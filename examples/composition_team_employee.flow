@@ -1,0 +1,23 @@
+# Composition Example: Team has Employees
+# Shows 1-to-many composition pattern using arrays (simulated)
+
+struct Employee {
+    id: i32
+    salary: i32
+}
+
+struct Team {
+    lead: Employee
+    member_count: i32
+}
+
+# "Method" to get team lead salary
+function team_lead_salary(team: Team) -> i32 {
+    return team.lead.salary
+}
+
+function main() -> i32 {
+    let lead: Employee = Employee { id: 1, salary: 80000 }
+    let team: Team = Team { lead: lead, member_count: 5 }
+    return team_lead_salary(team)  # Should be 80000
+}

@@ -1,0 +1,28 @@
+# OOP-style Example: Counter with encapsulated state
+# Shows struct + functions that modify internal state
+
+struct Counter {
+    value: i32
+}
+
+# "Constructor" function
+function make_counter(initial: i32) -> Counter {
+    return Counter { value: initial }
+}
+
+# "Method" to increment and return new value
+function counter_increment(c: Counter) -> Counter {
+    return Counter { value: c.value + 1 }
+}
+
+# "Method" to get current value
+function counter_get(c: Counter) -> i32 {
+    return c.value
+}
+
+function main() -> i32 {
+    let c: Counter = make_counter(5)
+    let c2: Counter = counter_increment(c)
+    let c3: Counter = counter_increment(c2)
+    return counter_get(c3)  # Should be 7
+}

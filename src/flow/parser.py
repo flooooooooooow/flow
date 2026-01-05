@@ -1,0 +1,1090 @@
+#!/usr/bin/env python3
+"""
+FLOW Language Parser
+A simple recursive descent parser for the FLOW language
+"""
+
+import re
+from typing import List, Dict, Optional, Union, Any, Tuple
+from dataclasses import dataclass
+from enum import Enum
+
+class TokenType(Enum):
+    # Literals
+    NUMBER = "NUMBER"
+    IDENTIFIER = "IDENTIFIER"
+    BOOLEAN = "BOOLEAN"
+    
+    # Keywords
+    FUNCTION = "FUNCTION"
+    LET = "LET"
+    RETURN = "RETURN"
+    IF = "IF"
+    ELSE = "ELSE"
+    ELIF = "ELIF"
+    WHILE = "WHILE"
+    FOR = "FOR"
+    PARALLEL = "PARALLEL"
+    IN = "IN"
+    STEP = "STEP"
+    IMPORT = "IMPORT"
+    EXPORT = "EXPORT"
+    MODULE = "MODULE"
+    STRUCT = "STRUCT"
+    INLINE = "INLINE"
+    NOINLINE = "NOINLINE"
+    ALWAYS_INLINE = "ALWAYS_INLINE"
+    TARGET = "TARGET"
+    EFFECT = "EFFECT"
+    CAPABILITY = "CAPABILITY"
+    HANDLE = "HANDLE"
+    WITH = "WITH"
+    MATCH = "MATCH"
+    
+    # Types
+    I8 = "I8"
+    I16 = "I16"
+    I32 = "I32"
+    I64 = "I64"
+    I128 = "I128"
+    U8 = "U8"
+    U16 = "U16"
+    U32 = "U32"
+    U64 = "U64"
+    U128 = "U128"
+    F32 = "F32"
+    F64 = "F64"
+    BOOL = "BOOL"
+    VOID = "VOID"
+    STRING = "STRING"
+    VEC = "VEC"
+    
+    # Symbols
+    LPAREN = "LPAREN"
+    RPAREN = "RPAREN"
+    LBRACE = "LBRACE"
+    RBRACE = "RBRACE"
+    LBRACKET = "LBRACKET"
+    RBRACKET = "RBRACKET"
+    SEMICOLON = "SEMICOLON"
+    COLON = "COLON"
+    COMMA = "COMMA"
+    DOTDOT = "DOTDOT"
+    DOT = "DOT"
+    ARROW = "ARROW"
+    ASSIGN = "ASSIGN"
+    DOUBLE_COLON = "DOUBLE_COLON"
+    
+    # Operators
+    PLUS = "PLUS"
+    MINUS = "MINUS"
+    STAR = "STAR"
+    SLASH = "SLASH"
+    PERCENT = "PERCENT"
+    EQUALS = "EQUALS"
+    NOT_EQUALS = "NOT_EQUALS"
+    LESS = "LESS"
+    GREATER = "GREATER"
+    LESS_EQUAL = "LESS_EQUAL"
+    GREATER_EQUAL = "GREATER_EQUAL"
+    AND = "AND"
+    OR = "OR"
+    NOT = "NOT"
+    
+    # Special
+    NEWLINE = "NEWLINE"
+    COMMENT = "COMMENT"
+    EOF = "EOF"
+
+@dataclass
+class Token:
+    type: TokenType
+    value: str
+    line: int
+    column: int
+
+@dataclass
+class Type:
+    name: str
+    is_pointer: bool = False
+    is_reference: bool = False
+    size: Optional[int] = None
+    element_type: Optional['Type'] = None
+
+@dataclass
+class Parameter:
+    name: str
+    type: Type
+
+@dataclass
+class FunctionDecl:
+    name: str
+    parameters: List[Parameter]
+    return_type: Type
+    body: 'Block'
+    attributes: List[str]
+
+@dataclass
+class VarDecl:
+    name: str
+    type: Type
+    initializer: Optional['Expression']
+
+@dataclass
+class Block:
+    statements: List['Statement']
+
+@dataclass
+class IfStatement:
+    condition: 'Expression'
+    then_block: Block
+    elif_blocks: List[Tuple['Expression', Block]]
+    else_block: Optional[Block]
+
+@dataclass
+class WhileStatement:
+    condition: 'Expression'
+    body: Block
+
+@dataclass
+class ForStatement:
+    variable: str
+    range_start: 'Expression'
+    range_end: 'Expression'
+    step: Optional['Expression']
+    body: Block
+    is_parallel: bool
+
+@dataclass
+class ReturnStatement:
+    value: Optional['Expression']
+
+@dataclass
+class Assignment:
+    target: str  # Simple variable name, or None if target_expr is used
+    value: 'Expression'
+    target_expr: Optional['Expression'] = None  # For array access like arr[i] = value
+
+@dataclass
+class FunctionCall:
+    name: str
+    arguments: List['Expression']
+
+@dataclass
+class BinaryOperation:
+    left: 'Expression'
+    operator: str
+    right: 'Expression'
+
+@dataclass
+class UnaryOperation:
+    operator: str
+    operand: 'Expression'
+
+@dataclass
+class Literal:
+    value: str
+    type: Type
+
+@dataclass
+class Variable:
+    name: str
+
+@dataclass
+class StructLiteral:
+    struct_name: str
+    fields: List[tuple]  # List of (field_name, field_value)
+
+@dataclass
+class FieldAccess:
+    object: 'Expression'
+    field: str
+
+@dataclass
+class ArrayLiteral:
+    elements: List['Expression']
+
+@dataclass
+class ArrayAccess:
+    array: 'Expression'
+    index: 'Expression'
+
+@dataclass
+class StructDecl:
+    name: str
+    fields: List[Parameter]
+
+@dataclass
+class EffectDecl:
+    name: str
+    operations: List['EffectOperation']
+
+@dataclass
+class EffectOperation:
+    name: str
+    parameters: List[Parameter]
+    return_type: Type
+
+@dataclass
+class CapabilityDecl:
+    name: str
+    effects: List[str]  # Names of effects this capability provides
+    methods: List['CapabilityMethod']
+
+@dataclass
+class CapabilityMethod:
+    name: str
+    parameters: List[Parameter]
+    return_type: Type
+    body: Block
+
+@dataclass
+class EffectCall:
+    effect_name: str
+    operation: str
+    arguments: List['Expression']
+
+@dataclass
+class HandleStatement:
+    effect: str
+    handler: str  # Name of capability or function
+    body: Block
+
+@dataclass
+class MatchStatement:
+    value: 'Expression'
+    cases: List['MatchCase']
+    default_case: Optional[Block]
+
+@dataclass
+class MatchCase:
+    pattern: 'Expression'  # Could be literal, struct pattern, etc.
+    body: Block
+
+Expression = Union[Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, ArrayAccess, EffectCall]
+Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement]
+
+class Lexer:
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+        self.line = 1
+        self.column = 1
+        
+        self.keyword_map = {
+            'function': TokenType.FUNCTION,
+            'let': TokenType.LET,
+            'return': TokenType.RETURN,
+            'if': TokenType.IF,
+            'else': TokenType.ELSE,
+            'elif': TokenType.ELIF,
+            'while': TokenType.WHILE,
+            'for': TokenType.FOR,
+            'parallel': TokenType.PARALLEL,
+            'in': TokenType.IN,
+            'step': TokenType.STEP,
+            'import': TokenType.IMPORT,
+            'export': TokenType.EXPORT,
+            'module': TokenType.MODULE,
+            'struct': TokenType.STRUCT,
+            'inline': TokenType.INLINE,
+            'noinline': TokenType.NOINLINE,
+            'always_inline': TokenType.ALWAYS_INLINE,
+            'target': TokenType.TARGET,
+            'effect': TokenType.EFFECT,
+            'capability': TokenType.CAPABILITY,
+            'handle': TokenType.HANDLE,
+            'with': TokenType.WITH,
+            'match': TokenType.MATCH,
+            'i8': TokenType.I8,
+            'i16': TokenType.I16,
+            'i32': TokenType.I32,
+            'i64': TokenType.I64,
+            'i128': TokenType.I128,
+            'u8': TokenType.U8,
+            'u16': TokenType.U16,
+            'u32': TokenType.U32,
+            'u64': TokenType.U64,
+            'u128': TokenType.U128,
+            'f32': TokenType.F32,
+            'f64': TokenType.F64,
+            'bool': TokenType.BOOL,
+            'void': TokenType.VOID,
+            'string': TokenType.STRING,
+            'vec': TokenType.VEC,
+            'true': TokenType.BOOLEAN,
+            'false': TokenType.BOOLEAN,
+        }
+        
+        self.token_specifications = [
+            (r'COMMENT', r'\#.*'),
+            (r'NEWLINE', r'\n'),
+            (r'WHITESPACE', r'\s+'),  # Skip whitespace
+            (r'ARROW', r'->'),
+            (r'EQUALS', r'=='),
+            (r'NOT_EQUALS', r'!='),
+            (r'LESS_EQUAL', r'<='),
+            (r'GREATER_EQUAL', r'>='),
+            (r'AND', r'&&'),
+            (r'OR', r'\|\|'),
+            (r'DOTDOT', r'\.\.'),
+            (r'DOUBLE_COLON', r'::'),
+            (r'PLUS', r'\+'),
+            (r'MINUS', r'-'),
+            (r'STAR', r'\*'),
+            (r'SLASH', r'/'),
+            (r'PERCENT', r'%'),
+            (r'LESS', r'<'),
+            (r'GREATER', r'>'),
+            (r'ASSIGN', r'='),
+            (r'NOT', r'!'),
+            (r'LPAREN', r'\('),
+            (r'RPAREN', r'\)'),
+            (r'LBRACE', r'\{'),
+            (r'RBRACE', r'\}'),
+            (r'LBRACKET', r'\['),
+            (r'RBRACKET', r'\]'),
+            (r'SEMICOLON', r';'),
+            (r'COLON', r':'),
+            (r'COMMA', r','),
+            (r'DOT', r'\.'),
+            (r'STRING', r'"[^"]*"'),
+            (r'NUMBER', r'[0-9]+\.[0-9]+|[0-9]+'),
+            (r'IDENTIFIER', r'[a-zA-Z_][a-zA-Z0-9_]*'),
+        ]
+        
+        self.token_regex = '|'.join(f'(?P<{name}>{pattern})' for name, pattern in self.token_specifications)
+        self.get_token = re.compile(self.token_regex).match
+    
+    def next_token(self) -> Token:
+        while self.pos < len(self.text):
+            m = self.get_token(self.text, self.pos)
+            if not m:
+                raise SyntaxError(f"Unexpected character at line {self.line}, column {self.column}")
+            
+            token_type_name = m.lastgroup
+            token_value = m.group(token_type_name)
+            
+            # Skip whitespace and comments
+            if token_type_name not in ['WHITESPACE', 'COMMENT', 'NEWLINE']:
+                token_type = getattr(TokenType, token_type_name)
+                
+                # Check if it's a keyword
+                if token_type == TokenType.IDENTIFIER and token_value in self.keyword_map:
+                    token_type = self.keyword_map[token_value]
+                
+                token = Token(token_type, token_value, self.line, self.column)
+                
+                # Update position
+                self.pos = m.end()
+                self.column += len(token_value)
+                
+                return token
+            
+            # Update position for whitespace and newlines
+            self.pos = m.end()
+            if token_type_name == 'NEWLINE':
+                self.line += 1
+                self.column = 1
+            else:
+                self.column += len(token_value)
+        
+        return Token(TokenType.EOF, "", self.line, self.column)
+    
+    def look_ahead(self) -> TokenType:
+        """Look ahead at the next token without consuming it"""
+        save_pos = self.pos
+        save_line = self.line
+        save_column = self.column
+        
+        token = self.next_token()
+        token_type = token.type
+        
+        # Restore position
+        self.pos = save_pos
+        self.line = save_line
+        self.column = save_column
+        
+        return token_type
+        
+class Parser:
+    def __init__(self, lexer: Lexer):
+        self.lexer = lexer
+        self.current_token = self.lexer.next_token()
+        self.lookahead = self.lexer.next_token()
+    
+    def advance(self):
+        self.current_token = self.lookahead
+        self.lookahead = self.lexer.next_token()
+    
+    def expect(self, token_type: TokenType):
+        if self.current_token.type == token_type:
+            token = self.current_token
+            self.advance()
+            return token
+        else:
+            raise SyntaxError(f"Expected {token_type}, got {self.current_token.type} at line {self.current_token.line}")
+    
+    def parse(self) -> List[Union[FunctionDecl, EffectDecl, CapabilityDecl, StructDecl]]:
+        declarations = []
+        while self.current_token.type != TokenType.EOF:
+            if self.current_token.type == TokenType.FUNCTION:
+                declarations.append(self.parse_function())
+            elif self.current_token.type == TokenType.STRUCT:
+                declarations.append(self.parse_struct())
+            elif self.current_token.type == TokenType.EFFECT:
+                declarations.append(self.parse_effect())
+            elif self.current_token.type == TokenType.CAPABILITY:
+                declarations.append(self.parse_capability())
+            else:
+                raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
+        return declarations
+    
+    def parse_struct(self) -> StructDecl:
+        self.expect(TokenType.STRUCT)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.LBRACE)
+        
+        fields = []
+        while self.current_token.type != TokenType.RBRACE:
+            field_name = self.expect(TokenType.IDENTIFIER).value
+            self.expect(TokenType.COLON)
+            field_type = self.parse_type()
+            fields.append(Parameter(field_name, field_type))
+            
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        
+        self.expect(TokenType.RBRACE)
+        return StructDecl(name, fields)
+    
+    def parse_function(self) -> FunctionDecl:
+        self.expect(TokenType.FUNCTION)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.LPAREN)
+        
+        parameters = []
+        if self.current_token.type != TokenType.RPAREN:
+            parameters = self.parse_parameters()
+        
+        self.expect(TokenType.RPAREN)
+        
+        return_type = Type("void")  # Default
+        if self.current_token.type == TokenType.ARROW:
+            self.advance()
+            return_type = self.parse_type()
+        
+        body = self.parse_block()
+        
+        return FunctionDecl(name, parameters, return_type, body, [])
+    
+    def parse_parameters(self) -> List[Parameter]:
+        parameters = []
+        parameters.append(self.parse_parameter())
+        
+        while self.current_token.type == TokenType.COMMA:
+            self.advance()
+            parameters.append(self.parse_parameter())
+        
+        return parameters
+    
+    def parse_parameter(self) -> Parameter:
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.COLON)
+        type = self.parse_type()
+        return Parameter(name, type)
+    
+    def parse_type(self) -> Type:
+        # Check for generic types first (array<T>, ptr<T>, etc.)
+        if self.current_token.type in [TokenType.IDENTIFIER, TokenType.I8, TokenType.I16, TokenType.I32, TokenType.I64, TokenType.I128,
+                                       TokenType.U8, TokenType.U16, TokenType.U32, TokenType.U64, TokenType.U128, TokenType.F32, TokenType.F64]:
+            type_name = self.current_token.value
+            self.advance()
+            
+            # Check for generic array type: array<T, N> or array<T>
+            if type_name == 'array' and self.current_token.type == TokenType.LESS:
+                self.advance()  # consume <
+                element_type = self.parse_type()
+                if self.current_token.type == TokenType.COMMA:
+                    self.advance()  # consume ,
+                    size = int(self.expect(TokenType.NUMBER).value)
+                    self.expect(TokenType.GREATER)
+                    return Type(f"array_{size}_{element_type.name}", size=size, element_type=element_type)
+                else:
+                    self.expect(TokenType.GREATER)
+                    return Type(f"array_{element_type.name}", element_type=element_type)
+            # Check for pointer type: ptr<T>
+            elif type_name == 'ptr' and self.current_token.type == TokenType.LESS:
+                self.advance()  # consume <
+                pointee_type = self.parse_type()
+                self.expect(TokenType.GREATER)
+                return Type(f"ptr_{pointee_type.name}", is_pointer=True, element_type=pointee_type)
+            # Check for array type: f32[]
+            elif self.current_token.type == TokenType.LBRACKET:
+                self.advance()
+                self.expect(TokenType.RBRACKET)
+                return Type(f"array_{type_name}", element_type=Type(type_name))
+            else:
+                # Simple type
+                return Type(type_name)
+        
+        elif self.current_token.type in [TokenType.I8, TokenType.I16, TokenType.I32, TokenType.I64, TokenType.I128,
+                                       TokenType.U8, TokenType.U16, TokenType.U32, TokenType.U64, TokenType.U128,
+                                       TokenType.F32, TokenType.F64, TokenType.BOOL, TokenType.VOID, TokenType.STRING]:
+            type_name = self.current_token.value
+            self.advance()
+            return Type(type_name)
+        
+        elif self.current_token.type == TokenType.VEC:
+            self.advance()
+            size = int(self.expect(TokenType.NUMBER).value)
+            element_type = self.parse_type()
+            return Type(f"vec{size}_{element_type.name}", size=size, element_type=element_type)
+        
+        elif self.current_token.type == TokenType.LBRACKET:
+            self.advance()
+            element_type = self.parse_type()
+            self.expect(TokenType.SEMICOLON)
+            size = int(self.expect(TokenType.NUMBER).value)
+            self.expect(TokenType.RBRACKET)
+            return Type(f"array_{size}_{element_type.name}", size=size, element_type=element_type)
+        
+        else:
+            raise SyntaxError(f"Unexpected type token: {self.current_token.type}")
+    
+    def parse_block(self) -> Block:
+        self.expect(TokenType.LBRACE)
+        statements = []
+        
+        while self.current_token.type != TokenType.RBRACE:
+            statements.append(self.parse_statement())
+        
+        self.expect(TokenType.RBRACE)
+        return Block(statements)
+    
+    def parse_statement(self) -> Statement:
+        if self.current_token.type == TokenType.LET:
+            return self.parse_var_decl()
+        elif self.current_token.type == TokenType.RETURN:
+            return self.parse_return()
+        elif self.current_token.type == TokenType.IF:
+            return self.parse_if()
+        elif self.current_token.type == TokenType.WHILE:
+            return self.parse_while()
+        elif self.current_token.type == TokenType.FOR:
+            return self.parse_for()
+        elif self.current_token.type == TokenType.PARALLEL:
+            return self.parse_for()  # parse_for handles parallel prefix
+        elif self.current_token.type == TokenType.EFFECT:
+            return self.parse_effect()
+        elif self.current_token.type == TokenType.CAPABILITY:
+            return self.parse_capability()
+        elif self.current_token.type == TokenType.HANDLE:
+            return self.parse_handle()
+        elif self.current_token.type == TokenType.MATCH:
+            return self.parse_match()
+        else:
+            return self.parse_expression_statement()
+    
+    def parse_effect(self) -> EffectDecl:
+        self.expect(TokenType.EFFECT)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.LBRACE)
+        
+        operations = []
+        while self.current_token.type != TokenType.RBRACE:
+            operations.append(self.parse_effect_operation())
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        
+        self.expect(TokenType.RBRACE)
+        return EffectDecl(name, operations)
+    
+    def parse_effect_operation(self) -> EffectOperation:
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.LPAREN)
+        
+        parameters = []
+        if self.current_token.type != TokenType.RPAREN:
+            parameters = self.parse_parameters()
+        
+        self.expect(TokenType.RPAREN)
+        
+        return_type = Type("void")
+        if self.current_token.type == TokenType.ARROW:
+            self.advance()
+            return_type = self.parse_type()
+        
+        return EffectOperation(name, parameters, return_type)
+    
+    def parse_capability(self) -> CapabilityDecl:
+        self.expect(TokenType.CAPABILITY)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.LBRACE)
+        
+        effects = []
+        methods = []
+        
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EFFECT:
+                self.advance()
+                # Parse multiple effects
+                effect_names = []
+                effect_names.append(self.expect(TokenType.IDENTIFIER).value)
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    # Check if next token is an identifier (another effect) or not
+                    if self.current_token.type == TokenType.IDENTIFIER:
+                        effect_names.append(self.expect(TokenType.IDENTIFIER).value)
+                    else:
+                        # No more effects in the list
+                        break
+                effects.extend(effect_names)
+                # Expect comma after effect list
+                if self.current_token.type == TokenType.COMMA:
+                    self.advance()
+            elif self.current_token.type == TokenType.FUNCTION:
+                methods.append(self.parse_capability_method())
+                # Expect comma after function
+                if self.current_token.type == TokenType.COMMA:
+                    self.advance()
+            else:
+                raise SyntaxError(f"Expected effect or function in capability, got {self.current_token.type}")
+        
+        self.expect(TokenType.RBRACE)
+        return CapabilityDecl(name, effects, methods)
+    
+    def parse_capability_method(self) -> CapabilityMethod:
+        method = self.parse_function()
+        return CapabilityMethod(method.name, method.parameters, method.return_type, method.body)
+    
+    def parse_handle(self) -> HandleStatement:
+        self.expect(TokenType.HANDLE)
+        
+        # Parse multiple effects
+        effects = []
+        effects.append(self.expect(TokenType.IDENTIFIER).value)
+        
+        while self.current_token.type == TokenType.COMMA:
+            self.advance()
+            effects.append(self.expect(TokenType.IDENTIFIER).value)
+        
+        self.expect(TokenType.WITH)
+        
+        # Parse multiple handlers
+        handlers = []
+        handlers.append(self.expect(TokenType.IDENTIFIER).value)
+        
+        while self.current_token.type == TokenType.COMMA:
+            self.advance()
+            handlers.append(self.expect(TokenType.IDENTIFIER).value)
+        
+        body = self.parse_block()
+        
+        # For now, just store the first effect and handler (TODO: support multiple)
+        return HandleStatement(effects[0], handlers[0], body)
+    
+    def parse_match(self) -> MatchStatement:
+        self.expect(TokenType.MATCH)
+        value = self.parse_expression_without_assign()
+        self.expect(TokenType.LBRACE)
+        
+        cases = []
+        default_case = None
+        
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.DEFAULT:
+                self.advance()
+                default_case = self.parse_block()
+            else:
+                pattern = self.parse_expression_without_assign()
+                self.expect(TokenType.ARROW)  # Use ARROW token for =>
+                body = self.parse_block()
+                cases.append(MatchCase(pattern, body))
+                
+                if self.current_token.type == TokenType.COMMA:
+                    self.advance()
+        
+        self.expect(TokenType.RBRACE)
+        return MatchStatement(value, cases, default_case)
+    
+    def parse_var_decl(self) -> VarDecl:
+        self.expect(TokenType.LET)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.COLON)
+        type = self.parse_type()
+        
+        initializer = None
+        if self.current_token.type == TokenType.ASSIGN:
+            self.advance()
+            initializer = self.parse_expression_without_assign()
+        
+        return VarDecl(name, type, initializer)
+    
+    def parse_return(self) -> ReturnStatement:
+        self.expect(TokenType.RETURN)
+        value = None
+        if self.current_token.type not in [TokenType.RBRACE, TokenType.RPAREN, TokenType.SEMICOLON, TokenType.EOF, 
+                                          TokenType.VOID, TokenType.I8, TokenType.I16, TokenType.I32, TokenType.I64, TokenType.I128,
+                                          TokenType.U8, TokenType.U16, TokenType.U32, TokenType.U64, TokenType.U128,
+                                          TokenType.F32, TokenType.F64, TokenType.BOOL]:
+            # Check if it's a valid expression start
+            if self.current_token.type in [TokenType.IDENTIFIER, TokenType.NUMBER, TokenType.BOOLEAN, 
+                                         TokenType.LPAREN, TokenType.MINUS, TokenType.NOT, TokenType.STAR, TokenType.AND]:
+                value = self.parse_expression_without_assign()
+        elif self.current_token.type == TokenType.VOID:
+            # Explicit void return - consume the VOID token
+            self.advance()
+        
+        return ReturnStatement(value)
+    
+    def parse_if(self) -> IfStatement:
+        self.expect(TokenType.IF)
+        condition = self.parse_expression_without_assign()
+        then_block = self.parse_block()
+        
+        elif_blocks = []
+        while self.current_token.type == TokenType.ELIF:
+            self.advance()
+            elif_condition = self.parse_expression_without_assign()
+            elif_block = self.parse_block()
+            elif_blocks.append((elif_condition, elif_block))
+        
+        else_block = None
+        if self.current_token.type == TokenType.ELSE:
+            self.advance()
+            else_block = self.parse_block()
+        
+        return IfStatement(condition, then_block, elif_blocks, else_block)
+    
+    def parse_while(self) -> WhileStatement:
+        self.expect(TokenType.WHILE)
+        condition = self.parse_expression_without_assign()
+        body = self.parse_block()
+        return WhileStatement(condition, body)
+    
+    def parse_for(self) -> ForStatement:
+        is_parallel = False
+        if self.current_token.type == TokenType.PARALLEL:
+            is_parallel = True
+            self.advance()
+        
+        self.expect(TokenType.FOR)
+        variable = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.IN)
+        
+        range_start = self.parse_expression_without_assign()
+        self.expect(TokenType.DOTDOT)  # Need to add this token type
+        range_end = self.parse_expression_without_assign()
+        
+        step = None
+        if self.current_token.type == TokenType.STEP:
+            self.advance()
+            step = self.parse_expression_without_assign()
+        
+        body = self.parse_block()
+        return ForStatement(variable, range_start, range_end, step, body, is_parallel)
+    
+    def parse_expression_statement(self) -> Statement:
+        expr = self.parse_assignment()
+        return expr
+    
+    def parse_expression(self) -> Expression:
+        return self.parse_assignment()
+    
+    def parse_expression_without_assign(self) -> Expression:
+        return self.parse_logical_or()
+    
+    def parse_assignment(self) -> Expression:
+        expr = self.parse_logical_or()
+        
+        if self.current_token.type == TokenType.ASSIGN:
+            if isinstance(expr, Variable):
+                self.advance()
+                value = self.parse_assignment()
+                return Assignment(expr.name, value)
+            elif isinstance(expr, ArrayAccess):
+                # Array element assignment: arr[i] = value
+                self.advance()
+                value = self.parse_assignment()
+                return Assignment("", value, target_expr=expr)
+            else:
+                raise SyntaxError("Invalid assignment target")
+        
+        return expr
+    
+    def parse_logical_or(self) -> Expression:
+        left = self.parse_logical_and()
+        
+        while self.current_token.type == TokenType.OR:
+            op = self.current_token.value
+            self.advance()
+            right = self.parse_logical_and()
+            left = BinaryOperation(left, op, right)
+        
+        return left
+    
+    def parse_logical_and(self) -> Expression:
+        left = self.parse_equality()
+        
+        while self.current_token.type == TokenType.AND:
+            op = self.current_token.value
+            self.advance()
+            right = self.parse_equality()
+            left = BinaryOperation(left, op, right)
+        
+        return left
+    
+    def parse_equality(self) -> Expression:
+        left = self.parse_comparison()
+        
+        while self.current_token.type in [TokenType.EQUALS, TokenType.NOT_EQUALS]:
+            op = self.current_token.value
+            self.advance()
+            right = self.parse_comparison()
+            left = BinaryOperation(left, op, right)
+        
+        return left
+    
+    def parse_comparison(self) -> Expression:
+        left = self.parse_term()
+        
+        while self.current_token.type in [TokenType.LESS, TokenType.GREATER, TokenType.LESS_EQUAL, TokenType.GREATER_EQUAL]:
+            op = self.current_token.value
+            self.advance()
+            right = self.parse_term()
+            left = BinaryOperation(left, op, right)
+        
+        return left
+    
+    def parse_term(self) -> Expression:
+        left = self.parse_factor()
+        
+        while self.current_token.type in [TokenType.PLUS, TokenType.MINUS]:
+            op = self.current_token.value
+            self.advance()
+            right = self.parse_factor()
+            left = BinaryOperation(left, op, right)
+        
+        return left
+    
+    def parse_factor(self) -> Expression:
+        left = self.parse_unary()
+        
+        while self.current_token.type in [TokenType.STAR, TokenType.SLASH, TokenType.PERCENT]:
+            op = self.current_token.value
+            self.advance()
+            right = self.parse_unary()
+            left = BinaryOperation(left, op, right)
+        
+        return left
+    
+    def parse_unary(self) -> Expression:
+        if self.current_token.type in [TokenType.MINUS, TokenType.NOT]:
+            op = self.current_token.value
+            self.advance()
+            operand = self.parse_unary()
+            return UnaryOperation(op, operand)
+        
+        return self.parse_primary()
+    
+    def parse_primary(self) -> Expression:
+        if self.current_token.type == TokenType.NUMBER:
+            value = self.current_token.value
+            self.advance()
+            # Infer float vs int from token text.
+            # This keeps the language ergonomic for SIMD examples that use 0.0/1.0.
+            if isinstance(value, str) and ('.' in value or 'e' in value.lower()):
+                return Literal(value, Type("f32"))
+            return Literal(value, Type("i32"))  # Default to i32 for numbers
+        
+        elif self.current_token.type == TokenType.BOOLEAN:
+            value = self.current_token.value
+            self.advance()
+            return Literal(value, Type("bool"))
+        
+        elif self.current_token.type == TokenType.STRING:
+            value = self.current_token.value
+            self.advance()
+            return Literal(value, Type("string"))
+        
+        elif self.current_token.type == TokenType.LBRACKET:
+            self.advance()
+            elements = []
+            
+            if self.current_token.type != TokenType.RBRACKET:
+                elements.append(self.parse_expression_without_assign())
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    elements.append(self.parse_expression_without_assign())
+            
+            self.expect(TokenType.RBRACKET)
+            return ArrayLiteral(elements)
+        
+        elif self.current_token.type == TokenType.IDENTIFIER:
+            name = self.current_token.value
+            self.advance()
+            
+            if self.current_token.type == TokenType.LPAREN:
+                return self.parse_function_call(name)
+            elif self.current_token.type == TokenType.LESS and name in ['array', 'ptr']:
+                # Generic type constructor: array<i32>(10)
+                self.advance()  # consume <
+                element_type = self.parse_type()
+                self.expect(TokenType.GREATER)
+                if self.current_token.type == TokenType.LPAREN:
+                    return self.parse_function_call(f"{name}<{element_type.name}>")
+                else:
+                    raise SyntaxError(f"Expected '(' after generic type constructor")
+            elif self.current_token.type == TokenType.LBRACE:
+                # Try to parse as struct literal - if it fails, it's not a struct literal
+                # Save state first (including lexer position)
+                save_current = self.current_token
+                save_lookahead = self.lookahead
+                save_lexer_pos = self.lexer.pos
+                save_lexer_line = self.lexer.line
+                save_lexer_column = self.lexer.column
+                
+                try:
+                    result = self.parse_struct_literal(name)
+                    return result
+                except:
+                    # If struct literal parsing fails, restore ALL state and treat as variable
+                    self.current_token = save_current
+                    self.lookahead = save_lookahead
+                    self.lexer.pos = save_lexer_pos
+                    self.lexer.line = save_lexer_line
+                    self.lexer.column = save_lexer_column
+                    return Variable(name)
+            elif self.current_token.type == TokenType.DOT:
+                return self.parse_field_access(name)
+            elif self.current_token.type == TokenType.DOUBLE_COLON:
+                # Effect call: EffectName::operation(args)
+                self.advance()  # consume ::
+                operation = self.expect(TokenType.IDENTIFIER).value
+                self.expect(TokenType.LPAREN)
+                
+                arguments = []
+                if self.current_token.type != TokenType.RPAREN:
+                    arguments.append(self.parse_expression_without_assign())
+                    while self.current_token.type == TokenType.COMMA:
+                        self.advance()
+                        arguments.append(self.parse_expression_without_assign())
+                
+                self.expect(TokenType.RPAREN)
+                return EffectCall(name, operation, arguments)
+            elif self.current_token.type == TokenType.LBRACKET:
+                # Array access: arr[index]
+                expr = Variable(name)
+                while self.current_token.type == TokenType.LBRACKET:
+                    self.advance()  # consume [
+                    index = self.parse_expression_without_assign()
+                    self.expect(TokenType.RBRACKET)
+                    expr = ArrayAccess(expr, index)
+                return expr
+            else:
+                return Variable(name)
+        
+        elif self.current_token.type == TokenType.LPAREN:
+            self.advance()
+            expr = self.parse_expression_without_assign()
+            self.expect(TokenType.RPAREN)
+            return expr
+        
+        else:
+            raise SyntaxError(f"Unexpected token in expression: {self.current_token.type}")
+    
+    def parse_function_call(self, name: str) -> FunctionCall:
+        self.expect(TokenType.LPAREN)
+        arguments = []
+        
+        if self.current_token.type != TokenType.RPAREN:
+            arguments.append(self.parse_expression_without_assign())
+            while self.current_token.type == TokenType.COMMA:
+                self.advance()
+                arguments.append(self.parse_expression_without_assign())
+        
+        self.expect(TokenType.RPAREN)
+        return FunctionCall(name, arguments)
+    
+    def parse_struct_literal(self, struct_name: str) -> 'StructLiteral':
+        # If current token is LBRACE, expect it and advance
+        # Otherwise, we're already positioned correctly
+        if self.current_token.type == TokenType.LBRACE:
+            self.expect(TokenType.LBRACE)
+        
+        fields = []
+        
+        while self.current_token.type != TokenType.RBRACE:
+            field_name = self.expect(TokenType.IDENTIFIER).value
+            self.expect(TokenType.COLON)
+            field_value = self.parse_expression_without_assign()
+            fields.append((field_name, field_value))
+            
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        
+        self.expect(TokenType.RBRACE)
+        return StructLiteral(struct_name, fields)
+    
+    def parse_field_access(self, object_name: str) -> Expression:
+        self.expect(TokenType.DOT)
+        member_name = self.expect(TokenType.IDENTIFIER).value
+
+        # Dotted call: EffectName.operation(args)
+        if self.current_token.type == TokenType.LPAREN:
+            self.expect(TokenType.LPAREN)
+            arguments: List[Expression] = []
+
+            if self.current_token.type != TokenType.RPAREN:
+                arguments.append(self.parse_expression_without_assign())
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    arguments.append(self.parse_expression_without_assign())
+
+            self.expect(TokenType.RPAREN)
+            return EffectCall(object_name, member_name, arguments)
+
+        # Regular field access
+        expr: Expression = FieldAccess(Variable(object_name), member_name)
+
+        # Support chained access: a.b.c
+        while self.current_token.type == TokenType.DOT:
+            self.expect(TokenType.DOT)
+            next_member = self.expect(TokenType.IDENTIFIER).value
+            expr = FieldAccess(expr, next_member)
+
+        return expr
+
+def parse_flow_code(code: str) -> List[Any]:
+    lexer = Lexer(code)
+    parser = Parser(lexer)
+    return parser.parse()
+
+if __name__ == "__main__":
+    # Test code
+    test_code = """
+function add(a: i32, b: i32) -> i32 {
+    let result: i32 = a + b
+    return result
+}
+
+function factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    } else {
+        return n * factorial(n - 1)
+    }
+}
+"""
+    
+    try:
+        functions = parse_flow_code(test_code)
+        print("Parsed successfully!")
+        for func in functions:
+            print(f"Function: {func.name}")
+            print(f"  Parameters: {[p.name + ':' + p.type.name for p in func.parameters]}")
+            print(f"  Return type: {func.return_type.name}")
+            print(f"  Statements: {len(func.body.statements)}")
+    except SyntaxError as e:
+        print(f"Syntax error: {e}")

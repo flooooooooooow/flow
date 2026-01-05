@@ -1,0 +1,15 @@
+# Fibonacci Sequence - FLOW version of C++ fibonacci example
+function fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    } else {
+        return fibonacci(n - 1) + fibonacci(n - 2)
+    }
+}
+
+function main() -> i32 {
+    let n: i32 = 10
+    let result: i32 = fibonacci(n)
+    # Would print first 10 fibonacci numbers
+    return result
+}

@@ -1,0 +1,286 @@
+#!/bin/bash
+# FLOW Programming Language Runner
+# The main entry point for running FLOW programs
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLOWC_MODULE="flow.transpiler"
+export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+LLVM_PATH="/opt/homebrew/opt/llvm/bin"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Print colored output
+print_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+# Show help
+show_help() {
+    echo "FLOW Programming Language v0.1"
+    echo ""
+    echo "Usage: flow [OPTIONS] <program.flow>"
+    echo ""
+    echo "Options:"
+    echo "  run <program>     Compile and run program"
+    echo "  compile <program>  Compile program only"
+    echo "  mlir <program>     Generate MLIR only"
+    echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
+    echo "  test              Run all tests"
+    echo "  install           Install dependencies"
+    echo "  examples          List example programs"
+    echo "  help              Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  flow run examples/fibonacci.flow"
+    echo "  flow compile examples/loops.flow"
+    echo "  flow mlir examples/hello_world.flow"
+    echo "  flow transpile tests/test_optimization.flow --mlir --optimize --opt-level O2 --opt-report"
+}
+
+# Check dependencies
+check_deps() {
+    if ! command -v python3 &> /dev/null; then
+        print_error "Python 3 is required"
+        exit 1
+    fi
+
+    if ! command -v clang &> /dev/null; then
+        print_error "clang is required"
+        exit 1
+    fi
+    
+    # Module import check
+    python3 -c "import $FLOWC_MODULE" 2>/dev/null || {
+        print_error "FLOW compiler module not found ($FLOWC_MODULE). Check PYTHONPATH/src layout."
+        exit 1
+    }
+}
+
+check_mlir_deps() {
+    if ! command -v "$LLVM_PATH/mlir-opt" &> /dev/null; then
+        print_error "MLIR tools not found. Run './flow install' (or brew install llvm)"
+        exit 1
+    fi
+    if ! command -v "$LLVM_PATH/mlir-translate" &> /dev/null; then
+        print_error "mlir-translate not found. Run './flow install' (or brew install llvm)"
+        exit 1
+    fi
+}
+
+# Compile FLOW to executable
+compile_program() {
+    local program="$1"
+    local basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    
+    if [ ! -f "$program" ]; then
+        print_error "Program not found: $program"
+        exit 1
+    fi
+    
+    print_info "Compiling $program..."
+    
+    # Create build directory
+    mkdir -p "$build_dir"
+    
+    # FLOW to C
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c -o "$build_dir/$basename.c" 2>/dev/null; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C: $basename.c"
+
+    # C to executable
+    if ! clang "$build_dir/$basename.c" -o "$build_dir/$basename" 2>/dev/null; then
+        print_error "C compilation/linking failed"
+        exit 1
+    fi
+    print_success "C → Executable: $basename"
+    
+    print_success "🚀 Ready to run: $build_dir/$basename"
+}
+
+# Run program
+run_program() {
+    local program="$1"
+    local basename=$(basename "$program" .flow)
+    local executable="$SCRIPT_DIR/build/$basename"
+    
+    compile_program "$program"
+    
+    print_info "Running $basename..."
+    echo "----------------------------------------"
+    "$executable"
+    status=$?
+    echo "----------------------------------------"
+    print_success "Program finished"
+    echo "Exit code: $status"
+    return $status
+}
+
+# Generate MLIR only
+generate_mlir() {
+    local program="$1"
+    shift
+    local basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    
+    if [ ! -f "$program" ]; then
+        print_error "Program not found: $program"
+        exit 1
+    fi
+    
+    mkdir -p "$build_dir"
+
+    check_mlir_deps
+
+    if python3 -m "$FLOWC_MODULE" "$program" --mlir "$@" -o "$build_dir/$basename.mlir"; then
+        print_success "Generated MLIR: $build_dir/$basename.mlir"
+        echo "----------------------------------------"
+        cat "$build_dir/$basename.mlir"
+        echo "----------------------------------------"
+    else
+        print_error "MLIR generation failed"
+        exit 1
+    fi
+}
+
+# Run the underlying transpiler directly (advanced flags)
+run_transpiler() {
+    check_deps
+    python3 -m "$FLOWC_MODULE" "$@"
+}
+
+# Run tests
+run_tests() {
+    print_info "Running FLOW tests..."
+
+    local failed=0
+    local total=0
+
+    for suite in "tests" "examples"; do
+        local dir="$SCRIPT_DIR/$suite"
+        for program in "$dir"/*.flow; do
+            if [ -f "$program" ]; then
+                total=$((total + 1))
+                local basename=$(basename "$program" .flow)
+                print_info "Testing $suite/$basename..."
+                
+                if python3 -m "$FLOWC_MODULE" "$program" -o "/tmp/$suite-$basename.mlir" 2>/dev/null; then
+                    print_success "✓ $suite/$basename"
+                else
+                    print_error "✗ $suite/$basename"
+                    failed=$((failed + 1))
+                fi
+            fi
+        done
+    done
+    
+    echo "----------------------------------------"
+    if [ $failed -eq 0 ]; then
+        print_success "All $total tests passed!"
+    else
+        print_error "$failed/$total tests failed"
+        exit 1
+    fi
+}
+
+# List examples
+list_examples() {
+    print_info "Available FLOW programs:"
+    echo ""
+    
+    local examples_dir="$SCRIPT_DIR/examples"
+    local tests_dir="$SCRIPT_DIR/tests"
+    
+    echo "📚 Examples (standard programs):"
+    for program in "$examples_dir"/*.flow; do
+        if [ -f "$program" ]; then
+            local basename=$(basename "$program" .flow)
+            echo "  📄 examples/$basename.flow"
+            # Show first line as description
+            local desc=$(head -n 1 "$program" | sed 's/^# *//')
+            echo "     $desc"
+            echo ""
+        fi
+    done
+    
+    echo "🧪 Tests (compiler/language demos):"
+    for program in "$tests_dir"/*.flow; do
+        if [ -f "$program" ]; then
+            local basename=$(basename "$program" .flow)
+            echo "  📄 tests/$basename.flow"
+            # Show first line as description
+            local desc=$(head -n 1 "$program" | sed 's/^# *//')
+            echo "     $desc"
+            echo ""
+        fi
+    done
+}
+
+# Install dependencies
+install_deps() {
+    print_info "Installing FLOW dependencies..."
+    
+    # Install LLVM
+    if ! command -v "$LLVM_PATH/mlir-opt" &> /dev/null; then
+        print_info "Installing LLVM..."
+        if command -v brew &> /dev/null; then
+            brew install llvm
+        else
+            print_error "Please install LLVM manually"
+            exit 1
+        fi
+    fi
+    
+    print_success "Dependencies installed!"
+}
+
+# Main command dispatcher
+case "${1:-help}" in
+    "run")
+        check_deps
+        run_program "$2"
+        ;;
+    "compile")
+        check_deps
+        compile_program "$2"
+        ;;
+    "mlir")
+        shift
+        generate_mlir "$@"
+        ;;
+    "transpile")
+        shift
+        run_transpiler "$@"
+        ;;
+    "test")
+        run_tests
+        ;;
+    "install")
+        install_deps
+        ;;
+    "examples")
+        list_examples
+        ;;
+    "help"|*)
+        show_help
+        ;;
+esac

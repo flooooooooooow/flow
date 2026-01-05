@@ -1,0 +1,11 @@
+function main() -> i32 {
+    printf("P3\n32 24\n255\n")
+    let y: i32 = 0
+    for y in 0..24 {
+        let x: i32 = 0
+        for x in 0..32 {
+            printf("20 20 24\n")
+        }
+    }
+    return 0
+}

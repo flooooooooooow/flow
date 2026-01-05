@@ -1,0 +1,15 @@
+# Factorial - FLOW version of C++ factorial example
+function factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    } else {
+        return n * factorial(n - 1)
+    }
+}
+
+function main() -> i32 {
+    let n: i32 = 5
+    let result: i32 = factorial(n)
+    # Would print: "Factorial of 5 is 120"
+    return result
+}
