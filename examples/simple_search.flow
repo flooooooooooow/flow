@@ -1,0 +1,35 @@
+# Simple Search - FLOW version
+function get_array_value(pos: i32) -> i32 {
+    # Simulate array: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91]
+    if pos == 0 { return 2 }
+    if pos == 1 { return 5 }
+    if pos == 2 { return 8 }
+    if pos == 3 { return 12 }
+    if pos == 4 { return 16 }
+    if pos == 5 { return 23 }
+    if pos == 6 { return 38 }
+    if pos == 7 { return 56 }
+    if pos == 8 { return 72 }
+    if pos == 9 { return 91 }
+    return -1
+}
+
+function linear_search(item: i32) -> i32 {
+    let index: i32 = 0
+    
+    while index < 10 {
+        let current: i32 = get_array_value(index)
+        if current == item {
+            return index
+        }
+        index = index + 1
+    }
+    
+    return -1
+}
+
+function main() -> i32 {
+    let number: i32 = 23
+    let location: i32 = linear_search(number)
+    return location
+}

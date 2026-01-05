@@ -1,0 +1,6 @@
+# Hello World - FLOW version of C++ "Hello, World!"
+function main() -> i32 {
+    # In a real implementation, we'd have print functions
+    # For now, return success code (42 instead of 0)
+    return 42
+}

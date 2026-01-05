@@ -1,0 +1,25 @@
+# Palindrome Checker - FLOW version of C++ string palindrome
+# Since we don't have strings yet, we'll use numbers
+function is_palindrome_number(n: i32) -> i32 {
+    let original: i32 = n
+    let reversed: i32 = 0
+    
+    while n > 0 {
+        let digit: i32 = n % 10
+        reversed = reversed * 10 + digit
+        n = n / 10
+    }
+    
+    if original == reversed {
+        return 1  # true
+    } else {
+        return 0  # false
+    }
+}
+
+function main() -> i32 {
+    let number: i32 = 121
+    let result: i32 = is_palindrome_number(number)
+    # Would print: "121 is a palindrome"
+    return result
+}
