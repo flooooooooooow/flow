@@ -1,0 +1,17 @@
+function main() -> i32 {
+    printf("P3\n128 96\n255\n")
+    let y: i32 = 0
+    for y in 0..96 {
+        let x: i32 = 0
+        for x in 0..128 {
+            if x >= 18 and y >= 18 and x < 110 and y < 36 {
+                printf("80 170 255\n")
+            } elif x >= 12 and y >= 12 and x < 116 and y < 84 {
+                printf("32 40 60\n")
+            } else {
+                printf("20 20 24\n")
+            }
+        }
+    }
+    return 0
+}

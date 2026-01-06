@@ -28,6 +28,8 @@ class MLIRGenerator:
         self.emit_debug_info = True  # Enable DWARF debug info generation
         self._effect_handler_stack: List[Dict[str, str]] = [{}]
         self.inside_scf_for = False  # Track if we're inside scf.for
+        self.declarations = []  # Store declarations for type lookup
+        self.struct_layouts = {}  # Maps struct name to field offsets and types
         
     def indent(self) -> str:
         return "  " * self.indent_level
@@ -37,6 +39,44 @@ class MLIRGenerator:
         self.block_counter += 1
         return label
     
+    def _calculate_struct_layouts(self, declarations: List[Any]) -> None:
+        """Calculate field offsets for all struct types"""
+        for decl in declarations:
+            if type(decl).__name__ == 'StructDecl':
+                layout = {}
+                offset = 0
+                for field in decl.fields:
+                    # Get field size (simplified - using 4 bytes for i32/f32, 1 for i8, etc.)
+                    field_size = self._get_type_size(field.type)
+                    layout[field.name] = {
+                        'offset': offset,
+                        'type': field.type,
+                        'size': field_size
+                    }
+                    offset += field_size
+                self.struct_layouts[decl.name] = layout
+    
+    def _get_type_size(self, flow_type) -> int:
+        """Get the size of a type in bytes (simplified)"""
+        # Handle string type names
+        type_name = flow_type.name if hasattr(flow_type, 'name') else str(flow_type)
+        
+        if type_name in ['i8', 'u8', 'bool']:
+            return 1
+        elif type_name in ['i16', 'u16']:
+            return 2
+        elif type_name in ['i32', 'u32', 'f32']:
+            return 4
+        elif type_name in ['i64', 'u64', 'f64']:
+            return 8
+        elif type_name in ['i128', 'u128']:
+            return 16
+        else:
+            # For struct types, calculate recursively
+            if type_name in self.struct_layouts:
+                return sum(field['size'] for field in self.struct_layouts[type_name].values())
+            return 4  # Default size
+    
     def generate_module(self, declarations: List[Any]) -> str:
         mlir_code = []
         
@@ -44,6 +84,10 @@ class MLIRGenerator:
         self.string_constants = {}
         self.string_counter = 0
         self.needs_printf = False
+        self.declarations = declarations  # Store declarations for type lookup
+        
+        # Calculate struct layouts
+        self._calculate_struct_layouts(declarations)
         
         # Module header with required dialects and debug info
         if self.emit_debug_info:
@@ -95,6 +139,9 @@ class MLIRGenerator:
             'parameters': func.parameters,
             'mlir_name': f"@{func.name}"
         }
+        
+        # Store current function return type for use in return statements
+        self.current_function_return_type = func.return_type
         
         mlir_code = []
         
@@ -168,6 +215,7 @@ class MLIRGenerator:
             # MLIR SSA values are immutable; we do not emit an extra "assignment" op.
             self.symbol_table[var_decl.name] = {
                 'type': 'variable',
+                'flow_type': var_decl.type,  # Store original FLOW type
                 'mlir_type': mlir_type,
                 'ssa_name': init_value
             }
@@ -180,6 +228,7 @@ class MLIRGenerator:
             
             self.symbol_table[var_decl.name] = {
                 'type': 'variable',
+                'flow_type': var_decl.type,  # Store original FLOW type
                 'mlir_type': mlir_type,
                 'ssa_name': ssa_name
             }
@@ -194,7 +243,9 @@ class MLIRGenerator:
             value_ssa, value_ops = self.generate_expression(return_stmt.value)
             lines: List[str] = []
             lines.extend(value_ops)
-            lines.append(f"{self.indent()}func.return {value_ssa} : {self.get_expression_type(return_stmt.value)}")
+            # Use the function's return type instead of the expression type
+            return_type = self.flow_type_to_mlir(self.current_function_return_type)
+            lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
             return "\n".join(lines)
         else:
             return f"{self.indent()}func.return"
@@ -243,7 +294,35 @@ class MLIRGenerator:
                 return "\n".join(ops)
             else:
                 return f"{self.indent()}// Unsupported assignment target expression"
-         
+        
+        # Check if this is a struct assignment
+        if assignment.target_expr and isinstance(assignment.target_expr, Variable):
+            target_name = assignment.target_expr.name
+            if target_name in self.symbol_table:
+                target_info = self.symbol_table[target_name]
+                target_type = target_info.get('mlir_type', '')
+                
+                # Check if target is a struct (memref with xi8)
+                if target_type.startswith('memref<') and 'xi8>' in target_type:
+                    # Struct assignment: copy struct from source to target
+                    ops.append(f"{self.indent()}// Struct assignment: copy struct")
+                    
+                    # Get struct size from target type
+                    struct_size = int(target_type.split('<')[1].split('x')[0])
+                    
+                    # Copy each byte from source to target
+                    for i in range(struct_size):
+                        # Load byte from source
+                        load_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}memref.load {load_name}, {value_ssa}[{i}] : memref<?xi8>")
+                        
+                        # Store byte to target
+                        ops.append(f"{self.indent()}memref.store {load_name}, {target_info['ssa_name']}[{i}] : memref<?xi8>")
+                    
+                    return "\n".join(ops)
+        
+        # Regular variable assignment
         if assignment.target in self.symbol_table:
             target_info = self.symbol_table[assignment.target]
             mlir_type = target_info['mlir_type']
@@ -669,6 +748,10 @@ class MLIRGenerator:
             return self.generate_array_literal(expr)
         elif expr_type == 'ArrayAccess':
             return self.generate_array_access(expr)
+        elif expr_type == 'FieldAccess':
+            return self.generate_field_access(expr)
+        elif expr_type == 'StructLiteral':
+            return self.generate_struct_literal(expr)
         else:
             return f"// Unsupported expression type: {expr_type}", []
     
@@ -756,9 +839,9 @@ class MLIRGenerator:
                 op_text = f"arith.cmpf {pred}, {left_ssa}, {right_ssa} : {operand_type}"
             else:
                 op_text = f"arith.cmpi {pred}, {left_ssa}, {right_ssa} : {operand_type}"
-        elif bin_op.operator == '&&':
+        elif bin_op.operator == '&&' or bin_op.operator == 'and':
             op_text = f"arith.andi {left_ssa}, {right_ssa} : i1"
-        elif bin_op.operator == '||':
+        elif bin_op.operator == '||' or bin_op.operator == 'or':
             op_text = f"arith.ori {left_ssa}, {right_ssa} : i1"
         else:
             return f"// Unsupported binary operator: {bin_op.operator}", left_ops + right_ops
@@ -791,6 +874,323 @@ class MLIRGenerator:
             return ssa_name, ops
         else:
             return f"// Unsupported unary operator: {un_op.operator}", operand_ops
+    
+    def generate_field_access(self, field_access: FieldAccess) -> tuple[str, List[str]]:
+        """Generate field access that loads values from struct memory"""
+        obj_result = self.generate_expression(field_access.object)
+        if obj_result is None:
+            # Fallback if object expression fails
+            ssa_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            return ssa_name, [f"{self.indent()}// Failed to generate object expression for field access"]
+        
+        obj_ssa, obj_ops = obj_result
+        ops = list(obj_ops)
+        
+        # Try to determine the field type by walking the struct hierarchy
+        field_type = self._determine_field_type(field_access)
+        
+        if not field_type:
+            # Default to i32 if we can't determine the type
+            ssa_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
+            return ssa_name, ops
+        
+        # Get the struct layout to find field offset
+        obj_type = self._determine_struct_type(field_access.object)
+        if not obj_type or obj_type.name not in self.struct_layouts:
+            # Fallback
+            ssa_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            if field_type.name == 'f32':
+                ops.append(f"{self.indent()}{ssa_name} = arith.constant 0.0 : f32")
+            else:
+                ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
+            return ssa_name, ops
+        
+        layout = self.struct_layouts[obj_type.name]
+        if field_access.field not in layout:
+            # Field not found
+            ssa_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            if field_type.name == 'f32':
+                ops.append(f"{self.indent()}{ssa_name} = arith.constant 0.0 : f32")
+            else:
+                ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
+            return ssa_name, ops
+        
+        field_info = layout[field_access.field]
+        offset = field_info['offset']
+        
+        # Load field from memory
+        ssa_name = f"%{self.function_counter}"
+        self.function_counter += 1
+        
+        if field_type.name == 'f32':
+            # Load f32 from memory (4 bytes, little-endian)
+            ops.append(f"{self.indent()}// Load {field_access.field} (f32) at offset {offset}")
+            
+            # Load 4 bytes and combine
+            loaded_bytes = []
+            for i in range(4):
+                byte_offset = offset + i
+                byte_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}memref.load {byte_name}, {obj_ssa}[{byte_offset}] : memref<?xi8>")
+                loaded_bytes.append(byte_name)
+            
+            # Extend each byte to i32
+            extended_bytes = []
+            for byte_name in loaded_bytes:
+                ext_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{ext_name} = arith.exti {byte_name} : i8 to i32")
+                extended_bytes.append(ext_name)
+            
+            # Shift and combine bytes (little-endian)
+            accumulator = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(self.indent() + accumulator + " = arith.constant 0 : i32")
+            
+            for i, ext_name in enumerate(extended_bytes):
+                shift_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(self.indent() + shift_name + " = arith.constant " + str(i * 8) + " : i32")
+                
+                shifted_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(self.indent() + shifted_name + " = arith.shli " + ext_name + ", " + shift_name + " : i32")
+                
+                prev_accumulator = accumulator
+                accumulator = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(self.indent() + accumulator + " = arith.ori " + prev_accumulator + ", " + shifted_name + " : i32")
+            
+            combined_name = accumulator
+            # Bitcast from i32 to f32
+            final_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(self.indent() + final_name + " = arith.bitcast " + combined_name + " : i32 to f32")
+            
+            return final_name, ops
+            
+        elif field_type.name in ['i32', 'u32']:
+            # Load i32 from memory (4 bytes, little-endian)
+            ops.append(self.indent() + "// Load " + field_access.field + " (i32) at offset " + str(offset))
+            
+            # Load 4 bytes and combine
+            loaded_bytes = []
+            for i in range(4):
+                byte_offset = offset + i
+                byte_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}memref.load {byte_name}, {obj_ssa}[{byte_offset}] : memref<?xi8>")
+                loaded_bytes.append(byte_name)
+            
+            # Extend each byte to i32
+            extended_bytes = []
+            for byte_name in loaded_bytes:
+                ext_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{ext_name} = arith.exti {byte_name} : i8 to i32")
+                extended_bytes.append(ext_name)
+            
+            # Shift and combine bytes (little-endian)
+            accumulator = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(self.indent() + accumulator + " = arith.constant 0 : i32")
+            
+            for i, ext_name in enumerate(extended_bytes):
+                shift_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(self.indent() + shift_name + " = arith.constant " + str(i * 8) + " : i32")
+                
+                shifted_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(self.indent() + shifted_name + " = arith.shli " + ext_name + ", " + shift_name + " : i32")
+                
+                prev_accumulator = accumulator
+                accumulator = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(self.indent() + accumulator + " = arith.ori " + prev_accumulator + ", " + shifted_name + " : i32")
+            
+            return accumulator, ops
+            
+        elif field_type.name in ['i8', 'u8', 'bool']:
+            # Load single byte
+            ops.append(f"{self.indent()}// Load {field_access.field} ({field_type.name}) at offset {offset}")
+            byte_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}memref.load {byte_name}, {obj_ssa}[{offset}] : memref<{total_size}xi8>")
+            
+            # Extend to i32 if needed
+            if field_type.name in ['u8', 'bool']:
+                ext_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{ext_name} = arith.exti {byte_name} : i8 to i32")
+                return ext_name, ops
+            else:
+                # For i8, sign extend
+                ext_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
+                return ext_name, ops
+    
+    def _determine_struct_type(self, expr):
+        """Determine the struct type of an expression"""
+        if hasattr(expr, 'name'):
+            # This is a variable, find its declaration
+            var_type = self._find_variable_type(expr.name)
+            return var_type
+        elif isinstance(expr, FieldAccess):
+            # This is a field access, get the field type
+            return self._determine_field_type(expr)
+        return None
+    
+    def _determine_field_type(self, field_access):
+        """Determine the type of a field access by walking the struct hierarchy"""
+        # Start with the base object
+        current_type = None
+        
+        # If the object is a variable, get its type from the AST
+        if hasattr(field_access.object, 'name'):
+            # This is a variable, find its declaration
+            current_type = self._find_variable_type(field_access.object.name)
+        elif isinstance(field_access.object, FieldAccess):
+            # This is a nested field access, recurse
+            current_type = self._determine_field_type(field_access.object)
+        
+        # Walk through the fields
+        if current_type and current_type.name in self.struct_layouts:
+            layout = self.struct_layouts[current_type.name]
+            if field_access.field in layout:
+                return layout[field_access.field]['type']
+        
+        return None
+    
+    def _find_variable_type(self, var_name):
+        """Find the type of a variable by looking through declarations"""
+        for decl in self.declarations:
+            if hasattr(decl, 'body') and hasattr(decl, 'name'):  # Function
+                for stmt in decl.body.statements:
+                    if hasattr(stmt, 'name') and stmt.name == var_name:
+                        if hasattr(stmt, 'type'):
+                            return stmt.type
+            elif hasattr(decl, 'name') and decl.name == var_name:  # Function parameter
+                if hasattr(decl, 'parameters'):
+                    for param in decl.parameters:
+                        if param.name == var_name:
+                            return param.type
+        return None
+    
+    def generate_struct_literal(self, struct_literal: StructLiteral) -> tuple[str, List[str]]:
+        """Generate struct literal with actual memory allocation and field storage"""
+        struct_name = struct_literal.struct_name
+        
+        if struct_name not in self.struct_layouts:
+            # Fallback for unknown structs
+            ssa_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            return ssa_name, [f"{self.indent()}{ssa_name} = arith.constant 0 : i32"]
+        
+        # Get struct layout
+        layout = self.struct_layouts[struct_name]
+        total_size = sum(field['size'] for field in layout.values())
+        
+        ops = []
+        
+        # Allocate memory for struct as byte array
+        alloc_name = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{alloc_name} = memref.alloc() : memref<{total_size}xi8>")
+        
+        # Store field at correct offset with proper byte manipulation
+        for field_name, field_value in struct_literal.fields:
+            if field_name in layout:
+                field_info = layout[field_name]
+                offset = field_info['offset']
+                field_type = field_info['type']
+                
+                # Generate field value
+                value_ssa, value_ops = self.generate_expression(field_value)
+                ops.extend(value_ops)
+                
+                # Store field at correct offset with proper byte manipulation
+                if field_type.name in ['i32', 'u32']:
+                    # Store i32 as 4 bytes (little-endian)
+                    for i in range(4):
+                        byte_offset = offset + i
+                        # Extract ith byte: (value >> (i * 8)) & 0xFF
+                        shift_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{shift_name} = arith.constant {i * 8} : i32")
+                        
+                        shr_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{shr_name} = arith.shrsi {value_ssa}, {shift_name} : i32")
+                        
+                        # Use arith.andi with constant 255
+                        and_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{and_name} = arith.andi {shr_name}, 255 : i32")
+                        
+                        # Cast to i8
+                        byte_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{byte_name} = arith.trunci {and_name} : i32 to i8")
+                        
+                        # Store byte
+                        ops.append(f"{self.indent()}memref.store {byte_name}, {alloc_name}[{byte_offset}] : memref<{total_size}xi8>")
+                        
+                elif field_type.name == 'f32':
+                    # Store f32 as 4 bytes (bitcast to i32 first)
+                    bitcast_name = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(f"{self.indent()}{bitcast_name} = arith.bitcast {value_ssa} : f32 to i32")
+                    
+                    # Extract bytes like i32
+                    for i in range(4):
+                        byte_offset = offset + i
+                        shift_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{shift_name} = arith.constant {i * 8} : i32")
+                        
+                        shr_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{shr_name} = arith.shrsi {bitcast_name}, {shift_name} : i32")
+                        
+                        # Use arith.andi with constant 255
+                        and_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{and_name} = arith.andi {shr_name}, 255 : i32")
+                        
+                        # Cast to i8
+                        byte_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{byte_name} = arith.trunci {and_name} : i32 to i8")
+                        
+                        # Store byte
+                        ops.append(f"{self.indent()}memref.store {byte_name}, {alloc_name}[{byte_offset}] : memref<{total_size}xi8>")
+                        
+                elif field_type.name in ['i8', 'u8', 'bool']:
+                    # Store single byte
+                    cast_name = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    if field_type.name in ['u8', 'bool']:
+                        ops.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : i32 to i8")
+                    else:
+                        ops.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : i32 to i8}")
+                    
+                    ops.append(f"{self.indent()}memref.store {cast_name}, {alloc_name}[{offset}] : memref<{total_size}xi8>")
+                    
+                else:
+                    # For other types, just store as bytes (simplified)
+                    ops.append(f"{self.indent()}// Store {field_name} ({field_type.name}) at offset {offset}")
+                    ops.append(f"{self.indent()}// Value: {value_ssa}")
+        
+        # Return the allocated memory pointer
+        return alloc_name, ops
     
     def generate_function_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
         # Handle array<T>(size) constructor specially
@@ -1141,7 +1541,11 @@ class MLIRGenerator:
             return self.flow_type_to_mlir(expr.type)
         elif isinstance(expr, Variable):
             if expr.name in self.symbol_table:
-                return self.symbol_table[expr.name]['mlir_type']
+                var_info = self.symbol_table[expr.name]
+                # If we have the original FLOW type, use it
+                if 'flow_type' in var_info:
+                    return var_info['flow_type'].name
+                return var_info.get('mlir_type', 'i32')
             else:
                 return 'i32'  # Default
         elif isinstance(expr, BinaryOperation):
@@ -1178,6 +1582,43 @@ class MLIRGenerator:
                 elif 'i32' in arr_type:
                     return 'i32'
             return 'f32'  # Default for array access
+        elif isinstance(expr, FieldAccess):
+            # Check if this is a nested field access
+            if isinstance(expr.object, FieldAccess):
+                # For nested field access, we need to check the field type of the parent
+                parent_obj_type = self.get_expression_type(expr.object.object)
+                if isinstance(parent_obj_type, str):
+                    class SimpleType:
+                        def __init__(self, name):
+                            self.name = name
+                    parent_obj_type = SimpleType(parent_obj_type)
+                
+                if parent_obj_type.name in self.struct_layouts:
+                    layout = self.struct_layouts[parent_obj_type.name]
+                    if expr.object.field in layout:
+                        parent_field_type = layout[expr.object.field]['type']
+                        if parent_field_type.name in self.struct_layouts:
+                            # This is a nested struct field access
+                            nested_layout = self.struct_layouts[parent_field_type.name]
+                            if expr.field in nested_layout:
+                                field_type = nested_layout[expr.field]['type']
+                                return self.flow_type_to_mlir(field_type)
+            
+            # Regular field access
+            obj_type = self.get_expression_type(expr.object)
+            if isinstance(obj_type, str):
+                # Convert string to Type-like object
+                class SimpleType:
+                    def __init__(self, name):
+                        self.name = name
+                obj_type = SimpleType(obj_type)
+            
+            if obj_type.name in self.struct_layouts:
+                layout = self.struct_layouts[obj_type.name]
+                if expr.field in layout:
+                    field_type = layout[expr.field]['type']
+                    return self.flow_type_to_mlir(field_type)
+            return 'i32'  # Default
         else:
             return 'i32'  # Default
     
@@ -1201,9 +1642,10 @@ class MLIRGenerator:
             if flow_type.element_type:
                 return f"memref<?x{flow_type.element_type.name}>"
             else:
-                # Extract type from array_f32 -> f32
-                base_type = flow_type.name.replace('array_', '')
-                return f"memref<?x{base_type}>"
+                return f"memref<?xi32>"
+        elif flow_type.name.startswith('struct_'):
+            # Struct type: struct_MyStruct -> !flow.struct<MyStruct>
+            return f"!flow.struct<{flow_type.name.replace('struct_', '')}>"
         elif flow_type.name.startswith('vec'):
             # Vector type: vec4f32 -> vector<4xf32>
             if flow_type.size and flow_type.element_type:
@@ -1222,7 +1664,11 @@ class MLIRGenerator:
             # Pointer type: ptr_f32 -> !llvm.ptr
             return '!llvm.ptr'
         else:
-            return f"// Unknown type: {flow_type.name}"
+            # For struct types, use memref for actual memory storage
+            if flow_type.name in self.struct_layouts:
+                total_size = sum(field['size'] for field in self.struct_layouts[flow_type.name].values())
+                return f"memref<{total_size}xi8>"  # Use byte array for struct storage
+            return "memref<16xi8>"  # Default struct size (4 fields * 4 bytes)
     
     def generate_effect(self, effect: EffectDecl) -> str:
         mlir_code = []

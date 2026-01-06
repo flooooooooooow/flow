@@ -39,7 +39,7 @@
       "patterns": [
         {
           "name": "keyword.control.flow",
-          "match": "\\b(if|else|while|for|return|match|handle|with|parallel|in|step)\\b"
+          "match": "\\b(if|elif|else|while|for|return|match|handle|with|parallel|in|step|to|and|or|not)\\b"
         },
         {
           "name": "keyword.declaration.flow",

@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""
+FLOW LSP Server Launcher
+"""
+import sys
+import os
+
+# Add the src directory to Python path
+sys.path.insert(0, '/Users/abhishekshivakumar/transpile/src')
+
+# Import and run the LSP server
+from flow.lsp_server import main
+
+if __name__ == '__main__':
+    main()

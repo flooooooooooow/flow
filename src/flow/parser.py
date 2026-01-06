@@ -90,6 +90,7 @@ class TokenType(Enum):
     AND = "AND"
     OR = "OR"
     NOT = "NOT"
+    TO = "TO"
     
     # Special
     NEWLINE = "NEWLINE"
@@ -276,26 +277,26 @@ class Lexer:
             'let': TokenType.LET,
             'return': TokenType.RETURN,
             'if': TokenType.IF,
-            'else': TokenType.ELSE,
             'elif': TokenType.ELIF,
+            'else': TokenType.ELSE,
             'while': TokenType.WHILE,
             'for': TokenType.FOR,
-            'parallel': TokenType.PARALLEL,
             'in': TokenType.IN,
+            'parallel': TokenType.PARALLEL,
             'step': TokenType.STEP,
-            'import': TokenType.IMPORT,
-            'export': TokenType.EXPORT,
-            'module': TokenType.MODULE,
-            'struct': TokenType.STRUCT,
-            'inline': TokenType.INLINE,
-            'noinline': TokenType.NOINLINE,
-            'always_inline': TokenType.ALWAYS_INLINE,
-            'target': TokenType.TARGET,
+            'to': TokenType.TO,
+            'match': TokenType.MATCH,
+            'with': TokenType.WITH,
+            'handle': TokenType.HANDLE,
             'effect': TokenType.EFFECT,
             'capability': TokenType.CAPABILITY,
-            'handle': TokenType.HANDLE,
-            'with': TokenType.WITH,
-            'match': TokenType.MATCH,
+            'struct': TokenType.STRUCT,
+            'and': TokenType.AND,
+            'or': TokenType.OR,
+            'not': TokenType.NOT,
+            'true': TokenType.BOOLEAN,
+            'false': TokenType.BOOLEAN,
+            'void': TokenType.VOID,
             'i8': TokenType.I8,
             'i16': TokenType.I16,
             'i32': TokenType.I32,
@@ -309,11 +310,10 @@ class Lexer:
             'f32': TokenType.F32,
             'f64': TokenType.F64,
             'bool': TokenType.BOOL,
-            'void': TokenType.VOID,
             'string': TokenType.STRING,
             'vec': TokenType.VEC,
-            'true': TokenType.BOOLEAN,
-            'false': TokenType.BOOLEAN,
+            'ptr': TokenType.IDENTIFIER,  # Will be handled in parse_type
+            'array': TokenType.IDENTIFIER,  # Will be handled in parse_type
         }
         
         self.token_specifications = [
@@ -774,7 +774,12 @@ class Parser:
         self.expect(TokenType.IN)
         
         range_start = self.parse_expression_without_assign()
-        self.expect(TokenType.DOTDOT)  # Need to add this token type
+        if self.current_token.type == TokenType.DOTDOT:
+            self.advance()  # consume ..
+        elif self.current_token.type == TokenType.TO:
+            self.advance()  # consume to
+        else:
+            raise SyntaxError(f"Expected '..' or 'to' in for range, got {self.current_token.type}")
         range_end = self.parse_expression_without_assign()
         
         step = None
