@@ -1,0 +1,10 @@
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function run_demo() -> i32 {
+    let p: Point = Point { x: 10, y: 20 };
+    print(p.x);
+    return 0;
+}

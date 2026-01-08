@@ -57,6 +57,7 @@ class CGenerator:
     def generate_translation_unit(self, functions: List[FunctionDecl]) -> str:
         lines: List[str] = []
         lines.append("#include <stdint.h>")
+        lines.append("#include <stdio.h>")
         lines.append("")
 
         # Collect struct types from functions
@@ -190,6 +191,24 @@ class CGenerator:
     def _c_type(self, t: Type) -> str:
         if t.name == "i32":
             return "int32_t"
+        if t.name == "i64":
+            return "int64_t"
+        if t.name == "i8":
+            return "int8_t"
+        if t.name == "i16":
+            return "int16_t"
+        if t.name == "u8":
+            return "uint8_t"
+        if t.name == "u16":
+            return "uint16_t"
+        if t.name == "u32":
+            return "uint32_t"
+        if t.name == "u64":
+            return "uint64_t"
+        if t.name == "f32":
+            return "float"
+        if t.name == "f64":
+            return "double"
         if t.name == "bool":
             return "int32_t"  # keep simple; 0/1
         if t.name == "void":

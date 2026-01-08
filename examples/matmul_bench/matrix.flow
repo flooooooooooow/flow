@@ -1,0 +1,24 @@
+export function matmul_cpu(A: memref_f32, B: memref_f32, C: memref_f32, N: i32) -> void {
+    for i in 0..N {
+        for j in 0..N {
+            let sum: f32 = 0.0
+            for k in 0..N {
+                # Row-major: A[i][k] * B[k][j]
+                sum = sum + A[i * N + k] * B[k * N + j]
+            }
+            C[i * N + j] = sum
+        }
+    }
+}
+
+export function matmul_gpu(A: memref_f32, B: memref_f32, C: memref_f32, N: i32) -> void {
+    parallel for i in 0..N {
+        parallel for j in 0..N {
+            let sum: f32 = 0.0
+            for k in 0..N {
+                sum = sum + A[i * N + k] * B[k * N + j]
+            }
+            C[i * N + j] = sum
+        }
+    }
+}

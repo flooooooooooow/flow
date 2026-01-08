@@ -1,0 +1,21 @@
+import "io.flow"
+import "srir.flow"
+
+function run_demo() -> i32 {
+    print("SRIR Rendering Test")
+    
+    # Draw a red rectangle
+    rect(10.0, 10.0, 50.0, 30.0, 255, 0, 0, 255)
+    
+    # Draw a green circle
+    circle(100.0, 50.0, 20.0, 0, 255, 0, 255)
+    
+    # Draw a blue rectangle
+    rect(40.0, 60.0, 80.0, 20.0, 0, 0, 255, 255)
+    
+    print("Rendering to output.ppm...")
+    render("output.ppm", 200, 150)
+    
+    print("Test Complete")
+    return 0
+}

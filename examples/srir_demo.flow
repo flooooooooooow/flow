@@ -1,0 +1,27 @@
+import "io.flow"
+import "srir.flow"
+
+effect Scene {
+    build() -> void
+}
+
+capability GLScene {
+    effect Scene,
+    function build() -> void {
+        print("Building GL Scene")
+        rect(10.0, 10.0, 100.0, 50.0, 255, 0, 0, 255)
+        circle(150.0, 150.0, 30.0, 0, 255, 0, 255)
+        return void
+    }
+}
+
+function run_demo() -> i32 {
+    print("Starting SRIR/Effects Demo")
+    
+    handle Scene with GLScene {
+        Scene.build()
+    }
+    
+    print("Demo Finished")
+    return 0
+}

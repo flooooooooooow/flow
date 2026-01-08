@@ -1,0 +1,8 @@
+function read_at(x: memref_f32, i: i32) -> i32 {
+    let y: f32 = x[i]
+    return 0
+}
+
+function main() -> i32 {
+    return 0
+}

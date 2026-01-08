@@ -1,0 +1,15 @@
+import "array.flow"
+import "io.flow"
+
+function run_demo() -> i32 {
+    let size: i32 = 5
+    let arr: array<f32> = array<f32>(size)
+    for i in 0..size {
+        arr[i] = 1.0
+    }
+    
+    print("Sum of array (should be 5.0):")
+    print(sum(arr, size))
+    
+    return 0
+}

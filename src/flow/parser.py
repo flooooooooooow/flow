@@ -40,6 +40,7 @@ class TokenType(Enum):
     HANDLE = "HANDLE"
     WITH = "WITH"
     MATCH = "MATCH"
+    DEFAULT = "DEFAULT"
     
     # Types
     I8 = "I8"
@@ -74,6 +75,7 @@ class TokenType(Enum):
     ARROW = "ARROW"
     ASSIGN = "ASSIGN"
     DOUBLE_COLON = "DOUBLE_COLON"
+    FAT_ARROW = "FAT_ARROW"
     
     # Operators
     PLUS = "PLUS"
@@ -262,8 +264,17 @@ class MatchCase:
     pattern: 'Expression'  # Could be literal, struct pattern, etc.
     body: Block
 
-Expression = Union[Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, ArrayAccess, EffectCall]
-Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement]
+@dataclass
+class StructPattern:
+    struct_name: str
+    bindings: List[str]  # List of variable names to bind fields to
+
+@dataclass
+class ImportDecl:
+    path: str
+
+Expression = Union[Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, ArrayAccess, EffectCall, StructPattern]
+Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement, ImportDecl]
 
 class Lexer:
     def __init__(self, text: str):
@@ -286,10 +297,13 @@ class Lexer:
             'step': TokenType.STEP,
             'to': TokenType.TO,
             'match': TokenType.MATCH,
+            'default': TokenType.DEFAULT,
             'with': TokenType.WITH,
             'handle': TokenType.HANDLE,
             'effect': TokenType.EFFECT,
             'capability': TokenType.CAPABILITY,
+            'import': TokenType.IMPORT,
+            'export': TokenType.EXPORT,
             'struct': TokenType.STRUCT,
             'and': TokenType.AND,
             'or': TokenType.OR,
@@ -321,6 +335,7 @@ class Lexer:
             (r'NEWLINE', r'\n'),
             (r'WHITESPACE', r'\s+'),  # Skip whitespace
             (r'ARROW', r'->'),
+            (r'FAT_ARROW', r'=>'),
             (r'EQUALS', r'=='),
             (r'NOT_EQUALS', r'!='),
             (r'LESS_EQUAL', r'<='),
@@ -348,7 +363,7 @@ class Lexer:
             (r'COLON', r':'),
             (r'COMMA', r','),
             (r'DOT', r'\.'),
-            (r'STRING', r'"[^"]*"'),
+            (r'STRING', r'"(?:[^"\\]|\\.)*"'),
             (r'NUMBER', r'[0-9]+\.[0-9]+|[0-9]+'),
             (r'IDENTIFIER', r'[a-zA-Z_][a-zA-Z0-9_]*'),
         ]
@@ -412,6 +427,7 @@ class Parser:
         self.lexer = lexer
         self.current_token = self.lexer.next_token()
         self.lookahead = self.lexer.next_token()
+        self.struct_names = set()
     
     def advance(self):
         self.current_token = self.lookahead
@@ -425,24 +441,49 @@ class Parser:
         else:
             raise SyntaxError(f"Expected {token_type}, got {self.current_token.type} at line {self.current_token.line}")
     
-    def parse(self) -> List[Union[FunctionDecl, EffectDecl, CapabilityDecl, StructDecl]]:
+    def parse(self) -> List[Union[FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ImportDecl]]:
         declarations = []
         while self.current_token.type != TokenType.EOF:
+            is_exported = False
+            if self.current_token.type == TokenType.EXPORT:
+                is_exported = True
+                self.advance()
+            
             if self.current_token.type == TokenType.FUNCTION:
-                declarations.append(self.parse_function())
+                decl = self.parse_function()
+                decl.is_exported = is_exported
+                declarations.append(decl)
             elif self.current_token.type == TokenType.STRUCT:
-                declarations.append(self.parse_struct())
+                decl = self.parse_struct()
+                decl.is_exported = is_exported
+                declarations.append(decl)
             elif self.current_token.type == TokenType.EFFECT:
-                declarations.append(self.parse_effect())
+                decl = self.parse_effect()
+                decl.is_exported = is_exported
+                declarations.append(decl)
             elif self.current_token.type == TokenType.CAPABILITY:
-                declarations.append(self.parse_capability())
+                decl = self.parse_capability()
+                decl.is_exported = is_exported
+                declarations.append(decl)
+            elif self.current_token.type == TokenType.IMPORT:
+                if is_exported:
+                    raise SyntaxError(f"Cannot export an import at line {self.current_token.line}")
+                declarations.append(self.parse_import())
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
         return declarations
+
+    def parse_import(self) -> ImportDecl:
+        self.expect(TokenType.IMPORT)
+        path_token = self.expect(TokenType.STRING)
+        # Strip quotes
+        path = path_token.value[1:-1]
+        return ImportDecl(path)
     
     def parse_struct(self) -> StructDecl:
         self.expect(TokenType.STRUCT)
         name = self.expect(TokenType.IDENTIFIER).value
+        self.struct_names.add(name)
         self.expect(TokenType.LBRACE)
         
         fields = []
@@ -698,7 +739,25 @@ class Parser:
                 default_case = self.parse_block()
             else:
                 pattern = self.parse_expression_without_assign()
-                self.expect(TokenType.ARROW)  # Use ARROW token for =>
+                
+                # Check for Struct Pattern syntax: Name(var1, var2)
+                # This is currently parsed as a FunctionCall
+                if isinstance(pattern, FunctionCall):
+                    is_struct_pattern = True
+                    bindings = []
+                    for arg in pattern.arguments:
+                        if isinstance(arg, Variable):
+                            bindings.append(arg.name)
+                        else:
+                            # Not a simple variable binding (e.g. constant match Point(1, 2))
+                            # For Phase 2, we only support bindings. Mixed patterns could be future work.
+                            is_struct_pattern = False
+                            break
+                    
+                    if is_struct_pattern:
+                        pattern = StructPattern(pattern.name, bindings)
+                
+                self.expect(TokenType.FAT_ARROW)
                 body = self.parse_block()
                 cases.append(MatchCase(pattern, body))
                 
@@ -719,6 +778,9 @@ class Parser:
             self.advance()
             initializer = self.parse_expression_without_assign()
         
+        # Semicolons are optional for backward compatibility
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
         return VarDecl(name, type, initializer)
     
     def parse_return(self) -> ReturnStatement:
@@ -736,6 +798,9 @@ class Parser:
             # Explicit void return - consume the VOID token
             self.advance()
         
+        # Semicolons are optional for backward compatibility
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
         return ReturnStatement(value)
     
     def parse_if(self) -> IfStatement:
@@ -792,6 +857,9 @@ class Parser:
     
     def parse_expression_statement(self) -> Statement:
         expr = self.parse_assignment()
+        # Semicolons are optional for backward compatibility
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
         return expr
     
     def parse_expression(self) -> Expression:

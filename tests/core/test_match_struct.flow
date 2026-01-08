@@ -1,0 +1,26 @@
+struct Point {
+    x: f32,
+    y: f32
+}
+
+function run_demo() -> i32 {
+    let p: Point = Point { x: 10.0, y: 20.0 };
+    
+    print("Testing struct matching...");
+    match p {
+        Point(a, b) => {
+            print("Matched Point:");
+            print(a);
+            print(b);
+            
+            if (a == 10.0) {
+                print("X is correct");
+            }
+            if (b == 20.0) {
+                print("Y is correct");
+            }
+        }
+    }
+    
+    return 0;
+}
