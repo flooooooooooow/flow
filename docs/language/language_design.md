@@ -348,4 +348,154 @@ function matrix_multiply_simd(A: [*f32], B: [*f32], C: [*f32], n: i32) {
 4. **Optimizer**: MLIR-based optimization pipeline
 5. **LLVMIR Backend**: Standard MLIR to LLVMIR conversion
 
-This design balances the needs of fast compilation, LLM generation, and human readability while maintaining direct paths to high-performance MLIR/LLVMIR code.
+## Lisp-Style Polysemy Extension
+
+### Overview
+Add extensible generic functions with multiple dispatch to FLOW, inspired by Common Lisp's CLOS (Common Lisp Object System). This enables polymorphic behavior based on multiple argument types rather than single-recipient message passing.
+
+### Core Features
+
+#### 1. Generic Function Declaration
+```flow
+# Define a generic function (abstract interface)
+generic fn draw(shape: Shape, context: Context) -> void
+    documentation: "Render a shape to the given context"
+```
+
+#### 2. Method Implementations
+```flow
+# Single dispatch
+method draw(shape: Circle, context: Context) -> void {
+    circle_renderer.draw(shape, context)
+}
+
+# Multiple dispatch (multimethods)
+method beat(drum: SnareDrum, stick: WoodenDrumstick) -> Sound {
+    return acoustic_model.hit_snare(drum, stick)
+}
+```
+
+#### 3. Method Combination
+```flow
+# Before/after methods
+method before withdraw(account: BankAccount, amount: f64) -> void {
+    log_transaction("withdrawal_started", account.id, amount)
+}
+
+method after withdraw(account: BankAccount, amount: f64) -> void {
+    update_balance_display(account)
+}
+
+# Primary method with call-next-method
+method withdraw(account: BankAccount, amount: f64) -> void {
+    if account.balance < amount {
+        error("Insufficient funds")
+    }
+    call_next_method(account, amount)  # Calls more specific method
+}
+```
+
+#### 4. Type Specialization Patterns
+```flow
+# EQL specialization (specific values)
+method process(value: 42) -> i32 {
+    return "the answer"
+}
+
+# Range specialization  
+method process(value: 0..100) -> i32 {
+    return "small number"
+}
+
+# Pattern matching integration
+method process(shape: Rectangle { width: w, height: h }) -> i32 {
+    return w * h
+}
+```
+
+### Implementation Phases
+
+#### Phase 1: Parser Extensions
+- Add `GenericDecl` AST node for generic function declarations
+- Add `MethodDecl` AST node for method implementations  
+- Add `Specializer` AST node for type/value specializers
+- Add `CallNextMethod` AST node for method combination
+- Extend keyword map with `generic`, `method`, `before`, `after`, `call_next_method`
+
+#### Phase 2: Type System Extensions
+- **Method tables**: Per-generic-function dispatch tables
+- **Specializer matching**: Algorithm for determining applicable methods
+- **Method precedence**: Rules for method specificity and ordering
+- **Multiple dispatch**: Runtime resolution based on argument types
+- **Type checking**: Compile-time validation of method signatures
+
+#### Phase 3: MLIR Generation
+- **Dispatch tables**: Generate lookup structures for each generic function
+- **Type-based dispatch**: Runtime dispatch mechanism
+- **Inline optimization**: Devirtualization for monomorphic calls
+- **Method combination**: Infrastructure for before/after/around methods
+- **Performance optimization**: Cache dispatch results, inline when possible
+
+#### Phase 4: Advanced Features
+- **Generic function introspection**: Runtime inspection of methods
+- **Method addition/removal**: Dynamic method registration
+- **Custom method combinations**: User-defined combination strategies
+- **Performance profiling**: Dispatch optimization based on usage patterns
+
+### Benefits
+
+1. **Extensibility**: New types can add methods without modifying existing code
+2. **Multiple Dispatch**: Behavior based on multiple argument types
+3. **Open/Closed Principle**: Open for extension, closed for modification
+4. **Type Safety**: Compile-time checking of method signatures
+5. **Performance**: Monomorphic calls can be devirtualized
+6. **Separation of Concerns**: Operations decoupled from data types
+
+### Example Use Cases
+
+#### Graphics Rendering System
+```flow
+generic fn render(obj: Renderable, target: RenderTarget) -> void
+
+method render(obj: 3DModel, target: OpenGLContext) -> void {
+    opengl_renderer.draw_model(obj, target)
+}
+
+method render(obj: 3DModel, target: VulkanContext) -> void {
+    vulkan_renderer.draw_model(obj, target)
+}
+
+# Usage - automatic dispatch based on both argument types
+fn render_scene(scene: Scene, target: RenderTarget) {
+    for obj in scene.objects {
+        render(obj, target)  # Dispatches to correct method
+    }
+}
+```
+
+#### Mathematical Operations
+```flow
+generic fn add(a: Numeric, b: Numeric) -> Numeric
+
+method add(a: Vector2D, b: Vector2D) -> Vector2D {
+    return Vector2D { x: a.x + b.x, y: a.y + b.y }
+}
+
+method add(a: Matrix, b: Matrix) -> Matrix {
+    return matrix_add(a, b)  # Optimized matrix addition
+}
+
+method add(a: Scalar, b: Vector2D) -> Vector2D {
+    return Vector2D { x: a.value + b.x, y: a.value + b.y }
+}
+```
+
+### Integration with Existing Features
+
+- **Structs**: Natural fit with existing struct system
+- **Pattern Matching**: Can be used in method specializers
+- **Effects System**: Methods can participate in effect handling
+- **Modules**: Generic functions can be exported/imported
+- **Performance**: Zero-cost abstractions for monomorphic calls
+
+This design balances the needs of fast compilation, LLM generation, and human readability while maintaining direct paths to high-performance MLIR/LLVMIR code and adding powerful extensible polymorphism capabilities.

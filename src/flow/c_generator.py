@@ -28,20 +28,23 @@ from .parser import (
     Assignment,
     BinaryOperation,
     Block,
+    ConstDecl,
     Expression,
+    FieldAccess,
     FunctionCall,
     FunctionDecl,
     IfStatement,
     Literal,
     ReturnStatement,
     Statement,
+    StructLiteral,
+    StructDecl,
     Type,
     UnaryOperation,
     VarDecl,
     Variable,
     WhileStatement,
-    StructLiteral,
-    FieldAccess,
+    ForStatement,
 )
 
 
@@ -54,10 +57,27 @@ class CGenerator:
     def _i(self) -> str:
         return "    " * self._indent
 
-    def generate_translation_unit(self, functions: List[FunctionDecl]) -> str:
+    def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl]) -> str:
         lines: List[str] = []
         lines.append("#include <stdint.h>")
         lines.append("#include <stdio.h>")
+        
+        # Check if we need math.h for math functions
+        math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow'}
+        needs_math = False
+        for fn in functions:
+            if fn.name in math_functions:
+                needs_math = True
+                break
+        
+        if needs_math:
+            lines.append("#include <math.h>")
+        
+        lines.append("")
+
+        # Emit constant declarations
+        for const in constants:
+            lines.append(f"static const {self._c_type(const.type)} {const.name} = {self._gen_expr(const.value)};")
         lines.append("")
 
         # Collect struct types from functions
@@ -87,7 +107,10 @@ class CGenerator:
 
         # Forward declarations
         for fn in functions:
-            lines.append(self._c_function_decl(fn) + ";")
+            # Skip math functions that are provided by the standard library
+            math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow'}
+            if fn.name not in math_functions:
+                lines.append(self._c_function_decl(fn) + ";")
         lines.append("")
 
         # Definitions
@@ -222,6 +245,11 @@ class CGenerator:
         return f"{ret} {fn.name}({params})"
 
     def _gen_function(self, fn: FunctionDecl) -> List[str]:
+        # Skip math functions that are provided by the standard library
+        math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow'}
+        if fn.name in math_functions:
+            return []  # Don't generate these functions
+        
         lines: List[str] = []
         lines.append(self._c_function_decl(fn) + " {")
         self._indent += 1
@@ -321,14 +349,70 @@ class CGenerator:
             return f"({op}{self._gen_expr(e.operand)})"
 
         if isinstance(e, BinaryOperation):
-            return f"({self._gen_expr(e.left)} {e.operator} {self._gen_expr(e.right)})"
+            left_expr = self._gen_expr(e.left)
+            right_expr = self._gen_expr(e.right)
+            
+            # Check if we need to remove parentheses around operands
+            # This prevents excessive nesting like (((a == 1) or (b == 2)))
+            def remove_outer_parens(expr):
+                if expr.startswith('(') and expr.endswith(')'):
+                    # Check if it's safe to remove (simple check for now)
+                    inner = expr[1:-1]
+                    # Only remove if the inner expression doesn't have unbalanced parentheses
+                    if inner.count('(') == inner.count(')'):
+                        return inner
+                return expr
+            
+            # For logical operators, be more aggressive about removing parentheses
+            if e.operator in ['and', 'or']:
+                left_expr = remove_outer_parens(left_expr)
+                right_expr = remove_outer_parens(right_expr)
+                
+            return f"({left_expr} {e.operator} {right_expr})"
 
         if isinstance(e, FunctionCall):
+            # Handle print intrinsic
+            if e.name == "print":
+                if len(e.arguments) == 1:
+                    arg = e.arguments[0]
+                    # Check if it's a literal to determine format
+                    if isinstance(arg, Literal):
+                        if arg.type.name == 'string':
+                            # String literal - use %s
+                            return f'printf({self._gen_expr(arg)})'
+                        elif arg.type.name in ['f32', 'f64']:
+                            # Float literal - use %f
+                            return f'printf("%f", {self._gen_expr(arg)})'
+                        elif arg.type.name in ['i32', 'i64', 'u32', 'u64']:
+                            # Integer literal - use %d or appropriate format
+                            if arg.type.name.startswith('u'):
+                                return f'printf("%u", {self._gen_expr(arg)})'
+                            else:
+                                return f'printf("%d", {self._gen_expr(arg)})'
+                        else:
+                            # Default to string representation
+                            return f'printf("%g", {self._gen_expr(arg)})'
+                    else:
+                        # For expressions, default to string representation
+                        return f'printf("%g", {self._gen_expr(arg)})'
+                else:
+                    # Multiple arguments - join with spaces
+                    args = []
+                    for arg in e.arguments:
+                        args.append(f'printf("%g", {self._gen_expr(arg)})')
+                    return ' '.join(args)
             args = ", ".join(self._gen_expr(a) for a in e.arguments)
             return f"{e.name}({args})"
 
         raise NotImplementedError(f"Unsupported expression: {type(e)}")
 
 
-def flow_to_c(functions: List[FunctionDecl]) -> str:
-    return CGenerator().generate_translation_unit(functions)
+def flow_to_c(declarations: List[Any]) -> str:
+    """Convert FLOW declarations to C code"""
+    generator = CGenerator()
+    
+    # Separate constants from functions
+    constants = [d for d in declarations if isinstance(d, ConstDecl)]
+    functions = [d for d in declarations if isinstance(d, FunctionDecl)]
+    
+    return generator.generate_translation_unit(constants, functions)

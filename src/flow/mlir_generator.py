@@ -9,9 +9,9 @@ from .parser import (
     FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, Block, Statement,
     VarDecl, Assignment, IfStatement, WhileStatement, ForStatement,
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
-    UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, ArrayAccess, Type,
+    UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
     HandleStatement, EffectOperation, CapabilityMethod, EffectCall,
-    MatchStatement, MatchCase, StructPattern
+    MatchStatement, MatchCase, StructPattern, ConstDecl
 )
 import textwrap
 
@@ -116,6 +116,8 @@ class MLIRGenerator:
                 decl_code.append(self.generate_capability(decl))
             elif decl_type == 'StructDecl':
                 decl_code.append(self.generate_struct(decl))
+            elif decl_type == 'ConstDecl':
+                decl_code.append(self.generate_const(decl))
             else:
                 decl_code.append(f"// Unsupported declaration type: {decl_type}")
         
@@ -208,7 +210,7 @@ class MLIRGenerator:
             return self.generate_handle(stmt)
         elif stmt_type == 'MatchStatement':
             return self.generate_match(stmt)
-        elif stmt_type in ['Literal', 'Variable', 'BinaryOperation', 'UnaryOperation', 'FunctionCall']:
+        elif stmt_type in ['Literal', 'Variable', 'BinaryOperation', 'UnaryOperation', 'FunctionCall', 'VectorLiteral']:
             value_ssa, value_ops = self.generate_expression(stmt)
             # Expression statement: emit ops for side effects / computation, discard value.
             return "\n".join(value_ops)
@@ -887,6 +889,8 @@ class MLIRGenerator:
             return self.generate_effect_call(expr)
         elif expr_type == 'ArrayLiteral':
             return self.generate_array_literal(expr)
+        elif expr_type == 'VectorLiteral':
+            return self.generate_vector_literal(expr)
         elif expr_type == 'ArrayAccess':
             return self.generate_array_access(expr)
         elif expr_type == 'FieldAccess':
@@ -922,28 +926,36 @@ class MLIRGenerator:
         # Determine operation based on operator
         left_ty = self.get_expression_type(bin_op.left)
         right_ty = self.get_expression_type(bin_op.right)
+        
+        # Check if this is a vector operation
+        is_vector = 'vector<' in left_ty or 'vector<' in right_ty
         is_float = ('f32' in left_ty) or ('f64' in left_ty) or ('f32' in right_ty) or ('f64' in right_ty)
 
-        # MLIR arith ops require explicit types.
-        # For integer/float binary arithmetic: `... %a, %b : i32`.
-        # For comparisons: `arith.cmpi slt, %a, %b : i32` and `arith.cmpf olt, %a, %b : f32`.
-        #
-        # Special case: scf.for induction vars are `index`, but FLOW often mixes them with i32.
-        # Prefer i32 when mixing (so `acc: i32 = acc + i` works) and insert casts.
-        def _maybe_cast(val: str, from_ty: str, to_ty: str) -> tuple[str, List[str]]:
-            if from_ty == to_ty:
-                return val, []
-            cast_name = f"%{self.function_counter}"
-            self.function_counter += 1
-            return cast_name, [f"{self.indent()}{cast_name} = arith.index_cast {val} : {from_ty} to {to_ty}"]
+        # For vector operations, ensure both operands have the same type
+        if is_vector:
+            # Use the left type as the vector type
+            operand_type = left_ty if 'vector<' in left_ty else right_ty
+        else:
+            # MLIR arith ops require explicit types.
+            # For integer/float binary arithmetic: `... %a, %b : i32`.
+            # For comparisons: `arith.cmpi slt, %a, %b : i32` and `arith.cmpf olt, %a, %b : f32`.
+            #
+            # Special case: scf.for induction vars are `index`, but FLOW often mixes them with i32.
+            # Prefer i32 when mixing (so `acc: i32 = acc + i` works) and insert casts.
+            def _maybe_cast(val: str, from_ty: str, to_ty: str) -> tuple[str, List[str]]:
+                if from_ty == to_ty:
+                    return val, []
+                cast_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                return cast_name, [f"{self.indent()}{cast_name} = arith.index_cast {val} : {from_ty} to {to_ty}"]
 
-        operand_type = left_ty if left_ty != 'i32' else right_ty if right_ty != 'i32' else left_ty
-        if not is_float:
-            if (left_ty == 'index' and right_ty == 'i32') or (left_ty == 'i32' and right_ty == 'index'):
-                operand_type = 'i32'
+            operand_type = left_ty if left_ty != 'i32' else right_ty if right_ty != 'i32' else left_ty
+            if not is_float:
+                if (left_ty == 'index' and right_ty == 'i32') or (left_ty == 'i32' and right_ty == 'index'):
+                    operand_type = 'i32'
 
         cast_ops: List[str] = []
-        if operand_type in ('i32', 'index') and not is_float:
+        if not is_vector and operand_type in ('i32', 'index') and not is_float:
             if left_ty in ('i32', 'index') and left_ty != operand_type:
                 left_ssa, ops = _maybe_cast(left_ssa, left_ty, operand_type)
                 cast_ops.extend(ops)
@@ -953,7 +965,10 @@ class MLIRGenerator:
 
         op_text: str
         if bin_op.operator == '+':
-            op_text = f"arith.addf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.addi {left_ssa}, {right_ssa} : {operand_type}"
+            if is_vector:
+                op_text = f"arith.addf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.addi {left_ssa}, {right_ssa} : {operand_type}"
+            else:
+                op_text = f"arith.addf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.addi {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '-':
             op_text = f"arith.subf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.subi {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '*':
@@ -1664,6 +1679,35 @@ class MLIRGenerator:
         
         return alloc_ssa, ops
 
+    def generate_vector_literal(self, vector_literal) -> tuple[str, List[str]]:
+        """Generate MLIR for vector literals like <1.0, 2.0, 3.0, 4.0>"""
+        ssa_name = f"%{self.function_counter}"
+        self.function_counter += 1
+
+        element_values: List[str] = []
+        ops: List[str] = []
+        
+        # Generate all element values
+        for element in vector_literal.elements:
+            v, vops = self.generate_expression(element)
+            ops.extend(vops)
+            element_values.append(v)
+
+        # Determine element type and vector size
+        if not element_values:
+            # Empty vector - create a zero-sized vector
+            ops.append(f"{self.indent()}{ssa_name} = arith.constant dense<> : vector<0xf32>")
+            return ssa_name, ops
+
+        elem_type = self.get_expression_type(vector_literal.elements[0])
+        size = len(element_values)
+        
+        # Create vector constant using dense notation
+        elements_str = ", ".join(element_values)
+        ops.append(f"{self.indent()}{ssa_name} = arith.constant dense<[{elements_str}]> : vector<{size}x{elem_type}>")
+        
+        return ssa_name, ops
+
     def generate_array_access(self, access: ArrayAccess) -> tuple[str, List[str]]:
         """Generate memref.load for array[index] access."""
         ssa_name = f"%{self.function_counter}"
@@ -1872,6 +1916,27 @@ class MLIRGenerator:
         for field in struct.fields:
             field_type = self.flow_type_to_mlir(field.type)
             mlir_code.append(f"{self.indent()}//   {field.name}: {field_type}")
+        return "\n".join(mlir_code)
+    
+    def generate_const(self, const: ConstDecl) -> str:
+        """Generate MLIR for constant declaration"""
+        mlir_code = []
+        mlir_code.append(f"{self.indent()}// Constant: {const.name}")
+        
+        # Generate the constant value
+        value_ssa, value_ops = self.generate_expression(const.value)
+        
+        # Add any operations needed to compute the value
+        mlir_code.extend(value_ops)
+        
+        # Store the constant in a global variable
+        mlir_type = self.flow_type_to_mlir(const.type)
+        if const.type.name == 'bool':
+            mlir_type = 'i1'
+        
+        # Create a global constant
+        mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({value_ssa}) : {mlir_type}")
+        
         return "\n".join(mlir_code)
 
 def flow_to_mlir(declarations: List[Any], source_file: str = "unknown.flow", emit_debug_info: bool = False) -> str:

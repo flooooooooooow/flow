@@ -1,0 +1,10 @@
+# Simple SIMD test
+
+function test_vector() -> vec4<f32> {
+    return <1.0, 2.0, 3.0, 4.0>
+}
+
+function main() -> i32 {
+    let v: vec4<f32> = test_vector()
+    return 0
+}

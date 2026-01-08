@@ -1,5 +1,5 @@
-import "math.flow"
-import "io.flow"
+import "math"
+import "io"
 
 function run_demo() -> i32 {
     let x: f32 = 1.0
