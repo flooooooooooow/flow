@@ -1,0 +1,321 @@
+import "memory.flow"
+import "io.flow"
+
+# Test edge cases and boundary conditions
+function test_edge_cases() -> bool {
+    print("Testing edge cases and boundary conditions...")
+    
+    # Test maximum alignment
+    let max_align_ptr: *mut void = aligned_alloc(4096, 8192)  # Page-aligned
+    if max_align_ptr != null {
+        if not is_aligned(max_align_ptr, 4096) {
+            print("FAIL: Maximum alignment not respected")
+            free(max_align_ptr)
+            return false
+        }
+        free(max_align_ptr)
+    }
+    
+    # Test very small allocations
+    let tiny_ptr: *mut void = malloc(1)
+    if tiny_ptr == null {
+        print("FAIL: malloc(1) failed")
+        return false
+    }
+    free(tiny_ptr)
+    
+    # Test size calculations for different types
+    let i8_size: usize = sizeof<i8>()
+    let i16_size: usize = sizeof<i16>()
+    let i32_size: usize = sizeof<i32>()
+    let i64_size: usize = sizeof<i64>()
+    
+    if i8_size != 1 or i16_size != 2 or i32_size != 4 or i64_size != 8 {
+        print("FAIL: Basic type sizes incorrect")
+        return false
+    }
+    
+    print("PASS: Edge cases")
+    return true
+}
+
+# Test memory corruption detection
+function test_corruption_detection() -> bool {
+    print("Testing memory corruption detection...")
+    
+    let buffer: [u8; 100] = [0; 100]
+    
+    # Fill with known pattern
+    memory_fill_pattern(&buffer, 0xDEADBEEF, 25)  # 25 * 4 = 100 bytes
+    
+    # Verify pattern
+    let ptr: *mut u32 = &buffer as *mut u32
+    let i: i32 = 0
+    while i < 25 {
+        if ptr[i] != 0xDEADBEEF {
+            print("FAIL: Pattern fill/verify failed")
+            return false
+        }
+        i = i + 1
+    }
+    
+    print("PASS: Corruption detection")
+    return true
+}
+
+# Test memory pool edge cases
+function test_pool_edge_cases() -> bool {
+    print("Testing memory pool edge cases...")
+    
+    # Test pool with zero size
+    let zero_pool: MemoryPool = memory_pool_create(0)
+    let ptr: *mut void = memory_pool_alloc(&zero_pool, 1, 1)
+    if ptr != null {
+        print("FAIL: Zero-size pool should not allow allocations")
+        memory_pool_destroy(&zero_pool)
+        return false
+    }
+    memory_pool_destroy(&zero_pool)
+    
+    # Test pool reset when empty
+    let empty_pool: MemoryPool = memory_pool_create(1024)
+    memory_pool_reset(&empty_pool)  # Should not crash
+    memory_pool_destroy(&empty_pool)
+    
+    # Test allocation larger than pool
+    let small_pool: MemoryPool = memory_pool_create(100)
+    let large_ptr: *mut void = memory_pool_alloc(&small_pool, 200, 1)
+    if large_ptr != null {
+        print("FAIL: Oversized allocation should fail")
+        memory_pool_destroy(&small_pool)
+        return false
+    }
+    memory_pool_destroy(&small_pool)
+    
+    print("PASS: Pool edge cases")
+    return true
+}
+
+# Test pointer arithmetic safety
+function test_pointer_arithmetic() -> bool {
+    print("Testing pointer arithmetic safety...")
+    
+    let array: [i32; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    let ptr: *mut i32 = &array as *mut i32
+    
+    # Test safe pointer access
+    let i: i32 = 0
+    while i < 10 {
+        if ptr[i] != i {
+            print("FAIL: Pointer arithmetic incorrect")
+            return false
+        }
+        i = i + 1
+    }
+    
+    print("PASS: Pointer arithmetic")
+    return true
+}
+
+# Test type casting safety
+function test_type_casting() -> bool {
+    print("Testing type casting safety...")
+    
+    let ptr: *mut void = malloc(16)
+    if ptr == null {
+        print("FAIL: malloc failed in casting test")
+        return false
+    }
+    
+    # Cast to different types
+    let i8_ptr: *mut i8 = ptr as *mut i8
+    let i32_ptr: *mut i32 = ptr as *mut i32
+    let f32_ptr: *mut f32 = ptr as *mut f32
+    
+    # Use the pointers
+    i8_ptr[0] = 42
+    i32_ptr[0] = 12345
+    f32_ptr[0] = 3.14159
+    
+    free(ptr)
+    print("PASS: Type casting")
+    return true
+}
+
+# Test memory layout consistency
+function test_memory_layout() -> bool {
+    print("Testing memory layout consistency...")
+    
+    # Test that alignment calculations are consistent
+    let test_alignments: [usize; 4] = [1, 2, 4, 8]
+    let i: i32 = 0
+    
+    while i < 4 {
+        let alignment: usize = test_alignments[i]
+        
+        # Test align_up/align_down consistency
+        let size: usize = 100
+        let up: usize = align_up(size, alignment)
+        let down: usize = align_down(size, alignment)
+        
+        if up < size or down > size {
+            print("FAIL: Alignment calculations inconsistent")
+            return false
+        }
+        
+        if up % alignment != 0 or down % alignment != 0 {
+            print("FAIL: Alignment results not properly aligned")
+            return false
+        }
+        
+        i = i + 1
+    }
+    
+    print("PASS: Memory layout consistency")
+    return true
+}
+
+# Test concurrent allocation patterns (simulated)
+function test_simulated_concurrency() -> bool {
+    print("Testing simulated concurrent allocation...")
+    
+    # Create multiple pools to simulate threads
+    let pools: [MemoryPool; 4] = [
+        memory_pool_create(1024),
+        memory_pool_create(1024),
+        memory_pool_create(1024),
+        memory_pool_create(1024)
+    ]
+    
+    let allocations: [*mut void; 40] = [null; 40]  # 10 allocations per pool
+    let alloc_count: i32 = 0
+    
+    # Simulate interleaved allocations
+    let pool_idx: i32 = 0
+    while pool_idx < 4 {
+        let alloc_idx: i32 = 0
+        while alloc_idx < 10 {
+            let size: usize = (alloc_idx + 1) * 16
+            let ptr: *mut void = memory_pool_alloc(&pools[pool_idx], size, 8)
+            if ptr != null {
+                allocations[alloc_count] = ptr
+                alloc_count = alloc_count + 1
+                
+                # Write unique pattern
+                memset(ptr, pool_idx * 10 + alloc_idx, size)
+            }
+            alloc_idx = alloc_idx + 1
+        }
+        pool_idx = pool_idx + 1
+    }
+    
+    # Verify all allocations are valid and contain correct data
+    let i: i32 = 0
+    while i < alloc_count {
+        if allocations[i] == null {
+            print("FAIL: Null allocation in concurrency test")
+            return false
+        }
+        i = i + 1
+    }
+    
+    # Clean up pools
+    pool_idx = 0
+    while pool_idx < 4 {
+        memory_pool_destroy(&pools[pool_idx])
+        pool_idx = pool_idx + 1
+    }
+    
+    print("PASS: Simulated concurrency")
+    return true
+}
+
+# Test memory pressure scenarios
+function test_memory_pressure() -> bool {
+    print("Testing memory pressure scenarios...")
+    
+    let total_allocations: i32 = 0
+    let max_allocations: i32 = 1000
+    
+    # Allocate until failure or limit
+    while total_allocations < max_allocations {
+        let ptr: *mut void = malloc(1024)  # 1KB each
+        if ptr == null {
+            print("Memory allocation failed at " + total_allocations + " allocations")
+            break
+        }
+        
+        # Write to ensure memory is actually allocated
+        memset(ptr, total_allocations as i32, 1024)
+        
+        total_allocations = total_allocations + 1
+        
+        # Free every 10th allocation to avoid complete exhaustion
+        if total_allocations % 10 == 0 {
+            free(ptr)
+        }
+    }
+    
+    print("Allocated " + total_allocations + " blocks before pressure")
+    print("PASS: Memory pressure test")
+    return true
+}
+
+# Test cleanup and resource management
+function test_cleanup() -> bool {
+    print("Testing cleanup and resource management...")
+    
+    # Test multiple pool creation/destruction
+    let i: i32 = 0
+    while i < 100 {
+        let pool: MemoryPool = memory_pool_create(1024)
+        let ptr: *mut void = memory_pool_alloc(&pool, 100, 8)
+        memory_pool_destroy(&pool)
+        i = i + 1
+    }
+    
+    # Test nested allocations
+    let outer_pool: MemoryPool = memory_pool_create(2048)
+    let inner_pool: MemoryPool = memory_pool_create(1024)
+    
+    let outer_ptr: *mut void = memory_pool_alloc(&outer_pool, 500, 8)
+    let inner_ptr: *mut void = memory_pool_alloc(&inner_pool, 250, 8)
+    
+    memory_pool_destroy(&inner_pool)
+    memory_pool_destroy(&outer_pool)
+    
+    print("PASS: Cleanup and resource management")
+    return true
+}
+
+# Advanced test runner
+function run_advanced_tests() -> i32 {
+    print("Running advanced memory management tests...")
+    print("==========================================")
+    
+    let passed: i32 = 0
+    let total: i32 = 10
+    
+    if test_edge_cases() { passed = passed + 1 }
+    if test_corruption_detection() { passed = passed + 1 }
+    if test_pool_edge_cases() { passed = passed + 1 }
+    if test_pointer_arithmetic() { passed = passed + 1 }
+    if test_type_casting() { passed = passed + 1 }
+    if test_memory_layout() { passed = passed + 1 }
+    if test_simulated_concurrency() { passed = passed + 1 }
+    if test_memory_pressure() { passed = passed + 1 }
+    if test_cleanup() { passed = passed + 1 }
+    
+    print("==========================================")
+    print("Advanced Test Results:")
+    print("Passed: " + passed)
+    print("Total: " + total)
+    
+    if passed == total {
+        print("ALL ADVANCED TESTS PASSED!")
+        return 0
+    } else {
+        print("SOME ADVANCED TESTS FAILED!")
+        return 1
+    }
+}

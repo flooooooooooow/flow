@@ -2,14 +2,17 @@
 """
 FLOW Language Transpiler
 Main entry point for transpiling FLOW to MLIR/LLVMIR
+With module system and GPU integration
 """
 
 import sys
 import argparse
 from pathlib import Path
-from .parser import parse_flow_code, FunctionDecl, EffectDecl, CapabilityDecl, StructDecl
+from .parser import parse_flow_code, FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ConstDecl
 from .mlir_generator import flow_to_mlir
 from .c_generator import flow_to_c
+from .module_resolver import resolve_modules, get_module_resolver
+from .gpu_integration import get_gpu_integration
 
 def main():
     parser = argparse.ArgumentParser(description="FLOW Language Transpiler")
@@ -28,6 +31,10 @@ def main():
     parser.add_argument("--no-vectorization", action="store_true", help="Disable loop vectorization")
     parser.add_argument("--no-loop-fusion", action="store_true", help="Disable loop fusion")
     parser.add_argument("--opt-report", action="store_true", help="Generate optimization report")
+    parser.add_argument("--gpu", action="store_true", help="Enable GPU compilation")
+    parser.add_argument("--gpu-backend", choices=["cuda", "opencl"], default="cuda", help="GPU backend (default: cuda)")
+    parser.add_argument("--module-info", action="store_true", help="Show module information")
+    parser.add_argument("--validate-imports", action="store_true", help="Validate import statements")
     
     args = parser.parse_args()
     
@@ -42,14 +49,73 @@ def main():
         print(f"Error reading file: {e}", file=sys.stderr)
         sys.exit(1)
     
-    # Parse FLOW code
+    # Resolve modules and imports
     try:
-        declarations = parse_flow_code(flow_code)
+        print("Resolving modules...", file=sys.stderr)
+        declarations = resolve_modules(args.input)
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
-        print(f"Parsed {len(functions)} functions", file=sys.stderr)
+        structs = [d for d in declarations if isinstance(d, StructDecl)]
+        effects = [d for d in declarations if isinstance(d, EffectDecl)]
+        capabilities = [d for d in declarations if isinstance(d, CapabilityDecl)]
+        
+        print(f"Parsed {len(functions)} functions, {len(structs)} structs, {len(effects)} effects, {len(capabilities)} capabilities", file=sys.stderr)
+        
+        # Show module information if requested
+        if args.module_info:
+            resolver = get_module_resolver(args.input)
+            print("\nModule Information:", file=sys.stderr)
+            for module_path, module_info in resolver.modules.items():
+                print(f"  Module: {module_path}", file=sys.stderr)
+                print(f"    Dependencies: {len(module_info.dependencies)}", file=sys.stderr)
+                print(f"    Symbols: {len(module_info.symbols)}", file=sys.stderr)
+                exported_symbols = [name for name, symbol in module_info.symbols.items() if symbol.is_exported]
+                print(f"    Exported: {len(exported_symbols)}", file=sys.stderr)
+        
+        # Validate imports if requested
+        if args.validate_imports:
+            resolver = get_module_resolver(args.input)
+            errors = resolver.validate_imports()
+            if errors:
+                print("Import validation errors:", file=sys.stderr)
+                for error in errors:
+                    print(f"  - {error}", file=sys.stderr)
+                if len(errors) > 0:
+                    sys.exit(1)
+            else:
+                print("All imports validated successfully", file=sys.stderr)
+        
     except Exception as e:
-        print(f"Parse error: {e}", file=sys.stderr)
+        print(f"Error resolving modules: {e}", file=sys.stderr)
         sys.exit(1)
+    
+    # GPU integration if requested
+    if args.gpu:
+        try:
+            gpu_integration = get_gpu_integration()
+            if gpu_integration.is_gpu_available():
+                print(f"GPU available: {gpu_integration.get_gpu_info()}", file=sys.stderr)
+                
+                # Compile functions for GPU
+                gpu_functions = []
+                for func in functions:
+                    # Mark functions that should run on GPU
+                    if hasattr(func, 'name') and ('gpu_' in func.name or 'cuda_' in func.name):
+                        gpu_functions.append(func)
+                
+                if gpu_functions:
+                    print(f"Compiling {len(gpu_functions)} functions for GPU", file=sys.stderr)
+                    for func in gpu_functions:
+                        try:
+                            result = gpu_integration.compile_and_execute(func, [])
+                            print(f"GPU function {func.name}: {result}", file=sys.stderr)
+                        except Exception as e:
+                            print(f"GPU compilation failed for {func.name}: {e}", file=sys.stderr)
+                else:
+                    print("No GPU functions found", file=sys.stderr)
+            else:
+                print("GPU not available", file=sys.stderr)
+        except Exception as e:
+            print(f"GPU integration error: {e}", file=sys.stderr)
     
     # Decide backend
     backend = "mlir"
@@ -58,7 +124,7 @@ def main():
 
     if backend == "c":
         try:
-            out_code = flow_to_c(functions)
+            out_code = flow_to_c(declarations)
         except Exception as e:
             print(f"C generation error: {e}", file=sys.stderr)
             sys.exit(1)

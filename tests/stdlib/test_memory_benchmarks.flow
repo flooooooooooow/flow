@@ -1,0 +1,261 @@
+import "memory.flow"
+import "io.flow"
+
+# Performance benchmark for allocation patterns
+function benchmark_allocation() -> void {
+    print("Benchmarking allocation patterns...")
+    
+    let iterations: i32 = 1000
+    let start_time: i64 = 0  # Placeholder for timing
+    let i: i32 = 0
+    
+    # Benchmark malloc/free
+    i = 0
+    while i < iterations {
+        let ptr: *mut void = malloc(1024)
+        free(ptr)
+        i = i + 1
+    }
+    
+    # Benchmark memory pool
+    let pool: MemoryPool = memory_pool_create(1024 * 1024)  # 1MB pool
+    i = 0
+    while i < iterations {
+        let ptr: *mut void = memory_pool_alloc(&pool, 1024, 8)
+        i = i + 1
+    }
+    memory_pool_destroy(&pool)
+    
+    print("Allocation benchmark completed")
+}
+
+# Performance benchmark for copy operations
+function benchmark_copy_operations() -> void {
+    print("Benchmarking copy operations...")
+    
+    let size: usize = 1024 * 1024  # 1MB
+    let src: *mut void = malloc(size)
+    let dest: *mut void = malloc(size)
+    
+    if src == null or dest == null {
+        print("FAIL: Could not allocate memory for benchmark")
+        return
+    }
+    
+    # Initialize source
+    memset(src, 0xAA, size)
+    
+    # Benchmark memcpy
+    let iterations: i32 = 100
+    let i: i32 = 0
+    while i < iterations {
+        memcpy(dest, src, size)
+        i = i + 1
+    }
+    
+    # Benchmark memmove (overlapping)
+    i = 0
+    while i < iterations {
+        memmove(src + 100, src, size - 100)
+        memmove(src, src + 100, size - 100)
+        i = i + 1
+    }
+    
+    free(src)
+    free(dest)
+    print("Copy benchmark completed")
+}
+
+# Stress test for memory pools
+function stress_test_memory_pools() -> void {
+    print("Stress testing memory pools...")
+    
+    let pool: MemoryPool = memory_pool_create(1024 * 1024)  # 1MB
+    let allocations: [*mut void] = malloc(1000 * 8) as [*mut void]  # Track 1000 allocations
+    let count: i32 = 0
+    
+    # Random allocation pattern
+    let i: i32 = 0
+    while i < 10000 and count < 1000 {
+        let size: usize = (i % 256 + 1) * 8  # 8 to 2048 bytes
+        let alignment: usize = 8
+        
+        let ptr: *mut void = memory_pool_alloc(&pool, size, alignment)
+        if ptr != null {
+            allocations[count] = ptr
+            count = count + 1
+            
+            # Write pattern to verify memory
+            memset(ptr, i as i32, size)
+        }
+        
+        # Random deallocation by resetting pool occasionally
+        if i % 1000 == 999 {
+            memory_pool_reset(&pool)
+            count = 0
+        }
+        
+        i = i + 1
+    }
+    
+    free(allocations as *mut void)
+    memory_pool_destroy(&pool)
+    print("Memory pool stress test completed")
+}
+
+# Test for memory leaks (manual verification needed)
+function test_memory_leaks() -> void {
+    print("Testing for memory leaks...")
+    
+    let i: i32 = 0
+    while i < 1000 {
+        # Various allocation patterns that should be properly freed
+        let ptr1: *mut void = malloc(100)
+        let ptr2: *mut void = calloc(10, 10)
+        let ptr3: *mut void = aligned_alloc(16, 256)
+        
+        # Use the memory
+        memset(ptr1, 0x55, 100)
+        memset(ptr3, 0xAA, 256)
+        
+        # Free all allocations
+        free(ptr1)
+        free(ptr2)
+        free(ptr3)
+        
+        i = i + 1
+    }
+    
+    print("Memory leak test completed (verify with external tools)")
+}
+
+# Test concurrent access patterns (conceptual)
+function test_concurrent_patterns() -> void {
+    print("Testing concurrent access patterns...")
+    
+    # Create multiple memory pools for different "threads"
+    let pool1: MemoryPool = memory_pool_create(1024 * 1024)
+    let pool2: MemoryPool = memory_pool_create(1024 * 1024)
+    
+    # Simulate concurrent allocations
+    let i: i32 = 0
+    while i < 1000 {
+        # Thread 1 allocations
+        let ptr1: *mut void = memory_pool_alloc(&pool1, 64, 8)
+        if ptr1 != null {
+            memset(ptr1, 0x11, 64)
+        }
+        
+        # Thread 2 allocations
+        let ptr2: *mut void = memory_pool_alloc(&pool2, 128, 16)
+        if ptr2 != null {
+            memset(ptr2, 0x22, 128)
+        }
+        
+        i = i + 1
+    }
+    
+    memory_pool_destroy(&pool1)
+    memory_pool_destroy(&pool2)
+    print("Concurrent patterns test completed")
+}
+
+# Test memory fragmentation
+function test_fragmentation() -> void {
+    print("Testing memory fragmentation...")
+    
+    let allocations: [*mut void] = malloc(100 * 8) as [*mut void]
+    let i: i32 = 0
+    
+    # Allocate many small blocks
+    while i < 100 {
+        allocations[i] = malloc((i % 10 + 1) * 16)  # 16 to 160 bytes
+        i = i + 1
+    }
+    
+    # Free every other allocation (creates fragmentation)
+    i = 0
+    while i < 100 {
+        if i % 2 == 0 {
+            free(allocations[i])
+            allocations[i] = null
+        }
+        i = i + 1
+    }
+    
+    # Try to allocate larger blocks in fragmented space
+    let j: i32 = 0
+    while j < 10 {
+        let large_ptr: *mut void = malloc(512)  # Larger than individual freed blocks
+        if large_ptr != null {
+            free(large_ptr)
+        }
+        j = j + 1
+    }
+    
+    # Free remaining allocations
+    i = 0
+    while i < 100 {
+        if allocations[i] != null {
+            free(allocations[i])
+        }
+        i = i + 1
+    }
+    
+    free(allocations as *mut void)
+    print("Fragmentation test completed")
+}
+
+# Test alignment edge cases
+function test_alignment_edge_cases() -> void {
+    print("Testing alignment edge cases...")
+    
+    # Test various alignments
+    let alignments: [usize; 5] = [1, 2, 4, 8, 16]
+    let i: i32 = 0
+    
+    while i < 5 {
+        let alignment: usize = alignments[i]
+        let ptr: *mut void = aligned_alloc(alignment, 1024)
+        
+        if ptr != null {
+            if not is_aligned(ptr, alignment) {
+                print("FAIL: Alignment " + alignment + " not respected")
+            }
+            
+            # Test offset calculations
+            let offset: usize = align_up(123, alignment)
+            let expected: usize = ((123 + alignment - 1) / alignment) * alignment
+            
+            if offset != expected {
+                print("FAIL: align_up calculation incorrect")
+            }
+            
+            free(ptr)
+        }
+        
+        i = i + 1
+    }
+    
+    print("Alignment edge cases test completed")
+}
+
+# Run all benchmarks and stress tests
+function run_benchmarks() -> i32 {
+    print("Running memory management benchmarks...")
+    print("=====================================")
+    
+    benchmark_allocation()
+    benchmark_copy_operations()
+    stress_test_memory_pools()
+    test_memory_leaks()
+    test_concurrent_patterns()
+    test_fragmentation()
+    test_alignment_edge_cases()
+    
+    print("=====================================")
+    print("All benchmarks completed!")
+    print("Note: Use external tools (valgrind, perf, etc.) for detailed analysis")
+    
+    return 0
+}

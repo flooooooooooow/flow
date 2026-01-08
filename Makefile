@@ -56,6 +56,28 @@ test: setup
 	@echo ""
 	@make run PROGRAM=test_control.flow
 
+# Test standard library
+test-stdlib: setup
+	@echo "Testing FLOW standard library..."
+	@echo "Testing math library..."
+	@make run PROGRAM=tests/stdlib/test_math_lib.flow
+	@echo ""
+	@echo "Testing array library..."
+	@make run PROGRAM=tests/stdlib/test_array_lib.flow
+	@echo ""
+	@echo "Testing memory library..."
+	@make run PROGRAM=tests/stdlib/test_memory_lib.flow
+	@echo ""
+	@echo "Running memory benchmarks..."
+	@make run PROGRAM=tests/stdlib/test_memory_benchmarks.flow
+	@echo ""
+	@echo "Running advanced memory tests..."
+	@make run PROGRAM=tests/stdlib/test_memory_advanced.flow
+
+# Test all components
+test-all: test test-stdlib
+	@echo "All tests completed!"
+
 # Interactive mode
 repl:
 	@echo "FLOW REPL (type 'exit' to quit)"
@@ -90,7 +112,9 @@ help:
 	@echo "  compile PROGRAM=file.flow  - Compile to executable"
 	@echo "  run PROGRAM=file.flow      - Compile and run"
 	@echo "  mlir PROGRAM=file.flow     - Compile to MLIR only"
-	@echo "  test                       - Run all examples"
+	@echo "  test                       - Run basic tests"
+	@echo "  test-stdlib                - Run standard library tests"
+	@echo "  test-all                   - Run all tests"
 	@echo "  repl                       - Interactive REPL"
 	@echo "  install                    - Install dependencies"
 	@echo "  clean                      - Clean build files"
@@ -100,4 +124,4 @@ help:
 	@echo "  make run PROGRAM=examples/minimal_turing.flow"
 	@echo "  make compile PROGRAM=examples/fibonacci.flow"
 
-.PHONY: all setup run compile mlir test repl install clean help
+.PHONY: all setup run compile mlir test test-stdlib test-all repl install clean help

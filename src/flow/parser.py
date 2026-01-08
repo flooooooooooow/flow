@@ -29,6 +29,7 @@ class TokenType(Enum):
     STEP = "STEP"
     IMPORT = "IMPORT"
     EXPORT = "EXPORT"
+    CONST = "CONST"
     MODULE = "MODULE"
     STRUCT = "STRUCT"
     INLINE = "INLINE"
@@ -208,6 +209,10 @@ class ArrayLiteral:
     elements: List['Expression']
 
 @dataclass
+class VectorLiteral:
+    elements: List['Expression']
+
+@dataclass
 class ArrayAccess:
     array: 'Expression'
     index: 'Expression'
@@ -273,8 +278,15 @@ class StructPattern:
 class ImportDecl:
     path: str
 
-Expression = Union[Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, ArrayAccess, EffectCall, StructPattern]
-Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement, ImportDecl]
+@dataclass
+class ConstDecl:
+    name: str
+    type: Type
+    value: 'Expression'
+    is_exported: bool = False
+
+Expression = Union[Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, EffectCall, StructPattern]
+Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement, ImportDecl, ConstDecl]
 
 class Lexer:
     def __init__(self, text: str):
@@ -304,6 +316,7 @@ class Lexer:
             'capability': TokenType.CAPABILITY,
             'import': TokenType.IMPORT,
             'export': TokenType.EXPORT,
+            'const': TokenType.CONST,
             'struct': TokenType.STRUCT,
             'and': TokenType.AND,
             'or': TokenType.OR,
@@ -441,7 +454,7 @@ class Parser:
         else:
             raise SyntaxError(f"Expected {token_type}, got {self.current_token.type} at line {self.current_token.line}")
     
-    def parse(self) -> List[Union[FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ImportDecl]]:
+    def parse(self) -> List[Union[FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ImportDecl, ConstDecl]]:
         declarations = []
         while self.current_token.type != TokenType.EOF:
             is_exported = False
@@ -469,6 +482,10 @@ class Parser:
                 if is_exported:
                     raise SyntaxError(f"Cannot export an import at line {self.current_token.line}")
                 declarations.append(self.parse_import())
+            elif self.current_token.type == TokenType.CONST:
+                decl = self.parse_const()
+                decl.is_exported = is_exported
+                declarations.append(decl)
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
         return declarations
@@ -479,6 +496,20 @@ class Parser:
         # Strip quotes
         path = path_token.value[1:-1]
         return ImportDecl(path)
+    
+    def parse_const(self) -> ConstDecl:
+        self.expect(TokenType.CONST)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.COLON)
+        type = self.parse_type()
+        self.expect(TokenType.ASSIGN)
+        value = self.parse_expression_without_assign()
+        
+        # Semicolons are optional
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
+            
+        return ConstDecl(name, type, value)
     
     def parse_struct(self) -> StructDecl:
         self.expect(TokenType.STRUCT)
@@ -560,6 +591,18 @@ class Parser:
                 pointee_type = self.parse_type()
                 self.expect(TokenType.GREATER)
                 return Type(f"ptr_{pointee_type.name}", is_pointer=True, element_type=pointee_type)
+            # Check for vector type: vec4<T>
+            elif type_name.startswith('vec') and self.current_token.type == TokenType.LESS:
+                self.advance()  # consume <
+                element_type = self.parse_type()
+                self.expect(TokenType.GREATER)
+                # Extract size from vec4, vec8, etc.
+                size_str = type_name[3:]  # Remove 'vec' prefix
+                try:
+                    size = int(size_str)
+                    return Type(f"vec{size}_{element_type.name}", size=size, element_type=element_type)
+                except ValueError:
+                    raise SyntaxError(f"Invalid vector size: {size_str}")
             # Check for array type: f32[]
             elif self.current_token.type == TokenType.LBRACKET:
                 self.advance()
@@ -961,6 +1004,10 @@ class Parser:
         
         return self.parse_primary()
     
+    def parse_simple_expression(self) -> Expression:
+        """Parse simple expressions for vector literals (no assignment, no complex ops)"""
+        return self.parse_primary()
+    
     def parse_primary(self) -> Expression:
         if self.current_token.type == TokenType.NUMBER:
             value = self.current_token.value
@@ -980,6 +1027,21 @@ class Parser:
             value = self.current_token.value
             self.advance()
             return Literal(value, Type("string"))
+        
+        elif self.current_token.type == TokenType.LESS:
+            # Vector literal: <1.0, 2.0, 3.0, 4.0>
+            self.advance()
+            elements = []
+            
+            if self.current_token.type != TokenType.GREATER:
+                # Parse simple expressions (literals, variables, function calls)
+                elements.append(self.parse_simple_expression())
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    elements.append(self.parse_simple_expression())
+            
+            self.expect(TokenType.GREATER)
+            return VectorLiteral(elements)
         
         elif self.current_token.type == TokenType.LBRACKET:
             self.advance()

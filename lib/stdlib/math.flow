@@ -1,3 +1,47 @@
+# Math Module - Exported functions and constants
+# This module demonstrates FLOW's export system
+
+export const PI: f32 = 3.14159265358979323846
+export const E: f32 = 2.71828182845904523536
+export const GOLDEN_RATIO: f32 = 1.61803398874989484820
+
+export function add(a: f32, b: f32) -> f32 {
+    return a + b
+}
+
+export function subtract(a: f32, b: f32) -> f32 {
+    return a - b
+}
+
+export function multiply(a: f32, b: f32) -> f32 {
+    return a * b
+}
+
+export function divide(a: f32, b: f32) -> f32 {
+    if b == 0.0 {
+        print("Error: Division by zero")
+        return 0.0
+    }
+    return a / b
+}
+
+export function power(base: f32, exponent: f32) -> f32 {
+    if exponent == 0.0 {
+        return 1.0
+    }
+    if exponent < 0.0 {
+        return 1.0 / power(base, -exponent)
+    }
+    
+    let result: f32 = 1.0
+    let i: f32 = 0.0
+    while i < exponent {
+        result = result * base
+        i = i + 1.0
+    }
+    return result
+}
+
 export function sin(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
@@ -16,4 +60,132 @@ export function sqrt(x: f32) -> f32 {
 export function fabs(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
+}
+
+export function abs(x: f32) -> f32 {
+    if x < 0.0 {
+        return -x
+    }
+    return x
+}
+
+export function tan(x: f32) -> f32 {
+    let cos_val: f32 = cos(x)
+    if cos_val == 0.0 {
+        print("Error: Tangent undefined")
+        return 0.0
+    }
+    return sin(x) / cos_val
+}
+
+export function log(x: f32) -> f32 {
+    if x <= 0.0 {
+        print("Error: Logarithm of non-positive number")
+        return 0.0
+    }
+    
+    # Natural logarithm using Newton's method
+    let guess: f32 = 1.0
+    let epsilon: f32 = 0.0001
+    let iterations: i32 = 0
+    
+    while iterations < 100 {
+        let new_guess: f32 = guess + (x / power(E, guess) - 1.0)
+        if abs(new_guess - guess) < epsilon {
+            break
+        }
+        guess = new_guess
+        iterations = iterations + 1
+    }
+    
+    return guess
+}
+
+export function exp(x: f32) -> f32 {
+    # Taylor series approximation for e^x
+    let result: f32 = 1.0
+    let term: f32 = 1.0
+    let factorial: f32 = 1.0
+    
+    let n: i32 = 1
+    while n <= 20 {
+        term = term * x
+        factorial = factorial * n
+        result = result + term / factorial
+        n = n + 1
+    }
+    
+    return result
+}
+
+# Advanced mathematical functions
+export function fibonacci(n: i32) -> i32 {
+    if n <= 0 {
+        return 0
+    }
+    if n == 1 {
+        return 1
+    }
+    
+    let a: i32 = 0
+    let b: i32 = 1
+    let i: i32 = 2
+    while i <= n {
+        let temp: i32 = a + b
+        a = b
+        b = temp
+        i = i + 1
+    }
+    
+    return b
+}
+
+export function gcd(a: i32, b: i32) -> i32 {
+    while b != 0 {
+        let temp: i32 = b
+        b = a % b
+        a = temp
+    }
+    return a
+}
+
+export function lcm(a: i32, b: i32) -> i32 {
+    return a * b / gcd(a, b)
+}
+
+export function is_prime(n: i32) -> bool {
+    if n <= 1 {
+        return false
+    }
+    if n <= 3 {
+        return true
+    }
+    if n % 2 == 0 or n % 3 == 0 {
+        return false
+    }
+    
+    let i: i32 = 5
+    while i * i <= n {
+        if n % i == 0 or n % (i + 2) == 0 {
+            return false
+        }
+        i = i + 6
+    }
+    
+    return true
+}
+
+export function factorial_big(n: i32) -> i64 {
+    if n <= 1 {
+        return 1
+    }
+    
+    let result: i64 = 1
+    let i: i32 = 2
+    while i <= n {
+        result = result * i
+        i = i + 1
+    }
+    
+    return result
 }

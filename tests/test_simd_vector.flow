@@ -1,0 +1,37 @@
+# Test SIMD vector types and operations
+
+function test_vector_literals() -> vec4<f32> {
+    let v1: vec4<f32> = <1.0, 2.0, 3.0, 4.0>
+    let v2: vec4<f32> = <0.5, 1.5, 2.5, 3.5>
+    let result: vec4<f32> = v1 + v2
+    return result
+}
+
+function test_vector_ops() -> vec4<f32> {
+    let a: vec4<f32> = <1.0, 2.0, 3.0, 4.0>
+    let b: vec4<f32> = <0.5, 0.5, 0.5, 0.5>
+    let c: vec4<f32> = a * b
+    let d: vec4<f32> = c - <1.0, 1.0, 1.0, 1.0>
+    return d
+}
+
+function test_int_vectors() -> vec4<i32> {
+    let v1: vec4<i32> = <1, 2, 3, 4>
+    let v2: vec4<i32> = <10, 20, 30, 40>
+    let result: vec4<i32> = v1 + v2
+    return result
+}
+
+function main() -> i32 {
+    print("Testing SIMD vector types")
+    
+    let float_result: vec4<f32> = test_vector_literals()
+    let ops_result: vec4<f32> = test_vector_ops()
+    let int_result: vec4<i32> = test_int_vectors()
+    
+    print("Vector literal test completed")
+    print("Vector operations test completed")
+    print("Integer vector test completed")
+    
+    return 0
+}

@@ -42,7 +42,9 @@ show_help() {
     echo "  compile <program>  Compile program only"
     echo "  mlir <program>     Generate MLIR only"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
-    echo "  test              Run all tests"
+    echo "  test              Run all FLOW tests"
+    echo "  test-python       Run Python unit tests"
+    echo "  test-all          Run FLOW and Python tests"
     echo "  install           Install dependencies"
     echo "  examples          List example programs"
     echo "  help              Show this help"
@@ -230,6 +232,56 @@ list_examples() {
     done
 }
 
+# Run Python unit tests
+run_python_tests() {
+    if command -v pytest &> /dev/null; then
+        print_info "Running Python unit tests..."
+        cd "$SCRIPT_DIR"
+        PYTHONPATH="$SCRIPT_DIR/src" pytest tests/unit/ tests/integration/ -v --tb=short
+        local status=$?
+        if [ $status -eq 0 ]; then
+            print_success "✅ All Python tests passed!"
+        else
+            print_error "❌ Python tests failed"
+            exit 1
+        fi
+    else
+        print_warning "pytest not found. Install test dependencies with:"
+        print_info "  pip install -e .[test]"
+        print_info "  or: pip install pytest pytest-cov pytest-mock"
+        exit 1
+    fi
+}
+
+# Run all tests (FLOW + Python)
+run_all_tests() {
+    print_info "Running all tests..."
+    
+    print_info "Phase 1: FLOW language tests..."
+    run_tests
+    local flow_status=$?
+    
+    echo ""
+    print_info "Phase 2: Python unit tests..."
+    run_python_tests
+    local python_status=$?
+    
+    echo ""
+    print_info "Test Summary:"
+    if [ $flow_status -eq 0 ] && [ $python_status -eq 0 ]; then
+        print_success "🎉 All tests passed!"
+    else
+        print_error "❌ Some tests failed"
+        if [ $flow_status -ne 0 ]; then
+            print_error "  - FLOW tests failed"
+        fi
+        if [ $python_status -ne 0 ]; then
+            print_error "  - Python tests failed"
+        fi
+        exit 1
+    fi
+}
+
 # Install dependencies
 install_deps() {
     print_info "Installing FLOW dependencies..."
@@ -243,6 +295,15 @@ install_deps() {
             print_error "Please install LLVM manually"
             exit 1
         fi
+    fi
+    
+    # Optionally install test dependencies
+    if command -v pip3 &> /dev/null; then
+        print_info "Installing test dependencies (optional)..."
+        pip3 install -e .[test] 2>/dev/null || {
+            print_warning "Failed to install test dependencies. Install manually with:"
+            print_info "  pip install pytest pytest-cov pytest-mock"
+        }
     fi
     
     print_success "Dependencies installed!"
@@ -268,6 +329,12 @@ case "${1:-help}" in
         ;;
     "test")
         run_tests
+        ;;
+    "test-python")
+        run_python_tests
+        ;;
+    "test-all")
+        run_all_tests
         ;;
     "install")
         install_deps

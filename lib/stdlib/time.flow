@@ -1,3 +1,3 @@
 export function get_time() -> f64 {
-    return get_current_time()
+    return jit_time()
 }

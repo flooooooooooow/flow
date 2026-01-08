@@ -1,0 +1,176 @@
+import "time.flow"
+import "io.flow"
+
+# Matrix multiplication CPU
+export function matmul_cpu(A: array<f32>, B: array<f32>, C: array<f32>, N: i32) -> void {
+    for i in 0..N {
+        for j in 0..N {
+            let sum: f32 = 0.0
+            for k in 0..N {
+                sum = sum + A[i * N + k] * B[k * N + j]
+            }
+            C[i * N + j] = sum
+        }
+    }
+}
+
+# Matrix multiplication GPU
+export function matmul_gpu(A: array<f32>, B: array<f32>, C: array<f32>, N: i32) -> void {
+    parallel for i in 0..N {
+        parallel for j in 0..N {
+            let sum: f32 = 0.0
+            for k in 0..N {
+                sum = sum + A[i * N + k] * B[k * N + j]
+            }
+            C[i * N + j] = sum
+        }
+    }
+}
+
+# Bubble sort
+export function bubble_sort(arr: array<f32>, n: i32) -> void {
+    for i in 0..(n - 1) {
+        for j in 0..(n - i - 1) {
+            if arr[j] > arr[j + 1] {
+                let temp: f32 = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+            }
+        }
+    }
+}
+
+# Quick sort partition
+function partition(arr: array<f32>, low: i32, high: i32) -> i32 {
+    let pivot: f32 = arr[high]
+    let i: i32 = low - 1
+    
+    for j in low..(high - 1) {
+        if arr[j] < pivot {
+            i = i + 1
+            let temp: f32 = arr[i]
+            arr[i] = arr[j]
+            arr[j] = temp
+        }
+    }
+    
+    let temp: f32 = arr[i + 1]
+    arr[i + 1] = arr[high]
+    arr[high] = temp
+    
+    return i + 1
+}
+
+# Quick sort recursive
+function quick_sort_recursive(arr: array<f32>, low: i32, high: i32) -> void {
+    if low < high {
+        let pi: i32 = partition(arr, low, high)
+        quick_sort_recursive(arr, low, pi - 1)
+        quick_sort_recursive(arr, pi + 1, high)
+    }
+}
+
+# Quick sort
+export function quick_sort(arr: array<f32>, n: i32) -> void {
+    quick_sort_recursive(arr, 0, n - 1)
+}
+
+# Vector addition
+export function vector_add(a: array<f32>, b: array<f32>, result: array<f32>, n: i32) -> void {
+    for i in 0..n {
+        result[i] = a[i] + b[i]
+    }
+}
+
+# Vector multiplication
+export function vector_multiply(a: array<f32>, b: array<f32>, result: array<f32>, n: i32) -> void {
+    for i in 0..n {
+        result[i] = a[i] * b[i]
+    }
+}
+
+# Fibonacci recursive
+export function fibonacci_recursive(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci_recursive(n - 1) + fibonacci_recursive(n - 2)
+}
+
+# Fibonacci iterative
+export function fibonacci_iterative(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    let a: i32 = 0
+    let b: i32 = 1
+    let c: i32 = 0
+    for i in 2..(n + 1) {
+        c = a + b
+        a = b
+        b = c
+    }
+    return b
+}
+
+# Prime test
+export function is_prime(n: i32) -> i32 {
+    if n <= 1 {
+        return 0
+    }
+    if n <= 3 {
+        return 1
+    }
+    if n % 2 == 0 or n % 3 == 0 {
+        return 0
+    }
+    
+    let i: i32 = 5
+    while i * i <= n {
+        if n % i == 0 or n % (i + 2) == 0 {
+            return 0
+        }
+        i = i + 6
+    }
+    return 1
+}
+
+# Count primes
+export function count_primes(N: i32) -> i32 {
+    let count: i32 = 0
+    for i in 2..(N + 1) {
+        if is_prime(i) == 1 {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+# Monte Carlo Pi estimation
+export function monte_carlo_pi(samples: i32) -> f32 {
+    let inside_circle: i32 = 0
+    
+    for i in 0..samples {
+        let x: f32 = 0.5
+        let y: f32 = 0.5
+        if x * x + y * y <= 1.0 {
+            inside_circle = inside_circle + 1
+        }
+    }
+    
+    return 4.0 * inside_circle / samples
+}
+
+# GPU vector addition
+export function vector_add_gpu(a: array<f32>, b: array<f32>, result: array<f32>, n: i32) -> void {
+    parallel for i in 0..n {
+        result[i] = a[i] + b[i]
+    }
+}
+
+# GPU vector multiplication
+export function vector_multiply_gpu(a: array<f32>, b: array<f32>, result: array<f32>, n: i32) -> void {
+    parallel for i in 0..n {
+        result[i] = a[i] * b[i]
+    }
+}

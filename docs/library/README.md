@@ -12,6 +12,13 @@ The FLOW standard library is organized into logical modules, each providing spec
 - Type conversions
 - Memory operations
 
+### 🧠 [Memory Management](memory.md)
+- Memory allocation and deallocation
+- Memory manipulation functions
+- Alignment and layout utilities
+- Memory safety and debugging
+- Stack allocation and memory pools
+
 ### 🔢 [Math Library](math.md)
 - Mathematical functions
 - Trigonometry and geometry
