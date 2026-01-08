@@ -1,0 +1,32 @@
+# Test MLIR optimizations
+function vectorizable_loop(n: i32) -> i32 {
+    let sum: f32 = 0.0
+    for i in 0..n {
+        sum = sum + 1.0
+    }
+    return 0
+}
+
+function multiple_loops(a: array<f32>, b: array<f32>, n: i32) -> i32 {
+    let sum1: f32 = 0.0
+    let sum2: f32 = 0.0
+    
+    for i in 0..n {
+        sum1 = sum1 + a[i]
+    }
+    
+    for i in 0..n {
+        sum2 = sum2 + b[i]
+    }
+    
+    return 0
+}
+
+function main() -> i32 {
+    let result1: i32 = vectorizable_loop(100)
+    let result2: i32 = multiple_loops([1.0, 2.0, 3.0], [4.0, 5.0, 6.0], 3)
+    print("Optimization test")
+    print(result1)
+    print(result2)
+    return 0
+}

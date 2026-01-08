@@ -1,0 +1,38 @@
+# Test struct memory layout with actual values
+
+struct Point3D {
+    x: f32
+    y: f32
+    z: f32
+}
+
+struct Vector {
+    magnitude: f32
+    direction: Point3D
+}
+
+function create_point3d(x: f32, y: f32, z: f32) -> Point3D {
+    return Point3D { x: x, y: y, z: z }
+}
+
+function create_vector(mag: f32, dx: f32, dy: f32, dz: f32) -> Vector {
+    let p: Point3D = create_point3d(dx, dy, dz)
+    return Vector { magnitude: mag, direction: p }
+}
+
+function main() -> i32 {
+    # Create a 3D vector
+    let v: Vector = create_vector(5.0, 1.0, 2.0, 3.0)
+    
+    # Access nested fields
+    let mag: f32 = v.magnitude
+    let x: f32 = v.direction.x
+    let y: f32 = v.direction.y
+    let z: f32 = v.direction.z
+    
+    # Print values
+    printf("Vector: magnitude=%.1f, direction=(%.1f, %.1f, %.1f)\n", mag, x, y, z)
+    
+    # Return magnitude as int
+    return 5
+}

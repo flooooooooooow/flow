@@ -1,0 +1,5 @@
+import "b.flow"
+
+export function a_func() -> i32 {
+    return 1
+}

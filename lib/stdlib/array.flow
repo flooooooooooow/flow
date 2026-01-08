@@ -1,0 +1,7 @@
+export function sum(arr: array<f32>, size: i32) -> f32 {
+    let s: f32 = 0.0
+    for i in 0..size {
+        s = s + arr[i]
+    }
+    return s
+}

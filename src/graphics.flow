@@ -1,0 +1,167 @@
+# Graphics Module for FLOW
+# This provides basic graphics types and functions
+
+# Color types
+struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8
+}
+
+struct RGB {
+    r: f32,
+    g: f32,
+    b: f32
+}
+
+struct RGBA {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32
+}
+
+# Point and rectangle types
+struct Point {
+    x: f32,
+    y: f32
+}
+
+struct Point2D {
+    x: i32,
+    y: i32
+}
+
+struct Rectangle {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32
+}
+
+struct Rect2D {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32
+}
+
+# Color creation functions
+function color_rgb(r: u8, g: u8, b: u8) -> Color {
+    return Color { r: r, g: g, b: b, a: 255 };
+}
+
+function color_rgba(r: u8, g: u8, b: u8, a: u8) -> Color {
+    return Color { r: r, g: g, b: b, a: a };
+}
+
+function color_rgb_norm(r: f32, g: f32, b: f32) -> RGB {
+    return RGB { r: r, g: g, b: b };
+}
+
+function color_rgba_norm(r: f32, g: f32, b: f32, a: f32) -> RGBA {
+    return RGBA { r: r, g: g, b: b, a: a };
+}
+
+# Point creation
+function point(x: f32, y: f32) -> Point {
+    return Point { x: x, y: y };
+}
+
+function point2d(x: i32, y: i32) -> Point2D {
+    return Point2D { x: x, y: y };
+}
+
+# Rectangle creation
+function rect(x: f32, y: f32, width: f32, height: f32) -> Rectangle {
+    return Rectangle { x: x, y: y, width: width, height: height };
+}
+
+function rect2d(x: i32, y: i32, width: i32, height: i32) -> Rect2D {
+    return Rect2D { x: x, y: y, width: width, height: height };
+}
+
+# Utility functions
+function clamp_u8(value: i32) -> u8 {
+    if value < 0 {
+        return 0;
+    }
+    if value > 255 {
+        return 255;
+    }
+    return value as u8;
+}
+
+function clamp_f32(value: f32, min: f32, max: f32) -> f32 {
+    if value < min {
+        return min;
+    }
+    if value > max {
+        return max;
+    }
+    return value;
+}
+
+# Color conversion
+function rgb_to_rgba(rgb: RGB, a: f32) -> RGBA {
+    return RGBA { r: rgb.r, g: rgb.g, b: rgb.b, a: a };
+}
+
+function rgba_to_rgb(rgba: RGBA) -> RGB {
+    return RGB { r: rgba.r, g: rgba.g, b: rgba.b };
+}
+
+# Color constants
+function color_black() -> Color {
+    return Color { r: 0, g: 0, b: 0, a: 255 };
+}
+
+function color_white() -> Color {
+    return Color { r: 255, g: 255, b: 255, a: 255 };
+}
+
+function color_red() -> Color {
+    return Color { r: 255, g: 0, b: 0, a: 255 };
+}
+
+function color_green() -> Color {
+    return Color { r: 0, g: 255, b: 0, a: 255 };
+}
+
+function color_blue() -> Color {
+    return Color { r: 0, g: 0, b: 255, a: 255 };
+}
+
+function color_yellow() -> Color {
+    return Color { r: 255, g: 255, b: 0, a: 255 };
+}
+
+function color_magenta() -> Color {
+    return Color { r: 255, g: 0, b: 255, a: 255 };
+}
+
+function color_cyan() -> Color {
+    return Color { r: 0, g: 255, b: 255, a: 255 };
+}
+
+function color_gray() -> Color {
+    return Color { r: 128, g: 128, b: 128, a: 255 };
+}
+
+# Color printing for debugging
+function print_color(c: Color) -> void {
+    printf("Color(r=%d, g=%d, b=%d, a=%d)", c.r, c.g, c.b, c.a);
+}
+
+function print_point(p: Point) -> void {
+    printf("Point(%.2f, %.2f)", p.x, p.y);
+}
+
+function print_point2d(p: Point2D) -> void {
+    printf("Point2D(%d, %d)", p.x, p.y);
+}
+
+function print_rect(r: Rect2D) -> void {
+    printf("Rect2D(x=%d, y=%d, w=%d, h=%d)", r.x, r.y, r.width, r.height);
+}

@@ -27,6 +27,15 @@ FLOW is designed around several key concepts:
 
 **Control Flow**: FLOW supports structured control flow including if-elif-else chains, while loops, and for loops with range iteration: `for x in 0..10`.
 
+### 2.3 Module System
+
+FLOW features a robust module system that enables code reuse and encapsulation:
+
+- **Imports**: Modules can import exported symbols from other files using the `import "path/to/file.flow"` syntax.
+- **Exports**: Symbols (functions, structs, effects, capabilities) are private to their module by default. The `export` keyword makes them visible to importing modules.
+- **Recursive Resolution**: The transpiler recursively resolves imports and merges exported declarations into a unified rendering plan.
+- **Cycle Detection**: The module resolver handles interdependent modules gracefully by tracking visited files and avoiding infinite recursion.
+
 ### 2.2 Scene Rendering Intermediate Representation (SRIR)
 
 SRIR is a tree-based intermediate representation that bridges high-level scene descriptions with low-level rendering operations. Key features:

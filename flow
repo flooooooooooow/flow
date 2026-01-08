@@ -177,20 +177,19 @@ run_tests() {
 
     for suite in "tests" "examples"; do
         local dir="$SCRIPT_DIR/$suite"
-        for program in "$dir"/*.flow; do
-            if [ -f "$program" ]; then
-                total=$((total + 1))
-                local basename=$(basename "$program" .flow)
-                print_info "Testing $suite/$basename..."
-                
-                if python3 -m "$FLOWC_MODULE" "$program" -o "/tmp/$suite-$basename.mlir" 2>/dev/null; then
-                    print_success "✓ $suite/$basename"
-                else
-                    print_error "✗ $suite/$basename"
-                    failed=$((failed + 1))
-                fi
+        while read program; do
+            if [ -z "$program" ]; then continue; fi
+            total=$((total + 1))
+            local rel_path=${program#$SCRIPT_DIR/}
+            print_info "Testing $rel_path..."
+            
+            if python3 -m "$FLOWC_MODULE" "$program" -o "/tmp/${rel_path//\//-}.mlir" 2>/dev/null; then
+                print_success "✓ $rel_path"
+            else
+                print_error "✗ $rel_path"
+                failed=$((failed + 1))
             fi
-        done
+        done < <(find "$dir" -name "*.flow")
     done
     
     echo "----------------------------------------"
@@ -211,27 +210,23 @@ list_examples() {
     local tests_dir="$SCRIPT_DIR/tests"
     
     echo "📚 Examples (standard programs):"
-    for program in "$examples_dir"/*.flow; do
-        if [ -f "$program" ]; then
-            local basename=$(basename "$program" .flow)
-            echo "  📄 examples/$basename.flow"
-            # Show first line as description
-            local desc=$(head -n 1 "$program" | sed 's/^# *//')
-            echo "     $desc"
-            echo ""
-        fi
+    find "$examples_dir" -name "*.flow" | while read program; do
+        local rel_path=${program#$SCRIPT_DIR/}
+        echo "  📄 $rel_path"
+        # Show first line as description
+        local desc=$(head -n 1 "$program" | sed 's/^# *//')
+        echo "     $desc"
+        echo ""
     done
     
     echo "🧪 Tests (compiler/language demos):"
-    for program in "$tests_dir"/*.flow; do
-        if [ -f "$program" ]; then
-            local basename=$(basename "$program" .flow)
-            echo "  📄 tests/$basename.flow"
-            # Show first line as description
-            local desc=$(head -n 1 "$program" | sed 's/^# *//')
-            echo "     $desc"
-            echo ""
-        fi
+    find "$tests_dir" -name "*.flow" | while read program; do
+        local rel_path=${program#$SCRIPT_DIR/}
+        echo "  📄 $rel_path"
+        # Show first line as description
+        local desc=$(head -n 1 "$program" | sed 's/^# *//')
+        echo "     $desc"
+        echo ""
     done
 }
 

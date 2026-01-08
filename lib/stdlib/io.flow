@@ -1,0 +1,4 @@
+export function print_benchmark(name: string, time: f64) -> void {
+    print(name)
+    print(time)
+}

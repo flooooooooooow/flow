@@ -1,0 +1,7 @@
+import "a.flow"
+import "b.flow"
+
+function main() -> i32 {
+    let res: i32 = a_func() + b_func()
+    return res
+}

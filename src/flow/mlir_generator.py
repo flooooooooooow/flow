@@ -10,7 +10,8 @@ from .parser import (
     VarDecl, Assignment, IfStatement, WhileStatement, ForStatement,
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, ArrayAccess, Type,
-    HandleStatement, EffectOperation, CapabilityMethod, EffectCall
+    HandleStatement, EffectOperation, CapabilityMethod, EffectCall,
+    MatchStatement, MatchCase, StructPattern
 )
 import textwrap
 
@@ -38,6 +39,13 @@ class MLIRGenerator:
         label = f"bb{self.block_counter}"
         self.block_counter += 1
         return label
+
+    def _get_struct_decl(self, name: str) -> Optional[StructDecl]:
+        """Look up a struct declaration by name."""
+        for decl in self.declarations:
+            if isinstance(decl, StructDecl) and decl.name == name:
+                return decl
+        return None
     
     def _calculate_struct_layouts(self, declarations: List[Any]) -> None:
         """Calculate field offsets for all struct types"""
@@ -198,6 +206,8 @@ class MLIRGenerator:
             return self.generate_for(stmt)
         elif stmt_type == 'HandleStatement':
             return self.generate_handle(stmt)
+        elif stmt_type == 'MatchStatement':
+            return self.generate_match(stmt)
         elif stmt_type in ['Literal', 'Variable', 'BinaryOperation', 'UnaryOperation', 'FunctionCall']:
             value_ssa, value_ops = self.generate_expression(stmt)
             # Expression statement: emit ops for side effects / computation, discard value.
@@ -729,6 +739,137 @@ class MLIRGenerator:
             return self.generate_block(handle_stmt.body)
         finally:
             self._effect_handler_stack.pop()
+
+    def generate_match(self, match_stmt: 'MatchStatement') -> str:
+        # Always use SCF match as it supports struct destructuring
+        return self._generate_scf_match(match_stmt)
+
+    def _generate_scf_match(self, match_stmt: 'MatchStatement') -> str:
+        """Generate match using control flow (cf) dialect for maximum flexibility."""
+        mlir_code = []
+        val_ssa, val_ops = self.generate_expression(match_stmt.value)
+        mlir_code.extend(val_ops)
+        val_type = self.get_expression_type(match_stmt.value)
+        
+        # Determine comparison op
+        if "ptr" in val_type:
+            cmp_op = 'llvm.icmp "eq"'
+            use_comma = False
+        else:
+            cmp_op = "arith.cmpi eq" if "i" in val_type or "index" in val_type or "i1" in val_type else "arith.cmpf oeq"
+            use_comma = True
+        
+        # Generate labels for each case and the end
+        case_labels = []
+        next_case_labels = []
+        for i in range(len(match_stmt.cases)):
+            case_labels.append(self._new_block_label())
+            next_case_labels.append(self._new_block_label())
+        
+        end_label = self._new_block_label()
+        
+        # Process each case
+        for idx, case in enumerate(match_stmt.cases):
+            case_label = case_labels[idx]
+            next_label = next_case_labels[idx]
+            
+            # Generate condition check
+            cond_ssa = ""
+            binding_ops = []
+            saved_locals = None
+            
+            if isinstance(case.pattern, StructPattern):
+                # Handle Struct Destructuring
+                struct_pattern = case.pattern
+                struct_decl = self._get_struct_decl(struct_pattern.struct_name)
+                
+                # Unconditional match for same type (assuming type checker verified it)
+                cond_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                mlir_code.append(f"{self.indent()}{cond_ssa} = arith.constant 1 : i1")
+                
+                if struct_decl:
+                    saved_locals = self.symbol_table.copy()
+                    
+                    # Create temp variable for val_ssa to allow FieldAccess reuse
+                    temp_var_name = f"__match_input_{self.function_counter}"
+                    self.symbol_table[temp_var_name] = {'ssa_name': val_ssa, 'mlir_type': val_type}
+                    
+                    for field_idx, binding_name in enumerate(struct_pattern.bindings):
+                        if field_idx < len(struct_decl.fields):
+                            field_decl = struct_decl.fields[field_idx]
+                            
+                            # Generate field access
+                            field_access = FieldAccess(Variable(temp_var_name), field_decl.name)
+                            field_ssa, field_ops = self.generate_field_access(field_access)
+                            
+                            binding_ops.extend(field_ops)
+                            
+                            # Bind to local name
+                            self.symbol_table[binding_name] = {
+                                'ssa_name': field_ssa,
+                                'mlir_type': self.flow_type_to_mlir(field_decl.type),
+                                'flow_type': field_decl.type,
+                                'type': 'variable'
+                            }
+            else:
+                pattern_ssa, pattern_ops = self.generate_expression(case.pattern)
+                mlir_code.extend(pattern_ops)
+                
+                cond_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                if use_comma:
+                    mlir_code.append(f"{self.indent()}{cond_ssa} = {cmp_op}, {val_ssa}, {pattern_ssa} : {val_type}")
+                else:
+                    mlir_code.append(f"{self.indent()}{cond_ssa} = {cmp_op} {val_ssa}, {pattern_ssa} : {val_type}")
+            
+            # Branch to case body or next case
+            mlir_code.append(f"{self.indent()}cf.cond_br {cond_ssa}, ^{case_label}, ^{next_label}")
+            
+            # Generate case body block
+            mlir_code.append(f"^{case_label}:")
+            self.indent_level += 1
+            
+            if binding_ops:
+                mlir_code.extend(binding_ops)
+            
+            body = self.generate_block(case.body)
+            if body.strip():
+                mlir_code.append(body)
+            
+            # Branch to end
+            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+            
+            self.indent_level -= 1
+            
+            # Restore symbol table if we had bindings
+            if saved_locals is not None:
+                self.symbol_table = saved_locals
+            
+            # Generate next case check block (if not last)
+            if idx < len(match_stmt.cases) - 1:
+                mlir_code.append(f"^{next_label}:")
+        
+        # Generate default case or final fallthrough
+        final_next_label = next_case_labels[-1] if next_case_labels else end_label
+        
+        if match_stmt.default_case:
+            mlir_code.append(f"^{final_next_label}:")
+            self.indent_level += 1
+            default_body = self.generate_block(match_stmt.default_case)
+            if default_body.strip():
+                mlir_code.append(default_body)
+            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+            self.indent_level -= 1
+        else:
+            # If no default, just make the last next label jump to end
+            mlir_code.append(f"^{final_next_label}:")
+            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+        
+        # End block
+        mlir_code.append(f"^{end_label}:")
+        
+        return "\n".join(mlir_code)
     
     def generate_expression(self, expr: Expression) -> tuple[str, List[str]]:
         expr_type = type(expr).__name__
@@ -935,9 +1076,14 @@ class MLIRGenerator:
             loaded_bytes = []
             for i in range(4):
                 byte_offset = offset + i
+                
+                offset_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{offset_ssa} = arith.constant {byte_offset} : index")
+                
                 byte_name = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}memref.load {byte_name}, {obj_ssa}[{byte_offset}] : memref<?xi8>")
+                ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<?xi8>")
                 loaded_bytes.append(byte_name)
             
             # Extend each byte to i32
@@ -945,7 +1091,7 @@ class MLIRGenerator:
             for byte_name in loaded_bytes:
                 ext_name = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{ext_name} = arith.exti {byte_name} : i8 to i32")
+                ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
                 extended_bytes.append(ext_name)
             
             # Shift and combine bytes (little-endian)
@@ -983,9 +1129,14 @@ class MLIRGenerator:
             loaded_bytes = []
             for i in range(4):
                 byte_offset = offset + i
+                
+                offset_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{offset_ssa} = arith.constant {byte_offset} : index")
+                
                 byte_name = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}memref.load {byte_name}, {obj_ssa}[{byte_offset}] : memref<?xi8>")
+                ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<?xi8>")
                 loaded_bytes.append(byte_name)
             
             # Extend each byte to i32
@@ -993,7 +1144,7 @@ class MLIRGenerator:
             for byte_name in loaded_bytes:
                 ext_name = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{ext_name} = arith.exti {byte_name} : i8 to i32")
+                ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
                 extended_bytes.append(ext_name)
             
             # Shift and combine bytes (little-endian)
@@ -1028,7 +1179,7 @@ class MLIRGenerator:
             if field_type.name in ['u8', 'bool']:
                 ext_name = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{ext_name} = arith.exti {byte_name} : i8 to i32")
+                ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
                 return ext_name, ops
             else:
                 # For i8, sign extend
@@ -1071,17 +1222,21 @@ class MLIRGenerator:
     
     def _find_variable_type(self, var_name):
         """Find the type of a variable by looking through declarations"""
+        # First check symbol table (fast, handles locals)
+        if var_name in self.symbol_table:
+            var_info = self.symbol_table[var_name]
+            if 'flow_type' in var_info:
+                return var_info['flow_type']
+            # Fallback: try to reconstruct from mlir_type (imperfect)
+            return Type(var_info.get('mlir_type', 'i32'))
+
+        # Fallback to scanning declarations (globals)
         for decl in self.declarations:
             if hasattr(decl, 'body') and hasattr(decl, 'name'):  # Function
-                for stmt in decl.body.statements:
-                    if hasattr(stmt, 'name') and stmt.name == var_name:
-                        if hasattr(stmt, 'type'):
-                            return stmt.type
-            elif hasattr(decl, 'name') and decl.name == var_name:  # Function parameter
-                if hasattr(decl, 'parameters'):
-                    for param in decl.parameters:
-                        if param.name == var_name:
-                            return param.type
+                pass # Don't scan function bodies from outside!
+            elif hasattr(decl, 'name') and decl.name == var_name:  # Global?
+                # Does FLOW have globals? Not implemented here.
+                pass
         return None
     
     def generate_struct_literal(self, struct_literal: StructLiteral) -> tuple[str, List[str]]:
@@ -1133,7 +1288,10 @@ class MLIRGenerator:
                         # Use arith.andi with constant 255
                         and_name = f"%{self.function_counter}"
                         self.function_counter += 1
-                        ops.append(f"{self.indent()}{and_name} = arith.andi {shr_name}, 255 : i32")
+                        mask_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{mask_name} = arith.constant 255 : i32")
+                        ops.append(f"{self.indent()}{and_name} = arith.andi {shr_name}, {mask_name} : i32")
                         
                         # Cast to i8
                         byte_name = f"%{self.function_counter}"
@@ -1141,7 +1299,10 @@ class MLIRGenerator:
                         ops.append(f"{self.indent()}{byte_name} = arith.trunci {and_name} : i32 to i8")
                         
                         # Store byte
-                        ops.append(f"{self.indent()}memref.store {byte_name}, {alloc_name}[{byte_offset}] : memref<{total_size}xi8>")
+                        idx_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{idx_name} = arith.constant {byte_offset} : index")
+                        ops.append(f"{self.indent()}memref.store {byte_name}, {alloc_name}[{idx_name}] : memref<{total_size}xi8>")
                         
                 elif field_type.name == 'f32':
                     # Store f32 as 4 bytes (bitcast to i32 first)
@@ -1163,7 +1324,10 @@ class MLIRGenerator:
                         # Use arith.andi with constant 255
                         and_name = f"%{self.function_counter}"
                         self.function_counter += 1
-                        ops.append(f"{self.indent()}{and_name} = arith.andi {shr_name}, 255 : i32")
+                        mask_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{mask_name} = arith.constant 255 : i32")
+                        ops.append(f"{self.indent()}{and_name} = arith.andi {shr_name}, {mask_name} : i32")
                         
                         # Cast to i8
                         byte_name = f"%{self.function_counter}"
@@ -1171,7 +1335,10 @@ class MLIRGenerator:
                         ops.append(f"{self.indent()}{byte_name} = arith.trunci {and_name} : i32 to i8")
                         
                         # Store byte
-                        ops.append(f"{self.indent()}memref.store {byte_name}, {alloc_name}[{byte_offset}] : memref<{total_size}xi8>")
+                        idx_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{idx_name} = arith.constant {byte_offset} : index")
+                        ops.append(f"{self.indent()}memref.store {byte_name}, {alloc_name}[{idx_name}] : memref<{total_size}xi8>")
                         
                 elif field_type.name in ['i8', 'u8', 'bool']:
                     # Store single byte
@@ -1180,7 +1347,7 @@ class MLIRGenerator:
                     if field_type.name in ['u8', 'bool']:
                         ops.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : i32 to i8")
                     else:
-                        ops.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : i32 to i8}")
+                        ops.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : i32 to i8")
                     
                     ops.append(f"{self.indent()}memref.store {cast_name}, {alloc_name}[{offset}] : memref<{total_size}xi8>")
                     
@@ -1189,8 +1356,13 @@ class MLIRGenerator:
                     ops.append(f"{self.indent()}// Store {field_name} ({field_type.name}) at offset {offset}")
                     ops.append(f"{self.indent()}// Value: {value_ssa}")
         
-        # Return the allocated memory pointer
-        return alloc_name, ops
+        # Cast to dynamic memref for consistency with field access
+        cast_name = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{cast_name} = memref.cast {alloc_name} : memref<{total_size}xi8> to memref<?xi8>")
+        
+        # Return the casted memory pointer
+        return cast_name, ops
     
     def generate_function_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
         # Handle array<T>(size) constructor specially

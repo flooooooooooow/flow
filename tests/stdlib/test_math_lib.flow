@@ -1,0 +1,19 @@
+import "math.flow"
+import "io.flow"
+
+function run_demo() -> i32 {
+    let x: f32 = 1.0
+    print("sin(1.0):")
+    print(sin(x))
+    
+    print("cos(1.0):")
+    print(cos(x))
+    
+    print("sqrt(4.0):")
+    print(sqrt(4.0))
+    
+    print("fabs(-5.0):")
+    print(fabs(-5.0))
+    
+    return 0
+}

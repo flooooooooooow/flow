@@ -1,0 +1,34 @@
+export function rect(x: f32, y: f32, w: f32, h: f32, r: i32, g: i32, b: i32, a: i32) -> void {
+    # Handled as intrinsic in MLIR generator
+    return void
+}
+
+export function circle(x: f32, y: f32, radius: f32, r: i32, g: i32, b: i32, a: i32) -> void {
+    # Handled as intrinsic in MLIR generator
+    return void
+}
+
+export function group() -> void {
+    # Handled as intrinsic in MLIR generator
+    return void
+}
+
+export function end_group() -> void {
+    # Handled as intrinsic in MLIR generator
+    return void
+}
+
+export function transform(tx: f32, ty: f32, sx: f32, sy: f32, rot: f32) -> void {
+    # Handled as intrinsic in MLIR generator
+    return void
+}
+
+export function end_transform() -> void {
+    # Handled as intrinsic in MLIR generator
+    return void
+}
+
+export function render(filename: string, width: i32, height: i32) -> void {
+    # Handled as intrinsic in MLIR generator
+    return void
+}

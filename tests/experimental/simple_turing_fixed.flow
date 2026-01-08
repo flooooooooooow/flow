@@ -1,0 +1,58 @@
+# Simple Turing Complete Example - No pointers
+
+# Unbounded recursion
+function fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    } else {
+        return fibonacci(n - 1) + fibonacci(n - 2)
+    }
+}
+
+# Unbounded while loop
+function count_to_n(n: i32) -> i32 {
+    let counter: i32 = 0
+    let sum: i32 = 0
+    
+    while counter < n {
+        sum = sum + counter
+        counter = counter + 1
+    }
+    
+    return sum
+}
+
+# Conditional branching
+function max(a: i32, b: i32) -> i32 {
+    if a > b {
+        return a
+    } else {
+        return b
+    }
+}
+
+# State machine simulation
+function simulate_state(initial_state: i32, steps: i32) -> i32 {
+    let state: i32 = initial_state
+    let current_step: i32 = 0
+    
+    while current_step < steps {
+        if state == 0 {
+            state = 1
+        } else {
+            state = 0
+        }
+        current_step = current_step + 1
+    }
+    
+    return state
+}
+
+function main() -> i32 {
+    let fib: i32 = fibonacci(5)
+    let count: i32 = count_to_n(10)
+    let maximum: i32 = max(7, 12)
+    let final_state: i32 = simulate_state(0, 5)
+    
+    return fib + count + maximum + final_state
+}

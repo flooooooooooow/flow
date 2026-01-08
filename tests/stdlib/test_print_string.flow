@@ -1,0 +1,8 @@
+# Test string literals and print intrinsic
+
+function main() -> i32 {
+    print("Hello, FLOW!")
+    print(42)
+    print(3.14)
+    return 0
+}

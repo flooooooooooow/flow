@@ -1,0 +1,55 @@
+# Test match statement
+
+function test_int_match(x: i32) -> void {
+    match x {
+        1 => {
+            print("One")
+        }
+        2 => {
+            print("Two")
+        }
+        default {
+            print("Many")
+        }
+    }
+}
+
+# String matching not yet supported - !flow.string type not implemented
+# function test_string_match(s: string) -> void {
+#     match s {
+#         "hello" => {
+#             print("Greetings")
+#         }
+#         "world" => {
+#             print("Globe")
+#         }
+#         default {
+#             print("Unknown")
+#         }
+#     }
+# }
+
+function run_demo() -> i32 {
+    print("Testing Match Statement:")
+    
+    print("test_int_match(1):")
+    test_int_match(1)
+    
+    print("test_int_match(2):")
+    test_int_match(2)
+    
+    print("test_int_match(3):")
+    test_int_match(3)
+    
+    # String matching not yet supported - !flow.string type not implemented
+    # print("test_string_match(\"hello\"):")
+    # test_string_match("hello")
+    # 
+    # print("test_string_match(\"world\"):")
+    # test_string_match("world")
+    # 
+    # print("test_string_match(\"other\"):")
+    # test_string_match("other")
+    
+    return 0
+}

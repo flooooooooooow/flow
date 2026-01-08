@@ -1,0 +1,19 @@
+export function sin(x: f32) -> f32 {
+    # Handled as intrinsic in MLIR generator
+    return 0.0
+}
+
+export function cos(x: f32) -> f32 {
+    # Handled as intrinsic in MLIR generator
+    return 0.0
+}
+
+export function sqrt(x: f32) -> f32 {
+    # Handled as intrinsic in MLIR generator
+    return 0.0
+}
+
+export function fabs(x: f32) -> f32 {
+    # Handled as intrinsic in MLIR generator
+    return 0.0
+}

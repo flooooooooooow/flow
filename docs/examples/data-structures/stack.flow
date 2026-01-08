@@ -1,0 +1,36 @@
+# Stack Implementation - FLOW version of C++ stack
+# Since we don't have dynamic arrays, we'll use fixed-size stack
+
+function stack_demo() -> i32 {
+    let stack: [i32; 5]  # Simulated stack with 5 elements
+    let top: i32 = -1    # Stack top index
+    
+    # Push operations
+    top = top + 1  # push 10
+    # stack[top] = 10
+    
+    top = top + 1  # push 20
+    # stack[top] = 20
+    
+    top = top + 1  # push 30
+    # stack[top] = 30
+    
+    # Pop operations (simulate)
+    let popped1: i32 = 30  # pop
+    top = top - 1
+    
+    let popped2: i32 = 20  # pop
+    top = top - 1
+    
+    let popped3: i32 = 10  # pop
+    top = top - 1
+    
+    # Return sum of popped values
+    return popped1 + popped2 + popped3
+}
+
+function main() -> i32 {
+    let result: i32 = stack_demo()
+    # Would print: "Stack demo completed"
+    return result
+}

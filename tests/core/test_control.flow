@@ -1,0 +1,26 @@
+# Control flow test
+function max(a: i32, b: i32) -> i32 {
+    if a > b {
+        return a
+    } else {
+        return b
+    }
+}
+
+function sum_to_n(n: i32) -> i32 {
+    let sum: i32 = 0
+    let i: i32 = 1
+    
+    while i <= n {
+        sum = sum + i
+        i = i + 1
+    }
+    
+    return sum
+}
+
+function main() -> i32 {
+    let m: i32 = max(10, 20)
+    let s: i32 = sum_to_n(5)
+    return m + s
+}

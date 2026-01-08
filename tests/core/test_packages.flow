@@ -1,0 +1,6 @@
+import "logpkg.flow"
+
+function run_demo() -> i32 {
+    greet()
+    return 0
+}
