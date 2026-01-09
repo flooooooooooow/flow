@@ -29,7 +29,6 @@ This document tracks what we're building next and why.
 
 **What's broken/missing:**
 - ❌ GPU codegen — Runtime exists, no shader generation
-- ❌ Package manager — No dependency management
 
 **Recently completed:**
 - ✅ Enums / ADTs — Tagged unions in C
@@ -39,6 +38,7 @@ This document tracks what we're building next and why.
 - ✅ Closures — Manual pattern with `self: Type`
 - ✅ REPL — `flow repl` for interactive development
 - ✅ JIT — `flow jit` for fast execution via MLIR
+- ✅ Package manager — `flow init`, `flow add`, `flow build`
 
 ---
 
