@@ -39,6 +39,18 @@ class MLIRGenerator:
         label = f"bb{self.block_counter}"
         self.block_counter += 1
         return label
+    
+    def _block_has_terminator(self, block_code: str) -> bool:
+        """Check if a block of MLIR code already ends with a terminator."""
+        if not block_code:
+            return False
+        lines = [l.strip() for l in block_code.strip().split('\n') if l.strip()]
+        if not lines:
+            return False
+        last_line = lines[-1]
+        # Terminators in MLIR: func.return, cf.br, cf.cond_br, scf.yield
+        terminators = ['func.return', 'cf.br', 'cf.cond_br', 'scf.yield', 'return']
+        return any(last_line.startswith(t) for t in terminators)
 
     def _get_struct_decl(self, name: str) -> Optional[StructDecl]:
         """Look up a struct declaration by name."""
@@ -555,6 +567,9 @@ class MLIRGenerator:
         current_else_block = self._new_block_label() if if_stmt.elif_blocks or if_stmt.else_block else self._new_block_label()
         end_block = self._new_block_label()
         
+        # Track if any branch needs the end block
+        needs_end_block = False
+        
         mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{current_then_block}, ^{current_else_block}")
         
         # Generate then block
@@ -563,7 +578,10 @@ class MLIRGenerator:
         then_body = self.generate_block(if_stmt.then_block)
         if then_body.strip():
             mlir_code.append(then_body)
-        mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+        # Only add branch if block doesn't already end with a terminator
+        if not self._block_has_terminator(then_body):
+            mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+            needs_end_block = True
         self.indent_level -= 1
         
         # Generate elif blocks
@@ -587,7 +605,10 @@ class MLIRGenerator:
             elif_body = self.generate_block(elif_block)
             if elif_body.strip():
                 mlir_code.append(elif_body)
-            mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+            # Only add branch if block doesn't already end with a terminator
+            if not self._block_has_terminator(elif_body):
+                mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+                needs_end_block = True
             self.indent_level -= 1
             
             current_block = next_elif_block
@@ -599,16 +620,21 @@ class MLIRGenerator:
             else_body = self.generate_block(if_stmt.else_block)
             if else_body.strip():
                 mlir_code.append(else_body)
-            mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+            # Only add branch if block doesn't already end with a terminator
+            if not self._block_has_terminator(else_body):
+                mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+                needs_end_block = True
             self.indent_level -= 1
         elif current_block != end_block:
             mlir_code.append(f"{self.indent()}^{current_block}:")
             self.indent_level += 1
             mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+            needs_end_block = True
             self.indent_level -= 1
         
-        # End block
-        mlir_code.append(f"{self.indent()}^{end_block}:")
+        # Only emit end block if at least one branch needs it
+        if needs_end_block:
+            mlir_code.append(f"{self.indent()}^{end_block}:")
         
         return "\n".join(mlir_code)
     
