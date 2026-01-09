@@ -64,6 +64,7 @@ from .parser import (
     WhileStatement,
     ForStatement,
 )
+from .overload import OverloadResolver
 
 
 class CGenerator:
@@ -77,9 +78,23 @@ class CGenerator:
         self._effects = {}  # effect_name -> EffectDecl
         self._capabilities = {}  # capability_name -> CapabilityDecl
         self._effect_handler_stack = [{}]  # Stack of {effect_name -> capability_name}
+        
+        # Function overload resolution
+        self._overload_resolver = OverloadResolver()
+        self._mangled_names = {}  # original fn -> mangled name
 
     def _i(self) -> str:
         return "    " * self._indent
+    
+    def _type_to_string(self, t: Type) -> str:
+        """Convert a Type to a string for overload resolution."""
+        if t is None:
+            return "void"
+        if isinstance(t, str):
+            return t
+        if isinstance(t, Type):
+            return t.name
+        return str(t)
 
     def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl], 
                                    structs: List[StructDecl] = None, 
@@ -139,6 +154,40 @@ class CGenerator:
             for enum in enums:
                 self._enums[enum.name] = enum
         
+        # Register structs with overload resolver
+        for struct_name, fields in self._structs.items():
+            self._overload_resolver.register_struct(
+                struct_name, 
+                {name: self._type_to_string(t) for name, t in fields.items()}
+            )
+        
+        # Math functions that should use C stdlib names (not mangled)
+        c_math_functions = {'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+                           'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+                           'sqrt', 'cbrt', 'pow', 'exp', 'exp2', 'log', 'log2', 'log10',
+                           'fabs', 'abs', 'floor', 'ceil', 'round', 'fmod',
+                           'fmin', 'fmax', 'hypot'}
+        primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
+        
+        # Register all functions for overload resolution
+        for fn in functions:
+            self._overload_resolver.register_function(fn)
+        
+        # Build mangled name map
+        for fn in functions:
+            param_types = tuple(self._type_to_string(p.type) for p in fn.parameters)
+            
+            # Don't mangle C math functions with primitive args - use C stdlib names
+            if fn.name in c_math_functions:
+                all_primitive = all(pt in primitives for pt in param_types)
+                if all_primitive:
+                    self._mangled_names[id(fn)] = fn.name  # Keep original name
+                    continue
+            
+            key = (fn.name, param_types)
+            mangled = self._overload_resolver._mangle_name(fn.name, list(param_types))
+            self._mangled_names[id(fn)] = mangled
+        
         # Emit enum definitions (tagged unions)
         for enum_name, enum_decl in self._enums.items():
             lines.extend(self._gen_enum(enum_decl))
@@ -184,15 +233,22 @@ class CGenerator:
             lines.extend(self._gen_effect_vtables(effects, capabilities or []))
 
         # Forward declarations
+        math_functions = {'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+                         'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+                         'sqrt', 'cbrt', 'pow', 'exp', 'exp2', 'log', 'log2', 'log10',
+                         'fabs', 'abs', 'floor', 'ceil', 'round', 'fmod',
+                         'fmin', 'fmax', 'hypot'}
+        primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
-            # Skip math functions that are provided by the standard library
-            math_functions = {'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
-                             'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
-                             'sqrt', 'cbrt', 'pow', 'exp', 'exp2', 'log', 'log2', 'log10',
-                             'fabs', 'abs', 'floor', 'ceil', 'round', 'fmod',
-                             'fmin', 'fmax', 'hypot'}
-            if fn.name not in math_functions:
-                lines.append(self._c_function_decl(fn) + ";")
+            # Skip math functions only if they take primitive types
+            if fn.name in math_functions:
+                all_primitive = all(
+                    self._type_to_string(p.type) in primitives 
+                    for p in fn.parameters
+                )
+                if all_primitive:
+                    continue  # Skip C math function
+            lines.append(self._c_function_decl(fn) + ";")
         lines.append("")
 
         # Generate capability method definitions
@@ -542,20 +598,37 @@ class CGenerator:
         # Struct types
         return t.name
 
-    def _c_function_decl(self, fn: FunctionDecl) -> str:
+    def _c_function_decl(self, fn: FunctionDecl, use_mangled: bool = True) -> str:
         ret = self._c_type(fn.return_type)
         params = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in fn.parameters])
-        return f"{ret} {fn.name}({params})"
+        # Use mangled name if function has overloads
+        name = fn.name
+        if use_mangled and id(fn) in self._mangled_names:
+            name = self._mangled_names[id(fn)]
+        return f"{ret} {name}({params})"
 
     def _gen_function(self, fn: FunctionDecl) -> List[str]:
         # Skip math functions that are provided by the standard library
-        math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow'}
+        # BUT only if they take primitive float types (not custom types like Dual)
+        math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow', 'tanh'}
         if fn.name in math_functions:
-            return []  # Don't generate these functions
+            # Only skip if all parameters are primitive types
+            primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
+            all_primitive = all(
+                self._type_to_string(p.type) in primitives 
+                for p in fn.parameters
+            )
+            if all_primitive:
+                return []  # Skip - this is the C math function
         
         lines: List[str] = []
-        lines.append(self._c_function_decl(fn) + " {")
+        lines.append(self._c_function_decl(fn, use_mangled=True) + " {")
         self._indent += 1
+        
+        # Track parameter types for overload resolution in function body
+        for param in fn.parameters:
+            self._overload_resolver.set_var_type(param.name, self._type_to_string(param.type))
+        
         lines.extend(self._gen_block(fn.body))
         self._indent -= 1
         lines.append("}")
@@ -570,6 +643,8 @@ class CGenerator:
     def _gen_statement(self, st: Statement) -> List[str]:
         if isinstance(st, VarDecl):
             c_t = self._c_type(st.type)
+            # Track variable type for overload resolution
+            self._overload_resolver.set_var_type(st.name, self._type_to_string(st.type))
             if st.initializer is None:
                 return [f"{self._i()}{c_t} {st.name};"]
             return [f"{self._i()}{c_t} {st.name} = {self._gen_expr(st.initializer)};"]
@@ -977,8 +1052,13 @@ class CGenerator:
                     for arg in e.arguments:
                         args.append(f'printf("%g", {self._gen_expr(arg)})')
                     return ' '.join(args)
+            
+            # Resolve function overload
+            resolved_name = self._overload_resolver.resolve_call(e)
+            func_name = resolved_name if resolved_name else e.name
+            
             args = ", ".join(self._gen_expr(a) for a in e.arguments)
-            return f"{e.name}({args})"
+            return f"{func_name}({args})"
         
         if isinstance(e, EffectCall):
             return self._gen_effect_call(e)

@@ -224,48 +224,93 @@ export function d(x: f32) -> Dual {
 }
 
 # =============================================================================
-# SCALAR OPERATIONS - Operate with plain floats directly
+# OVERLOADED OPERATIONS - Same name, different argument types!
 # =============================================================================
+# FLOW supports function overloading: mul(Dual, Dual), mul(Dual, f32), mul(f32, Dual)
+# all work and resolve to the correct implementation based on argument types.
 
-# Add a constant (Dual + float)
+# --- add: Addition ---
+
+# add(Dual, Dual) -> Dual
+export function add(a: Dual, b: Dual) -> Dual {
+    return Dual { val: a.val + b.val, grad: a.grad + b.grad }
+}
+
+# add(Dual, f32) -> Dual
 export function add(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val + b, grad: a.grad }
 }
 
-# Add constant on left (float + Dual)
-export function addc(a: f32, b: Dual) -> Dual {
+# add(f32, Dual) -> Dual
+export function add(a: f32, b: Dual) -> Dual {
     return Dual { val: a + b.val, grad: b.grad }
 }
 
-# Subtract a constant (Dual - float)
+# --- sub: Subtraction ---
+
+# sub(Dual, Dual) -> Dual
+export function sub(a: Dual, b: Dual) -> Dual {
+    return Dual { val: a.val - b.val, grad: a.grad - b.grad }
+}
+
+# sub(Dual, f32) -> Dual
 export function sub(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val - b, grad: a.grad }
 }
 
-# Subtract from a constant (float - Dual)
-export function rsub(a: f32, b: Dual) -> Dual {
+# sub(f32, Dual) -> Dual
+export function sub(a: f32, b: Dual) -> Dual {
     return Dual { val: a - b.val, grad: -b.grad }
 }
 
-# Multiply by a constant (Dual * float)
+# --- mul: Multiplication ---
+
+# mul(Dual, Dual) -> Dual (product rule)
+export function mul(a: Dual, b: Dual) -> Dual {
+    return Dual { val: a.val * b.val, grad: a.grad * b.val + a.val * b.grad }
+}
+
+# mul(Dual, f32) -> Dual
 export function mul(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val * b, grad: a.grad * b }
 }
 
-# Multiply with constant on left (float * Dual)
-export function smul(a: f32, b: Dual) -> Dual {
+# mul(f32, Dual) -> Dual
+export function mul(a: f32, b: Dual) -> Dual {
     return Dual { val: a * b.val, grad: a * b.grad }
 }
 
-# Alias: scale(scalar, dual) - same as smul  
-export function scale(a: f32, b: Dual) -> Dual {
-    return Dual { val: a * b.val, grad: a * b.grad }
+# --- div: Division ---
+
+# div(Dual, Dual) -> Dual (quotient rule)
+export function ddiv(a: Dual, b: Dual) -> Dual {
+    let b_sq: f32 = b.val * b.val
+    return Dual { val: a.val / b.val, grad: (a.grad * b.val - a.val * b.grad) / b_sq }
 }
 
-# Divide by a constant (Dual / float) - named 'divs' to avoid C stdlib conflict
+# div(Dual, f32) -> Dual - named 'divs' to avoid C stdlib conflict with div()
 export function divs(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val / b, grad: a.grad / b }
 }
+
+# div(f32, Dual) -> Dual
+export function rdiv(a: f32, b: Dual) -> Dual {
+    let b_sq: f32 = b.val * b.val
+    return Dual { val: a / b.val, grad: -a * b.grad / b_sq }
+}
+
+# --- Legacy aliases (for backwards compatibility) ---
+
+export function addc(a: f32, b: Dual) -> Dual { return add(a, b) }
+export function rsub(a: f32, b: Dual) -> Dual { return sub(a, b) }
+export function smul(a: f32, b: Dual) -> Dual { return mul(a, b) }
+export function scale(a: f32, b: Dual) -> Dual { return mul(a, b) }
+
+# --- Pure scalar versions (for convenience in expressions) ---
+
+export function add(a: f32, b: f32) -> f32 { return a + b }
+export function sub(a: f32, b: f32) -> f32 { return a - b }
+export function mul(a: f32, b: f32) -> f32 { return a * b }
 
 # Negate
 export function neg(a: Dual) -> Dual {

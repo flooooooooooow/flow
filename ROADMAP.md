@@ -1,7 +1,7 @@
 # FLOW Roadmap
 
 > Last updated: 2026-01-09
-> Current version: 0.2.0
+> Current version: 0.3.0
 
 This document tracks what we're building next and why.
 
@@ -17,7 +17,7 @@ This document tracks what we're building next and why.
 - ✅ Type checker (strict mode with --lenient fallback)
 - ✅ C backend (stable)
 - ✅ Formatter (`flow fmt`)
-- ✅ Test framework (156 tests passing - 100%)
+- ✅ Test framework (`./flow test`)
 - ✅ Documentation (spec, grammar, implementation map)
 - ✅ Generics (monomorphization)
 - ✅ Option<T> / Result<T, E> types
@@ -45,7 +45,7 @@ This document tracks what we're building next and why.
 
 ---
 
-## Phase 1: Type System Completion (2 weeks)
+## Phase 1: Type System Completion (Complete ✅)
 
 **Goal:** Make the type system trustworthy.
 
@@ -61,11 +61,11 @@ let x: i32 = "hello"  # Type mismatch: expected i32, got string
 ```
 
 **Tasks:**
-- [ ] Change `type_checker.py` to collect errors, not just warnings
-- [ ] Update `transpiler.py` to exit with code 1 on type errors
-- [ ] Add `--strict` flag (default on) and `--lenient` flag
-- [ ] Fix all 152 tests to pass strict checking
-- [ ] Document error messages in `docs/language/types.md`
+- [x] Change `type_checker.py` to collect errors, not just warnings
+- [x] Update `transpiler.py` to exit with code 1 on type errors
+- [x] Add `--strict` flag (default on) and `--lenient` flag
+- [x] Fix all tests to pass strict checking
+- [x] Document error messages in `docs/language/types.md`
 
 ### 1.2 Generics (Parametric Polymorphism)
 **Priority:** High  
@@ -92,12 +92,12 @@ function map<T, U>(arr: array<T>, f: (T) -> U) -> array<U> {
 ```
 
 **Tasks:**
-- [ ] Add `TypeParameter` to AST in `parser.py`
-- [ ] Parse `<T>` syntax after function/struct names
-- [ ] Implement type substitution in `type_checker.py`
-- [ ] Monomorphize generics in `c_generator.py` (generate specialized versions)
-- [ ] Add generic stdlib functions: `map`, `filter`, `fold`
-- [ ] Test with `Option<T>`, `Result<T, E>` types
+- [x] Add `TypeParameter` to AST in `parser.py`
+- [x] Parse `<T>` syntax after function/struct names
+- [x] Implement type substitution in `type_checker.py`
+- [x] Monomorphize generics in `c_generator.py` (generate specialized versions)
+- [x] Add generic stdlib functions: `map`, `filter`, `fold`
+- [x] Test with `Option<T>`, `Result<T, E>` types
 
 ### 1.3 Type Inference (Optional)
 **Priority:** Medium  
@@ -121,7 +121,7 @@ let y = 3.14    # Inferred as f32
 
 ---
 
-## Phase 2: Language Completeness (2-4 weeks)
+## Phase 2: Language Completeness (Complete ✅)
 
 **Goal:** Fill in missing language features.
 
@@ -149,11 +149,11 @@ match point {
 ```
 
 **Tasks:**
-- [ ] Add `StructPattern` with field destructuring
-- [ ] Add guard clauses (`if condition`)
-- [ ] Add nested patterns
-- [ ] Add `|` for multiple patterns
-- [ ] Exhaustiveness checking (warn on non-exhaustive matches)
+- [x] Add `StructPattern` with field destructuring
+- [x] Add guard clauses (`if condition`)
+- [x] Add nested patterns
+- [x] Add `|` for multiple patterns
+- [x] Exhaustiveness checking (warn on non-exhaustive matches)
 
 ### 2.2 Enums / Algebraic Data Types
 **Priority:** High  
@@ -181,11 +181,11 @@ function divide(a: f32, b: f32) -> Result<f32, string> {
 ```
 
 **Tasks:**
-- [ ] Add `EnumDecl` to AST
-- [ ] Parse `enum Name { Variant1, Variant2(T) }`
-- [ ] Generate tagged unions in C
-- [ ] Integrate with pattern matching
-- [ ] Add `Option` and `Result` to stdlib
+- [x] Add `EnumDecl` to AST
+- [x] Parse `enum Name { Variant1, Variant2(T) }`
+- [x] Generate tagged unions in C
+- [x] Integrate with pattern matching
+- [x] Add `Option` and `Result` to stdlib
 
 ### 2.3 Traits / Interfaces
 **Priority:** Medium  
@@ -210,11 +210,11 @@ function print<T: Printable>(x: T) -> void {
 ```
 
 **Tasks:**
-- [ ] Add `TraitDecl` and `ImplBlock` to AST
-- [ ] Parse trait and impl syntax
-- [ ] Implement trait bounds on generics
-- [ ] Generate vtables or monomorphize
-- [ ] Decide: traits vs effects — when to use which?
+- [x] Add `TraitDecl` and `ImplBlock` to AST
+- [x] Parse trait and impl syntax
+- [x] Implement trait bounds on generics
+- [x] Generate vtables or monomorphize
+- [x] Decide: traits vs effects — when to use which?
 
 ### 2.4 Closures (Full)
 **Priority:** Medium  
@@ -234,14 +234,14 @@ let result: i32 = add5(10)  # 15
 ```
 
 **Tasks:**
-- [ ] Implement closure environment capture
-- [ ] Decide: move vs copy semantics for captures
-- [ ] Generate closure structs in C
-- [ ] Test with higher-order functions
+- [x] Implement closure environment capture (pragmatic model)
+- [x] Decide: move vs copy semantics for captures
+- [x] Generate closure structs in C
+- [x] Test with higher-order functions
 
 ---
 
-## Phase 3: Tooling (1-2 months)
+## Phase 3: Tooling (Mostly complete ✅)
 
 **Goal:** Make FLOW pleasant to use.
 
@@ -252,14 +252,14 @@ let result: i32 = add5(10)  # 15
 Make `flow-lsp` actually useful.
 
 **Features:**
-- [ ] Go to definition
+- [x] Go to definition
 - [ ] Find references
-- [ ] Hover for type info
-- [ ] Autocomplete
+- [x] Hover for type info
+- [x] Autocomplete
 - [ ] Inline error diagnostics
 - [ ] Rename symbol
 
-### 3.2 REPL
+### 3.2 REPL (Complete ✅)
 **Priority:** Medium  
 **Effort:** 1 week
 
@@ -276,7 +276,7 @@ FLOW v0.3.0
 84
 ```
 
-### 3.3 Package Manager
+### 3.3 Package Manager (Complete ✅)
 **Priority:** Low  
 **Effort:** 2-3 weeks
 
@@ -357,11 +357,8 @@ let c: f32x4 = simd_add(a, b)  # (6.0, 8.0, 10.0, 12.0)
 ### 5.1 Self-Hosting
 Rewrite the compiler in FLOW itself.
 
-### 5.2 Standard Library Expansion
-- Data structures (HashMap, Set, Queue)
-- I/O (files, network)
-- Concurrency (channels, async)
-- Serialization (JSON, protobuf)
+### 5.2 Standard Library Expansion (Complete ✅)
+See **Standard Library Expansion (Complete ✅)** below for the module list.
 
 ### 5.3 Documentation Generator
 Generate docs from code comments.
@@ -379,7 +376,7 @@ These are explicitly out of scope:
 | **Inheritance** | Composition via traits/effects |
 | **Operator overloading** | Keeps code readable |
 | **Macros** | Complexity not worth it yet |
-| **Async/await** | Effects can model this better |
+| **Async/await syntax sugar** | Effects can model async without new syntax |
 
 ---
 
@@ -397,11 +394,11 @@ These are explicitly out of scope:
 
 | Version | Target | Key Features |
 |---------|--------|--------------|
-| **0.3.0** | 2 weeks | Strict types, generics basics |
-| **0.4.0** | 1 month | Pattern matching, enums |
-| **0.5.0** | 2 months | Traits, full closures |
-| **0.6.0** | 3 months | Full LSP, REPL |
-| **1.0.0** | 6 months | Production-ready core |
+| **0.3.0** | shipped | Feature-complete core |
+| **0.3.1** | next | Stabilization, docs polish, version unification |
+| **0.4.0** | later | Tooling upgrades (LSP refs/rename/diagnostics), perf/MLIR polish |
+| **0.5.0** | later | Ecosystem experiments (playground, debugger, packages) |
+| **1.0.0** | when earned | “Boring” stability + real-world validation |
 
 ---
 
@@ -410,8 +407,8 @@ These are explicitly out of scope:
 **Completed (2026-01-09):**
 1. [x] Strict type enforcement (turn warnings → errors)
    - `--strict` is default, `--lenient` for backwards compatibility
-   - 62/153 tests pass strict mode
-2. [x] Parse generic syntax (`<T>`) — parsed, not yet monomorphized
+   - Run `./flow test --strict` to validate strict mode
+2. [x] Parse generic syntax (`<T>`) — parsed + monomorphized
    - `function foo<T>(...)` and `struct Bar<T> { ... }` work
    - Type bounds `<T: Trait>` parsed (ignored for now)
 3. [x] Add `Option<T>` and `Result<T, E>` types to stdlib
@@ -421,7 +418,7 @@ These are explicitly out of scope:
    - Full monomorphization pass (`src/flow/monomorphize.py`)
    - Box<T>, Pair<A, B>, identity<T> all work
    - Generic struct literals: `Box<i32> { value: 42 }`
-   - 145/154 tests passing (9 pre-existing failures)
+   - Covered by the test suite (see `./flow test`)
 
 **This week:**
 1. [x] Add MatchStatement to C generator ✅
@@ -433,7 +430,7 @@ These are explicitly out of scope:
    - Compound literal syntax for inline vectors
 3. [x] Parser fix: vector literals in return statements ✅
 
-**Test Results:** 156/156 passing (100%) 🎉
+**Test Results:** see `./flow test`
 
 **Phase 2 Completed (2026-01-09):**
 1. [x] Traits/interfaces ✅
@@ -512,7 +509,7 @@ New stdlib modules added:
 The language is feature-complete! Future work:
 
 1. **Polish & Docs** - Improve documentation, tutorials, examples
-2. **Async/Await** - First-class async support
+2. **Async primitives** - Effects-based async/concurrency story
 3. **Debugger** - LLDB/GDB integration
 4. **Web Playground** - Browser-based IDE
 5. **Real-world projects** - Build something substantial to prove it out

@@ -1,0 +1,50 @@
+import "stdlib/autodiff.flow"
+
+# Clean autodiff syntax test
+# Using overloaded functions: mul, add, sub work with any combination of Dual/f32
+
+# Rosenbrock function: f(x) = (1 - x)² + 100(x² - 1)²
+function rosenbrock(x: Dual) -> Dual {
+    let term1: Dual = sq_diff(x, 1.0)           # (1 - x)²
+    let term2: Dual = mul(100.0, sq_diff(mul(x, x), 1.0))  # 100(x² - 1)²
+    return add(term1, term2)
+}
+
+# Logistic loss: L(w) = -[ y·log(σ(w)) + (1-y)·log(1-σ(w)) ]
+function logistic_loss(w: Dual, y: f32) -> Dual {
+    let p: Dual = sigmoid(w)
+    let loss_pos: Dual = mul(y, log(p))
+    let loss_neg: Dual = mul(sub(1.0, y), log(sub(1.0, p)))
+    return neg(add(loss_pos, loss_neg))
+}
+
+# Quadratic with coefficients: f(x) = ax² + bx + c
+function quadratic_auto(x: Dual, a: f32, b: f32, c: f32) -> Dual {
+    let ax2: Dual = mul(a, mul(x, x))    # a * x * x
+    let bx: Dual = mul(b, x)              # b * x
+    return add(add(ax2, bx), c)           # ax² + bx + c
+}
+
+function main() -> i32 {
+    printf("=== Clean Autodiff Syntax Demo ===\n\n")
+    
+    # Rosenbrock at x=0.8
+    let x1: Dual = dx(0.8)
+    let f1: Dual = rosenbrock(x1)
+    printf("Rosenbrock(0.8) = %f\n", f1.val)
+    printf("dRosenbrock/dx  = %f\n\n", f1.grad)
+    
+    # Logistic loss at w=-0.4, y=1
+    let w: Dual = dx(-0.4)
+    let loss: Dual = logistic_loss(w, 1.0)
+    printf("LogisticLoss(-0.4, 1) = %f\n", loss.val)
+    printf("dLoss/dw              = %f\n\n", loss.grad)
+    
+    # Quadratic 2x² + 3x + 1 at x=2
+    let x2: Dual = dx(2.0)
+    let q: Dual = quadratic_auto(x2, 2.0, 3.0, 1.0)
+    printf("Quadratic(2) = 2(4) + 3(2) + 1 = %f\n", q.val)
+    printf("dQuadratic/dx = 4x + 3 = 4(2) + 3 = %f\n", q.grad)
+    
+    return 0
+}
