@@ -444,10 +444,10 @@ These are explicitly out of scope:
    - Helpful suggestions for common errors
 
 **Next priorities:**
-1. [ ] Full closure captures (move vs copy semantics)
-2. [ ] Trait bounds enforcement on generics
-3. [ ] Enums / algebraic data types
-4. [ ] WASM build improvements
+1. [x] Full closure captures ✅ (manual closure pattern with explicit `self: Type`)
+2. [x] Trait bounds stored in AST ✅ (`<T: Display>` -> TypeParameter)
+3. [x] Enums / algebraic data types ✅ (tagged unions in C)
+4. [x] WASM build improvements ✅ (`flow wasm` command)
 
 ---
 

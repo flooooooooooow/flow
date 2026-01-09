@@ -888,13 +888,15 @@ class Parser:
                 # Optional type annotation for self
                 if self.current_token.type == TokenType.COLON:
                     self.advance()
-                    self.parse_type()  # Ignore self type
+                    self_type = self.parse_type()
+                    # If self has an explicit type, add it as a regular parameter
+                    parameters.append(Parameter("self", self_type))
                 if self.current_token.type == TokenType.COMMA:
                     self.advance()
             
             # Parse remaining parameters
             if self.current_token.type != TokenType.RPAREN:
-                parameters = self.parse_parameters()
+                parameters.extend(self.parse_parameters())
         
         self.expect(TokenType.RPAREN)
         

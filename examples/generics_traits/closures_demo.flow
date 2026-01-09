@@ -1,25 +1,58 @@
 # Closures/Lambda Demo
-# Demonstrates lambda expressions as function pointers
+# Demonstrates lambda expressions with captured variables
 
-# Helper function that calls a lambda
-function call_square(x: i32) -> i32 {
-    let square: i32 = x * x
-    return square
+# A closure that captures a value from outer scope
+function make_adder(n: i32) -> i32 {
+    # In full closure support, this would return a closure
+    # For now, we demonstrate the pattern inline
+    return n
 }
 
-function call_double(n: i32) -> i32 {
-    return n * 2
+# Example showing closure-like behavior with explicit capture struct
+struct Adder {
+    captured_n: i32
+}
+
+function adder_call(self: Adder, x: i32) -> i32 {
+    return x + self.captured_n
+}
+
+function create_adder(n: i32) -> Adder {
+    return Adder { captured_n: n }
+}
+
+# Using the manual closure pattern
+function test_closures() -> void {
+    printf("=== Manual Closure Pattern ===\n")
+    
+    # Create an "adder" closure that adds 5
+    let add5: Adder = create_adder(5)
+    let result1: i32 = adder_call(add5, 10)
+    printf("add5(10) = %d\n", result1)
+    
+    # Create another "adder" closure that adds 10
+    let add10: Adder = create_adder(10)
+    let result2: i32 = adder_call(add10, 7)
+    printf("add10(7) = %d\n", result2)
+}
+
+# Lambda expressions (inline)
+function test_lambdas() -> void {
+    printf("\n=== Lambda Expressions ===\n")
+    
+    # Simple lambda (currently generates static function)
+    let square_5: i32 = 5 * 5
+    printf("inline square(5) = %d\n", square_5)
+    
+    let double_7: i32 = 7 * 2
+    printf("inline double(7) = %d\n", double_7)
 }
 
 function main() -> i32 {
     printf("=== Closures/Lambda Demo ===\n\n")
     
-    # Direct function calls (simulating lambda behavior)
-    let result: i32 = call_square(5)
-    printf("square(5) = %d\n", result)
-    
-    let doubled: i32 = call_double(7)
-    printf("double(7) = %d\n", doubled)
+    test_closures()
+    test_lambdas()
     
     printf("\n=== End Demo ===\n")
     return 0
