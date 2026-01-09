@@ -1,0 +1,229 @@
+# Audio Processor Module
+#
+# Trait-based interface for audio processing components.
+# Enables composable, pluggable DSP building blocks.
+#
+# Usage:
+#   import "stdlib/audio.flow"
+#   import "stdlib/audio/processor.flow"
+#   
+#   # Implement the Processor trait for your DSP
+#   struct MyFilter { state: f32 }
+#   impl Processor for MyFilter {
+#       function process(self, input: f32) -> f32 { ... }
+#       function reset(self) -> void { ... }
+#   }
+#
+# Note: Trait methods use mangled names: Type_Processor_method(instance)
+
+import "stdlib/audio.flow"
+
+# =============================================================================
+# Processor Trait
+# =============================================================================
+
+# Base trait for any audio processor
+# All processors must implement process() and reset()
+trait Processor {
+    # Process a single sample
+    function process(self, input: f32) -> f32
+    
+    # Reset internal state (e.g., clear delay lines, reset envelopes)
+    function reset(self) -> void
+}
+
+# Extended trait for processors that need sample rate
+trait SampleRateAware {
+    # Set the sample rate (call before processing)
+    function set_sample_rate(self, rate: SampleRate) -> void
+}
+
+# =============================================================================
+# Example Processors
+# =============================================================================
+
+# --- Gain Processor ---
+
+export struct GainProcessor {
+    gain: f32
+}
+
+export function gain_processor_new(gain_db: f32) -> GainProcessor {
+    # Convert dB to linear
+    let linear: f32 = db_to_linear(gain_db)
+    return GainProcessor { gain: linear }
+}
+
+impl Processor for GainProcessor {
+    function process(self, input: f32) -> f32 {
+        return input * self.gain
+    }
+    
+    function reset(self) -> void {
+        # Gain has no state to reset
+    }
+}
+
+# Set gain in dB
+export function gain_processor_set_db(g: GainProcessor, db: f32) -> GainProcessor {
+    let linear: f32 = db_to_linear(db)
+    return GainProcessor { gain: linear }
+}
+
+# Set gain as linear multiplier
+export function gain_processor_set_linear(g: GainProcessor, linear: f32) -> GainProcessor {
+    return GainProcessor { gain: linear }
+}
+
+# --- Hard Clipper ---
+
+export struct HardClipper {
+    threshold: f32
+}
+
+export function hard_clipper_new(threshold: f32) -> HardClipper {
+    return HardClipper { threshold: threshold }
+}
+
+impl Processor for HardClipper {
+    function process(self, input: f32) -> f32 {
+        if input > self.threshold {
+            return self.threshold
+        }
+        if input < -self.threshold {
+            return -self.threshold
+        }
+        return input
+    }
+    
+    function reset(self) -> void {
+        # No state
+    }
+}
+
+# --- Soft Clipper (Tanh-like) ---
+
+export struct SoftClipper {
+    drive: f32      # Pre-gain before saturation
+}
+
+export function soft_clipper_new(drive: f32) -> SoftClipper {
+    return SoftClipper { drive: drive }
+}
+
+impl Processor for SoftClipper {
+    function process(self, input: f32) -> f32 {
+        let driven: f32 = input * self.drive
+        return soft_clip(driven)
+    }
+    
+    function reset(self) -> void {
+        # No state
+    }
+}
+
+# --- DC Offset ---
+
+export struct DCOffset {
+    offset: f32
+}
+
+export function dc_offset_new(offset: f32) -> DCOffset {
+    return DCOffset { offset: offset }
+}
+
+impl Processor for DCOffset {
+    function process(self, input: f32) -> f32 {
+        return input + self.offset
+    }
+    
+    function reset(self) -> void {
+        # No state
+    }
+}
+
+# =============================================================================
+# Stereo Processor Trait
+# =============================================================================
+
+# Trait for stereo processors (takes and returns Frame)
+trait StereoProcessor {
+    function process_frame(self, input: Frame) -> Frame
+    function reset(self) -> void
+}
+
+# --- Stereo Width ---
+
+export struct StereoWidth {
+    width: f32      # 0.0 = mono, 1.0 = normal, 2.0 = wide
+}
+
+export function stereo_width_new(width: f32) -> StereoWidth {
+    return StereoWidth { width: width }
+}
+
+impl StereoProcessor for StereoWidth {
+    function process_frame(self, input: Frame) -> Frame {
+        let mid: f32 = (input.left + input.right) * 0.5
+        let side: f32 = (input.left - input.right) * 0.5 * self.width
+        return Frame {
+            left: mid + side,
+            right: mid - side
+        }
+    }
+    
+    function reset(self) -> void {
+        # No state
+    }
+}
+
+# --- Stereo Pan ---
+
+export struct StereoPan {
+    pan: f32        # -1.0 = full left, 0.0 = center, 1.0 = full right
+}
+
+export function stereo_pan_new(pan: f32) -> StereoPan {
+    return StereoPan { pan: pan }
+}
+
+impl StereoProcessor for StereoPan {
+    function process_frame(self, input: Frame) -> Frame {
+        # Constant power pan law
+        let mono: f32 = (input.left + input.right) * 0.5
+        return frame_pan(mono, self.pan)
+    }
+    
+    function reset(self) -> void {
+        # No state
+    }
+}
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+# Process a mono sample through gain and clip
+export function process_with_gain_clip(sample: f32, gain: f32, threshold: f32) -> f32 {
+    let gained: f32 = sample * gain
+    if gained > threshold {
+        return threshold
+    }
+    if gained < -threshold {
+        return -threshold
+    }
+    return gained
+}
+
+# Mix two signals with crossfade (0.0 = all A, 1.0 = all B)
+export function crossfade(a: f32, b: f32, mix: f32) -> f32 {
+    return a * (1.0 - mix) + b * mix
+}
+
+# Equal power crossfade (smoother for audio)
+export function crossfade_equal_power(a: f32, b: f32, mix: f32) -> f32 {
+    # Approximate cos/sin with simple curve
+    let a_gain: f32 = 1.0 - mix * mix
+    let b_gain: f32 = mix * (2.0 - mix)
+    return a * a_gain + b * b_gain
+}

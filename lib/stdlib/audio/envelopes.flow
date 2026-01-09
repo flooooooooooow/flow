@@ -1,0 +1,488 @@
+# Audio Envelopes Module
+#
+# Envelope generators for amplitude, filter, and modulation control.
+# All envelopes use immutable state pattern: env_tick(state) -> new_state
+#
+# Usage:
+#   import "stdlib/audio.flow"
+#   import "stdlib/audio/envelopes.flow"
+#   
+#   let rate: SampleRate = sample_rate_44100()
+#   let env: ADSR = adsr_new(seconds_new(0.01), seconds_new(0.1), 0.7, seconds_new(0.3), rate)
+#   let env2: ADSR = adsr_gate_on(env)
+#   # In audio loop:
+#   let env3: ADSR = adsr_tick(env2)
+#   let gain: f32 = adsr_value(env3)
+
+import "stdlib/audio.flow"
+
+# =============================================================================
+# Envelope Stage
+# =============================================================================
+
+# ADSR envelope stages
+# Using struct with flags instead of enum for now (enum support pending)
+export struct EnvStage {
+    idle: bool
+    attack: bool
+    decay: bool
+    sustain: bool
+    release: bool
+}
+
+export function stage_idle() -> EnvStage {
+    return EnvStage { idle: true, attack: false, decay: false, sustain: false, release: false }
+}
+
+export function stage_attack() -> EnvStage {
+    return EnvStage { idle: false, attack: true, decay: false, sustain: false, release: false }
+}
+
+export function stage_decay() -> EnvStage {
+    return EnvStage { idle: false, attack: false, decay: true, sustain: false, release: false }
+}
+
+export function stage_sustain() -> EnvStage {
+    return EnvStage { idle: false, attack: false, decay: false, sustain: true, release: false }
+}
+
+export function stage_release() -> EnvStage {
+    return EnvStage { idle: false, attack: false, decay: false, sustain: false, release: true }
+}
+
+# =============================================================================
+# ADSR Envelope
+# =============================================================================
+
+# Classic Attack-Decay-Sustain-Release envelope
+export struct ADSR {
+    # Parameters (in samples)
+    attack_samples: i64
+    decay_samples: i64
+    sustain_level: f32      # 0.0 to 1.0
+    release_samples: i64
+    
+    # State
+    stage: EnvStage
+    position: i64           # Current position in stage
+    current_value: f32      # Current envelope output
+    release_start: f32      # Value when release started
+}
+
+# Create ADSR from time values
+export function adsr_new(attack: Seconds, decay: Seconds, sustain: f32, release: Seconds, rate: SampleRate) -> ADSR {
+    let attack_s: Samples = seconds_to_samples(attack, rate)
+    let decay_s: Samples = seconds_to_samples(decay, rate)
+    let release_s: Samples = seconds_to_samples(release, rate)
+    
+    return ADSR {
+        attack_samples: attack_s.count,
+        decay_samples: decay_s.count,
+        sustain_level: sustain,
+        release_samples: release_s.count,
+        stage: stage_idle(),
+        position: 0,
+        current_value: 0.0,
+        release_start: 0.0
+    }
+}
+
+# Create ADSR with millisecond times (convenience)
+export function adsr_new_ms(attack_ms: f32, decay_ms: f32, sustain: f32, release_ms: f32, rate: SampleRate) -> ADSR {
+    let attack: Samples = ms_to_samples(attack_ms, rate)
+    let decay: Samples = ms_to_samples(decay_ms, rate)
+    let release: Samples = ms_to_samples(release_ms, rate)
+    
+    return ADSR {
+        attack_samples: attack.count,
+        decay_samples: decay.count,
+        sustain_level: sustain,
+        release_samples: release.count,
+        stage: stage_idle(),
+        position: 0,
+        current_value: 0.0,
+        release_start: 0.0
+    }
+}
+
+# Trigger envelope (gate on)
+export function adsr_gate_on(e: ADSR) -> ADSR {
+    return ADSR {
+        attack_samples: e.attack_samples,
+        decay_samples: e.decay_samples,
+        sustain_level: e.sustain_level,
+        release_samples: e.release_samples,
+        stage: stage_attack(),
+        position: 0,
+        current_value: e.current_value,  # Start from current for re-trigger
+        release_start: e.release_start
+    }
+}
+
+# Release envelope (gate off)
+export function adsr_gate_off(e: ADSR) -> ADSR {
+    return ADSR {
+        attack_samples: e.attack_samples,
+        decay_samples: e.decay_samples,
+        sustain_level: e.sustain_level,
+        release_samples: e.release_samples,
+        stage: stage_release(),
+        position: 0,
+        current_value: e.current_value,
+        release_start: e.current_value  # Remember level at release start
+    }
+}
+
+# Advance envelope by one sample
+export function adsr_tick(e: ADSR) -> ADSR {
+    let new_value: f32 = e.current_value
+    let new_position: i64 = e.position + 1
+    let new_stage: EnvStage = e.stage
+    
+    if e.stage.idle {
+        new_value = 0.0
+    }
+    
+    if e.stage.attack {
+        if e.attack_samples <= 0 {
+            new_value = 1.0
+            new_stage = stage_decay()
+            new_position = 0
+        } else {
+            let progress: f32 = e.position / e.attack_samples
+            new_value = progress
+            if progress >= 1.0 {
+                new_value = 1.0
+                new_stage = stage_decay()
+                new_position = 0
+            }
+        }
+    }
+    
+    if e.stage.decay {
+        if e.decay_samples <= 0 {
+            new_value = e.sustain_level
+            new_stage = stage_sustain()
+            new_position = 0
+        } else {
+            let progress: f32 = e.position / e.decay_samples
+            new_value = 1.0 - progress * (1.0 - e.sustain_level)
+            if progress >= 1.0 {
+                new_value = e.sustain_level
+                new_stage = stage_sustain()
+                new_position = 0
+            }
+        }
+    }
+    
+    if e.stage.sustain {
+        new_value = e.sustain_level
+        # Stay in sustain until gate off
+    }
+    
+    if e.stage.release {
+        if e.release_samples <= 0 {
+            new_value = 0.0
+            new_stage = stage_idle()
+            new_position = 0
+        } else {
+            let progress: f32 = e.position / e.release_samples
+            new_value = e.release_start * (1.0 - progress)
+            if progress >= 1.0 {
+                new_value = 0.0
+                new_stage = stage_idle()
+                new_position = 0
+            }
+        }
+    }
+    
+    return ADSR {
+        attack_samples: e.attack_samples,
+        decay_samples: e.decay_samples,
+        sustain_level: e.sustain_level,
+        release_samples: e.release_samples,
+        stage: new_stage,
+        position: new_position,
+        current_value: new_value,
+        release_start: e.release_start
+    }
+}
+
+# Get current envelope value
+export function adsr_value(e: ADSR) -> f32 {
+    return e.current_value
+}
+
+# Check if envelope is active (not idle)
+export function adsr_is_active(e: ADSR) -> bool {
+    return e.stage.idle == false
+}
+
+# Check if envelope has finished
+export function adsr_is_idle(e: ADSR) -> bool {
+    return e.stage.idle
+}
+
+# Reset envelope to idle state
+export function adsr_reset(e: ADSR) -> ADSR {
+    return ADSR {
+        attack_samples: e.attack_samples,
+        decay_samples: e.decay_samples,
+        sustain_level: e.sustain_level,
+        release_samples: e.release_samples,
+        stage: stage_idle(),
+        position: 0,
+        current_value: 0.0,
+        release_start: 0.0
+    }
+}
+
+# =============================================================================
+# AR Envelope (Attack-Release)
+# =============================================================================
+
+# Simpler two-stage envelope for percussion/one-shot sounds
+export struct AR {
+    attack_samples: i64
+    release_samples: i64
+    stage: EnvStage
+    position: i64
+    current_value: f32
+}
+
+# Create AR envelope
+export function ar_new(attack: Seconds, release: Seconds, rate: SampleRate) -> AR {
+    let attack_s: Samples = seconds_to_samples(attack, rate)
+    let release_s: Samples = seconds_to_samples(release, rate)
+    
+    return AR {
+        attack_samples: attack_s.count,
+        release_samples: release_s.count,
+        stage: stage_idle(),
+        position: 0,
+        current_value: 0.0
+    }
+}
+
+# Trigger the envelope
+export function ar_trigger(e: AR) -> AR {
+    return AR {
+        attack_samples: e.attack_samples,
+        release_samples: e.release_samples,
+        stage: stage_attack(),
+        position: 0,
+        current_value: 0.0
+    }
+}
+
+# Advance by one sample
+export function ar_tick(e: AR) -> AR {
+    let new_value: f32 = e.current_value
+    let new_position: i64 = e.position + 1
+    let new_stage: EnvStage = e.stage
+    
+    if e.stage.idle {
+        new_value = 0.0
+    }
+    
+    if e.stage.attack {
+        if e.attack_samples <= 0 {
+            new_value = 1.0
+            new_stage = stage_release()
+            new_position = 0
+        } else {
+            let progress: f32 = e.position / e.attack_samples
+            new_value = progress
+            if progress >= 1.0 {
+                new_value = 1.0
+                new_stage = stage_release()
+                new_position = 0
+            }
+        }
+    }
+    
+    if e.stage.release {
+        if e.release_samples <= 0 {
+            new_value = 0.0
+            new_stage = stage_idle()
+            new_position = 0
+        } else {
+            let progress: f32 = e.position / e.release_samples
+            new_value = 1.0 - progress
+            if progress >= 1.0 {
+                new_value = 0.0
+                new_stage = stage_idle()
+                new_position = 0
+            }
+        }
+    }
+    
+    return AR {
+        attack_samples: e.attack_samples,
+        release_samples: e.release_samples,
+        stage: new_stage,
+        position: new_position,
+        current_value: new_value
+    }
+}
+
+# Get current value
+export function ar_value(e: AR) -> f32 {
+    return e.current_value
+}
+
+# Check if active
+export function ar_is_active(e: AR) -> bool {
+    return e.stage.idle == false
+}
+
+# =============================================================================
+# Linear Ramp
+# =============================================================================
+
+# Simple linear ramp from start to end value
+export struct Ramp {
+    start_value: f32
+    end_value: f32
+    duration_samples: i64
+    position: i64
+    current_value: f32
+    is_active: bool
+}
+
+# Create a ramp
+export function ramp_new(start_val: f32, end_val: f32, duration: Seconds, rate: SampleRate) -> Ramp {
+    let dur: Samples = seconds_to_samples(duration, rate)
+    return Ramp {
+        start_value: start_val,
+        end_value: end_val,
+        duration_samples: dur.count,
+        position: 0,
+        current_value: start_val,
+        is_active: false
+    }
+}
+
+# Start the ramp
+export function ramp_start(r: Ramp) -> Ramp {
+    return Ramp {
+        start_value: r.start_value,
+        end_value: r.end_value,
+        duration_samples: r.duration_samples,
+        position: 0,
+        current_value: r.start_value,
+        is_active: true
+    }
+}
+
+# Set new target (for smooth parameter changes)
+export function ramp_set_target(r: Ramp, target: f32, duration: Seconds, rate: SampleRate) -> Ramp {
+    let dur: Samples = seconds_to_samples(duration, rate)
+    return Ramp {
+        start_value: r.current_value,
+        end_value: target,
+        duration_samples: dur.count,
+        position: 0,
+        current_value: r.current_value,
+        is_active: true
+    }
+}
+
+# Advance by one sample
+export function ramp_tick(r: Ramp) -> Ramp {
+    if r.is_active == false {
+        return r
+    }
+    
+    let new_position: i64 = r.position + 1
+    let progress: f32 = 0.0
+    if r.duration_samples > 0 {
+        progress = r.position / r.duration_samples
+    } else {
+        progress = 1.0
+    }
+    
+    if progress >= 1.0 {
+        return Ramp {
+            start_value: r.start_value,
+            end_value: r.end_value,
+            duration_samples: r.duration_samples,
+            position: new_position,
+            current_value: r.end_value,
+            is_active: false
+        }
+    }
+    
+    let new_value: f32 = r.start_value + progress * (r.end_value - r.start_value)
+    
+    return Ramp {
+        start_value: r.start_value,
+        end_value: r.end_value,
+        duration_samples: r.duration_samples,
+        position: new_position,
+        current_value: new_value,
+        is_active: true
+    }
+}
+
+# Get current value
+export function ramp_value(r: Ramp) -> f32 {
+    return r.current_value
+}
+
+# =============================================================================
+# Exponential Envelope (more natural sounding)
+# =============================================================================
+
+# Attempt exponential decay using repeated multiplication
+export struct ExpDecay {
+    decay_coeff: f32     # Multiply by this each sample
+    current_value: f32
+    threshold: f32       # Consider done below this value
+}
+
+# Create exponential decay from time constant
+export function exp_decay_new(time_constant_ms: f32, rate: SampleRate) -> ExpDecay {
+    # decay_coeff = e^(-1/(time_constant * sample_rate))
+    # Approximation: coeff ≈ 1 - 1/(time_constant * sample_rate)
+    let time_samples: f32 = time_constant_ms * rate.hz / 1000.0
+    let coeff: f32 = 1.0 - 1.0 / time_samples
+    if coeff < 0.0 {
+        coeff = 0.0
+    }
+    if coeff > 0.99999 {
+        coeff = 0.99999
+    }
+    return ExpDecay {
+        decay_coeff: coeff,
+        current_value: 0.0,
+        threshold: 0.0001
+    }
+}
+
+# Trigger decay (start from 1.0)
+export function exp_decay_trigger(e: ExpDecay) -> ExpDecay {
+    return ExpDecay {
+        decay_coeff: e.decay_coeff,
+        current_value: 1.0,
+        threshold: e.threshold
+    }
+}
+
+# Advance by one sample
+export function exp_decay_tick(e: ExpDecay) -> ExpDecay {
+    let new_value: f32 = e.current_value * e.decay_coeff
+    if new_value < e.threshold {
+        new_value = 0.0
+    }
+    return ExpDecay {
+        decay_coeff: e.decay_coeff,
+        current_value: new_value,
+        threshold: e.threshold
+    }
+}
+
+# Get current value
+export function exp_decay_value(e: ExpDecay) -> f32 {
+    return e.current_value
+}
