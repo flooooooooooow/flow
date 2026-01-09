@@ -1,0 +1,243 @@
+# Audio Effects Demo
+#
+# Demonstrates Flow's effect system for audio I/O abstraction.
+# The AudioIO effect lets you swap audio backends without changing DSP code.
+#
+# This shows how effects enable:
+#   - Backend-agnostic audio processing
+#   - Easy testing with mock audio
+#   - Swappable implementations (real-time vs offline)
+#
+# Run: ./flow run examples/audio_effects_demo.flow
+
+import "stdlib/audio.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/filters.flow"
+import "stdlib/audio/envelopes.flow"
+
+# =============================================================================
+# Audio I/O Effect
+# =============================================================================
+
+# Abstract audio I/O operations
+effect AudioIO {
+    # Get the sample rate
+    get_sample_rate() -> f64,
+    
+    # Get number of samples to process this block
+    get_block_size() -> i32,
+    
+    # Read input sample (mono, for simplicity)
+    read_input(index: i32) -> f32,
+    
+    # Write output sample
+    write_output(index: i32, value: f32) -> void,
+    
+    # Log a message (for debugging)
+    log(message: string) -> void,
+}
+
+# =============================================================================
+# Mock Audio Capability (for testing)
+# =============================================================================
+
+# Simulates audio I/O for testing without real audio hardware
+capability MockAudio {
+    effect AudioIO,
+    
+    function get_sample_rate() -> f64 {
+        return 44100.0
+    },
+    
+    function get_block_size() -> i32 {
+        return 64
+    },
+    
+    function read_input(index: i32) -> f32 {
+        # Generate test signal: simple ramp
+        let normalized: f32 = index / 64.0
+        return normalized * 2.0 - 1.0
+    },
+    
+    function write_output(index: i32, value: f32) -> void {
+        # Print every 16th sample for verification
+        if index % 16 == 0 {
+            printf("  [%d] = %.4f\n", index, value)
+        }
+        return void
+    },
+    
+    function log(message: string) -> void {
+        printf("[MockAudio] %s\n", message)
+        return void
+    },
+}
+
+# =============================================================================
+# Offline Render Capability (for non-realtime processing)
+# =============================================================================
+
+capability OfflineRender {
+    effect AudioIO,
+    
+    function get_sample_rate() -> f64 {
+        return 96000.0  # Higher quality for offline
+    },
+    
+    function get_block_size() -> i32 {
+        return 512  # Larger blocks for efficiency
+    },
+    
+    function read_input(index: i32) -> f32 {
+        # Silence input for synthesis
+        return 0.0
+    },
+    
+    function write_output(index: i32, value: f32) -> void {
+        # In real implementation, would write to file
+        # For demo, just sample occasionally
+        if index % 128 == 0 {
+            printf("  [%d] = %.4f\n", index, value)
+        }
+        return void
+    },
+    
+    function log(message: string) -> void {
+        printf("[Offline] %s\n", message)
+        return void
+    },
+}
+
+# =============================================================================
+# DSP Processing (uses AudioIO effect abstractly)
+# =============================================================================
+
+# Simple gain processor using effect for I/O
+function process_gain(gain: f32) -> void {
+    let block_size: i32 = AudioIO::get_block_size()
+    
+    AudioIO::log("Processing gain...")
+    
+    let i: i32 = 0
+    while i < block_size {
+        let input: f32 = AudioIO::read_input(i)
+        let output: f32 = input * gain
+        AudioIO::write_output(i, output)
+        i = i + 1
+    }
+}
+
+# Synthesizer using effect for output
+function process_synth(freq: f64) -> void {
+    let sample_rate: f64 = AudioIO::get_sample_rate()
+    let block_size: i32 = AudioIO::get_block_size()
+    let rate: SampleRate = SampleRate { hz: sample_rate }
+    
+    AudioIO::log("Synthesizing tone...")
+    
+    # Create oscillator
+    let osc: Phasor = phasor_new(freq, rate)
+    
+    # Create filter
+    let filter: Biquad = biquad_lowpass(2000.0, 0.707, rate)
+    
+    # Process block
+    let i: i32 = 0
+    while i < block_size {
+        # Generate saw wave
+        let phase: f64 = phasor_value(osc)
+        let sample: f32 = saw(phase)
+        
+        # Apply filter
+        filter = biquad_tick(filter, sample)
+        let filtered: f32 = biquad_process(filter, sample)
+        
+        # Output
+        AudioIO::write_output(i, filtered * 0.5)
+        
+        # Advance oscillator
+        osc = phasor_tick(osc)
+        
+        i = i + 1
+    }
+}
+
+# Filter sweep using effect for I/O
+function process_filter_sweep() -> void {
+    let sample_rate: f64 = AudioIO::get_sample_rate()
+    let block_size: i32 = AudioIO::get_block_size()
+    let rate: SampleRate = SampleRate { hz: sample_rate }
+    
+    AudioIO::log("Processing filter sweep...")
+    
+    # Start with low cutoff, sweep up
+    let base_cutoff: f32 = 200.0
+    let sweep_range: f32 = 4000.0
+    
+    let i: i32 = 0
+    while i < block_size {
+        # Calculate sweep position
+        let pos_f: f32 = i
+        let size_f: f32 = block_size
+        let sweep: f32 = pos_f / size_f
+        let cutoff: f32 = base_cutoff + sweep * sweep_range
+        
+        # Create filter at current cutoff
+        let filter: Biquad = biquad_lowpass(cutoff, 2.0, rate)
+        
+        # Read input and filter
+        let input: f32 = AudioIO::read_input(i)
+        let output: f32 = biquad_process(filter, input)
+        
+        AudioIO::write_output(i, output)
+        i = i + 1
+    }
+}
+
+# =============================================================================
+# Main Demo
+# =============================================================================
+
+function main() -> i32 {
+    printf("=== Flow Audio Effects Demo ===\n\n")
+    printf("This demo shows how effects abstract audio I/O.\n")
+    printf("The same DSP code works with different audio backends.\n\n")
+    
+    # Demo 1: Mock audio for testing
+    printf("--- Test 1: MockAudio (simulated I/O) ---\n")
+    handle AudioIO with MockAudio {
+        process_gain(0.5)
+    }
+    printf("\n")
+    
+    # Demo 2: Synth with mock audio
+    printf("--- Test 2: Synthesizer with MockAudio ---\n")
+    handle AudioIO with MockAudio {
+        process_synth(440.0)
+    }
+    printf("\n")
+    
+    # Demo 3: Offline rendering (different sample rate/block size)
+    printf("--- Test 3: OfflineRender (96kHz, larger blocks) ---\n")
+    handle AudioIO with OfflineRender {
+        process_synth(220.0)
+    }
+    printf("\n")
+    
+    # Demo 4: Filter sweep with mock audio
+    printf("--- Test 4: Filter sweep with MockAudio ---\n")
+    handle AudioIO with MockAudio {
+        process_filter_sweep()
+    }
+    printf("\n")
+    
+    printf("=== Demo Complete ===\n\n")
+    printf("Key takeaways:\n")
+    printf("  1. DSP code is backend-agnostic (uses AudioIO effect)\n")
+    printf("  2. Different capabilities provide different implementations\n")
+    printf("  3. MockAudio: 44.1kHz, 64 samples, test signal\n")
+    printf("  4. OfflineRender: 96kHz, 512 samples, silence input\n")
+    printf("  5. Same process_synth() works with both!\n")
+    
+    return 0
+}

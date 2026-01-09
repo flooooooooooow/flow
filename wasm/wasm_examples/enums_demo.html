@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FLOW → WASM: fibonacci</title>
+    <title>FLOW → WASM: enums_demo</title>
     <style>
         * { box-sizing: border-box; }
         body { 
@@ -57,22 +57,75 @@
 </head>
 <body>
     <div class="container">
-        <h1>🚀 FLOW → WebAssembly <span class="badge">fibonacci</span></h1>
+        <h1>🚀 FLOW → WebAssembly <span class="badge">enums_demo</span></h1>
         
         <div class="grid">
             <div class="panel">
                 <div class="panel-header">📝 FLOW Source</div>
-                <div class="panel-content">function fibonacci(n: i32) -&gt; i32 {
-    if n &lt;= 1 {
-        return n
-    } else {
-        return fibonacci(n - 1) + fibonacci(n - 2)
-    }
+                <div class="panel-content"># Enums / Algebraic Data Types Demo
+# Demonstrates sum types
+
+# Simple enum without data
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+# Enum with data (Option type)
+enum Option_i32 {
+    Some(i32),
+    None
+}
+
+# Helper constructors (use struct-like syntax for now)
+function make_red() -&gt; Color {
+    let c: Color = Color { tag: Color_Red }
+    return c
+}
+
+function make_green() -&gt; Color {
+    let c: Color = Color { tag: Color_Green }
+    return c
+}
+
+function some_i32(value: i32) -&gt; Option_i32 {
+    let opt: Option_i32 = Option_i32 { tag: Option_i32_Some }
+    return opt
+}
+
+function none_i32() -&gt; Option_i32 {
+    let opt: Option_i32 = Option_i32 { tag: Option_i32_None }
+    return opt
+}
+
+function is_some(opt: Option_i32) -&gt; bool {
+    return opt.tag == Option_i32_Some
+}
+
+function is_none(opt: Option_i32) -&gt; bool {
+    return opt.tag == Option_i32_None
 }
 
 function main() -&gt; i32 {
-    let result: i32 = fibonacci(10)
-    return result
+    printf("=== Enums Demo ===\n\n")
+    
+    # Simple enum usage
+    let red: Color = make_red()
+    let green: Color = make_green()
+    
+    printf("red.tag = %d\n", red.tag)
+    printf("green.tag = %d\n", green.tag)
+    
+    # Option usage
+    let some_val: Option_i32 = some_i32(42)
+    let none_val: Option_i32 = none_i32()
+    
+    printf("some_val is_some: %d\n", is_some(some_val))
+    printf("none_val is_none: %d\n", is_none(none_val))
+    
+    printf("\n=== End Demo ===\n")
+    return 0
 }
 </div>
             </div>
@@ -84,20 +137,76 @@ function main() -&gt; i32 {
 #include &lt;math.h&gt;
 
 
-int32_t fibonacci(int32_t n);
+typedef enum {
+    Color_Red,
+    Color_Green,
+    Color_Blue
+} Color_Tag;
+
+typedef struct {
+    Color_Tag tag;
+} Color;
+
+typedef enum {
+    Option_i32_Some,
+    Option_i32_None
+} Option_i32_Tag;
+
+typedef struct {
+    Option_i32_Tag tag;
+    union {
+        int32_t Some_value;
+    } data;
+} Option_i32;
+
+Color make_red();
+Color make_green();
+Option_i32 some_i32(int32_t value);
+Option_i32 none_i32();
+int32_t is_some(Option_i32 opt);
+int32_t is_none(Option_i32 opt);
 int32_t main();
 
-int32_t fibonacci(int32_t n) {
-    if (n &lt;= 1) {
-        return n;
-    } else {
-        return (fibonacci((n - 1)) + fibonacci((n - 2)));
-    }
+Color make_red() {
+    Color c = (Color){ .tag = Color_Red };
+    return c;
+}
+
+Color make_green() {
+    Color c = (Color){ .tag = Color_Green };
+    return c;
+}
+
+Option_i32 some_i32(int32_t value) {
+    Option_i32 opt = (Option_i32){ .tag = Option_i32_Some };
+    return opt;
+}
+
+Option_i32 none_i32() {
+    Option_i32 opt = (Option_i32){ .tag = Option_i32_None };
+    return opt;
+}
+
+int32_t is_some(Option_i32 opt) {
+    return opt.tag == Option_i32_Some;
+}
+
+int32_t is_none(Option_i32 opt) {
+    return opt.tag == Option_i32_None;
 }
 
 int32_t main() {
-    int32_t result = fibonacci(10);
-    return result;
+    printf("=== Enums Demo ===\n\n");
+    Color red = make_red();
+    Color green = make_green();
+    printf("red.tag = %d\n", red.tag);
+    printf("green.tag = %d\n", green.tag);
+    Option_i32 some_val = some_i32(42);
+    Option_i32 none_val = none_i32();
+    printf("some_val is_some: %d\n", is_some(some_val));
+    printf("none_val is_none: %d\n", is_none(none_val));
+    printf("\n=== End Demo ===\n");
+    return 0;
 }
 </div>
             </div>

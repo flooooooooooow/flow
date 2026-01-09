@@ -46,6 +46,7 @@ show_help() {
     echo "  test              Run all FLOW tests"
     echo "  test-python       Run Python unit tests"
     echo "  test-all          Run FLOW and Python tests"
+    echo "  wasm <program>    Compile to WebAssembly"
     echo "  install           Install dependencies"
     echo "  examples          List example programs"
     echo "  help              Show this help"
@@ -358,6 +359,14 @@ for f in sys.argv[1:]:
         ;;
     "test-all")
         run_all_tests
+        ;;
+    "wasm")
+        shift
+        if [ -z "$1" ]; then
+            print_error "Usage: flow wasm <program.flow>"
+            exit 1
+        fi
+        python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "$1"
         ;;
     "install")
         install_deps
