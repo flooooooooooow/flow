@@ -1,0 +1,86 @@
+# Option and Result Types Demo
+# Shows how to handle optional values and error cases
+
+import "stdlib/option.flow"
+import "stdlib/result.flow"
+
+# Example: Find first positive number
+function find_positive(a: i32, b: i32, c: i32) -> Option_i32 {
+    if a > 0 {
+        return some_i32(a)
+    }
+    if b > 0 {
+        return some_i32(b)
+    }
+    if c > 0 {
+        return some_i32(c)
+    }
+    return none_i32()
+}
+
+# Example: Parse integer (simplified simulation)
+function parse_int_simple(is_valid: bool, value: i32) -> Result_i32_string {
+    if is_valid {
+        return ok_i32(value)
+    }
+    return err_i32("invalid integer format")
+}
+
+# Example: Chain operations with Result
+function compute_ratio(a: f64, b: f64) -> Result_f64_string {
+    let result: Result_f64_string = safe_divide(a, b)
+    if is_ok_f64(result) {
+        return result
+    }
+    return err_f64("computation failed")
+}
+
+function main() -> i32 {
+    printf("=== Option Demo ===\n")
+    
+    # Find positive in (-1, -2, 5)
+    let opt1: Option_i32 = find_positive(-1, -2, 5)
+    if is_some_i32(opt1) {
+        printf("Found positive: %d\n", unwrap_i32(opt1))
+    } else {
+        printf("No positive number found\n")
+    }
+    
+    # Find positive in (-1, -2, -3) - should be None
+    let opt2: Option_i32 = find_positive(-1, -2, -3)
+    let default_value: i32 = unwrap_or_i32(opt2, 42)
+    printf("Value or default: %d\n", default_value)
+    
+    printf("\n=== Result Demo ===\n")
+    
+    # Safe division
+    let div1: Result_f64_string = safe_divide(10.0, 2.0)
+    if is_ok_f64(div1) {
+        printf("10 / 2 = %f\n", unwrap_result_f64(div1))
+    }
+    
+    let div2: Result_f64_string = safe_divide(10.0, 0.0)
+    if is_err_f64(div2) {
+        printf("Division by zero: error caught!\n")
+    }
+    
+    # Parse simulation
+    let parsed: Result_i32_string = parse_int_simple(true, 123)
+    if is_ok_i32(parsed) {
+        printf("Parsed value: %d\n", unwrap_result_i32(parsed))
+    }
+    
+    let failed_parse: Result_i32_string = parse_int_simple(false, 0)
+    let fallback: i32 = unwrap_or_result_i32(failed_parse, -1)
+    printf("Failed parse with fallback: %d\n", fallback)
+    
+    printf("\n=== Option<f32> Demo ===\n")
+    
+    let opt_f: Option_f32 = some_f32(3.14159)
+    printf("Pi approx: %f\n", unwrap_f32(opt_f))
+    
+    let none_f: Option_f32 = none_f32()
+    printf("None with default: %f\n", unwrap_or_f32(none_f, 0.0))
+    
+    return 0
+}

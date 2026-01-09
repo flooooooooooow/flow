@@ -6,7 +6,7 @@ A simple recursive descent parser for the FLOW language
 
 import re
 from typing import List, Dict, Optional, Union, Any, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 class TokenType(Enum):
@@ -116,6 +116,7 @@ class Type:
     is_reference: bool = False
     size: Optional[int] = None
     element_type: Optional['Type'] = None
+    type_args: Optional[List['Type']] = None  # Generic type arguments
 
 @dataclass
 class Parameter:
@@ -131,6 +132,7 @@ class FunctionDecl:
     attributes: List[str]
     is_exported: bool = False
     is_extern: bool = False
+    type_params: List[str] = field(default_factory=list)  # Generic type parameters like <T, U>
 
 @dataclass
 class VarDecl:
@@ -225,6 +227,8 @@ class ArrayAccess:
 class StructDecl:
     name: str
     fields: List[Parameter]
+    is_exported: bool = False
+    type_params: List[str] = field(default_factory=list)  # Generic type parameters like <T, U>
 
 @dataclass
 class EffectDecl:
@@ -588,6 +592,13 @@ class Parser:
         self.expect(TokenType.STRUCT)
         name = self.expect(TokenType.IDENTIFIER).value
         self.struct_names.add(name)
+        
+        # Parse optional type parameters: struct Foo<T, U> { ... }
+        type_params = []
+        if self.current_token.type == TokenType.LESS:
+            type_params = self.parse_type_parameters()
+            # Also register generic struct name (without params) for type resolution
+        
         self.expect(TokenType.LBRACE)
         
         fields = []
@@ -601,11 +612,17 @@ class Parser:
                 self.advance()
         
         self.expect(TokenType.RBRACE)
-        return StructDecl(name, fields)
+        return StructDecl(name, fields, type_params=type_params)
     
     def parse_function(self) -> FunctionDecl:
         self.expect(TokenType.FUNCTION)
         name = self.expect(TokenType.IDENTIFIER).value
+        
+        # Parse optional type parameters: function foo<T, U>(...)
+        type_params = []
+        if self.current_token.type == TokenType.LESS:
+            type_params = self.parse_type_parameters()
+        
         self.expect(TokenType.LPAREN)
         
         parameters = []
@@ -621,7 +638,34 @@ class Parser:
         
         body = self.parse_block()
         
-        return FunctionDecl(name, parameters, return_type, body, [])
+        return FunctionDecl(name, parameters, return_type, body, [], type_params=type_params)
+    
+    def parse_type_parameters(self) -> List[str]:
+        """Parse generic type parameters: <T> or <T, U> or <T: Trait>"""
+        self.expect(TokenType.LESS)  # Consume <
+        
+        params = []
+        # First parameter
+        param_name = self.expect(TokenType.IDENTIFIER).value
+        params.append(param_name)
+        
+        # Optional bound: <T: Trait>  (parse but ignore for now)
+        if self.current_token.type == TokenType.COLON:
+            self.advance()
+            self.expect(TokenType.IDENTIFIER)  # Trait name, ignored for now
+        
+        # Additional parameters
+        while self.current_token.type == TokenType.COMMA:
+            self.advance()
+            param_name = self.expect(TokenType.IDENTIFIER).value
+            params.append(param_name)
+            
+            if self.current_token.type == TokenType.COLON:
+                self.advance()
+                self.expect(TokenType.IDENTIFIER)  # Trait name
+        
+        self.expect(TokenType.GREATER)  # Consume >
+        return params
     
     def parse_parameters(self) -> List[Parameter]:
         parameters = []
@@ -681,8 +725,19 @@ class Parser:
                 self.advance()
                 self.expect(TokenType.RBRACKET)
                 return Type(f"array_{type_name}", element_type=Type(type_name))
+            # Check for generic type application: Option<T> or Result<T, E>
+            elif self.current_token.type == TokenType.LESS:
+                self.advance()  # consume <
+                type_args = [self.parse_type()]
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    type_args.append(self.parse_type())
+                self.expect(TokenType.GREATER)
+                # Create a type name like Option_i32 or Result_i32_string
+                type_args_str = '_'.join(t.name for t in type_args)
+                return Type(f"{type_name}_{type_args_str}", type_args=type_args)
             else:
-                # Simple type
+                # Simple type (or type variable like T)
                 return Type(type_name)
         
         elif self.current_token.type in [TokenType.I8, TokenType.I16, TokenType.I32, TokenType.I64, TokenType.I128,
