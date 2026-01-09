@@ -42,6 +42,7 @@ show_help() {
     echo "  compile <program>  Compile program only"
     echo "  mlir <program>     Generate MLIR only"
     echo "  mlir-run <program> Compile via MLIR and run"
+    echo "  jit <program>      JIT compile and run (fastest)"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
     echo "  fmt <files...>    Format FLOW source files"
     echo "  test              Run all FLOW tests"
@@ -378,6 +379,42 @@ case "${1:-help}" in
         EXIT_CODE=$?
         echo "----------------------------------------"
         print_success "Program finished with exit code: $EXIT_CODE"
+        ;;
+    "jit")
+        shift
+        if [ -z "$1" ]; then
+            print_error "Usage: flow jit <program.flow>"
+            exit 1
+        fi
+        check_deps
+        print_info "JIT compiling $1..."
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+
+from flow.mlir_generator import flow_to_mlir
+from flow.mlir_jit import MLIRJIT
+from flow.module_resolver import ModuleResolver
+
+# Resolve modules
+resolver = ModuleResolver('$1')
+try:
+    declarations = resolver.resolve()
+except Exception as e:
+    print(f'Error: {e}')
+    sys.exit(1)
+
+# Generate MLIR
+mlir_code = flow_to_mlir(declarations, source_file='$1')
+
+# JIT compile and run
+jit = MLIRJIT()
+try:
+    result = jit.jit_compile_and_run(mlir_code, 'main')
+    print(f'Result: {result}')
+finally:
+    jit.cleanup()
+"
         ;;
     "transpile")
         shift
