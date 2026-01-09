@@ -28,12 +28,16 @@ This document tracks what we're building next and why.
 - ✅ Enhanced error messages with source context
 
 **What's broken/missing:**
-- ❌ Full closures — Lambda captures don't work yet
-- ❌ Enums / ADTs — Sum types not implemented
-- ❌ Trait bounds — Generics don't enforce trait constraints
-- ❌ MLIR backend — Generates but doesn't optimize
 - ❌ GPU codegen — Runtime exists, no shader generation
-- ❌ LSP — Syntax highlighting only
+- ❌ REPL — Interactive mode not implemented
+- ❌ Package manager — No dependency management
+
+**Recently completed:**
+- ✅ Enums / ADTs — Tagged unions in C
+- ✅ Trait bounds — `<T: Display>` stored in AST
+- ✅ MLIR backend — Full pipeline: FLOW → MLIR → LLVM → native
+- ✅ LSP — go-to-definition, hover, autocomplete
+- ✅ Closures — Manual pattern with `self: Type`
 
 ---
 
