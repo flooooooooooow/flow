@@ -41,6 +41,7 @@ This document tracks what we're building next and why.
 - ✅ Package manager — `flow init`, `flow add`, `flow build`
 - ✅ GPU codegen — `@gpu` decorator, Metal shader generation
 - ✅ Stdlib expansion — POSIX, collections, networking, concurrency, strings
+- ✅ Documentation — Tutorials, getting started, stdlib reference
 
 ---
 
