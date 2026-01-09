@@ -82,4 +82,4 @@ function recursive_gcd(a: i32, b: i32) -> i32 {
 
 - [Data Structures](../data-structures/) - Data structures used by algorithms
 - [Performance Examples](../performance/) - Performance optimization
-- [Standard Library - Math](../../library/math.md) - Built-in mathematical functions
+- [Standard Library - Math](../../library/stdlib-reference.md) - Built-in mathematical functions

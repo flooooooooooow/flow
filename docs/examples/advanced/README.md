@@ -299,10 +299,9 @@ function safe_get<T, n>(v: Vector<T, n>, i: i32) -> T {
 
 ## Related Topics
 
-- [Language Reference - Metaprogramming](../../language/metaprogramming.md) - Metaprogramming features
-- [JIT Compiler](../../reference/jit.md) - JIT system documentation
-- [Compiler Architecture](../../reference/compiler.md) - Compiler internals
-- [Research Papers](../../research/) - Theoretical foundations
+- [Language Specification](../../LANGUAGE_SPEC.md) - Full language reference
+- [Development Guide](../../DEVELOPMENT.md) - Compiler internals
+- [Research Papers](../../research/turing_proof.md) - Theoretical foundations
 
 ## Further Reading
 

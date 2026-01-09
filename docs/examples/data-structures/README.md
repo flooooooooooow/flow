@@ -67,4 +67,4 @@ struct Car {
 
 - [Algorithms](../algorithms/) - Algorithms using data structures
 - [Graphics Examples](../graphics/) - Graphics data structures
-- [Language Reference - Structs](../../language/structs.md) - Complete struct documentation
+- [Language Reference - Structs](../../LANGUAGE_SPEC.md) - Complete struct documentation

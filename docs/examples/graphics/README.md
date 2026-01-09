@@ -97,7 +97,7 @@ FLOW supports multiple color representations:
 ## Related Topics
 
 - [Performance Examples](../performance/) - Graphics optimization
-- [Graphics Module](../../library/graphics.md) - Graphics API reference
+- [Graphics Module](../../library/stdlib-reference.md) - Graphics API reference
 - [Language Reference - Graphics](../../language/graphics.md) - Graphics language features
 
 ## Viewing Output

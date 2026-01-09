@@ -441,6 +441,6 @@ Compute the gradient of `f(x) = sin(x²)` using the autodiff library.
 ## Reference
 
 - [Language Specification](../LANGUAGE_SPEC.md)
-- [Implementation Map](../IMPLEMENTATION_MAP.md)
 - [Grammar (EBNF)](../grammar.ebnf)
-- [API Reference](../reference/api.md)
+- [Standard Library API](../library/stdlib-reference.md)
+- [Development Guide](../DEVELOPMENT.md)

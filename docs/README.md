@@ -1,76 +1,75 @@
 # FLOW Documentation
 
-## 📖 Single Source of Truth
+Welcome to the FLOW programming language documentation.
 
-**[LANGUAGE_SPEC.md](LANGUAGE_SPEC.md)** — The authoritative language specification.
-Everything else references this. If there's a conflict, the spec wins.
+## Quick Start
 
----
+| Goal | Document |
+|------|----------|
+| **Install & Run** | [Getting Started](getting-started.md) |
+| **Learn FLOW** | [Tutorials](tutorials/beginner.md) |
+| **Language Reference** | [Language Spec](LANGUAGE_SPEC.md) |
+| **Standard Library** | [API Reference](library/stdlib-reference.md) |
+| **See Examples** | [Examples](examples/README.md) |
 
-## Documentation Hierarchy
+## Documentation Structure
 
 ```
-LANGUAGE_SPEC.md          ← AUTHORITATIVE (what IS implemented)
-│
-├── getting-started.md    ← How to start (practical, links to spec)
-│
-├── tutorials/            ← Learning paths (teach concepts, link spec for details)
+docs/
+├── getting-started.md      # Installation, first program, commands
+├── tutorials/              # Learning paths (beginner → advanced)
 │   ├── beginner.md
-│   ├── intermediate.md  
+│   ├── intermediate.md
 │   └── advanced.md
-│
-├── examples/             ← Working code (demonstrates spec features)
+├── language/               # Language features explained
+│   ├── overview.md
+│   ├── syntax.md
+│   ├── types.md
+│   └── ...
+├── library/                # Standard library reference
+│   └── stdlib-reference.md # Complete API documentation
+├── examples/               # Working code examples
 │   ├── basic/
 │   ├── algorithms/
-│   ├── data-structures/
 │   ├── effects/
-│   ├── graphics/
 │   └── gpu/
-│
-├── library/              ← Stdlib reference (links to spec for types)
-│   └── *.md
-│
-└── reference/            ← Quick lookups (derived from spec)
-    └── api.md
+├── LANGUAGE_SPEC.md        # Authoritative language specification
+└── DEVELOPMENT.md          # Compiler internals & contributing
 ```
 
-## Principles
+## Build Documentation
 
-1. **No Redundancy**: Don't repeat type tables, syntax definitions, or feature lists.
-   Link to the spec section instead.
+```bash
+# Install MkDocs
+pip3 install mkdocs mkdocs-material pymdown-extensions
 
-2. **Maximum Variance**: Each doc serves ONE purpose:
-   - Spec → What exists
-   - Tutorial → How to learn
-   - Example → Working code
-   - Reference → Quick lookup
+# Serve locally (auto-reload)
+python3 -m mkdocs serve
+# Open http://127.0.0.1:8000
 
-3. **Status Tracking**: The spec uses ✅ ⚠️ ❌ for implementation status.
-   All other docs should match or link to the spec's status.
+# Build static HTML
+python3 -m mkdocs build
+# Output in site/
 
----
-
-## Quick Links
-
-| I want to... | Go to |
-|--------------|-------|
-| Know what's implemented | [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) |
-| Start coding | [getting-started.md](getting-started.md) |
-| Learn step-by-step | [tutorials/](tutorials/) |
-| See working examples | [examples/](examples/) |
-| Look up stdlib | [library/](library/) |
-| Understand the compiler | [project/](project/) |
-
----
+# Deploy to GitHub Pages
+python3 -m mkdocs gh-deploy
+```
 
 ## Status
 
-| Component | Spec | Impl | Tests |
-|-----------|------|------|-------|
-| Lexer | ✅ | ✅ | ⚠️ |
-| Parser | ✅ | ✅ | ⚠️ |
-| C Backend | ✅ | ✅ | ⚠️ |
-| MLIR Backend | ⚠️ | ⚠️ | ⚠️ |
-| Effect System | ✅ | ✅ | ✅ |
-| Module System | ✅ | ✅ | ⚠️ |
-| WASM | ⚠️ | ⚠️ | ⚠️ |
+| Component | Status |
+|-----------|--------|
+| Lexer/Parser | ✅ Complete |
+| C Backend | ✅ Complete |
+| MLIR Backend | ✅ Working |
+| Effect System | ✅ Complete |
+| Type System | ✅ Generics, Traits |
+| LSP | ✅ Go-to-def, Hover |
+| REPL | ✅ Interactive |
+| Package Manager | ✅ Basic |
+| GPU Codegen | ✅ Metal |
+| Standard Library | ✅ Expanded |
+
+---
+
+*FLOW v0.3.0 — AI-Generated Language Infrastructure*

@@ -286,9 +286,9 @@ export fn open_file(path: string) -> File;
 
 ## Related Topics
 
-- [Language Reference - Modules](../../language/modules.md) - Complete module documentation
-- [Standard Library Overview](../../library/overview.md) - Standard library modules
-- [Package Management](../../reference/packages.md) - Package system reference
+- [Language Reference - Modules](../../LANGUAGE_SPEC.md) - Complete module documentation
+- [Standard Library Overview](../../library/stdlib-reference.md) - Standard library modules
+- [Package Management](../../DEVELOPMENT.md) - Package system reference
 - [Project Structure](../../getting-started.md#project-structure) - Project organization
 
 ## Advanced Topics

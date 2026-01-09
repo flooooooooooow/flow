@@ -146,8 +146,8 @@ Registers -> L1 Cache -> L2 Cache -> L3 Cache -> Main Memory
 
 - [GPU Examples](../gpu/) - GPU parallel programming
 - [Graphics Examples](../graphics/) - Graphics performance
-- [Language Reference - Performance](../../language/performance.md) - Performance language features
-- [Standard Library - Profiling](../../library/profiling.md) - Profiling tools
+- [Language Reference - Performance](../../LANGUAGE_SPEC.md) - Performance language features
+- [Standard Library - Profiling](../../library/stdlib-reference.md) - Profiling tools
 
 ## Further Reading
 

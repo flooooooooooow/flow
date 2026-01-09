@@ -382,10 +382,10 @@ Commands:
 |------|----------|
 | Learn the language in depth | [docs/LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) |
 | See more examples | [examples/](../examples/) |
-| Understand effects | [docs/language/effects.md](language/effects.md) |
+| Understand effects | [docs/LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) |
 | Use autodiff | [docs/library/autodiff.md](library/autodiff.md) |
 | Write GPU code | [examples/gpu/](../examples/gpu/) |
-| Contribute | [docs/project/CONTRIBUTING.md](project/CONTRIBUTING.md) |
+| Contribute | [docs/project/../project/CONTRIBUTING.md](project/../project/CONTRIBUTING.md) |
 
 ---
 
