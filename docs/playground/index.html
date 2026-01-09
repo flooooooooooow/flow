@@ -1055,8 +1055,6 @@ fib(7) = 13
 fib(8) = 21
 fib(9) = 34
 `;
-            } else if (code.includes('@gpu')) {
-                output += '\n[GPU kernels compiled - run ./flow gpu to generate Metal shaders]';
             } else if (code.includes('train_xor') || code.includes('neural') || code.includes('net2x2x1')) {
                 output = `Training XOR neural network...
 Epoch 0, Loss: 0.375000
@@ -1074,7 +1072,23 @@ Trained predictions:
 `;
             }
             
-            output += '\nProgram exited with code 0';
+            // For GPU code, show the generated Metal shader
+            if (code.includes('@gpu')) {
+                output = '✓ GPU kernels compiled successfully!\n\n';
+                output += '═══════════════════════════════════════\n';
+                output += '  Generated Metal Shader (see C tab)\n';
+                output += '═══════════════════════════════════════\n\n';
+                
+                // Count kernels
+                const gpuFuncs = [...code.matchAll(/@gpu\s*\n\s*function\s+(\w+)/g)];
+                output += `Found ${gpuFuncs.length} GPU kernel(s):\n`;
+                for (const f of gpuFuncs) {
+                    output += `  • ${f[1]}\n`;
+                }
+                output += '\nSwitch to the "Generated C" tab to see the Metal shader code!';
+            }
+            
+            output += '\n\nProgram exited with code 0';
 
             // Generate AST representation based on actual code
             const ast = generateAST(code);
@@ -1128,8 +1142,13 @@ Trained predictions:
             return ast;
         }
         
-        // Generate C code
+        // Generate C code (or Metal shader for @gpu code)
         function generateC(code) {
+            // Check if this is GPU code
+            if (code.includes('@gpu')) {
+                return generateMetal(code);
+            }
+            
             let c = '#include <stdio.h>\n#include <stdlib.h>\n#include <math.h>\n\n';
             
             // Convert structs
@@ -1187,6 +1206,120 @@ Trained predictions:
             }
             
             return c;
+        }
+        
+        // Generate Metal shader code from @gpu functions
+        function generateMetal(code) {
+            let metal = `// ═══════════════════════════════════════════════════════════════
+// Generated Metal Shader from FLOW
+// ═══════════════════════════════════════════════════════════════
+
+#include <metal_stdlib>
+using namespace metal;
+
+`;
+            
+            // Find all @gpu functions
+            const gpuPattern = /@gpu\s*\n\s*function\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*(\w+))?\s*\{([^]*?)\n\}/g;
+            
+            for (const match of code.matchAll(gpuPattern)) {
+                const name = match[1];
+                const params = match[2];
+                const body = match[4];
+                
+                metal += `kernel void ${name}(\n`;
+                
+                // Convert parameters to Metal buffer bindings
+                const paramList = params.split(',').map(p => p.trim()).filter(p => p);
+                let bufferIdx = 0;
+                const metalParams = [];
+                
+                for (const param of paramList) {
+                    const parts = param.split(':').map(p => p.trim());
+                    if (parts.length === 2) {
+                        const pname = parts[0];
+                        const ptype = parts[1];
+                        
+                        if (ptype.includes('array<')) {
+                            // Array parameter -> device buffer
+                            const innerType = ptype.match(/array<(\w+)>/)?.[1] || 'float';
+                            const metalType = flowTypeToMetal(innerType);
+                            metalParams.push(`    device ${metalType}* ${pname} [[buffer(${bufferIdx++})]]`);
+                        } else {
+                            // Scalar parameter -> constant buffer
+                            const metalType = flowTypeToMetal(ptype);
+                            metalParams.push(`    constant ${metalType}& ${pname} [[buffer(${bufferIdx++})]]`);
+                        }
+                    }
+                }
+                
+                // Add thread ID parameter
+                metalParams.push(`    uint tid [[thread_position_in_grid]]`);
+                
+                metal += metalParams.join(',\n') + '\n) {\n';
+                
+                // Convert body
+                const bodyLines = body.split('\n').filter(l => l.trim());
+                for (let line of bodyLines) {
+                    line = line.trim();
+                    if (!line || line.startsWith('//')) {
+                        if (line) metal += `    ${line}\n`;
+                        continue;
+                    }
+                    
+                    // Convert gpu_thread_id() to tid
+                    line = line.replace(/gpu_thread_id\(\)/g, 'tid');
+                    
+                    // Convert let declarations
+                    line = line.replace(/let\s+(\w+)\s*:\s*(\w+)\s*=/, (m, n, t) => `${flowTypeToMetal(t)} ${n} =`);
+                    line = line.replace(/let\s+(\w+)\s*=/, 'auto $1 =');
+                    
+                    // Convert for loops
+                    line = line.replace(/for\s+(\w+)\s+in\s+(\d+)\.\.(\w+)/, 'for (int $1 = $2; $1 < $3; $1++)');
+                    
+                    // Add semicolons if needed
+                    if (!line.endsWith(';') && !line.endsWith('{') && !line.endsWith('}') && 
+                        !line.startsWith('if') && !line.startsWith('for') && !line.startsWith('while')) {
+                        line += ';';
+                    }
+                    
+                    metal += `    ${line}\n`;
+                }
+                
+                metal += `}\n\n`;
+            }
+            
+            // Add usage example
+            metal += `// ═══════════════════════════════════════════════════════════════
+// Usage from Swift:
+// ═══════════════════════════════════════════════════════════════
+//
+// let library = device.makeDefaultLibrary()!
+// let kernel = library.makeFunction(name: "vector_add")!
+// let pipeline = device.makeComputePipelineState(function: kernel)
+//
+// let commandBuffer = commandQueue.makeCommandBuffer()!
+// let encoder = commandBuffer.makeComputeCommandEncoder()!
+// encoder.setComputePipelineState(pipeline)
+// encoder.setBuffer(bufferA, offset: 0, index: 0)
+// encoder.setBuffer(bufferB, offset: 0, index: 1)
+// encoder.setBuffer(bufferOut, offset: 0, index: 2)
+// encoder.dispatchThreads(...)
+// encoder.endEncoding()
+// commandBuffer.commit()
+`;
+            
+            return metal;
+        }
+        
+        function flowTypeToMetal(type) {
+            const map = {
+                'i32': 'int', 'i64': 'long', 'i8': 'char', 'i16': 'short',
+                'u32': 'uint', 'u64': 'ulong', 'u8': 'uchar', 'u16': 'ushort',
+                'f32': 'float', 'f64': 'double',
+                'bool': 'bool', 'void': 'void'
+            };
+            return map[type] || type;
         }
         
         function flowTypeToC(type) {
