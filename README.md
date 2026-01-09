@@ -46,6 +46,8 @@
 
 ## Quick Start
 
+**🎮 [Try FLOW in the Web Playground](docs/playground/index.html)** — No installation required!
+
 ```bash
 # Clone and run
 git clone https://github.com/yourusername/flow-lang.git
