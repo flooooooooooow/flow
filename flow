@@ -51,6 +51,10 @@ show_help() {
     echo "  wasm <program>    Compile to WebAssembly"
     echo "  install           Install dependencies"
     echo "  repl              Start interactive REPL"
+    echo "  init [name]       Initialize a new project"
+    echo "  add <package>     Add a dependency"
+    echo "  build             Build the project"
+    echo "  clean             Clean build artifacts"
     echo "  examples          List example programs"
     echo "  help              Show this help"
     echo ""
@@ -462,6 +466,48 @@ import sys
 sys.path.insert(0, '$SCRIPT_DIR/src')
 from flow.repl import main
 main()
+"
+        ;;
+    "init")
+        shift
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager()
+pm.init('$1' if '$1' else None)
+"
+        ;;
+    "add")
+        shift
+        if [ -z "$1" ]; then
+            print_error "Usage: flow add <package>"
+            exit 1
+        fi
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager()
+pm.add('$1')
+"
+        ;;
+    "build")
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager()
+pm.build()
+"
+        ;;
+    "clean")
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager()
+pm.clean()
 "
         ;;
     "examples")
