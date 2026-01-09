@@ -1,0 +1,51 @@
+import "stdlib/autodiff.flow"
+
+# Classic autodiff benchmark:
+# Rosenbrock function (1D slice)
+#
+# f(x) = (1 − x)² + 100(x² − 1)²
+#
+# Global minimum at x = 1
+function classic_autodiff_example() -> void {
+    let x: Dual = dx(0.8)   # track derivative wrt x
+
+    let term1: Dual = sq_diff(x, 1.0)                  # (1 - x)²
+    let x_sq: Dual = sq(x)
+    let term2: Dual = smul(100.0, sq_diff(x_sq, 1.0))  # 100(x² - 1)²
+
+    let f: Dual = dual_add(term1, term2)
+
+    printf("Rosenbrock function at x=0.8:\n")
+    printf("f(x)    = %f\n", f.val)
+    printf("df/dx   = %f\n", f.grad)
+}
+
+# Another canonical example:
+# Logistic regression loss for a single sample
+#
+# L(w) = -[ y log σ(w) + (1-y) log(1-σ(w)) ]
+function logistic_loss_example() -> void {
+    let w: Dual = dx(-0.4)
+    let y: f32 = 1.0
+
+    let p: Dual = sigmoid(w)
+    let log_p: Dual = ln(p)
+    let one_minus_p: Dual = rsub(1.0, p)
+    let log_one_minus_p: Dual = ln(one_minus_p)
+    
+    let loss_pos: Dual = smul(y, log_p)
+    let loss_neg: Dual = smul(1.0 - y, log_one_minus_p)
+
+    let L: Dual = neg(dual_add(loss_pos, loss_neg))
+
+    printf("\nLogistic loss at w=-0.4, y=1:\n")
+    printf("sigma(w) = %f\n", p.val)
+    printf("L(w)     = %f\n", L.val)
+    printf("dL/dw    = %f\n", L.grad)
+}
+
+function main() -> i32 {
+    classic_autodiff_example()
+    logistic_loss_example()
+    return 0
+}

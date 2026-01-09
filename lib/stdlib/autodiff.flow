@@ -227,29 +227,89 @@ export function d(x: f32) -> Dual {
 # SCALAR OPERATIONS - Operate with plain floats directly
 # =============================================================================
 
-# Add a constant
+# Add a constant (Dual + float)
 export function add(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val + b, grad: a.grad }
 }
 
-# Subtract a constant
+# Add constant on left (float + Dual)
+export function addc(a: f32, b: Dual) -> Dual {
+    return Dual { val: a + b.val, grad: b.grad }
+}
+
+# Subtract a constant (Dual - float)
 export function sub(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val - b, grad: a.grad }
 }
 
-# Subtract from a constant  
+# Subtract from a constant (float - Dual)
 export function rsub(a: f32, b: Dual) -> Dual {
     return Dual { val: a - b.val, grad: -b.grad }
 }
 
-# Multiply by a constant
+# Multiply by a constant (Dual * float)
 export function mul(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val * b, grad: a.grad * b }
 }
 
-# Divide by a constant
-export function div(a: Dual, b: f32) -> Dual {
+# Multiply with constant on left (float * Dual)
+export function smul(a: f32, b: Dual) -> Dual {
+    return Dual { val: a * b.val, grad: a * b.grad }
+}
+
+# Alias: scale(scalar, dual) - same as smul  
+export function scale(a: f32, b: Dual) -> Dual {
+    return Dual { val: a * b.val, grad: a * b.grad }
+}
+
+# Divide by a constant (Dual / float) - named 'divs' to avoid C stdlib conflict
+export function divs(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val / b, grad: a.grad / b }
+}
+
+# Negate
+export function neg(a: Dual) -> Dual {
+    return Dual { val: -a.val, grad: -a.grad }
+}
+
+# =============================================================================
+# SHORT ALIASES FOR COMMON TRANSCENDENTALS
+# =============================================================================
+# Note: These delegate to dual_* versions to avoid shadowing C math functions
+
+# Sigmoid (short alias)
+export function sigmoid(x: Dual) -> Dual {
+    return dual_sigmoid(x)
+}
+
+# Natural log (short alias) 
+export function ln(x: Dual) -> Dual {
+    return dual_log(x)
+}
+
+# Alias: log = ln for those who prefer log()
+export function log(x: Dual) -> Dual {
+    return dual_log(x)
+}
+
+# Exponential (short alias)
+export function e(x: Dual) -> Dual {
+    return dual_exp(x)
+}
+
+# Sine (short alias) - use dual_sin for Duals
+export function sinD(x: Dual) -> Dual {
+    return dual_sin(x)
+}
+
+# Cosine (short alias) - use dual_cos for Duals  
+export function cosD(x: Dual) -> Dual {
+    return dual_cos(x)
+}
+
+# Tanh (short alias) - use dual_tanh for Duals
+export function tanhD(x: Dual) -> Dual {
+    return dual_tanh(x)
 }
 
 # =============================================================================
