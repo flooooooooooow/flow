@@ -1,0 +1,10 @@
+function emit(message: string) -> void {
+    return void
+}
+
+capability ConsoleLogger {
+    effect Log,
+    function emit(message: string) -> void {
+        return void
+    }
+}
