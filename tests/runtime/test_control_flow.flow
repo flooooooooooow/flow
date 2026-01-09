@@ -1,0 +1,119 @@
+# Runtime test: Control flow statements
+# Returns 0 if all tests pass, non-zero otherwise
+
+function test_if_true() -> bool {
+    let x: i32 = 5
+    if x > 0 {
+        return true
+    }
+    return false
+}
+
+function test_if_false() -> bool {
+    let x: i32 = -5
+    if x > 0 {
+        return false
+    }
+    return true
+}
+
+function test_if_else() -> bool {
+    let x: i32 = -1
+    let result: i32 = 0
+    if x > 0 {
+        result = 1
+    } else {
+        result = -1
+    }
+    return result == -1
+}
+
+function test_elif() -> bool {
+    let x: i32 = 0
+    let result: i32 = 0
+    if x > 0 {
+        result = 1
+    } elif x < 0 {
+        result = -1
+    } else {
+        result = 0
+    }
+    return result == 0
+}
+
+function test_while_loop() -> bool {
+    let sum: i32 = 0
+    let i: i32 = 1
+    while i <= 5 {
+        sum = sum + i
+        i = i + 1
+    }
+    # 1 + 2 + 3 + 4 + 5 = 15
+    return sum == 15
+}
+
+function test_for_loop() -> bool {
+    let sum: i32 = 0
+    for i in 1 to 6 {
+        sum = sum + i
+    }
+    # 1 + 2 + 3 + 4 + 5 = 15
+    return sum == 15
+}
+
+function test_for_loop_step() -> bool {
+    let sum: i32 = 0
+    for i in 0 to 10 step 2 {
+        sum = sum + i
+    }
+    # 0 + 2 + 4 + 6 + 8 = 20
+    return sum == 20
+}
+
+function test_nested_loops() -> bool {
+    let count: i32 = 0
+    for i in 0 to 3 {
+        for j in 0 to 3 {
+            count = count + 1
+        }
+    }
+    return count == 9
+}
+
+function main() -> i32 {
+    if !test_if_true() {
+        printf("FAIL: if_true\n")
+        return 1
+    }
+    if !test_if_false() {
+        printf("FAIL: if_false\n")
+        return 2
+    }
+    if !test_if_else() {
+        printf("FAIL: if_else\n")
+        return 3
+    }
+    if !test_elif() {
+        printf("FAIL: elif\n")
+        return 4
+    }
+    if !test_while_loop() {
+        printf("FAIL: while_loop\n")
+        return 5
+    }
+    if !test_for_loop() {
+        printf("FAIL: for_loop\n")
+        return 6
+    }
+    if !test_for_loop_step() {
+        printf("FAIL: for_loop_step\n")
+        return 7
+    }
+    if !test_nested_loops() {
+        printf("FAIL: nested_loops\n")
+        return 8
+    }
+    
+    printf("All control flow tests passed\n")
+    return 0
+}

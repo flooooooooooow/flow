@@ -56,6 +56,7 @@ show_help() {
     echo "                    --verbose   Show error details"
     echo "  test-strict       Shortcut for: test --strict"
     echo "  test-runtime      Run runtime tests (compile + execute)"
+    echo "  test-mlir         Run MLIR verification (requires LLVM)"
     echo "  test-python       Run Python unit tests"
     echo "  test-all          Run FLOW + Python tests"
     echo ""
@@ -465,6 +466,95 @@ run_runtime_tests() {
     fi
 }
 
+# Run MLIR verification tests (optional - requires MLIR toolchain)
+run_mlir_tests() {
+    print_info "Running MLIR verification tests..."
+    
+    # Check if MLIR tools are available
+    if ! command -v "$LLVM_PATH/mlir-opt" &> /dev/null; then
+        print_warning "MLIR tools not found. Skipping MLIR verification tests."
+        print_info "Install with: brew install llvm"
+        return 0  # Skip, don't fail
+    fi
+    
+    local mlir_test_dir="$SCRIPT_DIR/tests/mlir"
+    local build_dir="/tmp/flow_mlir_test_$$"
+    mkdir -p "$build_dir"
+    
+    # If no dedicated MLIR tests, use a subset of core tests
+    local test_files=()
+    if [ -d "$mlir_test_dir" ]; then
+        while IFS= read -r -d '' file; do
+            test_files+=("$file")
+        done < <(find "$mlir_test_dir" -name "*.flow" -print0 2>/dev/null)
+    fi
+    
+    # Also test a few core programs
+    for core_test in "tests/core/hello_world.flow" "tests/core/fibonacci.flow" "tests/core/loops.flow"; do
+        if [ -f "$SCRIPT_DIR/$core_test" ]; then
+            test_files+=("$SCRIPT_DIR/$core_test")
+        fi
+    done
+    
+    if [ ${#test_files[@]} -eq 0 ]; then
+        print_warning "No MLIR test files found."
+        rm -rf "$build_dir"
+        return 0
+    fi
+    
+    local total=0
+    local passed=0
+    local failed=0
+    local skipped=0
+    
+    for program in "${test_files[@]}"; do
+        total=$((total + 1))
+        local rel_path=${program#$SCRIPT_DIR/}
+        local basename=$(basename "$program" .flow)
+        local mlir_file="$build_dir/${basename}.mlir"
+        
+        # Step 1: Generate MLIR
+        local gen_output
+        gen_output=$(python3 -m "$FLOWC_MODULE" "$program" --mlir --lenient -o "$mlir_file" 2>&1)
+        if [ $? -ne 0 ]; then
+            print_error "✗ $rel_path (MLIR generation failed)"
+            failed=$((failed + 1))
+            continue
+        fi
+        
+        # Step 2: Verify MLIR with mlir-opt
+        local verify_output
+        verify_output=$("$LLVM_PATH/mlir-opt" "$mlir_file" --verify-diagnostics 2>&1)
+        local verify_status=$?
+        
+        # mlir-opt may fail for some dialects - check if it's a verification failure vs missing dialect
+        if [ $verify_status -ne 0 ]; then
+            if echo "$verify_output" | grep -q "unknown dialect\|unregistered operation"; then
+                print_warning "⊘ $rel_path (skipped: dialect not available)"
+                skipped=$((skipped + 1))
+            else
+                print_error "✗ $rel_path (MLIR verification failed)"
+                failed=$((failed + 1))
+            fi
+            continue
+        fi
+        
+        print_success "✓ $rel_path"
+        passed=$((passed + 1))
+    done
+    
+    # Cleanup
+    rm -rf "$build_dir"
+    
+    echo "----------------------------------------"
+    print_info "MLIR tests: $passed passed, $failed failed, $skipped skipped (of $total)"
+    
+    if [ $failed -gt 0 ]; then
+        return 1
+    fi
+    return 0
+}
+
 # Run all tests (FLOW + Runtime + Python)
 run_all_tests() {
     print_info "Running all tests..."
@@ -692,6 +782,10 @@ for f in sys.argv[1:]:
     "test-runtime")
         check_deps
         run_runtime_tests
+        ;;
+    "test-mlir")
+        check_deps
+        run_mlir_tests
         ;;
     "test-python")
         run_python_tests

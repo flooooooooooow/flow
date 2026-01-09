@@ -1,0 +1,78 @@
+# Runtime test: Struct creation and field access
+# Returns 0 if all tests pass, non-zero otherwise
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+struct Rectangle {
+    width: i32,
+    height: i32
+}
+
+function make_point(x: i32, y: i32) -> Point {
+    return Point { x: x, y: y }
+}
+
+function point_sum(p: Point) -> i32 {
+    return p.x + p.y
+}
+
+function rect_area(r: Rectangle) -> i32 {
+    return r.width * r.height
+}
+
+function test_struct_creation() -> bool {
+    let p: Point = Point { x: 10, y: 20 }
+    return p.x == 10 && p.y == 20
+}
+
+function test_struct_field_access() -> bool {
+    let p: Point = Point { x: 5, y: 7 }
+    let sum: i32 = p.x + p.y
+    return sum == 12
+}
+
+function test_struct_from_function() -> bool {
+    let p: Point = make_point(3, 4)
+    return p.x == 3 && p.y == 4
+}
+
+function test_struct_as_parameter() -> bool {
+    let p: Point = Point { x: 6, y: 8 }
+    let result: i32 = point_sum(p)
+    return result == 14
+}
+
+function test_struct_computation() -> bool {
+    let r: Rectangle = Rectangle { width: 5, height: 4 }
+    let area: i32 = rect_area(r)
+    return area == 20
+}
+
+function main() -> i32 {
+    if !test_struct_creation() {
+        printf("FAIL: struct_creation\n")
+        return 1
+    }
+    if !test_struct_field_access() {
+        printf("FAIL: struct_field_access\n")
+        return 2
+    }
+    if !test_struct_from_function() {
+        printf("FAIL: struct_from_function\n")
+        return 3
+    }
+    if !test_struct_as_parameter() {
+        printf("FAIL: struct_as_parameter\n")
+        return 4
+    }
+    if !test_struct_computation() {
+        printf("FAIL: struct_computation\n")
+        return 5
+    }
+    
+    printf("All struct tests passed\n")
+    return 0
+}

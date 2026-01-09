@@ -1,0 +1,87 @@
+# Runtime test: Array operations (using fixed-size arrays)
+# Returns 0 if all tests pass, non-zero otherwise
+
+# Note: Dynamic array allocation (array<T>(n)) is not fully supported
+# in the current C backend. These tests use fixed-size stack arrays.
+
+struct ArrayWrapper5 {
+    data0: i32,
+    data1: i32,
+    data2: i32,
+    data3: i32,
+    data4: i32
+}
+
+function get_element(arr: ArrayWrapper5, idx: i32) -> i32 {
+    if idx == 0 { return arr.data0 }
+    if idx == 1 { return arr.data1 }
+    if idx == 2 { return arr.data2 }
+    if idx == 3 { return arr.data3 }
+    return arr.data4
+}
+
+function test_struct_array() -> bool {
+    let arr: ArrayWrapper5 = ArrayWrapper5 {
+        data0: 10,
+        data1: 20,
+        data2: 30,
+        data3: 40,
+        data4: 50
+    }
+    
+    let sum: i32 = arr.data0 + arr.data2 + arr.data4
+    return sum == 90
+}
+
+function test_array_access_via_function() -> bool {
+    let arr: ArrayWrapper5 = ArrayWrapper5 {
+        data0: 1,
+        data1: 2,
+        data2: 3,
+        data3: 4,
+        data4: 5
+    }
+    
+    # Sum elements via accessor function
+    let sum: i32 = 0
+    sum = sum + get_element(arr, 0)
+    sum = sum + get_element(arr, 1)
+    sum = sum + get_element(arr, 2)
+    sum = sum + get_element(arr, 3)
+    sum = sum + get_element(arr, 4)
+    
+    return sum == 15
+}
+
+function test_array_computation() -> bool {
+    let arr: ArrayWrapper5 = ArrayWrapper5 {
+        data0: 5,
+        data1: 10,
+        data2: 15,
+        data3: 20,
+        data4: 0
+    }
+    
+    let total: i32 = arr.data0 + arr.data1 + arr.data2 + arr.data3
+    let avg: i32 = total / 4
+    
+    return avg == 12
+}
+
+function main() -> i32 {
+    if !test_struct_array() {
+        printf("FAIL: struct_array\n")
+        return 1
+    }
+    if !test_array_access_via_function() {
+        printf("FAIL: array_access\n")
+        return 2
+    }
+    if !test_array_computation() {
+        printf("FAIL: array_computation\n")
+        return 3
+    }
+    
+    printf("All array tests passed\n")
+    return 0
+}

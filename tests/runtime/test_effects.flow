@@ -1,0 +1,83 @@
+# Runtime test: Effect system basics
+# Returns 0 if all tests pass, non-zero otherwise
+
+# Define an effect for logging
+effect Log {
+    emit(message: string) -> void
+}
+
+# A simple console logger capability
+capability ConsoleLogger {
+    effect Log,
+    function emit(message: string) -> void {
+        printf("[LOG] %s\n", message)
+        return
+    }
+}
+
+# A null logger that does nothing (for testing)
+capability NullLogger {
+    effect Log,
+    function emit(message: string) -> void {
+        # Do nothing
+        return
+    }
+}
+
+# Global counter to track if effects are called
+# (We use a simple approach since we can't easily share state)
+function do_logging() -> i32 {
+    Log.emit("Test message")
+    return 1  # Return 1 to indicate we reached this point
+}
+
+function test_effect_handler() -> bool {
+    let result: i32 = 0
+    handle Log with ConsoleLogger {
+        result = do_logging()
+    }
+    return result == 1
+}
+
+function test_null_logger() -> bool {
+    let result: i32 = 0
+    handle Log with NullLogger {
+        result = do_logging()
+    }
+    return result == 1
+}
+
+function test_nested_handlers() -> bool {
+    let outer_result: i32 = 0
+    let inner_result: i32 = 0
+    
+    handle Log with ConsoleLogger {
+        Log.emit("Outer scope")
+        outer_result = 1
+        
+        handle Log with NullLogger {
+            Log.emit("Inner scope - should not print")
+            inner_result = 1
+        }
+    }
+    
+    return outer_result == 1 && inner_result == 1
+}
+
+function main() -> i32 {
+    if !test_effect_handler() {
+        printf("FAIL: effect_handler\n")
+        return 1
+    }
+    if !test_null_logger() {
+        printf("FAIL: null_logger\n")
+        return 2
+    }
+    if !test_nested_handlers() {
+        printf("FAIL: nested_handlers\n")
+        return 3
+    }
+    
+    printf("All effect tests passed\n")
+    return 0
+}
