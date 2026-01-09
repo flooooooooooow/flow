@@ -6,6 +6,7 @@ Welcome to the FLOW programming language documentation.
 
 | Goal | Document |
 |------|----------|
+| **Try FLOW Now** | [🎮 Web Playground](playground/index.html) |
 | **Install & Run** | [Getting Started](getting-started.md) |
 | **Compare with Rust/Zig/Go** | [Language Comparison](comparison.md) |
 | **Learn FLOW** | [Tutorials](tutorials/beginner.md) |

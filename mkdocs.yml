@@ -52,6 +52,7 @@ markdown_extensions:
 
 nav:
   - Home: README.md
+  - Playground: playground/index.html
   - Getting Started: getting-started.md
   - Comparison: comparison.md
   - Tutorials:

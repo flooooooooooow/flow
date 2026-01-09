@@ -577,7 +577,37 @@ class Lexer:
         self.column = save_column
         
         return token_type
+    
+    def tokenize(self) -> List[Token]:
+        """
+        Tokenize all input and return a list of tokens (excluding EOF).
+        Resets position to allow re-tokenization.
+        """
+        # Save position
+        save_pos = self.pos
+        save_line = self.line
+        save_column = self.column
         
+        # Reset to start
+        self.pos = 0
+        self.line = 1
+        self.column = 1
+        
+        tokens = []
+        while True:
+            token = self.next_token()
+            if token.type == TokenType.EOF:
+                break
+            tokens.append(token)
+        
+        # Restore position
+        self.pos = save_pos
+        self.line = save_line
+        self.column = save_column
+        
+        return tokens
+
+
 class Parser:
     def __init__(self, lexer: Lexer, source: str = None):
         self.lexer = lexer
