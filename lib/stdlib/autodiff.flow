@@ -210,6 +210,143 @@ export function dual_grad(d: Dual) -> f32 {
 }
 
 # =============================================================================
+# SHORT ALIASES - Less typing!
+# =============================================================================
+
+# Short alias: create dual variable (derivative = 1)
+export function dx(x: f32) -> Dual {
+    return Dual { val: x, grad: 1.0 }
+}
+
+# Short alias: create dual constant (derivative = 0)  
+export function d(x: f32) -> Dual {
+    return Dual { val: x, grad: 0.0 }
+}
+
+# =============================================================================
+# SCALAR OPERATIONS - Operate with plain floats directly
+# =============================================================================
+
+# Add a constant
+export function add(a: Dual, b: f32) -> Dual {
+    return Dual { val: a.val + b, grad: a.grad }
+}
+
+# Subtract a constant
+export function sub(a: Dual, b: f32) -> Dual {
+    return Dual { val: a.val - b, grad: a.grad }
+}
+
+# Subtract from a constant  
+export function rsub(a: f32, b: Dual) -> Dual {
+    return Dual { val: a - b.val, grad: -b.grad }
+}
+
+# Multiply by a constant
+export function mul(a: Dual, b: f32) -> Dual {
+    return Dual { val: a.val * b, grad: a.grad * b }
+}
+
+# Divide by a constant
+export function div(a: Dual, b: f32) -> Dual {
+    return Dual { val: a.val / b, grad: a.grad / b }
+}
+
+# =============================================================================
+# COMBINED OPERATIONS - Common patterns in one call
+# =============================================================================
+
+# Square: x²
+export function sq(x: Dual) -> Dual {
+    return Dual { val: x.val * x.val, grad: 2.0 * x.val * x.grad }
+}
+
+# Cube: x³  
+export function cube(x: Dual) -> Dual {
+    let x2: f32 = x.val * x.val
+    return Dual { val: x2 * x.val, grad: 3.0 * x2 * x.grad }
+}
+
+# Fourth power: x⁴
+export function pow4(x: Dual) -> Dual {
+    let x2: f32 = x.val * x.val
+    let x3: f32 = x2 * x.val
+    return Dual { val: x2 * x2, grad: 4.0 * x3 * x.grad }
+}
+
+# (x - c)² for a constant c
+export function sq_diff(x: Dual, c: f32) -> Dual {
+    let diff: f32 = x.val - c
+    return Dual { val: diff * diff, grad: 2.0 * diff * x.grad }
+}
+
+# a*x + b (linear)
+export function linear(x: Dual, a: f32, b: f32) -> Dual {
+    return Dual { val: a * x.val + b, grad: a * x.grad }
+}
+
+# a*x² + b*x + c (quadratic)
+export function quadratic(x: Dual, a: f32, b: f32, c: f32) -> Dual {
+    let x2: f32 = x.val * x.val
+    return Dual { 
+        val: a * x2 + b * x.val + c, 
+        grad: (2.0 * a * x.val + b) * x.grad 
+    }
+}
+
+# sin(a*x) where a is constant
+export function sin_scaled(x: Dual, a: f32) -> Dual {
+    return Dual {
+        val: sin(a * x.val),
+        grad: a * cos(a * x.val) * x.grad
+    }
+}
+
+# cos(a*x) where a is constant
+export function cos_scaled(x: Dual, a: f32) -> Dual {
+    return Dual {
+        val: cos(a * x.val),
+        grad: -a * sin(a * x.val) * x.grad
+    }
+}
+
+# exp(a*x) where a is constant
+export function exp_scaled(x: Dual, a: f32) -> Dual {
+    let e: f32 = exp(a * x.val)
+    return Dual { val: e, grad: a * e * x.grad }
+}
+
+# =============================================================================
+# CHAIN HELPERS - Common compositions
+# =============================================================================
+
+# f + g
+export function chain_add(f: Dual, g: Dual) -> Dual {
+    return dual_add(f, g)
+}
+
+# f * g
+export function chain_mul(f: Dual, g: Dual) -> Dual {
+    return dual_mul(f, g)
+}
+
+# a*f + b*g (weighted sum)
+export function weighted_sum(f: Dual, a: f32, g: Dual, b: f32) -> Dual {
+    return Dual {
+        val: a * f.val + b * g.val,
+        grad: a * f.grad + b * g.grad
+    }
+}
+
+# Sum of three terms
+export function sum3(a: Dual, b: Dual, c: Dual) -> Dual {
+    return Dual {
+        val: a.val + b.val + c.val,
+        grad: a.grad + b.grad + c.grad
+    }
+}
+
+# =============================================================================
 # EXAMPLE USAGE (Forward Mode)
 # =============================================================================
 #
