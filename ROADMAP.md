@@ -29,8 +29,8 @@ This document tracks what we're building next and why.
 
 **What's broken/missing:**
 - ❌ GPU codegen — Runtime exists, no shader generation
-- ❌ REPL — Interactive mode not implemented
 - ❌ Package manager — No dependency management
+- ❌ JIT compilation — Direct execution without disk I/O
 
 **Recently completed:**
 - ✅ Enums / ADTs — Tagged unions in C
@@ -38,6 +38,7 @@ This document tracks what we're building next and why.
 - ✅ MLIR backend — Full pipeline: FLOW → MLIR → LLVM → native
 - ✅ LSP — go-to-definition, hover, autocomplete
 - ✅ Closures — Manual pattern with `self: Type`
+- ✅ REPL — `flow repl` for interactive development
 
 ---
 
