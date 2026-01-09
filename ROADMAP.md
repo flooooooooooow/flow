@@ -403,16 +403,21 @@ These are explicitly out of scope:
 3. [x] Add `Option<T>` and `Result<T, E>` types to stdlib
    - Concrete types: Option_i32, Result_f32_string, etc.
    - Full API with constructors, predicates, unwrapping
+4. [x] **Generics with monomorphization** ✨
+   - Full monomorphization pass (`src/flow/monomorphize.py`)
+   - Box<T>, Pair<A, B>, identity<T> all work
+   - Generic struct literals: `Box<i32> { value: 42 }`
+   - 145/154 tests passing (9 pre-existing failures)
 
 **This week:**
-1. [ ] Implement type substitution for generics
-2. [ ] Monomorphize generic functions in C backend
+1. [ ] Add MatchStatement to C generator
+2. [ ] Add VectorLiteral to C generator  
 3. [ ] Start pattern matching improvements (destructuring)
 
 **Next week:**
-1. [ ] Add MatchStatement to C generator
-2. [ ] Add VectorLiteral to C generator  
-3. [ ] Fix remaining 90 tests for strict mode
+1. [ ] Fix remaining tests for strict mode
+2. [ ] Improve type inference for generic function calls
+3. [ ] Add trait bounds enforcement
 
 ---
 
