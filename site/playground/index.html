@@ -1456,6 +1456,20 @@ using namespace metal;
             const sum3 = (a, b, c) => new Dual(a.val + b.val + c.val, a.grad + b.grad + c.grad);
             const weighted_sum = (f, a, g, b) => new Dual(a * f.val + b * g.val, a * f.grad + b * g.grad);
             
+            // Additional helpers for cleaner syntax
+            const neg = (x) => new Dual(-x.val, -x.grad);
+            const smul = (a, x) => new Dual(a * x.val, a * x.grad);  // scalar * Dual
+            const addc = (a, x) => new Dual(a + x.val, x.grad);      // scalar + Dual
+            const rsub = (a, x) => new Dual(a - x.val, -x.grad);     // scalar - Dual
+            
+            // Short aliases for transcendentals
+            const sigmoid = dual_sigmoid;
+            const log = dual_log;
+            const exp_d = dual_exp;  // renamed to avoid conflict with Math.exp
+            const sin_d = dual_sin;
+            const cos_d = dual_cos;
+            const tanh_d = dual_tanh;
+            
             // Try to find and evaluate autodiff expressions
             const results = [];
             
@@ -1539,7 +1553,7 @@ using namespace metal;
             // Physics force example
             else if (code.includes('force') || code.includes('spring')) {
                 let xVal = 0.4;
-                const xMatch = code.match(/dx\s*\(\s*([\d.]+)\s*\)/);
+                const xMatch = code.match(/dx\s*\(\s*([\d.-]+)\s*\)/);
                 if (xMatch) xVal = parseFloat(xMatch[1]);
                 
                 const x = dx(xVal);
@@ -1559,6 +1573,70 @@ using namespace metal;
                 output += `  ─────────────────────────────────────\n`;
                 output += `  Total E(x)     = ${E.val.toFixed(6)}\n`;
                 output += `  Force = -dE/dx = ${force.toFixed(6)}\n`;
+            }
+            // Rosenbrock function
+            else if (code.includes('rosenbrock') || code.includes('Rosenbrock') || 
+                     (code.includes('100') && code.includes('sq_diff'))) {
+                let xVal = 0.8;
+                const xMatch = code.match(/dx\s*\(\s*([\d.-]+)\s*\)/);
+                if (xMatch) xVal = parseFloat(xMatch[1]);
+                
+                const x = dx(xVal);
+                
+                // f(x) = (1 - x)² + 100(x² - 1)²
+                const term1 = sq_diff(x, 1.0);                      // (1 - x)²
+                const x_sq = sq(x);
+                const term2_inner = sq_diff(x_sq, 1.0);             // (x² - 1)²
+                const term2 = smul(100.0, term2_inner);             // 100 * (x² - 1)²
+                const f = dual_add(term1, term2);
+                
+                output += `Rosenbrock Function (1D slice)\n`;
+                output += `f(x) = (1 - x)² + 100(x² - 1)²\n`;
+                output += `Global minimum at x = 1\n\n`;
+                output += `At x = ${xVal}:\n\n`;
+                output += `  (1 - x)²        = ${term1.val.toFixed(6)}  (deriv: ${term1.grad.toFixed(6)})\n`;
+                output += `  (x² - 1)²       = ${term2_inner.val.toFixed(6)}  (deriv: ${term2_inner.grad.toFixed(6)})\n`;
+                output += `  100(x² - 1)²    = ${term2.val.toFixed(6)}  (deriv: ${term2.grad.toFixed(6)})\n`;
+                output += `  ─────────────────────────────────────\n`;
+                output += `  f(${xVal})        = ${f.val.toFixed(6)}\n`;
+                output += `  df/dx          = ${f.grad.toFixed(6)}\n`;
+                
+                // Show how far from minimum
+                const f_at_1 = 0.0;
+                output += `\n  f(1.0) = ${f_at_1.toFixed(6)}  (minimum)\n`;
+            }
+            // Logistic loss
+            else if (code.includes('logistic') || code.includes('Logistic') || 
+                     (code.includes('sigmoid') && code.includes('log'))) {
+                let wVal = -0.4;
+                const wMatch = code.match(/dx\s*\(\s*([\d.-]+)\s*\)/);
+                if (wMatch) wVal = parseFloat(wMatch[1]);
+                
+                const w = dx(wVal);
+                const y = 1.0;  // label
+                
+                // L(w) = -[ y log σ(w) + (1-y) log(1-σ(w)) ]
+                const p = dual_sigmoid(w);
+                const log_p = dual_log(p);
+                const one_minus_p = rsub(1.0, p);
+                const log_one_minus_p = dual_log(one_minus_p);
+                
+                const loss_pos = smul(y, log_p);
+                const loss_neg = smul(1.0 - y, log_one_minus_p);
+                const L = neg(dual_add(loss_pos, loss_neg));
+                
+                output += `Logistic Regression Loss (single sample)\n`;
+                output += `L(w) = -[ y·log(σ(w)) + (1-y)·log(1-σ(w)) ]\n`;
+                output += `where σ(w) = 1/(1+e^(-w))  (sigmoid)\n\n`;
+                output += `At w = ${wVal}, y = ${y}:\n\n`;
+                output += `  σ(w)           = ${p.val.toFixed(6)}\n`;
+                output += `  log(σ(w))      = ${log_p.val.toFixed(6)}\n`;
+                output += `  1 - σ(w)       = ${one_minus_p.val.toFixed(6)}\n`;
+                output += `  ─────────────────────────────────────\n`;
+                output += `  L(w)           = ${L.val.toFixed(6)}\n`;
+                output += `  dL/dw          = ${L.grad.toFixed(6)}\n`;
+                output += `\n  (gradient points toward increasing loss)\n`;
+                output += `  To minimize: w_new = w - lr * dL/dw\n`;
             }
             // Generic autodiff - basic operations
             else if (code.includes('dual_mul(x, x)') || code.includes('sq(x)')) {
