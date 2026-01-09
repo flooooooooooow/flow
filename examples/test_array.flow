@@ -1,9 +1,9 @@
-function test() -> array<i32> {
+function create_array() -> array<i32> {
     let arr: array<i32> = array<i32>(10)
     return arr
 }
 
 function main() -> i32 {
-    let a: array<i32> = test()
+    let a: array<i32> = create_array()
     return 0
 }

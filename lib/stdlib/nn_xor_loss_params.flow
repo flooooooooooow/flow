@@ -1,0 +1,35 @@
+# Input file for codegen: scalar XOR loss over parameters
+# Constraint: codegen supports only 1-arg calls, so we inline everything.
+
+function sigmoid(x: f32) -> f32 {
+    return 1.0 / (1.0 + exp(-1.0 * x))
+}
+
+function xor_loss_params(w00: f32, w01: f32, w10: f32, w11: f32,
+                         b0: f32, b1: f32, v0: f32, v1: f32, c: f32) -> f32 {
+    # sample (0,0) -> 0
+    let h0_00: f32 = sigmoid(0.0 * w00 + 0.0 * w01 + b0)
+    let h1_00: f32 = sigmoid(0.0 * w10 + 0.0 * w11 + b1)
+    let y00: f32 = sigmoid(h0_00 * v0 + h1_00 * v1 + c)
+    let d00: f32 = y00 - 0.0
+
+    # sample (0,1) -> 1
+    let h0_01: f32 = sigmoid(0.0 * w00 + 1.0 * w01 + b0)
+    let h1_01: f32 = sigmoid(0.0 * w10 + 1.0 * w11 + b1)
+    let y01: f32 = sigmoid(h0_01 * v0 + h1_01 * v1 + c)
+    let d01: f32 = y01 - 1.0
+
+    # sample (1,0) -> 1
+    let h0_10: f32 = sigmoid(1.0 * w00 + 0.0 * w01 + b0)
+    let h1_10: f32 = sigmoid(1.0 * w10 + 0.0 * w11 + b1)
+    let y10: f32 = sigmoid(h0_10 * v0 + h1_10 * v1 + c)
+    let d10: f32 = y10 - 1.0
+
+    # sample (1,1) -> 0
+    let h0_11: f32 = sigmoid(1.0 * w00 + 1.0 * w01 + b0)
+    let h1_11: f32 = sigmoid(1.0 * w10 + 1.0 * w11 + b1)
+    let y11: f32 = sigmoid(h0_11 * v0 + h1_11 * v1 + c)
+    let d11: f32 = y11 - 0.0
+
+    return d00*d00 + d01*d01 + d10*d10 + d11*d11
+}

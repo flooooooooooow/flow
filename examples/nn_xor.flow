@@ -1,0 +1,45 @@
+# XOR training using stdlib neural network helpers (reverse-mode backprop style)
+
+import "lib/stdlib/nn.flow"
+
+function main() -> i32 {
+    printf("=== XOR training via lib/stdlib/nn.flow ===\n\n")
+
+    let net: Net2x2x1 = Net2x2x1 {
+        w00: 0.5, w01: 0.9,
+        w10: 0.4, w11: 1.0,
+        b0: -0.8, b1: -0.1,
+        v0: -1.2, v1: 1.1,
+        c: -0.3
+    }
+
+    printf("Before:\n")
+    printf("  0^0=%.3f  0^1=%.3f  1^0=%.3f  1^1=%.3f\n",
+           net2x2x1_predict(net, 0.0, 0.0),
+           net2x2x1_predict(net, 0.0, 1.0),
+           net2x2x1_predict(net, 1.0, 0.0),
+           net2x2x1_predict(net, 1.0, 1.0))
+    printf("  loss=%.4f\n\n", net2x2x1_loss_xor(net))
+
+    let lr: f32 = 2.0
+    let epochs: i32 = 500
+
+    printf("Training %d epochs (lr=%.1f)...\n", epochs, lr)
+    for epoch in 0..epochs {
+        let g: Grads2x2x1 = net2x2x1_grads_xor(net)
+        net = net2x2x1_step(net, g, lr)
+        if epoch % 100 == 0 {
+            printf("  epoch %d: loss=%.4f\n", epoch, net2x2x1_loss_xor(net))
+        }
+    }
+
+    printf("\nAfter:\n")
+    printf("  0^0=%.3f (want 0)\n", net2x2x1_predict(net, 0.0, 0.0))
+    printf("  0^1=%.3f (want 1)\n", net2x2x1_predict(net, 0.0, 1.0))
+    printf("  1^0=%.3f (want 1)\n", net2x2x1_predict(net, 1.0, 0.0))
+    printf("  1^1=%.3f (want 0)\n", net2x2x1_predict(net, 1.0, 1.0))
+    printf("  loss=%.4f\n", net2x2x1_loss_xor(net))
+
+    return 0
+}
+

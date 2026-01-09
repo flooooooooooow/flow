@@ -1,3 +1,7 @@
+extern "jit" {
+    function jit_time() -> f64
+}
+
 export function get_time() -> f64 {
     return jit_time()
 }

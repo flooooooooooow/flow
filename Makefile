@@ -50,11 +50,11 @@ mlir:
 # Test with examples
 test: setup
 	@echo "Testing FLOW examples..."
-	@make run PROGRAM=minimal_turing.flow
+	@make run PROGRAM=examples/minimal_turing.flow
 	@echo ""
-	@make run PROGRAM=test_simple.flow
+	@make run PROGRAM=tests/test_simple.flow
 	@echo ""
-	@make run PROGRAM=test_control.flow
+	@make run PROGRAM=tests/test_control.flow
 
 # Test standard library
 test-stdlib: setup

@@ -1,0 +1,10 @@
+function test_array() -> array<f32> {
+    let arr: array<f32> = array<f32>(10)
+    return arr
+}
+
+function main() -> i32 {
+    let result: array<f32> = test_array()
+    print("Test complete")
+    return 0
+}

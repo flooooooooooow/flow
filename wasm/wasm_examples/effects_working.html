@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLOW → WASM: effects_working</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0; padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh; color: #eee;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; color: #00d4ff; margin-bottom: 30px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+        .panel { 
+            background: #0f0f23; border-radius: 12px; 
+            border: 1px solid #333; overflow: hidden;
+        }
+        .panel-header { 
+            background: #1a1a3e; padding: 12px 16px;
+            font-weight: 600; color: #00d4ff;
+            border-bottom: 1px solid #333;
+        }
+        .panel-content { 
+            padding: 16px; font-family: 'Fira Code', monospace;
+            font-size: 13px; line-height: 1.5;
+            max-height: 400px; overflow: auto;
+            white-space: pre-wrap; color: #a0ffa0;
+        }
+        .c-code { color: #87ceeb; }
+        #output { 
+            background: #0a0a1a; min-height: 150px;
+            color: #0f0; font-family: monospace;
+        }
+        .controls { text-align: center; margin: 20px 0; }
+        button { 
+            background: #00d4ff; color: #000; border: none;
+            padding: 12px 32px; border-radius: 8px;
+            font-size: 16px; font-weight: 600;
+            cursor: pointer; margin: 0 8px;
+            transition: all 0.2s;
+        }
+        button:hover { background: #00fff7; transform: translateY(-2px); }
+        button:disabled { background: #555; color: #888; cursor: not-allowed; transform: none; }
+        #status { text-align: center; margin: 15px 0; font-size: 14px; color: #888; }
+        .badge { 
+            display: inline-block; padding: 4px 12px; 
+            border-radius: 20px; font-size: 12px;
+            background: #00d4ff22; color: #00d4ff;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 FLOW → WebAssembly <span class="badge">effects_working</span></h1>
+        
+        <div class="grid">
+            <div class="panel">
+                <div class="panel-header">📝 FLOW Source</div>
+                <div class="panel-content"># Working Effects Example
+# This demonstrates FLOW's effect system with actual C code generation
+
+# Define a Log effect - abstract operations for logging
+effect Log {
+    emit(message: string) -&gt; void,
+    level(lvl: i32) -&gt; void,
+}
+
+# ConsoleLogger capability - implements Log by printing to console
+capability ConsoleLogger {
+    effect Log,
+    
+    function emit(message: string) -&gt; void {
+        printf("%s\n", message)
+        return void
+    },
+    
+    function level(lvl: i32) -&gt; void {
+        printf("Log level: %d\n", lvl)
+        return void
+    },
+}
+
+# SilentLogger capability - implements Log by doing nothing
+capability SilentLogger {
+    effect Log,
+    
+    function emit(message: string) -&gt; void {
+        # Do nothing - silent mode
+        return void
+    },
+    
+    function level(lvl: i32) -&gt; void {
+        # Do nothing - silent mode
+        return void
+    },
+}
+
+# A function that uses the Log effect abstractly
+function do_work(x: i32) -&gt; i32 {
+    Log::emit("Starting work...")
+    let result: i32 = x * 2
+    Log::emit("Work complete!")
+    return result
+}
+
+# Another function that uses Log for debugging
+function process(n: i32) -&gt; i32 {
+    Log::level(1)
+    let sum: i32 = 0
+    let i: i32 = 0
+    while i &lt; n {
+        sum = sum + i
+        i = i + 1
+    }
+    Log::emit("Processing done")
+    return sum
+}
+
+function main() -&gt; i32 {
+    # Test 1: Use ConsoleLogger - should print messages
+    printf("=== Test with ConsoleLogger ===\n")
+    handle Log with ConsoleLogger {
+        let r1: i32 = do_work(21)
+        printf("Result: %d\n", r1)
+    }
+    
+    # Test 2: Use SilentLogger - should be quiet
+    printf("\n=== Test with SilentLogger ===\n")
+    handle Log with SilentLogger {
+        let r2: i32 = do_work(10)
+        printf("Result: %d\n", r2)
+    }
+    
+    # Test 3: Nested effects
+    printf("\n=== Test nested handles ===\n")
+    handle Log with ConsoleLogger {
+        Log::emit("Outer scope")
+        handle Log with SilentLogger {
+            Log::emit("This should be silent")
+        }
+        Log::emit("Back to outer scope")
+    }
+    
+    return 0
+}
+
+</div>
+            </div>
+            <div class="panel">
+                <div class="panel-header">⚙️ Generated C</div>
+                <div class="panel-content c-code">#include &lt;stdint.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* ===== Effect Handler Runtime ===== */
+
+/* Effect handler vtable for Log */
+typedef struct {
+    void (*emit)(char*);
+    void (*level)(int32_t);
+} Log_Handler;
+
+static Log_Handler* _current_Log_handler = NULL;
+
+void Log_emit(char* message) {
+    if (_current_Log_handler &amp;&amp; _current_Log_handler-&gt;emit) {
+        _current_Log_handler-&gt;emit(message);
+    }
+}
+
+void Log_level(int32_t lvl) {
+    if (_current_Log_handler &amp;&amp; _current_Log_handler-&gt;level) {
+        _current_Log_handler-&gt;level(lvl);
+    }
+}
+
+
+void ConsoleLogger_emit(char* message);
+void ConsoleLogger_level(int32_t lvl);
+void SilentLogger_emit(char* message);
+void SilentLogger_level(int32_t lvl);
+
+/* ConsoleLogger handler for Log */
+static Log_Handler _ConsoleLogger_Log_vtable = {
+    .emit = ConsoleLogger_emit,
+    .level = ConsoleLogger_level,
+};
+
+/* SilentLogger handler for Log */
+static Log_Handler _SilentLogger_Log_vtable = {
+    .emit = SilentLogger_emit,
+    .level = SilentLogger_level,
+};
+
+/* ===== End Effect Handler Runtime ===== */
+
+int32_t do_work(int32_t x);
+int32_t process(int32_t n);
+int32_t main();
+
+void ConsoleLogger_emit(char* message) {
+    printf("%s\n", message);
+    return;
+}
+
+void ConsoleLogger_level(int32_t lvl) {
+    printf("Log level: %d\n", lvl);
+    return;
+}
+
+void SilentLogger_emit(char* message) {
+    return;
+}
+
+void SilentLogger_level(int32_t lvl) {
+    return;
+}
+
+int32_t do_work(int32_t x) {
+    Log_emit("Starting work...");
+    int32_t result = (x * 2);
+    Log_emit("Work complete!");
+    return result;
+}
+
+int32_t process(int32_t n) {
+    Log_level(1);
+    int32_t sum = 0;
+    int32_t i = 0;
+    while (i &lt; n) {
+        sum = (sum + i);
+        i = (i + 1);
+    }
+    Log_emit("Processing done");
+    return sum;
+}
+
+int32_t main() {
+    printf("=== Test with ConsoleLogger ===\n");
+    /* handle Log with ConsoleLogger */
+    {
+        Log_Handler* _prev_Log_handler = _current_Log_handler;
+        _current_Log_handler = &amp;_ConsoleLogger_Log_vtable;
+
+        int32_t r1 = do_work(21);
+        printf("Result: %d\n", r1);
+
+        _current_Log_handler = _prev_Log_handler;
+    }
+    printf("\n=== Test with SilentLogger ===\n");
+    /* handle Log with SilentLogger */
+    {
+        Log_Handler* _prev_Log_handler = _current_Log_handler;
+        _current_Log_handler = &amp;_SilentLogger_Log_vtable;
+
+        int32_t r2 = do_work(10);
+        printf("Result: %d\n", r2);
+
+        _current_Log_handler = _prev_Log_handler;
+    }
+    printf("\n=== Test nested handles ===\n");
+    /* handle Log with ConsoleLogger */
+    {
+        Log_Handler* _prev_Log_handler = _current_Log_handler;
+        _current_Log_handler = &amp;_ConsoleLogger_Log_vtable;
+
+        Log_emit("Outer scope");
+        /* handle Log with SilentLogger */
+        {
+            Log_Handler* _prev_Log_handler = _current_Log_handler;
+            _current_Log_handler = &amp;_SilentLogger_Log_vtable;
+
+            Log_emit("This should be silent");
+
+            _current_Log_handler = _prev_Log_handler;
+        }
+        Log_emit("Back to outer scope");
+
+        _current_Log_handler = _prev_Log_handler;
+    }
+    return 0;
+}
+</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="runBtn" onclick="runCode()" disabled>▶️ Run WebAssembly</button>
+            <button onclick="document.getElementById('output').textContent=''">🗑️ Clear</button>
+        </div>
+        
+        <div id="status">Loading...</div>
+        
+        <div class="panel">
+            <div class="panel-header">📤 Output</div>
+            <div class="panel-content" id="output">Waiting for execution...</div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('status').textContent = '⚠️ WASM not available - showing generated C code';
+        document.getElementById('runBtn').style.display = 'none';
+        document.getElementById('output').textContent = 'Install Emscripten to compile and run in browser:\n\n' +
+            'brew install emscripten\n' +
+            '# or\n' +
+            'git clone https://github.com/emscripten-core/emsdk.git\n' +
+            'cd emsdk && ./emsdk install latest && ./emsdk activate latest';
+    </script>
+</body>
+</html>

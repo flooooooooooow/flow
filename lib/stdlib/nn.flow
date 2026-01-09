@@ -1,0 +1,531 @@
+# Minimal Neural Network utilities (stdlib)
+#
+# Purpose: reusable training/prediction for tiny MLPs with explicit backprop.
+#
+# Notes on current design constraints:
+# - FLOW doesn't yet have ergonomic mutation for arrays/struct fields.
+# - So we provide fixed-shape nets and explicit backprop.
+
+import "autodiff_reverse.flow"
+
+function _sigmoid(x: f32) -> f32 {
+    return 1.0 / (1.0 + exp(-1.0 * x))
+}
+
+function _abs_f32(x: f32) -> f32 {
+    if x < 0.0 { return -1.0 * x }
+    return x
+}
+
+# -----------------------------------------------------------------------------
+# 2x2x1 MLP (2 inputs → 2 hidden → 1 output)
+# -----------------------------------------------------------------------------
+
+export struct Net2x2x1 {
+    w00: f32, w01: f32,
+    w10: f32, w11: f32,
+    b0: f32, b1: f32,
+    v0: f32, v1: f32,
+    c: f32
+}
+
+export struct Grads2x2x1 {
+    dw00: f32, dw01: f32,
+    dw10: f32, dw11: f32,
+    db0: f32, db1: f32,
+    dv0: f32, dv1: f32,
+    dc: f32
+}
+
+struct Cache2x2x1 {
+    x0: f32, x1: f32,
+    z0: f32, z1: f32,
+    h0: f32, h1: f32,
+    z_out: f32,
+    y_hat: f32,
+    target: f32,
+    loss: f32
+}
+
+export function net2x2x1_param_get(net: Net2x2x1, idx: i32) -> f32 {
+    if idx == 0 { return net.w00 }
+    if idx == 1 { return net.w01 }
+    if idx == 2 { return net.w10 }
+    if idx == 3 { return net.w11 }
+    if idx == 4 { return net.b0 }
+    if idx == 5 { return net.b1 }
+    if idx == 6 { return net.v0 }
+    if idx == 7 { return net.v1 }
+    if idx == 8 { return net.c }
+    return 0.0
+}
+
+export function net2x2x1_param_set(net: Net2x2x1, idx: i32, value: f32) -> Net2x2x1 {
+    if idx == 0 { return Net2x2x1 { w00: value,   w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
+    if idx == 1 { return Net2x2x1 { w00: net.w00, w01: value,   w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
+    if idx == 2 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: value,   w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
+    if idx == 3 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: value,   b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
+    if idx == 4 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: value,   b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
+    if idx == 5 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: value,   v0: net.v0, v1: net.v1, c: net.c } }
+    if idx == 6 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: value,   v1: net.v1, c: net.c } }
+    if idx == 7 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: value,   c: net.c } }
+    if idx == 8 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: value } }
+    return net
+}
+
+export function net2x2x1_grad_get(g: Grads2x2x1, idx: i32) -> f32 {
+    if idx == 0 { return g.dw00 }
+    if idx == 1 { return g.dw01 }
+    if idx == 2 { return g.dw10 }
+    if idx == 3 { return g.dw11 }
+    if idx == 4 { return g.db0 }
+    if idx == 5 { return g.db1 }
+    if idx == 6 { return g.dv0 }
+    if idx == 7 { return g.dv1 }
+    if idx == 8 { return g.dc }
+    return 0.0
+}
+
+function _forward2(net: Net2x2x1, x0: f32, x1: f32, target: f32) -> Cache2x2x1 {
+    let z0: f32 = x0 * net.w00 + x1 * net.w01 + net.b0
+    let z1: f32 = x0 * net.w10 + x1 * net.w11 + net.b1
+
+    let h0: f32 = _sigmoid(z0)
+    let h1: f32 = _sigmoid(z1)
+
+    let z_out: f32 = h0 * net.v0 + h1 * net.v1 + net.c
+    let y_hat: f32 = _sigmoid(z_out)
+
+    let diff: f32 = y_hat - target
+    let loss: f32 = diff * diff
+
+    return Cache2x2x1 {
+        x0: x0, x1: x1,
+        z0: z0, z1: z1,
+        h0: h0, h1: h1,
+        z_out: z_out,
+        y_hat: y_hat,
+        target: target,
+        loss: loss
+    }
+}
+
+function _backward2(net: Net2x2x1, c: Cache2x2x1) -> Grads2x2x1 {
+    let d_y: f32 = 2.0 * (c.y_hat - c.target)
+    let d_z_out: f32 = d_y * c.y_hat * (1.0 - c.y_hat)
+
+    let dv0: f32 = d_z_out * c.h0
+    let dv1: f32 = d_z_out * c.h1
+    let dc: f32 = d_z_out
+
+    let d_h0: f32 = d_z_out * net.v0
+    let d_h1: f32 = d_z_out * net.v1
+
+    let d_z0: f32 = d_h0 * c.h0 * (1.0 - c.h0)
+    let d_z1: f32 = d_h1 * c.h1 * (1.0 - c.h1)
+
+    return Grads2x2x1 {
+        dw00: d_z0 * c.x0,
+        dw01: d_z0 * c.x1,
+        dw10: d_z1 * c.x0,
+        dw11: d_z1 * c.x1,
+        db0: d_z0,
+        db1: d_z1,
+        dv0: dv0,
+        dv1: dv1,
+        dc: dc
+    }
+}
+
+export function net2x2x1_predict(net: Net2x2x1, x0: f32, x1: f32) -> f32 {
+    let c: Cache2x2x1 = _forward2(net, x0, x1, 0.0)
+    return c.y_hat
+}
+
+export function net2x2x1_loss_xor(net: Net2x2x1) -> f32 {
+    let c1: Cache2x2x1 = _forward2(net, 0.0, 0.0, 0.0)
+    let c2: Cache2x2x1 = _forward2(net, 0.0, 1.0, 1.0)
+    let c3: Cache2x2x1 = _forward2(net, 1.0, 0.0, 1.0)
+    let c4: Cache2x2x1 = _forward2(net, 1.0, 1.0, 0.0)
+    return c1.loss + c2.loss + c3.loss + c4.loss
+}
+
+export function net2x2x1_grads_xor(net: Net2x2x1) -> Grads2x2x1 {
+    let g1: Grads2x2x1 = _backward2(net, _forward2(net, 0.0, 0.0, 0.0))
+    let g2: Grads2x2x1 = _backward2(net, _forward2(net, 0.0, 1.0, 1.0))
+    let g3: Grads2x2x1 = _backward2(net, _forward2(net, 1.0, 0.0, 1.0))
+    let g4: Grads2x2x1 = _backward2(net, _forward2(net, 1.0, 1.0, 0.0))
+
+    return Grads2x2x1 {
+        dw00: g1.dw00 + g2.dw00 + g3.dw00 + g4.dw00,
+        dw01: g1.dw01 + g2.dw01 + g3.dw01 + g4.dw01,
+        dw10: g1.dw10 + g2.dw10 + g3.dw10 + g4.dw10,
+        dw11: g1.dw11 + g2.dw11 + g3.dw11 + g4.dw11,
+        db0:  g1.db0  + g2.db0  + g3.db0  + g4.db0,
+        db1:  g1.db1  + g2.db1  + g3.db1  + g4.db1,
+        dv0:  g1.dv0  + g2.dv0  + g3.dv0  + g4.dv0,
+        dv1:  g1.dv1  + g2.dv1  + g3.dv1  + g4.dv1,
+        dc:   g1.dc   + g2.dc   + g3.dc   + g4.dc
+    }
+}
+
+export function net2x2x1_step(net: Net2x2x1, grads: Grads2x2x1, lr: f32) -> Net2x2x1 {
+    return Net2x2x1 {
+        w00: net.w00 - lr * grads.dw00,
+        w01: net.w01 - lr * grads.dw01,
+        w10: net.w10 - lr * grads.dw10,
+        w11: net.w11 - lr * grads.dw11,
+        b0:  net.b0  - lr * grads.db0,
+        b1:  net.b1  - lr * grads.db1,
+        v0:  net.v0  - lr * grads.dv0,
+        v1:  net.v1  - lr * grads.dv1,
+        c:   net.c   - lr * grads.dc
+    }
+}
+
+export function net2x2x1_gradcheck_xor(net: Net2x2x1, eps: f32) -> f32 {
+    let g: Grads2x2x1 = net2x2x1_grads_xor(net)
+    let max_err: f32 = 0.0
+
+    for i in 0..9 {
+        let base: f32 = net2x2x1_param_get(net, i)
+        let plus: Net2x2x1 = net2x2x1_param_set(net, i, base + eps)
+        let minus: Net2x2x1 = net2x2x1_param_set(net, i, base - eps)
+        let num: f32 = (net2x2x1_loss_xor(plus) - net2x2x1_loss_xor(minus)) / (2.0 * eps)
+        let an: f32 = net2x2x1_grad_get(g, i)
+        let err: f32 = _abs_f32(num - an)
+        if err > max_err { max_err = err }
+    }
+
+    return max_err
+}
+
+# -----------------------------------------------------------------------------
+# 2x4x1 MLP (2 inputs → 4 hidden → 1 output)
+# -----------------------------------------------------------------------------
+
+export struct Net2x4x1 {
+    w00: f32, w01: f32,
+    w10: f32, w11: f32,
+    w20: f32, w21: f32,
+    w30: f32, w31: f32,
+    b0: f32, b1: f32, b2: f32, b3: f32,
+    v0: f32, v1: f32, v2: f32, v3: f32,
+    c: f32
+}
+
+export struct Grads2x4x1 {
+    dw00: f32, dw01: f32,
+    dw10: f32, dw11: f32,
+    dw20: f32, dw21: f32,
+    dw30: f32, dw31: f32,
+    db0: f32, db1: f32, db2: f32, db3: f32,
+    dv0: f32, dv1: f32, dv2: f32, dv3: f32,
+    dc: f32
+}
+
+struct Cache2x4x1 {
+    x0: f32, x1: f32,
+    h0: f32, h1: f32, h2: f32, h3: f32,
+    y_hat: f32,
+    target: f32,
+    loss: f32
+}
+
+function _forward4(net: Net2x4x1, x0: f32, x1: f32, target: f32) -> Cache2x4x1 {
+    let h0: f32 = _sigmoid(x0 * net.w00 + x1 * net.w01 + net.b0)
+    let h1: f32 = _sigmoid(x0 * net.w10 + x1 * net.w11 + net.b1)
+    let h2: f32 = _sigmoid(x0 * net.w20 + x1 * net.w21 + net.b2)
+    let h3: f32 = _sigmoid(x0 * net.w30 + x1 * net.w31 + net.b3)
+
+    let y_hat: f32 = _sigmoid(h0 * net.v0 + h1 * net.v1 + h2 * net.v2 + h3 * net.v3 + net.c)
+
+    let diff: f32 = y_hat - target
+    let loss: f32 = diff * diff
+
+    return Cache2x4x1 { x0: x0, x1: x1, h0: h0, h1: h1, h2: h2, h3: h3, y_hat: y_hat, target: target, loss: loss }
+}
+
+function _backward4(net: Net2x4x1, c: Cache2x4x1) -> Grads2x4x1 {
+    let d_y: f32 = 2.0 * (c.y_hat - c.target)
+    let d_z_out: f32 = d_y * c.y_hat * (1.0 - c.y_hat)
+
+    let dv0: f32 = d_z_out * c.h0
+    let dv1: f32 = d_z_out * c.h1
+    let dv2: f32 = d_z_out * c.h2
+    let dv3: f32 = d_z_out * c.h3
+    let dc: f32 = d_z_out
+
+    let d_h0: f32 = d_z_out * net.v0
+    let d_h1: f32 = d_z_out * net.v1
+    let d_h2: f32 = d_z_out * net.v2
+    let d_h3: f32 = d_z_out * net.v3
+
+    let d_z0: f32 = d_h0 * c.h0 * (1.0 - c.h0)
+    let d_z1: f32 = d_h1 * c.h1 * (1.0 - c.h1)
+    let d_z2: f32 = d_h2 * c.h2 * (1.0 - c.h2)
+    let d_z3: f32 = d_h3 * c.h3 * (1.0 - c.h3)
+
+    return Grads2x4x1 {
+        dw00: d_z0 * c.x0, dw01: d_z0 * c.x1,
+        dw10: d_z1 * c.x0, dw11: d_z1 * c.x1,
+        dw20: d_z2 * c.x0, dw21: d_z2 * c.x1,
+        dw30: d_z3 * c.x0, dw31: d_z3 * c.x1,
+        db0: d_z0, db1: d_z1, db2: d_z2, db3: d_z3,
+        dv0: dv0, dv1: dv1, dv2: dv2, dv3: dv3,
+        dc: dc
+    }
+}
+
+export function net2x4x1_predict(net: Net2x4x1, x0: f32, x1: f32) -> f32 {
+    let c: Cache2x4x1 = _forward4(net, x0, x1, 0.0)
+    return c.y_hat
+}
+
+export function net2x4x1_loss_xor(net: Net2x4x1) -> f32 {
+    let c1: Cache2x4x1 = _forward4(net, 0.0, 0.0, 0.0)
+    let c2: Cache2x4x1 = _forward4(net, 0.0, 1.0, 1.0)
+    let c3: Cache2x4x1 = _forward4(net, 1.0, 0.0, 1.0)
+    let c4: Cache2x4x1 = _forward4(net, 1.0, 1.0, 0.0)
+    return c1.loss + c2.loss + c3.loss + c4.loss
+}
+
+export function net2x4x1_grads_xor(net: Net2x4x1) -> Grads2x4x1 {
+    let g1: Grads2x4x1 = _backward4(net, _forward4(net, 0.0, 0.0, 0.0))
+    let g2: Grads2x4x1 = _backward4(net, _forward4(net, 0.0, 1.0, 1.0))
+    let g3: Grads2x4x1 = _backward4(net, _forward4(net, 1.0, 0.0, 1.0))
+    let g4: Grads2x4x1 = _backward4(net, _forward4(net, 1.0, 1.0, 0.0))
+
+    return Grads2x4x1 {
+        dw00: g1.dw00 + g2.dw00 + g3.dw00 + g4.dw00,
+        dw01: g1.dw01 + g2.dw01 + g3.dw01 + g4.dw01,
+        dw10: g1.dw10 + g2.dw10 + g3.dw10 + g4.dw10,
+        dw11: g1.dw11 + g2.dw11 + g3.dw11 + g4.dw11,
+        dw20: g1.dw20 + g2.dw20 + g3.dw20 + g4.dw20,
+        dw21: g1.dw21 + g2.dw21 + g3.dw21 + g4.dw21,
+        dw30: g1.dw30 + g2.dw30 + g3.dw30 + g4.dw30,
+        dw31: g1.dw31 + g2.dw31 + g3.dw31 + g4.dw31,
+        db0:  g1.db0  + g2.db0  + g3.db0  + g4.db0,
+        db1:  g1.db1  + g2.db1  + g3.db1  + g4.db1,
+        db2:  g1.db2  + g2.db2  + g3.db2  + g4.db2,
+        db3:  g1.db3  + g2.db3  + g3.db3  + g4.db3,
+        dv0:  g1.dv0  + g2.dv0  + g3.dv0  + g4.dv0,
+        dv1:  g1.dv1  + g2.dv1  + g3.dv1  + g4.dv1,
+        dv2:  g1.dv2  + g2.dv2  + g3.dv2  + g4.dv2,
+        dv3:  g1.dv3  + g2.dv3  + g3.dv3  + g4.dv3,
+        dc:   g1.dc   + g2.dc   + g3.dc   + g4.dc
+    }
+}
+
+export function net2x4x1_step(net: Net2x4x1, grads: Grads2x4x1, lr: f32) -> Net2x4x1 {
+    return Net2x4x1 {
+        w00: net.w00 - lr * grads.dw00, w01: net.w01 - lr * grads.dw01,
+        w10: net.w10 - lr * grads.dw10, w11: net.w11 - lr * grads.dw11,
+        w20: net.w20 - lr * grads.dw20, w21: net.w21 - lr * grads.dw21,
+        w30: net.w30 - lr * grads.dw30, w31: net.w31 - lr * grads.dw31,
+        b0:  net.b0  - lr * grads.db0,
+        b1:  net.b1  - lr * grads.db1,
+        b2:  net.b2  - lr * grads.db2,
+        b3:  net.b3  - lr * grads.db3,
+        v0:  net.v0  - lr * grads.dv0,
+        v1:  net.v1  - lr * grads.dv1,
+        v2:  net.v2  - lr * grads.dv2,
+        v3:  net.v3  - lr * grads.dv3,
+        c:   net.c   - lr * grads.dc
+    }
+}
+
+# -----------------------------------------------------------------------------
+# 2x8x1 MLP (2 inputs → 8 hidden → 1 output)
+# -----------------------------------------------------------------------------
+
+export struct Net2x8x1 {
+    w00: f32, w01: f32,
+    w10: f32, w11: f32,
+    w20: f32, w21: f32,
+    w30: f32, w31: f32,
+    w40: f32, w41: f32,
+    w50: f32, w51: f32,
+    w60: f32, w61: f32,
+    w70: f32, w71: f32,
+    b0: f32, b1: f32, b2: f32, b3: f32, b4: f32, b5: f32, b6: f32, b7: f32,
+    v0: f32, v1: f32, v2: f32, v3: f32, v4: f32, v5: f32, v6: f32, v7: f32,
+    c: f32
+}
+
+export struct Grads2x8x1 {
+    dw00: f32, dw01: f32,
+    dw10: f32, dw11: f32,
+    dw20: f32, dw21: f32,
+    dw30: f32, dw31: f32,
+    dw40: f32, dw41: f32,
+    dw50: f32, dw51: f32,
+    dw60: f32, dw61: f32,
+    dw70: f32, dw71: f32,
+    db0: f32, db1: f32, db2: f32, db3: f32, db4: f32, db5: f32, db6: f32, db7: f32,
+    dv0: f32, dv1: f32, dv2: f32, dv3: f32, dv4: f32, dv5: f32, dv6: f32, dv7: f32,
+    dc: f32
+}
+
+struct Cache2x8x1 {
+    x0: f32, x1: f32,
+    h0: f32, h1: f32, h2: f32, h3: f32, h4: f32, h5: f32, h6: f32, h7: f32,
+    y_hat: f32,
+    target: f32,
+    loss: f32
+}
+
+function _forward8(net: Net2x8x1, x0: f32, x1: f32, target: f32) -> Cache2x8x1 {
+    let h0: f32 = _sigmoid(x0 * net.w00 + x1 * net.w01 + net.b0)
+    let h1: f32 = _sigmoid(x0 * net.w10 + x1 * net.w11 + net.b1)
+    let h2: f32 = _sigmoid(x0 * net.w20 + x1 * net.w21 + net.b2)
+    let h3: f32 = _sigmoid(x0 * net.w30 + x1 * net.w31 + net.b3)
+    let h4: f32 = _sigmoid(x0 * net.w40 + x1 * net.w41 + net.b4)
+    let h5: f32 = _sigmoid(x0 * net.w50 + x1 * net.w51 + net.b5)
+    let h6: f32 = _sigmoid(x0 * net.w60 + x1 * net.w61 + net.b6)
+    let h7: f32 = _sigmoid(x0 * net.w70 + x1 * net.w71 + net.b7)
+
+    let y_hat: f32 = _sigmoid(
+        h0 * net.v0 + h1 * net.v1 + h2 * net.v2 + h3 * net.v3
+      + h4 * net.v4 + h5 * net.v5 + h6 * net.v6 + h7 * net.v7
+      + net.c
+    )
+
+    let diff: f32 = y_hat - target
+    let loss: f32 = diff * diff
+
+    return Cache2x8x1 { x0: x0, x1: x1, h0: h0, h1: h1, h2: h2, h3: h3, h4: h4, h5: h5, h6: h6, h7: h7, y_hat: y_hat, target: target, loss: loss }
+}
+
+function _backward8(net: Net2x8x1, c: Cache2x8x1) -> Grads2x8x1 {
+    let d_y: f32 = 2.0 * (c.y_hat - c.target)
+    let d_z_out: f32 = d_y * c.y_hat * (1.0 - c.y_hat)
+
+    let dv0: f32 = d_z_out * c.h0
+    let dv1: f32 = d_z_out * c.h1
+    let dv2: f32 = d_z_out * c.h2
+    let dv3: f32 = d_z_out * c.h3
+    let dv4: f32 = d_z_out * c.h4
+    let dv5: f32 = d_z_out * c.h5
+    let dv6: f32 = d_z_out * c.h6
+    let dv7: f32 = d_z_out * c.h7
+    let dc: f32 = d_z_out
+
+    let d_h0: f32 = d_z_out * net.v0
+    let d_h1: f32 = d_z_out * net.v1
+    let d_h2: f32 = d_z_out * net.v2
+    let d_h3: f32 = d_z_out * net.v3
+    let d_h4: f32 = d_z_out * net.v4
+    let d_h5: f32 = d_z_out * net.v5
+    let d_h6: f32 = d_z_out * net.v6
+    let d_h7: f32 = d_z_out * net.v7
+
+    let d_z0: f32 = d_h0 * c.h0 * (1.0 - c.h0)
+    let d_z1: f32 = d_h1 * c.h1 * (1.0 - c.h1)
+    let d_z2: f32 = d_h2 * c.h2 * (1.0 - c.h2)
+    let d_z3: f32 = d_h3 * c.h3 * (1.0 - c.h3)
+    let d_z4: f32 = d_h4 * c.h4 * (1.0 - c.h4)
+    let d_z5: f32 = d_h5 * c.h5 * (1.0 - c.h5)
+    let d_z6: f32 = d_h6 * c.h6 * (1.0 - c.h6)
+    let d_z7: f32 = d_h7 * c.h7 * (1.0 - c.h7)
+
+    return Grads2x8x1 {
+        dw00: d_z0 * c.x0, dw01: d_z0 * c.x1,
+        dw10: d_z1 * c.x0, dw11: d_z1 * c.x1,
+        dw20: d_z2 * c.x0, dw21: d_z2 * c.x1,
+        dw30: d_z3 * c.x0, dw31: d_z3 * c.x1,
+        dw40: d_z4 * c.x0, dw41: d_z4 * c.x1,
+        dw50: d_z5 * c.x0, dw51: d_z5 * c.x1,
+        dw60: d_z6 * c.x0, dw61: d_z6 * c.x1,
+        dw70: d_z7 * c.x0, dw71: d_z7 * c.x1,
+        db0: d_z0, db1: d_z1, db2: d_z2, db3: d_z3, db4: d_z4, db5: d_z5, db6: d_z6, db7: d_z7,
+        dv0: dv0, dv1: dv1, dv2: dv2, dv3: dv3, dv4: dv4, dv5: dv5, dv6: dv6, dv7: dv7,
+        dc: dc
+    }
+}
+
+export function net2x8x1_predict(net: Net2x8x1, x0: f32, x1: f32) -> f32 {
+    let c: Cache2x8x1 = _forward8(net, x0, x1, 0.0)
+    return c.y_hat
+}
+
+export function net2x8x1_loss_xor(net: Net2x8x1) -> f32 {
+    let c1: Cache2x8x1 = _forward8(net, 0.0, 0.0, 0.0)
+    let c2: Cache2x8x1 = _forward8(net, 0.0, 1.0, 1.0)
+    let c3: Cache2x8x1 = _forward8(net, 1.0, 0.0, 1.0)
+    let c4: Cache2x8x1 = _forward8(net, 1.0, 1.0, 0.0)
+    return c1.loss + c2.loss + c3.loss + c4.loss
+}
+
+export function net2x8x1_grads_xor(net: Net2x8x1) -> Grads2x8x1 {
+    let g1: Grads2x8x1 = _backward8(net, _forward8(net, 0.0, 0.0, 0.0))
+    let g2: Grads2x8x1 = _backward8(net, _forward8(net, 0.0, 1.0, 1.0))
+    let g3: Grads2x8x1 = _backward8(net, _forward8(net, 1.0, 0.0, 1.0))
+    let g4: Grads2x8x1 = _backward8(net, _forward8(net, 1.0, 1.0, 0.0))
+
+    return Grads2x8x1 {
+        dw00: g1.dw00 + g2.dw00 + g3.dw00 + g4.dw00,
+        dw01: g1.dw01 + g2.dw01 + g3.dw01 + g4.dw01,
+        dw10: g1.dw10 + g2.dw10 + g3.dw10 + g4.dw10,
+        dw11: g1.dw11 + g2.dw11 + g3.dw11 + g4.dw11,
+        dw20: g1.dw20 + g2.dw20 + g3.dw20 + g4.dw20,
+        dw21: g1.dw21 + g2.dw21 + g3.dw21 + g4.dw21,
+        dw30: g1.dw30 + g2.dw30 + g3.dw30 + g4.dw30,
+        dw31: g1.dw31 + g2.dw31 + g3.dw31 + g4.dw31,
+        dw40: g1.dw40 + g2.dw40 + g3.dw40 + g4.dw40,
+        dw41: g1.dw41 + g2.dw41 + g3.dw41 + g4.dw41,
+        dw50: g1.dw50 + g2.dw50 + g3.dw50 + g4.dw50,
+        dw51: g1.dw51 + g2.dw51 + g3.dw51 + g4.dw51,
+        dw60: g1.dw60 + g2.dw60 + g3.dw60 + g4.dw60,
+        dw61: g1.dw61 + g2.dw61 + g3.dw61 + g4.dw61,
+        dw70: g1.dw70 + g2.dw70 + g3.dw70 + g4.dw70,
+        dw71: g1.dw71 + g2.dw71 + g3.dw71 + g4.dw71,
+        db0:  g1.db0  + g2.db0  + g3.db0  + g4.db0,
+        db1:  g1.db1  + g2.db1  + g3.db1  + g4.db1,
+        db2:  g1.db2  + g2.db2  + g3.db2  + g4.db2,
+        db3:  g1.db3  + g2.db3  + g3.db3  + g4.db3,
+        db4:  g1.db4  + g2.db4  + g3.db4  + g4.db4,
+        db5:  g1.db5  + g2.db5  + g3.db5  + g4.db5,
+        db6:  g1.db6  + g2.db6  + g3.db6  + g4.db6,
+        db7:  g1.db7  + g2.db7  + g3.db7  + g4.db7,
+        dv0:  g1.dv0  + g2.dv0  + g3.dv0  + g4.dv0,
+        dv1:  g1.dv1  + g2.dv1  + g3.dv1  + g4.dv1,
+        dv2:  g1.dv2  + g2.dv2  + g3.dv2  + g4.dv2,
+        dv3:  g1.dv3  + g2.dv3  + g3.dv3  + g4.dv3,
+        dv4:  g1.dv4  + g2.dv4  + g3.dv4  + g4.dv4,
+        dv5:  g1.dv5  + g2.dv5  + g3.dv5  + g4.dv5,
+        dv6:  g1.dv6  + g2.dv6  + g3.dv6  + g4.dv6,
+        dv7:  g1.dv7  + g2.dv7  + g3.dv7  + g4.dv7,
+        dc:   g1.dc   + g2.dc   + g3.dc   + g4.dc
+    }
+}
+
+export function net2x8x1_step(net: Net2x8x1, grads: Grads2x8x1, lr: f32) -> Net2x8x1 {
+    return Net2x8x1 {
+        w00: net.w00 - lr * grads.dw00, w01: net.w01 - lr * grads.dw01,
+        w10: net.w10 - lr * grads.dw10, w11: net.w11 - lr * grads.dw11,
+        w20: net.w20 - lr * grads.dw20, w21: net.w21 - lr * grads.dw21,
+        w30: net.w30 - lr * grads.dw30, w31: net.w31 - lr * grads.dw31,
+        w40: net.w40 - lr * grads.dw40, w41: net.w41 - lr * grads.dw41,
+        w50: net.w50 - lr * grads.dw50, w51: net.w51 - lr * grads.dw51,
+        w60: net.w60 - lr * grads.dw60, w61: net.w61 - lr * grads.dw61,
+        w70: net.w70 - lr * grads.dw70, w71: net.w71 - lr * grads.dw71,
+        b0:  net.b0  - lr * grads.db0,
+        b1:  net.b1  - lr * grads.db1,
+        b2:  net.b2  - lr * grads.db2,
+        b3:  net.b3  - lr * grads.db3,
+        b4:  net.b4  - lr * grads.db4,
+        b5:  net.b5  - lr * grads.db5,
+        b6:  net.b6  - lr * grads.db6,
+        b7:  net.b7  - lr * grads.db7,
+        v0:  net.v0  - lr * grads.dv0,
+        v1:  net.v1  - lr * grads.dv1,
+        v2:  net.v2  - lr * grads.dv2,
+        v3:  net.v3  - lr * grads.dv3,
+        v4:  net.v4  - lr * grads.dv4,
+        v5:  net.v5  - lr * grads.dv5,
+        v6:  net.v6  - lr * grads.dv6,
+        v7:  net.v7  - lr * grads.dv7,
+        c:   net.c   - lr * grads.dc
+    }
+}

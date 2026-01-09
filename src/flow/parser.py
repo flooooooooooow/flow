@@ -29,6 +29,7 @@ class TokenType(Enum):
     STEP = "STEP"
     IMPORT = "IMPORT"
     EXPORT = "EXPORT"
+    EXTERN = "EXTERN"
     CONST = "CONST"
     MODULE = "MODULE"
     STRUCT = "STRUCT"
@@ -42,6 +43,7 @@ class TokenType(Enum):
     WITH = "WITH"
     MATCH = "MATCH"
     DEFAULT = "DEFAULT"
+    TEST = "TEST"
     
     # Types
     I8 = "I8"
@@ -127,6 +129,8 @@ class FunctionDecl:
     return_type: Type
     body: 'Block'
     attributes: List[str]
+    is_exported: bool = False
+    is_extern: bool = False
 
 @dataclass
 class VarDecl:
@@ -285,8 +289,13 @@ class ConstDecl:
     value: 'Expression'
     is_exported: bool = False
 
+@dataclass
+class TestDecl:
+    name: str
+    body: Block
+
 Expression = Union[Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, EffectCall, StructPattern]
-Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement, ImportDecl, ConstDecl]
+Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement, ImportDecl, ConstDecl, TestDecl]
 
 class Lexer:
     def __init__(self, text: str):
@@ -310,12 +319,14 @@ class Lexer:
             'to': TokenType.TO,
             'match': TokenType.MATCH,
             'default': TokenType.DEFAULT,
+            'test': TokenType.TEST,
             'with': TokenType.WITH,
             'handle': TokenType.HANDLE,
             'effect': TokenType.EFFECT,
             'capability': TokenType.CAPABILITY,
             'import': TokenType.IMPORT,
             'export': TokenType.EXPORT,
+            'extern': TokenType.EXTERN,
             'const': TokenType.CONST,
             'struct': TokenType.STRUCT,
             'and': TokenType.AND,
@@ -377,7 +388,7 @@ class Lexer:
             (r'COMMA', r','),
             (r'DOT', r'\.'),
             (r'STRING', r'"(?:[^"\\]|\\.)*"'),
-            (r'NUMBER', r'[0-9]+\.[0-9]+|[0-9]+'),
+            (r'NUMBER', r'0x[0-9a-fA-F]+|[0-9]+\.[0-9]+|[0-9]+'),
             (r'IDENTIFIER', r'[a-zA-Z_][a-zA-Z0-9_]*'),
         ]
         
@@ -486,6 +497,14 @@ class Parser:
                 decl = self.parse_const()
                 decl.is_exported = is_exported
                 declarations.append(decl)
+            elif self.current_token.type == TokenType.TEST:
+                if is_exported:
+                    raise SyntaxError(f"Cannot export a test declaration at line {self.current_token.line}")
+                declarations.append(self.parse_test())
+            elif self.current_token.type == TokenType.EXTERN:
+                if is_exported:
+                    raise SyntaxError(f"Cannot export an extern declaration at line {self.current_token.line}")
+                declarations.append(self.parse_extern())
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
         return declarations
@@ -510,6 +529,60 @@ class Parser:
             self.advance()
             
         return ConstDecl(name, type, value)
+
+    def parse_test(self) -> FunctionDecl:
+        self.expect(TokenType.TEST)
+        name_token = self.expect(TokenType.STRING)
+        name = "test_" + name_token.value[1:-1].replace(" ", "_")  # Remove quotes, make valid identifier
+        body = self.parse_block()
+
+        # Create a function that returns bool
+        return_type = Type("bool")
+        parameters = []  # No parameters for tests
+
+        return FunctionDecl(name, parameters, return_type, body, ["test"])
+    
+    def parse_extern(self) -> FunctionDecl:
+        """Parse extern function declaration"""
+        self.expect(TokenType.EXTERN)
+        
+        # Parse extern block: extern "module" { function declarations }
+        if self.current_token.type == TokenType.STRING:
+            # Skip the module name for now
+            self.advance()
+        
+        self.expect(TokenType.LBRACE)
+        
+        functions = []
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.FUNCTION:
+                # Parse function signature only for extern
+                self.expect(TokenType.FUNCTION)
+                name = self.expect(TokenType.IDENTIFIER).value
+                self.expect(TokenType.LPAREN)
+                
+                parameters = []
+                if self.current_token.type != TokenType.RPAREN:
+                    parameters = self.parse_parameters()
+                
+                self.expect(TokenType.RPAREN)
+                
+                return_type = Type("void")  # Default
+                if self.current_token.type == TokenType.ARROW:
+                    self.advance()
+                    return_type = self.parse_type()
+                
+                # Create function declaration with empty body
+                func = FunctionDecl(name, parameters, return_type, Block([]), [])
+                func.is_extern = True
+                functions.append(func)
+            else:
+                raise SyntaxError(f"Expected function declaration in extern block at line {self.current_token.line}")
+        
+        self.expect(TokenType.RBRACE)
+        
+        # Return the first function for now (extern blocks usually contain one function)
+        return functions[0] if functions else None
     
     def parse_struct(self) -> StructDecl:
         self.expect(TokenType.STRUCT)
@@ -835,7 +908,8 @@ class Parser:
                                           TokenType.F32, TokenType.F64, TokenType.BOOL]:
             # Check if it's a valid expression start
             if self.current_token.type in [TokenType.IDENTIFIER, TokenType.NUMBER, TokenType.BOOLEAN, 
-                                         TokenType.LPAREN, TokenType.MINUS, TokenType.NOT, TokenType.STAR, TokenType.AND]:
+                                         TokenType.LPAREN, TokenType.MINUS, TokenType.NOT, TokenType.STAR, TokenType.AND,
+                                         TokenType.STRING]:
                 value = self.parse_expression_without_assign()
         elif self.current_token.type == TokenType.VOID:
             # Explicit void return - consume the VOID token
@@ -1016,6 +1090,10 @@ class Parser:
             # This keeps the language ergonomic for SIMD examples that use 0.0/1.0.
             if isinstance(value, str) and ('.' in value or 'e' in value.lower()):
                 return Literal(value, Type("f32"))
+            elif isinstance(value, str) and value.startswith('0x'):
+                # Handle hex literals - convert to integer
+                hex_value = int(value, 16)
+                return Literal(str(hex_value), Type("i32"))
             return Literal(value, Type("i32"))  # Default to i32 for numbers
         
         elif self.current_token.type == TokenType.BOOLEAN:

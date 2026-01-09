@@ -1,0 +1,18 @@
+# Simple memory test case
+function malloc(size: i32) -> i32 {
+    return size + 1000  # Dummy implementation
+}
+
+function free(ptr: i32) -> i32 {
+    return 0
+}
+
+function test_memory() -> i32 {
+    let ptr: i32 = malloc(1024)
+    free(ptr)
+    return 0
+}
+
+function main() -> i32 {
+    return test_memory()
+}

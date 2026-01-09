@@ -1,0 +1,35 @@
+# XOR loss with helper functions (for cleaner gradient codegen demo)
+#
+# This version uses multi-arg helper functions instead of inlining everything.
+
+function sigmoid(x: f32) -> f32 {
+    return 1.0 / (1.0 + exp(-1.0 * x))
+}
+
+function predict(x0: f32, x1: f32,
+                 w00: f32, w01: f32, w10: f32, w11: f32,
+                 b0: f32, b1: f32, v0: f32, v1: f32, c: f32) -> f32 {
+    let h0: f32 = sigmoid(x0 * w00 + x1 * w01 + b0)
+    let h1: f32 = sigmoid(x0 * w10 + x1 * w11 + b1)
+    return sigmoid(h0 * v0 + h1 * v1 + c)
+}
+
+function squared_error(y: f32, target: f32) -> f32 {
+    let d: f32 = y - target
+    return d * d
+}
+
+function xor_loss_clean(w00: f32, w01: f32, w10: f32, w11: f32,
+                        b0: f32, b1: f32, v0: f32, v1: f32, c: f32) -> f32 {
+    let y00: f32 = predict(0.0, 0.0, w00, w01, w10, w11, b0, b1, v0, v1, c)
+    let y01: f32 = predict(0.0, 1.0, w00, w01, w10, w11, b0, b1, v0, v1, c)
+    let y10: f32 = predict(1.0, 0.0, w00, w01, w10, w11, b0, b1, v0, v1, c)
+    let y11: f32 = predict(1.0, 1.0, w00, w01, w10, w11, b0, b1, v0, v1, c)
+
+    let e00: f32 = squared_error(y00, 0.0)
+    let e01: f32 = squared_error(y01, 1.0)
+    let e10: f32 = squared_error(y10, 1.0)
+    let e11: f32 = squared_error(y11, 0.0)
+
+    return e00 + e01 + e10 + e11
+}

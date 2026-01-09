@@ -1,0 +1,431 @@
+# Neural Network with Backpropagation using FLOW's Autodiff
+# 
+# A 2-layer neural network learning XOR using forward-mode autodiff.
+
+import "autodiff.flow"
+
+# =============================================================================
+# Network weights as a struct
+# =============================================================================
+
+struct Net {
+    w00: f32, w01: f32, w10: f32, w11: f32,  # input->hidden
+    bh0: f32, bh1: f32,                       # hidden biases
+    wo0: f32, wo1: f32,                       # hidden->output  
+    bo: f32                                   # output bias
+}
+
+# =============================================================================
+# Forward pass helper (used by all gradient functions)
+# =============================================================================
+
+function sigmoid_f(x: f32) -> f32 {
+    return 1.0 / (1.0 + exp(-1.0 * x))
+}
+
+function predict(n: Net, x0: f32, x1: f32) -> f32 {
+    let h0: f32 = sigmoid_f(x0 * n.w00 + x1 * n.w01 + n.bh0)
+    let h1: f32 = sigmoid_f(x0 * n.w10 + x1 * n.w11 + n.bh1)
+    return sigmoid_f(h0 * n.wo0 + h1 * n.wo1 + n.bo)
+}
+
+# =============================================================================
+# Loss calculation (scalar, no autodiff)
+# =============================================================================
+
+function mse(pred: f32, target: f32) -> f32 {
+    let d: f32 = pred - target
+    return d * d
+}
+
+function total_loss(n: Net) -> f32 {
+    let l1: f32 = mse(predict(n, 0.0, 0.0), 0.0)
+    let l2: f32 = mse(predict(n, 0.0, 1.0), 1.0)
+    let l3: f32 = mse(predict(n, 1.0, 0.0), 1.0)
+    let l4: f32 = mse(predict(n, 1.0, 1.0), 0.0)
+    return l1 + l2 + l3 + l4
+}
+
+# =============================================================================
+# Gradient functions - one for each weight
+# Each computes ∂loss/∂weight using forward-mode autodiff
+# =============================================================================
+
+# Gradient for w00
+function grad_w00(n: Net) -> f32 {
+    let w00: Dual = dual_var(n.w00)
+    let w01: Dual = dual_const(n.w01)
+    let w10: Dual = dual_const(n.w10)
+    let w11: Dual = dual_const(n.w11)
+    let bh0: Dual = dual_const(n.bh0)
+    let bh1: Dual = dual_const(n.bh1)
+    let wo0: Dual = dual_const(n.wo0)
+    let wo1: Dual = dual_const(n.wo1)
+    let bo: Dual = dual_const(n.bo)
+    
+    let loss: Dual = dual_const(0.0)
+    
+    # Sample 1: (0,0) -> 0
+    let x0: Dual = dual_const(0.0)
+    let x1: Dual = dual_const(0.0)
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0, w00), dual_mul(x1, w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0, w10), dual_mul(x1, w11)), bh1))
+    let out: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo))
+    let l1: Dual = dual_sq(dual_sub(out, dual_const(0.0)))
+    
+    # Sample 2: (0,1) -> 1
+    let x0b: Dual = dual_const(0.0)
+    let x1b: Dual = dual_const(1.0)
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0b, w00), dual_mul(x1b, w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0b, w10), dual_mul(x1b, w11)), bh1))
+    let outb: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo))
+    let l2: Dual = dual_sq(dual_sub(outb, dual_const(1.0)))
+    
+    # Sample 3: (1,0) -> 1
+    let x0c: Dual = dual_const(1.0)
+    let x1c: Dual = dual_const(0.0)
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0c, w00), dual_mul(x1c, w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0c, w10), dual_mul(x1c, w11)), bh1))
+    let outc: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo))
+    let l3: Dual = dual_sq(dual_sub(outc, dual_const(1.0)))
+    
+    # Sample 4: (1,1) -> 0
+    let x0d: Dual = dual_const(1.0)
+    let x1d: Dual = dual_const(1.0)
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0d, w00), dual_mul(x1d, w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0d, w10), dual_mul(x1d, w11)), bh1))
+    let outd: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo))
+    let l4: Dual = dual_sq(dual_sub(outd, dual_const(0.0)))
+    
+    let total: Dual = dual_add(dual_add(l1, l2), dual_add(l3, l4))
+    return dual_grad(total)
+}
+
+# Gradient for w01  
+function grad_w01(n: Net) -> f32 {
+    let w00: Dual = dual_const(n.w00)
+    let w01: Dual = dual_var(n.w01)
+    let w10: Dual = dual_const(n.w10)
+    let w11: Dual = dual_const(n.w11)
+    let bh0: Dual = dual_const(n.bh0)
+    let bh1: Dual = dual_const(n.bh1)
+    let wo0: Dual = dual_const(n.wo0)
+    let wo1: Dual = dual_const(n.wo1)
+    let bo: Dual = dual_const(n.bo)
+    
+    let x0: Dual = dual_const(0.0)
+    let x1: Dual = dual_const(0.0)
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0, w00), dual_mul(x1, w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0, w10), dual_mul(x1, w11)), bh1))
+    let out: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo))
+    let l1: Dual = dual_sq(dual_sub(out, dual_const(0.0)))
+    
+    let x0b: Dual = dual_const(0.0)
+    let x1b: Dual = dual_const(1.0)
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0b, w00), dual_mul(x1b, w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0b, w10), dual_mul(x1b, w11)), bh1))
+    let outb: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo))
+    let l2: Dual = dual_sq(dual_sub(outb, dual_const(1.0)))
+    
+    let x0c: Dual = dual_const(1.0)
+    let x1c: Dual = dual_const(0.0)
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0c, w00), dual_mul(x1c, w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0c, w10), dual_mul(x1c, w11)), bh1))
+    let outc: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo))
+    let l3: Dual = dual_sq(dual_sub(outc, dual_const(1.0)))
+    
+    let x0d: Dual = dual_const(1.0)
+    let x1d: Dual = dual_const(1.0)
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0d, w00), dual_mul(x1d, w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0d, w10), dual_mul(x1d, w11)), bh1))
+    let outd: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo))
+    let l4: Dual = dual_sq(dual_sub(outd, dual_const(0.0)))
+    
+    return dual_grad(dual_add(dual_add(l1, l2), dual_add(l3, l4)))
+}
+
+# Gradient for w10
+function grad_w10(n: Net) -> f32 {
+    let w00: Dual = dual_const(n.w00)
+    let w01: Dual = dual_const(n.w01)
+    let w10: Dual = dual_var(n.w10)
+    let w11: Dual = dual_const(n.w11)
+    let bh0: Dual = dual_const(n.bh0)
+    let bh1: Dual = dual_const(n.bh1)
+    let wo0: Dual = dual_const(n.wo0)
+    let wo1: Dual = dual_const(n.wo1)
+    let bo: Dual = dual_const(n.bo)
+    
+    let x0: Dual = dual_const(0.0)
+    let x1: Dual = dual_const(0.0)
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0, w00), dual_mul(x1, w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0, w10), dual_mul(x1, w11)), bh1))
+    let l1: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo)), dual_const(0.0)))
+    
+    let x0b: Dual = dual_const(0.0)
+    let x1b: Dual = dual_const(1.0)
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0b, w00), dual_mul(x1b, w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0b, w10), dual_mul(x1b, w11)), bh1))
+    let l2: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo)), dual_const(1.0)))
+    
+    let x0c: Dual = dual_const(1.0)
+    let x1c: Dual = dual_const(0.0)
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0c, w00), dual_mul(x1c, w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0c, w10), dual_mul(x1c, w11)), bh1))
+    let l3: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo)), dual_const(1.0)))
+    
+    let x0d: Dual = dual_const(1.0)
+    let x1d: Dual = dual_const(1.0)
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0d, w00), dual_mul(x1d, w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0d, w10), dual_mul(x1d, w11)), bh1))
+    let l4: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo)), dual_const(0.0)))
+    
+    return dual_grad(dual_add(dual_add(l1, l2), dual_add(l3, l4)))
+}
+
+# Gradient for w11
+function grad_w11(n: Net) -> f32 {
+    let w00: Dual = dual_const(n.w00)
+    let w01: Dual = dual_const(n.w01)
+    let w10: Dual = dual_const(n.w10)
+    let w11: Dual = dual_var(n.w11)
+    let bh0: Dual = dual_const(n.bh0)
+    let bh1: Dual = dual_const(n.bh1)
+    let wo0: Dual = dual_const(n.wo0)
+    let wo1: Dual = dual_const(n.wo1)
+    let bo: Dual = dual_const(n.bo)
+    
+    let x0: Dual = dual_const(0.0)
+    let x1: Dual = dual_const(0.0)
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0, w00), dual_mul(x1, w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(x0, w10), dual_mul(x1, w11)), bh1))
+    let l1: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo)), dual_const(0.0)))
+    
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l2: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo)), dual_const(1.0)))
+    
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l3: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo)), dual_const(1.0)))
+    
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l4: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo)), dual_const(0.0)))
+    
+    return dual_grad(dual_add(dual_add(l1, l2), dual_add(l3, l4)))
+}
+
+# Gradient for bh0
+function grad_bh0(n: Net) -> f32 {
+    let w00: Dual = dual_const(n.w00)
+    let w01: Dual = dual_const(n.w01)
+    let w10: Dual = dual_const(n.w10)
+    let w11: Dual = dual_const(n.w11)
+    let bh0: Dual = dual_var(n.bh0)
+    let bh1: Dual = dual_const(n.bh1)
+    let wo0: Dual = dual_const(n.wo0)
+    let wo1: Dual = dual_const(n.wo1)
+    let bo: Dual = dual_const(n.bo)
+    
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l1: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo)), dual_const(0.0)))
+    
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l2: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo)), dual_const(1.0)))
+    
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l3: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo)), dual_const(1.0)))
+    
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l4: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo)), dual_const(0.0)))
+    
+    return dual_grad(dual_add(dual_add(l1, l2), dual_add(l3, l4)))
+}
+
+# Gradient for bh1
+function grad_bh1(n: Net) -> f32 {
+    let w00: Dual = dual_const(n.w00)
+    let w01: Dual = dual_const(n.w01)
+    let w10: Dual = dual_const(n.w10)
+    let w11: Dual = dual_const(n.w11)
+    let bh0: Dual = dual_const(n.bh0)
+    let bh1: Dual = dual_var(n.bh1)
+    let wo0: Dual = dual_const(n.wo0)
+    let wo1: Dual = dual_const(n.wo1)
+    let bo: Dual = dual_const(n.bo)
+    
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l1: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo)), dual_const(0.0)))
+    
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l2: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo)), dual_const(1.0)))
+    
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l3: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo)), dual_const(1.0)))
+    
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l4: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo)), dual_const(0.0)))
+    
+    return dual_grad(dual_add(dual_add(l1, l2), dual_add(l3, l4)))
+}
+
+# Gradient for wo0
+function grad_wo0(n: Net) -> f32 {
+    let w00: Dual = dual_const(n.w00)
+    let w01: Dual = dual_const(n.w01)
+    let w10: Dual = dual_const(n.w10)
+    let w11: Dual = dual_const(n.w11)
+    let bh0: Dual = dual_const(n.bh0)
+    let bh1: Dual = dual_const(n.bh1)
+    let wo0: Dual = dual_var(n.wo0)
+    let wo1: Dual = dual_const(n.wo1)
+    let bo: Dual = dual_const(n.bo)
+    
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l1: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo)), dual_const(0.0)))
+    
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l2: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo)), dual_const(1.0)))
+    
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l3: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo)), dual_const(1.0)))
+    
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l4: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo)), dual_const(0.0)))
+    
+    return dual_grad(dual_add(dual_add(l1, l2), dual_add(l3, l4)))
+}
+
+# Gradient for wo1
+function grad_wo1(n: Net) -> f32 {
+    let w00: Dual = dual_const(n.w00)
+    let w01: Dual = dual_const(n.w01)
+    let w10: Dual = dual_const(n.w10)
+    let w11: Dual = dual_const(n.w11)
+    let bh0: Dual = dual_const(n.bh0)
+    let bh1: Dual = dual_const(n.bh1)
+    let wo0: Dual = dual_const(n.wo0)
+    let wo1: Dual = dual_var(n.wo1)
+    let bo: Dual = dual_const(n.bo)
+    
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l1: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo)), dual_const(0.0)))
+    
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l2: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo)), dual_const(1.0)))
+    
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l3: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo)), dual_const(1.0)))
+    
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l4: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo)), dual_const(0.0)))
+    
+    return dual_grad(dual_add(dual_add(l1, l2), dual_add(l3, l4)))
+}
+
+# Gradient for bo
+function grad_bo(n: Net) -> f32 {
+    let w00: Dual = dual_const(n.w00)
+    let w01: Dual = dual_const(n.w01)
+    let w10: Dual = dual_const(n.w10)
+    let w11: Dual = dual_const(n.w11)
+    let bh0: Dual = dual_const(n.bh0)
+    let bh1: Dual = dual_const(n.bh1)
+    let wo0: Dual = dual_const(n.wo0)
+    let wo1: Dual = dual_const(n.wo1)
+    let bo: Dual = dual_var(n.bo)
+    
+    let h0: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l1: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0, wo0), dual_mul(h1, wo1)), bo)), dual_const(0.0)))
+    
+    let h0b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1b: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(0.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l2: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0b, wo0), dual_mul(h1b, wo1)), bo)), dual_const(1.0)))
+    
+    let h0c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(0.0), w01)), bh0))
+    let h1c: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(0.0), w11)), bh1))
+    let l3: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0c, wo0), dual_mul(h1c, wo1)), bo)), dual_const(1.0)))
+    
+    let h0d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w00), dual_mul(dual_const(1.0), w01)), bh0))
+    let h1d: Dual = dual_sigmoid(dual_add(dual_add(dual_mul(dual_const(1.0), w10), dual_mul(dual_const(1.0), w11)), bh1))
+    let l4: Dual = dual_sq(dual_sub(dual_sigmoid(dual_add(dual_add(dual_mul(h0d, wo0), dual_mul(h1d, wo1)), bo)), dual_const(0.0)))
+    
+    return dual_grad(dual_add(dual_add(l1, l2), dual_add(l3, l4)))
+}
+
+# =============================================================================
+# Training step
+# =============================================================================
+
+function train_step(n: Net, lr: f32) -> Net {
+    return Net {
+        w00: n.w00 - lr * grad_w00(n),
+        w01: n.w01 - lr * grad_w01(n),
+        w10: n.w10 - lr * grad_w10(n),
+        w11: n.w11 - lr * grad_w11(n),
+        bh0: n.bh0 - lr * grad_bh0(n),
+        bh1: n.bh1 - lr * grad_bh1(n),
+        wo0: n.wo0 - lr * grad_wo0(n),
+        wo1: n.wo1 - lr * grad_wo1(n),
+        bo: n.bo - lr * grad_bo(n)
+    }
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+function main() -> i32 {
+    printf("=== Neural Network XOR with Autodiff ===\n\n")
+    
+    let n: Net = Net {
+        w00: 0.5, w01: 0.9, w10: 0.4, w11: 1.0,
+        bh0: -0.8, bh1: -0.1,
+        wo0: -1.2, wo1: 1.1,
+        bo: -0.3
+    }
+    
+    printf("Before training:\n")
+    printf("  0^0=%.3f  0^1=%.3f  1^0=%.3f  1^1=%.3f\n",
+           predict(n, 0.0, 0.0), predict(n, 0.0, 1.0),
+           predict(n, 1.0, 0.0), predict(n, 1.0, 1.0))
+    printf("  Loss: %.4f\n\n", total_loss(n))
+    
+    let lr: f32 = 2.0
+    printf("Training 500 epochs (lr=%.1f)...\n", lr)
+    
+    for epoch in 0..500 {
+        n = train_step(n, lr)
+        if epoch % 100 == 0 {
+            printf("  Epoch %d: loss=%.4f\n", epoch, total_loss(n))
+        }
+    }
+    
+    printf("\nAfter training:\n")
+    printf("  0^0=%.3f (want 0)\n", predict(n, 0.0, 0.0))
+    printf("  0^1=%.3f (want 1)\n", predict(n, 0.0, 1.0))
+    printf("  1^0=%.3f (want 1)\n", predict(n, 1.0, 0.0))
+    printf("  1^1=%.3f (want 0)\n", predict(n, 1.0, 1.0))
+    printf("  Loss: %.4f\n", total_loss(n))
+    
+    printf("\n=== Done! ===\n")
+    return 0
+}

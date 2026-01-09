@@ -2,6 +2,7 @@ site_name: FLOW Programming Language Documentation
 site_description: Comprehensive documentation for the FLOW programming language
 repo_url: https://github.com/yourusername/transpile
 edit_uri: edit/main/docs/
+docs_dir: docs
 
 theme:
   name: material
@@ -50,53 +51,55 @@ markdown_extensions:
       alternate_style: true
 
 nav:
-  - Home: docs/README.md
+  - Home: README.md
   - Getting Started:
-    - docs/getting-started.md
+    - getting-started.md
   - Tutorials:
-    - docs/tutorials/beginner.md
-    - docs/tutorials/intermediate.md
-    - docs/tutorials/advanced.md
-    - docs/tutorials/graphics.md
-    - docs/tutorials/performance.md
-    - docs/tutorials/projects.md
+    - tutorials/beginner.md
+    - tutorials/intermediate.md
+    - tutorials/advanced.md
+    - tutorials/graphics.md
+    - tutorials/performance.md
+    - tutorials/projects.md
   - Language Reference:
-    - docs/language/overview.md
-    - docs/language/syntax.md
-    - docs/language/types.md
-    - docs/language/variables.md
-    - docs/language/functions.md
-    - docs/language/control-flow.md
-    - docs/language/structs.md
-    - docs/language/arrays.md
-    - docs/language/pattern-matching.md
-    - docs/language/effects.md
-    - docs/language/modules.md
-    - docs/language/graphics.md
-    - docs/language/memory.md
-    - docs/language/performance.md
-    - docs/language/error-handling.md
-    - docs/language/metaprogramming.md
-    - docs/language/ffi.md
-    - docs/language/language_design.md
+    - language/overview.md
+    - language/syntax.md
+    - language/types.md
+    - language/variables.md
+    - language/functions.md
+    - language/control-flow.md
+    - language/structs.md
+    - language/arrays.md
+    - language/pattern-matching.md
+    - language/effects.md
+    - language/modules.md
+    - language/graphics.md
+    - language/memory.md
+    - language/performance.md
+    - language/error-handling.md
+    - language/metaprogramming.md
+    - language/ffi.md
+    - language/language_design.md
   - Standard Library:
-    - docs/library/overview.md
-    - docs/library/core.md
-    - docs/library/math.md
-    - docs/library/strings.md
-    - docs/library/arrays.md
-    - docs/library/io.md
-    - docs/library/memory.md
+    - library/overview.md
+    - library/core.md
+    - library/math.md
+    - library/strings.md
+    - library/arrays.md
+    - library/io.md
+    - library/memory.md
   - Examples:
-    - docs/examples/README.md
-    - docs/examples/modules/README.md
-    - Metal GPU Examples: docs/examples/metal_examples.md
+    - examples/README.md
+    - examples/modules/README.md
+    - Interactive Demo: examples/interactive_demo.html
+    - Metal GPU Examples: examples/metal_examples.md
+    - WebAssembly Examples: examples/web_examples.md
   - Project Documentation:
-    - Project Structure: docs/project/PROJECT_STRUCTURE.md
-    - Changelog: docs/project/CHANGELOG.md
-    - Contributing: docs/project/CONTRIBUTING.md
+    - Project Structure: project/PROJECT_STRUCTURE.md
+    - Changelog: project/CHANGELOG.md
+    - Contributing: project/CONTRIBUTING.md
   - Research:
-    - Turing Proof: docs/research/turing_proof.md
-    - Research Paper: docs/research/FLOW_RESEARCH_PAPER.md
+    - Turing Proof: research/turing_proof.md
+    - Research Paper: research/FLOW_RESEARCH_PAPER.md
   - Development:
-    - docs/DEVELOPMENT.md
+    - DEVELOPMENT.md

@@ -13,6 +13,7 @@ from .mlir_generator import flow_to_mlir
 from .c_generator import flow_to_c
 from .module_resolver import resolve_modules, get_module_resolver
 from .gpu_integration import get_gpu_integration
+from .type_checker import TypeChecker
 
 def main():
     parser = argparse.ArgumentParser(description="FLOW Language Transpiler")
@@ -53,11 +54,23 @@ def main():
     try:
         print("Resolving modules...", file=sys.stderr)
         declarations = resolve_modules(args.input)
+
+        # Type checking phase (warnings only for now)
+        type_checker = TypeChecker()
+        type_result = type_checker.check(declarations)
+
+        if type_result.errors:
+            print("Type warnings:", file=sys.stderr)
+            for error in type_result.errors[:5]:  # Show max 5 warnings
+                print(f"  ⚠ {error}", file=sys.stderr)
+            if len(type_result.errors) > 5:
+                print(f"  ... and {len(type_result.errors) - 5} more", file=sys.stderr)
+
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
         structs = [d for d in declarations if isinstance(d, StructDecl)]
         effects = [d for d in declarations if isinstance(d, EffectDecl)]
         capabilities = [d for d in declarations if isinstance(d, CapabilityDecl)]
-        
+
         print(f"Parsed {len(functions)} functions, {len(structs)} structs, {len(effects)} effects, {len(capabilities)} capabilities", file=sys.stderr)
         
         # Show module information if requested

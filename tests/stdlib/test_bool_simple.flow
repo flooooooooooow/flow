@@ -1,0 +1,18 @@
+import "io.flow"
+
+function test_bool() -> bool {
+    let x: bool = true
+    let y: bool = false
+    return x
+}
+
+function main() -> i32 {
+    let result: bool = test_bool()
+    if result {
+        print("Boolean test passed")
+        return 0
+    } else {
+        print("Boolean test failed")
+        return 1
+    }
+}

@@ -1,0 +1,65 @@
+# Simplified GPU Integration Demo - Fixed Version
+
+function main() -> i32 {
+    print("=== GPU Integration Demo (Simplified) ===")
+    
+    # Check if GPU is available
+    let available: bool = gpu_is_available()
+    print("GPU available: ")
+    print(available)
+    
+    if available {
+        # Get GPU info
+        let gpu_info: string = gpu_get_info()
+        print("GPU info: ")
+        print(gpu_info)
+        
+        # Test GPU allocation
+        let size: i32 = 1024
+        let backend: string = "cuda"
+        let gpu_buffer: i64 = gpu_allocate(size, backend)
+        print("GPU buffer allocated: ")
+        print(gpu_buffer)
+        
+        # Test GPU operations
+        gpu_copy_to_device(gpu_buffer)
+        gpu_copy_from_device(gpu_buffer)
+        gpu_free_buffer(gpu_buffer)
+        
+        print("GPU operations completed successfully")
+    } else {
+        print("GPU not available - using CPU")
+    }
+    
+    print("Demo completed")
+    return 0
+}
+
+# GPU Functions
+function gpu_is_available() -> bool {
+    return false  # Simulate no GPU for demo
+}
+
+function gpu_get_info() -> string {
+    return "cuda,opencl,metal"
+}
+
+function gpu_allocate(size: i32, backend: string) -> i64 {
+    return 0  # Stub - MLIR will infer i64
+}
+
+function gpu_free(ptr: i64, backend: string) -> void {
+    # Stub
+}
+
+function gpu_copy_to_device(ptr: i64) -> void {
+    # Stub
+}
+
+function gpu_copy_from_device(ptr: i64) -> void {
+    # Stub
+}
+
+function gpu_free_buffer(ptr: i64) -> void {
+    gpu_free(ptr, "cuda")
+}

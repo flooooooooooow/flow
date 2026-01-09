@@ -1,0 +1,7 @@
+function simple() -> i32 {
+    return 42
+}
+
+function main() -> i32 {
+    return simple()
+}

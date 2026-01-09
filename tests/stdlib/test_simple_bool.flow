@@ -1,0 +1,12 @@
+function simple_bool() -> bool {
+    return true
+}
+
+function main() -> i32 {
+    let result: bool = simple_bool()
+    if result {
+        return 0
+    } else {
+        return 1
+    }
+}

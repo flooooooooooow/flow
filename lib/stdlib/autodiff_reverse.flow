@@ -1,0 +1,106 @@
+# Reverse-Mode Automatic Differentiation Helpers
+#
+# Provides operations that return both value AND local gradient,
+# enabling efficient manual backpropagation.
+
+# =============================================================================
+# Result types for gradient computation
+# =============================================================================
+
+struct UnaryResult {
+    result: f32,
+    grad_x: f32
+}
+
+struct BinaryResult {
+    result: f32,
+    grad_a: f32,
+    grad_b: f32
+}
+
+# =============================================================================
+# Binary operations with gradients
+# =============================================================================
+
+# Addition: d(a+b)/da = 1, d(a+b)/db = 1
+export function op_add(a: f32, b: f32) -> BinaryResult {
+    return BinaryResult { result: a + b, grad_a: 1.0, grad_b: 1.0 }
+}
+
+# Subtraction: d(a-b)/da = 1, d(a-b)/db = -1
+export function op_sub(a: f32, b: f32) -> BinaryResult {
+    return BinaryResult { result: a - b, grad_a: 1.0, grad_b: -1.0 }
+}
+
+# Multiplication: d(a*b)/da = b, d(a*b)/db = a
+export function op_mul(a: f32, b: f32) -> BinaryResult {
+    return BinaryResult { result: a * b, grad_a: b, grad_b: a }
+}
+
+# Division: d(a/b)/da = 1/b, d(a/b)/db = -a/b²
+export function op_div(a: f32, b: f32) -> BinaryResult {
+    let b_sq: f32 = b * b
+    return BinaryResult { result: a / b, grad_a: 1.0 / b, grad_b: -1.0 * a / b_sq }
+}
+
+# =============================================================================
+# Unary operations with gradients
+# =============================================================================
+
+# Square: d(x²)/dx = 2x
+export function op_sq(x: f32) -> UnaryResult {
+    return UnaryResult { result: x * x, grad_x: 2.0 * x }
+}
+
+# Square root: d(√x)/dx = 1/(2√x)
+export function op_sqrt(x: f32) -> UnaryResult {
+    let s: f32 = sqrt(x)
+    return UnaryResult { result: s, grad_x: 0.5 / s }
+}
+
+# Exponential: d(eˣ)/dx = eˣ
+export function op_exp(x: f32) -> UnaryResult {
+    let e: f32 = exp(x)
+    return UnaryResult { result: e, grad_x: e }
+}
+
+# Log: d(ln x)/dx = 1/x
+export function op_log(x: f32) -> UnaryResult {
+    return UnaryResult { result: log(x), grad_x: 1.0 / x }
+}
+
+# Sigmoid: σ(x) = 1/(1+e⁻ˣ), dσ/dx = σ(1-σ)
+export function op_sigmoid(x: f32) -> UnaryResult {
+    let s: f32 = 1.0 / (1.0 + exp(-1.0 * x))
+    return UnaryResult { result: s, grad_x: s * (1.0 - s) }
+}
+
+# Sin: d(sin x)/dx = cos x
+export function op_sin(x: f32) -> UnaryResult {
+    return UnaryResult { result: sin(x), grad_x: cos(x) }
+}
+
+# Cos: d(cos x)/dx = -sin x
+export function op_cos(x: f32) -> UnaryResult {
+    return UnaryResult { result: cos(x), grad_x: -1.0 * sin(x) }
+}
+
+# Tanh: d(tanh x)/dx = 1 - tanh²x
+export function op_tanh(x: f32) -> UnaryResult {
+    let t: f32 = tanh(x)
+    return UnaryResult { result: t, grad_x: 1.0 - t * t }
+}
+
+# ReLU: d(relu x)/dx = 1 if x > 0 else 0
+export function op_relu(x: f32) -> UnaryResult {
+    if x > 0.0 {
+        return UnaryResult { result: x, grad_x: 1.0 }
+    } else {
+        return UnaryResult { result: 0.0, grad_x: 0.0 }
+    }
+}
+
+# Negation: d(-x)/dx = -1
+export function op_neg(x: f32) -> UnaryResult {
+    return UnaryResult { result: -1.0 * x, grad_x: -1.0 }
+}

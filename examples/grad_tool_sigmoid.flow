@@ -1,0 +1,4 @@
+function g(x: f32) -> f32 {
+    let y: f32 = sigmoid(x)
+    return y * (1.0 - y)
+}
