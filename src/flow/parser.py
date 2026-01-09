@@ -964,7 +964,7 @@ class Parser:
             # Check if it's a valid expression start
             if self.current_token.type in [TokenType.IDENTIFIER, TokenType.NUMBER, TokenType.BOOLEAN, 
                                          TokenType.LPAREN, TokenType.MINUS, TokenType.NOT, TokenType.STAR, TokenType.AND,
-                                         TokenType.STRING]:
+                                         TokenType.STRING, TokenType.LESS, TokenType.LBRACKET]:
                 value = self.parse_expression_without_assign()
         elif self.current_token.type == TokenType.VOID:
             # Explicit void return - consume the VOID token

@@ -43,11 +43,13 @@ from .parser import (
     HandleStatement,
     IfStatement,
     Literal,
+    MatchCase,
     MatchStatement,
     ReturnStatement,
     Statement,
     StructDecl,
     StructLiteral,
+    StructPattern,
     Type,
     UnaryOperation,
     VarDecl,
@@ -411,6 +413,29 @@ class CGenerator:
             return "void"
         if t.name == "string":
             return "char*"  # C strings are char pointers
+        # Vector types: vec2, vec4, vec8, vec16 with element type
+        if t.name.startswith("vec"):
+            # Parse vec4<f32> or vec4_f32
+            if t.type_args and len(t.type_args) > 0:
+                elem_type = t.type_args[0]
+                elem_c_type = self._c_type(elem_type)
+            elif "_" in t.name:
+                # Handle vec4_f32 format
+                parts = t.name.split("_")
+                elem_c_type = self._c_type(Type(parts[1]))
+            else:
+                elem_c_type = "float"  # Default to float
+            
+            # Extract vector size from name (vec4 -> 4)
+            vec_name = t.name.split("_")[0]
+            if t.type_args:
+                vec_name = t.name
+            size_str = ''.join(c for c in vec_name if c.isdigit())
+            size = int(size_str) if size_str else 4
+            
+            # Use GCC/Clang vector extension
+            byte_size = size * (8 if elem_c_type == "double" else 4)
+            return f"{elem_c_type} __attribute__((vector_size({byte_size})))"
         # Array types: array_i32, array_f32, etc.
         if t.name.startswith("array_"):
             if t.element_type:
@@ -480,6 +505,9 @@ class CGenerator:
         
         if isinstance(st, HandleStatement):
             return self._gen_handle(st)
+        
+        if isinstance(st, MatchStatement):
+            return self._gen_match(st)
 
         # Expression statement
         if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall)):
@@ -537,6 +565,108 @@ class CGenerator:
         lines.extend(self._gen_block(st.body))
         self._indent -= 1
         lines.append(f"{self._i()}}}")
+        return lines
+    
+    def _gen_match(self, st: MatchStatement) -> List[str]:
+        """Generate C switch/if-else chain from FLOW match statement."""
+        lines: List[str] = []
+        match_expr = self._gen_expr(st.value)
+        
+        # Check if we can use a switch (integer/enum patterns only)
+        can_use_switch = all(
+            isinstance(case.pattern, Literal) and case.pattern.type.name in ('i32', 'i64', 'i8', 'i16', 'u8', 'u16', 'u32', 'u64')
+            for case in st.cases
+        )
+        
+        if can_use_switch:
+            # Generate C switch statement
+            lines.append(f"{self._i()}switch ({match_expr}) {{")
+            self._indent += 1
+            
+            for case in st.cases:
+                pattern_val = self._gen_expr(case.pattern)
+                lines.append(f"{self._i()}case {pattern_val}: {{")
+                self._indent += 1
+                lines.extend(self._gen_block(case.body))
+                lines.append(f"{self._i()}break;")
+                self._indent -= 1
+                lines.append(f"{self._i()}}}")
+            
+            if st.default_case:
+                lines.append(f"{self._i()}default: {{")
+                self._indent += 1
+                lines.extend(self._gen_block(st.default_case))
+                lines.append(f"{self._i()}break;")
+                self._indent -= 1
+                lines.append(f"{self._i()}}}")
+            
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+        else:
+            # Generate if-else chain for complex patterns
+            # Store match value in temp variable to avoid multiple evaluation
+            lines.append(f"{self._i()}{{ // match block")
+            self._indent += 1
+            
+            first = True
+            for case in st.cases:
+                pattern = case.pattern
+                
+                # Generate condition and bindings based on pattern type
+                bindings = []  # List of (var_name, c_expr) to bind before body
+                
+                if isinstance(pattern, Literal):
+                    cond = f"({match_expr}) == {self._gen_expr(pattern)}"
+                elif isinstance(pattern, Variable):
+                    # Variable pattern always matches - bind the value
+                    cond = "1"  # Always true
+                    bindings.append((pattern.name, match_expr))
+                elif isinstance(pattern, StructPattern):
+                    # Struct pattern: Point(a, b) matches any Point and binds fields
+                    # For now, struct patterns always match (type is checked at compile time)
+                    cond = "1"  # Always true - struct type check is static
+                    
+                    # Bind struct fields to pattern variables
+                    struct_name = pattern.struct_name
+                    if struct_name in self._structs:
+                        field_names = list(self._structs[struct_name].keys())
+                        for i, binding in enumerate(pattern.bindings):
+                            if i < len(field_names):
+                                field = field_names[i]
+                                bindings.append((binding, f"({match_expr}).{field}"))
+                else:
+                    # Other patterns - try comparison
+                    cond = f"({match_expr}) == {self._gen_expr(pattern)}"
+                
+                if first:
+                    lines.append(f"{self._i()}if ({cond}) {{")
+                    first = False
+                else:
+                    lines.append(f"{self._i()}}} else if ({cond}) {{")
+                
+                self._indent += 1
+                
+                # Generate variable bindings
+                for var_name, var_expr in bindings:
+                    lines.append(f"{self._i()}// pattern binding: {var_name}")
+                    # Infer type from expression or use auto
+                    lines.append(f"{self._i()}__auto_type {var_name} = {var_expr};")
+                
+                lines.extend(self._gen_block(case.body))
+                self._indent -= 1
+            
+            if st.default_case:
+                lines.append(f"{self._i()}}} else {{")
+                self._indent += 1
+                lines.extend(self._gen_block(st.default_case))
+                self._indent -= 1
+            
+            if st.cases:  # Close the last if/else
+                lines.append(f"{self._i()}}}")
+            
+            self._indent -= 1
+            lines.append(f"{self._i()}}} // end match")
+        
         return lines
     
     def _gen_handle(self, st: HandleStatement) -> List[str]:
@@ -766,6 +896,25 @@ class CGenerator:
         
         if isinstance(e, ArrayLiteral):
             return self._gen_array_literal(e)
+        
+        if isinstance(e, VectorLiteral):
+            # Generate vector literal using compound literal with vector extension
+            # Need to determine element type and vector size from elements
+            num_elems = len(e.elements)
+            elements_str = ", ".join(self._gen_expr(elem) for elem in e.elements)
+            
+            # Infer element type from first element
+            first_elem = e.elements[0] if e.elements else None
+            if first_elem and isinstance(first_elem, Literal):
+                if '.' in str(first_elem.value) or first_elem.type.name in ('f32', 'f64'):
+                    elem_type = "float"
+                else:
+                    elem_type = "int32_t"
+            else:
+                elem_type = "float"  # Default
+            
+            byte_size = num_elems * (8 if elem_type == "double" else 4)
+            return f"(({elem_type} __attribute__((vector_size({byte_size})))){{ {elements_str} }})"
 
         raise NotImplementedError(f"Unsupported expression: {type(e)}")
     
