@@ -41,6 +41,7 @@ show_help() {
     echo "  run <program>     Compile and run program"
     echo "  compile <program>  Compile program only"
     echo "  mlir <program>     Generate MLIR only"
+    echo "  mlir-run <program> Compile via MLIR and run"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
     echo "  fmt <files...>    Format FLOW source files"
     echo "  test              Run all FLOW tests"
@@ -331,6 +332,51 @@ case "${1:-help}" in
     "mlir")
         shift
         generate_mlir "$@"
+        ;;
+    "mlir-run")
+        shift
+        if [ -z "$1" ]; then
+            print_error "Usage: flow mlir-run <program.flow>"
+            exit 1
+        fi
+        generate_mlir "$1"
+        if [ $? -ne 0 ]; then
+            print_error "MLIR generation failed"
+            exit 1
+        fi
+        
+        PROGRAM_NAME=$(basename "$1" .flow)
+        BUILD_DIR="$SCRIPT_DIR/build"
+        MLIR_FILE="$BUILD_DIR/${PROGRAM_NAME}.mlir"
+        OBJ_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir.o"
+        EXE_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir"
+        
+        print_info "Lowering MLIR to LLVM IR..."
+        if ! $LLVM_PATH/mlir-opt "$MLIR_FILE" \
+            --convert-cf-to-llvm \
+            --convert-func-to-llvm \
+            --convert-arith-to-llvm \
+            --reconcile-unrealized-casts | \
+            $LLVM_PATH/mlir-translate --mlir-to-llvmir | \
+            $LLVM_PATH/llc -filetype=obj -o "$OBJ_FILE" 2>/dev/null; then
+            print_error "MLIR to LLVM lowering failed"
+            exit 1
+        fi
+        print_success "MLIR → LLVM IR → Object"
+        
+        print_info "Linking executable..."
+        if ! clang "$OBJ_FILE" -o "$EXE_FILE" 2>/dev/null; then
+            print_error "Linking failed"
+            exit 1
+        fi
+        print_success "Linked: $EXE_FILE"
+        
+        print_info "Running..."
+        echo "----------------------------------------"
+        "$EXE_FILE"
+        EXIT_CODE=$?
+        echo "----------------------------------------"
+        print_success "Program finished with exit code: $EXIT_CODE"
         ;;
     "transpile")
         shift
