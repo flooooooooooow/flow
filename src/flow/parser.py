@@ -169,6 +169,14 @@ class Token:
     column: int
 
 @dataclass
+class SourceLocation:
+    """Source code location for LSP features."""
+    line: int  # 0-based line number
+    column: int  # 0-based column number
+    end_line: Optional[int] = None
+    end_column: Optional[int] = None
+
+@dataclass
 class Type:
     name: str
     is_pointer: bool = False
@@ -199,6 +207,7 @@ class FunctionDecl:
     is_extern: bool = False
     type_params: List[str] = field(default_factory=list)  # Generic type parameters like <T, U>
     has_self: bool = False  # Whether this is a method with self parameter
+    location: Optional[SourceLocation] = None  # For LSP go-to-definition
 
 @dataclass
 class VarDecl:
@@ -303,6 +312,7 @@ class StructDecl:
     fields: List[Parameter]
     is_exported: bool = False
     type_params: List[str] = field(default_factory=list)  # Generic type parameters like <T, U>
+    location: Optional[SourceLocation] = None  # For LSP
 
 @dataclass
 class EnumVariant:
@@ -727,7 +737,9 @@ class Parser:
         return functions[0] if functions else None
     
     def parse_struct(self) -> StructDecl:
+        start_token = self.current_token
         self.expect(TokenType.STRUCT)
+        name_token = self.current_token
         name = self.expect(TokenType.IDENTIFIER).value
         self.struct_names.add(name)
         
@@ -750,7 +762,14 @@ class Parser:
                 self.advance()
         
         self.expect(TokenType.RBRACE)
-        return StructDecl(name, fields, type_params=type_params)
+        
+        loc = SourceLocation(
+            line=start_token.line - 1,
+            column=start_token.column - 1,
+            end_line=name_token.line - 1,
+            end_column=name_token.column - 1 + len(name)
+        )
+        return StructDecl(name, fields, type_params=type_params, location=loc)
     
     def parse_enum(self) -> EnumDecl:
         """Parse enum declaration: enum Option<T> { Some(T), None }"""
@@ -868,7 +887,9 @@ class Parser:
         return ImplDecl(trait_name, for_type, methods)
     
     def parse_function(self) -> FunctionDecl:
+        start_token = self.current_token
         self.expect(TokenType.FUNCTION)
+        name_token = self.current_token
         name = self.expect(TokenType.IDENTIFIER).value
         
         # Parse optional type parameters: function foo<T, U>(...)
@@ -907,7 +928,15 @@ class Parser:
         
         body = self.parse_block()
         
-        fn = FunctionDecl(name, parameters, return_type, body, [], type_params=type_params)
+        # Create location from start token (0-based for LSP)
+        loc = SourceLocation(
+            line=start_token.line - 1,  # Convert to 0-based
+            column=start_token.column - 1,
+            end_line=name_token.line - 1,
+            end_column=name_token.column - 1 + len(name)
+        )
+        
+        fn = FunctionDecl(name, parameters, return_type, body, [], type_params=type_params, location=loc)
         # Store has_self as an attribute (for impl methods)
         fn.has_self = has_self
         return fn

@@ -200,7 +200,7 @@ run_tests() {
                 print_error "✗ $rel_path"
                 failed=$((failed + 1))
             fi
-        done < <(find "$dir" -name "*.flow")
+        done < <(find "$dir" -name "*.flow" -not -path "*/wip/*")
     done
     
     echo "----------------------------------------"

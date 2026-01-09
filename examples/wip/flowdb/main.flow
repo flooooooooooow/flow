@@ -1,0 +1,619 @@
+# ============================================================================
+# FlowDB - Complete Demo Application
+# ============================================================================
+#
+# A comprehensive demonstration of the FLOW programming language featuring:
+#
+# ✅ CORE LANGUAGE FEATURES:
+#    - Structs and user-defined types
+#    - Functions with typed parameters
+#    - Control flow (if/elif/else, while, for, match)
+#    - Arrays (fixed-size)
+#    - Generics (Box<T>, Pair<A,B>)
+#    - Constants
+#
+# ✅ TYPE SYSTEM:
+#    - Primitive types (i32, i64, f32, f64, bool, string)
+#    - Option types for nullable values
+#    - Result types for error handling
+#    - Pattern matching on integers and structs
+#
+# ✅ EFFECTS SYSTEM:
+#    - Effect declarations (Database, Logger)
+#    - Capability implementations (ConsoleLogger, SilentLogger)
+#    - Effect handlers (handle ... with)
+#    - Scoped side effects
+#
+# ✅ TRAITS:
+#    - Trait definitions (Display, Comparable, Hashable, Validate)
+#    - Implementation blocks (impl Trait for Type)
+#    - Polymorphic behavior
+#
+# ✅ MODULES:
+#    - Import statements
+#    - Export declarations
+#    - Multi-file organization
+#
+# ✅ ALGORITHMS:
+#    - Hashing (for indexes)
+#    - Sorting (bubble sort)
+#    - Binary search
+#    - Statistical functions
+#
+# ============================================================================
+
+import "types.flow"
+import "traits.flow"
+import "engine.flow"
+import "query.flow"
+import "index.flow"
+import "stdlib/option.flow"
+import "stdlib/result.flow"
+
+# =============================================================================
+# DEMO: Creating Schema and Table
+# =============================================================================
+
+function demo_schema_creation() -> TableSchema {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Schema Definition Demo                      ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    # Create a schema for an "employees" table
+    let schema: TableSchema = schema_new("employees")
+    
+    # Add columns with different types
+    schema = schema_add_column(schema, column_def_primary("id", field_type_int()))
+    schema = schema_add_column(schema, column_def_new("name", field_type_string()))
+    schema = schema_add_column(schema, column_def_new("age", field_type_int()))
+    schema = schema_add_column(schema, column_def_new("salary", field_type_float()))
+    schema = schema_add_column(schema, column_def_new("active", field_type_bool()))
+    
+    printf("Created table schema: %s\n", schema.name)
+    printf("Number of columns: %d\n\n", schema.num_columns)
+    
+    # Display column definitions using traits
+    printf("Column Definitions:\n")
+    printf("-------------------\n")
+    for i in 0 to schema.num_columns {
+        let col: ColumnDef = schema_get_column(schema, i)
+        printf("  [%d] ", i)
+        ColumnDef_Display_show(col)
+        printf("\n")
+    }
+    printf("\n")
+    
+    return schema
+}
+
+# =============================================================================
+# DEMO: Inserting Data
+# =============================================================================
+
+function demo_insert_data(schema: TableSchema) -> Table {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Data Insertion Demo                         ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    let t: Table = table_new(schema)
+    
+    # Insert employee records
+    printf("Inserting employee records...\n\n")
+    
+    # Employee 1: Alice
+    let r1: Row = row_new(0)
+    r1 = row_set_value(r1, 0, value_int(1))
+    r1 = row_set_value(r1, 1, value_string("Alice"))
+    r1 = row_set_value(r1, 2, value_int(30))
+    r1 = row_set_value(r1, 3, value_float(75000.00))
+    r1 = row_set_value(r1, 4, value_bool(true))
+    t = insert_with_log(t, r1)
+    
+    # Employee 2: Bob
+    let r2: Row = row_new(0)
+    r2 = row_set_value(r2, 0, value_int(2))
+    r2 = row_set_value(r2, 1, value_string("Bob"))
+    r2 = row_set_value(r2, 2, value_int(25))
+    r2 = row_set_value(r2, 3, value_float(55000.00))
+    r2 = row_set_value(r2, 4, value_bool(true))
+    t = insert_with_log(t, r2)
+    
+    # Employee 3: Carol
+    let r3: Row = row_new(0)
+    r3 = row_set_value(r3, 0, value_int(3))
+    r3 = row_set_value(r3, 1, value_string("Carol"))
+    r3 = row_set_value(r3, 2, value_int(35))
+    r3 = row_set_value(r3, 3, value_float(85000.00))
+    r3 = row_set_value(r3, 4, value_bool(true))
+    t = insert_with_log(t, r3)
+    
+    # Employee 4: Dave
+    let r4: Row = row_new(0)
+    r4 = row_set_value(r4, 0, value_int(4))
+    r4 = row_set_value(r4, 1, value_string("Dave"))
+    r4 = row_set_value(r4, 2, value_int(28))
+    r4 = row_set_value(r4, 3, value_float(62000.00))
+    r4 = row_set_value(r4, 4, value_bool(false))
+    t = insert_with_log(t, r4)
+    
+    # Employee 5: Eve
+    let r5: Row = row_new(0)
+    r5 = row_set_value(r5, 0, value_int(5))
+    r5 = row_set_value(r5, 1, value_string("Eve"))
+    r5 = row_set_value(r5, 2, value_int(40))
+    r5 = row_set_value(r5, 3, value_float(95000.00))
+    r5 = row_set_value(r5, 4, value_bool(true))
+    t = insert_with_log(t, r5)
+    
+    printf("\n")
+    return t
+}
+
+# =============================================================================
+# DEMO: Querying Data
+# =============================================================================
+
+function demo_queries(t: Table) -> void {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Query Execution Demo                        ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    # Query 1: SELECT * (full table scan)
+    printf("Query 1: SELECT * FROM employees\n")
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    scan_with_log(t)
+    
+    # Query 2: COUNT
+    printf("\nQuery 2: SELECT COUNT(*) FROM employees\n")
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    let q_count: Query = query_count()
+    let r_count: QueryResult = execute_query(t, q_count)
+    print_aggregate_result(r_count, "COUNT(*)")
+    
+    # Query 3: SUM of salaries
+    printf("\nQuery 3: SELECT SUM(salary) FROM employees\n")
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    let q_sum: Query = query_sum(3)  # Column 3 is salary
+    let r_sum: QueryResult = execute_query(t, q_sum)
+    print_aggregate_result(r_sum, "SUM(salary)")
+    
+    # Query 4: AVG of ages
+    printf("\nQuery 4: SELECT AVG(age) FROM employees\n")
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    let q_avg: Query = query_avg(2)  # Column 2 is age
+    let r_avg: QueryResult = execute_query(t, q_avg)
+    print_aggregate_result(r_avg, "AVG(age)")
+    
+    # Query 5: MIN salary
+    printf("\nQuery 5: SELECT MIN(salary) FROM employees\n")
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    let q_min: Query = query_min(3)
+    let r_min: QueryResult = execute_query(t, q_min)
+    print_aggregate_result(r_min, "MIN(salary)")
+    
+    # Query 6: MAX salary
+    printf("\nQuery 6: SELECT MAX(salary) FROM employees\n")
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    let q_max: Query = query_max(3)
+    let r_max: QueryResult = execute_query(t, q_max)
+    print_aggregate_result(r_max, "MAX(salary)")
+    
+    # Query 7: SELECT with WHERE clause (age > 30)
+    printf("\nQuery 7: SELECT * FROM employees WHERE age > 30\n")
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    let cond_age: Condition = condition_gt(2, value_int(30))
+    let q_where: Query = query_select_where(cond_age)
+    let r_where: QueryResult = execute_query(t, q_where)
+    print_query_result(r_where, t.schema)
+    
+    printf("\n")
+}
+
+# =============================================================================
+# DEMO: Generics
+# =============================================================================
+
+function demo_generics() -> void {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Generics Demo                               ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    # Box<i32>
+    printf("Generic Box<T> container:\n")
+    printf("─────────────────────────\n")
+    let box_int: Box<i32> = Box<i32> { value: 42, has_value: true }
+    printf("  Box<i32>.value = %d\n", box_int.value)
+    
+    let box_float: Box<f32> = Box<f32> { value: 3.14159, has_value: true }
+    printf("  Box<f32>.value = %f\n", box_float.value)
+    
+    # Pair<K, V>
+    printf("\nGeneric Pair<K, V> container:\n")
+    printf("────────────────────────────\n")
+    let pair1: Pair<i32, f32> = Pair<i32, f32> { key: 100, value: 99.5 }
+    printf("  Pair<i32, f32> = (%d, %f)\n", pair1.key, pair1.value)
+    
+    let pair2: Pair<string, i32> = Pair<string, i32> { key: "count", value: 1000 }
+    printf("  Pair<string, i32> = ('%s', %d)\n", pair2.key, pair2.value)
+    
+    printf("\n")
+}
+
+# =============================================================================
+# DEMO: Pattern Matching
+# =============================================================================
+
+function demo_pattern_matching() -> void {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Pattern Matching Demo                       ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    printf("Matching on query types:\n")
+    printf("────────────────────────\n")
+    
+    for qt in 0 to 9 {
+        printf("  Query type %d = ", qt)
+        match qt {
+            0 => printf("SELECT\n")
+            1 => printf("INSERT\n")
+            2 => printf("UPDATE\n")
+            3 => printf("DELETE\n")
+            4 => printf("COUNT\n")
+            5 => printf("SUM\n")
+            6 => printf("AVG\n")
+            7 => printf("MIN\n")
+            8 => printf("MAX\n")
+            _ => printf("UNKNOWN\n")
+        }
+    }
+    
+    printf("\nMatching on field types:\n")
+    printf("────────────────────────\n")
+    
+    for ft in 0 to 4 {
+        let field: FieldType = FieldType { type_id: ft }
+        printf("  Type %d = %s\n", ft, field_type_name(field))
+    }
+    
+    printf("\n")
+}
+
+# =============================================================================
+# DEMO: Option and Result Types
+# =============================================================================
+
+function demo_option_result() -> void {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Option/Result Types Demo                    ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    # Option types
+    printf("Option<i32> examples:\n")
+    printf("─────────────────────\n")
+    
+    let some_val: Option_i32 = some_i32(42)
+    printf("  some_i32(42).has_value = %d\n", some_val.has_value)
+    printf("  some_i32(42).value     = %d\n", unwrap_i32(some_val))
+    
+    let none_val: Option_i32 = none_i32()
+    printf("  none_i32().has_value   = %d\n", none_val.has_value)
+    
+    let unwrapped: i32 = unwrap_or_i32(none_val, 999)
+    printf("  unwrap_or_i32(none, 999) = %d\n", unwrapped)
+    
+    # Result types
+    printf("\nResult<f64, string> examples:\n")
+    printf("─────────────────────────────\n")
+    
+    let res_ok: Result_f64_string = safe_divide(10.0, 2.0)
+    printf("  safe_divide(10.0, 2.0).is_ok = %d\n", res_ok.is_ok)
+    printf("  safe_divide(10.0, 2.0).value = %f\n", res_ok.value)
+    
+    let res_err: Result_f64_string = safe_divide(10.0, 0.0)
+    printf("  safe_divide(10.0, 0.0).is_ok = %d\n", res_err.is_ok)
+    printf("  safe_divide(10.0, 0.0).error = '%s'\n", res_err.error)
+    
+    printf("\n")
+}
+
+# =============================================================================
+# DEMO: Traits and Polymorphism
+# =============================================================================
+
+function demo_traits() -> void {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Traits Demo                                 ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    # Display trait
+    printf("Display trait for Value:\n")
+    printf("────────────────────────\n")
+    
+    let v1: Value = value_int(42)
+    printf("  Integer: ")
+    Value_Display_show(v1)
+    printf("\n")
+    
+    let v2: Value = value_float(3.14159)
+    printf("  Float:   ")
+    Value_Display_show(v2)
+    printf("\n")
+    
+    let v3: Value = value_string("Hello")
+    printf("  String:  ")
+    Value_Display_show(v3)
+    printf("\n")
+    
+    let v4: Value = value_bool(true)
+    printf("  Boolean: ")
+    Value_Display_show(v4)
+    printf("\n")
+    
+    let v5: Value = value_null()
+    printf("  Null:    ")
+    Value_Display_show(v5)
+    printf("\n")
+    
+    # Comparable trait
+    printf("\nComparable trait for Value:\n")
+    printf("───────────────────────────\n")
+    
+    let a: Value = value_int(10)
+    let b: Value = value_int(20)
+    let c: Value = value_int(10)
+    
+    printf("  compare(10, 20) = %d (expected: -1)\n", compare_values(a, b))
+    printf("  compare(20, 10) = %d (expected: 1)\n", compare_values(b, a))
+    printf("  compare(10, 10) = %d (expected: 0)\n", compare_values(a, c))
+    
+    # Hashable trait
+    printf("\nHashable trait for Value:\n")
+    printf("─────────────────────────\n")
+    
+    let h1: i64 = hash_value(value_int(42))
+    let h2: i64 = hash_value(value_int(100))
+    let h3: i64 = hash_value(value_float(3.14))
+    
+    printf("  hash(42)   = %lld\n", h1)
+    printf("  hash(100)  = %lld\n", h2)
+    printf("  hash(3.14) = %lld\n", h3)
+    
+    printf("\n")
+}
+
+# =============================================================================
+# DEMO: Hash Index
+# =============================================================================
+
+function demo_index() -> void {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Hash Index Demo                             ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    # Create an index on column 0 (id)
+    let idx: HashIndex = hash_index_new(0)
+    
+    printf("Building hash index on 'id' column...\n")
+    printf("─────────────────────────────────────\n")
+    
+    # Insert some values
+    idx = hash_index_insert(idx, value_int(1), 1)
+    idx = hash_index_insert(idx, value_int(2), 2)
+    idx = hash_index_insert(idx, value_int(3), 3)
+    idx = hash_index_insert(idx, value_int(4), 4)
+    idx = hash_index_insert(idx, value_int(5), 5)
+    
+    printf("  Inserted 5 entries into index\n")
+    printf("  Total entries: %d\n", idx.num_entries)
+    
+    # Show bucket distribution
+    printf("\nBucket distribution:\n")
+    printf("────────────────────\n")
+    
+    for i in 0 to 8 {
+        let bucket: HashBucket = index_get_bucket(idx, i)
+        if bucket.count > 0 {
+            printf("  Bucket %d: %d entries\n", i, bucket.count)
+        }
+    }
+    
+    printf("\n")
+}
+
+# =============================================================================
+# DEMO: Algorithms
+# =============================================================================
+
+function demo_algorithms() -> void {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Algorithms Demo                             ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    # Binary search
+    printf("Binary Search:\n")
+    printf("──────────────\n")
+    let sorted: array<i64, 16> = [10, 20, 30, 40, 50, 60, 70, 80, 0, 0, 0, 0, 0, 0, 0, 0]
+    
+    let found1: i32 = binary_search(sorted, 8, 40)
+    printf("  Search for 40 in [10,20,30,40,50,60,70,80]: index = %d\n", found1)
+    
+    let found2: i32 = binary_search(sorted, 8, 35)
+    printf("  Search for 35 in [10,20,30,40,50,60,70,80]: index = %d (not found)\n", found2)
+    
+    # Prime numbers
+    printf("\nPrime Numbers:\n")
+    printf("──────────────\n")
+    printf("  is_prime(7)  = %d\n", is_prime(7))
+    printf("  is_prime(10) = %d\n", is_prime(10))
+    printf("  is_prime(17) = %d\n", is_prime(17))
+    printf("  next_prime(10) = %d\n", next_prime(10))
+    printf("  next_prime(14) = %d\n", next_prime(14))
+    
+    # Random numbers
+    printf("\nRandom Number Generator:\n")
+    printf("────────────────────────\n")
+    let rng: Random = random_new(12345)
+    
+    printf("  First 5 random integers (0-100):\n")
+    for i in 0 to 5 {
+        let rand_val: i32 = random_int(rng, 0, 100)
+        printf("    [%d] %d\n", i, rand_val)
+        rng = random_next(rng)
+    }
+    
+    # Statistics
+    printf("\nStatistics:\n")
+    printf("───────────\n")
+    let values: array<f64, 16> = [10.0, 20.0, 30.0, 40.0, 50.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let variance: f64 = compute_variance(values, 5)
+    let std_dev: f64 = compute_std_dev(values, 5)
+    
+    printf("  Data: [10, 20, 30, 40, 50]\n")
+    printf("  Variance: %.2f\n", variance)
+    printf("  Std Dev:  %.2f\n", std_dev)
+    
+    printf("\n")
+}
+
+# =============================================================================
+# DEMO: Transactions
+# =============================================================================
+
+function demo_transactions(t: Table) -> Table {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Transaction Demo                            ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    printf("Starting a transaction...\n")
+    printf("─────────────────────────\n\n")
+    
+    let tx: Transaction = transaction_begin(t)
+    
+    # Insert a new row
+    let r6: Row = row_new(0)
+    r6 = row_set_value(r6, 0, value_int(6))
+    r6 = row_set_value(r6, 1, value_string("Frank"))
+    r6 = row_set_value(r6, 2, value_int(45))
+    r6 = row_set_value(r6, 3, value_float(120000.00))
+    r6 = row_set_value(r6, 4, value_bool(true))
+    
+    tx = Transaction {
+        original_table: tx.original_table,
+        current_table: insert_with_log(tx.current_table, r6),
+        is_active: tx.is_active,
+        num_operations: tx.num_operations + 1
+    }
+    
+    printf("\n")
+    
+    # Commit the transaction
+    let committed: Table = transaction_commit(tx)
+    
+    printf("\nAfter commit, table now has %lld rows\n\n", db_count(committed))
+    
+    return committed
+}
+
+# =============================================================================
+# DEMO: Delete Operation
+# =============================================================================
+
+function demo_delete(t: Table) -> Table {
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║              FlowDB - Delete Operation Demo                       ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    printf("Deleting employee with id=4 (Dave)...\n\n")
+    
+    let updated: Table = delete_with_log(t, 4)
+    
+    printf("\nActive rows after delete: %lld\n", db_count(updated))
+    printf("\nTable stats:\n")
+    TableStats_Display_show(updated.stats)
+    printf("\n\n")
+    
+    return updated
+}
+
+# =============================================================================
+# MAIN FUNCTION
+# =============================================================================
+
+function main() -> i32 {
+    printf("\n")
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║                                                                  ║\n")
+    printf("║     ███████╗██╗      ██████╗ ██╗    ██╗██████╗ ██████╗           ║\n")
+    printf("║     ██╔════╝██║     ██╔═══██╗██║    ██║██╔══██╗██╔══██╗          ║\n")
+    printf("║     █████╗  ██║     ██║   ██║██║ █╗ ██║██║  ██║██████╔╝          ║\n")
+    printf("║     ██╔══╝  ██║     ██║   ██║██║███╗██║██║  ██║██╔══██╗          ║\n")
+    printf("║     ██║     ███████╗╚██████╔╝╚███╔███╔╝██████╔╝██████╔╝          ║\n")
+    printf("║     ╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ ╚═════╝ ╚═════╝           ║\n")
+    printf("║                                                                  ║\n")
+    printf("║           In-Memory Database Demo - FLOW Language                ║\n")
+    printf("║                                                                  ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n")
+    printf("\n")
+    
+    # Use the Logger effect with ConsoleLogger capability
+    handle Logger with ConsoleLogger {
+        # Demo 1: Schema creation
+        let schema: TableSchema = demo_schema_creation()
+        
+        # Demo 2: Data insertion
+        let table: Table = demo_insert_data(schema)
+        
+        # Demo 3: Queries
+        demo_queries(table)
+        
+        # Demo 4: Generics
+        demo_generics()
+        
+        # Demo 5: Pattern matching
+        demo_pattern_matching()
+        
+        # Demo 6: Option and Result types
+        demo_option_result()
+        
+        # Demo 7: Traits
+        demo_traits()
+        
+        # Demo 8: Index structures
+        demo_index()
+        
+        # Demo 9: Algorithms
+        demo_algorithms()
+        
+        # Demo 10: Transactions
+        table = demo_transactions(table)
+        
+        # Demo 11: Delete operation
+        table = demo_delete(table)
+        
+        # Final table scan
+        printf("╔══════════════════════════════════════════════════════════════════╗\n")
+        printf("║              FlowDB - Final Table State                          ║\n")
+        printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+        scan_with_log(table)
+    }
+    
+    printf("╔══════════════════════════════════════════════════════════════════╗\n")
+    printf("║                    Demo Complete!                                ║\n")
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n")
+    
+    printf("Flow language features demonstrated:\n")
+    printf("  ✓ Structs and user-defined types\n")
+    printf("  ✓ Functions with typed parameters\n")
+    printf("  ✓ Control flow (if, while, for, match)\n")
+    printf("  ✓ Fixed-size arrays\n")
+    printf("  ✓ Generics (Box<T>, Pair<K,V>)\n")
+    printf("  ✓ Option and Result types\n")
+    printf("  ✓ Effects and capabilities\n")
+    printf("  ✓ Traits and implementations\n")
+    printf("  ✓ Module imports and exports\n")
+    printf("  ✓ Pattern matching\n")
+    printf("  ✓ Algorithms (hashing, sorting, search)\n")
+    printf("\n")
+    
+    return 0
+}

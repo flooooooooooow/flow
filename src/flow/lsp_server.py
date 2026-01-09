@@ -9,7 +9,10 @@ import sys
 import re
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
-from .parser import Lexer, Parser, TokenType, Token, FunctionDecl, StructDecl, VarDecl, Parameter, Type
+from .parser import (
+    Lexer, Parser, TokenType, Token, FunctionDecl, StructDecl, VarDecl, 
+    Parameter, Type, SourceLocation, EnumDecl, TraitDecl, EffectDecl
+)
 
 # LSP Message Types
 @dataclass
@@ -64,13 +67,27 @@ class FlowLanguageServer:
         # Built-in functions
         self.builtin_functions = {
             'print': {'params': ['value: any'], 'return': 'void', 'doc': 'Print a value to stdout'},
+            'printf': {'params': ['format: string', '...'], 'return': 'void', 'doc': 'Print formatted output (C-style)'},
+            'sqrt': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Square root'},
+            'sin': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Sine function'},
+            'cos': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Cosine function'},
+            'tan': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Tangent function'},
+            'exp': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Exponential function'},
+            'log': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Natural logarithm'},
+            'pow': {'params': ['x: f64', 'y: f64'], 'return': 'f64', 'doc': 'Power function'},
+            'abs': {'params': ['x: i32'], 'return': 'i32', 'doc': 'Absolute value (integer)'},
+            'fabs': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Absolute value (float)'},
+            'floor': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Floor function'},
+            'ceil': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Ceiling function'},
+            'tanh': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Hyperbolic tangent'},
         }
         
         # Keywords
         self.keywords = [
-            'function', 'let', 'return', 'if', 'else', 'while', 'for',
-            'parallel', 'in', 'step', 'struct', 'effect', 'capability',
-            'handle', 'with', 'match', 'import', 'export', 'module',
+            'function', 'let', 'return', 'if', 'else', 'elif', 'while', 'for',
+            'parallel', 'in', 'step', 'struct', 'enum', 'trait', 'impl',
+            'effect', 'capability', 'handle', 'with', 'match', 'default',
+            'import', 'export', 'extern', 'const', 'module', 'test', 'self',
             'array', 'ptr', 'vec', 'true', 'false'
         ]
     
@@ -160,22 +177,44 @@ class FlowLanguageServer:
         
         try:
             lexer = Lexer(text)
-            parser = Parser(lexer)
+            parser = Parser(lexer, source=text)
             declarations = parser.parse()
             
             for decl in declarations:
                 if isinstance(decl, FunctionDecl):
+                    loc = decl.location
                     symbols[decl.name] = {
                         'kind': 'function',
                         'params': [(p.name, p.type.name) for p in decl.parameters],
                         'return': decl.return_type.name,
-                        'line': 1,  # TODO: track line numbers in parser
+                        'line': loc.line if loc else 0,
+                        'column': loc.column if loc else 0,
+                        'end_line': loc.end_line if loc else 0,
+                        'end_column': loc.end_column if loc else 0,
                     }
                 elif isinstance(decl, StructDecl):
+                    loc = decl.location
                     symbols[decl.name] = {
                         'kind': 'struct',
                         'fields': [(f.name, f.type.name) for f in decl.fields],
-                        'line': 1,
+                        'line': loc.line if loc else 0,
+                        'column': loc.column if loc else 0,
+                        'end_line': loc.end_line if loc else 0,
+                        'end_column': loc.end_column if loc else 0,
+                    }
+                elif isinstance(decl, EnumDecl):
+                    symbols[decl.name] = {
+                        'kind': 'enum',
+                        'variants': [v.name for v in decl.variants],
+                        'line': 0,
+                        'column': 0,
+                    }
+                elif isinstance(decl, TraitDecl):
+                    symbols[decl.name] = {
+                        'kind': 'trait',
+                        'methods': [m.name for m in decl.methods],
+                        'line': 0,
+                        'column': 0,
                     }
         except Exception as e:
             # Parse error - still store partial symbols
@@ -231,6 +270,36 @@ class FlowLanguageServer:
                     'kind': 22,  # Struct
                     'detail': 'struct',
                 })
+            elif info['kind'] == 'enum':
+                items.append({
+                    'label': name,
+                    'kind': 10,  # Enum
+                    'detail': 'enum',
+                })
+            elif info['kind'] == 'trait':
+                items.append({
+                    'label': name,
+                    'kind': 8,  # Interface
+                    'detail': 'trait',
+                })
+        
+        # Also add symbols from other open documents
+        for other_uri, other_symbols in self.symbols.items():
+            if other_uri != uri:
+                for name, info in other_symbols.items():
+                    if info['kind'] == 'function':
+                        params_str = ', '.join([f"{p[0]}: {p[1]}" for p in info['params']])
+                        items.append({
+                            'label': name,
+                            'kind': 3,
+                            'detail': f"({params_str}) -> {info['return']}",
+                        })
+                    elif info['kind'] == 'struct':
+                        items.append({
+                            'label': name,
+                            'kind': 22,
+                            'detail': 'struct',
+                        })
         
         return items
     
@@ -257,34 +326,76 @@ class FlowLanguageServer:
         
         # Check built-in types
         if word in self.builtin_types:
+            type_docs = {
+                'i32': 'Signed 32-bit integer',
+                'i64': 'Signed 64-bit integer',
+                'f32': 'Single-precision floating point',
+                'f64': 'Double-precision floating point',
+                'bool': 'Boolean (true/false)',
+                'void': 'No return value',
+                'string': 'UTF-8 string',
+            }
+            doc = type_docs.get(word, 'Built-in type')
             return {
                 'contents': {
                     'kind': 'markdown',
-                    'value': f"**{word}** - Built-in type"
+                    'value': f"**{word}**\n\n{doc}"
                 }
             }
         
-        # Check document symbols
+        # Check document symbols in current file
         doc_symbols = self.symbols.get(uri, {})
-        if word in doc_symbols:
-            info = doc_symbols[word]
-            if info['kind'] == 'function':
-                params_str = ', '.join([f"{p[0]}: {p[1]}" for p in info['params']])
-                return {
-                    'contents': {
-                        'kind': 'markdown',
-                        'value': f"```flow\nfunction {word}({params_str}) -> {info['return']}\n```"
-                    }
-                }
-            elif info['kind'] == 'struct':
-                fields_str = '\n'.join([f"  {f[0]}: {f[1]}" for f in info['fields']])
-                return {
-                    'contents': {
-                        'kind': 'markdown',
-                        'value': f"```flow\nstruct {word} {{\n{fields_str}\n}}\n```"
-                    }
-                }
+        hover_info = self._get_hover_for_symbol(word, doc_symbols)
+        if hover_info:
+            return hover_info
         
+        # Check symbols in all open documents
+        for other_uri, other_symbols in self.symbols.items():
+            if other_uri != uri:
+                hover_info = self._get_hover_for_symbol(word, other_symbols)
+                if hover_info:
+                    return hover_info
+        
+        return None
+    
+    def _get_hover_for_symbol(self, word: str, symbols: Dict) -> Optional[dict]:
+        """Generate hover content for a symbol."""
+        if word not in symbols:
+            return None
+        
+        info = symbols[word]
+        if info['kind'] == 'function':
+            params_str = ', '.join([f"{p[0]}: {p[1]}" for p in info['params']])
+            return {
+                'contents': {
+                    'kind': 'markdown',
+                    'value': f"```flow\nfunction {word}({params_str}) -> {info['return']}\n```"
+                }
+            }
+        elif info['kind'] == 'struct':
+            fields_str = '\n'.join([f"    {f[0]}: {f[1]}" for f in info['fields']])
+            return {
+                'contents': {
+                    'kind': 'markdown',
+                    'value': f"```flow\nstruct {word} {{\n{fields_str}\n}}\n```"
+                }
+            }
+        elif info['kind'] == 'enum':
+            variants_str = ', '.join(info.get('variants', []))
+            return {
+                'contents': {
+                    'kind': 'markdown',
+                    'value': f"```flow\nenum {word} {{ {variants_str} }}\n```"
+                }
+            }
+        elif info['kind'] == 'trait':
+            methods_str = ', '.join(info.get('methods', []))
+            return {
+                'contents': {
+                    'kind': 'markdown',
+                    'value': f"```flow\ntrait {word} {{\n  // methods: {methods_str}\n}}\n```"
+                }
+            }
         return None
     
     def _handle_definition(self, params: dict) -> Optional[dict]:
@@ -298,18 +409,35 @@ class FlowLanguageServer:
         if not word:
             return None
         
-        # Check document symbols
+        # Check document symbols in current file
         doc_symbols = self.symbols.get(uri, {})
         if word in doc_symbols:
             info = doc_symbols[word]
             line = info.get('line', 0)
+            column = info.get('column', 0)
+            end_column = info.get('end_column', column + len(word))
             return {
                 'uri': uri,
                 'range': {
-                    'start': {'line': line, 'character': 0},
-                    'end': {'line': line, 'character': len(word)},
+                    'start': {'line': line, 'character': column},
+                    'end': {'line': line, 'character': end_column},
                 }
             }
+        
+        # Check symbols in all open documents (cross-file go-to-definition)
+        for other_uri, other_symbols in self.symbols.items():
+            if other_uri != uri and word in other_symbols:
+                info = other_symbols[word]
+                line = info.get('line', 0)
+                column = info.get('column', 0)
+                end_column = info.get('end_column', column + len(word))
+                return {
+                    'uri': other_uri,
+                    'range': {
+                        'start': {'line': line, 'character': column},
+                        'end': {'line': line, 'character': end_column},
+                    }
+                }
         
         return None
     
@@ -318,19 +446,31 @@ class FlowLanguageServer:
         uri = params['textDocument']['uri']
         doc_symbols = self.symbols.get(uri, {})
         
+        # Symbol kinds: 12=Function, 23=Struct, 10=Enum, 11=Interface(trait)
+        kind_map = {
+            'function': 12,
+            'struct': 23,
+            'enum': 10,
+            'trait': 11,
+        }
+        
         symbols = []
         for name, info in doc_symbols.items():
-            kind = 12 if info['kind'] == 'function' else 23  # Function or Struct
+            kind = kind_map.get(info['kind'], 12)
+            line = info.get('line', 0)
+            column = info.get('column', 0)
+            end_column = info.get('end_column', column + len(name))
+            
             symbols.append({
                 'name': name,
                 'kind': kind,
                 'range': {
-                    'start': {'line': info.get('line', 0), 'character': 0},
-                    'end': {'line': info.get('line', 0), 'character': 100},
+                    'start': {'line': line, 'character': column},
+                    'end': {'line': line, 'character': end_column + 50},  # Approximate end
                 },
                 'selectionRange': {
-                    'start': {'line': info.get('line', 0), 'character': 0},
-                    'end': {'line': info.get('line', 0), 'character': len(name)},
+                    'start': {'line': line, 'character': column},
+                    'end': {'line': line, 'character': end_column},
                 },
             })
         

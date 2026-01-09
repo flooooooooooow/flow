@@ -1,0 +1,615 @@
+# FlowDB - Query System Module
+# Demonstrates: pattern matching, Option/Result types, control flow
+#
+# A simplified query engine that supports filtering, projection,
+# and aggregation operations.
+
+import "types.flow"
+import "traits.flow"
+import "engine.flow"
+import "stdlib/option.flow"
+import "stdlib/result.flow"
+
+# =============================================================================
+# QUERY TYPES - Different kinds of database operations
+# =============================================================================
+
+# Query operation type constants
+export const QUERY_SELECT: i32 = 0
+export const QUERY_INSERT: i32 = 1
+export const QUERY_UPDATE: i32 = 2
+export const QUERY_DELETE: i32 = 3
+export const QUERY_COUNT: i32 = 4
+export const QUERY_SUM: i32 = 5
+export const QUERY_AVG: i32 = 6
+export const QUERY_MIN: i32 = 7
+export const QUERY_MAX: i32 = 8
+
+# Comparison operators
+export const OP_EQ: i32 = 0     # ==
+export const OP_NE: i32 = 1     # !=
+export const OP_LT: i32 = 2     # <
+export const OP_LE: i32 = 3     # <=
+export const OP_GT: i32 = 4     # >
+export const OP_GE: i32 = 5     # >=
+
+# =============================================================================
+# FILTER CONDITION - WHERE clause representation
+# =============================================================================
+
+export struct Condition {
+    column_idx: i32     # Which column to compare
+    operator: i32       # Comparison operator
+    compare_value: Value
+    is_active: bool     # False = match all
+}
+
+export function condition_all() -> Condition {
+    return Condition {
+        column_idx: 0,
+        operator: OP_EQ,
+        compare_value: value_null(),
+        is_active: false
+    }
+}
+
+export function condition_eq(col: i32, val: Value) -> Condition {
+    return Condition {
+        column_idx: col,
+        operator: OP_EQ,
+        compare_value: val,
+        is_active: true
+    }
+}
+
+export function condition_lt(col: i32, val: Value) -> Condition {
+    return Condition {
+        column_idx: col,
+        operator: OP_LT,
+        compare_value: val,
+        is_active: true
+    }
+}
+
+export function condition_gt(col: i32, val: Value) -> Condition {
+    return Condition {
+        column_idx: col,
+        operator: OP_GT,
+        compare_value: val,
+        is_active: true
+    }
+}
+
+export function condition_le(col: i32, val: Value) -> Condition {
+    return Condition {
+        column_idx: col,
+        operator: OP_LE,
+        compare_value: val,
+        is_active: true
+    }
+}
+
+export function condition_ge(col: i32, val: Value) -> Condition {
+    return Condition {
+        column_idx: col,
+        operator: OP_GE,
+        compare_value: val,
+        is_active: true
+    }
+}
+
+# Evaluate a condition against a row
+export function condition_matches(cond: Condition, r: Row) -> bool {
+    if cond.is_active == false {
+        return true  # No condition = match all
+    }
+    
+    let row_val: Value = row_get_value(r, cond.column_idx)
+    let cmp: i32 = compare_values(row_val, cond.compare_value)
+    
+    match cond.operator {
+        0 => return cmp == 0     # EQ
+        1 => return cmp != 0     # NE
+        2 => return cmp < 0      # LT
+        3 => return cmp <= 0     # LE
+        4 => return cmp > 0      # GT
+        5 => return cmp >= 0     # GE
+        _ => return false
+    }
+}
+
+# =============================================================================
+# QUERY STRUCTURE
+# =============================================================================
+
+export struct Query {
+    query_type: i32
+    target_column: i32      # For aggregates
+    where_clause: Condition
+    limit: i32              # Max results (0 = no limit)
+}
+
+export function query_select_all() -> Query {
+    return Query {
+        query_type: QUERY_SELECT,
+        target_column: -1,
+        where_clause: condition_all(),
+        limit: 0
+    }
+}
+
+export function query_select_where(cond: Condition) -> Query {
+    return Query {
+        query_type: QUERY_SELECT,
+        target_column: -1,
+        where_clause: cond,
+        limit: 0
+    }
+}
+
+export function query_count() -> Query {
+    return Query {
+        query_type: QUERY_COUNT,
+        target_column: -1,
+        where_clause: condition_all(),
+        limit: 0
+    }
+}
+
+export function query_count_where(cond: Condition) -> Query {
+    return Query {
+        query_type: QUERY_COUNT,
+        target_column: -1,
+        where_clause: cond,
+        limit: 0
+    }
+}
+
+export function query_sum(col: i32) -> Query {
+    return Query {
+        query_type: QUERY_SUM,
+        target_column: col,
+        where_clause: condition_all(),
+        limit: 0
+    }
+}
+
+export function query_avg(col: i32) -> Query {
+    return Query {
+        query_type: QUERY_AVG,
+        target_column: col,
+        where_clause: condition_all(),
+        limit: 0
+    }
+}
+
+export function query_min(col: i32) -> Query {
+    return Query {
+        query_type: QUERY_MIN,
+        target_column: col,
+        where_clause: condition_all(),
+        limit: 0
+    }
+}
+
+export function query_max(col: i32) -> Query {
+    return Query {
+        query_type: QUERY_MAX,
+        target_column: col,
+        where_clause: condition_all(),
+        limit: 0
+    }
+}
+
+# =============================================================================
+# QUERY RESULTS
+# =============================================================================
+
+export struct QueryResult {
+    success: bool
+    error_message: string
+    row_count: i64
+    
+    # For SELECT queries (up to 16 results)
+    result0: Row
+    result1: Row
+    result2: Row
+    result3: Row
+    result4: Row
+    result5: Row
+    result6: Row
+    result7: Row
+    
+    # For aggregate queries
+    aggregate_int: i64
+    aggregate_float: f64
+}
+
+export function result_empty() -> QueryResult {
+    let empty_row: Row = row_new(-1)
+    return QueryResult {
+        success: true,
+        error_message: "",
+        row_count: 0,
+        result0: empty_row, result1: empty_row, result2: empty_row, result3: empty_row,
+        result4: empty_row, result5: empty_row, result6: empty_row, result7: empty_row,
+        aggregate_int: 0,
+        aggregate_float: 0.0
+    }
+}
+
+export function result_error(msg: string) -> QueryResult {
+    let empty: QueryResult = result_empty()
+    return QueryResult {
+        success: false,
+        error_message: msg,
+        row_count: 0,
+        result0: empty.result0, result1: empty.result1, result2: empty.result2, result3: empty.result3,
+        result4: empty.result4, result5: empty.result5, result6: empty.result6, result7: empty.result7,
+        aggregate_int: 0,
+        aggregate_float: 0.0
+    }
+}
+
+function result_add_row(qr: QueryResult, r: Row) -> QueryResult {
+    let idx: i64 = qr.row_count
+    let new_count: i64 = idx + 1
+    
+    match idx {
+        0 => return QueryResult { success: qr.success, error_message: qr.error_message, row_count: new_count, result0: r, result1: qr.result1, result2: qr.result2, result3: qr.result3, result4: qr.result4, result5: qr.result5, result6: qr.result6, result7: qr.result7, aggregate_int: qr.aggregate_int, aggregate_float: qr.aggregate_float }
+        1 => return QueryResult { success: qr.success, error_message: qr.error_message, row_count: new_count, result0: qr.result0, result1: r, result2: qr.result2, result3: qr.result3, result4: qr.result4, result5: qr.result5, result6: qr.result6, result7: qr.result7, aggregate_int: qr.aggregate_int, aggregate_float: qr.aggregate_float }
+        2 => return QueryResult { success: qr.success, error_message: qr.error_message, row_count: new_count, result0: qr.result0, result1: qr.result1, result2: r, result3: qr.result3, result4: qr.result4, result5: qr.result5, result6: qr.result6, result7: qr.result7, aggregate_int: qr.aggregate_int, aggregate_float: qr.aggregate_float }
+        3 => return QueryResult { success: qr.success, error_message: qr.error_message, row_count: new_count, result0: qr.result0, result1: qr.result1, result2: qr.result2, result3: r, result4: qr.result4, result5: qr.result5, result6: qr.result6, result7: qr.result7, aggregate_int: qr.aggregate_int, aggregate_float: qr.aggregate_float }
+        4 => return QueryResult { success: qr.success, error_message: qr.error_message, row_count: new_count, result0: qr.result0, result1: qr.result1, result2: qr.result2, result3: qr.result3, result4: r, result5: qr.result5, result6: qr.result6, result7: qr.result7, aggregate_int: qr.aggregate_int, aggregate_float: qr.aggregate_float }
+        5 => return QueryResult { success: qr.success, error_message: qr.error_message, row_count: new_count, result0: qr.result0, result1: qr.result1, result2: qr.result2, result3: qr.result3, result4: qr.result4, result5: r, result6: qr.result6, result7: qr.result7, aggregate_int: qr.aggregate_int, aggregate_float: qr.aggregate_float }
+        6 => return QueryResult { success: qr.success, error_message: qr.error_message, row_count: new_count, result0: qr.result0, result1: qr.result1, result2: qr.result2, result3: qr.result3, result4: qr.result4, result5: qr.result5, result6: r, result7: qr.result7, aggregate_int: qr.aggregate_int, aggregate_float: qr.aggregate_float }
+        7 => return QueryResult { success: qr.success, error_message: qr.error_message, row_count: new_count, result0: qr.result0, result1: qr.result1, result2: qr.result2, result3: qr.result3, result4: qr.result4, result5: qr.result5, result6: qr.result6, result7: r, aggregate_int: qr.aggregate_int, aggregate_float: qr.aggregate_float }
+        _ => return qr  # Max capacity reached
+    }
+}
+
+function result_get_row(qr: QueryResult, idx: i64) -> Row {
+    match idx {
+        0 => return qr.result0
+        1 => return qr.result1
+        2 => return qr.result2
+        3 => return qr.result3
+        4 => return qr.result4
+        5 => return qr.result5
+        6 => return qr.result6
+        7 => return qr.result7
+        _ => return row_new(-1)
+    }
+}
+
+# =============================================================================
+# QUERY EXECUTOR
+# =============================================================================
+
+# Execute SELECT query
+function exec_select(t: Table, q: Query) -> QueryResult {
+    let result: QueryResult = result_empty()
+    let limit: i32 = q.limit
+    if limit == 0 {
+        limit = 1000  # Default limit
+    }
+    
+    for i in 0 to t.row_count_actual {
+        let r: Row = table_get_row(t, i)
+        
+        if r.is_deleted == false {
+            if condition_matches(q.where_clause, r) {
+                result = result_add_row(result, r)
+                
+                if result.row_count >= limit {
+                    return result
+                }
+            }
+        }
+    }
+    
+    return result
+}
+
+# Execute COUNT query
+function exec_count(t: Table, q: Query) -> QueryResult {
+    let count: i64 = 0
+    
+    for i in 0 to t.row_count_actual {
+        let r: Row = table_get_row(t, i)
+        
+        if r.is_deleted == false {
+            if condition_matches(q.where_clause, r) {
+                count = count + 1
+            }
+        }
+    }
+    
+    let result: QueryResult = result_empty()
+    return QueryResult {
+        success: result.success,
+        error_message: result.error_message,
+        row_count: count,
+        result0: result.result0, result1: result.result1, result2: result.result2, result3: result.result3,
+        result4: result.result4, result5: result.result5, result6: result.result6, result7: result.result7,
+        aggregate_int: count,
+        aggregate_float: 0.0
+    }
+}
+
+# Execute SUM query
+function exec_sum(t: Table, q: Query) -> QueryResult {
+    let sum_int: i64 = 0
+    let sum_float: f64 = 0.0
+    let col: i32 = q.target_column
+    
+    for i in 0 to t.row_count_actual {
+        let r: Row = table_get_row(t, i)
+        
+        if r.is_deleted == false {
+            if condition_matches(q.where_clause, r) {
+                let val: Value = row_get_value(r, col)
+                
+                if val.is_null == false {
+                    match val.type_id {
+                        0 => sum_int = sum_int + val.int_val
+                        1 => sum_float = sum_float + val.float_val
+                        _ => { }  # Ignore non-numeric
+                    }
+                }
+            }
+        }
+    }
+    
+    let result: QueryResult = result_empty()
+    return QueryResult {
+        success: result.success,
+        error_message: result.error_message,
+        row_count: 0,
+        result0: result.result0, result1: result.result1, result2: result.result2, result3: result.result3,
+        result4: result.result4, result5: result.result5, result6: result.result6, result7: result.result7,
+        aggregate_int: sum_int,
+        aggregate_float: sum_float
+    }
+}
+
+# Execute AVG query
+function exec_avg(t: Table, q: Query) -> QueryResult {
+    let sum: f64 = 0.0
+    let count: i64 = 0
+    let col: i32 = q.target_column
+    
+    for i in 0 to t.row_count_actual {
+        let r: Row = table_get_row(t, i)
+        
+        if r.is_deleted == false {
+            if condition_matches(q.where_clause, r) {
+                let val: Value = row_get_value(r, col)
+                
+                if val.is_null == false {
+                    match val.type_id {
+                        0 => {
+                            sum = sum + val.int_val
+                            count = count + 1
+                        }
+                        1 => {
+                            sum = sum + val.float_val
+                            count = count + 1
+                        }
+                        _ => { }
+                    }
+                }
+            }
+        }
+    }
+    
+    let avg: f64 = 0.0
+    if count > 0 {
+        avg = sum / count
+    }
+    
+    let result: QueryResult = result_empty()
+    return QueryResult {
+        success: result.success,
+        error_message: result.error_message,
+        row_count: count,
+        result0: result.result0, result1: result.result1, result2: result.result2, result3: result.result3,
+        result4: result.result4, result5: result.result5, result6: result.result6, result7: result.result7,
+        aggregate_int: 0,
+        aggregate_float: avg
+    }
+}
+
+# Execute MIN query
+function exec_min(t: Table, q: Query) -> QueryResult {
+    let found: bool = false
+    let min_int: i64 = 9223372036854775807  # MAX_INT64
+    let min_float: f64 = 1.7976931348623157e308  # MAX_FLOAT64
+    let col: i32 = q.target_column
+    
+    for i in 0 to t.row_count_actual {
+        let r: Row = table_get_row(t, i)
+        
+        if r.is_deleted == false {
+            if condition_matches(q.where_clause, r) {
+                let val: Value = row_get_value(r, col)
+                
+                if val.is_null == false {
+                    found = true
+                    match val.type_id {
+                        0 => {
+                            if val.int_val < min_int {
+                                min_int = val.int_val
+                            }
+                        }
+                        1 => {
+                            if val.float_val < min_float {
+                                min_float = val.float_val
+                            }
+                        }
+                        _ => { }
+                    }
+                }
+            }
+        }
+    }
+    
+    let result: QueryResult = result_empty()
+    if found == false {
+        return result_error("No values found for MIN")
+    }
+    
+    return QueryResult {
+        success: true,
+        error_message: "",
+        row_count: 1,
+        result0: result.result0, result1: result.result1, result2: result.result2, result3: result.result3,
+        result4: result.result4, result5: result.result5, result6: result.result6, result7: result.result7,
+        aggregate_int: min_int,
+        aggregate_float: min_float
+    }
+}
+
+# Execute MAX query
+function exec_max(t: Table, q: Query) -> QueryResult {
+    let found: bool = false
+    let max_int: i64 = -9223372036854775808  # MIN_INT64
+    let max_float: f64 = -1.7976931348623157e308  # MIN_FLOAT64
+    let col: i32 = q.target_column
+    
+    for i in 0 to t.row_count_actual {
+        let r: Row = table_get_row(t, i)
+        
+        if r.is_deleted == false {
+            if condition_matches(q.where_clause, r) {
+                let val: Value = row_get_value(r, col)
+                
+                if val.is_null == false {
+                    found = true
+                    match val.type_id {
+                        0 => {
+                            if val.int_val > max_int {
+                                max_int = val.int_val
+                            }
+                        }
+                        1 => {
+                            if val.float_val > max_float {
+                                max_float = val.float_val
+                            }
+                        }
+                        _ => { }
+                    }
+                }
+            }
+        }
+    }
+    
+    let result: QueryResult = result_empty()
+    if found == false {
+        return result_error("No values found for MAX")
+    }
+    
+    return QueryResult {
+        success: true,
+        error_message: "",
+        row_count: 1,
+        result0: result.result0, result1: result.result1, result2: result.result2, result3: result.result3,
+        result4: result.result4, result5: result.result5, result6: result.result6, result7: result.result7,
+        aggregate_int: max_int,
+        aggregate_float: max_float
+    }
+}
+
+# =============================================================================
+# MAIN QUERY EXECUTION - Uses pattern matching
+# =============================================================================
+
+export function execute_query(t: Table, q: Query) -> QueryResult {
+    Logger.log_info("Executing query")
+    
+    match q.query_type {
+        0 => {
+            # SELECT
+            let result: QueryResult = exec_select(t, q)
+            Logger.log_query("SELECT", result.row_count)
+            return result
+        }
+        4 => {
+            # COUNT
+            let result: QueryResult = exec_count(t, q)
+            Logger.log_query("COUNT", result.aggregate_int)
+            return result
+        }
+        5 => {
+            # SUM
+            let result: QueryResult = exec_sum(t, q)
+            Logger.log_query("SUM", 1)
+            return result
+        }
+        6 => {
+            # AVG
+            let result: QueryResult = exec_avg(t, q)
+            Logger.log_query("AVG", 1)
+            return result
+        }
+        7 => {
+            # MIN
+            let result: QueryResult = exec_min(t, q)
+            Logger.log_query("MIN", 1)
+            return result
+        }
+        8 => {
+            # MAX
+            let result: QueryResult = exec_max(t, q)
+            Logger.log_query("MAX", 1)
+            return result
+        }
+        _ => {
+            return result_error("Unknown query type")
+        }
+    }
+}
+
+# =============================================================================
+# RESULT PRINTING
+# =============================================================================
+
+export function print_query_result(qr: QueryResult, schema: TableSchema) -> void {
+    if qr.success == false {
+        printf("Error: %s\n", qr.error_message)
+        return void
+    }
+    
+    if qr.row_count == 0 {
+        printf("(0 rows)\n")
+        return void
+    }
+    
+    print_header(schema)
+    
+    for i in 0 to qr.row_count {
+        let r: Row = result_get_row(qr, i)
+        print_row(r, schema)
+    }
+    
+    printf("+")
+    for j in 0 to schema.num_columns {
+        printf("----------+")
+    }
+    printf("\n")
+    printf("(%lld rows)\n", qr.row_count)
+}
+
+export function print_aggregate_result(qr: QueryResult, label: string) -> void {
+    if qr.success == false {
+        printf("Error: %s\n", qr.error_message)
+        return void
+    }
+    
+    printf("%s: ", label)
+    if qr.aggregate_float != 0.0 {
+        printf("%.4f\n", qr.aggregate_float)
+    } else {
+        printf("%lld\n", qr.aggregate_int)
+    }
+}

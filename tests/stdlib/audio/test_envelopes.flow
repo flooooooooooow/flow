@@ -1,0 +1,271 @@
+# Audio Envelopes Test
+#
+# Tests for ADSR, AR, Ramp, ExpDecay envelopes.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/envelopes.flow"
+
+# =============================================================================
+# ADSR Tests
+# =============================================================================
+
+function test_adsr_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
+    
+    if adsr_is_idle(env) == false { return false }
+    if adsr_value(env) != 0.0 { return false }
+    return true
+}
+
+function test_adsr_gate_on() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
+    
+    env = adsr_gate_on(env)
+    
+    if adsr_is_active(env) == false { return false }
+    if adsr_is_idle(env) { return false }
+    return true
+}
+
+function test_adsr_attack_ramp() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: ADSR = adsr_new_ms(2.27, 100.0, 0.7, 200.0, rate)
+    
+    env = adsr_gate_on(env)
+    
+    let i: i32 = 0
+    while i < 50 {
+        env = adsr_tick(env)
+        i = i + 1
+    }
+    
+    let val: f32 = adsr_value(env)
+    if val < 0.3 { return false }
+    if val > 0.7 { return false }
+    return true
+}
+
+function test_adsr_reaches_sustain() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: ADSR = adsr_new_ms(1.0, 1.0, 0.5, 200.0, rate)
+    
+    env = adsr_gate_on(env)
+    
+    let i: i32 = 0
+    while i < 1000 {
+        env = adsr_tick(env)
+        i = i + 1
+    }
+    
+    let val: f32 = adsr_value(env)
+    if val < 0.4 { return false }
+    if val > 0.6 { return false }
+    return true
+}
+
+function test_adsr_release_to_idle() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: ADSR = adsr_new_ms(1.0, 1.0, 0.5, 5.0, rate)
+    
+    env = adsr_gate_on(env)
+    
+    let i: i32 = 0
+    while i < 500 {
+        env = adsr_tick(env)
+        i = i + 1
+    }
+    
+    env = adsr_gate_off(env)
+    
+    i = 0
+    while i < 500 {
+        env = adsr_tick(env)
+        i = i + 1
+    }
+    
+    if adsr_is_idle(env) == false { return false }
+    if adsr_value(env) != 0.0 { return false }
+    return true
+}
+
+function test_adsr_reset() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
+    
+    env = adsr_gate_on(env)
+    env = adsr_tick(env)
+    env = adsr_reset(env)
+    
+    if adsr_is_idle(env) == false { return false }
+    if adsr_value(env) != 0.0 { return false }
+    return true
+}
+
+# =============================================================================
+# AR Tests
+# =============================================================================
+
+function test_ar_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: AR = ar_new(seconds_new(0.01), seconds_new(0.1), rate)
+    return ar_is_active(env) == false
+}
+
+function test_ar_trigger() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: AR = ar_new(seconds_new(0.001), seconds_new(0.001), rate)
+    env = ar_trigger(env)
+    return ar_is_active(env)
+}
+
+function test_ar_completes() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let env: AR = ar_new(seconds_new(0.001), seconds_new(0.001), rate)
+    
+    env = ar_trigger(env)
+    
+    let i: i32 = 0
+    while i < 200 {
+        env = ar_tick(env)
+        i = i + 1
+    }
+    
+    if ar_is_active(env) { return false }
+    if ar_value(env) != 0.0 { return false }
+    return true
+}
+
+# =============================================================================
+# Ramp Tests
+# =============================================================================
+
+function test_ramp_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.01), rate)
+    return ramp_value(r) == 0.0
+}
+
+function test_ramp_start() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.01), rate)
+    r = ramp_start(r)
+    return r.is_active == true
+}
+
+function test_ramp_completion() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.001), rate)
+    
+    r = ramp_start(r)
+    
+    let i: i32 = 0
+    while i < 100 {
+        r = ramp_tick(r)
+        i = i + 1
+    }
+    
+    if ramp_value(r) != 1.0 { return false }
+    if r.is_active != false { return false }
+    return true
+}
+
+# =============================================================================
+# ExpDecay Tests
+# =============================================================================
+
+function test_exp_decay_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let e: ExpDecay = exp_decay_new(10.0, rate)
+    return exp_decay_value(e) == 0.0
+}
+
+function test_exp_decay_trigger() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let e: ExpDecay = exp_decay_new(10.0, rate)
+    e = exp_decay_trigger(e)
+    return exp_decay_value(e) == 1.0
+}
+
+function test_exp_decay_decays() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let e: ExpDecay = exp_decay_new(1.0, rate)
+    
+    e = exp_decay_trigger(e)
+    
+    let i: i32 = 0
+    while i < 500 {
+        e = exp_decay_tick(e)
+        i = i + 1
+    }
+    
+    return exp_decay_value(e) < 0.01
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+function main() -> i32 {
+    let passed: i32 = 0
+    let failed: i32 = 0
+    
+    printf("=== Audio Envelopes Tests ===\n\n")
+    
+    # ADSR
+    if test_adsr_creation() { printf("✓ adsr_creation\n"); passed = passed + 1 } 
+    else { printf("✗ adsr_creation\n"); failed = failed + 1 }
+    
+    if test_adsr_gate_on() { printf("✓ adsr_gate_on\n"); passed = passed + 1 } 
+    else { printf("✗ adsr_gate_on\n"); failed = failed + 1 }
+    
+    if test_adsr_attack_ramp() { printf("✓ adsr_attack_ramp\n"); passed = passed + 1 } 
+    else { printf("✗ adsr_attack_ramp\n"); failed = failed + 1 }
+    
+    if test_adsr_reaches_sustain() { printf("✓ adsr_reaches_sustain\n"); passed = passed + 1 } 
+    else { printf("✗ adsr_reaches_sustain\n"); failed = failed + 1 }
+    
+    if test_adsr_release_to_idle() { printf("✓ adsr_release_to_idle\n"); passed = passed + 1 } 
+    else { printf("✗ adsr_release_to_idle\n"); failed = failed + 1 }
+    
+    if test_adsr_reset() { printf("✓ adsr_reset\n"); passed = passed + 1 } 
+    else { printf("✗ adsr_reset\n"); failed = failed + 1 }
+    
+    # AR
+    if test_ar_creation() { printf("✓ ar_creation\n"); passed = passed + 1 } 
+    else { printf("✗ ar_creation\n"); failed = failed + 1 }
+    
+    if test_ar_trigger() { printf("✓ ar_trigger\n"); passed = passed + 1 } 
+    else { printf("✗ ar_trigger\n"); failed = failed + 1 }
+    
+    if test_ar_completes() { printf("✓ ar_completes\n"); passed = passed + 1 } 
+    else { printf("✗ ar_completes\n"); failed = failed + 1 }
+    
+    # Ramp
+    if test_ramp_creation() { printf("✓ ramp_creation\n"); passed = passed + 1 } 
+    else { printf("✗ ramp_creation\n"); failed = failed + 1 }
+    
+    if test_ramp_start() { printf("✓ ramp_start\n"); passed = passed + 1 } 
+    else { printf("✗ ramp_start\n"); failed = failed + 1 }
+    
+    if test_ramp_completion() { printf("✓ ramp_completion\n"); passed = passed + 1 } 
+    else { printf("✗ ramp_completion\n"); failed = failed + 1 }
+    
+    # ExpDecay
+    if test_exp_decay_creation() { printf("✓ exp_decay_creation\n"); passed = passed + 1 } 
+    else { printf("✗ exp_decay_creation\n"); failed = failed + 1 }
+    
+    if test_exp_decay_trigger() { printf("✓ exp_decay_trigger\n"); passed = passed + 1 } 
+    else { printf("✗ exp_decay_trigger\n"); failed = failed + 1 }
+    
+    if test_exp_decay_decays() { printf("✓ exp_decay_decays\n"); passed = passed + 1 } 
+    else { printf("✗ exp_decay_decays\n"); failed = failed + 1 }
+    
+    printf("\n=== Results: %d passed, %d failed ===\n", passed, failed)
+    
+    if failed > 0 {
+        return 1
+    }
+    return 0
+}
