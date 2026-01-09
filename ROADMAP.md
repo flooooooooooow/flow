@@ -28,7 +28,7 @@ This document tracks what we're building next and why.
 - ✅ Enhanced error messages with source context
 
 **What's broken/missing:**
-- ❌ GPU codegen — Runtime exists, no shader generation
+- (Nothing critical! All major features complete)
 
 **Recently completed:**
 - ✅ Enums / ADTs — Tagged unions in C
@@ -39,6 +39,7 @@ This document tracks what we're building next and why.
 - ✅ REPL — `flow repl` for interactive development
 - ✅ JIT — `flow jit` for fast execution via MLIR
 - ✅ Package manager — `flow init`, `flow add`, `flow build`
+- ✅ GPU codegen — `@gpu` decorator, Metal shader generation
 
 ---
 
@@ -459,3 +460,11 @@ These are explicitly out of scope:
 ---
 
 *This roadmap will be updated as priorities shift.*
+
+Next:
+
+1. Do POSIX integration
+2. More Stdlib
+3. Collections (HashMap, Set, Queue)
+4. Networking (HTTP, TCP)
+5. Concurrency primitives
