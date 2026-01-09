@@ -1149,7 +1149,7 @@ run_tests()
 
 ## Contributing
 
-We welcome contributions to FLOW! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions to FLOW! See [../project/CONTRIBUTING.md](../project/CONTRIBUTING.md) for guidelines.
 
 ### Development Setup
 

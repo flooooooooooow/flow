@@ -57,7 +57,7 @@ nav:
     - Beginner: tutorials/beginner.md
     - Intermediate: tutorials/intermediate.md
     - Advanced: tutorials/advanced.md
-  - Language Reference:
+  - Language:
     - Overview: language/overview.md
     - Syntax: language/syntax.md
     - Types: language/types.md
@@ -66,20 +66,22 @@ nav:
     - Graphics: language/graphics.md
     - Design: language/language_design.md
   - Standard Library:
-    - Overview: library/overview.md
     - API Reference: library/stdlib-reference.md
     - Core: library/core.md
     - Autodiff: library/autodiff.md
     - Memory: library/memory.md
   - Specification:
     - Language Spec: LANGUAGE_SPEC.md
-    - Grammar: grammar.ebnf
-    - Implementation Map: IMPLEMENTATION_MAP.md
   - Examples:
     - Overview: examples/README.md
-    - Interactive Demo: examples/interactive_demo.html
-    - Metal GPU: examples/metal_examples.md
-    - WebAssembly: examples/web_examples.md
+    - Basic: examples/basic/README.md
+    - Algorithms: examples/algorithms/README.md
+    - Data Structures: examples/data-structures/README.md
+    - Effects: examples/effects/README.md
+    - GPU: examples/gpu/README.md
+    - Graphics: examples/graphics/README.md
+    - Performance: examples/performance/README.md
+    - Modules: examples/modules/README.md
   - Project:
     - Structure: project/PROJECT_STRUCTURE.md
     - Changelog: project/CHANGELOG.md

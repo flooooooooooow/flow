@@ -201,9 +201,9 @@ effect Telemetry {
 
 ## Related Topics
 
-- [Language Reference - Effects](../../language/effects.md) - Complete effects documentation
+- [Language Reference - Effects](../../LANGUAGE_SPEC.md) - Complete effects documentation
 - [Advanced Tutorial](../../tutorials/advanced.md) - Advanced effects usage
-- [Standard Library - Effects](../../library/effects.md) - Built-in effects
+- [Standard Library - Effects](../../LANGUAGE_SPEC.md) - Built-in effects
 - [Modules Examples](../modules/) - Effect organization
 
 ## Further Reading

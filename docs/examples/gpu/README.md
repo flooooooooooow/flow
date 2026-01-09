@@ -301,8 +301,8 @@ printf("Kernel time: %.3f ms\n", elapsed);
 
 - [Performance Examples](../performance/) - CPU performance optimization
 - [SIMD Examples](../performance/) - Vector programming
-- [Language Reference - GPU](../../language/gpu.md) - GPU language features
-- [Standard Library - GPU](../../library/gpu.md) - GPU standard library
+- [Language Reference - GPU](../../LANGUAGE_SPEC.md) - GPU language features
+- [Standard Library - GPU](../../library/stdlib-reference.md) - GPU standard library
 
 ## Hardware Considerations
 
