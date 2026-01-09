@@ -449,6 +449,7 @@ These are explicitly out of scope:
 3. [x] Enums / algebraic data types ✅ (tagged unions in C)
 4. [x] WASM build improvements ✅ (`flow wasm` command)
 5. [x] LSP improvements ✅ (go-to-definition, hover, autocomplete)
+6. [x] MLIR backend ✅ (full pipeline: FLOW → MLIR → LLVM IR → native)
 
 ---
 
