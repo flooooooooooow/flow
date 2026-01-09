@@ -1,555 +1,461 @@
-# Beginner Tutorial - Getting Started with FLOW
+# FLOW Tutorial: Beginner
 
-Welcome to the FLOW beginner tutorial! This guide will teach you the fundamentals of the FLOW programming language, from basic syntax to your first complete program.
+Learn FLOW from scratch with hands-on examples.
 
-## 🎯 Learning Objectives
+## Part 1: Your First Program
 
-By the end of this tutorial, you will be able to:
-- Write basic FLOW programs
-- Understand FLOW's syntax and structure
-- Work with variables, types, and functions
-- Use control flow statements
-- Create and manipulate data structures
-- Handle input and output
+### 1.1 Hello World
 
-## 📝 Your First Program
-
-Let's start with the classic "Hello, World!" program:
+Create `hello.flow`:
 
 ```flow
-// hello.flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    printf("Hello, FLOW!\n");
+function main() -> i32 {
+    printf("Hello, World!\n")
+    return 0
 }
 ```
 
-### Breaking It Down
-
-- `// hello.flow` - A comment (ignored by the compiler)
-- `extern "C" fn printf(s: string, ...);` - Declaration of an external C function
-- `fn main() { ... }` - The main function where execution begins
-- `printf("Hello, FLOW!\n");` - Function call to print text
-
-### Running Your Program
-
-Save the code as `hello.flow` and run:
-
+Run it:
 ```bash
-flow run hello.flow
+./flow run hello.flow
 ```
 
-Output:
-```
-Hello, FLOW!
-```
+**Key points:**
+- Every FLOW program needs a `main` function
+- `main` returns `i32` (32-bit integer)
+- `printf` is available by default (from C stdlib)
+- Strings use double quotes
+- `\n` is a newline
 
-## 🔤 Variables and Types
-
-FLOW is a statically typed language with type inference. This means the compiler can figure out types automatically, but you can also specify them explicitly.
-
-### Basic Types
+### 1.2 Variables
 
 ```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    // Integers
-    let age = 25;           // i32 (32-bit integer)
-    let big_number: i64 = 1000000;  // i64 (64-bit integer)
+function main() -> i32 {
+    # Integer types
+    let age: i32 = 25
+    let big_number: i64 = 9999999999
     
-    // Floating point numbers
-    let pi = 3.14159;       // f64 (64-bit float)
-    let temperature: f32 = 98.6;     // f32 (32-bit float)
+    # Floating point
+    let pi: f32 = 3.14159
+    let precise_pi: f64 = 3.14159265358979
     
-    // Boolean
-    let is_student = true;
-    let graduated = false;
+    # Boolean
+    let is_active: bool = true
     
-    // Strings
-    let name = "Alice";
-    let greeting: string = "Hello, World!";
+    # String
+    let name: string = "Alice"
     
-    // Print them out
-    printf("Age: %d\n", age);
-    printf("Pi: %f\n", pi);
-    printf("Is student: %s\n", is_student ? "true" : "false");
-    printf("Name: %s\n", name);
+    printf("Name: %s, Age: %d\n", name, age)
+    printf("Pi: %f\n", pi)
+    
+    return 0
 }
 ```
 
-### Type Inference vs Explicit Types
+### 1.3 Basic Operations
 
 ```flow
-// Type inference - compiler figures out the type
-let x = 42;        // Compiler knows this is i32
-let y = 3.14;      // Compiler knows this is f64
-
-// Explicit types - you tell the compiler the type
-let a: i32 = 100;
-let b: f64 = 2.71828;
-```
-
-## 🧮 Basic Operations
-
-### Arithmetic Operations
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    let a = 10;
-    let b = 3;
+function main() -> i32 {
+    let a = 10
+    let b = 3
     
-    // Basic arithmetic
-    let sum = a + b;        // 13
-    let difference = a - b; // 7
-    let product = a * b;    // 30
-    let quotient = a / b;   // 3 (integer division)
-    let remainder = a % b;   // 1
+    # Arithmetic
+    printf("a + b = %d\n", a + b)   # 13
+    printf("a - b = %d\n", a - b)   # 7
+    printf("a * b = %d\n", a * b)   # 30
+    printf("a / b = %d\n", a / b)   # 3 (integer division)
+    printf("a %% b = %d\n", a % b)  # 1 (modulo)
     
-    printf("Sum: %d\n", sum);
-    printf("Difference: %d\n", difference);
-    printf("Product: %d\n", product);
-    printf("Quotient: %d\n", quotient);
-    printf("Remainder: %d\n", remainder);
+    # Comparison
+    printf("a > b: %d\n", a > b)    # 1 (true)
+    printf("a == b: %d\n", a == b)  # 0 (false)
+    
+    # Logical
+    let x = true
+    let y = false
+    printf("x && y: %d\n", x && y)  # 0
+    printf("x || y: %d\n", x || y)  # 1
+    printf("!x: %d\n", !x)          # 0
+    
+    return 0
 }
 ```
-
-### Comparison Operations
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    let a = 10;
-    let b = 5;
-    
-    // Comparisons return boolean values
-    let is_equal = a == b;        // false
-    let is_not_equal = a != b;    // true
-    let is_greater = a > b;       // true
-    let is_less = a < b;          // false
-    let is_greater_equal = a >= b; // true
-    let is_less_equal = a <= b;   // false
-    
-    printf("a == b: %s\n", is_equal ? "true" : "false");
-    printf("a != b: %s\n", is_not_equal ? "true" : "false");
-    printf("a > b: %s\n", is_greater ? "true" : "false");
-}
-```
-
-### Logical Operations
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    let is_sunny = true;
-    let is_warm = false;
-    
-    // Logical AND
-    let good_weather = is_sunny && is_warm;  // false
-    
-    // Logical OR
-    let can_go_out = is_sunny || is_warm;    // true
-    
-    // Logical NOT
-    let is_cloudy = !is_sunny;               // false
-    
-    printf("Good weather: %s\n", good_weather ? "true" : "false");
-    printf("Can go out: %s\n", can_go_out ? "true" : "false");
-    printf("Is cloudy: %s\n", is_cloudy ? "true" : "false");
-}
-```
-
-## 🔄 Control Flow
-
-### If Statements
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    let age = 18;
-    
-    if age < 13 {
-        printf("You are a child\n");
-    } else if age < 18 {
-        printf("You are a teenager\n");
-    } else if age < 65 {
-        printf("You are an adult\n");
-    } else {
-        printf("You are a senior\n");
-    }
-}
-```
-
-### Ternary Operator
-
-For simple conditions, use the ternary operator:
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    let age = 20;
-    let message = age >= 18 ? "You can vote" : "You cannot vote";
-    
-    printf("%s\n", message);
-}
-```
-
-### Loops
-
-#### For Loops
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    // Count from 0 to 4
-    for i in range(0, 5) {
-        printf("Count: %d\n", i);
-    }
-    
-    // Count by 2s
-    for i in range(0, 10, 2) {
-        printf("Even: %d\n", i);
-    }
-}
-```
-
-#### While Loops
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    let mut count = 0;
-    
-    while count < 5 {
-        printf("While count: %d\n", count);
-        count = count + 1;
-    }
-    
-    // Do-while style (check at the end)
-    let mut i = 0;
-    do {
-        printf("Do-while: %d\n", i);
-        i = i + 1;
-    } while i < 3;
-}
-```
-
-## 📦 Functions
-
-Functions are reusable blocks of code that perform specific tasks.
-
-### Basic Functions
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-// Function that takes two integers and returns their sum
-fn add(a: i32, b: i32) -> i32 {
-    return a + b;
-}
-
-// Function that returns a greeting
-fn greet(name: string) -> string {
-    return "Hello, " + name + "!";
-}
-
-// Function with no return value (void function)
-fn print_message(message: string) {
-    printf("Message: %s\n", message);
-}
-
-fn main() {
-    let sum = add(10, 20);
-    let greeting = greet("Alice");
-    
-    printf("Sum: %d\n", sum);
-    printf("%s\n", greeting);
-    print_message("This is a message");
-}
-```
-
-### Function Overloading
-
-FLOW supports function overloading (multiple functions with the same name but different parameters):
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-// Integer version
-fn print(value: i32) {
-    printf("Integer: %d\n", value);
-}
-
-// Float version
-fn print(value: f64) {
-    printf("Float: %f\n", value);
-}
-
-// String version
-fn print(value: string) {
-    printf("String: %s\n", value);
-}
-
-fn main() {
-    print(42);           // Calls integer version
-    print(3.14);         // Calls float version
-    print("Hello");      // Calls string version
-}
-```
-
-## 🗂️ Arrays
-
-Arrays are fixed-size collections of elements of the same type.
-
-### Creating and Using Arrays
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    // Array with explicit initialization
-    let numbers = [1, 2, 3, 4, 5];
-    
-    // Array with all elements the same
-    let zeros = [0; 10];  // 10 zeros
-    
-    // Array with specified type and size
-    let floats: [f64; 5] = [1.1, 2.2, 3.3, 4.4, 5.5];
-    
-    // Access elements (0-based indexing)
-    printf("First element: %d\n", numbers[0]);
-    printf("Last element: %d\n", numbers[4]);
-    
-    // Modify elements
-    numbers[0] = 10;
-    printf("Modified first element: %d\n", numbers[0]);
-    
-    // Get array length
-    let length = 5;  // In FLOW, array length is known at compile time
-    printf("Array length: %d\n", length);
-}
-```
-
-### Array Operations
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-fn main() {
-    let numbers = [1, 2, 3, 4, 5];
-    
-    // Sum all elements
-    let mut sum = 0;
-    for i in range(0, 5) {
-        sum = sum + numbers[i];
-    }
-    printf("Sum: %d\n", sum);
-    
-    // Find maximum
-    let mut max = numbers[0];
-    for i in range(1, 5) {
-        if numbers[i] > max {
-            max = numbers[i];
-        }
-    }
-    printf("Maximum: %d\n", max);
-    
-    // Reverse array
-    let mut reversed: [i32; 5];
-    for i in range(0, 5) {
-        reversed[i] = numbers[4 - i];
-    }
-    
-    printf("Reversed: ");
-    for i in range(0, 5) {
-        printf("%d ", reversed[i]);
-    }
-    printf("\n");
-}
-```
-
-## 🏗️ Structs
-
-Structs are custom data types that group related data together.
-
-### Defining and Using Structs
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-// Define a struct
-struct Person {
-    name: string,
-    age: i32,
-    height: f64
-}
-
-fn main() {
-    // Create a struct instance
-    let person = Person {
-        name: "Alice",
-        age: 30,
-        height: 5.6
-    };
-    
-    // Access struct fields
-    printf("Name: %s\n", person.name);
-    printf("Age: %d\n", person.age);
-    printf("Height: %.1f\n", person.height);
-    
-    // Modify struct fields
-    person.age = 31;
-    printf("Updated age: %d\n", person.age);
-}
-```
-
-### Structs with Functions
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-struct Point {
-    x: f64,
-    y: f64
-}
-
-// Function that works with structs
-fn distance(p1: Point, p2: Point) -> f64 {
-    let dx = p2.x - p1.x;
-    let dy = p2.y - p1.y;
-    return sqrt(dx * dx + dy * dy);
-}
-
-fn main() {
-    let p1 = Point { x: 0.0, y: 0.0 };
-    let p2 = Point { x: 3.0, y: 4.0 };
-    
-    let dist = distance(p1, p2);
-    printf("Distance: %.2f\n", dist);  // Should be 5.00
-}
-```
-
-## 🎯 Putting It All Together
-
-Let's create a complete program that uses everything we've learned:
-
-```flow
-extern "C" fn printf(s: string, ...);
-
-struct Student {
-    name: string,
-    age: i32,
-    grades: [i32; 3]
-}
-
-fn calculate_average(grades: [i32; 3]) -> f64 {
-    let mut sum = 0;
-    for i in range(0, 3) {
-        sum = sum + grades[i];
-    }
-    return (sum as f64) / 3.0;
-}
-
-fn print_student_info(student: Student) {
-    printf("Student: %s\n", student.name);
-    printf("Age: %d\n", student.age);
-    printf("Grades: ");
-    
-    for i in range(0, 3) {
-        printf("%d ", student.grades[i]);
-    }
-    printf("\n");
-    
-    let average = calculate_average(student.grades);
-    printf("Average: %.2f\n", average);
-    
-    if average >= 90.0 {
-        printf("Grade: A\n");
-    } else if average >= 80.0 {
-        printf("Grade: B\n");
-    } else if average >= 70.0 {
-        printf("Grade: C\n");
-    } else if average >= 60.0 {
-        printf("Grade: D\n");
-    } else {
-        printf("Grade: F\n");
-    }
-}
-
-fn main() {
-    let student1 = Student {
-        name: "Alice",
-        age: 20,
-        grades: [95, 87, 92]
-    };
-    
-    let student2 = Student {
-        name: "Bob",
-        age: 19,
-        grades: [78, 82, 85]
-    };
-    
-    printf("=== Student 1 ===\n");
-    print_student_info(student1);
-    
-    printf("\n=== Student 2 ===\n");
-    print_student_info(student2);
-}
-```
-
-## 🧪 Practice Exercises
-
-Try these exercises to practice what you've learned:
-
-### Exercise 1: Temperature Converter
-Write a function that converts Celsius to Fahrenheit:
-- Formula: `F = (C * 9/5) + 32`
-- Test with 0°C, 25°C, and 100°C
-
-### Exercise 2: Even/Odd Checker
-Write a program that:
-- Takes an array of numbers
-- Prints whether each number is even or odd
-- Counts how many even and odd numbers there are
-
-### Exercise 3: Simple Calculator
-Create a calculator that:
-- Takes two numbers and an operation (+, -, *, /)
-- Performs the operation and prints the result
-- Handles division by zero
-
-### Exercise 4: Book Library
-Create a simple library system with:
-- A `Book` struct (title, author, pages)
-- Functions to add books and display library info
-- Search for books by author
-
-## 🚀 Next Steps
-
-Congratulations! You've learned the basics of FLOW programming. Here's what to explore next:
-
-1. **[Intermediate Tutorial](intermediate.md)** - Learn about modules, error handling, and more advanced features
-2. **[Language Reference](../language/overview.md)** - Detailed documentation of all language features
-3. **[Standard Library](../library/overview.md)** - Explore available functions and modules
-4. **[Examples Gallery](../examples/README.md)** - See more complex examples
-
-## 💡 Tips for Learning
-
-1. **Practice Every Day** - Write small programs regularly
-2. **Experiment** - Try variations of the examples
-3. **Read Error Messages** - They often tell you exactly what's wrong
-4. **Break Problems Down** - Solve small pieces first
-5. **Ask for Help** - Join the FLOW community Discord or forums
 
 ---
 
-*Happy coding with FLOW! 🚀*
+## Part 2: Control Flow
+
+### 2.1 If Statements
+
+```flow
+function check_number(n: i32) -> void {
+    if n > 0 {
+        printf("%d is positive\n", n)
+    } elif n < 0 {
+        printf("%d is negative\n", n)
+    } else {
+        printf("It's zero\n")
+    }
+}
+
+function main() -> i32 {
+    check_number(5)
+    check_number(-3)
+    check_number(0)
+    return 0
+}
+```
+
+### 2.2 While Loops
+
+```flow
+function main() -> i32 {
+    # Count from 1 to 5
+    let i = 1
+    while i <= 5 {
+        printf("%d\n", i)
+        i = i + 1
+    }
+    
+    # Sum 1 to 100
+    let sum = 0
+    let n = 1
+    while n <= 100 {
+        sum = sum + n
+        n = n + 1
+    }
+    printf("Sum 1-100: %d\n", sum)  # 5050
+    
+    return 0
+}
+```
+
+### 2.3 For Loops
+
+```flow
+function main() -> i32 {
+    # Basic for loop
+    for i in 0..5 {
+        printf("%d ", i)  # 0 1 2 3 4
+    }
+    printf("\n")
+    
+    # With step
+    for i in 0..10 step 2 {
+        printf("%d ", i)  # 0 2 4 6 8
+    }
+    printf("\n")
+    
+    return 0
+}
+```
+
+---
+
+## Part 3: Functions
+
+### 3.1 Basic Functions
+
+```flow
+# No return value
+function greet(name: string) -> void {
+    printf("Hello, %s!\n", name)
+}
+
+# Returns a value
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+# Multiple parameters
+function power(base: i32, exp: i32) -> i32 {
+    let result = 1
+    for i in 0..exp {
+        result = result * base
+    }
+    return result
+}
+
+function main() -> i32 {
+    greet("Alice")
+    printf("2 + 3 = %d\n", add(2, 3))
+    printf("2^10 = %d\n", power(2, 10))
+    return 0
+}
+```
+
+### 3.2 Recursion
+
+```flow
+function factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+function fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+function main() -> i32 {
+    printf("5! = %d\n", factorial(5))        # 120
+    printf("fib(10) = %d\n", fibonacci(10))  # 55
+    return 0
+}
+```
+
+---
+
+## Part 4: Data Structures
+
+### 4.1 Structs
+
+```flow
+struct Point {
+    x: f32,
+    y: f32
+}
+
+struct Rectangle {
+    top_left: Point,
+    width: f32,
+    height: f32
+}
+
+function point_new(x: f32, y: f32) -> Point {
+    return Point { x: x, y: y }
+}
+
+function rect_area(r: Rectangle) -> f32 {
+    return r.width * r.height
+}
+
+function main() -> i32 {
+    let p = point_new(10.0, 20.0)
+    printf("Point: (%f, %f)\n", p.x, p.y)
+    
+    let rect = Rectangle {
+        top_left: Point { x: 0.0, y: 0.0 },
+        width: 5.0,
+        height: 3.0
+    }
+    printf("Area: %f\n", rect_area(rect))  # 15.0
+    
+    return 0
+}
+```
+
+### 4.2 Arrays
+
+```flow
+function main() -> i32 {
+    # Fixed-size array (stored on stack)
+    let arr: array<i32, 5> = [1, 2, 3, 4, 5]
+    
+    # Access elements
+    printf("First: %d\n", arr[0])
+    printf("Last: %d\n", arr[4])
+    
+    # Sum all elements
+    let sum = 0
+    for i in 0..5 {
+        sum = sum + arr[i]
+    }
+    printf("Sum: %d\n", sum)  # 15
+    
+    return 0
+}
+```
+
+---
+
+## Part 5: Modules
+
+### 5.1 Importing
+
+```flow
+# Import from standard library
+import "stdlib/math.flow"
+import "stdlib/string.flow"
+
+function main() -> i32 {
+    let x = sin(3.14159 / 2.0)  # ~1.0
+    printf("sin(pi/2) = %f\n", x)
+    return 0
+}
+```
+
+### 5.2 Creating Modules
+
+Create `mylib.flow`:
+
+```flow
+export function double(n: i32) -> i32 {
+    return n * 2
+}
+
+export function triple(n: i32) -> i32 {
+    return n * 3
+}
+```
+
+Use it in `main.flow`:
+
+```flow
+import "mylib.flow"
+
+function main() -> i32 {
+    printf("double(5) = %d\n", double(5))  # 10
+    printf("triple(5) = %d\n", triple(5))  # 15
+    return 0
+}
+```
+
+---
+
+## Part 6: Pattern Matching
+
+### 6.1 Match Expressions
+
+```flow
+function day_name(day: i32) -> string {
+    match day {
+        1 => return "Monday"
+        2 => return "Tuesday"
+        3 => return "Wednesday"
+        4 => return "Thursday"
+        5 => return "Friday"
+        6 => return "Saturday"
+        7 => return "Sunday"
+        default => return "Invalid"
+    }
+}
+
+function main() -> i32 {
+    printf("Day 3 is %s\n", day_name(3))  # Wednesday
+    return 0
+}
+```
+
+---
+
+## Exercises
+
+### Exercise 1: FizzBuzz
+
+Write a program that prints numbers 1 to 100, but:
+- For multiples of 3, print "Fizz"
+- For multiples of 5, print "Buzz"
+- For multiples of both, print "FizzBuzz"
+
+<details>
+<summary>Solution</summary>
+
+```flow
+function main() -> i32 {
+    for i in 1..101 {
+        if i % 15 == 0 {
+            printf("FizzBuzz\n")
+        } elif i % 3 == 0 {
+            printf("Fizz\n")
+        } elif i % 5 == 0 {
+            printf("Buzz\n")
+        } else {
+            printf("%d\n", i)
+        }
+    }
+    return 0
+}
+```
+</details>
+
+### Exercise 2: Prime Numbers
+
+Write a function `is_prime(n: i32) -> bool` that returns true if n is prime.
+
+<details>
+<summary>Solution</summary>
+
+```flow
+function is_prime(n: i32) -> bool {
+    if n < 2 {
+        return false
+    }
+    let i = 2
+    while i * i <= n {
+        if n % i == 0 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function main() -> i32 {
+    for i in 1..20 {
+        if is_prime(i) {
+            printf("%d is prime\n", i)
+        }
+    }
+    return 0
+}
+```
+</details>
+
+### Exercise 3: Struct Operations
+
+Create a `Vector2D` struct with `x` and `y` fields. Implement:
+- `vector_add(a, b)` - add two vectors
+- `vector_dot(a, b)` - dot product
+- `vector_magnitude(v)` - length of vector
+
+<details>
+<summary>Solution</summary>
+
+```flow
+struct Vector2D {
+    x: f32,
+    y: f32
+}
+
+function vector_add(a: Vector2D, b: Vector2D) -> Vector2D {
+    return Vector2D { x: a.x + b.x, y: a.y + b.y }
+}
+
+function vector_dot(a: Vector2D, b: Vector2D) -> f32 {
+    return a.x * b.x + a.y * b.y
+}
+
+function vector_magnitude(v: Vector2D) -> f32 {
+    return sqrt(v.x * v.x + v.y * v.y)
+}
+
+function main() -> i32 {
+    let a = Vector2D { x: 3.0, y: 0.0 }
+    let b = Vector2D { x: 0.0, y: 4.0 }
+    
+    let sum = vector_add(a, b)
+    printf("Sum: (%f, %f)\n", sum.x, sum.y)
+    
+    printf("Dot: %f\n", vector_dot(a, b))
+    printf("Magnitude of a: %f\n", vector_magnitude(a))
+    
+    return 0
+}
+```
+</details>
+
+---
+
+## Next Steps
+
+Continue to [Intermediate Tutorial](intermediate.md) to learn:
+- Generics
+- Traits
+- Enums
+- Error handling with Option/Result
+- Effects system

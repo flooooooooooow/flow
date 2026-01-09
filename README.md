@@ -2,7 +2,7 @@
 
 > A language designed by human intuition, implemented by machine precision.
 
-**Version**: 0.2.0 | **Tests**: 152 passing | **Status**: Active Development
+**Version**: 0.3.0 | **Tests**: 166 passing | **Status**: Feature Complete 🎉
 
 ---
 
@@ -50,13 +50,30 @@
 # Clone and run
 git clone https://github.com/yourusername/flow-lang.git
 cd flow-lang
-./flow run examples/hello_world.flow
+
+# Run a program
+./flow run examples/basics/hello_world.flow
+
+# Start the REPL
+./flow repl
+
+# JIT compile and run (fastest)
+./flow jit examples/basics/fibonacci.flow
+
+# Generate MLIR and run via LLVM
+./flow mlir-run examples/basics/factorial.flow
+
+# Generate GPU shaders
+./flow gpu examples/gpu/vector_add_gpu.flow
+
+# Initialize a new project
+./flow init my-project
 
 # Run all tests
 ./flow test
 
 # Format code
-./flow fmt examples/fibonacci.flow
+./flow fmt myfile.flow
 ```
 
 **Hello World**:
@@ -65,6 +82,29 @@ cd flow-lang
 function main() -> i32 {
     printf("Hello, FLOW!\n")
     return 0
+}
+```
+
+**Fibonacci with Generics**:
+
+```flow
+function fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+```
+
+**GPU Compute Shader**:
+
+```flow
+@gpu
+function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {
+    let i = gpu_thread_id()
+    if i < n {
+        out[i] = a[i] + b[i]
+    }
 }
 ```
 
