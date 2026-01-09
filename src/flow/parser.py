@@ -160,6 +160,7 @@ class TokenType(Enum):
     NEWLINE = "NEWLINE"
     COMMENT = "COMMENT"
     EOF = "EOF"
+    AT = "AT"  # @ for decorators like @gpu
 
 @dataclass
 class Token:
@@ -517,6 +518,7 @@ class Lexer:
             (r'COLON', r':'),
             (r'COMMA', r','),
             (r'DOT', r'\.'),
+            (r'AT', r'@'),
             (r'STRING', r'"(?:[^"\\]|\\.)*"'),
             (r'NUMBER', r'0x[0-9a-fA-F]+|[0-9]+\.[0-9]+|[0-9]+'),
             (r'IDENTIFIER', r'[a-zA-Z_][a-zA-Z0-9_]*'),
@@ -611,6 +613,14 @@ class Parser:
         declarations = []
         while self.current_token.type != TokenType.EOF:
             is_exported = False
+            attributes = []
+            
+            # Parse decorators like @gpu, @inline
+            while self.current_token.type == TokenType.AT:
+                self.advance()  # consume @
+                attr_name = self.expect(TokenType.IDENTIFIER).value
+                attributes.append(attr_name)
+            
             if self.current_token.type == TokenType.EXPORT:
                 is_exported = True
                 self.advance()
@@ -618,6 +628,7 @@ class Parser:
             if self.current_token.type == TokenType.FUNCTION:
                 decl = self.parse_function()
                 decl.is_exported = is_exported
+                decl.attributes = attributes
                 declarations.append(decl)
             elif self.current_token.type == TokenType.STRUCT:
                 decl = self.parse_struct()
