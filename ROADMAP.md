@@ -393,15 +393,26 @@ These are explicitly out of scope:
 
 ## Immediate Next Steps
 
-**This week:**
-1. [ ] Strict type enforcement (turn warnings → errors)
-2. [ ] Parse generic syntax (`<T>`) — even if not fully implemented
-3. [ ] Add `Option<T>` and `Result<T, E>` types to stdlib (can be non-generic initially)
+**Completed (2026-01-09):**
+1. [x] Strict type enforcement (turn warnings → errors)
+   - `--strict` is default, `--lenient` for backwards compatibility
+   - 62/153 tests pass strict mode
+2. [x] Parse generic syntax (`<T>`) — parsed, not yet monomorphized
+   - `function foo<T>(...)` and `struct Bar<T> { ... }` work
+   - Type bounds `<T: Trait>` parsed (ignored for now)
+3. [x] Add `Option<T>` and `Result<T, E>` types to stdlib
+   - Concrete types: Option_i32, Result_f32_string, etc.
+   - Full API with constructors, predicates, unwrapping
 
-**Next week:**
+**This week:**
 1. [ ] Implement type substitution for generics
 2. [ ] Monomorphize generic functions in C backend
-3. [ ] Start pattern matching improvements
+3. [ ] Start pattern matching improvements (destructuring)
+
+**Next week:**
+1. [ ] Add MatchStatement to C generator
+2. [ ] Add VectorLiteral to C generator  
+3. [ ] Fix remaining 90 tests for strict mode
 
 ---
 
