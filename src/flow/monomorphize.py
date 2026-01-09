@@ -455,7 +455,7 @@ class Monomorphizer:
             return ArrayAccess(new_arr, new_idx)
         elif isinstance(expr, ArrayLiteral):
             new_elems = [self._substitute_expression(e, type_map) for e in expr.elements]
-            return ArrayLiteral(new_elems, expr.element_type)
+            return ArrayLiteral(new_elems)
         return expr
     
     def _rewrite_declarations(self, declarations: List[Any]) -> List[Any]:
@@ -596,7 +596,7 @@ class Monomorphizer:
             return ArrayAccess(new_arr, new_idx)
         elif isinstance(expr, ArrayLiteral):
             new_elems = [self._rewrite_expression(e) for e in expr.elements]
-            return ArrayLiteral(new_elems, expr.element_type)
+            return ArrayLiteral(new_elems)
         return expr
 
 
