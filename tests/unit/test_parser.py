@@ -129,17 +129,20 @@ class TestLexer:
         assert tokens[1].value == "test\nescapes"
 
     def test_comments_and_whitespace(self, lexer):
-        """Test that comments and whitespace are properly handled."""
+        """Test that comments and whitespace are properly handled.
+        
+        Note: FLOW uses # for single-line comments (not // or /* */).
+        """
         code = """
-        // This is a comment
-        function test() -> i32 {  // Another comment
-            /* multiline comment */
+        # This is a comment
+        function test() -> i32 {  # Another comment
+            # More comments
             return 42
         }
         """
         tokens = lexer.tokenize(code)
 
-        # Should have: FUNCTION, IDENTIFIER, (, ), ->, i32, {, RETURN, NUMBER, }, EOF
+        # Should have: FUNCTION, IDENTIFIER, (, ), ->, i32, {, RETURN, NUMBER, }
         assert len(tokens) >= 10
         function_token = next(t for t in tokens if t.type == TokenType.FUNCTION)
         assert function_token.type == TokenType.FUNCTION
@@ -148,15 +151,15 @@ class TestLexer:
         """Test edge cases for the lexer."""
         # Empty string
         tokens = lexer.tokenize("")
-        assert len(tokens) == 1  # Only EOF
+        assert len(tokens) == 0  # No tokens (tokenize excludes EOF)
 
         # Whitespace only
         tokens = lexer.tokenize("   \n\t   ")
-        assert len(tokens) == 1  # Only EOF
+        assert len(tokens) == 0  # No tokens
 
-        # Only comments
-        tokens = lexer.tokenize("// Comment\n// Another comment")
-        assert len(tokens) == 1  # Only EOF
+        # Only comments (FLOW uses # comments)
+        tokens = lexer.tokenize("# Comment\n# Another comment")
+        assert len(tokens) == 0  # No tokens
 
 
 class TestParser:

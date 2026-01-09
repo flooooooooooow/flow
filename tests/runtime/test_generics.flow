@@ -1,0 +1,92 @@
+# Runtime test: Generic types and monomorphization
+# Returns 0 if all tests pass, non-zero otherwise
+
+# Note: This tests basic generic functionality.
+# More complex generics like nested Box<Box<T>> may not be fully supported yet.
+
+# Generic struct - simple box
+struct IntBox {
+    value: i32
+}
+
+struct FloatBox {
+    value: f32
+}
+
+struct BoolBox {
+    value: bool
+}
+
+# Generic pair (concrete instantiations)
+struct IntPair {
+    first: i32,
+    second: i32
+}
+
+struct IntBoolPair {
+    first: i32,
+    second: bool
+}
+
+function test_int_box() -> bool {
+    let b: IntBox = IntBox { value: 42 }
+    return b.value == 42
+}
+
+function test_float_box() -> bool {
+    let b: FloatBox = FloatBox { value: 3.14 }
+    # Compare with tolerance for float
+    return b.value > 3.13 && b.value < 3.15
+}
+
+function test_bool_box() -> bool {
+    let b: BoolBox = BoolBox { value: true }
+    return b.value == true
+}
+
+function test_int_pair() -> bool {
+    let p: IntPair = IntPair { first: 10, second: 20 }
+    return p.first == 10 && p.second == 20
+}
+
+function test_mixed_pair() -> bool {
+    let p: IntBoolPair = IntBoolPair { first: 42, second: true }
+    return p.first == 42 && p.second == true
+}
+
+function test_box_computation() -> bool {
+    let b1: IntBox = IntBox { value: 10 }
+    let b2: IntBox = IntBox { value: 20 }
+    let sum: i32 = b1.value + b2.value
+    return sum == 30
+}
+
+function main() -> i32 {
+    if !test_int_box() {
+        printf("FAIL: int_box\n")
+        return 1
+    }
+    if !test_float_box() {
+        printf("FAIL: float_box\n")
+        return 2
+    }
+    if !test_bool_box() {
+        printf("FAIL: bool_box\n")
+        return 3
+    }
+    if !test_int_pair() {
+        printf("FAIL: int_pair\n")
+        return 4
+    }
+    if !test_mixed_pair() {
+        printf("FAIL: mixed_pair\n")
+        return 5
+    }
+    if !test_box_computation() {
+        printf("FAIL: box_computation\n")
+        return 6
+    }
+    
+    printf("All generics tests passed\n")
+    return 0
+}

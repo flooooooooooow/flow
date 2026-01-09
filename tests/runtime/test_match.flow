@@ -1,0 +1,98 @@
+# Runtime test: Pattern matching
+# Returns 0 if all tests pass, non-zero otherwise
+
+function day_name(day: i32) -> i32 {
+    # Return a code based on day number
+    # (Can't return strings easily, so return codes)
+    match day {
+        1 => { return 100 }  # Monday
+        2 => { return 200 }  # Tuesday
+        3 => { return 300 }  # Wednesday
+        4 => { return 400 }  # Thursday
+        5 => { return 500 }  # Friday
+        6 => { return 600 }  # Saturday
+        7 => { return 700 }  # Sunday
+        default { return 0 }
+    }
+    return 0
+}
+
+function test_match_first() -> bool {
+    let result: i32 = day_name(1)
+    return result == 100
+}
+
+function test_match_middle() -> bool {
+    let result: i32 = day_name(4)
+    return result == 400
+}
+
+function test_match_last() -> bool {
+    let result: i32 = day_name(7)
+    return result == 700
+}
+
+function test_match_default() -> bool {
+    let result: i32 = day_name(99)
+    return result == 0
+}
+
+function classify_number(n: i32) -> i32 {
+    match n {
+        0 => { return 0 }
+        1 => { return 1 }
+        default { 
+            if n < 0 {
+                return -1
+            }
+            return 2
+        }
+    }
+    return 0
+}
+
+function test_classify_zero() -> bool {
+    return classify_number(0) == 0
+}
+
+function test_classify_one() -> bool {
+    return classify_number(1) == 1
+}
+
+function test_classify_positive() -> bool {
+    return classify_number(42) == 2
+}
+
+function main() -> i32 {
+    if !test_match_first() {
+        printf("FAIL: match_first\n")
+        return 1
+    }
+    if !test_match_middle() {
+        printf("FAIL: match_middle\n")
+        return 2
+    }
+    if !test_match_last() {
+        printf("FAIL: match_last\n")
+        return 3
+    }
+    if !test_match_default() {
+        printf("FAIL: match_default\n")
+        return 4
+    }
+    if !test_classify_zero() {
+        printf("FAIL: classify_zero\n")
+        return 5
+    }
+    if !test_classify_one() {
+        printf("FAIL: classify_one\n")
+        return 6
+    }
+    if !test_classify_positive() {
+        printf("FAIL: classify_positive\n")
+        return 7
+    }
+    
+    printf("All match tests passed\n")
+    return 0
+}

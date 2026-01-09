@@ -1,0 +1,82 @@
+# Runtime test: Basic arithmetic operations
+# Returns 0 if all tests pass, non-zero otherwise
+
+function test_addition() -> bool {
+    let a: i32 = 2 + 3
+    return a == 5
+}
+
+function test_subtraction() -> bool {
+    let a: i32 = 10 - 4
+    return a == 6
+}
+
+function test_multiplication() -> bool {
+    let a: i32 = 6 * 7
+    return a == 42
+}
+
+function test_division() -> bool {
+    let a: i32 = 20 / 4
+    return a == 5
+}
+
+function test_modulo() -> bool {
+    let a: i32 = 17 % 5
+    return a == 2
+}
+
+function test_precedence() -> bool {
+    # Should be: 2 + (3 * 4) = 14, not (2 + 3) * 4 = 20
+    let a: i32 = 2 + 3 * 4
+    return a == 14
+}
+
+function test_parentheses() -> bool {
+    let a: i32 = (2 + 3) * 4
+    return a == 20
+}
+
+function test_negative() -> bool {
+    let a: i32 = -5
+    let b: i32 = 10 + a
+    return b == 5
+}
+
+function main() -> i32 {
+    if !test_addition() {
+        printf("FAIL: addition\n")
+        return 1
+    }
+    if !test_subtraction() {
+        printf("FAIL: subtraction\n")
+        return 2
+    }
+    if !test_multiplication() {
+        printf("FAIL: multiplication\n")
+        return 3
+    }
+    if !test_division() {
+        printf("FAIL: division\n")
+        return 4
+    }
+    if !test_modulo() {
+        printf("FAIL: modulo\n")
+        return 5
+    }
+    if !test_precedence() {
+        printf("FAIL: precedence\n")
+        return 6
+    }
+    if !test_parentheses() {
+        printf("FAIL: parentheses\n")
+        return 7
+    }
+    if !test_negative() {
+        printf("FAIL: negative\n")
+        return 8
+    }
+    
+    printf("All arithmetic tests passed\n")
+    return 0
+}

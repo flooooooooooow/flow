@@ -1,0 +1,66 @@
+# Runtime test: Functions and recursion
+# Returns 0 if all tests pass, non-zero otherwise
+
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+function multiply(a: i32, b: i32) -> i32 {
+    return a * b
+}
+
+function factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+function fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+function test_simple_call() -> bool {
+    let result: i32 = add(3, 4)
+    return result == 7
+}
+
+function test_nested_call() -> bool {
+    let result: i32 = add(multiply(2, 3), 4)
+    return result == 10
+}
+
+function test_factorial() -> bool {
+    let f5: i32 = factorial(5)
+    return f5 == 120
+}
+
+function test_fibonacci() -> bool {
+    let fib6: i32 = fibonacci(6)
+    return fib6 == 8
+}
+
+function main() -> i32 {
+    if !test_simple_call() {
+        printf("FAIL: simple_call\n")
+        return 1
+    }
+    if !test_nested_call() {
+        printf("FAIL: nested_call\n")
+        return 2
+    }
+    if !test_factorial() {
+        printf("FAIL: factorial\n")
+        return 3
+    }
+    if !test_fibonacci() {
+        printf("FAIL: fibonacci\n")
+        return 4
+    }
+    
+    printf("All function tests passed\n")
+    return 0
+}

@@ -1,0 +1,22 @@
+# MLIR test: Basic arithmetic operations
+# Tests that MLIR generation produces valid IR
+
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+function multiply(x: i32, y: i32) -> i32 {
+    return x * y
+}
+
+function compute() -> i32 {
+    let a: i32 = 10
+    let b: i32 = 20
+    let sum: i32 = add(a, b)
+    let product: i32 = multiply(a, b)
+    return sum + product
+}
+
+function main() -> i32 {
+    return compute()
+}

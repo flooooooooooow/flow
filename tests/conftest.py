@@ -118,17 +118,37 @@ def temp_flow_file():
 
 @pytest.fixture
 def parser():
-    """Provide a parser instance for testing."""
-    # Create a lexer with empty text to start
-    lexer = Lexer("")
-    return Parser(lexer)
+    """Provide a parser factory for testing.
+    
+    Usage:
+        ast = parser.parse("function main() -> i32 { return 0 }")
+    """
+    class ParserFactory:
+        def parse(self, code: str):
+            """Parse FLOW code and return AST."""
+            return parse_flow_code(code)
+    
+    return ParserFactory()
 
 
 @pytest.fixture
 def lexer():
-    """Provide a lexer instance for testing."""
-    # Return a lambda to create lexer with text
-    return lambda text: Lexer(text)
+    """Provide a lexer factory for testing.
+    
+    Usage:
+        tokens = lexer.tokenize("let x: i32 = 42")
+        # or
+        lexer_instance = lexer("let x: i32 = 42")
+        tokens = lexer_instance.tokenize()
+    """
+    class LexerFactory:
+        def __call__(self, text: str) -> Lexer:
+            return Lexer(text)
+        
+        def tokenize(self, text: str) -> list:
+            return Lexer(text).tokenize()
+    
+    return LexerFactory()
 
 
 @pytest.fixture
@@ -215,10 +235,11 @@ def test_helpers():
 
 
 # Test data for edge cases and error conditions
+# Note: FLOW uses # for comments (not // or /* */)
 EDGE_CASES = {
     "empty_string": "",
     "whitespace_only": "   \n\t   ",
-    "only_comments": "// This is a comment\n// Another comment",
+    "only_comments": "# This is a comment\n# Another comment",
     "string_with_escapes": 'let s: string = "hello\\nworld\\t!"',
     "numeric_literals": "let a: i32 = 42\nlet b: i32 = -17\nlet c: bool = true\nlet d: bool = false",
     "complex_expressions": "result = a + b * c / d - e % f + (g * h)",
