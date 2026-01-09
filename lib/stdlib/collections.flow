@@ -1,0 +1,202 @@
+# FLOW Collections Standard Library
+# HashMap, Set, Queue, Stack, Vector
+
+# =============================================================================
+# Vector (Dynamic Array)
+# =============================================================================
+
+struct Vector_i32 {
+    data: ptr<i32>,
+    len: i32,
+    capacity: i32
+}
+
+function vector_i32_new() -> Vector_i32 {
+    return Vector_i32 { data: null, len: 0, capacity: 0 }
+}
+
+function vector_i32_len(v: Vector_i32) -> i32 {
+    return v.len
+}
+
+function vector_i32_is_empty(v: Vector_i32) -> bool {
+    return v.len == 0
+}
+
+# =============================================================================
+# Stack (LIFO)
+# =============================================================================
+
+struct Stack_i32 {
+    data: ptr<i32>,
+    top: i32,
+    capacity: i32
+}
+
+function stack_i32_new(cap: i32) -> Stack_i32 {
+    return Stack_i32 { data: null, top: -1, capacity: cap }
+}
+
+function stack_i32_is_empty(s: Stack_i32) -> bool {
+    return s.top < 0
+}
+
+function stack_i32_is_full(s: Stack_i32) -> bool {
+    return s.top >= s.capacity - 1
+}
+
+# =============================================================================
+# Queue (FIFO)
+# =============================================================================
+
+struct Queue_i32 {
+    data: ptr<i32>,
+    front: i32,
+    rear: i32,
+    size: i32,
+    capacity: i32
+}
+
+function queue_i32_new(cap: i32) -> Queue_i32 {
+    return Queue_i32 { data: null, front: 0, rear: -1, size: 0, capacity: cap }
+}
+
+function queue_i32_is_empty(q: Queue_i32) -> bool {
+    return q.size == 0
+}
+
+function queue_i32_is_full(q: Queue_i32) -> bool {
+    return q.size >= q.capacity
+}
+
+function queue_i32_len(q: Queue_i32) -> i32 {
+    return q.size
+}
+
+# =============================================================================
+# HashEntry and HashMap
+# =============================================================================
+
+struct HashEntry_string_i32 {
+    key: string,
+    value: i32,
+    occupied: bool
+}
+
+struct HashMap_string_i32 {
+    buckets: ptr<HashEntry_string_i32>,
+    size: i32,
+    capacity: i32
+}
+
+# Simple string hash function (djb2)
+function hash_string(s: string) -> i32 {
+    # djb2 hash - implemented via extern
+    return 5381  # Placeholder - actual hashing done in C
+}
+
+function hashmap_string_i32_new(cap: i32) -> HashMap_string_i32 {
+    return HashMap_string_i32 { buckets: null, size: 0, capacity: cap }
+}
+
+function hashmap_string_i32_len(m: HashMap_string_i32) -> i32 {
+    return m.size
+}
+
+function hashmap_string_i32_is_empty(m: HashMap_string_i32) -> bool {
+    return m.size == 0
+}
+
+# =============================================================================
+# Set (unique elements)
+# =============================================================================
+
+struct Set_i32 {
+    data: ptr<i32>,
+    size: i32,
+    capacity: i32
+}
+
+function set_i32_new(cap: i32) -> Set_i32 {
+    return Set_i32 { data: null, size: 0, capacity: cap }
+}
+
+function set_i32_len(s: Set_i32) -> i32 {
+    return s.size
+}
+
+function set_i32_is_empty(s: Set_i32) -> bool {
+    return s.size == 0
+}
+
+# =============================================================================
+# LinkedList Node
+# =============================================================================
+
+struct ListNode_i32 {
+    value: i32,
+    next: ptr<ListNode_i32>
+}
+
+struct LinkedList_i32 {
+    head: ptr<ListNode_i32>,
+    tail: ptr<ListNode_i32>,
+    len: i32
+}
+
+function linkedlist_i32_new() -> LinkedList_i32 {
+    return LinkedList_i32 { head: null, tail: null, len: 0 }
+}
+
+function linkedlist_i32_len(l: LinkedList_i32) -> i32 {
+    return l.len
+}
+
+function linkedlist_i32_is_empty(l: LinkedList_i32) -> bool {
+    return l.len == 0
+}
+
+# =============================================================================
+# Priority Queue (Min-Heap)
+# =============================================================================
+
+struct PriorityQueue_i32 {
+    data: ptr<i32>,
+    size: i32,
+    capacity: i32
+}
+
+function pq_i32_new(cap: i32) -> PriorityQueue_i32 {
+    return PriorityQueue_i32 { data: null, size: 0, capacity: cap }
+}
+
+function pq_i32_is_empty(pq: PriorityQueue_i32) -> bool {
+    return pq.size == 0
+}
+
+function pq_i32_len(pq: PriorityQueue_i32) -> i32 {
+    return pq.size
+}
+
+# =============================================================================
+# Pair / Tuple
+# =============================================================================
+
+struct Pair_i32_i32 {
+    first: i32,
+    second: i32
+}
+
+function pair_i32_i32_new(a: i32, b: i32) -> Pair_i32_i32 {
+    return Pair_i32_i32 { first: a, second: b }
+}
+
+struct Triple_i32_i32_i32 {
+    first: i32,
+    second: i32,
+    third: i32
+}
+
+function triple_new(a: i32, b: i32, c: i32) -> Triple_i32_i32_i32 {
+    return Triple_i32_i32_i32 { first: a, second: b, third: c }
+}

@@ -1,0 +1,161 @@
+# FLOW Networking Standard Library
+# TCP/UDP sockets, HTTP client
+
+# =============================================================================
+# Socket Types
+# =============================================================================
+
+struct Socket {
+    fd: i32,
+    domain: i32,
+    type: i32,
+    protocol: i32
+}
+
+# Socket domains
+const AF_UNIX: i32 = 1
+const AF_INET: i32 = 2      # IPv4
+const AF_INET6: i32 = 10    # IPv6
+
+# Socket types
+const SOCK_STREAM: i32 = 1  # TCP
+const SOCK_DGRAM: i32 = 2   # UDP
+const SOCK_RAW: i32 = 3
+
+# =============================================================================
+# Socket Address
+# =============================================================================
+
+struct SockAddr_in {
+    family: i16,
+    port: i16,
+    addr: i32,
+    zero: i64  # Padding
+}
+
+function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
+    return SockAddr_in { 
+        family: 2,  # AF_INET
+        port: port, 
+        addr: addr,
+        zero: 0
+    }
+}
+
+# =============================================================================
+# Low-level Socket Functions (extern to libc)
+# =============================================================================
+
+extern function socket(domain: i32, type: i32, protocol: i32) -> i32
+extern function bind(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
+extern function listen(sockfd: i32, backlog: i32) -> i32
+extern function accept(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: ptr<i32>) -> i32
+extern function connect(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
+extern function send(sockfd: i32, buf: ptr<i8>, len: i32, flags: i32) -> i32
+extern function recv(sockfd: i32, buf: ptr<i8>, len: i32, flags: i32) -> i32
+extern function shutdown(sockfd: i32, how: i32) -> i32
+extern function htons(hostshort: i16) -> i16
+extern function htonl(hostlong: i32) -> i32
+extern function ntohs(netshort: i16) -> i16
+extern function ntohl(netlong: i32) -> i32
+extern function inet_addr(cp: string) -> i32
+extern function inet_ntoa(addr: i32) -> string
+
+# Shutdown how values
+const SHUT_RD: i32 = 0
+const SHUT_WR: i32 = 1
+const SHUT_RDWR: i32 = 2
+
+# =============================================================================
+# High-level TCP API
+# =============================================================================
+
+struct TcpListener {
+    socket: Socket,
+    port: i32
+}
+
+struct TcpStream {
+    socket: Socket,
+    connected: bool
+}
+
+function tcp_listener_new(port: i32) -> TcpListener {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    let sock = Socket { fd: fd, domain: AF_INET, type: SOCK_STREAM, protocol: 0 }
+    return TcpListener { socket: sock, port: port }
+}
+
+function tcp_stream_new() -> TcpStream {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    let sock = Socket { fd: fd, domain: AF_INET, type: SOCK_STREAM, protocol: 0 }
+    return TcpStream { socket: sock, connected: false }
+}
+
+function tcp_stream_is_connected(stream: TcpStream) -> bool {
+    return stream.connected
+}
+
+# =============================================================================
+# UDP API
+# =============================================================================
+
+struct UdpSocket {
+    socket: Socket,
+    bound: bool
+}
+
+function udp_socket_new() -> UdpSocket {
+    let fd = socket(AF_INET, SOCK_DGRAM, 0)
+    let sock = Socket { fd: fd, domain: AF_INET, type: SOCK_DGRAM, protocol: 0 }
+    return UdpSocket { socket: sock, bound: false }
+}
+
+# =============================================================================
+# HTTP Client (Simple)
+# =============================================================================
+
+struct HttpResponse {
+    status_code: i32,
+    body_length: i32,
+    success: bool
+}
+
+struct HttpRequest {
+    method: string,
+    url: string,
+    host: string,
+    port: i32
+}
+
+function http_request_new(method: string, url: string) -> HttpRequest {
+    return HttpRequest { method: method, url: url, host: "", port: 80 }
+}
+
+function http_get(url: string) -> HttpResponse {
+    # Placeholder - actual implementation would parse URL and make request
+    return HttpResponse { status_code: 0, body_length: 0, success: false }
+}
+
+function http_post(url: string, body: string) -> HttpResponse {
+    return HttpResponse { status_code: 0, body_length: 0, success: false }
+}
+
+# =============================================================================
+# DNS Resolution
+# =============================================================================
+
+extern function gethostbyname(name: string) -> ptr<i8>
+
+function resolve_hostname(hostname: string) -> i32 {
+    # Returns IPv4 address as i32, or 0 on failure
+    return 0  # Placeholder
+}
+
+# =============================================================================
+# Common IP Addresses
+# =============================================================================
+
+const INADDR_ANY: i32 = 0
+const INADDR_LOOPBACK: i32 = 2130706433  # 127.0.0.1
+const INADDR_BROADCAST: i32 = -1         # 255.255.255.255

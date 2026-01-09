@@ -1,0 +1,225 @@
+# FLOW Concurrency Standard Library
+# Threads, mutexes, channels, atomics
+
+# =============================================================================
+# Thread
+# =============================================================================
+
+struct Thread {
+    id: i64,
+    running: bool
+}
+
+# Low-level pthread functions
+extern function pthread_create(thread: ptr<i64>, attr: ptr<i8>, start_routine: ptr<i8>, arg: ptr<i8>) -> i32
+extern function pthread_join(thread: i64, retval: ptr<ptr<i8>>) -> i32
+extern function pthread_detach(thread: i64) -> i32
+extern function pthread_self() -> i64
+extern function pthread_exit(retval: ptr<i8>) -> void
+
+function thread_new() -> Thread {
+    return Thread { id: 0, running: false }
+}
+
+function thread_is_running(t: Thread) -> bool {
+    return t.running
+}
+
+# =============================================================================
+# Mutex (Mutual Exclusion Lock)
+# =============================================================================
+
+struct Mutex {
+    locked: bool,
+    owner: i64
+}
+
+extern function pthread_mutex_init(mutex: ptr<i8>, attr: ptr<i8>) -> i32
+extern function pthread_mutex_lock(mutex: ptr<i8>) -> i32
+extern function pthread_mutex_unlock(mutex: ptr<i8>) -> i32
+extern function pthread_mutex_trylock(mutex: ptr<i8>) -> i32
+extern function pthread_mutex_destroy(mutex: ptr<i8>) -> i32
+
+function mutex_new() -> Mutex {
+    return Mutex { locked: false, owner: 0 }
+}
+
+function mutex_is_locked(m: Mutex) -> bool {
+    return m.locked
+}
+
+# =============================================================================
+# Condition Variable
+# =============================================================================
+
+struct CondVar {
+    initialized: bool
+}
+
+extern function pthread_cond_init(cond: ptr<i8>, attr: ptr<i8>) -> i32
+extern function pthread_cond_wait(cond: ptr<i8>, mutex: ptr<i8>) -> i32
+extern function pthread_cond_signal(cond: ptr<i8>) -> i32
+extern function pthread_cond_broadcast(cond: ptr<i8>) -> i32
+extern function pthread_cond_destroy(cond: ptr<i8>) -> i32
+
+function condvar_new() -> CondVar {
+    return CondVar { initialized: false }
+}
+
+# =============================================================================
+# Read-Write Lock
+# =============================================================================
+
+struct RwLock {
+    readers: i32,
+    writer: bool
+}
+
+extern function pthread_rwlock_init(rwlock: ptr<i8>, attr: ptr<i8>) -> i32
+extern function pthread_rwlock_rdlock(rwlock: ptr<i8>) -> i32
+extern function pthread_rwlock_wrlock(rwlock: ptr<i8>) -> i32
+extern function pthread_rwlock_unlock(rwlock: ptr<i8>) -> i32
+extern function pthread_rwlock_destroy(rwlock: ptr<i8>) -> i32
+
+function rwlock_new() -> RwLock {
+    return RwLock { readers: 0, writer: false }
+}
+
+# =============================================================================
+# Semaphore
+# =============================================================================
+
+struct Semaphore {
+    count: i32
+}
+
+function semaphore_new(initial: i32) -> Semaphore {
+    return Semaphore { count: initial }
+}
+
+# =============================================================================
+# Channel (Go-style communication)
+# =============================================================================
+
+struct Channel_i32 {
+    buffer: ptr<i32>,
+    capacity: i32,
+    size: i32,
+    head: i32,
+    tail: i32,
+    closed: bool
+}
+
+function channel_i32_new(cap: i32) -> Channel_i32 {
+    return Channel_i32 {
+        buffer: null,
+        capacity: cap,
+        size: 0,
+        head: 0,
+        tail: 0,
+        closed: false
+    }
+}
+
+function channel_i32_is_empty(ch: Channel_i32) -> bool {
+    return ch.size == 0
+}
+
+function channel_i32_is_full(ch: Channel_i32) -> bool {
+    return ch.size >= ch.capacity
+}
+
+function channel_i32_is_closed(ch: Channel_i32) -> bool {
+    return ch.closed
+}
+
+function channel_i32_len(ch: Channel_i32) -> i32 {
+    return ch.size
+}
+
+# =============================================================================
+# Atomic Operations
+# =============================================================================
+
+struct AtomicI32 {
+    value: i32
+}
+
+struct AtomicI64 {
+    value: i64
+}
+
+struct AtomicBool {
+    value: bool
+}
+
+function atomic_i32_new(val: i32) -> AtomicI32 {
+    return AtomicI32 { value: val }
+}
+
+function atomic_i64_new(val: i64) -> AtomicI64 {
+    return AtomicI64 { value: val }
+}
+
+function atomic_bool_new(val: bool) -> AtomicBool {
+    return AtomicBool { value: val }
+}
+
+# Atomic load/store (would map to __atomic builtins in C)
+extern function __atomic_load_n(ptr: ptr<i32>, memorder: i32) -> i32
+extern function __atomic_store_n(ptr: ptr<i32>, val: i32, memorder: i32) -> void
+extern function __atomic_fetch_add(ptr: ptr<i32>, val: i32, memorder: i32) -> i32
+extern function __atomic_fetch_sub(ptr: ptr<i32>, val: i32, memorder: i32) -> i32
+extern function __atomic_compare_exchange_n(ptr: ptr<i32>, expected: ptr<i32>, desired: i32, weak: bool, success_memorder: i32, failure_memorder: i32) -> bool
+
+# Memory ordering
+const MEMORY_ORDER_RELAXED: i32 = 0
+const MEMORY_ORDER_CONSUME: i32 = 1
+const MEMORY_ORDER_ACQUIRE: i32 = 2
+const MEMORY_ORDER_RELEASE: i32 = 3
+const MEMORY_ORDER_ACQ_REL: i32 = 4
+const MEMORY_ORDER_SEQ_CST: i32 = 5
+
+# =============================================================================
+# SpinLock (busy-wait lock)
+# =============================================================================
+
+struct SpinLock {
+    locked: bool
+}
+
+function spinlock_new() -> SpinLock {
+    return SpinLock { locked: false }
+}
+
+# =============================================================================
+# Once (run-once initialization)
+# =============================================================================
+
+struct Once {
+    done: bool
+}
+
+function once_new() -> Once {
+    return Once { done: false }
+}
+
+function once_is_done(o: Once) -> bool {
+    return o.done
+}
+
+# =============================================================================
+# WaitGroup (barrier synchronization)
+# =============================================================================
+
+struct WaitGroup {
+    count: i32
+}
+
+function waitgroup_new() -> WaitGroup {
+    return WaitGroup { count: 0 }
+}
+
+function waitgroup_count(wg: WaitGroup) -> i32 {
+    return wg.count
+}

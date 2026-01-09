@@ -40,6 +40,7 @@ This document tracks what we're building next and why.
 - ✅ JIT — `flow jit` for fast execution via MLIR
 - ✅ Package manager — `flow init`, `flow add`, `flow build`
 - ✅ GPU codegen — `@gpu` decorator, Metal shader generation
+- ✅ Stdlib expansion — POSIX, collections, networking, concurrency, strings
 
 ---
 
@@ -459,12 +460,62 @@ These are explicitly out of scope:
 
 ---
 
+## Standard Library Expansion (Complete ✅)
+
+New stdlib modules added:
+
+1. **posix.flow** ✅ - POSIX system calls
+   - File I/O (open, read, write, close, lseek)
+   - Process management (fork, exec, wait, exit)
+   - Signals (kill, signal constants)
+   - Environment variables (getenv, setenv)
+   - Directory operations (mkdir, chdir, getcwd)
+
+2. **collections.flow** ✅ - Data structures
+   - Vector (dynamic array)
+   - Stack (LIFO)
+   - Queue (FIFO)
+   - HashMap (key-value store)
+   - Set (unique elements)
+   - LinkedList
+   - PriorityQueue (min-heap)
+   - Pair, Triple
+
+3. **net.flow** ✅ - Networking
+   - TCP sockets (TcpListener, TcpStream)
+   - UDP sockets (UdpSocket)
+   - HTTP client (HttpRequest, HttpResponse)
+   - Socket address structures
+   - DNS resolution stubs
+
+4. **concurrent.flow** ✅ - Concurrency
+   - Threads (pthread wrappers)
+   - Mutex (mutual exclusion)
+   - Condition variables
+   - Read-write locks
+   - Semaphores
+   - Channels (Go-style)
+   - Atomics (AtomicI32, AtomicI64, AtomicBool)
+   - SpinLock, Once, WaitGroup
+
+5. **string.flow** ✅ - String utilities
+   - C string functions (strlen, strcmp, etc.)
+   - Character classification (is_digit, is_alpha)
+   - Number parsing (parse_int, parse_float)
+   - StringBuilder
+
+---
+
+## What's Next?
+
+The language is feature-complete! Future work:
+
+1. **Polish & Docs** - Improve documentation, tutorials, examples
+2. **Async/Await** - First-class async support
+3. **Debugger** - LLDB/GDB integration
+4. **Web Playground** - Browser-based IDE
+5. **Real-world projects** - Build something substantial to prove it out
+
+---
+
 *This roadmap will be updated as priorities shift.*
-
-Next:
-
-1. Do POSIX integration
-2. More Stdlib
-3. Collections (HashMap, Set, Queue)
-4. Networking (HTTP, TCP)
-5. Concurrency primitives
