@@ -7,6 +7,7 @@ Welcome to the FLOW programming language documentation.
 | Goal | Document |
 |------|----------|
 | **Install & Run** | [Getting Started](getting-started.md) |
+| **Compare with Rust/Zig/Go** | [Language Comparison](comparison.md) |
 | **Learn FLOW** | [Tutorials](tutorials/beginner.md) |
 | **Language Reference** | [Language Spec](LANGUAGE_SPEC.md) |
 | **Standard Library** | [API Reference](library/stdlib-reference.md) |
