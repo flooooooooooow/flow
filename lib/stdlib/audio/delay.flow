@@ -1,0 +1,316 @@
+# Audio Delay Module
+#
+# Delay lines and time-based effects.
+# Note: Full delay implementation requires pointer/array support.
+# This module provides the state structures and helper functions.
+#
+# Usage:
+#   import "stdlib/audio.flow"
+#   import "stdlib/audio/delay.flow"
+#   
+#   let rate: SampleRate = sample_rate_44100()
+#   let delay: DelayState = delay_new(seconds_new(0.5), rate)
+
+import "stdlib/audio.flow"
+
+# =============================================================================
+# Simple Delay State
+# =============================================================================
+
+# Delay line state (simplified - actual buffer needs array support)
+export struct DelayState {
+    delay_samples: i64      # Delay time in samples
+    max_samples: i64        # Maximum delay (buffer size)
+    write_pos: i64          # Current write position
+    feedback: f32           # Feedback amount [0.0, 1.0)
+    wet_mix: f32            # Wet/dry mix [0.0, 1.0]
+}
+
+# Create a delay with given time
+export function delay_new(max_time: Seconds, rate: SampleRate) -> DelayState {
+    let max_s: Samples = seconds_to_samples(max_time, rate)
+    return DelayState {
+        delay_samples: max_s.count,
+        max_samples: max_s.count,
+        write_pos: 0,
+        feedback: 0.0,
+        wet_mix: 0.5
+    }
+}
+
+# Set delay time
+export function delay_set_time(d: DelayState, time: Seconds, rate: SampleRate) -> DelayState {
+    let new_samples: Samples = seconds_to_samples(time, rate)
+    let delay: i64 = new_samples.count
+    if delay > d.max_samples {
+        delay = d.max_samples
+    }
+    if delay < 0 {
+        delay = 0
+    }
+    return DelayState {
+        delay_samples: delay,
+        max_samples: d.max_samples,
+        write_pos: d.write_pos,
+        feedback: d.feedback,
+        wet_mix: d.wet_mix
+    }
+}
+
+# Set feedback amount
+export function delay_set_feedback(d: DelayState, fb: f32) -> DelayState {
+    let feedback: f32 = fb
+    if feedback >= 1.0 {
+        feedback = 0.99  # Prevent infinite feedback
+    }
+    if feedback < 0.0 {
+        feedback = 0.0
+    }
+    return DelayState {
+        delay_samples: d.delay_samples,
+        max_samples: d.max_samples,
+        write_pos: d.write_pos,
+        feedback: feedback,
+        wet_mix: d.wet_mix
+    }
+}
+
+# Set wet/dry mix
+export function delay_set_mix(d: DelayState, mix: f32) -> DelayState {
+    let m: f32 = mix
+    if m > 1.0 {
+        m = 1.0
+    }
+    if m < 0.0 {
+        m = 0.0
+    }
+    return DelayState {
+        delay_samples: d.delay_samples,
+        max_samples: d.max_samples,
+        write_pos: d.write_pos,
+        feedback: d.feedback,
+        wet_mix: m
+    }
+}
+
+# Advance write position (call after writing sample)
+export function delay_advance(d: DelayState) -> DelayState {
+    let new_pos: i64 = d.write_pos + 1
+    if new_pos >= d.max_samples {
+        new_pos = 0
+    }
+    return DelayState {
+        delay_samples: d.delay_samples,
+        max_samples: d.max_samples,
+        write_pos: new_pos,
+        feedback: d.feedback,
+        wet_mix: d.wet_mix
+    }
+}
+
+# Calculate read position
+export function delay_read_pos(d: DelayState) -> i64 {
+    let read_pos: i64 = d.write_pos - d.delay_samples
+    if read_pos < 0 {
+        read_pos = read_pos + d.max_samples
+    }
+    return read_pos
+}
+
+# =============================================================================
+# Ping-Pong Delay State
+# =============================================================================
+
+export struct PingPongState {
+    left_delay: DelayState
+    right_delay: DelayState
+    cross_feedback: f32     # How much feeds to opposite channel
+}
+
+# Create ping-pong delay
+export function pingpong_new(time: Seconds, rate: SampleRate) -> PingPongState {
+    let d: DelayState = delay_new(time, rate)
+    return PingPongState {
+        left_delay: d,
+        right_delay: d,
+        cross_feedback: 0.5
+    }
+}
+
+# Set cross-feedback
+export function pingpong_set_feedback(pp: PingPongState, fb: f32) -> PingPongState {
+    let left: DelayState = delay_set_feedback(pp.left_delay, fb)
+    let right: DelayState = delay_set_feedback(pp.right_delay, fb)
+    return PingPongState {
+        left_delay: left,
+        right_delay: right,
+        cross_feedback: fb
+    }
+}
+
+# =============================================================================
+# Interpolation Helpers (for fractional delay)
+# =============================================================================
+
+# Linear interpolation between two samples
+export function lerp(a: f32, b: f32, t: f32) -> f32 {
+    return a + t * (b - a)
+}
+
+# Cubic interpolation (Hermite) for smoother modulated delays
+export function cubic_interp(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
+    let c0: f32 = y1
+    let c1: f32 = 0.5 * (y2 - y0)
+    let c2: f32 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3
+    let c3: f32 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2)
+    return ((c3 * t + c2) * t + c1) * t + c0
+}
+
+# =============================================================================
+# Allpass Delay (for reverb building blocks)
+# =============================================================================
+
+export struct AllpassDelay {
+    delay_samples: i64
+    coeff: f32          # Allpass coefficient
+    write_pos: i64
+}
+
+# Create allpass delay
+export function allpass_delay_new(time_ms: f32, coeff: f32, rate: SampleRate) -> AllpassDelay {
+    let samples: Samples = ms_to_samples(time_ms, rate)
+    return AllpassDelay {
+        delay_samples: samples.count,
+        coeff: coeff,
+        write_pos: 0
+    }
+}
+
+# Advance position
+export function allpass_delay_advance(a: AllpassDelay) -> AllpassDelay {
+    let new_pos: i64 = a.write_pos + 1
+    if new_pos >= a.delay_samples {
+        new_pos = 0
+    }
+    return AllpassDelay {
+        delay_samples: a.delay_samples,
+        coeff: a.coeff,
+        write_pos: new_pos
+    }
+}
+
+# =============================================================================
+# Comb Filter (for reverb)
+# =============================================================================
+
+export struct CombFilter {
+    delay_samples: i64
+    feedback: f32
+    damping: f32        # Lowpass in feedback path
+    write_pos: i64
+    filter_state: f32   # One-pole lowpass state
+}
+
+# Create comb filter
+export function comb_new(time_ms: f32, feedback: f32, damping: f32, rate: SampleRate) -> CombFilter {
+    let samples: Samples = ms_to_samples(time_ms, rate)
+    return CombFilter {
+        delay_samples: samples.count,
+        feedback: feedback,
+        damping: damping,
+        write_pos: 0,
+        filter_state: 0.0
+    }
+}
+
+# Advance position  
+export function comb_advance(c: CombFilter) -> CombFilter {
+    let new_pos: i64 = c.write_pos + 1
+    if new_pos >= c.delay_samples {
+        new_pos = 0
+    }
+    return CombFilter {
+        delay_samples: c.delay_samples,
+        feedback: c.feedback,
+        damping: c.damping,
+        write_pos: new_pos,
+        filter_state: c.filter_state
+    }
+}
+
+# =============================================================================
+# Modulated Delay (for chorus/flanger)
+# =============================================================================
+
+export struct ModDelay {
+    base_delay: DelayState
+    mod_depth_samples: f32  # Modulation depth in samples
+    mod_rate_hz: f32        # Modulation rate
+    mod_phase: f64          # Current modulation phase [0, 1)
+    mod_increment: f64      # Phase increment per sample
+}
+
+# Create modulated delay (chorus-like)
+export function mod_delay_new(base_time: Seconds, mod_depth_ms: f32, mod_rate: f32, rate: SampleRate) -> ModDelay {
+    let d: DelayState = delay_new(base_time, rate)
+    let depth_samples: f32 = mod_depth_ms * rate.hz / 1000.0
+    let increment: f64 = mod_rate / rate.hz
+    
+    return ModDelay {
+        base_delay: d,
+        mod_depth_samples: depth_samples,
+        mod_rate_hz: mod_rate,
+        mod_phase: 0.0,
+        mod_increment: increment
+    }
+}
+
+# Advance modulation phase
+export function mod_delay_tick(m: ModDelay) -> ModDelay {
+    let new_phase: f64 = m.mod_phase + m.mod_increment
+    if new_phase >= 1.0 {
+        new_phase = new_phase - 1.0
+    }
+    let new_base: DelayState = delay_advance(m.base_delay)
+    
+    return ModDelay {
+        base_delay: new_base,
+        mod_depth_samples: m.mod_depth_samples,
+        mod_rate_hz: m.mod_rate_hz,
+        mod_phase: new_phase,
+        mod_increment: m.mod_increment
+    }
+}
+
+# Get current delay time in samples (modulated)
+export function mod_delay_current_samples(m: ModDelay) -> f32 {
+    # Use sine modulation
+    let mod_value: f32 = m.mod_phase * 6.28318
+    let sine_approx: f32 = mod_value - mod_value * mod_value * mod_value / 6.0
+    let offset: f32 = sine_approx * m.mod_depth_samples
+    return m.base_delay.delay_samples + offset
+}
+
+# Set modulation rate
+export function mod_delay_set_rate(m: ModDelay, rate_hz: f32, sample_rate: SampleRate) -> ModDelay {
+    let increment: f64 = rate_hz / sample_rate.hz
+    return ModDelay {
+        base_delay: m.base_delay,
+        mod_depth_samples: m.mod_depth_samples,
+        mod_rate_hz: rate_hz,
+        mod_phase: m.mod_phase,
+        mod_increment: increment
+    }
+}
+
+# Set modulation depth
+export function mod_delay_set_depth(m: ModDelay, depth_ms: f32, rate: SampleRate) -> ModDelay {
+    let depth_samples: f32 = depth_ms * rate.hz / 1000.0
+    return ModDelay {
+        base_delay: m.base_delay,
+        mod_depth_samples: depth_samples,
+        mod_rate_hz: m.mod_rate_hz,
+        mod_phase: m.mod_phase,
+        mod_increment: m.mod_increment
+    }
+}

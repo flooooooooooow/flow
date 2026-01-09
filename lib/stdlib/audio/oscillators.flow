@@ -1,0 +1,258 @@
+# Audio Oscillators Module
+#
+# Phase-based oscillators and waveshaping functions.
+# All oscillators use a Phasor for phase tracking.
+#
+# Usage:
+#   import "stdlib/audio.flow"
+#   import "stdlib/audio/oscillators.flow"
+#   
+#   let rate: SampleRate = sample_rate_44100()
+#   let osc: Phasor = phasor_new(440.0, rate)
+#   let sample: f32 = sine(phasor_value(osc))
+#   let osc2: Phasor = phasor_tick(osc)
+#
+# Pattern: phasor_tick returns new state (immutable/functional style)
+
+import "stdlib/audio.flow"
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+export const TWO_PI: f64 = 6.28318530717958647692
+export const PI: f64 = 3.14159265358979323846
+
+# =============================================================================
+# Phasor (Phase Accumulator)
+# =============================================================================
+
+# A phasor tracks phase from 0.0 to 1.0, wrapping on overflow.
+# This is the foundation for all periodic waveforms.
+export struct Phasor {
+    phase: f64      # Current phase [0.0, 1.0)
+    increment: f64  # Phase increment per sample
+}
+
+# Create a phasor for a given frequency and sample rate
+export function phasor_new(freq: f64, rate: SampleRate) -> Phasor {
+    let inc: f64 = freq / rate.hz
+    return Phasor { phase: 0.0, increment: inc }
+}
+
+# Create a phasor with initial phase
+export function phasor_new_with_phase(freq: f64, rate: SampleRate, initial_phase: f64) -> Phasor {
+    let inc: f64 = freq / rate.hz
+    return Phasor { phase: initial_phase, increment: inc }
+}
+
+# Advance the phasor by one sample (returns new state)
+export function phasor_tick(p: Phasor) -> Phasor {
+    let new_phase: f64 = p.phase + p.increment
+    # Wrap to [0.0, 1.0)
+    if new_phase >= 1.0 {
+        new_phase = new_phase - 1.0
+    }
+    if new_phase < 0.0 {
+        new_phase = new_phase + 1.0
+    }
+    return Phasor { phase: new_phase, increment: p.increment }
+}
+
+# Get current phase value [0.0, 1.0)
+export function phasor_value(p: Phasor) -> f64 {
+    return p.phase
+}
+
+# Set frequency (returns new phasor with updated increment)
+export function phasor_set_freq(p: Phasor, freq: f64, rate: SampleRate) -> Phasor {
+    let inc: f64 = freq / rate.hz
+    return Phasor { phase: p.phase, increment: inc }
+}
+
+# Reset phase to zero
+export function phasor_reset(p: Phasor) -> Phasor {
+    return Phasor { phase: 0.0, increment: p.increment }
+}
+
+# Sync to another phasor's phase
+export function phasor_sync(p: Phasor, target_phase: f64) -> Phasor {
+    return Phasor { phase: target_phase, increment: p.increment }
+}
+
+# =============================================================================
+# Waveshaping Functions (Pure - No State)
+# =============================================================================
+
+# These functions take a phase [0.0, 1.0) and return a sample [-1.0, 1.0]
+
+# Sine wave: sin(2π * phase)
+export function sine(phase: f64) -> f32 {
+    # Taylor series approximation for sin(2π * phase)
+    let x: f64 = phase * TWO_PI
+    # Normalize to [-π, π] for better accuracy
+    if x > PI {
+        x = x - TWO_PI
+    }
+    # sin(x) ≈ x - x³/6 + x⁵/120 - x⁷/5040
+    let x2: f64 = x * x
+    let x3: f64 = x2 * x
+    let x5: f64 = x3 * x2
+    let x7: f64 = x5 * x2
+    let result: f64 = x - x3 / 6.0 + x5 / 120.0 - x7 / 5040.0
+    return result
+}
+
+# Saw wave: 2 * phase - 1 (naive, has aliasing at high frequencies)
+export function saw(phase: f64) -> f32 {
+    return 2.0 * phase - 1.0
+}
+
+# Reverse saw (ramp down)
+export function saw_reverse(phase: f64) -> f32 {
+    return 1.0 - 2.0 * phase
+}
+
+# Square wave: phase < 0.5 ? 1.0 : -1.0 (naive, has aliasing)
+export function square(phase: f64) -> f32 {
+    if phase < 0.5 {
+        return 1.0
+    }
+    return -1.0
+}
+
+# Pulse wave with variable width [0.0, 1.0]
+export function pulse(phase: f64, width: f64) -> f32 {
+    if phase < width {
+        return 1.0
+    }
+    return -1.0
+}
+
+# Triangle wave: 4 * |phase - 0.5| - 1
+export function triangle(phase: f64) -> f32 {
+    let centered: f64 = phase - 0.5
+    if centered < 0.0 {
+        centered = -centered
+    }
+    return 4.0 * centered - 1.0
+}
+
+# =============================================================================
+# Band-Limited Waveforms (PolyBLEP)
+# =============================================================================
+
+# PolyBLEP correction for anti-aliasing
+# t is normalized distance from discontinuity [0, 1)
+function polyblep(t: f64, dt: f64) -> f64 {
+    if t < dt {
+        let t_norm: f64 = t / dt
+        return t_norm + t_norm - t_norm * t_norm - 1.0
+    }
+    if t > 1.0 - dt {
+        let t_norm: f64 = (t - 1.0) / dt
+        return t_norm * t_norm + t_norm + t_norm + 1.0
+    }
+    return 0.0
+}
+
+# Band-limited saw using PolyBLEP
+export function saw_blep(phase: f64, increment: f64) -> f32 {
+    let naive: f64 = 2.0 * phase - 1.0
+    let correction: f64 = polyblep(phase, increment)
+    return naive - correction
+}
+
+# Band-limited square using PolyBLEP
+export function square_blep(phase: f64, increment: f64) -> f32 {
+    let naive: f64 = 1.0
+    if phase >= 0.5 {
+        naive = -1.0
+    }
+    let correction1: f64 = polyblep(phase, increment)
+    let phase2: f64 = phase + 0.5
+    if phase2 >= 1.0 {
+        phase2 = phase2 - 1.0
+    }
+    let correction2: f64 = polyblep(phase2, increment)
+    return naive + correction1 - correction2
+}
+
+# =============================================================================
+# Noise Generators
+# =============================================================================
+
+# Simple noise state (Linear Congruential Generator)
+export struct NoiseState {
+    seed: i64
+}
+
+# Create noise generator with seed
+export function noise_new(seed: i64) -> NoiseState {
+    return NoiseState { seed: seed }
+}
+
+# Generate next random sample and update state
+export function noise_tick(n: NoiseState) -> NoiseState {
+    # LCG: seed = (seed * 1103515245 + 12345) mod 2^31
+    let new_seed: i64 = n.seed * 1103515245 + 12345
+    # Keep in positive range
+    if new_seed < 0 {
+        new_seed = -new_seed
+    }
+    return NoiseState { seed: new_seed }
+}
+
+# Get current noise value [-1.0, 1.0]
+export function noise_value(n: NoiseState) -> f32 {
+    # Normalize to [-1, 1]
+    let normalized: f64 = n.seed / 1073741824.0  # 2^30
+    return normalized - 1.0
+}
+
+# White noise (calls tick internally - stateful convenience)
+export function white_noise(n: NoiseState) -> f32 {
+    return noise_value(n)
+}
+
+# =============================================================================
+# LFO (Low Frequency Oscillator)
+# =============================================================================
+
+# LFO is just a phasor at low frequency, but with Hz input
+export struct LFO {
+    phasor: Phasor
+    depth: f32      # Modulation depth [0.0, 1.0]
+    offset: f32     # Center offset
+}
+
+# Create an LFO
+export function lfo_new(rate_hz: f64, sample_rate: SampleRate, depth: f32) -> LFO {
+    let p: Phasor = phasor_new(rate_hz, sample_rate)
+    return LFO { phasor: p, depth: depth, offset: 0.0 }
+}
+
+# Tick the LFO
+export function lfo_tick(l: LFO) -> LFO {
+    let new_phasor: Phasor = phasor_tick(l.phasor)
+    return LFO { phasor: new_phasor, depth: l.depth, offset: l.offset }
+}
+
+# Get sine LFO value (bipolar: -depth to +depth)
+export function lfo_sine(l: LFO) -> f32 {
+    let phase: f64 = phasor_value(l.phasor)
+    return sine(phase) * l.depth + l.offset
+}
+
+# Get triangle LFO value
+export function lfo_triangle(l: LFO) -> f32 {
+    let phase: f64 = phasor_value(l.phasor)
+    return triangle(phase) * l.depth + l.offset
+}
+
+# Get unipolar LFO value [0, depth]
+export function lfo_unipolar(l: LFO) -> f32 {
+    let phase: f64 = phasor_value(l.phasor)
+    let bipolar: f32 = sine(phase)
+    return (bipolar + 1.0) * 0.5 * l.depth + l.offset
+}

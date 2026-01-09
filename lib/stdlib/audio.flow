@@ -1,0 +1,323 @@
+# Audio Module - Core Types and Operations
+# 
+# Real-time audio processing primitives with proper DSP nomenclature.
+# Runtime-agnostic: generates clean C that can be wrapped for any audio API.
+#
+# Usage:
+#   import "stdlib/audio.flow"
+#   let rate: SampleRate = sample_rate_new(44100.0)
+#   let buf: Buffer = buffer_create(256, 2)
+#
+# Abstraction levels:
+#   - Low-level: Buffer, Frame, SampleRate, Samples, Seconds
+#   - Mid-level: See audio/oscillators.flow, audio/filters.flow, etc.
+#   - High-level: See Processor trait in audio/processor.flow
+
+# =============================================================================
+# Time and Rate Types
+# =============================================================================
+
+# Sample rate in Hz (44100.0, 48000.0, 96000.0, etc.)
+export struct SampleRate {
+    hz: f64
+}
+
+# Duration or position in samples (absolute)
+export struct Samples {
+    count: i64
+}
+
+# Duration or position in seconds
+export struct Seconds {
+    value: f64
+}
+
+# Constructors
+export function sample_rate_new(hz: f64) -> SampleRate {
+    return SampleRate { hz: hz }
+}
+
+export function samples_new(count: i64) -> Samples {
+    return Samples { count: count }
+}
+
+export function seconds_new(value: f64) -> Seconds {
+    return Seconds { value: value }
+}
+
+# Common sample rates
+export function sample_rate_44100() -> SampleRate {
+    return SampleRate { hz: 44100.0 }
+}
+
+export function sample_rate_48000() -> SampleRate {
+    return SampleRate { hz: 48000.0 }
+}
+
+export function sample_rate_96000() -> SampleRate {
+    return SampleRate { hz: 96000.0 }
+}
+
+# =============================================================================
+# Time Conversions
+# =============================================================================
+
+# Convert samples to seconds: samples / sample_rate
+export function samples_to_seconds(s: Samples, rate: SampleRate) -> Seconds {
+    let secs: f64 = s.count / rate.hz
+    return Seconds { value: secs }
+}
+
+# Convert seconds to samples: seconds * sample_rate (rounded)
+export function seconds_to_samples(t: Seconds, rate: SampleRate) -> Samples {
+    let count: f64 = t.value * rate.hz
+    # Round to nearest sample
+    let rounded: i64 = count + 0.5
+    return Samples { count: rounded }
+}
+
+# Get samples per millisecond
+export function samples_per_ms(rate: SampleRate) -> f64 {
+    return rate.hz / 1000.0
+}
+
+# Convert milliseconds to samples
+export function ms_to_samples(ms: f64, rate: SampleRate) -> Samples {
+    let count: f64 = ms * rate.hz / 1000.0
+    let rounded: i64 = count + 0.5
+    return Samples { count: rounded }
+}
+
+# =============================================================================
+# Frame Type (Stereo Sample)
+# =============================================================================
+
+# A stereo audio frame (left and right channels)
+export struct Frame {
+    left: f32
+    right: f32
+}
+
+# Create a stereo frame
+export function frame_new(left: f32, right: f32) -> Frame {
+    return Frame { left: left, right: right }
+}
+
+# Create a mono frame (same value both channels)
+export function frame_mono(value: f32) -> Frame {
+    return Frame { left: value, right: value }
+}
+
+# Create a silent frame
+export function frame_zero() -> Frame {
+    return Frame { left: 0.0, right: 0.0 }
+}
+
+# Mix two frames together
+export function frame_mix(a: Frame, b: Frame) -> Frame {
+    return Frame { 
+        left: a.left + b.left, 
+        right: a.right + b.right 
+    }
+}
+
+# Scale a frame by a gain value
+export function frame_scale(f: Frame, gain: f32) -> Frame {
+    return Frame { 
+        left: f.left * gain, 
+        right: f.right * gain 
+    }
+}
+
+# Pan a mono signal (-1.0 = full left, 0.0 = center, 1.0 = full right)
+export function frame_pan(value: f32, pan: f32) -> Frame {
+    # Equal-power panning approximation
+    let left_gain: f32 = 1.0 - pan
+    let right_gain: f32 = 1.0 + pan
+    if left_gain > 1.0 {
+        left_gain = 1.0
+    }
+    if right_gain > 1.0 {
+        right_gain = 1.0
+    }
+    if left_gain < 0.0 {
+        left_gain = 0.0
+    }
+    if right_gain < 0.0 {
+        right_gain = 0.0
+    }
+    return Frame { 
+        left: value * left_gain * 0.707, 
+        right: value * right_gain * 0.707 
+    }
+}
+
+# Convert stereo to mono (average)
+export function frame_to_mono(f: Frame) -> f32 {
+    return (f.left + f.right) * 0.5
+}
+
+# =============================================================================
+# Buffer Layout
+# =============================================================================
+
+# How samples are arranged in memory
+# Interleaved: L R L R L R ... (common for audio APIs)
+# Planar: L L L ... R R R ... (better for SIMD)
+export struct Layout {
+    is_interleaved: bool
+}
+
+export function layout_interleaved() -> Layout {
+    return Layout { is_interleaved: true }
+}
+
+export function layout_planar() -> Layout {
+    return Layout { is_interleaved: false }
+}
+
+# =============================================================================
+# Buffer Type
+# =============================================================================
+
+# Audio buffer holding multiple frames
+# Note: This is a simplified buffer for now. 
+# Full implementation needs ptr<f32> support.
+export struct Buffer {
+    frames: i32       # Number of frames (not samples)
+    channels: i32     # 1 = mono, 2 = stereo
+    layout: Layout    # Interleaved or Planar
+    # data: ptr<f32> # TODO: Add when pointer arrays work
+}
+
+# Create a buffer descriptor
+export function buffer_create(frames: i32, channels: i32) -> Buffer {
+    return Buffer { 
+        frames: frames, 
+        channels: channels, 
+        layout: layout_interleaved() 
+    }
+}
+
+# Create a stereo buffer (most common case)
+export function buffer_stereo(frames: i32) -> Buffer {
+    return buffer_create(frames, 2)
+}
+
+# Create a mono buffer
+export function buffer_mono(frames: i32) -> Buffer {
+    return buffer_create(frames, 1)
+}
+
+# Get total sample count (frames * channels)
+export function buffer_sample_count(buf: Buffer) -> i32 {
+    return buf.frames * buf.channels
+}
+
+# Get buffer duration in seconds
+export function buffer_duration(buf: Buffer, rate: SampleRate) -> Seconds {
+    let samples: Samples = Samples { count: buf.frames }
+    return samples_to_seconds(samples, rate)
+}
+
+# =============================================================================
+# Decibel Conversions
+# =============================================================================
+
+# Convert linear amplitude to decibels
+# 1.0 -> 0dB, 0.5 -> -6dB, 0.0 -> -infinity (clamped to -96dB)
+export function linear_to_db(linear: f32) -> f32 {
+    if linear <= 0.00001 {
+        return -96.0  # Effective silence
+    }
+    # 20 * log10(linear) - using ln and conversion factor
+    # log10(x) = ln(x) / ln(10) ≈ ln(x) * 0.4343
+    let ln_val: f32 = 0.0  # TODO: Need ln function
+    # Approximation: for now just use ratio
+    return 20.0 * linear  # Placeholder - needs real log
+}
+
+# Convert decibels to linear amplitude
+# 0dB -> 1.0, -6dB -> 0.5, -96dB -> ~0.0
+export function db_to_linear(db: f32) -> f32 {
+    if db <= -96.0 {
+        return 0.0
+    }
+    # 10^(db/20) = e^(db/20 * ln(10)) ≈ e^(db * 0.1151)
+    # Approximation using Taylor series
+    let exp_arg: f32 = db * 0.1151
+    let result: f32 = 1.0 + exp_arg + exp_arg * exp_arg * 0.5
+    if result < 0.0 {
+        return 0.0
+    }
+    return result
+}
+
+# =============================================================================
+# Frequency Helpers
+# =============================================================================
+
+# MIDI note to frequency (A4 = 69 = 440Hz)
+export function midi_to_freq(note: i32) -> f32 {
+    # f = 440 * 2^((note - 69) / 12)
+    let semitones: f32 = note - 69
+    let octaves: f32 = semitones / 12.0
+    # 2^octaves approximation
+    let freq: f32 = 440.0
+    # Simple approximation for common range
+    if octaves > 0.0 {
+        let i: i32 = 0
+        while i < octaves * 12.0 {
+            freq = freq * 1.05946  # 2^(1/12)
+            i = i + 1
+        }
+    } else {
+        let i: i32 = 0
+        while i < -octaves * 12.0 {
+            freq = freq / 1.05946
+            i = i + 1
+        }
+    }
+    return freq
+}
+
+# Frequency to period in samples
+export function freq_to_period_samples(freq: f32, rate: SampleRate) -> f32 {
+    if freq <= 0.0 {
+        return 0.0
+    }
+    return rate.hz / freq
+}
+
+# =============================================================================
+# Clipping and Limiting
+# =============================================================================
+
+# Hard clip a sample to [-1.0, 1.0]
+export function clip(sample: f32) -> f32 {
+    if sample > 1.0 {
+        return 1.0
+    }
+    if sample < -1.0 {
+        return -1.0
+    }
+    return sample
+}
+
+# Soft clip using tanh-like curve (warmer saturation)
+export function soft_clip(sample: f32) -> f32 {
+    # tanh approximation: x / (1 + |x|)
+    if sample >= 0.0 {
+        return sample / (1.0 + sample)
+    } else {
+        return sample / (1.0 - sample)
+    }
+}
+
+# Clip a frame
+export function frame_clip(f: Frame) -> Frame {
+    return Frame { 
+        left: clip(f.left), 
+        right: clip(f.right) 
+    }
+}

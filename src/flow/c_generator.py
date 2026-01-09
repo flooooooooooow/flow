@@ -36,6 +36,8 @@ from .parser import (
     EffectCall,
     EffectDecl,
     EffectOperation,
+    EnumDecl,
+    EnumVariant,
     Expression,
     FieldAccess,
     FunctionCall,
@@ -68,6 +70,7 @@ class CGenerator:
     def __init__(self) -> None:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
+        self._enums = {}  # name -> EnumDecl
         self._var_types = {}  # name -> Type
         
         # Effect system tracking
@@ -82,7 +85,8 @@ class CGenerator:
                                    structs: List[StructDecl] = None, 
                                    effects: List[EffectDecl] = None,
                                    capabilities: List[CapabilityDecl] = None,
-                                   traits: List[TraitDecl] = None) -> str:
+                                   traits: List[TraitDecl] = None,
+                                   enums: List[EnumDecl] = None) -> str:
         lines: List[str] = []
         lines.append("#include <stdint.h>")
         lines.append("#include <stdio.h>")
@@ -129,11 +133,25 @@ class CGenerator:
                     self._structs[decl.name] = {}
                 for field in decl.fields:
                     self._structs[decl.name][field.name] = field.type
+        
+        # Collect enums
+        if enums:
+            for enum in enums:
+                self._enums[enum.name] = enum
+        
+        # Emit enum definitions (tagged unions)
+        for enum_name, enum_decl in self._enums.items():
+            lines.extend(self._gen_enum(enum_decl))
+            lines.append("")
 
         # Emit struct definitions in dependency order
         emitted = set()
         def emit_struct(name):
             if name in emitted:
+                return
+            # Skip types already defined as enums
+            if name in self._enums:
+                emitted.add(name)
                 return
             # First, emit any nested struct types
             for field_type in self._structs[name].values():
@@ -220,6 +238,55 @@ class CGenerator:
         lines.extend(self._gen_block(method.body))
         self._indent -= 1
         lines.append("}")
+        return lines
+    
+    def _gen_enum(self, enum: EnumDecl) -> List[str]:
+        """Generate C tagged union for enum.
+        
+        enum Option<T> { Some(T), None }
+        becomes:
+        typedef enum { Option_i32_Some, Option_i32_None } Option_i32_Tag;
+        typedef struct {
+            Option_i32_Tag tag;
+            union {
+                i32 Some_value;
+            } data;
+        } Option_i32;
+        """
+        lines: List[str] = []
+        name = enum.name
+        
+        # Generate tag enum
+        lines.append(f"typedef enum {{")
+        for i, variant in enumerate(enum.variants):
+            comma = "," if i < len(enum.variants) - 1 else ""
+            lines.append(f"    {name}_{variant.name}{comma}")
+        lines.append(f"}} {name}_Tag;")
+        lines.append("")
+        
+        # Generate tagged union struct
+        lines.append(f"typedef struct {{")
+        lines.append(f"    {name}_Tag tag;")
+        
+        # Check if any variants have data
+        has_data = any(len(v.fields) > 0 for v in enum.variants)
+        if has_data:
+            lines.append(f"    union {{")
+            for variant in enum.variants:
+                if len(variant.fields) == 1:
+                    c_type = self._c_type(variant.fields[0])
+                    lines.append(f"        {c_type} {variant.name}_value;")
+                elif len(variant.fields) > 1:
+                    # Multiple fields - create anonymous struct
+                    lines.append(f"        struct {{")
+                    for i, field_type in enumerate(variant.fields):
+                        c_type = self._c_type(field_type)
+                        lines.append(f"            {c_type} _{i};")
+                    lines.append(f"        }} {variant.name}_data;")
+            lines.append(f"    }} data;")
+        
+        lines.append(f"}} {name};")
+        
         return lines
     
     def _gen_effect_runtime_types(self, effects: List[EffectDecl]) -> List[str]:
@@ -1038,6 +1105,7 @@ def flow_to_c(declarations: List[Any]) -> str:
         capabilities = [d for d in declarations if isinstance(d, CapabilityDecl)]
         traits = [d for d in declarations if isinstance(d, TraitDecl)]
         impls = [d for d in declarations if isinstance(d, ImplDecl)]
+        enums = [d for d in declarations if isinstance(d, EnumDecl)]
         
         # Add impl methods to functions list (with mangled names)
         for impl in impls:
@@ -1054,7 +1122,7 @@ def flow_to_c(declarations: List[Any]) -> str:
                 
                 functions.append(method)
         
-        return generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits)
+        return generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums)
     except Exception as e:
         print(f"C generation error: {e}")
         import traceback

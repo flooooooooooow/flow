@@ -34,7 +34,7 @@ from .parser import (
     VarDecl, ReturnStatement, Assignment, IfStatement, WhileStatement,
     ForStatement, BinaryOperation, UnaryOperation, FunctionCall,
     Literal, Variable, StructLiteral, ArrayLiteral, FieldAccess,
-    ArrayAccess, Expression, ImplDecl, TraitDecl
+    ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl
 )
 
 
@@ -496,6 +496,9 @@ class Monomorphizer:
                 result.append(new_impl)
             elif isinstance(decl, TraitDecl):
                 # Pass through traits as-is (they're just interfaces)
+                result.append(decl)
+            elif isinstance(decl, EnumDecl):
+                # Pass through enums (may need monomorphization in future)
                 result.append(decl)
             else:
                 result.append(decl)

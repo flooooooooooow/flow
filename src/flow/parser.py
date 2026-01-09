@@ -101,6 +101,7 @@ class TokenType(Enum):
     TRAIT = "TRAIT"
     IMPL = "IMPL"
     SELF = "SELF"
+    ENUM = "ENUM"
     
     # Types
     I8 = "I8"
@@ -298,6 +299,20 @@ class StructDecl:
     type_params: List[str] = field(default_factory=list)  # Generic type parameters like <T, U>
 
 @dataclass
+class EnumVariant:
+    """A variant of an enum: Some(T), None, Ok(T), Err(E)"""
+    name: str
+    fields: List[Type] = field(default_factory=list)  # Empty for unit variants, types for tuple variants
+
+@dataclass
+class EnumDecl:
+    """Enum declaration: enum Option<T> { Some(T), None }"""
+    name: str
+    variants: List[EnumVariant]
+    is_exported: bool = False
+    type_params: List[str] = field(default_factory=list)
+
+@dataclass
 class TraitMethod:
     """A method signature in a trait (no body)."""
     name: str
@@ -417,6 +432,7 @@ class Lexer:
             'trait': TokenType.TRAIT,
             'impl': TokenType.IMPL,
             'self': TokenType.SELF,
+            'enum': TokenType.ENUM,
             'with': TokenType.WITH,
             'handle': TokenType.HANDLE,
             'effect': TokenType.EFFECT,
@@ -591,6 +607,10 @@ class Parser:
                 decl = self.parse_struct()
                 decl.is_exported = is_exported
                 declarations.append(decl)
+            elif self.current_token.type == TokenType.ENUM:
+                decl = self.parse_enum()
+                decl.is_exported = is_exported
+                declarations.append(decl)
             elif self.current_token.type == TokenType.EFFECT:
                 decl = self.parse_effect()
                 decl.is_exported = is_exported
@@ -725,6 +745,42 @@ class Parser:
         
         self.expect(TokenType.RBRACE)
         return StructDecl(name, fields, type_params=type_params)
+    
+    def parse_enum(self) -> EnumDecl:
+        """Parse enum declaration: enum Option<T> { Some(T), None }"""
+        self.expect(TokenType.ENUM)
+        name = self.expect(TokenType.IDENTIFIER).value
+        
+        # Parse optional type parameters: enum Option<T> { ... }
+        type_params = []
+        if self.current_token.type == TokenType.LESS:
+            type_params = self.parse_type_parameters()
+        
+        self.expect(TokenType.LBRACE)
+        
+        variants = []
+        while self.current_token.type != TokenType.RBRACE:
+            variant_name = self.expect(TokenType.IDENTIFIER).value
+            
+            # Parse optional variant fields: Some(T) or Ok(T, String)
+            variant_fields = []
+            if self.current_token.type == TokenType.LPAREN:
+                self.advance()
+                if self.current_token.type != TokenType.RPAREN:
+                    variant_fields.append(self.parse_type())
+                    while self.current_token.type == TokenType.COMMA:
+                        self.advance()
+                        variant_fields.append(self.parse_type())
+                self.expect(TokenType.RPAREN)
+            
+            variants.append(EnumVariant(variant_name, variant_fields))
+            
+            # Optional comma between variants
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        
+        self.expect(TokenType.RBRACE)
+        return EnumDecl(name, variants, type_params=type_params)
     
     def parse_trait(self) -> TraitDecl:
         """Parse trait declaration: trait Printable { function to_string(self) -> string }"""
