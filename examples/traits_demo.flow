@@ -1,0 +1,64 @@
+# Traits Demo
+# Demonstrates trait-based polymorphism
+
+# Define a trait for things that can be displayed
+trait Display {
+    function show(self) -> void
+}
+
+# A simple Point struct
+struct Point {
+    x: f32
+    y: f32
+}
+
+# Implement Display for Point
+impl Display for Point {
+    function show(self) -> void {
+        printf("Point(%f, %f)\n", self.x, self.y)
+    }
+}
+
+# A Rectangle struct
+struct Rectangle {
+    width: f32
+    height: f32
+}
+
+# Implement Display for Rectangle  
+impl Display for Rectangle {
+    function show(self) -> void {
+        printf("Rectangle(w=%f, h=%f)\n", self.width, self.height)
+    }
+}
+
+# Define a trait for things with area
+trait HasArea {
+    function area(self) -> f32
+}
+
+# Implement HasArea for Rectangle
+impl HasArea for Rectangle {
+    function area(self) -> f32 {
+        return self.width * self.height
+    }
+}
+
+function main() -> i32 {
+    printf("=== Traits Demo ===\n\n")
+    
+    let p: Point = Point { x: 10.0, y: 20.0 }
+    let r: Rectangle = Rectangle { width: 5.0, height: 3.0 }
+    
+    # Call trait methods (uses mangled names internally)
+    printf("Showing point: ")
+    Point_Display_show(p)
+    
+    printf("Showing rectangle: ")
+    Rectangle_Display_show(r)
+    
+    printf("Rectangle area: %f\n", Rectangle_HasArea_area(r))
+    
+    printf("\n=== End Demo ===\n")
+    return 0
+}

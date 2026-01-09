@@ -34,7 +34,7 @@ from .parser import (
     VarDecl, ReturnStatement, Assignment, IfStatement, WhileStatement,
     ForStatement, BinaryOperation, UnaryOperation, FunctionCall,
     Literal, Variable, StructLiteral, ArrayLiteral, FieldAccess,
-    ArrayAccess, Expression
+    ArrayAccess, Expression, ImplDecl, TraitDecl
 )
 
 
@@ -489,6 +489,14 @@ class Monomorphizer:
                 # Rewrite types in function
                 new_decl = self._rewrite_function(decl)
                 result.append(new_decl)
+            elif isinstance(decl, ImplDecl):
+                # Rewrite methods in impl block
+                new_methods = [self._rewrite_function(m) for m in decl.methods]
+                new_impl = ImplDecl(decl.trait_name, decl.for_type, new_methods)
+                result.append(new_impl)
+            elif isinstance(decl, TraitDecl):
+                # Pass through traits as-is (they're just interfaces)
+                result.append(decl)
             else:
                 result.append(decl)
         
@@ -512,10 +520,14 @@ class Monomorphizer:
         new_return = self._rewrite_type(fn.return_type)
         new_body = self._rewrite_block(fn.body)
         
-        return FunctionDecl(
+        new_fn = FunctionDecl(
             fn.name, new_params, new_return, new_body, fn.attributes,
             fn.is_exported, fn.is_extern, fn.type_params
         )
+        # Preserve has_self attribute for impl methods
+        if hasattr(fn, 'has_self'):
+            new_fn.has_self = fn.has_self
+        return new_fn
     
     def _rewrite_type(self, t: Type) -> Type:
         """Rewrite a type to use monomorphized struct names."""

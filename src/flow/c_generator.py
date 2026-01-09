@@ -42,6 +42,8 @@ from .parser import (
     FunctionDecl,
     HandleStatement,
     IfStatement,
+    ImplDecl,
+    Lambda,
     Literal,
     MatchCase,
     MatchStatement,
@@ -50,6 +52,8 @@ from .parser import (
     StructDecl,
     StructLiteral,
     StructPattern,
+    TraitDecl,
+    TraitMethod,
     Type,
     UnaryOperation,
     VarDecl,
@@ -77,7 +81,8 @@ class CGenerator:
     def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl], 
                                    structs: List[StructDecl] = None, 
                                    effects: List[EffectDecl] = None,
-                                   capabilities: List[CapabilityDecl] = None) -> str:
+                                   capabilities: List[CapabilityDecl] = None,
+                                   traits: List[TraitDecl] = None) -> str:
         lines: List[str] = []
         lines.append("#include <stdint.h>")
         lines.append("#include <stdio.h>")
@@ -182,6 +187,24 @@ class CGenerator:
         for fn in functions:
             lines.extend(self._gen_function(fn))
             lines.append("")
+        
+        # Emit any lambdas that were generated during function processing
+        if hasattr(self, '_pending_lambdas') and self._pending_lambdas:
+            # Insert lambda definitions before the first function
+            lambda_lines = []
+            lambda_lines.append("// Auto-generated lambda functions")
+            for lambda_name, ret_type, params, body_code in self._pending_lambdas:
+                lambda_lines.append(f"static {ret_type} {lambda_name}({params}) {{ {body_code} }}")
+            lambda_lines.append("")
+            
+            # Find where to insert (after structs, before functions)
+            insert_idx = 0
+            for i, line in enumerate(lines):
+                if line.startswith("int32_t main(") or (line and not line.startswith("#") and not line.startswith("typedef") and "(" in line and ")" in line):
+                    insert_idx = i
+                    break
+            
+            lines = lines[:insert_idx] + lambda_lines + lines[insert_idx:]
 
         return "\n".join(lines).rstrip() + "\n"
     
@@ -387,6 +410,8 @@ class CGenerator:
                              "u8", "u16", "u32", "u64", "u128", "f32", "f64", "string"]
 
     def _c_type(self, t: Type) -> str:
+        if t.name == "auto":
+            return "__auto_type"  # GCC/Clang extension for type inference
         if t.name == "i32":
             return "int32_t"
         if t.name == "i64":
@@ -897,6 +922,9 @@ class CGenerator:
         if isinstance(e, ArrayLiteral):
             return self._gen_array_literal(e)
         
+        if isinstance(e, Lambda):
+            return self._gen_lambda(e)
+        
         if isinstance(e, VectorLiteral):
             # Generate vector literal using compound literal with vector extension
             # Need to determine element type and vector size from elements
@@ -915,6 +943,26 @@ class CGenerator:
             
             byte_size = num_elems * (8 if elem_type == "double" else 4)
             return f"(({elem_type} __attribute__((vector_size({byte_size})))){{ {elements_str} }})"
+        
+        if isinstance(e, Lambda):
+            # Lambdas are converted to static functions at compile time
+            # For now, generate inline code or reference to generated function
+            lambda_name = f"__lambda_{id(e)}"
+            
+            # Generate function pointer type
+            param_types = ", ".join(self._c_type(p.type) for p in e.parameters)
+            return_type = self._c_type(e.return_type) if e.return_type else "__auto_type"
+            
+            # For simple expression bodies, we can use GCC statement expressions
+            if isinstance(e.body, Block):
+                # Complex body - would need to generate a separate function
+                # For now, return placeholder
+                return f"/* lambda: {lambda_name} */"
+            else:
+                # Simple expression body - use statement expression
+                params_str = ", ".join(p.name for p in e.parameters)
+                body_expr = self._gen_expr(e.body)
+                return f"({body_expr})"
 
         raise NotImplementedError(f"Unsupported expression: {type(e)}")
     
@@ -935,6 +983,46 @@ class CGenerator:
         """Generate C array literal initializer."""
         elements = ", ".join(self._gen_expr(elem) for elem in e.elements)
         return f"{{ {elements} }}"
+    
+    def _gen_lambda(self, e: Lambda) -> str:
+        """Generate C code for lambda expression.
+        
+        Since C doesn't have lambdas natively, we generate a static function
+        pointer. For now, lambdas can only be used as immediately-invoked
+        function expressions (IIFE) which we inline.
+        
+        Note: Requires -fnested-functions for GCC or use as IIFE only.
+        """
+        # Generate unique lambda name
+        if not hasattr(self, '_lambda_counter'):
+            self._lambda_counter = 0
+        self._lambda_counter += 1
+        lambda_name = f"lambda_{self._lambda_counter}"
+        
+        # Generate parameter list
+        params = ", ".join(f"{self._c_type(p.type)} {p.name}" for p in e.parameters)
+        if not params:
+            params = "void"
+        
+        # Generate return type
+        ret_type = self._c_type(e.return_type) if e.return_type else "void"
+        
+        # Generate body
+        if isinstance(e.body, Block):
+            body_lines = []
+            for stmt in e.body.statements:
+                body_lines.extend(self._gen_statement(stmt))
+            body_code = " ".join(line.strip() for line in body_lines)
+        else:
+            body_code = f"return {self._gen_expr(e.body)};"
+        
+        # Add lambda to pending functions for later emission
+        if not hasattr(self, '_pending_lambdas'):
+            self._pending_lambdas = []
+        self._pending_lambdas.append((lambda_name, ret_type, params, body_code))
+        
+        # Return function pointer
+        return f"&{lambda_name}"
 
 
 def flow_to_c(declarations: List[Any]) -> str:
@@ -948,8 +1036,25 @@ def flow_to_c(declarations: List[Any]) -> str:
         structs = [d for d in declarations if isinstance(d, StructDecl)]
         effects = [d for d in declarations if isinstance(d, EffectDecl)]
         capabilities = [d for d in declarations if isinstance(d, CapabilityDecl)]
+        traits = [d for d in declarations if isinstance(d, TraitDecl)]
+        impls = [d for d in declarations if isinstance(d, ImplDecl)]
         
-        return generator.generate_translation_unit(constants, functions, structs, effects, capabilities)
+        # Add impl methods to functions list (with mangled names)
+        for impl in impls:
+            type_name = impl.for_type.name
+            for method in impl.methods:
+                # Mangle name: Type_Trait_method
+                method.name = f"{type_name}_{impl.trait_name}_{method.name}"
+                
+                # If method has self, add it as first parameter
+                if getattr(method, 'has_self', False):
+                    from .parser import Parameter
+                    self_param = Parameter("self", impl.for_type)
+                    method.parameters = [self_param] + list(method.parameters)
+                
+                functions.append(method)
+        
+        return generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits)
     except Exception as e:
         print(f"C generation error: {e}")
         import traceback
