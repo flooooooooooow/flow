@@ -1,0 +1,141 @@
+# FLOW String Standard Library
+# String manipulation, formatting, parsing
+
+# =============================================================================
+# C String Functions (extern to libc)
+# =============================================================================
+
+extern function strlen(s: string) -> i32
+extern function strcmp(s1: string, s2: string) -> i32
+extern function strncmp(s1: string, s2: string, n: i32) -> i32
+extern function strcpy(dest: ptr<i8>, src: string) -> ptr<i8>
+extern function strncpy(dest: ptr<i8>, src: string, n: i32) -> ptr<i8>
+extern function strcat(dest: ptr<i8>, src: string) -> ptr<i8>
+extern function strchr(s: string, c: i32) -> ptr<i8>
+extern function strrchr(s: string, c: i32) -> ptr<i8>
+extern function strstr(haystack: string, needle: string) -> ptr<i8>
+extern function memset(s: ptr<i8>, c: i32, n: i32) -> ptr<i8>
+extern function memcpy(dest: ptr<i8>, src: ptr<i8>, n: i32) -> ptr<i8>
+extern function memmove(dest: ptr<i8>, src: ptr<i8>, n: i32) -> ptr<i8>
+extern function memcmp(s1: ptr<i8>, s2: ptr<i8>, n: i32) -> i32
+
+# =============================================================================
+# String Comparison
+# =============================================================================
+
+function str_equals(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+function str_less_than(a: string, b: string) -> bool {
+    return strcmp(a, b) < 0
+}
+
+function str_greater_than(a: string, b: string) -> bool {
+    return strcmp(a, b) > 0
+}
+
+# =============================================================================
+# String Length
+# =============================================================================
+
+function str_len(s: string) -> i32 {
+    return strlen(s)
+}
+
+function str_is_empty(s: string) -> bool {
+    return strlen(s) == 0
+}
+
+# =============================================================================
+# Character Classification (ASCII)
+# =============================================================================
+
+function is_digit(c: i32) -> bool {
+    return c >= 48 && c <= 57  # '0' to '9'
+}
+
+function is_alpha(c: i32) -> bool {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
+}
+
+function is_alnum(c: i32) -> bool {
+    return is_digit(c) || is_alpha(c)
+}
+
+function is_space(c: i32) -> bool {
+    return c == 32 || c == 9 || c == 10 || c == 13  # space, tab, newline, carriage return
+}
+
+function is_upper(c: i32) -> bool {
+    return c >= 65 && c <= 90
+}
+
+function is_lower(c: i32) -> bool {
+    return c >= 97 && c <= 122
+}
+
+function to_upper(c: i32) -> i32 {
+    if is_lower(c) {
+        return c - 32
+    }
+    return c
+}
+
+function to_lower(c: i32) -> i32 {
+    if is_upper(c) {
+        return c + 32
+    }
+    return c
+}
+
+# =============================================================================
+# Number Parsing
+# =============================================================================
+
+extern function atoi(s: string) -> i32
+extern function atol(s: string) -> i64
+extern function atof(s: string) -> f64
+extern function strtol(s: string, endptr: ptr<ptr<i8>>, base: i32) -> i64
+extern function strtod(s: string, endptr: ptr<ptr<i8>>) -> f64
+
+function parse_int(s: string) -> i32 {
+    return atoi(s)
+}
+
+function parse_long(s: string) -> i64 {
+    return atol(s)
+}
+
+function parse_float(s: string) -> f64 {
+    return atof(s)
+}
+
+# =============================================================================
+# Number Formatting
+# =============================================================================
+
+extern function sprintf(buf: ptr<i8>, format: string) -> i32
+extern function snprintf(buf: ptr<i8>, size: i32, format: string) -> i32
+
+# =============================================================================
+# StringBuilder (for efficient string concatenation)
+# =============================================================================
+
+struct StringBuilder {
+    buffer: ptr<i8>,
+    len: i32,
+    capacity: i32
+}
+
+function stringbuilder_new(cap: i32) -> StringBuilder {
+    return StringBuilder { buffer: null, len: 0, capacity: cap }
+}
+
+function stringbuilder_len(sb: StringBuilder) -> i32 {
+    return sb.len
+}
+
+function stringbuilder_is_empty(sb: StringBuilder) -> bool {
+    return sb.len == 0
+}

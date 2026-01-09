@@ -1,0 +1,147 @@
+# FLOW POSIX Standard Library
+# File I/O, processes, environment, and system calls
+
+# =============================================================================
+# File Descriptors
+# =============================================================================
+
+struct FileDescriptor {
+    fd: i32
+}
+
+# Standard file descriptors
+function stdin() -> FileDescriptor {
+    return FileDescriptor { fd: 0 }
+}
+
+function stdout() -> FileDescriptor {
+    return FileDescriptor { fd: 1 }
+}
+
+function stderr() -> FileDescriptor {
+    return FileDescriptor { fd: 2 }
+}
+
+# =============================================================================
+# File Operations
+# =============================================================================
+
+# Open flags (can be OR'd together)
+const O_RDONLY: i32 = 0
+const O_WRONLY: i32 = 1
+const O_RDWR: i32 = 2
+const O_CREAT: i32 = 64
+const O_TRUNC: i32 = 512
+const O_APPEND: i32 = 1024
+
+# File modes
+const S_IRUSR: i32 = 256   # Owner read
+const S_IWUSR: i32 = 128   # Owner write
+const S_IXUSR: i32 = 64    # Owner execute
+const S_IRGRP: i32 = 32    # Group read
+const S_IWGRP: i32 = 16    # Group write
+const S_IROTH: i32 = 4     # Other read
+
+# Default file mode: rw-r--r--
+const DEFAULT_MODE: i32 = 420  # 0644 in octal
+
+# Open a file, returns fd or -1 on error
+extern function open(path: string, flags: i32, mode: i32) -> i32
+extern function close(fd: i32) -> i32
+extern function read(fd: i32, buf: ptr<i8>, count: i32) -> i32
+extern function write(fd: i32, buf: ptr<i8>, count: i32) -> i32
+extern function lseek(fd: i32, offset: i64, whence: i32) -> i64
+
+# Seek whence values
+const SEEK_SET: i32 = 0
+const SEEK_CUR: i32 = 1
+const SEEK_END: i32 = 2
+
+# High-level file operations
+function file_open(path: string, flags: i32) -> FileDescriptor {
+    let fd = open(path, flags, DEFAULT_MODE)
+    return FileDescriptor { fd: fd }
+}
+
+function file_close(f: FileDescriptor) -> i32 {
+    return close(f.fd)
+}
+
+function file_is_valid(f: FileDescriptor) -> bool {
+    return f.fd >= 0
+}
+
+# =============================================================================
+# Process Management
+# =============================================================================
+
+extern function fork() -> i32
+extern function execve(path: string, argv: ptr<string>, envp: ptr<string>) -> i32
+extern function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
+extern function getpid() -> i32
+extern function getppid() -> i32
+extern function exit(status: i32) -> void
+
+# Wait options
+const WNOHANG: i32 = 1
+const WUNTRACED: i32 = 2
+
+# =============================================================================
+# Environment
+# =============================================================================
+
+extern function getenv(name: string) -> string
+extern function setenv(name: string, value: string, overwrite: i32) -> i32
+extern function unsetenv(name: string) -> i32
+
+# =============================================================================
+# Signals
+# =============================================================================
+
+const SIGHUP: i32 = 1
+const SIGINT: i32 = 2
+const SIGQUIT: i32 = 3
+const SIGILL: i32 = 4
+const SIGABRT: i32 = 6
+const SIGFPE: i32 = 8
+const SIGKILL: i32 = 9
+const SIGSEGV: i32 = 11
+const SIGPIPE: i32 = 13
+const SIGALRM: i32 = 14
+const SIGTERM: i32 = 15
+const SIGUSR1: i32 = 10
+const SIGUSR2: i32 = 12
+const SIGCHLD: i32 = 17
+const SIGCONT: i32 = 18
+const SIGSTOP: i32 = 19
+
+extern function kill(pid: i32, sig: i32) -> i32
+
+# =============================================================================
+# Directory Operations
+# =============================================================================
+
+extern function mkdir(path: string, mode: i32) -> i32
+extern function rmdir(path: string) -> i32
+extern function chdir(path: string) -> i32
+extern function getcwd(buf: ptr<i8>, size: i32) -> ptr<i8>
+extern function unlink(path: string) -> i32
+extern function rename(old_path: string, new_path: string) -> i32
+
+# =============================================================================
+# System Information
+# =============================================================================
+
+extern function gethostname(name: ptr<i8>, len: i32) -> i32
+extern function getuid() -> i32
+extern function getgid() -> i32
+extern function geteuid() -> i32
+extern function getegid() -> i32
+
+# =============================================================================
+# Time
+# =============================================================================
+
+extern function time(t: ptr<i64>) -> i64
+extern function sleep(seconds: i32) -> i32
+extern function usleep(usec: i32) -> i32
