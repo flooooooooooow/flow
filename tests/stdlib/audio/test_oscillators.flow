@@ -1,0 +1,221 @@
+# Audio Oscillators Test
+#
+# Tests for Phasor, waveshaping functions, LFO.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/oscillators.flow"
+
+# =============================================================================
+# Phasor Tests
+# =============================================================================
+
+function test_phasor_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let p: Phasor = phasor_new(440.0, rate)
+    
+    # Phase starts at 0
+    if phasor_value(p) != 0.0 { return false }
+    
+    # Increment should be freq / sample_rate = 440 / 44100 ≈ 0.00997
+    if p.increment < 0.009 { return false }
+    if p.increment > 0.011 { return false }
+    return true
+}
+
+function test_phasor_tick() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let p: Phasor = phasor_new(440.0, rate)
+    
+    let p2: Phasor = phasor_tick(p)
+    if phasor_value(p2) <= 0.0 { return false }
+    if phasor_value(p2) >= 0.02 { return false }
+    return true
+}
+
+function test_phasor_wrap() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let p: Phasor = phasor_new_with_phase(440.0, rate, 0.999)
+    
+    let p2: Phasor = phasor_tick(p)
+    # Should wrap to small positive value
+    if phasor_value(p2) < 0.0 { return false }
+    if phasor_value(p2) >= 0.5 { return false }
+    return true
+}
+
+function test_phasor_reset() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let p: Phasor = phasor_new_with_phase(440.0, rate, 0.5)
+    let p2: Phasor = phasor_reset(p)
+    return phasor_value(p2) == 0.0
+}
+
+# =============================================================================
+# Waveshaping Tests
+# =============================================================================
+
+function test_sine_at_zero() -> bool {
+    let s: f32 = sine(0.0)
+    # sin(0) = 0
+    if s < -0.01 { return false }
+    if s > 0.01 { return false }
+    return true
+}
+
+function test_sine_at_quarter() -> bool {
+    let s: f32 = sine(0.25)
+    # sin(π/2) = 1
+    if s < 0.9 { return false }
+    if s > 1.1 { return false }
+    return true
+}
+
+function test_saw_at_zero() -> bool {
+    let s: f32 = saw(0.0)
+    return s == -1.0
+}
+
+function test_saw_at_half() -> bool {
+    let s: f32 = saw(0.5)
+    return s == 0.0
+}
+
+function test_square_low() -> bool {
+    let s: f32 = square(0.25)
+    return s == 1.0
+}
+
+function test_square_high() -> bool {
+    let s: f32 = square(0.75)
+    return s == -1.0
+}
+
+function test_triangle_at_zero() -> bool {
+    let t: f32 = triangle(0.0)
+    # At phase 0: 4 * |0 - 0.5| - 1 = 1
+    return t == 1.0
+}
+
+function test_triangle_at_half() -> bool {
+    let t: f32 = triangle(0.5)
+    # At phase 0.5: 4 * |0.5 - 0.5| - 1 = -1
+    return t == -1.0
+}
+
+function test_pulse_narrow() -> bool {
+    let p1: f32 = pulse(0.1, 0.25)
+    let p2: f32 = pulse(0.3, 0.25)
+    if p1 != 1.0 { return false }
+    if p2 != -1.0 { return false }
+    return true
+}
+
+# =============================================================================
+# Noise Tests
+# =============================================================================
+
+function test_noise_changes() -> bool {
+    let n1: NoiseState = noise_new(12345)
+    let n2: NoiseState = noise_tick(n1)
+    return n1.seed != n2.seed
+}
+
+# =============================================================================
+# LFO Tests
+# =============================================================================
+
+function test_lfo_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let l: LFO = lfo_new(1.0, rate, 0.5)
+    return l.depth == 0.5
+}
+
+function test_lfo_tick() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let l: LFO = lfo_new(1.0, rate, 1.0)
+    let l2: LFO = lfo_tick(l)
+    return phasor_value(l2.phasor) > 0.0
+}
+
+function test_lfo_sine_at_zero() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let l: LFO = lfo_new(1.0, rate, 1.0)
+    let v: f32 = lfo_sine(l)
+    # At phase 0, sine(0) * depth = 0
+    if v < -0.1 { return false }
+    if v > 0.1 { return false }
+    return true
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+function main() -> i32 {
+    let passed: i32 = 0
+    let failed: i32 = 0
+    
+    printf("=== Audio Oscillators Tests ===\n\n")
+    
+    # Phasor
+    if test_phasor_creation() { printf("✓ phasor_creation\n"); passed = passed + 1 } 
+    else { printf("✗ phasor_creation\n"); failed = failed + 1 }
+    
+    if test_phasor_tick() { printf("✓ phasor_tick\n"); passed = passed + 1 } 
+    else { printf("✗ phasor_tick\n"); failed = failed + 1 }
+    
+    if test_phasor_wrap() { printf("✓ phasor_wrap\n"); passed = passed + 1 } 
+    else { printf("✗ phasor_wrap\n"); failed = failed + 1 }
+    
+    if test_phasor_reset() { printf("✓ phasor_reset\n"); passed = passed + 1 } 
+    else { printf("✗ phasor_reset\n"); failed = failed + 1 }
+    
+    # Waveshaping
+    if test_sine_at_zero() { printf("✓ sine_at_zero\n"); passed = passed + 1 } 
+    else { printf("✗ sine_at_zero\n"); failed = failed + 1 }
+    
+    if test_sine_at_quarter() { printf("✓ sine_at_quarter\n"); passed = passed + 1 } 
+    else { printf("✗ sine_at_quarter\n"); failed = failed + 1 }
+    
+    if test_saw_at_zero() { printf("✓ saw_at_zero\n"); passed = passed + 1 } 
+    else { printf("✗ saw_at_zero\n"); failed = failed + 1 }
+    
+    if test_saw_at_half() { printf("✓ saw_at_half\n"); passed = passed + 1 } 
+    else { printf("✗ saw_at_half\n"); failed = failed + 1 }
+    
+    if test_square_low() { printf("✓ square_low\n"); passed = passed + 1 } 
+    else { printf("✗ square_low\n"); failed = failed + 1 }
+    
+    if test_square_high() { printf("✓ square_high\n"); passed = passed + 1 } 
+    else { printf("✗ square_high\n"); failed = failed + 1 }
+    
+    if test_triangle_at_zero() { printf("✓ triangle_at_zero\n"); passed = passed + 1 } 
+    else { printf("✗ triangle_at_zero\n"); failed = failed + 1 }
+    
+    if test_triangle_at_half() { printf("✓ triangle_at_half\n"); passed = passed + 1 } 
+    else { printf("✗ triangle_at_half\n"); failed = failed + 1 }
+    
+    if test_pulse_narrow() { printf("✓ pulse_narrow\n"); passed = passed + 1 } 
+    else { printf("✗ pulse_narrow\n"); failed = failed + 1 }
+    
+    # Noise
+    if test_noise_changes() { printf("✓ noise_changes\n"); passed = passed + 1 } 
+    else { printf("✗ noise_changes\n"); failed = failed + 1 }
+    
+    # LFO
+    if test_lfo_creation() { printf("✓ lfo_creation\n"); passed = passed + 1 } 
+    else { printf("✗ lfo_creation\n"); failed = failed + 1 }
+    
+    if test_lfo_tick() { printf("✓ lfo_tick\n"); passed = passed + 1 } 
+    else { printf("✗ lfo_tick\n"); failed = failed + 1 }
+    
+    if test_lfo_sine_at_zero() { printf("✓ lfo_sine_at_zero\n"); passed = passed + 1 } 
+    else { printf("✗ lfo_sine_at_zero\n"); failed = failed + 1 }
+    
+    printf("\n=== Results: %d passed, %d failed ===\n", passed, failed)
+    
+    if failed > 0 {
+        return 1
+    }
+    return 0
+}

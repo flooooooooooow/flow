@@ -1,0 +1,65 @@
+# Enums / Algebraic Data Types Demo
+# Demonstrates sum types
+
+# Simple enum without data
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+# Enum with data (Option type)
+enum Option_i32 {
+    Some(i32),
+    None
+}
+
+# Helper constructors (use struct-like syntax for now)
+function make_red() -> Color {
+    let c: Color = Color { tag: Color_Red }
+    return c
+}
+
+function make_green() -> Color {
+    let c: Color = Color { tag: Color_Green }
+    return c
+}
+
+function some_i32(value: i32) -> Option_i32 {
+    let opt: Option_i32 = Option_i32 { tag: Option_i32_Some }
+    return opt
+}
+
+function none_i32() -> Option_i32 {
+    let opt: Option_i32 = Option_i32 { tag: Option_i32_None }
+    return opt
+}
+
+function is_some(opt: Option_i32) -> bool {
+    return opt.tag == Option_i32_Some
+}
+
+function is_none(opt: Option_i32) -> bool {
+    return opt.tag == Option_i32_None
+}
+
+function main() -> i32 {
+    printf("=== Enums Demo ===\n\n")
+    
+    # Simple enum usage
+    let red: Color = make_red()
+    let green: Color = make_green()
+    
+    printf("red.tag = %d\n", red.tag)
+    printf("green.tag = %d\n", green.tag)
+    
+    # Option usage
+    let some_val: Option_i32 = some_i32(42)
+    let none_val: Option_i32 = none_i32()
+    
+    printf("some_val is_some: %d\n", is_some(some_val))
+    printf("none_val is_none: %d\n", is_none(none_val))
+    
+    printf("\n=== End Demo ===\n")
+    return 0
+}

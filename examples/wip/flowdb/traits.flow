@@ -1,0 +1,265 @@
+# FlowDB - Traits Module
+# Demonstrates: trait definitions, impl blocks, polymorphism
+#
+# Traits define shared behavior that types can implement.
+# This is FLOW's approach to ad-hoc polymorphism.
+
+import "types.flow"
+
+# =============================================================================
+# TRAIT: Display - For pretty printing
+# =============================================================================
+
+trait Display {
+    function show(self) -> void
+}
+
+# Implement Display for Value
+impl Display for Value {
+    function show(self) -> void {
+        if self.is_null {
+            printf("NULL")
+            return void
+        }
+        
+        if self.type_id == 0 {
+            printf("%lld", self.int_val)
+        } elif self.type_id == 1 {
+            printf("%.4f", self.float_val)
+        } elif self.type_id == 2 {
+            printf("'%s'", self.str_val)
+        } elif self.type_id == 3 {
+            if self.bool_val {
+                printf("TRUE")
+            } else {
+                printf("FALSE")
+            }
+        } else {
+            printf("?")
+        }
+    }
+}
+
+# Implement Display for FieldType
+impl Display for FieldType {
+    function show(self) -> void {
+        printf("%s", field_type_name(self))
+    }
+}
+
+# Implement Display for ColumnDef
+impl Display for ColumnDef {
+    function show(self) -> void {
+        printf("%s ", self.name)
+        FieldType_Display_show(self.field_type)
+        if self.is_primary_key {
+            printf(" PRIMARY KEY")
+        }
+        if self.is_nullable == false {
+            printf(" NOT NULL")
+        }
+        if self.has_index {
+            printf(" INDEXED")
+        }
+    }
+}
+
+# Implement Display for TableStats
+impl Display for TableStats {
+    function show(self) -> void {
+        printf("TableStats {\n")
+        printf("  total_rows:   %lld\n", self.total_rows)
+        printf("  deleted_rows: %lld\n", self.deleted_rows)
+        printf("  active_rows:  %lld\n", stats_active_rows(self))
+        printf("  inserts:      %lld\n", self.num_inserts)
+        printf("  updates:      %lld\n", self.num_updates)
+        printf("  deletes:      %lld\n", self.num_deletes)
+        printf("  queries:      %lld\n", self.num_queries)
+        printf("}")
+    }
+}
+
+# =============================================================================
+# TRAIT: Comparable - For ordering and sorting
+# =============================================================================
+
+trait Comparable {
+    # Returns: -1 if self < other, 0 if equal, 1 if self > other
+    function compare(self, other: Value) -> i32
+}
+
+impl Comparable for Value {
+    function compare(self, other: Value) -> i32 {
+        # Handle nulls - NULL is considered "less than" non-null
+        if self.is_null and other.is_null {
+            return 0
+        }
+        if self.is_null {
+            return -1
+        }
+        if other.is_null {
+            return 1
+        }
+        
+        # Type mismatch - compare by type_id
+        if self.type_id != other.type_id {
+            if self.type_id < other.type_id {
+                return -1
+            }
+            return 1
+        }
+        
+        # Same type - compare values
+        if self.type_id == 0 {
+            if self.int_val < other.int_val { return -1 }
+            if self.int_val > other.int_val { return 1 }
+            return 0
+        }
+        if self.type_id == 1 {
+            if self.float_val < other.float_val { return -1 }
+            if self.float_val > other.float_val { return 1 }
+            return 0
+        }
+        if self.type_id == 3 {
+            # Boolean: false < true
+            if self.bool_val == other.bool_val { return 0 }
+            if self.bool_val { return 1 }
+            return -1
+        }
+        return 0  # Strings not fully comparable yet
+    }
+}
+
+# =============================================================================
+# TRAIT: Hashable - For index structures
+# =============================================================================
+
+trait Hashable {
+    function hash(self) -> i64
+}
+
+impl Hashable for Value {
+    function hash(self) -> i64 {
+        if self.is_null {
+            return 0
+        }
+        
+        if self.type_id == 0 {
+            # Integer hash - simple multiplication hash
+            let h: i64 = self.int_val
+            h = h * 2654435761  # Knuth's multiplicative hash
+            return h
+        }
+        if self.type_id == 1 {
+            # Float hash - convert bits to int (simplified)
+            let int_bits: i64 = (self.float_val * 1000000.0)
+            return int_bits * 2654435761
+        }
+        if self.type_id == 3 {
+            # Boolean hash
+            if self.bool_val {
+                return 1
+            }
+            return 0
+        }
+        return 0  # Strings would need character-by-character hashing
+    }
+}
+
+# =============================================================================
+# TRAIT: Validate - For data validation
+# =============================================================================
+
+trait Validate {
+    function is_valid(self) -> bool
+    function error_message(self) -> string
+}
+
+impl Validate for Row {
+    function is_valid(self) -> bool {
+        # A row is valid if it's not deleted and has a positive ID
+        if self.is_deleted {
+            return false
+        }
+        if self.id < 0 {
+            return false
+        }
+        return true
+    }
+    
+    function error_message(self) -> string {
+        if self.is_deleted {
+            return "Row is deleted"
+        }
+        if self.id < 0 {
+            return "Invalid row ID"
+        }
+        return ""
+    }
+}
+
+impl Validate for TableSchema {
+    function is_valid(self) -> bool {
+        # Schema is valid if it has at least one column and a name
+        if self.num_columns <= 0 {
+            return false
+        }
+        # Name check would go here if we had string length checking
+        return true
+    }
+    
+    function error_message(self) -> string {
+        if self.num_columns <= 0 {
+            return "Schema has no columns"
+        }
+        return ""
+    }
+}
+
+# =============================================================================
+# HELPER FUNCTIONS - Using traits polymorphically
+# =============================================================================
+
+# Print a row using Display trait
+export function print_row(r: Row, schema: TableSchema) -> void {
+    printf("| ")
+    for i in 0 to schema.num_columns {
+        let val: Value = row_get_value(r, i)
+        Value_Display_show(val)
+        printf(" | ")
+    }
+    printf("\n")
+}
+
+# Print table header
+export function print_header(schema: TableSchema) -> void {
+    printf("+")
+    for i in 0 to schema.num_columns {
+        printf("----------+")
+    }
+    printf("\n| ")
+    for i in 0 to schema.num_columns {
+        let col: ColumnDef = schema_get_column(schema, i)
+        printf("%-8s | ", col.name)
+    }
+    printf("\n+")
+    for i in 0 to schema.num_columns {
+        printf("----------+")
+    }
+    printf("\n")
+}
+
+# Compare two values (wrapper for trait method)
+export function compare_values(a: Value, b: Value) -> i32 {
+    return Value_Comparable_compare(a, b)
+}
+
+# Hash a value (wrapper for trait method)
+export function hash_value(v: Value) -> i64 {
+    return Value_Hashable_hash(v)
+}
+
+# Check if a row is valid
+export function is_row_valid(r: Row) -> bool {
+    return Row_Validate_is_valid(r)
+}

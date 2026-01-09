@@ -1,0 +1,238 @@
+# Audio Filters Test
+#
+# Tests for OnePole, Biquad, DCBlocker, SVF filters.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/filters.flow"
+
+# =============================================================================
+# OnePole Tests
+# =============================================================================
+
+function test_onepole_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: OnePole = onepole_lowpass(1000.0, rate)
+    
+    if f.coeff < 0.0 { return false }
+    if f.coeff > 1.0 { return false }
+    if f.state != 0.0 { return false }
+    return true
+}
+
+function test_onepole_tick() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: OnePole = onepole_lowpass(1000.0, rate)
+    
+    let f2: OnePole = onepole_tick(f, 1.0)
+    
+    if onepole_output(f2) <= 0.0 { return false }
+    if onepole_output(f2) > 1.0 { return false }
+    return true
+}
+
+function test_onepole_convergence() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: OnePole = onepole_lowpass(5000.0, rate)
+    
+    let i: i32 = 0
+    while i < 1000 {
+        f = onepole_tick(f, 1.0)
+        i = i + 1
+    }
+    
+    return onepole_output(f) > 0.9
+}
+
+function test_onepole_reset() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: OnePole = onepole_lowpass(1000.0, rate)
+    f = onepole_tick(f, 1.0)
+    f = onepole_reset(f)
+    return onepole_output(f) == 0.0
+}
+
+# =============================================================================
+# DC Blocker Tests
+# =============================================================================
+
+function test_dcblocker_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let dc: DCBlocker = dcblocker_new(rate)
+    
+    if dc.x1 != 0.0 { return false }
+    if dc.y1 != 0.0 { return false }
+    return true
+}
+
+function test_dcblocker_removes_dc() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let dc: DCBlocker = dcblocker_new(rate)
+    
+    let i: i32 = 0
+    while i < 10000 {
+        dc = dcblocker_tick(dc, 0.5)
+        i = i + 1
+    }
+    
+    if dcblocker_output(dc) < -0.1 { return false }
+    if dcblocker_output(dc) > 0.1 { return false }
+    return true
+}
+
+# =============================================================================
+# Biquad Tests
+# =============================================================================
+
+function test_biquad_bypass() -> bool {
+    let f: Biquad = biquad_bypass()
+    if f.b0 != 1.0 { return false }
+    if f.b1 != 0.0 { return false }
+    if f.a1 != 0.0 { return false }
+    return true
+}
+
+function test_biquad_lowpass_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
+    
+    if f.b0 < -10.0 { return false }
+    if f.b0 > 10.0 { return false }
+    if f.z1 != 0.0 { return false }
+    if f.z2 != 0.0 { return false }
+    return true
+}
+
+function test_biquad_tick() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
+    
+    let f2: Biquad = biquad_tick(f, 1.0)
+    
+    # State should change (at least one should be non-zero)
+    if f2.z1 != 0.0 { return true }
+    if f2.z2 != 0.0 { return true }
+    return false
+}
+
+function test_biquad_process() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: Biquad = biquad_lowpass(10000.0, 0.707, rate)
+    
+    let out: f32 = biquad_process(f, 1.0)
+    
+    # High cutoff should pass most signal
+    return out > 0.0
+}
+
+function test_biquad_reset() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
+    f = biquad_tick(f, 1.0)
+    f = biquad_reset(f)
+    
+    if f.z1 != 0.0 { return false }
+    if f.z2 != 0.0 { return false }
+    return true
+}
+
+# =============================================================================
+# SVF Tests
+# =============================================================================
+
+function test_svf_creation() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: SVF = svf_new(1000.0, 0.707, rate)
+    
+    if f.ic1eq != 0.0 { return false }
+    if f.ic2eq != 0.0 { return false }
+    return true
+}
+
+function test_svf_tick() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: SVF = svf_new(1000.0, 0.707, rate)
+    
+    let f2: SVF = svf_tick_lowpass(f, 1.0)
+    
+    # At least one should be non-zero
+    if f2.ic1eq != 0.0 { return true }
+    if f2.ic2eq != 0.0 { return true }
+    return false
+}
+
+function test_svf_lowpass_convergence() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let f: SVF = svf_new(5000.0, 0.707, rate)
+    
+    let i: i32 = 0
+    while i < 100 {
+        f = svf_tick_lowpass(f, 1.0)
+        i = i + 1
+    }
+    
+    return svf_lowpass(f) > 0.5
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+function main() -> i32 {
+    let passed: i32 = 0
+    let failed: i32 = 0
+    
+    printf("=== Audio Filters Tests ===\n\n")
+    
+    # OnePole
+    if test_onepole_creation() { printf("✓ onepole_creation\n"); passed = passed + 1 } 
+    else { printf("✗ onepole_creation\n"); failed = failed + 1 }
+    
+    if test_onepole_tick() { printf("✓ onepole_tick\n"); passed = passed + 1 } 
+    else { printf("✗ onepole_tick\n"); failed = failed + 1 }
+    
+    if test_onepole_convergence() { printf("✓ onepole_convergence\n"); passed = passed + 1 } 
+    else { printf("✗ onepole_convergence\n"); failed = failed + 1 }
+    
+    if test_onepole_reset() { printf("✓ onepole_reset\n"); passed = passed + 1 } 
+    else { printf("✗ onepole_reset\n"); failed = failed + 1 }
+    
+    # DC Blocker
+    if test_dcblocker_creation() { printf("✓ dcblocker_creation\n"); passed = passed + 1 } 
+    else { printf("✗ dcblocker_creation\n"); failed = failed + 1 }
+    
+    if test_dcblocker_removes_dc() { printf("✓ dcblocker_removes_dc\n"); passed = passed + 1 } 
+    else { printf("✗ dcblocker_removes_dc\n"); failed = failed + 1 }
+    
+    # Biquad
+    if test_biquad_bypass() { printf("✓ biquad_bypass\n"); passed = passed + 1 } 
+    else { printf("✗ biquad_bypass\n"); failed = failed + 1 }
+    
+    if test_biquad_lowpass_creation() { printf("✓ biquad_lowpass_creation\n"); passed = passed + 1 } 
+    else { printf("✗ biquad_lowpass_creation\n"); failed = failed + 1 }
+    
+    if test_biquad_tick() { printf("✓ biquad_tick\n"); passed = passed + 1 } 
+    else { printf("✗ biquad_tick\n"); failed = failed + 1 }
+    
+    if test_biquad_process() { printf("✓ biquad_process\n"); passed = passed + 1 } 
+    else { printf("✗ biquad_process\n"); failed = failed + 1 }
+    
+    if test_biquad_reset() { printf("✓ biquad_reset\n"); passed = passed + 1 } 
+    else { printf("✗ biquad_reset\n"); failed = failed + 1 }
+    
+    # SVF
+    if test_svf_creation() { printf("✓ svf_creation\n"); passed = passed + 1 } 
+    else { printf("✗ svf_creation\n"); failed = failed + 1 }
+    
+    if test_svf_tick() { printf("✓ svf_tick\n"); passed = passed + 1 } 
+    else { printf("✗ svf_tick\n"); failed = failed + 1 }
+    
+    if test_svf_lowpass_convergence() { printf("✓ svf_lowpass_convergence\n"); passed = passed + 1 } 
+    else { printf("✗ svf_lowpass_convergence\n"); failed = failed + 1 }
+    
+    printf("\n=== Results: %d passed, %d failed ===\n", passed, failed)
+    
+    if failed > 0 {
+        return 1
+    }
+    return 0
+}

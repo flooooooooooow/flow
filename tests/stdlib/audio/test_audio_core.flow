@@ -1,0 +1,264 @@
+# Audio Core Types Test
+#
+# Tests for SampleRate, Samples, Seconds, Frame, Buffer types and conversions.
+
+import "stdlib/audio.flow"
+
+# =============================================================================
+# Sample Rate Tests
+# =============================================================================
+
+function test_sample_rate_creation() -> bool {
+    let rate: SampleRate = sample_rate_new(44100.0)
+    return rate.hz == 44100.0
+}
+
+function test_sample_rate_presets() -> bool {
+    let r44: SampleRate = sample_rate_44100()
+    let r48: SampleRate = sample_rate_48000()
+    let r96: SampleRate = sample_rate_96000()
+    
+    if r44.hz != 44100.0 { return false }
+    if r48.hz != 48000.0 { return false }
+    if r96.hz != 96000.0 { return false }
+    return true
+}
+
+# =============================================================================
+# Time Conversion Tests
+# =============================================================================
+
+function test_samples_to_seconds() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let samples: Samples = Samples { count: 44100 }
+    let secs: Seconds = samples_to_seconds(samples, rate)
+    
+    # 44100 samples at 44100Hz = 1 second
+    if secs.value < 0.99 { return false }
+    if secs.value > 1.01 { return false }
+    return true
+}
+
+function test_seconds_to_samples() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let secs: Seconds = Seconds { value: 1.0 }
+    let samples: Samples = seconds_to_samples(secs, rate)
+    
+    # 1 second at 44100Hz = 44100 samples
+    return samples.count == 44100
+}
+
+function test_ms_to_samples() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let samples: Samples = ms_to_samples(1000.0, rate)
+    
+    # 1000ms = 44100 samples at 44.1kHz
+    return samples.count == 44100
+}
+
+# =============================================================================
+# Frame Tests
+# =============================================================================
+
+function test_frame_creation() -> bool {
+    let f: Frame = frame_new(0.5, -0.5)
+    if f.left != 0.5 { return false }
+    if f.right != -0.5 { return false }
+    return true
+}
+
+function test_frame_mono() -> bool {
+    let f: Frame = frame_mono(0.5)
+    if f.left != 0.5 { return false }
+    if f.right != 0.5 { return false }
+    return true
+}
+
+function test_frame_zero() -> bool {
+    let f: Frame = frame_zero()
+    if f.left != 0.0 { return false }
+    if f.right != 0.0 { return false }
+    return true
+}
+
+function test_frame_mix() -> bool {
+    let a: Frame = frame_new(0.3, 0.4)
+    let b: Frame = frame_new(0.2, 0.1)
+    let c: Frame = frame_mix(a, b)
+    
+    if c.left != 0.5 { return false }
+    if c.right != 0.5 { return false }
+    return true
+}
+
+function test_frame_scale() -> bool {
+    let f: Frame = frame_new(1.0, -1.0)
+    let scaled: Frame = frame_scale(f, 0.5)
+    
+    if scaled.left != 0.5 { return false }
+    if scaled.right != -0.5 { return false }
+    return true
+}
+
+function test_frame_to_mono() -> bool {
+    let f: Frame = frame_new(0.6, 0.4)
+    let mono: f32 = frame_to_mono(f)
+    return mono == 0.5
+}
+
+# =============================================================================
+# Buffer Tests
+# =============================================================================
+
+function test_buffer_creation() -> bool {
+    let buf: Buffer = buffer_create(256, 2)
+    if buf.frames != 256 { return false }
+    if buf.channels != 2 { return false }
+    return true
+}
+
+function test_buffer_stereo() -> bool {
+    let buf: Buffer = buffer_stereo(512)
+    if buf.frames != 512 { return false }
+    if buf.channels != 2 { return false }
+    return true
+}
+
+function test_buffer_mono() -> bool {
+    let buf: Buffer = buffer_mono(128)
+    if buf.frames != 128 { return false }
+    if buf.channels != 1 { return false }
+    return true
+}
+
+function test_buffer_sample_count() -> bool {
+    let buf: Buffer = buffer_stereo(256)
+    let count: i32 = buffer_sample_count(buf)
+    # 256 frames * 2 channels = 512 samples
+    return count == 512
+}
+
+# =============================================================================
+# Clipping Tests
+# =============================================================================
+
+function test_clip_passthrough() -> bool {
+    let x: f32 = clip(0.5)
+    return x == 0.5
+}
+
+function test_clip_positive() -> bool {
+    let x: f32 = clip(1.5)
+    return x == 1.0
+}
+
+function test_clip_negative() -> bool {
+    let x: f32 = clip(-1.5)
+    return x == -1.0
+}
+
+function test_soft_clip() -> bool {
+    let x: f32 = soft_clip(0.5)
+    # tanh-like: 0.5 / (1 + 0.5) = 0.333...
+    if x < 0.3 { return false }
+    if x > 0.4 { return false }
+    return true
+}
+
+# =============================================================================
+# Frequency Tests
+# =============================================================================
+
+function test_freq_to_period() -> bool {
+    let rate: SampleRate = sample_rate_44100()
+    let period: f32 = freq_to_period_samples(440.0, rate)
+    
+    # 44100 / 440 = 100.227...
+    if period < 100.0 { return false }
+    if period > 101.0 { return false }
+    return true
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+function main() -> i32 {
+    let passed: i32 = 0
+    let failed: i32 = 0
+    
+    printf("=== Audio Core Tests ===\n\n")
+    
+    # Sample Rate
+    if test_sample_rate_creation() { printf("✓ sample_rate_creation\n"); passed = passed + 1 } 
+    else { printf("✗ sample_rate_creation\n"); failed = failed + 1 }
+    
+    if test_sample_rate_presets() { printf("✓ sample_rate_presets\n"); passed = passed + 1 } 
+    else { printf("✗ sample_rate_presets\n"); failed = failed + 1 }
+    
+    # Time conversions
+    if test_samples_to_seconds() { printf("✓ samples_to_seconds\n"); passed = passed + 1 } 
+    else { printf("✗ samples_to_seconds\n"); failed = failed + 1 }
+    
+    if test_seconds_to_samples() { printf("✓ seconds_to_samples\n"); passed = passed + 1 } 
+    else { printf("✗ seconds_to_samples\n"); failed = failed + 1 }
+    
+    if test_ms_to_samples() { printf("✓ ms_to_samples\n"); passed = passed + 1 } 
+    else { printf("✗ ms_to_samples\n"); failed = failed + 1 }
+    
+    # Frame
+    if test_frame_creation() { printf("✓ frame_creation\n"); passed = passed + 1 } 
+    else { printf("✗ frame_creation\n"); failed = failed + 1 }
+    
+    if test_frame_mono() { printf("✓ frame_mono\n"); passed = passed + 1 } 
+    else { printf("✗ frame_mono\n"); failed = failed + 1 }
+    
+    if test_frame_zero() { printf("✓ frame_zero\n"); passed = passed + 1 } 
+    else { printf("✗ frame_zero\n"); failed = failed + 1 }
+    
+    if test_frame_mix() { printf("✓ frame_mix\n"); passed = passed + 1 } 
+    else { printf("✗ frame_mix\n"); failed = failed + 1 }
+    
+    if test_frame_scale() { printf("✓ frame_scale\n"); passed = passed + 1 } 
+    else { printf("✗ frame_scale\n"); failed = failed + 1 }
+    
+    if test_frame_to_mono() { printf("✓ frame_to_mono\n"); passed = passed + 1 } 
+    else { printf("✗ frame_to_mono\n"); failed = failed + 1 }
+    
+    # Buffer
+    if test_buffer_creation() { printf("✓ buffer_creation\n"); passed = passed + 1 } 
+    else { printf("✗ buffer_creation\n"); failed = failed + 1 }
+    
+    if test_buffer_stereo() { printf("✓ buffer_stereo\n"); passed = passed + 1 } 
+    else { printf("✗ buffer_stereo\n"); failed = failed + 1 }
+    
+    if test_buffer_mono() { printf("✓ buffer_mono\n"); passed = passed + 1 } 
+    else { printf("✗ buffer_mono\n"); failed = failed + 1 }
+    
+    if test_buffer_sample_count() { printf("✓ buffer_sample_count\n"); passed = passed + 1 } 
+    else { printf("✗ buffer_sample_count\n"); failed = failed + 1 }
+    
+    # Clipping
+    if test_clip_passthrough() { printf("✓ clip_passthrough\n"); passed = passed + 1 } 
+    else { printf("✗ clip_passthrough\n"); failed = failed + 1 }
+    
+    if test_clip_positive() { printf("✓ clip_positive\n"); passed = passed + 1 } 
+    else { printf("✗ clip_positive\n"); failed = failed + 1 }
+    
+    if test_clip_negative() { printf("✓ clip_negative\n"); passed = passed + 1 } 
+    else { printf("✗ clip_negative\n"); failed = failed + 1 }
+    
+    if test_soft_clip() { printf("✓ soft_clip\n"); passed = passed + 1 } 
+    else { printf("✗ soft_clip\n"); failed = failed + 1 }
+    
+    # Frequency
+    if test_freq_to_period() { printf("✓ freq_to_period\n"); passed = passed + 1 } 
+    else { printf("✗ freq_to_period\n"); failed = failed + 1 }
+    
+    printf("\n=== Results: %d passed, %d failed ===\n", passed, failed)
+    
+    if failed > 0 {
+        return 1
+    }
+    return 0
+}
