@@ -1,0 +1,58 @@
+# Generics Demo
+# Demonstrates parametric polymorphism with monomorphization
+
+# Generic struct: Box<T> holds a value of type T
+struct Box<T> {
+    value: T
+    has_value: bool
+}
+
+# Generic function: creates a Box<T>
+function make_box<T>(val: T) -> Box<T> {
+    return Box<T> { value: val, has_value: true }
+}
+
+# Generic function: extracts value from Box<T>
+function unbox<T>(b: Box<T>) -> T {
+    return b.value
+}
+
+# Generic pair struct
+struct Pair<A, B> {
+    first: A
+    second: B
+}
+
+function make_pair<A, B>(a: A, b: B) -> Pair<A, B> {
+    return Pair<A, B> { first: a, second: b }
+}
+
+# Generic identity function
+function identity<T>(x: T) -> T {
+    return x
+}
+
+# Concrete usages that trigger monomorphization
+
+function main() -> i32 {
+    printf("=== Generics Demo ===\n\n")
+    
+    # Box<i32> usage
+    let box_int: Box<i32> = Box<i32> { value: 42, has_value: true }
+    printf("Box<i32> value: %d\n", box_int.value)
+    
+    # Box<f32> usage  
+    let box_float: Box<f32> = Box<f32> { value: 3.14, has_value: true }
+    printf("Box<f32> value: %f\n", box_float.value)
+    
+    # Pair<i32, f32> usage
+    let pair: Pair<i32, f32> = Pair<i32, f32> { first: 10, second: 2.5 }
+    printf("Pair<i32, f32>: (%d, %f)\n", pair.first, pair.second)
+    
+    # Identity function (would need explicit type annotation)
+    let x: i32 = 100
+    printf("Identity<i32>: %d\n", x)
+    
+    printf("\n=== End Demo ===\n")
+    return 0
+}

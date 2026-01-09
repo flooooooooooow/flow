@@ -1195,15 +1195,51 @@ class Parser:
             
             if self.current_token.type == TokenType.LPAREN:
                 return self.parse_function_call(name)
-            elif self.current_token.type == TokenType.LESS and name in ['array', 'ptr']:
-                # Generic type constructor: array<i32>(10)
-                self.advance()  # consume <
-                element_type = self.parse_type()
-                self.expect(TokenType.GREATER)
-                if self.current_token.type == TokenType.LPAREN:
-                    return self.parse_function_call(f"{name}<{element_type.name}>")
-                else:
-                    raise SyntaxError(f"Expected '(' after generic type constructor")
+            elif self.current_token.type == TokenType.LESS:
+                # Could be:
+                # 1. Generic type constructor: array<i32>(10)
+                # 2. Generic struct literal: Box<i32> { ... }
+                # 3. Comparison: x < y (but then next token wouldn't be identifier)
+                
+                # Save state to backtrack if needed
+                save_pos = self.lexer.pos
+                save_line = self.lexer.line
+                save_col = self.lexer.column
+                save_current = self.current_token
+                save_lookahead = self.lookahead
+                
+                try:
+                    self.advance()  # consume <
+                    
+                    # Parse type arguments
+                    type_args = [self.parse_type()]
+                    while self.current_token.type == TokenType.COMMA:
+                        self.advance()
+                        type_args.append(self.parse_type())
+                    
+                    self.expect(TokenType.GREATER)
+                    
+                    # Construct mangled name: Box<i32> -> Box_i32
+                    type_args_str = '_'.join(t.name for t in type_args)
+                    mangled_name = f"{name}_{type_args_str}"
+                    
+                    if self.current_token.type == TokenType.LPAREN:
+                        # Generic function call: make_box<i32>(42)
+                        return self.parse_function_call(mangled_name)
+                    elif self.current_token.type == TokenType.LBRACE:
+                        # Generic struct literal: Box<i32> { ... }
+                        return self.parse_struct_literal(mangled_name)
+                    else:
+                        # Just a generic type in expression position (unusual but valid)
+                        return Variable(mangled_name)
+                except:
+                    # Restore state - this was probably a comparison
+                    self.lexer.pos = save_pos
+                    self.lexer.line = save_line
+                    self.lexer.column = save_col
+                    self.current_token = save_current
+                    self.lookahead = save_lookahead
+                    return Variable(name)
             elif self.current_token.type == TokenType.LBRACE:
                 # Try to parse as struct literal - if it fails, it's not a struct literal
                 # Save state first (including lexer position)
