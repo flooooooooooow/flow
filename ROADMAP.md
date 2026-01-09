@@ -7,24 +7,30 @@ This document tracks what we're building next and why.
 
 ---
 
-## Current State (v0.2.0)
+## Current State (v0.3.0)
 
 **What works:**
 - ✅ Core language (types, functions, control flow, structs, arrays)
 - ✅ Effect system (effects, capabilities, handlers)
 - ✅ Module system (imports, exports, cycle detection)
 - ✅ Autodiff (forward mode, reverse mode, neural nets)
-- ✅ Type checker (warnings mode)
+- ✅ Type checker (strict mode with --lenient fallback)
 - ✅ C backend (stable)
 - ✅ Formatter (`flow fmt`)
-- ✅ Test framework (152 tests passing)
+- ✅ Test framework (156 tests passing - 100%)
 - ✅ Documentation (spec, grammar, implementation map)
+- ✅ Generics (monomorphization)
+- ✅ Option<T> / Result<T, E> types
+- ✅ Pattern matching (integer + struct patterns)
+- ✅ SIMD vectors (vec4<f32>)
+- ✅ Traits/interfaces
+- ✅ Lambda expressions (basic)
+- ✅ Enhanced error messages with source context
 
 **What's broken/missing:**
-- ❌ Generics — No parametric polymorphism
-- ❌ Strict type enforcement — Type checker warns but doesn't error
-- ❌ Full pattern matching — Only basic `match` supported
-- ❌ Closures — Partially implemented, captures don't work
+- ❌ Full closures — Lambda captures don't work yet
+- ❌ Enums / ADTs — Sum types not implemented
+- ❌ Trait bounds — Generics don't enforce trait constraints
 - ❌ MLIR backend — Generates but doesn't optimize
 - ❌ GPU codegen — Runtime exists, no shader generation
 - ❌ LSP — Syntax highlighting only
@@ -419,13 +425,29 @@ These are explicitly out of scope:
    - Compound literal syntax for inline vectors
 3. [x] Parser fix: vector literals in return statements ✅
 
-**Test Results:** 154/154 passing (100%) 🎉
+**Test Results:** 156/156 passing (100%) 🎉
 
-**Next week:**
-1. [x] Fix remaining tests ✅ (ArrayLiteral monomorphizer bug)
-2. [ ] Improve type inference for generic function calls
-3. [ ] Add trait bounds enforcement
-4. [ ] Start WASM build improvements
+**Phase 2 Completed (2026-01-09):**
+1. [x] Traits/interfaces ✅
+   - `trait Display { function show(self) }` works
+   - `impl Display for Point { ... }` works
+   - Self parameter injected as first param in C
+   - Method name mangling: Type_Trait_method
+2. [x] Closures/lambdas (partial) ✅
+   - Lambda parsing: `|x: i32| -> i32 { return x * x }`
+   - Lambda C codegen: generates static functions
+   - IIFE pattern needs work (tracked for future)
+3. [x] Better error messages ✅
+   - FlowSyntaxError with source context
+   - Shows line number, column, source line
+   - Caret (^) points to error location
+   - Helpful suggestions for common errors
+
+**Next priorities:**
+1. [ ] Full closure captures (move vs copy semantics)
+2. [ ] Trait bounds enforcement on generics
+3. [ ] Enums / algebraic data types
+4. [ ] WASM build improvements
 
 ---
 
