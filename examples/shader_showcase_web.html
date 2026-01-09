@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLOW Shader Showcase - WebAssembly Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            width: 350px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            overflow-y: auto;
+            backdrop-filter: blur(10px);
+        }
+        
+        .main-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        .canvas-container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+        
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        .overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .controls {
+            margin: 20px 0;
+        }
+        
+        .btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 10px 15px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .btn.active {
+            background: rgba(255, 255, 255, 0.4);
+            border-color: #4CAF50;
+        }
+        
+        .shader-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .stats {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .shader-code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .shader-code pre {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .feature-highlight {
+            background: rgba(76, 175, 80, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+        }
+        
+        h1 {
+            margin-top: 0;
+            font-size: 28px;
+            text-align: center;
+        }
+        
+        h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h1>🎨 FLOW Shader Showcase</h1>
+            
+            <div class="shader-info">
+                <h3 id="currentShader">OpenGL/GLSL</h3>
+                <p><strong>API:</strong> <span id="currentAPI">OpenGL</span></p>
+                <p><strong>Language:</strong> <span id="currentLanguage">GLSL</span></p>
+                <p><strong>Version:</strong> <span id="currentVersion">450</span></p>
+            </div>
+            
+            <div class="controls">
+                <h3>🎮 Shader Controls</h3>
+                <button class="btn active" onclick="switchShader(0)">1. OpenGL/GLSL</button>
+                <button class="btn" onclick="switchShader(1)">2. DirectX/HLSL</button>
+                <button class="btn" onclick="switchShader(2)">3. Metal/MSL</button>
+                <button class="btn" onclick="switchShader(3)">4. Vulkan/SPIR-V</button>
+                <button class="btn" onclick="toggleAnimation()">⏯️ Toggle Animation</button>
+                <button class="btn" onclick="resetView()">🔄 Reset View</button>
+            </div>
+            
+            <div class="stats">
+                <h3>📊 Performance</h3>
+                <p><strong>FPS:</strong> <span id="fps">60</span></p>
+                <p><strong>Frame Time:</strong> <span id="frameTime">16.67</span>ms</p>
+                <p><strong>Draw Calls:</strong> <span id="drawCalls">1</span></p>
+                <p><strong>Mouse:</strong> <span id="mousePos">0, 0</span></p>
+            </div>
+            
+            <div class="shader-code">
+                <h3>📝 Current Shader Code</h3>
+                <pre id="shaderCode">Loading shader code...</pre>
+            </div>
+            
+            <div class="feature-highlight">
+                <h4>🚀 FLOW Shader Features</h4>
+                <p>• Multi-API shader support</p>
+                <p>• Real-time shader switching</p>
+                <p>• WebAssembly compilation</p>
+                <p>• GPU acceleration</p>
+                <p>• Interactive controls</p>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="canvas-container">
+                <div class="loading" id="loading">
+                    <div class="loading-spinner"></div>
+                    <div>Loading FLOW WebAssembly...</div>
+                </div>
+                
+                <canvas id="shaderCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentShaderIndex = 0;
+        let animationRunning = true;
+        let mouseX = 0, mouseY = 0;
+        let startTime = Date.now();
+        
+        // Shader programs for different APIs
+        const shaders = [
+            {
+                name: "OpenGL/GLSL",
+                api: "OpenGL",
+                language: "GLSL",
+                version: "450",
+                vertex: "#version 450 core\nlayout (location = 0) in vec3 aPos;\nlayout (location = 1) in vec2 aTexCoord;\n\nout vec2 TexCoord;\n\nuniform float uTime;\nuniform vec2 uResolution;\n\nvoid main() {\n    vec3 pos = aPos;\n    pos.x += sin(uTime + aPos.y * 3.0) * 0.1;\n    pos.y += cos(uTime + aPos.x * 3.0) * 0.1;\n    \n    gl_Position = vec4(pos, 1.0);\n    TexCoord = aTexCoord;\n}",
+                fragment: "#version 450 core\nin vec2 TexCoord;\nout vec4 FragColor;\n\nuniform float uTime;\nuniform vec2 uResolution;\nuniform vec2 uMouse;\n\nvoid main() {\n    vec2 uv = TexCoord;\n    vec2 mouse = uMouse / uResolution;\n    \n    vec3 color = vec3(\n        sin(uTime + uv.x * 10.0) * 0.5 + 0.5,\n        cos(uTime + uv.y * 10.0) * 0.5 + 0.5,\n        sin(uTime + length(uv - mouse) * 20.0) * 0.5 + 0.5\n    );\n    \n    float pattern = sin(uv.x * 50.0) * cos(uv.y * 50.0);\n    color *= pattern * 0.5 + 0.5;\n    \n    FragColor = vec4(color, 1.0);\n}"
+            },
+            {
+                name: "DirectX/HLSL",
+                api: "DirectX",
+                language: "HLSL",
+                version: "5.1",
+                vertex: "struct VSInput {\n    float3 pos : POSITION;\n    float2 tex : TEXCOORD;\n};\n\nstruct VSOutput {\n    float4 pos : SV_POSITION;\n    float2 tex : TEXCOORD;\n};\n\ncbuffer ConstantBuffer : register(b0) {\n    float uTime;\n    float2 uResolution;\n};\n\nVSOutput main(VSInput input) {\n    VSOutput output;\n    float3 pos = input.pos;\n    pos.x += sin(uTime + input.pos.y * 3.0) * 0.1;\n    pos.y += cos(uTime + input.pos.x * 3.0) * 0.1;\n    \n    output.pos = float4(pos, 1.0);\n    output.tex = input.tex;\n    return output;\n}",
+                fragment: "struct PSInput {\n    float4 pos : SV_POSITION;\n    float2 tex : TEXCOORD;\n};\n\ncbuffer ConstantBuffer : register(b0) {\n    float uTime;\n    float2 uResolution;\n    float2 uMouse;\n};\n\nfloat4 main(PSInput input) : SV_TARGET {\n    float2 uv = input.tex;\n    float2 mouse = uMouse / uResolution;\n    \n    float3 color = float3(\n        sin(uTime + uv.x * 10.0) * 0.5 + 0.5,\n        cos(uTime + uv.y * 10.0) * 0.5 + 0.5,\n        sin(uTime + length(uv - mouse) * 20.0) * 0.5 + 0.5\n    );\n    \n    float pattern = sin(uv.x * 50.0) * cos(uv.y * 50.0);\n    color *= pattern * 0.5 + 0.5;\n    \n    return float4(color, 1.0);\n}"
+            },
+            {
+                name: "Metal/MSL",
+                api: "Metal",
+                language: "MSL",
+                version: "2.0",
+                vertex: "#include <metal_stdlib>\nusing namespace metal;\n\nstruct VertexOut {\n    float4 position [[position]];\n    float2 texCoord;\n};\n\nstruct Uniforms {\n    float time;\n    float2 resolution;\n};\n\nvertex VertexOut vertex_main(float3 position [[attribute(0)]],\n                           float2 texCoord [[attribute(1)]],\n                           constant Uniforms& uniforms [[buffer(0)]]) {\n    VertexOut out;\n    float3 pos = position;\n    pos.x += sin(uniforms.time + position.y * 3.0) * 0.1;\n    pos.y += cos(uniforms.time + position.x * 3.0) * 0.1;\n    \n    out.position = float4(pos, 1.0);\n    out.texCoord = texCoord;\n    return out;\n}",
+                fragment: "#include <metal_stdlib>\nusing namespace metal;\n\nstruct VertexOut {\n    float4 position [[position]];\n    float2 texCoord;\n};\n\nstruct Uniforms {\n    float time;\n    float2 resolution;\n    float2 mouse;\n};\n\nfragment float4 fragment_main(VertexOut in [[stage_in]],\n                             constant Uniforms& uniforms [[buffer(0)]]) {\n    float2 uv = in.texCoord;\n    float2 mouse = uniforms.mouse / uniforms.resolution;\n    \n    float3 color = float3(\n        sin(uniforms.time + uv.x * 10.0) * 0.5 + 0.5,\n        cos(uniforms.time + uv.y * 10.0) * 0.5 + 0.5,\n        sin(uniforms.time + length(uv - mouse) * 20.0) * 0.5 + 0.5\n    );\n    \n    float pattern = sin(uv.x * 50.0) * cos(uv.y * 50.0);\n    color *= pattern * 0.5 + 0.5;\n    \n    return float4(color, 1.0);\n}"
+            },
+            {
+                name: "Vulkan/SPIR-V",
+                api: "Vulkan",
+                language: "SPIR-V",
+                version: "1.0",
+                vertex: "#version 450\nlayout(location = 0) in vec3 inPosition;\nlayout(location = 1) in vec2 inTexCoord;\n\nlayout(location = 0) out vec2 fragTexCoord;\n\nlayout(push_constant) uniform PushConstants {\n    float time;\n    vec2 resolution;\n} pc;\n\nvoid main() {\n    vec3 pos = inPosition;\n    pos.x += sin(pc.time + inPosition.y * 3.0) * 0.1;\n    pos.y += cos(pc.time + inPosition.x * 3.0) * 0.1;\n    \n    gl_Position = vec4(pos, 1.0);\n    fragTexCoord = inTexCoord;\n}",
+                fragment: "#version 450\nlayout(location = 0) in vec2 fragTexCoord;\nlayout(location = 0) out vec4 outColor;\n\nlayout(push_constant) uniform PushConstants {\n    float time;\n    vec2 resolution;\n    vec2 mouse;\n} pc;\n\nvoid main() {\n    vec2 uv = fragTexCoord;\n    vec2 mouse = pc.mouse / pc.resolution;\n    \n    vec3 color = vec3(\n        sin(pc.time + uv.x * 10.0) * 0.5 + 0.5,\n        cos(pc.time + uv.y * 10.0) * 0.5 + 0.5,\n        sin(pc.time + length(uv - mouse) * 20.0) * 0.5 + 0.5\n    );\n    \n    float pattern = sin(uv.x * 50.0) * cos(uv.y * 50.0);\n    color *= pattern * 0.5 + 0.5;\n    \n    outColor = vec4(color, 1.0);\n}"
+            }
+        ];
+
+        let frameCount = 0;
+        let lastFrameTime = startTime;
+
+        // Initialize canvas
+        const canvas = document.getElementById('shaderCanvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        
+        if (!gl) {
+            document.getElementById('loading').innerHTML = '<div>WebGL not supported</div>';
+            return;
+        }
+
+        // Hide loading
+        document.getElementById('loading').style.display = 'none';
+
+        // Create shader
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            
+            return shader;
+        }
+
+        // Create program
+        function createProgram(vertexSource, fragmentSource) {
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexSource);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+            
+            if (!vertexShader || !fragmentShader) {
+                return null;
+            }
+            
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program linking error:', gl.getProgramInfoLog(program));
+                return null;
+            }
+            
+            return program;
+        }
+
+        // Create geometry
+        function createGeometry() {
+            const vertices = new Float32Array([
+                // Position          // UV
+                -1.0, -1.0, 0.0,   0.0, 0.0,
+                 1.0, -1.0, 0.0,   1.0, 0.0,
+                 1.0,  1.0, 0.0,   1.0, 1.0,
+                -1.0,  1.0, 0.0,   0.0, 1.0
+            ]);
+            
+            const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+            
+            const vertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+            
+            const indexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+            
+            return { vertexBuffer, indexBuffer, indexCount: indices.length };
+        }
+
+        let geometry = createGeometry();
+        let currentProgram = null;
+
+        // Switch shader
+        function switchShader(index) {
+            currentShaderIndex = index;
+            const shader = shaders[index];
+            
+            // Update UI
+            document.getElementById('currentShader').textContent = shader.name;
+            document.getElementById('currentAPI').textContent = shader.api;
+            document.getElementById('currentLanguage').textContent = shader.language;
+            document.getElementById('currentVersion').textContent = shader.version;
+            
+            // Update shader code display
+            const codeDisplay = shader.vertex + '\\n\\n--- FRAGMENT ---\\n\\n' + shader.fragment;
+            document.getElementById('shaderCode').textContent = codeDisplay;
+            
+            // Update button states
+            document.querySelectorAll('.btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelectorAll('.btn')[index].classList.add('active');
+            
+            // Compile new shader
+            currentProgram = createProgram(shader.vertex, shader.fragment);
+            
+            if (currentProgram) {
+                gl.useProgram(currentProgram);
+                
+                // Set up attributes
+                const positionLoc = gl.getAttribLocation(currentProgram, 'aPos') || 
+                                  gl.getAttribLocation(currentProgram, 'position') ||
+                                  gl.getAttribLocation(currentProgram, 'inPosition');
+                const texCoordLoc = gl.getAttribLocation(currentProgram, 'aTexCoord') || 
+                                  gl.getAttribLocation(currentProgram, 'texCoord') ||
+                                  gl.getAttribLocation(currentProgram, 'inTexCoord');
+                
+                gl.bindBuffer(gl.ARRAY_BUFFER, geometry.vertexBuffer);
+                if (positionLoc >= 0) {
+                    gl.enableVertexAttribArray(positionLoc);
+                    gl.vertexAttribPointer(positionLoc, 3, gl.FLOAT, false, 20, 0);
+                }
+                if (texCoordLoc >= 0) {
+                    gl.enableVertexAttribArray(texCoordLoc);
+                    gl.vertexAttribPointer(texCoordLoc, 2, gl.FLOAT, false, 20, 12);
+                }
+            }
+        }
+
+        // Animation controls
+        function toggleAnimation() {
+            animationRunning = !animationRunning;
+        }
+
+        function resetView() {
+            mouseX = canvas.width / 2;
+            mouseY = canvas.height / 2;
+        }
+
+        // Render function
+        function render() {
+            if (!currentProgram) return;
+            
+            const currentTime = Date.now();
+            const deltaTime = currentTime - lastFrameTime;
+            const time = (currentTime - startTime) / 1000.0;
+            
+            // Update stats
+            frameCount++;
+            if (frameCount % 30 === 0) {
+                const fps = Math.round(1000 / deltaTime);
+                document.getElementById('fps').textContent = fps;
+                document.getElementById('frameTime').textContent = deltaTime.toFixed(2);
+            }
+            lastFrameTime = currentTime;
+            
+            // Clear
+            gl.clearColor(0.1, 0.1, 0.2, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            
+            // Set uniforms
+            const timeLoc = gl.getUniformLocation(currentProgram, 'uTime') || 
+                          gl.getUniformLocation(currentProgram, 'time');
+            const resolutionLoc = gl.getUniformLocation(currentProgram, 'uResolution') || 
+                                gl.getUniformLocation(currentProgram, 'resolution');
+            const mouseLoc = gl.getUniformLocation(currentProgram, 'uMouse') || 
+                            gl.getUniformLocation(currentProgram, 'mouse');
+            
+            if (timeLoc) gl.uniform1f(timeLoc, animationRunning ? time : 0);
+            if (resolutionLoc) gl.uniform2f(resolutionLoc, canvas.width, canvas.height);
+            if (mouseLoc) gl.uniform2f(mouseLoc, mouseX, mouseY);
+            
+            // Draw
+            gl.bindBuffer(gl.ARRAY_BUFFER, geometry.vertexBuffer);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, geometry.indexBuffer);
+            gl.drawElements(gl.TRIANGLES, geometry.indexCount, gl.UNSIGNED_SHORT, 0);
+            
+            document.getElementById('drawCalls').textContent = '1';
+            document.getElementById('mousePos').textContent = Math.round(mouseX) + ', ' + Math.round(mouseY);
+            
+            requestAnimationFrame(render);
+        }
+
+        // Mouse tracking
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = canvas.height - (e.clientY - rect.top);
+        });
+
+        // Resize canvas
+        function resizeCanvas() {
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Initialize
+        setTimeout(() => {
+            switchShader(0);
+            render();
+        }, 1000);
+    </script>
+</body>
+</html>

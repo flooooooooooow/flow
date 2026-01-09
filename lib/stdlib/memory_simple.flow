@@ -1,0 +1,308 @@
+# Memory Management Module
+# Provides low-level memory allocation, manipulation, and safety functions
+
+# Memory allocation functions
+export function malloc(size: i32) -> i32 {
+    # Allocate size bytes of uninitialized memory
+    # Returns pointer as integer (address)
+    # Returns 0 if allocation fails
+    # Implemented as intrinsic in MLIR generator
+    return 0
+}
+
+export function calloc(nmemb: i32, size: i32) -> i32 {
+    # Allocate nmemb elements of size bytes each, initialized to zero
+    # Returns pointer as integer (address)
+    # Returns 0 if allocation fails
+    let total_size: i32 = nmemb * size
+    let ptr: i32 = malloc(total_size)
+    if ptr != 0 {
+        memset(ptr, 0, total_size)
+    }
+    return ptr
+}
+
+export function realloc(ptr: i32, size: i32) -> i32 {
+    # Reallocate memory to new size
+    # Preserves existing data up to min(old_size, new_size)
+    # Returns 0 if allocation fails, original ptr remains valid
+    # Implemented as intrinsic in MLIR generator
+    return 0
+}
+
+export function free(ptr: i32) -> void {
+    # Deallocate memory previously allocated by malloc, calloc, or realloc
+    # Passing 0 pointer has no effect
+    # Implemented as intrinsic in MLIR generator
+}
+
+export function aligned_alloc(alignment: i32, size: i32) -> i32 {
+    # Allocate size bytes with specified alignment
+    # Alignment must be a power of 2 and size must be multiple of alignment
+    # Returns 0 if allocation fails
+    # Implemented as intrinsic in MLIR generator
+    return 0
+}
+
+# Memory manipulation functions
+export function memcpy(dest: i32, src: i32, n: i32) -> i32 {
+    # Copy n bytes from src to dest
+    # Regions may overlap - behavior is undefined
+    # Returns dest pointer
+    # Implemented as intrinsic in MLIR generator
+    return dest
+}
+
+export function memmove(dest: i32, src: i32, n: i32) -> i32 {
+    # Copy n bytes from src to dest
+    # Regions may overlap - copy is handled safely
+    # Returns dest pointer
+    # Implemented as intrinsic in MLIR generator
+    return dest
+}
+
+export function memset(dest: i32, c: i32, n: i32) -> i32 {
+    # Set n bytes starting at dest to value c (converted to unsigned char)
+    # Returns dest pointer
+    # Implemented as intrinsic in MLIR generator
+    return dest
+}
+
+export function memcmp(s1: i32, s2: i32, n: i32) -> i32 {
+    # Compare first n bytes of s1 and s2
+    # Returns < 0 if s1 < s2, 0 if equal, > 0 if s1 > s2
+    # Implemented as intrinsic in MLIR generator
+    return 0
+}
+
+# Memory alignment and layout functions
+export function alignof_i32() -> i32 {
+    # Return alignment requirement of i32 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 4
+}
+
+export function alignof_f32() -> i32 {
+    # Return alignment requirement of f32 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 4
+}
+
+export function alignof_i8() -> i32 {
+    # Return alignment requirement of i8 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 1
+}
+
+export function sizeof_i32() -> i32 {
+    # Return size of i32 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 4
+}
+
+export function sizeof_f32() -> i32 {
+    # Return size of f32 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 4
+}
+
+export function sizeof_i8() -> i32 {
+    # Return size of i8 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 1
+}
+
+export function offset_of_Point(field: str) -> i32 {
+    # Return byte offset of field within Point struct
+    # Compile-time error if field doesn't exist
+    # Implemented as intrinsic in MLIR generator
+    return 0
+}
+
+export function is_aligned(ptr: i32, alignment: i32) -> bool {
+    # Check if pointer is aligned to specified boundary
+    let addr: i32 = ptr
+    return (addr & (alignment - 1)) == 0
+}
+
+export function align_up(size: i32, alignment: i32) -> i32 {
+    # Round size up to nearest multiple of alignment
+    # Alignment must be power of 2
+    return (size + alignment - 1) & ~(alignment - 1)
+}
+
+export function align_down(size: i32, alignment: i32) -> i32 {
+    # Round size down to nearest multiple of alignment
+    # Alignment must be power of 2
+    return size & ~(alignment - 1)
+}
+
+# Memory safety and debugging functions
+export function memory_check(ptr: i32, size: i32) -> bool {
+    # Check if memory region is accessible for reading
+    # Returns true if readable, false otherwise
+    # Implemented as intrinsic in MLIR generator
+    return true
+}
+
+export function memory_check_write(ptr: i32, size: i32) -> bool {
+    # Check if memory region is accessible for writing
+    # Returns true if writable, false otherwise
+    # Implemented as intrinsic in MLIR generator
+    return true
+}
+
+export function memory_fill_pattern(ptr: i32, pattern: i32, count: i32) -> void {
+    # Fill memory with 32-bit pattern repeated
+    let i: i32 = 0
+    while i < count {
+        # Store pattern at memory location
+        # This would need proper memory store intrinsic
+        i = i + 1
+    }
+}
+
+export function memory_zero(ptr: i32, size: i32) -> void {
+    # Efficiently zero memory region
+    memset(ptr, 0, size)
+}
+
+export function memory_copy_nonoverlapping(dest: i32, src: i32, n: i32) -> void {
+    # Copy memory with guarantee of non-overlapping regions
+    # May use optimized copy operations
+    memcpy(dest, src, n)
+}
+
+export function memory_copy_overlapping(dest: i32, src: i32, n: i32) -> void {
+    # Copy memory with handling of overlapping regions
+    memmove(dest, src, n)
+}
+
+# Stack allocation functions
+export function alloca(size: i32) -> i32 {
+    # Allocate memory on stack (automatically freed when function returns)
+    # Returns pointer as integer (address)
+    # Implemented as intrinsic in MLIR generator
+    return 0
+}
+
+export function stack_array_i32(count: i32) -> i32 {
+    # Allocate array of i32 on stack
+    # Returns pointer as integer (address)
+    let size: i32 = count * sizeof_i32()
+    let ptr: i32 = alloca(size)
+    return ptr
+}
+
+export function stack_array_f32(count: i32) -> i32 {
+    # Allocate array of f32 on stack
+    # Returns pointer as integer (address)
+    let size: i32 = count * sizeof_f32()
+    let ptr: i32 = alloca(size)
+    return ptr
+}
+
+# Memory pool management
+export struct MemoryPool {
+    buffer: i32,
+    size: i32,
+    offset: i32,
+    capacity: i32
+}
+
+export function memory_pool_create(size: i32) -> MemoryPool {
+    # Create a new memory pool
+    let buffer: i32 = malloc(size)
+    return MemoryPool {
+        buffer: buffer,
+        size: size,
+        offset: 0,
+        capacity: size
+    }
+}
+
+export function memory_pool_alloc(pool: MemoryPool, size: i32, alignment: i32) -> i32 {
+    # Allocate from memory pool with alignment
+    let aligned_offset: i32 = align_up(pool.offset, alignment)
+    if aligned_offset + size > pool.capacity {
+        return 0  # Out of memory
+    }
+    
+    pool.offset = aligned_offset + size
+    return pool.buffer  # Simplified - just return buffer for now
+}
+
+export function memory_pool_reset(pool: MemoryPool) -> void {
+    # Reset pool to reuse all memory
+    pool.offset = 0
+}
+
+export function memory_pool_destroy(pool: MemoryPool) -> void {
+    # Free memory pool buffer
+    free(pool.buffer)
+    pool.buffer = 0
+    pool.size = 0
+    pool.offset = 0
+    pool.capacity = 0
+}
+
+# Memory debugging utilities
+export function memory_dump(ptr: i32, size: i32, bytes_per_line: i32) -> void {
+    # Dump memory contents in hex format for debugging
+    let i: i32 = 0
+    
+    while i < size {
+        # Print address
+        print("0x")
+        print(ptr + i)
+        print(": ")
+        
+        # Print hex bytes (simplified)
+        let j: i32 = 0
+        while j < bytes_per_line and i + j < size {
+            print("00 ")
+            j = j + 1
+        }
+        
+        print(" |")
+        j = 0
+        while j < bytes_per_line and i + j < size {
+            print(".")
+            j = j + 1
+        }
+        print("|\n")
+        
+        i = i + bytes_per_line
+    }
+}
+
+export function memory_validate(ptr: i32, size: i32) -> bool {
+    # Validate memory region for common corruption patterns
+    if ptr == 0 or size == 0 {
+        return false
+    }
+    
+    # Check for readable memory
+    if not memory_check(ptr, size) {
+        return false
+    }
+    
+    # Additional validation could include:
+    # - Check for known corruption patterns
+    # - Validate alignment
+    # - Check guard bytes
+    
+    return true
+}
+
+# Helper functions
+export function format_hex(value: i32) -> str {
+    # Format integer as hexadecimal string
+    # Simplified implementation
+    return "0x0"
+}
+
+export function format_hex_ptr(ptr: i32) -> str {
+    # Format pointer as hexadecimal string
+    return format_hex(ptr)
+}

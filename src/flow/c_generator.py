@@ -25,24 +25,34 @@ from dataclasses import dataclass
 from typing import List
 
 from .parser import (
+    ArrayAccess,
+    ArrayLiteral,
     Assignment,
     BinaryOperation,
     Block,
+    CapabilityDecl,
+    CapabilityMethod,
     ConstDecl,
+    EffectCall,
+    EffectDecl,
+    EffectOperation,
     Expression,
     FieldAccess,
     FunctionCall,
     FunctionDecl,
+    HandleStatement,
     IfStatement,
     Literal,
+    MatchStatement,
     ReturnStatement,
     Statement,
-    StructLiteral,
     StructDecl,
+    StructLiteral,
     Type,
     UnaryOperation,
     VarDecl,
     Variable,
+    VectorLiteral,
     WhileStatement,
     ForStatement,
 )
@@ -53,36 +63,65 @@ class CGenerator:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
         self._var_types = {}  # name -> Type
+        
+        # Effect system tracking
+        self._effects = {}  # effect_name -> EffectDecl
+        self._capabilities = {}  # capability_name -> CapabilityDecl
+        self._effect_handler_stack = [{}]  # Stack of {effect_name -> capability_name}
 
     def _i(self) -> str:
         return "    " * self._indent
 
-    def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl]) -> str:
+    def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl], 
+                                   structs: List[StructDecl] = None, 
+                                   effects: List[EffectDecl] = None,
+                                   capabilities: List[CapabilityDecl] = None) -> str:
         lines: List[str] = []
         lines.append("#include <stdint.h>")
         lines.append("#include <stdio.h>")
+        lines.append("#include <stdlib.h>")  # For malloc/free
         
-        # Check if we need math.h for math functions
-        math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow'}
-        needs_math = False
-        for fn in functions:
-            if fn.name in math_functions:
-                needs_math = True
-                break
-        
-        if needs_math:
-            lines.append("#include <math.h>")
+        # Always include math.h - many programs use math functions
+        # The linker will only include what's actually used
+        lines.append("#include <math.h>")
         
         lines.append("")
+        
+        # Register effects and capabilities for dispatch
+        if effects:
+            for effect in effects:
+                self._effects[effect.name] = effect
+        
+        if capabilities:
+            for capability in capabilities:
+                self._capabilities[capability.name] = capability
+        
+        # Generate effect handler type definitions and dispatch functions
+        if effects:
+            lines.extend(self._gen_effect_runtime_types(effects))
 
         # Emit constant declarations
         for const in constants:
             lines.append(f"static const {self._c_type(const.type)} {const.name} = {self._gen_expr(const.value)};")
+            # Track constant types for print formatting
+            self._var_types[const.name] = const.type
         lines.append("")
 
-        # Collect struct types from functions
-        for fn in functions:
-            self._collect_structs_from_function(fn)
+        # Collect struct types from functions and struct declarations
+        all_declarations = []
+        all_declarations.extend(functions)
+        if structs:
+            all_declarations.extend(structs)
+        
+        for decl in all_declarations:
+            if isinstance(decl, FunctionDecl):
+                self._collect_structs_from_function(decl)
+            elif isinstance(decl, StructDecl):
+                # Add struct declaration to the structs dictionary
+                if decl.name not in self._structs:
+                    self._structs[decl.name] = {}
+                for field in decl.fields:
+                    self._structs[decl.name][field.name] = field.type
 
         # Emit struct definitions in dependency order
         emitted = set()
@@ -105,13 +144,37 @@ class CGenerator:
         for struct_name in sorted(self._structs.keys()):
             emit_struct(struct_name)
 
+        # Forward declarations for capability methods (mangled names: CapabilityName_methodName)
+        for cap_name, cap in self._capabilities.items():
+            for method in cap.methods:
+                mangled_name = f"{cap_name}_{method.name}"
+                ret = self._c_type(method.return_type)
+                params = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in method.parameters])
+                lines.append(f"{ret} {mangled_name}({params});")
+        if self._capabilities:
+            lines.append("")
+        
+        # Generate effect vtables (after forward declarations so function pointers are valid)
+        if effects:
+            lines.extend(self._gen_effect_vtables(effects, capabilities or []))
+
         # Forward declarations
         for fn in functions:
             # Skip math functions that are provided by the standard library
-            math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow'}
+            math_functions = {'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+                             'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+                             'sqrt', 'cbrt', 'pow', 'exp', 'exp2', 'log', 'log2', 'log10',
+                             'fabs', 'abs', 'floor', 'ceil', 'round', 'fmod',
+                             'fmin', 'fmax', 'hypot'}
             if fn.name not in math_functions:
                 lines.append(self._c_function_decl(fn) + ";")
         lines.append("")
+
+        # Generate capability method definitions
+        for cap_name, cap in self._capabilities.items():
+            for method in cap.methods:
+                lines.extend(self._gen_capability_method(cap_name, method))
+                lines.append("")
 
         # Definitions
         for fn in functions:
@@ -119,6 +182,108 @@ class CGenerator:
             lines.append("")
 
         return "\n".join(lines).rstrip() + "\n"
+    
+    def _gen_capability_method(self, capability_name: str, method: CapabilityMethod) -> List[str]:
+        """Generate a capability method as a standalone C function with mangled name."""
+        lines: List[str] = []
+        mangled_name = f"{capability_name}_{method.name}"
+        ret = self._c_type(method.return_type)
+        params = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in method.parameters])
+        
+        lines.append(f"{ret} {mangled_name}({params}) {{")
+        self._indent += 1
+        lines.extend(self._gen_block(method.body))
+        self._indent -= 1
+        lines.append("}")
+        return lines
+    
+    def _gen_effect_runtime_types(self, effects: List[EffectDecl]) -> List[str]:
+        """Generate effect handler type definitions and dispatch functions."""
+        lines: List[str] = []
+        
+        lines.append("/* ===== Effect Handler Runtime ===== */")
+        lines.append("")
+        
+        # For each effect, generate a struct holding function pointers for its operations
+        for effect in effects:
+            effect_name = effect.name
+            lines.append(f"/* Effect handler vtable for {effect_name} */")
+            lines.append(f"typedef struct {{")
+            for op in effect.operations:
+                ret_type = self._c_type(op.return_type)
+                param_types = ", ".join([self._c_type(p.type) for p in op.parameters])
+                if not param_types:
+                    param_types = "void"
+                lines.append(f"    {ret_type} (*{op.name})({param_types});")
+            lines.append(f"}} {effect_name}_Handler;")
+            lines.append("")
+            
+            # Global handler pointer (thread-local for multi-threaded code)
+            lines.append(f"static {effect_name}_Handler* _current_{effect_name}_handler = NULL;")
+            lines.append("")
+            
+            # Generate dispatch functions for each operation
+            for op in effect.operations:
+                ret_type = self._c_type(op.return_type)
+                params_with_names = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in op.parameters])
+                param_names = ", ".join([p.name for p in op.parameters])
+                
+                lines.append(f"{ret_type} {effect_name}_{op.name}({params_with_names}) {{")
+                if ret_type == "void":
+                    lines.append(f"    if (_current_{effect_name}_handler && _current_{effect_name}_handler->{op.name}) {{")
+                    if param_names:
+                        lines.append(f"        _current_{effect_name}_handler->{op.name}({param_names});")
+                    else:
+                        lines.append(f"        _current_{effect_name}_handler->{op.name}();")
+                    lines.append(f"    }}")
+                else:
+                    lines.append(f"    if (_current_{effect_name}_handler && _current_{effect_name}_handler->{op.name}) {{")
+                    if param_names:
+                        lines.append(f"        return _current_{effect_name}_handler->{op.name}({param_names});")
+                    else:
+                        lines.append(f"        return _current_{effect_name}_handler->{op.name}();")
+                    lines.append(f"    }}")
+                    # Return default value if no handler
+                    if "int" in ret_type or ret_type in ["int32_t", "int64_t", "int8_t", "int16_t"]:
+                        lines.append(f"    return 0;")
+                    elif ret_type in ["float", "double"]:
+                        lines.append(f"    return 0.0;")
+                    elif ret_type == "char*":
+                        lines.append(f"    return NULL;")
+                    else:
+                        lines.append(f"    return ({ret_type}){{0}};")
+                lines.append("}")
+                lines.append("")
+        
+        return lines
+    
+    def _gen_effect_vtables(self, effects: List[EffectDecl], capabilities: List[CapabilityDecl]) -> List[str]:
+        """Generate handler vtable instances (must come after capability method forward declarations)."""
+        lines: List[str] = []
+        
+        # Generate handler vtable instances for each capability
+        for cap in capabilities:
+            cap_name = cap.name
+            for effect_name in cap.effects:
+                if effect_name in self._effects:
+                    effect = self._effects[effect_name]
+                    lines.append(f"/* {cap_name} handler for {effect_name} */")
+                    lines.append(f"static {effect_name}_Handler _{cap_name}_{effect_name}_vtable = {{")
+                    for op in effect.operations:
+                        # Check if capability has this method
+                        has_method = any(m.name == op.name for m in cap.methods)
+                        if has_method:
+                            lines.append(f"    .{op.name} = {cap_name}_{op.name},")
+                        else:
+                            lines.append(f"    .{op.name} = NULL,")
+                    lines.append("};")
+                    lines.append("")
+        
+        if capabilities:
+            lines.append("/* ===== End Effect Handler Runtime ===== */")
+            lines.append("")
+        
+        return lines
 
     def _collect_structs_from_function(self, fn: FunctionDecl) -> None:
         # Collect from parameter types
@@ -170,6 +335,14 @@ class CGenerator:
         elif isinstance(stmt, WhileStatement):
             self._collect_structs_from_expr(stmt.condition)
             self._collect_structs_from_block(stmt.body)
+        elif isinstance(stmt, ForStatement):
+            self._collect_structs_from_expr(stmt.range_start)
+            self._collect_structs_from_expr(stmt.range_end)
+            if stmt.step:
+                self._collect_structs_from_expr(stmt.step)
+            self._collect_structs_from_block(stmt.body)
+        elif isinstance(stmt, HandleStatement):
+            self._collect_structs_from_block(stmt.body)
         else:
             # Expression statement
             self._collect_structs_from_expr(stmt)
@@ -196,7 +369,7 @@ class CGenerator:
 
     def _infer_expr_type(self, expr: Expression) -> Type:
         if isinstance(expr, Literal):
-            return Type("i32")  # Simplified: all literals are i32
+            return expr.type  # Return the actual type of the literal
         elif isinstance(expr, Variable):
             # Look up variable type from our tracking
             if expr.name in self._var_types:
@@ -209,7 +382,7 @@ class CGenerator:
 
     def _is_struct_type(self, t: Type) -> bool:
         return t.name not in ["i32", "bool", "void", "i8", "i16", "i64", "i128", 
-                             "u8", "u16", "u32", "u64", "u128", "f32", "f64"]
+                             "u8", "u16", "u32", "u64", "u128", "f32", "f64", "string"]
 
     def _c_type(self, t: Type) -> str:
         if t.name == "i32":
@@ -236,6 +409,19 @@ class CGenerator:
             return "int32_t"  # keep simple; 0/1
         if t.name == "void":
             return "void"
+        if t.name == "string":
+            return "char*"  # C strings are char pointers
+        # Array types: array_i32, array_f32, etc.
+        if t.name.startswith("array_"):
+            if t.element_type:
+                elem_c_type = self._c_type(t.element_type)
+                if t.size:
+                    return f"{elem_c_type}*"  # Fixed-size array as pointer
+                return f"{elem_c_type}*"  # Dynamic array as pointer
+            # Parse element type from name
+            elem_type_name = t.name.replace("array_", "")
+            elem_type = Type(elem_type_name)
+            return f"{self._c_type(elem_type)}*"
         # Struct types
         return t.name
 
@@ -272,6 +458,10 @@ class CGenerator:
             return [f"{self._i()}{c_t} {st.name} = {self._gen_expr(st.initializer)};"]
 
         if isinstance(st, Assignment):
+            # Handle array element assignment: arr[i] = value
+            if st.target_expr is not None:
+                target_expr = self._gen_expr(st.target_expr)
+                return [f"{self._i()}{target_expr} = {self._gen_expr(st.value)};"]
             return [f"{self._i()}{st.target} = {self._gen_expr(st.value)};"]
 
         if isinstance(st, ReturnStatement):
@@ -284,9 +474,15 @@ class CGenerator:
 
         if isinstance(st, WhileStatement):
             return self._gen_while(st)
+        
+        if isinstance(st, ForStatement):
+            return self._gen_for(st)
+        
+        if isinstance(st, HandleStatement):
+            return self._gen_handle(st)
 
         # Expression statement
-        if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall)):
+        if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall)):
             return [f"{self._i()}{self._gen_expr(st)};"]
 
         raise NotImplementedError(f"Unsupported statement: {type(st)}")
@@ -323,11 +519,69 @@ class CGenerator:
         self._indent -= 1
         lines.append(f"{self._i()}}}")
         return lines
+    
+    def _gen_for(self, st: ForStatement) -> List[str]:
+        """Generate C for loop from FLOW for statement."""
+        lines: List[str] = []
+        var = st.variable
+        start = self._gen_expr(st.range_start)
+        end = self._gen_expr(st.range_end)
+        step = self._gen_expr(st.step) if st.step else "1"
+        
+        # Track the loop variable type
+        self._var_types[var] = Type("i32")
+        
+        # Generate standard C for loop
+        lines.append(f"{self._i()}for (int32_t {var} = {start}; {var} < {end}; {var} += {step}) {{")
+        self._indent += 1
+        lines.extend(self._gen_block(st.body))
+        self._indent -= 1
+        lines.append(f"{self._i()}}}")
+        return lines
+    
+    def _gen_handle(self, st: HandleStatement) -> List[str]:
+        """Generate code for handle statement by setting up effect dispatch context at runtime."""
+        lines: List[str] = []
+        effect_name = st.effect
+        handler_name = st.handler
+        
+        # Push new effect handler context (for compile-time tracking)
+        prev_handlers = self._effect_handler_stack[-1].copy()
+        prev_handlers[effect_name] = handler_name
+        self._effect_handler_stack.append(prev_handlers)
+        
+        try:
+            # Generate runtime handler setup
+            lines.append(f"{self._i()}/* handle {effect_name} with {handler_name} */")
+            lines.append(f"{self._i()}{{")
+            self._indent += 1
+            
+            # Save previous handler and set new one
+            lines.append(f"{self._i()}{effect_name}_Handler* _prev_{effect_name}_handler = _current_{effect_name}_handler;")
+            lines.append(f"{self._i()}_current_{effect_name}_handler = &_{handler_name}_{effect_name}_vtable;")
+            lines.append("")
+            
+            # Generate body
+            lines.extend(self._gen_block(st.body))
+            
+            # Restore previous handler
+            lines.append("")
+            lines.append(f"{self._i()}_current_{effect_name}_handler = _prev_{effect_name}_handler;")
+            
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+        finally:
+            # Pop handler context
+            self._effect_handler_stack.pop()
+        
+        return lines
 
     def _gen_expr(self, e: Expression) -> str:
         if isinstance(e, Literal):
             if e.type.name == "bool":
                 return "1" if e.value == "true" else "0"
+            elif e.type.name == "string":
+                return e.value  # String literals already have quotes
             return e.value
 
         if isinstance(e, Variable):
@@ -352,6 +606,70 @@ class CGenerator:
             left_expr = self._gen_expr(e.left)
             right_expr = self._gen_expr(e.right)
             
+            # Special handling for string concatenation
+            if e.operator == '+':
+                # Check if this is string concatenation
+                left_is_string = False
+                right_is_string = False
+                
+                # Check left operand
+                if isinstance(e.left, Literal) and e.left.type.name == 'string':
+                    left_is_string = True
+                elif isinstance(e.left, Variable) and e.left.name in self._var_types and self._var_types[e.left.name].name == 'string':
+                    left_is_string = True
+                
+                # Check right operand
+                if isinstance(e.right, Literal) and e.right.type.name == 'string':
+                    right_is_string = True
+                elif isinstance(e.right, Variable) and e.right.name in self._var_types and self._var_types[e.right.name].name == 'string':
+                    right_is_string = True
+                
+                # If either operand is a string, this is string concatenation
+                if left_is_string or right_is_string:
+                    # Generate separate printf calls for each part
+                    parts = []
+                    
+                    # Handle left part
+                    if isinstance(e.left, Literal) and e.left.type.name == 'string':
+                        parts.append(f'printf({left_expr})')
+                    elif left_is_string:
+                        parts.append(f'printf("%s", {left_expr})')
+                    else:
+                        # Non-string left part, need format specifier
+                        left_type = self._infer_expr_type(e.left)
+                        if left_type.name in ['i32', 'i64']:
+                            parts.append(f'printf("%d", {left_expr})')
+                        elif left_type.name.startswith('u'):
+                            parts.append(f'printf("%u", {left_expr})')
+                        elif left_type.name in ['f32', 'f64']:
+                            parts.append(f'printf("%f", {left_expr})')
+                        else:
+                            parts.append(f'printf("%g", {left_expr})')
+                    
+                    # Handle right part
+                    if isinstance(e.right, Literal) and e.right.type.name == 'string':
+                        parts.append(f'printf({right_expr})')
+                    elif right_is_string:
+                        parts.append(f'printf("%s", {right_expr})')
+                    else:
+                        # Non-string right part, need format specifier
+                        right_type = self._infer_expr_type(e.right)
+                        if right_type.name in ['i32', 'i64']:
+                            parts.append(f'printf("%d", {right_expr})')
+                        elif right_type.name.startswith('u'):
+                            parts.append(f'printf("%u", {right_expr})')
+                        elif right_type.name in ['f32', 'f64']:
+                            parts.append(f'printf("%f", {right_expr})')
+                        else:
+                            parts.append(f'printf("%g", {right_expr})')
+                    
+                    # Add newline to the last part
+                    if parts:
+                        # Add a newline after the concatenated output
+                        parts.append('printf("\\n")')
+                    
+                    return '; '.join(parts)
+            
             # Check if we need to remove parentheses around operands
             # This prevents excessive nesting like (((a == 1) or (b == 2)))
             def remove_outer_parens(expr):
@@ -367,6 +685,10 @@ class CGenerator:
             if e.operator in ['and', 'or']:
                 left_expr = remove_outer_parens(left_expr)
                 right_expr = remove_outer_parens(right_expr)
+            
+            # Comparison operators don't need outer parens (they have low precedence)
+            if e.operator in ['==', '!=', '<', '<=', '>', '>=']:
+                return f"{left_expr} {e.operator} {right_expr}"
                 
             return f"({left_expr} {e.operator} {right_expr})"
 
@@ -375,8 +697,12 @@ class CGenerator:
             if e.name == "print":
                 if len(e.arguments) == 1:
                     arg = e.arguments[0]
+                    # Check if it's a binary operation (string concatenation)
+                    if isinstance(arg, BinaryOperation) and arg.operator == '+':
+                        # Generate the concatenated expression directly
+                        return self._gen_expr(arg)
                     # Check if it's a literal to determine format
-                    if isinstance(arg, Literal):
+                    elif isinstance(arg, Literal):
                         if arg.type.name == 'string':
                             # String literal - use %s
                             return f'printf({self._gen_expr(arg)})'
@@ -387,11 +713,39 @@ class CGenerator:
                             # Integer literal - use %d or appropriate format
                             if arg.type.name.startswith('u'):
                                 return f'printf("%u", {self._gen_expr(arg)})'
+                            elif arg.type.name in ['i64']:
+                                return f'printf("%lld", {self._gen_expr(arg)})'
+                            elif arg.type.name in ['u64']:
+                                return f'printf("%llu", {self._gen_expr(arg)})'
                             else:
                                 return f'printf("%d", {self._gen_expr(arg)})'
+                        elif arg.type.name == 'bool':
+                            # Boolean literal - use %d
+                            return f'printf("%d", {self._gen_expr(arg)})'
                         else:
                             # Default to string representation
                             return f'printf("%g", {self._gen_expr(arg)})'
+                    elif isinstance(arg, Variable):
+                        # For variables, check if we know their type
+                        if arg.name in self._var_types:
+                            var_type = self._var_types[arg.name]
+                            if var_type.name == 'string':
+                                return f'printf("%s", {self._gen_expr(arg)})'
+                            elif var_type.name in ['f32', 'f64']:
+                                return f'printf("%f", {self._gen_expr(arg)})'
+                            elif var_type.name in ['i32', 'i64', 'u32', 'u64']:
+                                if var_type.name.startswith('u'):
+                                    return f'printf("%u", {self._gen_expr(arg)})'
+                                elif var_type.name in ['i64']:
+                                    return f'printf("%lld", {self._gen_expr(arg)})'
+                                elif var_type.name in ['u64']:
+                                    return f'printf("%llu", {self._gen_expr(arg)})'
+                                else:
+                                    return f'printf("%d", {self._gen_expr(arg)})'
+                            elif var_type.name == 'bool':
+                                return f'printf("%d", {self._gen_expr(arg)})'
+                        # Fall back to default
+                        return f'printf("%g", {self._gen_expr(arg)})'
                     else:
                         # For expressions, default to string representation
                         return f'printf("%g", {self._gen_expr(arg)})'
@@ -403,16 +757,52 @@ class CGenerator:
                     return ' '.join(args)
             args = ", ".join(self._gen_expr(a) for a in e.arguments)
             return f"{e.name}({args})"
+        
+        if isinstance(e, EffectCall):
+            return self._gen_effect_call(e)
+        
+        if isinstance(e, ArrayAccess):
+            return self._gen_array_access(e)
+        
+        if isinstance(e, ArrayLiteral):
+            return self._gen_array_literal(e)
 
         raise NotImplementedError(f"Unsupported expression: {type(e)}")
+    
+    def _gen_effect_call(self, e: EffectCall) -> str:
+        """Generate code for an effect call using runtime dispatch."""
+        # Always use the dispatch function which will use the runtime handler
+        # The dispatch function is named: EffectName_operationName
+        args = ", ".join(self._gen_expr(a) for a in e.arguments)
+        return f"{e.effect_name}_{e.operation}({args})"
+    
+    def _gen_array_access(self, e: ArrayAccess) -> str:
+        """Generate C array index access: arr[index]"""
+        array_expr = self._gen_expr(e.array)
+        index_expr = self._gen_expr(e.index)
+        return f"{array_expr}[{index_expr}]"
+    
+    def _gen_array_literal(self, e: ArrayLiteral) -> str:
+        """Generate C array literal initializer."""
+        elements = ", ".join(self._gen_expr(elem) for elem in e.elements)
+        return f"{{ {elements} }}"
 
 
 def flow_to_c(declarations: List[Any]) -> str:
     """Convert FLOW declarations to C code"""
-    generator = CGenerator()
-    
-    # Separate constants from functions
-    constants = [d for d in declarations if isinstance(d, ConstDecl)]
-    functions = [d for d in declarations if isinstance(d, FunctionDecl)]
-    
-    return generator.generate_translation_unit(constants, functions)
+    try:
+        generator = CGenerator()
+        
+        # Separate declarations by type
+        constants = [d for d in declarations if isinstance(d, ConstDecl)]
+        functions = [d for d in declarations if isinstance(d, FunctionDecl)]
+        structs = [d for d in declarations if isinstance(d, StructDecl)]
+        effects = [d for d in declarations if isinstance(d, EffectDecl)]
+        capabilities = [d for d in declarations if isinstance(d, CapabilityDecl)]
+        
+        return generator.generate_translation_unit(constants, functions, structs, effects, capabilities)
+    except Exception as e:
+        print(f"C generation error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise

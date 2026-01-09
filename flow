@@ -42,6 +42,7 @@ show_help() {
     echo "  compile <program>  Compile program only"
     echo "  mlir <program>     Generate MLIR only"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
+    echo "  fmt <files...>    Format FLOW source files"
     echo "  test              Run all FLOW tests"
     echo "  test-python       Run Python unit tests"
     echo "  test-all          Run FLOW and Python tests"
@@ -326,6 +327,17 @@ case "${1:-help}" in
     "transpile")
         shift
         run_transpiler "$@"
+        ;;
+    "fmt")
+        shift
+        check_deps
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.formatter import format_file
+for f in sys.argv[1:]:
+    format_file(f)
+" "$@"
         ;;
     "test")
         run_tests

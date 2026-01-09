@@ -1,0 +1,22 @@
+import "time.flow"
+import "io.flow"
+
+function simple_bench() -> i32 {
+    print("=== Simple FLOW Benchmark ===")
+    
+    let start: f64 = get_time()
+    
+    # Simple computation
+    let sum: i32 = 0
+    for i in 0..1000000 {
+        sum = sum + i
+    }
+    
+    let end: f64 = get_time()
+    
+    print_benchmark("Simple Loop", end - start)
+    print("Result:")
+    print(sum)
+    
+    return 0
+}

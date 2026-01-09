@@ -1,0 +1,60 @@
+# FLOW Shader Demo
+# Demonstrates shader language support in FLOW
+
+struct ShaderInfo {
+    name: string,
+    language: string,
+    api: string
+}
+
+function create_shader_info(name: string, language: string, api: string) -> ShaderInfo {
+    return ShaderInfo {
+        name: name,
+        language: language,
+        api: api
+    }
+}
+
+function get_shader_info(index: i32) -> ShaderInfo {
+    if index == 0 {
+        return create_shader_info("Basic Shader", "GLSL", "OpenGL")
+    }
+    if index == 1 {
+        return create_shader_info("Advanced Shader", "HLSL", "DirectX")
+    }
+    if index == 2 {
+        return create_shader_info("Metal Shader", "MSL", "Metal")
+    }
+    return create_shader_info("Vulkan Shader", "SPIR-V", "Vulkan")
+}
+
+function print_shader_info(shader: ShaderInfo) -> void {
+    print("Shader: ")
+    print(shader.name)
+    print("Language: ")
+    print(shader.language)
+    print("API: ")
+    print(shader.api)
+}
+
+function main() -> i32 {
+    print("🎨 FLOW Shader Demo")
+    print("==================")
+    
+    let i: i32 = 0
+    while i < 4 {
+        let shader: ShaderInfo = get_shader_info(i)
+        print_shader_info(shader)
+        print("")
+        i = i + 1
+    }
+    
+    print("✅ Shader demo complete!")
+    print("Supported shader languages:")
+    print("  • GLSL (OpenGL)")
+    print("  • HLSL (DirectX)")
+    print("  • MSL (Metal)")
+    print("  • SPIR-V (Vulkan)")
+    
+    return 0
+}

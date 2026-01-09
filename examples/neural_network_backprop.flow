@@ -1,0 +1,250 @@
+# Neural Network with Efficient Reverse-Mode Backpropagation
+#
+# This version computes ALL gradients in ONE backward pass,
+# instead of 9 forward passes like the forward-mode version.
+#
+# Architecture: 2 inputs → 2 hidden (sigmoid) → 1 output (sigmoid)
+# Task: Learn XOR
+
+import "autodiff_reverse.flow"
+
+# =============================================================================
+# Network Structure
+# =============================================================================
+
+struct Net {
+    # Input to hidden (2x2)
+    w00: f32, w01: f32,
+    w10: f32, w11: f32,
+    # Hidden biases
+    b0: f32, b1: f32,
+    # Hidden to output (2)
+    v0: f32, v1: f32,
+    # Output bias
+    c: f32
+}
+
+struct Grads {
+    dw00: f32, dw01: f32,
+    dw10: f32, dw11: f32,
+    db0: f32, db1: f32,
+    dv0: f32, dv1: f32,
+    dc: f32
+}
+
+# =============================================================================
+# Forward pass with cached intermediate values for backprop
+# =============================================================================
+
+struct ForwardCache {
+    # Inputs
+    x0: f32, x1: f32,
+    # Hidden pre-activation
+    z0: f32, z1: f32,
+    # Hidden activation
+    h0: f32, h1: f32,
+    # Output pre-activation
+    z_out: f32,
+    # Output
+    y_hat: f32,
+    # Target
+    target: f32,
+    # Loss
+    loss: f32
+}
+
+function forward(net: Net, x0: f32, x1: f32, target: f32) -> ForwardCache {
+    # Hidden layer pre-activation
+    let z0: f32 = x0 * net.w00 + x1 * net.w01 + net.b0
+    let z1: f32 = x0 * net.w10 + x1 * net.w11 + net.b1
+    
+    # Hidden activations (sigmoid)
+    let sig0: UnaryResult = op_sigmoid(z0)
+    let sig1: UnaryResult = op_sigmoid(z1)
+    let h0: f32 = sig0.result
+    let h1: f32 = sig1.result
+    
+    # Output pre-activation
+    let z_out: f32 = h0 * net.v0 + h1 * net.v1 + net.c
+    
+    # Output activation
+    let sig_out: UnaryResult = op_sigmoid(z_out)
+    let y_hat: f32 = sig_out.result
+    
+    # MSE Loss: (y_hat - target)²
+    let diff: f32 = y_hat - target
+    let loss: f32 = diff * diff
+    
+    return ForwardCache {
+        x0: x0, x1: x1,
+        z0: z0, z1: z1,
+        h0: h0, h1: h1,
+        z_out: z_out,
+        y_hat: y_hat,
+        target: target,
+        loss: loss
+    }
+}
+
+# =============================================================================
+# Backward pass - computes all gradients in one pass!
+# =============================================================================
+
+function backward(net: Net, cache: ForwardCache) -> Grads {
+    # ===== Output layer =====
+    # d_loss/d_y_hat = 2(y_hat - target)
+    let d_loss: f32 = 2.0 * (cache.y_hat - cache.target)
+    
+    # d_loss/d_z_out = d_loss/d_y_hat * d_sigmoid/d_z_out
+    # sigmoid derivative: σ(z)(1-σ(z)) = y_hat * (1 - y_hat)
+    let d_z_out: f32 = d_loss * cache.y_hat * (1.0 - cache.y_hat)
+    
+    # d_loss/d_v0 = d_loss/d_z_out * d_z_out/d_v0 = d_z_out * h0
+    let dv0: f32 = d_z_out * cache.h0
+    let dv1: f32 = d_z_out * cache.h1
+    let dc: f32 = d_z_out * 1.0
+    
+    # d_loss/d_h0 = d_z_out * v0, d_loss/d_h1 = d_z_out * v1
+    let d_h0: f32 = d_z_out * net.v0
+    let d_h1: f32 = d_z_out * net.v1
+    
+    # ===== Hidden layer =====
+    # d_loss/d_z0 = d_loss/d_h0 * d_sigmoid/d_z0 = d_h0 * h0 * (1 - h0)
+    let d_z0: f32 = d_h0 * cache.h0 * (1.0 - cache.h0)
+    let d_z1: f32 = d_h1 * cache.h1 * (1.0 - cache.h1)
+    
+    # d_loss/d_w00 = d_z0 * x0
+    let dw00: f32 = d_z0 * cache.x0
+    let dw01: f32 = d_z0 * cache.x1
+    let db0: f32 = d_z0 * 1.0
+    
+    let dw10: f32 = d_z1 * cache.x0
+    let dw11: f32 = d_z1 * cache.x1
+    let db1: f32 = d_z1 * 1.0
+    
+    return Grads {
+        dw00: dw00, dw01: dw01,
+        dw10: dw10, dw11: dw11,
+        db0: db0, db1: db1,
+        dv0: dv0, dv1: dv1,
+        dc: dc
+    }
+}
+
+# =============================================================================
+# Accumulate gradients over all XOR samples
+# =============================================================================
+
+function compute_batch_grads(net: Net) -> Grads {
+    # Forward and backward for each sample
+    let c1: ForwardCache = forward(net, 0.0, 0.0, 0.0)
+    let g1: Grads = backward(net, c1)
+    
+    let c2: ForwardCache = forward(net, 0.0, 1.0, 1.0)
+    let g2: Grads = backward(net, c2)
+    
+    let c3: ForwardCache = forward(net, 1.0, 0.0, 1.0)
+    let g3: Grads = backward(net, c3)
+    
+    let c4: ForwardCache = forward(net, 1.0, 1.0, 0.0)
+    let g4: Grads = backward(net, c4)
+    
+    # Sum gradients
+    return Grads {
+        dw00: g1.dw00 + g2.dw00 + g3.dw00 + g4.dw00,
+        dw01: g1.dw01 + g2.dw01 + g3.dw01 + g4.dw01,
+        dw10: g1.dw10 + g2.dw10 + g3.dw10 + g4.dw10,
+        dw11: g1.dw11 + g2.dw11 + g3.dw11 + g4.dw11,
+        db0: g1.db0 + g2.db0 + g3.db0 + g4.db0,
+        db1: g1.db1 + g2.db1 + g3.db1 + g4.db1,
+        dv0: g1.dv0 + g2.dv0 + g3.dv0 + g4.dv0,
+        dv1: g1.dv1 + g2.dv1 + g3.dv1 + g4.dv1,
+        dc: g1.dc + g2.dc + g3.dc + g4.dc
+    }
+}
+
+# =============================================================================
+# Training step
+# =============================================================================
+
+function train_step(net: Net, lr: f32) -> Net {
+    let grads: Grads = compute_batch_grads(net)
+    
+    return Net {
+        w00: net.w00 - lr * grads.dw00,
+        w01: net.w01 - lr * grads.dw01,
+        w10: net.w10 - lr * grads.dw10,
+        w11: net.w11 - lr * grads.dw11,
+        b0: net.b0 - lr * grads.db0,
+        b1: net.b1 - lr * grads.db1,
+        v0: net.v0 - lr * grads.dv0,
+        v1: net.v1 - lr * grads.dv1,
+        c: net.c - lr * grads.dc
+    }
+}
+
+# =============================================================================
+# Utilities
+# =============================================================================
+
+function predict(net: Net, x0: f32, x1: f32) -> f32 {
+    let cache: ForwardCache = forward(net, x0, x1, 0.0)
+    return cache.y_hat
+}
+
+function total_loss(net: Net) -> f32 {
+    let c1: ForwardCache = forward(net, 0.0, 0.0, 0.0)
+    let c2: ForwardCache = forward(net, 0.0, 1.0, 1.0)
+    let c3: ForwardCache = forward(net, 1.0, 0.0, 1.0)
+    let c4: ForwardCache = forward(net, 1.0, 1.0, 0.0)
+    return c1.loss + c2.loss + c3.loss + c4.loss
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+function main() -> i32 {
+    printf("=== Neural Network with Reverse-Mode Backprop ===\n\n")
+    
+    # Initialize network
+    let net: Net = Net {
+        w00: 0.5, w01: 0.9,
+        w10: 0.4, w11: 1.0,
+        b0: -0.8, b1: -0.1,
+        v0: -1.2, v1: 1.1,
+        c: -0.3
+    }
+    
+    printf("Before training:\n")
+    printf("  0 XOR 0 = %.3f (want 0)\n", predict(net, 0.0, 0.0))
+    printf("  0 XOR 1 = %.3f (want 1)\n", predict(net, 0.0, 1.0))
+    printf("  1 XOR 0 = %.3f (want 1)\n", predict(net, 1.0, 0.0))
+    printf("  1 XOR 1 = %.3f (want 0)\n", predict(net, 1.0, 1.0))
+    printf("  Loss: %.4f\n\n", total_loss(net))
+    
+    # Training
+    let lr: f32 = 2.0
+    let epochs: i32 = 500
+    
+    printf("Training %d epochs with reverse-mode backprop...\n", epochs)
+    printf("(This computes ALL 9 gradients in ONE backward pass!)\n\n")
+    
+    for epoch in 0..epochs {
+        net = train_step(net, lr)
+        
+        if epoch % 100 == 0 {
+            printf("  Epoch %d: loss = %.4f\n", epoch, total_loss(net))
+        }
+    }
+    
+    printf("\nAfter training:\n")
+    printf("  0 XOR 0 = %.3f (want 0)\n", predict(net, 0.0, 0.0))
+    printf("  0 XOR 1 = %.3f (want 1)\n", predict(net, 0.0, 1.0))
+    printf("  1 XOR 0 = %.3f (want 1)\n", predict(net, 1.0, 0.0))
+    printf("  1 XOR 1 = %.3f (want 0)\n", predict(net, 1.0, 1.0))
+    printf("  Loss: %.4f\n", total_loss(net))
+    
+    printf("\n=== Done! ===\n")
+    return 0
+}

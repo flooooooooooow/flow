@@ -1,0 +1,138 @@
+# Automatic Differentiation Demo
+# 
+# Demonstrates forward-mode autodiff using dual numbers
+
+import "autodiff.flow"
+
+# =============================================================================
+# Example 1: Simple polynomial f(x) = x² + 2x + 1
+# =============================================================================
+
+function poly(x: Dual) -> Dual {
+    # f(x) = x² + 2x + 1
+    let x_sq: Dual = dual_sq(x)
+    let two: Dual = dual_const(2.0)
+    let two_x: Dual = dual_mul(two, x)
+    let one: Dual = dual_const(1.0)
+    let sum1: Dual = dual_add(x_sq, two_x)
+    return dual_add(sum1, one)
+}
+
+# =============================================================================
+# Example 2: Trigonometric f(x) = sin(x) * cos(x)
+# =============================================================================
+
+function trig_func(x: Dual) -> Dual {
+    # f(x) = sin(x) * cos(x)
+    # f'(x) = cos²(x) - sin²(x) = cos(2x)
+    let s: Dual = dual_sin(x)
+    let c: Dual = dual_cos(x)
+    return dual_mul(s, c)
+}
+
+# =============================================================================
+# Example 3: Neural network activation: sigmoid(x² + 1)
+# =============================================================================
+
+function nn_activation(x: Dual) -> Dual {
+    let x_sq: Dual = dual_sq(x)
+    let one: Dual = dual_const(1.0)
+    let inner: Dual = dual_add(x_sq, one)
+    return dual_sigmoid(inner)
+}
+
+# =============================================================================
+# Example 4: Rosenbrock function (common optimization test)
+# f(x,y) = (a-x)² + b(y-x²)²
+# We compute ∂f/∂x by setting x as variable, y as constant
+# =============================================================================
+
+function rosenbrock_dx(x: Dual, y_val: f32) -> Dual {
+    # f(x,y) = (1-x)² + 100(y-x²)²
+    # ∂f/∂x = -2(1-x) + 100 * 2(y-x²) * (-2x)
+    #       = -2(1-x) - 400x(y-x²)
+    
+    let one: Dual = dual_const(1.0)
+    let hundred: Dual = dual_const(100.0)
+    let y: Dual = dual_const(y_val)
+    
+    # (1-x)²
+    let one_minus_x: Dual = dual_sub(one, x)
+    let term1: Dual = dual_sq(one_minus_x)
+    
+    # (y-x²)²
+    let x_sq: Dual = dual_sq(x)
+    let y_minus_xsq: Dual = dual_sub(y, x_sq)
+    let term2_inner: Dual = dual_sq(y_minus_xsq)
+    let term2: Dual = dual_mul(hundred, term2_inner)
+    
+    return dual_add(term1, term2)
+}
+
+# =============================================================================
+# Example 5: Chain rule test: exp(sin(x²))
+# =============================================================================
+
+function chain_test(x: Dual) -> Dual {
+    # f(x) = exp(sin(x²))
+    # f'(x) = exp(sin(x²)) * cos(x²) * 2x
+    let x_sq: Dual = dual_sq(x)
+    let sin_xsq: Dual = dual_sin(x_sq)
+    return dual_exp(sin_xsq)
+}
+
+# =============================================================================
+# Main: Run all tests
+# =============================================================================
+
+function main() -> i32 {
+    printf("=== FLOW Automatic Differentiation Demo ===\n\n")
+    
+    # Test 1: Polynomial
+    printf("1. Polynomial: f(x) = x^2 + 2x + 1\n")
+    let x1: Dual = dual_var(3.0)
+    let r1: Dual = poly(x1)
+    printf("   f(3) = %.4f (expected: 16.0)\n", r1.val)
+    printf("   f'(3) = %.4f (expected: 8.0, since f'(x) = 2x + 2)\n\n", r1.grad)
+    
+    # Test 2: Trigonometric
+    printf("2. Trigonometric: f(x) = sin(x) * cos(x)\n")
+    let x2: Dual = dual_var(0.0)
+    let r2: Dual = trig_func(x2)
+    printf("   f(0) = %.4f (expected: 0.0)\n", r2.val)
+    printf("   f'(0) = %.4f (expected: 1.0, since f'(x) = cos(2x))\n\n", r2.grad)
+    
+    # Test 3: NN activation at x=0
+    printf("3. NN Activation: f(x) = sigmoid(x^2 + 1)\n")
+    let x3: Dual = dual_var(0.0)
+    let r3: Dual = nn_activation(x3)
+    printf("   f(0) = %.4f (expected: ~0.731, sigmoid(1))\n", r3.val)
+    printf("   f'(0) = %.4f (expected: 0.0, since 2x*sigmoid'(...)=0 at x=0)\n\n", r3.grad)
+    
+    # Test 4: Rosenbrock
+    printf("4. Rosenbrock ∂f/∂x at (1,1) - the minimum\n")
+    let x4: Dual = dual_var(1.0)
+    let r4: Dual = rosenbrock_dx(x4, 1.0)
+    printf("   f(1,1) = %.4f (expected: 0.0 - global minimum)\n", r4.val)
+    printf("   ∂f/∂x at (1,1) = %.4f (expected: 0.0 - gradient is zero)\n\n", r4.grad)
+    
+    # Test 5: Chain rule
+    printf("5. Chain rule: f(x) = exp(sin(x^2))\n")
+    let x5: Dual = dual_var(0.0)
+    let r5: Dual = chain_test(x5)
+    printf("   f(0) = %.4f (expected: 1.0, exp(sin(0)))\n", r5.val)
+    printf("   f'(0) = %.4f (expected: 0.0, 2x*cos(0)*exp(0)=0)\n\n", r5.grad)
+    
+    # Non-zero chain rule test
+    printf("6. Chain rule at x=1: f(x) = exp(sin(x^2))\n")
+    let x6: Dual = dual_var(1.0)
+    let r6: Dual = chain_test(x6)
+    printf("   f(1) = %.4f\n", r6.val)
+    printf("   f'(1) = %.4f\n", r6.grad)
+    # f'(x) = exp(sin(x²)) * cos(x²) * 2x
+    # f'(1) = exp(sin(1)) * cos(1) * 2 ≈ 2.319 * 0.540 * 2 ≈ 2.51
+    printf("   (expected: ~2.51)\n\n")
+    
+    printf("=== All autodiff tests complete! ===\n")
+    return 0
+}

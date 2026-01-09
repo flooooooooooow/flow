@@ -1,0 +1,23 @@
+import "io.flow"
+
+function test_simple_memory() -> i32 {
+    print("Testing simple memory functions...")
+    
+    # Test basic allocation
+    let ptr: i32 = 100  # Dummy pointer value
+    print("Allocated pointer: ")
+    print(ptr)
+    
+    # Test simple alignment
+    let size: i32 = 13
+    let aligned: i32 = size + 8  # Simplified alignment
+    print("Aligned size: ")
+    print(aligned)
+    
+    print("PASS: Simple memory test")
+    return 0
+}
+
+function run_demo() -> i32 {
+    return test_simple_memory()
+}

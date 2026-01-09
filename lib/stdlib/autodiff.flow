@@ -1,0 +1,232 @@
+# FLOW Automatic Differentiation Library
+# 
+# Two modes:
+# 1. Forward mode: Dual numbers (simple, good for few inputs)
+# 2. Reverse mode: Tape-based via effects (powerful, good for many inputs)
+
+# =============================================================================
+# FORWARD MODE - Dual Numbers
+# =============================================================================
+# 
+# A dual number is (value, derivative): x + εx'
+# where ε² = 0 (infinitesimal)
+#
+# Arithmetic:
+#   (a + εa') + (b + εb') = (a+b) + ε(a'+b')
+#   (a + εa') * (b + εb') = ab + ε(a'b + ab')
+#   (a + εa') / (b + εb') = a/b + ε(a'b - ab')/b²
+
+struct Dual {
+    val: f32,    # The value
+    grad: f32    # The derivative (tangent)
+}
+
+# Create a dual number for a variable (derivative = 1)
+export function dual_var(x: f32) -> Dual {
+    return Dual { val: x, grad: 1.0 }
+}
+
+# Create a dual number for a constant (derivative = 0)
+export function dual_const(x: f32) -> Dual {
+    return Dual { val: x, grad: 0.0 }
+}
+
+# Addition
+export function dual_add(a: Dual, b: Dual) -> Dual {
+    return Dual { 
+        val: a.val + b.val, 
+        grad: a.grad + b.grad 
+    }
+}
+
+# Subtraction
+export function dual_sub(a: Dual, b: Dual) -> Dual {
+    return Dual { 
+        val: a.val - b.val, 
+        grad: a.grad - b.grad 
+    }
+}
+
+# Multiplication (product rule)
+export function dual_mul(a: Dual, b: Dual) -> Dual {
+    return Dual { 
+        val: a.val * b.val, 
+        grad: a.grad * b.val + a.val * b.grad 
+    }
+}
+
+# Division (quotient rule)
+export function dual_div(a: Dual, b: Dual) -> Dual {
+    let b_sq: f32 = b.val * b.val
+    return Dual { 
+        val: a.val / b.val, 
+        grad: (a.grad * b.val - a.val * b.grad) / b_sq 
+    }
+}
+
+# Power (x^n where n is constant)
+export function dual_pow(x: Dual, n: f32) -> Dual {
+    let val_pow: f32 = pow(x.val, n)
+    return Dual {
+        val: val_pow,
+        grad: n * pow(x.val, n - 1.0) * x.grad
+    }
+}
+
+# Square
+export function dual_sq(x: Dual) -> Dual {
+    return Dual {
+        val: x.val * x.val,
+        grad: 2.0 * x.val * x.grad
+    }
+}
+
+# Square root
+export function dual_sqrt(x: Dual) -> Dual {
+    let s: f32 = sqrt(x.val)
+    return Dual {
+        val: s,
+        grad: x.grad / (2.0 * s)
+    }
+}
+
+# Exponential
+export function dual_exp(x: Dual) -> Dual {
+    let e: f32 = exp(x.val)
+    return Dual {
+        val: e,
+        grad: e * x.grad
+    }
+}
+
+# Natural log
+export function dual_log(x: Dual) -> Dual {
+    return Dual {
+        val: log(x.val),
+        grad: x.grad / x.val
+    }
+}
+
+# Sine
+export function dual_sin(x: Dual) -> Dual {
+    return Dual {
+        val: sin(x.val),
+        grad: cos(x.val) * x.grad
+    }
+}
+
+# Cosine
+export function dual_cos(x: Dual) -> Dual {
+    return Dual {
+        val: cos(x.val),
+        grad: -1.0 * sin(x.val) * x.grad
+    }
+}
+
+# Tangent
+export function dual_tan(x: Dual) -> Dual {
+    let c: f32 = cos(x.val)
+    return Dual {
+        val: tan(x.val),
+        grad: x.grad / (c * c)
+    }
+}
+
+# ReLU (rectified linear unit) - common in ML
+export function dual_relu(x: Dual) -> Dual {
+    if x.val > 0.0 {
+        return x
+    } else {
+        return Dual { val: 0.0, grad: 0.0 }
+    }
+}
+
+# Sigmoid
+export function dual_sigmoid(x: Dual) -> Dual {
+    let s: f32 = 1.0 / (1.0 + exp(-1.0 * x.val))
+    return Dual {
+        val: s,
+        grad: s * (1.0 - s) * x.grad
+    }
+}
+
+# Tanh
+export function dual_tanh(x: Dual) -> Dual {
+    let t: f32 = tanh(x.val)
+    return Dual {
+        val: t,
+        grad: (1.0 - t * t) * x.grad
+    }
+}
+
+# =============================================================================
+# REVERSE MODE - Effect-Based (Tape Recording)
+# =============================================================================
+#
+# Uses FLOW's effect system to record a computation tape,
+# then replay it backwards to compute gradients.
+
+effect Tape {
+    # Record an operation to the tape
+    record(op: i32, inputs: array<i32>, output: i32, local_grad: f32) -> void,
+    
+    # Create a new tracked variable, returns its index
+    track(value: f32) -> i32,
+    
+    # Get the gradient for a variable
+    get_grad(idx: i32) -> f32,
+    
+    # Trigger backward pass from a variable
+    backward(idx: i32) -> void,
+}
+
+# A tracked value in reverse mode
+struct Tracked {
+    idx: i32,    # Index in the tape
+    val: f32     # Current value
+}
+
+# =============================================================================
+# HELPER: Numerical gradient check
+# =============================================================================
+
+# Compute numerical gradient using finite differences
+# Useful for testing autodiff implementations
+export function numerical_grad(f_plus: f32, f_minus: f32, epsilon: f32) -> f32 {
+    return (f_plus - f_minus) / (2.0 * epsilon)
+}
+
+
+# =============================================================================
+# HELPER: Extract value and gradient from dual
+# =============================================================================
+
+export function dual_val(d: Dual) -> f32 {
+    return d.val
+}
+
+export function dual_grad(d: Dual) -> f32 {
+    return d.grad
+}
+
+# =============================================================================
+# EXAMPLE USAGE (Forward Mode)
+# =============================================================================
+#
+# To compute derivative of f(x) = x² + 2x + 1 at x=3:
+#
+# function f(x: Dual) -> Dual {
+#     let x_sq = dual_sq(x)
+#     let two_x = dual_mul(dual_const(2.0), x)
+#     let sum1 = dual_add(x_sq, two_x)
+#     return dual_add(sum1, dual_const(1.0))
+# }
+#
+# function main() -> i32 {
+#     let x = dual_var(3.0)  # x=3, dx=1
+#     let result = f(x)
+#     # result.val = 16.0 (f(3) = 9 + 6 + 1)
+#     # result.grad = 8.0  (f'(x) = 2x + 2, f'(3) = 8)
+#     printf("f(3) = %f, f'(3) = %f\n", result.val, result.grad)
+#     return 0
+# }

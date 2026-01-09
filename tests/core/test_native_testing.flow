@@ -1,0 +1,37 @@
+# Native testing framework demo
+# Note: The `test` keyword is parsed and supported,
+# but the test runner is under development.
+
+function test_basic_arithmetic() -> bool {
+    let a: i32 = 2 + 3
+    let b: i32 = 5
+    return a == b
+}
+
+function test_function_calls() -> bool {
+    let result: i32 = add(10, 20)
+    return result == 30
+}
+
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+function main() -> i32 {
+    if test_basic_arithmetic() {
+        printf("✓ basic arithmetic\n")
+    } else {
+        printf("✗ basic arithmetic\n")
+        return 1
+    }
+    
+    if test_function_calls() {
+        printf("✓ function calls\n")
+    } else {
+        printf("✗ function calls\n")
+        return 1
+    }
+    
+    printf("All tests passed!\n")
+    return 0
+}

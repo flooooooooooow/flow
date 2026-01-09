@@ -1,0 +1,39 @@
+import "lib/stdlib/nn.flow"
+
+function main() -> i32 {
+    printf("=== Gradient check: Net2x2x1 XOR loss ===\n\n")
+
+    let net: Net2x2x1 = Net2x2x1 {
+        w00: 0.5, w01: 0.9,
+        w10: 0.4, w11: 1.0,
+        b0: -0.8, b1: -0.1,
+        v0: -1.2, v1: 1.1,
+        c: -0.3
+    }
+
+    let eps: f32 = 0.001
+    let g: Grads2x2x1 = net2x2x1_grads_xor(net)
+
+    let max_err: f32 = 0.0
+    for i in 0..9 {
+        let base: f32 = net2x2x1_param_get(net, i)
+        let plus: Net2x2x1 = net2x2x1_param_set(net, i, base + eps)
+        let minus: Net2x2x1 = net2x2x1_param_set(net, i, base - eps)
+        let num: f32 = (net2x2x1_loss_xor(plus) - net2x2x1_loss_xor(minus)) / (2.0 * eps)
+        let an: f32 = net2x2x1_grad_get(g, i)
+        let err: f32 = num - an
+        if err < 0.0 { err = -1.0 * err }
+        if err > max_err { max_err = err }
+        printf("param %d: analytic=% .6f  numeric=% .6f  |diff|=% .6f\n", i, an, num, err)
+    }
+
+    printf("\nmax |diff| = %.8f\n", max_err)
+
+    # return nonzero if too large
+    if max_err > 0.01 {
+        printf("FAIL\n")
+        return 1
+    }
+    printf("PASS\n")
+    return 0
+}

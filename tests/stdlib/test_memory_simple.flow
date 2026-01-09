@@ -1,0 +1,20 @@
+# Simple Memory Test
+
+function test_memory_ops() -> i32 {
+    print("Testing memory operations")
+    print("========================")
+    
+    let mem_size: i32 = 2048
+    let result: i32 = mem_size / 4
+    
+    print("Memory size: " + mem_size)
+    print("Operation result: " + result)
+    
+    return result
+}
+
+function main() -> i32 {
+    let final_result: i32 = test_memory_ops()
+    print("✅ Memory test complete!")
+    return final_result
+}

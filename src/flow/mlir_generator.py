@@ -104,7 +104,19 @@ class MLIRGenerator:
             mlir_code.append("module {")
         self.indent_level += 1
         
-        # First pass: generate all declarations to collect string constants
+        # First pass: collect all function signatures in symbol table
+        for decl in declarations:
+            decl_type = type(decl).__name__
+            if decl_type == 'FunctionDecl':
+                # Add function to symbol table
+                self.symbol_table[decl.name] = {
+                    'type': 'function',
+                    'return_type': decl.return_type,
+                    'parameters': decl.parameters,
+                    'mlir_name': f"@{decl.name}"
+                }
+        
+        # Second pass: generate all declarations to collect string constants
         decl_code = []
         for decl in declarations:
             decl_type = type(decl).__name__
@@ -142,16 +154,17 @@ class MLIRGenerator:
         return "\n".join(mlir_code)
     
     def generate_function(self, func: FunctionDecl) -> str:
-        # Add function to symbol table
-        self.symbol_table[func.name] = {
-            'type': 'function',
-            'return_type': func.return_type,
-            'parameters': func.parameters,
-            'mlir_name': f"@{func.name}"
-        }
+        # Don't add to symbol table here - it's already added in first pass
         
         # Store current function return type for use in return statements
         self.current_function_return_type = func.return_type
+        
+        # For extern functions, just declare them without body
+        if hasattr(func, 'is_extern') and func.is_extern:
+            param_types = [self.flow_type_to_mlir(p.type) for p in func.parameters]
+            return_type = self.flow_type_to_mlir(func.return_type)
+            func_signature = f"func.func private @{func.name}({', '.join(param_types)}) -> {return_type}"
+            return f"{self.indent()}{func_signature}"
         
         mlir_code = []
         
@@ -177,6 +190,11 @@ class MLIRGenerator:
         if body_mlir.strip():
             mlir_code.append(body_mlir)
         
+        # Add explicit return for void functions if none exists
+        has_return = any(isinstance(stmt, ReturnStatement) for stmt in func.body.statements)
+        if not has_return and func.return_type.name == 'void':
+            mlir_code.append(f"{self.indent()}func.return")
+        
         self.indent_level -= 1
         mlir_code.append(f"{self.indent()}}}")
         
@@ -189,6 +207,9 @@ class MLIRGenerator:
             stmt_mlir = self.generate_statement(stmt)
             if stmt_mlir.strip():
                 mlir_code.append(stmt_mlir)
+                # If this is a return statement, it should be the last one
+                if isinstance(stmt, ReturnStatement):
+                    break
         
         return "\n".join(mlir_code)
     
@@ -206,22 +227,70 @@ class MLIRGenerator:
             return self.generate_while(stmt)
         elif stmt_type == 'ForStatement':
             return self.generate_for(stmt)
-        elif stmt_type == 'HandleStatement':
-            return self.generate_handle(stmt)
-        elif stmt_type == 'MatchStatement':
-            return self.generate_match(stmt)
+        elif stmt_type == 'ExpressionStatement':
+            expr = stmt.expression
+            expr_ssa, expr_ops = self.generate_expression(expr)
+            if expr_ops:
+                lines = expr_ops + [f"{self.indent()}{expr_ssa}"]
+                return "\n".join(lines)
+            else:
+                return f"{self.indent()}{expr_ssa}"
         elif stmt_type in ['Literal', 'Variable', 'BinaryOperation', 'UnaryOperation', 'FunctionCall', 'VectorLiteral']:
             value_ssa, value_ops = self.generate_expression(stmt)
             # Expression statement: emit ops for side effects / computation, discard value.
             return "\n".join(value_ops)
         else:
-            return f"{self.indent()}// Unsupported statement type: {stmt_type}"
+            return f"{self.indent()}// Unsupported statement: {stmt_type}"
     
     def generate_var_decl(self, var_decl: VarDecl) -> str:
         mlir_type = self.flow_type_to_mlir(var_decl.type)
          
         if var_decl.initializer:
-            init_value, init_ops = self.generate_expression(var_decl.initializer)
+            # Special handling for string literals
+            if isinstance(var_decl.initializer, Literal) and var_decl.initializer.type.name == 'string':
+                # Create global constant for string literal
+                str_val = var_decl.initializer.value
+                if str_val not in self.string_constants:
+                    global_name = f"str_{self.string_counter}"
+                    self.string_counter += 1
+                    self.string_constants[str_val] = global_name
+                else:
+                    global_name = self.string_constants[str_val]
+                
+                # Get pointer to string constant
+                init_value = f"%{self.function_counter}"
+                self.function_counter += 1
+                init_ops = [f"{self.indent()}{init_value} = llvm.mlir.addressof @{global_name} : !llvm.ptr"]
+            else:
+                init_value, init_ops = self.generate_expression(var_decl.initializer)
+            
+            # Cast the initializer to the variable's type if needed
+            init_type = self.get_expression_type(var_decl.initializer)
+            if init_type != mlir_type:
+                # Handle f32 to f64 conversion
+                if init_type == 'f32' and mlir_type == 'f64':
+                    cast_value = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    init_ops.append(f"{self.indent()}{cast_value} = arith.extf {init_value} : f32 to f64")
+                    init_value = cast_value
+                # Handle f64 to f32 conversion
+                elif init_type == 'f64' and mlir_type == 'f32':
+                    cast_value = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    init_ops.append(f"{self.indent()}{cast_value} = arith.truncf {init_value} : f64 to f32")
+                    init_value = cast_value
+                # Handle i32 to i64 conversion
+                elif init_type == 'i32' and mlir_type == 'i64':
+                    cast_value = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    init_ops.append(f"{self.indent()}{cast_value} = arith.extsi {init_value} : i32 to i64")
+                    init_value = cast_value
+                # Handle i64 to i32 conversion
+                elif init_type == 'i64' and mlir_type == 'i32':
+                    cast_value = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    init_ops.append(f"{self.indent()}{cast_value} = arith.trunci {init_value} : i64 to i32")
+                    init_value = cast_value
 
             # Bind variable name to the SSA value produced by the initializer.
             # MLIR SSA values are immutable; we do not emit an extra "assignment" op.
@@ -252,11 +321,55 @@ class MLIRGenerator:
     
     def generate_return(self, return_stmt: ReturnStatement) -> str:
         if return_stmt.value:
+            # Special handling for string literals
+            if isinstance(return_stmt.value, Literal) and return_stmt.value.type.name == 'string':
+                # Create global constant for string literal
+                str_val = return_stmt.value.value
+                if str_val not in self.string_constants:
+                    global_name = f"str_{self.string_counter}"
+                    self.string_counter += 1
+                    self.string_constants[str_val] = global_name
+                else:
+                    global_name = self.string_constants[str_val]
+                
+                # Get pointer to string constant
+                value_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                lines = [f"{self.indent()}{value_ssa} = llvm.mlir.addressof @{global_name} : !llvm.ptr"]
+                return_type = self.flow_type_to_mlir(self.current_function_return_type)
+                lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
+                return "\n".join(lines)
+            
             value_ssa, value_ops = self.generate_expression(return_stmt.value)
             lines: List[str] = []
             lines.extend(value_ops)
             # Use the function's return type instead of the expression type
             return_type = self.flow_type_to_mlir(self.current_function_return_type)
+            
+            # If the value type doesn't match the return type, add a cast
+            value_type = self.get_expression_type(return_stmt.value)
+            if value_type != return_type:
+                cast_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                if return_type == 'i1' and value_type in ['i32', 'i64']:
+                    lines.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : {value_type} to i1")
+                    value_ssa = cast_name
+                elif return_type in ['i32', 'i64'] and value_type == 'i1':
+                    lines.append(f"{self.indent()}{cast_name} = arith.extsi {value_ssa} : i1 to {return_type}")
+                    value_ssa = cast_name
+                elif return_type == 'i64' and value_type == 'i32':
+                    lines.append(f"{self.indent()}{cast_name} = arith.extsi {value_ssa} : i32 to i64")
+                    value_ssa = cast_name
+                elif return_type == 'i32' and value_type == 'i64':
+                    lines.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : i64 to i32")
+                    value_ssa = cast_name
+                elif return_type == 'i1' and value_type in ['f32', 'f64']:
+                    lines.append(f"{self.indent()}{cast_name} = arith.fptosi {value_ssa} : {value_type} to i1")
+                    value_ssa = cast_name
+                elif return_type in ['f32', 'f64'] and value_type == 'i1':
+                    lines.append(f"{self.indent()}{cast_name} = arith.sitofp {value_ssa} : i1 to {return_type}")
+                    value_ssa = cast_name
+            
             lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
             return "\n".join(lines)
         else:
@@ -502,32 +615,134 @@ class MLIRGenerator:
     def generate_while(self, while_stmt: WhileStatement) -> str:
         mlir_code = []
         
+        # Detect loop-carried variables
+        loop_carried_vars = self._detect_loop_carried_vars(while_stmt.body)
+        
         # Create blocks
         header_block = self._new_block_label()
         body_block = self._new_block_label()
         end_block = self._new_block_label()
         
-        # Jump to header
-        mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
+        # Prepare initial values for loop-carried variables
+        init_args = []
+        for var_name in loop_carried_vars:
+            if var_name in self.symbol_table:
+                var_info = self.symbol_table[var_name]
+                init_args.append(var_info['ssa_name'])
         
-        # Header block - check condition
-        mlir_code.append(f"{self.indent()}^{header_block}:")
+        # Jump to header with initial values
+        if init_args:
+            # Add types to the arguments
+            init_args_with_types = []
+            for i, var_name in enumerate(loop_carried_vars):
+                if var_name in self.symbol_table:
+                    var_info = self.symbol_table[var_name]
+                    init_args_with_types.append(f"{init_args[i]} : {var_info['mlir_type']}")
+            mlir_code.append(f"{self.indent()}cf.br ^{header_block}({', '.join(init_args_with_types)})")
+        else:
+            mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
+        
+        # Header block - check condition and receive loop-carried vars
+        # Add block arguments for loop-carried variables
+        block_args = []
+        for var_name in loop_carried_vars:
+            if var_name in self.symbol_table:
+                var_info = self.symbol_table[var_name]
+                arg_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                block_args.append(f"{arg_name}: {var_info['mlir_type']}")
+                # Update symbol table with new SSA value
+                self.symbol_table[var_name] = {
+                    **var_info,
+                    'ssa_name': arg_name
+                }
+        
+        if block_args:
+            mlir_code.append(f"{self.indent()}^{header_block}({', '.join(block_args)}):")
+        else:
+            mlir_code.append(f"{self.indent()}^{header_block}:")
+        
+        # Generate condition
         condition_ssa, condition_ops = self.generate_expression(while_stmt.condition)
         if condition_ops:
             mlir_code.append("\n".join(condition_ops))
-        mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}, ^{end_block}")
         
-        # Body block
-        mlir_code.append(f"{self.indent()}^{body_block}:")
+        # Branch based on condition
+        body_args = []
+        body_args_with_types = []
+        for var_name in loop_carried_vars:
+            if var_name in self.symbol_table:
+                var_info = self.symbol_table[var_name]
+                body_args.append(self.symbol_table[var_name]['ssa_name'])
+                body_args_with_types.append(f"{self.symbol_table[var_name]['ssa_name']} : {var_info['mlir_type']}")
+        
+        if body_args:
+            mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}({', '.join(body_args_with_types)}), ^{end_block}")
+        else:
+            mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}, ^{end_block}")
+        
+        # Body block - receive loop-carried vars and execute body
+        # Add block arguments for loop-carried variables in body
+        body_block_args = []
+        for var_name in loop_carried_vars:
+            if var_name in self.symbol_table:
+                var_info = self.symbol_table[var_name]
+                arg_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                body_block_args.append(f"{arg_name}: {var_info['mlir_type']}")
+                # Update symbol table with new SSA value
+                self.symbol_table[var_name] = {
+                    **var_info,
+                    'ssa_name': arg_name
+                }
+        
+        if body_block_args:
+            mlir_code.append(f"{self.indent()}^{body_block}({', '.join(body_block_args)}):")
+        else:
+            mlir_code.append(f"{self.indent()}^{body_block}:")
+        
+        # Generate body
         self.indent_level += 1
         body_mlir = self.generate_block(while_stmt.body)
         if body_mlir.strip():
             mlir_code.append(body_mlir)
-        mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
+        
+        # Prepare final values for next iteration
+        final_args = []
+        final_args_with_types = []
+        for var_name in loop_carried_vars:
+            if var_name in self.symbol_table:
+                var_info = self.symbol_table[var_name]
+                final_args.append(self.symbol_table[var_name]['ssa_name'])
+                final_args_with_types.append(f"{self.symbol_table[var_name]['ssa_name']} : {var_info['mlir_type']}")
+        
+        # Branch back to header with updated values
+        if final_args:
+            mlir_code.append(f"{self.indent()}cf.br ^{header_block}({', '.join(final_args_with_types)})")
+        else:
+            mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
+        
         self.indent_level -= 1
         
-        # End block
-        mlir_code.append(f"{self.indent()}^{end_block}:")
+        # End block - receive final values
+        # Add block arguments for final values
+        end_block_args = []
+        for var_name in loop_carried_vars:
+            if var_name in self.symbol_table:
+                var_info = self.symbol_table[var_name]
+                arg_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                end_block_args.append(f"{arg_name}: {var_info['mlir_type']}")
+                # Update symbol table with final SSA value
+                self.symbol_table[var_name] = {
+                    **var_info,
+                    'ssa_name': arg_name
+                }
+        
+        if end_block_args:
+            mlir_code.append(f"{self.indent()}^{end_block}({', '.join(end_block_args)}):")
+        else:
+            mlir_code.append(f"{self.indent()}^{end_block}:")
         
         return "\n".join(mlir_code)
     
@@ -723,14 +938,59 @@ class MLIRGenerator:
     def _detect_loop_carried_vars(self, body: Block) -> List[str]:
         """Detect variables that are assigned inside a loop body and exist before the loop."""
         assigned_vars = []
+        declared_vars = []
+        
+        # First pass: collect all declared variables
+        for stmt in body.statements:
+            stmt_type = type(stmt).__name__
+            if stmt_type == 'VarDecl':
+                declared_vars.append(stmt.name)
+            elif stmt_type == 'Assignment':
+                # Check nested blocks (if statements, while loops, etc.)
+                declared_vars.extend(self._collect_declared_vars_from_stmt(stmt))
+        
+        # Second pass: find assigned variables that weren't declared in the loop
         for stmt in body.statements:
             stmt_type = type(stmt).__name__
             if stmt_type == 'Assignment':
                 # Check if this variable exists in symbol table (defined before loop)
+                # and wasn't declared inside the loop
                 if stmt.target in self.symbol_table and stmt.target_expr is None:
-                    if stmt.target not in assigned_vars:
+                    if stmt.target not in declared_vars and stmt.target not in assigned_vars:
                         assigned_vars.append(stmt.target)
         return assigned_vars
+    
+    def _collect_declared_vars_from_stmt(self, stmt) -> List[str]:
+        """Collect all variable declarations from a statement (including nested blocks)."""
+        declared = []
+        stmt_type = type(stmt).__name__
+        
+        if stmt_type == 'IfStatement':
+            # Check then block
+            declared.extend(self._collect_declared_vars_from_block(stmt.then_block))
+            # Check elif blocks
+            for elif_cond, elif_block in stmt.elif_blocks:
+                declared.extend(self._collect_declared_vars_from_block(elif_block))
+            # Check else block
+            if stmt.else_block:
+                declared.extend(self._collect_declared_vars_from_block(stmt.else_block))
+        elif stmt_type == 'WhileStatement':
+            declared.extend(self._collect_declared_vars_from_block(stmt.body))
+        elif stmt_type == 'ForStatement':
+            declared.extend(self._collect_declared_vars_from_block(stmt.body))
+        
+        return declared
+    
+    def _collect_declared_vars_from_block(self, block) -> List[str]:
+        """Collect all variable declarations from a block."""
+        declared = []
+        for stmt in block.statements:
+            stmt_type = type(stmt).__name__
+            if stmt_type == 'VarDecl':
+                declared.append(stmt.name)
+            else:
+                declared.extend(self._collect_declared_vars_from_stmt(stmt))
+        return declared
     
     def generate_handle(self, handle_stmt: HandleStatement) -> str:
         prev = self._effect_handler_stack[-1]
@@ -904,9 +1164,18 @@ class MLIRGenerator:
         ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
         mlir_type = self.flow_type_to_mlir(literal.type)
+        
         if literal.type.name == 'bool':
             mlir_type = 'i1'
-        line = f"{self.indent()}{ssa_name} = arith.constant {literal.value} : {mlir_type}"
+            # Convert boolean to integer constant (true=1, false=0)
+            bool_value = '1' if literal.value == 'true' else '0'
+            line = f"{self.indent()}{ssa_name} = arith.constant {bool_value} : {mlir_type}"
+        elif literal.type.name == 'string':
+            # String literals should be handled through global constants, not arith.constant
+            # This should not be called directly for strings
+            raise ValueError("String literals should be handled as global constants")
+        else:
+            line = f"{self.indent()}{ssa_name} = arith.constant {literal.value} : {mlir_type}"
         return ssa_name, [line]
     
     def generate_variable(self, variable: Variable) -> tuple[str, List[str]]:
@@ -917,6 +1186,19 @@ class MLIRGenerator:
             return f"# Undefined variable: {variable.name}", []
     
     def generate_binary_operation(self, bin_op: BinaryOperation) -> tuple[str, List[str]]:
+        # Special handling for string concatenation
+        if bin_op.operator == '+':
+            left_ty = self.get_expression_type(bin_op.left)
+            right_ty = self.get_expression_type(bin_op.right)
+            
+            # Check if this is string concatenation
+            if left_ty == '!llvm.ptr' or right_ty == '!llvm.ptr':
+                # For MLIR generation, just return a dummy string pointer
+                # String concatenation will be handled at the C code generation level
+                ssa_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                return ssa_name, [f"{self.indent()}# String concatenation: {left_ty} + {right_ty}"]
+        
         left_ssa, left_ops = self.generate_expression(bin_op.left)
         right_ssa, right_ops = self.generate_expression(bin_op.right)
 
@@ -1013,23 +1295,32 @@ class MLIRGenerator:
         operand_ssa, operand_ops = self.generate_expression(un_op.operand)
         ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
+        ty = self.get_expression_type(un_op.operand)
         
         if un_op.operator == '-':
-            ty = self.get_expression_type(un_op.operand)
             if 'f32' in ty or 'f64' in ty:
                 return ssa_name, operand_ops + [f"{self.indent()}{ssa_name} = arith.negf {operand_ssa} : {ty}"]
             return ssa_name, operand_ops + [f"{self.indent()}{ssa_name} = arith.subi %c0, {operand_ssa} : {ty}"]
-        elif un_op.operator == '!':
+        elif un_op.operator in ['!', 'not']:
             # %not = xor %x, true
             c1 = f"%{self.function_counter}"
             self.function_counter += 1
+            cast_name = f"%{self.function_counter}"
+            self.function_counter += 1
             ops = []
             ops.extend(operand_ops)
+            
+            # Ensure operand is i1 (boolean)
+            if 'i1' not in ty:
+                ops.append(f"{self.indent()}{cast_name} = arith.cmpi ne {operand_ssa}, %c0 : {ty}")
+                operand_ssa = cast_name
+                ty = 'i1'
+            
             ops.append(f"{self.indent()}{c1} = arith.constant 1 : i1")
             ops.append(f"{self.indent()}{ssa_name} = arith.xori {operand_ssa}, {c1} : i1")
             return ssa_name, ops
         else:
-            return f"// Unsupported unary operator: {un_op.operator}", operand_ops
+            return f"// Unsupported unary operator: '{un_op.operator}' (type: {type(un_op.operator)})", operand_ops
     
     def generate_field_access(self, field_access: FieldAccess) -> tuple[str, List[str]]:
         """Generate field access that loads values from struct memory"""
@@ -1443,12 +1734,30 @@ class MLIRGenerator:
             func_info = self.symbol_table[func_call.name]
             callee = func_info['mlir_name']
 
+        # Generate arguments
         arg_values: List[str] = []
         ops: List[str] = []
         for arg in func_call.arguments:
-            v, vops = self.generate_expression(arg)
-            ops.extend(vops)
-            arg_values.append(v)
+            # Special handling for string literals
+            if isinstance(arg, Literal) and arg.type.name == 'string':
+                # Create global constant for string literal
+                str_val = arg.value
+                if str_val not in self.string_constants:
+                    global_name = f"str_{self.string_counter}"
+                    self.string_counter += 1
+                    self.string_constants[str_val] = global_name
+                else:
+                    global_name = self.string_constants[str_val]
+                
+                # Get pointer to string constant
+                arg_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{arg_ssa} = llvm.mlir.addressof @{global_name} : !llvm.ptr")
+                arg_values.append(arg_ssa)
+            else:
+                v, vops = self.generate_expression(arg)
+                ops.extend(vops)
+                arg_values.append(v)
 
         # Get expected parameter types from function signature
         expected_arg_types = []
@@ -1482,10 +1791,18 @@ class MLIRGenerator:
         if func_call.name in self.symbol_table:
             ret_type = self.flow_type_to_mlir(self.symbol_table[func_call.name]['return_type'])
         
-        ops.append(
-            f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(cast_args)}) : ({', '.join(expected_arg_types)}) -> {ret_type}"
-        )
-        return ssa_name, ops
+        # For void functions, don't assign to SSA value
+        if ret_type == '()':
+            ops.append(
+                f"{self.indent()}func.call {callee}({', '.join(cast_args)}) : ({', '.join(expected_arg_types)}) -> {ret_type}"
+            )
+            # Return a dummy value for void functions (won't be used)
+            return f"%void_{self.function_counter}", ops
+        else:
+            ops.append(
+                f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(cast_args)}) : ({', '.join(expected_arg_types)}) -> {ret_type}"
+            )
+            return ssa_name, ops
     
     def generate_print_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
         """Generate MLIR for print() intrinsic - supports strings and numeric values."""
@@ -1493,8 +1810,6 @@ class MLIRGenerator:
         ops: List[str] = []
         
         for arg in func_call.arguments:
-            arg_type = self.get_expression_type(arg)
-            
             if isinstance(arg, Literal) and arg.type.name == 'string':
                 # String literal - create global constant and get pointer
                 str_val = arg.value
@@ -1514,8 +1829,62 @@ class MLIRGenerator:
                 result_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{result_ssa} = llvm.call @printf({ptr_ssa}) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32")
+            elif isinstance(arg, Variable) and arg.name in self.symbol_table:
+                var_info = self.symbol_table[arg.name]
+                if 'flow_type' in var_info and var_info['flow_type'].name == 'string':
+                    # String variable - just print it directly
+                    arg_ssa, arg_ops = self.generate_expression(arg)
+                    ops.extend(arg_ops)
+                    
+                    result_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(f"{self.indent()}{result_ssa} = llvm.call @printf({arg_ssa}) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32")
+                else:
+                    # Numeric variable
+                    arg_type = self.get_expression_type(arg)
+                    arg_ssa, arg_ops = self.generate_expression(arg)
+                    ops.extend(arg_ops)
+                    
+                    # Determine format string based on type
+                    if arg_type in ['f32', 'f64']:
+                        fmt_str = '"%f\\n"'
+                    else:
+                        fmt_str = '"%d\\n"'
+                    
+                    if fmt_str not in self.string_constants:
+                        global_name = f"str_{self.string_counter}"
+                        self.string_counter += 1
+                        self.string_constants[fmt_str] = global_name
+                    else:
+                        global_name = self.string_constants[fmt_str]
+                    
+                    # Get pointer to format string
+                    fmt_ptr = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(f"{self.indent()}{fmt_ptr} = llvm.mlir.addressof @{global_name} : !llvm.ptr")
+                    
+                    # For f32, extend to f64 for printf
+                    if arg_type == 'f32':
+                        ext_ssa = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{ext_ssa} = arith.extf {arg_ssa} : f32 to f64")
+                        arg_ssa = ext_ssa
+                        arg_type = 'f64'
+                    # For bool, convert to i32 for printf
+                    elif arg_type == 'i1':
+                        ext_ssa = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{ext_ssa} = arith.extsi {arg_ssa} : i1 to i32")
+                        arg_ssa = ext_ssa
+                        arg_type = 'i32'
+                    
+                    # Call printf
+                    result_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(f"{self.indent()}{result_ssa} = llvm.call @printf({fmt_ptr}, {arg_ssa}) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, {arg_type}) -> i32")
             else:
-                # Numeric value - create format string and print
+                # Other expression types - treat as numeric
+                arg_type = self.get_expression_type(arg)
                 arg_ssa, arg_ops = self.generate_expression(arg)
                 ops.extend(arg_ops)
                 
@@ -1544,6 +1913,13 @@ class MLIRGenerator:
                     ops.append(f"{self.indent()}{ext_ssa} = arith.extf {arg_ssa} : f32 to f64")
                     arg_ssa = ext_ssa
                     arg_type = 'f64'
+                # For bool, convert to i32 for printf
+                elif arg_type == 'i1':
+                    ext_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(f"{self.indent()}{ext_ssa} = arith.extsi {arg_ssa} : i1 to i32")
+                    arg_ssa = ext_ssa
+                    arg_type = 'i32'
                 
                 # Call printf
                 result_ssa = f"%{self.function_counter}"
@@ -1594,9 +1970,21 @@ class MLIRGenerator:
         var_ssas: List[str] = []
         var_types: List[str] = []
         for arg in func_call.arguments[1:]:
-            arg_type = self.get_expression_type(arg)
             arg_ssa, arg_ops = self.generate_expression(arg)
             ops.extend(arg_ops)
+            
+            # Get the actual type from the generated SSA value
+            # For string literals and variables, the type should be !llvm.ptr
+            if isinstance(arg, Literal) and arg.type.name == 'string':
+                arg_type = '!llvm.ptr'
+            elif isinstance(arg, Variable) and arg.name in self.symbol_table:
+                var_info = self.symbol_table[arg.name]
+                if 'flow_type' in var_info and var_info['flow_type'].name == 'string':
+                    arg_type = '!llvm.ptr'
+                else:
+                    arg_type = self.get_expression_type(arg)
+            else:
+                arg_type = self.get_expression_type(arg)
 
             # printf promotes float to double
             if arg_type == 'f32':
@@ -1758,9 +2146,9 @@ class MLIRGenerator:
         elif isinstance(expr, Variable):
             if expr.name in self.symbol_table:
                 var_info = self.symbol_table[expr.name]
-                # If we have the original FLOW type, use it
+                # If we have the original FLOW type, convert it to MLIR type
                 if 'flow_type' in var_info:
-                    return var_info['flow_type'].name
+                    return self.flow_type_to_mlir(var_info['flow_type'])
                 return var_info.get('mlir_type', 'i32')
             else:
                 return 'i32'  # Default
@@ -1846,9 +2234,9 @@ class MLIRGenerator:
         elif flow_type.name == 'bool':
             return 'i1'
         elif flow_type.name == 'void':
-            return 'none'
+            return '()'  # Void functions use empty tuple in MLIR
         elif flow_type.name == 'string':
-            return '!flow.string'  # Custom string type
+            return '!llvm.ptr'  # String as pointer for function parameters
         elif flow_type.name.startswith('memref_'):
             # memref_f32 -> memref<?xf32>
             elem = flow_type.name.replace('memref_', '')

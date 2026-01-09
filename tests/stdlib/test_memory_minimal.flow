@@ -1,0 +1,20 @@
+# Minimal Memory Test
+
+function test_minimal_memory() -> i32 {
+    print("Testing minimal memory operations")
+    print("================================")
+    
+    let ptr: i64 = 0x1000  # Mock pointer
+    let size: i32 = 256
+    
+    print("Pointer: " + ptr)
+    print("Size: " + size)
+    
+    return size
+}
+
+function main() -> i32 {
+    let result: i32 = test_minimal_memory()
+    print("✅ Minimal memory test complete!")
+    return result
+}

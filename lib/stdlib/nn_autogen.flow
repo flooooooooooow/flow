@@ -1,0 +1,28 @@
+# Auto-generated backprop for XOR loss (2x2x1) via tools/flow_grad_flow.py
+#
+# This file demonstrates "no hand-written backprop": gradients are generated from
+# `xor_loss_clean`.
+
+import "lib/stdlib/nn.flow"
+import "lib/stdlib/nn_xor_loss_clean.flow"
+import "lib/stdlib/nn_xor_loss_clean_grad.flow"
+
+# Convert Grad_xor_loss_clean (generated) to Grads2x2x1 (stdlib shape)
+export function net2x2x1_grads_xor_autogen(net: Net2x2x1) -> Grads2x2x1 {
+    let g: Grad_xor_loss_clean = grad_xor_loss_clean(
+        net.w00, net.w01, net.w10, net.w11,
+        net.b0, net.b1, net.v0, net.v1, net.c
+    )
+
+    return Grads2x2x1 {
+        dw00: g.d_w00,
+        dw01: g.d_w01,
+        dw10: g.d_w10,
+        dw11: g.d_w11,
+        db0: g.d_b0,
+        db1: g.d_b1,
+        dv0: g.d_v0,
+        dv1: g.d_v1,
+        dc: g.d_c
+    }
+}

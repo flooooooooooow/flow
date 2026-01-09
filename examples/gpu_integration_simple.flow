@@ -1,0 +1,17 @@
+import "time.flow"
+
+function cpu_fft(signal: array<f32>) -> array<f32> {
+    let spectrum: array<f32> = array<f32>(2048)
+    return spectrum
+}
+
+function main() -> i32 {
+    print("GPU Integration Demo")
+    print("=========================")
+    
+    let test_signal: array<f32> = array<f32>(1024)
+    let spectrum: array<f32> = cpu_fft(test_signal)
+    
+    print("GPU Integration Demo Complete!")
+    return 0
+}

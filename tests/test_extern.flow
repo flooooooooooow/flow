@@ -1,0 +1,9 @@
+extern "jit" {
+    function jit_time() -> f64
+}
+
+function main() -> i32 {
+    let t: f64 = jit_time()
+    print(t)
+    return 0
+}

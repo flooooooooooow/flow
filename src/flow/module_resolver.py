@@ -119,28 +119,31 @@ class ModuleResolver:
 
     def _resolve_import_path(self, import_path: str, base_dir: str, stdlib_path: str, packages_path: str) -> Optional[str]:
         """Resolve import path to actual file path."""
-        # Try relative to current file
-        imp_path = os.path.join(base_dir, import_path)
-        if not imp_path.endswith('.flow'):
-            imp_path += '.flow'
+        # Add .flow extension if not present
+        import_file = import_path if import_path.endswith('.flow') else import_path + '.flow'
         
+        # Try relative to current file
+        imp_path = os.path.join(base_dir, import_file)
         if os.path.exists(imp_path):
             return os.path.abspath(imp_path)
         
         # Try stdlib
-        std_imp_path = os.path.join(stdlib_path, import_path)
-        if not std_imp_path.endswith('.flow'):
-            std_imp_path += '.flow'
+        std_imp_path = os.path.join(stdlib_path, import_file)
         if os.path.exists(std_imp_path):
             return os.path.abspath(std_imp_path)
         
         # Try packages
-        pkg_imp_path = os.path.join(packages_path, import_path)
-        if not pkg_imp_path.endswith('.flow'):
-            pkg_imp_path += '.flow'
+        pkg_imp_path = os.path.join(packages_path, import_file)
         if os.path.exists(pkg_imp_path):
             return os.path.abspath(pkg_imp_path)
         
+        # Try project root (for paths like "lib/stdlib/foo.flow")
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        root_imp_path = os.path.join(project_root, import_file)
+        if os.path.exists(root_imp_path):
+            return os.path.abspath(root_imp_path)
+        
+        print(f"Warning: Could not resolve import '{import_path}'")
         return None
 
     def _resolve_symbols(self):

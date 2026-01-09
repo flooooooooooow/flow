@@ -2,25 +2,25 @@
 # Provides low-level memory allocation, manipulation, and safety functions
 
 # Memory allocation functions
-export function malloc(size: usize) -> *mut void {
+export function malloc(size: usize) -> ptr<void> {
     # Allocate size bytes of uninitialized memory
     # Returns null pointer if allocation fails
     # Implemented as intrinsic in MLIR generator
     return null
 }
 
-export function calloc(nmemb: usize, size: usize) -> *mut void {
+export function calloc(nmemb: usize, size: usize) -> ptr<void> {
     # Allocate nmemb elements of size bytes each, initialized to zero
     # Returns null pointer if allocation fails
     let total_size: usize = nmemb * size
-    let ptr: *mut void = malloc(total_size)
+    let ptr: ptr<void> = malloc(total_size)
     if ptr != null {
         memset(ptr, 0, total_size)
     }
     return ptr
 }
 
-export function realloc(ptr: *mut void, size: usize) -> *mut void {
+export function realloc(ptr: ptr<void>, size: usize) -> ptr<void> {
     # Reallocate memory to new size
     # Preserves existing data up to min(old_size, new_size)
     # Returns null pointer if allocation fails, original ptr remains valid
@@ -28,13 +28,13 @@ export function realloc(ptr: *mut void, size: usize) -> *mut void {
     return null
 }
 
-export function free(ptr: *mut void) -> void {
+export function free(ptr: ptr<void>) -> void {
     # Deallocate memory previously allocated by malloc, calloc, or realloc
     # Passing null pointer has no effect
     # Implemented as intrinsic in MLIR generator
 }
 
-export function aligned_alloc(alignment: usize, size: usize) -> *mut void {
+export function aligned_alloc(alignment: usize, size: usize) -> ptr<void> {
     # Allocate size bytes with specified alignment
     # Alignment must be a power of 2 and size must be multiple of alignment
     # Returns null pointer if allocation fails
@@ -43,7 +43,7 @@ export function aligned_alloc(alignment: usize, size: usize) -> *mut void {
 }
 
 # Memory manipulation functions
-export function memcpy(dest: *mut void, src: *const void, n: usize) -> *mut void {
+export function memcpy(dest: ptr<void>, src: ptr<void>, n: usize) -> ptr<void> {
     # Copy n bytes from src to dest
     # Regions may overlap - behavior is undefined
     # Returns dest pointer
@@ -51,7 +51,7 @@ export function memcpy(dest: *mut void, src: *const void, n: usize) -> *mut void
     return dest
 }
 
-export function memmove(dest: *mut void, src: *const void, n: usize) -> *mut void {
+export function memmove(dest: ptr<void>, src: ptr<void>, n: usize) -> ptr<void> {
     # Copy n bytes from src to dest
     # Regions may overlap - copy is handled safely
     # Returns dest pointer
@@ -59,14 +59,14 @@ export function memmove(dest: *mut void, src: *const void, n: usize) -> *mut voi
     return dest
 }
 
-export function memset(dest: *mut void, c: i32, n: usize) -> *mut void {
+export function memset(dest: ptr<void>, c: i32, n: usize) -> ptr<void> {
     # Set n bytes starting at dest to value c (converted to unsigned char)
     # Returns dest pointer
     # Implemented as intrinsic in MLIR generator
     return dest
 }
 
-export function memcmp(s1: *const void, s2: *const void, n: usize) -> i32 {
+export function memcmp(s1: ptr<void>, s2: ptr<void>, n: usize) -> i32 {
     # Compare first n bytes of s1 and s2
     # Returns < 0 if s1 < s2, 0 if equal, > 0 if s1 > s2
     # Implemented as intrinsic in MLIR generator
@@ -74,26 +74,50 @@ export function memcmp(s1: *const void, s2: *const void, n: usize) -> i32 {
 }
 
 # Memory alignment and layout functions
-export function alignof<T>() -> usize {
-    # Return alignment requirement of type T in bytes
+export function alignof_i32() -> usize {
+    # Return alignment requirement of i32 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 4
+}
+
+export function alignof_f32() -> usize {
+    # Return alignment requirement of f32 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 4
+}
+
+export function alignof_i8() -> usize {
+    # Return alignment requirement of i8 in bytes
     # Implemented as intrinsic in MLIR generator
     return 1
 }
 
-export function sizeof<T>() -> usize {
-    # Return size of type T in bytes
+export function sizeof_i32() -> usize {
+    # Return size of i32 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 4
+}
+
+export function sizeof_f32() -> usize {
+    # Return size of f32 in bytes
+    # Implemented as intrinsic in MLIR generator
+    return 4
+}
+
+export function sizeof_i8() -> usize {
+    # Return size of i8 in bytes
     # Implemented as intrinsic in MLIR generator
     return 1
 }
 
-export function offset_of<T>(field: str) -> usize {
-    # Return byte offset of field within struct T
+export function offset_of_Point(field: str) -> usize {
+    # Return byte offset of field within Point struct
     # Compile-time error if field doesn't exist
     # Implemented as intrinsic in MLIR generator
     return 0
 }
 
-export function is_aligned(ptr: *const void, alignment: usize) -> bool {
+export function is_aligned(ptr: ptr<void>, alignment: usize) -> bool {
     # Check if pointer is aligned to specified boundary
     let addr: usize = ptr as usize
     return (addr & (alignment - 1)) == 0
@@ -112,23 +136,23 @@ export function align_down(size: usize, alignment: usize) -> usize {
 }
 
 # Memory safety and debugging functions
-export function memory_check(ptr: *const void, size: usize) -> bool {
+export function memory_check(ptr: ptr<void>, size: usize) -> bool {
     # Check if memory region is accessible for reading
     # Returns true if readable, false otherwise
     # Implemented as intrinsic in MLIR generator
     return true
 }
 
-export function memory_check_write(ptr: *mut void, size: usize) -> bool {
+export function memory_check_write(ptr: ptr<void>, size: usize) -> bool {
     # Check if memory region is accessible for writing
     # Returns true if writable, false otherwise
     # Implemented as intrinsic in MLIR generator
     return true
 }
 
-export function memory_fill_pattern(ptr: *mut void, pattern: u32, count: usize) -> void {
+export function memory_fill_pattern(ptr: ptr<void>, pattern: u32, count: usize) -> void {
     # Fill memory with 32-bit pattern repeated
-    let p: *mut u32 = ptr as *mut u32
+    let p: ptr<u32> = ptr as ptr<u32>
     let i: usize = 0
     while i < count {
         p[i] = pattern
@@ -136,39 +160,46 @@ export function memory_fill_pattern(ptr: *mut void, pattern: u32, count: usize) 
     }
 }
 
-export function memory_zero(ptr: *mut void, size: usize) -> void {
+export function memory_zero(ptr: ptr<void>, size: usize) -> void {
     # Efficiently zero memory region
     memset(ptr, 0, size)
 }
 
-export function memory_copy_nonoverlapping(dest: *mut void, src: *const void, n: usize) -> void {
+export function memory_copy_nonoverlapping(dest: ptr<void>, src: ptr<void>, n: usize) -> void {
     # Copy memory with guarantee of non-overlapping regions
     # May use optimized copy operations
     memcpy(dest, src, n)
 }
 
-export function memory_copy_overlapping(dest: *mut void, src: *const void, n: usize) -> void {
+export function memory_copy_overlapping(dest: ptr<void>, src: ptr<void>, n: usize) -> void {
     # Copy memory with handling of overlapping regions
     memmove(dest, src, n)
 }
 
 # Stack allocation functions
-export function alloca(size: usize) -> *mut void {
+export function alloca(size: usize) -> ptr<void> {
     # Allocate memory on stack (automatically freed when function returns)
     # Implemented as intrinsic in MLIR generator
     return null
 }
 
-export function stack_array<T>(count: usize) -> *mut T {
-    # Allocate array of T on stack
-    let size: usize = count * sizeof<T>()
-    let ptr: *mut void = alloca(size)
-    return ptr as *mut T
+export function stack_array_i32(count: usize) -> ptr<i32> {
+    # Allocate array of i32 on stack
+    let size: usize = count * sizeof_i32()
+    let ptr: ptr<void> = alloca(size)
+    return ptr as ptr<i32>
+}
+
+export function stack_array_f32(count: usize) -> ptr<f32> {
+    # Allocate array of f32 on stack
+    let size: usize = count * sizeof_f32()
+    let ptr: ptr<void> = alloca(size)
+    return ptr as ptr<f32>
 }
 
 # Memory pool management
 export struct MemoryPool {
-    buffer: *mut u8,
+    buffer: ptr<u8>,
     size: usize,
     offset: usize,
     capacity: usize
@@ -176,7 +207,7 @@ export struct MemoryPool {
 
 export function memory_pool_create(size: usize) -> MemoryPool {
     # Create a new memory pool
-    let buffer: *mut u8 = malloc(size) as *mut u8
+    let buffer: ptr<u8> = malloc(size) as ptr<u8>
     return MemoryPool {
         buffer: buffer,
         size: size,
@@ -185,7 +216,7 @@ export function memory_pool_create(size: usize) -> MemoryPool {
     }
 }
 
-export function memory_pool_alloc(pool: *mut MemoryPool, size: usize, alignment: usize) -> *mut void {
+export function memory_pool_alloc(pool: ptr<MemoryPool>, size: usize, alignment: usize) -> ptr<void> {
     # Allocate from memory pool with alignment
     let aligned_offset: usize = align_up(pool.offset, alignment)
     if aligned_offset + size > pool.capacity {
@@ -196,14 +227,14 @@ export function memory_pool_alloc(pool: *mut MemoryPool, size: usize, alignment:
     return pool.buffer + aligned_offset
 }
 
-export function memory_pool_reset(pool: *mut MemoryPool) -> void {
+export function memory_pool_reset(pool: ptr<MemoryPool>) -> void {
     # Reset pool to reuse all memory
     pool.offset = 0
 }
 
-export function memory_pool_destroy(pool: *mut MemoryPool) -> void {
+export function memory_pool_destroy(pool: ptr<MemoryPool>) -> void {
     # Free memory pool buffer
-    free(pool.buffer as *mut void)
+    free(pool.buffer as ptr<void>)
     pool.buffer = null
     pool.size = 0
     pool.offset = 0
@@ -211,21 +242,21 @@ export function memory_pool_destroy(pool: *mut MemoryPool) -> void {
 }
 
 # Memory debugging utilities
-export function memory_dump(ptr: *const void, size: usize, bytes_per_line: usize) -> void {
+export function memory_dump(ptr: ptr<void>, size: usize, bytes_per_line: usize) -> void {
     # Dump memory contents in hex format for debugging
-    let p: *const u8 = ptr as *const u8
+    let p: ptr<u8> = ptr as ptr<u8>
     let i: usize = 0
     
     while i < size {
         # Print address
-        print(format_hex(ptr + i))
+        print(format_hex_ptr(ptr + i))
         print(": ")
         
         # Print hex bytes
         let j: usize = 0
         while j < bytes_per_line and i + j < size {
             let byte: u8 = p[i + j]
-            print(format_hex(byte))
+            print(format_hex(byte as u32))
             print(" ")
             j = j + 1
         }
@@ -248,7 +279,7 @@ export function memory_dump(ptr: *const void, size: usize, bytes_per_line: usize
     }
 }
 
-export function memory_validate(ptr: *const void, size: usize) -> bool {
+export function memory_validate(ptr: ptr<void>, size: usize) -> bool {
     # Validate memory region for common corruption patterns
     if ptr == null or size == 0 {
         return false
@@ -274,7 +305,7 @@ export function format_hex(value: u32) -> str {
     return "0x0"  # Placeholder
 }
 
-export function format_hex_ptr(ptr: *const void) -> str {
+export function format_hex_ptr(ptr: ptr<void>) -> str {
     # Format pointer as hexadecimal string
     return format_hex(ptr as u32)
 }

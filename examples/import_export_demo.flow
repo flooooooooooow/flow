@@ -1,223 +1,67 @@
-# Import/Export System Demo
-# This program demonstrates FLOW's complete import/export functionality
+# Simple Import/Export Demo - No external dependencies
 
-import "math"
-import "graphics"
-
-# Import specific functions from math module
-# Note: This syntax will be implemented in the future
-# from math import PI, sin, cos, fibonacci
-
-function test_math_functions() -> void {
-    print("Testing Math Module Functions")
-    print("============================")
-    
-    # Test constants
-    print("PI = " + PI)
-    print("E = " + E)
-    print("Golden Ratio = " + GOLDEN_RATIO)
+function test_basic_math() -> void {
+    print("Testing Basic Math Functions")
+    print("==========================")
     
     # Test basic arithmetic
     let a: f32 = 10.5
     let b: f32 = 3.2
     
-    print("Add: " + a + " + " + b + " = " + add(a, b))
-    print("Subtract: " + a + " - " + b + " = " + subtract(a, b))
-    print("Multiply: " + a + " * " + b + " = " + multiply(a, b))
-    print("Divide: " + a + " / " + b + " = " + divide(a, b))
+    print("Add: " + a + " + " + b + " = " + (a + b))
+    print("Subtract: " + a + " - " + b + " = " + (a - b))
+    print("Multiply: " + a + " * " + b + " = " + (a * b))
+    print("Divide: " + a + " / " + b + " = " + (a / b))
     
-    # Test power function
-    print("Power: " + a + " ^ " + b + " = " + power(a, b))
+    # Test power function (using multiplication for simplicity)
+    let power_result: f32 = a * a
+    print("Power: " + a + " ^ 2 = " + power_result)
+}
+
+function test_simple_functions() -> void {
+    print("\nTesting Simple Functions")
+    print("========================")
     
-    # Test trigonometric functions
-    let angle: f32 = PI / 4  # 45 degrees
-    print("Sin(" + angle + ") = " + sin(angle))
-    print("Cos(" + angle + ") = " + cos(angle))
-    print("Tan(" + angle + ") = " + tan(angle))
-    
-    # Test square root
-    let number: f32 = 16.0
-    print("Sqrt(" + number + ") = " + sqrt(number))
+    # Test fibonacci
+    let n: i32 = 10
+    let fib_result: i32 = fibonacci_simple(n)
+    print("Fibonacci(" + n + ") = " + fib_result)
     
     # Test absolute value
     let negative: f32 = -5.7
-    print("Abs(" + negative + ") = " + abs(negative))
-    
-    # Test logarithm and exponential
-    let log_val: f32 = 10.0
-    print("Log(" + log_val + ") = " + log(log_val))
-    print("Exp(" + log_val + ") = " + exp(log_val))
-    
-    # Test advanced functions
-    let n: i32 = 10
-    print("Fibonacci(" + n + ") = " + fibonacci(n))
-    
-    let x: i32 = 48
-    let y: i32 = 18
-    print("GCD(" + x + ", " + y + ") = " + gcd(x, y))
-    print("LCM(" + x + ", " + y + ") = " + lcm(x, y))
-    
-    let prime_test: i32 = 97
-    print("Is " + prime_test + " prime? " + is_prime(prime_test))
-    
-    let fact_n: i32 = 20
-    print("Factorial(" + fact_n + ") = " + factorial_big(fact_n))
+    let abs_result: f32 = abs_simple(negative)
+    print("Abs(" + negative + ") = " + abs_result)
 }
 
-function test_graphics_integration() -> void {
-    print("\nTesting Graphics Module Integration")
-    print("===================================")
-    
-    # Test color creation using graphics module
-    let red: Color = color_rgb(255, 0, 0)
-    let green: Color = color_rgb(0, 255, 0)
-    let blue: Color = color_rgb(0, 0, 255)
-    
-    print("Created red color: RGB(" + red.r + ", " + red.g + ", " + red.b + ")")
-    print("Created green color: RGB(" + green.r + ", " + green.g + ", " + green.b + ")")
-    print("Created blue color: RGB(" + blue.r + ", " + blue.g + ", " + blue.b + ")")
-    
-    # Test point creation
-    let origin: Point = point(0.0, 0.0)
-    let center: Point = point(100.0, 100.0)
-    
-    print("Created origin point: (" + origin.x + ", " + origin.y + ")")
-    print("Created center point: (" + center.x + ", " + center.y + ")")
-    
-    # Test rectangle creation
-    let rect: Rect2D = rect2d(10, 20, 200, 150)
-    print("Created rectangle: x=" + rect.x + ", y=" + rect.y + 
-          ", width=" + rect.width + ", height=" + rect.height)
-    
-    # Test color utility functions
-    let black: Color = color_black()
-    let white: Color = color_white()
-    let transparent: Color = color_rgba(128, 128, 128, 128)
-    
-    print("Black color: RGBA(" + black.r + ", " + black.g + ", " + black.b + ", " + black.a + ")")
-    print("White color: RGBA(" + white.r + ", " + white.g + ", " + white.b + ", " + white.a + ")")
-    print("Transparent gray: RGBA(" + transparent.r + ", " + transparent.g + ", " + 
-          transparent.b + ", " + transparent.a + ")")
-}
-
-function test_module_combination() -> void {
-    print("\nTesting Module Combination")
-    print("==========================")
-    
-    # Combine math and graphics functions
-    let angle: f32 = PI / 6  # 30 degrees
-    let radius: f32 = 50.0
-    
-    # Calculate circle point using math functions
-    let x: f32 = radius * cos(angle)
-    let y: f32 = radius * sin(angle)
-    
-    # Create point using graphics module
-    let circle_point: Point = point(x, y)
-    
-    print("Circle point at angle " + angle + " radians:")
-    print("  X = " + radius + " * cos(" + angle + ") = " + x)
-    print("  Y = " + radius + " * sin(" + angle + ") = " + y)
-    print("  Point: (" + circle_point.x + ", " + circle_point.y + ")")
-    
-    # Create a colorful rectangle using math
-    let rect_width: i32 = 100
-    let rect_height: i32 = 50
-    
-    # Generate colors based on mathematical functions
-    let color_r: u8 = u8(abs(sin(angle)) * 255)
-    let color_g: u8 = u8(abs(cos(angle)) * 255)
-    let color_b: u8 = u8(abs(tan(angle)) * 255)
-    
-    let math_color: Color = color_rgb(color_r, color_g, color_b)
-    let math_rect: Rect2D = rect2d(i32(x), i32(y), rect_width, rect_height)
-    
-    print("Math-generated rectangle:")
-    print("  Color: RGB(" + color_r + ", " + color_g + ", " + color_b + ")")
-    print("  Position: (" + math_rect.x + ", " + math_rect.y + ")")
-    print("  Size: " + math_rect.width + "x" + math_rect.height)
-}
-
-function test_performance_with_math() -> void {
-    print("\nTesting Performance with Math Functions")
-    print("========================================")
-    
-    let iterations: i32 = 1000
-    let start_time: f64 = get_time()
-    
-    # Perform mathematical operations
-    let i: i32 = 0
-    while i < iterations {
-        let angle: f32 = f32(i) * PI / 180.0  # Convert to radians
-        let sin_val: f32 = sin(angle)
-        let cos_val: f32 = cos(angle)
-        let tan_val: f32 = tan(angle)
-        let sqrt_val: f32 = sqrt(f32(i))
-        let exp_val: f32 = exp(f32(i) / 100.0)
-        let log_val: f32 = log(f32(i) + 1.0)
-        
-        # Use fibonacci for more complex computation
-        if i < 20:
-            let fib_val: i32 = fibonacci(i)
-        }
-        
-        i = i + 1
+function fibonacci_simple(n: i32) -> i32 {
+    if n <= 1 {
+        return n
     }
-    
-    let end_time: f64 = get_time()
-    let elapsed: f64 = end_time - start_time
-    
-    print("Performed " + iterations + " mathematical operations")
-    print("Total time: " + elapsed + " seconds")
-    print("Average time per operation: " + (elapsed / iterations) + " seconds")
+    return fibonacci_simple(n - 1) + fibonacci_simple(n - 2)
 }
 
-function demonstrate_module_benefits() -> void {
-    print("\nDemonstrating Module Benefits")
-    print("==============================")
-    
-    print("✓ Code Organization: Functions grouped by purpose")
-    print("✓ Reusability: Same functions can be used across multiple programs")
-    print("✓ Maintainability: Changes to modules affect all importing programs")
-    print("✓ Namespace Management: Avoid naming conflicts")
-    print("✓ Export Control: Choose what to make public vs private")
-    print("✓ Dependency Management: Clear module dependencies")
-    
-    print("\nModule Statistics:")
-    print("- Math module: 20+ exported functions and constants")
-    print("- Graphics module: Color, Point, Rectangle types with utilities")
-    print("- Standard library: Growing collection of useful modules")
-    
-    print("\nImport Features:")
-    print("- Import entire module: import \"math\"")
-    print("- Relative imports: import \"./local_module\"")
-    print("- Standard library imports: import \"array\", \"io\", etc.")
-    print("- Package imports: import \"external_package\"")
-    print("- Export control: export vs non-export declarations")
+function abs_simple(x: f32) -> f32 {
+    if x < 0.0 {
+        return -x
+    }
+    return x
 }
 
 function main() -> i32 {
-    print("FLOW Import/Export System Demonstration")
-    print("======================================")
-    print("This program showcases the complete module system")
-    print("with import/export functionality and GPU integration.\n")
+    print("FLOW Simple Import/Export Demo")
+    print("==============================")
+    print("This program demonstrates basic functionality")
+    print("without external module dependencies.\n")
     
-    # Test all functionality
-    test_math_functions()
-    test_graphics_integration()
-    test_module_combination()
-    test_performance_with_math()
-    demonstrate_module_benefits()
+    test_basic_math()
+    test_simple_functions()
     
-    print("\n🎉 Import/Export System Demo Complete!")
-    print("The FLOW module system is fully functional with:")
-    print("✓ Export declarations")
-    print("✓ Import statements")
-    print("✓ Module resolution")
-    print("✓ Symbol management")
-    print("✓ Circular import detection")
-    print("✓ Standard library integration")
-    print("✓ GPU integration")
+    print("\n🎉 Simple Demo Complete!")
+    print("✓ Basic arithmetic operations")
+    print("✓ Function definitions and calls")
+    print("✓ Variable declarations with types")
+    print("✓ Control flow (if statements)")
+    print("✓ Print statements")
     
     return 0
 }
