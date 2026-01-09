@@ -9,6 +9,60 @@ from typing import List, Dict, Optional, Union, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
+
+class FlowSyntaxError(SyntaxError):
+    """Enhanced syntax error with source context and suggestions."""
+    
+    def __init__(self, message: str, line: int = None, column: int = None, 
+                 source: str = None, suggestion: str = None):
+        self.line = line
+        self.column = column
+        self.source = source
+        self.suggestion = suggestion
+        
+        # Build detailed message
+        parts = [f"Error: {message}"]
+        
+        if line is not None:
+            parts[0] += f" at line {line}"
+            if column is not None:
+                parts[0] += f", column {column}"
+        
+        # Add source context if available
+        if source and line:
+            lines = source.split('\n')
+            if 0 < line <= len(lines):
+                src_line = lines[line - 1]
+                parts.append(f"\n  {line:4d} | {src_line}")
+                if column:
+                    parts.append(f"       | {' ' * (column - 1)}^")
+        
+        # Add suggestion if available
+        if suggestion:
+            parts.append(f"\n  Hint: {suggestion}")
+        
+        super().__init__('\n'.join(parts))
+
+
+# Common error suggestions
+ERROR_SUGGESTIONS = {
+    "Expected TokenType.RBRACE": "Missing closing brace '}'. Check for unbalanced braces.",
+    "Expected TokenType.RPAREN": "Missing closing parenthesis ')'. Check function calls and expressions.",
+    "Expected TokenType.SEMICOLON": "Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point.",
+    "Expected TokenType.IDENTIFIER": "Expected a name (identifier) here. Names must start with a letter or underscore.",
+    "Unexpected token in expression": "This token cannot start an expression. Check for typos or missing operators.",
+    "Unexpected declaration": "This keyword cannot appear at the top level. Check for missing braces or incorrect nesting.",
+}
+
+
+def get_suggestion(error_msg: str) -> Optional[str]:
+    """Get a helpful suggestion based on the error message."""
+    for pattern, suggestion in ERROR_SUGGESTIONS.items():
+        if pattern in error_msg:
+            return suggestion
+    return None
+
+
 class TokenType(Enum):
     # Literals
     NUMBER = "NUMBER"
@@ -44,6 +98,9 @@ class TokenType(Enum):
     MATCH = "MATCH"
     DEFAULT = "DEFAULT"
     TEST = "TEST"
+    TRAIT = "TRAIT"
+    IMPL = "IMPL"
+    SELF = "SELF"
     
     # Types
     I8 = "I8"
@@ -86,6 +143,7 @@ class TokenType(Enum):
     STAR = "STAR"
     SLASH = "SLASH"
     PERCENT = "PERCENT"
+    PIPE = "PIPE"  # For lambdas: |x| { ... }
     EQUALS = "EQUALS"
     NOT_EQUALS = "NOT_EQUALS"
     LESS = "LESS"
@@ -133,6 +191,7 @@ class FunctionDecl:
     is_exported: bool = False
     is_extern: bool = False
     type_params: List[str] = field(default_factory=list)  # Generic type parameters like <T, U>
+    has_self: bool = False  # Whether this is a method with self parameter
 
 @dataclass
 class VarDecl:
@@ -179,6 +238,14 @@ class Assignment:
 class FunctionCall:
     name: str
     arguments: List['Expression']
+
+@dataclass
+class Lambda:
+    """Lambda/closure expression: |x: i32, y: i32| -> i32 { x + y }"""
+    parameters: List[Parameter]
+    return_type: Optional[Type]
+    body: Union['Block', 'Expression']  # Can be block or single expression
+    captures: List[str] = field(default_factory=list)  # Captured variables (for analysis)
 
 @dataclass
 class BinaryOperation:
@@ -229,6 +296,28 @@ class StructDecl:
     fields: List[Parameter]
     is_exported: bool = False
     type_params: List[str] = field(default_factory=list)  # Generic type parameters like <T, U>
+
+@dataclass
+class TraitMethod:
+    """A method signature in a trait (no body)."""
+    name: str
+    parameters: List[Parameter]
+    return_type: Type
+    has_self: bool = False  # Whether first param is self
+
+@dataclass
+class TraitDecl:
+    """Trait declaration: trait Printable { function to_string(self) -> string }"""
+    name: str
+    methods: List[TraitMethod]
+    type_params: List[str] = field(default_factory=list)
+
+@dataclass
+class ImplDecl:
+    """Implementation block: impl Trait for Type { ... }"""
+    trait_name: str
+    for_type: Type
+    methods: List['FunctionDecl']
 
 @dataclass
 class EffectDecl:
@@ -299,11 +388,12 @@ class TestDecl:
     body: Block
 
 Expression = Union[Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, EffectCall, StructPattern]
-Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement, ImportDecl, ConstDecl, TestDecl]
+Statement = Union[VarDecl, Assignment, IfStatement, WhileStatement, ForStatement, ReturnStatement, Expression, EffectDecl, CapabilityDecl, HandleStatement, MatchStatement, ImportDecl, ConstDecl, TestDecl, TraitDecl, ImplDecl]
 
 class Lexer:
     def __init__(self, text: str):
         self.text = text
+        self._source = text  # Store for error messages
         self.pos = 0
         self.line = 1
         self.column = 1
@@ -324,6 +414,9 @@ class Lexer:
             'match': TokenType.MATCH,
             'default': TokenType.DEFAULT,
             'test': TokenType.TEST,
+            'trait': TokenType.TRAIT,
+            'impl': TokenType.IMPL,
+            'self': TokenType.SELF,
             'with': TokenType.WITH,
             'handle': TokenType.HANDLE,
             'effect': TokenType.EFFECT,
@@ -370,6 +463,7 @@ class Lexer:
             (r'GREATER_EQUAL', r'>='),
             (r'AND', r'&&'),
             (r'OR', r'\|\|'),
+            (r'PIPE', r'\|'),
             (r'DOTDOT', r'\.\.'),
             (r'DOUBLE_COLON', r'::'),
             (r'PLUS', r'\+'),
@@ -451,8 +545,9 @@ class Lexer:
         return token_type
         
 class Parser:
-    def __init__(self, lexer: Lexer):
+    def __init__(self, lexer: Lexer, source: str = None):
         self.lexer = lexer
+        self.source = source or getattr(lexer, '_source', '')
         self.current_token = self.lexer.next_token()
         self.lookahead = self.lexer.next_token()
         self.struct_names = set()
@@ -461,13 +556,24 @@ class Parser:
         self.current_token = self.lookahead
         self.lookahead = self.lexer.next_token()
     
+    def error(self, message: str, suggestion: str = None) -> FlowSyntaxError:
+        """Create a syntax error with context."""
+        return FlowSyntaxError(
+            message,
+            line=self.current_token.line if self.current_token else None,
+            column=self.current_token.column if hasattr(self.current_token, 'column') else None,
+            source=self.source,
+            suggestion=suggestion or get_suggestion(message)
+        )
+    
     def expect(self, token_type: TokenType):
         if self.current_token.type == token_type:
             token = self.current_token
             self.advance()
             return token
         else:
-            raise SyntaxError(f"Expected {token_type}, got {self.current_token.type} at line {self.current_token.line}")
+            msg = f"Expected {token_type}, got {self.current_token.type}"
+            raise self.error(msg)
     
     def parse(self) -> List[Union[FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ImportDecl, ConstDecl]]:
         declarations = []
@@ -509,6 +615,12 @@ class Parser:
                 if is_exported:
                     raise SyntaxError(f"Cannot export an extern declaration at line {self.current_token.line}")
                 declarations.append(self.parse_extern())
+            elif self.current_token.type == TokenType.TRAIT:
+                decl = self.parse_trait()
+                declarations.append(decl)
+            elif self.current_token.type == TokenType.IMPL:
+                decl = self.parse_impl()
+                declarations.append(decl)
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
         return declarations
@@ -614,6 +726,85 @@ class Parser:
         self.expect(TokenType.RBRACE)
         return StructDecl(name, fields, type_params=type_params)
     
+    def parse_trait(self) -> TraitDecl:
+        """Parse trait declaration: trait Printable { function to_string(self) -> string }"""
+        self.expect(TokenType.TRAIT)
+        name = self.expect(TokenType.IDENTIFIER).value
+        
+        # Parse optional type parameters: trait Comparable<T> { ... }
+        type_params = []
+        if self.current_token.type == TokenType.LESS:
+            type_params = self.parse_type_parameters()
+        
+        self.expect(TokenType.LBRACE)
+        
+        methods = []
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.FUNCTION:
+                self.advance()  # consume 'function'
+                method_name = self.expect(TokenType.IDENTIFIER).value
+                self.expect(TokenType.LPAREN)
+                
+                # Parse parameters
+                params = []
+                has_self = False
+                if self.current_token.type != TokenType.RPAREN:
+                    # Check for self parameter
+                    if self.current_token.type == TokenType.SELF:
+                        has_self = True
+                        self.advance()
+                        # Optional: self might have a type annotation
+                        if self.current_token.type == TokenType.COLON:
+                            self.advance()
+                            self.parse_type()  # Ignore self type for now
+                        if self.current_token.type == TokenType.COMMA:
+                            self.advance()
+                    
+                    # Parse remaining parameters
+                    if self.current_token.type != TokenType.RPAREN:
+                        params = self.parse_parameters()
+                
+                self.expect(TokenType.RPAREN)
+                
+                # Parse return type
+                return_type = Type("void")
+                if self.current_token.type == TokenType.ARROW:
+                    self.advance()
+                    return_type = self.parse_type()
+                
+                methods.append(TraitMethod(method_name, params, return_type, has_self))
+            else:
+                raise SyntaxError(f"Expected 'function' in trait body, got {self.current_token.type}")
+        
+        self.expect(TokenType.RBRACE)
+        return TraitDecl(name, methods, type_params)
+    
+    def parse_impl(self) -> ImplDecl:
+        """Parse impl block: impl Trait for Type { ... }"""
+        self.expect(TokenType.IMPL)
+        trait_name = self.expect(TokenType.IDENTIFIER).value
+        
+        # Expect 'for'
+        if self.current_token.type == TokenType.FOR:
+            self.advance()
+        else:
+            raise SyntaxError(f"Expected 'for' after trait name in impl, got {self.current_token.type}")
+        
+        for_type = self.parse_type()
+        
+        self.expect(TokenType.LBRACE)
+        
+        methods = []
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.FUNCTION:
+                method = self.parse_function()
+                methods.append(method)
+            else:
+                raise SyntaxError(f"Expected 'function' in impl body, got {self.current_token.type}")
+        
+        self.expect(TokenType.RBRACE)
+        return ImplDecl(trait_name, for_type, methods)
+    
     def parse_function(self) -> FunctionDecl:
         self.expect(TokenType.FUNCTION)
         name = self.expect(TokenType.IDENTIFIER).value
@@ -626,8 +817,22 @@ class Parser:
         self.expect(TokenType.LPAREN)
         
         parameters = []
+        has_self = False
         if self.current_token.type != TokenType.RPAREN:
-            parameters = self.parse_parameters()
+            # Handle self parameter (for methods)
+            if self.current_token.type == TokenType.SELF:
+                has_self = True
+                self.advance()
+                # Optional type annotation for self
+                if self.current_token.type == TokenType.COLON:
+                    self.advance()
+                    self.parse_type()  # Ignore self type
+                if self.current_token.type == TokenType.COMMA:
+                    self.advance()
+            
+            # Parse remaining parameters
+            if self.current_token.type != TokenType.RPAREN:
+                parameters = self.parse_parameters()
         
         self.expect(TokenType.RPAREN)
         
@@ -638,7 +843,10 @@ class Parser:
         
         body = self.parse_block()
         
-        return FunctionDecl(name, parameters, return_type, body, [], type_params=type_params)
+        fn = FunctionDecl(name, parameters, return_type, body, [], type_params=type_params)
+        # Store has_self as an attribute (for impl methods)
+        fn.has_self = has_self
+        return fn
     
     def parse_type_parameters(self) -> List[str]:
         """Parse generic type parameters: <T> or <T, U> or <T: Trait>"""
@@ -941,18 +1149,28 @@ class Parser:
     def parse_var_decl(self) -> VarDecl:
         self.expect(TokenType.LET)
         name = self.expect(TokenType.IDENTIFIER).value
-        self.expect(TokenType.COLON)
-        type = self.parse_type()
+        
+        # Type annotation is optional for type inference: let x = 42
+        var_type = None
+        if self.current_token.type == TokenType.COLON:
+            self.advance()
+            var_type = self.parse_type()
         
         initializer = None
         if self.current_token.type == TokenType.ASSIGN:
             self.advance()
             initializer = self.parse_expression_without_assign()
+            
+            # If no type annotation, use auto type (for inference)
+            if var_type is None:
+                var_type = Type("auto")
+        elif var_type is None:
+            raise SyntaxError(f"Variable '{name}' requires either a type annotation or an initializer")
         
         # Semicolons are optional for backward compatibility
         if self.current_token.type == TokenType.SEMICOLON:
             self.advance()
-        return VarDecl(name, type, initializer)
+        return VarDecl(name, var_type, initializer)
     
     def parse_return(self) -> ReturnStatement:
         self.expect(TokenType.RETURN)
@@ -964,7 +1182,7 @@ class Parser:
             # Check if it's a valid expression start
             if self.current_token.type in [TokenType.IDENTIFIER, TokenType.NUMBER, TokenType.BOOLEAN, 
                                          TokenType.LPAREN, TokenType.MINUS, TokenType.NOT, TokenType.STAR, TokenType.AND,
-                                         TokenType.STRING, TokenType.LESS, TokenType.LBRACKET]:
+                                         TokenType.STRING, TokenType.LESS, TokenType.LBRACKET, TokenType.SELF]:
                 value = self.parse_expression_without_assign()
         elif self.current_token.type == TokenType.VOID:
             # Explicit void return - consume the VOID token
@@ -1161,6 +1379,14 @@ class Parser:
             self.advance()
             return Literal(value, Type("string"))
         
+        elif self.current_token.type == TokenType.SELF:
+            # 'self' in method body - treated as a variable
+            self.advance()
+            # Handle self.field or self.method()
+            if self.current_token.type == TokenType.DOT:
+                return self.parse_field_access("self")
+            return Variable("self")
+        
         elif self.current_token.type == TokenType.LESS:
             # Vector literal: <1.0, 2.0, 3.0, 4.0>
             self.advance()
@@ -1295,6 +1521,11 @@ class Parser:
             self.expect(TokenType.RPAREN)
             return expr
         
+        elif self.current_token.type == TokenType.PIPE:
+            # Lambda expression: |x: i32, y: i32| -> i32 { x + y }
+            # Or shorthand: |x| x * 2
+            return self.parse_lambda()
+        
         else:
             raise SyntaxError(f"Unexpected token in expression: {self.current_token.type}")
     
@@ -1310,6 +1541,48 @@ class Parser:
         
         self.expect(TokenType.RPAREN)
         return FunctionCall(name, arguments)
+    
+    def parse_lambda(self) -> Lambda:
+        """Parse lambda expression: |x: i32, y: i32| -> i32 { x + y } or |x| x * 2"""
+        self.expect(TokenType.PIPE)
+        
+        # Parse parameters
+        parameters = []
+        if self.current_token.type != TokenType.PIPE:
+            # First parameter
+            param_name = self.expect(TokenType.IDENTIFIER).value
+            param_type = None
+            if self.current_token.type == TokenType.COLON:
+                self.advance()
+                param_type = self.parse_type()
+            parameters.append(Parameter(param_name, param_type or Type("auto")))
+            
+            # Additional parameters
+            while self.current_token.type == TokenType.COMMA:
+                self.advance()
+                param_name = self.expect(TokenType.IDENTIFIER).value
+                param_type = None
+                if self.current_token.type == TokenType.COLON:
+                    self.advance()
+                    param_type = self.parse_type()
+                parameters.append(Parameter(param_name, param_type or Type("auto")))
+        
+        self.expect(TokenType.PIPE)
+        
+        # Parse optional return type
+        return_type = None
+        if self.current_token.type == TokenType.ARROW:
+            self.advance()
+            return_type = self.parse_type()
+        
+        # Parse body - either block or single expression
+        if self.current_token.type == TokenType.LBRACE:
+            body = self.parse_block()
+        else:
+            # Single expression body
+            body = self.parse_expression_without_assign()
+        
+        return Lambda(parameters, return_type, body)
     
     def parse_struct_literal(self, struct_name: str) -> 'StructLiteral':
         # If current token is LBRACE, expect it and advance

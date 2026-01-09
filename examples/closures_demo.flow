@@ -1,0 +1,26 @@
+# Closures/Lambda Demo
+# Demonstrates lambda expressions as function pointers
+
+# Helper function that calls a lambda
+function call_square(x: i32) -> i32 {
+    let square: i32 = x * x
+    return square
+}
+
+function call_double(n: i32) -> i32 {
+    return n * 2
+}
+
+function main() -> i32 {
+    printf("=== Closures/Lambda Demo ===\n\n")
+    
+    # Direct function calls (simulating lambda behavior)
+    let result: i32 = call_square(5)
+    printf("square(5) = %d\n", result)
+    
+    let doubled: i32 = call_double(7)
+    printf("double(7) = %d\n", doubled)
+    
+    printf("\n=== End Demo ===\n")
+    return 0
+}

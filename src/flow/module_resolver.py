@@ -7,7 +7,7 @@ Handles multi-file resolution and recursive imports with proper import/export sy
 import os
 from pathlib import Path
 from typing import List, Dict, Set, Any, Optional, Tuple
-from .parser import Lexer, Parser, ImportDecl, FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl
+from .parser import Lexer, Parser, ImportDecl, FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, TraitDecl, ImplDecl
 
 class ModuleSymbol:
     """Represents a symbol exported from a module."""
@@ -90,7 +90,13 @@ class ModuleResolver:
 
         # Process symbols in this module
         for decl in others:
-            name = getattr(decl, 'name', None)
+            # Handle ImplDecl specially - it has trait_name instead of name
+            if isinstance(decl, ImplDecl):
+                # Use mangled name: Type_Trait for impl blocks
+                name = f"{decl.for_type.name}_{decl.trait_name}_impl"
+            else:
+                name = getattr(decl, 'name', None)
+            
             if name:
                 is_exported = getattr(decl, 'is_exported', False)
                 symbol = ModuleSymbol(name, decl, file_path, is_exported)
