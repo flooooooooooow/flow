@@ -557,6 +557,7 @@ Languages die from **semantic fragmentation**:
 
 | Mechanism | File | Purpose |
 |-----------|------|---------|
+| **Roadmap** | `ROADMAP.md` | What we're building next, and why |
 | **Language Spec** | `docs/LANGUAGE_SPEC.md` | Single source of truth for all features |
 | **Implementation Map** | `docs/IMPLEMENTATION_MAP.md` | Every concept → exact code location |
 | **Formal Grammar** | `docs/grammar.ebnf` | Syntax contract (291 lines) |
@@ -628,6 +629,7 @@ Languages die from **semantic fragmentation**:
 flow/
 ├── flow                      # CLI entry point (bash, 350 lines)
 ├── flow-lsp                  # LSP launcher (bash)
+├── ROADMAP.md                # What we're building next
 ├── Makefile                  # Build automation
 │
 ├── src/flow/                 # Compiler implementation (Python)
