@@ -149,7 +149,10 @@ export function adsr_tick(e: ADSR) -> ADSR {
             new_stage = stage_decay()
             new_position = 0
         } else {
-            let progress: f32 = e.position / e.attack_samples
+            # Cast to f32 to avoid integer division
+            let pos_f: f32 = e.position
+            let samples_f: f32 = e.attack_samples
+            let progress: f32 = pos_f / samples_f
             new_value = progress
             if progress >= 1.0 {
                 new_value = 1.0
@@ -165,7 +168,10 @@ export function adsr_tick(e: ADSR) -> ADSR {
             new_stage = stage_sustain()
             new_position = 0
         } else {
-            let progress: f32 = e.position / e.decay_samples
+            # Cast to f32 to avoid integer division
+            let pos_f: f32 = e.position
+            let samples_f: f32 = e.decay_samples
+            let progress: f32 = pos_f / samples_f
             new_value = 1.0 - progress * (1.0 - e.sustain_level)
             if progress >= 1.0 {
                 new_value = e.sustain_level
@@ -186,7 +192,10 @@ export function adsr_tick(e: ADSR) -> ADSR {
             new_stage = stage_idle()
             new_position = 0
         } else {
-            let progress: f32 = e.position / e.release_samples
+            # Cast to f32 to avoid integer division
+            let pos_f: f32 = e.position
+            let samples_f: f32 = e.release_samples
+            let progress: f32 = pos_f / samples_f
             new_value = e.release_start * (1.0 - progress)
             if progress >= 1.0 {
                 new_value = 0.0
@@ -291,7 +300,10 @@ export function ar_tick(e: AR) -> AR {
             new_stage = stage_release()
             new_position = 0
         } else {
-            let progress: f32 = e.position / e.attack_samples
+            # Cast to f32 to avoid integer division
+            let pos_f: f32 = e.position
+            let samples_f: f32 = e.attack_samples
+            let progress: f32 = pos_f / samples_f
             new_value = progress
             if progress >= 1.0 {
                 new_value = 1.0
@@ -307,7 +319,10 @@ export function ar_tick(e: AR) -> AR {
             new_stage = stage_idle()
             new_position = 0
         } else {
-            let progress: f32 = e.position / e.release_samples
+            # Cast to f32 to avoid integer division
+            let pos_f: f32 = e.position
+            let samples_f: f32 = e.release_samples
+            let progress: f32 = pos_f / samples_f
             new_value = 1.0 - progress
             if progress >= 1.0 {
                 new_value = 0.0
@@ -397,7 +412,10 @@ export function ramp_tick(r: Ramp) -> Ramp {
     let new_position: i64 = r.position + 1
     let progress: f32 = 0.0
     if r.duration_samples > 0 {
-        progress = r.position / r.duration_samples
+        # Cast to f32 to avoid integer division
+        let pos_f: f32 = r.position
+        let dur_f: f32 = r.duration_samples
+        progress = pos_f / dur_f
     } else {
         progress = 1.0
     }

@@ -178,6 +178,12 @@ class Type:
     type_args: Optional[List['Type']] = None  # Generic type arguments
 
 @dataclass
+class TypeParameter:
+    """A generic type parameter with optional trait bound: T or T: Display"""
+    name: str
+    bound: Optional[str] = None  # Trait bound, e.g., "Display"
+
+@dataclass
 class Parameter:
     name: str
     type: Type
@@ -904,29 +910,33 @@ class Parser:
         fn.has_self = has_self
         return fn
     
-    def parse_type_parameters(self) -> List[str]:
+    def parse_type_parameters(self) -> List[TypeParameter]:
         """Parse generic type parameters: <T> or <T, U> or <T: Trait>"""
         self.expect(TokenType.LESS)  # Consume <
         
         params = []
         # First parameter
         param_name = self.expect(TokenType.IDENTIFIER).value
-        params.append(param_name)
+        bound = None
         
-        # Optional bound: <T: Trait>  (parse but ignore for now)
+        # Optional bound: <T: Trait>
         if self.current_token.type == TokenType.COLON:
             self.advance()
-            self.expect(TokenType.IDENTIFIER)  # Trait name, ignored for now
+            bound = self.expect(TokenType.IDENTIFIER).value
+        
+        params.append(TypeParameter(param_name, bound))
         
         # Additional parameters
         while self.current_token.type == TokenType.COMMA:
             self.advance()
             param_name = self.expect(TokenType.IDENTIFIER).value
-            params.append(param_name)
+            bound = None
             
             if self.current_token.type == TokenType.COLON:
                 self.advance()
-                self.expect(TokenType.IDENTIFIER)  # Trait name
+                bound = self.expect(TokenType.IDENTIFIER).value
+            
+            params.append(TypeParameter(param_name, bound))
         
         self.expect(TokenType.GREATER)  # Consume >
         return params

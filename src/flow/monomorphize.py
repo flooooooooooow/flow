@@ -34,8 +34,23 @@ from .parser import (
     VarDecl, ReturnStatement, Assignment, IfStatement, WhileStatement,
     ForStatement, BinaryOperation, UnaryOperation, FunctionCall,
     Literal, Variable, StructLiteral, ArrayLiteral, FieldAccess,
-    ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl
+    ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter
 )
+
+
+def get_type_param_names(type_params) -> List[str]:
+    """Extract parameter names from type_params (handles both str and TypeParameter)."""
+    if not type_params:
+        return []
+    result = []
+    for p in type_params:
+        if isinstance(p, TypeParameter):
+            result.append(p.name)
+        elif isinstance(p, str):
+            result.append(p)
+        else:
+            result.append(str(p))
+    return result
 
 
 @dataclass
@@ -114,13 +129,13 @@ class Monomorphizer:
             if isinstance(decl, StructDecl) and decl.type_params:
                 self.generic_structs[decl.name] = GenericDef(
                     name=decl.name,
-                    type_params=decl.type_params,
+                    type_params=get_type_param_names(decl.type_params),
                     decl=decl
                 )
             elif isinstance(decl, FunctionDecl) and decl.type_params:
                 self.generic_functions[decl.name] = GenericDef(
                     name=decl.name,
-                    type_params=decl.type_params,
+                    type_params=get_type_param_names(decl.type_params),
                     decl=decl
                 )
     
@@ -135,7 +150,8 @@ class Monomorphizer:
     def _scan_struct(self, struct: StructDecl) -> None:
         """Scan struct fields for generic type usages."""
         # Get type params for this struct (if it's generic, we skip those)
-        type_params = set(struct.type_params) if struct.type_params else set()
+        type_param_names = get_type_param_names(struct.type_params)
+        type_params = set(type_param_names) if type_param_names else set()
         
         for field in struct.fields:
             self._scan_type(field.type, type_params)
@@ -143,7 +159,8 @@ class Monomorphizer:
     def _scan_function(self, fn: FunctionDecl) -> None:
         """Scan function for generic type usages."""
         # Get type params for this function (if it's generic, we skip those)
-        type_params = set(fn.type_params) if fn.type_params else set()
+        type_param_names = get_type_param_names(fn.type_params)
+        type_params = set(type_param_names) if type_param_names else set()
         
         # Check return type
         self._scan_type(fn.return_type, type_params)
