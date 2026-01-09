@@ -1,0 +1,72 @@
+# GPU FFT JIT Demo
+# Real-time GPU FFT compilation with hot reload
+
+effect GPU {
+    allocate(size: i32) -> i64,
+    free(buffer: i64) -> void,
+    copy_to_device(data: array_f32, buffer: i64) -> void,
+    copy_from_device(buffer: i64, data: array_f32) -> void,
+}
+
+effect FFT {
+    fft_forward(input: i64, output: i64, size: i32) -> void,
+    fft_inverse(input: i64, output: i64, size: i32) -> void,
+}
+
+capability CUDAGPU {
+    effect GPU,
+    effect FFT,
+    function allocate(size: i32) -> i64 {
+        # CUDA memory allocation
+        return 12345  # Mock GPU pointer
+    },
+    function free(buffer: i64) -> void {
+        # CUDA memory free
+        return void
+    },
+    function copy_to_device(data: array_f32, buffer: i64) -> void {
+        # CUDA memcpy host to device
+        return void
+    },
+    function copy_from_device(buffer: i64, data: array_f32) -> void {
+        # CUDA memcpy device to host
+        return void
+    },
+    function fft_forward(input: i64, output: i64, size: i32) -> void {
+        # cuFFT forward transform
+        return void
+    },
+    function fft_inverse(input: i64, output: i64, size: i32) -> void {
+        # cuFFT inverse transform
+        return void
+    },
+}
+
+# Real-time FFT function that benefits from JIT
+function realtime_fft(data: array_f32) -> array_f32 {
+    handle GPU, FFT with CUDAGPU {
+        let size: i32 = 4  # Mock size
+        let input: i64 = allocate(size)
+        let output: i64 = allocate(size)
+        
+        copy_to_device(data, input)
+        fft_forward(input, output, size)
+        
+        let result: array_f32 = [0.0, 0.0, 0.0, 0.0]  # Mock result
+        copy_from_device(output, result)
+        
+        free(input)
+        free(output)
+        
+        return result
+    }
+}
+
+# Main function for JIT execution
+function main() -> i32 {
+    let test_data: array_f32 = [1.0, 2.0, 3.0, 4.0]
+    let fft_result: array_f32 = realtime_fft(test_data)
+    
+    # In real JIT, this would benchmark performance
+    return 0
+}

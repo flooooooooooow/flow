@@ -1,0 +1,13 @@
+# SIMD SAXPY: a*x + y vectorizable loop
+# This should trigger LLVM loop vectorization
+
+function saxpy(a: f32, x: memref_f32, y: memref_f32, out: memref_f32, n: i32) -> i32 {
+    for i in 0..n {
+        out[i] = a * x[i] + y[i]
+    }
+    return 0
+}
+
+function main() -> i32 {
+    return 0
+}

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLOW Interactive Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        .demo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .demo-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            background: #f9f9f9;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .demo-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+        }
+        .demo-card h3 {
+            color: #333;
+            margin-top: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .demo-card .icon {
+            font-size: 1.5em;
+        }
+        .demo-card p {
+            color: #666;
+            line-height: 1.6;
+        }
+        .demo-card .code {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .demo-card .status {
+            margin-top: 10px;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        .status.working {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.coming-soon {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.experimental {
+            background: #cce5ff;
+            color: #004085;
+        }
+        .features {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 30px 0;
+        }
+        .features h2 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        .feature-item {
+            text-align: center;
+            padding: 15px;
+        }
+        .feature-item .icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        .try-it-out {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .try-it-out h2 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .command-box {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            margin: 15px 0;
+            text-align: left;
+            display: inline-block;
+        }
+        .note {
+            background: #e7f3ff;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 FLOW Interactive Demo</h1>
+        <p class="subtitle">Experience the power of FLOW programming language with these interactive examples</p>
+        
+        <div class="features">
+            <h2>✨ Key Features</h2>
+            <div class="features-grid">
+                <div class="feature-item">
+                    <div class="icon">🎯</div>
+                    <div>Static Typing</div>
+                </div>
+                <div class="feature-item">
+                    <div class="icon">🏗️</div>
+                    <div>Struct Support</div>
+                </div>
+                <div class="feature-item">
+                    <div class="icon">🌊</div>
+                    <div>Effects System</div>
+                </div>
+                <div class="feature-item">
+                    <div class="icon">🎮</div>
+                    <div>GPU Computing</div>
+                </div>
+                <div class="feature-item">
+                    <div class="icon">📱</div>
+                    <div>WebAssembly</div>
+                </div>
+                <div class="feature-item">
+                    <div class="icon">⚡</div>
+                    <div>High Performance</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-grid">
+            <div class="demo-card">
+                <h3><span class="icon">👋</span>Hello World</h3>
+                <p>The classic first program in FLOW</p>
+                <div class="code">function main() -> i32 {
+    print("Hello, World!")
+    return 0
+}</div>
+                <div class="status working">✅ Working</div>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">🔢</span>Fibonacci</h3>
+                <p>Recursive Fibonacci sequence calculation</p>
+                <div class="code">function fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci(n-1) + fibonacci(n-2)
+}</div>
+                <div class="status working">✅ Working</div>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">🏗️</span>Struct Demo</h3>
+                <p>Data structures with field access</p>
+                <div class="code">struct Point {
+    x: f32,
+    y: f32
+}
+
+let p = Point { x: 10.0, y: 20.0 }
+print("Point: (" + string(p.x) + ", " + string(p.y) + ")")</div>
+                <div class="status working">✅ Working</div>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">🎮</span>Metal GPU</h3>
+                <p>Apple Silicon GPU acceleration</p>
+                <div class="code">function metal_demo() -> i32 {
+    if metal_is_available() {
+        print("✓ Metal GPU ready")
+        return 0
+    }
+    return 1
+}</div>
+                <div class="status working">✅ Working</div>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">🌊</span>Effects</h3>
+                <p>Algebraic effects for control flow</p>
+                <div class="code">effect State {
+    get(key: string) -> any
+    set(key: string, value: any) -> void
+}</div>
+                <div class="status experimental">🧪 Experimental</div>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">📊</span>Array Processing</h3>
+                <p>Efficient array operations</p>
+                <div class="code">function sum_array(arr: [i32]) -> i32 {
+    let sum = 0
+    for i in 0..length(arr) {
+        sum = sum + arr[i]
+    }
+    return sum
+}</div>
+                <div class="status working">✅ Working</div>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">🔄</span>Recursion</h3>
+                <p>Advanced recursive patterns</p>
+                <div class="code">function factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}</div>
+                <div class="status working">✅ Working</div>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">🌐</span>WebAssembly</h3>
+                <p>Browser-based execution with real WASM</p>
+                <div class="code"># Compiles to WebAssembly
+function web_demo() -> i32 {
+    print("🌐 Running in browser!")
+    return 0
+}</div>
+                <div class="status working">✅ Working - Run ./build_wasm_demo.sh</div>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">📚</span>Module System</h3>
+                <p>Code organization and reuse</p>
+                <div class="code">import "math"
+import "graphics"
+
+function main() -> i32 {
+    let result = math.sqrt(16.0)
+    return 0
+}</div>
+                <div class="status experimental">🧪 Experimental</div>
+            </div>
+        </div>
+
+        <div class="try-it-out">
+            <h2>🛠️ Try It Yourself</h2>
+            <p>Run FLOW examples locally with these commands:</p>
+            <div class="command-box">
+# Run a specific example<br>
+./flow run examples/fibonacci.flow<br><br>
+# Run all tests<br>
+./flow test<br><br>
+# List available examples<br>
+./flow examples
+            </div>
+            <div class="note">
+                <strong>Note:</strong> FLOW compiles to C for maximum performance and portability. 
+                WebAssembly support is now available! Run <code>./build_wasm_demo.sh</code> to create real WASM binaries.
+            </div>
+        </div>
+
+        <div class="note">
+            <h3>📖 About FLOW</h3>
+            <p>FLOW is a modern programming language that combines the safety of static typing with the expressiveness of functional programming. 
+            It features first-class GPU computing, advanced effects systems, and compiles to high-performance native code.</p>
+            <p><strong>Current Status:</strong> Version 0.2.0 with Metal GPU integration and comprehensive documentation.</p>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactivity
+        document.querySelectorAll('.demo-card').forEach(card => {
+            card.addEventListener('click', function() {
+                const title = this.querySelector('h3').textContent.trim();
+                const code = this.querySelector('.code').textContent.trim();
+                
+                // Create a simple modal to show the code
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0,0,0,0.8);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 1000;
+                `;
+                
+                modal.innerHTML = `
+                    <div style="
+                        background: white;
+                        padding: 30px;
+                        border-radius: 10px;
+                        max-width: 80%;
+                        max-height: 80%;
+                        overflow: auto;
+                    ">
+                        <h2>${title}</h2>
+                        <pre style="
+                            background: #1e1e1e;
+                            color: #00ff00;
+                            padding: 20px;
+                            border-radius: 5px;
+                            overflow-x: auto;
+                        ">${code}</pre>
+                        <button onclick="this.parentElement.parentElement.remove()" style="
+                            background: #667eea;
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            border-radius: 5px;
+                            cursor: pointer;
+                            margin-top: 15px;
+                        ">Close</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        modal.remove();
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

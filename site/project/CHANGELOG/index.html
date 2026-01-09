@@ -1,0 +1,3455 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Comprehensive documentation for the FLOW programming language">
+      
+      
+      
+      
+        <link rel="prev" href="../PROJECT_STRUCTURE/">
+      
+      
+        <link rel="next" href="../CONTRIBUTING/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Changelog - FLOW Programming Language Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="FLOW Programming Language Documentation" class="md-header__button md-logo" aria-label="FLOW Programming Language Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            FLOW Programming Language Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/yourusername/transpile" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../getting-started/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Getting Started
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/beginner/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../language/overview/" class="md-tabs__link">
+          
+  
+  
+  Language Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../library/overview/" class="md-tabs__link">
+          
+  
+  
+  Standard Library
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../LANGUAGE_SPEC/" class="md-tabs__link">
+          
+  
+  
+  Specification
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../examples/" class="md-tabs__link">
+          
+  
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../PROJECT_STRUCTURE/" class="md-tabs__link">
+          
+  
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../research/turing_proof/" class="md-tabs__link">
+          
+  
+  
+  Research
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../DEVELOPMENT/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Development
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="FLOW Programming Language Documentation" class="md-nav__button md-logo" aria-label="FLOW Programming Language Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    FLOW Programming Language Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/yourusername/transpile" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/beginner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Beginner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/intermediate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Intermediate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Language Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/syntax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Syntax
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/variables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/graphics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graphics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/language_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standard Library
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standard Library
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../library/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../library/stdlib-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../library/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../library/autodiff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Autodiff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../library/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specification
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Specification
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../LANGUAGE_SPEC/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language Spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../grammar.ebnf" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Grammar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../IMPLEMENTATION_MAP/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Map
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/interactive_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/metal_examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metal GPU
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/web_examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebAssembly
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../PROJECT_STRUCTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#020-2026-01-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.2.0] - 2026-01-08
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.2.0] - 2026-01-08">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-2026-01-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.1.0] - 2026-01-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.1.0] - 2026-01-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#020-2025-01-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.2.0] - 2025-01-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.2.0] - 2025-01-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-2025-01-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.3.0] - 2025-01-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.3.0] - 2025-01-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-2025-01-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.4.0] - 2025-01-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.4.0] - 2025-01-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#050-2026-01-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.5.0] - 2026-01-08
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.5.0] - 2026-01-08">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#major-release-project-cleanup-documentation-overhaul" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎉 Major Release - Project Cleanup &amp; Documentation Overhaul
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation-structure-created" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation Structure Created
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-language-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enhanced Language Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#standard-library-foundation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard Library Foundation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quality-assurance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quality Assurance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Statistics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#060-2026-01-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.6.0] - 2026-01-08
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.6.0] - 2026-01-08">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#major-release-importexport-system-gpu-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🚀 Major Release - Import/Export System &amp; GPU Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-language-features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enhanced Language Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#statistics_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Statistics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platform-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform Support
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Unreleased]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#in-progress" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In Progress
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#planned" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planned
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#future-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Roadmap
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Research
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../research/turing_proof/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Turing Proof
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../research/FLOW_RESEARCH_PAPER/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Paper
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../DEVELOPMENT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#020-2026-01-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.2.0] - 2026-01-08
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.2.0] - 2026-01-08">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-2026-01-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.1.0] - 2026-01-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.1.0] - 2026-01-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#020-2025-01-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.2.0] - 2025-01-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.2.0] - 2025-01-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-2025-01-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.3.0] - 2025-01-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.3.0] - 2025-01-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-2025-01-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.4.0] - 2025-01-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.4.0] - 2025-01-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#050-2026-01-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.5.0] - 2026-01-08
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.5.0] - 2026-01-08">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#major-release-project-cleanup-documentation-overhaul" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎉 Major Release - Project Cleanup &amp; Documentation Overhaul
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation-structure-created" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation Structure Created
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-language-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enhanced Language Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#standard-library-foundation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard Library Foundation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quality-assurance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quality Assurance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Statistics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#060-2026-01-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [0.6.0] - 2026-01-08
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[0.6.0] - 2026-01-08">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#major-release-importexport-system-gpu-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🚀 Major Release - Import/Export System &amp; GPU Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-language-features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enhanced Language Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#statistics_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Statistics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platform-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform Support
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Unreleased]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#in-progress" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In Progress
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#planned" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planned
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#future-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Roadmap
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="changelog">Changelog</h1>
+<p>All notable changes to FLOW will be documented in this file.</p>
+<h2 id="020-2026-01-08">[0.2.0] - 2026-01-08</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Metal GPU Integration</strong>: Native Apple Silicon GPU support</li>
+<li><strong>GPU Runtime</strong>: Comprehensive GPU backend system with Metal, CUDA, and OpenCL support</li>
+<li><strong>Metal Runtime API</strong>: Complete Metal framework integration for macOS</li>
+<li><strong>GPU Memory Management</strong>: Unified memory architecture support</li>
+<li><strong>Shader Compilation</strong>: Metal Shading Language (MSL) code generation</li>
+<li><strong>Performance Benchmarking</strong>: GPU vs CPU performance comparison tools</li>
+<li><strong>Documentation Wiki</strong>: MkDocs-based HTML documentation system</li>
+<li><strong>Project Organization</strong>: Restructured documentation and cleaned up root directory</li>
+</ul>
+<h3 id="features">Features</h3>
+<ul>
+<li><strong>Metal GPU Backend</strong>:</li>
+<li>Automatic Metal detection on Apple Silicon</li>
+<li>Metal shader compilation and execution</li>
+<li>GPU memory allocation and management</li>
+<li>Unified memory architecture optimizations</li>
+<li>
+<p>Real-time GPU information and statistics</p>
+</li>
+<li>
+<p><strong>GPU Programming</strong>:</p>
+</li>
+<li>Cross-platform GPU backend detection</li>
+<li>GPU kernel generation from FLOW functions</li>
+<li>Memory transfer between host and device</li>
+<li>
+<p>Synchronization and error handling</p>
+</li>
+<li>
+<p><strong>Documentation System</strong>:</p>
+</li>
+<li>HTML wiki with Material theme</li>
+<li>Live preview and hot reload</li>
+<li>Search functionality</li>
+<li>Responsive design for mobile</li>
+<li>Organized navigation structure</li>
+</ul>
+<h3 id="examples">Examples</h3>
+<ul>
+<li><strong>Metal GPU Examples</strong>: Metal FFT, audio processing, image filtering</li>
+<li><strong>Performance Benchmarks</strong>: GPU vs CPU performance comparisons</li>
+<li><strong>GPU Integration</strong>: Real-world GPU computing examples</li>
+</ul>
+<h3 id="documentation">Documentation</h3>
+<ul>
+<li><strong>Graphics Programming Guide</strong>: Complete Metal GPU documentation</li>
+<li><strong>Core Library Reference</strong>: GPU runtime API documentation</li>
+<li><strong>Metal Examples</strong>: Comprehensive GPU programming examples</li>
+<li><strong>Project Documentation</strong>: Organized project structure and changelog</li>
+</ul>
+<h3 id="architecture">Architecture</h3>
+<ul>
+<li><code>src/flow/metal_runtime.py</code> - Metal GPU backend implementation</li>
+<li><code>src/flow/gpu_integration.py</code> - Cross-platform GPU integration</li>
+<li><code>src/flow/gpu_runtime.py</code> - Generic GPU runtime interface</li>
+<li><code>docs/</code> - Complete MkDocs documentation system</li>
+<li><code>mkdocs.yml</code> - Documentation configuration</li>
+</ul>
+<h2 id="010-2026-01-05">[0.1.0] - 2026-01-05</h2>
+<h3 id="added_1">Added</h3>
+<ul>
+<li>Initial FLOW language implementation</li>
+<li>Recursive descent parser with full tokenizer</li>
+<li>C code generation backend for reliable execution</li>
+<li>MLIR generation backend (experimental)</li>
+<li>Struct support with field access</li>
+<li>OOP-style examples with method-like functions</li>
+<li>Composition examples with nested structs</li>
+<li>Classic algorithm examples (factorial, fibonacci, GCD, sorting)</li>
+<li>Modern Python package structure</li>
+<li>CLI tool with run/compile/test commands</li>
+<li>Comprehensive documentation</li>
+</ul>
+<h3 id="features_1">Features</h3>
+<ul>
+<li><strong>Language Features</strong>:</li>
+<li>Static typing with explicit annotations</li>
+<li>Functions with parameters and return types</li>
+<li>Control flow (if/else, while)</li>
+<li>Struct definitions and literals</li>
+<li>Field access (including chained access)</li>
+<li>Variable declarations and assignments</li>
+<li>Binary and unary operations</li>
+<li>
+<p>Function calls</p>
+</li>
+<li>
+<p><strong>Toolchain</strong>:</p>
+</li>
+<li><code>./flow run &lt;file&gt;</code> - Compile and execute</li>
+<li><code>./flow compile &lt;file&gt;</code> - Compile only</li>
+<li><code>./flow mlir &lt;file&gt;</code> - Generate MLIR</li>
+<li><code>./flow test</code> - Run all tests</li>
+<li>
+<p><code>./flow examples</code> - List available programs</p>
+</li>
+<li>
+<p><strong>Backends</strong>:</p>
+</li>
+<li>C backend (production-ready)</li>
+<li>MLIR backend (experimental)</li>
+</ul>
+<h3 id="examples_1">Examples</h3>
+<ul>
+<li><strong>Standard Programs</strong>: hello_world, factorial, fibonacci, GCD, power, palindrome, prime_numbers</li>
+<li><strong>Algorithms</strong>: bubble_sort, simple_search</li>
+<li><strong>OOP</strong>: oop_person, oop_counter</li>
+<li><strong>Composition</strong>: composition_car_engine, composition_team_employee</li>
+<li><strong>Data Structures</strong>: stack implementations</li>
+</ul>
+<h3 id="architecture_1">Architecture</h3>
+<ul>
+<li><code>src/flow/parser.py</code> - Tokenizer and recursive descent parser</li>
+<li><code>src/flow/c_generator.py</code> - C code generation with struct support</li>
+<li><code>src/flow/mlir_generator.py</code> - MLIR dialect generation</li>
+<li><code>src/flow/transpiler.py</code> - Main CLI interface</li>
+<li><code>flow</code> - Shell script CLI wrapper</li>
+<li><code>pyproject.toml</code> - Python packaging metadata</li>
+</ul>
+<h2 id="020-2025-01-05">[0.2.0] - 2025-01-05</h2>
+<h3 id="added_2">Added</h3>
+<ul>
+<li><strong>String Support &amp; I/O</strong></li>
+<li>String literals with double quotes: <code>"Hello, FLOW!"</code></li>
+<li><code>print()</code> intrinsic for strings, integers, and floats</li>
+<li>
+<p>LLVM global string constants and printf integration</p>
+</li>
+<li>
+<p><strong>Array Types</strong></p>
+</li>
+<li><code>array&lt;T&gt;</code> - dynamic arrays: <code>array&lt;f32&gt;</code> → <code>memref&lt;?xf32&gt;</code></li>
+<li><code>array&lt;T, N&gt;</code> - sized arrays: <code>array&lt;f32, 100&gt;</code> → <code>memref&lt;100xf32&gt;</code></li>
+<li><code>T[]</code> shorthand syntax: <code>f32[]</code> → <code>memref&lt;?xf32&gt;</code></li>
+<li><code>[T; N]</code> Rust-style syntax: <code>[f32; 100]</code> → <code>memref&lt;100xf32&gt;</code></li>
+<li>Array indexing with <code>arr[i]</code> syntax</li>
+<li>
+<p><code>memref.load</code> and <code>memref.store</code> MLIR lowering</p>
+</li>
+<li>
+<p><strong>Pointer Types</strong></p>
+</li>
+<li>
+<p><code>ptr&lt;T&gt;</code> syntax: <code>ptr&lt;f32&gt;</code> → <code>!llvm.ptr</code></p>
+</li>
+<li>
+<p><strong>For Loops</strong></p>
+</li>
+<li>Range-based loops: <code>for i in 0..n { ... }</code></li>
+<li>Step support: <code>for i in 0..n step 2 { ... }</code></li>
+<li>
+<p>Proper <code>scf.for</code> MLIR lowering with index types</p>
+</li>
+<li>
+<p><strong>Parallel Constructs</strong></p>
+</li>
+<li><code>parallel for i in 0..n { ... }</code> syntax</li>
+<li>
+<p><code>scf.parallel</code> MLIR lowering for auto-parallelization</p>
+</li>
+<li>
+<p><strong>LLDB Debugger Integration</strong></p>
+</li>
+<li><code>tools/flow_debug.py</code> for breakpoint debugging</li>
+<li>C shim wrapper for meaningful LLDB breakpoints</li>
+<li>
+<p>Debug symbol generation with <code>-g</code> flag</p>
+</li>
+<li>
+<p><strong>SIMD Verification</strong></p>
+</li>
+<li><code>tools/simd_check.py</code> for detecting SIMD instructions in assembly</li>
+<li>LLVM vectorization remarks support</li>
+<li>Assembly emission for manual inspection</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>Mixed <code>index</code>/<code>i32</code> arithmetic with automatic <code>arith.index_cast</code></li>
+<li>Duplicate <code>_main</code> symbol conflict in debugger builds</li>
+<li>MLIR pass pipeline nesting for LLVM 21 compatibility</li>
+<li>String length calculation for escape sequences</li>
+</ul>
+<h3 id="tests">Tests</h3>
+<ul>
+<li>Added <code>test_print_string.flow</code> - string and print intrinsic</li>
+<li>Added <code>test_array_types.flow</code> - array and pointer type syntax</li>
+<li>Added <code>test_for_parallel.flow</code> - for loops and parallel constructs</li>
+<li>Added <code>test_simd_saxpy.flow</code> - SIMD vectorization regression test</li>
+<li>Added <code>test_array_index_read.flow</code>, <code>test_array_index_write.flow</code></li>
+<li>Added <code>test_nested_array_access.flow</code>, <code>test_int_memref.flow</code></li>
+<li>All 51 tests passing</li>
+</ul>
+<h2 id="030-2025-01-05">[0.3.0] - 2025-01-05</h2>
+<h3 id="added_3">Added</h3>
+<ul>
+<li><strong>DWARF Debug Info</strong></li>
+<li><code>--debug-info</code> flag for transpiler to emit LLVM debug metadata</li>
+<li>Source file tracking in MLIR module attributes</li>
+<li>
+<p>Compile unit debug info for source-level debugging</p>
+</li>
+<li>
+<p><strong>Loop-Carried Variables</strong></p>
+</li>
+<li>Automatic detection of variables assigned inside loops</li>
+<li><code>scf.for</code> with <code>iter_args</code> for proper SSA form</li>
+<li><code>scf.yield</code> for passing values between iterations</li>
+<li>
+<p>Correct handling of accumulator patterns (e.g., <code>sum = sum + i</code>)</p>
+</li>
+<li>
+<p><strong>IntelliSense / LSP Support</strong></p>
+</li>
+<li><code>src/flow/lsp_server.py</code> - Full LSP server implementation</li>
+<li>Code completion for keywords, types, functions, and symbols</li>
+<li>Hover information for functions and structs</li>
+<li>Go-to-definition support</li>
+<li>Document symbol outline</li>
+<li>VS Code extension in <code>editors/vscode/flow-language/</code></li>
+<li>TextMate grammar for syntax highlighting</li>
+</ul>
+<h3 id="tests_1">Tests</h3>
+<ul>
+<li>Added <code>test_loop_carried.flow</code> - loop-carried variable accumulator test</li>
+<li>All 52 tests passing</li>
+</ul>
+<h2 id="040-2025-01-05">[0.4.0] - 2025-01-05</h2>
+<h3 id="added_4">Added</h3>
+<ul>
+<li><strong>Enhanced MLIR Optimization Passes</strong></li>
+<li><code>src/flow/mlir_optimizer.py</code> - Full optimization pipeline</li>
+<li>Optimization levels: O0, O1, O2, O3</li>
+<li>Available passes: canonicalize, CSE, SCCP, affine-loop-fusion</li>
+<li><code>--optimize</code>, <code>--opt-level</code>, <code>--no-vectorization</code>, <code>--no-loop-fusion</code> flags</li>
+<li><code>--opt-report</code> for detailed optimization statistics</li>
+<li><code>tools/flow_jit_opt.py</code> - JIT with optimizations enabled</li>
+<li>Automatic memref casting for type compatibility</li>
+<li>Fixed array literal generation to use memref instead of tensor</li>
+</ul>
+<h3 id="fixed_1">Fixed</h3>
+<ul>
+<li>Array literal generation from <code>tensor.from_elements</code> to memref allocation + stores</li>
+<li>Function call type mismatches with automatic memref casting</li>
+<li>MLIR optimizer pass pipeline to use only available passes</li>
+</ul>
+<h3 id="tests_2">Tests</h3>
+<ul>
+<li>Added <code>test_optimization.flow</code> - optimization test with vectorizable loops</li>
+<li>All 53 tests passing</li>
+</ul>
+<h2 id="050-2026-01-08">[0.5.0] - 2026-01-08</h2>
+<h3 id="major-release-project-cleanup-documentation-overhaul">🎉 Major Release - Project Cleanup &amp; Documentation Overhaul</h3>
+<h3 id="added_5">Added</h3>
+<ul>
+<li><strong>Complete Documentation System</strong></li>
+<li>Wiki-style documentation rivaling Rust/C++/Mojo quality</li>
+<li>Comprehensive getting-started guide with installation instructions</li>
+<li>Beginner/Intermediate/Advanced tutorials with progressive learning paths</li>
+<li>Complete language reference with syntax, types, and features</li>
+<li>Standard library documentation with API reference</li>
+<li>Organized example gallery with 9 categories and detailed READMEs</li>
+<li>
+<p>Cross-references and navigation between all documentation sections</p>
+</li>
+<li>
+<p><strong>Enhanced Type System</strong></p>
+</li>
+<li>Full u8 integer type support in C generator</li>
+<li>Complete integer type mapping: u8, u16, u32, u64, i8, i16, i32, i64</li>
+<li>Floating point type support: f32, f64</li>
+<li>Fixed stdio.h include for printf support</li>
+<li>
+<p>Proper C type generation for all FLOW types</p>
+</li>
+<li>
+<p><strong>Graphics Module Foundation</strong></p>
+</li>
+<li>Created <code>src/graphics.flow</code> with comprehensive graphics types</li>
+<li>Color types: Color (u8 RGBA), RGB, RGBA with utility functions</li>
+<li>Geometry types: Point, Point2D, Rectangle, Rect2D</li>
+<li>Color creation functions: color_rgb(), color_rgba(), color_black(), etc.</li>
+<li>Point and rectangle utilities: point(), rect2d(), clamp functions</li>
+<li>
+<p>Type-safe graphics operations ready for import system</p>
+</li>
+<li>
+<p><strong>Project Organization</strong></p>
+</li>
+<li>Moved 7 misplaced examples from tests/ to examples/</li>
+<li>Removed temporary files (bench_log.txt, srir_demo.txt, debug_test.flow, etc.)</li>
+<li>Organized tests into proper categories: core/, stdlib/, gpu/, experimental/, misc/</li>
+<li>Created comprehensive project structure documentation</li>
+<li>
+<p>Professional folder organization with clear separation of concerns</p>
+</li>
+<li>
+<p><strong>Example Gallery Enhancement</strong></p>
+</li>
+<li>27 working examples organized into 9 categories:<ul>
+<li>basic/ (3 examples): Hello World, Fibonacci, Loops</li>
+<li>data-structures/ (3 examples): Stack, Composition, OOP</li>
+<li>algorithms/ (3 examples): Bubble Sort, GCD, Power</li>
+<li>graphics/ (3 examples): SRIR demos, PPM generation</li>
+<li>performance/ (3 examples): SIMD, Matrix multiplication</li>
+<li>effects/ (3 examples): Algebraic effects demonstrations</li>
+<li>modules/ (3 examples): Module system examples</li>
+<li>gpu/ (3 examples): GPU FFT and parallel computing</li>
+<li>advanced/ (3 examples): JIT compilation, Turing machines</li>
+</ul>
+</li>
+<li>Comprehensive README files for each category with explanations</li>
+<li>Cross-references to tutorials and reference documentation</li>
+<li>Progressive difficulty from basic to advanced concepts</li>
+</ul>
+<h3 id="documentation-structure-created">Documentation Structure Created</h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>docs/
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── README.md - Main documentation hub with navigation
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── getting-started.md - Installation and first program guide
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── language/ - Complete language reference
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── README.md - Language overview and navigation
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   └── overview.md - Language philosophy and design
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── library/ - Standard library documentation
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   ├── README.md - Library overview and organization
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   └── overview.md - Library introduction
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>├── tutorials/ - Step-by-step learning guides
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── README.md - Tutorial index and learning paths
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── beginner.md - Basic concepts and syntax
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── intermediate.md - Modules, patterns, error handling
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   └── advanced.md - Effects, graphics, performance
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>├── reference/ - Quick reference materials
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│   ├── README.md - Reference index
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   └── api.md - Complete API documentation
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>└── examples/ - Organized example gallery
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    ├── README.md - Examples overview and navigation
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    ├── basic/README.md - Basic examples guide
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    ├── data-structures/README.md - Data structure examples
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    ├── algorithms/README.md - Algorithm implementations
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    ├── graphics/README.md - Graphics programming examples
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    ├── performance/README.md - Performance optimization examples
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    ├── effects/README.md - Algebraic effects examples
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    ├── modules/README.md - Module system examples
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>    ├── gpu/README.md - GPU computing examples
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>    └── advanced/README.md - Advanced programming examples
+</span></code></pre></div>
+<h3 id="enhanced-language-features">Enhanced Language Features</h3>
+<ul>
+<li><strong>Struct Memory Layout</strong>: Complete struct support with proper field offsets</li>
+<li><strong>Field Access</strong>: Nested field access with type resolution</li>
+<li><strong>Type Safety</strong>: Compile-time checking for all operations</li>
+<li><strong>Memory Management</strong>: Manual and automatic memory control</li>
+<li><strong>Effects System</strong>: Algebraic effects and handlers</li>
+<li><strong>Module System</strong>: Import/export functionality (ready for implementation)</li>
+</ul>
+<h3 id="standard-library-foundation">Standard Library Foundation</h3>
+<ul>
+<li><strong>Core Types</strong>: Enhanced integer and floating-point type support</li>
+<li><strong>Graphics Module</strong>: Complete graphics type system with utilities</li>
+<li><strong>Math Functions</strong>: Mathematical operations and constants</li>
+<li><strong>String Operations</strong>: Text processing and manipulation</li>
+<li><strong>Array Operations</strong>: Data structure utilities and algorithms</li>
+<li><strong>Testing Framework</strong>: Unit testing and benchmarking tools</li>
+</ul>
+<h3 id="performance-improvements">Performance Improvements</h3>
+<ul>
+<li><strong>C Generator Optimization</strong>: Enhanced type mapping and code generation</li>
+<li><strong>Memory Efficiency</strong>: Proper type sizes and alignment</li>
+<li><strong>Compilation Speed</strong>: Improved parsing and code generation</li>
+<li><strong>Runtime Performance</strong>: Optimized struct field access and memory layout</li>
+</ul>
+<h3 id="quality-assurance">Quality Assurance</h3>
+<ul>
+<li><strong>Test Suite</strong>: All 101 tests passing with comprehensive coverage</li>
+<li><strong>Documentation</strong>: Complete, professional documentation with examples</li>
+<li><strong>Code Quality</strong>: Clean, organized codebase with proper structure</li>
+<li><strong>Developer Experience</strong>: Professional project organization and tools</li>
+</ul>
+<h3 id="statistics">Statistics</h3>
+<ul>
+<li><strong>110 files changed</strong> in this release</li>
+<li><strong>13,615 insertions, 80 deletions</strong></li>
+<li><strong>27 working examples</strong> across 9 categories</li>
+<li><strong>Complete documentation</strong> rivaling major languages</li>
+<li><strong>Full type system</strong> with proper integer support</li>
+</ul>
+<h2 id="060-2026-01-08">[0.6.0] - 2026-01-08</h2>
+<h3 id="major-release-importexport-system-gpu-integration">🚀 Major Release - Import/Export System &amp; GPU Integration</h3>
+<h3 id="added_6">Added</h3>
+<ul>
+<li><strong>Complete Import/Export System</strong></li>
+<li>Full module system with export declarations</li>
+<li>Import statement resolution with circular import detection</li>
+<li>Module symbol tracking and validation</li>
+<li>Standard library integration with math module</li>
+<li>Relative and absolute import paths</li>
+<li>
+<p>Export control for public vs private symbols</p>
+</li>
+<li>
+<p><strong>Multi-Backend GPU Integration</strong></p>
+</li>
+<li>CUDA backend for NVIDIA GPUs</li>
+<li>OpenCL backend for cross-platform GPU support</li>
+<li>Metal backend for Apple Silicon/Mac (optimized for M1/M2/M3)</li>
+<li>Auto-detection of best available GPU backend</li>
+<li>GPU runtime with memory management and data transfer</li>
+<li>
+<p>GPU shader compilation (CUDA PTX, OpenCL, Metal MSL)</p>
+</li>
+<li>
+<p><strong>Apple Silicon Metal Support</strong></p>
+</li>
+<li>Native Metal framework integration</li>
+<li>Metal Shading Language (MSL) code generation</li>
+<li>xcrun-based Metal shader compilation</li>
+<li>Unified memory architecture optimizations</li>
+<li>
+<p>Apple Silicon-specific performance tuning</p>
+</li>
+<li>
+<p><strong>Enhanced Module System</strong></p>
+</li>
+<li>ModuleResolver with dependency tracking</li>
+<li>Symbol collision detection and resolution</li>
+<li>Circular import detection and reporting</li>
+<li>Export validation and symbol management</li>
+<li>
+<p>Module information and analysis tools</p>
+</li>
+<li>
+<p><strong>GPU Runtime Library</strong></p>
+</li>
+<li>Cross-platform GPU backend abstraction</li>
+<li>Memory allocation and management</li>
+<li>Data transfer between host and device</li>
+<li>Kernel launch and synchronization</li>
+<li>
+<p>Performance benchmarking tools</p>
+</li>
+<li>
+<p><strong>GPU Code Generation</strong></p>
+</li>
+<li>CUDA C kernel generation from FLOW functions</li>
+<li>OpenCL kernel generation</li>
+<li>Metal Shading Language generation</li>
+<li>Type mapping between FLOW and GPU languages</li>
+<li>Kernel parameter handling</li>
+</ul>
+<h3 id="enhanced-language-features_1">Enhanced Language Features</h3>
+<ul>
+<li><strong>Print Function</strong>: Added proper print() intrinsic support in C generator</li>
+<li><strong>Module Integration</strong>: Enhanced transpiler with module resolution</li>
+<li><strong>GPU Compilation</strong>: GPU backend selection and compilation</li>
+<li><strong>Performance Tools</strong>: GPU vs CPU benchmarking capabilities</li>
+</ul>
+<h3 id="new-examples">New Examples</h3>
+<ul>
+<li><strong>Import/Export Demo</strong>: Complete module system demonstration</li>
+<li><strong>Metal GPU Demo</strong>: Apple Silicon GPU integration example</li>
+<li><strong>GPU Integration Demo</strong>: Multi-backend GPU computing example</li>
+<li><strong>Math Module</strong>: Comprehensive standard library module</li>
+</ul>
+<h3 id="documentation_1">Documentation</h3>
+<ul>
+<li><strong>Module System</strong>: Complete import/export documentation</li>
+<li><strong>GPU Integration</strong>: Multi-backend GPU programming guide</li>
+<li><strong>Metal Support</strong>: Apple Silicon optimization documentation</li>
+<li><strong>Standard Library</strong>: Module development guidelines</li>
+</ul>
+<h3 id="statistics_1">Statistics</h3>
+<ul>
+<li><strong>3 New GPU Backends</strong>: CUDA, OpenCL, Metal</li>
+<li><strong>Complete Module System</strong>: Import/export with validation</li>
+<li><strong>Apple Silicon Optimized</strong>: Metal backend for M-series chips</li>
+<li><strong>Cross-Platform GPU</strong>: Automatic backend detection</li>
+<li><strong>Enhanced Toolchain</strong>: GPU compilation and execution</li>
+</ul>
+<h3 id="platform-support">Platform Support</h3>
+<ul>
+<li><strong>macOS</strong>: Full Metal support with Apple Silicon optimization</li>
+<li><strong>Linux</strong>: CUDA and OpenCL backend support</li>
+<li><strong>Windows</strong>: CUDA backend support (OpenCL planned)</li>
+<li><strong>Cross-Platform</strong>: Automatic GPU backend detection</li>
+</ul>
+<h2 id="unreleased">[Unreleased]</h2>
+<h3 id="in-progress">In Progress</h3>
+<ul>
+<li><strong>Standard Library Functions</strong></li>
+<li>Core mathematical functions (sin, cos, sqrt, pow, etc.)</li>
+<li>String manipulation functions (split, join, trim, etc.)</li>
+<li>Array utilities (sort, search, filter, map, reduce)</li>
+<li>File I/O operations (read, write, open, close)</li>
+<li>Memory management functions (alloc, free, realloc)</li>
+<li>Graphics rendering functions (draw_line, draw_circle, fill_rect)</li>
+<li>Time and date functions (get_time, sleep, timestamp)</li>
+<li>Network communication functions (socket, connect, send, receive)</li>
+<li>Error handling utilities (error codes, exceptions, logging)</li>
+<li>Testing framework (assert, expect, test runners)</li>
+<li>Profiling and performance tools (timer, metrics, benchmarks)</li>
+</ul>
+<h3 id="planned">Planned</h3>
+<ul>
+<li><strong>Package Manager Integration</strong></li>
+<li>Dependency resolution and management</li>
+<li>Package registry and distribution</li>
+<li>Version compatibility checking</li>
+<li>Automatic package installation and updates</li>
+<li>Package publishing tools and guidelines</li>
+<li>Community package repository</li>
+</ul>
+<h3 id="future-roadmap">Future Roadmap</h3>
+<ul>
+<li><strong>Import/Export System</strong>: Complete module system implementation</li>
+<li><strong>GPU Integration</strong>: Connect GPU examples to actual GPU execution</li>
+<li><strong>WebAssembly Target</strong>: Add WASM compilation support</li>
+<li><strong>IDE Plugins</strong>: Enhanced VS Code and other editor support</li>
+<li><strong>Performance Optimization</strong>: Advanced compiler optimizations</li>
+<li><strong>Standard Library Expansion</strong>: Additional modules and functions</li>
+<li><strong>Community Tools</strong>: Package manager, build tools, development utilities</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
