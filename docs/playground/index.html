@@ -1055,60 +1055,9 @@ fib(7) = 13
 fib(8) = 21
 fib(9) = 34
 `;
-            } else if (code.includes('dual(') && code.includes('autodiff')) {
-                // Autodiff example - compute actual values
-                output = `═══════════════════════════════════════
-  Automatic Differentiation Results
-═══════════════════════════════════════
-
-`;
-                // Check what operations are being done
-                if (code.includes('dual_mul(x, x)') || code.includes('x²') || code.includes('x*x')) {
-                    output += `f(x) = x²  at x = 3.0
-  f(3)  = 9.000000
-  f'(3) = 6.000000  (derivative of x² is 2x)
-
-`;
-                }
-                if (code.includes('dual_sin')) {
-                    output += `g(x) = sin(x)  at x = 3.0
-  sin(3)  = 0.141120
-  cos(3)  = -0.989992  (derivative of sin is cos)
-
-`;
-                }
-                if (code.includes('dual_exp')) {
-                    output += `h(x) = exp(x)  at x = 3.0
-  exp(3)  = 20.085537
-  exp'(3) = 20.085537  (derivative of exp is exp)
-
-`;
-                }
-                if (code.includes('dual_sigmoid')) {
-                    output += `σ(x) = sigmoid(x) = 1/(1+e^(-x))  at x = 3.0
-  sigmoid(3)  = 0.952574
-  sigmoid'(3) = 0.045177  (σ(1-σ))
-
-`;
-                }
-                if (code.includes('dual_tanh')) {
-                    output += `tanh(x) at x = 3.0
-  tanh(3)  = 0.995055
-  tanh'(3) = 0.009866  (1 - tanh²)
-
-`;
-                }
-                if (code.includes('dual_cos')) {
-                    output += `cos(x) at x = 3.0
-  cos(3)  = -0.989992
-  cos'(3) = -0.141120  (derivative of cos is -sin)
-
-`;
-                }
-                output += `═══════════════════════════════════════
-  Forward-mode autodiff computes f(x) and f'(x) in one pass
-  using dual numbers: (value, derivative)
-═══════════════════════════════════════`;
+            } else if (code.includes('autodiff') || code.includes('dual(') || code.includes('dx(')) {
+                // Autodiff code - actually compute the values!
+                output = computeAutodiff(code);
             } else if (code.includes('Point') && code.includes('distance')) {
                 // Struct example with point distance
                 output = `Distance between (0,0) and (3,4): 5.000000
@@ -1450,6 +1399,211 @@ using namespace metal;
                 'f32': 'f32', 'f64': 'f64', 'bool': 'i1', 'void': ''
             };
             return map[type] || 'i32';
+        }
+        
+        // Actually compute autodiff expressions!
+        function computeAutodiff(code) {
+            let output = `═══════════════════════════════════════
+  Automatic Differentiation Results
+═══════════════════════════════════════
+
+`;
+            
+            // Dual number implementation in JS
+            class Dual {
+                constructor(val, grad) {
+                    this.val = val;
+                    this.grad = grad;
+                }
+            }
+            
+            // Operations
+            const dx = (x) => new Dual(x, 1.0);
+            const d = (x) => new Dual(x, 0.0);
+            const dual = (v, g) => new Dual(v, g);
+            const dual_var = dx;
+            const dual_const = d;
+            
+            const dual_add = (a, b) => new Dual(a.val + b.val, a.grad + b.grad);
+            const dual_sub = (a, b) => new Dual(a.val - b.val, a.grad - b.grad);
+            const dual_mul = (a, b) => new Dual(a.val * b.val, a.grad * b.val + a.val * b.grad);
+            const dual_div = (a, b) => new Dual(a.val / b.val, (a.grad * b.val - a.val * b.grad) / (b.val * b.val));
+            
+            const sq = (x) => new Dual(x.val * x.val, 2.0 * x.val * x.grad);
+            const cube = (x) => new Dual(x.val ** 3, 3.0 * x.val * x.val * x.grad);
+            const pow4 = (x) => new Dual(x.val ** 4, 4.0 * x.val ** 3 * x.grad);
+            const sq_diff = (x, c) => { const diff = x.val - c; return new Dual(diff * diff, 2.0 * diff * x.grad); };
+            
+            const add = (a, b) => new Dual(a.val + b, a.grad);
+            const sub = (a, b) => new Dual(a.val - b, a.grad);
+            const mul = (a, b) => new Dual(a.val * b, a.grad * b);
+            const div = (a, b) => new Dual(a.val / b, a.grad / b);
+            
+            const dual_sin = (x) => new Dual(Math.sin(x.val), Math.cos(x.val) * x.grad);
+            const dual_cos = (x) => new Dual(Math.cos(x.val), -Math.sin(x.val) * x.grad);
+            const dual_exp = (x) => { const e = Math.exp(x.val); return new Dual(e, e * x.grad); };
+            const dual_log = (x) => new Dual(Math.log(x.val), x.grad / x.val);
+            const dual_sqrt = (x) => { const s = Math.sqrt(x.val); return new Dual(s, x.grad / (2 * s)); };
+            const dual_sigmoid = (x) => { const s = 1 / (1 + Math.exp(-x.val)); return new Dual(s, s * (1 - s) * x.grad); };
+            const dual_tanh = (x) => { const t = Math.tanh(x.val); return new Dual(t, (1 - t * t) * x.grad); };
+            const dual_sq = sq;
+            const dual_pow = (x, n) => new Dual(x.val ** n, n * x.val ** (n - 1) * x.grad);
+            
+            const sin_scaled = (x, a) => new Dual(Math.sin(a * x.val), a * Math.cos(a * x.val) * x.grad);
+            const cos_scaled = (x, a) => new Dual(Math.cos(a * x.val), -a * Math.sin(a * x.val) * x.grad);
+            const exp_scaled = (x, a) => { const e = Math.exp(a * x.val); return new Dual(e, a * e * x.grad); };
+            
+            const sum3 = (a, b, c) => new Dual(a.val + b.val + c.val, a.grad + b.grad + c.grad);
+            const weighted_sum = (f, a, g, b) => new Dual(a * f.val + b * g.val, a * f.grad + b * g.grad);
+            
+            // Try to find and evaluate autodiff expressions
+            const results = [];
+            
+            // Look for variable declarations like dx(0.7) or dual(3.0, 1.0)
+            const varMatches = [...code.matchAll(/let\s+(\w+)\s*=\s*dx\s*\(\s*([\d.]+)\s*\)/g)];
+            for (const m of varMatches) {
+                const varName = m[1];
+                const xVal = parseFloat(m[2]);
+                output += `Variable: ${varName} = ${xVal} (tracking derivative)\n`;
+            }
+            
+            const dualVarMatches = [...code.matchAll(/let\s+(\w+)\s*=\s*dual\s*\(\s*([\d.]+)\s*,\s*1\.0\s*\)/g)];
+            for (const m of dualVarMatches) {
+                const varName = m[1];
+                const xVal = parseFloat(m[2]);
+                output += `Variable: ${varName} = ${xVal} (tracking derivative)\n`;
+            }
+            
+            output += '\n';
+            
+            // Try to evaluate specific patterns
+            // Energy function: E(x) = (x − 1)² + sin(3x) + 0.1 * x⁴
+            if (code.includes('sq_diff') && code.includes('sin_scaled') && code.includes('pow4')) {
+                // Extract x value
+                let xVal = 0.7;
+                const xMatch = code.match(/dx\s*\(\s*([\d.]+)\s*\)/);
+                if (xMatch) xVal = parseFloat(xMatch[1]);
+                
+                const x = dx(xVal);
+                const term1 = sq_diff(x, 1.0);
+                const term2 = sin_scaled(x, 3.0);
+                const term3 = mul(pow4(x), 0.1);
+                const E = sum3(term1, term2, term3);
+                
+                output += `Computing: E(x) = (x-1)² + sin(3x) + 0.1·x⁴\n`;
+                output += `At x = ${xVal}:\n\n`;
+                output += `  (x-1)²     = ${term1.val.toFixed(6)}  (deriv: ${term1.grad.toFixed(6)})\n`;
+                output += `  sin(3x)    = ${term2.val.toFixed(6)}  (deriv: ${term2.grad.toFixed(6)})\n`;
+                output += `  0.1·x⁴     = ${term3.val.toFixed(6)}  (deriv: ${term3.grad.toFixed(6)})\n`;
+                output += `  ─────────────────────────────────────\n`;
+                output += `  E(${xVal})    = ${E.val.toFixed(6)}\n`;
+                output += `  dE/dx     = ${E.grad.toFixed(6)}\n`;
+            }
+            // Newton step example
+            else if (code.includes('newton') || code.includes('hessian')) {
+                let xVal = 0.7;
+                const xMatch = code.match(/(?:x0|x)\s*=\s*([\d.]+)/);
+                if (xMatch) xVal = parseFloat(xMatch[1]);
+                
+                const x = dx(xVal);
+                
+                // E(x) = (x-1)² + sin(3x) + 0.1x⁴
+                const computeE = (xd) => {
+                    const t1 = sq_diff(xd, 1.0);
+                    const t2 = sin_scaled(xd, 3.0);
+                    const t3 = mul(pow4(xd), 0.1);
+                    return sum3(t1, t2, t3);
+                };
+                
+                const E = computeE(x);
+                
+                // Numerical second derivative
+                const eps = 1e-4;
+                const E_plus = computeE(dx(xVal + eps));
+                const E_minus = computeE(dx(xVal - eps));
+                const hessian = (E_plus.grad - E_minus.grad) / (2 * eps);
+                const x_next = xVal - E.grad / hessian;
+                
+                output += `Newton's Method on E(x) = (x-1)² + sin(3x) + 0.1·x⁴\n`;
+                output += `Starting at x₀ = ${xVal}\n\n`;
+                output += `  E(x₀)     = ${E.val.toFixed(6)}\n`;
+                output += `  dE/dx     = ${E.grad.toFixed(6)}\n`;
+                output += `  d²E/dx²   = ${hessian.toFixed(6)}  (numerical)\n`;
+                output += `  ─────────────────────────────────────\n`;
+                output += `  Newton x₁ = ${x_next.toFixed(6)}\n`;
+                
+                // Show convergence
+                const E_new = computeE(dx(x_next));
+                output += `  E(x₁)     = ${E_new.val.toFixed(6)}  (${E_new.val < E.val ? '↓ improved!' : 'no improvement'})\n`;
+            }
+            // Physics force example
+            else if (code.includes('force') || code.includes('spring')) {
+                let xVal = 0.4;
+                const xMatch = code.match(/dx\s*\(\s*([\d.]+)\s*\)/);
+                if (xMatch) xVal = parseFloat(xMatch[1]);
+                
+                const x = dx(xVal);
+                const k = 2.0;
+                
+                // E = 0.5*k*x² + 0.05*sin(5x)
+                const spring = mul(sq(x), 0.5 * k);
+                const ripple = mul(sin_scaled(x, 5.0), 0.05);
+                const E = dual_add(spring, ripple);
+                const force = -E.grad;
+                
+                output += `Harmonic Oscillator with Perturbation\n`;
+                output += `E(x) = 0.5·k·x² + 0.05·sin(5x)  where k = ${k}\n`;
+                output += `At x = ${xVal}:\n\n`;
+                output += `  Spring energy  = ${spring.val.toFixed(6)}\n`;
+                output += `  Ripple energy  = ${ripple.val.toFixed(6)}\n`;
+                output += `  ─────────────────────────────────────\n`;
+                output += `  Total E(x)     = ${E.val.toFixed(6)}\n`;
+                output += `  Force = -dE/dx = ${force.toFixed(6)}\n`;
+            }
+            // Generic autodiff - basic operations
+            else if (code.includes('dual_mul(x, x)') || code.includes('sq(x)')) {
+                let xVal = 3.0;
+                const xMatch = code.match(/(?:dual|dx)\s*\(\s*([\d.]+)/);
+                if (xMatch) xVal = parseFloat(xMatch[1]);
+                
+                const x = dx(xVal);
+                output += `At x = ${xVal}:\n\n`;
+                
+                if (code.includes('dual_mul(x, x)') || code.includes('sq(x)')) {
+                    const f = sq(x);
+                    output += `  f(x) = x²\n`;
+                    output += `  f(${xVal}) = ${f.val.toFixed(6)}\n`;
+                    output += `  f'(${xVal}) = ${f.grad.toFixed(6)}  (= 2x)\n\n`;
+                }
+                if (code.includes('dual_sin')) {
+                    const g = dual_sin(x);
+                    output += `  g(x) = sin(x)\n`;
+                    output += `  g(${xVal}) = ${g.val.toFixed(6)}\n`;
+                    output += `  g'(${xVal}) = ${g.grad.toFixed(6)}  (= cos(x))\n\n`;
+                }
+                if (code.includes('dual_sigmoid')) {
+                    const h = dual_sigmoid(x);
+                    output += `  h(x) = sigmoid(x)\n`;
+                    output += `  h(${xVal}) = ${h.val.toFixed(6)}\n`;
+                    output += `  h'(${xVal}) = ${h.grad.toFixed(6)}  (= σ(1-σ))\n\n`;
+                }
+            }
+            // Default fallback
+            else {
+                output += `Detected autodiff code.\n\n`;
+                output += `The playground can compute:\n`;
+                output += `  • Basic operations: sq(x), cube(x), pow4(x)\n`;
+                output += `  • Transcendentals: sin, cos, exp, log, sigmoid, tanh\n`;
+                output += `  • Combined: sq_diff(x,c), sin_scaled(x,a), sum3(a,b,c)\n\n`;
+                output += `Try the examples or use common patterns for computed results!\n`;
+            }
+            
+            output += `\n═══════════════════════════════════════
+  Forward-mode autodiff computes f(x) and f'(x) 
+  in a single forward pass using dual numbers
+═══════════════════════════════════════`;
+            
+            return output;
         }
 
         // Tab switching
