@@ -14,6 +14,7 @@ from .c_generator import flow_to_c
 from .module_resolver import resolve_modules, get_module_resolver
 from .gpu_integration import get_gpu_integration
 from .type_checker import TypeChecker
+from .monomorphize import monomorphize
 
 def main():
     parser = argparse.ArgumentParser(description="FLOW Language Transpiler")
@@ -79,6 +80,9 @@ def main():
                     print(f"  ⚠ {error}", file=sys.stderr)
                 if len(type_result.errors) > 5:
                     print(f"  ... and {len(type_result.errors) - 5} more", file=sys.stderr)
+
+        # Monomorphization pass: expand generics to concrete types
+        declarations = monomorphize(declarations)
 
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
         structs = [d for d in declarations if isinstance(d, StructDecl)]
