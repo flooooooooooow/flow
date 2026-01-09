@@ -43,6 +43,7 @@ show_help() {
     echo "  mlir <program>     Generate MLIR only"
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
+    echo "  gpu <program>      Generate Metal/CUDA shaders"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
     echo "  fmt <files...>    Format FLOW source files"
     echo "  test              Run all FLOW tests"
@@ -383,6 +384,49 @@ case "${1:-help}" in
         EXIT_CODE=$?
         echo "----------------------------------------"
         print_success "Program finished with exit code: $EXIT_CODE"
+        ;;
+    "gpu")
+        shift
+        if [ -z "$1" ]; then
+            print_error "Usage: flow gpu <program.flow>"
+            exit 1
+        fi
+        check_deps
+        print_info "Generating GPU shaders from $1..."
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+
+from flow.module_resolver import ModuleResolver
+from flow.metal_codegen import generate_metal_shaders, extract_gpu_functions
+
+# Resolve modules
+resolver = ModuleResolver('$1')
+try:
+    declarations = resolver.resolve()
+except Exception as e:
+    print(f'Error: {e}')
+    sys.exit(1)
+
+# Check for @gpu functions
+gpu_funcs = extract_gpu_functions(declarations)
+if not gpu_funcs:
+    print('No @gpu functions found in the program.')
+    print('Mark GPU functions with @gpu decorator:')
+    print()
+    print('@gpu')
+    print('function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {')
+    print('    let i = gpu_thread_id()')
+    print('    if i < n {')
+    print('        out[i] = a[i] + b[i]')
+    print('    }')
+    print('}')
+    sys.exit(0)
+
+# Generate Metal shaders
+results = generate_metal_shaders(declarations, '$SCRIPT_DIR/build/gpu')
+print(f'Generated {len(results)} GPU shader(s)')
+"
         ;;
     "jit")
         shift

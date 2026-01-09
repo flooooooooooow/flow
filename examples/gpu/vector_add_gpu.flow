@@ -1,0 +1,45 @@
+# Vector Addition - GPU Compute Shader
+# This demonstrates FLOW's @gpu decorator for Metal shader generation
+
+@gpu
+function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {
+    let i = gpu_thread_id()
+    if i < n {
+        out[i] = a[i] + b[i]
+    }
+}
+
+@gpu
+function vector_scale(input: array<f32>, output: array<f32>, scale: f32, n: i32) {
+    let i = gpu_thread_id()
+    if i < n {
+        output[i] = input[i] * scale
+    }
+}
+
+@gpu
+function vector_saxpy(x: array<f32>, y: array<f32>, a: f32, n: i32) {
+    # y = a * x + y (BLAS SAXPY)
+    let i = gpu_thread_id()
+    if i < n {
+        y[i] = a * x[i] + y[i]
+    }
+}
+
+# Host-side main function (runs on CPU)
+function main() -> i32 {
+    print("GPU Shader Generation Demo")
+    print("==========================")
+    print("")
+    print("This file contains @gpu annotated functions that can be")
+    print("compiled to Metal compute shaders using: flow gpu vector_add_gpu.flow")
+    print("")
+    print("Generated files:")
+    print("  - build/gpu/vector_add.metal")
+    print("  - build/gpu/vector_scale.metal")
+    print("  - build/gpu/vector_saxpy.metal")
+    print("")
+    print("To run on GPU, the generated Metal shaders can be loaded and")
+    print("executed using the Metal API on macOS/iOS.")
+    return 0
+}
