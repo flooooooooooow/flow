@@ -49,6 +49,7 @@ show_help() {
     echo "  test-all          Run FLOW and Python tests"
     echo "  wasm <program>    Compile to WebAssembly"
     echo "  install           Install dependencies"
+    echo "  repl              Start interactive REPL"
     echo "  examples          List example programs"
     echo "  help              Show this help"
     echo ""
@@ -416,6 +417,15 @@ for f in sys.argv[1:]:
         ;;
     "install")
         install_deps
+        ;;
+    "repl")
+        check_deps
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.repl import main
+main()
+"
         ;;
     "examples")
         list_examples
