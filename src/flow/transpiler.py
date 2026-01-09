@@ -36,8 +36,13 @@ def main():
     parser.add_argument("--gpu-backend", choices=["cuda", "opencl"], default="cuda", help="GPU backend (default: cuda)")
     parser.add_argument("--module-info", action="store_true", help="Show module information")
     parser.add_argument("--validate-imports", action="store_true", help="Validate import statements")
+    parser.add_argument("--strict", action="store_true", default=True, help="Strict type checking (default)")
+    parser.add_argument("--lenient", action="store_true", help="Lenient type checking (warnings only)")
     
     args = parser.parse_args()
+    
+    # --lenient overrides --strict
+    strict_mode = not args.lenient
     
     # Read input file
     try:
@@ -55,16 +60,25 @@ def main():
         print("Resolving modules...", file=sys.stderr)
         declarations = resolve_modules(args.input)
 
-        # Type checking phase (warnings only for now)
+        # Type checking phase
         type_checker = TypeChecker()
         type_result = type_checker.check(declarations)
 
         if type_result.errors:
-            print("Type warnings:", file=sys.stderr)
-            for error in type_result.errors[:5]:  # Show max 5 warnings
-                print(f"  ⚠ {error}", file=sys.stderr)
-            if len(type_result.errors) > 5:
-                print(f"  ... and {len(type_result.errors) - 5} more", file=sys.stderr)
+            if strict_mode:
+                print("Type errors:", file=sys.stderr)
+                for error in type_result.errors[:10]:
+                    print(f"  ✗ {error}", file=sys.stderr)
+                if len(type_result.errors) > 10:
+                    print(f"  ... and {len(type_result.errors) - 10} more", file=sys.stderr)
+                print(f"\n{len(type_result.errors)} type error(s). Use --lenient to compile anyway.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("Type warnings (lenient mode):", file=sys.stderr)
+                for error in type_result.errors[:5]:
+                    print(f"  ⚠ {error}", file=sys.stderr)
+                if len(type_result.errors) > 5:
+                    print(f"  ... and {len(type_result.errors) - 5} more", file=sys.stderr)
 
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
         structs = [d for d in declarations if isinstance(d, StructDecl)]

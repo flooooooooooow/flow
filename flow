@@ -103,8 +103,8 @@ compile_program() {
     # Create build directory
     mkdir -p "$build_dir"
     
-    # FLOW to C
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c -o "$build_dir/$basename.c" 2>/dev/null; then
+    # FLOW to C (use --lenient for now until type checker is fully stable)
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>/dev/null; then
         print_error "FLOW compilation failed"
         exit 1
     fi
@@ -171,9 +171,16 @@ run_transpiler() {
     python3 -m "$FLOWC_MODULE" "$@"
 }
 
-# Run tests
+# Run tests (use --lenient by default for backwards compatibility)
 run_tests() {
-    print_info "Running FLOW tests..."
+    local strict_mode=""
+    if [ "$1" = "--strict" ]; then
+        strict_mode="--strict"
+        print_info "Running FLOW tests (STRICT MODE)..."
+    else
+        strict_mode="--lenient"
+        print_info "Running FLOW tests..."
+    fi
 
     local failed=0
     local total=0
@@ -186,7 +193,7 @@ run_tests() {
             local rel_path=${program#$SCRIPT_DIR/}
             print_info "Testing $rel_path..."
             
-            if python3 -m "$FLOWC_MODULE" "$program" -o "/tmp/${rel_path//\//-}.mlir" 2>/dev/null; then
+            if python3 -m "$FLOWC_MODULE" "$program" --c $strict_mode -o "/tmp/${rel_path//\//-}.c" 2>/dev/null; then
                 print_success "✓ $rel_path"
             else
                 print_error "✗ $rel_path"
@@ -340,7 +347,11 @@ for f in sys.argv[1:]:
 " "$@"
         ;;
     "test")
-        run_tests
+        shift
+        run_tests "$@"
+        ;;
+    "test-strict")
+        run_tests --strict
         ;;
     "test-python")
         run_python_tests

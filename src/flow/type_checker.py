@@ -132,6 +132,33 @@ class TypeCheckResult:
 
 
 class TypeChecker:
+    # Known external/builtin functions that are always available
+    BUILTIN_FUNCTIONS = {
+        # C standard library
+        'printf', 'sprintf', 'fprintf', 'scanf', 'sscanf',
+        'print', 'println',  # Common aliases
+        'malloc', 'calloc', 'realloc', 'free',
+        'memcpy', 'memset', 'memmove', 'memcmp',
+        'strlen', 'strcpy', 'strcat', 'strcmp', 'strncpy', 'strncmp',
+        'exit', 'abort', 'atexit',
+        'fopen', 'fclose', 'fread', 'fwrite', 'fgets', 'fputs',
+        'rand', 'srand', 'time', 'clock',
+        # Math functions
+        'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+        'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+        'exp', 'exp2', 'expm1', 'log', 'log2', 'log10', 'log1p',
+        'pow', 'sqrt', 'cbrt', 'hypot',
+        'ceil', 'floor', 'round', 'trunc', 'fabs', 'fmod',
+        'fmin', 'fmax', 'fdim',
+        'sigmoid',  # Common ML function
+        # FLOW runtime / GPU
+        'alloc', 'dealloc', 'array_length', 'array',
+        'gpu_thread_id', 'gpu_block_id', 'gpu_sync',
+        'metal_create_buffer', 'metal_execute', 'metal_get_result',
+        # Effect operations (called via Effect.operation syntax but also direct)
+        'emit', 'query', 'insert', 'read', 'write',
+    }
+
     def __init__(self):
         self.global_scope = Scope()
         self.current_scope = self.global_scope
@@ -432,9 +459,16 @@ class TypeChecker:
         """Type check a function call."""
         symbol = self.current_scope.lookup(call.name)
         if not symbol:
-            # Allow unknown functions (e.g., external/builtin functions like printf)
-            # This is lenient - a stricter type checker would require declarations
-            return SemanticType(TypeKind.VOID)
+            # Check if it's a known builtin function
+            if call.name in self.BUILTIN_FUNCTIONS:
+                # Builtin functions are allowed without declaration
+                # Check arguments anyway (type check them)
+                for arg in call.arguments:
+                    self._check_expression(arg)
+                return SemanticType(TypeKind.VOID)
+            else:
+                self.errors.append(f"Undefined function '{call.name}'")
+                return SemanticType(TypeKind.VOID)
 
         if symbol.type.kind != TypeKind.FUNCTION:
             self.errors.append(f"'{call.name}' is not a function")

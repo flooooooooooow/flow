@@ -1,0 +1,180 @@
+# Result Type
+# Represents either success (Ok(value)) or failure (Err(error))
+#
+# Usage:
+#   import "stdlib/result.flow"
+#   let res: Result_i32_string = ok_i32(42)
+#   if is_ok_i32(res) { ... }
+#
+# Generic syntax is parsed but not yet fully implemented.
+# For now, use concrete types: Result_i32_string, Result_f32_string, etc.
+
+# Result<i32, string> - integer result with string error
+struct Result_i32_string {
+    is_ok: bool
+    value: i32
+    error: string
+}
+
+# Result<f32, string>
+struct Result_f32_string {
+    is_ok: bool
+    value: f32
+    error: string
+}
+
+# Result<f64, string>
+struct Result_f64_string {
+    is_ok: bool
+    value: f64
+    error: string
+}
+
+# Result<bool, string>
+struct Result_bool_string {
+    is_ok: bool
+    value: bool
+    error: string
+}
+
+# Result<i32, i32> - integer result with error code
+struct Result_i32_i32 {
+    is_ok: bool
+    value: i32
+    error: i32
+}
+
+# Constructors for Result<i32, string>
+function ok_i32(value: i32) -> Result_i32_string {
+    return Result_i32_string { is_ok: true, value: value, error: "" }
+}
+
+function err_i32(error: string) -> Result_i32_string {
+    return Result_i32_string { is_ok: false, value: 0, error: error }
+}
+
+function is_ok_i32(res: Result_i32_string) -> bool {
+    return res.is_ok
+}
+
+function is_err_i32(res: Result_i32_string) -> bool {
+    return res.is_ok == false
+}
+
+function unwrap_result_i32(res: Result_i32_string) -> i32 {
+    # Unsafe: panics if Err
+    return res.value
+}
+
+function unwrap_err_i32(res: Result_i32_string) -> string {
+    # Unsafe: panics if Ok
+    return res.error
+}
+
+function unwrap_or_result_i32(res: Result_i32_string, default_val: i32) -> i32 {
+    if res.is_ok {
+        return res.value
+    }
+    return default_val
+}
+
+# Constructors for Result<f32, string>
+function ok_f32(value: f32) -> Result_f32_string {
+    return Result_f32_string { is_ok: true, value: value, error: "" }
+}
+
+function err_f32(error: string) -> Result_f32_string {
+    return Result_f32_string { is_ok: false, value: 0.0, error: error }
+}
+
+function is_ok_f32(res: Result_f32_string) -> bool {
+    return res.is_ok
+}
+
+function is_err_f32(res: Result_f32_string) -> bool {
+    return res.is_ok == false
+}
+
+function unwrap_result_f32(res: Result_f32_string) -> f32 {
+    return res.value
+}
+
+function unwrap_or_result_f32(res: Result_f32_string, default_val: f32) -> f32 {
+    if res.is_ok {
+        return res.value
+    }
+    return default_val
+}
+
+# Constructors for Result<f64, string>
+function ok_f64(value: f64) -> Result_f64_string {
+    return Result_f64_string { is_ok: true, value: value, error: "" }
+}
+
+function err_f64(error: string) -> Result_f64_string {
+    return Result_f64_string { is_ok: false, value: 0.0, error: error }
+}
+
+function is_ok_f64(res: Result_f64_string) -> bool {
+    return res.is_ok
+}
+
+function is_err_f64(res: Result_f64_string) -> bool {
+    return res.is_ok == false
+}
+
+function unwrap_result_f64(res: Result_f64_string) -> f64 {
+    return res.value
+}
+
+function unwrap_err_f64(res: Result_f64_string) -> string {
+    return res.error
+}
+
+function unwrap_or_result_f64(res: Result_f64_string, default_val: f64) -> f64 {
+    if res.is_ok {
+        return res.value
+    }
+    return default_val
+}
+
+# Constructors for Result<i32, i32> (error codes)
+function ok_i32_code(value: i32) -> Result_i32_i32 {
+    return Result_i32_i32 { is_ok: true, value: value, error: 0 }
+}
+
+function err_i32_code(error: i32) -> Result_i32_i32 {
+    return Result_i32_i32 { is_ok: false, value: 0, error: error }
+}
+
+function is_ok_i32_code(res: Result_i32_i32) -> bool {
+    return res.is_ok
+}
+
+function unwrap_result_i32_code(res: Result_i32_i32) -> i32 {
+    return res.value
+}
+
+function unwrap_err_i32_code(res: Result_i32_i32) -> i32 {
+    return res.error
+}
+
+# Example: safe division
+function safe_divide(a: f64, b: f64) -> Result_f64_string {
+    if b == 0.0 {
+        return err_f64("division by zero")
+    }
+    return ok_f64(a / b)
+}
+
+# Example: safe array access (conceptual - arrays not fully implemented)
+function safe_get_i32(arr: array<i32>, index: i32, len: i32) -> Result_i32_string {
+    if index < 0 {
+        return err_i32("index out of bounds: negative index")
+    }
+    if index >= len {
+        return err_i32("index out of bounds: index >= length")
+    }
+    # Would return arr[index] when array access is fully working
+    return ok_i32(0)
+}

@@ -1,0 +1,149 @@
+# Option Type
+# Represents an optional value: either Some(value) or None
+# 
+# Usage:
+#   import "stdlib/option.flow"
+#   let opt: Option_i32 = some_i32(42)
+#   if is_some_i32(opt) { ... }
+#
+# Generic syntax is parsed but not yet fully implemented.
+# For now, use concrete types: Option_i32, Option_f32, Option_f64, etc.
+
+struct Option_i32 {
+    has_value: bool
+    value: i32
+}
+
+struct Option_i64 {
+    has_value: bool
+    value: i64
+}
+
+struct Option_f32 {
+    has_value: bool
+    value: f32
+}
+
+struct Option_f64 {
+    has_value: bool
+    value: f64
+}
+
+struct Option_bool {
+    has_value: bool
+    value: bool
+}
+
+struct Option_string {
+    has_value: bool
+    value: string
+}
+
+# Constructors for i32
+function some_i32(value: i32) -> Option_i32 {
+    return Option_i32 { has_value: true, value: value }
+}
+
+function none_i32() -> Option_i32 {
+    return Option_i32 { has_value: false, value: 0 }
+}
+
+function is_some_i32(opt: Option_i32) -> bool {
+    return opt.has_value
+}
+
+function is_none_i32(opt: Option_i32) -> bool {
+    return opt.has_value == false
+}
+
+function unwrap_i32(opt: Option_i32) -> i32 {
+    # Unsafe: panics if None
+    return opt.value
+}
+
+function unwrap_or_i32(opt: Option_i32, default_val: i32) -> i32 {
+    if opt.has_value {
+        return opt.value
+    }
+    return default_val
+}
+
+# Constructors for f32
+function some_f32(value: f32) -> Option_f32 {
+    return Option_f32 { has_value: true, value: value }
+}
+
+function none_f32() -> Option_f32 {
+    return Option_f32 { has_value: false, value: 0.0 }
+}
+
+function is_some_f32(opt: Option_f32) -> bool {
+    return opt.has_value
+}
+
+function is_none_f32(opt: Option_f32) -> bool {
+    return opt.has_value == false
+}
+
+function unwrap_f32(opt: Option_f32) -> f32 {
+    return opt.value
+}
+
+function unwrap_or_f32(opt: Option_f32, default_val: f32) -> f32 {
+    if opt.has_value {
+        return opt.value
+    }
+    return default_val
+}
+
+# Constructors for f64
+function some_f64(value: f64) -> Option_f64 {
+    return Option_f64 { has_value: true, value: value }
+}
+
+function none_f64() -> Option_f64 {
+    return Option_f64 { has_value: false, value: 0.0 }
+}
+
+function is_some_f64(opt: Option_f64) -> bool {
+    return opt.has_value
+}
+
+function is_none_f64(opt: Option_f64) -> bool {
+    return opt.has_value == false
+}
+
+function unwrap_f64(opt: Option_f64) -> f64 {
+    return opt.value
+}
+
+function unwrap_or_f64(opt: Option_f64, default_val: f64) -> f64 {
+    if opt.has_value {
+        return opt.value
+    }
+    return default_val
+}
+
+# Constructors for bool
+function some_bool(value: bool) -> Option_bool {
+    return Option_bool { has_value: true, value: value }
+}
+
+function none_bool() -> Option_bool {
+    return Option_bool { has_value: false, value: false }
+}
+
+function is_some_bool(opt: Option_bool) -> bool {
+    return opt.has_value
+}
+
+function unwrap_bool(opt: Option_bool) -> bool {
+    return opt.value
+}
+
+function unwrap_or_bool(opt: Option_bool, default_val: bool) -> bool {
+    if opt.has_value {
+        return opt.value
+    }
+    return default_val
+}

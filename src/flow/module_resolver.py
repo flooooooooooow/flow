@@ -127,7 +127,15 @@ class ModuleResolver:
         if os.path.exists(imp_path):
             return os.path.abspath(imp_path)
         
-        # Try stdlib
+        # Handle stdlib/ prefix (e.g., "stdlib/option.flow" -> look in lib/stdlib/option.flow)
+        if import_path.startswith("stdlib/"):
+            stripped = import_path[7:]  # Remove "stdlib/" prefix
+            stripped_file = stripped if stripped.endswith('.flow') else stripped + '.flow'
+            std_imp_path = os.path.join(stdlib_path, stripped_file)
+            if os.path.exists(std_imp_path):
+                return os.path.abspath(std_imp_path)
+        
+        # Try stdlib directly (for imports like "math.flow" from within stdlib)
         std_imp_path = os.path.join(stdlib_path, import_file)
         if os.path.exists(std_imp_path):
             return os.path.abspath(std_imp_path)
