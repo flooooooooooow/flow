@@ -46,8 +46,9 @@ show_help() {
     echo "  vulkan-demo       Build and run Vulkan triangle demo (macOS + MoltenVK)"
     echo "  vulkan-demo-basic  Alias for vulkan-demo"
     echo "  vulkan-demo-advanced  Build and run Vulkan scene demo"
+    echo "  vulkan-2048       Run Vulkan 2048 (Flow logic + Vulkan renderer)"
     echo "  demo vulkan [basic|advanced]  Alias for Vulkan demos"
-    echo "  demo vulkan-flow [basic|advanced]  Run Flow Vulkan demos"
+    echo "  demo vulkan-flow [basic|advanced|2048]  Run Flow Vulkan demos"
     echo "  mlir <program>     Generate MLIR only"
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
@@ -428,6 +429,16 @@ run_vulkan_demo_advanced() {
 
     print_info "Running Vulkan scene demo..."
     "$demo_dir/run.sh"
+}
+
+run_vulkan_2048() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_2048_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_2048_flow/src/main.flow')
+"
 }
 
 # Run the underlying transpiler directly (advanced flags)
@@ -891,6 +902,9 @@ case "${1:-help}" in
     "vulkan-demo-advanced")
         run_vulkan_demo_advanced
         ;;
+    "vulkan-2048")
+        run_vulkan_2048
+        ;;
     "demo")
         if [ -z "$2" ]; then
             print_error "Usage: flow demo <name> [variant]"
@@ -931,8 +945,11 @@ pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_advanced')
 pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
 "
                         ;;
+                    "2048")
+                        run_vulkan_2048
+                        ;;
                     *)
-                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic or advanced)"
+                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic, advanced, or 2048)"
                         exit 1
                         ;;
                 esac
