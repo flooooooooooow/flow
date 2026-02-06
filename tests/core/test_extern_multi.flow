@@ -1,0 +1,14 @@
+# Test: extern blocks preserve multiple function declarations
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(ptr: ptr<void>)
+}
+
+function main() -> i32 {
+    let p: ptr<void> = malloc(100)
+    if p != null {
+        free(p)
+    }
+    return 0
+}

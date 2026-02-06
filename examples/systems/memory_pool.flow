@@ -1,0 +1,233 @@
+# Memory Pool Allocator
+# Fixed-size block allocator with O(1) allocation and deallocation
+#
+# Use case: Game engines, embedded systems, real-time applications
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>)
+    function memset(p: ptr<u8>, val: i32, size: i64) -> ptr<u8>
+}
+
+# ============================================================================
+# MEMORY POOL STRUCTURE
+# ============================================================================
+
+struct MemoryPool {
+    memory: ptr<u8>,       # Backing memory
+    free_list: ptr<i32>,   # Free list (indices of free blocks)
+    block_size: i32,       # Size of each block
+    num_blocks: i32,       # Total number of blocks
+    free_count: i32,       # Number of free blocks
+    head: i32              # Index of first free block (-1 if full)
+}
+
+# ============================================================================
+# POOL CREATION
+# ============================================================================
+
+function pool_create(block_size: i32, num_blocks: i32) -> MemoryPool {
+    # Allocate memory for blocks
+    let total_size: i64 = block_size * num_blocks
+    let memory: ptr<u8> = malloc(total_size)
+    let dummy: ptr<u8> = memset(memory, 0, total_size)
+    
+    # Allocate free list
+    let list_size: i64 = num_blocks * 4
+    let free_list_raw: ptr<u8> = malloc(list_size)
+    let free_list: ptr<i32> = free_list_raw
+    
+    # Initialize free list as linked list
+    for i in 0 to num_blocks - 1 {
+        free_list[i] = i + 1
+    }
+    free_list[num_blocks - 1] = -1  # End of list
+    
+    return MemoryPool {
+        memory: memory,
+        free_list: free_list,
+        block_size: block_size,
+        num_blocks: num_blocks,
+        free_count: num_blocks,
+        head: 0
+    }
+}
+
+function pool_destroy(pool: MemoryPool) -> void {
+    free(pool.memory)
+    let list_ptr: ptr<u8> = pool.free_list
+    free(list_ptr)
+}
+
+# ============================================================================
+# ALLOCATION / DEALLOCATION
+# ============================================================================
+
+function pool_alloc(pool: ptr<MemoryPool>) -> ptr<u8> {
+    if pool[0].head == -1 {
+        # Pool is full
+        let null_ptr: ptr<u8> = 0
+        return null_ptr
+    }
+    
+    # Get block at head of free list
+    let block_idx: i32 = pool[0].head
+    let offset: i64 = block_idx * pool[0].block_size
+    let block: ptr<u8> = pool[0].memory + offset
+    
+    # Update free list
+    pool[0].head = pool[0].free_list[block_idx]
+    pool[0].free_count = pool[0].free_count - 1
+    
+    return block
+}
+
+function pool_free(pool: ptr<MemoryPool>, ptr: ptr<u8>) {
+    # Calculate block index from pointer
+    let offset: i64 = ptr - pool[0].memory
+    let block_idx: i32 = offset / pool[0].block_size
+    
+    # Add back to free list
+    pool[0].free_list[block_idx] = pool[0].head
+    pool[0].head = block_idx
+    pool[0].free_count = pool[0].free_count + 1
+}
+
+# ============================================================================
+# UTILITY
+# ============================================================================
+
+function pool_available(pool: MemoryPool) -> i32 {
+    return pool.free_count
+}
+
+function pool_used(pool: MemoryPool) -> i32 {
+    return pool.num_blocks - pool.free_count
+}
+
+function pool_is_full(pool: MemoryPool) -> i32 {
+    if pool.free_count == 0 {
+        return 1
+    }
+    return 0
+}
+
+function pool_is_empty(pool: MemoryPool) -> i32 {
+    if pool.free_count == pool.num_blocks {
+        return 1
+    }
+    return 0
+}
+
+# ============================================================================
+# DEMO: Object Pool Pattern
+# ============================================================================
+
+struct Entity {
+    id: i32,
+    x: f32,
+    y: f32,
+    active: i32
+}
+
+function main() -> i32 {
+    println("Memory Pool Allocator Demo")
+    println("==========================")
+    println("")
+    
+    # Create pool for Entity objects
+    let entity_size: i32 = 16  # sizeof(Entity)
+    let max_entities: i32 = 10
+    
+    let mut pool: MemoryPool = pool_create(entity_size, max_entities)
+    let pool_ptr: ptr<MemoryPool> = &pool
+    
+    print("Pool created: ")
+    print(max_entities)
+    print(" blocks of ")
+    print(entity_size)
+    println(" bytes each")
+    println("")
+    
+    # Allocate some entities
+    println("=== Allocation Phase ===")
+    
+    let ptrs: array<ptr<u8>, 10> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    
+    for i in 0 to 5 {
+        let p: ptr<u8> = pool_alloc(pool_ptr)
+        ptrs[i] = p
+        
+        # Initialize entity
+        let entity: ptr<Entity> = p
+        entity[0].id = i
+        entity[0].x = i * 10.0
+        entity[0].y = i * 20.0
+        entity[0].active = 1
+        
+        print("  Allocated entity ")
+        print(i)
+        print(", available: ")
+        println(pool.free_count)
+    }
+    
+    println("")
+    print("Pool status: ")
+    print(pool_used(pool))
+    print("/")
+    print(pool.num_blocks)
+    println(" used")
+    
+    # Free some entities
+    println("")
+    println("=== Deallocation Phase ===")
+    
+    pool_free(pool_ptr, ptrs[1])
+    print("  Freed entity 1, available: ")
+    println(pool.free_count)
+    
+    pool_free(pool_ptr, ptrs[3])
+    print("  Freed entity 3, available: ")
+    println(pool.free_count)
+    
+    # Allocate new entities (should reuse freed slots)
+    println("")
+    println("=== Reallocation Phase ===")
+    
+    let new_p1: ptr<u8> = pool_alloc(pool_ptr)
+    let new_entity1: ptr<Entity> = new_p1
+    new_entity1[0].id = 100
+    print("  Allocated entity 100, available: ")
+    println(pool.free_count)
+    
+    let new_p2: ptr<u8> = pool_alloc(pool_ptr)
+    let new_entity2: ptr<Entity> = new_p2
+    new_entity2[0].id = 101
+    print("  Allocated entity 101, available: ")
+    println(pool.free_count)
+    
+    # Try to allocate when full
+    println("")
+    println("=== Fill Test ===")
+    
+    for i in 0 to 10 {
+        let p: ptr<u8> = pool_alloc(pool_ptr)
+        if p == 0 {
+            print("  Pool full at allocation ")
+            println(i)
+            break
+        }
+    }
+    
+    # Cleanup
+    pool_destroy(pool)
+    
+    println("")
+    println("Benefits of Pool Allocators:")
+    println("  1. O(1) allocation and deallocation")
+    println("  2. No memory fragmentation")
+    println("  3. Cache-friendly (contiguous memory)")
+    println("  4. Predictable performance")
+    
+    return 0
+}

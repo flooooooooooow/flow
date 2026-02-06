@@ -1,0 +1,62 @@
+# SDL2 bindings (minimal)
+#
+# This is a deliberately tiny subset needed for simple 2D apps.
+# We declare functions one-by-one because the current parser only keeps the
+# first declaration inside an `extern { ... }` block.
+
+const SDL_INIT_VIDEO: u32 = 32
+
+const SDL_WINDOWPOS_CENTERED: i32 = 805240832  # 0x2FFF0000
+const SDL_WINDOW_SHOWN: u32 = 4
+
+const SDL_RENDERER_ACCELERATED: u32 = 2
+const SDL_RENDERER_PRESENTVSYNC: u32 = 4
+
+const SDL_QUIT: u32 = 256
+
+# SDL_Scancode values (subset)
+const SDL_SCANCODE_UP: i32 = 82
+const SDL_SCANCODE_DOWN: i32 = 81
+const SDL_SCANCODE_LEFT: i32 = 80
+const SDL_SCANCODE_RIGHT: i32 = 79
+const SDL_SCANCODE_ESCAPE: i32 = 41
+const SDL_SCANCODE_R: i32 = 21
+
+struct SDLRect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32
+}
+
+# SDL_Event is a union. We only need to read the first 32 bits (`type`).
+# On 64-bit SDL2, SDL_Event is 56 bytes; represent it as 14 u32 words.
+struct SDLEvent {
+    w0: u32,  w1: u32,  w2: u32,  w3: u32,  w4: u32,  w5: u32,  w6: u32,
+    w7: u32,  w8: u32,  w9: u32,  w10: u32, w11: u32, w12: u32, w13: u32
+}
+
+function sdl_event_type(e: SDLEvent) -> u32 {
+    return e.w0
+}
+
+extern { function SDL_Init(flags: u32) -> i32 }
+extern { function SDL_Quit() -> void }
+
+extern { function SDL_CreateWindow(title: string, x: i32, y: i32, w: i32, h: i32, flags: u32) -> ptr<void> }
+extern { function SDL_DestroyWindow(window: ptr<void>) -> void }
+
+extern { function SDL_CreateRenderer(window: ptr<void>, index: i32, flags: u32) -> ptr<void> }
+extern { function SDL_DestroyRenderer(renderer: ptr<void>) -> void }
+
+extern { function SDL_SetRenderDrawColor(renderer: ptr<void>, r: u8, g: u8, b: u8, a: u8) -> i32 }
+extern { function SDL_RenderClear(renderer: ptr<void>) -> i32 }
+extern { function SDL_RenderFillRect(renderer: ptr<void>, rect: ptr<SDLRect>) -> i32 }
+extern { function SDL_RenderPresent(renderer: ptr<void>) -> void }
+
+extern { function SDL_PollEvent(event: ptr<SDLEvent>) -> i32 }
+extern { function SDL_Delay(ms: u32) -> void }
+
+extern { function SDL_PumpEvents() -> void }
+extern { function SDL_GetKeyboardState(numkeys: ptr<i32>) -> ptr<u8> }
+

@@ -1,5 +1,0 @@
-import "a.flow"
-
-export function b_func() -> i32 {
-    return 2
-}

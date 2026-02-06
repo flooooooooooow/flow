@@ -1,0 +1,312 @@
+# SHA-256 Implementation
+# Cryptographic hash function in pure Flow
+#
+# This demonstrates Flow's capability for bit manipulation
+# and security-critical code
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+# SHA-256 initial hash values (first 32 bits of fractional parts of sqrt of first 8 primes)
+function get_h0() -> u32 { return 0x6a09e667 }
+function get_h1() -> u32 { return 0xbb67ae85 }
+function get_h2() -> u32 { return 0x3c6ef372 }
+function get_h3() -> u32 { return 0xa54ff53a }
+function get_h4() -> u32 { return 0x510e527f }
+function get_h5() -> u32 { return 0x9b05688c }
+function get_h6() -> u32 { return 0x1f83d9ab }
+function get_h7() -> u32 { return 0x5be0cd19 }
+
+# SHA-256 round constants (first 32 bits of fractional parts of cube roots of first 64 primes)
+function get_k(i: i32) -> u32 {
+    # Return K constants based on index
+    if i == 0 { return 0x428a2f98 }
+    if i == 1 { return 0x71374491 }
+    if i == 2 { return 0xb5c0fbcf }
+    if i == 3 { return 0xe9b5dba5 }
+    if i == 4 { return 0x3956c25b }
+    if i == 5 { return 0x59f111f1 }
+    if i == 6 { return 0x923f82a4 }
+    if i == 7 { return 0xab1c5ed5 }
+    if i == 8 { return 0xd807aa98 }
+    if i == 9 { return 0x12835b01 }
+    if i == 10 { return 0x243185be }
+    if i == 11 { return 0x550c7dc3 }
+    if i == 12 { return 0x72be5d74 }
+    if i == 13 { return 0x80deb1fe }
+    if i == 14 { return 0x9bdc06a7 }
+    if i == 15 { return 0xc19bf174 }
+    if i == 16 { return 0xe49b69c1 }
+    if i == 17 { return 0xefbe4786 }
+    if i == 18 { return 0x0fc19dc6 }
+    if i == 19 { return 0x240ca1cc }
+    if i == 20 { return 0x2de92c6f }
+    if i == 21 { return 0x4a7484aa }
+    if i == 22 { return 0x5cb0a9dc }
+    if i == 23 { return 0x76f988da }
+    if i == 24 { return 0x983e5152 }
+    if i == 25 { return 0xa831c66d }
+    if i == 26 { return 0xb00327c8 }
+    if i == 27 { return 0xbf597fc7 }
+    if i == 28 { return 0xc6e00bf3 }
+    if i == 29 { return 0xd5a79147 }
+    if i == 30 { return 0x06ca6351 }
+    if i == 31 { return 0x14292967 }
+    if i == 32 { return 0x27b70a85 }
+    if i == 33 { return 0x2e1b2138 }
+    if i == 34 { return 0x4d2c6dfc }
+    if i == 35 { return 0x53380d13 }
+    if i == 36 { return 0x650a7354 }
+    if i == 37 { return 0x766a0abb }
+    if i == 38 { return 0x81c2c92e }
+    if i == 39 { return 0x92722c85 }
+    if i == 40 { return 0xa2bfe8a1 }
+    if i == 41 { return 0xa81a664b }
+    if i == 42 { return 0xc24b8b70 }
+    if i == 43 { return 0xc76c51a3 }
+    if i == 44 { return 0xd192e819 }
+    if i == 45 { return 0xd6990624 }
+    if i == 46 { return 0xf40e3585 }
+    if i == 47 { return 0x106aa070 }
+    if i == 48 { return 0x19a4c116 }
+    if i == 49 { return 0x1e376c08 }
+    if i == 50 { return 0x2748774c }
+    if i == 51 { return 0x34b0bcb5 }
+    if i == 52 { return 0x391c0cb3 }
+    if i == 53 { return 0x4ed8aa4a }
+    if i == 54 { return 0x5b9cca4f }
+    if i == 55 { return 0x682e6ff3 }
+    if i == 56 { return 0x748f82ee }
+    if i == 57 { return 0x78a5636f }
+    if i == 58 { return 0x84c87814 }
+    if i == 59 { return 0x8cc70208 }
+    if i == 60 { return 0x90befffa }
+    if i == 61 { return 0xa4506ceb }
+    if i == 62 { return 0xbef9a3f7 }
+    return 0xc67178f2
+}
+
+# ============================================================================
+# BIT OPERATIONS
+# ============================================================================
+
+function rotr(x: u32, n: i32) -> u32 {
+    return (x >> n) | (x << (32 - n))
+}
+
+function ch(x: u32, y: u32, z: u32) -> u32 {
+    return (x & y) ^ ((~x) & z)
+}
+
+function maj(x: u32, y: u32, z: u32) -> u32 {
+    return (x & y) ^ (x & z) ^ (y & z)
+}
+
+function sigma0(x: u32) -> u32 {
+    return rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22)
+}
+
+function sigma1(x: u32) -> u32 {
+    return rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25)
+}
+
+function gamma0(x: u32) -> u32 {
+    return rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3)
+}
+
+function gamma1(x: u32) -> u32 {
+    return rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10)
+}
+
+# ============================================================================
+# SHA-256 COMPRESSION
+# ============================================================================
+
+function sha256_compress(block: ptr<u32>, h: ptr<u32>) {
+    # Message schedule
+    let w: array<u32, 64> = [0, 0, 0, 0, 0, 0, 0, 0]
+    
+    # First 16 words come from block
+    for i in 0 to 16 {
+        w[i] = block[i]
+    }
+    
+    # Expand to 64 words
+    for i in 16 to 64 {
+        w[i] = gamma1(w[i-2]) + w[i-7] + gamma0(w[i-15]) + w[i-16]
+    }
+    
+    # Initialize working variables
+    let mut a: u32 = h[0]
+    let mut b: u32 = h[1]
+    let mut c: u32 = h[2]
+    let mut d: u32 = h[3]
+    let mut e: u32 = h[4]
+    let mut f: u32 = h[5]
+    let mut g: u32 = h[6]
+    let mut hh: u32 = h[7]
+    
+    # 64 rounds
+    for i in 0 to 64 {
+        let t1: u32 = hh + sigma1(e) + ch(e, f, g) + get_k(i) + w[i]
+        let t2: u32 = sigma0(a) + maj(a, b, c)
+        
+        hh = g
+        g = f
+        f = e
+        e = d + t1
+        d = c
+        c = b
+        b = a
+        a = t1 + t2
+    }
+    
+    # Add to hash
+    h[0] = h[0] + a
+    h[1] = h[1] + b
+    h[2] = h[2] + c
+    h[3] = h[3] + d
+    h[4] = h[4] + e
+    h[5] = h[5] + f
+    h[6] = h[6] + g
+    h[7] = h[7] + hh
+}
+
+# ============================================================================
+# SIMPLIFIED SHA-256 (for demo - single block only)
+# ============================================================================
+
+function sha256_single_block(msg: ptr<u8>, len: i32, hash: ptr<u32>) {
+    # Initialize hash
+    hash[0] = get_h0()
+    hash[1] = get_h1()
+    hash[2] = get_h2()
+    hash[3] = get_h3()
+    hash[4] = get_h4()
+    hash[5] = get_h5()
+    hash[6] = get_h6()
+    hash[7] = get_h7()
+    
+    # Prepare padded block (64 bytes = 512 bits)
+    let block: array<u32, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let block_ptr: ptr<u32> = block
+    let block_bytes: ptr<u8> = block_ptr
+    
+    # Copy message
+    for i in 0 to len {
+        block_bytes[i] = msg[i]
+    }
+    
+    # Append padding bit
+    block_bytes[len] = 0x80
+    
+    # Zero padding (already zeros)
+    
+    # Append length in bits (big-endian, last 8 bytes)
+    let bit_len: u64 = len * 8
+    block_bytes[63] = bit_len & 0xFF
+    block_bytes[62] = (bit_len >> 8) & 0xFF
+    # ... rest are 0 for small messages
+    
+    # Convert to big-endian u32
+    for i in 0 to 16 {
+        let j: i32 = i * 4
+        block[i] = (block_bytes[j] << 24) | (block_bytes[j+1] << 16) | 
+                   (block_bytes[j+2] << 8) | block_bytes[j+3]
+    }
+    
+    # Compress
+    sha256_compress(block_ptr, hash)
+}
+
+# ============================================================================
+# OUTPUT
+# ============================================================================
+
+function print_hex_byte(b: u32) {
+    let hi: i32 = (b >> 4) & 0xF
+    let lo: i32 = b & 0xF
+    
+    if hi < 10 {
+        putchar(48 + hi)  # '0' + hi
+    } else {
+        putchar(87 + hi)  # 'a' + (hi - 10)
+    }
+    
+    if lo < 10 {
+        putchar(48 + lo)
+    } else {
+        putchar(87 + lo)
+    }
+}
+
+function print_hash(hash: ptr<u32>) {
+    for i in 0 to 8 {
+        let w: u32 = hash[i]
+        print_hex_byte((w >> 24) & 0xFF)
+        print_hex_byte((w >> 16) & 0xFF)
+        print_hex_byte((w >> 8) & 0xFF)
+        print_hex_byte(w & 0xFF)
+    }
+    println("")
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("SHA-256 Implementation Demo")
+    println("===========================")
+    println("")
+    
+    # Test 1: Empty string
+    # SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    println("Test 1: SHA-256 of empty string")
+    println("Expected: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    
+    let msg1: array<u8, 1> = [0]
+    let hash: array<u32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let msg1_ptr: ptr<u8> = msg1
+    let hash_ptr: ptr<u32> = hash
+    
+    sha256_single_block(msg1_ptr, 0, hash_ptr)
+    print("Computed: ")
+    print_hash(hash_ptr)
+    println("")
+    
+    # Test 2: "abc"
+    # SHA-256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+    println("Test 2: SHA-256 of 'abc'")
+    println("Expected: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    
+    let msg2: array<u8, 4> = [97, 98, 99, 0]  # "abc"
+    let msg2_ptr: ptr<u8> = msg2
+    
+    sha256_single_block(msg2_ptr, 3, hash_ptr)
+    print("Computed: ")
+    print_hash(hash_ptr)
+    println("")
+    
+    # Test 3: "hello"
+    println("Test 3: SHA-256 of 'hello'")
+    println("Expected: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+    
+    let msg3: array<u8, 6> = [104, 101, 108, 108, 111, 0]  # "hello"
+    let msg3_ptr: ptr<u8> = msg3
+    
+    sha256_single_block(msg3_ptr, 5, hash_ptr)
+    print("Computed: ")
+    print_hash(hash_ptr)
+    println("")
+    
+    println("Note: This is a simplified implementation for demonstration.")
+    println("Full implementation would handle multi-block messages.")
+    
+    return 0
+}

@@ -1,0 +1,63 @@
+# Particle Physics Simulation
+# Written in Flow Physics DSL - compiles to efficient WASM
+
+@physics
+world Particles {
+    
+    # Define what a particle IS
+    entity Particle {
+        position: Vec2
+        velocity: Vec2
+        radius: f64 = 4.0
+        mass: f64 = 1.0
+    }
+    
+    # Physical constants
+    const gravity = Vec2(0, 200)      # pixels/sec²
+    const air_friction = 0.01         # drag coefficient  
+    const restitution = 0.8           # bounciness (0-1)
+    
+    # PHYSICS RULES - applied every timestep
+    
+    rule "apply gravity":
+        velocity += gravity * dt
+    
+    rule "air resistance":
+        velocity *= (1.0 - air_friction)
+    
+    rule "integrate motion":
+        position += velocity * dt
+    
+    # CONSTRAINTS - boundary conditions
+    
+    constraint "floor" when position.y > bounds.height - radius:
+        position.y = bounds.height - radius
+        velocity.y = -abs(velocity.y) * restitution
+    
+    constraint "ceiling" when position.y < radius:
+        position.y = radius
+        velocity.y = abs(velocity.y) * restitution
+    
+    constraint "left wall" when position.x < radius:
+        position.x = radius
+        velocity.x = abs(velocity.x) * restitution
+        
+    constraint "right wall" when position.x > bounds.width - radius:
+        position.x = bounds.width - radius
+        velocity.x = -abs(velocity.x) * restitution
+    
+    # INTERACTIONS - between entities
+    
+    interact "elastic collision" between a, b when distance(a, b) < a.radius + b.radius:
+        let normal = normalize(b.position - a.position)
+        let rel_vel = a.velocity - b.velocity
+        let impulse = dot(rel_vel, normal) * 2.0 / (a.mass + b.mass)
+        
+        a.velocity -= impulse * b.mass * normal
+        b.velocity += impulse * a.mass * normal
+        
+        # Separate overlapping particles
+        let overlap = (a.radius + b.radius) - distance(a, b)
+        a.position -= normal * overlap * 0.5
+        b.position += normal * overlap * 0.5
+}

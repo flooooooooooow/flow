@@ -40,6 +40,14 @@ show_help() {
     echo "Options:"
     echo "  run <program>     Compile and run program"
     echo "  compile <program>  Compile program only"
+    echo "  debug <program>   Compile with debug symbols and open debugger"
+    echo "  window <program>  Run with SDL2 window backend"
+    echo "  gfx <program>     Run with native FLOW gfx backend (macOS)"
+    echo "  vulkan-demo       Build and run Vulkan triangle demo (macOS + MoltenVK)"
+    echo "  vulkan-demo-basic  Alias for vulkan-demo"
+    echo "  vulkan-demo-advanced  Build and run Vulkan scene demo"
+    echo "  demo vulkan [basic|advanced]  Alias for Vulkan demos"
+    echo "  demo vulkan-flow [basic|advanced]  Run Flow Vulkan demos"
     echo "  mlir <program>     Generate MLIR only"
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
@@ -61,12 +69,18 @@ show_help() {
     echo "  test-all          Run FLOW + Python tests"
     echo ""
     echo "Project:"
+    echo "  python <program>  Generate Python package (wheel)"
+    echo "                    --name      Module name (default: filename)"
+    echo "                    --version   Package version (default: 0.1.0)"
+    echo "                    --source    Generate source only (no wheel)"
     echo "  wasm <program>    Compile to WebAssembly"
     echo "  install           Install dependencies"
     echo "  repl              Start interactive REPL"
     echo "  init [name]       Initialize a new project"
     echo "  add <package>     Add a dependency"
     echo "  build             Build the project"
+    echo "  build-native      Build with native sources (uses flow.toml)"
+    echo "  run-native        Build and run with native sources"
     echo "  clean             Clean build artifacts"
     echo "  examples          List example programs"
     echo "  help              Show this help"
@@ -141,6 +155,53 @@ compile_program() {
     print_success "🚀 Ready to run: $build_dir/$basename"
 }
 
+# Compile with debug symbols and open a debugger (LLDB preferred).
+debug_program() {
+    local program="$1"
+    local basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local c_file="$build_dir/$basename.debug.c"
+    local exe_file="$build_dir/$basename.debug"
+    
+    if [ ! -f "$program" ]; then
+        print_error "Program not found: $program"
+        exit 1
+    fi
+    
+    check_deps
+    mkdir -p "$build_dir"
+    
+    print_info "Compiling $program (debug)..."
+    
+    # FLOW to C with coarse source mappings (#line) enabled
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --debug-info --lenient -o "$c_file"; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C (debug): $(basename "$c_file")"
+    
+    # C to debug executable
+    if ! clang -g -O0 -fno-omit-frame-pointer "$c_file" -o "$exe_file" -lm; then
+        print_error "C compilation/linking failed"
+        exit 1
+    fi
+    print_success "Built debug binary: $exe_file"
+    
+    # Launch debugger
+    if command -v lldb &> /dev/null; then
+        print_info "Launching LLDB..."
+        print_info "Tip: (lldb) b main ; run ; bt"
+        lldb "$exe_file"
+    elif command -v gdb &> /dev/null; then
+        print_info "Launching GDB..."
+        print_info "Tip: (gdb) break main ; run ; bt"
+        gdb "$exe_file"
+    else
+        print_warning "No debugger found (lldb/gdb). Install one and run:"
+        print_info "  lldb \"$exe_file\""
+    fi
+}
+
 # Run program
 run_program() {
     local program="$1"
@@ -159,6 +220,55 @@ run_program() {
     return $status
 }
 
+# Run program in an SDL2 window (requires SDL2 installed, via pkg-config).
+run_window_program() {
+    local program="$1"
+    local basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    
+    if [ ! -f "$program" ]; then
+        print_error "Program not found: $program"
+        exit 1
+    fi
+    
+    check_deps
+    
+    if ! command -v pkg-config &> /dev/null; then
+        print_error "pkg-config is required for SDL2 linking"
+        print_info "Install: brew install pkg-config"
+        exit 1
+    fi
+    if ! pkg-config --exists sdl2; then
+        print_error "SDL2 not found (pkg-config sdl2)"
+        print_info "Install: brew install sdl2"
+        exit 1
+    fi
+    
+    mkdir -p "$build_dir"
+    local c_file="$build_dir/$basename.window.c"
+    local exe_file="$build_dir/$basename.window"
+    
+    print_info "Compiling $program (SDL2 window)..."
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C: $(basename "$c_file")"
+    
+    local sdl_cflags
+    local sdl_libs
+    sdl_cflags=$(pkg-config --cflags sdl2)
+    sdl_libs=$(pkg-config --libs sdl2)
+    
+    if ! clang -O2 -fno-omit-frame-pointer $sdl_cflags "$c_file" -o "$exe_file" $sdl_libs -lm 2>/dev/null; then
+        print_error "C compilation/linking failed (SDL2)"
+        exit 1
+    fi
+    print_success "Built: $exe_file"
+    
+    print_info "Running..."
+    "$exe_file"
+}
 # Generate MLIR only
 generate_mlir() {
     local program="$1"
@@ -184,6 +294,140 @@ generate_mlir() {
         print_error "MLIR generation failed"
         exit 1
     fi
+}
+
+run_gfx_program() {
+    local program="$1"
+    local basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    
+    if [ ! -f "$program" ]; then
+        print_error "Program not found: $program"
+        exit 1
+    fi
+    
+    check_deps
+    mkdir -p "$build_dir"
+    
+    local c_file="$build_dir/$basename.gfx.c"
+    local exe_file="$build_dir/$basename.gfx"
+    
+    print_info "Compiling $program (native gfx)..."
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C: $(basename "$c_file")"
+    
+    if ! clang -O2 -fno-omit-frame-pointer "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
+        -framework Cocoa -framework CoreGraphics -framework QuartzCore \
+        -o "$exe_file" -lm 2>/dev/null; then
+        print_error "Native gfx build failed (clang/frameworks)"
+        exit 1
+    fi
+    print_success "Built: $exe_file"
+    
+    print_info "Running..."
+    "$exe_file"
+}
+
+# Build and run Vulkan triangle demo (macOS + MoltenVK).
+run_vulkan_demo() {
+    local demo_dir="$SCRIPT_DIR/demos/vulkan_triangle"
+
+    if [ ! -d "$demo_dir" ]; then
+        print_error "Vulkan demo not found: $demo_dir"
+        exit 1
+    fi
+
+    if ! command -v make &> /dev/null; then
+        print_error "make is required to build the Vulkan demo"
+        exit 1
+    fi
+
+    if ! command -v pkg-config &> /dev/null; then
+        print_error "pkg-config is required to build the Vulkan demo"
+        print_info "Install: brew install pkg-config"
+        exit 1
+    fi
+
+    if ! command -v glslangValidator &> /dev/null; then
+        print_error "glslangValidator is required to compile shaders"
+        print_info "Install: brew install vulkan-tools"
+        exit 1
+    fi
+
+    if ! pkg-config --exists vulkan; then
+        print_error "Vulkan loader/headers not found (pkg-config vulkan)"
+        print_info "Install: brew install vulkan-loader vulkan-headers molten-vk"
+        exit 1
+    fi
+
+    if ! pkg-config --exists glfw3; then
+        print_error "GLFW not found (pkg-config glfw3)"
+        print_info "Install: brew install glfw"
+        exit 1
+    fi
+
+    print_info "Building Vulkan triangle demo..."
+    if make -C "$demo_dir" -q 2>/dev/null; then
+        print_info "Build up to date (skipping rebuild)."
+    elif ! make -C "$demo_dir"; then
+        print_error "Vulkan demo build failed"
+        exit 1
+    fi
+
+    print_info "Running Vulkan triangle demo..."
+    "$demo_dir/run.sh"
+}
+
+run_vulkan_demo_advanced() {
+    local demo_dir="$SCRIPT_DIR/demos/vulkan_scene"
+
+    if [ ! -d "$demo_dir" ]; then
+        print_error "Vulkan advanced demo not found: $demo_dir"
+        exit 1
+    fi
+
+    if ! command -v make &> /dev/null; then
+        print_error "make is required to build the Vulkan demo"
+        exit 1
+    fi
+
+    if ! command -v pkg-config &> /dev/null; then
+        print_error "pkg-config is required to build the Vulkan demo"
+        print_info "Install: brew install pkg-config"
+        exit 1
+    fi
+
+    if ! command -v glslangValidator &> /dev/null; then
+        print_error "glslangValidator is required to compile shaders"
+        print_info "Install: brew install vulkan-tools"
+        exit 1
+    fi
+
+    if ! pkg-config --exists vulkan; then
+        print_error "Vulkan loader/headers not found (pkg-config vulkan)"
+        print_info "Install: brew install vulkan-loader vulkan-headers molten-vk"
+        exit 1
+    fi
+
+    if ! pkg-config --exists glfw3; then
+        print_error "GLFW not found (pkg-config glfw3)"
+        print_info "Install: brew install glfw"
+        exit 1
+    fi
+
+    print_info "Building Vulkan scene demo..."
+    if make -C "$demo_dir" -q 2>/dev/null; then
+        print_info "Build up to date (skipping rebuild)."
+    elif ! make -C "$demo_dir"; then
+        print_error "Vulkan advanced demo build failed"
+        exit 1
+    fi
+
+    print_info "Running Vulkan scene demo..."
+    "$demo_dir/run.sh"
 }
 
 # Run the underlying transpiler directly (advanced flags)
@@ -629,6 +873,76 @@ case "${1:-help}" in
         check_deps
         compile_program "$2"
         ;;
+    "debug")
+        debug_program "$2"
+        ;;
+    "window")
+        run_window_program "$2"
+        ;;
+    "gfx")
+        run_gfx_program "$2"
+        ;;
+    "vulkan-demo")
+        run_vulkan_demo
+        ;;
+    "vulkan-demo-basic")
+        run_vulkan_demo
+        ;;
+    "vulkan-demo-advanced")
+        run_vulkan_demo_advanced
+        ;;
+    "demo")
+        if [ -z "$2" ]; then
+            print_error "Usage: flow demo <name> [variant]"
+            exit 1
+        fi
+        case "$2" in
+            "vulkan")
+                case "${3:-basic}" in
+                    "basic")
+                        run_vulkan_demo
+                        ;;
+                    "advanced")
+                        run_vulkan_demo_advanced
+                        ;;
+                    *)
+                        print_error "Unknown Vulkan demo variant: $3 (use basic or advanced)"
+                        exit 1
+                        ;;
+                esac
+                ;;
+            "vulkan-flow")
+                case "${3:-basic}" in
+                    "basic")
+                        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_basic')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_basic/src/main.flow')
+"
+                        ;;
+                    "advanced")
+                        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_advanced')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
+"
+                        ;;
+                    *)
+                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic or advanced)"
+                        exit 1
+                        ;;
+                esac
+                ;;
+            *)
+                print_error "Unknown demo: $2"
+                exit 1
+                ;;
+        esac
+        ;;
     "mlir")
         shift
         generate_mlir "$@"
@@ -793,6 +1107,47 @@ for f in sys.argv[1:]:
     "test-all")
         run_all_tests
         ;;
+    "python")
+        shift
+        if [ -z "$1" ]; then
+            print_error "Usage: flow python <program.flow> [--name NAME] [--version VER] [--source]"
+            exit 1
+        fi
+        program="$1"
+        shift
+        
+        # Parse python-specific options
+        py_name=""
+        py_version="0.1.0"
+        py_source_only=""
+        
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --name)
+                    py_name="$2"
+                    shift 2
+                    ;;
+                --version)
+                    py_version="$2"
+                    shift 2
+                    ;;
+                --source)
+                    py_source_only="--python-source-only"
+                    shift
+                    ;;
+                *)
+                    shift
+                    ;;
+            esac
+        done
+        
+        print_info "Generating Python package from $program..."
+        
+        py_args="--python --python-version $py_version $py_source_only"
+        [ -n "$py_name" ] && py_args="$py_args --python-name $py_name"
+        
+        python3 -m "$FLOWC_MODULE" "$program" $py_args
+        ;;
     "wasm")
         shift
         if [ -z "$1" ]; then
@@ -844,6 +1199,26 @@ sys.path.insert(0, '$SCRIPT_DIR/src')
 from flow.package import FlowPackageManager
 pm = FlowPackageManager()
 pm.build()
+"
+        ;;
+    "build-native")
+        shift
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager()
+pm.build_native('$1' if '$1' else None)
+"
+        ;;
+    "run-native")
+        shift
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager()
+pm.run_native('$1' if '$1' else None)
 "
         ;;
     "clean")

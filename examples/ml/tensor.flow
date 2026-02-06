@@ -1,0 +1,428 @@
+# Tensor: N-dimensional array type for neural networks
+# Core data structure for the Flow ML framework
+#
+# Features:
+# - 1D, 2D, 3D, 4D tensor support
+# - Element-wise operations
+# - Broadcasting
+# - Matrix multiplication
+
+extern {
+    function malloc(size: i64) -> ptr<f32>
+    function free(p: ptr<f32>)
+    function memset(p: ptr<f32>, val: i32, size: i64) -> ptr<f32>
+    function sqrt(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+# ============================================================================
+# TENSOR STRUCTURE
+# ============================================================================
+
+struct Tensor {
+    data: ptr<f32>,
+    size: i32,        # Total number of elements
+    dim0: i32,        # First dimension (batch)
+    dim1: i32,        # Second dimension (channels/rows)
+    dim2: i32,        # Third dimension (height)
+    dim3: i32         # Fourth dimension (width)
+}
+
+# ============================================================================
+# TENSOR CREATION
+# ============================================================================
+
+function tensor_zeros(d0: i32, d1: i32, d2: i32, d3: i32) -> Tensor {
+    let size: i32 = d0 * d1 * d2 * d3
+    let data: ptr<f32> = malloc(size * 4)
+    let p: ptr<f32> = memset(data, 0, size * 4)
+    return Tensor {
+        data: data,
+        size: size,
+        dim0: d0,
+        dim1: d1,
+        dim2: d2,
+        dim3: d3
+    }
+}
+
+function tensor_ones(d0: i32, d1: i32, d2: i32, d3: i32) -> Tensor {
+    let t: Tensor = tensor_zeros(d0, d1, d2, d3)
+    for i in 0 to t.size {
+        t.data[i] = 1.0
+    }
+    return t
+}
+
+function tensor_fill(d0: i32, d1: i32, d2: i32, d3: i32, val: f32) -> Tensor {
+    let t: Tensor = tensor_zeros(d0, d1, d2, d3)
+    for i in 0 to t.size {
+        t.data[i] = val
+    }
+    return t
+}
+
+function tensor_rand(d0: i32, d1: i32, d2: i32, d3: i32, seed: i32) -> Tensor {
+    let t: Tensor = tensor_zeros(d0, d1, d2, d3)
+    let mut s: i32 = seed
+    for i in 0 to t.size {
+        s = (s * 1103515245 + 12345) % 2147483647
+        if s < 0 { s = 0 - s }
+        t.data[i] = (s % 10000) / 10000.0
+    }
+    return t
+}
+
+function tensor_randn(d0: i32, d1: i32, d2: i32, d3: i32, seed: i32) -> Tensor {
+    # Box-Muller transform for normal distribution
+    let t: Tensor = tensor_zeros(d0, d1, d2, d3)
+    let mut s: i32 = seed
+    for i in 0 to t.size {
+        s = (s * 1103515245 + 12345) % 2147483647
+        if s < 0 { s = 0 - s }
+        let u1: f64 = (s % 10000 + 1) / 10001.0
+        s = (s * 1103515245 + 12345) % 2147483647
+        if s < 0 { s = 0 - s }
+        let u2: f64 = (s % 10000) / 10000.0
+        
+        let mag: f64 = sqrt(0.0 - 2.0 * log(u1))
+        let z: f64 = mag * 0.5  # Simplified (no cos)
+        t.data[i] = z
+    }
+    return t
+}
+
+function tensor_free(t: Tensor) {
+    free(t.data)
+}
+
+# ============================================================================
+# TENSOR INDEXING
+# ============================================================================
+
+function tensor_idx(t: Tensor, i0: i32, i1: i32, i2: i32, i3: i32) -> i32 {
+    return ((i0 * t.dim1 + i1) * t.dim2 + i2) * t.dim3 + i3
+}
+
+function tensor_get(t: Tensor, i0: i32, i1: i32, i2: i32, i3: i32) -> f32 {
+    return t.data[tensor_idx(t, i0, i1, i2, i3)]
+}
+
+function tensor_set(t: Tensor, i0: i32, i1: i32, i2: i32, i3: i32, val: f32) {
+    t.data[tensor_idx(t, i0, i1, i2, i3)] = val
+}
+
+# 2D shortcuts
+function tensor_get2(t: Tensor, i: i32, j: i32) -> f32 {
+    return t.data[i * t.dim1 + j]
+}
+
+function tensor_set2(t: Tensor, i: i32, j: i32, val: f32) {
+    t.data[i * t.dim1 + j] = val
+}
+
+# 1D shortcuts
+function tensor_get1(t: Tensor, i: i32) -> f32 {
+    return t.data[i]
+}
+
+function tensor_set1(t: Tensor, i: i32, val: f32) {
+    t.data[i] = val
+}
+
+# ============================================================================
+# ELEMENT-WISE OPERATIONS
+# ============================================================================
+
+function tensor_add(a: Tensor, b: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
+    for i in 0 to a.size {
+        c.data[i] = a.data[i] + b.data[i]
+    }
+    return c
+}
+
+function tensor_sub(a: Tensor, b: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
+    for i in 0 to a.size {
+        c.data[i] = a.data[i] - b.data[i]
+    }
+    return c
+}
+
+function tensor_mul(a: Tensor, b: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
+    for i in 0 to a.size {
+        c.data[i] = a.data[i] * b.data[i]
+    }
+    return c
+}
+
+function tensor_div(a: Tensor, b: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
+    for i in 0 to a.size {
+        c.data[i] = a.data[i] / b.data[i]
+    }
+    return c
+}
+
+function tensor_scale(t: Tensor, s: f32) -> Tensor {
+    let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
+    for i in 0 to t.size {
+        c.data[i] = t.data[i] * s
+    }
+    return c
+}
+
+function tensor_add_scalar(t: Tensor, s: f32) -> Tensor {
+    let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
+    for i in 0 to t.size {
+        c.data[i] = t.data[i] + s
+    }
+    return c
+}
+
+function tensor_neg(t: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
+    for i in 0 to t.size {
+        c.data[i] = 0.0 - t.data[i]
+    }
+    return c
+}
+
+# ============================================================================
+# ACTIVATION FUNCTIONS
+# ============================================================================
+
+function tensor_relu(t: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
+    for i in 0 to t.size {
+        if t.data[i] > 0.0 {
+            c.data[i] = t.data[i]
+        } else {
+            c.data[i] = 0.0
+        }
+    }
+    return c
+}
+
+function tensor_sigmoid(t: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
+    for i in 0 to t.size {
+        let e: f64 = exp(0.0 - t.data[i])
+        c.data[i] = 1.0 / (1.0 + e)
+    }
+    return c
+}
+
+function tensor_tanh(t: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
+    for i in 0 to t.size {
+        let ep: f64 = exp(t.data[i])
+        let en: f64 = exp(0.0 - t.data[i])
+        c.data[i] = (ep - en) / (ep + en)
+    }
+    return c
+}
+
+function tensor_softmax(t: Tensor) -> Tensor {
+    # Assumes t is 2D: (batch, classes)
+    let c: Tensor = tensor_zeros(t.dim0, t.dim1, 1, 1)
+    
+    for b in 0 to t.dim0 {
+        # Find max for numerical stability
+        let mut max_val: f32 = t.data[b * t.dim1]
+        for i in 1 to t.dim1 {
+            if t.data[b * t.dim1 + i] > max_val {
+                max_val = t.data[b * t.dim1 + i]
+            }
+        }
+        
+        # Compute exp and sum
+        let mut sum: f64 = 0.0
+        for i in 0 to t.dim1 {
+            let e: f64 = exp(t.data[b * t.dim1 + i] - max_val)
+            c.data[b * t.dim1 + i] = e
+            sum = sum + e
+        }
+        
+        # Normalize
+        for i in 0 to t.dim1 {
+            c.data[b * t.dim1 + i] = c.data[b * t.dim1 + i] / sum
+        }
+    }
+    
+    return c
+}
+
+# ============================================================================
+# MATRIX OPERATIONS
+# ============================================================================
+
+function tensor_matmul(a: Tensor, b: Tensor) -> Tensor {
+    # a: (M, K), b: (K, N) -> c: (M, N)
+    let M: i32 = a.dim0
+    let K: i32 = a.dim1
+    let N: i32 = b.dim1
+    
+    let c: Tensor = tensor_zeros(M, N, 1, 1)
+    
+    for i in 0 to M {
+        for j in 0 to N {
+            let mut sum: f32 = 0.0
+            for k in 0 to K {
+                sum = sum + a.data[i * K + k] * b.data[k * N + j]
+            }
+            c.data[i * N + j] = sum
+        }
+    }
+    
+    return c
+}
+
+function tensor_transpose(t: Tensor) -> Tensor {
+    # Transpose 2D tensor
+    let c: Tensor = tensor_zeros(t.dim1, t.dim0, 1, 1)
+    
+    for i in 0 to t.dim0 {
+        for j in 0 to t.dim1 {
+            c.data[j * t.dim0 + i] = t.data[i * t.dim1 + j]
+        }
+    }
+    
+    return c
+}
+
+# ============================================================================
+# REDUCTION OPERATIONS
+# ============================================================================
+
+function tensor_sum(t: Tensor) -> f32 {
+    let mut sum: f32 = 0.0
+    for i in 0 to t.size {
+        sum = sum + t.data[i]
+    }
+    return sum
+}
+
+function tensor_mean(t: Tensor) -> f32 {
+    return tensor_sum(t) / t.size
+}
+
+function tensor_max(t: Tensor) -> f32 {
+    let mut max_val: f32 = t.data[0]
+    for i in 1 to t.size {
+        if t.data[i] > max_val {
+            max_val = t.data[i]
+        }
+    }
+    return max_val
+}
+
+function tensor_min(t: Tensor) -> f32 {
+    let mut min_val: f32 = t.data[0]
+    for i in 1 to t.size {
+        if t.data[i] < min_val {
+            min_val = t.data[i]
+        }
+    }
+    return min_val
+}
+
+function tensor_argmax(t: Tensor) -> i32 {
+    let mut max_idx: i32 = 0
+    let mut max_val: f32 = t.data[0]
+    for i in 1 to t.size {
+        if t.data[i] > max_val {
+            max_val = t.data[i]
+            max_idx = i
+        }
+    }
+    return max_idx
+}
+
+# ============================================================================
+# UTILITY
+# ============================================================================
+
+function tensor_copy(t: Tensor) -> Tensor {
+    let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
+    for i in 0 to t.size {
+        c.data[i] = t.data[i]
+    }
+    return c
+}
+
+function tensor_print(t: Tensor) {
+    print("Tensor(")
+    print(t.dim0)
+    print(", ")
+    print(t.dim1)
+    print(", ")
+    print(t.dim2)
+    print(", ")
+    print(t.dim3)
+    println(")")
+    
+    # Print first few elements
+    let n: i32 = t.size
+    if n > 10 { n = 10 }
+    print("  [")
+    for i in 0 to n {
+        print(t.data[i])
+        if i < n - 1 {
+            print(", ")
+        }
+    }
+    if t.size > 10 {
+        print(", ...")
+    }
+    println("]")
+}
+
+# ============================================================================
+# TEST
+# ============================================================================
+
+function main() -> i32 {
+    println("Tensor Library Test")
+    println("===================")
+    
+    # Create tensors
+    let a: Tensor = tensor_rand(2, 3, 1, 1, 42)
+    println("Random tensor:")
+    tensor_print(a)
+    
+    let b: Tensor = tensor_ones(2, 3, 1, 1)
+    println("Ones tensor:")
+    tensor_print(b)
+    
+    # Operations
+    let c: Tensor = tensor_add(a, b)
+    println("Add result:")
+    tensor_print(c)
+    
+    let d: Tensor = tensor_relu(a)
+    println("ReLU result:")
+    tensor_print(d)
+    
+    # Matrix multiply
+    let m1: Tensor = tensor_rand(2, 3, 1, 1, 123)
+    let m2: Tensor = tensor_rand(3, 4, 1, 1, 456)
+    let m3: Tensor = tensor_matmul(m1, m2)
+    println("MatMul (2x3) @ (3x4):")
+    tensor_print(m3)
+    
+    # Cleanup
+    tensor_free(a)
+    tensor_free(b)
+    tensor_free(c)
+    tensor_free(d)
+    tensor_free(m1)
+    tensor_free(m2)
+    tensor_free(m3)
+    
+    println("All tests passed!")
+    return 0
+}

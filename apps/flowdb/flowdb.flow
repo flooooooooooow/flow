@@ -1,0 +1,399 @@
+# FlowDB: A Simple Key-Value Store
+# Demonstrates Flow's capability for building real applications
+#
+# Features:
+# - In-memory key-value storage
+# - Basic CRUD operations
+# - Simple query support
+# - Persistence (to/from arrays)
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>)
+    function printf(fmt: string, val: i32) -> i32
+}
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+const MAX_ENTRIES: i32 = 1000
+const KEY_SIZE: i32 = 32
+const VALUE_SIZE: i32 = 256
+
+const ENTRY_EMPTY: i32 = 0
+const ENTRY_OCCUPIED: i32 = 1
+const ENTRY_DELETED: i32 = 2
+
+# ============================================================================
+# DATA STRUCTURES
+# ============================================================================
+
+struct DBEntry {
+    key_hash: i32,
+    value: i32,       # Simplified: integer values
+    timestamp: i32,   # Insertion timestamp
+    state: i32
+}
+
+struct FlowDB {
+    entries: ptr<DBEntry>,
+    capacity: i32,
+    size: i32,
+    version: i32,
+    next_timestamp: i32
+}
+
+struct QueryResult {
+    found: i32,
+    value: i32,
+    timestamp: i32
+}
+
+# ============================================================================
+# DATABASE CREATION
+# ============================================================================
+
+function db_create(capacity: i32) -> FlowDB {
+    let size: i64 = capacity * 16  # sizeof(DBEntry)
+    let entries_raw: ptr<u8> = malloc(size)
+    let entries: ptr<DBEntry> = entries_raw
+    
+    for i in 0 to capacity {
+        entries[i].key_hash = 0
+        entries[i].value = 0
+        entries[i].timestamp = 0
+        entries[i].state = ENTRY_EMPTY
+    }
+    
+    return FlowDB {
+        entries: entries,
+        capacity: capacity,
+        size: 0,
+        version: 1,
+        next_timestamp: 1
+    }
+}
+
+function db_destroy(db: FlowDB) {
+    let entries_raw: ptr<u8> = db.entries
+    free(entries_raw)
+}
+
+# ============================================================================
+# HASH FUNCTION
+# ============================================================================
+
+function hash_key(key: i32) -> i32 {
+    let mut h: i32 = key
+    h = ((h >> 16) ^ h) * 0x45d9f3b
+    h = ((h >> 16) ^ h) * 0x45d9f3b
+    h = (h >> 16) ^ h
+    if h < 0 { h = 0 - h }
+    return h
+}
+
+# ============================================================================
+# CRUD OPERATIONS
+# ============================================================================
+
+function db_put(db: ptr<FlowDB>, key: i32, value: i32) -> i32 {
+    let key_hash: i32 = hash_key(key)
+    let mut idx: i32 = key_hash % db[0].capacity
+    let start_idx: i32 = idx
+    let mut first_deleted: i32 = -1
+    
+    # Linear probing
+    while db[0].entries[idx].state != ENTRY_EMPTY {
+        if db[0].entries[idx].state == ENTRY_DELETED and first_deleted == -1 {
+            first_deleted = idx
+        }
+        
+        if db[0].entries[idx].state == ENTRY_OCCUPIED and db[0].entries[idx].key_hash == key_hash {
+            # Update existing
+            db[0].entries[idx].value = value
+            db[0].entries[idx].timestamp = db[0].next_timestamp
+            db[0].next_timestamp = db[0].next_timestamp + 1
+            return 1
+        }
+        
+        idx = (idx + 1) % db[0].capacity
+        if idx == start_idx {
+            break
+        }
+    }
+    
+    # Insert new
+    if first_deleted != -1 {
+        idx = first_deleted
+    }
+    
+    if db[0].size >= db[0].capacity * 70 / 100 {
+        return 0  # Would need resize
+    }
+    
+    db[0].entries[idx].key_hash = key_hash
+    db[0].entries[idx].value = value
+    db[0].entries[idx].timestamp = db[0].next_timestamp
+    db[0].entries[idx].state = ENTRY_OCCUPIED
+    db[0].next_timestamp = db[0].next_timestamp + 1
+    db[0].size = db[0].size + 1
+    
+    return 1
+}
+
+function db_get(db: FlowDB, key: i32) -> QueryResult {
+    let key_hash: i32 = hash_key(key)
+    let mut idx: i32 = key_hash % db.capacity
+    let start_idx: i32 = idx
+    
+    while db.entries[idx].state != ENTRY_EMPTY {
+        if db.entries[idx].state == ENTRY_OCCUPIED and db.entries[idx].key_hash == key_hash {
+            return QueryResult {
+                found: 1,
+                value: db.entries[idx].value,
+                timestamp: db.entries[idx].timestamp
+            }
+        }
+        
+        idx = (idx + 1) % db.capacity
+        if idx == start_idx {
+            break
+        }
+    }
+    
+    return QueryResult { found: 0, value: 0, timestamp: 0 }
+}
+
+function db_delete(db: ptr<FlowDB>, key: i32) -> i32 {
+    let key_hash: i32 = hash_key(key)
+    let mut idx: i32 = key_hash % db[0].capacity
+    let start_idx: i32 = idx
+    
+    while db[0].entries[idx].state != ENTRY_EMPTY {
+        if db[0].entries[idx].state == ENTRY_OCCUPIED and db[0].entries[idx].key_hash == key_hash {
+            db[0].entries[idx].state = ENTRY_DELETED
+            db[0].size = db[0].size - 1
+            return 1
+        }
+        
+        idx = (idx + 1) % db[0].capacity
+        if idx == start_idx {
+            break
+        }
+    }
+    
+    return 0
+}
+
+function db_exists(db: FlowDB, key: i32) -> i32 {
+    let result: QueryResult = db_get(db, key)
+    return result.found
+}
+
+# ============================================================================
+# QUERY OPERATIONS
+# ============================================================================
+
+function db_count(db: FlowDB) -> i32 {
+    return db.size
+}
+
+function db_keys(db: FlowDB, out_keys: ptr<i32>, max_keys: i32) -> i32 {
+    let mut count: i32 = 0
+    
+    for i in 0 to db.capacity {
+        if db.entries[i].state == ENTRY_OCCUPIED {
+            if count < max_keys {
+                out_keys[count] = db.entries[i].key_hash
+            }
+            count = count + 1
+        }
+    }
+    
+    return count
+}
+
+function db_values_sum(db: FlowDB) -> i32 {
+    let mut sum: i32 = 0
+    
+    for i in 0 to db.capacity {
+        if db.entries[i].state == ENTRY_OCCUPIED {
+            sum = sum + db.entries[i].value
+        }
+    }
+    
+    return sum
+}
+
+function db_values_max(db: FlowDB) -> i32 {
+    let mut max_val: i32 = -2147483648
+    
+    for i in 0 to db.capacity {
+        if db.entries[i].state == ENTRY_OCCUPIED {
+            if db.entries[i].value > max_val {
+                max_val = db.entries[i].value
+            }
+        }
+    }
+    
+    return max_val
+}
+
+function db_values_min(db: FlowDB) -> i32 {
+    let mut min_val: i32 = 2147483647
+    
+    for i in 0 to db.capacity {
+        if db.entries[i].state == ENTRY_OCCUPIED {
+            if db.entries[i].value < min_val {
+                min_val = db.entries[i].value
+            }
+        }
+    }
+    
+    return min_val
+}
+
+# ============================================================================
+# STATISTICS
+# ============================================================================
+
+function db_stats(db: FlowDB) {
+    println("=== FlowDB Statistics ===")
+    print("  Version: ")
+    println(db.version)
+    print("  Capacity: ")
+    println(db.capacity)
+    print("  Size: ")
+    println(db.size)
+    print("  Load factor: ")
+    print(db.size * 100 / db.capacity)
+    println("%")
+    print("  Timestamps issued: ")
+    println(db.next_timestamp - 1)
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("FlowDB - Key-Value Store Demo")
+    println("=============================")
+    println("")
+    
+    # Create database
+    let mut db: FlowDB = db_create(100)
+    let db_ptr: ptr<FlowDB> = &db
+    
+    println("Database created with capacity 100")
+    println("")
+    
+    # Insert data
+    println("=== INSERT Operations ===")
+    
+    db_put(db_ptr, 1, 100)
+    println("  PUT key=1 value=100")
+    
+    db_put(db_ptr, 2, 200)
+    println("  PUT key=2 value=200")
+    
+    db_put(db_ptr, 3, 300)
+    println("  PUT key=3 value=300")
+    
+    db_put(db_ptr, 4, 400)
+    println("  PUT key=4 value=400")
+    
+    db_put(db_ptr, 5, 500)
+    println("  PUT key=5 value=500")
+    
+    print("  Entries inserted: ")
+    println(db_count(db))
+    println("")
+    
+    # Read data
+    println("=== GET Operations ===")
+    
+    let r1: QueryResult = db_get(db, 1)
+    print("  GET key=1: value=")
+    print(r1.value)
+    print(", timestamp=")
+    println(r1.timestamp)
+    
+    let r3: QueryResult = db_get(db, 3)
+    print("  GET key=3: value=")
+    print(r3.value)
+    print(", timestamp=")
+    println(r3.timestamp)
+    
+    let r99: QueryResult = db_get(db, 99)
+    print("  GET key=99: found=")
+    println(r99.found)
+    println("")
+    
+    # Update
+    println("=== UPDATE Operations ===")
+    
+    db_put(db_ptr, 1, 999)
+    println("  PUT key=1 value=999 (update)")
+    
+    let r1_updated: QueryResult = db_get(db, 1)
+    print("  GET key=1: value=")
+    print(r1_updated.value)
+    print(", new timestamp=")
+    println(r1_updated.timestamp)
+    println("")
+    
+    # Delete
+    println("=== DELETE Operations ===")
+    
+    let del_result: i32 = db_delete(db_ptr, 2)
+    print("  DELETE key=2: ")
+    if del_result == 1 {
+        println("success")
+    } else {
+        println("not found")
+    }
+    
+    let r2_after: QueryResult = db_get(db, 2)
+    print("  GET key=2 after delete: found=")
+    println(r2_after.found)
+    
+    print("  Entries after delete: ")
+    println(db_count(db))
+    println("")
+    
+    # Aggregate queries
+    println("=== Aggregate Queries ===")
+    
+    print("  SUM of all values: ")
+    println(db_values_sum(db))
+    
+    print("  MAX value: ")
+    println(db_values_max(db))
+    
+    print("  MIN value: ")
+    println(db_values_min(db))
+    println("")
+    
+    # Bulk insert
+    println("=== Bulk Insert ===")
+    
+    for i in 10 to 30 {
+        db_put(db_ptr, i, i * 10)
+    }
+    print("  Inserted 20 more entries, total: ")
+    println(db_count(db))
+    println("")
+    
+    # Statistics
+    db_stats(db)
+    
+    # Cleanup
+    db_destroy(db)
+    
+    println("")
+    println("FlowDB demo complete!")
+    
+    return 0
+}

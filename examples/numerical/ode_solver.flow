@@ -1,0 +1,286 @@
+# Ordinary Differential Equation Solvers
+# Numerical methods for solving dy/dt = f(t, y)
+#
+# Methods:
+# - Euler (1st order)
+# - Midpoint (2nd order)
+# - RK4 (4th order, classic)
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function exp(x: f64) -> f64
+}
+
+# ============================================================================
+# EULER METHOD - First order, simplest
+# ============================================================================
+
+function euler_step(t: f64, y: f64, dt: f64, f_idx: i32) -> f64 {
+    let dy: f64 = eval_derivative(t, y, f_idx)
+    return y + dt * dy
+}
+
+function euler_solve(y0: f64, t0: f64, t_end: f64, dt: f64, f_idx: i32, results: ptr<f64>, n_max: i32) -> i32 {
+    let mut t: f64 = t0
+    let mut y: f64 = y0
+    let mut i: i32 = 0
+    
+    while t < t_end and i < n_max {
+        results[i] = y
+        y = euler_step(t, y, dt, f_idx)
+        t = t + dt
+        i = i + 1
+    }
+    
+    return i
+}
+
+# ============================================================================
+# MIDPOINT METHOD - Second order
+# ============================================================================
+
+function midpoint_step(t: f64, y: f64, dt: f64, f_idx: i32) -> f64 {
+    let k1: f64 = eval_derivative(t, y, f_idx)
+    let k2: f64 = eval_derivative(t + dt / 2.0, y + dt / 2.0 * k1, f_idx)
+    return y + dt * k2
+}
+
+function midpoint_solve(y0: f64, t0: f64, t_end: f64, dt: f64, f_idx: i32, results: ptr<f64>, n_max: i32) -> i32 {
+    let mut t: f64 = t0
+    let mut y: f64 = y0
+    let mut i: i32 = 0
+    
+    while t < t_end and i < n_max {
+        results[i] = y
+        y = midpoint_step(t, y, dt, f_idx)
+        t = t + dt
+        i = i + 1
+    }
+    
+    return i
+}
+
+# ============================================================================
+# RK4 METHOD - Fourth order, gold standard
+# ============================================================================
+
+function rk4_step(t: f64, y: f64, dt: f64, f_idx: i32) -> f64 {
+    let k1: f64 = eval_derivative(t, y, f_idx)
+    let k2: f64 = eval_derivative(t + dt / 2.0, y + dt / 2.0 * k1, f_idx)
+    let k3: f64 = eval_derivative(t + dt / 2.0, y + dt / 2.0 * k2, f_idx)
+    let k4: f64 = eval_derivative(t + dt, y + dt * k3, f_idx)
+    
+    return y + dt / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+}
+
+function rk4_solve(y0: f64, t0: f64, t_end: f64, dt: f64, f_idx: i32, results: ptr<f64>, n_max: i32) -> i32 {
+    let mut t: f64 = t0
+    let mut y: f64 = y0
+    let mut i: i32 = 0
+    
+    while t < t_end and i < n_max {
+        results[i] = y
+        y = rk4_step(t, y, dt, f_idx)
+        t = t + dt
+        i = i + 1
+    }
+    
+    return i
+}
+
+# ============================================================================
+# TEST ODES (indexed for simplicity without function pointers)
+# ============================================================================
+
+function eval_derivative(t: f64, y: f64, f_idx: i32) -> f64 {
+    # f_idx selects which ODE to solve
+    
+    # 0: dy/dt = y (exponential growth)
+    if f_idx == 0 {
+        return y
+    }
+    
+    # 1: dy/dt = -y (exponential decay)
+    if f_idx == 1 {
+        return 0.0 - y
+    }
+    
+    # 2: dy/dt = -2*t*y (Gaussian)
+    if f_idx == 2 {
+        return 0.0 - 2.0 * t * y
+    }
+    
+    # 3: dy/dt = sin(t) (integration of sine)
+    if f_idx == 3 {
+        return sin(t)
+    }
+    
+    # 4: dy/dt = y * (1 - y) (logistic growth)
+    if f_idx == 4 {
+        return y * (1.0 - y)
+    }
+    
+    return 0.0
+}
+
+function exact_solution(t: f64, y0: f64, f_idx: i32) -> f64 {
+    # Exact solutions for comparison
+    
+    # 0: y = y0 * exp(t)
+    if f_idx == 0 {
+        return y0 * exp(t)
+    }
+    
+    # 1: y = y0 * exp(-t)
+    if f_idx == 1 {
+        return y0 * exp(0.0 - t)
+    }
+    
+    # 2: y = y0 * exp(-t^2)
+    if f_idx == 2 {
+        return y0 * exp(0.0 - t * t)
+    }
+    
+    # 3: y = y0 - cos(t) + 1
+    if f_idx == 3 {
+        return y0 - cos(t) + 1.0
+    }
+    
+    return 0.0
+}
+
+# ============================================================================
+# ERROR ANALYSIS
+# ============================================================================
+
+function compute_error(results: ptr<f64>, n: i32, t0: f64, dt: f64, y0: f64, f_idx: i32) -> f64 {
+    let mut max_error: f64 = 0.0
+    
+    for i in 0 to n {
+        let t: f64 = t0 + i * dt
+        let exact: f64 = exact_solution(t, y0, f_idx)
+        let err: f64 = results[i] - exact
+        if err < 0.0 { err = 0.0 - err }
+        if err > max_error {
+            max_error = err
+        }
+    }
+    
+    return max_error
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("ODE Solver Demo")
+    println("===============")
+    println("")
+    
+    let results_euler: array<f64, 100> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let results_mid: array<f64, 100> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let results_rk4: array<f64, 100> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    
+    let euler_ptr: ptr<f64> = results_euler
+    let mid_ptr: ptr<f64> = results_mid
+    let rk4_ptr: ptr<f64> = results_rk4
+    
+    let y0: f64 = 1.0
+    let t0: f64 = 0.0
+    let t_end: f64 = 2.0
+    let dt: f64 = 0.1
+    
+    # Test 1: Exponential growth dy/dt = y
+    println("=== Test 1: dy/dt = y (exponential growth) ===")
+    println("Exact solution: y = e^t")
+    println("")
+    
+    let n_euler: i32 = euler_solve(y0, t0, t_end, dt, 0, euler_ptr, 100)
+    let n_mid: i32 = midpoint_solve(y0, t0, t_end, dt, 0, mid_ptr, 100)
+    let n_rk4: i32 = rk4_solve(y0, t0, t_end, dt, 0, rk4_ptr, 100)
+    
+    print("Steps computed: ")
+    println(n_euler)
+    
+    # Show final values
+    let t_final: f64 = t0 + (n_euler - 1) * dt
+    let exact_final: f64 = exact_solution(t_final, y0, 0)
+    
+    print("At t = ")
+    printf("%.2f", t_final)
+    println(":")
+    print("  Exact:    ")
+    printf("%.6f", exact_final)
+    println("")
+    print("  Euler:    ")
+    printf("%.6f", results_euler[n_euler - 1])
+    println("")
+    print("  Midpoint: ")
+    printf("%.6f", results_mid[n_mid - 1])
+    println("")
+    print("  RK4:      ")
+    printf("%.6f", results_rk4[n_rk4 - 1])
+    println("")
+    
+    # Errors
+    println("")
+    println("Maximum errors:")
+    let err_euler: f64 = compute_error(euler_ptr, n_euler, t0, dt, y0, 0)
+    let err_mid: f64 = compute_error(mid_ptr, n_mid, t0, dt, y0, 0)
+    let err_rk4: f64 = compute_error(rk4_ptr, n_rk4, t0, dt, y0, 0)
+    
+    print("  Euler:    ")
+    printf("%.6e", err_euler)
+    println("")
+    print("  Midpoint: ")
+    printf("%.6e", err_mid)
+    println("")
+    print("  RK4:      ")
+    printf("%.6e", err_rk4)
+    println("")
+    
+    # Test 2: Exponential decay
+    println("")
+    println("=== Test 2: dy/dt = -y (exponential decay) ===")
+    
+    let n2_euler: i32 = euler_solve(y0, t0, t_end, dt, 1, euler_ptr, 100)
+    let n2_rk4: i32 = rk4_solve(y0, t0, t_end, dt, 1, rk4_ptr, 100)
+    
+    let t2_final: f64 = t0 + (n2_euler - 1) * dt
+    let exact2_final: f64 = exact_solution(t2_final, y0, 1)
+    
+    print("At t = ")
+    printf("%.2f", t2_final)
+    print(": exact = ")
+    printf("%.6f", exact2_final)
+    print(", RK4 = ")
+    printf("%.6f", results_rk4[n2_rk4 - 1])
+    println("")
+    
+    # Test 3: Compare step sizes
+    println("")
+    println("=== Step Size Comparison (RK4 on dy/dt = y) ===")
+    
+    let dts: array<f64, 4> = [0.5, 0.1, 0.05, 0.01]
+    
+    for i in 0 to 4 {
+        let h: f64 = dts[i]
+        let n: i32 = rk4_solve(y0, t0, 1.0, h, 0, rk4_ptr, 100)
+        let err: f64 = compute_error(rk4_ptr, n, t0, h, y0, 0)
+        
+        print("  dt = ")
+        printf("%.2f", h)
+        print(": max error = ")
+        printf("%.6e", err)
+        println("")
+    }
+    
+    println("")
+    println("Observation: RK4 error scales as O(dt^4)")
+    
+    return 0
+}

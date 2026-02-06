@@ -1,0 +1,362 @@
+# Numerical Optimization
+# Methods for finding minima of functions
+#
+# Algorithms:
+# - Gradient Descent
+# - Newton's Method (1D)
+# - Nelder-Mead (derivative-free)
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function exp(x: f64) -> f64
+}
+
+# ============================================================================
+# TEST FUNCTIONS (indexed)
+# ============================================================================
+
+function eval_f(x: f64, f_idx: i32) -> f64 {
+    # f_idx selects which function to optimize
+    
+    # 0: Quadratic: f(x) = (x-3)^2 + 1, min at x=3
+    if f_idx == 0 {
+        return (x - 3.0) * (x - 3.0) + 1.0
+    }
+    
+    # 1: Quartic: f(x) = x^4 - 2x^2 + 1, min at x=+-1
+    if f_idx == 1 {
+        let x2: f64 = x * x
+        return x2 * x2 - 2.0 * x2 + 1.0
+    }
+    
+    # 2: Rosenbrock 1D slice: f(x) = (1-x)^2 + 100*(x^2 - x)^2
+    if f_idx == 2 {
+        let a: f64 = 1.0 - x
+        let b: f64 = x * x - x
+        return a * a + 100.0 * b * b
+    }
+    
+    return 0.0
+}
+
+function eval_df(x: f64, f_idx: i32) -> f64 {
+    # Derivative df/dx
+    
+    # 0: df/dx = 2*(x-3)
+    if f_idx == 0 {
+        return 2.0 * (x - 3.0)
+    }
+    
+    # 1: df/dx = 4x^3 - 4x
+    if f_idx == 1 {
+        return 4.0 * x * x * x - 4.0 * x
+    }
+    
+    # 2: numerical derivative
+    if f_idx == 2 {
+        let h: f64 = 1e-6
+        return (eval_f(x + h, 2) - eval_f(x - h, 2)) / (2.0 * h)
+    }
+    
+    return 0.0
+}
+
+function eval_ddf(x: f64, f_idx: i32) -> f64 {
+    # Second derivative d^2f/dx^2
+    
+    # 0: d^2f/dx^2 = 2
+    if f_idx == 0 {
+        return 2.0
+    }
+    
+    # 1: d^2f/dx^2 = 12x^2 - 4
+    if f_idx == 1 {
+        return 12.0 * x * x - 4.0
+    }
+    
+    return 2.0  # Fallback
+}
+
+# ============================================================================
+# GRADIENT DESCENT
+# ============================================================================
+
+function gradient_descent(x0: f64, lr: f64, tol: f64, max_iter: i32, f_idx: i32) -> f64 {
+    let mut x: f64 = x0
+    
+    for i in 0 to max_iter {
+        let grad: f64 = eval_df(x, f_idx)
+        
+        if fabs(grad) < tol {
+            print("  Converged at iteration ")
+            println(i)
+            return x
+        }
+        
+        x = x - lr * grad
+    }
+    
+    println("  Max iterations reached")
+    return x
+}
+
+function gradient_descent_with_momentum(x0: f64, lr: f64, momentum: f64, tol: f64, max_iter: i32, f_idx: i32) -> f64 {
+    let mut x: f64 = x0
+    let mut v: f64 = 0.0
+    
+    for i in 0 to max_iter {
+        let grad: f64 = eval_df(x, f_idx)
+        
+        if fabs(grad) < tol {
+            print("  Converged at iteration ")
+            println(i)
+            return x
+        }
+        
+        v = momentum * v - lr * grad
+        x = x + v
+    }
+    
+    return x
+}
+
+# ============================================================================
+# NEWTON'S METHOD (1D)
+# ============================================================================
+
+function newton_optimize(x0: f64, tol: f64, max_iter: i32, f_idx: i32) -> f64 {
+    let mut x: f64 = x0
+    
+    for i in 0 to max_iter {
+        let grad: f64 = eval_df(x, f_idx)
+        let hess: f64 = eval_ddf(x, f_idx)
+        
+        if fabs(grad) < tol {
+            print("  Converged at iteration ")
+            println(i)
+            return x
+        }
+        
+        if fabs(hess) < 1e-10 {
+            println("  Warning: near-zero Hessian")
+            return x
+        }
+        
+        x = x - grad / hess
+    }
+    
+    return x
+}
+
+# ============================================================================
+# GOLDEN SECTION SEARCH (derivative-free)
+# ============================================================================
+
+function golden_section(a: f64, b: f64, tol: f64, f_idx: i32) -> f64 {
+    let phi: f64 = 1.618033988749895  # Golden ratio
+    let inv_phi: f64 = 0.618033988749895
+    
+    let mut lo: f64 = a
+    let mut hi: f64 = b
+    
+    let mut x1: f64 = hi - inv_phi * (hi - lo)
+    let mut x2: f64 = lo + inv_phi * (hi - lo)
+    let mut f1: f64 = eval_f(x1, f_idx)
+    let mut f2: f64 = eval_f(x2, f_idx)
+    
+    while hi - lo > tol {
+        if f1 < f2 {
+            hi = x2
+            x2 = x1
+            f2 = f1
+            x1 = hi - inv_phi * (hi - lo)
+            f1 = eval_f(x1, f_idx)
+        } else {
+            lo = x1
+            x1 = x2
+            f1 = f2
+            x2 = lo + inv_phi * (hi - lo)
+            f2 = eval_f(x2, f_idx)
+        }
+    }
+    
+    return (lo + hi) / 2.0
+}
+
+# ============================================================================
+# LINE SEARCH (backtracking)
+# ============================================================================
+
+function backtracking_line_search(x: f64, grad: f64, f_idx: i32) -> f64 {
+    let alpha: f64 = 1.0
+    let beta: f64 = 0.5
+    let c: f64 = 0.1
+    
+    let f_x: f64 = eval_f(x, f_idx)
+    let mut step_size: f64 = alpha
+    
+    let mut iterations: i32 = 0
+    while iterations < 20 {
+        let x_new: f64 = x - step_size * grad
+        let f_new: f64 = eval_f(x_new, f_idx)
+        
+        # Armijo condition
+        if f_new <= f_x - c * step_size * grad * grad {
+            return step_size
+        }
+        
+        step_size = beta * step_size
+        iterations = iterations + 1
+    }
+    
+    return step_size
+}
+
+function gradient_descent_with_line_search(x0: f64, tol: f64, max_iter: i32, f_idx: i32) -> f64 {
+    let mut x: f64 = x0
+    
+    for i in 0 to max_iter {
+        let grad: f64 = eval_df(x, f_idx)
+        
+        if fabs(grad) < tol {
+            print("  Converged at iteration ")
+            println(i)
+            return x
+        }
+        
+        let step_size: f64 = backtracking_line_search(x, grad, f_idx)
+        x = x - step_size * grad
+    }
+    
+    return x
+}
+
+# ============================================================================
+# 2D OPTIMIZATION: Gradient Descent on f(x, y)
+# ============================================================================
+
+function eval_2d(x: f64, y: f64) -> f64 {
+    # Rosenbrock function: f(x,y) = (1-x)^2 + 100*(y-x^2)^2
+    let a: f64 = 1.0 - x
+    let b: f64 = y - x * x
+    return a * a + 100.0 * b * b
+}
+
+function grad_2d_x(x: f64, y: f64) -> f64 {
+    # df/dx = -2(1-x) - 400*x*(y-x^2)
+    return 0.0 - 2.0 * (1.0 - x) - 400.0 * x * (y - x * x)
+}
+
+function grad_2d_y(x: f64, y: f64) -> f64 {
+    # df/dy = 200*(y-x^2)
+    return 200.0 * (y - x * x)
+}
+
+function gd_2d(x0: f64, y0: f64, lr: f64, max_iter: i32) -> f64 {
+    let mut x: f64 = x0
+    let mut y: f64 = y0
+    
+    for i in 0 to max_iter {
+        let gx: f64 = grad_2d_x(x, y)
+        let gy: f64 = grad_2d_y(x, y)
+        
+        let grad_norm: f64 = sqrt(gx * gx + gy * gy)
+        if grad_norm < 1e-6 {
+            print("  2D GD converged at iteration ")
+            println(i)
+            break
+        }
+        
+        x = x - lr * gx
+        y = y - lr * gy
+        
+        if i % 1000 == 0 and i > 0 {
+            print("  Iter ")
+            print(i)
+            print(": f = ")
+            printf("%.6f", eval_2d(x, y))
+            print(", x = ")
+            printf("%.4f", x)
+            print(", y = ")
+            printf("%.4f", y)
+            println("")
+        }
+    }
+    
+    return eval_2d(x, y)
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Numerical Optimization Demo")
+    println("===========================")
+    println("")
+    
+    # Test 1: Simple quadratic
+    println("=== Test 1: f(x) = (x-3)^2 + 1 ===")
+    println("Minimum at x = 3")
+    println("")
+    
+    print("Gradient Descent (lr=0.1): ")
+    let x_gd: f64 = gradient_descent(0.0, 0.1, 1e-6, 1000, 0)
+    printf("%.6f", x_gd)
+    println("")
+    
+    print("Newton's Method: ")
+    let x_newton: f64 = newton_optimize(0.0, 1e-6, 100, 0)
+    printf("%.6f", x_newton)
+    println("")
+    
+    print("Golden Section [-5, 10]: ")
+    let x_golden: f64 = golden_section(-5.0, 10.0, 1e-6, 0)
+    printf("%.6f", x_golden)
+    println("")
+    
+    # Test 2: Quartic with multiple minima
+    println("")
+    println("=== Test 2: f(x) = x^4 - 2x^2 + 1 ===")
+    println("Minima at x = +-1")
+    println("")
+    
+    print("GD from x=0.5: ")
+    let x_q1: f64 = gradient_descent(0.5, 0.05, 1e-6, 1000, 1)
+    printf("%.6f", x_q1)
+    println("")
+    
+    print("GD from x=-0.5: ")
+    let x_q2: f64 = gradient_descent(-0.5, 0.05, 1e-6, 1000, 1)
+    printf("%.6f", x_q2)
+    println("")
+    
+    # Test 3: 2D Rosenbrock
+    println("")
+    println("=== Test 3: Rosenbrock f(x,y) = (1-x)^2 + 100(y-x^2)^2 ===")
+    println("Minimum at (1, 1)")
+    println("")
+    
+    let f_min: f64 = gd_2d(-1.0, 1.0, 0.001, 10000)
+    print("Final f value: ")
+    printf("%.6e", f_min)
+    println("")
+    
+    # Test 4: Compare methods
+    println("")
+    println("=== Method Comparison on (x-3)^2 + 1 ===")
+    
+    print("GD with momentum: ")
+    let x_mom: f64 = gradient_descent_with_momentum(0.0, 0.1, 0.9, 1e-6, 1000, 0)
+    printf("%.6f", x_mom)
+    println("")
+    
+    print("GD with line search: ")
+    let x_ls: f64 = gradient_descent_with_line_search(0.0, 1e-6, 1000, 0)
+    printf("%.6f", x_ls)
+    println("")
+    
+    return 0
+}

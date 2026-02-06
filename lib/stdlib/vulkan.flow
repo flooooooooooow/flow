@@ -1,0 +1,129 @@
+# Vulkan Flow wrapper (macOS + MoltenVK demo bridge)
+
+struct VulkanOptions {
+    pretty: bool,
+    trace: bool,
+    validation: bool
+}
+
+struct VulkanConfig {
+    width: i32,
+    height: i32,
+    clear_r: f32,
+    clear_g: f32,
+    clear_b: f32,
+    rotation_speed: f32,
+    title: string,
+    texture_path: string,
+    texture_path2: string,
+    camera_distance: f32,
+    camera_pitch: f32,
+    camera_yaw: f32,
+    move_speed: f32,
+    mouse_sensitivity: f32,
+    camera_smoothing: f32,
+    mesh1_r: f32,
+    mesh1_g: f32,
+    mesh1_b: f32,
+    mesh2_r: f32,
+    mesh2_g: f32,
+    mesh2_b: f32,
+    instance_count: i32
+}
+
+function vulkan_options_default() -> VulkanOptions {
+    return VulkanOptions { pretty: true, trace: true, validation: true }
+}
+
+function vulkan_config_default() -> VulkanConfig {
+    return VulkanConfig {
+        width: 960,
+        height: 640,
+        clear_r: 0.02,
+        clear_g: 0.02,
+        clear_b: 0.05,
+        rotation_speed: 1.0,
+        title: "Flow Vulkan",
+        texture_path: "",
+        texture_path2: "",
+        camera_distance: 2.5,
+        camera_pitch: 0.3,
+        camera_yaw: 0.6,
+        move_speed: 1.5,
+        mouse_sensitivity: 0.2,
+        camera_smoothing: 0.15,
+        mesh1_r: 1.0,
+        mesh1_g: 1.0,
+        mesh1_b: 1.0,
+        mesh2_r: 0.8,
+        mesh2_g: 0.9,
+        mesh2_b: 1.0,
+        instance_count: 16
+    }
+}
+
+function bool_to_i32(b: bool) -> i32 {
+    if b {
+        return 1
+    }
+    return 0
+}
+
+extern {
+    function flow_vulkan_basic_run(
+        pretty: i32, trace: i32, validation: i32,
+        width: i32, height: i32,
+        clear_r: f32, clear_g: f32, clear_b: f32,
+        title: string
+    ) -> i32
+}
+extern {
+    function flow_vulkan_advanced_run(
+        pretty: i32, trace: i32, validation: i32,
+        width: i32, height: i32,
+        clear_r: f32, clear_g: f32, clear_b: f32,
+        rotation_speed: f32, title: string,
+        texture_path: string, texture_path2: string,
+        camera_distance: f32, camera_pitch: f32, camera_yaw: f32,
+        move_speed: f32, mouse_sensitivity: f32,
+        camera_smoothing: f32,
+        mesh1_r: f32, mesh1_g: f32, mesh1_b: f32,
+        mesh2_r: f32, mesh2_g: f32, mesh2_b: f32,
+        instance_count: i32
+    ) -> i32
+}
+
+export function vulkan_run_basic(opts: VulkanOptions) -> i32 {
+    let cfg: VulkanConfig = vulkan_config_default()
+    return vulkan_run_basic_with_config(opts, cfg)
+}
+
+export function vulkan_run_advanced(opts: VulkanOptions) -> i32 {
+    let cfg: VulkanConfig = vulkan_config_default()
+    return vulkan_run_advanced_with_config(opts, cfg)
+}
+
+export function vulkan_run_basic_with_config(opts: VulkanOptions, cfg: VulkanConfig) -> i32 {
+    return flow_vulkan_basic_run(
+        bool_to_i32(opts.pretty), bool_to_i32(opts.trace), bool_to_i32(opts.validation),
+        cfg.width, cfg.height,
+        cfg.clear_r, cfg.clear_g, cfg.clear_b,
+        cfg.title
+    )
+}
+
+export function vulkan_run_advanced_with_config(opts: VulkanOptions, cfg: VulkanConfig) -> i32 {
+    return flow_vulkan_advanced_run(
+        bool_to_i32(opts.pretty), bool_to_i32(opts.trace), bool_to_i32(opts.validation),
+        cfg.width, cfg.height,
+        cfg.clear_r, cfg.clear_g, cfg.clear_b,
+        cfg.rotation_speed, cfg.title,
+        cfg.texture_path, cfg.texture_path2,
+        cfg.camera_distance, cfg.camera_pitch, cfg.camera_yaw,
+        cfg.move_speed, cfg.mouse_sensitivity,
+        cfg.camera_smoothing,
+        cfg.mesh1_r, cfg.mesh1_g, cfg.mesh1_b,
+        cfg.mesh2_r, cfg.mesh2_g, cfg.mesh2_b,
+        cfg.instance_count
+    )
+}

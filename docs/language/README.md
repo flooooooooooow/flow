@@ -1,22 +1,49 @@
 # Language Reference
 
-> ⚠️ **This directory contains supplementary material.**
-> The authoritative language reference is [../LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md).
+Detailed documentation for the Flow programming language.
 
-## Files in this Directory
+## Contents
 
-| File | Purpose | Spec Section |
-|------|---------|--------------|
-| [overview.md](overview.md) | Extended examples and philosophy | Introduction |
-| [syntax.md](syntax.md) | Grammar deep-dive | §1 Lexical Structure |
-| [types.md](types.md) | Type system details | §2 Types |
-| [variables.md](variables.md) | Variable semantics | §3.2 Variable Declaration |
-| [functions.md](functions.md) | Function details | §3.1 Function Declaration |
-| [graphics.md](graphics.md) | Graphics programming guide | Appendix (domain-specific) |
-| [language_design.md](language_design.md) | Design rationale | Historical |
+| Document | Description |
+|----------|-------------|
+| [Overview](overview.md) | Language philosophy and key features |
+| [Syntax](syntax.md) | Lexical structure, operators, grammar |
+| [Types](types.md) | Type system and primitive types |
+| [Functions](functions.md) | Function definitions and calling |
+| [Variables](variables.md) | Variables, mutability, scope |
+| [Graphics](graphics.md) | Native graphics API (macOS) |
+| [Language Design](language_design.md) | Design rationale |
 
-## When to Use What
+## Quick Reference
 
-- **Quick lookup**: Go to [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
-- **Extended examples**: Check files here
-- **Learning**: Use [tutorials/](../tutorials/)
+### Types
+```
+i32, i64, f32, f64, bool, string, void
+ptr<T>, array<T, N>
+```
+
+### Variable Declaration
+```flow
+let x: i32 = 42           # Immutable
+let mut y: i32 = 0        # Mutable
+```
+
+### Function
+```flow
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+```
+
+### Struct
+```flow
+struct Point { x: f32, y: f32 }
+let p: Point = Point { x: 1.0, y: 2.0 }
+```
+
+### Control Flow
+```flow
+if x > 0 { ... } elif x < 0 { ... } else { ... }
+while condition { ... }
+for i in 0 to n { ... }
+```

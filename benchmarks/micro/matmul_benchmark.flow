@@ -1,0 +1,240 @@
+# Matrix Multiplication Benchmark
+# Compares naive, tiled, and optimized implementations
+#
+# This benchmark measures GFLOPS for dense matrix multiplication
+# Standard operation: C = A * B where A is MxK and B is KxN
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const CLOCKS_PER_SEC: i64 = 1000000
+
+# ============================================================================
+# NAIVE MATRIX MULTIPLICATION - O(n^3)
+# ============================================================================
+
+function matmul_naive(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, M: i32, N: i32, K: i32) {
+    for i in 0 to M {
+        for j in 0 to N {
+            let mut sum: f64 = 0.0
+            for k in 0 to K {
+                sum = sum + A[i * K + k] * B[k * N + j]
+            }
+            C[i * N + j] = sum
+        }
+    }
+}
+
+# ============================================================================
+# TILED MATRIX MULTIPLICATION - Cache-friendly
+# ============================================================================
+
+function matmul_tiled(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, M: i32, N: i32, K: i32, tile_size: i32) {
+    # Initialize C to zero
+    for i in 0 to M {
+        for j in 0 to N {
+            C[i * N + j] = 0.0
+        }
+    }
+    
+    # Tiled multiplication
+    let mut ii: i32 = 0
+    while ii < M {
+        let mut jj: i32 = 0
+        while jj < N {
+            let mut kk: i32 = 0
+            while kk < K {
+                # Process tile
+                let i_end: i32 = ii + tile_size
+                let j_end: i32 = jj + tile_size
+                let k_end: i32 = kk + tile_size
+                
+                let mut i: i32 = ii
+                while i < i_end and i < M {
+                    let mut j: i32 = jj
+                    while j < j_end and j < N {
+                        let mut sum: f64 = C[i * N + j]
+                        let mut k: i32 = kk
+                        while k < k_end and k < K {
+                            sum = sum + A[i * K + k] * B[k * N + j]
+                            k = k + 1
+                        }
+                        C[i * N + j] = sum
+                        j = j + 1
+                    }
+                    i = i + 1
+                }
+                kk = kk + tile_size
+            }
+            jj = jj + tile_size
+        }
+        ii = ii + tile_size
+    }
+}
+
+# ============================================================================
+# UNROLLED MATRIX MULTIPLICATION - Reduced loop overhead
+# ============================================================================
+
+function matmul_unrolled(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, M: i32, N: i32, K: i32) {
+    for i in 0 to M {
+        for j in 0 to N {
+            let mut sum0: f64 = 0.0
+            let mut sum1: f64 = 0.0
+            let mut sum2: f64 = 0.0
+            let mut sum3: f64 = 0.0
+            
+            let k_unroll: i32 = K / 4 * 4
+            let mut k: i32 = 0
+            while k < k_unroll {
+                sum0 = sum0 + A[i * K + k] * B[k * N + j]
+                sum1 = sum1 + A[i * K + k + 1] * B[(k + 1) * N + j]
+                sum2 = sum2 + A[i * K + k + 2] * B[(k + 2) * N + j]
+                sum3 = sum3 + A[i * K + k + 3] * B[(k + 3) * N + j]
+                k = k + 4
+            }
+            
+            # Handle remainder
+            while k < K {
+                sum0 = sum0 + A[i * K + k] * B[k * N + j]
+                k = k + 1
+            }
+            
+            C[i * N + j] = sum0 + sum1 + sum2 + sum3
+        }
+    }
+}
+
+# ============================================================================
+# TIMING AND VERIFICATION
+# ============================================================================
+
+function verify_result(C1: ptr<f64>, C2: ptr<f64>, size: i32) -> i32 {
+    let eps: f64 = 1e-10
+    for i in 0 to size {
+        let diff: f64 = C1[i] - C2[i]
+        if diff < 0.0 { diff = 0.0 - diff }
+        if diff > eps {
+            return 0
+        }
+    }
+    return 1
+}
+
+function calculate_gflops(M: i32, N: i32, K: i32, time_sec: f64) -> f64 {
+    # 2 * M * N * K floating point operations (multiply + add)
+    let flops: f64 = 2.0 * M * N * K
+    return flops / time_sec / 1e9
+}
+
+# ============================================================================
+# MAIN BENCHMARK
+# ============================================================================
+
+function main() -> i32 {
+    println("========================================================")
+    println("       ")
+    println("========================================================")
+    println("")
+    
+    # Test sizes
+    let sizes: array<i32, 4> = [64, 128, 256, 512]
+    
+    for s in 0 to 4 {
+        let N: i32 = sizes[s]
+        let size: i32 = N * N
+        
+        println("====================================================")
+        print("Matrix size: ")
+        print(N)
+        print(" x ")
+        println(N)
+        println("====================================================")
+        
+        # Allocate matrices
+        let A: array<f64, 262144> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let B: array<f64, 262144> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let C_naive: array<f64, 262144> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let C_tiled: array<f64, 262144> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
+        let A_ptr: ptr<f64> = A
+        let B_ptr: ptr<f64> = B
+        let C_naive_ptr: ptr<f64> = C_naive
+        let C_tiled_ptr: ptr<f64> = C_tiled
+        
+        # Initialize with some values
+        for i in 0 to size {
+            A[i] = (i % 100) * 0.01
+            B[i] = ((i + 17) % 100) * 0.01
+        }
+        
+        # Benchmark naive
+        let start_naive: i64 = clock()
+        matmul_naive(A_ptr, B_ptr, C_naive_ptr, N, N, N)
+        let end_naive: i64 = clock()
+        let time_naive: f64 = (end_naive - start_naive) / CLOCKS_PER_SEC
+        let gflops_naive: f64 = calculate_gflops(N, N, N, time_naive)
+        
+        print("  Naive:    ")
+        printf("%.3f", time_naive * 1000.0)
+        print(" ms, ")
+        printf("%.2f", gflops_naive)
+        println(" GFLOPS")
+        
+        # Benchmark tiled
+        let start_tiled: i64 = clock()
+        matmul_tiled(A_ptr, B_ptr, C_tiled_ptr, N, N, N, 32)
+        let end_tiled: i64 = clock()
+        let time_tiled: f64 = (end_tiled - start_tiled) / CLOCKS_PER_SEC
+        let gflops_tiled: f64 = calculate_gflops(N, N, N, time_tiled)
+        
+        print("  Tiled:    ")
+        printf("%.3f", time_tiled * 1000.0)
+        print(" ms, ")
+        printf("%.2f", gflops_tiled)
+        println(" GFLOPS")
+        
+        # Verify results match
+        let valid: i32 = verify_result(C_naive_ptr, C_tiled_ptr, size)
+        if valid == 1 {
+            println("  ✓ Results verified")
+        } else {
+            println("  ✗ Results mismatch!")
+        }
+        
+        println("")
+    }
+    
+    println("Benchmark complete.")
+    return 0
+}

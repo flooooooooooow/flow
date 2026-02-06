@@ -1,5 +1,0 @@
-# Demo input for the tape-based reverse-mode prototype tool.
-
-function f(a: f32, b: f32) -> f32 {
-    return exp(a * b) + sin(a)
-}

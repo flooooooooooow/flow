@@ -1,0 +1,155 @@
+# UI2D: tiny immediate-mode 2D drawing on SDL2
+#
+# This is “graphics library written in FLOW”: rectangles + a built-in bitmap
+# font for digits so we don’t depend on SDL_ttf.
+
+import "stdlib/sdl2.flow"
+
+struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8
+}
+
+function rgb(r: i32, g: i32, b: i32) -> Color {
+    # Note: this relies on C's implicit narrowing conversion to uint8_t.
+    return Color { r: r, g: g, b: b, a: 255 }
+}
+
+struct Ui2D {
+    window: ptr<void>,
+    renderer: ptr<void>,
+    should_quit: bool
+}
+
+export function ui2d_init(title: string, w: i32, h: i32) -> Ui2D {
+    let rc = SDL_Init(SDL_INIT_VIDEO)
+    if rc != 0 {
+        print("SDL_Init failed\n")
+        return Ui2D { window: 0, renderer: 0, should_quit: true }
+    }
+
+    let win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, SDL_WINDOW_SHOWN)
+    # FLOW doesn't currently have a dedicated bitwise-or operator; these SDL flags are bitfields,
+    # so addition is fine for disjoint bits (2 + 4 = 6).
+    let ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED + SDL_RENDERER_PRESENTVSYNC)
+    return Ui2D { window: win, renderer: ren, should_quit: false }
+}
+
+export function ui2d_shutdown(ui: Ui2D) -> void {
+    SDL_DestroyRenderer(ui.renderer)
+    SDL_DestroyWindow(ui.window)
+    SDL_Quit()
+}
+
+export function ui2d_poll(ui: Ui2D) -> Ui2D {
+    # Poll quit event (window close)
+    let quit: bool = ui.should_quit
+    let ev_buf: array<SDLEvent, 1> = [SDLEvent {
+        w0: 0, w1: 0, w2: 0, w3: 0, w4: 0, w5: 0, w6: 0,
+        w7: 0, w8: 0, w9: 0, w10: 0, w11: 0, w12: 0, w13: 0
+    }]
+    while SDL_PollEvent(ev_buf) != 0 {
+        let t: u32 = sdl_event_type(ev_buf[0])
+        if t == SDL_QUIT {
+            quit = true
+        }
+    }
+    return Ui2D { window: ui.window, renderer: ui.renderer, should_quit: quit }
+}
+
+export function ui2d_key_down(scancode: i32) -> bool {
+    SDL_PumpEvents()
+    let keys = SDL_GetKeyboardState(0)
+    return keys[scancode] != 0
+}
+
+export function ui2d_begin(ui: Ui2D, clear: Color) -> void {
+    SDL_SetRenderDrawColor(ui.renderer, clear.r, clear.g, clear.b, clear.a)
+    SDL_RenderClear(ui.renderer)
+}
+
+export function ui2d_end(ui: Ui2D) -> void {
+    SDL_RenderPresent(ui.renderer)
+}
+
+export function ui2d_fill_rect(ui: Ui2D, x: i32, y: i32, w: i32, h: i32, c: Color) -> void {
+    SDL_SetRenderDrawColor(ui.renderer, c.r, c.g, c.b, c.a)
+    let rect_buf: array<SDLRect, 1> = [SDLRect { x: x, y: y, w: w, h: h }]
+    SDL_RenderFillRect(ui.renderer, rect_buf)
+}
+
+# ---------------------------------------------------------------------------
+# Bitmap digits: 3x5 glyphs (scaled)
+# Each row is 3 bits packed into low bits.
+#
+# 0: 111 101 101 101 111
+# 1: 010 110 010 010 111
+# 2: 111 001 111 100 111
+# 3: 111 001 111 001 111
+# 4: 101 101 111 001 001
+# 5: 111 100 111 001 111
+# 6: 111 100 111 101 111
+# 7: 111 001 001 001 001
+# 8: 111 101 111 101 111
+# 9: 111 101 111 001 111
+
+function digit_row(d: i32, row: i32) -> i32 {
+    if d == 0 { if row == 0 { return 7 } if row == 1 { return 5 } if row == 2 { return 5 } if row == 3 { return 5 } return 7 }
+    if d == 1 { if row == 0 { return 2 } if row == 1 { return 6 } if row == 2 { return 2 } if row == 3 { return 2 } return 7 }
+    if d == 2 { if row == 0 { return 7 } if row == 1 { return 1 } if row == 2 { return 7 } if row == 3 { return 4 } return 7 }
+    if d == 3 { if row == 0 { return 7 } if row == 1 { return 1 } if row == 2 { return 7 } if row == 3 { return 1 } return 7 }
+    if d == 4 { if row == 0 { return 5 } if row == 1 { return 5 } if row == 2 { return 7 } if row == 3 { return 1 } return 1 }
+    if d == 5 { if row == 0 { return 7 } if row == 1 { return 4 } if row == 2 { return 7 } if row == 3 { return 1 } return 7 }
+    if d == 6 { if row == 0 { return 7 } if row == 1 { return 4 } if row == 2 { return 7 } if row == 3 { return 5 } return 7 }
+    if d == 7 { if row == 0 { return 7 } if row == 1 { return 1 } if row == 2 { return 1 } if row == 3 { return 1 } return 1 }
+    if d == 8 { if row == 0 { return 7 } if row == 1 { return 5 } if row == 2 { return 7 } if row == 3 { return 5 } return 7 }
+    # 9
+    if row == 0 { return 7 } if row == 1 { return 5 } if row == 2 { return 7 } if row == 3 { return 1 } return 7
+}
+
+export function ui2d_draw_digit(ui: Ui2D, x: i32, y: i32, d: i32, scale: i32, c: Color) -> void {
+    let row: i32 = 0
+    while row < 5 {
+        let bits: i32 = digit_row(d, row)
+        let col: i32 = 0
+        while col < 3 {
+            # Avoid bitwise/shift ops (not currently supported everywhere).
+            let on: bool = false
+            if col == 0 { on = ((bits / 4) % 2) == 1 }
+            elif col == 1 { on = ((bits / 2) % 2) == 1 }
+            else { on = (bits % 2) == 1 }
+            if on {
+                ui2d_fill_rect(ui, x + col * scale, y + row * scale, scale, scale, c)
+            }
+            col = col + 1
+        }
+        row = row + 1
+    }
+}
+
+export function ui2d_draw_number(ui: Ui2D, x: i32, y: i32, n: i32, scale: i32, c: Color) -> void {
+    # Supports up to 5 digits (2048 max display: 131072 is 6, but good enough for demo).
+    if n <= 0 { return }
+
+    # Extract digits into fixed buffer reversed
+    let buf: array<i32, 5> = [0, 0, 0, 0, 0]
+    let len: i32 = 0
+    let v: i32 = n
+    while v > 0 && len < 5 {
+        buf[len] = v % 10
+        v = v / 10
+        len = len + 1
+    }
+
+    # Draw reversed (most significant first)
+    let i: i32 = len - 1
+    let dx: i32 = 0
+    while i >= 0 {
+        ui2d_draw_digit(ui, x + dx, y, buf[i], scale, c)
+        dx = dx + (4 * scale)  # 3 px + 1 gap
+        i = i - 1
+    }
+}
+

@@ -1,9 +1,0 @@
-import "grad_tool_demo_grad.flow"
-
-function main() -> i32 {
-    let r: Grad_f = grad_f(1.0, 2.0)
-    printf("value=%f\n", r.value)
-    printf("da=%f\n", r.d_a)
-    printf("db=%f\n", r.d_b)
-    return 0
-}

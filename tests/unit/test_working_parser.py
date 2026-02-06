@@ -63,7 +63,7 @@ class TestWorkingParser:
     def test_control_flow_parsing(self):
         """Test parsing if statement."""
         code = """
-        function test(x: i32) -> i32 {
+        function check(x: i32) -> i32 {
             if x > 0 {
                 return 1
             } else {
@@ -75,7 +75,7 @@ class TestWorkingParser:
         ast = parse_flow_code(code)
         assert len(ast) == 1
         func = ast[0]
-        assert func.name == "test"
+        assert func.name == "check"
 
     def test_struct_parsing(self):
         """Test parsing struct definition."""

@@ -1,6 +1,52 @@
 # GPU FFT Implementation using Effect-Based Programming
 # This demonstrates FLOW's capability for high-performance computing
 
+# External CUDA runtime functions (would be provided by CUDA headers)
+extern {
+    function cuda_malloc(size: i32) -> i64
+    function cuda_free(ptr: i64) -> void
+    function cudaMemcpy_host_to_device(src: ptr<f32>, dst: i64, size: i32) -> void
+    function cudaMemcpy_device_to_host(src: i64, dst: ptr<f32>, size: i32) -> void
+    function cuda_launch_kernel(kernel: i64, grid: i32, block: i32) -> void
+    function cuda_synchronize() -> void
+    function cuda_device_synchronize() -> void
+    function cufft_plan_1d(size: i32, type_code: i32, batch: i32) -> i64
+    function cufft_plan_2d(width: i32, height: i32, type_code: i32) -> i64
+    function cufft_plan_dft_1d(size: i32, input: i64, output: i64, direction: i32) -> i64
+    function cufft_plan_dft_2d(width: i32, height: i32, input: i64, output: i64, direction: i32) -> i64
+    function cufft_execute_dft(plan: i64, input: i64, output: i64, direction: i32) -> void
+    function cufft_destroy(plan: i64) -> void
+    # OpenCL functions
+    function cl_create_context() -> i64
+    function cl_create_command_queue(context: i64) -> i64
+    function cl_create_buffer(context: i64, size: i32, flags: i32) -> i64
+    function cl_enqueue_write_buffer(queue: i64, buffer: i64, data: ptr<f32>, size: i32) -> void
+    function cl_enqueue_read_buffer(queue: i64, buffer: i64, data: ptr<f32>, size: i32) -> void
+    function cl_enqueue_nd_range_kernel(queue: i64, kernel: i64, dim: i32, global_size: i32, local_size: i32) -> void
+    function cl_release_mem_object(buffer: i64) -> void
+    function cl_finish(queue: i64) -> void
+    function clfft_plan_1d(context: i64, size: i32) -> i64
+    function clfft_plan_2d(context: i64, width: i32, height: i32) -> i64
+    function clfft_enqueue_transform(plan: i64, direction: i32, queue: i64, input: i64, output: i64) -> void
+    function clfft_destroy_plan(plan: i64) -> void
+    function clfft_create_plan(size: i32, input: i64, output: i64, direction: i32) -> i64
+    function clfft_create_plan_2d(width: i32, height: i32, input: i64, output: i64, direction: i32) -> i64
+    function clfft_execute(plan: i64) -> void
+    function clfft_destroy(plan: i64) -> void
+    # Utility functions
+    function length(arr: ptr<f32>) -> i32
+    function array_f32(size: i32) -> ptr<f32>
+}
+
+# cuFFT constants
+const CUFFT_FORWARD: i32 = -1
+const CUFFT_INVERSE: i32 = 1
+# OpenCL constants
+const CL_MEM_READ_WRITE: i32 = 1
+const CLFFT_FORWARD: i32 = -1
+const CLFFT_BACKWARD: i32 = 1
+const CLFFT_INVERSE: i32 = 1
+
 # GPU Effects - Abstract GPU operations
 effect GPU {
     allocate(size: i32) -> GPUBuffer,
@@ -87,9 +133,9 @@ capability OpenCLGPU {
     effect FFT,
     
     function allocate(size: i32) -> GPUBuffer {
-        let cl_context: i64 = cl_create_context()
-        let cl_queue: i64 = cl_create_command_queue(cl_context)
-        let buffer: i64 = cl_create_buffer(cl_context, size * 4, CL_MEM_READ_WRITE)
+        let context: i64 = cl_create_context()
+        let queue: i64 = cl_create_command_queue(context)
+        let buffer: i64 = cl_create_buffer(context, size * 4, CL_MEM_READ_WRITE)
         return GPUBuffer { device_ptr: buffer, size: size }
     },
     
@@ -98,19 +144,28 @@ capability OpenCLGPU {
     },
     
     function copy_to_device(data: array_f32, buffer: GPUBuffer) -> void {
-        cl_enqueue_write_buffer(cl_queue, buffer.device_ptr, data, buffer.size * 4)
+        # Recreate context/queue for each operation (inefficient but correct for testing)
+        let context: i64 = cl_create_context()
+        let queue: i64 = cl_create_command_queue(context)
+        cl_enqueue_write_buffer(queue, buffer.device_ptr, data, buffer.size * 4)
     },
     
     function copy_from_device(buffer: GPUBuffer, data: array_f32) -> void {
-        cl_enqueue_read_buffer(cl_queue, buffer.device_ptr, data, buffer.size * 4)
+        let context: i64 = cl_create_context()
+        let queue: i64 = cl_create_command_queue(context)
+        cl_enqueue_read_buffer(queue, buffer.device_ptr, data, buffer.size * 4)
     },
     
     function launch_kernel(kernel: GPUKernel, grid: i32, block: i32) -> void {
-        cl_enqueue_nd_range_kernel(cl_queue, kernel.kernel_ptr, grid, block)
+        let context: i64 = cl_create_context()
+        let queue: i64 = cl_create_command_queue(context)
+        cl_enqueue_nd_range_kernel(queue, kernel.kernel_ptr, 1, grid, block)
     },
     
     function synchronize() -> void {
-        cl_finish(cl_queue)
+        let context: i64 = cl_create_context()
+        let queue: i64 = cl_create_command_queue(context)
+        cl_finish(queue)
     },
     
     function fft_forward(input: GPUBuffer, output: GPUBuffer, size: i32) -> void {

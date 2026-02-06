@@ -1,20 +1,25 @@
 # Flow Examples
 
-Organized examples demonstrating Flow language features.
+Comprehensive examples demonstrating Flow's capabilities across multiple domains.
 
 ## Directory Structure
 
 ```
 examples/
-├── basics/           # Core language: loops, functions, algorithms
-├── audio/            # Real-time audio DSP with audio library
-├── neural_networks/  # Autodiff, backprop, XOR networks
-├── gpu/              # GPU computing, SIMD, Metal integration
-├── effects/          # Effect system demos
-├── generics_traits/  # Generics, traits, enums, closures
-├── graphics/         # PPM output, shaders, web demos
-├── modules/          # Import/export, multi-file projects
-└── misc/             # Experimental, tests, misc demos
+├── basics/           # Fundamental algorithms and syntax
+├── compilers/        # Language implementation demos
+├── crypto/           # Cryptographic algorithms
+├── data/             # Data processing
+├── effects/          # Flow's unique effect system
+├── games/            # Interactive games with graphics
+├── generics_traits/  # Generic programming and traits
+├── gpu/              # GPU/Metal computation
+├── graphics/         # Rendering and shaders
+├── linalg/           # Linear algebra
+├── ml/               # Machine learning framework
+├── neural_networks/  # Autodiff and neural networks
+├── numerical/        # Scientific computing
+└── systems/          # Systems programming primitives
 ```
 
 ## Quick Start
@@ -22,38 +27,92 @@ examples/
 ```bash
 # Run any example
 ./flow run examples/basics/hello_world.flow
-./flow run examples/audio/audio_synth_demo.flow
-./flow run examples/neural_networks/nn_xor.flow
 
-# Run all tests
-./flow test
+# Run with graphics (macOS)
+./flow compile examples/games/tetris_gfx.flow
+clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
+    -framework Cocoa -framework CoreGraphics -framework QuartzCore \
+    -o build/tetris_gfx
+./build/tetris_gfx
 ```
 
-## Highlights by Category
+## Categories
 
-### basics/
-- `hello_world.flow` - Start here
-- `fibonacci.flow` - Recursion
-- `bubble_sort.flow` - Arrays and loops
+### Basics (`basics/`)
+Fundamental algorithms demonstrating Flow syntax:
+- `hello_world.flow` - First program
+- `fibonacci.flow` - Recursive functions
+- `bubble_sort.flow` - Array manipulation
+- `prime_numbers.flow` - Loops and conditionals
 
-### audio/
-- `audio_synth_demo.flow` - Subtractive synth with oscillator, filter, envelope
-- `audio_effects_demo.flow` - Audio I/O using Flow's effect system
+### Games (`games/`)
+Interactive demonstrations with graphics:
+- `tetris_gfx.flow` - Complete Tetris with native graphics
+- `2048_gfx.flow` - 2048 puzzle game
+- `2048.flow` - Terminal-based 2048
 
-### neural_networks/
-- `autodiff_demo.flow` - Forward-mode automatic differentiation
-- `nn_xor.flow` - Train a neural network on XOR
-- `neural_network_backprop.flow` - Manual backpropagation
+### Machine Learning (`ml/`)
+Neural network framework:
+- `tensor.flow` - N-dimensional tensor type
+- `nn_layers.flow` - Dense layers, activations
+- `optimizers.flow` - SGD, Adam, RMSprop
+- `models/mlp_xor.flow` - XOR learning demo (trains successfully!)
 
-### gpu/
-- `simple_gpu_fft.flow` - FFT on GPU
-- `simd_saxpy.flow` - SIMD vector operations
+### Effects (`effects/`)
+Flow's unique algebraic effects (not available in Mojo/Julia):
+- `dependency_injection.flow` - DI without frameworks
+- `state_effects.flow` - Implicit state threading
+- `async_effects.flow` - Async as effects
 
-### effects/
-- `effects_working.flow` - Core effect system demo
-- `effect_dispatch_demo.flow` - Runtime effect dispatch
+### Neural Networks (`neural_networks/`)
+Autodiff and backpropagation:
+- `autodiff_benchmark.flow` - Automatic differentiation
+- `nn_xor.flow` - XOR neural network
+- `neural_network_backprop.flow` - Backpropagation demo
 
-### generics_traits/
-- `generics_demo.flow` - Generic functions and structs
+### Linear Algebra (`linalg/`)
+Matrix operations (Julia territory):
+- `matrix_ops.flow` - Basic matrix operations
+- `lu_decomposition.flow` - LU factorization
+
+### Numerical (`numerical/`)
+Scientific computing:
+- `ode_solver.flow` - Euler, RK4 ODE solvers
+- `optimization.flow` - Gradient descent, Newton's method
+
+### Systems (`systems/`)
+Low-level systems programming:
+- `memory_pool.flow` - O(1) pool allocator
+- `ring_buffer.flow` - Lock-free SPSC queue
+- `hash_table.flow` - Open addressing hash table
+
+### GPU (`gpu/`)
+Metal GPU computation:
+- `gpu_fft.flow` - GPU FFT
+- `simd_saxpy.flow` - SIMD operations
+- `vector_add_gpu.flow` - GPU vector addition
+
+### Generics & Traits (`generics_traits/`)
+Generic programming:
+- `generics_demo.flow` - Generic type examples
 - `traits_demo.flow` - Trait-based polymorphism
-- `option_result_demo.flow` - Option and Result types
+- `option_result_demo.flow` - Option/Result types
+
+## Verified Working Examples
+
+These compile and run successfully:
+
+| Example | Command |
+|---------|---------|
+| XOR Neural Network | `./flow run examples/ml/models/mlp_xor.flow` |
+| Sort Benchmark | `./flow run benchmarks/micro/sort_benchmark.flow` |
+| Benchmark Runner | `./flow run benchmarks/runner.flow` |
+| Generics Demo | `./flow run examples/generics_traits/generics_demo.flow` |
+| Neural Network | `./flow run examples/neural_networks/nn_xor.flow` |
+
+## Adding New Examples
+
+1. Create a `.flow` file in the appropriate directory
+2. Include a `main() -> i32` function
+3. Test with `./flow run path/to/example.flow`
+4. Update this README

@@ -83,7 +83,7 @@ class TestWorkingMLIRGenerator:
     def test_control_flow_function(self):
         """Test control flow in MLIR."""
         flow_code = """
-        function test(x: i32) -> i32 {
+        function check(x: i32) -> i32 {
             if x > 0 {
                 return 1
             } else {
@@ -97,7 +97,7 @@ class TestWorkingMLIRGenerator:
         mlir = generator.generate_module(ast)
 
         # Should contain control flow constructs
-        assert "func.func @test" in mlir
+        assert "func.func @check" in mlir
         # Control flow may use different dialects
         assert len(mlir) > 100  # Should be more complex
 

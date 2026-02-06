@@ -1,0 +1,1219 @@
+# Chetris: Chess + Tetris Hybrid
+# A turn-based game combining spatial pressure with chess strategy
+#
+# Controls:
+#   A/D - Move tetromino left/right
+#   W   - Rotate tetromino
+#   S   - Soft drop (move down one)
+#   Space - Lock tetromino
+#   Arrow keys / WASD in chess phase for piece selection + destination
+#   Enter - Confirm move / Skip chess phase
+#   Q - Quit
+
+import "stdlib/ui.flow"
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+const BOARD_WIDTH: i32 = 8
+const BOARD_HEIGHT: i32 = 8
+
+# Cell states
+const CELL_EMPTY: i32 = 0
+const CELL_BLOCK: i32 = 1
+
+# Chess piece types (stored separately from block state)
+const PIECE_NONE: i32 = 0
+const PIECE_PAWN: i32 = 1
+const PIECE_ROOK: i32 = 2
+const PIECE_KNIGHT: i32 = 3
+const PIECE_BISHOP: i32 = 4
+const PIECE_QUEEN: i32 = 5
+const PIECE_KING: i32 = 6
+
+# Piece colors
+const COLOR_NONE: i32 = 0
+const COLOR_WHITE: i32 = 1
+const COLOR_BLACK: i32 = 2
+
+# Tetromino types
+const TETRO_I: i32 = 0
+const TETRO_O: i32 = 1
+const TETRO_T: i32 = 2
+const TETRO_S: i32 = 3
+const TETRO_Z: i32 = 4
+const TETRO_J: i32 = 5
+const TETRO_L: i32 = 6
+
+# Game phases
+const PHASE_TETRIS: i32 = 0
+const PHASE_CHESS: i32 = 1
+const PHASE_RESOLUTION: i32 = 2
+const PHASE_GAME_OVER: i32 = 3
+
+# ============================================================================
+# DATA STRUCTURES
+# ============================================================================
+
+struct Cell {
+    has_block: i32,     # 0 or 1
+    piece_type: i32,    # PIECE_* constant
+    piece_color: i32    # COLOR_* constant
+}
+
+struct Pos {
+    x: i32,
+    y: i32
+}
+
+struct Tetromino {
+    kind: i32,          # TETRO_* constant
+    rotation: i32,      # 0-3
+    x: i32,             # Position on board
+    y: i32
+}
+
+struct GameState {
+    current_player: i32,        # COLOR_WHITE or COLOR_BLACK
+    phase: i32,                 # PHASE_* constant
+    tetro_x: i32,
+    tetro_y: i32,
+    tetro_kind: i32,
+    tetro_rot: i32,
+    next_tetro: i32,
+    selected_x: i32,            # For chess move selection
+    selected_y: i32,
+    has_selection: i32,
+    white_king_alive: i32,
+    black_king_alive: i32,
+    white_in_check: i32,
+    black_in_check: i32,
+    turn_number: i32,
+    rng_seed: i32               # For deterministic random
+}
+
+# ============================================================================
+# BOARD STORAGE (global arrays)
+# ============================================================================
+
+# Board is stored as flat arrays: index = y * BOARD_WIDTH + x
+# board_blocks[i] = 1 if cell has block, 0 otherwise
+# board_pieces[i] = PIECE_* constant
+# board_colors[i] = COLOR_* constant
+
+# ============================================================================
+# RANDOM NUMBER GENERATOR (LCG for determinism)
+# ============================================================================
+
+function rng_next(seed: i32) -> i32 {
+    # Linear congruential generator
+    let a: i32 = 1103515245
+    let c: i32 = 12345
+    let m: i32 = 2147483647
+    let next: i32 = (a * seed + c) % m
+    if next < 0 {
+        return 0 - next
+    }
+    return next
+}
+
+function rng_range(seed: i32, max: i32) -> i32 {
+    return seed % max
+}
+
+# ============================================================================
+# TETROMINO SHAPES
+# Each tetromino is defined as 4 relative positions from origin
+# Stored as: [x0, y0, x1, y1, x2, y2, x3, y3] for each rotation
+# ============================================================================
+
+function get_tetro_block(kind: i32, rot: i32, block_idx: i32, coord: i32) -> i32 {
+    # coord: 0 = x, 1 = y
+    # Returns the relative position of block_idx for given tetromino and rotation
+    
+    let r: i32 = rot % 4
+    
+    # I-piece
+    if kind == TETRO_I {
+        if r == 0 or r == 2 {
+            # Horizontal: ####
+            if coord == 0 {
+                return block_idx - 1  # x: -1, 0, 1, 2
+            } else {
+                return 0
+            }
+        } else {
+            # Vertical
+            if coord == 0 {
+                return 0
+            } else {
+                return block_idx - 1
+            }
+        }
+    }
+    
+    # O-piece (no rotation effect)
+    if kind == TETRO_O {
+        if block_idx == 0 {
+            if coord == 0 { return 0 } else { return 0 }
+        }
+        if block_idx == 1 {
+            if coord == 0 { return 1 } else { return 0 }
+        }
+        if block_idx == 2 {
+            if coord == 0 { return 0 } else { return 1 }
+        }
+        if coord == 0 { return 1 } else { return 1 }
+    }
+    
+    # T-piece
+    if kind == TETRO_T {
+        if r == 0 {
+            # .#.
+            # ###
+            if block_idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return -1 } else { return 1 } }
+            if block_idx == 2 { if coord == 0 { return 0 } else { return 1 } }
+            if coord == 0 { return 1 } else { return 1 }
+        }
+        if r == 1 {
+            if block_idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 0 } else { return 1 } }
+            if block_idx == 2 { if coord == 0 { return 1 } else { return 1 } }
+            if coord == 0 { return 0 } else { return 2 }
+        }
+        if r == 2 {
+            if block_idx == 0 { if coord == 0 { return -1 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 2 { if coord == 0 { return 1 } else { return 0 } }
+            if coord == 0 { return 0 } else { return 1 }
+        }
+        # r == 3
+        if block_idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+        if block_idx == 1 { if coord == 0 { return -1 } else { return 1 } }
+        if block_idx == 2 { if coord == 0 { return 0 } else { return 1 } }
+        if coord == 0 { return 0 } else { return 2 }
+    }
+    
+    # S-piece
+    if kind == TETRO_S {
+        if r == 0 or r == 2 {
+            # .##
+            # ##.
+            if block_idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 1 } else { return 0 } }
+            if block_idx == 2 { if coord == 0 { return -1 } else { return 1 } }
+            if coord == 0 { return 0 } else { return 1 }
+        } else {
+            if block_idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 0 } else { return 1 } }
+            if block_idx == 2 { if coord == 0 { return 1 } else { return 1 } }
+            if coord == 0 { return 1 } else { return 2 }
+        }
+    }
+    
+    # Z-piece
+    if kind == TETRO_Z {
+        if r == 0 or r == 2 {
+            # ##.
+            # .##
+            if block_idx == 0 { if coord == 0 { return -1 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 2 { if coord == 0 { return 0 } else { return 1 } }
+            if coord == 0 { return 1 } else { return 1 }
+        } else {
+            if block_idx == 0 { if coord == 0 { return 1 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 0 } else { return 1 } }
+            if block_idx == 2 { if coord == 0 { return 1 } else { return 1 } }
+            if coord == 0 { return 0 } else { return 2 }
+        }
+    }
+    
+    # J-piece
+    if kind == TETRO_J {
+        if r == 0 {
+            # #..
+            # ###
+            if block_idx == 0 { if coord == 0 { return -1 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return -1 } else { return 1 } }
+            if block_idx == 2 { if coord == 0 { return 0 } else { return 1 } }
+            if coord == 0 { return 1 } else { return 1 }
+        }
+        if r == 1 {
+            if block_idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 1 } else { return 0 } }
+            if block_idx == 2 { if coord == 0 { return 0 } else { return 1 } }
+            if coord == 0 { return 0 } else { return 2 }
+        }
+        if r == 2 {
+            if block_idx == 0 { if coord == 0 { return -1 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 2 { if coord == 0 { return 1 } else { return 0 } }
+            if coord == 0 { return 1 } else { return 1 }
+        }
+        if block_idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+        if block_idx == 1 { if coord == 0 { return 0 } else { return 1 } }
+        if block_idx == 2 { if coord == 0 { return -1 } else { return 2 } }
+        if coord == 0 { return 0 } else { return 2 }
+    }
+    
+    # L-piece
+    if kind == TETRO_L {
+        if r == 0 {
+            # ..#
+            # ###
+            if block_idx == 0 { if coord == 0 { return 1 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return -1 } else { return 1 } }
+            if block_idx == 2 { if coord == 0 { return 0 } else { return 1 } }
+            if coord == 0 { return 1 } else { return 1 }
+        }
+        if r == 1 {
+            if block_idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 0 } else { return 1 } }
+            if block_idx == 2 { if coord == 0 { return 0 } else { return 2 } }
+            if coord == 0 { return 1 } else { return 2 }
+        }
+        if r == 2 {
+            if block_idx == 0 { if coord == 0 { return -1 } else { return 0 } }
+            if block_idx == 1 { if coord == 0 { return 0 } else { return 0 } }
+            if block_idx == 2 { if coord == 0 { return 1 } else { return 0 } }
+            if coord == 0 { return -1 } else { return 1 }
+        }
+        if block_idx == 0 { if coord == 0 { return -1 } else { return 0 } }
+        if block_idx == 1 { if coord == 0 { return 0 } else { return 0 } }
+        if block_idx == 2 { if coord == 0 { return 0 } else { return 1 } }
+        if coord == 0 { return 0 } else { return 2 }
+    }
+    
+    return 0
+}
+
+# Get chess piece type that spawns from tetromino
+function tetro_to_piece(kind: i32) -> i32 {
+    if kind == TETRO_I {
+        return PIECE_ROOK
+    }
+    if kind == TETRO_O {
+        return PIECE_PAWN
+    }
+    if kind == TETRO_T {
+        return PIECE_KNIGHT
+    }
+    if kind == TETRO_S or kind == TETRO_Z {
+        return PIECE_PAWN
+    }
+    # J or L
+    return PIECE_BISHOP
+}
+
+# ============================================================================
+# BOARD OPERATIONS
+# ============================================================================
+
+function board_idx(x: i32, y: i32) -> i32 {
+    return y * BOARD_WIDTH + x
+}
+
+function board_in_bounds(x: i32, y: i32) -> i32 {
+    if x < 0 or x >= BOARD_WIDTH {
+        return 0
+    }
+    if y < 0 or y >= BOARD_HEIGHT {
+        return 0
+    }
+    return 1
+}
+
+function board_get_block(blocks: ptr<i32>, x: i32, y: i32) -> i32 {
+    if board_in_bounds(x, y) == 0 {
+        return 1  # Out of bounds = solid
+    }
+    return blocks[board_idx(x, y)]
+}
+
+function board_set_block(blocks: ptr<i32>, x: i32, y: i32, val: i32) {
+    if board_in_bounds(x, y) == 1 {
+        blocks[board_idx(x, y)] = val
+    }
+}
+
+function board_get_piece(pieces: ptr<i32>, x: i32, y: i32) -> i32 {
+    if board_in_bounds(x, y) == 0 {
+        return PIECE_NONE
+    }
+    return pieces[board_idx(x, y)]
+}
+
+function board_set_piece(pieces: ptr<i32>, x: i32, y: i32, piece: i32) {
+    if board_in_bounds(x, y) == 1 {
+        pieces[board_idx(x, y)] = piece
+    }
+}
+
+function board_get_color(colors: ptr<i32>, x: i32, y: i32) -> i32 {
+    if board_in_bounds(x, y) == 0 {
+        return COLOR_NONE
+    }
+    return colors[board_idx(x, y)]
+}
+
+function board_set_color(colors: ptr<i32>, x: i32, y: i32, color: i32) {
+    if board_in_bounds(x, y) == 1 {
+        colors[board_idx(x, y)] = color
+    }
+}
+
+# ============================================================================
+# TETROMINO COLLISION
+# ============================================================================
+
+function tetro_fits(blocks: ptr<i32>, kind: i32, rot: i32, tx: i32, ty: i32) -> i32 {
+    for i in 0 to 4 {
+        let dx: i32 = get_tetro_block(kind, rot, i, 0)
+        let dy: i32 = get_tetro_block(kind, rot, i, 1)
+        let bx: i32 = tx + dx
+        let by: i32 = ty + dy
+        
+        if bx < 0 or bx >= BOARD_WIDTH {
+            return 0
+        }
+        if by < 0 or by >= BOARD_HEIGHT {
+            return 0
+        }
+        if board_get_block(blocks, bx, by) == 1 {
+            return 0
+        }
+    }
+    return 1
+}
+
+# ============================================================================
+# LOCK TETROMINO & SPAWN CHESS PIECES
+# ============================================================================
+
+function lock_tetromino(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                        kind: i32, rot: i32, tx: i32, ty: i32, player: i32) {
+    let piece_type: i32 = tetro_to_piece(kind)
+    
+    for i in 0 to 4 {
+        let dx: i32 = get_tetro_block(kind, rot, i, 0)
+        let dy: i32 = get_tetro_block(kind, rot, i, 1)
+        let bx: i32 = tx + dx
+        let by: i32 = ty + dy
+        
+        board_set_block(blocks, bx, by, 1)
+        board_set_piece(pieces, bx, by, piece_type)
+        board_set_color(colors, bx, by, player)
+    }
+}
+
+# ============================================================================
+# LINE CLEAR & GRAVITY
+# ============================================================================
+
+function is_row_full(blocks: ptr<i32>, y: i32) -> i32 {
+    for x in 0 to BOARD_WIDTH {
+        if board_get_block(blocks, x, y) == 0 {
+            return 0
+        }
+    }
+    return 1
+}
+
+function clear_row(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>, y: i32) {
+    for x in 0 to BOARD_WIDTH {
+        board_set_block(blocks, x, y, 0)
+        board_set_piece(pieces, x, y, PIECE_NONE)
+        board_set_color(colors, x, y, COLOR_NONE)
+    }
+}
+
+function drop_rows_above(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>, cleared_y: i32) {
+    # Move all rows above cleared_y down by 1
+    for y in cleared_y to 0 step -1 {
+        for x in 0 to BOARD_WIDTH {
+            if y > 0 {
+                let above_idx: i32 = board_idx(x, y - 1)
+                let curr_idx: i32 = board_idx(x, y)
+                blocks[curr_idx] = blocks[above_idx]
+                pieces[curr_idx] = pieces[above_idx]
+                colors[curr_idx] = colors[above_idx]
+            } else {
+                # Top row becomes empty
+                let curr_idx: i32 = board_idx(x, y)
+                blocks[curr_idx] = 0
+                pieces[curr_idx] = PIECE_NONE
+                colors[curr_idx] = COLOR_NONE
+            }
+        }
+    }
+}
+
+function process_line_clears(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>) -> i32 {
+    let lines_cleared: i32 = 0
+    
+    # Check from bottom to top
+    let y: i32 = BOARD_HEIGHT - 1
+    while y >= 0 {
+        if is_row_full(blocks, y) == 1 {
+            clear_row(blocks, pieces, colors, y)
+            drop_rows_above(blocks, pieces, colors, y)
+            lines_cleared = lines_cleared + 1
+            # Don't decrement y - check same row again (might have dropped full row)
+        } else {
+            y = y - 1
+        }
+    }
+    
+    return lines_cleared
+}
+
+# ============================================================================
+# CHECK IF KING ALIVE
+# ============================================================================
+
+function find_king(pieces: ptr<i32>, colors: ptr<i32>, player: i32) -> i32 {
+    # Returns board index of king, or -1 if not found
+    for y in 0 to BOARD_HEIGHT {
+        for x in 0 to BOARD_WIDTH {
+            let idx: i32 = board_idx(x, y)
+            if pieces[idx] == PIECE_KING and colors[idx] == player {
+                return idx
+            }
+        }
+    }
+    return -1
+}
+
+# ============================================================================
+# CHESS MOVE VALIDATION
+# ============================================================================
+
+function is_valid_pawn_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                            fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
+    let direction: i32 = 1  # White moves down (toward row 7)
+    if player == COLOR_BLACK {
+        direction = -1  # Black moves up (toward row 0)
+    }
+    
+    let dx: i32 = tx - fx
+    let dy: i32 = ty - fy
+    
+    # Forward move (must have block at destination, no piece there)
+    if dx == 0 and dy == direction {
+        if board_get_block(blocks, tx, ty) == 1 and board_get_piece(pieces, tx, ty) == PIECE_NONE {
+            return 1
+        }
+    }
+    
+    # Diagonal capture
+    if (dx == 1 or dx == -1) and dy == direction {
+        if board_get_block(blocks, tx, ty) == 1 {
+            let target_color: i32 = board_get_color(colors, tx, ty)
+            if target_color != COLOR_NONE and target_color != player {
+                return 1
+            }
+        }
+    }
+    
+    return 0
+}
+
+function is_valid_rook_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                            fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
+    let dx: i32 = tx - fx
+    let dy: i32 = ty - fy
+    
+    # Must move in straight line
+    if dx != 0 and dy != 0 {
+        return 0
+    }
+    if dx == 0 and dy == 0 {
+        return 0
+    }
+    
+    # Get step direction
+    let sx: i32 = 0
+    let sy: i32 = 0
+    if dx > 0 { sx = 1 }
+    if dx < 0 { sx = -1 }
+    if dy > 0 { sy = 1 }
+    if dy < 0 { sy = -1 }
+    
+    # Check path is clear (must have blocks, no pieces blocking)
+    let cx: i32 = fx + sx
+    let cy: i32 = fy + sy
+    while cx != tx or cy != ty {
+        if board_get_block(blocks, cx, cy) == 0 {
+            return 0  # No block to move through
+        }
+        if board_get_piece(pieces, cx, cy) != PIECE_NONE {
+            return 0  # Blocked by piece
+        }
+        cx = cx + sx
+        cy = cy + sy
+    }
+    
+    # Destination must have block
+    if board_get_block(blocks, tx, ty) == 0 {
+        return 0
+    }
+    
+    # Can't capture own piece
+    let target_color: i32 = board_get_color(colors, tx, ty)
+    if target_color == player {
+        return 0
+    }
+    
+    return 1
+}
+
+function is_valid_knight_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                              fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
+    let dx: i32 = tx - fx
+    let dy: i32 = ty - fy
+    if dx < 0 { dx = 0 - dx }
+    if dy < 0 { dy = 0 - dy }
+    
+    # L-shape: 2+1 or 1+2
+    let valid_shape: i32 = 0
+    if dx == 2 and dy == 1 { valid_shape = 1 }
+    if dx == 1 and dy == 2 { valid_shape = 1 }
+    
+    if valid_shape == 0 {
+        return 0
+    }
+    
+    # Destination must have block
+    if board_get_block(blocks, tx, ty) == 0 {
+        return 0
+    }
+    
+    # Can't capture own piece
+    let target_color: i32 = board_get_color(colors, tx, ty)
+    if target_color == player {
+        return 0
+    }
+    
+    return 1
+}
+
+function is_valid_bishop_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                              fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
+    let dx: i32 = tx - fx
+    let dy: i32 = ty - fy
+    let adx: i32 = dx
+    let ady: i32 = dy
+    if adx < 0 { adx = 0 - adx }
+    if ady < 0 { ady = 0 - ady }
+    
+    # Must move diagonally
+    if adx != ady or adx == 0 {
+        return 0
+    }
+    
+    # Get step direction
+    let sx: i32 = 1
+    let sy: i32 = 1
+    if dx < 0 { sx = -1 }
+    if dy < 0 { sy = -1 }
+    
+    # Check path
+    let cx: i32 = fx + sx
+    let cy: i32 = fy + sy
+    while cx != tx or cy != ty {
+        if board_get_block(blocks, cx, cy) == 0 {
+            return 0
+        }
+        if board_get_piece(pieces, cx, cy) != PIECE_NONE {
+            return 0
+        }
+        cx = cx + sx
+        cy = cy + sy
+    }
+    
+    if board_get_block(blocks, tx, ty) == 0 {
+        return 0
+    }
+    
+    let target_color: i32 = board_get_color(colors, tx, ty)
+    if target_color == player {
+        return 0
+    }
+    
+    return 1
+}
+
+function is_valid_queen_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                             fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
+    # Queen = Rook + Bishop
+    if is_valid_rook_move(blocks, pieces, colors, fx, fy, tx, ty, player) == 1 {
+        return 1
+    }
+    return is_valid_bishop_move(blocks, pieces, colors, fx, fy, tx, ty, player)
+}
+
+function is_valid_king_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                            fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
+    let dx: i32 = tx - fx
+    let dy: i32 = ty - fy
+    if dx < 0 { dx = 0 - dx }
+    if dy < 0 { dy = 0 - dy }
+    
+    # King moves one square in any direction
+    if dx > 1 or dy > 1 {
+        return 0
+    }
+    if dx == 0 and dy == 0 {
+        return 0
+    }
+    
+    if board_get_block(blocks, tx, ty) == 0 {
+        return 0
+    }
+    
+    let target_color: i32 = board_get_color(colors, tx, ty)
+    if target_color == player {
+        return 0
+    }
+    
+    return 1
+}
+
+function is_valid_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                       fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
+    # Check source has player's piece
+    if board_get_color(colors, fx, fy) != player {
+        return 0
+    }
+    
+    let piece: i32 = board_get_piece(pieces, fx, fy)
+    
+    if piece == PIECE_PAWN {
+        return is_valid_pawn_move(blocks, pieces, colors, fx, fy, tx, ty, player)
+    }
+    if piece == PIECE_ROOK {
+        return is_valid_rook_move(blocks, pieces, colors, fx, fy, tx, ty, player)
+    }
+    if piece == PIECE_KNIGHT {
+        return is_valid_knight_move(blocks, pieces, colors, fx, fy, tx, ty, player)
+    }
+    if piece == PIECE_BISHOP {
+        return is_valid_bishop_move(blocks, pieces, colors, fx, fy, tx, ty, player)
+    }
+    if piece == PIECE_QUEEN {
+        return is_valid_queen_move(blocks, pieces, colors, fx, fy, tx, ty, player)
+    }
+    if piece == PIECE_KING {
+        return is_valid_king_move(blocks, pieces, colors, fx, fy, tx, ty, player)
+    }
+    
+    return 0
+}
+
+# ============================================================================
+# EXECUTE CHESS MOVE
+# ============================================================================
+
+function execute_move(pieces: ptr<i32>, colors: ptr<i32>,
+                      fx: i32, fy: i32, tx: i32, ty: i32) {
+    let from_idx: i32 = board_idx(fx, fy)
+    let to_idx: i32 = board_idx(tx, ty)
+    
+    pieces[to_idx] = pieces[from_idx]
+    colors[to_idx] = colors[from_idx]
+    pieces[from_idx] = PIECE_NONE
+    colors[from_idx] = COLOR_NONE
+}
+
+# ============================================================================
+# CHECK DETECTION
+# ============================================================================
+
+function is_square_attacked(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                            tx: i32, ty: i32, by_player: i32) -> i32 {
+    # Check if any piece of by_player can attack square (tx, ty)
+    for fy in 0 to BOARD_HEIGHT {
+        for fx in 0 to BOARD_WIDTH {
+            if board_get_color(colors, fx, fy) == by_player {
+                if is_valid_move(blocks, pieces, colors, fx, fy, tx, ty, by_player) == 1 {
+                    return 1
+                }
+            }
+        }
+    }
+    return 0
+}
+
+function is_in_check(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>, player: i32) -> i32 {
+    let king_idx: i32 = find_king(pieces, colors, player)
+    if king_idx < 0 {
+        return 0  # King doesn't exist (destroyed)
+    }
+    
+    let kx: i32 = king_idx % BOARD_WIDTH
+    let ky: i32 = king_idx / BOARD_WIDTH
+    
+    let opponent: i32 = COLOR_WHITE
+    if player == COLOR_WHITE {
+        opponent = COLOR_BLACK
+    }
+    
+    return is_square_attacked(blocks, pieces, colors, kx, ky, opponent)
+}
+
+# ============================================================================
+# UI RENDERING
+# ============================================================================
+
+function piece_char(piece: i32, color: i32) -> i32 {
+    # Returns ASCII character for piece
+    if piece == PIECE_NONE { return 46 }  # '.'
+    
+    if color == COLOR_WHITE {
+        if piece == PIECE_PAWN { return 80 }    # 'P'
+        if piece == PIECE_ROOK { return 82 }    # 'R'
+        if piece == PIECE_KNIGHT { return 78 }  # 'N'
+        if piece == PIECE_BISHOP { return 66 }  # 'B'
+        if piece == PIECE_QUEEN { return 81 }   # 'Q'
+        if piece == PIECE_KING { return 75 }    # 'K'
+    } else {
+        if piece == PIECE_PAWN { return 112 }   # 'p'
+        if piece == PIECE_ROOK { return 114 }   # 'r'
+        if piece == PIECE_KNIGHT { return 110 } # 'n'
+        if piece == PIECE_BISHOP { return 98 }  # 'b'
+        if piece == PIECE_QUEEN { return 113 }  # 'q'
+        if piece == PIECE_KING { return 107 }   # 'k'
+    }
+    return 63  # '?'
+}
+
+function tetro_char(kind: i32) -> i32 {
+    if kind == TETRO_I { return 73 }  # 'I'
+    if kind == TETRO_O { return 79 }  # 'O'
+    if kind == TETRO_T { return 84 }  # 'T'
+    if kind == TETRO_S { return 83 }  # 'S'
+    if kind == TETRO_Z { return 90 }  # 'Z'
+    if kind == TETRO_J { return 74 }  # 'J'
+    if kind == TETRO_L { return 76 }  # 'L'
+    return 63
+}
+
+extern {
+    function putchar(c: i32) -> i32
+    function printf(fmt: string) -> i32
+}
+
+function print_char(c: i32) {
+    putchar(c)
+}
+
+function draw_board(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
+                    tetro_kind: i32, tetro_rot: i32, tetro_x: i32, tetro_y: i32,
+                    phase: i32, sel_x: i32, sel_y: i32, has_sel: i32) {
+    ui_clear()
+    
+    println("╔════════════════════╗")
+    println("║     CHETRIS        ║")
+    println("╚════════════════════╝")
+    println("")
+    
+    # Column labels
+    print("    ")
+    for x in 0 to BOARD_WIDTH {
+        print_char(97 + x)  # 'a' + x
+        print_char(32)      # space
+    }
+    println("")
+    
+    print("   ┌")
+    for x in 0 to BOARD_WIDTH {
+        print("──")
+    }
+    println("┐")
+    
+    # Build tetromino mask for ghost piece display
+    for y in 0 to BOARD_HEIGHT {
+        # Row number
+        print_char(56 - y)  # '8' - y
+        print("  │")
+        
+        for x in 0 to BOARD_WIDTH {
+            # Check if this cell is part of falling tetromino
+            let is_tetro: i32 = 0
+            if phase == PHASE_TETRIS {
+                for i in 0 to 4 {
+                    let dx: i32 = get_tetro_block(tetro_kind, tetro_rot, i, 0)
+                    let dy: i32 = get_tetro_block(tetro_kind, tetro_rot, i, 1)
+                    if tetro_x + dx == x and tetro_y + dy == y {
+                        is_tetro = 1
+                    }
+                }
+            }
+            
+            # Check selection highlight
+            let is_selected: i32 = 0
+            if has_sel == 1 and sel_x == x and sel_y == y {
+                is_selected = 1
+            }
+            
+            if is_selected == 1 {
+                print_char(91)  # '['
+            } else {
+                print_char(32)  # space
+            }
+            
+            if is_tetro == 1 {
+                # Show tetromino block
+                ui_fg(3)  # Yellow
+                print_char(tetro_char(tetro_kind))
+                ui_reset_style()
+            } elif board_get_block(blocks, x, y) == 1 {
+                # Show block with piece
+                let piece: i32 = board_get_piece(pieces, x, y)
+                let color: i32 = board_get_color(colors, x, y)
+                if color == COLOR_WHITE {
+                    ui_fg(7)  # White
+                } elif color == COLOR_BLACK {
+                    ui_fg(4)  # Blue for black pieces
+                } else {
+                    ui_fg(8)  # Gray for empty blocks
+                }
+                print_char(piece_char(piece, color))
+                ui_reset_style()
+            } else {
+                # Empty cell - show checkerboard pattern
+                if (x + y) % 2 == 0 {
+                    ui_fg(8)
+                    print_char(183)  # middle dot
+                    ui_reset_style()
+                } else {
+                    print_char(32)
+                }
+            }
+            
+            if is_selected == 1 {
+                print_char(93)  # ']'
+            }
+        }
+        
+        print("│")
+        
+        # Side info
+        if y == 0 {
+            if phase == PHASE_TETRIS {
+                print("  TETRIS PHASE")
+            } elif phase == PHASE_CHESS {
+                print("  CHESS PHASE")
+            } elif phase == PHASE_RESOLUTION {
+                print("  RESOLVING...")
+            } else {
+                print("  GAME OVER")
+            }
+        }
+        if y == 2 {
+            print("  Next: ")
+            print_char(tetro_char(tetro_kind))
+        }
+        
+        println("")
+    }
+    
+    print("   └")
+    for x in 0 to BOARD_WIDTH {
+        print("──")
+    }
+    println("┘")
+    
+    println("")
+    if phase == PHASE_TETRIS {
+        println("A/D: Move  W: Rotate  S: Drop  Space: Lock")
+    } elif phase == PHASE_CHESS {
+        println("Arrow keys: Select  Enter: Confirm/Skip")
+    }
+    println("Q: Quit")
+}
+
+# ============================================================================
+# GAME INITIALIZATION
+# ============================================================================
+
+function init_board(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>) {
+    # Clear board
+    for i in 0 to 64 {
+        blocks[i] = 0
+        pieces[i] = PIECE_NONE
+        colors[i] = COLOR_NONE
+    }
+    
+    # Place kings on initial positions (e1 and e8)
+    # e1 = (4, 7) for white king
+    # e8 = (4, 0) for black king
+    # Kings need blocks to stand on
+    
+    # White king at e1
+    let white_king_idx: i32 = board_idx(4, 7)
+    blocks[white_king_idx] = 1
+    pieces[white_king_idx] = PIECE_KING
+    colors[white_king_idx] = COLOR_WHITE
+    
+    # Black king at e8
+    let black_king_idx: i32 = board_idx(4, 0)
+    blocks[black_king_idx] = 1
+    pieces[black_king_idx] = PIECE_KING
+    colors[black_king_idx] = COLOR_BLACK
+}
+
+function init_game_state() -> GameState {
+    return GameState {
+        current_player: COLOR_WHITE,
+        phase: PHASE_TETRIS,
+        tetro_x: 4,
+        tetro_y: 0,
+        tetro_kind: TETRO_T,
+        tetro_rot: 0,
+        next_tetro: TETRO_I,
+        selected_x: 0,
+        selected_y: 0,
+        has_selection: 0,
+        white_king_alive: 1,
+        black_king_alive: 1,
+        white_in_check: 0,
+        black_in_check: 0,
+        turn_number: 1,
+        rng_seed: 42
+    }
+}
+
+# ============================================================================
+# INPUT HANDLING
+# ============================================================================
+
+function get_input() -> i32 {
+    return getchar()
+}
+
+# ============================================================================
+# MAIN GAME LOOP
+# ============================================================================
+
+function main() -> i32 {
+    # Allocate board arrays
+    let blocks: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0]
+    
+    let pieces: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0]
+    
+    let colors: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0]
+    
+    let blocks_ptr: ptr<i32> = blocks
+    let pieces_ptr: ptr<i32> = pieces
+    let colors_ptr: ptr<i32> = colors
+    
+    # Initialize
+    init_board(blocks_ptr, pieces_ptr, colors_ptr)
+    let mut state: GameState = init_game_state()
+    
+    # Spawn first tetromino
+    state.tetro_kind = TETRO_T
+    state.tetro_x = 3
+    state.tetro_y = 0
+    state.tetro_rot = 0
+    
+    # Generate next piece
+    state.rng_seed = rng_next(state.rng_seed)
+    state.next_tetro = rng_range(state.rng_seed, 7)
+    
+    ui_hide_cursor()
+    
+    let running: i32 = 1
+    while running == 1 {
+        # Draw current state
+        draw_board(blocks_ptr, pieces_ptr, colors_ptr,
+                   state.tetro_kind, state.tetro_rot, state.tetro_x, state.tetro_y,
+                   state.phase, state.selected_x, state.selected_y, state.has_selection)
+        
+        # Get input
+        let input: i32 = get_input()
+        
+        # Quit
+        if input == 113 or input == 81 {  # 'q' or 'Q'
+            running = 0
+        }
+        
+        # Handle based on phase
+        if state.phase == PHASE_TETRIS {
+            # Move left
+            if input == 97 or input == 65 {  # 'a' or 'A'
+                if tetro_fits(blocks_ptr, state.tetro_kind, state.tetro_rot, 
+                              state.tetro_x - 1, state.tetro_y) == 1 {
+                    state.tetro_x = state.tetro_x - 1
+                }
+            }
+            
+            # Move right
+            if input == 100 or input == 68 {  # 'd' or 'D'
+                if tetro_fits(blocks_ptr, state.tetro_kind, state.tetro_rot,
+                              state.tetro_x + 1, state.tetro_y) == 1 {
+                    state.tetro_x = state.tetro_x + 1
+                }
+            }
+            
+            # Rotate
+            if input == 119 or input == 87 {  # 'w' or 'W'
+                let new_rot: i32 = (state.tetro_rot + 1) % 4
+                if tetro_fits(blocks_ptr, state.tetro_kind, new_rot,
+                              state.tetro_x, state.tetro_y) == 1 {
+                    state.tetro_rot = new_rot
+                }
+            }
+            
+            # Soft drop
+            if input == 115 or input == 83 {  # 's' or 'S'
+                if tetro_fits(blocks_ptr, state.tetro_kind, state.tetro_rot,
+                              state.tetro_x, state.tetro_y + 1) == 1 {
+                    state.tetro_y = state.tetro_y + 1
+                }
+            }
+            
+            # Lock piece (space)
+            if input == 32 {
+                lock_tetromino(blocks_ptr, pieces_ptr, colors_ptr,
+                               state.tetro_kind, state.tetro_rot,
+                               state.tetro_x, state.tetro_y, state.current_player)
+                state.phase = PHASE_CHESS
+                state.has_selection = 0
+            }
+        } elif state.phase == PHASE_CHESS {
+            # Arrow key movement for selection
+            # Note: Arrow keys are escape sequences, simplified to hjkl
+            if input == 104 {  # 'h' - left
+                if state.selected_x > 0 {
+                    state.selected_x = state.selected_x - 1
+                }
+            }
+            if input == 108 {  # 'l' - right
+                if state.selected_x < BOARD_WIDTH - 1 {
+                    state.selected_x = state.selected_x + 1
+                }
+            }
+            if input == 107 {  # 'k' - up
+                if state.selected_y > 0 {
+                    state.selected_y = state.selected_y - 1
+                }
+            }
+            if input == 106 {  # 'j' - down
+                if state.selected_y < BOARD_HEIGHT - 1 {
+                    state.selected_y = state.selected_y + 1
+                }
+            }
+            
+            # Enter to select/confirm/skip
+            if input == 10 or input == 13 {  # Enter
+                if state.has_selection == 0 {
+                    # First selection - pick source piece
+                    if board_get_color(colors_ptr, state.selected_x, state.selected_y) == state.current_player {
+                        state.has_selection = 1
+                    }
+                } else {
+                    # Second selection - try to move or deselect
+                    # For now, skip to resolution
+                    state.phase = PHASE_RESOLUTION
+                }
+            }
+            
+            # Skip chess phase with 'n'
+            if input == 110 {  # 'n'
+                state.phase = PHASE_RESOLUTION
+            }
+        } elif state.phase == PHASE_RESOLUTION {
+            # Process line clears
+            let cleared: i32 = process_line_clears(blocks_ptr, pieces_ptr, colors_ptr)
+            
+            # Check king status
+            state.white_king_alive = 0
+            state.black_king_alive = 0
+            if find_king(pieces_ptr, colors_ptr, COLOR_WHITE) >= 0 {
+                state.white_king_alive = 1
+            }
+            if find_king(pieces_ptr, colors_ptr, COLOR_BLACK) >= 0 {
+                state.black_king_alive = 1
+            }
+            
+            # Check for game over
+            if state.white_king_alive == 0 {
+                state.phase = PHASE_GAME_OVER
+                println("BLACK WINS! White king destroyed!")
+            } elif state.black_king_alive == 0 {
+                state.phase = PHASE_GAME_OVER
+                println("WHITE WINS! Black king destroyed!")
+            } else {
+                # Check detection
+                state.white_in_check = is_in_check(blocks_ptr, pieces_ptr, colors_ptr, COLOR_WHITE)
+                state.black_in_check = is_in_check(blocks_ptr, pieces_ptr, colors_ptr, COLOR_BLACK)
+                
+                # Switch player
+                if state.current_player == COLOR_WHITE {
+                    state.current_player = COLOR_BLACK
+                } else {
+                    state.current_player = COLOR_WHITE
+                }
+                
+                # Start next turn
+                state.turn_number = state.turn_number + 1
+                state.phase = PHASE_TETRIS
+                
+                # Spawn next tetromino
+                state.tetro_kind = state.next_tetro
+                state.tetro_x = 3
+                state.tetro_y = 0
+                state.tetro_rot = 0
+                
+                # Generate new next piece
+                state.rng_seed = rng_next(state.rng_seed)
+                state.next_tetro = rng_range(state.rng_seed, 7)
+                
+                # Check if spawn is blocked (game over)
+                if tetro_fits(blocks_ptr, state.tetro_kind, state.tetro_rot,
+                              state.tetro_x, state.tetro_y) == 0 {
+                    state.phase = PHASE_GAME_OVER
+                    if state.current_player == COLOR_WHITE {
+                        println("BLACK WINS! Board full!")
+                    } else {
+                        println("WHITE WINS! Board full!")
+                    }
+                }
+            }
+        } elif state.phase == PHASE_GAME_OVER {
+            # Wait for quit
+            println("Press Q to quit")
+        }
+    }
+    
+    ui_show_cursor()
+    ui_clear()
+    println("Thanks for playing Chetris!")
+    
+    return 0
+}

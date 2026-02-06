@@ -185,6 +185,10 @@ class OverloadResolver:
         
         if not overloads:
             return None  # Not a registered function - use original name
+
+        # Extern functions must not be mangled (C ABI)
+        if any(getattr(entry.function, "is_extern", False) for entry in overloads):
+            return name
         
         # Get argument types
         arg_types = [self.get_expr_type(arg) for arg in call.arguments]
@@ -220,6 +224,9 @@ class OverloadResolver:
                         break
                 if all_compatible:
                     return entry.mangled_name
+                # Fallback: if there's only one overload and arity matches,
+                # prefer the mangled name to avoid unresolved calls.
+                return entry.mangled_name
         
         # No match found - return original name (might be C stdlib function)
         return name

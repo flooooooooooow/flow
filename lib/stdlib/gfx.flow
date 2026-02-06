@@ -1,0 +1,62 @@
+# gfx: explicit native graphics API (macOS backend)
+#
+# This is an explicit, minimal API designed for games/demos.
+# Backend implementation: `runtime/gfx_macos.m`
+
+struct Gfx {
+    ctx: ptr<void>
+}
+
+# macOS key codes (NSEvent.keyCode)
+const KEY_ESC: i32 = 53
+const KEY_R: i32 = 15
+const KEY_W: i32 = 13
+const KEY_A: i32 = 0
+const KEY_S: i32 = 1
+const KEY_D: i32 = 2
+const KEY_LEFT: i32 = 123
+const KEY_RIGHT: i32 = 124
+const KEY_DOWN: i32 = 125
+const KEY_UP: i32 = 126
+
+extern { function flow_gfx_init(w: i32, h: i32, title: string) -> ptr<void> }
+extern { function flow_gfx_shutdown(ctx: ptr<void>) -> void }
+extern { function flow_gfx_poll(ctx: ptr<void>) -> void }
+extern { function flow_gfx_should_close(ctx: ptr<void>) -> i32 }
+extern { function flow_gfx_key_down(ctx: ptr<void>, keycode: i32) -> i32 }
+extern { function flow_gfx_clear(ctx: ptr<void>, r: u8, g: u8, b: u8) -> void }
+extern { function flow_gfx_fill_rect(ctx: ptr<void>, x: i32, y: i32, w: i32, h: i32, r: u8, g: u8, b: u8) -> void }
+extern { function flow_gfx_present(ctx: ptr<void>) -> void }
+
+export function gfx_open(w: i32, h: i32, title: string) -> Gfx {
+    return Gfx { ctx: flow_gfx_init(w, h, title) }
+}
+
+export function gfx_close(g: Gfx) -> void {
+    flow_gfx_shutdown(g.ctx)
+}
+
+export function gfx_poll(g: Gfx) -> void {
+    flow_gfx_poll(g.ctx)
+}
+
+export function gfx_should_close(g: Gfx) -> bool {
+    return flow_gfx_should_close(g.ctx) != 0
+}
+
+export function gfx_key_down(g: Gfx, keycode: i32) -> bool {
+    return flow_gfx_key_down(g.ctx, keycode) != 0
+}
+
+export function gfx_clear(g: Gfx, r: i32, g2: i32, b: i32) -> void {
+    flow_gfx_clear(g.ctx, r, g2, b)
+}
+
+export function gfx_fill_rect(g: Gfx, x: i32, y: i32, w: i32, h: i32, r: i32, g2: i32, b: i32) -> void {
+    flow_gfx_fill_rect(g.ctx, x, y, w, h, r, g2, b)
+}
+
+export function gfx_present(g: Gfx) -> void {
+    flow_gfx_present(g.ctx)
+}
+

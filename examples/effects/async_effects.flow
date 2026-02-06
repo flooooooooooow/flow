@@ -1,0 +1,260 @@
+# Async Effects: Async/Await as an Effect
+# Demonstrates how algebraic effects can model async operations
+#
+# Unlike Mojo/Julia which need async/await syntax, Flow uses effects
+
+# ============================================================================
+# ASYNC EFFECT DEFINITION
+# ============================================================================
+
+effect Async {
+    function delay(ms: i32)
+    function spawn(task_id: i32)
+    function await_task(task_id: i32) -> i32
+}
+
+# ============================================================================
+# ASYNC BUSINESS LOGIC
+# ============================================================================
+
+function fetch_user_data(async: capability Async, user_id: i32) -> i32 {
+    print("  Fetching user ")
+    println(user_id)
+    async.delay(100)  # Simulate network delay
+    return user_id * 10  # Simulated data
+}
+
+function fetch_orders(async: capability Async, user_id: i32) -> i32 {
+    print("  Fetching orders for user ")
+    println(user_id)
+    async.delay(150)
+    return user_id * 5  # Number of orders
+}
+
+function process_user(async: capability Async, user_id: i32) -> i32 {
+    let data: i32 = fetch_user_data(async, user_id)
+    let orders: i32 = fetch_orders(async, user_id)
+    return data + orders
+}
+
+# Parallel fetch simulation
+function fetch_all_users(async: capability Async, num_users: i32) -> i32 {
+    let mut total: i32 = 0
+    
+    # Spawn tasks
+    for i in 0 to num_users {
+        async.spawn(i)
+    }
+    
+    # Await results
+    for i in 0 to num_users {
+        let result: i32 = async.await_task(i)
+        total = total + result
+    }
+    
+    return total
+}
+
+# ============================================================================
+# SYNCHRONOUS HANDLER (for testing/simulation)
+# ============================================================================
+
+struct SyncAsync {
+    total_delay: i32,
+    task_results: ptr<i32>
+}
+
+impl Async for SyncAsync {
+    function delay(self, ms: i32) {
+        # In sync mode, just track the delay
+        self.total_delay = self.total_delay + ms
+    }
+    
+    function spawn(self, task_id: i32) {
+        # Immediately "run" the task
+        self.task_results[task_id] = task_id * 10
+    }
+    
+    function await_task(self, task_id: i32) -> i32 {
+        return self.task_results[task_id]
+    }
+}
+
+# ============================================================================
+# TIMEOUT EFFECT
+# ============================================================================
+
+effect Timeout {
+    function set_timeout(ms: i32)
+    function check_timeout() -> i32
+    function cancel_timeout()
+}
+
+function with_timeout(timeout: capability Timeout, work: i32) -> i32 {
+    timeout.set_timeout(1000)
+    
+    # Simulate work
+    let mut result: i32 = 0
+    for i in 0 to work {
+        if timeout.check_timeout() == 1 {
+            println("  Timeout!")
+            return -1
+        }
+        result = result + i
+    }
+    
+    timeout.cancel_timeout()
+    return result
+}
+
+struct SimpleTimeout {
+    deadline: i32,
+    current: i32,
+    cancelled: i32
+}
+
+impl Timeout for SimpleTimeout {
+    function set_timeout(self, ms: i32) {
+        self.deadline = ms
+        self.current = 0
+        self.cancelled = 0
+    }
+    
+    function check_timeout(self) -> i32 {
+        if self.cancelled == 1 {
+            return 0
+        }
+        self.current = self.current + 100  # Simulate time passing
+        if self.current >= self.deadline {
+            return 1
+        }
+        return 0
+    }
+    
+    function cancel_timeout(self) {
+        self.cancelled = 1
+    }
+}
+
+# ============================================================================
+# RETRY EFFECT
+# ============================================================================
+
+effect Retry {
+    function should_retry() -> i32
+    function record_attempt()
+    function get_attempts() -> i32
+}
+
+function unreliable_operation(retry: capability Retry) -> i32 {
+    let mut success: i32 = 0
+    
+    while success == 0 {
+        retry.record_attempt()
+        let attempts: i32 = retry.get_attempts()
+        
+        # Simulate: succeed on 3rd attempt
+        if attempts >= 3 {
+            success = 1
+        } else {
+            print("  Attempt ")
+            print(attempts)
+            println(" failed")
+            
+            if retry.should_retry() == 0 {
+                return -1  # Give up
+            }
+        }
+    }
+    
+    print("  Success on attempt ")
+    println(retry.get_attempts())
+    return 1
+}
+
+struct LinearRetry {
+    max_attempts: i32,
+    attempts: i32
+}
+
+impl Retry for LinearRetry {
+    function should_retry(self) -> i32 {
+        if self.attempts < self.max_attempts {
+            return 1
+        }
+        return 0
+    }
+    
+    function record_attempt(self) {
+        self.attempts = self.attempts + 1
+    }
+    
+    function get_attempts(self) -> i32 {
+        return self.attempts
+    }
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Async Effects Demo")
+    println("==================")
+    println("")
+    
+    # Async demo
+    println("=== Async Effect (sync simulation) ===")
+    let task_results: array<i32, 10> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let results_ptr: ptr<i32> = task_results
+    let mut async_handler: SyncAsync = SyncAsync { 
+        total_delay: 0, 
+        task_results: results_ptr 
+    }
+    
+    let result: i32 = process_user(async_handler, 1)
+    print("Process user result: ")
+    println(result)
+    print("Total simulated delay: ")
+    print(async_handler.total_delay)
+    println(" ms")
+    
+    println("")
+    
+    # Timeout demo
+    println("=== Timeout Effect ===")
+    let mut timeout_handler: SimpleTimeout = SimpleTimeout {
+        deadline: 0,
+        current: 0,
+        cancelled: 0
+    }
+    
+    let work_result: i32 = with_timeout(timeout_handler, 5)
+    print("Work result (small): ")
+    println(work_result)
+    
+    timeout_handler.current = 0
+    timeout_handler.cancelled = 0
+    let timeout_result: i32 = with_timeout(timeout_handler, 100)
+    print("Work result (large, may timeout): ")
+    println(timeout_result)
+    
+    println("")
+    
+    # Retry demo
+    println("=== Retry Effect ===")
+    let mut retry_handler: LinearRetry = LinearRetry {
+        max_attempts: 5,
+        attempts: 0
+    }
+    
+    let retry_result: i32 = unreliable_operation(retry_handler)
+    print("Operation result: ")
+    println(retry_result)
+    
+    println("")
+    println("Key insight: Async patterns are just effects!")
+    println("No special syntax needed - effects are composable.")
+    
+    return 0
+}

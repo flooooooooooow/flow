@@ -1,0 +1,31 @@
+# Test: len builtin and improved array handling
+
+function main() -> i32 {
+    # Test sized array length
+    let arr: array<i32, 5> = [1, 2, 3, 4, 5]
+    
+    if len(arr) != 5 {
+        return 1
+    }
+    
+    # Test array element access
+    if arr[0] != 1 {
+        return 2
+    }
+    
+    if arr[4] != 5 {
+        return 3
+    }
+    
+    # Test array sum using len
+    let mut sum: i32 = 0
+    for i in 0 to len(arr) {
+        sum = sum + arr[i]
+    }
+    
+    if sum != 15 {
+        return 4
+    }
+    
+    return 0
+}
