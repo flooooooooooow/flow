@@ -1,0 +1,56 @@
+# FLOW Slice Type
+# A slice is a view into a contiguous block of memory (ptr + length)
+
+struct Slice_i32 {
+    ptr: ptr<i32>,
+    len: i32
+}
+
+struct Slice_f32 {
+    ptr: ptr<f32>,
+    len: i32
+}
+
+struct Slice_u8 {
+    ptr: ptr<u8>,
+    len: i32
+}
+
+# Get element from slice (bounds-unchecked)
+function slice_get_i32(s: Slice_i32, idx: i32) -> i32 {
+    return s.ptr[idx]
+}
+
+function slice_get_f32(s: Slice_f32, idx: i32) -> f32 {
+    return s.ptr[idx]
+}
+
+function slice_get_u8(s: Slice_u8, idx: i32) -> u8 {
+    return s.ptr[idx]
+}
+
+# Get slice length
+function slice_len_i32(s: Slice_i32) -> i32 {
+    return s.len
+}
+
+function slice_len_f32(s: Slice_f32) -> i32 {
+    return s.len
+}
+
+function slice_len_u8(s: Slice_u8) -> i32 {
+    return s.len
+}
+
+# Create slice from array pointer and length
+function slice_from_ptr_i32(ptr: ptr<i32>, len: i32) -> Slice_i32 {
+    return Slice_i32 { ptr: ptr, len: len }
+}
+
+function slice_from_ptr_f32(ptr: ptr<f32>, len: i32) -> Slice_f32 {
+    return Slice_f32 { ptr: ptr, len: len }
+}
+
+function slice_from_ptr_u8(ptr: ptr<u8>, len: i32) -> Slice_u8 {
+    return Slice_u8 { ptr: ptr, len: len }
+}

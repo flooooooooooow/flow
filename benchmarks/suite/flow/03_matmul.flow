@@ -1,0 +1,136 @@
+# Matrix Multiplication Benchmark - Tests loop performance and cache efficiency
+# Computes C = A * B for NxN matrices
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+
+function matmul(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, N: i32) {
+    for i in 0 to N {
+        for j in 0 to N {
+            let mut sum: f64 = 0.0
+            for k in 0 to N {
+                sum = sum + A[i * N + k] * B[k * N + j]
+            }
+            C[i * N + j] = sum
+        }
+    }
+}
+
+function matmul_transposed(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, N: i32) {
+    # Transpose B for better cache access
+    for i in 0 to N {
+        for j in 0 to N {
+            let mut sum: f64 = 0.0
+            for k in 0 to N {
+                sum = sum + A[i * N + k] * B[j * N + k]
+            }
+            C[i * N + j] = sum
+        }
+    }
+}
+
+function init_matrix(M: ptr<f64>, N: i32, seed: f64) {
+    for i in 0 to N * N {
+        M[i] = (i + 1) * seed
+    }
+}
+
+function transpose(M: ptr<f64>, MT: ptr<f64>, N: i32) {
+    for i in 0 to N {
+        for j in 0 to N {
+            MT[j * N + i] = M[i * N + j]
+        }
+    }
+}
+
+function checksum(M: ptr<f64>, N: i32) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to N * N {
+        sum = sum + M[i]
+    }
+    return sum
+}
+
+function calculate_gflops(N: i32, time_sec: f64) -> f64 {
+    let flops: f64 = 2.0 * N * N * N
+    return flops / time_sec / 1e9
+}
+
+function main() -> i32 {
+    println("==============================================")
+    println("  MATRIX MULTIPLICATION BENCHMARK")
+    println("==============================================")
+    println("")
+    
+    # Use smaller sizes that fit on stack (256x256 = 65536 elements = 512KB per array)
+    let sizes: array<i32, 3> = [64, 128, 256]
+    
+    for s in 0 to 3 {
+        let N: i32 = sizes[s]
+        let size: i32 = N * N
+        
+        print("Matrix size: ")
+        print(N)
+        print("x")
+        println(N)
+        
+        # Allocate matrices (stack arrays)
+        let A: array<f64, 65536> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let B: array<f64, 65536> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let BT: array<f64, 65536> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let C: array<f64, 65536> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
+        let A_ptr: ptr<f64> = A
+        let B_ptr: ptr<f64> = B
+        let BT_ptr: ptr<f64> = BT
+        let C_ptr: ptr<f64> = C
+        
+        init_matrix(A_ptr, N, 0.0001)
+        init_matrix(B_ptr, N, 0.0002)
+        transpose(B_ptr, BT_ptr, N)
+        
+        # Naive version
+        let start1: i64 = clock()
+        matmul(A_ptr, B_ptr, C_ptr, N)
+        let end1: i64 = clock()
+        let time1: f64 = (end1 - start1) / CLOCKS_PER_SEC
+        let gflops1: f64 = calculate_gflops(N, time1)
+        let check1: f64 = checksum(C_ptr, N)
+        
+        print("  Naive:      ")
+        printf("%.3f", time1)
+        print(" sec | ")
+        printf("%.2f", gflops1)
+        print(" GFLOPS | checksum: ")
+        printf("%.6f", check1)
+        println("")
+        
+        # Transposed version  
+        let start2: i64 = clock()
+        matmul_transposed(A_ptr, BT_ptr, C_ptr, N)
+        let end2: i64 = clock()
+        let time2: f64 = (end2 - start2) / CLOCKS_PER_SEC
+        let gflops2: f64 = calculate_gflops(N, time2)
+        let check2: f64 = checksum(C_ptr, N)
+        
+        print("  Transposed: ")
+        printf("%.3f", time2)
+        print(" sec | ")
+        printf("%.2f", gflops2)
+        print(" GFLOPS | checksum: ")
+        printf("%.6f", check2)
+        println("")
+        
+        print("  Speedup: ")
+        printf("%.2f", time1 / time2)
+        println("x")
+        println("")
+    }
+    
+    println("Benchmark complete.")
+    return 0
+}

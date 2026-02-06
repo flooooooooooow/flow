@@ -1,0 +1,18 @@
+# Test: explicit mutation with let mut and field assignment
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function main() -> i32 {
+    let mut p: Point = Point { x: 10, y: 20 }
+    p.x = 100
+    p.y = 200
+    
+    # Verify the values
+    if p.x == 100 and p.y == 200 {
+        return 0
+    }
+    return 1
+}

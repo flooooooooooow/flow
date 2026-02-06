@@ -1,0 +1,316 @@
+# Basic Matrix Operations
+# Fundamental linear algebra operations in Flow
+#
+# Operations: add, subtract, multiply, transpose, scale, dot product
+
+extern {
+    function sqrt(x: f64) -> f64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+# ============================================================================
+# MATRIX TYPE (Row-major, fixed size for simplicity)
+# ============================================================================
+
+struct Matrix {
+    data: ptr<f64>,
+    rows: i32,
+    cols: i32
+}
+
+# ============================================================================
+# CREATION FUNCTIONS
+# ============================================================================
+
+function matrix_zeros(data: ptr<f64>, rows: i32, cols: i32) -> Matrix {
+    let size: i32 = rows * cols
+    for i in 0 to size {
+        data[i] = 0.0
+    }
+    return Matrix { data: data, rows: rows, cols: cols }
+}
+
+function matrix_identity(data: ptr<f64>, n: i32) -> Matrix {
+    for i in 0 to n * n {
+        data[i] = 0.0
+    }
+    for i in 0 to n {
+        data[i * n + i] = 1.0
+    }
+    return Matrix { data: data, rows: n, cols: n }
+}
+
+function matrix_fill(data: ptr<f64>, rows: i32, cols: i32, val: f64) -> Matrix {
+    let size: i32 = rows * cols
+    for i in 0 to size {
+        data[i] = val
+    }
+    return Matrix { data: data, rows: rows, cols: cols }
+}
+
+# ============================================================================
+# INDEXING
+# ============================================================================
+
+function matrix_get(m: Matrix, i: i32, j: i32) -> f64 {
+    return m.data[i * m.cols + j]
+}
+
+function matrix_set(m: Matrix, i: i32, j: i32, val: f64) -> void {
+    m.data[i * m.cols + j] = val
+}
+
+# ============================================================================
+# BASIC OPERATIONS
+# ============================================================================
+
+function matrix_add(a: Matrix, b: Matrix, result: Matrix) -> void {
+    # result = a + b
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            let sum: f64 = matrix_get(a, i, j) + matrix_get(b, i, j)
+            matrix_set(result, i, j, sum)
+        }
+    }
+}
+
+function matrix_sub(a: Matrix, b: Matrix, result: Matrix) -> void {
+    # result = a - b
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            let diff: f64 = matrix_get(a, i, j) - matrix_get(b, i, j)
+            matrix_set(result, i, j, diff)
+        }
+    }
+}
+
+function matrix_scale(a: Matrix, scalar: f64, result: Matrix) -> void {
+    # result = a * scalar
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            let val: f64 = matrix_get(a, i, j) * scalar
+            matrix_set(result, i, j, val)
+        }
+    }
+}
+
+function matrix_mul(a: Matrix, b: Matrix, result: Matrix) -> void {
+    # result = a @ b (matrix multiplication)
+    # a: (M, K), b: (K, N), result: (M, N)
+    let M: i32 = a.rows
+    let K: i32 = a.cols
+    let N: i32 = b.cols
+    
+    for i in 0 to M {
+        for j in 0 to N {
+            let mut sum: f64 = 0.0
+            for k in 0 to K {
+                sum = sum + matrix_get(a, i, k) * matrix_get(b, k, j)
+            }
+            matrix_set(result, i, j, sum)
+        }
+    }
+}
+
+function matrix_transpose(a: Matrix, result: Matrix) -> void {
+    # result = a^T
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            matrix_set(result, j, i, matrix_get(a, i, j))
+        }
+    }
+}
+
+function matrix_elementwise_mul(a: Matrix, b: Matrix, result: Matrix) -> void {
+    # Hadamard product: result = a .* b
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            let val: f64 = matrix_get(a, i, j) * matrix_get(b, i, j)
+            matrix_set(result, i, j, val)
+        }
+    }
+}
+
+# ============================================================================
+# VECTOR OPERATIONS
+# ============================================================================
+
+function dot_product(a: ptr<f64>, b: ptr<f64>, n: i32) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to n {
+        sum = sum + a[i] * b[i]
+    }
+    return sum
+}
+
+function vector_norm(v: ptr<f64>, n: i32) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to n {
+        sum = sum + v[i] * v[i]
+    }
+    return sqrt(sum)
+}
+
+function vector_normalize(v: ptr<f64>, n: i32) -> void {
+    let norm: f64 = vector_norm(v, n)
+    if norm > 1e-10 {
+        for i in 0 to n {
+            v[i] = v[i] / norm
+        }
+    }
+}
+
+# ============================================================================
+# MATRIX PROPERTIES
+# ============================================================================
+
+function matrix_trace(m: Matrix) -> f64 {
+    let mut sum: f64 = 0.0
+    let n: i32 = m.rows
+    if m.cols < n { n = m.cols }
+    for i in 0 to n {
+        sum = sum + matrix_get(m, i, i)
+    }
+    return sum
+}
+
+function matrix_frobenius_norm(m: Matrix) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to m.rows {
+        for j in 0 to m.cols {
+            let val: f64 = matrix_get(m, i, j)
+            sum = sum + val * val
+        }
+    }
+    return sqrt(sum)
+}
+
+function matrix_max(m: Matrix) -> f64 {
+    let mut max_val: f64 = m.data[0]
+    for i in 0 to m.rows * m.cols {
+        if m.data[i] > max_val {
+            max_val = m.data[i]
+        }
+    }
+    return max_val
+}
+
+function matrix_min(m: Matrix) -> f64 {
+    let mut min_val: f64 = m.data[0]
+    for i in 0 to m.rows * m.cols {
+        if m.data[i] < min_val {
+            min_val = m.data[i]
+        }
+    }
+    return min_val
+}
+
+# ============================================================================
+# DISPLAY
+# ============================================================================
+
+function matrix_print(m: Matrix) -> void {
+    print("Matrix (")
+    print(m.rows)
+    print(" x ")
+    print(m.cols)
+    println("):")
+    
+    for i in 0 to m.rows {
+        print("  [")
+        for j in 0 to m.cols {
+            printf("%.4f", matrix_get(m, i, j))
+            if j < m.cols - 1 {
+                print(", ")
+            }
+        }
+        println("]")
+    }
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Matrix Operations Demo")
+    println("======================")
+    println("")
+    
+    # Create matrices
+    let data_a: array<f64, 9> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+    let data_b: array<f64, 9> = [9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]
+    let data_c: array<f64, 9> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let data_t: array<f64, 9> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let data_i: array<f64, 9> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let data_i_ptr: ptr<f64> = data_i
+    
+    let a: Matrix = Matrix { data: data_a, rows: 3, cols: 3 }
+    let b: Matrix = Matrix { data: data_b, rows: 3, cols: 3 }
+    let c: Matrix = Matrix { data: data_c, rows: 3, cols: 3 }
+    let t: Matrix = Matrix { data: data_t, rows: 3, cols: 3 }
+    let id: Matrix = matrix_identity(data_i_ptr, 3)
+    
+    println("Matrix A:")
+    matrix_print(a)
+    println("")
+    
+    println("Matrix B:")
+    matrix_print(b)
+    println("")
+    
+    # Addition
+    matrix_add(a, b, c)
+    println("A + B:")
+    matrix_print(c)
+    println("")
+    
+    # Multiplication
+    matrix_mul(a, b, c)
+    println("A @ B (matrix multiply):")
+    matrix_print(c)
+    println("")
+    
+    # Transpose
+    matrix_transpose(a, t)
+    println("A^T (transpose):")
+    matrix_print(t)
+    println("")
+    
+    # Identity
+    println("Identity (3x3):")
+    matrix_print(id)
+    println("")
+    
+    # Properties
+    print("Trace of A: ")
+    printf("%.4f", matrix_trace(a))
+    println("")
+    
+    print("Frobenius norm of A: ")
+    printf("%.4f", matrix_frobenius_norm(a))
+    println("")
+    
+    # Vector operations
+    println("")
+    println("Vector operations:")
+    let v1: array<f64, 3> = [1.0, 2.0, 3.0]
+    let v2: array<f64, 3> = [4.0, 5.0, 6.0]
+    let v1_ptr: ptr<f64> = v1
+    let v2_ptr: ptr<f64> = v2
+    
+    let dot: f64 = dot_product(v1_ptr, v2_ptr, 3)
+    print("  Dot product [1,2,3].[4,5,6] = ")
+    printf("%.4f", dot)
+    println("")
+    
+    let norm: f64 = vector_norm(v1_ptr, 3)
+    print("  Norm of [1,2,3] = ")
+    printf("%.4f", norm)
+    println("")
+    
+    println("")
+    println("All operations complete!")
+    
+    return 0
+}

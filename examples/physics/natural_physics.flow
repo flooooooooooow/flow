@@ -1,0 +1,197 @@
+# Natural Physics in Flow
+# ========================
+# Physics simulations written like equations, not code
+
+import "stdlib/vec"
+
+# ─────────────────────────────────────────────────────────────
+# ENTITY: What is a Particle?
+# ─────────────────────────────────────────────────────────────
+
+struct Particle {
+    position: Vec2,
+    velocity: Vec2,
+    acceleration: Vec2,
+    mass: f64,
+    radius: f64
+}
+
+function particle(x: f64, y: f64) -> Particle {
+    return Particle {
+        position: vec2(x, y),
+        velocity: vec2_zero(),
+        acceleration: vec2_zero(),
+        mass: 1.0,
+        radius: 5.0
+    }
+}
+
+# ─────────────────────────────────────────────────────────────
+# FORCES: How does physics work?
+# ─────────────────────────────────────────────────────────────
+
+const GRAVITY: Vec2 = Vec2 { x: 0.0, y: 200.0 }     # pixels/sec²
+const AIR_DRAG: f64 = 0.01                  # drag coefficient
+const BOUNCE: f64 = 0.8                     # restitution
+
+# F = ma, so a = F/m
+function apply_force(p: ptr<Particle>, force: Vec2) -> void {
+    # acceleration = force / mass
+    let a: Vec2 = vec2_div(force, p[0].mass)
+    p[0].acceleration = vec2_add(p[0].acceleration, a)
+}
+
+function apply_gravity(p: ptr<Particle>) -> void {
+    # Weight = mass * gravity
+    let weight: Vec2 = vec2_mul(GRAVITY, p[0].mass)
+    apply_force(p, weight)
+}
+
+function apply_drag(p: ptr<Particle>) -> void {
+    # Drag ∝ -velocity²
+    let speed: f64 = length(p[0].velocity)
+    let drag_magnitude: f64 = AIR_DRAG * speed * speed
+    
+    if speed > 0.001 {
+        let drag_dir: Vec2 = vec2_neg(normalize(p[0].velocity))
+        let drag: Vec2 = vec2_mul(drag_dir, drag_magnitude)
+        apply_force(p, drag)
+    }
+}
+
+# ─────────────────────────────────────────────────────────────
+# INTEGRATION: How do we update state?
+# ─────────────────────────────────────────────────────────────
+
+# Semi-implicit Euler: v' = v + a*dt, x' = x + v'*dt
+function integrate(p: ptr<Particle>, dt: f64) -> void {
+    # v = v + a * dt
+    p[0].velocity = vec2_add(p[0].velocity, vec2_mul(p[0].acceleration, dt))
+    
+    # x = x + v * dt  
+    p[0].position = vec2_add(p[0].position, vec2_mul(p[0].velocity, dt))
+    
+    # Reset acceleration for next frame
+    p[0].acceleration = vec2_zero()
+}
+
+# ─────────────────────────────────────────────────────────────
+# CONSTRAINTS: What are the boundaries?
+# ─────────────────────────────────────────────────────────────
+
+function constrain_to_box(p: ptr<Particle>, width: f64, height: f64) -> void {
+    let r: f64 = p[0].radius
+    
+    # Floor: y ≤ height - radius
+    if p[0].position.y > height - r {
+        p[0].position.y = height - r
+        p[0].velocity.y = 0.0 - p[0].velocity.y * BOUNCE
+    }
+    
+    # Ceiling: y ≥ radius
+    if p[0].position.y < r {
+        p[0].position.y = r
+        p[0].velocity.y = 0.0 - p[0].velocity.y * BOUNCE
+    }
+    
+    # Left wall: x ≥ radius
+    if p[0].position.x < r {
+        p[0].position.x = r
+        p[0].velocity.x = 0.0 - p[0].velocity.x * BOUNCE
+    }
+    
+    # Right wall: x ≤ width - radius
+    if p[0].position.x > width - r {
+        p[0].position.x = width - r
+        p[0].velocity.x = 0.0 - p[0].velocity.x * BOUNCE
+    }
+}
+
+# ─────────────────────────────────────────────────────────────
+# COLLISIONS: How do particles interact?
+# ─────────────────────────────────────────────────────────────
+
+function check_collision(a: ptr<Particle>, b: ptr<Particle>) -> bool {
+    let d: f64 = distance(a[0].position, b[0].position)
+    return d < a[0].radius + b[0].radius
+}
+
+function resolve_collision(a: ptr<Particle>, b: ptr<Particle>) -> void {
+    let delta: Vec2 = vec2_sub(b[0].position, a[0].position)
+    let d: f64 = length(delta)
+    
+    if d < 0.001 {
+        return  # Avoid division by zero
+    }
+    
+    let normal: Vec2 = vec2_div(delta, d)
+    
+    # Relative velocity along collision normal
+    let rel_vel: Vec2 = vec2_sub(a[0].velocity, b[0].velocity)
+    let vel_along_normal: f64 = dot(rel_vel, normal)
+    
+    # Only resolve if particles are approaching
+    if vel_along_normal > 0.0 {
+        return
+    }
+    
+    # Impulse magnitude (elastic collision)
+    let e: f64 = BOUNCE  # Coefficient of restitution
+    let j: f64 = (0.0 - (1.0 + e) * vel_along_normal) / (1.0/a[0].mass + 1.0/b[0].mass)
+    
+    # Apply impulse
+    let impulse: Vec2 = vec2_mul(normal, j)
+    a[0].velocity = vec2_sub(a[0].velocity, vec2_div(impulse, a[0].mass))
+    b[0].velocity = vec2_add(b[0].velocity, vec2_div(impulse, b[0].mass))
+    
+    # Separate overlapping particles
+    let overlap: f64 = (a[0].radius + b[0].radius) - d
+    if overlap > 0.0 {
+        let separation: Vec2 = vec2_mul(normal, overlap * 0.5)
+        a[0].position = vec2_sub(a[0].position, separation)
+        b[0].position = vec2_add(b[0].position, separation)
+    }
+}
+
+# ─────────────────────────────────────────────────────────────
+# SIMULATION: Putting it all together
+# ─────────────────────────────────────────────────────────────
+
+function update_particle(p: ptr<Particle>, dt: f64, w: f64, h: f64) -> void {
+    # Apply forces
+    apply_gravity(p)
+    apply_drag(p)
+    
+    # Integrate motion
+    integrate(p, dt)
+    
+    # Apply constraints
+    constrain_to_box(p, w, h)
+}
+
+function simulate(particles: ptr<Particle>, count: i32, dt: f64, w: f64, h: f64) -> void {
+    # Update each particle
+    for i in 0 to count {
+        update_particle(particles + i, dt, w, h)
+    }
+    
+    # Check collisions (O(n²) - could optimize with spatial hashing)
+    for i in 0 to count {
+        for j in i + 1 to count {
+            if check_collision(particles + i, particles + j) {
+                resolve_collision(particles + i, particles + j)
+            }
+        }
+    }
+}
+
+# ─────────────────────────────────────────────────────────────
+# MAIN: Demo
+# ─────────────────────────────────────────────────────────────
+
+function main() -> i32 {
+    printf("Natural Physics Demo\n")
+    printf("====================\n")
+    printf("This is how physics SHOULD be written!\n")
+    return 0
+}

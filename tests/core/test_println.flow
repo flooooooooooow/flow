@@ -1,0 +1,9 @@
+# Test: println builtin
+
+function main() -> i32 {
+    println("Hello, World!")
+    println(42)
+    println(3.14)
+    println()
+    return 0
+}

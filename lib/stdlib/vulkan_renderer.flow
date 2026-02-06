@@ -1,0 +1,125 @@
+import "stdlib/vulkan.flow"
+
+# Flow-style Vulkan wrapper API (high-level)
+
+struct VkBuffer { id: i32 }
+struct VkImage { id: i32 }
+struct VkPipeline { id: i32 }
+
+struct Renderer {
+    opts: VulkanOptions,
+    cfg: VulkanConfig,
+    mode: i32
+}
+
+const RENDERER_BASIC: i32 = 0
+const RENDERER_ADVANCED: i32 = 1
+
+export function renderer_basic() -> Renderer {
+    return Renderer { opts: vulkan_options_default(), cfg: vulkan_config_default(), mode: RENDERER_BASIC }
+}
+
+export function renderer_advanced() -> Renderer {
+    return Renderer { opts: vulkan_options_default(), cfg: vulkan_config_default(), mode: RENDERER_ADVANCED }
+}
+
+export function renderer_set_clear(r: Renderer, r_col: f32, g_col: f32, b_col: f32) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.clear_r = r_col
+    r2.cfg.clear_g = g_col
+    r2.cfg.clear_b = b_col
+    return r2
+}
+
+export function renderer_set_window(r: Renderer, w: i32, h: i32, title: string) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.width = w
+    r2.cfg.height = h
+    r2.cfg.title = title
+    return r2
+}
+
+export function renderer_set_texture(r: Renderer, path: string) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.texture_path = path
+    return r2
+}
+
+export function renderer_set_texture2(r: Renderer, path: string) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.texture_path2 = path
+    return r2
+}
+
+export function renderer_pick_texture(r: Renderer) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.texture_path = "__PICK__"
+    return r2
+}
+
+export function renderer_pick_texture2(r: Renderer) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.texture_path2 = "__PICK__"
+    return r2
+}
+
+export function renderer_set_camera(r: Renderer, distance: f32, pitch: f32, yaw: f32) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.camera_distance = distance
+    r2.cfg.camera_pitch = pitch
+    r2.cfg.camera_yaw = yaw
+    return r2
+}
+
+export function renderer_set_camera_speed(r: Renderer, move_speed: f32, mouse_sensitivity: f32) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.move_speed = move_speed
+    r2.cfg.mouse_sensitivity = mouse_sensitivity
+    return r2
+}
+
+export function renderer_set_camera_smoothing(r: Renderer, smoothing: f32) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.camera_smoothing = smoothing
+    return r2
+}
+
+export function renderer_set_material1(r: Renderer, r_col: f32, g_col: f32, b_col: f32) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.mesh1_r = r_col
+    r2.cfg.mesh1_g = g_col
+    r2.cfg.mesh1_b = b_col
+    return r2
+}
+
+export function renderer_set_material2(r: Renderer, r_col: f32, g_col: f32, b_col: f32) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.mesh2_r = r_col
+    r2.cfg.mesh2_g = g_col
+    r2.cfg.mesh2_b = b_col
+    return r2
+}
+export function renderer_set_instances(r: Renderer, count: i32) -> Renderer {
+    let mut r2: Renderer = r
+    r2.cfg.instance_count = count
+    return r2
+}
+
+export function renderer_set_trace(r: Renderer, trace_on: bool) -> Renderer {
+    let mut r2: Renderer = r
+    r2.opts.trace = trace_on
+    return r2
+}
+
+export function renderer_set_validation(r: Renderer, validation_on: bool) -> Renderer {
+    let mut r2: Renderer = r
+    r2.opts.validation = validation_on
+    return r2
+}
+
+export function renderer_run(r: Renderer) -> i32 {
+    if r.mode == RENDERER_ADVANCED {
+        return vulkan_run_advanced_with_config(r.opts, r.cfg)
+    }
+    return vulkan_run_basic_with_config(r.opts, r.cfg)
+}

@@ -1,0 +1,341 @@
+# Expression Calculator
+# A simple expression parser with operator precedence
+#
+# Features:
+# - Four basic operations (+, -, *, /)
+# - Parentheses support
+# - Recursive descent parsing
+# - Error handling
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+# ============================================================================
+# TOKEN TYPES
+# ============================================================================
+
+const TOK_NUMBER: i32 = 1
+const TOK_PLUS: i32 = 2
+const TOK_MINUS: i32 = 3
+const TOK_STAR: i32 = 4
+const TOK_SLASH: i32 = 5
+const TOK_LPAREN: i32 = 6
+const TOK_RPAREN: i32 = 7
+const TOK_EOF: i32 = 8
+const TOK_ERROR: i32 = 9
+
+# ============================================================================
+# LEXER
+# ============================================================================
+
+struct Token {
+    type: i32,
+    value: f64
+}
+
+struct Lexer {
+    input: ptr<u8>,
+    pos: i32,
+    len: i32,
+    current: Token
+}
+
+function is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function is_whitespace(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function lexer_create(input: ptr<u8>, len: i32) -> Lexer {
+    let tok: Token = Token { type: TOK_EOF, value: 0.0 }
+    return Lexer {
+        input: input,
+        pos: 0,
+        len: len,
+        current: tok
+    }
+}
+
+function lexer_peek(lex: Lexer) -> i32 {
+    if lex.pos >= lex.len {
+        return 0
+    }
+    return lex.input[lex.pos]
+}
+
+function lexer_advance(lex: ptr<Lexer>) {
+    lex[0].pos = lex[0].pos + 1
+}
+
+function lexer_skip_whitespace(lex: ptr<Lexer>) {
+    while lex[0].pos < lex[0].len and is_whitespace(lex[0].input[lex[0].pos]) == 1 {
+        lex[0].pos = lex[0].pos + 1
+    }
+}
+
+function lexer_read_number(lex: ptr<Lexer>) -> f64 {
+    let mut value: f64 = 0.0
+    
+    # Integer part
+    while lex[0].pos < lex[0].len and is_digit(lex[0].input[lex[0].pos]) == 1 {
+        value = value * 10.0 + (lex[0].input[lex[0].pos] - 48)
+        lex[0].pos = lex[0].pos + 1
+    }
+    
+    # Decimal part
+    if lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] == 46 {  # '.'
+        lex[0].pos = lex[0].pos + 1
+        let mut decimal: f64 = 0.1
+        while lex[0].pos < lex[0].len and is_digit(lex[0].input[lex[0].pos]) == 1 {
+            value = value + decimal * (lex[0].input[lex[0].pos] - 48)
+            decimal = decimal * 0.1
+            lex[0].pos = lex[0].pos + 1
+        }
+    }
+    
+    return value
+}
+
+function lexer_next_token(lex: ptr<Lexer>) -> Token {
+    lexer_skip_whitespace(lex)
+    
+    if lex[0].pos >= lex[0].len {
+        return Token { type: TOK_EOF, value: 0.0 }
+    }
+    
+    let c: i32 = lex[0].input[lex[0].pos]
+    
+    if is_digit(c) == 1 {
+        let val: f64 = lexer_read_number(lex)
+        return Token { type: TOK_NUMBER, value: val }
+    }
+    
+    lex[0].pos = lex[0].pos + 1
+    
+    if c == 43 { return Token { type: TOK_PLUS, value: 0.0 } }    # '+'
+    if c == 45 { return Token { type: TOK_MINUS, value: 0.0 } }   # '-'
+    if c == 42 { return Token { type: TOK_STAR, value: 0.0 } }    # '*'
+    if c == 47 { return Token { type: TOK_SLASH, value: 0.0 } }   # '/'
+    if c == 40 { return Token { type: TOK_LPAREN, value: 0.0 } }  # '('
+    if c == 41 { return Token { type: TOK_RPAREN, value: 0.0 } }  # ')'
+    
+    return Token { type: TOK_ERROR, value: 0.0 }
+}
+
+# ============================================================================
+# PARSER (Recursive Descent)
+# ============================================================================
+
+struct Parser {
+    lex: ptr<Lexer>,
+    current: Token,
+    error: i32
+}
+
+function parser_create(lex: ptr<Lexer>) -> Parser {
+    let tok: Token = lexer_next_token(lex)
+    return Parser {
+        lex: lex,
+        current: tok,
+        error: 0
+    }
+}
+
+function parser_advance(p: ptr<Parser>) {
+    p[0].current = lexer_next_token(p[0].lex)
+}
+
+function parser_expect(p: ptr<Parser>, type: i32) -> i32 {
+    if p[0].current.type == type {
+        parser_advance(p)
+        return 1
+    }
+    p[0].error = 1
+    return 0
+}
+
+# Forward declarations via mutual recursion
+function parse_expression(p: ptr<Parser>) -> f64
+function parse_term(p: ptr<Parser>) -> f64
+function parse_factor(p: ptr<Parser>) -> f64
+
+# factor = NUMBER | '(' expression ')' | '-' factor
+function parse_factor(p: ptr<Parser>) -> f64 {
+    if p[0].current.type == TOK_NUMBER {
+        let val: f64 = p[0].current.value
+        parser_advance(p)
+        return val
+    }
+    
+    if p[0].current.type == TOK_MINUS {
+        parser_advance(p)
+        return 0.0 - parse_factor(p)
+    }
+    
+    if p[0].current.type == TOK_LPAREN {
+        parser_advance(p)
+        let val: f64 = parse_expression(p)
+        parser_expect(p, TOK_RPAREN)
+        return val
+    }
+    
+    p[0].error = 1
+    return 0.0
+}
+
+# term = factor (('*' | '/') factor)*
+function parse_term(p: ptr<Parser>) -> f64 {
+    let mut left: f64 = parse_factor(p)
+    
+    while p[0].current.type == TOK_STAR or p[0].current.type == TOK_SLASH {
+        let op: i32 = p[0].current.type
+        parser_advance(p)
+        let right: f64 = parse_factor(p)
+        
+        if op == TOK_STAR {
+            left = left * right
+        } else {
+            if right != 0.0 {
+                left = left / right
+            } else {
+                p[0].error = 1
+            }
+        }
+    }
+    
+    return left
+}
+
+# expression = term (('+' | '-') term)*
+function parse_expression(p: ptr<Parser>) -> f64 {
+    let mut left: f64 = parse_term(p)
+    
+    while p[0].current.type == TOK_PLUS or p[0].current.type == TOK_MINUS {
+        let op: i32 = p[0].current.type
+        parser_advance(p)
+        let right: f64 = parse_term(p)
+        
+        if op == TOK_PLUS {
+            left = left + right
+        } else {
+            left = left - right
+        }
+    }
+    
+    return left
+}
+
+# ============================================================================
+# CALCULATOR API
+# ============================================================================
+
+function calculate(input: ptr<u8>, len: i32) -> f64 {
+    let mut lex: Lexer = lexer_create(input, len)
+    let lex_ptr: ptr<Lexer> = &lex
+    
+    let mut parser: Parser = parser_create(lex_ptr)
+    let parser_ptr: ptr<Parser> = &parser
+    
+    let result: f64 = parse_expression(parser_ptr)
+    
+    if parser.error == 1 {
+        return 0.0  # Error
+    }
+    
+    return result
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Expression Calculator Demo")
+    println("==========================")
+    println("")
+    
+    # Test expressions (as byte arrays)
+    
+    # "2 + 3"
+    let expr1: array<u8, 6> = [50, 32, 43, 32, 51, 0]  # "2 + 3"
+    let expr1_ptr: ptr<u8> = expr1
+    print("2 + 3 = ")
+    let r1: f64 = calculate(expr1_ptr, 5)
+    printf("%.2f", r1)
+    println("")
+    
+    # "10 - 4"
+    let expr2: array<u8, 7> = [49, 48, 32, 45, 32, 52, 0]  # "10 - 4"
+    let expr2_ptr: ptr<u8> = expr2
+    print("10 - 4 = ")
+    let r2: f64 = calculate(expr2_ptr, 6)
+    printf("%.2f", r2)
+    println("")
+    
+    # "3 * 4"
+    let expr3: array<u8, 6> = [51, 32, 42, 32, 52, 0]  # "3 * 4"
+    let expr3_ptr: ptr<u8> = expr3
+    print("3 * 4 = ")
+    let r3: f64 = calculate(expr3_ptr, 5)
+    printf("%.2f", r3)
+    println("")
+    
+    # "20 / 5"
+    let expr4: array<u8, 7> = [50, 48, 32, 47, 32, 53, 0]  # "20 / 5"
+    let expr4_ptr: ptr<u8> = expr4
+    print("20 / 5 = ")
+    let r4: f64 = calculate(expr4_ptr, 6)
+    printf("%.2f", r4)
+    println("")
+    
+    # "2 + 3 * 4" (operator precedence)
+    let expr5: array<u8, 10> = [50, 32, 43, 32, 51, 32, 42, 32, 52, 0]  # "2 + 3 * 4"
+    let expr5_ptr: ptr<u8> = expr5
+    print("2 + 3 * 4 = ")
+    let r5: f64 = calculate(expr5_ptr, 9)
+    printf("%.2f", r5)
+    println(" (should be 14, not 20)")
+    
+    # "(2 + 3) * 4" (parentheses)
+    let expr6: array<u8, 12> = [40, 50, 32, 43, 32, 51, 41, 32, 42, 32, 52, 0]
+    let expr6_ptr: ptr<u8> = expr6
+    print("(2 + 3) * 4 = ")
+    let r6: f64 = calculate(expr6_ptr, 11)
+    printf("%.2f", r6)
+    println("")
+    
+    # "-5 + 3" (unary minus)
+    let expr7: array<u8, 7> = [45, 53, 32, 43, 32, 51, 0]  # "-5 + 3"
+    let expr7_ptr: ptr<u8> = expr7
+    print("-5 + 3 = ")
+    let r7: f64 = calculate(expr7_ptr, 6)
+    printf("%.2f", r7)
+    println("")
+    
+    # "3.14 * 2"
+    let expr8: array<u8, 9> = [51, 46, 49, 52, 32, 42, 32, 50, 0]  # "3.14 * 2"
+    let expr8_ptr: ptr<u8> = expr8
+    print("3.14 * 2 = ")
+    let r8: f64 = calculate(expr8_ptr, 8)
+    printf("%.2f", r8)
+    println("")
+    
+    println("")
+    println("Calculator features:")
+    println("  - Four basic operations (+, -, *, /)")
+    println("  - Operator precedence (* and / before + and -)")
+    println("  - Parentheses for grouping")
+    println("  - Unary minus (-5)")
+    println("  - Decimal numbers (3.14)")
+    
+    return 0
+}

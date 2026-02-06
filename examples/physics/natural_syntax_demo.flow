@@ -1,0 +1,36 @@
+# Natural Physics Syntax Demo
+# Now with += -= *= /= operators!
+
+function simulate(x: ptr<f64>, y: ptr<f64>, vx: ptr<f64>, vy: ptr<f64>, dt: f64) -> void {
+    # Physics equations - readable like math!
+    vy[0] += 9.8 * dt        # gravity: dv/dt = g
+    vx[0] *= 0.99            # drag: v' = v * (1 - k)
+    vy[0] *= 0.99
+    x[0] += vx[0] * dt       # motion: dx/dt = v
+    y[0] += vy[0] * dt
+}
+
+function main() -> i32 {
+    let mut x: f64 = 0.0
+    let mut y: f64 = 100.0
+    let mut vx: f64 = 20.0
+    let mut vy: f64 = 0.0
+    
+    printf("Projectile Motion Simulation\n")
+    printf("============================\n")
+    printf("Initial: pos=(%.1f, %.1f) vel=(%.1f, %.1f)\n\n", x, y, vx, vy)
+    
+    let dt: f64 = 0.1
+    for i in 0 to 20 {
+        simulate(&x, &y, &vx, &vy, dt)
+        
+        # Stop if hit ground
+        if y < 0.0 {
+            printf("Hit ground at x=%.1f!\n", x)
+            return 0
+        }
+        
+        printf("t=%.1f: pos=(%.1f, %.1f) vel=(%.1f, %.1f)\n", (i + 1) * dt, x, y, vx, vy)
+    }
+    return 0
+}

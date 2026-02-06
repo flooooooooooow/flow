@@ -366,7 +366,8 @@ class Monomorphizer:
             attributes=original.attributes,
             is_exported=original.is_exported,
             is_extern=original.is_extern,
-            type_params=[]  # No longer generic
+            type_params=[],  # No longer generic
+            location=getattr(original, "location", None),
         )
         
         self.generated_functions[req.mangled_name] = specialized
@@ -389,12 +390,16 @@ class Monomorphizer:
                 req = MonomorphRequest(base_name, new_args)
                 self.struct_requests[req.mangled_name] = req
                 return Type(req.mangled_name, type_args=[])
-            return Type(t.name, t.is_pointer, t.is_reference, t.size, t.element_type, new_args)
+            return Type(name=t.name, is_pointer=t.is_pointer, is_reference=t.is_reference, 
+                        is_capability=getattr(t, 'is_capability', False), size=t.size, 
+                        element_type=t.element_type, type_args=new_args)
         
         # Handle element types (arrays, pointers)
         if t.element_type:
             new_elem = self._substitute_type(t.element_type, type_map)
-            return Type(t.name, t.is_pointer, t.is_reference, t.size, new_elem, t.type_args)
+            return Type(name=t.name, is_pointer=t.is_pointer, is_reference=t.is_reference,
+                        is_capability=getattr(t, 'is_capability', False), size=t.size,
+                        element_type=new_elem, type_args=t.type_args)
         
         return t
     
@@ -528,7 +533,13 @@ class Monomorphizer:
         for field in struct.fields:
             new_type = self._rewrite_type(field.type)
             new_fields.append(Parameter(field.name, new_type))
-        return StructDecl(struct.name, new_fields, struct.is_exported, struct.type_params)
+        return StructDecl(
+            struct.name,
+            new_fields,
+            struct.is_exported,
+            struct.type_params,
+            getattr(struct, "location", None),
+        )
     
     def _rewrite_function(self, fn: FunctionDecl) -> FunctionDecl:
         """Rewrite types in a function to use monomorphized names."""
@@ -542,11 +553,14 @@ class Monomorphizer:
         
         new_fn = FunctionDecl(
             fn.name, new_params, new_return, new_body, fn.attributes,
-            fn.is_exported, fn.is_extern, fn.type_params
+            fn.is_exported, fn.is_extern, fn.type_params, getattr(fn, "has_self", False), getattr(fn, "location", None)
         )
-        # Preserve has_self attribute for impl methods
-        if hasattr(fn, 'has_self'):
+        # Preserve has_self attribute for impl methods (constructor param is best-effort).
+        if hasattr(fn, "has_self"):
             new_fn.has_self = fn.has_self
+        # Preserve is_forward_decl attribute for forward declarations
+        if hasattr(fn, "is_forward_decl"):
+            new_fn.is_forward_decl = fn.is_forward_decl
         return new_fn
     
     def _rewrite_type(self, t: Type) -> Type:
@@ -562,7 +576,9 @@ class Monomorphizer:
         
         if t.element_type:
             new_elem = self._rewrite_type(t.element_type)
-            return Type(t.name, t.is_pointer, t.is_reference, t.size, new_elem, t.type_args)
+            return Type(name=t.name, is_pointer=t.is_pointer, is_reference=t.is_reference,
+                        is_capability=getattr(t, 'is_capability', False), size=t.size,
+                        element_type=new_elem, type_args=t.type_args)
         
         return t
     

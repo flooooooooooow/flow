@@ -22,7 +22,7 @@ Not supported yet:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import Any, List, Tuple
 
 from .parser import (
     ArrayAccess,
@@ -68,11 +68,13 @@ from .overload import OverloadResolver
 
 
 class CGenerator:
-    def __init__(self) -> None:
+    def __init__(self, *, source_file: str | None = None, debug_info: bool = False) -> None:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
         self._enums = {}  # name -> EnumDecl
         self._var_types = {}  # name -> Type
+        self._source_file = source_file
+        self._debug_info = debug_info
         
         # Effect system tracking
         self._effects = {}  # effect_name -> EffectDecl
@@ -106,6 +108,7 @@ class CGenerator:
         lines.append("#include <stdint.h>")
         lines.append("#include <stdio.h>")
         lines.append("#include <stdlib.h>")  # For malloc/free
+        lines.append("#include <string.h>")  # For memcpy/memset
         
         # Always include math.h - many programs use math functions
         # The linker will only include what's actually used
@@ -122,16 +125,41 @@ class CGenerator:
             for capability in capabilities:
                 self._capabilities[capability.name] = capability
         
+        # Pre-collect structs from struct declarations so we can emit them before effect runtime
+        if structs:
+            for decl in structs:
+                if decl.name not in self._structs:
+                    self._structs[decl.name] = {}
+                for field in decl.fields:
+                    self._structs[decl.name][field.name] = field.type
+        
+        # Collect structs referenced in effects that need to be defined first
+        effect_struct_names = set()
+        if effects:
+            for effect in effects:
+                for op in effect.operations:
+                    if self._is_struct_type(op.return_type):
+                        effect_struct_names.add(self._type_to_string(op.return_type))
+                    for p in op.parameters:
+                        if self._is_struct_type(p.type):
+                            effect_struct_names.add(self._type_to_string(p.type))
+        
+        # Emit struct definitions needed by effects before effect runtime
+        effect_structs_emitted = set()
+        if effect_struct_names:
+            lines.append("/* Struct definitions for effect types */")
+            for struct_name in sorted(effect_struct_names):
+                if struct_name in self._structs:
+                    lines.append(f"typedef struct {{")
+                    for field_name, field_type in sorted(self._structs[struct_name].items()):
+                        lines.append(f"    {self._c_type(field_type)} {field_name};")
+                    lines.append(f"}} {struct_name};")
+                    lines.append("")
+                    effect_structs_emitted.add(struct_name)
+        
         # Generate effect handler type definitions and dispatch functions
         if effects:
             lines.extend(self._gen_effect_runtime_types(effects))
-
-        # Emit constant declarations
-        for const in constants:
-            lines.append(f"static const {self._c_type(const.type)} {const.name} = {self._gen_expr(const.value)};")
-            # Track constant types for print formatting
-            self._var_types[const.name] = const.type
-        lines.append("")
 
         # Collect struct types from functions and struct declarations
         all_declarations = []
@@ -175,6 +203,10 @@ class CGenerator:
         
         # Build mangled name map
         for fn in functions:
+            # Never mangle extern functions: they must link against the host C ABI.
+            if getattr(fn, "is_extern", False):
+                self._mangled_names[id(fn)] = fn.name
+                continue
             param_types = tuple(self._type_to_string(p.type) for p in fn.parameters)
             
             # Don't mangle C math functions with primitive args - use C stdlib names
@@ -194,7 +226,8 @@ class CGenerator:
             lines.append("")
 
         # Emit struct definitions in dependency order
-        emitted = set()
+        # Include structs already emitted for effects
+        emitted = set(effect_structs_emitted)
         def emit_struct(name):
             if name in emitted:
                 return
@@ -238,8 +271,19 @@ class CGenerator:
                          'sqrt', 'cbrt', 'pow', 'exp', 'exp2', 'log', 'log2', 'log10',
                          'fabs', 'abs', 'floor', 'ceil', 'round', 'fmod',
                          'fmin', 'fmax', 'hypot'}
+        # Standard C library functions that don't need declarations (covered by includes)
+        stdlib_functions = {'malloc', 'free', 'calloc', 'realloc', 'printf', 'sprintf',
+                           'snprintf', 'fprintf', 'puts', 'putchar', 'getchar', 'fflush',
+                           'memcpy', 'memset', 'strlen', 'strcmp', 'strcpy', 'strcat'}
         primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
+            # Skip standard library functions - they're declared in system headers
+            if fn.name in stdlib_functions:
+                continue
+            # Emit extern function declarations (needed for linking with runtime)
+            if getattr(fn, 'is_extern', False):
+                lines.append(self._c_function_decl(fn) + ";")
+                continue
             # Skip math functions only if they take primitive types
             if fn.name in math_functions:
                 all_primitive = all(
@@ -250,6 +294,14 @@ class CGenerator:
                     continue  # Skip C math function
             lines.append(self._c_function_decl(fn) + ";")
         lines.append("")
+
+        # Emit constant declarations (after forward declarations)
+        for const in constants:
+            lines.append(f"static const {self._c_type(const.type)} {const.name} = {self._gen_expr(const.value)};")
+            # Track constant types for print formatting
+            self._var_types[const.name] = const.type
+        if constants:
+            lines.append("")
 
         # Generate capability method definitions
         for cap_name, cap in self._capabilities.items():
@@ -525,12 +577,75 @@ class CGenerator:
             return Type("i32")  # Default fallback
         elif isinstance(expr, StructLiteral):
             return Type(expr.struct_name)
+        elif isinstance(expr, FieldAccess):
+            obj_type = self._infer_expr_type(expr.object)
+            if obj_type and obj_type.name in self._structs:
+                field_type = self._structs[obj_type.name].get(expr.field)
+                if field_type:
+                    return field_type
+            return Type("i32")
         else:
             return Type("i32")  # Default fallback
 
+    def _is_string_expr(self, expr: Expression) -> bool:
+        """Check if an expression is a string type."""
+        if isinstance(expr, Literal) and expr.type.name == 'string':
+            return True
+        if isinstance(expr, Variable) and expr.name in self._var_types:
+            return self._var_types[expr.name].name == 'string'
+        if isinstance(expr, FieldAccess):
+            return self._infer_expr_type(expr).name == 'string'
+        if isinstance(expr, BinaryOperation) and expr.operator == '+':
+            # String concat if either side is string
+            return self._is_string_expr(expr.left) or self._is_string_expr(expr.right)
+        return False
+
+    def _flatten_string_concat(self, expr: Expression) -> List[Tuple[str, str]]:
+        """Flatten a string concatenation expression into (expr_code, type_name) pairs."""
+        if isinstance(expr, BinaryOperation) and expr.operator == '+':
+            # Check if this is string concatenation
+            if self._is_string_expr(expr.left) or self._is_string_expr(expr.right):
+                # Recursively flatten
+                left_parts = self._flatten_string_concat(expr.left)
+                right_parts = self._flatten_string_concat(expr.right)
+                return left_parts + right_parts
+        
+        # Base case: single expression
+        if isinstance(expr, Literal) and expr.type.name == 'string':
+            return [(self._gen_expr(expr), 'string_literal')]
+        elif isinstance(expr, Variable):
+            if expr.name in self._var_types:
+                var_type = self._var_types[expr.name]
+                return [(self._gen_expr(expr), var_type.name)]
+            return [(self._gen_expr(expr), 'i32')]
+        elif isinstance(expr, FieldAccess):
+            expr_type = self._infer_expr_type(expr)
+            return [(self._gen_expr(expr), expr_type.name)]
+        else:
+            expr_type = self._infer_expr_type(expr)
+            return [(self._gen_expr(expr), expr_type.name)]
+
     def _is_struct_type(self, t: Type) -> bool:
-        return t.name not in ["i32", "bool", "void", "i8", "i16", "i64", "i128", 
-                             "u8", "u16", "u32", "u64", "u128", "f32", "f64", "string"]
+        # Check if this is a primitive or built-in type (not a struct)
+        if t.name in ["i32", "bool", "void", "auto", "i8", "i16", "i64", "i128",
+                     "u8", "u16", "u32", "u64", "u128", "f32", "f64", "string"]:
+            return False
+        # Pointer types (ptr_*) are not structs
+        if t.name.startswith("ptr_") or getattr(t, 'is_pointer', False):
+            return False
+        # Array types are not structs
+        if t.name.startswith("array_"):
+            return False
+        # Memory reference types (memref_*) are pointers, not structs
+        if t.name.startswith("memref_"):
+            return False
+        # Capability types are not structs
+        if t.name.startswith("capability_"):
+            return False
+        # Vector types are not structs
+        if t.name.startswith("vec"):
+            return False
+        return True
 
     def _c_type(self, t: Type) -> str:
         if t.name == "auto":
@@ -559,8 +674,20 @@ class CGenerator:
             return "int32_t"  # keep simple; 0/1
         if t.name == "void":
             return "void"
-        if t.name == "string":
+        if t.name == "string" or t.name == "str":
             return "char*"  # C strings are char pointers
+        # Pointer types: ptr<T> parsed as ptr_<T>
+        if getattr(t, "is_pointer", False) or t.name.startswith("ptr_"):
+            if t.element_type:
+                return f"{self._c_type(t.element_type)}*"
+            if t.name.startswith("ptr_"):
+                pointee = Type(t.name[len("ptr_"):])
+                return f"{self._c_type(pointee)}*"
+            return "void*"
+        # Memory reference types: memref<T> or memref_<T> - these are array-like pointers
+        if t.name.startswith("memref_"):
+            elem_type_name = t.name[len("memref_"):]
+            return f"{self._c_type(Type(elem_type_name))}*"
         # Vector types: vec2, vec4, vec8, vec16 with element type
         if t.name.startswith("vec"):
             # Parse vec4<f32> or vec4_f32
@@ -584,23 +711,35 @@ class CGenerator:
             # Use GCC/Clang vector extension
             byte_size = size * (8 if elem_c_type == "double" else 4)
             return f"{elem_c_type} __attribute__((vector_size({byte_size})))"
-        # Array types: array_i32, array_f32, etc.
+        # Array types: array_i32, array_f32, array_5_f32, etc.
         if t.name.startswith("array_"):
             if t.element_type:
                 elem_c_type = self._c_type(t.element_type)
-                if t.size:
-                    return f"{elem_c_type}*"  # Fixed-size array as pointer
-                return f"{elem_c_type}*"  # Dynamic array as pointer
-            # Parse element type from name
+                return f"{elem_c_type}*"  # Arrays as pointers in C
+            # Parse element type from name: array_f32 or array_5_f32
             elem_type_name = t.name.replace("array_", "")
+            # Skip size prefix if present (e.g., "5_f32" -> "f32")
+            if "_" in elem_type_name:
+                parts = elem_type_name.split("_")
+                # Check if first part is a number (size)
+                if parts[0].isdigit():
+                    elem_type_name = "_".join(parts[1:])
             elem_type = Type(elem_type_name)
             return f"{self._c_type(elem_type)}*"
+        # Capability types: capability_EffectName -> void* (opaque handle, unused at runtime)
+        # The actual dispatch happens via the effect handler vtable
+        if t.name.startswith("capability_"):
+            return "void*"
         # Struct types
         return t.name
 
     def _c_function_decl(self, fn: FunctionDecl, use_mangled: bool = True) -> str:
         ret = self._c_type(fn.return_type)
-        params = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in fn.parameters])
+        if fn.parameters:
+            params = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in fn.parameters])
+        else:
+            # Important for system headers: `f()` (K&R) can conflict with `f(void)`.
+            params = "void"
         # Use mangled name if function has overloads
         name = fn.name
         if use_mangled and id(fn) in self._mangled_names:
@@ -608,6 +747,12 @@ class CGenerator:
         return f"{ret} {name}({params})"
 
     def _gen_function(self, fn: FunctionDecl) -> List[str]:
+        # Extern functions are declarations only (no emitted definition).
+        if getattr(fn, "is_extern", False):
+            return []
+        # Forward declarations are declarations only (already have forward decl).
+        if getattr(fn, "is_forward_decl", False):
+            return []
         # Skip math functions that are provided by the standard library
         # BUT only if they take primitive float types (not custom types like Dual)
         math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow', 'tanh'}
@@ -622,14 +767,32 @@ class CGenerator:
                 return []  # Skip - this is the C math function
         
         lines: List[str] = []
+
+        # Debugger support: map generated C back to FLOW source (coarse, function-level).
+        # This enables LLDB/GDB to show the .flow filename + approximate line on entry.
+        if self._debug_info and self._source_file and getattr(fn, "location", None):
+            # SourceLocation uses 0-based lines; C #line uses 1-based.
+            try:
+                src_line = int(fn.location.line) + 1
+                lines.append(f'#line {src_line} "{self._source_file}"')
+            except Exception:
+                pass
+
         lines.append(self._c_function_decl(fn, use_mangled=True) + " {")
         self._indent += 1
         
-        # Track parameter types for overload resolution in function body
+        # Save current var_types scope and create new scope for this function
+        saved_var_types = self._var_types.copy()
+        
+        # Track parameter types for overload resolution and effect call handling
         for param in fn.parameters:
             self._overload_resolver.set_var_type(param.name, self._type_to_string(param.type))
+            self._var_types[param.name] = param.type
         
         lines.extend(self._gen_block(fn.body))
+        
+        # Restore var_types scope
+        self._var_types = saved_var_types
         self._indent -= 1
         lines.append("}")
         return lines
@@ -642,9 +805,26 @@ class CGenerator:
 
     def _gen_statement(self, st: Statement) -> List[str]:
         if isinstance(st, VarDecl):
-            c_t = self._c_type(st.type)
             # Track variable type for overload resolution
             self._overload_resolver.set_var_type(st.name, self._type_to_string(st.type))
+
+            # Sized arrays: prefer real stack arrays (e.g. `int32_t a[16]`) so indexing works.
+            if st.type and st.type.name.startswith("array_") and st.type.size and st.type.element_type:
+                elem_c = self._c_type(st.type.element_type)
+                size = st.type.size
+                if st.initializer is None:
+                    return [f"{self._i()}{elem_c} {st.name}[{size}];"]
+                if isinstance(st.initializer, ArrayLiteral):
+                    return [f"{self._i()}{elem_c} {st.name}[{size}] = {self._gen_array_literal(st.initializer, as_initializer=True)};"]
+                # For other initializers (e.g., function call returning array, variable copy),
+                # declare the array and use memcpy
+                init_expr = self._gen_expr(st.initializer)
+                return [
+                    f"{self._i()}{elem_c} {st.name}[{size}];",
+                    f"{self._i()}memcpy({st.name}, {init_expr}, sizeof({st.name}));"
+                ]
+
+            c_t = self._c_type(st.type)
             if st.initializer is None:
                 return [f"{self._i()}{c_t} {st.name};"]
             return [f"{self._i()}{c_t} {st.name} = {self._gen_expr(st.initializer)};"]
@@ -879,6 +1059,9 @@ class CGenerator:
                 return "1" if e.value == "true" else "0"
             elif e.type.name == "string":
                 return e.value  # String literals already have quotes
+            elif e.value == "null" or e.type.name == "ptr_void" or getattr(e.type, 'is_pointer', False):
+                # null pointer literal
+                return "NULL"
             return e.value
 
         if isinstance(e, Variable):
@@ -893,11 +1076,13 @@ class CGenerator:
 
         if isinstance(e, UnaryOperation):
             op = e.operator
-            if op == "!":
+            if op == "!" or op == "not":
                 return f"(!{self._gen_expr(e.operand)})"
             if op == "-":
                 return f"(-{self._gen_expr(e.operand)})"
-            return f"({op}{self._gen_expr(e.operand)})"
+            if op == "~":
+                return f"(~{self._gen_expr(e.operand)})"
+            return f"({op} {self._gen_expr(e.operand)})"  # Add space for unknown operators
 
         if isinstance(e, BinaryOperation):
             left_expr = self._gen_expr(e.left)
@@ -906,33 +1091,46 @@ class CGenerator:
             # Special handling for string concatenation
             if e.operator == '+':
                 # Check if this is string concatenation
-                left_is_string = False
-                right_is_string = False
-                
-                # Check left operand
-                if isinstance(e.left, Literal) and e.left.type.name == 'string':
-                    left_is_string = True
-                elif isinstance(e.left, Variable) and e.left.name in self._var_types and self._var_types[e.left.name].name == 'string':
-                    left_is_string = True
-                
-                # Check right operand
-                if isinstance(e.right, Literal) and e.right.type.name == 'string':
-                    right_is_string = True
-                elif isinstance(e.right, Variable) and e.right.name in self._var_types and self._var_types[e.right.name].name == 'string':
-                    right_is_string = True
+                left_is_string = self._is_string_expr(e.left)
+                right_is_string = self._is_string_expr(e.right)
                 
                 # If either operand is a string, this is string concatenation
                 if left_is_string or right_is_string:
-                    # Generate separate printf calls for each part
+                    # Flatten the string concatenation and generate printf calls
+                    parts = self._flatten_string_concat(e)
+                    printf_calls = []
+                    for part_expr, part_type in parts:
+                        if part_type == 'string_literal':
+                            printf_calls.append(f'printf({part_expr})')
+                        elif part_type == 'string':
+                            printf_calls.append(f'printf("%s", {part_expr})')
+                        elif part_type in ['i32']:
+                            printf_calls.append(f'printf("%d", {part_expr})')
+                        elif part_type in ['i64']:
+                            printf_calls.append(f'printf("%lld", {part_expr})')
+                        elif part_type in ['u32']:
+                            printf_calls.append(f'printf("%u", {part_expr})')
+                        elif part_type in ['u64']:
+                            printf_calls.append(f'printf("%llu", {part_expr})')
+                        elif part_type in ['f32', 'f64']:
+                            printf_calls.append(f'printf("%f", {part_expr})')
+                        else:
+                            printf_calls.append(f'printf("%g", {part_expr})')
+                    return '; '.join(printf_calls)
+                
+                # Not string concat - handle as before
+                if False:  # Placeholder to keep elif structure
+                    pass
+                elif right_is_string:
+                    pass
+                elif left_is_string or right_is_string:
+                    # This branch is now dead code due to the restructure above
                     parts = []
-                    
-                    # Handle left part
                     if isinstance(e.left, Literal) and e.left.type.name == 'string':
                         parts.append(f'printf({left_expr})')
                     elif left_is_string:
                         parts.append(f'printf("%s", {left_expr})')
                     else:
-                        # Non-string left part, need format specifier
                         left_type = self._infer_expr_type(e.left)
                         if left_type.name in ['i32', 'i64']:
                             parts.append(f'printf("%d", {left_expr})')
@@ -943,13 +1141,11 @@ class CGenerator:
                         else:
                             parts.append(f'printf("%g", {left_expr})')
                     
-                    # Handle right part
                     if isinstance(e.right, Literal) and e.right.type.name == 'string':
                         parts.append(f'printf({right_expr})')
                     elif right_is_string:
                         parts.append(f'printf("%s", {right_expr})')
                     else:
-                        # Non-string right part, need format specifier
                         right_type = self._infer_expr_type(e.right)
                         if right_type.name in ['i32', 'i64']:
                             parts.append(f'printf("%d", {right_expr})')
@@ -979,17 +1175,118 @@ class CGenerator:
                 return expr
             
             # For logical operators, be more aggressive about removing parentheses
-            if e.operator in ['and', 'or']:
+            # and convert Flow operators to C operators
+            c_operator = e.operator
+            if e.operator == 'and':
+                c_operator = '&&'
+                left_expr = remove_outer_parens(left_expr)
+                right_expr = remove_outer_parens(right_expr)
+            elif e.operator == 'or':
+                c_operator = '||'
                 left_expr = remove_outer_parens(left_expr)
                 right_expr = remove_outer_parens(right_expr)
             
             # Comparison operators don't need outer parens (they have low precedence)
-            if e.operator in ['==', '!=', '<', '<=', '>', '>=']:
-                return f"{left_expr} {e.operator} {right_expr}"
+            if c_operator in ['==', '!=', '<', '<=', '>', '>=']:
+                return f"{left_expr} {c_operator} {right_expr}"
                 
-            return f"({left_expr} {e.operator} {right_expr})"
+            return f"({left_expr} {c_operator} {right_expr})"
 
         if isinstance(e, FunctionCall):
+            # Handle len() builtin for arrays and slices
+            if e.name == "len":
+                if len(e.arguments) == 1:
+                    arg = e.arguments[0]
+                    # For array types, use sizeof(arr)/sizeof(arr[0])
+                    # For slice types (structs with .len field), use .len
+                    if isinstance(arg, Variable):
+                        var_name = arg.name
+                        if var_name in self._var_types:
+                            var_type = self._var_types[var_name]
+                            # Check if it's a slice type (has .len field)
+                            if var_type.name in self._structs and 'len' in self._structs.get(var_type.name, {}):
+                                return f"{var_name}.len"
+                            # Check if it's a sized array
+                            if var_type.name.startswith("array_") and var_type.size:
+                                return str(var_type.size)
+                    # Default: try sizeof/sizeof for C arrays
+                    arg_expr = self._gen_expr(arg)
+                    return f"(sizeof({arg_expr})/sizeof({arg_expr}[0]))"
+            
+            # Handle println intrinsic (print with newline)
+            if e.name == "println":
+                if len(e.arguments) == 0:
+                    return 'printf("\\n")'
+                elif len(e.arguments) == 1:
+                    arg = e.arguments[0]
+                    # Similar to print but with newline
+                    if isinstance(arg, Literal):
+                        if arg.type.name == 'string':
+                            # For string literals, append \n
+                            val = arg.value[:-1] + '\\n"'  # Remove closing " and add \n"
+                            return f'printf({val})'
+                        elif arg.type.name in ['f32', 'f64']:
+                            return f'printf("%f\\n", {self._gen_expr(arg)})'
+                        elif arg.type.name in ['i32', 'i64', 'u32', 'u64']:
+                            if arg.type.name.startswith('u'):
+                                return f'printf("%u\\n", {self._gen_expr(arg)})'
+                            elif arg.type.name in ['i64']:
+                                return f'printf("%lld\\n", {self._gen_expr(arg)})'
+                            elif arg.type.name in ['u64']:
+                                return f'printf("%llu\\n", {self._gen_expr(arg)})'
+                            else:
+                                return f'printf("%d\\n", {self._gen_expr(arg)})'
+                        elif arg.type.name == 'bool':
+                            return f'printf("%d\\n", {self._gen_expr(arg)})'
+                        else:
+                            return f'printf("%g\\n", {self._gen_expr(arg)})'
+                    elif isinstance(arg, Variable):
+                        if arg.name in self._var_types:
+                            var_type = self._var_types[arg.name]
+                            if var_type.name == 'string':
+                                return f'printf("%s\\n", {self._gen_expr(arg)})'
+                            elif var_type.name in ['f32', 'f64']:
+                                return f'printf("%f\\n", {self._gen_expr(arg)})'
+                            elif var_type.name in ['i32', 'i64', 'u32', 'u64']:
+                                if var_type.name.startswith('u'):
+                                    return f'printf("%u\\n", {self._gen_expr(arg)})'
+                                elif var_type.name in ['i64']:
+                                    return f'printf("%lld\\n", {self._gen_expr(arg)})'
+                                elif var_type.name in ['u64']:
+                                    return f'printf("%llu\\n", {self._gen_expr(arg)})'
+                                else:
+                                    return f'printf("%d\\n", {self._gen_expr(arg)})'
+                            elif var_type.name == 'bool':
+                                return f'printf("%d\\n", {self._gen_expr(arg)})'
+                    elif isinstance(arg, FieldAccess):
+                        field_type = self._infer_expr_type(arg)
+                        if field_type.name == 'string':
+                            return f'printf("%s\\n", {self._gen_expr(arg)})'
+                        elif field_type.name in ['f32', 'f64']:
+                            return f'printf("%f\\n", {self._gen_expr(arg)})'
+                        elif field_type.name in ['i32', 'i64', 'u32', 'u64']:
+                            if field_type.name.startswith('u'):
+                                return f'printf("%u\\n", {self._gen_expr(arg)})'
+                            elif field_type.name in ['i64']:
+                                return f'printf("%lld\\n", {self._gen_expr(arg)})'
+                            elif field_type.name in ['u64']:
+                                return f'printf("%llu\\n", {self._gen_expr(arg)})'
+                            else:
+                                return f'printf("%d\\n", {self._gen_expr(arg)})'
+                        elif field_type.name == 'bool':
+                            return f'printf("%d\\n", {self._gen_expr(arg)})'
+                        return f'printf("%g\\n", {self._gen_expr(arg)})'
+                    else:
+                        return f'printf("%g\\n", {self._gen_expr(arg)})'
+                else:
+                    # Multiple arguments - print all with spaces, then newline
+                    parts = []
+                    for i, arg in enumerate(e.arguments):
+                        prefix = ' ' if i > 0 else ''
+                        parts.append(f'printf("{prefix}%g", {self._gen_expr(arg)})')
+                    parts.append('printf("\\n")')
+                    return '; '.join(parts)
+            
             # Handle print intrinsic
             if e.name == "print":
                 if len(e.arguments) == 1:
@@ -1041,6 +1338,23 @@ class CGenerator:
                                     return f'printf("%d", {self._gen_expr(arg)})'
                             elif var_type.name == 'bool':
                                 return f'printf("%d", {self._gen_expr(arg)})'
+                    elif isinstance(arg, FieldAccess):
+                        field_type = self._infer_expr_type(arg)
+                        if field_type.name == 'string':
+                            return f'printf("%s", {self._gen_expr(arg)})'
+                        elif field_type.name in ['f32', 'f64']:
+                            return f'printf("%f", {self._gen_expr(arg)})'
+                        elif field_type.name in ['i32', 'i64', 'u32', 'u64']:
+                            if field_type.name.startswith('u'):
+                                return f'printf("%u", {self._gen_expr(arg)})'
+                            elif field_type.name in ['i64']:
+                                return f'printf("%lld", {self._gen_expr(arg)})'
+                            elif field_type.name in ['u64']:
+                                return f'printf("%llu", {self._gen_expr(arg)})'
+                            else:
+                                return f'printf("%d", {self._gen_expr(arg)})'
+                        elif field_type.name == 'bool':
+                            return f'printf("%d", {self._gen_expr(arg)})'
                         # Fall back to default
                         return f'printf("%g", {self._gen_expr(arg)})'
                     else:
@@ -1057,7 +1371,28 @@ class CGenerator:
             resolved_name = self._overload_resolver.resolve_call(e)
             func_name = resolved_name if resolved_name else e.name
             
-            args = ", ".join(self._gen_expr(a) for a in e.arguments)
+            # Check if we need to pass address for capability parameters
+            overloads = self._overload_resolver.get_overloads(e.name)
+            target_overload = None
+            for ov in overloads:
+                if ov.mangled_name == func_name:
+                    target_overload = ov
+                    break
+            
+            # Generate arguments, taking address of structs for capability parameters
+            arg_strs = []
+            for i, arg in enumerate(e.arguments):
+                arg_expr = self._gen_expr(arg)
+                # Check if this parameter expects a capability type
+                if target_overload and i < len(target_overload.param_types):
+                    param_type = target_overload.param_types[i]
+                    if param_type.startswith("capability_"):
+                        # Need to pass address of struct
+                        if isinstance(arg, Variable):
+                            arg_expr = f"&{arg_expr}"
+                arg_strs.append(arg_expr)
+            
+            args = ", ".join(arg_strs)
             return f"{func_name}({args})"
         
         if isinstance(e, EffectCall):
@@ -1117,8 +1452,33 @@ class CGenerator:
         """Generate code for an effect call using runtime dispatch."""
         # Always use the dispatch function which will use the runtime handler
         # The dispatch function is named: EffectName_operationName
+
+        # Resolve effect name from variable type if needed
+        # e.effect_name might be a variable name like "counter" for "counter.get_count()"
+        # We need to look up its type (capability_Counter) to extract the effect name (Counter)
+        effect_name = e.effect_name
+        if effect_name in self._var_types:
+            var_type = self._var_types[effect_name]
+            if var_type.name.startswith("capability_"):
+                # Extract the effect name from capability_EffectName
+                effect_name = var_type.name[len("capability_"):]
+            elif var_type.name in self._effects:
+                # Variable type is directly an effect type (e.g., GPU)
+                effect_name = var_type.name
+        # Also check if it's already a known effect
+        elif effect_name not in self._effects:
+            # Try to find a matching effect by capitalizing
+            capitalized = effect_name.capitalize()
+            if capitalized in self._effects:
+                effect_name = capitalized
+            else:
+                # Try uppercase (e.g., gpu -> GPU)
+                upper = effect_name.upper()
+                if upper in self._effects:
+                    effect_name = upper
+
         args = ", ".join(self._gen_expr(a) for a in e.arguments)
-        return f"{e.effect_name}_{e.operation}({args})"
+        return f"{effect_name}_{e.operation}({args})"
     
     def _gen_array_access(self, e: ArrayAccess) -> str:
         """Generate C array index access: arr[index]"""
@@ -1126,10 +1486,29 @@ class CGenerator:
         index_expr = self._gen_expr(e.index)
         return f"{array_expr}[{index_expr}]"
     
-    def _gen_array_literal(self, e: ArrayLiteral) -> str:
-        """Generate C array literal initializer."""
+    def _gen_array_literal(self, e: ArrayLiteral, as_initializer: bool = False) -> str:
+        """Generate C array literal.
+        
+        When used as an initializer (in variable declarations), generates: { elem, elem, ... }
+        When used as an expression (function arguments), generates compound literal: (type[]){ elem, ... }
+        """
         elements = ", ".join(self._gen_expr(elem) for elem in e.elements)
-        return f"{{ {elements} }}"
+        
+        if as_initializer:
+            return f"{{ {elements} }}"
+        
+        # As expression - need compound literal
+        # Infer element type from first element
+        elem_type = "float"  # Default
+        if e.elements:
+            first_elem = e.elements[0]
+            if isinstance(first_elem, Literal):
+                if first_elem.type.name in ['i32', 'i64']:
+                    elem_type = "int32_t"
+                elif first_elem.type.name in ['f32', 'f64']:
+                    elem_type = "float"
+        
+        return f"({elem_type}[]){{ {elements} }}"
     
     def _gen_lambda(self, e: Lambda) -> str:
         """Generate C code for lambda expression.
@@ -1172,10 +1551,10 @@ class CGenerator:
         return f"&{lambda_name}"
 
 
-def flow_to_c(declarations: List[Any]) -> str:
+def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_info: bool = False) -> str:
     """Convert FLOW declarations to C code"""
     try:
-        generator = CGenerator()
+        generator = CGenerator(source_file=source_file, debug_info=debug_info)
         
         # Separate declarations by type
         constants = [d for d in declarations if isinstance(d, ConstDecl)]

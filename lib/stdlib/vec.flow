@@ -1,0 +1,83 @@
+# Flow Standard Library: Vector Types
+# Built-in Vec2/Vec3 with operator overloading
+
+struct Vec2 {
+    x: f64,
+    y: f64
+}
+
+struct Vec3 {
+    x: f64,
+    y: f64,
+    z: f64
+}
+
+# Vec2 constructors
+function vec2(x: f64, y: f64) -> Vec2 {
+    return Vec2 { x: x, y: y }
+}
+
+function vec2_zero() -> Vec2 {
+    return Vec2 { x: 0.0, y: 0.0 }
+}
+
+# Vec2 operators (will be inlined)
+function vec2_add(a: Vec2, b: Vec2) -> Vec2 {
+    return Vec2 { x: a.x + b.x, y: a.y + b.y }
+}
+
+function vec2_sub(a: Vec2, b: Vec2) -> Vec2 {
+    return Vec2 { x: a.x - b.x, y: a.y - b.y }
+}
+
+function vec2_mul(a: Vec2, s: f64) -> Vec2 {
+    return Vec2 { x: a.x * s, y: a.y * s }
+}
+
+function vec2_div(a: Vec2, s: f64) -> Vec2 {
+    return Vec2 { x: a.x / s, y: a.y / s }
+}
+
+function vec2_neg(a: Vec2) -> Vec2 {
+    return Vec2 { x: -a.x, y: -a.y }
+}
+
+# Vec2 operations
+function dot(a: Vec2, b: Vec2) -> f64 {
+    return a.x * b.x + a.y * b.y
+}
+
+function length(v: Vec2) -> f64 {
+    return sqrt(v.x * v.x + v.y * v.y)
+}
+
+function length_squared(v: Vec2) -> f64 {
+    return v.x * v.x + v.y * v.y
+}
+
+function normalize(v: Vec2) -> Vec2 {
+    let len: f64 = length(v)
+    if len > 0.0001 {
+        return vec2_div(v, len)
+    }
+    return vec2_zero()
+}
+
+function distance(a: Vec2, b: Vec2) -> f64 {
+    return length(vec2_sub(b, a))
+}
+
+function reflect(v: Vec2, normal: Vec2) -> Vec2 {
+    let d: f64 = dot(v, normal) * 2.0
+    return vec2_sub(v, vec2_mul(normal, d))
+}
+
+function lerp(a: Vec2, b: Vec2, t: f64) -> Vec2 {
+    return vec2_add(a, vec2_mul(vec2_sub(b, a), t))
+}
+
+# Common vectors
+function vec2_up() -> Vec2 { return Vec2 { x: 0.0, y: -1.0 } }
+function vec2_down() -> Vec2 { return Vec2 { x: 0.0, y: 1.0 } }
+function vec2_left() -> Vec2 { return Vec2 { x: -1.0, y: 0.0 } }
+function vec2_right() -> Vec2 { return Vec2 { x: 1.0, y: 0.0 } }

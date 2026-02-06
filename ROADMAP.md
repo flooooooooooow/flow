@@ -1,13 +1,70 @@
 # FLOW Roadmap
 
-> Last updated: 2026-01-09
-> Current version: 0.3.0
+> Last updated: 2026-01-09  
+> Current version: 0.3.3  
+> Lines of Code: ~38,000
 
 This document tracks what we're building next and why.
 
 ---
 
-## Current State (v0.3.0)
+## Development Philosophy
+
+Flow is built through **agentic pair programming** - human vision interpreted through AI implementation.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
+
+### Guiding Principles
+
+1. **Working > Perfect** - Ship incrementally, iterate based on use
+2. **Explicit > Implicit** - Clear syntax, obvious behavior
+3. **Unique > Clone** - Effects and autodiff are our differentiators
+4. **Portable > Fast** - C backend means runs anywhere
+
+### Decision Authority
+
+| What | Who Decides |
+|------|-------------|
+| Language design, syntax, features | Human (final authority) |
+| Implementation, code structure | AI (proposes, human approves) |
+| Bug fixes, refactoring | AI (within scope) |
+| Roadmap priorities | Human |
+
+---
+
+## Now: v0.4.0 Focus
+
+### 🎯 Immediate Priorities (This Week)
+
+| Task | Status | Impact |
+|------|--------|--------|
+| Fix `ptr[0].field` parser issue | ✅ | Unblocks 20+ examples |
+| Add GitHub Actions CI | 🔲 | Prevents regressions |
+| Update examples with verified status | 🔲 | Honest documentation |
+| Record Tetris demo GIF | 🔲 | Visual proof it works |
+
+### 📅 Short Term (This Month)
+
+| Task | Status | Impact |
+|------|--------|--------|
+| Python package target | ✅ | Python interop |
+| Cross-platform graphics (Linux) | 🔲 | Broader audience |
+| Package registry design | 🔲 | Ecosystem growth |
+| Effect system showcase | 🔲 | Unique selling point |
+| Benchmark vs C comparison | 🔲 | Performance credibility |
+
+### 🔮 Medium Term (This Quarter)
+
+| Task | Status | Impact |
+|------|--------|--------|
+| Windows graphics support | 🔲 | Full platform coverage |
+| Self-hosting components | 🔲 | Dogfooding |
+| WASM target | 🔲 | Web deployment |
+| GPU autodiff | 🔲 | ML performance |
+
+---
+
+## Current State (v0.3.3)
 
 **What works:**
 - ✅ Core language (types, functions, control flow, structs, arrays)
@@ -26,6 +83,11 @@ This document tracks what we're building next and why.
 - ✅ Traits/interfaces
 - ✅ Lambda expressions (basic)
 - ✅ Enhanced error messages with source context
+- ✅ **NEW:** FFI improvements (extern blocks preserve all decls, `null` literal)
+- ✅ **NEW:** Explicit mutation (`let mut`, field assignment)
+- ✅ **NEW:** Bitwise operators (`|`, `&`, `^`, `~`, `<<`, `>>`) and hex literals
+- ✅ **NEW:** `len(arr)` builtin, `println(...)` builtin
+- ✅ **NEW:** Native runtime linking (`flow run-native`, `[native]` in flow.toml)
 
 **What's broken/missing:**
 - (Nothing critical! All major features complete)
@@ -42,6 +104,86 @@ This document tracks what we're building next and why.
 - ✅ GPU codegen — `@gpu` decorator, Metal shader generation
 - ✅ Stdlib expansion — POSIX, collections, networking, concurrency, strings
 - ✅ Documentation — Tutorials, getting started, stdlib reference
+
+---
+
+## Recently Completed (v0.3.3): Demo Roadmap - Competing with Mojo/Julia
+
+**Goal:** Create comprehensive demos across 8 categories to position Flow competitively.
+
+### Performance Benchmarks (Complete ✅)
+- [x] `benchmarks/micro/matmul_benchmark.flow` - Matrix multiplication
+- [x] `benchmarks/micro/mandelbrot_benchmark.flow` - Fractal computation  
+- [x] `benchmarks/micro/nbody_benchmark.flow` - N-body simulation
+- [x] `benchmarks/micro/fft_benchmark.flow` - Fast Fourier Transform
+- [x] `benchmarks/micro/sort_benchmark.flow` - Sorting algorithms
+- [x] `benchmarks/runner.flow` - Benchmark suite with statistics
+
+### ML Framework (Complete ✅)
+- [x] `examples/ml/tensor.flow` - N-dimensional tensor type
+- [x] `examples/ml/nn_layers.flow` - Dense layers, activations, loss functions
+- [x] `examples/ml/optimizers.flow` - SGD, Adam, RMSprop
+- [x] `examples/ml/models/mlp_xor.flow` - Working XOR training demo
+
+### Effect System Demos (Complete ✅)
+- [x] `examples/effects/dependency_injection.flow` - DI without frameworks
+- [x] `examples/effects/state_effects.flow` - Implicit state threading
+- [x] `examples/effects/async_effects.flow` - Async/await as effects
+
+### Scientific Computing (Complete ✅)
+- [x] `examples/linalg/matrix_ops.flow` - Matrix operations
+- [x] `examples/linalg/lu_decomposition.flow` - LU factorization
+- [x] `examples/numerical/ode_solver.flow` - Euler, Midpoint, RK4
+- [x] `examples/numerical/optimization.flow` - Gradient descent, Newton's method
+
+### Systems Programming (Complete ✅)
+- [x] `examples/systems/memory_pool.flow` - O(1) pool allocator
+- [x] `examples/systems/ring_buffer.flow` - Lock-free SPSC queue
+- [x] `examples/systems/hash_table.flow` - Open addressing hash table
+
+### Real Applications (Complete ✅)
+- [x] `apps/flowdb/flowdb.flow` - Key-value database
+- [x] `apps/flow-http/http.flow` - HTTP framework
+
+### Domain-Specific (Complete ✅)
+- [x] `examples/data/csv_parser.flow` - CSV parsing
+- [x] `examples/crypto/sha256.flow` - SHA-256 implementation
+- [x] `examples/compilers/calculator.flow` - Expression parser
+
+---
+
+## Previously Completed (v0.3.2): Library & Native Module Ergonomics
+
+**Goal:** Make Flow suitable for writing real libraries and native modules.
+
+### FFI Improvements (Complete ✅)
+- [x] `extern { ... }` blocks now preserve ALL function declarations (not just the first)
+- [x] Extern functions never mangle their names (for correct C ABI linking)
+- [x] Added `null` literal as a proper keyword (`ptr<void>` type)
+- [x] Extern functions are declaration-only (no empty body generated)
+
+### Explicit Mutation (Complete ✅)
+- [x] Added `let mut` syntax for mutable variables: `let mut x: i32 = 0`
+- [x] Field assignment works: `obj.field = value`
+- [x] Type checker tracks mutability and warns on immutable assignment
+
+### Bitwise Operators (Complete ✅)
+- [x] Added `|` (OR), `&` (AND), `^` (XOR), `~` (NOT), `<<` (left shift), `>>` (right shift)
+- [x] Hex literals work: `0xFF`, `0x1234`
+- [x] Correct C precedence rules
+
+### Arrays & Slices (Complete ✅)
+- [x] Added `len(arr)` builtin for sized arrays
+- [x] Created `lib/stdlib/slice.flow` with `Slice_i32`, `Slice_f32` types
+- [x] Improved sized array handling (memcpy for non-literal initializers)
+
+### Formatting (Complete ✅)
+- [x] Added `println(...)` builtin (print with newline)
+- [x] Improved `print()` type detection for integers, floats, strings
+
+### Native Runtime Linking (Complete ✅)
+- [x] Extended `flow.toml` with `[native]` section for native sources, frameworks, and libs
+- [x] Added `flow build-native` and `flow run-native` commands
 
 ---
 
@@ -64,7 +206,7 @@ let x: i32 = "hello"  # Type mismatch: expected i32, got string
 - [x] Change `type_checker.py` to collect errors, not just warnings
 - [x] Update `transpiler.py` to exit with code 1 on type errors
 - [x] Add `--strict` flag (default on) and `--lenient` flag
-- [x] Fix all tests to pass strict checking
+- [ ] Make the test corpus strict-clean (or explicitly run tests in `--lenient` where intended)
 - [x] Document error messages in `docs/language/types.md`
 
 ### 1.2 Generics (Parametric Polymorphism)
@@ -150,10 +292,10 @@ match point {
 
 **Tasks:**
 - [x] Add `StructPattern` with field destructuring
-- [x] Add guard clauses (`if condition`)
-- [x] Add nested patterns
-- [x] Add `|` for multiple patterns
-- [x] Exhaustiveness checking (warn on non-exhaustive matches)
+- [ ] Add guard clauses (`if condition`)
+- [ ] Add nested patterns
+- [ ] Add `|` for multiple patterns
+- [ ] Exhaustiveness checking (warn on non-exhaustive matches)
 
 ### 2.2 Enums / Algebraic Data Types
 **Priority:** High  
@@ -234,7 +376,7 @@ let result: i32 = add5(10)  # 15
 ```
 
 **Tasks:**
-- [x] Implement closure environment capture (pragmatic model)
+- [ ] Implement closure environment capture (automatic captures, not just explicit `self`)
 - [x] Decide: move vs copy semantics for captures
 - [x] Generate closure structs in C
 - [x] Test with higher-order functions
@@ -267,7 +409,7 @@ Interactive FLOW session.
 
 ```bash
 $ flow repl
-FLOW v0.3.0
+FLOW v0.3.x
 >>> let x: i32 = 42
 >>> x * 2
 84
@@ -293,7 +435,7 @@ math = "1.0"
 json = { git = "https://github.com/..." }
 ```
 
-**Defer until:** Community exists and needs it.
+**Future:** Registry/lockfiles/semantic version resolution once there’s real third-party package demand.
 
 ### 3.4 Debugger Integration
 **Priority:** Low  
@@ -301,7 +443,9 @@ json = { git = "https://github.com/..." }
 
 DWARF debug info, breakpoints, step-through.
 
-**Defer until:** People are writing non-trivial programs.
+**Status:** Basic setup landed (C backend): `flow debug <program.flow>` builds with `-g -O0` and emits coarse `#line` mappings back to `.flow`.
+
+**Next:** Improve fidelity (statement-level mappings), and add an MLIR/LLVM debug story.
 
 ---
 
@@ -325,6 +469,8 @@ Make the MLIR backend actually optimize.
 **Effort:** 1-2 months
 
 Generate Metal/CUDA shaders from FLOW.
+
+**Status:** Experimental path exists (see `@gpu` + Metal codegen); treat this phase as polish/perf work, not “first implementation”.
 
 ```flow
 @gpu
@@ -508,11 +654,12 @@ New stdlib modules added:
 
 The language is feature-complete! Future work:
 
-1. **Polish & Docs** - Improve documentation, tutorials, examples
-2. **Async primitives** - Effects-based async/concurrency story
-3. **Debugger** - LLDB/GDB integration
-4. **Web Playground** - Browser-based IDE
-5. **Real-world projects** - Build something substantial to prove it out
+1. ✅ **Polish & Docs** - Documentation reorganized, examples cleaned, mascot added
+2. 🔲 **Async primitives** - Effects-based async/concurrency story
+3. 🔲 **Debugger** - LLDB/GDB integration + web playground step-debugger
+4. ✅ **Web Playground** - Browser-based IDE exists, needs step-through debugger
+5. 🔲 **Real-world projects** - Build something substantial to prove it out
+6. 🔲 **Parser fix** - Support `ptr[0].field` syntax (unblocks 20+ examples)
 
 ---
 

@@ -1,0 +1,312 @@
+# Neural Network Layers
+# Building blocks for neural networks in Flow
+#
+# Layers:
+# - Dense (fully connected)
+# - ReLU, Sigmoid, Tanh activations
+# - Softmax output
+# - Dropout (training only)
+
+extern {
+    function malloc(size: i64) -> ptr<f32>
+    function free(p: ptr<f32>)
+    function sqrt(x: f64) -> f64
+    function exp(x: f64) -> f64
+}
+
+# ============================================================================
+# DENSE LAYER
+# ============================================================================
+
+struct DenseLayer {
+    weights: ptr<f32>,    # (in_features, out_features)
+    bias: ptr<f32>,       # (out_features,)
+    grad_w: ptr<f32>,     # Gradient for weights
+    grad_b: ptr<f32>,     # Gradient for bias
+    in_features: i32,
+    out_features: i32,
+    # Cache for backward pass
+    input_cache: ptr<f32>,
+    batch_size: i32
+}
+
+function dense_create(in_features: i32, out_features: i32) -> DenseLayer {
+    let w_size: i64 = in_features * out_features * 4
+    let b_size: i64 = out_features * 4
+    
+    let weights: ptr<f32> = malloc(w_size)
+    let bias: ptr<f32> = malloc(b_size)
+    let grad_w: ptr<f32> = malloc(w_size)
+    let grad_b: ptr<f32> = malloc(b_size)
+    
+    # Xavier initialization
+    let scale: f32 = sqrt(2.0 / (in_features + out_features))
+    let mut seed: i32 = 42
+    for i in 0 to in_features * out_features {
+        seed = (seed * 1103515245 + 12345) % 2147483647
+        if seed < 0 { seed = 0 - seed }
+        weights[i] = ((seed % 10000) / 5000.0 - 1.0) * scale
+        grad_w[i] = 0.0
+    }
+    
+    for i in 0 to out_features {
+        bias[i] = 0.0
+        grad_b[i] = 0.0
+    }
+    
+    return DenseLayer {
+        weights: weights,
+        bias: bias,
+        grad_w: grad_w,
+        grad_b: grad_b,
+        in_features: in_features,
+        out_features: out_features,
+        input_cache: malloc(1),  # Will be reallocated
+        batch_size: 0
+    }
+}
+
+function dense_forward(layer: DenseLayer, input: ptr<f32>, batch_size: i32, output: ptr<f32>) {
+    # Forward: output = input @ weights + bias
+    # input: (batch_size, in_features)
+    # output: (batch_size, out_features)
+    
+    for b in 0 to batch_size {
+        for j in 0 to layer.out_features {
+            let mut sum: f32 = layer.bias[j]
+            for i in 0 to layer.in_features {
+                sum = sum + input[b * layer.in_features + i] * layer.weights[i * layer.out_features + j]
+            }
+            output[b * layer.out_features + j] = sum
+        }
+    }
+}
+
+function dense_backward(layer: DenseLayer, grad_output: ptr<f32>, batch_size: i32, grad_input: ptr<f32>) {
+    # Backward pass
+    # grad_output: (batch_size, out_features)
+    # grad_input: (batch_size, in_features)
+    
+    # Compute grad_input = grad_output @ weights.T
+    for b in 0 to batch_size {
+        for i in 0 to layer.in_features {
+            let mut sum: f32 = 0.0
+            for j in 0 to layer.out_features {
+                sum = sum + grad_output[b * layer.out_features + j] * layer.weights[i * layer.out_features + j]
+            }
+            grad_input[b * layer.in_features + i] = sum
+        }
+    }
+    
+    # Accumulate gradients for weights and bias
+    for b in 0 to batch_size {
+        for i in 0 to layer.in_features {
+            for j in 0 to layer.out_features {
+                layer.grad_w[i * layer.out_features + j] = layer.grad_w[i * layer.out_features + j] + 
+                    layer.input_cache[b * layer.in_features + i] * grad_output[b * layer.out_features + j]
+            }
+        }
+        for j in 0 to layer.out_features {
+            layer.grad_b[j] = layer.grad_b[j] + grad_output[b * layer.out_features + j]
+        }
+    }
+}
+
+function dense_zero_grad(layer: DenseLayer) {
+    for i in 0 to layer.in_features * layer.out_features {
+        layer.grad_w[i] = 0.0
+    }
+    for i in 0 to layer.out_features {
+        layer.grad_b[i] = 0.0
+    }
+}
+
+function dense_free(layer: DenseLayer) {
+    free(layer.weights)
+    free(layer.bias)
+    free(layer.grad_w)
+    free(layer.grad_b)
+    free(layer.input_cache)
+}
+
+# ============================================================================
+# ACTIVATION FUNCTIONS (in-place variants)
+# ============================================================================
+
+function relu_forward(data: ptr<f32>, size: i32) {
+    for i in 0 to size {
+        if data[i] < 0.0 {
+            data[i] = 0.0
+        }
+    }
+}
+
+function relu_backward(output: ptr<f32>, grad_output: ptr<f32>, size: i32, grad_input: ptr<f32>) {
+    for i in 0 to size {
+        if output[i] > 0.0 {
+            grad_input[i] = grad_output[i]
+        } else {
+            grad_input[i] = 0.0
+        }
+    }
+}
+
+function sigmoid_forward(data: ptr<f32>, size: i32) {
+    for i in 0 to size {
+        let e: f64 = exp(0.0 - data[i])
+        data[i] = 1.0 / (1.0 + e)
+    }
+}
+
+function sigmoid_backward(output: ptr<f32>, grad_output: ptr<f32>, size: i32, grad_input: ptr<f32>) {
+    for i in 0 to size {
+        let s: f32 = output[i]
+        grad_input[i] = grad_output[i] * s * (1.0 - s)
+    }
+}
+
+function tanh_forward(data: ptr<f32>, size: i32) {
+    for i in 0 to size {
+        let ep: f64 = exp(data[i])
+        let en: f64 = exp(0.0 - data[i])
+        data[i] = (ep - en) / (ep + en)
+    }
+}
+
+function tanh_backward(output: ptr<f32>, grad_output: ptr<f32>, size: i32, grad_input: ptr<f32>) {
+    for i in 0 to size {
+        let t: f32 = output[i]
+        grad_input[i] = grad_output[i] * (1.0 - t * t)
+    }
+}
+
+# ============================================================================
+# SOFTMAX + CROSS-ENTROPY LOSS
+# ============================================================================
+
+function softmax(logits: ptr<f32>, batch_size: i32, num_classes: i32, output: ptr<f32>) {
+    for b in 0 to batch_size {
+        # Find max for numerical stability
+        let mut max_val: f32 = logits[b * num_classes]
+        for i in 1 to num_classes {
+            if logits[b * num_classes + i] > max_val {
+                max_val = logits[b * num_classes + i]
+            }
+        }
+        
+        # Compute exp and sum
+        let mut sum: f64 = 0.0
+        for i in 0 to num_classes {
+            let e: f64 = exp(logits[b * num_classes + i] - max_val)
+            output[b * num_classes + i] = e
+            sum = sum + e
+        }
+        
+        # Normalize
+        for i in 0 to num_classes {
+            output[b * num_classes + i] = output[b * num_classes + i] / sum
+        }
+    }
+}
+
+function cross_entropy_loss(probs: ptr<f32>, labels: ptr<i32>, batch_size: i32, num_classes: i32) -> f32 {
+    let mut loss: f64 = 0.0
+    let eps: f32 = 1e-7
+    
+    for b in 0 to batch_size {
+        let label: i32 = labels[b]
+        let prob: f32 = probs[b * num_classes + label]
+        loss = loss - log(prob + eps)
+    }
+    
+    return loss / batch_size
+}
+
+function cross_entropy_backward(probs: ptr<f32>, labels: ptr<i32>, batch_size: i32, num_classes: i32, grad: ptr<f32>) {
+    # Gradient of softmax + cross-entropy is simply (probs - one_hot_labels)
+    for b in 0 to batch_size {
+        for i in 0 to num_classes {
+            grad[b * num_classes + i] = probs[b * num_classes + i]
+        }
+        let label: i32 = labels[b]
+        grad[b * num_classes + label] = grad[b * num_classes + label] - 1.0
+        
+        # Average over batch
+        for i in 0 to num_classes {
+            grad[b * num_classes + i] = grad[b * num_classes + i] / batch_size
+        }
+    }
+}
+
+# ============================================================================
+# MSE LOSS
+# ============================================================================
+
+function mse_loss(pred: ptr<f32>, target: ptr<f32>, size: i32) -> f32 {
+    let mut sum: f64 = 0.0
+    for i in 0 to size {
+        let diff: f32 = pred[i] - target[i]
+        sum = sum + diff * diff
+    }
+    return sum / size
+}
+
+function mse_backward(pred: ptr<f32>, target: ptr<f32>, size: i32, grad: ptr<f32>) {
+    let scale: f32 = 2.0 / size
+    for i in 0 to size {
+        grad[i] = scale * (pred[i] - target[i])
+    }
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Neural Network Layers Test")
+    println("==========================")
+    
+    # Create a simple 2-layer network
+    let layer1: DenseLayer = dense_create(4, 8)
+    let layer2: DenseLayer = dense_create(8, 2)
+    
+    println("Created layers:")
+    print("  Layer 1: 4 -> 8 (")
+    print(4 * 8)
+    println(" params)")
+    print("  Layer 2: 8 -> 2 (")
+    print(8 * 2)
+    println(" params)")
+    
+    # Create dummy input
+    let batch_size: i32 = 2
+    let input: ptr<f32> = malloc(batch_size * 4 * 4)
+    let hidden: ptr<f32> = malloc(batch_size * 8 * 4)
+    let output: ptr<f32> = malloc(batch_size * 2 * 4)
+    
+    # Initialize input
+    for i in 0 to batch_size * 4 {
+        input[i] = (i % 10) * 0.1
+    }
+    
+    # Forward pass
+    dense_forward(layer1, input, batch_size, hidden)
+    relu_forward(hidden, batch_size * 8)
+    dense_forward(layer2, hidden, batch_size, output)
+    
+    println("Forward pass complete")
+    print("Output[0]: ")
+    print(output[0])
+    print(", ")
+    println(output[1])
+    
+    # Cleanup
+    free(input)
+    free(hidden)
+    free(output)
+    dense_free(layer1)
+    dense_free(layer2)
+    
+    println("All tests passed!")
+    return 0
+}

@@ -1,0 +1,229 @@
+# State Effects: Implicit State Threading
+# Shows how effects can handle mutable state without explicit passing
+#
+# This pattern is impossible in Mojo/Julia without manual threading
+
+# ============================================================================
+# COUNTER EXAMPLE: State effect for a counter
+# ============================================================================
+
+effect Counter {
+    function get_count() -> i32
+    function increment()
+    function decrement()
+    function reset()
+}
+
+# Business logic using the counter effect
+function count_up_to(counter: capability Counter, target: i32) {
+    while counter.get_count() < target {
+        counter.increment()
+    }
+}
+
+function countdown(counter: capability Counter) {
+    while counter.get_count() > 0 {
+        print("T minus ")
+        println(counter.get_count())
+        counter.decrement()
+    }
+    println("Liftoff!")
+}
+
+# Handler implementation
+struct SimpleCounter {
+    value: i32
+}
+
+impl Counter for SimpleCounter {
+    function get_count(self) -> i32 {
+        return self.value
+    }
+    
+    function increment(self) {
+        self.value = self.value + 1
+    }
+    
+    function decrement(self) {
+        self.value = self.value - 1
+    }
+    
+    function reset(self) {
+        self.value = 0
+    }
+}
+
+# ============================================================================
+# ACCUMULATOR EXAMPLE: More complex state
+# ============================================================================
+
+effect Accumulator {
+    function add(x: f32)
+    function get_sum() -> f32
+    function get_count() -> i32
+    function get_average() -> f32
+}
+
+function compute_stats(acc: capability Accumulator, values: ptr<f32>, n: i32) {
+    for i in 0 to n {
+        acc.add(values[i])
+    }
+}
+
+struct RunningStats {
+    sum: f32,
+    count: i32
+}
+
+impl Accumulator for RunningStats {
+    function add(self, x: f32) {
+        self.sum = self.sum + x
+        self.count = self.count + 1
+    }
+    
+    function get_sum(self) -> f32 {
+        return self.sum
+    }
+    
+    function get_count(self) -> i32 {
+        return self.count
+    }
+    
+    function get_average(self) -> f32 {
+        if self.count == 0 {
+            return 0.0
+        }
+        return self.sum / self.count
+    }
+}
+
+# ============================================================================
+# STACK EXAMPLE: LIFO state
+# ============================================================================
+
+effect Stack {
+    function push(x: i32)
+    function pop() -> i32
+    function peek() -> i32
+    function is_empty() -> i32
+}
+
+function reverse_array(stack: capability Stack, arr: ptr<i32>, n: i32) {
+    # Push all elements
+    for i in 0 to n {
+        stack.push(arr[i])
+    }
+    # Pop back in reverse order
+    for i in 0 to n {
+        arr[i] = stack.pop()
+    }
+}
+
+struct ArrayStack {
+    data: ptr<i32>,
+    top: i32,
+    capacity: i32
+}
+
+impl Stack for ArrayStack {
+    function push(self, x: i32) {
+        if self.top < self.capacity {
+            self.data[self.top] = x
+            self.top = self.top + 1
+        }
+    }
+    
+    function pop(self) -> i32 {
+        if self.top > 0 {
+            self.top = self.top - 1
+            return self.data[self.top]
+        }
+        return 0
+    }
+    
+    function peek(self) -> i32 {
+        if self.top > 0 {
+            return self.data[self.top - 1]
+        }
+        return 0
+    }
+    
+    function is_empty(self) -> i32 {
+        if self.top == 0 {
+            return 1
+        }
+        return 0
+    }
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("State Effects Demo")
+    println("==================")
+    println("")
+    
+    # Counter demo
+    println("=== Counter Effect ===")
+    let mut counter: SimpleCounter = SimpleCounter { value: 0 }
+    
+    count_up_to(counter, 5)
+    print("Counted up to: ")
+    println(counter.value)
+    
+    counter.value = 3
+    countdown(counter)
+    
+    println("")
+    
+    # Accumulator demo
+    println("=== Accumulator Effect ===")
+    let mut stats: RunningStats = RunningStats { sum: 0.0, count: 0 }
+    
+    let values: array<f32, 5> = [1.0, 2.0, 3.0, 4.0, 5.0]
+    let values_ptr: ptr<f32> = values
+    
+    compute_stats(stats, values_ptr, 5)
+    
+    print("Sum: ")
+    println(stats.sum)
+    print("Count: ")
+    println(stats.count)
+    print("Average: ")
+    println(stats.get_average())
+    
+    println("")
+    
+    # Stack demo
+    println("=== Stack Effect ===")
+    let stack_data: array<i32, 10> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let stack_ptr: ptr<i32> = stack_data
+    let mut stack: ArrayStack = ArrayStack { data: stack_ptr, top: 0, capacity: 10 }
+    
+    let arr: array<i32, 5> = [1, 2, 3, 4, 5]
+    let arr_ptr: ptr<i32> = arr
+    
+    print("Before reverse: ")
+    for i in 0 to 5 {
+        print(arr[i])
+        print(" ")
+    }
+    println("")
+    
+    reverse_array(stack, arr_ptr, 5)
+    
+    print("After reverse:  ")
+    for i in 0 to 5 {
+        print(arr[i])
+        print(" ")
+    }
+    println("")
+    
+    println("")
+    println("Key insight: State is threaded through effects,")
+    println("not explicitly passed as parameters!")
+    
+    return 0
+}

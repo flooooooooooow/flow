@@ -1,0 +1,198 @@
+# Dependency Injection via Effects
+# Demonstrates how Flow's effect system enables clean DI without frameworks
+#
+# This is a unique advantage of Flow over Mojo/Julia - neither has algebraic effects
+
+# ============================================================================
+# THE PROBLEM: Hard-coded dependencies make testing difficult
+# ============================================================================
+
+# Bad: Direct dependency on real database
+# function get_user(id: i32) -> string {
+#     return database_query("SELECT * FROM users WHERE id = " + id)
+# }
+
+# ============================================================================
+# THE SOLUTION: Effects abstract over the implementation
+# ============================================================================
+
+# Define an effect for database operations
+effect Database {
+    function query(sql: string) -> string
+    function execute(sql: string) -> i32
+}
+
+# Define an effect for logging
+effect Logger {
+    function log_info(msg: string)
+    function log_error(msg: string)
+}
+
+# Define an effect for configuration
+effect Config {
+    function get_config(key: string) -> string
+}
+
+# ============================================================================
+# BUSINESS LOGIC (pure, testable, uses effects)
+# ============================================================================
+
+function get_user_name(db: capability Database, log: capability Logger, user_id: i32) -> string {
+    log.log_info("Fetching user")
+    let result: string = db.query("SELECT name FROM users WHERE id = 1")
+    return result
+}
+
+function create_user(db: capability Database, log: capability Logger, name: string) -> i32 {
+    log.log_info("Creating user")
+    let rows: i32 = db.execute("INSERT INTO users (name) VALUES ('test')")
+    if rows > 0 {
+        log.log_info("User created successfully")
+    } else {
+        log.log_error("Failed to create user")
+    }
+    return rows
+}
+
+function get_app_setting(cfg: capability Config, log: capability Logger, key: string) -> string {
+    log.log_info("Reading config")
+    return cfg.get_config(key)
+}
+
+# ============================================================================
+# PRODUCTION HANDLERS (real implementations)
+# ============================================================================
+
+struct ProductionDB {}
+
+impl Database for ProductionDB {
+    function query(self, sql: string) -> string {
+        # In real code: connect to actual database
+        return "John Doe"  # Simulated result
+    }
+    
+    function execute(self, sql: string) -> i32 {
+        # In real code: execute actual SQL
+        return 1  # Simulated: 1 row affected
+    }
+}
+
+struct ConsoleLogger {}
+
+impl Logger for ConsoleLogger {
+    function log_info(self, msg: string) {
+        print("[INFO] ")
+        println(msg)
+    }
+    
+    function log_error(self, msg: string) {
+        print("[ERROR] ")
+        println(msg)
+    }
+}
+
+struct EnvConfig {}
+
+impl Config for EnvConfig {
+    function get_config(self, key: string) -> string {
+        # In real code: read from environment or config file
+        return "production_value"
+    }
+}
+
+# ============================================================================
+# TEST HANDLERS (mock implementations)
+# ============================================================================
+
+struct MockDB {
+    should_fail: i32
+}
+
+impl Database for MockDB {
+    function query(self, sql: string) -> string {
+        return "Test User"  # Always return test data
+    }
+    
+    function execute(self, sql: string) -> i32 {
+        if self.should_fail == 1 {
+            return 0  # Simulate failure
+        }
+        return 1
+    }
+}
+
+struct NullLogger {}
+
+impl Logger for NullLogger {
+    function log_info(self, msg: string) {
+        # Do nothing - silent for tests
+    }
+    
+    function log_error(self, msg: string) {
+        # Do nothing
+    }
+}
+
+struct TestConfig {}
+
+impl Config for TestConfig {
+    function get_config(self, key: string) -> string {
+        return "test_value"
+    }
+}
+
+# ============================================================================
+# DEMO: Running with different implementations
+# ============================================================================
+
+function main() -> i32 {
+    println("Dependency Injection via Effects")
+    println("=================================")
+    println("")
+    
+    # --- Production mode ---
+    println("=== Production Mode ===")
+    let prod_db: ProductionDB = ProductionDB {}
+    let prod_log: ConsoleLogger = ConsoleLogger {}
+    let prod_cfg: EnvConfig = EnvConfig {}
+    
+    let name: string = get_user_name(prod_db, prod_log, 1)
+    print("Got user: ")
+    println(name)
+    
+    let created: i32 = create_user(prod_db, prod_log, "Alice")
+    print("Created rows: ")
+    println(created)
+    
+    let setting: string = get_app_setting(prod_cfg, prod_log, "api_key")
+    print("Config value: ")
+    println(setting)
+    
+    println("")
+    
+    # --- Test mode ---
+    println("=== Test Mode (with mocks) ===")
+    let mock_db: MockDB = MockDB { should_fail: 0 }
+    let null_log: NullLogger = NullLogger {}
+    let test_cfg: TestConfig = TestConfig {}
+    
+    let test_name: string = get_user_name(mock_db, null_log, 1)
+    print("Got test user: ")
+    println(test_name)
+    
+    # Test failure case
+    let fail_db: MockDB = MockDB { should_fail: 1 }
+    let fail_result: i32 = create_user(fail_db, null_log, "Bob")
+    print("Failed create result: ")
+    println(fail_result)
+    
+    println("")
+    println("Benefits of Effect-based DI:")
+    println("  1. No framework needed")
+    println("  2. Compile-time type safety")
+    println("  3. Easy mocking for tests")
+    println("  4. Clear dependency contracts")
+    println("  5. No runtime reflection")
+    
+    return 0
+}

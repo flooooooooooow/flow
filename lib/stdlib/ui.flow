@@ -1,0 +1,125 @@
+# FLOW Terminal UI Helpers
+#
+# Minimal, dependency-free helpers for building text UIs.
+# Works with the C backend (stdout/stderr) and is intentionally simple.
+
+extern {
+    function getchar() -> i32
+}
+
+#
+# (No `fflush(FILE*)` binding yet: FILE* isn’t representable.)
+
+# ANSI escape helpers ---------------------------------------------------------
+
+export function ui_clear() -> void {
+    # Clear screen + move cursor to home
+    let s: string = "\033[2J\033[H"
+    print(s)
+}
+
+export function ui_hide_cursor() -> void {
+    let s: string = "\033[?25l"
+    print(s)
+}
+
+export function ui_show_cursor() -> void {
+    let s: string = "\033[?25h"
+    print(s)
+}
+
+export function ui_reset_style() -> void {
+    let s: string = "\033[0m"
+    print(s)
+}
+
+export function ui_bold_on() -> void {
+    let s: string = "\033[1m"
+    print(s)
+}
+
+export function ui_dim_on() -> void {
+    let s: string = "\033[2m"
+    print(s)
+}
+
+export function ui_fg(code: i32) -> void {
+    # Basic colors: 30..37, bright: 90..97
+    # Note: no formatting intrinsics yet, so provide common colors via helpers below.
+    if code == 30 { print("\033[30m") }
+    elif code == 31 { print("\033[31m") }
+    elif code == 32 { print("\033[32m") }
+    elif code == 33 { print("\033[33m") }
+    elif code == 34 { print("\033[34m") }
+    elif code == 35 { print("\033[35m") }
+    elif code == 36 { print("\033[36m") }
+    elif code == 37 { print("\033[37m") }
+    elif code == 90 { print("\033[90m") }
+    elif code == 91 { print("\033[91m") }
+    elif code == 92 { print("\033[92m") }
+    elif code == 93 { print("\033[93m") }
+    elif code == 94 { print("\033[94m") }
+    elif code == 95 { print("\033[95m") }
+    elif code == 96 { print("\033[96m") }
+    elif code == 97 { print("\033[97m") }
+}
+
+export function ui_bg(code: i32) -> void {
+    # Basic colors: 40..47, bright: 100..107
+    if code == 40 { print("\033[40m") }
+    elif code == 41 { print("\033[41m") }
+    elif code == 42 { print("\033[42m") }
+    elif code == 43 { print("\033[43m") }
+    elif code == 44 { print("\033[44m") }
+    elif code == 45 { print("\033[45m") }
+    elif code == 46 { print("\033[46m") }
+    elif code == 47 { print("\033[47m") }
+    elif code == 100 { print("\033[100m") }
+    elif code == 101 { print("\033[101m") }
+    elif code == 102 { print("\033[102m") }
+    elif code == 103 { print("\033[103m") }
+    elif code == 104 { print("\033[104m") }
+    elif code == 105 { print("\033[105m") }
+    elif code == 106 { print("\033[106m") }
+    elif code == 107 { print("\033[107m") }
+}
+
+export function ui_newline() -> void {
+    print("\n")
+}
+
+export function ui_flush() -> void {
+    # No-op for now.
+}
+
+export function ui_print_spaces(n: i32) -> void {
+    let i: i32 = 0
+    while i < n {
+        print(" ")
+        i = i + 1
+    }
+}
+
+# Input helpers ---------------------------------------------------------------
+
+export function ui_read_char() -> i32 {
+    return getchar()
+}
+
+export function ui_read_non_newline_char() -> i32 {
+    # Returns first non-newline / non-carriage-return character.
+    let c: i32 = ui_read_char()
+    while c == 10 || c == 13 {  # '\n' or '\r'
+        c = ui_read_char()
+    }
+    return c
+}
+
+export function ui_consume_line() -> void {
+    # Drain stdin until newline so simple line-buffered inputs feel less clunky.
+    let c: i32 = ui_read_char()
+    while c != 10 && c != -1 {
+        c = ui_read_char()
+    }
+}
+

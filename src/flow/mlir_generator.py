@@ -2299,6 +2299,10 @@ class MLIRGenerator:
                 total_size = sum(field['size'] for field in self.struct_layouts[flow_type.name].values())
                 return f"memref<{total_size}xi8>"  # Use byte array for struct storage
             return "memref<16xi8>"  # Default struct size (4 fields * 4 bytes)
+
+    # Backward-compatible alias for older tests/utilities
+    def _flow_type_to_mlir(self, flow_type: Type) -> str:
+        return self.flow_type_to_mlir(flow_type)
     
     def generate_effect(self, effect: EffectDecl) -> str:
         mlir_code = []

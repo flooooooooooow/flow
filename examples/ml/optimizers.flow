@@ -1,0 +1,295 @@
+# Neural Network Optimizers
+# Gradient-based optimization algorithms for training
+#
+# Optimizers:
+# - SGD (Stochastic Gradient Descent)
+# - SGD with Momentum
+# - Adam (Adaptive Moment Estimation)
+# - RMSprop
+
+extern {
+    function malloc(size: i64) -> ptr<f32>
+    function free(p: ptr<f32>)
+    function sqrt(x: f64) -> f64
+}
+
+# ============================================================================
+# SGD OPTIMIZER
+# ============================================================================
+
+struct SGD {
+    learning_rate: f32,
+    weight_decay: f32
+}
+
+function sgd_create(lr: f32) -> SGD {
+    return SGD { learning_rate: lr, weight_decay: 0.0 }
+}
+
+function sgd_create_with_decay(lr: f32, wd: f32) -> SGD {
+    return SGD { learning_rate: lr, weight_decay: wd }
+}
+
+function sgd_step(opt: SGD, params: ptr<f32>, grads: ptr<f32>, size: i32) {
+    for i in 0 to size {
+        let g: f32 = grads[i] + opt.weight_decay * params[i]
+        params[i] = params[i] - opt.learning_rate * g
+    }
+}
+
+# ============================================================================
+# SGD WITH MOMENTUM
+# ============================================================================
+
+struct SGDMomentum {
+    learning_rate: f32,
+    momentum: f32,
+    weight_decay: f32,
+    velocity: ptr<f32>,
+    size: i32
+}
+
+function sgd_momentum_create(lr: f32, momentum: f32, size: i32) -> SGDMomentum {
+    let vel: ptr<f32> = malloc(size * 4)
+    for i in 0 to size {
+        vel[i] = 0.0
+    }
+    return SGDMomentum {
+        learning_rate: lr,
+        momentum: momentum,
+        weight_decay: 0.0,
+        velocity: vel,
+        size: size
+    }
+}
+
+function sgd_momentum_step(opt: SGDMomentum, params: ptr<f32>, grads: ptr<f32>) {
+    for i in 0 to opt.size {
+        let g: f32 = grads[i] + opt.weight_decay * params[i]
+        opt.velocity[i] = opt.momentum * opt.velocity[i] + g
+        params[i] = params[i] - opt.learning_rate * opt.velocity[i]
+    }
+}
+
+function sgd_momentum_free(opt: SGDMomentum) {
+    free(opt.velocity)
+}
+
+# ============================================================================
+# ADAM OPTIMIZER
+# ============================================================================
+
+struct Adam {
+    learning_rate: f32,
+    beta1: f32,
+    beta2: f32,
+    epsilon: f32,
+    weight_decay: f32,
+    m: ptr<f32>,    # First moment
+    v: ptr<f32>,    # Second moment
+    t: i32,         # Time step
+    size: i32
+}
+
+function adam_create(lr: f32, size: i32) -> Adam {
+    let m: ptr<f32> = malloc(size * 4)
+    let v: ptr<f32> = malloc(size * 4)
+    for i in 0 to size {
+        m[i] = 0.0
+        v[i] = 0.0
+    }
+    return Adam {
+        learning_rate: lr,
+        beta1: 0.9,
+        beta2: 0.999,
+        epsilon: 1e-8,
+        weight_decay: 0.0,
+        m: m,
+        v: v,
+        t: 0,
+        size: size
+    }
+}
+
+function adam_create_full(lr: f32, beta1: f32, beta2: f32, eps: f32, wd: f32, size: i32) -> Adam {
+    let m: ptr<f32> = malloc(size * 4)
+    let v: ptr<f32> = malloc(size * 4)
+    for i in 0 to size {
+        m[i] = 0.0
+        v[i] = 0.0
+    }
+    return Adam {
+        learning_rate: lr,
+        beta1: beta1,
+        beta2: beta2,
+        epsilon: eps,
+        weight_decay: wd,
+        m: m,
+        v: v,
+        t: 0,
+        size: size
+    }
+}
+
+function adam_step(opt: ptr<Adam>, params: ptr<f32>, grads: ptr<f32>) {
+    opt[0].t = opt[0].t + 1
+    
+    # Bias correction
+    let bc1: f64 = 1.0 - pow_f64(opt[0].beta1, opt[0].t)
+    let bc2: f64 = 1.0 - pow_f64(opt[0].beta2, opt[0].t)
+    
+    for i in 0 to opt[0].size {
+        let g: f32 = grads[i] + opt[0].weight_decay * params[i]
+        
+        # Update moments
+        opt[0].m[i] = opt[0].beta1 * opt[0].m[i] + (1.0 - opt[0].beta1) * g
+        opt[0].v[i] = opt[0].beta2 * opt[0].v[i] + (1.0 - opt[0].beta2) * g * g
+        
+        # Bias-corrected estimates
+        let m_hat: f64 = opt[0].m[i] / bc1
+        let v_hat: f64 = opt[0].v[i] / bc2
+        
+        # Update parameters
+        params[i] = params[i] - opt[0].learning_rate * m_hat / (sqrt(v_hat) + opt[0].epsilon)
+    }
+}
+
+function adam_free(opt: Adam) {
+    free(opt.m)
+    free(opt.v)
+}
+
+# Helper function for power
+function pow_f64(base: f32, exp: i32) -> f64 {
+    let mut result: f64 = 1.0
+    for i in 0 to exp {
+        result = result * base
+    }
+    return result
+}
+
+# ============================================================================
+# RMSPROP OPTIMIZER
+# ============================================================================
+
+struct RMSprop {
+    learning_rate: f32,
+    alpha: f32,       # Smoothing constant
+    epsilon: f32,
+    weight_decay: f32,
+    v: ptr<f32>,      # Running average of squared gradients
+    size: i32
+}
+
+function rmsprop_create(lr: f32, size: i32) -> RMSprop {
+    let v: ptr<f32> = malloc(size * 4)
+    for i in 0 to size {
+        v[i] = 0.0
+    }
+    return RMSprop {
+        learning_rate: lr,
+        alpha: 0.99,
+        epsilon: 1e-8,
+        weight_decay: 0.0,
+        v: v,
+        size: size
+    }
+}
+
+function rmsprop_step(opt: RMSprop, params: ptr<f32>, grads: ptr<f32>) {
+    for i in 0 to opt.size {
+        let g: f32 = grads[i] + opt.weight_decay * params[i]
+        
+        # Update running average of squared gradients
+        opt.v[i] = opt.alpha * opt.v[i] + (1.0 - opt.alpha) * g * g
+        
+        # Update parameters
+        params[i] = params[i] - opt.learning_rate * g / (sqrt(opt.v[i]) + opt.epsilon)
+    }
+}
+
+function rmsprop_free(opt: RMSprop) {
+    free(opt.v)
+}
+
+# ============================================================================
+# LEARNING RATE SCHEDULERS
+# ============================================================================
+
+function lr_step_decay(initial_lr: f32, epoch: i32, drop_rate: f32, drop_every: i32) -> f32 {
+    let drops: i32 = epoch / drop_every
+    let mut lr: f32 = initial_lr
+    for i in 0 to drops {
+        lr = lr * drop_rate
+    }
+    return lr
+}
+
+function lr_exponential_decay(initial_lr: f32, epoch: i32, decay_rate: f32) -> f32 {
+    let mut lr: f32 = initial_lr
+    for i in 0 to epoch {
+        lr = lr * decay_rate
+    }
+    return lr
+}
+
+function lr_cosine_annealing(initial_lr: f32, epoch: i32, total_epochs: i32) -> f32 {
+    # Simplified cosine (linear approximation)
+    let progress: f32 = epoch / total_epochs
+    return initial_lr * (1.0 - progress)
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Optimizer Test")
+    println("==============")
+    
+    let size: i32 = 10
+    let params: ptr<f32> = malloc(size * 4)
+    let grads: ptr<f32> = malloc(size * 4)
+    
+    # Initialize
+    for i in 0 to size {
+        params[i] = 1.0
+        grads[i] = 0.1
+    }
+    
+    println("Initial params[0]: 1.0")
+    
+    # Test SGD
+    let sgd: SGD = sgd_create(0.1)
+    sgd_step(sgd, params, grads, size)
+    print("After SGD step: ")
+    println(params[0])
+    
+    # Reset
+    for i in 0 to size {
+        params[i] = 1.0
+    }
+    
+    # Test Adam
+    let mut adam: Adam = adam_create(0.1, size)
+    let adam_ptr: ptr<Adam> = &adam
+    adam_step(adam_ptr, params, grads)
+    print("After Adam step: ")
+    println(params[0])
+    
+    # LR scheduling
+    let lr0: f32 = lr_step_decay(0.1, 0, 0.5, 10)
+    let lr20: f32 = lr_step_decay(0.1, 20, 0.5, 10)
+    print("LR at epoch 0: ")
+    println(lr0)
+    print("LR at epoch 20: ")
+    println(lr20)
+    
+    # Cleanup
+    free(params)
+    free(grads)
+    adam_free(adam)
+    
+    println("All tests passed!")
+    return 0
+}

@@ -1,77 +1,60 @@
-# FLOW Documentation
+# Flow Documentation
 
-Welcome to the FLOW programming language documentation.
+<img src="assets/flow-mascot.png" alt="Flowy the Hedgehog" width="200" align="right">
 
-## Quick Start
+Welcome to the Flow programming language documentation!
 
-| Goal | Document |
-|------|----------|
-| **Try FLOW Now** | [🎮 Web Playground](playground/index.html) |
-| **Install & Run** | [Getting Started](getting-started.md) |
-| **Compare with Rust/Zig/Go** | [Language Comparison](comparison.md) |
-| **Learn FLOW** | [Tutorials](tutorials/beginner.md) |
-| **Language Reference** | [Language Spec](LANGUAGE_SPEC.md) |
-| **Standard Library** | [API Reference](library/stdlib-reference.md) |
-| **See Examples** | [Examples](examples/README.md) |
+## Quick Links
 
-## Documentation Structure
+| Document | Description |
+|----------|-------------|
+| **[Getting Started](getting-started.md)** | Installation and first program |
+| **[Language Spec](LANGUAGE_SPEC.md)** | Complete language reference |
+| **[Grammar](grammar.ebnf)** | Formal EBNF grammar |
+
+## Language Reference
+
+- [Overview](language/overview.md) - Language philosophy and features
+- [Syntax](language/syntax.md) - Lexical structure and grammar
+- [Types](language/types.md) - Type system
+- [Functions](language/functions.md) - Function definitions
+- [Variables](language/variables.md) - Variables and mutability
+- [Graphics](language/graphics.md) - Native graphics API
+
+## Standard Library
+
+- [Core](library/core.md) - Built-in functions
+- [Autodiff](library/autodiff.md) - Automatic differentiation
+- [Memory](library/memory.md) - Memory management
+
+## Tutorials
+
+- [Beginner](tutorials/beginner.md) - Learn the basics
+- [Intermediate](tutorials/intermediate.md) - Deeper concepts
+- [Advanced](tutorials/advanced.md) - Expert techniques
+
+## Project
+
+- [Contributing](project/CONTRIBUTING.md) - How to contribute
+- [Changelog](project/CHANGELOG.md) - Version history
+- [Development](DEVELOPMENT.md) - Building Flow
+
+## Examples
+
+All examples are in the [`examples/`](../examples/) directory:
 
 ```
-docs/
-├── getting-started.md      # Installation, first program, commands
-├── tutorials/              # Learning paths (beginner → advanced)
-│   ├── beginner.md
-│   ├── intermediate.md
-│   └── advanced.md
-├── language/               # Language features explained
-│   ├── overview.md
-│   ├── syntax.md
-│   ├── types.md
-│   └── ...
-├── library/                # Standard library reference
-│   └── stdlib-reference.md # Complete API documentation
-├── examples/               # Working code examples
-│   ├── basic/
-│   ├── algorithms/
-│   ├── effects/
-│   └── gpu/
-├── LANGUAGE_SPEC.md        # Authoritative language specification
-└── DEVELOPMENT.md          # Compiler internals & contributing
+examples/
+├── basics/           # Hello world, fibonacci, etc.
+├── games/            # Tetris, 2048 with graphics
+├── ml/               # Machine learning framework
+├── effects/          # Algebraic effects demos
+├── neural_networks/  # Autodiff and backprop
+└── ...
 ```
 
-## Build Documentation
+Run any example:
 
 ```bash
-# Install MkDocs
-pip3 install mkdocs mkdocs-material pymdown-extensions
-
-# Serve locally (auto-reload)
-python3 -m mkdocs serve
-# Open http://127.0.0.1:8000
-
-# Build static HTML
-python3 -m mkdocs build
-# Output in site/
-
-# Deploy to GitHub Pages
-python3 -m mkdocs gh-deploy
+./flow run examples/basics/hello_world.flow
 ```
-
-## Status
-
-| Component | Status |
-|-----------|--------|
-| Lexer/Parser | ✅ Complete |
-| C Backend | ✅ Complete |
-| MLIR Backend | ✅ Working |
-| Effect System | ✅ Complete |
-| Type System | ✅ Generics, Traits |
-| LSP | ✅ Go-to-def, Hover |
-| REPL | ✅ Interactive |
-| Package Manager | ✅ Basic |
-| GPU Codegen | ✅ Metal |
-| Standard Library | ✅ Expanded |
-
----
-
-*FLOW v0.3.0 — AI-Generated Language Infrastructure*

@@ -1,0 +1,331 @@
+# Chetris Core Mechanics Test
+# Tests the fundamental game logic without interactive UI
+
+# ============================================================================
+# CONSTANTS (same as main game)
+# ============================================================================
+
+const BOARD_WIDTH: i32 = 8
+const BOARD_HEIGHT: i32 = 8
+
+const PIECE_NONE: i32 = 0
+const PIECE_PAWN: i32 = 1
+const PIECE_ROOK: i32 = 2
+const PIECE_KNIGHT: i32 = 3
+const PIECE_BISHOP: i32 = 4
+const PIECE_QUEEN: i32 = 5
+const PIECE_KING: i32 = 6
+
+const COLOR_NONE: i32 = 0
+const COLOR_WHITE: i32 = 1
+const COLOR_BLACK: i32 = 2
+
+const TETRO_I: i32 = 0
+const TETRO_O: i32 = 1
+const TETRO_T: i32 = 2
+const TETRO_S: i32 = 3
+const TETRO_Z: i32 = 4
+const TETRO_J: i32 = 5
+const TETRO_L: i32 = 6
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+function board_idx(x: i32, y: i32) -> i32 {
+    return y * BOARD_WIDTH + x
+}
+
+function tetro_to_piece(kind: i32) -> i32 {
+    if kind == TETRO_I { return PIECE_ROOK }
+    if kind == TETRO_O { return PIECE_PAWN }
+    if kind == TETRO_T { return PIECE_KNIGHT }
+    if kind == TETRO_S or kind == TETRO_Z { return PIECE_PAWN }
+    return PIECE_BISHOP
+}
+
+function get_tetro_block(kind: i32, rot: i32, idx: i32, coord: i32) -> i32 {
+    # Simplified - just T piece for testing
+    if kind == TETRO_T {
+        if rot == 0 {
+            if idx == 0 { if coord == 0 { return 0 } else { return 0 } }
+            if idx == 1 { if coord == 0 { return -1 } else { return 1 } }
+            if idx == 2 { if coord == 0 { return 0 } else { return 1 } }
+            if coord == 0 { return 1 } else { return 1 }
+        }
+    }
+    return 0
+}
+
+# ============================================================================
+# LINE CLEAR TEST
+# ============================================================================
+
+function test_line_clear() -> i32 {
+    println("Testing line clear mechanics...")
+    
+    let blocks: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   1, 1, 1, 1, 1, 1, 1, 1]  # Full bottom row
+    
+    let pieces: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   1, 1, 1, 1, 6, 1, 1, 1]  # Pawns + King
+    
+    let colors: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   1, 1, 1, 1, 1, 1, 1, 1]  # All white
+    
+    # Check bottom row is full
+    let full: i32 = 1
+    for x in 0 to BOARD_WIDTH {
+        if blocks[board_idx(x, 7)] == 0 {
+            full = 0
+        }
+    }
+    
+    if full == 1 {
+        println("  ✓ Bottom row detected as full")
+    } else {
+        println("  ✗ Bottom row not detected as full")
+        return 1
+    }
+    
+    # Clear the row
+    for x in 0 to BOARD_WIDTH {
+        let idx: i32 = board_idx(x, 7)
+        blocks[idx] = 0
+        pieces[idx] = PIECE_NONE
+        colors[idx] = COLOR_NONE
+    }
+    
+    # Verify cleared
+    let empty: i32 = 1
+    for x in 0 to BOARD_WIDTH {
+        if blocks[board_idx(x, 7)] != 0 {
+            empty = 0
+        }
+    }
+    
+    if empty == 1 {
+        println("  ✓ Row cleared successfully")
+    } else {
+        println("  ✗ Row not cleared")
+        return 1
+    }
+    
+    return 0
+}
+
+# ============================================================================
+# TETROMINO TO PIECE MAPPING TEST
+# ============================================================================
+
+function test_piece_mapping() -> i32 {
+    println("Testing tetromino -> chess piece mapping...")
+    
+    if tetro_to_piece(TETRO_I) != PIECE_ROOK {
+        println("  ✗ I-piece should spawn Rook")
+        return 1
+    }
+    println("  ✓ I -> Rook")
+    
+    if tetro_to_piece(TETRO_O) != PIECE_PAWN {
+        println("  ✗ O-piece should spawn Pawn")
+        return 1
+    }
+    println("  ✓ O -> Pawn")
+    
+    if tetro_to_piece(TETRO_T) != PIECE_KNIGHT {
+        println("  ✗ T-piece should spawn Knight")
+        return 1
+    }
+    println("  ✓ T -> Knight")
+    
+    if tetro_to_piece(TETRO_S) != PIECE_PAWN {
+        println("  ✗ S-piece should spawn Pawn")
+        return 1
+    }
+    println("  ✓ S -> Pawn")
+    
+    if tetro_to_piece(TETRO_Z) != PIECE_PAWN {
+        println("  ✗ Z-piece should spawn Pawn")
+        return 1
+    }
+    println("  ✓ Z -> Pawn")
+    
+    if tetro_to_piece(TETRO_J) != PIECE_BISHOP {
+        println("  ✗ J-piece should spawn Bishop")
+        return 1
+    }
+    println("  ✓ J -> Bishop")
+    
+    if tetro_to_piece(TETRO_L) != PIECE_BISHOP {
+        println("  ✗ L-piece should spawn Bishop")
+        return 1
+    }
+    println("  ✓ L -> Bishop")
+    
+    return 0
+}
+
+# ============================================================================
+# KING DETECTION TEST
+# ============================================================================
+
+function test_king_detection() -> i32 {
+    println("Testing king detection...")
+    
+    let pieces: array<i32, 64> = [0, 0, 0, 0, 6, 0, 0, 0,   # Black king at e8 (4,0)
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 6, 0, 0, 0]   # White king at e1 (4,7)
+    
+    let colors: array<i32, 64> = [0, 0, 0, 0, 2, 0, 0, 0,   # Black
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 1, 0, 0, 0]   # White
+    
+    # Find white king
+    let white_king: i32 = -1
+    for i in 0 to 64 {
+        if pieces[i] == PIECE_KING and colors[i] == COLOR_WHITE {
+            white_king = i
+        }
+    }
+    
+    if white_king == board_idx(4, 7) {
+        println("  ✓ White king found at e1")
+    } else {
+        println("  ✗ White king not found at correct position")
+        return 1
+    }
+    
+    # Find black king
+    let black_king: i32 = -1
+    for i in 0 to 64 {
+        if pieces[i] == PIECE_KING and colors[i] == COLOR_BLACK {
+            black_king = i
+        }
+    }
+    
+    if black_king == board_idx(4, 0) {
+        println("  ✓ Black king found at e8")
+    } else {
+        println("  ✗ Black king not found at correct position")
+        return 1
+    }
+    
+    return 0
+}
+
+# ============================================================================
+# GRAVITY TEST
+# ============================================================================
+
+function test_gravity() -> i32 {
+    println("Testing gravity after line clear...")
+    
+    let blocks: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 1, 0, 0, 0, 0,   # Block at (3,6) with piece
+                                   1, 1, 1, 1, 1, 1, 1, 1]   # Full row to clear
+    
+    let pieces: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 3, 0, 0, 0, 0,   # Knight at (3,6)
+                                   1, 1, 1, 1, 1, 1, 1, 1]
+    
+    # Clear bottom row and drop above
+    # Simulate: clear row 7, row 6 drops to row 7
+    
+    for x in 0 to BOARD_WIDTH {
+        blocks[board_idx(x, 7)] = blocks[board_idx(x, 6)]
+        pieces[board_idx(x, 7)] = pieces[board_idx(x, 6)]
+        blocks[board_idx(x, 6)] = 0
+        pieces[board_idx(x, 6)] = 0
+    }
+    
+    # Check if knight dropped
+    if blocks[board_idx(3, 7)] == 1 and pieces[board_idx(3, 7)] == 3 {
+        println("  ✓ Knight fell with gravity after line clear")
+    } else {
+        println("  ✗ Gravity not working correctly")
+        return 1
+    }
+    
+    if blocks[board_idx(3, 6)] == 0 {
+        println("  ✓ Original position cleared")
+    } else {
+        println("  ✗ Original position not cleared")
+        return 1
+    }
+    
+    return 0
+}
+
+# ============================================================================
+# MAIN TEST RUNNER
+# ============================================================================
+
+function main() -> i32 {
+    println("╔════════════════════════════════════╗")
+    println("║     CHETRIS CORE MECHANICS TEST    ║")
+    println("╚════════════════════════════════════╝")
+    println("")
+    
+    let mut failures: i32 = 0
+    
+    failures = failures + test_piece_mapping()
+    println("")
+    
+    failures = failures + test_king_detection()
+    println("")
+    
+    failures = failures + test_line_clear()
+    println("")
+    
+    failures = failures + test_gravity()
+    println("")
+    
+    println("════════════════════════════════════")
+    if failures == 0 {
+        println("All tests passed! ✓")
+        return 0
+    } else {
+        print("Tests failed: ")
+        println(failures)
+        return 1
+    }
+}

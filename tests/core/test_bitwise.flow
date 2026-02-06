@@ -1,0 +1,44 @@
+# Test: bitwise operators and hex literals
+
+function main() -> i32 {
+    let a: i32 = 0xFF
+    let b: i32 = 0x0F
+    
+    # Bitwise OR
+    let or_result: i32 = a | b
+    if or_result != 255 {
+        return 1
+    }
+    
+    # Bitwise AND
+    let and_result: i32 = a & b
+    if and_result != 15 {
+        return 2
+    }
+    
+    # Bitwise XOR
+    let xor_result: i32 = a ^ b
+    if xor_result != 240 {
+        return 3
+    }
+    
+    # Bitwise NOT
+    let not_result: i32 = ~0
+    if not_result != -1 {
+        return 4
+    }
+    
+    # Left shift
+    let lshift: i32 = 1 << 4
+    if lshift != 16 {
+        return 5
+    }
+    
+    # Right shift
+    let rshift: i32 = 16 >> 2
+    if rshift != 4 {
+        return 6
+    }
+    
+    return 0
+}

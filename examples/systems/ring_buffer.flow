@@ -1,0 +1,260 @@
+# Lock-Free Ring Buffer
+# SPSC (Single Producer, Single Consumer) queue
+#
+# Use case: Audio processing, network buffers, inter-thread communication
+
+extern {
+    function malloc(size: i64) -> ptr<i32>
+    function free(p: ptr<i32>)
+}
+
+# ============================================================================
+# RING BUFFER STRUCTURE
+# ============================================================================
+
+struct RingBuffer {
+    data: ptr<i32>,
+    capacity: i32,
+    write_idx: i32,   # Producer writes here
+    read_idx: i32     # Consumer reads here
+}
+
+# ============================================================================
+# CREATION / DESTRUCTION
+# ============================================================================
+
+function ring_create(capacity: i32) -> RingBuffer {
+    # Capacity must be power of 2 for efficient modulo
+    let data: ptr<i32> = malloc(capacity * 4)
+    
+    for i in 0 to capacity {
+        data[i] = 0
+    }
+    
+    return RingBuffer {
+        data: data,
+        capacity: capacity,
+        write_idx: 0,
+        read_idx: 0
+    }
+}
+
+function ring_destroy(rb: RingBuffer) {
+    free(rb.data)
+}
+
+# ============================================================================
+# OPERATIONS
+# ============================================================================
+
+function ring_size(rb: RingBuffer) -> i32 {
+    let diff: i32 = rb.write_idx - rb.read_idx
+    if diff < 0 {
+        diff = diff + rb.capacity
+    }
+    return diff
+}
+
+function ring_is_empty(rb: RingBuffer) -> i32 {
+    if rb.write_idx == rb.read_idx {
+        return 1
+    }
+    return 0
+}
+
+function ring_is_full(rb: RingBuffer) -> i32 {
+    let next_write: i32 = (rb.write_idx + 1) % rb.capacity
+    if next_write == rb.read_idx {
+        return 1
+    }
+    return 0
+}
+
+function ring_push(rb: ptr<RingBuffer>, value: i32) -> i32 {
+    let next_write: i32 = (rb[0].write_idx + 1) % rb[0].capacity
+    
+    if next_write == rb[0].read_idx {
+        # Buffer is full
+        return 0
+    }
+    
+    rb[0].data[rb[0].write_idx] = value
+    rb[0].write_idx = next_write
+    return 1
+}
+
+function ring_pop(rb: ptr<RingBuffer>) -> i32 {
+    if rb[0].write_idx == rb[0].read_idx {
+        # Buffer is empty
+        return -1  # Error value
+    }
+    
+    let value: i32 = rb[0].data[rb[0].read_idx]
+    rb[0].read_idx = (rb[0].read_idx + 1) % rb[0].capacity
+    return value
+}
+
+function ring_peek(rb: RingBuffer) -> i32 {
+    if rb.write_idx == rb.read_idx {
+        return -1
+    }
+    return rb.data[rb.read_idx]
+}
+
+# ============================================================================
+# BATCH OPERATIONS
+# ============================================================================
+
+function ring_push_batch(rb: ptr<RingBuffer>, values: ptr<i32>, count: i32) -> i32 {
+    let mut pushed: i32 = 0
+    for i in 0 to count {
+        if ring_push(rb, values[i]) == 0 {
+            break
+        }
+        pushed = pushed + 1
+    }
+    return pushed
+}
+
+function ring_pop_batch(rb: ptr<RingBuffer>, out: ptr<i32>, max_count: i32) -> i32 {
+    let mut popped: i32 = 0
+    for i in 0 to max_count {
+        let val: i32 = ring_pop(rb)
+        if val == -1 {
+            break
+        }
+        out[i] = val
+        popped = popped + 1
+    }
+    return popped
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Ring Buffer Demo")
+    println("================")
+    println("")
+    
+    let mut rb: RingBuffer = ring_create(8)
+    let rb_ptr: ptr<RingBuffer> = &rb
+    
+    print("Created ring buffer with capacity: ")
+    println(rb.capacity)
+    println("")
+    
+    # Basic push/pop
+    println("=== Basic Operations ===")
+    
+    for i in 0 to 5 {
+        let success: i32 = ring_push(rb_ptr, i * 10)
+        print("  Push ")
+        print(i * 10)
+        print(": ")
+        if success == 1 {
+            println("OK")
+        } else {
+            println("FULL")
+        }
+    }
+    
+    print("Size: ")
+    println(ring_size(rb))
+    
+    println("")
+    println("Popping values:")
+    for i in 0 to 3 {
+        let val: i32 = ring_pop(rb_ptr)
+        print("  Pop: ")
+        println(val)
+    }
+    
+    print("Size after pops: ")
+    println(ring_size(rb))
+    
+    # Fill to capacity
+    println("")
+    println("=== Fill Test ===")
+    
+    # Clear first
+    while ring_is_empty(rb) == 0 {
+        let val: i32 = ring_pop(rb_ptr)
+    }
+    
+    let mut count: i32 = 0
+    while ring_is_full(rb) == 0 {
+        ring_push(rb_ptr, count)
+        count = count + 1
+    }
+    
+    print("Pushed ")
+    print(count)
+    println(" items before full")
+    print("Is full: ")
+    println(ring_is_full(rb))
+    
+    # Batch operations
+    println("")
+    println("=== Batch Operations ===")
+    
+    # Clear
+    while ring_is_empty(rb) == 0 {
+        let val: i32 = ring_pop(rb_ptr)
+    }
+    
+    let batch_in: array<i32, 5> = [100, 200, 300, 400, 500]
+    let batch_in_ptr: ptr<i32> = batch_in
+    
+    let pushed: i32 = ring_push_batch(rb_ptr, batch_in_ptr, 5)
+    print("Batch pushed: ")
+    println(pushed)
+    
+    let batch_out: array<i32, 10> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let batch_out_ptr: ptr<i32> = batch_out
+    
+    let popped: i32 = ring_pop_batch(rb_ptr, batch_out_ptr, 10)
+    print("Batch popped: ")
+    print(popped)
+    print(" values: ")
+    for i in 0 to popped {
+        print(batch_out[i])
+        print(" ")
+    }
+    println("")
+    
+    # Wrap-around test
+    println("")
+    println("=== Wrap-around Test ===")
+    
+    # Push some, pop some, push more (to test wrap-around)
+    for i in 0 to 4 {
+        ring_push(rb_ptr, i)
+    }
+    for i in 0 to 2 {
+        ring_pop(rb_ptr)
+    }
+    for i in 0 to 4 {
+        ring_push(rb_ptr, i + 100)
+    }
+    
+    print("After wrap-around, values: ")
+    while ring_is_empty(rb) == 0 {
+        let val: i32 = ring_pop(rb_ptr)
+        print(val)
+        print(" ")
+    }
+    println("")
+    
+    ring_destroy(rb)
+    
+    println("")
+    println("Ring buffers are ideal for:")
+    println("  - Producer-consumer patterns")
+    println("  - Audio streaming")
+    println("  - Network packet buffers")
+    println("  - Inter-thread communication")
+    
+    return 0
+}

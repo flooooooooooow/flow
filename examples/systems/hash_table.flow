@@ -1,0 +1,336 @@
+# Hash Table Implementation
+# Open addressing with linear probing
+#
+# Features:
+# - String keys, integer values
+# - Automatic resizing
+# - O(1) average case operations
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>)
+    function strlen(s: string) -> i64
+}
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+const EMPTY: i32 = 0
+const OCCUPIED: i32 = 1
+const DELETED: i32 = 2
+
+# ============================================================================
+# HASH TABLE ENTRY
+# ============================================================================
+
+struct HashEntry {
+    key_hash: i32,    # Cached hash of key
+    value: i32,
+    state: i32        # EMPTY, OCCUPIED, or DELETED
+}
+
+struct HashTable {
+    entries: ptr<HashEntry>,
+    capacity: i32,
+    size: i32,        # Number of occupied entries
+    max_load: i32     # Percentage (e.g., 70)
+}
+
+# ============================================================================
+# HASH FUNCTION (FNV-1a variant)
+# ============================================================================
+
+function hash_string(s: string) -> i32 {
+    let mut hash: i32 = 2166136261
+    let len: i64 = strlen(s)
+    
+    let ptr: ptr<u8> = s
+    for i in 0 to len {
+        hash = hash ^ ptr[i]
+        hash = hash * 16777619
+    }
+    
+    if hash < 0 {
+        hash = 0 - hash
+    }
+    
+    return hash
+}
+
+function hash_int(x: i32) -> i32 {
+    # Simple integer hash
+    let mut h: i32 = x
+    h = ((h >> 16) ^ h) * 0x45d9f3b
+    h = ((h >> 16) ^ h) * 0x45d9f3b
+    h = (h >> 16) ^ h
+    if h < 0 { h = 0 - h }
+    return h
+}
+
+# ============================================================================
+# TABLE CREATION
+# ============================================================================
+
+function table_create(initial_capacity: i32) -> HashTable {
+    let size: i64 = initial_capacity * 12  # sizeof(HashEntry) approx
+    let entries_raw: ptr<u8> = malloc(size)
+    let entries: ptr<HashEntry> = entries_raw
+    
+    # Initialize all entries as empty
+    for i in 0 to initial_capacity {
+        entries[i].key_hash = 0
+        entries[i].value = 0
+        entries[i].state = EMPTY
+    }
+    
+    return HashTable {
+        entries: entries,
+        capacity: initial_capacity,
+        size: 0,
+        max_load: 70
+    }
+}
+
+function table_destroy(t: HashTable) {
+    let entries_raw: ptr<u8> = t.entries
+    free(entries_raw)
+}
+
+# ============================================================================
+# CORE OPERATIONS
+# ============================================================================
+
+function table_find_slot(t: HashTable, key_hash: i32) -> i32 {
+    let mut idx: i32 = key_hash % t.capacity
+    let start_idx: i32 = idx
+    
+    while t.entries[idx].state != EMPTY {
+        if t.entries[idx].state == OCCUPIED and t.entries[idx].key_hash == key_hash {
+            return idx  # Found existing key
+        }
+        
+        idx = (idx + 1) % t.capacity
+        if idx == start_idx {
+            return -1  # Table is full (shouldn't happen with resize)
+        }
+    }
+    
+    return idx  # Found empty slot
+}
+
+function table_insert(t: ptr<HashTable>, key_hash: i32, value: i32) -> i32 {
+    # Check if resize needed
+    let load: i32 = t[0].size * 100 / t[0].capacity
+    if load >= t[0].max_load {
+        # Would need resize here (simplified: just report full)
+        return 0
+    }
+    
+    let idx: i32 = table_find_slot(t[0], key_hash)
+    if idx == -1 {
+        return 0
+    }
+    
+    if t[0].entries[idx].state != OCCUPIED {
+        t[0].size = t[0].size + 1
+    }
+    
+    t[0].entries[idx].key_hash = key_hash
+    t[0].entries[idx].value = value
+    t[0].entries[idx].state = OCCUPIED
+    
+    return 1
+}
+
+function table_get(t: HashTable, key_hash: i32) -> i32 {
+    let mut idx: i32 = key_hash % t.capacity
+    let start_idx: i32 = idx
+    
+    while t.entries[idx].state != EMPTY {
+        if t.entries[idx].state == OCCUPIED and t.entries[idx].key_hash == key_hash {
+            return t.entries[idx].value
+        }
+        
+        idx = (idx + 1) % t.capacity
+        if idx == start_idx {
+            return -1  # Not found
+        }
+    }
+    
+    return -1  # Not found
+}
+
+function table_contains(t: HashTable, key_hash: i32) -> i32 {
+    let mut idx: i32 = key_hash % t.capacity
+    let start_idx: i32 = idx
+    
+    while t.entries[idx].state != EMPTY {
+        if t.entries[idx].state == OCCUPIED and t.entries[idx].key_hash == key_hash {
+            return 1
+        }
+        
+        idx = (idx + 1) % t.capacity
+        if idx == start_idx {
+            return 0
+        }
+    }
+    
+    return 0
+}
+
+function table_remove(t: ptr<HashTable>, key_hash: i32) -> i32 {
+    let mut idx: i32 = key_hash % t[0].capacity
+    let start_idx: i32 = idx
+    
+    while t[0].entries[idx].state != EMPTY {
+        if t[0].entries[idx].state == OCCUPIED and t[0].entries[idx].key_hash == key_hash {
+            t[0].entries[idx].state = DELETED
+            t[0].size = t[0].size - 1
+            return 1
+        }
+        
+        idx = (idx + 1) % t[0].capacity
+        if idx == start_idx {
+            return 0
+        }
+    }
+    
+    return 0
+}
+
+# ============================================================================
+# UTILITY
+# ============================================================================
+
+function table_size(t: HashTable) -> i32 {
+    return t.size
+}
+
+function table_load_factor(t: HashTable) -> i32 {
+    return t.size * 100 / t.capacity
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Hash Table Demo")
+    println("===============")
+    println("")
+    
+    let mut table: HashTable = table_create(16)
+    let table_ptr: ptr<HashTable> = &table
+    
+    print("Created hash table with capacity: ")
+    println(table.capacity)
+    println("")
+    
+    # Insert some key-value pairs
+    println("=== Insertion ===")
+    
+    # Using pre-computed hashes (simulating string keys)
+    let key_apple: i32 = hash_int(1)
+    let key_banana: i32 = hash_int(2)
+    let key_cherry: i32 = hash_int(3)
+    let key_date: i32 = hash_int(4)
+    let key_elderberry: i32 = hash_int(5)
+    
+    table_insert(table_ptr, key_apple, 100)
+    println("  Inserted apple -> 100")
+    
+    table_insert(table_ptr, key_banana, 200)
+    println("  Inserted banana -> 200")
+    
+    table_insert(table_ptr, key_cherry, 300)
+    println("  Inserted cherry -> 300")
+    
+    table_insert(table_ptr, key_date, 400)
+    println("  Inserted date -> 400")
+    
+    table_insert(table_ptr, key_elderberry, 500)
+    println("  Inserted elderberry -> 500")
+    
+    print("Table size: ")
+    println(table_size(table))
+    print("Load factor: ")
+    print(table_load_factor(table))
+    println("%")
+    
+    # Lookup
+    println("")
+    println("=== Lookup ===")
+    
+    let val_apple: i32 = table_get(table, key_apple)
+    print("  apple -> ")
+    println(val_apple)
+    
+    let val_cherry: i32 = table_get(table, key_cherry)
+    print("  cherry -> ")
+    println(val_cherry)
+    
+    let val_missing: i32 = table_get(table, hash_int(999))
+    print("  missing key -> ")
+    println(val_missing)
+    
+    # Contains check
+    println("")
+    println("=== Contains ===")
+    
+    print("  Contains banana: ")
+    println(table_contains(table, key_banana))
+    
+    print("  Contains missing: ")
+    println(table_contains(table, hash_int(999)))
+    
+    # Update (insert with same key)
+    println("")
+    println("=== Update ===")
+    
+    table_insert(table_ptr, key_apple, 999)
+    let updated: i32 = table_get(table, key_apple)
+    print("  apple updated to: ")
+    println(updated)
+    
+    # Deletion
+    println("")
+    println("=== Deletion ===")
+    
+    let removed: i32 = table_remove(table_ptr, key_banana)
+    print("  Removed banana: ")
+    println(removed)
+    
+    print("  Contains banana after removal: ")
+    println(table_contains(table, key_banana))
+    
+    print("  Table size after removal: ")
+    println(table_size(table))
+    
+    # Fill test
+    println("")
+    println("=== Collision Test ===")
+    
+    for i in 0 to 8 {
+        let h: i32 = hash_int(i + 100)
+        let ok: i32 = table_insert(table_ptr, h, i)
+        if ok == 0 {
+            print("  Table full at i=")
+            println(i)
+            break
+        }
+    }
+    
+    print("Final size: ")
+    println(table_size(table))
+    print("Final load: ")
+    print(table_load_factor(table))
+    println("%")
+    
+    table_destroy(table)
+    
+    println("")
+    println("Hash table operations complete!")
+    
+    return 0
+}

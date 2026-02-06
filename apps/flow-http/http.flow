@@ -1,0 +1,354 @@
+# Flow HTTP Framework
+# A minimal HTTP server framework demonstrating Flow's capability
+# for network applications
+#
+# Note: This is a demonstration of the API design.
+# Full implementation would require socket bindings.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+    function strlen(s: string) -> i64
+}
+
+# ============================================================================
+# HTTP TYPES
+# ============================================================================
+
+const METHOD_GET: i32 = 1
+const METHOD_POST: i32 = 2
+const METHOD_PUT: i32 = 3
+const METHOD_DELETE: i32 = 4
+
+const STATUS_OK: i32 = 200
+const STATUS_CREATED: i32 = 201
+const STATUS_BAD_REQUEST: i32 = 400
+const STATUS_NOT_FOUND: i32 = 404
+const STATUS_INTERNAL_ERROR: i32 = 500
+
+struct HttpRequest {
+    method: i32,
+    path_hash: i32,      # Hash of path for routing
+    content_length: i32,
+    body_offset: i32     # Offset into buffer where body starts
+}
+
+struct HttpResponse {
+    status: i32,
+    content_length: i32,
+    body_hash: i32       # Simplified: hash of response body
+}
+
+struct Route {
+    method: i32,
+    path_hash: i32,
+    handler_id: i32      # ID of handler function
+}
+
+struct HttpServer {
+    routes: ptr<Route>,
+    route_count: i32,
+    max_routes: i32,
+    port: i32
+}
+
+# ============================================================================
+# HASH FUNCTIONS
+# ============================================================================
+
+function hash_path(path: string) -> i32 {
+    let mut hash: i32 = 5381
+    let len: i64 = strlen(path)
+    let ptr: ptr<u8> = path
+    
+    for i in 0 to len {
+        hash = ((hash << 5) + hash) + ptr[i]
+    }
+    
+    if hash < 0 { hash = 0 - hash }
+    return hash
+}
+
+# ============================================================================
+# SERVER CREATION
+# ============================================================================
+
+function server_create(port: i32, max_routes: i32) -> HttpServer {
+    let routes_size: i64 = max_routes * 12  # sizeof(Route)
+    let routes_raw: ptr<u8> = malloc(routes_size)
+    let routes: ptr<Route> = routes_raw
+    
+    for i in 0 to max_routes {
+        routes[i].method = 0
+        routes[i].path_hash = 0
+        routes[i].handler_id = 0
+    }
+    
+    return HttpServer {
+        routes: routes,
+        route_count: 0,
+        max_routes: max_routes,
+        port: port
+    }
+}
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>)
+}
+
+function server_destroy(s: HttpServer) {
+    let routes_raw: ptr<u8> = s.routes
+    free(routes_raw)
+}
+
+# ============================================================================
+# ROUTING
+# ============================================================================
+
+function server_add_route(s: ptr<HttpServer>, method: i32, path: string, handler_id: i32) -> i32 {
+    if s[0].route_count >= s[0].max_routes {
+        return 0
+    }
+    
+    let idx: i32 = s[0].route_count
+    s[0].routes[idx].method = method
+    s[0].routes[idx].path_hash = hash_path(path)
+    s[0].routes[idx].handler_id = handler_id
+    s[0].route_count = s[0].route_count + 1
+    
+    return 1
+}
+
+function server_get(s: ptr<HttpServer>, path: string, handler_id: i32) -> i32 {
+    return server_add_route(s, METHOD_GET, path, handler_id)
+}
+
+function server_post(s: ptr<HttpServer>, path: string, handler_id: i32) -> i32 {
+    return server_add_route(s, METHOD_POST, path, handler_id)
+}
+
+function server_put(s: ptr<HttpServer>, path: string, handler_id: i32) -> i32 {
+    return server_add_route(s, METHOD_PUT, path, handler_id)
+}
+
+function server_delete(s: ptr<HttpServer>, path: string, handler_id: i32) -> i32 {
+    return server_add_route(s, METHOD_DELETE, path, handler_id)
+}
+
+# ============================================================================
+# REQUEST HANDLING
+# ============================================================================
+
+function find_route(s: HttpServer, req: HttpRequest) -> i32 {
+    for i in 0 to s.route_count {
+        if s.routes[i].method == req.method and s.routes[i].path_hash == req.path_hash {
+            return s.routes[i].handler_id
+        }
+    }
+    return -1
+}
+
+function handle_request(s: HttpServer, req: HttpRequest) -> HttpResponse {
+    let handler_id: i32 = find_route(s, req)
+    
+    if handler_id == -1 {
+        return HttpResponse {
+            status: STATUS_NOT_FOUND,
+            content_length: 0,
+            body_hash: 0
+        }
+    }
+    
+    # In a real implementation, we would call the handler function here
+    # For demo, we simulate based on handler_id
+    
+    if handler_id == 1 {
+        # Handler 1: Return "Hello, World!"
+        return HttpResponse {
+            status: STATUS_OK,
+            content_length: 13,
+            body_hash: hash_path("Hello, World!")
+        }
+    }
+    
+    if handler_id == 2 {
+        # Handler 2: Return user data
+        return HttpResponse {
+            status: STATUS_OK,
+            content_length: 50,
+            body_hash: hash_path("{\"user\": \"John\"}")
+        }
+    }
+    
+    if handler_id == 3 {
+        # Handler 3: Create resource
+        return HttpResponse {
+            status: STATUS_CREATED,
+            content_length: 20,
+            body_hash: hash_path("{\"created\": true}")
+        }
+    }
+    
+    return HttpResponse {
+        status: STATUS_INTERNAL_ERROR,
+        content_length: 0,
+        body_hash: 0
+    }
+}
+
+# ============================================================================
+# RESPONSE HELPERS
+# ============================================================================
+
+function status_text(status: i32) -> string {
+    if status == STATUS_OK { return "OK" }
+    if status == STATUS_CREATED { return "Created" }
+    if status == STATUS_BAD_REQUEST { return "Bad Request" }
+    if status == STATUS_NOT_FOUND { return "Not Found" }
+    return "Internal Server Error"
+}
+
+function method_text(method: i32) -> string {
+    if method == METHOD_GET { return "GET" }
+    if method == METHOD_POST { return "POST" }
+    if method == METHOD_PUT { return "PUT" }
+    if method == METHOD_DELETE { return "DELETE" }
+    return "UNKNOWN"
+}
+
+# ============================================================================
+# MIDDLEWARE SUPPORT
+# ============================================================================
+
+struct Middleware {
+    id: i32,
+    name_hash: i32,
+    enabled: i32
+}
+
+function middleware_logging(req: HttpRequest, resp: HttpResponse) {
+    print("  [LOG] ")
+    print(method_text(req.method))
+    print(" request -> ")
+    print(resp.status)
+    print(" ")
+    println(status_text(resp.status))
+}
+
+# ============================================================================
+# DEMO
+# ============================================================================
+
+function main() -> i32 {
+    println("Flow HTTP Framework Demo")
+    println("========================")
+    println("")
+    
+    # Create server
+    let mut server: HttpServer = server_create(8080, 10)
+    let server_ptr: ptr<HttpServer> = &server
+    
+    print("Server created on port ")
+    println(server.port)
+    println("")
+    
+    # Register routes
+    println("=== Registering Routes ===")
+    
+    server_get(server_ptr, "/", 1)
+    println("  GET  /          -> handler 1 (Hello World)")
+    
+    server_get(server_ptr, "/api/users", 2)
+    println("  GET  /api/users -> handler 2 (User data)")
+    
+    server_post(server_ptr, "/api/users", 3)
+    println("  POST /api/users -> handler 3 (Create user)")
+    
+    print("  Total routes: ")
+    println(server.route_count)
+    println("")
+    
+    # Simulate requests
+    println("=== Simulating Requests ===")
+    
+    # Request 1: GET /
+    let req1: HttpRequest = HttpRequest {
+        method: METHOD_GET,
+        path_hash: hash_path("/"),
+        content_length: 0,
+        body_offset: 0
+    }
+    println("Request: GET /")
+    let resp1: HttpResponse = handle_request(server, req1)
+    middleware_logging(req1, resp1)
+    println("")
+    
+    # Request 2: GET /api/users
+    let req2: HttpRequest = HttpRequest {
+        method: METHOD_GET,
+        path_hash: hash_path("/api/users"),
+        content_length: 0,
+        body_offset: 0
+    }
+    println("Request: GET /api/users")
+    let resp2: HttpResponse = handle_request(server, req2)
+    middleware_logging(req2, resp2)
+    println("")
+    
+    # Request 3: POST /api/users
+    let req3: HttpRequest = HttpRequest {
+        method: METHOD_POST,
+        path_hash: hash_path("/api/users"),
+        content_length: 25,
+        body_offset: 0
+    }
+    println("Request: POST /api/users")
+    let resp3: HttpResponse = handle_request(server, req3)
+    middleware_logging(req3, resp3)
+    println("")
+    
+    # Request 4: GET /not-found
+    let req4: HttpRequest = HttpRequest {
+        method: METHOD_GET,
+        path_hash: hash_path("/not-found"),
+        content_length: 0,
+        body_offset: 0
+    }
+    println("Request: GET /not-found")
+    let resp4: HttpResponse = handle_request(server, req4)
+    middleware_logging(req4, resp4)
+    println("")
+    
+    # Summary
+    println("=== Response Summary ===")
+    print("  / -> ")
+    print(resp1.status)
+    print(" (")
+    print(resp1.content_length)
+    println(" bytes)")
+    
+    print("  /api/users (GET) -> ")
+    print(resp2.status)
+    print(" (")
+    print(resp2.content_length)
+    println(" bytes)")
+    
+    print("  /api/users (POST) -> ")
+    print(resp3.status)
+    print(" (")
+    print(resp3.content_length)
+    println(" bytes)")
+    
+    print("  /not-found -> ")
+    println(resp4.status)
+    
+    server_destroy(server)
+    
+    println("")
+    println("HTTP Framework demo complete!")
+    println("")
+    println("Note: This is an API demonstration.")
+    println("Full implementation requires socket bindings.")
+    
+    return 0
+}

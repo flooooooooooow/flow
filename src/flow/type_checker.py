@@ -48,6 +48,7 @@ class TypeKind(Enum):
     ARRAY = "array"
     POINTER = "pointer"
     FUNCTION = "function"
+    NULL = "null"  # null pointer type
 
 
 @dataclass
@@ -104,6 +105,7 @@ class Symbol:
     type: SemanticType
     kind: str  # "function", "variable", "struct", "effect", "capability", "const"
     is_exported: bool = False
+    is_mutable: bool = False  # For variables: True if declared with 'let mut'
     definition: Any = None  # Reference to AST node
 
 
@@ -237,6 +239,10 @@ class TypeChecker:
 
     def _check_function(self, func: FunctionDecl) -> None:
         """Type check a function declaration."""
+        # Extern functions have no body to check - they're just declarations
+        if getattr(func, 'is_extern', False):
+            return
+        
         # Create function scope
         func_scope = Scope(parent=self.current_scope)
         self.current_scope = func_scope
@@ -252,7 +258,7 @@ class TypeChecker:
             body_type = self._check_block(func.body)
             expected_return = self._parse_type(func.return_type)
 
-            # Check return type
+            # Check return type - extern functions don't have bodies so don't check
             if body_type != expected_return:
                 self.errors.append(
                     f"Function '{func.name}' returns {body_type} but should return {expected_return}"
@@ -314,8 +320,9 @@ class TypeChecker:
             # Type inference - for now, just use the expression type
             expected_type = expr_type
 
-        # Add to current scope
-        symbol = Symbol(var.name, expected_type, "variable")
+        # Add to current scope with mutability flag
+        is_mutable = getattr(var, 'is_mutable', False)
+        symbol = Symbol(var.name, expected_type, "variable", is_mutable=is_mutable)
         self.current_scope.define(symbol)
 
         return expected_type
@@ -329,10 +336,24 @@ class TypeChecker:
 
     def _check_assignment(self, assign: Assignment) -> SemanticType:
         """Type check an assignment."""
+        # Handle field access assignments (target_expr is set)
+        if assign.target_expr is not None:
+            # For now, allow all field/array assignments - mutability check 
+            # would require tracking whether the base object is mutable
+            expr_type = self._check_expression(assign.value)
+            return expr_type
+        
         symbol = self.current_scope.lookup(assign.target)
         if not symbol:
             self.errors.append(f"Undefined variable '{assign.target}'")
             return SemanticType(TypeKind.VOID)
+        
+        # Check mutability
+        if not symbol.is_mutable:
+            self.errors.append(
+                f"Cannot assign to immutable variable '{assign.target}'. "
+                f"Use 'let mut {assign.target}' to make it mutable."
+            )
 
         expr_type = self._check_expression(assign.value)
         if expr_type != symbol.type:
