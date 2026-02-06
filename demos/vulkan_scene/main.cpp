@@ -364,6 +364,12 @@ public:
         cleanup();
     }
 
+    void waitIdle() {
+        if (device != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(device);
+        }
+    }
+
     bool shouldClose() const {
         return window && glfwWindowShouldClose(window);
     }
@@ -388,6 +394,9 @@ public:
         }
         uploadTexturePixels(width, height, pixels);
         createTextureImageView();
+        textureImage2 = textureImage;
+        textureImageMemory2 = textureImageMemory;
+        textureImageView2 = textureImageView;
         createDescriptorSets();
     }
 
@@ -504,6 +513,26 @@ private:
             glfwTerminate();
             throw std::runtime_error("GLFW reports Vulkan is not supported (check Vulkan loader/install)");
         }
+        int windowPosX = 0;
+        int windowPosY = 0;
+        if (externalInstanceMode) {
+            uint32_t side = std::min(g_config.width, g_config.height);
+            GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+            const GLFWvidmode* mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+            if (mode) {
+                side = static_cast<uint32_t>(std::min(mode->width, mode->height) / 4);
+            }
+            if (side == 0) {
+                side = 225;
+            }
+            side = static_cast<uint32_t>((side * 9) / 10);
+            g_config.width = side;
+            g_config.height = side;
+            if (mode) {
+                windowPosX = (mode->width - static_cast<int>(g_config.width)) / 2;
+                windowPosY = (mode->height - static_cast<int>(g_config.height)) / 2;
+            }
+        }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         window = glfwCreateWindow(g_config.width, g_config.height, g_config.title.c_str(), nullptr, nullptr);
@@ -512,6 +541,9 @@ private:
             throw std::runtime_error("failed to create GLFW window");
         }
         glfwSetWindowUserPointer(window, this);
+        if (externalInstanceMode && (windowPosX != 0 || windowPosY != 0)) {
+            glfwSetWindowPos(window, windowPosX, windowPosY);
+        }
         glfwSetScrollCallback(window, [](GLFWwindow* win, double /*xoff*/, double yoff) {
             (void)win;
             g_scrollDelta += yoff;
@@ -1325,6 +1357,10 @@ private:
                 vkDestroyImageView(device, textureImageView, nullptr);
                 textureImageView = VK_NULL_HANDLE;
             }
+            if (textureImageView2 && textureImageView2 != textureImageView) {
+                vkDestroyImageView(device, textureImageView2, nullptr);
+            }
+            textureImageView2 = VK_NULL_HANDLE;
             if (textureImage) {
                 vkDestroyImage(device, textureImage, nullptr);
                 textureImage = VK_NULL_HANDLE;
@@ -1332,6 +1368,10 @@ private:
             if (textureImageMemory) {
                 vkFreeMemory(device, textureImageMemory, nullptr);
                 textureImageMemory = VK_NULL_HANDLE;
+            }
+            if (textureImage2) {
+                textureImage2 = VK_NULL_HANDLE;
+                textureImageMemory2 = VK_NULL_HANDLE;
             }
 
             createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
@@ -1995,9 +2035,15 @@ private:
             float proj[16];
             mat4_identity(model);
             mat4_identity(view);
+            float orthoWidth = static_cast<float>(swapChainExtent.width);
+            float orthoHeight = static_cast<float>(swapChainExtent.height);
+            if (tileMode || externalInstanceMode) {
+                orthoWidth = static_cast<float>(g_config.width);
+                orthoHeight = static_cast<float>(g_config.height);
+            }
             mat4_ortho(0.0f,
-                       static_cast<float>(swapChainExtent.width),
-                       static_cast<float>(swapChainExtent.height),
+                       orthoWidth,
+                       orthoHeight,
                        0.0f,
                        -1.0f, 1.0f,
                        proj);
@@ -2776,6 +2822,7 @@ extern "C" void flow_vk_2048_shutdown() {
     if (!g_flow_app) {
         return;
     }
+    g_flow_app->waitIdle();
     g_flow_app->shutdown();
     delete g_flow_app;
     g_flow_app = nullptr;
