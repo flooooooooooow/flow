@@ -18,7 +18,7 @@ FRAG_SPV := shaders/scene.frag.spv
 
 RPATHS := /opt/homebrew/opt/vulkan-loader/lib /opt/homebrew/opt/molten-vk/lib /opt/homebrew/opt/vulkan-validationlayers/lib
 RPATH_FLAGS := $(foreach p,$(RPATHS),-Wl,-rpath,$(p))
-FRAMEWORKS := -framework CoreGraphics -framework ImageIO -framework CoreFoundation
+FRAMEWORKS := -framework CoreGraphics -framework ImageIO -framework CoreFoundation -framework CoreText
 
 .PHONY: all clean shaders run
 

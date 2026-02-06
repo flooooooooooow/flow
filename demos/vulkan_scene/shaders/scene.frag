@@ -16,5 +16,13 @@ layout(push_constant) uniform PushConstants {
 void main() {
     int idx = clamp(pc.texIndex, 0, 1);
     vec4 tex = texture(texSampler[idx], vUV);
-    outColor = vec4(vColor, 1.0) * tex * pc.color;
+    if (pc.color.w < 0.0) {
+        vec3 base = vColor;
+        vec3 text = vec3(0.12, 0.12, 0.12);
+        float a = tex.a;
+        vec3 mixed = mix(base, text, a);
+        outColor = vec4(mixed, 1.0);
+    } else {
+        outColor = vec4(vColor, 1.0) * tex * pc.color;
+    }
 }

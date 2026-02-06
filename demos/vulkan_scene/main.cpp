@@ -12,14 +12,18 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <sys/stat.h>
 
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
+#include <CoreText/CoreText.h>
 #endif
 
 namespace {
+
+class VulkanApp;
 
 struct Config {
     uint32_t width = 960;
@@ -43,6 +47,17 @@ struct Config {
 };
 
 Config g_config;
+bool g_tileMode = false;
+bool g_externalInstanceMode = false;
+uint32_t g_externalInstanceCapacity = 0;
+static VulkanApp* g_flow_app = nullptr;
+
+#ifndef FLOW_VK_STANDALONE
+extern "C" void flow_2048_init_ptr_i32_ptr_i32_ptr_i32(int32_t* board, int32_t* score, int32_t* rng);
+extern "C" void flow_2048_step_ptr_i32_ptr_i32_ptr_i32_i32(int32_t* board, int32_t* score, int32_t* rng, int32_t dir);
+extern "C" int32_t flow_2048_score_ptr_i32(int32_t* score);
+extern "C" int32_t flow_2048_can_move_ptr_i32(int32_t* board);
+#endif
 static double g_scrollDelta = 0.0;
 
 const std::vector<const char*> kValidationLayers = {
@@ -102,6 +117,9 @@ struct Vertex {
 struct InstanceData {
     float offset[3];
     float scale;
+    float uvOffset[2];
+    float uvScale[2];
+    float color[4];
 };
 
 struct MeshRange {
@@ -127,6 +145,47 @@ static std::vector<char> readFile(const std::string& filename) {
     file.read(buffer.data(), fileSize);
     file.close();
     return buffer;
+}
+
+static bool fileNewer(const char* a, const char* b) {
+    struct stat sa{};
+    struct stat sb{};
+    if (stat(a, &sa) != 0) {
+        return false;
+    }
+    if (stat(b, &sb) != 0) {
+        return true;
+    }
+    return sa.st_mtime > sb.st_mtime;
+}
+
+static void ensureShadersBuilt() {
+    const char* vertSrc = "demos/vulkan_scene/shaders/scene.vert";
+    const char* fragSrc = "demos/vulkan_scene/shaders/scene.frag";
+    const char* vertSpv = "demos/vulkan_scene/shaders/scene.vert.spv";
+    const char* fragSpv = "demos/vulkan_scene/shaders/scene.frag.spv";
+
+    bool buildVert = fileNewer(vertSrc, vertSpv);
+    bool buildFrag = fileNewer(fragSrc, fragSpv);
+    if (!buildVert && !buildFrag) {
+        return;
+    }
+    if (buildVert) {
+        std::string cmd = std::string("glslangValidator -V ") + vertSrc + " -o " + vertSpv;
+        int rc = std::system(cmd.c_str());
+        if (rc != 0) {
+            std::cerr << "error: failed to compile vertex shader via glslangValidator\n";
+            throw std::runtime_error("shader compilation failed");
+        }
+    }
+    if (buildFrag) {
+        std::string cmd = std::string("glslangValidator -V ") + fragSrc + " -o " + fragSpv;
+        int rc = std::system(cmd.c_str());
+        if (rc != 0) {
+            std::cerr << "error: failed to compile fragment shader via glslangValidator\n";
+            throw std::runtime_error("shader compilation failed");
+        }
+    }
 }
 
 static std::string pickFileDialog(const char* title) {
@@ -182,6 +241,17 @@ static void mat4_perspective(float fovy, float aspect, float znear, float zfar, 
     out[14] = (2.0f * zfar * znear) / (znear - zfar);
 }
 
+static void mat4_ortho(float left, float right, float top, float bottom, float znear, float zfar, float* out) {
+    std::memset(out, 0, sizeof(float) * 16);
+    out[0] = 2.0f / (right - left);
+    out[5] = 2.0f / (bottom - top);
+    out[10] = -2.0f / (zfar - znear);
+    out[12] = -(right + left) / (right - left);
+    out[13] = -(bottom + top) / (bottom - top);
+    out[14] = -(zfar + znear) / (zfar - znear);
+    out[15] = 1.0f;
+}
+
 static void mat4_lookat(const float* eye, const float* center, const float* up, float* out) {
     float f[3] = {center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]};
     float f_len = std::sqrt(f[0]*f[0] + f[1]*f[1] + f[2]*f[2]);
@@ -203,6 +273,12 @@ static void mat4_lookat(const float* eye, const float* center, const float* up, 
 }
 
 static void makeMissingTexture(int& width, int& height, std::vector<uint8_t>& pixels) {
+    if (g_tileMode) {
+        width = 2;
+        height = 2;
+        pixels.assign(static_cast<size_t>(width) * height * 4, 255);
+        return;
+    }
     width = 64;
     height = 64;
     pixels.resize(static_cast<size_t>(width) * height * 4);
@@ -230,9 +306,39 @@ static void makeMissingTexture(int& width, int& height, std::vector<uint8_t>& pi
         }
     }
 }
+
+struct TileLabel {
+    int value;
+    const char* text;
+};
+
+static const TileLabel kTileLabels[] = {
+    {0, ""},
+    {2, "2"},
+    {4, "4"},
+    {8, "8"},
+    {16, "16"},
+    {32, "32"},
+    {64, "64"},
+    {128, "128"},
+    {256, "256"},
+    {512, "512"},
+    {1024, "1024"},
+    {2048, "2048"},
+};
+
+static int tileLabelIndex(int value) {
+    for (size_t i = 0; i < sizeof(kTileLabels) / sizeof(kTileLabels[0]); ++i) {
+        if (kTileLabels[i].value == value) {
+            return static_cast<int>(i);
+        }
+    }
+    return 0;
+}
 class VulkanApp {
 public:
     void run() {
+        tileMode = g_tileMode;
         trace("Startup: initializing window");
         initWindow();
         trace("Startup: initializing Vulkan");
@@ -243,8 +349,70 @@ public:
         cleanup();
     }
 
+    void init() {
+        tileMode = g_tileMode;
+        externalInstanceMode = g_externalInstanceMode;
+        externalInstanceCapacity = g_externalInstanceCapacity;
+        trace("Startup: initializing window");
+        initWindow();
+        trace("Startup: initializing Vulkan");
+        initVulkan();
+    }
+
+    void shutdown() {
+        trace("Shutdown: cleaning up");
+        cleanup();
+    }
+
+    bool shouldClose() const {
+        return window && glfwWindowShouldClose(window);
+    }
+
+    void poll() {
+        if (window) {
+            glfwPollEvents();
+        }
+    }
+
+    void renderExternal(const float* instanceData, uint32_t count) {
+        if (!externalInstanceMode) {
+            return;
+        }
+        updateExternalInstanceBuffer(instanceData, count);
+        drawFrame();
+    }
+
+    int keyDown(int key) const {
+        if (!window) {
+            return 0;
+        }
+        return glfwGetKey(window, key) == GLFW_PRESS ? 1 : 0;
+    }
+
 private:
     GLFWwindow* window = nullptr;
+    bool tileMode = false;
+    bool tileInited = false;
+    bool keyLeftDown = false;
+    bool keyRightDown = false;
+    bool keyUpDown = false;
+    bool keyDownDown = false;
+    bool keyRestartDown = false;
+    std::array<int32_t, 16> tileValues{};
+    std::array<int32_t, 16> tileBoard{};
+    int32_t tileScore = 0;
+    int32_t tileRng = 1;
+    float tileSize = 0.0f;
+    float tileGap = 0.0f;
+    int tileAtlasCols = 1;
+    float tileAtlasU = 1.0f;
+    float tileAtlasV = 1.0f;
+    float tileAtlasPad = 2.0f;
+    float tileAtlasCell = 64.0f;
+    bool instanceBufferHostVisible = false;
+    bool externalInstanceMode = false;
+    uint32_t externalInstanceCount = 0;
+    uint32_t externalInstanceCapacity = 0;
 
     VkInstance instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
@@ -340,6 +508,7 @@ private:
     }
 
     void initVulkan() {
+        ensureShadersBuilt();
         trace("Init: create instance");
         createInstance();
         trace("Init: setup debug messenger");
@@ -398,9 +567,24 @@ private:
     }
 
     void mainLoop() {
+#ifndef FLOW_VK_STANDALONE
+        if (tileMode && !tileInited) {
+            flow_2048_init_ptr_i32_ptr_i32_ptr_i32(tileBoard.data(), &tileScore, &tileRng);
+            std::memcpy(tileValues.data(), tileBoard.data(), sizeof(int32_t) * tileBoard.size());
+            tileInited = true;
+        }
+#endif
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
-            handleInput();
+            if (tileMode) {
+                handleTileInput();
+#ifndef FLOW_VK_STANDALONE
+                std::memcpy(tileValues.data(), tileBoard.data(), sizeof(int32_t) * tileBoard.size());
+#endif
+                updateTileInstanceBuffer();
+            } else {
+                handleInput();
+            }
             drawFrame();
         }
         trace("Shutdown: waiting for device idle");
@@ -795,7 +979,7 @@ private:
         instanceBinding.stride = sizeof(InstanceData);
         instanceBinding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-        std::array<VkVertexInputAttributeDescription, 5> attributeDescriptions{};
+        std::array<VkVertexInputAttributeDescription, 8> attributeDescriptions{};
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -820,6 +1004,18 @@ private:
         attributeDescriptions[4].location = 4;
         attributeDescriptions[4].format = VK_FORMAT_R32_SFLOAT;
         attributeDescriptions[4].offset = offsetof(InstanceData, scale);
+        attributeDescriptions[5].binding = 1;
+        attributeDescriptions[5].location = 5;
+        attributeDescriptions[5].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[5].offset = offsetof(InstanceData, uvOffset);
+        attributeDescriptions[6].binding = 1;
+        attributeDescriptions[6].location = 6;
+        attributeDescriptions[6].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[6].offset = offsetof(InstanceData, uvScale);
+        attributeDescriptions[7].binding = 1;
+        attributeDescriptions[7].location = 7;
+        attributeDescriptions[7].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributeDescriptions[7].offset = offsetof(InstanceData, color);
 
         std::array<VkVertexInputBindingDescription, 2> bindings = {bindingDescription, instanceBinding};
 
@@ -860,7 +1056,7 @@ private:
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.cullMode = tileMode ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -982,6 +1178,69 @@ private:
         int texHeight = 2;
         std::vector<uint8_t> pixels;
 
+        if (tileMode) {
+            const int cell = 64;
+            tileAtlasCell = static_cast<float>(cell);
+            tileAtlasPad = 2.0f;
+            tileAtlasCols = static_cast<int>(sizeof(kTileLabels) / sizeof(kTileLabels[0]));
+            tileAtlasU = 1.0f / static_cast<float>(tileAtlasCols);
+            tileAtlasV = 1.0f;
+            texWidth = cell * tileAtlasCols;
+            texHeight = cell;
+            pixels.assign(static_cast<size_t>(texWidth) * texHeight * 4, 0);
+#ifdef __APPLE__
+            CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+            CGContextRef ctx = CGBitmapContextCreate(
+                pixels.data(), texWidth, texHeight, 8, texWidth * 4,
+                colorSpace, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big
+            );
+            if (ctx) {
+                CGContextSetRGBFillColor(ctx, 0, 0, 0, 0);
+                CGContextFillRect(ctx, CGRectMake(0, 0, texWidth, texHeight));
+
+                CTFontRef font = CTFontCreateWithName(CFSTR("Helvetica Neue Bold"), cell * 0.6, nullptr);
+                if (font) {
+                    for (int i = 0; i < tileAtlasCols; ++i) {
+                        const char* text = kTileLabels[i].text;
+                        if (!text || text[0] == '\0') {
+                            continue;
+                        }
+                        CFStringRef cfText = CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
+                        if (!cfText) continue;
+                        CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                                                                &kCFTypeDictionaryKeyCallBacks,
+                                                                                &kCFTypeDictionaryValueCallBacks);
+                        CFDictionarySetValue(attrs, kCTFontAttributeName, font);
+                        CFDictionarySetValue(attrs, kCTForegroundColorFromContextAttributeName, kCFBooleanTrue);
+                        CFAttributedStringRef attrStr = CFAttributedStringCreate(kCFAllocatorDefault, cfText, attrs);
+                        CTLineRef line = CTLineCreateWithAttributedString(attrStr);
+                        CFRelease(attrStr);
+                        CFRelease(attrs);
+                        CFRelease(cfText);
+
+                        CGRect bounds = CTLineGetBoundsWithOptions(line, kCTLineBoundsUseOpticalBounds);
+                        float textW = bounds.size.width;
+                        float textH = bounds.size.height;
+                        float x = i * cell + (cell - textW) * 0.5f - bounds.origin.x;
+                        float y = (cell - textH) * 0.5f - bounds.origin.y;
+
+                        CGContextSaveGState(ctx);
+                        CGContextTranslateCTM(ctx, 0, texHeight);
+                        CGContextScaleCTM(ctx, 1, -1);
+                        CGContextSetRGBFillColor(ctx, 1, 1, 1, 1);
+                        CGContextSetTextPosition(ctx, x, texHeight - cell + y);
+                        CTLineDraw(line, ctx);
+                        CGContextRestoreGState(ctx);
+
+                        CFRelease(line);
+                    }
+                    CFRelease(font);
+                }
+                CGContextRelease(ctx);
+            }
+            CGColorSpaceRelease(colorSpace);
+#endif
+        } else {
         if (g_config.texturePath == "__PICK__") {
             g_config.texturePath = pickFileDialog("Select texture");
         }
@@ -1018,6 +1277,7 @@ private:
                 CFRelease(url);
             }
 #endif
+        }
         }
 
         if (pixels.empty()) {
@@ -1149,11 +1409,11 @@ private:
     void createTextureSampler() {
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        samplerInfo.magFilter = VK_FILTER_LINEAR;
-        samplerInfo.minFilter = VK_FILTER_LINEAR;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.magFilter = tileMode ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+        samplerInfo.minFilter = tileMode ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = tileMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = tileMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = tileMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.anisotropyEnable = VK_FALSE;
         samplerInfo.maxAnisotropy = 1.0f;
         samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -1172,37 +1432,54 @@ private:
         indices.clear();
         meshes.clear();
 
-        const std::vector<Vertex> quad = {
-            {{-0.6f, -0.6f, 0.0f}, {1.0f, 0.3f, 0.3f}, {0.0f, 0.0f}},
-            {{0.6f, -0.6f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-            {{0.6f, 0.6f, 0.0f}, {0.3f, 0.3f, 1.0f}, {1.0f, 1.0f}},
-            {{-0.6f, 0.6f, 0.0f}, {1.0f, 1.0f, 0.3f}, {0.0f, 1.0f}},
-        };
+        std::vector<Vertex> quad;
+        if (tileMode) {
+            quad = {
+                {{-0.6f, -0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+                {{0.6f, -0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+                {{0.6f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+                {{-0.6f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+            };
+        } else {
+            quad = {
+                {{-0.6f, -0.6f, 0.0f}, {1.0f, 0.3f, 0.3f}, {0.0f, 0.0f}},
+                {{0.6f, -0.6f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+                {{0.6f, 0.6f, 0.0f}, {0.3f, 0.3f, 1.0f}, {1.0f, 1.0f}},
+                {{-0.6f, 0.6f, 0.0f}, {1.0f, 1.0f, 0.3f}, {0.0f, 1.0f}},
+            };
+        }
         const std::vector<uint16_t> quadIdx = {0, 1, 2, 2, 3, 0};
-
-        const std::vector<Vertex> tri = {
-            {{0.0f, -0.7f, 0.0f}, {0.9f, 0.6f, 0.2f}, {0.5f, 0.0f}},
-            {{0.7f, 0.7f, 0.0f}, {0.2f, 0.8f, 0.9f}, {1.0f, 1.0f}},
-            {{-0.7f, 0.7f, 0.0f}, {0.9f, 0.2f, 0.7f}, {0.0f, 1.0f}},
-        };
-        const std::vector<uint16_t> triIdx = {0, 1, 2};
 
         uint32_t baseVertex = 0;
         vertices.insert(vertices.end(), quad.begin(), quad.end());
         indices.insert(indices.end(), quadIdx.begin(), quadIdx.end());
         meshes.push_back({0, static_cast<uint32_t>(quadIdx.size()), static_cast<int32_t>(baseVertex)});
 
-        baseVertex = static_cast<uint32_t>(vertices.size());
-        uint32_t firstIndex = static_cast<uint32_t>(indices.size());
-        vertices.insert(vertices.end(), tri.begin(), tri.end());
-        for (auto idx : triIdx) {
-            indices.push_back(static_cast<uint16_t>(idx + baseVertex));
+        if (!tileMode) {
+            const std::vector<Vertex> tri = {
+                {{0.0f, -0.7f, 0.0f}, {0.9f, 0.6f, 0.2f}, {0.5f, 0.0f}},
+                {{0.7f, 0.7f, 0.0f}, {0.2f, 0.8f, 0.9f}, {1.0f, 1.0f}},
+                {{-0.7f, 0.7f, 0.0f}, {0.9f, 0.2f, 0.7f}, {0.0f, 1.0f}},
+            };
+            const std::vector<uint16_t> triIdx = {0, 1, 2};
+            baseVertex = static_cast<uint32_t>(vertices.size());
+            uint32_t firstIndex = static_cast<uint32_t>(indices.size());
+            vertices.insert(vertices.end(), tri.begin(), tri.end());
+            for (auto idx : triIdx) {
+                indices.push_back(static_cast<uint16_t>(idx + baseVertex));
+            }
+            meshes.push_back({firstIndex, static_cast<uint32_t>(triIdx.size()), static_cast<int32_t>(0)});
         }
-        meshes.push_back({firstIndex, static_cast<uint32_t>(triIdx.size()), static_cast<int32_t>(0)});
     }
 
     void buildInstanceData() {
-        instanceCount = std::max<uint32_t>(1, g_config.instanceCount);
+        if (externalInstanceMode) {
+            instanceCount = externalInstanceCapacity > 0 ? externalInstanceCapacity : 1;
+        } else if (tileMode) {
+            instanceCount = 16;
+        } else {
+            instanceCount = std::max<uint32_t>(1, g_config.instanceCount);
+        }
     }
 
     void createVertexBuffer() {
@@ -1253,6 +1530,40 @@ private:
 
     void createInstanceBuffer() {
         std::vector<InstanceData> instances;
+        if (externalInstanceMode) {
+            uint32_t capacity = externalInstanceCapacity > 0 ? externalInstanceCapacity : instanceCount;
+            if (capacity == 0) {
+                capacity = 1;
+            }
+            VkDeviceSize bufferSize = sizeof(InstanceData) * capacity;
+            createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         instanceBuffer, instanceBufferMemory);
+            std::vector<InstanceData> zero(capacity);
+            void* data;
+            vkMapMemory(device, instanceBufferMemory, 0, bufferSize, 0, &data);
+            std::memcpy(data, zero.data(), static_cast<size_t>(bufferSize));
+            vkUnmapMemory(device, instanceBufferMemory);
+            instanceBufferHostVisible = true;
+            externalInstanceCapacity = capacity;
+            externalInstanceCount = 0;
+            return;
+        }
+        if (tileMode) {
+            buildTileInstances(instances);
+            VkDeviceSize bufferSize = sizeof(InstanceData) * instances.size();
+            createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         instanceBuffer, instanceBufferMemory);
+            void* data;
+            vkMapMemory(device, instanceBufferMemory, 0, bufferSize, 0, &data);
+            std::memcpy(data, instances.data(), static_cast<size_t>(bufferSize));
+            vkUnmapMemory(device, instanceBufferMemory);
+            instanceBufferHostVisible = true;
+            return;
+        }
+        instanceBufferHostVisible = false;
+
         instances.reserve(instanceCount);
         const uint32_t grid = static_cast<uint32_t>(std::ceil(std::sqrt(static_cast<float>(instanceCount))));
         const float spacing = 1.6f;
@@ -1262,7 +1573,7 @@ private:
             for (uint32_t x = 0; x < grid && placed < instanceCount; ++x) {
                 float ox = (static_cast<float>(x) - (grid - 1) * 0.5f) * spacing;
                 float oy = (static_cast<float>(y) - (grid - 1) * 0.5f) * spacing;
-                instances.push_back({{ox, oy, 0.0f}, 0.6f});
+                instances.push_back({{ox, oy, 0.0f}, 0.6f, {0.0f, 0.0f}, {1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}});
                 placed++;
             }
         }
@@ -1287,6 +1598,132 @@ private:
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    void buildTileInstances(std::vector<InstanceData>& instances) {
+        instances.clear();
+        instances.reserve(16);
+
+        const float width = static_cast<float>(swapChainExtent.width);
+        const float height = static_cast<float>(swapChainExtent.height);
+        const float boardSize = std::min(width, height) * 0.78f;
+        tileGap = std::max(6.0f, boardSize * 0.03f);
+        tileSize = (boardSize - tileGap * 3.0f) / 4.0f;
+
+        const float startX = (width - boardSize) * 0.5f + tileSize * 0.5f;
+        const float startY = (height - boardSize) * 0.5f + tileSize * 0.5f;
+
+        for (int r = 0; r < 4; ++r) {
+            for (int c = 0; c < 4; ++c) {
+                float x = startX + static_cast<float>(c) * (tileSize + tileGap);
+                float y = startY + static_cast<float>(r) * (tileSize + tileGap);
+                int idx = r * 4 + c;
+                int labelIdx = tileLabelIndex(tileValues[idx]);
+                float padU = tileAtlasPad / (tileAtlasCell * static_cast<float>(tileAtlasCols));
+                float padV = tileAtlasPad / tileAtlasCell;
+                float cellU = tileAtlasU;
+                float cellV = tileAtlasV;
+                float u0 = static_cast<float>(labelIdx) * cellU + padU;
+                float v0 = padV;
+                float uScale = cellU - padU * 2.0f;
+                float vScale = cellV - padV * 2.0f;
+                float tileCol[4];
+                tileColor(tileValues[idx], tileCol);
+                instances.push_back({{x, y, 0.0f}, tileSize / 1.2f, {u0, v0}, {uScale, vScale}, {tileCol[0], tileCol[1], tileCol[2], tileCol[3]}});
+            }
+        }
+    }
+
+    void updateTileInstanceBuffer() {
+        if (!instanceBufferHostVisible) {
+            return;
+        }
+        std::vector<InstanceData> instances;
+        buildTileInstances(instances);
+        VkDeviceSize bufferSize = sizeof(InstanceData) * instances.size();
+        void* data;
+        vkMapMemory(device, instanceBufferMemory, 0, bufferSize, 0, &data);
+        std::memcpy(data, instances.data(), static_cast<size_t>(bufferSize));
+        vkUnmapMemory(device, instanceBufferMemory);
+    }
+
+    void updateExternalInstanceBuffer(const float* instanceData, uint32_t count) {
+        if (!instanceBufferHostVisible) {
+            throw std::runtime_error("external instance buffer not host visible");
+        }
+        if (count > externalInstanceCapacity) {
+            count = externalInstanceCapacity;
+        }
+        externalInstanceCount = count;
+        if (count == 0) {
+            return;
+        }
+        VkDeviceSize bufferSize = sizeof(InstanceData) * count;
+        void* data;
+        vkMapMemory(device, instanceBufferMemory, 0, bufferSize, 0, &data);
+        std::memcpy(data, instanceData, static_cast<size_t>(bufferSize));
+        vkUnmapMemory(device, instanceBufferMemory);
+    }
+
+    void handleTileInput() {
+#ifndef FLOW_VK_STANDALONE
+        auto pressed = [&](int key) { return glfwGetKey(window, key) == GLFW_PRESS; };
+
+        bool left = pressed(GLFW_KEY_LEFT) || pressed(GLFW_KEY_A);
+        bool right = pressed(GLFW_KEY_RIGHT) || pressed(GLFW_KEY_D);
+        bool up = pressed(GLFW_KEY_UP) || pressed(GLFW_KEY_W);
+        bool down = pressed(GLFW_KEY_DOWN) || pressed(GLFW_KEY_S);
+        bool restart = pressed(GLFW_KEY_R);
+
+        if (left && !keyLeftDown) {
+            flow_2048_step_ptr_i32_ptr_i32_ptr_i32_i32(tileBoard.data(), &tileScore, &tileRng, 0);
+        }
+        if (right && !keyRightDown) {
+            flow_2048_step_ptr_i32_ptr_i32_ptr_i32_i32(tileBoard.data(), &tileScore, &tileRng, 1);
+        }
+        if (up && !keyUpDown) {
+            flow_2048_step_ptr_i32_ptr_i32_ptr_i32_i32(tileBoard.data(), &tileScore, &tileRng, 2);
+        }
+        if (down && !keyDownDown) {
+            flow_2048_step_ptr_i32_ptr_i32_ptr_i32_i32(tileBoard.data(), &tileScore, &tileRng, 3);
+        }
+        if (restart && !keyRestartDown) {
+            flow_2048_step_ptr_i32_ptr_i32_ptr_i32_i32(tileBoard.data(), &tileScore, &tileRng, 4);
+        }
+
+        keyLeftDown = left;
+        keyRightDown = right;
+        keyUpDown = up;
+        keyDownDown = down;
+        keyRestartDown = restart;
+#else
+        (void)window;
+#endif
+    }
+
+    static void tileColor(int value, float* out) {
+        struct Color { int v; float r; float g; float b; };
+        static const Color palette[] = {
+            {0, 0.20f, 0.19f, 0.18f},
+            {2, 0.93f, 0.89f, 0.85f},
+            {4, 0.93f, 0.87f, 0.78f},
+            {8, 0.95f, 0.69f, 0.47f},
+            {16, 0.96f, 0.58f, 0.39f},
+            {32, 0.96f, 0.49f, 0.37f},
+            {64, 0.96f, 0.37f, 0.23f},
+            {128, 0.93f, 0.81f, 0.45f},
+            {256, 0.93f, 0.80f, 0.38f},
+            {512, 0.93f, 0.78f, 0.31f},
+            {1024, 0.93f, 0.76f, 0.25f},
+            {2048, 0.93f, 0.75f, 0.20f},
+        };
+        for (const auto& c : palette) {
+            if (value == c.v) {
+                out[0] = c.r; out[1] = c.g; out[2] = c.b; out[3] = 1.0f;
+                return;
+            }
+        }
+        out[0] = 0.23f; out[1] = 0.23f; out[2] = 0.23f; out[3] = 1.0f;
     }
 
     void createUniformBuffers() {
@@ -1419,21 +1856,50 @@ private:
             int32_t pad[3];
             float meshOffset[4];
         } pc{};
-        for (size_t i = 0; i < meshes.size(); ++i) {
-            pc.texIndex = static_cast<int32_t>(i % 2);
-            const float* col = (i % 2 == 0) ? g_config.mesh1Color : g_config.mesh2Color;
-            pc.color[0] = col[0];
-            pc.color[1] = col[1];
-            pc.color[2] = col[2];
-            pc.color[3] = 1.0f;
-            float meshOffsetX = (i == 0) ? -(instanceSpan + 1.5f) : (instanceSpan + 1.5f);
-            pc.meshOffset[0] = meshOffsetX;
+        if (externalInstanceMode) {
+            const auto& mesh = meshes[0];
+            pc.texIndex = 0;
+            pc.color[0] = 1.0f;
+            pc.color[1] = 1.0f;
+            pc.color[2] = 1.0f;
+            pc.color[3] = -1.0f;
+            pc.meshOffset[0] = 0.0f;
             pc.meshOffset[1] = 0.0f;
             pc.meshOffset[2] = 0.0f;
             pc.meshOffset[3] = 0.0f;
+            uint32_t count = externalInstanceCount > 0 ? externalInstanceCount : 1;
             vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pc);
-            const auto& mesh = meshes[i];
-            vkCmdDrawIndexed(commandBuffer, mesh.indexCount, instanceCount, mesh.firstIndex, mesh.vertexOffset, 0);
+            vkCmdDrawIndexed(commandBuffer, mesh.indexCount, count, mesh.firstIndex, mesh.vertexOffset, 0);
+        } else if (tileMode) {
+            const auto& mesh = meshes[0];
+            pc.texIndex = 0;
+            pc.meshOffset[0] = 0.0f;
+            pc.meshOffset[1] = 0.0f;
+            pc.meshOffset[2] = 0.0f;
+            pc.meshOffset[3] = 0.0f;
+            for (uint32_t i = 0; i < 16; ++i) {
+                tileColor(tileValues[i], pc.color);
+                pc.color[3] = -1.0f;
+                vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pc);
+                vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.firstIndex, mesh.vertexOffset, i);
+            }
+        } else {
+            for (size_t i = 0; i < meshes.size(); ++i) {
+                pc.texIndex = static_cast<int32_t>(i % 2);
+                const float* col = (i % 2 == 0) ? g_config.mesh1Color : g_config.mesh2Color;
+                pc.color[0] = col[0];
+                pc.color[1] = col[1];
+                pc.color[2] = col[2];
+                pc.color[3] = 1.0f;
+                float meshOffsetX = (i == 0) ? -(instanceSpan + 1.5f) : (instanceSpan + 1.5f);
+                pc.meshOffset[0] = meshOffsetX;
+                pc.meshOffset[1] = 0.0f;
+                pc.meshOffset[2] = 0.0f;
+                pc.meshOffset[3] = 0.0f;
+                vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pc);
+                const auto& mesh = meshes[i];
+                vkCmdDrawIndexed(commandBuffer, mesh.indexCount, instanceCount, mesh.firstIndex, mesh.vertexOffset, 0);
+            }
         }
         vkCmdEndRenderPass(commandBuffer);
 
@@ -1472,6 +1938,28 @@ private:
 
     void updateUniformBuffer(uint32_t currentImage) {
         UniformBufferObject ubo{};
+        if (tileMode) {
+            float model[16];
+            float view[16];
+            float proj[16];
+            mat4_identity(model);
+            mat4_identity(view);
+            mat4_ortho(0.0f,
+                       static_cast<float>(swapChainExtent.width),
+                       static_cast<float>(swapChainExtent.height),
+                       0.0f,
+                       -1.0f, 1.0f,
+                       proj);
+            std::memcpy(ubo.view, view, sizeof(view));
+            std::memcpy(ubo.proj, proj, sizeof(proj));
+            std::memcpy(ubo.model, model, sizeof(model));
+
+            void* data;
+            vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
+            std::memcpy(data, &ubo, sizeof(ubo));
+            vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
+            return;
+        }
         float angle = static_cast<float>(glfwGetTime()) * g_config.rotationSpeed;
         float c = std::cos(angle);
         float s = std::sin(angle);
@@ -2194,6 +2682,125 @@ extern "C" void flow_vk_scene_configure(int32_t width, int32_t height, float cle
     if (instance_count > 0) {
         g_config.instanceCount = static_cast<uint32_t>(instance_count);
     }
+}
+
+extern "C" int flow_vk_2048_init(int32_t width, int32_t height, const char* title, int32_t capacity) {
+    if (g_flow_app) {
+        return 0;
+    }
+    g_tileMode = true;
+    g_externalInstanceMode = true;
+    g_externalInstanceCapacity = capacity > 0 ? static_cast<uint32_t>(capacity) : 16;
+    g_config.rotationSpeed = 0.0f;
+    g_config.cameraSmoothing = 0.0f;
+    g_config.instanceCount = g_externalInstanceCapacity;
+    g_config.clearR = 0.10f;
+    g_config.clearG = 0.09f;
+    g_config.clearB = 0.08f;
+    if (width > 0) {
+        g_config.width = static_cast<uint32_t>(width);
+    }
+    if (height > 0) {
+        g_config.height = static_cast<uint32_t>(height);
+    }
+    if (title && *title) {
+        g_config.title = title;
+    } else {
+        g_config.title = "Flow Vulkan 2048";
+    }
+
+    g_flow_app = new VulkanApp();
+    try {
+        g_flow_app->init();
+    } catch (const std::exception& e) {
+        std::cerr << "error: " << e.what() << std::endl;
+        delete g_flow_app;
+        g_flow_app = nullptr;
+        return -1;
+    }
+    return 0;
+}
+
+extern "C" void flow_vk_2048_shutdown() {
+    if (!g_flow_app) {
+        return;
+    }
+    g_flow_app->shutdown();
+    delete g_flow_app;
+    g_flow_app = nullptr;
+}
+
+extern "C" int32_t flow_vk_2048_should_close() {
+    if (!g_flow_app) {
+        return 1;
+    }
+    return g_flow_app->shouldClose() ? 1 : 0;
+}
+
+extern "C" void flow_vk_2048_poll() {
+    if (!g_flow_app) {
+        return;
+    }
+    g_flow_app->poll();
+}
+
+extern "C" int32_t flow_vk_2048_key_down(int32_t key) {
+    if (!g_flow_app) {
+        return 0;
+    }
+    return g_flow_app->keyDown(key);
+}
+
+extern "C" void flow_vk_2048_draw(const float* instance_data, int32_t count) {
+    if (!g_flow_app) {
+        return;
+    }
+    if (!instance_data || count <= 0) {
+        g_flow_app->renderExternal(nullptr, 0);
+        return;
+    }
+    g_flow_app->renderExternal(instance_data, static_cast<uint32_t>(count));
+}
+
+extern "C" int flow_vulkan_2048_run(int32_t pretty, int32_t trace, int32_t validation,
+                                   int32_t width, int32_t height, const char* title) {
+    if (pretty) {
+        setenv("FLOW_VK_PRETTY", "1", 1);
+    }
+    if (trace) {
+        setenv("FLOW_VK_TRACE", "1", 1);
+    }
+    if (!validation) {
+        setenv("FLOW_VK_NO_VALIDATION", "1", 1);
+    }
+
+    g_tileMode = true;
+    if (width > 0) {
+        g_config.width = static_cast<uint32_t>(width);
+    }
+    if (height > 0) {
+        g_config.height = static_cast<uint32_t>(height);
+    }
+    g_config.rotationSpeed = 0.0f;
+    g_config.cameraSmoothing = 0.0f;
+    g_config.instanceCount = 16;
+    g_config.clearR = 0.10f;
+    g_config.clearG = 0.09f;
+    g_config.clearB = 0.08f;
+    if (title && *title) {
+        g_config.title = title;
+    } else {
+        g_config.title = "Flow Vulkan 2048";
+    }
+
+    VulkanApp app;
+    try {
+        app.run();
+    } catch (const std::exception& e) {
+        std::cerr << "error: " << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }
 
 #ifndef FLOW_VK_STANDALONE

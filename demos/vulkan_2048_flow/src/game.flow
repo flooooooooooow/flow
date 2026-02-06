@@ -1,0 +1,254 @@
+# 2048 game logic for Vulkan demo (Flow-side)
+
+struct MoveResult {
+    moved: bool,
+    gained: i32
+}
+
+struct LineResult {
+    v0: i32,
+    v1: i32,
+    v2: i32,
+    v3: i32,
+    gained: i32
+}
+
+function rng_next(rng: ptr<i32>) -> i32 {
+    rng[0] = rng[0] * 1664525 + 1013904223
+    return rng[0]
+}
+
+function idx(r: i32, c: i32) -> i32 { return r * 4 + c }
+
+function board_get(b: ptr<i32>, r: i32, c: i32) -> i32 { return b[idx(r, c)] }
+function board_set(b: ptr<i32>, r: i32, c: i32, v: i32) -> void { b[idx(r, c)] = v }
+
+function board_clear(b: ptr<i32>) -> void {
+    let i: i32 = 0
+    while i < 16 {
+        b[i] = 0
+        i = i + 1
+    }
+}
+
+function count_empty(b: ptr<i32>) -> i32 {
+    let n: i32 = 0
+    let i: i32 = 0
+    while i < 16 {
+        if b[i] == 0 { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+function spawn_tile(b: ptr<i32>, rng: ptr<i32>) -> bool {
+    let empty: i32 = count_empty(b)
+    if empty == 0 { return false }
+    let target: i32 = (rng_next(rng) % empty)
+    let i: i32 = 0
+    let seen: i32 = 0
+    while i < 16 {
+        if b[i] == 0 {
+            if seen == target {
+                if (rng_next(rng) % 10) == 0 { b[i] = 4 } else { b[i] = 2 }
+                return true
+            }
+            seen = seen + 1
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function can_move(b: ptr<i32>) -> bool {
+    if count_empty(b) > 0 { return true }
+    let r: i32 = 0
+    while r < 4 {
+        let c: i32 = 0
+        while c < 4 {
+            let v: i32 = board_get(b, r, c)
+            if c < 3 && v == board_get(b, r, c + 1) { return true }
+            if r < 3 && v == board_get(b, r + 1, c) { return true }
+            c = c + 1
+        }
+        r = r + 1
+    }
+    return false
+}
+
+function move_line(a0: i32, a1: i32, a2: i32, a3: i32) -> LineResult {
+    let v0: i32 = 0
+    let v1: i32 = 0
+    let v2: i32 = 0
+    let v3: i32 = 0
+    let gained: i32 = 0
+
+    # compress
+    let k: i32 = 0
+    if a0 != 0 {
+        if k == 0 { v0 = a0 }
+        elif k == 1 { v1 = a0 }
+        elif k == 2 { v2 = a0 }
+        else { v3 = a0 }
+        k = k + 1
+    }
+    if a1 != 0 {
+        if k == 0 { v0 = a1 }
+        elif k == 1 { v1 = a1 }
+        elif k == 2 { v2 = a1 }
+        else { v3 = a1 }
+        k = k + 1
+    }
+    if a2 != 0 {
+        if k == 0 { v0 = a2 }
+        elif k == 1 { v1 = a2 }
+        elif k == 2 { v2 = a2 }
+        else { v3 = a2 }
+        k = k + 1
+    }
+    if a3 != 0 {
+        if k == 0 { v0 = a3 }
+        elif k == 1 { v1 = a3 }
+        elif k == 2 { v2 = a3 }
+        else { v3 = a3 }
+        k = k + 1
+    }
+
+    # merge
+    if v0 != 0 && v0 == v1 {
+        v0 = v0 * 2
+        gained = gained + v0
+        v1 = v2
+        v2 = v3
+        v3 = 0
+    }
+    if v1 != 0 && v1 == v2 {
+        v1 = v1 * 2
+        gained = gained + v1
+        v2 = v3
+        v3 = 0
+    }
+    if v2 != 0 && v2 == v3 {
+        v2 = v2 * 2
+        gained = gained + v2
+        v3 = 0
+    }
+
+    return LineResult { v0: v0, v1: v1, v2: v2, v3: v3, gained: gained }
+}
+
+function move_left(b: ptr<i32>) -> MoveResult {
+    let moved: bool = false
+    let gained: i32 = 0
+    let r: i32 = 0
+    while r < 4 {
+        let a0: i32 = board_get(b, r, 0)
+        let a1: i32 = board_get(b, r, 1)
+        let a2: i32 = board_get(b, r, 2)
+        let a3: i32 = board_get(b, r, 3)
+        let res: LineResult = move_line(a0, a1, a2, a3)
+        if !(res.v0 == a0 && res.v1 == a1 && res.v2 == a2 && res.v3 == a3) { moved = true }
+        gained = gained + res.gained
+        board_set(b, r, 0, res.v0)
+        board_set(b, r, 1, res.v1)
+        board_set(b, r, 2, res.v2)
+        board_set(b, r, 3, res.v3)
+        r = r + 1
+    }
+    return MoveResult { moved: moved, gained: gained }
+}
+
+function move_right(b: ptr<i32>) -> MoveResult {
+    let moved: bool = false
+    let gained: i32 = 0
+    let r: i32 = 0
+    while r < 4 {
+        let a0: i32 = board_get(b, r, 3)
+        let a1: i32 = board_get(b, r, 2)
+        let a2: i32 = board_get(b, r, 1)
+        let a3: i32 = board_get(b, r, 0)
+        let res: LineResult = move_line(a0, a1, a2, a3)
+        if !(res.v0 == a0 && res.v1 == a1 && res.v2 == a2 && res.v3 == a3) { moved = true }
+        gained = gained + res.gained
+        board_set(b, r, 3, res.v0)
+        board_set(b, r, 2, res.v1)
+        board_set(b, r, 1, res.v2)
+        board_set(b, r, 0, res.v3)
+        r = r + 1
+    }
+    return MoveResult { moved: moved, gained: gained }
+}
+
+function move_up(b: ptr<i32>) -> MoveResult {
+    let moved: bool = false
+    let gained: i32 = 0
+    let c: i32 = 0
+    while c < 4 {
+        let a0: i32 = board_get(b, 0, c)
+        let a1: i32 = board_get(b, 1, c)
+        let a2: i32 = board_get(b, 2, c)
+        let a3: i32 = board_get(b, 3, c)
+        let res: LineResult = move_line(a0, a1, a2, a3)
+        if !(res.v0 == a0 && res.v1 == a1 && res.v2 == a2 && res.v3 == a3) { moved = true }
+        gained = gained + res.gained
+        board_set(b, 0, c, res.v0)
+        board_set(b, 1, c, res.v1)
+        board_set(b, 2, c, res.v2)
+        board_set(b, 3, c, res.v3)
+        c = c + 1
+    }
+    return MoveResult { moved: moved, gained: gained }
+}
+
+function move_down(b: ptr<i32>) -> MoveResult {
+    let moved: bool = false
+    let gained: i32 = 0
+    let c: i32 = 0
+    while c < 4 {
+        let a0: i32 = board_get(b, 3, c)
+        let a1: i32 = board_get(b, 2, c)
+        let a2: i32 = board_get(b, 1, c)
+        let a3: i32 = board_get(b, 0, c)
+        let res: LineResult = move_line(a0, a1, a2, a3)
+        if !(res.v0 == a0 && res.v1 == a1 && res.v2 == a2 && res.v3 == a3) { moved = true }
+        gained = gained + res.gained
+        board_set(b, 3, c, res.v0)
+        board_set(b, 2, c, res.v1)
+        board_set(b, 1, c, res.v2)
+        board_set(b, 0, c, res.v3)
+        c = c + 1
+    }
+    return MoveResult { moved: moved, gained: gained }
+}
+
+# C ABI functions called from native Vulkan loop
+
+function flow_2048_init(board: ptr<i32>, score: ptr<i32>, rng: ptr<i32>) -> void {
+    board_clear(board)
+    score[0] = 0
+    rng[0] = 1
+    spawn_tile(board, rng)
+    spawn_tile(board, rng)
+}
+
+function flow_2048_step(board: ptr<i32>, score: ptr<i32>, rng: ptr<i32>, dir: i32) -> void {
+    if dir == 4 {
+        flow_2048_init(board, score, rng)
+        return
+    }
+    if !can_move(board) { return }
+
+    let res: MoveResult = MoveResult { moved: false, gained: 0 }
+    if dir == 0 { res = move_left(board) }
+    elif dir == 1 { res = move_right(board) }
+    elif dir == 2 { res = move_up(board) }
+    elif dir == 3 { res = move_down(board) }
+
+    if res.moved {
+        score[0] = score[0] + res.gained
+        spawn_tile(board, rng)
+    }
+}
+
+function flow_2048_score(score: ptr<i32>) -> i32 { return score[0] }
+function flow_2048_can_move(board: ptr<i32>) -> i32 { if can_move(board) { return 1 } return 0 }

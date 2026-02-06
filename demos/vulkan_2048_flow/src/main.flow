@@ -1,0 +1,167 @@
+import "./game.flow"
+
+extern {
+    function flow_vk_2048_init(width: i32, height: i32, title: string, capacity: i32) -> i32
+    function flow_vk_2048_shutdown() -> void
+    function flow_vk_2048_should_close() -> i32
+    function flow_vk_2048_poll() -> void
+    function flow_vk_2048_key_down(key: i32) -> i32
+    function flow_vk_2048_draw(instance_data: ptr<f32>, count: i32) -> void
+}
+
+function min_f32(a: f32, b: f32) -> f32 { if a < b { return a } return b }
+function max_f32(a: f32, b: f32) -> f32 { if a > b { return a } return b }
+
+function label_index(v: i32) -> i32 {
+    if v == 0 { return 0 }
+    if v == 2 { return 1 }
+    if v == 4 { return 2 }
+    if v == 8 { return 3 }
+    if v == 16 { return 4 }
+    if v == 32 { return 5 }
+    if v == 64 { return 6 }
+    if v == 128 { return 7 }
+    if v == 256 { return 8 }
+    if v == 512 { return 9 }
+    if v == 1024 { return 10 }
+    if v == 2048 { return 11 }
+    return 0
+}
+
+function tile_color(v: i32, out: ptr<f32>) -> void {
+    # out[0..3] = r,g,b,a
+    if v == 0 { out[0]=0.20; out[1]=0.19; out[2]=0.18; out[3]=1.0; return }
+    if v == 2 { out[0]=0.93; out[1]=0.89; out[2]=0.85; out[3]=1.0; return }
+    if v == 4 { out[0]=0.93; out[1]=0.87; out[2]=0.78; out[3]=1.0; return }
+    if v == 8 { out[0]=0.95; out[1]=0.69; out[2]=0.47; out[3]=1.0; return }
+    if v == 16 { out[0]=0.96; out[1]=0.58; out[2]=0.39; out[3]=1.0; return }
+    if v == 32 { out[0]=0.96; out[1]=0.49; out[2]=0.37; out[3]=1.0; return }
+    if v == 64 { out[0]=0.96; out[1]=0.37; out[2]=0.23; out[3]=1.0; return }
+    if v == 128 { out[0]=0.93; out[1]=0.81; out[2]=0.45; out[3]=1.0; return }
+    if v == 256 { out[0]=0.93; out[1]=0.80; out[2]=0.38; out[3]=1.0; return }
+    if v == 512 { out[0]=0.93; out[1]=0.78; out[2]=0.31; out[3]=1.0; return }
+    if v == 1024 { out[0]=0.93; out[1]=0.76; out[2]=0.25; out[3]=1.0; return }
+    if v == 2048 { out[0]=0.93; out[1]=0.75; out[2]=0.20; out[3]=1.0; return }
+    out[0]=0.23; out[1]=0.23; out[2]=0.23; out[3]=1.0
+}
+
+function i32_to_f32(v: i32) -> f32 { return v * 1.0 }
+
+function fill_instances(board: ptr<i32>, out: ptr<f32>, count: i32, width: f32, height: f32) -> void {
+    let atlas_cols: f32 = 12.0
+    let atlas_u: f32 = 1.0 / atlas_cols
+    let pad: f32 = 2.0
+    let cell: f32 = 64.0
+    let pad_u: f32 = pad / (cell * atlas_cols)
+    let pad_v: f32 = pad / cell
+
+    let board_size: f32 = min_f32(width, height) * 0.78
+    let gap: f32 = max_f32(6.0, board_size * 0.03)
+    let tile_size: f32 = (board_size - gap * 3.0) / 4.0
+    let start_x: f32 = (width - board_size) * 0.5 + tile_size * 0.5
+    let start_y: f32 = (height - board_size) * 0.5 + tile_size * 0.5
+
+    let i: i32 = 0
+    while i < count {
+        let r: i32 = i / 4
+        let c: i32 = i - r * 4
+        let x: f32 = start_x + i32_to_f32(c) * (tile_size + gap)
+        let y: f32 = start_y + i32_to_f32(r) * (tile_size + gap)
+
+        let v: i32 = board[i]
+        let label: i32 = label_index(v)
+        let u0: f32 = i32_to_f32(label) * atlas_u + pad_u
+        let v0: f32 = pad_v
+        let u_scale: f32 = atlas_u - pad_u * 2.0
+        let v_scale: f32 = 1.0 - pad_v * 2.0
+
+        let base: i32 = i * 12
+        out[base + 0] = x
+        out[base + 1] = y
+        out[base + 2] = 0.0
+        out[base + 3] = tile_size / 1.2
+        if v == 0 {
+            out[base + 4] = 0.0
+            out[base + 5] = 0.0
+            out[base + 6] = 0.0
+            out[base + 7] = 0.0
+        } else {
+            out[base + 4] = u0
+            out[base + 5] = v0
+            out[base + 6] = u_scale
+            out[base + 7] = v_scale
+        }
+        tile_color(v, out + base + 8)
+
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let width: i32 = 960
+    let height: i32 = 720
+    if flow_vk_2048_init(width, height, "Flow Vulkan 2048", 16) != 0 {
+        return 1
+    }
+
+    let board: array<i32, 16> = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]
+    let score_buf: array<i32, 1> = [0]
+    let rng_buf: array<i32, 1> = [1]
+    let board_ptr: ptr<i32> = board
+    let score_ptr: ptr<i32> = score_buf
+    let rng_ptr: ptr<i32> = rng_buf
+
+    flow_2048_init(board_ptr, score_ptr, rng_ptr)
+
+    let instances: array<f32, 192> = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+    let inst_ptr: ptr<f32> = instances
+
+    let left_down: bool = false
+    let right_down: bool = false
+    let up_down: bool = false
+    let down_down: bool = false
+    let restart_down: bool = false
+
+    while flow_vk_2048_should_close() == 0 {
+        flow_vk_2048_poll()
+
+        let left: bool = flow_vk_2048_key_down(263) == 1 || flow_vk_2048_key_down(65) == 1
+        let right: bool = flow_vk_2048_key_down(262) == 1 || flow_vk_2048_key_down(68) == 1
+        let up: bool = flow_vk_2048_key_down(265) == 1 || flow_vk_2048_key_down(87) == 1
+        let down: bool = flow_vk_2048_key_down(264) == 1 || flow_vk_2048_key_down(83) == 1
+        let restart: bool = flow_vk_2048_key_down(82) == 1
+
+        if left && !left_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 0) }
+        if right && !right_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 1) }
+        if up && !up_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 3) }
+        if down && !down_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 2) }
+        if restart && !restart_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 4) }
+
+        left_down = left
+        right_down = right
+        up_down = up
+        down_down = down
+        restart_down = restart
+
+        fill_instances(board_ptr, inst_ptr, 16, i32_to_f32(width), i32_to_f32(height))
+        flow_vk_2048_draw(inst_ptr, 16)
+    }
+
+    flow_vk_2048_shutdown()
+    return 0
+}
