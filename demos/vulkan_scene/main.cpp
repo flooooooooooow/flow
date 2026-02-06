@@ -273,7 +273,7 @@ static void mat4_lookat(const float* eye, const float* center, const float* up, 
 }
 
 static void makeMissingTexture(int& width, int& height, std::vector<uint8_t>& pixels) {
-    if (g_tileMode) {
+    if (g_tileMode || g_externalInstanceMode) {
         width = 2;
         height = 2;
         pixels.assign(static_cast<size_t>(width) * height * 4, 255);
@@ -1056,7 +1056,7 @@ private:
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = tileMode ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+        rasterizer.cullMode = (tileMode || externalInstanceMode) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -1178,7 +1178,7 @@ private:
         int texHeight = 2;
         std::vector<uint8_t> pixels;
 
-        if (tileMode) {
+        if (tileMode || externalInstanceMode) {
             const int cell = 64;
             tileAtlasCell = static_cast<float>(cell);
             tileAtlasPad = 2.0f;
@@ -1409,11 +1409,12 @@ private:
     void createTextureSampler() {
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        samplerInfo.magFilter = tileMode ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-        samplerInfo.minFilter = tileMode ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-        samplerInfo.addressModeU = tileMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = tileMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = tileMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        bool atlasMode = tileMode || externalInstanceMode;
+        samplerInfo.magFilter = atlasMode ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+        samplerInfo.minFilter = atlasMode ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = atlasMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = atlasMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = atlasMode ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.anisotropyEnable = VK_FALSE;
         samplerInfo.maxAnisotropy = 1.0f;
         samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -1433,7 +1434,7 @@ private:
         meshes.clear();
 
         std::vector<Vertex> quad;
-        if (tileMode) {
+        if (tileMode || externalInstanceMode) {
             quad = {
                 {{-0.6f, -0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
                 {{0.6f, -0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
@@ -1455,7 +1456,7 @@ private:
         indices.insert(indices.end(), quadIdx.begin(), quadIdx.end());
         meshes.push_back({0, static_cast<uint32_t>(quadIdx.size()), static_cast<int32_t>(baseVertex)});
 
-        if (!tileMode) {
+        if (!tileMode && !externalInstanceMode) {
             const std::vector<Vertex> tri = {
                 {{0.0f, -0.7f, 0.0f}, {0.9f, 0.6f, 0.2f}, {0.5f, 0.0f}},
                 {{0.7f, 0.7f, 0.0f}, {0.2f, 0.8f, 0.9f}, {1.0f, 1.0f}},
@@ -1938,7 +1939,7 @@ private:
 
     void updateUniformBuffer(uint32_t currentImage) {
         UniformBufferObject ubo{};
-        if (tileMode) {
+        if (tileMode || externalInstanceMode) {
             float model[16];
             float view[16];
             float proj[16];
@@ -2688,7 +2689,7 @@ extern "C" int flow_vk_2048_init(int32_t width, int32_t height, const char* titl
     if (g_flow_app) {
         return 0;
     }
-    g_tileMode = true;
+    g_tileMode = false;
     g_externalInstanceMode = true;
     g_externalInstanceCapacity = capacity > 0 ? static_cast<uint32_t>(capacity) : 16;
     g_config.rotationSpeed = 0.0f;
