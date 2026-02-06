@@ -7,6 +7,10 @@ extern {
     function flow_vk_2048_poll() -> void
     function flow_vk_2048_key_down(key: i32) -> i32
     function flow_vk_2048_draw(instance_data: ptr<f32>, count: i32) -> void
+    function flow_vk_2048_upload_texture(pixels: ptr<u8>, width: i32, height: i32) -> void
+    function malloc(size: i32) -> ptr<void>
+    function free(ptr: ptr<void>) -> void
+    function memset(dest: ptr<void>, c: i32, n: i32) -> ptr<void>
 }
 
 function min_f32(a: f32, b: f32) -> f32 { if a < b { return a } return b }
@@ -97,12 +101,120 @@ function fill_instances(board: ptr<i32>, out: ptr<f32>, count: i32, width: f32, 
     }
 }
 
+function set_px(buf: ptr<u8>, width: i32, height: i32, x: i32, y: i32, r: i32, g: i32, b: i32, a: i32) -> void {
+    if x < 0 { return }
+    if y < 0 { return }
+    if x >= width { return }
+    if y >= height { return }
+    let idx: i32 = (y * width + x) * 4
+    buf[idx + 0] = (r as u8)
+    buf[idx + 1] = (g as u8)
+    buf[idx + 2] = (b as u8)
+    buf[idx + 3] = (a as u8)
+}
+
+function draw_rect(buf: ptr<u8>, width: i32, height: i32, x0: i32, y0: i32, x1: i32, y1: i32) -> void {
+    let y: i32 = y0
+    while y < y1 {
+        let x: i32 = x0
+        while x < x1 {
+            set_px(buf, width, height, x, y, 255, 255, 255, 255)
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+function draw_segment(buf: ptr<u8>, width: i32, height: i32, ox: i32, oy: i32, w: i32, h: i32, seg: i32) -> void {
+    let t: i32 = 4
+    let m: i32 = 2
+    let mid: i32 = h / 2
+    if seg == 0 { # A
+        draw_rect(buf, width, height, ox + m, oy + m, ox + w - m, oy + m + t)
+    } elif seg == 1 { # B
+        draw_rect(buf, width, height, ox + w - m - t, oy + m, ox + w - m, oy + mid - t / 2)
+    } elif seg == 2 { # C
+        draw_rect(buf, width, height, ox + w - m - t, oy + mid + t / 2, ox + w - m, oy + h - m)
+    } elif seg == 3 { # D
+        draw_rect(buf, width, height, ox + m, oy + h - m - t, ox + w - m, oy + h - m)
+    } elif seg == 4 { # E
+        draw_rect(buf, width, height, ox + m, oy + mid + t / 2, ox + m + t, oy + h - m)
+    } elif seg == 5 { # F
+        draw_rect(buf, width, height, ox + m, oy + m, ox + m + t, oy + mid - t / 2)
+    } elif seg == 6 { # G
+        draw_rect(buf, width, height, ox + m, oy + mid - t / 2, ox + w - m, oy + mid + t / 2)
+    }
+}
+
+function draw_digit(buf: ptr<u8>, width: i32, height: i32, ox: i32, oy: i32, w: i32, h: i32, digit: i32) -> void {
+    if digit == 0 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); draw_segment(buf, width, height, ox, oy, w, h, 4); draw_segment(buf, width, height, ox, oy, w, h, 5); return }
+    if digit == 1 { draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); return }
+    if digit == 2 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 4); draw_segment(buf, width, height, ox, oy, w, h, 3); return }
+    if digit == 3 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); return }
+    if digit == 4 { draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); return }
+    if digit == 5 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); return }
+    if digit == 6 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 4); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); return }
+    if digit == 7 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); return }
+    if digit == 8 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); draw_segment(buf, width, height, ox, oy, w, h, 4); draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); return }
+    if digit == 9 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); return }
+}
+
+function draw_number(buf: ptr<u8>, width: i32, height: i32, cell_x: i32, cell_y: i32, cell_w: i32, cell_h: i32, value: i32) -> void {
+    if value == 0 { return }
+    let digits: array<i32, 4> = [0,0,0,0]
+    let tmp: i32 = value
+    let len: i32 = 0
+    while tmp > 0 && len < 4 {
+        digits[len] = tmp % 10
+        tmp = tmp / 10
+        len = len + 1
+    }
+    let i: i32 = 0
+    while i < len / 2 {
+        let t: i32 = digits[i]
+        digits[i] = digits[len - 1 - i]
+        digits[len - 1 - i] = t
+        i = i + 1
+    }
+    let pad: i32 = 6
+    let inner_w: i32 = cell_w - pad * 2
+    let digit_w: i32 = inner_w / len
+    let digit_h: i32 = cell_h - pad * 2
+    i = 0
+    while i < len {
+        let ox: i32 = cell_x + pad + i * digit_w
+        let oy: i32 = cell_y + pad
+        draw_digit(buf, width, height, ox, oy, digit_w, digit_h, digits[i])
+        i = i + 1
+    }
+}
+
 function main() -> i32 {
     let width: i32 = 960
     let height: i32 = 720
     if flow_vk_2048_init(width, height, "Flow Vulkan 2048", 16) != 0 {
         return 1
     }
+
+    # Build a simple 7-seg digit atlas in Flow and upload to Vulkan.
+    let cell: i32 = 64
+    let cols: i32 = 12
+    let atlas_w: i32 = cell * cols
+    let atlas_h: i32 = cell
+    let atlas_size: i32 = atlas_w * atlas_h * 4
+    let atlas_ptr_void: ptr<void> = malloc(atlas_size)
+    let atlas: ptr<u8> = atlas_ptr_void as ptr<u8>
+    memset(atlas_ptr_void, 0, atlas_size)
+
+    let labels: array<i32, 12> = [0,2,4,8,16,32,64,128,256,512,1024,2048]
+    let li: i32 = 0
+    while li < 12 {
+        let value: i32 = labels[li]
+        let cx: i32 = li * cell
+        draw_number(atlas, atlas_w, atlas_h, cx, 0, cell, cell, value)
+        li = li + 1
+    }
+    flow_vk_2048_upload_texture(atlas, atlas_w, atlas_h)
 
     let board: array<i32, 16> = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]
     let score_buf: array<i32, 1> = [0]
@@ -162,6 +274,7 @@ function main() -> i32 {
         flow_vk_2048_draw(inst_ptr, 16)
     }
 
+    free(atlas_ptr_void)
     flow_vk_2048_shutdown()
     return 0
 }

@@ -382,6 +382,15 @@ public:
         drawFrame();
     }
 
+    void uploadExternalTexture(const uint8_t* pixels, int width, int height) {
+        if (!externalInstanceMode) {
+            return;
+        }
+        uploadTexturePixels(width, height, pixels);
+        createTextureImageView();
+        createDescriptorSets();
+    }
+
     int keyDown(int key) const {
         if (!window) {
             return 0;
@@ -457,6 +466,8 @@ private:
     VkDeviceMemory textureImageMemory = VK_NULL_HANDLE;
     VkImageView textureImageView = VK_NULL_HANDLE;
     VkSampler textureSampler = VK_NULL_HANDLE;
+    int textureWidth = 0;
+    int textureHeight = 0;
 
     VkImage textureImage2 = VK_NULL_HANDLE;
     VkDeviceMemory textureImageMemory2 = VK_NULL_HANDLE;
@@ -1284,6 +1295,18 @@ private:
             makeMissingTexture(texWidth, texHeight, pixels);
         }
 
+        uploadTexturePixels(texWidth, texHeight, pixels.data());
+    }
+
+    void uploadTexturePixels(int texWidth, int texHeight, const uint8_t* pixels) {
+        if (texWidth <= 0 || texHeight <= 0 || pixels == nullptr) {
+            throw std::runtime_error("invalid texture upload");
+        }
+
+        bool needRecreate = (textureImage == VK_NULL_HANDLE) ||
+                            (texWidth != textureWidth) ||
+                            (texHeight != textureHeight);
+
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4;
 
         VkBuffer stagingBuffer;
@@ -1294,23 +1317,44 @@ private:
 
         void* data;
         vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
-        std::memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
+        std::memcpy(data, pixels, static_cast<size_t>(imageSize));
         vkUnmapMemory(device, stagingBufferMemory);
 
-        createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
-                    VK_IMAGE_TILING_OPTIMAL,
-                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                    textureImage, textureImageMemory);
+        if (needRecreate) {
+            if (textureImageView) {
+                vkDestroyImageView(device, textureImageView, nullptr);
+                textureImageView = VK_NULL_HANDLE;
+            }
+            if (textureImage) {
+                vkDestroyImage(device, textureImage, nullptr);
+                textureImage = VK_NULL_HANDLE;
+            }
+            if (textureImageMemory) {
+                vkFreeMemory(device, textureImageMemory, nullptr);
+                textureImageMemory = VK_NULL_HANDLE;
+            }
 
-        transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_UNORM,
-                              VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
+                        VK_IMAGE_TILING_OPTIMAL,
+                        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        textureImage, textureImageMemory);
+            transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_UNORM,
+                                  VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        } else {
+            transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_UNORM,
+                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        }
+
         copyBufferToImage(stagingBuffer, textureImage, texWidth, texHeight);
         transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_UNORM,
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
+
+        textureWidth = texWidth;
+        textureHeight = texHeight;
     }
 
     void createTextureImage2() {
@@ -1403,6 +1447,10 @@ private:
     }
 
     void createTextureImageView() {
+        if (textureImageView) {
+            vkDestroyImageView(device, textureImageView, nullptr);
+            textureImageView = VK_NULL_HANDLE;
+        }
         textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 
@@ -1758,16 +1806,18 @@ private:
     }
 
     void createDescriptorSets() {
-        std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-        allocInfo.pSetLayouts = layouts.data();
+        if (descriptorSets.size() != swapChainImages.size()) {
+            std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+            VkDescriptorSetAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocInfo.descriptorPool = descriptorPool;
+            allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+            allocInfo.pSetLayouts = layouts.data();
 
-        descriptorSets.resize(swapChainImages.size());
-        if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate descriptor sets");
+            descriptorSets.resize(swapChainImages.size());
+            if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+                throw std::runtime_error("failed to allocate descriptor sets");
+            }
         }
 
         for (size_t i = 0; i < swapChainImages.size(); ++i) {
@@ -2761,6 +2811,16 @@ extern "C" void flow_vk_2048_draw(const float* instance_data, int32_t count) {
         return;
     }
     g_flow_app->renderExternal(instance_data, static_cast<uint32_t>(count));
+}
+
+extern "C" void flow_vk_2048_upload_texture(const uint8_t* pixels, int32_t width, int32_t height) {
+    if (!g_flow_app) {
+        return;
+    }
+    if (!pixels || width <= 0 || height <= 0) {
+        return;
+    }
+    g_flow_app->uploadExternalTexture(pixels, width, height);
 }
 
 extern "C" int flow_vulkan_2048_run(int32_t pretty, int32_t trace, int32_t validation,
