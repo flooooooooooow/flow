@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 import subprocess
+import signal
 
 # For Python < 3.11, fall back
 try:
@@ -535,8 +536,24 @@ flow_packages/
         print(f"{self.BLUE}Running {config.name}...{self.RESET}")
         
         try:
-            result = subprocess.run([str(output_file)])
-            return result.returncode == 0
+            process = subprocess.Popen([str(output_file)])
+            return process.wait() == 0
+        except KeyboardInterrupt:
+            try:
+                print(f"{self.YELLOW}Shutdown requested (SIGINT). Waiting for app to exit...{self.RESET}")
+                process.send_signal(signal.SIGINT)
+                try:
+                    return process.wait(timeout=5) == 0
+                except subprocess.TimeoutExpired:
+                    process.terminate()
+                    try:
+                        return process.wait(timeout=2) == 0
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        return False
+            except Exception as e:
+                print(f"{self.RED}Run error during shutdown: {e}{self.RESET}")
+                return False
         except Exception as e:
             print(f"{self.RED}Run error: {e}{self.RESET}")
             return False
