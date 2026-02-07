@@ -1,0 +1,286 @@
+import "time.flow"
+import "stdlib/python_embed.flow"
+
+extern {
+    function malloc(size: i32) -> ptr<void>
+    function free(ptr: ptr<void>) -> void
+}
+
+const M: i32 = 4
+const N: i32 = 2
+const K: i32 = 4
+const V: i32 = 2
+
+function matmul_naive(C: ptr<f32>, A: ptr<f32>, B: ptr<f32>, m: i32, n: i32, k: i32) -> void {
+    let i: i32 = 0
+    while i < m {
+        let j: i32 = 0
+        while j < n {
+            let sum: f32 = 0.0
+            let kk: i32 = 0
+            while kk < k {
+                sum = sum + A[i * k + kk] * B[kk * n + j]
+                kk = kk + 1
+            }
+            C[i * n + j] = sum
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+function matmul_vectorized_0(C: ptr<f32>, A: ptr<f32>, B: ptr<f32>, m: i32, n: i32, k: i32) -> void {
+    let i: i32 = 0
+    while i < m {
+        let kk: i32 = 0
+        while kk < k {
+            let j: i32 = 0
+            while j + V <= n {
+                let base: i32 = i * n + j
+                let b0: f32 = B[kk * n + j]
+                let b1: f32 = B[kk * n + j + 1]
+                let a: f32 = A[i * k + kk]
+                C[base + 0] = C[base + 0] + a * b0
+                C[base + 1] = C[base + 1] + a * b1
+                j = j + V
+            }
+            while j < n {
+                C[i * n + j] = C[i * n + j] + A[i * k + kk] * B[kk * n + j]
+                j = j + 1
+            }
+            kk = kk + 1
+        }
+        i = i + 1
+    }
+}
+
+function matmul_vectorized_1(C: ptr<f32>, A: ptr<f32>, B: ptr<f32>, m: i32, n: i32, k: i32) -> void {
+    # same math, structured for compiler auto-vectorization
+    let i: i32 = 0
+    while i < m {
+        let j: i32 = 0
+        while j < n {
+            let sum: f32 = 0.0
+            let kk: i32 = 0
+            while kk < k {
+                sum = sum + A[i * k + kk] * B[kk * n + j]
+                kk = kk + 1
+            }
+            C[i * n + j] = sum
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+function matmul_parallelized(C: ptr<f32>, A: ptr<f32>, B: ptr<f32>, m: i32, n: i32, k: i32) -> void {
+    parallel for i in 0..m {
+        let j: i32 = 0
+        while j < n {
+            let sum: f32 = 0.0
+            let kk: i32 = 0
+            while kk < k {
+                sum = sum + A[i * k + kk] * B[kk * n + j]
+                kk = kk + 1
+            }
+            C[i * n + j] = sum
+            j = j + 1
+        }
+    }
+}
+
+function matmul_tiled_parallelized(C: ptr<f32>, A: ptr<f32>, B: ptr<f32>, m: i32, n: i32, k: i32) -> void {
+    let tile: i32 = 2
+    parallel for i0 in 0..m {
+        let j0: i32 = 0
+        while j0 < n {
+            let jj: i32 = j0
+            while jj < j0 + tile {
+                if jj >= n { break }
+                let sum: f32 = 0.0
+                let kk: i32 = 0
+                while kk < k {
+                    sum = sum + A[i0 * k + kk] * B[kk * n + jj]
+                    kk = kk + 1
+                }
+                C[i0 * n + jj] = sum
+                jj = jj + 1
+            }
+            j0 = j0 + tile
+        }
+    }
+}
+
+function matmul_tiled_unrolled_parallelized(C: ptr<f32>, A: ptr<f32>, B: ptr<f32>, m: i32, n: i32, k: i32) -> void {
+    let tile: i32 = 2
+    parallel for i0 in 0..m {
+        let j0: i32 = 0
+        while j0 < n {
+            let jj: i32 = j0
+            while jj < j0 + tile {
+                if jj >= n { break }
+                let sum: f32 = 0.0
+                let kk: i32 = 0
+                while kk < k {
+                    # unroll by 2 when possible
+                    if kk + 1 < k {
+                        let a0: f32 = A[i0 * k + kk]
+                        let a1: f32 = A[i0 * k + kk + 1]
+                        let b0: f32 = B[kk * n + jj]
+                        let b1: f32 = B[(kk + 1) * n + jj]
+                        sum = sum + a0 * b0 + a1 * b1
+                        kk = kk + 2
+                    } else {
+                        sum = sum + A[i0 * k + kk] * B[kk * n + jj]
+                        kk = kk + 1
+                    }
+                }
+                C[i0 * n + jj] = sum
+                jj = jj + 1
+            }
+            j0 = j0 + tile
+        }
+    }
+}
+
+function print_matrix(name: string, M: ptr<f32>, rows: i32, cols: i32) -> void {
+    print_line(name)
+    let r: i32 = 0
+    while r < rows {
+        let c: i32 = 0
+        while c < cols {
+            print(M[r * cols + c])
+            c = c + 1
+        }
+        print_line("")
+        r = r + 1
+    }
+}
+
+function gflops(secs: f64, m: i32, n: i32, k: i32) -> f64 {
+    if secs <= 0.0 { return 0.0 }
+    let mf: f64 = m * 1.0
+    let nf: f64 = n * 1.0
+    let kf: f64 = k * 1.0
+    return (2.0 * mf * nf * kf) / secs / 1e9
+}
+
+function run_flow_baseline(m: i32, n: i32, k: i32) -> f64 {
+    let sizeA: i32 = m * k
+    let sizeB: i32 = k * n
+    let sizeC: i32 = m * n
+    let A: ptr<f32> = malloc(sizeA * 4)
+    let B: ptr<f32> = malloc(sizeB * 4)
+    let C: ptr<f32> = malloc(sizeC * 4)
+    let i: i32 = 0
+    while i < sizeA { A[i] = 1.0; i = i + 1 }
+    i = 0
+    while i < sizeB { B[i] = 2.0; i = i + 1 }
+    i = 0
+    while i < sizeC { C[i] = 0.0; i = i + 1 }
+    let t0: f64 = get_time()
+    matmul_naive(C, A, B, m, n, k)
+    let t1: f64 = get_time()
+    let g: f64 = gflops(t1 - t0, m, n, k)
+    free(A)
+    free(B)
+    free(C)
+    return g
+}
+
+function main() -> i32 {
+    print_line("Matrix Multiplication Optimizations (Flow)")
+    print_line("Size: 4x4 x 4x2 (A: 4x4, B: 4x2, C: 4x2)")
+
+    let sizeA: i32 = M * K
+    let sizeB: i32 = K * N
+    let sizeC: i32 = M * N
+
+    let A: ptr<f32> = malloc(sizeA * 4)
+    let B: ptr<f32> = malloc(sizeB * 4)
+    let C: ptr<f32> = malloc(sizeC * 4)
+
+    let i: i32 = 0
+    while i < sizeA { A[i] = (i + 1) * 1.0; i = i + 1 }
+    i = 0
+    while i < sizeB { B[i] = (i + 1) * 1.0; i = i + 1 }
+
+    let base: f64 = run_flow_baseline(M, N, K)
+
+    # Naive
+    i = 0
+    while i < sizeC { C[i] = 0.0; i = i + 1 }
+    let t0: f64 = get_time()
+    matmul_naive(C, A, B, M, N, K)
+    let t1: f64 = get_time()
+    let g0: f64 = gflops(t1 - t0, M, N, K)
+    print_line("Naive:")
+    print(g0)
+    print_line("")
+    print_matrix("Input A:", A, M, K)
+    print_matrix("Input B:", B, K, N)
+    print_matrix("Output C (naive):", C, M, N)
+
+    # Vectorized 0
+    i = 0
+    while i < sizeC { C[i] = 0.0; i = i + 1 }
+    let t2: f64 = get_time()
+    matmul_vectorized_0(C, A, B, M, N, K)
+    let t3: f64 = get_time()
+    let g1: f64 = gflops(t3 - t2, M, N, K)
+    print_line("Vectorized (unroll):")
+    print(g1)
+    print_line("")
+
+    # Vectorized 1
+    i = 0
+    while i < sizeC { C[i] = 0.0; i = i + 1 }
+    let t4: f64 = get_time()
+    matmul_vectorized_1(C, A, B, M, N, K)
+    let t5: f64 = get_time()
+    let g2: f64 = gflops(t5 - t4, M, N, K)
+    print_line("Vectorized (auto):")
+    print(g2)
+    print_line("")
+
+    # Parallelized
+    i = 0
+    while i < sizeC { C[i] = 0.0; i = i + 1 }
+    let t6: f64 = get_time()
+    matmul_parallelized(C, A, B, M, N, K)
+    let t7: f64 = get_time()
+    let g3: f64 = gflops(t7 - t6, M, N, K)
+    print_line("Parallelized:")
+    print(g3)
+    print_line("")
+
+    # Tiled + parallelized
+    i = 0
+    while i < sizeC { C[i] = 0.0; i = i + 1 }
+    let t8: f64 = get_time()
+    matmul_tiled_parallelized(C, A, B, M, N, K)
+    let t9: f64 = get_time()
+    let g4: f64 = gflops(t9 - t8, M, N, K)
+    print_line("Tiled + parallelized:")
+    print(g4)
+    print_line("")
+
+    # Tiled + unrolled + parallelized
+    i = 0
+    while i < sizeC { C[i] = 0.0; i = i + 1 }
+    let t10: f64 = get_time()
+    matmul_tiled_unrolled_parallelized(C, A, B, M, N, K)
+    let t11: f64 = get_time()
+    let g5: f64 = gflops(t11 - t10, M, N, K)
+    print_line("Tiled + unrolled + parallelized:")
+    print(g5)
+    print_line("")
+
+    print_line("Baseline (Flow naive GFLOP/s):")
+    print(base)
+    print_line("")
+    free(A)
+    free(B)
+    free(C)
+    return 0
+}

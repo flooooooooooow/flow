@@ -1,0 +1,17 @@
+# System info demo in FLOW (extern-backed)
+import "stdlib/sys_info.flow"
+
+function main() -> i32 {
+    let os: string = os_name()
+    let cpu: string = cpu_name()
+    let arch: string = cpu_arch()
+    let cpu_features: string = cpu_features_string()
+
+    print("System information:\n")
+    print_kv_str("    OS          :", os)
+    print_kv_str("    CPU         :", cpu)
+    print_kv_str("    Arch        :", arch)
+    print_kv_i32("    Num Cores   :", cpu_cores())
+    print_kv_str("    CPU Features:", cpu_features)
+    return 0
+}

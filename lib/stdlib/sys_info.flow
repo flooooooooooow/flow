@@ -1,0 +1,46 @@
+# System information helpers (extern-backed)
+
+extern {
+    function num_cores() -> i32
+
+    function os_is_linux() -> bool
+    function os_is_windows() -> bool
+    function os_is_macos() -> bool
+
+    function has_sse4() -> bool
+    function has_avx() -> bool
+    function has_avx2() -> bool
+    function has_avx512f() -> bool
+    function has_avx512_vnni() -> bool
+    function has_neon() -> bool
+    function is_apple_m1() -> bool
+    function has_intel_amx() -> bool
+
+    function current_cpu() -> string
+    function current_arch() -> string
+    function _cpu_features_string() -> string
+    function print_kv_str(label: string, val: string) -> void
+    function print_kv_i32(label: string, val: i32) -> void
+}
+
+export function os_name() -> string {
+    if os_is_linux() { return "linux" }
+    if os_is_macos() { return "macOS" }
+    return "windows"
+}
+
+export function cpu_name() -> string {
+    return current_cpu()
+}
+
+export function cpu_arch() -> string {
+    return current_arch()
+}
+
+export function cpu_cores() -> i32 {
+    return num_cores()
+}
+
+export function cpu_features_string() -> string {
+    return _cpu_features_string()
+}
