@@ -4,10 +4,13 @@ This folder defines a small C ABI surface and generates bindings for Flow.
 
 Source of truth:
 - `demos/vulkan_abi/renderer.abi`
+- `demos/vulkan_abi/vulkan_renderer.abi`
 
 Generated files (do not edit by hand):
 - `demos/vulkan_abi/renderer.h`
 - `demos/vulkan_abi/renderer.flow`
+- `demos/vulkan_abi/vulkan_renderer.h`
+- `demos/vulkan_abi/vulkan_renderer.flow`
 
 Regenerate:
 ```
