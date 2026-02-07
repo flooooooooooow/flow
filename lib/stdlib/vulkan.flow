@@ -69,29 +69,7 @@ function bool_to_i32(b: bool) -> i32 {
     return 0
 }
 
-extern {
-    function flow_vulkan_basic_run(
-        pretty: i32, trace: i32, validation: i32,
-        width: i32, height: i32,
-        clear_r: f32, clear_g: f32, clear_b: f32,
-        title: string
-    ) -> i32
-}
-extern {
-    function flow_vulkan_advanced_run(
-        pretty: i32, trace: i32, validation: i32,
-        width: i32, height: i32,
-        clear_r: f32, clear_g: f32, clear_b: f32,
-        rotation_speed: f32, title: string,
-        texture_path: string, texture_path2: string,
-        camera_distance: f32, camera_pitch: f32, camera_yaw: f32,
-        move_speed: f32, mouse_sensitivity: f32,
-        camera_smoothing: f32,
-        mesh1_r: f32, mesh1_g: f32, mesh1_b: f32,
-        mesh2_r: f32, mesh2_g: f32, mesh2_b: f32,
-        instance_count: i32
-    ) -> i32
-}
+import "../../demos/vulkan_abi/vulkan_renderer.flow"
 
 export function vulkan_run_basic(opts: VulkanOptions) -> i32 {
     let cfg: VulkanConfig = vulkan_config_default()
