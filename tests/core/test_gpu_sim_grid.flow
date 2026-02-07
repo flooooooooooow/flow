@@ -1,0 +1,37 @@
+import "stdlib/gpu_sim.flow"
+
+function main() -> i32 {
+    let n: i32 = 9
+    let a: array<f32, 9> = [1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0]
+    let b: array<f32, 9> = [10.0,20.0,30.0,40.0,50.0,60.0,70.0,80.0,90.0]
+    let out: array<f32, 9> = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+
+    let host_a: HostBufferF32 = host_buffer_f32(a, n)
+    let host_b: HostBufferF32 = host_buffer_f32(b, n)
+    let host_out: HostBufferF32 = host_buffer_f32(out, n)
+
+    let dev_a: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_b: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_out: DeviceBufferF32 = device_alloc_f32(n)
+
+    copy_host_to_device(host_a, dev_a)
+    copy_host_to_device(host_b, dev_b)
+
+    let layout: Layout = layout_1d(n)
+    let a_t: LayoutTensorF32 = tensor_from_device(dev_a, layout)
+    let b_t: LayoutTensorF32 = tensor_from_device(dev_b, layout)
+    let out_t: LayoutTensorF32 = tensor_from_device(dev_out, layout)
+
+    let cfg: LaunchConfig = grid_1d(n, 4)
+    launch_vec_add_1d(cfg, a_t, b_t, out_t, n)
+    copy_device_to_host(dev_out, host_out)
+
+    if out[0] != 11.0 { return 1 }
+    if out[4] != 55.0 { return 2 }
+    if out[8] != 99.0 { return 3 }
+
+    device_free_f32(dev_a)
+    device_free_f32(dev_b)
+    device_free_f32(dev_out)
+    return 0
+}

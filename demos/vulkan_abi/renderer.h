@@ -27,6 +27,7 @@ void flow_vk_upload_mesh(const float* vertices, int32_t vertex_count, const uint
 void flow_vk_set_clear_color(float r, float g, float b);
 void flow_vk_set_camera(float distance, float pitch, float yaw);
 void flow_vk_set_viewport(int32_t width, int32_t height);
+void flow_vk_set_window_scale(float scale, int32_t force_square);
 
 #ifdef __cplusplus
 }

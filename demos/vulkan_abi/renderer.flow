@@ -18,4 +18,5 @@ extern {
     function flow_vk_set_clear_color(r: f32, g: f32, b: f32) -> void
     function flow_vk_set_camera(distance: f32, pitch: f32, yaw: f32) -> void
     function flow_vk_set_viewport(width: i32, height: i32) -> void
+    function flow_vk_set_window_scale(scale: f32, force_square: i32) -> void
 }

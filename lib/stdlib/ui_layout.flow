@@ -1,0 +1,211 @@
+# Simple UI layout helpers for DSL blocks
+
+export const UI_JUSTIFY_START: i32 = 0
+export const UI_JUSTIFY_CENTER: i32 = 1
+export const UI_JUSTIFY_END: i32 = 2
+
+export struct UiRect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
+
+export struct UiLayoutFrame {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    kind: i32,
+    cols: i32,
+    rows: i32,
+    gap: i32,
+    pad: i32,
+    justify_x: i32,
+    justify_y: i32,
+    index: i32,
+}
+
+export struct UiLayoutState {
+    frames: array<UiLayoutFrame, 32>,
+    top: i32,
+    unit: f32,
+    win_w: f32,
+    win_h: f32,
+}
+
+extern {
+    function ui_layout_bind(state: ptr<UiLayoutState>) -> void
+}
+
+const LAYOUT_UI: i32 = 0
+const LAYOUT_ROW: i32 = 1
+const LAYOUT_COLUMN: i32 = 2
+const LAYOUT_GRID: i32 = 3
+const LAYOUT_STACK: i32 = 4
+
+extern {
+    function i32_to_f32(v: i32) -> f32
+}
+function min_f32(a: f32, b: f32) -> f32 { if a < b { return a } return b }
+
+export function ui_layout_set_view(state: ptr<UiLayoutState>, win_w: f32, win_h: f32) -> void {
+    state[0].win_w = win_w
+    state[0].win_h = win_h
+    return
+}
+
+function layout_push(state: ptr<UiLayoutState>, frame: UiLayoutFrame) -> void {
+    if state[0].top >= 32 { return }
+    state[0].frames[state[0].top] = frame
+    state[0].top = state[0].top + 1
+    return
+}
+
+function layout_pop(state: ptr<UiLayoutState>) -> void {
+    if state[0].top <= 0 { return }
+    state[0].top = state[0].top - 1
+    return
+}
+
+function layout_peek(state: ptr<UiLayoutState>) -> UiLayoutFrame {
+    if state[0].top <= 0 {
+        return UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }
+    }
+    return state[0].frames[state[0].top - 1]
+}
+
+function layout_update_top(state: ptr<UiLayoutState>, frame: UiLayoutFrame) -> void {
+    if state[0].top <= 0 { return }
+    state[0].frames[state[0].top - 1] = frame
+    return
+}
+
+function align_offset(space: i32, size: i32, align: i32) -> i32 {
+    if space <= size { return 0 }
+    if align == UI_JUSTIFY_END { return space - size }
+    if align == UI_JUSTIFY_CENTER { return (space - size) / 2 }
+    return 0
+}
+
+function layout_claim(state: ptr<UiLayoutState>) -> UiRect {
+    let frame: UiLayoutFrame = layout_peek(state)
+    if frame.kind == LAYOUT_ROW {
+        let gap: i32 = frame.gap
+        let cols: i32 = frame.cols
+        let pad: i32 = frame.pad
+        let w: i32 = frame.w - pad * 2
+        let h: i32 = frame.h - pad * 2
+        let cell_w: i32 = (w - (cols - 1) * gap) / cols
+        let used: i32 = cell_w * cols + gap * (cols - 1)
+        let offset: i32 = align_offset(w, used, frame.justify_x)
+        let x: i32 = frame.x + pad + offset + frame.index * (cell_w + gap)
+        let y: i32 = frame.y + pad
+        let out: UiRect = UiRect{ x: x, y: y, w: cell_w, h: h }
+        frame.index = frame.index + 1
+        layout_update_top(state, frame)
+        return out
+    }
+    if frame.kind == LAYOUT_COLUMN {
+        let gap: i32 = frame.gap
+        let rows: i32 = frame.rows
+        let pad: i32 = frame.pad
+        let w: i32 = frame.w - pad * 2
+        let h: i32 = frame.h - pad * 2
+        let cell_h: i32 = (h - (rows - 1) * gap) / rows
+        let used: i32 = cell_h * rows + gap * (rows - 1)
+        let offset: i32 = align_offset(h, used, frame.justify_y)
+        let x: i32 = frame.x + pad
+        let y: i32 = frame.y + pad + offset + frame.index * (cell_h + gap)
+        let out: UiRect = UiRect{ x: x, y: y, w: w, h: cell_h }
+        frame.index = frame.index + 1
+        layout_update_top(state, frame)
+        return out
+    }
+    if frame.kind == LAYOUT_GRID {
+        let gap: i32 = frame.gap
+        let cols: i32 = frame.cols
+        let rows: i32 = frame.rows
+        let pad: i32 = frame.pad
+        let w: i32 = frame.w - pad * 2
+        let h: i32 = frame.h - pad * 2
+        let cell_w: i32 = (w - (cols - 1) * gap) / cols
+        let cell_h: i32 = (h - (rows - 1) * gap) / rows
+        let used_w: i32 = cell_w * cols + gap * (cols - 1)
+        let used_h: i32 = cell_h * rows + gap * (rows - 1)
+        let offset_x: i32 = align_offset(w, used_w, frame.justify_x)
+        let offset_y: i32 = align_offset(h, used_h, frame.justify_y)
+        let row_idx: i32 = frame.index / cols
+        let col: i32 = frame.index - row_idx * cols
+        let x: i32 = frame.x + pad + offset_x + col * (cell_w + gap)
+        let y: i32 = frame.y + pad + offset_y + row_idx * (cell_h + gap)
+        let out: UiRect = UiRect{ x: x, y: y, w: cell_w, h: cell_h }
+        frame.index = frame.index + 1
+        layout_update_top(state, frame)
+        return out
+    }
+    return UiRect{ x: frame.x, y: frame.y, w: frame.w, h: frame.h }
+}
+
+export function ui_next_rect(state: ptr<UiLayoutState>) -> UiRect { return layout_claim(state) }
+
+export function ui_layout_begin(state: ptr<UiLayoutState>, cols: i32, rows: i32, pad: i32) -> void {
+    let unit: f32 = min_f32(state[0].win_w / i32_to_f32(cols), state[0].win_h / i32_to_f32(rows))
+    state[0].unit = unit
+    let frame: UiLayoutFrame = UiLayoutFrame{
+        x: pad,
+        y: pad,
+        w: cols - pad * 2,
+        h: rows - pad * 2,
+        kind: LAYOUT_UI,
+        cols: 0,
+        rows: 0,
+        gap: 0,
+        pad: 0,
+        justify_x: UI_JUSTIFY_START,
+        justify_y: UI_JUSTIFY_START,
+        index: 0,
+    }
+    layout_push(state, frame)
+    return
+}
+
+export function ui_layout_end(state: ptr<UiLayoutState>) -> void { state[0].top = 0; return }
+
+export function ui_row_begin(state: ptr<UiLayoutState>, cols: i32, gap: i32, pad: i32, justify: i32) -> void {
+    let rect: UiRect = layout_claim(state)
+    let frame: UiLayoutFrame = UiLayoutFrame{ x: rect.x, y: rect.y, w: rect.w, h: rect.h, kind: LAYOUT_ROW, cols: cols, rows: 0, gap: gap, pad: pad, justify_x: justify, justify_y: UI_JUSTIFY_START, index: 0 }
+    layout_push(state, frame)
+    return
+}
+
+export function ui_row_end(state: ptr<UiLayoutState>) -> void { layout_pop(state); return }
+
+export function ui_column_begin(state: ptr<UiLayoutState>, rows: i32, gap: i32, pad: i32, justify: i32) -> void {
+    let rect: UiRect = layout_claim(state)
+    let frame: UiLayoutFrame = UiLayoutFrame{ x: rect.x, y: rect.y, w: rect.w, h: rect.h, kind: LAYOUT_COLUMN, cols: 0, rows: rows, gap: gap, pad: pad, justify_x: UI_JUSTIFY_START, justify_y: justify, index: 0 }
+    layout_push(state, frame)
+    return
+}
+
+export function ui_column_end(state: ptr<UiLayoutState>) -> void { layout_pop(state); return }
+
+export function ui_grid_begin(state: ptr<UiLayoutState>, cols: i32, rows: i32, gap: i32, pad: i32, justify_x: i32, justify_y: i32) -> void {
+    let rect: UiRect = layout_claim(state)
+    let frame: UiLayoutFrame = UiLayoutFrame{ x: rect.x, y: rect.y, w: rect.w, h: rect.h, kind: LAYOUT_GRID, cols: cols, rows: rows, gap: gap, pad: pad, justify_x: justify_x, justify_y: justify_y, index: 0 }
+    layout_push(state, frame)
+    return
+}
+
+export function ui_grid_end(state: ptr<UiLayoutState>) -> void { layout_pop(state); return }
+
+export function ui_stack_begin(state: ptr<UiLayoutState>) -> void {
+    let rect: UiRect = layout_claim(state)
+    let frame: UiLayoutFrame = UiLayoutFrame{ x: rect.x, y: rect.y, w: rect.w, h: rect.h, kind: LAYOUT_STACK, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: UI_JUSTIFY_START, justify_y: UI_JUSTIFY_START, index: 0 }
+    layout_push(state, frame)
+    return
+}
+
+export function ui_stack_end(state: ptr<UiLayoutState>) -> void { layout_pop(state); return }
+
+export function ui_box(state: ptr<UiLayoutState>) -> UiRect { return ui_next_rect(state) }

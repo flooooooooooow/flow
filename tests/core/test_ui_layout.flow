@@ -1,0 +1,91 @@
+# UI layout DSL syntax + implicit state injection tests
+
+const LAYOUT_UI: i32 = 0
+const LAYOUT_GRID: i32 = 3
+const UI_JUSTIFY_START: i32 = 0
+
+struct LayoutState {
+    top: i32,
+}
+
+function ui_layout_begin(state: array<LayoutState, 1>, cols: i32, rows: i32, pad: i32) -> void {
+    state[0].top = 1
+    return
+}
+
+function ui_layout_end(state: array<LayoutState, 1>) -> void {
+    state[0].top = 0
+    return
+}
+
+function ui_row_begin(state: array<LayoutState, 1>, cols: i32, gap: i32, pad: i32, justify: i32) -> void {
+    state[0].top = 1
+    return
+}
+
+function ui_row_end(state: array<LayoutState, 1>) -> void {
+    state[0].top = 0
+    return
+}
+
+function ui_column_begin(state: array<LayoutState, 1>, rows: i32, gap: i32, pad: i32, justify: i32) -> void {
+    state[0].top = 1
+    return
+}
+
+function ui_column_end(state: array<LayoutState, 1>) -> void {
+    state[0].top = 0
+    return
+}
+
+function ui_grid_begin(state: array<LayoutState, 1>, cols: i32, rows: i32, gap: i32, pad: i32, justify_x: i32, justify_y: i32) -> void {
+    state[0].top = 1
+    return
+}
+
+function ui_grid_end(state: array<LayoutState, 1>) -> void {
+    state[0].top = 0
+    return
+}
+
+function ui_stack_begin(state: array<LayoutState, 1>) -> void {
+    state[0].top = 1
+    return
+}
+
+function ui_stack_end(state: array<LayoutState, 1>) -> void {
+    state[0].top = 0
+    return
+}
+
+function bump(x: i32) -> i32 { return x + 1 }
+
+function main() -> i32 {
+    let store: array<LayoutState, 1> = [LayoutState{ top: 0 }]
+    let state: array<LayoutState, 1> = store
+
+    let row: i32 = 1
+    let mut acc: i32 = 0
+
+    # implicit state injection
+    ui_layout(4, 4, 0) {
+        ui_stack() {
+            acc = bump(acc)
+        }
+        ui_grid(2, 2, 1, 0, UI_JUSTIFY_START, UI_JUSTIFY_START) {
+            acc = acc + row
+        }
+    }
+
+    # explicit state provided
+    ui_layout(state, 3, 3, 1) {
+        ui_row(state, 2, 1, 0, UI_JUSTIFY_START) {
+            acc = acc + 2
+        }
+        ui_column(state, 2, 1, 0, UI_JUSTIFY_START) {
+            acc = acc + 3
+        }
+    }
+
+    return acc
+}

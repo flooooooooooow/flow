@@ -1,0 +1,64 @@
+# FLOW GPU tutorial: device/queue/buffer/layout + @gpu kernel (CPU-backed simulation)
+import "stdlib/gpu_sim.flow"
+
+# GPU kernel for shader generation (Metal)
+@gpu
+function vec_add_gpu(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {
+    let i = gpu_thread_id()
+    if i < n {
+        out[i] = a[i] + b[i]
+    }
+}
+
+function main() -> i32 {
+    # Device detection (simulated)
+    let ctx: DeviceContext = device_context()
+    if !ctx.has_gpu {
+        print("No GPU available; CPU path only")
+    }
+
+    # Host buffers
+    let n: i32 = 8
+    let a: array<f32, 8> = [1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0]
+    let b: array<f32, 8> = [10.0,20.0,30.0,40.0,50.0,60.0,70.0,80.0]
+    let out: array<f32, 8> = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+
+    let host_a: HostBufferF32 = host_buffer_f32(a, n)
+    let host_b: HostBufferF32 = host_buffer_f32(b, n)
+    let host_out: HostBufferF32 = host_buffer_f32(out, n)
+
+    # Device buffers + copies
+    let dev_a: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_b: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_out: DeviceBufferF32 = device_alloc_f32(n)
+
+    copy_host_to_device(host_a, dev_a)
+    copy_host_to_device(host_b, dev_b)
+
+    # Layout/tensors
+    let layout: Layout = layout_1d(n)
+    let a_t: LayoutTensorF32 = tensor_from_device(dev_a, layout)
+    let b_t: LayoutTensorF32 = tensor_from_device(dev_b, layout)
+    let out_t: LayoutTensorF32 = tensor_from_device(dev_out, layout)
+
+    # Queue + enqueue + sync
+    let q0: CommandQueue = device_queue(ctx)
+    let q1: CommandQueue = enqueue_queue(q0)
+    kernel_vec_add(a_t, b_t, out_t)
+    let q2: CommandQueue = synchronize(q1)
+
+    # Copy back + print
+    copy_device_to_host(dev_out, host_out)
+    print("Result:")
+    let i: i32 = 0
+    while i < n {
+        print(out[i])
+        i = i + 1
+    }
+    print("")
+
+    device_free_f32(dev_a)
+    device_free_f32(dev_b)
+    device_free_f32(dev_out)
+    return q2.pending
+}

@@ -239,6 +239,8 @@ class MLIRGenerator:
             return self.generate_while(stmt)
         elif stmt_type == 'ForStatement':
             return self.generate_for(stmt)
+        elif stmt_type == 'LayoutStatement':
+            return self.generate_block(stmt.body)
         elif stmt_type == 'ExpressionStatement':
             expr = stmt.expression
             expr_ssa, expr_ops = self.generate_expression(expr)

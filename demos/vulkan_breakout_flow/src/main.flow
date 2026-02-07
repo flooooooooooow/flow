@@ -1,4 +1,5 @@
 import "../../vulkan_abi/renderer.flow"
+import "stdlib/ui_layout.flow"
 
 effect Input {
     function key_down(key: i32) -> i32
@@ -19,27 +20,26 @@ effect Renderer {
     function update_texture(tex: i32, pixels: ptr<u8>, width: i32, height: i32) -> void
 }
 
-struct VulkanRuntime {}
+capability VulkanRuntime {
+    effect Input,
+    effect Renderer,
 
-impl Input for VulkanRuntime {
-    function key_down(self, key: i32) -> i32 { return flow_vk_2048_key_down(key) }
-    function should_close(self) -> i32 { return flow_vk_2048_should_close() }
-    function poll(self) -> void { flow_vk_2048_poll() }
-}
+    function key_down(key: i32) -> i32 { return flow_vk_2048_key_down(key) }
+    function should_close() -> i32 { return flow_vk_2048_should_close() }
+    function poll() -> void { flow_vk_2048_poll() }
 
-impl Renderer for VulkanRuntime {
-    function begin_frame(self) -> i32 { return flow_vk_begin_frame() }
-    function end_frame(self) -> void { flow_vk_end_frame() }
-    function set_clear(self, r: f32, g: f32, b: f32) -> void { flow_vk_set_clear_color(r, g, b) }
-    function set_viewport(self, width: i32, height: i32) -> void { flow_vk_set_viewport(width, height) }
-    function create_instance_buffer(self, capacity: i32) -> i32 { return flow_vk_create_instance_buffer(capacity) }
-    function update_instance_buffer(self, buf: i32, data: ptr<f32>, count: i32) -> void { flow_vk_update_instance_buffer(buf, data, count) }
-    function draw_instance_buffer(self, buf: i32, count: i32) -> void { flow_vk_draw_instance_buffer(buf, count) }
-    function upload_mesh(self, vertices: ptr<f32>, vertex_count: i32, indices: ptr<u16>, index_count: i32) -> void {
+    function begin_frame() -> i32 { return flow_vk_begin_frame() }
+    function end_frame() -> void { flow_vk_end_frame() }
+    function set_clear(r: f32, g: f32, b: f32) -> void { flow_vk_set_clear_color(r, g, b) }
+    function set_viewport(width: i32, height: i32) -> void { flow_vk_set_viewport(width, height) }
+    function create_instance_buffer(capacity: i32) -> i32 { return flow_vk_create_instance_buffer(capacity) }
+    function update_instance_buffer(buf: i32, data: ptr<f32>, count: i32) -> void { flow_vk_update_instance_buffer(buf, data, count) }
+    function draw_instance_buffer(buf: i32, count: i32) -> void { flow_vk_draw_instance_buffer(buf, count) }
+    function upload_mesh(vertices: ptr<f32>, vertex_count: i32, indices: ptr<u16>, index_count: i32) -> void {
         flow_vk_upload_mesh(vertices, vertex_count, indices, index_count)
     }
-    function create_texture(self, width: i32, height: i32) -> i32 { return flow_vk_create_texture(width, height) }
-    function update_texture(self, tex: i32, pixels: ptr<u8>, width: i32, height: i32) -> void {
+    function create_texture(width: i32, height: i32) -> i32 { return flow_vk_create_texture(width, height) }
+    function update_texture(tex: i32, pixels: ptr<u8>, width: i32, height: i32) -> void {
         flow_vk_update_texture(tex, pixels, width, height)
     }
 }
@@ -47,6 +47,8 @@ impl Renderer for VulkanRuntime {
 function min_f32(a: f32, b: f32) -> f32 { if a < b { return a } return b }
 function max_f32(a: f32, b: f32) -> f32 { if a > b { return a } return b }
 function i32_to_f32(v: i32) -> f32 { return v * 1.0 }
+
+ 
 
 function upload_quad_mesh(renderer: capability Renderer) -> void {
     let verts: array<f32, 32> = [
@@ -74,6 +76,28 @@ function brick_color(row: i32, out: ptr<f32>) -> void {
     out[0]=0.6; out[1]=0.4; out[2]=0.9; out[3]=1.0
 }
 
+function push_rect_instance(out: ptr<f32>, count: i32, rect: UiRect, unit: f32, r: f32, g: f32, b: f32) -> i32 {
+    let w: f32 = i32_to_f32(rect.w) * unit
+    let h: f32 = i32_to_f32(rect.h) * unit
+    let size: f32 = min_f32(w, h) * 0.98
+    let x: f32 = i32_to_f32(rect.x) * unit + w * 0.5
+    let y: f32 = i32_to_f32(rect.y) * unit + h * 0.5
+    let base: i32 = count * 12
+    out[base + 0] = x
+    out[base + 1] = y
+    out[base + 2] = 0.0
+    out[base + 3] = size
+    out[base + 4] = 0.0
+    out[base + 5] = 0.0
+    out[base + 6] = 1.0
+    out[base + 7] = 1.0
+    out[base + 8] = r
+    out[base + 9] = g
+    out[base + 10] = b
+    out[base + 11] = 1.0
+    return count + 1
+}
+
 function fill_instances(out: ptr<f32>, bricks: ptr<i32>, paddle_x: i32, ball_x: i32, ball_y: i32, width: f32, height: f32) -> i32 {
     let cols: i32 = 10
     let rows: i32 = 6
@@ -84,6 +108,14 @@ function fill_instances(out: ptr<f32>, bricks: ptr<i32>, paddle_x: i32, ball_x: 
     let start_y: f32 = tile * 2.0
 
     let count: i32 = 0
+
+    ui_layout_set_view(_ui_state, width, height)
+    ui_layout(24, 18, 1) {
+        ui_row(1, 0, 0, UI_JUSTIFY_CENTER) {
+            let rect: UiRect = ui_next_rect(_ui_state)
+            count = push_rect_instance(out, count, rect, _ui_state[0].unit, 0.10, 0.12, 0.16)
+        }
+    }
     let r: i32 = 0
     while r < rows {
         let c: i32 = 0
@@ -109,23 +141,27 @@ function fill_instances(out: ptr<f32>, bricks: ptr<i32>, paddle_x: i32, ball_x: 
         r = r + 1
     }
 
-    # Paddle
+    # Paddle: 4 tiles wide
     let paddle_y: f32 = height - tile * 2.0
-    let px: f32 = start_x + i32_to_f32(paddle_x) * tile
-    let base2: i32 = count * 12
-    out[base2 + 0] = px
-    out[base2 + 1] = paddle_y
-    out[base2 + 2] = 0.0
-    out[base2 + 3] = tile * 2.5
-    out[base2 + 4] = 0.0
-    out[base2 + 5] = 0.0
-    out[base2 + 6] = 1.0
-    out[base2 + 7] = 1.0
-    out[base2 + 8] = 0.9
-    out[base2 + 9] = 0.9
-    out[base2 + 10] = 0.9
-    out[base2 + 11] = 1.0
-    count = count + 1
+    let k: i32 = 0
+    while k < 4 {
+        let px: f32 = start_x + i32_to_f32(paddle_x + k) * tile
+        let base2: i32 = count * 12
+        out[base2 + 0] = px
+        out[base2 + 1] = paddle_y
+        out[base2 + 2] = 0.0
+        out[base2 + 3] = tile * 0.95
+        out[base2 + 4] = 0.0
+        out[base2 + 5] = 0.0
+        out[base2 + 6] = 1.0
+        out[base2 + 7] = 1.0
+        out[base2 + 8] = 0.9
+        out[base2 + 9] = 0.9
+        out[base2 + 10] = 0.9
+        out[base2 + 11] = 1.0
+        count = count + 1
+        k = k + 1
+    }
 
     # Ball
     let bx: f32 = start_x + i32_to_f32(ball_x) * tile
@@ -154,6 +190,13 @@ function game_loop(input: capability Input, renderer: capability Renderer, width
     upload_quad_mesh(renderer)
     upload_white_texture(renderer)
     let inst_buf_handle: i32 = renderer.create_instance_buffer(128)
+    let ui_frames: array<UiLayoutFrame, 32> = [
+        UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }
+    ]
+    let ui_state_store: array<UiLayoutState, 1> = [
+        UiLayoutState{ frames: ui_frames, top: 0, unit: 1.0, win_w: 0.0, win_h: 0.0 }
+    ]
+    ui_layout_bind(ui_state_store)
 
     let bricks: array<i32, 60> = [0]
     let i: i32 = 0
@@ -164,11 +207,20 @@ function game_loop(input: capability Input, renderer: capability Renderer, width
     let ball_y: i32 = 8
     let ball_dx: i32 = 1
     let ball_dy: i32 = 1
+    let rng_buf: array<i32, 1> = [12345]
+    let rng_ptr: ptr<i32> = rng_buf
+
+    let frame: i32 = 0
+    let step_interval: i32 = 2
 
     let left_down: bool = false
     let right_down: bool = false
 
-    while input.should_close() == 0 && renderer.begin_frame() == 1 {
+    while input.should_close() == 0 {
+        if renderer.begin_frame() == 0 {
+            input.poll()
+            continue
+        }
         input.poll()
         let esc: bool = input.key_down(256) == 1
         if esc {
@@ -180,14 +232,26 @@ function game_loop(input: capability Input, renderer: capability Renderer, width
         if left && !left_down { paddle_x = max_i32(0, paddle_x - 1) }
         if right && !right_down { paddle_x = min_i32(8, paddle_x + 1) }
 
-        ball_x = ball_x + ball_dx
-        ball_y = ball_y + ball_dy
-        if ball_x <= 0 || ball_x >= 9 { ball_dx = -ball_dx }
-        if ball_y <= 0 { ball_dy = -ball_dy }
-        if ball_y >= 15 {
-            ball_x = 5; ball_y = 8; ball_dx = 1; ball_dy = 1
+        frame = frame + 1
+        if frame >= step_interval {
+            frame = 0
+            ball_x = ball_x + ball_dx
+            ball_y = ball_y + ball_dy
+            if ball_x <= 0 || ball_x >= 9 { ball_dx = -ball_dx }
+            if ball_y <= 0 { ball_dy = -ball_dy }
+            if ball_y >= 15 {
+                ball_x = 5; ball_y = 8; ball_dx = 1; ball_dy = 1
+            }
+            if ball_y == 14 && ball_x >= paddle_x && ball_x <= paddle_x + 3 {
+                ball_dy = -ball_dy
+                let hit: i32 = ball_x - paddle_x
+                if hit <= 1 { ball_dx = -1 }
+                if hit >= 2 { ball_dx = 1 }
+                # add entropy
+                rng_ptr[0] = rng_ptr[0] * 1664525 + 1013904223
+                if (rng_ptr[0] & 2) != 0 { ball_dx = -ball_dx }
+            }
         }
-        if ball_y == 14 && ball_x >= paddle_x && ball_x <= paddle_x + 2 { ball_dy = -ball_dy }
 
         let brick_row: i32 = ball_y
         let brick_col: i32 = ball_x
@@ -196,6 +260,8 @@ function game_loop(input: capability Input, renderer: capability Renderer, width
             if bricks[bidx] == 1 {
                 bricks[bidx] = 0
                 ball_dy = -ball_dy
+                rng_ptr[0] = rng_ptr[0] * 1664525 + 1013904223
+                if (rng_ptr[0] & 1) != 0 { ball_dx = -ball_dx }
             }
         }
 
@@ -217,11 +283,16 @@ function min_i32(a: i32, b: i32) -> i32 { if a < b { return a } return b }
 function main() -> i32 {
     let width: i32 = 900
     let height: i32 = 700
+    flow_vk_set_window_scale(1.0, 0)
     if flow_vk_2048_init(width, height, "Flow Vulkan Breakout", 128) != 0 {
         return 1
     }
-    let runtime: VulkanRuntime = VulkanRuntime {}
-    let result: i32 = game_loop(runtime, runtime, width, height)
+    let input: capability Input = 0
+    let renderer: capability Renderer = 0
+    let result: i32 = 0
+    handle Input, Renderer with VulkanRuntime {
+        result = game_loop(input, renderer, width, height)
+    }
     flow_vk_2048_shutdown()
     return result
 }
