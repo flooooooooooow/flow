@@ -7,4 +7,11 @@ extern {
     function flow_vk_2048_key_down(key: i32) -> i32
     function flow_vk_2048_draw(instance_data: ptr<f32>, count: i32) -> void
     function flow_vk_2048_upload_texture(pixels: ptr<u8>, width: i32, height: i32) -> void
+    function flow_vk_begin_frame() -> i32
+    function flow_vk_end_frame() -> void
+    function flow_vk_create_instance_buffer(capacity: i32) -> i32
+    function flow_vk_update_instance_buffer(handle: i32, instance_data: ptr<f32>, count: i32) -> void
+    function flow_vk_draw_instance_buffer(handle: i32, count: i32) -> void
+    function flow_vk_create_texture(width: i32, height: i32) -> i32
+    function flow_vk_update_texture(handle: i32, pixels: ptr<u8>, width: i32, height: i32) -> void
 }

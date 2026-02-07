@@ -386,8 +386,26 @@ public:
         if (!externalInstanceMode) {
             return;
         }
-        updateExternalInstanceBuffer(instanceData, count);
+        if (instanceData) {
+            updateExternalInstanceBuffer(instanceData, count);
+        } else {
+            if (count > externalInstanceCapacity) {
+                count = externalInstanceCapacity;
+            }
+            externalInstanceCount = count;
+        }
         drawFrame();
+    }
+
+    int32_t beginExternalFrame() const {
+        if (!window) {
+            return 0;
+        }
+        return glfwWindowShouldClose(window) ? 0 : 1;
+    }
+
+    void endExternalFrame() {
+        // No-op; drawFrame already submits work.
     }
 
     void uploadExternalTexture(const uint8_t* pixels, int width, int height) {
@@ -407,6 +425,14 @@ public:
             return 0;
         }
         return glfwGetKey(window, key) == GLFW_PRESS ? 1 : 0;
+    }
+
+    int32_t externalInstanceBufferHandle() const {
+        return externalInstanceHandle;
+    }
+
+    int32_t externalTextureHandleId() const {
+        return externalTextureHandle;
     }
 
 private:
@@ -433,6 +459,8 @@ private:
     bool externalInstanceMode = false;
     uint32_t externalInstanceCount = 0;
     uint32_t externalInstanceCapacity = 0;
+    int32_t externalInstanceHandle = 1;
+    int32_t externalTextureHandle = 1;
 
     VkInstance instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
@@ -1746,7 +1774,7 @@ private:
             count = externalInstanceCapacity;
         }
         externalInstanceCount = count;
-        if (count == 0) {
+        if (count == 0 || !instanceData) {
             return;
         }
         VkDeviceSize bufferSize = sizeof(InstanceData) * count;
@@ -1754,6 +1782,37 @@ private:
         vkMapMemory(device, instanceBufferMemory, 0, bufferSize, 0, &data);
         std::memcpy(data, instanceData, static_cast<size_t>(bufferSize));
         vkUnmapMemory(device, instanceBufferMemory);
+    }
+
+    void ensureExternalInstanceCapacity(uint32_t capacity) {
+        if (!externalInstanceMode) {
+            return;
+        }
+        if (capacity == 0) {
+            capacity = 1;
+        }
+        if (instanceBuffer != VK_NULL_HANDLE && capacity == externalInstanceCapacity) {
+            return;
+        }
+        if (instanceBuffer != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(device);
+            vkDestroyBuffer(device, instanceBuffer, nullptr);
+            vkFreeMemory(device, instanceBufferMemory, nullptr);
+            instanceBuffer = VK_NULL_HANDLE;
+            instanceBufferMemory = VK_NULL_HANDLE;
+        }
+        externalInstanceCapacity = capacity;
+        VkDeviceSize bufferSize = sizeof(InstanceData) * externalInstanceCapacity;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     instanceBuffer, instanceBufferMemory);
+        std::vector<InstanceData> zero(externalInstanceCapacity);
+        void* data;
+        vkMapMemory(device, instanceBufferMemory, 0, bufferSize, 0, &data);
+        std::memcpy(data, zero.data(), static_cast<size_t>(bufferSize));
+        vkUnmapMemory(device, instanceBufferMemory);
+        instanceBufferHostVisible = true;
+        externalInstanceCount = 0;
     }
 
     void handleTileInput() {
@@ -2864,6 +2923,68 @@ extern "C" void flow_vk_2048_draw(const float* instance_data, int32_t count) {
 
 extern "C" void flow_vk_2048_upload_texture(const uint8_t* pixels, int32_t width, int32_t height) {
     if (!g_flow_app) {
+        return;
+    }
+    if (!pixels || width <= 0 || height <= 0) {
+        return;
+    }
+    g_flow_app->uploadExternalTexture(pixels, width, height);
+}
+
+extern "C" int32_t flow_vk_begin_frame() {
+    if (!g_flow_app) {
+        return 0;
+    }
+    return g_flow_app->beginExternalFrame();
+}
+
+extern "C" void flow_vk_end_frame() {
+    if (!g_flow_app) {
+        return;
+    }
+    g_flow_app->endExternalFrame();
+}
+
+extern "C" int32_t flow_vk_create_instance_buffer(int32_t capacity) {
+    if (!g_flow_app) {
+        return 0;
+    }
+    g_flow_app->ensureExternalInstanceCapacity(static_cast<uint32_t>(capacity));
+    return g_flow_app->externalInstanceBufferHandle();
+}
+
+extern "C" void flow_vk_update_instance_buffer(int32_t handle, const float* instance_data, int32_t count) {
+    if (!g_flow_app || handle != g_flow_app->externalInstanceBufferHandle()) {
+        return;
+    }
+    if (!instance_data || count <= 0) {
+        g_flow_app->updateExternalInstanceBuffer(nullptr, 0);
+        return;
+    }
+    g_flow_app->updateExternalInstanceBuffer(instance_data, static_cast<uint32_t>(count));
+}
+
+extern "C" void flow_vk_draw_instance_buffer(int32_t handle, int32_t count) {
+    if (!g_flow_app || handle != g_flow_app->externalInstanceBufferHandle()) {
+        return;
+    }
+    if (count < 0) {
+        count = 0;
+    }
+    g_flow_app->renderExternal(nullptr, static_cast<uint32_t>(count));
+}
+
+extern "C" int32_t flow_vk_create_texture(int32_t width, int32_t height) {
+    if (!g_flow_app || width <= 0 || height <= 0) {
+        return 0;
+    }
+    std::vector<uint8_t> zero(static_cast<size_t>(width) * static_cast<size_t>(height) * 4, 0);
+    g_flow_app->uploadExternalTexture(zero.data(), width, height);
+    return g_flow_app->externalTextureHandleId();
+}
+
+extern "C" void flow_vk_update_texture(int32_t handle, const uint8_t* pixels, int32_t width, int32_t height) {
+    if (!g_flow_app || handle != g_flow_app->externalTextureHandleId()) {
         return;
     }
     if (!pixels || width <= 0 || height <= 0) {
