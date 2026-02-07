@@ -123,8 +123,9 @@ flow/
 │   ├── tutorials/          # Beginner → Advanced
 │   └── playground/         # Web playground
 │
-├── editors/                # EDITOR SUPPORT
-│   └── vscode/             # VS Code extension
+├── third_party/            # THIRD-PARTY INTEGRATIONS
+│   └── integrations/       # Editor + tooling integrations
+│       └── vscode/         # VS Code extension
 │
 ├── tools/                  # DEVELOPMENT TOOLS
 │   ├── flow_grad_flow.py   # Gradient code generator
@@ -332,7 +333,7 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 
 ### VS Code Extension
 
-Install from `editors/vscode/flow-language/flow-language-0.1.0.vsix`
+Install from `third_party/integrations/vscode/flow-language/flow-language-0.1.0.vsix`
 
 ---
 

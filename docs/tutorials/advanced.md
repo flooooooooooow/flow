@@ -385,7 +385,7 @@ Or use the wrapper:
 
 ### 7.3 VS Code Extension
 
-The `editors/vscode/` directory contains a VS Code extension with:
+The `third_party/integrations/vscode/` directory contains a VS Code extension with:
 - Syntax highlighting for `.flow` files
 - LSP client integration
 
