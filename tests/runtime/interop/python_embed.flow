@@ -1,0 +1,12 @@
+import "stdlib/python_embed.flow"
+
+function main() -> i32 {
+    let ctx0: PythonContext = python_begin(".", "./examples/interop")
+    if !ctx0.ok { return ctx0.error }
+    let ctx1: PythonContext = python_import(ctx0, "simple_interop")
+    if !ctx1.ok { return ctx1.error }
+    let ctx2: PythonContext = python_call(ctx1, "test_interop_func")
+    if !ctx2.ok { return ctx2.error }
+    python_end()
+    return 0
+}
