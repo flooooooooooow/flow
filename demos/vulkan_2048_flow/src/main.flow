@@ -1,5 +1,6 @@
 import "./game.flow"
 import "../../vulkan_abi/renderer.flow"
+import "stdlib/vulkan_abi_renderer.flow"
 
 extern {
     function malloc(size: i32) -> ptr<u8>
@@ -13,6 +14,18 @@ function clamp_u8(v: i32) -> i32 {
     if v < 0 { return 0 }
     if v > 255 { return 255 }
     return v
+}
+
+function upload_quad_mesh(renderer: AbiRenderer) -> void {
+    # pos.xyz, color.rgb, uv.xy
+    let verts: array<f32, 32> = [
+        -0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 0.0,
+         0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 0.0,
+         0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 1.0,
+        -0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 1.0
+    ]
+    let inds: array<u16, 6> = [0, 1, 2, 2, 3, 0]
+    abi_renderer_upload_mesh(renderer, verts, 4, inds, 6)
 }
 
 function label_index(v: i32) -> i32 {
@@ -196,6 +209,12 @@ function main() -> i32 {
     if flow_vk_2048_init(width, height, "Flow Vulkan 2048", 16) != 0 {
         return 1
     }
+    let renderer: AbiRenderer = abi_renderer_init()
+    let instance_handle: i32 = abi_renderer_create_instance_buffer(renderer, 16)
+    upload_quad_mesh(renderer)
+    abi_renderer_set_clear(renderer, 0.10, 0.09, 0.08)
+    abi_renderer_set_camera(renderer, 2.5, 0.3, 0.6)
+    abi_renderer_set_viewport(renderer, width, height)
 
     # Build a simple 7-seg digit atlas in Flow and upload to Vulkan.
     let cell: i32 = 64
@@ -214,7 +233,8 @@ function main() -> i32 {
         draw_number(atlas, atlas_w, atlas_h, cx, 0, cell, cell, value)
         li = li + 1
     }
-    flow_vk_2048_upload_texture(atlas, atlas_w, atlas_h)
+    let texture_handle: i32 = abi_renderer_create_texture(renderer, atlas_w, atlas_h)
+    abi_renderer_update_texture(renderer, texture_handle, atlas, atlas_w, atlas_h)
 
     let board: array<i32, 16> = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]
     let score_buf: array<i32, 1> = [0]
@@ -249,7 +269,7 @@ function main() -> i32 {
     let down_down: bool = false
     let restart_down: bool = false
 
-    while flow_vk_2048_should_close() == 0 {
+    while flow_vk_2048_should_close() == 0 && abi_renderer_begin_frame(renderer) == 1 {
         flow_vk_2048_poll()
 
         let left: bool = flow_vk_2048_key_down(263) == 1 || flow_vk_2048_key_down(65) == 1
@@ -271,7 +291,9 @@ function main() -> i32 {
         restart_down = restart
 
         fill_instances(board_ptr, inst_ptr, 16, i32_to_f32(width), i32_to_f32(height))
-        flow_vk_2048_draw(inst_ptr, 16)
+        abi_renderer_update_instance_buffer(renderer, instance_handle, inst_ptr, 16)
+        abi_renderer_draw_instance_buffer(renderer, instance_handle, 16)
+        abi_renderer_end_frame(renderer)
     }
 
     free(atlas)

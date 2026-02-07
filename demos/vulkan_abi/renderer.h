@@ -19,10 +19,14 @@ void flow_vk_2048_upload_texture(const uint8_t* pixels, int32_t width, int32_t h
 int32_t flow_vk_begin_frame(void);
 void flow_vk_end_frame(void);
 int32_t flow_vk_create_instance_buffer(int32_t capacity);
-void flow_vk_update_instance_buffer(int32_t handle, const float* instance_data, int32_t count);
-void flow_vk_draw_instance_buffer(int32_t handle, int32_t count);
+void flow_vk_update_instance_buffer(int32_t buf, const float* instance_data, int32_t count);
+void flow_vk_draw_instance_buffer(int32_t buf, int32_t count);
 int32_t flow_vk_create_texture(int32_t width, int32_t height);
-void flow_vk_update_texture(int32_t handle, const uint8_t* pixels, int32_t width, int32_t height);
+void flow_vk_update_texture(int32_t tex, const uint8_t* pixels, int32_t width, int32_t height);
+void flow_vk_upload_mesh(const float* vertices, int32_t vertex_count, const uint16_t* indices, int32_t index_count);
+void flow_vk_set_clear_color(float r, float g, float b);
+void flow_vk_set_camera(float distance, float pitch, float yaw);
+void flow_vk_set_viewport(int32_t width, int32_t height);
 
 #ifdef __cplusplus
 }

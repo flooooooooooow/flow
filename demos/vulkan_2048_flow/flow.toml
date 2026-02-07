@@ -9,7 +9,7 @@ entry = "src/main.flow"
 [dev-dependencies]
 
 [native]
-sources = ["../../demos/vulkan_scene/main.cpp"]
+sources = ["../../lib/stdlib/native/vulkan_scene.cpp"]
 libs = ["vulkan", "glfw"]
 cflags = ["-std=c++17", "-O2", "-I/opt/homebrew/opt/vulkan-headers/include", "-I/opt/homebrew/opt/glfw/include"]
 ldflags = ["-L/opt/homebrew/opt/vulkan-loader/lib", "-L/opt/homebrew/opt/molten-vk/lib", "-L/opt/homebrew/opt/glfw/lib", "-Wl,-rpath,/opt/homebrew/opt/vulkan-loader/lib", "-Wl,-rpath,/opt/homebrew/opt/molten-vk/lib", "-Wl,-rpath,/opt/homebrew/opt/vulkan-validationlayers/lib"]

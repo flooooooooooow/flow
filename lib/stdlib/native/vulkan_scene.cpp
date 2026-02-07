@@ -14,7 +14,7 @@
 #include <vector>
 #include <sys/stat.h>
 
-#include "../vulkan_abi/renderer.h"
+#include "../../../demos/vulkan_abi/renderer.h"
 
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
@@ -397,6 +397,14 @@ public:
         drawFrame();
     }
 
+    void setExternalInstanceData(const float* instanceData, uint32_t count) {
+        updateExternalInstanceBuffer(instanceData, count);
+    }
+
+    void setExternalInstanceCapacity(uint32_t capacity) {
+        ensureExternalInstanceCapacity(capacity);
+    }
+
     int32_t beginExternalFrame() const {
         if (!window) {
             return 0;
@@ -420,11 +428,84 @@ public:
         createDescriptorSets();
     }
 
+    void setMeshData(const float* verts, int32_t vertCount, const uint16_t* inds, int32_t indexCount) {
+        if (!verts || !inds || vertCount <= 0 || indexCount <= 0) {
+            return;
+        }
+        vertices.clear();
+        vertices.reserve(static_cast<size_t>(vertCount));
+        for (int32_t i = 0; i < vertCount; ++i) {
+            const float* v = verts + i * 8;
+            Vertex vert{};
+            vert.pos[0] = v[0];
+            vert.pos[1] = v[1];
+            vert.pos[2] = v[2];
+            vert.color[0] = v[3];
+            vert.color[1] = v[4];
+            vert.color[2] = v[5];
+            vert.uv[0] = v[6];
+            vert.uv[1] = v[7];
+            vertices.push_back(vert);
+        }
+        indices.assign(inds, inds + indexCount);
+
+        if (device != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(device);
+            if (vertexBuffer) {
+                vkDestroyBuffer(device, vertexBuffer, nullptr);
+                vertexBuffer = VK_NULL_HANDLE;
+            }
+            if (vertexBufferMemory) {
+                vkFreeMemory(device, vertexBufferMemory, nullptr);
+                vertexBufferMemory = VK_NULL_HANDLE;
+            }
+            if (indexBuffer) {
+                vkDestroyBuffer(device, indexBuffer, nullptr);
+                indexBuffer = VK_NULL_HANDLE;
+            }
+            if (indexBufferMemory) {
+                vkFreeMemory(device, indexBufferMemory, nullptr);
+                indexBufferMemory = VK_NULL_HANDLE;
+            }
+            createVertexBuffer();
+            createIndexBuffer();
+        }
+    }
+
     int keyDown(int key) const {
         if (!window) {
             return 0;
         }
         return glfwGetKey(window, key) == GLFW_PRESS ? 1 : 0;
+    }
+
+    void setClearColor(float r, float g, float b) {
+        g_config.clearR = r;
+        g_config.clearG = g;
+        g_config.clearB = b;
+    }
+
+    void setCameraParams(float distance, float pitch, float yaw) {
+        if (distance > 0.0f) {
+            g_config.cameraDistance = distance;
+        }
+        g_config.cameraPitch = pitch;
+        g_config.cameraYaw = yaw;
+        targetCameraDistance = g_config.cameraDistance;
+        targetCameraPitch = g_config.cameraPitch;
+        targetCameraYaw = g_config.cameraYaw;
+        cameraDistance = targetCameraDistance;
+        cameraPitch = targetCameraPitch;
+        cameraYaw = targetCameraYaw;
+    }
+
+    void setViewportSize(int32_t width, int32_t height) {
+        if (width > 0) {
+            g_config.width = static_cast<uint32_t>(width);
+        }
+        if (height > 0) {
+            g_config.height = static_cast<uint32_t>(height);
+        }
     }
 
     int32_t externalInstanceBufferHandle() const {
@@ -1104,24 +1185,10 @@ private:
         inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast<float>(swapChainExtent.width);
-        viewport.height = static_cast<float>(swapChainExtent.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-
-        VkRect2D scissor{};
-        scissor.offset = {0, 0};
-        scissor.extent = swapChainExtent;
-
         VkPipelineViewportStateCreateInfo viewportState{};
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         viewportState.viewportCount = 1;
-        viewportState.pViewports = &viewport;
         viewportState.scissorCount = 1;
-        viewportState.pScissors = &scissor;
 
         VkPipelineRasterizationStateCreateInfo rasterizer{};
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -1187,6 +1254,15 @@ private:
         pipelineInfo.pVertexInputState = &vertexInputInfo;
         pipelineInfo.pInputAssemblyState = &inputAssembly;
         pipelineInfo.pViewportState = &viewportState;
+        std::array<VkDynamicState, 2> dynamicStates = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
+        VkPipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+        dynamicState.pDynamicStates = dynamicStates.data();
+        pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.pRasterizationState = &rasterizer;
         pipelineInfo.pMultisampleState = &multisampling;
         pipelineInfo.pDepthStencilState = &depthStencil;
@@ -1990,6 +2066,20 @@ private:
         renderPassInfo.pClearValues = clearValues.data();
 
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapChainExtent.width);
+        viewport.height = static_cast<float>(swapChainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = swapChainExtent;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
         VkBuffer vertexBuffers[] = {vertexBuffer};
@@ -2949,7 +3039,7 @@ extern "C" int32_t flow_vk_create_instance_buffer(int32_t capacity) {
     if (!g_flow_app) {
         return 0;
     }
-    g_flow_app->ensureExternalInstanceCapacity(static_cast<uint32_t>(capacity));
+    g_flow_app->setExternalInstanceCapacity(static_cast<uint32_t>(capacity));
     return g_flow_app->externalInstanceBufferHandle();
 }
 
@@ -2958,10 +3048,10 @@ extern "C" void flow_vk_update_instance_buffer(int32_t handle, const float* inst
         return;
     }
     if (!instance_data || count <= 0) {
-        g_flow_app->updateExternalInstanceBuffer(nullptr, 0);
+        g_flow_app->setExternalInstanceData(nullptr, 0);
         return;
     }
-    g_flow_app->updateExternalInstanceBuffer(instance_data, static_cast<uint32_t>(count));
+    g_flow_app->setExternalInstanceData(instance_data, static_cast<uint32_t>(count));
 }
 
 extern "C" void flow_vk_draw_instance_buffer(int32_t handle, int32_t count) {
@@ -2991,6 +3081,34 @@ extern "C" void flow_vk_update_texture(int32_t handle, const uint8_t* pixels, in
         return;
     }
     g_flow_app->uploadExternalTexture(pixels, width, height);
+}
+
+extern "C" void flow_vk_upload_mesh(const float* vertices, int32_t vertex_count, const uint16_t* indices, int32_t index_count) {
+    if (!g_flow_app) {
+        return;
+    }
+    g_flow_app->setMeshData(vertices, vertex_count, indices, index_count);
+}
+
+extern "C" void flow_vk_set_clear_color(float r, float g, float b) {
+    if (!g_flow_app) {
+        return;
+    }
+    g_flow_app->setClearColor(r, g, b);
+}
+
+extern "C" void flow_vk_set_camera(float distance, float pitch, float yaw) {
+    if (!g_flow_app) {
+        return;
+    }
+    g_flow_app->setCameraParams(distance, pitch, yaw);
+}
+
+extern "C" void flow_vk_set_viewport(int32_t width, int32_t height) {
+    if (!g_flow_app) {
+        return;
+    }
+    g_flow_app->setViewportSize(width, height);
 }
 
 extern "C" int flow_vulkan_2048_run(int32_t pretty, int32_t trace, int32_t validation,
