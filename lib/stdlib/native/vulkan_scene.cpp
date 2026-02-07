@@ -55,10 +55,17 @@ uint32_t g_externalInstanceCapacity = 0;
 static VulkanApp* g_flow_app = nullptr;
 
 #ifndef FLOW_VK_STANDALONE
+#if defined(__GNUC__)
+extern "C" __attribute__((weak)) void flow_2048_init_ptr_i32_ptr_i32_ptr_i32(int32_t* /*board*/, int32_t* /*score*/, int32_t* /*rng*/) {}
+extern "C" __attribute__((weak)) void flow_2048_step_ptr_i32_ptr_i32_ptr_i32_i32(int32_t* /*board*/, int32_t* /*score*/, int32_t* /*rng*/, int32_t /*dir*/) {}
+extern "C" __attribute__((weak)) int32_t flow_2048_score_ptr_i32(int32_t* /*score*/) { return 0; }
+extern "C" __attribute__((weak)) int32_t flow_2048_can_move_ptr_i32(int32_t* /*board*/) { return 0; }
+#else
 extern "C" void flow_2048_init_ptr_i32_ptr_i32_ptr_i32(int32_t* board, int32_t* score, int32_t* rng);
 extern "C" void flow_2048_step_ptr_i32_ptr_i32_ptr_i32_i32(int32_t* board, int32_t* score, int32_t* rng, int32_t dir);
 extern "C" int32_t flow_2048_score_ptr_i32(int32_t* score);
 extern "C" int32_t flow_2048_can_move_ptr_i32(int32_t* board);
+#endif
 #endif
 static double g_scrollDelta = 0.0;
 

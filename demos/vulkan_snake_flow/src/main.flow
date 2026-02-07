@@ -1,0 +1,172 @@
+import "../../vulkan_abi/renderer.flow"
+import "stdlib/vulkan_abi_renderer.flow"
+
+function min_f32(a: f32, b: f32) -> f32 { if a < b { return a } return b }
+function i32_to_f32(v: i32) -> f32 { return v * 1.0 }
+
+function upload_white_texture(renderer: AbiRenderer) -> void {
+    let tex: array<u8, 4> = [255, 255, 255, 0]
+    let tex_handle: i32 = abi_renderer_create_texture(renderer, 1, 1)
+    abi_renderer_update_texture(renderer, tex_handle, tex, 1, 1)
+}
+
+function upload_quad_mesh(renderer: AbiRenderer) -> void {
+    let verts: array<f32, 32> = [
+        -0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 0.0,
+         0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 0.0,
+         0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 1.0,
+        -0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 1.0
+    ]
+    let inds: array<u16, 6> = [0, 1, 2, 2, 3, 0]
+    abi_renderer_upload_mesh(renderer, verts, 4, inds, 6)
+}
+
+function rng_next(seed: ptr<i32>) -> i32 {
+    seed[0] = seed[0] * 1103515245 + 12345
+    return (seed[0] >> 16) & 32767
+}
+
+function cell_color(kind: i32, out: ptr<f32>) -> void {
+    if kind == 0 { out[0]=0.06; out[1]=0.06; out[2]=0.07; out[3]=1.0; return }
+    if kind == 1 { out[0]=0.2; out[1]=0.9; out[2]=0.3; out[3]=1.0; return }
+    if kind == 2 { out[0]=0.9; out[1]=0.2; out[2]=0.2; out[3]=1.0; return }
+    out[0]=0.9; out[1]=0.9; out[2]=0.9; out[3]=1.0
+}
+
+function fill_instances(out: ptr<f32>, width: f32, height: f32, snake_x: ptr<i32>, snake_y: ptr<i32>, snake_len: i32, food_x: i32, food_y: i32) -> void {
+    let grid_w: i32 = 20
+    let grid_h: i32 = 20
+    let tile: f32 = min_f32(width / i32_to_f32(grid_w), height / i32_to_f32(grid_h))
+    let board_w: f32 = tile * i32_to_f32(grid_w)
+    let board_h: f32 = tile * i32_to_f32(grid_h)
+    let start_x: f32 = (width - board_w) * 0.5 + tile * 0.5
+    let start_y: f32 = (height - board_h) * 0.5 + tile * 0.5
+
+    let i: i32 = 0
+    while i < grid_w * grid_h {
+        let r: i32 = i / grid_w
+        let c: i32 = i - r * grid_w
+        let kind: i32 = 0
+        if c == food_x && r == food_y { kind = 2 }
+        let s: i32 = 0
+        while s < snake_len {
+            if snake_x[s] == c && snake_y[s] == r { kind = 1 }
+            s = s + 1
+        }
+        let x: f32 = start_x + i32_to_f32(c) * tile
+        let y: f32 = start_y + i32_to_f32(r) * tile
+        let base: i32 = i * 12
+        out[base + 0] = x
+        out[base + 1] = y
+        out[base + 2] = 0.0
+        out[base + 3] = tile * 0.9
+        out[base + 4] = 0.0
+        out[base + 5] = 0.0
+        out[base + 6] = 1.0
+        out[base + 7] = 1.0
+        cell_color(kind, out + base + 8)
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let width: i32 = 720
+    let height: i32 = 720
+    if flow_vk_2048_init(width, height, "Flow Vulkan Snake", 400) != 0 {
+        return 1
+    }
+    let renderer: AbiRenderer = abi_renderer_init()
+    abi_renderer_set_clear(renderer, 0.04, 0.04, 0.05)
+    abi_renderer_set_viewport(renderer, width, height)
+    upload_quad_mesh(renderer)
+    upload_white_texture(renderer)
+    let inst_handle: i32 = abi_renderer_create_instance_buffer(renderer, 400)
+
+    let snake_x: array<i32, 400> = [0]
+    let snake_y: array<i32, 400> = [0]
+    let snake_len: i32 = 3
+    snake_x[0] = 10; snake_y[0] = 10
+    snake_x[1] = 9; snake_y[1] = 10
+    snake_x[2] = 8; snake_y[2] = 10
+
+    let food_x: i32 = 5
+    let food_y: i32 = 5
+    let dir_x: i32 = 1
+    let dir_y: i32 = 0
+    let rng_buf: array<i32, 1> = [7]
+    let rng_ptr: ptr<i32> = rng_buf
+
+    let left_down: bool = false
+    let right_down: bool = false
+    let up_down: bool = false
+    let down_down: bool = false
+
+    let tick: i32 = 0
+    let tick_interval: i32 = 8
+
+    while flow_vk_2048_should_close() == 0 && abi_renderer_begin_frame(renderer) == 1 {
+        flow_vk_2048_poll()
+        let left: bool = flow_vk_2048_key_down(263) == 1 || flow_vk_2048_key_down(65) == 1
+        let right: bool = flow_vk_2048_key_down(262) == 1 || flow_vk_2048_key_down(68) == 1
+        let up: bool = flow_vk_2048_key_down(265) == 1 || flow_vk_2048_key_down(87) == 1
+        let down: bool = flow_vk_2048_key_down(264) == 1 || flow_vk_2048_key_down(83) == 1
+
+        if left && !left_down && dir_x != 1 { dir_x = -1; dir_y = 0 }
+        if right && !right_down && dir_x != -1 { dir_x = 1; dir_y = 0 }
+        if up && !up_down && dir_y != 1 { dir_x = 0; dir_y = -1 }
+        if down && !down_down && dir_y != -1 { dir_x = 0; dir_y = 1 }
+
+        tick = tick + 1
+        if tick >= tick_interval {
+            tick = 0
+            let hx: i32 = snake_x[0] + dir_x
+            let hy: i32 = snake_y[0] + dir_y
+            if hx < 0 || hx >= 20 || hy < 0 || hy >= 20 {
+                snake_len = 3
+                snake_x[0] = 10; snake_y[0] = 10
+                snake_x[1] = 9; snake_y[1] = 10
+                snake_x[2] = 8; snake_y[2] = 10
+            } else {
+                let hit: bool = false
+                let s: i32 = 0
+                while s < snake_len {
+                    if snake_x[s] == hx && snake_y[s] == hy { hit = true }
+                    s = s + 1
+                }
+                if hit {
+                    snake_len = 3
+                    snake_x[0] = 10; snake_y[0] = 10
+                    snake_x[1] = 9; snake_y[1] = 10
+                    snake_x[2] = 8; snake_y[2] = 10
+                } else {
+                    let i: i32 = snake_len
+                    while i > 0 {
+                        snake_x[i] = snake_x[i - 1]
+                        snake_y[i] = snake_y[i - 1]
+                        i = i - 1
+                    }
+                    snake_x[0] = hx
+                    snake_y[0] = hy
+                    if hx == food_x && hy == food_y {
+                        snake_len = snake_len + 1
+                        food_x = rng_next(rng_ptr) % 20
+                        food_y = rng_next(rng_ptr) % 20
+                    }
+                }
+            }
+        }
+
+        let inst_buf: array<f32, 4800> = [0.0]
+        fill_instances(inst_buf, i32_to_f32(width), i32_to_f32(height), snake_x, snake_y, snake_len, food_x, food_y)
+        abi_renderer_update_instance_buffer(renderer, inst_handle, inst_buf, 400)
+        abi_renderer_draw_instance_buffer(renderer, inst_handle, 400)
+        abi_renderer_end_frame(renderer)
+
+        left_down = left
+        right_down = right
+        up_down = up
+        down_down = down
+    }
+    flow_vk_2048_shutdown()
+    return 0
+}

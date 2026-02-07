@@ -1,0 +1,282 @@
+import "../../vulkan_abi/renderer.flow"
+import "stdlib/vulkan_abi_renderer.flow"
+
+extern {
+    function malloc(size: i32) -> ptr<u8>
+    function memset(dest: ptr<u8>, c: i32, n: i32) -> ptr<u8>
+}
+
+function min_f32(a: f32, b: f32) -> f32 { if a < b { return a } return b }
+function max_f32(a: f32, b: f32) -> f32 { if a > b { return a } return b }
+function i32_to_f32(v: i32) -> f32 { return v * 1.0 }
+
+function upload_white_texture(renderer: AbiRenderer) -> void {
+    let tex: array<u8, 4> = [255, 255, 255, 0]
+    let tex_handle: i32 = abi_renderer_create_texture(renderer, 1, 1)
+    abi_renderer_update_texture(renderer, tex_handle, tex, 1, 1)
+}
+
+function upload_quad_mesh(renderer: AbiRenderer) -> void {
+    let verts: array<f32, 32> = [
+        -0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 0.0,
+         0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 0.0,
+         0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 1.0,
+        -0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 1.0
+    ]
+    let inds: array<u16, 6> = [0, 1, 2, 2, 3, 0]
+    abi_renderer_upload_mesh(renderer, verts, 4, inds, 6)
+}
+
+function piece_cell(shape: ptr<i32>, piece: i32, rot: i32, x: i32, y: i32) -> bool {
+    if x < 0 { return false }
+    if y < 0 { return false }
+    if x >= 4 { return false }
+    if y >= 4 { return false }
+    let idx: i32 = piece * 64 + rot * 16 + y * 4 + x
+    return shape[idx] == 1
+}
+
+function can_place(board: ptr<i32>, shape: ptr<i32>, piece: i32, rot: i32, px: i32, py: i32) -> bool {
+    let y: i32 = 0
+    while y < 4 {
+        let x: i32 = 0
+        while x < 4 {
+            if piece_cell(shape, piece, rot, x, y) {
+                let gx: i32 = px + x
+                let gy: i32 = py + y
+                if gx < 0 { return false }
+                if gx >= 10 { return false }
+                if gy < 0 { return false }
+                if gy >= 20 { return false }
+                if board[gy * 10 + gx] != 0 { return false }
+            }
+            x = x + 1
+        }
+        y = y + 1
+    }
+    return true
+}
+
+function merge_piece(board: ptr<i32>, shape: ptr<i32>, piece: i32, rot: i32, px: i32, py: i32) -> void {
+    let y: i32 = 0
+    while y < 4 {
+        let x: i32 = 0
+        while x < 4 {
+            if piece_cell(shape, piece, rot, x, y) {
+                let gx: i32 = px + x
+                let gy: i32 = py + y
+                if gx >= 0 && gx < 10 && gy >= 0 && gy < 20 {
+                    board[gy * 10 + gx] = piece + 1
+                }
+            }
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+function clear_lines(board: ptr<i32>) -> void {
+    let y: i32 = 19
+    while y >= 0 {
+        let full: bool = true
+        let x: i32 = 0
+        while x < 10 {
+            if board[y * 10 + x] == 0 { full = false }
+            x = x + 1
+        }
+        if full {
+            let row: i32 = y
+            while row > 0 {
+                let col: i32 = 0
+                while col < 10 {
+                    board[row * 10 + col] = board[(row - 1) * 10 + col]
+                    col = col + 1
+                }
+                row = row - 1
+            }
+            let col2: i32 = 0
+            while col2 < 10 {
+                board[col2] = 0
+                col2 = col2 + 1
+            }
+        } else {
+            y = y - 1
+        }
+    }
+}
+
+function rng_next(seed: ptr<i32>) -> i32 {
+    seed[0] = seed[0] * 1664525 + 1013904223
+    let v: i32 = (seed[0] >> 16) & 7
+    return v
+}
+
+function tile_color(v: i32, out: ptr<f32>) -> void {
+    if v == 0 { out[0]=0.08; out[1]=0.08; out[2]=0.09; out[3]=1.0; return }
+    if v == 1 { out[0]=0.0; out[1]=0.8; out[2]=0.8; out[3]=1.0; return }
+    if v == 2 { out[0]=0.0; out[1]=0.0; out[2]=0.8; out[3]=1.0; return }
+    if v == 3 { out[0]=0.9; out[1]=0.5; out[2]=0.0; out[3]=1.0; return }
+    if v == 4 { out[0]=0.8; out[1]=0.0; out[2]=0.8; out[3]=1.0; return }
+    if v == 5 { out[0]=0.0; out[1]=0.8; out[2]=0.0; out[3]=1.0; return }
+    if v == 6 { out[0]=0.8; out[1]=0.0; out[2]=0.0; out[3]=1.0; return }
+    out[0]=0.9; out[1]=0.9; out[2]=0.0; out[3]=1.0
+}
+
+function fill_instances(board: ptr<i32>, shape: ptr<i32>, piece: i32, rot: i32, px: i32, py: i32, out: ptr<f32>, width: f32, height: f32) -> void {
+    let tile_size: f32 = min_f32(width / 10.0, height / 20.0)
+    let board_w: f32 = tile_size * 10.0
+    let board_h: f32 = tile_size * 20.0
+    let start_x: f32 = (width - board_w) * 0.5 + tile_size * 0.5
+    let start_y: f32 = (height - board_h) * 0.5 + tile_size * 0.5
+
+    let i: i32 = 0
+    while i < 200 {
+        let r: i32 = i / 10
+        let c: i32 = i - r * 10
+        let v: i32 = board[i]
+        let pc: i32 = 0
+        if piece_cell(shape, piece, rot, c - px, r - py) { pc = piece + 1 }
+        if pc != 0 { v = pc }
+
+        let x: f32 = start_x + i32_to_f32(c) * tile_size
+        let y: f32 = start_y + i32_to_f32(r) * tile_size
+
+        let base: i32 = i * 12
+        out[base + 0] = x
+        out[base + 1] = y
+        out[base + 2] = 0.0
+        out[base + 3] = tile_size * 0.95
+        out[base + 4] = 0.0
+        out[base + 5] = 0.0
+        out[base + 6] = 1.0
+        out[base + 7] = 1.0
+        tile_color(v, out + base + 8)
+
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let width: i32 = 720
+    let height: i32 = 900
+    if flow_vk_2048_init(width, height, "Flow Vulkan Tetris", 200) != 0 {
+        return 1
+    }
+    let renderer: AbiRenderer = abi_renderer_init()
+    abi_renderer_set_clear(renderer, 0.05, 0.05, 0.06)
+    abi_renderer_set_viewport(renderer, width, height)
+    upload_quad_mesh(renderer)
+    upload_white_texture(renderer)
+    let inst_handle: i32 = abi_renderer_create_instance_buffer(renderer, 200)
+
+    let board: array<i32, 200> = [0]
+    let board_ptr: ptr<i32> = board
+    let shapes: array<i32, 448> = [
+        # I
+        0,0,0,0, 1,1,1,1, 0,0,0,0, 0,0,0,0,
+        0,0,1,0, 0,0,1,0, 0,0,1,0, 0,0,1,0,
+        0,0,0,0, 0,0,0,0, 1,1,1,1, 0,0,0,0,
+        0,1,0,0, 0,1,0,0, 0,1,0,0, 0,1,0,0,
+        # O
+        0,1,1,0, 0,1,1,0, 0,0,0,0, 0,0,0,0,
+        0,1,1,0, 0,1,1,0, 0,0,0,0, 0,0,0,0,
+        0,1,1,0, 0,1,1,0, 0,0,0,0, 0,0,0,0,
+        0,1,1,0, 0,1,1,0, 0,0,0,0, 0,0,0,0,
+        # T
+        0,1,0,0, 1,1,1,0, 0,0,0,0, 0,0,0,0,
+        0,1,0,0, 0,1,1,0, 0,1,0,0, 0,0,0,0,
+        0,0,0,0, 1,1,1,0, 0,1,0,0, 0,0,0,0,
+        0,1,0,0, 1,1,0,0, 0,1,0,0, 0,0,0,0,
+        # S
+        0,1,1,0, 1,1,0,0, 0,0,0,0, 0,0,0,0,
+        0,1,0,0, 0,1,1,0, 0,0,1,0, 0,0,0,0,
+        0,0,0,0, 0,1,1,0, 1,1,0,0, 0,0,0,0,
+        1,0,0,0, 1,1,0,0, 0,1,0,0, 0,0,0,0,
+        # Z
+        1,1,0,0, 0,1,1,0, 0,0,0,0, 0,0,0,0,
+        0,0,1,0, 0,1,1,0, 0,1,0,0, 0,0,0,0,
+        0,0,0,0, 1,1,0,0, 0,1,1,0, 0,0,0,0,
+        0,1,0,0, 1,1,0,0, 1,0,0,0, 0,0,0,0,
+        # J
+        1,0,0,0, 1,1,1,0, 0,0,0,0, 0,0,0,0,
+        0,1,1,0, 0,1,0,0, 0,1,0,0, 0,0,0,0,
+        0,0,0,0, 1,1,1,0, 0,0,1,0, 0,0,0,0,
+        0,1,0,0, 0,1,0,0, 1,1,0,0, 0,0,0,0,
+        # L
+        0,0,1,0, 1,1,1,0, 0,0,0,0, 0,0,0,0,
+        0,1,0,0, 0,1,0,0, 0,1,1,0, 0,0,0,0,
+        0,0,0,0, 1,1,1,0, 1,0,0,0, 0,0,0,0,
+        1,1,0,0, 0,1,0,0, 0,1,0,0, 0,0,0,0
+    ]
+    let shape_ptr: ptr<i32> = shapes
+    let rng_buf: array<i32, 1> = [1]
+    let rng_ptr: ptr<i32> = rng_buf
+
+    let piece: i32 = rng_next(rng_ptr) % 7
+    let rot: i32 = 0
+    let px: i32 = 3
+    let py: i32 = 0
+
+    let left_down: bool = false
+    let right_down: bool = false
+    let up_down: bool = false
+    let down_down: bool = false
+
+    let frame: i32 = 0
+    let drop_interval: i32 = 20
+
+    while flow_vk_2048_should_close() == 0 && abi_renderer_begin_frame(renderer) == 1 {
+        flow_vk_2048_poll()
+
+        let left: bool = flow_vk_2048_key_down(263) == 1 || flow_vk_2048_key_down(65) == 1
+        let right: bool = flow_vk_2048_key_down(262) == 1 || flow_vk_2048_key_down(68) == 1
+        let up: bool = flow_vk_2048_key_down(265) == 1 || flow_vk_2048_key_down(87) == 1
+        let down: bool = flow_vk_2048_key_down(264) == 1 || flow_vk_2048_key_down(83) == 1
+
+        if left && !left_down {
+            if can_place(board_ptr, shape_ptr, piece, rot, px - 1, py) { px = px - 1 }
+        }
+        if right && !right_down {
+            if can_place(board_ptr, shape_ptr, piece, rot, px + 1, py) { px = px + 1 }
+        }
+        if up && !up_down {
+            let nr: i32 = (rot + 1) % 4
+            if can_place(board_ptr, shape_ptr, piece, nr, px, py) { rot = nr }
+        }
+        if down && !down_down {
+            if can_place(board_ptr, shape_ptr, piece, rot, px, py + 1) { py = py + 1 }
+        }
+
+        frame = frame + 1
+        if frame >= drop_interval {
+            frame = 0
+            if can_place(board_ptr, shape_ptr, piece, rot, px, py + 1) {
+                py = py + 1
+            } else {
+                merge_piece(board_ptr, shape_ptr, piece, rot, px, py)
+                clear_lines(board_ptr)
+                piece = rng_next(rng_ptr) % 7
+                rot = 0
+                px = 3
+                py = 0
+                if !can_place(board_ptr, shape_ptr, piece, rot, px, py) {
+                    let i: i32 = 0
+                    while i < 200 { board[i] = 0; i = i + 1 }
+                }
+            }
+        }
+
+        let inst_buf: array<f32, 2400> = [0.0]
+        fill_instances(board_ptr, shape_ptr, piece, rot, px, py, inst_buf, i32_to_f32(width), i32_to_f32(height))
+        abi_renderer_update_instance_buffer(renderer, inst_handle, inst_buf, 200)
+        abi_renderer_draw_instance_buffer(renderer, inst_handle, 200)
+        abi_renderer_end_frame(renderer)
+
+        left_down = left
+        right_down = right
+        up_down = up
+        down_down = down
+    }
+    flow_vk_2048_shutdown()
+    return 0
+}
