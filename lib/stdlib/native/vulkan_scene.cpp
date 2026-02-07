@@ -2201,8 +2201,8 @@ private:
             }
             mat4_ortho(0.0f,
                        orthoWidth,
-                       orthoHeight,
                        0.0f,
+                       orthoHeight,
                        -1.0f, 1.0f,
                        proj);
             std::memcpy(ubo.view, view, sizeof(view));
