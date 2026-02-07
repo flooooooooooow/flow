@@ -1021,7 +1021,16 @@ class MLIRGenerator:
     def generate_handle(self, handle_stmt: HandleStatement) -> str:
         prev = self._effect_handler_stack[-1]
         curr = dict(prev)
-        curr[handle_stmt.effect] = handle_stmt.handler
+        effects = handle_stmt.effects
+        handlers = handle_stmt.handlers
+        if len(handlers) == 1 and len(effects) > 1:
+            for effect in effects:
+                curr[effect] = handlers[0]
+        elif len(handlers) == len(effects):
+            for effect, handler in zip(effects, handlers):
+                curr[effect] = handler
+        else:
+            raise ValueError(f"handle expects 1 handler or the same count as effects; got {len(effects)} effects and {len(handlers)} handlers")
         self._effect_handler_stack.append(curr)
         try:
             return self.generate_block(handle_stmt.body)

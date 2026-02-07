@@ -455,8 +455,8 @@ class EffectCall:
 
 @dataclass
 class HandleStatement:
-    effect: str
-    handler: str  # Name of capability or function
+    effects: List[str]
+    handlers: List[str]  # Names of capabilities or functions
     body: Block
 
 
@@ -1481,8 +1481,7 @@ class Parser:
 
         body = self.parse_block()
 
-        # For now, just store the first effect and handler (TODO: support multiple)
-        return HandleStatement(effects[0], handlers[0], body)
+        return HandleStatement(effects, handlers, body)
 
     def parse_match(self) -> MatchStatement:
         self.expect(TokenType.MATCH)

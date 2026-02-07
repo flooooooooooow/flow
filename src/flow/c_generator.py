@@ -1019,23 +1019,39 @@ class CGenerator:
     def _gen_handle(self, st: HandleStatement) -> List[str]:
         """Generate code for handle statement by setting up effect dispatch context at runtime."""
         lines: List[str] = []
-        effect_name = st.effect
-        handler_name = st.handler
+        effects = st.effects
+        handlers = st.handlers
+        if len(handlers) == 1 and len(effects) > 1:
+            handler_map = {effect: handlers[0] for effect in effects}
+        elif len(handlers) == len(effects):
+            handler_map = {effect: handler for effect, handler in zip(effects, handlers)}
+        else:
+            raise ValueError(f"handle expects 1 handler or the same count as effects; got {len(effects)} effects and {len(handlers)} handlers")
         
         # Push new effect handler context (for compile-time tracking)
         prev_handlers = self._effect_handler_stack[-1].copy()
-        prev_handlers[effect_name] = handler_name
+        for effect_name, handler_name in handler_map.items():
+            prev_handlers[effect_name] = handler_name
         self._effect_handler_stack.append(prev_handlers)
         
         try:
             # Generate runtime handler setup
-            lines.append(f"{self._i()}/* handle {effect_name} with {handler_name} */")
+            if len(handler_map) == 1:
+                effect_name = next(iter(handler_map.keys()))
+                handler_name = handler_map[effect_name]
+                lines.append(f"{self._i()}/* handle {effect_name} with {handler_name} */")
+            else:
+                effects_str = ", ".join(handler_map.keys())
+                handlers_str = ", ".join(handler_map.values())
+                lines.append(f"{self._i()}/* handle {effects_str} with {handlers_str} */")
             lines.append(f"{self._i()}{{")
             self._indent += 1
             
-            # Save previous handler and set new one
-            lines.append(f"{self._i()}{effect_name}_Handler* _prev_{effect_name}_handler = _current_{effect_name}_handler;")
-            lines.append(f"{self._i()}_current_{effect_name}_handler = &_{handler_name}_{effect_name}_vtable;")
+            # Save previous handlers and set new ones
+            for effect_name, handler_name in handler_map.items():
+                lines.append(f"{self._i()}{effect_name}_Handler* _prev_{effect_name}_handler = _current_{effect_name}_handler;")
+            for effect_name, handler_name in handler_map.items():
+                lines.append(f"{self._i()}_current_{effect_name}_handler = &_{handler_name}_{effect_name}_vtable;")
             lines.append("")
             
             # Generate body
@@ -1043,7 +1059,8 @@ class CGenerator:
             
             # Restore previous handler
             lines.append("")
-            lines.append(f"{self._i()}_current_{effect_name}_handler = _prev_{effect_name}_handler;")
+            for effect_name in reversed(list(handler_map.keys())):
+                lines.append(f"{self._i()}_current_{effect_name}_handler = _prev_{effect_name}_handler;")
             
             self._indent -= 1
             lines.append(f"{self._i()}}}")
