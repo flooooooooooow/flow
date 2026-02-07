@@ -50,8 +50,9 @@ show_help() {
     echo "  vulkan-tetris     Run Vulkan Tetris (Flow logic + Vulkan renderer)"
     echo "  vulkan-snake      Run Vulkan Snake (Flow logic + Vulkan renderer)"
     echo "  vulkan-pong       Run Vulkan Pong (Flow logic + Vulkan renderer)"
+    echo "  vulkan-breakout   Run Vulkan Breakout (Flow effects + Vulkan renderer)"
     echo "  demo vulkan [basic|advanced]  Alias for Vulkan demos"
-    echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong]  Run Flow Vulkan demos"
+    echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout]  Run Flow Vulkan demos"
     echo "  mlir <program>     Generate MLIR only"
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
@@ -471,6 +472,16 @@ sys.path.insert(0, '$SCRIPT_DIR/src')
 from flow.package import FlowPackageManager
 pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_pong_flow')
 pm.run_native('$SCRIPT_DIR/demos/vulkan_pong_flow/src/main.flow')
+"
+}
+
+run_vulkan_breakout() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_breakout_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_breakout_flow/src/main.flow')
 "
 }
 
@@ -947,6 +958,9 @@ case "${1:-help}" in
     "vulkan-pong")
         run_vulkan_pong
         ;;
+    "vulkan-breakout")
+        run_vulkan_breakout
+        ;;
     "demo")
         if [ -z "$2" ]; then
             print_error "Usage: flow demo <name> [variant]"
@@ -999,8 +1013,11 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
                     "pong")
                         run_vulkan_pong
                         ;;
+                    "breakout")
+                        run_vulkan_breakout
+                        ;;
                     *)
-                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic, advanced, 2048, tetris, snake, or pong)"
+                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic, advanced, 2048, tetris, snake, pong, or breakout)"
                         exit 1
                         ;;
                 esac
