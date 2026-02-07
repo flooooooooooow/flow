@@ -1,13 +1,7 @@
 import "./game.flow"
+import "../../vulkan_abi/renderer.flow"
 
 extern {
-    function flow_vk_2048_init(width: i32, height: i32, title: string, capacity: i32) -> i32
-    function flow_vk_2048_shutdown() -> void
-    function flow_vk_2048_should_close() -> i32
-    function flow_vk_2048_poll() -> void
-    function flow_vk_2048_key_down(key: i32) -> i32
-    function flow_vk_2048_draw(instance_data: ptr<f32>, count: i32) -> void
-    function flow_vk_2048_upload_texture(pixels: ptr<u8>, width: i32, height: i32) -> void
     function malloc(size: i32) -> ptr<u8>
     function free(ptr: ptr<u8>) -> void
     function memset(dest: ptr<u8>, c: i32, n: i32) -> ptr<u8>
