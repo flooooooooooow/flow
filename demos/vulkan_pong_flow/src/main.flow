@@ -84,6 +84,7 @@ function fill_instances(out: ptr<f32>, width: f32, height: f32, paddle_y: i32, p
 function main() -> i32 {
     let width: i32 = 840
     let height: i32 = 600
+    flow_vk_set_window_scale(1.0, 0)
     if flow_vk_2048_init(width, height, "Flow Vulkan Pong", 64) != 0 {
         return 1
     }

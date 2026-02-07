@@ -1,0 +1,12 @@
+import "stdlib/ui_layout.flow"
+
+function main() -> i32 {
+    let mut sum: i32 = 0
+    ui_layout(10, 10, 0) {
+        ui_grid(2, 2, 1, 0, UI_JUSTIFY_CENTER, UI_JUSTIFY_CENTER) {
+            let r: UiRect = ui_box(_ui_state)
+            sum = sum + r.w + r.h
+        }
+    }
+    return sum
+}

@@ -1,0 +1,51 @@
+# FLOW 3D tensor demo (CPU-backed simulation)
+import "stdlib/gpu_sim.flow"
+
+function main() -> i32 {
+    let depth: i32 = 2
+    let rows: i32 = 2
+    let cols: i32 = 2
+    let n: i32 = depth * rows * cols
+
+    let a: array<f32, 8> = [1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0]
+    let b: array<f32, 8> = [10.0,20.0,30.0,40.0,50.0,60.0,70.0,80.0]
+    let out: array<f32, 8> = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+
+    let host_a: HostBufferF32 = host_buffer_f32(a, n)
+    let host_b: HostBufferF32 = host_buffer_f32(b, n)
+    let host_out: HostBufferF32 = host_buffer_f32(out, n)
+
+    let dev_a: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_b: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_out: DeviceBufferF32 = device_alloc_f32(n)
+    copy_host_to_device(host_a, dev_a)
+    copy_host_to_device(host_b, dev_b)
+
+    let layout: Layout3D = layout_3d(depth, rows, cols)
+    let a_t: LayoutTensor3DF32 = tensor3d_from_device(dev_a, layout)
+    let b_t: LayoutTensor3DF32 = tensor3d_from_device(dev_b, layout)
+    let out_t: LayoutTensor3DF32 = tensor3d_from_device(dev_out, layout)
+
+    kernel_add_3d(a_t, b_t, out_t)
+    copy_device_to_host(dev_out, host_out)
+
+    let z: i32 = 0
+    while z < depth {
+        let r: i32 = 0
+        while r < rows {
+            let c: i32 = 0
+            while c < cols {
+                let idx: i32 = layout_index_3d(layout, z, r, c)
+                print(out[idx])
+                c = c + 1
+            }
+            r = r + 1
+        }
+        z = z + 1
+    }
+
+    device_free_f32(dev_a)
+    device_free_f32(dev_b)
+    device_free_f32(dev_out)
+    return 0
+}

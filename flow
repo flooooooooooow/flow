@@ -51,8 +51,14 @@ show_help() {
     echo "  vulkan-snake      Run Vulkan Snake (Flow logic + Vulkan renderer)"
     echo "  vulkan-pong       Run Vulkan Pong (Flow logic + Vulkan renderer)"
     echo "  vulkan-breakout   Run Vulkan Breakout (Flow effects + Vulkan renderer)"
+    echo "  vulkan-layout     Run Vulkan Layout UI (Flow logic + Vulkan renderer)"
+    echo "  vulkan-layout-dsl Run Vulkan Layout DSL UI demo"
+    echo "  ui-layout         Run UI layout-only demo"
+    echo "  ui-layout-window  Run UI layout windowed demo (SDL2)"
     echo "  demo vulkan [basic|advanced]  Alias for Vulkan demos"
-    echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout]  Run Flow Vulkan demos"
+    echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout|layout|layout-dsl]  Run Flow Vulkan demos"
+    echo "  demo ui-layout    Run UI layout-only demo"
+    echo "  demo ui-layout-window  Run UI layout windowed demo"
     echo "  mlir <program>     Generate MLIR only"
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
@@ -483,6 +489,40 @@ from flow.package import FlowPackageManager
 pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_breakout_flow')
 pm.run_native('$SCRIPT_DIR/demos/vulkan_breakout_flow/src/main.flow')
 "
+}
+
+run_vulkan_layout() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_layout_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_layout_flow/src/main.flow')
+"
+}
+
+run_vulkan_layout_dsl() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_layout_dsl_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_layout_dsl_flow/src/main.flow')
+"
+}
+
+run_ui_layout() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/ui_layout_flow')
+pm.run_native('$SCRIPT_DIR/demos/ui_layout_flow/src/main.flow')
+"
+}
+
+run_ui_layout_window() {
+    run_window_program "$SCRIPT_DIR/demos/ui_layout_window_flow/src/main.flow"
 }
 
 # Run the underlying transpiler directly (advanced flags)
@@ -961,6 +1001,18 @@ case "${1:-help}" in
     "vulkan-breakout")
         run_vulkan_breakout
         ;;
+    "vulkan-layout")
+        run_vulkan_layout
+        ;;
+    "vulkan-layout-dsl")
+        run_vulkan_layout_dsl
+        ;;
+    "ui-layout")
+        run_ui_layout
+        ;;
+    "ui-layout-window")
+        run_ui_layout_window
+        ;;
     "demo")
         if [ -z "$2" ]; then
             print_error "Usage: flow demo <name> [variant]"
@@ -1016,11 +1068,23 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
                     "breakout")
                         run_vulkan_breakout
                         ;;
+                    "layout")
+                        run_vulkan_layout
+                        ;;
+                    "layout-dsl")
+                        run_vulkan_layout_dsl
+                        ;;
                     *)
-                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic, advanced, 2048, tetris, snake, pong, or breakout)"
+                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic, advanced, 2048, tetris, snake, pong, breakout, layout, or layout-dsl)"
                         exit 1
                         ;;
                 esac
+                ;;
+            "ui-layout")
+                run_ui_layout
+                ;;
+            "ui-layout-window")
+                run_ui_layout_window
                 ;;
             *)
                 print_error "Unknown demo: $2"

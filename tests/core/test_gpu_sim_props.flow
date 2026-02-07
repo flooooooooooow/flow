@@ -1,0 +1,12 @@
+import "stdlib/gpu_sim.flow"
+
+function main() -> i32 {
+    let ctx: DeviceContext = device_context()
+    let props: DeviceProperties = device_properties(ctx)
+    if props.name == "" { return 1 }
+    if props.max_threads_per_block < 256 { return 2 }
+    if props.warp_size <= 0 { return 3 }
+    if !props.supports_fp16 { return 4 }
+    if !props.supports_int64 { return 5 }
+    return 0
+}

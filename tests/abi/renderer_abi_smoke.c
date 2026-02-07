@@ -19,6 +19,7 @@ int main(void) {
     flow_vk_set_clear_color(0.0f, 0.0f, 0.0f);
     flow_vk_set_camera(0.0f, 0.0f, 0.0f);
     flow_vk_set_viewport(0, 0);
+    flow_vk_set_window_scale(1.0f, 0);
     flow_vk_2048_shutdown();
     return 0;
 }

@@ -63,55 +63,154 @@ function tile_color(v: i32, out: ptr<f32>) -> void {
 
 function i32_to_f32(v: i32) -> f32 { return v * 1.0 }
 
-function fill_instances(board: ptr<i32>, out: ptr<f32>, count: i32, width: f32, height: f32) -> void {
+const LAYOUT_UI: i32 = 0
+const LAYOUT_GRID: i32 = 3
+
+struct LayoutFrame {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    kind: i32,
+    cols: i32,
+    rows: i32,
+    gap: i32,
+    index: i32,
+}
+
+struct LayoutState {
+    frames: array<LayoutFrame, 32>,
+    top: i32,
+    unit: f32,
+    win_w: f32,
+    win_h: f32,
+}
+
+function layout_begin_frame(state: ptr<LayoutState>, win_w: f32, win_h: f32) -> void {
+    state[0].top = 0
+    state[0].win_w = win_w
+    state[0].win_h = win_h
+}
+
+function layout_push(state: ptr<LayoutState>, frame: LayoutFrame) -> void {
+    if state[0].top >= 32 { return }
+    state[0].frames[state[0].top] = frame
+    state[0].top = state[0].top + 1
+}
+
+function layout_pop(state: ptr<LayoutState>) -> void {
+    if state[0].top <= 0 { return }
+    state[0].top = state[0].top - 1
+}
+
+function layout_peek(state: ptr<LayoutState>) -> LayoutFrame {
+    if state[0].top <= 0 {
+        return LayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, index: 0 }
+    }
+    return state[0].frames[state[0].top - 1]
+}
+
+function layout_update_top(state: ptr<LayoutState>, frame: LayoutFrame) -> void {
+    if state[0].top <= 0 { return }
+    state[0].frames[state[0].top - 1] = frame
+}
+
+function layout_claim(state: ptr<LayoutState>) -> LayoutFrame {
+    let frame: LayoutFrame = layout_peek(state)
+    if frame.kind == LAYOUT_GRID {
+        let gap: i32 = frame.gap
+        let cols: i32 = frame.cols
+        let rows: i32 = frame.rows
+        let cell_w: i32 = (frame.w - (cols - 1) * gap) / cols
+        let cell_h: i32 = (frame.h - (rows - 1) * gap) / rows
+        let row_idx: i32 = frame.index / cols
+        let col: i32 = frame.index - row_idx * cols
+        let x: i32 = frame.x + col * (cell_w + gap)
+        let y: i32 = frame.y + row_idx * (cell_h + gap)
+        let out: LayoutFrame = LayoutFrame{ x: x, y: y, w: cell_w, h: cell_h, kind: 0, cols: 0, rows: 0, gap: 0, index: 0 }
+        frame.index = frame.index + 1
+        layout_update_top(state, frame)
+        return out
+    }
+    return frame
+}
+
+function layout_next_rect(state: ptr<LayoutState>) -> LayoutFrame { return layout_claim(state) }
+
+function ui_layout_begin(state: ptr<LayoutState>, cols: i32, rows: i32, pad: i32) -> void {
+    let unit: f32 = min_f32(state[0].win_w / i32_to_f32(cols), state[0].win_h / i32_to_f32(rows))
+    state[0].unit = unit
+    let frame: LayoutFrame = LayoutFrame{
+        x: pad,
+        y: pad,
+        w: cols - pad * 2,
+        h: rows - pad * 2,
+        kind: LAYOUT_UI,
+        cols: 0,
+        rows: 0,
+        gap: 0,
+        index: 0,
+    }
+    layout_push(state, frame)
+}
+
+function ui_layout_end(state: ptr<LayoutState>) -> void { state[0].top = 0 }
+
+function ui_grid_begin(state: ptr<LayoutState>, cols: i32, rows: i32, gap: i32, pad: i32, justify_x: i32, justify_y: i32) -> void {
+    let rect: LayoutFrame = layout_claim(state)
+    let frame: LayoutFrame = LayoutFrame{ x: rect.x, y: rect.y, w: rect.w, h: rect.h, kind: LAYOUT_GRID, cols: cols, rows: rows, gap: gap, index: 0 }
+    layout_push(state, frame)
+}
+
+function ui_grid_end(state: ptr<LayoutState>) -> void { layout_pop(state) }
+
+function fill_instances(board: ptr<i32>, out: ptr<f32>, count: i32, width: f32, height: f32, state: ptr<LayoutState>) -> void {
     let atlas_cols: f32 = 12.0
     let atlas_u: f32 = 1.0 / atlas_cols
     let pad_uv: f32 = 2.0
     let cell: f32 = 64.0
     let pad_u: f32 = pad_uv / (cell * atlas_cols)
     let pad_v: f32 = pad_uv / cell
+    layout_begin_frame(state, width, height)
 
-    let side: f32 = min_f32(width, height)
-    let pad_outer: f32 = 0.0
-    let board_size: f32 = side - pad_outer * 2.0
-    let gap: f32 = max_f32(4.0, board_size * 0.02)
-    let tile_size: f32 = (board_size - gap * 3.0) / 4.0
-    let start_x: f32 = (width - board_size) * 0.5 + tile_size * 0.5
-    let start_y: f32 = (height - board_size) * 0.5 + tile_size * 0.5
+    ui_layout(state, 4, 4, 0) {
+        ui_grid(state, 4, 4, 0, 0, 0, 0) {
+            let i: i32 = 0
+            while i < count {
+                let rect: LayoutFrame = layout_next_rect(state)
+                let cell_size: f32 = i32_to_f32(rect.w) * state[0].unit
+                let x: f32 = i32_to_f32(rect.x) * state[0].unit + cell_size * 0.5
+                let y: f32 = (height - i32_to_f32(rect.y + rect.h) * state[0].unit) + cell_size * 0.5
+                let tile_size: f32 = cell_size * 0.85
 
-    let i: i32 = 0
-    while i < count {
-        let r: i32 = i / 4
-        let c: i32 = i - r * 4
-        let x: f32 = start_x + i32_to_f32(c) * (tile_size + gap)
-        let y: f32 = start_y + i32_to_f32(r) * (tile_size + gap)
+                let v: i32 = board[i]
+                let label: i32 = label_index(v)
+                let u0: f32 = i32_to_f32(label) * atlas_u + pad_u
+                let v0: f32 = pad_v
+                let u_scale: f32 = atlas_u - pad_u * 2.0
+                let v_scale: f32 = 1.0 - pad_v * 2.0
 
-        let v: i32 = board[i]
-        let label: i32 = label_index(v)
-        let u0: f32 = i32_to_f32(label) * atlas_u + pad_u
-        let v0: f32 = pad_v
-        let u_scale: f32 = atlas_u - pad_u * 2.0
-        let v_scale: f32 = 1.0 - pad_v * 2.0
+                let base: i32 = i * 12
+                out[base + 0] = x
+                out[base + 1] = y
+                out[base + 2] = 0.0
+                out[base + 3] = tile_size / 1.2
+                if v == 0 {
+                    out[base + 4] = 0.0
+                    out[base + 5] = 0.0
+                    out[base + 6] = 0.0
+                    out[base + 7] = 0.0
+                } else {
+                    out[base + 4] = u0
+                    out[base + 5] = v0
+                    out[base + 6] = u_scale
+                    out[base + 7] = v_scale
+                }
+                tile_color(v, out + base + 8)
 
-        let base: i32 = i * 12
-        out[base + 0] = x
-        out[base + 1] = y
-        out[base + 2] = 0.0
-        out[base + 3] = tile_size / 1.2
-        if v == 0 {
-            out[base + 4] = 0.0
-            out[base + 5] = 0.0
-            out[base + 6] = 0.0
-            out[base + 7] = 0.0
-        } else {
-            out[base + 4] = u0
-            out[base + 5] = v0
-            out[base + 6] = u_scale
-            out[base + 7] = v_scale
+                i = i + 1
+            }
         }
-        tile_color(v, out + base + 8)
-
-        i = i + 1
     }
 }
 
@@ -262,6 +361,19 @@ function main() -> i32 {
                                       0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
                                       0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
     let inst_ptr: ptr<f32> = instances
+    let frames_init: array<LayoutFrame, 32> = [
+        LayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, index: 0 }
+    ]
+    let layout_state_store: array<LayoutState, 1> = [
+        LayoutState{
+            frames: frames_init,
+            top: 0,
+            unit: 1.0,
+            win_w: 0.0,
+            win_h: 0.0,
+        }
+    ]
+    let layout_state: ptr<LayoutState> = layout_state_store
 
     let left_down: bool = false
     let right_down: bool = false
@@ -290,7 +402,7 @@ function main() -> i32 {
         down_down = down
         restart_down = restart
 
-        fill_instances(board_ptr, inst_ptr, 16, i32_to_f32(width), i32_to_f32(height))
+        fill_instances(board_ptr, inst_ptr, 16, i32_to_f32(width), i32_to_f32(height), layout_state)
         abi_renderer_update_instance_buffer(renderer, instance_handle, inst_ptr, 16)
         abi_renderer_draw_instance_buffer(renderer, instance_handle, 16)
         abi_renderer_end_frame(renderer)

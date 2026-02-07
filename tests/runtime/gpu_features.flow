@@ -1,0 +1,111 @@
+# GPU feature coverage: device/queue/buffers/layouts/grid + 2D/3D tensor ops
+import "stdlib/gpu_sim.flow"
+
+function main() -> i32 {
+    let ctx: DeviceContext = device_context()
+    let props: DeviceProperties = device_properties(ctx)
+    if !ctx.has_gpu { return 1 }
+    if props.name == "" { return 2 }
+
+    # 1D buffers + vec add
+    let n: i32 = 4
+    let a: array<f32, 4> = [1.0,2.0,3.0,4.0]
+    let b: array<f32, 4> = [10.0,20.0,30.0,40.0]
+    let out: array<f32, 4> = [0.0,0.0,0.0,0.0]
+
+    let host_a: HostBufferF32 = host_buffer_f32(a, n)
+    let host_b: HostBufferF32 = host_buffer_f32(b, n)
+    let host_out: HostBufferF32 = host_buffer_f32(out, n)
+
+    let dev_a: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_b: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_out: DeviceBufferF32 = device_alloc_f32(n)
+
+    copy_host_to_device(host_a, dev_a)
+    copy_host_to_device(host_b, dev_b)
+
+    let layout: Layout = layout_1d(n)
+    let a_t: LayoutTensorF32 = tensor_from_device(dev_a, layout)
+    let b_t: LayoutTensorF32 = tensor_from_device(dev_b, layout)
+    let out_t: LayoutTensorF32 = tensor_from_device(dev_out, layout)
+
+    let q0: CommandQueue = device_queue(ctx)
+    let q1: CommandQueue = enqueue_queue(q0)
+    kernel_vec_add(a_t, b_t, out_t)
+    let q2: CommandQueue = synchronize(q1)
+
+    copy_device_to_host(dev_out, host_out)
+    if out[0] != 11.0 { return 3 }
+    if out[3] != 44.0 { return 4 }
+    if q2.pending != 0 { return 5 }
+
+    # Grid/block launch
+    let cfg: LaunchConfig = grid_1d(n, 2)
+    launch_vec_add_1d(cfg, a_t, b_t, out_t, n)
+    copy_device_to_host(dev_out, host_out)
+    if out[1] != 22.0 { return 6 }
+
+    # 2D layout
+    let rows: i32 = 2
+    let cols: i32 = 2
+    let n2: i32 = rows * cols
+    let a2: array<f32, 4> = [1.0,2.0,3.0,4.0]
+    let b2: array<f32, 4> = [10.0,20.0,30.0,40.0]
+    let out2: array<f32, 4> = [0.0,0.0,0.0,0.0]
+
+    let host_a2: HostBufferF32 = host_buffer_f32(a2, n2)
+    let host_b2: HostBufferF32 = host_buffer_f32(b2, n2)
+    let host_out2: HostBufferF32 = host_buffer_f32(out2, n2)
+
+    let dev_a2: DeviceBufferF32 = device_alloc_f32(n2)
+    let dev_b2: DeviceBufferF32 = device_alloc_f32(n2)
+    let dev_out2: DeviceBufferF32 = device_alloc_f32(n2)
+    copy_host_to_device(host_a2, dev_a2)
+    copy_host_to_device(host_b2, dev_b2)
+
+    let layout2: Layout2D = layout_2d(rows, cols)
+    let a2_t: LayoutTensor2DF32 = tensor2d_from_device(dev_a2, layout2)
+    let b2_t: LayoutTensor2DF32 = tensor2d_from_device(dev_b2, layout2)
+    let out2_t: LayoutTensor2DF32 = tensor2d_from_device(dev_out2, layout2)
+    kernel_add_2d(a2_t, b2_t, out2_t)
+    copy_device_to_host(dev_out2, host_out2)
+    if out2[3] != 44.0 { return 7 }
+
+    # 3D layout
+    let depth3: i32 = 2
+    let rows3: i32 = 2
+    let cols3: i32 = 2
+    let n3: i32 = depth3 * rows3 * cols3
+    let a3: array<f32, 8> = [1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0]
+    let b3: array<f32, 8> = [10.0,20.0,30.0,40.0,50.0,60.0,70.0,80.0]
+    let out3: array<f32, 8> = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+
+    let host_a3: HostBufferF32 = host_buffer_f32(a3, n3)
+    let host_b3: HostBufferF32 = host_buffer_f32(b3, n3)
+    let host_out3: HostBufferF32 = host_buffer_f32(out3, n3)
+
+    let dev_a3: DeviceBufferF32 = device_alloc_f32(n3)
+    let dev_b3: DeviceBufferF32 = device_alloc_f32(n3)
+    let dev_out3: DeviceBufferF32 = device_alloc_f32(n3)
+    copy_host_to_device(host_a3, dev_a3)
+    copy_host_to_device(host_b3, dev_b3)
+
+    let layout3: Layout3D = layout_3d(depth3, rows3, cols3)
+    let a3_t: LayoutTensor3DF32 = tensor3d_from_device(dev_a3, layout3)
+    let b3_t: LayoutTensor3DF32 = tensor3d_from_device(dev_b3, layout3)
+    let out3_t: LayoutTensor3DF32 = tensor3d_from_device(dev_out3, layout3)
+    kernel_add_3d(a3_t, b3_t, out3_t)
+    copy_device_to_host(dev_out3, host_out3)
+    if out3[7] != 88.0 { return 8 }
+
+    device_free_f32(dev_a)
+    device_free_f32(dev_b)
+    device_free_f32(dev_out)
+    device_free_f32(dev_a2)
+    device_free_f32(dev_b2)
+    device_free_f32(dev_out2)
+    device_free_f32(dev_a3)
+    device_free_f32(dev_b3)
+    device_free_f32(dev_out3)
+    return 0
+}

@@ -52,6 +52,8 @@ Config g_config;
 bool g_tileMode = false;
 bool g_externalInstanceMode = false;
 uint32_t g_externalInstanceCapacity = 0;
+float g_externalWindowScale = 1.0f;
+bool g_externalForceSquare = false;
 static VulkanApp* g_flow_app = nullptr;
 
 #ifndef FLOW_VK_STANDALONE
@@ -637,15 +639,16 @@ private:
             uint32_t side = std::min(g_config.width, g_config.height);
             GLFWmonitor* monitor = glfwGetPrimaryMonitor();
             const GLFWvidmode* mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
-            if (mode) {
-                side = static_cast<uint32_t>(std::min(mode->width, mode->height) / 4);
+            if (g_externalWindowScale > 0.0f && mode) {
+                side = static_cast<uint32_t>(std::min(mode->width, mode->height) * g_externalWindowScale);
             }
             if (side == 0) {
                 side = 225;
             }
-            side = static_cast<uint32_t>((side * 9) / 10);
-            g_config.width = side;
-            g_config.height = side;
+            if (g_externalForceSquare) {
+                g_config.width = side;
+                g_config.height = side;
+            }
             if (mode) {
                 windowPosX = (mode->width - static_cast<int>(g_config.width)) / 2;
                 windowPosY = (mode->height - static_cast<int>(g_config.height)) / 2;
@@ -653,10 +656,20 @@ private:
         }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+        glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
         window = glfwCreateWindow(g_config.width, g_config.height, g_config.title.c_str(), nullptr, nullptr);
         if (!window) {
             glfwTerminate();
             throw std::runtime_error("failed to create GLFW window");
+        }
+        glfwShowWindow(window);
+        glfwFocusWindow(window);
+#if defined(GLFW_COCOA_WINDOW)
+        glfwRequestWindowAttention(window);
+#endif
+        if (externalInstanceMode) {
+            glfwSetWindowPos(window, 100, 100);
         }
         glfwSetWindowUserPointer(window, this);
         if (externalInstanceMode && (windowPosX != 0 || windowPosY != 0)) {
@@ -3116,6 +3129,13 @@ extern "C" void flow_vk_set_viewport(int32_t width, int32_t height) {
         return;
     }
     g_flow_app->setViewportSize(width, height);
+}
+
+extern "C" void flow_vk_set_window_scale(float scale, int32_t force_square) {
+    if (scale > 0.0f) {
+        g_externalWindowScale = scale;
+    }
+    g_externalForceSquare = force_square != 0;
 }
 
 extern "C" int flow_vulkan_2048_run(int32_t pretty, int32_t trace, int32_t validation,

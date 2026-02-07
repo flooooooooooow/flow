@@ -108,6 +108,11 @@ class TokenType(Enum):
     TRAIT = "TRAIT"
     IMPL = "IMPL"
     SELF = "SELF"
+    UI_LAYOUT = "UI_LAYOUT"
+    UI_ROW = "UI_ROW"
+    UI_COLUMN = "UI_COLUMN"
+    UI_STACK = "UI_STACK"
+    UI_GRID = "UI_GRID"
     ENUM = "ENUM"
 
     # Types
@@ -461,6 +466,13 @@ class HandleStatement:
 
 
 @dataclass
+class LayoutStatement:
+    kind: str
+    args: List["Expression"]
+    body: Block
+
+
+@dataclass
 class MatchStatement:
     value: "Expression"
     cases: List["MatchCase"]
@@ -523,6 +535,7 @@ Statement = Union[
     EffectDecl,
     CapabilityDecl,
     HandleStatement,
+    LayoutStatement,
     MatchStatement,
     ImportDecl,
     ConstDecl,
@@ -563,6 +576,11 @@ class Lexer:
             "enum": TokenType.ENUM,
             "with": TokenType.WITH,
             "handle": TokenType.HANDLE,
+            "ui_layout": TokenType.UI_LAYOUT,
+            "ui_row": TokenType.UI_ROW,
+            "ui_column": TokenType.UI_COLUMN,
+            "ui_stack": TokenType.UI_STACK,
+            "ui_grid": TokenType.UI_GRID,
             "effect": TokenType.EFFECT,
             "capability": TokenType.CAPABILITY,
             "import": TokenType.IMPORT,
@@ -1374,6 +1392,8 @@ class Parser:
             return self.parse_capability()
         elif self.current_token.type == TokenType.HANDLE:
             return self.parse_handle()
+        elif self.current_token.type in (TokenType.UI_LAYOUT, TokenType.UI_ROW, TokenType.UI_COLUMN, TokenType.UI_STACK, TokenType.UI_GRID):
+            return self.parse_layout()
         elif self.current_token.type == TokenType.MATCH:
             return self.parse_match()
         else:
@@ -1482,6 +1502,21 @@ class Parser:
         body = self.parse_block()
 
         return HandleStatement(effects, handlers, body)
+
+    def parse_layout(self) -> LayoutStatement:
+        kind_token = self.current_token
+        self.advance()
+        args: List[Expression] = []
+        if self.current_token.type == TokenType.LPAREN:
+            self.advance()
+            if self.current_token.type != TokenType.RPAREN:
+                args.append(self.parse_expression())
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    args.append(self.parse_expression())
+            self.expect(TokenType.RPAREN)
+        body = self.parse_block()
+        return LayoutStatement(kind_token.value.lower(), args, body)
 
     def parse_match(self) -> MatchStatement:
         self.expect(TokenType.MATCH)

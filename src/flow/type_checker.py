@@ -21,9 +21,9 @@ from enum import Enum
 from .parser import (
     FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, ImportDecl,
     VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
-    FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral,
+    FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess,
     IfStatement, WhileStatement, ForStatement, MatchStatement,
-    HandleStatement, Block, Parameter, Type as ParsedType,
+    HandleStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
     EffectOperation, CapabilityMethod, MatchCase
 )
 
@@ -168,6 +168,9 @@ class TypeChecker:
         self.struct_types: Dict[str, StructDecl] = {}
         self.effect_types: Dict[str, EffectDecl] = {}
         self.capability_types: Dict[str, CapabilityDecl] = {}
+        # Builtin implicit UI layout state pointer
+        ui_state_type = SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
+        self.global_scope.define(Symbol("_ui_state", ui_state_type, "variable", is_mutable=True))
 
     def check(self, declarations: List[Any]) -> TypeCheckResult:
         """Main entry point for type checking."""
@@ -302,6 +305,10 @@ class TypeChecker:
             return self._check_for_stmt(stmt)
         elif isinstance(stmt, FunctionCall):
             return self._check_expression(stmt)
+        elif isinstance(stmt, LayoutStatement):
+            for arg in stmt.args:
+                self._check_expression(arg)
+            return self._check_block(stmt.body)
         else:
             # For now, assume other statements are void
             return SemanticType(TypeKind.VOID)
@@ -313,9 +320,14 @@ class TypeChecker:
         if var.type:  # Explicit type annotation
             expected_type = self._parse_type(var.type)
             if expr_type != expected_type:
-                self.errors.append(
-                    f"Variable '{var.name}' initialized with {expr_type} but annotated as {expected_type}"
-                )
+                if not (
+                    (expr_type.kind == TypeKind.POINTER and expected_type.kind == TypeKind.POINTER and
+                     expr_type.element_type and expr_type.element_type.kind == TypeKind.VOID) or
+                    (expr_type.kind == TypeKind.ARRAY and expected_type.kind == TypeKind.POINTER)
+                ):
+                    self.errors.append(
+                        f"Variable '{var.name}' initialized with {expr_type} but annotated as {expected_type}"
+                    )
         else:
             # Type inference - for now, just use the expression type
             expected_type = expr_type
@@ -357,9 +369,14 @@ class TypeChecker:
 
         expr_type = self._check_expression(assign.value)
         if expr_type != symbol.type:
-            self.errors.append(
-                f"Cannot assign {expr_type} to variable '{assign.target}' of type {symbol.type}"
-            )
+            if not (
+                (expr_type.kind == TypeKind.POINTER and symbol.type.kind == TypeKind.POINTER and
+                 expr_type.element_type and expr_type.element_type.kind == TypeKind.VOID) or
+                (expr_type.kind == TypeKind.ARRAY and symbol.type.kind == TypeKind.POINTER)
+            ):
+                self.errors.append(
+                    f"Cannot assign {expr_type} to variable '{assign.target}' of type {symbol.type}"
+                )
 
         return expr_type
 
@@ -414,6 +431,25 @@ class TypeChecker:
             return self._check_function_call(expr)
         elif isinstance(expr, StructLiteral):
             return self._check_struct_literal(expr)
+        elif isinstance(expr, ArrayLiteral):
+            if expr.elements:
+                elem_type = self._check_expression(expr.elements[0])
+            else:
+                elem_type = SemanticType(TypeKind.I32)
+            return SemanticType(TypeKind.ARRAY, element_type=elem_type, size=len(expr.elements))
+        elif isinstance(expr, ArrayAccess):
+            base_type = self._check_expression(expr.array)
+            if base_type.kind == TypeKind.ARRAY or base_type.kind == TypeKind.POINTER:
+                return base_type.element_type or SemanticType(TypeKind.VOID)
+            return SemanticType(TypeKind.VOID)
+        elif isinstance(expr, FieldAccess):
+            obj_type = self._check_expression(expr.object)
+            if obj_type.kind == TypeKind.STRUCT and obj_type.name in self.struct_types:
+                struct_def = self.struct_types[obj_type.name]
+                for field in struct_def.fields:
+                    if field.name == expr.field:
+                        return self._parse_type(field.type)
+            return SemanticType(TypeKind.VOID)
         else:
             # For now, assume unknown expressions are void
             return SemanticType(TypeKind.VOID)
@@ -421,6 +457,8 @@ class TypeChecker:
     def _check_literal(self, lit: Literal) -> SemanticType:
         """Type check a literal."""
         value = lit.value
+        if getattr(lit.type, 'is_pointer', False) or lit.type.name.startswith("ptr_"):
+            return SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
         if lit.type.name == "f32" or "." in str(value) or "e" in str(value).lower():
             return SemanticType(TypeKind.F32)
         elif value in ["true", "false"]:
@@ -506,9 +544,14 @@ class TypeChecker:
         for i, (arg, expected_type) in enumerate(zip(call.arguments, symbol.type.param_types)):
             arg_type = self._check_expression(arg)
             if arg_type != expected_type:
-                self.errors.append(
-                    f"Function '{call.name}' argument {i} expects {expected_type}, got {arg_type}"
-                )
+                if not (
+                    (arg_type.kind == TypeKind.POINTER and expected_type.kind == TypeKind.POINTER and
+                     arg_type.element_type and arg_type.element_type.kind == TypeKind.VOID) or
+                    (arg_type.kind == TypeKind.ARRAY and expected_type.kind == TypeKind.POINTER)
+                ):
+                    self.errors.append(
+                        f"Function '{call.name}' argument {i} expects {expected_type}, got {arg_type}"
+                    )
 
         return symbol.type.return_type
 
@@ -574,6 +617,10 @@ class TypeChecker:
             return SemanticType(TypeKind.F64)
         elif parsed_type.name == "string":
             return SemanticType(TypeKind.STRING)
+        elif parsed_type.is_pointer and parsed_type.element_type:
+            return SemanticType(TypeKind.POINTER, element_type=self._parse_type(parsed_type.element_type))
+        elif parsed_type.name.startswith("array_") and parsed_type.element_type:
+            return SemanticType(TypeKind.ARRAY, element_type=self._parse_type(parsed_type.element_type), size=parsed_type.size)
         elif parsed_type.name in self.struct_types:
             return SemanticType(TypeKind.STRUCT, name=parsed_type.name)
         else:

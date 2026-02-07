@@ -43,6 +43,7 @@ from .parser import (
     FunctionCall,
     FunctionDecl,
     HandleStatement,
+    LayoutStatement,
     IfStatement,
     ImplDecl,
     Lambda,
@@ -115,6 +116,19 @@ class CGenerator:
         lines.append("#include <math.h>")
         
         lines.append("")
+        lines.append("void* _ui_state = NULL;")
+        lines.append("")
+
+        # Provide a default i32_to_f32 helper if not defined in Flow code
+        has_i32_to_f32_def = False
+        if functions:
+            for fn in functions:
+                if fn.name == "i32_to_f32" and not getattr(fn, 'is_extern', False):
+                    has_i32_to_f32_def = True
+                    break
+        if not has_i32_to_f32_def:
+            lines.append("static inline float i32_to_f32(int32_t v) { return (float)v; }")
+            lines.append("")
         
         # Register effects and capabilities for dispatch
         if effects:
@@ -543,6 +557,8 @@ class CGenerator:
             self._collect_structs_from_block(stmt.body)
         elif isinstance(stmt, HandleStatement):
             self._collect_structs_from_block(stmt.body)
+        elif isinstance(stmt, LayoutStatement):
+            self._collect_structs_from_block(stmt.body)
         else:
             # Expression statement
             self._collect_structs_from_expr(stmt)
@@ -852,6 +868,9 @@ class CGenerator:
         
         if isinstance(st, HandleStatement):
             return self._gen_handle(st)
+
+        if isinstance(st, LayoutStatement):
+            return self._gen_layout(st)
         
         if isinstance(st, MatchStatement):
             return self._gen_match(st)
@@ -1070,6 +1089,39 @@ class CGenerator:
         
         return lines
 
+    def _gen_layout(self, st: LayoutStatement) -> List[str]:
+        lines: List[str] = []
+        begin_name = f"{st.kind}_begin"
+        end_name = f"{st.kind}_end"
+        args = list(st.args)
+        needs_implicit = False
+        if st.kind.startswith("ui_"):
+            if len(args) == 0:
+                needs_implicit = True
+            else:
+                first = args[0]
+                if isinstance(first, Variable):
+                    var_type = self._var_types.get(first.name)
+                    if var_type and (getattr(var_type, 'is_pointer', False) or var_type.name.startswith("ptr_")):
+                        needs_implicit = False
+                    else:
+                        needs_implicit = True
+                else:
+                    needs_implicit = True
+        if needs_implicit:
+            args = [Variable("_ui_state")] + args
+
+        begin_call = FunctionCall(begin_name, args)
+        lines.append(f"{self._i()}{self._gen_expr(begin_call)};")
+        lines.extend(self._gen_block(st.body))
+        if len(args) > 0:
+            end_call = FunctionCall(end_name, [args[0]])
+            lines.append(f"{self._i()}{self._gen_expr(end_call)};")
+        else:
+            end_call = FunctionCall(end_name, [])
+            lines.append(f"{self._i()}{self._gen_expr(end_call)};")
+        return lines
+
     def _gen_expr(self, e: Expression) -> str:
         if isinstance(e, Literal):
             if e.type.name == "bool":
@@ -1210,6 +1262,10 @@ class CGenerator:
             return f"({left_expr} {c_operator} {right_expr})"
 
         if isinstance(e, FunctionCall):
+            # ui_layout_bind intrinsic: bind implicit UI state pointer
+            if e.name == "ui_layout_bind" and len(e.arguments) == 1:
+                arg_expr = self._gen_expr(e.arguments[0])
+                return f"(_ui_state = (void*){arg_expr})"
             # Handle len() builtin for arrays and slices
             if e.name == "len":
                 if len(e.arguments) == 1:

@@ -1,0 +1,35 @@
+import "stdlib/ui_layout.flow"
+
+function hash_rect(h: i32, r: UiRect) -> i32 {
+    let out: i32 = h
+    out = out * 131 + r.x
+    out = out * 131 + r.y
+    out = out * 131 + r.w
+    out = out * 131 + r.h
+    return out
+}
+
+function main() -> i32 {
+    let frames: array<UiLayoutFrame, 32> = [UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }]
+    let state_store: array<UiLayoutState, 1> = [UiLayoutState{ frames: frames, top: 0, unit: 1.0, win_w: 0.0, win_h: 0.0 }]
+    ui_layout_bind(state_store)
+    ui_layout_set_view(_ui_state, 300.0, 200.0)
+
+    let mut h: i32 = 0
+    ui_layout(30, 20, 1) {
+        ui_row(3, 1, 1, UI_JUSTIFY_CENTER) {
+            h = hash_rect(h, ui_box(_ui_state))
+            h = hash_rect(h, ui_box(_ui_state))
+            h = hash_rect(h, ui_box(_ui_state))
+        }
+        ui_grid(2, 2, 1, 1, UI_JUSTIFY_CENTER, UI_JUSTIFY_CENTER) {
+            h = hash_rect(h, ui_box(_ui_state))
+            h = hash_rect(h, ui_box(_ui_state))
+            h = hash_rect(h, ui_box(_ui_state))
+            h = hash_rect(h, ui_box(_ui_state))
+        }
+    }
+
+    if h != 1520584819 { return 1 }
+    return 0
+}

@@ -72,6 +72,7 @@ function fill_instances(out: ptr<f32>, width: f32, height: f32, snake_x: ptr<i32
 function main() -> i32 {
     let width: i32 = 720
     let height: i32 = 720
+    flow_vk_set_window_scale(1.0, 0)
     if flow_vk_2048_init(width, height, "Flow Vulkan Snake", 400) != 0 {
         return 1
     }

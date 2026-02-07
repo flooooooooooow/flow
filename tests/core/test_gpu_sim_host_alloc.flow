@@ -1,0 +1,39 @@
+import "stdlib/gpu_sim.flow"
+
+function main() -> i32 {
+    let n: i32 = 3
+    let host_a: HostBufferF32 = host_alloc_f32(n)
+    let host_b: HostBufferF32 = host_alloc_f32(n)
+    let host_out: HostBufferF32 = host_alloc_f32(n)
+
+    host_a.data[0] = 1.0
+    host_a.data[1] = 2.0
+    host_a.data[2] = 3.0
+    host_b.data[0] = 10.0
+    host_b.data[1] = 20.0
+    host_b.data[2] = 30.0
+
+    let dev_a: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_b: DeviceBufferF32 = device_alloc_f32(n)
+    let dev_out: DeviceBufferF32 = device_alloc_f32(n)
+    copy_host_to_device(host_a, dev_a)
+    copy_host_to_device(host_b, dev_b)
+
+    let layout: Layout = layout_1d(n)
+    let a_t: LayoutTensorF32 = tensor_from_device(dev_a, layout)
+    let b_t: LayoutTensorF32 = tensor_from_device(dev_b, layout)
+    let out_t: LayoutTensorF32 = tensor_from_device(dev_out, layout)
+    kernel_vec_add(a_t, b_t, out_t)
+    copy_device_to_host(dev_out, host_out)
+
+    if host_out.data[0] != 11.0 { return 1 }
+    if host_out.data[2] != 33.0 { return 2 }
+
+    device_free_f32(dev_a)
+    device_free_f32(dev_b)
+    device_free_f32(dev_out)
+    host_free_f32(host_a)
+    host_free_f32(host_b)
+    host_free_f32(host_out)
+    return 0
+}
