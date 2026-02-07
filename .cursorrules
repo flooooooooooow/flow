@@ -1,0 +1,128 @@
+# Flow Language - Cursor AI Rules
+
+## Project Context
+
+Flow is a statically-typed, compiled programming language with:
+- Algebraic effects (unique differentiator)
+- Automatic differentiation (built-in)
+- C backend (portable, no LLVM required)
+- Native graphics (macOS currently)
+- ~38,000 lines of code
+
+## File Locations
+
+| What | Where |
+|------|-------|
+| Compiler source | `src/flow/*.py` |
+| Parser | `src/flow/parser.py` |
+| C code generator | `src/flow/c_generator.py` |
+| Standard library | `lib/stdlib/*.flow` |
+| Examples | `examples/` |
+| Tests | `tests/` |
+| Graphics runtime | `runtime/gfx_macos.m` |
+| CLI entry point | `./flow` (bash script) |
+
+## Current Syntax (Use This)
+
+```flow
+# Variables
+let x: i32 = 42              # Immutable
+let mut counter: i32 = 0     # Mutable
+
+# Functions
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+# Loops
+for i in 0 to 10 { }         # NOT 0..10 (old syntax)
+while condition { }
+
+# Structs
+struct Point { x: f32, y: f32 }
+
+# FFI
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+```
+
+## Known Parser Limitations
+
+- `ptr[0].field` syntax NOT supported - use individual variables instead
+- Binary literals `0b1010` NOT supported in C generator - use decimal
+- No `import` statements in current working examples - use extern
+
+## Before Making Changes
+
+1. Read ROADMAP.md for current priorities
+2. Read CONTRIBUTING.md for collaboration model
+3. Check Questions.md for unresolved decisions
+4. Run `./flow test` to verify baseline
+
+## After Making Changes
+
+1. Verify: `./flow run <file>` works
+2. Update docs if behavior changed
+3. Add to Questions.md if decisions needed
+4. Update ROADMAP.md if priorities shift
+
+## Code Style
+
+- Python: Follow existing patterns in `src/flow/`
+- Flow: Follow examples in `examples/basics/`
+- Comments: Use `#` not `//`
+- Types: Always explicit in function signatures
+
+## Testing Commands
+
+```bash
+./flow run examples/basics/hello_world.flow  # Quick test
+./flow test                                   # Full suite
+./flow run examples/ml/models/mlp_xor.flow   # ML test
+```
+
+## Decision Authority
+
+| Domain | Who Decides |
+|--------|-------------|
+| Language design | Human (final) |
+| Syntax choices | Human (final) |
+| Implementation | AI (human approves) |
+| Bug fixes | AI (within scope) |
+
+## AI Behavior Guidelines
+
+DO:
+- Check Questions.md before assuming
+- Verify code compiles before committing
+- Update ROADMAP.md after completing tasks
+- Use existing patterns from codebase
+- Ask when uncertain about design decisions
+
+DON'T:
+- Add features not requested
+- Change syntax without approval
+- Delete files without confirmation
+- Make large uncommitted changes
+- Assume requirements - ask instead
+
+## Questions Protocol
+
+When uncertain, add to Questions.md:
+
+```markdown
+## [Date] Question Title
+
+**Context:** Why this came up
+
+**Options:**
+1. Option A - pros/cons
+2. Option B - pros/cons
+
+**Recommendation:** What AI suggests
+
+**Status:** 🔲 Pending | ✅ Resolved
+```
+
+Wait for human answer before proceeding on design decisions.

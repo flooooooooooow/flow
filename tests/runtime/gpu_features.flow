@@ -2,12 +2,29 @@
 import "stdlib/gpu_sim.flow"
 
 function main() -> i32 {
+    print("[GPU] Step 1: device/context + properties\n")
+    print("  Expect: has_gpu=true, non-empty device name\n")
     let ctx: DeviceContext = device_context()
     let props: DeviceProperties = device_properties(ctx)
     if !ctx.has_gpu { return 1 }
     if props.name == "" { return 2 }
+    print("  OK: device name\n")
+    print(props.name)
+    print("\n")
+    print("  OK: max_threads_per_block (>=256)\n")
+    print(props.max_threads_per_block)
+    print("\n")
+    print("  OK: warp_size\n")
+    print(props.warp_size)
+    print("\n")
+    print("  OK: supports_fp16 / supports_int64\n")
+    if !props.supports_fp16 { return 9 }
+    if !props.supports_int64 { return 10 }
+    print("\n")
 
     # 1D buffers + vec add
+    print("[GPU] Step 2: 1D buffers + vec add (a+b -> out)\n")
+    print("  Expect: out = [11, 22, 33, 44]\n")
     let n: i32 = 4
     let a: array<f32, 4> = [1.0,2.0,3.0,4.0]
     let b: array<f32, 4> = [10.0,20.0,30.0,40.0]
@@ -38,14 +55,26 @@ function main() -> i32 {
     if out[0] != 11.0 { return 3 }
     if out[3] != 44.0 { return 4 }
     if q2.pending != 0 { return 5 }
+    print("  OK: out[0]=11, out[3]=44, queue pending=0\n")
 
     # Grid/block launch
+    print("[GPU] Step 3: grid/block launch (1D)\n")
+    print("  Expect: grid_1d(4,2) launches 2 blocks of 2 threads\n")
     let cfg: LaunchConfig = grid_1d(n, 2)
+    print("  grid blocks:\n")
+    print(cfg.grid.x)
+    print("\n")
+    print("  block size:\n")
+    print(cfg.block.x)
+    print("\n")
     launch_vec_add_1d(cfg, a_t, b_t, out_t, n)
     copy_device_to_host(dev_out, host_out)
     if out[1] != 22.0 { return 6 }
+    print("  OK: out[1]=22 via grid launch\n")
 
     # 2D layout
+    print("[GPU] Step 4: 2D layout/tensor add (2x2)\n")
+    print("  Expect: out2[3]=44\n")
     let rows: i32 = 2
     let cols: i32 = 2
     let n2: i32 = rows * cols
@@ -70,8 +99,11 @@ function main() -> i32 {
     kernel_add_2d(a2_t, b2_t, out2_t)
     copy_device_to_host(dev_out2, host_out2)
     if out2[3] != 44.0 { return 7 }
+    print("  OK: out2[3]=44\n")
 
     # 3D layout
+    print("[GPU] Step 5: 3D layout/tensor add (2x2x2)\n")
+    print("  Expect: out3[7]=88\n")
     let depth3: i32 = 2
     let rows3: i32 = 2
     let cols3: i32 = 2
@@ -97,6 +129,7 @@ function main() -> i32 {
     kernel_add_3d(a3_t, b3_t, out3_t)
     copy_device_to_host(dev_out3, host_out3)
     if out3[7] != 88.0 { return 8 }
+    print("  OK: out3[7]=88\n")
 
     device_free_f32(dev_a)
     device_free_f32(dev_b)
