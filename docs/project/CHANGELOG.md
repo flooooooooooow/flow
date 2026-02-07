@@ -178,7 +178,7 @@ All notable changes to FLOW will be documented in this file.
   - Hover information for functions and structs
   - Go-to-definition support
   - Document symbol outline
-  - VS Code extension in `editors/vscode/flow-language/`
+  - VS Code extension in `third_party/integrations/vscode/flow-language/`
   - TextMate grammar for syntax highlighting
 
 ### Tests
