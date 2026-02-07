@@ -14,6 +14,8 @@
 #include <vector>
 #include <sys/stat.h>
 
+#include "../vulkan_abi/renderer.h"
+
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>

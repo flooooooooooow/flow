@@ -1,0 +1,7 @@
+fn flow_vk_2048_init(width: i32, height: i32, title: string, capacity: i32) -> i32
+fn flow_vk_2048_shutdown() -> void
+fn flow_vk_2048_should_close() -> i32
+fn flow_vk_2048_poll() -> void
+fn flow_vk_2048_key_down(key: i32) -> i32
+fn flow_vk_2048_draw(instance_data: cptr<f32>, count: i32) -> void
+fn flow_vk_2048_upload_texture(pixels: cptr<u8>, width: i32, height: i32) -> void
