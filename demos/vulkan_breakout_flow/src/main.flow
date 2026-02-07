@@ -170,6 +170,11 @@ function game_loop(input: capability Input, renderer: capability Renderer, width
 
     while input.should_close() == 0 && renderer.begin_frame() == 1 {
         input.poll()
+        let esc: bool = input.key_down(256) == 1
+        if esc {
+            renderer.end_frame()
+            return 0
+        }
         let left: bool = input.key_down(263) == 1 || input.key_down(65) == 1
         let right: bool = input.key_down(262) == 1 || input.key_down(68) == 1
         if left && !left_down { paddle_x = max_i32(0, paddle_x - 1) }
@@ -216,5 +221,7 @@ function main() -> i32 {
         return 1
     }
     let runtime: VulkanRuntime = VulkanRuntime {}
-    return game_loop(runtime, runtime, width, height)
+    let result: i32 = game_loop(runtime, runtime, width, height)
+    flow_vk_2048_shutdown()
+    return result
 }
