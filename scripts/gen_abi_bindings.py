@@ -7,6 +7,7 @@ from pathlib import Path
 TYPE_MAP_C = {
     "i32": "int32_t",
     "u8": "uint8_t",
+    "u16": "uint16_t",
     "f32": "float",
     "f64": "double",
     "bool": "bool",

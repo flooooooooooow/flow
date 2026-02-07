@@ -15,6 +15,10 @@ int main(void) {
     flow_vk_draw_instance_buffer(1, 0);
     (void)flow_vk_create_texture(64, 64);
     flow_vk_update_texture(1, (const uint8_t*)0, 0, 0);
+    flow_vk_upload_mesh((const float*)0, 0, (const uint16_t*)0, 0);
+    flow_vk_set_clear_color(0.0f, 0.0f, 0.0f);
+    flow_vk_set_camera(0.0f, 0.0f, 0.0f);
+    flow_vk_set_viewport(0, 0);
     flow_vk_2048_shutdown();
     return 0;
 }

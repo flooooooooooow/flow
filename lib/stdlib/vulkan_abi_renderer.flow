@@ -1,0 +1,64 @@
+import "../../demos/vulkan_abi/renderer.flow"
+
+struct AbiRenderer {
+    ready: bool
+}
+
+export function abi_renderer_init() -> AbiRenderer {
+    return AbiRenderer { ready: true }
+}
+
+export function abi_renderer_begin_frame(r: AbiRenderer) -> i32 {
+    if !r.ready { return 0 }
+    return flow_vk_begin_frame()
+}
+
+export function abi_renderer_end_frame(r: AbiRenderer) -> void {
+    if !r.ready { return }
+    flow_vk_end_frame()
+}
+
+export function abi_renderer_create_instance_buffer(r: AbiRenderer, capacity: i32) -> i32 {
+    if !r.ready { return 0 }
+    return flow_vk_create_instance_buffer(capacity)
+}
+
+export function abi_renderer_update_instance_buffer(r: AbiRenderer, buf: i32, instance_data: ptr<f32>, count: i32) -> void {
+    if !r.ready { return }
+    flow_vk_update_instance_buffer(buf, instance_data, count)
+}
+
+export function abi_renderer_draw_instance_buffer(r: AbiRenderer, buf: i32, count: i32) -> void {
+    if !r.ready { return }
+    flow_vk_draw_instance_buffer(buf, count)
+}
+
+export function abi_renderer_create_texture(r: AbiRenderer, width: i32, height: i32) -> i32 {
+    if !r.ready { return 0 }
+    return flow_vk_create_texture(width, height)
+}
+
+export function abi_renderer_update_texture(r: AbiRenderer, tex: i32, pixels: ptr<u8>, width: i32, height: i32) -> void {
+    if !r.ready { return }
+    flow_vk_update_texture(tex, pixels, width, height)
+}
+
+export function abi_renderer_upload_mesh(r: AbiRenderer, vertices: ptr<f32>, vertex_count: i32, indices: ptr<u16>, index_count: i32) -> void {
+    if !r.ready { return }
+    flow_vk_upload_mesh(vertices, vertex_count, indices, index_count)
+}
+
+export function abi_renderer_set_clear(r: AbiRenderer, r_col: f32, g_col: f32, b_col: f32) -> void {
+    if !r.ready { return }
+    flow_vk_set_clear_color(r_col, g_col, b_col)
+}
+
+export function abi_renderer_set_camera(r: AbiRenderer, distance: f32, pitch: f32, yaw: f32) -> void {
+    if !r.ready { return }
+    flow_vk_set_camera(distance, pitch, yaw)
+}
+
+export function abi_renderer_set_viewport(r: AbiRenderer, width: i32, height: i32) -> void {
+    if !r.ready { return }
+    flow_vk_set_viewport(width, height)
+}
