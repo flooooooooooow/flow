@@ -47,8 +47,11 @@ show_help() {
     echo "  vulkan-demo-basic  Alias for vulkan-demo"
     echo "  vulkan-demo-advanced  Build and run Vulkan scene demo"
     echo "  vulkan-2048       Run Vulkan 2048 (Flow logic + Vulkan renderer)"
+    echo "  vulkan-tetris     Run Vulkan Tetris (Flow logic + Vulkan renderer)"
+    echo "  vulkan-snake      Run Vulkan Snake (Flow logic + Vulkan renderer)"
+    echo "  vulkan-pong       Run Vulkan Pong (Flow logic + Vulkan renderer)"
     echo "  demo vulkan [basic|advanced]  Alias for Vulkan demos"
-    echo "  demo vulkan-flow [basic|advanced|2048]  Run Flow Vulkan demos"
+    echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong]  Run Flow Vulkan demos"
     echo "  mlir <program>     Generate MLIR only"
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
@@ -438,6 +441,36 @@ sys.path.insert(0, '$SCRIPT_DIR/src')
 from flow.package import FlowPackageManager
 pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_2048_flow')
 pm.run_native('$SCRIPT_DIR/demos/vulkan_2048_flow/src/main.flow')
+"
+}
+
+run_vulkan_tetris() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_tetris_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_tetris_flow/src/main.flow')
+"
+}
+
+run_vulkan_snake() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_snake_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_snake_flow/src/main.flow')
+"
+}
+
+run_vulkan_pong() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_pong_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_pong_flow/src/main.flow')
 "
 }
 
@@ -905,6 +938,15 @@ case "${1:-help}" in
     "vulkan-2048")
         run_vulkan_2048
         ;;
+    "vulkan-tetris")
+        run_vulkan_tetris
+        ;;
+    "vulkan-snake")
+        run_vulkan_snake
+        ;;
+    "vulkan-pong")
+        run_vulkan_pong
+        ;;
     "demo")
         if [ -z "$2" ]; then
             print_error "Usage: flow demo <name> [variant]"
@@ -948,8 +990,17 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
                     "2048")
                         run_vulkan_2048
                         ;;
+                    "tetris")
+                        run_vulkan_tetris
+                        ;;
+                    "snake")
+                        run_vulkan_snake
+                        ;;
+                    "pong")
+                        run_vulkan_pong
+                        ;;
                     *)
-                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic, advanced, or 2048)"
+                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic, advanced, 2048, tetris, snake, or pong)"
                         exit 1
                         ;;
                 esac
