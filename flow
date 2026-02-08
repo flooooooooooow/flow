@@ -1367,40 +1367,43 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         fi
         check_deps
         print_info "Generating GPU shaders from $1..."
-        python3 -c "
+        python3 - "$SCRIPT_DIR" "$1" <<'PY'
 import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
+
+script_dir = sys.argv[1]
+program = sys.argv[2]
+sys.path.insert(0, f"{script_dir}/src")
 
 from flow.module_resolver import ModuleResolver
 from flow.metal_codegen import generate_metal_shaders, extract_gpu_functions
 
 # Resolve modules
-resolver = ModuleResolver('$1')
+resolver = ModuleResolver(program)
 try:
     declarations = resolver.resolve()
 except Exception as e:
-    print(f'Error: {e}')
+    print(f"Error: {e}")
     sys.exit(1)
 
 # Check for @gpu functions
 gpu_funcs = extract_gpu_functions(declarations)
 if not gpu_funcs:
-    print('No @gpu functions found in the program.')
-    print('Mark GPU functions with @gpu decorator:')
+    print("No @gpu functions found in the program.")
+    print("Mark GPU functions with @gpu decorator:")
     print()
-    print('@gpu')
-    print('function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {')
-    print('    let i = gpu_thread_id()')
-    print('    if i < n {')
-    print('        out[i] = a[i] + b[i]')
-    print('    }')
-    print('}')
+    print("@gpu")
+    print("function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {")
+    print("    let i = gpu_thread_id()")
+    print("    if i < n {")
+    print("        out[i] = a[i] + b[i]")
+    print("    }")
+    print("}")
     sys.exit(0)
 
 # Generate Metal shaders
-results = generate_metal_shaders(declarations, '$SCRIPT_DIR/build/gpu')
-print(f'Generated {len(results)} GPU shader(s)')
-"
+results = generate_metal_shaders(declarations, f"{script_dir}/build/gpu")
+print(f"Generated {len(results)} GPU shader(s)")
+PY
         ;;
     "jit")
         shift
@@ -1410,33 +1413,36 @@ print(f'Generated {len(results)} GPU shader(s)')
         fi
         check_deps
         print_info "JIT compiling $1..."
-        python3 -c "
+        python3 - "$SCRIPT_DIR" "$1" <<'PY'
 import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
+
+script_dir = sys.argv[1]
+program = sys.argv[2]
+sys.path.insert(0, f"{script_dir}/src")
 
 from flow.mlir_generator import flow_to_mlir
 from flow.mlir_jit import MLIRJIT
 from flow.module_resolver import ModuleResolver
 
 # Resolve modules
-resolver = ModuleResolver('$1')
+resolver = ModuleResolver(program)
 try:
     declarations = resolver.resolve()
 except Exception as e:
-    print(f'Error: {e}')
+    print(f"Error: {e}")
     sys.exit(1)
 
 # Generate MLIR
-mlir_code = flow_to_mlir(declarations, source_file='$1')
+mlir_code = flow_to_mlir(declarations, source_file=program)
 
 # JIT compile and run
 jit = MLIRJIT()
 try:
-    result = jit.jit_compile_and_run(mlir_code, 'main')
-    print(f'Result: {result}')
+    result = jit.jit_compile_and_run(mlir_code, "main")
+    print(f"Result: {result}")
 finally:
     jit.cleanup()
-"
+PY
         ;;
     "transpile")
         shift
@@ -1546,13 +1552,18 @@ main()
         ;;
     "init")
         shift
-        python3 -c "
+        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
 import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
+
+script_dir = sys.argv[1]
+arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
+sys.path.insert(0, f"{script_dir}/src")
+
 from flow.package import FlowPackageManager
+
 pm = FlowPackageManager()
-pm.init('$1' if '$1' else None)
-"
+pm.init(arg)
+PY
         ;;
     "add")
         shift
@@ -1560,13 +1571,18 @@ pm.init('$1' if '$1' else None)
             print_error "Usage: flow add <package>"
             exit 1
         fi
-        python3 -c "
+        python3 - "$SCRIPT_DIR" "$1" <<'PY'
 import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
+
+script_dir = sys.argv[1]
+package = sys.argv[2]
+sys.path.insert(0, f"{script_dir}/src")
+
 from flow.package import FlowPackageManager
+
 pm = FlowPackageManager()
-pm.add('$1')
-"
+pm.add(package)
+PY
         ;;
     "build")
         python3 -c "
@@ -1579,23 +1595,33 @@ pm.build()
         ;;
     "build-native")
         shift
-        python3 -c "
+        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
 import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
+
+script_dir = sys.argv[1]
+arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
+sys.path.insert(0, f"{script_dir}/src")
+
 from flow.package import FlowPackageManager
+
 pm = FlowPackageManager()
-pm.build_native('$1' if '$1' else None)
-"
+pm.build_native(arg)
+PY
         ;;
     "run-native")
         shift
-        python3 -c "
+        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
 import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
+
+script_dir = sys.argv[1]
+arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
+sys.path.insert(0, f"{script_dir}/src")
+
 from flow.package import FlowPackageManager
+
 pm = FlowPackageManager()
-pm.run_native('$1' if '$1' else None)
-"
+pm.run_native(arg)
+PY
         ;;
     "clean")
         python3 -c "
