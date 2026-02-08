@@ -898,9 +898,12 @@ class Parser:
     def parse_test(self) -> FunctionDecl:
         self.expect(TokenType.TEST)
         name_token = self.expect(TokenType.STRING_LITERAL)
-        name = "test_" + name_token.value[1:-1].replace(
-            " ", "_"
-        )  # Remove quotes, make valid identifier
+        raw_name = name_token.value[1:-1]
+        # Sanitize to a valid identifier for downstream C codegen
+        safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", raw_name)
+        if not safe_name:
+            safe_name = "case"
+        name = "test_" + safe_name
         body = self.parse_block()
 
         # Create a function that returns bool
