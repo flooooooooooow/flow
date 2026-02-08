@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "../../../demos/vulkan_abi/renderer.h"
 
@@ -199,20 +201,61 @@ static void ensureShadersBuilt() {
     }
 }
 
-static std::string pickFileDialog(const char* title) {
-#ifdef __APPLE__
-    std::string script = "osascript -e 'set theFile to choose file with prompt \"" + std::string(title) + "\"' "
-                         "-e 'POSIX path of theFile'";
-    FILE* pipe = popen(script.c_str(), "r");
-    if (!pipe) {
+static std::string runCommandCapture(const std::vector<std::string>& args) {
+    if (args.empty()) {
         return "";
     }
-    char buffer[1024];
-    std::string result;
-    while (fgets(buffer, sizeof(buffer), pipe)) {
-        result += buffer;
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        return "";
     }
-    pclose(pipe);
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return "";
+    }
+    if (pid == 0) {
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[0]);
+        close(pipefd[1]);
+        std::vector<char*> argv;
+        argv.reserve(args.size() + 1);
+        for (const auto& arg : args) {
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv.push_back(nullptr);
+        execvp(argv[0], argv.data());
+        _exit(127);
+    }
+    close(pipefd[1]);
+    std::string output;
+    char buffer[1024];
+    ssize_t n = 0;
+    while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0) {
+        output.append(buffer, buffer + n);
+    }
+    close(pipefd[0]);
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        return "";
+    }
+    return output;
+}
+
+static std::string pickFileDialog(const char* title) {
+#ifdef __APPLE__
+    std::vector<std::string> args = {
+        "osascript",
+        "-e",
+        "set theFile to choose file with prompt (item 1 of argv)",
+        "-e",
+        "POSIX path of theFile",
+        "--",
+        title ? title : ""
+    };
+    std::string result = runCommandCapture(args);
     if (!result.empty() && result.back() == '\n') {
         result.pop_back();
     }
