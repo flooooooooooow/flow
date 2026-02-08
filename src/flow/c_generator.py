@@ -1170,7 +1170,7 @@ class CGenerator:
                     printf_calls = []
                     for part_expr, part_type in parts:
                         if part_type == 'string_literal':
-                            printf_calls.append(f'printf({part_expr})')
+                            printf_calls.append(f'printf("%s", {part_expr})')
                         elif part_type == 'string':
                             printf_calls.append(f'printf("%s", {part_expr})')
                         elif part_type in ['i32']:
@@ -1196,7 +1196,7 @@ class CGenerator:
                     # This branch is now dead code due to the restructure above
                     parts = []
                     if isinstance(e.left, Literal) and e.left.type.name == 'string':
-                        parts.append(f'printf({left_expr})')
+                        parts.append(f'printf("%s", {left_expr})')
                     elif left_is_string:
                         parts.append(f'printf("%s", {left_expr})')
                     else:
@@ -1211,7 +1211,7 @@ class CGenerator:
                             parts.append(f'printf("%g", {left_expr})')
                     
                     if isinstance(e.right, Literal) and e.right.type.name == 'string':
-                        parts.append(f'printf({right_expr})')
+                        parts.append(f'printf("%s", {right_expr})')
                     elif right_is_string:
                         parts.append(f'printf("%s", {right_expr})')
                     else:
@@ -1297,7 +1297,7 @@ class CGenerator:
                         if arg.type.name == 'string':
                             # For string literals, append \n
                             val = arg.value[:-1] + '\\n"'  # Remove closing " and add \n"
-                            return f'printf({val})'
+                            return f'printf("%s", {val})'
                         elif arg.type.name in ['f32', 'f64']:
                             return f'printf("%f\\n", {self._gen_expr(arg)})'
                         elif arg.type.name in ['i32', 'i64', 'u32', 'u64']:
@@ -1372,7 +1372,7 @@ class CGenerator:
                     elif isinstance(arg, Literal):
                         if arg.type.name == 'string':
                             # String literal - use %s
-                            return f'printf({self._gen_expr(arg)})'
+                            return f'printf("%s", {self._gen_expr(arg)})'
                         elif arg.type.name in ['f32', 'f64']:
                             # Float literal - use %f
                             return f'printf("%f", {self._gen_expr(arg)})'
