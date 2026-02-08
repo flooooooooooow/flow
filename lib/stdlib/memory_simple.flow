@@ -14,7 +14,13 @@ export function calloc(nmemb: i32, size: i32) -> i32 {
     # Allocate nmemb elements of size bytes each, initialized to zero
     # Returns pointer as integer (address)
     # Returns 0 if allocation fails
+    if nmemb < 0 || size < 0 {
+        return 0
+    }
     let total_size: i32 = nmemb * size
+    if size != 0 && total_size / size != nmemb {
+        return 0
+    }
     let ptr: i32 = malloc(total_size)
     if ptr != 0 {
         memset(ptr, 0, total_size)

@@ -13,6 +13,10 @@ export function calloc(nmemb: usize, size: usize) -> ptr<void> {
     # Allocate nmemb elements of size bytes each, initialized to zero
     # Returns null pointer if allocation fails
     let total_size: usize = nmemb * size
+    # Detect integer overflow (wraparound) in size computation
+    if size != 0 && total_size / size != nmemb {
+        return null
+    }
     let ptr: ptr<void> = malloc(total_size)
     if ptr != null {
         memset(ptr, 0, total_size)
