@@ -1,4 +1,4 @@
-import "logpkg.flow"
+import "stdlib/logpkg.flow"
 
 function run_demo() -> i32 {
     greet()

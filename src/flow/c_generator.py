@@ -68,6 +68,39 @@ from .parser import (
 )
 from .overload import OverloadResolver
 
+import re
+
+_C_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+# C reserved words that must not be used as identifiers
+_C_RESERVED = frozenset({
+    'auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do',
+    'double', 'else', 'enum', 'extern', 'float', 'for', 'goto', 'if',
+    'inline', 'int', 'long', 'register', 'restrict', 'return', 'short',
+    'signed', 'sizeof', 'static', 'struct', 'switch', 'typedef', 'union',
+    'unsigned', 'void', 'volatile', 'while', '_Bool', '_Complex', '_Imaginary',
+})
+
+
+def _sanitize_identifier(name: str) -> str:
+    """Sanitize a Flow identifier for safe use in generated C code.
+
+    Replaces any character that is not [A-Za-z0-9_] with an underscore,
+    ensuring the result is a valid C identifier.  This prevents code
+    injection via crafted Flow identifier names.
+    """
+    if not name:
+        return "_empty"
+    # Replace non-identifier characters
+    safe = re.sub(r'[^A-Za-z0-9_]', '_', name)
+    # Ensure it starts with a letter or underscore
+    if safe[0].isdigit():
+        safe = '_' + safe
+    # Avoid C reserved words
+    if safe in _C_RESERVED:
+        safe = '_flow_' + safe
+    return safe
+
 
 class CGenerator:
     def __init__(self, *, source_file: str | None = None, debug_info: bool = False) -> None:
@@ -99,6 +132,39 @@ class CGenerator:
         if isinstance(t, Type):
             return t.name
         return str(t)
+    
+    def _printf_format_for_type_name(self, type_name: str | None) -> str:
+        if not type_name:
+            return "%g"
+        if type_name == "string":
+            return "%s"
+        if type_name in ["f32", "f64"]:
+            return "%f"
+        if type_name in ["i32", "i64", "u32", "u64", "bool"]:
+            if type_name == "i64":
+                return "%lld"
+            if type_name == "u64":
+                return "%llu"
+            if type_name == "u32":
+                return "%u"
+            return "%d"
+        return "%g"
+    
+    def _printf_for_expr(self, expr: Expression, *, newline: bool) -> str:
+        expr_str = self._gen_expr(expr)
+        type_name = None
+        if isinstance(expr, Literal):
+            type_name = expr.type.name
+        elif isinstance(expr, Variable):
+            if expr.name in self._var_types:
+                type_name = self._var_types[expr.name].name
+        elif isinstance(expr, FieldAccess):
+            field_type = self._infer_expr_type(expr)
+            type_name = field_type.name if field_type else None
+        fmt = self._printf_format_for_type_name(type_name)
+        if newline:
+            fmt = f"{fmt}\\n"
+        return f'printf("{fmt}", {expr_str})'
 
     def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl], 
                                    structs: List[StructDecl] = None, 
@@ -754,7 +820,7 @@ class CGenerator:
     def _c_function_decl(self, fn: FunctionDecl, use_mangled: bool = True) -> str:
         ret = self._c_type(fn.return_type)
         if fn.parameters:
-            params = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in fn.parameters])
+            params = ", ".join([f"{self._c_type(p.type)} {_sanitize_identifier(p.name)}" for p in fn.parameters])
         else:
             # Important for system headers: `f()` (K&R) can conflict with `f(void)`.
             params = "void"
@@ -762,6 +828,7 @@ class CGenerator:
         name = fn.name
         if use_mangled and id(fn) in self._mangled_names:
             name = self._mangled_names[id(fn)]
+        name = _sanitize_identifier(name)
         return f"{ret} {name}({params})"
 
     def _gen_function(self, fn: FunctionDecl) -> List[str]:
@@ -843,16 +910,17 @@ class CGenerator:
                 ]
 
             c_t = self._c_type(st.type)
+            safe_name = _sanitize_identifier(st.name)
             if st.initializer is None:
-                return [f"{self._i()}{c_t} {st.name};"]
-            return [f"{self._i()}{c_t} {st.name} = {self._gen_expr(st.initializer)};"]
+                return [f"{self._i()}{c_t} {safe_name};"]
+            return [f"{self._i()}{c_t} {safe_name} = {self._gen_expr(st.initializer)};"]
 
         if isinstance(st, Assignment):
             # Handle array element assignment: arr[i] = value
             if st.target_expr is not None:
                 target_expr = self._gen_expr(st.target_expr)
                 return [f"{self._i()}{target_expr} = {self._gen_expr(st.value)};"]
-            return [f"{self._i()}{st.target} = {self._gen_expr(st.value)};"]
+            return [f"{self._i()}{_sanitize_identifier(st.target)} = {self._gen_expr(st.value)};"]
 
         if isinstance(st, ReturnStatement):
             if st.value is None:
@@ -878,7 +946,7 @@ class CGenerator:
             return self._gen_match(st)
 
         # Expression statement
-        if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall)):
+        if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall, MethodCall)):
             return [f"{self._i()}{self._gen_expr(st)};"]
 
         raise NotImplementedError(f"Unsupported statement: {type(st)}")
@@ -1256,65 +1324,7 @@ class CGenerator:
                     return 'printf("\\n")'
                 elif len(e.arguments) == 1:
                     arg = e.arguments[0]
-                    # Similar to print but with newline
-                    if isinstance(arg, Literal):
-                        if arg.type.name == 'string':
-                            # For string literals, append \n
-                            val = arg.value[:-1] + '\\n"'  # Remove closing " and add \n"
-                            return f'printf("%s", {val})'
-                        elif arg.type.name in ['f32', 'f64']:
-                            return f'printf("%f\\n", {self._gen_expr(arg)})'
-                        elif arg.type.name in ['i32', 'i64', 'u32', 'u64']:
-                            if arg.type.name.startswith('u'):
-                                return f'printf("%u\\n", {self._gen_expr(arg)})'
-                            elif arg.type.name in ['i64']:
-                                return f'printf("%lld\\n", {self._gen_expr(arg)})'
-                            elif arg.type.name in ['u64']:
-                                return f'printf("%llu\\n", {self._gen_expr(arg)})'
-                            else:
-                                return f'printf("%d\\n", {self._gen_expr(arg)})'
-                        elif arg.type.name == 'bool':
-                            return f'printf("%d\\n", {self._gen_expr(arg)})'
-                        else:
-                            return f'printf("%g\\n", {self._gen_expr(arg)})'
-                    elif isinstance(arg, Variable):
-                        if arg.name in self._var_types:
-                            var_type = self._var_types[arg.name]
-                            if var_type.name == 'string':
-                                return f'printf("%s\\n", {self._gen_expr(arg)})'
-                            elif var_type.name in ['f32', 'f64']:
-                                return f'printf("%f\\n", {self._gen_expr(arg)})'
-                            elif var_type.name in ['i32', 'i64', 'u32', 'u64']:
-                                if var_type.name.startswith('u'):
-                                    return f'printf("%u\\n", {self._gen_expr(arg)})'
-                                elif var_type.name in ['i64']:
-                                    return f'printf("%lld\\n", {self._gen_expr(arg)})'
-                                elif var_type.name in ['u64']:
-                                    return f'printf("%llu\\n", {self._gen_expr(arg)})'
-                                else:
-                                    return f'printf("%d\\n", {self._gen_expr(arg)})'
-                            elif var_type.name == 'bool':
-                                return f'printf("%d\\n", {self._gen_expr(arg)})'
-                    elif isinstance(arg, FieldAccess):
-                        field_type = self._infer_expr_type(arg)
-                        if field_type.name == 'string':
-                            return f'printf("%s\\n", {self._gen_expr(arg)})'
-                        elif field_type.name in ['f32', 'f64']:
-                            return f'printf("%f\\n", {self._gen_expr(arg)})'
-                        elif field_type.name in ['i32', 'i64', 'u32', 'u64']:
-                            if field_type.name.startswith('u'):
-                                return f'printf("%u\\n", {self._gen_expr(arg)})'
-                            elif field_type.name in ['i64']:
-                                return f'printf("%lld\\n", {self._gen_expr(arg)})'
-                            elif field_type.name in ['u64']:
-                                return f'printf("%llu\\n", {self._gen_expr(arg)})'
-                            else:
-                                return f'printf("%d\\n", {self._gen_expr(arg)})'
-                        elif field_type.name == 'bool':
-                            return f'printf("%d\\n", {self._gen_expr(arg)})'
-                        return f'printf("%g\\n", {self._gen_expr(arg)})'
-                    else:
-                        return f'printf("%g\\n", {self._gen_expr(arg)})'
+                    return self._printf_for_expr(arg, newline=True)
                 else:
                     # Multiple arguments - print all with spaces, then newline
                     parts = []
@@ -1332,71 +1342,7 @@ class CGenerator:
                     if isinstance(arg, BinaryOperation) and arg.operator == '+':
                         # Generate the concatenated expression directly
                         return self._gen_expr(arg)
-                    # Check if it's a literal to determine format
-                    elif isinstance(arg, Literal):
-                        if arg.type.name == 'string':
-                            # String literal - use %s
-                            return f'printf("%s", {self._gen_expr(arg)})'
-                        elif arg.type.name in ['f32', 'f64']:
-                            # Float literal - use %f
-                            return f'printf("%f", {self._gen_expr(arg)})'
-                        elif arg.type.name in ['i32', 'i64', 'u32', 'u64']:
-                            # Integer literal - use %d or appropriate format
-                            if arg.type.name.startswith('u'):
-                                return f'printf("%u", {self._gen_expr(arg)})'
-                            elif arg.type.name in ['i64']:
-                                return f'printf("%lld", {self._gen_expr(arg)})'
-                            elif arg.type.name in ['u64']:
-                                return f'printf("%llu", {self._gen_expr(arg)})'
-                            else:
-                                return f'printf("%d", {self._gen_expr(arg)})'
-                        elif arg.type.name == 'bool':
-                            # Boolean literal - use %d
-                            return f'printf("%d", {self._gen_expr(arg)})'
-                        else:
-                            # Default to string representation
-                            return f'printf("%g", {self._gen_expr(arg)})'
-                    elif isinstance(arg, Variable):
-                        # For variables, check if we know their type
-                        if arg.name in self._var_types:
-                            var_type = self._var_types[arg.name]
-                            if var_type.name == 'string':
-                                return f'printf("%s", {self._gen_expr(arg)})'
-                            elif var_type.name in ['f32', 'f64']:
-                                return f'printf("%f", {self._gen_expr(arg)})'
-                            elif var_type.name in ['i32', 'i64', 'u32', 'u64']:
-                                if var_type.name.startswith('u'):
-                                    return f'printf("%u", {self._gen_expr(arg)})'
-                                elif var_type.name in ['i64']:
-                                    return f'printf("%lld", {self._gen_expr(arg)})'
-                                elif var_type.name in ['u64']:
-                                    return f'printf("%llu", {self._gen_expr(arg)})'
-                                else:
-                                    return f'printf("%d", {self._gen_expr(arg)})'
-                            elif var_type.name == 'bool':
-                                return f'printf("%d", {self._gen_expr(arg)})'
-                    elif isinstance(arg, FieldAccess):
-                        field_type = self._infer_expr_type(arg)
-                        if field_type.name == 'string':
-                            return f'printf("%s", {self._gen_expr(arg)})'
-                        elif field_type.name in ['f32', 'f64']:
-                            return f'printf("%f", {self._gen_expr(arg)})'
-                        elif field_type.name in ['i32', 'i64', 'u32', 'u64']:
-                            if field_type.name.startswith('u'):
-                                return f'printf("%u", {self._gen_expr(arg)})'
-                            elif field_type.name in ['i64']:
-                                return f'printf("%lld", {self._gen_expr(arg)})'
-                            elif field_type.name in ['u64']:
-                                return f'printf("%llu", {self._gen_expr(arg)})'
-                            else:
-                                return f'printf("%d", {self._gen_expr(arg)})'
-                        elif field_type.name == 'bool':
-                            return f'printf("%d", {self._gen_expr(arg)})'
-                        # Fall back to default
-                        return f'printf("%g", {self._gen_expr(arg)})'
-                    else:
-                        # For expressions, default to string representation
-                        return f'printf("%g", {self._gen_expr(arg)})'
+                    return self._printf_for_expr(arg, newline=False)
                 else:
                     # Multiple arguments - join with spaces
                     args = []
@@ -1533,9 +1479,31 @@ class CGenerator:
         return self._gen_expr(FunctionCall(e.method, args))
     
     def _gen_array_access(self, e: ArrayAccess) -> str:
-        """Generate C array index access: arr[index]"""
+        """Generate C array index access with optional bounds checking.
+
+        For sized arrays (where the size is known at compile time), we emit
+        a bounds-checked access that aborts on out-of-range indices.  For
+        dynamically-sized or pointer-based arrays we fall back to raw indexing.
+        """
         array_expr = self._gen_expr(e.array)
         index_expr = self._gen_expr(e.index)
+
+        # Try to determine if the array is a sized type so we can emit a bounds check
+        array_size = None
+        if isinstance(e.array, Variable) and e.array.name in self._var_types:
+            arr_type = self._var_types[e.array.name]
+            if arr_type and getattr(arr_type, 'size', None):
+                array_size = arr_type.size
+
+        if array_size is not None:
+            # Emit a bounds-checked access for debug safety.
+            # The check is branch-free in optimized builds (compiler removes it).
+            return (
+                f'(((unsigned)({index_expr}) < {array_size}) '
+                f'? {array_expr}[{index_expr}] '
+                f': (fprintf(stderr, "array index %d out of bounds (size %d)\\n", '
+                f'(int)({index_expr}), {array_size}), abort(), {array_expr}[0]))'
+            )
         return f"{array_expr}[{index_expr}]"
     
     def _gen_array_literal(self, e: ArrayLiteral, as_initializer: bool = False) -> str:

@@ -1,0 +1,5 @@
+# Minimal logging package for tests/examples.
+
+function greet() -> void {
+    println("hello from logpkg")
+}
