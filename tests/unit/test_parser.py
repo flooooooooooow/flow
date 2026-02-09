@@ -575,3 +575,18 @@ class TestParserUnit:
         assert isinstance(var_decl.initializer, FunctionCall)
         assert var_decl.initializer.name == "outer"
         assert len(var_decl.initializer.arguments) == 2
+
+
+class TestParserCases:
+    """Ensure shared edge/error cases are exercised."""
+
+    @pytest.mark.parametrize("name, code", EDGE_CASES.items())
+    def test_edge_cases_tokenize(self, name, code):
+        lexer = Lexer(code)
+        tokens = lexer.tokenize()
+        assert tokens is not None
+
+    @pytest.mark.parametrize("name, code", ERROR_CASES.items())
+    def test_error_cases_raise(self, name, code):
+        with pytest.raises(SyntaxError):
+            parse_flow_code(code)

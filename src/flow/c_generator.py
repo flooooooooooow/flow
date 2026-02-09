@@ -1187,50 +1187,7 @@ class CGenerator:
                             printf_calls.append(f'printf("%g", {part_expr})')
                     return '; '.join(printf_calls)
                 
-                # Not string concat - handle as before
-                if False:  # Placeholder to keep elif structure
-                    pass
-                elif right_is_string:
-                    pass
-                elif left_is_string or right_is_string:
-                    # This branch is now dead code due to the restructure above
-                    parts = []
-                    if isinstance(e.left, Literal) and e.left.type.name == 'string':
-                        parts.append(f'printf("%s", {left_expr})')
-                    elif left_is_string:
-                        parts.append(f'printf("%s", {left_expr})')
-                    else:
-                        left_type = self._infer_expr_type(e.left)
-                        if left_type.name in ['i32', 'i64']:
-                            parts.append(f'printf("%d", {left_expr})')
-                        elif left_type.name.startswith('u'):
-                            parts.append(f'printf("%u", {left_expr})')
-                        elif left_type.name in ['f32', 'f64']:
-                            parts.append(f'printf("%f", {left_expr})')
-                        else:
-                            parts.append(f'printf("%g", {left_expr})')
-                    
-                    if isinstance(e.right, Literal) and e.right.type.name == 'string':
-                        parts.append(f'printf("%s", {right_expr})')
-                    elif right_is_string:
-                        parts.append(f'printf("%s", {right_expr})')
-                    else:
-                        right_type = self._infer_expr_type(e.right)
-                        if right_type.name in ['i32', 'i64']:
-                            parts.append(f'printf("%d", {right_expr})')
-                        elif right_type.name.startswith('u'):
-                            parts.append(f'printf("%u", {right_expr})')
-                        elif right_type.name in ['f32', 'f64']:
-                            parts.append(f'printf("%f", {right_expr})')
-                        else:
-                            parts.append(f'printf("%g", {right_expr})')
-                    
-                    # Add newline to the last part
-                    if parts:
-                        # Add a newline after the concatenated output
-                        parts.append('printf("\\n")')
-                    
-                    return '; '.join(parts)
+                # Not string concat - fall through to normal binary op handling
             
             # Check if we need to remove parentheses around operands
             # This prevents excessive nesting like (((a == 1) or (b == 2)))

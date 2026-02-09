@@ -16,8 +16,7 @@ flowc = "flow.transpiler:main"
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0", 
-    "pytest-mock>=3.10",
-    "hypothesis>=6.0"
+    "pytest-mock>=3.10"
 ]
 
 [tool.setuptools]
