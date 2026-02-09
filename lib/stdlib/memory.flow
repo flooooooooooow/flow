@@ -51,10 +51,10 @@ export function aligned_alloc(alignment: usize, size: usize) -> ptr<void> {
 # Memory manipulation functions
 export function memcpy(dest: ptr<void>, src: ptr<void>, n: usize) -> ptr<void> {
     # Copy n bytes from src to dest
-    # Regions may overlap - behavior is undefined
+    # Regions may overlap - implementation uses memmove for safety
     # Returns dest pointer
     # Implemented as intrinsic in MLIR generator
-    return dest
+    return memmove(dest, src, n)
 }
 
 export function memmove(dest: ptr<void>, src: ptr<void>, n: usize) -> ptr<void> {

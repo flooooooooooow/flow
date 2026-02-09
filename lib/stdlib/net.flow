@@ -27,14 +27,16 @@ const SOCK_RAW: i32 = 3
 # =============================================================================
 
 struct SockAddr_in {
-    family: i16,
+    len: i8,
+    family: i8,
     port: i16,
     addr: i32,
-    zero: i64  # Padding
+    zero: i64  # Padding to 16 bytes
 }
 
 function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
     return SockAddr_in { 
+        len: 16,
         family: 2,  # AF_INET
         port: port, 
         addr: addr,
