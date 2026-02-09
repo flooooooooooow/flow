@@ -34,7 +34,10 @@ def run_mlir(path: Path, emit_gpu: bool, emit_spirv: bool) -> tuple[int, str]:
     if emit_spirv:
         args.append("--emit-spirv")
     env = os.environ.copy()
-    env["PYTHONPATH"] = f\"{ROOT / 'src'}\" + (\":\" + env.get(\"PYTHONPATH\") if env.get(\"PYTHONPATH\") else \"\")\n+    res = subprocess.run(args, cwd=str(ROOT), capture_output=True, text=True, env=env)
+    env["PYTHONPATH"] = str(ROOT / "src") + (
+        ":" + env.get("PYTHONPATH") if env.get("PYTHONPATH") else ""
+    )
+    res = subprocess.run(args, cwd=str(ROOT), capture_output=True, text=True, env=env)
     return res.returncode, res.stderr + res.stdout
 
 
