@@ -113,7 +113,9 @@ class ModuleResolver:
                             elif existing.is_exported and not is_exported:
                                 pass  # Keep existing exported symbol
                             elif is_exported == existing.is_exported:
-                                print(f"Warning: Symbol '{name}' collision between {file_path} and {existing.source_file}")
+                                raise ValueError(
+                                    f"Symbol '{name}' collision between {file_path} and {existing.source_file}"
+                                )
                     else:
                         self.symbol_table[name] = symbol
                 
@@ -166,11 +168,9 @@ class ModuleResolver:
     def _resolve_symbols(self):
         """Resolve all symbol references and check for missing symbols."""
         # This would be used to resolve symbol references in expressions
-        # For now, we just check for circular imports
         if self.circular_imports:
-            print("Warning: Circular imports detected:")
-            for cycle in self.circular_imports:
-                print("  -> ".join(cycle))
+            cycles = [" -> ".join(cycle) for cycle in self.circular_imports]
+            raise ValueError("Circular imports detected:\n  " + "\n  ".join(cycles))
 
     def get_module_info(self, file_path: str) -> Optional[ModuleInfo]:
         """Get information about a specific module."""

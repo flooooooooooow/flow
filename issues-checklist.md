@@ -48,17 +48,17 @@
 - [ ] #51 [MN-M2] Monomorphize: ambiguous name mangling (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/51
 - [ ] #50 [MN-M1] Monomorphize: generic function instantiation is unimplemented (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/50
 - [ ] #49 [MN-C1] Monomorphize: no termination guard against infinite instantiation (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/49
-- [ ] #48 [MR-L1] Module resolver: _resolve_symbols is a stub (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/48
+- [x] #48 [MR-L1] Module resolver: _resolve_symbols is a stub (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/48
 - [x] #47 [MR-M3] Module resolver: missing imports produce warning but compilation continues (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/47
-- [ ] #46 [MR-M2] Module resolver: symbol collisions silently dropped (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/46
-- [ ] #45 [MR-M1] Module resolver: circular imports silently drop symbols (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/45
+- [x] #46 [MR-M2] Module resolver: symbol collisions silently dropped (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/46
+- [x] #45 [MR-M1] Module resolver: circular imports silently drop symbols (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/45
 - [x] #44 [MR-C1] Module resolver: path traversal via import statements (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/44
 - [x] #43 [TP-L1] Transpiler: --strict flag is a no-op (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/43
 - [ ] #42 [TP-M1] Transpiler: temp file not cleaned up on MLIR optimization failure (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/42
 - [ ] #41 [TP-C1] Transpiler: unreachable code / control flow bug (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/41
 - [ ] #40 [MG-L1] MLIR generator: type dispatch uses string comparison (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/40
-- [ ] #39 [MG-M6] MLIR generator: vector literal puts SSA names in dense<> attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/39
-- [ ] #38 [MG-M5] MLIR generator: flat symbol table breaks variable shadowing (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/38
+- [x] #39 [MG-M6] MLIR generator: vector literal puts SSA names in dense<> attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/39
+- [x] #38 [MG-M5] MLIR generator: flat symbol table breaks variable shadowing (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/38
 - [x] #37 [MG-M4] MLIR generator: unary minus references undefined %c0 (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/37
 - [x] #36 [MG-M3] MLIR generator: has_return misses returns inside if-else (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/36
 - [x] #35 [MG-M2] MLIR generator: constants at module scope produce invalid MLIR (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/35
