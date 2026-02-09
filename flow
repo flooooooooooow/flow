@@ -324,12 +324,37 @@ run_window_program() {
 }
 # Generate MLIR only
 generate_mlir() {
-    local program="$1"
-    shift
+    local program=""
+    local flags=()
+    # Accept flags before or after the program path
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -*)
+                flags+=("$1")
+                # Flags that take a value
+                case "$1" in
+                    --spirv-out|--output|-o|--opt-level)
+                        shift
+                        if [ $# -gt 0 ]; then
+                            flags+=("$1")
+                        fi
+                        ;;
+                esac
+                ;;
+            *)
+                if [ -z "$program" ]; then
+                    program="$1"
+                else
+                    flags+=("$1")
+                fi
+                ;;
+        esac
+        shift
+    done
     local basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     
-    if [ ! -f "$program" ]; then
+    if [ -z "$program" ] || [ ! -f "$program" ]; then
         print_error "Program not found: $program"
         exit 1
     fi
@@ -338,7 +363,7 @@ generate_mlir() {
 
     check_mlir_deps
 
-    if python3 -m "$FLOWC_MODULE" "$program" --mlir "$@" -o "$build_dir/$basename.mlir"; then
+    if python3 -m "$FLOWC_MODULE" "$program" --mlir "${flags[@]}" -o "$build_dir/$basename.mlir"; then
         print_success "Generated MLIR: $build_dir/$basename.mlir"
         echo "----------------------------------------"
         cat "$build_dir/$basename.mlir"
