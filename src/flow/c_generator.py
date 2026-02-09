@@ -1196,11 +1196,14 @@ class CGenerator:
             # This prevents excessive nesting like (((a == 1) or (b == 2)))
             def remove_outer_parens(expr):
                 if expr.startswith('(') and expr.endswith(')'):
-                    # Check if it's safe to remove (simple check for now)
                     inner = expr[1:-1]
-                    # Only remove if the inner expression doesn't have unbalanced parentheses
-                    if inner.count('(') == inner.count(')'):
-                        return inner
+                    if inner.count('(') != inner.count(')'):
+                        return expr
+                    # Only remove if inner is a simple token (no operators)
+                    for ch in inner:
+                        if ch in "+-*/%&|^<>=!?:,":
+                            return expr
+                    return inner
                 return expr
             
             # For logical operators, be more aggressive about removing parentheses

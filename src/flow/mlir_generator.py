@@ -221,7 +221,7 @@ class MLIRGenerator:
             mlir_code.append(body_mlir)
         
         # Add explicit return for void functions if none exists
-        has_return = any(isinstance(stmt, ReturnStatement) for stmt in func.body.statements)
+        has_return = self._block_has_return(func.body)
         if not has_return and func.return_type.name == 'void':
             mlir_code.append(f"{self.indent()}func.return")
         
@@ -242,6 +242,29 @@ class MLIRGenerator:
                     break
         
         return "\n".join(mlir_code)
+
+    def _block_has_return(self, block: Block) -> bool:
+        for stmt in block.statements:
+            if isinstance(stmt, ReturnStatement):
+                return True
+            if isinstance(stmt, IfStatement):
+                if self._block_has_return(stmt.then_block):
+                    return True
+                for _, elif_block in stmt.elif_blocks:
+                    if self._block_has_return(elif_block):
+                        return True
+                if stmt.else_block and self._block_has_return(stmt.else_block):
+                    return True
+            if isinstance(stmt, WhileStatement):
+                if self._block_has_return(stmt.body):
+                    return True
+            if isinstance(stmt, ForStatement):
+                if self._block_has_return(stmt.body):
+                    return True
+            if isinstance(stmt, Block):
+                if self._block_has_return(stmt):
+                    return True
+        return False
     
     def generate_statement(self, stmt: Statement) -> str:
         stmt_type = type(stmt).__name__
@@ -1366,7 +1389,12 @@ class MLIRGenerator:
         if un_op.operator == '-':
             if 'f32' in ty or 'f64' in ty:
                 return ssa_name, operand_ops + [f"{self.indent()}{ssa_name} = arith.negf {operand_ssa} : {ty}"]
-            return ssa_name, operand_ops + [f"{self.indent()}{ssa_name} = arith.subi %c0, {operand_ssa} : {ty}"]
+            zero_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops = list(operand_ops)
+            ops.append(f"{self.indent()}{zero_ssa} = arith.constant 0 : {ty}")
+            ops.append(f"{self.indent()}{ssa_name} = arith.subi {zero_ssa}, {operand_ssa} : {ty}")
+            return ssa_name, ops
         elif un_op.operator in ['!', 'not']:
             # %not = xor %x, true
             c1 = f"%{self.function_counter}"
@@ -1378,7 +1406,10 @@ class MLIRGenerator:
             
             # Ensure operand is i1 (boolean)
             if 'i1' not in ty:
-                ops.append(f"{self.indent()}{cast_name} = arith.cmpi ne {operand_ssa}, %c0 : {ty}")
+                zero_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{zero_ssa} = arith.constant 0 : {ty}")
+                ops.append(f"{self.indent()}{cast_name} = arith.cmpi ne {operand_ssa}, {zero_ssa} : {ty}")
                 operand_ssa = cast_name
                 ty = 'i1'
             
@@ -2418,21 +2449,30 @@ class MLIRGenerator:
         """Generate MLIR for constant declaration"""
         mlir_code = []
         mlir_code.append(f"{self.indent()}// Constant: {const.name}")
-        
-        # Generate the constant value
-        value_ssa, value_ops = self.generate_expression(const.value)
-        
-        # Add any operations needed to compute the value
-        mlir_code.extend(value_ops)
-        
-        # Store the constant in a global variable
+
         mlir_type = self.flow_type_to_mlir(const.type)
         if const.type.name == 'bool':
             mlir_type = 'i1'
-        
-        # Create a global constant
-        mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({value_ssa}) : {mlir_type}")
-        
+
+        # Module-scope globals should not rely on SSA values from local ops.
+        if isinstance(const.value, Literal):
+            if const.value.type.name == "string":
+                # String constants handled via string globals; no separate const emitted.
+                str_val = const.value.value
+                if str_val not in self.string_constants:
+                    global_name = f"str_{self.string_counter}"
+                    self.string_counter += 1
+                    self.string_constants[str_val] = global_name
+                return ""
+            literal_value = const.value.value
+            mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({literal_value}) : {mlir_type}")
+            return "\n".join(mlir_code)
+
+        # Fallback: emit zero-initialized constant
+        zero_value = "0"
+        if mlir_type in ["f32", "f64"]:
+            zero_value = "0.0"
+        mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({zero_value}) : {mlir_type}")
         return "\n".join(mlir_code)
 
 def flow_to_mlir(declarations: List[Any], source_file: str = "unknown.flow", emit_debug_info: bool = False, emit_gpu: bool = False) -> str:
