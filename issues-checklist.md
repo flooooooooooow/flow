@@ -28,10 +28,10 @@
 - [x] #71 [SL-L3] Stdlib: alignment functions don't validate power-of-two (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/71
 - [x] #70 [SL-L2] Stdlib: pthread externs use ptr<i8> for mutex types (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/70
 - [x] #69 [SL-L1] Stdlib: atomic operations only support i32 (enhancement, low, stdlib) https://github.com/flooooooooooow/flow/issues/69
-- [ ] #68 [SL-M7] Stdlib: AF_INET6 constant is Linux-specific (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/68
+- [x] #68 [SL-M7] Stdlib: AF_INET6 constant is Linux-specific (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/68
 - [x] #67 [SL-M6] Stdlib: format_hex_ptr truncates 64-bit pointers (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/67
 - [x] #66 [SL-M5] Stdlib: memory_pool_create doesn't check malloc return (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/66
-- [ ] #65 [SL-M4] Stdlib: POSIX constants are Linux-specific, wrong on macOS (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/65
+- [x] #65 [SL-M4] Stdlib: POSIX constants are Linux-specific, wrong on macOS (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/65
 - [ ] #64 [SL-M3] Stdlib: network SockAddr_in has wrong types and layout (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/64
 - [ ] #63 [SL-M2] Stdlib: collection constructors initialize data to null (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/63
 - [ ] #62 [SL-M1] Stdlib: all slice accesses are bounds-unchecked (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/62
