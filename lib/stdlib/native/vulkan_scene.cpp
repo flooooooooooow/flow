@@ -172,6 +172,8 @@ static bool fileNewer(const char* a, const char* b) {
     return sa.st_mtime > sb.st_mtime;
 }
 
+static bool runCommand(const std::vector<std::string>& args);
+
 static void ensureShadersBuilt() {
     const char* vertSrc = "demos/vulkan_scene/shaders/scene.vert";
     const char* fragSrc = "demos/vulkan_scene/shaders/scene.frag";
@@ -184,17 +186,13 @@ static void ensureShadersBuilt() {
         return;
     }
     if (buildVert) {
-        std::string cmd = std::string("glslangValidator -V ") + vertSrc + " -o " + vertSpv;
-        int rc = std::system(cmd.c_str());
-        if (rc != 0) {
+        if (!runCommand({"glslangValidator", "-V", vertSrc, "-o", vertSpv})) {
             std::cerr << "error: failed to compile vertex shader via glslangValidator\n";
             throw std::runtime_error("shader compilation failed");
         }
     }
     if (buildFrag) {
-        std::string cmd = std::string("glslangValidator -V ") + fragSrc + " -o " + fragSpv;
-        int rc = std::system(cmd.c_str());
-        if (rc != 0) {
+        if (!runCommand({"glslangValidator", "-V", fragSrc, "-o", fragSpv})) {
             std::cerr << "error: failed to compile fragment shader via glslangValidator\n";
             throw std::runtime_error("shader compilation failed");
         }
@@ -242,6 +240,31 @@ static std::string runCommandCapture(const std::vector<std::string>& args) {
         return "";
     }
     return output;
+}
+
+static bool runCommand(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        return false;
+    }
+    pid_t pid = fork();
+    if (pid < 0) {
+        return false;
+    }
+    if (pid == 0) {
+        std::vector<char*> argv;
+        argv.reserve(args.size() + 1);
+        for (const auto& arg : args) {
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv.push_back(nullptr);
+        execvp(argv[0], argv.data());
+        _exit(127);
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        return false;
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 static std::string pickFileDialog(const char* title) {
@@ -2886,7 +2909,8 @@ private:
                 }
             }
         } else {
-            std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+            const char* msg = (pCallbackData && pCallbackData->pMessage) ? pCallbackData->pMessage : "";
+            std::cerr << "validation layer: " << msg << std::endl;
         }
         return VK_FALSE;
     }

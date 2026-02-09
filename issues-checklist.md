@@ -13,10 +13,10 @@
 - [x] #86 [CLI-L2] CLI: no .flow file extension validation (enhancement, low) https://github.com/flooooooooooow/flow/issues/86
 - [x] #85 [CLI-L1] CLI: missing set -euo pipefail (enhancement, low) https://github.com/flooooooooooow/flow/issues/85
 - [x] #84 [CLI-M1] CLI: predictable temp directory names (bug, medium, security) https://github.com/flooooooooooow/flow/issues/84
-- [ ] #83 [CLI-C1] CLI: shell injection via unquoted variable interpolation (bug, critical, security) https://github.com/flooooooooooow/flow/issues/83
+- [x] #83 [CLI-C1] CLI: shell injection via unquoted variable interpolation (bug, critical, security) https://github.com/flooooooooooow/flow/issues/83
 - [ ] #82 [RT-L2] Runtime: all Vulkan state is global/static (enhancement, low, runtime) https://github.com/flooooooooooow/flow/issues/82
 - [ ] #81 [RT-L1] Runtime: macOS window delegate leaks (bug, low, runtime) https://github.com/flooooooooooow/flow/issues/81
-- [ ] #80 [RT-M3] Runtime: debugCallback null dereference (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/80
+- [x] #80 [RT-M3] Runtime: debugCallback null dereference (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/80
 - [ ] #79 [RT-M2] Runtime: Vulkan resource leak on init failure (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/79
 - [ ] #78 **Severity:** Medium | **Category:** Native Runtime" (Short-term) https://github.com/flooooooooooow/flow/issues/78
 - [ ] #77 ## Audit ID: RT-M1 () https://github.com/flooooooooooow/flow/issues/77
@@ -24,7 +24,7 @@
 - [ ] #75 ``` () https://github.com/flooooooooooow/flow/issues/75
 - [ ] #74 FILE* pipe = popen(script.c_str() () https://github.com/flooooooooooow/flow/issues/74
 - [ ] #73 [RT-M1] Runtime: shell injection via osascript in pickFileDialog () https://github.com/flooooooooooow/flow/issues/73
-- [ ] #72 [RT-C1] Runtime: command injection via std::system() in shader compilation (bug, critical, runtime, security) https://github.com/flooooooooooow/flow/issues/72
+- [x] #72 [RT-C1] Runtime: command injection via std::system() in shader compilation (bug, critical, runtime, security) https://github.com/flooooooooooow/flow/issues/72
 - [x] #71 [SL-L3] Stdlib: alignment functions don't validate power-of-two (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/71
 - [x] #70 [SL-L2] Stdlib: pthread externs use ptr<i8> for mutex types (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/70
 - [x] #69 [SL-L1] Stdlib: atomic operations only support i32 (enhancement, low, stdlib) https://github.com/flooooooooooow/flow/issues/69
