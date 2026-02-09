@@ -70,6 +70,20 @@ def main():
         help="GPU backend (default: cuda)",
     )
     parser.add_argument(
+        "--mlir-gpu",
+        action="store_true",
+        help="Emit MLIR GPU dialect for @gpu functions",
+    )
+    parser.add_argument(
+        "--emit-spirv",
+        action="store_true",
+        help="Lower MLIR GPU module to SPIR-V (requires mlir-opt/mlir-translate)",
+    )
+    parser.add_argument(
+        "--spirv-out",
+        help="SPIR-V output path (default: build/<input>.spv)",
+    )
+    parser.add_argument(
         "--module-info", action="store_true", help="Show module information"
     )
     parser.add_argument(
@@ -320,7 +334,10 @@ def main():
         try:
             source_file = Path(args.input).name
             out_code = flow_to_mlir(
-                declarations, source_file=source_file, emit_debug_info=args.debug_info
+                declarations,
+                source_file=source_file,
+                emit_debug_info=args.debug_info,
+                emit_gpu=args.mlir_gpu,
             )
 
             # Apply optimizations if requested
@@ -363,6 +380,23 @@ def main():
 
         except Exception as e:
             print(f"MLIR generation error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Optional: Lower GPU module to SPIR-V
+    if backend != "c" and args.emit_spirv:
+        try:
+            from .mlir_spirv import MLIRSPIRVCompiler
+
+            spirv_out = args.spirv_out
+            if not spirv_out:
+                out_base = Path(args.input).stem + ".spv"
+                spirv_out = str(Path("build") / out_base)
+            Path(spirv_out).parent.mkdir(parents=True, exist_ok=True)
+            compiler = MLIRSPIRVCompiler()
+            compiler.compile_mlir_to_spirv(out_code, spirv_out)
+            print(f"Generated SPIR-V: {spirv_out}", file=sys.stderr)
+        except Exception as e:
+            print(f"SPIR-V generation failed: {e}", file=sys.stderr)
             sys.exit(1)
 
     # Handle JIT execution

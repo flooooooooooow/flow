@@ -97,7 +97,7 @@ class MLIRGenerator:
                 return sum(field['size'] for field in self.struct_layouts[type_name].values())
             return 4  # Default size
     
-    def generate_module(self, declarations: List[Any]) -> str:
+    def generate_module(self, declarations: List[Any], emit_gpu: bool = False) -> str:
         mlir_code = []
         
         # Reset state for new module
@@ -105,9 +105,18 @@ class MLIRGenerator:
         self.string_counter = 0
         self.needs_printf = False
         self.declarations = declarations  # Store declarations for type lookup
+
+        # Split GPU kernels from CPU declarations (GPU kernels are handled separately)
+        gpu_functions = []
+        cpu_decls = []
+        for decl in declarations:
+            if type(decl).__name__ == 'FunctionDecl' and hasattr(decl, 'attributes') and 'gpu' in decl.attributes:
+                gpu_functions.append(decl)
+            else:
+                cpu_decls.append(decl)
         
         # Calculate struct layouts
-        self._calculate_struct_layouts(declarations)
+        self._calculate_struct_layouts(cpu_decls)
         
         # Module header with required dialects and debug info
         if self.emit_debug_info:
@@ -117,7 +126,7 @@ class MLIRGenerator:
         self.indent_level += 1
         
         # First pass: collect all function signatures in symbol table
-        for decl in declarations:
+        for decl in cpu_decls:
             decl_type = type(decl).__name__
             if decl_type == 'FunctionDecl':
                 # Add function to symbol table
@@ -130,7 +139,7 @@ class MLIRGenerator:
         
         # Second pass: generate all declarations to collect string constants
         decl_code = []
-        for decl in declarations:
+        for decl in cpu_decls:
             decl_type = type(decl).__name__
             if decl_type == 'FunctionDecl':
                 decl_code.append(self.generate_function(decl))
@@ -159,6 +168,15 @@ class MLIRGenerator:
         
         # Add generated declarations
         mlir_code.extend(decl_code)
+
+        # Append GPU module if requested
+        if emit_gpu and gpu_functions:
+            from .mlir_gpu_codegen import MLIRGpuGenerator
+            gpu_gen = MLIRGpuGenerator()
+            gpu_gen.indent_level = self.indent_level
+            gpu_module = gpu_gen.generate_gpu_module(gpu_functions)
+            if gpu_module:
+                mlir_code.append(gpu_module)
         
         self.indent_level -= 1
         mlir_code.append("}")
@@ -2368,7 +2386,7 @@ class MLIRGenerator:
         
         return "\n".join(mlir_code)
 
-def flow_to_mlir(declarations: List[Any], source_file: str = "unknown.flow", emit_debug_info: bool = False) -> str:
+def flow_to_mlir(declarations: List[Any], source_file: str = "unknown.flow", emit_debug_info: bool = False, emit_gpu: bool = False) -> str:
     generator = MLIRGenerator(source_file)
     generator.emit_debug_info = emit_debug_info
-    return generator.generate_module(declarations)
+    return generator.generate_module(declarations, emit_gpu=emit_gpu)
