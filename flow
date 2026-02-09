@@ -681,7 +681,8 @@ run_tests() {
     local failed_files=""
     
     # Create temp directory for test outputs
-    local test_build_dir="/tmp/flow_test_$$"
+    local test_build_dir
+    test_build_dir="$(mktemp -d -t flow_test)"
     mkdir -p "$test_build_dir"
     
     for suite in "tests" "examples"; do
@@ -918,7 +919,8 @@ run_runtime_tests() {
     print_info "Running FLOW runtime tests..."
     
     local runtime_dir="$SCRIPT_DIR/tests/runtime"
-    local build_dir="/tmp/flow_runtime_test_$$"
+    local build_dir
+    build_dir="$(mktemp -d -t flow_runtime_test)"
     local verbose=0
     local targets=()
 
@@ -1077,7 +1079,8 @@ run_mlir_tests() {
     fi
     
     local mlir_test_dir="$SCRIPT_DIR/tests/mlir"
-    local build_dir="/tmp/flow_mlir_test_$$"
+    local build_dir
+    build_dir="$(mktemp -d -t flow_mlir_test)"
     mkdir -p "$build_dir"
     
     # If no dedicated MLIR tests, use a subset of core tests

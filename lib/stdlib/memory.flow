@@ -269,7 +269,7 @@ export function memory_dump(ptr: ptr<void>, size: usize, bytes_per_line: usize) 
         let j: usize = 0
         while j < bytes_per_line and i + j < size {
             let byte: u8 = p[i + j]
-            print(format_hex(byte as u32))
+            print(format_hex(byte as usize))
             print(" ")
             j = j + 1
         }
@@ -312,7 +312,7 @@ export function memory_validate(ptr: ptr<void>, size: usize) -> bool {
 }
 
 # Helper functions
-export function format_hex(value: u32) -> str {
+export function format_hex(value: usize) -> str {
     # Format integer as hexadecimal string
     # Simplified implementation
     return "0x0"  # Placeholder
@@ -320,5 +320,5 @@ export function format_hex(value: u32) -> str {
 
 export function format_hex_ptr(ptr: ptr<void>) -> str {
     # Format pointer as hexadecimal string
-    return format_hex(ptr as u32)
+    return format_hex(ptr as usize)
 }

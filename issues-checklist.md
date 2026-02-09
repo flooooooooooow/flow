@@ -12,7 +12,7 @@
 - [x] #87 [CLI-L3] CLI: hardcoded LLVM path (enhancement, low) https://github.com/flooooooooooow/flow/issues/87
 - [x] #86 [CLI-L2] CLI: no .flow file extension validation (enhancement, low) https://github.com/flooooooooooow/flow/issues/86
 - [x] #85 [CLI-L1] CLI: missing set -euo pipefail (enhancement, low) https://github.com/flooooooooooow/flow/issues/85
-- [ ] #84 [CLI-M1] CLI: predictable temp directory names (bug, medium, security) https://github.com/flooooooooooow/flow/issues/84
+- [x] #84 [CLI-M1] CLI: predictable temp directory names (bug, medium, security) https://github.com/flooooooooooow/flow/issues/84
 - [ ] #83 [CLI-C1] CLI: shell injection via unquoted variable interpolation (bug, critical, security) https://github.com/flooooooooooow/flow/issues/83
 - [ ] #82 [RT-L2] Runtime: all Vulkan state is global/static (enhancement, low, runtime) https://github.com/flooooooooooow/flow/issues/82
 - [ ] #81 [RT-L1] Runtime: macOS window delegate leaks (bug, low, runtime) https://github.com/flooooooooooow/flow/issues/81
@@ -26,10 +26,10 @@
 - [ ] #73 [RT-M1] Runtime: shell injection via osascript in pickFileDialog () https://github.com/flooooooooooow/flow/issues/73
 - [ ] #72 [RT-C1] Runtime: command injection via std::system() in shader compilation (bug, critical, runtime, security) https://github.com/flooooooooooow/flow/issues/72
 - [x] #71 [SL-L3] Stdlib: alignment functions don't validate power-of-two (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/71
-- [ ] #70 [SL-L2] Stdlib: pthread externs use ptr<i8> for mutex types (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/70
-- [ ] #69 [SL-L1] Stdlib: atomic operations only support i32 (enhancement, low, stdlib) https://github.com/flooooooooooow/flow/issues/69
+- [x] #70 [SL-L2] Stdlib: pthread externs use ptr<i8> for mutex types (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/70
+- [x] #69 [SL-L1] Stdlib: atomic operations only support i32 (enhancement, low, stdlib) https://github.com/flooooooooooow/flow/issues/69
 - [ ] #68 [SL-M7] Stdlib: AF_INET6 constant is Linux-specific (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/68
-- [ ] #67 [SL-M6] Stdlib: format_hex_ptr truncates 64-bit pointers (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/67
+- [x] #67 [SL-M6] Stdlib: format_hex_ptr truncates 64-bit pointers (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/67
 - [ ] #66 [SL-M5] Stdlib: memory_pool_create doesn't check malloc return (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/66
 - [ ] #65 [SL-M4] Stdlib: POSIX constants are Linux-specific, wrong on macOS (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/65
 - [ ] #64 [SL-M3] Stdlib: network SockAddr_in has wrong types and layout (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/64
@@ -53,7 +53,7 @@
 - [ ] #46 [MR-M2] Module resolver: symbol collisions silently dropped (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/46
 - [ ] #45 [MR-M1] Module resolver: circular imports silently drop symbols (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/45
 - [ ] #44 [MR-C1] Module resolver: path traversal via import statements (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/44
-- [ ] #43 [TP-L1] Transpiler: --strict flag is a no-op (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/43
+- [x] #43 [TP-L1] Transpiler: --strict flag is a no-op (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/43
 - [ ] #42 [TP-M1] Transpiler: temp file not cleaned up on MLIR optimization failure (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/42
 - [ ] #41 [TP-C1] Transpiler: unreachable code / control flow bug (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/41
 - [ ] #40 [MG-L1] MLIR generator: type dispatch uses string comparison (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/40
@@ -67,7 +67,7 @@
 - [ ] #32 [MG-C2] MLIR generator: incorrect memref.load syntax (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/32
 - [ ] #31 [MG-C1] MLIR generator: undefined variable total_size causes crash (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/31
 - [x] #30 [CG-L3] C generator: dead code behind if False (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/30
-- [ ] #29 [CG-L2] C generator: bool mapped to int32_t (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/29
+- [x] #29 [CG-L2] C generator: bool mapped to int32_t (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/29
 - [ ] #28 [CG-L1] C generator: massive code duplication in print/println handling (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/28
 - [ ] #27 [CG-M5] C generator: lambda with block bodies produces broken code (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/27
 - [ ] #26 [CG-M4] C generator: __auto_type is non-standard C (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/26
@@ -79,19 +79,19 @@
 - [ ] #20 [CG-C1] C generator: code injection via unsanitized identifiers (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/20
 - [ ] #19 [TC-L2] Type checker: no error recovery — first error cascades (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/19
 - [x] #18 [TC-L1] Type checker: SemanticType missing __hash__ (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/18
-- [ ] #17 [TC-M6] Type checker: _parse_type returns VOID for unknown types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/17
+- [x] #17 [TC-M6] Type checker: _parse_type returns VOID for unknown types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/17
 - [ ] #16 [TC-M5] Type checker: builtin functions always return void (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/16
 - [ ] #15 [TC-M4] Type checker: no implicit numeric coercions (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/15
 - [ ] #14 [TC-M3] Type checker: most expression types return VOID (effectively untyped) (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/14
 - [ ] #13 [TC-M2] Type checker: for-loop variable never added to scope (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/13
-- [ ] #12 [TC-M1] Type checker: elif blocks never type-checked (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/12
+- [x] #12 [TC-M1] Type checker: elif blocks never type-checked (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/12
 - [ ] #11 [TC-C2] Type checker: type inference (auto) always produces errors (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/11
-- [ ] #10 [TC-C1] Type checker: crash on uninitialized variable (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/10
+- [x] #10 [TC-C1] Type checker: crash on uninitialized variable (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/10
 - [x] #9 [P-L2] Parser: FunctionDecl.type_params type annotation is wrong (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/9
 - [x] #8 [P-L1] Parser: dead/unreachable elif branch in parse_type (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/8
 - [x] #7 [P-M5] Parser: test name to identifier conversion unsanitized (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/7
 - [x] #6 [P-M4] Parser: invalid escape sequences silently accepted in strings (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/6
-- [ ] #5 [P-M3] Parser: incorrect column tracking for multi-byte/tab characters (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/5
+- [x] #5 [P-M3] Parser: incorrect column tracking for multi-byte/tab characters (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/5
 - [ ] #4 [P-M2] Parser: all dotted method calls modeled as EffectCall (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/4
 - [ ] #3 [P-M1] Parser: fragile return-value detection heuristic (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/3
 - [x] #2 [P-C2] Parser: infinite loop on unterminated blocks (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/2

@@ -718,7 +718,7 @@ class Lexer:
 
                 # Update position
                 self.pos = m.end()
-                self.column += len(token_value)
+                self.column += len(token_value.expandtabs(4))
 
                 return token
 
@@ -728,7 +728,7 @@ class Lexer:
                 self.line += 1
                 self.column = 1
             else:
-                self.column += len(token_value)
+                self.column += len(token_value.expandtabs(4))
 
         return Token(TokenType.EOF, "", self.line, self.column)
 

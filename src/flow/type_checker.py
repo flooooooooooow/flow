@@ -49,6 +49,7 @@ class TypeKind(Enum):
     POINTER = "pointer"
     FUNCTION = "function"
     NULL = "null"  # null pointer type
+    UNKNOWN = "unknown"
 
 
 @dataclass
@@ -85,6 +86,8 @@ class SemanticType:
         elif self.kind == TypeKind.FUNCTION:
             params = ", ".join(str(p) for p in self.param_types)
             return f"({params}) -> {self.return_type}"
+        elif self.kind == TypeKind.UNKNOWN:
+            return self.name or "unknown"
         else:
             return f"<unknown:{self.kind}>"
 
@@ -225,7 +228,7 @@ class TypeChecker:
         if actual is None or expected is None:
             return True
         # Treat void/unknown as a wildcard in lenient checking
-        if actual.kind == TypeKind.VOID or expected.kind == TypeKind.VOID:
+        if actual.kind in {TypeKind.VOID, TypeKind.UNKNOWN} or expected.kind in {TypeKind.VOID, TypeKind.UNKNOWN}:
             return True
         if actual == expected:
             return True
@@ -417,7 +420,10 @@ class TypeChecker:
 
     def _check_var_decl(self, var: VarDecl) -> SemanticType:
         """Type check a variable declaration."""
-        expr_type = self._check_expression(var.initializer)
+        if var.initializer is None:
+            expr_type = SemanticType(TypeKind.UNKNOWN)
+        else:
+            expr_type = self._check_expression(var.initializer)
 
         if var.type and var.type.name != "auto":  # Explicit type annotation
             expected_type = self._parse_type(var.type)
@@ -478,6 +484,13 @@ class TypeChecker:
 
         # Check then block
         then_type = self._check_block(if_stmt.then_block)
+
+        # Check elif blocks
+        for elif_cond, elif_block in if_stmt.elif_blocks:
+            cond_type = self._check_expression(elif_cond)
+            if cond_type.kind != TypeKind.BOOL and not self._is_numeric(cond_type):
+                self.errors.append(f"If condition must be bool, got {cond_type}")
+            self._check_block(elif_block)
 
         # Check else block if present
         if if_stmt.else_block:
@@ -800,8 +813,8 @@ class TypeChecker:
         elif parsed_type.name in self.struct_types:
             return SemanticType(TypeKind.STRUCT, name=parsed_type.name)
         else:
-            # For now, assume it's a valid type
-            return SemanticType(TypeKind.VOID, name=parsed_type.name)
+            # Unknown type (e.g., generic parameter)
+            return SemanticType(TypeKind.UNKNOWN, name=parsed_type.name)
 
     def _collect_return_types(self, block: Block) -> List[SemanticType]:
         types: List[SemanticType] = []

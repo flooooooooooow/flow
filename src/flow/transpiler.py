@@ -116,7 +116,9 @@ def main():
     args = parser.parse_args()
 
     # --lenient overrides --strict
-    strict_mode = not args.lenient
+    strict_mode = args.strict
+    if args.lenient:
+        strict_mode = False
 
     # Read input file
     try:
