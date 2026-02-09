@@ -10,7 +10,7 @@ from .parser import (
     VarDecl, Assignment, IfStatement, WhileStatement, ForStatement,
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
-    HandleStatement, EffectOperation, CapabilityMethod, EffectCall,
+    HandleStatement, EffectOperation, CapabilityMethod, EffectCall, MethodCall,
     MatchStatement, MatchCase, StructPattern, ConstDecl
 )
 import textwrap
@@ -1236,6 +1236,8 @@ class MLIRGenerator:
             return self.generate_function_call(expr)
         elif expr_type == 'EffectCall':
             return self.generate_effect_call(expr)
+        elif expr_type == 'MethodCall':
+            return self.generate_method_call(expr)
         elif expr_type == 'ArrayLiteral':
             return self.generate_array_literal(expr)
         elif expr_type == 'VectorLiteral':
@@ -2165,6 +2167,15 @@ class MLIRGenerator:
             f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(arg_values)}) : ({', '.join(arg_types)}) -> i32"
         )
         return ssa_name, ops
+
+    def generate_method_call(self, method_call: MethodCall) -> tuple[str, List[str]]:
+        if isinstance(method_call.object, Variable):
+            effect_call = EffectCall(method_call.object.name, method_call.method, method_call.arguments)
+            return self.generate_effect_call(effect_call)
+
+        # Desugar to function call with receiver as first argument.
+        args = [method_call.object] + method_call.arguments
+        return self.generate_function_call(FunctionCall(method_call.method, args))
     
     def generate_array_literal(self, array_literal: ArrayLiteral) -> tuple[str, List[str]]:
         ssa_name = f"%{self.function_counter}"

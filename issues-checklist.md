@@ -33,7 +33,7 @@
 - [x] #66 [SL-M5] Stdlib: memory_pool_create doesn't check malloc return (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/66
 - [x] #65 [SL-M4] Stdlib: POSIX constants are Linux-specific, wrong on macOS (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/65
 - [x] #64 [SL-M3] Stdlib: network SockAddr_in has wrong types and layout (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/64
-- [ ] #63 [SL-M2] Stdlib: collection constructors initialize data to null (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/63
+- [x] #63 [SL-M2] Stdlib: collection constructors initialize data to null (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/63
 - [x] #62 [SL-M1] Stdlib: all slice accesses are bounds-unchecked (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/62
 - [x] #61 [SL-C3] Stdlib: memcpy wrapper allows overlap without check (bug, critical, stdlib) https://github.com/flooooooooooow/flow/issues/61
 - [ ] #60 [SL-C2] Stdlib: concurrency primitives provide no actual synchronization (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/60
@@ -92,7 +92,7 @@
 - [x] #7 [P-M5] Parser: test name to identifier conversion unsanitized (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/7
 - [x] #6 [P-M4] Parser: invalid escape sequences silently accepted in strings (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/6
 - [x] #5 [P-M3] Parser: incorrect column tracking for multi-byte/tab characters (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/5
-- [ ] #4 [P-M2] Parser: all dotted method calls modeled as EffectCall (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/4
-- [ ] #3 [P-M1] Parser: fragile return-value detection heuristic (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/3
+- [x] #4 [P-M2] Parser: all dotted method calls modeled as EffectCall (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/4
+- [x] #3 [P-M1] Parser: fragile return-value detection heuristic (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/3
 - [x] #2 [P-C2] Parser: infinite loop on unterminated blocks (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/2
 - [x] #1 [P-C1] Parser: bare except clauses swallow all errors (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/1
