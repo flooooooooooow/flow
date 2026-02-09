@@ -43,6 +43,8 @@ export function aligned_alloc(alignment: usize, size: usize) -> ptr<void> {
     # Alignment must be a power of 2 and size must be multiple of alignment
     # Returns null pointer if allocation fails
     # Implemented as intrinsic in MLIR generator
+    if alignment == 0 { return null }
+    if (alignment & (alignment - 1)) != 0 { return null }
     return null
 }
 
@@ -78,6 +80,10 @@ export function memcmp(s1: ptr<void>, s2: ptr<void>, n: usize) -> i32 {
 }
 
 # Memory alignment and layout functions
+export function is_power_of_two(value: usize) -> bool {
+    if value == 0 { return false }
+    return (value & (value - 1)) == 0
+}
 export function alignof_i32() -> usize {
     # Return alignment requirement of i32 in bytes
     # Implemented as intrinsic in MLIR generator
@@ -124,18 +130,21 @@ export function offset_of_Point(field: str) -> usize {
 export function is_aligned(ptr: ptr<void>, alignment: usize) -> bool {
     # Check if pointer is aligned to specified boundary
     let addr: usize = ptr as usize
+    if !is_power_of_two(alignment) { return false }
     return (addr & (alignment - 1)) == 0
 }
 
 export function align_up(size: usize, alignment: usize) -> usize {
     # Round size up to nearest multiple of alignment
     # Alignment must be power of 2
+    if !is_power_of_two(alignment) { return size }
     return (size + alignment - 1) & ~(alignment - 1)
 }
 
 export function align_down(size: usize, alignment: usize) -> usize {
     # Round size down to nearest multiple of alignment
     # Alignment must be power of 2
+    if !is_power_of_two(alignment) { return size }
     return size & ~(alignment - 1)
 }
 
