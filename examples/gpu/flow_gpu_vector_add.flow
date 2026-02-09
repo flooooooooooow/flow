@@ -50,7 +50,7 @@ function main() -> i32 {
     # Copy back + print
     copy_device_to_host(dev_out, host_out)
     print("Result:")
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < n {
         print(out[i])
         i = i + 1

@@ -366,7 +366,7 @@ function tensor_print(t: Tensor) {
     println(")")
     
     # Print first few elements
-    let n: i32 = t.size
+    let mut n: i32 = t.size
     if n > 10 { n = 10 }
     print("  [")
     for i in 0 to n {

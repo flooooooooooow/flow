@@ -1,9 +1,9 @@
-function dot(x: memref_f32, y: memref_f32, n: i32) -> i32 {
-    let acc: f32 = 0.0
+function dot(x: memref_f32, y: memref_f32, n: i32) -> f32 {
+    let mut acc: f32 = 0.0
     for i in 0..n {
         acc = acc + x[i] * y[i]
     }
-    return 0
+    return acc
 }
 
 function main() -> i32 {

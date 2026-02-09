@@ -5,7 +5,7 @@ import "lib/stdlib/nn.flow"
 function main() -> i32 {
     printf("=== XOR training via lib/stdlib/nn.flow ===\n\n")
 
-    let net: Net2x2x1 = Net2x2x1 {
+    let mut net: Net2x2x1 = Net2x2x1 {
         w00: 0.5, w01: 0.9,
         w10: 0.4, w11: 1.0,
         b0: -0.8, b1: -0.1,
