@@ -1,7 +1,7 @@
 - [ ] #98 [T-L4] Tests: duplicate test files at root and in subdirectories (cleanup, low, testing) https://github.com/flooooooooooow/flow/issues/98
-- [ ] #97 [T-L3] Tests: bare except: pass in test_working_parser.py (bug, low, testing) https://github.com/flooooooooooow/flow/issues/97
-- [ ] #96 [T-L2] Tests: hypothesis dependency listed but never used (cleanup, low, testing) https://github.com/flooooooooooow/flow/issues/96
-- [ ] #95 [T-L1] Tests: ERROR_CASES and EDGE_CASES only partially used (enhancement, low, testing) https://github.com/flooooooooooow/flow/issues/95
+- [x] #97 [T-L3] Tests: bare except: pass in test_working_parser.py (bug, low, testing) https://github.com/flooooooooooow/flow/issues/97
+- [x] #96 [T-L2] Tests: hypothesis dependency listed but never used (cleanup, low, testing) https://github.com/flooooooooooow/flow/issues/96
+- [x] #95 [T-L1] Tests: ERROR_CASES and EDGE_CASES only partially used (enhancement, low, testing) https://github.com/flooooooooooow/flow/issues/95
 - [ ] #94 [T-M1] Tests: temp files with delete=False never cleaned on failure (bug, medium, testing) https://github.com/flooooooooooow/flow/issues/94
 - [ ] #93 [CI-M4] CI: no SAST, DAST, or dependency scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/93
 - [ ] #92 [CI-M3] CI: no dependency pinning or lock file (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/92
@@ -9,9 +9,9 @@
 - [ ] #90 [CI-M1] CI: Python unit tests never run (bug, ci, medium) https://github.com/flooooooooooow/flow/issues/90
 - [ ] #89 [CI-C2] CI: no permissions block — overly broad token access (bug, critical, ci, security) https://github.com/flooooooooooow/flow/issues/89
 - [ ] #88 [CI-C1] CI: pipeline suppresses failures with || true (bug, critical, ci) https://github.com/flooooooooooow/flow/issues/88
-- [ ] #87 [CLI-L3] CLI: hardcoded LLVM path (enhancement, low) https://github.com/flooooooooooow/flow/issues/87
-- [ ] #86 [CLI-L2] CLI: no .flow file extension validation (enhancement, low) https://github.com/flooooooooooow/flow/issues/86
-- [ ] #85 [CLI-L1] CLI: missing set -euo pipefail (enhancement, low) https://github.com/flooooooooooow/flow/issues/85
+- [x] #87 [CLI-L3] CLI: hardcoded LLVM path (enhancement, low) https://github.com/flooooooooooow/flow/issues/87
+- [x] #86 [CLI-L2] CLI: no .flow file extension validation (enhancement, low) https://github.com/flooooooooooow/flow/issues/86
+- [x] #85 [CLI-L1] CLI: missing set -euo pipefail (enhancement, low) https://github.com/flooooooooooow/flow/issues/85
 - [ ] #84 [CLI-M1] CLI: predictable temp directory names (bug, medium, security) https://github.com/flooooooooooow/flow/issues/84
 - [ ] #83 [CLI-C1] CLI: shell injection via unquoted variable interpolation (bug, critical, security) https://github.com/flooooooooooow/flow/issues/83
 - [ ] #82 [RT-L2] Runtime: all Vulkan state is global/static (enhancement, low, runtime) https://github.com/flooooooooooow/flow/issues/82
@@ -66,7 +66,7 @@
 - [ ] #33 [MG-C3] MLIR generator: string literal in expression context crashes (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/33
 - [ ] #32 [MG-C2] MLIR generator: incorrect memref.load syntax (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/32
 - [ ] #31 [MG-C1] MLIR generator: undefined variable total_size causes crash (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/31
-- [ ] #30 [CG-L3] C generator: dead code behind if False (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/30
+- [x] #30 [CG-L3] C generator: dead code behind if False (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/30
 - [ ] #29 [CG-L2] C generator: bool mapped to int32_t (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/29
 - [ ] #28 [CG-L1] C generator: massive code duplication in print/println handling (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/28
 - [ ] #27 [CG-M5] C generator: lambda with block bodies produces broken code (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/27
@@ -78,7 +78,7 @@
 - [ ] #21 [CG-C2] C generator: printf format string vulnerability (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/21
 - [ ] #20 [CG-C1] C generator: code injection via unsanitized identifiers (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/20
 - [ ] #19 [TC-L2] Type checker: no error recovery — first error cascades (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/19
-- [ ] #18 [TC-L1] Type checker: SemanticType missing __hash__ (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/18
+- [x] #18 [TC-L1] Type checker: SemanticType missing __hash__ (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/18
 - [ ] #17 [TC-M6] Type checker: _parse_type returns VOID for unknown types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/17
 - [ ] #16 [TC-M5] Type checker: builtin functions always return void (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/16
 - [ ] #15 [TC-M4] Type checker: no implicit numeric coercions (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/15
@@ -87,8 +87,8 @@
 - [ ] #12 [TC-M1] Type checker: elif blocks never type-checked (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/12
 - [ ] #11 [TC-C2] Type checker: type inference (auto) always produces errors (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/11
 - [ ] #10 [TC-C1] Type checker: crash on uninitialized variable (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/10
-- [ ] #9 [P-L2] Parser: FunctionDecl.type_params type annotation is wrong (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/9
-- [ ] #8 [P-L1] Parser: dead/unreachable elif branch in parse_type (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/8
+- [x] #9 [P-L2] Parser: FunctionDecl.type_params type annotation is wrong (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/9
+- [x] #8 [P-L1] Parser: dead/unreachable elif branch in parse_type (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/8
 - [ ] #7 [P-M5] Parser: test name to identifier conversion unsanitized (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/7
 - [ ] #6 [P-M4] Parser: invalid escape sequences silently accepted in strings (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/6
 - [ ] #5 [P-M3] Parser: incorrect column tracking for multi-byte/tab characters (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/5

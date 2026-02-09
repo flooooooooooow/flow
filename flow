@@ -2,10 +2,12 @@
 # FLOW Programming Language Runner
 # The main entry point for running FLOW programs
 
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLOWC_MODULE="flow.transpiler"
 export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
-LLVM_PATH="/opt/homebrew/opt/llvm/bin"
+LLVM_PATH="${LLVM_PATH:-}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -29,6 +31,41 @@ print_error() {
 
 print_warning() {
     echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+resolve_llvm_path() {
+    if [ -n "$LLVM_PATH" ]; then
+        return
+    fi
+    if command -v mlir-opt &> /dev/null; then
+        LLVM_PATH="$(dirname "$(command -v mlir-opt)")"
+        return
+    fi
+    if command -v brew &> /dev/null; then
+        local brew_prefix
+        brew_prefix="$(brew --prefix llvm 2>/dev/null || true)"
+        if [ -n "$brew_prefix" ]; then
+            LLVM_PATH="$brew_prefix/bin"
+            return
+        fi
+    fi
+    LLVM_PATH="/opt/homebrew/opt/llvm/bin"
+}
+
+require_flow_file() {
+    local program="${1:-}"
+    if [ -z "$program" ]; then
+        print_error "Usage: flow <command> <program.flow>"
+        exit 1
+    fi
+    if [[ "$program" != *.flow ]]; then
+        print_error "Expected a .flow file, got: $program"
+        exit 1
+    fi
+    if [ ! -f "$program" ]; then
+        print_error "Program not found: $program"
+        exit 1
+    fi
 }
 
 # Show help
@@ -129,11 +166,12 @@ check_deps() {
 }
 
 check_mlir_deps() {
-    if ! command -v "$LLVM_PATH/mlir-opt" &> /dev/null; then
+    resolve_llvm_path
+    if [ ! -x "$LLVM_PATH/mlir-opt" ]; then
         print_error "MLIR tools not found. Run './flow install' (or brew install llvm)"
         exit 1
     fi
-    if ! command -v "$LLVM_PATH/mlir-translate" &> /dev/null; then
+    if [ ! -x "$LLVM_PATH/mlir-translate" ]; then
         print_error "mlir-translate not found. Run './flow install' (or brew install llvm)"
         exit 1
     fi
@@ -142,17 +180,13 @@ check_mlir_deps() {
 # Compile FLOW to executable
 compile_program() {
     local program="$1"
+    require_flow_file "$program"
     local basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
     local py_ldflags=()
-    
-    if [ ! -f "$program" ]; then
-        print_error "Program not found: $program"
-        exit 1
-    fi
     
     print_info "Compiling $program..."
     
@@ -187,6 +221,7 @@ compile_program() {
 # Compile with debug symbols and open a debugger (LLDB preferred).
 debug_program() {
     local program="$1"
+    require_flow_file "$program"
     local basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local c_file="$build_dir/$basename.debug.c"
@@ -195,11 +230,6 @@ debug_program() {
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
     local py_ldflags=()
-    
-    if [ ! -f "$program" ]; then
-        print_error "Program not found: $program"
-        exit 1
-    fi
     
     check_deps
     mkdir -p "$build_dir"
@@ -246,6 +276,7 @@ debug_program() {
 # Run program
 run_program() {
     local program="$1"
+    require_flow_file "$program"
     local basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
     
@@ -264,17 +295,13 @@ run_program() {
 # Run program in an SDL2 window (requires SDL2 installed, via pkg-config).
 run_window_program() {
     local program="$1"
+    require_flow_file "$program"
     local basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
     local py_ldflags=()
-    
-    if [ ! -f "$program" ]; then
-        print_error "Program not found: $program"
-        exit 1
-    fi
     
     check_deps
     
@@ -376,17 +403,13 @@ generate_mlir() {
 
 run_gfx_program() {
     local program="$1"
+    require_flow_file "$program"
     local basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
     local py_ldflags=()
-    
-    if [ ! -f "$program" ]; then
-        print_error "Program not found: $program"
-        exit 1
-    fi
     
     check_deps
     mkdir -p "$build_dir"
@@ -1171,9 +1194,10 @@ run_all_tests() {
 # Install dependencies
 install_deps() {
     print_info "Installing FLOW dependencies..."
+    resolve_llvm_path
     
     # Install LLVM
-    if ! command -v "$LLVM_PATH/mlir-opt" &> /dev/null; then
+    if [ ! -x "$LLVM_PATH/mlir-opt" ]; then
         print_info "Installing LLVM..."
         if command -v brew &> /dev/null; then
             brew install llvm
@@ -1199,20 +1223,20 @@ install_deps() {
 case "${1:-help}" in
     "run")
         check_deps
-        run_program "$2"
+        run_program "${2:-}"
         ;;
     "compile")
         check_deps
-        compile_program "$2"
+        compile_program "${2:-}"
         ;;
     "debug")
-        debug_program "$2"
+        debug_program "${2:-}"
         ;;
     "window")
-        run_window_program "$2"
+        run_window_program "${2:-}"
         ;;
     "gfx")
-        run_gfx_program "$2"
+        run_gfx_program "${2:-}"
         ;;
     "vulkan-demo")
         run_vulkan_demo
@@ -1251,11 +1275,11 @@ case "${1:-help}" in
         run_ui_layout_window
         ;;
     "demo")
-        if [ -z "$2" ]; then
+        if [ -z "${2:-}" ]; then
             print_error "Usage: flow demo <name> [variant]"
             exit 1
         fi
-        case "$2" in
+        case "${2:-}" in
             "vulkan")
                 case "${3:-basic}" in
                     "basic")
@@ -1265,7 +1289,7 @@ case "${1:-help}" in
                         run_vulkan_demo_advanced
                         ;;
                     *)
-                        print_error "Unknown Vulkan demo variant: $3 (use basic or advanced)"
+                        print_error "Unknown Vulkan demo variant: ${3:-} (use basic or advanced)"
                         exit 1
                         ;;
                 esac
@@ -1312,7 +1336,7 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
                         run_vulkan_layout_dsl
                         ;;
                     *)
-                        print_error "Unknown Vulkan Flow demo variant: $3 (use basic, advanced, 2048, tetris, snake, pong, breakout, layout, or layout-dsl)"
+                        print_error "Unknown Vulkan Flow demo variant: ${3:-} (use basic, advanced, 2048, tetris, snake, pong, breakout, layout, or layout-dsl)"
                         exit 1
                         ;;
                 esac
@@ -1324,28 +1348,35 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
                 run_ui_layout_window
                 ;;
             *)
-                print_error "Unknown demo: $2"
+                print_error "Unknown demo: ${2:-}"
                 exit 1
                 ;;
         esac
         ;;
     "mlir")
         shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow mlir <program.flow>"
+            exit 1
+        fi
+        require_flow_file "${1:-}"
         generate_mlir "$@"
         ;;
     "mlir-run")
         shift
-        if [ -z "$1" ]; then
+        if [ -z "${1:-}" ]; then
             print_error "Usage: flow mlir-run <program.flow>"
             exit 1
         fi
-        generate_mlir "$1"
+        require_flow_file "${1:-}"
+        check_mlir_deps
+        generate_mlir "${1:-}"
         if [ $? -ne 0 ]; then
             print_error "MLIR generation failed"
             exit 1
         fi
         
-        PROGRAM_NAME=$(basename "$1" .flow)
+        PROGRAM_NAME=$(basename "${1:-}" .flow)
         BUILD_DIR="$SCRIPT_DIR/build"
         MLIR_FILE="$BUILD_DIR/${PROGRAM_NAME}.mlir"
         OBJ_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir.o"
@@ -1386,13 +1417,14 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         ;;
     "gpu")
         shift
-        if [ -z "$1" ]; then
+        if [ -z "${1:-}" ]; then
             print_error "Usage: flow gpu <program.flow>"
             exit 1
         fi
+        require_flow_file "${1:-}"
         check_deps
-        print_info "Generating GPU shaders from $1..."
-        python3 - "$SCRIPT_DIR" "$1" <<'PY'
+        print_info "Generating GPU shaders from ${1:-}..."
+        python3 - "$SCRIPT_DIR" "${1:-}" <<'PY'
 import sys
 
 script_dir = sys.argv[1]
@@ -1432,13 +1464,14 @@ PY
         ;;
     "jit")
         shift
-        if [ -z "$1" ]; then
+        if [ -z "${1:-}" ]; then
             print_error "Usage: flow jit <program.flow>"
             exit 1
         fi
+        require_flow_file "${1:-}"
         check_deps
-        print_info "JIT compiling $1..."
-        python3 - "$SCRIPT_DIR" "$1" <<'PY'
+        print_info "JIT compiling ${1:-}..."
+        python3 - "$SCRIPT_DIR" "${1:-}" <<'PY'
 import sys
 
 script_dir = sys.argv[1]
@@ -1516,11 +1549,12 @@ for f in sys.argv[1:]:
         ;;
     "python")
         shift
-        if [ -z "$1" ]; then
+        if [ -z "${1:-}" ]; then
             print_error "Usage: flow python <program.flow> [--name NAME] [--version VER] [--source]"
             exit 1
         fi
-        program="$1"
+        program="${1:-}"
+        require_flow_file "$program"
         shift
         
         # Parse python-specific options
@@ -1557,11 +1591,12 @@ for f in sys.argv[1:]:
         ;;
     "wasm")
         shift
-        if [ -z "$1" ]; then
+        if [ -z "${1:-}" ]; then
             print_error "Usage: flow wasm <program.flow>"
             exit 1
         fi
-        python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "$1"
+        require_flow_file "${1:-}"
+        python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "${1:-}"
         ;;
     "install")
         install_deps

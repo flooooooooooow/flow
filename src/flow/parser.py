@@ -238,7 +238,7 @@ class FunctionDecl:
     attributes: List[str]
     is_exported: bool = False
     is_extern: bool = False
-    type_params: List[str] = field(
+    type_params: List["TypeParameter"] = field(
         default_factory=list
     )  # Generic type parameters like <T, U>
     has_self: bool = False  # Whether this is a method with self parameter
@@ -369,7 +369,7 @@ class StructDecl:
     name: str
     fields: List[Parameter]
     is_exported: bool = False
-    type_params: List[str] = field(
+    type_params: List["TypeParameter"] = field(
         default_factory=list
     )  # Generic type parameters like <T, U>
     location: Optional[SourceLocation] = None  # For LSP
@@ -392,7 +392,7 @@ class EnumDecl:
     name: str
     variants: List[EnumVariant]
     is_exported: bool = False
-    type_params: List[str] = field(default_factory=list)
+    type_params: List["TypeParameter"] = field(default_factory=list)
 
 
 @dataclass
@@ -411,7 +411,7 @@ class TraitDecl:
 
     name: str
     methods: List[TraitMethod]
-    type_params: List[str] = field(default_factory=list)
+    type_params: List["TypeParameter"] = field(default_factory=list)
 
 
 @dataclass
@@ -1323,18 +1323,6 @@ class Parser:
                 return Type(type_name)
 
         elif self.current_token.type in [
-            TokenType.I8,
-            TokenType.I16,
-            TokenType.I32,
-            TokenType.I64,
-            TokenType.I128,
-            TokenType.U8,
-            TokenType.U16,
-            TokenType.U32,
-            TokenType.U64,
-            TokenType.U128,
-            TokenType.F32,
-            TokenType.F64,
             TokenType.BOOL,
             TokenType.VOID,
             TokenType.STRING_TYPE,

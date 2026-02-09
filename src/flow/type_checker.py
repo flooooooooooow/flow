@@ -98,6 +98,18 @@ class SemanticType:
                 self.param_types == other.param_types and
                 self.return_type == other.return_type)
 
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.kind,
+                self.name,
+                self.element_type,
+                self.size,
+                tuple(self.param_types),
+                self.return_type,
+            )
+        )
+
 
 @dataclass
 class Symbol:
