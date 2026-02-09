@@ -889,6 +889,11 @@ class TypeChecker:
         if actual == expected:
             return True
 
+        # Capability compatibility: allow any struct to satisfy a capability type.
+        if expected.kind == TypeKind.STRUCT and expected.name.startswith("capability_"):
+            if actual.kind == TypeKind.STRUCT:
+                return True
+
         # Pointer compatibility
         if expected.kind == TypeKind.POINTER and actual.kind == TypeKind.I32:
             return True # Allow 0/NULL
@@ -998,6 +1003,9 @@ class TypeChecker:
             return SemanticType(TypeKind.F64)
         elif parsed_type.name == "string":
             return SemanticType(TypeKind.STRING)
+        elif parsed_type.name.startswith("capability_"):
+            # Treat capabilities as opaque structs for type compatibility
+            return SemanticType(TypeKind.STRUCT, name=parsed_type.name)
         elif parsed_type.is_pointer and parsed_type.element_type:
             return SemanticType(TypeKind.POINTER, element_type=self._parse_type(parsed_type.element_type))
         elif parsed_type.name.startswith("array_") and parsed_type.element_type:
