@@ -107,6 +107,7 @@ class CGenerator:
                                    enums: List[EnumDecl] = None) -> str:
         lines: List[str] = []
         lines.append("#include <stdint.h>")
+        lines.append("#include <stdbool.h>")
         lines.append("#include <stdio.h>")
         lines.append("#include <stdlib.h>")  # For malloc/free
         lines.append("#include <string.h>")  # For memcpy/memset
@@ -687,7 +688,7 @@ class CGenerator:
         if t.name == "f64":
             return "double"
         if t.name == "bool":
-            return "int32_t"  # keep simple; 0/1
+            return "bool"
         if t.name == "void":
             return "void"
         if t.name == "string" or t.name == "str":
