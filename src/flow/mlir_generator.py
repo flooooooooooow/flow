@@ -2212,11 +2212,21 @@ class MLIRGenerator:
 
         elem_type = self.get_expression_type(vector_literal.elements[0])
         size = len(element_values)
-        
-        # Create vector constant using dense notation
-        elements_str = ", ".join(element_values)
-        ops.append(f"{self.indent()}{ssa_name} = arith.constant dense<[{elements_str}]> : vector<{size}x{elem_type}>")
-        
+
+        # Build vector via insertelement to avoid SSA in dense<> attributes
+        vec_ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{vec_ssa} = vector.undef : vector<{size}x{elem_type}>")
+        current = vec_ssa
+        for i, val in enumerate(element_values):
+            idx_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{idx_ssa} = arith.constant {i} : index")
+            next_vec = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{next_vec} = vector.insertelement {val}, {current}[{idx_ssa}] : vector<{size}x{elem_type}>")
+            current = next_vec
+        ops.append(f"{self.indent()}{ssa_name} = {current} : vector<{size}x{elem_type}>")
         return ssa_name, ops
 
     def generate_array_access(self, access: ArrayAccess) -> tuple[str, List[str]]:
