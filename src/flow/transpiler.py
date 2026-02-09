@@ -348,37 +348,39 @@ def main():
                 import tempfile
 
                 # Write generated MLIR to temp file
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".mlir", delete=False
-                ) as tmp:
-                    tmp.write(out_code)
-                    tmp_path = tmp.name
+                tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", suffix=".mlir", delete=False
+                    ) as tmp:
+                        tmp.write(out_code)
+                        tmp_path = tmp.name
 
-                # Optimize
-                optimizer = MLIROptimizer()
-                opt_result = optimizer.optimize(
-                    tmp_path,
-                    tmp_path,
-                    enable_vectorization=not args.no_vectorization,
-                    enable_loop_fusion=not args.no_loop_fusion,
-                    optimization_level=args.opt_level,
-                )
+                    # Optimize
+                    optimizer = MLIROptimizer()
+                    opt_result = optimizer.optimize(
+                        tmp_path,
+                        tmp_path,
+                        enable_vectorization=not args.no_vectorization,
+                        enable_loop_fusion=not args.no_loop_fusion,
+                        optimization_level=args.opt_level,
+                    )
 
-                if opt_result != 0:
-                    print("MLIR optimization failed", file=sys.stderr)
-                    sys.exit(1)
+                    if opt_result != 0:
+                        print("MLIR optimization failed", file=sys.stderr)
+                        sys.exit(1)
 
-                # Read optimized MLIR
-                with open(tmp_path, "r") as f:
-                    out_code = f.read()
+                    # Read optimized MLIR
+                    with open(tmp_path, "r") as f:
+                        out_code = f.read()
 
-                # Generate optimization report if requested
-                if args.opt_report:
-                    report = optimizer.get_optimization_report(tmp_path)
-                    print(report, file=sys.stderr)
-
-                # Clean up
-                Path(tmp_path).unlink()
+                    # Generate optimization report if requested
+                    if args.opt_report:
+                        report = optimizer.get_optimization_report(tmp_path)
+                        print(report, file=sys.stderr)
+                finally:
+                    if tmp_path and Path(tmp_path).exists():
+                        Path(tmp_path).unlink()
 
         except Exception as e:
             print(f"MLIR generation error: {e}", file=sys.stderr)
