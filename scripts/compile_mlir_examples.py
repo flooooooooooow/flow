@@ -7,7 +7,6 @@ from pathlib import Path
 import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
-FLOW = ROOT / "flow"
 EXAMPLES = ROOT / "examples"
 
 
@@ -28,12 +27,11 @@ def collect_examples() -> list[Path]:
 
 
 def run_mlir(path: Path, emit_gpu: bool, emit_spirv: bool) -> tuple[int, str]:
-    args = [str(FLOW), "mlir"]
+    args = ["python3", "-m", "flow.transpiler", str(path), "--mlir"]
     if emit_gpu:
         args.append("--mlir-gpu")
     if emit_spirv:
         args.append("--emit-spirv")
-    args.append(str(path))
     res = subprocess.run(args, cwd=str(ROOT), capture_output=True, text=True)
     return res.returncode, res.stderr + res.stdout
 
