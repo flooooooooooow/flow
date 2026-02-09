@@ -366,13 +366,38 @@ Install from `third_party/integrations/vscode/flow-language/flow-language-0.1.0.
 
 ---
 
+## Known Issues & Security Status
+
+A comprehensive audit (Feb 2026) identified 98 issues. **56 have been resolved** (57%).
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Testing | 5/5 resolved | All test infrastructure issues fixed |
+| CLI | 5/5 resolved | Shell injection, temp dirs, validation fixed |
+| Stdlib | 8/13 resolved | POSIX constants, memory pools, alignment fixed |
+| Compiler | 36/58 resolved | MLIR, module resolver, monomorphize stabilized |
+| Runtime | 3/5 resolved | Command injection, null deref, resource leaks fixed |
+| CI | 0/6 resolved | Pipeline not yet hardened |
+
+**Open critical issues** (12 remaining):
+- Parser robustness (#1, #2)
+- C generator security (#20, #21, #22)
+- Compiler correctness (#41, #49)
+- Stdlib safety (#59, #60, #61)
+- CI hardening (#88, #89)
+
+See [docs/NEXT.md](docs/NEXT.md) for the prioritized roadmap and [CHANGELOG](docs/project/CHANGELOG.md) for details on what was fixed.
+
+---
+
 ## Documentation
 
 - **[Getting Started](docs/getting-started.md)** - Installation, first program
 - **[Language Spec](docs/LANGUAGE_SPEC.md)** - Complete reference
 - **[Examples](examples/README.md)** - All example programs
-- **[Roadmap](ROADMAP.md)** - What's next
-- **[Contributing](CONTRIBUTING.md)** - Human-AI collaboration guidelines
+- **[What's Next](docs/NEXT.md)** - Prioritized roadmap
+- **[Changelog](docs/project/CHANGELOG.md)** - Version history and audit fixes
+- **[Contributing](docs/project/CONTRIBUTING.md)** - How to contribute, security policy
 
 ---
 

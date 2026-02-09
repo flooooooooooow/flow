@@ -31,7 +31,10 @@ function thread_is_running(t: Thread) -> bool {
 
 struct Mutex {
     locked: bool,
-    owner: i64
+    owner: i64,
+    # Opaque storage for the underlying pthread_mutex_t.
+    # 64 bytes is sufficient for all platforms (Linux: 40, macOS: 64).
+    _opaque: array<u8, 64>
 }
 
 extern function pthread_mutex_init(mutex: ptr<void>, attr: ptr<void>) -> i32
@@ -41,7 +44,35 @@ extern function pthread_mutex_trylock(mutex: ptr<void>) -> i32
 extern function pthread_mutex_destroy(mutex: ptr<void>) -> i32
 
 function mutex_new() -> Mutex {
-    return Mutex { locked: false, owner: 0 }
+    let m: Mutex = Mutex { locked: false, owner: 0, _opaque: [] }
+    pthread_mutex_init(&m._opaque as ptr<void>, null)
+    return m
+}
+
+function mutex_lock(m: ptr<Mutex>) -> void {
+    pthread_mutex_lock(&m._opaque as ptr<void>)
+    m.locked = true
+    m.owner = pthread_self()
+}
+
+function mutex_unlock(m: ptr<Mutex>) -> void {
+    m.locked = false
+    m.owner = 0
+    pthread_mutex_unlock(&m._opaque as ptr<void>)
+}
+
+function mutex_trylock(m: ptr<Mutex>) -> bool {
+    let result: i32 = pthread_mutex_trylock(&m._opaque as ptr<void>)
+    if result == 0 {
+        m.locked = true
+        m.owner = pthread_self()
+        return true
+    }
+    return false
+}
+
+function mutex_destroy(m: ptr<Mutex>) -> void {
+    pthread_mutex_destroy(&m._opaque as ptr<void>)
 }
 
 function mutex_is_locked(m: Mutex) -> bool {
@@ -72,7 +103,8 @@ function condvar_new() -> CondVar {
 
 struct RwLock {
     readers: i32,
-    writer: bool
+    writer: bool,
+    _opaque: array<u8, 128>
 }
 
 extern function pthread_rwlock_init(rwlock: ptr<void>, attr: ptr<void>) -> i32
@@ -82,7 +114,32 @@ extern function pthread_rwlock_unlock(rwlock: ptr<void>) -> i32
 extern function pthread_rwlock_destroy(rwlock: ptr<void>) -> i32
 
 function rwlock_new() -> RwLock {
-    return RwLock { readers: 0, writer: false }
+    let rw: RwLock = RwLock { readers: 0, writer: false, _opaque: [] }
+    pthread_rwlock_init(&rw._opaque as ptr<void>, null)
+    return rw
+}
+
+function rwlock_rdlock(rw: ptr<RwLock>) -> void {
+    pthread_rwlock_rdlock(&rw._opaque as ptr<void>)
+    rw.readers = rw.readers + 1
+}
+
+function rwlock_wrlock(rw: ptr<RwLock>) -> void {
+    pthread_rwlock_wrlock(&rw._opaque as ptr<void>)
+    rw.writer = true
+}
+
+function rwlock_unlock(rw: ptr<RwLock>) -> void {
+    if rw.writer {
+        rw.writer = false
+    } else {
+        rw.readers = rw.readers - 1
+    }
+    pthread_rwlock_unlock(&rw._opaque as ptr<void>)
+}
+
+function rwlock_destroy(rw: ptr<RwLock>) -> void {
+    pthread_rwlock_destroy(&rw._opaque as ptr<void>)
 }
 
 # =============================================================================
@@ -107,18 +164,25 @@ struct Channel_i32 {
     size: i32,
     head: i32,
     tail: i32,
-    closed: bool
+    closed: bool,
+    _lock: array<u8, 64>
 }
 
+extern function malloc(size: i64) -> ptr<void>
+
 function channel_i32_new(cap: i32) -> Channel_i32 {
-    return Channel_i32 {
-        buffer: null,
+    let buf: ptr<i32> = malloc(cap * 4) as ptr<i32>
+    let ch: Channel_i32 = Channel_i32 {
+        buffer: buf,
         capacity: cap,
         size: 0,
         head: 0,
         tail: 0,
-        closed: false
+        closed: false,
+        _lock: []
     }
+    pthread_mutex_init(&ch._lock as ptr<void>, null)
+    return ch
 }
 
 function channel_i32_is_empty(ch: Channel_i32) -> bool {
@@ -221,11 +285,27 @@ const MEMORY_ORDER_SEQ_CST: i32 = 5
 # =============================================================================
 
 struct SpinLock {
-    locked: bool
+    _flag: AtomicBool
 }
 
 function spinlock_new() -> SpinLock {
-    return SpinLock { locked: false }
+    return SpinLock { _flag: atomic_bool_new(false) }
+}
+
+function spinlock_lock(sl: ptr<SpinLock>) -> void {
+    # Spin until we acquire the lock via atomic compare-exchange
+    let expected: bool = false
+    while !__atomic_compare_exchange_n_bool(&sl._flag.value, &expected, true, false, MEMORY_ORDER_ACQUIRE, MEMORY_ORDER_RELAXED) {
+        expected = false
+    }
+}
+
+function spinlock_unlock(sl: ptr<SpinLock>) -> void {
+    __atomic_store_n_bool(&sl._flag.value, false, MEMORY_ORDER_RELEASE)
+}
+
+function spinlock_is_locked(sl: ptr<SpinLock>) -> bool {
+    return __atomic_load_n_bool(&sl._flag.value, MEMORY_ORDER_ACQUIRE)
 }
 
 # =============================================================================
@@ -233,15 +313,18 @@ function spinlock_new() -> SpinLock {
 # =============================================================================
 
 struct Once {
-    done: bool
+    _done: AtomicBool,
+    _lock: array<u8, 64>
 }
 
 function once_new() -> Once {
-    return Once { done: false }
+    let o: Once = Once { _done: atomic_bool_new(false), _lock: [] }
+    pthread_mutex_init(&o._lock as ptr<void>, null)
+    return o
 }
 
-function once_is_done(o: Once) -> bool {
-    return o.done
+function once_is_done(o: ptr<Once>) -> bool {
+    return __atomic_load_n_bool(&o._done.value, MEMORY_ORDER_ACQUIRE)
 }
 
 # =============================================================================
@@ -249,13 +332,21 @@ function once_is_done(o: Once) -> bool {
 # =============================================================================
 
 struct WaitGroup {
-    count: i32
+    _count: AtomicI32
 }
 
 function waitgroup_new() -> WaitGroup {
-    return WaitGroup { count: 0 }
+    return WaitGroup { _count: atomic_i32_new(0) }
 }
 
-function waitgroup_count(wg: WaitGroup) -> i32 {
-    return wg.count
+function waitgroup_add(wg: ptr<WaitGroup>, delta: i32) -> void {
+    __atomic_fetch_add(&wg._count.value, delta, MEMORY_ORDER_SEQ_CST)
+}
+
+function waitgroup_done(wg: ptr<WaitGroup>) -> void {
+    __atomic_fetch_sub(&wg._count.value, 1, MEMORY_ORDER_SEQ_CST)
+}
+
+function waitgroup_count(wg: ptr<WaitGroup>) -> i32 {
+    return __atomic_load_n(&wg._count.value, MEMORY_ORDER_SEQ_CST)
 }

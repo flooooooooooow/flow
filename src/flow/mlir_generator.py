@@ -11,7 +11,7 @@ from .parser import (
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
     HandleStatement, EffectOperation, CapabilityMethod, EffectCall, MethodCall,
-    MatchStatement, MatchCase, StructPattern, ConstDecl
+    MatchStatement, MatchCase, StructPattern, ConstDecl, LayoutStatement
 )
 import textwrap
 
@@ -63,7 +63,7 @@ class MLIRGenerator:
     def _calculate_struct_layouts(self, declarations: List[Any]) -> None:
         """Calculate field offsets for all struct types"""
         for decl in declarations:
-            if type(decl).__name__ == 'StructDecl':
+            if isinstance(decl, StructDecl):
                 layout = {}
                 offset = 0
                 for field in decl.fields:
@@ -111,7 +111,7 @@ class MLIRGenerator:
         gpu_functions = []
         cpu_decls = []
         for decl in declarations:
-            if type(decl).__name__ == 'FunctionDecl' and hasattr(decl, 'attributes') and 'gpu' in decl.attributes:
+            if isinstance(decl, FunctionDecl) and hasattr(decl, 'attributes') and 'gpu' in decl.attributes:
                 gpu_functions.append(decl)
             else:
                 cpu_decls.append(decl)
@@ -128,8 +128,7 @@ class MLIRGenerator:
         
         # First pass: collect all function signatures in symbol table
         for decl in cpu_decls:
-            decl_type = type(decl).__name__
-            if decl_type == 'FunctionDecl':
+            if isinstance(decl, FunctionDecl):
                 # Add function to symbol table
                 self.symbol_table[decl.name] = {
                     'type': 'function',
@@ -141,19 +140,18 @@ class MLIRGenerator:
         # Second pass: generate all declarations to collect string constants
         decl_code = []
         for decl in cpu_decls:
-            decl_type = type(decl).__name__
-            if decl_type == 'FunctionDecl':
+            if isinstance(decl, FunctionDecl):
                 decl_code.append(self.generate_function(decl))
-            elif decl_type == 'EffectDecl':
+            elif isinstance(decl, EffectDecl):
                 decl_code.append(self.generate_effect(decl))
-            elif decl_type == 'CapabilityDecl':
+            elif isinstance(decl, CapabilityDecl):
                 decl_code.append(self.generate_capability(decl))
-            elif decl_type == 'StructDecl':
+            elif isinstance(decl, StructDecl):
                 decl_code.append(self.generate_struct(decl))
-            elif decl_type == 'ConstDecl':
+            elif isinstance(decl, ConstDecl):
                 decl_code.append(self.generate_const(decl))
             else:
-                decl_code.append(f"// Unsupported declaration type: {decl_type}")
+                decl_code.append(f"// Unsupported declaration type: {type(decl).__name__}")
         
         # Add external function declarations (printf for I/O)
         if self.needs_printf:
@@ -272,35 +270,26 @@ class MLIRGenerator:
         return False
     
     def generate_statement(self, stmt: Statement) -> str:
-        stmt_type = type(stmt).__name__
-        if stmt_type == 'VarDecl':
+        if isinstance(stmt, VarDecl):
             return self.generate_var_decl(stmt)
-        elif stmt_type == 'ReturnStatement':
+        elif isinstance(stmt, ReturnStatement):
             return self.generate_return(stmt)
-        elif stmt_type == 'Assignment':
+        elif isinstance(stmt, Assignment):
             return self.generate_assignment(stmt)
-        elif stmt_type == 'IfStatement':
+        elif isinstance(stmt, IfStatement):
             return self.generate_if(stmt)
-        elif stmt_type == 'WhileStatement':
+        elif isinstance(stmt, WhileStatement):
             return self.generate_while(stmt)
-        elif stmt_type == 'ForStatement':
+        elif isinstance(stmt, ForStatement):
             return self.generate_for(stmt)
-        elif stmt_type == 'LayoutStatement':
+        elif isinstance(stmt, LayoutStatement):
             return self.generate_block(stmt.body)
-        elif stmt_type == 'ExpressionStatement':
-            expr = stmt.expression
-            expr_ssa, expr_ops = self.generate_expression(expr)
-            if expr_ops:
-                lines = expr_ops + [f"{self.indent()}{expr_ssa}"]
-                return "\n".join(lines)
-            else:
-                return f"{self.indent()}{expr_ssa}"
-        elif stmt_type in ['Literal', 'Variable', 'BinaryOperation', 'UnaryOperation', 'FunctionCall', 'VectorLiteral']:
+        elif isinstance(stmt, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, VectorLiteral)):
             value_ssa, value_ops = self.generate_expression(stmt)
             # Expression statement: emit ops for side effects / computation, discard value.
             return "\n".join(value_ops)
         else:
-            return f"{self.indent()}// Unsupported statement: {stmt_type}"
+            return f"{self.indent()}// Unsupported statement: {type(stmt).__name__}"
     
     def generate_var_decl(self, var_decl: VarDecl) -> str:
         mlir_type = self.flow_type_to_mlir(var_decl.type)
@@ -443,7 +432,7 @@ class MLIRGenerator:
         if assignment.target_expr is not None:
             # Array element assignment: arr[i] = value -> memref.store
             access = assignment.target_expr
-            if type(access).__name__ == 'ArrayAccess':
+            if isinstance(access, ArrayAccess):
                 # Generate array expression
                 array_result = self.generate_expression(access.array)
                 if not array_result:
@@ -830,17 +819,16 @@ class MLIRGenerator:
         """Collect all variables that are assigned in a block."""
         assigned = set()
         for stmt in block.statements:
-            stmt_type = type(stmt).__name__
-            if stmt_type == 'Assignment':
+            if isinstance(stmt, Assignment):
                 if hasattr(stmt, 'target') and stmt.target_expr is None:
                     assigned.add(stmt.target)
-            elif stmt_type == 'IfStatement':
+            elif isinstance(stmt, IfStatement):
                 assigned.update(self._collect_assigned_vars(stmt.then_block))
                 for elif_cond, elif_block in stmt.elif_blocks:
                     assigned.update(self._collect_assigned_vars(elif_block))
                 if stmt.else_block:
                     assigned.update(self._collect_assigned_vars(stmt.else_block))
-            elif stmt_type == 'WhileStatement':
+            elif isinstance(stmt, WhileStatement):
                 assigned.update(self._collect_assigned_vars(stmt.body))
         return assigned
     
@@ -1022,17 +1010,15 @@ class MLIRGenerator:
         
         # First pass: collect all declared variables
         for stmt in body.statements:
-            stmt_type = type(stmt).__name__
-            if stmt_type == 'VarDecl':
+            if isinstance(stmt, VarDecl):
                 declared_vars.append(stmt.name)
-            elif stmt_type == 'Assignment':
+            elif isinstance(stmt, Assignment):
                 # Check nested blocks (if statements, while loops, etc.)
                 declared_vars.extend(self._collect_declared_vars_from_stmt(stmt))
         
         # Second pass: find assigned variables that weren't declared in the loop
         for stmt in body.statements:
-            stmt_type = type(stmt).__name__
-            if stmt_type == 'Assignment':
+            if isinstance(stmt, Assignment):
                 # Check if this variable exists in symbol table (defined before loop)
                 # and wasn't declared inside the loop
                 if stmt.target in self.symbol_table and stmt.target_expr is None:
@@ -1043,9 +1029,8 @@ class MLIRGenerator:
     def _collect_declared_vars_from_stmt(self, stmt) -> List[str]:
         """Collect all variable declarations from a statement (including nested blocks)."""
         declared = []
-        stmt_type = type(stmt).__name__
         
-        if stmt_type == 'IfStatement':
+        if isinstance(stmt, IfStatement):
             # Check then block
             declared.extend(self._collect_declared_vars_from_block(stmt.then_block))
             # Check elif blocks
@@ -1054,9 +1039,9 @@ class MLIRGenerator:
             # Check else block
             if stmt.else_block:
                 declared.extend(self._collect_declared_vars_from_block(stmt.else_block))
-        elif stmt_type == 'WhileStatement':
+        elif isinstance(stmt, WhileStatement):
             declared.extend(self._collect_declared_vars_from_block(stmt.body))
-        elif stmt_type == 'ForStatement':
+        elif isinstance(stmt, ForStatement):
             declared.extend(self._collect_declared_vars_from_block(stmt.body))
         
         return declared
@@ -1065,8 +1050,7 @@ class MLIRGenerator:
         """Collect all variable declarations from a block."""
         declared = []
         for stmt in block.statements:
-            stmt_type = type(stmt).__name__
-            if stmt_type == 'VarDecl':
+            if isinstance(stmt, VarDecl):
                 declared.append(stmt.name)
             else:
                 declared.extend(self._collect_declared_vars_from_stmt(stmt))
@@ -1223,33 +1207,32 @@ class MLIRGenerator:
         return "\n".join(mlir_code)
     
     def generate_expression(self, expr: Expression) -> tuple[str, List[str]]:
-        expr_type = type(expr).__name__
-        if expr_type == 'Literal':
+        if isinstance(expr, Literal):
             return self.generate_literal(expr)
-        elif expr_type == 'Variable':
+        elif isinstance(expr, Variable):
             return self.generate_variable(expr)
-        elif expr_type == 'BinaryOperation':
+        elif isinstance(expr, BinaryOperation):
             return self.generate_binary_operation(expr)
-        elif expr_type == 'UnaryOperation':
+        elif isinstance(expr, UnaryOperation):
             return self.generate_unary_operation(expr)
-        elif expr_type == 'FunctionCall':
+        elif isinstance(expr, FunctionCall):
             return self.generate_function_call(expr)
-        elif expr_type == 'EffectCall':
+        elif isinstance(expr, EffectCall):
             return self.generate_effect_call(expr)
-        elif expr_type == 'MethodCall':
+        elif isinstance(expr, MethodCall):
             return self.generate_method_call(expr)
-        elif expr_type == 'ArrayLiteral':
+        elif isinstance(expr, ArrayLiteral):
             return self.generate_array_literal(expr)
-        elif expr_type == 'VectorLiteral':
+        elif isinstance(expr, VectorLiteral):
             return self.generate_vector_literal(expr)
-        elif expr_type == 'ArrayAccess':
+        elif isinstance(expr, ArrayAccess):
             return self.generate_array_access(expr)
-        elif expr_type == 'FieldAccess':
+        elif isinstance(expr, FieldAccess):
             return self.generate_field_access(expr)
-        elif expr_type == 'StructLiteral':
+        elif isinstance(expr, StructLiteral):
             return self.generate_struct_literal(expr)
         else:
-            return f"// Unsupported expression type: {expr_type}", []
+            return f"// Unsupported expression type: {type(expr).__name__}", []
     
     def generate_literal(self, literal: Literal) -> tuple[str, List[str]]:
         ssa_name = f"%{self.function_counter}"

@@ -35,8 +35,9 @@ Welcome to the Flow programming language documentation!
 
 ## Project
 
-- [Contributing](project/CONTRIBUTING.md) - How to contribute
-- [Changelog](project/CHANGELOG.md) - Version history
+- [Contributing](project/CONTRIBUTING.md) - How to contribute, security policy
+- [Changelog](project/CHANGELOG.md) - Version history and audit fixes
+- [What's Next](NEXT.md) - Prioritized roadmap after v0.7.0 audit
 - [Development](DEVELOPMENT.md) - Building Flow
 
 ## Examples
