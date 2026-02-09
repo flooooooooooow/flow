@@ -396,7 +396,7 @@ function train_step(n: Net, lr: f32) -> Net {
 function main() -> i32 {
     printf("=== Neural Network XOR with Autodiff ===\n\n")
     
-    let n: Net = Net {
+    let mut n: Net = Net {
         w00: 0.5, w01: 0.9, w10: 0.4, w11: 1.0,
         bh0: -0.8, bh1: -0.1,
         wo0: -1.2, wo1: 1.1,

@@ -15,7 +15,7 @@ function get_array_value(pos: i32) -> i32 {
 }
 
 function linear_search(item: i32) -> i32 {
-    let index: i32 = 0
+    let mut index: i32 = 0
     
     while index < 10 {
         let current: i32 = get_array_value(index)
