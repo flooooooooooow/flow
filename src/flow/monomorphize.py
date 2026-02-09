@@ -27,7 +27,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple, Optional, Any
-from copy import deepcopy
 
 from .parser import (
     FunctionDecl, StructDecl, Type, Parameter, Block, Statement,
@@ -76,12 +75,27 @@ class MonomorphRequest:
         return f"{self.name}_{args_str}"
     
     def _type_to_str(self, t: Type) -> str:
-        """Convert type to string for name mangling."""
-        # Handle nested generic types
+        """Convert type to string for name mangling (unambiguous)."""
+        parts: List[str] = []
+        if getattr(t, "is_pointer", False):
+            parts.append("P")
+        if getattr(t, "is_reference", False):
+            parts.append("R")
+        if getattr(t, "is_capability", False):
+            parts.append("C")
+
+        name = t.name or ""
+        parts.append(f"N{len(name)}_{name}")
+
+        if t.size is not None:
+            parts.append(f"S{t.size}")
+        if t.element_type is not None:
+            parts.append(f"E{self._type_to_str(t.element_type)}")
         if t.type_args:
-            inner = '_'.join(self._type_to_str(arg) for arg in t.type_args)
-            return f"{t.name.split('_')[0]}_{inner}"
-        return t.name
+            inner = "_".join(self._type_to_str(arg) for arg in t.type_args)
+            parts.append(f"T{len(t.type_args)}_{inner}")
+
+        return "__".join(parts)
 
 
 class Monomorphizer:
@@ -354,8 +368,8 @@ class Monomorphizer:
         # Substitute in return type
         new_return = self._substitute_type(original.return_type, type_map)
         
-        # Substitute in body (deep copy and rewrite)
-        new_body = self._substitute_block(deepcopy(original.body), type_map)
+        # Substitute in body without deep-copying the whole AST
+        new_body = self._substitute_block(original.body, type_map)
         
         # Create specialized function
         specialized = FunctionDecl(
