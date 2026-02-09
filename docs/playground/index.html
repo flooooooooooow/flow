@@ -133,6 +133,16 @@
             opacity: 0.9;
         }
 
+        .btn-error {
+            background: var(--error);
+            border-color: var(--error);
+            color: #fff;
+        }
+
+        .btn-error:hover {
+            opacity: 0.9;
+        }
+
         /* Main Layout */
         main {
             flex: 1;
@@ -476,6 +486,30 @@
                 </label>
             </div>
             <div class="toolbar-group" style="margin-left: auto;">
+                <button id="btnDebug" class="btn" onclick="debugCode()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <circle cx="12" cy="12" r="2"/>
+                    </svg>
+                    Debug
+                </button>
+                <div id="debugControls" style="display: none; gap: 0.5rem; align-items: center;">
+                    <button class="btn" onclick="step()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 6 15 12 9 18"/>
+                        </svg>
+                        Step
+                    </button>
+                    <button class="btn" onclick="continueExecution()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                        Continue
+                    </button>
+                    <button class="btn btn-error" onclick="stopDebugging()">
+                        Stop
+                    </button>
+                </div>
                 <button class="btn" onclick="formatCode()">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="21" y1="10" x2="3" y2="10"/>
@@ -512,6 +546,7 @@
                 <div class="panel-header">
                     <div class="output-tabs">
                         <button class="output-tab active" onclick="showTab('output')">Output</button>
+                        <button class="output-tab" onclick="showTab('variables')">Variables</button>
                         <button class="output-tab" onclick="showTab('ast')">AST</button>
                         <button class="output-tab" onclick="showTab('c')">Generated C</button>
                         <button class="output-tab" onclick="showTab('mlir')">MLIR</button>
@@ -519,6 +554,22 @@
                 </div>
                 <div class="panel-content">
                     <div id="output" class="output-content">Click "Run" to execute your code.</div>
+                    <div id="variables" class="output-content hidden">
+                        <table style="width: 100%; border-collapse: collapse; font-family: inherit;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--text-secondary); font-size: 0.75rem;">
+                                    <th style="padding: 0.5rem; font-weight: 600;">Name</th>
+                                    <th style="padding: 0.5rem; font-weight: 600;">Type</th>
+                                    <th style="padding: 0.5rem; font-weight: 600;">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody id="variablesList">
+                                <tr>
+                                    <td colspan="3" style="padding: 2rem; color: var(--text-muted); text-align: center;">Start debugging to see variables</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                     <div id="ast" class="output-content hidden"></div>
                     <div id="c" class="output-content hidden"></div>
                     <div id="mlir" class="output-content hidden"></div>
@@ -1682,6 +1733,203 @@ using namespace metal;
 ═══════════════════════════════════════`;
             
             return output;
+        }
+
+        // Debugging state
+        let isDebugging = false;
+        let debugSession = null;
+
+        class FlowDebugger {
+            constructor(code) {
+                this.lines = code.split('\n');
+                this.pc = -1;
+                this.variables = {};
+                this.callStack = [];
+                this.output = '';
+                this.isFinished = false;
+
+                // Find main
+                for (let i = 0; i < this.lines.length; i++) {
+                    if (this.lines[i].includes('function main')) {
+                        this.pc = i;
+                        break;
+                    }
+                }
+                if (this.pc === -1) this.pc = 0;
+            }
+
+            step() {
+                if (this.pc >= this.lines.length) {
+                    this.isFinished = true;
+                    return;
+                }
+
+                const line = this.lines[this.pc].trim();
+
+                // Skip empty lines and comments
+                if (!line || line.startsWith('//') || line.startsWith('function') || line === '}') {
+                    this.pc++;
+                    if (this.pc >= this.lines.length) {
+                        this.isFinished = true;
+                    } else {
+                        return this.step();
+                    }
+                    return;
+                }
+
+                // Simple "Execution"
+                // 1. Assignments: let x = 5
+                let match = line.match(/let\s+(?:mut\s+)?(\w+)(?:\s*:\s*([^=]+))?\s*=\s*(.+)/);
+                if (match) {
+                    const name = match[1];
+                    const type = match[2] || 'auto';
+                    let expr = match[3].trim();
+
+                    // Simple expression evaluation
+                    let val = this.evaluate(expr);
+                    this.variables[name] = { type, value: val };
+                }
+
+                // 2. Print: print("hi")
+                match = line.match(/print\s*\(\s*"([^"]*)"\s*\)/);
+                if (match) {
+                    this.output += match[1] + '\n';
+                }
+
+                // printf("fmt", args)
+                match = line.match(/printf\s*\(\s*"([^"]*)"\s*,\s*(.+)\s*\)/);
+                if (match) {
+                    let fmt = match[1];
+                    let args = match[2].split(',').map(s => s.trim());
+                    let result = fmt;
+                    args.forEach(arg => {
+                        let val = this.evaluate(arg);
+                        result = result.replace(/%[dfsi]/, val);
+                    });
+                    this.output += result.replace(/\\n/g, '\n');
+                }
+
+                this.pc++;
+                if (this.pc >= this.lines.length) {
+                    this.isFinished = true;
+                }
+            }
+
+            evaluate(expr) {
+                // Check if it's a variable
+                if (this.variables[expr]) {
+                    return this.variables[expr].value;
+                }
+
+                // Check if it's a number
+                if (/^-?\d+(\.\d+)?$/.test(expr)) {
+                    return expr;
+                }
+
+                // Check if it's a string
+                if (expr.startsWith('"') && expr.endsWith('"')) {
+                    return expr.substring(1, expr.length - 1);
+                }
+
+                // Simple arithmetic
+                if (expr.includes('+')) {
+                    let parts = expr.split('+').map(p => this.evaluate(p.trim()));
+                    if (parts.every(p => !isNaN(p))) {
+                        return parts.reduce((a, b) => parseFloat(a) + parseFloat(b), 0).toString();
+                    }
+                    return parts.join('');
+                }
+
+                return expr;
+            }
+        }
+
+        function debugCode() {
+            isDebugging = true;
+            debugSession = new FlowDebugger(editor.value);
+
+            document.getElementById('btnDebug').style.display = 'none';
+            document.getElementById('debugControls').style.display = 'flex';
+            document.getElementById('editorStatusText').textContent = 'Debugging...';
+            document.getElementById('editorStatus').className = 'status-dot running';
+
+            updateDebugUI();
+            showTab('output');
+            document.getElementById('output').textContent = 'Debugging started...';
+        }
+
+        function stopDebugging() {
+            isDebugging = false;
+            debugSession = null;
+            document.getElementById('btnDebug').style.display = 'flex';
+            document.getElementById('debugControls').style.display = 'none';
+            document.getElementById('editorStatusText').textContent = 'Ready';
+            document.getElementById('editorStatus').className = 'status-dot';
+            removeHighlight();
+        }
+
+        function step() {
+            if (!isDebugging || !debugSession) return;
+
+            debugSession.step();
+            updateDebugUI();
+
+            if (debugSession.isFinished) {
+                document.getElementById('output').textContent += '\nProgram finished.';
+                stopDebugging();
+            }
+        }
+
+        function updateDebugUI() {
+            if (!debugSession) return;
+
+            highlightLine(debugSession.pc);
+            document.getElementById('output').textContent = 'Debugging started...\n\n' + debugSession.output;
+
+            // Update variables table
+            const list = document.getElementById('variablesList');
+            list.innerHTML = '';
+
+            const varNames = Object.keys(debugSession.variables);
+            if (varNames.length === 0) {
+                list.innerHTML = '<tr><td colspan="3" style="padding: 2rem; color: var(--text-muted); text-align: center;">No variables in scope</td></tr>';
+            } else {
+                varNames.forEach(name => {
+                    const info = debugSession.variables[name];
+                    const row = document.createElement('tr');
+                    row.style.borderBottom = '1px solid var(--border)';
+                    row.innerHTML = `
+                        <td style="padding: 0.5rem; color: var(--purple);">${name}</td>
+                        <td style="padding: 0.5rem; color: var(--accent); font-size: 0.8rem;">${info.type}</td>
+                        <td style="padding: 0.5rem; color: var(--warning);">${info.value}</td>
+                    `;
+                    list.appendChild(row);
+                });
+            }
+        }
+
+        function continueExecution() {
+            if (!isDebugging) return;
+            stopDebugging();
+            runCode();
+        }
+
+        function highlightLine(lineIndex) {
+            const lines = editor.value.split('\n');
+            // In a real editor we'd use a better way, but for a textarea
+            // we can just select the line to highlight it
+            let start = 0;
+            for (let i = 0; i < lineIndex; i++) {
+                start += lines[i].length + 1;
+            }
+            const end = start + lines[lineIndex].length;
+
+            editor.focus();
+            editor.setSelectionRange(start, end);
+        }
+
+        function removeHighlight() {
+            editor.setSelectionRange(0, 0);
         }
 
         // Tab switching

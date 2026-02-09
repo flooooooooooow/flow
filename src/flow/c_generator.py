@@ -1646,11 +1646,12 @@ def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_
                 # Mangle name: Type_Trait_method
                 method.name = f"{type_name}_{impl.trait_name}_{method.name}"
                 
-                # If method has self, add it as first parameter
+                # If method has self, add it as first parameter if not already present
                 if getattr(method, 'has_self', False):
-                    from .parser import Parameter
-                    self_param = Parameter("self", impl.for_type)
-                    method.parameters = [self_param] + list(method.parameters)
+                    if not any(p.name == "self" for p in method.parameters):
+                        from .parser import Parameter
+                        self_param = Parameter("self", impl.for_type)
+                        method.parameters = [self_param] + list(method.parameters)
                 
                 functions.append(method)
         

@@ -1,8 +1,9 @@
 # Palindrome Checker - FLOW version of C++ string palindrome
 # Since we don't have strings yet, we'll use numbers
-function is_palindrome_number(n: i32) -> i32 {
+function is_palindrome_number(num: i32) -> i32 {
+    let mut n: i32 = num
     let original: i32 = n
-    let reversed: i32 = 0
+    let mut reversed: i32 = 0
     
     while n > 0 {
         let digit: i32 = n % 10
