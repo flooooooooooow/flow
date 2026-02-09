@@ -171,6 +171,59 @@ class TypeChecker:
         # Builtin implicit UI layout state pointer
         ui_state_type = SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
         self.global_scope.define(Symbol("_ui_state", ui_state_type, "variable", is_mutable=True))
+        self.strict = True
+
+    def _is_numeric(self, t: SemanticType) -> bool:
+        return t.kind in {
+            TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64, TypeKind.I128,
+            TypeKind.U8, TypeKind.U16, TypeKind.U32, TypeKind.U64, TypeKind.U128,
+            TypeKind.F32, TypeKind.F64
+        }
+
+    def _is_integer(self, t: SemanticType) -> bool:
+        return t.kind in {
+            TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64, TypeKind.I128,
+            TypeKind.U8, TypeKind.U16, TypeKind.U32, TypeKind.U64, TypeKind.U128,
+        }
+
+    def _is_float(self, t: SemanticType) -> bool:
+        return t.kind in {TypeKind.F32, TypeKind.F64}
+
+    def _numeric_common_type(self, a: SemanticType, b: SemanticType) -> SemanticType:
+        # Prefer floats if any operand is float.
+        if self._is_float(a) or self._is_float(b):
+            if a.kind == TypeKind.F64 or b.kind == TypeKind.F64:
+                return SemanticType(TypeKind.F64)
+            return SemanticType(TypeKind.F32)
+
+        # Both integer types: choose the wider kind.
+        order = [
+            TypeKind.I8, TypeKind.U8,
+            TypeKind.I16, TypeKind.U16,
+            TypeKind.I32, TypeKind.U32,
+            TypeKind.I64, TypeKind.U64,
+            TypeKind.I128, TypeKind.U128,
+        ]
+        a_idx = order.index(a.kind) if a.kind in order else 0
+        b_idx = order.index(b.kind) if b.kind in order else 0
+        return SemanticType(order[max(a_idx, b_idx)])
+
+    def _can_coerce(self, actual: SemanticType, expected: SemanticType) -> bool:
+        if actual == expected:
+            return True
+        # Numeric widening/coercion
+        if self._is_numeric(actual) and self._is_numeric(expected):
+            return True
+        # Pointer compatibility: allow any pointer-to-pointer
+        if actual.kind == TypeKind.POINTER and expected.kind == TypeKind.POINTER:
+            return True
+        # Array to pointer decay
+        if actual.kind == TypeKind.ARRAY and expected.kind == TypeKind.POINTER:
+            return True
+        # Null literal to pointer
+        if actual.kind == TypeKind.NULL and expected.kind == TypeKind.POINTER:
+            return True
+        return False
 
     def check(self, declarations: List[Any]) -> TypeCheckResult:
         """Main entry point for type checking."""
@@ -258,14 +311,23 @@ class TypeChecker:
                 func_scope.define(symbol)
 
             # Type check function body
-            body_type = self._check_block(func.body)
+            self._check_block(func.body)
             expected_return = self._parse_type(func.return_type)
 
-            # Check return type - extern functions don't have bodies so don't check
-            if body_type != expected_return:
-                self.errors.append(
-                    f"Function '{func.name}' returns {body_type} but should return {expected_return}"
-                )
+            # Collect explicit return types
+            returns = self._collect_return_types(func.body)
+            if returns:
+                for rt in returns:
+                    if not self._can_coerce(rt, expected_return):
+                        self.errors.append(
+                            f"Function '{func.name}' returns {rt} but should return {expected_return}"
+                        )
+            else:
+                # No explicit returns: only error if expected is non-void
+                if expected_return.kind != TypeKind.VOID:
+                    self.errors.append(
+                        f"Function '{func.name}' returns void but should return {expected_return}"
+                    )
 
         finally:
             self.current_scope = func_scope.parent
@@ -319,15 +381,10 @@ class TypeChecker:
 
         if var.type:  # Explicit type annotation
             expected_type = self._parse_type(var.type)
-            if expr_type != expected_type:
-                if not (
-                    (expr_type.kind == TypeKind.POINTER and expected_type.kind == TypeKind.POINTER and
-                     expr_type.element_type and expr_type.element_type.kind == TypeKind.VOID) or
-                    (expr_type.kind == TypeKind.ARRAY and expected_type.kind == TypeKind.POINTER)
-                ):
-                    self.errors.append(
-                        f"Variable '{var.name}' initialized with {expr_type} but annotated as {expected_type}"
-                    )
+            if not self._can_coerce(expr_type, expected_type):
+                self.errors.append(
+                    f"Variable '{var.name}' initialized with {expr_type} but annotated as {expected_type}"
+                )
         else:
             # Type inference - for now, just use the expression type
             expected_type = expr_type
@@ -368,15 +425,10 @@ class TypeChecker:
             )
 
         expr_type = self._check_expression(assign.value)
-        if expr_type != symbol.type:
-            if not (
-                (expr_type.kind == TypeKind.POINTER and symbol.type.kind == TypeKind.POINTER and
-                 expr_type.element_type and expr_type.element_type.kind == TypeKind.VOID) or
-                (expr_type.kind == TypeKind.ARRAY and symbol.type.kind == TypeKind.POINTER)
-            ):
-                self.errors.append(
-                    f"Cannot assign {expr_type} to variable '{assign.target}' of type {symbol.type}"
-                )
+        if not self._can_coerce(expr_type, symbol.type):
+            self.errors.append(
+                f"Cannot assign {expr_type} to variable '{assign.target}' of type {symbol.type}"
+            )
 
         return expr_type
 
@@ -482,19 +534,23 @@ class TypeChecker:
         left_type = self._check_expression(op.left)
         right_type = self._check_expression(op.right)
 
-        # For now, assume operands must be the same type
-        if left_type != right_type:
-            self.errors.append(
-                f"Binary operator '{op.operator}' requires matching types, got {left_type} and {right_type}"
-            )
+        # Allow numeric coercions
+        if self._is_numeric(left_type) and self._is_numeric(right_type):
+            common = self._numeric_common_type(left_type, right_type)
+        else:
+            common = left_type
+            if left_type != right_type:
+                self.errors.append(
+                    f"Binary operator '{op.operator}' requires matching types, got {left_type} and {right_type}"
+                )
 
         # Determine result type based on operator
         if op.operator in ["+", "-", "*", "/"]:
-            return left_type
+            return common
         elif op.operator in ["==", "!=", "<", ">", "<=", ">=", "&&", "||"]:
             return SemanticType(TypeKind.BOOL)
         else:
-            return left_type  # Default
+            return common  # Default
 
     def _check_unary_op(self, op: UnaryOperation) -> SemanticType:
         """Type check a unary operation."""
@@ -524,6 +580,15 @@ class TypeChecker:
                 # Check arguments anyway (type check them)
                 for arg in call.arguments:
                     self._check_expression(arg)
+                # Some builtins are known to return values
+                if call.name in {"malloc", "calloc", "realloc"}:
+                    return SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
+                if call.name in {"memcpy", "memmove", "memset"}:
+                    return SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
+                if call.name in {"strlen"}:
+                    return SemanticType(TypeKind.U64)
+                if call.name.startswith("gpu_"):
+                    return SemanticType(TypeKind.I32)
                 return SemanticType(TypeKind.VOID)
             else:
                 self.errors.append(f"Undefined function '{call.name}'")
@@ -543,15 +608,10 @@ class TypeChecker:
         # Check argument types
         for i, (arg, expected_type) in enumerate(zip(call.arguments, symbol.type.param_types)):
             arg_type = self._check_expression(arg)
-            if arg_type != expected_type:
-                if not (
-                    (arg_type.kind == TypeKind.POINTER and expected_type.kind == TypeKind.POINTER and
-                     arg_type.element_type and arg_type.element_type.kind == TypeKind.VOID) or
-                    (arg_type.kind == TypeKind.ARRAY and expected_type.kind == TypeKind.POINTER)
-                ):
-                    self.errors.append(
-                        f"Function '{call.name}' argument {i} expects {expected_type}, got {arg_type}"
-                    )
+            if not self._can_coerce(arg_type, expected_type):
+                self.errors.append(
+                    f"Function '{call.name}' argument {i} expects {expected_type}, got {arg_type}"
+                )
 
         return symbol.type.return_type
 
@@ -578,7 +638,7 @@ class TypeChecker:
         for field_name, expected_type in expected_fields.items():
             if field_name not in provided_fields:
                 self.errors.append(f"Struct '{struct_name}' missing field '{field_name}'")
-            elif provided_fields[field_name] != expected_type:
+            elif not self._can_coerce(provided_fields[field_name], expected_type):
                 self.errors.append(
                     f"Struct '{struct_name}' field '{field_name}' expects {expected_type}, got {provided_fields[field_name]}"
                 )
@@ -626,3 +686,23 @@ class TypeChecker:
         else:
             # For now, assume it's a valid type
             return SemanticType(TypeKind.VOID, name=parsed_type.name)
+
+    def _collect_return_types(self, block: Block) -> List[SemanticType]:
+        types: List[SemanticType] = []
+        for stmt in block.statements:
+            if isinstance(stmt, ReturnStatement):
+                if stmt.value:
+                    types.append(self._check_expression(stmt.value))
+                else:
+                    types.append(SemanticType(TypeKind.VOID))
+            elif isinstance(stmt, IfStatement):
+                types.extend(self._collect_return_types(stmt.then_block))
+                if stmt.else_block:
+                    types.extend(self._collect_return_types(stmt.else_block))
+            elif isinstance(stmt, WhileStatement):
+                types.extend(self._collect_return_types(stmt.body))
+            elif isinstance(stmt, ForStatement):
+                types.extend(self._collect_return_types(stmt.body))
+            elif isinstance(stmt, Block):
+                types.extend(self._collect_return_types(stmt))
+        return types
