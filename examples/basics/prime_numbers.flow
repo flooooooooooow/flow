@@ -10,7 +10,7 @@ function is_prime(n: i32) -> i32 {
         return 0  # false
     }
     
-    let i: i32 = 5
+    let mut i: i32 = 5
     while i * i <= n {
         if n % i == 0 || n % (i + 2) == 0 {
             return 0  # false
@@ -23,8 +23,8 @@ function is_prime(n: i32) -> i32 {
 
 function main() -> i32 {
     let limit: i32 = 30
-    let count: i32 = 0
-    let i: i32 = 2
+    let mut count: i32 = 0
+    let mut i: i32 = 2
     
     while i <= limit {
         if is_prime(i) == 1 {

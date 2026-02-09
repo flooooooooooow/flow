@@ -162,7 +162,7 @@ function compute_error(results: ptr<f64>, n: i32, t0: f64, dt: f64, y0: f64, f_i
     for i in 0 to n {
         let t: f64 = t0 + i * dt
         let exact: f64 = exact_solution(t, y0, f_idx)
-        let err: f64 = results[i] - exact
+        let mut err: f64 = results[i] - exact
         if err < 0.0 { err = 0.0 - err }
         if err > max_error {
             max_error = err

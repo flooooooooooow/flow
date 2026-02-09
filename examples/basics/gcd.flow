@@ -1,11 +1,13 @@
 # Greatest Common Divisor - FLOW version of C++ Euclidean algorithm
 function gcd(a: i32, b: i32) -> i32 {
-    while b != 0 {
-        let temp: i32 = b
-        b = a % b
-        a = temp
+    let mut x: i32 = a
+    let mut y: i32 = b
+    while y != 0 {
+        let temp: i32 = y
+        y = x % y
+        x = temp
     }
-    return a
+    return x
 }
 
 function main() -> i32 {

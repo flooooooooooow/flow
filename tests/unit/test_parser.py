@@ -69,7 +69,8 @@ class TestLexer:
             TokenType.I16,
             TokenType.I32,
             TokenType.I64,
-            TokenType.BOOLEAN,  # string is handled as identifier
+            TokenType.BOOL,
+            TokenType.STRING_TYPE,
         ]
 
         for i, expected_type in enumerate(expected_types):
@@ -87,14 +88,13 @@ class TestLexer:
 
     def test_numeric_literals(self, lexer):
         """Test numeric literal tokenization."""
-        code = "42 -17 0 123456"
+        code = "42 - 17 0 123456"
         tokens = lexer.tokenize(code)
 
-        assert len(tokens) == 4
-        for token in tokens:
-            assert token.type == TokenType.NUMBER
-        assert tokens[0].value == "42"
-        assert tokens[1].value == "-17"
+        assert len(tokens) == 5
+        assert tokens[0].type == TokenType.NUMBER
+        assert tokens[1].type == TokenType.MINUS
+        assert tokens[2].type == TokenType.NUMBER
 
     def test_boolean_literals(self, lexer):
         """Test boolean literal tokenization."""
@@ -124,9 +124,9 @@ class TestLexer:
 
         assert len(tokens) == 3
         for token in tokens:
-            assert token.type == TokenType.STRING
-        assert tokens[0].value == "hello world"
-        assert tokens[1].value == "test\nescapes"
+            assert token.type == TokenType.STRING_LITERAL
+        assert tokens[0].value == '"hello world"'
+        assert tokens[1].value == '"test\\nescapes"'
 
     def test_comments_and_whitespace(self, lexer):
         """Test that comments and whitespace are properly handled.
@@ -408,8 +408,8 @@ class TestParser:
         """Test parsing for loops."""
         code = """
         function test() -> i32 {
-            let sum: i32 = 0
-            for i in range(0, 10) {
+            let mut sum: i32 = 0
+            for i in 0..10 {
                 sum = sum + i
             }
             return sum

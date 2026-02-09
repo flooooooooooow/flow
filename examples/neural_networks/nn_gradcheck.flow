@@ -14,14 +14,14 @@ function main() -> i32 {
     let eps: f32 = 0.001
     let g: Grads2x2x1 = net2x2x1_grads_xor(net)
 
-    let max_err: f32 = 0.0
+    let mut max_err: f32 = 0.0
     for i in 0..9 {
         let base: f32 = net2x2x1_param_get(net, i)
         let plus: Net2x2x1 = net2x2x1_param_set(net, i, base + eps)
         let minus: Net2x2x1 = net2x2x1_param_set(net, i, base - eps)
         let num: f32 = (net2x2x1_loss_xor(plus) - net2x2x1_loss_xor(minus)) / (2.0 * eps)
         let an: f32 = net2x2x1_grad_get(g, i)
-        let err: f32 = num - an
+        let mut err: f32 = num - an
         if err < 0.0 { err = -1.0 * err }
         if err > max_err { max_err = err }
         printf("param %d: analytic=% .6f  numeric=% .6f  |diff|=% .6f\n", i, an, num, err)

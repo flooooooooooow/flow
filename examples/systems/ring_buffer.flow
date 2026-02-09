@@ -48,7 +48,7 @@ function ring_destroy(rb: RingBuffer) {
 # ============================================================================
 
 function ring_size(rb: RingBuffer) -> i32 {
-    let diff: i32 = rb.write_idx - rb.read_idx
+    let mut diff: i32 = rb.write_idx - rb.read_idx
     if diff < 0 {
         diff = diff + rb.capacity
     }

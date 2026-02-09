@@ -1,7 +1,7 @@
 # Loop examples in FLOW
 function sum_range(start: i32, end: i32) -> i32 {
-    let sum: i32 = 0
-    let i: i32 = start
+    let mut sum: i32 = 0
+    let mut i: i32 = start
     
     while i <= end {
         sum = sum + i
@@ -12,8 +12,8 @@ function sum_range(start: i32, end: i32) -> i32 {
 }
 
 function factorial(n: i32) -> i32 {
-    let result: i32 = 1
-    let i: i32 = 2
+    let mut result: i32 = 1
+    let mut i: i32 = 2
     
     while i <= n {
         result = result * i

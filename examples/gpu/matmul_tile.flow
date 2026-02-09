@@ -1,7 +1,7 @@
 function matmul_4x4(a: memref_f32, b: memref_f32, c: memref_f32) -> i32 {
     for i in 0..4 {
         for j in 0..4 {
-            let acc: f32 = 0.0
+            let mut acc: f32 = 0.0
             for k in 0..4 {
                 acc = acc + a[i * 4 + k] * b[k * 4 + j]
             }

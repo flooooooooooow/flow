@@ -2,9 +2,9 @@
 # This is a compatibility + teaching layer to mirror Mojo-style APIs.
 
 extern {
-    function malloc(size: i32) -> ptr<u8>
-    function free(ptr: ptr<u8>) -> void
-    function memcpy(dest: ptr<u8>, src: ptr<u8>, n: i32) -> ptr<u8>
+    function malloc(size: i32) -> ptr<void>
+    function free(ptr: ptr<void>) -> void
+    function memcpy(dest: ptr<void>, src: ptr<void>, n: i32) -> ptr<void>
 }
 
 struct DeviceContext {
@@ -108,7 +108,7 @@ function host_buffer_f32(ptr: ptr<f32>, len: i32) -> HostBufferF32 {
 
 function host_alloc_f32(len: i32) -> HostBufferF32 {
     let bytes: i32 = len * 4
-    let raw: ptr<u8> = malloc(bytes)
+    let raw: ptr<f32> = malloc(bytes)
     return HostBufferF32 { data: raw, len: len }
 }
 
@@ -118,7 +118,7 @@ function host_free_f32(buf: HostBufferF32) -> void {
 
 function device_alloc_f32(len: i32) -> DeviceBufferF32 {
     let bytes: i32 = len * 4
-    let raw: ptr<u8> = malloc(bytes)
+    let raw: ptr<f32> = malloc(bytes)
     return DeviceBufferF32 { data: raw, len: len }
 }
 
@@ -217,7 +217,7 @@ function synchronize(q: CommandQueue) -> CommandQueue {
 # CPU-backed kernel emulation
 function kernel_vec_add(a: LayoutTensorF32, b: LayoutTensorF32, out: LayoutTensorF32) -> void {
     let n: i32 = a.layout.size
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < n {
         out.data[i] = a.data[i] + b.data[i]
         i = i + 1
@@ -226,9 +226,9 @@ function kernel_vec_add(a: LayoutTensorF32, b: LayoutTensorF32, out: LayoutTenso
 
 function launch_vec_add_1d(cfg: LaunchConfig, a: LayoutTensorF32, b: LayoutTensorF32, out: LayoutTensorF32, n: i32) -> void {
     let bx: i32 = cfg.block.x
-    let block_id: i32 = 0
+    let mut block_id: i32 = 0
     while block_id < cfg.grid.x {
-        let thread_id: i32 = 0
+        let mut thread_id: i32 = 0
         while thread_id < bx {
             let idx: i32 = block_id * bx + thread_id
             if idx < n {
@@ -241,9 +241,9 @@ function launch_vec_add_1d(cfg: LaunchConfig, a: LayoutTensorF32, b: LayoutTenso
 }
 
 function kernel_add_2d(a: LayoutTensor2DF32, b: LayoutTensor2DF32, out: LayoutTensor2DF32) -> void {
-    let r: i32 = 0
+    let mut r: i32 = 0
     while r < a.layout.rows {
-        let c: i32 = 0
+        let mut c: i32 = 0
         while c < a.layout.cols {
             let idx: i32 = layout_index_2d(a.layout, r, c)
             out.data[idx] = a.data[idx] + b.data[idx]
@@ -254,11 +254,11 @@ function kernel_add_2d(a: LayoutTensor2DF32, b: LayoutTensor2DF32, out: LayoutTe
 }
 
 function kernel_add_3d(a: LayoutTensor3DF32, b: LayoutTensor3DF32, out: LayoutTensor3DF32) -> void {
-    let z: i32 = 0
+    let mut z: i32 = 0
     while z < a.layout.depth {
-        let r: i32 = 0
+        let mut r: i32 = 0
         while r < a.layout.rows {
-            let c: i32 = 0
+            let mut c: i32 = 0
             while c < a.layout.cols {
                 let idx: i32 = layout_index_3d(a.layout, z, r, c)
                 out.data[idx] = a.data[idx] + b.data[idx]
