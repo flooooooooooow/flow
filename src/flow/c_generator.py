@@ -922,12 +922,14 @@ class CGenerator:
         start = self._gen_expr(st.range_start)
         end = self._gen_expr(st.range_end)
         step = self._gen_expr(st.step) if st.step else "1"
+        step_var = f"__flow_step_{var}"
         
         # Track the loop variable type
         self._var_types[var] = Type("i32")
         
         # Generate standard C for loop
-        lines.append(f"{self._i()}for (int32_t {var} = {start}; {var} < {end}; {var} += {step}) {{")
+        lines.append(f"{self._i()}int32_t {step_var} = {step};")
+        lines.append(f"{self._i()}for (int32_t {var} = {start}; ({step_var} > 0) ? {var} < {end} : {var} > {end}; {var} += {step_var}) {{")
         self._indent += 1
         lines.extend(self._gen_block(st.body))
         self._indent -= 1

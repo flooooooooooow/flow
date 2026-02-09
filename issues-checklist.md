@@ -30,7 +30,7 @@
 - [x] #69 [SL-L1] Stdlib: atomic operations only support i32 (enhancement, low, stdlib) https://github.com/flooooooooooow/flow/issues/69
 - [ ] #68 [SL-M7] Stdlib: AF_INET6 constant is Linux-specific (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/68
 - [x] #67 [SL-M6] Stdlib: format_hex_ptr truncates 64-bit pointers (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/67
-- [ ] #66 [SL-M5] Stdlib: memory_pool_create doesn't check malloc return (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/66
+- [x] #66 [SL-M5] Stdlib: memory_pool_create doesn't check malloc return (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/66
 - [ ] #65 [SL-M4] Stdlib: POSIX constants are Linux-specific, wrong on macOS (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/65
 - [ ] #64 [SL-M3] Stdlib: network SockAddr_in has wrong types and layout (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/64
 - [ ] #63 [SL-M2] Stdlib: collection constructors initialize data to null (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/63
@@ -71,7 +71,7 @@
 - [ ] #28 [CG-L1] C generator: massive code duplication in print/println handling (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/28
 - [ ] #27 [CG-M5] C generator: lambda with block bodies produces broken code (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/27
 - [ ] #26 [CG-M4] C generator: __auto_type is non-standard C (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/26
-- [ ] #25 [CG-M3] C generator: for-loop always uses < condition (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/25
+- [x] #25 [CG-M3] C generator: for-loop always uses < condition (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/25
 - [ ] #24 [CG-M2] C generator: remove_outer_parens is incorrect (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/24
 - [ ] #23 [CG-M1] C generator: memory leaks in generated code — no deallocation (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/23
 - [ ] #22 [CG-C3] C generator: no array bounds checking in generated code (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/22
@@ -80,12 +80,12 @@
 - [ ] #19 [TC-L2] Type checker: no error recovery — first error cascades (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/19
 - [x] #18 [TC-L1] Type checker: SemanticType missing __hash__ (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/18
 - [x] #17 [TC-M6] Type checker: _parse_type returns VOID for unknown types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/17
-- [ ] #16 [TC-M5] Type checker: builtin functions always return void (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/16
-- [ ] #15 [TC-M4] Type checker: no implicit numeric coercions (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/15
-- [ ] #14 [TC-M3] Type checker: most expression types return VOID (effectively untyped) (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/14
+- [x] #16 [TC-M5] Type checker: builtin functions always return void (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/16
+- [x] #15 [TC-M4] Type checker: no implicit numeric coercions (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/15
+- [x] #14 [TC-M3] Type checker: most expression types return VOID (effectively untyped) (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/14
 - [ ] #13 [TC-M2] Type checker: for-loop variable never added to scope (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/13
 - [x] #12 [TC-M1] Type checker: elif blocks never type-checked (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/12
-- [ ] #11 [TC-C2] Type checker: type inference (auto) always produces errors (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/11
+- [x] #11 [TC-C2] Type checker: type inference (auto) always produces errors (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/11
 - [x] #10 [TC-C1] Type checker: crash on uninitialized variable (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/10
 - [x] #9 [P-L2] Parser: FunctionDecl.type_params type annotation is wrong (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/9
 - [x] #8 [P-L1] Parser: dead/unreachable elif branch in parse_type (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/8

@@ -564,10 +564,10 @@ class TypeChecker:
                 for field in struct_def.fields:
                     if field.name == expr.field:
                         return self._parse_type(field.type)
-            return SemanticType(TypeKind.VOID)
+            return SemanticType(TypeKind.UNKNOWN)
         else:
-            # For now, assume unknown expressions are void
-            return SemanticType(TypeKind.VOID)
+            # For now, treat unknown expressions as unknown type
+            return SemanticType(TypeKind.UNKNOWN)
 
     def _check_literal(self, lit: Literal) -> SemanticType:
         """Type check a literal."""
@@ -688,6 +688,16 @@ class TypeChecker:
                     return SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
                 if call.name in {"strlen"}:
                     return SemanticType(TypeKind.U64)
+                if call.name in {"printf", "sprintf", "fprintf"}:
+                    return SemanticType(TypeKind.I32)
+                if call.name in {"scanf", "sscanf"}:
+                    return SemanticType(TypeKind.I32)
+                if call.name in {"fopen"}:
+                    return SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
+                if call.name in {"fclose", "fread", "fwrite", "fgets", "fputs"}:
+                    return SemanticType(TypeKind.I32)
+                if call.name in {"rand", "srand", "time", "clock"}:
+                    return SemanticType(TypeKind.I32)
                 if call.name in {"get_current_time"}:
                     return SemanticType(TypeKind.F64)
                 if call.name.startswith("gpu_"):
@@ -770,7 +780,7 @@ class TypeChecker:
     def _parse_type(self, parsed_type: ParsedType) -> SemanticType:
         """Convert a parsed Type to a SemanticType."""
         if parsed_type.name == "auto":
-            return SemanticType(TypeKind.VOID, name="auto")
+            return SemanticType(TypeKind.UNKNOWN, name="auto")
         if parsed_type.name.startswith("memref_"):
             elem_name = parsed_type.name[len("memref_"):]
             elem_type = self._parse_named_scalar(elem_name)
