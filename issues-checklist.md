@@ -43,9 +43,9 @@
 - [x] #56 [OV-M3] Overload: StructLiteral type inference uses wrong attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/56
 - [x] #55 [OV-M2] Overload: None arg types treated as primitive (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/55
 - [x] #54 [OV-M1] Overload: fallback returns mangled name even for incompatible types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/54
-- [ ] #53 [MN-L1] Monomorphize: deepcopy of AST nodes is expensive (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/53
+- [x] #53 [MN-L1] Monomorphize: deepcopy of AST nodes is expensive (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/53
 - [x] #52 [MN-M3] Monomorphize: VarDecl loses is_mutable flag after substitution (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/52
-- [ ] #51 [MN-M2] Monomorphize: ambiguous name mangling (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/51
+- [x] #51 [MN-M2] Monomorphize: ambiguous name mangling (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/51
 - [ ] #50 [MN-M1] Monomorphize: generic function instantiation is unimplemented (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/50
 - [ ] #49 [MN-C1] Monomorphize: no termination guard against infinite instantiation (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/49
 - [x] #48 [MR-L1] Module resolver: _resolve_symbols is a stub (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/48
