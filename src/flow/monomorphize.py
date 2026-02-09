@@ -418,7 +418,7 @@ class Monomorphizer:
         if isinstance(stmt, VarDecl):
             new_type = self._substitute_type(stmt.type, type_map)
             new_init = self._substitute_expression(stmt.initializer, type_map) if stmt.initializer else None
-            return VarDecl(stmt.name, new_type, new_init, getattr(stmt, 'is_mutable', False))
+            return VarDecl(stmt.name, new_type, new_init, is_mutable=getattr(stmt, "is_mutable", False))
         elif isinstance(stmt, ReturnStatement):
             new_value = self._substitute_expression(stmt.value, type_map) if stmt.value else None
             return ReturnStatement(new_value)
@@ -597,7 +597,7 @@ class Monomorphizer:
         if isinstance(stmt, VarDecl):
             new_type = self._rewrite_type(stmt.type)
             new_init = self._rewrite_expression(stmt.initializer) if stmt.initializer else None
-            return VarDecl(stmt.name, new_type, new_init, getattr(stmt, 'is_mutable', False))
+            return VarDecl(stmt.name, new_type, new_init, is_mutable=getattr(stmt, "is_mutable", False))
         elif isinstance(stmt, ReturnStatement):
             new_value = self._rewrite_expression(stmt.value) if stmt.value else None
             return ReturnStatement(new_value)

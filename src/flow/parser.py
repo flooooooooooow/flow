@@ -238,7 +238,7 @@ class FunctionDecl:
     attributes: List[str]
     is_exported: bool = False
     is_extern: bool = False
-    type_params: List[str] = field(
+    type_params: List["TypeParameter"] = field(
         default_factory=list
     )  # Generic type parameters like <T, U>
     has_self: bool = False  # Whether this is a method with self parameter
@@ -369,7 +369,7 @@ class StructDecl:
     name: str
     fields: List[Parameter]
     is_exported: bool = False
-    type_params: List[str] = field(
+    type_params: List["TypeParameter"] = field(
         default_factory=list
     )  # Generic type parameters like <T, U>
     location: Optional[SourceLocation] = None  # For LSP
@@ -392,7 +392,7 @@ class EnumDecl:
     name: str
     variants: List[EnumVariant]
     is_exported: bool = False
-    type_params: List[str] = field(default_factory=list)
+    type_params: List["TypeParameter"] = field(default_factory=list)
 
 
 @dataclass
@@ -411,7 +411,7 @@ class TraitDecl:
 
     name: str
     methods: List[TraitMethod]
-    type_params: List[str] = field(default_factory=list)
+    type_params: List["TypeParameter"] = field(default_factory=list)
 
 
 @dataclass
@@ -673,6 +673,23 @@ class Lexer:
         )
         self.get_token = re.compile(self.token_regex).match
 
+    def _validate_string_literal(self, token_value: str) -> None:
+        # token_value includes quotes
+        if len(token_value) < 2:
+            raise SyntaxError("Invalid string literal")
+        content = token_value[1:-1]
+        i = 0
+        while i < len(content):
+            if content[i] == "\\":
+                if i + 1 >= len(content):
+                    raise SyntaxError("Invalid escape sequence at end of string")
+                esc = content[i + 1]
+                if esc not in ['n', 't', 'r', '\\\\', '"', '0']:
+                    raise SyntaxError(f"Invalid escape sequence: \\\\{esc}")
+                i += 2
+                continue
+            i += 1
+
     def next_token(self) -> Token:
         while self.pos < len(self.text):
             m = self.get_token(self.text, self.pos)
@@ -694,12 +711,14 @@ class Lexer:
                     and token_value in self.keyword_map
                 ):
                     token_type = self.keyword_map[token_value]
+                if token_type == TokenType.STRING_LITERAL:
+                    self._validate_string_literal(token_value)
 
                 token = Token(token_type, token_value, self.line, self.column)
 
                 # Update position
                 self.pos = m.end()
-                self.column += len(token_value)
+                self.column += len(token_value.expandtabs(4))
 
                 return token
 
@@ -709,7 +728,7 @@ class Lexer:
                 self.line += 1
                 self.column = 1
             else:
-                self.column += len(token_value)
+                self.column += len(token_value.expandtabs(4))
 
         return Token(TokenType.EOF, "", self.line, self.column)
 
@@ -898,9 +917,12 @@ class Parser:
     def parse_test(self) -> FunctionDecl:
         self.expect(TokenType.TEST)
         name_token = self.expect(TokenType.STRING_LITERAL)
-        name = "test_" + name_token.value[1:-1].replace(
-            " ", "_"
-        )  # Remove quotes, make valid identifier
+        raw_name = name_token.value[1:-1]
+        # Sanitize to a valid identifier for downstream C codegen
+        safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", raw_name)
+        if not safe_name:
+            safe_name = "case"
+        name = "test_" + safe_name
         body = self.parse_block()
 
         # Create a function that returns bool
@@ -1320,18 +1342,6 @@ class Parser:
                 return Type(type_name)
 
         elif self.current_token.type in [
-            TokenType.I8,
-            TokenType.I16,
-            TokenType.I32,
-            TokenType.I64,
-            TokenType.I128,
-            TokenType.U8,
-            TokenType.U16,
-            TokenType.U32,
-            TokenType.U64,
-            TokenType.U128,
-            TokenType.F32,
-            TokenType.F64,
             TokenType.BOOL,
             TokenType.VOID,
             TokenType.STRING_TYPE,
@@ -1368,6 +1378,8 @@ class Parser:
         statements = []
 
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated block: expected '}' before end of file")
             statements.append(self.parse_statement())
 
         self.expect(TokenType.RBRACE)
@@ -2025,7 +2037,7 @@ class Parser:
                     else:
                         # Just a generic type in expression position (unusual but valid)
                         return Variable(mangled_name)
-                except:
+                except SyntaxError:
                     # Restore state - this was probably a comparison
                     self.lexer.pos = save_pos
                     self.lexer.line = save_line
@@ -2045,7 +2057,7 @@ class Parser:
                 try:
                     result = self.parse_struct_literal(name)
                     return result
-                except:
+                except SyntaxError:
                     # If struct literal parsing fails, restore ALL state and treat as variable
                     self.current_token = save_current
                     self.lookahead = save_lookahead

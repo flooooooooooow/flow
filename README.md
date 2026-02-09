@@ -279,6 +279,25 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 ./flow run benchmarks/runner.flow
 ```
 
+### Interop & System
+
+```bash
+# System info (native helpers)
+./flow run examples/system/system_info.flow
+
+# Python embedding (CPython via framework on macOS)
+./flow run examples/interop/python_embed.flow
+
+# Matrix optimization demo (Flow-only variants)
+./flow run examples/bench/matmul_optimizations.flow
+
+# Print assembly + MLIR for matmul optimizations
+./flow test-matmul
+
+# Interop runtime test
+./flow test-interop
+```
+
 ---
 
 ## Compiler Architecture
@@ -329,6 +348,16 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 
 # Start LSP for IDE support
 ./flow lsp
+```
+
+### MLIR
+
+```bash
+# Generate MLIR
+./flow mlir examples/basics/hello_world.flow
+
+# Compile via MLIR and run (requires LLVM/MLIR tools)
+./flow mlir-run examples/basics/hello_world.flow
 ```
 
 ### VS Code Extension
