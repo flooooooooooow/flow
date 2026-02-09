@@ -17,7 +17,7 @@
 - [ ] #82 [RT-L2] Runtime: all Vulkan state is global/static (enhancement, low, runtime) https://github.com/flooooooooooow/flow/issues/82
 - [ ] #81 [RT-L1] Runtime: macOS window delegate leaks (bug, low, runtime) https://github.com/flooooooooooow/flow/issues/81
 - [x] #80 [RT-M3] Runtime: debugCallback null dereference (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/80
-- [ ] #79 [RT-M2] Runtime: Vulkan resource leak on init failure (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/79
+- [x] #79 [RT-M2] Runtime: Vulkan resource leak on init failure (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/79
 - [ ] #78 **Severity:** Medium | **Category:** Native Runtime" (Short-term) https://github.com/flooooooooooow/flow/issues/78
 - [ ] #77 ## Audit ID: RT-M1 () https://github.com/flooooooooooow/flow/issues/77
 - [ ] #76 A `title` containing `""` or `'` or shell metacharacters can break out of the AppleScript string and execute arbitrary commands. () https://github.com/flooooooooooow/flow/issues/76
