@@ -14,7 +14,13 @@ export function calloc(nmemb: i32, size: i32) -> i32 {
     # Allocate nmemb elements of size bytes each, initialized to zero
     # Returns pointer as integer (address)
     # Returns 0 if allocation fails
+    if nmemb < 0 || size < 0 {
+        return 0
+    }
     let total_size: i32 = nmemb * size
+    if size != 0 && total_size / size != nmemb {
+        return 0
+    }
     let ptr: i32 = malloc(total_size)
     if ptr != 0 {
         memset(ptr, 0, total_size)
@@ -41,6 +47,8 @@ export function aligned_alloc(alignment: i32, size: i32) -> i32 {
     # Alignment must be a power of 2 and size must be multiple of alignment
     # Returns 0 if allocation fails
     # Implemented as intrinsic in MLIR generator
+    if alignment == 0 { return 0 }
+    if (alignment & (alignment - 1)) != 0 { return 0 }
     return 0
 }
 
@@ -76,6 +84,10 @@ export function memcmp(s1: i32, s2: i32, n: i32) -> i32 {
 }
 
 # Memory alignment and layout functions
+export function is_power_of_two(value: i32) -> bool {
+    if value == 0 { return false }
+    return (value & (value - 1)) == 0
+}
 export function alignof_i32() -> i32 {
     # Return alignment requirement of i32 in bytes
     # Implemented as intrinsic in MLIR generator
@@ -122,18 +134,21 @@ export function offset_of_Point(field: str) -> i32 {
 export function is_aligned(ptr: i32, alignment: i32) -> bool {
     # Check if pointer is aligned to specified boundary
     let addr: i32 = ptr
+    if !is_power_of_two(alignment) { return false }
     return (addr & (alignment - 1)) == 0
 }
 
 export function align_up(size: i32, alignment: i32) -> i32 {
     # Round size up to nearest multiple of alignment
     # Alignment must be power of 2
+    if !is_power_of_two(alignment) { return size }
     return (size + alignment - 1) & ~(alignment - 1)
 }
 
 export function align_down(size: i32, alignment: i32) -> i32 {
     # Round size down to nearest multiple of alignment
     # Alignment must be power of 2
+    if !is_power_of_two(alignment) { return size }
     return size & ~(alignment - 1)
 }
 
@@ -213,6 +228,9 @@ export struct MemoryPool {
 export function memory_pool_create(size: i32) -> MemoryPool {
     # Create a new memory pool
     let buffer: i32 = malloc(size)
+    if buffer == 0 {
+        return MemoryPool { buffer: 0, size: 0, offset: 0, capacity: 0 }
+    }
     return MemoryPool {
         buffer: buffer,
         size: size,

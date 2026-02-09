@@ -23,6 +23,7 @@ class MLIRGenerator:
         self.block_counter = 0
         self.string_constants = {}  # Maps string value -> global name
         self.string_counter = 0
+        self._symbol_stack: List[Dict[str, Any]] = []
         self.needs_printf = False  # Track if we need printf declaration
         self.source_file = source_file  # For debug info
         self.current_line = 1  # Track current source line for debug info
@@ -97,7 +98,7 @@ class MLIRGenerator:
                 return sum(field['size'] for field in self.struct_layouts[type_name].values())
             return 4  # Default size
     
-    def generate_module(self, declarations: List[Any]) -> str:
+    def generate_module(self, declarations: List[Any], emit_gpu: bool = False) -> str:
         mlir_code = []
         
         # Reset state for new module
@@ -105,9 +106,18 @@ class MLIRGenerator:
         self.string_counter = 0
         self.needs_printf = False
         self.declarations = declarations  # Store declarations for type lookup
+
+        # Split GPU kernels from CPU declarations (GPU kernels are handled separately)
+        gpu_functions = []
+        cpu_decls = []
+        for decl in declarations:
+            if type(decl).__name__ == 'FunctionDecl' and hasattr(decl, 'attributes') and 'gpu' in decl.attributes:
+                gpu_functions.append(decl)
+            else:
+                cpu_decls.append(decl)
         
         # Calculate struct layouts
-        self._calculate_struct_layouts(declarations)
+        self._calculate_struct_layouts(cpu_decls)
         
         # Module header with required dialects and debug info
         if self.emit_debug_info:
@@ -117,7 +127,7 @@ class MLIRGenerator:
         self.indent_level += 1
         
         # First pass: collect all function signatures in symbol table
-        for decl in declarations:
+        for decl in cpu_decls:
             decl_type = type(decl).__name__
             if decl_type == 'FunctionDecl':
                 # Add function to symbol table
@@ -130,7 +140,7 @@ class MLIRGenerator:
         
         # Second pass: generate all declarations to collect string constants
         decl_code = []
-        for decl in declarations:
+        for decl in cpu_decls:
             decl_type = type(decl).__name__
             if decl_type == 'FunctionDecl':
                 decl_code.append(self.generate_function(decl))
@@ -159,6 +169,15 @@ class MLIRGenerator:
         
         # Add generated declarations
         mlir_code.extend(decl_code)
+
+        # Append GPU module if requested
+        if emit_gpu and gpu_functions:
+            from .mlir_gpu_codegen import MLIRGpuGenerator
+            gpu_gen = MLIRGpuGenerator()
+            gpu_gen.indent_level = self.indent_level
+            gpu_module = gpu_gen.generate_gpu_module(gpu_functions)
+            if gpu_module:
+                mlir_code.append(gpu_module)
         
         self.indent_level -= 1
         mlir_code.append("}")
@@ -203,7 +222,7 @@ class MLIRGenerator:
             mlir_code.append(body_mlir)
         
         # Add explicit return for void functions if none exists
-        has_return = any(isinstance(stmt, ReturnStatement) for stmt in func.body.statements)
+        has_return = self._block_has_return(func.body)
         if not has_return and func.return_type.name == 'void':
             mlir_code.append(f"{self.indent()}func.return")
         
@@ -214,6 +233,9 @@ class MLIRGenerator:
     
     def generate_block(self, block: Block) -> str:
         mlir_code = []
+        # New lexical scope
+        self._symbol_stack.append(self.symbol_table)
+        self.symbol_table = self.symbol_table.copy()
         
         for stmt in block.statements:
             stmt_mlir = self.generate_statement(stmt)
@@ -222,8 +244,32 @@ class MLIRGenerator:
                 # If this is a return statement, it should be the last one
                 if isinstance(stmt, ReturnStatement):
                     break
-        
+        # Restore previous scope
+        self.symbol_table = self._symbol_stack.pop()
         return "\n".join(mlir_code)
+
+    def _block_has_return(self, block: Block) -> bool:
+        for stmt in block.statements:
+            if isinstance(stmt, ReturnStatement):
+                return True
+            if isinstance(stmt, IfStatement):
+                if self._block_has_return(stmt.then_block):
+                    return True
+                for _, elif_block in stmt.elif_blocks:
+                    if self._block_has_return(elif_block):
+                        return True
+                if stmt.else_block and self._block_has_return(stmt.else_block):
+                    return True
+            if isinstance(stmt, WhileStatement):
+                if self._block_has_return(stmt.body):
+                    return True
+            if isinstance(stmt, ForStatement):
+                if self._block_has_return(stmt.body):
+                    return True
+            if isinstance(stmt, Block):
+                if self._block_has_return(stmt):
+                    return True
+        return False
     
     def generate_statement(self, stmt: Statement) -> str:
         stmt_type = type(stmt).__name__
@@ -399,7 +445,13 @@ class MLIRGenerator:
             access = assignment.target_expr
             if type(access).__name__ == 'ArrayAccess':
                 # Generate array expression
-                array_ssa, array_ops = self.generate_expression(access.array)
+                array_result = self.generate_expression(access.array)
+                if not array_result:
+                    array_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    array_ops = [f"{self.indent()}{array_ssa} = memref.alloc() : memref<?xi8>"]
+                else:
+                    array_ssa, array_ops = array_result
                 ops.extend(array_ops)
 
                 # Generate index expression
@@ -1208,9 +1260,14 @@ class MLIRGenerator:
             bool_value = '1' if literal.value == 'true' else '0'
             line = f"{self.indent()}{ssa_name} = arith.constant {bool_value} : {mlir_type}"
         elif literal.type.name == 'string':
-            # String literals should be handled through global constants, not arith.constant
-            # This should not be called directly for strings
-            raise ValueError("String literals should be handled as global constants")
+            str_val = literal.value
+            if str_val not in self.string_constants:
+                global_name = f"str_{self.string_counter}"
+                self.string_counter += 1
+                self.string_constants[str_val] = global_name
+            else:
+                global_name = self.string_constants[str_val]
+            line = f"{self.indent()}{ssa_name} = llvm.mlir.addressof @{global_name} : !llvm.ptr"
         else:
             line = f"{self.indent()}{ssa_name} = arith.constant {literal.value} : {mlir_type}"
         return ssa_name, [line]
@@ -1337,7 +1394,12 @@ class MLIRGenerator:
         if un_op.operator == '-':
             if 'f32' in ty or 'f64' in ty:
                 return ssa_name, operand_ops + [f"{self.indent()}{ssa_name} = arith.negf {operand_ssa} : {ty}"]
-            return ssa_name, operand_ops + [f"{self.indent()}{ssa_name} = arith.subi %c0, {operand_ssa} : {ty}"]
+            zero_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops = list(operand_ops)
+            ops.append(f"{self.indent()}{zero_ssa} = arith.constant 0 : {ty}")
+            ops.append(f"{self.indent()}{ssa_name} = arith.subi {zero_ssa}, {operand_ssa} : {ty}")
+            return ssa_name, ops
         elif un_op.operator in ['!', 'not']:
             # %not = xor %x, true
             c1 = f"%{self.function_counter}"
@@ -1349,7 +1411,10 @@ class MLIRGenerator:
             
             # Ensure operand is i1 (boolean)
             if 'i1' not in ty:
-                ops.append(f"{self.indent()}{cast_name} = arith.cmpi ne {operand_ssa}, %c0 : {ty}")
+                zero_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{zero_ssa} = arith.constant 0 : {ty}")
+                ops.append(f"{self.indent()}{cast_name} = arith.cmpi ne {operand_ssa}, {zero_ssa} : {ty}")
                 operand_ssa = cast_name
                 ty = 'i1'
             
@@ -1394,6 +1459,7 @@ class MLIRGenerator:
             return ssa_name, ops
         
         layout = self.struct_layouts[obj_type.name]
+        total_size = sum(field['size'] for field in layout.values())
         if field_access.field not in layout:
             # Field not found
             ssa_name = f"%{self.function_counter}"
@@ -1870,7 +1936,20 @@ class MLIRGenerator:
                 var_info = self.symbol_table[arg.name]
                 if 'flow_type' in var_info and var_info['flow_type'].name == 'string':
                     # String variable - just print it directly
-                    arg_ssa, arg_ops = self.generate_expression(arg)
+                    arg_result = self.generate_expression(arg)
+                    if not arg_result:
+                        empty_str = ""
+                        if empty_str not in self.string_constants:
+                            global_name = f"str_{self.string_counter}"
+                            self.string_counter += 1
+                            self.string_constants[empty_str] = global_name
+                        else:
+                            global_name = self.string_constants[empty_str]
+                        arg_ssa = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        arg_ops = [f"{self.indent()}{arg_ssa} = llvm.mlir.addressof @{global_name} : !llvm.ptr"]
+                    else:
+                        arg_ssa, arg_ops = arg_result
                     ops.extend(arg_ops)
                     
                     result_ssa = f"%{self.function_counter}"
@@ -1879,7 +1958,13 @@ class MLIRGenerator:
                 else:
                     # Numeric variable
                     arg_type = self.get_expression_type(arg)
-                    arg_ssa, arg_ops = self.generate_expression(arg)
+                    arg_result = self.generate_expression(arg)
+                    if not arg_result:
+                        arg_ssa = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        arg_ops = [f"{self.indent()}{arg_ssa} = arith.constant 0 : i32"]
+                    else:
+                        arg_ssa, arg_ops = arg_result
                     ops.extend(arg_ops)
                     
                     # Determine format string based on type
@@ -1922,7 +2007,13 @@ class MLIRGenerator:
             else:
                 # Other expression types - treat as numeric
                 arg_type = self.get_expression_type(arg)
-                arg_ssa, arg_ops = self.generate_expression(arg)
+                arg_result = self.generate_expression(arg)
+                if not arg_result:
+                    arg_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    arg_ops = [f"{self.indent()}{arg_ssa} = arith.constant 0 : i32"]
+                else:
+                    arg_ssa, arg_ops = arg_result
                 ops.extend(arg_ops)
                 
                 # Determine format string based on type
@@ -2126,11 +2217,21 @@ class MLIRGenerator:
 
         elem_type = self.get_expression_type(vector_literal.elements[0])
         size = len(element_values)
-        
-        # Create vector constant using dense notation
-        elements_str = ", ".join(element_values)
-        ops.append(f"{self.indent()}{ssa_name} = arith.constant dense<[{elements_str}]> : vector<{size}x{elem_type}>")
-        
+
+        # Build vector via insertelement to avoid SSA in dense<> attributes
+        vec_ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{vec_ssa} = vector.undef : vector<{size}x{elem_type}>")
+        current = vec_ssa
+        for i, val in enumerate(element_values):
+            idx_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{idx_ssa} = arith.constant {i} : index")
+            next_vec = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{next_vec} = vector.insertelement {val}, {current}[{idx_ssa}] : vector<{size}x{elem_type}>")
+            current = next_vec
+        ops.append(f"{self.indent()}{ssa_name} = {current} : vector<{size}x{elem_type}>")
         return ssa_name, ops
 
     def generate_array_access(self, access: ArrayAccess) -> tuple[str, List[str]]:
@@ -2141,11 +2242,23 @@ class MLIRGenerator:
         ops: List[str] = []
 
         # Generate array expression (should resolve to a memref SSA value)
-        array_ssa, array_ops = self.generate_expression(access.array)
+        array_result = self.generate_expression(access.array)
+        if not array_result:
+            array_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            array_ops = [f"{self.indent()}{array_ssa} = memref.alloc() : memref<?xi8>"]
+        else:
+            array_ssa, array_ops = array_result
         ops.extend(array_ops)
 
         # Generate index expression
-        index_ssa, index_ops = self.generate_expression(access.index)
+        index_result = self.generate_expression(access.index)
+        if not index_result:
+            index_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            index_ops = [f"{self.indent()}{index_ssa} = arith.constant 0 : i32"]
+        else:
+            index_ssa, index_ops = index_result
         ops.extend(index_ops)
 
         # Check if index is already index type (e.g., loop induction variable)
@@ -2351,24 +2464,33 @@ class MLIRGenerator:
         """Generate MLIR for constant declaration"""
         mlir_code = []
         mlir_code.append(f"{self.indent()}// Constant: {const.name}")
-        
-        # Generate the constant value
-        value_ssa, value_ops = self.generate_expression(const.value)
-        
-        # Add any operations needed to compute the value
-        mlir_code.extend(value_ops)
-        
-        # Store the constant in a global variable
+
         mlir_type = self.flow_type_to_mlir(const.type)
         if const.type.name == 'bool':
             mlir_type = 'i1'
-        
-        # Create a global constant
-        mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({value_ssa}) : {mlir_type}")
-        
+
+        # Module-scope globals should not rely on SSA values from local ops.
+        if isinstance(const.value, Literal):
+            if const.value.type.name == "string":
+                # String constants handled via string globals; no separate const emitted.
+                str_val = const.value.value
+                if str_val not in self.string_constants:
+                    global_name = f"str_{self.string_counter}"
+                    self.string_counter += 1
+                    self.string_constants[str_val] = global_name
+                return ""
+            literal_value = const.value.value
+            mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({literal_value}) : {mlir_type}")
+            return "\n".join(mlir_code)
+
+        # Fallback: emit zero-initialized constant
+        zero_value = "0"
+        if mlir_type in ["f32", "f64"]:
+            zero_value = "0.0"
+        mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({zero_value}) : {mlir_type}")
         return "\n".join(mlir_code)
 
-def flow_to_mlir(declarations: List[Any], source_file: str = "unknown.flow", emit_debug_info: bool = False) -> str:
+def flow_to_mlir(declarations: List[Any], source_file: str = "unknown.flow", emit_debug_info: bool = False, emit_gpu: bool = False) -> str:
     generator = MLIRGenerator(source_file)
     generator.emit_debug_info = emit_debug_info
-    return generator.generate_module(declarations)
+    return generator.generate_module(declarations, emit_gpu=emit_gpu)

@@ -1,0 +1,31 @@
+# Python embedding demo in FLOW (extern-backed)
+import "stdlib/python_embed.flow"
+
+function main() -> i32 {
+    print_line("Hello FLOW!")
+    print_line("Countdown:")
+    let x: i32 = 9
+    while x > 0 {
+        print(x)
+        x = x - 3
+    }
+    print_line("")
+
+    let ctx0: PythonContext = python_begin(".", "./examples/interop")
+    if !ctx0.ok {
+        print_line(python_last_error())
+        return ctx0.error
+    }
+    let ctx1: PythonContext = python_import(ctx0, "simple_interop")
+    if !ctx1.ok {
+        print_line(python_last_error())
+        return ctx1.error
+    }
+    let ctx2: PythonContext = python_call(ctx1, "test_interop_func")
+    if !ctx2.ok {
+        print_line(python_last_error())
+        return ctx2.error
+    }
+    python_end()
+    return 0
+}

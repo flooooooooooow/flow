@@ -34,11 +34,11 @@ struct Mutex {
     owner: i64
 }
 
-extern function pthread_mutex_init(mutex: ptr<i8>, attr: ptr<i8>) -> i32
-extern function pthread_mutex_lock(mutex: ptr<i8>) -> i32
-extern function pthread_mutex_unlock(mutex: ptr<i8>) -> i32
-extern function pthread_mutex_trylock(mutex: ptr<i8>) -> i32
-extern function pthread_mutex_destroy(mutex: ptr<i8>) -> i32
+extern function pthread_mutex_init(mutex: ptr<void>, attr: ptr<void>) -> i32
+extern function pthread_mutex_lock(mutex: ptr<void>) -> i32
+extern function pthread_mutex_unlock(mutex: ptr<void>) -> i32
+extern function pthread_mutex_trylock(mutex: ptr<void>) -> i32
+extern function pthread_mutex_destroy(mutex: ptr<void>) -> i32
 
 function mutex_new() -> Mutex {
     return Mutex { locked: false, owner: 0 }
@@ -56,11 +56,11 @@ struct CondVar {
     initialized: bool
 }
 
-extern function pthread_cond_init(cond: ptr<i8>, attr: ptr<i8>) -> i32
-extern function pthread_cond_wait(cond: ptr<i8>, mutex: ptr<i8>) -> i32
-extern function pthread_cond_signal(cond: ptr<i8>) -> i32
-extern function pthread_cond_broadcast(cond: ptr<i8>) -> i32
-extern function pthread_cond_destroy(cond: ptr<i8>) -> i32
+extern function pthread_cond_init(cond: ptr<void>, attr: ptr<void>) -> i32
+extern function pthread_cond_wait(cond: ptr<void>, mutex: ptr<void>) -> i32
+extern function pthread_cond_signal(cond: ptr<void>) -> i32
+extern function pthread_cond_broadcast(cond: ptr<void>) -> i32
+extern function pthread_cond_destroy(cond: ptr<void>) -> i32
 
 function condvar_new() -> CondVar {
     return CondVar { initialized: false }
@@ -75,11 +75,11 @@ struct RwLock {
     writer: bool
 }
 
-extern function pthread_rwlock_init(rwlock: ptr<i8>, attr: ptr<i8>) -> i32
-extern function pthread_rwlock_rdlock(rwlock: ptr<i8>) -> i32
-extern function pthread_rwlock_wrlock(rwlock: ptr<i8>) -> i32
-extern function pthread_rwlock_unlock(rwlock: ptr<i8>) -> i32
-extern function pthread_rwlock_destroy(rwlock: ptr<i8>) -> i32
+extern function pthread_rwlock_init(rwlock: ptr<void>, attr: ptr<void>) -> i32
+extern function pthread_rwlock_rdlock(rwlock: ptr<void>) -> i32
+extern function pthread_rwlock_wrlock(rwlock: ptr<void>) -> i32
+extern function pthread_rwlock_unlock(rwlock: ptr<void>) -> i32
+extern function pthread_rwlock_destroy(rwlock: ptr<void>) -> i32
 
 function rwlock_new() -> RwLock {
     return RwLock { readers: 0, writer: false }
@@ -171,6 +171,42 @@ extern function __atomic_store_n(ptr: ptr<i32>, val: i32, memorder: i32) -> void
 extern function __atomic_fetch_add(ptr: ptr<i32>, val: i32, memorder: i32) -> i32
 extern function __atomic_fetch_sub(ptr: ptr<i32>, val: i32, memorder: i32) -> i32
 extern function __atomic_compare_exchange_n(ptr: ptr<i32>, expected: ptr<i32>, desired: i32, weak: bool, success_memorder: i32, failure_memorder: i32) -> bool
+
+# 64-bit atomics
+extern function __atomic_load_n_i64(ptr: ptr<i64>, memorder: i32) -> i64
+extern function __atomic_store_n_i64(ptr: ptr<i64>, val: i64, memorder: i32) -> void
+extern function __atomic_fetch_add_i64(ptr: ptr<i64>, val: i64, memorder: i32) -> i64
+extern function __atomic_fetch_sub_i64(ptr: ptr<i64>, val: i64, memorder: i32) -> i64
+extern function __atomic_compare_exchange_n_i64(ptr: ptr<i64>, expected: ptr<i64>, desired: i64, weak: bool, success_memorder: i32, failure_memorder: i32) -> bool
+
+# Bool atomics
+extern function __atomic_load_n_bool(ptr: ptr<bool>, memorder: i32) -> bool
+extern function __atomic_store_n_bool(ptr: ptr<bool>, val: bool, memorder: i32) -> void
+extern function __atomic_compare_exchange_n_bool(ptr: ptr<bool>, expected: ptr<bool>, desired: bool, weak: bool, success_memorder: i32, failure_memorder: i32) -> bool
+
+function atomic_i32_load(a: ptr<AtomicI32>, memorder: i32) -> i32 {
+    return __atomic_load_n(&a.value, memorder)
+}
+
+function atomic_i32_store(a: ptr<AtomicI32>, val: i32, memorder: i32) -> void {
+    __atomic_store_n(&a.value, val, memorder)
+}
+
+function atomic_i64_load(a: ptr<AtomicI64>, memorder: i32) -> i64 {
+    return __atomic_load_n_i64(&a.value, memorder)
+}
+
+function atomic_i64_store(a: ptr<AtomicI64>, val: i64, memorder: i32) -> void {
+    __atomic_store_n_i64(&a.value, val, memorder)
+}
+
+function atomic_bool_load(a: ptr<AtomicBool>, memorder: i32) -> bool {
+    return __atomic_load_n_bool(&a.value, memorder)
+}
+
+function atomic_bool_store(a: ptr<AtomicBool>, val: bool, memorder: i32) -> void {
+    __atomic_store_n_bool(&a.value, val, memorder)
+}
 
 # Memory ordering
 const MEMORY_ORDER_RELAXED: i32 = 0

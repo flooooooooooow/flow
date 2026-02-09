@@ -1,0 +1,167 @@
+# Minimal Python embedding interface (extern-backed)
+
+export const PY_OK: i32 = 0
+export const PY_ERR_INIT: i32 = 1
+export const PY_ERR_PATH: i32 = 2
+export const PY_ERR_IMPORT: i32 = 3
+export const PY_ERR_CALL: i32 = 4
+
+extern {
+    function python_init() -> i32
+    function python_destroy() -> i32
+    function python_add_to_path(path: string) -> i32
+    function python_import_module(name: string) -> ptr<void>
+    function python_call0(module: ptr<void>, name: string) -> i32
+    function python_call1_str(module: ptr<void>, name: string, arg: string) -> i32
+    function python_call1_i32(module: ptr<void>, name: string, arg: i32) -> i32
+    function python_call1_f32(module: ptr<void>, name: string, arg: f32) -> i32
+    function python_call1_bool(module: ptr<void>, name: string, arg: bool) -> i32
+    function python_call3_i32_f64(module: ptr<void>, name: string, a: i32, b: i32, c: i32) -> f64
+    function python_last_error() -> string
+    function print_line(msg: string) -> void
+}
+
+export function python_init_or_print() -> bool {
+    let code: i32 = python_init()
+    if code != PY_OK {
+        print("Python init failed")
+        return false
+    }
+    return true
+}
+
+export function python_add_paths(p1: string, p2: string) -> i32 {
+    let r1: i32 = python_add_to_path(p1)
+    let r2: i32 = python_add_to_path(p2)
+    if r1 != PY_OK { return r1 }
+    if r2 != PY_OK { return r2 }
+    return PY_OK
+}
+
+export function python_import_or_null(name: string) -> ptr<void> {
+    return python_import_module(name)
+}
+
+export function python_call0_or_print(module: ptr<void>, fn_name: string) -> i32 {
+    let code: i32 = python_call0(module, fn_name)
+    if code != PY_OK {
+        print_line("python call failed")
+    }
+    return code
+}
+
+export function python_call1_str_or_print(module: ptr<void>, fn_name: string, arg: string) -> i32 {
+    let code: i32 = python_call1_str(module, fn_name, arg)
+    if code != PY_OK {
+        print_line("python call failed")
+    }
+    return code
+}
+
+export function python_call1_i32_or_print(module: ptr<void>, fn_name: string, arg: i32) -> i32 {
+    let code: i32 = python_call1_i32(module, fn_name, arg)
+    if code != PY_OK {
+        print_line("python call failed")
+    }
+    return code
+}
+
+export function python_call1_f32_or_print(module: ptr<void>, fn_name: string, arg: f32) -> i32 {
+    let code: i32 = python_call1_f32(module, fn_name, arg)
+    if code != PY_OK {
+        print_line("python call failed")
+    }
+    return code
+}
+
+export function python_call1_bool_or_print(module: ptr<void>, fn_name: string, arg: bool) -> i32 {
+    let code: i32 = python_call1_bool(module, fn_name, arg)
+    if code != PY_OK {
+        print_line("python call failed")
+    }
+    return code
+}
+
+export struct PythonContext {
+    ok: bool,
+    module: ptr<void>,
+    error: i32,
+}
+
+export function python_begin(p1: string, p2: string) -> PythonContext {
+    if !python_init_or_print() {
+        return PythonContext{ ok: false, module: 0, error: PY_ERR_INIT }
+    }
+    let add_status: i32 = python_add_paths(p1, p2)
+    if add_status != PY_OK {
+        print_line("could not extend python path")
+        python_destroy()
+        return PythonContext{ ok: false, module: 0, error: PY_ERR_PATH }
+    }
+    return PythonContext{ ok: true, module: 0, error: PY_OK }
+}
+
+export function python_import(ctx: PythonContext, name: string) -> PythonContext {
+    if !ctx.ok { return ctx }
+    let mod: ptr<void> = python_import_or_null(name)
+    if mod == 0 {
+        print_line("could not find module")
+        python_destroy()
+        return PythonContext{ ok: false, module: 0, error: PY_ERR_IMPORT }
+    }
+    return PythonContext{ ok: true, module: mod, error: PY_OK }
+}
+
+export function python_call(ctx: PythonContext, fn_name: string) -> PythonContext {
+    if !ctx.ok { return ctx }
+    let rc: i32 = python_call0_or_print(ctx.module, fn_name)
+    if rc != PY_OK {
+        python_destroy()
+        return PythonContext{ ok: false, module: 0, error: PY_ERR_CALL }
+    }
+    return ctx
+}
+
+export function python_call_str(ctx: PythonContext, fn_name: string, arg: string) -> PythonContext {
+    if !ctx.ok { return ctx }
+    let rc: i32 = python_call1_str_or_print(ctx.module, fn_name, arg)
+    if rc != PY_OK {
+        python_destroy()
+        return PythonContext{ ok: false, module: 0, error: PY_ERR_CALL }
+    }
+    return ctx
+}
+
+export function python_call_i32(ctx: PythonContext, fn_name: string, arg: i32) -> PythonContext {
+    if !ctx.ok { return ctx }
+    let rc: i32 = python_call1_i32_or_print(ctx.module, fn_name, arg)
+    if rc != PY_OK {
+        python_destroy()
+        return PythonContext{ ok: false, module: 0, error: PY_ERR_CALL }
+    }
+    return ctx
+}
+
+export function python_call_f32(ctx: PythonContext, fn_name: string, arg: f32) -> PythonContext {
+    if !ctx.ok { return ctx }
+    let rc: i32 = python_call1_f32_or_print(ctx.module, fn_name, arg)
+    if rc != PY_OK {
+        python_destroy()
+        return PythonContext{ ok: false, module: 0, error: PY_ERR_CALL }
+    }
+    return ctx
+}
+
+export function python_call_bool(ctx: PythonContext, fn_name: string, arg: bool) -> PythonContext {
+    if !ctx.ok { return ctx }
+    let rc: i32 = python_call1_bool_or_print(ctx.module, fn_name, arg)
+    if rc != PY_OK {
+        python_destroy()
+        return PythonContext{ ok: false, module: 0, error: PY_ERR_CALL }
+    }
+    return ctx
+}
+
+export function python_end() -> void {
+    python_destroy()
+}

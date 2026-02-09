@@ -114,7 +114,7 @@ class TestWorkingLexer:
                 tokens.append(token)
                 if len(tokens) > 10:  # Limit to avoid infinite loops
                     break
-        except:
+        except Exception:
             pass
 
         assert len(tokens) > 0

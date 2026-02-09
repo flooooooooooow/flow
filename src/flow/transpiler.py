@@ -70,6 +70,20 @@ def main():
         help="GPU backend (default: cuda)",
     )
     parser.add_argument(
+        "--mlir-gpu",
+        action="store_true",
+        help="Emit MLIR GPU dialect for @gpu functions",
+    )
+    parser.add_argument(
+        "--emit-spirv",
+        action="store_true",
+        help="Lower MLIR GPU module to SPIR-V (requires mlir-opt/mlir-translate)",
+    )
+    parser.add_argument(
+        "--spirv-out",
+        help="SPIR-V output path (default: build/<input>.spv)",
+    )
+    parser.add_argument(
         "--module-info", action="store_true", help="Show module information"
     )
     parser.add_argument(
@@ -102,7 +116,9 @@ def main():
     args = parser.parse_args()
 
     # --lenient overrides --strict
-    strict_mode = not args.lenient
+    strict_mode = args.strict
+    if args.lenient:
+        strict_mode = False
 
     # Read input file
     try:
@@ -320,7 +336,10 @@ def main():
         try:
             source_file = Path(args.input).name
             out_code = flow_to_mlir(
-                declarations, source_file=source_file, emit_debug_info=args.debug_info
+                declarations,
+                source_file=source_file,
+                emit_debug_info=args.debug_info,
+                emit_gpu=args.mlir_gpu,
             )
 
             # Apply optimizations if requested
@@ -329,40 +348,59 @@ def main():
                 import tempfile
 
                 # Write generated MLIR to temp file
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".mlir", delete=False
-                ) as tmp:
-                    tmp.write(out_code)
-                    tmp_path = tmp.name
+                tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", suffix=".mlir", delete=False
+                    ) as tmp:
+                        tmp.write(out_code)
+                        tmp_path = tmp.name
 
-                # Optimize
-                optimizer = MLIROptimizer()
-                opt_result = optimizer.optimize(
-                    tmp_path,
-                    tmp_path,
-                    enable_vectorization=not args.no_vectorization,
-                    enable_loop_fusion=not args.no_loop_fusion,
-                    optimization_level=args.opt_level,
-                )
+                    # Optimize
+                    optimizer = MLIROptimizer()
+                    opt_result = optimizer.optimize(
+                        tmp_path,
+                        tmp_path,
+                        enable_vectorization=not args.no_vectorization,
+                        enable_loop_fusion=not args.no_loop_fusion,
+                        optimization_level=args.opt_level,
+                    )
 
-                if opt_result != 0:
-                    print("MLIR optimization failed", file=sys.stderr)
-                    sys.exit(1)
+                    if opt_result != 0:
+                        print("MLIR optimization failed", file=sys.stderr)
+                        sys.exit(1)
 
-                # Read optimized MLIR
-                with open(tmp_path, "r") as f:
-                    out_code = f.read()
+                    # Read optimized MLIR
+                    with open(tmp_path, "r") as f:
+                        out_code = f.read()
 
-                # Generate optimization report if requested
-                if args.opt_report:
-                    report = optimizer.get_optimization_report(tmp_path)
-                    print(report, file=sys.stderr)
-
-                # Clean up
-                Path(tmp_path).unlink()
+                    # Generate optimization report if requested
+                    if args.opt_report:
+                        report = optimizer.get_optimization_report(tmp_path)
+                        print(report, file=sys.stderr)
+                finally:
+                    if tmp_path and Path(tmp_path).exists():
+                        Path(tmp_path).unlink()
 
         except Exception as e:
             print(f"MLIR generation error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Optional: Lower GPU module to SPIR-V
+    if backend != "c" and args.emit_spirv:
+        try:
+            from .mlir_spirv import MLIRSPIRVCompiler
+
+            spirv_out = args.spirv_out
+            if not spirv_out:
+                out_base = Path(args.input).stem + ".spv"
+                spirv_out = str(Path("build") / out_base)
+            Path(spirv_out).parent.mkdir(parents=True, exist_ok=True)
+            compiler = MLIRSPIRVCompiler()
+            compiler.compile_mlir_to_spirv(out_code, spirv_out)
+            print(f"Generated SPIR-V: {spirv_out}", file=sys.stderr)
+        except Exception as e:
+            print(f"SPIR-V generation failed: {e}", file=sys.stderr)
             sys.exit(1)
 
     # Handle JIT execution

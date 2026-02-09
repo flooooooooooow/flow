@@ -115,8 +115,12 @@ class OverloadResolver:
                 return "f32"
             elif isinstance(val, str):
                 # Could be a string literal or a numeric literal stored as string
+                if val in ("true", "false"):
+                    return "bool"
+                if val.startswith("0x") and all(c in "0123456789abcdefABCDEF" for c in val[2:]):
+                    return "i32"
                 if val.replace('.', '').replace('-', '').replace('e', '').replace('E', '').isdigit():
-                    return "f32" if '.' in val else "i32"
+                    return "f32" if '.' in val or 'e' in val.lower() else "i32"
                 return "string"
             return None
         
@@ -139,7 +143,7 @@ class OverloadResolver:
             return self._func_return_types.get(expr.name)
         
         elif isinstance(expr, StructLiteral):
-            return expr.name
+            return expr.struct_name
         
         elif isinstance(expr, BinaryOperation):
             # Binary ops usually preserve type of operands
@@ -193,7 +197,8 @@ class OverloadResolver:
         # Get argument types
         arg_types = [self.get_expr_type(arg) for arg in call.arguments]
         
-        # Find exact match first
+        # Find exact matches first
+        exact_matches: List[OverloadEntry] = []
         for entry in overloads:
             if len(entry.param_types) != len(arg_types):
                 continue
@@ -209,7 +214,13 @@ class OverloadResolver:
                     break
             
             if exact_match:
-                return entry.mangled_name
+                exact_matches.append(entry)
+        
+        if len(exact_matches) == 1:
+            return exact_matches[0].mangled_name
+        if len(exact_matches) > 1:
+            # Ambiguous
+            return None
         
         # If only one overload and no exact match found, check if it's compatible
         if len(overloads) == 1:
@@ -218,15 +229,14 @@ class OverloadResolver:
                 all_compatible = True
                 for param_type, arg_type in zip(entry.param_types, arg_types):
                     if arg_type is None:
-                        continue  # Unknown type, might be compatible
+                        all_compatible = False
+                        break
                     if param_type != arg_type and not self._types_compatible(param_type, arg_type):
                         all_compatible = False
                         break
                 if all_compatible:
                     return entry.mangled_name
-                # Fallback: if there's only one overload and arity matches,
-                # prefer the mangled name to avoid unresolved calls.
-                return entry.mangled_name
+                return None
         
         # No match found - return original name (might be C stdlib function)
         return name

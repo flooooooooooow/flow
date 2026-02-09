@@ -1,0 +1,18 @@
+# MLIR-friendly matmul kernel (no interop, no parallel)
+
+function matmul_naive(C: array<f32, 4>, A: array<f32, 4>, B: array<f32, 4>) -> i32 {
+    for i in 0..2 {
+        for j in 0..2 {
+            let mut acc: f32 = 0.0
+            for k in 0..2 {
+                acc = acc + A[i * 2 + k] * B[k * 2 + j]
+            }
+            C[i * 2 + j] = acc
+        }
+    }
+    return 0
+}
+
+function main() -> i32 {
+    return 0
+}
