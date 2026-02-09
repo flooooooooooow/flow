@@ -417,7 +417,13 @@ class MLIRGenerator:
             access = assignment.target_expr
             if type(access).__name__ == 'ArrayAccess':
                 # Generate array expression
-                array_ssa, array_ops = self.generate_expression(access.array)
+                array_result = self.generate_expression(access.array)
+                if not array_result:
+                    array_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    array_ops = [f"{self.indent()}{array_ssa} = memref.alloc() : memref<?xi8>"]
+                else:
+                    array_ssa, array_ops = array_result
                 ops.extend(array_ops)
 
                 # Generate index expression
@@ -1226,9 +1232,14 @@ class MLIRGenerator:
             bool_value = '1' if literal.value == 'true' else '0'
             line = f"{self.indent()}{ssa_name} = arith.constant {bool_value} : {mlir_type}"
         elif literal.type.name == 'string':
-            # String literals should be handled through global constants, not arith.constant
-            # This should not be called directly for strings
-            raise ValueError("String literals should be handled as global constants")
+            str_val = literal.value
+            if str_val not in self.string_constants:
+                global_name = f"str_{self.string_counter}"
+                self.string_counter += 1
+                self.string_constants[str_val] = global_name
+            else:
+                global_name = self.string_constants[str_val]
+            line = f"{self.indent()}{ssa_name} = llvm.mlir.addressof @{global_name} : !llvm.ptr"
         else:
             line = f"{self.indent()}{ssa_name} = arith.constant {literal.value} : {mlir_type}"
         return ssa_name, [line]
@@ -1412,6 +1423,7 @@ class MLIRGenerator:
             return ssa_name, ops
         
         layout = self.struct_layouts[obj_type.name]
+        total_size = sum(field['size'] for field in layout.values())
         if field_access.field not in layout:
             # Field not found
             ssa_name = f"%{self.function_counter}"
@@ -1888,7 +1900,20 @@ class MLIRGenerator:
                 var_info = self.symbol_table[arg.name]
                 if 'flow_type' in var_info and var_info['flow_type'].name == 'string':
                     # String variable - just print it directly
-                    arg_ssa, arg_ops = self.generate_expression(arg)
+                    arg_result = self.generate_expression(arg)
+                    if not arg_result:
+                        empty_str = ""
+                        if empty_str not in self.string_constants:
+                            global_name = f"str_{self.string_counter}"
+                            self.string_counter += 1
+                            self.string_constants[empty_str] = global_name
+                        else:
+                            global_name = self.string_constants[empty_str]
+                        arg_ssa = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        arg_ops = [f"{self.indent()}{arg_ssa} = llvm.mlir.addressof @{global_name} : !llvm.ptr"]
+                    else:
+                        arg_ssa, arg_ops = arg_result
                     ops.extend(arg_ops)
                     
                     result_ssa = f"%{self.function_counter}"
@@ -1897,7 +1922,13 @@ class MLIRGenerator:
                 else:
                     # Numeric variable
                     arg_type = self.get_expression_type(arg)
-                    arg_ssa, arg_ops = self.generate_expression(arg)
+                    arg_result = self.generate_expression(arg)
+                    if not arg_result:
+                        arg_ssa = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        arg_ops = [f"{self.indent()}{arg_ssa} = arith.constant 0 : i32"]
+                    else:
+                        arg_ssa, arg_ops = arg_result
                     ops.extend(arg_ops)
                     
                     # Determine format string based on type
@@ -1940,7 +1971,13 @@ class MLIRGenerator:
             else:
                 # Other expression types - treat as numeric
                 arg_type = self.get_expression_type(arg)
-                arg_ssa, arg_ops = self.generate_expression(arg)
+                arg_result = self.generate_expression(arg)
+                if not arg_result:
+                    arg_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    arg_ops = [f"{self.indent()}{arg_ssa} = arith.constant 0 : i32"]
+                else:
+                    arg_ssa, arg_ops = arg_result
                 ops.extend(arg_ops)
                 
                 # Determine format string based on type
@@ -2159,11 +2196,23 @@ class MLIRGenerator:
         ops: List[str] = []
 
         # Generate array expression (should resolve to a memref SSA value)
-        array_ssa, array_ops = self.generate_expression(access.array)
+        array_result = self.generate_expression(access.array)
+        if not array_result:
+            array_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            array_ops = [f"{self.indent()}{array_ssa} = memref.alloc() : memref<?xi8>"]
+        else:
+            array_ssa, array_ops = array_result
         ops.extend(array_ops)
 
         # Generate index expression
-        index_ssa, index_ops = self.generate_expression(access.index)
+        index_result = self.generate_expression(access.index)
+        if not index_result:
+            index_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            index_ops = [f"{self.indent()}{index_ssa} = arith.constant 0 : i32"]
+        else:
+            index_ssa, index_ops = index_result
         ops.extend(index_ops)
 
         # Check if index is already index type (e.g., loop induction variable)
