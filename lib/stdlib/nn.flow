@@ -185,7 +185,7 @@ export function net2x2x1_step(net: Net2x2x1, grads: Grads2x2x1, lr: f32) -> Net2
 
 export function net2x2x1_gradcheck_xor(net: Net2x2x1, eps: f32) -> f32 {
     let g: Grads2x2x1 = net2x2x1_grads_xor(net)
-    let max_err: f32 = 0.0
+    let mut max_err: f32 = 0.0
 
     for i in 0..9 {
         let base: f32 = net2x2x1_param_get(net, i)

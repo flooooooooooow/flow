@@ -208,7 +208,7 @@ function main() -> i32 {
     printf("=== Neural Network with Reverse-Mode Backprop ===\n\n")
     
     # Initialize network
-    let net: Net = Net {
+    let mut net: Net = Net {
         w00: 0.5, w01: 0.9,
         w10: 0.4, w11: 1.0,
         b0: -0.8, b1: -0.1,
