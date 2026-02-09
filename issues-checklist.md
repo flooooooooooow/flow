@@ -1,8 +1,8 @@
-- [ ] #98 [T-L4] Tests: duplicate test files at root and in subdirectories (cleanup, low, testing) https://github.com/flooooooooooow/flow/issues/98
+- [x] #98 [T-L4] Tests: duplicate test files at root and in subdirectories (cleanup, low, testing) https://github.com/flooooooooooow/flow/issues/98
 - [x] #97 [T-L3] Tests: bare except: pass in test_working_parser.py (bug, low, testing) https://github.com/flooooooooooow/flow/issues/97
 - [x] #96 [T-L2] Tests: hypothesis dependency listed but never used (cleanup, low, testing) https://github.com/flooooooooooow/flow/issues/96
 - [x] #95 [T-L1] Tests: ERROR_CASES and EDGE_CASES only partially used (enhancement, low, testing) https://github.com/flooooooooooow/flow/issues/95
-- [ ] #94 [T-M1] Tests: temp files with delete=False never cleaned on failure (bug, medium, testing) https://github.com/flooooooooooow/flow/issues/94
+- [x] #94 [T-M1] Tests: temp files with delete=False never cleaned on failure (bug, medium, testing) https://github.com/flooooooooooow/flow/issues/94
 - [ ] #93 [CI-M4] CI: no SAST, DAST, or dependency scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/93
 - [ ] #92 [CI-M3] CI: no dependency pinning or lock file (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/92
 - [ ] #91 [CI-M2] CI: lint job is minimal and incomplete (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/91
@@ -25,7 +25,7 @@
 - [ ] #74 FILE* pipe = popen(script.c_str() () https://github.com/flooooooooooow/flow/issues/74
 - [ ] #73 [RT-M1] Runtime: shell injection via osascript in pickFileDialog () https://github.com/flooooooooooow/flow/issues/73
 - [ ] #72 [RT-C1] Runtime: command injection via std::system() in shader compilation (bug, critical, runtime, security) https://github.com/flooooooooooow/flow/issues/72
-- [ ] #71 [SL-L3] Stdlib: alignment functions don't validate power-of-two (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/71
+- [x] #71 [SL-L3] Stdlib: alignment functions don't validate power-of-two (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/71
 - [ ] #70 [SL-L2] Stdlib: pthread externs use ptr<i8> for mutex types (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/70
 - [ ] #69 [SL-L1] Stdlib: atomic operations only support i32 (enhancement, low, stdlib) https://github.com/flooooooooooow/flow/issues/69
 - [ ] #68 [SL-M7] Stdlib: AF_INET6 constant is Linux-specific (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/68
@@ -89,8 +89,8 @@
 - [ ] #10 [TC-C1] Type checker: crash on uninitialized variable (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/10
 - [x] #9 [P-L2] Parser: FunctionDecl.type_params type annotation is wrong (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/9
 - [x] #8 [P-L1] Parser: dead/unreachable elif branch in parse_type (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/8
-- [ ] #7 [P-M5] Parser: test name to identifier conversion unsanitized (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/7
-- [ ] #6 [P-M4] Parser: invalid escape sequences silently accepted in strings (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/6
+- [x] #7 [P-M5] Parser: test name to identifier conversion unsanitized (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/7
+- [x] #6 [P-M4] Parser: invalid escape sequences silently accepted in strings (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/6
 - [ ] #5 [P-M3] Parser: incorrect column tracking for multi-byte/tab characters (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/5
 - [ ] #4 [P-M2] Parser: all dotted method calls modeled as EffectCall (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/4
 - [ ] #3 [P-M1] Parser: fragile return-value detection heuristic (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/3

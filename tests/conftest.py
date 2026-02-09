@@ -7,6 +7,8 @@ for testing the FLOW language compiler components.
 import sys
 import tempfile
 import subprocess
+import atexit
+import os
 from pathlib import Path
 from typing import Dict, Any
 
@@ -16,6 +18,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import pytest
 from flow.parser import parse_flow_code, Lexer, Parser, Token, TokenType
 from flow.mlir_generator import MLIRGenerator
+
+
+_TEMP_FILES: list[str] = []
+
+
+def _cleanup_temp_files():
+    for path in list(_TEMP_FILES):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+
+
+atexit.register(_cleanup_temp_files)
 
 
 @pytest.fixture
@@ -111,6 +128,7 @@ def temp_flow_file():
     def _create_file(content: str, suffix: str = ".flow") -> str:
         with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as f:
             f.write(content)
+            _TEMP_FILES.append(f.name)
             return f.name
 
     return _create_file
@@ -186,6 +204,7 @@ class TestHelpers:
         """Create a temporary file with the given content."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as f:
             f.write(content)
+            _TEMP_FILES.append(f.name)
             return f.name
 
     @staticmethod

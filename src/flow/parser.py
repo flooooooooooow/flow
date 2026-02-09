@@ -673,6 +673,23 @@ class Lexer:
         )
         self.get_token = re.compile(self.token_regex).match
 
+    def _validate_string_literal(self, token_value: str) -> None:
+        # token_value includes quotes
+        if len(token_value) < 2:
+            raise SyntaxError("Invalid string literal")
+        content = token_value[1:-1]
+        i = 0
+        while i < len(content):
+            if content[i] == "\\":
+                if i + 1 >= len(content):
+                    raise SyntaxError("Invalid escape sequence at end of string")
+                esc = content[i + 1]
+                if esc not in ['n', 't', 'r', '\\\\', '"', '0']:
+                    raise SyntaxError(f"Invalid escape sequence: \\\\{esc}")
+                i += 2
+                continue
+            i += 1
+
     def next_token(self) -> Token:
         while self.pos < len(self.text):
             m = self.get_token(self.text, self.pos)
@@ -694,6 +711,8 @@ class Lexer:
                     and token_value in self.keyword_map
                 ):
                     token_type = self.keyword_map[token_value]
+                if token_type == TokenType.STRING_LITERAL:
+                    self._validate_string_literal(token_value)
 
                 token = Token(token_type, token_value, self.line, self.column)
 
