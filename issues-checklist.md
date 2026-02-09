@@ -37,7 +37,7 @@
 - [x] #62 [SL-M1] Stdlib: all slice accesses are bounds-unchecked (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/62
 - [x] #61 [SL-C3] Stdlib: memcpy wrapper allows overlap without check (bug, critical, stdlib) https://github.com/flooooooooooow/flow/issues/61
 - [ ] #60 [SL-C2] Stdlib: concurrency primitives provide no actual synchronization (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/60
-- [ ] #59 [SL-C1] Stdlib: calloc integer overflow in memory.flow (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/59
+- [x] #59 [SL-C1] Stdlib: calloc integer overflow in memory.flow (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/59
 - [x] #58 [OV-L1] Overload: no ambiguity detection for multiple matching overloads (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/58
 - [x] #57 [OV-M4] Overload: literal type detection is fragile (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/57
 - [x] #56 [OV-M3] Overload: StructLiteral type inference uses wrong attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/56
@@ -83,7 +83,7 @@
 - [x] #16 [TC-M5] Type checker: builtin functions always return void (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/16
 - [x] #15 [TC-M4] Type checker: no implicit numeric coercions (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/15
 - [x] #14 [TC-M3] Type checker: most expression types return VOID (effectively untyped) (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/14
-- [ ] #13 [TC-M2] Type checker: for-loop variable never added to scope (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/13
+- [x] #13 [TC-M2] Type checker: for-loop variable never added to scope (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/13
 - [x] #12 [TC-M1] Type checker: elif blocks never type-checked (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/12
 - [x] #11 [TC-C2] Type checker: type inference (auto) always produces errors (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/11
 - [x] #10 [TC-C1] Type checker: crash on uninitialized variable (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/10
