@@ -459,6 +459,13 @@ class EffectCall:
 
 
 @dataclass
+class MethodCall:
+    object: "Expression"
+    method: str
+    arguments: List["Expression"]
+
+
+@dataclass
 class HandleStatement:
     effects: List[str]
     handlers: List[str]  # Names of capabilities or functions
@@ -522,6 +529,7 @@ Expression = Union[
     VectorLiteral,
     ArrayAccess,
     EffectCall,
+    MethodCall,
     StructPattern,
 ]
 Statement = Union[
@@ -1610,45 +1618,15 @@ class Parser:
     def parse_return(self) -> ReturnStatement:
         self.expect(TokenType.RETURN)
         value = None
-        if self.current_token.type not in [
-            TokenType.RBRACE,
-            TokenType.RPAREN,
-            TokenType.SEMICOLON,
-            TokenType.EOF,
-            TokenType.VOID,
-            TokenType.I8,
-            TokenType.I16,
-            TokenType.I32,
-            TokenType.I64,
-            TokenType.I128,
-            TokenType.U8,
-            TokenType.U16,
-            TokenType.U32,
-            TokenType.U64,
-            TokenType.U128,
-            TokenType.F32,
-            TokenType.F64,
-            TokenType.BOOL,
-        ]:
-            # Check if it's a valid expression start
-            if self.current_token.type in [
-                TokenType.IDENTIFIER,
-                TokenType.NUMBER,
-                TokenType.BOOLEAN,
-                TokenType.LPAREN,
-                TokenType.MINUS,
-                TokenType.NOT,
-                TokenType.STAR,
-                TokenType.AND,
-                TokenType.STRING_LITERAL,
-                TokenType.LESS,
-                TokenType.LBRACKET,
-                TokenType.SELF,
-            ]:
-                value = self.parse_expression_without_assign()
+        # If the next token is a terminator, it's a bare return.
+        if self.current_token.type in [TokenType.SEMICOLON, TokenType.RBRACE, TokenType.EOF]:
+            value = None
         elif self.current_token.type == TokenType.VOID:
             # Explicit void return - consume the VOID token
             self.advance()
+            value = None
+        else:
+            value = self.parse_expression_without_assign()
 
         # Semicolons are optional for backward compatibility
         if self.current_token.type == TokenType.SEMICOLON:
@@ -2197,7 +2175,7 @@ class Parser:
         self.expect(TokenType.DOT)
         member_name = self.expect(TokenType.IDENTIFIER).value
 
-        # Dotted call: EffectName.operation(args)
+        # Dotted call: obj.method(args)
         if self.current_token.type == TokenType.LPAREN:
             self.expect(TokenType.LPAREN)
             arguments: List[Expression] = []
@@ -2209,7 +2187,7 @@ class Parser:
                     arguments.append(self.parse_expression_without_assign())
 
             self.expect(TokenType.RPAREN)
-            return EffectCall(object_name, member_name, arguments)
+            return MethodCall(Variable(object_name), member_name, arguments)
 
         # Regular field access
         expr: Expression = FieldAccess(Variable(object_name), member_name)

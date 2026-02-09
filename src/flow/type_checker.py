@@ -21,7 +21,7 @@ from enum import Enum
 from .parser import (
     FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, ImportDecl,
     VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
-    FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess,
+    FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall,
     IfStatement, WhileStatement, ForStatement, MatchStatement,
     HandleStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
     EffectOperation, CapabilityMethod, MatchCase, EnumDecl, TraitDecl, ImplDecl
@@ -646,6 +646,9 @@ class TypeChecker:
             return self._check_unary_op(expr)
         elif isinstance(expr, FunctionCall):
             return self._check_function_call(expr)
+        elif isinstance(expr, MethodCall):
+            desugared = FunctionCall(expr.method, [expr.object] + list(expr.arguments))
+            return self._check_function_call(desugared)
         elif isinstance(expr, StructLiteral):
             return self._check_struct_literal(expr)
         elif isinstance(expr, ArrayLiteral):

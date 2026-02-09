@@ -50,6 +50,7 @@ from .parser import (
     Literal,
     MatchCase,
     MatchStatement,
+    MethodCall,
     ReturnStatement,
     Statement,
     StructDecl,
@@ -1434,6 +1435,9 @@ class CGenerator:
         if isinstance(e, EffectCall):
             return self._gen_effect_call(e)
         
+        if isinstance(e, MethodCall):
+            return self._gen_method_call(e)
+        
         if isinstance(e, ArrayAccess):
             return self._gen_array_access(e)
         
@@ -1515,6 +1519,18 @@ class CGenerator:
 
         args = ", ".join(self._gen_expr(a) for a in e.arguments)
         return f"{effect_name}_{e.operation}({args})"
+
+    def _gen_method_call(self, e: MethodCall) -> str:
+        """Generate code for a method-style call (obj.method(args))."""
+        if isinstance(e.object, Variable):
+            var_type = self._var_types.get(e.object.name)
+            if var_type and (var_type.name.startswith("capability_") or var_type.name in self._effects):
+                effect_call = EffectCall(e.object.name, e.method, e.arguments)
+                return self._gen_effect_call(effect_call)
+
+        # Desugar to a normal function call with the receiver as the first argument.
+        args = [e.object] + e.arguments
+        return self._gen_expr(FunctionCall(e.method, args))
     
     def _gen_array_access(self, e: ArrayAccess) -> str:
         """Generate C array index access: arr[index]"""

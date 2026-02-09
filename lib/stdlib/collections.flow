@@ -12,7 +12,12 @@ struct Vector_i32 {
 }
 
 function vector_i32_new() -> Vector_i32 {
-    return Vector_i32 { data: null, len: 0, capacity: 0 }
+    let cap: i32 = 4
+    let data: ptr<i32> = null
+    if cap > 0 {
+        data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
+    }
+    return Vector_i32 { data: data, len: 0, capacity: cap }
 }
 
 function vector_i32_len(v: Vector_i32) -> i32 {
@@ -34,7 +39,11 @@ struct Stack_i32 {
 }
 
 function stack_i32_new(cap: i32) -> Stack_i32 {
-    return Stack_i32 { data: null, top: -1, capacity: cap }
+    let data: ptr<i32> = null
+    if cap > 0 {
+        data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
+    }
+    return Stack_i32 { data: data, top: -1, capacity: cap }
 }
 
 function stack_i32_is_empty(s: Stack_i32) -> bool {
@@ -58,7 +67,11 @@ struct Queue_i32 {
 }
 
 function queue_i32_new(cap: i32) -> Queue_i32 {
-    return Queue_i32 { data: null, front: 0, rear: -1, size: 0, capacity: cap }
+    let data: ptr<i32> = null
+    if cap > 0 {
+        data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
+    }
+    return Queue_i32 { data: data, front: 0, rear: -1, size: 0, capacity: cap }
 }
 
 function queue_i32_is_empty(q: Queue_i32) -> bool {
@@ -96,7 +109,13 @@ function hash_string(s: string) -> i32 {
 }
 
 function hashmap_string_i32_new(cap: i32) -> HashMap_string_i32 {
-    return HashMap_string_i32 { buckets: null, size: 0, capacity: cap }
+    let buckets: ptr<HashEntry_string_i32> = null
+    if cap > 0 {
+        # HashEntry_string_i32 layout is pointer + i32 + bool + padding (~16 bytes on 64-bit).
+        let entry_size: usize = 16
+        buckets = calloc(cap as usize, entry_size) as ptr<HashEntry_string_i32>
+    }
+    return HashMap_string_i32 { buckets: buckets, size: 0, capacity: cap }
 }
 
 function hashmap_string_i32_len(m: HashMap_string_i32) -> i32 {
@@ -118,7 +137,11 @@ struct Set_i32 {
 }
 
 function set_i32_new(cap: i32) -> Set_i32 {
-    return Set_i32 { data: null, size: 0, capacity: cap }
+    let data: ptr<i32> = null
+    if cap > 0 {
+        data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
+    }
+    return Set_i32 { data: data, size: 0, capacity: cap }
 }
 
 function set_i32_len(s: Set_i32) -> i32 {
@@ -167,7 +190,11 @@ struct PriorityQueue_i32 {
 }
 
 function pq_i32_new(cap: i32) -> PriorityQueue_i32 {
-    return PriorityQueue_i32 { data: null, size: 0, capacity: cap }
+    let data: ptr<i32> = null
+    if cap > 0 {
+        data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
+    }
+    return PriorityQueue_i32 { data: data, size: 0, capacity: cap }
 }
 
 function pq_i32_is_empty(pq: PriorityQueue_i32) -> bool {
