@@ -38,11 +38,11 @@
 - [ ] #61 [SL-C3] Stdlib: memcpy wrapper allows overlap without check (bug, critical, stdlib) https://github.com/flooooooooooow/flow/issues/61
 - [ ] #60 [SL-C2] Stdlib: concurrency primitives provide no actual synchronization (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/60
 - [ ] #59 [SL-C1] Stdlib: calloc integer overflow in memory.flow (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/59
-- [ ] #58 [OV-L1] Overload: no ambiguity detection for multiple matching overloads (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/58
-- [ ] #57 [OV-M4] Overload: literal type detection is fragile (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/57
-- [ ] #56 [OV-M3] Overload: StructLiteral type inference uses wrong attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/56
-- [ ] #55 [OV-M2] Overload: None arg types treated as primitive (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/55
-- [ ] #54 [OV-M1] Overload: fallback returns mangled name even for incompatible types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/54
+- [x] #58 [OV-L1] Overload: no ambiguity detection for multiple matching overloads (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/58
+- [x] #57 [OV-M4] Overload: literal type detection is fragile (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/57
+- [x] #56 [OV-M3] Overload: StructLiteral type inference uses wrong attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/56
+- [x] #55 [OV-M2] Overload: None arg types treated as primitive (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/55
+- [x] #54 [OV-M1] Overload: fallback returns mangled name even for incompatible types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/54
 - [ ] #53 [MN-L1] Monomorphize: deepcopy of AST nodes is expensive (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/53
 - [x] #52 [MN-M3] Monomorphize: VarDecl loses is_mutable flag after substitution (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/52
 - [ ] #51 [MN-M2] Monomorphize: ambiguous name mangling (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/51
@@ -54,7 +54,7 @@
 - [x] #45 [MR-M1] Module resolver: circular imports silently drop symbols (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/45
 - [x] #44 [MR-C1] Module resolver: path traversal via import statements (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/44
 - [x] #43 [TP-L1] Transpiler: --strict flag is a no-op (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/43
-- [ ] #42 [TP-M1] Transpiler: temp file not cleaned up on MLIR optimization failure (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/42
+- [x] #42 [TP-M1] Transpiler: temp file not cleaned up on MLIR optimization failure (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/42
 - [ ] #41 [TP-C1] Transpiler: unreachable code / control flow bug (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/41
 - [ ] #40 [MG-L1] MLIR generator: type dispatch uses string comparison (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/40
 - [x] #39 [MG-M6] MLIR generator: vector literal puts SSA names in dense<> attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/39

@@ -23,6 +23,7 @@ class MLIRGenerator:
         self.block_counter = 0
         self.string_constants = {}  # Maps string value -> global name
         self.string_counter = 0
+        self._symbol_stack: List[Dict[str, Any]] = []
         self.needs_printf = False  # Track if we need printf declaration
         self.source_file = source_file  # For debug info
         self.current_line = 1  # Track current source line for debug info
@@ -232,6 +233,9 @@ class MLIRGenerator:
     
     def generate_block(self, block: Block) -> str:
         mlir_code = []
+        # New lexical scope
+        self._symbol_stack.append(self.symbol_table)
+        self.symbol_table = self.symbol_table.copy()
         
         for stmt in block.statements:
             stmt_mlir = self.generate_statement(stmt)
@@ -240,7 +244,8 @@ class MLIRGenerator:
                 # If this is a return statement, it should be the last one
                 if isinstance(stmt, ReturnStatement):
                     break
-        
+        # Restore previous scope
+        self.symbol_table = self._symbol_stack.pop()
         return "\n".join(mlir_code)
 
     def _block_has_return(self, block: Block) -> bool:
