@@ -221,6 +221,9 @@ export struct MemoryPool {
 export function memory_pool_create(size: usize) -> MemoryPool {
     # Create a new memory pool
     let buffer: ptr<u8> = malloc(size) as ptr<u8>
+    if buffer == null {
+        return MemoryPool { buffer: null, size: 0, offset: 0, capacity: 0 }
+    }
     return MemoryPool {
         buffer: buffer,
         size: size,
