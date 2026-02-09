@@ -103,25 +103,77 @@ class MLIRGpuGenerator:
             return info["ssa"], info["mlir_type"], ops
 
         if isinstance(expr, FunctionCall):
+            def dim_index(kind: str, axis: str) -> Tuple[str, List[str]]:
+                ssa_idx = self.new_ssa()
+                ops.append(f"{self.indent()}{ssa_idx} = gpu.{kind} {axis}")
+                ssa_i32 = self.new_ssa()
+                ops.append(f"{self.indent()}{ssa_i32} = arith.index_cast {ssa_idx} : index to i32")
+                return ssa_i32, ops
+
             if expr.name in ["gpu_thread_id", "gpu_thread_id_x"]:
-                ssa = self.new_ssa()
-                ops.append(f"{self.indent()}{ssa} = gpu.thread_id x")
-                # cast to i32 for arithmetic
-                cast = self.new_ssa()
-                ops.append(f"{self.indent()}{cast} = arith.index_cast {ssa} : index to i32")
-                return cast, "i32", ops
+                # global id = block_id * block_dim + thread_id
+                block_id, _ = dim_index("block_id", "x")
+                block_dim, _ = dim_index("block_dim", "x")
+                thread_id, _ = dim_index("thread_id", "x")
+                mul = self.new_ssa()
+                ops.append(f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32")
+                add = self.new_ssa()
+                ops.append(f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32")
+                return add, "i32", ops
             if expr.name in ["gpu_thread_id_y"]:
-                ssa = self.new_ssa()
-                ops.append(f"{self.indent()}{ssa} = gpu.thread_id y")
-                cast = self.new_ssa()
-                ops.append(f"{self.indent()}{cast} = arith.index_cast {ssa} : index to i32")
-                return cast, "i32", ops
+                block_id, _ = dim_index("block_id", "y")
+                block_dim, _ = dim_index("block_dim", "y")
+                thread_id, _ = dim_index("thread_id", "y")
+                mul = self.new_ssa()
+                ops.append(f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32")
+                add = self.new_ssa()
+                ops.append(f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32")
+                return add, "i32", ops
             if expr.name in ["gpu_thread_id_z"]:
-                ssa = self.new_ssa()
-                ops.append(f"{self.indent()}{ssa} = gpu.thread_id z")
-                cast = self.new_ssa()
-                ops.append(f"{self.indent()}{cast} = arith.index_cast {ssa} : index to i32")
-                return cast, "i32", ops
+                block_id, _ = dim_index("block_id", "z")
+                block_dim, _ = dim_index("block_dim", "z")
+                thread_id, _ = dim_index("thread_id", "z")
+                mul = self.new_ssa()
+                ops.append(f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32")
+                add = self.new_ssa()
+                ops.append(f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32")
+                return add, "i32", ops
+            if expr.name in ["gpu_local_id", "gpu_local_id_x"]:
+                tid, _ = dim_index("thread_id", "x")
+                return tid, "i32", ops
+            if expr.name in ["gpu_local_id_y"]:
+                tid, _ = dim_index("thread_id", "y")
+                return tid, "i32", ops
+            if expr.name in ["gpu_local_id_z"]:
+                tid, _ = dim_index("thread_id", "z")
+                return tid, "i32", ops
+            if expr.name in ["gpu_block_id", "gpu_block_id_x"]:
+                bid, _ = dim_index("block_id", "x")
+                return bid, "i32", ops
+            if expr.name in ["gpu_block_id_y"]:
+                bid, _ = dim_index("block_id", "y")
+                return bid, "i32", ops
+            if expr.name in ["gpu_block_id_z"]:
+                bid, _ = dim_index("block_id", "z")
+                return bid, "i32", ops
+            if expr.name in ["gpu_block_size", "gpu_block_size_x"]:
+                bdim, _ = dim_index("block_dim", "x")
+                return bdim, "i32", ops
+            if expr.name in ["gpu_block_size_y"]:
+                bdim, _ = dim_index("block_dim", "y")
+                return bdim, "i32", ops
+            if expr.name in ["gpu_block_size_z"]:
+                bdim, _ = dim_index("block_dim", "z")
+                return bdim, "i32", ops
+            if expr.name in ["gpu_grid_size", "gpu_grid_size_x"]:
+                gdim, _ = dim_index("grid_dim", "x")
+                return gdim, "i32", ops
+            if expr.name in ["gpu_grid_size_y"]:
+                gdim, _ = dim_index("grid_dim", "y")
+                return gdim, "i32", ops
+            if expr.name in ["gpu_grid_size_z"]:
+                gdim, _ = dim_index("grid_dim", "z")
+                return gdim, "i32", ops
 
         if isinstance(expr, UnaryOperation):
             operand_ssa, operand_type, operand_ops = self.generate_expression(expr.operand)
@@ -269,6 +321,9 @@ class MLIRGpuGenerator:
             return lines
 
         if isinstance(stmt, Expression):
+            if isinstance(stmt, FunctionCall) and stmt.name in ["gpu_barrier", "gpu_sync"]:
+                lines.append(f"{self.indent()}gpu.barrier")
+                return lines
             _, _, expr_ops = self.generate_expression(stmt)
             lines.extend(expr_ops)
             return lines
