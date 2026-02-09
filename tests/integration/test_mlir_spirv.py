@@ -20,7 +20,7 @@ def test_mlir_spirv_vector_add():
     if out_spv.exists():
         out_spv.unlink()
     result = subprocess.run(
-        [str(FLOW), "mlir", "--mlir-gpu", "--emit-spirv", str(EXAMPLE)],
+        ["python3", "-m", "flow.transpiler", str(EXAMPLE), "--mlir", "--mlir-gpu", "--emit-spirv"],
         cwd=str(ROOT),
         capture_output=True,
         text=True,
