@@ -416,6 +416,9 @@ class VulkanApp {
 public:
     void run() {
         tileMode = g_tileMode;
+        config = g_config;
+        externalWindowScale = g_externalWindowScale;
+        externalForceSquare = g_externalForceSquare;
         trace("Startup: initializing window");
         initWindow();
         trace("Startup: initializing Vulkan");
@@ -430,6 +433,9 @@ public:
         tileMode = g_tileMode;
         externalInstanceMode = g_externalInstanceMode;
         externalInstanceCapacity = g_externalInstanceCapacity;
+        config = g_config;
+        externalWindowScale = g_externalWindowScale;
+        externalForceSquare = g_externalForceSquare;
         trace("Startup: initializing window");
         initWindow();
         trace("Startup: initializing Vulkan");
@@ -555,20 +561,20 @@ public:
     }
 
     void setClearColor(float r, float g, float b) {
-        g_config.clearR = r;
-        g_config.clearG = g;
-        g_config.clearB = b;
+        config.clearR = r;
+        config.clearG = g;
+        config.clearB = b;
     }
 
     void setCameraParams(float distance, float pitch, float yaw) {
         if (distance > 0.0f) {
-            g_config.cameraDistance = distance;
+            config.cameraDistance = distance;
         }
-        g_config.cameraPitch = pitch;
-        g_config.cameraYaw = yaw;
-        targetCameraDistance = g_config.cameraDistance;
-        targetCameraPitch = g_config.cameraPitch;
-        targetCameraYaw = g_config.cameraYaw;
+        config.cameraPitch = pitch;
+        config.cameraYaw = yaw;
+        targetCameraDistance = config.cameraDistance;
+        targetCameraPitch = config.cameraPitch;
+        targetCameraYaw = config.cameraYaw;
         cameraDistance = targetCameraDistance;
         cameraPitch = targetCameraPitch;
         cameraYaw = targetCameraYaw;
@@ -576,11 +582,18 @@ public:
 
     void setViewportSize(int32_t width, int32_t height) {
         if (width > 0) {
-            g_config.width = static_cast<uint32_t>(width);
+            config.width = static_cast<uint32_t>(width);
         }
         if (height > 0) {
-            g_config.height = static_cast<uint32_t>(height);
+            config.height = static_cast<uint32_t>(height);
         }
+    }
+
+    void setWindowScale(float scale, bool forceSquare) {
+        if (scale > 0.0f) {
+            externalWindowScale = scale;
+        }
+        externalForceSquare = forceSquare;
     }
 
     int32_t externalInstanceBufferHandle() const {
@@ -593,6 +606,7 @@ public:
 
 private:
     GLFWwindow* window = nullptr;
+    Config config{};
     bool tileMode = false;
     bool tileInited = false;
     bool keyLeftDown = false;
@@ -615,6 +629,8 @@ private:
     bool externalInstanceMode = false;
     uint32_t externalInstanceCount = 0;
     uint32_t externalInstanceCapacity = 0;
+    float externalWindowScale = 1.0f;
+    bool externalForceSquare = false;
     int32_t externalInstanceHandle = 1;
     int32_t externalTextureHandle = 1;
 
@@ -702,29 +718,29 @@ private:
         int windowPosX = 0;
         int windowPosY = 0;
         if (externalInstanceMode) {
-            uint32_t side = std::min(g_config.width, g_config.height);
+            uint32_t side = std::min(config.width, config.height);
             GLFWmonitor* monitor = glfwGetPrimaryMonitor();
             const GLFWvidmode* mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
-            if (g_externalWindowScale > 0.0f && mode) {
-                side = static_cast<uint32_t>(std::min(mode->width, mode->height) * g_externalWindowScale);
+            if (externalWindowScale > 0.0f && mode) {
+                side = static_cast<uint32_t>(std::min(mode->width, mode->height) * externalWindowScale);
             }
             if (side == 0) {
                 side = 225;
             }
-            if (g_externalForceSquare) {
-                g_config.width = side;
-                g_config.height = side;
+            if (externalForceSquare) {
+                config.width = side;
+                config.height = side;
             }
             if (mode) {
-                windowPosX = (mode->width - static_cast<int>(g_config.width)) / 2;
-                windowPosY = (mode->height - static_cast<int>(g_config.height)) / 2;
+                windowPosX = (mode->width - static_cast<int>(config.width)) / 2;
+                windowPosY = (mode->height - static_cast<int>(config.height)) / 2;
             }
         }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
         glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
-        window = glfwCreateWindow(g_config.width, g_config.height, g_config.title.c_str(), nullptr, nullptr);
+        window = glfwCreateWindow(config.width, config.height, config.title.c_str(), nullptr, nullptr);
         if (!window) {
             glfwTerminate();
             throw std::runtime_error("failed to create GLFW window");
@@ -782,9 +798,9 @@ private:
             createTextureImage2();
             createTextureImageView2();
             createTextureSampler();
-            cameraDistance = g_config.cameraDistance;
-            cameraPitch = g_config.cameraPitch;
-            cameraYaw = g_config.cameraYaw;
+            cameraDistance = config.cameraDistance;
+            cameraPitch = config.cameraPitch;
+            cameraYaw = config.cameraYaw;
             targetCameraDistance = cameraDistance;
             targetCameraPitch = cameraPitch;
             targetCameraYaw = cameraYaw;
@@ -1547,15 +1563,15 @@ private:
             CGColorSpaceRelease(colorSpace);
 #endif
         } else {
-        if (g_config.texturePath == "__PICK__") {
-            g_config.texturePath = pickFileDialog("Select texture");
+        if (config.texturePath == "__PICK__") {
+            config.texturePath = pickFileDialog("Select texture");
         }
-        if (!g_config.texturePath.empty()) {
+        if (!config.texturePath.empty()) {
 #ifdef __APPLE__
             CFURLRef url = CFURLCreateFromFileSystemRepresentation(
                 kCFAllocatorDefault,
-                reinterpret_cast<const UInt8*>(g_config.texturePath.c_str()),
-                g_config.texturePath.size(),
+                reinterpret_cast<const UInt8*>(config.texturePath.c_str()),
+                config.texturePath.size(),
                 false
             );
             if (url) {
@@ -1661,10 +1677,10 @@ private:
     }
 
     void createTextureImage2() {
-        if (g_config.texturePath2 == "__PICK__") {
-            g_config.texturePath2 = pickFileDialog("Select second texture");
+        if (config.texturePath2 == "__PICK__") {
+            config.texturePath2 = pickFileDialog("Select second texture");
         }
-        if (g_config.texturePath2.empty()) {
+        if (config.texturePath2.empty()) {
             textureImage2 = textureImage;
             textureImageMemory2 = textureImageMemory;
             textureImageView2 = textureImageView;
@@ -1678,8 +1694,8 @@ private:
 #ifdef __APPLE__
         CFURLRef url = CFURLCreateFromFileSystemRepresentation(
             kCFAllocatorDefault,
-            reinterpret_cast<const UInt8*>(g_config.texturePath2.c_str()),
-            g_config.texturePath2.size(),
+            reinterpret_cast<const UInt8*>(config.texturePath2.c_str()),
+            config.texturePath2.size(),
             false
         );
         if (url) {
@@ -1830,7 +1846,7 @@ private:
         } else if (tileMode) {
             instanceCount = 16;
         } else {
-            instanceCount = std::max<uint32_t>(1, g_config.instanceCount);
+            instanceCount = std::max<uint32_t>(1, config.instanceCount);
         }
     }
 
@@ -2217,7 +2233,7 @@ private:
         renderPassInfo.renderArea.extent = swapChainExtent;
 
         std::array<VkClearValue, 2> clearValues{};
-        clearValues[0].color = {{g_config.clearR, g_config.clearG, g_config.clearB, 1.0f}};
+        clearValues[0].color = {{config.clearR, config.clearG, config.clearB, 1.0f}};
         clearValues[1].depthStencil = {1.0f, 0};
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderPassInfo.pClearValues = clearValues.data();
@@ -2285,7 +2301,7 @@ private:
         } else {
             for (size_t i = 0; i < meshes.size(); ++i) {
                 pc.texIndex = static_cast<int32_t>(i % 2);
-                const float* col = (i % 2 == 0) ? g_config.mesh1Color : g_config.mesh2Color;
+                const float* col = (i % 2 == 0) ? config.mesh1Color : config.mesh2Color;
                 pc.color[0] = col[0];
                 pc.color[1] = col[1];
                 pc.color[2] = col[2];
@@ -2346,8 +2362,8 @@ private:
             float orthoWidth = static_cast<float>(swapChainExtent.width);
             float orthoHeight = static_cast<float>(swapChainExtent.height);
             if (tileMode || externalInstanceMode) {
-                orthoWidth = static_cast<float>(g_config.width);
-                orthoHeight = static_cast<float>(g_config.height);
+                orthoWidth = static_cast<float>(config.width);
+                orthoHeight = static_cast<float>(config.height);
             }
             mat4_ortho(0.0f,
                        orthoWidth,
@@ -2365,7 +2381,7 @@ private:
             vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
             return;
         }
-        float angle = static_cast<float>(glfwGetTime()) * g_config.rotationSpeed;
+        float angle = static_cast<float>(glfwGetTime()) * config.rotationSpeed;
         float c = std::cos(angle);
         float s = std::sin(angle);
 
@@ -2376,7 +2392,7 @@ private:
         model[4] = -s;
         model[5] = c;
 
-        float smooth = std::clamp(g_config.cameraSmoothing, 0.0f, 1.0f);
+        float smooth = std::clamp(config.cameraSmoothing, 0.0f, 1.0f);
         cameraDistance += (targetCameraDistance - cameraDistance) * smooth;
         cameraPitch += (targetCameraPitch - cameraPitch) * smooth;
         cameraYaw += (targetCameraYaw - cameraYaw) * smooth;
@@ -2589,7 +2605,7 @@ private:
         if (capabilities.currentExtent.width != UINT32_MAX) {
             return capabilities.currentExtent;
         }
-        VkExtent2D actualExtent = {g_config.width, g_config.height};
+        VkExtent2D actualExtent = {config.width, config.height};
         actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
         actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
         return actualExtent;
@@ -2900,7 +2916,7 @@ private:
             dt = 0.016f;
         }
 
-        float speed = g_config.moveSpeed * dt;
+        float speed = config.moveSpeed * dt;
         if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
             speed *= 2.0f;
         }
@@ -2944,8 +2960,8 @@ private:
             double dy = y - lastY;
             lastX = x;
             lastY = y;
-            targetCameraYaw += static_cast<float>(dx) * g_config.mouseSensitivity * 0.002f;
-            targetCameraPitch += static_cast<float>(dy) * g_config.mouseSensitivity * 0.002f;
+            targetCameraYaw += static_cast<float>(dx) * config.mouseSensitivity * 0.002f;
+            targetCameraPitch += static_cast<float>(dy) * config.mouseSensitivity * 0.002f;
         } else {
             first = true;
         }
@@ -3274,6 +3290,9 @@ extern "C" void flow_vk_set_window_scale(float scale, int32_t force_square) {
         g_externalWindowScale = scale;
     }
     g_externalForceSquare = force_square != 0;
+    if (g_flow_app) {
+        g_flow_app->setWindowScale(scale, force_square != 0);
+    }
 }
 
 extern "C" int flow_vulkan_2048_run(int32_t pretty, int32_t trace, int32_t validation,
