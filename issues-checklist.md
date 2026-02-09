@@ -15,7 +15,7 @@
 - [x] #84 [CLI-M1] CLI: predictable temp directory names (bug, medium, security) https://github.com/flooooooooooow/flow/issues/84
 - [x] #83 [CLI-C1] CLI: shell injection via unquoted variable interpolation (bug, critical, security) https://github.com/flooooooooooow/flow/issues/83
 - [ ] #82 [RT-L2] Runtime: all Vulkan state is global/static (enhancement, low, runtime) https://github.com/flooooooooooow/flow/issues/82
-- [ ] #81 [RT-L1] Runtime: macOS window delegate leaks (bug, low, runtime) https://github.com/flooooooooooow/flow/issues/81
+- [x] #81 [RT-L1] Runtime: macOS window delegate leaks (bug, low, runtime) https://github.com/flooooooooooow/flow/issues/81
 - [x] #80 [RT-M3] Runtime: debugCallback null dereference (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/80
 - [x] #79 [RT-M2] Runtime: Vulkan resource leak on init failure (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/79
 - [ ] #78 **Severity:** Medium | **Category:** Native Runtime" (Short-term) https://github.com/flooooooooooow/flow/issues/78

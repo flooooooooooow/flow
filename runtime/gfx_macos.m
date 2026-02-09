@@ -16,6 +16,13 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 typedef struct FlowGfxContext FlowGfxContext;
+@class FlowGfxWindowDelegate;
+
+#if __has_feature(objc_arc)
+#define FLOW_RELEASE(obj) ((void)0)
+#else
+#define FLOW_RELEASE(obj) [obj release]
+#endif
 
 @interface FlowGfxView : NSView
 @property(nonatomic, assign) FlowGfxContext* ctx;
@@ -24,6 +31,7 @@ typedef struct FlowGfxContext FlowGfxContext;
 struct FlowGfxContext {
     NSWindow* window;
     FlowGfxView* view;
+    FlowGfxWindowDelegate* delegate;
     int width;
     int height;
     uint8_t* pixels; // width*height*4 RGBA
@@ -138,8 +146,9 @@ void* flow_gfx_init(int32_t w, int32_t h, const char* title_utf8) {
         [ctx->window setContentView:ctx->view];
         [ctx->window makeFirstResponder:ctx->view];
 
-        FlowGfxWindowDelegate* del = [FlowGfxWindowDelegate new];
+        FlowGfxWindowDelegate* del = [[FlowGfxWindowDelegate alloc] init];
         del.ctx = ctx;
+        ctx->delegate = del;
         [ctx->window setDelegate:del];
 
         [ctx->window makeKeyAndOrderFront:nil];
@@ -154,8 +163,24 @@ void flow_gfx_shutdown(void* handle) {
         FlowGfxContext* ctx = (FlowGfxContext*)handle;
         if (!ctx) return;
         if (ctx->window) {
+            if (ctx->delegate) {
+                ctx->delegate.ctx = NULL;
+            }
+            [ctx->window setDelegate:nil];
             [ctx->window orderOut:nil];
             [ctx->window close];
+        }
+        if (ctx->view) {
+            FLOW_RELEASE(ctx->view);
+            ctx->view = nil;
+        }
+        if (ctx->delegate) {
+            FLOW_RELEASE(ctx->delegate);
+            ctx->delegate = nil;
+        }
+        if (ctx->window) {
+            FLOW_RELEASE(ctx->window);
+            ctx->window = nil;
         }
         free(ctx->pixels);
         free(ctx);
@@ -226,4 +251,3 @@ void flow_gfx_present(void* handle) {
         [ctx->view displayIfNeeded];
     }
 }
-
