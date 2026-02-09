@@ -20,10 +20,10 @@
 - [x] #79 [RT-M2] Runtime: Vulkan resource leak on init failure (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/79
 - [ ] #78 **Severity:** Medium | **Category:** Native Runtime" (Short-term) https://github.com/flooooooooooow/flow/issues/78
 - [ ] #77 ## Audit ID: RT-M1 () https://github.com/flooooooooooow/flow/issues/77
-- [ ] #76 A `title` containing `""` or `'` or shell metacharacters can break out of the AppleScript string and execute arbitrary commands. () https://github.com/flooooooooooow/flow/issues/76
-- [ ] #75 ``` () https://github.com/flooooooooooow/flow/issues/75
-- [ ] #74 FILE* pipe = popen(script.c_str() () https://github.com/flooooooooooow/flow/issues/74
-- [ ] #73 [RT-M1] Runtime: shell injection via osascript in pickFileDialog () https://github.com/flooooooooooow/flow/issues/73
+- [x] #76 A `title` containing `""` or `'` or shell metacharacters can break out of the AppleScript string and execute arbitrary commands. () https://github.com/flooooooooooow/flow/issues/76
+- [x] #75 ``` () https://github.com/flooooooooooow/flow/issues/75
+- [x] #74 FILE* pipe = popen(script.c_str() () https://github.com/flooooooooooow/flow/issues/74
+- [x] #73 [RT-M1] Runtime: shell injection via osascript in pickFileDialog () https://github.com/flooooooooooow/flow/issues/73
 - [x] #72 [RT-C1] Runtime: command injection via std::system() in shader compilation (bug, critical, runtime, security) https://github.com/flooooooooooow/flow/issues/72
 - [x] #71 [SL-L3] Stdlib: alignment functions don't validate power-of-two (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/71
 - [x] #70 [SL-L2] Stdlib: pthread externs use ptr<i8> for mutex types (bug, low, stdlib) https://github.com/flooooooooooow/flow/issues/70
@@ -56,7 +56,7 @@
 - [x] #43 [TP-L1] Transpiler: --strict flag is a no-op (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/43
 - [x] #42 [TP-M1] Transpiler: temp file not cleaned up on MLIR optimization failure (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/42
 - [ ] #41 [TP-C1] Transpiler: unreachable code / control flow bug (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/41
-- [ ] #40 [MG-L1] MLIR generator: type dispatch uses string comparison (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/40
+- [x] #40 [MG-L1] MLIR generator: type dispatch uses string comparison (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/40
 - [x] #39 [MG-M6] MLIR generator: vector literal puts SSA names in dense<> attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/39
 - [x] #38 [MG-M5] MLIR generator: flat symbol table breaks variable shadowing (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/38
 - [x] #37 [MG-M4] MLIR generator: unary minus references undefined %c0 (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/37
@@ -68,7 +68,7 @@
 - [x] #31 [MG-C1] MLIR generator: undefined variable total_size causes crash (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/31
 - [x] #30 [CG-L3] C generator: dead code behind if False (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/30
 - [x] #29 [CG-L2] C generator: bool mapped to int32_t (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/29
-- [ ] #28 [CG-L1] C generator: massive code duplication in print/println handling (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/28
+- [x] #28 [CG-L1] C generator: massive code duplication in print/println handling (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/28
 - [ ] #27 [CG-M5] C generator: lambda with block bodies produces broken code (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/27
 - [ ] #26 [CG-M4] C generator: __auto_type is non-standard C (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/26
 - [x] #25 [CG-M3] C generator: for-loop always uses < condition (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/25
