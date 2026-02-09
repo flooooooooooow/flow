@@ -15,7 +15,7 @@ struct Socket {
 # Socket domains
 const AF_UNIX: i32 = 1
 const AF_INET: i32 = 2      # IPv4
-const AF_INET6: i32 = 10    # IPv6
+const AF_INET6: i32 = 30    # IPv6 (macOS)
 
 # Socket types
 const SOCK_STREAM: i32 = 1  # TCP
