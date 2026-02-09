@@ -748,62 +748,68 @@ private:
     }
 
     void initVulkan() {
-        ensureShadersBuilt();
-        trace("Init: create instance");
-        createInstance();
-        trace("Init: setup debug messenger");
-        setupDebugMessenger();
-        trace("Init: create surface");
-        createSurface();
-        trace("Init: pick physical device");
-        pickPhysicalDevice();
-        trace("Init: create logical device");
-        createLogicalDevice();
-        trace("Init: create swapchain");
-        createSwapChain();
-        trace("Init: create image views");
-        createImageViews();
-        trace("Init: create render pass");
-        createRenderPass();
-        trace("Init: create descriptor set layout");
-        createDescriptorSetLayout();
-        trace("Init: create graphics pipeline");
-        createGraphicsPipeline();
-        trace("Init: create command pool");
-        createCommandPool();
-        trace("Init: create depth resources");
-        createDepthResources();
-        trace("Init: create framebuffers");
-        createFramebuffers();
-        trace("Init: create texture");
-        createTextureImage();
-        createTextureImageView();
-        createTextureImage2();
-        createTextureImageView2();
-        createTextureSampler();
-        cameraDistance = g_config.cameraDistance;
-        cameraPitch = g_config.cameraPitch;
-        cameraYaw = g_config.cameraYaw;
-        targetCameraDistance = cameraDistance;
-        targetCameraPitch = cameraPitch;
-        targetCameraYaw = cameraYaw;
-        lastFrameTime = glfwGetTime();
-        trace("Init: build mesh/instance data");
-        buildMeshData();
-        buildInstanceData();
-        trace("Init: create vertex/index buffers");
-        createVertexBuffer();
-        createIndexBuffer();
-        createInstanceBuffer();
-        trace("Init: create uniform buffers");
-        createUniformBuffers();
-        trace("Init: create descriptor pool/sets");
-        createDescriptorPool();
-        createDescriptorSets();
-        trace("Init: allocate command buffers");
-        createCommandBuffers();
-        trace("Init: create sync objects");
-        createSyncObjects();
+        try {
+            ensureShadersBuilt();
+            trace("Init: create instance");
+            createInstance();
+            trace("Init: setup debug messenger");
+            setupDebugMessenger();
+            trace("Init: create surface");
+            createSurface();
+            trace("Init: pick physical device");
+            pickPhysicalDevice();
+            trace("Init: create logical device");
+            createLogicalDevice();
+            trace("Init: create swapchain");
+            createSwapChain();
+            trace("Init: create image views");
+            createImageViews();
+            trace("Init: create render pass");
+            createRenderPass();
+            trace("Init: create descriptor set layout");
+            createDescriptorSetLayout();
+            trace("Init: create graphics pipeline");
+            createGraphicsPipeline();
+            trace("Init: create command pool");
+            createCommandPool();
+            trace("Init: create depth resources");
+            createDepthResources();
+            trace("Init: create framebuffers");
+            createFramebuffers();
+            trace("Init: create texture");
+            createTextureImage();
+            createTextureImageView();
+            createTextureImage2();
+            createTextureImageView2();
+            createTextureSampler();
+            cameraDistance = g_config.cameraDistance;
+            cameraPitch = g_config.cameraPitch;
+            cameraYaw = g_config.cameraYaw;
+            targetCameraDistance = cameraDistance;
+            targetCameraPitch = cameraPitch;
+            targetCameraYaw = cameraYaw;
+            lastFrameTime = glfwGetTime();
+            trace("Init: build mesh/instance data");
+            buildMeshData();
+            buildInstanceData();
+            trace("Init: create vertex/index buffers");
+            createVertexBuffer();
+            createIndexBuffer();
+            createInstanceBuffer();
+            trace("Init: create uniform buffers");
+            createUniformBuffers();
+            trace("Init: create descriptor pool/sets");
+            createDescriptorPool();
+            createDescriptorSets();
+            trace("Init: allocate command buffers");
+            createCommandBuffers();
+            trace("Init: create sync objects");
+            createSyncObjects();
+        } catch (...) {
+            trace("Init: failure, cleaning up partial Vulkan state");
+            cleanup();
+            throw;
+        }
     }
 
     void mainLoop() {
@@ -832,6 +838,9 @@ private:
     }
 
     void cleanupSwapChain() {
+        if (device == VK_NULL_HANDLE || swapChain == VK_NULL_HANDLE) {
+            return;
+        }
         for (auto framebuffer : swapChainFramebuffers) {
             vkDestroyFramebuffer(device, framebuffer, nullptr);
         }
@@ -854,64 +863,126 @@ private:
         trace("Shutdown: destroy swapchain resources");
         cleanupSwapChain();
 
-        vkDestroySampler(device, textureSampler, nullptr);
-        vkDestroyImageView(device, textureImageView, nullptr);
-        vkDestroyImage(device, textureImage, nullptr);
-        vkFreeMemory(device, textureImageMemory, nullptr);
-
-        if (textureImage2 && textureImage2 != textureImage) {
-            vkDestroyImageView(device, textureImageView2, nullptr);
-            vkDestroyImage(device, textureImage2, nullptr);
-            vkFreeMemory(device, textureImageMemory2, nullptr);
+        if (device != VK_NULL_HANDLE) {
+            if (textureSampler) {
+                vkDestroySampler(device, textureSampler, nullptr);
+            }
+            if (textureImageView) {
+                vkDestroyImageView(device, textureImageView, nullptr);
+            }
+            if (textureImage) {
+                vkDestroyImage(device, textureImage, nullptr);
+            }
+            if (textureImageMemory) {
+                vkFreeMemory(device, textureImageMemory, nullptr);
+            }
         }
 
-        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-
-        for (size_t i = 0; i < uniformBuffers.size(); ++i) {
-            vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-            vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+        if (device != VK_NULL_HANDLE && textureImage2 && textureImage2 != textureImage) {
+            if (textureImageView2) {
+                vkDestroyImageView(device, textureImageView2, nullptr);
+            }
+            if (textureImage2) {
+                vkDestroyImage(device, textureImage2, nullptr);
+            }
+            if (textureImageMemory2) {
+                vkFreeMemory(device, textureImageMemory2, nullptr);
+            }
         }
 
-        vkDestroyBuffer(device, indexBuffer, nullptr);
-        vkFreeMemory(device, indexBufferMemory, nullptr);
+        if (device != VK_NULL_HANDLE) {
+            if (descriptorPool) {
+                vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+            }
+            if (descriptorSetLayout) {
+                vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+            }
+        }
 
-        vkDestroyBuffer(device, instanceBuffer, nullptr);
-        vkFreeMemory(device, instanceBufferMemory, nullptr);
+        if (device != VK_NULL_HANDLE) {
+            for (size_t i = 0; i < uniformBuffers.size(); ++i) {
+                vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+                vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+            }
+        }
 
-        vkDestroyBuffer(device, vertexBuffer, nullptr);
-        vkFreeMemory(device, vertexBufferMemory, nullptr);
+        if (device != VK_NULL_HANDLE) {
+            if (indexBuffer) {
+                vkDestroyBuffer(device, indexBuffer, nullptr);
+            }
+            if (indexBufferMemory) {
+                vkFreeMemory(device, indexBufferMemory, nullptr);
+            }
+        }
+
+        if (device != VK_NULL_HANDLE) {
+            if (instanceBuffer) {
+                vkDestroyBuffer(device, instanceBuffer, nullptr);
+            }
+            if (instanceBufferMemory) {
+                vkFreeMemory(device, instanceBufferMemory, nullptr);
+            }
+        }
+
+        if (device != VK_NULL_HANDLE) {
+            if (vertexBuffer) {
+                vkDestroyBuffer(device, vertexBuffer, nullptr);
+            }
+            if (vertexBufferMemory) {
+                vkFreeMemory(device, vertexBufferMemory, nullptr);
+            }
+        }
 
         trace("Shutdown: destroy pipeline and render pass");
-        vkDestroyPipeline(device, graphicsPipeline, nullptr);
-        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-        vkDestroyRenderPass(device, renderPass, nullptr);
+        if (device != VK_NULL_HANDLE) {
+            if (graphicsPipeline) {
+                vkDestroyPipeline(device, graphicsPipeline, nullptr);
+            }
+            if (pipelineLayout) {
+                vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+            }
+            if (renderPass) {
+                vkDestroyRenderPass(device, renderPass, nullptr);
+            }
+        }
 
         trace("Shutdown: destroy sync objects");
-        for (size_t i = 0; i < imageAvailableSemaphores.size(); ++i) {
-            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-            vkDestroyFence(device, inFlightFences[i], nullptr);
-        }
-        for (size_t i = 0; i < renderFinishedSemaphores.size(); ++i) {
-            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+        if (device != VK_NULL_HANDLE) {
+            for (size_t i = 0; i < imageAvailableSemaphores.size(); ++i) {
+                vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+                vkDestroyFence(device, inFlightFences[i], nullptr);
+            }
+            for (size_t i = 0; i < renderFinishedSemaphores.size(); ++i) {
+                vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+            }
         }
 
         trace("Shutdown: destroy command pool");
-        vkDestroyCommandPool(device, commandPool, nullptr);
-        trace("Shutdown: destroy device");
-        vkDestroyDevice(device, nullptr);
+        if (device != VK_NULL_HANDLE) {
+            if (commandPool) {
+                vkDestroyCommandPool(device, commandPool, nullptr);
+            }
+            trace("Shutdown: destroy device");
+            vkDestroyDevice(device, nullptr);
+        }
 
-        if (validationLayersEnabled()) {
+        if (validationLayersEnabled() && instance != VK_NULL_HANDLE && debugMessenger != VK_NULL_HANDLE) {
             trace("Shutdown: destroy debug messenger");
             destroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
         }
 
         trace("Shutdown: destroy surface and instance");
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-        vkDestroyInstance(instance, nullptr);
+        if (instance != VK_NULL_HANDLE) {
+            if (surface != VK_NULL_HANDLE) {
+                vkDestroySurfaceKHR(instance, surface, nullptr);
+            }
+            vkDestroyInstance(instance, nullptr);
+        }
 
         trace("Shutdown: destroy window");
-        glfwDestroyWindow(window);
+        if (window) {
+            glfwDestroyWindow(window);
+        }
         glfwTerminate();
         trace("Shutdown: complete");
     }
