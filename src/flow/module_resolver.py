@@ -125,6 +125,10 @@ class ModuleResolver:
 
     def _resolve_import_path(self, import_path: str, base_dir: str, stdlib_path: str, packages_path: str) -> Optional[str]:
         """Resolve import path to actual file path."""
+        # Basic path traversal / absolute path guard
+        if os.path.isabs(import_path) or import_path.startswith("~") or ".." in Path(import_path).parts:
+            raise FileNotFoundError(f"Unsafe import path: {import_path}")
+
         # Add .flow extension if not present
         import_file = import_path if import_path.endswith('.flow') else import_path + '.flow'
         
@@ -157,8 +161,7 @@ class ModuleResolver:
         if os.path.exists(root_imp_path):
             return os.path.abspath(root_imp_path)
         
-        print(f"Warning: Could not resolve import '{import_path}'")
-        return None
+        raise FileNotFoundError(f"Could not resolve import '{import_path}'")
 
     def _resolve_symbols(self):
         """Resolve all symbol references and check for missing symbols."""
