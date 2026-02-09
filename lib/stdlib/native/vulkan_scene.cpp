@@ -267,8 +267,22 @@ static bool runCommand(const std::vector<std::string>& args) {
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+static std::string sanitizePrompt(const char* title) {
+    std::string prompt = title ? title : "";
+    for (char& ch : prompt) {
+        if (ch == '\n' || ch == '\r') {
+            ch = ' ';
+        }
+    }
+    if (prompt.size() > 200) {
+        prompt.resize(200);
+    }
+    return prompt;
+}
+
 static std::string pickFileDialog(const char* title) {
 #ifdef __APPLE__
+    std::string prompt = sanitizePrompt(title);
     std::vector<std::string> args = {
         "osascript",
         "-e",
@@ -276,7 +290,7 @@ static std::string pickFileDialog(const char* title) {
         "-e",
         "POSIX path of theFile",
         "--",
-        title ? title : ""
+        prompt
     };
     std::string result = runCommandCapture(args);
     if (!result.empty() && result.back() == '\n') {
