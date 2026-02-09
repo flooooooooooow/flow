@@ -32,10 +32,10 @@
 - [x] #67 [SL-M6] Stdlib: format_hex_ptr truncates 64-bit pointers (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/67
 - [x] #66 [SL-M5] Stdlib: memory_pool_create doesn't check malloc return (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/66
 - [x] #65 [SL-M4] Stdlib: POSIX constants are Linux-specific, wrong on macOS (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/65
-- [ ] #64 [SL-M3] Stdlib: network SockAddr_in has wrong types and layout (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/64
+- [x] #64 [SL-M3] Stdlib: network SockAddr_in has wrong types and layout (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/64
 - [ ] #63 [SL-M2] Stdlib: collection constructors initialize data to null (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/63
-- [ ] #62 [SL-M1] Stdlib: all slice accesses are bounds-unchecked (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/62
-- [ ] #61 [SL-C3] Stdlib: memcpy wrapper allows overlap without check (bug, critical, stdlib) https://github.com/flooooooooooow/flow/issues/61
+- [x] #62 [SL-M1] Stdlib: all slice accesses are bounds-unchecked (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/62
+- [x] #61 [SL-C3] Stdlib: memcpy wrapper allows overlap without check (bug, critical, stdlib) https://github.com/flooooooooooow/flow/issues/61
 - [ ] #60 [SL-C2] Stdlib: concurrency primitives provide no actual synchronization (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/60
 - [ ] #59 [SL-C1] Stdlib: calloc integer overflow in memory.flow (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/59
 - [x] #58 [OV-L1] Overload: no ambiguity detection for multiple matching overloads (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/58

@@ -18,14 +18,17 @@ struct Slice_u8 {
 
 # Get element from slice (bounds-unchecked)
 function slice_get_i32(s: Slice_i32, idx: i32) -> i32 {
+    if idx < 0 or idx >= s.len { return 0 }
     return s.ptr[idx]
 }
 
 function slice_get_f32(s: Slice_f32, idx: i32) -> f32 {
+    if idx < 0 or idx >= s.len { return 0.0 }
     return s.ptr[idx]
 }
 
 function slice_get_u8(s: Slice_u8, idx: i32) -> u8 {
+    if idx < 0 or idx >= s.len { return 0 }
     return s.ptr[idx]
 }
 
