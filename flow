@@ -1563,7 +1563,7 @@ for f in sys.argv[1:]:
         # Parse python-specific options
         py_name=""
         py_version="0.1.0"
-        py_source_only=""
+        py_source_only=0
         
         while [[ $# -gt 0 ]]; do
             case "$1" in
@@ -1576,7 +1576,7 @@ for f in sys.argv[1:]:
                     shift 2
                     ;;
                 --source)
-                    py_source_only="--python-source-only"
+                    py_source_only=1
                     shift
                     ;;
                 *)
@@ -1587,10 +1587,15 @@ for f in sys.argv[1:]:
         
         print_info "Generating Python package from $program..."
         
-        py_args="--python --python-version $py_version $py_source_only"
-        [ -n "$py_name" ] && py_args="$py_args --python-name $py_name"
-        
-        python3 -m "$FLOWC_MODULE" "$program" $py_args
+        py_args=(--python --python-version "$py_version")
+        if [ "$py_source_only" -eq 1 ]; then
+            py_args+=(--python-source-only)
+        fi
+        if [ -n "$py_name" ]; then
+            py_args+=(--python-name "$py_name")
+        fi
+
+        python3 -m "$FLOWC_MODULE" "$program" "${py_args[@]}"
         ;;
     "wasm")
         shift
