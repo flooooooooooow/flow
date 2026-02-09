@@ -1371,6 +1371,8 @@ class Parser:
         statements = []
 
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated block: expected '}' before end of file")
             statements.append(self.parse_statement())
 
         self.expect(TokenType.RBRACE)
@@ -2027,7 +2029,7 @@ class Parser:
                     else:
                         # Just a generic type in expression position (unusual but valid)
                         return Variable(mangled_name)
-                except:
+                except SyntaxError:
                     # Restore state - this was probably a comparison
                     self.lexer.pos = save_pos
                     self.lexer.line = save_line
@@ -2047,7 +2049,7 @@ class Parser:
                 try:
                     result = self.parse_struct_literal(name)
                     return result
-                except:
+                except SyntaxError:
                     # If struct literal parsing fails, restore ALL state and treat as variable
                     self.current_token = save_current
                     self.lookahead = save_lookahead
