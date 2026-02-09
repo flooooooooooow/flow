@@ -29,11 +29,11 @@ function main() -> i32 {
     kernel_add_3d(a_t, b_t, out_t)
     copy_device_to_host(dev_out, host_out)
 
-    let z: i32 = 0
+    let mut z: i32 = 0
     while z < depth {
-        let r: i32 = 0
+        let mut r: i32 = 0
         while r < rows {
-            let c: i32 = 0
+            let mut c: i32 = 0
             while c < cols {
                 let idx: i32 = layout_index_3d(layout, z, r, c)
                 print(out[idx])

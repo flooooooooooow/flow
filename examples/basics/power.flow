@@ -7,8 +7,8 @@ function power(base: i32, exp: i32) -> i32 {
         return base
     }
     
-    let result: i32 = 1
-    let i: i32 = 0
+    let mut result: i32 = 1
+    let mut i: i32 = 0
     
     while i < exp {
         result = result * base

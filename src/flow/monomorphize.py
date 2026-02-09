@@ -369,6 +369,11 @@ class Monomorphizer:
             type_params=[],  # No longer generic
             location=getattr(original, "location", None),
         )
+        # Preserve other attributes
+        if hasattr(original, "has_self"):
+            specialized.has_self = original.has_self
+        if hasattr(original, "is_forward_decl"):
+            specialized.is_forward_decl = original.is_forward_decl
         
         self.generated_functions[req.mangled_name] = specialized
     

@@ -1932,9 +1932,10 @@ class Parser:
             self.advance()
             # Infer float vs int from token text.
             # This keeps the language ergonomic for SIMD examples that use 0.0/1.0.
-            if isinstance(value, str) and ("." in value or "e" in value.lower()):
+            is_hex = isinstance(value, str) and value.startswith("0x")
+            if not is_hex and isinstance(value, str) and ("." in value or "e" in value.lower()):
                 return Literal(value, Type("f32"))
-            elif isinstance(value, str) and value.startswith("0x"):
+            elif is_hex:
                 # Handle hex literals - convert to integer
                 hex_value = int(value, 16)
                 return Literal(str(hex_value), Type("i32"))
