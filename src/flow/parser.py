@@ -952,6 +952,8 @@ class Parser:
 
         functions = []
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated extern block: expected '}' before end of file")
             if self.current_token.type == TokenType.FUNCTION:
                 # Parse function signature only for extern
                 self.expect(TokenType.FUNCTION)
@@ -1000,6 +1002,8 @@ class Parser:
 
         fields = []
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated struct: expected '}' before end of file")
             field_name = self.expect(TokenType.IDENTIFIER).value
             self.expect(TokenType.COLON)
             field_type = self.parse_type()
@@ -1032,6 +1036,8 @@ class Parser:
 
         variants = []
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated enum: expected '}' before end of file")
             variant_name = self.expect(TokenType.IDENTIFIER).value
 
             # Parse optional variant fields: Some(T) or Ok(T, String)
@@ -1068,6 +1074,8 @@ class Parser:
 
         methods = []
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated trait: expected '}' before end of file")
             if self.current_token.type == TokenType.FUNCTION:
                 self.advance()  # consume 'function'
                 method_name = self.expect(TokenType.IDENTIFIER).value
@@ -1128,6 +1136,8 @@ class Parser:
 
         methods = []
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated impl block: expected '}' before end of file")
             if self.current_token.type == TokenType.FUNCTION:
                 method = self.parse_function()
                 methods.append(method)
@@ -1426,6 +1436,8 @@ class Parser:
 
         operations = []
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated effect: expected '}' before end of file")
             operations.append(self.parse_effect_operation())
             if self.current_token.type == TokenType.COMMA:
                 self.advance()
@@ -1462,6 +1474,8 @@ class Parser:
         methods = []
 
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated capability: expected '}' before end of file")
             if self.current_token.type == TokenType.EFFECT:
                 self.advance()
                 # Parse multiple effects
@@ -1547,6 +1561,8 @@ class Parser:
         default_case = None
 
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated match: expected '}' before end of file")
             if self.current_token.type == TokenType.DEFAULT:
                 self.advance()
                 default_case = self.parse_block()
@@ -2160,6 +2176,8 @@ class Parser:
         fields = []
 
         while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated struct literal: expected '}' before end of file")
             field_name = self.expect(TokenType.IDENTIFIER).value
             self.expect(TokenType.COLON)
             field_value = self.parse_expression_without_assign()

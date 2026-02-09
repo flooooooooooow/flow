@@ -98,27 +98,33 @@ class MonomorphRequest:
         return "__".join(parts)
 
 
+MAX_INSTANTIATION_DEPTH = 64
+
+
 class Monomorphizer:
     """
     Performs monomorphization on FLOW declarations.
-    
+
     Usage:
         mono = Monomorphizer()
         new_decls = mono.monomorphize(declarations)
     """
-    
+
     def __init__(self):
         # Generic definitions: name -> GenericDef
         self.generic_structs: Dict[str, GenericDef] = {}
         self.generic_functions: Dict[str, GenericDef] = {}
-        
+
         # Monomorphization requests (what we need to generate)
         self.struct_requests: Dict[str, MonomorphRequest] = {}
         self.function_requests: Dict[str, MonomorphRequest] = {}
-        
+
         # Already generated specialized versions
         self.generated_structs: Dict[str, StructDecl] = {}
         self.generated_functions: Dict[str, FunctionDecl] = {}
+
+        # Guard against infinite instantiation (e.g. List<List<List<...>>>)
+        self._instantiation_depth: int = 0
     
     def monomorphize(self, declarations: List[Any]) -> List[Any]:
         """
@@ -319,43 +325,65 @@ class Monomorphizer:
         for mangled_name, req in self.struct_requests.items():
             if mangled_name not in self.generated_structs:
                 self._generate_struct(req)
-        
+
         # Generate function specializations
         for mangled_name, req in self.function_requests.items():
             if mangled_name not in self.generated_functions:
                 self._generate_function(req)
+
+    def _check_instantiation_depth(self, name: str) -> None:
+        """Guard against infinite recursive instantiation."""
+        if self._instantiation_depth > MAX_INSTANTIATION_DEPTH:
+            raise RecursionError(
+                f"Monomorphization depth limit ({MAX_INSTANTIATION_DEPTH}) exceeded "
+                f"while instantiating '{name}'. This usually indicates an infinitely "
+                f"recursive generic type (e.g. struct List<T> {{ next: List<T> }})."
+            )
     
     def _generate_struct(self, req: MonomorphRequest) -> None:
         """Generate a specialized struct."""
+        self._check_instantiation_depth(req.mangled_name)
         generic_def = self.generic_structs.get(req.name)
         if not generic_def:
             return
-        
-        original = generic_def.decl
-        type_map = dict(zip(generic_def.type_params, req.type_args))
-        
-        # Create new fields with substituted types
-        new_fields = []
-        for field in original.fields:
-            new_type = self._substitute_type(field.type, type_map)
-            new_fields.append(Parameter(field.name, new_type))
-        
-        # Create specialized struct
-        specialized = StructDecl(
-            name=req.mangled_name,
-            fields=new_fields,
-            is_exported=original.is_exported,
-            type_params=[]  # No longer generic
-        )
-        
-        self.generated_structs[req.mangled_name] = specialized
+
+        self._instantiation_depth += 1
+        try:
+            original = generic_def.decl
+            type_map = dict(zip(generic_def.type_params, req.type_args))
+
+            # Create new fields with substituted types
+            new_fields = []
+            for field in original.fields:
+                new_type = self._substitute_type(field.type, type_map)
+                new_fields.append(Parameter(field.name, new_type))
+
+            # Create specialized struct
+            specialized = StructDecl(
+                name=req.mangled_name,
+                fields=new_fields,
+                is_exported=original.is_exported,
+                type_params=[]  # No longer generic
+            )
+
+            self.generated_structs[req.mangled_name] = specialized
+        finally:
+            self._instantiation_depth -= 1
     
     def _generate_function(self, req: MonomorphRequest) -> None:
         """Generate a specialized function."""
+        self._check_instantiation_depth(req.mangled_name)
         generic_def = self.generic_functions.get(req.name)
         if not generic_def:
             return
-        
+
+        self._instantiation_depth += 1
+        try:
+            self._generate_function_inner(req, generic_def)
+        finally:
+            self._instantiation_depth -= 1
+
+    def _generate_function_inner(self, req: MonomorphRequest, generic_def: GenericDef) -> None:
         original = generic_def.decl
         type_map = dict(zip(generic_def.type_params, req.type_args))
         

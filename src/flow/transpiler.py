@@ -315,8 +315,7 @@ def main():
             traceback.print_exc()
             sys.exit(1)
 
-        # Decide backend
-        backend = "mlir"
+    # Decide backend
     backend = "mlir"  # Default backend
     if args.c:
         backend = "c"

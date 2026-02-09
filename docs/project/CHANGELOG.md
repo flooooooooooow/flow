@@ -405,36 +405,77 @@ docs/
 - **Windows**: CUDA backend support (OpenCL planned)
 - **Cross-Platform**: Automatic GPU backend detection
 
+## [0.7.0] - 2026-02-09
+
+### Security Audit & Hardening
+
+A comprehensive security and quality audit was performed across the entire codebase.
+98 issues were filed and systematically triaged. As of this release, 56 have been resolved (57%).
+
+### Fixed - Critical Security
+- **CLI shell injection** (#83): Unquoted variable interpolation in the `flow` shell script allowed arbitrary command execution. Fixed by using argument arrays and avoiding shell interpolation.
+- **Runtime command injection** (#72): `std::system()` in Vulkan shader compilation allowed command injection. Replaced with `execvp`-based `runCommand`.
+- **Module resolver path traversal** (#44): Import statements could traverse outside the project directory. Added path validation.
+
+### Fixed - Compiler
+- **MLIR generator**: Fixed 7 bugs including undefined `total_size` crash (#31), incorrect `memref.load` syntax (#32), string literal crash (#33), invalid module-scope constants (#35), missed returns in if-else (#36), undefined `%c0` in unary minus (#37), SSA names in dense attributes (#38, #39).
+- **Module resolver**: Fixed circular import silent drops (#45), symbol collision drops (#46), missing import warnings (#47), stub `_resolve_symbols` (#48).
+- **Monomorphize**: Fixed `VarDecl` losing `is_mutable` flag (#52), ambiguous name mangling (#51), deepcopy performance (#53).
+- **Parser**: Fixed fragile return-value heuristic (#3), `EffectCall` modeling for dotted methods (#4).
+- **C generator**: Fixed `remove_outer_parens` (#24), for-loop always using `<` (#25), dead code behind `if False` (#30), `bool` mapped to `int32_t` (#29).
+- **Transpiler**: `--strict` flag no longer a no-op (#43).
+
+### Fixed - Standard Library
+- **macOS POSIX constants** (#65): `O_CREAT`, `O_TRUNC`, etc. corrected for macOS (differ from Linux).
+- **AF_INET6** (#68): Corrected for macOS.
+- **format_hex_ptr** (#67): No longer truncates 64-bit pointers.
+- **memory_pool_create** (#66): Now checks `malloc` return value.
+- **Collection constructors** (#63): No longer initialize data to null.
+- **Alignment functions** (#71): Now validate power-of-two.
+- **pthread externs** (#70): Corrected from `ptr<i8>` to proper mutex types.
+- **Atomic operations** (#69): Expanded beyond i32-only.
+
+### Fixed - CLI & Tooling
+- **Predictable temp directories** (#84): Now uses secure random temp paths.
+- **Missing `set -euo pipefail`** (#85): Added to shell scripts.
+- **No `.flow` extension validation** (#86): CLI now validates file extensions.
+- **Hardcoded LLVM path** (#87): Now respects environment configuration.
+
+### Fixed - Testing
+- **Temp file leaks** (#94): `delete=False` temp files now cleaned on failure.
+- **Bare `except: pass`** (#97): Replaced with specific exception handling.
+- **Unused hypothesis dependency** (#96): Removed.
+- **Duplicate test files** (#98): Consolidated.
+- **Partial ERROR_CASES/EDGE_CASES** (#95): Now fully exercised.
+
+### Fixed - Runtime
+- **debugCallback null dereference** (#80): Added null check.
+- **Vulkan resource leak on init failure** (#79): Resources now freed on error paths.
+
+### Known Open Issues
+
+**12 critical issues remain open** and are tracked on GitHub:
+- Parser: bare `except` clauses (#1), infinite loop on unterminated blocks (#2)
+- C generator: code injection via identifiers (#20), printf format string (#21), no bounds checking (#22)
+- Transpiler: unreachable code / control flow bug (#41)
+- Monomorphize: no termination guard (#49)
+- Stdlib: calloc overflow (#59), no synchronization (#60), memcpy overlap (#61)
+- CI: suppressed failures (#88), overly broad permissions (#89)
+
+See the [GitHub Issues](https://github.com/flooooooooooow/flow/issues) page for full details.
+
+### Statistics
+- **98 audit issues** filed across compiler, stdlib, runtime, CI, and testing
+- **56 issues resolved** (57% closure rate)
+- **All testing issues resolved** (5/5)
+- **All CLI issues resolved** (5/5)
+- **0 CI issues resolved** (0/6) - highest priority for next release
+
 ## [Unreleased]
 
-### In Progress
-- **Standard Library Functions**
-  - Core mathematical functions (sin, cos, sqrt, pow, etc.)
-  - String manipulation functions (split, join, trim, etc.)
-  - Array utilities (sort, search, filter, map, reduce)
-  - File I/O operations (read, write, open, close)
-  - Memory management functions (alloc, free, realloc)
-  - Graphics rendering functions (draw_line, draw_circle, fill_rect)
-  - Time and date functions (get_time, sleep, timestamp)
-  - Network communication functions (socket, connect, send, receive)
-  - Error handling utilities (error codes, exceptions, logging)
-  - Testing framework (assert, expect, test runners)
-  - Profiling and performance tools (timer, metrics, benchmarks)
-
 ### Planned
+- **CI Hardening**: Fix suppressed failures, add permissions block, enable Python test runs, add SAST/dependency scanning
+- **C Generator Security**: Sanitize identifiers, fix printf format strings, add bounds checking
+- **Stdlib Safety**: Fix calloc overflow, add real synchronization primitives, check memcpy overlap
+- **Parser Robustness**: Fix bare except clauses, add block termination detection
 - **Package Manager Integration**
-  - Dependency resolution and management
-  - Package registry and distribution
-  - Version compatibility checking
-  - Automatic package installation and updates
-  - Package publishing tools and guidelines
-  - Community package repository
-
-### Future Roadmap
-- **Import/Export System**: Complete module system implementation
-- **GPU Integration**: Connect GPU examples to actual GPU execution
-- **WebAssembly Target**: Add WASM compilation support
-- **IDE Plugins**: Enhanced VS Code and other editor support
-- **Performance Optimization**: Advanced compiler optimizations
-- **Standard Library Expansion**: Additional modules and functions
-- **Community Tools**: Package manager, build tools, development utilities
