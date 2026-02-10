@@ -1,0 +1,180 @@
+# Hot Cross Buns - Actually Plays Audio!
+# Uses the existing audio/io.flow backend to output real sound
+#
+# Melody: E D C, E D C, C C C C, D D D D, E D C
+
+import "stdlib/audio.flow"
+import "stdlib/audio/io.flow"
+import "stdlib/audio/oscillators.flow"
+
+extern { function usleep(usec: i32) -> i32 }
+
+# Direct MIDI note numbers
+const E4: i32 = 64
+const D4: i32 = 62
+const C4: i32 = 60
+
+# Note structure
+struct Note {
+    midi: i32
+    duration: i32  # In 16th notes
+}
+
+# Convert MIDI to frequency
+function note_to_freq(midi: i32) -> f64 {
+    if midi == 60 { return 261.63 }  # C4
+    if midi == 62 { return 293.66 }  # D4
+    if midi == 64 { return 329.63 }  # E4
+    return 440.0
+}
+
+# Melody is created inline in main() to avoid C generator array return bug
+
+function main() -> i32 {
+    println("========================================")
+    println("  Hot Cross Buns - Live Playback!")
+    println("========================================")
+    println("")
+
+    # Set up audio device
+    let rate: SampleRate = sample_rate_48000()
+    let cfg: AudioDeviceConfig = audio_device_config(48000, 2, 256, false, true)
+    let dev: AudioDevice = audio_device_open(cfg)
+
+    if not audio_device_ok(dev) {
+        println("Error opening audio device:")
+        println(audio_last_error(dev))
+        return 1
+    }
+
+    # Allocate audio buffer
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(256, 2, layout_interleaved())
+
+    # Start audio device
+    if audio_device_start(dev) != AUDIO_OK {
+        println("Error starting audio device:")
+        println(audio_last_error(dev))
+        audio_device_close(dev)
+        audio_buffer_free_f32(buf)
+        return 1
+    }
+
+    println("Playing Hot Cross Buns...")
+    println("(100 BPM, sine waves)")
+    println("")
+
+    # Create melody (inline to avoid C generator array return bug)
+    let melody: array<Note, 17> = [
+        # "Hot cross buns"
+        Note { midi: E4, duration: 4 },  # Quarter note
+        Note { midi: D4, duration: 4 },
+        Note { midi: C4, duration: 8 },  # Half note
+
+        # "Hot cross buns"
+        Note { midi: E4, duration: 4 },
+        Note { midi: D4, duration: 4 },
+        Note { midi: C4, duration: 8 },
+
+        # "One a penny"
+        Note { midi: C4, duration: 2 },  # Eighth note
+        Note { midi: C4, duration: 2 },
+        Note { midi: C4, duration: 2 },
+        Note { midi: C4, duration: 2 },
+
+        # "Two a penny"
+        Note { midi: D4, duration: 2 },
+        Note { midi: D4, duration: 2 },
+        Note { midi: D4, duration: 2 },
+        Note { midi: D4, duration: 2 },
+
+        # "Hot cross buns"
+        Note { midi: E4, duration: 4 },
+        Note { midi: D4, duration: 4 },
+        Note { midi: C4, duration: 8 }
+    ]
+
+    # Calculate timing (100 BPM)
+    # 100 BPM = 1.67 beats/sec = 0.6 sec/beat
+    # At 48000 Hz: 0.6 * 48000 = 28800 samples/beat
+    # 1 sixteenth note = 28800 / 4 = 7200 samples
+    let samples_per_sixteenth: i32 = 7200
+
+    # Play each note
+    let note_idx: i32 = 0
+    while note_idx < 17 {
+        let note: Note = melody[note_idx]
+        let freq: f64 = note_to_freq(note.midi)
+        let note_samples: i32 = samples_per_sixteenth * note.duration
+
+        # Create oscillator for this note
+        let mut osc: Phasor = phasor_new(freq, rate)
+
+        # Print which note we're playing
+        print("Playing note ")
+        print(note_idx + 1)
+        print("/17: MIDI ")
+        print(note.midi)
+        print(" (")
+        printf("%.2f", freq)
+        print(" Hz) for ")
+        print(note.duration)
+        println(" sixteenths")
+
+        # Generate and play this note
+        let mut samples_played: i32 = 0
+        while samples_played < note_samples {
+            # Wait for buffer space
+            while audio_available_write(dev) < 256 {
+                usleep(1000)
+            }
+
+            # Fill buffer
+            let mut i: i32 = 0
+            while i < 256 and samples_played < note_samples {
+                # Simple envelope
+                let phase: f32 = samples_played / note_samples
+                let mut envelope: f32 = 1.0
+
+                if phase < 0.05 {
+                    # Attack (5%)
+                    envelope = phase / 0.05
+                } else {
+                    if phase > 0.85 {
+                        # Release (15%)
+                        envelope = (1.0 - phase) / 0.15
+                    }
+                }
+
+                # Generate sine sample
+                let sample: f32 = sine(phasor_value(osc)) * envelope * 0.3
+
+                # Write to both channels (stereo)
+                audio_buffer_set_f32(buf, i, 0, sample)
+                audio_buffer_set_f32(buf, i, 1, sample)
+
+                osc = phasor_tick(osc)
+                samples_played = samples_played + 1
+                i = i + 1
+            }
+
+            # Write buffer to audio device
+            audio_write_f32(dev, buf.data, 256)
+        }
+
+        note_idx = note_idx + 1
+    }
+
+    println("")
+    println("Melody complete!")
+
+    # Let the ring buffer drain
+    usleep(500000)
+
+    # Clean up
+    audio_device_stop(dev)
+    audio_device_close(dev)
+    audio_buffer_free_f32(buf)
+
+    println("Done.")
+    return 0
+}
