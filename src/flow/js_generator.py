@@ -8,7 +8,7 @@ from flow.parser import (
     FunctionDecl, StructDecl, ConstDecl,
     VarDecl, Assignment, ReturnStatement, IfStatement, WhileStatement, ForStatement,
     BinaryOperation, UnaryOperation, FunctionCall, ArrayAccess, FieldAccess,
-    Literal, Variable, ArrayLiteral, StructLiteral,
+    Literal, Variable, ArrayLiteral, StructLiteral, CastExpression,
     MatchStatement, Type, Block
 )
 
@@ -345,6 +345,10 @@ class JSGenerator:
             if op == 'not':
                 op = '!'
             return f"({op}{operand})"
+
+        elif isinstance(expr, CastExpression):
+            # JS is dynamically typed; casts are no-ops in runtime codegen.
+            return f"({self._gen_expr(expr.expr)})"
         
         elif isinstance(expr, FunctionCall):
             func_name = expr.name if isinstance(expr.name, str) else self._gen_expr(expr.name)

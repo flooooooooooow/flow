@@ -12,6 +12,7 @@ on:
       - '.github/workflows/**'
       - 'pyproject.toml'
       - 'requirements.txt'
+      - 'requirements.lock'
   pull_request:
     branches: [ main, master ]
     paths:
@@ -23,6 +24,7 @@ on:
       - '.github/workflows/**'
       - 'pyproject.toml'
       - 'requirements.txt'
+      - 'requirements.lock'
 
 # Restrict token permissions to read-only (fixes #89)
 permissions:
@@ -65,7 +67,7 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements.lock
 
     - name: Install LLVM, Clang, and MLIR tools
       run: |
@@ -120,6 +122,25 @@ jobs:
         python-version: '3.11'
         cache: 'pip'
 
+    - name: Install lint dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.lock
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+
+    - name: Run Ruff
+      run: |
+        ruff check src
+
+    - name: Run Mypy (best effort)
+      run: |
+        mypy src || true
+
+    - name: Run Shellcheck
+      run: |
+        shellcheck flow scripts/*.sh
+
     - name: Check Python syntax
       run: |
         python -m py_compile src/flow/parser.py
@@ -129,6 +150,32 @@ jobs:
         python -m py_compile src/flow/mlir_generator.py
         python -m py_compile src/flow/monomorphize.py
         python -m py_compile src/flow/module_resolver.py
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.lock
+
+    - name: Run Bandit
+      run: |
+        bandit -r src -ll
+
+    - name: Run pip-audit
+      run: |
+        pip-audit -r requirements.lock
 
   benchmarks:
     name: Benchmarks (informational)
@@ -152,7 +199,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y clang
-        pip install -r requirements.txt
+        pip install -r requirements.lock
 
     - name: Set up environment
       run: |

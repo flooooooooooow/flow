@@ -21,9 +21,10 @@ except Exception:
     _HAS_WATCHDOG = False
 
 class FlowJITRunner:
-    def __init__(self, flow_file: str, watch_dir: Optional[str] = None):
+    def __init__(self, flow_file: str, watch_dir: Optional[str] = None, *, hot_mode: bool = False):
         self.flow_file = Path(flow_file)
         self.watch_dir = Path(watch_dir) if watch_dir else self.flow_file.parent
+        self.hot_mode = hot_mode
         # Repo root is two levels above this file: src/flow/jit_runner.py -> repo/
         self.repo_root = Path(__file__).resolve().parents[2]
         self.src_root = self.repo_root / 'src'
@@ -44,9 +45,10 @@ class FlowJITRunner:
             env['PYTHONPATH'] = src_path if not existing_pp else f"{src_path}:{existing_pp}"
 
             # Compile to MLIR
+            mode = "hot" if self.hot_mode else "jit"
             result = subprocess.run([
-                sys.executable, '-m', 'flow.transpiler', 
-                str(self.flow_file), '--mlir'
+                sys.executable, '-m', 'flow.transpiler',
+                str(self.flow_file), '--mlir', '--mode', mode
             ], capture_output=True, text=True, cwd=str(self.repo_root), env=env)
             
             if result.returncode != 0:
@@ -204,7 +206,7 @@ def main():
         print(template)
         return
     
-    runner = FlowJITRunner(args.input, args.watch)
+    runner = FlowJITRunner(args.input, args.watch, hot_mode=not args.once)
     
     if args.once:
         success = runner.run_once()

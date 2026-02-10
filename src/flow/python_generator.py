@@ -31,6 +31,8 @@ from .parser import (
     EnumDecl,
     Type,
     Parameter,
+    TypeAliasDecl,
+    DistinctTypeDecl,
 )
 from .c_generator import flow_to_c
 
@@ -92,12 +94,37 @@ ABI_TYPE_MAP: Dict[str, ABIType] = {
 }
 
 
-def is_abi_compatible(flow_type: Type, structs: Dict[str, StructDecl]) -> Tuple[bool, str]:
+def _resolve_type_alias(flow_type: Type, type_aliases: Dict[str, Type], distinct_types: Dict[str, Type]) -> Type:
+    current = flow_type
+    seen: Set[str] = set()
+    while isinstance(current, Type) and (current.name in type_aliases or current.name in distinct_types):
+        name = current.name
+        if name in seen:
+            return current
+        seen.add(name)
+        if name in type_aliases:
+            current = type_aliases[name]
+            continue
+        if name in distinct_types:
+            current = distinct_types[name]
+            continue
+    return current
+
+
+def is_abi_compatible(
+    flow_type: Type,
+    structs: Dict[str, StructDecl],
+    type_aliases: Dict[str, Type] | None = None,
+    distinct_types: Dict[str, Type] | None = None,
+) -> Tuple[bool, str]:
     """
     Check if a Flow type can cross the Python ABI boundary.
     Returns (is_compatible, reason_if_not).
     """
-    type_name = flow_type.name if isinstance(flow_type, Type) else str(flow_type)
+    type_aliases = type_aliases or {}
+    distinct_types = distinct_types or {}
+    base = _resolve_type_alias(flow_type, type_aliases, distinct_types)
+    type_name = base.name if isinstance(base, Type) else str(base)
     
     # Primitive types
     if type_name in ABI_TYPE_MAP:
@@ -127,7 +154,7 @@ def is_abi_compatible(flow_type: Type, structs: Dict[str, StructDecl]) -> Tuple[
     if type_name in structs:
         struct = structs[type_name]
         for field_name, field_type in struct.fields:
-            compat, reason = is_abi_compatible(field_type, structs)
+            compat, reason = is_abi_compatible(field_type, structs, type_aliases, distinct_types)
             if not compat:
                 return False, f"Struct field '{field_name}' not compatible: {reason}"
         return True, ""
@@ -179,6 +206,8 @@ def infer_exports(
     structs: Dict[str, StructDecl],
     consts: List[ConstDecl],
     enums: Dict[str, EnumDecl],
+    type_aliases: Dict[str, Type] | None = None,
+    distinct_types: Dict[str, Type] | None = None,
 ) -> ExportResult:
     """
     Deterministically infer which symbols to export to Python.
@@ -199,7 +228,7 @@ def infer_exports(
             continue
         
         # Check return type
-        ret_compat, ret_reason = is_abi_compatible(fn.return_type, structs)
+        ret_compat, ret_reason = is_abi_compatible(fn.return_type, structs, type_aliases, distinct_types)
         if not ret_compat:
             result.diagnostics.append(ExportDiagnostic(
                 fn.name, "excluded", f"Return type not ABI-compatible: {ret_reason}"
@@ -209,7 +238,7 @@ def infer_exports(
         # Check parameter types
         all_params_ok = True
         for param in fn.parameters:
-            param_compat, param_reason = is_abi_compatible(param.type, structs)
+            param_compat, param_reason = is_abi_compatible(param.type, structs, type_aliases, distinct_types)
             if not param_compat:
                 result.diagnostics.append(ExportDiagnostic(
                     fn.name, "excluded", 
@@ -247,7 +276,7 @@ def infer_exports(
             ))
             continue
         
-        compat, reason = is_abi_compatible(Type(name), structs)
+        compat, reason = is_abi_compatible(Type(name), structs, type_aliases, distinct_types)
         if compat:
             result.exports.append(ExportedSymbol(
                 name=name,
@@ -268,7 +297,7 @@ def infer_exports(
         if not is_public_symbol(const.name):
             continue
         
-        compat, reason = is_abi_compatible(const.type, structs)
+        compat, reason = is_abi_compatible(const.type, structs, type_aliases, distinct_types)
         if compat:
             result.exports.append(ExportedSymbol(
                 name=const.name,
@@ -549,6 +578,8 @@ class PythonTarget:
         self.structs: Dict[str, StructDecl] = {}
         self.consts: List[ConstDecl] = []
         self.enums: Dict[str, EnumDecl] = {}
+        self.type_aliases: Dict[str, Type] = {}
+        self.distinct_types: Dict[str, Type] = {}
         
         for node in ast:
             if isinstance(node, FunctionDecl):
@@ -559,6 +590,10 @@ class PythonTarget:
                 self.consts.append(node)
             elif isinstance(node, EnumDecl):
                 self.enums[node.name] = node
+            elif isinstance(node, TypeAliasDecl):
+                self.type_aliases[node.name] = node.base_type
+            elif isinstance(node, DistinctTypeDecl):
+                self.distinct_types[node.name] = node.base_type
         
         self.export_result: Optional[ExportResult] = None
         self.c_code: Optional[str] = None
@@ -571,6 +606,8 @@ class PythonTarget:
             self.structs,
             self.consts,
             self.enums,
+            self.type_aliases,
+            self.distinct_types,
         )
         return self.export_result
     
