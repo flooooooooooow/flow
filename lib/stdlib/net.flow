@@ -8,7 +8,7 @@
 struct Socket {
     fd: i32,
     domain: i32,
-    type: i32,
+    socket_type: i32,
     protocol: i32
 }
 
@@ -48,7 +48,7 @@ function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
 # Low-level Socket Functions (extern to libc)
 # =============================================================================
 
-extern function socket(domain: i32, type: i32, protocol: i32) -> i32
+extern function socket(domain: i32, socket_type: i32, protocol: i32) -> i32
 extern function bind(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
 extern function listen(sockfd: i32, backlog: i32) -> i32
 extern function accept(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: ptr<i32>) -> i32
@@ -84,13 +84,13 @@ struct TcpStream {
 
 function tcp_listener_new(port: i32) -> TcpListener {
     let fd = socket(AF_INET, SOCK_STREAM, 0)
-    let sock = Socket { fd: fd, domain: AF_INET, type: SOCK_STREAM, protocol: 0 }
+    let sock = Socket { fd: fd, domain: AF_INET, socket_type: SOCK_STREAM, protocol: 0 }
     return TcpListener { socket: sock, port: port }
 }
 
 function tcp_stream_new() -> TcpStream {
     let fd = socket(AF_INET, SOCK_STREAM, 0)
-    let sock = Socket { fd: fd, domain: AF_INET, type: SOCK_STREAM, protocol: 0 }
+    let sock = Socket { fd: fd, domain: AF_INET, socket_type: SOCK_STREAM, protocol: 0 }
     return TcpStream { socket: sock, connected: false }
 }
 
@@ -109,7 +109,7 @@ struct UdpSocket {
 
 function udp_socket_new() -> UdpSocket {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
-    let sock = Socket { fd: fd, domain: AF_INET, type: SOCK_DGRAM, protocol: 0 }
+    let sock = Socket { fd: fd, domain: AF_INET, socket_type: SOCK_DGRAM, protocol: 0 }
     return UdpSocket { socket: sock, bound: false }
 }
 
