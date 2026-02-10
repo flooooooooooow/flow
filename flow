@@ -779,9 +779,12 @@ run_tests() {
     # Create temp directory for test outputs
     local test_build_dir
     test_build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_test)"
+    echo "DEBUG: Created temp dir: $test_build_dir"
     mkdir -p "$test_build_dir"
-    
+
+    echo "DEBUG: About to loop through test suites..."
     for suite in "tests" "examples"; do
+        echo "DEBUG: Processing suite: $suite"
         local dir="$SCRIPT_DIR/$suite"
         [ -d "$dir" ] || continue
         
