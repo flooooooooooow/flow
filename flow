@@ -809,8 +809,10 @@ run_tests() {
             
             # Tier 1: Transpile FLOW to C
             local transpile_output
+            set +e  # Temporarily disable exit on error to capture failures
             transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c $strict_mode -o "$c_file" 2>&1)
             local transpile_status=$?
+            set -e  # Re-enable exit on error
             
             if [ $transpile_status -ne 0 ]; then
                 print_error "✗ $rel_path (transpile failed)"
