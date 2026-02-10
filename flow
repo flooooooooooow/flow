@@ -814,9 +814,9 @@ run_tests() {
             
             if [ $transpile_status -ne 0 ]; then
                 print_error "✗ $rel_path (transpile failed)"
-                if [ $verbose -eq 1 ]; then
-                    echo "    $transpile_output" | head -5
-                fi
+                # Always show errors in CI, not just verbose mode
+                echo "    Error output:"
+                echo "$transpile_output" | head -10
                 transpile_failed=$((transpile_failed + 1))
                 failed_files="$failed_files\n  - $rel_path (transpile)"
                 continue
