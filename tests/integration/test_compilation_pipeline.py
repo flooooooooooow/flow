@@ -7,6 +7,7 @@ import pytest
 import subprocess
 import tempfile
 import os
+import shutil
 from pathlib import Path
 from tests.conftest import TestHelpers, sample_flow_code
 
@@ -240,6 +241,7 @@ class TestModuleResolution:
 class TestOptimizationPipeline:
     """Test MLIR optimization pipeline."""
 
+    @pytest.mark.skipif(shutil.which("mlir-opt") is None, reason="mlir-opt not available")
     def test_basic_optimization(self, temp_flow_file):
         """Test basic optimization flags."""
         flow_code = """
