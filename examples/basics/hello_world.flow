@@ -2,5 +2,5 @@
 function main() -> i32 {
     # In a real implementation, we'd have I/O functions
     # For now, return a success code
-    return 42
+    return 0
 }
