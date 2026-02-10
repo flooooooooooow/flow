@@ -105,7 +105,7 @@ jobs:
       if: steps.changes.outputs.src == 'true' || steps.changes.outputs.examples == 'true'
       run: |
         ./flow run examples/basics/hello_world.flow
-        ./flow compile examples/basics/variables.flow
+        ./flow compile examples/basics/fibonacci.flow
 
   lint:
     name: Lint
