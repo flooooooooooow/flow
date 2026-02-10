@@ -1,0 +1,303 @@
+# Hot Cross Buns - Classic Children's Song
+# Played with pure sine waves
+#
+# Melody: B A G, B A G, G G G G, A A A A, B A G
+
+import "stdlib/audio.flow"
+import "stdlib/audio/scales.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/clock.flow"
+
+# =============================================================================
+# Hot Cross Buns Melody
+# =============================================================================
+
+# The classic melody (in C major, starting on E)
+# E D C, E D C, C C C C, D D D D, E D C
+# Using MIDI notes (C4 = middle C = 60)
+
+struct Note {
+    pitch: i32      # MIDI note number
+    duration: i32   # Duration in sixteenth notes (4 = quarter note)
+}
+
+function create_melody() -> array<Note, 15> {
+    let C: i32 = note_C(4)  # Middle C
+    let D: i32 = note_D(4)
+    let E: i32 = note_E(4)
+
+    return [
+        # "Hot cross buns"
+        Note { pitch: E, duration: 4 },  # Hot (quarter note)
+        Note { pitch: D, duration: 4 },  # cross
+        Note { pitch: C, duration: 8 },  # buns (half note)
+
+        # "Hot cross buns"
+        Note { pitch: E, duration: 4 },  # Hot
+        Note { pitch: D, duration: 4 },  # cross
+        Note { pitch: C, duration: 8 },  # buns
+
+        # "One a penny, two a penny"
+        Note { pitch: C, duration: 2 },  # One (eighth note)
+        Note { pitch: C, duration: 2 },  # a
+        Note { pitch: C, duration: 2 },  # pen-
+        Note { pitch: C, duration: 2 },  # ny
+        Note { pitch: D, duration: 2 },  # two
+        Note { pitch: D, duration: 2 },  # a
+        Note { pitch: D, duration: 2 },  # pen-
+        Note { pitch: D, duration: 2 },  # ny
+
+        # "Hot cross buns"
+        Note { pitch: E, duration: 4 },  # Hot
+        Note { pitch: D, duration: 4 },  # cross
+        Note { pitch: C, duration: 8 }   # buns
+    ]
+}
+
+# =============================================================================
+# Simple Sine Wave Player
+# =============================================================================
+
+struct Player {
+    melody: array<Note, 15>
+    current_note: i32
+    note_position: i64
+    rate: SampleRate
+    clock: Clock
+    osc: Phasor
+    envelope: f32
+}
+
+function player_new() -> Player {
+    let rate: SampleRate = sample_rate_44100()
+    let clock: Clock = clock_new(100.0, rate)  # 100 BPM (slow and clear)
+
+    return Player {
+        melody: create_melody(),
+        current_note: 0,
+        note_position: 0,
+        rate: rate,
+        clock: clock,
+        osc: phasor_new(440.0, rate),
+        envelope: 0.0
+    }
+}
+
+function player_tick(p: Player, global_pos: i64) -> f32 {
+    # Check if we've finished the melody
+    if p.current_note >= 15 {
+        return 0.0
+    }
+
+    # Get current note
+    let note: Note = p.melody[p.current_note]
+    let freq: f32 = midi_to_freq_accurate(note.pitch)
+
+    # Calculate note duration in samples
+    let sixteenth_samples: i64 = samples_per_sixteenth(p.clock)
+    let note_duration: i64 = sixteenth_samples * note.duration
+
+    # Update oscillator frequency
+    let osc: Phasor = phasor_new(freq, p.rate)
+    let phase: f64 = p.note_position / note_duration  # 0.0 to 1.0 over note
+
+    # Simple envelope (fade in/out)
+    let mut envelope: f32 = 0.0
+    let attack_time: f64 = 0.1   # 10% of note
+    let release_time: f64 = 0.2  # 20% of note
+
+    if phase < attack_time {
+        # Attack
+        envelope = phase / attack_time
+    } else {
+        if phase > (1.0 - release_time) {
+            # Release
+            let release_phase: f64 = (phase - (1.0 - release_time)) / release_time
+            envelope = 1.0 - release_phase
+        } else {
+            # Sustain
+            envelope = 1.0
+        }
+    }
+
+    # Generate sine wave
+    let osc_phase: f64 = (p.note_position * freq) / p.rate.hz
+    let wrapped_phase: f64 = osc_phase - (osc_phase / 1.0)  # Wrap to 0-1
+    let sample: f32 = sine(wrapped_phase) * envelope * 0.5
+
+    # Advance position
+    let mut new_note_pos: i64 = p.note_position + 1
+
+    # Check if note finished
+    if new_note_pos >= note_duration {
+        # Move to next note
+        new_note_pos = 0
+    }
+
+    return sample
+}
+
+# =============================================================================
+# Simplified playback function
+# =============================================================================
+
+function play_hot_cross_buns(pos: i64) -> f32 {
+    let rate: SampleRate = sample_rate_44100()
+    let clock: Clock = clock_new(100.0, rate)  # 100 BPM
+
+    # Define melody
+    let melody: array<Note, 17> = [
+        # Hot cross buns
+        Note { pitch: note_E(4), duration: 4 },
+        Note { pitch: note_D(4), duration: 4 },
+        Note { pitch: note_C(4), duration: 8 },
+
+        # Hot cross buns
+        Note { pitch: note_E(4), duration: 4 },
+        Note { pitch: note_D(4), duration: 4 },
+        Note { pitch: note_C(4), duration: 8 },
+
+        # One a penny, two a penny
+        Note { pitch: note_C(4), duration: 2 },
+        Note { pitch: note_C(4), duration: 2 },
+        Note { pitch: note_C(4), duration: 2 },
+        Note { pitch: note_C(4), duration: 2 },
+        Note { pitch: note_D(4), duration: 2 },
+        Note { pitch: note_D(4), duration: 2 },
+        Note { pitch: note_D(4), duration: 2 },
+        Note { pitch: note_D(4), duration: 2 },
+
+        # Hot cross buns
+        Note { pitch: note_E(4), duration: 4 },
+        Note { pitch: note_D(4), duration: 4 },
+        Note { pitch: note_C(4), duration: 8 }
+    ]
+
+    # Calculate which note we're on
+    let sixteenth_samples: i64 = samples_per_sixteenth(clock)
+    let mut cumulative: i64 = 0
+    let mut current_note_idx: i32 = 0
+    let mut note_start: i64 = 0
+
+    # Find current note
+    for i in 0 to 17 {
+        let note_duration: i64 = sixteenth_samples * melody[i].duration
+        if pos >= cumulative and pos < cumulative + note_duration {
+            current_note_idx = i
+            note_start = cumulative
+            break
+        }
+        cumulative = cumulative + note_duration
+    }
+
+    # If past the end, return silence
+    if current_note_idx >= 17 or pos >= cumulative {
+        return 0.0
+    }
+
+    # Get current note
+    let note: Note = melody[current_note_idx]
+    let freq: f32 = midi_to_freq_accurate(note.pitch)
+    let note_duration: i64 = sixteenth_samples * note.duration
+    let note_pos: i64 = pos - note_start
+
+    # Simple envelope
+    let phase: f64 = note_pos / note_duration
+    let mut envelope: f32 = 1.0
+
+    if phase < 0.1 {
+        # Attack (10%)
+        envelope = phase / 0.1
+    } else {
+        if phase > 0.8 {
+            # Release (20%)
+            envelope = (1.0 - phase) / 0.2
+        }
+    }
+
+    # Generate sine wave
+    let osc_phase: f64 = (pos * freq) / rate.hz
+    let wrapped: f64 = osc_phase - (osc_phase)  # Simple wrap
+    let sample: f32 = sine(wrapped) * envelope * 0.4
+
+    return sample
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+function main() -> i32 {
+    println("========================================")
+    println("  Hot Cross Buns - Sine Wave Demo")
+    println("========================================")
+    println("")
+    println("Melody: E D C, E D C, C C C C, D D D D, E D C")
+    println("")
+    println("This would play through audio output in a real")
+    println("audio callback, generating samples at 44.1kHz.")
+    println("")
+    println("Notes:")
+
+    let melody: array<Note, 17> = [
+        Note { pitch: note_E(4), duration: 4 },
+        Note { pitch: note_D(4), duration: 4 },
+        Note { pitch: note_C(4), duration: 8 },
+        Note { pitch: note_E(4), duration: 4 },
+        Note { pitch: note_D(4), duration: 4 },
+        Note { pitch: note_C(4), duration: 8 },
+        Note { pitch: note_C(4), duration: 2 },
+        Note { pitch: note_C(4), duration: 2 },
+        Note { pitch: note_C(4), duration: 2 },
+        Note { pitch: note_C(4), duration: 2 },
+        Note { pitch: note_D(4), duration: 2 },
+        Note { pitch: note_D(4), duration: 2 },
+        Note { pitch: note_D(4), duration: 2 },
+        Note { pitch: note_D(4), duration: 2 },
+        Note { pitch: note_E(4), duration: 4 },
+        Note { pitch: note_D(4), duration: 4 },
+        Note { pitch: note_C(4), duration: 8 }
+    ]
+
+    for i in 0 to 17 {
+        let note: Note = melody[i]
+        let freq: f32 = midi_to_freq_accurate(note.pitch)
+
+        print("  Note ")
+        print(i + 1)
+        print(": MIDI ")
+        print(note.pitch)
+        print(" (")
+        printf("%.2f", freq)
+        print(" Hz) - Duration: ")
+        print(note.duration)
+        println(" sixteenths")
+    }
+
+    println("")
+    println("To actually hear this, you would:")
+    println("1. Set up an audio callback (e.g., PortAudio, JACK)")
+    println("2. Call play_hot_cross_buns(sample_pos) for each sample")
+    println("3. Send output to your speakers!")
+    println("")
+    println("Example usage in audio callback:")
+    println("  let sample: f32 = play_hot_cross_buns(position)")
+    println("  output_buffer[i] = sample")
+
+    # Demonstrate a few samples
+    println("")
+    println("Sample output at different positions:")
+    let rate: SampleRate = sample_rate_44100()
+
+    for i in 0 to 10 {
+        let pos: i64 = i * 4410  # Every 0.1 seconds
+        let sample: f32 = play_hot_cross_buns(pos)
+        print("  Sample at ")
+        printf("%.1f", pos / rate.hz)
+        print("s: ")
+        printf("%.4f", sample)
+        println("")
+    }
+
+    return 0
+}
