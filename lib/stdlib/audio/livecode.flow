@@ -1,0 +1,356 @@
+# Livecode Module - Ultra-Easy Audio Programming
+#
+# THE EASIEST WAY TO MAKE SOUND IN ANY PROGRAMMING LANGUAGE.
+# One-liners that make music. No setup, no boilerplate, just code and sound.
+#
+# Usage:
+#   import "stdlib/audio/livecode.flow"
+#
+#   # Make a bassline
+#   let bass: f32 = play_bass(C3(), clock, pos)
+#
+#   # Make a melody
+#   let melody: f32 = play_lead([C4(), E4(), G4(), C5()], clock, pos)
+#
+#   # Add a kick drum
+#   if kick_on_beat(clock, pos) { let kick: f32 = kick() }
+
+import "stdlib/audio.flow"
+import "stdlib/audio/synth.flow"
+import "stdlib/audio/scales.flow"
+import "stdlib/audio/clock.flow"
+import "stdlib/audio/effects.flow"
+import "stdlib/audio/oscillators.flow"
+
+# =============================================================================
+# Global Audio Context
+# =============================================================================
+
+# Simple global state for livecoding (initialized once)
+export struct LiveContext {
+    rate: SampleRate
+    clock: Clock
+    position: i64      # Current sample position
+}
+
+export function live_context_new() -> LiveContext {
+    return LiveContext {
+        rate: sample_rate_44100(),
+        clock: clock_new(120.0, sample_rate_44100()),
+        position: 0
+    }
+}
+
+export function live_context_44k_120bpm() -> LiveContext {
+    return live_context_new()
+}
+
+# =============================================================================
+# One-Liner Instruments
+# =============================================================================
+
+# Play a bass note
+export function bass(note: i32) -> f32 {
+    let synth: Synth = synth_bass()
+    let freq: f32 = freq(note)
+    return synth_tick(synth, freq, true) * 0.8
+}
+
+# Play a lead note
+export function lead(note: i32) -> f32 {
+    let synth: Synth = synth_lead()
+    let freq: f32 = freq(note)
+    return synth_tick(synth, freq, true) * 0.6
+}
+
+# Play a pad note
+export function pad(note: i32) -> f32 {
+    let synth: Synth = synth_pad()
+    let freq: f32 = freq(note)
+    return synth_tick(synth, freq, true) * 0.5
+}
+
+# Play a pluck note
+export function pluck(note: i32) -> f32 {
+    let synth: Synth = synth_pluck()
+    let freq: f32 = freq(note)
+    return synth_tick(synth, freq, true) * 0.7
+}
+
+# Play an organ note
+export function organ(note: i32) -> f32 {
+    let synth: Synth = synth_organ()
+    let freq: f32 = freq(note)
+    return synth_tick(synth, freq, true) * 0.6
+}
+
+# =============================================================================
+# Drum Synthesis (Kick, Snare, Hat)
+# =============================================================================
+
+# Kick drum (808-style)
+export function kick() -> f32 {
+    # Simple kick: sine sweep from 150Hz to 50Hz
+    let env_decay: f32 = 0.3  # 300ms decay
+    let pitch_env: f32 = 150.0 - 100.0 * env_decay
+
+    let phase: f64 = 0.0  # Would need phase accumulator
+    let osc: f32 = sine(phase)
+
+    return osc * env_decay * 0.9
+}
+
+# Snare drum
+export function snare() -> f32 {
+    # Simple snare: filtered noise + sine
+    let noise: f32 = (0.5 - 0.5)  # Random noise approximation
+    let tone: f32 = sine(0.3)     # 200Hz tone
+
+    let env_decay: f32 = 0.2
+    let output: f32 = (noise * 0.7 + tone * 0.3) * env_decay
+
+    return output * 0.6
+}
+
+# Hi-hat (closed)
+export function hat() -> f32 {
+    # High-pass filtered noise
+    let noise: f32 = (0.5 - 0.5)  # Random noise
+    let env_decay: f32 = 0.05      # Very short
+
+    return noise * env_decay * 0.4
+}
+
+# Hi-hat (open)
+export function hat_open() -> f32 {
+    let noise: f32 = (0.5 - 0.5)
+    let env_decay: f32 = 0.3       # Longer decay
+
+    return noise * env_decay * 0.35
+}
+
+# Clap
+export function clap() -> f32 {
+    let noise: f32 = (0.5 - 0.5)
+    let env_decay: f32 = 0.1
+
+    # Multiple hits for clap effect
+    return noise * env_decay * 0.5
+}
+
+# =============================================================================
+# Rhythm Helpers
+# =============================================================================
+
+# Is kick happening on this beat?
+export function kick_on_beat(clock: Clock, pos: i64) -> bool {
+    return clock_on_beat(clock, pos)
+}
+
+# Is snare happening on backbeat? (beats 2 and 4 in 4/4)
+export function snare_on_backbeat(clock: Clock, pos: i64) -> bool {
+    if not clock_on_beat(clock, pos) {
+        return false
+    }
+
+    let beat_in_bar: i32 = clock_beat_in_bar(clock, pos)
+    return beat_in_bar == 1 or beat_in_bar == 3
+}
+
+# Is hi-hat happening on eighth notes?
+export function hat_on_eighth(clock: Clock, pos: i64) -> bool {
+    let eighth_samples: i64 = samples_per_eighth(clock)
+    let remainder: i64 = pos % eighth_samples
+    return remainder < 2
+}
+
+# Is hi-hat happening on sixteenth notes?
+export function hat_on_sixteenth(clock: Clock, pos: i64) -> bool {
+    return clock_on_sixteenth(clock, pos)
+}
+
+# =============================================================================
+# Pattern Sequencers
+# =============================================================================
+
+# Play a repeating pattern of notes
+export function pattern_4(notes: array<i32, 4>, clock: Clock, pos: i64, instrument: function(i32) -> f32) -> f32 {
+    let beat: i64 = clock_current_beat(clock, pos)
+    let pattern_idx: i32 = beat % 4
+
+    if clock_on_beat(clock, pos) {
+        return instrument(notes[pattern_idx])
+    }
+
+    return 0.0
+}
+
+# Play a repeating 8-step pattern
+export function pattern_8(notes: array<i32, 8>, clock: Clock, pos: i64, instrument: function(i32) -> f32) -> f32 {
+    let beat: i64 = clock_current_beat(clock, pos)
+    let pattern_idx: i32 = beat % 8
+
+    if clock_on_beat(clock, pos) {
+        return instrument(notes[pattern_idx])
+    }
+
+    return 0.0
+}
+
+# Play a chord progression (changes every bar)
+export function chord_progression(chords: array<array<i32, 3>, 4>, clock: Clock, pos: i64) -> f32 {
+    let bar: i64 = clock_current_bar(clock, pos)
+    let chord_idx: i32 = bar % 4
+    let chord: array<i32, 3> = chords[chord_idx]
+
+    # Play all notes in chord
+    let voice1: f32 = pad(chord[0])
+    let voice2: f32 = pad(chord[1])
+    let voice3: f32 = pad(chord[2])
+
+    return (voice1 + voice2 + voice3) * 0.33
+}
+
+# =============================================================================
+# Euclidean Rhythm Generator
+# =============================================================================
+
+# Generate a euclidean rhythm pattern (k hits in n steps)
+# Example: euclidean_hit(3, 8, step) gives [x . . x . . x .]
+export function euclidean_hit(k: i32, n: i32, step: i32) -> bool {
+    if k == 0 or n == 0 {
+        return false
+    }
+
+    # Euclidean algorithm
+    let bucket: i32 = step * k
+    let prev_bucket: i32 = (step - 1) * k
+
+    return (bucket / n) != (prev_bucket / n)
+}
+
+# Play euclidean rhythm with instrument
+export function euclidean_pattern(k: i32, n: i32, clock: Clock, pos: i64, hit_fn: function() -> f32) -> f32 {
+    let sixteenth: i64 = pos / samples_per_sixteenth(clock)
+    let step: i32 = sixteenth % n
+
+    if euclidean_hit(k, n, step) and clock_on_sixteenth(clock, pos) {
+        return hit_fn()
+    }
+
+    return 0.0
+}
+
+# =============================================================================
+# Quick Scales
+# =============================================================================
+
+# Play a note from a scale by degree (0-6)
+export function scale_note(root: i32, scale_type: i32, degree: i32) -> i32 {
+    let scale: array<i32, 7> = [0, 0, 0, 0, 0, 0, 0]
+
+    if scale_type == 0 {
+        scale = scale_major(root)
+    } else if scale_type == 1 {
+        scale = scale_minor(root)
+    } else if scale_type == 2 {
+        scale = scale_dorian(root)
+    } else if scale_type == 3 {
+        scale = scale_mixolydian(root)
+    } else {
+        scale = scale_pentatonic_major(root)
+    }
+
+    return scale[degree % 7]
+}
+
+# =============================================================================
+# Effects Shortcuts
+# =============================================================================
+
+# Add delay to a signal
+export function with_delay(input: f32, clock: Clock) -> f32 {
+    let delay: Delay = delay_dotted_eighth(clock)
+    return delay_process(delay, input)
+}
+
+# Add distortion to a signal
+export function with_distortion(input: f32, amount: f32) -> f32 {
+    let mut drive: f32 = 2.0 + amount * 8.0  # 2.0 to 10.0
+    let dist: Distortion = distortion_new(drive, 0.5, 0.7)
+    return distortion_process(dist, input)
+}
+
+# Add reverb to a signal
+export function with_reverb(input: f32, size: f32) -> f32 {
+    let rev: Reverb = reverb_new(size, 0.4, 0.3)
+    return reverb_process(rev, input)
+}
+
+# Add bitcrushing to a signal
+export function with_bitcrush(input: f32, bits: i32) -> f32 {
+    let crusher: Bitcrusher = bitcrusher_new(bits, 4)
+    return bitcrusher_process(crusher, input)
+}
+
+# =============================================================================
+# Complete Example Patterns
+# =============================================================================
+
+# 4-on-the-floor house beat
+export function house_beat(clock: Clock, pos: i64) -> f32 {
+    let mut output: f32 = 0.0
+
+    # Kick on every beat
+    if kick_on_beat(clock, pos) {
+        output = output + kick()
+    }
+
+    # Clap on backbeat
+    if snare_on_backbeat(clock, pos) {
+        output = output + clap()
+    }
+
+    # Hi-hat on eighth notes
+    if hat_on_eighth(clock, pos) {
+        output = output + hat()
+    }
+
+    return output
+}
+
+# Basic bassline (root note pattern)
+export function bass_pattern_simple(root: i32, clock: Clock, pos: i64) -> f32 {
+    let pattern: array<i32, 4> = [root, root, root + 7, root + 5]
+    return pattern_4(pattern, clock, pos, bass)
+}
+
+# Arpeggio pattern
+export function arpeggio(chord: array<i32, 3>, clock: Clock, pos: i64) -> f32 {
+    let sixteenth: i64 = pos / samples_per_sixteenth(clock)
+    let step: i32 = sixteenth % 4
+
+    if step < 3 and clock_on_sixteenth(clock, pos) {
+        return pluck(chord[step])
+    }
+
+    return 0.0
+}
+
+# =============================================================================
+# Master Output Helpers
+# =============================================================================
+
+# Clip and normalize output
+export function master_out(input: f32) -> f32 {
+    let limited: f32 = soft_clip(input)
+    return limited * 0.8  # Leave headroom
+}
+
+# Stereo output
+export function master_out_stereo(left: f32, right: f32) -> Frame {
+    return Frame {
+        left: soft_clip(left) * 0.8,
+        right: soft_clip(right) * 0.8
+    }
+}

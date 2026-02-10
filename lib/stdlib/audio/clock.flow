@@ -1,0 +1,301 @@
+# Audio Clock Module - BPM, Tempo, and Timing
+#
+# Makes rhythm and timing incredibly easy with BPM-based scheduling.
+#
+# Usage:
+#   import "stdlib/audio/clock.flow"
+#
+#   let clock: Clock = clock_new(120.0, sample_rate_44100())  # 120 BPM
+#   let beat_samples: i64 = samples_per_beat(clock)
+#   if clock_on_beat(clock, sample_count) { trigger_kick() }
+
+import "stdlib/audio.flow"
+
+# =============================================================================
+# Clock / Tempo Types
+# =============================================================================
+
+# Musical clock with BPM (beats per minute) and sample rate
+export struct Clock {
+    bpm: f64              # Beats per minute (e.g., 120.0)
+    rate: SampleRate      # Sample rate (e.g., 44100 Hz)
+    beat_samples: f64     # Samples per beat (calculated)
+    bar_samples: f64      # Samples per bar (4 beats)
+    sixteenth_samples: f64 # Samples per 16th note
+}
+
+# Time signature (numerator/denominator)
+export struct TimeSignature {
+    beats_per_bar: i32    # Numerator (e.g., 4 in 4/4)
+    beat_unit: i32        # Denominator (e.g., 4 in 4/4)
+}
+
+# =============================================================================
+# Clock Constructors
+# =============================================================================
+
+# Create a clock at given BPM and sample rate
+export function clock_new(bpm: f64, rate: SampleRate) -> Clock {
+    # Samples per beat = (60 seconds/minute) / (beats/minute) * (samples/second)
+    # = (60 / bpm) * sample_rate
+    let beat_samples: f64 = (60.0 / bpm) * rate.hz
+    let bar_samples: f64 = beat_samples * 4.0  # Assume 4/4 time
+    let sixteenth_samples: f64 = beat_samples / 4.0  # 16th notes
+
+    return Clock {
+        bpm: bpm,
+        rate: rate,
+        beat_samples: beat_samples,
+        bar_samples: bar_samples,
+        sixteenth_samples: sixteenth_samples
+    }
+}
+
+# Create a clock with custom time signature
+export function clock_new_with_sig(bpm: f64, rate: SampleRate, sig: TimeSignature) -> Clock {
+    let beat_samples: f64 = (60.0 / bpm) * rate.hz
+    let bar_samples: f64 = beat_samples * sig.beats_per_bar
+    let sixteenth_samples: f64 = beat_samples / 4.0
+
+    return Clock {
+        bpm: bpm,
+        rate: rate,
+        beat_samples: beat_samples,
+        bar_samples: bar_samples,
+        sixteenth_samples: sixteenth_samples
+    }
+}
+
+# Common BPM presets
+export function clock_slow(rate: SampleRate) -> Clock { return clock_new(80.0, rate) }
+export function clock_medium(rate: SampleRate) -> Clock { return clock_new(120.0, rate) }
+export function clock_fast(rate: SampleRate) -> Clock { return clock_new(140.0, rate) }
+export function clock_house(rate: SampleRate) -> Clock { return clock_new(128.0, rate) }
+export function clock_dnb(rate: SampleRate) -> Clock { return clock_new(174.0, rate) }
+export function clock_techno(rate: SampleRate) -> Clock { return clock_new(130.0, rate) }
+
+# =============================================================================
+# Time Signature Presets
+# =============================================================================
+
+export function time_sig_4_4() -> TimeSignature {
+    return TimeSignature { beats_per_bar: 4, beat_unit: 4 }
+}
+
+export function time_sig_3_4() -> TimeSignature {
+    return TimeSignature { beats_per_bar: 3, beat_unit: 4 }
+}
+
+export function time_sig_6_8() -> TimeSignature {
+    return TimeSignature { beats_per_bar: 6, beat_unit: 8 }
+}
+
+export function time_sig_5_4() -> TimeSignature {
+    return TimeSignature { beats_per_bar: 5, beat_unit: 4 }
+}
+
+export function time_sig_7_8() -> TimeSignature {
+    return TimeSignature { beats_per_bar: 7, beat_unit: 8 }
+}
+
+# =============================================================================
+# Timing Queries
+# =============================================================================
+
+# Get samples per beat
+export function samples_per_beat(clock: Clock) -> i64 {
+    return clock.beat_samples
+}
+
+# Get samples per bar
+export function samples_per_bar(clock: Clock) -> i64 {
+    return clock.bar_samples
+}
+
+# Get samples per measure (alias for bar)
+export function samples_per_measure(clock: Clock) -> i64 {
+    return clock.bar_samples
+}
+
+# Get samples per whole note (4 beats in 4/4)
+export function samples_per_whole(clock: Clock) -> i64 {
+    return clock.beat_samples * 4.0
+}
+
+# Get samples per half note (2 beats)
+export function samples_per_half(clock: Clock) -> i64 {
+    return clock.beat_samples * 2.0
+}
+
+# Get samples per quarter note (1 beat in 4/4)
+export function samples_per_quarter(clock: Clock) -> i64 {
+    return clock.beat_samples
+}
+
+# Get samples per eighth note (half beat)
+export function samples_per_eighth(clock: Clock) -> i64 {
+    return clock.beat_samples / 2.0
+}
+
+# Get samples per sixteenth note
+export function samples_per_sixteenth(clock: Clock) -> i64 {
+    return clock.sixteenth_samples
+}
+
+# Get samples per thirty-second note
+export function samples_per_thirtysecond(clock: Clock) -> i64 {
+    return clock.sixteenth_samples / 2.0
+}
+
+# Get samples per dotted quarter (1.5 beats)
+export function samples_per_quarter_dotted(clock: Clock) -> i64 {
+    return clock.beat_samples * 1.5
+}
+
+# Get samples per triplet quarter (2/3 beat)
+export function samples_per_quarter_triplet(clock: Clock) -> i64 {
+    return clock.beat_samples * 0.666666
+}
+
+# =============================================================================
+# Beat Detection
+# =============================================================================
+
+# Check if we're on a beat boundary (within tolerance)
+export function clock_on_beat(clock: Clock, sample_pos: i64) -> bool {
+    let beat_samples: i64 = clock.beat_samples
+    let remainder: i64 = sample_pos % beat_samples
+    # Within 1 sample of beat boundary
+    return remainder < 2 or remainder > beat_samples - 2
+}
+
+# Check if we're on a bar boundary
+export function clock_on_bar(clock: Clock, sample_pos: i64) -> bool {
+    let bar_samples: i64 = clock.bar_samples
+    let remainder: i64 = sample_pos % bar_samples
+    return remainder < 2 or remainder > bar_samples - 2
+}
+
+# Check if we're on a sixteenth note
+export function clock_on_sixteenth(clock: Clock, sample_pos: i64) -> bool {
+    let sixteenth_samples: i64 = clock.sixteenth_samples
+    let remainder: i64 = sample_pos % sixteenth_samples
+    return remainder < 2 or remainder > sixteenth_samples - 2
+}
+
+# Get current beat number (0-indexed)
+export function clock_current_beat(clock: Clock, sample_pos: i64) -> i64 {
+    return sample_pos / clock.beat_samples
+}
+
+# Get current bar number (0-indexed)
+export function clock_current_bar(clock: Clock, sample_pos: i64) -> i64 {
+    return sample_pos / clock.bar_samples
+}
+
+# Get beat within current bar (0-3 for 4/4)
+export function clock_beat_in_bar(clock: Clock, sample_pos: i64) -> i32 {
+    let bar_pos: i64 = sample_pos % clock.bar_samples
+    return bar_pos / clock.beat_samples
+}
+
+# Get sixteenth note number within current beat (0-3)
+export function clock_sixteenth_in_beat(clock: Clock, sample_pos: i64) -> i32 {
+    let beat_pos: i64 = sample_pos % clock.beat_samples
+    return beat_pos / clock.sixteenth_samples
+}
+
+# =============================================================================
+# Tempo Changes
+# =============================================================================
+
+# Change BPM (returns new clock)
+export function clock_set_bpm(clock: Clock, new_bpm: f64) -> Clock {
+    return clock_new(new_bpm, clock.rate)
+}
+
+# Multiply BPM by factor (for tempo changes)
+export function clock_scale_tempo(clock: Clock, factor: f64) -> Clock {
+    return clock_new(clock.bpm * factor, clock.rate)
+}
+
+# Double tempo (half-time -> normal)
+export function clock_double_tempo(clock: Clock) -> Clock {
+    return clock_scale_tempo(clock, 2.0)
+}
+
+# Half tempo (normal -> half-time)
+export function clock_half_tempo(clock: Clock) -> Clock {
+    return clock_scale_tempo(clock, 0.5)
+}
+
+# =============================================================================
+# Swing / Groove
+# =============================================================================
+
+# Swing amount (0.0 = no swing, 0.5 = triplet swing, 1.0 = max swing)
+export struct SwingClock {
+    clock: Clock
+    swing: f64  # 0.0 to 1.0
+}
+
+export function swing_clock_new(bpm: f64, rate: SampleRate, swing: f64) -> SwingClock {
+    return SwingClock {
+        clock: clock_new(bpm, rate),
+        swing: swing
+    }
+}
+
+# Get swung position for a sixteenth note (0-3 within beat)
+# Even sixteenths (0, 2) play early, odd (1, 3) play late
+export function swing_position(sclock: SwingClock, sixteenth: i32) -> f64 {
+    if sixteenth % 2 == 0 {
+        # Even sixteenths: no change
+        return sixteenth * sclock.clock.sixteenth_samples
+    } else {
+        # Odd sixteenths: delayed by swing amount
+        let base_pos: f64 = sixteenth * sclock.clock.sixteenth_samples
+        let swing_offset: f64 = sclock.clock.sixteenth_samples * sclock.swing * 0.5
+        return base_pos + swing_offset
+    }
+}
+
+# =============================================================================
+# Utilities
+# =============================================================================
+
+# Convert BPM to Hz (frequency of quarter notes)
+export function bpm_to_hz(bpm: f64) -> f64 {
+    return bpm / 60.0
+}
+
+# Convert Hz to BPM
+export function hz_to_bpm(hz: f64) -> f64 {
+    return hz * 60.0
+}
+
+# Get milliseconds per beat
+export function ms_per_beat(clock: Clock) -> f64 {
+    return (60.0 / clock.bpm) * 1000.0
+}
+
+# Get beats per second
+export function beats_per_second(clock: Clock) -> f64 {
+    return clock.bpm / 60.0
+}
+
+# Calculate delay time in samples for a note value
+# note_value: 1.0 = whole, 0.5 = half, 0.25 = quarter, etc.
+export function delay_time_samples(clock: Clock, note_value: f64) -> i64 {
+    return clock.beat_samples * note_value * 4.0  # 4 beats per whole note
+}
+
+# Dotted note value (multiply by 1.5)
+export function dotted(note_value: f64) -> f64 {
+    return note_value * 1.5
+}
+
+# Triplet note value (multiply by 2/3)
+export function triplet(note_value: f64) -> f64 {
+    return note_value * 0.666666
+}

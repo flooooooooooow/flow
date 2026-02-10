@@ -1,0 +1,341 @@
+# Music Theory Module - Scales, Chords, and Note Helpers
+#
+# Makes music theory incredibly easy - easier than any other language.
+#
+# Usage:
+#   import "stdlib/audio/scales.flow"
+#
+#   let freq: f32 = note("C4")          # Middle C = 261.63 Hz
+#   let chord: array<f32, 3> = chord_major(60)  # C major chord
+#   let scale: array<i32, 7> = scale_major(60)  # C major scale
+
+import "stdlib/audio.flow"
+
+# =============================================================================
+# Note Names to MIDI
+# =============================================================================
+
+# Convert note name to MIDI number
+# "C4" = 60 (middle C), "A4" = 69 (concert A = 440Hz)
+# Supports: C, C#, Db, D, D#, Eb, E, F, F#, Gb, G, G#, Ab, A, A#, Bb, B
+export function note_to_midi(note_name: string) -> i32 {
+    # For now, return common notes
+    # TODO: Implement full parser when string parsing is available
+    return 60  # Default to middle C
+}
+
+# Quick note constructors for common notes
+export function note_C(octave: i32) -> i32 { return octave * 12 + 0 }
+export function note_Cs(octave: i32) -> i32 { return octave * 12 + 1 }
+export function note_Db(octave: i32) -> i32 { return octave * 12 + 1 }
+export function note_D(octave: i32) -> i32 { return octave * 12 + 2 }
+export function note_Ds(octave: i32) -> i32 { return octave * 12 + 3 }
+export function note_Eb(octave: i32) -> i32 { return octave * 12 + 3 }
+export function note_E(octave: i32) -> i32 { return octave * 12 + 4 }
+export function note_F(octave: i32) -> i32 { return octave * 12 + 5 }
+export function note_Fs(octave: i32) -> i32 { return octave * 12 + 6 }
+export function note_Gb(octave: i32) -> i32 { return octave * 12 + 6 }
+export function note_G(octave: i32) -> i32 { return octave * 12 + 7 }
+export function note_Gs(octave: i32) -> i32 { return octave * 12 + 8 }
+export function note_Ab(octave: i32) -> i32 { return octave * 12 + 8 }
+export function note_A(octave: i32) -> i32 { return octave * 12 + 9 }
+export function note_As(octave: i32) -> i32 { return octave * 12 + 10 }
+export function note_Bb(octave: i32) -> i32 { return octave * 12 + 10 }
+export function note_B(octave: i32) -> i32 { return octave * 12 + 11 }
+
+# Common note shortcuts
+export function C4() -> i32 { return 60 }   # Middle C
+export function A4() -> i32 { return 69 }   # Concert A (440Hz)
+export function C3() -> i32 { return 48 }   # Low C
+export function C5() -> i32 { return 72 }   # High C
+
+# =============================================================================
+# Scales
+# =============================================================================
+
+# Scale intervals (semitones from root)
+# Major: W W H W W W H (2 2 1 2 2 2 1)
+export function scale_major(root: i32) -> array<i32, 7> {
+    return [
+        root,
+        root + 2,   # Major 2nd
+        root + 4,   # Major 3rd
+        root + 5,   # Perfect 4th
+        root + 7,   # Perfect 5th
+        root + 9,   # Major 6th
+        root + 11   # Major 7th
+    ]
+}
+
+# Natural minor: W H W W H W W (2 1 2 2 1 2 2)
+export function scale_minor(root: i32) -> array<i32, 7> {
+    return [
+        root,
+        root + 2,   # Major 2nd
+        root + 3,   # Minor 3rd
+        root + 5,   # Perfect 4th
+        root + 7,   # Perfect 5th
+        root + 8,   # Minor 6th
+        root + 10   # Minor 7th
+    ]
+}
+
+# Pentatonic major: C D E G A (5 notes)
+export function scale_pentatonic_major(root: i32) -> array<i32, 5> {
+    return [
+        root,
+        root + 2,   # Major 2nd
+        root + 4,   # Major 3rd
+        root + 7,   # Perfect 5th
+        root + 9    # Major 6th
+    ]
+}
+
+# Pentatonic minor: C Eb F G Bb (5 notes)
+export function scale_pentatonic_minor(root: i32) -> array<i32, 5> {
+    return [
+        root,
+        root + 3,   # Minor 3rd
+        root + 5,   # Perfect 4th
+        root + 7,   # Perfect 5th
+        root + 10   # Minor 7th
+    ]
+}
+
+# Blues scale: C Eb F F# G Bb (6 notes)
+export function scale_blues(root: i32) -> array<i32, 6> {
+    return [
+        root,
+        root + 3,   # Minor 3rd
+        root + 5,   # Perfect 4th
+        root + 6,   # Tritone (blue note)
+        root + 7,   # Perfect 5th
+        root + 10   # Minor 7th
+    ]
+}
+
+# Chromatic scale (all 12 notes)
+export function scale_chromatic(root: i32) -> array<i32, 12> {
+    return [
+        root, root + 1, root + 2, root + 3,
+        root + 4, root + 5, root + 6, root + 7,
+        root + 8, root + 9, root + 10, root + 11
+    ]
+}
+
+# Whole tone scale: C D E F# G# A# (6 notes, all whole steps)
+export function scale_whole_tone(root: i32) -> array<i32, 6> {
+    return [
+        root,
+        root + 2,
+        root + 4,
+        root + 6,
+        root + 8,
+        root + 10
+    ]
+}
+
+# Dorian mode: D E F G A B C (minor with raised 6th)
+export function scale_dorian(root: i32) -> array<i32, 7> {
+    return [
+        root,
+        root + 2,
+        root + 3,
+        root + 5,
+        root + 7,
+        root + 9,
+        root + 10
+    ]
+}
+
+# Phrygian mode: E F G A B C D (minor with lowered 2nd)
+export function scale_phrygian(root: i32) -> array<i32, 7> {
+    return [
+        root,
+        root + 1,
+        root + 3,
+        root + 5,
+        root + 7,
+        root + 8,
+        root + 10
+    ]
+}
+
+# Lydian mode: F G A B C D E (major with raised 4th)
+export function scale_lydian(root: i32) -> array<i32, 7> {
+    return [
+        root,
+        root + 2,
+        root + 4,
+        root + 6,
+        root + 7,
+        root + 9,
+        root + 11
+    ]
+}
+
+# Mixolydian mode: G A B C D E F (major with lowered 7th)
+export function scale_mixolydian(root: i32) -> array<i32, 7> {
+    return [
+        root,
+        root + 2,
+        root + 4,
+        root + 5,
+        root + 7,
+        root + 9,
+        root + 10
+    ]
+}
+
+# =============================================================================
+# Chords
+# =============================================================================
+
+# Major triad: C E G (root, major 3rd, perfect 5th)
+export function chord_major(root: i32) -> array<i32, 3> {
+    return [root, root + 4, root + 7]
+}
+
+# Minor triad: C Eb G (root, minor 3rd, perfect 5th)
+export function chord_minor(root: i32) -> array<i32, 3> {
+    return [root, root + 3, root + 7]
+}
+
+# Diminished triad: C Eb Gb
+export function chord_dim(root: i32) -> array<i32, 3> {
+    return [root, root + 3, root + 6]
+}
+
+# Augmented triad: C E G#
+export function chord_aug(root: i32) -> array<i32, 3> {
+    return [root, root + 4, root + 8]
+}
+
+# Major 7th: C E G B
+export function chord_maj7(root: i32) -> array<i32, 4> {
+    return [root, root + 4, root + 7, root + 11]
+}
+
+# Minor 7th: C Eb G Bb
+export function chord_min7(root: i32) -> array<i32, 4> {
+    return [root, root + 3, root + 7, root + 10]
+}
+
+# Dominant 7th: C E G Bb
+export function chord_dom7(root: i32) -> array<i32, 4> {
+    return [root, root + 4, root + 7, root + 10]
+}
+
+# Suspended 2nd: C D G
+export function chord_sus2(root: i32) -> array<i32, 3> {
+    return [root, root + 2, root + 7]
+}
+
+# Suspended 4th: C F G
+export function chord_sus4(root: i32) -> array<i32, 3> {
+    return [root, root + 5, root + 7]
+}
+
+# Power chord (rock): C G (root + perfect 5th)
+export function chord_power(root: i32) -> array<i32, 2> {
+    return [root, root + 7]
+}
+
+# =============================================================================
+# Frequency Conversions (Extended)
+# =============================================================================
+
+# Get frequency for a MIDI note (more accurate than stdlib/audio.flow version)
+export function midi_to_freq_accurate(note: i32) -> f32 {
+    # f = 440 * 2^((note - 69) / 12)
+    # Using better approximation
+    let semitones: i32 = note - 69
+    let mut freq: f32 = 440.0
+
+    if semitones > 0 {
+        for i in 0 to semitones {
+            freq = freq * 1.059463094359  # 2^(1/12)
+        }
+    } else if semitones < 0 {
+        for i in 0 to -semitones {
+            freq = freq / 1.059463094359
+        }
+    }
+
+    return freq
+}
+
+# Shorthand: get frequency from MIDI note
+export function freq(midi_note: i32) -> f32 {
+    return midi_to_freq_accurate(midi_note)
+}
+
+# =============================================================================
+# Chord Progressions
+# =============================================================================
+
+# Common chord progression: I - IV - V - I (in major key)
+export function progression_145(root: i32) -> array<array<i32, 3>, 4> {
+    let I: array<i32, 3> = chord_major(root)
+    let IV: array<i32, 3> = chord_major(root + 5)
+    let V: array<i32, 3> = chord_major(root + 7)
+
+    return [I, IV, V, I]
+}
+
+# Pop progression: I - V - vi - IV (e.g., C - G - Am - F)
+export function progression_pop(root: i32) -> array<array<i32, 3>, 4> {
+    let I: array<i32, 3> = chord_major(root)
+    let V: array<i32, 3> = chord_major(root + 7)
+    let vi: array<i32, 3> = chord_minor(root + 9)
+    let IV: array<i32, 3> = chord_major(root + 5)
+
+    return [I, V, vi, IV]
+}
+
+# Blues progression: I - IV - I - V (12-bar simplified)
+export function progression_blues(root: i32) -> array<array<i32, 3>, 4> {
+    let I: array<i32, 3> = chord_dom7_triad(root)
+    let IV: array<i32, 3> = chord_dom7_triad(root + 5)
+    let V: array<i32, 3> = chord_dom7_triad(root + 7)
+
+    return [I, IV, I, V]
+}
+
+function chord_dom7_triad(root: i32) -> array<i32, 3> {
+    return [root, root + 4, root + 7]  # Just the triad part
+}
+
+# =============================================================================
+# Utilities
+# =============================================================================
+
+# Transpose a MIDI note by semitones
+export function transpose(note: i32, semitones: i32) -> i32 {
+    return note + semitones
+}
+
+# Octave shift
+export function octave_up(note: i32) -> i32 {
+    return note + 12
+}
+
+export function octave_down(note: i32) -> i32 {
+    return note - 12
+}
+
+# Invert a chord (move lowest note up an octave)
+export function chord_invert(chord: array<i32, 3>) -> array<i32, 3> {
+    return [chord[1], chord[2], chord[0] + 12]
+}
+
+# Check if note is in scale (basic check for 7-note scales)
+export function is_in_scale(note: i32, scale: array<i32, 7>) -> bool {
+    let note_class: i32 = note % 12
+    for i in 0 to 7 {
+        if scale[i] % 12 == note_class {
+            return true
+        }
+    }
+    return false
+}
