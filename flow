@@ -832,10 +832,13 @@ run_tests() {
     
     # Cleanup
     rm -rf "$test_build_dir"
-    
+
     echo "----------------------------------------"
+    echo "DEBUG: Total tests found: $total"
+    echo "DEBUG: Transpile failures: $transpile_failed"
+    echo "DEBUG: Clang failures: $clang_failed"
     local total_failed=$((transpile_failed + clang_failed))
-    
+
     if [ $total_failed -eq 0 ]; then
         print_success "All $total tests passed! (Tier $tier)"
         return 0
