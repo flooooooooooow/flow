@@ -155,7 +155,7 @@ function parser_advance(p: ptr<Parser>) {
 }
 
 function parser_expect(p: ptr<Parser>, kind: i32) -> i32 {
-    if p[0].current.kind == type {
+    if p[0].current.kind == kind {
         parser_advance(p)
         return 1
     }
