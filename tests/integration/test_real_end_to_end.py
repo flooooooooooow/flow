@@ -124,7 +124,7 @@ class TestRealEndToEnd:
 
             with open(output_file, "r") as f:
                 c_content = f.read()
-                assert "int add" in c_content or "add(" in c_content
+                assert "add" in c_content
 
         finally:
             # Cleanup

@@ -651,9 +651,14 @@ run_tests() {
                 strict_mode="--lenient"
                 shift
                 ;;
-            --tier1)
-                tier=1
-                shift
+            --tier1|--tier)
+                if [[ "$1" == "--tier" && -n "${2:-}" && "$2" == "1" ]]; then
+                    tier=1
+                    shift 2
+                else
+                    tier=1
+                    shift
+                fi
                 ;;
             --tier2)
                 tier=2
@@ -664,7 +669,13 @@ run_tests() {
                 shift
                 ;;
             *)
-                shift
+                # Handle --tier N format
+                if [[ "$1" == "--tier" && -n "${2:-}" ]]; then
+                    tier="$2"
+                    shift 2
+                else
+                    shift
+                fi
                 ;;
         esac
     done
@@ -682,7 +693,7 @@ run_tests() {
     
     # Create temp directory for test outputs
     local test_build_dir
-    test_build_dir="$(mktemp -d -t flow_test)"
+    test_build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_test)"
     mkdir -p "$test_build_dir"
     
     for suite in "tests" "examples"; do
@@ -917,10 +928,10 @@ run_gpu_tests() {
 # Run runtime tests (compile + execute programs and check exit codes/output)
 run_runtime_tests() {
     print_info "Running FLOW runtime tests..."
-    
+
     local runtime_dir="$SCRIPT_DIR/tests/runtime"
     local build_dir
-    build_dir="$(mktemp -d -t flow_runtime_test)"
+    build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_runtime_test)"
     local verbose=0
     local targets=()
 
@@ -1080,7 +1091,7 @@ run_mlir_tests() {
     
     local mlir_test_dir="$SCRIPT_DIR/tests/mlir"
     local build_dir
-    build_dir="$(mktemp -d -t flow_mlir_test)"
+    build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_mlir_test)"
     mkdir -p "$build_dir"
     
     # If no dedicated MLIR tests, use a subset of core tests
