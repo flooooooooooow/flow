@@ -766,7 +766,11 @@ run_tests() {
     else
         print_info "Running FLOW tests (Tier $tier)..."
     fi
-    
+
+    echo "DEBUG: Starting tests, tier=$tier, strict=$strict_mode"
+    echo "DEBUG: SCRIPT_DIR=$SCRIPT_DIR"
+    echo "DEBUG: Looking for tests in tests/ and examples/"
+
     local transpile_failed=0
     local clang_failed=0
     local total=0
