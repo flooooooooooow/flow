@@ -256,9 +256,11 @@ export function midi_to_freq_accurate(note: i32) -> f32 {
         for i in 0 to semitones {
             freq = freq * 1.059463094359  # 2^(1/12)
         }
-    } else if semitones < 0 {
-        for i in 0 to -semitones {
-            freq = freq / 1.059463094359
+    } else {
+        if semitones < 0 {
+            for i in 0 to -semitones {
+                freq = freq / 1.059463094359
+            }
         }
     }
 
