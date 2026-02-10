@@ -110,6 +110,7 @@ class TokenType(Enum):
     SELF = "SELF"
     TYPE = "TYPE"
     DISTINCT = "DISTINCT"
+    AS = "AS"
     UI_LAYOUT = "UI_LAYOUT"
     UI_ROW = "UI_ROW"
     UI_COLUMN = "UI_COLUMN"
@@ -501,6 +502,12 @@ class StructPattern:
 
 
 @dataclass
+class CastExpression:
+    expr: "Expression"
+    target_type: Type
+
+
+@dataclass
 class ImportDecl:
     path: str
 
@@ -554,6 +561,7 @@ Expression = Union[
     EffectCall,
     MethodCall,
     StructPattern,
+    CastExpression,
 ]
 Statement = Union[
     VarDecl,
@@ -606,6 +614,7 @@ class Lexer:
             "self": TokenType.SELF,
             "type": TokenType.TYPE,
             "distinct": TokenType.DISTINCT,
+            "as": TokenType.AS,
             "enum": TokenType.ENUM,
             "with": TokenType.WITH,
             "handle": TokenType.HANDLE,
@@ -862,11 +871,34 @@ class Parser:
             is_exported = False
             attributes = []
 
-            # Parse decorators like @gpu, @inline
+            # Parse decorators like @gpu, @inline, @only(hot, compile)
             while self.current_token.type == TokenType.AT:
                 self.advance()  # consume @
                 attr_name = self.expect(TokenType.IDENTIFIER).value
-                attributes.append(attr_name)
+                if self.current_token.type == TokenType.LPAREN:
+                    self.advance()
+                    args = []
+                    if self.current_token.type != TokenType.RPAREN:
+                        # Parse identifiers or string literals as args
+                        while True:
+                            if self.current_token.type == TokenType.IDENTIFIER:
+                                args.append(self.current_token.value)
+                                self.advance()
+                            elif self.current_token.type == TokenType.STRING_LITERAL:
+                                args.append(self.current_token.value.strip('"').strip("'"))
+                                self.advance()
+                            else:
+                                raise SyntaxError(
+                                    f"Expected decorator argument, got {self.current_token.type}"
+                                )
+                            if self.current_token.type == TokenType.COMMA:
+                                self.advance()
+                                continue
+                            break
+                    self.expect(TokenType.RPAREN)
+                    attributes.append(f"{attr_name}({','.join(args)})")
+                else:
+                    attributes.append(attr_name)
 
             if self.current_token.type == TokenType.EXPORT:
                 is_exported = True
@@ -1963,7 +1995,7 @@ class Parser:
         return left
 
     def parse_factor(self) -> Expression:
-        left = self.parse_unary()
+        left = self.parse_cast()
 
         while self.current_token.type in [
             TokenType.STAR,
@@ -1972,10 +2004,18 @@ class Parser:
         ]:
             op = self.current_token.value
             self.advance()
-            right = self.parse_unary()
+            right = self.parse_cast()
             left = BinaryOperation(left, op, right)
 
         return left
+
+    def parse_cast(self) -> Expression:
+        expr = self.parse_unary()
+        while self.current_token.type == TokenType.AS:
+            self.advance()
+            target_type = self.parse_type()
+            expr = CastExpression(expr, target_type)
+        return expr
 
     def parse_unary(self) -> Expression:
         if self.current_token.type in [
