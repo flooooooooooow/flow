@@ -77,8 +77,8 @@ show_help() {
     echo "Options:"
     echo "  run <program>     Compile and run program"
     echo "  compile <program>  Compile program only"
-    echo "  audio <program>   Compile and run with audio backend"
-    echo "  compile-audio <program>  Compile with audio backend"
+    echo "  audio <program> [--mlir]   Compile and run with audio backend"
+    echo "  compile-audio <program> [--mlir]  Compile with audio backend"
     echo "  debug <program>   Compile with debug symbols and open debugger"
     echo "  window <program>  Run with SDL2 window backend"
     echo "  gfx <program>     Run with native FLOW gfx backend (macOS)"
@@ -299,6 +299,7 @@ run_program() {
 # Compile with audio backend (real-time I/O)
 compile_audio_program() {
     local program="$1"
+    local backend="${2:-}"
     require_flow_file "$program"
     local basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
@@ -310,15 +311,28 @@ compile_audio_program() {
     local audio_ldflags=()
     local audio_sources=("$SCRIPT_DIR/runtime/audio_miniaudio.c" "$SCRIPT_DIR/runtime/audio_simd.c")
     
+    local use_mlir=0
+    if [ "$backend" = "--mlir" ] || [ "${FLOW_AUDIO_BACKEND:-}" = "mlir" ]; then
+        use_mlir=1
+    fi
+
     print_info "Compiling $program (audio backend)..."
     
     mkdir -p "$build_dir"
     
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>/dev/null; then
-        print_error "FLOW compilation failed"
-        exit 1
+    if [ $use_mlir -eq 1 ]; then
+        if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>/dev/null; then
+            print_error "FLOW MLIR/LLVM compilation failed"
+            exit 1
+        fi
+        print_success "FLOW → MLIR → LLVM: $basename.ll"
+    else
+        if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>/dev/null; then
+            print_error "FLOW compilation failed"
+            exit 1
+        fi
+        print_success "FLOW → C: $basename.c"
     fi
-    print_success "FLOW → C: $basename.c"
 
     if [ -f "$SCRIPT_DIR/third_party/miniaudio.h" ]; then
         audio_cflags+=("-I$SCRIPT_DIR/third_party" "-DFLOW_AUDIO_BACKEND_MINIAUDIO")
@@ -340,7 +354,12 @@ compile_audio_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
-    if ! clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "$build_dir/$basename.c" \
+    local flow_input="$build_dir/$basename.c"
+    if [ $use_mlir -eq 1 ]; then
+        flow_input="$build_dir/$basename.ll"
+    fi
+
+    if ! clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "$flow_input" \
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
@@ -361,7 +380,7 @@ run_audio_program() {
     local basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
     
-    compile_audio_program "$program"
+    compile_audio_program "$program" "${2:-}"
     
     print_info "Running $basename (audio)..."
     echo "----------------------------------------"
@@ -1346,7 +1365,7 @@ case "${1:-help}" in
         ;;
     "audio")
         check_deps
-        run_audio_program "${2:-}"
+        run_audio_program "${2:-}" "${3:-}"
         ;;
     "compile")
         check_deps
@@ -1354,7 +1373,7 @@ case "${1:-help}" in
         ;;
     "compile-audio")
         check_deps
-        compile_audio_program "${2:-}"
+        compile_audio_program "${2:-}" "${3:-}"
         ;;
     "debug")
         debug_program "${2:-}"

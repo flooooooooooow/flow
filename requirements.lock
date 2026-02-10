@@ -1,0 +1,6 @@
+pytest==8.2.2
+numpy==1.26.4
+ruff==0.6.9
+mypy==1.11.2
+bandit==1.7.9
+pip-audit==2.7.3

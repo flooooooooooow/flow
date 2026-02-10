@@ -25,7 +25,7 @@ from .parser import (
     IfStatement, WhileStatement, ForStatement, MatchStatement,
     HandleStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
     EffectOperation, CapabilityMethod, MatchCase, EnumDecl, TraitDecl, ImplDecl,
-    TypeAliasDecl, DistinctTypeDecl
+    TypeAliasDecl, DistinctTypeDecl, CastExpression
 )
 
 
@@ -719,6 +719,12 @@ class TypeChecker:
             if base_type.kind == TypeKind.ARRAY or base_type.kind == TypeKind.POINTER:
                 return base_type.element_type or SemanticType(TypeKind.VOID)
             return SemanticType(TypeKind.VOID)
+        elif isinstance(expr, CastExpression):
+            src_type = self._check_expression(expr.expr)
+            target_type = self._parse_type(expr.target_type)
+            if not self._can_cast(src_type, target_type):
+                self.errors.append(f"Cannot cast {src_type} to {target_type}")
+            return target_type
         elif isinstance(expr, FieldAccess):
             obj_type = self._check_expression(expr.object)
             if obj_type.kind == TypeKind.STRUCT and obj_type.name in self.struct_types:
@@ -730,6 +736,33 @@ class TypeChecker:
         else:
             # For now, treat unknown expressions as unknown type
             return SemanticType(TypeKind.UNKNOWN)
+
+    def _can_cast(self, actual: SemanticType, target: SemanticType) -> bool:
+        if actual == target:
+            return True
+
+        # Distinct types: allow explicit casts to/from base type only.
+        if target.kind == TypeKind.DISTINCT and target.base_type:
+            return actual == target.base_type
+        if actual.kind == TypeKind.DISTINCT and actual.base_type:
+            return target == actual.base_type
+
+        # Numeric explicit casts are allowed between ints/floats/bools.
+        ints = {TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64, TypeKind.I128,
+                TypeKind.U8, TypeKind.U16, TypeKind.U32, TypeKind.U64, TypeKind.U128}
+        floats = {TypeKind.F32, TypeKind.F64}
+        if actual.kind in ints | floats | {TypeKind.BOOL} and target.kind in ints | floats | {TypeKind.BOOL}:
+            return True
+
+        # Pointer casts are allowed explicitly.
+        if actual.kind == TypeKind.POINTER and target.kind == TypeKind.POINTER:
+            return True
+        if actual.kind == TypeKind.POINTER and target.kind in ints:
+            return True
+        if target.kind == TypeKind.POINTER and actual.kind in ints:
+            return True
+
+        return False
 
     def _check_literal(self, lit: Literal) -> SemanticType:
         """Type check a literal."""

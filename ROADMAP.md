@@ -53,6 +53,45 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 | Effect system showcase | 🔲 | Unique selling point |
 | Benchmark vs C comparison | 🔲 | Performance credibility |
 
+### 🧹 Repository Cleanup
+
+The repo has accumulated stray files, empty stubs, and misplaced artifacts. This section tracks the cleanup plan.
+
+#### High Priority — Delete or Move
+
+| File | Problem | Action | Status |
+|------|---------|--------|--------|
+| `/bench.sh` | Empty (0 bytes), superseded by `scripts/bench.sh` | Delete | 🔲 |
+| `/run_bench.py` | Empty (0 bytes), superseded by `scripts/run_bench.py` | Delete | 🔲 |
+| `/flow_wasm.py` | Duplicate of `wasm/flow_to_wasm.py` | Delete from root | 🔲 |
+| `/test_ci_locally.sh` | Dev utility loose at repo root | Move to `scripts/` | 🔲 |
+
+#### Medium Priority — Remove Empty Stubs
+
+| File | Problem | Action | Status |
+|------|---------|--------|--------|
+| `examples/gpu_integration_demo.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
+| `examples/gpu_integration_simple.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
+| `tests/test_graphics.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
+| `tests/test_const_comprehensive.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
+
+#### Medium Priority — Misplaced Files
+
+| File | Problem | Action | Status |
+|------|---------|--------|--------|
+| `examples/effects_demo.mlir` | MLIR file loose in examples root | Move to `examples/effects/` | 🔲 |
+| `tools/srir_demo.mlir` | Demo data in tools dir | Move to `examples/` or `tests/` | 🔲 |
+| 21 `.flow` test files in `tests/` root | `tests/core/` subdir already exists | Organize into subdirectories | 🔲 |
+
+#### Low Priority — Empty Directories & Structure
+
+| Item | Problem | Action | Status |
+|------|---------|--------|--------|
+| `challenges/` | Empty directory | Remove if not planned | 🔲 |
+| `editors/` | Empty directory | Remove if not planned | 🔲 |
+| `tools/` flat structure | Mixed-purpose files (debug, grad, JIT, SIMD, test) | Consider subdirs by purpose | 🔲 |
+| `lib/` → `lib/stdlib/` | Single nested child | Consider flattening | 🔲 |
+
 ### 🔮 Medium Term (This Quarter)
 
 | Task | Status | Impact |

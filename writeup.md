@@ -1,6 +1,6 @@
 # Flow: How the Language Works (and Why MLIR)
 
-Flow is a statically typed, compiled language that sits at the intersection of systems programming, ML workloads, and graphics. It is implemented primarily in Python and targets multiple backends. MLIR is one of the targets, not the whole story: Flow also has a portable C backend and a Metal shader pipeline. The approach is intentionally pragmatic: keep the language semantics small, expressible, and easy to lower, while still providing powerful capabilities like algebraic effects and automatic differentiation.
+Flow is a statically typed, compiled language that sits at the intersection of systems programming, ML workloads, audio, and graphics. It is implemented primarily in Python and targets multiple backends. MLIR is one of the targets, not the whole story: Flow also has a portable C backend and a Metal shader pipeline. The approach is intentionally pragmatic: keep the language semantics small, expressible, and easy to lower, while still providing powerful capabilities like algebraic effects and automatic differentiation.
 
 This writeup explains the structure and the design choices as they exist in this codebase.
 

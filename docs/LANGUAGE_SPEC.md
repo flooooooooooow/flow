@@ -173,6 +173,31 @@ let p: ptr<i32> = &x
 let matrix: array<array<f32>> = ...
 ```
 
+### 2.4 Type Aliases and Distinct Types
+
+Flow supports two modern type declaration forms:
+
+```flow
+# Transparent alias (structural)
+type Bytes = array<u8>
+
+# Distinct (nominal) type
+distinct type UserId = i64
+```
+
+- **Type aliases** are transparent and interchangeable with their base type.
+- **Distinct types** are nominal and incompatible with their base type unless explicitly cast.
+
+### 2.5 Explicit Casts
+
+Use `as` to convert between compatible types (including to/from distinct types):
+
+```flow
+let raw: i64 = 42
+let id: UserId = raw as UserId
+let back: i64 = id as i64
+```
+
 ---
 
 ## 3. Declarations
@@ -198,6 +223,29 @@ function greet(name: string) -> void {
     printf("Hello, %s!\n", name)
 }
 ```
+
+### 3.1.1 Function Guards (Build Modes)
+
+Flow supports lightweight build guards to include/exclude functions per mode:
+
+```flow
+@only(hot)
+function dev_overlay() -> void { ... }
+
+@guard(jit, compile)
+function shared_path() -> void { ... }
+
+@compile
+function release_only() -> void { ... }
+```
+
+Modes are resolved by the transpiler:
+- `compile` (default)
+- `jit`
+- `hot`
+- `mlir`, `c`
+
+Use `--mode` in the CLI to override mode detection when needed.
 
 ### 3.2 Variable Declaration
 

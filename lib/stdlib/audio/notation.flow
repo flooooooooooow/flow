@@ -1,0 +1,179 @@
+# Musical Notation Module - Load Music from Files
+#
+# Simple text-based notation for livecoding:
+#   C4/4 D4/4 E4/2    # Note/duration (4=quarter, 2=eighth, 8=half, etc.)
+#   - C4 = note name + octave
+#   - /4 = duration in sixteenth notes
+#
+# Usage with effects:
+#   effect Notation {
+#       function load_file(path: string) -> bool
+#       function get_note_count() -> i32
+#       function get_note(idx: i32) -> Note
+#   }
+
+import "stdlib/audio.flow"
+
+# =============================================================================
+# Note Structure
+# =============================================================================
+
+export struct MusicNote {
+    midi: i32       # MIDI note number (60 = C4)
+    duration: i32   # Duration in sixteenth notes
+}
+
+# =============================================================================
+# Notation Effect
+# =============================================================================
+
+export effect Notation {
+    function load_file(path: string) -> bool
+    function get_note_count() -> i32
+    function get_note(idx: i32) -> MusicNote
+    function parse_line(line: string) -> bool
+}
+
+# =============================================================================
+# Note Name Parsing
+# =============================================================================
+
+# Parse note name to MIDI number (e.g., "C4" -> 60)
+export function parse_note_name(name: string) -> i32 {
+    # For now, return common notes
+    # TODO: Implement full parser when string operations available
+    # Format: C4, D4, E4, etc.
+    # This is a placeholder - would need string parsing
+    return 60  # Default to C4
+}
+
+# Helper: Parse a single note/duration pair
+# Format: "C4/4" means C4 for 4 sixteenth notes (quarter note)
+export function parse_note_simple(note_str: string, duration: i32) -> MusicNote {
+    # Simplified version - would parse string properly
+    let midi: i32 = 60  # Default C4
+    return MusicNote { midi: midi, duration: duration }
+}
+
+# =============================================================================
+# Notation Handler Implementation
+# =============================================================================
+
+export struct NotationReader {
+    notes: array<MusicNote, 128>  # Max 128 notes
+    count: i32
+    loaded: bool
+}
+
+export function notation_reader_new() -> NotationReader {
+    let empty_notes: array<MusicNote, 128> = []
+    return NotationReader {
+        notes: empty_notes,
+        count: 0,
+        loaded: false
+    }
+}
+
+# Regular functions (effect impl not fully supported in C backend yet)
+export function notation_load_file(reader: ptr<NotationReader>, path: string) -> bool {
+    let self: ptr<NotationReader> = reader
+    if true {
+        # In a real implementation, this would:
+        # 1. Open the file
+        # 2. Read lines
+        # 3. Parse each line into notes
+        # 4. Store in self.notes
+
+        # For now, hardcode Hot Cross Buns as example
+        # This would be replaced with actual file reading
+        self.notes[0] = MusicNote { midi: 64, duration: 4 }   # E4/4
+        self.notes[1] = MusicNote { midi: 62, duration: 4 }   # D4/4
+        self.notes[2] = MusicNote { midi: 60, duration: 8 }   # C4/8
+        self.notes[3] = MusicNote { midi: 64, duration: 4 }
+        self.notes[4] = MusicNote { midi: 62, duration: 4 }
+        self.notes[5] = MusicNote { midi: 60, duration: 8 }
+        self.notes[6] = MusicNote { midi: 60, duration: 2 }
+        self.notes[7] = MusicNote { midi: 60, duration: 2 }
+        self.notes[8] = MusicNote { midi: 60, duration: 2 }
+        self.notes[9] = MusicNote { midi: 60, duration: 2 }
+        self.notes[10] = MusicNote { midi: 62, duration: 2 }
+        self.notes[11] = MusicNote { midi: 62, duration: 2 }
+        self.notes[12] = MusicNote { midi: 62, duration: 2 }
+        self.notes[13] = MusicNote { midi: 62, duration: 2 }
+        self.notes[14] = MusicNote { midi: 64, duration: 4 }
+        self.notes[15] = MusicNote { midi: 62, duration: 4 }
+        self.notes[16] = MusicNote { midi: 60, duration: 8 }
+
+        self.count = 17
+        self.loaded = true
+        return true
+    }
+
+    function get_note_count(self) -> i32 {
+        return self.count
+    }
+
+    function get_note(self, idx: i32) -> MusicNote {
+        if idx >= 0 and idx < self.count {
+            return self.notes[idx]
+        }
+        # Return default note if out of bounds
+        return MusicNote { midi: 60, duration: 4 }
+    }
+
+    function parse_line(self, line: string) -> bool {
+        # Would parse a line like "C4/4 D4/4 E4/2"
+        # For now, just return success
+        return true
+    }
+}
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+# Create a notation reader and load a file
+export function load_notation(path: string) -> NotationReader {
+    let mut reader: NotationReader = notation_reader_new()
+    let cap: capability Notation = reader
+    let success: bool = cap.load_file(path)
+    return reader
+}
+
+# Convert note name to MIDI (manual mapping for now)
+export function note_name_to_midi(note: i32, octave: i32) -> i32 {
+    # note: 0=C, 1=C#, 2=D, 3=D#, 4=E, 5=F, 6=F#, 7=G, 8=G#, 9=A, 10=A#, 11=B
+    return octave * 12 + note
+}
+
+# Quick note constructors
+export function note_from_name(name: i32, octave: i32, duration: i32) -> MusicNote {
+    return MusicNote {
+        midi: note_name_to_midi(name, octave),
+        duration: duration
+    }
+}
+
+# =============================================================================
+# Notation Format Documentation
+# =============================================================================
+
+# Text file format (.flow-music or .flowmusic):
+#
+# # Comments start with #
+# E4/4 D4/4 C4/8   # Hot cross buns (note/duration)
+# E4/4 D4/4 C4/8   # Hot cross buns
+# C4/2 C4/2 C4/2 C4/2   # One a penny
+# D4/2 D4/2 D4/2 D4/2   # Two a penny
+# E4/4 D4/4 C4/8   # Hot cross buns
+#
+# Note format: <name><octave>/<duration>
+#   - name: C, D, E, F, G, A, B (with # for sharp, b for flat)
+#   - octave: 0-9 (4 = middle octave)
+#   - duration: sixteenth notes (2=eighth, 4=quarter, 8=half, 16=whole)
+#
+# Special:
+#   - Rest: R/4 (rest for 4 sixteenths)
+#   - Repeat: @2 (repeat previous section twice)
+#   - Tempo: BPM:120 (set tempo)
+#   - Section: [intro], [verse], [chorus]

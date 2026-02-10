@@ -24,6 +24,61 @@ from .type_checker import TypeChecker
 from .monomorphize import monomorphize
 
 
+def _parse_decorator(attr: str) -> tuple[str, list[str]]:
+    if "(" in attr and attr.endswith(")"):
+        name, rest = attr.split("(", 1)
+        args = [a.strip() for a in rest[:-1].split(",") if a.strip()]
+        return name, args
+    return attr, []
+
+
+def _active_modes(args, backend: str) -> set[str]:
+    if args.mode:
+        base = {args.mode}
+    else:
+        if args.hot_reload:
+            base = {"hot", "jit"}
+        elif args.jit:
+            base = {"jit"}
+        else:
+            base = {"compile"}
+    base.add(backend)
+    if backend == "mlir":
+        base.add("compile")
+    if backend == "c":
+        base.add("compile")
+    return base
+
+
+def _function_allowed(fn: FunctionDecl, active_modes: set[str]) -> bool:
+    attrs = getattr(fn, "attributes", []) or []
+    guard_modes: list[str] = []
+    has_guard = False
+
+    for attr in attrs:
+        name, args = _parse_decorator(attr)
+        if name in ("only", "guard"):
+            has_guard = True
+            guard_modes.extend(args)
+        elif name in active_modes or name in ("hot", "jit", "compile", "interp", "mlir", "c"):
+            has_guard = True
+            guard_modes.append(name)
+
+    if not has_guard:
+        return True
+    return any(mode in active_modes for mode in guard_modes)
+
+
+def _filter_declarations(declarations, active_modes: set[str]):
+    filtered = []
+    for decl in declarations:
+        if isinstance(decl, FunctionDecl):
+            if not _function_allowed(decl, active_modes):
+                continue
+        filtered.append(decl)
+    return filtered
+
+
 def main():
     parser = argparse.ArgumentParser(description="FLOW Language Transpiler")
     parser.add_argument("input", help="Input FLOW file")
@@ -112,8 +167,17 @@ def main():
         action="store_true",
         help="Generate C extension source without building wheel",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["compile", "jit", "hot", "interp", "mlir", "c"],
+        help="Guard mode for @only/@guard decorators (default: inferred)",
+    )
 
     args = parser.parse_args()
+
+    if args.c and args.llvm:
+        print("Error: --llvm is only valid for MLIR backend (remove --c).", file=sys.stderr)
+        sys.exit(1)
 
     # --lenient overrides --strict
     strict_mode = args.strict
@@ -135,6 +199,14 @@ def main():
     try:
         print("Resolving modules...", file=sys.stderr)
         declarations = resolve_modules(args.input)
+
+        # Decide backend early so mode filtering can use it.
+        backend = "mlir"
+        if args.c:
+            backend = "c"
+
+        active_modes = _active_modes(args, backend)
+        declarations = _filter_declarations(declarations, active_modes)
 
         # Type checking phase
         type_checker = TypeChecker()
@@ -166,6 +238,7 @@ def main():
 
         # Monomorphization pass: expand generics to concrete types
         declarations = monomorphize(declarations)
+        declarations = _filter_declarations(declarations, active_modes)
 
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
         structs = [d for d in declarations if isinstance(d, StructDecl)]
@@ -315,7 +388,7 @@ def main():
             traceback.print_exc()
             sys.exit(1)
 
-    # Decide backend
+    # Decide backend (may have been inferred earlier)
     backend = "mlir"  # Default backend
     if args.c:
         backend = "c"
@@ -352,7 +425,7 @@ def main():
             )
 
             # Apply optimizations if requested
-            if args.optimize:
+    if args.optimize:
                 from .mlir_optimizer import MLIROptimizer
                 import tempfile
 
@@ -394,6 +467,19 @@ def main():
         except Exception as e:
             print(f"MLIR generation error: {e}", file=sys.stderr)
             sys.exit(1)
+
+        # Optional: Lower MLIR to LLVM IR
+        if args.llvm:
+            try:
+                from .mlir_jit import MLIRJIT
+                jit = MLIRJIT()
+                try:
+                    out_code = jit.compile_mlir_to_llvm(out_code)
+                finally:
+                    jit.cleanup()
+            except Exception as e:
+                print(f"LLVM IR generation failed: {e}", file=sys.stderr)
+                sys.exit(1)
 
     # Optional: Lower GPU module to SPIR-V
     if backend != "c" and args.emit_spirv:
@@ -445,6 +531,8 @@ def main():
                 f.write(out_code)
             if backend == "c":
                 print(f"Generated C written to {args.output}", file=sys.stderr)
+            elif args.llvm:
+                print(f"Generated LLVM IR written to {args.output}", file=sys.stderr)
             else:
                 print(f"Generated MLIR written to {args.output}", file=sys.stderr)
         except Exception as e:

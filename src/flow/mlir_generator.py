@@ -4,7 +4,7 @@ FLOW to MLIR Generator
 Converts parsed FLOW AST to MLIR dialects
 """
 
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Set
 from .parser import (
     FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, Block, Statement,
     VarDecl, Assignment, IfStatement, WhileStatement, ForStatement,
@@ -35,6 +35,8 @@ class MLIRGenerator:
         self._ssa_types: Dict[str, str] = {}  # Maps SSA name -> MLIR type string
         self.type_aliases = {}  # name -> base Type
         self.distinct_types = {}  # name -> base Type
+        self.struct_llvm_types: Dict[str, Optional[str]] = {}
+        self._struct_llvm_building: Set[str] = set()
         
     def indent(self) -> str:
         return "  " * self.indent_level
@@ -122,6 +124,47 @@ class MLIRGenerator:
                 current = self.distinct_types[name]
                 continue
             return current
+
+    def _struct_llvm_type(self, struct_name: str) -> Optional[str]:
+        if struct_name in self.struct_llvm_types:
+            return self.struct_llvm_types[struct_name]
+        if struct_name in self._struct_llvm_building:
+            return None
+
+        self._struct_llvm_building.add(struct_name)
+
+        decl = self._get_struct_decl(struct_name)
+        if not decl:
+            self._struct_llvm_building.discard(struct_name)
+            self.struct_llvm_types[struct_name] = None
+            return None
+
+        field_types = []
+        for field in decl.fields:
+            field_ty = self.flow_type_to_mlir(field.type)
+            # LLVM struct fields must be LLVM-compatible scalars/pointers/structs.
+            if field_ty.startswith("memref") or field_ty.startswith("vector") or field_ty.startswith("!flow.struct"):
+                self._struct_llvm_building.discard(struct_name)
+                self.struct_llvm_types[struct_name] = None
+                return None
+            field_types.append(field_ty)
+
+        struct_ty = f"!llvm.struct<({', '.join(field_types)})>"
+        self._struct_llvm_building.discard(struct_name)
+        self.struct_llvm_types[struct_name] = struct_ty
+        return struct_ty
+
+    def _zero_value_for_mlir_type(self, mlir_type: str) -> tuple[str, List[str]]:
+        ssa_name = f"%{self.function_counter}"
+        self.function_counter += 1
+        if mlir_type.startswith("f"):
+            return ssa_name, [f"{self.indent()}{ssa_name} = arith.constant 0.0 : {mlir_type}"]
+        if mlir_type.startswith("i"):
+            return ssa_name, [f"{self.indent()}{ssa_name} = arith.constant 0 : {mlir_type}"]
+        if mlir_type == "!llvm.ptr":
+            return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.null : {mlir_type}"]
+        # Fallback to undef for aggregate/unknown types
+        return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.undef : {mlir_type}"]
     
     def generate_module(self, declarations: List[Any], emit_gpu: bool = False) -> str:
         mlir_code = []
@@ -133,6 +176,8 @@ class MLIRGenerator:
         self.declarations = declarations  # Store declarations for type lookup
         self.type_aliases = {d.name: d.base_type for d in declarations if isinstance(d, TypeAliasDecl)}
         self.distinct_types = {d.name: d.base_type for d in declarations if isinstance(d, DistinctTypeDecl)}
+        self.struct_llvm_types = {}
+        self._struct_llvm_building = set()
 
         # Split GPU kernels from CPU declarations (GPU kernels are handled separately)
         gpu_functions = []
@@ -241,6 +286,7 @@ class MLIRGenerator:
             self.symbol_table[param.name] = {
                 'type': 'variable',
                 'mlir_type': self.flow_type_to_mlir(param.type),
+                'flow_type': param.type,
                 'ssa_name': f'%arg{i}'
             }
         
@@ -346,30 +392,9 @@ class MLIRGenerator:
             # Cast the initializer to the variable's type if needed
             init_type = self.get_expression_type(var_decl.initializer)
             if init_type != mlir_type:
-                # Handle f32 to f64 conversion
-                if init_type == 'f32' and mlir_type == 'f64':
-                    cast_value = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    init_ops.append(f"{self.indent()}{cast_value} = arith.extf {init_value} : f32 to f64")
-                    init_value = cast_value
-                # Handle f64 to f32 conversion
-                elif init_type == 'f64' and mlir_type == 'f32':
-                    cast_value = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    init_ops.append(f"{self.indent()}{cast_value} = arith.truncf {init_value} : f64 to f32")
-                    init_value = cast_value
-                # Handle i32 to i64 conversion
-                elif init_type == 'i32' and mlir_type == 'i64':
-                    cast_value = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    init_ops.append(f"{self.indent()}{cast_value} = arith.extsi {init_value} : i32 to i64")
-                    init_value = cast_value
-                # Handle i64 to i32 conversion
-                elif init_type == 'i64' and mlir_type == 'i32':
-                    cast_value = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    init_ops.append(f"{self.indent()}{cast_value} = arith.trunci {init_value} : i64 to i32")
-                    init_value = cast_value
+                init_value, cast_ops = self._emit_cast(init_value, init_type, mlir_type)
+                init_ops.extend(cast_ops)
+            self._ssa_types[init_value] = mlir_type
 
             # Bind variable name to the SSA value produced by the initializer.
             # MLIR SSA values are immutable; we do not emit an extra "assignment" op.
@@ -395,8 +420,9 @@ class MLIRGenerator:
             
             if var_decl.type.size:  # Array type
                 return f"{self.indent()}{ssa_name} = memref.alloc() {{type = {mlir_type}}} : memref<{var_decl.type.size}x{var_decl.type.element_type.name}>"
-            else:
-                return f"{self.indent()}{ssa_name} = memref.alloc() : memref<{mlir_type}>"
+            if mlir_type.startswith("memref<"):
+                return f"{self.indent()}{ssa_name} = memref.alloc() : {mlir_type}"
+            return f"{self.indent()}{ssa_name} = llvm.mlir.undef : {mlir_type}"
     
     def generate_return(self, return_stmt: ReturnStatement) -> str:
         if return_stmt.value:
@@ -428,26 +454,8 @@ class MLIRGenerator:
             # If the value type doesn't match the return type, add a cast
             value_type = self.get_expression_type(return_stmt.value)
             if value_type != return_type:
-                cast_name = f"%{self.function_counter}"
-                self.function_counter += 1
-                if return_type == 'i1' and value_type in ['i32', 'i64']:
-                    lines.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : {value_type} to i1")
-                    value_ssa = cast_name
-                elif return_type in ['i32', 'i64'] and value_type == 'i1':
-                    lines.append(f"{self.indent()}{cast_name} = arith.extsi {value_ssa} : i1 to {return_type}")
-                    value_ssa = cast_name
-                elif return_type == 'i64' and value_type == 'i32':
-                    lines.append(f"{self.indent()}{cast_name} = arith.extsi {value_ssa} : i32 to i64")
-                    value_ssa = cast_name
-                elif return_type == 'i32' and value_type == 'i64':
-                    lines.append(f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : i64 to i32")
-                    value_ssa = cast_name
-                elif return_type == 'i1' and value_type in ['f32', 'f64']:
-                    lines.append(f"{self.indent()}{cast_name} = arith.fptosi {value_ssa} : {value_type} to i1")
-                    value_ssa = cast_name
-                elif return_type in ['f32', 'f64'] and value_type == 'i1':
-                    lines.append(f"{self.indent()}{cast_name} = arith.sitofp {value_ssa} : i1 to {return_type}")
-                    value_ssa = cast_name
+                value_ssa, cast_ops = self._emit_cast(value_ssa, value_type, return_type)
+                lines.extend(cast_ops)
             
             lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
             return "\n".join(lines)
@@ -525,10 +533,10 @@ class MLIRGenerator:
                         # Load byte from source
                         load_name = f"%{self.function_counter}"
                         self.function_counter += 1
-                        ops.append(f"{self.indent()}memref.load {load_name}, {value_ssa}[{i}] : memref<?xi8>")
+                        ops.append(f"{self.indent()}{load_name} = memref.load {value_ssa}[{i}] : memref<{struct_size}xi8>")
                         
                         # Store byte to target
-                        ops.append(f"{self.indent()}memref.store {load_name}, {target_info['ssa_name']}[{i}] : memref<?xi8>")
+                        ops.append(f"{self.indent()}memref.store {load_name}, {target_info['ssa_name']}[{i}] : memref<{struct_size}xi8>")
                     
                     return "\n".join(ops)
         
@@ -1277,34 +1285,54 @@ class MLIRGenerator:
         cast_name = f"%{self.function_counter}"
         self.function_counter += 1
 
+        def _int_width(ty: str) -> int:
+            try:
+                return int(ty[1:])
+            except Exception:
+                return 0
+
+        def _is_unsigned(ty: str) -> bool:
+            return ty.startswith("u")
+
         # Index casts
         if from_type == "index" and to_type.startswith("i"):
+            self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.index_cast {value_ssa} : index to {to_type}"]
         if to_type == "index" and from_type.startswith("i"):
+            self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.index_cast {value_ssa} : {from_type} to index"]
 
         # Integer width casts
-        if from_type.startswith("i") and to_type.startswith("i"):
-            if int(from_type[1:]) < int(to_type[1:]):
-                return cast_name, [f"{self.indent()}{cast_name} = arith.extsi {value_ssa} : {from_type} to {to_type}"]
+        if (from_type.startswith("i") or from_type.startswith("u")) and (to_type.startswith("i") or to_type.startswith("u")):
+            if _int_width(from_type) < _int_width(to_type):
+                ext_op = "arith.extui" if _is_unsigned(from_type) else "arith.extsi"
+                self._ssa_types[cast_name] = to_type
+                return cast_name, [f"{self.indent()}{cast_name} = {ext_op} {value_ssa} : {from_type} to {to_type}"]
+            self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : {from_type} to {to_type}"]
 
         # Bool/integer casts
         if from_type == "i1" and to_type.startswith("i"):
+            self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.extui {value_ssa} : i1 to {to_type}"]
         if to_type == "i1" and from_type.startswith("i"):
+            self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : {from_type} to i1"]
 
         # Float width casts
         if from_type in ["f32", "f64"] and to_type in ["f32", "f64"]:
             if from_type == "f32" and to_type == "f64":
+                self._ssa_types[cast_name] = to_type
                 return cast_name, [f"{self.indent()}{cast_name} = arith.extf {value_ssa} : f32 to f64"]
+            self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.truncf {value_ssa} : f64 to f32"]
 
         # Int/float casts (signed)
         if from_type.startswith("i") and to_type in ["f32", "f64"]:
+            self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.sitofp {value_ssa} : {from_type} to {to_type}"]
-        if from_type in ["f32", "f64"] and to_type.startswith("i"):
+        if from_type in ["f32", "f64"] and (to_type.startswith("i") or to_type.startswith("u")):
+            self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.fptosi {value_ssa} : {from_type} to {to_type}"]
 
         # Fallback: no cast op available, return original value.
@@ -1331,11 +1359,14 @@ class MLIRGenerator:
             line = f"{self.indent()}{ssa_name} = llvm.mlir.addressof @{global_name} : !llvm.ptr"
         else:
             line = f"{self.indent()}{ssa_name} = arith.constant {literal.value} : {mlir_type}"
+        self._ssa_types[ssa_name] = mlir_type
         return ssa_name, [line]
     
     def generate_variable(self, variable: Variable) -> tuple[str, List[str]]:
         if variable.name in self.symbol_table:
             var_info = self.symbol_table[variable.name]
+            if 'ssa_name' in var_info and 'mlir_type' in var_info:
+                self._ssa_types[var_info['ssa_name']] = var_info['mlir_type']
             return var_info['ssa_name'], []
         else:
             return f"# Undefined variable: {variable.name}", []
@@ -1363,41 +1394,45 @@ class MLIRGenerator:
         # Determine operation based on operator
         left_ty = self.get_expression_type(bin_op.left)
         right_ty = self.get_expression_type(bin_op.right)
-        
+
         # Check if this is a vector operation
         is_vector = 'vector<' in left_ty or 'vector<' in right_ty
         is_float = ('f32' in left_ty) or ('f64' in left_ty) or ('f32' in right_ty) or ('f64' in right_ty)
 
+        def _is_int(ty: str) -> bool:
+            return ty.startswith('i') or ty.startswith('u')
+
+        def _int_width(ty: str) -> int:
+            try:
+                return int(ty[1:])
+            except Exception:
+                return 0
+
         # For vector operations, ensure both operands have the same type
         if is_vector:
-            # Use the left type as the vector type
             operand_type = left_ty if 'vector<' in left_ty else right_ty
         else:
-            # MLIR arith ops require explicit types.
-            # For integer/float binary arithmetic: `... %a, %b : i32`.
-            # For comparisons: `arith.cmpi slt, %a, %b : i32` and `arith.cmpf olt, %a, %b : f32`.
-            #
-            # Special case: scf.for induction vars are `index`, but FLOW often mixes them with i32.
-            # Prefer i32 when mixing (so `acc: i32 = acc + i` works) and insert casts.
-            def _maybe_cast(val: str, from_ty: str, to_ty: str) -> tuple[str, List[str]]:
-                if from_ty == to_ty:
-                    return val, []
-                cast_name = f"%{self.function_counter}"
-                self.function_counter += 1
-                return cast_name, [f"{self.indent()}{cast_name} = arith.index_cast {val} : {from_ty} to {to_ty}"]
-
-            operand_type = left_ty if left_ty != 'i32' else right_ty if right_ty != 'i32' else left_ty
-            if not is_float:
-                if (left_ty == 'index' and right_ty == 'i32') or (left_ty == 'i32' and right_ty == 'index'):
-                    operand_type = 'i32'
+            # Prefer floats, then wider ints. Handle index/i32 mixing explicitly.
+            if 'f64' in (left_ty, right_ty):
+                operand_type = 'f64'
+            elif 'f32' in (left_ty, right_ty):
+                operand_type = 'f32'
+            elif left_ty == 'index' and right_ty == 'index':
+                operand_type = 'index'
+            elif left_ty == 'index' or right_ty == 'index':
+                operand_type = 'i32'
+            elif _is_int(left_ty) or _is_int(right_ty):
+                operand_type = 'i64' if max(_int_width(left_ty), _int_width(right_ty)) > 32 else 'i32'
+            else:
+                operand_type = left_ty
 
         cast_ops: List[str] = []
-        if not is_vector and operand_type in ('i32', 'index') and not is_float:
-            if left_ty in ('i32', 'index') and left_ty != operand_type:
-                left_ssa, ops = _maybe_cast(left_ssa, left_ty, operand_type)
+        if not is_vector:
+            if left_ty != operand_type:
+                left_ssa, ops = self._emit_cast(left_ssa, left_ty, operand_type)
                 cast_ops.extend(ops)
-            if right_ty in ('i32', 'index') and right_ty != operand_type:
-                right_ssa, ops = _maybe_cast(right_ssa, right_ty, operand_type)
+            if right_ty != operand_type:
+                right_ssa, ops = self._emit_cast(right_ssa, right_ty, operand_type)
                 cast_ops.extend(ops)
 
         op_text: str
@@ -1444,6 +1479,8 @@ class MLIRGenerator:
         lines.extend(right_ops)
         lines.extend(cast_ops)
         lines.append(f"{self.indent()}{ssa_name} = {op_text}")
+        result_type = 'i1' if bin_op.operator in ['==', '!=', '<', '<=', '>', '>=', '&&', 'and', '||', 'or'] else operand_type
+        self._ssa_types[ssa_name] = result_type
         return ssa_name, lines
     
     def generate_unary_operation(self, un_op: UnaryOperation) -> tuple[str, List[str]]:
@@ -1454,12 +1491,14 @@ class MLIRGenerator:
         
         if un_op.operator == '-':
             if 'f32' in ty or 'f64' in ty:
+                self._ssa_types[ssa_name] = ty
                 return ssa_name, operand_ops + [f"{self.indent()}{ssa_name} = arith.negf {operand_ssa} : {ty}"]
             zero_ssa = f"%{self.function_counter}"
             self.function_counter += 1
             ops = list(operand_ops)
             ops.append(f"{self.indent()}{zero_ssa} = arith.constant 0 : {ty}")
             ops.append(f"{self.indent()}{ssa_name} = arith.subi {zero_ssa}, {operand_ssa} : {ty}")
+            self._ssa_types[ssa_name] = ty
             return ssa_name, ops
         elif un_op.operator in ['!', 'not']:
             # %not = xor %x, true
@@ -1481,6 +1520,7 @@ class MLIRGenerator:
             
             ops.append(f"{self.indent()}{c1} = arith.constant 1 : i1")
             ops.append(f"{self.indent()}{ssa_name} = arith.xori {operand_ssa}, {c1} : i1")
+            self._ssa_types[ssa_name] = "i1"
             return ssa_name, ops
         else:
             return f"// Unsupported unary operator: '{un_op.operator}' (type: {type(un_op.operator)})", operand_ops
@@ -1507,6 +1547,23 @@ class MLIRGenerator:
             ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
             return ssa_name, ops
         
+        # Prefer LLVM struct extraction when available.
+        obj_type = self._determine_struct_type(field_access.object)
+        if obj_type:
+            llvm_struct = self._struct_llvm_type(obj_type.name)
+            if llvm_struct:
+                decl = self._get_struct_decl(obj_type.name)
+                if decl:
+                    field_names = [f.name for f in decl.fields]
+                    if field_access.field in field_names:
+                        idx = field_names.index(field_access.field)
+                        ssa_name = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(f"{self.indent()}{ssa_name} = llvm.extractvalue {obj_ssa}[{idx}] : {llvm_struct}")
+                        field_ty = self.flow_type_to_mlir(field_type)
+                        self._ssa_types[ssa_name] = field_ty
+                        return ssa_name, ops
+
         # Get the struct layout to find field offset
         obj_type = self._determine_struct_type(field_access.object)
         if not obj_type or obj_type.name not in self.struct_layouts:
@@ -1553,7 +1610,7 @@ class MLIRGenerator:
                 
                 byte_name = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<?xi8>")
+                ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<{total_size}xi8>")
                 loaded_bytes.append(byte_name)
             
             # Extend each byte to i32
@@ -1588,7 +1645,7 @@ class MLIRGenerator:
             final_name = f"%{self.function_counter}"
             self.function_counter += 1
             ops.append(self.indent() + final_name + " = arith.bitcast " + combined_name + " : i32 to f32")
-            
+            self._ssa_types[final_name] = "f32"
             return final_name, ops
             
         elif field_type.name in ['i32', 'u32']:
@@ -1606,7 +1663,7 @@ class MLIRGenerator:
                 
                 byte_name = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<?xi8>")
+                ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<{total_size}xi8>")
                 loaded_bytes.append(byte_name)
             
             # Extend each byte to i32
@@ -1635,7 +1692,7 @@ class MLIRGenerator:
                 accumulator = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(self.indent() + accumulator + " = arith.ori " + prev_accumulator + ", " + shifted_name + " : i32")
-            
+            self._ssa_types[accumulator] = "i32"
             return accumulator, ops
             
         elif field_type.name in ['i8', 'u8', 'bool']:
@@ -1643,19 +1700,21 @@ class MLIRGenerator:
             ops.append(f"{self.indent()}// Load {field_access.field} ({field_type.name}) at offset {offset}")
             byte_name = f"%{self.function_counter}"
             self.function_counter += 1
-            ops.append(f"{self.indent()}memref.load {byte_name}, {obj_ssa}[{offset}] : memref<{total_size}xi8>")
+            ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset}] : memref<{total_size}xi8>")
 
             # Extend to i32 if needed
             if field_type.name in ['u8', 'bool']:
                 ext_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
+                self._ssa_types[ext_name] = "i32"
                 return ext_name, ops
             else:
                 # For i8, sign extend
                 ext_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
+                self._ssa_types[ext_name] = "i32"
                 return ext_name, ops
 
         else:
@@ -1681,7 +1740,7 @@ class MLIRGenerator:
                 ops.append(f"{self.indent()}{offset_ssa} = arith.constant {byte_offset} : index")
                 byte_name = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<?xi8>")
+                ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<{total_size}xi8>")
                 loaded_bytes.append(byte_name)
 
             extended_bytes = []
@@ -1711,8 +1770,10 @@ class MLIRGenerator:
                 final_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{final_name} = arith.bitcast {accumulator} : i64 to f64")
+                self._ssa_types[final_name] = "f64"
                 return final_name, ops
             else:
+                self._ssa_types[accumulator] = int_type
                 return accumulator, ops
     
     def _get_ssa_type(self, ssa_name: str, ops: list = None) -> str:
@@ -1806,6 +1867,42 @@ class MLIRGenerator:
     def generate_struct_literal(self, struct_literal: StructLiteral) -> tuple[str, List[str]]:
         """Generate struct literal with actual memory allocation and field storage"""
         struct_name = struct_literal.struct_name
+
+        llvm_struct = self._struct_llvm_type(struct_name)
+        if llvm_struct:
+            decl = self._get_struct_decl(struct_name)
+            if not decl:
+                ssa_name = f"%{self.function_counter}"
+                self.function_counter += 1
+                return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.undef : {llvm_struct}"]
+
+            # Map provided fields for lookup
+            provided = {name: value for name, value in struct_literal.fields}
+            ops: List[str] = []
+            agg_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{agg_name} = llvm.mlir.undef : {llvm_struct}")
+
+            for idx, field in enumerate(decl.fields):
+                field_type = self.flow_type_to_mlir(field.type)
+                if field.name in provided:
+                    val_ssa, val_ops = self.generate_expression(provided[field.name])
+                    ops.extend(val_ops)
+                    val_type = self.get_expression_type(provided[field.name])
+                    if val_type != field_type:
+                        val_ssa, cast_ops = self._emit_cast(val_ssa, val_type, field_type)
+                        ops.extend(cast_ops)
+                else:
+                    val_ssa, zero_ops = self._zero_value_for_mlir_type(field_type)
+                    ops.extend(zero_ops)
+
+                next_agg = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{next_agg} = llvm.insertvalue {agg_name}, {val_ssa}[{idx}] : {llvm_struct}")
+                agg_name = next_agg
+
+            self._ssa_types[agg_name] = llvm_struct
+            return agg_name, ops
         
         if struct_name not in self.struct_layouts:
             # Fallback for unknown structs
@@ -2010,6 +2107,7 @@ class MLIRGenerator:
                 array_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{array_ssa} = memref.alloc({size_ssa}) : memref<?x{elem_type}>")
+                self._ssa_types[array_ssa] = f"memref<?x{elem_type}>"
                 return array_ssa, ops
             else:
                 # Array with initial values: array<i32>(1, 2, 3)
@@ -2025,6 +2123,7 @@ class MLIRGenerator:
                 array_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{array_ssa} = memref.alloc() : memref<{size}x{elem_type}>")
+                self._ssa_types[array_ssa] = f"memref<{size}x{elem_type}>"
                 
                 # Store each element
                 for i, element_value in enumerate(element_values):
@@ -2119,6 +2218,7 @@ class MLIRGenerator:
             ops.append(
                 f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(cast_args)}) : ({', '.join(expected_arg_types)}) -> {ret_type}"
             )
+            self._ssa_types[ssa_name] = ret_type
             return ssa_name, ops
     
     def generate_print_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
@@ -2548,6 +2648,14 @@ class MLIRGenerator:
                 return self.flow_type_to_mlir(self.symbol_table[expr.name]['return_type'])
             else:
                 return 'i32'  # Default
+        elif isinstance(expr, StructLiteral):
+            struct_ty = self._struct_llvm_type(expr.struct_name)
+            if struct_ty:
+                return struct_ty
+            if expr.struct_name in self.struct_layouts:
+                total_size = sum(field['size'] for field in self.struct_layouts[expr.struct_name].values())
+                return f"memref<{total_size}xi8>"
+            return 'i32'
         elif isinstance(expr, ArrayAccess):
             # Get element type from array
             if isinstance(expr.array, Variable) and expr.array.name in self.symbol_table:
@@ -2647,6 +2755,9 @@ class MLIRGenerator:
         else:
             # For struct types, use memref for actual memory storage
             if flow_type.name in self.struct_layouts:
+                llvm_struct = self._struct_llvm_type(flow_type.name)
+                if llvm_struct:
+                    return llvm_struct
                 total_size = sum(field['size'] for field in self.struct_layouts[flow_type.name].values())
                 return f"memref<{total_size}xi8>"  # Use byte array for struct storage
             return "memref<16xi8>"  # Default struct size (4 fields * 4 bytes)
