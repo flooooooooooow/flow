@@ -834,6 +834,7 @@ run_tests() {
     
     if [ $total_failed -eq 0 ]; then
         print_success "All $total tests passed! (Tier $tier)"
+        return 0
     else
         echo ""
         print_error "Test failures: $total_failed/$total"
