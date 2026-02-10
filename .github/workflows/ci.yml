@@ -13,12 +13,13 @@ permissions:
 jobs:
   test:
     name: Test Suite
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.10', '3.11', '3.12']
+        # Only test on Ubuntu (free/cheap) with latest Python version
+        # macOS runners cost 10x more - skip them for private repos
+        python-version: ['3.11']
 
     steps:
     - uses: actions/checkout@v4
@@ -34,8 +35,7 @@ jobs:
         pip install pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-    - name: Install clang (Ubuntu)
-      if: runner.os == 'Linux'
+    - name: Install clang
       run: |
         sudo apt-get update
         sudo apt-get install -y clang
