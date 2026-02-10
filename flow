@@ -795,9 +795,12 @@ run_tests() {
         local file_count=$(find "$dir" -name "*.flow" -not -path "*/wip/*" 2>/dev/null | wc -l)
         echo "DEBUG: Found $file_count .flow files in $suite"
 
-        while read program; do
+        while read program || [ -n "$program" ]; do
+            if [ -z "$program" ]; then
+                echo "DEBUG: Empty program entry, skipping"
+                continue
+            fi
             echo "DEBUG: Processing file: $program"
-            if [ -z "$program" ]; then continue; fi
             total=$((total + 1))
             local rel_path=${program#$SCRIPT_DIR/}
             local safe_name="${rel_path//\//-}"
