@@ -27,20 +27,20 @@ const SOCK_RAW: i32 = 3
 # =============================================================================
 
 struct SockAddr_in {
-    len: i8,
-    family: i8,
-    port: i16,
-    addr: i32,
-    zero: i64  # Padding to 16 bytes
+    len: u8,          # sin_len (macOS/BSD)
+    family: u8,       # sa_family_t
+    port: u16,        # in_port_t (network byte order)
+    addr: u32,        # in_addr_t (network byte order)
+    zero: array<u8, 8>  # Padding to 16 bytes
 }
 
 function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
-    return SockAddr_in { 
+    return SockAddr_in {
         len: 16,
-        family: 2,  # AF_INET
-        port: port, 
-        addr: addr,
-        zero: 0
+        family: 2,       # AF_INET
+        port: htons(port as i16),
+        addr: htonl(addr),
+        zero: []
     }
 }
 

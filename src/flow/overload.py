@@ -33,6 +33,8 @@ class OverloadResolver:
         self._structs: Dict[str, Dict[str, str]] = {}  # struct_name -> {field: type}
         # Known function return types
         self._func_return_types: Dict[str, str] = {}
+        # Warnings accumulated during resolution
+        self.warnings: List[str] = []
     
     def _normalize_type(self, t: Union[Type, str, None]) -> str:
         """Convert a Type to a normalized string for comparison."""
@@ -119,8 +121,11 @@ class OverloadResolver:
                     return "bool"
                 if val.startswith("0x") and all(c in "0123456789abcdefABCDEF" for c in val[2:]):
                     return "i32"
-                if val.replace('.', '').replace('-', '').replace('e', '').replace('E', '').isdigit():
+                try:
+                    float(val)
                     return "f32" if '.' in val or 'e' in val.lower() else "i32"
+                except (ValueError, TypeError):
+                    pass
                 return "string"
             return None
         
@@ -184,7 +189,7 @@ class OverloadResolver:
                 at is None or at in self.PRIMITIVES 
                 for at in arg_types
             )
-            if all_primitive:
+            if all_primitive and all(at is not None for at in arg_types):
                 return name  # Use C stdlib name
         
         if not overloads:
@@ -219,7 +224,11 @@ class OverloadResolver:
         if len(exact_matches) == 1:
             return exact_matches[0].mangled_name
         if len(exact_matches) > 1:
-            # Ambiguous
+            types_str = ", ".join(str(t) for t in arg_types)
+            self.warnings.append(
+                f"Ambiguous call to '{name}' with types ({types_str}): "
+                f"{len(exact_matches)} overloads match"
+            )
             return None
         
         # If only one overload and no exact match found, check if it's compatible
@@ -236,10 +245,10 @@ class OverloadResolver:
                         break
                 if all_compatible:
                     return entry.mangled_name
-                return None
-        
-        # No match found - return original name (might be C stdlib function)
-        return name
+            return None
+
+        # No match found among multiple overloads
+        return None
     
     def _types_compatible(self, expected: str, actual: str) -> bool:
         """Check if actual type is compatible with expected type."""
@@ -260,3 +269,7 @@ class OverloadResolver:
             for entry in overloads:
                 result.append((entry.function, entry.mangled_name))
         return result
+
+    def get_return_type(self, name: str) -> Optional[str]:
+        """Get known return type for a function name (mangled or original)."""
+        return self._func_return_types.get(name)
