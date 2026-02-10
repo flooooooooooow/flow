@@ -56,7 +56,7 @@ function is_whitespace(c: i32) -> i32 {
 }
 
 function lexer_create(input: ptr<u8>, len: i32) -> Lexer {
-    let tok: Token = Token { type: TOK_EOF, value: 0.0 }
+    let tok: Token = Token { kind: TOK_EOF, value: 0.0 }
     return Lexer {
         input: input,
         pos: 0,
@@ -109,26 +109,26 @@ function lexer_next_token(lex: ptr<Lexer>) -> Token {
     lexer_skip_whitespace(lex)
     
     if lex[0].pos >= lex[0].len {
-        return Token { type: TOK_EOF, value: 0.0 }
+        return Token { kind: TOK_EOF, value: 0.0 }
     }
     
     let c: i32 = lex[0].input[lex[0].pos]
     
     if is_digit(c) == 1 {
         let val: f64 = lexer_read_number(lex)
-        return Token { type: TOK_NUMBER, value: val }
+        return Token { kind: TOK_NUMBER, value: val }
     }
     
     lex[0].pos = lex[0].pos + 1
     
-    if c == 43 { return Token { type: TOK_PLUS, value: 0.0 } }    # '+'
-    if c == 45 { return Token { type: TOK_MINUS, value: 0.0 } }   # '-'
-    if c == 42 { return Token { type: TOK_STAR, value: 0.0 } }    # '*'
-    if c == 47 { return Token { type: TOK_SLASH, value: 0.0 } }   # '/'
-    if c == 40 { return Token { type: TOK_LPAREN, value: 0.0 } }  # '('
-    if c == 41 { return Token { type: TOK_RPAREN, value: 0.0 } }  # ')'
+    if c == 43 { return Token { kind: TOK_PLUS, value: 0.0 } }    # '+'
+    if c == 45 { return Token { kind: TOK_MINUS, value: 0.0 } }   # '-'
+    if c == 42 { return Token { kind: TOK_STAR, value: 0.0 } }    # '*'
+    if c == 47 { return Token { kind: TOK_SLASH, value: 0.0 } }   # '/'
+    if c == 40 { return Token { kind: TOK_LPAREN, value: 0.0 } }  # '('
+    if c == 41 { return Token { kind: TOK_RPAREN, value: 0.0 } }  # ')'
     
-    return Token { type: TOK_ERROR, value: 0.0 }
+    return Token { kind: TOK_ERROR, value: 0.0 }
 }
 
 # ============================================================================
@@ -154,7 +154,7 @@ function parser_advance(p: ptr<Parser>) {
     p[0].current = lexer_next_token(p[0].lex)
 }
 
-function parser_expect(p: ptr<Parser>, type: i32) -> i32 {
+function parser_expect(p: ptr<Parser>, kind: i32) -> i32 {
     if p[0].current.kind == type {
         parser_advance(p)
         return 1
