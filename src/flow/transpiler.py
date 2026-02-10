@@ -327,6 +327,16 @@ def main():
             out_code = flow_to_c(
                 declarations, source_file=args.input, debug_info=args.debug_info
             )
+            overload_warnings = getattr(flow_to_c, "last_warnings", None)
+            if overload_warnings:
+                print("Overload resolution warnings:", file=sys.stderr)
+                for warning in overload_warnings[:10]:
+                    print(f"  ⚠ {warning}", file=sys.stderr)
+                if len(overload_warnings) > 10:
+                    print(
+                        f"  ... and {len(overload_warnings) - 10} more",
+                        file=sys.stderr,
+                    )
         except Exception as e:
             print(f"C generation error: {e}", file=sys.stderr)
             sys.exit(1)

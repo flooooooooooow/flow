@@ -46,7 +46,7 @@
 - [x] #53 [MN-L1] Monomorphize: deepcopy of AST nodes is expensive (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/53
 - [x] #52 [MN-M3] Monomorphize: VarDecl loses is_mutable flag after substitution (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/52
 - [x] #51 [MN-M2] Monomorphize: ambiguous name mangling (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/51
-- [ ] #50 [MN-M1] Monomorphize: generic function instantiation is unimplemented (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/50
+- [x] #50 [MN-M1] Monomorphize: generic function instantiation is unimplemented (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/50
 - [ ] #49 [MN-C1] Monomorphize: no termination guard against infinite instantiation (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/49
 - [x] #48 [MR-L1] Module resolver: _resolve_symbols is a stub (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/48
 - [x] #47 [MR-M3] Module resolver: missing imports produce warning but compilation continues (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/47
@@ -62,21 +62,21 @@
 - [x] #37 [MG-M4] MLIR generator: unary minus references undefined %c0 (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/37
 - [x] #36 [MG-M3] MLIR generator: has_return misses returns inside if-else (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/36
 - [x] #35 [MG-M2] MLIR generator: constants at module scope produce invalid MLIR (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/35
-- [ ] #34 [MG-M1] MLIR generator: struct alignment completely ignored (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/34
+- [x] #34 [MG-M1] MLIR generator: struct alignment completely ignored (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/34
 - [x] #33 [MG-C3] MLIR generator: string literal in expression context crashes (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/33
 - [x] #32 [MG-C2] MLIR generator: incorrect memref.load syntax (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/32
 - [x] #31 [MG-C1] MLIR generator: undefined variable total_size causes crash (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/31
 - [x] #30 [CG-L3] C generator: dead code behind if False (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/30
 - [x] #29 [CG-L2] C generator: bool mapped to int32_t (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/29
 - [x] #28 [CG-L1] C generator: massive code duplication in print/println handling (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/28
-- [ ] #27 [CG-M5] C generator: lambda with block bodies produces broken code (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/27
-- [ ] #26 [CG-M4] C generator: __auto_type is non-standard C (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/26
+- [x] #27 [CG-M5] C generator: lambda with block bodies produces broken code (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/27
+- [x] #26 [CG-M4] C generator: __auto_type is non-standard C (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/26
 - [x] #25 [CG-M3] C generator: for-loop always uses < condition (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/25
 - [x] #24 [CG-M2] C generator: remove_outer_parens is incorrect (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/24
 - [ ] #23 [CG-M1] C generator: memory leaks in generated code — no deallocation (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/23
 - [ ] #22 [CG-C3] C generator: no array bounds checking in generated code (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/22
-- [ ] #21 [CG-C2] C generator: printf format string vulnerability (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/21
-- [ ] #20 [CG-C1] C generator: code injection via unsanitized identifiers (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/20
+- [x] #21 [CG-C2] C generator: printf format string vulnerability (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/21
+- [x] #20 [CG-C1] C generator: code injection via unsanitized identifiers (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/20
 - [ ] #19 [TC-L2] Type checker: no error recovery — first error cascades (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/19
 - [x] #18 [TC-L1] Type checker: SemanticType missing __hash__ (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/18
 - [x] #17 [TC-M6] Type checker: _parse_type returns VOID for unknown types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/17

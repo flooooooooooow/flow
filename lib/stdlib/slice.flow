@@ -16,7 +16,7 @@ struct Slice_u8 {
     len: i32
 }
 
-# Get element from slice (bounds-unchecked)
+# Get element from slice (bounds-checked, returns default on out-of-bounds)
 function slice_get_i32(s: Slice_i32, idx: i32) -> i32 {
     if idx < 0 or idx >= s.len { return 0 }
     return s.ptr[idx]

@@ -716,9 +716,14 @@ class TypeChecker:
         """Type check a binary operation."""
         left_type = self._check_expression(op.left)
         right_type = self._check_expression(op.right)
-        # Allow unknown/void to pass through
+        # Allow unknown/void to pass through without cascading errors
         if left_type is None or right_type is None:
-            return left_type or right_type or SemanticType(TypeKind.VOID)
+            return left_type or right_type or SemanticType(TypeKind.UNKNOWN)
+        if left_type.kind == TypeKind.UNKNOWN or right_type.kind == TypeKind.UNKNOWN:
+            # Don't report errors when operands have unknown types (error recovery)
+            if op.operator in ["==", "!=", "<", ">", "<=", ">=", "&&", "||"]:
+                return SemanticType(TypeKind.BOOL)
+            return left_type if left_type.kind != TypeKind.UNKNOWN else right_type
         if left_type.kind == TypeKind.VOID:
             return right_type
         if right_type.kind == TypeKind.VOID:
@@ -768,6 +773,14 @@ class TypeChecker:
     def _check_unary_op(self, op: UnaryOperation) -> SemanticType:
         """Type check a unary operation."""
         operand_type = self._check_expression(op.operand)
+
+        # Don't cascade errors from unknown types
+        if operand_type.kind == TypeKind.UNKNOWN:
+            if op.operator == "!":
+                return SemanticType(TypeKind.BOOL)
+            if op.operator == "&":
+                return SemanticType(TypeKind.POINTER, element_type=operand_type)
+            return operand_type
 
         if op.operator == "-":
             # Must be numeric

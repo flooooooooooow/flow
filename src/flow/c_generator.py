@@ -102,6 +102,11 @@ def _sanitize_identifier(name: str) -> str:
     return safe
 
 
+def _c_ident(name: str) -> str:
+    """Return a safe C identifier for any Flow name."""
+    return _sanitize_identifier(name)
+
+
 class CGenerator:
     def __init__(self, *, source_file: str | None = None, debug_info: bool = False) -> None:
         self._indent = 0
@@ -165,6 +170,31 @@ class CGenerator:
         if newline:
             fmt = f"{fmt}\\n"
         return f'printf("{fmt}", {expr_str})'
+
+    def _gen_print_call(self, arguments: list, *, newline: bool) -> str:
+        """Shared implementation for print/println intrinsics."""
+        if len(arguments) == 0:
+            return 'printf("\\n")' if newline else ''
+        if len(arguments) == 1:
+            arg = arguments[0]
+            if not newline and isinstance(arg, BinaryOperation) and arg.operator == '+':
+                return self._gen_expr(arg)
+            return self._printf_for_expr(arg, newline=newline)
+        # Multiple arguments - print all with spaces
+        parts = []
+        for i, arg in enumerate(arguments):
+            prefix = ' ' if i > 0 else ''
+            expr_str = self._gen_expr(arg)
+            type_name = None
+            if isinstance(arg, Literal):
+                type_name = arg.type.name
+            elif isinstance(arg, Variable) and arg.name in self._var_types:
+                type_name = self._var_types[arg.name].name
+            fmt = self._printf_format_for_type_name(type_name)
+            parts.append(f'printf("{prefix}{fmt}", {expr_str})')
+        if newline:
+            parts.append('printf("\\n")')
+        return '; '.join(parts)
 
     def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl], 
                                    structs: List[StructDecl] = None, 
@@ -232,10 +262,11 @@ class CGenerator:
             lines.append("/* Struct definitions for effect types */")
             for struct_name in sorted(effect_struct_names):
                 if struct_name in self._structs:
+                    safe_struct_name = _c_ident(struct_name)
                     lines.append(f"typedef struct {{")
                     for field_name, field_type in sorted(self._structs[struct_name].items()):
-                        lines.append(f"    {self._c_type(field_type)} {field_name};")
-                    lines.append(f"}} {struct_name};")
+                        lines.append(f"    {self._c_type(field_type)} {_c_ident(field_name)};")
+                    lines.append(f"}} {safe_struct_name};")
                     lines.append("")
                     effect_structs_emitted.add(struct_name)
         
@@ -317,6 +348,7 @@ class CGenerator:
             if name in self._enums:
                 emitted.add(name)
                 return
+            safe_struct_name = _c_ident(name)
             # First, emit any nested struct types
             for field_type in self._structs[name].values():
                 if self._is_struct_type(field_type) and field_type.name not in emitted:
@@ -325,8 +357,8 @@ class CGenerator:
             # Now emit this struct
             lines.append(f"typedef struct {{")
             for field_name, field_type in sorted(self._structs[name].items()):
-                lines.append(f"    {self._c_type(field_type)} {field_name};")
-            lines.append(f"}} {name};")
+                lines.append(f"    {self._c_type(field_type)} {_c_ident(field_name)};")
+            lines.append(f"}} {safe_struct_name};")
             lines.append("")
             emitted.add(name)
         
@@ -336,9 +368,9 @@ class CGenerator:
         # Forward declarations for capability methods (mangled names: CapabilityName_methodName)
         for cap_name, cap in self._capabilities.items():
             for method in cap.methods:
-                mangled_name = f"{cap_name}_{method.name}"
+                mangled_name = _c_ident(f"{cap_name}_{method.name}")
                 ret = self._c_type(method.return_type)
-                params = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in method.parameters])
+                params = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in method.parameters])
                 lines.append(f"{ret} {mangled_name}({params});")
         if self._capabilities:
             lines.append("")
@@ -379,7 +411,7 @@ class CGenerator:
 
         # Emit constant declarations (after forward declarations)
         for const in constants:
-            lines.append(f"static const {self._c_type(const.type)} {const.name} = {self._gen_expr(const.value)};")
+            lines.append(f"static const {self._c_type(const.type)} {_c_ident(const.name)} = {self._gen_expr(const.value)};")
             # Track constant types for print formatting
             self._var_types[const.name] = const.type
         if constants:
@@ -401,8 +433,11 @@ class CGenerator:
             # Insert lambda definitions before the first function
             lambda_lines = []
             lambda_lines.append("// Auto-generated lambda functions")
-            for lambda_name, ret_type, params, body_code in self._pending_lambdas:
-                lambda_lines.append(f"static {ret_type} {lambda_name}({params}) {{ {body_code} }}")
+            for lambda_name, ret_type, params, body_lines in self._pending_lambdas:
+                lambda_lines.append(f"static {ret_type} {lambda_name}({params}) {{")
+                for line in body_lines:
+                    lambda_lines.append(f"    {line}")
+                lambda_lines.append("}")
             lambda_lines.append("")
             
             # Find where to insert (after structs, before functions)
@@ -419,9 +454,9 @@ class CGenerator:
     def _gen_capability_method(self, capability_name: str, method: CapabilityMethod) -> List[str]:
         """Generate a capability method as a standalone C function with mangled name."""
         lines: List[str] = []
-        mangled_name = f"{capability_name}_{method.name}"
+        mangled_name = _c_ident(f"{capability_name}_{method.name}")
         ret = self._c_type(method.return_type)
-        params = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in method.parameters])
+        params = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in method.parameters])
         
         lines.append(f"{ret} {mangled_name}({params}) {{")
         self._indent += 1
@@ -444,13 +479,13 @@ class CGenerator:
         } Option_i32;
         """
         lines: List[str] = []
-        name = enum.name
+        name = _c_ident(enum.name)
         
         # Generate tag enum
         lines.append(f"typedef enum {{")
         for i, variant in enumerate(enum.variants):
             comma = "," if i < len(enum.variants) - 1 else ""
-            lines.append(f"    {name}_{variant.name}{comma}")
+            lines.append(f"    {name}_{_c_ident(variant.name)}{comma}")
         lines.append(f"}} {name}_Tag;")
         lines.append("")
         
@@ -465,14 +500,14 @@ class CGenerator:
             for variant in enum.variants:
                 if len(variant.fields) == 1:
                     c_type = self._c_type(variant.fields[0])
-                    lines.append(f"        {c_type} {variant.name}_value;")
+                    lines.append(f"        {c_type} {_c_ident(variant.name)}_value;")
                 elif len(variant.fields) > 1:
                     # Multiple fields - create anonymous struct
                     lines.append(f"        struct {{")
                     for i, field_type in enumerate(variant.fields):
                         c_type = self._c_type(field_type)
                         lines.append(f"            {c_type} _{i};")
-                    lines.append(f"        }} {variant.name}_data;")
+                    lines.append(f"        }} {_c_ident(variant.name)}_data;")
             lines.append(f"    }} data;")
         
         lines.append(f"}} {name};")
@@ -489,41 +524,42 @@ class CGenerator:
         # For each effect, generate a struct holding function pointers for its operations
         for effect in effects:
             effect_name = effect.name
-            lines.append(f"/* Effect handler vtable for {effect_name} */")
+            safe_effect_name = _c_ident(effect_name)
+            lines.append(f"/* Effect handler vtable for {safe_effect_name} */")
             lines.append(f"typedef struct {{")
             for op in effect.operations:
                 ret_type = self._c_type(op.return_type)
                 param_types = ", ".join([self._c_type(p.type) for p in op.parameters])
                 if not param_types:
                     param_types = "void"
-                lines.append(f"    {ret_type} (*{op.name})({param_types});")
-            lines.append(f"}} {effect_name}_Handler;")
+                lines.append(f"    {ret_type} (*{_c_ident(op.name)})({param_types});")
+            lines.append(f"}} {safe_effect_name}_Handler;")
             lines.append("")
             
             # Global handler pointer (thread-local for multi-threaded code)
-            lines.append(f"static {effect_name}_Handler* _current_{effect_name}_handler = NULL;")
+            lines.append(f"static {safe_effect_name}_Handler* _current_{safe_effect_name}_handler = NULL;")
             lines.append("")
             
             # Generate dispatch functions for each operation
             for op in effect.operations:
                 ret_type = self._c_type(op.return_type)
-                params_with_names = ", ".join([f"{self._c_type(p.type)} {p.name}" for p in op.parameters])
-                param_names = ", ".join([p.name for p in op.parameters])
+                params_with_names = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in op.parameters])
+                param_names = ", ".join([_c_ident(p.name) for p in op.parameters])
                 
-                lines.append(f"{ret_type} {effect_name}_{op.name}({params_with_names}) {{")
+                lines.append(f"{ret_type} {safe_effect_name}_{_c_ident(op.name)}({params_with_names}) {{")
                 if ret_type == "void":
-                    lines.append(f"    if (_current_{effect_name}_handler && _current_{effect_name}_handler->{op.name}) {{")
+                    lines.append(f"    if (_current_{safe_effect_name}_handler && _current_{safe_effect_name}_handler->{_c_ident(op.name)}) {{")
                     if param_names:
-                        lines.append(f"        _current_{effect_name}_handler->{op.name}({param_names});")
+                        lines.append(f"        _current_{safe_effect_name}_handler->{_c_ident(op.name)}({param_names});")
                     else:
-                        lines.append(f"        _current_{effect_name}_handler->{op.name}();")
+                        lines.append(f"        _current_{safe_effect_name}_handler->{_c_ident(op.name)}();")
                     lines.append(f"    }}")
                 else:
-                    lines.append(f"    if (_current_{effect_name}_handler && _current_{effect_name}_handler->{op.name}) {{")
+                    lines.append(f"    if (_current_{safe_effect_name}_handler && _current_{safe_effect_name}_handler->{_c_ident(op.name)}) {{")
                     if param_names:
-                        lines.append(f"        return _current_{effect_name}_handler->{op.name}({param_names});")
+                        lines.append(f"        return _current_{safe_effect_name}_handler->{_c_ident(op.name)}({param_names});")
                     else:
-                        lines.append(f"        return _current_{effect_name}_handler->{op.name}();")
+                        lines.append(f"        return _current_{safe_effect_name}_handler->{_c_ident(op.name)}();")
                     lines.append(f"    }}")
                     # Return default value if no handler
                     if "int" in ret_type or ret_type in ["int32_t", "int64_t", "int8_t", "int16_t"]:
@@ -546,18 +582,20 @@ class CGenerator:
         # Generate handler vtable instances for each capability
         for cap in capabilities:
             cap_name = cap.name
+            safe_cap_name = _c_ident(cap_name)
             for effect_name in cap.effects:
                 if effect_name in self._effects:
                     effect = self._effects[effect_name]
-                    lines.append(f"/* {cap_name} handler for {effect_name} */")
-                    lines.append(f"static {effect_name}_Handler _{cap_name}_{effect_name}_vtable = {{")
+                    safe_effect_name = _c_ident(effect_name)
+                    lines.append(f"/* {safe_cap_name} handler for {safe_effect_name} */")
+                    lines.append(f"static {safe_effect_name}_Handler _{safe_cap_name}_{safe_effect_name}_vtable = {{")
                     for op in effect.operations:
                         # Check if capability has this method
                         has_method = any(m.name == op.name for m in cap.methods)
                         if has_method:
-                            lines.append(f"    .{op.name} = {cap_name}_{op.name},")
+                            lines.append(f"    .{_c_ident(op.name)} = {safe_cap_name}_{_c_ident(op.name)},")
                         else:
-                            lines.append(f"    .{op.name} = NULL,")
+                            lines.append(f"    .{_c_ident(op.name)} = NULL,")
                     lines.append("};")
                     lines.append("")
         
@@ -589,17 +627,20 @@ class CGenerator:
     def _collect_structs_from_statement(self, stmt: Statement) -> None:
         if isinstance(stmt, VarDecl):
             # Track variable type
-            self._var_types[stmt.name] = stmt.type
+            decl_type = stmt.type
+            if decl_type and decl_type.name == "auto" and stmt.initializer is not None:
+                decl_type = self._infer_expr_type(stmt.initializer)
+            self._var_types[stmt.name] = decl_type
             
-            if self._is_struct_type(stmt.type):
-                if stmt.type.name not in self._structs:
-                    self._structs[stmt.type.name] = {}
+            if self._is_struct_type(decl_type):
+                if decl_type.name not in self._structs:
+                    self._structs[decl_type.name] = {}
             if stmt.initializer:
                 # If this is a struct declaration with a struct literal, infer field types
-                if self._is_struct_type(stmt.type) and isinstance(stmt.initializer, StructLiteral):
+                if self._is_struct_type(decl_type) and isinstance(stmt.initializer, StructLiteral):
                     for field_name, field_value in stmt.initializer.fields:
                         field_type = self._infer_expr_type(field_value)
-                        self._structs[stmt.type.name][field_name] = field_type
+                        self._structs[decl_type.name][field_name] = field_type
                 self._collect_structs_from_expr(stmt.initializer)
         elif isinstance(stmt, Assignment):
             self._collect_structs_from_expr(stmt.value)
@@ -659,6 +700,14 @@ class CGenerator:
             if expr.name in self._var_types:
                 return self._var_types[expr.name]
             return Type("i32")  # Default fallback
+        elif isinstance(expr, FunctionCall):
+            resolved = self._overload_resolver.resolve_call(expr)
+            ret = None
+            if resolved:
+                ret = self._overload_resolver.get_return_type(resolved)
+            if not ret:
+                ret = self._overload_resolver.get_return_type(expr.name)
+            return Type(ret or "i32")
         elif isinstance(expr, StructLiteral):
             return Type(expr.struct_name)
         elif isinstance(expr, FieldAccess):
@@ -668,6 +717,27 @@ class CGenerator:
                 if field_type:
                     return field_type
             return Type("i32")
+        elif isinstance(expr, UnaryOperation):
+            operand = self._infer_expr_type(expr.operand)
+            if expr.operator == "!":
+                return Type("bool")
+            return operand
+        elif isinstance(expr, BinaryOperation):
+            if expr.operator in ("==", "!=", "<", "<=", ">", ">=", "&&", "||"):
+                return Type("bool")
+            left = self._infer_expr_type(expr.left)
+            right = self._infer_expr_type(expr.right)
+            if left.name == "f64" or right.name == "f64":
+                return Type("f64")
+            if left.name == "f32" or right.name == "f32":
+                return Type("f32")
+            if left.name == "i64" or right.name == "i64":
+                return Type("i64")
+            if left.name == "u64" or right.name == "u64":
+                return Type("u64")
+            if left.name == "u32" or right.name == "u32":
+                return Type("u32")
+            return left or right or Type("i32")
         else:
             return Type("i32")  # Default fallback
 
@@ -733,7 +803,7 @@ class CGenerator:
 
     def _c_type(self, t: Type) -> str:
         if t.name == "auto":
-            return "__auto_type"  # GCC/Clang extension for type inference
+            return "int32_t"  # Default auto-inferred type (standard C)
         if t.name == "i32":
             return "int32_t"
         if t.name == "i64":
@@ -814,13 +884,13 @@ class CGenerator:
         # The actual dispatch happens via the effect handler vtable
         if t.name.startswith("capability_"):
             return "void*"
-        # Struct types
-        return t.name
+        # Struct/enum/trait types - sanitize for safe C identifiers
+        return _c_ident(t.name)
 
     def _c_function_decl(self, fn: FunctionDecl, use_mangled: bool = True) -> str:
         ret = self._c_type(fn.return_type)
         if fn.parameters:
-            params = ", ".join([f"{self._c_type(p.type)} {_sanitize_identifier(p.name)}" for p in fn.parameters])
+            params = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in fn.parameters])
         else:
             # Important for system headers: `f()` (K&R) can conflict with `f(void)`.
             params = "void"
@@ -828,7 +898,7 @@ class CGenerator:
         name = fn.name
         if use_mangled and id(fn) in self._mangled_names:
             name = self._mangled_names[id(fn)]
-        name = _sanitize_identifier(name)
+        name = _c_ident(name)
         return f"{ret} {name}({params})"
 
     def _gen_function(self, fn: FunctionDecl) -> List[str]:
@@ -890,13 +960,22 @@ class CGenerator:
 
     def _gen_statement(self, st: Statement) -> List[str]:
         if isinstance(st, VarDecl):
-            # Track variable type for overload resolution
-            self._overload_resolver.set_var_type(st.name, self._type_to_string(st.type))
+            decl_type = st.type
+            if decl_type and decl_type.name == "auto":
+                if st.initializer is not None:
+                    decl_type = self._infer_expr_type(st.initializer)
+                else:
+                    # No initializer; fall back to i32 to keep C code valid
+                    decl_type = Type("i32")
+
+            # Track variable type for overload resolution and expression inference
+            self._overload_resolver.set_var_type(st.name, self._type_to_string(decl_type))
+            self._var_types[st.name] = decl_type
 
             # Sized arrays: prefer real stack arrays (e.g. `int32_t a[16]`) so indexing works.
-            if st.type and st.type.name.startswith("array_") and st.type.size and st.type.element_type:
-                elem_c = self._c_type(st.type.element_type)
-                size = st.type.size
+            if decl_type and decl_type.name.startswith("array_") and decl_type.size and decl_type.element_type:
+                elem_c = self._c_type(decl_type.element_type)
+                size = decl_type.size
                 if st.initializer is None:
                     return [f"{self._i()}{elem_c} {st.name}[{size}];"]
                 if isinstance(st.initializer, ArrayLiteral):
@@ -909,7 +988,7 @@ class CGenerator:
                     f"{self._i()}memcpy({st.name}, {init_expr}, sizeof({st.name}));"
                 ]
 
-            c_t = self._c_type(st.type)
+            c_t = self._c_type(decl_type)
             safe_name = _sanitize_identifier(st.name)
             if st.initializer is None:
                 return [f"{self._i()}{c_t} {safe_name};"]
@@ -988,17 +1067,18 @@ class CGenerator:
         """Generate C for loop from FLOW for statement."""
         lines: List[str] = []
         var = st.variable
+        safe_var = _c_ident(var)
         start = self._gen_expr(st.range_start)
         end = self._gen_expr(st.range_end)
         step = self._gen_expr(st.step) if st.step else "1"
-        step_var = f"__flow_step_{var}"
+        step_var = f"__flow_step_{safe_var}"
         
         # Track the loop variable type
         self._var_types[var] = Type("i32")
         
         # Generate standard C for loop
         lines.append(f"{self._i()}int32_t {step_var} = {step};")
-        lines.append(f"{self._i()}for (int32_t {var} = {start}; ({step_var} > 0) ? {var} < {end} : {var} > {end}; {var} += {step_var}) {{")
+        lines.append(f"{self._i()}for (int32_t {safe_var} = {start}; ({step_var} > 0) ? {safe_var} < {end} : {safe_var} > {end}; {safe_var} += {step_var}) {{")
         self._indent += 1
         lines.extend(self._gen_block(st.body))
         self._indent -= 1
@@ -1071,7 +1151,7 @@ class CGenerator:
                         for i, binding in enumerate(pattern.bindings):
                             if i < len(field_names):
                                 field = field_names[i]
-                                bindings.append((binding, f"({match_expr}).{field}"))
+                                bindings.append((binding, f"({match_expr}).{_c_ident(field)}"))
                 else:
                     # Other patterns - try comparison
                     cond = f"({match_expr}) == {self._gen_expr(pattern)}"
@@ -1086,9 +1166,9 @@ class CGenerator:
                 
                 # Generate variable bindings
                 for var_name, var_expr in bindings:
-                    lines.append(f"{self._i()}// pattern binding: {var_name}")
-                    # Infer type from expression or use auto
-                    lines.append(f"{self._i()}__auto_type {var_name} = {var_expr};")
+                    safe_name = _c_ident(var_name)
+                    lines.append(f"{self._i()}// pattern binding: {safe_name}")
+                    lines.append(f"{self._i()}int32_t {safe_name} = {var_expr};")
                 
                 lines.extend(self._gen_block(case.body))
                 self._indent -= 1
@@ -1206,14 +1286,14 @@ class CGenerator:
             return e.value
 
         if isinstance(e, Variable):
-            return e.name
+            return _c_ident(e.name)
 
         if isinstance(e, StructLiteral):
-            fields = ", ".join([f".{name} = {self._gen_expr(value)}" for name, value in e.fields])
-            return f"({e.struct_name}){{ {fields} }}"
+            fields = ", ".join([f".{_c_ident(name)} = {self._gen_expr(value)}" for name, value in e.fields])
+            return f"({_c_ident(e.struct_name)}){{ {fields} }}"
 
         if isinstance(e, FieldAccess):
-            return f"{self._gen_expr(e.object)}.{e.field}"
+            return f"{self._gen_expr(e.object)}.{_c_ident(e.field)}"
 
         if isinstance(e, UnaryOperation):
             op = e.operator
@@ -1318,41 +1398,14 @@ class CGenerator:
                     arg_expr = self._gen_expr(arg)
                     return f"(sizeof({arg_expr})/sizeof({arg_expr}[0]))"
             
-            # Handle println intrinsic (print with newline)
-            if e.name == "println":
-                if len(e.arguments) == 0:
-                    return 'printf("\\n")'
-                elif len(e.arguments) == 1:
-                    arg = e.arguments[0]
-                    return self._printf_for_expr(arg, newline=True)
-                else:
-                    # Multiple arguments - print all with spaces, then newline
-                    parts = []
-                    for i, arg in enumerate(e.arguments):
-                        prefix = ' ' if i > 0 else ''
-                        parts.append(f'printf("{prefix}%g", {self._gen_expr(arg)})')
-                    parts.append('printf("\\n")')
-                    return '; '.join(parts)
-            
-            # Handle print intrinsic
-            if e.name == "print":
-                if len(e.arguments) == 1:
-                    arg = e.arguments[0]
-                    # Check if it's a binary operation (string concatenation)
-                    if isinstance(arg, BinaryOperation) and arg.operator == '+':
-                        # Generate the concatenated expression directly
-                        return self._gen_expr(arg)
-                    return self._printf_for_expr(arg, newline=False)
-                else:
-                    # Multiple arguments - join with spaces
-                    args = []
-                    for arg in e.arguments:
-                        args.append(f'printf("%g", {self._gen_expr(arg)})')
-                    return ' '.join(args)
+            # Handle print/println intrinsics
+            if e.name in ("print", "println"):
+                return self._gen_print_call(e.arguments, newline=(e.name == "println"))
             
             # Resolve function overload
             resolved_name = self._overload_resolver.resolve_call(e)
             func_name = resolved_name if resolved_name else e.name
+            func_name = _c_ident(func_name)
             
             # Check if we need to pass address for capability parameters
             overloads = self._overload_resolver.get_overloads(e.name)
@@ -1412,26 +1465,6 @@ class CGenerator:
             byte_size = num_elems * (8 if elem_type == "double" else 4)
             return f"(({elem_type} __attribute__((vector_size({byte_size})))){{ {elements_str} }})"
         
-        if isinstance(e, Lambda):
-            # Lambdas are converted to static functions at compile time
-            # For now, generate inline code or reference to generated function
-            lambda_name = f"__lambda_{id(e)}"
-            
-            # Generate function pointer type
-            param_types = ", ".join(self._c_type(p.type) for p in e.parameters)
-            return_type = self._c_type(e.return_type) if e.return_type else "__auto_type"
-            
-            # For simple expression bodies, we can use GCC statement expressions
-            if isinstance(e.body, Block):
-                # Complex body - would need to generate a separate function
-                # For now, return placeholder
-                return f"/* lambda: {lambda_name} */"
-            else:
-                # Simple expression body - use statement expression
-                params_str = ", ".join(p.name for p in e.parameters)
-                body_expr = self._gen_expr(e.body)
-                return f"({body_expr})"
-
         raise NotImplementedError(f"Unsupported expression: {type(e)}")
     
     def _gen_effect_call(self, e: EffectCall) -> str:
@@ -1464,7 +1497,7 @@ class CGenerator:
                     effect_name = upper
 
         args = ", ".join(self._gen_expr(a) for a in e.arguments)
-        return f"{effect_name}_{e.operation}({args})"
+        return f"{_c_ident(effect_name)}_{_c_ident(e.operation)}({args})"
 
     def _gen_method_call(self, e: MethodCall) -> str:
         """Generate code for a method-style call (obj.method(args))."""
@@ -1546,7 +1579,7 @@ class CGenerator:
         lambda_name = f"lambda_{self._lambda_counter}"
         
         # Generate parameter list
-        params = ", ".join(f"{self._c_type(p.type)} {p.name}" for p in e.parameters)
+        params = ", ".join(f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in e.parameters)
         if not params:
             params = "void"
         
@@ -1557,15 +1590,15 @@ class CGenerator:
         if isinstance(e.body, Block):
             body_lines = []
             for stmt in e.body.statements:
-                body_lines.extend(self._gen_statement(stmt))
-            body_code = " ".join(line.strip() for line in body_lines)
+                for line in self._gen_statement(stmt):
+                    body_lines.append(line.lstrip())
         else:
-            body_code = f"return {self._gen_expr(e.body)};"
+            body_lines = [f"return {self._gen_expr(e.body)};"]
         
         # Add lambda to pending functions for later emission
         if not hasattr(self, '_pending_lambdas'):
             self._pending_lambdas = []
-        self._pending_lambdas.append((lambda_name, ret_type, params, body_code))
+        self._pending_lambdas.append((lambda_name, ret_type, params, body_lines))
         
         # Return function pointer
         return f"&{lambda_name}"
@@ -1602,7 +1635,10 @@ def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_
                 
                 functions.append(method)
         
-        return generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums)
+        out = generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums)
+        # Expose overload warnings without changing the return signature.
+        flow_to_c.last_warnings = list(generator._overload_resolver.warnings)
+        return out
     except Exception as e:
         print(f"C generation error: {e}")
         import traceback

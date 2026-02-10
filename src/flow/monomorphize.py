@@ -311,13 +311,70 @@ class Monomorphizer:
     
     def _request_function_mono(self, call: FunctionCall) -> None:
         """Request monomorphization for a function call."""
-        # For now, we infer type args from the first argument's type
-        # TODO: Proper type inference from all arguments
-        if call.arguments and call.name in self.generic_functions:
-            generic_def = self.generic_functions[call.name]
-            # Simple heuristic: use first argument's type
-            # Full implementation would do proper type inference
-            pass  # TODO: Implement type argument inference
+        if not call.arguments or call.name not in self.generic_functions:
+            return
+
+        generic_def = self.generic_functions[call.name]
+        original = generic_def.decl
+        num_type_params = len(generic_def.type_params)
+
+        # If the call has explicit type arguments, use them directly
+        if hasattr(call, 'type_args') and call.type_args and len(call.type_args) == num_type_params:
+            req = MonomorphRequest(call.name, call.type_args)
+            self.function_requests[req.mangled_name] = req
+            return
+
+        # Otherwise, infer type args from arguments by matching parameter types
+        # to the generic type parameters.
+        type_param_map: dict = {}  # type_param_name -> concrete Type
+        for arg, param in zip(call.arguments, original.parameters):
+            self._infer_type_arg(arg, param.type, generic_def.type_params, type_param_map)
+
+        # Build type_args list in order of generic_def.type_params
+        if len(type_param_map) == num_type_params:
+            type_args = [type_param_map[tp] for tp in generic_def.type_params]
+            req = MonomorphRequest(call.name, type_args)
+            self.function_requests[req.mangled_name] = req
+
+    def _infer_type_arg(self, arg: Expression, param_type: Type,
+                        type_params: list, result: dict) -> None:
+        """Infer concrete type for a type parameter from an argument expression."""
+        if not param_type:
+            return
+        # If the parameter type is itself a type parameter, infer from the argument
+        if param_type.name in type_params:
+            concrete = self._expr_type(arg)
+            if concrete and param_type.name not in result:
+                result[param_type.name] = concrete
+
+    def _expr_type(self, expr: Expression) -> 'Type | None':
+        """Try to infer the concrete type of an expression."""
+        if isinstance(expr, Literal):
+            if hasattr(expr, 'type') and expr.type:
+                return expr.type
+            val = expr.value
+            if isinstance(val, bool):
+                return Type("bool")
+            if isinstance(val, int):
+                return Type("i32")
+            if isinstance(val, float):
+                return Type("f32")
+            if isinstance(val, str):
+                if val in ("true", "false"):
+                    return Type("bool")
+                try:
+                    float(val)
+                    return Type("f32") if '.' in val else Type("i32")
+                except (ValueError, TypeError):
+                    return Type("string")
+        elif isinstance(expr, StructLiteral):
+            return Type(expr.struct_name)
+        elif isinstance(expr, ArrayLiteral):
+            if expr.elements:
+                elem_type = self._expr_type(expr.elements[0])
+                if elem_type:
+                    return Type(f"array_{elem_type.name}")
+        return None
     
     def _generate_specializations(self) -> None:
         """Generate all requested specializations."""

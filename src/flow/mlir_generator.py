@@ -61,14 +61,16 @@ class MLIRGenerator:
         return None
     
     def _calculate_struct_layouts(self, declarations: List[Any]) -> None:
-        """Calculate field offsets for all struct types"""
+        """Calculate field offsets for all struct types with proper alignment"""
         for decl in declarations:
             if isinstance(decl, StructDecl):
                 layout = {}
                 offset = 0
                 for field in decl.fields:
-                    # Get field size (simplified - using 4 bytes for i32/f32, 1 for i8, etc.)
                     field_size = self._get_type_size(field.type)
+                    # Align offset to the field's natural alignment
+                    alignment = min(field_size, 8) if field_size > 0 else 1
+                    offset = (offset + alignment - 1) & ~(alignment - 1)
                     layout[field.name] = {
                         'offset': offset,
                         'type': field.type,
