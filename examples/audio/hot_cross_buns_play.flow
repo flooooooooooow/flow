@@ -131,8 +131,8 @@ function main() -> i32 {
             # Fill buffer
             let mut i: i32 = 0
             while i < 256 and samples_played < note_samples {
-                # Simple envelope
-                let phase: f32 = samples_played / note_samples
+                # Simple envelope (convert to float for division!)
+                let phase: f32 = (samples_played as f32) / (note_samples as f32)
                 let mut envelope: f32 = 1.0
 
                 if phase < 0.05 {
