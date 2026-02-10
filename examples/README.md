@@ -7,6 +7,7 @@ Comprehensive examples demonstrating Flow's capabilities across multiple domains
 ```
 examples/
 ├── basics/           # Fundamental algorithms and syntax
+├── audio/            # Real-time audio DSP
 ├── compilers/        # Language implementation demos
 ├── crypto/           # Cryptographic algorithms
 ├── data/             # Data processing
@@ -63,6 +64,13 @@ Flow's unique algebraic effects (not available in Mojo/Julia):
 - `dependency_injection.flow` - DI without frameworks
 - `state_effects.flow` - Implicit state threading
 - `async_effects.flow` - Async as effects
+
+### Audio (`audio/`)
+Real-time DSP:
+- `loopback_effects.flow` - Input -> effect chain -> output (requires audio backend)
+- `offline_graph_demo.flow` - Offline graph processing demo
+- `bus_graph_demo.flow` - Parallel bus routing demo
+- `gpu_gain_demo.flow` - GPU gain demo (CPU fallback)
 
 ### Neural Networks (`neural_networks/`)
 Autodiff and backpropagation:

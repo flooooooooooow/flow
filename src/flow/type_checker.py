@@ -24,7 +24,8 @@ from .parser import (
     FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall,
     IfStatement, WhileStatement, ForStatement, MatchStatement,
     HandleStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
-    EffectOperation, CapabilityMethod, MatchCase, EnumDecl, TraitDecl, ImplDecl
+    EffectOperation, CapabilityMethod, MatchCase, EnumDecl, TraitDecl, ImplDecl,
+    TypeAliasDecl, DistinctTypeDecl
 )
 
 
@@ -49,14 +50,17 @@ class TypeKind(Enum):
     POINTER = "pointer"
     FUNCTION = "function"
     NULL = "null"  # null pointer type
+    TYPE_ALIAS = "type_alias"  # Transparent type alias
+    DISTINCT = "distinct"  # Opaque distinct type
     UNKNOWN = "unknown"
 
 
 @dataclass
 class SemanticType:
     kind: TypeKind
-    name: str = ""  # For structs, effects, etc.
+    name: str = ""  # For structs, effects, distinct types, etc.
     element_type: Optional['SemanticType'] = None  # For arrays, pointers
+    base_type: Optional['SemanticType'] = None  # For type aliases and distinct types
     size: Optional[int] = None  # For fixed-size arrays
     param_types: List['SemanticType'] = field(default_factory=list)  # For functions
     return_type: Optional['SemanticType'] = None  # For functions
@@ -76,6 +80,12 @@ class SemanticType:
             return "string"
         elif self.kind == TypeKind.STRUCT:
             return self.name
+        elif self.kind == TypeKind.TYPE_ALIAS:
+            # Type aliases are transparent - show the alias name
+            return self.name
+        elif self.kind == TypeKind.DISTINCT:
+            # Distinct types show their name (they're opaque)
+            return self.name
         elif self.kind == TypeKind.ARRAY:
             if self.size is not None:
                 return f"array<{self.element_type}, {self.size}>"
@@ -94,9 +104,27 @@ class SemanticType:
     def __eq__(self, other) -> bool:
         if not isinstance(other, SemanticType):
             return False
+
+        # Type aliases are transparent - compare underlying types
+        if self.kind == TypeKind.TYPE_ALIAS and other.kind == TypeKind.TYPE_ALIAS:
+            # Both are aliases - compare base types
+            return self.base_type == other.base_type
+        elif self.kind == TypeKind.TYPE_ALIAS:
+            # Self is alias - compare base type with other
+            return self.base_type == other
+        elif other.kind == TypeKind.TYPE_ALIAS:
+            # Other is alias - compare self with base type
+            return self == other.base_type
+
+        # Distinct types are opaque - they're only equal to themselves
+        if self.kind == TypeKind.DISTINCT or other.kind == TypeKind.DISTINCT:
+            return (self.kind == other.kind and
+                    self.name == other.name)
+
         return (self.kind == other.kind and
                 self.name == other.name and
                 self.element_type == other.element_type and
+                self.base_type == other.base_type and
                 self.size == other.size and
                 self.param_types == other.param_types and
                 self.return_type == other.return_type)
@@ -107,6 +135,7 @@ class SemanticType:
                 self.kind,
                 self.name,
                 self.element_type,
+                self.base_type,
                 self.size,
                 tuple(self.param_types),
                 self.return_type,
@@ -366,7 +395,7 @@ class TypeChecker:
         )
 
     def _collect_types(self, declarations: List[Any]) -> None:
-        """Collect struct, effect, and capability definitions."""
+        """Collect struct, effect, capability, type alias, and distinct type definitions."""
         for decl in declarations:
             if isinstance(decl, StructDecl):
                 if decl.name in self.struct_types:
@@ -385,6 +414,34 @@ class TypeChecker:
                 for variant in decl.variants:
                     variant_name = f"{decl.name}_{variant.name}"
                     self.global_scope.define(Symbol(variant_name, SemanticType(TypeKind.I32), "const"))
+
+            elif isinstance(decl, TypeAliasDecl):
+                # Type aliases are transparent - just map name to base type
+                base_type = self._parse_type(decl.base_type)
+                alias_type = SemanticType(
+                    kind=TypeKind.TYPE_ALIAS,
+                    name=decl.name,
+                    base_type=base_type
+                )
+                symbol = Symbol(decl.name, alias_type, "type",
+                              getattr(decl, 'is_exported', False), decl)
+                self.global_scope.define(symbol)
+                # Also register in struct_types for lookup
+                self.struct_types[decl.name] = decl
+
+            elif isinstance(decl, DistinctTypeDecl):
+                # Distinct types are opaque - incompatible with base type
+                base_type = self._parse_type(decl.base_type)
+                distinct_type = SemanticType(
+                    kind=TypeKind.DISTINCT,
+                    name=decl.name,
+                    base_type=base_type
+                )
+                symbol = Symbol(decl.name, distinct_type, "type",
+                              getattr(decl, 'is_exported', False), decl)
+                self.global_scope.define(symbol)
+                # Also register in struct_types for lookup
+                self.struct_types[decl.name] = decl
 
             elif isinstance(decl, EffectDecl):
                 if decl.name in self.effect_types:
@@ -1028,7 +1085,26 @@ class TypeChecker:
             element_type = self._parse_type(ParsedType(element_name))
             return SemanticType(TypeKind.POINTER, element_type=element_type)
         elif parsed_type.name in self.struct_types:
-            return SemanticType(TypeKind.STRUCT, name=parsed_type.name)
+            decl = self.struct_types[parsed_type.name]
+            if isinstance(decl, TypeAliasDecl):
+                # Type aliases are transparent - return the base type
+                base_type = self._parse_type(decl.base_type)
+                return SemanticType(
+                    kind=TypeKind.TYPE_ALIAS,
+                    name=parsed_type.name,
+                    base_type=base_type
+                )
+            elif isinstance(decl, DistinctTypeDecl):
+                # Distinct types are opaque - return distinct type with base type reference
+                base_type = self._parse_type(decl.base_type)
+                return SemanticType(
+                    kind=TypeKind.DISTINCT,
+                    name=parsed_type.name,
+                    base_type=base_type
+                )
+            else:
+                # Regular struct
+                return SemanticType(TypeKind.STRUCT, name=parsed_type.name)
         else:
             # Unknown type (e.g., generic parameter)
             return SemanticType(TypeKind.UNKNOWN, name=parsed_type.name)

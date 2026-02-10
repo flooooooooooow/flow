@@ -1,0 +1,281 @@
+# Audio Graph Helpers (High-Level)
+#
+# Simple, pragmatic effect chains for real-time routing.
+# Uses fixed slots to keep things predictable and fast.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/filters.flow"
+import "stdlib/audio/delay_line.flow"
+import "stdlib/audio/control.flow"
+
+export struct EffectChain {
+    gain: f32
+    pan: f32
+    rate: SampleRate
+    lowpass_l: Biquad
+    lowpass_r: Biquad
+    delay_l: DelayLineF32
+    delay_r: DelayLineF32
+    gain_smoother: ParamSmoother
+    cutoff_smoother: ParamSmoother
+    enable_lowpass: bool
+    enable_delay: bool
+    last: Frame
+}
+
+export function effect_chain_new(rate: SampleRate) -> EffectChain {
+    let lp: Biquad = biquad_bypass()
+    let dl: DelayLineF32 = delay_line_new(250.0, rate)
+    let g: ParamSmoother = param_smoother_new(1.0, 10.0, rate)
+    let c: ParamSmoother = param_smoother_new(10000.0, 30.0, rate)
+    return EffectChain {
+        gain: 1.0,
+        pan: 0.0,
+        rate: rate,
+        lowpass_l: lp,
+        lowpass_r: lp,
+        delay_l: dl,
+        delay_r: dl,
+        gain_smoother: g,
+        cutoff_smoother: c,
+        enable_lowpass: false,
+        enable_delay: false,
+        last: frame_zero()
+    }
+}
+
+export function effect_chain_set_gain_db(c: EffectChain, db: f32) -> EffectChain {
+    let g: f32 = db_to_linear(db)
+    return EffectChain {
+        gain: g,
+        pan: c.pan,
+        rate: c.rate,
+        lowpass_l: c.lowpass_l,
+        lowpass_r: c.lowpass_r,
+        delay_l: c.delay_l,
+        delay_r: c.delay_r,
+        gain_smoother: param_smoother_set_target(c.gain_smoother, g),
+        cutoff_smoother: c.cutoff_smoother,
+        enable_lowpass: c.enable_lowpass,
+        enable_delay: c.enable_delay,
+        last: c.last
+    }
+}
+
+export function effect_chain_set_pan(c: EffectChain, pan: f32) -> EffectChain {
+    return EffectChain {
+        gain: c.gain,
+        pan: pan,
+        rate: c.rate,
+        lowpass_l: c.lowpass_l,
+        lowpass_r: c.lowpass_r,
+        delay_l: c.delay_l,
+        delay_r: c.delay_r,
+        gain_smoother: c.gain_smoother,
+        cutoff_smoother: c.cutoff_smoother,
+        enable_lowpass: c.enable_lowpass,
+        enable_delay: c.enable_delay,
+        last: c.last
+    }
+}
+
+export function effect_chain_enable_lowpass(c: EffectChain, cutoff: f32, q: f32, rate: SampleRate) -> EffectChain {
+    let lp: Biquad = biquad_lowpass(cutoff, q, rate)
+    return EffectChain {
+        gain: c.gain,
+        pan: c.pan,
+        rate: rate,
+        lowpass_l: lp,
+        lowpass_r: lp,
+        delay_l: c.delay_l,
+        delay_r: c.delay_r,
+        gain_smoother: c.gain_smoother,
+        cutoff_smoother: param_smoother_set_target(c.cutoff_smoother, cutoff),
+        enable_lowpass: true,
+        enable_delay: c.enable_delay,
+        last: c.last
+    }
+}
+
+export function effect_chain_enable_delay(c: EffectChain, time_ms: f32, feedback: f32, mix: f32, rate: SampleRate) -> EffectChain {
+    let dl: DelayLineF32 = delay_line_set_time(c.delay_l, time_ms, rate)
+    let dl2: DelayLineF32 = delay_line_set_feedback(dl, feedback)
+    let dl3: DelayLineF32 = delay_line_set_mix(dl2, mix)
+    return EffectChain {
+        gain: c.gain,
+        pan: c.pan,
+        rate: rate,
+        lowpass_l: c.lowpass_l,
+        lowpass_r: c.lowpass_r,
+        delay_l: dl3,
+        delay_r: dl3,
+        gain_smoother: c.gain_smoother,
+        cutoff_smoother: c.cutoff_smoother,
+        enable_lowpass: c.enable_lowpass,
+        enable_delay: true,
+        last: c.last
+    }
+}
+
+export function effect_chain_update(c: EffectChain,
+                                    gain_db: f32,
+                                    pan: f32,
+                                    enable_lowpass: bool,
+                                    cutoff: f32,
+                                    enable_delay: bool,
+                                    delay_ms: f32,
+                                    feedback: f32,
+                                    mix: f32) -> EffectChain {
+    let out: EffectChain = effect_chain_set_gain_db(c, gain_db)
+    out = effect_chain_set_pan(out, pan)
+    if enable_lowpass {
+        out = effect_chain_enable_lowpass(out, cutoff, 0.707, out.rate)
+    } else {
+        out = EffectChain {
+            gain: out.gain,
+            pan: out.pan,
+            rate: out.rate,
+            lowpass_l: out.lowpass_l,
+            lowpass_r: out.lowpass_r,
+            delay_l: out.delay_l,
+            delay_r: out.delay_r,
+            gain_smoother: out.gain_smoother,
+            cutoff_smoother: out.cutoff_smoother,
+            enable_lowpass: false,
+            enable_delay: out.enable_delay,
+            last: out.last
+        }
+    }
+    if enable_delay {
+        out = effect_chain_enable_delay(out, delay_ms, feedback, mix, out.rate)
+    } else {
+        out = EffectChain {
+            gain: out.gain,
+            pan: out.pan,
+            rate: out.rate,
+            lowpass_l: out.lowpass_l,
+            lowpass_r: out.lowpass_r,
+            delay_l: out.delay_l,
+            delay_r: out.delay_r,
+            gain_smoother: out.gain_smoother,
+            cutoff_smoother: out.cutoff_smoother,
+            enable_lowpass: out.enable_lowpass,
+            enable_delay: false,
+            last: out.last
+        }
+    }
+    return out
+}
+
+export function effect_chain_tick(c: EffectChain, input: Frame) -> EffectChain {
+    let gs: ParamSmoother = param_smoother_tick(c.gain_smoother)
+    let smoothed_gain: f32 = param_smoother_value(gs)
+    let mut left: f32 = input.left * smoothed_gain
+    let mut right: f32 = input.right * smoothed_gain
+
+    let lp_l: Biquad = c.lowpass_l
+    let lp_r: Biquad = c.lowpass_r
+    let cs: ParamSmoother = c.cutoff_smoother
+    if c.enable_lowpass {
+        cs = param_smoother_tick(c.cutoff_smoother)
+        let cutoff: f32 = param_smoother_value(cs)
+        lp_l = biquad_lowpass(cutoff, 0.707, c.rate)
+        lp_r = lp_l
+        lp_l = biquad_tick(lp_l, left)
+        lp_r = biquad_tick(lp_r, right)
+        left = biquad_output(lp_l)
+        right = biquad_output(lp_r)
+    }
+
+    let dl_l: DelayLineF32 = c.delay_l
+    let dl_r: DelayLineF32 = c.delay_r
+    if c.enable_delay {
+        dl_l = delay_line_tick(dl_l, left)
+        dl_r = delay_line_tick(dl_r, right)
+        left = delay_line_output(dl_l)
+        right = delay_line_output(dl_r)
+    }
+
+    let out: Frame = Frame { left: left, right: right }
+    if c.pan != 0.0 {
+        let mono: f32 = (left + right) * 0.5
+        out = frame_pan(mono, c.pan)
+    }
+
+    return EffectChain {
+        gain: c.gain,
+        pan: c.pan,
+        rate: c.rate,
+        lowpass_l: lp_l,
+        lowpass_r: lp_r,
+        delay_l: dl_l,
+        delay_r: dl_r,
+        gain_smoother: gs,
+        cutoff_smoother: cs,
+        enable_lowpass: c.enable_lowpass,
+        enable_delay: c.enable_delay,
+        last: out
+    }
+}
+
+export function effect_chain_output(c: EffectChain) -> Frame {
+    return c.last
+}
+
+export function effect_chain_process_interleaved(c: EffectChain, buf: AudioBufferF32) -> EffectChain {
+    let chain: EffectChain = c
+    let frames: i32 = buf.frames
+    let channels: i32 = buf.channels
+    if channels < 2 {
+        let i: i32 = 0
+        while i < frames {
+            let s: f32 = audio_buffer_get_f32(buf, i, 0)
+            chain = effect_chain_tick(chain, frame_mono(s))
+            let out: Frame = effect_chain_output(chain)
+            audio_buffer_set_f32(buf, i, 0, out.left)
+            i = i + 1
+        }
+        return chain
+    }
+    let i: i32 = 0
+    while i < frames {
+        let l: f32 = audio_buffer_get_f32(buf, i, 0)
+        let r: f32 = audio_buffer_get_f32(buf, i, 1)
+        chain = effect_chain_tick(chain, frame_new(l, r))
+        let out: Frame = effect_chain_output(chain)
+        audio_buffer_set_f32(buf, i, 0, out.left)
+        audio_buffer_set_f32(buf, i, 1, out.right)
+        i = i + 1
+    }
+    return chain
+}
+
+export function effect_chain_process_interleaved_frames(c: EffectChain, buf: AudioBufferF32, frames: i32) -> EffectChain {
+    let chain: EffectChain = c
+    let max_frames: i32 = buf.frames
+    let count: i32 = frames
+    if count > max_frames { count = max_frames }
+    let channels: i32 = buf.channels
+    if channels < 2 {
+        let i: i32 = 0
+        while i < count {
+            let s: f32 = audio_buffer_get_f32(buf, i, 0)
+            chain = effect_chain_tick(chain, frame_mono(s))
+            let out: Frame = effect_chain_output(chain)
+            audio_buffer_set_f32(buf, i, 0, out.left)
+            i = i + 1
+        }
+        return chain
+    }
+    let i: i32 = 0
+    while i < count {
+        let l: f32 = audio_buffer_get_f32(buf, i, 0)
+        let r: f32 = audio_buffer_get_f32(buf, i, 1)
+        chain = effect_chain_tick(chain, frame_new(l, r))
+        let out: Frame = effect_chain_output(chain)
+        audio_buffer_set_f32(buf, i, 0, out.left)
+        audio_buffer_set_f32(buf, i, 1, out.right)
+        i = i + 1
+    }
+    return chain
+}

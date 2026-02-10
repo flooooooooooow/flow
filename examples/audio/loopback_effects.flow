@@ -1,0 +1,63 @@
+# Real-time audio loopback with basic effect chain
+#
+# Requires audio runtime backend (see docs/library/audio.md).
+
+import "stdlib/audio.flow"
+import "stdlib/audio/io.flow"
+import "stdlib/audio/graph.flow"
+import "stdlib/audio/graph_scheduler.flow"
+
+function main() -> i32 {
+    let rate: SampleRate = sample_rate_48000()
+    let cfg: AudioDeviceConfig = audio_device_config(48000, 2, 256, true, true)
+    let dev: AudioDevice = audio_device_open(cfg)
+    if not audio_device_ok(dev) {
+        println(audio_last_error(dev))
+        return 1
+    }
+
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(cfg.frames_per_buffer, cfg.channels, layout_interleaved())
+    let chain: EffectChain = effect_chain_new(rate)
+    let chain2: EffectChain = effect_chain_enable_delay(chain, 250.0, 0.3, 0.35, rate)
+    let chain3: EffectChain = effect_chain_enable_lowpass(chain2, 8000.0, 0.707, rate)
+
+    let nodes: array<AudioNode, 32> = [
+        audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+        audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+        audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+        audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+        audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+        audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+        audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+        audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default()
+    ]
+    let g: AudioGraph = audio_graph_init(rate, nodes)
+    let g1: AudioGraph = audio_graph_add_gain(g, -3.0)
+    let g2: AudioGraph = audio_graph_add_lowpass(g1, 9000.0, 0.707)
+    let g3: AudioGraph = audio_graph_add_delay(g2, 200.0, 0.2, 0.25)
+
+    if audio_device_start(dev) != AUDIO_OK {
+        println(audio_last_error(dev))
+        audio_device_close(dev)
+        audio_buffer_free_f32(buf)
+        return 1
+    }
+
+    let i: i32 = 0
+    let current: EffectChain = chain3
+    let graph: AudioGraph = g3
+    while i < 5000 {
+        let frames: i32 = audio_read_f32(dev, buf.data, cfg.frames_per_buffer)
+        if frames > 0 {
+            current = effect_chain_process_interleaved_frames(current, buf, frames)
+            graph = audio_graph_process_interleaved(graph, buf, frames)
+            audio_write_f32(dev, buf.data, frames)
+        }
+        i = i + 1
+    }
+
+    audio_device_stop(dev)
+    audio_device_close(dev)
+    audio_buffer_free_f32(buf)
+    return 0
+}

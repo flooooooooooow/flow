@@ -3,12 +3,12 @@
 - [x] #96 [T-L2] Tests: hypothesis dependency listed but never used (cleanup, low, testing) https://github.com/flooooooooooow/flow/issues/96
 - [x] #95 [T-L1] Tests: ERROR_CASES and EDGE_CASES only partially used (enhancement, low, testing) https://github.com/flooooooooooow/flow/issues/95
 - [x] #94 [T-M1] Tests: temp files with delete=False never cleaned on failure (bug, medium, testing) https://github.com/flooooooooooow/flow/issues/94
-- [ ] #93 [CI-M4] CI: no SAST, DAST, or dependency scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/93
-- [ ] #92 [CI-M3] CI: no dependency pinning or lock file (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/92
-- [ ] #91 [CI-M2] CI: lint job is minimal and incomplete (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/91
-- [ ] #90 [CI-M1] CI: Python unit tests never run (bug, ci, medium) https://github.com/flooooooooooow/flow/issues/90
-- [ ] #89 [CI-C2] CI: no permissions block — overly broad token access (bug, critical, ci, security) https://github.com/flooooooooooow/flow/issues/89
-- [ ] #88 [CI-C1] CI: pipeline suppresses failures with || true (bug, critical, ci) https://github.com/flooooooooooow/flow/issues/88
+- [x] #93 [CI-M4] CI: no SAST, DAST, or dependency scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/93
+- [x] #92 [CI-M3] CI: no dependency pinning or lock file (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/92
+- [x] #91 [CI-M2] CI: lint job is minimal and incomplete (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/91
+- [x] #90 [CI-M1] CI: Python unit tests never run (bug, ci, medium) https://github.com/flooooooooooow/flow/issues/90
+- [x] #89 [CI-C2] CI: no permissions block — overly broad token access (bug, critical, ci, security) https://github.com/flooooooooooow/flow/issues/89
+- [x] #88 [CI-C1] CI: pipeline suppresses failures with || true (bug, critical, ci) https://github.com/flooooooooooow/flow/issues/88
 - [x] #87 [CLI-L3] CLI: hardcoded LLVM path (enhancement, low) https://github.com/flooooooooooow/flow/issues/87
 - [x] #86 [CLI-L2] CLI: no .flow file extension validation (enhancement, low) https://github.com/flooooooooooow/flow/issues/86
 - [x] #85 [CLI-L1] CLI: missing set -euo pipefail (enhancement, low) https://github.com/flooooooooooow/flow/issues/85
@@ -18,8 +18,8 @@
 - [x] #81 [RT-L1] Runtime: macOS window delegate leaks (bug, low, runtime) https://github.com/flooooooooooow/flow/issues/81
 - [x] #80 [RT-M3] Runtime: debugCallback null dereference (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/80
 - [x] #79 [RT-M2] Runtime: Vulkan resource leak on init failure (bug, medium, runtime) https://github.com/flooooooooooow/flow/issues/79
-- [ ] #78 **Severity:** Medium | **Category:** Native Runtime" (Short-term) https://github.com/flooooooooooow/flow/issues/78
-- [ ] #77 ## Audit ID: RT-M1 () https://github.com/flooooooooooow/flow/issues/77
+- [x] #78 **Severity:** Medium | **Category:** Native Runtime" (Short-term) https://github.com/flooooooooooow/flow/issues/78
+- [x] #77 ## Audit ID: RT-M1 () https://github.com/flooooooooooow/flow/issues/77
 - [x] #76 A `title` containing `""` or `'` or shell metacharacters can break out of the AppleScript string and execute arbitrary commands. () https://github.com/flooooooooooow/flow/issues/76
 - [x] #75 ``` () https://github.com/flooooooooooow/flow/issues/75
 - [x] #74 FILE* pipe = popen(script.c_str() () https://github.com/flooooooooooow/flow/issues/74
@@ -36,7 +36,7 @@
 - [x] #63 [SL-M2] Stdlib: collection constructors initialize data to null (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/63
 - [x] #62 [SL-M1] Stdlib: all slice accesses are bounds-unchecked (bug, medium, stdlib) https://github.com/flooooooooooow/flow/issues/62
 - [x] #61 [SL-C3] Stdlib: memcpy wrapper allows overlap without check (bug, critical, stdlib) https://github.com/flooooooooooow/flow/issues/61
-- [ ] #60 [SL-C2] Stdlib: concurrency primitives provide no actual synchronization (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/60
+- [x] #60 [SL-C2] Stdlib: concurrency primitives provide no actual synchronization (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/60
 - [x] #59 [SL-C1] Stdlib: calloc integer overflow in memory.flow (bug, critical, security, stdlib) https://github.com/flooooooooooow/flow/issues/59
 - [x] #58 [OV-L1] Overload: no ambiguity detection for multiple matching overloads (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/58
 - [x] #57 [OV-M4] Overload: literal type detection is fragile (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/57
@@ -47,7 +47,7 @@
 - [x] #52 [MN-M3] Monomorphize: VarDecl loses is_mutable flag after substitution (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/52
 - [x] #51 [MN-M2] Monomorphize: ambiguous name mangling (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/51
 - [x] #50 [MN-M1] Monomorphize: generic function instantiation is unimplemented (enhancement, compiler, medium) https://github.com/flooooooooooow/flow/issues/50
-- [ ] #49 [MN-C1] Monomorphize: no termination guard against infinite instantiation (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/49
+- [x] #49 [MN-C1] Monomorphize: no termination guard against infinite instantiation (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/49
 - [x] #48 [MR-L1] Module resolver: _resolve_symbols is a stub (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/48
 - [x] #47 [MR-M3] Module resolver: missing imports produce warning but compilation continues (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/47
 - [x] #46 [MR-M2] Module resolver: symbol collisions silently dropped (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/46
@@ -55,7 +55,7 @@
 - [x] #44 [MR-C1] Module resolver: path traversal via import statements (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/44
 - [x] #43 [TP-L1] Transpiler: --strict flag is a no-op (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/43
 - [x] #42 [TP-M1] Transpiler: temp file not cleaned up on MLIR optimization failure (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/42
-- [ ] #41 [TP-C1] Transpiler: unreachable code / control flow bug (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/41
+- [x] #41 [TP-C1] Transpiler: unreachable code / control flow bug (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/41
 - [x] #40 [MG-L1] MLIR generator: type dispatch uses string comparison (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/40
 - [x] #39 [MG-M6] MLIR generator: vector literal puts SSA names in dense<> attribute (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/39
 - [x] #38 [MG-M5] MLIR generator: flat symbol table breaks variable shadowing (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/38
@@ -73,11 +73,11 @@
 - [x] #26 [CG-M4] C generator: __auto_type is non-standard C (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/26
 - [x] #25 [CG-M3] C generator: for-loop always uses < condition (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/25
 - [x] #24 [CG-M2] C generator: remove_outer_parens is incorrect (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/24
-- [ ] #23 [CG-M1] C generator: memory leaks in generated code — no deallocation (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/23
-- [ ] #22 [CG-C3] C generator: no array bounds checking in generated code (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/22
+- [x] #23 [CG-M1] C generator: memory leaks in generated code — no deallocation (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/23
+- [x] #22 [CG-C3] C generator: no array bounds checking in generated code (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/22
 - [x] #21 [CG-C2] C generator: printf format string vulnerability (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/21
 - [x] #20 [CG-C1] C generator: code injection via unsanitized identifiers (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/20
-- [ ] #19 [TC-L2] Type checker: no error recovery — first error cascades (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/19
+- [x] #19 [TC-L2] Type checker: no error recovery — first error cascades (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/19
 - [x] #18 [TC-L1] Type checker: SemanticType missing __hash__ (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/18
 - [x] #17 [TC-M6] Type checker: _parse_type returns VOID for unknown types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/17
 - [x] #16 [TC-M5] Type checker: builtin functions always return void (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/16
@@ -96,3 +96,6 @@
 - [x] #3 [P-M1] Parser: fragile return-value detection heuristic (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/3
 - [x] #2 [P-C2] Parser: infinite loop on unterminated blocks (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/2
 - [x] #1 [P-C1] Parser: bare except clauses swallow all errors (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/1
+- [ ] #100 [CI-M1] CI: dependencies are unpinned (no lockfile; installs latest pytest) (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/100
+- [ ] #101 [CI-M2] CI: lint job is syntax-only; missing ruff/mypy/shellcheck (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/101
+- [ ] #102 [CI-M3] CI: no SAST/dependency/security scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/102

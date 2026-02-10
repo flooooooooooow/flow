@@ -1,0 +1,34 @@
+# Audio Delay Line Test
+
+import "stdlib/audio.flow"
+import "stdlib/audio/delay_line.flow"
+
+function test_delay_one_sample() -> bool {
+    let rate: SampleRate = sample_rate_new(1000.0)
+    let d: DelayLineF32 = delay_line_new(1.0, rate)
+    let d2: DelayLineF32 = delay_line_set_mix(d, 1.0)
+    let d3: DelayLineF32 = delay_line_set_feedback(d2, 0.0)
+
+    let d4: DelayLineF32 = delay_line_tick(d3, 1.0)
+    let out1: f32 = delay_line_output(d4)
+    if out1 > 0.001 { return false }
+
+    let d5: DelayLineF32 = delay_line_tick(d4, 0.0)
+    let out2: f32 = delay_line_output(d5)
+    if out2 < 0.99 { return false }
+    return true
+}
+
+function main() -> i32 {
+    let passed: i32 = 0
+    let failed: i32 = 0
+    printf("=== Audio Delay Line Tests ===\n\n")
+
+    if test_delay_one_sample() { printf("✓ delay_one_sample\n"); passed = passed + 1 }
+    else { printf("✗ delay_one_sample\n"); failed = failed + 1 }
+
+    printf("\nPassed: %d\n", passed)
+    printf("Failed: %d\n", failed)
+    if failed > 0 { return 1 }
+    return 0
+}

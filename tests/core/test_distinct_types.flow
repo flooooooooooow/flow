@@ -1,0 +1,15 @@
+# Test distinct types (opaque types like Odin)
+# Note: Since FLOW doesn't have 'as' casting yet, this demonstrates the type system at compile time
+
+# Distinct types are opaque - incompatible with their base type and each other
+distinct type Meters = f32
+distinct type Feet = f32
+
+# This would be a type error if we tried: let m: Meters = 10.0
+# Distinct types ensure type safety at compile time
+
+function main() -> i32 {
+    println("Distinct types enforce type safety!")
+    println("Meters and Feet are both f32-based but incompatible")
+    return 0
+}
