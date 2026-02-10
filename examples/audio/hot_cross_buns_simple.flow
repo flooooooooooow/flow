@@ -1,0 +1,82 @@
+# Hot Cross Buns - Simplified Demo
+# Just prints the melody structure
+
+import "stdlib/audio/scales.flow"
+
+function main() -> i32 {
+    println("========================================")
+    println("  Hot Cross Buns - Melody Demo")
+    println("========================================")
+    println("")
+    println("Classic nursery rhyme in E-D-C pattern")
+    println("")
+
+    # Define the melody
+    # E D C, E D C, C C C C, D D D D, E D C
+    let E: i32 = note_E(4)
+    let D: i32 = note_D(4)
+    let C: i32 = note_C(4)
+
+    println("Part 1: 'Hot cross buns'")
+    print("  E (")
+    print(E)
+    print(") = ")
+    let freq_e: f32 = midi_to_freq_accurate(E)
+    printf("%.2f", freq_e)
+    println(" Hz")
+
+    print("  D (")
+    print(D)
+    print(") = ")
+    let freq_d: f32 = midi_to_freq_accurate(D)
+    printf("%.2f", freq_d)
+    println(" Hz")
+
+    print("  C (")
+    print(C)
+    print(") = ")
+    let freq_c: f32 = midi_to_freq_accurate(C)
+    printf("%.2f", freq_c)
+    println(" Hz")
+
+    println("")
+    println("Part 2: 'Hot cross buns' (repeat)")
+    println("  E - D - C")
+
+    println("")
+    println("Part 3: 'One a penny, two a penny'")
+    println("  C C C C - D D D D")
+
+    println("")
+    println("Part 4: 'Hot cross buns' (final)")
+    println("  E - D - C")
+
+    println("")
+    println("Complete melody notes:")
+    let melody: array<i32, 17> = [
+        E, D, C,        # Hot cross buns
+        E, D, C,        # Hot cross buns
+        C, C, C, C,     # One a penny
+        D, D, D, D,     # Two a penny
+        E, D, C         # Hot cross buns
+    ]
+
+    for i in 0 to 17 {
+        let note: i32 = melody[i]
+        let freq: f32 = midi_to_freq_accurate(note)
+
+        print("  Note ")
+        print(i + 1)
+        print(": MIDI ")
+        print(note)
+        print(" = ")
+        printf("%.2f", freq)
+        println(" Hz")
+    }
+
+    println("")
+    println("This melody would sound like a simple sine wave")
+    println("version of the classic nursery rhyme!")
+
+    return 0
+}
