@@ -184,7 +184,7 @@ class TestHelpers:
         try:
             ast = parse_flow_code(flow_code)
             generator = MLIRGenerator(source_file)
-            return generator.generate(ast)
+            return generator.generate_module(ast)
         except Exception as e:
             raise RuntimeError(f"Failed to compile FLOW to MLIR: {e}")
 
