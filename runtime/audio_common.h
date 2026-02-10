@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -13,8 +15,8 @@ typedef struct FlowAudioConfig {
     int sample_rate;
     int channels;
     int frames_per_buffer;
-    int enable_input;
-    int enable_output;
+    bool enable_input;
+    bool enable_output;
 } FlowAudioConfig;
 
 // Returns 0 on success, non-zero on failure.
