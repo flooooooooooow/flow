@@ -1,0 +1,123 @@
+# Delay Line (F32) with Real Buffer Storage
+#
+# Uses AudioBufferF32 for a real ring buffer implementation.
+# Designed for mono or per-channel use.
+
+import "stdlib/audio.flow"
+
+export struct DelayLineF32 {
+    buffer: AudioBufferF32
+    write_pos: i32
+    delay_samples: i32
+    feedback: f32
+    wet: f32
+    last: f32
+}
+
+export function delay_line_empty() -> DelayLineF32 {
+    return DelayLineF32 {
+        buffer: audio_buffer_empty_f32(),
+        write_pos: 0,
+        delay_samples: 0,
+        feedback: 0.0,
+        wet: 0.0,
+        last: 0.0
+    }
+}
+
+export function delay_line_new(max_ms: f32, rate: SampleRate) -> DelayLineF32 {
+    let max_s: Samples = ms_to_samples(max_ms, rate)
+    let frames: i32 = max_s.count
+    if frames < 1 { frames = 1 }
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(frames, 1, layout_planar())
+    return DelayLineF32 {
+        buffer: buf,
+        write_pos: 0,
+        delay_samples: frames,
+        feedback: 0.0,
+        wet: 0.5,
+        last: 0.0
+    }
+}
+
+export function delay_line_set_time(d: DelayLineF32, time_ms: f32, rate: SampleRate) -> DelayLineF32 {
+    let s: Samples = ms_to_samples(time_ms, rate)
+    let delay: i32 = s.count
+    if delay < 0 { delay = 0 }
+    if delay >= d.buffer.frames { delay = d.buffer.frames - 1 }
+    return DelayLineF32 {
+        buffer: d.buffer,
+        write_pos: d.write_pos,
+        delay_samples: delay,
+        feedback: d.feedback,
+        wet: d.wet,
+        last: d.last
+    }
+}
+
+export function delay_line_set_feedback(d: DelayLineF32, fb: f32) -> DelayLineF32 {
+    let f: f32 = fb
+    if f < 0.0 { f = 0.0 }
+    if f >= 1.0 { f = 0.99 }
+    return DelayLineF32 {
+        buffer: d.buffer,
+        write_pos: d.write_pos,
+        delay_samples: d.delay_samples,
+        feedback: f,
+        wet: d.wet,
+        last: d.last
+    }
+}
+
+export function delay_line_set_mix(d: DelayLineF32, mix: f32) -> DelayLineF32 {
+    let m: f32 = mix
+    if m < 0.0 { m = 0.0 }
+    if m > 1.0 { m = 1.0 }
+    return DelayLineF32 {
+        buffer: d.buffer,
+        write_pos: d.write_pos,
+        delay_samples: d.delay_samples,
+        feedback: d.feedback,
+        wet: m,
+        last: d.last
+    }
+}
+
+export function delay_line_tick(d: DelayLineF32, input: f32) -> DelayLineF32 {
+    let max_frames: i32 = d.buffer.frames
+    if max_frames <= 0 {
+        return d
+    }
+    let read_pos: i32 = d.write_pos - d.delay_samples
+    if read_pos < 0 { read_pos = read_pos + max_frames }
+    let delayed: f32 = audio_buffer_get_f32(d.buffer, read_pos, 0)
+    let write_val: f32 = input + delayed * d.feedback
+    audio_buffer_set_f32(d.buffer, d.write_pos, 0, write_val)
+    let out: f32 = input * (1.0 - d.wet) + delayed * d.wet
+    let next_pos: i32 = d.write_pos + 1
+    if next_pos >= max_frames { next_pos = 0 }
+    return DelayLineF32 {
+        buffer: d.buffer,
+        write_pos: next_pos,
+        delay_samples: d.delay_samples,
+        feedback: d.feedback,
+        wet: d.wet,
+        last: out
+    }
+}
+
+export function delay_line_output(d: DelayLineF32) -> f32 {
+    return d.last
+}
+
+export function delay_line_reset(d: DelayLineF32) -> DelayLineF32 {
+    audio_buffer_zero_f32(d.buffer)
+    return DelayLineF32 {
+        buffer: d.buffer,
+        write_pos: 0,
+        delay_samples: d.delay_samples,
+        feedback: d.feedback,
+        wet: d.wet,
+        last: 0.0
+    }
+}

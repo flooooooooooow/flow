@@ -1,0 +1,55 @@
+# Bus graph demo (offline, parallel routing)
+
+import "stdlib/audio.flow"
+import "stdlib/audio/graph_bus.flow"
+
+function main() -> i32 {
+    let rate: SampleRate = sample_rate_48000()
+    let b0: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(8, 2, layout_interleaved()), enabled: true }
+    let b1: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(8, 2, layout_interleaved()), enabled: true }
+    let b2: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(8, 2, layout_interleaved()), enabled: true }
+    let b3: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(8, 2, layout_interleaved()), enabled: true }
+    let b4: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(8, 2, layout_interleaved()), enabled: true }
+    let b5: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(8, 2, layout_interleaved()), enabled: true }
+    let b6: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(8, 2, layout_interleaved()), enabled: true }
+    let b7: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(8, 2, layout_interleaved()), enabled: true }
+    let buses: array<AudioBus, 8> = [b0,b1,b2,b3,b4,b5,b6,b7]
+    let nodes: array<BusNode, 64> = [
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default()
+    ]
+    let scratch: AudioBufferF32 = audio_buffer_alloc_f32(8, 2, layout_interleaved())
+    let g: BusGraph = bus_graph_init(rate, buses, nodes, scratch)
+
+    # Input on bus0
+    let i: i32 = 0
+    while i < 8 {
+        audio_buffer_set_f32(g.buses[0].buffer, i, 0, 1.0)
+        audio_buffer_set_f32(g.buses[0].buffer, i, 1, 0.8)
+        i = i + 1
+    }
+
+    # Route bus0 -> bus1 with two parallel gains, then mix
+    let g1: BusGraph = bus_graph_add_gain(g, 0, 1, -3.0)
+    let g2: BusGraph = bus_graph_add_gain(g1, 0, 1, -6.0)
+    let g3: BusGraph = bus_graph_process(g2, 8)
+
+    let l0: f32 = audio_buffer_get_f32(g3.buses[1].buffer, 0, 0)
+    let r0: f32 = audio_buffer_get_f32(g3.buses[1].buffer, 0, 1)
+    printf("Bus demo: first frame L=%f R=%f\n", l0, r0)
+    bus_graph_free(g3)
+    return 0
+}

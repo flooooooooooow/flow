@@ -25,6 +25,7 @@ Welcome to the Flow programming language documentation!
 
 - [Core](library/core.md) - Built-in functions
 - [Autodiff](library/autodiff.md) - Automatic differentiation
+- [Audio DSP](library/audio.md) - Real-time audio DSP utilities
 - [Memory](library/memory.md) - Memory management
 
 ## Tutorials
@@ -38,6 +39,7 @@ Welcome to the Flow programming language documentation!
 - [Contributing](project/CONTRIBUTING.md) - How to contribute, security policy
 - [Changelog](project/CHANGELOG.md) - Version history and audit fixes
 - [What's Next](NEXT.md) - Prioritized roadmap after v0.7.0 audit
+- [Audit Report (2026-02-10)](project/AUDIT_2026-02-10.md) - Latest full audit findings
 - [Development](DEVELOPMENT.md) - Building Flow
 
 ## Examples

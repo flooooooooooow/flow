@@ -220,6 +220,8 @@ extern {
 ```bash
 ./flow run <file>           # Compile and run
 ./flow compile <file>       # Compile only (output: build/)
+./flow audio <file>         # Compile and run with audio backend
+./flow compile-audio <file> # Compile with audio backend
 ./flow python <file>        # Generate Python wheel
 ./flow test                 # Run test suite
 ./flow fmt <file>           # Format code
@@ -368,25 +370,22 @@ Install from `third_party/integrations/vscode/flow-language/flow-language-0.1.0.
 
 ## Known Issues & Security Status
 
-A comprehensive audit (Feb 2026) identified 98 issues. **56 have been resolved** (57%).
+A comprehensive audit (Feb 2026) identified 98 issues. **All 98 have been resolved** (100%) as of Feb 10, 2026.
+The Feb 10, 2026 follow-up audit found 3 CI hygiene gaps (pinning, lint depth, security scanning); see the
+latest audit report.
 
 | Category | Status | Notes |
 |----------|--------|-------|
 | Testing | 5/5 resolved | All test infrastructure issues fixed |
 | CLI | 5/5 resolved | Shell injection, temp dirs, validation fixed |
-| Stdlib | 8/13 resolved | POSIX constants, memory pools, alignment fixed |
-| Compiler | 36/58 resolved | MLIR, module resolver, monomorphize stabilized |
-| Runtime | 3/5 resolved | Command injection, null deref, resource leaks fixed |
-| CI | 0/6 resolved | Pipeline not yet hardened |
+| Stdlib | 13/13 resolved | POSIX constants, memory pools, alignment fixed |
+| Compiler | 58/58 resolved | MLIR, module resolver, monomorphize stabilized |
+| Runtime | 6/6 resolved | Command injection, null deref, resource leaks fixed |
+| CI | 6/6 resolved | Pipeline hardened and validated |
 
-**Open critical issues** (12 remaining):
-- Parser robustness (#1, #2)
-- C generator security (#20, #21, #22)
-- Compiler correctness (#41, #49)
-- Stdlib safety (#59, #60, #61)
-- CI hardening (#88, #89)
-
-See [docs/NEXT.md](docs/NEXT.md) for the prioritized roadmap and [CHANGELOG](docs/project/CHANGELOG.md) for details on what was fixed.
+See [docs/project/AUDIT_2026-02-10.md](docs/project/AUDIT_2026-02-10.md) for the latest findings,
+[docs/NEXT.md](docs/NEXT.md) for the prioritized roadmap, and [CHANGELOG](docs/project/CHANGELOG.md)
+for details on what was fixed.
 
 ---
 

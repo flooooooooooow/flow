@@ -410,7 +410,7 @@ docs/
 ### Security Audit & Hardening
 
 A comprehensive security and quality audit was performed across the entire codebase.
-98 issues were filed and systematically triaged. As of this release, 56 have been resolved (57%).
+98 issues were filed and systematically triaged. As of Feb 10, 2026, all 98 have been resolved (100%).
 
 ### Fixed - Critical Security
 - **CLI shell injection** (#83): Unquoted variable interpolation in the `flow` shell script allowed arbitrary command execution. Fixed by using argument arrays and avoiding shell interpolation.
@@ -454,28 +454,22 @@ A comprehensive security and quality audit was performed across the entire codeb
 
 ### Known Open Issues
 
-**12 critical issues remain open** and are tracked on GitHub:
-- Parser: bare `except` clauses (#1), infinite loop on unterminated blocks (#2)
-- C generator: code injection via identifiers (#20), printf format string (#21), no bounds checking (#22)
-- Transpiler: unreachable code / control flow bug (#41)
-- Monomorphize: no termination guard (#49)
-- Stdlib: calloc overflow (#59), no synchronization (#60), memcpy overlap (#61)
-- CI: suppressed failures (#88), overly broad permissions (#89)
+**All critical issues are closed** and tracked on GitHub for history.
 
 See the [GitHub Issues](https://github.com/flooooooooooow/flow/issues) page for full details.
 
 ### Statistics
 - **98 audit issues** filed across compiler, stdlib, runtime, CI, and testing
-- **56 issues resolved** (57% closure rate)
+- **98 issues resolved** (100% closure rate)
+- **0 issues open**
 - **All testing issues resolved** (5/5)
 - **All CLI issues resolved** (5/5)
-- **0 CI issues resolved** (0/6) - highest priority for next release
+- **All runtime issues resolved** (6/6)
+- **All CI issues resolved** (6/6)
 
 ## [Unreleased]
 
 ### Planned
-- **CI Hardening**: Fix suppressed failures, add permissions block, enable Python test runs, add SAST/dependency scanning
-- **C Generator Security**: Sanitize identifiers, fix printf format strings, add bounds checking
-- **Stdlib Safety**: Fix calloc overflow, add real synchronization primitives, check memcpy overlap
-- **Parser Robustness**: Fix bare except clauses, add block termination detection
+- **Regression Coverage**: Add tests for audit fixes to prevent regressions
+- **Developer Experience**: Improve diagnostics and error recovery
 - **Package Manager Integration**

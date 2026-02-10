@@ -1,0 +1,78 @@
+# Audio Bus Graph Test
+
+import "stdlib/audio.flow"
+import "stdlib/audio/graph_bus.flow"
+
+function test_bus_mix() -> bool {
+    let rate: SampleRate = sample_rate_48000()
+    let b0: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(4, 2, layout_interleaved()), enabled: true }
+    let b1: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(4, 2, layout_interleaved()), enabled: true }
+    let b2: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(4, 2, layout_interleaved()), enabled: true }
+    let b3: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(4, 2, layout_interleaved()), enabled: true }
+    let b4: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(4, 2, layout_interleaved()), enabled: true }
+    let b5: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(4, 2, layout_interleaved()), enabled: true }
+    let b6: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(4, 2, layout_interleaved()), enabled: true }
+    let b7: AudioBus = AudioBus { buffer: audio_buffer_alloc_f32(4, 2, layout_interleaved()), enabled: true }
+    let buses: array<AudioBus, 8> = [b0,b1,b2,b3,b4,b5,b6,b7]
+    let nodes: array<BusNode, 64> = [
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+        bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default()
+    ]
+    let scratch: AudioBufferF32 = audio_buffer_alloc_f32(4, 2, layout_interleaved())
+    let g: BusGraph = bus_graph_init(rate, buses, nodes, scratch)
+
+    # Put signal on bus0
+    let buf0: AudioBufferF32 = g.buses[0].buffer
+    let i: i32 = 0
+    while i < 4 {
+        audio_buffer_set_f32(buf0, i, 0, 1.0)
+        audio_buffer_set_f32(buf0, i, 1, 1.0)
+        i = i + 1
+    }
+
+    let g1: BusGraph = bus_graph_add_gain(g, 0, 1, -6.0)
+    let g2: BusGraph = bus_graph_add_gain(g1, 0, 1, -6.0)
+
+    bus_graph_clear_buses(g2)
+    # Restore bus0 input
+    let j: i32 = 0
+    while j < 4 {
+        audio_buffer_set_f32(g2.buses[0].buffer, j, 0, 1.0)
+        audio_buffer_set_f32(g2.buses[0].buffer, j, 1, 1.0)
+        j = j + 1
+    }
+    let g3: BusGraph = bus_graph_process(g2, 4)
+
+    let out: f32 = audio_buffer_get_f32(g3.buses[1].buffer, 0, 0)
+    bus_graph_free(g3)
+    if out < 0.7 { return false }
+    if out > 1.1 { return false }
+    return true
+}
+
+function main() -> i32 {
+    let passed: i32 = 0
+    let failed: i32 = 0
+    printf("=== Audio Bus Graph Tests ===\n\n")
+
+    if test_bus_mix() { printf("✓ bus_mix\n"); passed = passed + 1 }
+    else { printf("✗ bus_mix\n"); failed = failed + 1 }
+
+    printf("\nPassed: %d\n", passed)
+    printf("Failed: %d\n", failed)
+    if failed > 0 { return 1 }
+    return 0
+}

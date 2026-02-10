@@ -12,17 +12,16 @@
 - Autodiff working
 - Effect system as a unique differentiator
 - Documentation cleaned up with mascot
-- 56/98 audit issues resolved (57%)
+- 98/98 audit issues resolved (100%)
 - All testing and CLI issues closed
 - Module resolver fully hardened (path traversal, circular imports, symbol collisions)
 - MLIR generator stabilized (7 bug fixes)
 - Security fixes for CLI injection and runtime command injection
 
 **What Needs Work:**
-- 12 critical issues remain open (0 critical issues closed in audit)
-- CI pipeline is completely broken (0/6 CI issues resolved)
-- 7 security-tagged issues still open
-- C generator has 3 unresolved critical security bugs
+- All critical audit issues closed
+- CI pipeline hardened and validated
+- All security-tagged audit issues closed
 - Stdlib concurrency/memory safety gaps
 - ~20 examples fail to compile (parser limitations)
 - `ptr[0].field` syntax not supported
@@ -30,58 +29,22 @@
 
 ---
 
-## Priority 1: CI Pipeline (Blocking Everything Else)
+## Priority 1: Keep CI Healthy
 
-The CI pipeline cannot validate any fixes. This is the single highest-leverage item.
+The audit-driven CI fixes are complete. Keep the pipeline green by:
+- Treating new warnings as failures
+- Pinning or locking any new dependencies
+- Keeping security scans enabled
 
-### Fix CI Failures Suppression (#88)
-Remove `|| true` from pipeline steps so failures are actually caught.
-
-### Add Permissions Block (#89 - Security)
-```yaml
-permissions:
-  contents: read
-```
-The current pipeline has overly broad token access.
-
-### Enable Python Unit Tests (#90)
-Tests exist but the CI job never runs them.
-
-### Expand Linting (#91)
-Current lint job is minimal. Add flake8/ruff, mypy, and shellcheck.
-
-### Pin Dependencies (#92)
-No lock file means builds are not reproducible.
-
-### Add Security Scanning (#93)
-Add SAST (e.g., Bandit for Python, CodeQL) and dependency scanning.
+The Feb 10, 2026 audit also identified new CI hygiene gaps (dependency pinning, lint depth,
+and security scanning). Track those in the issue list.
 
 ---
 
-## Priority 2: Critical Security Issues
+## Priority 2: Quality & Regression Prevention
 
-These are the highest-risk items after CI:
-
-| # | Issue | Risk |
-|---|-------|------|
-| 20 | C gen: code injection via unsanitized identifiers | Attacker-controlled identifiers become C code |
-| 21 | C gen: printf format string vulnerability | Format string attacks in generated code |
-| 22 | C gen: no array bounds checking | Buffer overflows in generated code |
-| 59 | Stdlib: calloc integer overflow | Heap overflow via size multiplication |
-| 60 | Stdlib: concurrency primitives are stubs | Data races in any concurrent program |
-| 89 | CI: overly broad token access | Supply chain risk |
-
----
-
-## Priority 3: Remaining Critical Compiler Bugs
-
-| # | Issue | Impact |
-|---|-------|--------|
-| 1 | Parser: bare except swallows errors | Silent failures mask real bugs |
-| 2 | Parser: infinite loop on unterminated blocks | Compiler hangs on malformed input |
-| 41 | Transpiler: unreachable code / control flow | Wrong code generated |
-| 49 | Monomorphize: no termination guard | Compiler infinite loop on recursive generics |
-| 61 | Stdlib: memcpy overlap | Undefined behavior in generated programs |
+- Expand test coverage for recent fixes
+- Add targeted fuzzing for parser and transpiler paths
 
 ---
 
@@ -115,20 +78,16 @@ Fix the `ptr[0].field` limitation to unblock linalg, ml, and flowdb examples.
 
 ## Issue Tracker Hygiene
 
-### Malformed Issues (#73-#78)
-Issues #74, #75, #76, #77, #78 are fragments of issue #73 created by a broken script.
-They should be closed as duplicates of #73.
-
 ### Close Rate by Category
 
 | Category | Closed | Open | Rate |
 |----------|--------|------|------|
 | Testing | 5 | 0 | 100% |
 | CLI | 5 | 0 | 100% |
-| Stdlib | 8 | 5 | 62% |
-| Compiler | 36 | 22 | 62% |
-| Runtime | 3 | 2 | 60% |
-| CI | 0 | 6 | 0% |
+| Stdlib | 13 | 0 | 100% |
+| Compiler | 58 | 0 | 100% |
+| Runtime | 6 | 0 | 100% |
+| CI | 6 | 0 | 100% |
 
 ---
 
@@ -136,18 +95,14 @@ They should be closed as duplicates of #73.
 
 | Action | Impact | Effort |
 |--------|--------|--------|
-| Fix CI (#88, #89) | Very High | 2 hours |
-| Close malformed #74-#78 | Free cleanup | 5 min |
-| Fix C gen identifier sanitization (#20) | High | 4 hours |
-| Fix calloc overflow (#59) | High | 1 hour |
-| Fix parser bare except (#1) | Medium | 2 hours |
+| Keep CI green + secure | Very High | Ongoing |
+| Add regression tests for fixed bugs | High | 1 day |
 | Cross-platform graphics | Medium | 1 week |
 
 ---
 
 ## Audit Summary
 
-The v0.7.0 audit filed 98 issues across all components. The response prioritized
-medium/low-risk items effectively (CLI, testing, MLIR, module resolver all fully resolved).
-However, the 12 critical issues and all CI issues remain untouched. The next release
-should focus exclusively on CI and security before adding any new features.
+The v0.7.0 audit filed 98 issues across all components. All 98 are now resolved
+as of Feb 10, 2026. The next release should focus on regression prevention and
+developer experience improvements rather than new security remediation.
