@@ -1,0 +1,369 @@
+# Audio Effects Module - Common Effects Processors
+#
+# Ready-to-use effects: reverb, delay, distortion, chorus, etc.
+# Easier than any plugin or effect library!
+#
+# Usage:
+#   import "stdlib/audio/effects.flow"
+#
+#   let delay: Delay = delay_quarter_note(clock)
+#   let wet: f32 = delay_process(delay, dry_signal)
+
+import "stdlib/audio.flow"
+import "stdlib/audio/delay_line.flow"
+import "stdlib/audio/clock.flow"
+
+# =============================================================================
+# Delay Effect
+# =============================================================================
+
+export struct Delay {
+    buffer: DelayLine
+    time_samples: i32     # Delay time in samples
+    feedback: f32         # Feedback amount (0.0 to 1.0)
+    mix: f32             # Dry/wet mix (0.0 = dry, 1.0 = wet)
+}
+
+# Create a delay with time in samples
+export function delay_new(time_samples: i32, feedback: f32, mix: f32) -> Delay {
+    return Delay {
+        buffer: delay_line_new(time_samples),
+        time_samples: time_samples,
+        feedback: feedback,
+        mix: mix
+    }
+}
+
+# Create a delay synced to clock (quarter note)
+export function delay_quarter_note(clock: Clock) -> Delay {
+    let time: i32 = samples_per_quarter(clock)
+    return delay_new(time, 0.5, 0.3)
+}
+
+# Create a delay synced to clock (eighth note)
+export function delay_eighth_note(clock: Clock) -> Delay {
+    let time: i32 = samples_per_eighth(clock)
+    return delay_new(time, 0.6, 0.25)
+}
+
+# Create a delay synced to clock (dotted eighth - classic dub delay)
+export function delay_dotted_eighth(clock: Clock) -> Delay {
+    let time: i32 = samples_per_eighth(clock) * 1.5
+    return delay_new(time, 0.65, 0.4)
+}
+
+# Process one sample through delay
+export function delay_process(delay: Delay, input: f32) -> f32 {
+    # Read delayed sample
+    let delayed: f32 = delay_line_read(delay.buffer, delay.time_samples)
+
+    # Write input + feedback to delay line
+    let feedback_signal: f32 = input + delayed * delay.feedback
+    let new_buffer: DelayLine = delay_line_write(delay.buffer, feedback_signal)
+
+    # Mix dry and wet
+    let output: f32 = input * (1.0 - delay.mix) + delayed * delay.mix
+
+    return output
+}
+
+# =============================================================================
+# Distortion / Saturation
+# =============================================================================
+
+export struct Distortion {
+    drive: f32        # Input gain (1.0 to 10.0+)
+    tone: f32         # Tone control (0.0 = dark, 1.0 = bright)
+    mix: f32          # Dry/wet mix
+}
+
+export function distortion_new(drive: f32, tone: f32, mix: f32) -> Distortion {
+    return Distortion {
+        drive: drive,
+        tone: tone,
+        mix: mix
+    }
+}
+
+# Presets
+export function distortion_light() -> Distortion {
+    return distortion_new(2.0, 0.6, 0.5)
+}
+
+export function distortion_medium() -> Distortion {
+    return distortion_new(4.0, 0.5, 0.7)
+}
+
+export function distortion_heavy() -> Distortion {
+    return distortion_new(8.0, 0.4, 0.9)
+}
+
+export function distortion_fuzz() -> Distortion {
+    return distortion_new(15.0, 0.3, 1.0)
+}
+
+# Process one sample
+export function distortion_process(dist: Distortion, input: f32) -> f32 {
+    # Apply drive
+    let driven: f32 = input * dist.drive
+
+    # Soft clipping (tanh-like)
+    let clipped: f32 = soft_clip(driven)
+
+    # Simple tone control (low-pass simulation)
+    # In reality, would use a filter
+    let toned: f32 = clipped * dist.tone + clipped * 0.5 * (1.0 - dist.tone)
+
+    # Mix
+    let output: f32 = input * (1.0 - dist.mix) + toned * dist.mix
+
+    return output
+}
+
+# =============================================================================
+# Chorus Effect
+# =============================================================================
+
+export struct Chorus {
+    delay: DelayLine
+    rate: f32          # LFO rate in Hz
+    depth: f32         # Modulation depth in samples
+    mix: f32
+    phase: f32         # LFO phase
+}
+
+export function chorus_new(rate: f32, depth: f32, mix: f32) -> Chorus {
+    return Chorus {
+        delay: delay_line_new(1000),  # Max delay ~22ms at 44.1kHz
+        rate: rate,
+        depth: depth,
+        mix: mix,
+        phase: 0.0
+    }
+}
+
+# Presets
+export function chorus_subtle() -> Chorus {
+    return chorus_new(0.5, 100.0, 0.3)
+}
+
+export function chorus_medium() -> Chorus {
+    return chorus_new(1.0, 200.0, 0.5)
+}
+
+export function chorus_wide() -> Chorus {
+    return chorus_new(2.0, 400.0, 0.7)
+}
+
+# Process one sample (simplified - would need LFO from oscillators)
+export function chorus_process(chorus: Chorus, input: f32) -> f32 {
+    # Simple sine LFO for modulation
+    let lfo: f32 = sine_approx(chorus.phase)
+    let delay_time: i32 = 500 + lfo * chorus.depth  # Modulated delay time
+
+    # Read from delay line
+    let delayed: f32 = delay_line_read(chorus.delay, delay_time)
+
+    # Write input
+    let new_buffer: DelayLine = delay_line_write(chorus.delay, input)
+
+    # Mix
+    let output: f32 = input * (1.0 - chorus.mix) + delayed * chorus.mix
+
+    return output
+}
+
+# Simple sine approximation for LFO
+function sine_approx(phase: f32) -> f32 {
+    # Use phase-based approximation
+    if phase < 0.5 {
+        return 4.0 * phase * (1.0 - phase)  # Parabola approximation
+    } else {
+        let p: f32 = phase - 0.5
+        return -4.0 * p * (1.0 - p)
+    }
+}
+
+# =============================================================================
+# Compressor / Limiter
+# =============================================================================
+
+export struct Compressor {
+    threshold: f32     # Threshold in linear amplitude (0.0 to 1.0)
+    ratio: f32         # Compression ratio (1.0 = no compression, 10.0 = limiting)
+    attack: f32        # Attack time in samples
+    release: f32       # Release time in samples
+    gain_reduction: f32  # Current gain reduction
+}
+
+export function compressor_new(threshold: f32, ratio: f32, attack: f32, release: f32) -> Compressor {
+    return Compressor {
+        threshold: threshold,
+        ratio: ratio,
+        attack: attack,
+        release: release,
+        gain_reduction: 1.0
+    }
+}
+
+# Presets
+export function compressor_gentle() -> Compressor {
+    return compressor_new(0.7, 2.0, 100.0, 1000.0)
+}
+
+export function compressor_medium() -> Compressor {
+    return compressor_new(0.5, 4.0, 50.0, 500.0)
+}
+
+export function compressor_hard() -> Compressor {
+    return compressor_new(0.3, 8.0, 10.0, 200.0)
+}
+
+export function limiter() -> Compressor {
+    return compressor_new(0.9, 20.0, 1.0, 100.0)
+}
+
+# Process one sample (simplified envelope follower)
+export function compressor_process(comp: Compressor, input: f32) -> f32 {
+    # Get absolute value
+    let mut level: f32 = input
+    if level < 0.0 {
+        level = -level
+    }
+
+    # Calculate target gain reduction
+    let mut target_gain: f32 = 1.0
+    if level > comp.threshold {
+        let over: f32 = level - comp.threshold
+        let compressed: f32 = over / comp.ratio
+        target_gain = (comp.threshold + compressed) / level
+    }
+
+    # Smooth gain reduction (attack/release)
+    let mut new_gain: f32 = comp.gain_reduction
+    if target_gain < new_gain {
+        # Attack
+        new_gain = new_gain - (new_gain - target_gain) / comp.attack
+    } else {
+        # Release
+        new_gain = new_gain + (target_gain - new_gain) / comp.release
+    }
+
+    # Apply gain reduction
+    let output: f32 = input * new_gain
+
+    return output
+}
+
+# =============================================================================
+# Bitcrusher / Lo-Fi Effect
+# =============================================================================
+
+export struct Bitcrusher {
+    bits: i32          # Bit depth (1 to 16)
+    sample_rate_div: i32  # Sample rate divider
+    counter: i32       # Internal counter
+    held_sample: f32   # Sample & hold value
+}
+
+export function bitcrusher_new(bits: i32, sample_rate_div: i32) -> Bitcrusher {
+    return Bitcrusher {
+        bits: bits,
+        sample_rate_div: sample_rate_div,
+        counter: 0,
+        held_sample: 0.0
+    }
+}
+
+# Presets
+export function bitcrusher_lofi() -> Bitcrusher {
+    return bitcrusher_new(8, 4)   # 8-bit, 1/4 sample rate
+}
+
+export function bitcrusher_telephone() -> Bitcrusher {
+    return bitcrusher_new(6, 8)   # 6-bit, 1/8 sample rate
+}
+
+export function bitcrusher_crushed() -> Bitcrusher {
+    return bitcrusher_new(4, 16)  # 4-bit, 1/16 sample rate
+}
+
+# Process one sample
+export function bitcrusher_process(crusher: Bitcrusher, input: f32) -> f32 {
+    # Sample rate reduction (sample & hold)
+    let mut output: f32 = crusher.held_sample
+    let mut new_counter: i32 = crusher.counter + 1
+
+    if new_counter >= crusher.sample_rate_div {
+        new_counter = 0
+        output = input
+
+        # Bit depth reduction
+        let levels: f32 = 2.0 ^ crusher.bits
+        let quantized: f32 = (input * levels) / levels
+        output = quantized
+    }
+
+    return output
+}
+
+# =============================================================================
+# Reverb (Simple Freeverb-style)
+# =============================================================================
+
+export struct Reverb {
+    room_size: f32     # Room size (0.0 to 1.0)
+    damping: f32       # High frequency damping (0.0 to 1.0)
+    mix: f32           # Dry/wet mix
+    # TODO: Add comb filters and allpass filters
+}
+
+export function reverb_new(room_size: f32, damping: f32, mix: f32) -> Reverb {
+    return Reverb {
+        room_size: room_size,
+        damping: damping,
+        mix: mix
+    }
+}
+
+# Presets
+export function reverb_small_room() -> Reverb {
+    return reverb_new(0.3, 0.5, 0.2)
+}
+
+export function reverb_medium_hall() -> Reverb {
+    return reverb_new(0.6, 0.4, 0.3)
+}
+
+export function reverb_large_hall() -> Reverb {
+    return reverb_new(0.85, 0.3, 0.4)
+}
+
+export function reverb_plate() -> Reverb {
+    return reverb_new(0.7, 0.6, 0.35)
+}
+
+# Process one sample (simplified - full reverb needs comb filters)
+export function reverb_process(rev: Reverb, input: f32) -> f32 {
+    # Placeholder - real reverb is complex
+    # For now, just mix dry signal
+    return input * (1.0 - rev.mix) + input * 0.3 * rev.mix
+}
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+# Chain effects together
+export function fx_chain_2(input: f32, fx1_process: function(f32) -> f32, fx2_process: function(f32) -> f32) -> f32 {
+    let stage1: f32 = fx1_process(input)
+    let stage2: f32 = fx2_process(stage1)
+    return stage2
+}
+
+# Parallel effects (sum outputs)
+export function fx_parallel_2(input: f32, fx1_process: function(f32) -> f32, fx2_process: function(f32) -> f32) -> f32 {
+    let out1: f32 = fx1_process(input)
+    let out2: f32 = fx2_process(input)
+    return (out1 + out2) * 0.5
+}
