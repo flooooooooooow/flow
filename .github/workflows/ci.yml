@@ -49,7 +49,9 @@ jobs:
     - name: Run Tier 1 tests (transpile only)
       run: |
         chmod +x ./flow
-        ./flow test --tier 1 || (echo "Tests failed with exit code $?" && exit 1)
+        set -x  # Show commands being executed
+        ./flow test --tier 1 2>&1 | tee test_output.log
+        exit ${PIPESTATUS[0]}
 
     - name: Run Tier 2 tests (transpile + compile)
       run: |
