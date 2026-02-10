@@ -1,0 +1,242 @@
+# Audio Graph Scheduler
+#
+# Fixed-size node graph with per-node state and block processing.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/filters.flow"
+import "stdlib/audio/delay_line.flow"
+import "stdlib/audio/simd.flow"
+
+export const AUDIO_NODE_NONE: i32 = 0
+export const AUDIO_NODE_GAIN: i32 = 1
+export const AUDIO_NODE_LOWPASS: i32 = 2
+export const AUDIO_NODE_DELAY: i32 = 3
+export const AUDIO_NODE_PAN: i32 = 4
+
+export struct AudioNode {
+    kind: i32
+    enabled: bool
+    gain_db: f32
+    pan: f32
+    cutoff: f32
+    q: f32
+    delay_ms: f32
+    feedback: f32
+    mix: f32
+    lp_l: Biquad
+    lp_r: Biquad
+    dl_l: DelayLineF32
+    dl_r: DelayLineF32
+}
+
+export struct AudioGraph {
+    rate: SampleRate
+    count: i32
+    nodes: array<AudioNode, 32>
+    node_type: AudioNode
+}
+
+export function audio_node_default() -> AudioNode {
+    return AudioNode {
+        kind: AUDIO_NODE_NONE,
+        enabled: false,
+        gain_db: 0.0,
+        pan: 0.0,
+        cutoff: 10000.0,
+        q: 0.707,
+        delay_ms: 250.0,
+        feedback: 0.0,
+        mix: 0.0,
+        lp_l: biquad_bypass(),
+        lp_r: biquad_bypass(),
+        dl_l: delay_line_empty(),
+        dl_r: delay_line_empty()
+    }
+}
+
+export function audio_graph_init(rate: SampleRate, nodes: array<AudioNode, 32>) -> AudioGraph {
+    # nodes must outlive the graph (stored by reference).
+    return AudioGraph { rate: rate, count: 0, nodes: nodes, node_type: audio_node_default() }
+}
+
+export function audio_graph_add_gain(g: AudioGraph, gain_db: f32) -> AudioGraph {
+    let idx: i32 = g.count
+    if idx >= 32 { return g }
+    let n: AudioNode = AudioNode {
+        kind: AUDIO_NODE_GAIN,
+        enabled: true,
+        gain_db: gain_db,
+        pan: 0.0,
+        cutoff: 10000.0,
+        q: 0.707,
+        delay_ms: 250.0,
+        feedback: 0.0,
+        mix: 0.0,
+        lp_l: biquad_bypass(),
+        lp_r: biquad_bypass(),
+        dl_l: delay_line_empty(),
+        dl_r: delay_line_empty()
+    }
+    g.nodes[idx] = n
+    g.count = idx + 1
+    return g
+}
+
+export function audio_graph_add_lowpass(g: AudioGraph, cutoff: f32, q: f32) -> AudioGraph {
+    let idx: i32 = g.count
+    if idx >= 32 { return g }
+    let lp: Biquad = biquad_lowpass(cutoff, q, g.rate)
+    let n: AudioNode = AudioNode {
+        kind: AUDIO_NODE_LOWPASS,
+        enabled: true,
+        gain_db: 0.0,
+        pan: 0.0,
+        cutoff: cutoff,
+        q: q,
+        delay_ms: 250.0,
+        feedback: 0.0,
+        mix: 0.0,
+        lp_l: lp,
+        lp_r: lp,
+        dl_l: delay_line_empty(),
+        dl_r: delay_line_empty()
+    }
+    g.nodes[idx] = n
+    g.count = idx + 1
+    return g
+}
+
+export function audio_graph_add_delay(g: AudioGraph, delay_ms: f32, feedback: f32, mix: f32) -> AudioGraph {
+    let idx: i32 = g.count
+    if idx >= 32 { return g }
+    let dl: DelayLineF32 = delay_line_new(delay_ms, g.rate)
+    let dl2: DelayLineF32 = delay_line_set_feedback(dl, feedback)
+    let dl3: DelayLineF32 = delay_line_set_mix(dl2, mix)
+    let n: AudioNode = AudioNode {
+        kind: AUDIO_NODE_DELAY,
+        enabled: true,
+        gain_db: 0.0,
+        pan: 0.0,
+        cutoff: 10000.0,
+        q: 0.707,
+        delay_ms: delay_ms,
+        feedback: feedback,
+        mix: mix,
+        lp_l: biquad_bypass(),
+        lp_r: biquad_bypass(),
+        dl_l: dl3,
+        dl_r: dl3
+    }
+    g.nodes[idx] = n
+    g.count = idx + 1
+    return g
+}
+
+export function audio_graph_add_pan(g: AudioGraph, pan: f32) -> AudioGraph {
+    let idx: i32 = g.count
+    if idx >= 32 { return g }
+    let n: AudioNode = AudioNode {
+        kind: AUDIO_NODE_PAN,
+        enabled: true,
+        gain_db: 0.0,
+        pan: pan,
+        cutoff: 10000.0,
+        q: 0.707,
+        delay_ms: 250.0,
+        feedback: 0.0,
+        mix: 0.0,
+        lp_l: biquad_bypass(),
+        lp_r: biquad_bypass(),
+        dl_l: delay_line_empty(),
+        dl_r: delay_line_empty()
+    }
+    g.nodes[idx] = n
+    g.count = idx + 1
+    return g
+}
+
+export function audio_graph_process_interleaved(g: AudioGraph, buf: AudioBufferF32, frames: i32) -> AudioGraph {
+    let graph: AudioGraph = g
+    let count: i32 = graph.count
+    let i: i32 = 0
+    while i < count {
+        let node: AudioNode = graph.nodes[i]
+        let mut lp_l: Biquad = node.lp_l
+        let mut lp_r: Biquad = node.lp_r
+        let mut dl_l: DelayLineF32 = node.dl_l
+        let mut dl_r: DelayLineF32 = node.dl_r
+        if node.enabled {
+            if node.kind == AUDIO_NODE_GAIN {
+                let gain: f32 = db_to_linear(node.gain_db)
+                audio_gain_interleaved_f32(buf.data, frames, buf.channels, gain)
+            } elif node.kind == AUDIO_NODE_LOWPASS {
+                let f: i32 = 0
+                while f < frames {
+                    let l: f32 = audio_buffer_get_f32(buf, f, 0)
+                    let mut r: f32 = l
+                    if buf.channels > 1 {
+                        r = audio_buffer_get_f32(buf, f, 1)
+                    }
+                    lp_l = biquad_tick(lp_l, l)
+                    lp_r = biquad_tick(lp_r, r)
+                    audio_buffer_set_f32(buf, f, 0, biquad_output(lp_l))
+                    if buf.channels > 1 {
+                        audio_buffer_set_f32(buf, f, 1, biquad_output(lp_r))
+                    }
+                    f = f + 1
+                }
+            } elif node.kind == AUDIO_NODE_DELAY {
+                let f: i32 = 0
+                while f < frames {
+                    let l: f32 = audio_buffer_get_f32(buf, f, 0)
+                    let mut r: f32 = l
+                    if buf.channels > 1 {
+                        r = audio_buffer_get_f32(buf, f, 1)
+                    }
+                    dl_l = delay_line_tick(dl_l, l)
+                    dl_r = delay_line_tick(dl_r, r)
+                    audio_buffer_set_f32(buf, f, 0, delay_line_output(dl_l))
+                    if buf.channels > 1 {
+                        audio_buffer_set_f32(buf, f, 1, delay_line_output(dl_r))
+                    }
+                    f = f + 1
+                }
+            } elif node.kind == AUDIO_NODE_PAN {
+                let f: i32 = 0
+                while f < frames {
+                    let l: f32 = audio_buffer_get_f32(buf, f, 0)
+                    let mut r: f32 = l
+                    if buf.channels > 1 {
+                        r = audio_buffer_get_f32(buf, f, 1)
+                    }
+                    let mono: f32 = (l + r) * 0.5
+                    let out: Frame = frame_pan(mono, node.pan)
+                    let out_l: f32 = out.left
+                    let out_r: f32 = out.right
+                    audio_buffer_set_f32(buf, f, 0, out_l)
+                    if buf.channels > 1 {
+                        audio_buffer_set_f32(buf, f, 1, out_r)
+                    }
+                    f = f + 1
+                }
+            }
+        }
+        graph.nodes[i] = AudioNode {
+            kind: node.kind,
+            enabled: node.enabled,
+            gain_db: node.gain_db,
+            pan: node.pan,
+            cutoff: node.cutoff,
+            q: node.q,
+            delay_ms: node.delay_ms,
+            feedback: node.feedback,
+            mix: node.mix,
+            lp_l: lp_l,
+            lp_r: lp_r,
+            dl_l: dl_l,
+            dl_r: dl_r
+        }
+        i = i + 1
+    }
+    return graph
+}

@@ -1,0 +1,31 @@
+# Audio Control Utilities
+#
+# Control-rate smoothing and parameter utilities.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/filters.flow"
+
+export struct ParamSmoother {
+    value: f32
+    target: f32
+    filter: OnePole
+}
+
+export function param_smoother_new(initial: f32, time_ms: f32, rate: SampleRate) -> ParamSmoother {
+    let f: OnePole = onepole_smooth(time_ms, rate)
+    return ParamSmoother { value: initial, target: initial, filter: f }
+}
+
+export function param_smoother_set_target(p: ParamSmoother, target: f32) -> ParamSmoother {
+    return ParamSmoother { value: p.value, target: target, filter: p.filter }
+}
+
+export function param_smoother_tick(p: ParamSmoother) -> ParamSmoother {
+    let f: OnePole = onepole_tick(p.filter, p.target)
+    let v: f32 = onepole_output(f)
+    return ParamSmoother { value: v, target: p.target, filter: f }
+}
+
+export function param_smoother_value(p: ParamSmoother) -> f32 {
+    return p.value
+}

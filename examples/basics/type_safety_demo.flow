@@ -1,0 +1,44 @@
+# Advanced Type Safety with Type Aliases and Distinct Types
+# Demonstrates Odin-style type safety in FLOW
+
+# Type aliases - transparent, compatible with base type
+type Temperature = f32
+type Distance = f32
+
+# Distinct types - opaque, incompatible with base type and each other
+distinct type Celsius = f32
+distinct type Fahrenheit = f32
+distinct type Kelvin = f32
+
+# Main demo
+function main() -> i32 {
+    println("=== Type Safety Demo ===")
+    println("")
+
+    # Type aliases are transparent
+    println("Type Aliases (transparent):")
+    let temp1: Temperature = 25.5
+    let temp2: f32 = 30.0
+    let sum: f32 = temp1 + temp2  # Can mix freely!
+    println("Temperature operations work seamlessly")
+    println("")
+
+    # Distinct types are opaque - full type safety!
+    println("Distinct Types (opaque):")
+    println("Celsius, Fahrenheit, and Kelvin are all f32-based")
+    println("But they are incompatible with each other!")
+    println("This prevents unit confusion bugs at compile time")
+    println("")
+
+    # Type safety prevents errors at compile time:
+    # let mixed: Celsius = body_temp  # ERROR! Fahrenheit != Celsius
+    # let wrong: Kelvin = room_temp  # ERROR! Celsius != Kelvin
+    # let bad: Celsius = 100.0  # ERROR! f32 != Celsius (need explicit conversion)
+
+    println("Type aliases: transparent (like C typedef)")
+    println("Distinct types: opaque (like Odin distinct)")
+    println("")
+    println("✓ Type safety enforced at compile time!")
+
+    return 0
+}

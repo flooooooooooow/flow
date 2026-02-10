@@ -9,9 +9,16 @@
 #   let buf: Buffer = buffer_create(256, 2)
 #
 # Abstraction levels:
-#   - Low-level: Buffer, Frame, SampleRate, Samples, Seconds
+#   - Low-level: Buffer, Frame, SampleRate, Samples, Seconds, AudioBufferF32
 #   - Mid-level: See audio/oscillators.flow, audio/filters.flow, etc.
 #   - High-level: See Processor trait in audio/processor.flow
+
+# =============================================================================
+# Imports / externs
+# =============================================================================
+
+extern { function malloc(size: i32) -> ptr<f32> }
+extern { function free(ptr: ptr<f32>) -> void }
 
 # =============================================================================
 # Time and Rate Types
@@ -197,6 +204,111 @@ export function buffer_create(frames: i32, channels: i32) -> Buffer {
         channels: channels, 
         layout: layout_interleaved() 
     }
+}
+
+# =============================================================================
+# Audio Buffer (F32) - Low-Level Sample Storage
+# =============================================================================
+
+export struct AudioBufferF32 {
+    data: ptr<f32>
+    frames: i32
+    channels: i32
+    layout: Layout
+}
+
+export function audio_buffer_empty_f32() -> AudioBufferF32 {
+    return AudioBufferF32 { data: null, frames: 0, channels: 0, layout: layout_planar() }
+}
+
+export function audio_buffer_alloc_f32(frames: i32, channels: i32, layout: Layout) -> AudioBufferF32 {
+    let total: i32 = frames * channels
+    let bytes: i32 = total * 4
+    let raw: ptr<f32> = malloc(bytes)
+    if raw != null {
+        let i: i32 = 0
+        while i < total {
+            raw[i] = 0.0
+            i = i + 1
+        }
+    }
+    return AudioBufferF32 { data: raw, frames: frames, channels: channels, layout: layout }
+}
+
+export function audio_buffer_free_f32(buf: AudioBufferF32) -> void {
+    if buf.data != null {
+        free(buf.data)
+    }
+}
+
+export function audio_buffer_index(buf: AudioBufferF32, frame: i32, channel: i32) -> i32 {
+    if buf.layout.is_interleaved {
+        return frame * buf.channels + channel
+    }
+    return channel * buf.frames + frame
+}
+
+export function audio_buffer_get_f32(buf: AudioBufferF32, frame: i32, channel: i32) -> f32 {
+    let idx: i32 = audio_buffer_index(buf, frame, channel)
+    if idx < 0 or idx >= buf.frames * buf.channels {
+        return 0.0
+    }
+    return buf.data[idx]
+}
+
+export function audio_buffer_set_f32(buf: AudioBufferF32, frame: i32, channel: i32, value: f32) -> void {
+    let idx: i32 = audio_buffer_index(buf, frame, channel)
+    if idx < 0 or idx >= buf.frames * buf.channels {
+        return
+    }
+    buf.data[idx] = value
+}
+
+export function audio_buffer_zero_f32(buf: AudioBufferF32) -> void {
+    let total: i32 = buf.frames * buf.channels
+    if buf.data != null {
+        let i: i32 = 0
+        while i < total {
+            buf.data[i] = 0.0
+            i = i + 1
+        }
+    }
+}
+
+export function audio_buffer_copy_interleaved_f32(dst: AudioBufferF32, src: AudioBufferF32, frames: i32) -> void {
+    let count: i32 = frames
+    if count > dst.frames { count = dst.frames }
+    if count > src.frames { count = src.frames }
+    let channels: i32 = dst.channels
+    if channels != src.channels { return }
+    let total: i32 = count * channels
+    let i: i32 = 0
+    while i < total {
+        dst.data[i] = src.data[i]
+        i = i + 1
+    }
+}
+
+export function audio_buffer_add_interleaved_f32(dst: AudioBufferF32, src: AudioBufferF32, frames: i32) -> void {
+    let count: i32 = frames
+    if count > dst.frames { count = dst.frames }
+    if count > src.frames { count = src.frames }
+    let channels: i32 = dst.channels
+    if channels != src.channels { return }
+    let total: i32 = count * channels
+    let i: i32 = 0
+    while i < total {
+        dst.data[i] = dst.data[i] + src.data[i]
+        i = i + 1
+    }
+}
+
+export function audio_buffer_frame_count(buf: AudioBufferF32) -> i32 {
+    return buf.frames
+}
+
+export function audio_buffer_channel_count(buf: AudioBufferF32) -> i32 {
+    return buf.channels
 }
 
 # Create a stereo buffer (most common case)

@@ -1,0 +1,105 @@
+# Audio I/O Module (Real-Time)
+#
+# Cross-platform audio I/O facade. Backend implemented in runtime (C).
+# Design: pull/push via ring buffers so Flow never needs function pointers.
+#
+# Usage:
+#   import "stdlib/audio/io.flow"
+#   let cfg: AudioDeviceConfig = audio_device_config(48000, 2, 256, true, true)
+#   let dev: AudioDevice = audio_device_open(cfg)
+#   if audio_device_ok(dev) {
+#       audio_device_start(dev)
+#       # write/read with audio_write_f32 / audio_read_f32
+#   }
+
+import "stdlib/audio.flow"
+
+export const AUDIO_OK: i32 = 0
+export const AUDIO_ERR: i32 = -1
+
+export struct AudioDeviceConfig {
+    sample_rate: i32
+    channels: i32
+    frames_per_buffer: i32
+    enable_input: bool
+    enable_output: bool
+}
+
+export struct AudioDevice {
+    raw: ptr<void>
+}
+
+export function audio_device_config(sample_rate: i32, channels: i32, frames_per_buffer: i32,
+                                    enable_input: bool, enable_output: bool) -> AudioDeviceConfig {
+    return AudioDeviceConfig {
+        sample_rate: sample_rate,
+        channels: channels,
+        frames_per_buffer: frames_per_buffer,
+        enable_input: enable_input,
+        enable_output: enable_output
+    }
+}
+
+export function audio_device_ok(dev: AudioDevice) -> bool {
+    return dev.raw != null
+}
+
+extern { function flow_audio_open(config: ptr<AudioDeviceConfig>, out_dev: ptr<ptr<void> >) -> i32 }
+extern { function flow_audio_start(dev: ptr<void>) -> i32 }
+extern { function flow_audio_stop(dev: ptr<void>) -> i32 }
+extern { function flow_audio_close(dev: ptr<void>) -> void }
+extern { function flow_audio_read_f32(dev: ptr<void>, out: ptr<f32>, frames: i32) -> i32 }
+extern { function flow_audio_write_f32(dev: ptr<void>, input: ptr<f32>, frames: i32) -> i32 }
+extern { function flow_audio_available_read(dev: ptr<void>) -> i32 }
+extern { function flow_audio_available_write(dev: ptr<void>) -> i32 }
+extern { function flow_audio_last_error(dev: ptr<void>) -> string }
+
+export function audio_device_open(config: AudioDeviceConfig) -> AudioDevice {
+    let dev_ptr: ptr<void> = null
+    let code: i32 = flow_audio_open(&config, &dev_ptr)
+    if code != AUDIO_OK {
+        return AudioDevice { raw: null }
+    }
+    return AudioDevice { raw: dev_ptr }
+}
+
+export function audio_device_start(dev: AudioDevice) -> i32 {
+    if dev.raw == null { return AUDIO_ERR }
+    return flow_audio_start(dev.raw)
+}
+
+export function audio_device_stop(dev: AudioDevice) -> i32 {
+    if dev.raw == null { return AUDIO_ERR }
+    return flow_audio_stop(dev.raw)
+}
+
+export function audio_device_close(dev: AudioDevice) -> void {
+    if dev.raw == null { return }
+    flow_audio_close(dev.raw)
+}
+
+# Read interleaved f32 frames into out buffer. Returns frames read.
+export function audio_read_f32(dev: AudioDevice, out: ptr<f32>, frames: i32) -> i32 {
+    if dev.raw == null { return 0 }
+    return flow_audio_read_f32(dev.raw, out, frames)
+}
+
+# Write interleaved f32 frames from input buffer. Returns frames written.
+export function audio_write_f32(dev: AudioDevice, input: ptr<f32>, frames: i32) -> i32 {
+    if dev.raw == null { return 0 }
+    return flow_audio_write_f32(dev.raw, input, frames)
+}
+
+export function audio_available_read(dev: AudioDevice) -> i32 {
+    if dev.raw == null { return 0 }
+    return flow_audio_available_read(dev.raw)
+}
+
+export function audio_available_write(dev: AudioDevice) -> i32 {
+    if dev.raw == null { return 0 }
+    return flow_audio_available_write(dev.raw)
+}
+
+export function audio_last_error(dev: AudioDevice) -> string {
+    return flow_audio_last_error(dev.raw)
+}

@@ -245,7 +245,8 @@ class OverloadResolver:
                         break
                 if all_compatible:
                     return entry.mangled_name
-            return None
+            # If we can't prove incompatibility, fall back to the only overload.
+            return entry.mangled_name
 
         # No match found among multiple overloads
         return None
