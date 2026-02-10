@@ -1,0 +1,60 @@
+# Sine wave playback demo (output only, no microphone needed)
+#
+# Generates a 440 Hz sine tone at 0.3 amplitude for ~2 seconds.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/io.flow"
+import "stdlib/audio/oscillators.flow"
+
+extern { function usleep(usec: i32) -> i32 }
+
+function main() -> i32 {
+    let rate: SampleRate = sample_rate_48000()
+    let cfg: AudioDeviceConfig = audio_device_config(48000, 2, 256, false, true)
+    let dev: AudioDevice = audio_device_open(cfg)
+    if not audio_device_ok(dev) {
+        println(audio_last_error(dev))
+        return 1
+    }
+
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(256, 2, layout_interleaved())
+    let osc: Phasor = phasor_new(440.0, rate)
+    let amp: f32 = 0.3
+
+    if audio_device_start(dev) != AUDIO_OK {
+        println(audio_last_error(dev))
+        audio_device_close(dev)
+        audio_buffer_free_f32(buf)
+        return 1
+    }
+
+    printf("Playing 440 Hz sine wave for ~2 seconds...\n")
+
+    let i: i32 = 0
+    while i < 375 {
+        # Wait until the ring buffer has space
+        while audio_available_write(dev) < 256 {
+            usleep(1000)
+        }
+
+        let j: i32 = 0
+        while j < 256 {
+            let sample: f32 = sine(phasor_value(osc)) * amp
+            audio_buffer_set_f32(buf, j, 0, sample)
+            audio_buffer_set_f32(buf, j, 1, sample)
+            osc = phasor_tick(osc)
+            j = j + 1
+        }
+        audio_write_f32(dev, buf.data, 256)
+        i = i + 1
+    }
+
+    # Let the ring buffer drain before stopping
+    usleep(500000)
+
+    audio_device_stop(dev)
+    audio_device_close(dev)
+    audio_buffer_free_f32(buf)
+    printf("Done.\n")
+    return 0
+}

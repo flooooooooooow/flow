@@ -39,6 +39,7 @@ from .parser import (
     EnumDecl,
     EnumVariant,
     Expression,
+    CastExpression,
     FieldAccess,
     FunctionCall,
     FunctionDecl,
@@ -271,7 +272,7 @@ class CGenerator:
                 if struct_name in self._structs:
                     safe_struct_name = _c_ident(struct_name)
                     lines.append(f"typedef struct {{")
-                    for field_name, field_type in sorted(self._structs[struct_name].items()):
+                    for field_name, field_type in self._structs[struct_name].items():
                         lines.append(f"    {self._c_type(field_type)} {_c_ident(field_name)};")
                     lines.append(f"}} {safe_struct_name};")
                     lines.append("")
@@ -402,7 +403,7 @@ class CGenerator:
             
             # Now emit this struct
             lines.append(f"typedef struct {{")
-            for field_name, field_type in sorted(self._structs[name].items()):
+            for field_name, field_type in self._structs[name].items():
                 lines.append(f"    {self._c_type(field_type)} {_c_ident(field_name)};")
             lines.append(f"}} {safe_struct_name};")
             lines.append("")
@@ -1340,6 +1341,10 @@ class CGenerator:
 
         if isinstance(e, FieldAccess):
             return f"{self._gen_expr(e.object)}.{_c_ident(e.field)}"
+
+        if isinstance(e, CastExpression):
+            target_c = self._c_type(e.target_type)
+            return f"(({target_c})({self._gen_expr(e.expr)}))"
 
         if isinstance(e, UnaryOperation):
             op = e.operator
