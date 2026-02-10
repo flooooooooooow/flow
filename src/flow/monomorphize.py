@@ -33,7 +33,7 @@ from .parser import (
     VarDecl, ReturnStatement, Assignment, IfStatement, WhileStatement,
     ForStatement, BinaryOperation, UnaryOperation, FunctionCall,
     Literal, Variable, StructLiteral, ArrayLiteral, FieldAccess,
-    ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter
+    ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter, CastExpression
 )
 
 
@@ -279,6 +279,9 @@ class Monomorphizer:
         elif isinstance(expr, ArrayLiteral):
             for elem in expr.elements:
                 self._scan_expression(elem)
+        elif isinstance(expr, CastExpression):
+            self._scan_expression(expr.expr)
+            self._scan_type(expr.target_type)
     
     def _scan_type(self, t: Type, type_params: Set[str] = None) -> None:
         """Check if a type is a generic instantiation and register it."""
@@ -374,6 +377,8 @@ class Monomorphizer:
                 elem_type = self._expr_type(expr.elements[0])
                 if elem_type:
                     return Type(f"array_{elem_type.name}")
+        elif isinstance(expr, CastExpression):
+            return expr.target_type
         return None
     
     def _generate_specializations(self) -> None:
@@ -582,6 +587,10 @@ class Monomorphizer:
         elif isinstance(expr, ArrayLiteral):
             new_elems = [self._substitute_expression(e, type_map) for e in expr.elements]
             return ArrayLiteral(new_elems)
+        elif isinstance(expr, CastExpression):
+            new_expr = self._substitute_expression(expr.expr, type_map)
+            new_target = self._substitute_type(expr.target_type, type_map)
+            return CastExpression(new_expr, new_target)
         return expr
     
     def _rewrite_declarations(self, declarations: List[Any]) -> List[Any]:
@@ -749,6 +758,9 @@ class Monomorphizer:
         elif isinstance(expr, ArrayLiteral):
             new_elems = [self._rewrite_expression(e) for e in expr.elements]
             return ArrayLiteral(new_elems)
+        elif isinstance(expr, CastExpression):
+            new_expr = self._rewrite_expression(expr.expr)
+            return CastExpression(new_expr, expr.target_type)
         return expr
 
 

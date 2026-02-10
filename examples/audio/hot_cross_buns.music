@@ -1,0 +1,23 @@
+# Hot Cross Buns - FLOW Music Notation
+# Traditional English nursery rhyme
+#
+# Format: <Note><Octave>/<Duration>
+# Duration in sixteenth notes: 2=eighth, 4=quarter, 8=half, 16=whole
+
+# First phrase: "Hot cross buns"
+E4/4 D4/4 C4/8
+
+# Second phrase: "Hot cross buns"
+E4/4 D4/4 C4/8
+
+# Third phrase: "One a penny"
+C4/2 C4/2 C4/2 C4/2
+
+# Fourth phrase: "Two a penny"
+D4/2 D4/2 D4/2 D4/2
+
+# Final phrase: "Hot cross buns"
+E4/4 D4/4 C4/8
+
+# Tempo: 100 BPM
+# Total: 17 notes
