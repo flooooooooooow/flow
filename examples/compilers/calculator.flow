@@ -30,7 +30,7 @@ const TOK_ERROR: i32 = 9
 # ============================================================================
 
 struct Token {
-    type: i32,
+    kind: i32,
     value: f64
 }
 
@@ -155,7 +155,7 @@ function parser_advance(p: ptr<Parser>) {
 }
 
 function parser_expect(p: ptr<Parser>, type: i32) -> i32 {
-    if p[0].current.type == type {
+    if p[0].current.kind == type {
         parser_advance(p)
         return 1
     }
@@ -170,18 +170,18 @@ function parse_factor(p: ptr<Parser>) -> f64
 
 # factor = NUMBER | '(' expression ')' | '-' factor
 function parse_factor(p: ptr<Parser>) -> f64 {
-    if p[0].current.type == TOK_NUMBER {
+    if p[0].current.kind == TOK_NUMBER {
         let val: f64 = p[0].current.value
         parser_advance(p)
         return val
     }
     
-    if p[0].current.type == TOK_MINUS {
+    if p[0].current.kind == TOK_MINUS {
         parser_advance(p)
         return 0.0 - parse_factor(p)
     }
     
-    if p[0].current.type == TOK_LPAREN {
+    if p[0].current.kind == TOK_LPAREN {
         parser_advance(p)
         let val: f64 = parse_expression(p)
         parser_expect(p, TOK_RPAREN)
@@ -196,8 +196,8 @@ function parse_factor(p: ptr<Parser>) -> f64 {
 function parse_term(p: ptr<Parser>) -> f64 {
     let mut left: f64 = parse_factor(p)
     
-    while p[0].current.type == TOK_STAR or p[0].current.type == TOK_SLASH {
-        let op: i32 = p[0].current.type
+    while p[0].current.kind == TOK_STAR or p[0].current.kind == TOK_SLASH {
+        let op: i32 = p[0].current.kind
         parser_advance(p)
         let right: f64 = parse_factor(p)
         
@@ -219,8 +219,8 @@ function parse_term(p: ptr<Parser>) -> f64 {
 function parse_expression(p: ptr<Parser>) -> f64 {
     let mut left: f64 = parse_term(p)
     
-    while p[0].current.type == TOK_PLUS or p[0].current.type == TOK_MINUS {
-        let op: i32 = p[0].current.type
+    while p[0].current.kind == TOK_PLUS or p[0].current.kind == TOK_MINUS {
+        let op: i32 = p[0].current.kind
         parser_advance(p)
         let right: f64 = parse_term(p)
         
