@@ -108,6 +108,8 @@ class TokenType(Enum):
     TRAIT = "TRAIT"
     IMPL = "IMPL"
     SELF = "SELF"
+    TYPE = "TYPE"
+    DISTINCT = "DISTINCT"
     UI_LAYOUT = "UI_LAYOUT"
     UI_ROW = "UI_ROW"
     UI_COLUMN = "UI_COLUMN"
@@ -517,6 +519,27 @@ class TestDecl:
     body: Block
 
 
+@dataclass
+class TypeAliasDecl:
+    """Type alias declaration: type Name = BaseType
+    Type aliases are transparent - they're just alternate names for existing types.
+    """
+    name: str
+    base_type: Type
+    is_exported: bool = False
+
+
+@dataclass
+class DistinctTypeDecl:
+    """Distinct type declaration: distinct type Name = BaseType
+    Distinct types are opaque - they're incompatible with their base type and each other.
+    Similar to Odin's distinct types or Ada's derived types.
+    """
+    name: str
+    base_type: Type
+    is_exported: bool = False
+
+
 Expression = Union[
     Literal,
     Variable,
@@ -581,6 +604,8 @@ class Lexer:
             "trait": TokenType.TRAIT,
             "impl": TokenType.IMPL,
             "self": TokenType.SELF,
+            "type": TokenType.TYPE,
+            "distinct": TokenType.DISTINCT,
             "enum": TokenType.ENUM,
             "with": TokenType.WITH,
             "handle": TokenType.HANDLE,
@@ -828,7 +853,8 @@ class Parser:
         self,
     ) -> List[
         Union[
-            FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ImportDecl, ConstDecl
+            FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ImportDecl, ConstDecl,
+            TypeAliasDecl, DistinctTypeDecl
         ]
     ]:
         declarations = []
@@ -896,6 +922,14 @@ class Parser:
                 declarations.append(decl)
             elif self.current_token.type == TokenType.IMPL:
                 decl = self.parse_impl()
+                declarations.append(decl)
+            elif self.current_token.type == TokenType.TYPE:
+                decl = self.parse_type_alias()
+                decl.is_exported = is_exported
+                declarations.append(decl)
+            elif self.current_token.type == TokenType.DISTINCT:
+                decl = self.parse_distinct_type()
+                decl.is_exported = is_exported
                 declarations.append(decl)
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
@@ -1148,6 +1182,47 @@ class Parser:
 
         self.expect(TokenType.RBRACE)
         return ImplDecl(trait_name, for_type, methods)
+
+    def parse_type_alias(self) -> TypeAliasDecl:
+        """Parse type alias declaration: type Name = BaseType
+
+        Examples:
+            type UserId = i32
+            type Vec2 = array<f32, 2>
+            type Callback = (i32, i32) -> i32
+        """
+        self.expect(TokenType.TYPE)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.ASSIGN)
+        base_type = self.parse_type()
+
+        # Semicolons are optional
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
+
+        return TypeAliasDecl(name, base_type)
+
+    def parse_distinct_type(self) -> DistinctTypeDecl:
+        """Parse distinct type declaration: distinct type Name = BaseType
+
+        Distinct types are nominally typed - incompatible with their base type.
+
+        Examples:
+            distinct type Distance = f32
+            distinct type Speed = f32
+            # Distance and Speed are incompatible despite both being f32
+        """
+        self.expect(TokenType.DISTINCT)
+        self.expect(TokenType.TYPE)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.ASSIGN)
+        base_type = self.parse_type()
+
+        # Semicolons are optional
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
+
+        return DistinctTypeDecl(name, base_type)
 
     def parse_function(self) -> FunctionDecl:
         start_token = self.current_token

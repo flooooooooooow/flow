@@ -59,6 +59,8 @@ from .parser import (
     TraitDecl,
     TraitMethod,
     Type,
+    TypeAliasDecl,
+    DistinctTypeDecl,
     UnaryOperation,
     VarDecl,
     Variable,
@@ -166,6 +168,9 @@ class CGenerator:
         elif isinstance(expr, FieldAccess):
             field_type = self._infer_expr_type(expr)
             type_name = field_type.name if field_type else None
+        elif isinstance(expr, FunctionCall):
+            ret_type = self._infer_expr_type(expr)
+            type_name = ret_type.name if ret_type else None
         fmt = self._printf_format_for_type_name(type_name)
         if newline:
             fmt = f"{fmt}\\n"
@@ -196,12 +201,14 @@ class CGenerator:
             parts.append('printf("\\n")')
         return '; '.join(parts)
 
-    def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl], 
-                                   structs: List[StructDecl] = None, 
+    def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl],
+                                   structs: List[StructDecl] = None,
                                    effects: List[EffectDecl] = None,
                                    capabilities: List[CapabilityDecl] = None,
                                    traits: List[TraitDecl] = None,
-                                   enums: List[EnumDecl] = None) -> str:
+                                   enums: List[EnumDecl] = None,
+                                   type_aliases: List[TypeAliasDecl] = None,
+                                   distinct_types: List[DistinctTypeDecl] = None) -> str:
         lines: List[str] = []
         lines.append("#include <stdint.h>")
         lines.append("#include <stdbool.h>")
@@ -294,7 +301,15 @@ class CGenerator:
         if enums:
             for enum in enums:
                 self._enums[enum.name] = enum
-        
+
+        # Track type aliases and distinct types to skip during struct emission
+        type_alias_names = set()
+        distinct_type_names = set()
+        if type_aliases:
+            type_alias_names = {alias.name for alias in type_aliases}
+        if distinct_types:
+            distinct_type_names = {dt.name for dt in distinct_types}
+
         # Register structs with overload resolver
         for struct_name, fields in self._structs.items():
             self._overload_resolver.register_struct(
@@ -309,6 +324,7 @@ class CGenerator:
                            'fabs', 'abs', 'floor', 'ceil', 'round', 'fmod',
                            'fmin', 'fmax', 'hypot'}
         primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
+        no_mangle_prefixes = ()
         
         # Register all functions for overload resolution
         for fn in functions:
@@ -322,6 +338,10 @@ class CGenerator:
                 continue
             param_types = tuple(self._type_to_string(p.type) for p in fn.parameters)
             
+            if fn.name.startswith(no_mangle_prefixes):
+                self._mangled_names[id(fn)] = fn.name
+                continue
+
             # Don't mangle C math functions with primitive args - use C stdlib names
             if fn.name in c_math_functions:
                 all_primitive = all(pt in primitives for pt in param_types)
@@ -338,6 +358,25 @@ class CGenerator:
             lines.extend(self._gen_enum(enum_decl))
             lines.append("")
 
+        # Emit type aliases (transparent typedefs in C)
+        if type_aliases:
+            lines.append("/* Type aliases (transparent) */")
+            for alias in type_aliases:
+                base_c_type = self._c_type(alias.base_type)
+                alias_name = _c_ident(alias.name)
+                lines.append(f"typedef {base_c_type} {alias_name};")
+            lines.append("")
+
+        # Emit distinct types (typedefs in C - same representation but different type name)
+        # Note: C doesn't enforce type safety for typedefs, but the type checker does
+        if distinct_types:
+            lines.append("/* Distinct types (opaque) */")
+            for distinct in distinct_types:
+                base_c_type = self._c_type(distinct.base_type)
+                distinct_name = _c_ident(distinct.name)
+                lines.append(f"typedef {base_c_type} {distinct_name};")
+            lines.append("")
+
         # Emit struct definitions in dependency order
         # Include structs already emitted for effects
         emitted = set(effect_structs_emitted)
@@ -347,6 +386,13 @@ class CGenerator:
             # Skip types already defined as enums
             if name in self._enums:
                 emitted.add(name)
+                return
+            # Skip type aliases and distinct types (they're emitted as typedefs above)
+            if name in type_alias_names or name in distinct_type_names:
+                emitted.add(name)
+                return
+            # Skip if not in _structs (type aliases/distinct types might not have entries)
+            if name not in self._structs:
                 return
             safe_struct_name = _c_ident(name)
             # First, emit any nested struct types
@@ -1618,6 +1664,8 @@ def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_
         traits = [d for d in declarations if isinstance(d, TraitDecl)]
         impls = [d for d in declarations if isinstance(d, ImplDecl)]
         enums = [d for d in declarations if isinstance(d, EnumDecl)]
+        type_aliases = [d for d in declarations if isinstance(d, TypeAliasDecl)]
+        distinct_types = [d for d in declarations if isinstance(d, DistinctTypeDecl)]
         
         # Add impl methods to functions list (with mangled names)
         for impl in impls:
@@ -1635,7 +1683,7 @@ def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_
                 
                 functions.append(method)
         
-        out = generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums)
+        out = generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums, type_aliases, distinct_types)
         # Expose overload warnings without changing the return signature.
         flow_to_c.last_warnings = list(generator._overload_resolver.warnings)
         return out

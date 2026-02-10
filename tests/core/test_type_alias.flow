@@ -1,0 +1,30 @@
+# Test type aliases (transparent types)
+
+# Type aliases are transparent - they're just alternate names
+type UserId = i32
+type Distance = f32
+type Vec2 = array<f32, 2>
+
+function get_user_id() -> UserId {
+    let id: UserId = 42
+    return id
+}
+
+function calculate_distance(x: Distance, y: Distance) -> Distance {
+    return x + y
+}
+
+function main() -> i32 {
+    # Type aliases are compatible with their base types
+    let user_id: UserId = get_user_id()
+    let also_user_id: i32 = user_id  # This works - aliases are transparent
+
+    let d1: f32 = 10.5
+    let d2: f32 = 20.5
+    let total: f32 = d1 + d2  # Can perform arithmetic directly
+
+    println("User ID: 42")
+    println("Distance: 31.0")
+
+    return 0
+}

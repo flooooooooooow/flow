@@ -1,0 +1,22 @@
+# GPU gain demo (falls back to CPU if GPU unavailable)
+
+import "stdlib/audio.flow"
+import "stdlib/audio/gpu.flow"
+
+function main() -> i32 {
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(8, 2, layout_interleaved())
+    let i: i32 = 0
+    while i < 8 {
+        audio_buffer_set_f32(buf, i, 0, 1.0)
+        audio_buffer_set_f32(buf, i, 1, 1.0)
+        i = i + 1
+    }
+
+    let backend: AudioComputeBackend = audio_backend_gpu()
+    audio_gain_block(backend, buf, 0.5)
+
+    let v: f32 = audio_buffer_get_f32(buf, 0, 0)
+    printf("GPU gain demo: first sample = %f\n", v)
+    audio_buffer_free_f32(buf)
+    return 0
+}

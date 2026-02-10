@@ -1,0 +1,55 @@
+# Audio GPU Acceleration (Scaffold)
+#
+# This module defines a simple backend switch to allow CPU/GPU paths.
+# The GPU path is currently a stub and falls back to CPU logic.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/simd.flow"
+
+extern { function flow_audio_metal_available() -> i32 }
+extern { function flow_audio_metal_gain_f32(data: ptr<f32>, frames: i32, channels: i32, gain: f32) -> i32 }
+extern { function flow_audio_metal_convolution_f32(data: ptr<f32>, frames: i32, channels: i32, impulse: ptr<f32>, impulse_len: i32) -> i32 }
+
+export struct AudioComputeBackend {
+    use_gpu: bool
+}
+
+export function audio_backend_cpu() -> AudioComputeBackend {
+    return AudioComputeBackend { use_gpu: false }
+}
+
+export function audio_backend_gpu() -> AudioComputeBackend {
+    return AudioComputeBackend { use_gpu: true }
+}
+
+export function audio_backend_is_gpu(b: AudioComputeBackend) -> bool {
+    return b.use_gpu
+}
+
+export function audio_backend_gpu_available() -> bool {
+    return flow_audio_metal_available() == 1
+}
+
+# Gain processing on interleaved buffer
+export function audio_gain_block(b: AudioComputeBackend, buf: AudioBufferF32, gain: f32) -> void {
+    if b.use_gpu && audio_backend_gpu_available() {
+        let res: i32 = flow_audio_metal_gain_f32(buf.data, buf.frames, buf.channels, gain)
+        if res == 0 { return }
+    }
+    audio_gain_interleaved_f32(buf.data, buf.frames, buf.channels, gain)
+}
+
+# Convolution stub (CPU fallback)
+export function audio_convolution_block(b: AudioComputeBackend, input: AudioBufferF32, impulse: AudioBufferF32) -> void {
+    if b.use_gpu && audio_backend_gpu_available() {
+        let res: i32 = flow_audio_metal_convolution_f32(input.data, input.frames, input.channels, impulse.data, impulse.frames)
+        if res == 0 { return }
+    }
+    # CPU fallback: simple passthrough (no-op)
+}
+
+# FFT stub (CPU fallback)
+export function audio_fft_block(b: AudioComputeBackend, buf: AudioBufferF32) -> void {
+    # Placeholder for GPU FFT.
+    return
+}

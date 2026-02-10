@@ -77,6 +77,8 @@ show_help() {
     echo "Options:"
     echo "  run <program>     Compile and run program"
     echo "  compile <program>  Compile program only"
+    echo "  audio <program>   Compile and run with audio backend"
+    echo "  compile-audio <program>  Compile with audio backend"
     echo "  debug <program>   Compile with debug symbols and open debugger"
     echo "  window <program>  Run with SDL2 window backend"
     echo "  gfx <program>     Run with native FLOW gfx backend (macOS)"
@@ -209,6 +211,7 @@ compile_program() {
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
+        "$SCRIPT_DIR/runtime/audio_simd.c" \
         "${py_ldflags[@]}" -o "$build_dir/$basename" 2>/dev/null; then
         print_error "C compilation/linking failed"
         exit 1
@@ -252,6 +255,7 @@ debug_program() {
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
+        "$SCRIPT_DIR/runtime/audio_simd.c" \
         "${py_ldflags[@]}" -o "$exe_file" -lm; then
         print_error "C compilation/linking failed"
         exit 1
@@ -283,6 +287,83 @@ run_program() {
     compile_program "$program"
     
     print_info "Running $basename..."
+    echo "----------------------------------------"
+    "$executable"
+    status=$?
+    echo "----------------------------------------"
+    print_success "Program finished"
+    echo "Exit code: $status"
+    return $status
+}
+
+# Compile with audio backend (real-time I/O)
+compile_audio_program() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+    local py_cflags=()
+    local py_ldflags=()
+    local audio_cflags=()
+    local audio_ldflags=()
+    local audio_sources=("$SCRIPT_DIR/runtime/audio_miniaudio.c" "$SCRIPT_DIR/runtime/audio_simd.c")
+    
+    print_info "Compiling $program (audio backend)..."
+    
+    mkdir -p "$build_dir"
+    
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>/dev/null; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C: $basename.c"
+
+    if [ -f "$SCRIPT_DIR/third_party/miniaudio.h" ]; then
+        audio_cflags+=("-I$SCRIPT_DIR/third_party" "-DFLOW_AUDIO_BACKEND_MINIAUDIO")
+    else
+        print_warning "miniaudio.h not found; building with stub backend (no real-time audio)"
+    fi
+
+    case "$(uname -s)" in
+        Darwin)
+            audio_sources+=("$SCRIPT_DIR/runtime/audio_gpu_metal.m")
+            audio_ldflags+=("-framework" "CoreAudio" "-framework" "AudioToolbox" "-framework" "AudioUnit" "-framework" "Metal" "-framework" "Foundation")
+            ;;
+        Linux)
+            audio_ldflags+=("-ldl" "-pthread" "-lm")
+            ;;
+    esac
+
+    if [ -d "$py_header_dir" ]; then
+        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+    fi
+    if ! clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "$build_dir/$basename.c" \
+        "$SCRIPT_DIR/runtime/flow_sys_info.c" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "$SCRIPT_DIR/runtime/flow_time.c" \
+        "${audio_sources[@]}" \
+        "${py_ldflags[@]}" "${audio_ldflags[@]}" -o "$build_dir/$basename" 2>/dev/null; then
+        print_error "C compilation/linking failed"
+        exit 1
+    fi
+    print_success "C → Executable: $basename"
+    
+    print_success "🎧 Ready to run (audio): $build_dir/$basename"
+}
+
+# Run program with audio backend
+run_audio_program() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename=$(basename "$program" .flow)
+    local executable="$SCRIPT_DIR/build/$basename"
+    
+    compile_audio_program "$program"
+    
+    print_info "Running $basename (audio)..."
     echo "----------------------------------------"
     "$executable"
     status=$?
@@ -1239,9 +1320,17 @@ case "${1:-help}" in
         check_deps
         run_program "${2:-}"
         ;;
+    "audio")
+        check_deps
+        run_audio_program "${2:-}"
+        ;;
     "compile")
         check_deps
         compile_program "${2:-}"
+        ;;
+    "compile-audio")
+        check_deps
+        compile_audio_program "${2:-}"
         ;;
     "debug")
         debug_program "${2:-}"

@@ -95,16 +95,14 @@ When reporting bugs:
 
 ## 🔒 Security Policy
 
-Flow underwent a comprehensive security audit in February 2026. If you discover a security
+Flow underwent a comprehensive security audit in February 2026 and a follow-up full audit
+on Feb 10, 2026. If you discover a security
 vulnerability, please check the [open issues](https://github.com/flooooooooooow/flow/issues)
 first -- it may already be tracked. Known security issues are labeled with `security` and
 `critical`.
 
-**Known open security issues** (as of v0.7.0):
-- C generator: unsanitized identifiers (#20), printf format strings (#21), no bounds checking (#22)
-- Stdlib: calloc integer overflow (#59), no real synchronization (#60)
-- CI: overly broad token permissions (#89)
-- Runtime: shell injection in osascript (#73)
+**Known open security issues** (as of Feb 10, 2026):
+- None. All audit-tracked security issues are closed.
 
 For new security issues not already tracked, please open a GitHub issue with the `security` label.
 

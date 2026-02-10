@@ -1,0 +1,33 @@
+# Audio SIMD Gain Test
+
+import "stdlib/audio.flow"
+import "stdlib/audio/simd.flow"
+
+function test_gain_fast() -> bool {
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(4, 2, layout_interleaved())
+    let i: i32 = 0
+    while i < 4 {
+        audio_buffer_set_f32(buf, i, 0, 1.0)
+        audio_buffer_set_f32(buf, i, 1, 1.0)
+        i = i + 1
+    }
+
+    audio_gain_interleaved_f32(buf.data, 4, 2, 2.0)
+    let v: f32 = audio_buffer_get_f32(buf, 0, 0)
+    audio_buffer_free_f32(buf)
+    return v == 2.0
+}
+
+function main() -> i32 {
+    let passed: i32 = 0
+    let failed: i32 = 0
+    printf("=== Audio SIMD Gain Tests ===\n\n")
+
+    if test_gain_fast() { printf("✓ gain_fast\n"); passed = passed + 1 }
+    else { printf("✗ gain_fast\n"); failed = failed + 1 }
+
+    printf("\nPassed: %d\n", passed)
+    printf("Failed: %d\n", failed)
+    if failed > 0 { return 1 }
+    return 0
+}
