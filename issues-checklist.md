@@ -96,6 +96,6 @@
 - [x] #3 [P-M1] Parser: fragile return-value detection heuristic (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/3
 - [x] #2 [P-C2] Parser: infinite loop on unterminated blocks (bug, critical, compiler) https://github.com/flooooooooooow/flow/issues/2
 - [x] #1 [P-C1] Parser: bare except clauses swallow all errors (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/1
-- [ ] #100 [CI-M1] CI: dependencies are unpinned (no lockfile; installs latest pytest) (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/100
-- [ ] #101 [CI-M2] CI: lint job is syntax-only; missing ruff/mypy/shellcheck (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/101
-- [ ] #102 [CI-M3] CI: no SAST/dependency/security scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/102
+- [x] #100 [CI-M1] CI: dependencies are unpinned (no lockfile; installs latest pytest) (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/100
+- [x] #101 [CI-M2] CI: lint job is syntax-only; missing ruff/mypy/shellcheck (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/101
+- [x] #102 [CI-M3] CI: no SAST/dependency/security scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/102

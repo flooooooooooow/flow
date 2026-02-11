@@ -8,7 +8,7 @@ import ctypes
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
 import os
 import shutil
 
@@ -190,7 +190,7 @@ class MLIRJIT:
         # Set argument and return types
         if args:
             func.argtypes = [ctypes.c_int] * len(args)
-        func.restype = ctypes.c_int if return_type == int else ctypes.c_void_p
+        func.restype = ctypes.c_int if return_type is int else ctypes.c_void_p
         
         # Call the function
         if args:

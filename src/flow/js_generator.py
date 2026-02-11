@@ -3,13 +3,13 @@ Flow to JavaScript Generator
 Transpiles Flow AST to JavaScript for browser execution
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict
 from flow.parser import (
     FunctionDecl, StructDecl, ConstDecl,
     VarDecl, Assignment, ReturnStatement, IfStatement, WhileStatement, ForStatement,
     BinaryOperation, UnaryOperation, FunctionCall, ArrayAccess, FieldAccess,
     Literal, Variable, ArrayLiteral, StructLiteral, CastExpression,
-    MatchStatement, Type, Block
+    MatchStatement, Block
 )
 
 
@@ -81,9 +81,9 @@ class JSGenerator:
                 self.structs[decl.name] = decl
             elif isinstance(decl, FunctionDecl):
                 self.functions[decl.name] = decl
-            elif isinstance(decl, ExternBlock):
-                for fn in decl.functions:
-                    self.externs.add(fn.name)
+            # elif isinstance(decl, ExternBlock):  # ExternBlock not implemented
+            #     for fn in decl.functions:
+            #         self.externs.add(fn.name)
         
         # Generate struct constructors
         for name, struct in self.structs.items():
@@ -243,7 +243,7 @@ class JSGenerator:
             try:
                 expr = self._gen_expr(stmt)
                 self.emit(f"{expr};")
-            except:
+            except Exception:
                 self.emit(f"// Unknown statement: {type(stmt).__name__}")
     
     def _gen_match(self, match: MatchStatement):

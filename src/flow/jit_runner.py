@@ -8,7 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional
 import subprocess
 
 try:
@@ -55,7 +55,6 @@ class FlowJITRunner:
                 print(f"❌ Compilation failed: {result.stderr}")
                 return False
             
-            mlir_code = result.stdout
             
             # For now, just print the MLIR (real JIT would use MLIR ExecutionEngine)
             # print(f"🔥 JIT Compiled {self.flow_file.name}")

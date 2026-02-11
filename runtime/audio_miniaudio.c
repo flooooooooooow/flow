@@ -62,6 +62,35 @@ static void flow_audio_set_error(FlowAudioDevice* dev, const char* msg) {
     flow_audio_set_global_error(msg);
 }
 
+const char* flow_audio_probe_devices(void) {
+    static char buf[1024];
+    buf[0] = '\0';
+    ma_context ctx;
+    ma_context_config ctx_config = ma_context_config_init();
+    if (ma_context_init(NULL, 0, &ctx_config, &ctx) != MA_SUCCESS) {
+        snprintf(buf, sizeof(buf), "audio: context init failed");
+        flow_audio_set_global_error(buf);
+        return buf;
+    }
+
+    ma_device_info* playback_infos = NULL;
+    ma_uint32 playback_count = 0;
+    ma_device_info* capture_infos = NULL;
+    ma_uint32 capture_count = 0;
+    ma_result res = ma_context_get_devices(&ctx, &playback_infos, &playback_count, &capture_infos, &capture_count);
+    if (res != MA_SUCCESS) {
+        snprintf(buf, sizeof(buf), "audio: device enumeration failed (%s)", ma_result_description(res));
+        flow_audio_set_global_error(buf);
+        ma_context_uninit(&ctx);
+        return buf;
+    }
+
+    snprintf(buf, sizeof(buf), "playback=%u capture=%u", (unsigned)playback_count, (unsigned)capture_count);
+    flow_audio_set_global_error(buf);
+    ma_context_uninit(&ctx);
+    return buf;
+}
+
 static uint32_t flow_next_pow2(uint32_t v) {
     if (v == 0) return 1;
     v--;
@@ -222,6 +251,20 @@ int flow_audio_open(const FlowAudioConfig* config, FlowAudioDevice** out_dev) {
             device_config.periods = 0;
             result = ma_device_init(NULL, &device_config, &dev->device);
         }
+        /* Fallback 3: if duplex failed, retry as playback-only. */
+        if (result != MA_SUCCESS && dev->has_input && dev->has_output) {
+            dev->has_input = MA_FALSE;
+            device_config = ma_device_config_init(ma_device_type_playback);
+            device_config.playback.format = ma_format_f32;
+            device_config.playback.channels = dev->channels;
+            device_config.sampleRate = dev->sample_rate;
+            device_config.periodSizeInFrames = dev->frames_per_buffer;
+            device_config.periods = 2;
+            device_config.performanceProfile = ma_performance_profile_low_latency;
+            device_config.dataCallback = flow_audio_data_callback;
+            device_config.pUserData = dev;
+            result = ma_device_init(NULL, &device_config, &dev->device);
+        }
         if (result != MA_SUCCESS) {
             char msg[256];
             snprintf(msg, sizeof(msg),
@@ -338,6 +381,16 @@ const char* flow_audio_last_error(FlowAudioDevice* dev) {
     return dev->last_error;
 }
 
+int flow_audio_has_input(FlowAudioDevice* dev) {
+    if (!dev) return 0;
+    return dev->has_input ? 1 : 0;
+}
+
+int flow_audio_has_output(FlowAudioDevice* dev) {
+    if (!dev) return 0;
+    return dev->has_output ? 1 : 0;
+}
+
 #else
 
 struct FlowAudioDevice {
@@ -369,6 +422,11 @@ static void flow_audio_set_error(FlowAudioDevice* dev, const char* msg) {
     strncpy(dev->last_error, msg, sizeof(dev->last_error) - 1);
     dev->last_error[sizeof(dev->last_error) - 1] = '\0';
     flow_audio_set_global_error(msg);
+}
+
+const char* flow_audio_probe_devices(void) {
+    flow_audio_set_global_error("audio backend not built (enable FLOW_AUDIO_BACKEND_MINIAUDIO)");
+    return flow_audio_last_error_global;
 }
 
 int flow_audio_open(const FlowAudioConfig* config, FlowAudioDevice** out_dev) {
@@ -446,6 +504,16 @@ const char* flow_audio_last_error(FlowAudioDevice* dev) {
         return "audio: device not initialized";
     }
     return dev->last_error;
+}
+
+int flow_audio_has_input(FlowAudioDevice* dev) {
+    (void)dev;
+    return 0;
+}
+
+int flow_audio_has_output(FlowAudioDevice* dev) {
+    (void)dev;
+    return 0;
 }
 
 #endif

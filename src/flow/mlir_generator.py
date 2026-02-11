@@ -10,10 +10,9 @@ from .parser import (
     VarDecl, Assignment, IfStatement, WhileStatement, ForStatement,
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
-    HandleStatement, EffectOperation, CapabilityMethod, EffectCall, MethodCall,
-    MatchStatement, MatchCase, StructPattern, ConstDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl
+    HandleStatement, EffectCall, MethodCall,
+    MatchStatement, StructPattern, ConstDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl
 )
-import textwrap
 
 class MLIRGenerator:
     def __init__(self, source_file: str = "unknown.flow"):
@@ -50,7 +49,7 @@ class MLIRGenerator:
         """Check if a block of MLIR code already ends with a terminator."""
         if not block_code:
             return False
-        lines = [l.strip() for l in block_code.strip().split('\n') if l.strip()]
+        lines = [line.strip() for line in block_code.strip().split('\n') if line.strip()]
         if not lines:
             return False
         last_line = lines[-1]
@@ -543,7 +542,7 @@ class MLIRGenerator:
         # Regular variable assignment
         if assignment.target in self.symbol_table:
             target_info = self.symbol_table[assignment.target]
-            mlir_type = target_info['mlir_type']
+            target_info['mlir_type']
 
             # Re-bind the variable to the new SSA value.
             self.symbol_table[assignment.target]['ssa_name'] = value_ssa
@@ -580,7 +579,6 @@ class MLIRGenerator:
             self.indent_level += 1
             
             # For elif chains, we need to nest scf.if
-            current_condition = None
             remaining_elifs = list(if_stmt.elif_blocks)
             final_else = if_stmt.else_block
             
@@ -973,7 +971,7 @@ class MLIRGenerator:
                     self.function_counter += 1
                     iter_vars.append(iter_var)
                 
-                iter_args_str = ", ".join([f"{iter_args_init[i]} : {iter_args_types[i]}" for i in range(len(iter_args_init))])
+                ", ".join([f"{iter_args_init[i]} : {iter_args_types[i]}" for i in range(len(iter_args_init))])
                 iter_vars_str = ", ".join(iter_vars)
                 result_var = f"%{self.function_counter}"
                 self.function_counter += 1
@@ -2490,7 +2488,6 @@ class MLIRGenerator:
         return self.generate_function_call(FunctionCall(method_call.method, args))
     
     def generate_array_literal(self, array_literal: ArrayLiteral) -> tuple[str, List[str]]:
-        ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
 
         element_values: List[str] = []
@@ -2731,7 +2728,7 @@ class MLIRGenerator:
             if elem_type:
                 return f"memref<?x{elem_type.name}>"
             else:
-                return f"memref<?xi32>"
+                return "memref<?xi32>"
         elif flow_type.name.startswith('struct_'):
             # Struct type: struct_MyStruct -> !flow.struct<MyStruct>
             return f"!flow.struct<{flow_type.name.replace('struct_', '')}>"

@@ -8,7 +8,6 @@ import os
 import ctypes
 import numpy as np
 from typing import Optional, Dict, Any, List, Tuple
-from pathlib import Path
 
 # Suppress warnings by default
 SUPPRESS_GPU_WARNINGS = os.environ.get('FLOW_SUPPRESS_GPU_WARNINGS', '1') == '1'
@@ -75,7 +74,7 @@ class CUDABackend(GPUBackend):
                 try:
                     self.cuda_lib = ctypes.CDLL(path)
                     break
-                except:
+                except Exception:
                     continue
             
             if self.cuda_lib is None:
@@ -96,7 +95,7 @@ class CUDABackend(GPUBackend):
                 try:
                     self.cufft_lib = ctypes.CDLL(path)
                     break
-                except:
+                except Exception:
                     continue
             
             # Set up function signatures
@@ -145,7 +144,7 @@ class CUDABackend(GPUBackend):
             self.device_count = device_count.value
             self.initialized = True
             return True
-        except:
+        except Exception:
             return False
     
     def allocate_memory(self, size: int) -> int:
@@ -238,7 +237,7 @@ class OpenCLBackend(GPUBackend):
                 try:
                     self.opencl_lib = ctypes.CDLL(path)
                     break
-                except:
+                except Exception:
                     continue
             
             if self.opencl_lib is None:
@@ -280,7 +279,7 @@ class OpenCLBackend(GPUBackend):
             self.device_count = platform_count.value
             self.initialized = True
             return True
-        except:
+        except Exception:
             return False
     
     def allocate_memory(self, size: int) -> int:

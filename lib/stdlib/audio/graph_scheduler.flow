@@ -55,8 +55,27 @@ export function audio_node_default() -> AudioNode {
 }
 
 export function audio_graph_init(rate: SampleRate, nodes: array<AudioNode, 32>) -> AudioGraph {
-    # nodes must outlive the graph (stored by reference).
-    return AudioGraph { rate: rate, count: 0, nodes: nodes, node_type: audio_node_default() }
+    let g: AudioGraph = AudioGraph {
+        rate: rate,
+        count: 0,
+        nodes: [
+            audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+            audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+            audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+            audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+            audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+            audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+            audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default(),
+            audio_node_default(), audio_node_default(), audio_node_default(), audio_node_default()
+        ],
+        node_type: audio_node_default()
+    }
+    let i: i32 = 0
+    while i < 32 {
+        g.nodes[i] = nodes[i]
+        i = i + 1
+    }
+    return g
 }
 
 export function audio_graph_add_gain(g: AudioGraph, gain_db: f32) -> AudioGraph {

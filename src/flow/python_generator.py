@@ -16,7 +16,6 @@ Key principles:
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import tempfile
@@ -30,7 +29,6 @@ from .parser import (
     ConstDecl,
     EnumDecl,
     Type,
-    Parameter,
     TypeAliasDecl,
     DistinctTypeDecl,
 )
@@ -148,7 +146,7 @@ def is_abi_compatible(
             elem_type = match.group(1)
             if elem_type in ABI_TYPE_MAP:
                 return True, ""
-        return False, f"Array element type not ABI-compatible"
+        return False, "Array element type not ABI-compatible"
     
     # Struct types - exposed as dicts or named tuples
     if type_name in structs:
@@ -398,7 +396,6 @@ static PyObject* py_{sym.python_name}(PyObject* self, PyObject* args) {{
     
     def generate_struct_type(self, sym: ExportedSymbol) -> str:
         """Generate a Python type wrapper for a Flow struct."""
-        struct = sym.decl
         
         # For now, generate a simple dict-based approach
         # A full implementation would create a proper Python type
