@@ -201,7 +201,7 @@ class MLIRJIT:
         self,
         lib: ctypes.CDLL,
         func_name: str,
-        args: List[Any] = None,
+        args: Optional[List[Any]] = None,
         return_type: type = int,
     ) -> Any:
         """Execute a compiled function"""
@@ -227,7 +227,7 @@ class MLIRJIT:
             return func()
 
     def jit_compile_and_run(
-        self, mlir_code: str, func_name: str = "main", args: List[Any] = None
+        self, mlir_code: str, func_name: str = "main", args: Optional[List[Any]] = None
     ) -> Optional[Any]:
         """Full JIT pipeline: MLIR -> LLVM -> Native -> Execute"""
         # print("🔥 JIT Compiling MLIR...")

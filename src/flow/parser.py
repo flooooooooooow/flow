@@ -16,10 +16,10 @@ class FlowSyntaxError(SyntaxError):
     def __init__(
         self,
         message: str,
-        line: int = None,
-        column: int = None,
-        source: str = None,
-        suggestion: str = None,
+        line: Optional[int] = None,
+        column: Optional[int] = None,
+        source: Optional[str] = None,
+        suggestion: Optional[str] = None,
     ):
         self.line = line
         self.column = column
@@ -245,6 +245,7 @@ class FunctionDecl:
         default_factory=list
     )  # Generic type parameters like <T, U>
     has_self: bool = False  # Whether this is a method with self parameter
+    is_forward_decl: bool = False  # True if no body (forward declaration)
     location: Optional[SourceLocation] = None  # For LSP go-to-definition
 
 
@@ -823,7 +824,7 @@ class Lexer:
 
 
 class Parser:
-    def __init__(self, lexer: Lexer, source: str = None):
+    def __init__(self, lexer: Lexer, source: Optional[str] = None):
         self.lexer = lexer
         self.source = source or getattr(lexer, "_source", "")
         self.current_token = self.lexer.next_token()
@@ -834,7 +835,7 @@ class Parser:
         self.current_token = self.lookahead
         self.lookahead = self.lexer.next_token()
 
-    def error(self, message: str, suggestion: str = None) -> FlowSyntaxError:
+    def error(self, message: str, suggestion: Optional[str] = None) -> FlowSyntaxError:
         """Create a syntax error with context."""
         return FlowSyntaxError(
             message,
@@ -1043,7 +1044,7 @@ class Parser:
                 name = self.expect(TokenType.IDENTIFIER).value
                 self.expect(TokenType.LPAREN)
 
-                parameters = []
+                parameters: List[Parameter] = []
                 if self.current_token.type != TokenType.RPAREN:
                     parameters = self.parse_parameters()
 
@@ -1157,7 +1158,7 @@ class Parser:
 
         self.expect(TokenType.LBRACE)
 
-        methods = []
+        methods: List[TraitMethod] = []
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
                 raise SyntaxError("Unterminated trait: expected '}' before end of file")

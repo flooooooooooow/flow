@@ -30,7 +30,7 @@ except ImportError:
                     "dev-dependencies": {},
                     "native": {},
                 }
-                current_section = None
+                current_section: Optional[str] = None
                 for line in s.strip().split("\n"):
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -75,14 +75,14 @@ class FlowPackage:
     author: str = ""
     license: str = "MIT"
     entry: str = "src/main.flow"
-    dependencies: Dict[str, str] = None
-    dev_dependencies: Dict[str, str] = None
+    dependencies: Optional[Dict[str, str]] = None
+    dev_dependencies: Optional[Dict[str, str]] = None
     # Native linking support
-    native_sources: List[str] = None  # e.g., ["runtime/gfx_macos.m"]
-    frameworks: List[str] = None  # macOS frameworks, e.g., ["Cocoa", "CoreGraphics"]
-    libs: List[str] = None  # libraries to link, e.g., ["SDL2"]
-    cflags: List[str] = None  # extra compile flags
-    ldflags: List[str] = None  # extra link flags
+    native_sources: Optional[List[str]] = None  # e.g., ["runtime/gfx_macos.m"]
+    frameworks: Optional[List[str]] = None  # macOS frameworks, e.g., ["Cocoa", "CoreGraphics"]
+    libs: Optional[List[str]] = None  # libraries to link, e.g., ["SDL2"]
+    cflags: Optional[List[str]] = None  # extra compile flags
+    ldflags: Optional[List[str]] = None  # extra link flags
 
     def __post_init__(self):
         if self.dependencies is None:

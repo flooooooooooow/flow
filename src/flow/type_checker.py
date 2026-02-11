@@ -496,6 +496,7 @@ class TypeChecker:
                     alias_type,
                     "type",
                     getattr(decl, "is_exported", False),
+                    False,
                     decl,
                 )
                 self.global_scope.define(symbol)
@@ -513,6 +514,7 @@ class TypeChecker:
                     distinct_type,
                     "type",
                     getattr(decl, "is_exported", False),
+                    False,
                     decl,
                 )
                 self.global_scope.define(symbol)
@@ -556,6 +558,7 @@ class TypeChecker:
                     const_type,
                     "const",
                     getattr(decl, "is_exported", False),
+                    False,
                     decl,
                 )
                 self.global_scope.define(symbol)
@@ -567,7 +570,12 @@ class TypeChecker:
             kind=TypeKind.FUNCTION, param_types=param_types, return_type=return_type
         )
         symbol = Symbol(
-            name, func_type, "function", getattr(decl, "is_exported", False), decl
+            name,
+            func_type,
+            "function",
+            getattr(decl, "is_exported", False),
+            False,
+            decl,
         )
         self.global_scope.define(symbol)
 

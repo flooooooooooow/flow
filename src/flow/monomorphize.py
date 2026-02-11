@@ -26,7 +26,7 @@ This approach (similar to Rust) has:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Set, Any
+from typing import Dict, List, Set, Any, Optional
 
 from .parser import (
     FunctionDecl,
@@ -302,7 +302,7 @@ class Monomorphizer:
             for elem in expr.elements:
                 self._scan_expression(elem)
 
-    def _scan_type(self, t: Type, type_params: Set[str] = None) -> None:
+    def _scan_type(self, t: Type, type_params: Optional[Set[str]] = None) -> None:
         """Check if a type is a generic instantiation and register it."""
         if not t:
             return

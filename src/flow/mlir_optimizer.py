@@ -8,13 +8,13 @@ import subprocess
 import tempfile
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 
 class MLIROptimizer:
     """MLIR optimization pipeline for FLOW."""
 
-    def __init__(self, mlir_opt_path: str = None):
+    def __init__(self, mlir_opt_path: Optional[str] = None):
         if mlir_opt_path is None:
             # Try to find mlir-opt in common locations
             import shutil

@@ -13,7 +13,7 @@ import tempfile
 import os
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
 
@@ -38,7 +38,7 @@ class TestRunner:
     - Optional .expected file for output comparison
     """
 
-    def __init__(self, build_dir: str = None, verbose: bool = False):
+    def __init__(self, build_dir: Optional[str] = None, verbose: bool = False):
         self.build_dir = (
             Path(build_dir)
             if build_dir

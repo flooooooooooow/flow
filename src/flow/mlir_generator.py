@@ -465,7 +465,7 @@ class MLIRGenerator:
                 "ssa_name": _ssa_name,
             }
 
-            if var_decl.type.size:  # Array type
+            if var_decl.type.size and var_decl.type.element_type:  # Array type
                 return f"{self.indent()}{_ssa_name} = memref.alloc() {{type = {mlir_type}}} : memref<{var_decl.type.size}x{var_decl.type.element_type.name}>"
             else:
                 return (
@@ -499,7 +499,7 @@ class MLIRGenerator:
                 return "\n".join(lines)
 
             value_ssa, value_ops = self.generate_expression(return_stmt.value)
-            lines: List[str] = []
+            lines = []
             lines.extend(value_ops)
             # Use the function's return type instead of the expression type
             return_type = self.flow_type_to_mlir(self.current_function_return_type)
