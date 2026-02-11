@@ -8,9 +8,7 @@ Supports CUDA, OpenCL, and Metal (Apple Silicon).
 import os
 import subprocess
 import tempfile
-import platform
-from typing import List, Dict, Any, Optional, Tuple
-from pathlib import Path
+from typing import List, Dict, Any, Optional
 
 # Import Metal runtime for Apple Silicon
 try:
@@ -19,9 +17,8 @@ try:
 except ImportError:
     METAL_AVAILABLE = False
 
-from .gpu_runtime import GPURuntime, get_gpu_runtime
-from .parser import FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ConstDecl
-from .mlir_generator import MLIRGenerator
+from .gpu_runtime import get_gpu_runtime
+from .parser import FunctionDecl
 
 class GPUCodeGenerator:
     """Generates GPU code from FLOW AST."""
@@ -251,7 +248,7 @@ class GPUCompiler:
                     os.unlink(kernel_file)
                     if os.path.exists(output_file):
                         os.unlink(output_file)
-                except:
+                except Exception:
                     pass
                     
         except Exception as e:

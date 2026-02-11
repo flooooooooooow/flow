@@ -7,11 +7,10 @@ Provides IntelliSense features: completion, hover, diagnostics, go-to-definition
 import json
 import sys
 import re
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
 from .parser import (
-    Lexer, Parser, TokenType, Token, FunctionDecl, StructDecl, VarDecl, 
-    Parameter, Type, SourceLocation, EnumDecl, TraitDecl, EffectDecl
+    Lexer, Parser, FunctionDecl, StructDecl, EnumDecl, TraitDecl
 )
 
 # LSP Message Types
@@ -216,7 +215,7 @@ class FlowLanguageServer:
                         'line': 0,
                         'column': 0,
                     }
-        except Exception as e:
+        except Exception:
             # Parse error - still store partial symbols
             pass
         
@@ -225,7 +224,7 @@ class FlowLanguageServer:
     def _handle_completion(self, params: dict) -> List[dict]:
         """Handle textDocument/completion."""
         uri = params['textDocument']['uri']
-        pos = params['position']
+        params['position']
         
         items = []
         

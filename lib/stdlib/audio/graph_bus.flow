@@ -68,17 +68,44 @@ export function bus_node_default() -> BusNode {
 }
 
 export function bus_graph_init(rate: SampleRate, buses: array<AudioBus, 8>, nodes: array<BusNode, 64>, scratch: AudioBufferF32) -> BusGraph {
-    # buses/nodes must outlive the graph (stored by reference).
-    return BusGraph {
+    let empty: AudioBus = AudioBus { buffer: audio_buffer_empty_f32(), enabled: false }
+    let g: BusGraph = BusGraph {
         rate: rate,
         bus_count: 8,
         node_count: 0,
-        buses: buses,
-        nodes: nodes,
+        buses: [empty, empty, empty, empty, empty, empty, empty, empty],
+        nodes: [
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default(),
+            bus_node_default(), bus_node_default(), bus_node_default(), bus_node_default()
+        ],
         scratch: scratch,
-        bus_type: AudioBus { buffer: audio_buffer_empty_f32(), enabled: false },
+        bus_type: empty,
         node_type: bus_node_default()
     }
+    let i: i32 = 0
+    while i < 8 {
+        g.buses[i] = buses[i]
+        i = i + 1
+    }
+    let j: i32 = 0
+    while j < 64 {
+        g.nodes[j] = nodes[j]
+        j = j + 1
+    }
+    return g
 }
 
 export function bus_graph_free(g: BusGraph) -> void {

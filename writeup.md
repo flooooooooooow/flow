@@ -25,6 +25,8 @@ The language is deliberately small and readable:
 - **Pointers**: `ptr<T>` and `ptr<void>` for low-level interop
 - **Arrays**: fixed-size `array<T, N>`
 - **Structs**: named aggregates
+- **Type aliases**: `type Name = ...` for readable, reusable type expressions
+- **Distinct types**: `distinct type UserId = i64` for nominal safety over primitives
 - **Generics**: functions may be parameterized by type variables
 
 The parser and type checker are typical for a small language: parse to AST, infer and check types, then lower. Generics are handled by a monomorphization pass (`src/flow/monomorphize.py`).
@@ -34,6 +36,14 @@ The parser and type checker are typical for a small language: parse to AST, infe
 To avoid infinite generic expansion, the monomorphizer enforces a depth guard and
 fails fast when recursive instantiation grows without bound. This is a compiler
 safety valve rather than a semantic restriction.
+
+## 2.2 Type Aliases, Distinct Types, and Casts
+
+Type aliases are purely syntactic and lower away, while distinct types introduce
+nominal boundaries without changing runtime layout. This gives a pragmatic mix:
+readable signatures for humans and safer identifiers for large systems. Casts
+via `as` are explicit and controlled (e.g., `UserId as i64`) when you want to
+cross those boundaries intentionally.
 
 ## 3. Algebraic Effects: The Semantic Anchor
 
@@ -92,15 +102,17 @@ The project ships with:
 - An LSP server (`flow-lsp`)
 - A REPL
 - A VS Code extension (`third_party/integrations/vscode`)
+- **Guarded builds**: decorators like `@only("hot")` or `@compile` allow
+  selectively including declarations in hot-reload, JIT, or full compile modes
 
 This is significant: it signals a commitment to a usable language, not a research-only artifact.
 
 ## 9. Project Status (Feb 2026)
 
-The v0.7.0 audit filed 98 issues across the compiler, stdlib, runtime, and CI.
-As of this snapshot, 56 have been resolved. The remaining critical work is
-concentrated in CI hardening, C backend security, and a few compiler correctness
-holes. The roadmap in `docs/NEXT.md` reflects this prioritization.
+The v0.7.0 audit backlog listed in `issues-checklist.md` has been fully worked
+through in this snapshot, including CI hardening, security scanning, and
+compiler correctness fixes. The roadmap in `docs/NEXT.md` reflects the next
+frontier rather than the audit cleanup.
 
 ## 10. Summary: The Approach in One Line
 

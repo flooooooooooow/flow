@@ -35,7 +35,6 @@ from .parser import (
     EffectCall,
     EffectDecl,
     EnumDecl,
-    EnumVariant,
     Expression,
     CastExpression,
     FieldAccess,
@@ -47,7 +46,6 @@ from .parser import (
     ImplDecl,
     Lambda,
     Literal,
-    MatchCase,
     MatchStatement,
     MethodCall,
     ReturnStatement,
@@ -56,7 +54,6 @@ from .parser import (
     StructLiteral,
     StructPattern,
     TraitDecl,
-    TraitMethod,
     Type,
     TypeAliasDecl,
     DistinctTypeDecl,
@@ -269,7 +266,7 @@ class CGenerator:
             for struct_name in sorted(effect_struct_names):
                 if struct_name in self._structs:
                     safe_struct_name = _c_ident(struct_name)
-                    lines.append(f"typedef struct {{")
+                    lines.append("typedef struct {")
                     for field_name, field_type in self._structs[struct_name].items():
                         lines.append(f"    {self._c_type(field_type)} {_c_ident(field_name)};")
                     lines.append(f"}} {safe_struct_name};")
@@ -347,8 +344,7 @@ class CGenerator:
                 if all_primitive:
                     self._mangled_names[id(fn)] = fn.name  # Keep original name
                     continue
-            
-            key = (fn.name, param_types)
+
             mangled = self._overload_resolver._mangle_name(fn.name, list(param_types))
             self._mangled_names[id(fn)] = mangled
         
@@ -403,9 +399,9 @@ class CGenerator:
                     elem = field_type.element_type
                     if self._is_struct_type(elem) and elem.name not in emitted:
                         emit_struct(elem.name)
-            
+
             # Now emit this struct
-            lines.append(f"typedef struct {{")
+            lines.append("typedef struct {")
             for field_name, field_type in self._structs[name].items():
                 # Inline sized arrays in struct fields when size is known.
                 if getattr(field_type, "name", "").startswith("array_") and getattr(field_type, "size", None) and getattr(field_type, "element_type", None):
@@ -536,35 +532,35 @@ class CGenerator:
         """
         lines: List[str] = []
         name = _c_ident(enum.name)
-        
+
         # Generate tag enum
-        lines.append(f"typedef enum {{")
+        lines.append("typedef enum {")
         for i, variant in enumerate(enum.variants):
             comma = "," if i < len(enum.variants) - 1 else ""
             lines.append(f"    {name}_{_c_ident(variant.name)}{comma}")
         lines.append(f"}} {name}_Tag;")
         lines.append("")
-        
+
         # Generate tagged union struct
-        lines.append(f"typedef struct {{")
+        lines.append("typedef struct {")
         lines.append(f"    {name}_Tag tag;")
         
         # Check if any variants have data
         has_data = any(len(v.fields) > 0 for v in enum.variants)
         if has_data:
-            lines.append(f"    union {{")
+            lines.append("    union {")
             for variant in enum.variants:
                 if len(variant.fields) == 1:
                     c_type = self._c_type(variant.fields[0])
                     lines.append(f"        {c_type} {_c_ident(variant.name)}_value;")
                 elif len(variant.fields) > 1:
                     # Multiple fields - create anonymous struct
-                    lines.append(f"        struct {{")
+                    lines.append("        struct {")
                     for i, field_type in enumerate(variant.fields):
                         c_type = self._c_type(field_type)
                         lines.append(f"            {c_type} _{i};")
                     lines.append(f"        }} {_c_ident(variant.name)}_data;")
-            lines.append(f"    }} data;")
+            lines.append("    } data;")
         
         lines.append(f"}} {name};")
         
@@ -582,7 +578,7 @@ class CGenerator:
             effect_name = effect.name
             safe_effect_name = _c_ident(effect_name)
             lines.append(f"/* Effect handler vtable for {safe_effect_name} */")
-            lines.append(f"typedef struct {{")
+            lines.append("typedef struct {")
             for op in effect.operations:
                 ret_type = self._c_type(op.return_type)
                 param_types = ", ".join([self._c_type(p.type) for p in op.parameters])
@@ -609,21 +605,21 @@ class CGenerator:
                         lines.append(f"        _current_{safe_effect_name}_handler->{_c_ident(op.name)}({param_names});")
                     else:
                         lines.append(f"        _current_{safe_effect_name}_handler->{_c_ident(op.name)}();")
-                    lines.append(f"    }}")
+                    lines.append("    }")
                 else:
                     lines.append(f"    if (_current_{safe_effect_name}_handler && _current_{safe_effect_name}_handler->{_c_ident(op.name)}) {{")
                     if param_names:
                         lines.append(f"        return _current_{safe_effect_name}_handler->{_c_ident(op.name)}({param_names});")
                     else:
                         lines.append(f"        return _current_{safe_effect_name}_handler->{_c_ident(op.name)}();")
-                    lines.append(f"    }}")
+                    lines.append("    }")
                     # Return default value if no handler
                     if "int" in ret_type or ret_type in ["int32_t", "int64_t", "int8_t", "int16_t"]:
-                        lines.append(f"    return 0;")
+                        lines.append("    return 0;")
                     elif ret_type in ["float", "double"]:
-                        lines.append(f"    return 0.0;")
+                        lines.append("    return 0.0;")
                     elif ret_type == "char*":
-                        lines.append(f"    return NULL;")
+                        lines.append("    return NULL;")
                     else:
                         lines.append(f"    return ({ret_type}){{0}};")
                 lines.append("}")
