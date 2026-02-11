@@ -339,6 +339,48 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 
 ---
 
+## Comparison with C and MOJO
+
+### Flow vs C
+
+| Feature | Flow | C |
+|---------|------|---|
+| **Memory Safety** | Automatic memory management with optional manual control | Manual memory management, prone to buffer overflows and memory leaks |
+| **Syntax** | Modern, expressive syntax with type inference | Verbose, low-level syntax requiring explicit type declarations |
+| **Audio Programming** | Built-in audio abstractions and effects system | Requires external libraries and complex setup |
+| **Type Safety** | Strong static typing with advanced type system | Weak typing with manual casting required |
+| **Concurrency** | Built-in effect system for managing side effects | Manual thread management and mutex handling |
+| **Development Speed** | Rapid prototyping with high-level abstractions | Slower development due to low-level details |
+| **Performance** | Compiles to efficient LLVM IR | Direct compilation to machine code |
+| **Learning Curve** | Gentle learning curve with intuitive syntax | Steep learning curve with complex concepts |
+
+### Flow vs MOJO
+
+| Feature | Flow | MOJO |
+|---------|------|-----|
+| **Primary Domain** | Audio processing, scientific computing, systems programming | AI/ML development and data science |
+| **Performance** | Optimized for real-time audio and systems performance | Optimized for AI/ML workloads |
+| **Syntax** | Clean, minimal syntax inspired by Rust/Go | Python-like syntax with extensions |
+| **Memory Management** | Automatic with optional manual control | Ownership model similar to Rust |
+| **Hardware Acceleration** | Built-in SIMD and GPU support | Native hardware acceleration for ML |
+| **Audio Processing** | First-class audio processing capabilities | Limited audio processing capabilities |
+| **Scientific Computing** | Optimized for signal processing | Optimized for numerical computation |
+| **Compilation** | Ahead-of-time compilation to LLVM IR | Compilation to efficient machine code |
+| **Ecosystem** | Audio-focused libraries and tools | AI/ML-focused ecosystem |
+
+### Why Choose Flow?
+
+Flow offers unique advantages for audio programming and real-time systems:
+
+- **Real-time Audio**: Purpose-built for audio processing with minimal latency
+- **Expressive Effects System**: Manage side effects cleanly without sacrificing performance
+- **Built-in Audio Abstractions**: No need for external libraries for basic audio operations
+- **Modern Syntax**: Clean, readable code that's easy to maintain
+- **Performance**: Compiles to efficient LLVM IR for maximum performance
+- **Safety**: Memory-safe by default while allowing unsafe operations when needed
+
+---
+
 ## Development
 
 ```bash
