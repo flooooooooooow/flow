@@ -163,10 +163,10 @@ function livecode_pattern(bar_number: i32) -> f32 {
     if bar_number % 4 == 0 {
         # First bar: just root
         pattern = [note_C(3), note_C(3), note_C(3), note_C(3)]
-    } else if bar_number % 4 == 1 {
+    } elif bar_number % 4 == 1 {
         # Second bar: add fifth
         pattern = [note_C(3), note_G(3), note_C(3), note_G(3)]
-    } else if bar_number % 4 == 2 {
+    } elif bar_number % 4 == 2 {
         # Third bar: walking bass
         pattern = [note_C(3), note_D(3), note_E(3), note_F(3)]
     } else {
