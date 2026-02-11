@@ -50,10 +50,10 @@ function generate_waveform(phase: f64, waveform: i32) -> f32 {
     if waveform == 0 {
         # Sine wave
         return sine(phase)
-    } else if waveform == 1 {
+    } elif waveform == 1 {
         # Sawtooth
         return 2.0 * phase - 1.0
-    } else if waveform == 2 {
+    } elif waveform == 2 {
         # Square wave
         if phase < 0.5 {
             return 1.0
@@ -292,7 +292,7 @@ function envelope_tick(env: ADSREnvelope, gate: bool) -> ADSREnvelope {
                 new_env.stage = 2
                 new_env.time = 0
             }
-        } else if new_env.stage == 2 {
+        } elif new_env.stage == 2 {
             # Decay stage
             let decay_progress: f32 = new_env.time / new_env.decay
             new_env.current = 1.0 - (1.0 - new_env.sustain) * decay_progress
