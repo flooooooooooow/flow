@@ -355,15 +355,17 @@ export function reverb_process(rev: Reverb, input: f32) -> f32 {
 # =============================================================================
 
 # Chain effects together
-export function fx_chain_2(input: f32, fx1_process: function(f32) -> f32, fx2_process: function(f32) -> f32) -> f32 {
-    let stage1: f32 = fx1_process(input)
-    let stage2: f32 = fx2_process(stage1)
-    return stage2
-}
+# Note: Function types not supported in current Flow parser
+# export function fx_chain_2(input: f32, fx1_process: function(f32) -> f32, fx2_process: function(f32) -> f32) -> f32 {
+#     let stage1: f32 = fx1_process(input)
+#     let stage2: f32 = fx2_process(stage1)
+#     return stage2
+# }
 
 # Parallel effects (sum outputs)
-export function fx_parallel_2(input: f32, fx1_process: function(f32) -> f32, fx2_process: function(f32) -> f32) -> f32 {
-    let out1: f32 = fx1_process(input)
-    let out2: f32 = fx2_process(input)
-    return (out1 + out2) * 0.5
-}
+# Note: Function types not supported in current Flow parser
+# export function fx_parallel_2(input: f32, fx1_process: function(f32) -> f32, fx2_process: function(f32) -> f32) -> f32 {
+#     let out1: f32 = fx1_process(input)
+#     let out2: f32 = fx2_process(input)
+#     return (out1 + out2) * 0.5
+# }
