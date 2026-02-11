@@ -2,4 +2,4 @@
 FLOW Language Compiler Package
 """
 
-from .monomorphize import monomorphize, Monomorphizer
+from .monomorphize import monomorphize as monomorphize, Monomorphizer as Monomorphizer
