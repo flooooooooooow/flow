@@ -425,7 +425,7 @@ def main():
             )
 
             # Apply optimizations if requested
-    if args.optimize:
+            if args.optimize:
                 from .mlir_optimizer import MLIROptimizer
                 import tempfile
 
