@@ -1,0 +1,9 @@
+# Audio device probe (no playback)
+
+import "stdlib/audio/io.flow"
+
+function main() -> i32 {
+    let info: string = audio_probe_devices()
+    println(info)
+    return 0
+}
