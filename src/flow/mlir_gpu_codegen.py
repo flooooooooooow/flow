@@ -7,7 +7,6 @@ Emits MLIR GPU dialect suitable for SPIR-V lowering.
 from typing import List, Dict, Tuple
 from .parser import (
     FunctionDecl,
-    Block,
     Statement,
     Expression,
     VarDecl,

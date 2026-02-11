@@ -8,7 +8,7 @@ Uses name mangling to generate unique C function names.
 
 from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
-from .parser import FunctionDecl, Type, Parameter, Expression, Variable, Literal, FunctionCall, StructLiteral, FieldAccess, BinaryOperation
+from .parser import FunctionDecl, Type, Expression, Variable, Literal, FunctionCall, StructLiteral, FieldAccess, BinaryOperation
 
 
 @dataclass
@@ -236,17 +236,23 @@ class OverloadResolver:
             entry = overloads[0]
             if len(entry.param_types) == len(arg_types):
                 all_compatible = True
+                any_unknown = False
                 for param_type, arg_type in zip(entry.param_types, arg_types):
                     if arg_type is None:
-                        all_compatible = False
-                        break
+                        any_unknown = True
+                        continue
                     if param_type != arg_type and not self._types_compatible(param_type, arg_type):
                         all_compatible = False
                         break
                 if all_compatible:
                     return entry.mangled_name
-            # If we can't prove incompatibility, fall back to the only overload.
-            return entry.mangled_name
+                if any_unknown:
+                    # Unknown types: fall back to the only overload.
+                    self.warnings.append(
+                        f"Falling back to sole overload '{entry.mangled_name}' due to unknown arg types"
+                    )
+                    return entry.mangled_name
+            return None
 
         # No match found among multiple overloads
         return None

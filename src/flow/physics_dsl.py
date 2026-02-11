@@ -54,8 +54,8 @@ world Particles {
 This compiles to efficient Flow code with SoA memory layout.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any
+from dataclasses import dataclass
+from typing import List, Dict
 import re
 
 
@@ -293,14 +293,14 @@ def compile_physics_to_flow(world: PhysicsWorld) -> str:
                 if line:
                     # Handle Vec2 arithmetic
                     if 'gravity' in line and 'velocity' in line:
-                        lines.append(f"        velocity_x = velocity_x + gravity_x * dt")
-                        lines.append(f"        velocity_y = velocity_y + gravity_y * dt")
+                        lines.append("        velocity_x = velocity_x + gravity_x * dt")
+                        lines.append("        velocity_y = velocity_y + gravity_y * dt")
                     elif 'friction' in line:
-                        lines.append(f"        velocity_x = velocity_x * (1.0 - friction)")
-                        lines.append(f"        velocity_y = velocity_y * (1.0 - friction)")
+                        lines.append("        velocity_x = velocity_x * (1.0 - friction)")
+                        lines.append("        velocity_y = velocity_y * (1.0 - friction)")
                     elif 'position' in line and 'velocity' in line:
-                        lines.append(f"        position_x = position_x + velocity_x * dt")
-                        lines.append(f"        position_y = position_y + velocity_y * dt")
+                        lines.append("        position_x = position_x + velocity_x * dt")
+                        lines.append("        position_y = position_y + velocity_y * dt")
         
         # Apply constraints
         lines.append("")

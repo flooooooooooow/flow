@@ -34,6 +34,9 @@ int flow_audio_available_read(FlowAudioDevice* dev);
 int flow_audio_available_write(FlowAudioDevice* dev);
 
 const char* flow_audio_last_error(FlowAudioDevice* dev);
+const char* flow_audio_probe_devices(void);
+int flow_audio_has_input(FlowAudioDevice* dev);
+int flow_audio_has_output(FlowAudioDevice* dev);
 
 #ifdef __cplusplus
 }

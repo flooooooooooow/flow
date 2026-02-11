@@ -71,6 +71,7 @@ Real-time DSP:
 - `offline_graph_demo.flow` - Offline graph processing demo
 - `bus_graph_demo.flow` - Parallel bus routing demo
 - `gpu_gain_demo.flow` - GPU gain demo (CPU fallback)
+- `live_graph_demo.flow` - Live graph single-standard demo
 
 ### Neural Networks (`neural_networks/`)
 Autodiff and backpropagation:

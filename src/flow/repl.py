@@ -5,10 +5,7 @@ Run FLOW expressions and statements interactively.
 """
 
 import sys
-import os
 import subprocess
-import tempfile
-import readline  # For history and line editing
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 
@@ -17,8 +14,8 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from flow.parser import Lexer, Parser, FunctionDecl, StructDecl, VarDecl, Expression
-from flow.c_generator import flow_to_c
+from flow.parser import Lexer, Parser, FunctionDecl, StructDecl  # noqa: E402
+from flow.c_generator import flow_to_c  # noqa: E402
 
 
 class FlowREPL:
@@ -162,7 +159,7 @@ class FlowREPL:
         # Try to parse
         try:
             lexer = Lexer(line)
-            parser = Parser(lexer)
+            Parser(lexer)
             
             # Check if it's a function definition
             if line.strip().startswith('function '):
@@ -357,7 +354,7 @@ class FlowREPL:
             for f in [temp_flow, temp_c, temp_exe]:
                 try:
                     f.unlink()
-                except:
+                except Exception:
                     pass
 
 

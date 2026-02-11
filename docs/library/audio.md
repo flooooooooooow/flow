@@ -24,6 +24,8 @@ Flow ships with a pragmatic audio DSP layer focused on real-time routing and eff
   GPU acceleration (Metal on macOS, CPU fallback).
 - `stdlib/audio/simd.flow`  
   CPU SIMD-friendly helpers.
+- `stdlib/audio/live.flow`  
+  Single-standard live graph (one buffer layout + plugin ABI).
 
 ## Real-time I/O Backend (Cross-platform)
 
@@ -50,6 +52,17 @@ On macOS, the CLI links Metal automatically when using `./flow audio`.
 ```bash
 ./flow audio examples/audio/loopback_effects.flow
 ```
+
+### Device Probe
+Use `audio_probe_devices()` to print a quick device count via the backend.
+
+## Live Standard
+The live graph standardizes on:
+- Interleaved `f32` buffers
+- A single graph API (`live_graph_*`)
+- A single plugin ABI (`flow_live_plugin_*`)
+
+Hot-swap support is provided via `LiveGraphHandle` in `stdlib/audio/live.flow`.
 
 ## Example
 See `examples/audio/loopback_effects.flow` for input -> effect chain -> output,

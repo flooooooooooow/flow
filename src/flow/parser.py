@@ -5,7 +5,7 @@ A simple recursive descent parser for the FLOW language
 """
 
 import re
-from typing import List, Dict, Optional, Union, Any, Tuple
+from typing import List, Optional, Union, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -1904,7 +1904,6 @@ class Parser:
             # Peek ahead to distinguish lambda from bitwise OR
             # If next token is IDENTIFIER followed by COLON or PIPE, it's lambda
             # Otherwise it's bitwise OR
-            op = self.current_token.value
             self.advance()
             right = self.parse_bitwise_xor()
             left = BinaryOperation(left, "|", right)
@@ -1916,7 +1915,6 @@ class Parser:
         left = self.parse_bitwise_and()
 
         while self.current_token.type == TokenType.CARET:
-            op = self.current_token.value
             self.advance()
             right = self.parse_bitwise_and()
             left = BinaryOperation(left, "^", right)
@@ -1928,7 +1926,6 @@ class Parser:
         left = self.parse_equality()
 
         while self.current_token.type == TokenType.AMPERSAND:
-            op = self.current_token.value
             self.advance()
             right = self.parse_equality()
             left = BinaryOperation(left, "&", right)

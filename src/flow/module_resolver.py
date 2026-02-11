@@ -7,7 +7,7 @@ Handles multi-file resolution and recursive imports with proper import/export sy
 import os
 from pathlib import Path
 from typing import List, Dict, Set, Any, Optional, Tuple
-from .parser import Lexer, Parser, ImportDecl, FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, TraitDecl, ImplDecl, EnumDecl
+from .parser import Lexer, Parser, ImportDecl, ImplDecl
 
 class ModuleSymbol:
     """Represents a symbol exported from a module."""

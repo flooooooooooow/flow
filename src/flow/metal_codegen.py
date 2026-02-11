@@ -4,10 +4,10 @@ FLOW Metal Shader Generator
 Transpiles @gpu functions to Metal Shading Language (MSL).
 """
 
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 from pathlib import Path
 from .parser import (
-    FunctionDecl, StructDecl, Block, Statement, Expression,
+    FunctionDecl, Block, Statement, Expression,
     VarDecl, Assignment, IfStatement, WhileStatement, ForStatement,
     ReturnStatement, Literal, Variable, BinaryOperation, UnaryOperation,
     FunctionCall, ArrayAccess, FieldAccess, Type

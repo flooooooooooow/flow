@@ -15,15 +15,13 @@ Source → Parser → AST → Type Checker → Typed AST → Code Generator
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Union, Any
+from typing import Dict, List, Optional, Any
 from enum import Enum
 
 from .parser import (
-    FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, ImportDecl,
-    VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
+    FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
     FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall,
-    IfStatement, WhileStatement, ForStatement, MatchStatement,
-    LayoutStatement, Block, Parameter, Type as ParsedType,
+    IfStatement, WhileStatement, ForStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl,
     TypeAliasDecl, DistinctTypeDecl, CastExpression
 )

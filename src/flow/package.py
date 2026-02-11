@@ -5,12 +5,10 @@ Manages FLOW projects and dependencies.
 """
 
 import os
-import sys
-import json
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional
+from dataclasses import dataclass
 import subprocess
 import signal
 
@@ -130,7 +128,7 @@ class FlowPackage:
                 frameworks_str = ', '.join(f'"{f}"' for f in self.frameworks)
                 lines.append(f'frameworks = [{frameworks_str}]')
             if self.libs:
-                libs_str = ', '.join(f'"{l}"' for l in self.libs)
+                libs_str = ', '.join(f'"{lib}"' for lib in self.libs)
                 lines.append(f'libs = [{libs_str}]')
             if self.cflags:
                 cflags_str = ', '.join(f'"{f}"' for f in self.cflags)
@@ -197,7 +195,7 @@ class FlowPackageManager:
         # Create package config
         package = FlowPackage(
             name=name,
-            description=f"A FLOW project",
+            description="A FLOW project",
         )
         
         # Write flow.toml
@@ -239,7 +237,7 @@ flow_packages/
             print(f"{self.GREEN}✓ Created .gitignore{self.RESET}")
         
         print(f"\n{self.BOLD}Project '{name}' initialized!{self.RESET}")
-        print(f"\nNext steps:")
+        print("\nNext steps:")
         print(f"  {self.BLUE}cd {name}{self.RESET}")
         print(f"  {self.BLUE}flow run src/main.flow{self.RESET}")
         
@@ -337,7 +335,7 @@ flow_packages/
         build_dir.mkdir(exist_ok=True)
         
         output_name = config.name
-        output_file = build_dir / output_name
+        build_dir / output_name
         
         print(f"{self.BLUE}Building {config.name}...{self.RESET}")
         
