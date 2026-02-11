@@ -76,56 +76,58 @@ export function notation_reader_new() -> NotationReader {
 
 # Regular functions (effect impl not fully supported in C backend yet)
 export function notation_load_file(reader: ptr<NotationReader>, path: string) -> bool {
-    let self: ptr<NotationReader> = reader
-    if true {
-        # In a real implementation, this would:
-        # 1. Open the file
-        # 2. Read lines
-        # 3. Parse each line into notes
-        # 4. Store in self.notes
+    let reader_ptr: ptr<NotationReader> = reader
+    # In a real implementation, this would:
+    # 1. Open the file
+    # 2. Read lines
+    # 3. Parse each line into notes
+    # 4. Store in reader_ptr.notes
 
-        # For now, hardcode Hot Cross Buns as example
-        # This would be replaced with actual file reading
-        self.notes[0] = MusicNote { midi: 64, duration: 4 }   # E4/4
-        self.notes[1] = MusicNote { midi: 62, duration: 4 }   # D4/4
-        self.notes[2] = MusicNote { midi: 60, duration: 8 }   # C4/8
-        self.notes[3] = MusicNote { midi: 64, duration: 4 }
-        self.notes[4] = MusicNote { midi: 62, duration: 4 }
-        self.notes[5] = MusicNote { midi: 60, duration: 8 }
-        self.notes[6] = MusicNote { midi: 60, duration: 2 }
-        self.notes[7] = MusicNote { midi: 60, duration: 2 }
-        self.notes[8] = MusicNote { midi: 60, duration: 2 }
-        self.notes[9] = MusicNote { midi: 60, duration: 2 }
-        self.notes[10] = MusicNote { midi: 62, duration: 2 }
-        self.notes[11] = MusicNote { midi: 62, duration: 2 }
-        self.notes[12] = MusicNote { midi: 62, duration: 2 }
-        self.notes[13] = MusicNote { midi: 62, duration: 2 }
-        self.notes[14] = MusicNote { midi: 64, duration: 4 }
-        self.notes[15] = MusicNote { midi: 62, duration: 4 }
-        self.notes[16] = MusicNote { midi: 60, duration: 8 }
+    # For now, hardcode Hot Cross Buns as example
+    # This would be replaced with actual file reading
+    reader_ptr.notes[0] = MusicNote { midi: 64, duration: 4 }   # E4/4
+    reader_ptr.notes[1] = MusicNote { midi: 62, duration: 4 }   # D4/4
+    reader_ptr.notes[2] = MusicNote { midi: 60, duration: 8 }   # C4/8
+    reader_ptr.notes[3] = MusicNote { midi: 64, duration: 4 }
+    reader_ptr.notes[4] = MusicNote { midi: 62, duration: 4 }
+    reader_ptr.notes[5] = MusicNote { midi: 60, duration: 8 }
+    reader_ptr.notes[6] = MusicNote { midi: 60, duration: 2 }
+    reader_ptr.notes[7] = MusicNote { midi: 60, duration: 2 }
+    reader_ptr.notes[8] = MusicNote { midi: 60, duration: 2 }
+    reader_ptr.notes[9] = MusicNote { midi: 60, duration: 2 }
+    reader_ptr.notes[10] = MusicNote { midi: 62, duration: 2 }
+    reader_ptr.notes[11] = MusicNote { midi: 62, duration: 2 }
+    reader_ptr.notes[12] = MusicNote { midi: 62, duration: 2 }
+    reader_ptr.notes[13] = MusicNote { midi: 62, duration: 2 }
+    reader_ptr.notes[14] = MusicNote { midi: 64, duration: 4 }
+    reader_ptr.notes[15] = MusicNote { midi: 62, duration: 4 }
+    reader_ptr.notes[16] = MusicNote { midi: 60, duration: 8 }
 
-        self.count = 17
-        self.loaded = true
-        return true
+    reader_ptr.count = 17
+    reader_ptr.loaded = true
+    return true
+}
+
+export function load_file(reader: ptr<NotationReader>, path: string) -> bool {
+    return notation_load_file(reader, path)
+}
+
+export function get_note_count(reader: ptr<NotationReader>) -> i32 {
+    return reader.count
+}
+
+export function get_note(reader: ptr<NotationReader>, idx: i32) -> MusicNote {
+    if idx >= 0 and idx < reader.count {
+        return reader.notes[idx]
     }
+    # Return default note if out of bounds
+    return MusicNote { midi: 60, duration: 4 }
+}
 
-    function get_note_count(self) -> i32 {
-        return self.count
-    }
-
-    function get_note(self, idx: i32) -> MusicNote {
-        if idx >= 0 and idx < self.count {
-            return self.notes[idx]
-        }
-        # Return default note if out of bounds
-        return MusicNote { midi: 60, duration: 4 }
-    }
-
-    function parse_line(self, line: string) -> bool {
-        # Would parse a line like "C4/4 D4/4 E4/2"
-        # For now, just return success
-        return true
-    }
+export function parse_line(reader: ptr<NotationReader>, line: string) -> bool {
+    # Would parse a line like "C4/4 D4/4 E4/2"
+    # For now, just return success
+    return true
 }
 
 # =============================================================================
