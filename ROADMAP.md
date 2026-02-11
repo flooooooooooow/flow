@@ -52,6 +52,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 | Package registry design | 🔲 | Ecosystem growth |
 | Effect system showcase | 🔲 | Unique selling point |
 | Benchmark vs C comparison | 🔲 | Performance credibility |
+| Documentation enhancements (comparisons with C and MOJO) | ✅ | Clear positioning |
+| Live DSP standard (single graph + buffer layout) | ✅ | Audio consistency |
+| Live plugin ABI registry | ✅ | Extensible DSP |
+| Live graph hot-swap handle | ✅ | Live coding |
+| RT-safety policy (no-alloc audio thread) | 🔲 | Dropout prevention |
 
 ### 🧹 Repository Cleanup
 
