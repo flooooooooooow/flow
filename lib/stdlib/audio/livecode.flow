@@ -174,24 +174,26 @@ export function hat_on_sixteenth(clock: Clock, pos: i64) -> bool {
 # =============================================================================
 
 # Play a repeating pattern of notes
-export function pattern_4(notes: array<i32, 4>, clock: Clock, pos: i64, instrument: function(i32) -> f32) -> f32 {
+export function pattern_4(notes: array<i32, 4>, clock: Clock, pos: i64) -> f32 {
     let beat: i64 = clock_current_beat(clock, pos)
     let pattern_idx: i32 = beat % 4
 
     if clock_on_beat(clock, pos) {
-        return instrument(notes[pattern_idx])
+        # Use a default instrument (bass) - caller can modify this pattern if needed
+        return bass(notes[pattern_idx])
     }
 
     return 0.0
 }
 
 # Play a repeating 8-step pattern
-export function pattern_8(notes: array<i32, 8>, clock: Clock, pos: i64, instrument: function(i32) -> f32) -> f32 {
+export function pattern_8(notes: array<i32, 8>, clock: Clock, pos: i64) -> f32 {
     let beat: i64 = clock_current_beat(clock, pos)
     let pattern_idx: i32 = beat % 8
 
     if clock_on_beat(clock, pos) {
-        return instrument(notes[pattern_idx])
+        # Use a default instrument (lead) - caller can modify this pattern if needed
+        return lead(notes[pattern_idx])
     }
 
     return 0.0
@@ -217,25 +219,26 @@ export function chord_progression(chords: array<array<i32, 3>, 4>, clock: Clock,
 
 # Generate a euclidean rhythm pattern (k hits in n steps)
 # Example: euclidean_hit(3, 8, step) gives [x . . x . . x .]
-export function euclidean_hit(k: i32, n: i32, step: i32) -> bool {
+export function euclidean_hit(k: i32, n: i32, step_val: i32) -> bool {
     if k == 0 or n == 0 {
         return false
     }
 
     # Euclidean algorithm
-    let bucket: i32 = step * k
-    let prev_bucket: i32 = (step - 1) * k
+    let bucket: i32 = step_val * k
+    let prev_bucket: i32 = (step_val - 1) * k
 
     return (bucket / n) != (prev_bucket / n)
 }
 
 # Play euclidean rhythm with instrument
-export function euclidean_pattern(k: i32, n: i32, clock: Clock, pos: i64, hit_fn: function() -> f32) -> f32 {
+export function euclidean_pattern(k: i32, n: i32, clock: Clock, pos: i64) -> f32 {
     let sixteenth: i64 = pos / samples_per_sixteenth(clock)
-    let step: i32 = sixteenth % n
+    let step_val: i32 = sixteenth % n
 
-    if euclidean_hit(k, n, step) and clock_on_sixteenth(clock, pos) {
-        return hit_fn()
+    if euclidean_hit(k, n, step_val) and clock_on_sixteenth(clock, pos) {
+        # Use a default kick drum sound
+        return kick()
     }
 
     return 0.0
@@ -328,10 +331,10 @@ export function bass_pattern_simple(root: i32, clock: Clock, pos: i64) -> f32 {
 # Arpeggio pattern
 export function arpeggio(chord: array<i32, 3>, clock: Clock, pos: i64) -> f32 {
     let sixteenth: i64 = pos / samples_per_sixteenth(clock)
-    let step: i32 = sixteenth % 4
+    let step_val: i32 = sixteenth % 4
 
-    if step < 3 and clock_on_sixteenth(clock, pos) {
-        return pluck(chord[step])
+    if step_val < 3 and clock_on_sixteenth(clock, pos) {
+        return pluck(chord[step_val])
     }
 
     return 0.0
