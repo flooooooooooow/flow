@@ -24,7 +24,7 @@ from .parser import (
     FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall,
     IfStatement, WhileStatement, ForStatement, MatchStatement,
     HandleStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
-    EffectOperation, CapabilityMethod, MatchCase, EnumDecl, TraitDecl, ImplDecl,
+    EffectOperation, EnumDecl, ImplDecl,
     TypeAliasDecl, DistinctTypeDecl, CastExpression
 )
 
@@ -653,7 +653,7 @@ class TypeChecker:
 
         # Check else block if present
         if if_stmt.else_block:
-            else_type = self._check_block(if_stmt.else_block)
+            self._check_block(if_stmt.else_block)
             # For now, just return the then type
             return then_type
         else:
@@ -970,12 +970,12 @@ class TypeChecker:
         # Check that all required fields are present and types match
         # struct_lit.fields is List[tuple] where each tuple is (field_name, field_value)
         provided_fields = {}
-        for field in struct_lit.fields:
-            if isinstance(field, tuple) and len(field) == 2:
-                field_name, field_value = field
+        for field_item in struct_lit.fields:
+            if isinstance(field_item, tuple) and len(field_item) == 2:
+                field_name, field_value = field_item
                 provided_fields[field_name] = self._check_expression(field_value)
-            elif hasattr(field, 'name') and hasattr(field, 'value'):
-                provided_fields[field.name] = self._check_expression(field.value)
+            elif hasattr(field_item, 'name') and hasattr(field_item, 'value'):
+                provided_fields[field_item.name] = self._check_expression(field_item.value)
 
         for field_name, expected_type in expected_fields.items():
             if field_name not in provided_fields:
