@@ -21,7 +21,6 @@ Not supported yet:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, List, Tuple
 
 from .parser import (
@@ -35,7 +34,6 @@ from .parser import (
     ConstDecl,
     EffectCall,
     EffectDecl,
-    EffectOperation,
     EnumDecl,
     EnumVariant,
     Expression,
@@ -400,11 +398,22 @@ class CGenerator:
             for field_type in self._structs[name].values():
                 if self._is_struct_type(field_type) and field_type.name not in emitted:
                     emit_struct(field_type.name)
+                # Handle sized array fields that contain structs
+                if getattr(field_type, "name", "").startswith("array_") and getattr(field_type, "element_type", None):
+                    elem = field_type.element_type
+                    if self._is_struct_type(elem) and elem.name not in emitted:
+                        emit_struct(elem.name)
             
             # Now emit this struct
             lines.append(f"typedef struct {{")
             for field_name, field_type in self._structs[name].items():
-                lines.append(f"    {self._c_type(field_type)} {_c_ident(field_name)};")
+                # Inline sized arrays in struct fields when size is known.
+                if getattr(field_type, "name", "").startswith("array_") and getattr(field_type, "size", None) and getattr(field_type, "element_type", None):
+                    elem_c = self._c_type(field_type.element_type)
+                    size = field_type.size
+                    lines.append(f"    {elem_c} {_c_ident(field_name)}[{size}];")
+                else:
+                    lines.append(f"    {self._c_type(field_type)} {_c_ident(field_name)};")
             lines.append(f"}} {safe_struct_name};")
             lines.append("")
             emitted.add(name)
@@ -1336,7 +1345,16 @@ class CGenerator:
             return _c_ident(e.name)
 
         if isinstance(e, StructLiteral):
-            fields = ", ".join([f".{_c_ident(name)} = {self._gen_expr(value)}" for name, value in e.fields])
+            field_parts = []
+            struct_fields = self._structs.get(e.struct_name, {})
+            for name, value in e.fields:
+                field_type = struct_fields.get(name)
+                if field_type and getattr(field_type, "name", "").startswith("array_") and isinstance(value, ArrayLiteral):
+                    value_expr = self._gen_array_literal(value, as_initializer=True)
+                else:
+                    value_expr = self._gen_expr(value)
+                field_parts.append(f".{_c_ident(name)} = {value_expr}")
+            fields = ", ".join(field_parts)
             return f"({_c_ident(e.struct_name)}){{ {fields} }}"
 
         if isinstance(e, FieldAccess):
@@ -1611,6 +1629,12 @@ class CGenerator:
                     elem_type = "int32_t"
                 elif first_elem.type.name in ['f32', 'f64']:
                     elem_type = "float"
+                else:
+                    elem_type = self._c_type(first_elem.type)
+            else:
+                inferred = self._infer_expr_type(first_elem)
+                if inferred is not None:
+                    elem_type = self._c_type(inferred)
         
         return f"({elem_type}[]){{ {elements} }}"
     
