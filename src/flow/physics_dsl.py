@@ -55,7 +55,7 @@ This compiles to efficient Flow code with SoA memory layout.
 """
 
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List, Dict, Optional
 import re
 
 
@@ -288,7 +288,7 @@ def compile_physics_to_flow(world: PhysicsWorld) -> str:
         lines.append("")
 
     # Generate update function
-    entity = world.entities[0] if world.entities else None
+    entity: Optional[PhysicsEntity] = world.entities[0] if world.entities else None
     if entity:
         lines.append(f"# Update all {entity.name}s")
         lines.append(

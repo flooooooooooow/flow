@@ -1809,10 +1809,14 @@ class CGenerator:
         """Generate code for a method-style call (obj.method(args))."""
         if isinstance(e.object, Variable):
             var_type = self._var_types.get(e.object.name)
-            if var_type and (
-                var_type.name.startswith("capability_")
-                or var_type.name in self._effects
-            ):
+            # Check if it's a capability variable OR if the object name itself is an effect
+            if (
+                var_type
+                and (
+                    var_type.name.startswith("capability_")
+                    or var_type.name in self._effects
+                )
+            ) or (e.object.name in self._effects):
                 effect_call = EffectCall(e.object.name, e.method, e.arguments)
                 return self._gen_effect_call(effect_call)
 

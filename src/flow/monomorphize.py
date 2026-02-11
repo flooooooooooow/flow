@@ -674,7 +674,7 @@ class Monomorphizer:
         2. Add specialized versions
         3. Update usages to use specialized names
         """
-        result = []
+        result: List[Any] = []
 
         # Add specialized structs first (they may be needed by functions)
         for struct in self.generated_structs.values():
@@ -690,14 +690,14 @@ class Monomorphizer:
                 if decl.type_params:
                     continue  # Skip generic definition
                 # Rewrite field types
-                new_decl = self._rewrite_struct(decl)
-                result.append(new_decl)
+                new_struct = self._rewrite_struct(decl)
+                result.append(new_struct)
             elif isinstance(decl, FunctionDecl):
                 if decl.type_params:
                     continue  # Skip generic definition
                 # Rewrite types in function
-                new_decl = self._rewrite_function(decl)
-                result.append(new_decl)
+                new_func = self._rewrite_function(decl)
+                result.append(new_func)
             elif isinstance(decl, ImplDecl):
                 # Rewrite methods in impl block
                 new_methods = [self._rewrite_function(m) for m in decl.methods]
@@ -739,16 +739,17 @@ class Monomorphizer:
         new_body = self._rewrite_block(fn.body)
 
         new_fn = FunctionDecl(
-            fn.name,
-            new_params,
-            new_return,
-            new_body,
-            fn.attributes,
-            fn.is_exported,
-            fn.is_extern,
-            fn.type_params,
-            getattr(fn, "has_self", False),
-            getattr(fn, "location", None),
+            name=fn.name,
+            parameters=new_params,
+            return_type=new_return,
+            body=new_body,
+            attributes=fn.attributes,
+            is_exported=fn.is_exported,
+            is_extern=fn.is_extern,
+            type_params=fn.type_params,
+            has_self=getattr(fn, "has_self", False),
+            is_forward_decl=getattr(fn, "is_forward_decl", False),
+            location=getattr(fn, "location", None),
         )
         # Preserve has_self attribute for impl methods (constructor param is best-effort).
         if hasattr(fn, "has_self"):

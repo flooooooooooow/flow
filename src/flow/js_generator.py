@@ -221,6 +221,17 @@ class JSGenerator:
                     self._gen_stmt(s)
             self.indent_level -= 1
 
+            # Handle elif blocks
+            if hasattr(stmt, "elif_blocks") and stmt.elif_blocks:
+                for elif_cond, elif_block in stmt.elif_blocks:
+                    c = self._gen_expr(elif_cond)
+                    self.emit(f"}} else if ({c}) {{")
+                    self.indent_level += 1
+                    if isinstance(elif_block, Block):
+                        for s in elif_block.statements:
+                            self._gen_stmt(s)
+                    self.indent_level -= 1
+
             if stmt.else_block:
                 self.emit("} else {")
                 self.indent_level += 1

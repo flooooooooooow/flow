@@ -78,6 +78,13 @@ class Formatter:
         elif isinstance(stmt, IfStatement):
             lines = [f"{prefix}if {self._format_expr(stmt.condition)} {{"]
             lines.extend(self._format_block(stmt.then_block, indent + 1))
+
+            # Handle elif blocks
+            if hasattr(stmt, "elif_blocks") and stmt.elif_blocks:
+                for elif_cond, elif_block in stmt.elif_blocks:
+                    lines.append(f"{prefix}}} else if {self._format_expr(elif_cond)} {{")
+                    lines.extend(self._format_block(elif_block, indent + 1))
+
             if stmt.else_block:
                 lines.append(f"{prefix}}} else {{")
                 lines.extend(self._format_block(stmt.else_block, indent + 1))

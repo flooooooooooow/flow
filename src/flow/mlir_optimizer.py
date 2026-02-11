@@ -75,18 +75,16 @@ class MLIROptimizer:
             # Try vectorization but skip if not available
             pipeline_parts.append("affine-loop-fusion")
 
-        # Build full pipeline
-        pipeline = f"builtin.module(func.func({','.join(pipeline_parts)}))"
-
-        # Run mlir-opt with optimization pipeline
+        # Run mlir-opt with individual pass flags for better compatibility across versions
         cmd = [
             self.mlir_opt,
             "--mlir-print-op-on-diagnostic=false",
-            f"--pass-pipeline={pipeline}",
-            input_mlir,
-            "-o",
-            output_mlir,
         ]
+
+        for p in pipeline_parts:
+            cmd.append(f"--{p}")
+
+        cmd.extend([input_mlir, "-o", output_mlir])
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
@@ -102,7 +100,6 @@ class MLIROptimizer:
         cmd = [
             self.mlir_opt,
             "--mlir-print-op-on-diagnostic=false",
-            "--pass-pipeline=builtin.module(func.func(print-ir-after-all))",
             "--mlir-pass-statistics",
             mlir_file,
         ]
@@ -126,15 +123,17 @@ class MLIROptimizer:
             # Run with statistics using the same known-available passes as optimize()
             # Keep this conservative: some Homebrew LLVM builds may not include optional passes.
             pipeline_parts: List[str] = ["canonicalize", "cse", "sccp"]
-            pipeline = f"builtin.module(func.func({','.join(pipeline_parts)}))"
 
             cmd = [
                 self.mlir_opt,
                 "--mlir-print-op-on-diagnostic=false",
                 "--mlir-pass-statistics",
-                f"--pass-pipeline={pipeline}",
-                tmp_path,
             ]
+
+            for p in pipeline_parts:
+                cmd.append(f"--{p}")
+
+            cmd.extend([tmp_path, "-o", "/dev/null"])
 
             result = subprocess.run(cmd, capture_output=True, text=True)
 

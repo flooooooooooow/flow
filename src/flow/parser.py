@@ -5,7 +5,7 @@ A simple recursive descent parser for the FLOW language
 """
 
 import re
-from typing import List, Optional, Union, Any, Tuple
+from typing import List, Optional, Union, Any, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -431,6 +431,7 @@ class ImplDecl:
 class EffectDecl:
     name: str
     operations: List["EffectOperation"]
+    is_exported: bool = False
 
 
 @dataclass
@@ -445,6 +446,7 @@ class CapabilityDecl:
     name: str
     effects: List[str]  # Names of effects this capability provides
     methods: List["CapabilityMethod"]
+    is_exported: bool = False
 
 
 @dataclass
@@ -565,10 +567,12 @@ Expression = Union[
     MethodCall,
     StructPattern,
     CastExpression,
+    "Assignment",
+    "Lambda",
 ]
 Statement = Union[
     VarDecl,
-    Assignment,
+    "Assignment",
     IfStatement,
     WhileStatement,
     ForStatement,
@@ -584,6 +588,7 @@ Statement = Union[
     TestDecl,
     TraitDecl,
     ImplDecl,
+    "Block",
 ]
 
 
@@ -744,6 +749,9 @@ class Lexer:
                 )
 
             token_type_name = m.lastgroup
+            if token_type_name is None:
+                self.pos = m.end()
+                continue
             token_value = m.group(token_type_name)
 
             # Skip whitespace and comments
@@ -829,7 +837,7 @@ class Parser:
         self.source = source or getattr(lexer, "_source", "")
         self.current_token = self.lexer.next_token()
         self.lookahead = self.lexer.next_token()
-        self.struct_names = set()
+        self.struct_names: Set[str] = set()
 
     def advance(self):
         self.current_token = self.lookahead
@@ -868,19 +876,8 @@ class Parser:
 
     def parse(
         self,
-    ) -> List[
-        Union[
-            FunctionDecl,
-            EffectDecl,
-            CapabilityDecl,
-            StructDecl,
-            ImportDecl,
-            ConstDecl,
-            TypeAliasDecl,
-            DistinctTypeDecl,
-        ]
-    ]:
-        declarations = []
+    ) -> List[Any]:
+        declarations: List[Any] = []
         while self.current_token.type != TokenType.EOF:
             is_exported = False
             attributes = []
@@ -921,26 +918,26 @@ class Parser:
                 self.advance()
 
             if self.current_token.type == TokenType.FUNCTION:
-                decl = self.parse_function()
-                decl.is_exported = is_exported
-                decl.attributes = attributes
-                declarations.append(decl)
+                decl_func = self.parse_function()
+                decl_func.is_exported = is_exported
+                decl_func.attributes = attributes
+                declarations.append(decl_func)
             elif self.current_token.type == TokenType.STRUCT:
-                decl = self.parse_struct()
-                decl.is_exported = is_exported
-                declarations.append(decl)
+                decl_struct = self.parse_struct()
+                decl_struct.is_exported = is_exported
+                declarations.append(decl_struct)
             elif self.current_token.type == TokenType.ENUM:
-                decl = self.parse_enum()
-                decl.is_exported = is_exported
-                declarations.append(decl)
+                decl_enum = self.parse_enum()
+                decl_enum.is_exported = is_exported
+                declarations.append(decl_enum)
             elif self.current_token.type == TokenType.EFFECT:
-                decl = self.parse_effect()
-                decl.is_exported = is_exported
-                declarations.append(decl)
+                decl_effect = self.parse_effect()
+                decl_effect.is_exported = is_exported
+                declarations.append(decl_effect)
             elif self.current_token.type == TokenType.CAPABILITY:
-                decl = self.parse_capability()
-                decl.is_exported = is_exported
-                declarations.append(decl)
+                decl_cap = self.parse_capability()
+                decl_cap.is_exported = is_exported
+                declarations.append(decl_cap)
             elif self.current_token.type == TokenType.IMPORT:
                 if is_exported:
                     raise SyntaxError(
@@ -948,9 +945,9 @@ class Parser:
                     )
                 declarations.append(self.parse_import())
             elif self.current_token.type == TokenType.CONST:
-                decl = self.parse_const()
-                decl.is_exported = is_exported
-                declarations.append(decl)
+                decl_const = self.parse_const()
+                decl_const.is_exported = is_exported
+                declarations.append(decl_const)
             elif self.current_token.type == TokenType.TEST:
                 if is_exported:
                     raise SyntaxError(
@@ -966,19 +963,19 @@ class Parser:
                 extern_funcs = self.parse_extern()
                 declarations.extend(extern_funcs)
             elif self.current_token.type == TokenType.TRAIT:
-                decl = self.parse_trait()
-                declarations.append(decl)
+                decl_trait = self.parse_trait()
+                declarations.append(decl_trait)
             elif self.current_token.type == TokenType.IMPL:
-                decl = self.parse_impl()
-                declarations.append(decl)
+                decl_impl = self.parse_impl()
+                declarations.append(decl_impl)
             elif self.current_token.type == TokenType.TYPE:
-                decl = self.parse_type_alias()
-                decl.is_exported = is_exported
-                declarations.append(decl)
+                decl_type = self.parse_type_alias()
+                decl_type.is_exported = is_exported
+                declarations.append(decl_type)
             elif self.current_token.type == TokenType.DISTINCT:
-                decl = self.parse_distinct_type()
-                decl.is_exported = is_exported
-                declarations.append(decl)
+                decl_dist = self.parse_distinct_type()
+                decl_dist.is_exported = is_exported
+                declarations.append(decl_dist)
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
         return declarations
@@ -1017,9 +1014,15 @@ class Parser:
 
         # Create a function that returns bool
         return_type = Type("bool")
-        parameters = []  # No parameters for tests
+        parameters: List[Parameter] = []  # No parameters for tests
 
-        return FunctionDecl(name, parameters, return_type, body, ["test"])
+        return FunctionDecl(
+            name=name,
+            parameters=parameters,
+            return_type=return_type,
+            body=body,
+            attributes=["test"],
+        )
 
     def parse_extern(self) -> List[FunctionDecl]:
         """Parse extern function declaration block - returns all declared functions."""
@@ -1032,7 +1035,7 @@ class Parser:
 
         self.expect(TokenType.LBRACE)
 
-        functions = []
+        functions: List[FunctionDecl] = []
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
                 raise SyntaxError(
@@ -1056,8 +1059,14 @@ class Parser:
                     return_type = self.parse_type()
 
                 # Create function declaration with empty body
-                func = FunctionDecl(name, parameters, return_type, Block([]), [])
-                func.is_extern = True
+                func = FunctionDecl(
+                    name=name,
+                    parameters=parameters,
+                    return_type=return_type,
+                    body=Block([]),
+                    attributes=[],
+                    is_extern=True,
+                )
                 functions.append(func)
             else:
                 raise SyntaxError(
@@ -1220,7 +1229,7 @@ class Parser:
 
         self.expect(TokenType.LBRACE)
 
-        methods = []
+        methods: List[FunctionDecl] = []
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
                 raise SyntaxError(
@@ -1321,10 +1330,16 @@ class Parser:
         # Check for forward declaration (no body)
         if self.current_token.type != TokenType.LBRACE:
             # Forward declaration - empty body
-            func = FunctionDecl(name, parameters, return_type, Block([]), type_params)
-            func.is_forward_decl = True
-            if has_self:
-                func.has_self = True
+            func = FunctionDecl(
+                name=name,
+                parameters=parameters,
+                return_type=return_type,
+                body=Block([]),
+                attributes=[],
+                type_params=type_params,
+                is_forward_decl=True,
+                has_self=has_self,
+            )
             return func
 
         body = self.parse_block()
@@ -1338,16 +1353,15 @@ class Parser:
         )
 
         fn = FunctionDecl(
-            name,
-            parameters,
-            return_type,
-            body,
-            [],
+            name=name,
+            parameters=parameters,
+            return_type=return_type,
+            body=body,
+            attributes=[],
             type_params=type_params,
+            has_self=has_self,
             location=loc,
         )
-        # Store has_self as an attribute (for impl methods)
-        fn.has_self = has_self
         return fn
 
     def parse_type_parameters(self) -> List[TypeParameter]:
@@ -1520,7 +1534,7 @@ class Parser:
         elif self.current_token.type == TokenType.FUNCTION:
             self.advance()  # consume 'function'
             self.expect(TokenType.LPAREN)
-            param_types = []
+            param_types: List[Type] = []
             if self.current_token.type != TokenType.RPAREN:
                 param_types.append(self.parse_type())
                 while self.current_token.type == TokenType.COMMA:
@@ -1819,7 +1833,7 @@ class Parser:
         condition = self.parse_expression_without_assign()
         then_block = self.parse_block()
 
-        elif_blocks = []
+        elif_blocks: List[Tuple[Expression, Block]] = []
         while True:
             if self.current_token.type == TokenType.ELIF:
                 self.advance()
@@ -1838,7 +1852,7 @@ class Parser:
             else:
                 break
 
-        else_block = None
+        else_block: Optional[Block] = None
         if self.current_token.type == TokenType.ELSE:
             self.advance()
             else_block = self.parse_block()
@@ -1911,22 +1925,22 @@ class Parser:
 
             # Transform: x += y  →  x = x + y
             if isinstance(expr, Variable):
-                value = BinaryOperation(expr, op, rhs)
-                return Assignment(expr.name, value)
+                compound_val = BinaryOperation(expr, op, rhs)
+                return Assignment(expr.name, compound_val)
             elif isinstance(expr, ArrayAccess):
-                value = BinaryOperation(expr, op, rhs)
-                return Assignment("", value, target_expr=expr)
+                compound_val = BinaryOperation(expr, op, rhs)
+                return Assignment("", compound_val, target_expr=expr)
             elif isinstance(expr, FieldAccess):
-                value = BinaryOperation(expr, op, rhs)
-                return Assignment("", value, target_expr=expr)
+                compound_val = BinaryOperation(expr, op, rhs)
+                return Assignment("", compound_val, target_expr=expr)
             else:
                 raise SyntaxError("Invalid compound assignment target")
 
         if self.current_token.type == TokenType.ASSIGN:
             if isinstance(expr, Variable):
                 self.advance()
-                value = self.parse_assignment()
-                return Assignment(expr.name, value)
+                assign_val = self.parse_assignment()
+                return Assignment(expr.name, assign_val)
             elif isinstance(expr, ArrayAccess):
                 # Array element assignment: arr[i] = value
                 self.advance()
@@ -1974,7 +1988,6 @@ class Parser:
             # Peek ahead to distinguish lambda from bitwise OR
             # If next token is IDENTIFIER followed by COLON or PIPE, it's lambda
             # Otherwise it's bitwise OR
-            _op = self.current_token.value
             self.advance()
             right = self.parse_bitwise_xor()
             left = BinaryOperation(left, "|", right)
@@ -1986,7 +1999,6 @@ class Parser:
         left = self.parse_bitwise_and()
 
         while self.current_token.type == TokenType.CARET:
-            _op = self.current_token.value
             self.advance()
             right = self.parse_bitwise_and()
             left = BinaryOperation(left, "^", right)
@@ -1998,7 +2010,6 @@ class Parser:
         left = self.parse_equality()
 
         while self.current_token.type == TokenType.AMPERSAND:
-            _op = self.current_token.value
             self.advance()
             right = self.parse_equality()
             left = BinaryOperation(left, "&", right)
@@ -2354,6 +2365,7 @@ class Parser:
             return_type = self.parse_type()
 
         # Parse body - either block or single expression
+        body: Union[Block, Expression]
         if self.current_token.type == TokenType.LBRACE:
             body = self.parse_block()
         else:

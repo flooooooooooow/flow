@@ -30,7 +30,7 @@ except ImportError:
                     "dev-dependencies": {},
                     "native": {},
                 }
-                current_section: Optional[str] = None
+                current_section = None
                 for line in s.strip().split("\n"):
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -75,14 +75,14 @@ class FlowPackage:
     author: str = ""
     license: str = "MIT"
     entry: str = "src/main.flow"
-    dependencies: Optional[Dict[str, str]] = None
-    dev_dependencies: Optional[Dict[str, str]] = None
+    dependencies: Dict[str, str] = None
+    dev_dependencies: Dict[str, str] = None
     # Native linking support
-    native_sources: Optional[List[str]] = None  # e.g., ["runtime/gfx_macos.m"]
-    frameworks: Optional[List[str]] = None  # macOS frameworks, e.g., ["Cocoa", "CoreGraphics"]
-    libs: Optional[List[str]] = None  # libraries to link, e.g., ["SDL2"]
-    cflags: Optional[List[str]] = None  # extra compile flags
-    ldflags: Optional[List[str]] = None  # extra link flags
+    native_sources: List[str] = None  # e.g., ["runtime/gfx_macos.m"]
+    frameworks: List[str] = None  # macOS frameworks, e.g., ["Cocoa", "CoreGraphics"]
+    libs: List[str] = None  # libraries to link, e.g., ["SDL2"]
+    cflags: List[str] = None  # extra compile flags
+    ldflags: List[str] = None  # extra link flags
 
     def __post_init__(self):
         if self.dependencies is None:
@@ -579,12 +579,12 @@ flow_packages/
         if not config:
             return False
 
-        output_file = self.project_dir / "build" / config.name
+        run_file = self.project_dir / "build" / config.name
 
         print(f"{self.BLUE}Running {config.name}...{self.RESET}")
 
         try:
-            process = subprocess.Popen([str(output_file)])
+            process = subprocess.Popen([str(run_file)])
             return process.wait() == 0
         except KeyboardInterrupt:
             try:
