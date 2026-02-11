@@ -5,7 +5,7 @@ A simple recursive descent parser for the FLOW language
 """
 
 import re
-from typing import List, Dict, Optional, Union, Any, Tuple
+from typing import List, Optional, Union, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -531,6 +531,7 @@ class TypeAliasDecl:
     """Type alias declaration: type Name = BaseType
     Type aliases are transparent - they're just alternate names for existing types.
     """
+
     name: str
     base_type: Type
     is_exported: bool = False
@@ -542,6 +543,7 @@ class DistinctTypeDecl:
     Distinct types are opaque - they're incompatible with their base type and each other.
     Similar to Odin's distinct types or Ada's derived types.
     """
+
     name: str
     base_type: Type
     is_exported: bool = False
@@ -726,7 +728,7 @@ class Lexer:
                 if i + 1 >= len(content):
                     raise SyntaxError("Invalid escape sequence at end of string")
                 esc = content[i + 1]
-                if esc not in ['n', 't', 'r', '\\\\', '"', '0']:
+                if esc not in ["n", "t", "r", "\\\\", '"', "0"]:
                     raise SyntaxError(f"Invalid escape sequence: \\\\{esc}")
                 i += 2
                 continue
@@ -849,8 +851,13 @@ class Parser:
             token = self.current_token
             self.advance()
             return token
-        if token_type == TokenType.IDENTIFIER and self.current_token.type == TokenType.TEST:
-            # Allow 'test' as an identifier in contexts like `function test()`
+        if token_type == TokenType.IDENTIFIER and self.current_token.type in [
+            TokenType.TEST,
+            TokenType.STEP,
+            TokenType.TYPE,
+            TokenType.MODULE,
+        ]:
+            # Allow certain keywords as identifiers in non-ambiguous contexts
             token = self.current_token
             self.advance()
             return token
@@ -862,8 +869,14 @@ class Parser:
         self,
     ) -> List[
         Union[
-            FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ImportDecl, ConstDecl,
-            TypeAliasDecl, DistinctTypeDecl
+            FunctionDecl,
+            EffectDecl,
+            CapabilityDecl,
+            StructDecl,
+            ImportDecl,
+            ConstDecl,
+            TypeAliasDecl,
+            DistinctTypeDecl,
         ]
     ]:
         declarations = []
@@ -885,7 +898,9 @@ class Parser:
                                 args.append(self.current_token.value)
                                 self.advance()
                             elif self.current_token.type == TokenType.STRING_LITERAL:
-                                args.append(self.current_token.value.strip('"').strip("'"))
+                                args.append(
+                                    self.current_token.value.strip('"').strip("'")
+                                )
                                 self.advance()
                             else:
                                 raise SyntaxError(
@@ -1019,7 +1034,9 @@ class Parser:
         functions = []
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
-                raise SyntaxError("Unterminated extern block: expected '}' before end of file")
+                raise SyntaxError(
+                    "Unterminated extern block: expected '}' before end of file"
+                )
             if self.current_token.type == TokenType.FUNCTION:
                 # Parse function signature only for extern
                 self.expect(TokenType.FUNCTION)
@@ -1069,7 +1086,9 @@ class Parser:
         fields = []
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
-                raise SyntaxError("Unterminated struct: expected '}' before end of file")
+                raise SyntaxError(
+                    "Unterminated struct: expected '}' before end of file"
+                )
             field_name = self.expect(TokenType.IDENTIFIER).value
             self.expect(TokenType.COLON)
             field_type = self.parse_type()
@@ -1203,7 +1222,9 @@ class Parser:
         methods = []
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
-                raise SyntaxError("Unterminated impl block: expected '}' before end of file")
+                raise SyntaxError(
+                    "Unterminated impl block: expected '}' before end of file"
+                )
             if self.current_token.type == TokenType.FUNCTION:
                 method = self.parse_function()
                 methods.append(method)
@@ -1495,6 +1516,28 @@ class Parser:
                 element_type=element_type,
             )
 
+        elif self.current_token.type == TokenType.FUNCTION:
+            self.advance()  # consume 'function'
+            self.expect(TokenType.LPAREN)
+            param_types = []
+            if self.current_token.type != TokenType.RPAREN:
+                param_types.append(self.parse_type())
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    param_types.append(self.parse_type())
+            self.expect(TokenType.RPAREN)
+
+            return_type = Type("void")
+            if self.current_token.type == TokenType.ARROW:
+                self.advance()
+                return_type = self.parse_type()
+
+            param_str = "_".join([t.name for t in param_types])
+            return Type(
+                f"func_{param_str}_{return_type.name}",
+                type_args=param_types + [return_type],
+            )
+
         else:
             raise SyntaxError(f"Unexpected type token: {self.current_token.type}")
 
@@ -1529,7 +1572,13 @@ class Parser:
             return self.parse_capability()
         elif self.current_token.type == TokenType.HANDLE:
             return self.parse_handle()
-        elif self.current_token.type in (TokenType.UI_LAYOUT, TokenType.UI_ROW, TokenType.UI_COLUMN, TokenType.UI_STACK, TokenType.UI_GRID):
+        elif self.current_token.type in (
+            TokenType.UI_LAYOUT,
+            TokenType.UI_ROW,
+            TokenType.UI_COLUMN,
+            TokenType.UI_STACK,
+            TokenType.UI_GRID,
+        ):
             return self.parse_layout()
         elif self.current_token.type == TokenType.MATCH:
             return self.parse_match()
@@ -1544,7 +1593,9 @@ class Parser:
         operations = []
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
-                raise SyntaxError("Unterminated effect: expected '}' before end of file")
+                raise SyntaxError(
+                    "Unterminated effect: expected '}' before end of file"
+                )
             operations.append(self.parse_effect_operation())
             if self.current_token.type == TokenType.COMMA:
                 self.advance()
@@ -1582,7 +1633,9 @@ class Parser:
 
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
-                raise SyntaxError("Unterminated capability: expected '}' before end of file")
+                raise SyntaxError(
+                    "Unterminated capability: expected '}' before end of file"
+                )
             if self.current_token.type == TokenType.EFFECT:
                 self.advance()
                 # Parse multiple effects
@@ -1742,7 +1795,11 @@ class Parser:
         self.expect(TokenType.RETURN)
         value = None
         # If the next token is a terminator, it's a bare return.
-        if self.current_token.type in [TokenType.SEMICOLON, TokenType.RBRACE, TokenType.EOF]:
+        if self.current_token.type in [
+            TokenType.SEMICOLON,
+            TokenType.RBRACE,
+            TokenType.EOF,
+        ]:
             value = None
         elif self.current_token.type == TokenType.VOID:
             # Explicit void return - consume the VOID token
@@ -1762,11 +1819,23 @@ class Parser:
         then_block = self.parse_block()
 
         elif_blocks = []
-        while self.current_token.type == TokenType.ELIF:
-            self.advance()
-            elif_condition = self.parse_expression_without_assign()
-            elif_block = self.parse_block()
-            elif_blocks.append((elif_condition, elif_block))
+        while True:
+            if self.current_token.type == TokenType.ELIF:
+                self.advance()
+                elif_condition = self.parse_expression_without_assign()
+                elif_block = self.parse_block()
+                elif_blocks.append((elif_condition, elif_block))
+            elif (
+                self.current_token.type == TokenType.ELSE
+                and self.lookahead.type == TokenType.IF
+            ):
+                self.advance()  # consume ELSE
+                self.expect(TokenType.IF)  # consume IF
+                elif_condition = self.parse_expression_without_assign()
+                elif_block = self.parse_block()
+                elif_blocks.append((elif_condition, elif_block))
+            else:
+                break
 
         else_block = None
         if self.current_token.type == TokenType.ELSE:
@@ -1876,10 +1945,10 @@ class Parser:
         left = self.parse_logical_and()
 
         while self.current_token.type == TokenType.OR:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_logical_and()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, _op, right)
 
         return left
 
@@ -1887,10 +1956,10 @@ class Parser:
         left = self.parse_bitwise_or()
 
         while self.current_token.type == TokenType.AND:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_bitwise_or()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, _op, right)
 
         return left
 
@@ -1904,7 +1973,7 @@ class Parser:
             # Peek ahead to distinguish lambda from bitwise OR
             # If next token is IDENTIFIER followed by COLON or PIPE, it's lambda
             # Otherwise it's bitwise OR
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_bitwise_xor()
             left = BinaryOperation(left, "|", right)
@@ -1916,7 +1985,7 @@ class Parser:
         left = self.parse_bitwise_and()
 
         while self.current_token.type == TokenType.CARET:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_bitwise_and()
             left = BinaryOperation(left, "^", right)
@@ -1928,7 +1997,7 @@ class Parser:
         left = self.parse_equality()
 
         while self.current_token.type == TokenType.AMPERSAND:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_equality()
             left = BinaryOperation(left, "&", right)
@@ -1939,10 +2008,10 @@ class Parser:
         left = self.parse_comparison()
 
         while self.current_token.type in [TokenType.EQUALS, TokenType.NOT_EQUALS]:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_comparison()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, _op, right)
 
         return left
 
@@ -1955,10 +2024,10 @@ class Parser:
             TokenType.LESS_EQUAL,
             TokenType.GREATER_EQUAL,
         ]:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_shift()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, _op, right)
 
         return left
 
@@ -1967,10 +2036,10 @@ class Parser:
         left = self.parse_term()
 
         while self.current_token.type in [TokenType.LSHIFT, TokenType.RSHIFT]:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_term()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, _op, right)
 
         return left
 
@@ -1978,7 +2047,7 @@ class Parser:
         left: Expression = self.parse_factor()
 
         while self.current_token.type in [TokenType.PLUS, TokenType.MINUS]:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_factor()
 
@@ -1987,10 +2056,10 @@ class Parser:
                 isinstance(right, Literal) and right.type.name == "string"
             ):
                 # String concatenation - keep as BinaryOperation, MLIR generator will handle it
-                left = BinaryOperation(left, op, right)
+                left = BinaryOperation(left, _op, right)
             else:
                 # Numeric addition
-                left = BinaryOperation(left, op, right)
+                left = BinaryOperation(left, _op, right)
 
         return left
 
@@ -2002,10 +2071,10 @@ class Parser:
             TokenType.SLASH,
             TokenType.PERCENT,
         ]:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             right = self.parse_cast()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, _op, right)
 
         return left
 
@@ -2024,10 +2093,10 @@ class Parser:
             TokenType.TILDE,
             TokenType.AMPERSAND,
         ]:
-            op = self.current_token.value
+            _op = self.current_token.value
             self.advance()
             operand = self.parse_unary()
-            return UnaryOperation(op, operand)
+            return UnaryOperation(_op, operand)
 
         return self.parse_primary()
 
@@ -2042,7 +2111,11 @@ class Parser:
             # Infer float vs int from token text.
             # This keeps the language ergonomic for SIMD examples that use 0.0/1.0.
             is_hex = isinstance(value, str) and value.startswith("0x")
-            if not is_hex and isinstance(value, str) and ("." in value or "e" in value.lower()):
+            if (
+                not is_hex
+                and isinstance(value, str)
+                and ("." in value or "e" in value.lower())
+            ):
                 return Literal(value, Type("f32"))
             elif is_hex:
                 # Handle hex literals - convert to integer
@@ -2103,7 +2176,13 @@ class Parser:
             self.expect(TokenType.RBRACKET)
             return ArrayLiteral(elements)
 
-        elif self.current_token.type == TokenType.IDENTIFIER:
+        elif self.current_token.type in [
+            TokenType.IDENTIFIER,
+            TokenType.TEST,
+            TokenType.STEP,
+            TokenType.TYPE,
+            TokenType.MODULE,
+        ]:
             name = self.current_token.value
             self.advance()
 
@@ -2292,7 +2371,9 @@ class Parser:
 
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
-                raise SyntaxError("Unterminated struct literal: expected '}' before end of file")
+                raise SyntaxError(
+                    "Unterminated struct literal: expected '}' before end of file"
+                )
             field_name = self.expect(TokenType.IDENTIFIER).value
             self.expect(TokenType.COLON)
             field_value = self.parse_expression_without_assign()

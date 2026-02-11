@@ -5,10 +5,20 @@ FLOW Code Formatter - Formats FLOW source code according to style guidelines.
 from __future__ import annotations
 from typing import List
 from .parser import (
-    parse_flow_code, FunctionDecl, StructDecl, EffectDecl, CapabilityDecl,
-    ConstDecl, ImportDecl, VarDecl, ReturnStatement, IfStatement, WhileStatement,
-    ForStatement, Block, BinaryOperation, UnaryOperation, FunctionCall,
-    Literal, Variable, StructLiteral, FieldAccess, ArrayLiteral, ArrayAccess, Type
+    parse_flow_code,
+    FunctionDecl,
+    StructDecl,
+    ImportDecl,
+    VarDecl,
+    ReturnStatement,
+    IfStatement,
+    Block,
+    BinaryOperation,
+    FunctionCall,
+    Literal,
+    Variable,
+    StructLiteral,
+    Type,
 )
 
 
@@ -40,7 +50,9 @@ class Formatter:
         return lines
 
     def _format_function(self, decl: FunctionDecl) -> List[str]:
-        params = ", ".join(f"{p.name}: {self._format_type(p.type)}" for p in decl.parameters)
+        params = ", ".join(
+            f"{p.name}: {self._format_type(p.type)}" for p in decl.parameters
+        )
         ret = self._format_type(decl.return_type)
         lines = [f"function {decl.name}({params}) -> {ret} {{"]
         lines.extend(self._format_block(decl.body, 1))
@@ -56,7 +68,9 @@ class Formatter:
     def _format_stmt(self, stmt, indent: int) -> List[str]:
         prefix = "    " * indent
         if isinstance(stmt, VarDecl):
-            init = f" = {self._format_expr(stmt.initializer)}" if stmt.initializer else ""
+            init = (
+                f" = {self._format_expr(stmt.initializer)}" if stmt.initializer else ""
+            )
             return [f"{prefix}let {stmt.name}: {self._format_type(stmt.type)}{init}"]
         elif isinstance(stmt, ReturnStatement):
             val = f" {self._format_expr(stmt.value)}" if stmt.value else ""
@@ -96,7 +110,7 @@ class Formatter:
 
 
 def format_file(filepath: str, check_only: bool = False) -> bool:
-    with open(filepath, 'r') as f:
+    with open(filepath, "r") as f:
         original = f.read()
     formatter = Formatter()
     try:
@@ -109,6 +123,6 @@ def format_file(filepath: str, check_only: bool = False) -> bool:
     if check_only:
         print(f"Would reformat {filepath}")
         return False
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         f.write(formatted)
     return True

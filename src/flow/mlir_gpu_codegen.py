@@ -7,7 +7,6 @@ Emits MLIR GPU dialect suitable for SPIR-V lowering.
 from typing import List, Dict, Tuple
 from .parser import (
     FunctionDecl,
-    Block,
     Statement,
     Expression,
     VarDecl,
@@ -67,10 +66,18 @@ class MLIRGpuGenerator:
             left = self.infer_expr_type(expr.left)
             right = self.infer_expr_type(expr.right)
             if left.name in ["f32", "f64"] or right.name in ["f32", "f64"]:
-                return Type("f32") if left.name == "f32" or right.name == "f32" else Type("f64")
+                return (
+                    Type("f32")
+                    if left.name == "f32" or right.name == "f32"
+                    else Type("f64")
+                )
             return left
         if isinstance(expr, FunctionCall):
-            if expr.name.startswith("gpu_thread_id") or expr.name.startswith("gpu_block_id") or expr.name.startswith("gpu_local_id"):
+            if (
+                expr.name.startswith("gpu_thread_id")
+                or expr.name.startswith("gpu_block_id")
+                or expr.name.startswith("gpu_local_id")
+            ):
                 return Type("i32")
         return Type("i32")
 
@@ -78,7 +85,9 @@ class MLIRGpuGenerator:
         if ssa_type == "index":
             return ssa
         cast = self.new_ssa()
-        ops.append(f"{self.indent()}{cast} = arith.index_cast {ssa} : {ssa_type} to index")
+        ops.append(
+            f"{self.indent()}{cast} = arith.index_cast {ssa} : {ssa_type} to index"
+        )
         return cast
 
     def generate_expression(self, expr: Expression) -> Tuple[str, str, List[str]]:
@@ -91,7 +100,9 @@ class MLIRGpuGenerator:
                 ops.append(f"{self.indent()}{ssa} = arith.constant {val} : {mlir_type}")
                 return ssa, mlir_type, ops
             ssa = self.new_ssa()
-            ops.append(f"{self.indent()}{ssa} = arith.constant {expr.value} : {mlir_type}")
+            ops.append(
+                f"{self.indent()}{ssa} = arith.constant {expr.value} : {mlir_type}"
+            )
             return ssa, mlir_type, ops
 
         if isinstance(expr, Variable):
@@ -103,11 +114,14 @@ class MLIRGpuGenerator:
             return info["ssa"], info["mlir_type"], ops
 
         if isinstance(expr, FunctionCall):
+
             def dim_index(kind: str, axis: str) -> Tuple[str, List[str]]:
                 ssa_idx = self.new_ssa()
                 ops.append(f"{self.indent()}{ssa_idx} = gpu.{kind} {axis}")
                 ssa_i32 = self.new_ssa()
-                ops.append(f"{self.indent()}{ssa_i32} = arith.index_cast {ssa_idx} : index to i32")
+                ops.append(
+                    f"{self.indent()}{ssa_i32} = arith.index_cast {ssa_idx} : index to i32"
+                )
                 return ssa_i32, ops
 
             if expr.name in ["gpu_thread_id", "gpu_thread_id_x"]:
@@ -116,27 +130,39 @@ class MLIRGpuGenerator:
                 block_dim, _ = dim_index("block_dim", "x")
                 thread_id, _ = dim_index("thread_id", "x")
                 mul = self.new_ssa()
-                ops.append(f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32")
+                ops.append(
+                    f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32"
+                )
                 add = self.new_ssa()
-                ops.append(f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32")
+                ops.append(
+                    f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32"
+                )
                 return add, "i32", ops
             if expr.name in ["gpu_thread_id_y"]:
                 block_id, _ = dim_index("block_id", "y")
                 block_dim, _ = dim_index("block_dim", "y")
                 thread_id, _ = dim_index("thread_id", "y")
                 mul = self.new_ssa()
-                ops.append(f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32")
+                ops.append(
+                    f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32"
+                )
                 add = self.new_ssa()
-                ops.append(f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32")
+                ops.append(
+                    f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32"
+                )
                 return add, "i32", ops
             if expr.name in ["gpu_thread_id_z"]:
                 block_id, _ = dim_index("block_id", "z")
                 block_dim, _ = dim_index("block_dim", "z")
                 thread_id, _ = dim_index("thread_id", "z")
                 mul = self.new_ssa()
-                ops.append(f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32")
+                ops.append(
+                    f"{self.indent()}{mul} = arith.muli {block_id}, {block_dim} : i32"
+                )
                 add = self.new_ssa()
-                ops.append(f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32")
+                ops.append(
+                    f"{self.indent()}{add} = arith.addi {mul}, {thread_id} : i32"
+                )
                 return add, "i32", ops
             if expr.name in ["gpu_local_id", "gpu_local_id_x"]:
                 tid, _ = dim_index("thread_id", "x")
@@ -176,16 +202,24 @@ class MLIRGpuGenerator:
                 return gdim, "i32", ops
 
         if isinstance(expr, UnaryOperation):
-            operand_ssa, operand_type, operand_ops = self.generate_expression(expr.operand)
+            operand_ssa, operand_type, operand_ops = self.generate_expression(
+                expr.operand
+            )
             ops.extend(operand_ops)
             ssa = self.new_ssa()
             if expr.operator == "-":
                 if operand_type in ["f32", "f64"]:
-                    ops.append(f"{self.indent()}{ssa} = arith.negf {operand_ssa} : {operand_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.negf {operand_ssa} : {operand_type}"
+                    )
                 else:
-                    ops.append(f"{self.indent()}{ssa} = arith.subi {operand_ssa}, 0 : {operand_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.subi {operand_ssa}, 0 : {operand_type}"
+                    )
             elif expr.operator in ["!", "not"]:
-                ops.append(f"{self.indent()}{ssa} = arith.xori {operand_ssa}, 1 : {operand_type}")
+                ops.append(
+                    f"{self.indent()}{ssa} = arith.xori {operand_ssa}, 1 : {operand_type}"
+                )
             else:
                 ops.append(f"{self.indent()}// Unsupported unary op {expr.operator}")
             return ssa, operand_type, ops
@@ -203,7 +237,9 @@ class MLIRGpuGenerator:
             if "f64" in arr_type:
                 elem_type = "f64"
             ssa = self.new_ssa()
-            ops.append(f"{self.indent()}{ssa} = memref.load {arr_ssa}[{idx_final}] : {arr_type}")
+            ops.append(
+                f"{self.indent()}{ssa} = memref.load {arr_ssa}[{idx_final}] : {arr_type}"
+            )
             return ssa, elem_type, ops
 
         if isinstance(expr, BinaryOperation):
@@ -224,7 +260,9 @@ class MLIRGpuGenerator:
                         "==": "oeq",
                         "!=": "one",
                     }[expr.operator]
-                    ops.append(f"{self.indent()}{ssa} = arith.cmpf {pred}, {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.cmpf {pred}, {left_ssa}, {right_ssa} : {left_type}"
+                    )
                 else:
                     pred = {
                         "<": "slt",
@@ -234,7 +272,9 @@ class MLIRGpuGenerator:
                         "==": "eq",
                         "!=": "ne",
                     }[expr.operator]
-                    ops.append(f"{self.indent()}{ssa} = arith.cmpi {pred}, {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.cmpi {pred}, {left_ssa}, {right_ssa} : {left_type}"
+                    )
                 return ssa, "i1", ops
 
             # Arithmetic
@@ -242,24 +282,40 @@ class MLIRGpuGenerator:
             is_float = left_type in ["f32", "f64"] or right_type in ["f32", "f64"]
             if expr.operator == "+":
                 if is_float:
-                    ops.append(f"{self.indent()}{ssa} = arith.addf {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.addf {left_ssa}, {right_ssa} : {left_type}"
+                    )
                 else:
-                    ops.append(f"{self.indent()}{ssa} = arith.addi {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.addi {left_ssa}, {right_ssa} : {left_type}"
+                    )
             elif expr.operator == "-":
                 if is_float:
-                    ops.append(f"{self.indent()}{ssa} = arith.subf {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.subf {left_ssa}, {right_ssa} : {left_type}"
+                    )
                 else:
-                    ops.append(f"{self.indent()}{ssa} = arith.subi {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.subi {left_ssa}, {right_ssa} : {left_type}"
+                    )
             elif expr.operator == "*":
                 if is_float:
-                    ops.append(f"{self.indent()}{ssa} = arith.mulf {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.mulf {left_ssa}, {right_ssa} : {left_type}"
+                    )
                 else:
-                    ops.append(f"{self.indent()}{ssa} = arith.muli {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.muli {left_ssa}, {right_ssa} : {left_type}"
+                    )
             elif expr.operator == "/":
                 if is_float:
-                    ops.append(f"{self.indent()}{ssa} = arith.divf {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.divf {left_ssa}, {right_ssa} : {left_type}"
+                    )
                 else:
-                    ops.append(f"{self.indent()}{ssa} = arith.divsi {left_ssa}, {right_ssa} : {left_type}")
+                    ops.append(
+                        f"{self.indent()}{ssa} = arith.divsi {left_ssa}, {right_ssa} : {left_type}"
+                    )
             else:
                 ops.append(f"{self.indent()}// Unsupported binary op {expr.operator}")
             return ssa, left_type, ops
@@ -275,7 +331,9 @@ class MLIRGpuGenerator:
                 # uninitialized scalars not supported in GPU kernels
                 lines.append(f"{self.indent()}// Uninitialized var {stmt.name}")
                 return lines
-            value_ssa, value_type, value_ops = self.generate_expression(stmt.initializer)
+            value_ssa, value_type, value_ops = self.generate_expression(
+                stmt.initializer
+            )
             lines.extend(value_ops)
             self.symbol_table[stmt.name] = {
                 "ssa": value_ssa,
@@ -287,13 +345,21 @@ class MLIRGpuGenerator:
         if isinstance(stmt, Assignment):
             value_ssa, value_type, value_ops = self.generate_expression(stmt.value)
             lines.extend(value_ops)
-            if stmt.target_expr is not None and isinstance(stmt.target_expr, ArrayAccess):
-                arr_ssa, arr_type, arr_ops = self.generate_expression(stmt.target_expr.array)
+            if stmt.target_expr is not None and isinstance(
+                stmt.target_expr, ArrayAccess
+            ):
+                arr_ssa, arr_type, arr_ops = self.generate_expression(
+                    stmt.target_expr.array
+                )
                 lines.extend(arr_ops)
-                idx_ssa, idx_type, idx_ops = self.generate_expression(stmt.target_expr.index)
+                idx_ssa, idx_type, idx_ops = self.generate_expression(
+                    stmt.target_expr.index
+                )
                 lines.extend(idx_ops)
                 idx_final = self.ensure_index(idx_ssa, idx_type, lines)
-                lines.append(f"{self.indent()}memref.store {value_ssa}, {arr_ssa}[{idx_final}] : {arr_type}")
+                lines.append(
+                    f"{self.indent()}memref.store {value_ssa}, {arr_ssa}[{idx_final}] : {arr_type}"
+                )
                 return lines
             if stmt.target in self.symbol_table:
                 self.symbol_table[stmt.target]["ssa"] = value_ssa
@@ -321,7 +387,10 @@ class MLIRGpuGenerator:
             return lines
 
         if isinstance(stmt, Expression):
-            if isinstance(stmt, FunctionCall) and stmt.name in ["gpu_barrier", "gpu_sync"]:
+            if isinstance(stmt, FunctionCall) and stmt.name in [
+                "gpu_barrier",
+                "gpu_sync",
+            ]:
                 lines.append(f"{self.indent()}gpu.barrier")
                 return lines
             _, _, expr_ops = self.generate_expression(stmt)
@@ -347,7 +416,9 @@ class MLIRGpuGenerator:
                 "flow_type": param.type,
             }
 
-        lines.append(f"{self.indent()}gpu.func @{func.name}({', '.join(params)}) kernel {{")
+        lines.append(
+            f"{self.indent()}gpu.func @{func.name}({', '.join(params)}) kernel {{"
+        )
         self.indent_level += 1
         for stmt in func.body.statements:
             lines.extend(self.generate_statement(stmt))

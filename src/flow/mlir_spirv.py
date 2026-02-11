@@ -9,7 +9,9 @@ import tempfile
 
 
 class MLIRSPIRVCompiler:
-    def __init__(self, mlir_opt: Optional[str] = None, mlir_translate: Optional[str] = None):
+    def __init__(
+        self, mlir_opt: Optional[str] = None, mlir_translate: Optional[str] = None
+    ):
         self.mlir_opt = mlir_opt or self._find_mlir_opt()
         self.mlir_translate = mlir_translate or self._find_mlir_translate()
 
@@ -21,7 +23,9 @@ class MLIRSPIRVCompiler:
         brew = shutil.which("brew")
         if brew:
             try:
-                res = subprocess.run([brew, "--prefix", "llvm"], capture_output=True, text=True)
+                res = subprocess.run(
+                    [brew, "--prefix", "llvm"], capture_output=True, text=True
+                )
                 if res.returncode == 0:
                     candidate = Path(res.stdout.strip()) / "bin" / "mlir-opt"
                     if candidate.exists():
@@ -37,7 +41,9 @@ class MLIRSPIRVCompiler:
         brew = shutil.which("brew")
         if brew:
             try:
-                res = subprocess.run([brew, "--prefix", "llvm"], capture_output=True, text=True)
+                res = subprocess.run(
+                    [brew, "--prefix", "llvm"], capture_output=True, text=True
+                )
                 if res.returncode == 0:
                     candidate = Path(res.stdout.strip()) / "bin" / "mlir-translate"
                     if candidate.exists():
@@ -46,7 +52,12 @@ class MLIRSPIRVCompiler:
                 pass
         return "mlir-translate"
 
-    def compile_mlir_to_spirv(self, mlir_code: str, output_path: str, extra_opt_args: Optional[List[str]] = None) -> None:
+    def compile_mlir_to_spirv(
+        self,
+        mlir_code: str,
+        output_path: str,
+        extra_opt_args: Optional[List[str]] = None,
+    ) -> None:
         if not self.mlir_opt or not self.mlir_translate:
             raise RuntimeError("mlir-opt or mlir-translate not found on PATH")
 
@@ -79,6 +90,8 @@ class MLIRSPIRVCompiler:
             ]
             res2 = subprocess.run(translate_cmd, capture_output=True)
             if res2.returncode != 0:
-                raise RuntimeError(f"mlir-translate failed: {res2.stderr.decode('utf-8', errors='ignore')}")
+                raise RuntimeError(
+                    f"mlir-translate failed: {res2.stderr.decode('utf-8', errors='ignore')}"
+                )
 
             Path(output_path).write_bytes(res2.stdout)

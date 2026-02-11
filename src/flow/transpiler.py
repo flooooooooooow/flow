@@ -9,12 +9,10 @@ import sys
 import argparse
 from pathlib import Path
 from .parser import (
-    parse_flow_code,
     FunctionDecl,
     EffectDecl,
     CapabilityDecl,
     StructDecl,
-    ConstDecl,
 )
 from .mlir_generator import flow_to_mlir
 from .c_generator import flow_to_c
@@ -123,7 +121,7 @@ def main():
     # Read input file
     try:
         with open(args.input, "r") as f:
-            flow_code = f.read()
+            _flow_code = f.read()
     except FileNotFoundError:
         print(f"Error: File '{args.input}' not found", file=sys.stderr)
         sys.exit(1)
