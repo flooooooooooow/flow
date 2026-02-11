@@ -25,14 +25,14 @@ This approach (similar to Rust) has:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple, Optional, Any
+from dataclasses import dataclass
+from typing import Dict, List, Set, Any
 
 from .parser import (
     FunctionDecl, StructDecl, Type, Parameter, Block, Statement,
     VarDecl, ReturnStatement, Assignment, IfStatement, WhileStatement,
     ForStatement, BinaryOperation, UnaryOperation, FunctionCall,
-    Literal, Variable, StructLiteral, ArrayLiteral, FieldAccess,
+    Literal, StructLiteral, ArrayLiteral, FieldAccess,
     ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter, CastExpression
 )
 

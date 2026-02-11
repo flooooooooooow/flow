@@ -211,6 +211,8 @@ compile_program() {
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
+        "$SCRIPT_DIR/runtime/live_plugin.c" \
+        "$SCRIPT_DIR/runtime/live_host.c" \
         "$SCRIPT_DIR/runtime/audio_simd.c" \
         "${py_ldflags[@]}" -o "$build_dir/$basename" 2>/dev/null; then
         print_error "C compilation/linking failed"
@@ -309,7 +311,7 @@ compile_audio_program() {
     local py_ldflags=()
     local audio_cflags=()
     local audio_ldflags=()
-    local audio_sources=("$SCRIPT_DIR/runtime/audio_miniaudio.c" "$SCRIPT_DIR/runtime/audio_simd.c")
+    local audio_sources=("$SCRIPT_DIR/runtime/audio_miniaudio.c" "$SCRIPT_DIR/runtime/audio_simd.c" "$SCRIPT_DIR/runtime/live_plugin.c" "$SCRIPT_DIR/runtime/live_host.c")
     
     local use_mlir=0
     if [ "$backend" = "--mlir" ] || [ "${FLOW_AUDIO_BACKEND:-}" = "mlir" ]; then

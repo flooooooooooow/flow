@@ -9,7 +9,6 @@ import ctypes
 import subprocess
 import tempfile
 from typing import Optional, Dict, Any, List, Tuple
-from pathlib import Path
 
 # Suppress warnings by default
 SUPPRESS_GPU_WARNINGS = os.environ.get('FLOW_SUPPRESS_GPU_WARNINGS', '1') == '1'
@@ -154,7 +153,7 @@ class MetalShaderCompiler:
             result = subprocess.run(['which', 'xcrun'], capture_output=True, text=True)
             if result.returncode == 0:
                 return result.stdout.strip()
-        except:
+        except Exception:
             pass
         
         # Try common paths
@@ -218,7 +217,7 @@ class MetalShaderCompiler:
                     try:
                         if os.path.exists(temp_file):
                             os.unlink(temp_file)
-                    except:
+                    except Exception:
                         pass
                         
         except Exception as e:
