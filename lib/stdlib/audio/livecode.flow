@@ -251,11 +251,11 @@ export function scale_note(root: i32, scale_type: i32, degree: i32) -> i32 {
 
     if scale_type == 0 {
         scale = scale_major(root)
-    } else if scale_type == 1 {
+    } elif scale_type == 1 {
         scale = scale_minor(root)
-    } else if scale_type == 2 {
+    } elif scale_type == 2 {
         scale = scale_dorian(root)
-    } else if scale_type == 3 {
+    } elif scale_type == 3 {
         scale = scale_mixolydian(root)
     } else {
         scale = scale_pentatonic_major(root)
