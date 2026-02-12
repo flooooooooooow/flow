@@ -449,7 +449,6 @@ run_window_program() {
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
-        # shellcheck disable=SC2086
         "${py_ldflags[@]}" -o "$exe_file" $sdl_libs -lm 2>/dev/null; then
         print_error "C compilation/linking failed (SDL2)"
         exit 1
