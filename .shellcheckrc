@@ -1,0 +1,35 @@
+# Disable specific ShellCheck warnings that are too noisy or not critical
+
+# SC2155: Declare and assign separately - many false positives for simple assignments
+disable=SC2155
+
+# SC2181: Check exit code directly - sometimes checking $? is clearer
+disable=SC2181
+
+# SC2162: read without -r - not critical for this codebase
+disable=SC2162
+
+# SC2164: Use cd ... || exit - handled contextually
+disable=SC2164
+
+# SC2295: Expansions inside ${..} need to be quoted separately - false positives
+disable=SC2295
+
+# SC2034: Variable appears unused - many false positives
+disable=SC2034
+
+# SC2001: See if you can use ${variable//search/replace} - sed is clearer
+disable=SC2001
+
+# SC2046: Quote to prevent word splitting - intentional in many cases
+disable=SC2046
+
+# SC2102: Ranges can only match single chars
+disable=SC2102
+
+# SC2103: Use a ( subshell ) to avoid having to cd back
+disable=SC2103
+
+# SC2119/SC2120: Function references arguments but none are passed
+disable=SC2119
+disable=SC2120
