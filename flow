@@ -173,7 +173,7 @@ check_mlir_deps() {
         print_error "MLIR tools not found. Run './flow install' (or brew install llvm)"
         exit 1
     fi
-    if [ ! -x "$LLVM_PATH/mlir-translate" ]; then
+    if [ ! -x ""$LLVM_PATH"/mlir-translate" ]; then
         print_error "mlir-translate not found. Run './flow install' (or brew install llvm)"
         exit 1
     fi
@@ -183,7 +183,8 @@ check_mlir_deps() {
 compile_program() {
     local program="$1"
     require_flow_file "$program"
-    local basename=$(basename "$program" .flow)
+    local basename
+    basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
@@ -227,7 +228,8 @@ compile_program() {
 debug_program() {
     local program="$1"
     require_flow_file "$program"
-    local basename=$(basename "$program" .flow)
+    local basename
+    basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local c_file="$build_dir/$basename.debug.c"
     local exe_file="$build_dir/$basename.debug"
@@ -283,7 +285,8 @@ debug_program() {
 run_program() {
     local program="$1"
     require_flow_file "$program"
-    local basename=$(basename "$program" .flow)
+    local basename
+    basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
     
     compile_program "$program"
@@ -303,7 +306,8 @@ compile_audio_program() {
     local program="$1"
     local backend="${2:-}"
     require_flow_file "$program"
-    local basename=$(basename "$program" .flow)
+    local basename
+    basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
@@ -379,7 +383,8 @@ compile_audio_program() {
 run_audio_program() {
     local program="$1"
     require_flow_file "$program"
-    local basename=$(basename "$program" .flow)
+    local basename
+    basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
     
     compile_audio_program "$program" "${2:-}"
@@ -398,7 +403,8 @@ run_audio_program() {
 run_window_program() {
     local program="$1"
     require_flow_file "$program"
-    local basename=$(basename "$program" .flow)
+    local basename
+    basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
@@ -438,10 +444,12 @@ run_window_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
+    # shellcheck disable=SC2086
     if ! clang -O2 -fno-omit-frame-pointer $sdl_cflags "${py_cflags[@]}" "$c_file" \
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
+        # shellcheck disable=SC2086
         "${py_ldflags[@]}" -o "$exe_file" $sdl_libs -lm 2>/dev/null; then
         print_error "C compilation/linking failed (SDL2)"
         exit 1
@@ -480,7 +488,8 @@ generate_mlir() {
         esac
         shift
     done
-    local basename=$(basename "$program" .flow)
+    local basename
+    basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     
     if [ -z "$program" ] || [ ! -f "$program" ]; then
@@ -506,7 +515,8 @@ generate_mlir() {
 run_gfx_program() {
     local program="$1"
     require_flow_file "$program"
-    local basename=$(basename "$program" .flow)
+    local basename
+    basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
@@ -1109,7 +1119,8 @@ run_runtime_tests() {
         if [ -z "$program" ]; then continue; fi
         total=$((total + 1))
         local rel_path=${program#$SCRIPT_DIR/}
-        local basename=$(basename "$program" .flow)
+        local basename
+        basename=$(basename "$program" .flow)
         local c_file="$build_dir/${basename}.c"
         local exe_file="$build_dir/${basename}"
         
@@ -1249,7 +1260,8 @@ run_mlir_tests() {
     for program in "${test_files[@]}"; do
         total=$((total + 1))
         local rel_path=${program#$SCRIPT_DIR/}
-        local basename=$(basename "$program" .flow)
+        local basename
+        basename=$(basename "$program" .flow)
         local mlir_file="$build_dir/${basename}.mlir"
         
         # Step 1: Generate MLIR
@@ -1532,7 +1544,7 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         
         print_info "Lowering MLIR to LLVM IR..."
         set -o pipefail
-        if ! $LLVM_PATH/mlir-opt "$MLIR_FILE" \
+        if ! "$LLVM_PATH"/mlir-opt "$MLIR_FILE" \
             --convert-scf-to-cf \
             --memref-expand \
             --convert-arith-to-llvm \
@@ -1541,8 +1553,8 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
             --convert-func-to-llvm \
             --finalize-memref-to-llvm \
             --reconcile-unrealized-casts | \
-            $LLVM_PATH/mlir-translate --mlir-to-llvmir | \
-            $LLVM_PATH/llc -filetype=obj -o "$OBJ_FILE"; then
+            "$LLVM_PATH"/mlir-translate --mlir-to-llvmir | \
+            "$LLVM_PATH"/llc -filetype=obj -o "$OBJ_FILE"; then
             print_error "MLIR to LLVM lowering failed"
             exit 1
         fi
