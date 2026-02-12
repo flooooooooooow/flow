@@ -173,7 +173,7 @@ check_mlir_deps() {
         print_error "MLIR tools not found. Run './flow install' (or brew install llvm)"
         exit 1
     fi
-    if [ ! -x ""$LLVM_PATH"/mlir-translate" ]; then
+    if [ ! -x "$LLVM_PATH/mlir-translate" ]; then
         print_error "mlir-translate not found. Run './flow install' (or brew install llvm)"
         exit 1
     fi
@@ -855,7 +855,7 @@ run_tests() {
             fi
             
             # Tier 2: Compile C with clang (if enabled)
-            if [ $tier -ge 2 ]; then
+            if [ "$tier" -ge 2 ]; then
                 local clang_output
                 clang_output=$(clang -fsyntax-only -Wno-everything "$c_file" 2>&1)
                 local clang_status=$?
