@@ -1,0 +1,26 @@
+# Stdlib autograd smoke test (tensor-only for MLIR JIT)
+import "stdlib/tensor.flow"
+
+function test_relu_backward() -> i32 {
+    let x: Tensor = tensor_fill(1, 4, 1, 1, 0.0)
+    tensor_set1(x, 0, -1.0)
+    tensor_set1(x, 1, 2.0)
+    tensor_set1(x, 2, -3.0)
+    tensor_set1(x, 3, 4.0)
+    let y: Tensor = tensor_relu(x)
+    let grad_out: Tensor = tensor_ones(1, 4, 1, 1)
+    let grad_in: Tensor = tensor_relu_backward(y, grad_out)
+    if tensor_get1(grad_in, 0) != 0.0 { return 1 }
+    if tensor_get1(grad_in, 1) != 1.0 { return 2 }
+    if tensor_get1(grad_in, 2) != 0.0 { return 3 }
+    if tensor_get1(grad_in, 3) != 1.0 { return 4 }
+    tensor_free(x)
+    tensor_free(y)
+    tensor_free(grad_out)
+    tensor_free(grad_in)
+    return 0
+}
+
+function main() -> i32 {
+    return test_relu_backward()
+}
