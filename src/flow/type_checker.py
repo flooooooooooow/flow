@@ -22,8 +22,9 @@ from .parser import (
     FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
     FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall,
     IfStatement, WhileStatement, ForStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
-    EnumDecl, ImplDecl,
-    TypeAliasDecl, DistinctTypeDecl, CastExpression
+    EnumDecl, ImplDecl, TraitDecl,
+    TypeAliasDecl, DistinctTypeDecl, CastExpression,
+    MatchStatement, MatchCase, StructPattern, DeferStatement, TryExpr, Lambda,
 )
 
 
@@ -290,6 +291,8 @@ class TypeChecker:
         ui_state_type = SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
         self.global_scope.define(Symbol("_ui_state", ui_state_type, "variable", is_mutable=True))
         self.strict = True
+        self.trait_types: Dict[str, TraitDecl] = {}
+        self.impl_pairs: set = set()  # (type_name, trait_name)
 
     def _is_numeric(self, t: SemanticType) -> bool:
         return t.kind in {
@@ -329,8 +332,11 @@ class TypeChecker:
     def _can_coerce(self, actual: SemanticType, expected: SemanticType) -> bool:
         if actual is None or expected is None:
             return True
-        # Treat void/unknown as a wildcard in lenient checking
-        if actual.kind in {TypeKind.VOID, TypeKind.UNKNOWN} or expected.kind in {TypeKind.VOID, TypeKind.UNKNOWN}:
+        # Treat void/unknown as a wildcard only in lenient checking
+        if not self.strict and (
+            actual.kind in {TypeKind.VOID, TypeKind.UNKNOWN}
+            or expected.kind in {TypeKind.VOID, TypeKind.UNKNOWN}
+        ):
             return True
         if actual == expected:
             return True
@@ -368,8 +374,8 @@ class TypeChecker:
             return True
         if expected.kind == TypeKind.BOOL and self._is_numeric(actual):
             return True
-        # Struct coercion (lenient)
-        if actual.kind == TypeKind.STRUCT or expected.kind == TypeKind.STRUCT:
+        # Struct coercion only in lenient mode
+        if not self.strict and (actual.kind == TypeKind.STRUCT or expected.kind == TypeKind.STRUCT):
             return True
         return False
 
@@ -451,6 +457,13 @@ class TypeChecker:
                     self.errors.append(f"Capability '{decl.name}' already defined")
                 else:
                     self.capability_types[decl.name] = decl
+            elif isinstance(decl, TraitDecl):
+                if decl.name in self.trait_types:
+                    self.errors.append(f"Trait '{decl.name}' already defined")
+                else:
+                    self.trait_types[decl.name] = decl
+            elif isinstance(decl, ImplDecl):
+                self.impl_pairs.add((decl.for_type.name, decl.trait_name))
 
     def _collect_symbols(self, declarations: List[Any]) -> None:
         """Collect function signatures and global symbols."""
@@ -499,11 +512,24 @@ class TypeChecker:
                 self._check_const(decl)
             # Other declaration types don't need additional checking yet
 
+    def _check_trait_bounds(self, func: FunctionDecl) -> None:
+        """Validate generic type parameter trait bounds when concrete types are known."""
+        type_params = getattr(func, "type_params", None) or []
+        for tp in type_params:
+            if tp.bound and self.strict:
+                # Bounds are checked at monomorphization sites; warn if trait unknown
+                if tp.bound not in self.trait_types:
+                    self.errors.append(
+                        f"Unknown trait bound '{tp.bound}' on type parameter '{tp.name}'"
+                    )
+
     def _check_function(self, func: FunctionDecl) -> None:
         """Type check a function declaration."""
         # Extern functions have no body to check - they're just declarations
         if getattr(func, 'is_extern', False):
             return
+
+        self._check_trait_bounds(func)
         
         # Create function scope
         func_scope = Scope(parent=self.current_scope)
@@ -571,9 +597,41 @@ class TypeChecker:
             for arg in stmt.args:
                 self._check_expression(arg)
             return self._check_block(stmt.body)
-        else:
-            # For now, assume other statements are void
+        elif isinstance(stmt, MatchStatement):
+            return self._check_match_stmt(stmt)
+        elif isinstance(stmt, DeferStatement):
+            self._check_expression(stmt.expr)
             return SemanticType(TypeKind.VOID)
+        else:
+            return SemanticType(TypeKind.VOID)
+
+    def _check_match_stmt(self, match_stmt: MatchStatement) -> SemanticType:
+        """Type check a match statement."""
+        value_type = self._check_expression(match_stmt.value)
+        result_type = SemanticType(TypeKind.VOID)
+        for case in match_stmt.cases:
+            if isinstance(case.pattern, Literal):
+                pat_type = self._check_literal(case.pattern)
+                if not self._can_coerce(value_type, pat_type) and not self._can_coerce(pat_type, value_type):
+                    if self.strict:
+                        self.errors.append(
+                            f"Match pattern {pat_type} incompatible with value type {value_type}"
+                        )
+            elif isinstance(case.pattern, StructPattern):
+                if case.pattern.struct_name not in self.struct_types:
+                    self.errors.append(f"Unknown struct in match pattern: {case.pattern.struct_name}")
+            if case.guard is not None:
+                guard_type = self._check_expression(case.guard)
+                if guard_type.kind != TypeKind.BOOL and self.strict:
+                    self.errors.append(f"Match guard must be bool, got {guard_type}")
+            case_type = self._check_block(case.body)
+            if case_type.kind != TypeKind.VOID:
+                result_type = case_type
+        if match_stmt.default_case:
+            default_type = self._check_block(match_stmt.default_case)
+            if default_type.kind != TypeKind.VOID:
+                result_type = default_type
+        return result_type
 
     def _check_var_decl(self, var: VarDecl) -> SemanticType:
         """Type check a variable declaration."""
@@ -725,12 +783,40 @@ class TypeChecker:
             return target_type
         elif isinstance(expr, FieldAccess):
             obj_type = self._check_expression(expr.object)
-            if obj_type.kind == TypeKind.STRUCT and obj_type.name in self.struct_types:
-                struct_def = self.struct_types[obj_type.name]
+            struct_name = None
+            if obj_type.kind == TypeKind.STRUCT:
+                struct_name = obj_type.name
+            elif obj_type.kind == TypeKind.POINTER and obj_type.element_type:
+                if obj_type.element_type.kind == TypeKind.STRUCT:
+                    struct_name = obj_type.element_type.name
+            if struct_name and struct_name in self.struct_types:
+                struct_def = self.struct_types[struct_name]
                 for field in struct_def.fields:
                     if field.name == expr.field:
                         return self._parse_type(field.type)
+            if self.strict:
+                self.errors.append(f"Field '{expr.field}' not found on type {obj_type}")
             return SemanticType(TypeKind.UNKNOWN)
+        elif isinstance(expr, TryExpr):
+            operand_type = self._check_expression(expr.operand)
+            if operand_type.kind == TypeKind.STRUCT and operand_type.name.startswith("Result_"):
+                parts = operand_type.name.split("_")
+                if len(parts) >= 2:
+                    return self._parse_named_scalar(parts[1]) or SemanticType(TypeKind.I32)
+            if self.strict:
+                self.errors.append(f"Try operator '?' requires Result type, got {operand_type}")
+            return SemanticType(TypeKind.VOID)
+        elif isinstance(expr, Lambda):
+            for p in expr.parameters:
+                if p.type and p.type.name != "auto":
+                    self._parse_type(p.type)
+            if isinstance(expr.body, Block):
+                self._check_block(expr.body)
+            else:
+                self._check_expression(expr.body)
+            if expr.return_type:
+                return self._parse_type(expr.return_type)
+            return SemanticType(TypeKind.VOID)
         else:
             # For now, treat unknown expressions as unknown type
             return SemanticType(TypeKind.UNKNOWN)
@@ -796,7 +882,8 @@ class TypeChecker:
         """Type check a variable reference."""
         symbol = self.current_scope.lookup(var.name)
         if not symbol:
-            # Be permissive for unresolved variables (e.g., generated names)
+            if self.strict:
+                self.errors.append(f"Undefined variable '{var.name}'")
             return SemanticType(TypeKind.I32)
         return symbol.type
 
@@ -913,7 +1000,8 @@ class TypeChecker:
                     return SemanticType(TypeKind.ARRAY, element_type=SemanticType(TypeKind.I32))
                 return SemanticType(kind)
             else:
-                # Allow unresolved calls in lenient checking
+                if self.strict:
+                    self.errors.append(f"Undefined function '{call.name}'")
                 return SemanticType(TypeKind.VOID)
 
         if symbol.type.kind != TypeKind.FUNCTION:

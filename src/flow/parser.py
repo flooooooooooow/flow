@@ -117,6 +117,11 @@ class TokenType(Enum):
     UI_STACK = "UI_STACK"
     UI_GRID = "UI_GRID"
     ENUM = "ENUM"
+    THEOREM = "THEOREM"
+    ASSUME = "ASSUME"
+    THEREFORE = "THEREFORE"
+    CLAIM_PATH = "CLAIM_PATH"
+    CLAIM_COORDINATE = "CLAIM_COORDINATE"
 
     # Types
     I8 = "I8"
@@ -137,6 +142,8 @@ class TokenType(Enum):
     STRING_LITERAL = "STRING_LITERAL"  # "hello" string literals
     VEC = "VEC"
     NULL = "NULL"  # null pointer literal
+    DEFER = "DEFER"
+    QUESTION = "QUESTION"  # ? operator for Result propagation
 
     # Symbols
     LPAREN = "LPAREN"
@@ -493,6 +500,7 @@ class MatchStatement:
 class MatchCase:
     pattern: "Expression"  # Could be literal, struct pattern, etc.
     body: Block
+    guard: Optional["Expression"] = None  # Optional: pattern if guard => body
 
 
 @dataclass
@@ -508,8 +516,69 @@ class CastExpression:
 
 
 @dataclass
+class TryExpr:
+    """Result propagation: expr? returns value or early-returns the Err."""
+
+    operand: "Expression"
+
+
+@dataclass
+class DeferStatement:
+    """Deferred cleanup: defer expr; runs at scope exit (LIFO)."""
+
+    expr: "Expression"
+
+
+@dataclass
+class ModuleDecl:
+    """Namespace module: module name { declarations... }"""
+
+    name: str
+    declarations: List[Any]
+    is_exported: bool = False
+
+
+@dataclass
 class ImportDecl:
+    """Module import — dot paths (verify.nat) or legacy string paths."""
+
     path: str
+    symbols: Optional[List[str]] = None
+    alias: Optional[str] = None
+    is_legacy_string: bool = False
+
+
+@dataclass
+class ExportDecl:
+    """File-level export list: export foo, bar"""
+
+    symbols: List[str] = field(default_factory=list)
+
+
+@dataclass
+class TheoremDecl:
+    """Verified claim at a Claim Path — same shape as function, different keyword."""
+
+    claim_path: str
+    parameters: List[Parameter]
+    body: "Block"
+    is_exported: bool = False
+
+
+@dataclass
+class AssumeStmt:
+    """Invoke a prior claim (definition, axiom, or derived fact)."""
+
+    claim_path: str
+    arguments: List["Expression"] = field(default_factory=list)
+
+
+@dataclass
+class ThereforeStmt:
+    """Conclusion the checker must verify."""
+
+    expression: "Expression"
+    method: Optional[str] = None
 
 
 @dataclass
@@ -562,6 +631,8 @@ Expression = Union[
     MethodCall,
     StructPattern,
     CastExpression,
+    Lambda,
+    TryExpr,
 ]
 Statement = Union[
     VarDecl,
@@ -576,11 +647,15 @@ Statement = Union[
     HandleStatement,
     LayoutStatement,
     MatchStatement,
+    DeferStatement,
     ImportDecl,
+    ExportDecl,
     ConstDecl,
     TestDecl,
     TraitDecl,
     ImplDecl,
+    AssumeStmt,
+    ThereforeStmt,
 ]
 
 
@@ -616,6 +691,9 @@ class Lexer:
             "distinct": TokenType.DISTINCT,
             "as": TokenType.AS,
             "enum": TokenType.ENUM,
+            "theorem": TokenType.THEOREM,
+            "assume": TokenType.ASSUME,
+            "therefore": TokenType.THEREFORE,
             "with": TokenType.WITH,
             "handle": TokenType.HANDLE,
             "ui_layout": TokenType.UI_LAYOUT,
@@ -636,6 +714,8 @@ class Lexer:
             "true": TokenType.BOOLEAN,
             "false": TokenType.BOOLEAN,
             "null": TokenType.NULL,
+            "defer": TokenType.DEFER,
+            "module": TokenType.MODULE,
             "void": TokenType.VOID,
             "i8": TokenType.I8,
             "i16": TokenType.I16,
@@ -662,6 +742,7 @@ class Lexer:
             (r"WHITESPACE", r"\s+"),  # Skip whitespace
             (r"ARROW", r"->"),
             (r"FAT_ARROW", r"=>"),
+            (r"QUESTION", r"\?"),
             (r"EQUALS", r"=="),
             (r"NOT_EQUALS", r"!="),
             (r"LSHIFT", r"<<"),  # Bitwise left shift (must be before LESS)
@@ -706,6 +787,14 @@ class Lexer:
             (
                 r"NUMBER",
                 r"0x[0-9a-fA-F]+|[0-9]+\.[0-9]+(?:[eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+|[0-9]+",
+            ),
+            (
+                r"CLAIM_COORDINATE",
+                r"«[^»]+»\s*«[^»]+»\s*«[^»]+»",
+            ),
+            (
+                r"CLAIM_PATH",
+                r"[A-Za-z][A-Za-z0-9_]*/(?:\|\||[+|=|*]|[a-z][a-zA-Z0-9_-]*)\.[a-z][a-z0-9-]+",
             ),
             (r"IDENTIFIER", r"[a-zA-Z_][a-zA-Z0-9_]*"),
         ]
@@ -901,13 +990,31 @@ class Parser:
                     attributes.append(attr_name)
 
             if self.current_token.type == TokenType.EXPORT:
-                is_exported = True
                 self.advance()
+                if self.current_token.type in (
+                    TokenType.FUNCTION,
+                    TokenType.STRUCT,
+                    TokenType.ENUM,
+                    TokenType.EFFECT,
+                    TokenType.CAPABILITY,
+                    TokenType.CONST,
+                    TokenType.TYPE,
+                    TokenType.DISTINCT,
+                    TokenType.THEOREM,
+                ):
+                    is_exported = True
+                else:
+                    declarations.append(self.parse_export_list())
+                    continue
 
             if self.current_token.type == TokenType.FUNCTION:
                 decl = self.parse_function()
                 decl.is_exported = is_exported
                 decl.attributes = attributes
+                declarations.append(decl)
+            elif self.current_token.type == TokenType.THEOREM:
+                decl = self.parse_theorem()
+                decl.is_exported = is_exported
                 declarations.append(decl)
             elif self.current_token.type == TokenType.STRUCT:
                 decl = self.parse_struct()
@@ -963,16 +1070,117 @@ class Parser:
                 decl = self.parse_distinct_type()
                 decl.is_exported = is_exported
                 declarations.append(decl)
+            elif self.current_token.type == TokenType.MODULE:
+                mod = self.parse_module()
+                mod.is_exported = is_exported
+                declarations.append(mod)
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
         return declarations
 
+    def parse_module(self) -> ModuleDecl:
+        """Parse module name { ... } and collect inner declarations."""
+        self.expect(TokenType.MODULE)
+        name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.LBRACE)
+        inner: List[Any] = []
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise SyntaxError("Unterminated module: expected '}' before end of file")
+            saved = self.current_token
+            # Re-use top-level parse logic for one declaration at a time
+            if saved.type == TokenType.FUNCTION:
+                inner.append(self.parse_function())
+            elif saved.type == TokenType.STRUCT:
+                inner.append(self.parse_struct())
+            elif saved.type == TokenType.CONST:
+                inner.append(self.parse_const())
+            elif saved.type == TokenType.ENUM:
+                inner.append(self.parse_enum())
+            elif saved.type == TokenType.IMPORT:
+                inner.append(self.parse_import())
+            elif saved.type == TokenType.TRAIT:
+                inner.append(self.parse_trait())
+            elif saved.type == TokenType.IMPL:
+                inner.append(self.parse_impl())
+            else:
+                raise SyntaxError(
+                    f"Unexpected declaration inside module '{name}': {saved.type}"
+                )
+        self.expect(TokenType.RBRACE)
+        return ModuleDecl(name=name, declarations=inner)
+
     def parse_import(self) -> ImportDecl:
         self.expect(TokenType.IMPORT)
-        path_token = self.expect(TokenType.STRING_LITERAL)
-        # Strip quotes
-        path = path_token.value[1:-1]
-        return ImportDecl(path)
+
+        # Legacy string import: import "path/to/file.flow"
+        if self.current_token.type == TokenType.STRING_LITERAL:
+            path_token = self.current_token
+            self.advance()
+            path = path_token.value[1:-1]
+            return ImportDecl(path=path, is_legacy_string=True)
+
+        module_path = self._parse_module_path()
+        symbols: Optional[List[str]] = None
+        alias: Optional[str] = None
+
+        if self.current_token.type == TokenType.LBRACE:
+            symbols = self._parse_import_symbol_list()
+        elif self.current_token.type == TokenType.AS:
+            self.advance()
+            alias = self.expect(TokenType.IDENTIFIER).value
+
+        return ImportDecl(path=module_path, symbols=symbols, alias=alias)
+
+    def _parse_claim_path_ref(self) -> str:
+        if self.current_token.type == TokenType.CLAIM_COORDINATE:
+            value = self.current_token.value
+            self.advance()
+            return value
+        if self.current_token.type == TokenType.CLAIM_PATH:
+            value = self.current_token.value
+            self.advance()
+            return value
+        return self.expect(TokenType.IDENTIFIER).value
+
+    def parse_export_list(self) -> ExportDecl:
+        """Parse: export sym1, sym2 (export keyword already consumed)."""
+        symbols: List[str] = []
+        while True:
+            symbols.append(self._parse_claim_path_ref())
+            if self.current_token.type != TokenType.COMMA:
+                break
+            self.advance()
+        return ExportDecl(symbols=symbols)
+
+    def _parse_module_path(self) -> str:
+        """Parse dotted module path: verify.nat, std.math, .sibling_mod"""
+        relative = False
+        if self.current_token.type == TokenType.DOT:
+            relative = True
+            self.advance()
+
+        segments: List[str] = [self.expect(TokenType.IDENTIFIER).value]
+        while self.current_token.type == TokenType.DOT:
+            self.advance()
+            segments.append(self.expect(TokenType.IDENTIFIER).value)
+
+        if relative:
+            return "." + ".".join(segments)
+        return ".".join(segments)
+
+    def _parse_import_symbol_list(self) -> List[str]:
+        """Parse { sym1, sym2 } after a module path."""
+        self.expect(TokenType.LBRACE)
+        symbols: List[str] = []
+        if self.current_token.type != TokenType.RBRACE:
+            while True:
+                symbols.append(self.expect(TokenType.IDENTIFIER).value)
+                if self.current_token.type != TokenType.COMMA:
+                    break
+                self.advance()
+        self.expect(TokenType.RBRACE)
+        return symbols
 
     def parse_const(self) -> ConstDecl:
         self.expect(TokenType.CONST)
@@ -1256,6 +1464,18 @@ class Parser:
 
         return DistinctTypeDecl(name, base_type)
 
+    def parse_theorem(self) -> TheoremDecl:
+        """Parse: theorem Nat/+.zero-left(m: Nat) { ... }"""
+        self.expect(TokenType.THEOREM)
+        claim_path = self._parse_claim_path_ref()
+        self.expect(TokenType.LPAREN)
+        parameters: List[Parameter] = []
+        if self.current_token.type != TokenType.RPAREN:
+            parameters = self.parse_parameters()
+        self.expect(TokenType.RPAREN)
+        body = self.parse_block()
+        return TheoremDecl(claim_path=claim_path, parameters=parameters, body=body)
+
     def parse_function(self) -> FunctionDecl:
         start_token = self.current_token
         self.expect(TokenType.FUNCTION)
@@ -1513,6 +1733,10 @@ class Parser:
     def parse_statement(self) -> Statement:
         if self.current_token.type == TokenType.LET:
             return self.parse_var_decl()
+        elif self.current_token.type == TokenType.ASSUME:
+            return self.parse_assume()
+        elif self.current_token.type == TokenType.THEREFORE:
+            return self.parse_therefore()
         elif self.current_token.type == TokenType.RETURN:
             return self.parse_return()
         elif self.current_token.type == TokenType.IF:
@@ -1533,8 +1757,39 @@ class Parser:
             return self.parse_layout()
         elif self.current_token.type == TokenType.MATCH:
             return self.parse_match()
+        elif self.current_token.type == TokenType.DEFER:
+            self.advance()
+            expr = self.parse_expression_without_assign()
+            return DeferStatement(expr)
         else:
             return self.parse_expression_statement()
+
+    def parse_assume(self) -> AssumeStmt:
+        self.expect(TokenType.ASSUME)
+        claim_path = self._parse_claim_path_ref()
+        arguments: List[Expression] = []
+        if self.current_token.type == TokenType.LPAREN:
+            self.advance()
+            if self.current_token.type != TokenType.RPAREN:
+                while True:
+                    arguments.append(self.parse_expression_without_assign())
+                    if self.current_token.type != TokenType.COMMA:
+                        break
+                    self.advance()
+            self.expect(TokenType.RPAREN)
+        return AssumeStmt(claim_path=claim_path, arguments=arguments)
+
+    def parse_therefore(self) -> ThereforeStmt:
+        self.expect(TokenType.THEREFORE)
+        expression = self.parse_expression_without_assign()
+        method: Optional[str] = None
+        if (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.current_token.value == "by"
+        ):
+            self.advance()
+            method = self.expect(TokenType.IDENTIFIER).value
+        return ThereforeStmt(expression=expression, method=method)
 
     def parse_effect(self) -> EffectDecl:
         self.expect(TokenType.EFFECT)
@@ -1693,9 +1948,14 @@ class Parser:
                     if is_struct_pattern:
                         pattern = StructPattern(pattern.name, bindings)
 
+                guard = None
+                if self.current_token.type == TokenType.IF:
+                    self.advance()
+                    guard = self.parse_expression_without_assign()
+
                 self.expect(TokenType.FAT_ARROW)
                 body = self.parse_block()
-                cases.append(MatchCase(pattern, body))
+                cases.append(MatchCase(pattern, body, guard))
 
                 if self.current_token.type == TokenType.COMMA:
                     self.advance()
@@ -2012,6 +2272,9 @@ class Parser:
             self.advance()
             target_type = self.parse_type()
             expr = CastExpression(expr, target_type)
+        while self.current_token.type == TokenType.QUESTION:
+            self.advance()
+            expr = TryExpr(expr)
         return expr
 
     def parse_unary(self) -> Expression:
@@ -2020,6 +2283,7 @@ class Parser:
             TokenType.NOT,
             TokenType.TILDE,
             TokenType.AMPERSAND,
+            TokenType.STAR,
         ]:
             op = self.current_token.value
             self.advance()
@@ -2237,6 +2501,73 @@ class Parser:
         self.expect(TokenType.RPAREN)
         return FunctionCall(name, arguments)
 
+    def _collect_free_variables(self, node: Any, param_names: set, found: Optional[set] = None) -> List[str]:
+        """Collect variable names referenced in an expression/block but not in param_names."""
+        if found is None:
+            found = set()
+        if isinstance(node, Variable):
+            if node.name not in param_names and node.name != "self":
+                found.add(node.name)
+        elif isinstance(node, Block):
+            for stmt in node.statements:
+                self._collect_free_variables(stmt, param_names, found)
+        elif isinstance(node, (BinaryOperation, UnaryOperation, CastExpression, TryExpr)):
+            if isinstance(node, BinaryOperation):
+                self._collect_free_variables(node.left, param_names, found)
+                self._collect_free_variables(node.right, param_names, found)
+            elif isinstance(node, UnaryOperation):
+                self._collect_free_variables(node.operand, param_names, found)
+            elif isinstance(node, CastExpression):
+                self._collect_free_variables(node.expr, param_names, found)
+            elif isinstance(node, TryExpr):
+                self._collect_free_variables(node.operand, param_names, found)
+        elif isinstance(node, FunctionCall):
+            for arg in node.arguments:
+                self._collect_free_variables(arg, param_names, found)
+        elif isinstance(node, (FieldAccess, ArrayAccess)):
+            self._collect_free_variables(node.object if hasattr(node, 'object') else node.array, param_names, found)
+            if isinstance(node, ArrayAccess):
+                self._collect_free_variables(node.index, param_names, found)
+        elif isinstance(node, (IfStatement, WhileStatement, ForStatement, MatchStatement)):
+            if isinstance(node, IfStatement):
+                self._collect_free_variables(node.condition, param_names, found)
+                self._collect_free_variables(node.then_block, param_names, found)
+                for _, blk in node.elif_blocks:
+                    self._collect_free_variables(blk, param_names, found)
+                if node.else_block:
+                    self._collect_free_variables(node.else_block, param_names, found)
+            elif isinstance(node, WhileStatement):
+                self._collect_free_variables(node.condition, param_names, found)
+                self._collect_free_variables(node.body, param_names, found)
+            elif isinstance(node, ForStatement):
+                self._collect_free_variables(node.range_start, param_names, found)
+                self._collect_free_variables(node.range_end, param_names, found)
+                if node.step:
+                    self._collect_free_variables(node.step, param_names, found)
+                self._collect_free_variables(node.body, param_names, found)
+            elif isinstance(node, MatchStatement):
+                self._collect_free_variables(node.value, param_names, found)
+                for case in node.cases:
+                    if case.guard:
+                        self._collect_free_variables(case.guard, param_names, found)
+                    self._collect_free_variables(case.body, param_names, found)
+                if node.default_case:
+                    self._collect_free_variables(node.default_case, param_names, found)
+        elif isinstance(node, (VarDecl, ReturnStatement, Assignment, DeferStatement)):
+            if isinstance(node, VarDecl) and node.initializer:
+                self._collect_free_variables(node.initializer, param_names, found)
+            elif isinstance(node, ReturnStatement) and node.value:
+                self._collect_free_variables(node.value, param_names, found)
+            elif isinstance(node, Assignment):
+                self._collect_free_variables(node.value, param_names, found)
+                if node.target_expr:
+                    self._collect_free_variables(node.target_expr, param_names, found)
+            elif isinstance(node, DeferStatement):
+                self._collect_free_variables(node.expr, param_names, found)
+        elif isinstance(node, Expression):
+            pass
+        return sorted(found)
+
     def parse_lambda(self) -> Lambda:
         """Parse lambda expression: |x: i32, y: i32| -> i32 { x + y } or |x| x * 2"""
         self.expect(TokenType.PIPE)
@@ -2277,7 +2608,9 @@ class Parser:
             # Single expression body
             body = self.parse_expression_without_assign()
 
-        return Lambda(parameters, return_type, body)
+        param_names = {p.name for p in parameters}
+        captures = self._collect_free_variables(body, param_names)
+        return Lambda(parameters, return_type, body, captures=captures)
 
     def parse_struct_literal(self, struct_name: str) -> "StructLiteral":
         # If current token is LBRACE, expect it and advance

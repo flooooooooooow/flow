@@ -1,33 +1,25 @@
 # FLOW String Utilities
-# Formatting helpers for converting numbers to strings
 
 extern {
     function sprintf(buf: ptr<i8>, fmt: string, val: i32) -> i32
     function snprintf(buf: ptr<i8>, size: i64, fmt: string, val: i32) -> i32
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strcpy(dst: ptr<i8>, src: string) -> ptr<i8>
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
 }
 
-# Buffer size for number conversions
 const ITOA_BUF_SIZE: i32 = 32
 
-# Convert integer to string (decimal)
-# Note: Returns pointer to static buffer - not thread-safe
-# For thread-safe version, use itoa_buf with your own buffer
-function itoa(n: i32) -> string {
-    # Use sprintf to format
-    return format_int(n)
+function str_len(s: string) -> i64 {
+    return strlen(s)
 }
 
-# Format an integer using printf-style format
-function format_int(n: i32) -> string {
-    # This is a simple wrapper - the C generator handles print specially
-    return ""
+function str_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
 }
 
-# Convert unsigned integer to hex string
-function to_hex(n: i32) -> string {
-    return format_hex(n)
-}
-
-function format_hex(n: i32) -> string {
-    return ""
+function concat(a: string, b: string) -> string {
+    return a + b
 }

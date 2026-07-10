@@ -503,20 +503,21 @@ def main():
         from .mlir_jit import MLIRJIT
 
         if args.hot_reload:
-            # Start hot reload mode
-            runner = FlowJITRunner(args.input, args.watch)
+            runner = FlowJITRunner(args.input, args.watch, hot_mode=True)
             runner.start_hot_reload()
             return
         else:
-            # One-time JIT execution
             jit = MLIRJIT()
             try:
                 result = jit.jit_compile_and_run(out_code, "main")
                 if result is not None:
-                    # print(f"JIT Result: {result}")
-                    pass
+                    print(f"JIT exit code: {result}", file=sys.stderr)
                 else:
                     print("JIT execution failed", file=sys.stderr)
+                    print(
+                        "Requires mlir-opt, mlir-translate, and clang on PATH.",
+                        file=sys.stderr,
+                    )
                     sys.exit(1)
             finally:
                 jit.cleanup()

@@ -279,15 +279,21 @@ class MLIRGenerator:
         mlir_code.append(f"{self.indent()}{func_signature} {{")
         
         self.indent_level += 1
+
+        # SSA names like %arg0 are reused per function; reset type tracking each time.
+        self._ssa_types = {}
         
         # Generate function body
         for i, param in enumerate(func.parameters):
+            param_mlir = self.flow_type_to_mlir(param.type)
+            arg_ssa = f'%arg{i}'
             self.symbol_table[param.name] = {
                 'type': 'variable',
-                'mlir_type': self.flow_type_to_mlir(param.type),
+                'mlir_type': param_mlir,
                 'flow_type': param.type,
-                'ssa_name': f'%arg{i}'
+                'ssa_name': arg_ssa
             }
+            self._ssa_types[arg_ssa] = param_mlir
         
         # Generate statements
         body_mlir = self.generate_block(func.body)
@@ -389,7 +395,7 @@ class MLIRGenerator:
                 init_value, init_ops = self.generate_expression(var_decl.initializer)
             
             # Cast the initializer to the variable's type if needed
-            init_type = self.get_expression_type(var_decl.initializer)
+            init_type = self._ssa_types.get(init_value) or self.get_expression_type(var_decl.initializer)
             if init_type != mlir_type:
                 init_value, cast_ops = self._emit_cast(init_value, init_type, mlir_type)
                 init_ops.extend(cast_ops)
@@ -484,10 +490,20 @@ class MLIRGenerator:
                 index_ssa, index_ops = self.generate_expression(access.index)
                 ops.extend(index_ops)
 
-                # Check if index is already index type
-                index_type = 'i32'
+                index_type = self._ssa_types.get(index_ssa, 'i32')
                 if isinstance(access.index, Variable) and access.index.name in self.symbol_table:
-                    index_type = self.symbol_table[access.index.name].get('mlir_type', 'i32')
+                    index_type = self.symbol_table[access.index.name].get('mlir_type', index_type)
+
+                if self._is_pointer_array_ssa(array_ssa, access):
+                    elem_type = self._elem_type_from_array_expr(access.array) or 'f32'
+                    val_type = self._ssa_types.get(value_ssa) or self.get_expression_type(assignment.value)
+                    if val_type != elem_type:
+                        value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, elem_type)
+                        ops.extend(cast_ops)
+                    gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type)
+                    ops.extend(gep_ops)
+                    ops.append(f"{self.indent()}llvm.store {value_ssa}, {gep} : {elem_type}, !llvm.ptr")
+                    return "\n".join(ops)
 
                 if index_type == 'index':
                     final_index = index_ssa
@@ -497,7 +513,6 @@ class MLIRGenerator:
                     ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : i32 to index")
                     final_index = index_cast
 
-                # Determine element type
                 elem_type = 'f32'
                 if isinstance(access.array, Variable) and access.array.name in self.symbol_table:
                     arr_type = self.symbol_table[access.array.name].get('mlir_type', '')
@@ -506,7 +521,6 @@ class MLIRGenerator:
                     elif 'f64' in arr_type:
                         elem_type = 'f64'
 
-                # Emit memref.store
                 ops.append(f"{self.indent()}memref.store {value_ssa}, {array_ssa}[{final_index}] : memref<?x{elem_type}>")
                 return "\n".join(ops)
             else:
@@ -542,20 +556,101 @@ class MLIRGenerator:
         # Regular variable assignment
         if assignment.target in self.symbol_table:
             target_info = self.symbol_table[assignment.target]
-            target_info['mlir_type']
-
-            # Re-bind the variable to the new SSA value.
+            target_type = target_info.get('mlir_type', '')
+            value_type = self._ssa_types.get(value_ssa) or self.get_expression_type(assignment.value)
+            if target_type and value_type != target_type:
+                value_ssa, cast_ops = self._emit_cast(value_ssa, value_type, target_type)
+                ops.extend(cast_ops)
             self.symbol_table[assignment.target]['ssa_name'] = value_ssa
+            if target_type:
+                self._ssa_types[value_ssa] = target_type
             return "\n".join(ops)
         else:
             return f"{self.indent()}// Assignment to undefined variable: {assignment.target}"
     
     def generate_if(self, if_stmt: IfStatement) -> str:
+        if not if_stmt.elif_blocks:
+            then_assigned = self._assigned_locals(if_stmt.then_block)
+            else_assigned = self._assigned_locals(if_stmt.else_block) if if_stmt.else_block else []
+            merged_vars = list(dict.fromkeys(then_assigned + else_assigned))
+            if merged_vars:
+                condition_ssa, condition_ops = self.generate_expression(if_stmt.condition)
+                return self._generate_scf_if_with_yield(if_stmt, condition_ssa, merged_vars, condition_ops)
         if self.inside_scf_for:
             return self._generate_scf_if(if_stmt)
-        else:
-            return self._generate_cf_if(if_stmt)
+        return self._generate_cf_if(if_stmt)
     
+    def _assigned_locals(self, block: Block) -> List[str]:
+        assigned: List[str] = []
+        for stmt in block.statements:
+            if isinstance(stmt, Assignment) and stmt.target_expr is None and stmt.target:
+                if stmt.target not in assigned:
+                    assigned.append(stmt.target)
+            elif isinstance(stmt, IfStatement):
+                for name in self._assigned_locals(stmt.then_block):
+                    if name not in assigned:
+                        assigned.append(name)
+                for _, elif_block in stmt.elif_blocks:
+                    for name in self._assigned_locals(elif_block):
+                        if name not in assigned:
+                            assigned.append(name)
+                if stmt.else_block:
+                    for name in self._assigned_locals(stmt.else_block):
+                        if name not in assigned:
+                            assigned.append(name)
+        return assigned
+
+    def _generate_scf_if_with_yield(
+        self,
+        if_stmt: IfStatement,
+        condition_ssa: str,
+        merged_vars: List[str],
+        prefix_ops: List[str],
+    ) -> str:
+        mlir_code = list(prefix_ops)
+        merged_vars = [v for v in merged_vars if v in self.symbol_table]
+        if not merged_vars:
+            return "\n".join(prefix_ops)
+
+        types = [self.symbol_table[v]['mlir_type'] for v in merged_vars]
+        old_ssas = {v: self.symbol_table[v]['ssa_name'] for v in merged_vars}
+        result_names: List[str] = []
+        for _ in merged_vars:
+            rn = f"%{self.function_counter}"
+            self.function_counter += 1
+            result_names.append(rn)
+
+        types_str = ', '.join(types)
+        results_str = ', '.join(result_names)
+
+        mlir_code.append(f"{self.indent()}{results_str} = scf.if {condition_ssa} -> ({types_str}) {{")
+        self.indent_level += 1
+        then_body = self.generate_block(if_stmt.then_block)
+        if then_body.strip():
+            mlir_code.append(then_body)
+        then_yields = [self.symbol_table[v]['ssa_name'] for v in merged_vars]
+        mlir_code.append(f"{self.indent()}scf.yield {', '.join(then_yields)} : {types_str}")
+        self.indent_level -= 1
+
+        mlir_code.append(f"{self.indent()}}} else {{")
+        self.indent_level += 1
+        if if_stmt.else_block:
+            else_body = self.generate_block(if_stmt.else_block)
+            if else_body.strip():
+                mlir_code.append(else_body)
+            else_yields = [self.symbol_table[v]['ssa_name'] for v in merged_vars]
+        else:
+            else_yields = [old_ssas[v] for v in merged_vars]
+        mlir_code.append(f"{self.indent()}scf.yield {', '.join(else_yields)} : {types_str}")
+        self.indent_level -= 1
+        mlir_code.append(f"{self.indent()}}}")
+
+        for v, rn, ty in zip(merged_vars, result_names, types):
+            self.symbol_table[v]['ssa_name'] = rn
+            self._ssa_types[rn] = ty
+
+        return "\n".join(mlir_code)
+
     def _generate_scf_if(self, if_stmt: IfStatement) -> str:
         """Generate scf.if for use inside scf.for regions"""
         mlir_code = []
@@ -563,6 +658,13 @@ class MLIRGenerator:
         # Generate condition
         condition_ssa, condition_ops = self.generate_expression(if_stmt.condition)
         mlir_code.extend(condition_ops)
+
+        if not if_stmt.elif_blocks:
+            then_assigned = self._assigned_locals(if_stmt.then_block)
+            else_assigned = self._assigned_locals(if_stmt.else_block) if if_stmt.else_block else []
+            merged_vars = list(dict.fromkeys(then_assigned + else_assigned))
+            if merged_vars:
+                return self._generate_scf_if_with_yield(if_stmt, condition_ssa, merged_vars, mlir_code)
         
         # Generate if-then-else using scf.if
         if if_stmt.elif_blocks or if_stmt.else_block:
@@ -905,6 +1007,7 @@ class MLIRGenerator:
             # Induction variable
             iv_name = f"%{self.function_counter}"
             self.function_counter += 1
+            self._ssa_types[iv_name] = 'index'
             
             # Add loop variable to symbol table
             self.symbol_table[for_stmt.variable] = {
@@ -951,6 +1054,7 @@ class MLIRGenerator:
             # Induction variable
             iv = f"%{self.function_counter}"
             self.function_counter += 1
+            self._ssa_types[iv] = 'index'
 
             # Collect initial values and types for iter_args
             iter_args_init = []
@@ -971,17 +1075,33 @@ class MLIRGenerator:
                     self.function_counter += 1
                     iter_vars.append(iter_var)
                 
-                ", ".join([f"{iter_args_init[i]} : {iter_args_types[i]}" for i in range(len(iter_args_init))])
-                iter_vars_str = ", ".join(iter_vars)
-                result_var = f"%{self.function_counter}"
-                self.function_counter += 1
+                iter_args_spec = ", ".join(
+                    f"{iter_vars[i]} = {iter_args_init[i]}" for i in range(len(iter_vars))
+                )
+                if len(iter_args_names) == 1:
+                    result_vars = [f"%{self.function_counter}"]
+                    self.function_counter += 1
+                else:
+                    result_vars = []
+                    for _ in iter_args_names:
+                        rn = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        result_vars.append(rn)
+                result_lhs = result_vars[0] if len(result_vars) == 1 else ", ".join(result_vars)
                 
-                mlir_code.append(f"{self.indent()}{result_var} = scf.for {iv} = {lb_idx} to {ub_idx} step {step_idx} iter_args({iter_vars_str} = {', '.join(iter_args_init)}) -> ({', '.join(iter_args_types)}) {{")
+                mlir_code.append(
+                    f"{self.indent()}{result_lhs} = scf.for {iv} = {lb_idx} to {ub_idx} step {step_idx} "
+                    f"iter_args({iter_args_spec}) -> ({', '.join(iter_args_types)}) {{"
+                )
                 self.indent_level += 1
+
+                old_inside_scf_for = self.inside_scf_for
+                self.inside_scf_for = True
                 
                 # Update symbol table with iter_args SSA names inside loop
                 for i, var_name in enumerate(iter_args_names):
                     self.symbol_table[var_name]['ssa_name'] = iter_vars[i]
+                    self._ssa_types[iter_vars[i]] = iter_args_types[i]
                 
                 # Add loop variable to symbol table
                 self.symbol_table[for_stmt.variable] = {
@@ -998,19 +1118,14 @@ class MLIRGenerator:
                 yield_vals = [self.symbol_table[var_name]['ssa_name'] for var_name in iter_args_names]
                 mlir_code.append(f"{self.indent()}scf.yield {', '.join(yield_vals)} : {', '.join(iter_args_types)}")
                 
+                self.inside_scf_for = old_inside_scf_for
                 self.indent_level -= 1
                 mlir_code.append(f"{self.indent()}}}")
                 
                 # Update symbol table with result SSA names after loop
-                if len(iter_args_names) == 1:
-                    self.symbol_table[iter_args_names[0]]['ssa_name'] = result_var
-                else:
-                    # Multiple results - need to extract each
-                    for i, var_name in enumerate(iter_args_names):
-                        extract_var = f"%{self.function_counter}"
-                        self.function_counter += 1
-                        mlir_code.append(f"{self.indent()}{extract_var} = \"scf.get_result\"({result_var}) {{index = {i} : i32}} : ({', '.join(iter_args_types)}) -> {iter_args_types[i]}")
-                        self.symbol_table[var_name]['ssa_name'] = extract_var
+                for i, var_name in enumerate(iter_args_names):
+                    self.symbol_table[var_name]['ssa_name'] = result_vars[i]
+                    self._ssa_types[result_vars[i]] = iter_args_types[i]
             else:
                 # Simple scf.for without iter_args
                 mlir_code.append(f"{self.indent()}scf.for {iv} = {lb_idx} to {ub_idx} step {step_idx} {{")
@@ -1041,26 +1156,13 @@ class MLIRGenerator:
     
     def _detect_loop_carried_vars(self, body: Block) -> List[str]:
         """Detect variables that are assigned inside a loop body and exist before the loop."""
-        assigned_vars = []
-        declared_vars = []
-        
-        # First pass: collect all declared variables
-        for stmt in body.statements:
-            if isinstance(stmt, VarDecl):
-                declared_vars.append(stmt.name)
-            elif isinstance(stmt, Assignment):
-                # Check nested blocks (if statements, while loops, etc.)
-                declared_vars.extend(self._collect_declared_vars_from_stmt(stmt))
-        
-        # Second pass: find assigned variables that weren't declared in the loop
-        for stmt in body.statements:
-            if isinstance(stmt, Assignment):
-                # Check if this variable exists in symbol table (defined before loop)
-                # and wasn't declared inside the loop
-                if stmt.target in self.symbol_table and stmt.target_expr is None:
-                    if stmt.target not in declared_vars and stmt.target not in assigned_vars:
-                        assigned_vars.append(stmt.target)
-        return assigned_vars
+        assigned_vars = self._assigned_locals(body)
+        declared_vars = self._collect_declared_vars_from_block(body)
+        carried: List[str] = []
+        for var_name in assigned_vars:
+            if var_name in self.symbol_table and var_name not in declared_vars and var_name not in carried:
+                carried.append(var_name)
+        return carried
     
     def _collect_declared_vars_from_stmt(self, stmt) -> List[str]:
         """Collect all variable declarations from a statement (including nested blocks)."""
@@ -1277,6 +1379,7 @@ class MLIRGenerator:
             return f"// Unsupported expression type: {type(expr).__name__}", []
 
     def _emit_cast(self, value_ssa: str, from_type: str, to_type: str) -> tuple[str, List[str]]:
+        from_type = self._ssa_types.get(value_ssa, from_type)
         if from_type == to_type:
             return value_ssa, []
 
@@ -1364,10 +1467,39 @@ class MLIRGenerator:
         if variable.name in self.symbol_table:
             var_info = self.symbol_table[variable.name]
             if 'ssa_name' in var_info and 'mlir_type' in var_info:
-                self._ssa_types[var_info['ssa_name']] = var_info['mlir_type']
+                ssa = var_info['ssa_name']
+                if ssa not in self._ssa_types:
+                    self._ssa_types[ssa] = var_info['mlir_type']
             return var_info['ssa_name'], []
         else:
             return f"# Undefined variable: {variable.name}", []
+
+    def _resolve_binary_operand_type(self, left_ty: str, right_ty: str) -> str:
+        if 'vector<' in left_ty or 'vector<' in right_ty:
+            return left_ty if 'vector<' in left_ty else right_ty
+        if 'f64' in (left_ty, right_ty):
+            return 'f64'
+        if 'f32' in (left_ty, right_ty):
+            return 'f32'
+        if left_ty == 'index' and right_ty == 'index':
+            return 'index'
+        if left_ty == 'index' or right_ty == 'index':
+            return 'i32'
+
+        def _is_int(ty: str) -> bool:
+            return ty.startswith('i') or ty.startswith('u')
+
+        def _int_width(ty: str) -> int:
+            try:
+                return int(ty[1:])
+            except Exception:
+                return 0
+
+        if left_ty == 'i1' or right_ty == 'i1':
+            return 'i1'
+        if _is_int(left_ty) or _is_int(right_ty):
+            return 'i64' if max(_int_width(left_ty), _int_width(right_ty)) > 32 else 'i32'
+        return left_ty
     
     def generate_binary_operation(self, bin_op: BinaryOperation) -> tuple[str, List[str]]:
         # Special handling for string concatenation
@@ -1397,32 +1529,10 @@ class MLIRGenerator:
         is_vector = 'vector<' in left_ty or 'vector<' in right_ty
         is_float = ('f32' in left_ty) or ('f64' in left_ty) or ('f32' in right_ty) or ('f64' in right_ty)
 
-        def _is_int(ty: str) -> bool:
-            return ty.startswith('i') or ty.startswith('u')
-
-        def _int_width(ty: str) -> int:
-            try:
-                return int(ty[1:])
-            except Exception:
-                return 0
-
-        # For vector operations, ensure both operands have the same type
-        if is_vector:
-            operand_type = left_ty if 'vector<' in left_ty else right_ty
+        if bin_op.operator in ['&&', 'and', '||', 'or']:
+            operand_type = 'i1'
         else:
-            # Prefer floats, then wider ints. Handle index/i32 mixing explicitly.
-            if 'f64' in (left_ty, right_ty):
-                operand_type = 'f64'
-            elif 'f32' in (left_ty, right_ty):
-                operand_type = 'f32'
-            elif left_ty == 'index' and right_ty == 'index':
-                operand_type = 'index'
-            elif left_ty == 'index' or right_ty == 'index':
-                operand_type = 'i32'
-            elif _is_int(left_ty) or _is_int(right_ty):
-                operand_type = 'i64' if max(_int_width(left_ty), _int_width(right_ty)) > 32 else 'i32'
-            else:
-                operand_type = left_ty
+            operand_type = self._resolve_binary_operand_type(left_ty, right_ty)
 
         cast_ops: List[str] = []
         if not is_vector:
@@ -1896,7 +2006,7 @@ class MLIRGenerator:
 
                 next_agg = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{next_agg} = llvm.insertvalue {agg_name}, {val_ssa}[{idx}] : {llvm_struct}")
+                ops.append(f"{self.indent()}{next_agg} = llvm.insertvalue {val_ssa}, {agg_name}[{idx}] : {llvm_struct}")
                 agg_name = next_agg
 
             self._ssa_types[agg_name] = llvm_struct
@@ -2132,9 +2242,9 @@ class MLIRGenerator:
                 
                 return array_ssa, ops
         
-        # Handle print intrinsic specially
-        if func_call.name == 'print':
-            return self.generate_print_call(func_call)
+        # Handle print/println intrinsics specially
+        if func_call.name in ('print', 'println'):
+            return self.generate_print_call(func_call, newline=(func_call.name == 'println'))
 
         # Handle printf intrinsic specially (format string + varargs)
         if func_call.name == 'printf':
@@ -2183,20 +2293,25 @@ class MLIRGenerator:
             # Fallback to expression types
             expected_arg_types = [self.get_expression_type(a) for a in func_call.arguments]
         
-        # Cast arguments if needed (especially for memref size mismatches and index/i32)
+        # Cast arguments if needed (width mismatches, index/i32, memref shapes)
         cast_args = []
         for i, (arg_val, expected_type) in enumerate(zip(arg_values, expected_arg_types)):
-            actual_type = self.get_expression_type(func_call.arguments[i])
-            if actual_type != expected_type and ((actual_type, expected_type) in (('index', 'i32'), ('i32', 'index'))):
+            actual_type = self._ssa_types.get(arg_val) or self.get_expression_type(func_call.arguments[i])
+            if actual_type == expected_type:
+                cast_args.append(arg_val)
+            elif (actual_type, expected_type) in (('index', 'i32'), ('i32', 'index')):
                 cast_arg = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{cast_arg} = arith.index_cast {arg_val} : {actual_type} to {expected_type}")
                 cast_args.append(cast_arg)
-            elif actual_type != expected_type and 'memref<' in actual_type and 'memref<' in expected_type:
-                # Cast memref to expected type
+            elif 'memref<' in actual_type and 'memref<' in expected_type:
                 cast_arg = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{cast_arg} = memref.cast {arg_val} : {actual_type} to {expected_type}")
+                cast_args.append(cast_arg)
+            elif actual_type != expected_type:
+                cast_arg, cast_ops = self._emit_cast(arg_val, actual_type, expected_type)
+                ops.extend(cast_ops)
                 cast_args.append(cast_arg)
             else:
                 cast_args.append(arg_val)
@@ -2219,7 +2334,7 @@ class MLIRGenerator:
             self._ssa_types[ssa_name] = ret_type
             return ssa_name, ops
     
-    def generate_print_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
+    def generate_print_call(self, func_call: FunctionCall, *, newline: bool = False) -> tuple[str, List[str]]:
         """Generate MLIR for print() intrinsic - supports strings and numeric values."""
         self.needs_printf = True
         ops: List[str] = []
@@ -2228,6 +2343,11 @@ class MLIRGenerator:
             if isinstance(arg, Literal) and arg.type.name == 'string':
                 # String literal - create global constant and get pointer
                 str_val = arg.value
+                if newline:
+                    if str_val.startswith('"') and str_val.endswith('"'):
+                        str_val = f'{str_val[:-1]}\\n"'
+                    else:
+                        str_val = f'{str_val}\\n'
                 if str_val not in self.string_constants:
                     global_name = f"str_{self.string_counter}"
                     self.string_counter += 1
@@ -2554,14 +2674,61 @@ class MLIRGenerator:
         ops.append(f"{self.indent()}{ssa_name} = {current} : vector<{size}x{elem_type}>")
         return ssa_name, ops
 
+    def _elem_type_from_array_expr(self, expr: Expression) -> Optional[str]:
+        if isinstance(expr, FieldAccess):
+            field_type = self._determine_field_type(expr)
+            if field_type and (getattr(field_type, 'is_pointer', False) or field_type.name.startswith('ptr')):
+                if getattr(field_type, 'element_type', None):
+                    return self.flow_type_to_mlir(field_type.element_type)
+                if field_type.name.startswith('ptr_'):
+                    return field_type.name[4:]
+        if isinstance(expr, Variable) and expr.name in self.symbol_table:
+            flow_type = self.symbol_table[expr.name].get('flow_type')
+            if flow_type and (getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr')):
+                if getattr(flow_type, 'element_type', None):
+                    return self.flow_type_to_mlir(flow_type.element_type)
+                if flow_type.name.startswith('ptr_'):
+                    return flow_type.name[4:]
+        return None
+
+    def _is_pointer_array_ssa(self, array_ssa: str, access: ArrayAccess) -> bool:
+        if self._ssa_types.get(array_ssa) == '!llvm.ptr':
+            return True
+        if isinstance(access.array, Variable):
+            arr_type = self.symbol_table.get(access.array.name, {}).get('mlir_type', '')
+            return arr_type == '!llvm.ptr'
+        return self._elem_type_from_array_expr(access.array) is not None
+
+    def _emit_ptr_index_gep(self, ptr_ssa: str, index_ssa: str, index_type: str) -> tuple[str, List[str]]:
+        ops: List[str] = []
+        if index_type == 'index':
+            idx64 = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{idx64} = arith.index_cast {index_ssa} : index to i64")
+            index_ssa = idx64
+        elif index_type != 'i64':
+            idx64 = f"%{self.function_counter}"
+            self.function_counter += 1
+            ext_op = "arith.extui" if index_type.startswith('u') else "arith.extsi"
+            ops.append(f"{self.indent()}{idx64} = {ext_op} {index_ssa} : {index_type} to i64")
+            index_ssa = idx64
+
+        gep = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(
+            f"{self.indent()}{gep} = llvm.getelementptr {ptr_ssa}[{index_ssa}] "
+            f": (!llvm.ptr, i64) -> !llvm.ptr, !llvm.ptr"
+        )
+        self._ssa_types[gep] = '!llvm.ptr'
+        return gep, ops
+
     def generate_array_access(self, access: ArrayAccess) -> tuple[str, List[str]]:
-        """Generate memref.load for array[index] access."""
+        """Generate memref.load or llvm.load for array[index] access."""
         ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
 
         ops: List[str] = []
 
-        # Generate array expression (should resolve to a memref SSA value)
         array_result = self.generate_expression(access.array)
         if not array_result:
             array_ssa = f"%{self.function_counter}"
@@ -2571,7 +2738,6 @@ class MLIRGenerator:
             array_ssa, array_ops = array_result
         ops.extend(array_ops)
 
-        # Generate index expression
         index_result = self.generate_expression(access.index)
         if not index_result:
             index_ssa = f"%{self.function_counter}"
@@ -2581,12 +2747,18 @@ class MLIRGenerator:
             index_ssa, index_ops = index_result
         ops.extend(index_ops)
 
-        # Check if index is already index type (e.g., loop induction variable)
-        index_type = 'i32'
+        index_type = self._ssa_types.get(index_ssa, 'i32')
         if isinstance(access.index, Variable) and access.index.name in self.symbol_table:
-            index_type = self.symbol_table[access.index.name].get('mlir_type', 'i32')
+            index_type = self.symbol_table[access.index.name].get('mlir_type', index_type)
 
-        # Convert index to index type if it's an integer
+        if self._is_pointer_array_ssa(array_ssa, access):
+            elem_type = self._elem_type_from_array_expr(access.array) or 'f32'
+            gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type)
+            ops.extend(gep_ops)
+            ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
+            self._ssa_types[ssa_name] = elem_type
+            return ssa_name, ops
+
         if index_type == 'index':
             final_index = index_ssa
         else:
@@ -2595,8 +2767,7 @@ class MLIRGenerator:
             ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : i32 to index")
             final_index = index_cast
 
-        # Determine element type from array type
-        elem_type = 'f32'  # Default; ideally infer from array's type
+        elem_type = 'f32'
         if isinstance(access.array, Variable) and access.array.name in self.symbol_table:
             arr_type = self.symbol_table[access.array.name].get('mlir_type', '')
             if 'i32' in arr_type and 'memref' in arr_type:
@@ -2606,8 +2777,8 @@ class MLIRGenerator:
             elif 'f32' in arr_type:
                 elem_type = 'f32'
 
-        # Emit memref.load
         ops.append(f"{self.indent()}{ssa_name} = memref.load {array_ssa}[{final_index}] : memref<?x{elem_type}>")
+        self._ssa_types[ssa_name] = elem_type
         return ssa_name, ops
     
     def get_expression_type(self, expr: Expression) -> str:
@@ -2616,21 +2787,21 @@ class MLIRGenerator:
         elif isinstance(expr, Variable):
             if expr.name in self.symbol_table:
                 var_info = self.symbol_table[expr.name]
-                # If we have the original FLOW type, convert it to MLIR type
+                if 'mlir_type' in var_info:
+                    return var_info['mlir_type']
                 if 'flow_type' in var_info:
                     return self.flow_type_to_mlir(var_info['flow_type'])
-                return var_info.get('mlir_type', 'i32')
+                return 'i32'
             else:
                 return 'i32'  # Default
         elif isinstance(expr, BinaryOperation):
             left_type = self.get_expression_type(expr.left)
             right_type = self.get_expression_type(expr.right)
-            # For arithmetic, prefer float types over int
-            if 'f32' in left_type or 'f32' in right_type:
-                return 'f32'
-            if 'f64' in left_type or 'f64' in right_type:
-                return 'f64'
-            return left_type if left_type == right_type else 'i32'
+            if expr.operator in ['==', '!=', '<', '<=', '>', '>=', '&&', 'and', '||', 'or']:
+                return 'i1'
+            if expr.operator == '+' and (left_type == '!llvm.ptr' or right_type == '!llvm.ptr'):
+                return '!llvm.ptr'
+            return self._resolve_binary_operand_type(left_type, right_type)
         elif isinstance(expr, UnaryOperation):
             return self.get_expression_type(expr.operand)
         elif isinstance(expr, ArrayLiteral):

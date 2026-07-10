@@ -259,6 +259,29 @@ flow_packages/
         """Save project configuration."""
         self.config_file.write_text(package.to_toml())
     
+    def _read_lock(self) -> dict:
+        """Load flow.lock or return empty dict."""
+        if not self.lock_file.exists():
+            return {"version": 1, "packages": {}}
+        try:
+            import json
+            return json.loads(self.lock_file.read_text())
+        except Exception:
+            return {"version": 1, "packages": {}}
+
+    def _write_lock(self, lock_data: dict) -> None:
+        """Persist flow.lock with pinned dependency versions."""
+        import json
+        self.lock_file.write_text(json.dumps(lock_data, indent=2) + "\n")
+
+    def _update_lock_entry(self, package_name: str, version: str, source: str) -> None:
+        lock = self._read_lock()
+        lock.setdefault("packages", {})[package_name] = {
+            "version": version,
+            "source": source,
+        }
+        self._write_lock(lock)
+
     def add(self, package_name: str, version: str = "*") -> bool:
         """Add a dependency to the project."""
         config = self.load_config()
@@ -277,7 +300,10 @@ flow_packages/
         print(f"{self.GREEN}✓ Added {package_name} to dependencies{self.RESET}")
         
         # Try to install
-        return self.install_package(package_name, version)
+        ok = self.install_package(package_name, version)
+        if ok:
+            self._update_lock_entry(package_name, version, "stdlib" if (Path(__file__).parent.parent.parent / "lib" / "stdlib" / f"{package_name}.flow").exists() else "registry")
+        return ok
     
     def install_package(self, package_name: str, version: str = "*") -> bool:
         """Install a package from the stdlib or registry."""
@@ -303,7 +329,7 @@ flow_packages/
         return True
     
     def install(self) -> bool:
-        """Install all dependencies."""
+        """Install all dependencies and refresh flow.lock."""
         config = self.load_config()
         if not config:
             return False
@@ -311,12 +337,20 @@ flow_packages/
         print(f"{self.BLUE}Installing dependencies...{self.RESET}")
         
         success = True
+        lock = self._read_lock()
+        lock.setdefault("packages", {})
         for name, version in config.dependencies.items():
-            if not self.install_package(name, version):
+            pinned = lock.get("packages", {}).get(name, {}).get("version", version)
+            if not self.install_package(name, pinned):
                 success = False
+            else:
+                stdlib_path = Path(__file__).parent.parent.parent / "lib" / "stdlib" / f"{name}.flow"
+                source = "stdlib" if stdlib_path.exists() else "registry"
+                lock["packages"][name] = {"version": pinned, "source": source}
         
         if success:
-            print(f"\n{self.GREEN}✓ All dependencies installed{self.RESET}")
+            self._write_lock(lock)
+            print(f"\n{self.GREEN}✓ All dependencies installed (flow.lock updated){self.RESET}")
         
         return success
     
