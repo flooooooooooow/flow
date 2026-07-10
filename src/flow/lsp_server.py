@@ -121,6 +121,10 @@ class FlowLanguageServer:
             result = self._handle_definition(params)
         elif method == 'textDocument/documentSymbol':
             result = self._handle_document_symbol(params)
+        elif method == 'textDocument/references':
+            result = self._handle_references(params)
+        elif method == 'textDocument/rename':
+            result = self._handle_rename(params)
         
         if msg_id is not None:
             return {'jsonrpc': '2.0', 'id': msg_id, 'result': result}
@@ -141,6 +145,8 @@ class FlowLanguageServer:
                 'hoverProvider': True,
                 'definitionProvider': True,
                 'documentSymbolProvider': True,
+                'referencesProvider': True,
+                'renameProvider': True,
             },
             'serverInfo': {
                 'name': 'flow-lsp',
@@ -475,6 +481,64 @@ class FlowLanguageServer:
         
         return symbols
     
+    def _find_references_in_text(self, text: str, word: str) -> List[dict]:
+        """Find all occurrences of word in text."""
+        import re
+        locations = []
+        lines = text.split('\n')
+        pattern = re.compile(r'\b' + re.escape(word) + r'\b')
+        for line_no, line_text in enumerate(lines):
+            for match in pattern.finditer(line_text):
+                locations.append({
+                    'range': {
+                        'start': {'line': line_no, 'character': match.start()},
+                        'end': {'line': line_no, 'character': match.end()},
+                    }
+                })
+        return locations
+
+    def _handle_references(self, params: dict) -> List[dict]:
+        """Handle textDocument/references."""
+        uri = params['textDocument']['uri']
+        pos = params['position']
+        text = self.documents.get(uri, '')
+        word = self._get_word_at_position(text, pos['line'], pos['character'])
+        if not word:
+            return []
+        refs = []
+        for doc_uri, doc_text in self.documents.items():
+            for loc in self._find_references_in_text(doc_text, word):
+                refs.append({'uri': doc_uri, **loc})
+        return refs
+
+    def _handle_rename(self, params: dict) -> Optional[dict]:
+        """Handle textDocument/rename."""
+        uri = params['textDocument']['uri']
+        pos = params['position']
+        new_name = params.get('newName', '')
+        text = self.documents.get(uri, '')
+        word = self._get_word_at_position(text, pos['line'], pos['character'])
+        if not word or not new_name:
+            return None
+        changes = {}
+        import re
+        pattern = re.compile(r'\b' + re.escape(word) + r'\b')
+        for doc_uri, doc_text in self.documents.items():
+            doc_changes = []
+            lines = doc_text.split('\n')
+            for line_no, line_text in enumerate(lines):
+                for match in pattern.finditer(line_text):
+                    doc_changes.append({
+                        'range': {
+                            'start': {'line': line_no, 'character': match.start()},
+                            'end': {'line': line_no, 'character': match.end()},
+                        },
+                        'newText': new_name,
+                    })
+            if doc_changes:
+                changes[doc_uri] = doc_changes
+        return {'changes': changes}
+
     def _get_word_at_position(self, text: str, line: int, character: int) -> str:
         """Get the word at a given position in the text."""
         lines = text.split('\n')

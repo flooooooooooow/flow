@@ -1,0 +1,26 @@
+# MLIR-first tensor benchmark — matmul + activations
+import "stdlib/tensor.flow"
+
+function bench_matmul(M: i32, K: i32, N: i32) -> f32 {
+    let a: Tensor = tensor_rand(M, K, 1, 1, 42)
+    let b: Tensor = tensor_rand(K, N, 1, 1, 99)
+    let c: Tensor = tensor_matmul(a, b)
+    let s: f32 = tensor_sum(c)
+    tensor_free(a)
+    tensor_free(b)
+    tensor_free(c)
+    return s
+}
+
+function main() -> i32 {
+    println("MLIR Tensor Benchmark")
+    println("=====================")
+    let s64: f32 = bench_matmul(64, 64, 64)
+    let s128: f32 = bench_matmul(128, 128, 128)
+    println("matmul 64x64 sum checkpoint")
+    println(s64)
+    println("matmul 128x128 sum checkpoint")
+    println(s128)
+    println("done")
+    return 0
+}
