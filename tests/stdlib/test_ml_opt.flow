@@ -1,0 +1,24 @@
+# Adam optimizer smoke test
+import "stdlib/ml_opt.flow"
+
+function main() -> i32 {
+    let params: ptr<f32> = malloc(16)
+    let grads: ptr<f32> = malloc(16)
+    params[0] = 1.0
+    params[1] = 2.0
+    params[2] = 3.0
+    params[3] = 4.0
+    grads[0] = 0.1
+    grads[1] = 0.2
+    grads[2] = 0.3
+    grads[3] = 0.4
+    let opt: Adam = adam_create(0.1, 4)
+    let opt2: Adam = adam_step(opt, params, grads)
+    let p0: f32 = params[0]
+    adam_free(opt2)
+    free(params)
+    free(grads)
+    if p0 >= 1.0 { return 1 }
+    if opt2.t != 1 { return 2 }
+    return 0
+}

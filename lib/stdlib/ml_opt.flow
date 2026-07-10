@@ -1,0 +1,82 @@
+# ML optimizers (stdlib)
+# Import: import "stdlib/ml_opt.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<f32>
+    function free(p: ptr<f32>)
+    function sqrt(x: f64) -> f64
+}
+
+struct Adam {
+    learning_rate: f32,
+    beta1: f32,
+    beta2: f32,
+    epsilon: f32,
+    weight_decay: f32,
+    m: ptr<f32>,
+    v: ptr<f32>,
+    t: i32,
+    size: i32
+}
+
+function pow_f32(base: f32, exp: i32) -> f64 {
+    let mut result: f64 = 1.0
+    for i in 0 to exp {
+        result = result * base
+    }
+    return result
+}
+
+function adam_create(lr: f32, size: i32) -> Adam {
+    let nbytes: i64 = (size as i64) * 4
+    let m: ptr<f32> = malloc(nbytes)
+    let v: ptr<f32> = malloc(nbytes)
+    for i in 0 to size {
+        m[i] = 0.0
+        v[i] = 0.0
+    }
+    return Adam {
+        learning_rate: lr,
+        beta1: 0.9,
+        beta2: 0.999,
+        epsilon: 1e-8,
+        weight_decay: 0.0,
+        m: m,
+        v: v,
+        t: 0,
+        size: size
+    }
+}
+
+function adam_step(opt: Adam, params: ptr<f32>, grads: ptr<f32>) -> Adam {
+    let t_new: i32 = opt.t + 1
+    let bc1: f64 = 1.0 - pow_f32(opt.beta1, t_new)
+    let bc2: f64 = 1.0 - pow_f32(opt.beta2, t_new)
+    for i in 0 to opt.size {
+        let g: f32 = grads[i] + opt.weight_decay * params[i]
+        let m_new: f32 = opt.beta1 * opt.m[i] + (1.0 - opt.beta1) * g
+        let v_new: f32 = opt.beta2 * opt.v[i] + (1.0 - opt.beta2) * g * g
+        opt.m[i] = m_new
+        opt.v[i] = v_new
+        let m_hat: f64 = m_new / bc1
+        let v_hat: f64 = v_new / bc2
+        let update: f64 = opt.learning_rate * m_hat / (sqrt(v_hat) + opt.epsilon)
+        params[i] = params[i] - update
+    }
+    return Adam {
+        learning_rate: opt.learning_rate,
+        beta1: opt.beta1,
+        beta2: opt.beta2,
+        epsilon: opt.epsilon,
+        weight_decay: opt.weight_decay,
+        m: opt.m,
+        v: opt.v,
+        t: t_new,
+        size: opt.size
+    }
+}
+
+function adam_free(opt: Adam) {
+    free(opt.m)
+    free(opt.v)
+}
