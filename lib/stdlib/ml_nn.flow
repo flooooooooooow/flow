@@ -82,3 +82,36 @@ function nn_forward_relu(layer: Dense2D, input: Tensor) -> Tensor {
     tensor_free(logits)
     return out
 }
+
+struct Dense2DGrad {
+    grad_input: Tensor,
+    grad_weights: Tensor,
+    grad_bias: Tensor
+}
+
+function dense2d_backward(layer: Dense2D, input: Tensor, grad_out: Tensor) -> Dense2DGrad {
+    # grad_input = grad_out @ W^T
+    let grad_input: Tensor = tensor_matmul_backward_a(input, layer.weights, grad_out)
+    # grad_weights = input^T @ grad_out
+    let grad_weights: Tensor = tensor_matmul_backward_b(input, layer.weights, grad_out)
+    # grad_bias = sum over batch
+    let grad_bias: Tensor = tensor_zeros(1, layer.weights.dim1, 1, 1)
+    for b in 0 to grad_out.dim0 {
+        for j in 0 to grad_out.dim1 {
+            let g: f32 = tensor_get2(grad_out, b, j)
+            let cur: f32 = tensor_get2(grad_bias, 0, j)
+            tensor_set2(grad_bias, 0, j, cur + g)
+        }
+    }
+    return Dense2DGrad {
+        grad_input: grad_input,
+        grad_weights: grad_weights,
+        grad_bias: grad_bias
+    }
+}
+
+function dense2d_grad_free(g: Dense2DGrad) {
+    tensor_free(g.grad_input)
+    tensor_free(g.grad_weights)
+    tensor_free(g.grad_bias)
+}

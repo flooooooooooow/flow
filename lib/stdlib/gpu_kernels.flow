@@ -10,10 +10,10 @@ function gpu_vector_add(a: ptr<f32>, b: ptr<f32>, out: ptr<f32>, n: i32) -> void
 }
 
 @gpu
-function gpu_scale(in: ptr<f32>, out: ptr<f32>, n: i32, alpha: f32) -> void {
+function gpu_scale(inp: ptr<f32>, out: ptr<f32>, n: i32, alpha: f32) -> void {
     let i: i32 = gpu_thread_id()
     if i < n {
-        out[i] = in[i] * alpha
+        out[i] = inp[i] * alpha
     }
 }
 
