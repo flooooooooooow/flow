@@ -651,10 +651,16 @@ let val: i32 = *p       # Dereference (not yet implemented)
 
 ### 9.4 JIT Execution
 
-**Status:** ⚠️ Via C compilation + execution
+**Status:** ✅ MLIR JIT via `flow jit` (requires LLVM/MLIR toolchain)
 
-- Compiles to C, then compiles and runs
-- Not true JIT (no in-memory compilation)
+- Pipeline: Flow → MLIR → `mlir-opt` → `mlir-translate` → LLVM IR → `clang -shared` → in-memory execution via `ctypes`
+- Commands: `flow jit <file>`, `transpiler --jit`, `transpiler --hot-reload`
+- Hot reload watches `.flow` files and re-JITs on save (`FlowJITRunner` + `MLIRJIT`)
+- Fallback: `flow run` uses the portable C backend (not JIT)
+
+**Requirements:** `mlir-opt`, `mlir-translate`, and `clang` on `PATH` (e.g. `brew install llvm` on macOS)
+
+**Related (AOT, not in-memory JIT):** `flow mlir-run` lowers MLIR → LLVM object file → links and runs
 
 ---
 

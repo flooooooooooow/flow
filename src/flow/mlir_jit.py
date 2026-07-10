@@ -18,6 +18,12 @@ class MLIRJIT:
         if override:
             return override
 
+        llvm_bin = os.environ.get("LLVM_PATH")
+        if llvm_bin:
+            candidate = Path(llvm_bin) / "mlir-opt"
+            if candidate.exists():
+                return str(candidate)
+
         found = shutil.which("mlir-opt")
         if found:
             return found
@@ -40,6 +46,12 @@ class MLIRJIT:
         override = os.environ.get("MLIR_TRANSLATE")
         if override:
             return override
+
+        llvm_bin = os.environ.get("LLVM_PATH")
+        if llvm_bin:
+            candidate = Path(llvm_bin) / "mlir-translate"
+            if candidate.exists():
+                return str(candidate)
 
         found = shutil.which("mlir-translate")
         if found:
@@ -198,34 +210,22 @@ class MLIRJIT:
         else:
             return func()
     
-    def jit_compile_and_run(self, mlir_code: str, func_name: str = "main", 
+    def jit_compile_and_run(self, mlir_code: str, func_name: str = "main",
                            args: List[Any] = None) -> Optional[Any]:
         """Full JIT pipeline: MLIR -> LLVM -> Native -> Execute"""
-        # print("🔥 JIT Compiling MLIR...")
-        
-        # Step 1: MLIR to LLVM IR
         llvm_ir = self.compile_mlir_to_llvm(mlir_code)
         if not llvm_ir:
             return None
-        
-        # print("LLVM IR generated")
-        
-        # Step 2: LLVM to native
+
         lib = self.compile_llvm_to_native(llvm_ir)
         if not lib:
             return None
-        
-        # print("🚀 Native code compiled")
-        
-        # Step 3: Execute
-        result = self.execute_function(lib, func_name, args)
-        # print("Function main executed")
-        return result
+
+        return self.execute_function(lib, func_name, args)
     
     def cleanup(self):
-        """Clean up temporary files"""
-        import shutil
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        """Release JIT handles. Temp dylibs are left for the OS to reclaim at exit."""
+        self.compiled_modules.clear()
 
 class FlowJITRuntime:
     """Runtime support functions for FLOW JIT"""

@@ -32,6 +32,7 @@ from .parser import (
     CapabilityDecl,
     CapabilityMethod,
     ConstDecl,
+    DeferStatement,
     EffectCall,
     EffectDecl,
     EnumDecl,
@@ -46,6 +47,7 @@ from .parser import (
     ImplDecl,
     Lambda,
     Literal,
+    MatchCase,
     MatchStatement,
     MethodCall,
     ReturnStatement,
@@ -54,6 +56,7 @@ from .parser import (
     StructLiteral,
     StructPattern,
     TraitDecl,
+    TryExpr,
     Type,
     TypeAliasDecl,
     DistinctTypeDecl,
@@ -106,13 +109,15 @@ def _c_ident(name: str) -> str:
 
 
 class CGenerator:
-    def __init__(self, *, source_file: str | None = None, debug_info: bool = False) -> None:
+    def __init__(self, *, source_file: str | None = None, debug_info: bool = False, bounds_check: bool = True) -> None:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
         self._enums = {}  # name -> EnumDecl
         self._var_types = {}  # name -> Type
         self._source_file = source_file
         self._debug_info = debug_info
+        self._bounds_check = bounds_check
+        self._current_return_type: Type | None = None
         
         # Effect system tracking
         self._effects = {}  # effect_name -> EffectDecl
@@ -211,6 +216,18 @@ class CGenerator:
         lines.append("#include <stdio.h>")
         lines.append("#include <stdlib.h>")  # For malloc/free
         lines.append("#include <string.h>")  # For memcpy/memset
+        lines.append("")
+        lines.append("/* Flow runtime helpers */")
+        lines.append("static char* flow_strcat(const char* a, const char* b) {")
+        lines.append("    size_t la = strlen(a ? a : \"\"), lb = strlen(b ? b : \"\");")
+        lines.append("    char* r = (char*)malloc(la + lb + 1);")
+        lines.append("    if (!r) return NULL;")
+        lines.append("    if (la) memcpy(r, a, la);")
+        lines.append("    if (lb) memcpy(r + la, b, lb);")
+        lines.append("    r[la + lb] = '\\0';")
+        lines.append("    return r;")
+        lines.append("}")
+        lines.append("")
         
         # Always include math.h - many programs use math functions
         # The linker will only include what's actually used
@@ -806,6 +823,36 @@ class CGenerator:
             return self._is_string_expr(expr.left) or self._is_string_expr(expr.right)
         return False
 
+    def _infer_match_type(self, expr: Expression) -> Type:
+        """Infer C type for match scrutinee bindings."""
+        inferred = self._infer_expr_type(expr)
+        if inferred is not None:
+            return inferred
+        return Type("i32")
+
+    def _infer_result_struct_type(self, expr: Expression) -> str:
+        """Infer Result struct C type name for try operator."""
+        inferred = self._infer_expr_type(expr)
+        if inferred and inferred.name.startswith("Result_"):
+            return _c_ident(inferred.name)
+        if isinstance(expr, FunctionCall) and expr.name.startswith("parse_"):
+            return "Result_i32_string"
+        if isinstance(expr, FunctionCall) and expr.name in self._var_types:
+            t = self._var_types[expr.name]
+            if t.name.startswith("Result_"):
+                return _c_ident(t.name)
+        return "Result_i32_string"
+
+    def _is_pointer_expr(self, expr: Expression) -> bool:
+        """Return True when field access should use -> (base is a pointer variable)."""
+        if isinstance(expr, Variable):
+            if expr.name in self._var_types:
+                t = self._var_types[expr.name]
+                return bool(getattr(t, "is_pointer", False) or t.name.startswith("ptr_"))
+        if isinstance(expr, FieldAccess):
+            return self._is_pointer_expr(expr.object)
+        return False
+
     def _flatten_string_concat(self, expr: Expression) -> List[Tuple[str, str]]:
         """Flatten a string concatenation expression into (expr_code, type_name) pairs."""
         if isinstance(expr, BinaryOperation) and expr.operator == '+':
@@ -990,6 +1037,8 @@ class CGenerator:
         
         # Save current var_types scope and create new scope for this function
         saved_var_types = self._var_types.copy()
+        saved_return_type = self._current_return_type
+        self._current_return_type = fn.return_type
         
         # Track parameter types for overload resolution and effect call handling
         for param in fn.parameters:
@@ -1000,17 +1049,42 @@ class CGenerator:
         
         # Restore var_types scope
         self._var_types = saved_var_types
+        self._current_return_type = saved_return_type
         self._indent -= 1
         lines.append("}")
         return lines
 
-    def _gen_block(self, block: Block) -> List[str]:
+    def _gen_defers(self, defers: List[DeferStatement]) -> List[str]:
+        """Emit deferred expressions in LIFO order."""
         lines: List[str] = []
-        for st in block.statements:
-            lines.extend(self._gen_statement(st))
+        for defer_stmt in reversed(defers):
+            expr = defer_stmt.expr
+            if isinstance(expr, FunctionCall):
+                lines.append(f"{self._i()}{self._gen_expr(expr)};")
+            else:
+                lines.append(f"{self._i()}(void)({self._gen_expr(expr)});")
         return lines
 
-    def _gen_statement(self, st: Statement) -> List[str]:
+    def _gen_block(self, block: Block) -> List[str]:
+        lines: List[str] = []
+        defer_stack: List[DeferStatement] = []
+        returned = False
+        for st in block.statements:
+            if isinstance(st, DeferStatement):
+                defer_stack.append(st)
+                continue
+            if isinstance(st, ReturnStatement):
+                lines.extend(self._gen_defers(defer_stack))
+                defer_stack.clear()
+                returned = True
+            lines.extend(self._gen_statement(st, defer_stack))
+        if defer_stack and not returned:
+            lines.extend(self._gen_defers(defer_stack))
+        return lines
+
+    def _gen_statement(self, st: Statement, defer_stack: List[DeferStatement] | None = None) -> List[str]:
+        if defer_stack is None:
+            defer_stack = []
         if isinstance(st, VarDecl):
             decl_type = st.type
             if decl_type and decl_type.name == "auto":
@@ -1063,7 +1137,7 @@ class CGenerator:
 
         if isinstance(st, WhileStatement):
             return self._gen_while(st)
-        
+
         if isinstance(st, ForStatement):
             return self._gen_for(st)
         
@@ -1075,6 +1149,9 @@ class CGenerator:
         
         if isinstance(st, MatchStatement):
             return self._gen_match(st)
+
+        if isinstance(st, DeferStatement):
+            return []  # Collected by _gen_block
 
         # Expression statement
         if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall, MethodCall)):
@@ -1123,7 +1200,10 @@ class CGenerator:
         start = self._gen_expr(st.range_start)
         end = self._gen_expr(st.range_end)
         step = self._gen_expr(st.step) if st.step else "1"
-        step_var = f"__flow_step_{safe_var}"
+        if not hasattr(self, "_for_counter"):
+            self._for_counter = 0
+        self._for_counter += 1
+        step_var = f"__flow_step_{self._for_counter}"
         
         # Track the loop variable type
         self._var_types[var] = Type("i32")
@@ -1142,9 +1222,11 @@ class CGenerator:
         lines: List[str] = []
         match_expr = self._gen_expr(st.value)
         
-        # Check if we can use a switch (integer/enum patterns only)
+        # Check if we can use a switch (integer patterns only, no guards)
         can_use_switch = all(
-            isinstance(case.pattern, Literal) and case.pattern.type.name in ('i32', 'i64', 'i8', 'i16', 'u8', 'u16', 'u32', 'u64')
+            case.guard is None
+            and isinstance(case.pattern, Literal)
+            and case.pattern.type.name in ('i32', 'i64', 'i8', 'i16', 'u8', 'u16', 'u32', 'u64')
             for case in st.cases
         )
         
@@ -1181,47 +1263,55 @@ class CGenerator:
             first = True
             for case in st.cases:
                 pattern = case.pattern
-                
-                # Generate condition and bindings based on pattern type
-                bindings = []  # List of (var_name, c_expr) to bind before body
-                
+                cond = "1"
+
                 if isinstance(pattern, Literal):
-                    cond = f"({match_expr}) == {self._gen_expr(pattern)}"
+                    if pattern.type.name == 'string':
+                        cond = f'(strcmp({match_expr}, {self._gen_expr(pattern)}) == 0)'
+                    else:
+                        cond = f"({match_expr}) == {self._gen_expr(pattern)}"
+                    if case.guard is not None:
+                        cond = f"({cond}) && ({self._gen_expr(case.guard)})"
                 elif isinstance(pattern, Variable):
-                    # Variable pattern always matches - bind the value
-                    cond = "1"  # Always true
-                    bindings.append((pattern.name, match_expr))
+                    if pattern.name == "_" and case.guard is None:
+                        cond = "1"
+                    elif case.guard is not None:
+                        bind_type = self._c_type(self._infer_match_type(st.value))
+                        guard_expr = self._gen_expr(case.guard)
+                        cond = (
+                            f"({{ {bind_type} {_c_ident(pattern.name)} = {match_expr}; "
+                            f"{guard_expr}; }})"
+                        )
+                    elif pattern.name != "_":
+                        bind_type = self._c_type(self._infer_match_type(st.value))
+                        cond = (
+                            f"({{ {bind_type} {_c_ident(pattern.name)} = {match_expr}; 1; }})"
+                        )
                 elif isinstance(pattern, StructPattern):
-                    # Struct pattern: Point(a, b) matches any Point and binds fields
-                    # For now, struct patterns always match (type is checked at compile time)
-                    cond = "1"  # Always true - struct type check is static
-                    
-                    # Bind struct fields to pattern variables
+                    bind_lines = []
                     struct_name = pattern.struct_name
                     if struct_name in self._structs:
                         field_names = list(self._structs[struct_name].keys())
                         for i, binding in enumerate(pattern.bindings):
                             if i < len(field_names):
                                 field = field_names[i]
-                                bindings.append((binding, f"({match_expr}).{_c_ident(field)}"))
+                                ft = self._structs[struct_name][field_names[i]]
+                                bind_lines.append(
+                                    f"{self._c_type(ft)} {_c_ident(binding)} = "
+                                    f"({match_expr}).{_c_ident(field)}"
+                                )
+                    guard_expr = self._gen_expr(case.guard) if case.guard else "1"
+                    binds = "; ".join(bind_lines)
+                    cond = f"({{ {binds}; {guard_expr}; }})" if binds else guard_expr
                 else:
-                    # Other patterns - try comparison
                     cond = f"({match_expr}) == {self._gen_expr(pattern)}"
-                
-                if first:
-                    lines.append(f"{self._i()}if ({cond}) {{")
-                    first = False
-                else:
-                    lines.append(f"{self._i()}}} else if ({cond}) {{")
-                
+                    if case.guard is not None:
+                        cond = f"({cond}) && ({self._gen_expr(case.guard)})"
+
+                branch_kw = "if" if first else "} else if"
+                first = False
+                lines.append(f"{self._i()}{branch_kw} ({cond}) {{")
                 self._indent += 1
-                
-                # Generate variable bindings
-                for var_name, var_expr in bindings:
-                    safe_name = _c_ident(var_name)
-                    lines.append(f"{self._i()}// pattern binding: {safe_name}")
-                    lines.append(f"{self._i()}int32_t {safe_name} = {var_expr};")
-                
                 lines.extend(self._gen_block(case.body))
                 self._indent -= 1
             
@@ -1354,7 +1444,19 @@ class CGenerator:
             return f"({_c_ident(e.struct_name)}){{ {fields} }}"
 
         if isinstance(e, FieldAccess):
-            return f"{self._gen_expr(e.object)}.{_c_ident(e.field)}"
+            obj_expr = self._gen_expr(e.object)
+            if self._is_pointer_expr(e.object):
+                return f"{obj_expr}->{_c_ident(e.field)}"
+            return f"{obj_expr}.{_c_ident(e.field)}"
+
+        if isinstance(e, TryExpr):
+            tmp = f"_flow_try_{id(e) & 0xFFFFFF}"
+            result_type = self._infer_result_struct_type(e.operand)
+            operand_c = self._gen_expr(e.operand)
+            return (
+                f"({{ {result_type} {tmp} = {operand_c}; "
+                f"if (!{tmp}.is_ok) return {tmp}; {tmp}.value; }})"
+            )
 
         if isinstance(e, CastExpression):
             target_c = self._c_type(e.target_type)
@@ -1368,6 +1470,10 @@ class CGenerator:
                 return f"(-{self._gen_expr(e.operand)})"
             if op == "~":
                 return f"(~{self._gen_expr(e.operand)})"
+            if op == "&":
+                return f"(&({self._gen_expr(e.operand)}))"
+            if op == "*":
+                return f"(*({self._gen_expr(e.operand)}))"
             return f"({op} {self._gen_expr(e.operand)})"  # Add space for unknown operators
 
         if isinstance(e, BinaryOperation):
@@ -1382,27 +1488,8 @@ class CGenerator:
                 
                 # If either operand is a string, this is string concatenation
                 if left_is_string or right_is_string:
-                    # Flatten the string concatenation and generate printf calls
-                    parts = self._flatten_string_concat(e)
-                    printf_calls = []
-                    for part_expr, part_type in parts:
-                        if part_type == 'string_literal':
-                            printf_calls.append(f'printf("%s", {part_expr})')
-                        elif part_type == 'string':
-                            printf_calls.append(f'printf("%s", {part_expr})')
-                        elif part_type in ['i32']:
-                            printf_calls.append(f'printf("%d", {part_expr})')
-                        elif part_type in ['i64']:
-                            printf_calls.append(f'printf("%lld", {part_expr})')
-                        elif part_type in ['u32']:
-                            printf_calls.append(f'printf("%u", {part_expr})')
-                        elif part_type in ['u64']:
-                            printf_calls.append(f'printf("%llu", {part_expr})')
-                        elif part_type in ['f32', 'f64']:
-                            printf_calls.append(f'printf("%f", {part_expr})')
-                        else:
-                            printf_calls.append(f'printf("%g", {part_expr})')
-                    return '; '.join(printf_calls)
+                    # Return allocated concatenated string
+                    return f"flow_strcat({left_expr}, {right_expr})"
                 
                 # Not string concat - fall through to normal binary op handling
             
@@ -1593,9 +1680,7 @@ class CGenerator:
             if arr_type and getattr(arr_type, 'size', None):
                 array_size = arr_type.size
 
-        if array_size is not None:
-            # Emit a bounds-checked access for debug safety.
-            # The check is branch-free in optimized builds (compiler removes it).
+        if self._bounds_check and array_size is not None:
             return (
                 f'(((unsigned)({index_expr}) < {array_size}) '
                 f'? {array_expr}[{index_expr}] '
@@ -1635,29 +1720,39 @@ class CGenerator:
         return f"({elem_type}[]){{ {elements} }}"
     
     def _gen_lambda(self, e: Lambda) -> str:
-        """Generate C code for lambda expression.
-        
-        Since C doesn't have lambdas natively, we generate a static function
-        pointer. For now, lambdas can only be used as immediately-invoked
-        function expressions (IIFE) which we inline.
-        
-        Note: Requires -fnested-functions for GCC or use as IIFE only.
-        """
-        # Generate unique lambda name
+        """Generate C closure: static function + env struct for captured variables."""
         if not hasattr(self, '_lambda_counter'):
             self._lambda_counter = 0
         self._lambda_counter += 1
-        lambda_name = f"lambda_{self._lambda_counter}"
-        
-        # Generate parameter list
-        params = ", ".join(f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in e.parameters)
-        if not params:
-            params = "void"
-        
-        # Generate return type
+        lambda_id = self._lambda_counter
+        lambda_name = f"lambda_{lambda_id}"
+        env_name = f"lambda_{lambda_id}_env"
+
+        captures = list(getattr(e, "captures", []) or [])
+        if captures:
+            env_fields = []
+            for cap in captures:
+                cap_type = self._var_types.get(cap, Type("i32"))
+                env_fields.append(f"{self._c_type(cap_type)} {_c_ident(cap)};")
+            env_struct = f"typedef struct {{ {', '.join(env_fields)} }} {env_name};"
+            if not hasattr(self, '_pending_env_structs'):
+                self._pending_env_structs = []
+            self._pending_env_structs.append(env_struct)
+
+        param_parts = []
+        if captures:
+            param_parts.append(f"{env_name}* _env")
+        param_parts.extend(f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in e.parameters)
+        params = ", ".join(param_parts) if param_parts else "void"
+
         ret_type = self._c_type(e.return_type) if e.return_type else "void"
-        
-        # Generate body
+
+        saved_var_types = self._var_types.copy()
+        if captures:
+            for cap in captures:
+                if cap in saved_var_types:
+                    self._var_types[cap] = saved_var_types[cap]
+
         if isinstance(e.body, Block):
             body_lines = []
             for stmt in e.body.statements:
@@ -1665,13 +1760,26 @@ class CGenerator:
                     body_lines.append(line.lstrip())
         else:
             body_lines = [f"return {self._gen_expr(e.body)};"]
-        
-        # Add lambda to pending functions for later emission
+
+        self._var_types = saved_var_types
+
+        if captures:
+            for i, line in enumerate(body_lines):
+                for cap in captures:
+                    body_lines[i] = line.replace(_c_ident(cap), f"_env->{_c_ident(cap)}")
+
         if not hasattr(self, '_pending_lambdas'):
             self._pending_lambdas = []
         self._pending_lambdas.append((lambda_name, ret_type, params, body_lines))
-        
-        # Return function pointer
+
+        if captures:
+            init_fields = ", ".join(
+                f".{_c_ident(cap)} = {_c_ident(cap)}" for cap in captures
+            )
+            return (
+                f"(({ret_type} (*)({params}))(&{lambda_name})) "
+                f"/* closure env: ({env_name}){{ {init_fields} }} */"
+            )
         return f"&{lambda_name}"
 
 

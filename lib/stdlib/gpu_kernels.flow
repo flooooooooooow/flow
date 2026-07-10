@@ -1,0 +1,37 @@
+# GPU kernels for ML workloads (Metal/CUDA codegen via @gpu)
+# Mojo-style: annotate kernels, compile with `flow gpu <file>`
+
+@gpu
+function gpu_vector_add(a: ptr<f32>, b: ptr<f32>, out: ptr<f32>, n: i32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        out[i] = a[i] + b[i]
+    }
+}
+
+@gpu
+function gpu_scale(in: ptr<f32>, out: ptr<f32>, n: i32, alpha: f32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        out[i] = in[i] * alpha
+    }
+}
+
+@gpu
+function gpu_matmul_row(A: ptr<f32>, B: ptr<f32>, C: ptr<f32>, M: i32, K: i32, N: i32) -> void {
+    let row: i32 = gpu_thread_id()
+    if row < M {
+        for col in 0 to N {
+            let mut acc: f32 = 0.0
+            for k in 0 to K {
+                acc = acc + A[row * K + k] * B[k * N + col]
+            }
+            C[row * N + col] = acc
+        }
+    }
+}
+
+function main() -> i32 {
+    println("gpu_kernels: use `flow gpu lib/stdlib/gpu_kernels.flow` to emit shaders")
+    return 0
+}
