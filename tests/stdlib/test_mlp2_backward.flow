@@ -1,0 +1,19 @@
+# MLP2 forward/backward smoke test
+import "stdlib/ml_nn.flow"
+
+function main() -> i32 {
+    let mlp: MLP2 = mlp2_create(2, 3, 1, 7)
+    let x: Tensor = tensor_fill(2, 2, 1, 1, 0.5)
+    let y: Tensor = tensor_fill(2, 1, 1, 1, 1.0)
+    let cache: MLP2Activations = mlp2_forward(mlp, x)
+    if cache.pred.dim0 != 2 || cache.pred.dim1 != 1 { return 1 }
+    let grads: MLP2Grads = mlp2_backward(mlp, cache, y)
+    if grads.layer1.grad_weights.dim0 != 2 { return 2 }
+    if grads.layer2.grad_weights.dim1 != 1 { return 3 }
+    mlp2_grads_free(grads)
+    mlp2_activations_free(cache)
+    tensor_free(x)
+    tensor_free(y)
+    mlp2_free(mlp)
+    return 0
+}

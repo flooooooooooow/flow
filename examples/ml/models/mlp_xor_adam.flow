@@ -1,0 +1,100 @@
+# XOR MLP trained with Adam (stdlib tensor + ml_nn + ml_opt)
+# Architecture: 2 -> 4 (sigmoid) -> 1 (sigmoid), batch=4, MSE loss
+
+import "stdlib/ml_nn.flow"
+import "stdlib/ml_opt.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function count_correct(pred: Tensor, target: Tensor) -> i32 {
+    let mut correct: i32 = 0
+    for i in 0 to pred.dim0 {
+        let p: f32 = tensor_get2(pred, i, 0)
+        let t: f32 = tensor_get2(target, i, 0)
+        let mut pr: i32 = 0
+        if p > 0.5 { pr = 1 }
+        let mut tr: i32 = 0
+        if t > 0.5 { tr = 1 }
+        if pr == tr { correct = correct + 1 }
+    }
+    return correct
+}
+
+function main() -> i32 {
+    println("XOR MLP + Adam (stdlib)")
+    println("========================")
+
+    let x: Tensor = tensor_zeros(4, 2, 1, 1)
+    tensor_set2(x, 0, 0, 0.0)
+    tensor_set2(x, 0, 1, 0.0)
+    tensor_set2(x, 1, 0, 0.0)
+    tensor_set2(x, 1, 1, 1.0)
+    tensor_set2(x, 2, 0, 1.0)
+    tensor_set2(x, 2, 1, 0.0)
+    tensor_set2(x, 3, 0, 1.0)
+    tensor_set2(x, 3, 1, 1.0)
+
+    let y: Tensor = tensor_zeros(4, 1, 1, 1)
+    tensor_set2(y, 0, 0, 0.0)
+    tensor_set2(y, 1, 0, 1.0)
+    tensor_set2(y, 2, 0, 1.0)
+    tensor_set2(y, 3, 0, 0.0)
+
+    let mlp: MLP2 = mlp2_create(2, 4, 1, 42)
+
+    let mut opt_w1: Adam = adam_create(0.05, mlp.layer1.weights.size)
+    let mut opt_b1: Adam = adam_create(0.05, mlp.layer1.bias.size)
+    let mut opt_w2: Adam = adam_create(0.05, mlp.layer2.weights.size)
+    let mut opt_b2: Adam = adam_create(0.05, mlp.layer2.bias.size)
+
+    let epochs: i32 = 3000
+    println("Training...")
+
+    for epoch in 0 to epochs {
+        let cache: MLP2Activations = mlp2_forward(mlp, x)
+        let loss: f32 = nn_mse_loss(cache.pred, y)
+        let grads: MLP2Grads = mlp2_backward(mlp, cache, y)
+
+        opt_w1 = adam_step_tensor(opt_w1, mlp.layer1.weights, grads.layer1.grad_weights)
+        opt_b1 = adam_step_tensor(opt_b1, mlp.layer1.bias, grads.layer1.grad_bias)
+        opt_w2 = adam_step_tensor(opt_w2, mlp.layer2.weights, grads.layer2.grad_weights)
+        opt_b2 = adam_step_tensor(opt_b2, mlp.layer2.bias, grads.layer2.grad_bias)
+
+        mlp2_grads_free(grads)
+        mlp2_activations_free(cache)
+
+        if epoch % 500 == 0 {
+            print("Epoch ")
+            print(epoch)
+            print(": loss=")
+            printf("%.6f", loss)
+            println("")
+        }
+    }
+
+    let final_cache: MLP2Activations = mlp2_forward(mlp, x)
+    let correct: i32 = count_correct(final_cache.pred, y)
+
+    println("")
+    print("Accuracy: ")
+    print(correct)
+    println("/4")
+
+    mlp2_activations_free(final_cache)
+    adam_free(opt_w1)
+    adam_free(opt_b1)
+    adam_free(opt_w2)
+    adam_free(opt_b2)
+    mlp2_free(mlp)
+    tensor_free(x)
+    tensor_free(y)
+
+    if correct == 4 {
+        println("SUCCESS: Adam-trained MLP learned XOR")
+        return 0
+    }
+    println("FAILED: need more epochs or tuning")
+    return 1
+}
