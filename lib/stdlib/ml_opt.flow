@@ -1,6 +1,8 @@
 # ML optimizers (stdlib)
 # Import: import "stdlib/ml_opt.flow"
 
+import "stdlib/tensor.flow"
+
 extern {
     function malloc(size: i64) -> ptr<f32>
     function free(p: ptr<f32>)
@@ -74,6 +76,10 @@ function adam_step(opt: Adam, params: ptr<f32>, grads: ptr<f32>) -> Adam {
         t: t_new,
         size: opt.size
     }
+}
+
+function adam_step_tensor(opt: Adam, params: Tensor, grads: Tensor) -> Adam {
+    return adam_step(opt, params.data, grads.data)
 }
 
 function adam_free(opt: Adam) {
