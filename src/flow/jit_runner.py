@@ -68,6 +68,9 @@ class FlowJITRunner:
                 print("   Requires: mlir-opt, mlir-translate, clang on PATH")
                 print("   macOS: brew install llvm && export PATH=\"$(brew --prefix llvm)/bin:$PATH\"")
                 return False
+            if result != 0:
+                print(f"❌ JIT finished with exit code: {result}")
+                return False
             print(f"✅ JIT finished with exit code: {result}")
             return True
         except Exception as e:

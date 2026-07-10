@@ -106,16 +106,13 @@ class MLIRJIT:
             result = subprocess.run(
                 [
                     mlir_opt,
-                    "--canonicalize",
-                    "--cse",
                     "--convert-scf-to-cf",
-                    "--convert-index-to-llvm",
+                    "--memref-expand",
                     "--convert-arith-to-llvm",
+                    "--convert-index-to-llvm",
                     "--convert-cf-to-llvm",
-                    "--convert-math-to-llvm",
                     "--convert-func-to-llvm",
                     "--finalize-memref-to-llvm",
-                    "--convert-vector-to-llvm",
                     "--reconcile-unrealized-casts",
                     str(mlir_file),
                     "-o",
@@ -123,6 +120,7 @@ class MLIRJIT:
                 ],
                 capture_output=True,
                 text=True,
+                stdin=subprocess.DEVNULL,
                 env=os.environ.copy(),
             )
             
@@ -145,6 +143,7 @@ class MLIRJIT:
                 ],
                 capture_output=True,
                 text=True,
+                stdin=subprocess.DEVNULL,
                 env=os.environ.copy(),
             )
 
@@ -157,6 +156,26 @@ class MLIRJIT:
         except FileNotFoundError:
             raise RuntimeError("mlir-translate could not be executed. Check that it exists and is executable.")
     
+    def compile_llvm_to_executable(self, llvm_ir: str, module_name: str = "jit_module") -> Optional[Path]:
+        """Compile LLVM IR to a standalone executable."""
+        llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
+        exe_file = Path(self.temp_dir) / module_name
+        llvm_file.write_text(llvm_ir)
+        try:
+            result = subprocess.run(
+                ["clang", "-O3", str(llvm_file), "-o", str(exe_file), "-lm"],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+            )
+            if result.returncode != 0:
+                print(f"LLVM executable build failed: {result.stderr}")
+                return None
+            return exe_file
+        except FileNotFoundError:
+            print("❌ clang not found. Install Clang for JIT compilation.")
+            return None
+
     def compile_llvm_to_native(self, llvm_ir: str, module_name: str = "jit_module") -> Optional[ctypes.CDLL]:
         """Compile LLVM IR to native library and load it"""
         llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
@@ -168,10 +187,9 @@ class MLIRJIT:
         try:
             # Compile LLVM IR to shared library
             result = subprocess.run([
-                # SIMD-first defaults: let LLVM pick the best available ISA on this machine.
-                "clang", "-shared", "-fPIC", "-O3", "-march=native",
+                "clang", "-shared", "-fPIC", "-O3",
                 str(llvm_file), "-o", str(so_file)
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True, stdin=subprocess.DEVNULL)
             
             if result.returncode != 0:
                 print(f"LLVM compilation failed: {result.stderr}")
