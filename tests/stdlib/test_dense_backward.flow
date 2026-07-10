@@ -1,0 +1,19 @@
+# Dense2D backward smoke test
+import "stdlib/ml_nn.flow"
+
+function main() -> i32 {
+    let layer: Dense2D = dense2d_create(2, 2, 11)
+    let input: Tensor = tensor_fill(1, 2, 1, 1, 1.0)
+    let out: Tensor = dense2d_forward(layer, input)
+    let grad_out: Tensor = tensor_ones(1, 2, 1, 1)
+    let g: Dense2DGrad = dense2d_backward(layer, input, grad_out)
+    if g.grad_input.dim0 != 1 || g.grad_input.dim1 != 2 { return 1 }
+    if g.grad_weights.dim0 != 2 || g.grad_weights.dim1 != 2 { return 2 }
+    if g.grad_bias.dim1 != 2 { return 3 }
+    dense2d_grad_free(g)
+    tensor_free(input)
+    tensor_free(out)
+    tensor_free(grad_out)
+    dense2d_free(layer)
+    return 0
+}
