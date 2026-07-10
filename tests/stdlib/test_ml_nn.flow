@@ -1,0 +1,15 @@
+# Stdlib ml_nn smoke test (C backend; dense2d forward)
+import "stdlib/ml_nn.flow"
+
+function main() -> i32 {
+    let layer: Dense2D = dense2d_create(2, 3, 7)
+    let input: Tensor = tensor_fill(2, 2, 1, 1, 1.0)
+    let out: Tensor = dense2d_forward(layer, input)
+    if out.dim0 != 2 || out.dim1 != 3 { return 1 }
+    let v: f32 = tensor_get2(out, 0, 0)
+    tensor_free(input)
+    tensor_free(out)
+    dense2d_free(layer)
+    if v == 0.0 { return 2 }
+    return 0
+}

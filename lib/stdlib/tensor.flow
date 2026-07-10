@@ -259,6 +259,56 @@ function tensor_softmax(t: Tensor) -> Tensor {
 }
 
 # ============================================================================
+# AUTODIFF (element-wise activation gradients)
+# ============================================================================
+
+function tensor_relu_backward(output: Tensor, grad_out: Tensor) -> Tensor {
+    let g: Tensor = tensor_zeros(output.dim0, output.dim1, output.dim2, output.dim3)
+    for i in 0 to output.size {
+        if output.data[i] > 0.0 {
+            g.data[i] = grad_out.data[i]
+        } else {
+            g.data[i] = 0.0
+        }
+    }
+    return g
+}
+
+function tensor_sigmoid_backward(output: Tensor, grad_out: Tensor) -> Tensor {
+    let g: Tensor = tensor_zeros(output.dim0, output.dim1, output.dim2, output.dim3)
+    for i in 0 to output.size {
+        let s: f32 = output.data[i]
+        g.data[i] = grad_out.data[i] * s * (1.0 - s)
+    }
+    return g
+}
+
+function tensor_tanh_backward(output: Tensor, grad_out: Tensor) -> Tensor {
+    let g: Tensor = tensor_zeros(output.dim0, output.dim1, output.dim2, output.dim3)
+    for i in 0 to output.size {
+        let t: f32 = output.data[i]
+        g.data[i] = grad_out.data[i] * (1.0 - t * t)
+    }
+    return g
+}
+
+function tensor_mul_backward_a(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
+    let g: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
+    for i in 0 to a.size {
+        g.data[i] = grad_out.data[i] * b.data[i]
+    }
+    return g
+}
+
+function tensor_mul_backward_b(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
+    let g: Tensor = tensor_zeros(b.dim0, b.dim1, b.dim2, b.dim3)
+    for i in 0 to b.size {
+        g.data[i] = grad_out.data[i] * a.data[i]
+    }
+    return g
+}
+
+# ============================================================================
 # MATRIX OPERATIONS
 # ============================================================================
 

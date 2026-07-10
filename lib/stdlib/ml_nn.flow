@@ -1,0 +1,84 @@
+# ML neural-network building blocks (stdlib)
+# Import: import "stdlib/ml_nn.flow"
+# MLIR-first training via tensor ops + ptr-based SGD
+
+import "stdlib/tensor.flow"
+
+# ============================================================================
+# SGD OPTIMIZER (pointer params)
+# ============================================================================
+
+struct SGD {
+    learning_rate: f32,
+    weight_decay: f32
+}
+
+function sgd_create(lr: f32) -> SGD {
+    return SGD { learning_rate: lr, weight_decay: 0.0 }
+}
+
+function sgd_step(opt: SGD, params: ptr<f32>, grads: ptr<f32>, size: i32) {
+    for i in 0 to size {
+        let g: f32 = grads[i] + opt.weight_decay * params[i]
+        params[i] = params[i] - opt.learning_rate * g
+    }
+}
+
+# ============================================================================
+# 2D DENSE LAYER (tensor API)
+# ============================================================================
+
+struct Dense2D {
+    weights: Tensor,   # (in_features, out_features)
+    bias: Tensor       # (1, out_features)
+}
+
+function dense2d_create(in_features: i32, out_features: i32, seed: i32) -> Dense2D {
+    let scale: f32 = sqrt(2.0 / (in_features + out_features))
+    let w: Tensor = tensor_rand(in_features, out_features, 1, 1, seed)
+    let w_scaled: Tensor = tensor_scale(w, scale)
+    tensor_free(w)
+    let b: Tensor = tensor_zeros(1, out_features, 1, 1)
+    return Dense2D { weights: w_scaled, bias: b }
+}
+
+function dense2d_forward(layer: Dense2D, input: Tensor) -> Tensor {
+    # input: (batch, in_features), weights: (in, out) -> (batch, out)
+    let batch: i32 = input.dim0
+    let out: Tensor = tensor_zeros(batch, layer.weights.dim1, 1, 1)
+    for b in 0 to batch {
+        for j in 0 to layer.weights.dim1 {
+            let mut sum: f32 = tensor_get2(layer.bias, 0, j)
+            for i in 0 to layer.weights.dim0 {
+                sum = sum + tensor_get2(input, b, i) * tensor_get2(layer.weights, i, j)
+            }
+            tensor_set2(out, b, j, sum)
+        }
+    }
+    return out
+}
+
+function dense2d_free(layer: Dense2D) {
+    tensor_free(layer.weights)
+    tensor_free(layer.bias)
+}
+
+# ============================================================================
+# TRAINING UTILITIES
+# ============================================================================
+
+function nn_mse_loss(pred: Tensor, target: Tensor) -> f32 {
+    let diff: Tensor = tensor_sub(pred, target)
+    let sq: Tensor = tensor_mul(diff, diff)
+    let loss: f32 = tensor_sum(sq) / pred.size
+    tensor_free(diff)
+    tensor_free(sq)
+    return loss
+}
+
+function nn_forward_relu(layer: Dense2D, input: Tensor) -> Tensor {
+    let logits: Tensor = dense2d_forward(layer, input)
+    let out: Tensor = tensor_relu(logits)
+    tensor_free(logits)
+    return out
+}
