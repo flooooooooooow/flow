@@ -1,0 +1,41 @@
+# Stdlib tensor smoke test
+import "stdlib/tensor.flow"
+
+function test_matmul_shape() -> i32 {
+    let a: Tensor = tensor_fill(2, 3, 1, 1, 1.0)
+    let b: Tensor = tensor_fill(3, 4, 1, 1, 2.0)
+    let c: Tensor = tensor_matmul(a, b)
+    if c.dim0 != 2 || c.dim1 != 4 {
+        return 1
+    }
+    let v: f32 = tensor_get2(c, 0, 0)
+    if v != 6.0 {
+        return 2
+    }
+    tensor_free(a)
+    tensor_free(b)
+    tensor_free(c)
+    return 0
+}
+
+function test_broadcast_add() -> i32 {
+    let a: Tensor = tensor_fill(2, 3, 1, 1, 1.0)
+    let b: Tensor = tensor_fill(1, 3, 1, 1, 2.0)
+    let c: Tensor = tensor_broadcast_add(a, b)
+    let v: f32 = tensor_get2(c, 1, 2)
+    tensor_free(a)
+    tensor_free(b)
+    tensor_free(c)
+    if v != 3.0 {
+        return 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    let r1: i32 = test_matmul_shape()
+    if r1 != 0 { return 10 + r1 }
+    let r2: i32 = test_broadcast_add()
+    if r2 != 0 { return 20 + r2 }
+    return 0
+}

@@ -1,44 +1,67 @@
 #!/usr/bin/env python3
 """
 FLOW Module Resolver
-Handles multi-file resolution and recursive imports with proper import/export system.
+Resolves dot-path imports (verify.nat) and legacy string imports.
 """
 
+from __future__ import annotations
+
 import os
+import warnings
 from pathlib import Path
 from typing import List, Dict, Set, Any, Optional, Tuple
-from .parser import Lexer, Parser, ImportDecl, ImplDecl
+
+from .parser import Lexer, Parser, ImportDecl, ImplDecl, ExportDecl, ModuleDecl
+from .project_config import ProjectConfig, load_project_config
+
 
 class ModuleSymbol:
     """Represents a symbol exported from a module."""
-    
-    def __init__(self, name: str, declaration: Any, source_file: str, is_exported: bool = False):
+
+    def __init__(
+        self,
+        name: str,
+        declaration: Any,
+        source_file: str,
+        is_exported: bool = False,
+    ):
         self.name = name
         self.declaration = declaration
         self.source_file = source_file
         self.is_exported = is_exported
-        self.imported_as: Optional[str] = None  # For aliasing imports
+        self.imported_as: Optional[str] = None
+
 
 class ModuleInfo:
     """Information about a loaded module."""
-    
+
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.symbols: Dict[str, ModuleSymbol] = {}
         self.dependencies: Set[str] = set()
         self.is_loaded = False
 
+
 class ModuleResolver:
-    """Resolves and merges FLOW modules across multiple files with proper import/export."""
-    
+    """Resolves and merges FLOW modules across multiple files."""
+
     def __init__(self, root_file: str):
         self.root_file = os.path.abspath(root_file)
+        self.project = load_project_config(self.root_file)
         self.modules: Dict[str, ModuleInfo] = {}
         self.all_declarations: List[Any] = []
         self.symbol_table: Dict[str, ModuleSymbol] = {}
         self.import_stack: List[str] = []
-        self.circular_imports: Set[Tuple[str, str]] = set()
-        
+        self.circular_imports: Set[Tuple[str, ...]] = set()
+        self._legacy_import_warnings: Set[str] = set()
+
+        # Legacy search paths (string imports)
+        compiler_root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..")
+        )
+        self._stdlib_path = self.project.stdlib_root
+        self._packages_path = os.path.join(compiler_root, "packages")
+
     def resolve(self) -> List[Any]:
         """Recursively resolves all imports starting from the root file."""
         self._resolve_recursive(self.root_file, is_root=True)
@@ -46,176 +69,287 @@ class ModuleResolver:
         return self.all_declarations
 
     def _resolve_recursive(self, file_path: str, is_root: bool = False):
-        """Recursively resolve imports from a file."""
         if file_path in self.import_stack:
-            # Detect circular import
-            cycle = tuple(self.import_stack[self.import_stack.index(file_path):] + [file_path])
+            idx = self.import_stack.index(file_path)
+            cycle = tuple(self.import_stack[idx:] + [file_path])
             self.circular_imports.add(cycle)
             return
-        
+
         if file_path in self.modules and self.modules[file_path].is_loaded:
             return
-        
+
         self.import_stack.append(file_path)
-        
+
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Module file not found: {file_path}")
 
-        # Create module info
         module_info = ModuleInfo(file_path)
         self.modules[file_path] = module_info
 
-        # Parse the file
-        with open(file_path, 'r') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
 
         lexer = Lexer(code)
         parser = Parser(lexer)
         declarations = parser.parse()
 
-        # Split into imports and other declarations
         imports = [d for d in declarations if isinstance(d, ImportDecl)]
-        others = [d for d in declarations if not isinstance(d, ImportDecl)]
+        others = [
+            d
+            for d in declarations
+            if not isinstance(d, ImportDecl) and not isinstance(d, ExportDecl)
+        ]
+        export_lists = [d for d in declarations if isinstance(d, ExportDecl)]
+        export_names: Set[str] = set()
+        for export_decl in export_lists:
+            export_names.update(export_decl.symbols)
 
-        # Process imports first (depth-first)
         base_dir = os.path.dirname(file_path)
-        stdlib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "lib", "stdlib"))
-        packages_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "packages"))
 
         for imp in imports:
-            resolved_path = self._resolve_import_path(imp.path, base_dir, stdlib_path, packages_path)
+            resolved_path, import_symbols = self._resolve_import(imp, base_dir)
             if resolved_path:
                 module_info.dependencies.add(resolved_path)
                 self._resolve_recursive(resolved_path)
+                self._validate_import_symbols(
+                    imp, resolved_path, import_symbols, file_path
+                )
 
-        # Process symbols in this module
         for decl in others:
-            # Handle ImplDecl specially - it has trait_name instead of name
             if isinstance(decl, ImplDecl):
-                # Use mangled name: Type_Trait for impl blocks
                 name = f"{decl.for_type.name}_{decl.trait_name}_impl"
             else:
-                name = getattr(decl, 'name', None)
-            
+                name = getattr(decl, "name", None)
+
             if name:
-                is_exported = getattr(decl, 'is_exported', False)
+                is_exported = getattr(decl, "is_exported", False) or name in export_names
+                decl.is_exported = is_exported
                 symbol = ModuleSymbol(name, decl, file_path, is_exported)
                 module_info.symbols[name] = symbol
-                
-                # Add to global symbol table if exported or root module
+
                 if is_root or is_exported:
                     if name in self.symbol_table:
                         existing = self.symbol_table[name]
                         if existing.source_file != file_path:
-                            # Symbol collision - prefer exported symbols
                             if is_exported and not existing.is_exported:
                                 self.symbol_table[name] = symbol
                             elif existing.is_exported and not is_exported:
-                                pass  # Keep existing exported symbol
+                                pass
                             elif is_exported == existing.is_exported:
                                 raise ValueError(
-                                    f"Symbol '{name}' collision between {file_path} and {existing.source_file}"
+                                    f"Symbol '{name}' collision between "
+                                    f"{file_path} and {existing.source_file}"
                                 )
                     else:
                         self.symbol_table[name] = symbol
-                
-                # Add to declarations list
+
                 self.all_declarations.append(decl)
 
         module_info.is_loaded = True
         self.import_stack.pop()
 
-    def _resolve_import_path(self, import_path: str, base_dir: str, stdlib_path: str, packages_path: str) -> Optional[str]:
-        """Resolve import path to actual file path."""
-        # Basic path traversal / absolute path guard
-        if os.path.isabs(import_path) or import_path.startswith("~") or ".." in Path(import_path).parts:
+    def _resolve_import(
+        self, imp: ImportDecl, base_dir: str
+    ) -> Tuple[Optional[str], Optional[List[str]]]:
+        if imp.is_legacy_string:
+            self._warn_legacy_import(imp.path)
+            path = self._resolve_legacy_import_path(imp.path, base_dir)
+            symbols = imp.symbols
+            return path, symbols
+
+        path, extra_symbols = self._resolve_dot_import_path(imp.path, base_dir)
+        symbols = list(imp.symbols) if imp.symbols else None
+        if extra_symbols:
+            symbols = (symbols or []) + extra_symbols
+        return path, symbols
+
+    def _resolve_dot_import_path(
+        self, module_path: str, base_dir: str
+    ) -> Tuple[str, Optional[List[str]]]:
+        """Resolve verify.nat, std.audio.filters, .sibling_mod"""
+        if ".." in module_path.split("."):
+            raise FileNotFoundError(
+                f"Parent-relative imports (..) are not allowed: {module_path}"
+            )
+
+        if module_path.startswith("."):
+            return self._resolve_relative_dot_path(module_path, base_dir)
+
+        return self._resolve_absolute_dot_path(module_path)
+
+    def _resolve_relative_dot_path(
+        self, module_path: str, base_dir: str
+    ) -> Tuple[str, Optional[List[str]]]:
+        rel = module_path[1:]
+        parts = rel.split(".") if rel else []
+        if not parts:
+            raise FileNotFoundError(f"Invalid relative import: {module_path}")
+
+        for i in range(len(parts), 0, -1):
+            file_parts = parts[:i]
+            sym_parts = parts[i:]
+            candidate = os.path.join(base_dir, *file_parts)
+            if not candidate.endswith(".flow"):
+                candidate += ".flow"
+            if os.path.exists(candidate):
+                return os.path.abspath(candidate), sym_parts or None
+
+        raise FileNotFoundError(
+            f"Could not resolve relative import '{module_path}' from {base_dir}"
+        )
+
+    def _resolve_absolute_dot_path(
+        self, module_path: str
+    ) -> Tuple[str, Optional[List[str]]]:
+        parts = module_path.split(".")
+        if not parts:
+            raise FileNotFoundError(f"Invalid module path: {module_path}")
+
+        roots: List[Tuple[str, List[str]]] = []
+
+        if parts[0] == "std":
+            roots.append((self._stdlib_path, parts[1:]))
+        elif parts[0] in self.project.paths:
+            root = os.path.join(self.project.project_root, self.project.paths[parts[0]])
+            roots.append((root, parts[1:]))
+        else:
+            # stdlib/ prefix compatibility: stdlib.math -> lib/stdlib/math.flow
+            if parts[0] == "stdlib":
+                roots.append((self._stdlib_path, parts[1:]))
+            roots.append((self._stdlib_path, parts))
+            roots.append((self.project.project_root, parts))
+
+        seen: Set[str] = set()
+        for root, rest in roots:
+            if not rest:
+                continue
+            for i in range(len(rest), 0, -1):
+                file_parts = rest[:i]
+                sym_parts = rest[i:]
+                candidate = os.path.join(root, *file_parts)
+                if not candidate.endswith(".flow"):
+                    candidate += ".flow"
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
+                if os.path.exists(candidate):
+                    return os.path.abspath(candidate), sym_parts or None
+
+        raise FileNotFoundError(f"Could not resolve import '{module_path}'")
+
+    def _resolve_legacy_import_path(
+        self, import_path: str, base_dir: str
+    ) -> Optional[str]:
+        if os.path.isabs(import_path) or import_path.startswith("~"):
+            raise FileNotFoundError(f"Unsafe import path: {import_path}")
+        if ".." in Path(import_path).parts:
             raise FileNotFoundError(f"Unsafe import path: {import_path}")
 
-        # Add .flow extension if not present
-        import_file = import_path if import_path.endswith('.flow') else import_path + '.flow'
-        
-        # Try relative to current file
-        imp_path = os.path.join(base_dir, import_file)
-        if os.path.exists(imp_path):
-            return os.path.abspath(imp_path)
-        
-        # Handle stdlib/ prefix (e.g., "stdlib/option.flow" -> look in lib/stdlib/option.flow)
+        import_file = (
+            import_path if import_path.endswith(".flow") else import_path + ".flow"
+        )
+
+        candidates = [
+            os.path.join(base_dir, import_file),
+        ]
+
         if import_path.startswith("stdlib/"):
-            stripped = import_path[7:]  # Remove "stdlib/" prefix
-            stripped_file = stripped if stripped.endswith('.flow') else stripped + '.flow'
-            std_imp_path = os.path.join(stdlib_path, stripped_file)
-            if os.path.exists(std_imp_path):
-                return os.path.abspath(std_imp_path)
-        
-        # Try stdlib directly (for imports like "math.flow" from within stdlib)
-        std_imp_path = os.path.join(stdlib_path, import_file)
-        if os.path.exists(std_imp_path):
-            return os.path.abspath(std_imp_path)
-        
-        # Try packages
-        pkg_imp_path = os.path.join(packages_path, import_file)
-        if os.path.exists(pkg_imp_path):
-            return os.path.abspath(pkg_imp_path)
-        
-        # Try project root (for paths like "lib/stdlib/foo.flow")
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        root_imp_path = os.path.join(project_root, import_file)
-        if os.path.exists(root_imp_path):
-            return os.path.abspath(root_imp_path)
-        
+            stripped = import_path[7:]
+            stripped_file = stripped if stripped.endswith(".flow") else stripped + ".flow"
+            candidates.append(os.path.join(self._stdlib_path, stripped_file))
+
+        candidates.append(os.path.join(self._stdlib_path, import_file))
+        candidates.append(os.path.join(self._packages_path, import_file))
+        candidates.append(os.path.join(self.project.project_root, import_file))
+
+        for imp_path in candidates:
+            if os.path.exists(imp_path):
+                return os.path.abspath(imp_path)
+
         raise FileNotFoundError(f"Could not resolve import '{import_path}'")
 
+    def _validate_import_symbols(
+        self,
+        imp: ImportDecl,
+        resolved_path: str,
+        import_symbols: Optional[List[str]],
+        importing_file: str,
+    ):
+        if not import_symbols:
+            return
+        module_info = self.modules.get(resolved_path)
+        if not module_info:
+            return
+        for sym in import_symbols:
+            if sym not in module_info.symbols:
+                raise ValueError(
+                    f"Module {imp.path} ({resolved_path}) has no symbol '{sym}' "
+                    f"(imported from {importing_file})"
+                )
+            if not module_info.symbols[sym].is_exported:
+                raise ValueError(
+                    f"Symbol '{sym}' in {resolved_path} is not exported "
+                    f"(imported from {importing_file})"
+                )
+
+    def _warn_legacy_import(self, path: str):
+        if path in self._legacy_import_warnings:
+            return
+        self._legacy_import_warnings.add(path)
+        warnings.warn(
+            f'String import "{path}" is deprecated. '
+            f"Use dot-path imports (e.g. std.math or verify.nat).",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
     def _resolve_symbols(self):
-        """Resolve all symbol references and check for missing symbols."""
-        # This would be used to resolve symbol references in expressions
         if self.circular_imports:
             cycles = [" -> ".join(cycle) for cycle in self.circular_imports]
             raise ValueError("Circular imports detected:\n  " + "\n  ".join(cycles))
 
     def get_module_info(self, file_path: str) -> Optional[ModuleInfo]:
-        """Get information about a specific module."""
         return self.modules.get(os.path.abspath(file_path))
 
     def get_symbol(self, name: str) -> Optional[ModuleSymbol]:
-        """Get a symbol by name."""
         return self.symbol_table.get(name)
 
     def list_exported_symbols(self, module_path: str) -> List[str]:
-        """List all exported symbols from a module."""
         module_info = self.get_module_info(module_path)
         if not module_info:
             return []
-        
-        return [name for name, symbol in module_info.symbols.items() if symbol.is_exported]
+        return [name for name, sym in module_info.symbols.items() if sym.is_exported]
 
     def get_module_dependencies(self, module_path: str) -> List[str]:
-        """Get all dependencies of a module."""
         module_info = self.get_module_info(module_path)
         if not module_info:
             return []
-        
         return list(module_info.dependencies)
 
     def validate_imports(self) -> List[str]:
-        """Validate all imports and return list of errors."""
         errors = []
-        
-        # Check for circular imports
         for cycle in self.circular_imports:
             errors.append(f"Circular import detected: {' -> '.join(cycle)}")
-        
-        # Check for missing symbols (this would require expression analysis)
-        # For now, just check that all imported files exist
-        
         return errors
 
+
+def flatten_module_declarations(declarations: List[Any]) -> List[Any]:
+    """Expand module { ... } blocks into top-level declarations."""
+    flat: List[Any] = []
+    for decl in declarations:
+        if isinstance(decl, ModuleDecl):
+            flat.extend(flatten_module_declarations(decl.declarations))
+        else:
+            flat.append(decl)
+    return flat
+
+
 def resolve_modules(root_file: str) -> List[Any]:
-    """Resolve modules starting from root file."""
     resolver = ModuleResolver(root_file)
-    return resolver.resolve()
+    return flatten_module_declarations(resolver.resolve())
+
 
 def get_module_resolver(root_file: str) -> ModuleResolver:
-    """Get a module resolver instance for analysis."""
     resolver = ModuleResolver(root_file)
     resolver.resolve()
     return resolver

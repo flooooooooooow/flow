@@ -52,6 +52,16 @@ resolve_llvm_path() {
     LLVM_PATH="/opt/homebrew/opt/llvm/bin"
 }
 
+# Auto-discover Homebrew LLVM and prepend to PATH for JIT/MLIR commands
+resolve_llvm_path
+if [ -n "$LLVM_PATH" ] && [ -d "$LLVM_PATH" ]; then
+    export LLVM_PATH
+    case ":$PATH:" in
+        *":$LLVM_PATH:"*) ;;
+        *) export PATH="$LLVM_PATH:$PATH" ;;
+    esac
+fi
+
 require_flow_file() {
     local program="${1:-}"
     if [ -z "$program" ]; then
@@ -101,6 +111,7 @@ show_help() {
     echo "  mlir <program>     Generate MLIR only"
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
+    echo "  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)"
     echo "  gpu <program>      Generate Metal/CUDA shaders"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
     echo "  fmt <files...>    Format FLOW source files"
@@ -500,7 +511,12 @@ generate_mlir() {
 
     check_mlir_deps
 
-    if python3 -m "$FLOWC_MODULE" "$program" --mlir "${flags[@]}" -o "$build_dir/$basename.mlir"; then
+    local mlir_cmd=(python3 -m "$FLOWC_MODULE" "$program" --mlir)
+    if [ ${#flags[@]} -gt 0 ]; then
+        mlir_cmd+=("${flags[@]}")
+    fi
+    mlir_cmd+=(-o "$build_dir/$basename.mlir")
+    if "${mlir_cmd[@]}"; then
         print_success "Generated MLIR: $build_dir/$basename.mlir"
         echo "----------------------------------------"
         cat "$build_dir/$basename.mlir"
@@ -1352,6 +1368,9 @@ install_deps() {
         print_info "Installing LLVM..."
         if command -v brew &> /dev/null; then
             brew install llvm
+            resolve_llvm_path
+            export LLVM_PATH
+            export PATH="$LLVM_PATH:$PATH"
         else
             print_error "Please install LLVM manually"
             exit 1
@@ -1629,37 +1648,89 @@ PY
         fi
         require_flow_file "${1:-}"
         check_deps
+        check_mlir_deps
         print_info "JIT compiling ${1:-}..."
         python3 - "$SCRIPT_DIR" "${1:-}" <<'PY'
 import sys
-
-script_dir = sys.argv[1]
-program = sys.argv[2]
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.mlir_generator import flow_to_mlir
-from flow.mlir_jit import MLIRJIT
-from flow.module_resolver import ModuleResolver
-
-# Resolve modules
-resolver = ModuleResolver(program)
-try:
-    declarations = resolver.resolve()
-except Exception as e:
-    print(f"Error: {e}")
-    sys.exit(1)
-
-# Generate MLIR
-mlir_code = flow_to_mlir(declarations, source_file=program)
-
-# JIT compile and run
-jit = MLIRJIT()
-try:
-    result = jit.jit_compile_and_run(mlir_code, "main")
-    print(f"Result: {result}")
-finally:
-    jit.cleanup()
+sys.path.insert(0, sys.argv[1] + "/src")
+from flow.jit_runner import FlowJITRunner
+runner = FlowJITRunner(sys.argv[2], hot_mode=False)
+sys.exit(0 if runner.run_once() else 1)
 PY
+        ;;
+    "ml")
+        shift
+        subcmd="${1:-run}"
+        case "$subcmd" in
+            run|jit|bench)
+                shift
+                program="${1:-$SCRIPT_DIR/examples/ml/mlir_tensor_bench.flow}"
+                require_flow_file "$program"
+                check_deps
+                check_mlir_deps
+                print_info "MLIR ML ($subcmd): $program"
+                if [ "$subcmd" = "bench" ]; then
+                    generate_mlir "$program"
+                    BUILD_DIR="$SCRIPT_DIR/build"
+                    PROGRAM_NAME=$(basename "$program" .flow)
+                    MLIR_FILE="$BUILD_DIR/${PROGRAM_NAME}.mlir"
+                    OBJ_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir.o"
+                    EXE_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir"
+                    print_info "Lowering MLIR to LLVM IR..."
+                    set -o pipefail
+                    "$LLVM_PATH"/mlir-opt "$MLIR_FILE" \
+                        --convert-scf-to-cf --memref-expand \
+                        --convert-arith-to-llvm --convert-index-to-llvm \
+                        --convert-cf-to-llvm --convert-func-to-llvm \
+                        --finalize-memref-to-llvm --reconcile-unrealized-casts | \
+                        "$LLVM_PATH"/mlir-translate --mlir-to-llvmir | \
+                        "$LLVM_PATH"/llc -O3 -march=native -filetype=obj -o "$OBJ_FILE"
+                    set +o pipefail
+                    clang -O3 "$OBJ_FILE" -o "$EXE_FILE" -lm
+                    print_info "Running benchmark..."
+                    /usr/bin/time -p "$EXE_FILE"
+                else
+                    python3 - "$SCRIPT_DIR" "$program" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1] + "/src")
+from flow.jit_runner import FlowJITRunner
+runner = FlowJITRunner(sys.argv[2], hot_mode=False)
+sys.exit(0 if runner.run_once() else 1)
+PY
+                fi
+                ;;
+            test)
+                check_deps
+                print_info "Running ML tensor tests..."
+                for t in "$SCRIPT_DIR/tests/stdlib/test_tensor.flow" "$SCRIPT_DIR/examples/ml/models/mlp_xor.flow"; do
+                    if [ -f "$t" ]; then
+                        print_info "  $t"
+                        if ! python3 -m flow.transpiler "$t" --c --lenient -o "$SCRIPT_DIR/build/$(basename "$t" .flow).c" 2>/dev/null; then
+                            print_error "Failed: $t"
+                            exit 1
+                        fi
+                        print_success "  ✓ $(basename "$t")"
+                    fi
+                done
+                if command -v "$LLVM_PATH/mlir-opt" &>/dev/null || command -v mlir-opt &>/dev/null; then
+                    check_mlir_deps
+                    print_info "  MLIR JIT smoke: test_tensor"
+                    python3 - "$SCRIPT_DIR" "$SCRIPT_DIR/tests/stdlib/test_tensor.flow" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1] + "/src")
+from flow.jit_runner import FlowJITRunner
+sys.exit(0 if FlowJITRunner(sys.argv[2]).run_once() else 1)
+PY
+                else
+                    print_warning "Skipping MLIR JIT (install llvm: brew install llvm)"
+                fi
+                print_success "ML tests passed"
+                ;;
+            *)
+                print_error "Usage: flow ml [run|jit|bench|test] [program.flow]"
+                exit 1
+                ;;
+        esac
         ;;
     "transpile")
         shift
@@ -1858,6 +1929,38 @@ pm.clean()
         ;;
     "examples")
         list_examples
+        ;;
+    know)
+        shift
+        python3 "$SCRIPT_DIR/tools/flow_know.py" "$@"
+        ;;
+    "doc")
+        shift
+        sub="${1:-}"
+        shift || true
+        case "$sub" in
+            proof)
+                if [ -z "${1:-}" ]; then
+                    print_error "Usage: flow doc proof <file.flow|directory> [-r]"
+                    exit 1
+                fi
+                python3 "$SCRIPT_DIR/tools/flow_doc.py" proof "$@"
+                ;;
+            bundle)
+                python3 "$SCRIPT_DIR/tools/flow_doc.py" bundle "$@"
+                ;;
+            kernel)
+                if [ -z "${1:-}" ]; then
+                    print_error "Usage: flow doc kernel <file.flow> [--param n=0] [--plot out.dot]"
+                    exit 1
+                fi
+                python3 "$SCRIPT_DIR/tools/flow_doc.py" kernel "$@"
+                ;;
+            *)
+                print_error "Usage: flow doc proof <file|dir> [-r]  |  flow doc bundle  |  flow doc kernel <file.flow> [--param n=0] [--plot out.png]"
+                exit 1
+                ;;
+        esac
         ;;
     "help"|*)
         show_help

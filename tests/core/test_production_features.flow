@@ -1,0 +1,101 @@
+# Production feature smoke tests: pointers, match, defer, try, modules
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+struct Result_i32_string {
+    is_ok: bool,
+    value: i32,
+    error: string,
+}
+
+function ok_i32(v: i32) -> Result_i32_string {
+    return Result_i32_string { is_ok: true, value: v, error: "" }
+}
+
+function err_i32(msg: string) -> Result_i32_string {
+    return Result_i32_string { is_ok: false, value: 0, error: msg }
+}
+
+function parse_five() -> Result_i32_string {
+    return ok_i32(5)
+}
+
+function use_try() -> Result_i32_string {
+    let v: i32 = parse_five()?
+    return ok_i32(v * 2)
+}
+
+function test_deref_and_field() -> i32 {
+    let p: Point = Point { x: 3, y: 4 }
+    let ptr: ptr<Point> = &p
+    let val: i32 = ptr.x
+    return val
+}
+
+function test_match_string(status: string) -> i32 {
+    match status {
+        "ok" => {
+            return 1
+        }
+        "err" => {
+            return 0
+        }
+        _ => {
+            return -1
+        }
+    }
+}
+
+function test_match_guard(n: i32) -> i32 {
+    match n {
+        x if x > 0 => {
+            return 1
+        }
+        _ => {
+            return 0
+        }
+    }
+}
+
+function test_defer() -> i32 {
+    let mut acc: i32 = 0
+    acc = acc + 1
+    defer printf("cleanup\n", 0)
+    return acc
+}
+
+module inner {
+    function helper() -> i32 {
+        return 42
+    }
+}
+
+function main() -> i32 {
+    let r: i32 = test_deref_and_field()
+    if r != 3 {
+        return 1
+    }
+    let s: i32 = test_match_string("ok")
+    if s != 1 {
+        return 2
+    }
+    let g: i32 = test_match_guard(5)
+    if g != 1 {
+        return 3
+    }
+    let d: i32 = test_defer()
+    if d != 1 {
+        return 4
+    }
+    return 0
+}
