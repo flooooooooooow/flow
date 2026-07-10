@@ -102,7 +102,7 @@ class MLIRJIT:
         try:
             # Keep this pipeline conservative and widely supported.
             # The goal for SIMD-first (implicit) is: emit LLVM-friendly IR,
-            # then rely on LLVM/Clang -O3 -march=native to pick best vector width.
+            # then rely on LLVM/Clang -O2 for stable codegen (-O3 miscompiles some tensor loops).
             result = subprocess.run(
                 [
                     mlir_opt,
@@ -163,7 +163,7 @@ class MLIRJIT:
         llvm_file.write_text(llvm_ir)
         try:
             result = subprocess.run(
-                ["clang", "-O3", str(llvm_file), "-o", str(exe_file), "-lm"],
+                ["clang", "-O2", str(llvm_file), "-o", str(exe_file), "-lm"],
                 capture_output=True,
                 text=True,
                 stdin=subprocess.DEVNULL,
@@ -187,8 +187,8 @@ class MLIRJIT:
         try:
             # Compile LLVM IR to shared library
             result = subprocess.run([
-                "clang", "-shared", "-fPIC", "-O3",
-                str(llvm_file), "-o", str(so_file)
+                "clang", "-shared", "-fPIC", "-O2",
+                str(llvm_file), "-o", str(so_file), "-lm"
             ], capture_output=True, text=True, stdin=subprocess.DEVNULL)
             
             if result.returncode != 0:

@@ -1,0 +1,28 @@
+# Matmul backward smoke test
+import "stdlib/tensor.flow"
+
+function test_matmul_backward_shapes() -> i32 {
+    let a: Tensor = tensor_fill(2, 3, 1, 1, 1.0)
+    let b: Tensor = tensor_fill(3, 4, 1, 1, 2.0)
+    let c: Tensor = tensor_matmul(a, b)
+    let grad_c: Tensor = tensor_ones(2, 4, 1, 1)
+    let grad_a: Tensor = tensor_matmul_backward_a(a, b, grad_c)
+    let grad_b: Tensor = tensor_matmul_backward_b(a, b, grad_c)
+    if grad_a.dim0 != 2 || grad_a.dim1 != 3 { return 1 }
+    if grad_b.dim0 != 3 || grad_b.dim1 != 4 { return 2 }
+    let va: f32 = tensor_get2(grad_a, 0, 0)
+    let vb: f32 = tensor_get2(grad_b, 0, 0)
+    tensor_free(a)
+    tensor_free(b)
+    tensor_free(c)
+    tensor_free(grad_c)
+    tensor_free(grad_a)
+    tensor_free(grad_b)
+    if va != 8.0 { return 3 }
+    if vb != 2.0 { return 4 }
+    return 0
+}
+
+function main() -> i32 {
+    return test_matmul_backward_shapes()
+}

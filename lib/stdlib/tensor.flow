@@ -350,6 +350,22 @@ function tensor_matmul(a: Tensor, b: Tensor) -> Tensor {
     return c
 }
 
+function tensor_matmul_backward_a(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
+    # dL/dA = grad_out @ B^T   (M,N) @ (N,K) -> (M,K)
+    let bt: Tensor = tensor_transpose(b)
+    let grad_a: Tensor = tensor_matmul(grad_out, bt)
+    tensor_free(bt)
+    return grad_a
+}
+
+function tensor_matmul_backward_b(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
+    # dL/dB = A^T @ grad_out   (K,M) @ (M,N) -> (K,N)
+    let at: Tensor = tensor_transpose(a)
+    let grad_b: Tensor = tensor_matmul(at, grad_out)
+    tensor_free(at)
+    return grad_b
+}
+
 function tensor_transpose(t: Tensor) -> Tensor {
     # Transpose 2D tensor
     let c: Tensor = tensor_zeros(t.dim1, t.dim0, 1, 1)

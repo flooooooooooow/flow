@@ -12,6 +12,7 @@ from .parser import (
     VarDecl,
     Assignment,
     IfStatement,
+    ForStatement,
     ReturnStatement,
     Literal,
     Variable,
@@ -20,6 +21,7 @@ from .parser import (
     FunctionCall,
     ArrayAccess,
     Type,
+    Block,
 )
 
 
@@ -319,8 +321,12 @@ class MLIRGpuGenerator:
             lines.append(f"{self.indent()}// return ignored in gpu kernel")
             return lines
 
-        if isinstance(stmt, Expression):
-            if isinstance(stmt, FunctionCall) and stmt.name in ["gpu_barrier", "gpu_sync"]:
+        if isinstance(stmt, ForStatement):
+            lines.extend(self.generate_for(stmt))
+            return lines
+
+        if isinstance(stmt, FunctionCall):
+            if stmt.name in ["gpu_barrier", "gpu_sync"]:
                 lines.append(f"{self.indent()}gpu.barrier")
                 return lines
             _, _, expr_ops = self.generate_expression(stmt)
@@ -328,6 +334,115 @@ class MLIRGpuGenerator:
             return lines
 
         lines.append(f"{self.indent()}// Unsupported statement {type(stmt).__name__}")
+        return lines
+
+    def _assigned_locals(self, block: Block) -> List[str]:
+        assigned: List[str] = []
+        for inner in block.statements:
+            if isinstance(inner, Assignment) and inner.target_expr is None and inner.target:
+                if inner.target not in assigned:
+                    assigned.append(inner.target)
+            elif isinstance(inner, IfStatement):
+                for name in self._assigned_locals(inner.then_block):
+                    if name not in assigned:
+                        assigned.append(name)
+                if inner.else_block:
+                    for name in self._assigned_locals(inner.else_block):
+                        if name not in assigned:
+                            assigned.append(name)
+        return assigned
+
+    def _collect_declared_vars_from_block(self, block: Block) -> List[str]:
+        declared: List[str] = []
+        for inner in block.statements:
+            if isinstance(inner, VarDecl):
+                declared.append(inner.name)
+            elif isinstance(inner, IfStatement):
+                declared.extend(self._collect_declared_vars_from_block(inner.then_block))
+                if inner.else_block:
+                    declared.extend(self._collect_declared_vars_from_block(inner.else_block))
+            elif isinstance(inner, ForStatement):
+                declared.extend(self._collect_declared_vars_from_block(inner.body))
+        return declared
+
+    def _detect_loop_carried_vars(self, body: Block) -> List[str]:
+        assigned_vars = self._assigned_locals(body)
+        declared_vars = self._collect_declared_vars_from_block(body)
+        carried: List[str] = []
+        for var_name in assigned_vars:
+            if var_name in self.symbol_table and var_name not in declared_vars and var_name not in carried:
+                carried.append(var_name)
+        return carried
+
+    def generate_block(self, block: Block) -> List[str]:
+        lines: List[str] = []
+        for inner in block.statements:
+            lines.extend(self.generate_statement(inner))
+        return lines
+
+    def generate_for(self, for_stmt: ForStatement) -> List[str]:
+        lines: List[str] = []
+        loop_carried_vars = self._detect_loop_carried_vars(for_stmt.body)
+
+        lower_ssa, lower_type, lower_ops = self.generate_expression(for_stmt.range_start)
+        upper_ssa, upper_type, upper_ops = self.generate_expression(for_stmt.range_end)
+        lines.extend(lower_ops)
+        lines.extend(upper_ops)
+
+        lb_idx = self.new_ssa()
+        ub_idx = self.new_ssa()
+        step_idx = self.new_ssa()
+        lines.append(f"{self.indent()}{lb_idx} = arith.index_cast {lower_ssa} : {lower_type} to index")
+        lines.append(f"{self.indent()}{ub_idx} = arith.index_cast {upper_ssa} : {upper_type} to index")
+        lines.append(f"{self.indent()}{step_idx} = arith.constant 1 : index")
+
+        iv = self.new_ssa()
+        iter_inits: List[str] = []
+        iter_types: List[str] = []
+        for var_name in loop_carried_vars:
+            info = self.symbol_table[var_name]
+            iter_inits.append(info["ssa"])
+            iter_types.append(info["mlir_type"])
+
+        if iter_inits:
+            iter_vars = [self.new_ssa() for _ in loop_carried_vars]
+            iter_args_spec = ", ".join(f"{iv_arg} = {init}" for iv_arg, init in zip(iter_vars, iter_inits))
+            if len(loop_carried_vars) == 1:
+                result_vars = [self.new_ssa()]
+            else:
+                result_vars = [self.new_ssa() for _ in loop_carried_vars]
+            result_lhs = result_vars[0] if len(result_vars) == 1 else ", ".join(result_vars)
+            lines.append(
+                f"{self.indent()}{result_lhs} = scf.for {iv} = {lb_idx} to {ub_idx} step {step_idx} "
+                f"iter_args({iter_args_spec}) -> ({', '.join(iter_types)}) {{"
+            )
+        else:
+            result_vars = []
+            lines.append(f"{self.indent()}scf.for {iv} = {lb_idx} to {ub_idx} step {step_idx} {{")
+
+        self.indent_level += 1
+        for var_name, iter_var in zip(loop_carried_vars, iter_vars if iter_inits else []):
+            self.symbol_table[var_name]["ssa"] = iter_var
+
+        iv_i32 = self.new_ssa()
+        lines.append(f"{self.indent()}{iv_i32} = arith.index_cast {iv} : index to i32")
+        self.symbol_table[for_stmt.variable] = {
+            "ssa": iv_i32,
+            "mlir_type": "i32",
+            "flow_type": Type("i32"),
+        }
+
+        lines.extend(self.generate_block(for_stmt.body))
+
+        if iter_inits:
+            yield_vals = [self.symbol_table[v]["ssa"] for v in loop_carried_vars]
+            lines.append(f"{self.indent()}scf.yield {', '.join(yield_vals)} : {', '.join(iter_types)}")
+        self.indent_level -= 1
+        lines.append(f"{self.indent()}}}")
+
+        for var_name, result_ssa in zip(loop_carried_vars, result_vars):
+            self.symbol_table[var_name]["ssa"] = result_ssa
+
         return lines
 
     def generate_gpu_func(self, func: FunctionDecl) -> List[str]:
