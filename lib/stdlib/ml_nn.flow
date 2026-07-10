@@ -48,11 +48,11 @@ function dense2d_forward(layer: Dense2D, input: Tensor) -> Tensor {
     let out: Tensor = tensor_zeros(batch, layer.weights.dim1, 1, 1)
     for b in 0 to batch {
         for j in 0 to layer.weights.dim1 {
-            let mut sum: f32 = tensor_get2(layer.bias, 0, j)
+            let mut sum: f32 = layer.bias.data[j]
             for i in 0 to layer.weights.dim0 {
-                sum = sum + tensor_get2(input, b, i) * tensor_get2(layer.weights, i, j)
+                sum = sum + input.data[b * input.dim1 + i] * layer.weights.data[i * layer.weights.dim1 + j]
             }
-            tensor_set2(out, b, j, sum)
+            out.data[b * out.dim1 + j] = sum
         }
     }
     return out
@@ -74,6 +74,15 @@ function nn_mse_loss(pred: Tensor, target: Tensor) -> f32 {
     tensor_free(diff)
     tensor_free(sq)
     return loss
+}
+
+function nn_mse_backward(pred: Tensor, target: Tensor) -> Tensor {
+    let n: f32 = pred.size
+    let grad: Tensor = tensor_zeros(pred.dim0, pred.dim1, pred.dim2, pred.dim3)
+    for i in 0 to pred.size {
+        grad.data[i] = 2.0 * (pred.data[i] - target.data[i]) / n
+    }
+    return grad
 }
 
 function nn_forward_relu(layer: Dense2D, input: Tensor) -> Tensor {
@@ -98,9 +107,9 @@ function dense2d_backward(layer: Dense2D, input: Tensor, grad_out: Tensor) -> De
     let grad_bias: Tensor = tensor_zeros(1, layer.weights.dim1, 1, 1)
     for b in 0 to grad_out.dim0 {
         for j in 0 to grad_out.dim1 {
-            let g: f32 = tensor_get2(grad_out, b, j)
-            let cur: f32 = tensor_get2(grad_bias, 0, j)
-            tensor_set2(grad_bias, 0, j, cur + g)
+            let g: f32 = grad_out.data[b * grad_out.dim1 + j]
+            let cur: f32 = grad_bias.data[j]
+            grad_bias.data[j] = cur + g
         }
     }
     return Dense2DGrad {
@@ -114,4 +123,79 @@ function dense2d_grad_free(g: Dense2DGrad) {
     tensor_free(g.grad_input)
     tensor_free(g.grad_weights)
     tensor_free(g.grad_bias)
+}
+
+# ============================================================================
+# 2-LAYER MLP (tensor API + autograd helpers)
+# ============================================================================
+
+struct MLP2 {
+    layer1: Dense2D,
+    layer2: Dense2D
+}
+
+struct MLP2Activations {
+    input: Tensor,
+    h1: Tensor,
+    pred: Tensor
+}
+
+function mlp2_create(in_features: i32, hidden: i32, out_features: i32, seed: i32) -> MLP2 {
+    return MLP2 {
+        layer1: dense2d_create(in_features, hidden, seed),
+        layer2: dense2d_create(hidden, out_features, seed + 1)
+    }
+}
+
+function mlp2_forward(mlp: MLP2, input: Tensor) -> MLP2Activations {
+    let logits1: Tensor = dense2d_forward(mlp.layer1, input)
+    let h1: Tensor = tensor_sigmoid(logits1)
+    tensor_free(logits1)
+    let logits2: Tensor = dense2d_forward(mlp.layer2, h1)
+    let pred: Tensor = tensor_sigmoid(logits2)
+    tensor_free(logits2)
+    return MLP2Activations { input: input, h1: h1, pred: pred }
+}
+
+struct MLP2Grads {
+    layer1: Dense2DGrad,
+    layer2: Dense2DGrad
+}
+
+function mlp2_backward(mlp: MLP2, cache: MLP2Activations, target: Tensor) -> MLP2Grads {
+    let grad_pred: Tensor = nn_mse_backward(cache.pred, target)
+    let logits2: Tensor = dense2d_forward(mlp.layer2, cache.h1)
+    let grad_logits2: Tensor = tensor_sigmoid_backward(cache.pred, grad_pred)
+    tensor_free(grad_pred)
+    let g2: Dense2DGrad = dense2d_backward(mlp.layer2, cache.h1, grad_logits2)
+    tensor_free(logits2)
+    tensor_free(grad_logits2)
+    let logits1: Tensor = dense2d_forward(mlp.layer1, cache.input)
+    let grad_h1: Tensor = g2.grad_input
+    let grad_logits1: Tensor = tensor_sigmoid_backward(cache.h1, grad_h1)
+    tensor_free(grad_h1)
+    let g1: Dense2DGrad = dense2d_backward(mlp.layer1, cache.input, grad_logits1)
+    tensor_free(logits1)
+    tensor_free(grad_logits1)
+    let g2_out: Dense2DGrad = Dense2DGrad {
+        grad_input: tensor_zeros(1, 1, 1, 1),
+        grad_weights: g2.grad_weights,
+        grad_bias: g2.grad_bias
+    }
+    return MLP2Grads { layer1: g1, layer2: g2_out }
+}
+
+function mlp2_grads_free(grads: MLP2Grads) {
+    dense2d_grad_free(grads.layer1)
+    dense2d_grad_free(grads.layer2)
+}
+
+function mlp2_free(mlp: MLP2) {
+    dense2d_free(mlp.layer1)
+    dense2d_free(mlp.layer2)
+}
+
+function mlp2_activations_free(cache: MLP2Activations) {
+    tensor_free(cache.h1)
+    tensor_free(cache.pred)
 }

@@ -1709,8 +1709,10 @@ PY
                          "$SCRIPT_DIR/tests/stdlib/test_matmul_backward.flow" \
                          "$SCRIPT_DIR/tests/stdlib/test_ml_nn.flow" \
                          "$SCRIPT_DIR/tests/stdlib/test_dense_backward.flow" \
+                         "$SCRIPT_DIR/tests/stdlib/test_mlp2_backward.flow" \
                          "$SCRIPT_DIR/tests/stdlib/test_ml_opt.flow" \
-                         "$SCRIPT_DIR/examples/ml/models/mlp_xor.flow"; do
+                         "$SCRIPT_DIR/examples/ml/models/mlp_xor.flow" \
+                         "$SCRIPT_DIR/examples/ml/models/mlp_xor_adam.flow"; do
                     if [ -f "$t" ]; then
                         print_info "  $t"
                         if ! python3 -m flow.transpiler "$t" --c --lenient -o "$SCRIPT_DIR/build/$(basename "$t" .flow).c" 2>/dev/null; then
