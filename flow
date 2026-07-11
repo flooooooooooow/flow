@@ -1728,6 +1728,8 @@ PY
                     run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_tensor.flow"
                     print_info "  MLIR JIT smoke: test_ml_autograd"
                     run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_ml_autograd.flow"
+                    print_info "  MLIR JIT smoke: test_matmul_backward"
+                    run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_matmul_backward.flow"
                     print_info "  MLIR AOT smoke: mlir_tensor_bench"
                     generate_mlir "$SCRIPT_DIR/examples/ml/mlir_tensor_bench.flow" >/dev/null
                     BENCH_MLIR="$SCRIPT_DIR/build/mlir_tensor_bench.mlir"

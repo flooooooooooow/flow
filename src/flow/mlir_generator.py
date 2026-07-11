@@ -35,6 +35,87 @@ class MLIRGenerator:
             return ext_ssa, "i32", ops
         return arg_ssa, arg_type, ops
 
+    def _is_tensor_struct(self, mlir_type: str) -> bool:
+        return mlir_type == "!llvm.struct<(!llvm.ptr, i32, i32, i32, i32, i32)>"
+
+    def _struct_field_types(self, mlir_type: str) -> List[str]:
+        if not mlir_type.startswith("!llvm.struct<"):
+            return []
+        inner = mlir_type[len("!llvm.struct<") : -1].strip()
+        if inner.startswith("(") and inner.endswith(")"):
+            inner = inner[1:-1].strip()
+        fields: List[str] = []
+        start = 0
+        depth = 0
+        for i, ch in enumerate(inner):
+            if ch in "<([":
+                depth += 1
+            elif ch in ">)]":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                fields.append(inner[start:i].strip())
+                start = i + 1
+        fields.append(inner[start:].strip())
+        return fields
+
+    def _struct_field_count(self, mlir_type: str) -> int:
+        return len(self._struct_field_types(mlir_type))
+
+    _TENSOR_PTR_ARG_CALLEES = frozenset({"tensor_matmul"})
+
+
+    def _materialize_tensor_for_call(
+        self, value_ssa: str, mlir_type: str, callee_name: str
+    ) -> tuple[str, List[str]]:
+        """Copy tensor SSA before passing to a callee that may clobber the return slot."""
+        if callee_name in self._TENSOR_PTR_ARG_CALLEES:
+            field_indices = [0]
+        else:
+            field_indices = list(range(self._struct_field_count(mlir_type)))
+        ops: List[str] = []
+        agg = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{agg} = llvm.mlir.undef : {mlir_type}")
+        for idx in field_indices:
+            field = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{field} = llvm.extractvalue {value_ssa}[{idx}] : {mlir_type}")
+            next_agg = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{next_agg} = llvm.insertvalue {field}, {agg}[{idx}] : {mlir_type}"
+            )
+            agg = next_agg
+        self._ssa_types[agg] = mlir_type
+        return agg, ops
+
+    def _materialize_struct_value(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
+        """Copy aggregate SSA so nested struct returns do not alias callee stack slots."""
+        if not mlir_type.startswith("!llvm.struct"):
+            return value_ssa, []
+        if self._is_tensor_struct(mlir_type):
+            return self._materialize_tensor_for_call(value_ssa, mlir_type, "")
+        ops: List[str] = []
+        field_types = self._struct_field_types(mlir_type)
+        agg = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{agg} = llvm.mlir.undef : {mlir_type}")
+        for idx, field_type in enumerate(field_types):
+            field = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{field} = llvm.extractvalue {value_ssa}[{idx}] : {mlir_type}")
+            if self._is_tensor_struct(field_type):
+                field, sub_ops = self._materialize_tensor_for_call(field, field_type, "")
+                ops.extend(sub_ops)
+            next_agg = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{next_agg} = llvm.insertvalue {field}, {agg}[{idx}] : {mlir_type}"
+            )
+            agg = next_agg
+        self._ssa_types[agg] = mlir_type
+        return agg, ops
+
     @staticmethod
     def _format_mlir_numeric(value: str, mlir_type: str) -> str:
         """Format numeric literals for MLIR text (no scientific notation)."""
@@ -300,6 +381,10 @@ class MLIRGenerator:
         
         # Store current function return type for use in return statements
         self.current_function_return_type = func.return_type
+        self._current_function_name = func.name
+        self._tensor_call_results: set[str] = set()
+        self._tensor_stable_ssas: set[str] = set()
+        self._tensor_ptr_copies: dict[str, str] = {}
         
         # For extern functions, just declare them without body (dedupe across imports)
         if hasattr(func, 'is_extern') and func.is_extern:
@@ -2045,6 +2130,7 @@ class MLIRGenerator:
                     if val_type != field_type:
                         val_ssa, cast_ops = self._emit_cast(val_ssa, val_type, field_type)
                         ops.extend(cast_ops)
+
                 else:
                     val_ssa, zero_ops = self._zero_value_for_mlir_type(field_type)
                     ops.extend(zero_ops)
@@ -2341,6 +2427,21 @@ class MLIRGenerator:
         # Cast arguments if needed (width mismatches, index/i32, memref shapes)
         cast_args = []
         for i, (arg_val, expected_type) in enumerate(zip(arg_values, expected_arg_types)):
+            if (
+                self._is_tensor_struct(expected_type)
+                and arg_val in getattr(self, "_tensor_call_results", set())
+                and arg_val not in getattr(self, "_tensor_stable_ssas", set())
+            ):
+                if arg_val in self._tensor_ptr_copies:
+                    arg_val = self._tensor_ptr_copies[arg_val]
+                else:
+                    copied, mat_ops = self._materialize_tensor_for_call(
+                        arg_val, expected_type, func_call.name
+                    )
+                    ops.extend(mat_ops)
+                    self._tensor_ptr_copies[arg_val] = copied
+                    self._tensor_stable_ssas.add(copied)
+                    arg_val = copied
             actual_type = self._ssa_types.get(arg_val) or self.get_expression_type(func_call.arguments[i])
             if actual_type == expected_type:
                 cast_args.append(arg_val)
@@ -2377,6 +2478,8 @@ class MLIRGenerator:
                 f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(cast_args)}) : ({', '.join(expected_arg_types)}) -> {ret_type}"
             )
             self._ssa_types[ssa_name] = ret_type
+            if self._is_tensor_struct(ret_type):
+                self._tensor_call_results.add(ssa_name)
             return ssa_name, ops
     
     def generate_print_call(self, func_call: FunctionCall, *, newline: bool = False) -> tuple[str, List[str]]:
