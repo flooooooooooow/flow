@@ -78,15 +78,12 @@ class MLIRGenerator:
         "dense2d_forward",
         "nn_mse_backward",
     })
-    _TENSOR_PARAM_METADATA_FIELDS = [0, 1, 2]
-    _TENSOR_PARAM_METADATA_FIELDS_DIM1 = [0, 1, 2, 3]
+    _TENSOR_PARAM_METADATA_FIELDS = [0, 1, 2, 3, 4, 5]
 
     def _tensor_param_metadata_fields(self) -> List[int]:
-        name = getattr(self, "_current_function_name", "") or ""
-        if name == "tensor_matmul":
-            return self._TENSOR_PARAM_METADATA_FIELDS_DIM1
-        if "backward" in name or name.startswith("dense") or name.startswith("mlp") or "forward" in name:
-            return self._TENSOR_PARAM_METADATA_FIELDS_DIM1
+        # Materialize every tensor metadata field at function entry. Partial
+        # copies (e.g. ptr/size/dim0 only) leave dim1–dim3 as undef and cause
+        # heap corruption in callees like tensor_scale that read all dims.
         return self._TENSOR_PARAM_METADATA_FIELDS
 
 
@@ -1975,9 +1972,19 @@ class MLIRGenerator:
                     field_names = [f.name for f in decl.fields]
                     if field_access.field in field_names:
                         idx = field_names.index(field_access.field)
+                        extract_ssa = obj_ssa
+                        if (
+                            obj_type.name == "Tensor"
+                            and idx >= 1
+                            and isinstance(field_access.object, Variable)
+                        ):
+                            var_info = self.symbol_table.get(field_access.object.name) or {}
+                            root = var_info.get("ssa_name", obj_ssa)
+                            if root.startswith("%arg") or root in self._tensor_param_ssas:
+                                extract_ssa = root
                         ssa_name = f"%{self.function_counter}"
                         self.function_counter += 1
-                        ops.append(f"{self.indent()}{ssa_name} = llvm.extractvalue {obj_ssa}[{idx}] : {llvm_struct}")
+                        ops.append(f"{self.indent()}{ssa_name} = llvm.extractvalue {extract_ssa}[{idx}] : {llvm_struct}")
                         field_ty = self.flow_type_to_mlir(field_type)
                         self._ssa_types[ssa_name] = field_ty
                         if self._is_tensor_struct(field_ty):
