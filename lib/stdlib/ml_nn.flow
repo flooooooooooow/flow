@@ -104,7 +104,7 @@ function dense2d_backward(layer: Dense2D, input: Tensor, grad_out: Tensor) -> De
     # grad_weights = input^T @ grad_out
     let grad_weights: Tensor = tensor_matmul_backward_b(input, layer.weights, grad_out)
     # grad_bias = sum over batch
-    let grad_bias: Tensor = tensor_zeros(1, layer.weights.dim1, 1, 1)
+    let grad_bias: Tensor = tensor_zeros(1, grad_out.dim1, 1, 1)
     for b in 0 to grad_out.dim0 {
         for j in 0 to grad_out.dim1 {
             let g: f32 = grad_out.data[b * grad_out.dim1 + j]
