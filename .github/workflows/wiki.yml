@@ -1,0 +1,90 @@
+name: Wiki
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - 'site/**'
+      - 'scripts/build_wiki.py'
+      - 'scripts/deploy_wiki.py'
+      - 'lib/verify/**'
+      - 'examples/verify/**'
+      - 'docs/project/CHANGELOG.md'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - 'site/**'
+      - 'scripts/build_wiki.py'
+      - 'scripts/deploy_wiki.py'
+      - 'lib/verify/**'
+      - 'examples/verify/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build wiki
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build static wiki
+        run: python3 scripts/build_wiki.py
+
+      - name: Verify wiki artifacts
+        run: |
+          test -f build/wiki/index.html
+          test -f build/wiki/wiki-nav.json
+          test -f build/wiki/search-index.json
+          test -f build/wiki/flow-compile.js
+          test -f build/wiki/tutorials/exercises.json
+          grep -q 'wiki.js' build/wiki/index.html
+          echo "Wiki artifacts OK ($(du -sh build/wiki | cut -f1))"
+
+      - name: Upload wiki artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-wiki
+          path: build/wiki/
+          retention-days: 7
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wiki
+        run: python3 scripts/build_wiki.py
+
+      - name: Package tarball
+        run: |
+          cd build/wiki
+          tar czf ../flow-wiki-deploy.tgz .
+          ls -lh ../flow-wiki-deploy.tgz
+
+      - name: Deploy via SSH
+        env:
+          WIKI_SSH_HOST: ${{ secrets.WIKI_SSH_HOST }}
+          WIKI_SSH_USER: ${{ secrets.WIKI_SSH_USER }}
+          WIKI_SSH_PASSWORD: ${{ secrets.WIKI_SSH_PASSWORD }}
+        run: |
+          if [ -z "$WIKI_SSH_PASSWORD" ]; then
+            echo "WIKI_SSH_PASSWORD not set — skipping VPS deploy (build artifact uploaded)."
+            exit 0
+          fi
+          HOST="${WIKI_SSH_HOST:-93.127.202.196}"
+          USER="${WIKI_SSH_USER:-root}"
+          REMOTE_DIR="/var/www/transpile"
+          export SSHPASS="$WIKI_SSH_PASSWORD"
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "${USER}@${HOST}" echo connected
+          sshpass -e scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 build/flow-wiki-deploy.tgz "${USER}@${HOST}:/tmp/flow-wiki.tgz"
+          sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "${USER}@${HOST}" \
+            "mkdir -p ${REMOTE_DIR} && find ${REMOTE_DIR} -mindepth 1 -delete && tar xzf /tmp/flow-wiki.tgz -C ${REMOTE_DIR} && rm /tmp/flow-wiki.tgz && wc -c ${REMOTE_DIR}/index.html"
+          echo "Deployed → https://abhishek-shivakumar.com/transpile/"
