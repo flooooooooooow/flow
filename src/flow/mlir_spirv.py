@@ -61,7 +61,12 @@ class MLIRSPIRVCompiler:
             opt_cmd = [
                 self.mlir_opt,
                 "-gpu-kernel-outlining",
+                "-convert-scf-to-spirv",
+                "-convert-memref-to-spirv",
+                "-convert-arith-to-spirv",
+                "-convert-index-to-spirv",
                 "-convert-gpu-to-spirv",
+                "-reconcile-unrealized-casts",
                 *extra_opt_args,
                 str(mlir_file),
                 "-o",
