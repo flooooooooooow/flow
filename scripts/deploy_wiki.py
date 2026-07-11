@@ -26,9 +26,13 @@ def main() -> int:
     from ssh_client import get_config  # noqa: E402
 
     config = get_config()
-    host = config["host"]
-    user = config["user"]
-    password = config["password"]
+    host = os.environ.get("WIKI_SSH_HOST") or config["host"]
+    user = os.environ.get("WIKI_SSH_USER") or config["user"]
+    password = (
+        os.environ.get("WIKI_SSH_PASSWORD")
+        or os.environ.get("AISSH_HOSTINGER_PWD")
+        or config["password"]
+    )
 
     if not password:
         print("No SSH password configured — set SSH_PASSWORD or .ssh_config", file=sys.stderr)
