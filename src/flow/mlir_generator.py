@@ -61,6 +61,14 @@ class MLIRGenerator:
     def _struct_field_count(self, mlir_type: str) -> int:
         return len(self._struct_field_types(mlir_type))
 
+    def _flow_type_name(self, flow_type: Any) -> Optional[str]:
+        return getattr(flow_type, "name", None) if flow_type else None
+
+    def _func_call_return_type_name(self, func_call: FunctionCall) -> Optional[str]:
+        if func_call.name not in self.symbol_table:
+            return None
+        return self._flow_type_name(self.symbol_table[func_call.name].get("return_type"))
+
     _TENSOR_PTR_ARG_CALLEES = frozenset({"tensor_matmul"})
     _COMPOSITE_FIELD_MATERIALIZE_TYPES = frozenset({
         "Dense2D",
@@ -2737,26 +2745,44 @@ class MLIRGenerator:
                 else:
                     self._tensor_call_results.add(ssa_name)
             elif ret_type.startswith("!llvm.struct"):
-                self._composite_call_results.add(ssa_name)
+                ret_name = self._func_call_return_type_name(func_call)
+                if ret_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES:
+                    stable, mat_ops = self._materialize_struct_value(ssa_name, ret_type)
+                    ops.extend(mat_ops)
+                    ssa_name = stable
+                    self._ssa_types[ssa_name] = ret_type
+                else:
+                    self._composite_call_results.add(ssa_name)
             if callee_returns_tensor or callee_returns_composite:
                 for i, arg in enumerate(func_call.arguments):
-                    if not self._is_tensor_struct(expected_arg_types[i]):
-                        continue
                     if not isinstance(arg, Variable):
                         continue
                     var_info = self.symbol_table.get(arg.name)
                     if not var_info or "ssa_name" not in var_info:
                         continue
-                    mlir_type = var_info.get("mlir_type") or expected_arg_types[i]
-                    # Refresh from the call-site copy, not the variable SSA that may
-                    # share the callee's aggregate return stack slot.
-                    fresh, mat_ops = self._materialize_tensor_for_call(
-                        cast_args[i], mlir_type, ""
-                    )
-                    ops.extend(mat_ops)
-                    var_info["ssa_name"] = fresh
-                    self._ssa_types[fresh] = mlir_type
-                    self._tensor_stable_ssas.add(fresh)
+                    expected_type = expected_arg_types[i]
+                    mlir_type = var_info.get("mlir_type") or expected_type
+                    struct_name = self._flow_type_name(var_info.get("flow_type"))
+                    if self._is_tensor_struct(expected_type):
+                        # Refresh from the call-site copy, not the variable SSA that may
+                        # share the callee's aggregate return stack slot.
+                        fresh, mat_ops = self._materialize_tensor_for_call(
+                            cast_args[i], mlir_type, ""
+                        )
+                        ops.extend(mat_ops)
+                        var_info["ssa_name"] = fresh
+                        self._ssa_types[fresh] = mlir_type
+                        self._tensor_stable_ssas.add(fresh)
+                    elif (
+                        expected_type.startswith("!llvm.struct")
+                        and struct_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
+                    ):
+                        fresh, mat_ops = self._materialize_struct_value(
+                            cast_args[i], mlir_type
+                        )
+                        ops.extend(mat_ops)
+                        var_info["ssa_name"] = fresh
+                        self._ssa_types[fresh] = mlir_type
             return ssa_name, ops
     
     def generate_print_call(self, func_call: FunctionCall, *, newline: bool = False) -> tuple[str, List[str]]:
