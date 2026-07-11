@@ -73,6 +73,9 @@ class MLIRGenerator:
         "tensor_matmul_backward_a",
         "tensor_matmul_backward_b",
         "tensor_transpose",
+        "tensor_sigmoid",
+        "tensor_relu",
+        "dense2d_forward",
         "nn_mse_backward",
     })
     _TENSOR_PARAM_METADATA_FIELDS = [0, 1, 2]
@@ -85,6 +88,8 @@ class MLIRGenerator:
         if "backward" in name or name.startswith("dense") or name.startswith("mlp") or "forward" in name:
             return self._TENSOR_PARAM_METADATA_FIELDS_DIM1
         return self._TENSOR_PARAM_METADATA_FIELDS
+
+
 
     def _materialize_tensor_param_metadata(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
         ops: List[str] = []
@@ -512,6 +517,12 @@ class MLIRGenerator:
             arg_ssa = f'%arg{i}'
             bind_ssa = arg_ssa
             self._ssa_types[arg_ssa] = param_mlir
+            var_entry = {
+                'type': 'variable',
+                'mlir_type': param_mlir,
+                'flow_type': param.type,
+                'ssa_name': bind_ssa,
+            }
             if self._is_tensor_struct(param_mlir):
                 self._tensor_param_ssas.add(arg_ssa)
                 stable, mat_ops = self._materialize_tensor_param_metadata(
@@ -521,12 +532,16 @@ class MLIRGenerator:
                 bind_ssa = stable
                 self._tensor_stable_ssas.add(stable)
                 self._ssa_types[stable] = param_mlir
-            self.symbol_table[param.name] = {
-                'type': 'variable',
-                'mlir_type': param_mlir,
-                'flow_type': param.type,
-                'ssa_name': bind_ssa
-            }
+            elif (
+                getattr(param.type, "name", None) in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
+                and ("backward" in func.name or func.name.startswith("dense") or func.name.startswith("mlp"))
+            ):
+                stable, mat_ops = self._materialize_struct_value(arg_ssa, param_mlir)
+                param_prologue.extend(mat_ops)
+                bind_ssa = stable
+                self._ssa_types[stable] = param_mlir
+            var_entry["ssa_name"] = bind_ssa
+            self.symbol_table[param.name] = var_entry
 
         if param_prologue:
             mlir_code.append("\n".join(param_prologue))
@@ -653,7 +668,6 @@ class MLIRGenerator:
             elif (
                 mlir_type.startswith("!llvm.struct")
                 and getattr(var_decl.type, "name", None) in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
-                and init_value in self._composite_call_results
             ):
                 orig_ssa = init_value
                 init_value, mat_ops = self._materialize_struct_value(init_value, mlir_type)
@@ -724,6 +738,19 @@ class MLIRGenerator:
             if value_type != return_type:
                 value_ssa, cast_ops = self._emit_cast(value_ssa, value_type, return_type)
                 lines.extend(cast_ops)
+
+            return_type_name = getattr(self.current_function_return_type, "name", None)
+            if (
+                return_type.startswith("!llvm.struct")
+                and return_type_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
+            ):
+                value_ssa, mat_ops = self._materialize_struct_value(value_ssa, return_type)
+                lines.extend(mat_ops)
+            elif self._is_tensor_struct(return_type):
+                value_ssa, mat_ops = self._materialize_tensor_for_call(
+                    value_ssa, return_type, ""
+                )
+                lines.extend(mat_ops)
             
             lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
             return "\n".join(lines)
@@ -2545,7 +2572,7 @@ class MLIRGenerator:
         # Handle printf intrinsic specially (format string + varargs)
         if func_call.name == 'printf':
             return self.generate_printf_call(func_call)
-        
+
         ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
 
