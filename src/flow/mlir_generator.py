@@ -75,6 +75,32 @@ class MLIRGenerator:
         "tensor_transpose",
         "nn_mse_backward",
     })
+    _TENSOR_PARAM_METADATA_FIELDS = [0, 1, 2]
+    _TENSOR_PARAM_METADATA_FIELDS_DIM1 = [0, 1, 2, 3]
+
+    def _tensor_param_metadata_fields(self) -> List[int]:
+        name = getattr(self, "_current_function_name", "") or ""
+        if "backward" in name or name.startswith("dense") or name.startswith("mlp") or "forward" in name:
+            return self._TENSOR_PARAM_METADATA_FIELDS_DIM1
+        return self._TENSOR_PARAM_METADATA_FIELDS
+
+    def _materialize_tensor_param_metadata(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
+        ops: List[str] = []
+        agg = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{agg} = llvm.mlir.undef : {mlir_type}")
+        for idx in self._tensor_param_metadata_fields():
+            field = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{field} = llvm.extractvalue {value_ssa}[{idx}] : {mlir_type}")
+            next_agg = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{next_agg} = llvm.insertvalue {field}, {agg}[{idx}] : {mlir_type}"
+            )
+            agg = next_agg
+        self._ssa_types[agg] = mlir_type
+        return agg, ops
 
     def _materialize_tensor_for_call(
         self, value_ssa: str, mlir_type: str, callee_name: str
@@ -478,21 +504,29 @@ class MLIRGenerator:
         # SSA names like %arg0 are reused per function; reset type tracking each time.
         self._ssa_types = {}
         
-        # Generate function body
+        param_prologue: List[str] = []
         for i, param in enumerate(func.parameters):
             param_mlir = self.flow_type_to_mlir(param.type)
             arg_ssa = f'%arg{i}'
+            bind_ssa = arg_ssa
+            self._ssa_types[arg_ssa] = param_mlir
+            if self._is_tensor_struct(param_mlir):
+                self._tensor_param_ssas.add(arg_ssa)
+                stable, mat_ops = self._materialize_tensor_param_metadata(arg_ssa, param_mlir)
+                param_prologue.extend(mat_ops)
+                bind_ssa = stable
+                self._tensor_stable_ssas.add(stable)
+                self._ssa_types[stable] = param_mlir
             self.symbol_table[param.name] = {
                 'type': 'variable',
                 'mlir_type': param_mlir,
                 'flow_type': param.type,
-                'ssa_name': arg_ssa
+                'ssa_name': bind_ssa
             }
-            self._ssa_types[arg_ssa] = param_mlir
-            if self._is_tensor_struct(param_mlir):
-                self._tensor_param_ssas.add(arg_ssa)
-        
-        # Generate statements
+
+        if param_prologue:
+            mlir_code.append("\n".join(param_prologue))
+
         body_mlir = self.generate_block(func.body)
         if body_mlir.strip():
             mlir_code.append(body_mlir)
