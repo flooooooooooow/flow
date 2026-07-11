@@ -1,0 +1,14 @@
+import "stdlib/tensor.flow"
+
+function main() -> i32 {
+    let a: Tensor = tensor_fill(1, 2, 1, 1, 1.0)
+    let b: Tensor = tensor_fill(2, 2, 1, 1, 2.0)
+    let grad_c: Tensor = tensor_ones(1, 2, 1, 1)
+    let grad_b: Tensor = tensor_matmul_backward_b(a, b, grad_c)
+    if grad_b.dim0 != 2 || grad_b.dim1 != 2 { return 1 }
+    tensor_free(a)
+    tensor_free(b)
+    tensor_free(grad_c)
+    tensor_free(grad_b)
+    return 0
+}

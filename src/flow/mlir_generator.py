@@ -72,6 +72,7 @@ class MLIRGenerator:
     _TENSOR_POST_MATERIALIZE_CALLEES = frozenset({
         "tensor_matmul_backward_a",
         "tensor_matmul_backward_b",
+        "tensor_transpose",
         "nn_mse_backward",
     })
 
@@ -80,7 +81,7 @@ class MLIRGenerator:
     ) -> tuple[str, List[str]]:
         """Copy tensor SSA before passing to a callee that may clobber the return slot."""
         if callee_name in self._TENSOR_PTR_ARG_CALLEES:
-            field_indices = [0]
+            field_indices = [0, 1, 2]
         else:
             field_indices = list(range(self._struct_field_count(mlir_type)))
         ops: List[str] = []
@@ -127,6 +128,17 @@ class MLIRGenerator:
         self._ssa_types[agg] = mlir_type
         return agg, ops
 
+    def _tensor_needs_full_materialize(
+        self, arg_val: str, arg_expr: Optional[Expression] = None
+    ) -> bool:
+        if arg_val in self._tensor_field_extracts:
+            return True
+        if isinstance(arg_expr, Variable):
+            var_info = self.symbol_table.get(arg_expr.name) or {}
+            if var_info.get("from_tensor_field"):
+                return True
+        return False
+
     def _stable_tensor_for_call(
         self,
         arg_val: str,
@@ -135,8 +147,12 @@ class MLIRGenerator:
         *,
         callee_returns_tensor: bool = False,
         callee_returns_composite: bool = False,
+        arg_expr: Optional[Expression] = None,
     ) -> tuple[str, List[str]]:
         """Return a stack-independent tensor SSA safe to pass into func.call."""
+        if arg_val in self._tensor_stable_ssas:
+            return arg_val, []
+
         needs_copy = (
             arg_val in self._tensor_call_results
             or arg_val in self._tensor_field_extracts
@@ -150,8 +166,17 @@ class MLIRGenerator:
         if not needs_copy:
             return arg_val, []
 
-        copied, mat_ops = self._materialize_tensor_for_call(arg_val, mlir_type, callee_name)
-        self._tensor_stable_ssas.add(copied)
+        mat_callee = (
+            ""
+            if (
+                self._tensor_needs_full_materialize(arg_val, arg_expr)
+                or arg_val in self._tensor_call_results
+            )
+            else callee_name
+        )
+        copied, mat_ops = self._materialize_tensor_for_call(arg_val, mlir_type, mat_callee)
+        if mat_callee == "":
+            self._tensor_stable_ssas.add(copied)
         return copied, mat_ops
 
     @staticmethod
@@ -573,9 +598,10 @@ class MLIRGenerator:
                 init_ops.extend(cast_ops)
             self._ssa_types[init_value] = mlir_type
 
+            from_tensor_field = init_value in self._tensor_field_extracts
             if self._is_tensor_struct(mlir_type) and (
                 init_value in self._tensor_call_results
-                or init_value in self._tensor_field_extracts
+                or from_tensor_field
             ):
                 orig_ssa = init_value
                 init_value, mat_ops = self._materialize_tensor_for_call(
@@ -589,12 +615,15 @@ class MLIRGenerator:
 
             # Bind variable name to the SSA value produced by the initializer.
             # MLIR SSA values are immutable; we do not emit an extra "assignment" op.
-            self.symbol_table[var_decl.name] = {
+            var_entry = {
                 'type': 'variable',
                 'flow_type': var_decl.type,  # Store original FLOW type
                 'mlir_type': mlir_type,
                 'ssa_name': init_value
             }
+            if from_tensor_field and self._is_tensor_struct(mlir_type):
+                var_entry["from_tensor_field"] = True
+            self.symbol_table[var_decl.name] = var_entry
 
             return "\n".join(init_ops)
         else:
@@ -2214,6 +2243,11 @@ class MLIRGenerator:
                     if val_type != field_type:
                         val_ssa, cast_ops = self._emit_cast(val_ssa, val_type, field_type)
                         ops.extend(cast_ops)
+                    if self._is_tensor_struct(field_type):
+                        val_ssa, mat_ops = self._materialize_tensor_for_call(
+                            val_ssa, field_type, ""
+                        )
+                        ops.extend(mat_ops)
                 else:
                     val_ssa, zero_ops = self._zero_value_for_mlir_type(field_type)
                     ops.extend(zero_ops)
@@ -2543,6 +2577,7 @@ class MLIRGenerator:
                     func_call.name,
                     callee_returns_tensor=callee_returns_tensor,
                     callee_returns_composite=callee_returns_composite,
+                    arg_expr=func_call.arguments[i],
                 )
                 ops.extend(mat_ops)
                 prepared_args[i] = stable

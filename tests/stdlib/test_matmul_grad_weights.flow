@@ -1,0 +1,13 @@
+import "stdlib/ml_nn.flow"
+
+function main() -> i32 {
+    let layer: Dense2D = dense2d_create(2, 2, 11)
+    let grad_out: Tensor = tensor_ones(1, 2, 1, 1)
+    let weights: Tensor = layer.weights
+    let tmp: Tensor = tensor_matmul(grad_out, weights)
+    if tmp.dim0 != 1 || tmp.dim1 != 2 { return 1 }
+    tensor_free(tmp)
+    tensor_free(grad_out)
+    dense2d_free(layer)
+    return 0
+}
