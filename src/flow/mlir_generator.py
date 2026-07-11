@@ -63,9 +63,16 @@ class MLIRGenerator:
 
     _TENSOR_PTR_ARG_CALLEES = frozenset({"tensor_matmul"})
     _COMPOSITE_FIELD_MATERIALIZE_TYPES = frozenset({
+        "Dense2D",
         "Dense2DGrad",
+        "MLP2",
         "MLP2Grads",
         "MLP2Activations",
+    })
+    _TENSOR_POST_MATERIALIZE_CALLEES = frozenset({
+        "tensor_matmul_backward_a",
+        "tensor_matmul_backward_b",
+        "nn_mse_backward",
     })
 
     def _materialize_tensor_for_call(
@@ -121,30 +128,30 @@ class MLIRGenerator:
         return agg, ops
 
     def _stable_tensor_for_call(
-        self, arg_val: str, mlir_type: str, callee_name: str
+        self,
+        arg_val: str,
+        mlir_type: str,
+        callee_name: str,
+        *,
+        callee_returns_tensor: bool = False,
+        callee_returns_composite: bool = False,
     ) -> tuple[str, List[str]]:
         """Return a stack-independent tensor SSA safe to pass into func.call."""
-        if arg_val in self._tensor_ptr_copies:
-            return self._tensor_ptr_copies[arg_val], []
-
-        origin = self._tensor_extract_origins.get(arg_val)
-        if origin is not None and origin in self._tensor_field_stable:
-            stable = self._tensor_field_stable[origin]
-            self._tensor_ptr_copies[arg_val] = stable
-            return stable, []
-
         needs_copy = (
             arg_val in self._tensor_call_results
             or arg_val in self._tensor_field_extracts
+            or (
+                arg_val in self._tensor_param_ssas
+                and (callee_returns_tensor or callee_returns_composite)
+            )
+            or callee_returns_tensor
+            or callee_returns_composite
         )
-        if not needs_copy or arg_val in self._tensor_stable_ssas:
+        if not needs_copy:
             return arg_val, []
 
         copied, mat_ops = self._materialize_tensor_for_call(arg_val, mlir_type, callee_name)
-        self._tensor_ptr_copies[arg_val] = copied
         self._tensor_stable_ssas.add(copied)
-        if origin is not None:
-            self._tensor_field_stable[origin] = copied
         return copied, mat_ops
 
     @staticmethod
@@ -415,11 +422,10 @@ class MLIRGenerator:
         self._current_function_name = func.name
         self._tensor_call_results: set[str] = set()
         self._tensor_stable_ssas: set[str] = set()
-        self._tensor_ptr_copies: dict[str, str] = {}
         self._tensor_field_extracts: set[str] = set()
         self._tensor_extract_origins: Dict[str, tuple[str, int]] = {}
-        self._tensor_field_stable: Dict[tuple[str, int], str] = {}
         self._composite_call_results: set[str] = set()
+        self._tensor_param_ssas: set[str] = set()
         
         # For extern functions, just declare them without body (dedupe across imports)
         if hasattr(func, 'is_extern') and func.is_extern:
@@ -458,6 +464,8 @@ class MLIRGenerator:
                 'ssa_name': arg_ssa
             }
             self._ssa_types[arg_ssa] = param_mlir
+            if self._is_tensor_struct(param_mlir):
+                self._tensor_param_ssas.add(arg_ssa)
         
         # Generate statements
         body_mlir = self.generate_block(func.body)
@@ -564,6 +572,20 @@ class MLIRGenerator:
                 init_value, cast_ops = self._emit_cast(init_value, init_type, mlir_type)
                 init_ops.extend(cast_ops)
             self._ssa_types[init_value] = mlir_type
+
+            if self._is_tensor_struct(mlir_type) and (
+                init_value in self._tensor_call_results
+                or init_value in self._tensor_field_extracts
+            ):
+                orig_ssa = init_value
+                init_value, mat_ops = self._materialize_tensor_for_call(
+                    init_value, mlir_type, ""
+                )
+                init_ops.extend(mat_ops)
+                self._tensor_call_results.discard(orig_ssa)
+                self._tensor_field_extracts.discard(orig_ssa)
+                self._tensor_stable_ssas.add(init_value)
+                self._ssa_types[init_value] = mlir_type
 
             # Bind variable name to the SSA value produced by the initializer.
             # MLIR SSA values are immutable; we do not emit an extra "assignment" op.
@@ -1817,7 +1839,10 @@ class MLIRGenerator:
             if (
                 var_info
                 and struct_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
-                and obj_ssa in self._composite_call_results
+                and (
+                    obj_ssa in self._composite_call_results
+                    or obj_ssa.startswith("%arg")
+                )
             ):
                 obj_mlir = var_info.get("mlir_type") or (
                     self.flow_type_to_mlir(flow_type) if flow_type else None
@@ -1827,7 +1852,8 @@ class MLIRGenerator:
                     obj_ssa, mat_ops = self._materialize_struct_value(obj_ssa, obj_mlir)
                     ops.extend(mat_ops)
                     self._composite_call_results.discard(orig_ssa)
-                    var_info["ssa_name"] = obj_ssa
+                    if not orig_ssa.startswith("%arg"):
+                        var_info["ssa_name"] = obj_ssa
                     self._ssa_types[obj_ssa] = obj_mlir
 
         # Try to determine the field type by walking the struct hierarchy
@@ -2188,7 +2214,6 @@ class MLIRGenerator:
                     if val_type != field_type:
                         val_ssa, cast_ops = self._emit_cast(val_ssa, val_type, field_type)
                         ops.extend(cast_ops)
-
                 else:
                     val_ssa, zero_ops = self._zero_value_for_mlir_type(field_type)
                     ops.extend(zero_ops)
@@ -2447,13 +2472,33 @@ class MLIRGenerator:
             func_info = self.symbol_table[func_call.name]
             callee = func_info['mlir_name']
 
-        # Generate arguments
-        arg_values: List[str] = []
+        # Resolve signature before arg codegen so tensor-returning callees can
+        # evaluate arguments last-to-first (keeps early tensor args off clobbered stack).
+        expected_arg_types = []
+        if func_call.name in self.symbol_table:
+            func_info = self.symbol_table[func_call.name]
+            for param in func_info.get('parameters', []):
+                expected_arg_types.append(self.flow_type_to_mlir(param.type))
+        else:
+            expected_arg_types = [self.get_expression_type(a) for a in func_call.arguments]
+
+        ret_type = 'i32'
+        if func_call.name in self.symbol_table:
+            ret_type = self.flow_type_to_mlir(self.symbol_table[func_call.name]['return_type'])
+        callee_returns_tensor = self._is_tensor_struct(ret_type)
+        callee_returns_composite = (
+            ret_type.startswith("!llvm.struct") and not callee_returns_tensor
+        )
+
+        arg_indices = list(range(len(func_call.arguments)))
+        if callee_returns_tensor or callee_returns_composite:
+            arg_indices = list(reversed(arg_indices))
+
+        arg_values: List[Optional[str]] = [None] * len(func_call.arguments)
         ops: List[str] = []
-        for arg in func_call.arguments:
-            # Special handling for string literals
+        for i in arg_indices:
+            arg = func_call.arguments[i]
             if isinstance(arg, Literal) and arg.type.name == 'string':
-                # Create global constant for string literal
                 str_val = arg.value
                 if str_val not in self.string_constants:
                     global_name = f"str_{self.string_counter}"
@@ -2461,37 +2506,53 @@ class MLIRGenerator:
                     self.string_constants[str_val] = global_name
                 else:
                     global_name = self.string_constants[str_val]
-                
-                # Get pointer to string constant
+
                 arg_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{arg_ssa} = llvm.mlir.addressof @{global_name} : !llvm.ptr")
-                arg_values.append(arg_ssa)
+                arg_values[i] = arg_ssa
             else:
                 v, vops = self.generate_expression(arg)
                 ops.extend(vops)
-                arg_values.append(v)
+                arg_values[i] = v
 
-        # Get expected parameter types from function signature
-        expected_arg_types = []
-        if func_call.name in self.symbol_table:
-            func_info = self.symbol_table[func_call.name]
-            for param in func_info.get('parameters', []):
-                expected_arg_types.append(self.flow_type_to_mlir(param.type))
-        else:
-            # Fallback to expression types
-            expected_arg_types = [self.get_expression_type(a) for a in func_call.arguments]
-        
-        # Cast arguments if needed (width mismatches, index/i32, memref shapes)
-        cast_args = []
-        for i, (arg_val, expected_type) in enumerate(zip(arg_values, expected_arg_types)):
+        resolved_arg_values: List[str] = [
+            arg_values[i] for i in range(len(func_call.arguments))
+        ]
+
+        prepared_args = list(resolved_arg_values)
+        for i, (arg_val, expected_type) in enumerate(zip(prepared_args, expected_arg_types)):
+            if expected_type.startswith("!llvm.struct") and (
+                not self._is_tensor_struct(expected_type)
+            ) and (callee_returns_tensor or callee_returns_composite):
+                stable, mat_ops = self._materialize_struct_value(arg_val, expected_type)
+                ops.extend(mat_ops)
+                prepared_args[i] = stable
+
+        tensor_stabilize_order = (
+            reversed(range(len(prepared_args)))
+            if callee_returns_tensor or callee_returns_composite
+            else range(len(prepared_args))
+        )
+        for i in tensor_stabilize_order:
+            expected_type = expected_arg_types[i]
             if self._is_tensor_struct(expected_type):
                 stable, mat_ops = self._stable_tensor_for_call(
-                    arg_val, expected_type, func_call.name
+                    prepared_args[i],
+                    expected_type,
+                    func_call.name,
+                    callee_returns_tensor=callee_returns_tensor,
+                    callee_returns_composite=callee_returns_composite,
                 )
                 ops.extend(mat_ops)
-                arg_val = stable
-            actual_type = self._ssa_types.get(arg_val) or self.get_expression_type(func_call.arguments[i])
+                prepared_args[i] = stable
+
+        # Cast arguments if needed (width mismatches, index/i32, memref shapes)
+        cast_args = []
+        for i, (arg_val, expected_type) in enumerate(zip(prepared_args, expected_arg_types)):
+            actual_type = self._ssa_types.get(arg_val) or self.get_expression_type(
+                func_call.arguments[i]
+            )
             if actual_type == expected_type:
                 cast_args.append(arg_val)
             elif (actual_type, expected_type) in (('index', 'i32'), ('i32', 'index')):
@@ -2511,10 +2572,6 @@ class MLIRGenerator:
             else:
                 cast_args.append(arg_val)
         
-        ret_type = 'i32'
-        if func_call.name in self.symbol_table:
-            ret_type = self.flow_type_to_mlir(self.symbol_table[func_call.name]['return_type'])
-        
         # For void functions, don't assign to SSA value
         if ret_type == '()':
             ops.append(
@@ -2528,7 +2585,16 @@ class MLIRGenerator:
             )
             self._ssa_types[ssa_name] = ret_type
             if self._is_tensor_struct(ret_type):
-                self._tensor_call_results.add(ssa_name)
+                if func_call.name in self._TENSOR_POST_MATERIALIZE_CALLEES:
+                    stable, mat_ops = self._materialize_tensor_for_call(
+                        ssa_name, ret_type, func_call.name
+                    )
+                    ops.extend(mat_ops)
+                    ssa_name = stable
+                    self._ssa_types[ssa_name] = ret_type
+                    self._tensor_stable_ssas.add(ssa_name)
+                else:
+                    self._tensor_call_results.add(ssa_name)
             elif ret_type.startswith("!llvm.struct"):
                 self._composite_call_results.add(ssa_name)
             return ssa_name, ops
