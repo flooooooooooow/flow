@@ -39,12 +39,14 @@ def main() -> int:
         return 1
 
     env = {**os.environ, "SSHPASS": password}
-    ssh_base = [
-        "sshpass", "-e", "ssh",
+    ssh_opts = [
+        "-o", "PreferredAuthentications=password",
+        "-o", "PubkeyAuthentication=no",
         "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
         "-o", "ConnectTimeout=30",
-        f"{user}@{host}",
     ]
+    ssh_base = ["sshpass", "-e", "ssh", *ssh_opts, f"{user}@{host}"]
 
     tarball = ROOT / "build" / "flow-wiki-deploy.tgz"
     print(f"Packaging wiki ({_dir_size(BUILD):.1f} MB) → {tarball}")
@@ -72,8 +74,7 @@ def main() -> int:
     print(f"Uploading to {host}:{REMOTE_DIR} …")
     scp_cmd = [
         "sshpass", "-e", "scp",
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "ConnectTimeout=20",
+        *ssh_opts,
         str(tarball),
         f"{user}@{host}:/tmp/flow-wiki.tgz",
     ]
