@@ -28,6 +28,24 @@ Welcome to the Flow programming language documentation!
 - [Audio DSP](library/audio.md) - Real-time audio DSP utilities
 - [Memory](library/memory.md) - Memory management
 
+## Third-Party Libraries
+
+- [Overview](third-party/README.md) - Packages outside the core stdlib
+- [flow-verify](third-party/flow-verify.md) - Formal math proofs and Claim Paths
+- [Proof Catalog](third-party/flow-verify-catalog.md) - Auto-generated proof index
+
+## Documentation Project
+
+- [Wiki Strategy](wiki-strategy.md) - Long-term documentation architecture
+- [Wiki Roadmap](wiki-roadmap.md) - Phased wiki delivery plan
+
+## Verification
+
+- [Verification Design](language/verification.md) - `theorem` / `therefore` language spec
+- [Epistemology](language/epistemology.md) - Claim Path grammar
+- [Proof Book](language/math-proof-book.md) - Numbered proof book plan
+- [Mathlib Roadmap](language/mathlib-equivalence-toc.md) - Mathlib parity TOC
+
 ## Tutorials
 
 - [Beginner](tutorials/beginner.md) - Learn the basics

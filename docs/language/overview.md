@@ -29,6 +29,7 @@ function main() -> i32 {
 - **[Types](types.md)** - Type system reference
 - **[Functions](functions.md)** - Function definitions
 - **[Variables](variables.md)** - Variables and mutability
+- **[flow-verify](../third-party/flow-verify.md)** - optional formal math library (not core Flow)
 
 ## Design Philosophy
 

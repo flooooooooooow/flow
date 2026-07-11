@@ -1,6 +1,11 @@
 # FLOW Tutorials
 
-Step-by-step learning paths. For reference, see [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md).
+Step-by-step learning paths with **browser compile & run** on every complete example.
+
+- **[Interactive app](index.html)** — lesson picker with live editor (frontend, separate from native compiler)
+- **Written guides** — beginner / intermediate / advanced (embedded runners on each `main` program)
+
+For reference, see [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md).
 
 ## Learning Paths
 
