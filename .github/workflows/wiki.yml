@@ -84,8 +84,9 @@ jobs:
           REMOTE_DIR="/var/www/transpile"
           export SSHPASS="$WIKI_SSH_PASSWORD"
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
-          sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "${USER}@${HOST}" echo connected
-          sshpass -e scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 build/flow-wiki-deploy.tgz "${USER}@${HOST}:/tmp/flow-wiki.tgz"
-          sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 "${USER}@${HOST}" \
+          SSH_OPTS="-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+          sshpass -e ssh $SSH_OPTS "${USER}@${HOST}" echo connected
+          sshpass -e scp $SSH_OPTS build/flow-wiki-deploy.tgz "${USER}@${HOST}:/tmp/flow-wiki.tgz"
+          sshpass -e ssh $SSH_OPTS "${USER}@${HOST}" \
             "mkdir -p ${REMOTE_DIR} && find ${REMOTE_DIR} -mindepth 1 -delete && tar xzf /tmp/flow-wiki.tgz -C ${REMOTE_DIR} && rm /tmp/flow-wiki.tgz && wc -c ${REMOTE_DIR}/index.html"
           echo "Deployed → https://abhishek-shivakumar.com/transpile/"
