@@ -6,6 +6,7 @@ Real JIT compilation and execution of MLIR code
 
 import ctypes
 import subprocess
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -159,14 +160,31 @@ class MLIRJIT:
         except FileNotFoundError:
             raise RuntimeError("mlir-translate could not be executed. Check that it exists and is executable.")
     
+    def _use_asan_executable_jit(self) -> bool:
+        """Use ASAN executable subprocess JIT (stable for aggregate returns on macOS)."""
+        env = os.environ.get("FLOW_JIT_ASAN")
+        if env is not None:
+            return env.lower() not in ("0", "false", "no", "off")
+        return sys.platform == "darwin"
+
+    def _clang_jit_flags(self, *, shared: bool) -> List[str]:
+        if self._use_asan_executable_jit():
+            flags = ["-fsanitize=address", "-g", "-O2", "-fno-omit-frame-pointer"]
+        else:
+            flags = ["-O2"]
+        if shared:
+            flags = ["-shared", "-fPIC", *flags]
+        return flags
+
     def compile_llvm_to_executable(self, llvm_ir: str, module_name: str = "jit_module") -> Optional[Path]:
         """Compile LLVM IR to a standalone executable."""
+        module_name = self._unique_module_name(module_name)
         llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
         exe_file = Path(self.temp_dir) / module_name
         llvm_file.write_text(llvm_ir)
         try:
             result = subprocess.run(
-                ["clang", "-O2", str(llvm_file), "-o", str(exe_file), "-lm"],
+                ["clang", *self._clang_jit_flags(shared=False), str(llvm_file), "-o", str(exe_file), "-lm"],
                 capture_output=True,
                 text=True,
                 stdin=subprocess.DEVNULL,
@@ -196,7 +214,7 @@ class MLIRJIT:
         try:
             # Compile LLVM IR to shared library
             result = subprocess.run([
-                "clang", "-shared", "-fPIC", "-O2",
+                "clang", *self._clang_jit_flags(shared=True),
                 str(llvm_file), "-o", str(so_file), "-lm"
             ], capture_output=True, text=True, stdin=subprocess.DEVNULL)
             
@@ -244,6 +262,21 @@ class MLIRJIT:
         llvm_ir = self.compile_mlir_to_llvm(mlir_code)
         if not llvm_ir:
             return None
+
+        if self._use_asan_executable_jit():
+            exe = self.compile_llvm_to_executable(llvm_ir)
+            if not exe:
+                return None
+            try:
+                result = subprocess.run(
+                    [str(exe)],
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                )
+                return result.returncode
+            except Exception:
+                return None
 
         lib = self.compile_llvm_to_native(llvm_ir)
         if not lib:
