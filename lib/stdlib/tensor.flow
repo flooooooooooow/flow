@@ -351,31 +351,54 @@ function tensor_matmul(a: Tensor, b: Tensor) -> Tensor {
 }
 
 function tensor_matmul_backward_a(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
-    # dL/dA = grad_out @ B^T   (M,N) @ (N,K) -> (M,K)
-    let bt: Tensor = tensor_transpose(b)
-    let grad_a: Tensor = tensor_matmul(grad_out, bt)
-    tensor_free(bt)
+    # dL/dA = grad_out @ B^T   (M,N) @ (N,K) -> (M,K) — fused (no transpose temp)
+    let M: i32 = grad_out.dim0
+    let N: i32 = grad_out.dim1
+    let K: i32 = a.dim1
+    let grad_a: Tensor = tensor_zeros(M, K, 1, 1)
+
+    for i in 0 to M {
+        for k in 0 to K {
+            let mut sum: f32 = 0.0
+            for j in 0 to N {
+                sum = sum + grad_out.data[i * N + j] * b.data[k * N + j]
+            }
+            grad_a.data[i * K + k] = sum
+        }
+    }
+
     return grad_a
 }
 
 function tensor_matmul_backward_b(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
-    # dL/dB = A^T @ grad_out   (K,M) @ (M,N) -> (K,N)
-    let at: Tensor = tensor_transpose(a)
-    let grad_b: Tensor = tensor_matmul(at, grad_out)
-    tensor_free(at)
+    # dL/dB = A^T @ grad_out   (K,M) @ (M,N) -> (K,N) — fused (no transpose temp)
+    let M: i32 = a.dim0
+    let K: i32 = a.dim1
+    let N: i32 = grad_out.dim1
+    let grad_b: Tensor = tensor_zeros(K, N, 1, 1)
+
+    for k in 0 to K {
+        for n in 0 to N {
+            let mut sum: f32 = 0.0
+            for i in 0 to M {
+                sum = sum + a.data[i * K + k] * grad_out.data[i * N + n]
+            }
+            grad_b.data[k * N + n] = sum
+        }
+    }
+
     return grad_b
 }
 
 function tensor_transpose(t: Tensor) -> Tensor {
-    # Transpose 2D tensor
     let c: Tensor = tensor_zeros(t.dim1, t.dim0, 1, 1)
-    
+
     for i in 0 to t.dim0 {
         for j in 0 to t.dim1 {
             c.data[j * t.dim0 + i] = t.data[i * t.dim1 + j]
         }
     }
-    
+
     return c
 }
 
