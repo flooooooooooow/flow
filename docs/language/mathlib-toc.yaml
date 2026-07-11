@@ -4,7 +4,7 @@
 
 version: 1
 mathlib_declarations_approx: 150000
-flow_theorems_current: 838
+flow_theorems_current: 1120
 
 phases:
   - id: 0
@@ -21,20 +21,20 @@ phases:
     name: Discrete structures
     target_theorems: 350
     mathlib_mirror: [Data, Order, Combinatorics]
-    status: in_progress
-    current_theorems: 291
+    status: done
+    current_theorems: 350
   - id: 3
     name: Euclidean corpus
     target_theorems: 350
     mathlib_mirror: [Geometry]
     status: in_progress
-    current_theorems: 173
+    current_theorems: 306
   - id: 4
     name: Algebra core
     target_theorems: 800
     mathlib_mirror: [Algebra, GroupTheory, RingTheory, FieldTheory]
     status: in_progress
-    current_theorems: 138
+    current_theorems: 190
   - id: 5
     name: Linear algebra
     target_theorems: 600
@@ -88,7 +88,7 @@ book_parts:
   - title: "Part II — Data and Order"
     phase: 2
     target_theorems: 350
-    current_theorems: 291
+    current_theorems: 350
     lib_roots: [lib/verify/Pair.flow, lib/verify/List.flow, lib/verify/Finset.flow, lib/verify/Order.flow, lib/verify/Comb.flow]
 
   - title: "Book I — Euclid's Elements"
@@ -139,10 +139,17 @@ book_parts:
     example_roots: [examples/verify/euclid/book-vi/]
     generator: tools/generate_euclid_book_vi.py
 
+  - title: "Geometry — Derived Lemmas"
+    phase: 3
+    target_theorems: 50
+    current_theorems: 133
+    bundle_key: GEOMETRY_DERIVED_BUNDLE
+    example_roots: [examples/verify/geometry/]
+
   - title: "Part III — Algebra"
     phase: 4
     target_theorems: 800
-    current_theorems: 138
+    current_theorems: 198
     bundle_key: ALGEBRA_PROOF_BUNDLE
     lib_roots: [lib/verify/Monoid.flow, lib/verify/Group.flow, lib/verify/Ring.flow, lib/verify/Ideal.flow, lib/verify/GroupHom.flow, lib/verify/Subgroup.flow, lib/verify/RingHom.flow]
 
