@@ -7,6 +7,7 @@ Real JIT compilation and execution of MLIR code
 import ctypes
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 import os
@@ -74,6 +75,8 @@ class MLIRJIT:
     def __init__(self):
         self.temp_dir = tempfile.mkdtemp(prefix="flow_jit_")
         self.compiled_modules: Dict[str, Any] = {}
+        self._loaded_libs: List[ctypes.CDLL] = []
+        self._module_seq = 0
         
     def compile_mlir_to_llvm(self, mlir_code: str, module_name: str = "jit_module") -> str:
         """Compile MLIR to LLVM IR using mlir-opt"""
@@ -176,8 +179,14 @@ class MLIRJIT:
             print("❌ clang not found. Install Clang for JIT compilation.")
             return None
 
+    def _unique_module_name(self, module_name: str = "jit_module") -> str:
+        self._module_seq += 1
+        token = uuid.uuid4().hex[:8]
+        return f"{module_name}_{self._module_seq}_{token}"
+
     def compile_llvm_to_native(self, llvm_ir: str, module_name: str = "jit_module") -> Optional[ctypes.CDLL]:
         """Compile LLVM IR to native library and load it"""
+        module_name = self._unique_module_name(module_name)
         llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
         so_file = Path(self.temp_dir) / f"{module_name}.so"
         
@@ -195,9 +204,10 @@ class MLIRJIT:
                 print(f"LLVM compilation failed: {result.stderr}")
                 return None
                 
-            # Load the shared library
-            lib = ctypes.CDLL(str(so_file))
+            # Load the shared library with local symbol scope to avoid cross-module clashes.
+            lib = ctypes.CDLL(str(so_file), mode=ctypes.RTLD_LOCAL)
             self.compiled_modules[module_name] = lib
+            self._loaded_libs.append(lib)
             return lib
             
         except FileNotFoundError:
@@ -244,6 +254,7 @@ class MLIRJIT:
     def cleanup(self):
         """Release JIT handles. Temp dylibs are left for the OS to reclaim at exit."""
         self.compiled_modules.clear()
+        self._loaded_libs.clear()
 
 class FlowJITRuntime:
     """Runtime support functions for FLOW JIT"""
