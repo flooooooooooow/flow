@@ -746,12 +746,7 @@ class MLIRGenerator:
             ):
                 value_ssa, mat_ops = self._materialize_struct_value(value_ssa, return_type)
                 lines.extend(mat_ops)
-            elif self._is_tensor_struct(return_type):
-                value_ssa, mat_ops = self._materialize_tensor_for_call(
-                    value_ssa, return_type, ""
-                )
-                lines.extend(mat_ops)
-            
+
             lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
             return "\n".join(lines)
         else:
