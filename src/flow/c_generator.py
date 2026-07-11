@@ -1037,6 +1037,7 @@ class CGenerator:
         
         # Save current var_types scope and create new scope for this function
         saved_var_types = self._var_types.copy()
+        saved_resolver_var_types = self._overload_resolver._var_types.copy()
         saved_return_type = self._current_return_type
         self._current_return_type = fn.return_type
         
@@ -1049,6 +1050,7 @@ class CGenerator:
         
         # Restore var_types scope
         self._var_types = saved_var_types
+        self._overload_resolver._var_types = saved_resolver_var_types
         self._current_return_type = saved_return_type
         self._indent -= 1
         lines.append("}")
@@ -1207,6 +1209,7 @@ class CGenerator:
         
         # Track the loop variable type
         self._var_types[var] = Type("i32")
+        self._overload_resolver.set_var_type(var, "i32")
         
         # Generate standard C for loop
         lines.append(f"{self._i()}int32_t {step_var} = {step};")

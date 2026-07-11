@@ -50,6 +50,8 @@ class MLIRGpuGenerator:
                 return f"memref<?x{flow_type.element_type.name}>"
             return "memref<?xi32>"
         if flow_type.is_pointer:
+            if flow_type.element_type and flow_type.element_type.name in ["f32", "f64", "i32", "i64"]:
+                return f"memref<?x{flow_type.element_type.name}>"
             return "memref<?xi8>"
         return "i32"
 
@@ -461,7 +463,10 @@ class MLIRGpuGenerator:
                 "flow_type": param.type,
             }
 
-        lines.append(f"{self.indent()}gpu.func @{func.name}({', '.join(params)}) kernel {{")
+        lines.append(
+            f"{self.indent()}gpu.func @{func.name}({', '.join(params)}) kernel "
+            f"attributes {{spirv.entry_point_abi = #spirv.entry_point_abi<workgroup_size = [64, 1, 1]>}} {{"
+        )
         self.indent_level += 1
         for stmt in func.body.statements:
             lines.extend(self.generate_statement(stmt))

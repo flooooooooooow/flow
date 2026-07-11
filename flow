@@ -1742,6 +1742,13 @@ PY
                         print_error "GPU MLIR generation failed"
                         exit 1
                     fi
+                    print_info "  MLIR SPIR-V smoke: gpu_kernels (best-effort)"
+                    if python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/stdlib/gpu_kernels.flow" \
+                        --mlir --mlir-gpu --emit-spirv -o "$SCRIPT_DIR/build/gpu_kernels.spv" >/dev/null 2>&1; then
+                        print_success "  SPIR-V lowering ok"
+                    else
+                        print_warning "  SPIR-V lowering WIP (GPU MLIR codegen ok)"
+                    fi
                 else
                     print_warning "Skipping MLIR JIT (install llvm: brew install llvm)"
                 fi

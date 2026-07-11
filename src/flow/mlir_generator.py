@@ -15,6 +15,42 @@ from .parser import (
 )
 
 class MLIRGenerator:
+    def _cast_for_printf(self, arg_ssa: str, arg_type: str) -> tuple[str, str, List[str]]:
+        """Cast MLIR values to printf-compatible LLVM types."""
+        ops: List[str] = []
+        if arg_type == "f32":
+            ext_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{ext_ssa} = arith.extf {arg_ssa} : f32 to f64")
+            return ext_ssa, "f64", ops
+        if arg_type == "i1":
+            ext_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{ext_ssa} = arith.extui {arg_ssa} : i1 to i32")
+            return ext_ssa, "i32", ops
+        if arg_type == "index":
+            ext_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{ext_ssa} = arith.index_cast {arg_ssa} : index to i32")
+            return ext_ssa, "i32", ops
+        return arg_ssa, arg_type, ops
+
+    @staticmethod
+    def _format_mlir_numeric(value: str, mlir_type: str) -> str:
+        """Format numeric literals for MLIR text (no scientific notation)."""
+        if mlir_type not in ("f32", "f64", "i32", "i64", "index"):
+            return value
+        lowered = value.lower()
+        if mlir_type in ("f32", "f64") and ("e" in lowered):
+            try:
+                number = float(value)
+                if mlir_type == "f32":
+                    return format(number, ".10f").rstrip("0").rstrip(".") or "0.0"
+                return format(number, ".17f").rstrip("0").rstrip(".") or "0.0"
+            except ValueError:
+                return value
+        return value
+
     def __init__(self, source_file: str = "unknown.flow"):
         self.indent_level = 0
         self.symbol_table = {}
@@ -177,6 +213,7 @@ class MLIRGenerator:
         self.distinct_types = {d.name: d.base_type for d in declarations if isinstance(d, DistinctTypeDecl)}
         self.struct_llvm_types = {}
         self._struct_llvm_building = set()
+        self._declared_externs: Set[str] = set()
 
         # Split GPU kernels from CPU declarations (GPU kernels are handled separately)
         gpu_functions = []
@@ -200,6 +237,8 @@ class MLIRGenerator:
         # First pass: collect all function signatures in symbol table
         for decl in cpu_decls:
             if isinstance(decl, FunctionDecl):
+                if getattr(decl, "is_extern", False) and decl.name == "printf":
+                    self.needs_printf = True
                 # Add function to symbol table
                 self.symbol_table[decl.name] = {
                     'type': 'function',
@@ -262,8 +301,13 @@ class MLIRGenerator:
         # Store current function return type for use in return statements
         self.current_function_return_type = func.return_type
         
-        # For extern functions, just declare them without body
+        # For extern functions, just declare them without body (dedupe across imports)
         if hasattr(func, 'is_extern') and func.is_extern:
+            if func.name == "printf":
+                return ""
+            if func.name in self._declared_externs:
+                return ""
+            self._declared_externs.add(func.name)
             param_types = [self.flow_type_to_mlir(p.type) for p in func.parameters]
             return_type = self.flow_type_to_mlir(func.return_type)
             func_signature = f"func.func private @{func.name}({', '.join(param_types)}) -> {return_type}"
@@ -1459,7 +1503,8 @@ class MLIRGenerator:
                 global_name = self.string_constants[str_val]
             line = f"{self.indent()}{ssa_name} = llvm.mlir.addressof @{global_name} : !llvm.ptr"
         else:
-            line = f"{self.indent()}{ssa_name} = arith.constant {literal.value} : {mlir_type}"
+            numeric = self._format_mlir_numeric(str(literal.value), mlir_type)
+            line = f"{self.indent()}{ssa_name} = arith.constant {numeric} : {mlir_type}"
         self._ssa_types[ssa_name] = mlir_type
         return ssa_name, [line]
     
@@ -2417,21 +2462,11 @@ class MLIRGenerator:
                     self.function_counter += 1
                     ops.append(f"{self.indent()}{fmt_ptr} = llvm.mlir.addressof @{global_name} : !llvm.ptr")
                     
-                    # For f32, extend to f64 for printf
-                    if arg_type == 'f32':
-                        ext_ssa = f"%{self.function_counter}"
-                        self.function_counter += 1
-                        ops.append(f"{self.indent()}{ext_ssa} = arith.extf {arg_ssa} : f32 to f64")
-                        arg_ssa = ext_ssa
-                        arg_type = 'f64'
-                    # For bool, convert to i32 for printf
-                    elif arg_type == 'i1':
-                        ext_ssa = f"%{self.function_counter}"
-                        self.function_counter += 1
-                        ops.append(f"{self.indent()}{ext_ssa} = arith.extsi {arg_ssa} : i1 to i32")
-                        arg_ssa = ext_ssa
-                        arg_type = 'i32'
-                    
+                    cast_ssa, cast_type, cast_ops = self._cast_for_printf(arg_ssa, arg_type)
+                    ops.extend(cast_ops)
+                    arg_ssa = cast_ssa
+                    arg_type = cast_type
+
                     # Call printf
                     result_ssa = f"%{self.function_counter}"
                     self.function_counter += 1
@@ -2466,21 +2501,11 @@ class MLIRGenerator:
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{fmt_ptr} = llvm.mlir.addressof @{global_name} : !llvm.ptr")
                 
-                # For f32, extend to f64 for printf
-                if arg_type == 'f32':
-                    ext_ssa = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    ops.append(f"{self.indent()}{ext_ssa} = arith.extf {arg_ssa} : f32 to f64")
-                    arg_ssa = ext_ssa
-                    arg_type = 'f64'
-                # For bool, convert to i32 for printf
-                elif arg_type == 'i1':
-                    ext_ssa = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    ops.append(f"{self.indent()}{ext_ssa} = arith.extsi {arg_ssa} : i1 to i32")
-                    arg_ssa = ext_ssa
-                    arg_type = 'i32'
-                
+                cast_ssa, cast_type, cast_ops = self._cast_for_printf(arg_ssa, arg_type)
+                ops.extend(cast_ops)
+                arg_ssa = cast_ssa
+                arg_type = cast_type
+
                 # Call printf
                 result_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
@@ -2546,13 +2571,8 @@ class MLIRGenerator:
             else:
                 arg_type = self.get_expression_type(arg)
 
-            # printf promotes float to double
-            if arg_type == 'f32':
-                ext_ssa = f"%{self.function_counter}"
-                self.function_counter += 1
-                ops.append(f"{self.indent()}{ext_ssa} = arith.extf {arg_ssa} : f32 to f64")
-                arg_ssa = ext_ssa
-                arg_type = 'f64'
+            arg_ssa, arg_type, cast_ops = self._cast_for_printf(arg_ssa, arg_type)
+            ops.extend(cast_ops)
 
             var_ssas.append(arg_ssa)
             var_types.append(arg_type)
