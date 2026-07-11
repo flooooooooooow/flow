@@ -24,7 +24,7 @@ from .parser import (
     IfStatement, WhileStatement, ForStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl, TraitDecl,
     TypeAliasDecl, DistinctTypeDecl, CastExpression,
-    MatchStatement, MatchCase, StructPattern, DeferStatement, TryExpr, Lambda,
+    MatchStatement, StructPattern, DeferStatement, TryExpr, Lambda,
 )
 
 
