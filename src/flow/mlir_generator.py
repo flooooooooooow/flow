@@ -90,8 +90,6 @@ class MLIRGenerator:
         # heap corruption in callees like tensor_scale that read all dims.
         return self._TENSOR_PARAM_METADATA_FIELDS
 
-
-
     def _materialize_tensor_param_metadata(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
         ops: List[str] = []
         agg = f"%{self.function_counter}"
@@ -184,7 +182,9 @@ class MLIRGenerator:
         arg_expr: Optional[Expression] = None,
     ) -> tuple[str, List[str]]:
         """Return a stack-independent tensor SSA safe to pass into func.call."""
-        if arg_val in self._tensor_stable_ssas:
+        if arg_val in self._tensor_stable_ssas and not (
+            callee_returns_tensor or callee_returns_composite
+        ):
             return arg_val, []
 
         needs_copy = (
@@ -205,6 +205,8 @@ class MLIRGenerator:
             if (
                 self._tensor_needs_full_materialize(arg_val, arg_expr)
                 or arg_val in self._tensor_call_results
+                or callee_returns_tensor
+                or callee_returns_composite
             )
             else callee_name
         )
@@ -2736,6 +2738,25 @@ class MLIRGenerator:
                     self._tensor_call_results.add(ssa_name)
             elif ret_type.startswith("!llvm.struct"):
                 self._composite_call_results.add(ssa_name)
+            if callee_returns_tensor or callee_returns_composite:
+                for i, arg in enumerate(func_call.arguments):
+                    if not self._is_tensor_struct(expected_arg_types[i]):
+                        continue
+                    if not isinstance(arg, Variable):
+                        continue
+                    var_info = self.symbol_table.get(arg.name)
+                    if not var_info or "ssa_name" not in var_info:
+                        continue
+                    mlir_type = var_info.get("mlir_type") or expected_arg_types[i]
+                    # Refresh from the call-site copy, not the variable SSA that may
+                    # share the callee's aggregate return stack slot.
+                    fresh, mat_ops = self._materialize_tensor_for_call(
+                        cast_args[i], mlir_type, ""
+                    )
+                    ops.extend(mat_ops)
+                    var_info["ssa_name"] = fresh
+                    self._ssa_types[fresh] = mlir_type
+                    self._tensor_stable_ssas.add(fresh)
             return ssa_name, ops
     
     def generate_print_call(self, func_call: FunctionCall, *, newline: bool = False) -> tuple[str, List[str]]:
