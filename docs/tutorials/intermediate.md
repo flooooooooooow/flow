@@ -1,6 +1,6 @@
 # FLOW Tutorial: Intermediate
 
-Build on the basics with generics, traits, error handling, and more.
+Build on the basics with generics, traits, error handling, and more. Programs with `main` **run in the browser** — use **Run** on each example or the [interactive app](index.html).
 
 ## Part 1: Generics
 
