@@ -1,6 +1,6 @@
 # FLOW Tutorial: Beginner
 
-Learn FLOW from scratch with hands-on examples.
+Learn FLOW from scratch with hands-on examples. Every program below with a `main` function **compiles in your browser** — click **Run** to execute, or open the [interactive tutorials app](index.html).
 
 ## Part 1: Your First Program
 

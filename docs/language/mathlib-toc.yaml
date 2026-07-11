@@ -1,0 +1,224 @@
+# Flow Mathlib Equivalence — machine-readable book manifest
+# Drives BOOK_PARTS expansion and phase tracking.
+# Human-readable companion: mathlib-equivalence-toc.md
+
+version: 1
+mathlib_declarations_approx: 150000
+flow_theorems_current: 838
+
+phases:
+  - id: 0
+    name: Engine & book contract
+    target_theorems: 0
+    status: done
+  - id: 1
+    name: Logic + Peano spine
+    target_theorems: 200
+    mathlib_mirror: [Init, Logic, Data.Nat]
+    status: done
+    current_theorems: 200
+  - id: 2
+    name: Discrete structures
+    target_theorems: 350
+    mathlib_mirror: [Data, Order, Combinatorics]
+    status: in_progress
+    current_theorems: 291
+  - id: 3
+    name: Euclidean corpus
+    target_theorems: 350
+    mathlib_mirror: [Geometry]
+    status: in_progress
+    current_theorems: 173
+  - id: 4
+    name: Algebra core
+    target_theorems: 800
+    mathlib_mirror: [Algebra, GroupTheory, RingTheory, FieldTheory]
+    status: in_progress
+    current_theorems: 138
+  - id: 5
+    name: Linear algebra
+    target_theorems: 600
+    mathlib_mirror: [LinearAlgebra]
+    status: planned
+  - id: 6
+    name: Topology & metric analysis
+    target_theorems: 1200
+    mathlib_mirror: [Topology, Analysis]
+    status: planned
+  - id: 7
+    name: Measure & probability
+    target_theorems: 900
+    mathlib_mirror: [MeasureTheory, Probability]
+    status: planned
+  - id: 8
+    name: Number theory
+    target_theorems: 700
+    mathlib_mirror: [NumberTheory]
+    status: planned
+  - id: 9
+    name: Manifolds & advanced geometry
+    target_theorems: 1000
+    mathlib_mirror: [Geometry.Manifold, AlgebraicGeometry]
+    status: planned
+  - id: 10
+    name: Category theory & homological
+    target_theorems: 800
+    mathlib_mirror: [CategoryTheory]
+    status: planned
+  - id: 11
+    name: Set theory & foundations
+    target_theorems: 400
+    mathlib_mirror: [SetTheory, ModelTheory]
+    status: planned
+  - id: 12
+    name: Computability & dynamics
+    target_theorems: 300
+    mathlib_mirror: [Computability, Dynamics]
+    status: planned
+
+book_parts:
+  - title: "Part I — Logic and Arithmetic"
+    phase: 1
+    target_theorems: 200
+    current_theorems: 134
+    bundle_key: BASIC_PROOF_BUNDLE
+    lib_roots: [lib/verify/Eq.flow, lib/verify/Bool.flow, lib/verify/Nat-core.flow, lib/verify/Nat.flow, lib/verify/Nat-mul.flow, lib/verify/Nat-order.flow]
+    example_roots: [examples/verify/math/]
+
+  - title: "Part II — Data and Order"
+    phase: 2
+    target_theorems: 350
+    current_theorems: 291
+    lib_roots: [lib/verify/Pair.flow, lib/verify/List.flow, lib/verify/Finset.flow, lib/verify/Order.flow, lib/verify/Comb.flow]
+
+  - title: "Book I — Euclid's Elements"
+    phase: 3
+    target_theorems: 48
+    current_theorems: 48
+    bundle_key: EUCLID_BOOK_I_BUNDLE
+    example_roots: [examples/verify/euclid/book-i/]
+    generator: tools/generate_euclid_book_i.py
+
+  - title: "Book II — Euclid (areas)"
+    phase: 3
+    target_theorems: 14
+    current_theorems: 14
+    bundle_key: EUCLID_BOOK_II_BUNDLE
+    example_roots: [examples/verify/euclid/book-ii/]
+    generator: tools/generate_euclid_book_ii.py
+
+  - title: "Book III — Euclid (circles)"
+    phase: 3
+    target_theorems: 37
+    current_theorems: 37
+    bundle_key: EUCLID_BOOK_III_BUNDLE
+    example_roots: [examples/verify/euclid/book-iii/]
+    generator: tools/generate_euclid_book_iii.py
+
+  - title: "Book IV — Euclid (polygons)"
+    phase: 3
+    target_theorems: 16
+    current_theorems: 16
+    bundle_key: EUCLID_BOOK_IV_BUNDLE
+    example_roots: [examples/verify/euclid/book-iv/]
+    generator: tools/generate_euclid_book_iv.py
+
+  - title: "Book V — Euclid (proportion)"
+    phase: 3
+    target_theorems: 25
+    current_theorems: 25
+    bundle_key: EUCLID_BOOK_V_BUNDLE
+    example_roots: [examples/verify/euclid/book-v/]
+    generator: tools/generate_euclid_book_v.py
+
+  - title: "Book VI — Euclid (similar figures)"
+    phase: 3
+    target_theorems: 33
+    current_theorems: 33
+    bundle_key: EUCLID_BOOK_VI_BUNDLE
+    example_roots: [examples/verify/euclid/book-vi/]
+    generator: tools/generate_euclid_book_vi.py
+
+  - title: "Part III — Algebra"
+    phase: 4
+    target_theorems: 800
+    current_theorems: 138
+    bundle_key: ALGEBRA_PROOF_BUNDLE
+    lib_roots: [lib/verify/Monoid.flow, lib/verify/Group.flow, lib/verify/Ring.flow, lib/verify/Ideal.flow, lib/verify/GroupHom.flow, lib/verify/Subgroup.flow, lib/verify/RingHom.flow]
+
+  - title: "Part IV — Linear Algebra"
+    phase: 5
+    target_theorems: 600
+    lib_roots: [lib/verify/LinearAlgebra/]
+
+  - title: "Part V — Topology"
+    phase: 6
+    target_theorems: 500
+    lib_roots: [lib/verify/Topology/]
+
+  - title: "Part VI — Analysis"
+    phase: 6
+    target_theorems: 700
+    lib_roots: [lib/verify/Analysis/]
+    example_roots: [examples/verify/analysis/]
+
+  - title: "Part VII — Number Theory"
+    phase: 8
+    target_theorems: 700
+    lib_roots: [lib/verify/NumberTheory/]
+
+  - title: "Part VIII — Combinatorics"
+    phase: 2
+    target_theorems: 400
+    lib_roots: [lib/verify/Combinatorics/]
+
+  - title: "Part IX — Probability"
+    phase: 7
+    target_theorems: 500
+    lib_roots: [lib/verify/Probability/, lib/verify/MeasureTheory/]
+
+  - title: "Part X — Category & Algebraic Geometry"
+    phase: 10
+    target_theorems: 800
+    lib_roots: [lib/verify/CategoryTheory/, lib/verify/Geometry/Algebraic/]
+
+  - title: "Part XI — Set Theory & Logic"
+    phase: 11
+    target_theorems: 400
+    lib_roots: [lib/verify/SetTheory/, lib/verify/ModelTheory/]
+
+  - title: "Part XII — Computability & Dynamics"
+    phase: 12
+    target_theorems: 300
+    lib_roots: [lib/verify/Computability/, lib/verify/Dynamics/]
+
+  - title: "Appendix — Special topics"
+    phase: 6
+    target_theorems: 50
+    current_theorems: 2
+    bundle_key: ANALYSIS_APPENDIX
+    example_roots: [examples/verify/analysis/, examples/verify/geometry/taylor-sin-maclaurin.flow]
+
+mathlib_module_map:
+  Algebra: { volume: "Part III", phase: 4 }
+  AlgebraicGeometry: { volume: "Part X", phase: 9 }
+  Analysis: { volume: "Part VI", phase: 6 }
+  CategoryTheory: { volume: "Part X", phase: 10 }
+  Combinatorics: { volume: "Part VIII", phase: 2 }
+  Computability: { volume: "Part XII", phase: 12 }
+  Data: { volume: "Part II", phase: 2 }
+  Dynamics: { volume: "Part XII", phase: 12 }
+  FieldTheory: { volume: "Part III", phase: 4 }
+  Geometry: { volume: "Books I–VI + Part X", phase: 3 }
+  GroupTheory: { volume: "Part III", phase: 4 }
+  LinearAlgebra: { volume: "Part IV", phase: 5 }
+  Logic: { volume: "Part I", phase: 1 }
+  MeasureTheory: { volume: "Part IX", phase: 7 }
+  ModelTheory: { volume: "Part XI", phase: 11 }
+  NumberTheory: { volume: "Part VII", phase: 8 }
+  Order: { volume: "Part II", phase: 2 }
+  Probability: { volume: "Part IX", phase: 7 }
+  RepresentationTheory: { volume: "Part III", phase: 4 }
+  RingTheory: { volume: "Part III", phase: 4 }
+  SetTheory: { volume: "Part XI", phase: 11 }
+  Topology: { volume: "Part V", phase: 6 }
