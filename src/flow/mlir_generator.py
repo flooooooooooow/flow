@@ -80,6 +80,8 @@ class MLIRGenerator:
 
     def _tensor_param_metadata_fields(self) -> List[int]:
         name = getattr(self, "_current_function_name", "") or ""
+        if name == "tensor_matmul":
+            return self._TENSOR_PARAM_METADATA_FIELDS_DIM1
         if "backward" in name or name.startswith("dense") or name.startswith("mlp") or "forward" in name:
             return self._TENSOR_PARAM_METADATA_FIELDS_DIM1
         return self._TENSOR_PARAM_METADATA_FIELDS
@@ -107,7 +109,7 @@ class MLIRGenerator:
     ) -> tuple[str, List[str]]:
         """Copy tensor SSA before passing to a callee that may clobber the return slot."""
         if callee_name in self._TENSOR_PTR_ARG_CALLEES:
-            field_indices = [0, 1, 2]
+            field_indices = [0, 1, 2, 3]
         else:
             field_indices = list(range(self._struct_field_count(mlir_type)))
         ops: List[str] = []
@@ -512,7 +514,9 @@ class MLIRGenerator:
             self._ssa_types[arg_ssa] = param_mlir
             if self._is_tensor_struct(param_mlir):
                 self._tensor_param_ssas.add(arg_ssa)
-                stable, mat_ops = self._materialize_tensor_param_metadata(arg_ssa, param_mlir)
+                stable, mat_ops = self._materialize_tensor_param_metadata(
+                    arg_ssa, param_mlir
+                )
                 param_prologue.extend(mat_ops)
                 bind_ssa = stable
                 self._tensor_stable_ssas.add(stable)
@@ -645,6 +649,16 @@ class MLIRGenerator:
                 self._tensor_call_results.discard(orig_ssa)
                 self._tensor_field_extracts.discard(orig_ssa)
                 self._tensor_stable_ssas.add(init_value)
+                self._ssa_types[init_value] = mlir_type
+            elif (
+                mlir_type.startswith("!llvm.struct")
+                and getattr(var_decl.type, "name", None) in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
+                and init_value in self._composite_call_results
+            ):
+                orig_ssa = init_value
+                init_value, mat_ops = self._materialize_struct_value(init_value, mlir_type)
+                init_ops.extend(mat_ops)
+                self._composite_call_results.discard(orig_ssa)
                 self._ssa_types[init_value] = mlir_type
 
             # Bind variable name to the SSA value produced by the initializer.
