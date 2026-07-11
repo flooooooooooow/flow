@@ -51,7 +51,7 @@ markdown_extensions:
       alternate_style: true
 
 nav:
-  - Home: README.md
+  - Home: wiki-home.md
   - Playground: playground/index.html
   - Getting Started: getting-started.md
   - Comparison: comparison.md
@@ -59,8 +59,12 @@ nav:
     - Beginner: tutorials/beginner.md
     - Intermediate: tutorials/intermediate.md
     - Advanced: tutorials/advanced.md
+  - Documentation:
+    - Wiki Strategy: wiki-strategy.md
+    - Wiki Roadmap: wiki-roadmap.md
   - Language:
     - Overview: language/overview.md
+    - Grammar: language/grammar.md
     - Syntax: language/syntax.md
     - Types: language/types.md
     - Variables: language/variables.md
@@ -72,6 +76,15 @@ nav:
     - Core: library/core.md
     - Autodiff: library/autodiff.md
     - Memory: library/memory.md
+  - Third-Party Libraries:
+    - Overview: third-party/README.md
+    - flow-verify: third-party/flow-verify.md
+    - Proof Catalog: third-party/flow-verify-catalog.md
+  - Verification:
+    - Design: language/verification.md
+    - Epistemology: language/epistemology.md
+    - Proof Book: language/math-proof-book.md
+    - Mathlib Roadmap: language/mathlib-equivalence-toc.md
   - Specification:
     - Language Spec: LANGUAGE_SPEC.md
   - Examples:

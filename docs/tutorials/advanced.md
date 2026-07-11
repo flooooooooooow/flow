@@ -1,6 +1,6 @@
 # FLOW Tutorial: Advanced
 
-Master effects, autodiff, GPU programming, and compiler backends.
+Master effects, autodiff, GPU programming, and compiler backends. Runnable examples compile in-browser via **Run** or the [interactive app](index.html).
 
 ## Part 1: Effect System
 

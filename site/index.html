@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Flow — Programming Language</title>
+    <meta name="description" content="Official Flow language documentation: tutorials, reference, verification proofs, and third-party libraries.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <link rel="stylesheet" href="wiki.css">
+    <link rel="stylesheet" href="tutorial-runner.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="/transpile/" class="brand">
+                <span class="brand-mark">F</span>
+                <span class="brand-name">Flow</span>
+                <span class="brand-tag">docs</span>
+            </a>
+            <div class="version-picker" id="versionPicker">
+                <label class="sr-only" for="versionSelect">Documentation version</label>
+                <select id="versionSelect" class="version-select" aria-label="Documentation version"></select>
+            </div>
+            <div class="header-tools">
+                <button type="button" class="search-trigger" id="searchTrigger" aria-label="Search (⌘K)">
+                    <span class="search-icon">⌕</span>
+                    <span class="search-placeholder">Search…</span>
+                    <kbd>⌘K</kbd>
+                </button>
+                <a href="tutorials/" class="btn">Tutorials</a>
+                <a href="playground/" class="btn btn-accent">Playground</a>
+                <a href="https://github.com/abhishekshivakumar/transpile" class="btn" target="_blank" rel="noopener">GitHub</a>
+                <button type="button" class="btn btn-icon mobile-nav-toggle" id="sidebarToggle" aria-label="Toggle navigation">☰</button>
+            </div>
+        </div>
+        <nav class="tab-bar" id="tabBar" aria-label="Documentation sections"></nav>
+    </header>
+
+    <div class="search-overlay" id="searchOverlay" hidden>
+        <div class="search-panel">
+            <input type="search" id="searchInput" class="search-input" placeholder="Search documentation and proofs…" autocomplete="off">
+            <ul class="search-results" id="searchResults"></ul>
+        </div>
+    </div>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar">
+            <nav id="sidebarNav" aria-label="Page navigation"></nav>
+        </aside>
+
+        <div class="main-column">
+            <div class="version-banner" id="versionBanner" hidden></div>
+            <nav class="breadcrumb" id="breadcrumb" aria-label="Breadcrumb"></nav>
+            <article class="doc-article">
+                <header class="doc-header">
+                    <h1 class="doc-title" id="docTitle"></h1>
+                    <p class="doc-lead" id="docLead" hidden></p>
+                </header>
+                <div class="markdown-body" id="markdownContent">
+                    <p class="loading">Loading…</p>
+                </div>
+                <nav class="doc-pager" id="docPager" hidden></nav>
+            </article>
+        </div>
+
+        <aside class="toc-column" id="tocColumn" hidden>
+            <div class="toc-inner">
+                <p class="toc-label">On this page</p>
+                <nav id="pageToc" aria-label="Table of contents"></nav>
+            </div>
+        </aside>
+    </div>
+
+    <footer class="site-footer">
+        <span>Flow Programming Language</span>
+        <span class="footer-sep">·</span>
+        <a href="#" data-path="project/CHANGELOG.md">Changelog</a>
+        <span class="footer-sep">·</span>
+        <a href="#" data-path="third-party/flow-verify.md">flow-verify</a>
+        <span class="footer-sep">·</span>
+        <a href="https://abhishek-shivakumar.com/">abhishek-shivakumar.com</a>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="flow-compile.js"></script>
+    <script src="tutorial-runner.js"></script>
+    <script src="grammar-viewer.js"></script>
+    <script src="wiki.js"></script>
+</body>
+</html>
