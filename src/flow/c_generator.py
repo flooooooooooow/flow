@@ -47,7 +47,6 @@ from .parser import (
     ImplDecl,
     Lambda,
     Literal,
-    MatchCase,
     MatchStatement,
     MethodCall,
     ReturnStatement,

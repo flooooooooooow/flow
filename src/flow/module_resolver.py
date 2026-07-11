@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Set, Any, Optional, Tuple
 
 from .parser import Lexer, Parser, ImportDecl, ImplDecl, ExportDecl, ModuleDecl
-from .project_config import ProjectConfig, load_project_config
+from .project_config import load_project_config
 
 
 class ModuleSymbol:
