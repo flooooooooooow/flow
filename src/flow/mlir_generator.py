@@ -70,6 +70,10 @@ class MLIRGenerator:
         "MLP2Activations",
     })
     _TENSOR_POST_MATERIALIZE_CALLEES = frozenset({
+        "tensor_rand",
+        "tensor_randn",
+        "tensor_scale",
+        "tensor_zeros",
         "tensor_matmul_backward_a",
         "tensor_matmul_backward_b",
         "tensor_transpose",
@@ -1973,15 +1977,38 @@ class MLIRGenerator:
                     if field_access.field in field_names:
                         idx = field_names.index(field_access.field)
                         extract_ssa = obj_ssa
-                        if (
-                            obj_type.name == "Tensor"
-                            and idx >= 1
-                            and isinstance(field_access.object, Variable)
-                        ):
-                            var_info = self.symbol_table.get(field_access.object.name) or {}
-                            root = var_info.get("ssa_name", obj_ssa)
-                            if root.startswith("%arg") or root in self._tensor_param_ssas:
-                                extract_ssa = root
+                        if obj_type.name == "Tensor" and idx >= 1:
+                            if isinstance(field_access.object, Variable):
+                                var_info = self.symbol_table.get(field_access.object.name) or {}
+                                root = var_info.get("ssa_name", obj_ssa)
+                                if root.startswith("%arg") or root in self._tensor_param_ssas:
+                                    extract_ssa = root
+                            elif (
+                                isinstance(field_access.object, FieldAccess)
+                                and obj_ssa in self._tensor_extract_origins
+                            ):
+                                origin_ssa, origin_idx = self._tensor_extract_origins[obj_ssa]
+                                origin_type = self._ssa_types.get(origin_ssa)
+                                if origin_type and origin_type.startswith("!llvm.struct"):
+                                    ssa_name = f"%{self.function_counter}"
+                                    self.function_counter += 1
+                                    ops.append(
+                                        f"{self.indent()}{ssa_name} = llvm.extractvalue "
+                                        f"{origin_ssa}[{origin_idx}] : {origin_type}"
+                                    )
+                                    inner = f"%{self.function_counter}"
+                                    self.function_counter += 1
+                                    inner_ty = self._ssa_types.get(ssa_name) or self.flow_type_to_mlir(
+                                        field_type
+                                    )
+                                    if inner_ty.startswith("!llvm.struct"):
+                                        ops.append(
+                                            f"{self.indent()}{inner} = llvm.extractvalue "
+                                            f"{ssa_name}[{idx}] : {inner_ty}"
+                                        )
+                                        field_ty = self.flow_type_to_mlir(field_type)
+                                        self._ssa_types[inner] = field_ty
+                                        return inner, ops
                         ssa_name = f"%{self.function_counter}"
                         self.function_counter += 1
                         ops.append(f"{self.indent()}{ssa_name} = llvm.extractvalue {extract_ssa}[{idx}] : {llvm_struct}")
