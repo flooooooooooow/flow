@@ -69,6 +69,48 @@ class MLIRGenerator:
             return None
         return self._flow_type_name(self.symbol_table[func_call.name].get("return_type"))
 
+    def _uses_alloca_storage(self, mlir_type: str, flow_type: Any = None) -> bool:
+        """Tensor/composite locals live in dedicated alloca slots to avoid arm64 return-slot aliasing."""
+        if self._is_tensor_struct(mlir_type):
+            return True
+        return self._flow_type_name(flow_type) in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
+
+    def _emit_alloca_store(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
+        ops: List[str] = []
+        one = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{one} = llvm.mlir.constant(1 : i64) : i64")
+        ptr = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(
+            f"{self.indent()}{ptr} = llvm.alloca {one} x {mlir_type} : (i64) -> !llvm.ptr"
+        )
+        ops.append(
+            f"{self.indent()}llvm.store {value_ssa}, {ptr} : {mlir_type}, !llvm.ptr"
+        )
+        return ptr, ops
+
+    def _emit_alloca_load(self, ptr_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
+        val = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops = [f"{self.indent()}{val} = llvm.load {ptr_ssa} : !llvm.ptr -> {mlir_type}"]
+        self._ssa_types[val] = mlir_type
+        return val, ops
+
+    def _store_aggregate_var(self, var_info: Dict[str, Any], value_ssa: str) -> List[str]:
+        mlir_type = var_info.get("mlir_type")
+        if not mlir_type:
+            return []
+        ptr = var_info.get("alloca_ptr")
+        if not ptr:
+            ptr, ops = self._emit_alloca_store(value_ssa, mlir_type)
+            var_info["alloca_ptr"] = ptr
+            var_info["ssa_name"] = value_ssa
+            return ops
+        return [
+            f"{self.indent()}llvm.store {value_ssa}, {ptr} : {mlir_type}, !llvm.ptr"
+        ]
+
     _TENSOR_PTR_ARG_CALLEES = frozenset({"tensor_matmul"})
     _COMPOSITE_FIELD_MATERIALIZE_TYPES = frozenset({
         "Dense2D",
@@ -140,6 +182,18 @@ class MLIRGenerator:
             agg = next_agg
         self._ssa_types[agg] = mlir_type
         return agg, ops
+
+    def _roundtrip_alloca(
+        self, value_ssa: str, mlir_type: str, ops: Optional[List[str]] = None
+    ) -> tuple[str, List[str]]:
+        """Force aggregate through an alloca slot so LLVM cannot reuse return-stack memory."""
+        if ops is None:
+            ops = []
+        ptr, store_ops = self._emit_alloca_store(value_ssa, mlir_type)
+        ops.extend(store_ops)
+        loaded, load_ops = self._emit_alloca_load(ptr, mlir_type)
+        ops.extend(load_ops)
+        return loaded, ops
 
     def _materialize_struct_value(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
         """Copy aggregate SSA so nested struct returns do not alias callee stack slots."""
@@ -552,6 +606,10 @@ class MLIRGenerator:
                 bind_ssa = stable
                 self._ssa_types[stable] = param_mlir
             var_entry["ssa_name"] = bind_ssa
+            if self._uses_alloca_storage(param_mlir, param.type):
+                ptr, alloc_ops = self._emit_alloca_store(bind_ssa, param_mlir)
+                param_prologue.extend(alloc_ops)
+                var_entry["alloca_ptr"] = ptr
             self.symbol_table[param.name] = var_entry
 
         if param_prologue:
@@ -696,6 +754,10 @@ class MLIRGenerator:
             }
             if from_tensor_field and self._is_tensor_struct(mlir_type):
                 var_entry["from_tensor_field"] = True
+            if self._uses_alloca_storage(mlir_type, var_decl.type):
+                ptr, alloc_ops = self._emit_alloca_store(init_value, mlir_type)
+                init_ops.extend(alloc_ops)
+                var_entry["alloca_ptr"] = ptr
             self.symbol_table[var_decl.name] = var_entry
 
             return "\n".join(init_ops)
@@ -756,6 +818,9 @@ class MLIRGenerator:
                 and return_type_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
             ):
                 value_ssa, mat_ops = self._materialize_struct_value(value_ssa, return_type)
+                lines.extend(mat_ops)
+            elif self._uses_alloca_storage(return_type, self.current_function_return_type):
+                value_ssa, mat_ops = self._roundtrip_alloca(value_ssa, return_type, [])
                 lines.extend(mat_ops)
 
             lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
@@ -857,9 +922,12 @@ class MLIRGenerator:
             if target_type and value_type != target_type:
                 value_ssa, cast_ops = self._emit_cast(value_ssa, value_type, target_type)
                 ops.extend(cast_ops)
-            self.symbol_table[assignment.target]['ssa_name'] = value_ssa
+            target_info = self.symbol_table[assignment.target]
+            target_info["ssa_name"] = value_ssa
             if target_type:
                 self._ssa_types[value_ssa] = target_type
+            if target_info.get("alloca_ptr") and target_type:
+                ops.extend(self._store_aggregate_var(target_info, value_ssa))
             return "\n".join(ops)
         else:
             return f"{self.indent()}// Assignment to undefined variable: {assignment.target}"
@@ -1763,11 +1831,15 @@ class MLIRGenerator:
     def generate_variable(self, variable: Variable) -> tuple[str, List[str]]:
         if variable.name in self.symbol_table:
             var_info = self.symbol_table[variable.name]
-            if 'ssa_name' in var_info and 'mlir_type' in var_info:
-                ssa = var_info['ssa_name']
+            mlir_type = var_info.get("mlir_type")
+            if var_info.get("alloca_ptr") and mlir_type:
+                return self._emit_alloca_load(var_info["alloca_ptr"], mlir_type)
+            if "ssa_name" in var_info and mlir_type:
+                ssa = var_info["ssa_name"]
                 if ssa not in self._ssa_types:
-                    self._ssa_types[ssa] = var_info['mlir_type']
-            return var_info['ssa_name'], []
+                    self._ssa_types[ssa] = mlir_type
+                return ssa, []
+            return var_info.get("ssa_name", f"# bad var {variable.name}"), []
         else:
             return f"# Undefined variable: {variable.name}", []
 
@@ -2773,6 +2845,7 @@ class MLIRGenerator:
                         var_info["ssa_name"] = fresh
                         self._ssa_types[fresh] = mlir_type
                         self._tensor_stable_ssas.add(fresh)
+                        ops.extend(self._store_aggregate_var(var_info, fresh))
                     elif (
                         expected_type.startswith("!llvm.struct")
                         and struct_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
@@ -2783,6 +2856,7 @@ class MLIRGenerator:
                         ops.extend(mat_ops)
                         var_info["ssa_name"] = fresh
                         self._ssa_types[fresh] = mlir_type
+                        ops.extend(self._store_aggregate_var(var_info, fresh))
             return ssa_name, ops
     
     def generate_print_call(self, func_call: FunctionCall, *, newline: bool = False) -> tuple[str, List[str]]:
