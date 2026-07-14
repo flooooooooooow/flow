@@ -1996,7 +1996,7 @@ class MLIRGenerator:
                 zero_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{zero_ssa} = arith.constant 0 : {ty}")
-                ops.append(f"{self.indent()}{cast_name} = arith.cmpi ne {operand_ssa}, {zero_ssa} : {ty}")
+                ops.append(f"{self.indent()}{cast_name} = arith.cmpi ne, {operand_ssa}, {zero_ssa} : {ty}")
                 operand_ssa = cast_name
                 ty = 'i1'
             
