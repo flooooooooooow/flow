@@ -95,7 +95,7 @@ and dual C / MLIR backends at native speed.
 Formal math proofs live in the **third-party** [flow-verify](third-party/flow-verify.md) library — not required for everyday Flow programming.
 
 - [Proof catalog](third-party/flow-verify-catalog.md) — browse 1000+ stepped proofs
-- [Euclid Books I–VI](third-party/flow-verify/euclid-book-i.md) — Elements corpus
+- [Euclid Books I–VI](third-party/flow-verify-catalog.md) — Elements corpus (see catalog)
 
 ---
 
