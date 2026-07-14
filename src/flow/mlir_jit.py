@@ -161,7 +161,12 @@ class MLIRJIT:
             raise RuntimeError("mlir-translate could not be executed. Check that it exists and is executable.")
     
     def _use_asan_executable_jit(self) -> bool:
-        """Use ASAN executable subprocess JIT (stable for aggregate returns on macOS)."""
+        """Use ASAN executable subprocess JIT on macOS arm64.
+
+        LLVM -O2 dylibs/executables can still hit arm64 aggregate-return stack
+        aliasing in dense/MLP paths; ASAN shifts stack layout and stabilizes runs.
+        Set FLOW_JIT_ASAN=0 to force the in-process dylib path (faster, flaky).
+        """
         env = os.environ.get("FLOW_JIT_ASAN")
         if env is not None:
             return env.lower() not in ("0", "false", "no", "off")
