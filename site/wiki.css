@@ -856,4 +856,215 @@ body {
     .sidebar.open { transform: translateX(0); }
 
     .main-column { padding: 1.25rem 1.25rem 2.5rem; }
+
+    .wiki-hero-title { font-size: 2rem; }
+    .wiki-card-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Home hero ── */
+.wiki-hero {
+    margin: -0.5rem 0 2rem;
+    padding: 2rem 2rem 1.75rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-light);
+    background:
+        radial-gradient(ellipse 80% 60% at 100% 0%, rgba(68, 147, 248, 0.14), transparent),
+        radial-gradient(ellipse 60% 50% at 0% 100%, rgba(188, 140, 255, 0.1), transparent),
+        var(--surface-2);
+}
+
+.wiki-hero-eyebrow {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+}
+
+.wiki-hero-title {
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+    margin-bottom: 1rem;
+}
+
+.wiki-hero-lead {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    max-width: 52ch;
+    line-height: 1.55;
+    margin-bottom: 1.5rem;
+}
+
+.wiki-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin-bottom: 1.5rem;
+}
+
+.wiki-cta {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.55rem 1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-light);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.88rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.wiki-cta:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.wiki-cta-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0d1117;
+}
+
+.wiki-cta-primary:hover {
+    filter: brightness(1.06);
+    color: #0d1117;
+    background: var(--accent);
+}
+
+.wiki-hero-code {
+    margin: 0;
+    padding: 1rem 1.15rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    overflow-x: auto;
+    font-size: 0.82rem;
+}
+
+/* ── Card grid ── */
+.wiki-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.85rem;
+    margin: 1rem 0;
+}
+
+.wiki-card {
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.wiki-card strong {
+    display: block;
+    font-size: 0.92rem;
+    margin-bottom: 0.35rem;
+    color: var(--text);
+}
+
+.wiki-card p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+/* ── Admonitions ── */
+.admonition {
+    margin: 1.25rem 0;
+    padding: 0.85rem 1rem 0.85rem 1rem;
+    border-radius: var(--radius);
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+}
+
+.admonition-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.4rem;
+    color: var(--accent);
+}
+
+.admonition-body { font-size: 0.92rem; color: var(--text-muted); }
+.admonition-body p:last-child { margin-bottom: 0; }
+
+.admonition-note { border-left-color: var(--accent); background: var(--accent-soft); }
+.admonition-note .admonition-title { color: var(--accent); }
+
+.admonition-tip { border-left-color: var(--green); background: rgba(63, 185, 80, 0.1); }
+.admonition-tip .admonition-title { color: var(--green); }
+
+.admonition-warning { border-left-color: #d29922; background: rgba(210, 153, 34, 0.1); }
+.admonition-warning .admonition-title { color: #d29922; }
+
+.admonition-important { border-left-color: var(--purple); background: var(--purple-soft); }
+.admonition-important .admonition-title { color: var(--purple); }
+
+/* ── 404 ── */
+.not-found-panel {
+    padding: 2rem;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    text-align: center;
+}
+
+.not-found-panel h2 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.not-found-panel p { color: var(--text-muted); margin-bottom: 1.25rem; }
+
+.not-found-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+/* ── Search filters ── */
+.search-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.search-filter {
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-light);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.72rem;
+    cursor: pointer;
+}
+
+.search-filter.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.search-results .result-cat {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
+    margin-right: 0.5rem;
+}
+
+body.page-home .doc-title { display: none; }
+body.page-home .doc-lead { display: none; }
