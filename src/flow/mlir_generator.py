@@ -314,7 +314,17 @@ class MLIRGenerator:
         self.distinct_types = {}  # name -> base Type
         self.struct_llvm_types: Dict[str, Optional[str]] = {}
         self._struct_llvm_building: Set[str] = set()
-        
+        self._init_per_function_state()
+
+    def _init_per_function_state(self) -> None:
+        """Reset per-function SSA tracking (safe for unit tests that skip generate_function)."""
+        self._tensor_call_results: set[str] = set()
+        self._tensor_stable_ssas: set[str] = set()
+        self._tensor_field_extracts: set[str] = set()
+        self._tensor_extract_origins: Dict[str, tuple[str, int]] = {}
+        self._composite_call_results: set[str] = set()
+        self._tensor_param_ssas: set[str] = set()
+
     def indent(self) -> str:
         return "  " * self.indent_level
 
@@ -543,12 +553,7 @@ class MLIRGenerator:
         # Store current function return type for use in return statements
         self.current_function_return_type = func.return_type
         self._current_function_name = func.name
-        self._tensor_call_results: set[str] = set()
-        self._tensor_stable_ssas: set[str] = set()
-        self._tensor_field_extracts: set[str] = set()
-        self._tensor_extract_origins: Dict[str, tuple[str, int]] = {}
-        self._composite_call_results: set[str] = set()
-        self._tensor_param_ssas: set[str] = set()
+        self._init_per_function_state()
         
         # For extern functions, just declare them without body (dedupe across imports)
         if hasattr(func, 'is_extern') and func.is_extern:
