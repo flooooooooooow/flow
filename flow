@@ -872,6 +872,21 @@ run_tests() {
     echo "DEBUG: Created temp dir: $test_build_dir"
     mkdir -p "$test_build_dir"
 
+    # Only run git-tracked .flow files so local WIP verify corpora do not break tier tests.
+    _list_suite_flow_files() {
+        local suite="$1"
+        if command -v git >/dev/null 2>&1 && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git -C "$SCRIPT_DIR" ls-files "$suite" 2>/dev/null \
+                | grep '\.flow$' \
+                | grep -v '/wip/' \
+                | while read -r rel; do
+                    echo "$SCRIPT_DIR/$rel"
+                done
+        else
+            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" 2>/dev/null
+        fi
+    }
+
     echo "DEBUG: About to loop through test suites..."
     for suite in "tests" "examples"; do
         echo "DEBUG: Processing suite: $suite"
@@ -882,8 +897,8 @@ run_tests() {
         fi
 
         echo "DEBUG: Finding .flow files in $dir..."
-        local file_count=$(find "$dir" -name "*.flow" -not -path "*/wip/*" 2>/dev/null | wc -l)
-        echo "DEBUG: Found $file_count .flow files in $suite"
+        local file_count=$(_list_suite_flow_files "$suite" | wc -l | tr -d ' ')
+        echo "DEBUG: Found $file_count tracked .flow files in $suite"
 
         while read program || [ -n "$program" ]; do
             if [ -z "$program" ]; then
@@ -933,7 +948,7 @@ run_tests() {
             
             print_success "✓ $rel_path"
             
-        done < <(find "$dir" -name "*.flow" -not -path "*/wip/*" 2>/dev/null)
+        done < <(_list_suite_flow_files "$suite")
     done
     
     # Cleanup
