@@ -2,6 +2,10 @@
 
 import os
 
+import pytest
+
+pytest.importorskip("flow.proof_document")
+
 from flow.proof_document import (
     parse_proof_file,
     render_english,
