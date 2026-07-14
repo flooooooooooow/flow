@@ -85,6 +85,39 @@ def short_euclid_label(rel: str) -> str:
     return name
 
 
+def proof_group_label(group: str, rows: list[dict]) -> str:
+    """Human-readable sidebar label for proof example groups."""
+    labels = {
+        "analysis": "Analysis",
+        "circuits": "Circuits",
+        "geometry": "Geometry",
+        "math": "Math",
+        "math/derived": "Derived Math",
+        "systems": "Systems",
+        "transforms": "Transforms",
+    }
+    base = labels.get(group, group.replace("/", " · ").replace("-", " ").title())
+    return f"{base} ({len(rows)})"
+
+
+def page_category(wiki_path: str) -> str:
+    p = wiki_path.replace("\\", "/")
+    if p.startswith("tutorials/"):
+        return "tutorial"
+    if "flow-verify" in p or p.endswith(".proof.md"):
+        return "proof"
+    if p.startswith("library/") or p.startswith("language/") or p in {
+        "LANGUAGE_SPEC.md",
+        "grammar.ebnf",
+    }:
+        return "reference"
+    if p in {"DEVELOPMENT.md", "python-target.md", "NEXT.md"} or p.startswith("project/"):
+        return "tooling" if "CHANGELOG" not in p and "CONTRIBUTING" not in p else "guide"
+    if p.startswith("third-party/"):
+        return "proof"
+    return "guide"
+
+
 def sync_proofs() -> tuple[list[dict], list[dict]]:
     lib_src = ROOT / "lib" / "verify"
     ex_src = ROOT / "examples" / "verify"
@@ -111,6 +144,9 @@ def sync_proofs() -> tuple[list[dict], list[dict]]:
             target = dst / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
+            svg = path.with_suffix(".svg")
+            if svg.exists():
+                shutil.copy2(svg, target.with_suffix(".svg"))
             text = path.read_text(encoding="utf-8", errors="replace")
             bucket.append(
                 {
@@ -357,20 +393,16 @@ def build_tutorial_exercises() -> None:
 
 
 def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict]) -> None:
-    lib_items = [
-        {"label": Path(r["rel"]).stem, "path": r["wiki_path"]}
-        for r in lib_rows
-    ]
-
     other_groups = []
     for group, rows in group_examples(ex_rows).items():
         if group.startswith("euclid/"):
             continue
-        label = group.replace("/", " / ").replace("-", " ").title()
-        if len(rows) == 1:
-            other_groups.append({"label": label, "path": rows[0]["wiki_path"]})
-        else:
-            other_groups.append({"label": f"{label} ({len(rows)})", "path": rows[0]["wiki_path"]})
+        other_groups.append(
+            {
+                "label": proof_group_label(group, rows),
+                "path": "third-party/flow-verify-catalog.md",
+            }
+        )
 
     nav = {
         "default": "wiki-home.md",
@@ -452,13 +484,6 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                 ],
             },
             {
-                "id": "proofs-core",
-                "tab": "thirdparty",
-                "title": "flow-verify — Core",
-                "collapsed": False,
-                "items": lib_items,
-            },
-            {
                 "id": "proofs-euclid",
                 "tab": "thirdparty",
                 "title": "flow-verify — Euclid",
@@ -466,9 +491,9 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                 "items": euclid_nav,
             },
             {
-                "id": "proofs-other",
+                "id": "proofs-corpus",
                 "tab": "thirdparty",
-                "title": "flow-verify — Examples",
+                "title": "flow-verify — Corpus",
                 "collapsed": True,
                 "items": other_groups,
             },
@@ -544,7 +569,14 @@ def build_search_index(lib_rows: list[dict], ex_rows: list[dict]) -> None:
         title = title or path.stem
         body = re.sub(r"[#*`\[\]()]", " ", text)
         body = re.sub(r"\s+", " ", body)[:2000]
-        entries.append({"path": wiki_path, "title": title, "text": body})
+        entries.append(
+            {
+                "path": wiki_path,
+                "title": title,
+                "text": body,
+                "category": page_category(wiki_path),
+            }
+        )
 
     for md in OUT.rglob("*.md"):
         if "flow-verify/proofs" in md.as_posix():
@@ -560,10 +592,51 @@ def build_search_index(lib_rows: list[dict], ex_rows: list[dict]) -> None:
                     "path": row["wiki_path"],
                     "title": row["title"],
                     "text": (row["summary"] + " " + text[:500]).strip(),
+                    "category": "proof",
                 }
             )
 
     (OUT / "search-index.json").write_text(json.dumps(entries, indent=2), encoding="utf-8")
+
+
+def write_llms_txt() -> None:
+    """Machine-readable doc index (Mojo-style llms.txt)."""
+    lines = [
+        "# Flow Programming Language Documentation",
+        "",
+        "> https://abhishek-shivakumar.com/transpile/",
+        "",
+        "## Start",
+        "- [Home](wiki-home.md): Language overview and quick links",
+        "- [Quick Start](getting-started.md): Install and first program",
+        "- [Comparison](comparison.md): Flow vs C, Rust, Zig, Mojo",
+        "- [Interactive Tutorials](tutorials/index.html): Browser lessons",
+        "",
+        "## Language Reference",
+        "- [Language Spec](LANGUAGE_SPEC.md)",
+        "- [Grammar](language/grammar.md)",
+        "- [Types](language/types.md)",
+        "- [Functions](language/functions.md)",
+        "- [Modules](language/modules.md)",
+        "",
+        "## Standard Library",
+        "- [API Reference](library/stdlib-reference.md)",
+        "",
+        "## Tutorials",
+        "- [Beginner](tutorials/beginner.md)",
+        "- [Intermediate](tutorials/intermediate.md)",
+        "- [Advanced](tutorials/advanced.md)",
+        "",
+        "## Third-Party",
+        "- [flow-verify](third-party/flow-verify.md): Formal math library (optional)",
+        "- [Proof Catalog](third-party/flow-verify-catalog.md)",
+        "",
+        "## Tooling",
+        "- [Development](DEVELOPMENT.md)",
+        "",
+        "Append `.md` to any doc path for raw markdown, e.g. `getting-started.md`.",
+    ]
+    (OUT / "llms.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def copy_site_shell() -> None:
@@ -581,9 +654,17 @@ def copy_site_shell() -> None:
         if src.exists():
             shutil.copy2(src, OUT / name)
 
+    vendor_src = SITE / "vendor"
+    if vendor_src.exists():
+        copy_tree(vendor_src, OUT / "vendor")
+
     tutorials_src = SITE / "tutorials"
     if tutorials_src.exists():
-        copy_tree(tutorials_src, OUT / "tutorials")
+        out_tutorials = OUT / "tutorials"
+        out_tutorials.mkdir(parents=True, exist_ok=True)
+        for item in tutorials_src.iterdir():
+            if item.is_file():
+                shutil.copy2(item, out_tutorials / item.name)
 
 
 def main() -> None:
@@ -603,6 +684,7 @@ def main() -> None:
     build_search_index(lib_rows, ex_rows)
     copy_site_shell()
     build_tutorial_exercises()
+    write_llms_txt()
 
     total = len(lib_rows) + len(ex_rows)
     print(f"Wiki built → {OUT}")
