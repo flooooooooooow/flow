@@ -7,8 +7,18 @@ let currentPath = null;
 let activeTab = 'all';
 let flatNav = [];
 let selectedVersion = null;
+let searchFilter = 'all';
 
 const VERSION_STORAGE_KEY = 'flow-wiki-version';
+
+const SEARCH_CATEGORIES = [
+    { id: 'all', label: 'All' },
+    { id: 'guide', label: 'Guides' },
+    { id: 'reference', label: 'Reference' },
+    { id: 'tutorial', label: 'Tutorials' },
+    { id: 'proof', label: 'Proofs' },
+    { id: 'tooling', label: 'Tooling' },
+];
 
 marked.setOptions({
     gfm: true,
@@ -393,6 +403,7 @@ async function loadDoc(path) {
             highlightCode(content);
         } else {
             content.innerHTML = marked.parse(text);
+            transformAdmonitions(content);
             annotateChangelogHeadings(content);
             wireInternalLinks(content, path);
             renderMath(content);
@@ -432,12 +443,56 @@ async function loadDoc(path) {
             }
         }
 
+        document.body.classList.toggle('page-home', path === 'wiki-home.md');
+        if (path === 'wiki-home.md') {
+            const hero = content.querySelector('.wiki-hero');
+            const h1 = content.querySelector('h1');
+            if (hero && h1) h1.remove();
+        }
+
         history.replaceState(null, '', `#${encodeURIComponent(path)}`);
         document.title = `${displayTitle} — Flow Docs`;
         window.scrollTo({ top: 0, behavior: 'instant' });
     } catch (err) {
-        content.innerHTML = `<p class="error-msg">Could not load <code>${escapeHtml(path)}</code>: ${escapeHtml(err.message)}</p>`;
+        document.body.classList.remove('page-home');
+        content.innerHTML = renderNotFound(path, err.message);
     }
+}
+
+function transformAdmonitions(container) {
+    const types = ['note', 'tip', 'warning', 'important', 'caution'];
+    container.querySelectorAll('blockquote').forEach((bq) => {
+        const first = bq.querySelector('p');
+        if (!first) return;
+        const m = first.textContent.match(/^\[!(note|tip|warning|important|caution)\]\s*(.*)$/i);
+        if (!m) return;
+        const kind = m[1].toLowerCase();
+        const title = m[2].trim() || kind;
+        first.remove();
+        const body = document.createElement('div');
+        body.className = 'admonition-body';
+        while (bq.firstChild) body.appendChild(bq.firstChild);
+        const wrap = document.createElement('div');
+        wrap.className = `admonition admonition-${kind}`;
+        wrap.innerHTML = `<div class="admonition-title">${escapeHtml(title)}</div>`;
+        wrap.appendChild(body);
+        bq.replaceWith(wrap);
+    });
+}
+
+function renderNotFound(path, message) {
+    return `
+        <div class="not-found-panel">
+            <h2>Page not found</h2>
+            <p>Could not load <code>${escapeHtml(path)}</code>${message ? ` — ${escapeHtml(message)}` : ''}.</p>
+            <div class="not-found-links">
+                <a href="#" class="wiki-cta wiki-cta-primary" data-goto="wiki-home.md">Home</a>
+                <a href="#" class="wiki-cta" data-goto="getting-started.md">Quick Start</a>
+                <a href="#" class="wiki-cta" data-goto="tutorials/beginner.md">Tutorials</a>
+                <a href="#" class="wiki-cta" data-goto="third-party/flow-verify-catalog.md">Proof catalog</a>
+            </div>
+        </div>
+    `;
 }
 
 function resolveRelative(base, href) {
@@ -481,7 +536,26 @@ function openSearch() {
     const input = document.getElementById('searchInput');
     input.value = '';
     input.focus();
+    renderSearchFilters();
     renderSearchResults('');
+}
+
+function renderSearchFilters() {
+    const el = document.getElementById('searchFilters');
+    if (!el) return;
+    el.innerHTML = '';
+    for (const cat of SEARCH_CATEGORIES) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'search-filter' + (searchFilter === cat.id ? ' active' : '');
+        btn.textContent = cat.label;
+        btn.addEventListener('click', () => {
+            searchFilter = cat.id;
+            renderSearchFilters();
+            renderSearchResults(document.getElementById('searchInput').value);
+        });
+        el.appendChild(btn);
+    }
 }
 
 function closeSearch() {
@@ -504,13 +578,15 @@ function renderSearchResults(query) {
             return { entry, score };
         })
         .filter((h) => h.score > 0)
+        .filter((h) => searchFilter === 'all' || h.entry.category === searchFilter)
         .sort((a, b) => b.score - a.score)
         .slice(0, 12);
 
     for (const { entry } of hits) {
         const li = document.createElement('li');
         const btn = document.createElement('button');
-        btn.innerHTML = `<span class="result-title">${escapeHtml(entry.title)}</span><span class="result-path">${escapeHtml(entry.path)}</span>`;
+        const cat = entry.category ? `<span class="result-cat">${escapeHtml(entry.category)}</span>` : '';
+        btn.innerHTML = `${cat}<span class="result-title">${escapeHtml(entry.title)}</span><span class="result-path">${escapeHtml(entry.path)}</span>`;
         btn.addEventListener('click', () => {
             closeSearch();
             loadDoc(entry.path);
@@ -569,6 +645,13 @@ function bindEvents() {
             openSearch();
         }
         if (e.key === 'Escape') closeSearch();
+    });
+
+    document.getElementById('markdownContent').addEventListener('click', (e) => {
+        const link = e.target.closest('[data-goto]');
+        if (!link) return;
+        e.preventDefault();
+        loadDoc(link.dataset.goto);
     });
 
     window.addEventListener('hashchange', routeFromHash);

@@ -41,8 +41,13 @@ jobs:
           test -f build/wiki/search-index.json
           test -f build/wiki/flow-compile.js
           test -f build/wiki/tutorials/exercises.json
+          test -f build/wiki/llms.txt
+          test -f build/wiki/vendor/marked.min.js
           grep -q 'wiki.js' build/wiki/index.html
           echo "Wiki artifacts OK ($(du -sh build/wiki | cut -f1))"
+
+      - name: Check internal links
+        run: python3 scripts/check_wiki_links.py
 
       - name: Upload wiki artifact
         uses: actions/upload-artifact@v4

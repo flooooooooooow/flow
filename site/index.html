@@ -8,8 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <link rel="stylesheet" href="vendor/katex.min.css">
+    <link rel="stylesheet" href="vendor/github-dark.min.css">
     <link rel="stylesheet" href="wiki.css">
     <link rel="stylesheet" href="tutorial-runner.css">
 </head>
@@ -43,6 +43,7 @@
     <div class="search-overlay" id="searchOverlay" hidden>
         <div class="search-panel">
             <input type="search" id="searchInput" class="search-input" placeholder="Search documentation and proofs…" autocomplete="off">
+            <div class="search-filters" id="searchFilters" role="group" aria-label="Search category"></div>
             <ul class="search-results" id="searchResults"></ul>
         </div>
     </div>
@@ -61,8 +62,11 @@
                     <p class="doc-lead" id="docLead" hidden></p>
                 </header>
                 <div class="markdown-body" id="markdownContent">
-                    <p class="loading">Loading…</p>
+                    <p class="loading">Loading documentation…</p>
                 </div>
+                <noscript>
+                    <p class="error-msg">JavaScript is required for navigation. Browse <a href="wiki-home.md">wiki-home.md</a> or <a href="llms.txt">llms.txt</a>.</p>
+                </noscript>
                 <nav class="doc-pager" id="docPager" hidden></nav>
             </article>
         </div>
@@ -85,10 +89,10 @@
         <a href="https://abhishek-shivakumar.com/">abhishek-shivakumar.com</a>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="vendor/marked.min.js"></script>
+    <script src="vendor/katex.min.js"></script>
+    <script src="vendor/auto-render.min.js"></script>
+    <script src="vendor/highlight.min.js"></script>
     <script src="flow-compile.js"></script>
     <script src="tutorial-runner.js"></script>
     <script src="grammar-viewer.js"></script>

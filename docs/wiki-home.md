@@ -1,88 +1,101 @@
-# Flow Programming Language
+<div class="wiki-hero">
 
-A statically-typed, compiled language with **algebraic effects**, **automatic differentiation**, and **native graphics** — designed for audio, scientific computing, and systems programming at C-level speed.
+<p class="wiki-hero-eyebrow">Flow · v0.7</p>
 
-```flow
-function main() -> i32 {
+<h1 class="wiki-hero-title">Write with effects.<br>Compile like C.</h1>
+
+<p class="wiki-hero-lead">
+A statically-typed language for audio, ML, and systems — algebraic effects, built-in autodiff,
+and dual C / MLIR backends at native speed.
+</p>
+
+<div class="wiki-hero-actions">
+  <a href="getting-started.md" class="wiki-cta wiki-cta-primary">Install &amp; run</a>
+  <a href="tutorials/index.html" class="wiki-cta">Interactive tutorials</a>
+  <a href="comparison.md" class="wiki-cta">vs C · Rust · Zig · Mojo</a>
+</div>
+
+<pre class="wiki-hero-code"><code class="language-flow">function main() -> i32 {
+    let x: i32 = 42
     println("Hello, Flow!")
     return 0
-}
-```
+}</code></pre>
+
+</div>
+
+> [!tip] New here?
+> Start with the [5-minute quick start](getting-started.md), then open the [interactive tutorial app](tutorials/index.html) and run examples in your browser.
 
 ---
 
 ## Why Flow
 
-| Capability | What it means |
-|------------|---------------|
-| **Algebraic effects** | Swap I/O, logging, and state without rewriting call sites |
-| **Built-in autodiff** | Forward and reverse mode for ML and optimization |
-| **Dual compilation** | Portable C backend, or MLIR/LLVM for JIT and GPU |
-| **flow-verify** | Optional third-party math proof library — not part of core Flow ([docs](third-party/flow-verify.md)) |
+<div class="wiki-card-grid">
 
-Flow compiles to efficient native code. Benchmarks show performance matching hand-written C.
+<div class="wiki-card">
+<strong>Algebraic effects</strong>
+<p>Swap I/O, logging, and state without rewriting call sites. Capabilities, not globals.</p>
+</div>
+
+<div class="wiki-card">
+<strong>Built-in autodiff</strong>
+<p>Forward and reverse mode for optimization and ML — not a bolt-on library.</p>
+</div>
+
+<div class="wiki-card">
+<strong>Dual compilation</strong>
+<p>Portable C by default; MLIR/LLVM for JIT and GPU when you need it.</p>
+</div>
+
+<div class="wiki-card">
+<strong>Real-time audio</strong>
+<p>Native DSP paths, Metal graphics, and systems patterns in one language.</p>
+</div>
+
+</div>
 
 ---
 
-## Quick start
+## Start here
 
-```bash
-git clone https://github.com/abhishekshivakumar/transpile.git
-cd transpile
-./flow run examples/basics/hello_world.flow
-```
-
-**Requirements:** Python 3.8+, Clang or GCC (LLVM optional for MLIR/JIT)
-
-→ Full guide: [Getting Started](getting-started.md)
+| Path | What you'll do |
+|------|----------------|
+| [Quick Start](getting-started.md) | Install, compile, run `hello_world` |
+| [Interactive Tutorials](tutorials/index.html) | Edit &amp; run 40+ lessons in the browser |
+| [Beginner guide](tutorials/beginner.md) | Variables, functions, control flow |
+| [Playground](playground/index.html) | Free-form experiments |
+| [Comparison](comparison.md) | Flow vs C, Rust, Zig, Mojo |
 
 ---
 
-## Documentation map
+## Reference
 
-### Learn
-- [Interactive Tutorials](tutorials/index.html) — compile and run in the browser
-- [Beginner Tutorial](tutorials/beginner.md) — variables, functions, control flow
-- [Intermediate](tutorials/intermediate.md) — structs, generics, effects
-- [Advanced](tutorials/advanced.md) — GPU, autodiff, systems patterns
-
-### Reference
 - [Language Spec](LANGUAGE_SPEC.md) — complete syntax and semantics
-- [Type System](language/types.md) — primitives, generics, pointers
-- [Standard Library](library/stdlib-reference.md) — API reference
-- [Comparison](comparison.md) — Flow vs C, Rust, Zig
-
-### Third-party: flow-verify
-- [flow-verify](third-party/flow-verify.md) — formal math proof library (not core Flow)
-- [Proof catalog](third-party/flow-verify-catalog.md) — browsable index
-- [Verification spec](language/verification.md) — `theorem` / `therefore` design (library)
-
-### Tooling
-- [CLI & development](DEVELOPMENT.md) — compiler architecture
-- [Python target](python-target.md) — generate Python wheels
-- [Playground](playground/index.html) — try Flow in the browser
-
-### Documentation project
-- [Wiki strategy](wiki-strategy.md) — long-term IA, build pipeline, quality bar
-- [Wiki roadmap](wiki-roadmap.md) — phased delivery plan
-- [Language roadmap](project/language-roadmap.md) — compiler & language features
+- [Grammar](language/grammar.md) · [Formal EBNF](grammar.ebnf)
+- [Types](language/types.md) · [Functions](language/functions.md) · [Modules](language/modules.md)
+- [Standard Library](library/stdlib-reference.md)
 
 ---
 
-## Compiler backends
-
-```
-Flow source → C generator  → Clang     (portable, default)
-            → MLIR generator → LLVM/JIT (optional)
-            → Metal codegen  → GPU shaders
-```
+## Tooling
 
 ```bash
-./flow run program.flow          # compile via C
-./flow mlir program.flow         # emit MLIR
-./flow mlir-run program.flow     # compile via MLIR pipeline
-./flow jit program.flow          # JIT execution
+./flow run program.flow       # compile via C (default)
+./flow mlir program.flow      # emit MLIR
+./flow mlir-run program.flow  # MLIR pipeline
+./flow jit program.flow       # JIT execution
 ```
+
+→ [CLI &amp; development](DEVELOPMENT.md) · [Python target](python-target.md)
+
+---
+
+## Optional: flow-verify
+
+Formal math proofs live in the **third-party** [flow-verify](third-party/flow-verify.md) library — not required for everyday Flow programming.
+
+- [Proof catalog](third-party/flow-verify-catalog.md) — browse 1000+ stepped proofs
+- [Euclid Books I–VI](third-party/flow-verify/euclid-book-i.md) — Elements corpus
 
 ---
 
@@ -90,7 +103,7 @@ Flow source → C generator  → Clang     (portable, default)
 
 | | |
 |---|---|
-| Version | 0.7.0 ([changelog](project/CHANGELOG.md) · [all releases](releases.md)) |
+| Version | 0.7.0 ([changelog](project/CHANGELOG.md)) |
 | License | MIT |
 | Repository | [github.com/abhishekshivakumar/transpile](https://github.com/abhishekshivakumar/transpile) |
-| Roadmap | [What's Next](NEXT.md) |
+| Roadmap | [Language](project/language-roadmap.md) · [Wiki](wiki-roadmap.md) |
