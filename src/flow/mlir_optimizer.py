@@ -35,6 +35,11 @@ class MLIROptimizer:
         self.mlir_opt = mlir_opt_path
         self._opt_capable: Optional[bool] = None
 
+    @staticmethod
+    def _copy_if_different(src: str, dst: str) -> None:
+        if Path(src).resolve() != Path(dst).resolve():
+            shutil.copyfile(src, dst)
+
     def _toolchain_supports_flow_mlir(self) -> bool:
         """Return True when mlir-opt can parse FLOW's func/arith dialect mix."""
         if self._opt_capable is not None:
@@ -112,7 +117,7 @@ class MLIROptimizer:
         pipeline = f"builtin.module(func.func({','.join(pipeline_parts)}))"
 
         if not self._toolchain_supports_flow_mlir():
-            shutil.copyfile(input_mlir, output_mlir)
+            self._copy_if_different(input_mlir, output_mlir)
             return 0
 
         # Run mlir-opt with optimization pipeline
@@ -131,7 +136,7 @@ class MLIROptimizer:
                 err = result.stderr or ""
                 # Ubuntu mlir-14 packages sometimes ship mlir-opt without the Func dialect.
                 if "func.func" in err and "unknown" in err:
-                    shutil.copyfile(input_mlir, output_mlir)
+                    self._copy_if_different(input_mlir, output_mlir)
                     self._opt_capable = False
                     return 0
                 print(f"MLIR optimization failed: {err}", file=sys.stderr)
