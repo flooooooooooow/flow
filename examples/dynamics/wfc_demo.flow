@@ -1,0 +1,35 @@
+# Wave Function Collapse on a tiny tile grid
+import "stdlib/dynamics/wfc.flow"
+
+function main() -> i32 {
+    let w: i32 = 4
+    let h: i32 = 4
+    let tiles: i32 = 3
+    let cells: array<i32, 16> = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+    let opts: array<i32, 48> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    for i in 0 to 16 {
+        cells[i] = -1
+    }
+    for i in 0 to 48 {
+        opts[i] = 1
+    }
+    cells[0] = 1
+    let grid: WFCGrid = WFCGrid { width: w, height: h, cells: cells, options: opts }
+    wfc_propagate(grid, tiles)
+    let mut seed: i32 = 7
+    let mut steps: i32 = 0
+    while wfc_step(grid, tiles, seed) == 1 and steps < 20 {
+        seed = seed + 13
+        steps = steps + 1
+    }
+    let mut collapsed: i32 = 0
+    for i in 0 to 16 {
+        if cells[i] >= 0 {
+            collapsed = collapsed + 1
+        }
+    }
+    if collapsed < 8 {
+        return 1
+    }
+    return 0
+}

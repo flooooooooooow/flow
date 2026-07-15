@@ -1,0 +1,80 @@
+# Dynamical system DSL types (declarative struct syntax)
+# Import: import "stdlib/dynamics/core.flow"
+#
+# Example:
+#   let sys: DynamicalSystem = dsys_discrete(n: 2, m: 1, dt: 0.1, A: A, B: B, C: C)
+#   let h: Horizon = horizon_finite(40)
+#   let t: TransformSpec = transform_similarity(T)
+
+import "stdlib/dynamics/linalg.flow"
+
+# kind: 0 = discrete x[k+1] = A x + B u,  1 = continuous x' = A x + B u
+struct DynamicalSystem {
+    n: i32,
+    m: i32,
+    p: i32,
+    dt: f64,
+    kind: i32,
+    A: Matrix,
+    B: Matrix,
+    C: Matrix
+}
+
+# finite=1 → Gramian/LQR over N steps; finite=0 → infinite horizon (gamma discount)
+struct Horizon {
+    finite: i32,
+    steps: i32,
+    gamma: f64
+}
+
+# kind: 0 identity, 1 similarity x = T z, 2 modal (diagonalizing, user supplies T)
+struct TransformSpec {
+    kind: i32,
+    T: Matrix,
+    T_inv: Matrix
+}
+
+function horizon_finite(steps: i32) -> Horizon {
+    return Horizon { finite: 1, steps: steps, gamma: 1.0 }
+}
+
+function horizon_infinite(gamma: f64) -> Horizon {
+    return Horizon { finite: 0, steps: 0, gamma: gamma }
+}
+
+function dsys_discrete(n: i32, m: i32, p: i32, dt: f64, A: Matrix, B: Matrix, C: Matrix) -> DynamicalSystem {
+    return DynamicalSystem { n: n, m: m, p: p, dt: dt, kind: 0, A: A, B: B, C: C }
+}
+
+function dsys_continuous(n: i32, m: i32, p: i32, dt: f64, A: Matrix, B: Matrix, C: Matrix) -> DynamicalSystem {
+    return DynamicalSystem { n: n, m: m, p: p, dt: dt, kind: 1, A: A, B: B, C: C }
+}
+
+function transform_identity(T_buf: ptr<f64>, n: i32) -> TransformSpec {
+    let T: Matrix = matrix_identity(T_buf, n)
+    return TransformSpec { kind: 0, T: T, T_inv: T }
+}
+
+function transform_similarity(T: Matrix, T_inv: Matrix) -> TransformSpec {
+    return TransformSpec { kind: 1, T: T, T_inv: T_inv }
+}
+
+# Continuous → discrete via Euler: Ad = I + dt A, Bd = dt B
+function dsys_euler_discretize(
+    sys: DynamicalSystem,
+    Ad_buf: ptr<f64>,
+    Bd_buf: ptr<f64>,
+    id_buf: ptr<f64>,
+    scaled_buf: ptr<f64>
+) -> DynamicalSystem {
+    let n: i32 = sys.n
+    let m: i32 = sys.m
+    let I: Matrix = matrix_identity(id_buf, n)
+    let A_scaled: Matrix = matrix_zeros(scaled_buf, n, n)
+    matrix_scale(sys.A, sys.dt, A_scaled)
+    let Ad: Matrix = matrix_zeros(Ad_buf, n, n)
+    matrix_add(I, A_scaled, Ad)
+    let Bd: Matrix = matrix_zeros(Bd_buf, n, m)
+    matrix_scale(sys.B, sys.dt, Bd)
+    return dsys_discrete(n, m, sys.p, sys.dt, Ad, Bd, sys.C)
+}

@@ -1,0 +1,85 @@
+# Genetic algorithm for feedback gain search
+# Import: import "stdlib/dynamics/ga.flow"
+
+import "stdlib/dynamics/state_space.flow"
+
+struct GAConfig {
+    population: i32,
+    generations: i32,
+    horizon: i32,
+    mutation: f64
+}
+
+function ga_rollout_cost(sys: DynamicalSystem, k1: f64, k2: f64, steps: i32) -> f64 {
+    let n: i32 = sys.n
+    let x: array<f64, 8> = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let xn: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut cost: f64 = 0.0
+    for t in 0 to steps {
+        u[0] = 0.0 - k1 * x[0] - k2 * x[1]
+        cost = cost + x[0] * x[0] + x[1] * x[1] + 0.1 * u[0] * u[0]
+        state_step(sys, x, u, xn)
+        vec_copy(xn, x, n)
+    }
+    return cost
+}
+
+function ga_hash(seed: i32) -> f64 {
+    let s: i32 = seed * 1103515245 + 12345
+    let v: i32 = s / 65536
+    if v < 0 { v = 0 - v }
+    return (v % 1000) / 1000.0
+}
+
+function ga_mutate(val: f64, scale: f64, seed: i32) -> f64 {
+    let noise: f64 = ga_hash(seed) * 2.0 - 1.0
+    return val + scale * noise
+}
+
+function ga_evolve_control(
+    sys: DynamicalSystem,
+    steps: i32,
+    cfg: GAConfig,
+    k1_pop: ptr<f64>,
+    k2_pop: ptr<f64>,
+    fit_pop: ptr<f64>,
+    best_k1: ptr<f64>,
+    best_k2: ptr<f64>
+) -> f64 {
+    let pop_n: i32 = cfg.population
+    let mut gen: i32 = 0
+    while gen < cfg.generations {
+        for i in 0 to pop_n {
+            let fit: f64 = ga_rollout_cost(sys, k1_pop[i], k2_pop[i], steps)
+            fit_pop[i] = 0.0 - fit
+        }
+        let mut best_i: i32 = 0
+        for i in 1 to pop_n {
+            if fit_pop[i] > fit_pop[best_i] {
+                best_i = i
+            }
+        }
+        let elite_k1: f64 = k1_pop[best_i]
+        let elite_k2: f64 = k2_pop[best_i]
+        for i in 0 to pop_n {
+            if i == 0 {
+                k1_pop[i] = elite_k1
+                k2_pop[i] = elite_k2
+            } else {
+                k1_pop[i] = ga_mutate(elite_k1, cfg.mutation, gen * 97 + i)
+                k2_pop[i] = ga_mutate(elite_k2, cfg.mutation, gen * 131 + i)
+            }
+        }
+        gen = gen + 1
+    }
+    let mut best_i: i32 = 0
+    for i in 1 to pop_n {
+        if fit_pop[i] > fit_pop[best_i] {
+            best_i = i
+        }
+    }
+    best_k1[0] = k1_pop[best_i]
+    best_k2[0] = k2_pop[best_i]
+    return fit_pop[best_i]
+}
