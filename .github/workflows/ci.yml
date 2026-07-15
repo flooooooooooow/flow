@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
     paths:
       - 'src/**'
       - 'tests/**'
@@ -11,12 +11,13 @@ on:
       - 'runtime/**'
       - 'flow'
       - 'flow.toml'
-      - '.github/workflows/**'
+      - '.github/**'
       - 'pyproject.toml'
       - 'requirements.txt'
       - 'requirements.lock'
+      - 'scripts/**'
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
     paths:
       - 'src/**'
       - 'tests/**'
@@ -25,192 +26,236 @@ on:
       - 'runtime/**'
       - 'flow'
       - 'flow.toml'
-      - '.github/workflows/**'
+      - '.github/**'
       - 'pyproject.toml'
       - 'requirements.txt'
       - 'requirements.lock'
+      - 'scripts/**'
 
-# Restrict token permissions to read-only (fixes #89)
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
-  test:
-    name: Test Suite
+  changes:
+    name: Detect changes
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # Only test on Ubuntu (free/cheap) with latest Python version
-        # macOS runners cost 10x more - skip them for private repos
-        python-version: ['3.11']
-
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+      tests: ${{ steps.filter.outputs.tests }}
+      examples: ${{ steps.filter.outputs.examples }}
+      libs: ${{ steps.filter.outputs.libs }}
+      runtime: ${{ steps.filter.outputs.runtime }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+      deps: ${{ steps.filter.outputs.deps }}
     steps:
-    - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-    - name: Detect changed files
-      uses: dorny/paths-filter@v4
-      id: changes
-      with:
-        filters: |
-          src:
-            - 'src/**'
-          tests:
-            - 'tests/**'
-          examples:
-            - 'examples/**'
-          libs:
-            - 'lib/**'
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
-
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.lock
-
-    - name: Install LLVM, Clang, and MLIR tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y clang llvm lld mlir-14-tools
-        # Create symlink for mlir-opt if needed
-        if [ -f /usr/bin/mlir-opt-14 ] && [ ! -f /usr/local/bin/mlir-opt ]; then
-          sudo ln -sf /usr/bin/mlir-opt-14 /usr/local/bin/mlir-opt
-        fi
-
-    - name: Verify setup
-      run: |
-        python --version
-        clang --version
-        mlir-opt --version || echo "mlir-opt not available"
-        echo "PYTHONPATH=src" >> $GITHUB_ENV
-
-    - name: Run Tier 1 tests (transpile only)
-      if: steps.changes.outputs.src == 'true' || steps.changes.outputs.tests == 'true' || steps.changes.outputs.libs == 'true'
-      run: |
-        chmod +x ./flow
-        set -x  # Show commands being executed
-        ./flow test --tier1 2>&1 | tee test_output.log
-        exit ${PIPESTATUS[0]}
-
-    - name: Run Tier 2 tests (transpile + compile)
-      if: steps.changes.outputs.src == 'true' || steps.changes.outputs.tests == 'true'
-      run: |
-        ./flow test --tier2
-
-    - name: Run Python unit tests
-      if: steps.changes.outputs.src == 'true' || steps.changes.outputs.tests == 'true'
-      run: |
-        PYTHONPATH=src pytest tests/ -m "not slow" -v --tb=short
-
-    - name: Run example programs
-      if: steps.changes.outputs.src == 'true' || steps.changes.outputs.examples == 'true'
-      run: |
-        ./flow run examples/basics/hello_world.flow
-        ./flow compile examples/basics/fibonacci.flow
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            src:
+              - 'src/**'
+            tests:
+              - 'tests/**'
+            examples:
+              - 'examples/**'
+            libs:
+              - 'lib/**'
+            runtime:
+              - 'runtime/**'
+            workflow:
+              - '.github/**'
+              - 'flow'
+              - 'scripts/**'
+            deps:
+              - 'requirements.lock'
+              - 'requirements.txt'
+              - 'pyproject.toml'
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
-
+    needs: changes
+    if: |
+      needs.changes.outputs.src == 'true' ||
+      needs.changes.outputs.workflow == 'true' ||
+      needs.changes.outputs.deps == 'true'
     steps:
-    - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
+      - uses: ./.github/actions/setup-python
 
-    - name: Install lint dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.lock
-        sudo apt-get update
-        sudo apt-get install -y shellcheck
+      - uses: ./.github/actions/install-toolchain
+        with:
+          shellcheck: 'true'
 
-    - name: Run Ruff
-      run: |
-        ruff check src
+      - name: Ruff
+        run: ruff check src
 
-    - name: Run Mypy (best effort)
-      run: |
-        mypy src || true
+      - name: Mypy (best effort)
+        if: needs.changes.outputs.src == 'true'
+        run: mypy src || true
 
-    - name: Run Shellcheck
-      run: |
-        shellcheck flow scripts/*.sh
-
-    - name: Check Python syntax
-      run: |
-        python -m py_compile src/flow/parser.py
-        python -m py_compile src/flow/c_generator.py
-        python -m py_compile src/flow/transpiler.py
-        python -m py_compile src/flow/type_checker.py
-        python -m py_compile src/flow/mlir_generator.py
-        python -m py_compile src/flow/monomorphize.py
-        python -m py_compile src/flow/module_resolver.py
+      - name: Shellcheck
+        if: needs.changes.outputs.workflow == 'true'
+        run: shellcheck flow scripts/*.sh
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-
+    needs: changes
+    if: |
+      needs.changes.outputs.src == 'true' ||
+      needs.changes.outputs.deps == 'true'
     steps:
-    - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
+      - uses: ./.github/actions/setup-python
 
-    - name: Install security tools
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.lock
+      - name: Bandit
+        if: needs.changes.outputs.src == 'true'
+        run: bandit -r src -ll
 
-    - name: Run Bandit
-      run: |
-        bandit -r src -ll
+      - name: pip-audit
+        run: pip-audit -r requirements.lock
 
-    - name: Run pip-audit
-      run: |
-        pip-audit -r requirements.lock
+  flow-tier2:
+    name: FLOW tier-2
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.src == 'true' ||
+      needs.changes.outputs.tests == 'true' ||
+      needs.changes.outputs.libs == 'true' ||
+      needs.changes.outputs.runtime == 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-python
+
+      - uses: ./.github/actions/install-toolchain
+        with:
+          mlir: 'true'
+
+      - name: Tier 2 (transpile + clang)
+        env:
+          PYTHONPATH: src
+        run: |
+          chmod +x ./flow
+          # Tier 2 already transpiles; tier 1 was redundant (~2× work).
+          ./flow test --tier2
+
+  pytest:
+    name: Python tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.src == 'true' ||
+      needs.changes.outputs.tests == 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-python
+
+      - name: Pytest (fast)
+        env:
+          PYTHONPATH: src
+          PYTEST_ADDOPTS: --tb=short -q
+        run: pytest tests/ -m "not slow"
+
+  flow-examples:
+    name: Example smoke
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.src == 'true' ||
+      needs.changes.outputs.examples == 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-python
+
+      - name: hello_world + fibonacci
+        env:
+          PYTHONPATH: src
+        run: |
+          chmod +x ./flow
+          ./flow run examples/basics/hello_world.flow
+          ./flow compile examples/basics/fibonacci.flow
 
   benchmarks:
     name: Benchmarks (informational)
     runs-on: ubuntu-latest
-    needs: test
-    # Only run benchmarks on pushes to main, not on every PR
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # Benchmarks are informational and should not block merges
     continue-on-error: true
-
     steps:
-    - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
+      - uses: ./.github/actions/setup-python
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y clang
-        pip install -r requirements.lock
+      - name: Fibonacci benchmark
+        env:
+          PYTHONPATH: src
+        run: |
+          chmod +x ./flow
+          ./flow compile benchmarks/suite/flow/01_fibonacci.flow
+          ./build/01_fibonacci
 
-    - name: Set up environment
-      run: |
-        echo "PYTHONPATH=src" >> $GITHUB_ENV
-
-    - name: Run benchmarks
-      run: |
-        chmod +x ./flow
-        # Run fibonacci benchmark (spmv requires too much stack space for CI)
-        ./flow compile benchmarks/suite/flow/01_fibonacci.flow && ./build/01_fibonacci
+  ci-ok:
+    name: CI
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - lint
+      - security
+      - flow-tier2
+      - pytest
+      - flow-examples
+    if: always()
+    steps:
+      - name: Require passing jobs
+        run: |
+          fail=0
+          check() {
+            local name="$1"
+            local result="$2"
+            local required="$3"
+            if [ "$required" != "true" ]; then
+              echo "↷ $name (skipped)"
+              return
+            fi
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "✗ $name ($result)"
+              fail=1
+            else
+              echo "✓ $name"
+            fi
+          }
+          src='${{ needs.changes.outputs.src }}'
+          tests='${{ needs.changes.outputs.tests }}'
+          examples='${{ needs.changes.outputs.examples }}'
+          libs='${{ needs.changes.outputs.libs }}'
+          runtime='${{ needs.changes.outputs.runtime }}'
+          workflow='${{ needs.changes.outputs.workflow }}'
+          deps='${{ needs.changes.outputs.deps }}'
+          lint_req=false
+          if [ "$src" = "true" ] || [ "$workflow" = "true" ] || [ "$deps" = "true" ]; then lint_req=true; fi
+          sec_req=false
+          if [ "$src" = "true" ] || [ "$deps" = "true" ]; then sec_req=true; fi
+          tier_req=false
+          if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
+          pytest_req=false
+          if [ "$src" = "true" ] || [ "$tests" = "true" ]; then pytest_req=true; fi
+          ex_req=false
+          if [ "$src" = "true" ] || [ "$examples" = "true" ]; then ex_req=true; fi
+          check lint '${{ needs.lint.result }}' "$lint_req"
+          check security '${{ needs.security.result }}' "$sec_req"
+          check flow-tier2 '${{ needs.flow-tier2.result }}' "$tier_req"
+          check pytest '${{ needs.pytest.result }}' "$pytest_req"
+          check flow-examples '${{ needs.flow-examples.result }}' "$ex_req"
+          exit $fail
