@@ -1,0 +1,208 @@
+# GA + dynamical systems unified analysis
+# Import: import "stdlib/dynamics/ga_analysis.flow"
+#
+# Treats three coupled systems with the same DynamicalSystem / Horizon types:
+#   1. Plant (open loop)           — controllability, Gramians, spectral radius
+#   2. Closed loop (GA solution)   — stability attractor, reachable energy
+#   3. GA fitness trajectory       — convergence dynamics over generations
+
+import "stdlib/dynamics/ga.flow"
+import "stdlib/dynamics/gramian.flow"
+
+extern {
+    function sqrt(x: f64) -> f64
+}
+
+struct GAAnalysisReport {
+    plant_controllable: i32,
+    plant_spectral_radius: f64,
+    closed_spectral_radius: f64,
+    gramian_open_finite: f64,
+    gramian_open_infinite: f64,
+    closed_loop_energy: f64,
+    baseline_cost: f64,
+    evolved_cost: f64,
+    fitness_drop: f64,
+    convergence_gen: i32,
+    stable_closed_loop: i32
+}
+
+# Closed loop x+ = (A - B K) x  for u = -K x,  B is n×1, K = [k1, k2]
+function ga_closed_loop_matrix(
+    sys: DynamicalSystem,
+    k1: f64,
+    k2: f64,
+    acl_buf: ptr<f64>,
+    bk_buf: ptr<f64>
+) -> DynamicalSystem {
+    let n: i32 = sys.n
+    let K: array<f64, 2> = [k1, k2]
+    let BK: Matrix = matrix_zeros(bk_buf, n, n)
+    for i in 0 to n {
+        for j in 0 to n {
+            let b_i: f64 = matrix_get(sys.B, i, 0)
+            matrix_set(BK, i, j, b_i * K[j])
+        }
+    }
+    let Acl: Matrix = matrix_zeros(acl_buf, n, n)
+    matrix_sub(sys.A, BK, Acl)
+    let zero_b: Matrix = matrix_zeros(bk_buf, n, 1)
+    return dsys_discrete(n, 0, sys.p, sys.dt, Acl, zero_b, sys.C)
+}
+
+function matrix_spectral_radius_2x2(m: Matrix) -> f64 {
+    let tr: f64 = matrix_get(m, 0, 0) + matrix_get(m, 1, 1)
+    let det: f64 = matrix_get(m, 0, 0) * matrix_get(m, 1, 1) - matrix_get(m, 0, 1) * matrix_get(m, 1, 0)
+    let disc: f64 = tr * tr - 4.0 * det
+    if disc < 0.0 {
+        let re: f64 = tr / 2.0
+        let im: f64 = sqrt(0.0 - disc) / 2.0
+        return sqrt(re * re + im * im)
+    }
+    let s: f64 = sqrt(disc)
+    let l1: f64 = (tr + s) / 2.0
+    let l2: f64 = (tr - s) / 2.0
+    let a1: f64 = l1
+    if a1 < 0.0 { a1 = 0.0 - a1 }
+    let a2: f64 = l2
+    if a2 < 0.0 { a2 = 0.0 - a2 }
+    if a1 > a2 { return a1 }
+    return a2
+}
+
+function ga_evolve_traced(
+    sys: DynamicalSystem,
+    steps: i32,
+    cfg: GAConfig,
+    k1_pop: ptr<f64>,
+    k2_pop: ptr<f64>,
+    fit_pop: ptr<f64>,
+    best_k1: ptr<f64>,
+    best_k2: ptr<f64>,
+    cost_history: ptr<f64>
+) -> f64 {
+    let pop_n: i32 = cfg.population
+    let mut gen: i32 = 0
+    while gen < cfg.generations {
+        let mut best_i: i32 = 0
+        for i in 0 to pop_n {
+            let cost: f64 = ga_rollout_cost(sys, k1_pop[i], k2_pop[i], steps)
+            fit_pop[i] = 0.0 - cost
+            if i == 0 || fit_pop[i] > fit_pop[best_i] {
+                best_i = i
+            }
+        }
+        cost_history[gen] = 0.0 - fit_pop[best_i]
+        let elite_k1: f64 = k1_pop[best_i]
+        let elite_k2: f64 = k2_pop[best_i]
+        for i in 0 to pop_n {
+            if i == 0 {
+                k1_pop[i] = elite_k1
+                k2_pop[i] = elite_k2
+            } else {
+                k1_pop[i] = ga_mutate(elite_k1, cfg.mutation, gen * 97 + i)
+                k2_pop[i] = ga_mutate(elite_k2, cfg.mutation, gen * 131 + i)
+            }
+        }
+        gen = gen + 1
+    }
+    let mut best_i: i32 = 0
+    for i in 1 to pop_n {
+        if fit_pop[i] > fit_pop[best_i] {
+            best_i = i
+        }
+    }
+    best_k1[0] = k1_pop[best_i]
+    best_k2[0] = k2_pop[best_i]
+    return fit_pop[best_i]
+}
+
+function ga_closed_loop_energy(closed: DynamicalSystem, steps: i32) -> f64 {
+    let n: i32 = closed.n
+    let x: array<f64, 8> = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let xn: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut energy: f64 = 0.0
+    for t in 0 to steps {
+        energy = energy + x[0] * x[0] + x[1] * x[1]
+        state_step(closed, x, u, xn)
+        vec_copy(xn, x, n)
+    }
+    return energy
+}
+
+function ga_fitness_convergence_gen(cost_history: ptr<f64>, generations: i32, tol: f64) -> i32 {
+    if generations < 2 {
+        return 0
+    }
+    let final_c: f64 = cost_history[generations - 1]
+    for g in 1 to generations {
+        let prev: f64 = cost_history[generations - 1 - g]
+        let mut delta: f64 = prev - final_c
+        if delta < 0.0 { delta = 0.0 - delta }
+        if delta < tol {
+            return g
+        }
+    }
+    return generations
+}
+
+function ga_analyze_control_search(
+    plant: DynamicalSystem,
+    steps: i32,
+    cfg: GAConfig,
+    k1_pop: ptr<f64>,
+    k2_pop: ptr<f64>,
+    fit_pop: ptr<f64>,
+    best_k1: ptr<f64>,
+    best_k2: ptr<f64>,
+    cost_history: ptr<f64>,
+    ctrl_buf: ptr<f64>,
+    ap_buf: ptr<f64>,
+    blk_buf: ptr<f64>,
+    na_buf: ptr<f64>,
+    rk_buf: ptr<f64>,
+    wf_buf: ptr<f64>,
+    wi_buf: ptr<f64>,
+    bbt_buf: ptr<f64>,
+    sa_buf: ptr<f64>,
+    sb_buf: ptr<f64>,
+    acl_buf: ptr<f64>,
+    bk_buf: ptr<f64>
+) -> GAAnalysisReport {
+    let baseline: f64 = ga_rollout_cost(plant, 0.0, 0.0, steps)
+    ga_evolve_traced(plant, steps, cfg, k1_pop, k2_pop, fit_pop, best_k1, best_k2, cost_history)
+    let evolved: f64 = ga_rollout_cost(plant, best_k1[0], best_k2[0], steps)
+
+    let controllable: i32 = is_controllable(plant, ctrl_buf, ap_buf, blk_buf, na_buf, rk_buf)
+    let rho_open: f64 = matrix_spectral_radius_2x2(plant.A)
+
+    let closed: DynamicalSystem = ga_closed_loop_matrix(plant, best_k1[0], best_k2[0], acl_buf, bk_buf)
+    let rho_closed: f64 = matrix_spectral_radius_2x2(closed.A)
+    let stable: i32 = 0
+    if rho_closed < 1.0 {
+        stable = 1
+    }
+
+    let h_fin: Horizon = horizon_finite(steps)
+    let h_inf: Horizon = horizon_infinite(0.99)
+    let Wf_open: Matrix = gramian_finite_horizon(plant, h_fin, wf_buf, ap_buf, blk_buf, na_buf)
+    let Wi_open: Matrix = gramian_infinite_horizon(plant, h_inf, wi_buf, bbt_buf, sa_buf, sb_buf)
+    let closed_energy: f64 = ga_closed_loop_energy(closed, steps)
+
+    let conv: i32 = ga_fitness_convergence_gen(cost_history, cfg.generations, 0.05)
+
+    return GAAnalysisReport {
+        plant_controllable: controllable,
+        plant_spectral_radius: rho_open,
+        closed_spectral_radius: rho_closed,
+        gramian_open_finite: matrix_trace(Wf_open),
+        gramian_open_infinite: matrix_trace(Wi_open),
+        closed_loop_energy: closed_energy,
+        baseline_cost: baseline,
+        evolved_cost: evolved,
+        fitness_drop: baseline - evolved,
+        convergence_gen: conv,
+        stable_closed_loop: stable
+    }
+}
