@@ -1,0 +1,17 @@
+# Lorenz attractor integration + Lyapunov separation proxy
+import "stdlib/dynamics/attractor.flow"
+
+function main() -> i32 {
+    let x0: array<f64, 3> = [1.0, 1.0, 1.0]
+    let traj_a: array<f64, 300> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let traj_b: array<f64, 300> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let lyap: f64 = lyapunov_proxy(x0, 3, 100, 0.01, 1, 1e-6, traj_a, traj_b)
+    if lyap <= 0.0 {
+        return 1
+    }
+    let z: f64 = traj_a[297]
+    if z < -20.0 || z > 30.0 {
+        return 2
+    }
+    return 0
+}
