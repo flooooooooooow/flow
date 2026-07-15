@@ -1,0 +1,5 @@
+import .testlib.greeter { greet }
+
+function main() -> i32 {
+    return greet()
+}
