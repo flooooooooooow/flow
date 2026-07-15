@@ -1,0 +1,14 @@
+[package]
+name = "flow"
+version = "0.7.0"
+description = "Flow programming language"
+entry = "examples/basics/hello_world.flow"
+
+[paths]
+verify = "lib/verify"
+stdlib = "lib/stdlib"
+examples = "examples"
+
+[dependencies]
+
+[dev-dependencies]
