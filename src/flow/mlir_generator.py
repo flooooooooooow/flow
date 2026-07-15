@@ -69,11 +69,12 @@ class MLIRGenerator:
             return None
         return self._flow_type_name(self.symbol_table[func_call.name].get("return_type"))
 
+    def _is_aggregate_mlir_type(self, mlir_type: str) -> bool:
+        return self._is_tensor_struct(mlir_type) or mlir_type.startswith("!llvm.struct")
+
     def _uses_alloca_storage(self, mlir_type: str, flow_type: Any = None) -> bool:
-        """Tensor/composite locals live in dedicated alloca slots to avoid arm64 return-slot aliasing."""
-        if self._is_tensor_struct(mlir_type):
-            return True
-        return self._flow_type_name(flow_type) in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
+        """Aggregate locals live in dedicated alloca slots to avoid arm64 return-slot aliasing."""
+        return self._is_aggregate_mlir_type(mlir_type)
 
     def _emit_alloca_store(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
         ops: List[str] = []
@@ -194,6 +195,18 @@ class MLIRGenerator:
         loaded, load_ops = self._emit_alloca_load(ptr, mlir_type)
         ops.extend(load_ops)
         return loaded, ops
+
+    def _stabilize_aggregate_ssa(
+        self, value_ssa: str, mlir_type: str, callee_name: str = ""
+    ) -> tuple[str, List[str]]:
+        """Break arm64 aggregate-return stack aliasing via field copy + alloca roundtrip."""
+        if not self._is_aggregate_mlir_type(mlir_type):
+            return value_ssa, []
+        if self._is_tensor_struct(mlir_type):
+            copied, ops = self._materialize_tensor_for_call(value_ssa, mlir_type, callee_name)
+        else:
+            copied, ops = self._materialize_struct_value(value_ssa, mlir_type)
+        return self._roundtrip_alloca(copied, mlir_type, ops)
 
     def _materialize_struct_value(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
         """Copy aggregate SSA so nested struct returns do not alias callee stack slots."""
@@ -602,10 +615,7 @@ class MLIRGenerator:
                 bind_ssa = stable
                 self._tensor_stable_ssas.add(stable)
                 self._ssa_types[stable] = param_mlir
-            elif (
-                getattr(param.type, "name", None) in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
-                and ("backward" in func.name or func.name.startswith("dense") or func.name.startswith("mlp"))
-            ):
+            elif param_mlir.startswith("!llvm.struct") and not self._is_tensor_struct(param_mlir):
                 stable, mat_ops = self._materialize_struct_value(arg_ssa, param_mlir)
                 param_prologue.extend(mat_ops)
                 bind_ssa = stable
@@ -726,27 +736,18 @@ class MLIRGenerator:
             self._ssa_types[init_value] = mlir_type
 
             from_tensor_field = init_value in self._tensor_field_extracts
-            if self._is_tensor_struct(mlir_type) and (
+            if self._is_aggregate_mlir_type(mlir_type) and (
                 init_value in self._tensor_call_results
+                or init_value in self._composite_call_results
                 or from_tensor_field
             ):
                 orig_ssa = init_value
-                init_value, mat_ops = self._materialize_tensor_for_call(
-                    init_value, mlir_type, ""
-                )
+                init_value, mat_ops = self._stabilize_aggregate_ssa(init_value, mlir_type)
                 init_ops.extend(mat_ops)
                 self._tensor_call_results.discard(orig_ssa)
+                self._composite_call_results.discard(orig_ssa)
                 self._tensor_field_extracts.discard(orig_ssa)
                 self._tensor_stable_ssas.add(init_value)
-                self._ssa_types[init_value] = mlir_type
-            elif (
-                mlir_type.startswith("!llvm.struct")
-                and getattr(var_decl.type, "name", None) in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
-            ):
-                orig_ssa = init_value
-                init_value, mat_ops = self._materialize_struct_value(init_value, mlir_type)
-                init_ops.extend(mat_ops)
-                self._composite_call_results.discard(orig_ssa)
                 self._ssa_types[init_value] = mlir_type
 
             # Bind variable name to the SSA value produced by the initializer.
@@ -817,15 +818,8 @@ class MLIRGenerator:
                 value_ssa, cast_ops = self._emit_cast(value_ssa, value_type, return_type)
                 lines.extend(cast_ops)
 
-            return_type_name = getattr(self.current_function_return_type, "name", None)
-            if (
-                return_type.startswith("!llvm.struct")
-                and return_type_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
-            ):
-                value_ssa, mat_ops = self._materialize_struct_value(value_ssa, return_type)
-                lines.extend(mat_ops)
-            elif self._uses_alloca_storage(return_type, self.current_function_return_type):
-                value_ssa, mat_ops = self._roundtrip_alloca(value_ssa, return_type, [])
+            if self._is_aggregate_mlir_type(return_type):
+                value_ssa, mat_ops = self._stabilize_aggregate_ssa(value_ssa, return_type)
                 lines.extend(mat_ops)
 
             lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
@@ -2022,26 +2016,26 @@ class MLIRGenerator:
         if isinstance(field_access.object, Variable):
             var_info = self.symbol_table.get(field_access.object.name)
             flow_type = var_info.get("flow_type") if var_info else None
-            struct_name = getattr(flow_type, "name", None) if flow_type else None
+            obj_mlir = var_info.get("mlir_type") if var_info else None
+            if not obj_mlir and flow_type:
+                obj_mlir = self.flow_type_to_mlir(flow_type)
             if (
                 var_info
-                and struct_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
+                and obj_mlir
+                and obj_mlir.startswith("!llvm.struct")
+                and not self._is_tensor_struct(obj_mlir)
                 and (
                     obj_ssa in self._composite_call_results
                     or obj_ssa.startswith("%arg")
                 )
             ):
-                obj_mlir = var_info.get("mlir_type") or (
-                    self.flow_type_to_mlir(flow_type) if flow_type else None
-                )
-                if obj_mlir:
-                    orig_ssa = obj_ssa
-                    obj_ssa, mat_ops = self._materialize_struct_value(obj_ssa, obj_mlir)
-                    ops.extend(mat_ops)
-                    self._composite_call_results.discard(orig_ssa)
-                    if not orig_ssa.startswith("%arg"):
-                        var_info["ssa_name"] = obj_ssa
-                    self._ssa_types[obj_ssa] = obj_mlir
+                orig_ssa = obj_ssa
+                obj_ssa, mat_ops = self._materialize_struct_value(obj_ssa, obj_mlir)
+                ops.extend(mat_ops)
+                self._composite_call_results.discard(orig_ssa)
+                if not orig_ssa.startswith("%arg"):
+                    var_info["ssa_name"] = obj_ssa
+                self._ssa_types[obj_ssa] = obj_mlir
 
         # Try to determine the field type by walking the struct hierarchy
         field_type = self._determine_field_type(field_access)
@@ -2810,26 +2804,15 @@ class MLIRGenerator:
                 f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(cast_args)}) : ({', '.join(expected_arg_types)}) -> {ret_type}"
             )
             self._ssa_types[ssa_name] = ret_type
-            if self._is_tensor_struct(ret_type):
-                if func_call.name in self._TENSOR_POST_MATERIALIZE_CALLEES:
-                    stable, mat_ops = self._materialize_tensor_for_call(
-                        ssa_name, ret_type, func_call.name
-                    )
-                    ops.extend(mat_ops)
-                    ssa_name = stable
-                    self._ssa_types[ssa_name] = ret_type
+            if self._is_aggregate_mlir_type(ret_type):
+                stable, mat_ops = self._stabilize_aggregate_ssa(
+                    ssa_name, ret_type, func_call.name
+                )
+                ops.extend(mat_ops)
+                ssa_name = stable
+                self._ssa_types[ssa_name] = ret_type
+                if self._is_tensor_struct(ret_type):
                     self._tensor_stable_ssas.add(ssa_name)
-                else:
-                    self._tensor_call_results.add(ssa_name)
-            elif ret_type.startswith("!llvm.struct"):
-                ret_name = self._func_call_return_type_name(func_call)
-                if ret_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES:
-                    stable, mat_ops = self._materialize_struct_value(ssa_name, ret_type)
-                    ops.extend(mat_ops)
-                    ssa_name = stable
-                    self._ssa_types[ssa_name] = ret_type
-                else:
-                    self._composite_call_results.add(ssa_name)
             if callee_returns_tensor or callee_returns_composite:
                 for i, arg in enumerate(func_call.arguments):
                     if not isinstance(arg, Variable):
@@ -2839,7 +2822,6 @@ class MLIRGenerator:
                         continue
                     expected_type = expected_arg_types[i]
                     mlir_type = var_info.get("mlir_type") or expected_type
-                    struct_name = self._flow_type_name(var_info.get("flow_type"))
                     if self._is_tensor_struct(expected_type):
                         # Refresh from the call-site copy, not the variable SSA that may
                         # share the callee's aggregate return stack slot.
@@ -2853,9 +2835,9 @@ class MLIRGenerator:
                         ops.extend(self._store_aggregate_var(var_info, fresh))
                     elif (
                         expected_type.startswith("!llvm.struct")
-                        and struct_name in self._COMPOSITE_FIELD_MATERIALIZE_TYPES
+                        and not self._is_tensor_struct(expected_type)
                     ):
-                        fresh, mat_ops = self._materialize_struct_value(
+                        fresh, mat_ops = self._stabilize_aggregate_ssa(
                             cast_args[i], mlir_type
                         )
                         ops.extend(mat_ops)
