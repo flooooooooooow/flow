@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Supplementary adjacent angles with vertical pairs yield equal vertical angles.
+# @from   euclid — Elements, Book I, Proposition 15
+# @tier   derived
+
+# @means  angle alpha equals angle alpha prime.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «adjacent angles on a line sum to two right», «Geometry» «intersecting lines» «vertical angles form equal pairs»
+
+theorem «Geometry» «intersecting lines» «supplementary yields equal vertical angles» () {
+    assume «Geometry» «intersecting lines» «adjacent angles on a line sum to two right»()
+    assume «Geometry» «intersecting lines» «vertical angles form equal pairs»()
+    therefore angle_alpha == angle_alpha_prime
+}
+
+export «Geometry» «intersecting lines» «supplementary yields equal vertical angles»

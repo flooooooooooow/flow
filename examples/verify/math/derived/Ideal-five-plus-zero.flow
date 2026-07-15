@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Five plus zero is five in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  5 + 0 = 5 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «four plus zero in ideal»
+
+theorem «Ideal» «addition» «five plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(5)
+    assume «Ideal» «addition» «four plus zero in ideal»()
+    therefore 5 + 0 == 5
+}
+
+export «Ideal» «addition» «five plus zero in ideal»

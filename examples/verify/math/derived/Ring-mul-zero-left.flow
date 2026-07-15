@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero on the left annihilates ring multiplication.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  0 * r = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «addition» «zero is the left identity», «Ring» «multiplication» «one is the left identity»
+
+theorem «Ring» «multiplication» «zero on the left gives zero» (r: Ring) {
+    assume «Ring» «addition» «zero is the left identity»(r)
+    assume «Ring» «multiplication» «one is the left identity»(0)
+    therefore 0 * r == 0
+}
+
+export «Ring» «multiplication» «zero on the left gives zero»

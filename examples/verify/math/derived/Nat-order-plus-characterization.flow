@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Less-or-equal is characterized by adding a natural on the right.
+# @from   peano — https://en.wikipedia.org/wiki/Total_order
+# @tier   derived
+
+# @means  a ≤ b if and only if there exists k with a + k = b (forward: addition witness).
+# @from   peano — Landau, *Foundations of Analysis*
+# @tier   derived
+# @needs  «Nat» «addition» «adding on the right preserves order»
+
+theorem «Nat» «order» «less-or-equal means a right summand exists» (a: Nat, b: Nat, k: Nat) {
+    if a + k == b {
+        assume «Nat» «addition» «adding on the right preserves order»(0, a, b)
+        therefore a <= b
+    }
+}
+
+export «Nat» «order» «less-or-equal means a right summand exists»

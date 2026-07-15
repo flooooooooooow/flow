@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An exterior angle strictly exceeds a remote interior angle when the triangle is non-degenerate.
+# @from   euclid — Elements, Book I, Proposition 16
+# @tier   derived
+
+# @means  exterior at C is greater than angle B when angle A is positive.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «exterior at least each remote interior», «Geometry» «triangle» «third interior angle is positive»
+
+theorem «Geometry» «triangle» «exterior strictly greater remote interior» () {
+    assume «Geometry» «triangle» «exterior at least each remote interior»()
+    assume «Geometry» «triangle» «third interior angle is positive»()
+    therefore exterior_at_C > angle_B
+}
+
+export «Geometry» «triangle» «exterior strictly greater remote interior»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Eleven plus zero is eleven in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  11 + 0 = 11 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «ten plus zero in ideal»
+
+theorem «Ideal» «addition» «eleven plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(11)
+    assume «Ideal» «addition» «ten plus zero in ideal»()
+    therefore 11 + 0 == 11
+}
+
+export «Ideal» «addition» «eleven plus zero in ideal»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Corresponding angles are equal when parallel lines meet a transversal.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  corresponding angle alpha equals corresponding angle beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «alternate angles are equal», «Geometry» «intersecting lines» «vertical angles are equal»
+
+theorem «Geometry» «parallel lines» «corresponding angles are equal» () {
+    assume «Geometry» «parallel lines» «alternate angles are equal»()
+    assume «Geometry» «intersecting lines» «vertical angles are equal»()
+    therefore angle_corresponding_alpha == angle_corresponding_beta
+}
+
+export «Geometry» «parallel lines» «corresponding angles are equal»

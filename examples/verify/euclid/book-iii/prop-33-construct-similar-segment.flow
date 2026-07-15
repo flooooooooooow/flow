@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iii
+# @means  On a given straight line to construct a segment of a circle similar to a given segment.
+# @from   euclid — Elements, Book III, Proposition 33
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 24: similar segments on equal straight lines are equal», «Geometry» «Euclid Book I» «Proposition 23: copy a given angle onto a line at a point»
+
+theorem «Geometry» «Euclid Book III» «Proposition 33: to construct on a given straight line a segment similar to a given segment» () {
+    let AB = given_line
+    let template = given_segment
+    let angle = angle_of_segment
+    therefore similar_segment_on_AB_exists
+    assume «Geometry» «Euclid Book III» «Proposition 24: similar segments on equal straight lines are equal»()
+    assume «Geometry» «Euclid Book I» «Proposition 23: copy a given angle onto a line at a point»()
+    therefore similar_segment_constructed
+}

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Cardinality is monotone under union on the right.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(b) <= card(a ∪ b).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «union» «order does not matter», «Finset» «cardinality» «size is monotone under union on the left»
+
+theorem «Finset» «cardinality» «size is monotone under union on the right» (a: Finset, b: Finset) {
+    assume «Finset» «union» «order does not matter»(a, b)
+    assume «Finset» «cardinality» «size is monotone under union on the left»(b, a)
+    therefore card(b) <= card(a ∪ b)
+}
+
+export «Finset» «cardinality» «size is monotone under union on the right»

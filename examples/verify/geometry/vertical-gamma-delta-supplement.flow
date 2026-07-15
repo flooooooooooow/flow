@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Angles gamma and delta at intersecting lines are supplementary.
+# @from   euclid — Elements, Book I, Proposition 13
+# @tier   derived
+
+# @means  gamma plus delta equals two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «alpha beta supplementary», «Geometry» «intersecting lines» «adjacent vertical pairs supplementary»
+
+theorem «Geometry» «intersecting lines» «gamma delta supplementary» () {
+    assume «Geometry» «intersecting lines» «alpha beta supplementary»()
+    assume «Geometry» «intersecting lines» «adjacent vertical pairs supplementary»()
+    therefore angle_gamma + angle_delta == two_right_angles
+}
+
+export «Geometry» «intersecting lines» «gamma delta supplementary»

@@ -1,0 +1,24 @@
+# @module examples.verify.math.derived
+# @means  Reversing preserves list length.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(xs)) = len(xs).
+# @from   church/induction
+# @tier   derived
+# @needs  «List» «reverse» «reversing empty yields empty», «List» «length» «length adds under append», «List» «reverse» «reverse distributes over append»
+
+theorem «List» «length» «reverse preserves length» (xs: List) {
+    if xs == nil {
+        assume «List» «reverse» «reversing empty yields empty»()
+        assume «List» «length» «the empty list has length zero»()
+        therefore len(rev(xs)) == len(xs)
+    } else {
+        let rest = tail(xs)
+        assume «List» «length» «reverse preserves length»(rest)
+        assume «List» «reverse» «reverse distributes over append»(rest, cons(head(xs), nil))
+        therefore len(rev(xs)) == len(xs)
+    }
+}
+
+export «List» «length» «reverse preserves length»

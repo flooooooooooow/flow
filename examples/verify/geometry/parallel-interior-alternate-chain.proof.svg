@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360">
+<style>text{font-family:Georgia,serif;font-size:15px;fill:#1a1a1a}</style>
+<rect width="100%" height="100%" fill="#faf9f6"/>
+<line x1="60.0" y1="120.0" x2="420.0" y2="120.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="40.0" y1="260.0" x2="440.0" y2="260.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="120.0" y1="40.0" x2="360.0" y2="320.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="228.0" y1="126.0" x2="228.0" y2="114.0" stroke="#7f8c8d" stroke-width="1.4"/>
+<line x1="252.0" y1="126.0" x2="252.0" y2="114.0" stroke="#7f8c8d" stroke-width="1.4"/>
+<line x1="228.0" y1="266.0" x2="228.0" y2="254.0" stroke="#7f8c8d" stroke-width="1.4"/>
+<line x1="252.0" y1="266.0" x2="252.0" y2="254.0" stroke="#7f8c8d" stroke-width="1.4"/>
+<path d="M 172.0 120.0 A 28.0 28.0 0 0 1 180.2 100.2" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="161.2" y="103.9" text-anchor="middle">α</text>
+<path d="M 232.0 260.0 A 28.0 28.0 0 0 1 245.0 236.4" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="223.2" y="239.8" text-anchor="middle">α</text>
+<path d="M 228.0 120.0 A 28.0 28.0 0 0 1 217.5 141.9" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="237.9" y="138.2" text-anchor="middle">β</text>
+<path d="M 288.0 260.0 A 28.0 28.0 0 0 1 284.0 274.4" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="300.5" y="271.2" text-anchor="middle">β</text>
+<circle cx="60.0" cy="120.0" r="4.5" fill="#2c3e50"/>
+<text x="60.0" y="106.0" text-anchor="middle" font-weight="bold">P</text>
+<circle cx="420.0" cy="120.0" r="4.5" fill="#2c3e50"/>
+<text x="420.0" y="106.0" text-anchor="middle" font-weight="bold">Q</text>
+<circle cx="40.0" cy="260.0" r="4.5" fill="#2c3e50"/>
+<text x="40.0" y="246.0" text-anchor="middle" font-weight="bold">R</text>
+<circle cx="440.0" cy="260.0" r="4.5" fill="#2c3e50"/>
+<text x="440.0" y="246.0" text-anchor="middle" font-weight="bold">S</text>
+<circle cx="120.0" cy="40.0" r="4.5" fill="#2c3e50"/>
+<text x="120.0" y="60.0" text-anchor="middle" font-weight="bold">T</text>
+<circle cx="360.0" cy="320.0" r="4.5" fill="#2c3e50"/>
+<text x="360.0" y="306.0" text-anchor="middle" font-weight="bold">U</text>
+<circle cx="200.0" cy="120.0" r="4.5" fill="#2c3e50"/>
+<text x="200.0" y="106.0" text-anchor="middle" font-weight="bold">X</text>
+<circle cx="260.0" cy="260.0" r="4.5" fill="#2c3e50"/>
+<text x="260.0" y="246.0" text-anchor="middle" font-weight="bold">Y</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Parallel lines cut by a transversal — alternate interior angles are equal.</text>
+</svg>

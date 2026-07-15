@@ -1,0 +1,54 @@
+# @module verify.Finset
+# @means  Finite set algebra on Finset carriers.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   definitions-only
+
+# @means  Union with the empty set changes nothing.
+# @from   graham-knuth-patashnik
+# @tier   definition
+
+theorem «Finset» «union» «empty is the right identity» (s: Finset) {
+    therefore s ∪ empty == s
+}
+
+# @means  Union with the empty set on the left changes nothing.
+# @from   graham-knuth-patashnik
+# @tier   definition
+
+theorem «Finset» «union» «empty is the left identity» (s: Finset) {
+    therefore empty ∪ s == s
+}
+
+# @means  Union order does not matter.
+# @from   graham-knuth-patashnik
+# @tier   derived
+
+theorem «Finset» «union» «order does not matter» (a: Finset, b: Finset) {
+    therefore a ∪ b == b ∪ a
+}
+
+# @means  The empty finite set has cardinality zero.
+# @from   graham-knuth-patashnik
+# @tier   definition
+
+theorem «Finset» «cardinality» «the empty set has size zero» () {
+    therefore card(empty) == 0
+}
+
+# @means  Intersecting with the empty set yields the empty set.
+# @from   graham-knuth-patashnik
+# @tier   definition
+
+theorem «Finset» «intersection» «empty is the right annihilator» (s: Finset) {
+    therefore s ∩ empty == empty
+}
+
+# @means  Intersecting the empty set on the left yields the empty set.
+# @from   graham-knuth-patashnik
+# @tier   definition
+
+theorem «Finset» «intersection» «empty is the left annihilator» (s: Finset) {
+    therefore empty ∩ s == empty
+}
+
+export «Finset» «union» «empty is the right identity», «Finset» «union» «empty is the left identity», «Finset» «union» «order does not matter», «Finset» «cardinality» «the empty set has size zero», «Finset» «intersection» «empty is the right annihilator», «Finset» «intersection» «empty is the left annihilator»

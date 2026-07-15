@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360">
+<style>text{font-family:Georgia,serif;font-size:15px;fill:#1a1a1a}</style>
+<rect width="100%" height="100%" fill="#faf9f6"/>
+<line x1="60.0" y1="80.0" x2="420.0" y2="280.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="420.0" y1="80.0" x2="60.0" y2="280.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 215.5 166.4 A 28.0 28.0 0 0 1 264.5 166.4" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="240.0" y="138.0" text-anchor="middle">α</text>
+<path d="M 264.5 166.4 A 28.0 28.0 0 0 1 264.5 193.6" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="282.0" y="180.0" text-anchor="middle">β</text>
+<path d="M 264.5 193.6 A 28.0 28.0 0 0 1 215.5 193.6" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="240.0" y="222.0" text-anchor="middle">α′</text>
+<path d="M 215.5 193.6 A 28.0 28.0 0 0 1 215.5 166.4" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="198.0" y="180.0" text-anchor="middle">β′</text>
+<circle cx="240.0" cy="180.0" r="4.5" fill="#2c3e50"/>
+<text x="240.0" y="166.0" text-anchor="middle" font-weight="bold">O</text>
+<circle cx="60.0" cy="80.0" r="4.5" fill="#2c3e50"/>
+<text x="60.0" y="100.0" text-anchor="middle" font-weight="bold">A</text>
+<circle cx="420.0" cy="280.0" r="4.5" fill="#2c3e50"/>
+<text x="420.0" y="266.0" text-anchor="middle" font-weight="bold">B</text>
+<circle cx="420.0" cy="80.0" r="4.5" fill="#2c3e50"/>
+<text x="420.0" y="100.0" text-anchor="middle" font-weight="bold">C</text>
+<circle cx="60.0" cy="280.0" r="4.5" fill="#2c3e50"/>
+<text x="60.0" y="266.0" text-anchor="middle" font-weight="bold">D</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Intersecting lines — vertical angles α and α′ are equal, as are β and β′.</text>
+</svg>

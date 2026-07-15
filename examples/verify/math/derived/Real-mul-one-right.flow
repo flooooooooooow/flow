@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  One is the right multiplicative identity for reals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  x * 1 = x.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «multiplication» «one is the left identity», «Real» «addition» «zero is the right identity»
+
+theorem «Real» «multiplication» «one is the right identity» (x: Real) {
+    assume «Real» «multiplication» «one is the left identity»(x)
+    assume «Real» «addition» «zero is the right identity»(x)
+    therefore x * 1 == x
+}
+
+export «Real» «multiplication» «one is the right identity»

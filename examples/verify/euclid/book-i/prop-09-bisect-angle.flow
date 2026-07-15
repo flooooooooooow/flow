@@ -1,0 +1,16 @@
+# @module examples.verify.euclid.book-i
+# @means  To bisect a given rectilineal angle.
+# @from   euclid — Elements, Book I, Proposition 9
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment», «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»
+
+theorem «Geometry» «Euclid Book I» «Proposition 9: bisect a given angle» () {
+    let equilateral_ABF = triangle_on_AB_by_Proposition_1
+    let equilateral_ACF = triangle_on_AC_by_Proposition_1
+    let D = intersection_of_circles_through_B_and_C_on_AF
+    let AD = line_from_A_to_D
+    assume «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»()
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    assume «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»()
+    therefore angle_BAD == angle_CAD
+}

@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  In a circle, two chords that do not both pass through the center do not bisect each other.
+# @from   euclid — Elements, Book III, Proposition 4
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»
+
+theorem «Geometry» «Euclid Book III» «Proposition 4: chords not through the center do not bisect each other» () {
+    let AB = chord_through_P
+    let CD = chord_through_Q
+    let P = point_not_center
+    therefore chords_do_not_bisect
+    assume «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»()
+    therefore non_diameter_chords_do_not_bisect
+}

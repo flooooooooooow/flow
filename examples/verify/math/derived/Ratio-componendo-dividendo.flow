@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Proportional magnitudes satisfy componendo and dividendo.
+# @from   euclid — Elements, Book V, Proposition 13
+# @tier   derived
+
+# @means  a:b = c:d implies (a+b):(a-b) = (c+d):(c-d).
+# @from   euclid
+# @tier   derived
+# @needs  «Ratio» «proportion» «componendo holds», «Ratio» «proportion» «dividendo holds»
+
+import .Ratio-dividendo { dividendo }
+
+theorem «Ratio» «proportion» «componendo and dividendo hold» (a: Magnitude, b: Magnitude, c: Magnitude, d: Magnitude) {
+    assume «Ratio» «proportion» «componendo holds»(a, b, c, d)
+    assume «Ratio» «proportion» «dividendo holds»(a, b, c, d)
+    therefore ratio(a + b, a - b) == ratio(c + d, c - d)
+}
+
+export «Ratio» «proportion» «componendo and dividendo hold»

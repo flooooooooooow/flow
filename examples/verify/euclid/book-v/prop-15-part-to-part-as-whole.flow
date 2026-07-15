@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-v
+# @means  A part has to a part the same ratio which the corresponding whole has to the corresponding whole.
+# @from   euclid — Elements, Book V, Proposition 15
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 6: magnitudes with the same ratio to a third are proportional to one another»
+
+theorem «Geometry» «Euclid Book V» «Proposition 15: a part has the same ratio to its part as the whole to its whole» () {
+    let part_a = part_of_first
+    let part_b = part_of_second
+    let whole_a = whole_first
+    therefore ratio(part_a, part_b) == ratio(whole_a, whole_b)
+    assume «Geometry» «Euclid Book V» «Proposition 6: magnitudes with the same ratio to a third are proportional to one another»()
+    therefore part_ratio_equals_whole_ratio
+}

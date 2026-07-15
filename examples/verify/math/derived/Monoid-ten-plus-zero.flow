@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Ten plus zero is ten in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  10 + 0 = 10.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «nine plus zero is nine»
+
+theorem «Monoid» «addition» «ten plus zero is ten» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(10)
+    assume «Monoid» «addition» «nine plus zero is nine»()
+    therefore 10 + 0 == 10
+}
+
+export «Monoid» «addition» «ten plus zero is ten»

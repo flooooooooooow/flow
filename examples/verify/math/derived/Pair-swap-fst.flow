@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Swapping exchanges the first projection.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  fst(swap(pair(a, b))) = b.
+# @from   church
+# @tier   derived
+# @needs  «Pair» «first projection» «first component is retrieved», «Pair» «second projection» «second component is retrieved», «Pair» «swap» «double swap returns the pair»
+
+theorem «Pair» «swap» «swap exchanges the first projection» (a: Nat, b: Nat) {
+    assume «Pair» «first projection» «first component is retrieved»(a, b)
+    assume «Pair» «second projection» «second component is retrieved»(a, b)
+    assume «Pair» «swap» «double swap returns the pair»(a, b)
+    therefore fst(swap(pair(a, b))) == b
+}
+
+export «Pair» «swap» «swap exchanges the first projection»

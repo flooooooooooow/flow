@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An inscribed angle on a major arc exceeds one right angle.
+# @from   euclid — Elements, Book III, Proposition 20
+# @tier   derived
+
+# @means  angle APB exceeds one right angle on major arc AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed on minor arc is acute», «Geometry» «circle» «central angle on diameter is two right»
+
+theorem «Geometry» «circle» «inscribed on major arc is obtuse» () {
+    assume «Geometry» «circle» «inscribed on minor arc is acute»()
+    assume «Geometry» «circle» «central angle on diameter is two right»()
+    therefore angle_APB > one_right_angle
+}
+
+export «Geometry» «circle» «inscribed on major arc is obtuse»

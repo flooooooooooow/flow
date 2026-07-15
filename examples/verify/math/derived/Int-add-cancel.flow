@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Equal integers can be subtracted from both sides of an equation.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  a + c = b + c implies a = b.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «parentheses do not matter», «Int» «negation» «negation distributes over addition»
+
+import .Int-add-assoc { add-assoc }
+
+theorem «Int» «addition» «right cancellation holds» (a: Int, b: Int, c: Int) {
+    if a + c == b + c {
+        assume «Int» «addition» «parentheses do not matter»(a, c, -c)
+        assume «Int» «negation» «negation distributes over addition»(a, c)
+        therefore a == b
+    }
+}
+
+export «Int» «addition» «right cancellation holds»

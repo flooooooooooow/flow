@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Equal rationals can be subtracted from both sides.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  p + r = q + r implies p = q.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «addition» «parentheses do not matter», «Rat» «addition» «zero is the right identity»
+
+theorem «Rat» «addition» «right cancellation holds» (p: Rat, q: Rat, r: Rat) {
+    if p + r == q + r {
+        assume «Rat» «addition» «parentheses do not matter»(p, r, -r)
+        assume «Rat» «addition» «zero is the right identity»(p)
+        therefore p == q
+    }
+}
+
+export «Rat» «addition» «right cancellation holds»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Five plus zero maps to five under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(5 + 0) = 5.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «five plus zero maps to five» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 5, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(5 + 0) == 5
+}
+
+export «RingHom» «preservation» «five plus zero maps to five»

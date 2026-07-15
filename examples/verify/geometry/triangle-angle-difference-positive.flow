@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The difference of two triangle angles is less than two right angles.
+# @from   euclid — Elements, Book I, Proposition 17
+# @tier   derived
+
+# @means  angle A minus angle B is less than two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «each interior angle is less than two right», «Geometry» «triangle» «first interior angle is positive»
+
+theorem «Geometry» «triangle» «angle difference less than two right» () {
+    assume «Geometry» «triangle» «each interior angle is less than two right»()
+    assume «Geometry» «triangle» «first interior angle is positive»()
+    therefore angle_A - angle_B < two_right_angles
+}
+
+export «Geometry» «triangle» «angle difference less than two right»

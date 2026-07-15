@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing the empty list has length zero.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(nil)) = 0.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «length» «the empty list has length zero»
+
+theorem «List» «length» «reverse of empty has length zero» () {
+    assume «List» «length» «reverse preserves length»(nil)
+    assume «List» «length» «the empty list has length zero»()
+    therefore len(rev(nil)) == 0
+}
+
+export «List» «length» «reverse of empty has length zero»

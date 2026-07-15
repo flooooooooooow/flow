@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The sum of leg lengths is greater than the hypotenuse.
+# @from   euclid — Elements, Book I, Proposition 20
+# @tier   derived
+
+# @means  a plus b is greater than c.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «both non-right angles are acute», «Geometry» «right triangle» «each leg is shorter than hypotenuse»
+
+theorem «Geometry» «right triangle» «sum of legs exceeds hypotenuse» () {
+    assume «Geometry» «right triangle» «both non-right angles are acute»()
+    assume «Geometry» «right triangle» «each leg is shorter than hypotenuse»()
+    therefore a + b > c
+}
+
+export «Geometry» «right triangle» «sum of legs exceeds hypotenuse»

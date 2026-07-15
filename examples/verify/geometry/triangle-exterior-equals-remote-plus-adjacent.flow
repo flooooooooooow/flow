@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An exterior angle equals remote interiors plus the adjacent interior decomposition.
+# @from   euclid — Elements, Book I, Proposition 32
+# @tier   derived
+
+# @means  exterior at C equals angle A plus angle B by remote sum.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «exterior angle equals remote interior sum», «Geometry» «triangle» «exterior plus adjacent interior is two right»
+
+theorem «Geometry» «triangle» «exterior remote sum decomposition» () {
+    assume «Geometry» «triangle» «exterior angle equals remote interior sum»()
+    assume «Geometry» «triangle» «exterior plus adjacent interior is two right»()
+    therefore exterior_at_C == angle_A + angle_B
+}
+
+export «Geometry» «triangle» «exterior remote sum decomposition»

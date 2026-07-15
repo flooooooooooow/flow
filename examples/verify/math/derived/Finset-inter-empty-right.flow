@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Intersection with the empty set on the right yields empty.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  s ∩ empty = empty.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «intersection» «order does not matter», «Finset» «intersection» «empty is the right annihilator»
+
+theorem «Finset» «intersection» «empty on the right gives empty» (s: Finset) {
+    assume «Finset» «intersection» «order does not matter»(s, empty)
+    assume «Finset» «intersection» «empty is the right annihilator»(s)
+    therefore s ∩ empty == empty
+}
+
+export «Finset» «intersection» «empty on the right gives empty»

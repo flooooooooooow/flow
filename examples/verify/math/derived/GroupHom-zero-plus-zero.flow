@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  A group homomorphism sends zero plus zero to zero.
+# @from   dummit-foote — *Abstract Algebra*, §3.1
+# @tier   derived
+
+# @means  f(0 + 0) = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «GroupHom» «preservation» «homomorphisms preserve the identity», «Group» «addition» «identity plus identity is identity»
+
+theorem «GroupHom» «preservation» «zero plus zero maps to identity» (f: GroupHom) {
+    assume «GroupHom» «preservation» «homomorphisms preserve the identity»(f)
+    assume «Group» «addition» «identity plus identity is identity»()
+    therefore f(0 + 0) == 0
+}
+
+export «GroupHom» «preservation» «zero plus zero maps to identity»

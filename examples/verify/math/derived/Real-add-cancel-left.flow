@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Equal reals can be subtracted from the left of both sides.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  z + x = z + y implies x = y.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «addition» «right cancellation holds», «Real» «addition» «order does not matter»
+
+import .Real-add-cancel { add-cancel-right }
+
+theorem «Real» «addition» «left cancellation holds» (x: Real, y: Real, z: Real) {
+    if z + x == z + y {
+        assume «Real» «addition» «right cancellation holds»(x, y, z)
+        assume «Real» «addition» «order does not matter»(z, x)
+        therefore x == y
+    }
+}
+
+export «Real» «addition» «left cancellation holds»

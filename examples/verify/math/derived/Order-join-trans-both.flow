@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Join above meet via both-side transitivity.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  join(a, b) >= meet(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «join above meet via transitivity», «Order» «lattice» «join above meet via left transitivity»
+
+theorem «Order» «lattice» «join above meet via both transitivity» (a: Nat, b: Nat) {
+    assume «Order» «lattice» «join above meet via transitivity»(a, b, join(a, b))
+    assume «Order» «lattice» «join above meet via left transitivity»(a, b)
+    therefore join(a, b) >= meet(a, b)
+}
+
+export «Order» «lattice» «join above meet via both transitivity»

@@ -1,0 +1,26 @@
+# @module examples.verify.math.derived
+# @means  n + 0 = n, derived by induction.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+
+# @means  Adding zero on the right gives the same number.  (12 + 0 = 12)
+# @from   peano/induction — https://en.wikipedia.org/wiki/Mathematical_induction
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the right steps the sum»
+# @used-by «Nat» «addition» «order does not matter»
+
+import verify.Nat/+ { zero-left, succ-right }
+
+theorem «Nat» «addition» «zero is the right identity» (n: Nat) {
+    if n == 0 {
+        assume «Nat» «addition» «zero is the left identity»(0)
+        therefore 0 + 0 == 0
+    } else {
+        let k = pred(n)
+        assume «Nat» «addition» «zero is the right identity»(k)
+        assume «Nat» «addition» «successor on the right steps the sum»(k, 0)
+        therefore n + 0 == n
+    }
+}
+
+export «Nat» «addition» «zero is the right identity»

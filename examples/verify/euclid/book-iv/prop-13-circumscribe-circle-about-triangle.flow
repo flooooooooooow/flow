@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iv
+# @means  About a given rectilineal figure to circumscribe a circle.
+# @from   euclid — Elements, Book IV, Proposition 13
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment», «Geometry» «Euclid Book III» «Proposition 17: the bisector from the center to a chord is perpendicular»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 13: about a given triangle to circumscribe a circle» () {
+    let triangle = given_triangle
+    let circumcenter = intersection_of_perp_bisectors
+    let circumcircle = circle_about_circumcenter
+    therefore circle_circumscribed_about_triangle
+    assume «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment»()
+    assume «Geometry» «Euclid Book III» «Proposition 17: the bisector from the center to a chord is perpendicular»()
+}

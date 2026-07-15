@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  If the rectangle contained by the first and third equals the square on the second, the three straight lines are proportional.
+# @from   euclid — Elements, Book VI, Proposition 18
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 17: three proportional lines give rectangle on extremes equal to square on mean»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 18: rectangle on extremes equal to square on mean implies three lines proportional» () {
+    let a = first
+    let b = second
+    let c = third
+    therefore ratio(a, b) == ratio(b, c)
+    assume «Geometry» «Euclid Book VI» «Proposition 17: three proportional lines give rectangle on extremes equal to square on mean»()
+    therefore sq_mean_implies_three_proportional
+}

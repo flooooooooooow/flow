@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  In equal circles equal circumferences are subtended by equal straight lines.
+# @from   euclid — Elements, Book III, Proposition 29
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 28: in equal circles equal chords cut off equal arcs»
+
+theorem «Geometry» «Euclid Book III» «Proposition 29: in equal circles equal arcs subtend equal chords» () {
+    let arc1 = equal_arc
+    let arc2 = equal_arc
+    let chord1 = chord_subtending_arc1
+    therefore chord1 == chord2
+    assume «Geometry» «Euclid Book III» «Proposition 28: in equal circles equal chords cut off equal arcs»()
+    therefore equal_arcs_subtend_equal_chords
+}

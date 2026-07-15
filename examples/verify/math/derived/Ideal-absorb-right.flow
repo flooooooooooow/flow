@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Ideals absorb multiplication on the right.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  If a in I then a * r in I.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «multiplication» «absorbs ring elements on the left», «Ring» «multiplication» «one is the left identity»
+
+theorem «Ideal» «multiplication» «absorbs ring elements on the right» (I: Ideal, r: Ring, a: Ring) {
+    if a in I {
+        assume «Ideal» «multiplication» «absorbs ring elements on the left»(I, r, a)
+        assume «Ring» «multiplication» «one is the left identity»(a)
+        therefore a * r in I
+    }
+}
+
+export «Ideal» «multiplication» «absorbs ring elements on the right»

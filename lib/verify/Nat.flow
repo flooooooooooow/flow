@@ -1,0 +1,22 @@
+# @module verify.Nat
+# @means  Peano definitions for addition on natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   definitions-only
+
+# @means  Adding zero on the left gives the other number.  (0 + 7 = 7)
+# @from   peano
+# @tier   definition
+
+theorem «Nat» «addition» «zero is the left identity» (m: Nat) {
+    therefore 0 + m == m
+}
+
+# @means  Adding one more on the right steps the sum by one.
+# @from   peano
+# @tier   definition
+
+theorem «Nat» «addition» «successor on the right steps the sum» (n: Nat, m: Nat) {
+    therefore n + succ(m) == succ(n + m)
+}
+
+export «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the right steps the sum»

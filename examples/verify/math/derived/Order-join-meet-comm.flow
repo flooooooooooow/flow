@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Join above meet commutes in arguments.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  join(a, b) >= meet(a, b) and join(b, a) >= meet(b, a).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «join above meet symmetric», «Order» «lattice» «meet is below join»
+
+theorem «Order» «lattice» «join above meet commutes» (a: Nat, b: Nat) {
+    assume «Order» «lattice» «join above meet symmetric»(a, b)
+    assume «Order» «lattice» «meet is below join»(a, b)
+    therefore join(a, b) >= meet(a, b)
+}
+
+export «Order» «lattice» «join above meet commutes»

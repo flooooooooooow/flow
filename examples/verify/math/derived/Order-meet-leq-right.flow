@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Meet is bounded above by its right argument.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, b) <= b.
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «meet» «order does not matter», «Order» «meet» «meet is below the left argument»
+
+theorem «Order» «meet» «meet is below the right argument» (a: Nat, b: Nat) {
+    assume «Order» «meet» «order does not matter»(a, b)
+    assume «Order» «meet» «meet is below the left argument»(b, a)
+    therefore meet(a, b) <= b
+}
+
+export «Order» «meet» «meet is below the right argument»

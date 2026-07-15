@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  Similar rectilineal figures are to one another as the duplicate ratio of their homologous sides.
+# @from   euclid — Elements, Book VI, Proposition 21
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 20: similar polygons are divided into the same number of similar triangles»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 21: similar figures have ratio duplicate of homologous sides» () {
+    let fig1 = figure_1
+    let fig2 = figure_2
+    let s1 = homologous_side_1
+    therefore ratio_areas == duplicate_ratio(s1, s2)
+    assume «Geometry» «Euclid Book VI» «Proposition 20: similar polygons are divided into the same number of similar triangles»()
+    therefore area_as_duplicate_homologous_ratio
+}

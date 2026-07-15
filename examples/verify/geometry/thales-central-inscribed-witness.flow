@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Central and inscribed angles on a diameter satisfy the half relation.
+# @from   euclid — Elements, Book III, Propositions 20 and 31
+# @tier   derived
+
+# @means  angle ACB equals half of angle AOB on diameter AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed central ratio is half», «Geometry» «circle» «inscribed on semicircle is right»
+
+theorem «Geometry» «circle» «central inscribed diameter witness» () {
+    assume «Geometry» «circle» «inscribed central ratio is half»()
+    assume «Geometry» «circle» «inscribed on semicircle is right»()
+    therefore angle_ACB == half_of_angle_AOB
+}
+
+export «Geometry» «circle» «central inscribed diameter witness»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An exterior angle is at least each remote interior angle.
+# @from   euclid — Elements, Book I, Proposition 16
+# @tier   derived
+
+# @means  exterior at C is at least angle B.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «exterior angle exceeds remote interior», «Geometry» «triangle» «exterior angle equals remote interior sum»
+
+theorem «Geometry» «triangle» «exterior at least each remote interior» () {
+    assume «Geometry» «triangle» «exterior angle exceeds remote interior»()
+    assume «Geometry» «triangle» «exterior angle equals remote interior sum»()
+    therefore exterior_at_C >= angle_B
+}
+
+export «Geometry» «triangle» «exterior at least each remote interior»

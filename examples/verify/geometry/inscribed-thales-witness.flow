@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An inscribed angle on a diameter is a right angle.
+# @from   euclid — Elements, Book III, Propositions 20 and 31
+# @tier   derived
+
+# @means  angle APB inscribed on diameter AB is one right angle.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed angle is half the central angle», «Geometry» «circle» «Thales right angle in semicircle»
+
+theorem «Geometry» «circle» «inscribed angle on diameter is right» () {
+    assume «Geometry» «circle» «inscribed angle is half the central angle»()
+    assume «Geometry» «circle» «Thales right angle in semicircle»()
+    therefore angle_APB == one_right_angle
+}
+
+export «Geometry» «circle» «inscribed angle on diameter is right»

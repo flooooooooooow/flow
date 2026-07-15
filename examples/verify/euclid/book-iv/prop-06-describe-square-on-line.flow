@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  On a given straight line to describe a square.
+# @from   euclid — Elements, Book IV, Proposition 6
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 46: describe a square on a given straight line», «Geometry» «Euclid Book IV» «Proposition 4: in a circle to inscribe a square»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 6: on a given straight line to describe a square» () {
+    let AB = given_line
+    let ABCD = square_on_AB
+    let right_angle = angle_ABC
+    therefore square_on_AB_exists
+    assume «Geometry» «Euclid Book I» «Proposition 46: describe a square on a given straight line»()
+    assume «Geometry» «Euclid Book IV» «Proposition 4: in a circle to inscribe a square»()
+    therefore square_on_given_line_exists
+}

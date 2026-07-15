@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Union difference with empty is the union.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  (s ∪ t) \ empty = s ∪ t.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «difference» «union difference empty derived»
+
+theorem «Finset» «difference» «union diff empty is union» (s: Finset, t: Finset) {
+    assume «Finset» «difference» «union difference empty derived»(s, t)
+    therefore (s ∪ t) \ empty == s ∪ t
+}
+
+export «Finset» «difference» «union diff empty is union»

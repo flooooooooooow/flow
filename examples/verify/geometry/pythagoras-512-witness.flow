@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The 5-12-13 triangle satisfies the Pythagorean relation.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  13 squared equals 5 squared plus 12 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «three four five satisfies Pythagoras», «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «five twelve thirteen satisfies Pythagoras» () {
+    assume «Geometry» «right triangle» «three four five satisfies Pythagoras»()
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore 13 * 13 == 5 * 5 + 12 * 12
+}
+
+export «Geometry» «right triangle» «five twelve thirteen satisfies Pythagoras»

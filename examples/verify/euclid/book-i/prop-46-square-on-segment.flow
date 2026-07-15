@@ -1,0 +1,17 @@
+# @module examples.verify.euclid.book-i
+# @means  On a given straight line to describe a square.
+# @from   euclid — Elements, Book I, Proposition 46
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line», «Geometry» «Euclid Book I» «Proposition 3: cut a segment equal to a smaller segment»
+
+theorem «Geometry» «Euclid Book I» «Proposition 46: describe a square on a given straight line» () {
+    let perpendicular_at_A = line_through_A_perpendicular_to_AB
+    let perpendicular_at_B = line_through_B_perpendicular_to_AB
+    let C = point_on_perpendicular_at_A_with_AC_equal_to_AB
+    let D = point_on_perpendicular_at_B_with_BD_equal_to_AB
+    assume «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line»()
+    assume «Geometry» «Euclid Book I» «Proposition 3: cut a segment equal to a smaller segment»()
+    therefore segment_AC == segment_AB
+    therefore segment_BD == segment_AB
+    therefore square_on_AB_exists
+}

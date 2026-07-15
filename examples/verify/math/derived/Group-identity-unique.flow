@@ -1,0 +1,22 @@
+# @module examples.verify.math.derived
+# @means  The identity element of a group is unique.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  If e and e' are both identities then e = e'.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «identity» «one is the left identity», «Group» «identity» «one is the right identity», «Group» «multiplication» «parentheses do not matter»
+
+theorem «Group» «identity» «the identity is unique» (e: Group, e_prime: Group) {
+    if e * e_prime == e_prime {
+        if e_prime * e == e {
+            assume «Group» «identity» «one is the left identity»(e_prime)
+            assume «Group» «identity» «one is the right identity»(e)
+            assume «Group» «multiplication» «parentheses do not matter»(e, e_prime, e)
+            therefore e == e_prime
+        }
+    }
+}
+
+export «Group» «identity» «the identity is unique»

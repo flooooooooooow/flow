@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  In an isosceles triangle, the angles at the base equal one another.
+# @from   euclid — Elements, Book I, Proposition 5
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»
+
+theorem «Geometry» «Euclid Book I» «Proposition 5: base angles of an isosceles triangle are equal» () {
+    let D = point_on_BC_extended_with_BD_equal_to_CE
+    let E = point_on_CB_extended_with_CE_equal_to_BD
+    assume segment_AB == segment_AC
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    therefore angle_ABD == angle_ACE
+    therefore angle_ABC == angle_ACB
+    therefore angle_at_B == angle_at_C
+}

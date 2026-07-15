@@ -1,0 +1,24 @@
+# @module examples.verify.math.derived
+# @means  Appending the empty list on the right changes nothing.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  xs ++ nil = xs.
+# @from   church/induction
+# @tier   derived
+# @needs  «List» «append» «empty is the left identity», «List» «append» «singleton prepends the head»
+
+theorem «List» «append» «empty is the right identity» (xs: List) {
+    if xs == nil {
+        assume «List» «append» «empty is the left identity»(nil)
+        therefore xs ++ nil == xs
+    } else {
+        let x = head(xs)
+        let rest = tail(xs)
+        assume «List» «append» «empty is the right identity»(rest)
+        assume «List» «append» «singleton prepends the head»(x, nil)
+        therefore xs ++ nil == xs
+    }
+}
+
+export «List» «append» «empty is the right identity»

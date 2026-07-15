@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  A transversal across parallel lines makes interior angles on one side equal to two right angles.
+# @from   euclid — Elements, Book I, Proposition 31
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 29: alternate angles are equal when a transversal crosses parallels», «Geometry» «Euclid Book I» «Proposition 13: adjacent angles on a straight line sum to two right angles»
+
+theorem «Geometry» «Euclid Book I» «Proposition 31: interior angles on one side sum to two right angles» () {
+    let BGH = interior_angle_at_G_on_side_of_EF
+    let AGH = adjacent_interior_angle_at_G
+    assume lines_AB_and_CD_are_parallel
+    assume transversal_EF_crosses_parallels_at_G_and_H
+    assume «Geometry» «Euclid Book I» «Proposition 29: alternate angles are equal when a transversal crosses parallels»()
+    assume «Geometry» «Euclid Book I» «Proposition 13: adjacent angles on a straight line sum to two right angles»()
+    therefore angle_BGH + angle_AGH == two_right_angles
+}

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Cons distributes over list append.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  cons(x, xs) ++ ys = cons(x, xs ++ ys).
+# @from   church
+# @tier   derived
+# @needs  «List» «append» «singleton prepends the head», «List» «append» «parentheses do not matter»
+
+theorem «List» «append» «cons distributes over append» (x: Nat, xs: List, ys: List) {
+    assume «List» «append» «singleton prepends the head»(x, xs)
+    assume «List» «append» «parentheses do not matter»(cons(x, nil), xs, ys)
+    therefore cons(x, xs) ++ ys == cons(x, xs ++ ys)
+}
+
+export «List» «append» «cons distributes over append»

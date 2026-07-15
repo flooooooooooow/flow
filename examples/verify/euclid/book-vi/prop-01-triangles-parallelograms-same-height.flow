@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  Triangles and parallelograms under the same height are to one another as their bases.
+# @from   euclid — Elements, Book VI, Proposition 1
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 1: equimultiples of equimultiples are equimultiple of the originals»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 1: triangles and parallelograms of the same height are as their bases» () {
+    let ABC = triangle
+    let base_BC = base
+    let height = common_height
+    therefore area(ABC) : area(DEF) == base_BC : base_EF
+    assume «Geometry» «Euclid Book V» «Proposition 1: equimultiples of equimultiples are equimultiple of the originals»()
+    therefore area_ratio_equals_base_ratio
+}

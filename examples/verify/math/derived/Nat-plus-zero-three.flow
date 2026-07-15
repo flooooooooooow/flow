@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero plus three is three for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 + 3 = 3.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «zero on the left gives the value»
+
+theorem «Nat» «addition» «zero plus three is three» () {
+    let three = succ(succ(succ(0)))
+    assume «Nat» «addition» «zero on the left gives the value»(three)
+    therefore 0 + three == three
+}
+
+export «Nat» «addition» «zero plus three is three»

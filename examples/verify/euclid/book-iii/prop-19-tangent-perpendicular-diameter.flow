@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If a straight line touches a circle, the perpendicular from the point of contact to the center is perpendicular to the tangent.
+# @from   euclid — Elements, Book III, Proposition 19
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 18: exterior rectangle condition characterizes tangents»
+
+theorem «Geometry» «Euclid Book III» «Proposition 19: the tangent is perpendicular to the diameter at the point of contact» () {
+    let T = point_of_contact
+    let O = center
+    let tangent = line_through_T
+    therefore tangent_perpendicular_to_OT
+    assume «Geometry» «Euclid Book III» «Proposition 18: exterior rectangle condition characterizes tangents»()
+    therefore tangent_perpendicular_to_radius
+}

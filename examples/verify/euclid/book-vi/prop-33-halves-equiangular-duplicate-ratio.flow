@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  In equal circles (or equiangular parallelograms with equal angles), halves have to one another the duplicate ratio of the homologous sides.
+# @from   euclid — Elements, Book VI, Proposition 33
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 31: similar parallelograms are as the duplicate ratio of homologous sides», «Geometry» «Euclid Book VI» «Proposition 15: equiangular parallelograms with reciprocal sides are equal»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 33: halves of equiangular parallelograms have ratio duplicate of homologous sides» () {
+    let half1 = half_of_par_1
+    let half2 = half_of_par_2
+    let side = homologous_side
+    therefore ratio_halves == duplicate(side)
+    assume «Geometry» «Euclid Book VI» «Proposition 31: similar parallelograms are as the duplicate ratio of homologous sides»()
+    assume «Geometry» «Euclid Book VI» «Proposition 15: equiangular parallelograms with reciprocal sides are equal»()
+    therefore halves_duplicate_ratio_homologous
+}

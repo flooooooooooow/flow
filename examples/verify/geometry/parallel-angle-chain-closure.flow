@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Parallel angle chains close back to alternate angles.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  f-angle beta equals alternate alpha after full chain closure.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «complete transversal chain», «Geometry» «parallel lines» «co-interior supplement witness»
+
+theorem «Geometry» «parallel lines» «angle chain closure» () {
+    assume «Geometry» «parallel lines» «complete transversal chain»()
+    assume «Geometry» «parallel lines» «co-interior supplement witness»()
+    therefore angle_f_beta == angle_alternate_alpha
+}
+
+export «Geometry» «parallel lines» «angle chain closure»

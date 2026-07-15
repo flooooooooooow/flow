@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Zero plus one stays in an ideal when zero is present.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  If 0 in I then 0 + 1 in I.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «ideal sums stay in the ideal», «Ideal» «membership» «ideals contain zero», «Ring» «addition» «zero plus one is one»
+
+theorem «Ideal» «addition» «zero plus one stays in the ideal» (I: Ideal) {
+    if 0 in I {
+        assume «Ideal» «addition» «ideal sums stay in the ideal»(I, 0, 1)
+        assume «Ideal» «membership» «ideals contain zero»(I)
+        assume «Ring» «addition» «zero plus one is one»()
+        therefore 0 + 1 in I
+    }
+}
+
+export «Ideal» «addition» «zero plus one stays in the ideal»

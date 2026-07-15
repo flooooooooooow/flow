@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An inscribed angle on a semicircle is acute, alternate witness.
+# @from   euclid — Elements, Book III, Proposition 20
+# @tier   derived
+
+# @means  inscribed angle on minor arc is acute.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed on minor arc is acute», «Geometry» «circle» «semicircle inscribed angle is right witness»
+
+theorem «Geometry» «circle» «semicircle inscribed acute alt» () {
+    assume «Geometry» «circle» «inscribed on minor arc is acute»()
+    assume «Geometry» «circle» «semicircle inscribed angle is right witness»()
+    therefore angle_inscribed < one_right_angle
+}
+
+export «Geometry» «circle» «semicircle inscribed acute alt»

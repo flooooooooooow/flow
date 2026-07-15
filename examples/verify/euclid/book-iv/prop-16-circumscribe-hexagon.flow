@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  About a given circle to circumscribe a regular hexagon.
+# @from   euclid — Elements, Book IV, Proposition 16
+# @tier   derived
+# @needs  «Geometry» «Euclid Book IV» «Proposition 15: in a circle to inscribe a regular hexagon», «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 16: about a circle to circumscribe a regular hexagon» () {
+    let circle = given_circle
+    let hexagon = circumscribed_regular_hexagon
+    let sides_tangent = hexagon_sides
+    therefore regular_hexagon_about_circle
+    assume «Geometry» «Euclid Book IV» «Proposition 15: in a circle to inscribe a regular hexagon»()
+    assume «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal»()
+    therefore regular_hexagon_circumscribed
+}

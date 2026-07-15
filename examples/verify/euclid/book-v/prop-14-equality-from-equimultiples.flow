@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If four magnitudes are proportional, the sum of the first and second is to the second as the sum of the third and fourth is to the fourth.
+# @from   euclid — Elements, Book V, Proposition 14
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 4: equimultiples preserve proportion»
+
+theorem «Geometry» «Euclid Book V» «Proposition 14: equality of ratios follows from equality of equimultiples» () {
+    let a = first
+    let b = second
+    let c = third
+    let d = fourth
+    therefore ratio(a + b, b) == ratio(c + d, d)
+    assume «Geometry» «Euclid Book V» «Proposition 4: equimultiples preserve proportion»()
+    therefore equality_from_equimultiple_comparison
+}

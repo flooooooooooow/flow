@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iv
+# @means  In a given rectilineal figure to inscribe a circle.
+# @from   euclid — Elements, Book IV, Proposition 12
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 9: bisect a given angle», «Geometry» «Euclid Book III» «Proposition 16: the perpendicular from the center to a chord bisects it»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 12: in a given triangle to inscribe a circle» () {
+    let triangle = given_triangle
+    let incenter = intersection_of_angle_bisectors
+    let incircle = circle_about_incenter
+    therefore circle_inscribed_in_triangle
+    assume «Geometry» «Euclid Book I» «Proposition 9: bisect a given angle»()
+    assume «Geometry» «Euclid Book III» «Proposition 16: the perpendicular from the center to a chord bisects it»()
+}

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Fourteen plus zero is fourteen in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  14 + 0 = 14 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «thirteen plus zero in ideal»
+
+theorem «Ideal» «addition» «fourteen plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(14)
+    assume «Ideal» «addition» «thirteen plus zero in ideal»()
+    therefore 14 + 0 == 14
+}
+
+export «Ideal» «addition» «fourteen plus zero in ideal»

@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  Equiangular parallelograms have to one another the ratio compounded of the ratios of their sides.
+# @from   euclid — Elements, Book VI, Proposition 23
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 14: equal equiangular parallelograms have reciprocally proportional sides», «Geometry» «Euclid Book V» «Proposition 23: chained proportion yields ex aequali»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 23: equiangular parallelograms have ratio compounded of side ratios» () {
+    let ABCD = parallelogram_1
+    let EFGH = parallelogram_2
+    let side_ratio_1 = ratio_AB_DE
+    therefore area_ratio == compound(side_ratios)
+    assume «Geometry» «Euclid Book VI» «Proposition 14: equal equiangular parallelograms have reciprocally proportional sides»()
+    assume «Geometry» «Euclid Book V» «Proposition 23: chained proportion yields ex aequali»()
+    therefore parallelogram_ratio_compounded
+}

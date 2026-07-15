@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  A chord through the centre has endpoints equidistant from the centre.
+# @from   euclid — Elements, Book III, Proposition 1
+# @tier   derived
+
+# @means  chord endpoints are radii from centre.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «chord through centre gives isosceles triangle», «Geometry» «circle» «radii from the centre are equal»
+
+theorem «Geometry» «circle» «chord endpoints equal radii» () {
+    assume «Geometry» «circle» «chord through centre gives isosceles triangle»()
+    assume «Geometry» «circle» «radii from the centre are equal»()
+    therefore dist_centre_A == dist_centre_B
+}
+
+export «Geometry» «circle» «chord endpoints equal radii»

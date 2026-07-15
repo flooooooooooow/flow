@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Vertical angles come in equal pairs across intersecting lines.
+# @from   euclid — Elements, Book I, Proposition 15
+# @tier   derived
+
+# @means  angle beta prime equals angle beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «vertical angles are equal», «Geometry» «intersecting lines» «adjacent angles on a line sum to two right»
+
+theorem «Geometry» «intersecting lines» «vertical angles form equal pairs» () {
+    assume «Geometry» «intersecting lines» «vertical angles are equal»()
+    assume «Geometry» «intersecting lines» «adjacent angles on a line sum to two right»()
+    therefore angle_beta_prime == angle_beta
+}
+
+export «Geometry» «intersecting lines» «vertical angles form equal pairs»

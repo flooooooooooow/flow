@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One times one is one for rationals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  1 * 1 = 1.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «multiplication» «one is the right identity»
+
+theorem «Rat» «multiplication» «one times one is one» () {
+    assume «Rat» «multiplication» «one is the right identity»(1)
+    therefore 1 * 1 == 1
+}
+
+export «Rat» «multiplication» «one times one is one»

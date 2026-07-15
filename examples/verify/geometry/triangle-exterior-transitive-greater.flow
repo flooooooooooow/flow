@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Exterior angle comparison is transitive over remote interiors.
+# @from   euclid — Elements, Book I, Proposition 16
+# @tier   derived
+
+# @means  if exterior exceeds angle A and angle A is positive then exterior exceeds angle B.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «exterior sum strict with positive angles», «Geometry» «triangle» «all interior angles are positive»
+
+theorem «Geometry» «triangle» «exterior greater is transitive over remote» () {
+    assume «Geometry» «triangle» «exterior sum strict with positive angles»()
+    assume «Geometry» «triangle» «all interior angles are positive»()
+    therefore exterior_at_C > angle_B
+}
+
+export «Geometry» «triangle» «exterior greater is transitive over remote»

@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-i
+# @means  To bisect a given finite straight line.
+# @from   euclid — Elements, Book I, Proposition 10
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment», «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»
+
+theorem «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment» () {
+    let equilateral_ABC = triangle_on_AB_by_Proposition_1
+    let M = intersection_of_angle_bisectors_at_A_and_B
+    assume «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»()
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    therefore segment_AM == segment_MB
+}

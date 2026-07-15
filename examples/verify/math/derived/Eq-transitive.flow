@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Equalities chain: x = y and y = z imply x = z.
+# @from   leibniz — https://en.wikipedia.org/wiki/Transitive_relation
+# @tier   derived
+
+# @means  If x equals y and y equals z, then x equals z.
+# @from   leibniz — https://en.wikipedia.org/wiki/Transitive_relation
+# @tier   derived
+# @needs  «Eq» «equality» «everything equals itself»
+
+theorem «Eq» «equality» «equality chains» (x: Nat, y: Nat, z: Nat) {
+    if x == y {
+        if y == z {
+            assume «Eq» «equality» «everything equals itself»(x)
+            assume «Eq» «equality» «everything equals itself»(z)
+            therefore x == z
+        }
+    }
+}
+
+export «Eq» «equality» «equality chains»

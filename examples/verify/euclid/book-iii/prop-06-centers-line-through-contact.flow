@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If two circles touch one another, the straight line joining their centers passes through the point of contact.
+# @from   euclid — Elements, Book III, Proposition 6
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 5: the line joining centers passes through the intersection»
+
+theorem «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact» () {
+    let O = center_first
+    let P = center_second
+    let T = point_of_contact
+    therefore O_P_line_passes_through_T
+    assume «Geometry» «Euclid Book III» «Proposition 5: the line joining centers passes through the intersection»()
+    therefore center_line_passes_through_contact
+}

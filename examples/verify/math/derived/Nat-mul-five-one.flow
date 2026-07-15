@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Five times one is five for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  5 * 1 = 5.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «one is the right identity»
+
+theorem «Nat» «multiplication» «five times one is five» () {
+    let five = succ(succ(succ(succ(succ(0)))))
+    assume «Nat» «multiplication» «one is the right identity»(five)
+    therefore five * succ(0) == five
+}
+
+export «Nat» «multiplication» «five times one is five»

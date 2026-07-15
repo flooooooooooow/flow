@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Thales inscribed and central angles chain on a diameter.
+# @from   euclid — Elements, Book III, Proposition 31
+# @tier   derived
+
+# @means  inscribed equals half central on diameter.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «central inscribed diameter witness», «Geometry» «circle» «Thales inscribed is half central»
+
+theorem «Geometry» «circle» «inscribed central diameter chain» () {
+    assume «Geometry» «circle» «central inscribed diameter witness»()
+    assume «Geometry» «circle» «Thales inscribed is half central»()
+    therefore angle_inscribed == angle_central / 2
+}
+
+export «Geometry» «circle» «inscribed central diameter chain»

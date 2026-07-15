@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Squaring one gives one.
+# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @tier   derived
+
+# @means  sq(1) = 1, i.e. succ(0) * succ(0) = succ(0).
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «square» «squaring is self-multiplication», «Nat» «multiplication» «one times one is one»
+
+theorem «Nat» «square» «squaring one gives one» () {
+    let n = succ(0)
+    assume «Nat» «square» «squaring is self-multiplication»(n)
+    assume «Nat» «multiplication» «one times one is one»()
+    therefore n * n == n
+}
+
+export «Nat» «square» «squaring one gives one»

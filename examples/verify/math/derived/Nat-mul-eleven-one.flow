@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Eleven times one is eleven.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  11 * 1 = 11.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «ten times one is ten»
+
+theorem «Nat» «multiplication» «eleven times one is eleven» () {
+    assume «Nat» «multiplication» «ten times one is ten»()
+    therefore 11 * 1 == 11
+}
+
+export «Nat» «multiplication» «eleven times one is eleven»

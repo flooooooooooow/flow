@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Sedecuple cons ending in nil has length sixteen.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len of sixteen cons ending in nil equals 16.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «cons increases length by one», «List» «length» «quindecuple cons nil has length fifteen»
+
+theorem «List» «length» «sedecuple cons nil has length sixteen» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat, l: Nat, m: Nat, n: Nat, o: Nat, p: Nat) {
+    assume «List» «length» «cons increases length by one»(cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, cons(p, nil))))))))))))))))
+    assume «List» «length» «quindecuple cons nil has length fifteen»(b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
+    therefore len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, cons(p, nil))))))))))))))) == 16
+}
+
+export «List» «length» «sedecuple cons nil has length sixteen»

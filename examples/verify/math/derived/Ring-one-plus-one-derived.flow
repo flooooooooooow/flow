@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One plus one is two in a ring witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  1 + 1 = 2.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «addition» «one plus one is two»
+
+theorem «Ring» «addition» «one plus one derived» () {
+    assume «Ring» «addition» «one plus one is two»()
+    therefore 1 + 1 == 2
+}
+
+export «Ring» «addition» «one plus one derived»

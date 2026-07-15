@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Interior alternate angles chain to corresponding angles.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  interior alternate alpha equals corresponding beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «corresponding and f angles chain», «Geometry» «parallel lines» «alternate and z angles chain»
+
+theorem «Geometry» «parallel lines» «interior alternate chains to corresponding» () {
+    assume «Geometry» «parallel lines» «corresponding and f angles chain»()
+    assume «Geometry» «parallel lines» «alternate and z angles chain»()
+    therefore angle_interior_alternate_alpha == angle_corresponding_beta
+}
+
+export «Geometry» «parallel lines» «interior alternate chains to corresponding»

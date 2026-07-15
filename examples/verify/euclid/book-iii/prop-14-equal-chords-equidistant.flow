@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  In equal circles equal straight lines are equally distant from the centers, and conversely.
+# @from   euclid — Elements, Book III, Proposition 14
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»
+
+theorem «Geometry» «Euclid Book III» «Proposition 14: equal chords are equally distant from the center» () {
+    let AB = chord_first
+    let DE = chord_second
+    let d1 = distance_to_center
+    therefore d1 == d2
+    assume «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»()
+    therefore equal_chords_equally_distant
+}

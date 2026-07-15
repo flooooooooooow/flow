@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One times one is one in a monoid.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  1 * 1 = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «identity» «one is the left identity»
+
+theorem «Monoid» «multiplication» «one times one is one» () {
+    assume «Monoid» «identity» «one is the left identity»(1)
+    therefore 1 * 1 == 1
+}
+
+export «Monoid» «multiplication» «one times one is one»

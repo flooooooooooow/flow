@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Co-interior angles on parallel lines sum to two right angles.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  co-interior alpha plus beta equals two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «corresponding angles are equal», «Geometry» «intersecting lines» «adjacent angles on a line sum to two right»
+
+theorem «Geometry» «parallel lines» «co-interior angles sum to two right» () {
+    assume «Geometry» «parallel lines» «corresponding angles are equal»()
+    assume «Geometry» «intersecting lines» «adjacent angles on a line sum to two right»()
+    therefore angle_co_interior_alpha + angle_co_interior_beta == two_right_angles
+}
+
+export «Geometry» «parallel lines» «co-interior angles sum to two right»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Ring homomorphisms send one to one.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(1) = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «multiplication» «products map to products», «Ring» «multiplication» «one is the left identity»
+
+theorem «RingHom» «multiplication» «one maps to one» (f: RingHom) {
+    assume «RingHom» «multiplication» «products map to products»(f, 1, 1)
+    assume «Ring» «multiplication» «one is the left identity»(1)
+    therefore f(1) == 1
+}
+
+export «RingHom» «multiplication» «one maps to one»

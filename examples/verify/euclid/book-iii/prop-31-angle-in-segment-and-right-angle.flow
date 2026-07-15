@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  In a circle the angle in a greater segment is less than a right angle, and in a less segment greater.
+# @from   euclid — Elements, Book III, Proposition 31
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 20: the central angle is double the inscribed angle on the same arc», «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line»
+
+theorem «Geometry» «Euclid Book III» «Proposition 31: the angle in a greater segment is less than a right angle» () {
+    let seg = greater_segment
+    let angle = inscribed_angle
+    therefore angle < one_right_angle
+    assume «Geometry» «Euclid Book III» «Proposition 20: the central angle is double the inscribed angle on the same arc»()
+    assume «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line»()
+    therefore segment_angle_compares_to_right
+}

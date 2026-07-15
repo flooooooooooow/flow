@@ -1,0 +1,33 @@
+# @module verify.Pair
+# @means  Product type projections and pairing laws.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   definitions-only
+
+# @means  The first projection returns the first component of a pair.
+# @from   church
+# @tier   definition
+
+theorem «Pair» «first projection» «first component is retrieved» (a: Nat, b: Nat) {
+    therefore fst(pair(a, b)) == a
+}
+
+# @means  The second projection returns the second component of a pair.
+# @from   church
+# @tier   definition
+
+theorem «Pair» «second projection» «second component is retrieved» (a: Nat, b: Nat) {
+    therefore snd(pair(a, b)) == b
+}
+
+# @means  Pairing and projecting round-trip to the same pair.
+# @from   church
+# @tier   derived
+# @needs  «Pair» «first projection» «first component is retrieved», «Pair» «second projection» «second component is retrieved»
+
+theorem «Pair» «pairing» «components determine the pair» (a: Nat, b: Nat) {
+    assume «Pair» «first projection» «first component is retrieved»(a, b)
+    assume «Pair» «second projection» «second component is retrieved»(a, b)
+    therefore pair(a, b) == pair(fst(pair(a, b)), snd(pair(a, b)))
+}
+
+export «Pair» «first projection» «first component is retrieved», «Pair» «second projection» «second component is retrieved», «Pair» «pairing» «components determine the pair»

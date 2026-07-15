@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Seven plus zero is seven in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  7 + 0 = 7.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «six plus zero is six»
+
+theorem «Monoid» «addition» «seven plus zero is seven» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(7)
+    assume «Monoid» «addition» «six plus zero is six»()
+    therefore 7 + 0 == 7
+}
+
+export «Monoid» «addition» «seven plus zero is seven»

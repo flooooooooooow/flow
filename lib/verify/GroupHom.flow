@@ -1,0 +1,22 @@
+# @module verify.GroupHom
+# @means  Group homomorphism axioms.
+# @from   dummit-foote — *Abstract Algebra*, §1.6
+# @tier   definitions-only
+
+# @means  A homomorphism sends the identity to the identity.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «GroupHom» «identity» «the identity maps to the identity» (f: GroupHom) {
+    therefore f(1) == 1
+}
+
+# @means  A homomorphism respects multiplication.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «GroupHom» «multiplication» «products map to products» (f: GroupHom, a: Group, b: Group) {
+    therefore f(a * b) == f(a) * f(b)
+}
+
+export «GroupHom» «identity» «the identity maps to the identity», «GroupHom» «multiplication» «products map to products»

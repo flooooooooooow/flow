@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Eighteen plus zero is eighteen in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  18 + 0 = 18.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «seventeen plus zero is seventeen»
+
+theorem «Monoid» «addition» «eighteen plus zero is eighteen» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(18)
+    assume «Monoid» «addition» «seventeen plus zero is seventeen»()
+    therefore 18 + 0 == 18
+}
+
+export «Monoid» «addition» «eighteen plus zero is eighteen»

@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Choosing four from a successor derived from Pascal.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(succ(n), 4) = choose(n, 3) + choose(n, 4).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «choosing four from a successor»
+
+theorem «Comb» «choose» «choosing four from a successor derived» (n: Nat) {
+    assume «Comb» «choose» «choosing four from a successor»(n)
+    therefore choose(succ(n), 4) == choose(n, 3) + choose(n, 4)
+}
+
+export «Comb» «choose» «choosing four from a successor derived»

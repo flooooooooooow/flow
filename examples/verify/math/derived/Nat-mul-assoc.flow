@@ -1,0 +1,28 @@
+# @module examples.verify.math.derived
+# @means  Multiplication associates on natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Associative_property
+# @tier   derived
+
+# @means  (a * b) * c = a * (b * c).
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the left annihilator», «Nat» «multiplication» «successor on the right distributes», «Nat» «multiplication» «distributes over addition on the right»
+
+import verify.Nat-mul { zero-left, succ-right }
+import .Nat-mul-distrib-left { distrib-left }
+
+theorem «Nat» «multiplication» «parentheses do not matter» (a: Nat, b: Nat, c: Nat) {
+    if a == 0 {
+        assume «Nat» «multiplication» «zero is the left annihilator»(b)
+        assume «Nat» «multiplication» «zero is the left annihilator»(b * c)
+        therefore (a * b) * c == a * (b * c)
+    } else {
+        let n = pred(a)
+        assume «Nat» «multiplication» «parentheses do not matter»(n, b, c)
+        assume «Nat» «multiplication» «successor on the right distributes»(n, b)
+        assume «Nat» «multiplication» «distributes over addition on the right»(n, b, c)
+        therefore (a * b) * c == a * (b * c)
+    }
+}
+
+export «Nat» «multiplication» «parentheses do not matter»

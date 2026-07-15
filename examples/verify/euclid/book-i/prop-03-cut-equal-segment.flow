@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  Given two unequal straight lines, to cut off from the greater a part equal to the less.
+# @from   euclid — Elements, Book I, Proposition 3
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment», «Geometry» «Euclid Book I» «Proposition 2: a segment equal to a given segment»
+
+theorem «Geometry» «Euclid Book I» «Proposition 3: cut a segment equal to a smaller segment» () {
+    let equilateral_AEF = triangle_on_AE_by_Proposition_1
+    let circle_center_A_radius_CD = circle_at_A_with_radius_CD
+    let F = point_where_circle_meets_line_from_A_through_E
+    assume «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»()
+    assume «Geometry» «Euclid Book I» «Proposition 2: a segment equal to a given segment»()
+    therefore segment_AF == segment_CD
+    therefore cut_from_AE_equals_CD
+}

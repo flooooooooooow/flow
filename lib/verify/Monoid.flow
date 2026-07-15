@@ -1,0 +1,30 @@
+# @module verify.Monoid
+# @means  Monoid axioms for an associative operation with identity.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   definitions-only
+
+# @means  Monoid multiplication associates.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Monoid» «multiplication» «parentheses do not matter» (a: Monoid, b: Monoid, c: Monoid) {
+    therefore (a * b) * c == a * (b * c)
+}
+
+# @means  The identity is a left unit.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Monoid» «identity» «one is the left identity» (m: Monoid) {
+    therefore 1 * m == m
+}
+
+# @means  The identity is a right unit.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Monoid» «identity» «one is the right identity» (m: Monoid) {
+    therefore m * 1 == m
+}
+
+export «Monoid» «multiplication» «parentheses do not matter», «Monoid» «identity» «one is the left identity», «Monoid» «identity» «one is the right identity»

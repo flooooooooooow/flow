@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Zero on the right annihilates integer multiplication.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  m * 0 = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «multiplication» «zero on the left gives zero», «Int» «multiplication» «order does not matter»
+
+import .Int-mul-comm { mul-comm }
+
+theorem «Int» «multiplication» «zero on the right gives zero» (m: Int) {
+    assume «Int» «multiplication» «zero on the left gives zero»(m)
+    assume «Int» «multiplication» «order does not matter»(m, 0)
+    therefore m * 0 == 0
+}
+
+export «Int» «multiplication» «zero on the right gives zero»

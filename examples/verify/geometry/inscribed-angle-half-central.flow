@@ -1,0 +1,10 @@
+# @means  An inscribed angle equals half the central angle subtending the same arc.
+# @from   euclid — Elements, Book III, Proposition 20
+# @tier   derived
+# @needs  «Geometry» «circle» «radii from the centre are equal»
+# @diagram inscribed-angle-half-central
+
+theorem «Geometry» «circle» «inscribed angle is half the central angle» () {
+    assume «Geometry» «circle» «radii from the centre are equal»()
+    therefore angle_APB == half_of_angle_AOB
+}

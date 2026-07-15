@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Undecuple cons ending in nil has length eleven.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len of eleven cons ending in nil equals 11.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «cons increases length by one», «List» «length» «decuple cons nil has length ten»
+
+theorem «List» «length» «undecuple cons nil has length eleven» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat) {
+    assume «List» «length» «cons increases length by one»(cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, nil)))))))))))
+    assume «List» «length» «decuple cons nil has length ten»(b, c, d, e, f, g, h, i, j, k)
+    therefore len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, nil)))))))))))) == 11
+}
+
+export «List» «length» «undecuple cons nil has length eleven»

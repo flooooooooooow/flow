@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Equal rationals can be subtracted from the left.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  r + p = r + q implies p = q.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «addition» «right cancellation holds», «Rat» «addition» «order does not matter»
+
+theorem «Rat» «addition» «left cancellation holds» (p: Rat, q: Rat, r: Rat) {
+    if r + p == r + q {
+        assume «Rat» «addition» «right cancellation holds»(p, q, r)
+        assume «Rat» «addition» «order does not matter»(r, p)
+        therefore p == q
+    }
+}
+
+export «Rat» «addition» «left cancellation holds»

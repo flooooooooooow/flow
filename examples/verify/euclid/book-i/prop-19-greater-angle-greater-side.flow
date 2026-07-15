@@ -1,0 +1,11 @@
+# @module examples.verify.euclid.book-i
+# @means  In any triangle, the greater angle is subtended by the greater side.
+# @from   euclid — Elements, Book I, Proposition 19
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 18: the greater side subtends the greater angle»
+
+theorem «Geometry» «Euclid Book I» «Proposition 19: the greater angle is opposite the greater side» () {
+    assume triangle_ABC_with_angle_B_greater_than_angle_C
+    assume «Geometry» «Euclid Book I» «Proposition 18: the greater side subtends the greater angle»()
+    therefore angle_B_greater_implies_side_AC_greater
+}

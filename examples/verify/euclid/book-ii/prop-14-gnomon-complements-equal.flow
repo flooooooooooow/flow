@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-ii
+# @means  The complements of the parallelograms about the diameter of a gnomon are equal to one another.
+# @from   euclid — Elements, Book II, Proposition 14
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal», «Geometry» «Euclid Book II» «Proposition 11: a gnomon equals the rectangle by the segments»
+
+theorem «Geometry» «Euclid Book II» «Proposition 14: the complements about the diameter of a gnomon are equal» () {
+    let gnomon = gnomon_about_diameter
+    let comp_1 = complement_about_diameter_1
+    let comp_2 = complement_about_diameter_2
+    therefore comp_1 == comp_2
+    assume «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal»()
+    assume «Geometry» «Euclid Book II» «Proposition 11: a gnomon equals the rectangle by the segments»()
+    therefore complement_1 == complement_2
+}

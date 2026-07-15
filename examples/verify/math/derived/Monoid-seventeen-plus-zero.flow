@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Seventeen plus zero is seventeen in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  17 + 0 = 17.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «sixteen plus zero is sixteen»
+
+theorem «Monoid» «addition» «seventeen plus zero is seventeen» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(17)
+    assume «Monoid» «addition» «sixteen plus zero is sixteen»()
+    therefore 17 + 0 == 17
+}
+
+export «Monoid» «addition» «seventeen plus zero is seventeen»

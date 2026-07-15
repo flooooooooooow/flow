@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  In a triangle, an exterior angle is greater than either remote interior angle.
+# @from   euclid — Elements, Book I, Proposition 16
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book I» «Proposition 15: vertical angles are equal»
+
+theorem «Geometry» «Euclid Book I» «Proposition 16: an exterior angle exceeds either remote interior angle» () {
+    let D = point_on_BC_produced_beyond_C
+    let F = midpoint_of_AC
+    let G = point_on_BF_with_FG_equal_to_FA
+    assume triangle_ABC_with_exterior_angle_ACD
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    assume «Geometry» «Euclid Book I» «Proposition 15: vertical angles are equal»()
+    therefore angle_ACD > angle_CAB
+}

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Each interior angle of a triangle is less than two right angles.
+# @from   euclid — Elements, Book I, Proposition 17
+# @tier   derived
+
+# @means  angle A is less than two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «interior angles sum to two right angles», «Geometry» «triangle» «two angles determine the third»
+
+theorem «Geometry» «triangle» «each interior angle is less than two right» () {
+    assume «Geometry» «triangle» «interior angles sum to two right angles»()
+    assume «Geometry» «triangle» «two angles determine the third»()
+    therefore angle_A < two_right_angles
+}
+
+export «Geometry» «triangle» «each interior angle is less than two right»

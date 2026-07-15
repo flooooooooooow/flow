@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Pairing is determined by its components.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  pair(a, b) determines a and b.
+# @from   church
+# @tier   derived
+# @needs  «Pair» «first projection» «first projection from pairing», «Pair» «second projection» «second projection from pairing», «Pair» «pairing» «components determine the pair»
+
+theorem «Pair» «pairing» «pairing is determined by components» (a: Nat, b: Nat) {
+    assume «Pair» «first projection» «first projection from pairing»(a, b)
+    assume «Pair» «second projection» «second projection from pairing»(a, b)
+    assume «Pair» «pairing» «components determine the pair»(a, b)
+    therefore pair(a, b) == pair(a, b)
+}
+
+export «Pair» «pairing» «pairing is determined by components»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing a quindecuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @tier   derived
+
+# @means  rev of fifteen cons ending in nil reverses element order.
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «reverse of cons is append of reverse tail», «List» «reverse» «reverse of quattuordecuple cons»
+
+theorem «List» «reverse» «reverse of quindecuple cons» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat, l: Nat, m: Nat, n: Nat, o: Nat) {
+    assume «List» «reverse» «reverse of cons is append of reverse tail»(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, nil)))))))))))))))
+    assume «List» «reverse» «reverse of quattuordecuple cons»(b, c, d, e, f, g, h, i, j, k, l, m, n, o)
+    therefore rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, nil))))))))))))))) == cons(o, cons(n, cons(m, cons(l, cons(k, cons(j, cons(i, cons(h, cons(g, cons(f, cons(e, cons(d, cons(c, cons(b, cons(a, nil)))))))))))))))
+}
+
+export «List» «reverse» «reverse of quindecuple cons»

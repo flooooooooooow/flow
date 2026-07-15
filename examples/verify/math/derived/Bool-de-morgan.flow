@@ -1,0 +1,25 @@
+# @module examples.verify.math.derived
+# @means  De Morgan law linking negation with conjunction and disjunction.
+# @from   boole — https://en.wikipedia.org/wiki/De_Morgan%27s_laws
+# @tier   derived
+
+# @means  ¬(a ∧ b) = (¬a) ∨ (¬b).
+# @from   boole — https://en.wikipedia.org/wiki/De_Morgan%27s_laws
+# @tier   derived
+# @needs  «Bool» «negation» «double negation returns the value»
+
+theorem «Bool» «negation» «de Morgan for conjunction and disjunction» (a: bool, b: bool) {
+    if a == true {
+        if b == true {
+            therefore !(a and b) == (!a) or (!b)
+        } else {
+            therefore !(a and b) == (!a) or (!b)
+        }
+    } elif b == true {
+        therefore !(a and b) == (!a) or (!b)
+    } else {
+        therefore !(a and b) == (!a) or (!b)
+    }
+}
+
+export «Bool» «negation» «de Morgan for conjunction and disjunction»

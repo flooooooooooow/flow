@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Decuple swap returns the original pair.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  ten nested swaps on a pair returns the pair.
+# @from   church
+# @tier   derived
+# @needs  «Pair» «swap» «nonuple swap returns pair», «Pair» «swap» «octuple swap returns pair»
+
+theorem «Pair» «swap» «decuple swap returns pair» (a: Nat, b: Nat) {
+    assume «Pair» «swap» «nonuple swap returns pair»(a, b)
+    assume «Pair» «swap» «octuple swap returns pair»(a, b)
+    therefore swap(swap(swap(swap(swap(swap(swap(swap(swap(swap(pair(a, b))))))))))) == pair(a, b)
+}
+
+export «Pair» «swap» «decuple swap returns pair»

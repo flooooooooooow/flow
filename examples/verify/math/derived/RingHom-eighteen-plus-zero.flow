@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Eighteen plus zero maps to eighteen under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(18 + 0) = 18.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «RingHom» «preservation» «seventeen plus zero maps to seventeen»
+
+theorem «RingHom» «preservation» «eighteen plus zero maps to eighteen» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 18, 0)
+    assume «RingHom» «preservation» «seventeen plus zero maps to seventeen»(f)
+    therefore f(18 + 0) == 18
+}
+
+export «RingHom» «preservation» «eighteen plus zero maps to eighteen»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Eight plus zero maps to eight under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(8 + 0) = 8.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «eight plus zero maps to eight» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 8, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(8 + 0) == 8
+}
+
+export «RingHom» «preservation» «eight plus zero maps to eight»

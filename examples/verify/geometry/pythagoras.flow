@@ -1,0 +1,8 @@
+# @means  In a right triangle, the square on the hypotenuse equals the sum of squares on the legs.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+# @diagram right-triangle-pythagoras
+
+theorem «Geometry» «right triangle» «the Pythagorean relation holds» () {
+    therefore c * c == a * a + b * b
+}

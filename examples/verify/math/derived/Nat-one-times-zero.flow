@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One times zero is zero for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  1 * 0 = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the right annihilator»
+
+theorem «Nat» «multiplication» «one times zero is zero» () {
+    assume «Nat» «multiplication» «zero is the right annihilator»(succ(0))
+    therefore succ(0) * 0 == 0
+}
+
+export «Nat» «multiplication» «one times zero is zero»

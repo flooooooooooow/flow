@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  One is the right multiplicative identity for rationals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  q * 1 = q.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «multiplication» «one is the left identity», «Rat» «addition» «zero is the right identity»
+
+theorem «Rat» «multiplication» «one is the right identity» (q: Rat) {
+    assume «Rat» «multiplication» «one is the left identity»(q)
+    assume «Rat» «addition» «zero is the right identity»(q)
+    therefore q * 1 == q
+}
+
+export «Rat» «multiplication» «one is the right identity»

@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-ii
+# @means  If a straight line is cut into equal and unequal segments, the rectangle by the unequal segments together with the square on the line between the points of section equals the square on the half.
+# @from   euclid — Elements, Book II, Proposition 5
+# @tier   derived
+# @needs  «Geometry» «Euclid Book II» «Proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle»
+
+theorem «Geometry» «Euclid Book II» «Proposition 5: the rectangle by unequal parts plus the square on the midpoint equals the square on the half» () {
+    let whole = straight_line_AB
+    let half = segment_AM
+    let unequal = segments_AN_and_NB
+    therefore rect(unequal) + sq(between_points) == sq(half)
+    assume «Geometry» «Euclid Book II» «Proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle»()
+    therefore rect(unequal_parts) + sq(between_points) == sq(half)
+}

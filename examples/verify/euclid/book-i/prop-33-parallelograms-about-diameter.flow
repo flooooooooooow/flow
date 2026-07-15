@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  Parallelograms about the diameter of a parallelogram are equal.
+# @from   euclid — Elements, Book I, Proposition 33
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book I» «Proposition 26: equal parallelograms on equal bases between parallels»
+
+theorem «Geometry» «Euclid Book I» «Proposition 33: parallelograms about a diameter are equal» () {
+    let K = point_on_diagonal_AC_of_parallelogram_ABCD
+    let EKHK = parallelogram_about_diameter_through_K
+    let KGFC = complementary_parallelogram_about_K
+    assume parallelogram_ABCD_with_diameter_AC
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    assume «Geometry» «Euclid Book I» «Proposition 26: equal parallelograms on equal bases between parallels»()
+    therefore parallelogram_AEKH == parallelogram_KGFC
+}

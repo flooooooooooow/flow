@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  In equal and equiangular parallelograms the sides about the equal angles are reciprocally proportional.
+# @from   euclid — Elements, Book VI, Proposition 14
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides», «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 14: equal equiangular parallelograms have reciprocally proportional sides» () {
+    let ABCD = parallelogram_1
+    let EFGH = parallelogram_2
+    let angle_A = angle_E
+    therefore reciprocal_proportion_holds
+    assume «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides»()
+    assume «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando»()
+    therefore equal_equiangular_implies_reciprocal_sides
+}

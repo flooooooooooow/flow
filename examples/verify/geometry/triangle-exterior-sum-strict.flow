@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An exterior angle strictly exceeds the sum of remote interiors when angles are positive.
+# @from   euclid — Elements, Book I, Proposition 16
+# @tier   derived
+
+# @means  exterior at C exceeds angle A when angle B is positive.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «exterior exceeds max remote interior», «Geometry» «triangle» «second interior angle is positive»
+
+theorem «Geometry» «triangle» «exterior sum strict with positive angles» () {
+    assume «Geometry» «triangle» «exterior exceeds max remote interior»()
+    assume «Geometry» «triangle» «second interior angle is positive»()
+    therefore exterior_at_C > angle_A
+}
+
+export «Geometry» «triangle» «exterior sum strict with positive angles»

@@ -1,0 +1,32 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (A) at (90.0,80.0);
+  \coordinate (B) at (220.0,80.0);
+  \coordinate (C) at (160.0,260.0);
+  \coordinate (D) at (290.0,80.0);
+  \coordinate (E) at (390.0,80.0);
+  \coordinate (F) at (330.0,260.0);
+  \draw[thick] (A) -- (B);
+  \draw[thick] (B) -- (C);
+  \draw[thick] (C) -- (A);
+  \draw[thick] (D) -- (E);
+  \draw[thick] (E) -- (F);
+  \draw[thick] (F) -- (D);
+  \pic [draw, angle radius=5mm, "$\theta$"] {angle = B--A--C};
+  \pic [draw, angle radius=5mm, "$\theta$"] {angle = E--D--F};
+  \fill (A) circle (6pt);
+  \node[font=\bfseries] at ($( A ) + (0,-14)$) {A};
+  \fill (B) circle (6pt);
+  \node[font=\bfseries] at ($( B ) + (0,-14)$) {B};
+  \fill (C) circle (6pt);
+  \node[font=\bfseries] at ($( C ) + (0,20)$) {C};
+  \fill (D) circle (6pt);
+  \node[font=\bfseries] at ($( D ) + (0,-14)$) {D};
+  \fill (E) circle (6pt);
+  \node[font=\bfseries] at ($( E ) + (0,-14)$) {E};
+  \fill (F) circle (6pt);
+  \node[font=\bfseries] at ($( F ) + (0,20)$) {F};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Two triangles with two sides and the included angle equal — the triangles are congruent.};
+\end{tikzpicture}
+\end{center}

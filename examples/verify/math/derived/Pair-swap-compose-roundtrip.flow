@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Composing swap twice is the identity on pairs.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  swap(swap(pair(a, b))) = pair(a, b).
+# @from   church
+# @tier   derived
+# @needs  «Pair» «swap» «swap recovers both components», «Pair» «swap» «swap recovers second as first»
+
+theorem «Pair» «swap» «compose swap twice is identity» (a: Nat, b: Nat) {
+    assume «Pair» «swap» «swap recovers both components»(a, b)
+    assume «Pair» «swap» «swap recovers second as first»(a, b)
+    therefore swap(swap(pair(a, b))) == pair(a, b)
+}
+
+export «Pair» «swap» «compose swap twice is identity»

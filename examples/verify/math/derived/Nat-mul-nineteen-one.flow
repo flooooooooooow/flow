@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Nineteen times one is nineteen.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  19 * 1 = 19.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «eighteen times one is eighteen»
+
+theorem «Nat» «multiplication» «nineteen times one is nineteen» () {
+    assume «Nat» «multiplication» «eighteen times one is eighteen»()
+    therefore 19 * 1 == 19
+}
+
+export «Nat» «multiplication» «nineteen times one is nineteen»

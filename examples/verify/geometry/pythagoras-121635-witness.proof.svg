@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360">
+<style>text{font-family:Georgia,serif;font-size:15px;fill:#1a1a1a}</style>
+<rect width="100%" height="100%" fill="#faf9f6"/>
+<line x1="80.0" y1="300.0" x2="380.0" y2="300.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="380.0" y1="300.0" x2="80.0" y2="80.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="80.0" y1="80.0" x2="80.0" y2="300.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 352.0 300.0 A 28.0 28.0 0 0 1 357.4 283.4" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="340.1" y="286.9" text-anchor="middle">a</text>
+<path d="M 102.6 96.6 A 28.0 28.0 0 0 1 80.0 108.0" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="99.0" y="117.5" text-anchor="middle">b</text>
+<path d="M 94.0 300.0 L 94.0 286.0 L 80.0 286.0" fill="none" stroke="#2c3e50" stroke-width="1.5"/>
+<circle cx="80.0" cy="300.0" r="4.5" fill="#2c3e50"/>
+<text x="80.0" y="286.0" text-anchor="middle" font-weight="bold">A</text>
+<circle cx="380.0" cy="300.0" r="4.5" fill="#2c3e50"/>
+<text x="380.0" y="286.0" text-anchor="middle" font-weight="bold">B</text>
+<circle cx="80.0" cy="80.0" r="4.5" fill="#2c3e50"/>
+<text x="80.0" y="100.0" text-anchor="middle" font-weight="bold">C</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Right triangle with legs a, b and hypotenuse c — c² = a² + b².</text>
+</svg>

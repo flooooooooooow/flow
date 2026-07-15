@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Cardinality of union intersected with self is bounded.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card((s ∪ t) ∩ s) <= card(s ∪ t).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «cardinality» «intersection card is at most left card»
+
+theorem «Finset» «cardinality» «union intersect self card bound» (s: Finset, t: Finset) {
+    assume «Finset» «cardinality» «intersection card is at most left card»(s ∪ t, s)
+    therefore card((s ∪ t) ∩ s) <= card(s ∪ t)
+}
+
+export «Finset» «cardinality» «union intersect self card bound»

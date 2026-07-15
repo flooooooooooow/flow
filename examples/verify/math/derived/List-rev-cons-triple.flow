@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing a triple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @tier   derived
+
+# @means  rev(cons(a, cons(b, cons(c, nil)))) = cons(c, cons(b, cons(a, nil))).
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «reverse of cons is append of reverse tail», «List» «reverse» «reverse of double cons»
+
+theorem «List» «reverse» «reverse of triple cons» (a: Nat, b: Nat, c: Nat) {
+    assume «List» «reverse» «reverse of cons is append of reverse tail»(a, cons(b, cons(c, nil)))
+    assume «List» «reverse» «reverse of double cons»(b, c)
+    therefore rev(cons(a, cons(b, cons(c, nil)))) == cons(c, cons(b, cons(a, nil)))
+}
+
+export «List» «reverse» «reverse of triple cons»

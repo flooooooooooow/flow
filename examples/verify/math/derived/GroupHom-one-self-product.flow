@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  A group homomorphism preserves the identity product.
+# @from   dummit-foote — *Abstract Algebra*, §1.6
+# @tier   derived
+
+# @means  f(1) * f(1) = f(1).
+# @from   dummit-foote
+# @tier   derived
+# @needs  «GroupHom» «identity» «the identity image is idempotent»
+
+theorem «GroupHom» «identity» «the identity image multiplies to itself» (f: GroupHom) {
+    assume «GroupHom» «identity» «the identity image is idempotent»(f)
+    therefore f(1) * f(1) == f(1)
+}
+
+export «GroupHom» «identity» «the identity image multiplies to itself»

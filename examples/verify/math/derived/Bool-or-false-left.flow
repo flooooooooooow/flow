@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  False on the left is a disjunctive identity.
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+
+# @means  false or a = a.
+# @from   boole
+# @tier   derived
+# @needs  «Bool» «disjunction» «order does not matter», «Bool» «disjunction» «false is the right identity»
+
+theorem «Bool» «disjunction» «false is the left identity» (a: bool) {
+    assume «Bool» «disjunction» «order does not matter»(false, a)
+    assume «Bool» «disjunction» «false is the right identity»(a)
+    therefore false or a == a
+}
+
+export «Bool» «disjunction» «false is the left identity»

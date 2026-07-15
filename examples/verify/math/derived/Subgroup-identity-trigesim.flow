@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  The identity to the thirtieth stays in a subgroup.
+# @from   dummit-foote — *Abstract Algebra*, §2.2
+# @tier   derived
+
+# @means  If identity to the twenty-ninth in H then identity to the thirtieth in H.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Subgroup» «multiplication» «subgroup products stay in the subgroup», «Subgroup» «multiplication» «identity to the twenty ninth stays in the subgroup», «Subgroup» «membership» «subgroups contain the identity»
+
+theorem «Subgroup» «multiplication» «identity to the thirtieth stays in the subgroup» (H: Subgroup) {
+    if 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 in H {
+        assume «Subgroup» «multiplication» «subgroup products stay in the subgroup»(H, 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1, 1)
+        assume «Subgroup» «multiplication» «identity to the twenty ninth stays in the subgroup»(H)
+        assume «Subgroup» «membership» «subgroups contain the identity»(H)
+        therefore 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 * 1 in H
+    }
+}
+
+export «Subgroup» «multiplication» «identity to the thirtieth stays in the subgroup»

@@ -1,0 +1,25 @@
+# Optimisation proof: run both versions, therefore they're equal.
+# Status: design example (syntax not yet implemented)
+
+theorem matmul_vectorized_correct(m: i32, n: i32, k: i32) {
+    let A = arbitrary_f32_matrix(m, k)
+    let B = arbitrary_f32_matrix(k, n)
+    let C_naive = f32_matrix_zeros(m, n)
+    let C_fast  = f32_matrix_zeros(m, n)
+
+    matmul_naive(C_naive, A, B, m, n, k)
+    matmul_vectorized_0(C_fast, A, B, m, n, k)
+
+    therefore matrices_equal(C_naive, C_fast, m, n)
+}
+
+theorem loop_fusion_correct(n: i32) {
+    let σ = arbitrary_memory()
+    let a = fresh_array(n)
+    let b = fresh_array(n)
+
+    let σ_separate = run_separate_loops(σ, a, b, n)
+    let σ_fused    = run_fused_loop(σ, a, b, n)
+
+    therefore memory_equal(σ_separate, σ_fused)
+}

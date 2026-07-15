@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  The empty set unioned on the left has cardinality zero.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(empty ∪ s) <= card(s).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «union» «empty on the left gives the set», «Finset» «cardinality» «the empty set has size zero»
+
+theorem «Finset» «cardinality» «empty left union has bounded size» (s: Finset) {
+    assume «Finset» «union» «empty on the left gives the set»(s)
+    assume «Finset» «cardinality» «the empty set has size zero»()
+    therefore card(empty ∪ s) <= card(s)
+}
+
+export «Finset» «cardinality» «empty left union has bounded size»

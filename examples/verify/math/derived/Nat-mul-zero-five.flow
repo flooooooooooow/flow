@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero times five is zero for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 * 5 = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the left annihilator»
+
+theorem «Nat» «multiplication» «zero times five is zero» () {
+    let five = succ(succ(succ(succ(succ(0)))))
+    assume «Nat» «multiplication» «zero is the left annihilator»(five)
+    therefore 0 * five == 0
+}
+
+export «Nat» «multiplication» «zero times five is zero»

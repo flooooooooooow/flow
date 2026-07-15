@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Octuple cons ending in nil has length eight.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil)))))))) = 8.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «cons increases length by one», «List» «length» «septuple cons nil has length seven»
+
+theorem «List» «length» «octuple cons nil has length eight» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat) {
+    assume «List» «length» «cons increases length by one»(cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil))))))))
+    assume «List» «length» «septuple cons nil has length seven»(b, c, d, e, f, g, h)
+    therefore len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil)))))))) == 8
+}
+
+export «List» «length» «octuple cons nil has length eight»

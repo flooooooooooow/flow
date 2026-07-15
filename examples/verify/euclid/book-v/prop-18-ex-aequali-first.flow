@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If magnitudes are proportional ex aequali, the first is to the last as the first of the others is to the last of the others.
+# @from   euclid — Elements, Book V, Proposition 18
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando», «Geometry» «Euclid Book V» «Proposition 15: a part has the same ratio to its part as the whole to its whole»
+
+theorem «Geometry» «Euclid Book V» «Proposition 18: ex aequali proportion from three magnitudes» () {
+    let a = first
+    let b = middle
+    let c = last
+    therefore ratio(a, c) == ratio(d, f)
+    assume «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando»()
+    assume «Geometry» «Euclid Book V» «Proposition 15: a part has the same ratio to its part as the whole to its whole»()
+    therefore ex_aequali_first_holds
+}

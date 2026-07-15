@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Meet absorbs join on the lattice order.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  a ∧ (a ∨ b) = a.
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «meet» «order does not matter», «Order» «join» «order does not matter», «Order» «meet» «repeating does not change the value»
+
+theorem «Order» «meet» «meet absorbs join» (a: Nat, b: Nat) {
+    assume «Order» «meet» «order does not matter»(a, b)
+    assume «Order» «join» «order does not matter»(a, b)
+    assume «Order» «meet» «repeating does not change the value»(a)
+    therefore meet(a, join(a, b)) == a
+}
+
+export «Order» «meet» «meet absorbs join»

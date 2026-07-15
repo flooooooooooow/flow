@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Meet below join is reflexive on equal arguments.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, a) <= join(a, a).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «meet below join commutes», «Order» «meet» «repeating does not change the value»
+
+theorem «Order» «lattice» «meet below join reflexive» (a: Nat) {
+    assume «Order» «lattice» «meet below join commutes»(a, a)
+    assume «Order» «meet» «repeating does not change the value»(a)
+    therefore meet(a, a) <= join(a, a)
+}
+
+export «Order» «lattice» «meet below join reflexive»

@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Three plus one is four for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  3 + 1 = 4.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «successor on the right via commutativity», «Nat» «addition» «three plus zero is three»
+
+theorem «Nat» «addition» «three plus one is four» () {
+    let three = succ(succ(succ(0)))
+    assume «Nat» «addition» «successor on the right via commutativity»(three, 0)
+    assume «Nat» «addition» «three plus zero is three»()
+    therefore three + succ(0) == succ(three)
+}
+
+export «Nat» «addition» «three plus one is four»

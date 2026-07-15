@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  Similar rectilineal figures are to one another in the duplicate ratio of the corresponding sides.
+# @from   euclid — Elements, Book VI, Proposition 19
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides», «Geometry» «Euclid Book V» «Proposition 18: ex aequali proportion from three magnitudes»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 19: similar rectilineal figures are in duplicate ratio of corresponding sides» () {
+    let fig1 = similar_figure_1
+    let fig2 = similar_figure_2
+    let side_a = homologous_side
+    therefore area_ratio_duplicate_of_side_ratio
+    assume «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides»()
+    assume «Geometry» «Euclid Book V» «Proposition 18: ex aequali proportion from three magnitudes»()
+    therefore similar_figures_duplicate_ratio
+}

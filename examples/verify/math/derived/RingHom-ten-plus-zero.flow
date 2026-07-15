@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Ten plus zero maps to ten under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(10 + 0) = 10.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «ten plus zero maps to ten» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 10, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(10 + 0) == 10
+}
+
+export «RingHom» «preservation» «ten plus zero maps to ten»

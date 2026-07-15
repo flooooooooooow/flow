@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Eight times one is eight.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  8 * 1 = 8.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «seven times one is seven»
+
+theorem «Nat» «multiplication» «eight times one is eight» () {
+    assume «Nat» «multiplication» «seven times one is seven»()
+    therefore 8 * 1 == 8
+}
+
+export «Nat» «multiplication» «eight times one is eight»
