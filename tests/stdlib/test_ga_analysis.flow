@@ -16,10 +16,21 @@ function main() -> i32 {
     let bk1: array<f64, 1> = [0.0]
     let bk2: array<f64, 1> = [0.0]
     let hist: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let z: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let ctrl: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let ap: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let blk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let na: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let rk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let wf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let wi: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let bbt: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sa: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sb: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let acl: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let bk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
     let r: GAAnalysisReport = ga_analyze_control_search(
         plant, 40, cfg, k1, k2, fit, bk1, bk2, hist,
-        z, z, z, z, z, z, z, z, z, z, z, z
+        ctrl, ap, blk, na, rk, wf, wi, bbt, sa, sb, acl, bk
     )
     if r.plant_controllable != 1 { return 1 }
     if r.fitness_drop <= 0.0 { return 2 }
