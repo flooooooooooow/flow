@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from flow.claim_address import ClaimAddress, try_parse_claim_address
+from flow.claim_address import try_parse_claim_address
 from flow.math_prose import flow_expr_to_latex
 
 
