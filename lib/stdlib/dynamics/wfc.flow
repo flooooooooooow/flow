@@ -168,3 +168,60 @@ function wfc_step(grid: WFCGrid, tile_count: i32, seed: i32) -> i32 {
     wfc_propagate(grid, tile_count)
     return 1
 }
+
+function wfc_count_collapsed(grid: WFCGrid) -> i32 {
+    let total: i32 = grid.width * grid.height
+    let mut c: i32 = 0
+    for i in 0 to total {
+        if grid.cells[i] >= 0 {
+            c = c + 1
+        }
+    }
+    return c
+}
+
+function wfc_wall_fraction(grid: WFCGrid) -> f64 {
+    let total: i32 = grid.width * grid.height
+    let mut walls: i32 = 0
+    for i in 0 to total {
+        if grid.cells[i] == 1 {
+            walls = walls + 1
+        }
+    }
+    if total == 0 {
+        return 0.0
+    }
+    return walls / (total * 1.0)
+}
+
+function wfc_mean_entropy(grid: WFCGrid, tile_count: i32) -> f64 {
+    let total: i32 = grid.width * grid.height
+    let mut sum: i32 = 0
+    let mut open_cells: i32 = 0
+    for i in 0 to total {
+        if grid.cells[i] < 0 {
+            let base: i32 = i * tile_count
+            let ent: i32 = wfc_entropy_at(grid.options, base, tile_count)
+            sum = sum + ent
+            open_cells = open_cells + 1
+        }
+    }
+    if open_cells == 0 {
+        return 0.0
+    }
+    return sum / (open_cells * 1.0)
+}
+
+function wfc_run_collapse(grid: WFCGrid, tile_count: i32, seed: i32, max_steps: i32) -> i32 {
+    wfc_propagate(grid, tile_count)
+    let mut cur_seed: i32 = seed
+    let mut steps: i32 = 0
+    while steps < max_steps {
+        if wfc_step(grid, tile_count, cur_seed) == 0 {
+            return steps
+        }
+        cur_seed = cur_seed + 13
+        steps = steps + 1
+    }
+    return steps
+}

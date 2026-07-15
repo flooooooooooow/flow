@@ -1,0 +1,58 @@
+# Stdlib: GA + WFC coupling
+import "stdlib/dynamics/wfc_ga_coupling.flow"
+
+function main() -> i32 {
+    let n: i32 = 2
+    let m: i32 = 1
+    let A: array<f64, 4> = [1.0, 0.1, 0.0, 1.0]
+    let B: array<f64, 2> = [0.0, 0.1]
+    let C: array<f64, 2> = [1.0, 0.0]
+    let plant: DynamicalSystem = dsys_discrete(n, m, 1, 0.1,
+        Matrix { data: A, rows: n, cols: n },
+        Matrix { data: B, rows: n, cols: m },
+        Matrix { data: C, rows: 1, cols: n }
+    )
+
+    let report: GAAnalysisReport = GAAnalysisReport {
+        plant_controllable: 1,
+        plant_spectral_radius: 1.0,
+        closed_spectral_radius: 0.85,
+        gramian_open_finite: 1.0,
+        gramian_open_infinite: 0.01,
+        closed_loop_energy: 10.0,
+        baseline_cost: 50.0,
+        evolved_cost: 20.0,
+        fitness_drop: 30.0,
+        convergence_gen: 5,
+        stable_closed_loop: 1
+    }
+
+    let guide: CoupledGuidance = couple_ga_wfc_guidance(report, 1.5, 2.0, 7, 20)
+
+    let cells: array<i32, 16> = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+    let opts: array<i32, 48> = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    cells[0] = 1
+    let grid: WFCGrid = WFCGrid { width: 4, height: 4, cells: cells, options: opts }
+    let wfc: WFCRunReport = wfc_run_guided(grid, 3, guide)
+
+    let b_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let acl: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let bk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let ev: GuidedEvolutionReport = guide_state_evolution(
+        plant, 1.5, 2.0, guide, wfc, 50, b_buf, acl, bk
+    )
+
+    if guide.b_scale <= 1.0 {
+        return 1
+    }
+    if wfc.collapsed < 4 {
+        return 2
+    }
+    if ev.stable_guided != 1 {
+        return 3
+    }
+    if ev.layout_energy <= 0.0 {
+        return 4
+    }
+    return 0
+}

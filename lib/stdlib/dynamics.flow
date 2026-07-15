@@ -19,6 +19,7 @@
 #   dynamics/ga.flow          — genetic control search
 #   dynamics/ga_analysis.flow — GA + Gramian + attractor unified report
 #   dynamics/wfc.flow         — wave function collapse grids
+#   dynamics/wfc_ga_coupling.flow — GA analysis guides WFC + state evolution
 #
 # Examples: examples/dynamics/
 

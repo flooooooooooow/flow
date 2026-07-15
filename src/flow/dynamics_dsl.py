@@ -42,6 +42,26 @@ Syntax
     analyze plant ga k1 k2 over rollout -> report {
         full
     }
+
+    wfc field layout {
+        size 4 4
+        tiles 3
+        seed 7
+        pin 0 1
+        collapse 20
+    }
+
+    couple plant field layout using report k1 k2 {
+        guidance -> guide
+        collapsed -> wfc_collapsed
+    }
+
+    guide plant with k1 k2 through layout using guide over rollout {
+        input_scale -> B_scale
+        energy -> E_guided
+        spectral -> rho_guided
+        stable -> stable_guided
+    }
 """
 
 from __future__ import annotations
@@ -109,13 +129,51 @@ class AnalyzeDecl:
 
 
 @dataclass
+class WFCDecl:
+    name: str
+    width: int = 4
+    height: int = 4
+    tiles: int = 3
+    seed: int = 7
+    pin_cell: int = 0
+    pin_tile: int = 1
+    steps: int = 20
+
+
+@dataclass
+class CoupleDecl:
+    system: str
+    field: str
+    report_var: str
+    k1_var: str
+    k2_var: str
+    guidance_var: str = "guide"
+    wfc_report_var: str = "wfc_report"
+    bindings: List[Tuple[str, str]] = field(default_factory=list)
+
+
+@dataclass
+class GuideDecl:
+    system: str
+    k1_var: str
+    k2_var: str
+    field: str
+    guidance_var: str
+    horizon: str
+    bindings: List[Tuple[str, str]] = field(default_factory=list)
+
+
+@dataclass
 class DynamicsProgram:
     systems: Dict[str, DsysDecl] = field(default_factory=dict)
     horizons: Dict[str, HorizonDecl] = field(default_factory=dict)
+    wfc_fields: Dict[str, WFCDecl] = field(default_factory=dict)
     senses: List[SenseDecl] = field(default_factory=list)
     ga_evolutions: List[GAEvolveDecl] = field(default_factory=list)
     closed_blocks: List[ClosedDecl] = field(default_factory=list)
     analyzes: List[AnalyzeDecl] = field(default_factory=list)
+    couples: List[CoupleDecl] = field(default_factory=list)
+    guides: List[GuideDecl] = field(default_factory=list)
 
 
 def _strip_comments(line: str) -> str:
@@ -296,6 +354,79 @@ def parse_dynamics_dsl(source: str) -> Tuple[DynamicsProgram, str]:
             body_lines, i = _extract_brace_block(lines, i)
             continue
 
+        if line.startswith("wfc field "):
+            m = re.match(r"wfc\s+field\s+(\w+)\s*\{", line)
+            if not m:
+                raise SyntaxError(f"Invalid wfc field block: {line}")
+            wfc = WFCDecl(m.group(1))
+            body_lines, i = _extract_brace_block(lines, i)
+            for bl in body_lines:
+                b = _strip_comments(bl)
+                if b.startswith("size "):
+                    parts = b.split()
+                    wfc.width = int(parts[1])
+                    wfc.height = int(parts[2])
+                elif b.startswith("tiles "):
+                    wfc.tiles = int(b.split()[1])
+                elif b.startswith("seed "):
+                    wfc.seed = int(b.split()[1])
+                elif b.startswith("pin "):
+                    parts = b.split()
+                    wfc.pin_cell = int(parts[1])
+                    wfc.pin_tile = int(parts[2])
+                elif b.startswith("collapse "):
+                    wfc.steps = int(b.split()[1])
+            program.wfc_fields[wfc.name] = wfc
+            continue
+
+        if line.startswith("couple "):
+            m = re.match(
+                r"couple\s+(\w+)\s+field\s+(\w+)\s+using\s+(\w+)\s+(\w+)\s+(\w+)\s*\{",
+                line,
+            )
+            if not m:
+                raise SyntaxError(f"Invalid couple block: {line}")
+            couple = CoupleDecl(
+                m.group(1), m.group(2), m.group(3), m.group(4), m.group(5)
+            )
+            body_lines, i = _extract_brace_block(lines, i)
+            for bl in body_lines:
+                b = _strip_comments(bl)
+                if "->" not in b:
+                    continue
+                lhs, rhs = [x.strip() for x in b.split("->", 1)]
+                if lhs == "guidance":
+                    couple.guidance_var = rhs
+                else:
+                    couple.bindings.append((lhs, rhs))
+            program.couples.append(couple)
+            continue
+
+        if line.startswith("guide "):
+            m = re.match(
+                r"guide\s+(\w+)\s+with\s+(\w+)\s+(\w+)\s+through\s+(\w+)\s+using\s+(\w+)\s+over\s+(\w+)\s*\{",
+                line,
+            )
+            if not m:
+                raise SyntaxError(f"Invalid guide block: {line}")
+            guide = GuideDecl(
+                m.group(1),
+                m.group(2),
+                m.group(3),
+                m.group(4),
+                m.group(5),
+                m.group(6),
+            )
+            body_lines, i = _extract_brace_block(lines, i)
+            for bl in body_lines:
+                b = _strip_comments(bl)
+                if "->" not in b:
+                    continue
+                lhs, rhs = [x.strip() for x in b.split("->", 1)]
+                guide.bindings.append((lhs, rhs))
+            program.guides.append(guide)
+            continue
+
         out_lines.append(raw)
         i += 1
 
@@ -313,15 +444,30 @@ def _zero_f64_array(size: int) -> str:
     return f"[{inner}]"
 
 
+def _neg_one_i32_array(size: int) -> str:
+    n = max(size, 1)
+    inner = ", ".join("-1" for _ in range(n))
+    return f"[{inner}]"
+
+
+def _one_i32_array(size: int) -> str:
+    n = max(size, 1)
+    inner = ", ".join("1" for _ in range(n))
+    return f"[{inner}]"
+
+
 def compile_dynamics_program(program: DynamicsProgram) -> str:
     """Emit Flow setup code injected into main()."""
     if not any(
         [
             program.systems,
+            program.wfc_fields,
             program.senses,
             program.ga_evolutions,
             program.closed_blocks,
             program.analyzes,
+            program.couples,
+            program.guides,
         ]
     ):
         return ""
@@ -380,6 +526,31 @@ def compile_dynamics_program(program: DynamicsProgram) -> str:
                 f"Matrix {{ data: __dsys_{name}_B, rows: {sys.n}, cols: {sys.m} }}, "
                 f"Matrix {{ data: __dsys_{name}_C, rows: {sys.p}, cols: {sys.n} }})"
             )
+
+    for wf_name, wf in program.wfc_fields.items():
+        cells_n = wf.width * wf.height
+        opts_n = cells_n * wf.tiles
+        grid_var = f"__wfc_{wf_name}"
+        lines.append(
+            f"    let {grid_var}_cells: array<i32, {cells_n}> = {_neg_one_i32_array(cells_n)}"
+        )
+        lines.append(
+            f"    let {grid_var}_opts: array<i32, {opts_n}> = {_one_i32_array(opts_n)}"
+        )
+        lines.append(f"    for __wfc_i in 0 to {cells_n} {{")
+        lines.append(f"        {grid_var}_cells[__wfc_i] = -1")
+        lines.append("    }")
+        lines.append(f"    for __wfc_j in 0 to {opts_n} {{")
+        lines.append(f"        {grid_var}_opts[__wfc_j] = 1")
+        lines.append("    }")
+        lines.append(
+            f"    {grid_var}_cells[{wf.pin_cell}] = {wf.pin_tile}"
+        )
+        lines.append(
+            f"    let {grid_var}: WFCGrid = WFCGrid {{ width: {wf.width}, "
+            f"height: {wf.height}, cells: {grid_var}_cells, "
+            f"options: {grid_var}_opts }}"
+        )
 
     for sense in program.senses:
         sysv = sys_vars[sense.system]
@@ -501,6 +672,54 @@ def compile_dynamics_program(program: DynamicsProgram) -> str:
         lines.append(f"    {analyze.k1_var} = {tag}_bk1[0]")
         lines.append(f"    {analyze.k2_var} = {tag}_bk2[0]")
 
+    for couple in program.couples:
+        wf = program.wfc_fields[couple.field]
+        grid_var = f"__wfc_{couple.field}"
+        rep_var = f"__wfc_rep_{couple.field}"
+        couple.wfc_report_var = rep_var
+        lines.append(
+            f"    let {couple.guidance_var}: CoupledGuidance = couple_ga_wfc_guidance("
+            f"{couple.report_var}, {couple.k1_var}, {couple.k2_var}, "
+            f"{wf.seed}, {wf.steps})"
+        )
+        lines.append(
+            f"    let {rep_var}: WFCRunReport = wfc_run_guided("
+            f"{grid_var}, {wf.tiles}, {couple.guidance_var})"
+        )
+        for lhs, var in couple.bindings:
+            if lhs == "collapsed":
+                lines.append(f"    let mut {var}: i32 = {rep_var}.collapsed")
+            elif lhs == "wall_fraction":
+                lines.append(f"    let mut {var}: f64 = {rep_var}.wall_fraction")
+            elif lhs == "entropy":
+                lines.append(f"    let mut {var}: f64 = {rep_var}.mean_entropy")
+
+    for gi, guide in enumerate(program.guides):
+        sysv = sys_vars[guide.system]
+        steps = hz_steps.get(guide.horizon, 20)
+        rep_var = f"__wfc_rep_{guide.field}"
+        bufs = _bufs(3)
+        ev_var = f"__guide_ev_{gi}"
+        lines.append(
+            f"    let {ev_var}: GuidedEvolutionReport = guide_state_evolution("
+            f"{sysv}, {guide.k1_var}, {guide.k2_var}, {guide.guidance_var}, "
+            f"{rep_var}, {steps}, {bufs[0]}, {bufs[1]}, {bufs[2]})"
+        )
+        binding_map = {
+            "input_scale": f"{ev_var}.input_scale",
+            "energy": f"{ev_var}.layout_energy",
+            "spectral": f"{ev_var}.guided_spectral_radius",
+            "stable": f"{ev_var}.stable_guided",
+            "collapsed": f"{ev_var}.collapsed_cells",
+        }
+        for lhs, var in guide.bindings:
+            if lhs in ("input_scale", "energy", "spectral"):
+                lines.append(f"    let mut {var}: f64 = {binding_map[lhs]}")
+            elif lhs in ("stable", "collapsed"):
+                lines.append(f"    let mut {var}: i32 = {binding_map[lhs]}")
+            elif lhs == "wall_fraction":
+                lines.append(f"    let mut {var}: f64 = {rep_var}.wall_fraction")
+
     lines.append("    # --- end dsys DSL expansion ---")
     return "\n".join(lines)
 
@@ -525,7 +744,17 @@ def expand_dynamics_dsl(source: str) -> str:
     if not setup:
         return stripped
     merged = stripped
-    if 'import "stdlib/dynamics/ga_analysis.flow"' not in merged:
+    needs_coupling = bool(program.wfc_fields or program.couples or program.guides)
+    needs_ga = bool(
+        program.systems
+        or program.senses
+        or program.ga_evolutions
+        or program.closed_blocks
+        or program.analyzes
+    )
+    if needs_coupling and 'import "stdlib/dynamics/wfc_ga_coupling.flow"' not in merged:
+        merged = 'import "stdlib/dynamics/wfc_ga_coupling.flow"\n\n' + merged
+    elif needs_ga and 'import "stdlib/dynamics/ga_analysis.flow"' not in merged:
         merged = 'import "stdlib/dynamics/ga_analysis.flow"\n\n' + merged
     return inject_dynamics_setup(merged, setup)
 
@@ -538,4 +767,7 @@ def has_dynamics_dsl(source: str) -> bool:
         or re.search(r"^\s*ga\s+evolve\s+", source, re.MULTILINE)
         or re.search(r"^\s*closed\s+\w+", source, re.MULTILINE)
         or re.search(r"^\s*analyze\s+\w+", source, re.MULTILINE)
+        or re.search(r"^\s*wfc\s+field\s+", source, re.MULTILINE)
+        or re.search(r"^\s*couple\s+\w+", source, re.MULTILINE)
+        or re.search(r"^\s*guide\s+\w+", source, re.MULTILINE)
     )
