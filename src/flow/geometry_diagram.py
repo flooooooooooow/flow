@@ -8,7 +8,6 @@ Reads @diagram metadata or Claim Coordinates and emits SVG + TikZ figures.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple

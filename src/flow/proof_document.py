@@ -25,7 +25,6 @@ from flow.math_prose import (
     flow_expr_to_latex,
     flow_expr_to_mathematical_english,
     mathematical_case_condition,
-    type_latex,
 )
 from flow.proof_substitution import (
     SubstitutionBox,
@@ -2014,7 +2013,7 @@ def _render_theorem_markdown(
     if goal:
         parts.append(f"> **Goal.** {goal.english}")
         if goal.math_latex:
-            parts.append(f">")
+            parts.append(">")
             parts.append(f"> $${goal.math_latex}$$")
         parts.append("")
 
