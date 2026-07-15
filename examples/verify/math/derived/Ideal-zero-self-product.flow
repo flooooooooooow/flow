@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Zero times zero stays in an ideal.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  If 0 in I then 0 * 0 in I.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «multiplication» «zero product stays in the ideal», «Ideal» «membership» «ideals contain zero»
+
+theorem «Ideal» «multiplication» «zero squared stays in the ideal» (I: Ideal) {
+    if 0 in I {
+        assume «Ideal» «multiplication» «zero product stays in the ideal»(I, 0)
+        assume «Ideal» «membership» «ideals contain zero»(I)
+        therefore 0 * 0 in I
+    }
+}
+
+export «Ideal» «multiplication» «zero squared stays in the ideal»

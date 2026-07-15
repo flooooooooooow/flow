@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Fifteen plus zero is fifteen in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  15 + 0 = 15 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «fourteen plus zero in ideal»
+
+theorem «Ideal» «addition» «fifteen plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(15)
+    assume «Ideal» «addition» «fourteen plus zero in ideal»()
+    therefore 15 + 0 == 15
+}
+
+export «Ideal» «addition» «fifteen plus zero in ideal»

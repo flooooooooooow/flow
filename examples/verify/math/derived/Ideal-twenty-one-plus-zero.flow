@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Twenty-one plus zero is twenty-one in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  21 + 0 = 21 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «twenty plus zero in ideal»
+
+theorem «Ideal» «addition» «twenty one plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(21)
+    assume «Ideal» «addition» «twenty plus zero in ideal»()
+    therefore 21 + 0 == 21
+}
+
+export «Ideal» «addition» «twenty one plus zero in ideal»

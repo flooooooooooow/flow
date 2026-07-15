@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Double reverse fixes a singleton list.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  rev(rev(cons(x, nil))) = cons(x, nil).
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «double reverse returns the list»
+
+theorem «List» «reverse» «double reverse fixes singletons» (x: Nat) {
+    assume «List» «reverse» «double reverse returns the list»(cons(x, nil))
+    therefore rev(rev(cons(x, nil))) == cons(x, nil)
+}
+
+export «List» «reverse» «double reverse fixes singletons»

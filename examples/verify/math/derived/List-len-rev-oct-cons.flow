@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reverse preserves length of an octuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(octuple cons ending in nil)) = 8.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «length» «octuple cons nil has length eight»
+
+theorem «List» «length» «reverse of octuple cons has length eight» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat) {
+    assume «List» «length» «reverse preserves length»(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil)))))))))
+    assume «List» «length» «octuple cons nil has length eight»(a, b, c, d, e, f, g, h)
+    therefore len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil)))))))))) == 8
+}
+
+export «List» «length» «reverse of octuple cons has length eight»

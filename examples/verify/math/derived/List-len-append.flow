@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Length is a homomorphism for append.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(xs ++ ys) = len(xs) + len(ys).
+# @from   church/induction
+# @tier   derived
+# @needs  «List» «append» «empty is the left identity», «Nat» «addition» «zero is the right identity»
+
+theorem «List» «length» «length adds under append» (xs: List, ys: List) {
+    if xs == nil {
+        assume «List» «append» «empty is the left identity»(ys)
+        assume «Nat» «addition» «zero is the right identity»(len(ys))
+        therefore len(xs ++ ys) == len(xs) + len(ys)
+    } else {
+        let rest = tail(xs)
+        assume «List» «length» «length adds under append»(rest, ys)
+        therefore len(xs ++ ys) == len(xs) + len(ys)
+    }
+}
+
+export «List» «length» «length adds under append»

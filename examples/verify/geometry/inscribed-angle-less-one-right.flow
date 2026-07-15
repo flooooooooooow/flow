@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An inscribed angle not on a diameter is less than one right angle.
+# @from   euclid — Elements, Book III, Proposition 20
+# @tier   derived
+
+# @means  angle APB is less than one right angle when arc AB is less than a semicircle.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed angle is half the central angle», «Geometry» «circle» «inscribed angle on diameter is right»
+
+theorem «Geometry» «circle» «inscribed angle less than one right» () {
+    assume «Geometry» «circle» «inscribed angle is half the central angle»()
+    assume «Geometry» «circle» «inscribed angle on diameter is right»()
+    therefore angle_APB < one_right_angle
+}
+
+export «Geometry» «circle» «inscribed angle less than one right»

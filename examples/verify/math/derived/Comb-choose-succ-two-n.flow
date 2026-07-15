@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Choosing two from a successor gives a successor count.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(succ(n), 2) = choose(n, 1) + choose(n, 2).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «choosing two from a successor»
+
+theorem «Comb» «choose» «choosing two from a successor derived» (n: Nat) {
+    assume «Comb» «choose» «choosing two from a successor»(n)
+    therefore choose(succ(n), 2) == choose(n, 1) + choose(n, 2)
+}
+
+export «Comb» «choose» «choosing two from a successor derived»

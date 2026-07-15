@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Union commutes as a derived consequence.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  a ∪ b = b ∪ a.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «union» «order does not matter»
+
+theorem «Finset» «union» «union commutes derived» (a: Finset, b: Finset) {
+    assume «Finset» «union» «order does not matter»(a, b)
+    therefore a ∪ b == b ∪ a
+}
+
+export «Finset» «union» «union commutes derived»

@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  About a given circle to circumscribe a triangle equiangular to a given triangle.
+# @from   euclid — Elements, Book IV, Proposition 3
+# @tier   derived
+# @needs  «Geometry» «Euclid Book IV» «Proposition 2: in a circle to inscribe a triangle equiangular to a given triangle», «Geometry» «Euclid Book III» «Proposition 19: the tangent is perpendicular to the diameter at the point of contact»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 3: about a circle to circumscribe a triangle equiangular to a given triangle» () {
+    let circle = given_circle
+    let ABC = given_triangle
+    let PQR = circumscribed_triangle
+    therefore angle_PQR == angle_ABC
+    assume «Geometry» «Euclid Book IV» «Proposition 2: in a circle to inscribe a triangle equiangular to a given triangle»()
+    assume «Geometry» «Euclid Book III» «Proposition 19: the tangent is perpendicular to the diameter at the point of contact»()
+    therefore circumscribed_triangle_equiangular
+}

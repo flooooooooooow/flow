@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reverse preserves length of a sextuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, nil))))))) = 6.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «length» «sextuple cons nil has length six»
+
+theorem «List» «length» «reverse of sextuple cons has length six» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat) {
+    assume «List» «length» «reverse preserves length»(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, nil)))))))
+    assume «List» «length» «sextuple cons nil has length six»(a, b, c, d, e, f)
+    therefore len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, nil))))))) == 6
+}
+
+export «List» «length» «reverse of sextuple cons has length six»

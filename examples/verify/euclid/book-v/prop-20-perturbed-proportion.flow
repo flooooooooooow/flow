@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If a first is to a second as a third is to a fourth, and the third is to a sixth as the fourth is to a fifth, the first is to the fifth as the second is to the sixth.
+# @from   euclid — Elements, Book V, Proposition 20
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 19: ex aequali proportion in the second form»
+
+theorem «Geometry» «Euclid Book V» «Proposition 20: perturbed proportion implies ex aequali» () {
+    let a = first
+    let b = second
+    let c = third
+    let f = fifth
+    therefore ratio(a, f) == ratio(b, sixth)
+    assume «Geometry» «Euclid Book V» «Proposition 19: ex aequali proportion in the second form»()
+    therefore perturbed_proportion_holds
+}

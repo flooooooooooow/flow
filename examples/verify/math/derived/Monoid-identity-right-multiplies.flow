@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  The identity acts as a right multiplier in a monoid.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  m * 1 = m.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «identity» «one is the right identity»
+
+theorem «Monoid» «identity» «identity multiplies on the right» (m: Monoid) {
+    assume «Monoid» «identity» «one is the right identity»(m)
+    therefore m * 1 == m
+}
+
+export «Monoid» «identity» «identity multiplies on the right»

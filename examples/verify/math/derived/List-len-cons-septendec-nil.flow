@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Septendecuple cons ending in nil has length seventeen.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len of seventeen cons ending in nil equals 17.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «cons increases length by one», «List» «length» «sedecuple cons nil has length sixteen»
+
+theorem «List» «length» «septendecuple cons nil has length seventeen» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat, l: Nat, m: Nat, n: Nat, o: Nat, p: Nat, q: Nat) {
+    assume «List» «length» «cons increases length by one»(cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, cons(p, cons(q, nil)))))))))))))))))
+    assume «List» «length» «sedecuple cons nil has length sixteen»(b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q)
+    therefore len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, cons(p, cons(q, nil)))))))))))))))) == 17
+}
+
+export «List» «length» «septendecuple cons nil has length seventeen»

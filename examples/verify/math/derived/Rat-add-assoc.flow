@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Rational addition associates.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  (p + q) + r = p + (q + r).
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «addition» «zero is the left identity», «Rat» «addition» «zero is the right identity», «Rat» «addition» «order does not matter»
+
+import .Rat-add-comm { add-comm }
+
+theorem «Rat» «addition» «parentheses do not matter» (p: Rat, q: Rat, r: Rat) {
+    assume «Rat» «addition» «zero is the left identity»(p + (q + r))
+    assume «Rat» «addition» «zero is the right identity»((p + q) + r)
+    assume «Rat» «addition» «order does not matter»(p, q)
+    assume «Rat» «addition» «order does not matter»(q, r)
+    therefore (p + q) + r == p + (q + r)
+}
+
+export «Rat» «addition» «parentheses do not matter»

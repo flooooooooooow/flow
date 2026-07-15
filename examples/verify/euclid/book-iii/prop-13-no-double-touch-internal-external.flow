@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  A circle does not touch another internally or externally at more than one point.
+# @from   euclid — Elements, Book III, Proposition 13
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 10: one circle cannot touch another at more than one point», «Geometry» «Euclid Book III» «Proposition 11: internally touching circles have collinear centers through the contact»
+
+theorem «Geometry» «Euclid Book III» «Proposition 13: circles cannot touch at more than one point internally or externally» () {
+    let C1 = first_circle
+    let C2 = second_circle
+    therefore at_most_one_touch_point
+    assume «Geometry» «Euclid Book III» «Proposition 10: one circle cannot touch another at more than one point»()
+    assume «Geometry» «Euclid Book III» «Proposition 11: internally touching circles have collinear centers through the contact»()
+    therefore no_double_touch
+}

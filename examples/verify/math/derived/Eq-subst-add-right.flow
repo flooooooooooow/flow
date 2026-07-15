@@ -1,0 +1,30 @@
+# @module examples.verify.math.derived
+# @means  Equal summands stay equal when the same term is added on the right.
+# @from   leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
+# @tier   derived
+
+# @means  From a = b we deduce a + c = b + c, by induction on c.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the right identity», «Nat» «addition» «successor on the right steps the sum»
+
+import verify.Nat/+ { zero-left, succ-right }
+import .Nat-plus-zero-right { zero-right }
+
+theorem «Eq» «equality» «equal terms add the same on the right» (a: Nat, b: Nat, c: Nat) {
+    if a == b {
+        if c == 0 {
+            assume «Nat» «addition» «zero is the right identity»(a)
+            assume «Nat» «addition» «zero is the right identity»(b)
+            therefore a + c == b + c
+        } else {
+            let k = pred(c)
+            assume «Eq» «equality» «equal terms add the same on the right»(a, b, k)
+            assume «Nat» «addition» «successor on the right steps the sum»(a, k)
+            assume «Nat» «addition» «successor on the right steps the sum»(b, k)
+            therefore a + c == b + c
+        }
+    }
+}
+
+export «Eq» «equality» «equal terms add the same on the right»

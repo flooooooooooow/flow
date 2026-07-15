@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The 12-35-37 triangle satisfies the Pythagorean relation.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  37 squared equals 12 squared plus 35 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «twelve sixteen twenty satisfies Pythagoras», «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «twelve thirty five thirty seven satisfies Pythagoras» () {
+    assume «Geometry» «right triangle» «twelve sixteen twenty satisfies Pythagoras»()
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore 37 * 37 == 12 * 12 + 35 * 35
+}
+
+export «Geometry» «right triangle» «twelve thirty five thirty seven satisfies Pythagoras»

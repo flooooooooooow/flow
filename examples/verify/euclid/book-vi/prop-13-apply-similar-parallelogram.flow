@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  To a given straight line to apply a parallelogram equal to a given rectilineal figure and similar to a given parallelogram.
+# @from   euclid — Elements, Book VI, Proposition 13
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 12: to apply a parallelogram equal to a figure and exceeding by a similar parallelogram»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 13: to apply to a line a parallelogram equal to a figure and similar to another» () {
+    let AB = given_line
+    let F = given_figure
+    let template = given_parallelogram
+    therefore applied_parallelogram_similar
+    assume «Geometry» «Euclid Book VI» «Proposition 12: to apply a parallelogram equal to a figure and exceeding by a similar parallelogram»()
+    therefore similar_parallelogram_applied
+}

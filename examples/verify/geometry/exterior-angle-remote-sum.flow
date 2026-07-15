@@ -1,0 +1,16 @@
+# @module examples.verify.geometry
+# @means  An exterior angle equals the sum of the two remote interior angles.
+# @from   euclid — Elements, Book I, Proposition 32
+# @tier   derived
+
+# @means  exterior angle at C equals angle A plus angle B.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «interior angles sum to two right angles»
+
+theorem «Geometry» «triangle» «exterior angle equals remote interior sum» () {
+    assume «Geometry» «triangle» «interior angles sum to two right angles»()
+    therefore exterior_at_C == angle_A + angle_B
+}
+
+export «Geometry» «triangle» «exterior angle equals remote interior sum»

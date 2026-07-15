@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-i
+# @means  Parallelograms on equal bases and in the same parallels equal one another.
+# @from   euclid — Elements, Book I, Proposition 34
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 26: equal parallelograms on equal bases between parallels»
+
+theorem «Geometry» «Euclid Book I» «Proposition 34: parallelograms on equal bases between parallels are equal» () {
+    let diagonal_AC = segment_from_A_to_C
+    assume parallelograms_ABCD_and_EFGH_on_equal_bases_between_same_parallels
+    assume «Geometry» «Euclid Book I» «Proposition 26: equal parallelograms on equal bases between parallels»()
+    therefore triangle_ABC == triangle_CDA
+    therefore parallelogram_ABCD == parallelogram_EFGH
+}

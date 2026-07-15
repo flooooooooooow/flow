@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  The identity multiplies to itself.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  1 * 1 = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «identity» «one is the right identity»
+
+theorem «Group» «multiplication» «identity times identity is identity» () {
+    assume «Group» «identity» «one is the right identity»(1)
+    therefore 1 * 1 == 1
+}
+
+export «Group» «multiplication» «identity times identity is identity»

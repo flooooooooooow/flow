@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Thirteen plus zero is thirteen in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  13 + 0 = 13 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «twelve plus zero in ideal»
+
+theorem «Ideal» «addition» «thirteen plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(13)
+    assume «Ideal» «addition» «twelve plus zero in ideal»()
+    therefore 13 + 0 == 13
+}
+
+export «Ideal» «addition» «thirteen plus zero in ideal»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero plus zero is zero in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  0 + 0 = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the left additive identity», «Monoid» «addition» «zero is the right additive identity»
+
+theorem «Monoid» «addition» «zero plus zero is zero» () {
+    assume «Monoid» «addition» «zero is the left additive identity»(0)
+    assume «Monoid» «addition» «zero is the right additive identity»(0)
+    therefore 0 + 0 == 0
+}
+
+export «Monoid» «addition» «zero plus zero is zero»

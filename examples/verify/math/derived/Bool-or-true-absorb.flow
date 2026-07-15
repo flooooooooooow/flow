@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  True is absorbing for disjunction on the left.
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+
+# @means  true or a = true.
+# @from   boole
+# @tier   derived
+# @needs  «Bool» «disjunction» «order does not matter»
+
+theorem «Bool» «disjunction» «true is absorbing on the left» (a: bool) {
+    assume «Bool» «disjunction» «order does not matter»(true, a)
+    if a == true {
+        therefore true or a == true
+    } else {
+        therefore true or a == true
+    }
+}
+
+export «Bool» «disjunction» «true is absorbing on the left»

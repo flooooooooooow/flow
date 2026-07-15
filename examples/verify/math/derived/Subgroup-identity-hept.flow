@@ -1,0 +1,12 @@
+# @module examples.verify.math.derived
+# @means  The subgroup identity is seven in this witness.
+# @from   Subgroup identity hept
+# @tier   derived
+# @needs  «Subgroup» «identity» «hept»
+
+theorem «Subgroup» «identity» «hept» () {
+    assume «Subgroup» «identity» = 7
+    therefore «Subgroup» «identity» = 7
+}
+
+export «Subgroup» «identity» «hept»

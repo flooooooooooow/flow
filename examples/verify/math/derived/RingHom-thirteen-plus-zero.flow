@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Thirteen plus zero maps to thirteen under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(13 + 0) = 13.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «thirteen plus zero maps to thirteen» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 13, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(13 + 0) == 13
+}
+
+export «RingHom» «preservation» «thirteen plus zero maps to thirteen»

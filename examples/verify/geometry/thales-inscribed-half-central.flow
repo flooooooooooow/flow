@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Thales configuration gives inscribed angle half the central angle.
+# @from   euclid — Elements, Book III, Propositions 20 and 31
+# @tier   derived
+
+# @means  angle ACB equals half of angle AOB on diameter AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «Thales right angle in semicircle», «Geometry» «circle» «inscribed angle is half the central angle»
+
+theorem «Geometry» «circle» «Thales inscribed is half central» () {
+    assume «Geometry» «circle» «Thales right angle in semicircle»()
+    assume «Geometry» «circle» «inscribed angle is half the central angle»()
+    therefore angle_ACB == half_of_angle_AOB
+}
+
+export «Geometry» «circle» «Thales inscribed is half central»

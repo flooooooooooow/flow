@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  If two naturals are equal, the equality reads either way.
+# @from   leibniz — https://en.wikipedia.org/wiki/Identity_(mathematics)#Equality
+# @tier   derived
+
+# @means  Equality reverses: from x = y we obtain y = x.
+# @from   leibniz — https://en.wikipedia.org/wiki/Symmetric_relation
+# @tier   derived
+# @needs  «Eq» «equality» «everything equals itself»
+
+theorem «Eq» «equality» «equality reverses» (x: Nat, y: Nat) {
+    if x == y {
+        assume «Eq» «equality» «everything equals itself»(x)
+        assume «Eq» «equality» «everything equals itself»(y)
+        therefore y == x
+    }
+}
+
+export «Eq» «equality» «equality reverses»

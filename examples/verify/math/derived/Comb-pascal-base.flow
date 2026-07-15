@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Pascal recurrence at the top edge gives one.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(n, n) = 1 via Pascal at the diagonal.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «choosing all gives one», «Comb» «choose» «Pascal recurrence holds»
+
+import .Comb-choose-n-n { choose-n-n }
+
+theorem «Comb» «choose» «Pascal recurrence closes on the diagonal» (n: Nat) {
+    assume «Comb» «choose» «choosing all gives one»(n)
+    assume «Comb» «choose» «Pascal recurrence holds»(n, n)
+    therefore choose(n, n) == 1
+}
+
+export «Comb» «choose» «Pascal recurrence closes on the diagonal»

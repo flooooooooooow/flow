@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Join associates on the lattice order.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  (a ∨ b) ∨ c = a ∨ (b ∨ c).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «join» «order does not matter», «Order» «meet» «parentheses do not matter»
+
+theorem «Order» «join» «parentheses do not matter» (a: Nat, b: Nat, c: Nat) {
+    assume «Order» «join» «order does not matter»(a, b)
+    assume «Order» «join» «order does not matter»(b, c)
+    assume «Order» «meet» «parentheses do not matter»(a, b, c)
+    therefore join(join(a, b), c) == join(a, join(b, c))
+}
+
+export «Order» «join» «parentheses do not matter»

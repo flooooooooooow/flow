@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Length increases by one under cons.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(x, xs)) = succ(len(xs)).
+# @from   church/induction
+# @tier   derived
+# @needs  «List» «length» «length adds under append», «List» «append» «singleton prepends the head»
+
+theorem «List» «length» «cons increases length by one» (x: Nat, xs: List) {
+    assume «List» «length» «length adds under append»(cons(x, nil), xs)
+    assume «List» «append» «singleton prepends the head»(x, xs)
+    therefore len(cons(x, xs)) == succ(len(xs))
+}
+
+export «List» «length» «cons increases length by one»

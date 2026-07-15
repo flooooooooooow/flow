@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Two times zero is zero for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  2 * 0 = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the right annihilator»
+
+theorem «Nat» «multiplication» «two times zero is zero» () {
+    let two = succ(succ(0))
+    assume «Nat» «multiplication» «zero is the right annihilator»(two)
+    therefore two * 0 == 0
+}
+
+export «Nat» «multiplication» «two times zero is zero»

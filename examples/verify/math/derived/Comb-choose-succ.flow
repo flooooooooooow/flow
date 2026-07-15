@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Pascal recurrence at a successor index.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(succ(n), succ(k)) = choose(n, k) + choose(n, succ(k)).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «Pascal recurrence holds», «Comb» «choose» «choosing none gives one»
+
+theorem «Comb» «choose» «Pascal recurrence at successors» (n: Nat, k: Nat) {
+    assume «Comb» «choose» «Pascal recurrence holds»(succ(n), succ(k))
+    assume «Comb» «choose» «choosing none gives one»(n)
+    therefore choose(succ(n), succ(k)) == choose(n, k) + choose(n, succ(k))
+}
+
+export «Comb» «choose» «Pascal recurrence at successors»

@@ -1,0 +1,16 @@
+# @module examples.verify.geometry
+# @means  Adjacent angles on a straight line sum to two right angles.
+# @from   euclid — Elements, Book I, Proposition 13
+# @tier   derived
+
+# @means  angle alpha plus angle beta equals two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «vertical angles are equal»
+
+theorem «Geometry» «intersecting lines» «adjacent angles on a line sum to two right» () {
+    assume «Geometry» «intersecting lines» «vertical angles are equal»()
+    therefore angle_alpha + angle_beta == two_right_angles
+}
+
+export «Geometry» «intersecting lines» «adjacent angles on a line sum to two right»

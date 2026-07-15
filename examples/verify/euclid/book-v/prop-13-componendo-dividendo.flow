@@ -1,0 +1,16 @@
+# @module examples.verify.euclid.book-v
+# @means  If four magnitudes are proportional, they are proportional by composition and division.
+# @from   euclid — Elements, Book V, Proposition 13
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 11: proportional magnitudes satisfy componendo», «Geometry» «Euclid Book V» «Proposition 12: proportional magnitudes satisfy dividendo»
+
+theorem «Geometry» «Euclid Book V» «Proposition 13: proportional magnitudes satisfy componendo and dividendo» () {
+    let a = first
+    let b = second
+    let c = third
+    let d = fourth
+    therefore ratio(a + b, a - b) == ratio(c + d, c - d)
+    assume «Geometry» «Euclid Book V» «Proposition 11: proportional magnitudes satisfy componendo»()
+    assume «Geometry» «Euclid Book V» «Proposition 12: proportional magnitudes satisfy dividendo»()
+    therefore ratio_a_plus_b_a_minus_b
+}

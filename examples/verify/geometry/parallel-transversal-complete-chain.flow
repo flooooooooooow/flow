@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Complete transversal chain links all parallel angle witnesses.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  alternate alpha equals f-angle beta via full chain.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «co-interior chain supplementary», «Geometry» «parallel lines» «full transversal angle chain»
+
+theorem «Geometry» «parallel lines» «complete transversal chain» () {
+    assume «Geometry» «parallel lines» «co-interior chain supplementary»()
+    assume «Geometry» «parallel lines» «full transversal angle chain»()
+    therefore angle_alternate_alpha == angle_f_beta
+}
+
+export «Geometry» «parallel lines» «complete transversal chain»

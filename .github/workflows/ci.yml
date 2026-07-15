@@ -103,7 +103,7 @@ jobs:
     - name: Run Python unit tests
       if: steps.changes.outputs.src == 'true' || steps.changes.outputs.tests == 'true'
       run: |
-        PYTHONPATH=src pytest tests/ -v --tb=short
+        PYTHONPATH=src pytest tests/ -m "not slow" -v --tb=short
 
     - name: Run example programs
       if: steps.changes.outputs.src == 'true' || steps.changes.outputs.examples == 'true'

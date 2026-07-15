@@ -1,0 +1,22 @@
+# @module examples.verify.math.derived
+# @means  The inverse of the identity times the identity stays in a subgroup.
+# @from   dummit-foote — *Abstract Algebra*, §2.2
+# @tier   derived
+
+# @means  inv(1) * 1 in H for every subgroup H.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Subgroup» «multiplication» «subgroup products stay in the subgroup», «Subgroup» «inverse» «identity inverse stays in the subgroup», «Subgroup» «membership» «subgroups contain the identity»
+
+theorem «Subgroup» «multiplication» «identity inverse times identity stays in the subgroup» (H: Subgroup) {
+    if 1 in H {
+        if inv(1) in H {
+            assume «Subgroup» «multiplication» «subgroup products stay in the subgroup»(H, inv(1), 1)
+            assume «Subgroup» «inverse» «identity inverse stays in the subgroup»(H)
+            assume «Subgroup» «membership» «subgroups contain the identity»(H)
+            therefore inv(1) * 1 in H
+        }
+    }
+}
+
+export «Subgroup» «multiplication» «identity inverse times identity stays in the subgroup»

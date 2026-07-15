@@ -1,0 +1,24 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (O) at (240.0,160.0);
+  \coordinate (A) at (100.0,160.0);
+  \coordinate (B) at (380.0,160.0);
+  \coordinate (C) at (240.0,290.0);
+  \draw[gray] (O) circle (130.0);
+  \draw[thick] (A) -- (B);
+  \draw[thick] (A) -- (C);
+  \draw[thick] (B) -- (C);
+  \pic [draw, angle radius=3.5mm] {right angle = A--C--B};
+  \pic [draw, angle radius=5mm, "$\theta$"] {angle = A--C--B};
+  \fill (O) circle (6pt);
+  \node[font=\bfseries] at ($( O ) + (0,-14)$) {O};
+  \fill (A) circle (6pt);
+  \node[font=\bfseries] at ($( A ) + (0,-14)$) {A};
+  \fill (B) circle (6pt);
+  \node[font=\bfseries] at ($( B ) + (0,-14)$) {B};
+  \fill (C) circle (6pt);
+  \node[font=\bfseries] at ($( C ) + (0,20)$) {C};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Angle in a semicircle — when AB is a diameter, the inscribed angle at C is a right angle.};
+\end{tikzpicture}
+\end{center}

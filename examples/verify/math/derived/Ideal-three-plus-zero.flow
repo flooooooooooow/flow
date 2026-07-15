@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Three plus zero is three in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  3 + 0 = 3 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «two plus zero in ideal»
+
+theorem «Ideal» «addition» «three plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(3)
+    assume «Ideal» «addition» «two plus zero in ideal»()
+    therefore 3 + 0 == 3
+}
+
+export «Ideal» «addition» «three plus zero in ideal»

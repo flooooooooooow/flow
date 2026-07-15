@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  One times one maps to one under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(1 * 1) = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve multiplication», «RingHom» «preservation» «homomorphisms preserve one»
+
+theorem «RingHom» «preservation» «one times one maps to one derived» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve multiplication»(f, 1, 1)
+    assume «RingHom» «preservation» «homomorphisms preserve one»(f)
+    therefore f(1 * 1) == 1
+}
+
+export «RingHom» «preservation» «one times one maps to one derived»

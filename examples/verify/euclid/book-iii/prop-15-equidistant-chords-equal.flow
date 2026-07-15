@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-iii
+# @means  In a circle straight lines equidistant from the center are equal, and conversely.
+# @from   euclid — Elements, Book III, Proposition 15
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 14: equal chords are equally distant from the center»
+
+theorem «Geometry» «Euclid Book III» «Proposition 15: chords equidistant from the center are equal» () {
+    let AB = chord_at_distance_d
+    let CD = chord_at_distance_d
+    therefore chord_AB == chord_CD
+    assume «Geometry» «Euclid Book III» «Proposition 14: equal chords are equally distant from the center»()
+    therefore equidistant_chords_equal
+}

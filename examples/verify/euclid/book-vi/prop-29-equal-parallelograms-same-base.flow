@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  In equal parallelograms which have the same base the sides opposite the base are in the same straight lines.
+# @from   euclid — Elements, Book VI, Proposition 29
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 39: equal triangles on same base and same side are in same parallels»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 29: equal parallelograms on the same base are in the same parallels» () {
+    let ABCD = parallelogram_1
+    let ABCE = parallelogram_2
+    let base_AB = common_base
+    therefore in_same_parallels
+    assume «Geometry» «Euclid Book I» «Proposition 39: equal triangles on same base and same side are in same parallels»()
+    therefore equal_pars_same_base_same_parallels
+}

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Eight plus zero is eight in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  8 + 0 = 8 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «seven plus zero in ideal»
+
+theorem «Ideal» «addition» «eight plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(8)
+    assume «Ideal» «addition» «seven plus zero in ideal»()
+    therefore 8 + 0 == 8
+}
+
+export «Ideal» «addition» «eight plus zero in ideal»

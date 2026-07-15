@@ -1,0 +1,29 @@
+# @module examples.verify.math.derived
+# @means  Equal factors stay equal when multiplied on the right.
+# @from   leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
+# @tier   derived
+
+# @means  From a = b we deduce a * c = b * c.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the right annihilator», «Nat» «multiplication» «successor on the right distributes»
+
+import verify.Nat-mul { zero-right-annihilator, succ-right-distrib }
+
+theorem «Eq» «equality» «equal terms multiply the same on the right» (a: Nat, b: Nat, c: Nat) {
+    if a == b {
+        if c == 0 {
+            assume «Nat» «multiplication» «zero is the right annihilator»(a)
+            assume «Nat» «multiplication» «zero is the right annihilator»(b)
+            therefore a * c == b * c
+        } else {
+            let k = pred(c)
+            assume «Eq» «equality» «equal terms multiply the same on the right»(a, b, k)
+            assume «Nat» «multiplication» «successor on the right distributes»(a, k)
+            assume «Nat» «multiplication» «successor on the right distributes»(b, k)
+            therefore a * c == b * c
+        }
+    }
+}
+
+export «Eq» «equality» «equal terms multiply the same on the right»

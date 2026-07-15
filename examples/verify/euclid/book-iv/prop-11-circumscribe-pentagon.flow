@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  About a given circle to circumscribe a regular pentagon.
+# @from   euclid — Elements, Book IV, Proposition 11
+# @tier   derived
+# @needs  «Geometry» «Euclid Book IV» «Proposition 9: in a circle to inscribe a regular pentagon», «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 11: about a circle to circumscribe a regular pentagon» () {
+    let circle = given_circle
+    let pentagon = circumscribed_regular_pentagon
+    let vertices = tangent_points
+    therefore regular_pentagon_about_circle
+    assume «Geometry» «Euclid Book IV» «Proposition 9: in a circle to inscribe a regular pentagon»()
+    assume «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal»()
+    therefore regular_pentagon_circumscribed
+}

@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If two circles touch externally, the straight line joining their centers passes through the point of contact.
+# @from   euclid — Elements, Book III, Proposition 12
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact»
+
+theorem «Geometry» «Euclid Book III» «Proposition 12: externally touching circles have collinear centers through the contact» () {
+    let O = center_first
+    let P = center_second
+    let T = contact_point
+    therefore O_P_passes_through_T
+    assume «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact»()
+    therefore external_tangency_center_line
+}

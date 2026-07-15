@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Integer addition associates.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  (a + b) + c = a + (b + c).
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «zero is the left identity», «Int» «addition» «zero is the right identity», «Int» «addition» «order does not matter»
+
+import .Int-add-comm { add-comm }
+
+theorem «Int» «addition» «parentheses do not matter» (a: Int, b: Int, c: Int) {
+    assume «Int» «addition» «zero is the left identity»(a + (b + c))
+    assume «Int» «addition» «zero is the right identity»((a + b) + c)
+    assume «Int» «addition» «order does not matter»(a, b)
+    assume «Int» «addition» «order does not matter»(b, c)
+    therefore (a + b) + c == a + (b + c)
+}
+
+export «Int» «addition» «parentheses do not matter»

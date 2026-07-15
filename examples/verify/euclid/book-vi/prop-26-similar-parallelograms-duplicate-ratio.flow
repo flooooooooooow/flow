@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  Similar parallelograms are to one another in the duplicate ratio of the homologous sides.
+# @from   euclid — Elements, Book VI, Proposition 26
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 19: similar rectilineal figures are in duplicate ratio of corresponding sides», «Geometry» «Euclid Book VI» «Proposition 24: parallelograms about a diameter are similar to the whole and to one another»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 26: similar parallelograms are in duplicate ratio of homologous sides» () {
+    let par1 = parallelogram_1
+    let par2 = parallelogram_2
+    let side = homologous_side
+    therefore area_ratio_duplicate
+    assume «Geometry» «Euclid Book VI» «Proposition 19: similar rectilineal figures are in duplicate ratio of corresponding sides»()
+    assume «Geometry» «Euclid Book VI» «Proposition 24: parallelograms about a diameter are similar to the whole and to one another»()
+    therefore similar_parallelograms_duplicate_ratio
+}

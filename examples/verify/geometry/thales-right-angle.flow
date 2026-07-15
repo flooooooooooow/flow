@@ -1,0 +1,10 @@
+# @means  An angle inscribed in a semicircle is a right angle.
+# @from   euclid — Elements, Book III, Proposition 31; Thales of Miletus
+# @tier   derived
+# @needs  «Geometry» «triangle» «interior angles sum to two right angles»
+# @diagram thales-right-angle
+
+theorem «Geometry» «circle» «Thales right angle in semicircle» () {
+    assume «Geometry» «triangle» «interior angles sum to two right angles»()
+    therefore angle_ACB == one_right_angle
+}

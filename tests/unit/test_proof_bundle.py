@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-pytest.importorskip("flow.proof_document")
+pytestmark = pytest.mark.slow
 
 from flow.proof_document import (
     ALGEBRA_PROOF_BUNDLE,

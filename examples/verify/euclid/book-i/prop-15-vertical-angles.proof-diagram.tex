@@ -1,0 +1,27 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (O) at (240.0,180.0);
+  \coordinate (A) at (60.0,280.0);
+  \coordinate (B) at (420.0,80.0);
+  \coordinate (C) at (420.0,280.0);
+  \coordinate (D) at (60.0,80.0);
+  \draw[thick] (A) -- (B);
+  \draw[thick] (C) -- (D);
+  \pic [draw, angle radius=5mm, "$\alpha$"] {angle = A--O--C};
+  \pic [draw, angle radius=5mm, "$\beta$"] {angle = C--O--B};
+  \pic [draw, angle radius=5mm, "$\alpha'$"] {angle = B--O--D};
+  \pic [draw, angle radius=5mm, "$\beta'$"] {angle = D--O--A};
+  \fill (O) circle (6pt);
+  \node[font=\bfseries] at ($( O ) + (0,-14)$) {O};
+  \fill (A) circle (6pt);
+  \node[font=\bfseries] at ($( A ) + (0,20)$) {A};
+  \fill (B) circle (6pt);
+  \node[font=\bfseries] at ($( B ) + (0,-14)$) {B};
+  \fill (C) circle (6pt);
+  \node[font=\bfseries] at ($( C ) + (0,20)$) {C};
+  \fill (D) circle (6pt);
+  \node[font=\bfseries] at ($( D ) + (0,-14)$) {D};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Intersecting lines — vertical angles α and α′ are equal, as are β and β′.};
+\end{tikzpicture}
+\end{center}

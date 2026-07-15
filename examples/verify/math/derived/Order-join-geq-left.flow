@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Join is bounded below by its left argument.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  a <= join(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «join» «join absorbs meet», «Order» «lattice» «meet is below join»
+
+theorem «Order» «join» «join is above the left argument» (a: Nat, b: Nat) {
+    assume «Order» «join» «join absorbs meet»(a, b)
+    assume «Order» «lattice» «meet is below join»(a, b)
+    therefore a <= join(a, b)
+}
+
+export «Order» «join» «join is above the left argument»

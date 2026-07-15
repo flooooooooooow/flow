@@ -1,0 +1,22 @@
+# @module examples.verify.math.derived
+# @means  The identity element of a monoid is unique.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  If e and e' are both identities then e = e'.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «identity» «one is the left identity», «Monoid» «identity» «one is the right identity», «Monoid» «multiplication» «parentheses do not matter»
+
+theorem «Monoid» «identity» «the identity is unique» (e: Monoid, e_prime: Monoid) {
+    if e * e_prime == e_prime {
+        if e_prime * e == e {
+            assume «Monoid» «identity» «one is the left identity»(e_prime)
+            assume «Monoid» «identity» «one is the right identity»(e)
+            assume «Monoid» «multiplication» «parentheses do not matter»(e, e_prime, e)
+            therefore e == e_prime
+        }
+    }
+}
+
+export «Monoid» «identity» «the identity is unique»

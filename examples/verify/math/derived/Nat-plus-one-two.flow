@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  One plus two is three for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  1 + 2 = 3.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «successor on the right via commutativity», «Nat» «addition» «one plus one is two»
+
+theorem «Nat» «addition» «one plus two is three» () {
+    let two = succ(succ(0))
+    assume «Nat» «addition» «successor on the right via commutativity»(succ(0), two)
+    assume «Nat» «addition» «one plus one is two»()
+    therefore succ(0) + two == succ(succ(0))
+}
+
+export «Nat» «addition» «one plus two is three»

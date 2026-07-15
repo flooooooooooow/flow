@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  One times zero stays in an ideal.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  If 0 in I then 1 * 0 in I.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «multiplication» «zero product stays in the ideal», «Ideal» «membership» «ideals contain zero»
+
+theorem «Ideal» «multiplication» «one times zero stays in the ideal» (I: Ideal) {
+    if 0 in I {
+        assume «Ideal» «multiplication» «zero product stays in the ideal»(I, 1)
+        assume «Ideal» «membership» «ideals contain zero»(I)
+        therefore 1 * 0 in I
+    }
+}
+
+export «Ideal» «multiplication» «one times zero stays in the ideal»

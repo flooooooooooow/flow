@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  About a given circle to circumscribe a square.
+# @from   euclid — Elements, Book IV, Proposition 5
+# @tier   derived
+# @needs  «Geometry» «Euclid Book IV» «Proposition 4: in a circle to inscribe a square», «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 5: about a circle to circumscribe a square» () {
+    let circle = given_circle
+    let ABCD = circumscribed_square
+    let tangent_points = vertices_on_circle
+    therefore square_ABCD_about_circle
+    assume «Geometry» «Euclid Book IV» «Proposition 4: in a circle to inscribe a square»()
+    assume «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal»()
+    therefore square_circumscribed_about_circle
+}

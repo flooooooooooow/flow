@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Self-difference has cardinality zero.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(s \ s) = 0.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «difference» «difference with self is empty», «Finset» «cardinality» «empty set has cardinality zero»
+
+theorem «Finset» «cardinality» «self difference has card zero» (s: Finset) {
+    assume «Finset» «difference» «difference with self is empty»(s)
+    assume «Finset» «cardinality» «empty set has cardinality zero»()
+    therefore card(s \ s) == 0
+}
+
+export «Finset» «cardinality» «self difference has card zero»

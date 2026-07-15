@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Join with itself returns the argument.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  join(a, a) = a.
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «join» «repeating does not change the value», «Nat» «order» «less-or-equal is reflexive»
+
+theorem «Order» «join» «join with itself equals the argument» (a: Nat) {
+    assume «Order» «join» «repeating does not change the value»(a)
+    assume «Nat» «order» «less-or-equal is reflexive»(a)
+    therefore join(a, a) == a
+}
+
+export «Order» «join» «join with itself equals the argument»

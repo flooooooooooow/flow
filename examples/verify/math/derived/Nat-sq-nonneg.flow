@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  The square of a natural number is never negative.
+# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @tier   derived
+
+# @means  n * n ≥ 0 for every natural n.
+# @from   peano — https://en.wikipedia.org/wiki/Ordered_ring
+# @tier   derived
+# @needs  «Nat» «square» «squaring is self-multiplication», «Nat» «order» «less-or-equal is reflexive»
+
+theorem «Nat» «square» «squaring never yields a negative» (n: Nat) {
+    let sq = n * n
+    assume «Nat» «order» «less-or-equal is reflexive»(sq)
+    therefore sq >= 0
+}
+
+export «Nat» «square» «squaring never yields a negative»

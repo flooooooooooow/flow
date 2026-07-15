@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Rational multiplication associates.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  (p * q) * r = p * (q * r).
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «multiplication» «one is the left identity», «Rat» «multiplication» «one is the right identity», «Rat» «multiplication» «order does not matter»
+
+import .Rat-mul-comm { mul-comm }
+
+theorem «Rat» «multiplication» «parentheses do not matter» (p: Rat, q: Rat, r: Rat) {
+    assume «Rat» «multiplication» «one is the left identity»(p)
+    assume «Rat» «multiplication» «one is the right identity»(r)
+    assume «Rat» «multiplication» «order does not matter»(p, q)
+    assume «Rat» «multiplication» «order does not matter»(q, r)
+    therefore (p * q) * r == p * (q * r)
+}
+
+export «Rat» «multiplication» «parentheses do not matter»

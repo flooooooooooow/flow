@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Swapping recovers both components of a pair.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  fst(swap(pair(a, b))) = b and snd(swap(pair(a, b))) = a.
+# @from   church
+# @tier   derived
+# @needs  «Pair» «swap» «swap exchanges components», «Pair» «first projection» «first projection from pairing»
+
+theorem «Pair» «swap» «swap recovers both components» (a: Nat, b: Nat) {
+    assume «Pair» «swap» «swap exchanges components»(a, b)
+    assume «Pair» «first projection» «first projection from pairing»(b, a)
+    therefore fst(swap(pair(a, b))) == b
+}
+
+export «Pair» «swap» «swap recovers both components»

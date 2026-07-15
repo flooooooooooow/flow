@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Meet of meet and join is idempotent on the left.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(meet(a, b), join(a, b)) = meet(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «meet absorbs join derived», «Order» «meet» «repeating does not change the value»
+
+theorem «Order» «lattice» «meet idempotent with join» (a: Nat, b: Nat) {
+    assume «Order» «lattice» «meet absorbs join derived»(a, b)
+    assume «Order» «meet» «repeating does not change the value»(meet(a, b))
+    therefore meet(meet(a, b), join(a, b)) == meet(a, b)
+}
+
+export «Order» «lattice» «meet idempotent with join»

@@ -1,0 +1,16 @@
+# @module examples.verify.geometry
+# @means  The 3-4-5 triangle satisfies the Pythagorean relation.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  5 squared equals 3 squared plus 4 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «three four five satisfies Pythagoras» () {
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore 5 * 5 == 3 * 3 + 4 * 4
+}
+
+export «Geometry» «right triangle» «three four five satisfies Pythagoras»

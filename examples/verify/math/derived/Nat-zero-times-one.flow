@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero times one is zero for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 * 1 = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the left annihilator»
+
+theorem «Nat» «multiplication» «zero times one is zero» () {
+    assume «Nat» «multiplication» «zero is the left annihilator»(succ(0))
+    therefore 0 * succ(0) == 0
+}
+
+export «Nat» «multiplication» «zero times one is zero»

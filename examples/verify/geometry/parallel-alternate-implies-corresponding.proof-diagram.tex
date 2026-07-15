@@ -1,0 +1,41 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (P) at (60.0,240.0);
+  \coordinate (Q) at (420.0,240.0);
+  \coordinate (R) at (40.0,100.0);
+  \coordinate (S) at (440.0,100.0);
+  \coordinate (T) at (120.0,320.0);
+  \coordinate (U) at (360.0,40.0);
+  \coordinate (X) at (200.0,240.0);
+  \coordinate (Y) at (260.0,100.0);
+  \draw[thick] (P) -- (Q);
+  \draw[thick] (R) -- (S);
+  \draw[thick] (T) -- (U);
+  \draw[gray] (228.0,246.0) -- (228.0,234.0);
+  \draw[gray] (252.0,246.0) -- (252.0,234.0);
+  \draw[gray] (228.0,106.0) -- (228.0,94.0);
+  \draw[gray] (252.0,106.0) -- (252.0,94.0);
+  \pic [draw, angle radius=5mm, "$\alpha$"] {angle = T--X--P};
+  \pic [draw, angle radius=5mm, "$\alpha$"] {angle = R--Y--T};
+  \pic [draw, angle radius=5mm, "$\beta$"] {angle = Q--X--U};
+  \pic [draw, angle radius=5mm, "$\beta$"] {angle = S--Y--U};
+  \fill (P) circle (6pt);
+  \node[font=\bfseries] at ($( P ) + (0,-14)$) {P};
+  \fill (Q) circle (6pt);
+  \node[font=\bfseries] at ($( Q ) + (0,-14)$) {Q};
+  \fill (R) circle (6pt);
+  \node[font=\bfseries] at ($( R ) + (0,-14)$) {R};
+  \fill (S) circle (6pt);
+  \node[font=\bfseries] at ($( S ) + (0,-14)$) {S};
+  \fill (T) circle (6pt);
+  \node[font=\bfseries] at ($( T ) + (0,20)$) {T};
+  \fill (U) circle (6pt);
+  \node[font=\bfseries] at ($( U ) + (0,-14)$) {U};
+  \fill (X) circle (6pt);
+  \node[font=\bfseries] at ($( X ) + (0,-14)$) {X};
+  \fill (Y) circle (6pt);
+  \node[font=\bfseries] at ($( Y ) + (0,-14)$) {Y};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Parallel lines cut by a transversal — alternate interior angles are equal.};
+\end{tikzpicture}
+\end{center}

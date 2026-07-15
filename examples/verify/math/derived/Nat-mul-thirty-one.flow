@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Thirty times one is thirty.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  30 * 1 = 30.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «twenty nine times one is twenty nine»
+
+theorem «Nat» «multiplication» «thirty times one is thirty» () {
+    assume «Nat» «multiplication» «twenty nine times one is twenty nine»()
+    therefore 30 * 1 == 30
+}
+
+export «Nat» «multiplication» «thirty times one is thirty»

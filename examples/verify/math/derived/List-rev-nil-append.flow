@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing an empty left append changes nothing.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  rev(nil ++ xs) = rev(xs).
+# @from   church
+# @tier   derived
+# @needs  «List» «append» «empty is the left identity», «List» «reverse» «reversing empty yields empty»
+
+theorem «List» «reverse» «reverse of empty append is reverse» (xs: List) {
+    assume «List» «append» «empty is the left identity»(xs)
+    assume «List» «reverse» «reversing empty yields empty»()
+    therefore rev(nil ++ xs) == rev(xs)
+}
+
+export «List» «reverse» «reverse of empty append is reverse»

@@ -1,0 +1,16 @@
+# @module examples.verify.euclid.book-vi
+# @means  If four straight lines are proportional, the rectangle contained by the extremes equals the rectangle contained by the means.
+# @from   euclid — Elements, Book VI, Proposition 16
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 16: composition holds with alternando», «Geometry» «Euclid Book VI» «Proposition 14: equal equiangular parallelograms have reciprocally proportional sides»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 16: four proportional lines give equal rectangles on extremes and means» () {
+    let a = first
+    let b = second
+    let c = third
+    let d = fourth
+    therefore rect(a, d) == rect(b, c)
+    assume «Geometry» «Euclid Book V» «Proposition 16: composition holds with alternando»()
+    assume «Geometry» «Euclid Book VI» «Proposition 14: equal equiangular parallelograms have reciprocally proportional sides»()
+    therefore rect_extremes_equals_rect_means
+}

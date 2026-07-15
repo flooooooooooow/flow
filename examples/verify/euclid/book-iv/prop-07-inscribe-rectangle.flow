@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  In a given circle to inscribe a rectangle.
+# @from   euclid — Elements, Book IV, Proposition 7
+# @tier   derived
+# @needs  «Geometry» «Euclid Book IV» «Proposition 4: in a circle to inscribe a square», «Geometry» «Euclid Book I» «Proposition 31: interior angles on one side sum to two right angles»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 7: in a circle to inscribe a rectangle» () {
+    let circle = given_circle
+    let ABCD = inscribed_rectangle
+    let O = center
+    therefore rectangle_ABCD_in_circle
+    assume «Geometry» «Euclid Book IV» «Proposition 4: in a circle to inscribe a square»()
+    assume «Geometry» «Euclid Book I» «Proposition 31: interior angles on one side sum to two right angles»()
+    therefore rectangle_inscribed_in_circle
+}

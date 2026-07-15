@@ -1,0 +1,21 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (A) at (70.0,70.0);
+  \coordinate (B) at (410.0,70.0);
+  \coordinate (C) at (230.0,290.0);
+  \draw[thick] (A) -- (B);
+  \draw[thick] (B) -- (C);
+  \draw[thick] (C) -- (A);
+  \pic [draw, angle radius=5mm, "$\alpha$"] {angle = C--A--B};
+  \pic [draw, angle radius=5mm, "$\beta$"] {angle = A--B--C};
+  \pic [draw, angle radius=5mm, "$\gamma$"] {angle = B--C--A};
+  \fill (A) circle (6pt);
+  \node[font=\bfseries] at ($( A ) + (0,-14)$) {A};
+  \fill (B) circle (6pt);
+  \node[font=\bfseries] at ($( B ) + (0,-14)$) {B};
+  \fill (C) circle (6pt);
+  \node[font=\bfseries] at ($( C ) + (0,20)$) {C};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Triangle ABC — the three interior angles α, β, and γ sum to two right angles.};
+\end{tikzpicture}
+\end{center}

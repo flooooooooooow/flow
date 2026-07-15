@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  If the sides of a triangle are cut proportionally, the join of the points of section is parallel to the remaining side.
+# @from   euclid — Elements, Book VI, Proposition 3
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 2: a line parallel to a triangle side cuts the other sides proportionally»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 3: a proportional cut implies a line parallel to the opposite side» () {
+    let ABC = triangle
+    let D = point_on_AB
+    let E = point_on_AC
+    therefore DE_parallel_to_BC
+    assume «Geometry» «Euclid Book VI» «Proposition 2: a line parallel to a triangle side cuts the other sides proportionally»()
+    therefore proportional_sides_implies_parallel
+}

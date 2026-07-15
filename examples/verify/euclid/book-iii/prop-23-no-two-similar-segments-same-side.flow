@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  On the same straight line and on the same side of it there cannot be constructed two similar unequal segments of circles.
+# @from   euclid — Elements, Book III, Proposition 23
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal»
+
+theorem «Geometry» «Euclid Book III» «Proposition 23: two unequal similar segments cannot stand on the same side of a line» () {
+    let AB = straight_line
+    let seg1 = segment_on_AB
+    let seg2 = second_segment
+    therefore seg1 == seg2
+    assume «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal»()
+    therefore unique_segment_on_line_side
+}

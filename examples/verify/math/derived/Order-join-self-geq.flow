@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Join with itself is above the argument.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  a <= join(a, a).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «join» «repeating does not change the value», «Order» «join» «join is above the left argument»
+
+theorem «Order» «join» «join with itself is above the argument» (a: Nat) {
+    assume «Order» «join» «repeating does not change the value»(a)
+    assume «Order» «join» «join is above the left argument»(a, a)
+    therefore a <= join(a, a)
+}
+
+export «Order» «join» «join with itself is above the argument»

@@ -1,0 +1,26 @@
+# @module examples.verify.math.derived
+# @means  Adding the same term on the right preserves less-or-equal.
+# @from   peano — https://en.wikipedia.org/wiki/Monotonic_function
+# @tier   derived
+
+# @means  If b ≤ c then a + b ≤ a + c.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «order» «less-or-equal is reflexive», «Nat» «order» «less-or-equal is transitive», «Nat» «addition» «zero is the left identity»
+
+theorem «Nat» «addition» «adding on the right preserves order» (a: Nat, b: Nat, c: Nat) {
+    if b <= c {
+        if a == 0 {
+            assume «Nat» «addition» «zero is the left identity»(b)
+            assume «Nat» «addition» «zero is the left identity»(c)
+            therefore a + b <= a + c
+        } else {
+            let n = pred(a)
+            assume «Nat» «addition» «adding on the right preserves order»(n, b, c)
+            assume «Nat» «order» «less-or-equal is transitive»(n + b, c + b, c + c)
+            therefore a + b <= a + c
+        }
+    }
+}
+
+export «Nat» «addition» «adding on the right preserves order»

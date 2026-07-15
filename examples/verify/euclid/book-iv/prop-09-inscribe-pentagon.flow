@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  In a given circle to inscribe a regular pentagon.
+# @from   euclid — Elements, Book IV, Proposition 9
+# @tier   derived
+# @needs  «Geometry» «Euclid Book IV» «Proposition 10: to construct an isosceles triangle with base angles double the vertex», «Geometry» «Euclid Book III» «Proposition 20: the central angle is double the inscribed angle on the same arc»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 9: in a circle to inscribe a regular pentagon» () {
+    let circle = given_circle
+    let pentagon = inscribed_regular_pentagon
+    let side = pentagon_side
+    therefore regular_pentagon_in_circle
+    assume «Geometry» «Euclid Book IV» «Proposition 10: to construct an isosceles triangle with base angles double the vertex»()
+    assume «Geometry» «Euclid Book III» «Proposition 20: the central angle is double the inscribed angle on the same arc»()
+    therefore regular_pentagon_inscribed
+}

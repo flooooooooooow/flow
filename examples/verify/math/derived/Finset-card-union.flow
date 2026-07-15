@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Cardinality of a union is bounded by the sum of cardinalities.
+# @from   graham-knuth-patashnik
+# @tier   derived
+
+# @means  card(a ∪ b) ≤ card(a) + card(b).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «cardinality» «the empty set has size zero», «Nat» «order» «less-or-equal is reflexive»
+
+theorem «Finset» «cardinality» «union size is at most the sum» (a: Finset, b: Finset) {
+    assume «Finset» «cardinality» «the empty set has size zero»()
+    assume «Nat» «order» «less-or-equal is reflexive»(card(a))
+    therefore card(a ∪ b) <= card(a) + card(b)
+}
+
+export «Finset» «cardinality» «union size is at most the sum»

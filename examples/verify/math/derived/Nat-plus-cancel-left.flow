@@ -1,0 +1,32 @@
+# @module examples.verify.math.derived
+# @means  Equal left summands can be cancelled from both sides of an equation.
+# @from   peano — https://en.wikipedia.org/wiki/Cancellation_property
+# @tier   derived
+
+# @means  From a + b = a + c we deduce b = c.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the left steps the sum», «Nat» «successor» «successor is injective»
+
+import verify.Nat/+ { zero-left, succ-right }
+import verify.Nat-core { succ-injective }
+import .Nat-plus-succ-left { succ-left }
+
+theorem «Nat» «addition» «left cancellation holds» (a: Nat, b: Nat, c: Nat) {
+    if a + b == a + c {
+        if a == 0 {
+            assume «Nat» «addition» «zero is the left identity»(b)
+            assume «Nat» «addition» «zero is the left identity»(c)
+            therefore b == c
+        } else {
+            let n = pred(a)
+            assume «Nat» «addition» «successor on the left steps the sum»(n, b)
+            assume «Nat» «addition» «successor on the left steps the sum»(n, c)
+            assume «Nat» «successor» «successor is injective»(n + b, n + c)
+            assume «Nat» «addition» «left cancellation holds»(n, b, c)
+            therefore b == c
+        }
+    }
+}
+
+export «Nat» «addition» «left cancellation holds»

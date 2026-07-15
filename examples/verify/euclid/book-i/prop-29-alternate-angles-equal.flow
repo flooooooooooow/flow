@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  A straight line falling on parallel straight lines makes alternate angles equal.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 14: lines with interior angles less than two right angles meet», «Geometry» «Euclid Book I» «Proposition 15: vertical angles are equal»
+
+theorem «Geometry» «Euclid Book I» «Proposition 29: alternate angles are equal when a transversal crosses parallels» () {
+    let alpha = alternate_angle_AGH
+    let beta = alternate_angle_GHD
+    assume lines_AB_and_CD_are_parallel
+    assume transversal_EF_crosses_parallels_at_G_and_H
+    assume «Geometry» «Euclid Book I» «Proposition 14: lines with interior angles less than two right angles meet»()
+    assume «Geometry» «Euclid Book I» «Proposition 15: vertical angles are equal»()
+    therefore angle_alpha == angle_beta
+}

@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  To a given straight line to apply a parallelogram equal to a given rectilineal figure and exceeding by a parallelogram similar to a given one.
+# @from   euclid — Elements, Book VI, Proposition 12
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 11: to apply a parallelogram equal to a figure and deficient by a similar parallelogram»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 12: to apply a parallelogram equal to a figure and exceeding by a similar parallelogram» () {
+    let AB = given_line
+    let F = given_figure
+    let par = applied_parallelogram
+    therefore area(par) == area(F) + excess
+    assume «Geometry» «Euclid Book VI» «Proposition 11: to apply a parallelogram equal to a figure and deficient by a similar parallelogram»()
+    therefore exceeding_parallelogram_applied
+}

@@ -1,0 +1,24 @@
+# @module examples.verify.math.derived
+# @means  Transitive equality preserves right addition.
+# @from   leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
+# @tier   derived
+
+# @means  If a = b and b = c then a + d = c + d.
+# @from   leibniz
+# @tier   derived
+# @needs  «Eq» «equality» «equal terms add the same on the right», «Eq» «equality» «equality reverses»
+
+import .Eq-symmetric { eq-symmetric }
+
+theorem «Eq» «equality» «transitive substitution on the right» (a: Nat, b: Nat, c: Nat, d: Nat) {
+    if a == b {
+        if b == c {
+            assume «Eq» «equality» «equal terms add the same on the right»(a, b, d)
+            assume «Eq» «equality» «equality reverses»(b, c)
+            assume «Eq» «equality» «equal terms add the same on the right»(b, c, d)
+            therefore a + d == c + d
+        }
+    }
+}
+
+export «Eq» «equality» «transitive substitution on the right»

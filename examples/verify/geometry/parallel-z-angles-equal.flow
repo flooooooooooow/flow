@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Z-angles are equal when parallel lines meet a transversal.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  z-angle alpha equals z-angle beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «alternate equal implies corresponding equal», «Geometry» «intersecting lines» «vertical angles are equal»
+
+theorem «Geometry» «parallel lines» «z angles are equal» () {
+    assume «Geometry» «parallel lines» «alternate equal implies corresponding equal»()
+    assume «Geometry» «intersecting lines» «vertical angles are equal»()
+    therefore angle_z_alpha == angle_z_beta
+}
+
+export «Geometry» «parallel lines» «z angles are equal»

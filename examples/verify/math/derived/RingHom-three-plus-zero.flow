@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Three plus zero maps to three under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(3 + 0) = 3.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «three plus zero maps to three» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 3, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(3 + 0) == 3
+}
+
+export «RingHom» «preservation» «three plus zero maps to three»

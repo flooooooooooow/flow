@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  To construct an isosceles triangle having each of the angles at the base double the remaining one.
+# @from   euclid — Elements, Book IV, Proposition 10
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book III» «Proposition 32: the angle between tangent and chord equals the angle in the alternate segment»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 10: to construct an isosceles triangle with base angles double the vertex» () {
+    let ABC = isosceles_triangle
+    let angle_A = vertex_angle
+    let angle_B = base_angle
+    therefore angle_B == 2 * angle_A
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    assume «Geometry» «Euclid Book III» «Proposition 32: the angle between tangent and chord equals the angle in the alternate segment»()
+    therefore isosceles_triangle_with_double_base_angles
+}

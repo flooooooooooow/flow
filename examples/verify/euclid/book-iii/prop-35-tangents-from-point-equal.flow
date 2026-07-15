@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If two straight lines from a point touch a circle, the straight lines are equal.
+# @from   euclid — Elements, Book III, Proposition 35
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 8: the rectangle on a secant and its exterior segment equals the square on the tangent»
+
+theorem «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal» () {
+    let P = exterior_point
+    let TA = tangent_at_A
+    let TB = tangent_at_B
+    therefore segment_PT_A == segment_PT_B
+    assume «Geometry» «Euclid Book III» «Proposition 8: the rectangle on a secant and its exterior segment equals the square on the tangent»()
+    therefore tangents_from_point_equal
+}

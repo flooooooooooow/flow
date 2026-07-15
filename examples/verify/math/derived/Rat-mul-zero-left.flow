@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Zero on the left annihilates rational multiplication.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  0 * q = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «addition» «zero is the right identity», «Rat» «multiplication» «one is the right identity»
+
+import .Rat-mul-one-right { mul-one-right }
+
+theorem «Rat» «multiplication» «zero on the left gives zero» (q: Rat) {
+    assume «Rat» «addition» «zero is the right identity»(q)
+    assume «Rat» «multiplication» «one is the right identity»(0)
+    therefore 0 * q == 0
+}
+
+export «Rat» «multiplication» «zero on the left gives zero»

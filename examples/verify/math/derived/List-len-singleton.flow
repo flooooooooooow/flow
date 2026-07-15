@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  A singleton list has length one.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(x, nil)) = succ(0).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «cons increases length by one», «List» «length» «the empty list has length zero»
+
+theorem «List» «length» «singleton has length one» (x: Nat) {
+    assume «List» «length» «cons increases length by one»(x, nil)
+    assume «List» «length» «the empty list has length zero»()
+    therefore len(cons(x, nil)) == succ(0)
+}
+
+export «List» «length» «singleton has length one»

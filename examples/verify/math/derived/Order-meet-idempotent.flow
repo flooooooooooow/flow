@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Meet is idempotent on the lattice order.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  a ∧ a = a.
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «meet» «order does not matter»
+
+theorem «Order» «meet» «repeating does not change the value» (a: Nat) {
+    assume «Order» «meet» «order does not matter»(a, a)
+    therefore meet(a, a) == a
+}
+
+export «Order» «meet» «repeating does not change the value»

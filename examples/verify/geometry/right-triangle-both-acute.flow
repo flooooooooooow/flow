@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Both non-right angles in a right triangle are acute.
+# @from   euclid — Elements, Book I, Proposition 32
+# @tier   derived
+
+# @means  angle A is less than one right angle.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «acute angles sum to one right angle», «Geometry» «triangle» «each interior angle is less than two right»
+
+theorem «Geometry» «right triangle» «both non-right angles are acute» () {
+    assume «Geometry» «right triangle» «acute angles sum to one right angle»()
+    assume «Geometry» «triangle» «each interior angle is less than two right»()
+    therefore angle_A < one_right_angle
+}
+
+export «Geometry» «right triangle» «both non-right angles are acute»

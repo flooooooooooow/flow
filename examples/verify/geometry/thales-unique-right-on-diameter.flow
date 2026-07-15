@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The right angle on a diameter is unique up to the semicircle choice.
+# @from   euclid — Elements, Book III, Proposition 31
+# @tier   derived
+
+# @means  angle ACB equals one right angle for C on the semicircle.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «Thales inscribed is half central», «Geometry» «circle» «central angle on diameter is two right»
+
+theorem «Geometry» «circle» «right angle on diameter is unique witness» () {
+    assume «Geometry» «circle» «Thales inscribed is half central»()
+    assume «Geometry» «circle» «central angle on diameter is two right»()
+    therefore angle_ACB == one_right_angle
+}
+
+export «Geometry» «circle» «right angle on diameter is unique witness»

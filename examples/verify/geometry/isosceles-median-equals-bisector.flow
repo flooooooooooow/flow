@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The apex median equals the apex angle bisector in an isosceles triangle.
+# @from   euclid — Elements, Book I, Proposition 5
+# @tier   derived
+
+# @means  apex median coincides with apex bisector.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «isosceles triangle» «apex median bisects apex angle», «Geometry» «isosceles triangle» «reflection fixes apex»
+
+theorem «Geometry» «isosceles triangle» «median equals bisector at apex» () {
+    assume «Geometry» «isosceles triangle» «apex median bisects apex angle»()
+    assume «Geometry» «isosceles triangle» «reflection fixes apex»()
+    therefore apex_median == apex_bisector
+}
+
+export «Geometry» «isosceles triangle» «median equals bisector at apex»

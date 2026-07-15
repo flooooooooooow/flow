@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Twenty-one plus one is twenty-two.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  21 + 1 = 22.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «twenty plus one is twenty one»
+
+theorem «Nat» «addition» «twenty one plus one is twenty two» () {
+    assume «Nat» «addition» «twenty plus one is twenty one»()
+    therefore 21 + 1 == 22
+}
+
+export «Nat» «addition» «twenty one plus one is twenty two»

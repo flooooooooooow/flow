@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing a pair cons list has length two.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(cons(x, cons(y, nil)))) = succ(succ(0)).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse of pair list has length two», «List» «reverse» «reverse of pair cons swaps endpoints»
+
+theorem «List» «length» «reverse of pair cons has length two» (x: Nat, y: Nat) {
+    assume «List» «length» «reverse of pair list has length two»(x, y)
+    assume «List» «reverse» «reverse of pair cons swaps endpoints»(x, y)
+    therefore len(rev(cons(x, cons(y, nil)))) == succ(succ(0))
+}
+
+export «List» «length» «reverse of pair cons has length two»

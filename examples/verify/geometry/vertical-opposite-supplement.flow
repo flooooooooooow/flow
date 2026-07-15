@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Opposite vertical angles are supplementary with their adjacent partners.
+# @from   euclid — Elements, Book I, Proposition 15
+# @tier   derived
+
+# @means  angle alpha plus angle beta equals two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «four vertical supplement cycle», «Geometry» «intersecting lines» «opposite vertical angles equal pair»
+
+theorem «Geometry» «intersecting lines» «opposite vertical supplement pair» () {
+    assume «Geometry» «intersecting lines» «four vertical supplement cycle»()
+    assume «Geometry» «intersecting lines» «opposite vertical angles equal pair»()
+    therefore angle_alpha + angle_beta == two_right_angles
+}
+
+export «Geometry» «intersecting lines» «opposite vertical supplement pair»

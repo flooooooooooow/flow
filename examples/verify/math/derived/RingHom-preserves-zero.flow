@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Ring homomorphisms send zero to zero.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(0) = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «addition» «sums map to sums», «Ring» «addition» «zero is the left identity»
+
+theorem «RingHom» «zero» «zero maps to zero» (f: RingHom) {
+    assume «RingHom» «addition» «sums map to sums»(f, 0, 0)
+    assume «Ring» «addition» «zero is the left identity»(0)
+    therefore f(0) == 0
+}
+
+export «RingHom» «zero» «zero maps to zero»

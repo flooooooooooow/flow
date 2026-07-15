@@ -1,0 +1,17 @@
+# @module examples.verify.euclid.book-i
+# @means  To draw a straight line at right angles to a given straight line from a given point on it.
+# @from   euclid — Elements, Book I, Proposition 11
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment», «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»
+
+theorem «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line» () {
+    let C = point_on_AB_with_AC_equal_to_equilateral_side
+    let equilateral_ACD = triangle_on_AC_by_Proposition_1
+    let equilateral_BCE = triangle_on_BC_by_Proposition_1
+    let P = intersection_of_segments_from_D_and_E_above_AB
+    assume «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»()
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    assume «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»()
+    therefore angle_APC == angle_BPC
+    therefore angle_APB == one_right_angle
+}

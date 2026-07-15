@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If a first magnitude is greater than a third, the second is greater than the fourth when the four are proportional.
+# @from   euclid — Elements, Book V, Proposition 8
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando»
+
+theorem «Geometry» «Euclid Book V» «Proposition 8: if the first exceeds the third then the second exceeds the fourth» () {
+    let a = first
+    let b = second
+    let c = third
+    let d = fourth
+    therefore a > c implies b > d
+    assume «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando»()
+    therefore a_greater_c_implies_b_greater_d
+}

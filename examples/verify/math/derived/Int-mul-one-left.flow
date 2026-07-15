@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  One is the left multiplicative identity for integers.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  1 * m = m.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «multiplication» «one is the right identity», «Int» «multiplication» «order does not matter»
+
+import .Int-mul-one-right { mul-one-right }
+import .Int-mul-comm { mul-comm }
+
+theorem «Int» «multiplication» «one is the left identity» (m: Int) {
+    assume «Int» «multiplication» «one is the right identity»(m)
+    assume «Int» «multiplication» «order does not matter»(1, m)
+    therefore 1 * m == m
+}
+
+export «Int» «multiplication» «one is the left identity»

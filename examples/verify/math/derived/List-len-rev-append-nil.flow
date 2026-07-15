@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reverse length is preserved after right-empty append.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(xs ++ nil)) = len(xs).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «length» «append empty on the right preserves length»
+
+theorem «List» «length» «reverse after right empty append preserves length» (xs: List) {
+    assume «List» «length» «reverse preserves length»(xs ++ nil)
+    assume «List» «length» «append empty on the right preserves length»(xs)
+    therefore len(rev(xs ++ nil)) == len(xs)
+}
+
+export «List» «length» «reverse after right empty append preserves length»

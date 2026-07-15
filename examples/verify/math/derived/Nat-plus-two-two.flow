@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Two plus two is four for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  2 + 2 = 4.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «successor on the right via commutativity», «Nat» «addition» «two plus one is three»
+
+theorem «Nat» «addition» «two plus two is four» () {
+    let two = succ(succ(0))
+    let three = succ(two)
+    assume «Nat» «addition» «successor on the right via commutativity»(two, two)
+    assume «Nat» «addition» «two plus one is three»()
+    therefore two + two == succ(three)
+}
+
+export «Nat» «addition» «two plus two is four»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  F-angles and Z-angles chain together on parallel lines.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  f-angle alpha equals z-angle beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «angle chain closure», «Geometry» «parallel lines» «z angles are equal»
+
+theorem «Geometry» «parallel lines» «f and z angles chain» () {
+    assume «Geometry» «parallel lines» «angle chain closure»()
+    assume «Geometry» «parallel lines» «z angles are equal»()
+    therefore angle_f_alpha == angle_z_beta
+}
+
+export «Geometry» «parallel lines» «f and z angles chain»

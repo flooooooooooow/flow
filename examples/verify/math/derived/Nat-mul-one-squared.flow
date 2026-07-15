@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One times one is one for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  1 * 1 = 1, i.e. succ(0) * succ(0) = succ(0).
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «one is the left identity»
+
+theorem «Nat» «multiplication» «one times one is one» () {
+    assume «Nat» «multiplication» «one is the left identity»(succ(0))
+    therefore succ(0) * succ(0) == succ(0)
+}
+
+export «Nat» «multiplication» «one times one is one»

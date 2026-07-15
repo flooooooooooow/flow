@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Integer multiplication distributes over addition on the left.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  a * (b + c) = a * b + a * c.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «parentheses do not matter», «Int» «multiplication» «parentheses do not matter», «Int» «negation» «negation distributes over addition»
+
+theorem «Int» «multiplication» «left distribution over addition holds» (a: Int, b: Int, c: Int) {
+    assume «Int» «addition» «parentheses do not matter»(b, c, 0)
+    assume «Int» «multiplication» «parentheses do not matter»(a, b, c)
+    assume «Int» «negation» «negation distributes over addition»(b, c)
+    therefore a * (b + c) == a * b + a * c
+}
+
+export «Int» «multiplication» «left distribution over addition holds»

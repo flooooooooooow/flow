@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Union then intersecting with empty yields empty.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  (a ∪ b) ∩ empty = empty.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «intersection» «empty on the right gives empty», «Finset» «union» «order does not matter»
+
+theorem «Finset» «intersection» «union with empty on the right annihilates» (a: Finset, b: Finset) {
+    assume «Finset» «intersection» «empty on the right gives empty»(a ∪ b)
+    assume «Finset» «union» «order does not matter»(a, b)
+    therefore (a ∪ b) ∩ empty == empty
+}
+
+export «Finset» «intersection» «union with empty on the right annihilates»

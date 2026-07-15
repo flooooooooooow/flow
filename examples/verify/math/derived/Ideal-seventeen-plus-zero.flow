@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Seventeen plus zero is seventeen in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  17 + 0 = 17 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «sixteen plus zero in ideal»
+
+theorem «Ideal» «addition» «seventeen plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(17)
+    assume «Ideal» «addition» «sixteen plus zero in ideal»()
+    therefore 17 + 0 == 17
+}
+
+export «Ideal» «addition» «seventeen plus zero in ideal»

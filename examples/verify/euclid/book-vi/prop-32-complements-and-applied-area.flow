@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  If ABCD is a parallelogram and BE is a parallelogram about the diameter, the complement CD is such that the whole is to the complement as the other about the diameter is to CD.
+# @from   euclid — Elements, Book VI, Proposition 32
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 24: parallelograms about a diameter are similar to the whole and to one another», «Geometry» «Euclid Book VI» «Proposition 31: similar parallelograms are as the duplicate ratio of homologous sides»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 32: complements with an applied parallelogram relate by duplicate ratio» () {
+    let ABCD = whole_parallelogram
+    let BE = about_diameter
+    let CD = complement
+    therefore ratio_whole_complement_holds
+    assume «Geometry» «Euclid Book VI» «Proposition 24: parallelograms about a diameter are similar to the whole and to one another»()
+    assume «Geometry» «Euclid Book VI» «Proposition 31: similar parallelograms are as the duplicate ratio of homologous sides»()
+    therefore complement_applied_area_ratio
+}

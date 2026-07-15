@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Cardinality of an intersection is at most the right operand.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(a ∩ b) ≤ card(b).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «intersection» «order does not matter», «Finset» «cardinality» «intersection size is at most each factor»
+
+import .Finset-card-inter { card-inter-left }
+
+theorem «Finset» «cardinality» «intersection size is at most the right factor» (a: Finset, b: Finset) {
+    assume «Finset» «intersection» «order does not matter»(a, b)
+    assume «Finset» «cardinality» «intersection size is at most each factor»(b, a)
+    therefore card(a ∩ b) <= card(b)
+}
+
+export «Finset» «cardinality» «intersection size is at most the right factor»

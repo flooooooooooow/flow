@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-v
+# @means  If one magnitude is the same multiple of another that a part subtracted is of a part subtracted, the remainder is the same multiple of the remainder.
+# @from   euclid — Elements, Book V, Proposition 5
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 3: the difference of equimultiples is an equimultiple of the difference»
+
+theorem «Geometry» «Euclid Book V» «Proposition 5: the remainder is the same multiple of the remainder» () {
+    let whole = first_magnitude
+    let part = subtracted_part
+    let remainder = whole - part
+    therefore equimultiple_remainder_holds
+    assume «Geometry» «Euclid Book V» «Proposition 3: the difference of equimultiples is an equimultiple of the difference»()
+    therefore remainder_same_multiple
+}

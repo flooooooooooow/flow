@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The square on a leg is less than the square on the hypotenuse.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  a squared is less than c squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «the Pythagorean relation holds», «Geometry» «right triangle» «each leg is shorter than hypotenuse»
+
+theorem «Geometry» «right triangle» «leg square is less than hypotenuse square» () {
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    assume «Geometry» «right triangle» «each leg is shorter than hypotenuse»()
+    therefore a * a < c * c
+}
+
+export «Geometry» «right triangle» «leg square is less than hypotenuse square»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Corresponding and F-angle equalities chain along a transversal.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  corresponding alpha equals f-angle beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «f angles are equal», «Geometry» «parallel lines» «alternate and z angles chain»
+
+theorem «Geometry» «parallel lines» «corresponding and f angles chain» () {
+    assume «Geometry» «parallel lines» «f angles are equal»()
+    assume «Geometry» «parallel lines» «alternate and z angles chain»()
+    therefore angle_corresponding_alpha == angle_f_beta
+}
+
+export «Geometry» «parallel lines» «corresponding and f angles chain»

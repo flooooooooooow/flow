@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  A ring homomorphism sends zero plus zero to zero.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(0 + 0) = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve zero», «Ring» «addition» «zero plus zero is zero»
+
+theorem «RingHom» «preservation» «zero plus zero maps to zero» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve zero»(f)
+    assume «Ring» «addition» «zero plus zero is zero»()
+    therefore f(0 + 0) == 0
+}
+
+export «RingHom» «preservation» «zero plus zero maps to zero»

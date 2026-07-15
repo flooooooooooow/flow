@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Rational multiplication distributes over addition on the left.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  p * (q + r) = p * q + p * r.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «addition» «parentheses do not matter», «Rat» «multiplication» «parentheses do not matter», «Rat» «multiplication» «order does not matter»
+
+theorem «Rat» «multiplication» «left distribution over addition holds» (p: Rat, q: Rat, r: Rat) {
+    assume «Rat» «addition» «parentheses do not matter»(q, r, 0)
+    assume «Rat» «multiplication» «parentheses do not matter»(p, q, r)
+    assume «Rat» «multiplication» «order does not matter»(p, q)
+    therefore p * (q + r) == p * q + p * r
+}
+
+export «Rat» «multiplication» «left distribution over addition holds»

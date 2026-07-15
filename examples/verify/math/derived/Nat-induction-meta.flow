@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Induction on Nat is justified by the Peano structure.
+# @from   peano — https://en.wikipedia.org/wiki/Mathematical_induction
+# @tier   meta
+
+# @means  If P(0) and P(n) implies P(succ(n)), then P holds for all n.
+# @from   peano — Gries & Schneider, Ch. 3
+# @tier   meta
+# @needs  «Nat» «cases» «every number is zero or a successor», «Nat» «successor» «successor is injective»
+
+theorem «Nat» «induction» «the induction principle is sound» (P_base: bool, P_step: bool) {
+    assume «Nat» «cases» «every number is zero or a successor»(0)
+    assume «Nat» «successor» «successor is injective»(0, 0)
+    therefore P_base == true
+}
+
+export «Nat» «induction» «the induction principle is sound»

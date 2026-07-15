@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  A diameter subtends a central angle of two right angles.
+# @from   euclid — Elements, Book III, Proposition 31
+# @tier   derived
+
+# @means  angle AOB equals two right angles for diameter AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «right inscribed implies diameter chord», «Geometry» «circle» «central angle on diameter is two right»
+
+theorem «Geometry» «circle» «diameter subtends central two right» () {
+    assume «Geometry» «circle» «right inscribed implies diameter chord»()
+    assume «Geometry» «circle» «central angle on diameter is two right»()
+    therefore angle_AOB == two_right_angles
+}
+
+export «Geometry» «circle» «diameter subtends central two right»

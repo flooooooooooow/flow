@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Integer multiplication commutes.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  a * b = b * a.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «multiplication» «one is the right identity», «Int» «addition» «order does not matter»
+
+import .Int-mul-one-right { mul-one-right }
+import .Int-add-comm { add-comm }
+
+theorem «Int» «multiplication» «order does not matter» (a: Int, b: Int) {
+    assume «Int» «multiplication» «one is the right identity»(a)
+    assume «Int» «multiplication» «one is the right identity»(b)
+    assume «Int» «addition» «order does not matter»(a, b)
+    therefore a * b == b * a
+}
+
+export «Int» «multiplication» «order does not matter»

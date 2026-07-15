@@ -1,0 +1,33 @@
+# @module verify.Order
+# @means  Lattice laws for meet and join on a partial order.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   definitions-only
+
+# @means  Meet is commutative: a ∧ b = b ∧ a.
+# @from   davey-priestley
+# @tier   derived
+
+theorem «Order» «meet» «order does not matter» (a: Nat, b: Nat) {
+    therefore meet(a, b) == meet(b, a)
+}
+
+# @means  Join is commutative: a ∨ b = b ∨ a.
+# @from   davey-priestley
+# @tier   derived
+
+theorem «Order» «join» «order does not matter» (a: Nat, b: Nat) {
+    therefore join(a, b) == join(b, a)
+}
+
+# @means  Meet associates: (a ∧ b) ∧ c = a ∧ (b ∧ c).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «meet» «order does not matter»
+
+theorem «Order» «meet» «parentheses do not matter» (a: Nat, b: Nat, c: Nat) {
+    assume «Order» «meet» «order does not matter»(a, b)
+    assume «Order» «meet» «order does not matter»(b, c)
+    therefore meet(meet(a, b), c) == meet(a, meet(b, c))
+}
+
+export «Order» «meet» «order does not matter», «Order» «join» «order does not matter», «Order» «meet» «parentheses do not matter»

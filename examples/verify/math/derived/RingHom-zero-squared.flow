@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  A ring homomorphism squares zero to zero.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(0) * f(0) = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «zero» «zero maps to zero», «Ring» «multiplication» «zero times zero is zero»
+
+theorem «RingHom» «multiplication» «zero squared maps to zero» (f: RingHom) {
+    assume «RingHom» «zero» «zero maps to zero»(f)
+    assume «Ring» «multiplication» «zero times zero is zero»()
+    therefore f(0) * f(0) == 0
+}
+
+export «RingHom» «multiplication» «zero squared maps to zero»

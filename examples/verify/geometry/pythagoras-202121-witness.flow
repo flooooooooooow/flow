@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The 20-21-29 triangle satisfies the Pythagorean relation.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  29 squared equals 20 squared plus 21 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «seven twenty four twenty five satisfies Pythagoras», «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «twenty twenty one twenty nine satisfies Pythagoras» () {
+    assume «Geometry» «right triangle» «seven twenty four twenty five satisfies Pythagoras»()
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore 29 * 29 == 20 * 20 + 21 * 21
+}
+
+export «Geometry» «right triangle» «twenty twenty one twenty nine satisfies Pythagoras»

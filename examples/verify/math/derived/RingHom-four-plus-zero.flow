@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Four plus zero maps to four under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(4 + 0) = 4.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «four plus zero maps to four» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 4, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(4 + 0) == 4
+}
+
+export «RingHom» «preservation» «four plus zero maps to four»

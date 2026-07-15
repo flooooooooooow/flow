@@ -1,0 +1,30 @@
+# @module verify.Int
+# @means  Integer arithmetic definitions extending the natural numbers.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   definitions-only
+
+# @means  Adding zero on the left leaves an integer unchanged.
+# @from   landau
+# @tier   definition
+
+theorem «Int» «addition» «zero is the left identity» (m: Int) {
+    therefore 0 + m == m
+}
+
+# @means  Adding zero on the right leaves an integer unchanged.
+# @from   landau
+# @tier   definition
+
+theorem «Int» «addition» «zero is the right identity» (m: Int) {
+    therefore m + 0 == m
+}
+
+# @means  Negating twice returns the original integer.
+# @from   landau
+# @tier   derived
+
+theorem «Int» «negation» «double negation returns the value» (m: Int) {
+    therefore -(-m) == m
+}
+
+export «Int» «addition» «zero is the left identity», «Int» «addition» «zero is the right identity», «Int» «negation» «double negation returns the value»

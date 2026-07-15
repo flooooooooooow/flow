@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-i
+# @means  In any triangle, the sum of any two angles is less than two right angles.
+# @from   euclid — Elements, Book I, Proposition 17
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 13: adjacent angles on a straight line sum to two right angles», «Geometry» «Euclid Book I» «Proposition 16: an exterior angle exceeds either remote interior angle»
+
+theorem «Geometry» «Euclid Book I» «Proposition 17: any two angles of a triangle sum to less than two right angles» () {
+    let D = point_on_BC_produced_beyond_C
+    assume triangle_ABC
+    assume «Geometry» «Euclid Book I» «Proposition 13: adjacent angles on a straight line sum to two right angles»()
+    assume «Geometry» «Euclid Book I» «Proposition 16: an exterior angle exceeds either remote interior angle»()
+    therefore angle_ABC + angle_BCA < two_right_angles
+}

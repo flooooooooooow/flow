@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Zero on the left annihilates real multiplication.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  0 * x = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «addition» «zero is the right identity», «Real» «multiplication» «one is the right identity»
+
+import .Real-mul-one-right { mul-one-right }
+
+theorem «Real» «multiplication» «zero on the left gives zero» (x: Real) {
+    assume «Real» «addition» «zero is the right identity»(x)
+    assume «Real» «multiplication» «one is the right identity»(0)
+    therefore 0 * x == 0
+}
+
+export «Real» «multiplication» «zero on the left gives zero»

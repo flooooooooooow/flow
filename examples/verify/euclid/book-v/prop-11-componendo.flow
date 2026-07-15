@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If four magnitudes are proportional, they are also proportional by composition.
+# @from   euclid — Elements, Book V, Proposition 11
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando»
+
+theorem «Geometry» «Euclid Book V» «Proposition 11: proportional magnitudes satisfy componendo» () {
+    let a = first
+    let b = second
+    let c = third
+    let d = fourth
+    therefore ratio(a + b, b) == ratio(c + d, d)
+    assume «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando»()
+    therefore ratio_a_b_implies_ratio_a_plus_b_b
+}

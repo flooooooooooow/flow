@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Twelve plus zero is twelve in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  12 + 0 = 12.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «eleven plus zero is eleven»
+
+theorem «Monoid» «addition» «twelve plus zero is twelve» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(12)
+    assume «Monoid» «addition» «eleven plus zero is eleven»()
+    therefore 12 + 0 == 12
+}
+
+export «Monoid» «addition» «twelve plus zero is twelve»

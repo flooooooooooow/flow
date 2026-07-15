@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Alternate and corresponding angles are equal on parallel lines.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  alternate alpha equals corresponding beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «alternate angles are equal», «Geometry» «parallel lines» «alternate equals f after closure»
+
+theorem «Geometry» «parallel lines» «alternate corresponding equal» () {
+    assume «Geometry» «parallel lines» «alternate angles are equal»()
+    assume «Geometry» «parallel lines» «alternate equals f after closure»()
+    therefore angle_alt_alpha == angle_corr_beta
+}
+
+export «Geometry» «parallel lines» «alternate corresponding equal»

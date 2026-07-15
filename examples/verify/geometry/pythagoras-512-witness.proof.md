@@ -1,0 +1,36 @@
+# examples.verify.geometry
+
+*The 5-12-13 triangle satisfies the Pythagorean relation.*
+
+**Source.** euclid — Elements, Book I, Proposition 47
+
+## Derived fact 1 — 13 squared equals 5 squared plus 12 squared
+
+**Coordinate.** the Euclidean plane · right triangle · five twelve thirteen satisfies Pythagoras · **Derived fact**
+
+*Source: euclid*
+
+*Built on: three four five satisfies Pythagoras, for right triangles in on the Euclidean plane, the square on the hypotenuse equals the sum of squares on the legs*
+
+> **Goal.** 13 squared equals 5 squared plus 12 squared
+>
+> $$13^{2} = 5^{2} + 12^{2}$$
+
+**Figure.**
+
+![pythagoras-512-witness.proof.svg](pythagoras-512-witness.proof.svg)
+
+| | **Proof** | | **Math** |
+|:---:|:---|:---:|:---|
+| ① | We prove that five twelve thirteen satisfies Pythagoras for right triangles in the Euclidean plane. |  |  |
+| ② | We invoke the derived fact governing right triangles in the Euclidean plane: three four five satisfies Pythagoras, for right triangles in on the Euclidean plane. |  |  |
+| ③ | We invoke the derived fact governing right triangles in the Euclidean plane: the square on the hypotenuse equals the sum of squares on the legs. |  |  |
+| ④ | From step 2 and step 3, this implies 13 times 13 equals 5 times 5 plus 12 times 12. Hence proven. | ④ | $13^{2} = 5^{2} + 12^{2}$ |
+
+**Trace.** Each step lists the earlier steps it depends on.
+
+| Step | Uses |
+|:---:|:---|
+| ④ | step 2 and step 3 |
+
+`the Euclidean plane · right triangle · five twelve thirteen satisfies Pythagoras`

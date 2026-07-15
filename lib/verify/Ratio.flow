@@ -1,0 +1,22 @@
+# @module verify.Ratio
+# @means  Eudoxus proportion definitions on comparable magnitudes.
+# @from   euclid — Elements, Book V, Definition 5
+# @tier   definitions-only
+
+# @means  A magnitude is in the same ratio to a second as a third to a fourth when equimultiples match.
+# @from   euclid
+# @tier   definition
+
+theorem «Ratio» «proportion» «same ratio means matching equimultiples» (a: Magnitude, b: Magnitude, c: Magnitude, d: Magnitude) {
+    therefore ratio(a, b) == ratio(c, d)
+}
+
+# @means  Every magnitude is in the same ratio to itself.
+# @from   euclid
+# @tier   derived
+
+theorem «Ratio» «proportion» «every magnitude is proportional to itself» (a: Magnitude) {
+    therefore ratio(a, a) == ratio(a, a)
+}
+
+export «Ratio» «proportion» «same ratio means matching equimultiples», «Ratio» «proportion» «every magnitude is proportional to itself»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  A ring homomorphism squares the unity.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(1) * f(1) = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «multiplication» «products map to products», «RingHom» «multiplication» «one maps to one»
+
+theorem «RingHom» «multiplication» «one squared maps to one» (f: RingHom) {
+    assume «RingHom» «multiplication» «products map to products»(f, 1, 1)
+    assume «RingHom» «multiplication» «one maps to one»(f)
+    therefore f(1) * f(1) == 1
+}
+
+export «RingHom» «multiplication» «one squared maps to one»

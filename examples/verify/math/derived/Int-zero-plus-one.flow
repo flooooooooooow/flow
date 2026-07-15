@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero plus one is one for integers.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  0 + 1 = 1.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «zero is the left identity»
+
+theorem «Int» «addition» «zero plus one is one» () {
+    assume «Int» «addition» «zero is the left identity»(1)
+    therefore 0 + 1 == 1
+}
+
+export «Int» «addition» «zero plus one is one»

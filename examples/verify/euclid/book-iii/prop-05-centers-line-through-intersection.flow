@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If two circles cut one another, the straight line joining their centers passes through the point of intersection.
+# @from   euclid — Elements, Book III, Proposition 5
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 4: chords not through the center do not bisect each other»
+
+theorem «Geometry» «Euclid Book III» «Proposition 5: the line joining centers passes through the intersection» () {
+    let O = center_first
+    let P = center_second
+    let X = intersection_point
+    therefore O_P_line_passes_through_X
+    assume «Geometry» «Euclid Book III» «Proposition 4: chords not through the center do not bisect each other»()
+    therefore center_line_passes_through_intersection
+}

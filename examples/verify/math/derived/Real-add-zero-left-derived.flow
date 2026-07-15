@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero on the left is an additive identity for reals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  0 + x = x.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «addition» «zero on the right gives the value», «Real» «addition» «order does not matter»
+
+theorem «Real» «addition» «zero on the left gives the value» (x: Real) {
+    assume «Real» «addition» «zero on the right gives the value»(x)
+    assume «Real» «addition» «order does not matter»(0, x)
+    therefore 0 + x == x
+}
+
+export «Real» «addition» «zero on the left gives the value»

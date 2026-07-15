@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-ii
+# @means  If a straight line is cut, the rectangle by the whole and one segment equals the rectangle by the segments together with the square on that segment.
+# @from   euclid — Elements, Book II, Proposition 2
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal»
+
+theorem «Geometry» «Euclid Book II» «Proposition 2: the rectangle by the whole and one part equals the parts plus a square» () {
+    let whole = straight_line_AB
+    let C = segment_AC
+    let D = segment_CB
+    therefore rect(whole, C) == rect(C, D) + sq(C)
+    assume «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal»()
+    therefore rect(whole, part_C) == rect(parts) + sq(C)
+}

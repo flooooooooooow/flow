@@ -1,0 +1,16 @@
+# @module examples.verify.geometry
+# @means  Two interior angles determine the third in a triangle.
+# @from   euclid — Elements, Book I, Proposition 32
+# @tier   derived
+
+# @means  angle C equals two right angles minus angle A minus angle B.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «interior angles sum to two right angles»
+
+theorem «Geometry» «triangle» «two angles determine the third» () {
+    assume «Geometry» «triangle» «interior angles sum to two right angles»()
+    therefore angle_C == two_right_angles - angle_A - angle_B
+}
+
+export «Geometry» «triangle» «two angles determine the third»

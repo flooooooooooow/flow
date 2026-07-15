@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  The identity image is a right unit under a homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §1.6
+# @tier   derived
+
+# @means  f(1) * f(1) = f(1).
+# @from   dummit-foote
+# @tier   derived
+# @needs  «GroupHom» «identity» «the identity image multiplies to itself»
+
+theorem «GroupHom» «identity» «the identity image is a right unit» (f: GroupHom) {
+    assume «GroupHom» «identity» «the identity image multiplies to itself»(f)
+    therefore f(1) * f(1) == f(1)
+}
+
+export «GroupHom» «identity» «the identity image is a right unit»

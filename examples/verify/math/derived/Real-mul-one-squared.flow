@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One times one is one for reals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  1 * 1 = 1.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «multiplication» «one is the left identity»
+
+theorem «Real» «multiplication» «one times one is one» () {
+    assume «Real» «multiplication» «one is the left identity»(1)
+    therefore 1 * 1 == 1
+}
+
+export «Real» «multiplication» «one times one is one»

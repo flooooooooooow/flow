@@ -1,0 +1,27 @@
+# @module examples.verify.math.derived
+# @means  Addition commutes: a + b = b + a.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  You can swap the order of addition.  (3 + 5 = 5 + 3)
+# @from   landau — https://en.wikipedia.org/wiki/Foundations_of_analysis_(book)
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the left identity», «Nat» «addition» «zero is the right identity», «Nat» «addition» «successor on the right steps the sum»
+
+import verify.Nat/+ { zero-left, succ-right }
+import .Nat-plus-zero-right { zero-right }
+
+theorem «Nat» «addition» «order does not matter» (a: Nat, b: Nat) {
+    if a == 0 {
+        assume «Nat» «addition» «zero is the right identity»(b)
+        assume «Nat» «addition» «zero is the left identity»(b)
+        therefore a + b == b + a
+    } else {
+        let n = pred(a)
+        assume «Nat» «addition» «order does not matter»(n, b)
+        assume «Nat» «addition» «successor on the right steps the sum»(n, b)
+        therefore a + b == b + a
+    }
+}
+
+export «Nat» «addition» «order does not matter»

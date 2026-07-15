@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  True on the left is a conjunctive identity.
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+
+# @means  true and a = a.
+# @from   boole
+# @tier   derived
+# @needs  «Bool» «conjunction» «order does not matter», «Bool» «conjunction» «true is the right identity»
+
+theorem «Bool» «conjunction» «true is the left identity» (a: bool) {
+    assume «Bool» «conjunction» «order does not matter»(true, a)
+    assume «Bool» «conjunction» «true is the right identity»(a)
+    therefore true and a == a
+}
+
+export «Bool» «conjunction» «true is the left identity»

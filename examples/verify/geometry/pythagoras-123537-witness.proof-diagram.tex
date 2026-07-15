@@ -1,0 +1,21 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (A) at (80.0,60.0);
+  \coordinate (B) at (380.0,60.0);
+  \coordinate (C) at (80.0,280.0);
+  \draw[thick] (A) -- (B);
+  \draw[thick] (B) -- (C);
+  \draw[thick] (C) -- (A);
+  \pic [draw, angle radius=3.5mm] {right angle = B--A--C};
+  \pic [draw, angle radius=5mm, "$a$"] {angle = A--B--C};
+  \pic [draw, angle radius=5mm, "$b$"] {angle = B--C--A};
+  \fill (A) circle (6pt);
+  \node[font=\bfseries] at ($( A ) + (0,-14)$) {A};
+  \fill (B) circle (6pt);
+  \node[font=\bfseries] at ($( B ) + (0,-14)$) {B};
+  \fill (C) circle (6pt);
+  \node[font=\bfseries] at ($( C ) + (0,20)$) {C};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Right triangle with legs a, b and hypotenuse c — c² = a² + b².};
+\end{tikzpicture}
+\end{center}

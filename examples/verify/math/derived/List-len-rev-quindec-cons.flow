@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reverse preserves length of a quindecuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(quindecuple cons ending in nil)) = 15.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «length» «quindecuple cons nil has length fifteen»
+
+theorem «List» «length» «reverse of quindecuple cons has length fifteen» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat, l: Nat, m: Nat, n: Nat, o: Nat) {
+    assume «List» «length» «reverse preserves length»(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, nil)))))))))))))))
+    assume «List» «length» «quindecuple cons nil has length fifteen»(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o)
+    therefore len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, nil))))))))))))))) == 15
+}
+
+export «List» «length» «reverse of quindecuple cons has length fifteen»

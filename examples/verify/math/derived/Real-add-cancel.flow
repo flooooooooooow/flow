@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Equal reals can be subtracted from both sides.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  x + z = y + z implies x = y.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «addition» «parentheses do not matter», «Real» «addition» «zero is the right identity»
+
+theorem «Real» «addition» «right cancellation holds» (x: Real, y: Real, z: Real) {
+    if x + z == y + z {
+        assume «Real» «addition» «parentheses do not matter»(x, z, -z)
+        assume «Real» «addition» «zero is the right identity»(x)
+        therefore x == y
+    }
+}
+
+export «Real» «addition» «right cancellation holds»

@@ -1,0 +1,16 @@
+# @module examples.verify.geometry
+# @means  Both legs of a right triangle are shorter than the hypotenuse.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  b < c when a < c in a right triangle.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «each leg is shorter than hypotenuse»
+
+theorem «Geometry» «right triangle» «second leg is shorter than hypotenuse» () {
+    assume «Geometry» «right triangle» «each leg is shorter than hypotenuse»()
+    therefore b < c
+}
+
+export «Geometry» «right triangle» «second leg is shorter than hypotenuse»

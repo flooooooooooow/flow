@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Choosing zero from a successor set gives one.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(succ(n), 0) = 1.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «Pascal recurrence holds», «Comb» «choose» «choosing none gives one»
+
+theorem «Comb» «choose» «choosing zero from a successor gives one» (n: Nat) {
+    assume «Comb» «choose» «Pascal recurrence holds»(succ(n), 0)
+    assume «Comb» «choose» «choosing none gives one»(n)
+    therefore choose(succ(n), 0) == 1
+}
+
+export «Comb» «choose» «choosing zero from a successor gives one»

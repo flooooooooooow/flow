@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Choosing eight from a successor set.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(succ(n), 8) = choose(n, 7) + choose(n, 8).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «Pascal recurrence holds», «Comb» «choose» «choosing seven from a successor»
+
+theorem «Comb» «choose» «choosing eight from a successor» (n: Nat) {
+    assume «Comb» «choose» «Pascal recurrence holds»(succ(n), 8)
+    assume «Comb» «choose» «choosing seven from a successor»(n)
+    therefore choose(succ(n), 8) == choose(n, 7) + choose(n, 8)
+}
+
+export «Comb» «choose» «choosing eight from a successor»

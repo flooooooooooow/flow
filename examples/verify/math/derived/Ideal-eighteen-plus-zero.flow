@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Eighteen plus zero is eighteen in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  18 + 0 = 18 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «seventeen plus zero in ideal»
+
+theorem «Ideal» «addition» «eighteen plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(18)
+    assume «Ideal» «addition» «seventeen plus zero in ideal»()
+    therefore 18 + 0 == 18
+}
+
+export «Ideal» «addition» «eighteen plus zero in ideal»

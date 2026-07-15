@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The inscribed-to-central angle ratio is one half.
+# @from   euclid — Elements, Book III, Proposition 20
+# @tier   derived
+
+# @means  angle APB times two equals angle AOB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «Thales inscribed is half central», «Geometry» «circle» «inscribed angle is half the central angle»
+
+theorem «Geometry» «circle» «inscribed central ratio is half» () {
+    assume «Geometry» «circle» «Thales inscribed is half central»()
+    assume «Geometry» «circle» «inscribed angle is half the central angle»()
+    therefore angle_APB * 2 == angle_AOB
+}
+
+export «Geometry» «circle» «inscribed central ratio is half»

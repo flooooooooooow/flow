@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Zero on the right is an additive identity for rationals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  q + 0 = q.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «addition» «zero is the left identity», «Rat» «addition» «order does not matter»
+
+import .Rat-add-comm { add-comm }
+
+theorem «Rat» «addition» «zero on the right gives the value» (q: Rat) {
+    assume «Rat» «addition» «zero is the left identity»(q)
+    assume «Rat» «addition» «order does not matter»(q, 0)
+    therefore q + 0 == q
+}
+
+export «Rat» «addition» «zero on the right gives the value»

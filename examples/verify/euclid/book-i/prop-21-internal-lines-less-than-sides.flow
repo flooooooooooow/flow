@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-i
+# @means  If two lines are drawn from the ends of a side to an interior point, their sum is less than the sum of the other two sides.
+# @from   euclid — Elements, Book I, Proposition 21
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 20: the sum of two sides exceeds the third»
+
+theorem «Geometry» «Euclid Book I» «Proposition 21: two internal lines from the base are shorter than the other sides» () {
+    let D = interior_point_inside_triangle_ABC
+    assume triangle_ABC_with_interior_point_D
+    assume «Geometry» «Euclid Book I» «Proposition 20: the sum of two sides exceeds the third»()
+    therefore AB_plus_AD_greater_than_BD
+    therefore AC_plus_AD_greater_than_CD
+    therefore BD_plus_DC_less_than_AB_plus_AC
+}

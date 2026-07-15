@@ -1,0 +1,8 @@
+# @means  Two triangles with two sides and the included angle equal are congruent.
+# @from   euclid — Elements, Book I, Proposition 4
+# @tier   axiom
+# @diagram triangle-congruence-sas
+
+theorem «Geometry» «triangle congruence» «side-angle-side implies congruence» () {
+    therefore triangle_ABC == triangle_DEF
+}

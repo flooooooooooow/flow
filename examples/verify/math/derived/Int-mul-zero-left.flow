@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero on the left annihilates integer multiplication.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  0 * m = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «zero is the right identity», «Int» «multiplication» «one is the right identity»
+
+theorem «Int» «multiplication» «zero on the left gives zero» (m: Int) {
+    assume «Int» «addition» «zero is the right identity»(m)
+    assume «Int» «multiplication» «one is the right identity»(0)
+    therefore 0 * m == 0
+}
+
+export «Int» «multiplication» «zero on the left gives zero»

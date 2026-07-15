@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-i
+# @means  Parallelograms on equal bases and in the same parallels are equal.
+# @from   euclid — Elements, Book I, Proposition 24
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book I» «Proposition 14: lines with interior angles less than two right angles meet»
+
+theorem «Geometry» «Euclid Book I» «Proposition 24: parallelograms on equal bases and parallels are equal» () {
+    let diagonal_AC = segment_from_A_to_C
+    assume parallelogram_ABCD_and_EFGH_on_equal_bases_BC_and_FG
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    assume «Geometry» «Euclid Book I» «Proposition 14: lines with interior angles less than two right angles meet»()
+    therefore triangle_ABC == triangle_DCB
+    therefore parallelogram_ABCD == parallelogram_EFGH
+}

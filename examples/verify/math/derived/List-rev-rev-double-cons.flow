@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Double reverse restores a double cons list.
+# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @tier   derived
+
+# @means  rev(rev(cons(a, cons(b, xs)))) = cons(a, cons(b, xs)).
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «reverse is an involution»
+
+theorem «List» «reverse» «double reverse of double cons» (a: Nat, b: Nat, xs: List) {
+    assume «List» «reverse» «reverse is an involution»(cons(a, cons(b, xs)))
+    therefore rev(rev(cons(a, cons(b, xs)))) == cons(a, cons(b, xs))
+}
+
+export «List» «reverse» «double reverse of double cons»

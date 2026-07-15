@@ -1,0 +1,12 @@
+# @module examples.verify.euclid.book-i
+# @means  Equal triangles on the same base are in the same parallels.
+# @from   euclid — Elements, Book I, Proposition 39
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 37: triangles on the same base and parallels are equal»
+
+theorem «Geometry» «Euclid Book I» «Proposition 39: equal triangles on the same base lie between parallels» () {
+    assume triangles_ABC_and_DBC_equal_on_same_base_BC
+    assume «Geometry» «Euclid Book I» «Proposition 37: triangles on the same base and parallels are equal»()
+    therefore lines_AD_and_BC_are_parallel
+    therefore triangles_ABC_DBC_same_parallels
+}

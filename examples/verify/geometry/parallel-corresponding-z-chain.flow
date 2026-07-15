@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Corresponding and Z-angles chain on parallel lines.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  corresponding alpha equals z-angle beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «corresponding angles are equal», «Geometry» «parallel lines» «f and z angles chain»
+
+theorem «Geometry» «parallel lines» «corresponding and z angles chain» () {
+    assume «Geometry» «parallel lines» «corresponding angles are equal»()
+    assume «Geometry» «parallel lines» «f and z angles chain»()
+    therefore angle_corr_alpha == angle_z_beta
+}
+
+export «Geometry» «parallel lines» «corresponding and z angles chain»

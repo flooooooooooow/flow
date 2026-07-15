@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Real multiplication commutes.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  x * y = y * x.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «multiplication» «one is the left identity», «Real» «multiplication» «one is the right identity», «Real» «addition» «order does not matter»
+
+import .Real-mul-one-right { mul-one-right }
+
+theorem «Real» «multiplication» «order does not matter» (x: Real, y: Real) {
+    assume «Real» «multiplication» «one is the left identity»(x)
+    assume «Real» «multiplication» «one is the right identity»(y)
+    assume «Real» «addition» «order does not matter»(x, y)
+    therefore x * y == y * x
+}
+
+export «Real» «multiplication» «order does not matter»

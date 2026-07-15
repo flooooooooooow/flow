@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The 7-24-25 triangle satisfies the Pythagorean relation.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  25 squared equals 7 squared plus 24 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «eight fifteen seventeen satisfies Pythagoras», «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «seven twenty four twenty five satisfies Pythagoras» () {
+    assume «Geometry» «right triangle» «eight fifteen seventeen satisfies Pythagoras»()
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore 25 * 25 == 7 * 7 + 24 * 24
+}
+
+export «Geometry» «right triangle» «seven twenty four twenty five satisfies Pythagoras»

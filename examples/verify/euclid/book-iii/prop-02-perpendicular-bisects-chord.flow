@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If a straight line through the center of a circle cuts a chord at right angles, it bisects the chord and the central angles.
+# @from   euclid — Elements, Book III, Proposition 2
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment»
+
+theorem «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord» () {
+    let O = center
+    let AB = chord
+    let M = foot_of_perpendicular
+    therefore segment_AM == segment_MB
+    assume «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment»()
+    therefore perpendicular_from_center_bisects_chord
+}

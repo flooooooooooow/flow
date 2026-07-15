@@ -1,0 +1,36 @@
+# @module verify.Subgroup
+# @means  Subgroup axioms as a subset closed under multiplication and inverses.
+# @from   dummit-foote — *Abstract Algebra*, §2.2
+# @tier   definitions-only
+
+# @means  A subgroup contains the group identity.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Subgroup» «membership» «the identity lies in every subgroup» (H: Subgroup) {
+    therefore 1 in H
+}
+
+# @means  A subgroup is closed under multiplication.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Subgroup» «multiplication» «closed under multiplication» (H: Subgroup, a: Group, b: Group) {
+    if a in H {
+        if b in H {
+            therefore a * b in H
+        }
+    }
+}
+
+# @means  A subgroup is closed under taking inverses.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Subgroup» «inverse» «closed under inverses» (H: Subgroup, g: Group) {
+    if g in H {
+        therefore inv(g) in H
+    }
+}
+
+export «Subgroup» «membership» «the identity lies in every subgroup», «Subgroup» «multiplication» «closed under multiplication», «Subgroup» «inverse» «closed under inverses»

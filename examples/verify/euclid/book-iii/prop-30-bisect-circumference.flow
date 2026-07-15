@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iii
+# @means  To bisect a given circumference of a circle.
+# @from   euclid — Elements, Book III, Proposition 30
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord», «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment»
+
+theorem «Geometry» «Euclid Book III» «Proposition 30: to bisect a given circumference of a circle» () {
+    let arc = given_circumference
+    let chord = chord_of_arc
+    let M = midpoint_of_chord
+    therefore arc_bisected_at_M
+    assume «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»()
+    assume «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment»()
+    therefore bisected_circumference_exists
+}

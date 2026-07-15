@@ -1,0 +1,28 @@
+# @module examples.verify.math.derived
+# @means  Multiplying on the left preserves less-or-equal order.
+# @from   peano — https://en.wikipedia.org/wiki/Monotonic_function
+# @tier   derived
+
+# @means  If a ≤ b then c * a ≤ c * b.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the left annihilator», «Nat» «multiplication» «successor on the right distributes», «Nat» «addition» «adding on the right preserves order»
+
+theorem «Nat» «multiplication» «multiplying on the left preserves order» (a: Nat, b: Nat, c: Nat) {
+    if a <= b {
+        if c == 0 {
+            assume «Nat» «multiplication» «zero is the left annihilator»(a)
+            assume «Nat» «multiplication» «zero is the left annihilator»(b)
+            therefore c * a <= c * b
+        } else {
+            let k = pred(c)
+            assume «Nat» «multiplication» «multiplying on the left preserves order»(a, b, k)
+            assume «Nat» «multiplication» «successor on the right distributes»(k, a)
+            assume «Nat» «multiplication» «successor on the right distributes»(k, b)
+            assume «Nat» «addition» «adding on the right preserves order»(k * a, a, b)
+            therefore c * a <= c * b
+        }
+    }
+}
+
+export «Nat» «multiplication» «multiplying on the left preserves order»

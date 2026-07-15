@@ -1,0 +1,12 @@
+# @module examples.verify.euclid.book-v
+# @means  If any number of magnitudes are equimultiples of as many others, each of each, whatever multiple one is of one, that multiple the sum is of the sum.
+# @from   euclid — Elements, Book V, Proposition 1
+# @tier   derived
+
+theorem «Geometry» «Euclid Book V» «Proposition 1: equimultiples of equimultiples are equimultiple of the originals» () {
+    let m = multiple_factor
+    let a = first_magnitude
+    let b = second_magnitude
+    therefore equimultiple(m, sum) == sum_of_equimultiples
+    therefore equimultiple_of_equimultiple_is_equimultiple
+}

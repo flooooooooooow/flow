@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  On a given straight line at a given point, to construct an angle equal to a given angle.
+# @from   euclid — Elements, Book I, Proposition 23
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality», «Geometry» «Euclid Book I» «Proposition 22: construct a triangle from three lines»
+
+theorem «Geometry» «Euclid Book I» «Proposition 23: copy a given angle onto a line at a point» () {
+    let triangle_on_DEF = triangle_from_three_sides_by_Proposition_22
+    let triangle_on_GHJ = triangle_matching_DEF_by_Proposition_8
+    assume angle_DEF_given
+    assume point_G_on_line_and_H_off_line
+    assume «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»()
+    assume «Geometry» «Euclid Book I» «Proposition 22: construct a triangle from three lines»()
+    therefore angle_DEF == angle_GHJ
+}

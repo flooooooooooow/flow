@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero equals itself.
+# @from   leibniz — https://en.wikipedia.org/wiki/Law_of_identity
+# @tier   derived
+
+# @means  0 = 0.
+# @from   leibniz
+# @tier   derived
+# @needs  «Eq» «equality» «everything equals itself»
+
+theorem «Eq» «equality» «zero equals itself» () {
+    assume «Eq» «equality» «everything equals itself»(0)
+    therefore 0 == 0
+}
+
+export «Eq» «equality» «zero equals itself»

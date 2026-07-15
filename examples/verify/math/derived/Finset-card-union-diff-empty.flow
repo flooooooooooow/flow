@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Union difference with empty preserves cardinality.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card((s ∪ t) \ empty) = card(s ∪ t).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «difference» «union diff empty is union», «Finset» «cardinality» «union with empty preserves cardinality»
+
+theorem «Finset» «cardinality» «union diff empty card derived» (s: Finset, t: Finset) {
+    assume «Finset» «difference» «union diff empty is union»(s, t)
+    assume «Finset» «cardinality» «union with empty preserves cardinality»(s ∪ t)
+    therefore card((s ∪ t) \ empty) == card(s ∪ t)
+}
+
+export «Finset» «cardinality» «union diff empty card derived»

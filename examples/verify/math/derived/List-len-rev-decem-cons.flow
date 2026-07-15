@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reverse preserves length of a decuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(decuple cons ending in nil)) = 10.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «length» «decuple cons nil has length ten»
+
+theorem «List» «length» «reverse of decuple cons has length ten» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat) {
+    assume «List» «length» «reverse preserves length»(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, nil)))))))))))
+    assume «List» «length» «decuple cons nil has length ten»(a, b, c, d, e, f, g, h, i, j)
+    therefore len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, nil)))))))))))) == 10
+}
+
+export «List» «length» «reverse of decuple cons has length ten»

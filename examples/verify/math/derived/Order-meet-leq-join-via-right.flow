@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Meet is below join via the right bound.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, b) <= join(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «meet is below join», «Order» «join» «join is above the right argument»
+
+theorem «Order» «lattice» «meet is below join via right bound» (a: Nat, b: Nat) {
+    assume «Order» «lattice» «meet is below join»(a, b)
+    assume «Order» «join» «join is above the right argument»(a, b)
+    therefore meet(a, b) <= join(a, b)
+}
+
+export «Order» «lattice» «meet is below join via right bound»

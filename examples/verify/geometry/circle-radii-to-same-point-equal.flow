@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Two radii to the same point on the circumference are equal.
+# @from   euclid — Elements, Book I, Definition 15
+# @tier   derived
+
+# @means  OA equals OC for points A and C on the circle.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «radii from the centre are equal», «Geometry» «circle» «chord through centre gives isosceles triangle»
+
+theorem «Geometry» «circle» «radii to circumference points are equal» () {
+    assume «Geometry» «circle» «radii from the centre are equal»()
+    assume «Geometry» «circle» «chord through centre gives isosceles triangle»()
+    therefore radius_OA == radius_OC
+}
+
+export «Geometry» «circle» «radii to circumference points are equal»

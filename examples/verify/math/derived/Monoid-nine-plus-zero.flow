@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Nine plus zero is nine in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  9 + 0 = 9.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «eight plus zero is eight»
+
+theorem «Monoid» «addition» «nine plus zero is nine» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(9)
+    assume «Monoid» «addition» «eight plus zero is eight»()
+    therefore 9 + 0 == 9
+}
+
+export «Monoid» «addition» «nine plus zero is nine»

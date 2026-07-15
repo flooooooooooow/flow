@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  The image of the identity is idempotent under a homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §1.6
+# @tier   derived
+
+# @means  f(1) * f(1) = f(1).
+# @from   dummit-foote
+# @tier   derived
+# @needs  «GroupHom» «multiplication» «products map to products», «GroupHom» «identity» «the identity maps to the identity»
+
+theorem «GroupHom» «identity» «the identity image is idempotent» (f: GroupHom) {
+    assume «GroupHom» «multiplication» «products map to products»(f, 1, 1)
+    assume «GroupHom» «identity» «the identity maps to the identity»(f)
+    therefore f(1) * f(1) == f(1)
+}
+
+export «GroupHom» «identity» «the identity image is idempotent»

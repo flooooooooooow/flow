@@ -1,0 +1,38 @@
+# @module verify.Group
+# @means  Group axioms for an abstract multiplication operation.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   definitions-only
+
+# @means  Group multiplication associates.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Group» «multiplication» «parentheses do not matter» (a: Group, b: Group, c: Group) {
+    therefore (a * b) * c == a * (b * c)
+}
+
+# @means  The identity element is a left unit.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Group» «identity» «one is the left identity» (g: Group) {
+    therefore 1 * g == g
+}
+
+# @means  The identity element is a right unit.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Group» «identity» «one is the right identity» (g: Group) {
+    therefore g * 1 == g
+}
+
+# @means  Every element has a left inverse.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Group» «inverse» «left inverse recovers the identity» (g: Group) {
+    therefore inv(g) * g == 1
+}
+
+export «Group» «multiplication» «parentheses do not matter», «Group» «identity» «one is the left identity», «Group» «identity» «one is the right identity», «Group» «inverse» «left inverse recovers the identity»

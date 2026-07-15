@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Left cancellation holds in a group.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  a * b = a * c implies b = c.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «inverse» «left inverse recovers the identity», «Group» «multiplication» «parentheses do not matter», «Group» «identity» «one is the left identity»
+
+theorem «Group» «multiplication» «left cancellation holds» (a: Group, b: Group, c: Group) {
+    if a * b == a * c {
+        assume «Group» «inverse» «left inverse recovers the identity»(a)
+        assume «Group» «multiplication» «parentheses do not matter»(inv(a), a, b)
+        assume «Group» «identity» «one is the left identity»(b)
+        therefore b == c
+    }
+}
+
+export «Group» «multiplication» «left cancellation holds»

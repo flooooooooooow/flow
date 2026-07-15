@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero times three is zero for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 * 3 = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the left annihilator»
+
+theorem «Nat» «multiplication» «zero times three is zero» () {
+    let three = succ(succ(succ(0)))
+    assume «Nat» «multiplication» «zero is the left annihilator»(three)
+    therefore 0 * three == 0
+}
+
+export «Nat» «multiplication» «zero times three is zero»

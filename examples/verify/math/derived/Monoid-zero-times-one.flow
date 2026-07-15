@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero times one is zero in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  0 * 1 = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «multiplication» «zero on the left gives zero», «Monoid» «identity» «one is the right identity»
+
+theorem «Monoid» «multiplication» «zero times one is zero» () {
+    assume «Monoid» «multiplication» «zero on the left gives zero»(1)
+    assume «Monoid» «identity» «one is the right identity»(0)
+    therefore 0 * 1 == 0
+}
+
+export «Monoid» «multiplication» «zero times one is zero»

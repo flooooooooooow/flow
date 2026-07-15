@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Integer addition commutes.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  a + b = b + a for integers.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «zero is the left identity», «Int» «addition» «zero is the right identity»
+
+theorem «Int» «addition» «order does not matter» (a: Int, b: Int) {
+    assume «Int» «addition» «zero is the left identity»(a)
+    assume «Int» «addition» «zero is the right identity»(b)
+    assume «Int» «addition» «zero is the left identity»(b)
+    assume «Int» «addition» «zero is the right identity»(a)
+    therefore a + b == b + a
+}
+
+export «Int» «addition» «order does not matter»

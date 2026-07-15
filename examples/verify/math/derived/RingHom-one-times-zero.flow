@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  A ring homomorphism sends one times zero to zero.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(1) * 0 = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «multiplication» «one maps to one», «Ring» «multiplication» «one times zero is zero»
+
+theorem «RingHom» «multiplication» «one times zero maps to zero» (f: RingHom) {
+    assume «RingHom» «multiplication» «one maps to one»(f)
+    assume «Ring» «multiplication» «one times zero is zero»()
+    therefore f(1) * 0 == 0
+}
+
+export «RingHom» «multiplication» «one times zero maps to zero»

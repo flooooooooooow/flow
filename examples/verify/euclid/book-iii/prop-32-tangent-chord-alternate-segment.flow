@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iii
+# @means  If a straight line touches a circle and a chord is drawn from the point of contact, the angles with the tangent equal the angles in the alternate segments.
+# @from   euclid — Elements, Book III, Proposition 32
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 19: the tangent is perpendicular to the diameter at the point of contact», «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal»
+
+theorem «Geometry» «Euclid Book III» «Proposition 32: the angle between tangent and chord equals the angle in the alternate segment» () {
+    let T = point_of_contact
+    let tangent = line_through_T
+    let chord = chord_TA
+    therefore angle_between_tangent_chord == angle_in_alternate_segment
+    assume «Geometry» «Euclid Book III» «Proposition 19: the tangent is perpendicular to the diameter at the point of contact»()
+    assume «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal»()
+    therefore tangent_chord_angle_equals_alternate_segment
+}

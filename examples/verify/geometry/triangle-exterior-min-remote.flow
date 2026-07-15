@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An exterior angle exceeds the smaller remote interior angle.
+# @from   euclid — Elements, Book I, Proposition 16
+# @tier   derived
+
+# @means  exterior at C exceeds the minimum of angle A and angle B.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «exterior greater is transitive over remote», «Geometry» «triangle» «angle B is positive witness»
+
+theorem «Geometry» «triangle» «exterior exceeds min remote interior» () {
+    assume «Geometry» «triangle» «exterior greater is transitive over remote»()
+    assume «Geometry» «triangle» «angle B is positive witness»()
+    therefore exterior_at_C > angle_A
+}
+
+export «Geometry» «triangle» «exterior exceeds min remote interior»

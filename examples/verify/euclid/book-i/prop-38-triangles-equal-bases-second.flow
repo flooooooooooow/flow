@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-i
+# @means  Triangles on equal bases and in the same parallels equal one another.
+# @from   euclid — Elements, Book I, Proposition 38
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 28: triangles on equal bases and parallels are equal»
+
+theorem «Geometry» «Euclid Book I» «Proposition 38: triangles on equal bases and parallels are equal» () {
+    let parallelogram_on_AB = parallelogram_through_triangle_ABC
+    let parallelogram_on_DE = parallelogram_through_triangle_DEF
+    assume triangles_ABC_and_DEF_on_equal_bases_between_same_parallels
+    assume «Geometry» «Euclid Book I» «Proposition 28: triangles on equal bases and parallels are equal»()
+    therefore triangle_ABC == triangle_DEF
+}

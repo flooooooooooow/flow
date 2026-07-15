@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  First projection retrieves the first component.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  fst(pair(a, b)) = a.
+# @from   church
+# @tier   derived
+# @needs  «Pair» «first projection» «first component is retrieved»
+
+theorem «Pair» «first projection» «first projection from pairing» (a: Nat, b: Nat) {
+    assume «Pair» «first projection» «first component is retrieved»(a, b)
+    therefore fst(pair(a, b)) == a
+}
+
+export «Pair» «first projection» «first projection from pairing»

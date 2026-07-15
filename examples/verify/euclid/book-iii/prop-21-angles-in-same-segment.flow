@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  In a circle angles in the same segment are equal to one another.
+# @from   euclid — Elements, Book III, Proposition 21
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 20: the central angle is double the inscribed angle on the same arc»
+
+theorem «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal» () {
+    let segment = arc_AB
+    let C = point_in_segment
+    let D = second_point
+    therefore angle_ACB == angle_ADB
+    assume «Geometry» «Euclid Book III» «Proposition 20: the central angle is double the inscribed angle on the same arc»()
+    therefore angles_in_same_segment_equal
+}

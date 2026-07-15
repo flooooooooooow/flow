@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One plus zero is one for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  1 + 0 = 1.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the right identity»
+
+theorem «Nat» «addition» «one plus zero is one» () {
+    assume «Nat» «addition» «zero is the right identity»(succ(0))
+    therefore succ(0) + 0 == succ(0)
+}
+
+export «Nat» «addition» «one plus zero is one»

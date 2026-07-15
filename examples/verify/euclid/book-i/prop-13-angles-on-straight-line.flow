@@ -1,0 +1,10 @@
+# @module examples.verify.euclid.book-i
+# @means  If a straight line stands on a straight line, the adjacent angles equal two right angles.
+# @from   euclid — Elements, Book I, Proposition 13
+# @tier   axiom
+
+theorem «Geometry» «Euclid Book I» «Proposition 13: adjacent angles on a straight line sum to two right angles» () {
+    assume line_PC_stands_on_line_AB_at_P
+    assume Common Notion 4: coinciding straight lines have equal adjacent angles
+    therefore angle_APC + angle_APB == two_right_angles
+}

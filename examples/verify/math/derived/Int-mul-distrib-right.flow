@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Integer multiplication distributes over addition on the right.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  (b + c) * a = b * a + c * a.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «multiplication» «left distribution over addition holds», «Int» «multiplication» «order does not matter»
+
+import .Int-mul-distrib-left { mul-distrib-left }
+
+theorem «Int» «multiplication» «right distribution over addition holds» (a: Int, b: Int, c: Int) {
+    assume «Int» «multiplication» «left distribution over addition holds»(a, b, c)
+    assume «Int» «multiplication» «order does not matter»(b, a)
+    assume «Int» «multiplication» «order does not matter»(c, a)
+    therefore (b + c) * a == b * a + c * a
+}
+
+export «Int» «multiplication» «right distribution over addition holds»
