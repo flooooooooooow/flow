@@ -1,0 +1,163 @@
+# GA + WFC coupled guidance for state-space evolution
+# Import: import "stdlib/dynamics/wfc_ga_coupling.flow"
+#
+# Pipeline:
+#   1. GA analysis yields stability / fitness metrics (CoupledGuidance)
+#   2. WFC layout collapses under GA-biased seeds (spatial constraint field)
+#   3. Layout statistics scale plant input & initial state (guided evolution)
+
+import "stdlib/dynamics/wfc.flow"
+import "stdlib/dynamics/ga.flow"
+import "stdlib/dynamics/ga_analysis.flow"
+
+struct CoupledGuidance {
+    seed: i32,
+    max_steps: i32,
+    b_scale: f64,
+    layout_bias: f64
+}
+
+struct WFCRunReport {
+    collapsed: i32,
+    steps_taken: i32,
+    wall_fraction: f64,
+    mean_entropy: f64
+}
+
+struct GuidedEvolutionReport {
+    input_scale: f64,
+    layout_energy: f64,
+    guided_spectral_radius: f64,
+    collapsed_cells: i32,
+    stable_guided: i32
+}
+
+function f64_floor_i32(x: f64) -> i32 {
+    let mut n: i32 = 0
+    let mut r: f64 = x
+    if r < 0.0 {
+        r = 0.0 - r
+    }
+    while r >= 1.0 {
+        r = r - 1.0
+        n = n + 1
+        if n > 10000 {
+            return n
+        }
+    }
+    return n
+}
+
+# Derive WFC collapse budget and plant input scaling from GA analysis + gains.
+function couple_ga_wfc_guidance(
+    report: GAAnalysisReport,
+    k1: f64,
+    k2: f64,
+    base_seed: i32,
+    base_steps: i32
+) -> CoupledGuidance {
+    let k_part: i32 = f64_floor_i32(k1 * 10.0) + f64_floor_i32(k2 * 5.0)
+    let seed_i: i32 = base_seed + k_part + report.convergence_gen
+    let mut steps: i32 = base_steps
+    if report.stable_closed_loop != 1 {
+        steps = base_steps / 2
+    }
+    if steps < 4 {
+        steps = 4
+    }
+    let mut b_scale: f64 = 1.0 + 0.02 * report.fitness_drop
+    if b_scale > 2.0 {
+        b_scale = 2.0
+    }
+    if b_scale < 0.5 {
+        b_scale = 0.5
+    }
+    if report.plant_controllable != 1 {
+        b_scale = 0.75
+    }
+    let layout_bias: f64 = 1.0 - report.closed_spectral_radius
+    return CoupledGuidance {
+        seed: seed_i,
+        max_steps: steps,
+        b_scale: b_scale,
+        layout_bias: layout_bias
+    }
+}
+
+function wfc_run_guided(grid: WFCGrid, tile_count: i32, guide: CoupledGuidance) -> WFCRunReport {
+    let steps: i32 = wfc_run_collapse(grid, tile_count, guide.seed, guide.max_steps)
+    let collapsed: i32 = wfc_count_collapsed(grid)
+    let walls: f64 = wfc_wall_fraction(grid)
+    let ent: f64 = wfc_mean_entropy(grid, tile_count)
+    return WFCRunReport {
+        collapsed: collapsed,
+        steps_taken: steps,
+        wall_fraction: walls,
+        mean_entropy: ent
+    }
+}
+
+function dsys_scale_input(sys: DynamicalSystem, scale: f64, b_buf: ptr<f64>) -> DynamicalSystem {
+    let n: i32 = sys.n
+    let m: i32 = sys.m
+    let Bs: Matrix = matrix_zeros(b_buf, n, m)
+    for i in 0 to n {
+        for j in 0 to m {
+            let v: f64 = matrix_get(sys.B, i, j) * scale
+            matrix_set(Bs, i, j, v)
+        }
+    }
+    return dsys_discrete(n, m, sys.p, sys.dt, sys.A, Bs, sys.C)
+}
+
+function layout_state_bias(wfc: WFCRunReport, guide: CoupledGuidance) -> f64 {
+    let open_frac: f64 = 1.0 - wfc.wall_fraction
+    return guide.layout_bias * open_frac
+}
+
+function guided_layout_rollout_energy(
+    closed: DynamicalSystem,
+    state_bias: f64,
+    steps: i32
+) -> f64 {
+    let n: i32 = closed.n
+    let x: array<f64, 8> = [1.0 + state_bias, state_bias, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let xn: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut energy: f64 = 0.0
+    for t in 0 to steps {
+        energy = energy + x[0] * x[0] + x[1] * x[1]
+        state_step(closed, x, u, xn)
+        vec_copy(xn, x, n)
+    }
+    return energy
+}
+
+function guide_state_evolution(
+    plant: DynamicalSystem,
+    k1: f64,
+    k2: f64,
+    guide: CoupledGuidance,
+    wfc: WFCRunReport,
+    steps: i32,
+    b_buf: ptr<f64>,
+    acl_buf: ptr<f64>,
+    bk_buf: ptr<f64>
+) -> GuidedEvolutionReport {
+    let scaled: DynamicalSystem = dsys_scale_input(plant, guide.b_scale, b_buf)
+    let closed: DynamicalSystem = ga_closed_loop_matrix(scaled, k1, k2, acl_buf, bk_buf)
+    let bias: f64 = layout_state_bias(wfc, guide)
+    let energy: f64 = guided_layout_rollout_energy(closed, bias, steps)
+    let rho: f64 = matrix_spectral_radius_2x2(closed.A)
+    let stable: i32 = 0
+    if rho < 1.0 {
+        stable = 1
+    }
+    return GuidedEvolutionReport {
+        input_scale: guide.b_scale,
+        layout_energy: energy,
+        guided_spectral_radius: rho,
+        collapsed_cells: wfc.collapsed,
+        stable_guided: stable
+    }
+}
