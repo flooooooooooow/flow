@@ -17,6 +17,7 @@
 #   dynamics/gramian.flow     — finite / infinite horizon Gramians
 #   dynamics/attractor.flow   — RK4 flows, Lyapunov proxy
 #   dynamics/ga.flow          — genetic control search
+#   dynamics/ga_analysis.flow — GA + Gramian + attractor unified report
 #   dynamics/wfc.flow         — wave function collapse grids
 #
 # Examples: examples/dynamics/
