@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Two plus zero is two in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  2 + 0 = 2 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «one plus one in ideal»
+
+theorem «Ideal» «addition» «two plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(2)
+    assume «Ideal» «addition» «one plus one in ideal»()
+    therefore 2 + 0 == 2
+}
+
+export «Ideal» «addition» «two plus zero in ideal»

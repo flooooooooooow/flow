@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-iii
+# @means  If from a point outside a circle a secant and a tangent are drawn, the rectangle on the whole secant and the exterior segment equals the square on the tangent.
+# @from   euclid — Elements, Book III, Proposition 8
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 7: the square on a half-diameter exceeds the square on a line to an interior point»
+
+theorem «Geometry» «Euclid Book III» «Proposition 8: the rectangle on a secant and its exterior segment equals the square on the tangent» () {
+    let P = exterior_point
+    let secant = line_PAB
+    let tangent = line_PT
+    therefore rect(secant, exterior) == sq(tangent)
+    assume «Geometry» «Euclid Book III» «Proposition 7: the square on a half-diameter exceeds the square on a line to an interior point»()
+}

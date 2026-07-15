@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Double reverse fixes a pair cons list.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  rev(rev(cons(x, cons(y, nil)))) = cons(x, cons(y, nil)).
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «double reverse returns the list»
+
+theorem «List» «reverse» «double reverse fixes pair cons» (x: Nat, y: Nat) {
+    assume «List» «reverse» «double reverse returns the list»(cons(x, cons(y, nil)))
+    therefore rev(rev(cons(x, cons(y, nil)))) == cons(x, cons(y, nil))
+}
+
+export «List» «reverse» «double reverse fixes pair cons»

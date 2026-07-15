@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  If the square on one side equals the sum of squares on the other two, the angle between them is right.
+# @from   euclid — Elements, Book I, Proposition 48
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 47: square on hypotenuse equals sum of squares on legs», «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»
+
+theorem «Geometry» «Euclid Book I» «Proposition 48: square sum implies a right angle» () {
+    let D = point_with_AD_perpendicular_to_AB_and_AD_equal_to_AC
+    let square_on_BD = square_on_side_BD
+    assume triangle_ABC_with_BC_squared_equals_AB_squared_plus_AC_squared
+    assume «Geometry» «Euclid Book I» «Proposition 47: square on hypotenuse equals sum of squares on legs»()
+    assume «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»()
+    therefore angle_DAB == one_right_angle
+    therefore angle_BAC == one_right_angle
+}

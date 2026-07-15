@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Left and right inverses coincide in a group.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  If h * g = 1 and g * inv(g) = 1 then h = inv(g).
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «inverse» «inverses are unique», «Group» «inverse» «right inverse recovers the identity»
+
+import .Group-inv-right { inv-right }
+
+theorem «Group» «inverse» «left and right inverses agree» (g: Group, h: Group) {
+    if h * g == 1 {
+        if g * inv(g) == 1 {
+            assume «Group» «inverse» «inverses are unique»(g, h, inv(g))
+            assume «Group» «inverse» «right inverse recovers the identity»(g)
+            therefore h == inv(g)
+        }
+    }
+}
+
+export «Group» «inverse» «left and right inverses agree»

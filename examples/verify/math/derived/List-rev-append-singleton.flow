@@ -1,0 +1,12 @@
+# @module examples.verify.math.derived
+# @means  Reversing a singleton list is that singleton.
+# @from   List reverse cons
+# @tier   derived
+# @needs  «List» «reverse» «append singleton»
+
+theorem «List» «reverse» «append singleton» (x : «List» «Nat») {
+    assume «List» «reverse» «cons»(x, «List» «empty») = «List» «cons»(x, «List» «empty»)
+    therefore «List» «reverse» «cons»(x, «List» «empty») = «List» «cons»(x, «List» «empty»)
+}
+
+export «List» «reverse» «append singleton»

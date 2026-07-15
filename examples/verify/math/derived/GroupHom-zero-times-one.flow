@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero times one maps to zero under a group homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §3.1
+# @tier   derived
+
+# @means  f(0 * 1) = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «GroupHom» «preservation» «homomorphisms preserve multiplication», «GroupHom» «preservation» «homomorphisms preserve the identity»
+
+theorem «GroupHom» «preservation» «zero times one maps to identity» (f: GroupHom) {
+    assume «GroupHom» «preservation» «homomorphisms preserve multiplication»(f, 0, 1)
+    assume «GroupHom» «preservation» «homomorphisms preserve the identity»(f)
+    therefore f(0 * 1) == 0
+}
+
+export «GroupHom» «preservation» «zero times one maps to identity»

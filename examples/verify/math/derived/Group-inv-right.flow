@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Every group element has a right inverse.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  g * inv(g) = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «inverse» «left inverse recovers the identity», «Group» «identity» «one is the left identity», «Group» «multiplication» «parentheses do not matter»
+
+theorem «Group» «inverse» «right inverse recovers the identity» (g: Group) {
+    assume «Group» «inverse» «left inverse recovers the identity»(g)
+    assume «Group» «identity» «one is the left identity»(inv(g))
+    assume «Group» «multiplication» «parentheses do not matter»(g, inv(g), 1)
+    therefore g * inv(g) == 1
+}
+
+export «Group» «inverse» «right inverse recovers the identity»

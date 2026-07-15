@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  The inverse of a product reverses the factors.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  inv(a * b) = inv(b) * inv(a).
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «inverse» «right inverse recovers the identity», «Group» «inverse» «inverses are unique», «Group» «multiplication» «parentheses do not matter»
+
+import .Group-inv-right { inv-right }
+
+theorem «Group» «inverse» «product inverses reverse order» (a: Group, b: Group) {
+    assume «Group» «inverse» «right inverse recovers the identity»(a)
+    assume «Group» «inverse» «right inverse recovers the identity»(b)
+    assume «Group» «inverse» «inverses are unique»(a * b, inv(b) * inv(a), inv(a * b))
+    assume «Group» «multiplication» «parentheses do not matter»(a, b, inv(b))
+    therefore inv(a * b) == inv(b) * inv(a)
+}
+
+export «Group» «inverse» «product inverses reverse order»

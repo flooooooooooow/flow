@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Squaring two is four-fold self-multiplication.
+# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @tier   derived
+
+# @means  sq(2) = 2 * 2.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «square» «squaring is self-multiplication»
+
+theorem «Nat» «square» «squaring two is self multiplication» () {
+    let two = succ(succ(0))
+    assume «Nat» «square» «squaring is self-multiplication»(two)
+    therefore sq(two) == two * two
+}
+
+export «Nat» «square» «squaring two is self multiplication»

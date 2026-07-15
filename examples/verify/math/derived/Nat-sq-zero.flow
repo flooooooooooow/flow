@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Squaring zero gives zero.
+# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @tier   derived
+
+# @means  sq(0) = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «square» «squaring is self-multiplication», «Nat» «multiplication» «zero on the right gives zero»
+
+theorem «Nat» «square» «squaring zero gives zero» () {
+    assume «Nat» «square» «squaring is self-multiplication»(0)
+    assume «Nat» «multiplication» «zero on the right gives zero»(0)
+    therefore 0 * 0 == 0
+}
+
+export «Nat» «square» «squaring zero gives zero»

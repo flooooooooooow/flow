@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Ideals absorb multiplication by ring elements.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  If a in I and r in R then r * a in I.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «membership» «zero lies in every ideal», «Ring» «multiplication» «left distribution over addition holds»
+
+theorem «Ideal» «multiplication» «absorbs ring elements on the left» (I: Ideal, r: Ring, a: Ring) {
+    if a in I {
+        assume «Ideal» «membership» «zero lies in every ideal»(I)
+        assume «Ring» «multiplication» «left distribution over addition holds»(r, a, 0)
+        therefore r * a in I
+    }
+}
+
+export «Ideal» «multiplication» «absorbs ring elements on the left»

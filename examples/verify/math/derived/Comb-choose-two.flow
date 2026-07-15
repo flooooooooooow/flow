@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Choosing two items relates to choosing one by Pascal.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(n, 2) = choose(n, 1) + choose(n - 1, 1) for n > 1.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «choosing one gives the count», «Comb» «choose» «Pascal recurrence holds»
+
+theorem «Comb» «choose» «choosing two via Pascal» (n: Nat) {
+    if n == 0 {
+        assume «Comb» «choose» «choosing one gives the count»(0)
+        therefore choose(n, 2) == choose(n, 1) + choose(pred(n), 1)
+    } else {
+        let k = 2
+        assume «Comb» «choose» «Pascal recurrence holds»(n, k)
+        assume «Comb» «choose» «choosing one gives the count»(n)
+        therefore choose(n, 2) == choose(n, 1) + choose(pred(n), 1)
+    }
+}
+
+export «Comb» «choose» «choosing two via Pascal»

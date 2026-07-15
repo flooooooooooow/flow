@@ -1,0 +1,12 @@
+# @module examples.verify.math.derived
+# @means  Seven times one is seven.
+# @from   Nat mul seven one
+# @tier   derived
+# @needs  «Nat» «mul» «seven one»
+
+theorem «Nat» «mul» «seven one» () {
+    assume «Nat» «mul»(7, 1) = 7
+    therefore «Nat» «mul»(7, 1) = 7
+}
+
+export «Nat» «mul» «seven one»

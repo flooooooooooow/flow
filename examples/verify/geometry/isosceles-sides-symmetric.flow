@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Equal sides in an isosceles triangle are symmetric about the apex median.
+# @from   euclid — Elements, Book I, Proposition 5
+# @tier   derived
+
+# @means  side AB equals reflect of side AC across apex median.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «isosceles triangle» «apex median bisects apex angle», «Geometry» «isosceles triangle» «reflection across apex median swaps base»
+
+theorem «Geometry» «isosceles triangle» «equal sides symmetric about apex median» () {
+    assume «Geometry» «isosceles triangle» «apex median bisects apex angle»()
+    assume «Geometry» «isosceles triangle» «reflection across apex median swaps base»()
+    therefore side_AB == reflect_side_AC
+}
+
+export «Geometry» «isosceles triangle» «equal sides symmetric about apex median»

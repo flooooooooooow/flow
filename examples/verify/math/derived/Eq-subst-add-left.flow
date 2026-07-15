@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Equal summands stay equal when the same term is added on the left.
+# @from   leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
+# @tier   derived
+
+# @means  From a = b we deduce c + a = c + b.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «addition» «order does not matter», «Eq» «equality» «equal terms add the same on the right»
+
+import .Nat-plus-commutes { plus-commutes }
+
+theorem «Eq» «equality» «equal terms add the same on the left» (a: Nat, b: Nat, c: Nat) {
+    if a == b {
+        assume «Nat» «addition» «order does not matter»(a, c)
+        assume «Eq» «equality» «equal terms add the same on the right»(a, b, c)
+        therefore c + a == c + b
+    }
+}
+
+export «Eq» «equality» «equal terms add the same on the left»

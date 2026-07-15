@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One is the right multiplicative identity for integers.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  m * 1 = m.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «zero is the right identity»
+
+theorem «Int» «multiplication» «one is the right identity» (m: Int) {
+    assume «Int» «addition» «zero is the right identity»(m)
+    therefore m * 1 == m
+}
+
+export «Int» «multiplication» «one is the right identity»

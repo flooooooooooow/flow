@@ -1,0 +1,14 @@
+# @module verify.Eq
+# @means  Leibniz identity — equality reflexivity on natural numbers.
+# @from   leibniz — https://en.wikipedia.org/wiki/Law_of_identity
+# @tier   axioms-only
+
+# @means  Anything equals itself.  (42 == 42)
+# @from   leibniz — https://en.wikipedia.org/wiki/Law_of_identity
+# @tier   axiom
+
+theorem «Eq» «equality» «everything equals itself» (x: Nat) {
+    therefore x == x
+}
+
+export «Eq» «equality» «everything equals itself»

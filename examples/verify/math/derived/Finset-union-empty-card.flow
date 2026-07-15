@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Union with empty preserves cardinality.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(s ∪ empty) = card(s).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «cardinality» «union with empty preserves cardinality»
+
+theorem «Finset» «cardinality» «union with empty preserves cardinality» (s: Finset) {
+    assume «Finset» «cardinality» «union with empty preserves cardinality»(s)
+    therefore card(s ∪ empty) == card(s)
+}
+
+export «Finset» «cardinality» «union with empty preserves cardinality»

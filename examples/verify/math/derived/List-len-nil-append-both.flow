@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Empty append on both sides preserves zero length.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(nil ++ nil) = 0.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «empty append preserves length», «List» «length» «the empty list has length zero»
+
+theorem «List» «length» «double empty append has length zero» () {
+    assume «List» «length» «empty append preserves length»(nil)
+    assume «List» «length» «the empty list has length zero»()
+    therefore len(nil ++ nil) == 0
+}
+
+export «List» «length» «double empty append has length zero»

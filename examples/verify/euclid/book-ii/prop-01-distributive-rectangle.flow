@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-ii
+# @means  If one of two straight lines is cut into segments, the rectangle by the whole pair equals the sum of rectangles by the uncut line and each segment.
+# @from   euclid — Elements, Book II, Proposition 1
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal»
+
+theorem «Geometry» «Euclid Book II» «Proposition 1: the rectangle by two lines equals the sum over segments» () {
+    let A = uncut_straight_line
+    let B = straight_line_cut_into_segments
+    let parts = segments_of_B
+    therefore rect(A, B) == sum_rect(A, parts)
+    assume «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal»()
+    therefore rect(A, B) == sum_rect(A, segments_of_B)
+}

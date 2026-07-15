@@ -1,0 +1,28 @@
+# @module examples.verify.math.derived
+# @means  Multiplication distributes over addition on the right.
+# @from   peano — https://en.wikipedia.org/wiki/Distributive_property
+# @tier   derived
+
+# @means  a * (b + c) = a * b + a * c.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the right annihilator», «Nat» «multiplication» «successor on the right distributes», «Nat» «addition» «successor on the right steps the sum»
+
+import verify.Nat-mul { zero-right, succ-right }
+
+theorem «Nat» «multiplication» «distributes over addition on the right» (a: Nat, b: Nat, c: Nat) {
+    if b == 0 {
+        assume «Nat» «multiplication» «zero is the right annihilator»(a)
+        assume «Nat» «multiplication» «zero is the right annihilator»(a)
+        assume «Nat» «addition» «zero is the left identity»(c)
+        therefore a * (b + c) == a * b + a * c
+    } else {
+        let k = pred(b)
+        assume «Nat» «multiplication» «distributes over addition on the right»(a, k, c)
+        assume «Nat» «multiplication» «successor on the right distributes»(a, k)
+        assume «Nat» «addition» «successor on the right steps the sum»(k, c)
+        therefore a * (b + c) == a * b + a * c
+    }
+}
+
+export «Nat» «multiplication» «distributes over addition on the right»

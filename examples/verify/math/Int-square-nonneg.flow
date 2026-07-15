@@ -1,0 +1,8 @@
+# @means  Squaring any integer gives zero or a positive number.
+# @from   dummit-foote — *Abstract Algebra*, §7.4 (ordered rings)
+# @tier   derived
+
+theorem «Int» «multiplication» «squaring never yields a negative» (n: i32) {
+    let sq = n * n
+    therefore sq >= 0 by smt
+}

@@ -1,0 +1,30 @@
+# @module verify.Real
+# @means  Real number arithmetic extending the rationals.
+# @from   landau — *Foundations of Analysis*
+# @tier   definitions-only
+
+# @means  Adding zero on the left leaves a real unchanged.
+# @from   landau
+# @tier   definition
+
+theorem «Real» «addition» «zero is the left identity» (x: Real) {
+    therefore 0 + x == x
+}
+
+# @means  Adding zero on the right leaves a real unchanged.
+# @from   landau
+# @tier   definition
+
+theorem «Real» «addition» «zero is the right identity» (x: Real) {
+    therefore x + 0 == x
+}
+
+# @means  One is the left multiplicative identity for reals.
+# @from   landau
+# @tier   definition
+
+theorem «Real» «multiplication» «one is the left identity» (x: Real) {
+    therefore 1 * x == x
+}
+
+export «Real» «addition» «zero is the left identity», «Real» «addition» «zero is the right identity», «Real» «multiplication» «one is the left identity»

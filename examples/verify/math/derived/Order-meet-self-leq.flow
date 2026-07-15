@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Meet with itself is below the argument.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, a) <= a.
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «meet» «repeating does not change the value», «Nat» «order» «less-or-equal is reflexive»
+
+theorem «Order» «meet» «meet with itself is below the argument» (a: Nat) {
+    assume «Order» «meet» «repeating does not change the value»(a)
+    assume «Nat» «order» «less-or-equal is reflexive»(a)
+    therefore meet(a, a) <= a
+}
+
+export «Order» «meet» «meet with itself is below the argument»

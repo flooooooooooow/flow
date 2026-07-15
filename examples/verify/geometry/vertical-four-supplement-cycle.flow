@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Four vertical angles cycle through supplementary pairs.
+# @from   euclid — Elements, Book I, Proposition 15
+# @tier   derived
+
+# @means  angle alpha plus angle alpha prime equals two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «adjacent vertical pairs supplementary», «Geometry» «intersecting lines» «four vertical angles cycle equally»
+
+theorem «Geometry» «intersecting lines» «four vertical supplement cycle» () {
+    assume «Geometry» «intersecting lines» «adjacent vertical pairs supplementary»()
+    assume «Geometry» «intersecting lines» «four vertical angles cycle equally»()
+    therefore angle_alpha + angle_alpha_prime == two_right_angles
+}
+
+export «Geometry» «intersecting lines» «four vertical supplement cycle»

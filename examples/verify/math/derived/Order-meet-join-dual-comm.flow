@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Dual meet-below-join commutes in arguments.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, b) <= join(b, a) via dual commutativity.
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «meet below join commutes», «Order» «lattice» «meet below join in dual order»
+
+theorem «Order» «lattice» «meet below join dual commutes» (a: Nat, b: Nat) {
+    assume «Order» «lattice» «meet below join commutes»(a, b)
+    assume «Order» «lattice» «meet below join in dual order»(a, b)
+    therefore meet(a, b) <= join(b, a)
+}
+
+export «Order» «lattice» «meet below join dual commutes»

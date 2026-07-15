@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Two equal radii sum to a diameter through their endpoints.
+# @from   euclid — Elements, Book I, Definition 15
+# @tier   derived
+
+# @means  radius OA plus radius OB equals diameter AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «diameter is positive», «Geometry» «circle» «diameter equals two radii»
+
+theorem «Geometry» «circle» «two radii sum to diameter» () {
+    assume «Geometry» «circle» «diameter is positive»()
+    assume «Geometry» «circle» «diameter equals two radii»()
+    therefore radius_OA + radius_OB == diameter_AB
+}
+
+export «Geometry» «circle» «two radii sum to diameter»

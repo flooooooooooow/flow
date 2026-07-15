@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  In a given circle to inscribe a square.
+# @from   euclid — Elements, Book IV, Proposition 4
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line», «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 4: in a circle to inscribe a square» () {
+    let circle = given_circle
+    let ABCD = inscribed_square
+    let O = center
+    therefore square_ABCD_in_circle
+    assume «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line»()
+    assume «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»()
+    therefore square_inscribed_in_circle
+}

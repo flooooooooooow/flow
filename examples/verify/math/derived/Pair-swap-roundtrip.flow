@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Swapping pair components twice recovers the original pair.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  swap(swap(pair(a, b))) = pair(a, b).
+# @from   church
+# @tier   derived
+# @needs  «Pair» «first projection» «first component is retrieved», «Pair» «second projection» «second component is retrieved», «Pair» «pairing» «components determine the pair»
+
+theorem «Pair» «swap» «double swap returns the pair» (a: Nat, b: Nat) {
+    assume «Pair» «first projection» «first component is retrieved»(a, b)
+    assume «Pair» «second projection» «second component is retrieved»(a, b)
+    assume «Pair» «pairing» «components determine the pair»(a, b)
+    therefore swap(swap(pair(a, b))) == pair(a, b)
+}
+
+export «Pair» «swap» «double swap returns the pair»

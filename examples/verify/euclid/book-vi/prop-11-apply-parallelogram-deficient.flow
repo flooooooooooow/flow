@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  To a given straight line to apply a parallelogram equal to a given rectilineal figure and deficient by a parallelogram similar to a given one.
+# @from   euclid — Elements, Book VI, Proposition 11
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 10: to cut off a prescribed part from a given straight line», «Geometry» «Euclid Book I» «Proposition 44: apply a parallelogram equal to a triangle to a line»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 11: to apply a parallelogram equal to a figure and deficient by a similar parallelogram» () {
+    let AB = given_line
+    let F = given_figure
+    let par = applied_parallelogram
+    therefore area(par) == area(F) - deficiency
+    assume «Geometry» «Euclid Book VI» «Proposition 10: to cut off a prescribed part from a given straight line»()
+    assume «Geometry» «Euclid Book I» «Proposition 44: apply a parallelogram equal to a triangle to a line»()
+    therefore deficient_parallelogram_applied
+}

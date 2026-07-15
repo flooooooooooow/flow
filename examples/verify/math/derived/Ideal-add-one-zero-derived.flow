@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  One plus zero stays in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  1 + 0 = 1 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «one» «one plus zero is one»
+
+theorem «Ideal» «addition» «one plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(1)
+    assume «Ideal» «one» «one plus zero is one»()
+    therefore 1 + 0 == 1
+}
+
+export «Ideal» «addition» «one plus zero in ideal»

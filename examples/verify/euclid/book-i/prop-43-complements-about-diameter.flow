@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-i
+# @means  The complements of parallelograms about the diameter are equal.
+# @from   euclid — Elements, Book I, Proposition 43
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 33: parallelograms about a diameter are equal»
+
+theorem «Geometry» «Euclid Book I» «Proposition 43: complements of parallelograms about a diameter are equal» () {
+    let K = point_on_diameter_AC
+    let complement_AEK = region_AEKH_about_K
+    let complement_KGC = region_KGFC_about_K
+    assume parallelogram_ABCD_with_diameter_AC_and_point_K
+    assume «Geometry» «Euclid Book I» «Proposition 33: parallelograms about a diameter are equal»()
+    therefore complement_AEK == complement_KGC
+}

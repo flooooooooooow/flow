@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Twelve plus zero is twelve in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  12 + 0 = 12 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «eleven plus zero in ideal»
+
+theorem «Ideal» «addition» «twelve plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(12)
+    assume «Ideal» «addition» «eleven plus zero in ideal»()
+    therefore 12 + 0 == 12
+}
+
+export «Ideal» «addition» «twelve plus zero in ideal»

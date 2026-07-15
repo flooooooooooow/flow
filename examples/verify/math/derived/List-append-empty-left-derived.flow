@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Empty list appended on the left changes nothing.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  nil ++ xs = xs.
+# @from   church
+# @tier   derived
+# @needs  «List» «append» «empty is the left identity»
+
+theorem «List» «append» «empty on the left gives the list» (xs: List) {
+    assume «List» «append» «empty is the left identity»(xs)
+    therefore nil ++ xs == xs
+}
+
+export «List» «append» «empty on the left gives the list»

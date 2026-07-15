@@ -1,0 +1,12 @@
+# @module examples.verify.euclid.book-i
+# @means  If two angles of a triangle are equal, the sides opposite them are equal.
+# @from   euclid — Elements, Book I, Proposition 6
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 5: base angles of an isosceles triangle are equal»
+
+theorem «Geometry» «Euclid Book I» «Proposition 6: equal angles imply equal opposite sides» () {
+    assume angle_ABC == angle_ACB
+    assume «Geometry» «Euclid Book I» «Proposition 5: base angles of an isosceles triangle are equal»()
+    therefore segment_AB == segment_AC
+    therefore side_AC == side_AB
+}

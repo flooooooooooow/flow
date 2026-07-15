@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Proportional magnitudes satisfy invertendo.
+# @from   euclid — Elements, Book V, Proposition 10
+# @tier   derived
+
+# @means  a:b = c:d implies b:a = d:c.
+# @from   euclid
+# @tier   derived
+# @needs  «Ratio» «proportion» «alternando holds», «Ratio» «proportion» «every magnitude is proportional to itself»
+
+import .Ratio-alternando { alternando }
+
+theorem «Ratio» «proportion» «invertendo holds» (a: Magnitude, b: Magnitude, c: Magnitude, d: Magnitude) {
+    assume «Ratio» «proportion» «alternando holds»(a, b, c, d)
+    assume «Ratio» «proportion» «every magnitude is proportional to itself»(b)
+    therefore ratio(b, a) == ratio(d, c)
+}
+
+export «Ratio» «proportion» «invertendo holds»

@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Reversing a double cons list.
+# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @tier   derived
+
+# @means  rev(cons(a, cons(b, nil))) = cons(b, cons(a, nil)).
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «reverse of cons is append of reverse tail»
+
+theorem «List» «reverse» «reverse of double cons» (a: Nat, b: Nat) {
+    assume «List» «reverse» «reverse of cons is append of reverse tail»(a, cons(b, nil))
+    therefore rev(cons(a, cons(b, nil))) == cons(b, cons(a, nil))
+}
+
+export «List» «reverse» «reverse of double cons»

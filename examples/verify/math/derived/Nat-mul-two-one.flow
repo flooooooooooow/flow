@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Two times one is two for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  2 * 1 = 2.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «one is the right identity»
+
+theorem «Nat» «multiplication» «two times one is two» () {
+    let two = succ(succ(0))
+    assume «Nat» «multiplication» «one is the right identity»(two)
+    therefore two * succ(0) == two
+}
+
+export «Nat» «multiplication» «two times one is two»

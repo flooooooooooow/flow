@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  If in a right-angled triangle a perpendicular is drawn from the right angle to the base, the triangles on each side are similar to the whole and to one another.
+# @from   euclid — Elements, Book VI, Proposition 8
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 47: square on hypotenuse equals sum of squares on legs», «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 8: in a right triangle the altitude to the hypotenuse gives similar subtriangles» () {
+    let ABC = right_triangle
+    let AD = altitude_to_hypotenuse
+    let ABD = subtriangle
+    therefore triangle_ABD ~ triangle_ABC
+    assume «Geometry» «Euclid Book I» «Proposition 47: square on hypotenuse equals sum of squares on legs»()
+    assume «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides»()
+    therefore right_triangle_altitude_gives_similarity
+}

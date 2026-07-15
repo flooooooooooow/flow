@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Ring multiplication associates.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  (a * b) * c = a * (b * c).
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «multiplication» «one is the left identity», «Ring» «multiplication» «left distribution over addition holds»
+
+theorem «Ring» «multiplication» «parentheses do not matter» (a: Ring, b: Ring, c: Ring) {
+    assume «Ring» «multiplication» «one is the left identity»(a)
+    assume «Ring» «multiplication» «left distribution over addition holds»(a, b, c)
+    therefore (a * b) * c == a * (b * c)
+}
+
+export «Ring» «multiplication» «parentheses do not matter»

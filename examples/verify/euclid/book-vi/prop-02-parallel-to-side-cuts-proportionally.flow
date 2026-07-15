@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  If a straight line is drawn parallel to one side of a triangle, it cuts the other sides proportionally.
+# @from   euclid — Elements, Book VI, Proposition 2
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 1: triangles and parallelograms of the same height are as their bases», «Geometry» «Euclid Book I» «Proposition 37: triangles on the same base and between the same parallels are equal»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 2: a line parallel to a triangle side cuts the other sides proportionally» () {
+    let ABC = triangle
+    let DE = line_parallel_to_BC
+    let AD = segment_on_AB
+    therefore ratio(AD, DB) == ratio(AE, EC)
+    assume «Geometry» «Euclid Book VI» «Proposition 1: triangles and parallelograms of the same height are as their bases»()
+    assume «Geometry» «Euclid Book I» «Proposition 37: triangles on the same base and between the same parallels are equal»()
+    therefore parallel_implies_proportional_sides
+}

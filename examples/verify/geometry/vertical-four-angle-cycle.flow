@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Four vertical angles around intersecting lines cycle by equality.
+# @from   euclid — Elements, Book I, Proposition 15
+# @tier   derived
+
+# @means  angle alpha prime equals angle alpha across the cycle.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «supplementary yields equal vertical angles», «Geometry» «intersecting lines» «vertical angles form equal pairs»
+
+theorem «Geometry» «intersecting lines» «four vertical angles cycle equally» () {
+    assume «Geometry» «intersecting lines» «supplementary yields equal vertical angles»()
+    assume «Geometry» «intersecting lines» «vertical angles form equal pairs»()
+    therefore angle_alpha_prime == angle_alpha
+}
+
+export «Geometry» «intersecting lines» «four vertical angles cycle equally»

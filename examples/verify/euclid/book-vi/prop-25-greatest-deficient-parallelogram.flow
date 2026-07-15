@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  Of all parallelograms applied to a given straight line and deficient by parallelograms similar to a given one, the greatest is that applied to the half of the line.
+# @from   euclid — Elements, Book VI, Proposition 25
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 11: to apply a parallelogram equal to a figure and deficient by a similar parallelogram»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 25: the greatest parallelogram on half the line with deficiency is similar to the given one» () {
+    let AB = given_line
+    let M = midpoint
+    let par = applied_on_half
+    therefore par_is_greatest_deficient
+    assume «Geometry» «Euclid Book VI» «Proposition 11: to apply a parallelogram equal to a figure and deficient by a similar parallelogram»()
+    therefore greatest_deficient_parallelogram_on_half
+}

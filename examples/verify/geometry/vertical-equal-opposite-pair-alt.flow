@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Equal opposite vertical angles form supplementary adjacent pairs.
+# @from   euclid — Elements, Book I, Proposition 15
+# @tier   derived
+
+# @means  angle beta prime equals angle beta and sums with alpha to two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «opposite vertical supplement pair», «Geometry» «intersecting lines» «opposite vertical angles equal pair»
+
+theorem «Geometry» «intersecting lines» «equal opposite vertical supplement alt» () {
+    assume «Geometry» «intersecting lines» «opposite vertical supplement pair»()
+    assume «Geometry» «intersecting lines» «opposite vertical angles equal pair»()
+    therefore angle_beta_prime == angle_beta
+}
+
+export «Geometry» «intersecting lines» «equal opposite vertical supplement alt»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  A diameter is twice any radius to the circumference.
+# @from   euclid — Elements, Book I, Definition 15
+# @tier   derived
+
+# @means  diameter AB equals two times radius OA.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «radius equals half diameter», «Geometry» «circle» «diameter equals two radii»
+
+theorem «Geometry» «circle» «diameter is twice radius» () {
+    assume «Geometry» «circle» «radius equals half diameter»()
+    assume «Geometry» «circle» «diameter equals two radii»()
+    therefore diameter_AB == 2 * radius_OA
+}
+
+export «Geometry» «circle» «diameter is twice radius»

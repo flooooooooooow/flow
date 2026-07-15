@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Squaring a successor expands by self-multiplication.
+# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @tier   derived
+
+# @means  sq(succ(n)) = succ(n) * succ(n).
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «square» «squaring is self-multiplication», «Nat» «addition» «successor on the right via commutativity»
+
+import verify.Nat-sq { sq-def }
+import .Nat-plus-succ-right { succ-right }
+
+theorem «Nat» «square» «successor squares by self multiplication» (n: Nat) {
+    let s = succ(n)
+    assume «Nat» «square» «squaring is self-multiplication»(s)
+    assume «Nat» «addition» «successor on the right via commutativity»(n, 0)
+    therefore sq(s) == s * s
+}
+
+export «Nat» «square» «successor squares by self multiplication»

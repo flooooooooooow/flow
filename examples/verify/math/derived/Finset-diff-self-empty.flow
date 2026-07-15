@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Difference of a set with itself is empty.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  s \ s = empty.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «difference» «difference with self is empty»
+
+theorem «Finset» «difference» «difference with self is empty» (s: Finset) {
+    assume «Finset» «difference» «difference with self is empty»(s)
+    therefore s \ s == empty
+}
+
+export «Finset» «difference» «difference with self is empty»

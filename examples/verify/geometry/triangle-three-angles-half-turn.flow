@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Three positive angles sum to half a turn.
+# @from   euclid — Elements, Book I, Proposition 32
+# @tier   derived
+
+# @means  positive angles A, B, C sum to two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «half turn interior sum witness», «Geometry» «triangle» «all interior angles are positive»
+
+theorem «Geometry» «triangle» «three positive angles half turn» () {
+    assume «Geometry» «triangle» «half turn interior sum witness»()
+    assume «Geometry» «triangle» «all interior angles are positive»()
+    therefore angle_A + angle_B + angle_C == two_right_angles
+}
+
+export «Geometry» «triangle» «three positive angles half turn»

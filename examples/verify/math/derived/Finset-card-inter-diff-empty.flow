@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Intersection difference with empty preserves cardinality.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card((s ∩ t) \ empty) = card(s ∩ t).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «difference» «inter diff empty is intersection», «Finset» «cardinality» «inter union empty card derived»
+
+theorem «Finset» «cardinality» «inter diff empty card derived» (s: Finset, t: Finset) {
+    assume «Finset» «difference» «inter diff empty is intersection»(s, t)
+    assume «Finset» «cardinality» «inter union empty card derived»(s, t)
+    therefore card((s ∩ t) \ empty) == card(s ∩ t)
+}
+
+export «Finset» «cardinality» «inter diff empty card derived»

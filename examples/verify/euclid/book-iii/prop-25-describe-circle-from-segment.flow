@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iii
+# @means  Given a segment of a circle, to describe the complete circle of which it is a part.
+# @from   euclid — Elements, Book III, Proposition 25
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal», «Geometry» «Euclid Book I» «Proposition 9: bisect a given angle»
+
+theorem «Geometry» «Euclid Book III» «Proposition 25: to describe the circle of which a given segment is part» () {
+    let seg = given_segment
+    let chord = base_of_segment
+    let center = point_equidistant_from_ends
+    therefore circle_through_segment_exists
+    assume «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal»()
+    assume «Geometry» «Euclid Book I» «Proposition 9: bisect a given angle»()
+    therefore circle_from_segment_exists
+}

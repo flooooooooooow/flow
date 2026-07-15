@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing a two-element cons list swaps endpoints.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  rev(cons(x, cons(y, nil))) = cons(y, cons(x, nil)).
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «reverse of cons appends reversed tail», «List» «reverse» «singleton reverse is identity»
+
+theorem «List» «reverse» «reverse of pair cons swaps endpoints» (x: Nat, y: Nat) {
+    assume «List» «reverse» «reverse of cons appends reversed tail»(x, cons(y, nil))
+    assume «List» «reverse» «singleton reverse is identity»(y)
+    therefore rev(cons(x, cons(y, nil))) == cons(y, cons(x, nil))
+}
+
+export «List» «reverse» «reverse of pair cons swaps endpoints»

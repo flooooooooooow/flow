@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  About a given circle to circumscribe a rectangle.
+# @from   euclid — Elements, Book IV, Proposition 8
+# @tier   derived
+# @needs  «Geometry» «Euclid Book IV» «Proposition 5: about a circle to circumscribe a square», «Geometry» «Euclid Book IV» «Proposition 7: in a circle to inscribe a rectangle»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 8: about a circle to circumscribe a rectangle» () {
+    let circle = given_circle
+    let ABCD = circumscribed_rectangle
+    let sides_tangent = sides_touch_circle
+    therefore rectangle_ABCD_about_circle
+    assume «Geometry» «Euclid Book IV» «Proposition 5: about a circle to circumscribe a square»()
+    assume «Geometry» «Euclid Book IV» «Proposition 7: in a circle to inscribe a rectangle»()
+    therefore rectangle_circumscribed_about_circle
+}

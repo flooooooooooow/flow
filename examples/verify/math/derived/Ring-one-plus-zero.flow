@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One plus zero is one in a ring.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  1 + 0 = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «addition» «zero is the right identity»
+
+theorem «Ring» «addition» «one plus zero is one» () {
+    assume «Ring» «addition» «zero is the right identity»(1)
+    therefore 1 + 0 == 1
+}
+
+export «Ring» «addition» «one plus zero is one»

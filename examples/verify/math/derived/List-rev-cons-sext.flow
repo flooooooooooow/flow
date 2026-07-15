@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing a sextuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @tier   derived
+
+# @means  rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, nil))))))) = cons(f, cons(e, cons(d, cons(c, cons(b, cons(a, nil)))))).
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «reverse of cons is append of reverse tail», «List» «reverse» «reverse of quintuple cons»
+
+theorem «List» «reverse» «reverse of sextuple cons» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat) {
+    assume «List» «reverse» «reverse of cons is append of reverse tail»(a, cons(b, cons(c, cons(d, cons(e, cons(f, nil))))))
+    assume «List» «reverse» «reverse of quintuple cons»(b, c, d, e, f)
+    therefore rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, nil))))))) == cons(f, cons(e, cons(d, cons(c, cons(b, cons(a, nil))))))
+}
+
+export «List» «reverse» «reverse of sextuple cons»

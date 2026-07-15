@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Intersection cardinality bounds union cardinality from below.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(s ∩ t) <= card(s ∪ t).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «cardinality» «union bounds intersection card derived»
+
+theorem «Finset» «cardinality» «inter union card bound derived» (s: Finset, t: Finset) {
+    assume «Finset» «cardinality» «union bounds intersection card derived»(s, t)
+    therefore card(s ∩ t) <= card(s ∪ t)
+}
+
+export «Finset» «cardinality» «inter union card bound derived»

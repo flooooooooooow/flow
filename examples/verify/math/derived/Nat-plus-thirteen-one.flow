@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Thirteen plus one is fourteen.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  13 + 1 = 14.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «twelve plus one is thirteen»
+
+theorem «Nat» «addition» «thirteen plus one is fourteen» () {
+    assume «Nat» «addition» «twelve plus one is thirteen»()
+    therefore 13 + 1 == 14
+}
+
+export «Nat» «addition» «thirteen plus one is fourteen»

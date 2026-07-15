@@ -1,0 +1,15 @@
+# @module verify.Nat-sq
+# @means  Squaring as self-multiplication on natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @tier   definitions-only
+
+# @means  Squaring a number means multiplying it by itself.  sq(n) = n * n
+# @from   peano
+# @tier   definition
+
+theorem «Nat» «square» «squaring is self-multiplication» (n: Nat) {
+    let sq = n * n
+    therefore sq == n * n
+}
+
+export «Nat» «square» «squaring is self-multiplication»

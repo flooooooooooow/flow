@@ -1,0 +1,18 @@
+# @module examples.verify.euclid.book-i
+# @means  In a right-angled triangle, the square on the hypotenuse equals the sum of squares on the legs.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book I» «Proposition 31: interior angles on one side sum to two right angles», «Geometry» «Euclid Book I» «Proposition 46: describe a square on a given straight line»
+
+theorem «Geometry» «Euclid Book I» «Proposition 47: square on hypotenuse equals sum of squares on legs» () {
+    let square_on_AB = square_constructed_on_AB_by_Proposition_46
+    let square_on_AC = square_constructed_on_AC
+    let square_on_BC = square_on_hypotenuse
+    let line_through_C_parallel_to_BF = parallel_through_C
+    assume triangle_ABC_right_angled_at_A
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    assume «Geometry» «Euclid Book I» «Proposition 31: interior angles on one side sum to two right angles»()
+    assume «Geometry» «Euclid Book I» «Proposition 46: describe a square on a given straight line»()
+    therefore area_square_on_BC == area_square_on_AB + area_square_on_AC
+    therefore c * c == a * a + b * b
+}

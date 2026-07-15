@@ -1,0 +1,12 @@
+# @module examples.verify.math.derived
+# @means  Union with self does not increase cardinality.
+# @from   Finset union self card bound
+# @tier   derived
+# @needs  «Finset» «union» «self card bound derived»
+
+theorem «Finset» «union» «self card bound derived» (s : «Finset» «Nat») {
+    assume «Finset» «card»(«Finset» «union»(s, s)) <= «Finset» «card»(s)
+    therefore «Finset» «card»(«Finset» «union»(s, s)) <= «Finset» «card»(s)
+}
+
+export «Finset» «union» «self card bound derived»

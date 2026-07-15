@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reverse preserves length of a quattuordecuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(quattuordecuple cons ending in nil)) = 14.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «length» «quattuordecuple cons nil has length fourteen»
+
+theorem «List» «length» «reverse of quattuordecuple cons has length fourteen» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat, l: Nat, m: Nat, n: Nat) {
+    assume «List» «length» «reverse preserves length»(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, nil))))))))))))))
+    assume «List» «length» «quattuordecuple cons nil has length fourteen»(a, b, c, d, e, f, g, h, i, j, k, l, m, n)
+    therefore len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, nil))))))))))))))) == 14
+}
+
+export «List» «length» «reverse of quattuordecuple cons has length fourteen»

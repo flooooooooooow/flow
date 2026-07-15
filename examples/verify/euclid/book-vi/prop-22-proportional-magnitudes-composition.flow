@@ -1,0 +1,16 @@
+# @module examples.verify.euclid.book-vi
+# @means  If four magnitudes are proportional, they are also proportional by composition as in Book V.
+# @from   euclid — Elements, Book VI, Proposition 22
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 11: proportional magnitudes satisfy componendo», «Geometry» «Euclid Book VI» «Proposition 16: four proportional lines give equal rectangles on extremes and means»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 22: proportional magnitudes satisfy composition of ratios» () {
+    let a = first
+    let b = second
+    let c = third
+    let d = fourth
+    therefore ratio(a + b, b) == ratio(c + d, d)
+    assume «Geometry» «Euclid Book V» «Proposition 11: proportional magnitudes satisfy componendo»()
+    assume «Geometry» «Euclid Book VI» «Proposition 16: four proportional lines give equal rectangles on extremes and means»()
+    therefore composition_of_ratios_holds
+}

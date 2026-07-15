@@ -1,0 +1,63 @@
+# @module verify.Bool
+# @means  Boolean algebra lemmas for disjunction and conjunction.
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   definitions-only
+
+# @means  "A or B" gives the same result as "B or A".
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+
+theorem «Bool» «disjunction» «order does not matter» (a: bool, b: bool) {
+    if a == true {
+        therefore a or b == b or a
+    } elif b == true {
+        therefore a or b == b or a
+    } else {
+        therefore a or b == b or a
+    }
+}
+
+# @means  "A and B" gives the same result as "B and A".
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+# @needs  «Bool» «disjunction» «order does not matter»
+
+theorem «Bool» «conjunction» «order does not matter» (a: bool, b: bool) {
+    if a == true {
+        if b == true {
+            therefore a and b == b and a
+        } else {
+            therefore a and b == b and a
+        }
+    } elif b == true {
+        therefore a and b == b and a
+    } else {
+        therefore a and b == b and a
+    }
+}
+
+# @means  Or with false on the right leaves the left value unchanged.
+# @from   boole — https://en.wikipedia.org/wiki/Identity_element
+# @tier   derived
+
+theorem «Bool» «disjunction» «false is the right identity» (a: bool) {
+    if a == true {
+        therefore a or false == a
+    } else {
+        therefore a or false == a
+    }
+}
+
+# @means  And with true on the right leaves the left value unchanged.
+# @from   boole — https://en.wikipedia.org/wiki/Identity_element
+# @tier   derived
+
+theorem «Bool» «conjunction» «true is the right identity» (a: bool) {
+    if a == true {
+        therefore a and true == a
+    } else {
+        therefore a and true == a
+    }
+}
+
+export «Bool» «disjunction» «order does not matter», «Bool» «conjunction» «order does not matter», «Bool» «disjunction» «false is the right identity», «Bool» «conjunction» «true is the right identity»

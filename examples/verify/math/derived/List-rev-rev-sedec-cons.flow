@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Double reverse restores a sedecuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @tier   derived
+
+# @means  rev(rev(sedecuple cons with tail xs)) = sedecuple cons with tail xs.
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «reverse is an involution»
+
+theorem «List» «reverse» «double reverse of sedecuple cons» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat, l: Nat, m: Nat, n: Nat, o: Nat, p: Nat, xs: List) {
+    assume «List» «reverse» «reverse is an involution»(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, cons(p, xs))))))))))))))))
+    therefore rev(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, cons(p, xs))))))))))))))) == cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, cons(m, cons(n, cons(o, cons(p, xs)))))))))))))))
+}
+
+export «List» «reverse» «double reverse of sedecuple cons»

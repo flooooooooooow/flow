@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Appending to the empty list preserves length.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(nil ++ xs) = len(xs).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «length adds under append», «Nat» «addition» «zero is the left identity»
+
+theorem «List» «length» «empty append preserves length» (xs: List) {
+    assume «List» «length» «length adds under append»(nil, xs)
+    assume «Nat» «addition» «zero is the left identity»(len(xs))
+    therefore len(nil ++ xs) == len(xs)
+}
+
+export «List» «length» «empty append preserves length»

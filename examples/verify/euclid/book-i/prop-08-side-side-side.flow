@@ -1,0 +1,17 @@
+# @module examples.verify.euclid.book-i
+# @means  If two triangles have three sides equal, the included angles are equal.
+# @from   euclid — Elements, Book I, Proposition 8
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book I» «Proposition 7: two triangles on the same base cannot meet above it»
+
+theorem «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality» () {
+    let D = point_on_BC_with_BD_equal_to_BF
+    let triangle_BDF = triangle_on_BD_and_BF
+    assume segment_AB == segment_DE
+    assume segment_AC == segment_DF
+    assume segment_BC == segment_EF
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    assume «Geometry» «Euclid Book I» «Proposition 7: two triangles on the same base cannot meet above it»()
+    therefore angle_ABC == angle_DEF
+    therefore angle_A == angle_D
+}

@@ -1,0 +1,16 @@
+# @module examples.verify.geometry
+# @means  Inscribed angles on the same arc are equal.
+# @from   euclid — Elements, Book III, Proposition 21
+# @tier   derived
+
+# @means  angle APB equals angle AQB on the same arc AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed angle is half the central angle»
+
+theorem «Geometry» «circle» «inscribed angles on same arc are equal» () {
+    assume «Geometry» «circle» «inscribed angle is half the central angle»()
+    therefore angle_APB == angle_AQB
+}
+
+export «Geometry» «circle» «inscribed angles on same arc are equal»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Sextuple swap returns the original pair.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  six nested swaps on a pair returns the pair.
+# @from   church
+# @tier   derived
+# @needs  «Pair» «swap» «quintuple swap returns pair», «Pair» «swap» «quadruple swap returns pair»
+
+theorem «Pair» «swap» «sextuple swap returns pair» (a: Nat, b: Nat) {
+    assume «Pair» «swap» «quintuple swap returns pair»(a, b)
+    assume «Pair» «swap» «quadruple swap returns pair»(a, b)
+    therefore swap(swap(swap(swap(swap(swap(pair(a, b))))))) == pair(a, b)
+}
+
+export «Pair» «swap» «sextuple swap returns pair»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Six plus zero maps to six under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(6 + 0) = 6.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «six plus zero maps to six» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 6, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(6 + 0) == 6
+}
+
+export «RingHom» «preservation» «six plus zero maps to six»

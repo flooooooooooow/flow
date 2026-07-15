@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The first interior angle of a triangle is positive.
+# @from   euclid — Elements, Book I, Proposition 32
+# @tier   derived
+
+# @means  angle A is greater than zero.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «interior angle sum is positive», «Geometry» «triangle» «third interior angle is positive»
+
+theorem «Geometry» «triangle» «first interior angle is positive» () {
+    assume «Geometry» «triangle» «interior angle sum is positive»()
+    assume «Geometry» «triangle» «third interior angle is positive»()
+    therefore angle_A > 0
+}
+
+export «Geometry» «triangle» «first interior angle is positive»

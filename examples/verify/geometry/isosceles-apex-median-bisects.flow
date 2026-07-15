@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The apex median bisects the apex angle in an isosceles triangle.
+# @from   euclid — Elements, Book I, Proposition 5
+# @tier   derived
+
+# @means  apex median bisects angle at A.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «isosceles triangle» «reflection across apex median swaps base», «Geometry» «isosceles triangle» «apex bisector meets base at midpoint»
+
+theorem «Geometry» «isosceles triangle» «apex median bisects apex angle» () {
+    assume «Geometry» «isosceles triangle» «reflection across apex median swaps base»()
+    assume «Geometry» «isosceles triangle» «apex bisector meets base at midpoint»()
+    therefore bisect_angle_A == apex_median
+}
+
+export «Geometry» «isosceles triangle» «apex median bisects apex angle»

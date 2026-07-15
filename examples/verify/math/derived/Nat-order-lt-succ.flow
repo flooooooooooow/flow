@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Strict less-than is witnessed by adding a positive amount.
+# @from   peano — https://en.wikipedia.org/wiki/Total_order
+# @tier   derived
+
+# @means  If a < b then there exists k with a + succ(k) = b.
+# @from   peano — Landau, *Foundations of Analysis*
+# @tier   derived
+# @needs  «Nat» «order» «every number is below its successor», «Nat» «addition» «zero is the left identity»
+
+theorem «Nat» «order» «strictly below implies a positive right summand» (a: Nat, b: Nat, k: Nat) {
+    if a < b {
+        if a + succ(k) == b {
+            assume «Nat» «order» «every number is below its successor»(a)
+            assume «Nat» «addition» «zero is the left identity»(succ(k))
+            therefore a < b
+        }
+    }
+}
+
+export «Nat» «order» «strictly below implies a positive right summand»

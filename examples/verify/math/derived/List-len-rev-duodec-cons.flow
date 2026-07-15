@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reverse preserves length of a duodecuple cons list.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(duodecuple cons ending in nil)) = 12.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «length» «duodecuple cons nil has length twelve»
+
+theorem «List» «length» «reverse of duodecuple cons has length twelve» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat, l: Nat) {
+    assume «List» «length» «reverse preserves length»(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, nil))))))))))))
+    assume «List» «length» «duodecuple cons nil has length twelve»(a, b, c, d, e, f, g, h, i, j, k, l)
+    therefore len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, cons(i, cons(j, cons(k, cons(l, nil))))))))))))) == 12
+}
+
+export «List» «length» «reverse of duodecuple cons has length twelve»

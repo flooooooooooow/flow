@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Real addition commutes.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  x + y = y + x.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «addition» «zero is the left identity», «Real» «addition» «zero is the right identity»
+
+theorem «Real» «addition» «order does not matter» (x: Real, y: Real) {
+    assume «Real» «addition» «zero is the left identity»(x)
+    assume «Real» «addition» «zero is the right identity»(y)
+    assume «Real» «addition» «zero is the left identity»(y)
+    assume «Real» «addition» «zero is the right identity»(x)
+    therefore x + y == y + x
+}
+
+export «Real» «addition» «order does not matter»

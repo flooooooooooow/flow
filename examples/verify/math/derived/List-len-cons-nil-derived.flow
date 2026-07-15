@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Cons onto empty has length one.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(x, nil)) = succ(0).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «singleton has length one»
+
+theorem «List» «length» «cons onto empty has length one derived» (x: Nat) {
+    assume «List» «length» «singleton has length one»(x)
+    therefore len(cons(x, nil)) == succ(0)
+}
+
+export «List» «length» «cons onto empty has length one derived»

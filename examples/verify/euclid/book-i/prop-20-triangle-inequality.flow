@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-i
+# @means  In any triangle, the sum of any two sides is greater than the remaining side.
+# @from   euclid — Elements, Book I, Proposition 20
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 19: the greater angle is opposite the greater side»
+
+theorem «Geometry» «Euclid Book I» «Proposition 20: the sum of two sides exceeds the third» () {
+    let D = point_on_AB_with_AD_equal_to_AC
+    assume triangle_ABC
+    assume «Geometry» «Euclid Book I» «Proposition 19: the greater angle is opposite the greater side»()
+    therefore angle_BDC > angle_DBC
+    therefore AB_plus_BC_greater_than_AC
+}

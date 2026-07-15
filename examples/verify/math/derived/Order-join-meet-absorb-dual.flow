@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Dual join meet absorption witness.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  join(b, meet(b, a)) = join(b, a).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «join absorbs meet derived», «Order» «lattice» «dual join above meet antisymmetric witness»
+
+theorem «Order» «lattice» «dual join absorbs meet witness» (a: Nat, b: Nat) {
+    assume «Order» «lattice» «join absorbs meet derived»(b, a)
+    assume «Order» «lattice» «dual join above meet antisymmetric witness»(a, b)
+    therefore join(b, meet(b, a)) == join(b, a)
+}
+
+export «Order» «lattice» «dual join absorbs meet witness»

@@ -1,0 +1,11 @@
+# @module examples.verify.euclid.book-i
+# @means  If two lines produce interior angles less than two right angles, the lines meet if produced.
+# @from   euclid — Elements, Book I, Proposition 14
+# @tier   axiom
+
+theorem «Geometry» «Euclid Book I» «Proposition 14: lines with interior angles less than two right angles meet» () {
+    assume lines_AB_and_CD_are_not_parallel
+    assume interior_angles_on_one_side_sum_to_less_than_two_right_angles
+    assume Postulate 5: lines meeting that condition meet when produced
+    therefore lines_AB_CD_meet_on_that_side
+}

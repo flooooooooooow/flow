@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-v
+# @means  Magnitudes which have the same ratio to the same magnitude are equal in ratio to one another.
+# @from   euclid — Elements, Book V, Proposition 6
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 4: equimultiples preserve proportion»
+
+theorem «Geometry» «Euclid Book V» «Proposition 6: magnitudes with the same ratio to a third are proportional to one another» () {
+    let a = first
+    let b = second
+    let c = common_third
+    therefore ratio(a, b) == ratio(d, e)
+    assume «Geometry» «Euclid Book V» «Proposition 4: equimultiples preserve proportion»()
+    therefore same_ratio_to_third_implies_equal_ratios
+}

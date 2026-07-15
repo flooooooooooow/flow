@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Negation distributes over integer addition.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  -(a + b) = (-a) + (-b).
+# @from   landau
+# @tier   derived
+# @needs  «Int» «negation» «double negation returns the value», «Int» «addition» «zero is the right identity»
+
+theorem «Int» «negation» «negation distributes over addition» (a: Int, b: Int) {
+    assume «Int» «negation» «double negation returns the value»(a)
+    assume «Int» «negation» «double negation returns the value»(b)
+    assume «Int» «addition» «zero is the right identity»(a + b)
+    therefore -(a + b) == (-a) + (-b)
+}
+
+export «Int» «negation» «negation distributes over addition»

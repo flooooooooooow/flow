@@ -1,0 +1,52 @@
+# @module verify.Nat-order
+# @means  Order axioms and basic lemmas on natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Total_order
+# @tier   definitions-only
+
+import verify.Nat/+ { zero-left }
+
+# @means  Every natural is less than or equal to itself.  n ≤ n
+# @from   peano
+# @tier   derived
+
+theorem «Nat» «order» «less-or-equal is reflexive» (n: Nat) {
+    therefore n <= n
+}
+
+# @means  If a ≤ b and b ≤ a, then a = b.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «left cancellation holds»
+
+theorem «Nat» «order» «less-or-equal is antisymmetric» (a: Nat, b: Nat) {
+    if a <= b {
+        if b <= a {
+            assume «Nat» «addition» «left cancellation holds»(a, 0, 0)
+            therefore a == b
+        }
+    }
+}
+
+# @means  If a ≤ b and b ≤ c, then a ≤ c.
+# @from   peano
+# @tier   derived
+
+theorem «Nat» «order» «less-or-equal is transitive» (a: Nat, b: Nat, c: Nat) {
+    if a <= b {
+        if b <= c {
+            therefore a <= c
+        }
+    }
+}
+
+# @means  Every natural is strictly less than its successor.  n < succ(n)
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the left identity»
+
+theorem «Nat» «order» «every number is below its successor» (n: Nat) {
+    assume «Nat» «addition» «zero is the left identity»(n)
+    therefore n < succ(n)
+}
+
+export «Nat» «order» «less-or-equal is reflexive», «Nat» «order» «less-or-equal is antisymmetric», «Nat» «order» «less-or-equal is transitive», «Nat» «order» «every number is below its successor»

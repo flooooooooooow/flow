@@ -1,0 +1,25 @@
+# @module examples.verify.math.derived
+# @means  List append associates.
+# @from   church — https://en.wikipedia.org/wiki/Associative_property
+# @tier   derived
+
+# @means  (xs ++ ys) ++ zs = xs ++ (ys ++ zs).
+# @from   church/induction — standard list induction
+# @tier   derived
+# @needs  «List» «append» «empty is the left identity», «List» «append» «singleton prepends the head»
+
+theorem «List» «append» «parentheses do not matter» (xs: List, ys: List, zs: List) {
+    if xs == nil {
+        assume «List» «append» «empty is the left identity»(ys)
+        assume «List» «append» «empty is the left identity»(cons(0, zs))
+        therefore (xs ++ ys) ++ zs == xs ++ (ys ++ zs)
+    } else {
+        let x = head(xs)
+        let rest = tail(xs)
+        assume «List» «append» «parentheses do not matter»(rest, ys, zs)
+        assume «List» «append» «singleton prepends the head»(x, ys)
+        therefore (xs ++ ys) ++ zs == xs ++ (ys ++ zs)
+    }
+}
+
+export «List» «append» «parentheses do not matter»

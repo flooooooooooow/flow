@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero is the left additive identity in a ring.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  0 + r = r.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «addition» «zero is the left identity»
+
+theorem «Ring» «addition» «zero is the left additive identity» (r: Ring) {
+    assume «Ring» «addition» «zero is the left identity»(r)
+    therefore 0 + r == r
+}
+
+export «Ring» «addition» «zero is the left additive identity»

@@ -1,0 +1,144 @@
+{
+  "claim": "\u00abNat\u00bb \u00abaddition\u00bb \u00abzero is the right identity\u00bb",
+  "claim_display": "Nat \u203a addition \u203a zero is the right identity",
+  "parameters": [
+    "n"
+  ],
+  "instantiation": {
+    "n": "0"
+  },
+  "nodes": [
+    {
+      "step": 1,
+      "kind": "step",
+      "text": "We prove that on Nat, addition satisfies \u00abzero is the right identity\u00bb.",
+      "math": null,
+      "refs": [],
+      "active": true
+    },
+    {
+      "step": 2,
+      "kind": "frame",
+      "text": "We proceed by induction on n: first the base case, then the inductive step.",
+      "math": null,
+      "refs": [],
+      "active": true
+    },
+    {
+      "step": 3,
+      "kind": "case",
+      "text": "Consider the base case where n  =  0.",
+      "math": null,
+      "refs": [],
+      "active": true
+    },
+    {
+      "step": 4,
+      "kind": "invoke",
+      "text": "We invoke the definitional clause `\u00abNat\u00bb \u00abaddition\u00bb \u00abzero is the left identity\u00bb`: adding zero on the left does not change the number (instantiated for 0).",
+      "math": null,
+      "refs": [
+        3
+      ],
+      "active": true
+    },
+    {
+      "step": 5,
+      "kind": "conclude",
+      "text": "From \u2462 and \u2463, we can deduce that 0 + 0 = 0. This establishes the base case (see \u2462 and \u2463). Hence proven.",
+      "math": "0 + 0 = 0",
+      "refs": [
+        3,
+        4
+      ],
+      "active": true
+    },
+    {
+      "step": 6,
+      "kind": "frame",
+      "text": "For the inductive step, suppose the claim holds for all smaller values.",
+      "math": null,
+      "refs": [],
+      "active": true
+    },
+    {
+      "step": 7,
+      "kind": "bind",
+      "text": "Under the supposition in \u2465, let k denote the predecessor of n.",
+      "math": null,
+      "refs": [
+        6
+      ],
+      "active": true
+    },
+    {
+      "step": 8,
+      "kind": "invoke",
+      "text": "Under the supposition in \u2465, we cross the inductive boundary: assume the claim holds for k (the induction hypothesis).",
+      "math": null,
+      "refs": [
+        6
+      ],
+      "active": true
+    },
+    {
+      "step": 9,
+      "kind": "invoke",
+      "text": "We invoke the definitional clause `\u00abNat\u00bb \u00abaddition\u00bb \u00absuccessor on the right steps the sum\u00bb`: adding one more on the right bumps the sum by one (instantiated for k, 0).",
+      "math": null,
+      "refs": [],
+      "active": true
+    },
+    {
+      "step": 10,
+      "kind": "conclude",
+      "text": "From \u2465, \u2466, \u2467, and \u2468, this implies n + 0 = n. Hence proven.",
+      "math": "n + 0 = n",
+      "refs": [
+        6,
+        7,
+        8,
+        9
+      ],
+      "active": true
+    }
+  ],
+  "edges": [
+    {
+      "from": 3,
+      "to": 4
+    },
+    {
+      "from": 3,
+      "to": 5
+    },
+    {
+      "from": 4,
+      "to": 5
+    },
+    {
+      "from": 6,
+      "to": 7
+    },
+    {
+      "from": 6,
+      "to": 8
+    },
+    {
+      "from": 6,
+      "to": 10
+    },
+    {
+      "from": 7,
+      "to": 10
+    },
+    {
+      "from": 8,
+      "to": 10
+    },
+    {
+      "from": 9,
+      "to": 10
+    }
+  ]
+}

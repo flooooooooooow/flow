@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Adding an element to its negation yields zero.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  m + (-m) = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «negation» «negation distributes over addition», «Int» «addition» «zero is the right identity»
+
+theorem «Int» «addition» «adding the negation yields zero» (m: Int) {
+    assume «Int» «negation» «negation distributes over addition»(m, -m)
+    assume «Int» «addition» «zero is the right identity»(0)
+    therefore m + (-m) == 0
+}
+
+export «Int» «addition» «adding the negation yields zero»

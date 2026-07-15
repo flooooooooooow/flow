@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The 9-12-15 triangle satisfies the Pythagorean relation as a scaled witness.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  15 squared equals 9 squared plus 12 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «twenty twenty one twenty nine satisfies Pythagoras», «Geometry» «right triangle» «nine twelve fifteen satisfies Pythagoras»
+
+theorem «Geometry» «right triangle» «nine twelve fifteen scaled witness» () {
+    assume «Geometry» «right triangle» «twenty twenty one twenty nine satisfies Pythagoras»()
+    assume «Geometry» «right triangle» «nine twelve fifteen satisfies Pythagoras»()
+    therefore 15 * 15 == 9 * 9 + 12 * 12
+}
+
+export «Geometry» «right triangle» «nine twelve fifteen scaled witness»

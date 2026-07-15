@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Strict less implies less-or-equal on naturals.
+# @from   peano — https://en.wikipedia.org/wiki/Total_order
+# @tier   derived
+
+# @means  a < b implies a <= b.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «order» «less-or-equal is reflexive», «Nat» «order» «every number is below its successor»
+
+theorem «Nat» «order» «strict below implies below or equal» (a: Nat, b: Nat) {
+    if a < b {
+        assume «Nat» «order» «less-or-equal is reflexive»(a)
+        assume «Nat» «order» «every number is below its successor»(a)
+        therefore a <= b
+    }
+}
+
+export «Nat» «order» «strict below implies below or equal»

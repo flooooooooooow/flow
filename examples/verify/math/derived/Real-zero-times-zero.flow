@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero times zero is zero for reals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  0 * 0 = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «multiplication» «zero on the left gives zero»
+
+theorem «Real» «multiplication» «zero times zero is zero» () {
+    assume «Real» «multiplication» «zero on the left gives zero»(0)
+    therefore 0 * 0 == 0
+}
+
+export «Real» «multiplication» «zero times zero is zero»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Join dominates meet on the lattice order.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, b) <= join(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «meet» «meet absorbs join», «Order» «join» «repeating does not change the value»
+
+theorem «Order» «lattice» «meet is below join» (a: Nat, b: Nat) {
+    assume «Order» «meet» «meet absorbs join»(a, b)
+    assume «Order» «join» «repeating does not change the value»(a)
+    therefore meet(a, b) <= join(a, b)
+}
+
+export «Order» «lattice» «meet is below join»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Nine plus zero maps to nine under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(9 + 0) = 9.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «nine plus zero maps to nine» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 9, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(9 + 0) == 9
+}
+
+export «RingHom» «preservation» «nine plus zero maps to nine»

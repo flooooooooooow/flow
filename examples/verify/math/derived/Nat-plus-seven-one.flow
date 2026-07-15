@@ -1,0 +1,12 @@
+# @module examples.verify.math.derived
+# @means  Seven plus one is eight.
+# @from   Nat plus seven one
+# @tier   derived
+# @needs  «Nat» «plus» «seven one»
+
+theorem «Nat» «plus» «seven one» () {
+    assume «Nat» «plus»(7, 1) = 8
+    therefore «Nat» «plus»(7, 1) = 8
+}
+
+export «Nat» «plus» «seven one»

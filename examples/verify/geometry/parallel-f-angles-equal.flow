@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  F-angles are equal when parallel lines meet a transversal.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  f-angle alpha equals f-angle beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «z angles are equal», «Geometry» «parallel lines» «corresponding angles are equal»
+
+theorem «Geometry» «parallel lines» «f angles are equal» () {
+    assume «Geometry» «parallel lines» «z angles are equal»()
+    assume «Geometry» «parallel lines» «corresponding angles are equal»()
+    therefore angle_f_alpha == angle_f_beta
+}
+
+export «Geometry» «parallel lines» «f angles are equal»

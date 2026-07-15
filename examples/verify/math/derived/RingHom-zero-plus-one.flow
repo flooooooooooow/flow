@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero plus one maps to one under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(0 + 1) = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «zero plus one is one»
+
+theorem «RingHom» «preservation» «zero plus one maps to one» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 0, 1)
+    assume «Ring» «addition» «zero plus one is one»()
+    therefore f(0 + 1) == 1
+}
+
+export «RingHom» «preservation» «zero plus one maps to one»

@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  The identity acts as a right multiplier.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  g * 1 = g.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «identity» «one is the right identity»
+
+theorem «Group» «identity» «identity multiplies on the right» (g: Group) {
+    assume «Group» «identity» «one is the right identity»(g)
+    therefore g * 1 == g
+}
+
+export «Group» «identity» «identity multiplies on the right»

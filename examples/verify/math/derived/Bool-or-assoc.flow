@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Disjunction associates: regrouping ors does not change the result.
+# @from   boole — https://en.wikipedia.org/wiki/Associative_property
+# @tier   derived
+
+# @means  (a ∨ b) ∨ c = a ∨ (b ∨ c).
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+# @needs  «Bool» «disjunction» «order does not matter»
+
+theorem «Bool» «disjunction» «parentheses do not matter» (a: bool, b: bool, c: bool) {
+    if a == true {
+        therefore (a or b) or c == a or (b or c)
+    } elif b == true {
+        therefore (a or b) or c == a or (b or c)
+    } elif c == true {
+        therefore (a or b) or c == a or (b or c)
+    } else {
+        therefore (a or b) or c == a or (b or c)
+    }
+}
+
+export «Bool» «disjunction» «parentheses do not matter»

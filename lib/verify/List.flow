@@ -1,0 +1,22 @@
+# @module verify.List
+# @means  List append definitions on finite sequences.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   definitions-only
+
+# @means  Appending the empty list on the left changes nothing.
+# @from   church
+# @tier   definition
+
+theorem «List» «append» «empty is the left identity» (xs: List) {
+    therefore nil ++ xs == xs
+}
+
+# @means  Appending a singleton prepends the head.
+# @from   church
+# @tier   definition
+
+theorem «List» «append» «singleton prepends the head» (x: Nat, xs: List) {
+    therefore cons(x, nil) ++ xs == cons(x, xs)
+}
+
+export «List» «append» «empty is the left identity», «List» «append» «singleton prepends the head»

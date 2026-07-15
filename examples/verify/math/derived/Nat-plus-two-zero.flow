@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Two plus zero is two for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  2 + 0 = 2.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the right identity»
+
+theorem «Nat» «addition» «two plus zero is two» () {
+    let two = succ(succ(0))
+    assume «Nat» «addition» «zero is the right identity»(two)
+    therefore two + 0 == two
+}
+
+export «Nat» «addition» «two plus zero is two»

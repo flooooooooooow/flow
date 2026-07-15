@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Rational addition commutes.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  p + q = q + p for rationals.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «addition» «zero is the left identity», «Rat» «addition» «zero is the right identity»
+
+theorem «Rat» «addition» «order does not matter» (p: Rat, q: Rat) {
+    assume «Rat» «addition» «zero is the left identity»(p)
+    assume «Rat» «addition» «zero is the right identity»(q)
+    assume «Rat» «addition» «zero is the left identity»(q)
+    assume «Rat» «addition» «zero is the right identity»(p)
+    therefore p + q == q + p
+}
+
+export «Rat» «addition» «order does not matter»

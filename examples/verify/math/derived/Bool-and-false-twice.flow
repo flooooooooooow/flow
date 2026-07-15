@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  False conjoined with itself is false.
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+
+# @means  false and false = false.
+# @from   boole
+# @tier   derived
+# @needs  «Bool» «conjunction» «false is absorbing on the left»
+
+theorem «Bool» «conjunction» «false conjoined with itself is false» () {
+    assume «Bool» «conjunction» «false is absorbing on the left»(false)
+    therefore false and false == false
+}
+
+export «Bool» «conjunction» «false conjoined with itself is false»

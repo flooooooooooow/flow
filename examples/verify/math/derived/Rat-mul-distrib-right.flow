@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Rational multiplication distributes over addition on the right.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  (q + r) * p = q * p + r * p.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «multiplication» «left distribution over addition holds», «Rat» «multiplication» «order does not matter»
+
+import .Rat-mul-distrib-left { mul-distrib-left }
+
+theorem «Rat» «multiplication» «right distribution over addition holds» (p: Rat, q: Rat, r: Rat) {
+    assume «Rat» «multiplication» «left distribution over addition holds»(p, q, r)
+    assume «Rat» «multiplication» «order does not matter»(q, p)
+    assume «Rat» «multiplication» «order does not matter»(r, p)
+    therefore (q + r) * p == q * p + r * p
+}
+
+export «Rat» «multiplication» «right distribution over addition holds»

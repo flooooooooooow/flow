@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Self-intersection does not increase cardinality.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(s ∩ s) <= card(s).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «intersection» «repeating does not change the set», «Nat» «order» «less-or-equal is reflexive»
+
+theorem «Finset» «cardinality» «self intersection size is bounded» (s: Finset) {
+    assume «Finset» «intersection» «repeating does not change the set»(s)
+    assume «Nat» «order» «less-or-equal is reflexive»(card(s))
+    therefore card(s ∩ s) <= card(s)
+}
+
+export «Finset» «cardinality» «self intersection size is bounded»

@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  In equal circles equal straight lines cut off equal circumferences, the greater equal to the greater and the less to the less.
+# @from   euclid — Elements, Book III, Proposition 28
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 1: equal chords subtend equal angles at the center»
+
+theorem «Geometry» «Euclid Book III» «Proposition 28: in equal circles equal chords cut off equal arcs» () {
+    let AB = chord_1
+    let DE = chord_2
+    let arc_AB = major_or_minor_arc
+    therefore arc_AB == arc_DE
+    assume «Geometry» «Euclid Book III» «Proposition 1: equal chords subtend equal angles at the center»()
+    therefore equal_chords_cut_equal_arcs
+}

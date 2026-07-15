@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Alternate and F-angles are equal after chain closure.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  alternate alpha equals f-angle beta after closure.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «f and z angles chain», «Geometry» «parallel lines» «angle chain closure»
+
+theorem «Geometry» «parallel lines» «alternate equals f after closure» () {
+    assume «Geometry» «parallel lines» «f and z angles chain»()
+    assume «Geometry» «parallel lines» «angle chain closure»()
+    therefore angle_alternate_alpha == angle_f_beta
+}
+
+export «Geometry» «parallel lines» «alternate equals f after closure»

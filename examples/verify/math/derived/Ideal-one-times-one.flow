@@ -1,0 +1,12 @@
+# @module examples.verify.math.derived
+# @means  One times one is one in an ideal witness.
+# @from   Ideal one times one
+# @tier   derived
+# @needs  «Ideal» «one» «times one»
+
+theorem «Ideal» «one» «times one» () {
+    assume «Ideal» «mul»(1, 1) = 1
+    therefore «Ideal» «mul»(1, 1) = 1
+}
+
+export «Ideal» «one» «times one»

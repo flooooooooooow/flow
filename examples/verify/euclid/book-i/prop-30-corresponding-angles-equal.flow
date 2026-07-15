@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  A transversal across parallel lines makes an exterior angle equal to the opposite interior angle.
+# @from   euclid — Elements, Book I, Proposition 30
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 29: alternate angles are equal when a transversal crosses parallels», «Geometry» «Euclid Book I» «Proposition 15: vertical angles are equal»
+
+theorem «Geometry» «Euclid Book I» «Proposition 30: an exterior angle equals the opposite interior angle» () {
+    let EGB = exterior_angle_at_G
+    let AGH = interior_opposite_angle_at_G
+    assume lines_AB_and_CD_are_parallel
+    assume transversal_EF_crosses_parallels
+    assume «Geometry» «Euclid Book I» «Proposition 29: alternate angles are equal when a transversal crosses parallels»()
+    assume «Geometry» «Euclid Book I» «Proposition 15: vertical angles are equal»()
+    therefore angle_EGB == angle_AGH
+}

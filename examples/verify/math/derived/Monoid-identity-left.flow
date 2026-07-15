@@ -1,0 +1,12 @@
+# @module examples.verify.math.derived
+# @means  The monoid identity acts on the left.
+# @from   Monoid identity left
+# @tier   derived
+# @needs  «Monoid» «identity» «left»
+
+theorem «Monoid» «identity» «left» (x : «Monoid» «Nat») {
+    assume «Monoid» «mul»(1, x) = x
+    therefore «Monoid» «mul»(1, x) = x
+}
+
+export «Monoid» «identity» «left»

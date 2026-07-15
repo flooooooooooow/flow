@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Multiplying two by itself equals its square.
+# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @tier   derived
+
+# @means  2 * 2 = sq(2).
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «square» «squaring two is self multiplication»
+
+theorem «Nat» «multiplication» «two times two is the square of two» () {
+    let two = succ(succ(0))
+    assume «Nat» «square» «squaring two is self multiplication»()
+    therefore two * two == sq(two)
+}
+
+export «Nat» «multiplication» «two times two is the square of two»

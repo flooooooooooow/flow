@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-vi
+# @means  In equiangular triangles the sides about the equal angles are proportional, and those are corresponding sides which subtend the equal angles.
+# @from   euclid — Elements, Book VI, Proposition 4
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 2: a line parallel to a triangle side cuts the other sides proportionally», «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides» () {
+    let ABC = triangle_1
+    let DEF = triangle_2
+    let angle_A = angle_D
+    therefore ratio(AB, BC) == ratio(DE, EF)
+    assume «Geometry» «Euclid Book VI» «Proposition 2: a line parallel to a triangle side cuts the other sides proportionally»()
+    assume «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence»()
+    therefore equiangular_implies_proportional_sides
+}

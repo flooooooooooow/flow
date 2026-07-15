@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Twenty-two times one is twenty-two.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  22 * 1 = 22.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «twenty one times one is twenty one»
+
+theorem «Nat» «multiplication» «twenty two times one is twenty two» () {
+    assume «Nat» «multiplication» «twenty one times one is twenty one»()
+    therefore 22 * 1 == 22
+}
+
+export «Nat» «multiplication» «twenty two times one is twenty two»

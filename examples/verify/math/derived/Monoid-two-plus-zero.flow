@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Two plus zero is two in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  2 + 0 = 2.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «one plus zero is one»
+
+theorem «Monoid» «addition» «two plus zero is two» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(2)
+    assume «Monoid» «addition» «one plus zero is one»()
+    therefore 2 + 0 == 2
+}
+
+export «Monoid» «addition» «two plus zero is two»

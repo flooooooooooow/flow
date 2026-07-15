@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Half the central angle on a diameter gives the inscribed angle.
+# @from   euclid — Elements, Book III, Propositions 20 and 31
+# @tier   derived
+
+# @means  half of angle AOB equals angle ACB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «Thales inscribed is half central», «Geometry» «circle» «central angle on diameter is two right»
+
+theorem «Geometry» «circle» «half central on diameter gives inscribed» () {
+    assume «Geometry» «circle» «Thales inscribed is half central»()
+    assume «Geometry» «circle» «central angle on diameter is two right»()
+    therefore half_of_angle_AOB == angle_ACB
+}
+
+export «Geometry» «circle» «half central on diameter gives inscribed»

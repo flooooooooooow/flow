@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  False is absorbing for conjunction on the right.
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+
+# @means  a and false = false.
+# @from   boole
+# @tier   derived
+# @needs  «Bool» «conjunction» «order does not matter», «Bool» «conjunction» «false is absorbing on the left»
+
+theorem «Bool» «conjunction» «false is absorbing on the right» (a: bool) {
+    assume «Bool» «conjunction» «order does not matter»(a, false)
+    assume «Bool» «conjunction» «false is absorbing on the left»(a)
+    therefore a and false == false
+}
+
+export «Bool» «conjunction» «false is absorbing on the right»

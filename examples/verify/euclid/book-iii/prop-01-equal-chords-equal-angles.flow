@@ -1,0 +1,12 @@
+# @module examples.verify.euclid.book-iii
+# @means  In equal circles equal chords subtend equal angles at the center, and equal central angles subtend equal chords.
+# @from   euclid — Elements, Book III, Proposition 1
+# @tier   derived
+
+theorem «Geometry» «Euclid Book III» «Proposition 1: equal chords subtend equal angles at the center» () {
+    let O = center_of_circle
+    let AOB = angle_at_center
+    let DE = equal_chord
+    therefore angle_AOB == angle_DOE
+    therefore chord_AB == chord_DE implies angle_AOB == angle_DOE
+}

@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If a first is to a second as a third is to a fourth, any equimultiples of them are in the same ratio.
+# @from   euclid — Elements, Book V, Proposition 4
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 1: equimultiples of equimultiples are equimultiple of the originals»
+
+theorem «Geometry» «Euclid Book V» «Proposition 4: equimultiples preserve proportion» () {
+    let a = first
+    let b = second
+    let m = multiple
+    let n = multiple
+    therefore ratio(m * a, n * b) == ratio(m * c, n * d)
+    assume «Geometry» «Euclid Book V» «Proposition 1: equimultiples of equimultiples are equimultiple of the originals»()
+    therefore equimultiples_preserve_proportion
+}

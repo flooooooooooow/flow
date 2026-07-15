@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Subgroup inverse closure follows from group laws.
+# @from   dummit-foote — *Abstract Algebra*, §2.2
+# @tier   derived
+
+# @means  If g in H then inv(g) in H when H is a subgroup.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Subgroup» «inverse» «closed under inverses», «Group» «inverse» «left inverse recovers the identity»
+
+theorem «Subgroup» «inverse» «subgroup inverses stay in the subgroup» (H: Subgroup, g: Group) {
+    if g in H {
+        assume «Subgroup» «inverse» «closed under inverses»(H, g)
+        assume «Group» «inverse» «left inverse recovers the identity»(g)
+        therefore inv(g) in H
+    }
+}
+
+export «Subgroup» «inverse» «subgroup inverses stay in the subgroup»

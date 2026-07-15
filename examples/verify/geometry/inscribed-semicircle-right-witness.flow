@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An inscribed angle on a semicircle is a right angle witness.
+# @from   euclid — Elements, Book III, Proposition 31
+# @tier   derived
+
+# @means  angle AQB equals one right angle on semicircle AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «right angle on diameter is unique witness», «Geometry» «circle» «inscribed angle on diameter is right»
+
+theorem «Geometry» «circle» «semicircle inscribed angle is right witness» () {
+    assume «Geometry» «circle» «right angle on diameter is unique witness»()
+    assume «Geometry» «circle» «inscribed angle on diameter is right»()
+    therefore angle_AQB == one_right_angle
+}
+
+export «Geometry» «circle» «semicircle inscribed angle is right witness»

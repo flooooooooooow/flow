@@ -1,0 +1,40 @@
+# @means  The full adder output matches binary addition with carry.
+# @from   patterson — Patterson & Hennessy, *Computer Organization and Design*, §A.5
+# @tier   derived
+
+struct FullAdderResult {
+    Sum: bit,
+    Cout: bit
+}
+
+function FullAdder(A: bit, B: bit, Cin: bit) -> FullAdderResult {
+    let X = xor(A, B)
+    let Y = and(A, B)
+    let Z = and(X, Cin)
+    return FullAdderResult {
+        Sum: xor(X, Cin),
+        Cout: or(Y, Z)
+    }
+}
+
+theorem FullAdder/out.correct(A: bit, B: bit, Cin: bit) {
+    let result = FullAdder(A, B, Cin)
+    let expected = binary_add_1bit(A, B, Cin)
+    therefore result.Sum == expected.sum and result.Cout == expected.carry by exhaustive
+}
+
+theorem Ripple4/out.correct(A: [bit; 4], B: [bit; 4], Cin: bit) {
+    let mut carry = Cin
+    let mut s: [bit; 4] = [0, 0, 0, 0]
+
+    for i in 0 to 4 {
+        let step = FullAdder(A[i], B[i], carry)
+        assume FullAdder/out.correct(A[i], B[i], carry)
+        s[i] = step.Sum
+        carry = step.Cout
+    }
+
+    let sum = bits_to_int(s) + bits_to_int(carry) * 16
+    let expected = bits_to_int(A) + bits_to_int(B) + int(Cin)
+    therefore sum == expected
+}

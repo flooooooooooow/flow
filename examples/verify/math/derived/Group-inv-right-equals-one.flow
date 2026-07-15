@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Right multiplying by an inverse yields the identity.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  g * inv(g) = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «inverse» «right inverse recovers the identity»
+
+theorem «Group» «inverse» «right inverse multiplied on the right yields one» (g: Group) {
+    assume «Group» «inverse» «right inverse recovers the identity»(g)
+    therefore g * inv(g) == 1
+}
+
+export «Group» «inverse» «right inverse multiplied on the right yields one»

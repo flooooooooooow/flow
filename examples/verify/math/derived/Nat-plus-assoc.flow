@@ -1,0 +1,28 @@
+# @module examples.verify.math.derived
+# @means  Addition associates: parentheses on the left can move to the right.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  (a + b) + c = a + (b + c).
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the left steps the sum»
+
+import verify.Nat/+ { zero-left, succ-right }
+import .Nat-plus-succ-left { succ-left }
+
+theorem «Nat» «addition» «parentheses do not matter» (a: Nat, b: Nat, c: Nat) {
+    if a == 0 {
+        assume «Nat» «addition» «zero is the left identity»(b)
+        assume «Nat» «addition» «zero is the left identity»(b + c)
+        therefore (a + b) + c == a + (b + c)
+    } else {
+        let n = pred(a)
+        assume «Nat» «addition» «parentheses do not matter»(n, b, c)
+        assume «Nat» «addition» «successor on the left steps the sum»(n, b)
+        assume «Nat» «addition» «successor on the left steps the sum»(n, b + c)
+        therefore (a + b) + c == a + (b + c)
+    }
+}
+
+export «Nat» «addition» «parentheses do not matter»

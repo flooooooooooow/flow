@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The apex median is perpendicular to the base in an isosceles triangle.
+# @from   euclid — Elements, Book I, Proposition 5
+# @tier   derived
+
+# @means  apex median meets base at a right angle.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «isosceles triangle» «median to base is perpendicular», «Geometry» «isosceles triangle» «base angles symmetric about apex median»
+
+theorem «Geometry» «isosceles triangle» «apex median perpendicular to base» () {
+    assume «Geometry» «isosceles triangle» «median to base is perpendicular»()
+    assume «Geometry» «isosceles triangle» «base angles symmetric about apex median»()
+    therefore angle_at_base == one_right_angle
+}
+
+export «Geometry» «isosceles triangle» «apex median perpendicular to base»

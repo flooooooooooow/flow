@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  One times three is three for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  1 * 3 = 3.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «one is the left identity»
+
+theorem «Nat» «multiplication» «one times three is three» () {
+    let three = succ(succ(succ(0)))
+    assume «Nat» «multiplication» «one is the left identity»(three)
+    therefore succ(0) * three == three
+}
+
+export «Nat» «multiplication» «one times three is three»

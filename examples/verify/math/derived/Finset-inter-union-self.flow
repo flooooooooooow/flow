@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Intersection distributes over self-union.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  s ∩ (s ∪ s) = s.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «intersection» «intersecting with self union gives self»
+
+theorem «Finset» «intersection» «intersect with self union» (s: Finset) {
+    assume «Finset» «intersection» «intersecting with self union gives self»(s)
+    therefore s ∩ (s ∪ s) == s
+}
+
+export «Finset» «intersection» «intersect with self union»

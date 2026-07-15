@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If from the center of a circle a perpendicular is drawn to a chord, it bisects the chord.
+# @from   euclid — Elements, Book III, Proposition 16
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»
+
+theorem «Geometry» «Euclid Book III» «Proposition 16: the perpendicular from the center to a chord bisects it» () {
+    let O = center
+    let AB = chord
+    let M = foot_of_perpendicular
+    therefore segment_AM == segment_MB
+    assume «Geometry» «Euclid Book III» «Proposition 2: a perpendicular from the center bisects the chord»()
+    therefore center_perpendicular_bisects
+}

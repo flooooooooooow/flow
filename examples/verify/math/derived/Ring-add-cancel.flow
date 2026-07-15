@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Equal ring elements can be subtracted from both sides.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  a + c = b + c implies a = b.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «addition» «parentheses do not matter», «Ring» «addition» «zero is the right identity»
+
+theorem «Ring» «addition» «right cancellation holds» (a: Ring, b: Ring, c: Ring) {
+    if a + c == b + c {
+        assume «Ring» «addition» «parentheses do not matter»(a, c, -c)
+        assume «Ring» «addition» «zero is the right identity»(a)
+        therefore a == b
+    }
+}
+
+export «Ring» «addition» «right cancellation holds»

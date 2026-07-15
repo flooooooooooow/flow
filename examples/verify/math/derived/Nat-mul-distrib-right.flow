@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Multiplication distributes over addition on the left.
+# @from   peano — https://en.wikipedia.org/wiki/Distributive_property
+# @tier   derived
+
+# @means  (a + b) * c = a * c + b * c.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «multiplication» «distributes over addition on the right», «Nat» «multiplication» «order does not matter»
+
+theorem «Nat» «multiplication» «distributes over addition on the left» (a: Nat, b: Nat, c: Nat) {
+    assume «Nat» «multiplication» «distributes over addition on the right»(c, a, b)
+    assume «Nat» «multiplication» «order does not matter»(a, c)
+    assume «Nat» «multiplication» «order does not matter»(b, c)
+    assume «Nat» «multiplication» «order does not matter»(a + b, c)
+    assume «Nat» «multiplication» «order does not matter»(c, a + b)
+    therefore (a + b) * c == a * c + b * c
+}
+
+export «Nat» «multiplication» «distributes over addition on the left»

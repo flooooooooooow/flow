@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  List append commutes when lengths match trivially.
+# @from   church — https://en.wikipedia.org/wiki/Associative_property
+# @tier   derived
+
+# @means  For singleton left, cons(x, nil) ++ ys = ys with head x prepended via singleton law.
+# @from   church
+# @tier   derived
+# @needs  «List» «append» «singleton prepends the head», «List» «append» «parentheses do not matter»
+
+theorem «List» «append» «singleton blocks commute with append» (x: Nat, xs: List, ys: List) {
+    assume «List» «append» «singleton prepends the head»(x, xs)
+    assume «List» «append» «parentheses do not matter»(cons(x, nil), xs, ys)
+    therefore cons(x, nil) ++ (xs ++ ys) == (cons(x, nil) ++ xs) ++ ys
+}
+
+export «List» «append» «singleton blocks commute with append»

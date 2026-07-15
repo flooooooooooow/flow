@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Each co-interior angle is less than two right angles.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  co-interior alpha is less than two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «co-interior angles sum to two right», «Geometry» «triangle» «each interior angle is less than two right»
+
+theorem «Geometry» «parallel lines» «co-interior angle less than two right» () {
+    assume «Geometry» «parallel lines» «co-interior angles sum to two right»()
+    assume «Geometry» «triangle» «each interior angle is less than two right»()
+    therefore angle_co_interior_alpha < two_right_angles
+}
+
+export «Geometry» «parallel lines» «co-interior angle less than two right»

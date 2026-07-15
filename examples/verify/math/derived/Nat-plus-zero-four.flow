@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero plus four is four for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 + 4 = 4.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «zero on the left gives the value»
+
+theorem «Nat» «addition» «zero plus four is four» () {
+    let four = succ(succ(succ(succ(0))))
+    assume «Nat» «addition» «zero on the left gives the value»(four)
+    therefore 0 + four == four
+}
+
+export «Nat» «addition» «zero plus four is four»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Two plus zero maps to two under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(2 + 0) = 2.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «two plus zero maps to two» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 2, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(2 + 0) == 2
+}
+
+export «RingHom» «preservation» «two plus zero maps to two»

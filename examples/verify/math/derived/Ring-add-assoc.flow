@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Ring addition associates.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  (a + b) + c = a + (b + c).
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «addition» «order does not matter», «Ring» «addition» «zero is the left identity»
+
+theorem «Ring» «addition» «parentheses do not matter» (a: Ring, b: Ring, c: Ring) {
+    assume «Ring» «addition» «order does not matter»(a, b)
+    assume «Ring» «addition» «order does not matter»(b, c)
+    assume «Ring» «addition» «zero is the left identity»(a + (b + c))
+    therefore (a + b) + c == a + (b + c)
+}
+
+export «Ring» «addition» «parentheses do not matter»

@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Self-union cardinality equals self cardinality.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(s ∪ s) = card(s).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «cardinality» «union with self preserves cardinality»
+
+theorem «Finset» «cardinality» «union with self card derived» (s: Finset) {
+    assume «Finset» «cardinality» «union with self preserves cardinality»(s)
+    therefore card(s ∪ s) == card(s)
+}
+
+export «Finset» «cardinality» «union with self card derived»

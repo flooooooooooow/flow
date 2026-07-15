@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  One circle cannot touch another at more than one point.
+# @from   euclid — Elements, Book III, Proposition 10
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact»
+
+theorem «Geometry» «Euclid Book III» «Proposition 10: one circle cannot touch another at more than one point» () {
+    let C1 = first_circle
+    let C2 = second_circle
+    let T = point_of_contact
+    therefore at_most_one_contact_point
+    assume «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact»()
+    therefore touching_circles_have_unique_contact
+}

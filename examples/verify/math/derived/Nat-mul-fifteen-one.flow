@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Fifteen times one is fifteen.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  15 * 1 = 15.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «fourteen times one is fourteen»
+
+theorem «Nat» «multiplication» «fifteen times one is fifteen» () {
+    assume «Nat» «multiplication» «fourteen times one is fourteen»()
+    therefore 15 * 1 == 15
+}
+
+export «Nat» «multiplication» «fifteen times one is fifteen»

@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Zero on the right is an additive identity for integers.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  m + 0 = m.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «zero is the left identity», «Int» «addition» «order does not matter»
+
+import .Int-add-comm { add-comm }
+
+theorem «Int» «addition» «zero on the right gives the value» (m: Int) {
+    assume «Int» «addition» «zero is the left identity»(m)
+    assume «Int» «addition» «order does not matter»(m, 0)
+    therefore m + 0 == m
+}
+
+export «Int» «addition» «zero on the right gives the value»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Every subgroup contains the group identity.
+# @from   dummit-foote — *Abstract Algebra*, §2.2
+# @tier   derived
+
+# @means  1 in H for every subgroup H.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Subgroup» «membership» «the identity lies in every subgroup», «Group» «identity» «one is the left identity»
+
+theorem «Subgroup» «membership» «subgroups contain the identity» (H: Subgroup) {
+    assume «Subgroup» «membership» «the identity lies in every subgroup»(H)
+    assume «Group» «identity» «one is the left identity»(1)
+    therefore 1 in H
+}
+
+export «Subgroup» «membership» «subgroups contain the identity»

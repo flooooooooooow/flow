@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Fifteen plus zero maps to fifteen under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(15 + 0) = 15.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «fifteen plus zero maps to fifteen» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 15, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(15 + 0) == 15
+}
+
+export «RingHom» «preservation» «fifteen plus zero maps to fifteen»

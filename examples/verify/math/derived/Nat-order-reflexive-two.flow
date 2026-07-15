@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Two is less than or equal to itself.
+# @from   peano — https://en.wikipedia.org/wiki/Total_order
+# @tier   derived
+
+# @means  2 <= 2.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «order» «less-or-equal is reflexive»
+
+theorem «Nat» «order» «two is below itself» () {
+    let two = succ(succ(0))
+    assume «Nat» «order» «less-or-equal is reflexive»(two)
+    therefore two <= two
+}
+
+export «Nat» «order» «two is below itself»

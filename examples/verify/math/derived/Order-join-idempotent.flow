@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Join is idempotent on the lattice order.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  a ∨ a = a.
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «join» «order does not matter»
+
+theorem «Order» «join» «repeating does not change the value» (a: Nat) {
+    assume «Order» «join» «order does not matter»(a, a)
+    therefore join(a, a) == a
+}
+
+export «Order» «join» «repeating does not change the value»

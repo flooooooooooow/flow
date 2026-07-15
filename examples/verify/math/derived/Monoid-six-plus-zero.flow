@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Six plus zero is six in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  6 + 0 = 6.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «five plus zero is five»
+
+theorem «Monoid» «addition» «six plus zero is six» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(6)
+    assume «Monoid» «addition» «five plus zero is five»()
+    therefore 6 + 0 == 6
+}
+
+export «Monoid» «addition» «six plus zero is six»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Intersection distributes over union on the right.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  (b ∪ c) ∩ a = (b ∩ a) ∪ (c ∩ a).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «intersection» «left distribution over union holds», «Finset» «intersection» «order does not matter»
+
+theorem «Finset» «intersection» «right distribution over union holds» (a: Finset, b: Finset, c: Finset) {
+    assume «Finset» «intersection» «left distribution over union holds»(a, b, c)
+    assume «Finset» «intersection» «order does not matter»(b, c)
+    therefore (b ∪ c) ∩ a == (b ∩ a) ∪ (c ∩ a)
+}
+
+export «Finset» «intersection» «right distribution over union holds»

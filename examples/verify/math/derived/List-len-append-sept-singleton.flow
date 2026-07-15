@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Appending seven singletons gives length seven.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len of seven appended singletons equals 7.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «append preserves length sum», «List» «length» «append of six singletons has length six»
+
+theorem «List» «length» «append of seven singletons has length seven» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat) {
+    assume «List» «length» «append preserves length sum»(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil) ++ cons(e, nil) ++ cons(f, nil), cons(g, nil))
+    assume «List» «length» «append of six singletons has length six»(a, b, c, d, e, f)
+    therefore len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil) ++ cons(e, nil) ++ cons(f, nil) ++ cons(g, nil)) == 7
+}
+
+export «List» «length» «append of seven singletons has length seven»

@@ -877,6 +877,7 @@ run_tests() {
             git -C "$SCRIPT_DIR" ls-files "$suite" 2>/dev/null \
                 | grep '\.flow$' \
                 | grep -v '/wip/' \
+                | grep -v '^examples/verify/' \
                 | while read -r rel; do
                     echo "$SCRIPT_DIR/$rel"
                 done

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Negating zero yields zero.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  -0 = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «adding the negation yields zero», «Int» «addition» «zero is the right identity»
+
+theorem «Int» «negation» «negating zero yields zero» () {
+    assume «Int» «addition» «adding the negation yields zero»(0)
+    assume «Int» «addition» «zero is the right identity»(0)
+    therefore -0 == 0
+}
+
+export «Int» «negation» «negating zero yields zero»

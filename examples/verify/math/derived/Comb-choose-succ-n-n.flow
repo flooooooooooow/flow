@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Choosing all items from a successor set gives one.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(succ(n), succ(n)) = 1.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «choosing all gives one», «Comb» «choose» «choosing none gives one»
+
+import .Comb-choose-n-n { choose-all }
+
+theorem «Comb» «choose» «choosing all from a successor» (n: Nat) {
+    assume «Comb» «choose» «choosing all gives one»(succ(n))
+    assume «Comb» «choose» «choosing none gives one»(n)
+    therefore choose(succ(n), succ(n)) == 1
+}
+
+export «Comb» «choose» «choosing all from a successor»

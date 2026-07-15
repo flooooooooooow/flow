@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Ten plus zero is ten in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  10 + 0 = 10 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «nine plus zero in ideal»
+
+theorem «Ideal» «addition» «ten plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(10)
+    assume «Ideal» «addition» «nine plus zero in ideal»()
+    therefore 10 + 0 == 10
+}
+
+export «Ideal» «addition» «ten plus zero in ideal»

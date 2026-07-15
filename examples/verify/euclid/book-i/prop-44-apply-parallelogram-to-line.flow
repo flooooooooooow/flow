@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-i
+# @means  To a given straight line to apply a parallelogram equal to a given triangle in a given angle.
+# @from   euclid — Elements, Book I, Proposition 44
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 23: copy a given angle onto a line at a point», «Geometry» «Euclid Book I» «Proposition 42: a parallelogram equals a triangle on an equal base»
+
+theorem «Geometry» «Euclid Book I» «Proposition 44: apply a parallelogram equal to a triangle to a line» () {
+    let angle_at_A = copied_angle_DCE_at_point_A
+    let parallelogram_on_AB = parallelogram_with_angle_at_A
+    assume segment_AB_given_and_triangle_C_and_angle_DCE
+    assume «Geometry» «Euclid Book I» «Proposition 23: copy a given angle onto a line at a point»()
+    assume «Geometry» «Euclid Book I» «Proposition 42: a parallelogram equals a triangle on an equal base»()
+    therefore parallelogram_on_AB_equals_triangle_C
+}

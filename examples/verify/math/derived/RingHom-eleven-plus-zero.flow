@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Eleven plus zero maps to eleven under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(11 + 0) = 11.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «eleven plus zero maps to eleven» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 11, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(11 + 0) == 11
+}
+
+export «RingHom» «preservation» «eleven plus zero maps to eleven»

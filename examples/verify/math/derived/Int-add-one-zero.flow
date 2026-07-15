@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One plus zero is one for integers.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  1 + 0 = 1.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «zero is the right identity»
+
+theorem «Int» «addition» «one plus zero is one» () {
+    assume «Int» «addition» «zero is the right identity»(1)
+    therefore 1 + 0 == 1
+}
+
+export «Int» «addition» «one plus zero is one»

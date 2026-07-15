@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  The identity acts as a left multiplier.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  1 * g = g.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «identity» «one is the left identity»
+
+theorem «Group» «identity» «identity multiplies on the left» (g: Group) {
+    assume «Group» «identity» «one is the left identity»(g)
+    therefore 1 * g == g
+}
+
+export «Group» «identity» «identity multiplies on the left»

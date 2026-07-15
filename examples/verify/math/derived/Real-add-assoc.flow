@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Real addition associates.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  (x + y) + z = x + (y + z).
+# @from   landau
+# @tier   derived
+# @needs  «Real» «addition» «zero is the left identity», «Real» «addition» «zero is the right identity», «Real» «addition» «order does not matter»
+
+import .Real-add-comm { add-comm }
+
+theorem «Real» «addition» «parentheses do not matter» (x: Real, y: Real, z: Real) {
+    assume «Real» «addition» «zero is the left identity»(x + (y + z))
+    assume «Real» «addition» «zero is the right identity»((x + y) + z)
+    assume «Real» «addition» «order does not matter»(x, y)
+    assume «Real» «addition» «order does not matter»(y, z)
+    therefore (x + y) + z == x + (y + z)
+}
+
+export «Real» «addition» «parentheses do not matter»

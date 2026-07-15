@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Six times one is six for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  6 * 1 = 6.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «one is the right identity»
+
+theorem «Nat» «multiplication» «six times one is six» () {
+    let six = succ(succ(succ(succ(succ(succ(0))))))
+    assume «Nat» «multiplication» «one is the right identity»(six)
+    therefore six * succ(0) == six
+}
+
+export «Nat» «multiplication» «six times one is six»

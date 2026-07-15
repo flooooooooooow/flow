@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One times zero is zero for rationals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  1 * 0 = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «multiplication» «zero on the right gives zero»
+
+theorem «Rat» «multiplication» «one times zero is zero» () {
+    assume «Rat» «multiplication» «zero on the right gives zero»(1)
+    therefore 1 * 0 == 0
+}
+
+export «Rat» «multiplication» «one times zero is zero»

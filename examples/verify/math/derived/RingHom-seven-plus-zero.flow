@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Seven plus zero maps to seven under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(7 + 0) = 7.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «seven plus zero maps to seven» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 7, 0)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(7 + 0) == 7
+}
+
+export «RingHom» «preservation» «seven plus zero maps to seven»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An exterior angle strictly exceeds the larger remote interior.
+# @from   euclid — Elements, Book I, Proposition 16
+# @tier   derived
+
+# @means  exterior at C exceeds the maximum of angle A and angle B.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «exterior strictly greater remote interior», «Geometry» «triangle» «exterior remote sum decomposition»
+
+theorem «Geometry» «triangle» «exterior exceeds max remote interior» () {
+    assume «Geometry» «triangle» «exterior strictly greater remote interior»()
+    assume «Geometry» «triangle» «exterior remote sum decomposition»()
+    therefore exterior_at_C > angle_A
+}
+
+export «Geometry» «triangle» «exterior exceeds max remote interior»

@@ -1,0 +1,10 @@
+# @means  In an isosceles triangle, the base angles are equal.
+# @from   euclid — Elements, Book I, Proposition 5
+# @tier   derived
+# @needs  «Geometry» «triangle congruence» «side-angle-side implies congruence»
+# @diagram isosceles-base-angles
+
+theorem «Geometry» «isosceles triangle» «base angles are equal» () {
+    assume «Geometry» «triangle congruence» «side-angle-side implies congruence»()
+    therefore angle_at_B == angle_at_C
+}

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Union with the empty set on the right changes nothing.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  s ∪ empty = s.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «union» «order does not matter», «Finset» «union» «empty is the right identity»
+
+theorem «Finset» «union» «empty on the right gives the set» (s: Finset) {
+    assume «Finset» «union» «order does not matter»(s, empty)
+    assume «Finset» «union» «empty is the right identity»(s)
+    therefore s ∪ empty == s
+}
+
+export «Finset» «union» «empty on the right gives the set»

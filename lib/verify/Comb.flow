@@ -1,0 +1,27 @@
+# @module verify.Comb
+# @means  Basic combinatorial identities on binomial coefficients.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   definitions-only
+
+# @means  Choosing zero items always gives one way.
+# @from   graham-knuth-patashnik
+# @tier   definition
+
+theorem «Comb» «choose» «choosing none gives one» (n: Nat) {
+    therefore choose(n, 0) == 1
+}
+
+# @means  Pascal recurrence for binomial coefficients.
+# @from   graham-knuth-patashnik
+# @tier   definition
+
+theorem «Comb» «choose» «Pascal recurrence holds» (n: Nat, k: Nat) {
+    if k == 0 {
+        therefore choose(n, k) == 1
+    } else {
+        let j = pred(k)
+        therefore choose(n, k) == choose(pred(n), j) + choose(pred(n), k)
+    }
+}
+
+export «Comb» «choose» «choosing none gives one», «Comb» «choose» «Pascal recurrence holds»

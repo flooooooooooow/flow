@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Second projection determines the second component.
+# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @tier   derived
+
+# @means  snd(pair(a, b)) = b.
+# @from   church
+# @tier   derived
+# @needs  «Pair» «second projection» «second projection from pairing»
+
+theorem «Pair» «pairing» «second projection determines component» (a: Nat, b: Nat) {
+    assume «Pair» «second projection» «second projection from pairing»(a, b)
+    therefore snd(pair(a, b)) == b
+}
+
+export «Pair» «pairing» «second projection determines component»

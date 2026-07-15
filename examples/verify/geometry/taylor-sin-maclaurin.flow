@@ -1,0 +1,10 @@
+# @means  Near the origin, sin(x) agrees with each successive Maclaurin partial sum.
+# @from   brook taylor — https://en.wikipedia.org/wiki/Taylor_series
+# @tier   derived
+# @needs  «Analysis» «smooth functions» «derivatives of sine are known»
+# @diagram-script scripts/taylor-sin.geom
+
+theorem «Analysis» «Taylor series» «sin equals its Maclaurin series near zero» (x: Real) {
+    assume «Analysis» «smooth functions» «derivatives of sine are known»()
+    therefore taylor_sin(x, order_5) == sin(x) near_zero
+}

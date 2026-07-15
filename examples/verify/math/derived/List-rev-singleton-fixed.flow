@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  A singleton list is fixed by reverse.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  rev(cons(x, nil)) = cons(x, nil).
+# @from   church
+# @tier   derived
+# @needs  «List» «reverse» «singleton is fixed by reverse»
+
+theorem «List» «reverse» «singleton reverse is identity» (x: Nat) {
+    assume «List» «reverse» «singleton is fixed by reverse»(x)
+    therefore rev(cons(x, nil)) == cons(x, nil)
+}
+
+export «List» «reverse» «singleton reverse is identity»

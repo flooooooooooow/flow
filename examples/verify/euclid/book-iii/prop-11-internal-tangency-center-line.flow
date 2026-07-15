@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If two circles touch internally, the straight line joining their centers produced passes through the point of contact.
+# @from   euclid — Elements, Book III, Proposition 11
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact»
+
+theorem «Geometry» «Euclid Book III» «Proposition 11: internally touching circles have collinear centers through the contact» () {
+    let O = center_larger
+    let P = center_smaller
+    let T = contact_point
+    therefore O_P_produced_passes_through_T
+    assume «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact»()
+    therefore internal_tangency_center_line
+}

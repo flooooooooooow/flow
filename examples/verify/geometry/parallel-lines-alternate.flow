@@ -1,0 +1,8 @@
+# @means  When parallel lines are cut by a transversal, alternate interior angles are equal.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   axiom
+# @diagram parallel-lines-alternate
+
+theorem «Geometry» «parallel lines» «alternate angles are equal» () {
+    therefore angle_alpha == angle_beta
+}

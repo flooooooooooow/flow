@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Adding on the left preserves less-or-equal order.
+# @from   peano — https://en.wikipedia.org/wiki/Monotonic_function
+# @tier   derived
+
+# @means  a <= b implies c + a <= c + b.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «order does not matter», «Nat» «order» «less-or-equal is transitive», «Nat» «order» «less-or-equal is reflexive»
+
+import .Nat-plus-mono-right { plus-mono-right }
+import .Nat-plus-commutes { commutes }
+
+theorem «Nat» «order» «adding on the left preserves order» (a: Nat, b: Nat, c: Nat) {
+    if a <= b {
+        assume «Nat» «addition» «order does not matter»(c, a)
+        assume «Nat» «order» «less-or-equal is transitive»(c + a, c + b, c + b)
+        assume «Nat» «order» «less-or-equal is reflexive»(c + a)
+        therefore c + a <= c + b
+    }
+}
+
+export «Nat» «order» «adding on the left preserves order»

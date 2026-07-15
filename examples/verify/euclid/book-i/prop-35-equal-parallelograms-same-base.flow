@@ -1,0 +1,12 @@
+# @module examples.verify.euclid.book-i
+# @means  Equal parallelograms on the same base are in the same parallels.
+# @from   euclid — Elements, Book I, Proposition 35
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 25: parallelograms on the same base and parallels are equal»
+
+theorem «Geometry» «Euclid Book I» «Proposition 35: equal parallelograms on the same base lie between parallels» () {
+    assume parallelograms_ABCD_and_EBCF_equal_and_on_same_base_BC
+    assume «Geometry» «Euclid Book I» «Proposition 25: parallelograms on the same base and parallels are equal»()
+    therefore lines_AD_and_EF_are_parallel_to_BC
+    therefore parallelograms_ABCD_EBCF_same_parallels
+}

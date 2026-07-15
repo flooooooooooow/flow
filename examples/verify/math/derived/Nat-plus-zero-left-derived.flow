@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Zero on the left is an additive identity for naturals.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 + n = n.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the right identity», «Nat» «addition» «order does not matter»
+
+import .Nat-plus-commutes { plus-commutes }
+
+theorem «Nat» «addition» «zero on the left gives the value» (n: Nat) {
+    assume «Nat» «addition» «zero is the right identity»(n)
+    assume «Nat» «addition» «order does not matter»(0, n)
+    therefore 0 + n == n
+}
+
+export «Nat» «addition» «zero on the left gives the value»

@@ -1,0 +1,16 @@
+# @module examples.verify.euclid.book-i
+# @means  To place at a given point a straight line equal to a given straight line.
+# @from   euclid — Elements, Book I, Proposition 2
+# @tier   axiom
+
+theorem «Geometry» «Euclid Book I» «Proposition 2: a segment equal to a given segment» () {
+    let L = line_through_A_and_D
+    let equilateral_ADE = triangle_on_AD_by_Proposition_1
+    let circle_center_D_radius_BC = circle_at_D_with_radius_BC
+    let circle_center_E_radius_DG = circle_at_E_with_radius_DG
+    let F = second_intersection_of_circles_at_D_and_E
+    assume Postulate 3: a circle can be drawn with any center and radius
+    assume Postulate 1: a straight line can be drawn from any point to any point
+    therefore segment_AF == segment_BC
+    therefore segment_at_A_equals_BC
+}

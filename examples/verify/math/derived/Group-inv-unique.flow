@@ -1,0 +1,24 @@
+# @module examples.verify.math.derived
+# @means  Inverses in a group are unique.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  If h * g = 1 and g * k = 1 then h = k.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «inverse» «left inverse recovers the identity», «Group» «inverse» «right inverse recovers the identity», «Group» «multiplication» «parentheses do not matter»
+
+import .Group-inv-right { inv-right }
+
+theorem «Group» «inverse» «inverses are unique» (g: Group, h: Group, k: Group) {
+    if h * g == 1 {
+        if g * k == 1 {
+            assume «Group» «inverse» «left inverse recovers the identity»(g)
+            assume «Group» «inverse» «right inverse recovers the identity»(g)
+            assume «Group» «multiplication» «parentheses do not matter»(h, g, k)
+            therefore h == k
+        }
+    }
+}
+
+export «Group» «inverse» «inverses are unique»

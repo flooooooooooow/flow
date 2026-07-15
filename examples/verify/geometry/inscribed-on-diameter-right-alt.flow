@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An inscribed angle on a diameter is right, alternate witness.
+# @from   euclid — Elements, Book III, Proposition 31
+# @tier   derived
+
+# @means  angle APB equals one right angle on diameter AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed on semicircle is right», «Geometry» «circle» «inscribed angle on diameter is right»
+
+theorem «Geometry» «circle» «inscribed on diameter right alt» () {
+    assume «Geometry» «circle» «inscribed on semicircle is right»()
+    assume «Geometry» «circle» «inscribed angle on diameter is right»()
+    therefore angle_APB == one_right_angle
+}
+
+export «Geometry» «circle» «inscribed on diameter right alt»

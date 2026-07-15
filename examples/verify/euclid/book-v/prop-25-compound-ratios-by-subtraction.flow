@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If a first is to a second as a third is to a fourth, and a fifth is to a second as a sixth is to a fourth, the difference of the first and fifth is to the second as the difference of the third and sixth is to the fourth.
+# @from   euclid — Elements, Book V, Proposition 25
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 24: equal compound ratios by addition»
+
+theorem «Geometry» «Euclid Book V» «Proposition 25: equal compound ratios by subtraction» () {
+    let a = first
+    let b = second
+    let e = fifth
+    let g = sixth
+    therefore ratio(a - e, b) == ratio(c - g, d)
+    assume «Geometry» «Euclid Book V» «Proposition 24: equal compound ratios by addition»()
+    therefore compound_ratios_by_subtraction
+}

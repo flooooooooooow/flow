@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The sum of leg squares equals the hypotenuse square.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  a squared plus b squared equals c squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «hypotenuse square is positive», «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «sum of leg squares equals hypotenuse square» () {
+    assume «Geometry» «right triangle» «hypotenuse square is positive»()
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore a * a + b * b == c * c
+}
+
+export «Geometry» «right triangle» «sum of leg squares equals hypotenuse square»
