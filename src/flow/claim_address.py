@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 # «carrier» «structure» «law phrase»
 GUILLEMET_CLAIM_RE = re.compile(

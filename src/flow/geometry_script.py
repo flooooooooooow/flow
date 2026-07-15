@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from flow.geometry_diagram import (
     AxesSpec,
@@ -545,7 +545,7 @@ class GeometryScriptEngine:
             re.I,
         )
         if not m:
-            raise GeomScriptError(f"fill syntax: between f and g from a to b [color #hex@alpha]")
+            raise GeomScriptError("fill syntax: between f and g from a to b [color #hex@alpha]")
         e1, e2, lo_s, hi_s, color = m.groups()
         lo = float(self._eval_expr(self._parse_expr(lo_s.strip())))
         hi = float(self._eval_expr(self._parse_expr(hi_s.strip())))

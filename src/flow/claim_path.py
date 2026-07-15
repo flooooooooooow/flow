@@ -14,7 +14,6 @@ from typing import Dict, List, Optional, Tuple
 
 from flow.claim_address import (
     ClaimAddress,
-    address_phrase,
     parse_claim_address,
     try_parse_claim_address,
 )
