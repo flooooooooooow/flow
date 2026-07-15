@@ -88,6 +88,27 @@ class TestDynamicsDSLCompiler:
         assert "is_controllable" in code
 
 
+WFC_SAMPLE = SAMPLE + """
+wfc field layout {
+    size 4 4
+    tiles 3
+    seed 7
+    pin 0 1
+    collapse 20
+}
+
+couple plant field layout using report k1 k2 {
+    guidance -> guide
+    collapsed -> wfc_ok
+}
+
+guide plant with k1 k2 through layout using guide over rollout {
+    energy -> E_guide
+    spectral -> rho_guide
+}
+"""
+
+
 class TestDynamicsDSLExpand:
     def test_expand_injects_import_at_top(self):
         out = expand_dynamics_dsl(SAMPLE)
@@ -104,3 +125,26 @@ class TestDynamicsDSLExpand:
     def test_expand_noop_without_dsl(self):
         plain = 'function main() -> i32 { return 0 }'
         assert expand_dynamics_dsl(plain) == plain
+
+
+class TestDynamicsDSLWFC:
+    def test_parse_wfc_and_couple(self):
+        program, stripped = parse_dynamics_dsl(WFC_SAMPLE)
+        assert "wfc field" not in stripped
+        assert "couple plant" not in stripped
+        assert "layout" in program.wfc_fields
+        assert program.wfc_fields["layout"].width == 4
+        assert len(program.couples) == 1
+        assert len(program.guides) == 1
+
+    def test_compile_wfc_coupling(self):
+        program, _ = parse_dynamics_dsl(WFC_SAMPLE)
+        code = compile_dynamics_program(program)
+        assert "wfc_run_guided" in code
+        assert "couple_ga_wfc_guidance" in code
+        assert "guide_state_evolution" in code
+        assert "__wfc_layout" in code
+
+    def test_expand_imports_coupling_module(self):
+        out = expand_dynamics_dsl(WFC_SAMPLE)
+        assert 'import "stdlib/dynamics/wfc_ga_coupling.flow"' in out
