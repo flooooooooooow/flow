@@ -1,0 +1,28 @@
+import "stdlib/dynamics/ga_analysis.flow"
+
+function main() -> i32 {
+    let A: array<f64, 4> = [1.0, 0.1, 0.0, 1.0]
+    let B: array<f64, 2> = [0.0, 0.1]
+    let C: array<f64, 2> = [1.0, 0.0]
+    let plant: DynamicalSystem = dsys_discrete(2, 1, 1, 0.1,
+        Matrix { data: A, rows: 2, cols: 2 },
+        Matrix { data: B, rows: 2, cols: 1 },
+        Matrix { data: C, rows: 1, cols: 2 }
+    )
+    let cfg: GAConfig = GAConfig { population: 8, generations: 16, horizon: 40, mutation: 0.25 }
+    let k1: array<f64, 8> = [0.5, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0, 2.2]
+    let k2: array<f64, 8> = [0.3, 0.5, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0]
+    let fit: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let bk1: array<f64, 1> = [0.0]
+    let bk2: array<f64, 1> = [0.0]
+    let hist: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let z: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let r: GAAnalysisReport = ga_analyze_control_search(
+        plant, 40, cfg, k1, k2, fit, bk1, bk2, hist,
+        z, z, z, z, z, z, z, z, z, z, z, z
+    )
+    if r.plant_controllable != 1 { return 1 }
+    if r.fitness_drop <= 0.0 { return 2 }
+    if r.stable_closed_loop != 1 { return 3 }
+    return 0
+}
