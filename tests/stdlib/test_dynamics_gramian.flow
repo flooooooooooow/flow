@@ -1,0 +1,30 @@
+import "stdlib/dynamics/gramian.flow"
+import "stdlib/dynamics/state_space.flow"
+
+function main() -> i32 {
+    let n: i32 = 2
+    let m: i32 = 1
+    let A: array<f64, 4> = [1.0, 0.1, 0.0, 1.0]
+    let B: array<f64, 2> = [0.0, 0.1]
+    let C: array<f64, 2> = [1.0, 0.0]
+    let sys: DynamicalSystem = dsys_discrete(n, m, 1, 0.1,
+        Matrix { data: A, rows: n, cols: n },
+        Matrix { data: B, rows: n, cols: m },
+        Matrix { data: C, rows: 1, cols: n }
+    )
+    let ctrl: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let ap: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let blk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let na: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let rk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    if is_controllable(sys, ctrl, ap, blk, na, rk) != 1 {
+        return 1
+    }
+    let W: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let h: Horizon = horizon_finite(20)
+    let Wm: Matrix = gramian_finite_horizon(sys, h, W, ap, blk, na)
+    if matrix_trace(Wm) <= 0.0 {
+        return 2
+    }
+    return 0
+}

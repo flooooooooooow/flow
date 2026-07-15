@@ -1,0 +1,106 @@
+# Controllability / observability Gramians (finite & infinite horizon)
+# Import: import "stdlib/dynamics/gramian.flow"
+#
+# Discrete finite horizon:   Wc(N) = sum_{k=0}^{N-1} A^k B B^T (A^k)^T
+# Discrete infinite horizon: Wc = A Wc A^T + B B^T  (Lyapunov, iterative solve)
+
+import "stdlib/dynamics/state_space.flow"
+
+function gramian_add_outer(block: Matrix, W: Matrix) -> void {
+    let n: i32 = block.rows
+    let m: i32 = block.cols
+    for i in 0 to n {
+        for j in 0 to n {
+            let mut sum: f64 = matrix_get(W, i, j)
+            for k in 0 to m {
+                sum = sum + matrix_get(block, i, k) * matrix_get(block, j, k)
+            }
+            matrix_set(W, i, j, sum)
+        }
+    }
+}
+
+function gramian_finite_horizon(
+    sys: DynamicalSystem,
+    h: Horizon,
+    W_buf: ptr<f64>,
+    a_pow_buf: ptr<f64>,
+    block_buf: ptr<f64>,
+    next_a_buf: ptr<f64>
+) -> Matrix {
+    let n: i32 = sys.n
+    let W: Matrix = matrix_zeros(W_buf, n, n)
+    let a_pow: Matrix = matrix_identity(a_pow_buf, n)
+    let steps: i32 = h.steps
+    for k in 0 to steps {
+        let block: Matrix = matrix_zeros(block_buf, n, sys.m)
+        matrix_mul(a_pow, sys.B, block)
+        gramian_add_outer(block, W)
+        let next_a: Matrix = matrix_zeros(next_a_buf, n, n)
+        matrix_mul(sys.A, a_pow, next_a)
+        matrix_copy(next_a, a_pow)
+    }
+    return W
+}
+
+function gramian_infinite_horizon(
+    sys: DynamicalSystem,
+    h: Horizon,
+    W_buf: ptr<f64>,
+    bbt_buf: ptr<f64>,
+    scratch_a: ptr<f64>,
+    scratch_b: ptr<f64>
+) -> Matrix {
+    let n: i32 = sys.n
+    let W: Matrix = matrix_zeros(W_buf, n, n)
+    let BBt: Matrix = matrix_zeros(bbt_buf, n, n)
+    gramian_add_outer(sys.B, BBt)
+    let mut iter: i32 = 0
+    while iter < 64 {
+        let AW: Matrix = matrix_zeros(scratch_a, n, n)
+        let AWAt: Matrix = matrix_zeros(scratch_b, n, n)
+        let At: Matrix = matrix_zeros(scratch_b, n, n)
+        let newW: Matrix = matrix_zeros(W_buf, n, n)
+        matrix_mul(sys.A, W, AW)
+        matrix_transpose(sys.A, At)
+        matrix_mul(AW, At, AWAt)
+        matrix_scale(AWAt, h.gamma, AWAt)
+        matrix_add(AWAt, BBt, newW)
+        matrix_copy(newW, W)
+        iter = iter + 1
+    }
+    return W
+}
+
+function observability_gramian_finite(
+    sys: DynamicalSystem,
+    h: Horizon,
+    W_buf: ptr<f64>,
+    a_pow_buf: ptr<f64>,
+    block_buf: ptr<f64>,
+    scratch: ptr<f64>
+) -> Matrix {
+    let n: i32 = sys.n
+    let p: i32 = sys.p
+    let W: Matrix = matrix_zeros(W_buf, n, n)
+    let a_pow: Matrix = matrix_identity(a_pow_buf, n)
+    let At: Matrix = matrix_zeros(scratch, n, n)
+    let steps: i32 = h.steps
+    for k in 0 to steps {
+        let CA: Matrix = matrix_zeros(block_buf, p, n)
+        matrix_mul(sys.C, a_pow, CA)
+        for i in 0 to n {
+            for j in 0 to n {
+                let mut sum: f64 = matrix_get(W, i, j)
+                for r in 0 to p {
+                    sum = sum + matrix_get(CA, r, i) * matrix_get(CA, r, j)
+                }
+                matrix_set(W, i, j, sum)
+            }
+        }
+        let next_a: Matrix = matrix_zeros(scratch, n, n)
+        matrix_mul(sys.A, a_pow, next_a)
+        matrix_copy(next_a, a_pow)
+    }
+    return W
+}

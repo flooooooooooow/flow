@@ -1,0 +1,133 @@
+# Attractors & nonlinear flows (indexed vector fields + RK4)
+# Import: import "stdlib/dynamics/attractor.flow"
+
+import "stdlib/dynamics/linalg.flow"
+
+extern {
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+function attractor_field(x: ptr<f64>, n: i32, sys_id: i32, out: ptr<f64>) -> void {
+    # sys_id 0: damped oscillator  x' = y, y' = -x - 0.5 y
+    if sys_id == 0 and n >= 2 {
+        out[0] = x[1]
+        out[1] = 0.0 - x[0] - 0.5 * x[1]
+        return
+    }
+    # sys_id 1: Lorenz (sigma=10, rho=28, beta=8/3)
+    if sys_id == 1 and n >= 3 {
+        out[0] = 10.0 * (x[1] - x[0])
+        out[1] = x[0] * (28.0 - x[2]) - x[1]
+        out[2] = x[0] * x[1] - 2.6666666667 * x[2]
+        return
+    }
+    # sys_id 2: bistable gradient  x' = x - x^3
+    if sys_id == 2 and n >= 1 {
+        out[0] = x[0] - x[0] * x[0] * x[0]
+        return
+    }
+    for i in 0 to n {
+        out[i] = 0.0
+    }
+}
+
+function rk4_step_n(x: ptr<f64>, n: i32, dt: f64, sys_id: i32, out: ptr<f64>) -> void {
+    let k1: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let k2: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let k3: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let k4: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let tmp: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    attractor_field(x, n, sys_id, k1)
+    for i in 0 to n {
+        tmp[i] = x[i] + 0.5 * dt * k1[i]
+    }
+    attractor_field(tmp, n, sys_id, k2)
+    for i in 0 to n {
+        tmp[i] = x[i] + 0.5 * dt * k2[i]
+    }
+    attractor_field(tmp, n, sys_id, k3)
+    for i in 0 to n {
+        tmp[i] = x[i] + dt * k3[i]
+    }
+    attractor_field(tmp, n, sys_id, k4)
+    for i in 0 to n {
+        out[i] = x[i] + dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i])
+    }
+}
+
+function integrate_attractor(
+    x0: ptr<f64>,
+    n: i32,
+    steps: i32,
+    dt: f64,
+    sys_id: i32,
+    traj: ptr<f64>
+) -> void {
+    let cur: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let nxt: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    vec_copy(x0, cur, n)
+    for t in 0 to steps {
+        for i in 0 to n {
+            traj[t * n + i] = cur[i]
+        }
+        rk4_step_n(cur, n, dt, sys_id, nxt)
+        vec_copy(nxt, cur, n)
+    }
+}
+
+# Finite-time Lyapunov proxy: log separation growth between nearby trajectories
+function lyapunov_proxy(
+    x0: ptr<f64>,
+    n: i32,
+    steps: i32,
+    dt: f64,
+    sys_id: i32,
+    eps: f64,
+    traj_a: ptr<f64>,
+    traj_b: ptr<f64>
+) -> f64 {
+    let pert: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    for i in 0 to n {
+        pert[i] = x0[i]
+    }
+    pert[0] = pert[0] + eps
+    integrate_attractor(x0, n, steps, dt, sys_id, traj_a)
+    integrate_attractor(pert, n, steps, dt, sys_id, traj_b)
+    let idx: i32 = (steps - 1) * n
+    let mut dist: f64 = 0.0
+    for i in 0 to n {
+        let d: f64 = traj_a[idx + i] - traj_b[idx + i]
+        dist = dist + d * d
+    }
+    dist = sqrt(dist)
+    if dist < 1e-12 {
+        return 0.0
+    }
+    return log_sep(dist, eps, steps, dt)
+}
+
+function log_sep(dist: f64, eps: f64, steps: i32, dt: f64) -> f64 {
+    let time: f64 = steps * dt
+    if time < 1e-12 or eps < 1e-12 {
+        return 0.0
+    }
+    let ratio: f64 = dist / eps
+    # ln(ratio) / time  (natural log via series for small portability)
+    return ln_approx(ratio) / time
+}
+
+function ln_approx(x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0
+    }
+    let mut y: f64 = 0.0
+    let mut z: f64 = (x - 1.0) / (x + 1.0)
+    let z2: f64 = z * z
+    y = 2.0 * z
+    z = z * z2
+    y = y + 2.0 * z / 3.0
+    z = z * z2
+    y = y + 2.0 * z / 5.0
+    return y
+}

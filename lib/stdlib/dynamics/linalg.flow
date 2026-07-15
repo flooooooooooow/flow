@@ -1,0 +1,145 @@
+# Dynamics linear algebra (f64, caller-provided buffers)
+# Import: import "stdlib/dynamics/linalg.flow"
+
+extern {
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+struct Matrix {
+    data: ptr<f64>,
+    rows: i32,
+    cols: i32
+}
+
+function matrix_zeros(data: ptr<f64>, rows: i32, cols: i32) -> Matrix {
+    let size: i32 = rows * cols
+    for i in 0 to size {
+        data[i] = 0.0
+    }
+    return Matrix { data: data, rows: rows, cols: cols }
+}
+
+function matrix_identity(data: ptr<f64>, n: i32) -> Matrix {
+    for i in 0 to n * n {
+        data[i] = 0.0
+    }
+    for i in 0 to n {
+        data[i * n + i] = 1.0
+    }
+    return Matrix { data: data, rows: n, cols: n }
+}
+
+function matrix_get(m: Matrix, i: i32, j: i32) -> f64 {
+    return m.data[i * m.cols + j]
+}
+
+function matrix_set(m: Matrix, i: i32, j: i32, val: f64) -> void {
+    m.data[i * m.cols + j] = val
+}
+
+function matrix_copy(src: Matrix, dst: Matrix) -> void {
+    let n: i32 = src.rows * src.cols
+    for i in 0 to n {
+        dst.data[i] = src.data[i]
+    }
+}
+
+function matrix_add(a: Matrix, b: Matrix, result: Matrix) -> void {
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            matrix_set(result, i, j, matrix_get(a, i, j) + matrix_get(b, i, j))
+        }
+    }
+}
+
+function matrix_sub(a: Matrix, b: Matrix, result: Matrix) -> void {
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            matrix_set(result, i, j, matrix_get(a, i, j) - matrix_get(b, i, j))
+        }
+    }
+}
+
+function matrix_scale(a: Matrix, scalar: f64, result: Matrix) -> void {
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            matrix_set(result, i, j, matrix_get(a, i, j) * scalar)
+        }
+    }
+}
+
+function matrix_mul(a: Matrix, b: Matrix, result: Matrix) -> void {
+    let M: i32 = a.rows
+    let K: i32 = a.cols
+    let N: i32 = b.cols
+    for i in 0 to M {
+        for j in 0 to N {
+            let mut sum: f64 = 0.0
+            for k in 0 to K {
+                sum = sum + matrix_get(a, i, k) * matrix_get(b, k, j)
+            }
+            matrix_set(result, i, j, sum)
+        }
+    }
+}
+
+function matrix_transpose(a: Matrix, result: Matrix) -> void {
+    for i in 0 to a.rows {
+        for j in 0 to a.cols {
+            matrix_set(result, j, i, matrix_get(a, i, j))
+        }
+    }
+}
+
+function matrix_trace(m: Matrix) -> f64 {
+    let mut dim: i32 = m.rows
+    if m.cols < dim {
+        dim = m.cols
+    }
+    let mut sum: f64 = 0.0
+    for i in 0 to dim {
+        sum = sum + matrix_get(m, i, i)
+    }
+    return sum
+}
+
+function matvec(m: Matrix, x: ptr<f64>, y: ptr<f64>) -> void {
+    for i in 0 to m.rows {
+        let mut sum: f64 = 0.0
+        for j in 0 to m.cols {
+            sum = sum + matrix_get(m, i, j) * x[j]
+        }
+        y[i] = sum
+    }
+}
+
+function vec_copy(src: ptr<f64>, dst: ptr<f64>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+}
+
+function vec_scale(x: ptr<f64>, n: i32, s: f64) -> void {
+    for i in 0 to n {
+        x[i] = x[i] * s
+    }
+}
+
+function vec_add(a: ptr<f64>, b: ptr<f64>, n: i32, out: ptr<f64>) -> void {
+    for i in 0 to n {
+        out[i] = a[i] + b[i]
+    }
+}
+
+function vec_dot(a: ptr<f64>, b: ptr<f64>, n: i32) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to n {
+        sum = sum + a[i] * b[i]
+    }
+    return sum
+}
+
+function vec_norm(x: ptr<f64>, n: i32) -> f64 {
+    return sqrt(vec_dot(x, x, n))
+}
