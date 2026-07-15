@@ -1124,7 +1124,7 @@ class CGenerator:
         if isinstance(st, Assignment):
             # Handle array element assignment: arr[i] = value
             if st.target_expr is not None:
-                target_expr = self._gen_expr(st.target_expr)
+                target_expr = self._gen_lvalue_expr(st.target_expr)
                 return [f"{self._i()}{target_expr} = {self._gen_expr(st.value)};"]
             return [f"{self._i()}{_sanitize_identifier(st.target)} = {self._gen_expr(st.value)};"]
 
@@ -1290,7 +1290,7 @@ class CGenerator:
                             f"({{ {bind_type} {_c_ident(pattern.name)} = {match_expr}; 1; }})"
                         )
                 elif isinstance(pattern, StructPattern):
-                    bind_lines = []
+                    struct_binds: List[str] = []
                     struct_name = pattern.struct_name
                     if struct_name in self._structs:
                         field_names = list(self._structs[struct_name].keys())
@@ -1298,13 +1298,26 @@ class CGenerator:
                             if i < len(field_names):
                                 field = field_names[i]
                                 ft = self._structs[struct_name][field_names[i]]
-                                bind_lines.append(
-                                    f"{self._c_type(ft)} {_c_ident(binding)} = "
+                                bind_name = _c_ident(binding)
+                                struct_binds.append(
+                                    f"{self._c_type(ft)} {bind_name} = "
                                     f"({match_expr}).{_c_ident(field)}"
                                 )
+                                self._overload_resolver.set_var_type(
+                                    binding, self._type_to_string(ft)
+                                )
+                                self._var_types[binding] = ft
                     guard_expr = self._gen_expr(case.guard) if case.guard else "1"
-                    binds = "; ".join(bind_lines)
-                    cond = f"({{ {binds}; {guard_expr}; }})" if binds else guard_expr
+                    cond = guard_expr
+                    branch_kw = "if" if first else "} else if"
+                    first = False
+                    lines.append(f"{self._i()}{branch_kw} ({cond}) {{")
+                    self._indent += 1
+                    for bind_stmt in struct_binds:
+                        lines.append(f"{self._i()}{bind_stmt};")
+                    lines.extend(self._gen_block(case.body))
+                    self._indent -= 1
+                    continue
                 else:
                     cond = f"({match_expr}) == {self._gen_expr(pattern)}"
                     if case.guard is not None:
@@ -1656,6 +1669,9 @@ class CGenerator:
     def _gen_method_call(self, e: MethodCall) -> str:
         """Generate code for a method-style call (obj.method(args))."""
         if isinstance(e.object, Variable):
+            if e.object.name in self._effects:
+                effect_call = EffectCall(e.object.name, e.method, e.arguments)
+                return self._gen_effect_call(effect_call)
             var_type = self._var_types.get(e.object.name)
             if var_type and (var_type.name.startswith("capability_") or var_type.name in self._effects):
                 effect_call = EffectCall(e.object.name, e.method, e.arguments)
@@ -1665,6 +1681,18 @@ class CGenerator:
         args = [e.object] + e.arguments
         return self._gen_expr(FunctionCall(e.method, args))
     
+    def _gen_lvalue_expr(self, e: Expression) -> str:
+        """Generate an assignable C lvalue (no bounds-check ternaries)."""
+        if isinstance(e, ArrayAccess):
+            return (
+                f"{self._gen_lvalue_expr(e.array)}[{self._gen_expr(e.index)}]"
+            )
+        if isinstance(e, FieldAccess):
+            return (
+                f"{self._gen_lvalue_expr(e.object)}.{_c_ident(e.field)}"
+            )
+        return self._gen_expr(e)
+
     def _gen_array_access(self, e: ArrayAccess) -> str:
         """Generate C array index access with optional bounds checking.
 

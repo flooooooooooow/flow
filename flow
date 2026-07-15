@@ -822,31 +822,29 @@ run_tests() {
                 strict_mode="--lenient"
                 shift
                 ;;
-            --tier1|--tier)
-                if [[ "$1" == "--tier" && -n "${2:-}" && "$2" == "1" ]]; then
-                    tier=1
-                    shift 2
-                else
-                    tier=1
-                    shift
-                fi
+            --tier1)
+                tier=1
+                shift
                 ;;
             --tier2)
                 tier=2
                 shift
+                ;;
+            --tier)
+                if [[ -n "${2:-}" ]]; then
+                    tier="$2"
+                    shift 2
+                else
+                    tier=2
+                    shift
+                fi
                 ;;
             --verbose|-v)
                 verbose=1
                 shift
                 ;;
             *)
-                # Handle --tier N format
-                if [[ "$1" == "--tier" && -n "${2:-}" ]]; then
-                    tier="$2"
-                    shift 2
-                else
-                    shift
-                fi
+                shift
                 ;;
         esac
     done
@@ -929,8 +927,9 @@ run_tests() {
                 continue
             fi
             
-            # Tier 2: Compile C with clang (if enabled)
-            if [ "$tier" -ge 2 ]; then
+            # Tier 2: Compile C with clang (if enabled).
+            # Examples often need platform libs/graphics; clang-check tests/ only.
+            if [ "$tier" -ge 2 ] && [ "$suite" = "tests" ]; then
                 local clang_output
                 clang_output=$(clang -fsyntax-only -Wno-everything "$c_file" 2>&1)
                 local clang_status=$?
