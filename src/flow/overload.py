@@ -214,7 +214,7 @@ class OverloadResolver:
                     # Unknown type - not an exact match
                     exact_match = False
                     break
-                if param_type != arg_type:
+                if not self._types_compatible(param_type, arg_type):
                     exact_match = False
                     break
             
@@ -257,9 +257,25 @@ class OverloadResolver:
         # No match found among multiple overloads
         return None
     
+    def _ptr_type_for_array(self, array_type: str) -> Optional[str]:
+        """Map stack arrays to pointer types for overload matching."""
+        if not array_type.startswith("array_"):
+            return None
+        parts = array_type.split("_", 2)
+        # array_4_f32 -> ptr_f32
+        if len(parts) == 3 and parts[1].isdigit():
+            return f"ptr_{parts[2]}"
+        # array_f32 -> ptr_f32
+        if len(parts) == 2:
+            return f"ptr_{parts[1]}"
+        return None
+
     def _types_compatible(self, expected: str, actual: str) -> bool:
         """Check if actual type is compatible with expected type."""
         if expected == actual:
+            return True
+        ptr_type = self._ptr_type_for_array(actual)
+        if ptr_type and expected == ptr_type:
             return True
         # Allow f32/f64 interchangeability for now
         if expected in ('f32', 'f64') and actual in ('f32', 'f64'):

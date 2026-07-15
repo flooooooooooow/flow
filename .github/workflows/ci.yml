@@ -92,13 +92,13 @@ jobs:
       run: |
         chmod +x ./flow
         set -x  # Show commands being executed
-        ./flow test --tier 1 2>&1 | tee test_output.log
+        ./flow test --tier1 2>&1 | tee test_output.log
         exit ${PIPESTATUS[0]}
 
     - name: Run Tier 2 tests (transpile + compile)
       if: steps.changes.outputs.src == 'true' || steps.changes.outputs.tests == 'true'
       run: |
-        ./flow test --tier 2
+        ./flow test --tier2
 
     - name: Run Python unit tests
       if: steps.changes.outputs.src == 'true' || steps.changes.outputs.tests == 'true'
