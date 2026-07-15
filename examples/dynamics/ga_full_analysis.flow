@@ -1,0 +1,142 @@
+# GA control search + unified dynamical systems analysis
+#
+# What most languages cannot express in one program:
+#   - The GA optimizes a cost (optimization view)
+#   - The plant is a DynamicalSystem with controllability / Gramians (control view)
+#   - The GA solution induces a closed-loop attractor with spectral radius (geometry view)
+#   - The GA itself is a discrete dynamical system on fitness (meta-dynamics view)
+#
+# All four share the same Horizon / DynamicalSystem types — no glue code.
+
+import "stdlib/dynamics/ga_analysis.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function print_report(r: GAAnalysisReport, k1: f64, k2: f64) -> void {
+    println("")
+    println("=== GA + Dynamical Systems Analysis ===")
+    println("")
+    println("--- Plant (before GA) ---")
+    print("  Controllable:        ")
+    if r.plant_controllable == 1 {
+        println("yes")
+    } else {
+        println("NO — GA cannot find stabilizing gains")
+    }
+    print("  Open-loop |λ|_max:   ")
+    printf("%.4f", r.plant_spectral_radius)
+    println("")
+    print("  Gramian trace (N):   ")
+    printf("%.6f", r.gramian_open_finite)
+    println("")
+    print("  Gramian trace (∞):   ")
+    printf("%.6f", r.gramian_open_infinite)
+    println("")
+    println("--- GA search (fitness dynamics) ---")
+    print("  Baseline cost:       ")
+    printf("%.4f", r.baseline_cost)
+    println("")
+    print("  Evolved cost:        ")
+    printf("%.4f", r.evolved_cost)
+    println("")
+    print("  Improvement:         ")
+    printf("%.4f", r.fitness_drop)
+    println("")
+    print("  Converged within:    ")
+    print(r.convergence_gen)
+    println(" generations")
+    println("")
+    println("--- Closed loop (GA solution as attractor) ---")
+    print("  Evolved gains K:     [")
+    printf("%.4f", k1)
+    print(", ")
+    printf("%.4f", k2)
+    println("]")
+    print("  Closed-loop |λ|_max: ")
+    printf("%.4f", r.closed_spectral_radius)
+    println("")
+    if r.stable_closed_loop == 1 {
+        println("  Attractor:           stable fixed point (|λ| < 1)")
+    } else {
+        println("  Attractor:           UNSTABLE — GA landed on bad geometry")
+    }
+    print("  State energy (N=50): ")
+    printf("%.6f", r.closed_loop_energy)
+    println("  (trajectory contracts toward attractor)")
+    println("")
+    println("--- Why this is hard elsewhere ---")
+    println("  Python: GA in scipy/deap, control in python-control — separate objects.")
+    println("  Rust/C++: types don't unify optimization trajectories with Gramians.")
+    println("  Flow: one DynamicalSystem type spans plant, closed loop, and horizons.")
+    println("")
+}
+
+function main() -> i32 {
+    let n: i32 = 2
+    let m: i32 = 1
+    let A: array<f64, 4> = [1.0, 0.1, 0.0, 1.0]
+    let B: array<f64, 2> = [0.0, 0.1]
+    let C: array<f64, 2> = [1.0, 0.0]
+    let plant: DynamicalSystem = dsys_discrete(n, m, 1, 0.1,
+        Matrix { data: A, rows: n, cols: n },
+        Matrix { data: B, rows: n, cols: m },
+        Matrix { data: C, rows: 1, cols: n }
+    )
+
+    let cfg: GAConfig = GAConfig { population: 12, generations: 30, horizon: 50, mutation: 0.3 }
+    let k1: array<f64, 16> = [0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 0.0, 0.0, 0.0, 0.0]
+    let k2: array<f64, 16> = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 0.0, 0.0, 0.0, 0.0]
+    let fit: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let bk1: array<f64, 1> = [0.0]
+    let bk2: array<f64, 1> = [0.0]
+    let hist: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let ctrl: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let ap: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let blk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let na: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let rk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let wf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let wi: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let bbt: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sa: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sb: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let acl: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let bk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+
+    let report: GAAnalysisReport = ga_analyze_control_search(
+        plant, 50, cfg, k1, k2, fit, bk1, bk2, hist,
+        ctrl, ap, blk, na, rk, wf, wi, bbt, sa, sb, acl, bk
+    )
+
+    print_report(report, bk1[0], bk2[0])
+
+    println("Fitness trajectory (GA as dynamical system on cost):")
+    for g in 0 to 10 {
+        print("  gen ")
+        print(g)
+        print(": ")
+        printf("%.4f", hist[g])
+        println("")
+    }
+    print("  ... gen ")
+    print(29)
+    print(": ")
+    printf("%.4f", hist[29])
+    println("")
+
+    if report.plant_controllable != 1 {
+        return 1
+    }
+    if report.fitness_drop <= 0.0 {
+        return 2
+    }
+    if report.stable_closed_loop != 1 {
+        return 3
+    }
+    if report.closed_spectral_radius >= report.plant_spectral_radius {
+        return 4
+    }
+    return 0
+}
