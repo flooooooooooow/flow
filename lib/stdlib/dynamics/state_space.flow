@@ -1,0 +1,146 @@
+# State-space simulation, controllability, transformations
+# Import: import "stdlib/dynamics/state_space.flow"
+
+import "stdlib/dynamics/core.flow"
+
+function state_step(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void {
+    let n: i32 = sys.n
+    let Bu: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let Ax: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    matvec(sys.B, u, Bu)
+    matvec(sys.A, x, Ax)
+    for i in 0 to n {
+        x_next[i] = Ax[i] + Bu[i]
+    }
+}
+
+function state_step_continuous_euler(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void {
+    let n: i32 = sys.n
+    let dx: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let Bu: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let Ax: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    matvec(sys.A, x, Ax)
+    matvec(sys.B, u, Bu)
+    for i in 0 to n {
+        dx[i] = Ax[i] + Bu[i]
+        x_next[i] = x[i] + sys.dt * dx[i]
+    }
+}
+
+function rollout_discrete(
+    sys: DynamicalSystem,
+    x0: ptr<f64>,
+    u_seq: ptr<f64>,
+    steps: i32,
+    x_out: ptr<f64>
+) -> void {
+    let n: i32 = sys.n
+    let m: i32 = sys.m
+    let x_cur: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let x_next: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    vec_copy(x0, x_cur, n)
+    for t in 0 to steps {
+        for i in 0 to n {
+            x_out[t * n + i] = x_cur[i]
+        }
+        for j in 0 to m {
+            u[j] = u_seq[t * m + j]
+        }
+        state_step(sys, x_cur, u, x_next)
+        vec_copy(x_next, x_cur, n)
+    }
+}
+
+# Controllability matrix columns: A^k B for k = 0..n-1
+function build_controllability_matrix(
+    sys: DynamicalSystem,
+    ctrl_buf: ptr<f64>,
+    a_pow_buf: ptr<f64>,
+    block_buf: ptr<f64>,
+    next_a_buf: ptr<f64>
+) -> Matrix {
+    let n: i32 = sys.n
+    let m: i32 = sys.m
+    let cols: i32 = n * m
+    let ctrl: Matrix = matrix_zeros(ctrl_buf, n, cols)
+    let a_pow: Matrix = matrix_identity(a_pow_buf, n)
+    for k in 0 to n {
+        let block: Matrix = matrix_zeros(block_buf, n, m)
+        matrix_mul(a_pow, sys.B, block)
+        for i in 0 to n {
+            for j in 0 to m {
+                matrix_set(ctrl, i, k * m + j, matrix_get(block, i, j))
+            }
+        }
+        let next_a: Matrix = matrix_zeros(next_a_buf, n, n)
+        matrix_mul(sys.A, a_pow, next_a)
+        matrix_copy(next_a, a_pow)
+    }
+    return ctrl
+}
+
+function matrix_rank_estimate(m: Matrix, scratch: ptr<f64>) -> i32 {
+    let rows: i32 = m.rows
+    let cols: i32 = m.cols
+    let r: Matrix = matrix_zeros(scratch, rows, cols)
+    matrix_copy(m, r)
+    let mut rank: i32 = 0
+    let mut col: i32 = 0
+    while col < cols and rank < rows {
+        let mut pivot_row: i32 = rank
+        let mut found: i32 = 0
+        let mut search: i32 = rank
+        while search < rows {
+            if fabs(matrix_get(r, search, col)) > 1e-9 {
+                found = 1
+                pivot_row = search
+                search = rows
+            } else {
+                search = search + 1
+            }
+        }
+        if found == 1 {
+            for i in 0 to rows {
+                if i != pivot_row and fabs(matrix_get(r, i, col)) > 1e-9 {
+                    let factor: f64 = matrix_get(r, i, col) / matrix_get(r, pivot_row, col)
+                    for j in 0 to cols {
+                        let v: f64 = matrix_get(r, i, j) - factor * matrix_get(r, pivot_row, j)
+                        matrix_set(r, i, j, v)
+                    }
+                }
+            }
+            rank = rank + 1
+        }
+        col = col + 1
+    }
+    return rank
+}
+
+function is_controllable(sys: DynamicalSystem, ctrl_buf: ptr<f64>, a_pow_buf: ptr<f64>, block_buf: ptr<f64>, next_a_buf: ptr<f64>, rank_scratch: ptr<f64>) -> i32 {
+    let ctrl: Matrix = build_controllability_matrix(sys, ctrl_buf, a_pow_buf, block_buf, next_a_buf)
+    let rank: i32 = matrix_rank_estimate(ctrl, rank_scratch)
+    if rank >= sys.n {
+        return 1
+    }
+    return 0
+}
+
+# Similarity transform: A' = T^{-1} A T,  B' = T^{-1} B
+function apply_similarity(
+    sys: DynamicalSystem,
+    spec: TransformSpec,
+    out_a: ptr<f64>,
+    out_b: ptr<f64>,
+    work: ptr<f64>
+) -> DynamicalSystem {
+    let n: i32 = sys.n
+    let m: i32 = sys.m
+    let AT: Matrix = matrix_zeros(work, n, n)
+    let Ap: Matrix = matrix_zeros(out_a, n, n)
+    let Bp: Matrix = matrix_zeros(out_b, n, m)
+    matrix_mul(sys.A, spec.T, AT)
+    matrix_mul(spec.T_inv, AT, Ap)
+    matrix_mul(spec.T_inv, sys.B, Bp)
+    return dsys_discrete(n, m, sys.p, sys.dt, Ap, Bp, sys.C)
+}

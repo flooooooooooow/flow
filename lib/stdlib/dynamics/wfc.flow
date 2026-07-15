@@ -1,0 +1,170 @@
+# Wave Function Collapse (constraint propagation on tile grids)
+# Import: import "stdlib/dynamics/wfc.flow"
+#
+# Tiles: 0=empty, 1=wall, 2=floor, 3=door (each has N/E/S/W socket flags in table)
+
+struct WFCTile {
+    id: i32,
+    north: i32,
+    east: i32,
+    south: i32,
+    west: i32
+}
+
+struct WFCGrid {
+    width: i32,
+    height: i32,
+    cells: ptr<i32>
+    options: ptr<i32>
+}
+
+function wfc_tile_table(tid: i32) -> WFCTile {
+    if tid == 1 {
+        return WFCTile { id: 1, north: 1, east: 1, south: 1, west: 1 }
+    }
+    if tid == 2 {
+        return WFCTile { id: 2, north: 0, east: 0, south: 0, west: 0 }
+    }
+    if tid == 3 {
+        return WFCTile { id: 3, north: 0, east: 1, south: 0, west: 1 }
+    }
+    return WFCTile { id: 0, north: 0, east: 0, south: 0, west: 0 }
+}
+
+function wfc_compatible(a: WFCTile, b: WFCTile, dir: i32) -> i32 {
+    # dir: 0=N, 1=E, 2=S, 3=W  (does a's dir socket match b's opposite?)
+    if dir == 0 {
+        if a.north == b.south { return 1 }
+    }
+    if dir == 1 {
+        if a.east == b.west { return 1 }
+    }
+    if dir == 2 {
+        if a.south == b.north { return 1 }
+    }
+    if dir == 3 {
+        if a.west == b.east { return 1 }
+    }
+    return 0
+}
+
+function wfc_entropy_at(options: ptr<i32>, base: i32, count: i32) -> i32 {
+    let mut c: i32 = 0
+    for i in 0 to count {
+        if options[base + i] == 1 {
+            c = c + 1
+        }
+    }
+    return c
+}
+
+function wfc_collapse_at(options: ptr<i32>, base: i32, count: i32, seed: i32) -> i32 {
+    let mut pick: i32 = seed % count
+    for i in 0 to count {
+        if options[base + i] == 1 {
+            if pick == 0 {
+                return i
+            }
+            pick = pick - 1
+        }
+    }
+    return 0
+}
+
+function wfc_propagate(grid: WFCGrid, tile_count: i32) -> i32 {
+    let w: i32 = grid.width
+    let h: i32 = grid.height
+    let mut changed: i32 = 1
+    let mut guard: i32 = 0
+    while changed == 1 and guard < 64 {
+        changed = 0
+        guard = guard + 1
+        for y in 0 to h {
+            for x in 0 to w {
+                let idx: i32 = y * w + x
+                if grid.cells[idx] < 0 {
+                let base: i32 = idx * tile_count
+                for t in 0 to tile_count {
+                    if grid.options[base + t] == 1 {
+                    let tile: WFCTile = wfc_tile_table(t)
+                    if x > 0 {
+                        let nidx: i32 = idx - 1
+                        if grid.cells[nidx] >= 0 {
+                            let nb: WFCTile = wfc_tile_table(grid.cells[nidx])
+                            if wfc_compatible(tile, nb, 3) == 0 {
+                                grid.options[base + t] = 0
+                                changed = 1
+                            }
+                        }
+                    }
+                    if x + 1 < w {
+                        let nidx: i32 = idx + 1
+                        if grid.cells[nidx] >= 0 {
+                            let nb: WFCTile = wfc_tile_table(grid.cells[nidx])
+                            if wfc_compatible(tile, nb, 1) == 0 {
+                                grid.options[base + t] = 0
+                                changed = 1
+                            }
+                        }
+                    }
+                    if y > 0 {
+                        let nidx: i32 = idx - w
+                        if grid.cells[nidx] >= 0 {
+                            let nb: WFCTile = wfc_tile_table(grid.cells[nidx])
+                            if wfc_compatible(tile, nb, 0) == 0 {
+                                grid.options[base + t] = 0
+                                changed = 1
+                            }
+                        }
+                    }
+                    if y + 1 < h {
+                        let nidx: i32 = idx + w
+                        if grid.cells[nidx] >= 0 {
+                            let nb: WFCTile = wfc_tile_table(grid.cells[nidx])
+                            if wfc_compatible(tile, nb, 2) == 0 {
+                                grid.options[base + t] = 0
+                                changed = 1
+                            }
+                        }
+                    }
+                    }
+                }
+                }
+            }
+        }
+    }
+    return guard
+}
+
+function wfc_step(grid: WFCGrid, tile_count: i32, seed: i32) -> i32 {
+    let w: i32 = grid.width
+    let h: i32 = grid.height
+    let mut best_idx: i32 = -1
+    let mut best_ent: i32 = 999
+    for y in 0 to h {
+        for x in 0 to w {
+            let idx: i32 = y * w + x
+            if grid.cells[idx] < 0 {
+            let base: i32 = idx * tile_count
+            let ent: i32 = wfc_entropy_at(grid.options, base, tile_count)
+            if ent > 1 and ent < best_ent {
+                best_ent = ent
+                best_idx = idx
+            }
+            }
+        }
+    }
+    if best_idx < 0 {
+        return 0
+    }
+    let base: i32 = best_idx * tile_count
+    let choice: i32 = wfc_collapse_at(grid.options, base, tile_count, seed)
+    grid.cells[best_idx] = choice
+    for t in 0 to tile_count {
+        if t != choice {
+            grid.options[base + t] = 0
+        }
+    }
+    wfc_propagate(grid, tile_count)
+    return 1
+}

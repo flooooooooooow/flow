@@ -1,0 +1,46 @@
+# Controllability + similarity transform on mass-spring-damper
+import "stdlib/dynamics/state_space.flow"
+
+function main() -> i32 {
+    let dt: f64 = 0.05
+    let n: i32 = 2
+    let m: i32 = 1
+    # x1' = x2, x2' = -x1 - 0.3 x2 + u  → Euler discretize
+    let Ac: array<f64, 4> = [0.0, 1.0, -1.0, -0.3]
+    let Bc: array<f64, 2> = [0.0, 1.0]
+    let Cc: array<f64, 2> = [1.0, 0.0]
+    let A_cont: Matrix = Matrix { data: Ac, rows: n, cols: n }
+    let B_cont: Matrix = Matrix { data: Bc, rows: n, cols: m }
+    let C: Matrix = Matrix { data: Cc, rows: 1, cols: n }
+    let cont: DynamicalSystem = dsys_continuous(n, m, 1, dt, A_cont, B_cont, C)
+
+    let Ad: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let Bd: array<f64, 2> = [0.0, 0.0]
+    let Id: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sc: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sys: DynamicalSystem = dsys_euler_discretize(cont, Ad, Bd, Id, sc)
+
+    let ctrl: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let ap: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let blk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let na: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let rk: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    if is_controllable(sys, ctrl, ap, blk, na, rk) != 1 {
+        return 1
+    }
+
+    let T: array<f64, 4> = [1.0, 0.5, 0.0, 1.0]
+    let Tinv: array<f64, 4> = [1.0, -0.5, 0.0, 1.0]
+    let spec: TransformSpec = transform_similarity(
+        Matrix { data: T, rows: n, cols: n },
+        Matrix { data: Tinv, rows: n, cols: n }
+    )
+    let oa: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let ob: array<f64, 2> = [0.0, 0.0]
+    let work: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sys_t: DynamicalSystem = apply_similarity(sys, spec, oa, ob, work)
+    if matrix_get(sys_t.A, 0, 0) == matrix_get(sys.A, 0, 0) {
+        return 2
+    }
+    return 0
+}

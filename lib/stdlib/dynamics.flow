@@ -1,0 +1,26 @@
+# Flow Dynamical Systems Standard Library
+#
+# Declarative DSL via structs (no new keywords required):
+#
+#   import "stdlib/dynamics/core.flow"
+#   import "stdlib/dynamics/gramian.flow"
+#
+#   let sys = dsys_discrete(n: 2, m: 1, p: 1, dt: 0.1, A: A, B: B, C: C)
+#   let h_fin = horizon_finite(50)
+#   let h_inf = horizon_infinite(0.99)
+#   let Wc = gramian_finite_horizon(sys, h_fin, ...)
+#
+# Modules:
+#   dynamics/linalg.flow      — f64 matrices & vectors
+#   dynamics/core.flow        — DynamicalSystem, Horizon, TransformSpec
+#   dynamics/state_space.flow — simulation, controllability, similarity maps
+#   dynamics/gramian.flow     — finite / infinite horizon Gramians
+#   dynamics/attractor.flow   — RK4 flows, Lyapunov proxy
+#   dynamics/ga.flow          — genetic control search
+#   dynamics/wfc.flow         — wave function collapse grids
+#
+# Examples: examples/dynamics/
+
+function dynamics_stdlib_version() -> i32 {
+    return 1
+}

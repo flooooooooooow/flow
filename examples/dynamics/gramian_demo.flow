@@ -1,0 +1,39 @@
+# Finite vs infinite horizon controllability Gramian
+import "stdlib/dynamics/gramian.flow"
+
+function main() -> i32 {
+    # Double integrator (position, velocity), discrete Euler
+    let n: i32 = 2
+    let m: i32 = 1
+    let A_data: array<f64, 4> = [1.0, 0.1, 0.0, 1.0]
+    let B_data: array<f64, 2> = [0.0, 0.1]
+    let C_data: array<f64, 2> = [1.0, 0.0]
+    let A: Matrix = Matrix { data: A_data, rows: n, cols: n }
+    let B: Matrix = Matrix { data: B_data, rows: n, cols: m }
+    let C: Matrix = Matrix { data: C_data, rows: 1, cols: n }
+    let sys: DynamicalSystem = dsys_discrete(n, m, 1, 0.1, A, B, C)
+
+    let Wf_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let Wi_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let a_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let b_buf: array<f64, 2> = [0.0, 0.0]
+    let next_a: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let bbt: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sa: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sb: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+
+    let h_fin: Horizon = horizon_finite(30)
+    let h_inf: Horizon = horizon_infinite(0.99)
+    let Wf: Matrix = gramian_finite_horizon(sys, h_fin, Wf_buf, a_buf, b_buf, next_a)
+    let Wi: Matrix = gramian_infinite_horizon(sys, h_inf, Wi_buf, bbt, sa, sb)
+
+    let tr_f: f64 = matrix_trace(Wf)
+    let tr_i: f64 = matrix_trace(Wi)
+    if tr_f <= 0.0 || tr_i <= 0.0 {
+        return 1
+    }
+    if tr_f > 1000.0 || tr_i > 1000.0 {
+        return 2
+    }
+    return 0
+}
