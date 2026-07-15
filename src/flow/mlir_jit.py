@@ -160,28 +160,51 @@ class MLIRJIT:
         except FileNotFoundError:
             raise RuntimeError("mlir-translate could not be executed. Check that it exists and is executable.")
     
-    def _use_asan_executable_jit(self) -> bool:
-        """Use ASAN executable subprocess JIT on macOS arm64.
-
-        LLVM -O2 dylibs/executables can still hit arm64 aggregate-return stack
-        aliasing in dense/MLP paths; ASAN shifts stack layout and stabilizes runs.
-        Set FLOW_JIT_ASAN=0 to force the in-process dylib path (faster, flaky).
-        """
+    @staticmethod
+    def _asan_preferred() -> bool:
+        """Prefer ASAN executable JIT on macOS arm64 (stable aggregate-return codegen)."""
         env = os.environ.get("FLOW_JIT_ASAN")
         if env is not None:
             return env.lower() not in ("0", "false", "no", "off")
         return sys.platform == "darwin"
 
-    def _clang_jit_flags(self, *, shared: bool) -> List[str]:
-        if self._use_asan_executable_jit():
+    @staticmethod
+    def _force_fast_jit() -> bool:
+        """FLOW_JIT_ASAN=0: try fast -O2 executable before ASAN fallback."""
+        env = os.environ.get("FLOW_JIT_ASAN")
+        return env is not None and env.lower() in ("0", "false", "no", "off")
+
+    @staticmethod
+    def normalize_exit_code(code: Optional[int]) -> int:
+        if code is None:
+            return -1
+        return code
+
+    @classmethod
+    def is_crash_exit(cls, code: Optional[int]) -> bool:
+        """True when native code died from a signal (segfault, bus error, etc.)."""
+        if code is None:
+            return True
+        if code < 0:
+            return True
+        return code in (134, 138, 139)
+
+    @staticmethod
+    def _clang_jit_flags(*, shared: bool, asan: bool) -> List[str]:
+        flags = ["-O2"]
+        if asan:
             flags = ["-fsanitize=address", "-g", "-O2", "-fno-omit-frame-pointer"]
-        else:
-            flags = ["-O2"]
         if shared:
             flags = ["-shared", "-fPIC", *flags]
         return flags
 
-    def compile_llvm_to_executable(self, llvm_ir: str, module_name: str = "jit_module") -> Optional[Path]:
+    def compile_llvm_to_executable(
+        self,
+        llvm_ir: str,
+        module_name: str = "jit_module",
+        *,
+        asan: bool = False,
+    ) -> Optional[Path]:
         """Compile LLVM IR to a standalone executable."""
         module_name = self._unique_module_name(module_name)
         llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
@@ -189,7 +212,14 @@ class MLIRJIT:
         llvm_file.write_text(llvm_ir)
         try:
             result = subprocess.run(
-                ["clang", *self._clang_jit_flags(shared=False), str(llvm_file), "-o", str(exe_file), "-lm"],
+                [
+                    "clang",
+                    *self._clang_jit_flags(shared=False, asan=asan),
+                    str(llvm_file),
+                    "-o",
+                    str(exe_file),
+                    "-lm",
+                ],
                 capture_output=True,
                 text=True,
                 stdin=subprocess.DEVNULL,
@@ -201,6 +231,32 @@ class MLIRJIT:
         except FileNotFoundError:
             print("❌ clang not found. Install Clang for JIT compilation.")
             return None
+
+    def _run_native_executable(self, exe: Path) -> int:
+        """Run JIT code in an isolated subprocess so crashes cannot kill Python."""
+        timeout_s = int(os.environ.get("FLOW_JIT_TIMEOUT", "300"))
+        try:
+            result = subprocess.run(
+                [str(exe)],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=timeout_s,
+            )
+            if result.stdout:
+                sys.stdout.write(result.stdout)
+            if result.stderr:
+                sys.stderr.write(result.stderr)
+            return self.normalize_exit_code(result.returncode)
+        except subprocess.TimeoutExpired:
+            print(f"❌ JIT execution timed out after {timeout_s}s")
+            return -1
+        except OSError as e:
+            print(f"❌ JIT subprocess failed to start: {e}")
+            return -1
+        except Exception as e:
+            print(f"❌ JIT subprocess error: {e}")
+            return -1
 
     def _unique_module_name(self, module_name: str = "jit_module") -> str:
         self._module_seq += 1
@@ -219,8 +275,12 @@ class MLIRJIT:
         try:
             # Compile LLVM IR to shared library
             result = subprocess.run([
-                "clang", *self._clang_jit_flags(shared=True),
-                str(llvm_file), "-o", str(so_file), "-lm"
+                "clang",
+                *self._clang_jit_flags(shared=True, asan=False),
+                str(llvm_file),
+                "-o",
+                str(so_file),
+                "-lm",
             ], capture_output=True, text=True, stdin=subprocess.DEVNULL)
             
             if result.returncode != 0:
@@ -237,57 +297,72 @@ class MLIRJIT:
             print("❌ clang not found. Install Clang for JIT compilation.")
             return None
     
-    def execute_function(self, lib: ctypes.CDLL, func_name: str, 
+    def execute_function(self, lib: ctypes.CDLL, func_name: str,
                          args: List[Any] = None, return_type: type = int) -> Any:
-        """Execute a compiled function"""
-        if func_name not in self.compiled_modules:
-            # Try to find the function in the library
-            try:
-                func = getattr(lib, func_name)
-            except AttributeError:
-                print(f"❌ Function {func_name} not found in compiled module")
-                return None
-        else:
+        """Execute a compiled function in-process (testing only — crashes are not catchable)."""
+        try:
             func = getattr(lib, func_name)
-        
-        # Set argument and return types
+        except AttributeError:
+            print(f"❌ Function {func_name} not found in compiled module")
+            return None
+
         if args:
             func.argtypes = [ctypes.c_int] * len(args)
         func.restype = ctypes.c_int if return_type is int else ctypes.c_void_p
-        
-        # Call the function
-        if args:
-            return func(*args)
-        else:
+
+        try:
+            if args:
+                return func(*args)
             return func()
-    
+        except Exception as e:
+            print(f"❌ In-process JIT call failed: {e}")
+            return None
+
     def jit_compile_and_run(self, mlir_code: str, func_name: str = "main",
                            args: List[Any] = None) -> Optional[Any]:
-        """Full JIT pipeline: MLIR -> LLVM -> Native -> Execute"""
-        llvm_ir = self.compile_mlir_to_llvm(mlir_code)
-        if not llvm_ir:
-            return None
+        """Full JIT pipeline: MLIR -> LLVM -> native executable -> subprocess execute.
 
-        if self._use_asan_executable_jit():
-            exe = self.compile_llvm_to_executable(llvm_ir)
-            if not exe:
-                return None
-            try:
-                result = subprocess.run(
-                    [str(exe)],
-                    capture_output=True,
-                    text=True,
-                    stdin=subprocess.DEVNULL,
-                )
-                return result.returncode
-            except Exception:
+        Native code never runs in the Python process (segfaults cannot be caught
+        via try/except). On crash, automatically retries with an ASAN executable.
+        """
+        del func_name, args  # entry point is always main() in the JIT executable
+        try:
+            llvm_ir = self.compile_mlir_to_llvm(mlir_code)
+            if not llvm_ir:
                 return None
 
-        lib = self.compile_llvm_to_native(llvm_ir)
-        if not lib:
-            return None
+            attempts: List[tuple[str, bool]] = []
+            if self._force_fast_jit():
+                attempts.append(("fast", False))
+                attempts.append(("asan-fallback", True))
+            elif self._asan_preferred():
+                attempts.append(("asan", True))
+            else:
+                attempts.append(("fast", False))
+                attempts.append(("asan-fallback", True))
 
-        return self.execute_function(lib, func_name, args)
+            last_code: Optional[int] = None
+            for idx, (label, asan) in enumerate(attempts):
+                exe = self.compile_llvm_to_executable(llvm_ir, asan=asan)
+                if exe is None:
+                    continue
+                code = self._run_native_executable(exe)
+                last_code = code
+                if not self.is_crash_exit(code):
+                    return code
+                if idx + 1 < len(attempts):
+                    print(
+                        "⚠️  JIT native crash (exit "
+                        f"{code}); retrying with ASAN executable..."
+                    )
+                    continue
+                print(f"❌ JIT native crash (exit {code}) after all attempts")
+                return code
+
+            return last_code
+        except Exception as e:
+            print(f"❌ JIT pipeline error: {e}")
+            return None
     
     def cleanup(self):
         """Release JIT handles. Temp dylibs are left for the OS to reclaim at exit."""
