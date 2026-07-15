@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If on the diameter of a circle a point is taken and a perpendicular is erected, the square on the half-diameter exceeds the square on the line to the point by the square on the perpendicular.
+# @from   euclid — Elements, Book III, Proposition 7
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 47: square on hypotenuse equals sum of squares on legs»
+
+theorem «Geometry» «Euclid Book III» «Proposition 7: the square on a half-diameter exceeds the square on a line to an interior point» () {
+    let AB = diameter
+    let C = interior_point
+    let D = foot_of_perpendicular
+    therefore sq(half) == sq(AC) + sq(CD)
+    assume «Geometry» «Euclid Book I» «Proposition 47: square on hypotenuse equals sum of squares on legs»()
+    therefore sq(half_diameter) == sq(line_to_point) + sq(perpendicular)
+}

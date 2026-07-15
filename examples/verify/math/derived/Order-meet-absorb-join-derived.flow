@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Meet absorbs into join in a lattice witness.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, join(a, b)) = meet(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «meet absorbs join on the left», «Order» «meet» «meet is below the left argument»
+
+theorem «Order» «lattice» «meet absorbs join derived» (a: Nat, b: Nat) {
+    assume «Order» «lattice» «meet absorbs join on the left»(a, b)
+    assume «Order» «meet» «meet is below the left argument»(a, b)
+    therefore meet(a, join(a, b)) == meet(a, b)
+}
+
+export «Order» «lattice» «meet absorbs join derived»

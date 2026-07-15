@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Appending twelve singletons gives length twelve.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len of twelve appended singletons equals 12.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «append preserves length sum», «List» «length» «append of eleven singletons has length eleven»
+
+theorem «List» «length» «append of twelve singletons has length twelve» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat, j: Nat, k: Nat, l: Nat) {
+    assume «List» «length» «append preserves length sum»(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil) ++ cons(e, nil) ++ cons(f, nil) ++ cons(g, nil) ++ cons(h, nil) ++ cons(i, nil) ++ cons(j, nil) ++ cons(k, nil), cons(l, nil))
+    assume «List» «length» «append of eleven singletons has length eleven»(a, b, c, d, e, f, g, h, i, j, k)
+    therefore len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil) ++ cons(e, nil) ++ cons(f, nil) ++ cons(g, nil) ++ cons(h, nil) ++ cons(i, nil) ++ cons(j, nil) ++ cons(k, nil) ++ cons(l, nil)) == 12
+}
+
+export «List» «length» «append of twelve singletons has length twelve»

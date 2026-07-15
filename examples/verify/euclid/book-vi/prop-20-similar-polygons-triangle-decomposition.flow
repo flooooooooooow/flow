@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  Similar polygons may be divided into the same number of similar triangles corresponding in order and proportion.
+# @from   euclid — Elements, Book VI, Proposition 20
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 19: similar rectilineal figures are in duplicate ratio of corresponding sides»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 20: similar polygons are divided into the same number of similar triangles» () {
+    let poly1 = polygon_1
+    let poly2 = polygon_2
+    let triangles1 = decomposition
+    therefore triangles_similar_in_order
+    assume «Geometry» «Euclid Book VI» «Proposition 19: similar rectilineal figures are in duplicate ratio of corresponding sides»()
+    therefore similar_polygons_same_triangle_decomposition
+}

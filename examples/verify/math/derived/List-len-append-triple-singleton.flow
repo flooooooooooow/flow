@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Appending three singletons gives length three.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil)) = 3.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «append preserves length sum», «List» «length» «append of two singletons has length two»
+
+theorem «List» «length» «append of three singletons has length three» (a: Nat, b: Nat, c: Nat) {
+    assume «List» «length» «append preserves length sum»(cons(a, nil) ++ cons(b, nil), cons(c, nil))
+    assume «List» «length» «append of two singletons has length two»(a, b)
+    therefore len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil)) == 3
+}
+
+export «List» «length» «append of three singletons has length three»

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360">
+<style>text{font-family:Georgia,serif;font-size:15px;fill:#1a1a1a}</style>
+<rect width="100%" height="100%" fill="#faf9f6"/>
+<circle cx="240.0" cy="200.0" r="130.0" fill="none" stroke="#95a5a6" stroke-width="1.8"/>
+<line x1="100.0" y1="200.0" x2="380.0" y2="200.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="100.0" y1="200.0" x2="240.0" y2="70.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="380.0" y1="200.0" x2="240.0" y2="70.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 260.5 89.1 A 28.0 28.0 0 0 1 219.5 89.1" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="240.0" y="112.0" text-anchor="middle">θ</text>
+<path d="M 229.7 79.5 L 240.0 89.1 L 250.3 79.5" fill="none" stroke="#2c3e50" stroke-width="1.5"/>
+<circle cx="240.0" cy="200.0" r="4.5" fill="#2c3e50"/>
+<text x="240.0" y="186.0" text-anchor="middle" font-weight="bold">O</text>
+<circle cx="100.0" cy="200.0" r="4.5" fill="#2c3e50"/>
+<text x="100.0" y="186.0" text-anchor="middle" font-weight="bold">A</text>
+<circle cx="380.0" cy="200.0" r="4.5" fill="#2c3e50"/>
+<text x="380.0" y="186.0" text-anchor="middle" font-weight="bold">B</text>
+<circle cx="240.0" cy="70.0" r="4.5" fill="#2c3e50"/>
+<text x="240.0" y="90.0" text-anchor="middle" font-weight="bold">C</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Angle in a semicircle — when AB is a diameter, the inscribed angle at C is a right angle.</text>
+</svg>

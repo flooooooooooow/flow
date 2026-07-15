@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  One plus one is two in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  1 + 1 = 2 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «one plus one is two», «Ideal» «one» «one plus zero is one»
+
+theorem «Ideal» «addition» «one plus one in ideal» () {
+    assume «Ideal» «addition» «one plus one is two»()
+    assume «Ideal» «one» «one plus zero is one»()
+    therefore 1 + 1 == 2
+}
+
+export «Ideal» «addition» «one plus one in ideal»

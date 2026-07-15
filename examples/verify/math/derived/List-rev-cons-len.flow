@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Reverse of cons preserves the tail length increment.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(cons(x, xs))) = len(cons(x, xs)).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves cons length»
+
+theorem «List» «length» «reverse preserves cons length derived» (x: Nat, xs: List) {
+    assume «List» «length» «reverse preserves cons length»(x, xs)
+    therefore len(rev(cons(x, xs))) == len(cons(x, xs))
+}
+
+export «List» «length» «reverse preserves cons length derived»

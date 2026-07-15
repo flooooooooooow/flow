@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  Equal parallelograms which are on equal bases and on the same side are also in the same parallels.
+# @from   euclid — Elements, Book VI, Proposition 30
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 29: equal parallelograms on the same base are in the same parallels»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 30: equal parallelograms on equal bases are in the same parallels» () {
+    let ABCD = parallelogram_1
+    let EFGH = parallelogram_2
+    let equal_bases = bases
+    therefore in_same_parallels
+    assume «Geometry» «Euclid Book VI» «Proposition 29: equal parallelograms on the same base are in the same parallels»()
+    therefore equal_pars_equal_bases_same_parallels
+}

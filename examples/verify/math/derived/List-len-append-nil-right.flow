@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Appending the empty list on the right preserves length.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(xs ++ nil) = len(xs).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «length adds under append», «Nat» «addition» «zero is the right identity»
+
+theorem «List» «length» «append empty on the right preserves length» (xs: List) {
+    assume «List» «length» «length adds under append»(xs, nil)
+    assume «Nat» «addition» «zero is the right identity»(len(xs))
+    therefore len(xs ++ nil) == len(xs)
+}
+
+export «List» «length» «append empty on the right preserves length»

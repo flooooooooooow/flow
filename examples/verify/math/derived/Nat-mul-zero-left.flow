@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Zero on the left annihilates multiplication.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 * n = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the left annihilator», «Nat» «multiplication» «zero is the right annihilator», «Nat» «multiplication» «order does not matter»
+
+import verify.Nat-mul { zero-left-annihilator }
+import .Nat-mul-commutes { mul-commutes }
+
+theorem «Nat» «multiplication» «zero on the left gives zero» (n: Nat) {
+    assume «Nat» «multiplication» «zero is the left annihilator»(n)
+    assume «Nat» «multiplication» «zero is the right annihilator»(0)
+    assume «Nat» «multiplication» «order does not matter»(0, n)
+    therefore 0 * n == 0
+}
+
+export «Nat» «multiplication» «zero on the left gives zero»

@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Right-empty intersection has cardinality zero.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  card(s ∩ empty) = 0.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «intersection» «intersection with empty has size zero»
+
+theorem «Finset» «cardinality» «right empty intersection has size zero derived» (s: Finset) {
+    assume «Finset» «intersection» «intersection with empty has size zero»(s)
+    therefore card(s ∩ empty) == 0
+}
+
+export «Finset» «cardinality» «right empty intersection has size zero derived»

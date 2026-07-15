@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Four plus zero is four in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  4 + 0 = 4.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «three plus zero is three»
+
+theorem «Monoid» «addition» «four plus zero is four» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(4)
+    assume «Monoid» «addition» «three plus zero is three»()
+    therefore 4 + 0 == 4
+}
+
+export «Monoid» «addition» «four plus zero is four»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The 12-16-20 triangle satisfies the Pythagorean relation.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  20 squared equals 12 squared plus 16 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «nine twelve fifteen scaled witness», «Geometry» «right triangle» «six eight ten satisfies Pythagoras»
+
+theorem «Geometry» «right triangle» «twelve sixteen twenty satisfies Pythagoras» () {
+    assume «Geometry» «right triangle» «nine twelve fifteen scaled witness»()
+    assume «Geometry» «right triangle» «six eight ten satisfies Pythagoras»()
+    therefore 20 * 20 == 12 * 12 + 16 * 16
+}
+
+export «Geometry» «right triangle» «twelve sixteen twenty satisfies Pythagoras»

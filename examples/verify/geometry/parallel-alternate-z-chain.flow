@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Alternate and Z-angle equalities chain along a transversal.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  alternate alpha equals z-angle beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «transversal angle cycle holds», «Geometry» «parallel lines» «z angles are equal»
+
+theorem «Geometry» «parallel lines» «alternate and z angles chain» () {
+    assume «Geometry» «parallel lines» «transversal angle cycle holds»()
+    assume «Geometry» «parallel lines» «z angles are equal»()
+    therefore angle_alternate_alpha == angle_z_beta
+}
+
+export «Geometry» «parallel lines» «alternate and z angles chain»

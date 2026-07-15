@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Six plus zero is six in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  6 + 0 = 6 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «five plus zero in ideal»
+
+theorem «Ideal» «addition» «six plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(6)
+    assume «Ideal» «addition» «five plus zero in ideal»()
+    therefore 6 + 0 == 6
+}
+
+export «Ideal» «addition» «six plus zero in ideal»

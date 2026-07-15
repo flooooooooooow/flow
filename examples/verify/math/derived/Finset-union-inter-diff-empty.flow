@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Union intersect difference with empty is the intersection.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  ((s ∪ t) ∩ s) \ empty = (s ∪ t) ∩ s.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «difference» «difference with empty preserves the set», «Finset» «cardinality» «union intersect self card derived»
+
+theorem «Finset» «difference» «union intersect diff empty derived» (s: Finset, t: Finset) {
+    assume «Finset» «difference» «difference with empty preserves the set»((s ∪ t) ∩ s)
+    assume «Finset» «cardinality» «union intersect self card derived»(s, t)
+    therefore ((s ∪ t) ∩ s) \ empty == (s ∪ t) ∩ s
+}
+
+export «Finset» «difference» «union intersect diff empty derived»

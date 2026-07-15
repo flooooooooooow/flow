@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If a first magnitude is the same multiple of a second that a third is of a fourth, the difference of the first and third is the same multiple of the difference of the second and fourth.
+# @from   euclid — Elements, Book V, Proposition 3
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 2: the sum of equimultiples is an equimultiple of the sum»
+
+theorem «Geometry» «Euclid Book V» «Proposition 3: the difference of equimultiples is an equimultiple of the difference» () {
+    let a = first
+    let b = second
+    let c = third
+    let d = fourth
+    therefore equimultiple(a - c, b - d)
+    assume «Geometry» «Euclid Book V» «Proposition 2: the sum of equimultiples is an equimultiple of the sum»()
+    therefore difference_equimultiple_preserved
+}

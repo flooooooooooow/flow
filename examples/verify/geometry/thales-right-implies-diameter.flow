@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  A right inscribed angle implies the subtending chord is a diameter.
+# @from   euclid — Elements, Book III, Proposition 31
+# @tier   derived
+
+# @means  chord AB is a diameter when angle ACB is right.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «semicircle inscribed angle is right witness», «Geometry» «circle» «central angle on diameter is two right»
+
+theorem «Geometry» «circle» «right inscribed implies diameter chord» () {
+    assume «Geometry» «circle» «semicircle inscribed angle is right witness»()
+    assume «Geometry» «circle» «central angle on diameter is two right»()
+    therefore chord_AB_is_diameter
+}
+
+export «Geometry» «circle» «right inscribed implies diameter chord»

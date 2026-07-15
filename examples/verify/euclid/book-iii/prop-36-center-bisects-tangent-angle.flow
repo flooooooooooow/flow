@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iii
+# @means  If from a point outside a circle two straight lines touch it, the line joining the point to the center bisects the angle between the tangents.
+# @from   euclid — Elements, Book III, Proposition 36
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal», «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»
+
+theorem «Geometry» «Euclid Book III» «Proposition 36: the line to the center bisects the angle between tangents» () {
+    let P = exterior_point
+    let O = center
+    let TA = tangent_at_A
+    therefore angle_APT == angle_BPT
+    assume «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal»()
+    assume «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»()
+    therefore center_line_bisects_tangent_angle
+}

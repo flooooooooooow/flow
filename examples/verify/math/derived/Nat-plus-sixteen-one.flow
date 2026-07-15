@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Sixteen plus one is seventeen.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  16 + 1 = 17.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «fifteen plus one is sixteen»
+
+theorem «Nat» «addition» «sixteen plus one is seventeen» () {
+    assume «Nat» «addition» «fifteen plus one is sixteen»()
+    therefore 16 + 1 == 17
+}
+
+export «Nat» «addition» «sixteen plus one is seventeen»

@@ -1,0 +1,25 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (O) at (240.0,170.0);
+  \coordinate (A) at (110.0,110.0);
+  \coordinate (B) at (370.0,110.0);
+  \coordinate (P) at (240.0,305.0);
+  \draw[gray] (O) circle (135.0);
+  \draw[thick] (O) -- (A);
+  \draw[thick] (O) -- (B);
+  \draw[thick] (P) -- (A);
+  \draw[thick] (P) -- (B);
+  \pic [draw, angle radius=5mm, "$2\theta$"] {angle = A--O--B};
+  \pic [draw, angle radius=5mm, "$\theta$"] {angle = A--P--B};
+  \fill (O) circle (6pt);
+  \node[font=\bfseries] at ($( O ) + (0,-14)$) {O};
+  \fill (A) circle (6pt);
+  \node[font=\bfseries] at ($( A ) + (0,-14)$) {A};
+  \fill (B) circle (6pt);
+  \node[font=\bfseries] at ($( B ) + (0,-14)$) {B};
+  \fill (P) circle (6pt);
+  \node[font=\bfseries] at ($( P ) + (0,20)$) {P};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Inscribed angle θ at P equals half the central angle 2θ subtending arc AB.};
+\end{tikzpicture}
+\end{center}

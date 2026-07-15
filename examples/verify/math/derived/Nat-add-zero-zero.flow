@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero plus zero is zero for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 + 0 = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the left identity»
+
+theorem «Nat» «addition» «zero plus zero is zero» () {
+    assume «Nat» «addition» «zero is the left identity»(0)
+    therefore 0 + 0 == 0
+}
+
+export «Nat» «addition» «zero plus zero is zero»

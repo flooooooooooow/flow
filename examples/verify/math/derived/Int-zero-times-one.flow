@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero times one is zero for integers.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  0 * 1 = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «multiplication» «zero on the left gives zero»
+
+theorem «Int» «multiplication» «zero times one is zero» () {
+    assume «Int» «multiplication» «zero on the left gives zero»(1)
+    therefore 0 * 1 == 0
+}
+
+export «Int» «multiplication» «zero times one is zero»

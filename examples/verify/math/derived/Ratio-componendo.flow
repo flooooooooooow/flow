@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Proportional magnitudes satisfy componendo.
+# @from   euclid — Elements, Book V, Proposition 11
+# @tier   derived
+
+# @means  a:b = c:d implies (a+b):b = (c+d):d.
+# @from   euclid
+# @tier   derived
+# @needs  «Ratio» «proportion» «alternando holds», «Ratio» «proportion» «invertendo holds»
+
+import .Ratio-invertendo { invertendo }
+
+theorem «Ratio» «proportion» «componendo holds» (a: Magnitude, b: Magnitude, c: Magnitude, d: Magnitude) {
+    assume «Ratio» «proportion» «alternando holds»(a, b, c, d)
+    assume «Ratio» «proportion» «invertendo holds»(a, b, c, d)
+    therefore ratio(a + b, b) == ratio(c + d, d)
+}
+
+export «Ratio» «proportion» «componendo holds»

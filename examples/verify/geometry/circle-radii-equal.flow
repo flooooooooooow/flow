@@ -1,0 +1,8 @@
+# @means  All radii of a circle from the centre to the circumference are equal.
+# @from   euclid — Elements, Book I, Definition 15
+# @tier   definition
+# @diagram circle-radii-equal
+
+theorem «Geometry» «circle» «radii from the centre are equal» () {
+    therefore radius_OA == radius_OB
+}

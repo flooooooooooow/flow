@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Half the diameter equals a radius, alternate witness.
+# @from   euclid — Elements, Book I, Definition 15
+# @tier   derived
+
+# @means  half of diameter AB equals radius OA.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «diameter is twice radius», «Geometry» «circle» «radius equals half diameter»
+
+theorem «Geometry» «circle» «half diameter equals radius alt» () {
+    assume «Geometry» «circle» «diameter is twice radius»()
+    assume «Geometry» «circle» «radius equals half diameter»()
+    therefore half_of_diameter_AB == radius_OA
+}
+
+export «Geometry» «circle» «half diameter equals radius alt»

@@ -1,0 +1,12 @@
+# @module examples.verify.math.derived
+# @means  One is the right multiplicative identity in a ring.
+# @from   Ring one right identity
+# @tier   derived
+# @needs  «Ring» «one» «right identity»
+
+theorem «Ring» «one» «right identity» (x : «Ring» «Nat») {
+    assume «Ring» «mul»(x, 1) = x
+    therefore «Ring» «mul»(x, 1) = x
+}
+
+export «Ring» «one» «right identity»

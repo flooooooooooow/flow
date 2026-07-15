@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  True disjoined with itself is true.
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @tier   derived
+
+# @means  true or true = true.
+# @from   boole
+# @tier   derived
+# @needs  «Bool» «disjunction» «true is absorbing on the left»
+
+theorem «Bool» «disjunction» «true disjoined with itself is true» () {
+    assume «Bool» «disjunction» «true is absorbing on the left»(true)
+    therefore true or true == true
+}
+
+export «Bool» «disjunction» «true disjoined with itself is true»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Quadruple cons ending in nil has length four.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(a, cons(b, cons(c, cons(d, nil))))) = 4.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «cons increases length by one», «List» «length» «triple cons nil has length three»
+
+theorem «List» «length» «quadruple cons nil has length four» (a: Nat, b: Nat, c: Nat, d: Nat) {
+    assume «List» «length» «cons increases length by one»(cons(b, cons(c, cons(d, nil))))
+    assume «List» «length» «triple cons nil has length three»(b, c, d)
+    therefore len(cons(a, cons(b, cons(c, cons(d, nil))))) == 4
+}
+
+export «List» «length» «quadruple cons nil has length four»

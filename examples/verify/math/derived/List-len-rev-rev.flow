@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Double reverse preserves length.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(rev(rev(xs))) = len(xs).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «reverse preserves length», «List» «reverse» «double reverse returns the list»
+
+theorem «List» «length» «double reverse preserves length» (xs: List) {
+    assume «List» «length» «reverse preserves length»(rev(xs))
+    assume «List» «reverse» «double reverse returns the list»(xs)
+    therefore len(rev(rev(xs))) == len(xs)
+}
+
+export «List» «length» «double reverse preserves length»

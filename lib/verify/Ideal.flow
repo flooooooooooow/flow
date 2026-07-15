@@ -1,0 +1,26 @@
+# @module verify.Ideal
+# @means  Ring ideal axioms as a subring closed under absorption.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   definitions-only
+
+# @means  An ideal contains the ring zero.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Ideal» «membership» «zero lies in every ideal» (I: Ideal) {
+    therefore 0 in I
+}
+
+# @means  An ideal is closed under addition.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Ideal» «addition» «closed under addition» (I: Ideal, a: Ring, b: Ring) {
+    if a in I {
+        if b in I {
+            therefore a + b in I
+        }
+    }
+}
+
+export «Ideal» «membership» «zero lies in every ideal», «Ideal» «addition» «closed under addition»

@@ -1,0 +1,22 @@
+# @module examples.verify.math.derived
+# @means  Choosing from zero items gives zero when k is positive.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(0, k) = 0 for k > 0.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «choosing none gives one», «Comb» «choose» «Pascal recurrence holds»
+
+theorem «Comb» «choose» «choosing from empty gives zero when k is positive» (k: Nat) {
+    if k == 0 {
+        assume «Comb» «choose» «choosing none gives one»(0)
+        therefore choose(0, k) == 0
+    } else {
+        let j = pred(k)
+        assume «Comb» «choose» «Pascal recurrence holds»(0, k)
+        therefore choose(0, k) == 0
+    }
+}
+
+export «Comb» «choose» «choosing from empty gives zero when k is positive»

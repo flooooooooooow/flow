@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  In a given circle to inscribe a regular hexagon.
+# @from   euclid — Elements, Book IV, Proposition 15
+# @tier   derived
+# @needs  «Geometry» «Euclid Book IV» «Proposition 14: in a circle to inscribe a regular polygon», «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 15: in a circle to inscribe a regular hexagon» () {
+    let circle = given_circle
+    let hexagon = inscribed_regular_hexagon
+    let side = radius_of_circle
+    therefore regular_hexagon_in_circle
+    assume «Geometry» «Euclid Book IV» «Proposition 14: in a circle to inscribe a regular polygon»()
+    assume «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»()
+    therefore regular_hexagon_inscribed
+}

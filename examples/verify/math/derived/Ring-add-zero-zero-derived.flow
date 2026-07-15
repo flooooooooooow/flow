@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero plus zero is zero in a ring.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  0 + 0 = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «addition» «zero plus zero is zero»
+
+theorem «Ring» «addition» «zero plus zero derived» () {
+    assume «Ring» «addition» «zero plus zero is zero»()
+    therefore 0 + 0 == 0
+}
+
+export «Ring» «addition» «zero plus zero derived»

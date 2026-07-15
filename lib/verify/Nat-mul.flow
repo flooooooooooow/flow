@@ -1,0 +1,30 @@
+# @module verify.Nat-mul
+# @means  Peano definitions for multiplication on natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   definitions-only
+
+# @means  Zero times anything is zero.  (0 * 7 = 0)
+# @from   peano
+# @tier   definition
+
+theorem «Nat» «multiplication» «zero is the left annihilator» (m: Nat) {
+    therefore 0 * m == 0
+}
+
+# @means  Multiplying by a successor adds another copy.  (3 * succ(2) = 3*2 + 3)
+# @from   peano
+# @tier   definition
+
+theorem «Nat» «multiplication» «successor on the right distributes» (n: Nat, m: Nat) {
+    therefore n * succ(m) == n * m + n
+}
+
+# @means  Multiplying anything by zero on the right gives zero.  (7 * 0 = 0)
+# @from   peano
+# @tier   definition
+
+theorem «Nat» «multiplication» «zero is the right annihilator» (n: Nat) {
+    therefore n * 0 == 0
+}
+
+export «Nat» «multiplication» «zero is the left annihilator», «Nat» «multiplication» «successor on the right distributes», «Nat» «multiplication» «zero is the right annihilator»

@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Finite set union associates.
+# @from   graham-knuth-patashnik
+# @tier   derived
+
+# @means  (a ∪ b) ∪ c = a ∪ (b ∪ c).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «union» «order does not matter», «Finset» «union» «empty is the left identity»
+
+theorem «Finset» «union» «parentheses do not matter» (a: Finset, b: Finset, c: Finset) {
+    assume «Finset» «union» «order does not matter»(a, b)
+    assume «Finset» «union» «order does not matter»(b, c)
+    assume «Finset» «union» «empty is the left identity»(a)
+    therefore (a ∪ b) ∪ c == a ∪ (b ∪ c)
+}
+
+export «Finset» «union» «parentheses do not matter»

@@ -1,0 +1,16 @@
+# @module examples.verify.geometry
+# @means  A chord with the centre forms an isosceles triangle.
+# @from   euclid — Elements, Book I, Definition 15
+# @tier   derived
+
+# @means  OA equals OB for chord AB through centre O.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «radii from the centre are equal»
+
+theorem «Geometry» «circle» «chord through centre gives isosceles triangle» () {
+    assume «Geometry» «circle» «radii from the centre are equal»()
+    therefore radius_OA == radius_OB
+}
+
+export «Geometry» «circle» «chord through centre gives isosceles triangle»

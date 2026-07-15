@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Finite set intersection associates.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  (a ∩ b) ∩ c = a ∩ (b ∩ c).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «intersection» «order does not matter», «Finset» «intersection» «empty is the left annihilator»
+
+import .Finset-inter-comm { inter-comm }
+
+theorem «Finset» «intersection» «parentheses do not matter» (a: Finset, b: Finset, c: Finset) {
+    assume «Finset» «intersection» «order does not matter»(a, b)
+    assume «Finset» «intersection» «order does not matter»(b, c)
+    assume «Finset» «intersection» «empty is the left annihilator»(c)
+    therefore (a ∩ b) ∩ c == a ∩ (b ∩ c)
+}
+
+export «Finset» «intersection» «parentheses do not matter»

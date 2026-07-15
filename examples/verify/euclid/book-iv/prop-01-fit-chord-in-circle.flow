@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-iv
+# @means  In a given circle to place a straight line equal to a given straight line not greater than the diameter.
+# @from   euclid — Elements, Book IV, Proposition 1
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment», «Geometry» «Euclid Book III» «Proposition 1: equal chords subtend equal angles at the center»
+
+theorem «Geometry» «Euclid Book IV» «Proposition 1: in a circle to place a straight line equal to a given line» () {
+    let circle = given_circle
+    let AB = given_line
+    let chord = line_in_circle
+    therefore chord == AB
+    assume «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»()
+    assume «Geometry» «Euclid Book III» «Proposition 1: equal chords subtend equal angles at the center»()
+    therefore chord_in_circle_equal_to_given_line
+}

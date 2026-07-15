@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One times one is one via the squared identity.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  1 * 1 = 1.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «one times one is one»
+
+theorem «Nat» «multiplication» «one squared is one» () {
+    assume «Nat» «multiplication» «one times one is one»()
+    therefore succ(0) * succ(0) == succ(0)
+}
+
+export «Nat» «multiplication» «one squared is one»

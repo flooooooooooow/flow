@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360">
+<style>text{font-family:Georgia,serif;font-size:15px;fill:#1a1a1a}</style>
+<rect width="100%" height="100%" fill="#faf9f6"/>
+<circle cx="240.0" cy="190.0" r="135.0" fill="none" stroke="#95a5a6" stroke-width="1.8"/>
+<line x1="240.0" y1="190.0" x2="110.0" y2="250.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="240.0" y1="190.0" x2="370.0" y2="250.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="240.0" y1="55.0" x2="110.0" y2="250.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="240.0" y1="55.0" x2="370.0" y2="250.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 265.4 201.7 A 28.0 28.0 0 0 1 214.6 201.7" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="240.0" y="232.0" text-anchor="middle">2θ</text>
+<path d="M 255.5 78.3 A 28.0 28.0 0 0 1 224.5 78.3" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="240.0" y="97.0" text-anchor="middle">θ</text>
+<circle cx="240.0" cy="190.0" r="4.5" fill="#2c3e50"/>
+<text x="240.0" y="176.0" text-anchor="middle" font-weight="bold">O</text>
+<circle cx="110.0" cy="250.0" r="4.5" fill="#2c3e50"/>
+<text x="110.0" y="236.0" text-anchor="middle" font-weight="bold">A</text>
+<circle cx="370.0" cy="250.0" r="4.5" fill="#2c3e50"/>
+<text x="370.0" y="236.0" text-anchor="middle" font-weight="bold">B</text>
+<circle cx="240.0" cy="55.0" r="4.5" fill="#2c3e50"/>
+<text x="240.0" y="75.0" text-anchor="middle" font-weight="bold">P</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Inscribed angle θ at P equals half the central angle 2θ subtending arc AB.</text>
+</svg>

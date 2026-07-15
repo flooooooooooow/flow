@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  If the sides of two triangles are proportional, the triangles are equiangular and have equal angles.
+# @from   euclid — Elements, Book VI, Proposition 5
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 5: triangles with proportional sides are equiangular» () {
+    let ABC = triangle_1
+    let DEF = triangle_2
+    let ratio_sides = proportional
+    therefore angle_A == angle_D
+    assume «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides»()
+    therefore proportional_sides_implies_equiangular
+}

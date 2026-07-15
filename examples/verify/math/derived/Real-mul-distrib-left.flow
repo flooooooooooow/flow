@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Real multiplication distributes over addition on the left.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  x * (y + z) = x * y + x * z.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «addition» «parentheses do not matter», «Real» «multiplication» «parentheses do not matter», «Real» «addition» «zero is the right identity»
+
+import .Real-add-assoc { add-assoc }
+import .Real-mul-assoc { mul-assoc }
+
+theorem «Real» «multiplication» «left distribution over addition holds» (x: Real, y: Real, z: Real) {
+    assume «Real» «addition» «parentheses do not matter»(y, z, 0)
+    assume «Real» «multiplication» «parentheses do not matter»(x, y, z)
+    assume «Real» «addition» «zero is the right identity»(x * y)
+    therefore x * (y + z) == x * y + x * z
+}
+
+export «Real» «multiplication» «left distribution over addition holds»

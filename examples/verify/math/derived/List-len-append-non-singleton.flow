@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Appending nine singletons gives length nine.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len of nine appended singletons equals 9.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «append preserves length sum», «List» «length» «append of eight singletons has length eight»
+
+theorem «List» «length» «append of nine singletons has length nine» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat, f: Nat, g: Nat, h: Nat, i: Nat) {
+    assume «List» «length» «append preserves length sum»(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil) ++ cons(e, nil) ++ cons(f, nil) ++ cons(g, nil) ++ cons(h, nil), cons(i, nil))
+    assume «List» «length» «append of eight singletons has length eight»(a, b, c, d, e, f, g, h)
+    therefore len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil) ++ cons(e, nil) ++ cons(f, nil) ++ cons(g, nil) ++ cons(h, nil) ++ cons(i, nil)) == 9
+}
+
+export «List» «length» «append of nine singletons has length nine»

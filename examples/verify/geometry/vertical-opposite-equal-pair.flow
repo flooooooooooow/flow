@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Opposite vertical angles form an equal pair.
+# @from   euclid — Elements, Book I, Proposition 15
+# @tier   derived
+
+# @means  angle beta equals angle beta prime.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «four vertical angles cycle equally», «Geometry» «intersecting lines» «vertical angles are equal»
+
+theorem «Geometry» «intersecting lines» «opposite vertical angles equal pair» () {
+    assume «Geometry» «intersecting lines» «four vertical angles cycle equally»()
+    assume «Geometry» «intersecting lines» «vertical angles are equal»()
+    therefore angle_beta == angle_beta_prime
+}
+
+export «Geometry» «intersecting lines» «opposite vertical angles equal pair»

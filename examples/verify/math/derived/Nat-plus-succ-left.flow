@@ -1,0 +1,32 @@
+# @module examples.verify.math.derived
+# @means  Adding a successor on the left steps the sum by one.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  succ(a) + b = succ(a + b).
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «addition» «zero is the left identity», «Nat» «addition» «zero is the right identity», «Nat» «addition» «order does not matter», «Nat» «addition» «successor on the right steps the sum»
+
+import verify.Nat/+ { zero-left, succ-right }
+import .Nat-plus-zero-right { zero-right }
+import .Nat-plus-commutes { commutes }
+
+theorem «Nat» «addition» «successor on the left steps the sum» (a: Nat, b: Nat) {
+    if a == 0 {
+        assume «Nat» «addition» «zero is the left identity»(b)
+        assume «Nat» «addition» «order does not matter»(0, b)
+        assume «Nat» «addition» «successor on the right steps the sum»(b, 0)
+        assume «Nat» «addition» «zero is the right identity»(b)
+        therefore succ(a) + b == succ(a + b)
+    } else {
+        let n = pred(a)
+        assume «Nat» «addition» «successor on the left steps the sum»(n, b)
+        assume «Nat» «addition» «order does not matter»(succ(n), b)
+        assume «Nat» «addition» «order does not matter»(n, b)
+        assume «Nat» «addition» «successor on the right steps the sum»(n, b)
+        therefore succ(a) + b == succ(a + b)
+    }
+}
+
+export «Nat» «addition» «successor on the left steps the sum»

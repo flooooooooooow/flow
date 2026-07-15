@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Homomorphisms send inverse products to one.
+# @from   dummit-foote — *Abstract Algebra*, §1.6
+# @tier   derived
+
+# @means  f(g) * f(inv(g)) = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «GroupHom» «multiplication» «products map to products», «GroupHom» «inverse» «inverses map to inverses», «Group» «inverse» «right inverse recovers the identity»
+
+import .Group-inv-right { inv-right }
+
+theorem «GroupHom» «multiplication» «products with inverses map to one» (f: GroupHom, g: Group) {
+    assume «GroupHom» «multiplication» «products map to products»(f, g, inv(g))
+    assume «GroupHom» «inverse» «inverses map to inverses»(f, g)
+    assume «Group» «inverse» «right inverse recovers the identity»(g)
+    therefore f(g) * f(inv(g)) == 1
+}
+
+export «GroupHom» «multiplication» «products with inverses map to one»

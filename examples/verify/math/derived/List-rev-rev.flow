@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Reversing twice recovers the original list.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  rev(rev(xs)) = xs.
+# @from   church/induction
+# @tier   derived
+# @needs  «List» «reverse» «reversing empty yields empty», «List» «reverse» «reverse distributes over append»
+
+theorem «List» «reverse» «double reverse returns the list» (xs: List) {
+    if xs == nil {
+        assume «List» «reverse» «reversing empty yields empty»()
+        therefore rev(rev(xs)) == xs
+    } else {
+        let rest = tail(xs)
+        assume «List» «reverse» «double reverse returns the list»(rest)
+        assume «List» «reverse» «reverse distributes over append»(rest, cons(head(xs), nil))
+        therefore rev(rev(xs)) == xs
+    }
+}
+
+export «List» «reverse» «double reverse returns the list»

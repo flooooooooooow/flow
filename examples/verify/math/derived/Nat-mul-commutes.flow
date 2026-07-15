@@ -1,0 +1,29 @@
+# @module examples.verify.math.derived
+# @means  Multiplication commutes on natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  a * b = b * a.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the left annihilator», «Nat» «multiplication» «zero is the right annihilator», «Nat» «multiplication» «successor on the right distributes», «Nat» «addition» «order does not matter»
+
+import verify.Nat-mul { zero-left, zero-right, succ-right }
+import .Nat-plus-commutes { commutes }
+
+theorem «Nat» «multiplication» «order does not matter» (a: Nat, b: Nat) {
+    if b == 0 {
+        assume «Nat» «multiplication» «zero is the right annihilator»(a)
+        assume «Nat» «multiplication» «zero is the left annihilator»(a)
+        therefore a * b == b * a
+    } else {
+        let k = pred(b)
+        assume «Nat» «multiplication» «order does not matter»(a, k)
+        assume «Nat» «multiplication» «successor on the right distributes»(a, k)
+        assume «Nat» «addition» «order does not matter»(a, k)
+        assume «Nat» «addition» «order does not matter»(k, a)
+        therefore a * b == b * a
+    }
+}
+
+export «Nat» «multiplication» «order does not matter»

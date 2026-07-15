@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One is less than or equal to itself.
+# @from   peano — https://en.wikipedia.org/wiki/Total_order
+# @tier   derived
+
+# @means  1 <= 1.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «order» «less-or-equal is reflexive»
+
+theorem «Nat» «order» «one is below itself» () {
+    assume «Nat» «order» «less-or-equal is reflexive»(succ(0))
+    therefore succ(0) <= succ(0)
+}
+
+export «Nat» «order» «one is below itself»

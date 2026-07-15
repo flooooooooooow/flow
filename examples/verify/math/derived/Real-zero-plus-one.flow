@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero plus one is one for reals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  0 + 1 = 1.
+# @from   landau
+# @tier   derived
+# @needs  «Real» «addition» «zero is the left identity»
+
+theorem «Real» «addition» «zero plus one is one» () {
+    assume «Real» «addition» «zero is the left identity»(1)
+    therefore 0 + 1 == 1
+}
+
+export «Real» «addition» «zero plus one is one»

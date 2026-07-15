@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The 8-15-17 triangle satisfies the Pythagorean relation.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  17 squared equals 8 squared plus 15 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «nine twelve fifteen satisfies Pythagoras», «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «eight fifteen seventeen satisfies Pythagoras» () {
+    assume «Geometry» «right triangle» «nine twelve fifteen satisfies Pythagoras»()
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore 17 * 17 == 8 * 8 + 15 * 15
+}
+
+export «Geometry» «right triangle» «eight fifteen seventeen satisfies Pythagoras»

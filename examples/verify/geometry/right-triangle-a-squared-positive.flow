@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The square on the first leg is positive.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  a squared is greater than zero.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «leg squares are positive», «Geometry» «right triangle» «second leg square is positive»
+
+theorem «Geometry» «right triangle» «first leg square is positive» () {
+    assume «Geometry» «right triangle» «leg squares are positive»()
+    assume «Geometry» «right triangle» «second leg square is positive»()
+    therefore a * a > 0
+}
+
+export «Geometry» «right triangle» «first leg square is positive»

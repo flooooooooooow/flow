@@ -1,0 +1,22 @@
+# @module examples.verify.math.derived
+# @means  Adding a successor on the right steps the sum by one.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  a + succ(b) = succ(a + b).
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «successor on the right steps the sum», «Nat» «addition» «order does not matter», «Nat» «addition» «successor on the left steps the sum»
+
+import verify.Nat/+ { succ-right }
+import .Nat-plus-succ-left { succ-left }
+import .Nat-plus-commutes { commutes }
+
+theorem «Nat» «addition» «successor on the right via commutativity» (a: Nat, b: Nat) {
+    assume «Nat» «addition» «successor on the right steps the sum»(a, b)
+    assume «Nat» «addition» «order does not matter»(a, b)
+    assume «Nat» «addition» «successor on the left steps the sum»(b, a)
+    therefore a + succ(b) == succ(a + b)
+}
+
+export «Nat» «addition» «successor on the right via commutativity»

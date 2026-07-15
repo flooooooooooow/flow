@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  One is the left multiplicative identity in a ring.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  1 * x = x.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «multiplication» «one is the left identity»
+
+theorem «Ring» «multiplication» «one is the left identity derived» (x: Ring) {
+    assume «Ring» «multiplication» «one is the left identity»(x)
+    therefore 1 * x == x
+}
+
+export «Ring» «multiplication» «one is the left identity derived»

@@ -1,0 +1,38 @@
+# @module verify.Ring
+# @means  Ring axioms extending commutative addition and associative multiplication.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   definitions-only
+
+# @means  Ring addition commutes.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Ring» «addition» «order does not matter» (a: Ring, b: Ring) {
+    therefore a + b == b + a
+}
+
+# @means  Zero is the left additive identity.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Ring» «addition» «zero is the left identity» (r: Ring) {
+    therefore 0 + r == r
+}
+
+# @means  One is the left multiplicative identity.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Ring» «multiplication» «one is the left identity» (r: Ring) {
+    therefore 1 * r == r
+}
+
+# @means  Multiplication distributes over addition on the left.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «Ring» «multiplication» «left distribution over addition holds» (a: Ring, b: Ring, c: Ring) {
+    therefore a * (b + c) == a * b + a * c
+}
+
+export «Ring» «addition» «order does not matter», «Ring» «addition» «zero is the left identity», «Ring» «multiplication» «one is the left identity», «Ring» «multiplication» «left distribution over addition holds»

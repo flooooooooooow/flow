@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Choosing one element from a successor set.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(succ(n), 1) = succ(n).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «Pascal recurrence holds», «Comb» «choose» «choosing none gives one»
+
+theorem «Comb» «choose» «choosing one from a successor» (n: Nat) {
+    assume «Comb» «choose» «Pascal recurrence holds»(succ(n), 1)
+    assume «Comb» «choose» «choosing none gives one»(n)
+    therefore choose(succ(n), 1) == succ(n)
+}
+
+export «Comb» «choose» «choosing one from a successor»

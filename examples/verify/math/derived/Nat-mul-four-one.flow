@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Four times one is four for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  4 * 1 = 4.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «one is the right identity»
+
+theorem «Nat» «multiplication» «four times one is four» () {
+    let four = succ(succ(succ(succ(0))))
+    assume «Nat» «multiplication» «one is the right identity»(four)
+    therefore four * succ(0) == four
+}
+
+export «Nat» «multiplication» «four times one is four»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Reflection across the apex median fixes the apex.
+# @from   euclid — Elements, Book I, Proposition 5
+# @tier   derived
+
+# @means  apex A is fixed by reflection across apex median.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «isosceles triangle» «apex median perpendicular to base», «Geometry» «isosceles triangle» «reflection across apex median swaps base»
+
+theorem «Geometry» «isosceles triangle» «reflection fixes apex» () {
+    assume «Geometry» «isosceles triangle» «apex median perpendicular to base»()
+    assume «Geometry» «isosceles triangle» «reflection across apex median swaps base»()
+    therefore reflect_A_across_median == A
+}
+
+export «Geometry» «isosceles triangle» «reflection fixes apex»

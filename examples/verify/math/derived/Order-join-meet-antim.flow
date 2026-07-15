@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Join above meet is antisymmetric on equal bounds.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  If meet(a, b) <= c and join(a, b) >= c then join(a, b) >= meet(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «join above meet reflexive», «Order» «lattice» «join above meet via transitivity»
+
+theorem «Order» «lattice» «join above meet antisymmetric witness» (a: Nat, b: Nat, c: Nat) {
+    assume «Order» «lattice» «join above meet reflexive»(a)
+    assume «Order» «lattice» «join above meet via transitivity»(a, b, c)
+    therefore join(a, b) >= meet(a, b)
+}
+
+export «Order» «lattice» «join above meet antisymmetric witness»

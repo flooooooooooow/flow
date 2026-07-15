@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-ii
+# @means  To apply a gnomon equal to the rectangle contained by two unequal straight lines.
+# @from   euclid — Elements, Book II, Proposition 13
+# @tier   derived
+# @needs  «Geometry» «Euclid Book II» «Proposition 11: a gnomon equals the rectangle by the segments», «Geometry» «Euclid Book II» «Proposition 5: the rectangle by unequal parts plus the square on the midpoint equals the square on the half»
+
+theorem «Geometry» «Euclid Book II» «Proposition 13: a gnomon equals the rectangle by two unequal segments» () {
+    let unequal = segments_AC_and_CB
+    let gnomon = gnomon_about_diameter
+    therefore gnomon == rect(unequal)
+    assume «Geometry» «Euclid Book II» «Proposition 11: a gnomon equals the rectangle by the segments»()
+    assume «Geometry» «Euclid Book II» «Proposition 5: the rectangle by unequal parts plus the square on the midpoint equals the square on the half»()
+    therefore gnomon_equals_rect_of_unequal_segments
+}

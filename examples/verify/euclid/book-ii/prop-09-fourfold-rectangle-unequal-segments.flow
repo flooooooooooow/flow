@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-ii
+# @means  If a straight line is cut into equal and unequal segments, four times the rectangle by the unequal segments together with the square on the half equals the square on the whole.
+# @from   euclid — Elements, Book II, Proposition 9
+# @tier   derived
+# @needs  «Geometry» «Euclid Book II» «Proposition 5: the rectangle by unequal parts plus the square on the midpoint equals the square on the half»
+
+theorem «Geometry» «Euclid Book II» «Proposition 9: four times the rectangle by unequal parts plus the square on the half equals the square on the whole» () {
+    let whole = straight_line_AB
+    let half = segment_AM
+    let unequal = segments_AN_and_NB
+    therefore 4 * rect(unequal) + sq(half) == sq(whole)
+    assume «Geometry» «Euclid Book II» «Proposition 5: the rectangle by unequal parts plus the square on the midpoint equals the square on the half»()
+    therefore 4 * rect(unequal_parts) + sq(half) == sq(whole)
+}

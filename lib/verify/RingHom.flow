@@ -1,0 +1,22 @@
+# @module verify.RingHom
+# @means  Ring homomorphism axioms.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   definitions-only
+
+# @means  A ring homomorphism preserves addition.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «RingHom» «addition» «sums map to sums» (f: RingHom, a: Ring, b: Ring) {
+    therefore f(a + b) == f(a) + f(b)
+}
+
+# @means  A ring homomorphism preserves multiplication.
+# @from   dummit-foote
+# @tier   definition
+
+theorem «RingHom» «multiplication» «products map to products» (f: RingHom, a: Ring, b: Ring) {
+    therefore f(a * b) == f(a) * f(b)
+}
+
+export «RingHom» «addition» «sums map to sums», «RingHom» «multiplication» «products map to products»

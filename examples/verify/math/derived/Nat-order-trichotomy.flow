@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Any two naturals are comparable by less-or-equal in one direction.
+# @from   peano — https://en.wikipedia.org/wiki/Trichotomy_(mathematics)
+# @tier   derived
+
+# @means  For all a and b, either a ≤ b or b ≤ a.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «order» «less-or-equal is reflexive», «Nat» «order» «less-or-equal is transitive», «Nat» «order» «every number is below its successor»
+
+theorem «Nat» «order» «one side is less than or equal to the other» (a: Nat, b: Nat) {
+    if a == b {
+        assume «Nat» «order» «less-or-equal is reflexive»(a)
+        therefore a <= b
+    } elif a < b {
+        therefore a <= b
+    } else {
+        assume «Nat» «order» «less-or-equal is reflexive»(b)
+        therefore b <= a
+    }
+}
+
+export «Nat» «order» «one side is less than or equal to the other»

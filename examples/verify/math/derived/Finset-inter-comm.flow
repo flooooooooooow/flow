@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Finite set intersection commutes.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  a ∩ b = b ∩ a.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «union» «order does not matter», «Finset» «intersection» «empty is the right annihilator»
+
+theorem «Finset» «intersection» «order does not matter» (a: Finset, b: Finset) {
+    assume «Finset» «union» «order does not matter»(a, b)
+    assume «Finset» «intersection» «empty is the right annihilator»(a)
+    therefore a ∩ b == b ∩ a
+}
+
+export «Finset» «intersection» «order does not matter»

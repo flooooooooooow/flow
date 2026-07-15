@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Binomial coefficients are symmetric in k and n-k.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(n, k) = choose(n, n - k).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «Pascal recurrence holds», «Comb» «choose» «choosing none gives one»
+
+theorem «Comb» «choose» «symmetry in k and n minus k» (n: Nat, k: Nat) {
+    if k == 0 {
+        assume «Comb» «choose» «choosing none gives one»(n)
+        therefore choose(n, k) == choose(n, n - k)
+    } else {
+        let j = pred(k)
+        assume «Comb» «choose» «symmetry in k and n minus k»(pred(n), j)
+        assume «Comb» «choose» «Pascal recurrence holds»(n, k)
+        therefore choose(n, k) == choose(n, n - k)
+    }
+}
+
+export «Comb» «choose» «symmetry in k and n minus k»

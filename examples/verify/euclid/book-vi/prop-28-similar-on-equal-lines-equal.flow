@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  On equal straight lines similar and similarly situated rectilineal figures are equal to one another.
+# @from   euclid — Elements, Book VI, Proposition 28
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 26: similar parallelograms are in duplicate ratio of homologous sides»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 28: similar and similarly situated figures on equal straight lines are equal» () {
+    let AB = equal_line_1
+    let CD = equal_line_2
+    let fig1 = similar_figure_on_AB
+    therefore fig1 == fig2
+    assume «Geometry» «Euclid Book VI» «Proposition 26: similar parallelograms are in duplicate ratio of homologous sides»()
+    therefore similar_on_equal_lines_equal
+}

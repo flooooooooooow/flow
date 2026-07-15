@@ -1,0 +1,22 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (A) at (240.0,300.0);
+  \coordinate (B) at (80.0,60.0);
+  \coordinate (C) at (400.0,60.0);
+  \draw[thick] (A) -- (B);
+  \draw[thick] (A) -- (C);
+  \draw[thick] (B) -- (C);
+  \pic [draw, angle radius=5mm, "$\theta$"] {angle = A--B--C};
+  \pic [draw, angle radius=5mm, "$\theta$"] {angle = A--C--B};
+  \pic [draw, angle radius=5mm, "$\varphi$"] {angle = B--A--C};
+  \pic [draw, angle radius=5mm, "$\psi$"] {angle = C--A--B};
+  \fill (A) circle (6pt);
+  \node[font=\bfseries] at ($( A ) + (0,20)$) {A};
+  \fill (B) circle (6pt);
+  \node[font=\bfseries] at ($( B ) + (0,-14)$) {B};
+  \fill (C) circle (6pt);
+  \node[font=\bfseries] at ($( C ) + (0,-14)$) {C};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Isosceles triangle with AB = AC — the base angles at B and C are equal.};
+\end{tikzpicture}
+\end{center}

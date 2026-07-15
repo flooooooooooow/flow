@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Eight plus one is nine.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  8 + 1 = 9.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «seven plus one is eight»
+
+theorem «Nat» «addition» «eight plus one is nine» () {
+    assume «Nat» «addition» «seven plus one is eight»()
+    therefore 8 + 1 == 9
+}
+
+export «Nat» «addition» «eight plus one is nine»

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360">
+<style>text{font-family:Georgia,serif;font-size:15px;fill:#1a1a1a}</style>
+<rect width="100%" height="100%" fill="#faf9f6"/>
+<line x1="70.0" y1="290.0" x2="410.0" y2="290.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="410.0" y1="290.0" x2="230.0" y2="70.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="230.0" y1="70.0" x2="70.0" y2="290.0" stroke="#2c3e50" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 86.5 267.4 A 28.0 28.0 0 0 1 98.0 290.0" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="107.4" y="270.9" text-anchor="middle">α</text>
+<path d="M 382.0 290.0 A 28.0 28.0 0 0 1 392.3 268.3" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="372.0" y="272.0" text-anchor="middle">β</text>
+<path d="M 247.7 91.7 A 28.0 28.0 0 0 1 213.5 92.6" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<text x="231.2" y="112.0" text-anchor="middle">γ</text>
+<circle cx="70.0" cy="290.0" r="4.5" fill="#2c3e50"/>
+<text x="70.0" y="276.0" text-anchor="middle" font-weight="bold">A</text>
+<circle cx="410.0" cy="290.0" r="4.5" fill="#2c3e50"/>
+<text x="410.0" y="276.0" text-anchor="middle" font-weight="bold">B</text>
+<circle cx="230.0" cy="70.0" r="4.5" fill="#2c3e50"/>
+<text x="230.0" y="90.0" text-anchor="middle" font-weight="bold">C</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Triangle ABC — the three interior angles α, β, and γ sum to two right angles.</text>
+</svg>

@@ -1,0 +1,20 @@
+# @module examples.verify.math.derived
+# @means  Group homomorphisms preserve inverses.
+# @from   dummit-foote — *Abstract Algebra*, §1.6
+# @tier   derived
+
+# @means  f(inv(g)) = inv(f(g)).
+# @from   dummit-foote
+# @tier   derived
+# @needs  «GroupHom» «identity» «the identity maps to the identity», «GroupHom» «multiplication» «products map to products», «Group» «inverse» «right inverse recovers the identity»
+
+import .Group-inv-right { inv-right }
+
+theorem «GroupHom» «inverse» «inverses map to inverses» (f: GroupHom, g: Group) {
+    assume «GroupHom» «identity» «the identity maps to the identity»(f)
+    assume «GroupHom» «multiplication» «products map to products»(f, g, inv(g))
+    assume «Group» «inverse» «right inverse recovers the identity»(g)
+    therefore f(inv(g)) == inv(f(g))
+}
+
+export «GroupHom» «inverse» «inverses map to inverses»

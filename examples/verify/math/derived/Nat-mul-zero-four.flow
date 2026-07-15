@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero times four is zero for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  0 * 4 = 0.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the left annihilator»
+
+theorem «Nat» «multiplication» «zero times four is zero» () {
+    let four = succ(succ(succ(succ(0))))
+    assume «Nat» «multiplication» «zero is the left annihilator»(four)
+    therefore 0 * four == 0
+}
+
+export «Nat» «multiplication» «zero times four is zero»

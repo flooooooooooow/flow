@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  A two-element list has length two.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(x, cons(y, nil))) = succ(succ(0)).
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «cons increases length by one», «List» «length» «singleton has length one»
+
+theorem «List» «length» «pair list has length two» (x: Nat, y: Nat) {
+    assume «List» «length» «cons increases length by one»(x, cons(y, nil))
+    assume «List» «length» «singleton has length one»(y)
+    therefore len(cons(x, cons(y, nil))) == succ(succ(0))
+}
+
+export «List» «length» «pair list has length two»

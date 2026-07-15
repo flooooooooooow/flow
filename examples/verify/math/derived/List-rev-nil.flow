@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing the empty list yields the empty list.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  rev(nil) = nil.
+# @from   church
+# @tier   derived
+# @needs  «List» «append» «empty is the left identity», «List» «length» «the empty list has length zero»
+
+theorem «List» «reverse» «reversing empty yields empty» () {
+    assume «List» «append» «empty is the left identity»(nil)
+    assume «List» «length» «the empty list has length zero»()
+    therefore rev(nil) == nil
+}
+
+export «List» «reverse» «reversing empty yields empty»

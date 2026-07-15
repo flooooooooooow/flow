@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Meet is at most each argument.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, b) <= a.
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «meet» «meet is below the left argument»
+
+theorem «Order» «meet» «meet is at most the left argument» (a: Nat, b: Nat) {
+    assume «Order» «meet» «meet is below the left argument»(a, b)
+    therefore meet(a, b) <= a
+}
+
+export «Order» «meet» «meet is at most the left argument»

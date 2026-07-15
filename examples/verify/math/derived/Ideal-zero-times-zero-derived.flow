@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero times zero is zero in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  0 * 0 = 0 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «multiplication» «zero on the left gives zero», «Ideal» «multiplication» «zero times zero is zero»
+
+theorem «Ideal» «multiplication» «zero times zero in ideal» () {
+    assume «Ideal» «multiplication» «zero on the left gives zero»(0)
+    assume «Ideal» «multiplication» «zero times zero is zero»()
+    therefore 0 * 0 == 0
+}
+
+export «Ideal» «multiplication» «zero times zero in ideal»

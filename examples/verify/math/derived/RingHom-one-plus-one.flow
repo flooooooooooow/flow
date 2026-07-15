@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  One plus one maps to two under a ring homomorphism.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  f(1 + 1) = 2.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «RingHom» «preservation» «homomorphisms preserve addition», «Ring» «addition» «one plus one derived»
+
+theorem «RingHom» «preservation» «one plus one maps to two» (f: RingHom) {
+    assume «RingHom» «preservation» «homomorphisms preserve addition»(f, 1, 1)
+    assume «Ring» «addition» «one plus one derived»()
+    therefore f(1 + 1) == 2
+}
+
+export «RingHom» «preservation» «one plus one maps to two»

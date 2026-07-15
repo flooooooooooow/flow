@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Thirty plus one is thirty-one.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  30 + 1 = 31.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «twenty nine plus one is thirty»
+
+theorem «Nat» «addition» «thirty plus one is thirty one» () {
+    assume «Nat» «addition» «twenty nine plus one is thirty»()
+    therefore 30 + 1 == 31
+}
+
+export «Nat» «addition» «thirty plus one is thirty one»

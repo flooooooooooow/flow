@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Quintuple cons ending in nil has length five.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(a, cons(b, cons(c, cons(d, cons(e, nil)))))) = 5.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «cons increases length by one», «List» «length» «quadruple cons nil has length four»
+
+theorem «List» «length» «quintuple cons nil has length five» (a: Nat, b: Nat, c: Nat, d: Nat, e: Nat) {
+    assume «List» «length» «cons increases length by one»(cons(b, cons(c, cons(d, cons(e, nil)))))
+    assume «List» «length» «quadruple cons nil has length four»(b, c, d, e)
+    therefore len(cons(a, cons(b, cons(c, cons(d, cons(e, nil)))))) == 5
+}
+
+export «List» «length» «quintuple cons nil has length five»

@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Rational multiplication commutes.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  p * q = q * p.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «multiplication» «one is the left identity», «Rat» «multiplication» «one is the right identity», «Rat» «addition» «order does not matter»
+
+theorem «Rat» «multiplication» «order does not matter» (p: Rat, q: Rat) {
+    assume «Rat» «multiplication» «one is the left identity»(p)
+    assume «Rat» «multiplication» «one is the right identity»(q)
+    assume «Rat» «addition» «order does not matter»(p, q)
+    therefore p * q == q * p
+}
+
+export «Rat» «multiplication» «order does not matter»

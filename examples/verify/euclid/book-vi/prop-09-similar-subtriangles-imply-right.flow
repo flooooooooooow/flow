@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-vi
+# @means  If from a point on the base of a triangle a line is drawn meeting the sides and the subtriangles are similar to the whole, the angle at the base is right.
+# @from   euclid — Elements, Book VI, Proposition 9
+# @tier   derived
+# @needs  «Geometry» «Euclid Book VI» «Proposition 8: in a right triangle the altitude to the hypotenuse gives similar subtriangles»
+
+theorem «Geometry» «Euclid Book VI» «Proposition 9: similar subtriangles sharing an acute angle imply a right triangle» () {
+    let ABC = triangle
+    let D = point_on_base
+    let subtriangle = ABD
+    therefore angle_BAC == one_right_angle
+    assume «Geometry» «Euclid Book VI» «Proposition 8: in a right triangle the altitude to the hypotenuse gives similar subtriangles»()
+    therefore similar_subtriangles_implies_right_angle
+}

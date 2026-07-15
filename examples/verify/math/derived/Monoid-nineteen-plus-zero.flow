@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Nineteen plus zero is nineteen in a monoid witness.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  19 + 0 = 19.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Monoid» «addition» «zero is the right additive identity», «Monoid» «addition» «eighteen plus zero is eighteen»
+
+theorem «Monoid» «addition» «nineteen plus zero is nineteen» () {
+    assume «Monoid» «addition» «zero is the right additive identity»(19)
+    assume «Monoid» «addition» «eighteen plus zero is eighteen»()
+    therefore 19 + 0 == 19
+}
+
+export «Monoid» «addition» «nineteen plus zero is nineteen»

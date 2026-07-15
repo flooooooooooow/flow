@@ -1,0 +1,82 @@
+# @module verify.Nat-core
+# @means  Peano predecessor and successor structural laws.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   definitions-only
+
+# @means  Taking predecessor after successor returns the same number.  pred(succ(n)) = n
+# @from   peano
+# @tier   definition
+
+theorem «Nat» «predecessor» «predecessor undoes successor» (n: Nat) {
+    therefore pred(succ(n)) == n
+}
+
+# @means  For a nonzero natural, successor after predecessor recovers the number.
+# @from   peano
+# @tier   definition
+
+theorem «Nat» «successor» «successor undoes predecessor away from zero» (n: Nat) {
+    if n == 0 {
+        therefore succ(pred(n)) == n
+    } else {
+        let k = pred(n)
+        assume «Nat» «predecessor» «predecessor undoes successor»(k)
+        therefore succ(pred(n)) == n
+    }
+}
+
+# @means  If two successors match, the originals match.  succ(m) = succ(n) → m = n
+# @from   peano — https://en.wikipedia.org/wiki/Injective_function
+# @tier   derived
+# @needs  «Nat» «predecessor» «predecessor undoes successor»
+
+theorem «Nat» «successor» «successor is injective» (m: Nat, n: Nat) {
+    if succ(m) == succ(n) {
+        assume «Nat» «predecessor» «predecessor undoes successor»(m)
+        assume «Nat» «predecessor» «predecessor undoes successor»(n)
+        therefore m == n
+    }
+}
+
+# @means  Zero is never the successor of any natural number.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «predecessor» «predecessor undoes successor»
+
+theorem «Nat» «zero» «zero is not a successor» (n: Nat) {
+    if 0 == succ(n) {
+        assume «Nat» «predecessor» «predecessor undoes successor»(n)
+        therefore pred(0) == n
+    }
+}
+
+# @means  Successor never produces zero.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «zero» «zero is not a successor»
+
+theorem «Nat» «successor» «successor never yields zero» (n: Nat) {
+    if succ(n) == 0 {
+        assume «Nat» «zero» «zero is not a successor»(n)
+        therefore succ(n) != 0
+    } else {
+        therefore succ(n) != 0
+    }
+}
+
+# @means  Every natural is either zero or the successor of some natural.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «predecessor» «predecessor undoes successor»
+
+theorem «Nat» «cases» «every number is zero or a successor» (n: Nat) {
+    if n == 0 {
+        therefore n == 0
+    } else {
+        let k = pred(n)
+        assume «Nat» «predecessor» «predecessor undoes successor»(k)
+        therefore n == succ(k)
+    }
+}
+
+export «Nat» «predecessor» «predecessor undoes successor», «Nat» «successor» «successor undoes predecessor away from zero», «Nat» «successor» «successor is injective», «Nat» «zero» «zero is not a successor», «Nat» «successor» «successor never yields zero», «Nat» «cases» «every number is zero or a successor»

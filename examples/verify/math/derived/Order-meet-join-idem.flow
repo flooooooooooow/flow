@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Meet is below join via idempotence.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  meet(a, b) <= join(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «lattice» «meet is below join», «Order» «meet» «repeating does not change the value»
+
+theorem «Order» «lattice» «meet is below join via idempotence» (a: Nat, b: Nat) {
+    assume «Order» «lattice» «meet is below join»(a, b)
+    assume «Order» «meet» «repeating does not change the value»(a)
+    therefore meet(a, b) <= join(a, b)
+}
+
+export «Order» «lattice» «meet is below join via idempotence»

@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  The inverse of an inverse returns the original element.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  inv(inv(g)) = g.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «inverse» «left inverse recovers the identity», «Group» «inverse» «inverses are unique»
+
+import .Group-inv-unique { inv-unique }
+
+theorem «Group» «inverse» «double inverse returns the element» (g: Group) {
+    assume «Group» «inverse» «left inverse recovers the identity»(inv(g))
+    assume «Group» «inverse» «inverses are unique»(g, inv(inv(g)), g)
+    therefore inv(inv(g)) == g
+}
+
+export «Group» «inverse» «double inverse returns the element»

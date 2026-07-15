@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Five plus one is six for natural numbers.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  5 + 1 = 6.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «addition» «successor on the right via commutativity», «Nat» «addition» «zero is the right identity»
+
+theorem «Nat» «addition» «five plus one is six» () {
+    let five = succ(succ(succ(succ(succ(0)))))
+    assume «Nat» «addition» «successor on the right via commutativity»(five, 0)
+    assume «Nat» «addition» «zero is the right identity»(five)
+    therefore five + succ(0) == succ(five)
+}
+
+export «Nat» «addition» «five plus one is six»

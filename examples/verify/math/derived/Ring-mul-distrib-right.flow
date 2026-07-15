@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Ring multiplication distributes over addition on the right.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  (b + c) * a = b * a + c * a.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «multiplication» «left distribution over addition holds», «Ring» «addition» «order does not matter»
+
+theorem «Ring» «multiplication» «right distribution over addition holds» (a: Ring, b: Ring, c: Ring) {
+    assume «Ring» «multiplication» «left distribution over addition holds»(a, b, c)
+    assume «Ring» «addition» «order does not matter»(b, c)
+    therefore (b + c) * a == b * a + c * a
+}
+
+export «Ring» «multiplication» «right distribution over addition holds»

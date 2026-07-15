@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Intersection union difference with self is empty.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  ((s ∩ t) ∪ s) \ ((s ∩ t) ∪ s) = empty.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Finset» «difference» «union diff self is empty», «Finset» «cardinality» «inter union self card derived»
+
+theorem «Finset» «difference» «inter union diff self derived» (s: Finset, t: Finset) {
+    assume «Finset» «difference» «union diff self is empty»(s, t)
+    assume «Finset» «cardinality» «inter union self card derived»(s, t)
+    therefore ((s ∩ t) ∪ s) \ ((s ∩ t) ∪ s) == empty
+}
+
+export «Finset» «difference» «inter union diff self derived»

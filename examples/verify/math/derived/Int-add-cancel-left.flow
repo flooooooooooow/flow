@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Equal integers can be subtracted from the left of both sides.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  c + a = c + b implies a = b.
+# @from   landau
+# @tier   derived
+# @needs  «Int» «addition» «right cancellation holds», «Int» «addition» «order does not matter»
+
+import .Int-add-cancel { add-cancel-right }
+
+theorem «Int» «addition» «left cancellation holds» (a: Int, b: Int, c: Int) {
+    if c + a == c + b {
+        assume «Int» «addition» «right cancellation holds»(a, b, c)
+        assume «Int» «addition» «order does not matter»(c, a)
+        therefore a == b
+    }
+}
+
+export «Int» «addition» «left cancellation holds»

@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-i
+# @means  A parallelogram on the same base and between the same parallels equals the triangle on that base.
+# @from   euclid — Elements, Book I, Proposition 41
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 27: a triangle is half a parallelogram on same base»
+
+theorem «Geometry» «Euclid Book I» «Proposition 41: a parallelogram equals a triangle on the same base» () {
+    let diagonal_AC = segment_from_A_to_C
+    assume parallelogram_ABCD_and_triangle_ABC_on_same_base_and_parallels
+    assume «Geometry» «Euclid Book I» «Proposition 27: a triangle is half a parallelogram on same base»()
+    therefore triangle_ABC == half_parallelogram_ABCD
+    therefore parallelogram_ABCD == triangle_ABC_doubled
+}

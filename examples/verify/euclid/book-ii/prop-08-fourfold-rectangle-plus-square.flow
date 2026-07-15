@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-ii
+# @means  If a straight line is cut at random, four times the rectangle by the whole and one segment together with the square on the remaining segment equals the square on the whole and that segment as on one straight line.
+# @from   euclid — Elements, Book II, Proposition 8
+# @tier   derived
+# @needs  «Geometry» «Euclid Book II» «Proposition 7: the square on the whole plus that on one segment equals twice a rectangle plus a square»
+
+theorem «Geometry» «Euclid Book II» «Proposition 8: four times a rectangle plus the square on the remainder equals a square on one line» () {
+    let whole = straight_line_AB
+    let C = segment_AC
+    let D = segment_CB
+    therefore 4 * rect(whole, C) + sq(D) == sq(whole_and_C)
+    assume «Geometry» «Euclid Book II» «Proposition 7: the square on the whole plus that on one segment equals twice a rectangle plus a square»()
+}

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The 6-8-10 triangle satisfies the Pythagorean relation.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  10 squared equals 6 squared plus 8 squared.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «five twelve thirteen satisfies Pythagoras», «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «six eight ten satisfies Pythagoras» () {
+    assume «Geometry» «right triangle» «five twelve thirteen satisfies Pythagoras»()
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore 10 * 10 == 6 * 6 + 8 * 8
+}
+
+export «Geometry» «right triangle» «six eight ten satisfies Pythagoras»

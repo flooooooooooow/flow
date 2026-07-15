@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An exterior angle exceeds the maximum remote interior angle.
+# @from   euclid — Elements, Book I, Proposition 16
+# @tier   derived
+
+# @means  exterior at C exceeds angle B when angle C is positive.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «exterior exceeds min remote interior», «Geometry» «triangle» «angle C is positive witness»
+
+theorem «Geometry» «triangle» «exterior exceeds max remote interior» () {
+    assume «Geometry» «triangle» «exterior exceeds min remote interior»()
+    assume «Geometry» «triangle» «angle C is positive witness»()
+    therefore exterior_at_C > angle_B
+}
+
+export «Geometry» «triangle» «exterior exceeds max remote interior»

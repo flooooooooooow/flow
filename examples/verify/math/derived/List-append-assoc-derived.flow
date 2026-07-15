@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  List append associativity as a derived law.
+# @from   church — https://en.wikipedia.org/wiki/Associative_property
+# @tier   derived
+
+# @means  (xs ++ ys) ++ zs = xs ++ (ys ++ zs).
+# @from   church
+# @tier   derived
+# @needs  «List» «append» «parentheses do not matter»
+
+theorem «List» «append» «append associativity derived» (xs: List, ys: List, zs: List) {
+    assume «List» «append» «parentheses do not matter»(xs, ys, zs)
+    therefore (xs ++ ys) ++ zs == xs ++ (ys ++ zs)
+}
+
+export «List» «append» «append associativity derived»

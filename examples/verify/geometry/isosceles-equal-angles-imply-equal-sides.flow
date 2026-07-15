@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Equal base angles imply equal opposite sides.
+# @from   euclid — Elements, Book I, Proposition 6
+# @tier   derived
+
+# @means  if angle at B equals angle at C then side AB equals side AC.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «isosceles triangle» «base angles are equal», «Geometry» «triangle congruence» «side-angle-side implies congruence»
+
+theorem «Geometry» «isosceles triangle» «equal base angles imply equal sides» () {
+    assume «Geometry» «isosceles triangle» «base angles are equal»()
+    assume «Geometry» «triangle congruence» «side-angle-side implies congruence»()
+    therefore side_AB == side_AC
+}
+
+export «Geometry» «isosceles triangle» «equal base angles imply equal sides»

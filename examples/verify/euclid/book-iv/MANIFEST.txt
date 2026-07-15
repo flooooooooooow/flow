@@ -1,0 +1,16 @@
+examples/verify/euclid/book-iv/prop-01-fit-chord-in-circle.flow
+examples/verify/euclid/book-iv/prop-02-inscribe-equiangular-triangle.flow
+examples/verify/euclid/book-iv/prop-03-circumscribe-equiangular-triangle.flow
+examples/verify/euclid/book-iv/prop-04-inscribe-square.flow
+examples/verify/euclid/book-iv/prop-05-circumscribe-square.flow
+examples/verify/euclid/book-iv/prop-06-describe-square-on-line.flow
+examples/verify/euclid/book-iv/prop-07-inscribe-rectangle.flow
+examples/verify/euclid/book-iv/prop-08-circumscribe-rectangle.flow
+examples/verify/euclid/book-iv/prop-09-inscribe-pentagon.flow
+examples/verify/euclid/book-iv/prop-10-double-angle-triangle.flow
+examples/verify/euclid/book-iv/prop-11-circumscribe-pentagon.flow
+examples/verify/euclid/book-iv/prop-12-inscribe-circle-in-triangle.flow
+examples/verify/euclid/book-iv/prop-13-circumscribe-circle-about-triangle.flow
+examples/verify/euclid/book-iv/prop-14-inscribe-equilateral-polygon.flow
+examples/verify/euclid/book-iv/prop-15-inscribe-hexagon.flow
+examples/verify/euclid/book-iv/prop-16-circumscribe-hexagon.flow

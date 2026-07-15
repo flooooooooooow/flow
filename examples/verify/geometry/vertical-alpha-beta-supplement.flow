@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Alpha and beta form a supplementary pair on intersecting lines.
+# @from   euclid — Elements, Book I, Proposition 13
+# @tier   derived
+
+# @means  angle alpha plus angle beta equals two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «intersecting lines» «equal opposite vertical supplement alt», «Geometry» «intersecting lines» «opposite vertical supplement pair»
+
+theorem «Geometry» «intersecting lines» «alpha beta supplementary» () {
+    assume «Geometry» «intersecting lines» «equal opposite vertical supplement alt»()
+    assume «Geometry» «intersecting lines» «opposite vertical supplement pair»()
+    therefore angle_alpha + angle_beta == two_right_angles
+}
+
+export «Geometry» «intersecting lines» «alpha beta supplementary»

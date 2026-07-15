@@ -1,0 +1,16 @@
+# @module examples.verify.euclid.book-v
+# @means  If four magnitudes are proportional, they are also proportional alternando.
+# @from   euclid — Elements, Book V, Proposition 7
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 4: equimultiples preserve proportion», «Geometry» «Euclid Book V» «Proposition 6: magnitudes with the same ratio to a third are proportional to one another»
+
+theorem «Geometry» «Euclid Book V» «Proposition 7: proportional magnitudes satisfy alternando» () {
+    let a = first
+    let b = second
+    let c = third
+    let d = fourth
+    therefore ratio(a, c) == ratio(b, d)
+    assume «Geometry» «Euclid Book V» «Proposition 4: equimultiples preserve proportion»()
+    assume «Geometry» «Euclid Book V» «Proposition 6: magnitudes with the same ratio to a third are proportional to one another»()
+    therefore ratio_a_b_implies_ratio_a_c
+}

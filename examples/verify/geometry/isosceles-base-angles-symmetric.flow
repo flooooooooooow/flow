@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Base angles are symmetric about the apex median.
+# @from   euclid — Elements, Book I, Proposition 5
+# @tier   derived
+
+# @means  angle at B equals reflect of angle at C across apex median.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «isosceles triangle» «equal sides symmetric about apex median», «Geometry» «isosceles triangle» «base angles are equal»
+
+theorem «Geometry» «isosceles triangle» «base angles symmetric about apex median» () {
+    assume «Geometry» «isosceles triangle» «equal sides symmetric about apex median»()
+    assume «Geometry» «isosceles triangle» «base angles are equal»()
+    therefore angle_at_B == reflect_angle_at_C
+}
+
+export «Geometry» «isosceles triangle» «base angles symmetric about apex median»

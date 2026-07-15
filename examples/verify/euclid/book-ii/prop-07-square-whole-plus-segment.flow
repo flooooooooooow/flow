@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-ii
+# @means  If a straight line is cut at random, the square on the whole and that on one segment equal twice the rectangle by the whole and that segment together with the square on the remaining segment.
+# @from   euclid — Elements, Book II, Proposition 7
+# @tier   derived
+# @needs  «Geometry» «Euclid Book II» «Proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle»
+
+theorem «Geometry» «Euclid Book II» «Proposition 7: the square on the whole plus that on one segment equals twice a rectangle plus a square» () {
+    let whole = straight_line_AB
+    let C = segment_AC
+    let D = segment_CB
+    therefore sq(whole) + sq(C) == 2 * rect(whole, C) + sq(D)
+    assume «Geometry» «Euclid Book II» «Proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle»()
+}

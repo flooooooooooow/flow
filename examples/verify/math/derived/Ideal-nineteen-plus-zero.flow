@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Nineteen plus zero is nineteen in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  19 + 0 = 19 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «eighteen plus zero in ideal»
+
+theorem «Ideal» «addition» «nineteen plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(19)
+    assume «Ideal» «addition» «eighteen plus zero in ideal»()
+    therefore 19 + 0 == 19
+}
+
+export «Ideal» «addition» «nineteen plus zero in ideal»

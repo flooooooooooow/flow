@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Zero plus zero is zero in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  0 + 0 = 0 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the left additive identity», «Ideal» «addition» «zero plus zero is zero»
+
+theorem «Ideal» «addition» «zero plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the left additive identity»(0)
+    assume «Ideal» «addition» «zero plus zero is zero»()
+    therefore 0 + 0 == 0
+}
+
+export «Ideal» «addition» «zero plus zero in ideal»

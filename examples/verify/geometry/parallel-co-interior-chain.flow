@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Co-interior angles chain to supplementary pairs on parallel lines.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  co-interior alpha plus co-interior beta equals two right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «full transversal angle chain», «Geometry» «parallel lines» «co-interior angles sum to two right»
+
+theorem «Geometry» «parallel lines» «co-interior chain supplementary» () {
+    assume «Geometry» «parallel lines» «full transversal angle chain»()
+    assume «Geometry» «parallel lines» «co-interior angles sum to two right»()
+    therefore angle_co_interior_alpha + angle_co_interior_beta == two_right_angles
+}
+
+export «Geometry» «parallel lines» «co-interior chain supplementary»

@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Symmetry of binomial coefficients at a successor index.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(succ(n), k) = choose(succ(n), succ(n) - k).
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «symmetry in k and n minus k», «Comb» «choose» «choosing none gives one»
+
+theorem «Comb» «choose» «symmetry at successors» (n: Nat, k: Nat) {
+    assume «Comb» «choose» «symmetry in k and n minus k»(succ(n), k)
+    assume «Comb» «choose» «choosing none gives one»(n)
+    therefore choose(succ(n), k) == choose(succ(n), succ(n) - k)
+}
+
+export «Comb» «choose» «symmetry at successors»

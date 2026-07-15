@@ -1,0 +1,8 @@
+# @means  The derivatives of sine at zero follow the alternating Maclaurin pattern 0, 1, 0, -1, …
+# @from   brook taylor — https://en.wikipedia.org/wiki/Taylor_series
+# @tier   definition
+
+theorem «Analysis» «smooth functions» «derivatives of sine are known» (x: Real) {
+    therefore sin_prime_at_zero == 1
+    therefore sin_double_prime_at_zero == 0
+}

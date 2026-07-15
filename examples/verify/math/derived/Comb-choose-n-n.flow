@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Choosing all items from n gives exactly one subset.
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @tier   derived
+
+# @means  choose(n, n) = 1.
+# @from   graham-knuth-patashnik
+# @tier   derived
+# @needs  «Comb» «choose» «choosing none gives one», «Comb» «choose» «symmetry in k and n minus k»
+
+import .Comb-choose-sym { choose-sym }
+
+theorem «Comb» «choose» «choosing all gives one» (n: Nat) {
+    assume «Comb» «choose» «choosing none gives one»(n)
+    assume «Comb» «choose» «symmetry in k and n minus k»(n, n)
+    therefore choose(n, n) == 1
+}
+
+export «Comb» «choose» «choosing all gives one»

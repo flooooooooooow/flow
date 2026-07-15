@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Every ideal contains the ring zero.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  0 in I for every ideal I.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «membership» «zero lies in every ideal», «Ring» «addition» «zero is the left identity»
+
+theorem «Ideal» «membership» «ideals contain zero» (I: Ideal) {
+    assume «Ideal» «membership» «zero lies in every ideal»(I)
+    assume «Ring» «addition» «zero is the left identity»(0)
+    therefore 0 in I
+}
+
+export «Ideal» «membership» «ideals contain zero»

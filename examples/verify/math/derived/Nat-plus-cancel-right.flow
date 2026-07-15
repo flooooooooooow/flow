@@ -1,0 +1,23 @@
+# @module examples.verify.math.derived
+# @means  Equal right summands can be cancelled when they sit on the right.
+# @from   peano — https://en.wikipedia.org/wiki/Cancellation_property
+# @tier   derived
+
+# @means  From b + a = c + a we deduce b = c.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «addition» «order does not matter», «Nat» «addition» «left cancellation holds»
+
+import .Nat-plus-commutes { commutes }
+import .Nat-plus-cancel-left { cancel-left }
+
+theorem «Nat» «addition» «right cancellation holds» (a: Nat, b: Nat, c: Nat) {
+    if b + a == c + a {
+        assume «Nat» «addition» «order does not matter»(b, a)
+        assume «Nat» «addition» «order does not matter»(c, a)
+        assume «Nat» «addition» «left cancellation holds»(a, b, c)
+        therefore b == c
+    }
+}
+
+export «Nat» «addition» «right cancellation holds»

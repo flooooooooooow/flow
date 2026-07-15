@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Three times three equals its square.
+# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @tier   derived
+
+# @means  3 * 3 = sq(3).
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «square» «squaring three is self multiplication»
+
+theorem «Nat» «multiplication» «three times three is the square of three» () {
+    let three = succ(succ(succ(0)))
+    assume «Nat» «square» «squaring three is self multiplication»()
+    therefore three * three == sq(three)
+}
+
+export «Nat» «multiplication» «three times three is the square of three»

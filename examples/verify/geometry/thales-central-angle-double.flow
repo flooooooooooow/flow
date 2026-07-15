@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The central angle on a diameter is two right angles.
+# @from   euclid — Elements, Book III, Proposition 31
+# @tier   derived
+
+# @means  angle AOB equals two right angles for diameter AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed angle on diameter is right», «Geometry» «circle» «inscribed angle is half the central angle»
+
+theorem «Geometry» «circle» «central angle on diameter is two right» () {
+    assume «Geometry» «circle» «inscribed angle on diameter is right»()
+    assume «Geometry» «circle» «inscribed angle is half the central angle»()
+    therefore angle_AOB == two_right_angles
+}
+
+export «Geometry» «circle» «central angle on diameter is two right»

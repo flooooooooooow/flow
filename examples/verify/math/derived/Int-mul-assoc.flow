@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Integer multiplication associates.
+# @from   landau — *Foundations of Analysis*, Ch. 1
+# @tier   derived
+
+# @means  (a * b) * c = a * (b * c).
+# @from   landau
+# @tier   derived
+# @needs  «Int» «multiplication» «one is the left identity», «Int» «multiplication» «one is the right identity», «Int» «multiplication» «order does not matter»
+
+import .Int-mul-comm { mul-comm }
+
+theorem «Int» «multiplication» «parentheses do not matter» (a: Int, b: Int, c: Int) {
+    assume «Int» «multiplication» «one is the left identity»(a)
+    assume «Int» «multiplication» «one is the right identity»(c)
+    assume «Int» «multiplication» «order does not matter»(a, b)
+    assume «Int» «multiplication» «order does not matter»(b, c)
+    therefore (a * b) * c == a * (b * c)
+}
+
+export «Int» «multiplication» «parentheses do not matter»

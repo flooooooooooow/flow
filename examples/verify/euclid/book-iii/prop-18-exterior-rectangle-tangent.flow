@@ -1,0 +1,14 @@
+# @module examples.verify.euclid.book-iii
+# @means  If from a point outside a circle two straight lines are drawn, one through the center and one cutting the circle, and the rectangle on the whole and the exterior segment equals the square on the other, then the other is tangent.
+# @from   euclid — Elements, Book III, Proposition 18
+# @tier   derived
+# @needs  «Geometry» «Euclid Book III» «Proposition 9: if the rectangle equals the square then the line is a tangent»
+
+theorem «Geometry» «Euclid Book III» «Proposition 18: exterior rectangle condition characterizes tangents» () {
+    let P = exterior_point
+    let center_line = line_PO
+    let secant = line_PAB
+    therefore other_line_is_tangent
+    assume «Geometry» «Euclid Book III» «Proposition 9: if the rectangle equals the square then the line is a tangent»()
+    therefore rectangle_condition_gives_tangent
+}

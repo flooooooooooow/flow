@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Angle equalities cycle along a transversal of parallel lines.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  f-angle alpha equals corresponding beta.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «f angles are equal», «Geometry» «parallel lines» «alternate equal implies corresponding equal»
+
+theorem «Geometry» «parallel lines» «transversal angle cycle holds» () {
+    assume «Geometry» «parallel lines» «f angles are equal»()
+    assume «Geometry» «parallel lines» «alternate equal implies corresponding equal»()
+    therefore angle_f_alpha == angle_corresponding_beta
+}
+
+export «Geometry» «parallel lines» «transversal angle cycle holds»

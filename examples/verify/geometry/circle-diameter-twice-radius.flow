@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  A diameter equals twice a radius.
+# @from   euclid — Elements, Book I, Definition 15
+# @tier   derived
+
+# @means  diameter AB equals radius OA plus radius OB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «radii from the centre are equal», «Geometry» «circle» «radii to circumference points are equal»
+
+theorem «Geometry» «circle» «diameter equals two radii» () {
+    assume «Geometry» «circle» «radii from the centre are equal»()
+    assume «Geometry» «circle» «radii to circumference points are equal»()
+    therefore diameter_AB == radius_OA + radius_OB
+}
+
+export «Geometry» «circle» «diameter equals two radii»

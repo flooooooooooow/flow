@@ -1,0 +1,19 @@
+# @module examples.verify.math.derived
+# @means  Multiplying zero by a ring element stays in an ideal.
+# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @tier   derived
+
+# @means  If 0 in I then r * 0 in I.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «multiplication» «absorbs ring elements on the left», «Ideal» «membership» «ideals contain zero»
+
+theorem «Ideal» «multiplication» «zero product stays in the ideal» (I: Ideal, r: Ring) {
+    if 0 in I {
+        assume «Ideal» «multiplication» «absorbs ring elements on the left»(I, r, 0)
+        assume «Ideal» «membership» «ideals contain zero»(I)
+        therefore r * 0 in I
+    }
+}
+
+export «Ideal» «multiplication» «zero product stays in the ideal»

@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Join of join with self is idempotent.
+# @from   davey-priestley — *Introduction to Lattices and Order*
+# @tier   derived
+
+# @means  join(join(a, b), join(a, b)) = join(a, b).
+# @from   davey-priestley
+# @tier   derived
+# @needs  «Order» «join» «repeating does not change the value»
+
+theorem «Order» «join» «join of join with self is idempotent» (a: Nat, b: Nat) {
+    assume «Order» «join» «repeating does not change the value»(join(a, b))
+    therefore join(join(a, b), join(a, b)) == join(a, b)
+}
+
+export «Order» «join» «join of join with self is idempotent»

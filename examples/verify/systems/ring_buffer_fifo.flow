@@ -1,0 +1,42 @@
+# Ring buffer — properties on the function, theorem connects to ghost model.
+# Status: design example (syntax not yet implemented)
+
+struct RingBuffer {
+    data: ptr<i32>,
+    capacity: i32,
+    write_idx: i32,
+    read_idx: i32,
+
+    has property size == (write_idx - read_idx) mod capacity
+    has property 0 <= size < capacity
+}
+
+ghost type Queue<T> {
+    items: [T],
+    len: i32
+}
+
+function ring_push(rb: ptr<RingBuffer>, value: i32) -> i32
+    has property not ring_is_full(rb) before
+    has property ring_size(rb) == old(ring_size(rb)) + 1 after
+{
+    let next_write: i32 = (rb[0].write_idx + 1) % rb[0].capacity
+    rb[0].data[rb[0].write_idx] = value
+    rb[0].write_idx = next_write
+    return 1
+}
+
+theorem rb_matches_queue(rb: RingBuffer, q: Queue<i32>) {
+    therefore ring_size(rb) == q.len
+    therefore queue_order(rb) == q.items
+}
+
+theorem push_preserves_fifo(rb: RingBuffer, q: Queue<i32>, x: i32) {
+    assume rb_matches_queue(rb, q)
+    assume not ring_is_full(rb)
+
+    let rb2 = ring_push(rb, x)
+    let q2  = queue_push(q, x)
+
+    therefore rb_matches_queue(rb2, q2)
+}

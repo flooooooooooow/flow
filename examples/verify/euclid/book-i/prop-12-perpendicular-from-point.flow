@@ -1,0 +1,16 @@
+# @module examples.verify.euclid.book-i
+# @means  To draw a perpendicular to a given infinite straight line from a given point not on it.
+# @from   euclid — Elements, Book I, Proposition 12
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 2: a segment equal to a given segment», «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment», «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line»
+
+theorem «Geometry» «Euclid Book I» «Proposition 12: drop a perpendicular from a point to a line» () {
+    let circle_center_C_radius_CD = circle_at_C_with_radius_CD
+    let E = second_intersection_of_circle_with_line_AB
+    let F = midpoint_of_EF_by_Proposition_10
+    let perpendicular_at_F = line_through_F_perpendicular_to_AB_by_Proposition_11
+    assume «Geometry» «Euclid Book I» «Proposition 2: a segment equal to a given segment»()
+    assume «Geometry» «Euclid Book I» «Proposition 10: bisect a given segment»()
+    assume «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line»()
+    therefore angle_CEB == one_right_angle
+}

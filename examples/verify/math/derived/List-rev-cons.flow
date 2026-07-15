@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Reversing a cons prepends the head to the reversed tail.
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @tier   derived
+
+# @means  rev(cons(x, xs)) = rev(xs) ++ cons(x, nil).
+# @from   church/induction
+# @tier   derived
+# @needs  «List» «reverse» «reverse distributes over append», «List» «append» «singleton prepends the head»
+
+theorem «List» «reverse» «reverse of cons appends reversed tail» (x: Nat, xs: List) {
+    assume «List» «reverse» «reverse distributes over append»(xs, cons(x, nil))
+    assume «List» «append» «singleton prepends the head»(x, xs)
+    therefore rev(cons(x, xs)) == rev(xs) ++ cons(x, nil)
+}
+
+export «List» «reverse» «reverse of cons appends reversed tail»

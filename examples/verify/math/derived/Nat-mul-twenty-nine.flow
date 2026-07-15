@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Twenty-eight times one is twenty-eight.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  28 * 1 = 28.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «twenty seven times one is twenty seven»
+
+theorem «Nat» «multiplication» «twenty eight times one is twenty eight» () {
+    assume «Nat» «multiplication» «twenty seven times one is twenty seven»()
+    therefore 28 * 1 == 28
+}
+
+export «Nat» «multiplication» «twenty eight times one is twenty eight»

@@ -1,0 +1,18 @@
+# @module examples.verify.math.derived
+# @means  Appending two singletons increases length by two.
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @tier   derived
+
+# @means  len(cons(a, nil) ++ cons(b, nil)) = 2.
+# @from   church
+# @tier   derived
+# @needs  «List» «length» «append preserves length sum», «List» «length» «singleton has length one»
+
+theorem «List» «length» «append of two singletons has length two» (a: Nat, b: Nat) {
+    assume «List» «length» «append preserves length sum»(cons(a, nil), cons(b, nil))
+    assume «List» «length» «singleton has length one»(a)
+    assume «List» «length» «singleton has length one»(b)
+    therefore len(cons(a, nil) ++ cons(b, nil)) == 2
+}
+
+export «List» «length» «append of two singletons has length two»

@@ -1,0 +1,14 @@
+examples/verify/euclid/book-ii/prop-01-distributive-rectangle.flow
+examples/verify/euclid/book-ii/prop-02-rectangle-whole-and-part.flow
+examples/verify/euclid/book-ii/prop-03-rectangle-whole-and-other-part.flow
+examples/verify/euclid/book-ii/prop-04-square-on-whole-cut-random.flow
+examples/verify/euclid/book-ii/prop-05-rectangle-unequal-with-square-between.flow
+examples/verify/euclid/book-ii/prop-06-rectangle-whole-plus-added.flow
+examples/verify/euclid/book-ii/prop-07-square-whole-plus-segment.flow
+examples/verify/euclid/book-ii/prop-08-fourfold-rectangle-plus-square.flow
+examples/verify/euclid/book-ii/prop-09-fourfold-rectangle-unequal-segments.flow
+examples/verify/euclid/book-ii/prop-10-fourfold-rectangle-bisected-plus-added.flow
+examples/verify/euclid/book-ii/prop-11-gnomon-applications.flow
+examples/verify/euclid/book-ii/prop-12-gnomon-sum-squares.flow
+examples/verify/euclid/book-ii/prop-13-gnomon-from-two-segments.flow
+examples/verify/euclid/book-ii/prop-14-gnomon-complements-equal.flow

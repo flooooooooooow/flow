@@ -1,0 +1,18 @@
+\begin{center}
+\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]
+  \fill[fill=gray!4] (-10,-10) rectangle (500,370);
+  \coordinate (O) at (240.0,180.0);
+  \coordinate (A) at (100.0,140.0);
+  \coordinate (B) at (380.0,220.0);
+  \draw[gray] (O) circle (130.0);
+  \draw[thick] (O) -- (A);
+  \draw[thick] (O) -- (B);
+  \fill (O) circle (6pt);
+  \node[font=\bfseries] at ($( O ) + (0,-14)$) {O};
+  \fill (A) circle (6pt);
+  \node[font=\bfseries] at ($( A ) + (0,-14)$) {A};
+  \fill (B) circle (6pt);
+  \node[font=\bfseries] at ($( B ) + (0,-14)$) {B};
+  \node[below, text width=14cm, align=center, font=\small] at (240,20) {Circle with centre O — radii OA and OB are equal.};
+\end{tikzpicture}
+\end{center}

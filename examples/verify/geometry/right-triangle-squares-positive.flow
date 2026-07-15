@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The squares on the sides of a right triangle are positive.
+# @from   euclid — Elements, Book I, Proposition 47
+# @tier   derived
+
+# @means  a squared is greater than zero.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «right triangle» «leg square is less than hypotenuse square», «Geometry» «right triangle» «the Pythagorean relation holds»
+
+theorem «Geometry» «right triangle» «leg squares are positive» () {
+    assume «Geometry» «right triangle» «leg square is less than hypotenuse square»()
+    assume «Geometry» «right triangle» «the Pythagorean relation holds»()
+    therefore a * a > 0
+}
+
+export «Geometry» «right triangle» «leg squares are positive»

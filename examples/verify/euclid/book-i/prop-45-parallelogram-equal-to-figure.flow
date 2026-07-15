@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-i
+# @means  To construct a parallelogram equal to a given rectilineal figure in a given angle.
+# @from   euclid — Elements, Book I, Proposition 45
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 44: apply a parallelogram equal to a triangle to a line»
+
+theorem «Geometry» «Euclid Book I» «Proposition 45: construct a parallelogram equal to a rectilinear figure» () {
+    let triangles_partitioning_F = decomposition_of_rectilinear_F
+    let parallelogram_on_AB = parallelogram_for_first_triangle
+    assume rectilinear_figure_F_and_angle_DCE_and_segment_AB
+    assume «Geometry» «Euclid Book I» «Proposition 44: apply a parallelogram equal to a triangle to a line»()
+    therefore parallelogram_equals_rectilinear_F
+}

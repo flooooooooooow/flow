@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  If two triangles have two sides and the included angle equal, the triangles are congruent.
+# @from   euclid — Elements, Book I, Proposition 4
+# @tier   axiom
+
+theorem «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence» () {
+    assume segment_AB == segment_DE
+    assume segment_AC == segment_DF
+    assume angle_BAC == angle_EDF
+    assume Common Notion 4: things coinciding with one another are equal
+    therefore segment_BC == segment_EF
+    therefore angle_ABC == angle_DEF
+    therefore angle_ACB == angle_DFE
+    therefore triangle_ABC == triangle_DEF
+}

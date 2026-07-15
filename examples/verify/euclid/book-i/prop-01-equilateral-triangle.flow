@@ -1,0 +1,13 @@
+# @module examples.verify.euclid.book-i
+# @means  On a given finite straight line to construct an equilateral triangle.
+# @from   euclid — Elements, Book I, Proposition 1
+# @tier   axiom
+
+theorem «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment» () {
+    let C = intersection_of_circles(center_A, radius_AB, center_B, radius_BA)
+    assume Postulate 3: a circle can be drawn with any center and radius
+    assume Postulate 1: a straight line can be drawn from any point to any point
+    therefore segment_AC == segment_AB
+    therefore segment_BC == segment_AB
+    therefore equilateral_on_AB_exists
+}

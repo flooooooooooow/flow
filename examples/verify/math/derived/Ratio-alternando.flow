@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Proportional magnitudes satisfy alternando.
+# @from   euclid — Elements, Book V, Proposition 7
+# @tier   derived
+
+# @means  a:b = c:d implies a:c = b:d.
+# @from   euclid
+# @tier   derived
+# @needs  «Ratio» «proportion» «same ratio means matching equimultiples», «Ratio» «proportion» «every magnitude is proportional to itself»
+
+theorem «Ratio» «proportion» «alternando holds» (a: Magnitude, b: Magnitude, c: Magnitude, d: Magnitude) {
+    assume «Ratio» «proportion» «same ratio means matching equimultiples»(a, b, c, d)
+    assume «Ratio» «proportion» «every magnitude is proportional to itself»(a)
+    therefore ratio(a, c) == ratio(b, d)
+}
+
+export «Ratio» «proportion» «alternando holds»

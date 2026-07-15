@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  An inscribed angle on a minor arc is acute.
+# @from   euclid — Elements, Book III, Proposition 20
+# @tier   derived
+
+# @means  angle APB is less than one right angle on minor arc AB.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «circle» «inscribed less than central on same arc», «Geometry» «circle» «inscribed angle less than one right»
+
+theorem «Geometry» «circle» «inscribed on minor arc is acute» () {
+    assume «Geometry» «circle» «inscribed less than central on same arc»()
+    assume «Geometry» «circle» «inscribed angle less than one right»()
+    therefore angle_APB < one_right_angle
+}
+
+export «Geometry» «circle» «inscribed on minor arc is acute»

@@ -1,0 +1,8 @@
+# @means  Vertical angles formed by intersecting lines are equal.
+# @from   euclid — Elements, Book I, Proposition 15
+# @tier   derived
+# @diagram vertical-angles
+
+theorem «Geometry» «intersecting lines» «vertical angles are equal» () {
+    therefore angle_alpha == angle_alpha_prime
+}

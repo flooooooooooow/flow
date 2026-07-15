@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero times zero is zero in a ring witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  0 * 0 = 0.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ring» «multiplication» «zero times zero is zero»
+
+theorem «Ring» «multiplication» «zero times zero derived» () {
+    assume «Ring» «multiplication» «zero times zero is zero»()
+    therefore 0 * 0 == 0
+}
+
+export «Ring» «multiplication» «zero times zero derived»

@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Seventeen times one is seventeen.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  17 * 1 = 17.
+# @from   peano
+# @tier   derived
+# @needs  «Nat» «multiplication» «sixteen times one is sixteen»
+
+theorem «Nat» «multiplication» «seventeen times one is seventeen» () {
+    assume «Nat» «multiplication» «sixteen times one is sixteen»()
+    therefore 17 * 1 == 17
+}
+
+export «Nat» «multiplication» «seventeen times one is seventeen»

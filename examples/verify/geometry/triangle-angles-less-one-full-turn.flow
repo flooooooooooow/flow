@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  The interior angle sum is less than one full turn.
+# @from   euclid — Elements, Book I, Proposition 32
+# @tier   derived
+
+# @means  angle A plus angle B plus angle C is less than four right angles.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «interior angles sum to two right angles», «Geometry» «triangle» «angle difference less than two right»
+
+theorem «Geometry» «triangle» «interior sum less than one full turn» () {
+    assume «Geometry» «triangle» «interior angles sum to two right angles»()
+    assume «Geometry» «triangle» «angle difference less than two right»()
+    therefore angle_A + angle_B + angle_C < four_right_angles
+}
+
+export «Geometry» «triangle» «interior sum less than one full turn»

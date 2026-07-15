@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Seven plus zero is seven in an ideal witness.
+# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @tier   derived
+
+# @means  7 + 0 = 7 in an ideal.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Ideal» «addition» «zero is the right additive identity», «Ideal» «addition» «six plus zero in ideal»
+
+theorem «Ideal» «addition» «seven plus zero in ideal» () {
+    assume «Ideal» «addition» «zero is the right additive identity»(7)
+    assume «Ideal» «addition» «six plus zero in ideal»()
+    therefore 7 + 0 == 7
+}
+
+export «Ideal» «addition» «seven plus zero in ideal»

@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Half-turn interior sum witness for triangles.
+# @from   euclid — Elements, Book I, Proposition 32
+# @tier   derived
+
+# @means  two right angles equals angle A plus angle B plus angle C.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «triangle» «interior sum equals half turn», «Geometry» «triangle» «interior angles sum to two right angles»
+
+theorem «Geometry» «triangle» «half turn interior sum witness» () {
+    assume «Geometry» «triangle» «interior sum equals half turn»()
+    assume «Geometry» «triangle» «interior angles sum to two right angles»()
+    therefore two_right_angles == angle_A + angle_B + angle_C
+}
+
+export «Geometry» «triangle» «half turn interior sum witness»

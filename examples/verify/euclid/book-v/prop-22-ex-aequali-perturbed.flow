@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-v
+# @means  If a first is to a second as a third is to a fourth, and a fifth is to a second as a sixth is to a fourth, the sum of the first and fifth is to the third as the sum of the second and sixth is to the fourth.
+# @from   euclid — Elements, Book V, Proposition 22
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 20: perturbed proportion implies ex aequali»
+
+theorem «Geometry» «Euclid Book V» «Proposition 22: ex aequali from perturbed proportion» () {
+    let a = first
+    let b = second
+    let e = fifth
+    let f = sixth
+    therefore ratio(a + e, c) == ratio(b + f, d)
+    assume «Geometry» «Euclid Book V» «Proposition 20: perturbed proportion implies ex aequali»()
+    therefore ex_aequali_perturbed_holds
+}

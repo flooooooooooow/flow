@@ -1,0 +1,17 @@
+# @module examples.verify.math.derived
+# @means  Inverse times inverse gives identity in a group.
+# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @tier   derived
+
+# @means  inv(a) * inv(a) = 1 when a * inv(a) = 1.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Group» «inverse» «right inverse cancels on the right», «Group» «inverse» «inverse of inverse is original»
+
+theorem «Group» «inverse» «inverse times inverse is identity» (a: Group) {
+    assume «Group» «inverse» «right inverse cancels on the right»(a, inv(a))
+    assume «Group» «inverse» «inverse of inverse is original»(a)
+    therefore inv(a) * inv(a) == 1
+}
+
+export «Group» «inverse» «inverse times inverse is identity»

@@ -1,0 +1,15 @@
+# @module examples.verify.euclid.book-i
+# @means  To construct a triangle from three straight lines, each less than the sum of the other two.
+# @from   euclid — Elements, Book I, Proposition 22
+# @tier   derived
+# @needs  «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment», «Geometry» «Euclid Book I» «Proposition 20: the sum of two sides exceeds the third»
+
+theorem «Geometry» «Euclid Book I» «Proposition 22: construct a triangle from three lines» () {
+    let circle_center_A_radius_F = circle_at_A_with_radius_F
+    let circle_center_B_radius_G = circle_at_B_with_radius_G
+    let K = intersection_of_circles_at_A_and_B
+    assume lines_F_G_H_satisfy_triangle_inequality
+    assume «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»()
+    assume «Geometry» «Euclid Book I» «Proposition 20: the sum of two sides exceeds the third»()
+    therefore triangle_from_lines_LMN_exists
+}

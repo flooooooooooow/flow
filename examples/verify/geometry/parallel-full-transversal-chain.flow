@@ -1,0 +1,17 @@
+# @module examples.verify.geometry
+# @means  Full transversal angle equality chain for parallel lines.
+# @from   euclid — Elements, Book I, Proposition 29
+# @tier   derived
+
+# @means  alternate, corresponding, z, and f angles all equal pairwise.
+# @from   euclid
+# @tier   derived
+# @needs  «Geometry» «parallel lines» «interior alternate chains to corresponding», «Geometry» «parallel lines» «corresponding and f angles chain»
+
+theorem «Geometry» «parallel lines» «full transversal angle chain» () {
+    assume «Geometry» «parallel lines» «interior alternate chains to corresponding»()
+    assume «Geometry» «parallel lines» «corresponding and f angles chain»()
+    therefore angle_alternate_alpha == angle_f_beta
+}
+
+export «Geometry» «parallel lines» «full transversal angle chain»

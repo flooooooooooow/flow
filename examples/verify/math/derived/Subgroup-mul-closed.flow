@@ -1,0 +1,21 @@
+# @module examples.verify.math.derived
+# @means  Subgroup multiplication closure follows from subgroup axioms.
+# @from   dummit-foote — *Abstract Algebra*, §2.2
+# @tier   derived
+
+# @means  If a in H and b in H then a * b in H when H is a subgroup.
+# @from   dummit-foote
+# @tier   derived
+# @needs  «Subgroup» «multiplication» «closed under multiplication», «Group» «identity» «one is the left identity»
+
+theorem «Subgroup» «multiplication» «subgroup products stay in the subgroup» (H: Subgroup, a: Group, b: Group) {
+    if a in H {
+        if b in H {
+            assume «Subgroup» «multiplication» «closed under multiplication»(H, a, b)
+            assume «Group» «identity» «one is the left identity»(a)
+            therefore a * b in H
+        }
+    }
+}
+
+export «Subgroup» «multiplication» «subgroup products stay in the subgroup»

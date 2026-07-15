@@ -1,0 +1,16 @@
+# @module examples.verify.euclid.book-v
+# @means  If a first is to a second as a third is to a fourth, and the third is to a fourth as a fifth is to a sixth, the first is to the sixth as the third is to the eighth.
+# @from   euclid — Elements, Book V, Proposition 23
+# @tier   derived
+# @needs  «Geometry» «Euclid Book V» «Proposition 19: ex aequali proportion in the second form», «Geometry» «Euclid Book V» «Proposition 20: perturbed proportion implies ex aequali»
+
+theorem «Geometry» «Euclid Book V» «Proposition 23: chained proportion yields ex aequali» () {
+    let a = first
+    let b = second
+    let e = fifth
+    let h = eighth
+    therefore ratio(a, h) == ratio(c, eighth)
+    assume «Geometry» «Euclid Book V» «Proposition 19: ex aequali proportion in the second form»()
+    assume «Geometry» «Euclid Book V» «Proposition 20: perturbed proportion implies ex aequali»()
+    therefore chained_ex_aequali_holds
+}

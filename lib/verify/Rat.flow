@@ -1,0 +1,30 @@
+# @module verify.Rat
+# @means  Rational numbers as normalized pair quotients.
+# @from   landau — *Foundations of Analysis*
+# @tier   definitions-only
+
+# @means  Zero is the left additive identity for rationals.
+# @from   landau
+# @tier   definition
+
+theorem «Rat» «addition» «zero is the left identity» (q: Rat) {
+    therefore 0 + q == q
+}
+
+# @means  Zero is the right additive identity for rationals.
+# @from   landau
+# @tier   definition
+
+theorem «Rat» «addition» «zero is the right identity» (q: Rat) {
+    therefore q + 0 == q
+}
+
+# @means  One is the left multiplicative identity for rationals.
+# @from   landau
+# @tier   definition
+
+theorem «Rat» «multiplication» «one is the left identity» (q: Rat) {
+    therefore 1 * q == q
+}
+
+export «Rat» «addition» «zero is the left identity», «Rat» «addition» «zero is the right identity», «Rat» «multiplication» «one is the left identity»

@@ -1,0 +1,16 @@
+# @module examples.verify.math.derived
+# @means  Zero plus zero is zero for rationals.
+# @from   landau — *Foundations of Analysis*
+# @tier   derived
+
+# @means  0 + 0 = 0.
+# @from   landau
+# @tier   derived
+# @needs  «Rat» «addition» «zero is the left identity»
+
+theorem «Rat» «addition» «zero plus zero is zero» () {
+    assume «Rat» «addition» «zero is the left identity»(0)
+    therefore 0 + 0 == 0
+}
+
+export «Rat» «addition» «zero plus zero is zero»

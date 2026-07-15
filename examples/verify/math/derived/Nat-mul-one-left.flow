@@ -1,0 +1,30 @@
+# @module examples.verify.math.derived
+# @means  One is the left multiplicative identity.
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @tier   derived
+
+# @means  succ(0) * m = m, i.e. 1 * m = m.
+# @from   peano/induction — Gries & Schneider, Ch. 3
+# @tier   derived
+# @needs  «Nat» «multiplication» «zero is the right annihilator», «Nat» «multiplication» «successor on the right distributes», «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the left steps the sum»
+
+import verify.Nat-mul { zero-right, succ-right }
+import verify.Nat/+ { zero-left }
+import .Nat-plus-succ-left { succ-left }
+
+theorem «Nat» «multiplication» «one is the left identity» (m: Nat) {
+    if m == 0 {
+        assume «Nat» «multiplication» «zero is the right annihilator»(succ(0))
+        assume «Nat» «addition» «zero is the left identity»(0)
+        therefore succ(0) * m == m
+    } else {
+        let k = pred(m)
+        assume «Nat» «multiplication» «one is the left identity»(k)
+        assume «Nat» «multiplication» «successor on the right distributes»(succ(0), k)
+        assume «Nat» «addition» «successor on the left steps the sum»(0, k)
+        assume «Nat» «addition» «zero is the left identity»(k)
+        therefore succ(0) * m == m
+    }
+}
+
+export «Nat» «multiplication» «one is the left identity»
