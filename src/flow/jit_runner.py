@@ -4,8 +4,10 @@ FLOW JIT Runner
 Hot reload and JIT execution via MLIRJIT (MLIR → LLVM → native shared lib).
 """
 
+import os
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -68,13 +70,22 @@ class FlowJITRunner:
                 print("   Requires: mlir-opt, mlir-translate, clang on PATH")
                 print("   macOS: brew install llvm && export PATH=\"$(brew --prefix llvm)/bin:$PATH\"")
                 return False
+            if MLIRJIT.is_crash_exit(result):
+                print(f"❌ JIT crashed (exit {result}) — native code fault, not a Python exception")
+                print("   Usually arm64 aggregate-return stack aliasing in MLIR codegen.")
+                print("   ASAN retry should have run automatically; unset FLOW_JIT_ASAN=0 to prefer ASAN.")
+                return False
             if result != 0:
                 print(f"❌ JIT finished with exit code: {result}")
                 return False
             print(f"✅ JIT finished with exit code: {result}")
             return True
+        except KeyboardInterrupt:
+            raise
         except Exception as e:
             print(f"❌ JIT error: {e}")
+            if os.environ.get("FLOW_JIT_DEBUG"):
+                traceback.print_exc()
             return False
 
     def cleanup(self) -> None:
