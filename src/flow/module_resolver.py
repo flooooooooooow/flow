@@ -11,6 +11,7 @@ import warnings
 from pathlib import Path
 from typing import List, Dict, Set, Any, Optional, Tuple
 
+from .dynamics_dsl import expand_dynamics_dsl, has_dynamics_dsl
 from .parser import Lexer, Parser, ImportDecl, ImplDecl, ExportDecl, ModuleDecl
 from .project_config import load_project_config
 
@@ -88,6 +89,9 @@ class ModuleResolver:
 
         with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
+
+        if has_dynamics_dsl(code):
+            code = expand_dynamics_dsl(code)
 
         lexer = Lexer(code)
         parser = Parser(lexer)
