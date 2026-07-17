@@ -2369,7 +2369,8 @@ class Parser:
             self.advance()
 
             if self.current_token.type == TokenType.LPAREN:
-                return self.parse_function_call(name)
+                # Allow postfix chains on call results: f()[i].x, f().m()
+                return self.parse_postfix_chain(self.parse_function_call(name))
             elif self.current_token.type == TokenType.LESS:
                 # Could be:
                 # 1. Generic type constructor: array<i32>(10)
@@ -2400,7 +2401,9 @@ class Parser:
 
                     if self.current_token.type == TokenType.LPAREN:
                         # Generic function call: make_box<i32>(42)
-                        return self.parse_function_call(mangled_name)
+                        return self.parse_postfix_chain(
+                            self.parse_function_call(mangled_name)
+                        )
                     elif self.current_token.type == TokenType.LBRACE:
                         # Generic struct literal: Box<i32> { ... }
                         return self.parse_struct_literal(mangled_name)
@@ -2453,22 +2456,8 @@ class Parser:
                 self.expect(TokenType.RPAREN)
                 return EffectCall(name, operation, arguments)
             elif self.current_token.type == TokenType.LBRACKET:
-                # Array access: arr[index] with optional chained field/index access
-                expr = Variable(name)
-                while (
-                    self.current_token.type == TokenType.LBRACKET
-                    or self.current_token.type == TokenType.DOT
-                ):
-                    if self.current_token.type == TokenType.LBRACKET:
-                        self.advance()  # consume [
-                        index = self.parse_expression_without_assign()
-                        self.expect(TokenType.RBRACKET)
-                        expr = ArrayAccess(expr, index)
-                    elif self.current_token.type == TokenType.DOT:
-                        self.advance()  # consume .
-                        field_name = self.expect(TokenType.IDENTIFIER).value
-                        expr = FieldAccess(expr, field_name)
-                return expr
+                # Array access: arr[index] with chained field/index/method access
+                return self.parse_postfix_chain(Variable(name))
             else:
                 return Variable(name)
 
@@ -2476,7 +2465,8 @@ class Parser:
             self.advance()
             expr = self.parse_expression_without_assign()
             self.expect(TokenType.RPAREN)
-            return expr
+            # Allow postfix chains on parenthesized expressions: (p)[0].x
+            return self.parse_postfix_chain(expr)
 
         elif self.current_token.type == TokenType.PIPE:
             # Lambda expression: |x: i32, y: i32| -> i32 { x + y }
@@ -2635,35 +2625,39 @@ class Parser:
         return StructLiteral(struct_name, fields)
 
     def parse_field_access(self, object_name: str) -> Expression:
-        self.expect(TokenType.DOT)
-        member_name = self.expect(TokenType.IDENTIFIER).value
+        # Delegate to the unified postfix chain so field access, indexing,
+        # and method calls compose arbitrarily: a.b, a.b[i].c, a.b().c[0].d()
+        return self.parse_postfix_chain(Variable(object_name))
 
-        # Dotted call: obj.method(args)
-        if self.current_token.type == TokenType.LPAREN:
-            self.expect(TokenType.LPAREN)
-            arguments: List[Expression] = []
+    def parse_postfix_chain(self, expr: Expression) -> Expression:
+        """Apply postfix operators (field access, indexing, method calls) to an
+        already-parsed base expression, chaining arbitrarily.
 
-            if self.current_token.type != TokenType.RPAREN:
-                arguments.append(self.parse_expression_without_assign())
-                while self.current_token.type == TokenType.COMMA:
-                    self.advance()
-                    arguments.append(self.parse_expression_without_assign())
-
-            self.expect(TokenType.RPAREN)
-            return MethodCall(Variable(object_name), member_name, arguments)
-
-        # Regular field access
-        expr: Expression = FieldAccess(Variable(object_name), member_name)
-
-        # Support chained access: a.b.c and a.b[i].c
+        Handles: a.b.c, a[i], a[i].b, a.b[i].c, a[i].m(x), a.b().c, f()[i].x
+        """
         while (
             self.current_token.type == TokenType.DOT
             or self.current_token.type == TokenType.LBRACKET
         ):
             if self.current_token.type == TokenType.DOT:
                 self.advance()  # consume .
-                next_member = self.expect(TokenType.IDENTIFIER).value
-                expr = FieldAccess(expr, next_member)
+                member_name = self.expect(TokenType.IDENTIFIER).value
+
+                if self.current_token.type == TokenType.LPAREN:
+                    # Method call: expr.method(args)
+                    self.expect(TokenType.LPAREN)
+                    arguments: List[Expression] = []
+
+                    if self.current_token.type != TokenType.RPAREN:
+                        arguments.append(self.parse_expression_without_assign())
+                        while self.current_token.type == TokenType.COMMA:
+                            self.advance()
+                            arguments.append(self.parse_expression_without_assign())
+
+                    self.expect(TokenType.RPAREN)
+                    expr = MethodCall(expr, member_name, arguments)
+                else:
+                    expr = FieldAccess(expr, member_name)
             elif self.current_token.type == TokenType.LBRACKET:
                 self.advance()  # consume [
                 index = self.parse_expression_without_assign()
