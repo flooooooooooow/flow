@@ -39,3 +39,8 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests"
 ]
+filterwarnings = [
+    # Treat any warning raised during the test run as an error so new
+    # warnings fail CI instead of accumulating silently.
+    "error"
+]

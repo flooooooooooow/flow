@@ -142,13 +142,15 @@ jobs:
         with:
           mlir: 'true'
 
-      - name: Tier 2 (transpile + clang)
+      - name: Tier 2 (transpile + clang, strict)
         env:
           PYTHONPATH: src
         run: |
           chmod +x ./flow
           # Tier 2 already transpiles; tier 1 was redundant (~2× work).
-          ./flow test --tier2
+          # --strict: type-checker findings fail the build. Files with a
+          # documented "# flow:lenient - <reason>" pragma are exempt.
+          ./flow test --tier2 --strict
 
   pytest:
     name: Python tests
