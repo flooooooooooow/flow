@@ -489,6 +489,7 @@
                     <option value="generics">Generics</option>
                     <option value="traits">Traits &amp; Impl</option>
                     <option value="effects">Effects &amp; Handlers</option>
+                    <option value="dynamics">Dynamics (Bouncing Ball)</option>
                 </select>
             </div>
             <div class="toolbar-group" style="margin-left: auto;">
@@ -842,6 +843,55 @@ function main() -> i32 {
         let silent: i32 = do_work()
         printf("silent answer = %d\\n", silent)
     }
+    return 0
+}`,
+
+            dynamics: `# Bouncing ball -- continuous flight + discrete impact events
+# Hybrid dynamics: height evolves under gravity; when it reaches
+# zero, an event resets velocity := -0.8 * velocity.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+}
+
+const GRAVITY: f64 = 9.81
+const RESTITUTION: f64 = 0.8
+
+function main() -> i32 {
+    let dt: f64 = 0.001
+    let mut t: f64 = 0.0
+    let mut h: f64 = 2.0
+    let mut v: f64 = 0.0
+    let mut bounce: i32 = 0
+    let mut steps: i32 = 0
+
+    println("bounce   impact t [s]   rebound apex [m]")
+    while bounce < 8 and steps < 20000 {
+        let h_next: f64 = h + v * dt - 0.5 * GRAVITY * dt * dt
+        let v_next: f64 = v - GRAVITY * dt
+        if h_next <= 0.0 and v < 0.0 {
+            # Event: solve for the exact impact instant inside the step
+            let tau: f64 = (v + sqrt(v * v + 2.0 * GRAVITY * h)) / GRAVITY
+            t = t + tau
+            let v_hit: f64 = v - GRAVITY * tau
+            # Reset: velocity becomes -e * velocity
+            v = 0.0 - RESTITUTION * v_hit
+            h = 0.0
+            bounce = bounce + 1
+            let apex: f64 = v * v / (2.0 * GRAVITY)
+            printf("%6.0f", bounce as f64)
+            printf("   %12.6f", t)
+            printf("   %16.6f", apex)
+            println("")
+        } else {
+            h = h_next
+            v = v_next
+            t = t + dt
+        }
+        steps = steps + 1
+    }
+    println("apex decays by e^2 = 0.64 each bounce")
     return 0
 }`
         };
