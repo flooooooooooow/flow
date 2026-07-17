@@ -144,7 +144,14 @@ function main() -> i32 {
 }
 """
 
+OTHER_FILE = """function use_norm() -> f64 {
+    let q = Point { x: 1.0, y: 2.0 }
+    return norm(q)
+}
+"""
+
 URI = 'file:///test/main.flow'
+URI2 = 'file:///test/other.flow'
 
 
 def test_diagnostics(c):
@@ -207,6 +214,82 @@ def test_diagnostics(c):
           first['params']['diagnostics'] == [])
 
 
+def test_references(c):
+    print("\n== References ==")
+
+    # CLEAN_FILE is open as URI from the diagnostics test; open a second
+    # file that calls norm() and uses Point to exercise cross-file refs.
+    c.notify('textDocument/didOpen', {'textDocument': {
+        'uri': URI2, 'languageId': 'flow', 'version': 1, 'text': OTHER_FILE}})
+    c.wait_notification('textDocument/publishDiagnostics')
+
+    def lines_of(refs, uri):
+        return sorted(r['range']['start']['line'] for r in refs
+                      if r['uri'] == uri)
+
+    # function references: cursor on 'norm' declaration (line 5, col 9)
+    resp = c.request('textDocument/references', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 9},
+        'context': {'includeDeclaration': True}})
+    refs = resp['result']
+    print(f"  references(norm) -> {json.dumps(refs, indent=2)}")
+    check('function refs: decl + call in main found (same file)',
+          lines_of(refs, URI) == [5, 11], str(lines_of(refs, URI)))
+    check('function refs: cross-file call found',
+          lines_of(refs, URI2) == [2], str(lines_of(refs, URI2)))
+
+    # includeDeclaration False drops the declaration
+    resp = c.request('textDocument/references', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 9},
+        'context': {'includeDeclaration': False}})
+    refs = resp['result']
+    check('function refs: includeDeclaration=false drops declaration',
+          lines_of(refs, URI) == [11], str(lines_of(refs, URI)))
+
+    # struct references: cursor on 'Point' usage in main (line 10 'Point {')
+    resp = c.request('textDocument/references', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 10, 'character': 13},
+        'context': {'includeDeclaration': True}})
+    refs = resp['result']
+    print(f"  references(Point) -> {len(refs)} locations: "
+          f"{[(r['uri'].split('/')[-1], r['range']['start']['line']) for r in refs]}")
+    check('struct refs: decl, param type, literal found (same file)',
+          lines_of(refs, URI) == [0, 5, 10], str(lines_of(refs, URI)))
+    check('struct refs: cross-file literal found',
+          lines_of(refs, URI2) == [1], str(lines_of(refs, URI2)))
+
+    # local variable references: cursor on 'p' in main (line 10 'let p =')
+    resp = c.request('textDocument/references', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 10, 'character': 8},
+        'context': {'includeDeclaration': True}})
+    refs = resp['result']
+    print(f"  references(p) -> {json.dumps(refs, indent=2)}")
+    check('variable refs: local var stays in same file only',
+          refs and all(r['uri'] == URI for r in refs), str(refs))
+    check('variable refs: both p occurrences in main found',
+          {10, 11} <= set(lines_of(refs, URI)), str(lines_of(refs, URI)))
+    # Note: 'p' is also norm()'s parameter; the token scan is file-wide,
+    # not function-scoped, so norm's p (lines 5-6) appears too by design.
+
+    # references inside comments/strings must NOT match (token-based scan)
+    commented = CLEAN_FILE + "\n# norm in a comment should not count\n"
+    c.notify('textDocument/didChange', {
+        'textDocument': {'uri': URI, 'version': 20},
+        'contentChanges': [{'text': commented}]})
+    c.wait_notification('textDocument/publishDiagnostics')
+    resp = c.request('textDocument/references', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 9},
+        'context': {'includeDeclaration': True}})
+    refs = resp['result']
+    check('comment mention of norm is not a reference',
+          lines_of(refs, URI) == [5, 11], str(lines_of(refs, URI)))
+
+
 def main():
     c = LspClient()
     try:
@@ -218,6 +301,7 @@ def main():
         check('referencesProvider advertised', caps.get('referencesProvider') is True)
 
         test_diagnostics(c)
+        test_references(c)
     finally:
         c.close()
 
