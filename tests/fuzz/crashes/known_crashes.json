@@ -3,7 +3,8 @@
     "exception": "RecursionError",
     "location": "parser.py:parse_expression_without_assign",
     "message": "maximum recursion depth exceeded (deeply nested expression, ~70 parens suffices at default limit)",
-    "stage": "parse"
+    "stage": "parse",
+    "status": "fixed"
   },
   "parse-valueerror-parser-parse-type.flow": {
     "exception": "ValueError",
