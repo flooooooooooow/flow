@@ -3,10 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FLOW Playground</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>FLOW Playground — Syntax Explorer</title>
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -32,7 +29,7 @@
         }
 
         body {
-            font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
@@ -91,6 +88,24 @@
             gap: 0.75rem;
         }
 
+        /* Honesty banner */
+        .notice {
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border);
+            padding: 0.5rem 1.5rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .notice strong {
+            color: var(--text-primary);
+        }
+
+        .notice code {
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
+            color: var(--accent);
+        }
+
         /* Buttons */
         .btn {
             padding: 0.5rem 1rem;
@@ -106,6 +121,7 @@
             align-items: center;
             gap: 0.5rem;
             transition: all 0.15s ease;
+            text-decoration: none;
         }
 
         .btn:hover {
@@ -130,16 +146,6 @@
         }
 
         .btn-success:hover {
-            opacity: 0.9;
-        }
-
-        .btn-error {
-            background: var(--error);
-            border-color: var(--error);
-            color: #fff;
-        }
-
-        .btn-error:hover {
             opacity: 0.9;
         }
 
@@ -241,12 +247,6 @@
 
         .status-dot.success { background: var(--success); }
         .status-dot.error { background: var(--error); }
-        .status-dot.running { background: var(--warning); animation: pulse 1s infinite; }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
 
         .panel-content {
             flex: 1;
@@ -254,65 +254,68 @@
             min-height: 0;
         }
 
-        /* Code Editor */
+        /* Code Editor: highlighted <pre> underneath a transparent <textarea> */
+        .editor-wrap {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            min-height: 320px;
+        }
+
+        .editor-wrap textarea,
+        .editor-wrap pre {
+            position: absolute;
+            inset: 0;
+            margin: 0;
+            padding: 1rem;
+            font-family: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            tab-size: 4;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow: auto;
+        }
+
         #editor {
             width: 100%;
             height: 100%;
-            padding: 1rem;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 14px;
-            line-height: 1.6;
+            background: transparent;
+            color: transparent;
+            caret-color: var(--text-primary);
             border: none;
             resize: none;
             outline: none;
-            tab-size: 4;
+            z-index: 2;
         }
 
         #editor::placeholder {
             color: var(--text-muted);
         }
 
-        /* Output */
-        .output-tabs {
-            display: flex;
-            gap: 0;
-            background: var(--bg-secondary);
-        }
-
-        .output-tab {
-            padding: 0.5rem 1rem;
-            background: transparent;
-            border: none;
-            border-bottom: 2px solid transparent;
-            color: var(--text-secondary);
-            font-family: inherit;
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .output-tab:hover {
+        #highlight {
+            z-index: 1;
+            pointer-events: none;
+            background: var(--bg-primary);
             color: var(--text-primary);
         }
 
-        .output-tab.active {
-            color: var(--accent);
-            border-bottom-color: var(--accent);
-        }
+        /* Syntax Highlighting */
+        .keyword { color: var(--pink); }
+        .type { color: var(--accent); }
+        .string { color: var(--success); }
+        .number { color: var(--warning); }
+        .comment { color: var(--text-muted); font-style: italic; }
+        .function { color: var(--purple); }
 
+        /* Output */
         .output-content {
             padding: 1rem;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
             font-size: 13px;
             line-height: 1.6;
             white-space: pre-wrap;
             word-break: break-word;
-        }
-
-        .output-content.hidden {
-            display: none;
         }
 
         .output-content.error {
@@ -323,13 +326,34 @@
             color: var(--success);
         }
 
-        /* Syntax Highlighting (basic) */
-        .keyword { color: var(--pink); }
-        .type { color: var(--accent); }
-        .string { color: var(--success); }
-        .number { color: var(--warning); }
-        .comment { color: var(--text-muted); font-style: italic; }
-        .function { color: var(--purple); }
+        .howto {
+            padding: 1rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .howto h4 {
+            font-size: 0.8rem;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .howto pre {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+            overflow-x: auto;
+        }
+
+        .howto p {
+            margin: 0.4rem 0;
+        }
 
         /* Footer */
         footer {
@@ -341,6 +365,8 @@
             justify-content: space-between;
             font-size: 0.75rem;
             color: var(--text-secondary);
+            flex-wrap: wrap;
+            gap: 0.5rem;
         }
 
         footer a {
@@ -364,27 +390,6 @@
             border: 1px solid var(--border);
             font-family: inherit;
             font-size: 0.7rem;
-        }
-
-        /* Loading */
-        .loading {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            color: var(--text-secondary);
-        }
-
-        .spinner {
-            width: 16px;
-            height: 16px;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
         }
 
         /* Share Modal */
@@ -426,7 +431,7 @@
             border: 1px solid var(--border);
             background: var(--bg-tertiary);
             color: var(--text-primary);
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
             font-size: 0.85rem;
             margin-bottom: 1rem;
         }
@@ -443,7 +448,7 @@
         <a href="../" class="logo">
             <div class="logo-icon">F</div>
             <span class="logo-text">FLOW Playground</span>
-            <span class="logo-badge">v0.3.0</span>
+            <span class="logo-badge">syntax explorer</span>
         </a>
         <div class="header-actions">
             <button class="btn" onclick="shareCode()" title="Share code">
@@ -454,7 +459,7 @@
                 </svg>
                 Share
             </button>
-            <a href="https://github.com/yourusername/transpile" target="_blank" class="btn">
+            <a href="https://github.com/flooooooooooow/flow" target="_blank" class="btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                 </svg>
@@ -463,6 +468,13 @@
         </div>
     </header>
 
+    <div class="notice">
+        <strong>This page does not execute code.</strong>
+        It is a syntax explorer: browse examples of current FLOW syntax with highlighting and basic
+        lint checks. Every example below compiles and runs with the real compiler — copy one and run
+        it locally with <code>./flow run</code> (instructions in the right panel).
+    </div>
+
     <main>
         <div class="toolbar">
             <div class="toolbar-group">
@@ -470,46 +482,16 @@
                 <select id="examples" onchange="loadExample()">
                     <option value="hello">Hello World</option>
                     <option value="fibonacci">Fibonacci</option>
-                    <option value="struct">Structs</option>
-                    <option value="generics">Generics</option>
-                    <option value="effects">Effects</option>
+                    <option value="mutability">Mutability (let mut)</option>
+                    <option value="structs">Structs</option>
+                    <option value="enums">Enums</option>
                     <option value="pattern">Pattern Matching</option>
-                    <option value="autodiff">Autodiff</option>
-                    <option value="gpu">GPU Kernel</option>
-                    <option value="neural">Neural Network</option>
+                    <option value="generics">Generics</option>
+                    <option value="traits">Traits &amp; Impl</option>
+                    <option value="effects">Effects &amp; Handlers</option>
                 </select>
             </div>
-            <div class="toolbar-group">
-                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-size: 0.8rem; color: var(--text-secondary);">
-                    <input type="checkbox" id="autoRun" style="cursor: pointer;">
-                    Auto-run
-                </label>
-            </div>
             <div class="toolbar-group" style="margin-left: auto;">
-                <button id="btnDebug" class="btn" onclick="debugCode()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <circle cx="12" cy="12" r="2"/>
-                    </svg>
-                    Debug
-                </button>
-                <div id="debugControls" style="display: none; gap: 0.5rem; align-items: center;">
-                    <button class="btn" onclick="step()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="9 6 15 12 9 18"/>
-                        </svg>
-                        Step
-                    </button>
-                    <button class="btn" onclick="continueExecution()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                            <polygon points="5 3 19 12 5 21 5 3"/>
-                        </svg>
-                        Continue
-                    </button>
-                    <button class="btn btn-error" onclick="stopDebugging()">
-                        Stop
-                    </button>
-                </div>
                 <button class="btn" onclick="formatCode()">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="21" y1="10" x2="3" y2="10"/>
@@ -519,11 +501,11 @@
                     </svg>
                     Format
                 </button>
-                <button class="btn btn-success" onclick="runCode()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <polygon points="5 3 19 12 5 21 5 3"/>
+                <button class="btn btn-success" onclick="checkSyntax()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    Run
+                    Check Syntax
                 </button>
             </div>
         </div>
@@ -538,41 +520,29 @@
                     </span>
                 </div>
                 <div class="panel-content">
-                    <textarea id="editor" spellcheck="false" placeholder="// Write your FLOW code here..."></textarea>
+                    <div class="editor-wrap">
+                        <pre id="highlight" aria-hidden="true"><code id="highlightCode"></code></pre>
+                        <textarea id="editor" spellcheck="false" placeholder="# Write your FLOW code here..."></textarea>
+                    </div>
                 </div>
             </div>
 
             <div class="panel">
                 <div class="panel-header">
-                    <div class="output-tabs">
-                        <button class="output-tab active" onclick="showTab('output')">Output</button>
-                        <button class="output-tab" onclick="showTab('variables')">Variables</button>
-                        <button class="output-tab" onclick="showTab('ast')">AST</button>
-                        <button class="output-tab" onclick="showTab('c')">Generated C</button>
-                        <button class="output-tab" onclick="showTab('mlir')">MLIR</button>
-                    </div>
+                    <span>Syntax Check</span>
                 </div>
-                <div class="panel-content">
-                    <div id="output" class="output-content">Click "Run" to execute your code.</div>
-                    <div id="variables" class="output-content hidden">
-                        <table style="width: 100%; border-collapse: collapse; font-family: inherit;">
-                            <thead>
-                                <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--text-secondary); font-size: 0.75rem;">
-                                    <th style="padding: 0.5rem; font-weight: 600;">Name</th>
-                                    <th style="padding: 0.5rem; font-weight: 600;">Type</th>
-                                    <th style="padding: 0.5rem; font-weight: 600;">Value</th>
-                                </tr>
-                            </thead>
-                            <tbody id="variablesList">
-                                <tr>
-                                    <td colspan="3" style="padding: 2rem; color: var(--text-muted); text-align: center;">Start debugging to see variables</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                <div class="panel-content" style="display: flex; flex-direction: column;">
+                    <div id="output" class="output-content" style="flex: 1;">Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks — only the real compiler is authoritative.</div>
+                    <div class="howto">
+                        <h4>Run this program for real</h4>
+                        <p>FLOW compiles server-side (Python transpiler → C → native). Save the editor contents as <code>main.flow</code> and run:</p>
+                        <pre>git clone https://github.com/flooooooooooow/flow.git
+cd flow
+# paste the editor contents into main.flow, then:
+./flow run main.flow</pre>
+                        <p>Advanced: <code>python3 -m flow.transpiler main.flow --c -o main.c</code> emits C; <code>./flow mlir main.flow</code> emits MLIR.</p>
+                        <p>Every example in the dropdown is verified against the current compiler.</p>
                     </div>
-                    <div id="ast" class="output-content hidden"></div>
-                    <div id="c" class="output-content hidden"></div>
-                    <div id="mlir" class="output-content hidden"></div>
                 </div>
             </div>
         </div>
@@ -580,12 +550,13 @@
 
     <footer>
         <div>
-            <a href="../">Documentation</a> · 
-            <a href="../comparison.html">Language Comparison</a> · 
-            <a href="../getting-started.html">Getting Started</a>
+            <a href="../">Documentation</a> ·
+            <a href="../LANGUAGE_SPEC/">Language Spec</a> ·
+            <a href="../getting-started/">Getting Started</a> ·
+            <a href="../comparison/">Language Comparison</a>
         </div>
         <div class="keyboard-shortcuts">
-            <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> Run</span>
+            <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> Check</span>
             <span><kbd>Ctrl</kbd>+<kbd>S</kbd> Format</span>
         </div>
     </footer>
@@ -602,18 +573,23 @@
         </div>
     </div>
 
-    <script src="../flow-compile.js"></script>
     <script>
-        // Example programs
+        // Example programs.
+        // Every example is verified to compile and run with the current compiler:
+        //   ./flow run <example.flow>
         const examples = {
-            hello: `// Hello World in FLOW
+            hello: `# Hello World in FLOW
+# Comments start with '#'
+
 function main() -> i32 {
-    print("Hello, World!")
-    print("Welcome to FLOW Playground!")
+    println("Hello, World!")
+    println("Welcome to the FLOW Playground!")
     return 0
 }`,
 
-            fibonacci: `// Fibonacci sequence
+            fibonacci: `# Fibonacci sequence
+# Ranges use 'to' (exclusive upper bound): for i in 0 to 10
+
 function fibonacci(n: i32) -> i32 {
     if n <= 1 {
         return n
@@ -622,15 +598,40 @@ function fibonacci(n: i32) -> i32 {
 }
 
 function main() -> i32 {
-    print("Fibonacci sequence:")
-    for i in 0..10 {
-        let fib = fibonacci(i)
+    println("Fibonacci sequence:")
+    for i in 0 to 10 {
+        let fib: i32 = fibonacci(i)
         printf("fib(%d) = %d\\n", i, fib)
     }
     return 0
 }`,
 
-            struct: `// Structs and methods
+            mutability: `# Mutability: bindings are immutable unless declared 'let mut'
+
+function main() -> i32 {
+    # Immutable binding
+    let limit: i32 = 10
+
+    # Mutable bindings can be reassigned
+    let mut total: i32 = 0
+    let mut i: i32 = 1
+    while i <= limit {
+        total = total + i
+        i = i + 1
+    }
+    printf("Sum of 1..%d = %d\\n", limit, total)
+
+    # 'for ... in a to b step s' walks a range
+    let mut evens: i32 = 0
+    for k in 0 to 20 step 2 {
+        evens = evens + 1
+    }
+    printf("Even numbers below 20: %d\\n", evens)
+    return 0
+}`,
+
+            structs: `# Structs and functions
+
 struct Point {
     x: f32,
     y: f32
@@ -643,8 +644,8 @@ struct Rectangle {
 }
 
 function point_distance(p1: Point, p2: Point) -> f32 {
-    let dx = p2.x - p1.x
-    let dy = p2.y - p1.y
+    let dx: f32 = p2.x - p1.x
+    let dy: f32 = p2.y - p1.y
     return sqrt(dx * dx + dy * dy)
 }
 
@@ -653,22 +654,95 @@ function rect_area(r: Rectangle) -> f32 {
 }
 
 function main() -> i32 {
-    let p1 = Point { x: 0.0, y: 0.0 }
-    let p2 = Point { x: 3.0, y: 4.0 }
-    
+    let p1: Point = Point { x: 0.0, y: 0.0 }
+    let p2: Point = Point { x: 3.0, y: 4.0 }
+
     printf("Distance: %f\\n", point_distance(p1, p2))
-    
-    let rect = Rectangle {
+
+    let rect: Rectangle = Rectangle {
         origin: p1,
         width: 10.0,
         height: 5.0
     }
-    
+
     printf("Area: %f\\n", rect_area(rect))
     return 0
 }`,
 
-            generics: `// Generic programming
+            enums: `# Enums (sum types)
+# Variants become tag constants: Color_Red, Color_Green, ...
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+function color_name(c: Color) -> void {
+    if c.tag == Color_Red {
+        println("red")
+    } elif c.tag == Color_Green {
+        println("green")
+    } else {
+        println("blue")
+    }
+}
+
+function main() -> i32 {
+    let g: Color = Color { tag: Color_Green }
+    let b: Color = Color { tag: Color_Blue }
+
+    color_name(g)
+    color_name(b)
+
+    # Tags are comparable values
+    if g.tag != b.tag {
+        println("different colors")
+    }
+    return 0
+}`,
+
+            pattern: `# Pattern matching with 'match'
+
+struct Point {
+    x: f32,
+    y: f32
+}
+
+function classify(x: i32) -> void {
+    match x {
+        0 => {
+            println("zero")
+        }
+        1 => {
+            println("one")
+        }
+        42 => {
+            println("the answer!")
+        }
+        default {
+            println("something else")
+        }
+    }
+}
+
+function main() -> i32 {
+    classify(0)
+    classify(42)
+    classify(7)
+
+    # Struct patterns destructure fields into bindings
+    let p: Point = Point { x: 3.0, y: 4.0 }
+    match p {
+        Point(a, b) => {
+            printf("Point(%f, %f)\\n", a, b)
+        }
+    }
+    return 0
+}`,
+
+            generics: `# Generic structs (monomorphized at compile time)
+
 struct Box<T> {
     value: T
 }
@@ -678,609 +752,318 @@ struct Pair<A, B> {
     second: B
 }
 
-function identity<T>(x: T) -> T {
-    return x
-}
-
-function swap<A, B>(p: Pair<A, B>) -> Pair<B, A> {
-    return Pair<B, A> {
-        first: p.second,
-        second: p.first
-    }
-}
-
 function main() -> i32 {
-    // Generic box
+    # Each instantiation generates a concrete type
     let int_box = Box<i32> { value: 42 }
     let float_box = Box<f32> { value: 3.14 }
-    
-    printf("Int box: %d\\n", int_box.value)
-    printf("Float box: %f\\n", float_box.value)
-    
-    // Generic pair
+
+    printf("Box<i32>: %d\\n", int_box.value)
+    printf("Box<f32>: %f\\n", float_box.value)
+
     let pair = Pair<i32, f32> { first: 1, second: 2.5 }
-    let swapped = swap(pair)
-    
-    printf("Swapped: (%f, %d)\\n", swapped.first, swapped.second)
-    
-    // Identity function
-    let x = identity<i32>(100)
-    printf("Identity: %d\\n", x)
-    
+    printf("Pair<i32, f32>: (%d, %f)\\n", pair.first, pair.second)
     return 0
 }`,
 
-            effects: `// Algebraic Effects
-effect Console {
-    function print(msg: string) -> void
-    function read() -> string
+            traits: `# Traits and impl blocks
+
+trait HasArea {
+    function area(self) -> f32
 }
 
-effect State<T> {
-    function get() -> T
-    function set(val: T) -> void
+struct Circle {
+    radius: f32
 }
 
-function counter() -> i32 with State<i32> {
-    let current = State.get()
-    State.set(current + 1)
-    return current
+struct Rectangle {
+    width: f32,
+    height: f32
 }
 
-function greet(name: string) -> void with Console {
-    Console.print("Hello, ")
-    Console.print(name)
-    Console.print("!\\n")
-}
-
-capability StdioConsole for Console {
-    function print(msg: string) -> void {
-        printf("%s", msg)
+impl HasArea for Circle {
+    function area(self) -> f32 {
+        return 3.14159 * self.radius * self.radius
     }
-    
-    function read() -> string {
-        return "User"
+}
+
+impl HasArea for Rectangle {
+    function area(self) -> f32 {
+        return self.width * self.height
     }
 }
 
 function main() -> i32 {
-    handle greet("World") with StdioConsole
+    let c: Circle = Circle { radius: 2.0 }
+    let r: Rectangle = Rectangle { width: 5.0, height: 3.0 }
+
+    # Trait methods are called via mangled names: Type_Trait_method
+    printf("Circle area: %f\\n", Circle_HasArea_area(c))
+    printf("Rectangle area: %f\\n", Rectangle_HasArea_area(r))
     return 0
 }`,
 
-            pattern: `// Pattern Matching
-enum Option<T> {
-    Some(T),
-    None
+            effects: `# Algebraic effects and handlers
+
+effect Log {
+    emit(message: string) -> void
 }
 
-enum Result<T, E> {
-    Ok(T),
-    Err(E)
+capability ConsoleLogger {
+    effect Log,
+    function emit(message: string) -> void {
+        printf("[LOG] %s\\n", message)
+        return
+    }
 }
 
-function divide(a: f64, b: f64) -> Result<f64, string> {
-    if b == 0.0 {
-        return Err("division by zero")
+capability QuietLogger {
+    effect Log,
+    function emit(message: string) -> void {
+        # Swallow all messages
+        return
     }
-    return Ok(a / b)
 }
 
-function main() -> i32 {
-    let result = divide(10.0, 2.0)
-    
-    match result {
-        Ok(value) => {
-            printf("Result: %f\\n", value)
-        }
-        Err(msg) => {
-            printf("Error: %s\\n", msg)
-        }
-    }
-    
-    // Integer matching
-    let x = 42
-    match x {
-        0 => print("zero")
-        1 => print("one")
-        42 => print("the answer!")
-        _ => print("something else")
-    }
-    
-    return 0
-}`,
-
-            autodiff: `// Automatic Differentiation
-import "stdlib/autodiff.flow"
-
-// Forward mode autodiff using dual numbers
-function gradient_example() -> void {
-    // Create dual number: x = 3.0, dx/dx = 1.0
-    let x = dual(3.0, 1.0)
-    
-    // f(x) = x² 
-    let f = dual_mul(x, x)
-    
-    printf("f(3) = %f\\n", f.val)    // 9.0
-    printf("f'(3) = %f\\n", f.grad)  // 6.0 (derivative of x² is 2x)
-    
-    // g(x) = sin(x)
-    let g = dual_sin(x)
-    printf("sin(3) = %f\\n", g.val)
-    printf("cos(3) = %f\\n", g.grad)  // derivative of sin is cos
-    
-    // h(x) = sigmoid(x)
-    let h = dual_sigmoid(x)
-    printf("sigmoid(3) = %f\\n", h.val)
-    printf("sigmoid'(3) = %f\\n", h.grad)
+function do_work() -> i32 {
+    Log.emit("starting work")
+    let result: i32 = 6 * 7
+    Log.emit("work finished")
+    return result
 }
 
 function main() -> i32 {
-    gradient_example()
-    return 0
-}`,
-
-            gpu: `// GPU Kernel (generates Metal shader)
-@gpu
-function vector_add(
-    a: array<f32>,
-    b: array<f32>,
-    out: array<f32>,
-    n: i32
-) {
-    let i = gpu_thread_id()
-    if i < n {
-        out[i] = a[i] + b[i]
+    # The handler in scope decides what Log.emit does
+    handle Log with ConsoleLogger {
+        let answer: i32 = do_work()
+        printf("answer = %d\\n", answer)
     }
-}
 
-@gpu
-function matrix_multiply(
-    A: array<f32>,
-    B: array<f32>,
-    C: array<f32>,
-    M: i32,
-    N: i32,
-    K: i32
-) {
-    let idx = gpu_thread_id()
-    let row = idx / N
-    let col = idx % N
-    
-    if row < M && col < N {
-        let sum = 0.0
-        for k in 0..K {
-            sum = sum + A[row * K + k] * B[k * N + col]
-        }
-        C[row * N + col] = sum
+    handle Log with QuietLogger {
+        let silent: i32 = do_work()
+        printf("silent answer = %d\\n", silent)
     }
-}
-
-@gpu
-function saxpy(
-    x: array<f32>,
-    y: array<f32>,
-    a: f32,
-    n: i32
-) {
-    let i = gpu_thread_id()
-    if i < n {
-        y[i] = a * x[i] + y[i]
-    }
-}
-
-function main() -> i32 {
-    print("GPU kernels defined!")
-    print("Run: ./flow gpu this_file.flow")
-    print("to generate Metal shaders")
-    return 0
-}`,
-
-            neural: `// Neural Network with Backpropagation
-import "stdlib/nn.flow"
-import "stdlib/autodiff.flow"
-
-// XOR neural network (2 inputs, 2 hidden, 1 output)
-function train_xor() -> void {
-    // Initialize network
-    let net = net2x2x1_new()
-    
-    // XOR training data
-    let inputs = [
-        [0.0, 0.0],
-        [0.0, 1.0],
-        [1.0, 0.0],
-        [1.0, 1.0]
-    ]
-    let targets = [0.0, 1.0, 1.0, 0.0]
-    
-    let learning_rate = 0.5
-    let epochs = 1000
-    
-    print("Training XOR neural network...")
-    
-    for epoch in 0..epochs {
-        let total_loss = 0.0
-        
-        for i in 0..4 {
-            // Forward pass
-            let output = net2x2x1_forward(net, inputs[i][0], inputs[i][1])
-            
-            // Compute loss
-            let error = output - targets[i]
-            total_loss = total_loss + error * error
-            
-            // Backward pass would update weights here
-        }
-        
-        if epoch % 100 == 0 {
-            printf("Epoch %d, Loss: %f\\n", epoch, total_loss / 4.0)
-        }
-    }
-    
-    print("\\nTrained network predictions:")
-    for i in 0..4 {
-        let output = net2x2x1_forward(net, inputs[i][0], inputs[i][1])
-        printf("Input: [%f, %f] -> Output: %f (Target: %f)\\n",
-               inputs[i][0], inputs[i][1], output, targets[i])
-    }
-}
-
-function main() -> i32 {
-    train_xor()
     return 0
 }`
         };
 
-        // Initialize
+        // Current FLOW keywords (mirrors src/flow/parser.py keyword table)
+        const KEYWORDS = [
+            'function', 'let', 'mut', 'return', 'if', 'elif', 'else', 'while',
+            'for', 'in', 'parallel', 'step', 'to', 'match', 'default', 'test',
+            'trait', 'impl', 'self', 'type', 'distinct', 'as', 'enum', 'with',
+            'handle', 'effect', 'capability', 'import', 'export', 'extern',
+            'const', 'struct', 'and', 'or', 'not', 'defer', 'module',
+            'true', 'false', 'null'
+        ];
+        const TYPES = [
+            'i8', 'i16', 'i32', 'i64', 'i128',
+            'u8', 'u16', 'u32', 'u64', 'u128',
+            'f32', 'f64', 'bool', 'void', 'string', 'ptr', 'array'
+        ];
+
+        const KEYWORD_SET = new Set(KEYWORDS);
+        const TYPE_SET = new Set(TYPES);
+
         const editor = document.getElementById('editor');
-        editor.value = examples.hello;
-        
-        // Mark as modified when user types, with debounced auto-run
-        let lastCode = editor.value;
-        let autoRunTimeout = null;
-        
-        editor.addEventListener('input', () => {
+        const highlightCode = document.getElementById('highlightCode');
+        const highlightPre = document.getElementById('highlight');
+
+        function escapeHtml(s) {
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // Simple single-pass tokenizer for highlighting
+        function highlight(code) {
+            const tokenRe = /("(?:[^"\\]|\\.)*"?)|(#[^\n]*)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)/g;
+            let out = '';
+            let last = 0;
+            let m;
+            while ((m = tokenRe.exec(code)) !== null) {
+                out += escapeHtml(code.slice(last, m.index));
+                const tok = m[0];
+                if (m[1] !== undefined) {
+                    out += '<span class="string">' + escapeHtml(tok) + '</span>';
+                } else if (m[2] !== undefined) {
+                    out += '<span class="comment">' + escapeHtml(tok) + '</span>';
+                } else if (m[3] !== undefined) {
+                    out += '<span class="number">' + escapeHtml(tok) + '</span>';
+                } else if (KEYWORD_SET.has(tok)) {
+                    out += '<span class="keyword">' + escapeHtml(tok) + '</span>';
+                } else if (TYPE_SET.has(tok)) {
+                    out += '<span class="type">' + escapeHtml(tok) + '</span>';
+                } else {
+                    // Function call or declaration name?
+                    const rest = code.slice(m.index + tok.length);
+                    if (/^\s*\(|^\s*</.test(rest) && /^[a-z_]/.test(tok)) {
+                        out += '<span class="function">' + escapeHtml(tok) + '</span>';
+                    } else {
+                        out += escapeHtml(tok);
+                    }
+                }
+                last = m.index + tok.length;
+            }
+            out += escapeHtml(code.slice(last));
+            return out;
+        }
+
+        function refreshHighlight() {
+            // Trailing newline keeps <pre> height in sync with the textarea
+            highlightCode.innerHTML = highlight(editor.value) + '\n';
+        }
+
+        function syncScroll() {
+            highlightPre.scrollTop = editor.scrollTop;
+            highlightPre.scrollLeft = editor.scrollLeft;
+        }
+
+        // Strip strings and comments so lint checks don't fire inside them
+        function stripStringsAndComments(line) {
+            let out = '';
+            let inString = false;
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (inString) {
+                    if (ch === '\\') { i++; continue; }
+                    if (ch === '"') inString = false;
+                    continue;
+                }
+                if (ch === '"') { inString = true; continue; }
+                if (ch === '#') break;
+                out += ch;
+            }
+            return out;
+        }
+
+        // Basic lint checks against current FLOW syntax.
+        // These are lightweight editor checks, NOT the real compiler.
+        function lint(code) {
+            const problems = [];
+            const lines = code.split('\n');
+            const stack = [];
+            const open = { '{': '}', '(': ')', '[': ']' };
+            const close = { '}': '{', ')': '(', ']': '[' };
+
+            lines.forEach((raw, idx) => {
+                const n = idx + 1;
+                const line = stripStringsAndComments(raw);
+
+                if (/\/\//.test(line) || /\/\*/.test(line)) {
+                    problems.push('line ' + n + ": FLOW uses '#' comments; '//' and '/* */' are not supported");
+                }
+                if (/\d\s*\.\.\s*\d|\w\s*\.\.\s*\w/.test(line)) {
+                    problems.push('line ' + n + ": range syntax is 'for i in a to b' (optionally 'step s'), not 'a..b'");
+                }
+                if (/\bfn\s+[A-Za-z_]/.test(line)) {
+                    problems.push('line ' + n + ": FLOW uses 'function', not 'fn'");
+                }
+                if (/\bfunc\s+[A-Za-z_]/.test(line)) {
+                    problems.push('line ' + n + ": FLOW uses 'function', not 'func'");
+                }
+
+                for (const ch of line) {
+                    if (open[ch]) {
+                        stack.push({ ch, line: n });
+                    } else if (close[ch]) {
+                        if (stack.length === 0 || stack[stack.length - 1].ch !== close[ch]) {
+                            problems.push('line ' + n + ": unbalanced '" + ch + "'");
+                        } else {
+                            stack.pop();
+                        }
+                    }
+                }
+            });
+
+            stack.forEach(item => {
+                problems.push('line ' + item.line + ": unclosed '" + item.ch + "'");
+            });
+
+            if (!/\bfunction\s+main\s*\(/.test(code)) {
+                problems.push("no 'function main() -> i32' found (needed to run the program)");
+            }
+
+            return problems;
+        }
+
+        function checkSyntax() {
+            const outputEl = document.getElementById('output');
             const statusDot = document.getElementById('editorStatus');
             const statusText = document.getElementById('editorStatusText');
-            
-            if (editor.value !== lastCode) {
-                statusDot.className = 'status-dot';
-                statusText.textContent = 'Modified';
-                
-                // Auto-run with debounce if enabled
-                if (document.getElementById('autoRun').checked) {
-                    clearTimeout(autoRunTimeout);
-                    autoRunTimeout = setTimeout(() => {
-                        runCode();
-                    }, 500); // Wait 500ms after typing stops
-                } else {
-                    statusText.textContent = 'Modified - press Run';
-                }
+            const problems = lint(editor.value);
+
+            if (problems.length === 0) {
+                outputEl.className = 'output-content success';
+                outputEl.textContent =
+                    'No problems found by the basic checks.\n\n' +
+                    'Note: these are lightweight editor checks (comment style, ranges, balanced ' +
+                    'brackets). Only the real compiler is authoritative — run this program with ' +
+                    './flow run (see below).';
+                statusDot.className = 'status-dot success';
+                statusText.textContent = 'Looks OK';
+            } else {
+                outputEl.className = 'output-content error';
+                outputEl.textContent = problems.join('\n');
+                statusDot.className = 'status-dot error';
+                statusText.textContent = problems.length + ' problem' + (problems.length === 1 ? '' : 's');
             }
-        });
-        
-        // Update lastCode after running
-        const originalRunCode = runCode;
-        runCode = function() {
-            originalRunCode();
-            lastCode = editor.value;
-        };
+        }
 
         // Load example
         function loadExample() {
             const select = document.getElementById('examples');
             editor.value = examples[select.value];
+            refreshHighlight();
             clearOutput();
         }
 
-        // Run code
-        function runCode() {
-            const code = editor.value;
-            const outputEl = document.getElementById('output');
-            const statusDot = document.getElementById('editorStatus');
-            const statusText = document.getElementById('editorStatusText');
-
-            statusDot.className = 'status-dot running';
-            statusText.textContent = 'Running...';
-
-            // Simulate compilation and execution
-            setTimeout(() => {
-                try {
-                    if (!window.FlowCompile) {
-                        throw new Error('Compile engine not loaded');
-                    }
-                    const result = FlowCompile.run(code);
-                    if (!result.ok) {
-                        throw new Error(result.error);
-                    }
-                    outputEl.className = 'output-content success';
-                    outputEl.textContent = result.output;
-                    
-                    document.getElementById('ast').textContent = result.ast;
-                    document.getElementById('c').textContent = result.c;
-                    document.getElementById('mlir').textContent = result.mlir;
-
-                    statusDot.className = 'status-dot success';
-                    statusText.textContent = 'Success';
-                } catch (e) {
-                    outputEl.className = 'output-content error';
-                    outputEl.textContent = 'Error: ' + e.message;
-                    statusDot.className = 'status-dot error';
-                    statusText.textContent = 'Error';
-                }
-            }, 300);
-        }
-
-        // Debugging state
-        let isDebugging = false;
-        let debugSession = null;
-
-        class FlowDebugger {
-            constructor(code) {
-                this.lines = code.split('\n');
-                this.pc = -1;
-                this.variables = {};
-                this.callStack = [];
-                this.output = '';
-                this.isFinished = false;
-
-                // Find main
-                for (let i = 0; i < this.lines.length; i++) {
-                    if (this.lines[i].includes('function main')) {
-                        this.pc = i;
-                        break;
-                    }
-                }
-                if (this.pc === -1) this.pc = 0;
-            }
-
-            step() {
-                if (this.pc >= this.lines.length) {
-                    this.isFinished = true;
-                    return;
-                }
-
-                const line = this.lines[this.pc].trim();
-
-                // Skip empty lines and comments
-                if (!line || line.startsWith('//') || line.startsWith('function') || line === '}') {
-                    this.pc++;
-                    if (this.pc >= this.lines.length) {
-                        this.isFinished = true;
-                    } else {
-                        return this.step();
-                    }
-                    return;
-                }
-
-                // Simple "Execution"
-                // 1. Assignments: let x = 5
-                let match = line.match(/let\s+(?:mut\s+)?(\w+)(?:\s*:\s*([^=]+))?\s*=\s*(.+)/);
-                if (match) {
-                    const name = match[1];
-                    const type = match[2] || 'auto';
-                    let expr = match[3].trim();
-
-                    // Simple expression evaluation
-                    let val = this.evaluate(expr);
-                    this.variables[name] = { type, value: val };
-                }
-
-                // 2. Print: print("hi")
-                match = line.match(/print\s*\(\s*"([^"]*)"\s*\)/);
-                if (match) {
-                    this.output += match[1] + '\n';
-                }
-
-                // printf("fmt", args)
-                match = line.match(/printf\s*\(\s*"([^"]*)"\s*,\s*(.+)\s*\)/);
-                if (match) {
-                    let fmt = match[1];
-                    let args = match[2].split(',').map(s => s.trim());
-                    let result = fmt;
-                    args.forEach(arg => {
-                        let val = this.evaluate(arg);
-                        result = result.replace(/%[dfsi]/, val);
-                    });
-                    this.output += result.replace(/\\n/g, '\n');
-                }
-
-                this.pc++;
-                if (this.pc >= this.lines.length) {
-                    this.isFinished = true;
-                }
-            }
-
-            evaluate(expr) {
-                // Check if it's a variable
-                if (this.variables[expr]) {
-                    return this.variables[expr].value;
-                }
-
-                // Check if it's a number
-                if (/^-?\d+(\.\d+)?$/.test(expr)) {
-                    return expr;
-                }
-
-                // Check if it's a string
-                if (expr.startsWith('"') && expr.endsWith('"')) {
-                    return expr.substring(1, expr.length - 1);
-                }
-
-                // Simple arithmetic
-                if (expr.includes('+')) {
-                    let parts = expr.split('+').map(p => this.evaluate(p.trim()));
-                    if (parts.every(p => !isNaN(p))) {
-                        return parts.reduce((a, b) => parseFloat(a) + parseFloat(b), 0).toString();
-                    }
-                    return parts.join('');
-                }
-
-                return expr;
-            }
-        }
-
-        function debugCode() {
-            isDebugging = true;
-            debugSession = new FlowDebugger(editor.value);
-
-            document.getElementById('btnDebug').style.display = 'none';
-            document.getElementById('debugControls').style.display = 'flex';
-            document.getElementById('editorStatusText').textContent = 'Debugging...';
-            document.getElementById('editorStatus').className = 'status-dot running';
-
-            updateDebugUI();
-            showTab('output');
-            document.getElementById('output').textContent = 'Debugging started...';
-        }
-
-        function stopDebugging() {
-            isDebugging = false;
-            debugSession = null;
-            document.getElementById('btnDebug').style.display = 'flex';
-            document.getElementById('debugControls').style.display = 'none';
-            document.getElementById('editorStatusText').textContent = 'Ready';
-            document.getElementById('editorStatus').className = 'status-dot';
-            removeHighlight();
-        }
-
-        function step() {
-            if (!isDebugging || !debugSession) return;
-
-            debugSession.step();
-            updateDebugUI();
-
-            if (debugSession.isFinished) {
-                document.getElementById('output').textContent += '\nProgram finished.';
-                stopDebugging();
-            }
-        }
-
-        function updateDebugUI() {
-            if (!debugSession) return;
-
-            highlightLine(debugSession.pc);
-            document.getElementById('output').textContent = 'Debugging started...\n\n' + debugSession.output;
-
-            // Update variables table
-            const list = document.getElementById('variablesList');
-            list.innerHTML = '';
-
-            const varNames = Object.keys(debugSession.variables);
-            if (varNames.length === 0) {
-                list.innerHTML = '<tr><td colspan="3" style="padding: 2rem; color: var(--text-muted); text-align: center;">No variables in scope</td></tr>';
-            } else {
-                varNames.forEach(name => {
-                    const info = debugSession.variables[name];
-                    const row = document.createElement('tr');
-                    row.style.borderBottom = '1px solid var(--border)';
-                    row.innerHTML = `
-                        <td style="padding: 0.5rem; color: var(--purple);">${name}</td>
-                        <td style="padding: 0.5rem; color: var(--accent); font-size: 0.8rem;">${info.type}</td>
-                        <td style="padding: 0.5rem; color: var(--warning);">${info.value}</td>
-                    `;
-                    list.appendChild(row);
-                });
-            }
-        }
-
-        function continueExecution() {
-            if (!isDebugging) return;
-            stopDebugging();
-            runCode();
-        }
-
-        function highlightLine(lineIndex) {
-            const lines = editor.value.split('\n');
-            // In a real editor we'd use a better way, but for a textarea
-            // we can just select the line to highlight it
-            let start = 0;
-            for (let i = 0; i < lineIndex; i++) {
-                start += lines[i].length + 1;
-            }
-            const end = start + lines[lineIndex].length;
-
-            editor.focus();
-            editor.setSelectionRange(start, end);
-        }
-
-        function removeHighlight() {
-            editor.setSelectionRange(0, 0);
-        }
-
-        // Tab switching
-        function showTab(tabName) {
-            document.querySelectorAll('.output-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.output-content').forEach(content => {
-                content.classList.add('hidden');
-            });
-            
-            event.target.classList.add('active');
-            document.getElementById(tabName).classList.remove('hidden');
-        }
-
-        // Format code (basic indentation)
+        // Format code (basic indentation only)
         function formatCode() {
             const code = editor.value;
             let formatted = '';
             let indent = 0;
             const lines = code.split('\n');
-            
+
             for (let line of lines) {
                 line = line.trim();
                 if (!line) {
                     formatted += '\n';
                     continue;
                 }
-                
-                // Decrease indent for closing braces
+
                 if (line.startsWith('}') || line.startsWith(']')) {
                     indent = Math.max(0, indent - 1);
                 }
-                
-                // Add indentation
+
                 formatted += '    '.repeat(indent) + line + '\n';
-                
-                // Increase indent after opening braces
+
                 if (line.endsWith('{') || line.endsWith('[')) {
                     indent++;
                 }
-                
-                // Handle inline braces like } else {
-                if (line.includes('}') && line.endsWith('{')) {
-                    // Already handled
-                }
             }
-            
+
             editor.value = formatted.trimEnd();
-            
+            refreshHighlight();
+
             const statusDot = document.getElementById('editorStatus');
             const statusText = document.getElementById('editorStatusText');
             statusDot.className = 'status-dot success';
             statusText.textContent = 'Formatted';
-            
-            // Also update outputs to reflect changes
-            runCode();
         }
 
         // Clear output
         function clearOutput() {
-            document.getElementById('output').textContent = 'Click "Run" to execute your code.';
-            document.getElementById('output').className = 'output-content';
-            document.getElementById('ast').textContent = '';
-            document.getElementById('c').textContent = '';
-            document.getElementById('mlir').textContent = '';
+            const outputEl = document.getElementById('output');
+            outputEl.textContent = 'Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks — only the real compiler is authoritative.';
+            outputEl.className = 'output-content';
+            document.getElementById('editorStatus').className = 'status-dot';
+            document.getElementById('editorStatusText').textContent = 'Ready';
         }
 
-        // Share code
+        // Share code via URL
         function shareCode() {
             const code = editor.value;
             const encoded = btoa(encodeURIComponent(code));
             const url = window.location.origin + window.location.pathname + '?code=' + encoded;
-            
+
             document.getElementById('shareUrl').value = url;
             document.getElementById('shareModal').classList.add('visible');
         }
@@ -1309,11 +1092,18 @@ function main() -> i32 {
             }
         }
 
-        // Keyboard shortcuts
+        // Events
+        editor.addEventListener('input', () => {
+            refreshHighlight();
+            document.getElementById('editorStatus').className = 'status-dot';
+            document.getElementById('editorStatusText').textContent = 'Modified';
+        });
+        editor.addEventListener('scroll', syncScroll);
+
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
-                runCode();
+                checkSyntax();
             }
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
@@ -1322,7 +1112,9 @@ function main() -> i32 {
         });
 
         // Initialize
+        editor.value = examples.hello;
         loadFromUrl();
+        refreshHighlight();
     </script>
 </body>
 </html>

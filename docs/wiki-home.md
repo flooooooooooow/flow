@@ -63,7 +63,7 @@ and dual C / MLIR backends at native speed.
 | [Quick Start](getting-started.md) | Install, compile, run `hello_world` |
 | [Interactive Tutorials](tutorials/index.html) | Edit &amp; run 40+ lessons in the browser |
 | [Beginner guide](tutorials/beginner.md) | Variables, functions, control flow |
-| [Playground](playground/index.html) | Free-form experiments |
+| [Playground](playground/index.html) | Syntax explorer with verified examples (compile locally with `./flow run`) |
 | [Comparison](comparison.md) | Flow vs C, Rust, Zig, Mojo |
 
 ---
