@@ -75,10 +75,10 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 
 | File | Problem | Action | Status |
 |------|---------|--------|--------|
-| `examples/gpu_integration_demo.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
-| `examples/gpu_integration_simple.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
-| `tests/test_graphics.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
-| `tests/test_const_comprehensive.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
+| `examples/gpu_integration_demo.flow` | Empty (0 bytes) | Deleted | ✅ |
+| `examples/gpu_integration_simple.flow` | Empty (0 bytes) | Deleted | ✅ |
+| `tests/test_graphics.flow` | Empty (0 bytes) | Deleted | ✅ |
+| `tests/test_const_comprehensive.flow` | Empty (0 bytes) | Deleted | ✅ |
 
 #### Medium Priority — Misplaced Files
 
