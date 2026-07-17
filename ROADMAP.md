@@ -69,7 +69,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 | `/bench.sh` | Empty (0 bytes), superseded by `scripts/bench.sh` | Delete | 🔲 |
 | `/run_bench.py` | Empty (0 bytes), superseded by `scripts/run_bench.py` | Delete | 🔲 |
 | `/flow_wasm.py` | Duplicate of `wasm/flow_to_wasm.py` | Delete from root | 🔲 |
-| `/test_ci_locally.sh` | Dev utility loose at repo root | Move to `scripts/` | 🔲 |
+| `/test_ci_locally.sh` | Dev utility loose at repo root | Moved to `scripts/test_ci_locally.sh` | ✅ |
 
 #### Medium Priority — Remove Empty Stubs
 
