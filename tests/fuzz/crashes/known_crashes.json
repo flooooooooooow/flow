@@ -9,6 +9,7 @@
     "exception": "ValueError",
     "location": "parser.py:parse_type",
     "message": "invalid literal for int() with base 10: '0.0'",
-    "stage": "parse"
+    "stage": "parse",
+    "status": "fixed"
   }
 }

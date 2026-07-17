@@ -29,7 +29,13 @@ def known_crash_classes() -> set:
     if not manifest.exists():
         return set()
     data = json.loads(manifest.read_text(encoding="utf-8"))
-    return {(entry["stage"], entry["exception"]) for entry in data.values()}
+    # "fixed" entries stay in the manifest as regression fixtures, but no
+    # longer suppress findings: a NEW crash of the same class must fail.
+    return {
+        (entry["stage"], entry["exception"])
+        for entry in data.values()
+        if entry.get("status", "open") == "open"
+    }
 
 
 def main() -> int:
