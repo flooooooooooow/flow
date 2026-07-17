@@ -1,0 +1,160 @@
+# Runtime test: effect-system showcase invariants
+# Guards the behaviours demonstrated by examples/effects/showcase.flow:
+#   1. Swapping handlers changes business outcomes with unchanged logic
+#   2. Nested handle overrides, then restores, the outer handler
+#   3. One capability can handle multiple effects
+#   4. Handlers can call other effects (composition), so swapping an
+#      inner handler changes a composed result
+#   5. Unhandled effect operations default to zero / no-op
+# Returns 0 if all pass, non-zero otherwise.
+
+effect Inventory {
+    stock_of(sku: i32) -> i32,
+    reserve(sku: i32, qty: i32) -> i32,
+}
+
+effect Notify {
+    send(recipient: string, msg: string) -> void,
+}
+
+effect Clock {
+    now() -> i32,
+}
+
+effect Stamp {
+    tagged() -> i32,
+}
+
+# --- business logic under test (no handler parameters) ---
+function place_order(sku: i32, qty: i32) -> i32 {
+    let available: i32 = Inventory.stock_of(sku)
+    if available < qty {
+        Notify.send("ops@shop.example", "restock needed")
+        return -1
+    }
+    return Inventory.reserve(sku, qty)
+}
+
+function read_clock() -> i32 {
+    return Clock.now()
+}
+
+# --- handlers ---
+capability ScarceWarehouse {
+    effect Inventory,
+    function stock_of(sku: i32) -> i32 {
+        return 1
+    },
+    function reserve(sku: i32, qty: i32) -> i32 {
+        return 500000 + sku
+    },
+}
+
+# Multi-effect capability: handles Inventory AND Notify
+capability TestBackend {
+    effect Inventory, Notify,
+    function stock_of(sku: i32) -> i32 {
+        return 99
+    },
+    function reserve(sku: i32, qty: i32) -> i32 {
+        return 42
+    },
+    function send(recipient: string, msg: string) -> void {
+    },
+}
+
+capability WallClock {
+    effect Clock,
+    function now() -> i32 {
+        return 1721224800
+    },
+}
+
+capability FrozenClock {
+    effect Clock,
+    function now() -> i32 {
+        return 7
+    },
+}
+
+# Composition: a Stamp handler that itself performs the Clock effect
+capability ClockStamp {
+    effect Stamp,
+    function tagged() -> i32 {
+        let t: i32 = Clock.now()
+        return t + 1
+    },
+}
+
+# --- tests ---
+function test_handler_swap_changes_outcome() -> bool {
+    let mut prod: i32 = 0
+    let mut mocked: i32 = 0
+    handle Inventory with ScarceWarehouse {
+        handle Notify with TestBackend {
+            prod = place_order(2002, 5)
+        }
+    }
+    handle Inventory, Notify with TestBackend {
+        mocked = place_order(2002, 5)
+    }
+    # same call: rejected under scarce warehouse, accepted under fixture
+    return prod == -1 && mocked == 42
+}
+
+function test_nested_override_and_restore() -> bool {
+    let mut outer_before: i32 = 0
+    let mut inner: i32 = 0
+    let mut outer_after: i32 = 0
+    handle Clock with WallClock {
+        outer_before = read_clock()
+        handle Clock with FrozenClock {
+            inner = read_clock()
+        }
+        outer_after = read_clock()
+    }
+    return outer_before == 1721224800 && inner == 7 && outer_after == 1721224800
+}
+
+function test_handler_composition() -> bool {
+    let mut with_wall: i32 = 0
+    let mut with_frozen: i32 = 0
+    handle Stamp with ClockStamp {
+        handle Clock with WallClock {
+            with_wall = Stamp.tagged()
+        }
+        handle Clock with FrozenClock {
+            with_frozen = Stamp.tagged()
+        }
+    }
+    return with_wall == 1721224801 && with_frozen == 8
+}
+
+function test_unhandled_defaults() -> bool {
+    # No handlers installed: stock_of() -> 0, so any positive qty is rejected;
+    # Notify.send inside the reject path must be a harmless no-op.
+    let bare: i32 = place_order(1001, 2)
+    let t: i32 = read_clock()
+    return bare == -1 && t == 0
+}
+
+function main() -> i32 {
+    if !test_handler_swap_changes_outcome() {
+        printf("FAIL: handler_swap_changes_outcome\n")
+        return 1
+    }
+    if !test_nested_override_and_restore() {
+        printf("FAIL: nested_override_and_restore\n")
+        return 2
+    }
+    if !test_handler_composition() {
+        printf("FAIL: handler_composition\n")
+        return 3
+    }
+    if !test_unhandled_defaults() {
+        printf("FAIL: unhandled_defaults\n")
+        return 4
+    }
+    printf("All effect showcase tests passed\n")
+    return 0
+}
