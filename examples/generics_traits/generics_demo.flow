@@ -1,3 +1,4 @@
+# flow:lenient - type checking runs before monomorphization; generic Box<T>/Pair<A,B> fields unresolved
 # Generics Demo
 # Demonstrates parametric polymorphism with monomorphization
 

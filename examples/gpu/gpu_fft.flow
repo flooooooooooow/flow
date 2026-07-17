@@ -1,3 +1,4 @@
+# flow:lenient - type checker does not yet model GPU capability methods (allocate) or array<f32> aliasing
 # GPU FFT Implementation using Effect-Based Programming
 # This demonstrates FLOW's capability for high-performance computing
 
