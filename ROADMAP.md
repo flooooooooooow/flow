@@ -69,24 +69,24 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 | `/bench.sh` | Empty (0 bytes), superseded by `scripts/bench.sh` | Delete | 🔲 |
 | `/run_bench.py` | Empty (0 bytes), superseded by `scripts/run_bench.py` | Delete | 🔲 |
 | `/flow_wasm.py` | Duplicate of `wasm/flow_to_wasm.py` | Delete from root | 🔲 |
-| `/test_ci_locally.sh` | Dev utility loose at repo root | Move to `scripts/` | 🔲 |
+| `/test_ci_locally.sh` | Dev utility loose at repo root | Moved to `scripts/test_ci_locally.sh` | ✅ |
 
 #### Medium Priority — Remove Empty Stubs
 
 | File | Problem | Action | Status |
 |------|---------|--------|--------|
-| `examples/gpu_integration_demo.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
-| `examples/gpu_integration_simple.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
-| `tests/test_graphics.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
-| `tests/test_const_comprehensive.flow` | Empty (0 bytes) | Delete or implement | 🔲 |
+| `examples/gpu_integration_demo.flow` | Empty (0 bytes) | Deleted | ✅ |
+| `examples/gpu_integration_simple.flow` | Empty (0 bytes) | Deleted | ✅ |
+| `tests/test_graphics.flow` | Empty (0 bytes) | Deleted | ✅ |
+| `tests/test_const_comprehensive.flow` | Empty (0 bytes) | Deleted | ✅ |
 
 #### Medium Priority — Misplaced Files
 
 | File | Problem | Action | Status |
 |------|---------|--------|--------|
-| `examples/effects_demo.mlir` | MLIR file loose in examples root | Move to `examples/effects/` | 🔲 |
-| `tools/srir_demo.mlir` | Demo data in tools dir | Move to `examples/` or `tests/` | 🔲 |
-| 21 `.flow` test files in `tests/` root | `tests/core/` subdir already exists | Organize into subdirectories | 🔲 |
+| `examples/effects_demo.mlir` | MLIR file loose in examples root | Untracked by git — handle in main checkout | 🔲 |
+| `tools/srir_demo.mlir` | Demo data in tools dir | Untracked by git — handle in main checkout | 🔲 |
+| 21 `.flow` test files in `tests/` root | `tests/core/` subdir already exists | Organized into `tests/{arrays,simd,memory,core}/`; 5 exact duplicates of existing `core/`/`misc/` copies deleted | ✅ |
 
 #### Low Priority — Empty Directories & Structure
 
