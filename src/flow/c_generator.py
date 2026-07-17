@@ -780,11 +780,32 @@ class CGenerator:
             return Type(expr.struct_name)
         elif isinstance(expr, FieldAccess):
             obj_type = self._infer_expr_type(expr.object)
+            # Unwrap pointers so ptr<Struct> field access resolves the struct
+            if obj_type and obj_type.name not in self._structs:
+                elem = getattr(obj_type, "element_type", None)
+                if elem is not None and elem.name in self._structs:
+                    obj_type = elem
             if obj_type and obj_type.name in self._structs:
                 field_type = self._structs[obj_type.name].get(expr.field)
                 if field_type:
                     return field_type
             return Type("i32")
+        elif isinstance(expr, ArrayAccess):
+            base_type = self._infer_expr_type(expr.array)
+            if base_type is not None:
+                elem = getattr(base_type, "element_type", None)
+                if elem is not None:
+                    return elem
+                # Fall back to name-based unwrapping: ptr_Point -> Point
+                for prefix in ("ptr_", "array_"):
+                    if base_type.name.startswith(prefix):
+                        return Type(base_type.name[len(prefix):])
+            return Type("i32")
+        elif isinstance(expr, MethodCall):
+            # Desugars to method(object, args...)
+            return self._infer_expr_type(
+                FunctionCall(expr.method, [expr.object] + list(expr.arguments))
+            )
         elif isinstance(expr, UnaryOperation):
             operand = self._infer_expr_type(expr.operand)
             if expr.operator == "!":
@@ -849,6 +870,20 @@ class CGenerator:
                 t = self._var_types[expr.name]
                 return bool(getattr(t, "is_pointer", False) or t.name.startswith("ptr_"))
         if isinstance(expr, FieldAccess):
+            # Prefer the declared field type when the struct is known
+            obj_type = self._infer_expr_type(expr.object)
+            if obj_type is not None:
+                struct_name = obj_type.name
+                elem = getattr(obj_type, "element_type", None)
+                if struct_name not in self._structs and elem is not None and elem.name in self._structs:
+                    struct_name = elem.name
+                if struct_name in self._structs:
+                    field_type = self._structs[struct_name].get(expr.field)
+                    if field_type is not None:
+                        return bool(
+                            getattr(field_type, "is_pointer", False)
+                            or field_type.name.startswith("ptr_")
+                        )
             return self._is_pointer_expr(expr.object)
         return False
 
@@ -1119,7 +1154,13 @@ class CGenerator:
             safe_name = _sanitize_identifier(st.name)
             if st.initializer is None:
                 return [f"{self._i()}{c_t} {safe_name};"]
-            return [f"{self._i()}{c_t} {safe_name} = {self._gen_expr(st.initializer)};"]
+            init_expr = self._gen_expr(st.initializer)
+            if getattr(decl_type, "is_pointer", False) or decl_type.name.startswith("ptr_"):
+                # Flow permits implicit pointer conversions (e.g. ptr<u8> ->
+                # ptr<HashEntry>); modern clang treats the uncasted C as an
+                # error, so make the conversion explicit.
+                init_expr = f"({c_t})({init_expr})"
+            return [f"{self._i()}{c_t} {safe_name} = {init_expr};"]
 
         if isinstance(st, Assignment):
             # Handle array element assignment: arr[i] = value
@@ -1153,6 +1194,12 @@ class CGenerator:
 
         if isinstance(st, DeferStatement):
             return []  # Collected by _gen_block
+
+        # Loop control: the parser currently surfaces `break`/`continue` as
+        # bare Variable statements; emit the C keywords directly instead of
+        # a mangled identifier.
+        if isinstance(st, Variable) and st.name in ("break", "continue"):
+            return [f"{self._i()}{st.name};"]
 
         # Expression statement
         if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall, MethodCall)):
@@ -1688,8 +1735,9 @@ class CGenerator:
                 f"{self._gen_lvalue_expr(e.array)}[{self._gen_expr(e.index)}]"
             )
         if isinstance(e, FieldAccess):
+            accessor = "->" if self._is_pointer_expr(e.object) else "."
             return (
-                f"{self._gen_lvalue_expr(e.object)}.{_c_ident(e.field)}"
+                f"{self._gen_lvalue_expr(e.object)}{accessor}{_c_ident(e.field)}"
             )
         return self._gen_expr(e)
 
