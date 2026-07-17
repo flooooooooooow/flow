@@ -1,8 +1,14 @@
 #!/bin/bash
 # Run CI tests locally (without Docker/act)
 # This simulates what GitHub Actions does
+# Run from project root: ./scripts/test_ci_locally.sh
 
 set -e  # Exit on error
+
+# Get project root (parent of scripts/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
 
 echo "🧪 Running CI tests locally..."
 echo ""
