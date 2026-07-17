@@ -7,11 +7,14 @@ Provides IntelliSense features: completion, hover, diagnostics, go-to-definition
 import json
 import sys
 import re
+import threading
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from .parser import (
-    Lexer, Parser, FunctionDecl, StructDecl, EnumDecl, TraitDecl
+    Lexer, Parser, FunctionDecl, StructDecl, EnumDecl, TraitDecl,
+    FlowSyntaxError, TokenType
 )
+from .type_checker import TypeChecker
 
 # LSP Message Types
 @dataclass
@@ -51,10 +54,14 @@ class Hover:
 class FlowLanguageServer:
     """LSP server for FLOW language."""
     
+    DEBOUNCE_SECONDS = 0.2  # delay before re-analyzing on keystrokes
+
     def __init__(self):
         self.documents: Dict[str, str] = {}  # uri -> content
         self.symbols: Dict[str, Dict[str, Any]] = {}  # uri -> {name: symbol_info}
         self.running = True
+        self._write_lock = threading.Lock()  # serializes stdout writes
+        self._debounce_timers: Dict[str, threading.Timer] = {}  # uri -> pending analysis
         
         # Built-in types
         self.builtin_types = [
@@ -159,21 +166,51 @@ class FlowLanguageServer:
         uri = params['textDocument']['uri']
         text = params['textDocument']['text']
         self.documents[uri] = text
+        # Analyze immediately on open (no debounce needed for a single event)
         self._analyze_document(uri)
-    
+        self._publish_diagnostics(uri)
+
     def _handle_did_change(self, params: dict):
         """Handle textDocument/didChange."""
         uri = params['textDocument']['uri']
         changes = params.get('contentChanges', [])
         if changes:
             self.documents[uri] = changes[0]['text']
-            self._analyze_document(uri)
-    
+            # Debounce: rapid keystrokes cancel the previous pending analysis
+            # so we only parse + type-check once typing pauses.
+            timer = self._debounce_timers.pop(uri, None)
+            if timer is not None:
+                timer.cancel()
+            timer = threading.Timer(
+                self.DEBOUNCE_SECONDS, self._analyze_and_publish, args=(uri,)
+            )
+            timer.daemon = True
+            self._debounce_timers[uri] = timer
+            timer.start()
+
     def _handle_did_close(self, params: dict):
         """Handle textDocument/didClose."""
         uri = params['textDocument']['uri']
+        timer = self._debounce_timers.pop(uri, None)
+        if timer is not None:
+            timer.cancel()
         self.documents.pop(uri, None)
         self.symbols.pop(uri, None)
+        # Clear any diagnostics still shown for the closed document
+        self._send_notification('textDocument/publishDiagnostics',
+                                {'uri': uri, 'diagnostics': []})
+
+    def _analyze_and_publish(self, uri: str):
+        """Debounced worker: re-analyze a document and publish diagnostics."""
+        self._debounce_timers.pop(uri, None)
+        if uri not in self.documents:
+            return  # closed while the timer was pending
+        try:
+            self._analyze_document(uri)
+            self._publish_diagnostics(uri)
+        except Exception as e:
+            sys.stderr.write(f"LSP analyze error: {e}\n")
+            sys.stderr.flush()
     
     def _analyze_document(self, uri: str):
         """Analyze a document and extract symbols."""
@@ -224,9 +261,144 @@ class FlowLanguageServer:
         except Exception:
             # Parse error - still store partial symbols
             pass
-        
+
         self.symbols[uri] = symbols
-    
+
+    # ------------------------------------------------------------------
+    # Diagnostics
+    # ------------------------------------------------------------------
+
+    def _publish_diagnostics(self, uri: str):
+        """Compute diagnostics for a document and push them to the client."""
+        text = self.documents.get(uri)
+        if text is None:
+            return
+        diagnostics = self._compute_diagnostics(text)
+        self._send_notification('textDocument/publishDiagnostics', {
+            'uri': uri,
+            'diagnostics': diagnostics,
+        })
+
+    def _compute_diagnostics(self, text: str) -> List[dict]:
+        """Run the FLOW parser + type checker over text, return LSP diagnostics.
+
+        Parser/lexer errors are severity 1 (Error); type-checker findings are
+        severity 2 (Warning). Reuses the compiler's own error objects:
+        FlowSyntaxError carries 1-based line/column which we convert to
+        0-based LSP positions.
+        """
+        diagnostics: List[dict] = []
+
+        # Phase 1: parse (syntax errors stop here - the AST is unusable)
+        try:
+            lexer = Lexer(text)
+            parser = Parser(lexer, source=text)
+            declarations = parser.parse()
+        except FlowSyntaxError as e:
+            # First line of the message is the human-readable summary;
+            # the rest is terminal-oriented source context we don't need in LSP.
+            message = str(e).split('\n')[0]
+            if e.suggestion:
+                message += f" (hint: {e.suggestion})"
+            line = (e.line - 1) if e.line else 0
+            column = (e.column - 1) if e.column else 0
+            diagnostics.append({
+                'range': self._word_range(text, line, column),
+                'severity': 1,
+                'source': 'flow-parser',
+                'message': message,
+            })
+            return diagnostics
+        except SyntaxError as e:
+            # Plain lexer/parser SyntaxError without structured location;
+            # some messages embed "at line L, column C" - recover it if present.
+            message = str(e).split('\n')[0]
+            line, column = 0, 0
+            m = re.search(r'line (\d+)(?:, column (\d+))?', message)
+            if m:
+                line = max(int(m.group(1)) - 1, 0)
+                if m.group(2):
+                    column = max(int(m.group(2)) - 1, 0)
+            diagnostics.append({
+                'range': self._word_range(text, line, column),
+                'severity': 1,
+                'source': 'flow-parser',
+                'message': message,
+            })
+            return diagnostics
+        except Exception as e:
+            diagnostics.append({
+                'range': self._word_range(text, 0, 0),
+                'severity': 1,
+                'source': 'flow-parser',
+                'message': f"Internal parser error: {e}",
+            })
+            return diagnostics
+
+        # Phase 2: type check (findings are strings without locations, so we
+        # locate the first identifier the message quotes to place the range)
+        try:
+            checker = TypeChecker()
+            result = checker.check(declarations)
+            seen = set()
+            for err in result.errors:
+                if err in seen:  # checker can report the same finding twice
+                    continue
+                seen.add(err)
+                diagnostics.append({
+                    'range': self._range_for_type_error(text, err),
+                    'severity': 2,
+                    'source': 'flow-typecheck',
+                    'message': err,
+                })
+        except Exception as e:
+            sys.stderr.write(f"LSP type-check error: {e}\n")
+            sys.stderr.flush()
+
+        return diagnostics
+
+    def _range_for_type_error(self, text: str, message: str) -> dict:
+        """Best-effort range for a location-less type error message.
+
+        Type checker messages usually quote the offending symbol
+        (e.g. \"Undefined variable 'x'\") - point at its first occurrence.
+        """
+        m = re.search(r"'([A-Za-z_][A-Za-z0-9_]*)'", message)
+        if m:
+            name = m.group(1)
+            pattern = re.compile(r'\b' + re.escape(name) + r'\b')
+            for line_no, line_text in enumerate(text.split('\n')):
+                found = pattern.search(line_text)
+                if found:
+                    return {
+                        'start': {'line': line_no, 'character': found.start()},
+                        'end': {'line': line_no, 'character': found.end()},
+                    }
+        # Fallback: flag the first line
+        first_len = len(text.split('\n', 1)[0])
+        return {
+            'start': {'line': 0, 'character': 0},
+            'end': {'line': 0, 'character': first_len},
+        }
+
+    def _word_range(self, text: str, line: int, column: int) -> dict:
+        """Range covering the word (or at least one character) at line/column."""
+        lines = text.split('\n')
+        if line >= len(lines):
+            line = max(len(lines) - 1, 0)
+        line_text = lines[line] if lines else ''
+        if column > len(line_text):
+            column = max(len(line_text) - 1, 0)
+        end = column
+        while end < len(line_text) and (line_text[end].isalnum() or line_text[end] == '_'):
+            end += 1
+        if end == column:
+            end = min(column + 1, max(len(line_text), column + 1))
+        return {
+            'start': {'line': line, 'character': column},
+            'end': {'line': line, 'character': end},
+        }
+
     def _handle_completion(self, params: dict) -> List[dict]:
         """Handle textDocument/completion."""
         uri = params['textDocument']['uri']
@@ -482,12 +654,40 @@ class FlowLanguageServer:
         return symbols
     
     def _find_references_in_text(self, text: str, word: str) -> List[dict]:
-        """Find all occurrences of word in text."""
-        import re
+        """Find identifier occurrences of word in text.
+
+        Tokenizes with the compiler's Lexer so mentions inside comments and
+        string literals are NOT counted. Falls back to a word-boundary regex
+        scan if the buffer cannot be tokenized (e.g. mid-edit garbage).
+        """
         locations = []
-        lines = text.split('\n')
+        try:
+            tokens = Lexer(text).tokenize()
+        except Exception:
+            tokens = None
+
+        if tokens is not None:
+            for tok in tokens:
+                # Identifiers only; TEST is included because the lexer maps
+                # the identifier 'test' to a keyword token (parser allows it
+                # as a name, e.g. `function test()`).
+                if tok.type not in (TokenType.IDENTIFIER, TokenType.TEST):
+                    continue
+                if tok.value != word:
+                    continue
+                line = tok.line - 1  # tokens are 1-based; LSP is 0-based
+                column = tok.column - 1
+                locations.append({
+                    'range': {
+                        'start': {'line': line, 'character': column},
+                        'end': {'line': line, 'character': column + len(word)},
+                    }
+                })
+            return locations
+
+        # Fallback: plain text scan
         pattern = re.compile(r'\b' + re.escape(word) + r'\b')
-        for line_no, line_text in enumerate(lines):
+        for line_no, line_text in enumerate(text.split('\n')):
             for match in pattern.finditer(line_text):
                 locations.append({
                     'range': {
@@ -498,17 +698,56 @@ class FlowLanguageServer:
         return locations
 
     def _handle_references(self, params: dict) -> List[dict]:
-        """Handle textDocument/references."""
+        """Handle textDocument/references.
+
+        Resolution mirrors _handle_definition: top-level symbols (functions,
+        structs, enums, traits) are looked up in the per-document symbol
+        index built on didOpen/didChange, and their references are collected
+        across every open document. Names that are not in any symbol index
+        (local variables, parameters) are searched in the current file only.
+        """
         uri = params['textDocument']['uri']
         pos = params['position']
+        include_declaration = params.get('context', {}).get('includeDeclaration', True)
         text = self.documents.get(uri, '')
         word = self._get_word_at_position(text, pos['line'], pos['character'])
         if not word:
             return []
+
+        # Resolve the symbol the same way definition does: current file
+        # first, then any other open document.
+        decl_uri = None
+        decl_info = None
+        if word in self.symbols.get(uri, {}):
+            decl_uri = uri
+            decl_info = self.symbols[uri][word]
+        else:
+            for other_uri, other_symbols in self.symbols.items():
+                if other_uri != uri and word in other_symbols:
+                    decl_uri = other_uri
+                    decl_info = other_symbols[word]
+                    break
+
+        # Top-level symbol -> search all open documents (cross-file, like
+        # definition/hover). Local name -> same-file only.
+        if decl_uri is not None:
+            search_docs = self.documents.items()
+        else:
+            search_docs = [(uri, text)]
+
         refs = []
-        for doc_uri, doc_text in self.documents.items():
+        for doc_uri, doc_text in search_docs:
             for loc in self._find_references_in_text(doc_text, word):
                 refs.append({'uri': doc_uri, **loc})
+
+        if not include_declaration and decl_info is not None:
+            decl_line = decl_info.get('line', -1)
+            refs = [
+                r for r in refs
+                if not (r['uri'] == decl_uri
+                        and r['range']['start']['line'] == decl_line)
+            ]
+
         return refs
 
     def _handle_rename(self, params: dict) -> Optional[dict]:
@@ -560,6 +799,17 @@ class FlowLanguageServer:
         
         return line_text[start:end]
     
+    def _send_message(self, message: dict):
+        """Serialize and write an LSP message to stdout (thread-safe)."""
+        body = json.dumps(message)
+        with self._write_lock:
+            sys.stdout.write(f'Content-Length: {len(body)}\r\n\r\n{body}')
+            sys.stdout.flush()
+
+    def _send_notification(self, method: str, params: dict):
+        """Send a server-initiated notification (e.g. publishDiagnostics)."""
+        self._send_message({'jsonrpc': '2.0', 'method': method, 'params': params})
+
     def run(self):
         """Run the LSP server using stdio."""
         while self.running:
@@ -590,9 +840,7 @@ class FlowLanguageServer:
                 
                 # Send response
                 if response:
-                    response_str = json.dumps(response)
-                    sys.stdout.write(f'Content-Length: {len(response_str)}\r\n\r\n{response_str}')
-                    sys.stdout.flush()
+                    self._send_message(response)
                     
             except Exception as e:
                 sys.stderr.write(f"LSP Error: {e}\n")
