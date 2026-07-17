@@ -7,6 +7,9 @@ Drives src/flow/lsp_server.py as a subprocess over stdio (no editor needed):
   didChange (type error)              -> expect publishDiagnostics (typecheck Warning)
   didChange (clean file)              -> expect empty diagnostics
   textDocument/references             -> expect symbol locations
+  textDocument/prepareRename          -> symbol range, null on keywords
+  textDocument/rename                 -> WorkspaceEdit across open files,
+                                         errors on invalid/reserved names
 
 Run:  python3 scripts/test_lsp_server.py
 Exits non-zero on any failed check.
@@ -290,6 +293,152 @@ def test_references(c):
           lines_of(refs, URI) == [5, 11], str(lines_of(refs, URI)))
 
 
+def apply_edits(text, edits):
+    """Apply single-line LSP TextEdits to a document (last edit first so
+    earlier ranges stay valid)."""
+    lines = text.split('\n')
+    ordered = sorted(edits, key=lambda e: (e['range']['start']['line'],
+                                           e['range']['start']['character']),
+                     reverse=True)
+    for e in ordered:
+        ln = e['range']['start']['line']
+        s = e['range']['start']['character']
+        t = e['range']['end']['character']
+        lines[ln] = lines[ln][:s] + e['newText'] + lines[ln][t:]
+    return '\n'.join(lines)
+
+
+def flow_compiles(text):
+    """Parse + type-check text with the real Flow compiler; return
+    (ok, detail)."""
+    sys.path.insert(0, SRC_DIR)
+    from flow.parser import Lexer, Parser
+    from flow.type_checker import TypeChecker
+    try:
+        decls = Parser(Lexer(text), source=text).parse()
+    except Exception as e:
+        return False, f'parse error: {e}'
+    try:
+        result = TypeChecker().check(decls)
+    except Exception as e:
+        return False, f'type-check crash: {e}'
+    errors = list(getattr(result, 'errors', []) or [])
+    return not errors, f'type errors: {errors}' if errors else 'ok'
+
+
+def test_rename(c):
+    print("\n== Rename ==")
+
+    # State from the previous tests: URI holds CLEAN_FILE plus a trailing
+    # comment mentioning norm (line 15); URI2 holds OTHER_FILE.
+
+    # prepareRename on the norm declaration -> range + placeholder
+    resp = c.request('textDocument/prepareRename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 9}})
+    prep = resp['result']
+    print(f"  prepareRename(norm) -> {json.dumps(prep)}")
+    check('prepareRename on symbol returns its range',
+          prep and prep['range']['start'] == {'line': 5, 'character': 9}
+          and prep['range']['end'] == {'line': 5, 'character': 13}, str(prep))
+    check('prepareRename placeholder is the symbol name',
+          prep and prep.get('placeholder') == 'norm', str(prep))
+
+    # prepareRename on a keyword ('function' at line 5 col 0) -> null
+    resp = c.request('textDocument/prepareRename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 0}})
+    check('prepareRename on keyword returns null',
+          resp.get('result') is None, str(resp.get('result')))
+
+    # prepareRename on whitespace (blank line 4) -> null
+    resp = c.request('textDocument/prepareRename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 4, 'character': 0}})
+    check('prepareRename on whitespace returns null',
+          resp.get('result') is None, str(resp.get('result')))
+
+    # prepareRename on the comment mention of norm (line 15) -> null
+    resp = c.request('textDocument/prepareRename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 15, 'character': 3}})
+    check('prepareRename inside a comment returns null',
+          resp.get('result') is None, str(resp.get('result')))
+
+    # rename to a reserved keyword -> JSON-RPC error, no result
+    resp = c.request('textDocument/rename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 9},
+        'newName': 'while'})
+    print(f"  rename(norm -> while) -> {json.dumps(resp.get('error'))}")
+    check('rename to keyword is rejected with an error',
+          'error' in resp and not resp.get('result'), str(resp))
+    check("rejection message names the keyword",
+          'while' in resp.get('error', {}).get('message', ''), str(resp))
+
+    # rename to an invalid identifier -> error
+    resp = c.request('textDocument/rename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 9},
+        'newName': '123abc'})
+    check('rename to invalid identifier is rejected',
+          'error' in resp and not resp.get('result'), str(resp))
+
+    # rename ON a keyword -> error
+    resp = c.request('textDocument/rename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 0},
+        'newName': 'whatever'})
+    check('rename on a keyword is rejected',
+          'error' in resp and not resp.get('result'), str(resp))
+
+    # successful cross-file rename: norm -> magnitude
+    resp = c.request('textDocument/rename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 5, 'character': 9},
+        'newName': 'magnitude'})
+    edit = resp['result']
+    print(f"  rename(norm -> magnitude) -> {json.dumps(edit, indent=2)}")
+    changes = edit['changes']
+    check('WorkspaceEdit contains edits for both files',
+          set(changes) == {URI, URI2}, str(set(changes)))
+
+    def lines_of(uri):
+        return sorted(e['range']['start']['line'] for e in changes.get(uri, []))
+
+    check('main file edits hit declaration + call, not the comment',
+          lines_of(URI) == [5, 11], str(lines_of(URI)))
+    check('other file edit hits the cross-file call',
+          lines_of(URI2) == [2], str(lines_of(URI2)))
+    check('all edits insert the new name',
+          all(e['newText'] == 'magnitude'
+              for es in changes.values() for e in es))
+
+    # apply the WorkspaceEdit and verify the renamed program compiles
+    main_text = CLEAN_FILE + "\n# norm in a comment should not count\n"
+    renamed_main = apply_edits(main_text, changes[URI])
+    renamed_other = apply_edits(OTHER_FILE, changes[URI2])
+    check("renamed main no longer calls 'norm'",
+          'norm(' not in renamed_main and 'magnitude(p)' in renamed_main)
+    check("renamed other file calls 'magnitude'",
+          'magnitude(q)' in renamed_other, renamed_other)
+    ok, detail = flow_compiles(renamed_main + '\n' + renamed_other)
+    print(f"  combined renamed program -> {detail}")
+    check('renamed program parses and type-checks cleanly', ok, detail)
+
+    # local variable rename stays in the current file only
+    resp = c.request('textDocument/rename', {
+        'textDocument': {'uri': URI},
+        'position': {'line': 10, 'character': 8},
+        'newName': 'origin'})
+    changes = resp['result']['changes']
+    print(f"  rename(p -> origin) -> files: {sorted(changes)}")
+    check('local rename touches the current file only',
+          set(changes) == {URI}, str(set(changes)))
+    # Note: like references, the token scan is file-wide, not function-
+    # scoped, so norm()'s parameter p is renamed together with main()'s p.
+
+
 def main():
     c = LspClient()
     try:
@@ -299,9 +448,13 @@ def main():
         print("== Initialize ==")
         check('initialize returns capabilities', bool(caps))
         check('referencesProvider advertised', caps.get('referencesProvider') is True)
+        check('renameProvider advertised with prepareProvider',
+              caps.get('renameProvider') == {'prepareProvider': True},
+              str(caps.get('renameProvider')))
 
         test_diagnostics(c)
         test_references(c)
+        test_rename(c)
     finally:
         c.close()
 
