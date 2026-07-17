@@ -25,6 +25,7 @@ from .parser import (
     EnumDecl, ImplDecl, TraitDecl,
     TypeAliasDecl, DistinctTypeDecl, CastExpression,
     MatchStatement, StructPattern, DeferStatement, TryExpr, Lambda,
+    VectorLiteral,
 )
 
 
@@ -205,6 +206,7 @@ class TypeChecker:
         'memmove': TypeKind.POINTER,
         'memcmp': TypeKind.I32,
         'strlen': TypeKind.U64,
+        'len': TypeKind.I64,  # FLOW builtin: array/slice length
         'strcpy': TypeKind.POINTER,
         'strcat': TypeKind.POINTER,
         'strcmp': TypeKind.I32,
@@ -291,6 +293,9 @@ class TypeChecker:
         ui_state_type = SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
         self.global_scope.define(Symbol("_ui_state", ui_state_type, "variable", is_mutable=True))
         self.strict = True
+        # Active collector for return statement types of the function currently
+        # being checked (None outside function bodies).
+        self._return_type_sink: Optional[List[SemanticType]] = None
         self.trait_types: Dict[str, TraitDecl] = {}
         self.impl_pairs: set = set()  # (type_name, trait_name)
 
@@ -542,12 +547,17 @@ class TypeChecker:
                 symbol = Symbol(param.name, param_type, "variable")
                 func_scope.define(symbol)
 
-            # Type check function body
-            self._check_block(func.body)
+            # Type check function body, collecting return types as we go so
+            # return expressions are resolved in their proper scopes.
+            prev_sink = self._return_type_sink
+            self._return_type_sink = []
+            try:
+                self._check_block(func.body)
+                returns = self._return_type_sink
+            finally:
+                self._return_type_sink = prev_sink
             expected_return = self._parse_type(func.return_type)
 
-            # Collect explicit return types
-            returns = self._collect_return_types(func.body)
             if returns:
                 for rt in returns:
                     if not self._can_coerce(rt, expected_return):
@@ -610,6 +620,8 @@ class TypeChecker:
         value_type = self._check_expression(match_stmt.value)
         result_type = SemanticType(TypeKind.VOID)
         for case in match_stmt.cases:
+            # Pattern bindings are scoped to the case's guard and body.
+            case_scope = Scope(parent=self.current_scope)
             if isinstance(case.pattern, Literal):
                 pat_type = self._check_literal(case.pattern)
                 if not self._can_coerce(value_type, pat_type) and not self._can_coerce(pat_type, value_type):
@@ -618,13 +630,32 @@ class TypeChecker:
                             f"Match pattern {pat_type} incompatible with value type {value_type}"
                         )
             elif isinstance(case.pattern, StructPattern):
-                if case.pattern.struct_name not in self.struct_types:
+                struct_decl = self.struct_types.get(case.pattern.struct_name)
+                if struct_decl is None:
                     self.errors.append(f"Unknown struct in match pattern: {case.pattern.struct_name}")
-            if case.guard is not None:
-                guard_type = self._check_expression(case.guard)
-                if guard_type.kind != TypeKind.BOOL and self.strict:
-                    self.errors.append(f"Match guard must be bool, got {guard_type}")
-            case_type = self._check_block(case.body)
+                fields = getattr(struct_decl, "fields", None) or []
+                for i, binding in enumerate(case.pattern.bindings):
+                    if binding == "_":
+                        continue
+                    if i < len(fields):
+                        bind_type = self._parse_type(fields[i].type)
+                    else:
+                        bind_type = SemanticType(TypeKind.UNKNOWN)
+                    case_scope.define(Symbol(binding, bind_type, "variable"))
+            elif isinstance(case.pattern, Variable):
+                # Identifier pattern binds the matched value (e.g. `x if x > 0 =>`).
+                if case.pattern.name != "_":
+                    case_scope.define(Symbol(case.pattern.name, value_type, "variable"))
+            prev_scope = self.current_scope
+            self.current_scope = case_scope
+            try:
+                if case.guard is not None:
+                    guard_type = self._check_expression(case.guard)
+                    if guard_type.kind != TypeKind.BOOL and self.strict:
+                        self.errors.append(f"Match guard must be bool, got {guard_type}")
+                case_type = self._check_block(case.body)
+            finally:
+                self.current_scope = prev_scope
             if case_type.kind != TypeKind.VOID:
                 result_type = case_type
         if match_stmt.default_case:
@@ -660,9 +691,15 @@ class TypeChecker:
     def _check_return_stmt(self, ret: ReturnStatement) -> SemanticType:
         """Type check a return statement."""
         if ret.value:
-            return self._check_expression(ret.value)
+            ret_type = self._check_expression(ret.value)
         else:
-            return SemanticType(TypeKind.VOID)
+            ret_type = SemanticType(TypeKind.VOID)
+        # Record for the enclosing function's return-type validation. Recording
+        # here (during the scoped body walk) keeps pattern/loop bindings visible,
+        # unlike a separate post-pass traversal.
+        if self._return_type_sink is not None:
+            self._return_type_sink.append(ret_type)
+        return ret_type
 
     def _check_assignment(self, assign: Assignment) -> SemanticType:
         """Type check an assignment."""
@@ -770,6 +807,16 @@ class TypeChecker:
             else:
                 elem_type = SemanticType(TypeKind.I32)
             return SemanticType(TypeKind.ARRAY, element_type=elem_type, size=len(expr.elements))
+        elif isinstance(expr, VectorLiteral):
+            # SIMD vector literal like <1.0, 2.0, 3.0, 4.0> -> vecN_<elem>.
+            elem_types = [self._check_expression(e) for e in expr.elements]
+            if any(t.kind in {TypeKind.F32, TypeKind.F64} for t in elem_types):
+                elem_name = "f32"
+            else:
+                elem_name = "i32"
+            return SemanticType(
+                TypeKind.UNKNOWN, name=f"vec{len(expr.elements)}_{elem_name}"
+            )
         elif isinstance(expr, ArrayAccess):
             base_type = self._check_expression(expr.array)
             if base_type.kind == TypeKind.ARRAY or base_type.kind == TypeKind.POINTER:
@@ -810,10 +857,17 @@ class TypeChecker:
             for p in expr.parameters:
                 if p.type and p.type.name != "auto":
                     self._parse_type(p.type)
-            if isinstance(expr.body, Block):
-                self._check_block(expr.body)
-            else:
-                self._check_expression(expr.body)
+            # Returns inside a lambda body belong to the lambda, not the
+            # enclosing function's return-type collection.
+            prev_sink = self._return_type_sink
+            self._return_type_sink = []
+            try:
+                if isinstance(expr.body, Block):
+                    self._check_block(expr.body)
+                else:
+                    self._check_expression(expr.body)
+            finally:
+                self._return_type_sink = prev_sink
             if expr.return_type:
                 return self._parse_type(expr.return_type)
             return SemanticType(TypeKind.VOID)
@@ -1228,22 +1282,3 @@ class TypeChecker:
             # Unknown type (e.g., generic parameter)
             return SemanticType(TypeKind.UNKNOWN, name=parsed_type.name)
 
-    def _collect_return_types(self, block: Block) -> List[SemanticType]:
-        types: List[SemanticType] = []
-        for stmt in block.statements:
-            if isinstance(stmt, ReturnStatement):
-                if stmt.value:
-                    types.append(self._check_expression(stmt.value))
-                else:
-                    types.append(SemanticType(TypeKind.VOID))
-            elif isinstance(stmt, IfStatement):
-                types.extend(self._collect_return_types(stmt.then_block))
-                if stmt.else_block:
-                    types.extend(self._collect_return_types(stmt.else_block))
-            elif isinstance(stmt, WhileStatement):
-                types.extend(self._collect_return_types(stmt.body))
-            elif isinstance(stmt, ForStatement):
-                types.extend(self._collect_return_types(stmt.body))
-            elif isinstance(stmt, Block):
-                types.extend(self._collect_return_types(stmt))
-        return types

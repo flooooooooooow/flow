@@ -120,7 +120,7 @@ export function sizeof_i8() -> usize {
     return 1
 }
 
-export function offset_of_Point(field: str) -> usize {
+export function offset_of_Point(field: string) -> usize {
     # Return byte offset of field within Point struct
     # Compile-time error if field doesn't exist
     # Implemented as intrinsic in MLIR generator
@@ -315,13 +315,13 @@ export function memory_validate(ptr: ptr<void>, size: usize) -> bool {
 }
 
 # Helper functions
-export function format_hex(value: usize) -> str {
+export function format_hex(value: usize) -> string {
     # Format integer as hexadecimal string
     # Simplified implementation
     return "0x0"  # Placeholder
 }
 
-export function format_hex_ptr(ptr: ptr<void>) -> str {
+export function format_hex_ptr(ptr: ptr<void>) -> string {
     # Format pointer as hexadecimal string
     return format_hex(ptr as usize)
 }
