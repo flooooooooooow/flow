@@ -1154,7 +1154,13 @@ class CGenerator:
             safe_name = _sanitize_identifier(st.name)
             if st.initializer is None:
                 return [f"{self._i()}{c_t} {safe_name};"]
-            return [f"{self._i()}{c_t} {safe_name} = {self._gen_expr(st.initializer)};"]
+            init_expr = self._gen_expr(st.initializer)
+            if getattr(decl_type, "is_pointer", False) or decl_type.name.startswith("ptr_"):
+                # Flow permits implicit pointer conversions (e.g. ptr<u8> ->
+                # ptr<HashEntry>); modern clang treats the uncasted C as an
+                # error, so make the conversion explicit.
+                init_expr = f"({c_t})({init_expr})"
+            return [f"{self._i()}{c_t} {safe_name} = {init_expr};"]
 
         if isinstance(st, Assignment):
             # Handle array element assignment: arr[i] = value
