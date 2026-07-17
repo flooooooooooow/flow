@@ -910,12 +910,33 @@ class Lexer:
 
 
 class Parser:
+    # Maximum combined expression/statement nesting depth. Measured on
+    # CPython with the default recursion limit (1000): one parenthesized
+    # expression level costs ~13.5 interpreter frames (RecursionError at 69
+    # levels from a shallow stack), one nested statement ~3 frames
+    # (RecursionError at 324). 50 keeps the worst case (~675 frames) safely
+    # below the interpreter limit even when parsing starts on a deep caller
+    # stack, while remaining far beyond any real program's nesting.
+    MAX_NESTING_DEPTH = 50
+
     def __init__(self, lexer: Lexer, source: str = None):
         self.lexer = lexer
         self.source = source or getattr(lexer, "_source", "")
         self.current_token = self.lexer.next_token()
         self.lookahead = self.lexer.next_token()
         self.struct_names = set()
+        self.nesting_depth = 0
+
+    def _enter_nesting(self, kind: str = "expression") -> None:
+        """Bump the nesting depth; reject pathologically deep input cleanly
+        instead of letting recursive descent hit Python's RecursionError.
+        Callers must decrement self.nesting_depth in a finally block."""
+        self.nesting_depth += 1
+        if self.nesting_depth > self.MAX_NESTING_DEPTH:
+            raise self.error(
+                f"{kind} nesting too deep (limit {self.MAX_NESTING_DEPTH})",
+                suggestion="split the code into smaller expressions or blocks",
+            )
 
     def advance(self):
         self.current_token = self.lookahead
@@ -1763,6 +1784,14 @@ class Parser:
         return Block(statements)
 
     def parse_statement(self) -> Statement:
+        # Nested blocks (if/while/for/match bodies) recurse through here.
+        self._enter_nesting("statement")
+        try:
+            return self._parse_statement_impl()
+        finally:
+            self.nesting_depth -= 1
+
+    def _parse_statement_impl(self) -> Statement:
         if self.current_token.type == TokenType.LET:
             return self.parse_var_decl()
         elif self.current_token.type == TokenType.ASSUME:
@@ -2165,6 +2194,15 @@ class Parser:
         return expr
 
     def parse_logical_or(self) -> Expression:
+        # Every nested expression (parens, brackets, call args, ...) re-enters
+        # here, so this is the single choke point for expression depth.
+        self._enter_nesting("expression")
+        try:
+            return self._parse_logical_or_impl()
+        finally:
+            self.nesting_depth -= 1
+
+    def _parse_logical_or_impl(self) -> Expression:
         left = self.parse_logical_and()
 
         while self.current_token.type == TokenType.OR:
@@ -2319,7 +2357,11 @@ class Parser:
         ]:
             op = self.current_token.value
             self.advance()
-            operand = self.parse_unary()
+            self._enter_nesting("expression")
+            try:
+                operand = self.parse_unary()
+            finally:
+                self.nesting_depth -= 1
             return UnaryOperation(op, operand)
 
         return self.parse_primary()
