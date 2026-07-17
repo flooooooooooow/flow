@@ -4,7 +4,9 @@
 
 <img src="docs/assets/flow-mascot.png" alt="Flowy the Hedgehog" width="180" align="right">
 
-A statically-typed, compiled language with **algebraic effects**, **automatic differentiation**, and **native graphics**.
+A statically-typed, compiled language for describing **systems that evolve through time** — with **algebraic effects**, **automatic differentiation**, **native dynamics/control analysis**, and **native graphics**.
+
+> **Why Flow exists:** see [VISION.md](VISION.md) — evolution as the primary abstraction.
 
 ```flow
 function main() -> i32 {
