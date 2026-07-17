@@ -1,0 +1,58 @@
+# ASPIRATIONAL — does not compile today.
+# North-star composition example for the Helm epic "Vision: Evolution"
+# (cards: evolves-syntax, time-blocks, connect, constraints).
+# Spec: docs/vision/north-star.md. Kept under docs/ deliberately: excluded
+# from `./flow test` and scripts/verify_examples.py discovery by location.
+
+flow Motor {
+    state speed   : f64 = 0.0
+    state current : f64 = 0.0
+    input voltage : f64
+    output speed_out : f64 = speed
+    param resistance : f64 = 1.2
+    param inductance : f64 = 0.05
+    param k_emf : f64 = 0.6
+    param k_torque : f64 = 0.6
+    param inertia : f64 = 0.02
+    param damping : f64 > 0.0 = 0.1
+
+    current evolves as (voltage - resistance * current - k_emf * speed) / inductance
+    speed   evolves as (k_torque * current - damping * speed) / inertia
+}
+
+flow PID {
+    state integral : f64 = 0.0
+    state prev_err : f64 = 0.0
+    input setpoint : f64
+    input feedback : f64
+    output command : f64
+    param kp : f64 = 2.0
+    param ki : f64 = 0.5
+    param kd : f64 = 0.05
+
+    every 1 ms {
+        let err = setpoint - feedback
+        integral becomes integral + err * 0.001
+        prev_err becomes err
+        command becomes kp * err + ki * integral + kd * (err - prev_err) / 0.001
+    }
+}
+
+flow Robot {
+    plant : Motor
+    controller : PID
+    input target : f64
+
+    connect {
+        controller.command -> plant.voltage
+        plant.speed_out   -> controller.feedback
+    }
+
+    every 10 ms {
+        controller.setpoint becomes target
+    }
+
+    always {
+        plant.current <= 40.0
+    }
+}
