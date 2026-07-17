@@ -947,6 +947,38 @@ class Parser:
             msg = f"Expected {token_type}, got {self.current_token.type}"
             raise self.error(msg)
 
+    def parse_array_size(self, what: str = "array") -> int:
+        """Parse a static size used in a type: a non-negative integer literal.
+
+        Raises FlowSyntaxError (with line/column) for float, exponent,
+        negative, or non-numeric size tokens instead of crashing.
+        """
+        token = self.current_token
+        if token.type != TokenType.NUMBER:
+            raise self.error(
+                f"{what} size must be an integer literal, "
+                f"got {token.type}",
+                suggestion=f"use a non-negative integer literal for the {what} size, e.g. 4",
+            )
+        text = str(token.value)
+        try:
+            size = int(text, 16) if text.lower().startswith("0x") else int(text)
+        except ValueError:
+            raise self.error(
+                f"{what} size must be an integer literal, got '{text}'",
+                suggestion=f"use a non-negative integer literal for the {what} size, e.g. 4",
+            ) from None
+        if size < 0:
+            raise self.error(
+                f"{what} size must be non-negative, got '{text}'"
+            )
+        if size > 0x7FFFFFFFFFFFFFFF:  # must fit in i64
+            raise self.error(
+                f"{what} size is too large: '{text}'"
+            )
+        self.advance()
+        return size
+
     def parse(
         self,
     ) -> List[
@@ -1627,7 +1659,7 @@ class Parser:
                 element_type = self.parse_type()
                 if self.current_token.type == TokenType.COMMA:
                     self.advance()  # consume ,
-                    size = int(self.expect(TokenType.NUMBER).value)
+                    size = self.parse_array_size("array")
                     self.expect(TokenType.GREATER)
                     return Type(
                         f"array_{size}_{element_type.name}",
@@ -1697,7 +1729,7 @@ class Parser:
 
         elif self.current_token.type == TokenType.VEC:
             self.advance()
-            size = int(self.expect(TokenType.NUMBER).value)
+            size = self.parse_array_size("vector")
             element_type = self.parse_type()
             return Type(
                 f"vec{size}_{element_type.name}", size=size, element_type=element_type
@@ -1707,7 +1739,7 @@ class Parser:
             self.advance()
             element_type = self.parse_type()
             self.expect(TokenType.SEMICOLON)
-            size = int(self.expect(TokenType.NUMBER).value)
+            size = self.parse_array_size("array")
             self.expect(TokenType.RBRACKET)
             return Type(
                 f"array_{size}_{element_type.name}",
