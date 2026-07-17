@@ -121,7 +121,7 @@ flow/
 │   ├── language/           # Language feature docs
 │   ├── library/            # Stdlib reference
 │   ├── tutorials/          # Beginner → Advanced
-│   └── playground/         # Web playground
+│   └── playground/         # Web playground (syntax explorer)
 │
 ├── third_party/            # THIRD-PARTY INTEGRATIONS
 │   └── integrations/       # Editor + tooling integrations
