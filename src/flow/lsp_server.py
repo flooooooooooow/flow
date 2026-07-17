@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from .parser import (
     Lexer, Parser, FunctionDecl, StructDecl, EnumDecl, TraitDecl,
-    FlowSyntaxError
+    FlowSyntaxError, TokenType
 )
 from .type_checker import TypeChecker
 
@@ -654,12 +654,40 @@ class FlowLanguageServer:
         return symbols
     
     def _find_references_in_text(self, text: str, word: str) -> List[dict]:
-        """Find all occurrences of word in text."""
-        import re
+        """Find identifier occurrences of word in text.
+
+        Tokenizes with the compiler's Lexer so mentions inside comments and
+        string literals are NOT counted. Falls back to a word-boundary regex
+        scan if the buffer cannot be tokenized (e.g. mid-edit garbage).
+        """
         locations = []
-        lines = text.split('\n')
+        try:
+            tokens = Lexer(text).tokenize()
+        except Exception:
+            tokens = None
+
+        if tokens is not None:
+            for tok in tokens:
+                # Identifiers only; TEST is included because the lexer maps
+                # the identifier 'test' to a keyword token (parser allows it
+                # as a name, e.g. `function test()`).
+                if tok.type not in (TokenType.IDENTIFIER, TokenType.TEST):
+                    continue
+                if tok.value != word:
+                    continue
+                line = tok.line - 1  # tokens are 1-based; LSP is 0-based
+                column = tok.column - 1
+                locations.append({
+                    'range': {
+                        'start': {'line': line, 'character': column},
+                        'end': {'line': line, 'character': column + len(word)},
+                    }
+                })
+            return locations
+
+        # Fallback: plain text scan
         pattern = re.compile(r'\b' + re.escape(word) + r'\b')
-        for line_no, line_text in enumerate(lines):
+        for line_no, line_text in enumerate(text.split('\n')):
             for match in pattern.finditer(line_text):
                 locations.append({
                     'range': {
@@ -670,17 +698,56 @@ class FlowLanguageServer:
         return locations
 
     def _handle_references(self, params: dict) -> List[dict]:
-        """Handle textDocument/references."""
+        """Handle textDocument/references.
+
+        Resolution mirrors _handle_definition: top-level symbols (functions,
+        structs, enums, traits) are looked up in the per-document symbol
+        index built on didOpen/didChange, and their references are collected
+        across every open document. Names that are not in any symbol index
+        (local variables, parameters) are searched in the current file only.
+        """
         uri = params['textDocument']['uri']
         pos = params['position']
+        include_declaration = params.get('context', {}).get('includeDeclaration', True)
         text = self.documents.get(uri, '')
         word = self._get_word_at_position(text, pos['line'], pos['character'])
         if not word:
             return []
+
+        # Resolve the symbol the same way definition does: current file
+        # first, then any other open document.
+        decl_uri = None
+        decl_info = None
+        if word in self.symbols.get(uri, {}):
+            decl_uri = uri
+            decl_info = self.symbols[uri][word]
+        else:
+            for other_uri, other_symbols in self.symbols.items():
+                if other_uri != uri and word in other_symbols:
+                    decl_uri = other_uri
+                    decl_info = other_symbols[word]
+                    break
+
+        # Top-level symbol -> search all open documents (cross-file, like
+        # definition/hover). Local name -> same-file only.
+        if decl_uri is not None:
+            search_docs = self.documents.items()
+        else:
+            search_docs = [(uri, text)]
+
         refs = []
-        for doc_uri, doc_text in self.documents.items():
+        for doc_uri, doc_text in search_docs:
             for loc in self._find_references_in_text(doc_text, word):
                 refs.append({'uri': doc_uri, **loc})
+
+        if not include_declaration and decl_info is not None:
+            decl_line = decl_info.get('line', -1)
+            refs = [
+                r for r in refs
+                if not (r['uri'] == decl_uri
+                        and r['range']['start']['line'] == decl_line)
+            ]
+
         return refs
 
     def _handle_rename(self, params: dict) -> Optional[dict]:
