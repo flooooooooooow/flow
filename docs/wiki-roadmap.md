@@ -34,7 +34,7 @@
 | Link language roadmap from wiki | P1 | Copy/symlink `ROADMAP.md` into docs |
 | Fix `grammar.ebnf` copy path in build | P1 | `docs/grammar.ebnf` |
 | Admonition blocks (`> [!note]`) in CSS | P2 | wiki.js renderer |
-| Playground link works from production | P1 | verify `playground/index.html` |
+| Playground link works from production | P1 | verify `playground/index.html` (page refreshed 2026-07 as a non-executing syntax explorer with 9 compile-verified samples) |
 | 404 / error page in wiki shell | P2 | wiki.js |
 
 **Exit criteria:** `https://abhishek-shivakumar.com/transpile/` shows new shell; grammar page is navigable and readable; strategy doc is in sidebar.
@@ -82,7 +82,9 @@
 
 ## Relationship to language roadmap
 
-The **language** roadmap (`ROADMAP.md`) tracks compiler features. The **wiki** roadmap tracks documentation delivery. They intersect at:
+The **language** roadmap (`ROADMAP.md`) tracks compiler features (day-to-day task
+status lives on the local Helm board, `http://127.0.0.1:9470/app?project=flow`).
+The **wiki** roadmap tracks documentation delivery. They intersect at:
 
 | Language milestone | Wiki deliverable |
 |--------------------|------------------|
