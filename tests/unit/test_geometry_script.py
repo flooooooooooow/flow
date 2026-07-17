@@ -77,4 +77,6 @@ class TestGeometryScript:
         shutil.copy(TAYLOR_GEOM, scripts / "taylor-sin.geom")
         md, tex, diagrams = write_proof_artifacts(str(dst))
         assert any(p.endswith(".svg") for p in diagrams)
-        assert "Taylor" in open(md).read() or "Maclaurin" in open(md).read()
+        with open(md) as f:
+            md_text = f.read()
+        assert "Taylor" in md_text or "Maclaurin" in md_text
