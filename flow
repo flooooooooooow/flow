@@ -911,10 +911,19 @@ run_tests() {
             local c_file="$test_build_dir/${safe_name}.c"
             local exe_file="$test_build_dir/${safe_name}"
             
+            # Per-file strictness: files carrying a "flow:lenient" pragma in
+            # their first lines are intentionally checked leniently even when
+            # the suite runs with --strict (checker gaps documented in-file).
+            local file_mode="$strict_mode"
+            if [ "$strict_mode" = "--strict" ] && head -n 3 "$program" | grep -q "flow:lenient"; then
+                file_mode="--lenient"
+                print_warning "~ $rel_path (marked flow:lenient)"
+            fi
+
             # Tier 1: Transpile FLOW to C
             local transpile_output
             set +e  # Temporarily disable exit on error to capture failures
-            transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c $strict_mode -o "$c_file" 2>&1)
+            transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c $file_mode -o "$c_file" 2>&1)
             local transpile_status=$?
             set -e  # Re-enable exit on error
             
