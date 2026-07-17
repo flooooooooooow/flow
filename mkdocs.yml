@@ -52,6 +52,7 @@ markdown_extensions:
 
 nav:
   - Home: wiki-home.md
+  - Vision: vision.md
   - Playground: playground/index.html
   - Getting Started: getting-started.md
   - Comparison: comparison.md
