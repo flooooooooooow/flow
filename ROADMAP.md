@@ -6,6 +6,10 @@
 
 This document tracks what we're building next and why.
 
+> **Vision:** the destination this roadmap points at is laid out in
+> [VISION.md](VISION.md) — a language where the primary abstraction is the
+> evolution of systems through time.
+
 > **Live tracker:** day-to-day backlog and task status now live on the Helm board
 > (local kanban at `http://127.0.0.1:9470/app?project=flow`). This document stays
 > the strategic overview; the board is the source of truth for in-flight work.
