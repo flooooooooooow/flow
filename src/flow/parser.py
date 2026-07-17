@@ -910,12 +910,33 @@ class Lexer:
 
 
 class Parser:
+    # Maximum combined expression/statement nesting depth. Measured on
+    # CPython with the default recursion limit (1000): one parenthesized
+    # expression level costs ~13.5 interpreter frames (RecursionError at 69
+    # levels from a shallow stack), one nested statement ~3 frames
+    # (RecursionError at 324). 50 keeps the worst case (~675 frames) safely
+    # below the interpreter limit even when parsing starts on a deep caller
+    # stack, while remaining far beyond any real program's nesting.
+    MAX_NESTING_DEPTH = 50
+
     def __init__(self, lexer: Lexer, source: str = None):
         self.lexer = lexer
         self.source = source or getattr(lexer, "_source", "")
         self.current_token = self.lexer.next_token()
         self.lookahead = self.lexer.next_token()
         self.struct_names = set()
+        self.nesting_depth = 0
+
+    def _enter_nesting(self, kind: str = "expression") -> None:
+        """Bump the nesting depth; reject pathologically deep input cleanly
+        instead of letting recursive descent hit Python's RecursionError.
+        Callers must decrement self.nesting_depth in a finally block."""
+        self.nesting_depth += 1
+        if self.nesting_depth > self.MAX_NESTING_DEPTH:
+            raise self.error(
+                f"{kind} nesting too deep (limit {self.MAX_NESTING_DEPTH})",
+                suggestion="split the code into smaller expressions or blocks",
+            )
 
     def advance(self):
         self.current_token = self.lookahead
@@ -946,6 +967,38 @@ class Parser:
         else:
             msg = f"Expected {token_type}, got {self.current_token.type}"
             raise self.error(msg)
+
+    def parse_array_size(self, what: str = "array") -> int:
+        """Parse a static size used in a type: a non-negative integer literal.
+
+        Raises FlowSyntaxError (with line/column) for float, exponent,
+        negative, or non-numeric size tokens instead of crashing.
+        """
+        token = self.current_token
+        if token.type != TokenType.NUMBER:
+            raise self.error(
+                f"{what} size must be an integer literal, "
+                f"got {token.type}",
+                suggestion=f"use a non-negative integer literal for the {what} size, e.g. 4",
+            )
+        text = str(token.value)
+        try:
+            size = int(text, 16) if text.lower().startswith("0x") else int(text)
+        except ValueError:
+            raise self.error(
+                f"{what} size must be an integer literal, got '{text}'",
+                suggestion=f"use a non-negative integer literal for the {what} size, e.g. 4",
+            ) from None
+        if size < 0:
+            raise self.error(
+                f"{what} size must be non-negative, got '{text}'"
+            )
+        if size > 0x7FFFFFFFFFFFFFFF:  # must fit in i64
+            raise self.error(
+                f"{what} size is too large: '{text}'"
+            )
+        self.advance()
+        return size
 
     def parse(
         self,
@@ -1627,7 +1680,7 @@ class Parser:
                 element_type = self.parse_type()
                 if self.current_token.type == TokenType.COMMA:
                     self.advance()  # consume ,
-                    size = int(self.expect(TokenType.NUMBER).value)
+                    size = self.parse_array_size("array")
                     self.expect(TokenType.GREATER)
                     return Type(
                         f"array_{size}_{element_type.name}",
@@ -1697,7 +1750,7 @@ class Parser:
 
         elif self.current_token.type == TokenType.VEC:
             self.advance()
-            size = int(self.expect(TokenType.NUMBER).value)
+            size = self.parse_array_size("vector")
             element_type = self.parse_type()
             return Type(
                 f"vec{size}_{element_type.name}", size=size, element_type=element_type
@@ -1707,7 +1760,7 @@ class Parser:
             self.advance()
             element_type = self.parse_type()
             self.expect(TokenType.SEMICOLON)
-            size = int(self.expect(TokenType.NUMBER).value)
+            size = self.parse_array_size("array")
             self.expect(TokenType.RBRACKET)
             return Type(
                 f"array_{size}_{element_type.name}",
@@ -1731,6 +1784,14 @@ class Parser:
         return Block(statements)
 
     def parse_statement(self) -> Statement:
+        # Nested blocks (if/while/for/match bodies) recurse through here.
+        self._enter_nesting("statement")
+        try:
+            return self._parse_statement_impl()
+        finally:
+            self.nesting_depth -= 1
+
+    def _parse_statement_impl(self) -> Statement:
         if self.current_token.type == TokenType.LET:
             return self.parse_var_decl()
         elif self.current_token.type == TokenType.ASSUME:
@@ -2133,6 +2194,15 @@ class Parser:
         return expr
 
     def parse_logical_or(self) -> Expression:
+        # Every nested expression (parens, brackets, call args, ...) re-enters
+        # here, so this is the single choke point for expression depth.
+        self._enter_nesting("expression")
+        try:
+            return self._parse_logical_or_impl()
+        finally:
+            self.nesting_depth -= 1
+
+    def _parse_logical_or_impl(self) -> Expression:
         left = self.parse_logical_and()
 
         while self.current_token.type == TokenType.OR:
@@ -2287,7 +2357,11 @@ class Parser:
         ]:
             op = self.current_token.value
             self.advance()
-            operand = self.parse_unary()
+            self._enter_nesting("expression")
+            try:
+                operand = self.parse_unary()
+            finally:
+                self.nesting_depth -= 1
             return UnaryOperation(op, operand)
 
         return self.parse_primary()
