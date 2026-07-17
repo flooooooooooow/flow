@@ -1,0 +1,26 @@
+# ASPIRATIONAL — does not compile today.
+# North-star hybrid-system example for the Helm epic "Vision: Evolution"
+# (cards: evolves-syntax, hybrid-events, constraints).
+# Spec: docs/vision/north-star.md. Kept under docs/ deliberately: excluded
+# from `./flow test` and scripts/verify_examples.py discovery by location.
+
+flow Ball {
+    state height   : f64 = 10.0
+    state velocity : f64 = 0.0
+    param gravity  : f64 = 9.81
+    param restitution : f64 = 0.8
+
+    solver { dt 500 us }
+
+    height evolves as velocity
+    velocity evolves as -gravity
+
+    when height reaches 0.0 {
+        velocity becomes -restitution * velocity
+        height becomes 0.0
+    }
+
+    never {
+        height < -0.01
+    }
+}
