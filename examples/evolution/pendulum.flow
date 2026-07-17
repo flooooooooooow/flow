@@ -1,0 +1,141 @@
+# PENDULUM — the anchor example of the Flow vision (VISION.md).
+# A damped nonlinear pendulum: theta'' = -(g/L) sin(theta) - c theta'.
+# The program *is* the mathematical model: explicit state (angle, velocity),
+# explicit dynamics (one derivative function), explicit time (RK4 at fixed dt).
+# It integrates 20 seconds of evolution, prints the trajectory, and verifies
+# two physical guarantees: damped energy never increases, and the pendulum
+# settles at the stable equilibrium.
+#
+# North-star (VISION.md) — one day this same system reads:
+#
+#     flow Pendulum {
+#         angle    : Angle
+#         velocity : AngularVelocity
+#
+#         angle evolves as velocity
+#         velocity evolves as
+#             -(gravity / length) * sin(angle) - damping * velocity
+#
+#         always { energy(next) <= energy(now) }
+#     }
+#
+# Run: ./flow run examples/evolution/pendulum.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const GRAVITY: f64 = 9.81      # m/s^2
+const LENGTH: f64 = 1.0        # m
+const DAMPING: f64 = 0.5       # 1/s
+const MASS: f64 = 1.0          # kg
+
+# --- Dynamics: the whole physical model is these two lines -----------------
+#   angle    evolves as velocity
+#   velocity evolves as -(g/L) sin(angle) - c velocity
+function pendulum_deriv(theta: f64, omega: f64, out: ptr<f64>) -> void {
+    out[0] = omega
+    out[1] = 0.0 - (GRAVITY / LENGTH) * sin(theta) - DAMPING * omega
+}
+
+# Classic RK4 step over the 2-state pendulum
+function pendulum_rk4(state: ptr<f64>, dt: f64) -> void {
+    let k1: array<f64, 2> = [0.0, 0.0]
+    let k2: array<f64, 2> = [0.0, 0.0]
+    let k3: array<f64, 2> = [0.0, 0.0]
+    let k4: array<f64, 2> = [0.0, 0.0]
+    pendulum_deriv(state[0], state[1], k1)
+    pendulum_deriv(state[0] + 0.5 * dt * k1[0], state[1] + 0.5 * dt * k1[1], k2)
+    pendulum_deriv(state[0] + 0.5 * dt * k2[0], state[1] + 0.5 * dt * k2[1], k3)
+    pendulum_deriv(state[0] + dt * k3[0], state[1] + dt * k3[1], k4)
+    state[0] = state[0] + dt / 6.0 * (k1[0] + 2.0 * k2[0] + 2.0 * k3[0] + k4[0])
+    state[1] = state[1] + dt / 6.0 * (k1[1] + 2.0 * k2[1] + 2.0 * k3[1] + k4[1])
+}
+
+# Total mechanical energy: E = 1/2 m L^2 w^2 + m g L (1 - cos theta)
+function pendulum_energy(theta: f64, omega: f64) -> f64 {
+    let kinetic: f64 = 0.5 * MASS * LENGTH * LENGTH * omega * omega
+    let potential: f64 = MASS * GRAVITY * LENGTH * (1.0 - cos(theta))
+    return kinetic + potential
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.01           # s
+    let steps: i32 = 2400        # 24 seconds of evolution
+    let print_every: i32 = 200   # one table row every two simulated seconds
+
+    let state: array<f64, 2> = [2.0, 0.0]   # released from 2 rad, at rest
+
+    println("")
+    println("  PENDULUM  --  theta'' = -(g/L) sin(theta) - c theta'")
+    println("  ====================================================")
+    println("")
+    println("      t [s]  angle [rad]   vel [rad/s]  energy [J]")
+    println("    -------  -----------  ------------  ----------")
+
+    let mut prev_energy: f64 = pendulum_energy(state[0], state[1])
+    let e0: f64 = prev_energy
+    let mut energy_violations: i32 = 0
+    let mut saw_nan: i32 = 0
+
+    for k in 0 to steps + 1 {
+        let t: f64 = k * dt
+        let e: f64 = pendulum_energy(state[0], state[1])
+
+        if e != e or state[0] != state[0] {
+            saw_nan = 1
+        }
+        # Guarantee: damped energy is non-increasing (tiny RK4 slack allowed)
+        if e > prev_energy + 1e-9 {
+            energy_violations = energy_violations + 1
+        }
+        prev_energy = e
+
+        if k % print_every == 0 {
+            print("    ")
+            printf("%7.2f", t)
+            printf("  %11.4f", state[0])
+            printf("  %12.4f", state[1])
+            printf("  %10.4f", e)
+            println("")
+        }
+
+        pendulum_rk4(state, dt)
+    }
+
+    let theta_end: f64 = state[0]
+    let omega_end: f64 = state[1]
+    let e_end: f64 = pendulum_energy(theta_end, omega_end)
+
+    println("")
+    print("    initial energy : ")
+    printf("%.4f J", e0)
+    println("")
+    print("    final energy   : ")
+    printf("%.6f J", e_end)
+    println("")
+    print("    dissipated     : ")
+    printf("%.2f %%", (e0 - e_end) / e0 * 100.0)
+    println("")
+    println("")
+
+    # --- Self-checks -------------------------------------------------------
+    if saw_nan == 1 {
+        println("    FAIL: state became NaN")
+        return 1
+    }
+    if energy_violations > 0 {
+        print("    FAIL: energy increased at ")
+        println(energy_violations)
+        return 2
+    }
+    if fabs(theta_end) > 0.02 or fabs(omega_end) > 0.02 {
+        println("    FAIL: pendulum did not settle at equilibrium")
+        return 3
+    }
+    println("    OK: energy decreased monotonically, pendulum settled at rest")
+    return 0
+}

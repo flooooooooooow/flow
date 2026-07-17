@@ -1,0 +1,168 @@
+# HEAT DIFFUSION — fields evolve too (VISION.md, scientific computing pillar).
+# A 1D rod of 32 cells obeying the heat equation T' = alpha * d2T/dx2 with
+# fixed-temperature (ambient) ends, integrated with an explicit Euler scheme
+# at r = alpha dt / dx^2 = 0.4 (stable: r <= 0.5). Each frame renders the
+# temperature field as an ASCII heat-map, so you watch the state of an entire
+# field evolve through time in the terminal. The program verifies the excess
+# heat decays monotonically toward ambient and no cell ever goes NaN.
+#
+# North-star (VISION.md) — one day this same system reads:
+#
+#     flow Rod {
+#         T : Field<Celsius, 32>
+#
+#         T evolves as alpha * laplacian(T)
+#         boundary { T[0] = ambient; T[31] = ambient }
+#
+#         always { total(T - ambient) is decreasing }
+#     }
+#
+# Run: ./flow run examples/evolution/heat_diffusion.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+}
+
+const N: i32 = 32              # cells
+const AMBIENT: f64 = 20.0      # C, boundary + background temperature
+const PEAK: f64 = 100.0        # C, initial hot spot
+const R: f64 = 0.4             # alpha*dt/dx^2, explicit-Euler stability <= 0.5
+
+# Map a temperature to one character of the ramp " .:-=+*#%@"
+# (sqrt-compressed so faint warmth stays visible late in the decay)
+function heat_char(temp: f64) -> string {
+    let mut x: f64 = (temp - AMBIENT) / (PEAK - AMBIENT)
+    if x < 0.0 { x = 0.0 }
+    x = sqrt(x)
+    let mut level: i32 = (x * 10.0) as i32
+    if level < 0 { level = 0 }
+    if level > 9 { level = 9 }
+    if level == 0 { return " " }
+    if level == 1 { return "." }
+    if level == 2 { return ":" }
+    if level == 3 { return "-" }
+    if level == 4 { return "=" }
+    if level == 5 { return "+" }
+    if level == 6 { return "*" }
+    if level == 7 { return "#" }
+    if level == 8 { return "%" }
+    return "@"
+}
+
+# Excess heat stored in the rod relative to ambient
+function excess_heat(temp: ptr<f64>) -> f64 {
+    let mut total: f64 = 0.0
+    for i in 0 to N {
+        total = total + (temp[i] - AMBIENT)
+    }
+    return total
+}
+
+function render_frame(t_now: f64, temp: ptr<f64>) -> void {
+    print("    t=")
+    printf("%6.1f", t_now)
+    print("  |")
+    for i in 0 to N {
+        print(heat_char(temp[i]))
+    }
+    print("|  q=")
+    printf("%7.2f", excess_heat(temp))
+    println("")
+}
+
+function main() -> i32 {
+    let frames: i32 = 16
+    let steps_per_frame: i32 = 40
+    let dt: f64 = R              # dx = 1, alpha = 1  =>  dt = r
+
+    let temp: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let next: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # Initial condition: ambient rod with a hot spot in the middle
+    for i in 0 to N {
+        temp[i] = AMBIENT
+    }
+    for i in 14 to 18 {
+        temp[i] = PEAK
+    }
+
+    println("")
+    println("  HEAT DIFFUSION  --  T' = alpha * d2T/dx2 on a 32-cell rod")
+    println("  =========================================================")
+    println("")
+    print("  r = alpha*dt/dx^2 = ")
+    printf("%.2f", R)
+    println("  (explicit Euler, stable for r <= 0.5)")
+    println("  ramp: 20 C ' .:-=+*#%@' 100 C     q = excess heat vs ambient")
+    println("")
+
+    let q0: f64 = excess_heat(temp)
+    let mut prev_q: f64 = q0
+    let mut q_violations: i32 = 0
+    let mut saw_nan: i32 = 0
+
+    render_frame(0.0, temp)
+    for frame in 1 to frames + 1 {
+        for s in 0 to steps_per_frame {
+            # Interior cells: T[i] += r * (T[i-1] - 2 T[i] + T[i+1])
+            for i in 1 to N - 1 {
+                next[i] = temp[i] + R * (temp[i - 1] - 2.0 * temp[i] + temp[i + 1])
+            }
+            # Dirichlet boundaries: the ends stay at ambient
+            next[0] = AMBIENT
+            next[N - 1] = AMBIENT
+            for i in 0 to N {
+                temp[i] = next[i]
+                if temp[i] != temp[i] {
+                    saw_nan = 1
+                }
+            }
+        }
+        let q: f64 = excess_heat(temp)
+        if q > prev_q + 1e-9 {
+            q_violations = q_violations + 1
+        }
+        prev_q = q
+        render_frame(frame as f64 * steps_per_frame as f64 * dt, temp)
+    }
+
+    let mut max_t: f64 = AMBIENT
+    for i in 0 to N {
+        if temp[i] > max_t {
+            max_t = temp[i]
+        }
+    }
+
+    println("")
+    print("    initial excess heat : ")
+    printf("%.2f", q0)
+    println("")
+    print("    final   excess heat : ")
+    printf("%.2f", prev_q)
+    println("")
+    print("    hottest final cell  : ")
+    printf("%.2f C", max_t)
+    println("")
+    println("")
+
+    # --- Self-checks -------------------------------------------------------
+    if saw_nan == 1 {
+        println("    FAIL: temperature field went NaN")
+        return 1
+    }
+    if q_violations > 0 {
+        println("    FAIL: excess heat increased between frames")
+        return 2
+    }
+    if prev_q >= q0 * 0.5 {
+        println("    FAIL: rod did not shed at least half its excess heat")
+        return 3
+    }
+    if max_t >= 50.0 {
+        println("    FAIL: hot spot did not cool below 50 C")
+        return 4
+    }
+    println("    OK: field diffused, excess heat decayed monotonically")
+    return 0
+}

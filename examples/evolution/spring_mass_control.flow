@@ -1,0 +1,169 @@
+# SPRING-MASS CONTROL — model, analyze, and control in ONE file (VISION.md).
+# The plant is declared once as continuous physics (`dsys ... continuous`);
+# the compiler discretizes it, `sense` proves it controllable and measures the
+# open-loop spectral radius, `ga evolve` searches feedback gains, and `closed`
+# certifies the closed loop. main() then plays both systems side by side.
+# This is the vision's model -> analyze -> control pipeline, running today.
+#
+# North-star (VISION.md) — one day this same system reads:
+#
+#     flow SpringMass {
+#         position : Meter
+#         velocity : Meter / Second
+#
+#         position evolves as velocity
+#         velocity evolves as -(k/m) * position - (c/m) * velocity + u/m
+#     }
+#
+#     analyze SpringMass { controllability, stability }
+#     control SpringMass { objective { minimize error } }
+#
+# Run: ./flow run examples/evolution/spring_mass_control.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+# --- MODEL: mass-spring-damper, m = 1 kg, k = 1 N/m, c = 0.2 N s/m ---------
+#   x1' = x2
+#   x2' = -x1 - 0.2 x2 + u
+dsys plant {
+    continuous
+    dt 0.1
+    n 2 m 1 p 1
+    A 0.0 1.0 -1.0 -0.2
+    B 0.0 1.0
+    C 1.0 0.0
+}
+
+horizon rollout finite 60
+
+# --- ANALYZE: is the plant even controllable? How stable is it? ------------
+sense on plant {
+    controllable -> plant_ok
+    spectral -> rho_open
+    gramian finite rollout trace -> reach_energy
+}
+
+# --- CONTROL: evolve state-feedback gains u = -k1 x1 - k2 x2 ---------------
+ga evolve on plant over rollout -> k1 k2 {
+    population 16
+    generations 40
+    mutation 0.3
+}
+
+# --- CERTIFY: close the loop and re-analyze --------------------------------
+closed plant with k1 k2 {
+    spectral -> rho_cl
+    energy over rollout -> E_cl
+    stable -> stable_cl
+}
+
+function main() -> i32 {
+    println("")
+    println("  SPRING-MASS CONTROL  --  model -> analyze -> control, one file")
+    println("  ==============================================================")
+    println("")
+    println("  --- Analysis (sense block) ---")
+    print("    controllable          : ")
+    if plant_ok == 1 { println("yes") } else { println("NO") }
+    print("    open-loop  rho(A)     : ")
+    printf("%.4f", rho_open)
+    println("   (lightly damped ringing)")
+    print("    reachability energy   : ")
+    printf("%.4f", reach_energy)
+    println("")
+    println("")
+    println("  --- Synthesis (ga evolve block) ---")
+    print("    evolved gains         : k1 = ")
+    printf("%.4f", k1)
+    print(",  k2 = ")
+    printf("%.4f", k2)
+    println("")
+    println("")
+    println("  --- Certification (closed block) ---")
+    print("    closed-loop rho(A-BK) : ")
+    printf("%.4f", rho_cl)
+    println("")
+    print("    closed-loop energy    : ")
+    printf("%.4f", E_cl)
+    print("    stable: ")
+    if stable_cl == 1 { println("yes") } else { println("NO") }
+    println("")
+
+    # --- SIMULATE: release from x = 1 m, open loop vs closed loop ----------
+    # Same Euler-discretized plant the analysis used (dt = 0.1 s).
+    let a11: f64 = 1.0
+    let a12: f64 = 0.1
+    let a21: f64 = -0.1
+    let a22: f64 = 0.98
+    let b1: f64 = 0.0
+    let b2: f64 = 0.1
+
+    let mut xo1: f64 = 1.0
+    let mut xo2: f64 = 0.0
+    let mut xc1: f64 = 1.0
+    let mut xc2: f64 = 0.0
+    let mut open_acc: f64 = 0.0
+    let mut closed_acc: f64 = 0.0
+
+    println("  --- Step comparison: release from x = 1 m ---")
+    println("      t [s]    open x [m]   closed x [m]")
+    println("    -------   -----------   ------------")
+    for k in 0 to 61 {
+        if k % 6 == 0 {
+            print("    ")
+            printf("%7.1f", k as f64 * 0.1)
+            printf("   %11.4f", xo1)
+            printf("   %12.4f", xc1)
+            println("")
+        }
+        # open loop: u = 0
+        let no1: f64 = a11 * xo1 + a12 * xo2
+        let no2: f64 = a21 * xo1 + a22 * xo2
+        xo1 = no1
+        xo2 = no2
+        # closed loop: u = -k1 x1 - k2 x2
+        let u: f64 = 0.0 - k1 * xc1 - k2 * xc2
+        let nc1: f64 = a11 * xc1 + a12 * xc2 + b1 * u
+        let nc2: f64 = a21 * xc1 + a22 * xc2 + b2 * u
+        xc1 = nc1
+        xc2 = nc2
+        open_acc = open_acc + xo1 * xo1
+        closed_acc = closed_acc + xc1 * xc1
+    }
+
+    println("")
+    print("    sum x^2 open   : ")
+    printf("%.4f", open_acc)
+    println("")
+    print("    sum x^2 closed : ")
+    printf("%.4f", closed_acc)
+    println("")
+    println("")
+
+    # --- Self-checks -------------------------------------------------------
+    if plant_ok != 1 {
+        println("    FAIL: plant not controllable")
+        return 1
+    }
+    if stable_cl != 1 {
+        println("    FAIL: evolved closed loop is unstable")
+        return 2
+    }
+    if rho_cl >= rho_open {
+        println("    FAIL: feedback did not improve the spectral radius")
+        return 3
+    }
+    if closed_acc >= open_acc {
+        println("    FAIL: closed loop did not outperform open loop")
+        return 4
+    }
+    if fabs(xc1) > 0.1 {
+        println("    FAIL: closed loop did not settle within 6 s")
+        return 5
+    }
+    println("    OK: controllable plant, stable evolved loop, faster settling")
+    return 0
+}
