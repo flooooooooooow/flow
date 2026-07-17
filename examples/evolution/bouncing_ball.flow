@@ -1,0 +1,152 @@
+# BOUNCING BALL — the hybrid-systems pillar of the Flow vision (VISION.md).
+# Continuous evolution (ballistic flight under gravity) punctuated by discrete
+# events (impact): when the height crosses zero the integrator solves for the
+# exact impact instant inside the step, then applies the restitution reset
+# velocity := -0.8 * velocity. Every bounce is logged and compared against the
+# closed-form prediction, and the program verifies that the ball settles.
+#
+# North-star (VISION.md) — one day this same system reads:
+#
+#     flow Ball {
+#         height   : Meter
+#         velocity : Meter / Second
+#
+#         height evolves as velocity
+#         velocity evolves as -gravity
+#
+#         when height reaches 0 {
+#             velocity becomes -0.8 * velocity
+#         }
+#     }
+#
+# Run: ./flow run examples/evolution/bouncing_ball.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const GRAVITY: f64 = 9.81        # m/s^2
+const RESTITUTION: f64 = 0.8     # coefficient of restitution
+const H0: f64 = 2.0              # drop height, m
+
+function main() -> i32 {
+    let dt: f64 = 0.001          # s, integration step
+    let max_bounces: i32 = 10
+    let max_steps: i32 = 20000   # global budget (20 s)
+
+    let mut t: f64 = 0.0
+    let mut h: f64 = H0
+    let mut v: f64 = 0.0
+
+    # Closed-form reference: first impact at t1 = sqrt(2 h0 / g), speed v1 = g t1.
+    # After bounce k the flight time is 2 v1 e^k / g and the apex is h0 e^(2k).
+    let t1: f64 = sqrt(2.0 * H0 / GRAVITY)
+    let v1: f64 = GRAVITY * t1
+
+    println("")
+    println("  BOUNCING BALL  --  continuous flight + discrete impact events")
+    println("  =============================================================")
+    println("")
+    print("  drop height 2.0 m, restitution 0.8, event-interpolated impacts")
+    println("")
+    println("")
+    println("    bounce   impact t [s]   analytic t [s]   |dt| [s]    rebound apex [m]")
+    println("    ------   ------------   --------------   ---------   ----------------")
+
+    let mut bounce: i32 = 0
+    let mut steps: i32 = 0
+    let mut t_pred: f64 = t1        # analytic time of next impact
+    let mut v_pred: f64 = v1        # analytic speed at next impact
+    let mut worst_dt_err: f64 = 0.0
+    let mut apex_ok: i32 = 1
+    let mut prev_apex: f64 = H0
+    let mut last_apex: f64 = H0
+
+    while bounce < max_bounces and steps < max_steps {
+        # Ballistic step (exact for constant gravity):
+        #   height   evolves as velocity
+        #   velocity evolves as -gravity
+        let h_next: f64 = h + v * dt - 0.5 * GRAVITY * dt * dt
+        let v_next: f64 = v - GRAVITY * dt
+
+        if h_next <= 0.0 and v < 0.0 {
+            # --- EVENT: height reaches 0 inside this step ------------------
+            # Solve h + v tau - g tau^2 / 2 = 0 for the impact instant tau.
+            let tau: f64 = (v + sqrt(v * v + 2.0 * GRAVITY * h)) / GRAVITY
+            let t_hit: f64 = t + tau
+            let v_hit: f64 = v - GRAVITY * tau
+
+            # --- RESET: velocity becomes -e * velocity ---------------------
+            bounce = bounce + 1
+            t = t_hit
+            h = 0.0
+            v = 0.0 - RESTITUTION * v_hit
+
+            let apex: f64 = v * v / (2.0 * GRAVITY)
+            last_apex = apex
+            if apex >= prev_apex {
+                apex_ok = 0
+            }
+            prev_apex = apex
+
+            let dt_err: f64 = fabs(t_hit - t_pred)
+            if dt_err > worst_dt_err {
+                worst_dt_err = dt_err
+            }
+
+            print("    ")
+            printf("%6.0f", bounce as f64)
+            printf("   %12.6f", t_hit)
+            printf("   %14.6f", t_pred)
+            printf("   %9.2e", dt_err)
+            printf("   %16.6f", apex)
+            println("")
+
+            # Advance the analytic reference to the next impact
+            v_pred = v_pred * RESTITUTION
+            t_pred = t_pred + 2.0 * v_pred / GRAVITY
+        } else {
+            h = h_next
+            v = v_next
+            t = t + dt
+        }
+        steps = steps + 1
+    }
+
+    println("")
+    print("    bounces simulated    : ")
+    println(bounce)
+    print("    final rebound apex   : ")
+    printf("%.4f m", last_apex)
+    println("")
+    print("    worst event-time err : ")
+    printf("%.2e s", worst_dt_err)
+    println("")
+    println("")
+
+    # --- Self-checks -------------------------------------------------------
+    if h != h or v != v {
+        println("    FAIL: state became NaN")
+        return 1
+    }
+    if bounce < max_bounces {
+        println("    FAIL: expected 10 bounces within the step budget")
+        return 2
+    }
+    if apex_ok == 0 {
+        println("    FAIL: rebound heights were not strictly decreasing")
+        return 3
+    }
+    if last_apex > 0.05 {
+        println("    FAIL: ball did not settle below 5 cm")
+        return 4
+    }
+    if worst_dt_err > 1e-6 {
+        println("    FAIL: interpolated impact times drifted from closed form")
+        return 5
+    }
+    println("    OK: 10 decaying bounces, impact times match closed form")
+    return 0
+}
