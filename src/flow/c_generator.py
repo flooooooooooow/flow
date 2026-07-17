@@ -1189,6 +1189,12 @@ class CGenerator:
         if isinstance(st, DeferStatement):
             return []  # Collected by _gen_block
 
+        # Loop control: the parser currently surfaces `break`/`continue` as
+        # bare Variable statements; emit the C keywords directly instead of
+        # a mangled identifier.
+        if isinstance(st, Variable) and st.name in ("break", "continue"):
+            return [f"{self._i()}{st.name};"]
+
         # Expression statement
         if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall, MethodCall)):
             return [f"{self._i()}{self._gen_expr(st)};"]
