@@ -27,7 +27,7 @@ and dual C / MLIR backends at native speed.
 > Start with the [5-minute quick start](getting-started.md), then open the [interactive tutorial app](tutorials/index.html) and run examples in your browser.
 
 > [!note] Vision
-> Flow's founding vision — the evolution of systems through time as the primary abstraction — is laid out in [VISION.md](../VISION.md).
+> Flow's founding vision — the evolution of systems through time as the primary abstraction — is laid out on the [Vision page](vision.md) (full text: `VISION.md` at the repo root).
 
 ---
 
