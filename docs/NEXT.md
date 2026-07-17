@@ -54,7 +54,13 @@ and security scanning). Track those in the issue list.
 The effect system is Flow's **killer feature** - not in Rust, Go, Mojo, or Julia.
 
 ### Interactive Playground
-The `docs/playground/index.html` exists. Make it work with current syntax.
+Done: `docs/playground/index.html` is a syntax explorer with current-syntax examples
+(all verified against `./flow run`), keyword-accurate highlighting, and basic lint
+checks. It does not execute code in the browser; it links to server-side compilation
+instructions instead.
+
+Follow-up (out of scope for the syntax refresh): a real step-through debugger /
+in-browser execution would need a wasm build of the compiler pipeline.
 
 ### Performance Comparison
 Run benchmarks against C/Rust/Python and publish results.
