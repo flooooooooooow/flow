@@ -878,11 +878,12 @@ run_tests() {
                 | grep '\.flow$' \
                 | grep -v '/wip/' \
                 | grep -v '^examples/verify/' \
+                | grep -v '^tests/fuzz/crashes/' \
                 | while read -r rel; do
                     echo "$SCRIPT_DIR/$rel"
                 done
         else
-            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" 2>/dev/null
+            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" 2>/dev/null
         fi
     }
 
