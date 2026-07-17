@@ -36,6 +36,22 @@ Flow is a high-performance programming language designed for audio processing, s
 | **Automatic Differentiation** | Built-in language feature | Core language feature |
 | **Interactivity** | Batch compilation with REPL support | Highly interactive with Jupyter integration |
 
+## Flow vs MATLAB/Simulink
+
+The workflow Flow ultimately targets ([VISION.md](../VISION.md)) is the fragmented control-engineering toolchain: analyze in MATLAB, diagram in Simulink, model physics in Modelica, then hand-write or code-generate C for deployment. Every hand-off loses information — the mathematical model and the deployed software drift apart. Flow's answer: **the model is the program.** The same source file that declares the plant is the one that is analyzed, controlled, and compiled to native code.
+
+| Feature | Flow | MATLAB/Simulink |
+|---------|------|-----------------|
+| **Model → deployment** | One source file, compiled directly to C | Model in one tool, generate/rewrite code in another |
+| **System declaration** | `dsys` block in the program itself | Block diagrams / `ss()` objects in a separate environment |
+| **Analysis** | `sense` blocks: controllability, spectral radius, Gramians, bound to program variables | Rich toolbox functions, but results live outside the deployed artifact |
+| **Controller synthesis** | GA-based gain search (`ga evolve`), certified by a `closed` block | Extensive (PID/LQR/MPC toolboxes) |
+| **Runtime artifact** | Native binary via portable C; no runtime license | Generated code requires toolchain hand-off; licenses for tools/coder |
+| **Breadth today** | LTI systems (2-state seed), GA search — honest scope below | Decades of toolboxes; far broader numerically |
+| **General-purpose code** | Full language around the model (effects, generics, systems programming) | Scripting language distinct from deployment language |
+
+**Honest scoping.** What ships in Flow today is the seed: discrete/continuous *linear* `dsys` plants (2-state, single-input envelope), `sense` analysis, Gramians, and GA-based gain search — see the [dynamics DSL reference](language/dynamics-dsl.md) and [dynamics library](library/dynamics.md). MATLAB/Simulink remains far ahead on numerical breadth. The aspirational end-state — nonlinear `evolves as` dynamics, units in the type system, temporal guarantees, solver selection at deploy time — is the vision ([VISION.md](../VISION.md), [north-star plan](vision/north-star.md)), not the present. Choose Flow here if you want model and executable to be the same artifact and today's LTI + GA scope covers your problem.
+
 ## Detailed Analysis
 
 ### Memory Management

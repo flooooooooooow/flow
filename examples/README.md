@@ -11,7 +11,9 @@ examples/
 ├── compilers/        # Language implementation demos
 ├── crypto/           # Cryptographic algorithms
 ├── data/             # Data processing
+├── dynamics/         # Dynamical systems, control, GA search (dsys DSL)
 ├── effects/          # Flow's unique effect system
+├── evolution/        # Flagship vision suite: systems evolving through time
 ├── games/            # Interactive games with graphics
 ├── generics_traits/  # Generic programming and traits
 ├── gpu/              # GPU/Metal computation
@@ -58,6 +60,24 @@ Neural network framework:
 - `nn_layers.flow` - Dense layers, activations
 - `optimizers.flow` - SGD, Adam, RMSprop
 - `models/mlp_xor.flow` - XOR learning demo (trains successfully!)
+
+### Evolution (`evolution/`)
+The flagship suite for Flow's founding vision — systems that evolve through time,
+each self-checking a physical guarantee (see [evolution/README.md](evolution/README.md)):
+- `pendulum.flow` - Nonlinear damped pendulum, RK4, energy guarantee
+- `bouncing_ball.flow` - Hybrid system: continuous flight + discrete impact events
+- `spring_mass_control.flow` - Model → analyze → control in one file (`dsys` DSL)
+- `heat_diffusion.flow` - 1D heat equation with ASCII heat-map frames
+- `lorenz_gfx.flow` - Lorenz attractor live in a window (`./flow gfx`)
+
+### Dynamics (`dynamics/`)
+Dynamical systems, analysis, and control via `stdlib/dynamics` and the
+declarative `dsys` surface syntax (see [dynamics/README.md](dynamics/README.md)):
+- `ga_dsys_syntax.flow` - Every `dsys`/`sense`/`ga evolve`/`closed`/`analyze` block in one file
+- `controllability_demo.flow` - Controllability + similarity transforms
+- `gramian_demo.flow` - Finite vs infinite horizon Gramians
+- `ga_full_analysis.flow` - GA control search with unified analysis report
+- `lorenz_attractor.flow` - Chaos detection via Lyapunov separation proxy
 
 ### Effects (`effects/`)
 Flow's unique algebraic effects (not available in Mojo/Julia):

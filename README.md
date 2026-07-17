@@ -376,13 +376,14 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 
 ### Why Choose Flow?
 
-Flow offers unique advantages for audio programming and real-time systems:
+Flow's thesis ([VISION.md](VISION.md)) is that programs describe systems that evolve through time:
 
-- **Real-time Audio**: Purpose-built for audio processing with minimal latency
+- **Evolution as the Abstraction**: Model, analyze, and control dynamical systems in one file — `dsys` plants, `sense` analysis (controllability, spectral radius, Gramians), and GA-based gain search ship today (`examples/evolution/`, `examples/dynamics/`)
 - **Expressive Effects System**: Manage side effects cleanly without sacrificing performance
-- **Built-in Audio Abstractions**: No need for external libraries for basic audio operations
+- **Built-in Autodiff**: Forward and reverse mode as a language feature, not a library
+- **Real-time Audio**: A first-class domain — native DSP paths and audio abstractions with minimal latency
 - **Modern Syntax**: Clean, readable code that's easy to maintain
-- **Performance**: Compiles to efficient LLVM IR for maximum performance
+- **Performance**: Compiles to portable C (and MLIR/LLVM) for native speed
 - **Safety**: Memory-safe by default while allowing unsafe operations when needed
 
 ---

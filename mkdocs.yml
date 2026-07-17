@@ -60,6 +60,7 @@ nav:
     - Beginner: tutorials/beginner.md
     - Intermediate: tutorials/intermediate.md
     - Advanced: tutorials/advanced.md
+    - Dynamics: tutorials/dynamics.md
   - Documentation:
     - Wiki Strategy: wiki-strategy.md
     - Wiki Roadmap: wiki-roadmap.md
@@ -70,12 +71,15 @@ nav:
     - Types: language/types.md
     - Variables: language/variables.md
     - Functions: language/functions.md
+    - Dynamics DSL: language/dynamics-dsl.md
     - Graphics: language/graphics.md
     - Design: language/language_design.md
   - Standard Library:
     - API Reference: library/stdlib-reference.md
     - Core: library/core.md
     - Autodiff: library/autodiff.md
+    - Dynamics: library/dynamics.md
+    - Audio: library/audio.md
     - Memory: library/memory.md
   - Third-Party Libraries:
     - Overview: third-party/README.md
