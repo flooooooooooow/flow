@@ -1,3 +1,4 @@
+# flow:lenient - type checker does not yet resolve trait/capability-based audio overloads (DelayLine vs DelayLineF32)
 # Livecoding Demo - Make Music in FLOW
 #
 # This demonstrates how FLOW makes audio programming easier than ANY other language.
