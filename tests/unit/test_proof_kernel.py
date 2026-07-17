@@ -32,6 +32,7 @@ class TestProofKernel:
         dst = tmp_path / "Nat-plus-zero-right.flow"
         shutil.copy(FIXTURE, dst)
         path = write_kernel_json(str(dst), instantiation={"n": "0"})
-        data = json.loads(open(path).read())
+        with open(path) as f:
+            data = json.load(f)
         assert "nodes" in data
         assert data["instantiation"]["n"] == "0"
