@@ -24,6 +24,11 @@ For reference, see [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md).
 2. [advanced.md](advanced.md) — Effects deep-dive
 3. Run `examples/effects_working.flow`
 
+### Path 4: Dynamics & Control (the vision path)
+1. [dynamics.md](dynamics.md) — ODE integrators → `dsys` → `sense` → `ga evolve`
+2. Run the flagship suite in `examples/evolution/`
+3. Read [VISION.md](../../VISION.md) and the [north-star grammar plan](../vision/north-star.md)
+
 ## Tutorial Files
 
 | File | Duration | Prerequisites |
@@ -31,6 +36,7 @@ For reference, see [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md).
 | [beginner.md](beginner.md) | 30 min | None |
 | [intermediate.md](intermediate.md) | 45 min | beginner.md |
 | [advanced.md](advanced.md) | 60 min | intermediate.md |
+| [dynamics.md](dynamics.md) | 60 min | intermediate.md |
 
 ## Exercises
 

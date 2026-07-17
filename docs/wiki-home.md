@@ -5,12 +5,14 @@
 <h1 class="wiki-hero-title">Write with effects.<br>Compile like C.</h1>
 
 <p class="wiki-hero-lead">
-A statically-typed language for audio, ML, and systems — algebraic effects, built-in autodiff,
+A statically-typed language for describing systems that evolve through time —
+dynamics, analysis, and control alongside algebraic effects, built-in autodiff,
 and dual C / MLIR backends at native speed.
 </p>
 
 <div class="wiki-hero-actions">
   <a href="getting-started.md" class="wiki-cta wiki-cta-primary">Install &amp; run</a>
+  <a href="vision.md" class="wiki-cta">The vision</a>
   <a href="tutorials/index.html" class="wiki-cta">Interactive tutorials</a>
   <a href="comparison.md" class="wiki-cta">vs C · Rust · Zig · Mojo</a>
 </div>
