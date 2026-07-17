@@ -196,6 +196,9 @@ capability ConsoleLogger {
 # Swap implementations without changing code
 ```
 
+See the full walkthrough in [docs/effects-showcase.md](docs/effects-showcase.md)
+(`examples/effects/showcase.flow` — compiles, links, and runs end to end).
+
 ### Automatic Differentiation
 
 ```flow
@@ -223,7 +226,8 @@ extern {
 ./flow audio <file>         # Compile and run with audio backend
 ./flow compile-audio <file> # Compile with audio backend
 ./flow python <file>        # Generate Python wheel
-./flow test                 # Run test suite
+./flow test                 # Run test suite (strict type-checking by default)
+./flow test --strict --tier2 # Strict corpus + transpile/clang compile checks
 ./flow fmt <file>           # Format code
 ./flow repl                 # Interactive mode
 ./flow jit <file>           # JIT compile (requires LLVM)
@@ -384,14 +388,25 @@ Flow offers unique advantages for audio programming and real-time systems:
 ## Development
 
 ```bash
-# Run tests
+# Run tests (strict mode is the default; tier-2 also compile-checks the corpus)
 ./flow test
+./flow test --strict --tier2
+
+# Fuzz the compiler (mutation/grammar/pipeline targets; also runs in CI)
+python3 tests/fuzz/run_fuzz.py --seconds 30
+
+# Regenerate the examples compile-status table (examples/STATUS.md)
+python3 scripts/verify_examples.py
 
 # Format code
 ./flow fmt examples/basics/hello_world.flow
 
 # Start LSP for IDE support
+# (go-to-definition, hover, autocomplete, inline diagnostics, find references, rename)
 ./flow lsp
+
+# LSP regression harness (39 tests)
+python3 scripts/test_lsp_server.py
 ```
 
 ### MLIR
@@ -436,6 +451,8 @@ for details on what was fixed.
 - **[Getting Started](docs/getting-started.md)** - Installation, first program
 - **[Language Spec](docs/LANGUAGE_SPEC.md)** - Complete reference
 - **[Examples](examples/README.md)** - All example programs
+- **[Examples Compile Status](examples/STATUS.md)** - Verified compile status of every example (891/1170)
+- **[Effects Showcase](docs/effects-showcase.md)** - Algebraic effects walkthrough with honest limitations
 - **[What's Next](docs/NEXT.md)** - Prioritized roadmap
 - **[Changelog](docs/project/CHANGELOG.md)** - Version history and audit fixes
 - **[Contributing](docs/project/CONTRIBUTING.md)** - How to contribute, security policy
