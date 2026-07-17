@@ -3,12 +3,14 @@
     "exception": "RecursionError",
     "location": "parser.py:parse_expression_without_assign",
     "message": "maximum recursion depth exceeded (deeply nested expression, ~70 parens suffices at default limit)",
-    "stage": "parse"
+    "stage": "parse",
+    "status": "fixed"
   },
   "parse-valueerror-parser-parse-type.flow": {
     "exception": "ValueError",
     "location": "parser.py:parse_type",
     "message": "invalid literal for int() with base 10: '0.0'",
-    "stage": "parse"
+    "stage": "parse",
+    "status": "fixed"
   }
 }
