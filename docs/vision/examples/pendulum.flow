@@ -1,0 +1,39 @@
+# ASPIRATIONAL — does not compile today.
+# North-star example for the Helm epic "Vision: Evolution" (cards:
+# evolves-syntax, units, constraints, represent-linear, analyze-block).
+# Spec: docs/vision/north-star.md. Kept under docs/ deliberately: neither
+# `./flow test` (suites: tests, examples) nor scripts/verify_examples.py
+# (roots: examples, apps, benchmarks) scans this directory, so this file
+# cannot lower the examples/STATUS.md compile percentage.
+
+unit Radian
+unit Second
+unit RadPerSec = Radian / Second
+
+flow Pendulum {
+    state angle    : Radian    = 0.5 as Radian
+    state velocity : RadPerSec = 0.0 as RadPerSec
+    param gravity  : f64 = 9.81
+    param length   : f64 = 1.0
+
+    solver { dt 1 ms  method euler }
+
+    angle evolves as velocity
+    velocity evolves as -(gravity / length) * sin(angle)
+
+    always {
+        angle < 3.15 as Radian
+        angle > -3.15 as Radian
+    }
+
+    represent linear {
+        at (angle: 0.0, velocity: 0.0)
+        outputs (angle)
+    }
+}
+
+analyze Pendulum {
+    poles
+    stability
+    controllability
+}
