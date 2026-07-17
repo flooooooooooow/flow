@@ -84,9 +84,9 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 
 | File | Problem | Action | Status |
 |------|---------|--------|--------|
-| `examples/effects_demo.mlir` | MLIR file loose in examples root | Move to `examples/effects/` | 🔲 |
-| `tools/srir_demo.mlir` | Demo data in tools dir | Move to `examples/` or `tests/` | 🔲 |
-| 21 `.flow` test files in `tests/` root | `tests/core/` subdir already exists | Organize into subdirectories | 🔲 |
+| `examples/effects_demo.mlir` | MLIR file loose in examples root | Untracked by git — handle in main checkout | 🔲 |
+| `tools/srir_demo.mlir` | Demo data in tools dir | Untracked by git — handle in main checkout | 🔲 |
+| 21 `.flow` test files in `tests/` root | `tests/core/` subdir already exists | Organized into `tests/{arrays,simd,memory,core}/`; 5 exact duplicates of existing `core/`/`misc/` copies deleted | ✅ |
 
 #### Low Priority — Empty Directories & Structure
 
