@@ -107,9 +107,17 @@ Generic programming:
 - `traits_demo.flow` - Trait-based polymorphism
 - `option_result_demo.flow` - Option/Result types
 
-## Verified Working Examples
+## Verified Compile Status
 
-These compile and run successfully:
+See [STATUS.md](STATUS.md) for a machine-generated compile status table covering
+every `.flow` file under `examples/`, `apps/`, and `benchmarks/` (pass/fail plus
+failure category). Regenerate it with:
+
+```bash
+python3 scripts/verify_examples.py
+```
+
+A few examples known to compile *and run* successfully:
 
 | Example | Command |
 |---------|---------|
