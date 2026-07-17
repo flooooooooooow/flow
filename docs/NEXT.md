@@ -17,14 +17,22 @@
 - Module resolver fully hardened (path traversal, circular imports, symbol collisions)
 - MLIR generator stabilized (7 bug fixes)
 - Security fixes for CLI injection and runtime command injection
+- `ptr[0].field` / unified postfix chaining works end-to-end (parser + C codegen);
+  recovered ring_buffer, memory_pool, hash_table, 2048, tetris_gfx, csv_parser, flowdb
+- Test corpus is strict-clean: `./flow test --strict --tier2` passes 215/215
+- Targeted fuzzing harness (`tests/fuzz/`) runs in CI
+- LSP: inline diagnostics, find references, rename (39-test scripted harness)
+- Compile status of all examples tracked honestly in `../examples/STATUS.md`
+  (891/1170 compile, 76.2%)
 
 **What Needs Work:**
-- All critical audit issues closed
-- CI pipeline hardened and validated
-- All security-tagged audit issues closed
-- Stdlib concurrency/memory safety gaps
-- ~20 examples fail to compile (parser limitations)
-- `ptr[0].field` syntax not supported
+- 2 known parser crashes from fuzzing (xfail regressions): `ValueError` in
+  `parse_type` on float array sizes, `RecursionError` on ~70 nested parens
+- 8 remaining C-codegen failures listed in `../examples/STATUS.md`
+- MLIR backend not yet validated against the new postfix-chain AST shapes
+- Older `capability EffectName`-style effects examples transpile but don't link
+  (see [effects-showcase.md](effects-showcase.md))
+- Benchmark results not yet published
 - Graphics is macOS-only
 
 ---
@@ -44,7 +52,10 @@ and security scanning). Track those in the issue list.
 ## Priority 2: Quality & Regression Prevention
 
 - Expand test coverage for recent fixes
-- Add targeted fuzzing for parser and transpiler paths
+- Done: targeted fuzzing for parser/typecheck/codegen paths (`tests/fuzz/run_fuzz.py`,
+  mutation/grammar/pipeline targets, 30s per target in CI)
+- Next: fix the two known fuzz crashes tracked as xfail in
+  `tests/fuzz/test_crash_regressions.py`
 
 ---
 
@@ -52,6 +63,10 @@ and security scanning). Track those in the issue list.
 
 ### Effect System Demo
 The effect system is Flow's **killer feature** - not in Rust, Go, Mojo, or Julia.
+
+Done: `examples/effects/showcase.flow` plus a walkthrough in
+[effects-showcase.md](effects-showcase.md) (including honest limitations of the
+current handler model).
 
 ### Interactive Playground
 Done: `docs/playground/index.html` is a syntax explorer with current-syntax examples
@@ -78,7 +93,13 @@ Run benchmarks against C/Rust/Python and publish results.
 - GitHub-based package hosting
 
 ### Parser Improvements
-Fix the `ptr[0].field` limitation to unblock linalg, ml, and flowdb examples.
+Done: the `ptr[0].field` limitation is fixed (unified postfix chaining), unblocking
+the systems, games, csv_parser, and flowdb examples. Remaining parser work is the
+two fuzz crashes and the `examples/verify/` proof-corpus syntax (271 parser failures
+in `../examples/STATUS.md`, mostly that corpus).
+
+### Real-World Project
+Build something substantial in Flow to prove the language out end-to-end.
 
 ---
 
@@ -102,7 +123,9 @@ Fix the `ptr[0].field` limitation to unblock linalg, ml, and flowdb examples.
 | Action | Impact | Effort |
 |--------|--------|--------|
 | Keep CI green + secure | Very High | Ongoing |
-| Add regression tests for fixed bugs | High | 1 day |
+| Fix the 2 known fuzz crashes | High | 1 day |
+| Publish benchmark results | High | 1-2 days |
+| MLIR polish (validate postfix chains, optimization passes) | Medium | 1 week |
 | Cross-platform graphics | Medium | 1 week |
 
 ---

@@ -74,6 +74,7 @@ and dual C / MLIR backends at native speed.
 - [Grammar](language/grammar.md) · [Formal EBNF](grammar.ebnf)
 - [Types](language/types.md) · [Functions](language/functions.md) · [Modules](language/modules.md)
 - [Standard Library](library/stdlib-reference.md)
+- [Effects Showcase](effects-showcase.md) — algebraic effects walkthrough (with honest limitations)
 
 ---
 
@@ -81,9 +82,11 @@ and dual C / MLIR backends at native speed.
 
 ```bash
 ./flow run program.flow       # compile via C (default)
+./flow test --strict --tier2  # strict type-checking (default) + corpus compile checks
 ./flow mlir program.flow      # emit MLIR
 ./flow mlir-run program.flow  # MLIR pipeline
 ./flow jit program.flow       # JIT execution
+./flow lsp                    # LSP: diagnostics, go-to-def, references, rename
 ```
 
 → [CLI &amp; development](DEVELOPMENT.md) · [Python target](python-target.md)

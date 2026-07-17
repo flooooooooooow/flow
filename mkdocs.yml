@@ -87,16 +87,7 @@ nav:
     - Mathlib Roadmap: language/mathlib-equivalence-toc.md
   - Specification:
     - Language Spec: LANGUAGE_SPEC.md
-  - Examples:
-    - Overview: examples/README.md
-    - Basic: examples/basic/README.md
-    - Algorithms: examples/algorithms/README.md
-    - Data Structures: examples/data-structures/README.md
-    - Effects: examples/effects/README.md
-    - GPU: examples/gpu/README.md
-    - Graphics: examples/graphics/README.md
-    - Performance: examples/performance/README.md
-    - Modules: examples/modules/README.md
+  - Effects Showcase: effects-showcase.md
   - Project:
     - Structure: project/PROJECT_STRUCTURE.md
     - Changelog: project/CHANGELOG.md
