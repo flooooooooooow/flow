@@ -51,6 +51,19 @@ class Hover:
     contents: str
     range: Optional[Range] = None
 
+
+class LspError(Exception):
+    """Raised by a request handler to produce a JSON-RPC error response."""
+
+    # LSP 3.17 error code: the request was valid but cannot be fulfilled.
+    REQUEST_FAILED = -32803
+
+    def __init__(self, message: str, code: int = REQUEST_FAILED):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 class FlowLanguageServer:
     """LSP server for FLOW language."""
     
@@ -96,7 +109,18 @@ class FlowLanguageServer:
             'import', 'export', 'extern', 'const', 'module', 'test', 'self',
             'array', 'ptr', 'vec', 'true', 'false'
         ]
-    
+
+        # Reserved words for rename validation: mirrors the parser's
+        # Lexer.keyword_map exactly (keywords, literals true/false/null,
+        # builtin type names, and contextual keywords like ptr/array).
+        self.reserved_names = frozenset(Lexer('').keyword_map.keys())
+
+    IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+    def _is_valid_identifier(self, name: str) -> bool:
+        """True if name is a lexically valid Flow identifier."""
+        return bool(self.IDENTIFIER_RE.match(name))
+
     def handle_message(self, message: dict) -> Optional[dict]:
         """Handle an incoming LSP message."""
         method = message.get('method', '')
@@ -104,7 +128,23 @@ class FlowLanguageServer:
         msg_id = message.get('id')
         
         result = None
-        
+
+        try:
+            result = self._dispatch(method, params)
+        except LspError as e:
+            if msg_id is not None:
+                return {'jsonrpc': '2.0', 'id': msg_id,
+                        'error': {'code': e.code, 'message': e.message}}
+            return None
+
+        if msg_id is not None:
+            return {'jsonrpc': '2.0', 'id': msg_id, 'result': result}
+        return None
+
+    def _dispatch(self, method: str, params: dict) -> Any:
+        """Route a request/notification to its handler; returns the result."""
+        result = None
+
         if method == 'initialize':
             result = self._handle_initialize(params)
         elif method == 'initialized':
@@ -130,13 +170,13 @@ class FlowLanguageServer:
             result = self._handle_document_symbol(params)
         elif method == 'textDocument/references':
             result = self._handle_references(params)
+        elif method == 'textDocument/prepareRename':
+            result = self._handle_prepare_rename(params)
         elif method == 'textDocument/rename':
             result = self._handle_rename(params)
-        
-        if msg_id is not None:
-            return {'jsonrpc': '2.0', 'id': msg_id, 'result': result}
-        return None
-    
+
+        return result
+
     def _handle_initialize(self, params: dict) -> dict:
         """Handle initialize request."""
         return {
@@ -153,7 +193,7 @@ class FlowLanguageServer:
                 'definitionProvider': True,
                 'documentSymbolProvider': True,
                 'referencesProvider': True,
-                'renameProvider': True,
+                'renameProvider': {'prepareProvider': True},
             },
             'serverInfo': {
                 'name': 'flow-lsp',
@@ -697,6 +737,44 @@ class FlowLanguageServer:
                 })
         return locations
 
+    def _resolve_symbol(self, uri: str, word: str):
+        """Resolve word against the symbol indexes the same way definition
+        does: current file first, then any other open document.
+
+        Returns (decl_uri, decl_info) or (None, None) for local names.
+        """
+        if word in self.symbols.get(uri, {}):
+            return uri, self.symbols[uri][word]
+        for other_uri, other_symbols in self.symbols.items():
+            if other_uri != uri and word in other_symbols:
+                return other_uri, other_symbols[word]
+        return None, None
+
+    def _collect_reference_locations(self, uri: str, word: str):
+        """Collect every identifier occurrence of word, declaration included.
+
+        Top-level symbols (functions, structs, enums, traits) are searched
+        across every open document; names not in any symbol index (locals,
+        parameters) are searched in the current file only.
+
+        Returns (refs, decl_uri, decl_info) where refs is a list of
+        {'uri': ..., 'range': ...} Locations.
+        """
+        decl_uri, decl_info = self._resolve_symbol(uri, word)
+
+        # Top-level symbol -> search all open documents (cross-file, like
+        # definition/hover). Local name -> same-file only.
+        if decl_uri is not None:
+            search_docs = list(self.documents.items())
+        else:
+            search_docs = [(uri, self.documents.get(uri, ''))]
+
+        refs = []
+        for doc_uri, doc_text in search_docs:
+            for loc in self._find_references_in_text(doc_text, word):
+                refs.append({'uri': doc_uri, **loc})
+        return refs, decl_uri, decl_info
+
     def _handle_references(self, params: dict) -> List[dict]:
         """Handle textDocument/references.
 
@@ -714,31 +792,7 @@ class FlowLanguageServer:
         if not word:
             return []
 
-        # Resolve the symbol the same way definition does: current file
-        # first, then any other open document.
-        decl_uri = None
-        decl_info = None
-        if word in self.symbols.get(uri, {}):
-            decl_uri = uri
-            decl_info = self.symbols[uri][word]
-        else:
-            for other_uri, other_symbols in self.symbols.items():
-                if other_uri != uri and word in other_symbols:
-                    decl_uri = other_uri
-                    decl_info = other_symbols[word]
-                    break
-
-        # Top-level symbol -> search all open documents (cross-file, like
-        # definition/hover). Local name -> same-file only.
-        if decl_uri is not None:
-            search_docs = self.documents.items()
-        else:
-            search_docs = [(uri, text)]
-
-        refs = []
-        for doc_uri, doc_text in search_docs:
-            for loc in self._find_references_in_text(doc_text, word):
-                refs.append({'uri': doc_uri, **loc})
+        refs, decl_uri, decl_info = self._collect_reference_locations(uri, word)
 
         if not include_declaration and decl_info is not None:
             decl_line = decl_info.get('line', -1)
@@ -750,32 +804,94 @@ class FlowLanguageServer:
 
         return refs
 
-    def _handle_rename(self, params: dict) -> Optional[dict]:
-        """Handle textDocument/rename."""
+    # ------------------------------------------------------------------
+    # Rename
+    #
+    # Rename is references + edits: the same occurrence collection that
+    # backs textDocument/references (declaration included) is turned into
+    # a WorkspaceEdit. It inherits the references scope honestly:
+    #   - Top-level symbols (functions, structs, enums, traits) are renamed
+    #     across every OPEN document. Files on disk that are not open in
+    #     the editor are NOT touched.
+    #   - Local names (variables, parameters) are renamed file-wide in the
+    #     current document. The token scan is not scope-aware, so two
+    #     distinct locals with the same name in different functions of the
+    #     same file are renamed together (same limitation as references).
+    #   - A local that shadows a top-level symbol of the same name resolves
+    #     to the top-level symbol and is renamed cross-file.
+    #   - 'test' is a contextual keyword the parser allows as a function
+    #     name; rename conservatively rejects it as a keyword.
+    # ------------------------------------------------------------------
+
+    def _prepare_rename_info(self, uri: str, pos: dict):
+        """Return (word, range) if pos is on a renameable identifier.
+
+        Returns None for keywords, literals, comments/strings, whitespace,
+        and anything else that is not an identifier token.
+        """
+        text = self.documents.get(uri, '')
+        line, character = pos['line'], pos['character']
+        word = self._get_word_at_position(text, line, character)
+        if not word:
+            return None  # whitespace / punctuation
+        if not self._is_valid_identifier(word):
+            return None  # e.g. cursor inside a numeric literal
+        if word in self.reserved_names:
+            return None  # keyword or true/false/null literal
+        # The position must sit on an actual identifier token; occurrences
+        # inside comments or string literals are not symbols.
+        for loc in self._find_references_in_text(text, word):
+            r = loc['range']
+            if (r['start']['line'] == line
+                    and r['start']['character'] <= character <= r['end']['character']):
+                return word, r
+        return None
+
+    def _handle_prepare_rename(self, params: dict) -> Optional[dict]:
+        """Handle textDocument/prepareRename.
+
+        Returns the symbol's range and placeholder text, or null when the
+        position is not on a renameable symbol.
+        """
+        prep = self._prepare_rename_info(params['textDocument']['uri'],
+                                         params['position'])
+        if prep is None:
+            return None
+        word, rng = prep
+        return {'range': rng, 'placeholder': word}
+
+    def _handle_rename(self, params: dict) -> dict:
+        """Handle textDocument/rename: return a WorkspaceEdit.
+
+        Built directly on the references machinery (see class comment above
+        for the inherited scope). Rejects invalid or reserved new names and
+        rename requests on keywords/literals/non-symbols with a JSON-RPC
+        error response.
+        """
         uri = params['textDocument']['uri']
         pos = params['position']
         new_name = params.get('newName', '')
-        text = self.documents.get(uri, '')
-        word = self._get_word_at_position(text, pos['line'], pos['character'])
-        if not word or not new_name:
-            return None
-        changes = {}
-        import re
-        pattern = re.compile(r'\b' + re.escape(word) + r'\b')
-        for doc_uri, doc_text in self.documents.items():
-            doc_changes = []
-            lines = doc_text.split('\n')
-            for line_no, line_text in enumerate(lines):
-                for match in pattern.finditer(line_text):
-                    doc_changes.append({
-                        'range': {
-                            'start': {'line': line_no, 'character': match.start()},
-                            'end': {'line': line_no, 'character': match.end()},
-                        },
-                        'newText': new_name,
-                    })
-            if doc_changes:
-                changes[doc_uri] = doc_changes
+
+        prep = self._prepare_rename_info(uri, pos)
+        if prep is None:
+            raise LspError('Cannot rename this element: '
+                           'not a renameable symbol')
+        word, _ = prep
+
+        if not self._is_valid_identifier(new_name):
+            raise LspError(f"Cannot rename to '{new_name}': "
+                           "not a valid Flow identifier")
+        if new_name in self.reserved_names:
+            raise LspError(f"Cannot rename to '{new_name}': "
+                           "reserved Flow keyword")
+
+        refs, _, _ = self._collect_reference_locations(uri, word)
+        changes: Dict[str, List[dict]] = {}
+        for ref in refs:
+            changes.setdefault(ref['uri'], []).append({
+                'range': ref['range'],
+                'newText': new_name,
+            })
         return {'changes': changes}
 
     def _get_word_at_position(self, text: str, line: int, character: int) -> str:
