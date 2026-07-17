@@ -1,3 +1,4 @@
+# flow:lenient - type checker does not yet register effect operations as callable functions
 # Async Effects: Async/Await as an Effect
 # Demonstrates how algebraic effects can model async operations
 #

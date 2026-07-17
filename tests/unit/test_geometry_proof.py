@@ -33,7 +33,8 @@ class TestGeometryProof:
         dst = tmp_path / "triangle-angle-sum.flow"
         shutil.copy(TRIANGLE, dst)
         md, tex, diagrams = write_proof_artifacts(str(dst))
-        text = open(md).read()
+        with open(md) as f:
+            text = f.read()
         assert "**Figure.**" in text
         assert ".proof.svg" in text
         assert len(diagrams) >= 1

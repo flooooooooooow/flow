@@ -1,3 +1,4 @@
+# flow:lenient - type checker does not yet model capability instances (capability_Notation vs NotationReader)
 # Notation Player - Load Music from Files with Effects
 #
 # Demonstrates FLOW's effect system for livecoding:

@@ -1,3 +1,4 @@
+# flow:lenient - type checker does not yet register effect operations as callable functions
 # State Effects: Implicit State Threading
 # Shows how effects can handle mutable state without explicit passing
 #
