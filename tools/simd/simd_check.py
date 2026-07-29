@@ -19,15 +19,15 @@ def main() -> int:
     ap.add_argument("--arch", choices=["auto", "arm64", "x86_64"], default="auto")
     args = ap.parse_args()
 
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[2]
     flow_file = (repo_root / args.flow_file).resolve()
     if not flow_file.exists():
         print(f"error: file not found: {flow_file}", file=sys.stderr)
         return 2
 
-    pipeline = repo_root / "tools" / "flow_jit_pipeline.py"
+    pipeline = repo_root / "tools" / "jit" / "flow_jit_pipeline.py"
     if not pipeline.exists():
-        print("error: tools/flow_jit_pipeline.py not found", file=sys.stderr)
+        print("error: tools/jit/flow_jit_pipeline.py not found", file=sys.stderr)
         return 2
 
     # Require toolchain (mlir-opt/mlir-translate/clang) indirectly via pipeline script.

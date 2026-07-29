@@ -63,7 +63,7 @@ def main() -> int:
     ap.add_argument("--emit-asm", action="store_true", help="also emit assembly (.s) for inspection")
     args = ap.parse_args()
 
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[2]
     src_root = repo_root / "src"
 
     env = os.environ.copy()

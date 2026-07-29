@@ -51,7 +51,7 @@ def main() -> int:
     ap.add_argument("--opt", default="0", choices=["0", "1", "2", "3"], help="clang optimization level")
     args = ap.parse_args()
 
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[2]
     src_root = repo_root / "src"
 
     env = os.environ.copy()
