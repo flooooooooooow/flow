@@ -18,16 +18,31 @@ import "stdlib/audio/clock.flow"
 # =============================================================================
 
 export struct Delay {
-    buffer: DelayLine
+    buffer: DelayLineF32
     time_samples: i32     # Delay time in samples
     feedback: f32         # Feedback amount (0.0 to 1.0)
     mix: f32             # Dry/wet mix (0.0 = dry, 1.0 = wet)
 }
 
-# Create a delay with time in samples
+# Create a delay with time in samples (assumes 44.1kHz; use delay_new_at_rate
+# for other sample rates)
 export function delay_new(time_samples: i32, feedback: f32, mix: f32) -> Delay {
+    let rate: SampleRate = sample_rate_44100()
+    return delay_new_at_rate(time_samples, feedback, mix, rate)
+}
+
+# Create a delay with time in samples at a specific sample rate
+export function delay_new_at_rate(time_samples: i32, feedback: f32, mix: f32, rate: SampleRate) -> Delay {
+    let time_ms: f32 = (time_samples / rate.hz) * 1000.0
+    # Give the underlying delay line some headroom above the requested time
+    # so later calls to delay_set_time (if added) don't need reallocation.
+    let max_ms: f32 = time_ms * 2.0 + 10.0
+    let base: DelayLineF32 = delay_line_new(max_ms, rate)
+    let timed: DelayLineF32 = delay_line_set_time(base, time_ms, rate)
+    let with_fb: DelayLineF32 = delay_line_set_feedback(timed, feedback)
+    let with_mix: DelayLineF32 = delay_line_set_mix(with_fb, mix)
     return Delay {
-        buffer: delay_line_new(time_samples),
+        buffer: with_mix,
         time_samples: time_samples,
         feedback: feedback,
         mix: mix
@@ -53,18 +68,28 @@ export function delay_dotted_eighth(clock: Clock) -> Delay {
 }
 
 # Process one sample through delay
+# Note: this returns only the output sample (matching the historical API);
+# use delay_tick if you need the updated Delay state for the next call.
 export function delay_process(delay: Delay, input: f32) -> f32 {
-    # Read delayed sample
-    let delayed: f32 = delay_line_read(delay.buffer, delay.time_samples)
+    let ticked: DelayLineF32 = delay_line_tick(delay.buffer, input)
+    return delay_line_output(ticked)
+}
 
-    # Write input + feedback to delay line
-    let feedback_signal: f32 = input + delayed * delay.feedback
-    let new_buffer: DelayLine = delay_line_write(delay.buffer, feedback_signal)
+# Process one sample through delay, returning the updated Delay state
+# (threading this back in on the next call gives a real running delay line).
+export function delay_tick(delay: Delay, input: f32) -> Delay {
+    let ticked: DelayLineF32 = delay_line_tick(delay.buffer, input)
+    return Delay {
+        buffer: ticked,
+        time_samples: delay.time_samples,
+        feedback: delay.feedback,
+        mix: delay.mix
+    }
+}
 
-    # Mix dry and wet
-    let output: f32 = input * (1.0 - delay.mix) + delayed * delay.mix
-
-    return output
+# Get the last output sample from a Delay (after delay_tick)
+export function delay_output(delay: Delay) -> f32 {
+    return delay_line_output(delay.buffer)
 }
 
 # =============================================================================
@@ -125,7 +150,7 @@ export function distortion_process(dist: Distortion, input: f32) -> f32 {
 # =============================================================================
 
 export struct Chorus {
-    delay: DelayLine
+    delay: DelayLineF32
     rate: f32          # LFO rate in Hz
     depth: f32         # Modulation depth in samples
     mix: f32
@@ -133,8 +158,12 @@ export struct Chorus {
 }
 
 export function chorus_new(rate: f32, depth: f32, mix: f32) -> Chorus {
+    let sr: SampleRate = sample_rate_44100()
+    let base: DelayLineF32 = delay_line_new(30.0, sr)  # Max delay ~30ms
+    let timed: DelayLineF32 = delay_line_set_time(base, 15.0, sr)
+    let with_mix: DelayLineF32 = delay_line_set_mix(timed, mix)
     return Chorus {
-        delay: delay_line_new(1000),  # Max delay ~22ms at 44.1kHz
+        delay: with_mix,
         rate: rate,
         depth: depth,
         mix: mix,
@@ -156,21 +185,31 @@ export function chorus_wide() -> Chorus {
 }
 
 # Process one sample (simplified - would need LFO from oscillators)
+# Note: this returns only the output sample (matching the historical API);
+# use chorus_tick if you need the updated Chorus state for the next call.
 export function chorus_process(chorus: Chorus, input: f32) -> f32 {
-    # Simple sine LFO for modulation
+    let ticked: DelayLineF32 = delay_line_tick(chorus.delay, input)
+    return delay_line_output(ticked)
+}
+
+# Process one sample through the chorus, returning the updated Chorus state
+export function chorus_tick(chorus: Chorus, input: f32) -> Chorus {
+    let sr: SampleRate = sample_rate_44100()
     let lfo: f32 = sine_approx(chorus.phase)
-    let delay_time: i32 = 500 + lfo * chorus.depth  # Modulated delay time
-
-    # Read from delay line
-    let delayed: f32 = delay_line_read(chorus.delay, delay_time)
-
-    # Write input
-    let new_buffer: DelayLine = delay_line_write(chorus.delay, input)
-
-    # Mix
-    let output: f32 = input * (1.0 - chorus.mix) + delayed * chorus.mix
-
-    return output
+    let mod_ms: f32 = 15.0 + lfo * (chorus.depth / sr.hz) * 1000.0
+    let retimed: DelayLineF32 = delay_line_set_time(chorus.delay, mod_ms, sr)
+    let ticked: DelayLineF32 = delay_line_tick(retimed, input)
+    let mut new_phase: f32 = chorus.phase + chorus.rate * 0.0001
+    if new_phase >= 1.0 {
+        new_phase = new_phase - 1.0
+    }
+    return Chorus {
+        delay: ticked,
+        rate: chorus.rate,
+        depth: chorus.depth,
+        mix: chorus.mix,
+        phase: new_phase
+    }
 }
 
 # Simple sine approximation for LFO
@@ -298,8 +337,8 @@ export function bitcrusher_process(crusher: Bitcrusher, input: f32) -> f32 {
         new_counter = 0
         output = input
 
-        # Bit depth reduction
-        let levels: f32 = 2.0 ^ crusher.bits
+        # Bit depth reduction (2^bits quantization levels)
+        let levels: f32 = pow(2.0, crusher.bits as f32)
         let quantized: f32 = (input * levels) / levels
         output = quantized
     }

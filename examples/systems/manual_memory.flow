@@ -1,0 +1,47 @@
+# Manual heap + arena demo (stdlib/memory.flow)
+import "stdlib/memory.flow"
+
+function sum_i32(p: ptr<i32>, n: i64) -> i32 {
+    let mut total: i32 = 0
+    let mut i: i64 = 0
+    while i < n {
+        total = total + p[i]
+        i = i + 1
+    }
+    return total
+}
+
+function main() -> i32 {
+    printf("=== Manual memory ===\n")
+
+    let buf: ptr<i32> = alloc_i32(5)
+    if buf == null {
+        printf("alloc_i32 failed\n")
+        return 1
+    }
+    let mut i: i64 = 0
+    while i < 5 {
+        buf[i] = (i + 1) * 10
+        i = i + 1
+    }
+    printf("heap sum = %d\n", sum_i32(buf, 5))
+    free(buf)
+
+    let mut arena: Arena = arena_create(1024)
+    let a: ptr<i32> = arena_alloc_i32(&arena, 3)
+    let b: ptr<i32> = arena_alloc_i32(&arena, 3)
+    if a == null || b == null {
+        printf("arena_alloc failed\n")
+        arena_destroy(&arena)
+        return 1
+    }
+    a[0] = 1
+    a[1] = 2
+    a[2] = 3
+    memory_copy_i32(b, a, 3)
+    printf("arena copy sum = %d  used=%d\n", sum_i32(b, 3), arena_used(arena))
+    arena_destroy(&arena)
+
+    printf("ok\n")
+    return 0
+}

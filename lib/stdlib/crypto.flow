@@ -1,0 +1,24 @@
+# Cryptographic primitives (FFI to platform or bundled implementations)
+
+extern {
+    function flow_sha256(data: ptr<i8>, len: i64, out: ptr<i8>) -> void
+    function flow_random_bytes(buf: ptr<i8>, len: i64) -> i32
+}
+
+const SHA256_DIGEST_SIZE: i32 = 32
+
+struct Sha256Digest {
+    bytes: array<u8, 32>,
+}
+
+function sha256_digest_size() -> i32 {
+    return SHA256_DIGEST_SIZE
+}
+
+function sha256_hash(data: ptr<i8>, len: i64, out: ptr<i8>) -> void {
+    flow_sha256(data, len, out)
+}
+
+function secure_random(buf: ptr<i8>, len: i64) -> i32 {
+    return flow_random_bytes(buf, len)
+}

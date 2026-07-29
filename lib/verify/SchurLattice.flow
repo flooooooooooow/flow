@@ -1,0 +1,26 @@
+# Schur–lattice all-pass formal claims (flow-verify companion to Lean proofs)
+
+import "stdlib/dynamics/schur_lattice.flow"
+
+function schur_reflection_bounded(k: f64) -> i32 {
+    if k > 0.999 { return 0 }
+    if k < -0.999 { return 0 }
+    return 1
+}
+
+function givens_energy_preserved(c: f64, s: f64) -> i32 {
+    let sum: f64 = c * c + s * s
+    if sum < 0.999 { return 0 }
+    if sum > 1.001 { return 0 }
+    return 1
+}
+
+function main() -> i32 {
+    let denom: array<f64, 2> = [-0.4, 0.15]
+    let k: array<f64, 2> = [0.0, 0.0]
+    schur_step_down(denom, 2, k)
+    if schur_reflection_bounded(k[0]) != 1 { return 1 }
+    if schur_reflection_bounded(k[1]) != 1 { return 2 }
+    if givens_energy_preserved(0.866, 0.5) != 1 { return 3 }
+    return 0
+}
