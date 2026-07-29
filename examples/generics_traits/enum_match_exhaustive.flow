@@ -1,0 +1,46 @@
+# Enum/ADT match demo - exercises path/const patterns and exhaustiveness
+# checking for `match` on an enum's `.tag` field (or the enum value itself).
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Option_i32 {
+    Some(i32),
+    None
+}
+
+function classify(c: Color) -> i32 {
+    # Exhaustive: every variant covered, no wildcard needed.
+    match c.tag {
+        Color_Red => { return 1 }
+        Color_Green => { return 2 }
+        Color_Blue => { return 3 }
+    }
+    return -1
+}
+
+function is_some(opt: Option_i32) -> bool {
+    # Matching directly on the enum value (not just `.tag`) also works.
+    match opt {
+        Option_i32_Some => { return true }
+        Option_i32_None => { return false }
+    }
+    return false
+}
+
+function main() -> i32 {
+    let red: Color = Color { tag: Color_Red }
+    let blue: Color = Color { tag: Color_Blue }
+    printf("classify(red) = %d\n", classify(red))
+    printf("classify(blue) = %d\n", classify(blue))
+
+    let some_val: Option_i32 = Option_i32 { tag: Option_i32_Some }
+    let none_val: Option_i32 = Option_i32 { tag: Option_i32_None }
+    printf("is_some(some_val) = %d\n", is_some(some_val))
+    printf("is_some(none_val) = %d\n", is_some(none_val))
+
+    return 0
+}
