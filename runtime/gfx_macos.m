@@ -103,10 +103,12 @@ static void flow_gfx_pump_events(FlowGfxContext* ctx) {
 
 @end
 
-static void flow_gfx_request_close(FlowGfxContext* ctx) {
+static void flow_gfx_request_close(FlowGfxContext* ctx, bool from_delegate) {
     if (!ctx) return;
     ctx->should_close = true;
-    if (ctx->window) [ctx->window close];
+    // Only call close if not already being called from windowWillClose delegate
+    // to avoid infinite recursion
+    if (!from_delegate && ctx->window) [ctx->window close];
 }
 
 @interface FlowGfxWindowDelegate : NSObject <NSWindowDelegate>
@@ -115,7 +117,7 @@ static void flow_gfx_request_close(FlowGfxContext* ctx) {
 
 @implementation FlowGfxWindowDelegate
 - (void)windowWillClose:(NSNotification*)notification {
-    flow_gfx_request_close(self.ctx);
+    flow_gfx_request_close(self.ctx, true);
 }
 @end
 
