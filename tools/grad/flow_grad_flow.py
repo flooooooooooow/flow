@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prototype: generate FLOW code for gradients of a scalar f32 function.
 
-This is the "FLOW side" companion to `tools/flow_grad_c.py`.
+This is the "FLOW side" companion to `tools/grad/flow_grad_c.py`.
 
 Input: a FLOW file containing a function `f(params...) -> f32`.
 Output: a FLOW module containing:
@@ -20,7 +20,7 @@ Supported subset:
 - multi-arg function calls (inlined)
 
 Usage:
-  PYTHONPATH=src python3 tools/flow_grad_flow.py <file.flow> <function_name> > out.flow
+  PYTHONPATH=src python3 tools/grad/flow_grad_flow.py <file.flow> <function_name> > out.flow
 """
 
 from __future__ import annotations
