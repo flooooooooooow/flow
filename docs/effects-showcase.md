@@ -185,10 +185,19 @@ The C backend implements effects with vtable-based dynamic dispatch
 - `handle E with H { ... }` saves the current pointer, installs `H`'s
   vtable, runs the block, and restores the pointer on exit;
 - `E.op(args)` compiles to a dispatch function that calls through the
-  current handler, or returns a zeroed default when none is installed.
+  current handler, or returns a zeroed default when none is installed;
+- **zero-cost substitution**: written directly inside a `handle E with H`
+  block, `E.op(args)` skips the dispatch function entirely and compiles to
+  a direct call to `H`'s implementation, which the C compiler can inline.
+  Swapping one handler for another is resolved at compile time and costs
+  nothing at runtime. Dynamic dispatch remains wherever the handler is
+  unknowable at the call site: functions called from inside the block,
+  lambda bodies (a closure can outlive the block), and operations the
+  installed capability does not implement.
 
-Cost: one indirect call per effect operation. No allocation, no
-continuations, no runtime library.
+Cost: zero for effect calls written inside a `handle` block; one indirect
+call where dispatch stays dynamic. No allocation, no continuations, no
+runtime library.
 
 ## Honest limitations (found while building this)
 
@@ -234,4 +243,6 @@ continuations, no runtime library.
 - `tests/runtime/test_effects_showcase.flow` — executed assertions pinning
   handler swap, nested override/restore, multi-effect capabilities,
   handler composition, and unhandled defaults
+- `tests/unit/test_zero_cost_effects.py` — pins direct-call emission inside
+  `handle` blocks and dynamic dispatch everywhere the handler is unknowable
 - `docs/LANGUAGE_SPEC.md` section 6 — effect grammar and implementation notes

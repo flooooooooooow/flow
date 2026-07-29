@@ -122,6 +122,7 @@ class CGenerator:
         self._effects = {}  # effect_name -> EffectDecl
         self._capabilities = {}  # capability_name -> CapabilityDecl
         self._effect_handler_stack = [{}]  # Stack of {effect_name -> capability_name}
+        self._lambda_depth = 0  # >0 while generating a lambda body (closures may outlive the enclosing handle block)
         
         # Function overload resolution
         self._overload_resolver = OverloadResolver()
@@ -1711,6 +1712,18 @@ class CGenerator:
                     effect_name = upper
 
         args = ", ".join(self._gen_expr(a) for a in e.arguments)
+
+        # Zero-cost substitution: inside a `handle Effect with Cap` block the
+        # handler is known at compile time, so bypass the vtable and call the
+        # capability function directly (the C compiler can then inline it).
+        # Lambda bodies are excluded because the closure may be invoked after
+        # the handle block exits, where only the runtime handler is correct.
+        if self._lambda_depth == 0:
+            handler_name = self._effect_handler_stack[-1].get(effect_name)
+            cap = self._capabilities.get(handler_name) if handler_name else None
+            if cap is not None and any(m.name == e.operation for m in cap.methods):
+                return f"{_c_ident(handler_name)}_{_c_ident(e.operation)}({args})"
+
         return f"{_c_ident(effect_name)}_{_c_ident(e.operation)}({args})"
 
     def _gen_method_call(self, e: MethodCall) -> str:
@@ -1831,13 +1844,17 @@ class CGenerator:
                 if cap in saved_var_types:
                     self._var_types[cap] = saved_var_types[cap]
 
-        if isinstance(e.body, Block):
-            body_lines = []
-            for stmt in e.body.statements:
-                for line in self._gen_statement(stmt):
-                    body_lines.append(line.lstrip())
-        else:
-            body_lines = [f"return {self._gen_expr(e.body)};"]
+        self._lambda_depth += 1
+        try:
+            if isinstance(e.body, Block):
+                body_lines = []
+                for stmt in e.body.statements:
+                    for line in self._gen_statement(stmt):
+                        body_lines.append(line.lstrip())
+            else:
+                body_lines = [f"return {self._gen_expr(e.body)};"]
+        finally:
+            self._lambda_depth -= 1
 
         self._var_types = saved_var_types
 

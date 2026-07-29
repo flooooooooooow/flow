@@ -2628,8 +2628,11 @@ class Parser:
                     self._collect_free_variables(node.target_expr, param_names, found)
             elif isinstance(node, DeferStatement):
                 self._collect_free_variables(node.expr, param_names, found)
-        elif isinstance(node, Expression):
-            pass
+        elif isinstance(node, (MethodCall, EffectCall)):
+            # Receivers are skipped: for effect calls the receiver is an
+            # effect name, and capturing it would corrupt codegen.
+            for arg in node.arguments:
+                self._collect_free_variables(arg, param_names, found)
         return sorted(found)
 
     def parse_lambda(self) -> Lambda:
