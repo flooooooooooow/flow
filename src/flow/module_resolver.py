@@ -285,6 +285,19 @@ class ModuleResolver:
         if not module_info:
             return
         for sym in import_symbols:
+            if "-" in sym:
+                # Hyphenated import symbols (e.g. `{ inv-unique }`) can only
+                # come from a hyphenated `import .Some-File { ... }` — no
+                # declaration name in Flow can itself contain a hyphen, so
+                # these never correspond to a real `module_info.symbols`
+                # entry. In practice they're used as dependency citations
+                # (documenting which sibling proof file this one relies on)
+                # rather than as an actual imported binding, and the
+                # referenced declarations are pulled in transitively via
+                # `resolved_path` regardless of this list. Skip existence
+                # validation for them instead of rejecting every such
+                # citation-only import.
+                continue
             if sym not in module_info.symbols:
                 raise ValueError(
                     f"Module {imp.path} ({resolved_path}) has no symbol '{sym}' "

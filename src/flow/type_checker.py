@@ -24,7 +24,7 @@ from .parser import (
     IfStatement, WhileStatement, ForStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl, TraitDecl,
     TypeAliasDecl, DistinctTypeDecl, CastExpression,
-    MatchStatement, StructPattern, DeferStatement, TryExpr, Lambda,
+    MatchStatement, StructPattern, OrPattern, DeferStatement, TryExpr, Lambda,
     VectorLiteral,
 )
 
@@ -183,6 +183,7 @@ class TypeCheckResult:
     typed_ast: List[Any]  # Will be refined later
     symbol_table: Dict[str, Symbol]
     errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
 
 class TypeChecker:
@@ -286,9 +287,15 @@ class TypeChecker:
         self.global_scope = Scope()
         self.current_scope = self.global_scope
         self.errors: List[str] = []
+        self.warnings: List[str] = []
         self.struct_types: Dict[str, StructDecl] = {}
         self.effect_types: Dict[str, EffectDecl] = {}
         self.capability_types: Dict[str, CapabilityDecl] = {}
+        # Enum/ADT metadata, used for match exhaustiveness checking and to
+        # disambiguate "path pattern" identifiers (e.g. `Option_i32_Some`)
+        # from ordinary identifier bindings in match arms.
+        self.enum_decls: Dict[str, EnumDecl] = {}  # enum name -> EnumDecl
+        self.enum_variant_owner: Dict[str, str] = {}  # "Enum_Variant" -> "Enum"
         # Builtin implicit UI layout state pointer
         ui_state_type = SemanticType(TypeKind.POINTER, element_type=SemanticType(TypeKind.VOID))
         self.global_scope.define(Symbol("_ui_state", ui_state_type, "variable", is_mutable=True))
@@ -387,6 +394,7 @@ class TypeChecker:
     def check(self, declarations: List[Any]) -> TypeCheckResult:
         """Main entry point for type checking."""
         self.errors = []
+        self.warnings = []
 
         # Phase 1: Collect type definitions (structs, effects, capabilities)
         self._collect_types(declarations)
@@ -400,7 +408,8 @@ class TypeChecker:
         return TypeCheckResult(
             typed_ast=declarations,  # For now, just return the original AST
             symbol_table=dict(self.global_scope.symbols),
-            errors=self.errors
+            errors=self.errors,
+            warnings=self.warnings,
         )
 
     def _collect_types(self, declarations: List[Any]) -> None:
@@ -418,11 +427,13 @@ class TypeChecker:
                     Parameter("tag", ParsedType("i32"))
                 ])
                 self.struct_types[decl.name] = enum_struct
+                self.enum_decls[decl.name] = decl
 
                 # Register variants as global constants
                 for variant in decl.variants:
                     variant_name = f"{decl.name}_{variant.name}"
                     self.global_scope.define(Symbol(variant_name, SemanticType(TypeKind.I32), "const"))
+                    self.enum_variant_owner[variant_name] = decl.name
 
             elif isinstance(decl, TypeAliasDecl):
                 # Type aliases are transparent - just map name to base type
@@ -615,6 +626,230 @@ class TypeChecker:
         else:
             return SemanticType(TypeKind.VOID)
 
+    def _bind_struct_pattern(self, pattern: "StructPattern", case_scope: "Scope") -> None:
+        """Type-check a (possibly nested) StructPattern and bind its variables.
+
+        Recurses into `field_patterns` for struct-in-struct nesting (e.g.
+        `Outer(Inner(x), y)`), so bindings from any nesting depth land in
+        `case_scope` and nested literal fields are checked against their own
+        struct's field types.
+        """
+        struct_decl = self.struct_types.get(pattern.struct_name)
+        if struct_decl is None:
+            self.errors.append(f"Unknown struct in match pattern: {pattern.struct_name}")
+            return
+        fields = getattr(struct_decl, "fields", None) or []
+        field_literals = pattern.field_literals or {}
+        field_patterns = pattern.field_patterns or {}
+        for i, binding in enumerate(pattern.bindings):
+            if i in field_patterns:
+                # Struct-in-struct nesting - recurse using the nested pattern;
+                # its own struct name (not this field's declared type) drives
+                # field lookups, matching the c_generator lowering.
+                self._bind_struct_pattern(field_patterns[i], case_scope)
+                continue
+            if i in field_literals:
+                # Nested literal pattern (e.g. `Point(0, y)`) - no binding,
+                # just check the literal is compatible with the field type.
+                if i < len(fields):
+                    field_type = self._parse_type(fields[i].type)
+                    lit_type = self._check_literal(field_literals[i])
+                    if not self._can_coerce(field_type, lit_type) and not self._can_coerce(lit_type, field_type):
+                        if self.strict:
+                            self.errors.append(
+                                f"Match pattern field {i} of {pattern.struct_name} "
+                                f"expects {field_type}, got literal {lit_type}"
+                            )
+                continue
+            if binding == "_":
+                continue
+            if i < len(fields):
+                bind_type = self._parse_type(fields[i].type)
+            else:
+                bind_type = SemanticType(TypeKind.UNKNOWN)
+            case_scope.define(Symbol(binding, bind_type, "variable"))
+
+    def _is_integer_literal_pattern(self, pattern: Any) -> bool:
+        """True if pattern is an integer Literal or OrPattern of only those."""
+        if isinstance(pattern, Literal):
+            return self._is_integer(self._check_literal(pattern))
+        if isinstance(pattern, OrPattern):
+            return bool(pattern.patterns) and all(
+                self._is_integer_literal_pattern(alt) for alt in pattern.patterns
+            )
+        return False
+
+    def _is_bool_literal_pattern(self, pattern: Any) -> bool:
+        """True if pattern is a bool Literal or OrPattern of only those."""
+        if isinstance(pattern, Literal):
+            return self._check_literal(pattern).kind == TypeKind.BOOL
+        if isinstance(pattern, OrPattern):
+            return bool(pattern.patterns) and all(
+                self._is_bool_literal_pattern(alt) for alt in pattern.patterns
+            )
+        return False
+
+    def _bool_literal_values(self, pattern: Any) -> List[bool]:
+        """Collect the concrete bool values a bool-literal/OrPattern covers."""
+        if isinstance(pattern, Literal):
+            return [str(pattern.value).lower() == "true"]
+        if isinstance(pattern, OrPattern):
+            values: List[bool] = []
+            for alt in pattern.patterns:
+                values.extend(self._bool_literal_values(alt))
+            return values
+        return []
+
+    def _lookup_const_symbol(self, name: str) -> Optional["Symbol"]:
+        """Resolve `name` to a global `const` symbol, if it is one.
+
+        Used to disambiguate a bare identifier match pattern (e.g.
+        `Option_i32_Some`) as a "path/const pattern" (a value-equality
+        check) rather than an identifier binding. Only `const` symbols
+        qualify - ordinary variables/functions/etc. still bind as before.
+        """
+        if name == "_":
+            return None
+        symbol = self.current_scope.lookup(name)
+        if symbol is not None and symbol.kind == "const":
+            return symbol
+        return None
+
+    def _infer_type_quiet(self, expr: Any) -> SemanticType:
+        """Type-check `expr` without recording any new errors/warnings.
+
+        Used when we need an expression's type for exhaustiveness analysis
+        but the expression was (or will be) checked elsewhere already -
+        avoids duplicating diagnostics for the same subexpression.
+        """
+        saved_errors, saved_warnings = self.errors, self.warnings
+        self.errors, self.warnings = [], []
+        try:
+            return self._check_expression(expr)
+        finally:
+            self.errors, self.warnings = saved_errors, saved_warnings
+
+    def _match_enum_target(self, match_stmt: MatchStatement, value_type: SemanticType) -> Optional[str]:
+        """Return the enum name being matched on, if any.
+
+        Covers two shapes: matching directly on an enum-typed value
+        (`match opt { ... }`) and matching on its `.tag` field
+        (`match opt.tag { ... }`), which is the idiom used elsewhere in the
+        codebase for enum dispatch (enums lower to a `{ tag, ... }` struct).
+        """
+        if value_type.kind == TypeKind.STRUCT and value_type.name in self.enum_decls:
+            return value_type.name
+        if isinstance(match_stmt.value, FieldAccess) and match_stmt.value.field == "tag":
+            obj_type = self._infer_type_quiet(match_stmt.value.object)
+            if obj_type.kind == TypeKind.STRUCT and obj_type.name in self.enum_decls:
+                return obj_type.name
+        return None
+
+    def _warn_enum_exhaustiveness(self, match_stmt: MatchStatement, enum_name: str) -> None:
+        """Real exhaustiveness check for enum/ADT matches (path/const patterns).
+
+        A case pattern counts as covering a variant when it is a bare
+        identifier that resolves (via `_lookup_const_symbol`) to that
+        variant's generated constant, e.g. `Option_i32_Some` for
+        `enum Option_i32 { Some(i32), None }`. Any other pattern shape
+        (struct/literal/plain binding) makes coverage un-attributable, so we
+        conservatively skip the check rather than risk a false positive -
+        this only fires when *every* arm is a recognized variant pattern.
+        """
+        if match_stmt.default_case is not None:
+            return
+
+        enum_decl = self.enum_decls[enum_name]
+        all_variants = {variant.name for variant in enum_decl.variants}
+        covered: set = set()
+
+        for case in match_stmt.cases:
+            pat = case.pattern
+            if isinstance(pat, Variable) and pat.name == "_":
+                return  # wildcard - exhaustive by construction
+            if not isinstance(pat, Variable):
+                return  # unrecognized pattern shape - don't guess
+            owner = self.enum_variant_owner.get(pat.name)
+            if owner != enum_name or self._lookup_const_symbol(pat.name) is None:
+                return  # not a known variant of this enum - don't guess
+            if case.guard is None:
+                covered.add(pat.name[len(enum_name) + 1:])
+
+        missing = sorted(all_variants - covered)
+        if missing:
+            self.warnings.append(
+                f"Non-exhaustive match: enum '{enum_name}' patterns do not cover "
+                f"variant(s) {', '.join(missing)} (add the missing variant(s) or `_`/`default`)"
+            )
+
+    def _warn_match_exhaustiveness_stub(self, match_stmt: MatchStatement, value_type: SemanticType) -> None:
+        """Exhaustiveness checking for `match`, with three tiers of coverage:
+
+        1. Enum/ADT matches: a *real* exhaustiveness check when matching
+           directly on an enum value or its `.tag` field with path/const
+           patterns (see `_warn_enum_exhaustiveness`) - requires every
+           variant covered or a wildcard/`default`.
+        2. Boolean matches: bool has exactly two inhabitants, so this is a
+           *real* exhaustiveness check (not a stub) - if every arm is a bool
+           literal (or `|` of those) and the set of covered values is not
+           `{true, false}`, and there's no wildcard/`default`, warn.
+        3. Integer matches: a minimal stub. If every arm is an integer literal
+           (or `|` of those) and there's no wildcard/`default`, warn - even
+           though listing all `i32`/`i64`/etc. values is never actually
+           achievable, so this only catches the "forgot the wildcard" case,
+           not true integer-domain coverage. It does NOT attempt range/gap
+           analysis (e.g. it won't tell you that `0 | 1` on a `bool`-like i32
+           still misses other in-range values).
+
+        Warnings are collected on `TypeCheckResult.warnings`, not hard errors.
+        """
+        enum_name = self._match_enum_target(match_stmt, value_type)
+        if enum_name is not None:
+            self._warn_enum_exhaustiveness(match_stmt, enum_name)
+            return
+
+        if match_stmt.default_case is not None:
+            return
+
+        has_wildcard = False
+        all_int_literals = True
+        saw_int_literal = False
+        all_bool_literals = True
+        saw_bool_literal = False
+        covered_bools: set = set()
+
+        for case in match_stmt.cases:
+            pat = case.pattern
+            if isinstance(pat, Variable) and pat.name == "_":
+                has_wildcard = True
+                continue
+            if self._is_integer_literal_pattern(pat):
+                saw_int_literal = True
+            else:
+                all_int_literals = False
+            if self._is_bool_literal_pattern(pat):
+                saw_bool_literal = True
+                covered_bools.update(self._bool_literal_values(pat))
+            else:
+                all_bool_literals = False
+
+        if has_wildcard:
+            return
+
+        if all_bool_literals and saw_bool_literal:
+            if covered_bools != {True, False}:
+                self.warnings.append(
+                    "Non-exhaustive match: bool patterns do not cover both "
+                    "`true` and `false` (add the missing value or `_`/`default`)"
+                )
+            return
+
+        if all_int_literals and saw_int_literal:
+            self.warnings.append(
+                "Non-exhaustive match: integer literal patterns do not cover all "
+                "values (add `_` or `default`)"
+            )
+
     def _check_match_stmt(self, match_stmt: MatchStatement) -> SemanticType:
         """Type check a match statement."""
         value_type = self._check_expression(match_stmt.value)
@@ -630,21 +865,33 @@ class TypeChecker:
                             f"Match pattern {pat_type} incompatible with value type {value_type}"
                         )
             elif isinstance(case.pattern, StructPattern):
-                struct_decl = self.struct_types.get(case.pattern.struct_name)
-                if struct_decl is None:
-                    self.errors.append(f"Unknown struct in match pattern: {case.pattern.struct_name}")
-                fields = getattr(struct_decl, "fields", None) or []
-                for i, binding in enumerate(case.pattern.bindings):
-                    if binding == "_":
-                        continue
-                    if i < len(fields):
-                        bind_type = self._parse_type(fields[i].type)
-                    else:
-                        bind_type = SemanticType(TypeKind.UNKNOWN)
-                    case_scope.define(Symbol(binding, bind_type, "variable"))
+                self._bind_struct_pattern(case.pattern, case_scope)
+            elif isinstance(case.pattern, OrPattern):
+                for alt in case.pattern.patterns:
+                    if isinstance(alt, Literal):
+                        pat_type = self._check_literal(alt)
+                        if not self._can_coerce(value_type, pat_type) and not self._can_coerce(pat_type, value_type):
+                            if self.strict:
+                                self.errors.append(
+                                    f"Match pattern {pat_type} incompatible with value type {value_type}"
+                                )
             elif isinstance(case.pattern, Variable):
-                # Identifier pattern binds the matched value (e.g. `x if x > 0 =>`).
-                if case.pattern.name != "_":
+                const_symbol = self._lookup_const_symbol(case.pattern.name)
+                if const_symbol is not None:
+                    # Path/const pattern (e.g. an enum variant tag constant):
+                    # a value-equality check, not an identifier binding.
+                    compare_type = value_type
+                    if value_type.kind == TypeKind.STRUCT and value_type.name in self.enum_decls:
+                        compare_type = SemanticType(TypeKind.I32)  # `.tag` field
+                    pat_type = const_symbol.type
+                    if not self._can_coerce(compare_type, pat_type) and not self._can_coerce(pat_type, compare_type):
+                        if self.strict:
+                            self.errors.append(
+                                f"Match pattern '{case.pattern.name}' has type {pat_type} "
+                                f"incompatible with value type {value_type}"
+                            )
+                elif case.pattern.name != "_":
+                    # Identifier pattern binds the matched value (e.g. `x if x > 0 =>`).
                     case_scope.define(Symbol(case.pattern.name, value_type, "variable"))
             prev_scope = self.current_scope
             self.current_scope = case_scope
@@ -662,6 +909,7 @@ class TypeChecker:
             default_type = self._check_block(match_stmt.default_case)
             if default_type.kind != TypeKind.VOID:
                 result_type = default_type
+        self._warn_match_exhaustiveness_stub(match_stmt, value_type)
         return result_type
 
     def _check_var_decl(self, var: VarDecl) -> SemanticType:

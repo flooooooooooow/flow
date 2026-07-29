@@ -54,6 +54,7 @@ from .parser import (
     StructDecl,
     StructLiteral,
     StructPattern,
+    OrPattern,
     TraitDecl,
     TryExpr,
     Type,
@@ -112,6 +113,7 @@ class CGenerator:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
         self._enums = {}  # name -> EnumDecl
+        self._enum_variant_owner = {}  # "Enum_Variant" -> "Enum" (for path/const match patterns)
         self._var_types = {}  # name -> Type
         self._source_file = source_file
         self._debug_info = debug_info
@@ -176,6 +178,21 @@ class CGenerator:
         if newline:
             fmt = f"{fmt}\\n"
         return f'printf("{fmt}", {expr_str})'
+
+    def _gen_stringify_expr(self, expr: Expression) -> str:
+        """Render a non-string expression as a `const char*` for use in
+        string concatenation (e.g. `"Average time: " + avg_time`). Formats
+        the value with the printf conversion appropriate for its inferred
+        type into a small stack buffer via a GNU statement expression.
+        """
+        inferred = self._infer_expr_type(expr)
+        type_name = inferred.name if inferred else None
+        expr_c = self._gen_expr(expr)
+        if type_name == "bool":
+            return f"({expr_c} ? \"true\" : \"false\")"
+        fmt = self._printf_format_for_type_name(type_name)
+        buf = f"_flow_strval_{id(expr) & 0xFFFFFF}"
+        return f'({{ char {buf}[64]; snprintf({buf}, sizeof({buf}), "{fmt}", {expr_c}); {buf}; }})'
 
     def _gen_print_call(self, arguments: list, *, newline: bool) -> str:
         """Shared implementation for print/println intrinsics."""
@@ -314,6 +331,8 @@ class CGenerator:
         if enums:
             for enum in enums:
                 self._enums[enum.name] = enum
+                for variant in enum.variants:
+                    self._enum_variant_owner[f"{enum.name}_{variant.name}"] = enum.name
 
         # Track type aliases and distinct types to skip during struct emission
         type_alias_names = set()
@@ -392,6 +411,25 @@ class CGenerator:
         # Emit struct definitions in dependency order
         # Include structs already emitted for effects
         emitted = set(effect_structs_emitted)
+
+        # Forward-declare every remaining struct as `typedef struct Name Name;`
+        # so that pointer fields (e.g. `ptr<Route>` inside `HttpServer`) can
+        # reference a struct type regardless of alphabetical/definition order.
+        # A pointer field only needs the type *name* to exist, not a complete
+        # definition, so this also transparently supports self- and
+        # mutually-referential struct pointers.
+        forward_declared = set()
+        for struct_name in sorted(self._structs.keys()):
+            if struct_name in emitted:
+                continue
+            if struct_name in self._enums or struct_name in type_alias_names or struct_name in distinct_type_names:
+                continue
+            safe_name = _c_ident(struct_name)
+            lines.append(f"typedef struct {safe_name} {safe_name};")
+            forward_declared.add(struct_name)
+        if forward_declared:
+            lines.append("")
+
         def emit_struct(name):
             if name in emitted:
                 return
@@ -407,7 +445,9 @@ class CGenerator:
             if name not in self._structs:
                 return
             safe_struct_name = _c_ident(name)
-            # First, emit any nested struct types
+            # First, emit any nested (embedded-by-value) struct types. These
+            # must be fully defined before use, unlike pointer fields which
+            # only need the forward declaration above.
             for field_type in self._structs[name].values():
                 if self._is_struct_type(field_type) and field_type.name not in emitted:
                     emit_struct(field_type.name)
@@ -417,8 +457,12 @@ class CGenerator:
                     if self._is_struct_type(elem) and elem.name not in emitted:
                         emit_struct(elem.name)
 
-            # Now emit this struct
-            lines.append("typedef struct {")
+            # Now emit this struct. If it was forward-declared above, complete
+            # the tagged struct rather than re-typedef'ing the name.
+            if name in forward_declared:
+                lines.append(f"struct {safe_struct_name} {{")
+            else:
+                lines.append("typedef struct {")
             for field_name, field_type in self._structs[name].items():
                 # Inline sized arrays in struct fields when size is known.
                 if getattr(field_type, "name", "").startswith("array_") and getattr(field_type, "size", None) and getattr(field_type, "element_type", None):
@@ -427,7 +471,10 @@ class CGenerator:
                     lines.append(f"    {elem_c} {_c_ident(field_name)}[{size}];")
                 else:
                     lines.append(f"    {self._c_type(field_type)} {_c_ident(field_name)};")
-            lines.append(f"}} {safe_struct_name};")
+            if name in forward_declared:
+                lines.append("};")
+            else:
+                lines.append(f"}} {safe_struct_name};")
             lines.append("")
             emitted.add(name)
         
@@ -1168,7 +1215,17 @@ class CGenerator:
             if st.target_expr is not None:
                 target_expr = self._gen_lvalue_expr(st.target_expr)
                 return [f"{self._i()}{target_expr} = {self._gen_expr(st.value)};"]
-            return [f"{self._i()}{_sanitize_identifier(st.target)} = {self._gen_expr(st.value)};"]
+            target_name = _sanitize_identifier(st.target)
+            # Sized array variables are represented as C arrays (e.g.
+            # `int32_t scale[7]`), which cannot be reassigned with `=` even
+            # when the RHS is a function returning the same array<T, N> type
+            # (which decays to a pointer in C). Use memcpy for those instead.
+            target_type = self._var_types.get(st.target)
+            if (target_type and getattr(target_type, "name", "").startswith("array_")
+                    and getattr(target_type, "size", None)):
+                value_expr = self._gen_expr(st.value)
+                return [f"{self._i()}memcpy({target_name}, {value_expr}, sizeof({target_name}));"]
+            return [f"{self._i()}{target_name} = {self._gen_expr(st.value)};"]
 
         if isinstance(st, ReturnStatement):
             if st.value is None:
@@ -1267,16 +1324,80 @@ class CGenerator:
         lines.append(f"{self._i()}}}")
         return lines
     
+    def _gen_literal_eq_cond(self, match_expr: str, literal: "Literal") -> str:
+        """Generate an equality condition between match_expr and a literal pattern."""
+        if literal.type.name == 'string':
+            return f'(strcmp({match_expr}, {self._gen_expr(literal)}) == 0)'
+        return f"({match_expr}) == {self._gen_expr(literal)}"
+
+    def _gen_struct_pattern_match(
+        self, pattern: "StructPattern", value_expr: str
+    ) -> Tuple[List[str], List[str]]:
+        """Recursively lower a (possibly nested) StructPattern against `value_expr`.
+
+        Returns `(conds, binds)`: `conds` are C boolean expressions that must
+        all hold for the pattern to match (literal field checks, recursively
+        including any nested struct sub-patterns); `binds` are C variable
+        declarations to run once the match succeeds (both this pattern's own
+        bindings and any collected from nested struct patterns).
+        """
+        conds: List[str] = []
+        binds: List[str] = []
+        struct_name = pattern.struct_name
+        if struct_name not in self._structs:
+            return conds, binds
+
+        field_names = list(self._structs[struct_name].keys())
+        field_literals = pattern.field_literals or {}
+        field_patterns = pattern.field_patterns or {}
+        for i, binding in enumerate(pattern.bindings):
+            if i >= len(field_names):
+                continue
+            field = field_names[i]
+            ft = self._structs[struct_name][field]
+            field_access = f"({value_expr}).{_c_ident(field)}"
+
+            if i in field_patterns:
+                nested_conds, nested_binds = self._gen_struct_pattern_match(
+                    field_patterns[i], field_access
+                )
+                conds.extend(nested_conds)
+                binds.extend(nested_binds)
+                continue
+            if i in field_literals:
+                # Nested literal pattern: value must match, no binding.
+                conds.append(self._gen_literal_eq_cond(field_access, field_literals[i]))
+                continue
+            if binding == "_":
+                continue
+
+            bind_name = _c_ident(binding)
+            binds.append(f"{self._c_type(ft)} {bind_name} = {field_access}")
+            self._overload_resolver.set_var_type(binding, self._type_to_string(ft))
+            self._var_types[binding] = ft
+
+        return conds, binds
+
     def _gen_match(self, st: MatchStatement) -> List[str]:
         """Generate C switch/if-else chain from FLOW match statement."""
         lines: List[str] = []
         match_expr = self._gen_expr(st.value)
-        
-        # Check if we can use a switch (integer patterns only, no guards)
+
+        def _is_int_literal(lit: "Literal") -> bool:
+            return isinstance(lit, Literal) and lit.type.name in (
+                'i32', 'i64', 'i8', 'i16', 'u8', 'u16', 'u32', 'u64'
+            )
+
+        # Check if we can use a switch (integer patterns/or-of-integers, no guards)
         can_use_switch = all(
             case.guard is None
-            and isinstance(case.pattern, Literal)
-            and case.pattern.type.name in ('i32', 'i64', 'i8', 'i16', 'u8', 'u16', 'u32', 'u64')
+            and (
+                _is_int_literal(case.pattern)
+                or (
+                    isinstance(case.pattern, OrPattern)
+                    and all(_is_int_literal(p) for p in case.pattern.patterns)
+                )
+            )
             for case in st.cases
         )
         
@@ -1286,8 +1407,12 @@ class CGenerator:
             self._indent += 1
             
             for case in st.cases:
-                pattern_val = self._gen_expr(case.pattern)
-                lines.append(f"{self._i()}case {pattern_val}: {{")
+                if isinstance(case.pattern, OrPattern):
+                    for alt in case.pattern.patterns:
+                        lines.append(f"{self._i()}case {self._gen_expr(alt)}:")
+                else:
+                    lines.append(f"{self._i()}case {self._gen_expr(case.pattern)}:")
+                lines.append(f"{self._i()}{{")
                 self._indent += 1
                 lines.extend(self._gen_block(case.body))
                 lines.append(f"{self._i()}break;")
@@ -1316,14 +1441,32 @@ class CGenerator:
                 cond = "1"
 
                 if isinstance(pattern, Literal):
-                    if pattern.type.name == 'string':
-                        cond = f'(strcmp({match_expr}, {self._gen_expr(pattern)}) == 0)'
-                    else:
-                        cond = f"({match_expr}) == {self._gen_expr(pattern)}"
+                    cond = self._gen_literal_eq_cond(match_expr, pattern)
+                    if case.guard is not None:
+                        cond = f"({cond}) && ({self._gen_expr(case.guard)})"
+                elif isinstance(pattern, OrPattern):
+                    cond = " || ".join(
+                        self._gen_literal_eq_cond(match_expr, alt) for alt in pattern.patterns
+                    )
                     if case.guard is not None:
                         cond = f"({cond}) && ({self._gen_expr(case.guard)})"
                 elif isinstance(pattern, Variable):
-                    if pattern.name == "_" and case.guard is None:
+                    variant_owner = self._enum_variant_owner.get(pattern.name)
+                    if pattern.name != "_" and variant_owner is not None:
+                        # Path/const pattern (e.g. `Option_i32_Some`): a
+                        # value-equality check against the enum's tag, not an
+                        # identifier binding. Matching directly on an enum
+                        # value compares its `.tag` field; matching on
+                        # `.tag` (or another i32) compares directly.
+                        value_ty = self._infer_expr_type(st.value)
+                        if value_ty is not None and value_ty.name == variant_owner:
+                            tag_expr = f"({match_expr}).tag"
+                        else:
+                            tag_expr = match_expr
+                        cond = f"({tag_expr}) == {_c_ident(pattern.name)}"
+                        if case.guard is not None:
+                            cond = f"({cond}) && ({self._gen_expr(case.guard)})"
+                    elif pattern.name == "_" and case.guard is None:
                         cond = "1"
                     elif case.guard is not None:
                         bind_type = self._c_type(self._infer_match_type(st.value))
@@ -1338,25 +1481,21 @@ class CGenerator:
                             f"({{ {bind_type} {_c_ident(pattern.name)} = {match_expr}; 1; }})"
                         )
                 elif isinstance(pattern, StructPattern):
-                    struct_binds: List[str] = []
-                    struct_name = pattern.struct_name
-                    if struct_name in self._structs:
-                        field_names = list(self._structs[struct_name].keys())
-                        for i, binding in enumerate(pattern.bindings):
-                            if i < len(field_names):
-                                field = field_names[i]
-                                ft = self._structs[struct_name][field_names[i]]
-                                bind_name = _c_ident(binding)
-                                struct_binds.append(
-                                    f"{self._c_type(ft)} {bind_name} = "
-                                    f"({match_expr}).{_c_ident(field)}"
-                                )
-                                self._overload_resolver.set_var_type(
-                                    binding, self._type_to_string(ft)
-                                )
-                                self._var_types[binding] = ft
-                    guard_expr = self._gen_expr(case.guard) if case.guard else "1"
-                    cond = guard_expr
+                    literal_conds, struct_binds = self._gen_struct_pattern_match(
+                        pattern, match_expr
+                    )
+                    cond_terms = list(literal_conds)
+                    if case.guard is not None:
+                        guard_expr = self._gen_expr(case.guard)
+                        if struct_binds:
+                            # Bindings must be visible to the guard, but they're
+                            # only declared inside the if-body below - use a GNU
+                            # statement expression so the guard can see them too.
+                            bind_decls = " ".join(f"{b};" for b in struct_binds)
+                            cond_terms.append(f"({{ {bind_decls} {guard_expr}; }})")
+                        else:
+                            cond_terms.append(f"({guard_expr})")
+                    cond = " && ".join(cond_terms) if cond_terms else "1"
                     branch_kw = "if" if first else "} else if"
                     first = False
                     lines.append(f"{self._i()}{branch_kw} ({cond}) {{")
@@ -1494,17 +1633,53 @@ class CGenerator:
             return _c_ident(e.name)
 
         if isinstance(e, StructLiteral):
-            field_parts = []
             struct_fields = self._structs.get(e.struct_name, {})
+
+            def is_array_field(name):
+                ft = struct_fields.get(name)
+                return bool(ft and getattr(ft, "name", "").startswith("array_"))
+
+            # A sized-array field can only be initialized in-place (via a
+            # designated initializer) when the source value is itself an
+            # array literal (brace-enclosed sub-lists are legal C). If the
+            # value is a pointer-producing expression (e.g. a function call
+            # returning `Note*` for a `-> array<Note, N>` function, or a
+            # plain variable/pointer), C has no syntax to initialize an
+            # array member from it directly - it would try to coerce the
+            # pointer into the first scalar member. Fall back to a
+            # statement-expression that memcpy's such fields into place.
+            needs_memcpy = any(
+                is_array_field(name) and not isinstance(value, ArrayLiteral)
+                for name, value in e.fields
+            )
+
+            struct_c_name = _c_ident(e.struct_name)
+            if needs_memcpy:
+                tmp = f"_flow_struct_tmp_{id(e) & 0xFFFFFF}"
+                stmts = [f"{struct_c_name} {tmp};"]
+                for name, value in e.fields:
+                    c_field = _c_ident(name)
+                    if is_array_field(name):
+                        if isinstance(value, ArrayLiteral):
+                            value_expr = self._gen_array_literal(value, as_initializer=False)
+                        else:
+                            value_expr = self._gen_expr(value)
+                        stmts.append(f"memcpy({tmp}.{c_field}, {value_expr}, sizeof({tmp}.{c_field}));")
+                    else:
+                        value_expr = self._gen_expr(value)
+                        stmts.append(f"{tmp}.{c_field} = {value_expr};")
+                stmts.append(f"{tmp};")
+                return "({ " + " ".join(stmts) + " })"
+
+            field_parts = []
             for name, value in e.fields:
-                field_type = struct_fields.get(name)
-                if field_type and getattr(field_type, "name", "").startswith("array_") and isinstance(value, ArrayLiteral):
+                if is_array_field(name) and isinstance(value, ArrayLiteral):
                     value_expr = self._gen_array_literal(value, as_initializer=True)
                 else:
                     value_expr = self._gen_expr(value)
                 field_parts.append(f".{_c_ident(name)} = {value_expr}")
             fields = ", ".join(field_parts)
-            return f"({_c_ident(e.struct_name)}){{ {fields} }}"
+            return f"({struct_c_name}){{ {fields} }}"
 
         if isinstance(e, FieldAccess):
             obj_expr = self._gen_expr(e.object)
@@ -1534,7 +1709,11 @@ class CGenerator:
             if op == "~":
                 return f"(~{self._gen_expr(e.operand)})"
             if op == "&":
-                return f"(&({self._gen_expr(e.operand)}))"
+                # Use the lvalue form for array/field access so bounds-checked
+                # array reads (which expand to a ternary rvalue) don't end up
+                # with their address taken - a ternary result is never an
+                # lvalue in C even when both branches are.
+                return f"(&({self._gen_lvalue_expr(e.operand)}))"
             if op == "*":
                 return f"(*({self._gen_expr(e.operand)}))"
             return f"({op} {self._gen_expr(e.operand)})"  # Add space for unknown operators
@@ -1542,6 +1721,20 @@ class CGenerator:
         if isinstance(e, BinaryOperation):
             left_expr = self._gen_expr(e.left)
             right_expr = self._gen_expr(e.right)
+
+            # C's '%' operator requires integer operands. Flow lets '%' be used
+            # on fields/values that are declared f32/f64 but are semantically
+            # integral counts (e.g. struct fields computed from sample-rate
+            # math but consumed as sample counts); cast any float operand to
+            # int64_t so the generated C is valid rather than erroring on
+            # "invalid operands to binary expression".
+            if e.operator == '%':
+                left_type = self._infer_expr_type(e.left)
+                right_type = self._infer_expr_type(e.right)
+                if left_type and left_type.name in ('f32', 'f64'):
+                    left_expr = f"((int64_t)({left_expr}))"
+                if right_type and right_type.name in ('f32', 'f64'):
+                    right_expr = f"((int64_t)({right_expr}))"
             
             # Special handling for string concatenation
             if e.operator == '+':
@@ -1549,10 +1742,13 @@ class CGenerator:
                 left_is_string = self._is_string_expr(e.left)
                 right_is_string = self._is_string_expr(e.right)
                 
-                # If either operand is a string, this is string concatenation
+                # If either operand is a string, this is string concatenation.
+                # Non-string operands (numbers, bools) are stringified first,
+                # matching common "text: " + value ergonomics.
                 if left_is_string or right_is_string:
-                    # Return allocated concatenated string
-                    return f"flow_strcat({left_expr}, {right_expr})"
+                    left_str = left_expr if left_is_string else self._gen_stringify_expr(e.left)
+                    right_str = right_expr if right_is_string else self._gen_stringify_expr(e.right)
+                    return f"flow_strcat({left_str}, {right_str})"
                 
                 # Not string concat - fall through to normal binary op handling
             
@@ -1738,7 +1934,25 @@ class CGenerator:
                 return self._gen_effect_call(effect_call)
 
         # Desugar to a normal function call with the receiver as the first argument.
-        args = [e.object] + e.arguments
+        # Many stdlib modules implement "methods" as plain functions taking
+        # `ptr<Struct>` as their first parameter (effects/capabilities aren't
+        # fully lowered to the C backend yet). If the receiver is a by-value
+        # struct but every registered overload of this method name expects a
+        # pointer to that exact struct type, take its address automatically -
+        # this mirrors how `obj.method(...)` behaves as sugar for a
+        # reference-receiving free function in the rest of the codebase.
+        receiver = e.object
+        obj_type = self._infer_expr_type(receiver)
+        if obj_type and not getattr(obj_type, "is_pointer", False) and not obj_type.name.startswith("ptr_"):
+            expected_ptr_type = f"ptr_{obj_type.name}"
+            overloads = self._overload_resolver.get_overloads(e.method)
+            if overloads and all(
+                ov.param_types and ov.param_types[0] == expected_ptr_type
+                for ov in overloads
+            ):
+                receiver = UnaryOperation("&", receiver)
+
+        args = [receiver] + e.arguments
         return self._gen_expr(FunctionCall(e.method, args))
     
     def _gen_lvalue_expr(self, e: Expression) -> str:
