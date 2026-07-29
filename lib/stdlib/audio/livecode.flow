@@ -325,7 +325,7 @@ export function house_beat(clock: Clock, pos: i64) -> f32 {
 # Basic bassline (root note pattern)
 export function bass_pattern_simple(root: i32, clock: Clock, pos: i64) -> f32 {
     let pattern: array<i32, 4> = [root, root, root + 7, root + 5]
-    return pattern_4(pattern, clock, pos, bass)
+    return pattern_4(pattern, clock, pos)
 }
 
 # Arpeggio pattern

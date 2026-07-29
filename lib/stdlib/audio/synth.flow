@@ -349,11 +349,3 @@ export function synth_tick(synth: Synth, freq: f32, gate: bool) -> f32 {
 
     return output
 }
-
-# Helper to set phasor frequency
-function phasor_set_freq(p: Phasor, freq: f32, rate: SampleRate) -> Phasor {
-    return Phasor {
-        phase: p.phase,
-        increment: freq / rate.hz
-    }
-}

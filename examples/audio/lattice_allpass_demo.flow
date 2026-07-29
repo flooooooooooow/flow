@@ -1,0 +1,163 @@
+# Lattice all-pass verification demo — prints CSV metrics for plotting
+# Run: ./flow run examples/audio/lattice_allpass_demo.flow
+
+import "stdlib/dynamics/schur_lattice.flow"
+import "stdlib/math.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function f64_abs(v: f64) -> f64 {
+    if v < 0.0 {
+        return 0.0 - v
+    }
+    return v
+}
+
+function schur_clamp_k_f64(k: f64) -> f64 {
+    if k > 0.999 {
+        return 0.999
+    }
+    if k < -0.999 {
+        return -0.999
+    }
+    return k
+}
+
+# Cascade first-order all-pass sections: H_i(z)=(k_i+z^{-1})/(1+k_i z^{-1})
+# y[n]=k*x[n]+x[n-1]-k*y[n-1]; x_prev/y_prev in state buffers.
+function lattice_tick(
+    k: ptr<f64>,
+    x_prev: ptr<f64>,
+    y_prev: ptr<f64>,
+    order: i32,
+    input: f32
+) -> f32 {
+    let mut inp: f32 = input
+    let mut i: i32 = 0
+    while i < order {
+        let ki: f32 = k[i]
+        let xp: f32 = x_prev[i]
+        let yp: f32 = y_prev[i]
+        let y: f32 = ki * inp + xp - ki * yp
+        x_prev[i] = inp
+        y_prev[i] = y
+        inp = y
+        i = i + 1
+    }
+    return inp
+}
+
+function measure_tone_gain(
+    k: ptr<f64>,
+    x_prev: ptr<f64>,
+    y_prev: ptr<f64>,
+    order: i32,
+    fs: f64,
+    freq_hz: f64,
+    settle: i32,
+    measure: i32
+) -> f64 {
+    let two_pi: f32 = 6.28318530718
+    let omega: f32 = two_pi * freq_hz / fs
+    let mut i: i32 = 0
+    while i < order {
+        x_prev[i] = 0.0
+        y_prev[i] = 0.0
+        i = i + 1
+    }
+    let mut n: i32 = 0
+    while n < settle {
+        let t: f32 = n
+        lattice_tick(k, x_prev, y_prev, order, sin(omega * t))
+        n = n + 1
+    }
+    let mut in_e: f64 = 0.0
+    let mut out_e: f64 = 0.0
+    n = 0
+    while n < measure {
+        let t: f32 = settle + n
+        let x: f32 = sin(omega * t)
+        let y: f32 = lattice_tick(k, x_prev, y_prev, order, x)
+        in_e = in_e + x * x
+        out_e = out_e + y * y
+        n = n + 1
+    }
+    if in_e <= 1e-12 {
+        return 0.0
+    }
+    let ratio: f32 = out_e / in_e
+    return sqrt(ratio)
+}
+
+function main() -> i32 {
+    let denom: array<f64, 4> = [-1.4, 0.71, -0.154, 0.012]
+    let k: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let x_prev: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let y_prev: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let order: i32 = 4
+    schur_step_down(denom, order, k)
+
+    println("LATTICE_ALLPASS_DEMO")
+    printf("order,%f\n", order * 1.0)
+    let mut i: i32 = 0
+    while i < order {
+        printf("k,%f\n", k[i])
+        i = i + 1
+    }
+
+    let fs: f64 = 48000.0
+    let freqs: array<f64, 8> = [100.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0]
+    i = 0
+    while i < 8 {
+        let gain: f64 = measure_tone_gain(k, x_prev, y_prev, order, fs, freqs[i], 4096, 2048)
+        printf("mag,%f,%f\n", freqs[i], gain)
+        i = i + 1
+    }
+
+    let mut n: i32 = 0
+    while n < 200 {
+        let t_ms: f64 = n * 1000.0 / fs
+        let t: f64 = n / fs
+        let wobble0: f64 = 0.12 * sin(6.28318 * 3.0 * t)
+        let wobble1: f64 = 0.12 * sin(6.28318 * 3.0 * t + 0.31)
+        let wobble2: f64 = 0.12 * sin(6.28318 * 3.0 * t + 0.62)
+        let wobble3: f64 = 0.12 * sin(6.28318 * 3.0 * t + 0.93)
+        printf("mod,%f,%f,%f,%f,%f\n", t_ms, schur_clamp_k_f64(k[0] + wobble0), schur_clamp_k_f64(k[1] + wobble1), schur_clamp_k_f64(k[2] + wobble2), schur_clamp_k_f64(k[3] + wobble3))
+        n = n + 1
+    }
+
+    i = 0
+    while i < order {
+        x_prev[i] = 0.0
+        y_prev[i] = 0.0
+        i = i + 1
+    }
+    n = 0
+    while n < 64 {
+        let mut x: f32 = 0.0
+        if n == 0 {
+            x = 1.0
+        }
+        let y: f32 = lattice_tick(k, x_prev, y_prev, order, x)
+        printf("imp,%f\n", y)
+        n = n + 1
+    }
+
+    let mut max_dev: f64 = 0.0
+    i = 0
+    while i < 8 {
+        let gain: f64 = measure_tone_gain(k, x_prev, y_prev, order, fs, freqs[i], 4096, 2048)
+        let dev: f64 = f64_abs(gain - 1.0)
+        if dev > max_dev {
+            max_dev = dev
+        }
+        i = i + 1
+    }
+    printf("max_mag_dev,%f\n", max_dev)
+    if max_dev > 0.05 {
+        return 1
+    }
+    return 0
+}

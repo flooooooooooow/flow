@@ -1,0 +1,10 @@
+# Call dense2d_backward and free inline (no grad var_decl materialize)
+import "stdlib/ml_nn.flow"
+
+function main() -> i32 {
+    let layer: Dense2D = dense2d_create(2, 2, 11)
+    let input: Tensor = tensor_fill(1, 2, 1, 1, 1.0)
+    let grad_out: Tensor = tensor_ones(1, 2, 1, 1)
+    dense2d_grad_free(dense2d_backward(layer, input, grad_out))
+    return 0
+}

@@ -1,0 +1,149 @@
+# Phase engine: poles → Schur k → per-sample modulated all-pass
+#
+# Flow paradigm on display:
+#   • dynamics + audio in one program (schur_lattice + math)
+#   • immutable filter state: modulate/tick return new structs
+#   • stability = clip |k_i|<1 each sample (no root solve)
+#
+# Run: ./flow run examples/audio/lattice_allpass_phase_engine.flow
+
+import "stdlib/dynamics/schur_lattice.flow"
+import "stdlib/math.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+struct PhaseEngine {
+    order: i32,
+    k_base: array<f64, 16>,
+    k_live: array<f64, 16>,
+    x_prev: array<f64, 16>,
+    y_prev: array<f64, 16>,
+    mod_depth: f32,
+    mod_rate_hz: f32,
+    sample: i64,
+    last: f32
+}
+
+function clamp_k(k: f64) -> f64 {
+    if k > 0.999 { return 0.999 }
+    if k < -0.999 { return -0.999 }
+    return k
+}
+
+function phase_engine_design(poles: ptr<f64>, count: i32, k_out: ptr<f64>) -> i32 {
+    let denom: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut i: i32 = 0
+    while i < count {
+        denom[i] = 0.0 - poles[i]
+        i = i + 1
+    }
+    schur_step_down(denom, count, k_out)
+    return count
+}
+
+function phase_engine_new(k: ptr<f64>, order: i32, depth: f32, rate_hz: f32) -> PhaseEngine {
+    let kb: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let kl: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut i: i32 = 0
+    while i < order {
+        kb[i] = k[i]
+        kl[i] = k[i]
+        i = i + 1
+    }
+    let z: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    return PhaseEngine {
+        order: order,
+        k_base: kb,
+        k_live: kl,
+        x_prev: z,
+        y_prev: z,
+        mod_depth: depth,
+        mod_rate_hz: rate_hz,
+        sample: 0,
+        last: 0.0
+    }
+}
+
+# Per-sample retune every reflection, then cascade all-pass section.
+function phase_engine_sample(pe: PhaseEngine, x: f32, fs: f64) -> PhaseEngine {
+    let two_pi: f32 = 6.28318
+    let t: f32 = pe.sample / fs
+    let omega: f32 = two_pi * pe.mod_rate_hz
+    let k_new: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let xp: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let yp: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut i: i32 = 0
+    while i < 16 {
+        xp[i] = pe.x_prev[i]
+        yp[i] = pe.y_prev[i]
+        i = i + 1
+    }
+    i = 0
+    while i < pe.order {
+        let phase_off: f32 = i * 0.31
+        let wobble: f32 = pe.mod_depth * sin(omega * t + phase_off)
+        k_new[i] = clamp_k(pe.k_base[i] + wobble)
+        i = i + 1
+    }
+    let mut inp: f32 = x
+    let mut y: f32 = 0.0
+    i = 0
+    while i < pe.order {
+        let ki: f32 = k_new[i]
+        let xpi: f32 = xp[i]
+        let ypi: f32 = yp[i]
+        y = ki * inp + xpi - ki * ypi
+        xp[i] = inp
+        yp[i] = y
+        inp = y
+        i = i + 1
+    }
+    return PhaseEngine {
+        order: pe.order,
+        k_base: pe.k_base,
+        k_live: k_new,
+        x_prev: xp,
+        y_prev: yp,
+        mod_depth: pe.mod_depth,
+        mod_rate_hz: pe.mod_rate_hz,
+        sample: pe.sample + 1,
+        last: y
+    }
+}
+
+function main() -> i32 {
+    let poles: array<f64, 4> = [0.5, 0.4, 0.3, 0.2]
+    let k: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let order: i32 = phase_engine_design(poles, 4, k)
+    let mut pe: PhaseEngine = phase_engine_new(k, order, 0.15, 2.0)
+    let fs: f64 = 48000.0
+
+    println("PHASE_ENGINE")
+    printf("order,%f\n", order * 1.0)
+    let mut i: i32 = 0
+    while i < order {
+        printf("k,%f\n", k[i])
+        i = i + 1
+    }
+
+    let mut n: i32 = 0
+    let mut in_e: f64 = 0.0
+    let mut out_e: f64 = 0.0
+    while n < 48000 {
+        let omega: f32 = 6.28318 * 1000.0 / fs
+        let x: f32 = sin(omega * n)
+        pe = phase_engine_sample(pe, x, fs)
+        let y: f32 = pe.last
+        in_e = in_e + x * x
+        out_e = out_e + y * y
+        n = n + 1
+    }
+    let ratio: f32 = out_e / in_e
+    printf("rms_ratio,%f\n", sqrt(ratio))
+    if sqrt(ratio) > 1.05 or sqrt(ratio) < 0.95 {
+        return 1
+    }
+    return 0
+}
