@@ -1,0 +1,16 @@
+# Diagnostic: return grad_input.dim0*100 + grad_input.dim1 from dense2d_backward
+import "stdlib/ml_nn.flow"
+
+function main() -> i32 {
+    let layer: Dense2D = dense2d_create(2, 2, 11)
+    let input: Tensor = tensor_fill(1, 2, 1, 1, 1.0)
+    let grad_out: Tensor = tensor_ones(1, 2, 1, 1)
+    let g: Dense2DGrad = dense2d_backward(layer, input, grad_out)
+    let d0: i32 = g.grad_input.dim0
+    let d1: i32 = g.grad_input.dim1
+    dense2d_grad_free(g)
+    tensor_free(input)
+    tensor_free(grad_out)
+    dense2d_free(layer)
+    return d0 * 100 + d1
+}

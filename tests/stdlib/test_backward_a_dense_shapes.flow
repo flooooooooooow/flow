@@ -1,0 +1,15 @@
+# Isolated backward_a test for dense2d shapes
+import "stdlib/tensor.flow"
+
+function main() -> i32 {
+    let input: Tensor = tensor_fill(1, 2, 1, 1, 1.0)
+    let weights: Tensor = tensor_fill(2, 2, 1, 1, 0.5)
+    let grad_out: Tensor = tensor_ones(1, 2, 1, 1)
+    let grad_input: Tensor = tensor_matmul_backward_a(input, weights, grad_out)
+    if grad_input.dim0 != 1 || grad_input.dim1 != 2 { return 1 }
+    tensor_free(input)
+    tensor_free(weights)
+    tensor_free(grad_out)
+    tensor_free(grad_input)
+    return 0
+}
