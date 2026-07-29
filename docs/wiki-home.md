@@ -66,10 +66,14 @@ and dual C / MLIR backends at native speed.
 | Path | What you'll do |
 |------|----------------|
 | [Quick Start](getting-started.md) | Install, compile, run `hello_world` |
-| [Interactive Tutorials](tutorials/index.html) | Edit &amp; run 40+ lessons in the browser |
+| [Interactive Tutorials](tutorials/index.html) | Edit &amp; run **130+** lessons (incl. manual memory) |
 | [Beginner guide](tutorials/beginner.md) | Variables, functions, control flow |
 | [Playground](playground/index.html) | Syntax explorer with verified examples (compile locally with `./flow run`) |
 | [Comparison](comparison.md) | Flow vs C, Rust, Zig, Mojo |
+| [Effects showcase](effects-showcase.md) | Algebraic effects with honest limitations |
+| [Autodiff guide](library/autodiff-guide.md) | Forward/reverse AD patterns |
+| [Manual memory](library/memory.md) · [RT safety](library/rt-safety.md) | Arenas, allocators, and real-time constraints |
+| [Benchmarks](project/benchmark-results.md) | Flow ≈ C on microbenchmarks |
 
 ---
 

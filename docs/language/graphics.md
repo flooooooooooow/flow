@@ -1,315 +1,85 @@
-# Graphics Programming in FLOW
+# Graphics in Flow
 
-FLOW provides built-in graphics programming capabilities with support for modern GPU APIs including Metal (Apple Silicon), CUDA, and OpenCL.
+Honest status of the **native 2D window API** (`lib/stdlib/gfx.flow`) and related
+GPU experiments. This page is not a promise of Metal/CUDA/OpenCL product parity.
 
-## 🎨 Graphics Overview
+## Platform matrix
 
-### GPU Backends
+| Platform | Backend file | Status | What you get today |
+|----------|--------------|--------|--------------------|
+| **macOS** | `runtime/gfx_macos.m` | ✅ Working | Cocoa window, software RGBA8 framebuffer, poll/keys, clear/fill_rect/present |
+| **Linux** | `runtime/gfx_linux.c` | 🔲 Stub | Same C symbols as macOS; `flow_gfx_init` returns `NULL` and logs to stderr |
+| **Windows** | — | 🔲 Missing | No `gfx_windows.c`; not started |
 
-FLOW automatically detects and uses the best available GPU backend:
+| Related path | Status | Notes |
+|--------------|--------|-------|
+| Metal (Apple GPU compute / audio helpers) | Partial | Separate from `gfx.flow` — see `runtime/audio_gpu_metal.m` and GPU examples; not a full shader pipeline product |
+| Vulkan sample bridges | Experimental | `runtime/vulkan_flow_*_bridge.cpp` — demos, not the stdlib 2D API |
+| CUDA / OpenCL “auto backend” | ❌ Not shipping | Older aspirational docs; do not rely on this |
 
-- **Metal** - Native support for Apple Silicon (M1/M2/M3 chips)
-- **CUDA** - NVIDIA GPU support
-- **OpenCL** - Cross-platform GPU computing
+Cross-platform graphics (Linux) remains a short-term roadmap item:
+[ROADMAP.md](../../ROADMAP.md).
 
-### Metal Integration
+## What works (macOS)
 
-FLOW includes comprehensive Metal GPU integration for macOS:
+Stdlib wrapper: `lib/stdlib/gfx.flow`. Typical link:
+
+```bash
+clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
+  -framework Cocoa -framework CoreGraphics -framework QuartzCore -o tetris_gfx
+```
 
 ```flow
-# Check Metal availability
-function check_metal() -> i32 {
-    if metal_is_available() {
-        print("✓ Metal GPU available")
-        let info = metal_get_info()
-        print("Device count: ", info.device_count)
-        return 1
-    } else {
-        print("✗ Metal not available")
-        return 0
-    }
+# Sketch — see examples that use gfx.flow
+let g = gfx_open(640, 480, "Demo")
+while !gfx_should_close(g) {
+    gfx_poll(g)
+    gfx_clear(g, 20, 20, 30)
+    gfx_fill_rect(g, 100, 100, 50, 50, 200, 80, 80)
+    gfx_present(g)
 }
+gfx_close(g)
 ```
 
-## 🚀 GPU Programming
+Pixel format: RGBA8. Key codes are macOS `NSEvent.keyCode` values (constants in
+`gfx.flow`).
 
-### Kernel Functions
+## Linux stub (current)
 
-Write GPU kernels using FLOW's `gpu` capability:
+`runtime/gfx_linux.c` matches the **macOS C ABI** so Linux links do not fail on
+missing symbols, but it does not open a window:
 
-```flow
-capability gpu
+- `flow_gfx_init` → prints a clear stub message, returns `NULL`
+- `flow_gfx_should_close` → always `1` (so loops exit instead of spinning)
+- other entry points → no-ops after a one-shot stderr warning
 
-function vector_add_gpu(a: [f32], b: [f32], result: [f32], n: i32) -> void {
-    # This function can be compiled to GPU kernels
-    for i in 0..n {
-        result[i] = a[i] + b[i]
-    }
-}
-```
+See `runtime/README.md`.
 
-### Metal Shader Generation
+## What’s needed next (Linux — small scope)
 
-FLOW automatically generates Metal Shading Language (MSL) code:
+Not a Vulkan rewrite. Incremental path:
 
-```metal
-#include <metal_stdlib>
-using namespace metal;
+1. **SDL2 window + texture** presenting an RGBA8 buffer (same layout as macOS).
+2. Implement every `flow_gfx_*` symbol with the **same signatures** as
+   `gfx_macos.m` / `gfx.flow` (opaque `void*` ctx).
+3. Map a small keycode set (document Linux vs macOS differences in `gfx.flow`).
+4. Teach the package/build path to link `gfx_linux.c` (+ `-lSDL2`) on Linux
+   instead of `gfx_macos.m`.
 
-kernel void vector_add_gpu_kernel(
-    device float* a [[buffer(0)]],
-    device float* b [[buffer(1)]], 
-    device float* result [[buffer(2)]],
-    uint n [[thread_position_in_grid]]
-) {
-    uint tid = get_thread_position_in_grid().x;
-    if (tid < n) {
-        result[tid] = a[tid] + b[tid];
-    }
-}
-```
+Optional later: Windows via SDL2 sharing most of the Linux code, or a thin
+Win32 GDI/DIB path. GPU compute remains a separate track from this 2D API.
 
-## 📱 Apple Silicon Optimization
+## GPU / Metal notes
 
-### Metal Backend Features
+- Prefer treating Metal and Vulkan as **optional native runtimes**, not as the
+  default “graphics” story for demos and games.
+- For games and tutorials, target `gfx.flow` + software fill until a real Linux
+  backend lands.
+- Do not assume automatic Metal/CUDA/OpenCL selection from Flow source.
 
-The Metal backend provides:
+## Related
 
-- **Native Performance**: Direct access to Apple Silicon GPU
-- **Memory Management**: Unified memory architecture
-- **Shader Compilation**: Automatic MSL compilation
-- **Command Buffers**: Efficient GPU command submission
-
-### Metal Runtime API
-
-```flow
-# Initialize Metal runtime
-function init_metal() -> bool {
-    return metal_initialize()
-}
-
-# Compile custom shaders
-function compile_shader() -> bool {
-    let shader_code = "#include <metal_stdlib>\nusing namespace metal;"
-    let compiled = metal_compile_shader(shader_code, "my_shader")
-    return compiled != null
-}
-
-# Execute shaders
-function run_shader() -> bool {
-    return metal_execute_shader("my_shader", [])
-}
-```
-
-## 🔧 GPU Memory Management
-
-### Buffer Allocation
-
-```flow
-function gpu_buffer_example() -> void {
-    # Allocate GPU memory
-    let size: i32 = 1024 * 1024  # 1MB
-    let gpu_buffer = gpu_allocate(size)
-    
-    # Copy data to GPU
-    let host_data = [1.0f, 2.0f, 3.0f, 4.0f]
-    gpu_copy_to_device(host_data, gpu_buffer)
-    
-    # Process on GPU
-    gpu_process_buffer(gpu_buffer, size)
-    
-    # Copy results back
-    let result = gpu_copy_from_device(gpu_buffer, size)
-    
-    # Free GPU memory
-    gpu_free(gpu_buffer)
-}
-```
-
-### Memory Types
-
-- **Device Memory**: GPU-local memory for fast access
-- **Unified Memory**: Shared between CPU and GPU (Apple Silicon)
-- **Host Memory**: System RAM with GPU access
-
-## 🎮 Graphics Pipeline
-
-### Rendering Pipeline
-
-```flow
-capability graphics
-
-function render_triangle() -> void {
-    # Vertex shader
-    vertex_shader = gpu_compile(vertex_shader_code, "vertex")
-    
-    # Fragment shader  
-    fragment_shader = gpu_compile(fragment_shader_code, "fragment")
-    
-    # Create pipeline
-    pipeline = gpu_create_pipeline(vertex_shader, fragment_shader)
-    
-    # Render
-    gpu_begin_render()
-    gpu_set_pipeline(pipeline)
-    gpu_draw_triangles(3)
-    gpu_end_render()
-}
-```
-
-### Shader Capabilities
-
-- **Vertex Shaders**: Transform vertices
-- **Fragment Shaders**: Pixel processing
-- **Compute Shaders**: General GPU computation
-- **Geometry Shaders**: Primitive processing
-
-## 📊 Performance Optimization
-
-### SIMD Operations
-
-```flow
-function simd_vector_ops(a: [f32], b: [f32]) -> [f32] {
-    # SIMD-optimized operations
-    let result = allocate_array(length(a))
-    
-    # Auto-vectorized loop
-    for i in 0..length(a) {
-        result[i] = a[i] * b[i] + 1.0f
-    }
-    
-    return result
-}
-```
-
-### Parallel Processing
-
-```flow
-function parallel_process(data: [f32]) -> [f32] {
-    # Process data in parallel on GPU
-    let n = length(data)
-    let result = gpu_allocate_array(n)
-    
-    # Launch GPU kernel
-    gpu_launch_kernel("process_kernel", n, 1, data, result)
-    
-    return result
-}
-```
-
-## 🔍 GPU Detection
-
-### Automatic Backend Selection
-
-```flow
-function detect_gpu_backend() -> str {
-    if metal_is_available() {
-        return "metal"
-    } else if cuda_is_available() {
-        return "cuda"  
-    } else if opencl_is_available() {
-        return "opencl"
-    } else {
-        return "cpu"
-    }
-}
-```
-
-### GPU Information
-
-```flow
-function print_gpu_info() -> void {
-    let backend = detect_gpu_backend()
-    print("Using GPU backend: ", backend)
-    
-    if backend == "metal" {
-        let info = metal_get_info()
-        print("Metal devices: ", info.device_count)
-        print("Compiled shaders: ", info.compiled_shaders)
-    }
-}
-```
-
-## 🛠️ Development Tools
-
-### GPU Debugging
-
-```flow
-function debug_gpu_kernel() -> void {
-    # Enable GPU debugging
-    gpu_set_debug_mode(true)
-    
-    # Run with validation
-    gpu_validate_kernels(true)
-    
-    # Profile performance
-    gpu_start_profiling()
-    gpu_execute_kernel()
-    let stats = gpu_get_profiling_stats()
-    print("GPU execution time: ", stats.execution_time)
-}
-```
-
-### Shader Validation
-
-- **Syntax Checking**: Validate shader code
-- **Type Checking**: Ensure type correctness
-- **Performance Analysis**: Identify bottlenecks
-- **Memory Usage**: Track GPU memory consumption
-
-## 📚 Examples
-
-### Basic Metal Example
-
-```flow
-function metal_hello_world() -> i32 {
-    print("Metal GPU Test")
-    
-    if metal_initialize() {
-        print("✓ Metal initialized")
-        
-        # Simple computation
-        let result = metal_compute(42)
-        print("Result: ", result)
-        
-        return 0
-    } else {
-        print("✗ Metal initialization failed")
-        return 1
-    }
-}
-```
-
-### GPU Matrix Multiplication
-
-```flow
-function gpu_matrix_multiply(a: [[f32]], b: [[f32]]) -> [[f32]] {
-    let m = rows(a)
-    let n = cols(b)
-    let p = cols(a)
-    
-    # Allocate result matrix
-    let result = allocate_matrix(m, n)
-    
-    # GPU kernel for matrix multiplication
-    gpu_launch_kernel("matmul_kernel", m, n, a, b, result, p)
-    
-    return result
-}
-```
-
-## 🎯 Best Practices
-
-1. **Use Metal on Apple Silicon** for best performance
-2. **Batch GPU operations** to minimize overhead
-3. **Profile GPU code** to identify bottlenecks
-4. **Use unified memory** when available
-5. **Validate shaders** during development
-6. **Handle GPU errors** gracefully
-
-## 🔮 Future Features
-
-- **Ray Tracing**: Metal ray tracing support
-- **Machine Learning**: GPU-accelerated ML operations
-- **Video Processing**: Hardware-accelerated video encode/decode
-- **Cross-Platform**: Unified API across all GPU backends
+- [runtime/README.md](../../runtime/README.md) — native backends map
+- [Effects Showcase](../effects-showcase.md) — unrelated, but shows how Flow prefers
+  explicit capabilities over hidden runtimes
+- [docs/NEXT.md](../NEXT.md) — Priority 5 cross-platform graphics bullets

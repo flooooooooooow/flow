@@ -21,6 +21,12 @@ A formal mathematics library (**flow-verify**), separate from everyday Flow prog
 
 Browse the full [proof catalog](flow-verify-catalog.md) or read the [package overview](flow-verify.md).
 
+The corpus is written ahead of the parser/checker in places (set-builder
+operators, Euclidean ratios, ghost/ownership contracts). See
+[flow-verify-parser-status.md](flow-verify-parser-status.md) for a categorized
+breakdown of every `examples/verify/` parse failure and why it isn't a
+core-Flow regression.
+
 ---
 
 ## Adding a third-party package

@@ -2,6 +2,9 @@
 
 Flow ships with a pragmatic audio DSP layer focused on real-time routing and effects.
 
+> [!important] Real-time contract
+> Nothing on the audio thread may allocate or block. See **[RT Safety Policy](rt-safety.md)** for the allowed / forbidden checklist (prep vs process).
+
 ## Modules
 
 - `stdlib/audio.flow`  

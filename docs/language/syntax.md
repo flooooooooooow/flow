@@ -95,6 +95,39 @@ for i in 0 to n {
 }
 ```
 
+### Match
+
+```flow
+match n {
+    0 => { return "zero" }
+    1 | 2 | 3 => { return "small" }        # `|` alternation (literal patterns only)
+    x if x > 100 => { return "big" }       # guard clause: binds x, checked with `if`
+    x if x < 0 => { return "negative" }
+    _ => { return "other" }
+}
+
+match point {
+    Point(0, 0) => { return "origin" }     # nested literal pattern on field 0
+    Point(0, y) => { return "y-axis" }     # literal + binding mixed
+    Point(x, y) if x == y => { return "diagonal" }
+    _ => { return "elsewhere" }
+}
+```
+
+- Arms are checked top-to-bottom; the first arm whose pattern matches **and**
+  whose guard (if any) is true wins. A failing guard falls through to the
+  next arm, it does not exit the match.
+- `_` is a wildcard that matches anything and binds nothing.
+- A bare identifier (e.g. `x`) matches anything and binds the matched value
+  to that name for the rest of the arm (guard + body).
+- `|` combines several literal patterns into one arm (`1 | 2 | 3 => ...`).
+  Only literals can be combined this way — bindings and struct patterns
+  cannot appear on either side of `|`.
+- Struct patterns (`Point(a, b)`) destructure positionally. A literal in a
+  field position (`Point(0, y)`) requires that field to equal the literal
+  instead of binding it; the remaining positions bind as usual.
+- `default { ... }` provides a fallback when no arm (and no guard) matches.
+
 ### Struct Definition
 ```flow
 struct Name {
