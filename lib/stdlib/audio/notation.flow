@@ -137,8 +137,7 @@ export function parse_line(reader: ptr<NotationReader>, line: string) -> bool {
 # Create a notation reader and load a file
 export function load_notation(path: string) -> NotationReader {
     let mut reader: NotationReader = notation_reader_new()
-    let cap: capability Notation = reader
-    let success: bool = cap.load_file(path)
+    let success: bool = reader.load_file(path)
     return reader
 }
 

@@ -1,0 +1,314 @@
+# BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux)
+# Import: import "stdlib/blas.flow"
+#
+# Compile with: -framework Accelerate (macOS) or -lopenblas (Linux)
+#
+# This gives you 10-100x speedup over naive loops for large matrices.
+#
+# Example:
+#   let C: Mat = mat_new(512, 512)
+#   gemm(A, B, C)           # C = A @ B (BLAS dgemm)
+#   let x: Vec = solve(A, b) # x = A \ b (LAPACK dgesv)
+
+# ============================================================================
+# BLAS LEVEL 1 (vector operations)
+# ============================================================================
+
+extern {
+    # y = alpha * x + y
+    function cblas_daxpy(n: i32, alpha: f64, x: ptr<f64>, incx: i32, y: ptr<f64>, incy: i32) -> void
+    # dot = x . y
+    function cblas_ddot(n: i32, x: ptr<f64>, incx: i32, y: ptr<f64>, incy: i32) -> f64
+    # norm = ||x||_2
+    function cblas_dnrm2(n: i32, x: ptr<f64>, incx: i32) -> f64
+    # x = alpha * x
+    function cblas_dscal(n: i32, alpha: f64, x: ptr<f64>, incx: i32) -> void
+    # copy x to y
+    function cblas_dcopy(n: i32, x: ptr<f64>, incx: i32, y: ptr<f64>, incy: i32) -> void
+}
+
+# ============================================================================
+# BLAS LEVEL 2 (matrix-vector)
+# ============================================================================
+
+extern {
+    # y = alpha * A * x + beta * y
+    # CblasRowMajor=101, CblasNoTrans=111
+    function cblas_dgemv(order: i32, trans: i32, m: i32, n: i32,
+                         alpha: f64, A: ptr<f64>, lda: i32,
+                         x: ptr<f64>, incx: i32,
+                         beta: f64, y: ptr<f64>, incy: i32) -> void
+}
+
+# ============================================================================
+# BLAS LEVEL 3 (matrix-matrix)
+# ============================================================================
+
+extern {
+    # C = alpha * A * B + beta * C
+    function cblas_dgemm(order: i32, transA: i32, transB: i32,
+                         m: i32, n: i32, k: i32,
+                         alpha: f64, A: ptr<f64>, lda: i32,
+                         B: ptr<f64>, ldb: i32,
+                         beta: f64, C: ptr<f64>, ldc: i32) -> void
+}
+
+# ============================================================================
+# LAPACK (linear algebra)
+# ============================================================================
+
+extern {
+    # Solve A * X = B (general matrix, LU factorization)
+    # n: order of A, nrhs: number of right-hand sides
+    # A is overwritten with L and U, ipiv contains pivot indices
+    # B is overwritten with solution X
+    function dgesv_(n: ptr<i32>, nrhs: ptr<i32>, A: ptr<f64>, lda: ptr<i32>,
+                    ipiv: ptr<i32>, B: ptr<f64>, ldb: ptr<i32>, info: ptr<i32>) -> void
+    
+    # Eigenvalues of a general matrix
+    # jobvl='N', jobvr='V' to compute right eigenvectors only
+    function dgeev_(jobvl: ptr<i8>, jobvr: ptr<i8>, n: ptr<i32>, A: ptr<f64>, lda: ptr<i32>,
+                    wr: ptr<f64>, wi: ptr<f64>, vl: ptr<f64>, ldvl: ptr<i32>,
+                    vr: ptr<f64>, ldvr: ptr<i32>, work: ptr<f64>, lwork: ptr<i32>,
+                    info: ptr<i32>) -> void
+    
+    # SVD: A = U * S * V^T
+    function dgesvd_(jobu: ptr<i8>, jobvt: ptr<i8>, m: ptr<i32>, n: ptr<i32>,
+                     A: ptr<f64>, lda: ptr<i32>, s: ptr<f64>,
+                     U: ptr<f64>, ldu: ptr<i32>, VT: ptr<f64>, ldvt: ptr<i32>,
+                     work: ptr<f64>, lwork: ptr<i32>, info: ptr<i32>) -> void
+    
+    # Cholesky factorization (for positive definite matrices)
+    function dpotrf_(uplo: ptr<i8>, n: ptr<i32>, A: ptr<f64>, lda: ptr<i32>, info: ptr<i32>) -> void
+    
+    # Solve using Cholesky: A * X = B where A = L * L^T
+    function dpotrs_(uplo: ptr<i8>, n: ptr<i32>, nrhs: ptr<i32>, A: ptr<f64>, lda: ptr<i32>,
+                     B: ptr<f64>, ldb: ptr<i32>, info: ptr<i32>) -> void
+    
+    # QR factorization
+    function dgeqrf_(m: ptr<i32>, n: ptr<i32>, A: ptr<f64>, lda: ptr<i32>,
+                     tau: ptr<f64>, work: ptr<f64>, lwork: ptr<i32>, info: ptr<i32>) -> void
+    
+    # Matrix inverse via LU
+    function dgetrf_(m: ptr<i32>, n: ptr<i32>, A: ptr<f64>, lda: ptr<i32>,
+                     ipiv: ptr<i32>, info: ptr<i32>) -> void
+    function dgetri_(n: ptr<i32>, A: ptr<f64>, lda: ptr<i32>, ipiv: ptr<i32>,
+                     work: ptr<f64>, lwork: ptr<i32>, info: ptr<i32>) -> void
+}
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+const CBLAS_ROW_MAJOR: i32 = 101
+const CBLAS_COL_MAJOR: i32 = 102
+const CBLAS_NO_TRANS: i32 = 111
+const CBLAS_TRANS: i32 = 112
+
+# ============================================================================
+# HIGH-LEVEL MATRIX TYPE
+# ============================================================================
+
+struct Mat {
+    data: ptr<f64>,
+    rows: i32,
+    cols: i32,
+    owns: i32
+}
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function memset(s: ptr<void>, c: i32, n: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+}
+
+# ============================================================================
+# MATRIX CREATION
+# ============================================================================
+
+export function mat_new(rows: i32, cols: i32) -> Mat {
+    let size: i64 = rows * cols * 8
+    let data: ptr<f64> = malloc(size)
+    memset(data, 0, size)
+    return Mat { data: data, rows: rows, cols: cols, owns: 1 }
+}
+
+export function mat_free(m: Mat) -> void {
+    if m.owns == 1 {
+        free(m.data)
+    }
+}
+
+export function mat_wrap(data: ptr<f64>, rows: i32, cols: i32) -> Mat {
+    return Mat { data: data, rows: rows, cols: cols, owns: 0 }
+}
+
+export function mat_clone(m: Mat) -> Mat {
+    let result: Mat = mat_new(m.rows, m.cols)
+    let size: i64 = m.rows * m.cols * 8
+    memcpy(result.data, m.data, size)
+    return result
+}
+
+# ============================================================================
+# ELEMENT ACCESS (row-major)
+# ============================================================================
+
+export function mat_get(m: Mat, i: i32, j: i32) -> f64 {
+    return m.data[i * m.cols + j]
+}
+
+export function mat_set(m: Mat, i: i32, j: i32, val: f64) -> void {
+    m.data[i * m.cols + j] = val
+}
+
+# ============================================================================
+# BLAS WRAPPERS (ergonomic API)
+# ============================================================================
+
+export function gemm(A: Mat, B: Mat, C: Mat) -> void {
+    # C = A @ B
+    # A: (m, k), B: (k, n), C: (m, n)
+    let m: i32 = A.rows
+    let k: i32 = A.cols
+    let n: i32 = B.cols
+    cblas_dgemm(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, CBLAS_NO_TRANS,
+                m, n, k, 1.0, A.data, k, B.data, n, 0.0, C.data, n)
+}
+
+export function gemm_alpha_beta(alpha: f64, A: Mat, B: Mat, beta: f64, C: Mat) -> void {
+    # C = alpha * A @ B + beta * C
+    let m: i32 = A.rows
+    let k: i32 = A.cols
+    let n: i32 = B.cols
+    cblas_dgemm(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, CBLAS_NO_TRANS,
+                m, n, k, alpha, A.data, k, B.data, n, beta, C.data, n)
+}
+
+export function gemv(A: Mat, x: ptr<f64>, y: ptr<f64>) -> void {
+    # y = A @ x
+    cblas_dgemv(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, A.rows, A.cols,
+                1.0, A.data, A.cols, x, 1, 0.0, y, 1)
+}
+
+export function dot(x: ptr<f64>, y: ptr<f64>, n: i32) -> f64 {
+    return cblas_ddot(n, x, 1, y, 1)
+}
+
+export function norm2(x: ptr<f64>, n: i32) -> f64 {
+    return cblas_dnrm2(n, x, 1)
+}
+
+export function axpy(alpha: f64, x: ptr<f64>, y: ptr<f64>, n: i32) -> void {
+    # y = alpha * x + y
+    cblas_daxpy(n, alpha, x, 1, y, 1)
+}
+
+export function scal(alpha: f64, x: ptr<f64>, n: i32) -> void {
+    # x = alpha * x
+    cblas_dscal(n, alpha, x, 1)
+}
+
+# ============================================================================
+# LAPACK WRAPPERS
+# ============================================================================
+
+export function solve(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32 {
+    # Solve A * x = b, result in x
+    # Returns 0 on success, non-zero on failure
+    let n: i32 = A.rows
+    
+    # Copy A (will be overwritten)
+    let A_copy: Mat = mat_clone(A)
+    
+    # Copy b to x (will be overwritten with solution)
+    cblas_dcopy(n, b, 1, x, 1)
+    
+    # Pivot array
+    let ipiv: array<i32, 1024> = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    
+    let mut n_val: i32 = n
+    let mut nrhs: i32 = 1
+    let mut lda: i32 = n
+    let mut ldb: i32 = n
+    let mut info: i32 = 0
+    
+    dgesv_(&n_val, &nrhs, A_copy.data, &lda, ipiv, x, &ldb, &info)
+    
+    mat_free(A_copy)
+    return info
+}
+
+# ============================================================================
+# CONVENIENCE: MATLAB-STYLE OPERATORS
+# ============================================================================
+
+export function matmul(A: Mat, B: Mat) -> Mat {
+    # Returns new matrix C = A @ B
+    let C: Mat = mat_new(A.rows, B.cols)
+    gemm(A, B, C)
+    return C
+}
+
+export function transpose(A: Mat) -> Mat {
+    let result: Mat = mat_new(A.cols, A.rows)
+    for i in 0 to A.rows {
+        for j in 0 to A.cols {
+            mat_set(result, j, i, mat_get(A, i, j))
+        }
+    }
+    return result
+}
+
+export function eye(n: i32) -> Mat {
+    let m: Mat = mat_new(n, n)
+    for i in 0 to n {
+        mat_set(m, i, i, 1.0)
+    }
+    return m
+}
+
+export function zeros(rows: i32, cols: i32) -> Mat {
+    return mat_new(rows, cols)
+}
+
+export function ones(rows: i32, cols: i32) -> Mat {
+    let m: Mat = mat_new(rows, cols)
+    let size: i32 = rows * cols
+    for i in 0 to size {
+        m.data[i] = 1.0
+    }
+    return m
+}

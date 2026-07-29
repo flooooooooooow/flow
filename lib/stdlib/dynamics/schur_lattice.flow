@@ -1,0 +1,205 @@
+# Schur / lattice / orthogonal-colligation route for all-pass synthesis
+# Import: import "stdlib/dynamics/schur_lattice.flow"
+#
+# Avoids infinite-horizon Gramians:
+#   1. Step monic denominator down → Schur reflection coefficients
+#   2. Compose Givens rotations → orthogonal colligation A
+#   3. Map canonical numerator observer through finite controllability basis
+
+import "stdlib/dynamics/linalg.flow"
+import "stdlib/dynamics/state_space.flow"
+
+struct SchurLatticeSpec {
+    order: i32,
+    k: ptr<f64>,
+    observer: ptr<f64>
+}
+
+function schur_clamp_k(k: f64) -> f64 {
+    if k > 0.999 {
+        return 0.999
+    }
+    if k < -0.999 {
+        return -0.999
+    }
+    return k
+}
+
+# Step-down a monic denominator a[0..order-1] (a[0]=1 implied) to reflections k[0..order-1].
+function schur_step_down(a: ptr<f64>, order: i32, k_out: ptr<f64>) -> void {
+    let work: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let n: i32 = order
+    let mut i: i32 = 0
+    while i < n {
+        work[i] = a[i]
+        i = i + 1
+    }
+    let mut stage: i32 = n
+    while stage > 0 {
+        let idx: i32 = stage - 1
+        let kn: f64 = work[idx]
+        kn = schur_clamp_k(kn)
+        k_out[idx] = kn
+        let denom: f64 = 1.0 - kn * kn
+        if stage > 1 {
+            let mut m: i32 = 0
+            while m < stage - 1 {
+                let rev: i32 = stage - 2 - m
+                let num: f64 = work[m] - kn * work[rev]
+                work[m] = num / denom
+                m = m + 1
+            }
+        }
+        stage = stage - 1
+    }
+}
+
+# Levinson-Durbin on autocorrelation r[0..order] → reflections + predictor.
+function levinson_durbin(
+    r: ptr<f64>,
+    order: i32,
+    k_out: ptr<f64>,
+    a_out: ptr<f64>
+) -> i32 {
+    if order <= 0 {
+        return 0
+    }
+    if r[0] <= 1e-12 {
+        return 0
+    }
+    let alpha: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let a_work: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut err: f64 = r[0]
+    let mut m: i32 = 1
+    while m <= order {
+        let mut acc: f64 = r[m]
+        let mut j: i32 = 1
+        while j < m {
+            acc = acc + a_work[j - 1] * r[m - j]
+            j = j + 1
+        }
+        let km: f64 = schur_clamp_k(0.0 - acc / err)
+        k_out[m - 1] = km
+        a_work[m - 1] = km
+        let mut i: i32 = 1
+        while i < m {
+            let old: f64 = a_work[i - 1]
+            a_work[i - 1] = old + km * a_work[m - i - 1]
+            a_work[m - i - 1] = a_work[m - i - 1] + km * old
+            i = i + 1
+        }
+        err = err * (1.0 - km * km)
+        if err <= 1e-12 {
+            return m
+        }
+        m = m + 1
+    }
+    let mut c: i32 = 0
+    while c < order {
+        a_out[c] = a_work[c]
+        c = c + 1
+    }
+    return order
+}
+
+function givens_apply_rows(a_flat: ptr<f64>, n: i32, i: i32, j: i32, c: f64, s: f64) -> void {
+    let mut col: i32 = 0
+    while col < n {
+        let pi: i32 = i * n + col
+        let pj: i32 = j * n + col
+        let vi: f64 = a_flat[pi]
+        let vj: f64 = a_flat[pj]
+        a_flat[pi] = c * vi - s * vj
+        a_flat[pj] = s * vi + c * vj
+        col = col + 1
+    }
+}
+
+# Compose orthogonal colligation A = G_1 G_2 ... G_{n-1} from reflections.
+function compose_orthogonal_colligation(
+    k: ptr<f64>,
+    order: i32,
+    a_buf: ptr<f64>
+) -> Matrix {
+    let n: i32 = order
+    let mut i: i32 = 0
+    while i < n * n {
+        a_buf[i] = 0.0
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        a_buf[i * n + i] = 1.0
+        i = i + 1
+    }
+    let mut stage: i32 = 0
+    while stage < n - 1 {
+        let ki: f64 = k[stage]
+        let c: f64 = sqrt(1.0 - ki * ki)
+        let s: f64 = ki
+        givens_apply_rows(a_buf, n, stage, stage + 1, c, s)
+        stage = stage + 1
+    }
+    return Matrix { data: a_buf, rows: n, cols: n }
+}
+
+# Map canonical numerator observer through finite controllability basis.
+function map_observer_through_controllability(
+    c_can: ptr<f64>,
+    ctrl: Matrix,
+    n: i32,
+    out: ptr<f64>
+) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        let mut acc: f64 = 0.0
+        let mut j: i32 = 0
+        while j < n {
+            acc = acc + c_can[j] * matrix_get(ctrl, j, i)
+            j = j + 1
+        }
+        out[i] = acc
+        i = i + 1
+    }
+}
+
+function build_colligation_input(n: i32, b_buf: ptr<f64>) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        b_buf[i] = 0.0
+        i = i + 1
+    }
+    if n > 0 {
+        b_buf[0] = 1.0
+    }
+}
+
+function schur_lattice_from_denominator(
+    denom: ptr<f64>,
+    order: i32,
+    k_out: ptr<f64>,
+    observer_out: ptr<f64>,
+    a_buf: ptr<f64>,
+    ctrl_buf: ptr<f64>,
+    apow_buf: ptr<f64>,
+    blk_buf: ptr<f64>,
+    na_buf: ptr<f64>
+) -> SchurLatticeSpec {
+    schur_step_down(denom, order, k_out)
+    let A: Matrix = compose_orthogonal_colligation(k_out, order, a_buf)
+    let b_vec: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    build_colligation_input(order, b_vec)
+    let c_vec: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    if order > 0 {
+        c_vec[0] = 1.0
+    }
+    let Cm: Matrix = Matrix { data: c_vec, rows: 1, cols: order }
+    let sys: DynamicalSystem = dsys_discrete(order, 1, 1, 1.0, A, Matrix { data: b_vec, rows: order, cols: 1 }, Cm)
+    let ctrl: Matrix = build_controllability_matrix(sys, ctrl_buf, apow_buf, blk_buf, na_buf)
+    let c_can: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    if order > 0 {
+        c_can[order - 1] = 1.0
+    }
+    map_observer_through_controllability(c_can, ctrl, order, observer_out)
+    return SchurLatticeSpec { order: order, k: k_out, observer: observer_out }
+}

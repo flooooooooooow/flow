@@ -1,4 +1,3 @@
-# flow:lenient - type checker does not yet resolve trait/capability-based audio overloads (DelayLine vs DelayLineF32)
 # Livecoding Demo - Make Music in FLOW
 #
 # This demonstrates how FLOW makes audio programming easier than ANY other language.
@@ -34,8 +33,8 @@ function example_bassline() -> f32 {
         note_F(2)       # F2 (fourth)
     ]
 
-    # Play the pattern with bass synth
-    return pattern_4(pattern, clock, pos, bass)
+    # Play the pattern with bass synth (pattern_4 uses bass internally)
+    return pattern_4(pattern, clock, pos)
 }
 
 # =============================================================================
@@ -89,8 +88,8 @@ function example_melody() -> f32 {
         scale[2]   # E
     ]
 
-    # Play with lead synth
-    return pattern_8(pattern, clock, pos, lead)
+    # Play with lead synth (pattern_8 uses lead internally)
+    return pattern_8(pattern, clock, pos)
 }
 
 # =============================================================================
@@ -102,8 +101,8 @@ function example_euclidean() -> f32 {
     let pos: i64 = 0
 
     # 5 hits in 8 steps (funky rhythm!)
-    # Pattern: [x . x . x . x x]
-    return euclidean_pattern(5, 8, clock, pos, kick)
+    # Pattern: [x . x . x . x x] (euclidean_pattern uses kick internally)
+    return euclidean_pattern(5, 8, clock, pos)
 }
 
 # =============================================================================
@@ -121,14 +120,14 @@ function example_complete_track() -> f32 {
     let bass_notes: array<i32, 4> = [
         note_C(2), note_C(2), note_G(2), note_Bb(2)
     ]
-    let bassline: f32 = pattern_4(bass_notes, clock, pos, bass)
+    let bassline: f32 = pattern_4(bass_notes, clock, pos)
 
     # Melody
     let melody_notes: array<i32, 8> = [
         note_C(5), note_E(5), note_G(5), note_C(6),
         note_G(5), note_E(5), note_D(5), note_C(5)
     ]
-    let melody: f32 = pattern_8(melody_notes, clock, pos, lead)
+    let melody: f32 = pattern_8(melody_notes, clock, pos)
 
     # Chord pad
     let chords: array<array<i32, 3>, 4> = [
@@ -175,7 +174,7 @@ function livecode_pattern(bar_number: i32) -> f32 {
         pattern = [note_C(3), note_C(2), note_G(3), note_C(4)]
     }
 
-    return pattern_4(pattern, clock, pos, bass)
+    return pattern_4(pattern, clock, pos)
 }
 
 # =============================================================================
@@ -202,7 +201,7 @@ function generative_melody(seed: i32) -> f32 {
         scale[degree4]
     ]
 
-    return pattern_4(pattern, clock, pos, pluck)
+    return pattern_4(pattern, clock, pos)
 }
 
 # =============================================================================
@@ -219,7 +218,7 @@ function main() -> i32 {
 
     println("1. Bassline Pattern:")
     println("   let pattern = [C2, C2, G2, F2]")
-    println("   pattern_4(pattern, clock, pos, bass)")
+    println("   pattern_4(pattern, clock, pos)")
     println("")
 
     println("2. House Beat:")
@@ -233,7 +232,7 @@ function main() -> i32 {
     println("")
 
     println("4. Euclidean Rhythm:")
-    println("   euclidean_pattern(5, 8, clock, pos, kick)")
+    println("   euclidean_pattern(5, 8, clock, pos)")
     println("   ^ 5 hits in 8 steps, automatically!")
     println("")
 

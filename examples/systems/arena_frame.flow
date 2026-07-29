@@ -1,0 +1,53 @@
+# Per-frame arena: bump allocate, then arena_reset each frame
+import "stdlib/memory.flow"
+
+function fill_temps(arena: ptr<Arena>, frame: i32) -> i32 {
+    let xs: ptr<i32> = arena_alloc_i32(arena, 4)
+    if xs == null {
+        return -1
+    }
+    xs[0] = frame
+    xs[1] = frame * 10
+    xs[2] = frame * 100
+    xs[3] = frame + 7
+
+    let mut sum: i32 = 0
+    let mut i: i64 = 0
+    while i < 4 {
+        sum = sum + xs[i]
+        i = i + 1
+    }
+    return sum
+}
+
+function main() -> i32 {
+    printf("=== Arena frame demo ===\n")
+
+    let mut arena: Arena = arena_create(1024)
+    if arena.buffer == null {
+        printf("arena_create failed\n")
+        return 1
+    }
+
+    let mut frame: i32 = 0
+    while frame < 3 {
+        let sum: i32 = fill_temps(&arena, frame)
+        if sum < 0 {
+            printf("frame %d: alloc failed\n", frame)
+            arena_destroy(&arena)
+            return 1
+        }
+        printf("frame %d: sum=%d used=%d remaining=%d\n",
+            frame, sum, arena_used(arena), arena_remaining(arena))
+
+        # Reclaim the whole slab for the next frame.
+        # Pointers from fill_temps are invalid after this.
+        arena_reset(&arena)
+        printf("frame %d: after reset used=%d\n", frame, arena_used(arena))
+        frame = frame + 1
+    }
+
+    arena_destroy(&arena)
+    printf("ok\n")
+    return 0
+}

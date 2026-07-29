@@ -1,0 +1,240 @@
+# Many-pole lattice all-pass — Schur reflections, fast per-sample modulation
+# Import: import "stdlib/audio/lattice_allpass.flow"
+#
+# Gray-Markel ladder driven by Schur coefficients; |k_i|<1 guarantees stability
+# while coefficients retune every sample without Gramian solves.
+
+import "stdlib/audio.flow"
+import "stdlib/dynamics/schur_lattice.flow"
+
+export struct LatticeAllpass {
+    order: i32,
+    k: array<f32, 16>,
+    k_base: array<f32, 16>,
+    g: array<f32, 32>,
+    mod_depth: f32,
+    mod_rate_hz: f32,
+    phase: array<f32, 16>,
+    sample_count: i64,
+    last_out: f32
+}
+
+export struct LatticeAllpassDesign {
+    order: i32,
+    k: array<f32, 16>,
+    observer: array<f32, 16>
+}
+
+function f32_sin_approx(x: f32) -> f32 {
+    let x2: f32 = x * x
+    return x - x * x2 / 6.0 + x * x2 * x2 / 120.0
+}
+
+function f64_to_f32(v: f64) -> f32 {
+    return v
+}
+
+function schur_clamp_k_f32(k: f32) -> f32 {
+    if k > 0.999 {
+        return 0.999
+    }
+    if k < -0.999 {
+        return -0.999
+    }
+    return k
+}
+
+# Expand real pole p into monic first-order factor (1 - p z^-1) coefficient.
+function denom_from_real_pole(p: f64, out: ptr<f64>) -> void {
+    out[0] = 0.0 - p
+}
+
+# Multiply monic factors (1 + d1[i] z^{-i-1}) * (1 + d2[j] z^{-j-1}).
+function denom_mul_monic(d1: ptr<f64>, order1: i32, d2: ptr<f64>, order2: i32, out: ptr<f64>) -> i32 {
+    let out_order: i32 = order1 + order2
+    let mut k: i32 = 0
+    while k < out_order {
+        out[k] = 0.0
+        k = k + 1
+    }
+    k = 1
+    while k <= out_order {
+        let mut sum: f64 = 0.0
+        if k <= order2 {
+            sum = sum + d2[k - 1]
+        }
+        if k <= order1 {
+            sum = sum + d1[k - 1]
+        }
+        let mut i: i32 = 1
+        while i <= order1 {
+            let j: i32 = k - i
+            if j >= 1 and j <= order2 {
+                sum = sum + d1[i - 1] * d2[j - 1]
+            }
+            i = i + 1
+        }
+        out[k - 1] = sum
+        k = k + 1
+    }
+    return out_order
+}
+
+export function lattice_allpass_design_from_poles(
+    poles: ptr<f64>,
+    pole_count: i32,
+    a_buf: ptr<f64>,
+    ctrl_buf: ptr<f64>,
+    apow_buf: ptr<f64>,
+    blk_buf: ptr<f64>,
+    na_buf: ptr<f64>
+) -> LatticeAllpassDesign {
+    let acc: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let tmp: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let one: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut order: i32 = 0
+    let mut p: i32 = 0
+    while p < pole_count {
+        denom_from_real_pole(poles[p], one)
+        if order == 0 {
+            acc[0] = one[0]
+            order = 1
+        } else {
+            order = denom_mul_monic(acc, order, one, 1, tmp)
+            let mut c: i32 = 0
+            while c < order {
+                acc[c] = tmp[c]
+                c = c + 1
+            }
+        }
+        p = p + 1
+    }
+    let k_buf: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let obs_buf: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let spec: SchurLatticeSpec = schur_lattice_from_denominator(
+        acc, order, k_buf, obs_buf, a_buf, ctrl_buf, apow_buf, blk_buf, na_buf
+    )
+    let kf: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let obs: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut i: i32 = 0
+    while i < order {
+        kf[i] = f64_to_f32(k_buf[i])
+        obs[i] = f64_to_f32(obs_buf[i])
+        i = i + 1
+    }
+    return LatticeAllpassDesign { order: order, k: kf, observer: obs }
+}
+
+export function lattice_allpass_new(
+    design: LatticeAllpassDesign,
+    mod_depth: f32,
+    mod_rate_hz: f32
+) -> LatticeAllpass {
+    let g: array<f32, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let phase: array<f32, 16> = [0.0, 0.31, 0.62, 0.93, 1.24, 1.55, 1.86, 2.17, 2.48, 2.79, 3.10, 3.41, 3.72, 4.03, 4.34, 4.65]
+    return LatticeAllpass {
+        order: design.order,
+        k: design.k,
+        k_base: design.k,
+        g: g,
+        mod_depth: mod_depth,
+        mod_rate_hz: mod_rate_hz,
+        phase: phase,
+        sample_count: 0,
+        last_out: 0.0
+    }
+}
+
+# Retune reflections from GA/WFC-style modulation signal (per-pole phase offsets).
+export function lattice_allpass_modulate(ap: LatticeAllpass, rate: SampleRate) -> LatticeAllpass {
+    let two_pi: f32 = 6.28318
+    let t: f32 = ap.sample_count / rate.hz
+    let omega: f32 = two_pi * ap.mod_rate_hz
+    let k_new: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut i: i32 = 0
+    while i < ap.order {
+        let arg: f32 = omega * t + ap.phase[i]
+        let wobble: f32 = f32_sin_approx(arg) * ap.mod_depth
+        k_new[i] = schur_clamp_k_f32(ap.k_base[i] + wobble)
+        i = i + 1
+    }
+    return LatticeAllpass {
+        order: ap.order,
+        k: k_new,
+        k_base: ap.k_base,
+        g: ap.g,
+        mod_depth: ap.mod_depth,
+        mod_rate_hz: ap.mod_rate_hz,
+        phase: ap.phase,
+        sample_count: ap.sample_count,
+        last_out: ap.last_out
+    }
+}
+
+# Cascade all-pass sections H_i(z)=(k_i+z^{-1})/(1+k_i z^{-1}); g[2i]=x_prev, g[2i+1]=y_prev.
+export function lattice_allpass_tick(ap: LatticeAllpass, input: f32) -> LatticeAllpass {
+    let mut inp: f32 = input
+    let mut y: f32 = 0.0
+    let g_new: array<f32, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut i: i32 = 0
+    while i < 32 {
+        g_new[i] = ap.g[i]
+        i = i + 1
+    }
+    i = 0
+    while i < ap.order {
+        let ki: f32 = ap.k[i]
+        let xp: f32 = ap.g[2 * i]
+        let yp: f32 = ap.g[2 * i + 1]
+        y = ki * inp + xp - ki * yp
+        g_new[2 * i] = inp
+        g_new[2 * i + 1] = y
+        inp = y
+        i = i + 1
+    }
+    return LatticeAllpass {
+        order: ap.order,
+        k: ap.k,
+        k_base: ap.k_base,
+        g: g_new,
+        mod_depth: ap.mod_depth,
+        mod_rate_hz: ap.mod_rate_hz,
+        phase: ap.phase,
+        sample_count: ap.sample_count + 1,
+        last_out: y
+    }
+}
+
+export function lattice_allpass_output(ap: LatticeAllpass) -> f32 {
+    return ap.last_out
+}
+
+export function lattice_allpass_reset(ap: LatticeAllpass) -> LatticeAllpass {
+    let g: array<f32, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    return LatticeAllpass {
+        order: ap.order,
+        k: ap.k,
+        k_base: ap.k_base,
+        g: g,
+        mod_depth: ap.mod_depth,
+        mod_rate_hz: ap.mod_rate_hz,
+        phase: ap.phase,
+        sample_count: 0,
+        last_out: 0.0
+    }
+}
+
+# Energy metric for all-pass verification (should stay near input RMS).
+export function lattice_allpass_block_energy(samples: ptr<f32>, count: i32) -> f32 {
+    let mut e: f32 = 0.0
+    let mut i: i32 = 0
+    while i < count {
+        let v: f32 = samples[i]
+        e = e + v * v
+        i = i + 1
+    }
+    if count <= 0 {
+        return 0.0
+    }
+    return e / count
+}
