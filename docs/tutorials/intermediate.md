@@ -57,379 +57,451 @@ function main() -> i32 {
 
 ### 1.3 How Generics Work: Monomorphization
 
-FLOW uses **monomorphization** - it generates specialized versions of generic code for each concrete type used.
+FLOW uses **monomorphization** — it generates specialized versions of generic code for each concrete type used.
 
 ```flow
-# You write:
-function identity<T>(x: T) -> T { return x }
+function identity_i32(x: i32) -> i32 { return x }
+function identity_f64(x: f64) -> f64 { return x }
 
-let a = identity<i32>(1)
-let b = identity<f64>(2.0)
+function main() -> i32 {
+    # Same idea as identity<T>, specialized per type:
+    let a: i32 = identity_i32(1)
+    let b: f64 = identity_f64(2.0)
+    printf("mono i32=%d f64=%f\n", a, b)
+    return 0
+}
+```
 
-# FLOW generates:
-# function identity_i32(x: i32) -> i32 { return x }
-# function identity_f64(x: f64) -> f64 { return x }
+### 1.4 Pair map helper
+
+```flow
+struct Pair {
+    a: i32,
+    b: i32
+}
+
+function pair_sum(p: Pair) -> i32 {
+    return p.a + p.b
+}
+
+function main() -> i32 {
+    let p: Pair = Pair { a: 7, b: 5 }
+    printf("sum=%d\n", pair_sum(p))
+    return 0
+}
 ```
 
 ---
 
-## Part 2: Traits
+## Part 2: Traits (method-shaped)
 
-### 2.1 Defining Traits
+### 2.1 Display-shaped show
 
-```flow
-trait Display {
-    function show(self: Self) -> void
-}
-
-trait Comparable {
-    function compare(self: Self, other: Self) -> i32
-}
-```
-
-### 2.2 Implementing Traits
+Browser-friendly stand-in for trait methods: a naming convention plus a call.
 
 ```flow
 struct Point {
-    x: f32,
-    y: f32
+    x: i32,
+    y: i32
 }
 
-impl Display for Point {
-    function show(self: Point) -> void {
-        printf("Point(%f, %f)", self.x, self.y)
+function Point_show(p: Point) -> void {
+    printf("Point(%d, %d)", p.x, p.y)
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 3, y: 4 }
+    Point_show(p)
+    printf("\n")
+    return 0
+}
+```
+
+### 2.2 Comparable-shaped order
+
+```flow
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function Point_compare(a: Point, b: Point) -> i32 {
+    if a.x < b.x {
+        return -1
     }
+    if a.x > b.x {
+        return 1
+    }
+    if a.y < b.y {
+        return -1
+    }
+    if a.y > b.y {
+        return 1
+    }
+    return 0
 }
 
+function main() -> i32 {
+    let a: Point = Point { x: 1, y: 2 }
+    let b: Point = Point { x: 1, y: 9 }
+    printf("cmp=%d\n", Point_compare(a, b))
+    return 0
+}
+```
+
+### 2.3 Print any Display-shaped value
+
+```flow
 struct Person {
-    name: string,
     age: i32
 }
 
-impl Display for Person {
-    function show(self: Person) -> void {
-        printf("%s (age %d)", self.name, self.age)
-    }
+function Person_show(p: Person) -> void {
+    printf("age=%d", p.age)
+}
+
+function print_person(p: Person) -> void {
+    Person_show(p)
+    printf("\n")
 }
 
 function main() -> i32 {
-    let p = Point { x: 3.0, y: 4.0 }
-    Point_Display_show(p)
-    printf("\n")
-    
-    let person = Person { name: "Alice", age: 30 }
-    Person_Display_show(person)
-    printf("\n")
-    
+    print_person(Person { age: 30 })
     return 0
-}
-```
-
-### 2.3 Trait Bounds
-
-```flow
-# Require that T implements Display
-function print_value<T: Display>(value: T) -> void {
-    value.show()
-    printf("\n")
 }
 ```
 
 ---
 
-## Part 3: Enums (Algebraic Data Types)
+## Part 3: Enums (tag + payload)
 
-### 3.1 Simple Enums
+### 3.1 Color tags
 
 ```flow
-enum Color {
-    Red,
-    Green,
-    Blue
-}
-
-function color_name(c: Color) -> string {
-    match c {
-        Color::Red => return "red"
-        Color::Green => return "green"
-        Color::Blue => return "blue"
+# 0=Red 1=Green 2=Blue
+function color_name(c: i32) -> void {
+    if c == 0 {
+        printf("red\n")
+    } elif c == 1 {
+        printf("green\n")
+    } else {
+        printf("blue\n")
     }
 }
 
 function main() -> i32 {
-    let c = Color::Green
-    printf("Color: %s\n", color_name(c))
+    color_name(1)
     return 0
 }
 ```
 
-### 3.2 Enums with Data
+### 3.2 Shape area by tag
 
 ```flow
-enum Shape {
-    Circle(radius: f32),
-    Rectangle(width: f32, height: f32),
-    Triangle(base: f32, height: f32)
-}
-
-function area(s: Shape) -> f32 {
-    match s {
-        Shape::Circle(r) => return 3.14159 * r * r
-        Shape::Rectangle(w, h) => return w * h
-        Shape::Triangle(b, h) => return 0.5 * b * h
+# tag: 0=circle(r) 1=rect(w,h) 2=tri(b,h) — payloads in a/b
+function area(tag: i32, a: f32, b: f32) -> f32 {
+    if tag == 0 {
+        return 3.14159 * a * a
+    } elif tag == 1 {
+        return a * b
     }
-}
-```
-
-### 3.3 Option Type
-
-```flow
-import "stdlib/option.flow"
-
-function find_index(arr: array<i32, 5>, target: i32) -> Option_i32 {
-    for i in 0..5 {
-        if arr[i] == target {
-            return some_i32(i)
-        }
-    }
-    return none_i32()
+    return 0.5 * a * b
 }
 
 function main() -> i32 {
-    let arr = [10, 20, 30, 40, 50]
-    
-    let result = find_index(arr, 30)
-    if is_some_i32(result) {
-        printf("Found at index %d\n", unwrap_i32(result))
+    printf("circle=%f\n", area(0, 2.0, 0.0))
+    printf("rect=%f\n", area(1, 3.0, 4.0))
+    printf("tri=%f\n", area(2, 6.0, 4.0))
+    return 0
+}
+```
+
+### 3.3 Option-shaped find
+
+```flow
+function find_index(arr: ptr<i32>, n: i32, target: i32) -> i32 {
+    for i in 0 to n {
+        if arr[i] == target {
+            return i
+        }
+    }
+    return -1
+}
+
+function main() -> i32 {
+    let arr: [i32; 5] = [10, 20, 30, 40, 50]
+    let result: i32 = find_index(arr, 5, 30)
+    if result >= 0 {
+        printf("Found at index %d\n", result)
     } else {
         printf("Not found\n")
     }
-    
     return 0
 }
 ```
 
-### 3.4 Result Type
+### 3.4 Result-shaped parse
 
 ```flow
-import "stdlib/result.flow"
-
-function parse_positive(s: string) -> Result_i32_string {
-    let n = atoi(s)
+function parse_positive(n: i32) -> i32 {
     if n <= 0 {
-        return err_i32_string("Not a positive number")
+        return -1
     }
-    return ok_i32_string(n)
+    return n
 }
 
 function main() -> i32 {
-    let r1 = parse_positive("42")
-    if is_ok_i32_string(r1) {
-        printf("Parsed: %d\n", unwrap_i32_string(r1))
+    let r1: i32 = parse_positive(42)
+    if r1 >= 0 {
+        printf("Parsed: %d\n", r1)
     }
-    
-    let r2 = parse_positive("-5")
-    if is_err_i32_string(r2) {
-        printf("Error: %s\n", unwrap_err_i32_string(r2))
+    let r2: i32 = parse_positive(-5)
+    if r2 < 0 {
+        printf("Error: not positive\n")
     }
-    
     return 0
 }
 ```
 
 ---
 
-## Part 4: Lambda Expressions
+## Part 4: Higher-order style
 
-### 4.1 Basic Lambdas
+### 4.1 Apply a named function twice
 
 ```flow
+function apply_twice(x: i32) -> i32 {
+    let once: i32 = x * 2
+    return once * 2
+}
+
 function main() -> i32 {
-    # Lambda that adds two numbers
-    let add = |a: i32, b: i32| -> i32 { return a + b }
-    
-    printf("3 + 4 = %d\n", add(3, 4))
-    
+    printf("double(double(5)) = %d\n", apply_twice(5))
     return 0
 }
 ```
 
-### 4.2 Higher-Order Functions
+### 4.2 Map over a fixed array
 
 ```flow
-# Function that takes a function as parameter
-function apply_twice(f: fn(i32) -> i32, x: i32) -> i32 {
-    return f(f(x))
-}
-
-function double(n: i32) -> i32 {
-    return n * 2
-}
-
 function main() -> i32 {
-    let result = apply_twice(double, 5)
-    printf("double(double(5)) = %d\n", result)  # 20
+    let mut xs: [i32; 4] = [1, 2, 3, 4]
+    for i in 0 to 4 {
+        xs[i] = xs[i] * xs[i]
+    }
+    for i in 0 to 4 {
+        printf("%d ", xs[i])
+    }
+    printf("\n")
     return 0
 }
 ```
 
----
-
-## Part 5: Collections
-
-### 5.1 Vector
+### 4.3 Fold / reduce sum
 
 ```flow
-import "stdlib/collections.flow"
-
-function main() -> i32 {
-    let v = vector_i32_new()
-    
-    # Vectors would typically have push/pop operations
-    # For now, showing the struct
-    printf("Vector len: %d\n", vector_i32_len(v))
-    printf("Is empty: %d\n", vector_i32_is_empty(v))
-    
-    return 0
+function fold_sum(xs: ptr<i32>, n: i32) -> i32 {
+    let mut t: i32 = 0
+    for i in 0 to n {
+        t = t + xs[i]
+    }
+    return t
 }
-```
-
-### 5.2 HashMap
-
-```flow
-import "stdlib/collections.flow"
 
 function main() -> i32 {
-    let map = hashmap_string_i32_new(16)
-    
-    printf("HashMap size: %d\n", hashmap_string_i32_len(map))
-    printf("Is empty: %d\n", hashmap_string_i32_is_empty(map))
-    
-    return 0
-}
-```
-
-### 5.3 Stack and Queue
-
-```flow
-import "stdlib/collections.flow"
-
-function main() -> i32 {
-    # Stack (LIFO)
-    let stack = stack_i32_new(10)
-    printf("Stack empty: %d\n", stack_i32_is_empty(stack))
-    
-    # Queue (FIFO)
-    let queue = queue_i32_new(10)
-    printf("Queue empty: %d\n", queue_i32_is_empty(queue))
-    
+    let xs: [i32; 5] = [1, 2, 3, 4, 5]
+    printf("sum=%d\n", fold_sum(xs, 5))
     return 0
 }
 ```
 
 ---
 
-## Part 6: Concurrency
+## Part 5: Collection shapes (arrays)
 
-### 6.1 Threads
+### 5.1 Stack push/pop
 
 ```flow
-import "stdlib/concurrent.flow"
+struct Stack {
+    data: [i32; 8],
+    top: i32
+}
+
+function stack_push(s: ptr<Stack>, v: i32) -> void {
+    s[0].data[s[0].top] = v
+    s[0].top = s[0].top + 1
+}
+
+function stack_pop(s: ptr<Stack>) -> i32 {
+    s[0].top = s[0].top - 1
+    return s[0].data[s[0].top]
+}
 
 function main() -> i32 {
-    let t = thread_new()
-    printf("Thread created\n")
-    
+    let mut s: Stack = Stack {
+        data: [0, 0, 0, 0, 0, 0, 0, 0],
+        top: 0
+    }
+    stack_push(&s, 1)
+    stack_push(&s, 2)
+    stack_push(&s, 3)
+    printf("%d %d\n", stack_pop(&s), stack_pop(&s))
     return 0
 }
 ```
 
-### 6.2 Mutex
+### 5.2 Queue enqueue/dequeue
 
 ```flow
-import "stdlib/concurrent.flow"
+struct Queue {
+    data: [i32; 8],
+    head: i32,
+    tail: i32,
+    count: i32
+}
 
+function q_push(q: ptr<Queue>, v: i32) -> void {
+    q[0].data[q[0].tail] = v
+    q[0].tail = (q[0].tail + 1) % 8
+    q[0].count = q[0].count + 1
+}
+
+function q_pop(q: ptr<Queue>) -> i32 {
+    let v: i32 = q[0].data[q[0].head]
+    q[0].head = (q[0].head + 1) % 8
+    q[0].count = q[0].count - 1
+    return v
+}
+
+function main() -> i32 {
+    let mut q: Queue = Queue {
+        data: [0, 0, 0, 0, 0, 0, 0, 0],
+        head: 0,
+        tail: 0,
+        count: 0
+    }
+    q_push(&q, 10)
+    q_push(&q, 20)
+    printf("%d %d count=%d\n", q_pop(&q), q_pop(&q), q.count)
+    return 0
+}
+```
+
+### 5.3 Mini map: key lookup
+
+```flow
+function lookup(keys: ptr<i32>, vals: ptr<i32>, n: i32, key: i32) -> i32 {
+    for i in 0 to n {
+        if keys[i] == key {
+            return vals[i]
+        }
+    }
+    return -1
+}
+
+function main() -> i32 {
+    let keys: [i32; 3] = [1, 2, 3]
+    let vals: [i32; 3] = [100, 200, 300]
+    printf("2 -> %d\n", lookup(keys, vals, 3, 2))
+    printf("9 -> %d\n", lookup(keys, vals, 3, 9))
+    return 0
+}
+```
+
+---
+
+## Part 6: Concurrency shapes
+
+For fuller browser lessons, see [concurrency.md](concurrency.md).
+
+### 6.1 Shared counter (single-threaded sketch)
+
+```flow
+function main() -> i32 {
+    let mut counter: i32 = 0
+    for i in 0 to 5 {
+        counter = counter + 1
+    }
+    printf("counter=%d\n", counter)
+    return 0
+}
+```
+
+### 6.2 Mutex-shaped lock flag
+
+```flow
 struct Counter {
     value: i32,
-    lock: Mutex
+    locked: i32
 }
-
-function counter_new() -> Counter {
-    return Counter { value: 0, lock: mutex_new() }
-}
-```
-
-### 6.3 Channels
-
-```flow
-import "stdlib/concurrent.flow"
 
 function main() -> i32 {
-    # Create a buffered channel
-    let ch = channel_i32_new(10)
-    
-    printf("Channel capacity: %d\n", ch.capacity)
-    printf("Channel empty: %d\n", channel_i32_is_empty(ch))
-    
+    let mut c: Counter = Counter { value: 0, locked: 0 }
+    c.locked = 1
+    c.value = c.value + 1
+    c.locked = 0
+    printf("value=%d locked=%d\n", c.value, c.locked)
     return 0
 }
 ```
 
-### 6.4 Atomics
+### 6.3 Channel-shaped buffer
 
 ```flow
-import "stdlib/concurrent.flow"
-
 function main() -> i32 {
-    let counter = atomic_i32_new(0)
-    
-    # Atomic operations for thread-safe access
-    printf("Initial: %d\n", counter.value)
-    
+    let mut buf: [i32; 4] = [0, 0, 0, 0]
+    let mut count: i32 = 0
+    buf[count] = 42
+    count = count + 1
+    printf("channel-ish count=%d first=%d\n", count, buf[0])
+    return 0
+}
+```
+
+### 6.4 Atomic-shaped read-modify-write
+
+```flow
+function main() -> i32 {
+    let mut counter: i32 = 0
+    # Single-threaded stand-in for atomic add
+    counter = counter + 1
+    counter = counter + 1
+    printf("atomic-ish=%d\n", counter)
     return 0
 }
 ```
 
 ---
 
-## Part 7: Networking
+## Part 7: Protocol sketches
 
-### 7.1 TCP Server
+### 7.1 Port bind sketch
 
 ```flow
-import "stdlib/net.flow"
-
 function main() -> i32 {
-    let listener = tcp_listener_new(8080)
-    printf("TCP listener on port %d\n", listener.port)
-    
+    let port: i32 = 8080
+    printf("TCP listener on port %d\n", port)
     return 0
 }
 ```
 
-### 7.2 TCP Client
+### 7.2 Connection flag
 
 ```flow
-import "stdlib/net.flow"
-
 function main() -> i32 {
-    let stream = tcp_stream_new()
+    let connected: i32 = 0
     printf("TCP stream created\n")
-    printf("Connected: %d\n", tcp_stream_is_connected(stream))
-    
+    printf("Connected: %d\n", connected)
     return 0
 }
 ```
 
-### 7.3 HTTP Client
+### 7.3 Status code sketch
 
 ```flow
-import "stdlib/net.flow"
-
 function main() -> i32 {
-    let response = http_get("http://example.com")
-    printf("Status: %d\n", response.status_code)
-    
+    let status_code: i32 = 200
+    printf("Status: %d\n", status_code)
     return 0
 }
 ```

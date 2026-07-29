@@ -1,11 +1,12 @@
 # Wiki Roadmap
 
-> Phased plan for [abhishek-shivakumar.com/transpile](https://abhishek-shivakumar.com/transpile/)  
+> Phased plan for [abhishek-shivakumar.com/flow](https://abhishek-shivakumar.com/flow/)  
+> (also at [/transpile/](https://abhishek-shivakumar.com/transpile/))  
 > Strategy: [wiki-strategy.md](wiki-strategy.md)
 
 ---
 
-## Current state (Phase 0 — shipped locally)
+## Current state (Phase 0–1 — shipped)
 
 | Item | Status |
 |------|--------|
@@ -13,46 +14,40 @@
 | Tab navigation + collapsible sidebar | ✅ |
 | ⌘K search over docs + proofs | ✅ |
 | KaTeX math in proof pages | ✅ |
-| Third-party `flow-verify` section (676 proofs) | ✅ |
+| Third-party `flow-verify` section (1000+ proofs) | ✅ |
 | Euclid book index pages (auto-generated) | ✅ |
 | Build script (`scripts/build_wiki.py`) | ✅ |
-| Deploy script (`scripts/deploy_wiki.py`) | ✅ (blocked when VPS unreachable) |
+| Deploy script (`scripts/deploy_wiki.py`) | ✅ |
 | Version dropdown + changelog | ✅ |
-| VPS live deploy | 🔲 pending |
+| VPS live deploy (`/flow/` + `/transpile/`) | ✅ |
+| Grammar page + EBNF viewer | ✅ |
+| Language roadmap linked in nav | ✅ |
+| Admonitions (`note/tip/warning/important/caution`) | ✅ |
+| Interactive tutorials app (40+ lessons) | ✅ |
+| 404 / not-found panel in wiki shell | ✅ |
+| Proof link resolution + HTML-fallback guard | ✅ |
+| Mobile drawer (backdrop / Escape / aria) | ✅ |
+| Edit-on-GitHub per page | ✅ |
+| Playground syntax explorer | ✅ |
 
 ---
 
-## Phase 1 — Polish & deploy (now → 2 weeks)
-
-**Goal:** Live site looks pristine; grammar and reference pages are professional.
-
-| Task | Priority | Owner |
-|------|----------|-------|
-| Deploy `build/wiki/` to VPS | P0 | `./scripts/deploy_wiki.py` |
-| Grammar page + EBNF viewer | P0 | `language/grammar.md` + JS viewer |
-| Wiki strategy & roadmap (this doc) | P0 | docs |
-| Link language roadmap from wiki | P1 | Copy/symlink `ROADMAP.md` into docs |
-| Fix `grammar.ebnf` copy path in build | P1 | `docs/grammar.ebnf` |
-| Admonition blocks (`> [!note]`) in CSS | P2 | wiki.js renderer |
-| Playground link works from production | P1 | verify `playground/index.html` (page refreshed 2026-07 as a non-executing syntax explorer with 9 compile-verified samples) |
-| 404 / error page in wiki shell | P2 | wiki.js |
-
-**Exit criteria:** `https://abhishek-shivakumar.com/transpile/` shows new shell; grammar page is navigable and readable; strategy doc is in sidebar.
-
----
-
-## Phase 2 — Reference completeness (1–2 months)
+## Phase 2 — Reference completeness (in progress)
 
 **Goal:** Every language feature has a reference page; nothing lives only in README.
 
-| Task | Notes |
-|------|-------|
-| Split `LANGUAGE_SPEC.md` into navigable sections | Or generate sidebar from headings |
-| Stdlib autogen from `.flow` sources | Signatures + doc comments |
-| Effects & autodiff dedicated guides | Beyond stdlib API list |
-| Comparison page: add Zig + Rust columns | Update `comparison.md` |
-| Benchmark results embedded | Link `benchmarks/suite/RESULTS.md` |
-| Changelog synced from `project/CHANGELOG.md` | Auto on release |
+| Task | Status | Notes |
+|------|--------|-------|
+| Comparison: Rust + Zig columns | ✅ | `comparison.md` |
+| Benchmark results in wiki | ✅ | `project/benchmark-results.md` |
+| Effects guide in nav | ✅ | `effects-showcase.md` |
+| Autodiff guide | ✅ | `library/autodiff-guide.md` |
+| Stdlib API autogen | ✅ | `scripts/gen_stdlib_docs.py` → `library/stdlib-api.md` |
+| Split `LANGUAGE_SPEC.md` into sections | ✅ | Index: `language/spec-index.md` (anchors + focused pages); full spec kept intact |
+| RT-safety policy (audio) | ✅ | `library/rt-safety.md` linked from Audio DSP + nav |
+| Changelog auto-sync on release | ✅ | `copy_docs()` ships `project/CHANGELOG.md`; `write_releases_index` + `versions.json` regenerate each build |
+
+**Exit criteria:** Newcomers can compare languages, read effects/AD guides, and browse generated stdlib signatures without leaving the wiki.
 
 ---
 
@@ -60,11 +55,10 @@
 
 | Task | Notes |
 |------|-------|
-| Pagefind or Algolia index | Replace hand-rolled JSON at 1000+ pages |
-| Playground: compile via WASM or API | Tutorial embed buttons |
+| Pagefind wiki search | ✅ | `scripts/build_pagefind.sh` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
+| Playground: compile via WASM or API | partial ✅ | browser interpreter wired (`flow-compile.js` / Run (browser)); native WASM deferred |
 | Proof graph visualization | Claim Path dependency edges |
-| Dark/light theme toggle | CSS variables already structured |
-| Mobile nav polish | Test on phone |
+| Dark/light theme toggle | ✅ Header **Theme** button; `localStorage` key `flow-wiki-theme` |
 
 ---
 
@@ -72,9 +66,8 @@
 
 | Task | Notes |
 |------|-------|
-| `flow-lang.org` DNS + SSL | Redirect from `/transpile/` |
+| `flow-lang.org` DNS + SSL | Redirect from `/flow/` + `/transpile/` |
 | Versioned doc sets (`/v0.8/`, `/latest/`) | Build matrix in CI |
-| Community edit links | "Edit on GitHub" per page |
 | Package docs (`flow.toml` dependencies) | Per-package subsites |
 | CI auto-deploy on `main` | Webhook to VPS |
 
@@ -82,38 +75,39 @@
 
 ## Relationship to language roadmap
 
-The **language** roadmap (`ROADMAP.md`) tracks compiler features (day-to-day task
-status lives on the local Helm board, `http://127.0.0.1:9470/app?project=flow`).
-The **wiki** roadmap tracks documentation delivery. They intersect at:
+The **language** roadmap (`ROADMAP.md`) tracks compiler features. The **wiki** roadmap tracks documentation delivery. They intersect at:
 
 | Language milestone | Wiki deliverable |
 |--------------------|------------------|
-| Verification checker ships | Update `language/verification.md` status; proof lint docs |
+| Verification checker ships | Update `language/verification.md` status |
 | Linux graphics | `language/graphics.md` platform section |
 | Package registry | Third-party publishing guide |
 | `flow-lang.org` | Phase 4 DNS + migration |
-
-Language roadmap does not block wiki Phase 1 deploy — documentation can lead implementation for verification and grammar.
 
 ---
 
 ## Metrics
 
-| Metric | Target (Phase 1) | Target (Phase 4) |
-|--------|------------------|------------------|
+| Metric | Target (now) | Target (Phase 4) |
+|--------|--------------|------------------|
 | Pages in nav | 50+ | 200+ |
-| Proof pages hosted | 676 | 2,000+ |
+| Proof pages hosted | 1000+ | 2,000+ |
 | Deploy time | < 2 min | < 30 s (CI) |
 | Search latency | < 100 ms | < 50 ms (Pagefind) |
-| Lighthouse accessibility | 90+ | 95+ |
 
 ---
 
 ## How to contribute
 
 1. Edit markdown under `docs/`
-2. Run `./scripts/build_wiki.py`
-3. Preview: `cd build/wiki && python3 -m http.server 8777`
-4. Open PR; after merge, run `./scripts/deploy_wiki.py`
+2. Run `python3 scripts/gen_stdlib_docs.py` (if touching stdlib)
+3. Run `python3 scripts/build_wiki.py` (also runs Pagefind if `node`/`npx` are available)
+4. Optional re-index only: `./scripts/build_pagefind.sh`
+5. Preview: `cd build/wiki && python3 -m http.server 8777`
+6. Deploy: `python3 scripts/deploy_wiki.py`
 
-For new third-party packages, follow [third-party/README.md](third-party/README.md) and update `write_nav()` in `build_wiki.py`.
+### Releases / changelog
+
+1. Update `docs/project/CHANGELOG.md` with a new `## [X.Y.Z] - YYYY-MM-DD` heading.
+2. Rebuild — the wiki serves that file as `project/CHANGELOG.md` and regenerates `releases.md` + `versions.json` from it.
+3. Deploy when you want the live site to pick up the new version.

@@ -1,43 +1,46 @@
 # FLOW Tutorials
 
-Step-by-step learning paths with **browser compile & run** on every complete example.
+Step-by-step tracks with **browser compile & run** on every complete `main` example.
 
-- **[Interactive app](index.html)** — lesson picker with live editor (frontend, separate from native compiler)
-- **Written guides** — beginner / intermediate / advanced (embedded runners on each `main` program)
+- **[Interactive app](index.html)** — lesson picker with live editor
+- **Written guides** — embedded runners on each `main` program
+- **Native memory** — `import "stdlib/memory.flow"` + `./flow run` (real heap / arenas)
 
-For reference, see [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md).
+## Tracks
 
-## Learning Paths
+| Track | Focus |
+|-------|--------|
+| [beginner.md](beginner.md) | First programs |
+| [control.md](control.md) | If / while / for |
+| [functions.md](functions.md) | Params, recursion |
+| [structs.md](structs.md) | Records & mutation |
+| [arrays.md](arrays.md) | Fixed arrays & algos |
+| [strings.md](strings.md) | printf & parsing |
+| [pointers.md](pointers.md) | `ptr<T>`, null |
+| [memory.md](memory.md) | **Manual memory** — malloc, free, arenas |
+| [errors.md](errors.md) | Return codes / Result |
+| [intermediate.md](intermediate.md) | Generics, traits, modules |
+| [concurrency.md](concurrency.md) | Mutex / channel shapes (browser) |
+| [algorithms.md](algorithms.md) | Search, sort, numerics |
+| [systems.md](systems.md) | Rings, pools, bits |
+| [effects-basics.md](effects-basics.md) | Effect-shaped design |
+| [autodiff-basics.md](autodiff-basics.md) | Dual numbers |
+| [audio-basics.md](audio-basics.md) | Sample / DSP loops |
+| [advanced.md](advanced.md) | Effects deep-dive |
+| [dynamics.md](dynamics.md) | Control / `dsys` path |
+| [projects.md](projects.md) | Mini projects |
 
-### Path 1: Complete Beginner
-1. [beginner.md](beginner.md) — Variables, functions, basic types
-2. Run examples in `docs/examples/basic/`
-3. Build: Calculator, Guessing game
+## Learning paths
 
-### Path 2: Coming from Other Languages
-1. Skim [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md) §1-5
-2. [intermediate.md](intermediate.md) — Structs, modules, patterns
-3. Run examples in `docs/examples/algorithms/`
+1. **New to Flow:** beginner → control → functions → structs → arrays → projects  
+2. **Systems / C background:** pointers → **memory** → systems → algorithms  
+3. **ML / DSP:** autodiff-basics → audio-basics → [autodiff guide](../library/autodiff-guide.md)  
+4. **Vision / control:** intermediate → dynamics → [VISION.md](../../VISION.md)
 
-### Path 3: Effect System Focus
-1. Read [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md) §6
-2. [advanced.md](advanced.md) — Effects deep-dive
-3. Run `examples/effects_working.flow`
+## Manual memory (native)
 
-### Path 4: Dynamics & Control (the vision path)
-1. [dynamics.md](dynamics.md) — ODE integrators → `dsys` → `sense` → `ga evolve`
-2. Run the flagship suite in `examples/evolution/`
-3. Read [VISION.md](../../VISION.md) and the [north-star grammar plan](../vision/north-star.md)
+```bash
+./flow run examples/systems/manual_memory.flow
+```
 
-## Tutorial Files
-
-| File | Duration | Prerequisites |
-|------|----------|---------------|
-| [beginner.md](beginner.md) | 30 min | None |
-| [intermediate.md](intermediate.md) | 45 min | beginner.md |
-| [advanced.md](advanced.md) | 60 min | intermediate.md |
-| [dynamics.md](dynamics.md) | 60 min | intermediate.md |
-
-## Exercises
-
-Each tutorial includes exercises. Solutions are in `examples/`.
+See [library/memory.md](../library/memory.md) for the real `malloc` / arena API.

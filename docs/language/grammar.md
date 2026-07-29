@@ -73,8 +73,20 @@ while_stmt     ::= "while" expression block
 for_stmt       ::= ("parallel")? "for" IDENTIFIER "in" range_expr block
 range_expr     ::= expression "to" expression ("step" expression)?
 handle_stmt    ::= "handle" expression "with" "{" handler_case* "}"
-match_stmt     ::= "match" expression "{" match_case* "}"
+match_stmt     ::= "match" expression "{" (match_case | default_case)* "}"
+match_case     ::= match_pattern ("if" expression)? "=>" block ","?
+default_case   ::= "default" block
+match_pattern  ::= pattern_atom ("|" pattern_atom)*
+pattern_atom   ::= literal | IDENTIFIER | IDENTIFIER "(" pattern_arg ("," pattern_arg)* ")"
+pattern_arg    ::= literal | IDENTIFIER
 ```
+
+`match_pattern` is parsed one precedence level below bitwise-OR, so a bare
+`|` between patterns means alternation (`1 | 2 | 3 => ...`), not the
+bitwise-OR operator — alternatives must all be literals. `IDENTIFIER "(" ... ")"`
+is the struct-pattern form (`Point(a, b)`); a `literal` argument in that form
+becomes a nested value check on that field instead of a binding
+(`Point(0, y)`).
 
 `let mut` and additional statement forms are documented in [Variables](variables.md) and [Language Spec](../LANGUAGE_SPEC.md).
 

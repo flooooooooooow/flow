@@ -68,8 +68,8 @@ flow test                 # Run all tests
 | `in` | ✅ | Control Flow |
 | `parallel` | ⚠️ | Control Flow (parsed, not optimized) |
 | `step` | ✅ | Control Flow |
-| `match` | ⚠️ | Pattern Matching (parsed, partial codegen) |
-| `default` | ⚠️ | Pattern Matching |
+| `match` | ⚠️ | Pattern Matching (literals, structs, guards, `\|` alternation, nested literal fields; real exhaustiveness checking for `bool` and enum/ADT variants via path/const patterns, minimal stub for integers) |
+| `default` | ✅ | Pattern Matching |
 | `inline` | ⚠️ | Optimization Hint (parsed, ignored) |
 | `noinline` | ⚠️ | Optimization Hint (parsed, ignored) |
 | `always_inline` | ⚠️ | Optimization Hint (parsed, ignored) |
@@ -97,7 +97,7 @@ flow test                 # Run all tests
 | `=` | Assignment | ✅ |
 | `..` | Range | ✅ |
 | `->` | Type Arrow | ✅ |
-| `=>` | Match Arrow | ⚠️ |
+| `=>` | Match Arrow | ✅ |
 | `::` | Scope Resolution | ✅ (effects only) |
 | `.` | Field Access | ✅ |
 
@@ -381,7 +381,7 @@ extern "C" {
 | While Loop | ✅ |
 | For Loop | ✅ |
 | Handle Statement | ✅ |
-| Match Statement | ⚠️ (parsed, limited codegen) |
+| Match Statement | ⚠️ (literals/structs/guards/`\|`/nested-literal fields/struct-in-struct patterns work; exhaustiveness is real for `bool` and enum/ADT variants via path/const patterns, minimal stub for plain integers) |
 | Expression Statement | ✅ |
 
 ### 5.2 If Statement
@@ -699,8 +699,9 @@ Complete list of AST nodes defined in `src/flow/parser.py`:
 | `EffectCall` | Effect method call | effect, operation, arguments |
 | `HandleStatement` | Handle block | effect, handler, body |
 | `MatchStatement` | Match expression | value, cases |
-| `MatchCase` | Match case | pattern, body |
-| `StructPattern` | Struct pattern | struct_name, bindings |
+| `MatchCase` | Match case | pattern, body, guard |
+| `StructPattern` | Struct pattern | struct_name, bindings, field_literals |
+| `OrPattern` | `\|`-alternation of literal patterns | patterns |
 | `ImportDecl` | Import statement | path |
 | `ConstDecl` | Constant declaration | name, type, value |
 
@@ -747,7 +748,7 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Import | ✅ | ✅ | ✅ | ✅ |
 | Export | ✅ | ✅ | ✅ | ✅ |
 | Extern | ✅ | ✅ | ✅ | ⚠️ |
-| Match | ✅ | ❌ | ⚠️ | ⚠️ |
+| Match | ✅ | ⚠️ | ⚠️ | ✅ |
 | Parallel | ✅ | ❌ | ❌ | ⚠️ |
 | SIMD Vec | ✅ | ⚠️ | ⚠️ | ⚠️ |
 | Pointers | ✅ | ⚠️ | ⚠️ | ⚠️ |
