@@ -18,24 +18,24 @@ FLOW currently supports **automatic differentiation as library code**, not as a 
 
 Two prototype tools can **auto-generate gradient code** from a scalar loss function:
 
-### 1. C code generator (`tools/flow_grad_c.py`)
+### 1. C code generator (`tools/grad/flow_grad_c.py`)
 
 Generates C code that computes value + gradients using a reverse-mode tape:
 
 ```bash
-PYTHONPATH=src python3 tools/flow_grad_c.py examples/grad_tool_demo.flow f > build/grad_demo.c
+PYTHONPATH=src python3 tools/grad/flow_grad_c.py examples/grad_tool_demo.flow f > build/grad_demo.c
 clang -O2 build/grad_demo.c -lm -o build/grad_demo
 ./build/grad_demo 1.0 2.0
 ```
 
 Supports: `sin`, `cos`, `exp`, `log`, `sqrt`, `sigmoid`, `let` bindings.
 
-### 2. FLOW code generator (`tools/flow_grad_flow.py`)
+### 2. FLOW code generator (`tools/grad/flow_grad_flow.py`)
 
 Generates **FLOW code** with a gradient struct and function:
 
 ```bash
-PYTHONPATH=src python3 tools/flow_grad_flow.py lib/stdlib/nn_xor_loss_clean.flow xor_loss_clean > lib/stdlib/nn_xor_loss_clean_grad.flow
+PYTHONPATH=src python3 tools/grad/flow_grad_flow.py lib/stdlib/nn_xor_loss_clean.flow xor_loss_clean > lib/stdlib/nn_xor_loss_clean_grad.flow
 ```
 
 Supports:
