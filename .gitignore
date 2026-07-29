@@ -95,3 +95,6 @@ lake-packages/
 
 # LaTeX
 *.aux
+
+# Claude Code workspace (agent worktrees, local settings)
+.claude/
