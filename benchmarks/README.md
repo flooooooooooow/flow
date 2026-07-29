@@ -2,10 +2,30 @@
 
 Performance benchmarks for the Flow programming language.
 
+## Published results
+
+[RESULTS.md](RESULTS.md) holds the measured comparison of Flow against C,
+Rust, and plain CPython: same algorithms, same sizes, same clang and flags
+for Flow-generated C and hand-written C. Regenerate it with:
+
+```bash
+./benchmarks/run_publish.sh
+```
+
+The sources for those runs live in `publish/` with one directory per
+language.
+
 ## Structure
 
 ```
 benchmarks/
+├── publish/                  # Published cross-language comparison
+│   ├── flow/                # Flow sources
+│   ├── c/                   # Hand-written C equivalents
+│   ├── rust/                # Rust equivalents
+│   └── python/              # Plain CPython equivalents
+├── run_publish.py           # Harness that writes RESULTS.md
+├── run_publish.sh           # Wrapper for the harness
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform
 │   ├── mandelbrot_benchmark.flow  # Fractal computation

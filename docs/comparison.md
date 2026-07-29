@@ -72,7 +72,20 @@ The workflow Flow ultimately targets is the fragmented control-engineering toolc
 
 ## Performance
 
-On microbenchmarks (Apple Silicon, clang `-O3`), Flow matches C within noise and is typically 50–100× faster than CPython for the same algorithms. Full tables: [Benchmark results](project/benchmark-results.md).
+Measured on 2026-07-29 on an Apple M4 Max, comparing Flow binaries against
+hand-written C compiled by the same clang with the same flags
+(`-O3 -march=native`). Median of 5 runs, workload time only.
+
+- Dense 300x300 matrix multiply: Flow 0.0167 s, C 0.0167 s (1.00x).
+- Mandelbrot count, 400x400 grid: Flow 0.0069 s, C 0.0069 s (1.00x).
+- N-body, 1,000,000 steps: Flow 0.0320 s, C 0.0257 s (1.24x). The gap
+  comes from clang specializing the static hand-written functions for a
+  constant body count, which Flow's externally visible functions block.
+- The same n-body run in plain CPython took 5.4521 s.
+
+Full tables, methodology, and reproduce instructions:
+[benchmarks/RESULTS.md](../benchmarks/RESULTS.md). Regenerate with
+`./benchmarks/run_publish.sh`.
 
 ## See also
 
