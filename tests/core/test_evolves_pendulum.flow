@@ -1,0 +1,72 @@
+# Runtime test for `flow` + `evolves as` (card: evolves-syntax).
+# Spec: docs/vision/north-star.md sections 1 and 2.
+#
+# Acceptance bar: the damped pendulum written with `flow` + `evolves as`
+# must match a hand-integrated trajectory with the same integrator and the
+# same dt to floating-point tolerance. The dynamics and constants mirror
+# examples/evolution/pendulum.flow. That example integrates with RK4; this
+# card generates explicit Euler, so the hand-integrated reference here is
+# Euler too, keeping integrator and dt identical on both sides.
+#
+# Exits 0 on success.
+
+extern {
+    function sin(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+flow Pendulum {
+    state angle    : f64 = 2.0
+    state velocity : f64 = 0.0
+    param gravity  : f64 = 9.81
+    param length   : f64 = 1.0
+    param damping  : f64 = 0.5
+
+    angle evolves as velocity
+    velocity evolves as -(gravity / length) * sin(angle) - damping * velocity
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.01
+    let steps: i32 = 2400    # 24 seconds of evolution
+
+    let mut p: Pendulum = Pendulum_new()
+
+    # Hand-integrated Euler reference: identical dynamics, dt, initial state.
+    let mut ref_angle: f64 = 2.0
+    let mut ref_velocity: f64 = 0.0
+
+    let mut max_err: f64 = 0.0
+    for k in 0 to steps {
+        Pendulum_step(&p, dt)
+
+        let d_angle: f64 = ref_velocity
+        let d_velocity: f64 = 0.0 - (9.81 / 1.0) * sin(ref_angle) - 0.5 * ref_velocity
+        ref_angle = ref_angle + d_angle * dt
+        ref_velocity = ref_velocity + d_velocity * dt
+
+        let err_a: f64 = fabs(p.angle - ref_angle)
+        let err_v: f64 = fabs(p.velocity - ref_velocity)
+        if err_a > max_err {
+            max_err = err_a
+        }
+        if err_v > max_err {
+            max_err = err_v
+        }
+    }
+
+    if p.angle != p.angle {
+        println("FAIL: state became NaN")
+        return 1
+    }
+    if max_err > 0.000000001 {
+        println("FAIL: trajectory diverged from hand-integrated Euler")
+        return 2
+    }
+    if fabs(p.angle) > 0.05 or fabs(p.velocity) > 0.05 {
+        println("FAIL: damped pendulum did not settle at equilibrium")
+        return 3
+    }
+    println("OK: flow-generated Euler matches the hand-integrated trajectory")
+    return 0
+}

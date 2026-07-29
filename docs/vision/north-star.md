@@ -14,6 +14,27 @@
 > nor `scripts/verify_examples.py` (roots: `examples`, `apps`, `benchmarks`)
 > picks them up.
 
+## Card status
+
+| Card | Status |
+|---|---|
+| evolves-syntax | **SHIPPED**: `flow` blocks, `state`/`input`/`output`/`param` members, `evolves as`, Euler `_step` with factored `_derivs`, `_new`/`_init`/`_outputs`; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/pendulum_evolves.flow` |
+| time-blocks | design |
+| hybrid-events | design |
+| constraints | design |
+| connect | design |
+| represent-linear | design |
+| analyze-block | design |
+| units | design |
+
+Shipped-scope notes for evolves-syntax: the `solver` block is deferred to the
+time-blocks card because its `dt 1 ms` form needs duration literals (§4.1);
+`Name_step` already takes caller-supplied dt, so nothing blocks on it. A
+`Name_new()` constructor is generated alongside `Name_init` so ordinary Flow
+code can construct an instance with declared defaults. Flow members are
+limited to `f64` and `f32` in this version. Outputs require an inline map
+until `every`/`when` land.
+
 ---
 
 ## 0. Method and global decisions
@@ -706,6 +727,7 @@ north-star (this document)
 - **`evolves-syntax`** and **`time-blocks`** are fully decided by this spec
   (§1–4): grammar productions, AST shapes, checker rules, exact generated-C
   shapes, dt sourcing, ordering semantics. No open question blocks them.
+  `evolves-syntax` is SHIPPED (see the card status table at the top).
 - `hybrid-events` and `constraints` depend only on `evolves-syntax` and can
   proceed in parallel after it.
 - `connect` needs `evolves-syntax` + `time-blocks` (multi-rate story).

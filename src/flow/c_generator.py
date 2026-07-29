@@ -368,6 +368,11 @@ class CGenerator:
             if getattr(fn, "is_extern", False):
                 self._mangled_names[id(fn)] = fn.name
                 continue
+            # Functions generated from `flow` blocks keep their plain names:
+            # Name_step(Name*, double) is a stable C embedding API.
+            if "flow_api" in (getattr(fn, "attributes", None) or []):
+                self._mangled_names[id(fn)] = fn.name
+                continue
             param_types = tuple(self._type_to_string(p.type) for p in fn.parameters)
             
             if fn.name.startswith(no_mangle_prefixes):
