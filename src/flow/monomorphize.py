@@ -481,6 +481,41 @@ class Monomorphizer:
         
         self.generated_functions[req.mangled_name] = specialized
     
+    def _resolve_struct_literal_mangled_name(self, struct_name: str, type_map: Dict[str, Type] = None) -> str:
+        """Map a parser-mangled struct literal name (e.g. `Box_i32`, or
+        `Box_T` while still inside a generic function body) to the fully
+        monomorphized struct name used for the actual generated definition
+        (e.g. `Box_N3_i32` via `MonomorphRequest.mangled_name`).
+
+        The parser mangles `Box<i32> { ... }` to `Box_i32` using simple
+        underscore-joined type names, but `MonomorphRequest.mangled_name`
+        (used to name the actual generated `struct Box_N3_i32 { ... }`)
+        uses a longer-form encoding to stay unambiguous for compound types.
+        Without this translation, struct literal expressions end up
+        referencing a type name that was never defined in the generated C.
+        """
+        if '_' not in struct_name:
+            return struct_name
+        base_name = struct_name.split('_')[0]
+        if base_name not in self.generic_structs:
+            return struct_name
+
+        generic_def = self.generic_structs[base_name]
+        num_type_params = len(generic_def.type_params)
+        suffix = struct_name[len(base_name) + 1:]
+        parts = suffix.split('_')
+        if len(parts) >= num_type_params:
+            type_args = [Type(parts[i]) for i in range(num_type_params)]
+        else:
+            type_args = [Type(suffix)]
+
+        if type_map:
+            type_args = [type_map.get(arg.name, arg) for arg in type_args]
+
+        req = MonomorphRequest(base_name, type_args)
+        self.struct_requests[req.mangled_name] = req
+        return req.mangled_name
+
     def _substitute_type(self, t: Type, type_map: Dict[str, Type]) -> Type:
         """Substitute type parameters with concrete types."""
         if not t:
@@ -562,14 +597,8 @@ class Monomorphizer:
             return FunctionCall(expr.name, new_args)
         elif isinstance(expr, StructLiteral):
             new_fields = [(n, self._substitute_expression(v, type_map)) for n, v in expr.fields]
-            # Handle monomorphized struct names
-            struct_name = expr.struct_name
-            if '_' in struct_name:
-                base = struct_name.split('_')[0]
-                if base in self.generic_structs:
-                    # Keep the monomorphized name
-                    pass
-            return StructLiteral(struct_name, new_fields)
+            new_name = self._resolve_struct_literal_mangled_name(expr.struct_name, type_map)
+            return StructLiteral(new_name, new_fields)
         elif isinstance(expr, BinaryOperation):
             new_left = self._substitute_expression(expr.left, type_map)
             new_right = self._substitute_expression(expr.right, type_map)
@@ -740,7 +769,8 @@ class Monomorphizer:
             return FunctionCall(expr.name, new_args)
         elif isinstance(expr, StructLiteral):
             new_fields = [(n, self._rewrite_expression(v)) for n, v in expr.fields]
-            return StructLiteral(expr.struct_name, new_fields)
+            new_name = self._resolve_struct_literal_mangled_name(expr.struct_name)
+            return StructLiteral(new_name, new_fields)
         elif isinstance(expr, BinaryOperation):
             new_left = self._rewrite_expression(expr.left)
             new_right = self._rewrite_expression(expr.right)

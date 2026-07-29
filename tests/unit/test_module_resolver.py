@@ -43,6 +43,33 @@ class TestImportParser:
         assert imp.path == ".nat_add_zero"
         assert imp.symbols == ["nat_add_zero"]
 
+    def test_parse_hyphenated_module_path(self):
+        code = "import .Group-inv-unique { inv-unique }"
+        imp = Parser(Lexer(code)).parse()[0]
+        assert imp.path == ".Group-inv-unique"
+        assert imp.symbols == ["inv-unique"]
+
+    def test_parse_hyphenated_module_path_multi_segment(self):
+        code = "import verify.Ratio-alternando-lemma"
+        imp = Parser(Lexer(code)).parse()[0]
+        assert imp.path == "verify.Ratio-alternando-lemma"
+
+    def test_parse_hyphenated_import_symbol_list(self):
+        code = "import .Nat-plus-assoc { zero-left, succ-right }"
+        imp = Parser(Lexer(code)).parse()[0]
+        assert imp.symbols == ["zero-left", "succ-right"]
+
+    def test_subtraction_still_works_outside_imports(self):
+        # Regression guard: hyphen-merging is scoped to import path/symbol
+        # parsing only, so ordinary subtraction must be unaffected.
+        code = """
+function sub(a: i32, b: i32) -> i32 {
+    return a - b
+}
+"""
+        decl = Parser(Lexer(code)).parse()[0]
+        assert decl.name == "sub"
+
     def test_parse_import_alias(self):
         code = "import verify.nat as nat"
         imp = Parser(Lexer(code)).parse()[0]
@@ -119,6 +146,36 @@ function main() -> i32 {
         finally:
             if os.path.exists(fixture):
                 os.remove(fixture)
+
+    def test_hyphenated_citation_import_does_not_require_matching_symbol(self):
+        """`import .Sibling-Proof { some-claim }` style citations (used by the
+        flow-verify corpus to document a dependency on a sibling proof file)
+        should resolve even though no declaration is actually named
+        `missing-symbol` (declaration names can never contain hyphens; the
+        sibling's real exports are pulled in transitively regardless)."""
+        dep = os.path.join(FIXTURES, "Hyphen-Dep-Sibling.flow")
+        consumer = os.path.join(FIXTURES, "_hyphen_consumer.flow")
+        with open(dep, "w", encoding="utf-8") as f:
+            f.write(
+                "function helper() -> i32 {\n"
+                "    return 1\n"
+                "}\n\n"
+                "export helper\n"
+            )
+        with open(consumer, "w", encoding="utf-8") as f:
+            f.write(
+                "import .Hyphen-Dep-Sibling { missing-symbol }\n\n"
+                "function main() -> i32 {\n"
+                "    return 0\n"
+                "}\n"
+            )
+        try:
+            resolver = get_module_resolver(consumer)
+            assert "helper" in resolver.symbol_table
+        finally:
+            for path in (dep, consumer):
+                if os.path.exists(path):
+                    os.remove(path)
 
     def test_import_non_exported_symbol_fails(self):
         code = """
