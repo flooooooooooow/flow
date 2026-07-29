@@ -638,6 +638,74 @@ class DistinctTypeDecl:
     is_exported: bool = False
 
 
+@dataclass
+class FlowStateDecl:
+    """`state x : type = init` inside a `flow` block (docs/vision/north-star.md 1.1)."""
+
+    name: str
+    type: Type
+    initializer: Optional["Expression"]
+    line: int = 0
+
+
+@dataclass
+class FlowParamDecl:
+    """`param k : type = init` inside a `flow` block. Constant per instance."""
+
+    name: str
+    type: Type
+    initializer: Optional["Expression"]
+    line: int = 0
+
+
+@dataclass
+class FlowInputDecl:
+    """`input u : type` inside a `flow` block. Written by the embedder before a step."""
+
+    name: str
+    type: Type
+    line: int = 0
+
+
+@dataclass
+class FlowOutputDecl:
+    """`output y : type = expr` inside a `flow` block. Computed after integration."""
+
+    name: str
+    type: Type
+    expr: Optional["Expression"]
+    line: int = 0
+
+
+@dataclass
+class FlowEvolveDecl:
+    """`x evolves as expr`: declares dx/dt = expr for state x."""
+
+    target: str
+    expr: "Expression"
+    line: int = 0
+
+
+@dataclass
+class FlowDecl:
+    """`flow Name { ... }`: a struct plus continuous dynamics.
+
+    Recognized contextually (`flow` stays a legal identifier everywhere else).
+    Lowered by src/flow/flow_blocks.py into a StructDecl plus generated
+    Name_new/Name_init/Name_derivs/Name_step/Name_outputs functions.
+    Spec: docs/vision/north-star.md sections 1 and 2.
+    """
+
+    name: str
+    states: List[FlowStateDecl]
+    inputs: List[FlowInputDecl]
+    outputs: List[FlowOutputDecl]
+    params: List[FlowParamDecl]
+    evolves: List[FlowEvolveDecl]
+    is_exported: bool = False
+    location: Optional[SourceLocation] = None
+
+
 Expression = Union[
     Literal,
     Variable,
@@ -965,6 +1033,33 @@ class Parser:
         self.current_token = self.lookahead
         self.lookahead = self.lexer.next_token()
 
+    def _peek2(self) -> Token:
+        """Peek one token past self.lookahead without consuming lexer state.
+
+        Used for contextual keywords (e.g. `flow Name {`) that need a third
+        token of lookahead. Saves and restores the lexer position, matching
+        the save/restore pattern used by struct-literal backtracking.
+        """
+        save_pos = self.lexer.pos
+        save_line = self.lexer.line
+        save_column = self.lexer.column
+        token = self.lexer.next_token()
+        self.lexer.pos = save_pos
+        self.lexer.line = save_line
+        self.lexer.column = save_column
+        return token
+
+    def _at_flow_decl(self) -> bool:
+        """True when positioned at `flow IDENT {`, the contextual flow-block
+        form. The triple lookahead keeps `flow` a legal identifier everywhere
+        else (docs/vision/north-star.md 0.2)."""
+        return (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.current_token.value == "flow"
+            and self.lookahead.type == TokenType.IDENTIFIER
+            and self._peek2().type == TokenType.LBRACE
+        )
+
     def error(self, message: str, suggestion: str = None) -> FlowSyntaxError:
         """Create a syntax error with context."""
         return FlowSyntaxError(
@@ -1025,10 +1120,11 @@ class Parser:
 
     def parse(
         self,
+        expand_flows: bool = True,
     ) -> List[
         Union[
             FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, ImportDecl, ConstDecl,
-            TypeAliasDecl, DistinctTypeDecl
+            TypeAliasDecl, DistinctTypeDecl, FlowDecl
         ]
     ]:
         declarations = []
@@ -1150,8 +1246,16 @@ class Parser:
                 mod = self.parse_module()
                 mod.is_exported = is_exported
                 declarations.append(mod)
+            elif self._at_flow_decl():
+                decl = self.parse_flow_decl()
+                decl.is_exported = is_exported
+                declarations.append(decl)
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
+        if expand_flows and any(isinstance(d, FlowDecl) for d in declarations):
+            from .flow_blocks import expand_flow_decls
+
+            declarations = expand_flow_decls(declarations, source=self.source)
         return declarations
 
     def parse_module(self) -> ModuleDecl:
@@ -1389,6 +1493,105 @@ class Parser:
             end_column=name_token.column - 1 + len(name),
         )
         return StructDecl(name, fields, type_params=type_params, location=loc)
+
+    def parse_flow_decl(self) -> FlowDecl:
+        """Parse `flow Name { ... }` (docs/vision/north-star.md 1.1).
+
+        Body items in this card's scope:
+          state|input|output|param NAME : type [= expr]
+          NAME evolves as expr
+        `flow`, `state`, `input`, `output`, `param`, `evolves` are contextual
+        keywords: each is recognized only by its position and one token of
+        lookahead, so all of them remain ordinary identifiers elsewhere.
+        """
+        start_token = self.current_token
+        self.advance()  # consume contextual 'flow'
+        name_token = self.expect(TokenType.IDENTIFIER)
+        name = name_token.value
+        # Flow instances are constructed with struct-literal syntax.
+        self.struct_names.add(name)
+        self.expect(TokenType.LBRACE)
+
+        states: List[FlowStateDecl] = []
+        inputs: List[FlowInputDecl] = []
+        outputs: List[FlowOutputDecl] = []
+        params: List[FlowParamDecl] = []
+        evolves: List[FlowEvolveDecl] = []
+        section_words = ("state", "input", "output", "param")
+
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise self.error(
+                    f"Unterminated flow '{name}': expected '}}' before end of file"
+                )
+            tok = self.current_token
+            is_section = (
+                tok.type == TokenType.IDENTIFIER
+                and tok.value in section_words
+                and self.lookahead.type == TokenType.IDENTIFIER
+            )
+            is_evolves = (
+                tok.type == TokenType.IDENTIFIER
+                and self.lookahead.type == TokenType.IDENTIFIER
+                and self.lookahead.value == "evolves"
+            )
+            if is_section:
+                kind = tok.value
+                self.advance()  # consume section word
+                member_name = self.expect(TokenType.IDENTIFIER).value
+                self.expect(TokenType.COLON)
+                member_type = self.parse_type()
+                initializer = None
+                if self.current_token.type == TokenType.ASSIGN:
+                    self.advance()
+                    initializer = self.parse_expression_without_assign()
+                if kind == "state":
+                    states.append(
+                        FlowStateDecl(member_name, member_type, initializer, tok.line)
+                    )
+                elif kind == "param":
+                    params.append(
+                        FlowParamDecl(member_name, member_type, initializer, tok.line)
+                    )
+                elif kind == "input":
+                    if initializer is not None:
+                        raise self.error(
+                            f"input '{member_name}' in flow '{name}' cannot have an "
+                            f"initializer; inputs are written by the embedder",
+                            suggestion="remove the '= ...' part",
+                        )
+                    inputs.append(FlowInputDecl(member_name, member_type, tok.line))
+                else:  # output
+                    outputs.append(
+                        FlowOutputDecl(member_name, member_type, initializer, tok.line)
+                    )
+            elif is_evolves:
+                target = tok.value
+                self.advance()  # consume target
+                self.advance()  # consume contextual 'evolves'
+                self.expect(TokenType.AS)
+                rhs = self.parse_expression_without_assign()
+                evolves.append(FlowEvolveDecl(target, rhs, tok.line))
+            else:
+                raise self.error(
+                    f"Unexpected item in flow '{name}' body",
+                    suggestion=(
+                        "flow bodies contain member declarations "
+                        "('state|input|output|param name : type [= expr]') and "
+                        "dynamics ('x evolves as expr')"
+                    ),
+                )
+
+        self.expect(TokenType.RBRACE)
+        loc = SourceLocation(
+            line=start_token.line - 1,
+            column=start_token.column - 1,
+            end_line=name_token.line - 1,
+            end_column=name_token.column - 1 + len(name),
+        )
+        return FlowDecl(
+            name, states, inputs, outputs, params, evolves, location=loc
+        )
 
     def parse_enum(self) -> EnumDecl:
         """Parse enum declaration: enum Option<T> { Some(T), None }"""

@@ -1,0 +1,112 @@
+# PENDULUM, WRITTEN AS A FLOW. The anchor example of VISION.md, now in the
+# shipped `flow` + `evolves as` syntax (spec: docs/vision/north-star.md,
+# card: evolves-syntax). Compare examples/evolution/pendulum.flow, which
+# integrates the same system by hand with RK4.
+#
+# The block below is the whole physical model. The compiler lowers it to a
+# struct plus Pendulum_new, Pendulum_init, Pendulum_derivs, and
+# Pendulum_step(self, dt): explicit Euler with all derivatives evaluated
+# from the pre-step state. dt is caller-supplied, in seconds. Units,
+# `always` invariants, `every` blocks, and linear analysis are later cards.
+#
+# Run: ./flow run examples/evolution/pendulum_evolves.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+flow Pendulum {
+    state angle    : f64 = 2.0      # rad, released from 2 rad at rest
+    state velocity : f64 = 0.0      # rad/s
+    param gravity  : f64 = 9.81     # m/s^2
+    param length   : f64 = 1.0      # m
+    param damping  : f64 = 0.5      # 1/s
+
+    angle evolves as velocity
+    velocity evolves as -(gravity / length) * sin(angle) - damping * velocity
+}
+
+# Total mechanical energy: E = 1/2 m L^2 w^2 + m g L (1 - cos theta)
+function pendulum_energy(theta: f64, omega: f64) -> f64 {
+    let mass: f64 = 1.0
+    let length: f64 = 1.0
+    let gravity: f64 = 9.81
+    let kinetic: f64 = 0.5 * mass * length * length * omega * omega
+    let potential: f64 = mass * gravity * length * (1.0 - cos(theta))
+    return kinetic + potential
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.001          # s; Euler wants a finer step than RK4
+    let steps: i32 = 24000       # 24 seconds of evolution
+    let print_every: i32 = 2000  # one table row every two simulated seconds
+
+    let mut p: Pendulum = Pendulum_new()
+
+    println("")
+    println("  PENDULUM as a flow  --  angle evolves as velocity")
+    println("  =================================================")
+    println("")
+    println("      t [s]  angle [rad]   vel [rad/s]  energy [J]")
+    println("    -------  -----------  ------------  ----------")
+
+    let mut prev_row_energy: f64 = pendulum_energy(p.angle, p.velocity)
+    let e0: f64 = prev_row_energy
+    let mut energy_violations: i32 = 0
+    let mut saw_nan: i32 = 0
+
+    for k in 0 to steps + 1 {
+        let t: f64 = k * dt
+        let e: f64 = pendulum_energy(p.angle, p.velocity)
+
+        if e != e or p.angle != p.angle {
+            saw_nan = 1
+        }
+
+        if k % print_every == 0 {
+            # Damped energy decreases from row to row (Euler wobbles within
+            # a step near velocity peaks, so the check is per interval)
+            if k > 0 and e > prev_row_energy {
+                energy_violations = energy_violations + 1
+            }
+            prev_row_energy = e
+            print("    ")
+            printf("%7.2f", t)
+            printf("  %11.4f", p.angle)
+            printf("  %12.4f", p.velocity)
+            printf("  %10.4f", e)
+            println("")
+        }
+
+        Pendulum_step(&p, dt)
+    }
+
+    let e_end: f64 = pendulum_energy(p.angle, p.velocity)
+
+    println("")
+    print("    initial energy : ")
+    printf("%.4f J", e0)
+    println("")
+    print("    final energy   : ")
+    printf("%.6f J", e_end)
+    println("")
+    println("")
+
+    if saw_nan == 1 {
+        println("    FAIL: state became NaN")
+        return 1
+    }
+    if energy_violations > 0 {
+        println("    FAIL: energy increased")
+        return 2
+    }
+    if fabs(p.angle) > 0.02 or fabs(p.velocity) > 0.02 {
+        println("    FAIL: pendulum did not settle at equilibrium")
+        return 3
+    }
+    println("    OK: energy decreased, pendulum settled at rest")
+    return 0
+}

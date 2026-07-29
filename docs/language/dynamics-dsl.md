@@ -215,6 +215,17 @@ The `dsys` vocabulary is the shipped seed of Flow's founding vision
 | `closed … { stable -> s }` + runtime check | `guarantee { stable }` — compilation fails if unprovable |
 | pre-parse text expansion | first-class grammar, type-checked `flow` declarations |
 
+The first north-star card has shipped: `evolves as` now compiles. A
+`flow Name { ... }` block with `state`, `param`, `input`, and `output`
+members and `x evolves as expr` dynamics parses as real AST, passes the
+strict type checker, and lowers to C as a struct plus
+`Name_step(Name* self, double dt)` with explicit Euler and a separate
+`Name_derivs` function, so a later card can swap in RK4 without changing
+the surface syntax. All derivatives are evaluated from the pre-step state.
+See `examples/evolution/pendulum_evolves.flow` for the pendulum written
+this way. Time blocks, hybrid events, invariants, units, and `connect`
+remain aspirational.
+
 The strategy is to grow this seed rather than build a second language beside
 the current one. The concrete grammar-level plan for each north-star construct
 — what `evolves as` desugars to, how time blocks and hybrid events land — is
