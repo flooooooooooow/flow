@@ -12,7 +12,7 @@ Supported:
 - calls: sin, cos, exp, log, sqrt, sigmoid
 
 Usage:
-  PYTHONPATH=src python3 tools/flow_grad_c.py <file.flow> <function_name>
+  PYTHONPATH=src python3 tools/grad/flow_grad_c.py <file.flow> <function_name>
 
 Then compile the emitted C:
   clang -O2 out.c -lm -o out
