@@ -1,6 +1,6 @@
 # Wiki Strategy
 
-> **Status:** Active · **Owner:** Flow project · **Live URL:** [abhishek-shivakumar.com/transpile](https://abhishek-shivakumar.com/transpile/)
+> **Status:** Active · **Owner:** Flow project · **Live URL:** [abhishek-shivakumar.com/flow](https://abhishek-shivakumar.com/flow/) (also [/transpile/](https://abhishek-shivakumar.com/transpile/))
 
 This document defines how Flow documentation should be built, organized, and maintained long term.
 
@@ -67,8 +67,10 @@ docs/**/*.md  ─┐
 lib/verify/   ─┼─► scripts/build_wiki.py ─► build/wiki/
 examples/verify/┘         │
 site/{html,css,js}        ├─ wiki-nav.json      (nav)
-                          ├─ search-index.json  (⌘K search)
+                          ├─ search-index.json  (⌘K fallback)
+                          ├─ pagefind/          (⌘K primary when built)
                           ├─ flow-verify-catalog.md
+                          ├─ releases.md / versions.json  (from CHANGELOG)
                           └─ euclid-book-*.md   (generated indexes)
 
 build/wiki/ ─► deploy_wiki.py ─► /var/www/transpile/ (VPS)
@@ -87,6 +89,7 @@ build/wiki/ ─► deploy_wiki.py ─► /var/www/transpile/ (VPS)
 | Stdlib | `lib/stdlib/*.flow` + `docs/library/` | New module or API change |
 | Proofs | `lib/verify/`, `examples/verify/` | `./flow doc proof` |
 | Wiki IA | `scripts/build_wiki.py` (`write_nav`) | New section or package |
+| Changelog / releases | `docs/project/CHANGELOG.md` | New version section → rebuild (auto-syncs `releases.md` + `versions.json`) |
 | Language roadmap | `ROADMAP.md` (repo root) | Quarterly planning |
 | Wiki roadmap | `docs/wiki-roadmap.md` | This strategy doc |
 
@@ -110,7 +113,7 @@ We deliberately **do not** use MkDocs for the live site today — the custom she
 1. **Custom domain** — `flow-lang.org` (referenced in verification docs; DNS TBD)
 2. **Versioned docs** — `/transpile/v0.7/` alongside `latest`
 3. **API autogen** — stdlib signatures from `flow doc` or LSP
-4. **Pagefind** — offline full-text search replacing JSON index at scale
+4. **Pagefind** — ✅ optional post-build index (`scripts/build_pagefind.sh`); ⌘K prefers Pagefind, falls back to `search-index.json`
 5. **Playground embed** — runnable snippets from tutorial pages
 6. **CI deploy** — GitHub Action on `docs/` or `site/` change → VPS webhook
 

@@ -6,12 +6,14 @@ Detailed documentation for the Flow programming language.
 
 | Document | Description |
 |----------|-------------|
+| [Spec Index](spec-index.md) | Navigable TOC into LANGUAGE_SPEC + focused pages |
 | [Overview](overview.md) | Language philosophy and key features |
 | [Syntax](syntax.md) | Lexical structure, operators, grammar |
 | [Types](types.md) | Type system and primitive types |
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |
-| [Graphics](graphics.md) | Native graphics API (macOS) |
+| [Graphics](graphics.md) | Native 2D graphics — platform matrix (macOS / Linux stub / Windows) |
+| [Async via Effects](async-effects.md) | Async modeled as effects (no async/await keyword) |
 | [Language Design](language_design.md) | Design rationale |
 
 ## Quick Reference
