@@ -8,8 +8,11 @@ let activeTab = 'all';
 let flatNav = [];
 let selectedVersion = null;
 let searchFilter = 'all';
+let pagefindApi = null;
+let searchRenderToken = 0;
 
 const VERSION_STORAGE_KEY = 'flow-wiki-version';
+const THEME_STORAGE_KEY = 'flow-wiki-theme';
 
 const SEARCH_CATEGORIES = [
     { id: 'all', label: 'All' },
@@ -24,15 +27,54 @@ marked.setOptions({
     gfm: true,
     breaks: false,
     langPrefix: 'language-',
-    highlight(code, lang) {
-        if (lang && hljs.getLanguage(lang)) {
-            return hljs.highlight(code, { language: lang }).value;
-        }
-        return hljs.highlightAuto(code).value;
-    },
 });
 
+function getPreferredTheme() {
+    try {
+        const stored = localStorage.getItem(THEME_STORAGE_KEY);
+        if (stored === 'light' || stored === 'dark') return stored;
+    } catch (_) { /* ignore */ }
+    return 'dark';
+}
+
+function applyTheme(theme) {
+    const next = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch (_) { /* ignore */ }
+    const btn = document.getElementById('themeToggle');
+    if (btn) {
+        btn.setAttribute('aria-pressed', next === 'light' ? 'true' : 'false');
+        btn.title = next === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+    }
+}
+
+function toggleTheme() {
+    applyTheme(getPreferredTheme() === 'light' ? 'dark' : 'light');
+}
+
+function initTheme() {
+    applyTheme(getPreferredTheme());
+    document.getElementById('themeToggle')?.addEventListener('click', toggleTheme);
+}
+
+async function tryInitPagefind() {
+    try {
+        const base = new URL('.', window.location.href);
+        const mod = await import(new URL('pagefind/pagefind.js', base).href);
+        await mod.options({ bundlePath: new URL('pagefind/', base).href });
+        mod.init();
+        pagefindApi = mod;
+        return true;
+    } catch (_) {
+        pagefindApi = null;
+        return false;
+    }
+}
+
 async function init() {
+    initTheme();
     const [navRes, searchRes, verRes] = await Promise.all([
         fetch('wiki-nav.json'),
         fetch('search-index.json'),
@@ -41,6 +83,7 @@ async function init() {
     navData = await navRes.json();
     searchIndex = await searchRes.json();
     versionsData = await verRes.json();
+    await tryInitPagefind();
     buildFlatNav();
     renderVersionPicker();
     renderTabs();
@@ -293,9 +336,41 @@ function makePagerLink(item, dir) {
     return a;
 }
 
+/** GitHub/GFM-style heading id (matches LANGUAGE_SPEC.md TOC anchors). */
+function headingSlug(text) {
+    return String(text || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+}
+
+function assignHeadingIds(container) {
+    const used = new Set(
+        [...container.querySelectorAll('[id]')].map((el) => el.id).filter(Boolean)
+    );
+    container.querySelectorAll('h2, h3').forEach((h, i) => {
+        if (h.id) {
+            used.add(h.id);
+            return;
+        }
+        let id = headingSlug(h.textContent) || `heading-${i}`;
+        if (used.has(id)) {
+            let n = 1;
+            while (used.has(`${id}-${n}`)) n += 1;
+            id = `${id}-${n}`;
+        }
+        used.add(id);
+        h.id = id;
+    });
+}
+
 function buildPageToc(container) {
     const tocCol = document.getElementById('tocColumn');
     const tocNav = document.getElementById('pageToc');
+    assignHeadingIds(container);
     const headings = container.querySelectorAll('h2, h3');
 
     if (headings.length < 2) {
@@ -306,13 +381,11 @@ function buildPageToc(container) {
     tocCol.hidden = false;
     tocNav.innerHTML = '';
 
-    headings.forEach((h, i) => {
-        const id = h.id || `heading-${i}`;
-        h.id = id;
+    headings.forEach((h) => {
         const li = document.createElement('li');
         if (h.tagName === 'H3') li.className = 'toc-h3';
         const a = document.createElement('a');
-        a.href = `#${id}`;
+        a.href = `#${h.id}`;
         a.textContent = h.textContent;
         a.addEventListener('click', (e) => {
             e.preventDefault();
@@ -351,13 +424,28 @@ function wireInternalLinks(container, basePath) {
         const href = a.getAttribute('href');
         if (!href || href.startsWith('http') || href.startsWith('#') || href.startsWith('mailto:')) return;
         const resolved = resolveRelative(basePath, href);
-        if (/\.(md|proof\.md|ebnf)$/.test(resolved)) {
+        a.setAttribute('href', `#${encodeURIComponent(resolved)}`);
+        const docPath = resolved.split('#')[0];
+        if (/\.(md|proof\.md|ebnf)$/.test(docPath)) {
             a.addEventListener('click', (e) => {
                 e.preventDefault();
                 loadDoc(resolved);
             });
         }
     });
+}
+
+function rewriteMediaUrls(container, basePath) {
+    container.querySelectorAll('img[src]').forEach((img) => {
+        const src = img.getAttribute('src');
+        if (!src || /^(https?:|data:|\/\/)/i.test(src)) return;
+        img.setAttribute('src', resolveRelative(basePath, src));
+    });
+}
+
+function looksLikeHtmlDocument(text) {
+    const head = String(text || '').slice(0, 240).trim().toLowerCase();
+    return head.startsWith('<!doctype html') || head.startsWith('<html');
 }
 
 async function loadDoc(path) {
@@ -376,6 +464,7 @@ async function loadDoc(path) {
     content.innerHTML = '<p class="loading">Loading…</p>';
     titleEl.textContent = '';
     leadEl.hidden = true;
+    updateEditLink(null);
     document.getElementById('tocColumn').hidden = true;
 
     setBreadcrumb(path);
@@ -391,6 +480,10 @@ async function loadDoc(path) {
         const response = await fetch(path);
         if (!response.ok) throw new Error(`Not found (${response.status})`);
         const text = await response.text();
+        // nginx try_files falls back to index.html with HTTP 200 — never render that as a doc
+        if (looksLikeHtmlDocument(text)) {
+            throw new Error('Not found (got site shell HTML instead of the document)');
+        }
 
         if (path.endsWith('.ebnf')) {
             const page = renderEbnfPage(text);
@@ -405,6 +498,7 @@ async function loadDoc(path) {
             content.innerHTML = marked.parse(text);
             transformAdmonitions(content);
             annotateChangelogHeadings(content);
+            rewriteMediaUrls(content, path);
             wireInternalLinks(content, path);
             renderMath(content);
             highlightCode(content);
@@ -426,6 +520,7 @@ async function loadDoc(path) {
             displayTitle = h1 ? h1.textContent : path.split('/').pop().replace(/\.[^.]+$/, '');
         }
         titleEl.textContent = displayTitle;
+        updateEditLink(path);
 
         if (path.endsWith('.proof.md')) addBadge(titleEl, 'PROOF', 'proof-badge');
         else if (path.endsWith('.ebnf')) addBadge(titleEl, 'EBNF', 'grammar-badge');
@@ -450,9 +545,10 @@ async function loadDoc(path) {
             if (hero && h1) h1.remove();
         }
 
-        history.replaceState(null, '', `#${encodeURIComponent(path)}`);
+        const loc = anchor ? `${path}#${anchor}` : path;
+        history.replaceState(null, '', `#${encodeURIComponent(loc)}`);
         document.title = `${displayTitle} — Flow Docs`;
-        window.scrollTo({ top: 0, behavior: 'instant' });
+        if (!anchor) window.scrollTo({ top: 0, behavior: 'instant' });
     } catch (err) {
         document.body.classList.remove('page-home');
         content.innerHTML = renderNotFound(path, err.message);
@@ -496,7 +592,28 @@ function renderNotFound(path, message) {
 }
 
 function resolveRelative(base, href) {
+    if (!href) return href;
+    if (/^(https?:|mailto:|#)/i.test(href)) return href;
     if (href.startsWith('/')) return href.replace(/^\//, '');
+
+    // Bare filenames / ./foo → resolve against the current document directory
+    // (proof diagrams: prop-04….proof.svg next to the .proof.md)
+    if (href.startsWith('./') || !href.includes('/')) {
+        const baseParts = base.split('/');
+        baseParts.pop();
+        for (const part of href.replace(/^\.\//, '').split('/')) {
+            if (part === '..') baseParts.pop();
+            else if (part && part !== '.') baseParts.push(part);
+        }
+        return baseParts.join('/');
+    }
+
+    // Catalog / index links are written as wiki-root paths (third-party/…).
+    // Only ../… walks from the current document.
+    if (!href.startsWith('../')) {
+        return href;
+    }
+
     const baseParts = base.split('/');
     baseParts.pop();
     for (const part of href.split('/')) {
@@ -525,8 +642,14 @@ function annotateChangelogHeadings(container) {
 }
 
 function routeFromHash() {
-    const hash = window.location.hash.slice(1);
-    loadDoc(hash ? decodeURIComponent(hash) : (navData.default || 'wiki-home.md'));
+    const raw = window.location.hash.slice(1);
+    const hash = raw ? decodeURIComponent(raw) : '';
+    // Legacy /flow/#viewer bookmark from the old Umbra docs shell
+    if (!hash || hash === 'viewer') {
+        loadDoc(navData.default || 'wiki-home.md');
+        return;
+    }
+    loadDoc(hash);
 }
 
 /* ── Search ── */
@@ -536,6 +659,9 @@ function openSearch() {
     const input = document.getElementById('searchInput');
     input.value = '';
     input.focus();
+    if (pagefindApi && typeof pagefindApi.init === 'function') {
+        try { pagefindApi.init(); } catch (_) { /* already inited */ }
+    }
     renderSearchFilters();
     renderSearchResults('');
 }
@@ -562,46 +688,177 @@ function closeSearch() {
     document.getElementById('searchOverlay').hidden = true;
 }
 
-function renderSearchResults(query) {
+function pagefindUrlToWikiPath(url) {
+    if (!url) return '';
+    let path = url.replace(/^\//, '');
+    try {
+        if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file:')) {
+            path = new URL(url).pathname.replace(/^\//, '');
+        }
+    } catch (_) { /* keep path */ }
+    // Stubs are written as "<wiki-path>.html" under _pagefind_src/
+    if (path.endsWith('.html')) path = path.slice(0, -5);
+    // Drop accidental site prefixes if the index was built with absolute paths
+    for (const prefix of ['flow/', 'transpile/', 'build/wiki/', '_pagefind_src/']) {
+        if (path.startsWith(prefix)) path = path.slice(prefix.length);
+    }
+    return path;
+}
+
+function renderSearchHitList(hits) {
     const ul = document.getElementById('searchResults');
-    const q = query.toLowerCase().trim();
     ul.innerHTML = '';
-
-    if (!q) return;
-
-    const hits = searchIndex
-        .map((entry) => {
-            const hay = (entry.title + ' ' + entry.text + ' ' + entry.path).toLowerCase();
-            const score = (hay.includes(q) ? 10 : 0)
-                + (entry.title.toLowerCase().includes(q) ? 20 : 0)
-                + (entry.path.toLowerCase().includes(q) ? 5 : 0);
-            return { entry, score };
-        })
-        .filter((h) => h.score > 0)
-        .filter((h) => searchFilter === 'all' || h.entry.category === searchFilter)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 12);
-
-    for (const { entry } of hits) {
+    for (const hit of hits) {
         const li = document.createElement('li');
         const btn = document.createElement('button');
-        const cat = entry.category ? `<span class="result-cat">${escapeHtml(entry.category)}</span>` : '';
-        btn.innerHTML = `${cat}<span class="result-title">${escapeHtml(entry.title)}</span><span class="result-path">${escapeHtml(entry.path)}</span>`;
+        const cat = hit.category ? `<span class="result-cat">${escapeHtml(hit.category)}</span>` : '';
+        const excerpt = hit.excerpt
+            ? `<span class="result-excerpt">${hit.excerpt}</span>`
+            : '';
+        btn.innerHTML = `${cat}<span class="result-title">${escapeHtml(hit.title)}</span>`
+            + `<span class="result-path">${escapeHtml(hit.path)}</span>${excerpt}`;
         btn.addEventListener('click', () => {
             closeSearch();
-            loadDoc(entry.path);
+            if (hit.path.endsWith('.html') && !hit.path.endsWith('.proof.md.html')) {
+                window.location.href = hit.path;
+                return;
+            }
+            loadDoc(hit.path);
         });
         li.appendChild(btn);
         ul.appendChild(li);
     }
-
     if (!hits.length) {
         ul.innerHTML = '<li><button type="button" disabled style="opacity:0.5">No results</button></li>';
     }
 }
 
+function scoreLocalSearchEntry(entry, q, terms) {
+    const title = (entry.title || '').toLowerCase();
+    const path = (entry.path || '').toLowerCase();
+    const text = (entry.text || '').toLowerCase();
+    const hay = `${title} ${text} ${path}`;
+    let score = 0;
+    if (title === q) score += 100;
+    if (title.startsWith(q)) score += 40;
+    if (title.includes(q)) score += 30;
+    if (path.includes(q)) score += 12;
+    if (hay.includes(q)) score += 8;
+    for (const term of terms) {
+        if (!term) continue;
+        if (title.includes(term)) score += 10;
+        else if (path.includes(term)) score += 4;
+        else if (text.includes(term)) score += 2;
+    }
+    // Prefer shorter, more specific docs slightly over huge proof dumps when tied
+    if (entry.category === 'tutorial') score += 3;
+    if (entry.category === 'reference' || entry.category === 'guide') score += 2;
+    return score;
+}
+
+function localSearchHits(query) {
+    const q = query.toLowerCase().trim();
+    const terms = q.split(/\s+/).filter(Boolean);
+    return searchIndex
+        .map((entry) => ({ entry, score: scoreLocalSearchEntry(entry, q, terms) }))
+        .filter((h) => h.score > 0)
+        .filter((h) => searchFilter === 'all' || h.entry.category === searchFilter)
+        .sort((a, b) => b.score - a.score || a.entry.title.localeCompare(b.entry.title))
+        .slice(0, 12)
+        .map(({ entry }) => ({
+            path: entry.path,
+            title: entry.title,
+            category: entry.category,
+            excerpt: '',
+        }));
+}
+
+async function pagefindSearchHits(query) {
+    if (!pagefindApi) return null;
+    const opts = {};
+    if (searchFilter !== 'all') {
+        opts.filters = { category: searchFilter };
+    }
+    const search = await pagefindApi.debouncedSearch(query, opts, 120);
+    if (search === null) return null; // superseded by a newer query
+    const raw = await Promise.all(search.results.slice(0, 12).map((r) => r.data()));
+    return raw.map((data) => ({
+        path: pagefindUrlToWikiPath(data.url),
+        title: (data.meta && data.meta.title) || pagefindUrlToWikiPath(data.url),
+        category: (data.meta && data.meta.category)
+            || (data.filters && data.filters.category && data.filters.category[0])
+            || '',
+        // Pagefind excerpts encode entities and may include <mark>; safe for innerHTML
+        excerpt: data.excerpt || '',
+    })).filter((h) => h.path);
+}
+
+async function renderSearchResults(query) {
+    const ul = document.getElementById('searchResults');
+    const q = query.trim();
+    ul.innerHTML = '';
+    if (!q) return;
+
+    const token = ++searchRenderToken;
+    if (pagefindApi) {
+        try {
+            const hits = await pagefindSearchHits(q);
+            if (token !== searchRenderToken) return;
+            if (hits === null) return;
+            if (hits.length) {
+                renderSearchHitList(hits);
+                return;
+            }
+            // Empty Pagefind result — fall through to local index
+        } catch (_) {
+            // fall through to local
+        }
+    }
+    if (token !== searchRenderToken) return;
+    renderSearchHitList(localSearchHits(q));
+}
+
+function setMobileSidebar(open) {
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const toggle = document.getElementById('sidebarToggle');
+    sidebar.classList.toggle('open', open);
+    document.body.classList.toggle('sidebar-open', open);
+    if (backdrop) backdrop.hidden = !open;
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
 function closeMobileSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
+    setMobileSidebar(false);
+}
+
+function githubEditUrl(path) {
+    const base = 'https://github.com/abhishekshivakumar/transpile/edit/main/';
+    if (path === 'project/language-roadmap.md') return `${base}ROADMAP.md`;
+    if (path === 'project/benchmark-results.md') return `${base}benchmarks/suite/RESULTS.md`;
+    if (path.startsWith('third-party/flow-verify/proofs/lib/')) {
+        const rel = path.replace('third-party/flow-verify/proofs/lib/', '');
+        return `${base}lib/verify/${rel}`;
+    }
+    if (path.startsWith('third-party/flow-verify/proofs/examples/')) {
+        const rel = path.replace('third-party/flow-verify/proofs/examples/', '');
+        return `${base}examples/verify/${rel}`;
+    }
+    if (path.startsWith('project/')) {
+        return `${base}docs/${path}`;
+    }
+    return `${base}docs/${path}`;
+}
+
+function updateEditLink(path) {
+    const el = document.getElementById('docEditLink');
+    if (!el) return;
+    if (!path || path.endsWith('.ebnf') || path.endsWith('.html')) {
+        el.hidden = true;
+        return;
+    }
+    el.href = githubEditUrl(path);
+    el.hidden = false;
 }
 
 function bindEvents() {
@@ -625,11 +882,17 @@ function bindEvents() {
         if (e.target.id === 'searchOverlay') closeSearch();
     });
     document.getElementById('searchInput').addEventListener('input', (e) => {
-        renderSearchResults(e.target.value);
+        const value = e.target.value;
+        if (pagefindApi && typeof pagefindApi.preload === 'function' && value.trim()) {
+            pagefindApi.preload(value.trim());
+        }
+        renderSearchResults(value);
     });
     document.getElementById('sidebarToggle').addEventListener('click', () => {
-        document.getElementById('sidebar').classList.toggle('open');
+        const open = !document.getElementById('sidebar').classList.contains('open');
+        setMobileSidebar(open);
     });
+    document.getElementById('sidebarBackdrop')?.addEventListener('click', closeMobileSidebar);
 
     document.querySelectorAll('[data-path]').forEach((a) => {
         if (a.closest('.markdown-body')) return;
@@ -644,7 +907,10 @@ function bindEvents() {
             e.preventDefault();
             openSearch();
         }
-        if (e.key === 'Escape') closeSearch();
+        if (e.key === 'Escape') {
+            closeSearch();
+            closeMobileSidebar();
+        }
     });
 
     document.getElementById('markdownContent').addEventListener('click', (e) => {

@@ -178,42 +178,136 @@
 }
 
 /* Standalone tutorials app */
+.tutorials-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.tutorials-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.25rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border, #21262d);
+    background: var(--surface, #0f1419);
+}
+
+.tutorials-tracks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.tutorials-track {
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-light, #30363d);
+    background: transparent;
+    color: var(--text-muted, #8b949e);
+    font-size: 0.78rem;
+    font-family: var(--sans, inherit);
+    cursor: pointer;
+}
+
+.tutorials-track:hover { color: var(--text, #e6edf3); border-color: var(--accent, #4493f8); }
+.tutorials-track.active {
+    color: var(--accent, #4493f8);
+    border-color: var(--accent, #4493f8);
+    background: var(--accent-soft, rgba(68,147,248,0.12));
+}
+
+.tutorials-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 180px;
+}
+
+.tutorials-progress-bar {
+    flex: 1;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--border, #21262d);
+    overflow: hidden;
+}
+
+.tutorials-progress-bar span {
+    display: block;
+    height: 100%;
+    background: var(--green, #3fb950);
+    border-radius: inherit;
+}
+
+.tutorials-progress-label {
+    font-size: 0.72rem;
+    color: var(--text-faint, #6e7681);
+    white-space: nowrap;
+}
+
 .tutorials-app {
-    min-height: calc(100vh - var(--header-h, 56px) - var(--tabs-h, 40px));
+    flex: 1;
+    min-height: 0;
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 300px 1fr;
+}
+
+@media (max-width: 860px) {
+    .tutorials-app { grid-template-columns: 1fr; }
+    .tutorials-sidebar { max-height: 220px; border-right: none; border-bottom: 1px solid var(--border, #21262d); }
 }
 
 .tutorials-sidebar {
     border-right: 1px solid var(--border, #21262d);
     background: var(--surface, #0f1419);
     overflow-y: auto;
-    padding: 1rem 0;
+    padding: 0.75rem 0 1.5rem;
 }
 
-.tutorials-sidebar h2 {
+.tutorials-sidebar > h2 {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-faint, #6e7681);
     padding: 0 1rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.tutorials-section {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-faint, #6e7681);
+    padding: 0.85rem 1rem 0.25rem;
+    margin: 0;
 }
 
 .tutorials-lesson {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
     width: 100%;
     text-align: left;
-    padding: 0.55rem 1rem;
+    padding: 0.5rem 1rem;
     border: none;
     background: transparent;
     color: var(--text-muted, #8b949e);
     font-family: var(--sans, inherit);
-    font-size: 0.88rem;
+    font-size: 0.86rem;
     cursor: pointer;
     border-left: 2px solid transparent;
 }
 
+.tutorials-lesson-mark {
+    width: 1rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-faint, #6e7681);
+}
+
+.tutorials-lesson.done .tutorials-lesson-mark { color: var(--green, #3fb950); }
 .tutorials-lesson:hover { color: var(--text, #e6edf3); background: var(--accent-soft, rgba(68,147,248,0.08)); }
 .tutorials-lesson.active {
     color: var(--accent, #4493f8);
@@ -221,20 +315,118 @@
     background: var(--accent-soft, rgba(68,147,248,0.12));
 }
 
+.tutorials-empty {
+    padding: 1rem;
+    color: var(--text-faint, #6e7681);
+    font-size: 0.85rem;
+}
+
 .tutorials-main {
-    padding: 1.5rem 2rem 2rem;
+    padding: 1.5rem 2rem 2.5rem;
     overflow-y: auto;
 }
 
 .tutorials-main h1 {
     font-size: 1.5rem;
-    margin-bottom: 0.5rem;
+    margin: 0.35rem 0 0.5rem;
+}
+
+.tutorials-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--text-muted, #8b949e);
+}
+
+.tutorials-track-badge {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--accent, #4493f8);
+}
+
+.tutorials-meta-sep { opacity: 0.5; }
+
+.tutorials-done-pill {
+    margin-left: 0.25rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--green, #3fb950);
+    font-size: 0.68rem;
+    font-weight: 600;
 }
 
 .tutorials-lead {
     color: var(--text-muted, #8b949e);
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     max-width: 60ch;
+}
+
+.tutorials-goals {
+    margin: 0 0 1.25rem;
+    padding-left: 1.2rem;
+    color: var(--text-muted, #8b949e);
+    font-size: 0.9rem;
+    max-width: 60ch;
+}
+
+.tutorials-goals li { margin: 0.25rem 0; }
+.tutorials-goals code {
+    font-family: var(--mono, 'IBM Plex Mono', monospace);
+    font-size: 0.82em;
+    color: var(--text, #e6edf3);
+}
+
+.tutorials-check {
+    margin: 0.85rem 0 1.25rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    border: 1px solid var(--border-light, #30363d);
+}
+
+.tutorials-check.pass {
+    border-color: rgba(63, 185, 80, 0.45);
+    background: rgba(63, 185, 80, 0.1);
+    color: var(--green, #3fb950);
+}
+
+.tutorials-check.fail {
+    border-color: rgba(248, 81, 73, 0.45);
+    background: rgba(248, 81, 73, 0.08);
+    color: #f85149;
+}
+
+.tutorials-check.hint {
+    border-color: rgba(68, 147, 248, 0.35);
+    background: rgba(68, 147, 248, 0.08);
+    color: var(--text-muted, #8b949e);
+}
+
+.tutorials-check pre {
+    margin: 0.5rem 0 0;
+    padding: 0.55rem 0.7rem;
+    border-radius: 6px;
+    background: #0d1117;
+    color: #c9d1d9;
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+}
+
+.tutorials-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.tutorials-nav .flow-runner-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .tutorials-app .flow-runner { margin-top: 0; }
