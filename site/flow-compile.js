@@ -83,6 +83,14 @@
           }
       }
       
+      // Educational notes for manual-memory lessons (browser is not a real heap)
+      if (/\bmalloc\s*\(|\bcalloc\s*\(|\brealloc\s*\(/.test(code)) {
+          const frees = (code.match(/\bfree\s*\(/g) || []).length;
+          const allocs = (code.match(/\b(malloc|calloc|realloc)\s*\(/g) || []).length;
+          output += `\n[browser note] Simulated heap — ${allocs} alloc call(s), ${frees} free call(s).\n`;
+          output += '[browser note] For real libc malloc/arena: ./flow run with import "stdlib/memory.flow"\n';
+      }
+
       // If no output was generated, provide helpful message
       if (!output.trim()) {
           if (code.includes('function main')) {

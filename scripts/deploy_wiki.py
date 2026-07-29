@@ -49,7 +49,9 @@ def main() -> int:
     ssh_base = ["sshpass", "-e", "ssh", *ssh_opts, f"{user}@{host}"]
 
     tarball = ROOT / "build" / "flow-wiki-deploy.tgz"
-    print(f"Packaging wiki ({_dir_size(BUILD):.1f} MB) → {tarball}")
+    pf = BUILD / "pagefind" / "pagefind.js"
+    pf_note = " incl. Pagefind" if pf.exists() else " (no Pagefind — local search only)"
+    print(f"Packaging wiki ({_dir_size(BUILD):.1f} MB{pf_note}) → {tarball}")
     with tarfile.open(tarball, "w:gz") as tar:
         tar.add(BUILD, arcname=".")
 
@@ -109,7 +111,8 @@ def main() -> int:
         print(result.stderr, file=sys.stderr)
         return result.returncode
 
-    print("✅ Live → https://abhishek-shivakumar.com/transpile/")
+    print("✅ Live → https://abhishek-shivakumar.com/flow/")
+    print("   also → https://abhishek-shivakumar.com/transpile/")
     return 0
 
 

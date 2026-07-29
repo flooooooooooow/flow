@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="../wiki.css">
     <link rel="stylesheet" href="../tutorial-runner.css">
 </head>
-<body>
+<body class="tutorials-shell">
     <header class="site-header">
         <div class="header-inner">
             <a href="../" class="brand">
@@ -27,6 +27,11 @@
         </div>
     </header>
 
+    <div class="tutorials-toolbar">
+        <div class="tutorials-tracks" data-tracks aria-label="Difficulty track"></div>
+        <div class="tutorials-progress" data-progress></div>
+    </div>
+
     <div class="tutorials-app" data-tutorials-app>
         <aside class="tutorials-sidebar">
             <h2>Lessons</h2>
@@ -38,7 +43,7 @@
     </div>
 
     <footer class="site-footer">
-        <span>Browser interpreter — not the native compiler</span>
+        <span>100+ browser lessons · interpreter, not the native compiler</span>
         <span class="footer-sep">·</span>
         <a href="../">Documentation</a>
     </footer>
@@ -46,7 +51,7 @@
     <script src="../flow-compile.js"></script>
     <script src="../tutorial-runner.js"></script>
     <script>
-        initTutorialsApp(document.querySelector('[data-tutorials-app]'));
+        initTutorialsApp(document.body);
     </script>
 </body>
 </html>
