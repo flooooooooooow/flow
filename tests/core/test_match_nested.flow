@@ -1,0 +1,128 @@
+# Match: struct-in-struct nested patterns, e.g. `Outer(Inner(x), y)`.
+# Extends tests/core/test_match_advanced.flow, which covers guards, `|`
+# alternation, and narrow literal-only nested patterns (`Point(0, y)`).
+# Returns 0 if all checks pass, non-zero (test id) otherwise.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+struct Inner {
+    x: i32,
+    y: i32,
+}
+
+struct Outer {
+    inner: Inner,
+    tag: i32,
+}
+
+# --- Basic struct-in-struct: Outer(Inner(x), y) --------------------------
+
+function describe(o: Outer) -> i32 {
+    match o {
+        Outer(Inner(0), tag) => { return 100 + tag }   # inner.x == 0, bind tag
+        Outer(Inner(x), 0) => { return 200 + x }       # bind inner.x, tag == 0
+        Outer(Inner(x), tag) => { return x + tag }     # bind both
+    }
+    return -1
+}
+
+function test_nested_inner_literal() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 0, y: 1 }, tag: 5 }
+    return describe(o) == 105
+}
+
+function test_nested_outer_literal() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 7, y: 1 }, tag: 0 }
+    return describe(o) == 207
+}
+
+function test_nested_both_bindings() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 3, y: 1 }, tag: 4 }
+    return describe(o) == 7
+}
+
+# --- Nested pattern with a literal on the inner struct's second field ----
+
+function classify_inner(o: Outer) -> i32 {
+    match o {
+        Outer(Inner(0, 0), tag) => { return 1 }        # both inner fields literal
+        Outer(Inner(x, 0), tag) => { return 2 }        # inner.y literal, x bound
+        _ => { return 3 }
+    }
+    return -1
+}
+
+function test_nested_double_literal_match() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 0, y: 0 }, tag: 9 }
+    return classify_inner(o) == 1
+}
+
+function test_nested_partial_literal_match() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 5, y: 0 }, tag: 9 }
+    return classify_inner(o) == 2
+}
+
+function test_nested_no_match_falls_to_wildcard() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 5, y: 9 }, tag: 9 }
+    return classify_inner(o) == 3
+}
+
+# --- Nested pattern combined with a guard ---------------------------------
+
+function guarded_nested(o: Outer) -> i32 {
+    match o {
+        Outer(Inner(x), tag) if x > tag => { return 1 }
+        Outer(Inner(x), tag) => { return 2 }
+    }
+    return -1
+}
+
+function test_nested_guard_true() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 10, y: 0 }, tag: 2 }
+    return guarded_nested(o) == 1
+}
+
+function test_nested_guard_false() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 1, y: 0 }, tag: 2 }
+    return guarded_nested(o) == 2
+}
+
+function main() -> i32 {
+    if !test_nested_inner_literal() {
+        printf("FAIL: nested_inner_literal\n", 0)
+        return 1
+    }
+    if !test_nested_outer_literal() {
+        printf("FAIL: nested_outer_literal\n", 0)
+        return 2
+    }
+    if !test_nested_both_bindings() {
+        printf("FAIL: nested_both_bindings\n", 0)
+        return 3
+    }
+    if !test_nested_double_literal_match() {
+        printf("FAIL: nested_double_literal_match\n", 0)
+        return 4
+    }
+    if !test_nested_partial_literal_match() {
+        printf("FAIL: nested_partial_literal_match\n", 0)
+        return 5
+    }
+    if !test_nested_no_match_falls_to_wildcard() {
+        printf("FAIL: nested_no_match_falls_to_wildcard\n", 0)
+        return 6
+    }
+    if !test_nested_guard_true() {
+        printf("FAIL: nested_guard_true\n", 0)
+        return 7
+    }
+    if !test_nested_guard_false() {
+        printf("FAIL: nested_guard_false\n", 0)
+        return 8
+    }
+
+    printf("All nested match tests passed\n", 0)
+    return 0
+}

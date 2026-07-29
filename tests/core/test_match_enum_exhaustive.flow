@@ -1,0 +1,123 @@
+# Match: enum/ADT variant dispatch via path/const patterns, e.g.
+# `Color_Red => ...`. Extends tests/core/test_match_nested.flow, which
+# covers struct-in-struct nesting; this file covers enum-variant matching
+# on both the `.tag` field and the enum value directly, plus the real
+# exhaustiveness warning these patterns unlock (see
+# tests/unit/test_match_exhaustiveness.py for the warning-level checks).
+# Returns 0 if all checks pass, non-zero (test id) otherwise.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Option_i32 {
+    Some(i32),
+    None
+}
+
+# --- Matching on the `.tag` field, exhaustive over all variants ----------
+
+function classify(c: Color) -> i32 {
+    match c.tag {
+        Color_Red => { return 1 }
+        Color_Green => { return 2 }
+        Color_Blue => { return 3 }
+    }
+    return -1
+}
+
+function test_classify_red() -> bool {
+    let c: Color = Color { tag: Color_Red }
+    return classify(c) == 1
+}
+
+function test_classify_green() -> bool {
+    let c: Color = Color { tag: Color_Green }
+    return classify(c) == 2
+}
+
+function test_classify_blue() -> bool {
+    let c: Color = Color { tag: Color_Blue }
+    return classify(c) == 3
+}
+
+# --- Matching directly on the enum value (no `.tag` needed) --------------
+
+function is_some(opt: Option_i32) -> bool {
+    match opt {
+        Option_i32_Some => { return true }
+        Option_i32_None => { return false }
+    }
+    return false
+}
+
+function test_is_some_true() -> bool {
+    let opt: Option_i32 = Option_i32 { tag: Option_i32_Some }
+    return is_some(opt)
+}
+
+function test_is_some_false() -> bool {
+    let opt: Option_i32 = Option_i32 { tag: Option_i32_None }
+    return !is_some(opt)
+}
+
+# --- Path/const pattern combined with a wildcard and a guard -------------
+
+function describe(c: Color) -> i32 {
+    match c.tag {
+        Color_Red if 1 == 2 => { return 100 }   # guard always false
+        Color_Red => { return 1 }
+        _ => { return 0 }
+    }
+    return -1
+}
+
+function test_guard_false_falls_through() -> bool {
+    let c: Color = Color { tag: Color_Red }
+    return describe(c) == 1
+}
+
+function test_wildcard_catches_rest() -> bool {
+    let c: Color = Color { tag: Color_Blue }
+    return describe(c) == 0
+}
+
+function main() -> i32 {
+    if !test_classify_red() {
+        printf("FAIL: classify_red\n", 0)
+        return 1
+    }
+    if !test_classify_green() {
+        printf("FAIL: classify_green\n", 0)
+        return 2
+    }
+    if !test_classify_blue() {
+        printf("FAIL: classify_blue\n", 0)
+        return 3
+    }
+    if !test_is_some_true() {
+        printf("FAIL: is_some_true\n", 0)
+        return 4
+    }
+    if !test_is_some_false() {
+        printf("FAIL: is_some_false\n", 0)
+        return 5
+    }
+    if !test_guard_false_falls_through() {
+        printf("FAIL: guard_false_falls_through\n", 0)
+        return 6
+    }
+    if !test_wildcard_catches_rest() {
+        printf("FAIL: wildcard_catches_rest\n", 0)
+        return 7
+    }
+
+    printf("All enum match exhaustiveness tests passed\n", 0)
+    return 0
+}

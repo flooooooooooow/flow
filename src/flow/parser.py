@@ -5,7 +5,7 @@ A simple recursive descent parser for the FLOW language
 """
 
 import re
-from typing import List, Optional, Union, Any, Tuple
+from typing import List, Optional, Union, Any, Tuple, Dict
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -506,7 +506,29 @@ class MatchCase:
 @dataclass
 class StructPattern:
     struct_name: str
-    bindings: List[str]  # List of variable names to bind fields to
+    bindings: List[str]  # List of variable names to bind fields to ("_" = no binding)
+    # Nested/refined patterns: positional index -> literal the field must equal.
+    # Positions present here have "_" at the same index in `bindings` (no bind,
+    # just a value check), e.g. `Point(0, y)` requires field 0 == 0 and binds y.
+    field_literals: Optional[Dict[int, "Literal"]] = None
+    # Struct-in-struct nesting: positional index -> nested StructPattern the
+    # field must recursively match, e.g. `Outer(Inner(x), y)` requires field 0
+    # to match the nested pattern `Inner(x)` (binding `x` from the inner
+    # struct's own field 0) and binds field 1 to `y`. Positions present here
+    # also have "_" at the same index in `bindings`.
+    field_patterns: Optional[Dict[int, "StructPattern"]] = None
+
+
+@dataclass
+class OrPattern:
+    """Multiple alternative patterns for one match arm: `1 | 2 | 3 => ...`.
+
+    Scope is intentionally narrow: alternatives must be literal patterns
+    (no variable bindings), since binding a name to one of several
+    differently-shaped alternatives is ambiguous.
+    """
+
+    patterns: List["Expression"]
 
 
 @dataclass
@@ -630,6 +652,7 @@ Expression = Union[
     EffectCall,
     MethodCall,
     StructPattern,
+    OrPattern,
     CastExpression,
     Lambda,
     TryExpr,
@@ -1206,29 +1229,47 @@ class Parser:
             self.advance()
         return ExportDecl(symbols=symbols)
 
+    def _parse_dashed_identifier(self) -> str:
+        """Parse IDENTIFIER (- IDENTIFIER)* as a single hyphenated name.
+
+        Scoped to import module-path segments and import symbol lists only
+        (called from `_parse_module_path` / `_parse_import_symbol_list`).
+        MINUS has no meaning in either grammar position (there is no
+        subtraction expression there), so merging runs like
+        `Group-inv-unique` into one dashed identifier is unambiguous and
+        does not affect subtraction parsing anywhere else.
+        """
+        name = self.expect(TokenType.IDENTIFIER).value
+        while self.current_token.type == TokenType.MINUS:
+            self.advance()
+            name += "-" + self.expect(TokenType.IDENTIFIER).value
+        return name
+
     def _parse_module_path(self) -> str:
-        """Parse dotted module path: verify.nat, std.math, .sibling_mod"""
+        """Parse dotted module path: verify.nat, std.math, .sibling_mod,
+        .Group-inv-unique (hyphenated segments allowed)."""
         relative = False
         if self.current_token.type == TokenType.DOT:
             relative = True
             self.advance()
 
-        segments: List[str] = [self.expect(TokenType.IDENTIFIER).value]
+        segments: List[str] = [self._parse_dashed_identifier()]
         while self.current_token.type == TokenType.DOT:
             self.advance()
-            segments.append(self.expect(TokenType.IDENTIFIER).value)
+            segments.append(self._parse_dashed_identifier())
 
         if relative:
             return "." + ".".join(segments)
         return ".".join(segments)
 
     def _parse_import_symbol_list(self) -> List[str]:
-        """Parse { sym1, sym2 } after a module path."""
+        """Parse { sym1, sym2 } after a module path (hyphenated symbol
+        names such as `inv-unique` are allowed)."""
         self.expect(TokenType.LBRACE)
         symbols: List[str] = []
         if self.current_token.type != TokenType.RBRACE:
             while True:
-                symbols.append(self.expect(TokenType.IDENTIFIER).value)
+                symbols.append(self._parse_dashed_identifier())
                 if self.current_token.type != TokenType.COMMA:
                     break
                 self.advance()
@@ -1975,6 +2016,75 @@ class Parser:
         body = self.parse_block()
         return LayoutStatement(kind_token.value.lower(), args, body)
 
+    def parse_match_pattern(self) -> "Expression":
+        """Parse a single match-arm pattern, including `|`-separated alternatives.
+
+        Patterns are parsed one level below bitwise-OR precedence so that a
+        bare `|` between pattern atoms is treated as pattern alternation
+        (`1 | 2 | 3 => ...`) rather than the bitwise-OR binary operator.
+        """
+        first = self._finalize_pattern_atom(self.parse_bitwise_xor())
+
+        if self.current_token.type != TokenType.PIPE:
+            return first
+
+        alternatives = [first]
+        while self.current_token.type == TokenType.PIPE:
+            self.advance()
+            alternatives.append(self._finalize_pattern_atom(self.parse_bitwise_xor()))
+
+        for alt in alternatives:
+            if not isinstance(alt, Literal):
+                raise SyntaxError(
+                    "`|` in a match pattern only supports literal alternatives "
+                    "(e.g. `1 | 2 | 3 => ...`); variable bindings and struct "
+                    "patterns cannot be combined with `|`"
+                )
+
+        return OrPattern(alternatives)
+
+    def _finalize_pattern_atom(self, pattern: "Expression") -> "Expression":
+        """Convert a parsed pattern atom into a StructPattern where applicable.
+
+        Struct patterns are parsed as `FunctionCall` (`Point(a, b)`). Arguments
+        that are plain variables become bindings; literal arguments become
+        nested value checks (e.g. `Point(0, y)` requires field 0 == 0 and
+        binds field 1 to `y`); arguments that are themselves struct patterns
+        (`Inner(x)`) recurse into `field_patterns`, so `Outer(Inner(x), y)`
+        matches field 0 against the nested pattern and binds field 1 to `y`.
+        """
+        if not isinstance(pattern, FunctionCall):
+            return pattern
+
+        bindings: List[str] = []
+        field_literals: Dict[int, "Literal"] = {}
+        field_patterns: Dict[int, "StructPattern"] = {}
+        for i, arg in enumerate(pattern.arguments):
+            if isinstance(arg, Variable):
+                bindings.append(arg.name)
+            elif isinstance(arg, Literal):
+                bindings.append("_")
+                field_literals[i] = arg
+            elif isinstance(arg, FunctionCall):
+                nested = self._finalize_pattern_atom(arg)
+                if isinstance(nested, StructPattern):
+                    bindings.append("_")
+                    field_patterns[i] = nested
+                else:
+                    # Nested call didn't resolve to a struct pattern (e.g. an
+                    # arbitrary expression) - unsupported, fall through to
+                    # equality comparison on the whole pattern.
+                    return pattern
+            else:
+                # Not a variable binding, literal, or nested struct pattern -
+                # unsupported for now, leave as a plain FunctionCall so it
+                # falls through to equality comparison.
+                return pattern
+
+        return StructPattern(
+            pattern.name, bindings, field_literals or None, field_patterns or None
+        )
+
     def parse_match(self) -> MatchStatement:
         self.expect(TokenType.MATCH)
         value = self.parse_expression_without_assign()
@@ -1990,24 +2100,7 @@ class Parser:
                 self.advance()
                 default_case = self.parse_block()
             else:
-                pattern = self.parse_expression_without_assign()
-
-                # Check for Struct Pattern syntax: Name(var1, var2)
-                # This is currently parsed as a FunctionCall
-                if isinstance(pattern, FunctionCall):
-                    is_struct_pattern = True
-                    bindings = []
-                    for arg in pattern.arguments:
-                        if isinstance(arg, Variable):
-                            bindings.append(arg.name)
-                        else:
-                            # Not a simple variable binding (e.g. constant match Point(1, 2))
-                            # For Phase 2, we only support bindings. Mixed patterns could be future work.
-                            is_struct_pattern = False
-                            break
-
-                    if is_struct_pattern:
-                        pattern = StructPattern(pattern.name, bindings)
+                pattern = self.parse_match_pattern()
 
                 guard = None
                 if self.current_token.type == TokenType.IF:
