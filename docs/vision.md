@@ -28,3 +28,5 @@ The goal: replace the fragmented Python → MATLAB → Simulink → C toolchain 
 ## Where we are
 
 The general-purpose core (types, generics, effects, autodiff, C/MLIR backends) is shipped, and a seed of the dynamics story exists today: the `dsys` declarative syntax with controllability/spectral/gramian analysis and GA-based control search (see `examples/dynamics/`). The full pillar-by-pillar status table is in [`VISION.md`](https://github.com/flow-lang/flow/blob/main/VISION.md#where-flow-is-today); the gaps are tracked on the project board under the **Vision: Evolution** epic.
+
+The first vision construct is now in the compiler. `flow Name { ... }` blocks with `state` declarations and `x evolves as expr` continuous dynamics parse, type check, and compile to C: a struct plus a generated `Name_step(self, dt)` that evaluates every derivative from the pre-step state and integrates with explicit Euler. The pendulum from the vision runs today as `examples/evolution/pendulum_evolves.flow`. The spec and per-card status live in [docs/vision/north-star.md](vision/north-star.md).
