@@ -180,6 +180,21 @@ def write_status_md(results: list[dict], roots: list[str], timeout: int) -> None
                  f"Per-stage timeout: {timeout}s. Roots swept: "
                  + ", ".join(f"`{r}/`" for r in roots) + ".")
     lines.append("")
+    verify_failed = sum(1 for r in failed if r["file"].startswith("examples/verify/"))
+    if verify_failed:
+        lines.append(
+            f"> **Note:** {verify_failed} of the failures below are under "
+            "`examples/verify/`, the `flow-verify` proof corpus. That corpus "
+            "is written *ahead of* the verification-keyword parser/checker "
+            "(see [verification.md](../docs/language/verification.md)) and "
+            "intentionally explores notation (set operators, Euclidean "
+            "ratios, ghost contracts) that isn't implemented yet — these are "
+            "not core-Flow regressions. See "
+            "[flow-verify-parser-status.md](../docs/third-party/flow-verify-parser-status.md) "
+            "for a categorized breakdown, or regenerate it with "
+            "`python3 scripts/triage_verify_failures.py`."
+        )
+        lines.append("")
     lines.append("## Totals")
     lines.append("")
     lines.append(f"- **{total}** files checked, **{len(passed)}** pass "

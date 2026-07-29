@@ -12,11 +12,22 @@
     <link rel="stylesheet" href="vendor/github-dark.min.css">
     <link rel="stylesheet" href="wiki.css">
     <link rel="stylesheet" href="tutorial-runner.css">
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('flow-wiki-theme');
+                if (t !== 'light' && t !== 'dark') t = 'dark';
+                document.documentElement.setAttribute('data-theme', t);
+            } catch (e) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
 </head>
 <body>
     <header class="site-header">
         <div class="header-inner">
-            <a href="/transpile/" class="brand">
+            <a href="/flow/" class="brand">
                 <span class="brand-mark">F</span>
                 <span class="brand-name">Flow</span>
                 <span class="brand-tag">docs</span>
@@ -31,6 +42,7 @@
                     <span class="search-placeholder">Search…</span>
                     <kbd>⌘K</kbd>
                 </button>
+                <button type="button" class="btn theme-toggle" id="themeToggle" aria-label="Toggle color theme">Theme</button>
                 <a href="tutorials/" class="btn">Tutorials</a>
                 <a href="playground/" class="btn btn-accent">Playground</a>
                 <a href="https://github.com/abhishekshivakumar/transpile" class="btn" target="_blank" rel="noopener">GitHub</a>
@@ -58,9 +70,13 @@
             <nav class="breadcrumb" id="breadcrumb" aria-label="Breadcrumb"></nav>
             <article class="doc-article">
                 <header class="doc-header">
-                    <h1 class="doc-title" id="docTitle"></h1>
+                    <div class="doc-header-row">
+                        <h1 class="doc-title" id="docTitle"></h1>
+                        <a class="doc-edit-link" id="docEditLink" href="#" target="_blank" rel="noopener" hidden>Edit</a>
+                    </div>
                     <p class="doc-lead" id="docLead" hidden></p>
                 </header>
+                <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
                 <div class="markdown-body" id="markdownContent">
                     <p class="loading">Loading documentation…</p>
                 </div>
