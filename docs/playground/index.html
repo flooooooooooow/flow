@@ -448,9 +448,11 @@
         <a href="../" class="logo">
             <div class="logo-icon">F</div>
             <span class="logo-text">FLOW Playground</span>
-            <span class="logo-badge">syntax explorer</span>
+            <span class="logo-badge" id="logoBadge">syntax explorer</span>
         </a>
         <div class="header-actions">
+            <a href="../tutorials/index.html" class="btn" title="Interactive lessons in the browser">Tutorials</a>
+            <a href="../#library/memory.md" class="btn" title="Manual memory and arenas">Memory docs</a>
             <button class="btn" onclick="shareCode()" title="Share code">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
@@ -468,11 +470,16 @@
         </div>
     </header>
 
-    <div class="notice">
-        <strong>This page does not execute code.</strong>
-        It is a syntax explorer: browse examples of current FLOW syntax with highlighting and basic
-        lint checks. Every example below compiles and runs with the real compiler — copy one and run
-        it locally with <code>./flow run</code> (instructions in the right panel).
+    <div class="notice" id="notice">
+        <strong>Syntax explorer + optional browser interpreter.</strong>
+        Browse examples with highlighting and basic lint checks. When loaded from the wiki deploy,
+        <strong>Run (browser)</strong> executes via the same client-side interpreter as tutorials
+        (<code>flow-compile.js</code>) — not the native compiler. For real native runs use
+        <code>./flow run</code> (instructions in the right panel).
+        For hands-on lessons see
+        <a href="../tutorials/index.html" style="color: var(--accent)">Interactive Tutorials</a>;
+        for heap/arena rules see
+        <a href="../#library/memory.md" style="color: var(--accent)">Memory docs</a>.
     </div>
 
     <main>
@@ -502,11 +509,17 @@
                     </svg>
                     Format
                 </button>
-                <button class="btn btn-success" onclick="checkSyntax()">
+                <button class="btn" onclick="checkSyntax()">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="20 6 9 17 4 12"/>
                     </svg>
                     Check Syntax
+                </button>
+                <button class="btn btn-success" id="runBrowserBtn" onclick="runInBrowser()" title="Browser interpreter (not native)" style="display: none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    Run (browser)
                 </button>
             </div>
         </div>
@@ -530,13 +543,13 @@
 
             <div class="panel">
                 <div class="panel-header">
-                    <span>Syntax Check</span>
+                    <span id="outputPanelLabel">Output</span>
                 </div>
                 <div class="panel-content" style="display: flex; flex-direction: column;">
-                    <div id="output" class="output-content" style="flex: 1;">Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks — only the real compiler is authoritative.</div>
+                    <div id="output" class="output-content" style="flex: 1;">Click "Check Syntax" for basic lint checks, or "Run (browser)" when available for interpreter output. Browser run is not the native compiler.</div>
                     <div class="howto">
-                        <h4>Run this program for real</h4>
-                        <p>FLOW compiles server-side (Python transpiler → C → native). Save the editor contents as <code>main.flow</code> and run:</p>
+                        <h4>Run this program for real (native)</h4>
+                        <p>The browser button uses a client-side interpreter only. FLOW's real path is Python transpiler → C → native. Save the editor contents as <code>main.flow</code> and run:</p>
                         <pre>git clone https://github.com/flooooooooooow/flow.git
 cd flow
 # paste the editor contents into main.flow, then:
@@ -558,6 +571,7 @@ cd flow
         </div>
         <div class="keyboard-shortcuts">
             <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> Check</span>
+            <span id="runShortcut" style="display: none;"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> Run (browser)</span>
             <span><kbd>Ctrl</kbd>+<kbd>S</kbd> Format</span>
         </div>
     </footer>
@@ -574,6 +588,8 @@ cd flow
         </div>
     </div>
 
+    <!-- Optional: same engine as tutorials when served from wiki deploy (site/flow-compile.js → ../flow-compile.js) -->
+    <script src="../flow-compile.js" onerror="window.__flowCompileMissing = true;"></script>
     <script>
         // Example programs.
         // Every example is verified to compile and run with the current compiler:
@@ -1039,6 +1055,7 @@ function main() -> i32 {
             const statusDot = document.getElementById('editorStatus');
             const statusText = document.getElementById('editorStatusText');
             const problems = lint(editor.value);
+            document.getElementById('outputPanelLabel').textContent = 'Syntax Check';
 
             if (problems.length === 0) {
                 outputEl.className = 'output-content success';
@@ -1055,6 +1072,63 @@ function main() -> i32 {
                 statusDot.className = 'status-dot error';
                 statusText.textContent = problems.length + ' problem' + (problems.length === 1 ? '' : 's');
             }
+        }
+
+        function browserEngineAvailable() {
+            return typeof window.FlowCompile === 'object' && typeof window.FlowCompile.run === 'function';
+        }
+
+        function runInBrowser() {
+            const outputEl = document.getElementById('output');
+            const statusDot = document.getElementById('editorStatus');
+            const statusText = document.getElementById('editorStatusText');
+            document.getElementById('outputPanelLabel').textContent = 'Browser interpreter output';
+
+            if (!browserEngineAvailable()) {
+                outputEl.className = 'output-content error';
+                outputEl.textContent =
+                    'Browser interpreter not loaded.\n\n' +
+                    'flow-compile.js is available when this page is served from the wiki deploy ' +
+                    '(relative ../flow-compile.js). Open the playground from the built wiki, or run ' +
+                    'natively with ./flow run (see below).';
+                statusDot.className = 'status-dot error';
+                statusText.textContent = 'No interpreter';
+                return;
+            }
+
+            statusDot.className = 'status-dot';
+            statusText.textContent = 'Running…';
+
+            window.requestAnimationFrame(() => {
+                const result = FlowCompile.run(editor.value);
+                if (!result.ok) {
+                    outputEl.className = 'output-content error';
+                    outputEl.textContent =
+                        'Interpreter error: ' + (result.error || 'unknown') + '\n\n' +
+                        '(This is the browser interpreter, not the native FLOW compiler.)';
+                    statusDot.className = 'status-dot error';
+                    statusText.textContent = 'Error';
+                    return;
+                }
+
+                const banner =
+                    '── browser interpreter (not native) ──\n' +
+                    'Same engine as Interactive Tutorials. For real ./flow run, see below.\n\n';
+                outputEl.className = 'output-content success';
+                outputEl.textContent = banner + (result.output || '(no output)\n');
+                statusDot.className = 'status-dot success';
+                statusText.textContent = 'Ran (browser)';
+            });
+        }
+
+        function enableBrowserRunIfAvailable() {
+            if (!browserEngineAvailable()) return;
+            const btn = document.getElementById('runBrowserBtn');
+            const shortcut = document.getElementById('runShortcut');
+            const badge = document.getElementById('logoBadge');
+            btn.style.display = '';
+            shortcut.style.display = '';
+            badge.textContent = 'browser + syntax';
         }
 
         // Load example
@@ -1102,8 +1176,12 @@ function main() -> i32 {
         // Clear output
         function clearOutput() {
             const outputEl = document.getElementById('output');
-            outputEl.textContent = 'Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks — only the real compiler is authoritative.';
+            const hint = browserEngineAvailable()
+                ? 'Click "Check Syntax" for lint checks, or "Run (browser)" for interpreter output (not native).'
+                : 'Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks — only the real compiler is authoritative.';
+            outputEl.textContent = hint;
             outputEl.className = 'output-content';
+            document.getElementById('outputPanelLabel').textContent = 'Output';
             document.getElementById('editorStatus').className = 'status-dot';
             document.getElementById('editorStatusText').textContent = 'Ready';
         }
@@ -1151,6 +1229,11 @@ function main() -> i32 {
         editor.addEventListener('scroll', syncScroll);
 
         document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
+                e.preventDefault();
+                if (browserEngineAvailable()) runInBrowser();
+                return;
+            }
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
                 checkSyntax();
@@ -1165,6 +1248,8 @@ function main() -> i32 {
         editor.value = examples.hello;
         loadFromUrl();
         refreshHighlight();
+        enableBrowserRunIfAvailable();
+        clearOutput();
     </script>
 </body>
 </html>

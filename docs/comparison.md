@@ -1,111 +1,82 @@
-# Flow vs C vs MOJO: Detailed Comparison
+# Flow vs C · Rust · Zig · Mojo
 
-## Introduction
+Where Flow sits relative to systems and AI/ML languages. For the dynamics / control-engineering story, see [Flow vs MATLAB/Simulink](#flow-vs-labviewsimulink--matlabsimulink) below and [VISION.md](../VISION.md) at the repo root.
 
-Flow is a high-performance programming language designed for audio processing, scientific computing, and systems programming. This document provides a detailed comparison between Flow, C, and MOJO to help developers understand the strengths and use cases for each language.
+## At a glance
 
-## Flow vs C
+| Dimension | Flow | C | Rust | Zig | Mojo |
+|-----------|------|---|------|-----|------|
+| **Memory model** | Manual + helpers; no GC | Manual | Ownership / borrow checker | Manual + allocators | Ownership (Rust-like) |
+| **Effects / side effects** | Algebraic effects (first-class) | Conventions / errno | `Result` + traits | Error unions | Python-style + extras |
+| **Autodiff** | Built into the language | Libraries | Libraries (e.g. burn) | Libraries | Core ML feature |
+| **Audio / DSP** | First-class stdlib paths | External libs | Ecosystem crates | DIY / C interop | Not a focus |
+| **Compile target** | Portable C (+ MLIR/LLVM) | Native object code | LLVM | LLVM / C ABI | Machine code + Python interop |
+| **Syntax feel** | Explicit types, Rust/Go-ish | Low-level | Strict / expressive | Explicit / C-like | Python-like |
+| **Package story** | Early (`flow.toml`) | Headers / build systems | crates.io | zig fetch | Modular / evolving |
+| **Learning curve** | Moderate | Steep for safety | Steep | Moderate–steep | Easy if you know Python |
+| **Best fit today** | Audio, dynamics seed, systems demos | Embedded, OS, ABI glue | Safe systems at scale | Tooling, interop, freestanding | AI/ML productivity |
 
-| Feature | Flow | C |
-|---------|------|---|
-| **Memory Safety** | Automatic memory management with optional manual control | Manual memory management, prone to buffer overflows and memory leaks |
-| **Syntax** | Modern, expressive syntax with type inference | Verbose, low-level syntax requiring explicit type declarations |
-| **Audio Programming** | Built-in audio abstractions and effects system | Requires external libraries and complex setup |
-| **Type Safety** | Strong static typing with advanced type system | Weak typing with manual casting required |
-| **Concurrency** | Built-in effect system for managing side effects | Manual thread management and mutex handling |
-| **Development Speed** | Rapid prototyping with high-level abstractions | Slower development due to low-level details |
-| **Performance** | Compiles to efficient LLVM IR | Direct compilation to machine code |
-| **Learning Curve** | Gentle learning curve with intuitive syntax | Steep learning curve with complex concepts |
-| **Error Handling** | Algebraic effects for clean error propagation | Manual error checking with return codes |
-| **Standard Library** | Rich standard library with audio/graphics utilities | Minimal standard library |
-| **Debugging** | Integrated debugging with effect tracing | Traditional debugging tools |
+## Feature deep dive
 
-## Flow vs MOJO
+### Memory & safety
 
-| Feature | Flow | MOJO |
-|---------|------|-----|
-| **Primary Domain** | Audio processing, scientific computing, systems programming | AI/ML development and data science |
-| **Performance** | Optimized for real-time audio and systems performance | Optimized for AI/ML workloads |
-| **Syntax** | Clean, minimal syntax inspired by Rust/Go | Python-like syntax with extensions |
-| **Memory Management** | Automatic with optional manual control | Ownership model similar to Rust |
-| **Hardware Acceleration** | Built-in SIMD and GPU support | Native hardware acceleration for ML |
-| **Audio Processing** | First-class audio processing capabilities | Limited audio processing capabilities |
-| **Scientific Computing** | Optimized for signal processing | Optimized for numerical computation |
-| **Compilation** | Ahead-of-time compilation to LLVM IR | Compilation to efficient machine code |
-| **Ecosystem** | Audio-focused libraries and tools | AI/ML-focused ecosystem |
-| **Automatic Differentiation** | Built-in language feature | Core language feature |
-| **Interactivity** | Batch compilation with REPL support | Highly interactive with Jupyter integration |
+| | Flow | C | Rust | Zig | Mojo |
+|-|------|---|------|-----|------|
+| Buffer overflows | Programmer discipline | Same | Prevented by types | Discipline + optional checks | Ownership helps |
+| Null | `null` + pointers | Ubiquitous | `Option` | Optional pointers | Safer defaults |
+| GC pause | None | None | None | None | None (ownership) |
 
-## Flow vs MATLAB/Simulink
+### Concurrency & effects
 
-The workflow Flow ultimately targets ([VISION.md](../VISION.md)) is the fragmented control-engineering toolchain: analyze in MATLAB, diagram in Simulink, model physics in Modelica, then hand-write or code-generate C for deployment. Every hand-off loses information — the mathematical model and the deployed software drift apart. Flow's answer: **the model is the program.** The same source file that declares the plant is the one that is analyzed, controlled, and compiled to native code.
+| | Flow | C | Rust | Zig | Mojo |
+|-|------|---|------|-----|------|
+| Threads | POSIX wrappers in stdlib | pthreads / OS | `std::thread` + async | std.Thread | Runtime / Python model |
+| Side-effect control | Effect handlers | Informal | Types + `unsafe` | Explicit errors | Framework-dependent |
+| Async | Modeled via effects (no `async` keyword) | Callbacks / libs | `async`/`await` | Manual / event loops | Interactive notebooks |
+
+### Differentiation & numerics
+
+| | Flow | C | Rust | Zig | Mojo |
+|-|------|---|------|-----|------|
+| Forward / reverse AD | Language-level | Manual / libs | Ecosystem | Ecosystem | Native focus |
+| SIMD | `vec4` / stdlib | Intrinsics | `std::simd` | `@Vector` | Hardware accel for ML |
+| GPU | Experimental `@gpu` / Metal path | CUDA/OpenCL by hand | Growing | Via C | Strong ML path |
+
+## When to choose what
+
+**Choose Flow** when you want algebraic effects, built-in autodiff, and audio/dynamics-oriented systems code that still emits portable C.
+
+**Choose C** when you need maximum ABI control, tiny runtimes, or to meet an existing C-only interface.
+
+**Choose Rust** when memory safety at scale and a mature package ecosystem matter more than effects/AD as language features.
+
+**Choose Zig** when you want explicit allocators, superb C interop, and a modern “better C” toolchain.
+
+**Choose Mojo** when the workload is AI/ML and Python interop / notebook speed dominate.
+
+## Flow vs LabVIEW/Simulink · MATLAB/Simulink
+
+The workflow Flow ultimately targets is the fragmented control-engineering toolchain: analyze in MATLAB, diagram in Simulink, model physics in Modelica, then hand-write or code-generate C for deployment. Every hand-off loses information. Flow's answer: **the model is the program.**
 
 | Feature | Flow | MATLAB/Simulink |
 |---------|------|-----------------|
-| **Model → deployment** | One source file, compiled directly to C | Model in one tool, generate/rewrite code in another |
-| **System declaration** | `dsys` block in the program itself | Block diagrams / `ss()` objects in a separate environment |
-| **Analysis** | `sense` blocks: controllability, spectral radius, Gramians, bound to program variables | Rich toolbox functions, but results live outside the deployed artifact |
-| **Controller synthesis** | GA-based gain search (`ga evolve`), certified by a `closed` block | Extensive (PID/LQR/MPC toolboxes) |
-| **Runtime artifact** | Native binary via portable C; no runtime license | Generated code requires toolchain hand-off; licenses for tools/coder |
-| **Breadth today** | LTI systems (2-state seed), GA search — honest scope below | Decades of toolboxes; far broader numerically |
-| **General-purpose code** | Full language around the model (effects, generics, systems programming) | Scripting language distinct from deployment language |
+| **Model → deployment** | One source file → C | Model in one tool, code in another |
+| **System declaration** | `dsys` in the program | Block diagrams / `ss()` elsewhere |
+| **Analysis** | `sense` blocks bound to program variables | Rich toolboxes outside the deployable artifact |
+| **Controller synthesis** | GA gain search (`ga evolve`), `closed` blocks | PID/LQR/MPC toolboxes |
+| **Runtime artifact** | Native binary; no runtime license | Toolchain hand-off; licenses |
+| **Breadth today** | LTI seed (honest scope) | Decades of numerical breadth |
 
-**Honest scoping.** What ships in Flow today is the seed: discrete/continuous *linear* `dsys` plants (2-state, single-input envelope), `sense` analysis, Gramians, and GA-based gain search — see the [dynamics DSL reference](language/dynamics-dsl.md) and [dynamics library](library/dynamics.md). MATLAB/Simulink remains far ahead on numerical breadth. The aspirational end-state — nonlinear `evolves as` dynamics, units in the type system, temporal guarantees, solver selection at deploy time — is the vision ([VISION.md](../VISION.md), [north-star plan](vision/north-star.md)), not the present. Choose Flow here if you want model and executable to be the same artifact and today's LTI + GA scope covers your problem.
+> [!note] Honest scoping
+> What ships today is discrete/continuous *linear* `dsys` plants, `sense` analysis, Gramians, and GA-based gain search — see the [dynamics DSL](language/dynamics-dsl.md). MATLAB remains far ahead numerically. The end-state is [VISION.md](../VISION.md).
 
-## Detailed Analysis
+## Performance
 
-### Memory Management
+On microbenchmarks (Apple Silicon, clang `-O3`), Flow matches C within noise and is typically 50–100× faster than CPython for the same algorithms. Full tables: [Benchmark results](project/benchmark-results.md).
 
-**Flow**: Combines automatic memory management with optional manual control, allowing developers to choose the right approach for their use case. The effect system provides clean ways to manage resources.
+## See also
 
-**C**: Requires manual memory management, which gives maximum control but increases the risk of memory-related bugs.
-
-**MOJO**: Uses an ownership model similar to Rust, providing memory safety without garbage collection.
-
-### Concurrency and Side Effects
-
-**Flow**: Features an innovative algebraic effects system that allows clean separation of pure computation from side effects like I/O, state, and exceptions.
-
-**C**: Requires manual thread management and mutex handling, making concurrent programming error-prone.
-
-**MOJO**: Inherits Python's concurrency model with additional safety features for ML workloads.
-
-### Performance Characteristics
-
-**Flow**: Designed for real-time applications with predictable performance. The compiler generates efficient LLVM IR optimized for audio processing and systems programming.
-
-**C**: Offers direct control over hardware resources with predictable performance characteristics.
-
-**MOJO**: Optimized for ML workloads with automatic vectorization and GPU acceleration.
-
-## Use Cases
-
-### Choose Flow When:
-
-- Building real-time audio applications
-- Developing systems with predictable performance requirements
-- Needing clean separation of side effects
-- Working on signal processing applications
-- Wanting modern syntax with strong type safety
-
-### Choose C When:
-
-- Maximum performance and control are required
-- Working with embedded systems
-- Needing direct hardware access
-- Building system-level software
-- Working with existing C codebases
-
-### Choose MOJO When:
-
-- Developing AI/ML applications
-- Needing high interactivity for experimentation
-- Working with numerical computations
-- Leveraging Python ecosystem for ML
-- Requiring automatic differentiation
-
-## Conclusion
-
-Each language serves different domains effectively. Flow excels in audio processing and systems programming with its unique effects system, C remains the gold standard for systems programming with maximum control, and MOJO leads in AI/ML development with its Python compatibility and ML optimizations.
-
-Flow's unique position lies in its combination of high performance, memory safety, and the algebraic effects system, making it ideal for applications where side effects need to be managed cleanly while maintaining performance.
+- [Quick Start](getting-started.md)
+- [Effects showcase](effects-showcase.md)
+- [Autodiff library](library/autodiff.md)
+- [Language roadmap](project/language-roadmap.md)
