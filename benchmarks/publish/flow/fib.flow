@@ -1,0 +1,25 @@
+# Naive recursive Fibonacci. Measures function call overhead.
+# Prints "result <n>" and "seconds <t>". Timed region is the single fib(35) call.
+
+extern {
+    function clock_gettime_nsec_np(clock_id: i32) -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function fib(n: i32) -> i64 {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+function main() -> i32 {
+    let t0: i64 = clock_gettime_nsec_np(6)
+    let result: i64 = fib(35)
+    let t1: i64 = clock_gettime_nsec_np(6)
+    let secs: f64 = (t1 - t0) / 1000000000.0
+    print("result ")
+    println(result)
+    printf("seconds %.9f\n", secs)
+    return 0
+}

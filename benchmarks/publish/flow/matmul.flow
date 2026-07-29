@@ -1,0 +1,52 @@
+# Dense matrix multiply, naive i-j-k triple loop, 300x300 doubles.
+# Result is the checksum of C. Timed region is the multiply only.
+
+extern {
+    function clock_gettime_nsec_np(clock_id: i32) -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const N: i32 = 300
+
+function matmul(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, n: i32) {
+    for i in 0 to n {
+        for j in 0 to n {
+            let mut sum: f64 = 0.0
+            for k in 0 to n {
+                sum = sum + A[i * n + k] * B[k * n + j]
+            }
+            C[i * n + j] = sum
+        }
+    }
+}
+
+function main() -> i32 {
+    let A: array<f64, 90000> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let B: array<f64, 90000> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let C: array<f64, 90000> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    let A_ptr: ptr<f64> = A
+    let B_ptr: ptr<f64> = B
+    let C_ptr: ptr<f64> = C
+
+    for i in 0 to N {
+        for j in 0 to N {
+            A[i * N + j] = 0.001 * (i + j)
+            B[i * N + j] = 0.001 * (i - j)
+        }
+    }
+
+    let t0: i64 = clock_gettime_nsec_np(6)
+    matmul(A_ptr, B_ptr, C_ptr, N)
+    let t1: i64 = clock_gettime_nsec_np(6)
+    let secs: f64 = (t1 - t0) / 1000000000.0
+
+    let mut check: f64 = 0.0
+    for i in 0 to N * N {
+        check = check + C[i]
+    }
+
+    printf("result %.6f\n", check)
+    printf("seconds %.9f\n", secs)
+    return 0
+}
