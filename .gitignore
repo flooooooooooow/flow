@@ -79,3 +79,16 @@ venv.bak/
 .dmypy.json
 dmypy.json
 emsdk/
+
+# Node
+node_modules/
+
+# Python packaging
+*.egg-info/
+
+# Helm workspace state
+.helm/
+
+# Lean
+.lake/
+lake-packages/
