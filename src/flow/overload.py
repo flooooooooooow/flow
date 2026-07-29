@@ -67,8 +67,13 @@ class OverloadResolver:
         if key in self._mangled_names:
             return  # Already registered
         
-        # Create mangled name
-        mangled = self._mangle_name(name, param_types)
+        # Create mangled name. Functions generated from `flow` blocks keep
+        # their plain names: Name_step(Name*, double) is a stable C API
+        # (docs/vision/north-star.md 1.4).
+        if "flow_api" in (getattr(func, "attributes", None) or []):
+            mangled = name
+        else:
+            mangled = self._mangle_name(name, param_types)
         
         # Store overload
         if name not in self._overloads:
