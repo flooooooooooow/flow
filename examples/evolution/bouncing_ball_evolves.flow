@@ -1,0 +1,108 @@
+# BOUNCING BALL, written as a flow block with a hybrid event.
+#
+# This is the north-star form promised in VISION.md and in the header of
+# examples/evolution/bouncing_ball.flow, now compiling for real. The
+# continuous part is two `evolves as` equations. The impact is a
+# `when height reaches 0.0` event whose body flips the velocity with
+# restitution 0.8 and clamps the height back to the surface. Both resets
+# in the event body read the same pre-reset state and apply together.
+#
+# The guard is a sign-change test at step granularity (see
+# docs/vision/north-star.md section 5.3): the event fires at the end of
+# the step in which height crossed zero. The hand-integrated sibling
+# example solves for the exact impact instant inside the step; this one
+# accepts O(dt) event-location error in exchange for stating the system
+# declaratively.
+#
+# Run: ./flow run examples/evolution/bouncing_ball_evolves.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+flow Ball {
+    state height      : f64 = 2.0     # m
+    state velocity    : f64 = 0.0     # m/s
+    param gravity     : f64 = 9.81    # m/s^2
+    param restitution : f64 = 0.8
+
+    height evolves as velocity
+    velocity evolves as -gravity
+
+    when height reaches 0.0 {
+        velocity becomes -restitution * velocity
+        height becomes 0.0
+    }
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.001
+    let steps: i32 = 6000
+
+    let mut ball: Ball = Ball_new()
+
+    println("")
+    println("  BOUNCING BALL  --  flow block + `when height reaches 0.0` event")
+    println("  ================================================================")
+    println("")
+    println("    bounce   time [s]    rebound apex [m]   apex ratio")
+    println("    ------   --------    ----------------   ----------")
+
+    let mut t: f64 = 0.0
+    let mut prev_velocity: f64 = 0.0
+    let mut peak: f64 = 2.0
+    let mut prev_peak: f64 = 0.0
+    let mut bounces: i32 = 0
+    let mut decreasing: i32 = 1
+
+    for k in 0 to steps {
+        Ball_step(&ball, dt)
+        t = t + dt
+
+        if prev_velocity < 0.0 and ball.velocity > 0.0 {
+            bounces = bounces + 1
+            if bounces > 1 and peak >= prev_peak {
+                decreasing = 0
+            }
+            if bounces <= 8 {
+                print("    ")
+                printf("%6.0f", bounces as f64)
+                printf("   %8.3f", t)
+                printf("   %17.4f", peak)
+                if bounces > 1 {
+                    printf("   %10.4f", peak / prev_peak)
+                }
+                println("")
+            }
+            prev_peak = peak
+            peak = 0.0
+        }
+        if ball.height > peak {
+            peak = ball.height
+        }
+        prev_velocity = ball.velocity
+    }
+
+    println("")
+    print("    bounces simulated : ")
+    println(bounces)
+    print("    final height      : ")
+    printf("%.4f m", ball.height)
+    println("")
+    println("")
+
+    if ball.height != ball.height or ball.velocity != ball.velocity {
+        println("    FAIL: state became NaN")
+        return 1
+    }
+    if bounces < 4 {
+        println("    FAIL: expected at least 4 bounces")
+        return 2
+    }
+    if decreasing == 0 {
+        println("    FAIL: rebound apexes were not strictly decreasing")
+        return 3
+    }
+    println("    OK: declarative hybrid bounce, apexes decay by ~restitution^2")
+    return 0
+}

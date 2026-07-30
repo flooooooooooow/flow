@@ -209,6 +209,7 @@ The `dsys` vocabulary is the shipped seed of Flow's founding vision
 |---|---|
 | `dsys plant { A … B … C … }` | `flow Plant { position : Meter; … }` with typed, unit-checked state |
 | matrices as flat numbers | `position evolves as velocity` — dynamics as equations, any nonlinearity |
+| `when height reaches 0.0 { velocity becomes -0.8 * velocity }` | event location by root-finding inside the step; boolean edge guards |
 | `continuous` + Euler discretization | solver selection in a `deploy { solver RK4 }` block |
 | `sense on plant { controllable … }` | `analyze Plant { poles, stability, controllability, observability }` |
 | `ga evolve on … { … }` | `control Plant { objective { minimize error } }` — PID/LQR/MPC synthesis |
@@ -223,8 +224,17 @@ strict type checker, and lowers to C as a struct plus
 `Name_derivs` function, so a later card can swap in RK4 without changing
 the surface syntax. All derivatives are evaluated from the pre-step state.
 See `examples/evolution/pendulum_evolves.flow` for the pendulum written
-this way. Time blocks, hybrid events, invariants, units, and `connect`
-remain aspirational.
+this way.
+
+Hybrid events have shipped in their zero-crossing form:
+`when x reaches L { x becomes expr }` inside a flow block fires when the
+sign of `x - L` changes between the end of one step and the next, then
+applies its `becomes` resets synchronously, all right-hand sides read
+from the same pre-reset state. Detection is at step granularity; locating
+the crossing inside the step is a later refinement. See
+`examples/evolution/bouncing_ball_evolves.flow` for the bouncing ball
+written this way. Time blocks, invariants, units, and `connect` remain
+aspirational.
 
 The strategy is to grow this seed rather than build a second language beside
 the current one. The concrete grammar-level plan for each north-star construct
