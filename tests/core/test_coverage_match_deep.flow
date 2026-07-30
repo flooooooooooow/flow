@@ -1,0 +1,220 @@
+# Match coverage: 3-deep nested struct patterns, string-literal patterns
+# (strcmp content semantics), and literal+binding mixes combined with
+# guards and `|` alternation. Extends test_match_advanced.flow (guards,
+# alternation, 2-level nesting) and test_match_nested.flow.
+# Returns 0 if all checks pass, non-zero (test id) otherwise.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+struct Leaf {
+    v: i32,
+}
+
+struct Mid {
+    leaf: Leaf,
+    m: i32,
+}
+
+struct Top {
+    mid: Mid,
+    t: i32,
+}
+
+# --- 3-deep nested struct patterns ---------------------------------------
+
+function classify_top(x: Top) -> i32 {
+    match x {
+        Top(Mid(Leaf(0), m), t) => { return 1 }        # innermost literal
+        Top(Mid(Leaf(v), 0), t) => { return 2 }        # middle literal
+        Top(Mid(Leaf(v), m), 0) => { return 3 }        # outer literal
+        Top(Mid(Leaf(v), m), t) if v > t => { return 4 }  # deep binding + guard
+        _ => { return 5 }
+    }
+    return -1
+}
+
+function make_top(v: i32, m: i32, t: i32) -> Top {
+    return Top { mid: Mid { leaf: Leaf { v: v }, m: m }, t: t }
+}
+
+function test_deep_innermost_literal() -> bool {
+    return classify_top(make_top(0, 9, 9)) == 1
+}
+
+function test_deep_middle_literal() -> bool {
+    return classify_top(make_top(5, 0, 9)) == 2
+}
+
+function test_deep_outer_literal() -> bool {
+    return classify_top(make_top(5, 9, 0)) == 3
+}
+
+function test_deep_guard_uses_innermost_binding() -> bool {
+    return classify_top(make_top(8, 9, 3)) == 4
+}
+
+function test_deep_wildcard() -> bool {
+    return classify_top(make_top(1, 9, 3)) == 5
+}
+
+# --- String-literal patterns: strcmp content semantics --------------------
+
+function power_of(word: string) -> i32 {
+    match word {
+        "off" => { return 0 }
+        "low" => { return 1 }
+        "high" => { return 2 }
+        _ => { return -1 }
+    }
+    return -1
+}
+
+function test_string_literal_match() -> bool {
+    return power_of("low") == 1 && power_of("high") == 2
+}
+
+function test_string_no_match_takes_wildcard() -> bool {
+    return power_of("banana") == -1
+}
+
+function pick_word(n: i32) -> string {
+    if n == 0 {
+        return "off"
+    }
+    return "high"
+}
+
+function test_string_match_by_content_not_source_literal() -> bool {
+    # The scrutinee comes back from a function call, so the arm can only
+    # match by strcmp on content, never by comparing the literal itself.
+    return power_of(pick_word(0)) == 0 && power_of(pick_word(1)) == 2
+}
+
+# --- String or-patterns and guards ---------------------------------------
+
+function answer_of(word: string, strict: i32) -> i32 {
+    match word {
+        "yes" | "y" if strict == 1 => { return 10 }
+        "yes" | "y" => { return 11 }
+        "no" | "n" => { return 12 }
+        _ => { return 13 }
+    }
+    return -1
+}
+
+function test_string_or_pattern_with_guard_true() -> bool {
+    return answer_of("y", 1) == 10 && answer_of("yes", 1) == 10
+}
+
+function test_string_or_pattern_with_guard_false() -> bool {
+    return answer_of("yes", 0) == 11
+}
+
+function test_string_or_pattern_second_arm() -> bool {
+    return answer_of("n", 1) == 12
+}
+
+# --- Literal + binding mix on a flat struct -------------------------------
+
+struct Pair {
+    a: i32,
+    b: i32,
+}
+
+function mix(p: Pair) -> i32 {
+    match p {
+        Pair(0, b) => { return 100 + b }
+        Pair(a, 0) => { return 200 + a }
+        Pair(a, b) if a == b => { return 300 + a }
+        Pair(a, b) => { return a + b }
+    }
+    return -1
+}
+
+function test_mix_first_field_literal_binds_second() -> bool {
+    let p: Pair = Pair { a: 0, b: 7 }
+    return mix(p) == 107
+}
+
+function test_mix_second_field_literal_binds_first() -> bool {
+    let p: Pair = Pair { a: 4, b: 0 }
+    return mix(p) == 204
+}
+
+function test_mix_guard_on_bindings() -> bool {
+    let p: Pair = Pair { a: 6, b: 6 }
+    return mix(p) == 306
+}
+
+function test_mix_fallthrough_binds_both() -> bool {
+    let p: Pair = Pair { a: 2, b: 5 }
+    return mix(p) == 7
+}
+
+function main() -> i32 {
+    if !test_deep_innermost_literal() {
+        printf("FAIL: deep_innermost_literal\n", 0)
+        return 1
+    }
+    if !test_deep_middle_literal() {
+        printf("FAIL: deep_middle_literal\n", 0)
+        return 2
+    }
+    if !test_deep_outer_literal() {
+        printf("FAIL: deep_outer_literal\n", 0)
+        return 3
+    }
+    if !test_deep_guard_uses_innermost_binding() {
+        printf("FAIL: deep_guard_uses_innermost_binding\n", 0)
+        return 4
+    }
+    if !test_deep_wildcard() {
+        printf("FAIL: deep_wildcard\n", 0)
+        return 5
+    }
+    if !test_string_literal_match() {
+        printf("FAIL: string_literal_match\n", 0)
+        return 6
+    }
+    if !test_string_no_match_takes_wildcard() {
+        printf("FAIL: string_no_match_takes_wildcard\n", 0)
+        return 7
+    }
+    if !test_string_match_by_content_not_source_literal() {
+        printf("FAIL: string_match_by_content\n", 0)
+        return 8
+    }
+    if !test_string_or_pattern_with_guard_true() {
+        printf("FAIL: string_or_pattern_with_guard_true\n", 0)
+        return 9
+    }
+    if !test_string_or_pattern_with_guard_false() {
+        printf("FAIL: string_or_pattern_with_guard_false\n", 0)
+        return 10
+    }
+    if !test_string_or_pattern_second_arm() {
+        printf("FAIL: string_or_pattern_second_arm\n", 0)
+        return 11
+    }
+    if !test_mix_first_field_literal_binds_second() {
+        printf("FAIL: mix_first_field_literal\n", 0)
+        return 12
+    }
+    if !test_mix_second_field_literal_binds_first() {
+        printf("FAIL: mix_second_field_literal\n", 0)
+        return 13
+    }
+    if !test_mix_guard_on_bindings() {
+        printf("FAIL: mix_guard_on_bindings\n", 0)
+        return 14
+    }
+    if !test_mix_fallthrough_binds_both() {
+        printf("FAIL: mix_fallthrough_binds_both\n", 0)
+        return 15
+    }
+
+    printf("All deep match coverage tests passed\n", 0)
+    return 0
+}
