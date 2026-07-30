@@ -17,10 +17,13 @@ and dual C / MLIR backends at native speed.
   <a href="comparison.md" class="wiki-cta">vs C · Rust · Zig · Mojo</a>
 </div>
 
-<pre class="wiki-hero-code"><code class="language-flow">function main() -> i32 {
-    let x: i32 = 42
-    println("Hello, Flow!")
-    return 0
+<pre class="wiki-hero-code"><code class="language-flow">flow Pendulum {
+    state angle: f64 = 0.5
+    state velocity: f64 = 0.0
+    param damping: f64 = 0.3
+
+    angle evolves as velocity
+    velocity evolves as -9.81 * sin(angle) - damping * velocity
 }</code></pre>
 
 </div>
@@ -39,7 +42,7 @@ and dual C / MLIR backends at native speed.
 
 <div class="wiki-card">
 <strong>Algebraic effects</strong>
-<p>Swap I/O, logging, and state without rewriting call sites. Capabilities, not globals.</p>
+<p>Swap I/O, logging, and state without rewriting call sites. Statically bound handlers compile to direct calls.</p>
 </div>
 
 <div class="wiki-card">
@@ -49,7 +52,7 @@ and dual C / MLIR backends at native speed.
 
 <div class="wiki-card">
 <strong>Dual compilation</strong>
-<p>Portable C by default; MLIR/LLVM for JIT and GPU when you need it.</p>
+<p>Portable C by default; MLIR/LLVM for JIT when you need it. Dynamics, structs, and effects run on both.</p>
 </div>
 
 <div class="wiki-card">
