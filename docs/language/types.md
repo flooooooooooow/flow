@@ -198,6 +198,56 @@ let arr: [f32] = [1, 2, 3]  # OK: i32 literals converted to f32
 let i: i32 = 3.14        # Error: cannot convert f32 to i32
 ```
 
+## 📏 Units of Measure
+
+A `unit` declaration creates a numeric type that carries a physical
+dimension. The checker performs dimensional analysis at compile time.
+At runtime a unit value is a plain `f64`.
+
+```
+unit Meter
+unit Second
+unit Velocity = Meter / Second
+unit Accel    = Meter / Second^2
+unit Hertz    = 1 / Second
+```
+
+A bare `unit Name` declares a new base dimension. A declaration with `=`
+derives a unit from existing ones using `*`, `/`, and integer `^`
+exponents. The literal `1` stands for the dimensionless unit.
+
+```
+let d: Meter  = 100.0 as Meter    # literals take a unit with `as`
+let t: Second = 8.0 as Second
+
+let v: Velocity = d / t           # division composes dimensions
+let d2: Meter   = v * t           # multiplication cancels them
+let sum: Meter  = d + d2          # addition needs equal dimensions
+let ratio: f64  = d2 / d          # full cancellation gives plain f64
+let far: bool   = sum > d         # comparison needs equal dimensions
+
+let bad = d + t                   # compile error:
+# line N: dimensional error: Meter + Second
+# (operands of '+' must have the same dimension)
+```
+
+Dimensionless scalars multiply and divide freely: `d * 2.0` is a
+`Meter`. Adding a bare literal to a unit value is an error; give the
+literal a unit first with `as`. Casting between units requires equal
+dimensions; cross-dimension conversion goes through the numeric base,
+as in `d as f64 as Second`.
+
+Two derived units with the same exponent vector are interchangeable.
+When a `*` or `/` result matches no declared unit, error messages print
+its dimensions directly, for example `Meter/Second^3`.
+
+Trigonometric and exponential builtins take dimensionless arguments.
+A unit named `Radian` is the one exception: angles pass into `sin`,
+`cos`, and the rest as plain numbers.
+
+Units erase in the generated C. Each unit becomes a `typedef double`,
+so the runtime cost is zero.
+
 ## 🎭 Generic Types (Future)
 
 ```
