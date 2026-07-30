@@ -1,0 +1,113 @@
+# Flow blocks coverage: several flows in one file, evolves referencing
+# params and inputs together, and two instances of the same flow stepped
+# independently. Constant or linear derivatives with power-of-two
+# constants keep the Euler arithmetic exact, so results compare with ==.
+# Extends test_evolves_pendulum.flow and test_evolves_bouncing_ball.flow.
+# Returns 0 if all checks pass, non-zero (test id) otherwise.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+flow Linear {
+    state x : f64 = 0.0
+    param rate : f64 = 1.0
+    x evolves as rate
+}
+
+flow Motor {
+    state speed : f64 = 0.0
+    input voltage : f64
+    param gain : f64 = 2.0
+    param damping : f64 = 0.5
+    speed evolves as gain * voltage - damping * speed
+}
+
+function test_two_instances_step_independently() -> bool {
+    let mut a: Linear = Linear_new()
+    let mut b: Linear = Linear_new()
+    b.rate = 4.0
+
+    for k in 0 to 8 {
+        Linear_step(&a, 0.25)
+    }
+    for k in 0 to 4 {
+        Linear_step(&b, 0.25)
+    }
+
+    # a: 8 steps * 0.25 * 1.0 = 2.0; b: 4 steps * 0.25 * 4.0 = 4.0.
+    # Stepping b must not have moved a.
+    return a.x == 2.0 && b.x == 4.0
+}
+
+function test_instance_param_change_isolated() -> bool {
+    let mut a: Linear = Linear_new()
+    let mut b: Linear = Linear_new()
+    a.rate = 8.0
+    Linear_step(&a, 0.5)
+    Linear_step(&b, 0.5)
+    # b keeps the default rate 1.0.
+    return a.x == 4.0 && b.x == 0.5
+}
+
+function test_evolves_reads_input_and_params() -> bool {
+    let mut m: Motor = Motor_new()
+    m.voltage = 1.0
+    # One Euler step: speed += dt * (gain * voltage - damping * speed)
+    #               = 0.25 * (2.0 * 1.0 - 0.5 * 0.0) = 0.5
+    Motor_step(&m, 0.25)
+    if m.speed != 0.5 {
+        return false
+    }
+    # Second step: speed += 0.25 * (2.0 - 0.5 * 0.5) = 0.4375
+    Motor_step(&m, 0.25)
+    return m.speed == 0.9375
+}
+
+function test_input_change_between_steps() -> bool {
+    let mut m: Motor = Motor_new()
+    m.voltage = 1.0
+    Motor_step(&m, 0.25)      # speed = 0.5
+    m.voltage = 0.0
+    # Now only damping acts: speed += 0.25 * (0.0 - 0.5 * 0.5) = -0.0625
+    Motor_step(&m, 0.25)
+    return m.speed == 0.4375
+}
+
+function test_different_flows_coexist() -> bool {
+    let mut lin: Linear = Linear_new()
+    let mut m: Motor = Motor_new()
+    m.voltage = 1.0
+    for k in 0 to 4 {
+        Linear_step(&lin, 0.25)
+        Motor_step(&m, 0.25)
+    }
+    # lin advanced 4 * 0.25 * 1.0 = 1.0 regardless of Motor stepping.
+    return lin.x == 1.0 && m.speed > 0.0
+}
+
+function main() -> i32 {
+    if !test_two_instances_step_independently() {
+        printf("FAIL: two_instances_step_independently\n", 0.0)
+        return 1
+    }
+    if !test_instance_param_change_isolated() {
+        printf("FAIL: instance_param_change_isolated\n", 0.0)
+        return 2
+    }
+    if !test_evolves_reads_input_and_params() {
+        printf("FAIL: evolves_reads_input_and_params\n", 0.0)
+        return 3
+    }
+    if !test_input_change_between_steps() {
+        printf("FAIL: input_change_between_steps\n", 0.0)
+        return 4
+    }
+    if !test_different_flows_coexist() {
+        printf("FAIL: different_flows_coexist\n", 0.0)
+        return 5
+    }
+
+    printf("All flow instance coverage tests passed\n", 0.0)
+    return 0
+}
