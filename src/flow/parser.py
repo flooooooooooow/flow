@@ -5,9 +5,21 @@ A simple recursive descent parser for the FLOW language
 """
 
 import re
+from fractions import Fraction
 from typing import List, Optional, Union, Any, Tuple, Dict
 from dataclasses import dataclass, field
 from enum import Enum
+
+# Time-unit suffixes for duration literals (docs/vision/north-star.md 4.1),
+# mapped to nanoseconds per unit. Recognized only in duration positions
+# (`every`, `solver dt`), so each word stays a legal identifier elsewhere.
+DURATION_UNIT_NS = {
+    "ns": 1,
+    "us": 1_000,
+    "ms": 1_000_000,
+    "s": 1_000_000_000,
+    "min": 60_000_000_000,
+}
 
 
 class FlowSyntaxError(SyntaxError):
@@ -738,6 +750,49 @@ class FlowWhenDecl:
 
 
 @dataclass
+class DurationLiteral:
+    """NUMBER + time-unit suffix, canonicalized to i64 nanoseconds at parse
+    time (docs/vision/north-star.md 4.1). Valid only where a duration is
+    grammatically expected (`every`, `solver dt`); the suffix words stay
+    ordinary identifiers everywhere else. Fractional literals are accepted
+    only when they land on a whole number of nanoseconds.
+    """
+
+    ns: int
+    text: str = ""
+    line: int = 0
+
+
+@dataclass
+class FlowEveryDecl:
+    """`every <duration> { ... }`: a discrete block fired once per elapsed
+    period of integrated time (docs/vision/north-star.md 4.2-4.4, card:
+    time-blocks). The period is stored canonicalized to i64 nanoseconds.
+    Bodies contain `becomes` updates in this version, staged with the same
+    synchronous semantics as `when` resets (3.2).
+    """
+
+    period_ns: int
+    period_text: str
+    body: List[FlowBecomesDecl]
+    line: int = 0
+
+
+@dataclass
+class FlowSolverDecl:
+    """`solver { dt <duration> method euler }` (docs/vision/north-star.md
+    2.3): pins the default fixed step used by simulation drivers and the
+    integration method. It does not change the `Name_step` signature; dt
+    stays caller-supplied.
+    """
+
+    dt_ns: int
+    dt_text: str
+    method: str = "euler"
+    line: int = 0
+
+
+@dataclass
 class FlowDecl:
     """`flow Name { ... }`: a struct plus continuous dynamics.
 
@@ -754,6 +809,8 @@ class FlowDecl:
     params: List[FlowParamDecl]
     evolves: List[FlowEvolveDecl]
     whens: List[FlowWhenDecl] = field(default_factory=list)
+    everys: List[FlowEveryDecl] = field(default_factory=list)
+    solver: Optional[FlowSolverDecl] = None
     is_exported: bool = False
     location: Optional[SourceLocation] = None
 
@@ -1587,6 +1644,8 @@ class Parser:
         params: List[FlowParamDecl] = []
         evolves: List[FlowEvolveDecl] = []
         whens: List[FlowWhenDecl] = []
+        everys: List[FlowEveryDecl] = []
+        solver: Optional[FlowSolverDecl] = None
         section_words = ("state", "input", "output", "param")
 
         while self.current_token.type != TokenType.RBRACE:
@@ -1616,6 +1675,21 @@ class Parser:
                 peek2 is not None
                 and peek2.type == TokenType.IDENTIFIER
                 and peek2.value == "reaches"
+            )
+            # `every 10 ms { ... }`: `every` followed by a number is the
+            # discrete-block form; `every` anywhere else stays an identifier
+            # (so `state every : f64` and `every evolves as ...` still parse).
+            is_every = (
+                tok.type == TokenType.IDENTIFIER
+                and tok.value == "every"
+                and self.lookahead.type == TokenType.NUMBER
+            )
+            # `solver { ... }`: `solver` directly before '{' is the settings
+            # block; `solver` in any other position stays an identifier.
+            is_solver = (
+                tok.type == TokenType.IDENTIFIER
+                and tok.value == "solver"
+                and self.lookahead.type == TokenType.LBRACE
             )
             if is_section:
                 kind = tok.value
@@ -1656,14 +1730,26 @@ class Parser:
                 evolves.append(FlowEvolveDecl(target, rhs, tok.line))
             elif is_when:
                 whens.append(self._parse_flow_when(name))
+            elif is_every:
+                everys.append(self._parse_flow_every(name))
+            elif is_solver:
+                if solver is not None:
+                    raise self.error(
+                        f"flow '{name}' has two 'solver' blocks; a flow "
+                        f"pins at most one default step",
+                        suggestion="merge the settings into one solver block",
+                    )
+                solver = self._parse_flow_solver(name)
             else:
                 raise self.error(
                     f"Unexpected item in flow '{name}' body",
                     suggestion=(
                         "flow bodies contain member declarations "
                         "('state|input|output|param name : type [= expr]'), "
-                        "dynamics ('x evolves as expr'), and events "
-                        "('when x reaches expr { x becomes expr }')"
+                        "dynamics ('x evolves as expr'), events "
+                        "('when x reaches expr { x becomes expr }'), "
+                        "discrete blocks ('every 10 ms { x becomes expr }'), "
+                        "and settings ('solver { dt 1 ms }')"
                     ),
                 )
 
@@ -1675,7 +1761,8 @@ class Parser:
             end_column=name_token.column - 1 + len(name),
         )
         return FlowDecl(
-            name, states, inputs, outputs, params, evolves, whens, location=loc
+            name, states, inputs, outputs, params, evolves, whens, everys,
+            solver, location=loc
         )
 
     def _parse_flow_when(self, flow_name: str) -> FlowWhenDecl:
@@ -1691,13 +1778,22 @@ class Parser:
         guard_target = self.expect(TokenType.IDENTIFIER).value
         self.advance()  # consume contextual 'reaches'
         threshold = self.parse_expression_without_assign()
-        self.expect(TokenType.LBRACE)
+        body = self._parse_becomes_body(flow_name, "when", "resets")
+        return FlowWhenDecl(guard_target, threshold, body, when_token.line)
 
+    def _parse_becomes_body(
+        self, flow_name: str, block_word: str, what: str
+    ) -> List[FlowBecomesDecl]:
+        """Parse `{ NAME becomes expr ... }`, the body shared by `when`
+        events and `every` blocks. Only `becomes` statements exist in this
+        version; each right-hand side is a full expression.
+        """
+        self.expect(TokenType.LBRACE)
         body: List[FlowBecomesDecl] = []
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
                 raise self.error(
-                    f"Unterminated 'when' body in flow '{flow_name}': "
+                    f"Unterminated '{block_word}' body in flow '{flow_name}': "
                     f"expected '}}' before end of file"
                 )
             stmt_tok = self.current_token
@@ -1708,11 +1804,11 @@ class Parser:
             )
             if not is_becomes:
                 raise self.error(
-                    f"Unexpected statement in 'when' body of flow "
+                    f"Unexpected statement in '{block_word}' body of flow "
                     f"'{flow_name}'",
                     suggestion=(
-                        "'when' bodies contain resets in this version: "
-                        "'x becomes expr'"
+                        f"'{block_word}' bodies contain {what} in this "
+                        f"version: 'x becomes expr'"
                     ),
                 )
             target = stmt_tok.value
@@ -1722,7 +1818,143 @@ class Parser:
             body.append(FlowBecomesDecl(target, rhs, stmt_tok.line))
 
         self.expect(TokenType.RBRACE)
-        return FlowWhenDecl(guard_target, threshold, body, when_token.line)
+        return body
+
+    def parse_duration(self, where: str) -> DurationLiteral:
+        """Parse NUMBER + time-unit suffix into i64 nanoseconds
+        (docs/vision/north-star.md 4.1).
+
+        The lexer keeps the number and the suffix as separate tokens
+        (`10ms` lexes as NUMBER(10) IDENT(ms)), so suffix words stay legal
+        identifiers everywhere a duration is not expected. Fractional
+        literals must land on a whole number of nanoseconds; time is never
+        silently rounded.
+        """
+        num_token = self.current_token
+        if num_token.type != TokenType.NUMBER:
+            raise self.error(
+                f"Expected a duration in {where}, "
+                f"got {num_token.type}",
+                suggestion=(
+                    "write a number with a time-unit suffix, e.g. '10 ms' "
+                    "(units: ns, us, ms, s, min)"
+                ),
+            )
+        self.advance()
+        suffix_token = self.current_token
+        if (
+            suffix_token.type != TokenType.IDENTIFIER
+            or suffix_token.value not in DURATION_UNIT_NS
+        ):
+            got = (
+                f"'{suffix_token.value}'"
+                if suffix_token.type == TokenType.IDENTIFIER
+                else str(suffix_token.type)
+            )
+            raise self.error(
+                f"Expected a time unit after '{num_token.value}' in {where}, "
+                f"got {got}",
+                suggestion="valid time units: ns, us, ms, s, min",
+            )
+        self.advance()
+
+        text = str(num_token.value)
+        try:
+            if text.lower().startswith("0x"):
+                value = Fraction(int(text, 16))
+            else:
+                value = Fraction(text)
+        except (ValueError, ZeroDivisionError):
+            raise self.error(
+                f"Invalid duration value '{text}' in {where}"
+            ) from None
+        ns = value * DURATION_UNIT_NS[suffix_token.value]
+        if ns.denominator != 1:
+            raise self.error(
+                f"Duration '{text} {suffix_token.value}' in {where} is not "
+                f"a whole number of nanoseconds; time is not silently rounded",
+                suggestion=(
+                    "use a finer unit, e.g. '500 us' instead of '0.5 ms'"
+                ),
+            )
+        ns_int = ns.numerator
+        if ns_int > 0x7FFFFFFFFFFFFFFF:
+            raise self.error(
+                f"Duration '{text} {suffix_token.value}' in {where} "
+                f"overflows the i64 nanosecond range"
+            )
+        return DurationLiteral(
+            ns=ns_int,
+            text=f"{text} {suffix_token.value}",
+            line=num_token.line,
+        )
+
+    def _parse_flow_every(self, flow_name: str) -> FlowEveryDecl:
+        """Parse `every <duration> { NAME becomes expr ... }`
+        (docs/vision/north-star.md 4.2). The period canonicalizes to i64
+        nanoseconds at parse time.
+        """
+        every_token = self.current_token
+        self.advance()  # consume contextual 'every'
+        period = self.parse_duration(f"the 'every' period of flow '{flow_name}'")
+        body = self._parse_becomes_body(flow_name, "every", "discrete updates")
+        return FlowEveryDecl(period.ns, period.text, body, every_token.line)
+
+    def _parse_flow_solver(self, flow_name: str) -> FlowSolverDecl:
+        """Parse `solver { dt <duration> method <name> }`
+        (docs/vision/north-star.md 2.3). `dt` is required; `method` is
+        optional and defaults to euler. Settings may come in either order,
+        each at most once.
+        """
+        solver_token = self.current_token
+        self.advance()  # consume contextual 'solver'
+        self.expect(TokenType.LBRACE)
+
+        dt: Optional[DurationLiteral] = None
+        method: Optional[str] = None
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise self.error(
+                    f"Unterminated 'solver' block in flow '{flow_name}': "
+                    f"expected '}}' before end of file"
+                )
+            tok = self.current_token
+            if tok.type == TokenType.IDENTIFIER and tok.value == "dt":
+                if dt is not None:
+                    raise self.error(
+                        f"'solver' block in flow '{flow_name}' sets 'dt' twice"
+                    )
+                self.advance()
+                dt = self.parse_duration(
+                    f"the solver dt of flow '{flow_name}'"
+                )
+            elif tok.type == TokenType.IDENTIFIER and tok.value == "method":
+                if method is not None:
+                    raise self.error(
+                        f"'solver' block in flow '{flow_name}' sets "
+                        f"'method' twice"
+                    )
+                self.advance()
+                method = self.expect(TokenType.IDENTIFIER).value
+            else:
+                raise self.error(
+                    f"Unexpected item in 'solver' block of flow "
+                    f"'{flow_name}'",
+                    suggestion=(
+                        "solver blocks contain 'dt <duration>' and "
+                        "'method euler'"
+                    ),
+                )
+        self.expect(TokenType.RBRACE)
+
+        if dt is None:
+            raise self.error(
+                f"'solver' block in flow '{flow_name}' needs a 'dt' setting",
+                suggestion="write 'solver { dt 1 ms }'",
+            )
+        return FlowSolverDecl(
+            dt.ns, dt.text, method or "euler", solver_token.line
+        )
 
     def parse_enum(self) -> EnumDecl:
         """Parse enum declaration: enum Option<T> { Some(T), None }"""

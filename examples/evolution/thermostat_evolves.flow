@@ -1,0 +1,134 @@
+# THERMOSTAT, WRITTEN AS A FLOW. Continuous heat dynamics with a sampled
+# bang-bang controller, in the shipped `flow` + `every` syntax (VISION.md;
+# spec: docs/vision/north-star.md sections 2 and 4, card: time-blocks).
+#
+# The room temperature evolves continuously: heat leaks toward ambient and
+# the heater adds power while it is on. The `every 100 ms` block is the
+# discrete part of the system. Ten times per simulated second it samples
+# the temperature and switches the heater state: on below the band, off
+# above it, unchanged inside it. The compiler lowers the block to a hidden
+# nanosecond accumulator in the Thermostat struct, advanced by each step's
+# dt and drained one 100 ms period per firing, so the controller rate is
+# part of the model rather than the driver loop.
+#
+# The `solver` block pins the default step to 1 ms; Thermostat_step still
+# takes dt from the caller.
+#
+# Run: ./flow run examples/evolution/thermostat_evolves.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+# Bang-bang decision with hysteresis: heat below the band, coast above it,
+# keep the previous command inside it. Pure, so it is legal in a `becomes`
+# right-hand side.
+function bang(temp: f64, heater: f64, low: f64, high: f64) -> f64 {
+    if temp < low {
+        return 1.0
+    }
+    if temp > high {
+        return 0.0
+    }
+    return heater
+}
+
+flow Thermostat {
+    state temperature : f64 = 12.0   # C, cold room at start
+    state heater      : f64 = 1.0    # command: 1 on, 0 off
+    param ambient     : f64 = 8.0    # C outside
+    param leak        : f64 = 0.12   # 1/s heat-loss rate
+    param power       : f64 = 1.8    # C/s heating rate at full power
+    param low         : f64 = 19.5   # C, lower edge of the band
+    param high        : f64 = 20.5   # C, upper edge of the band
+
+    solver { dt 1 ms  method euler }
+
+    temperature evolves as (ambient - temperature) * leak + heater * power
+
+    every 100 ms {
+        heater becomes bang(temperature, heater, low, high)
+    }
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.001          # s, matches the solver default
+    let steps: i32 = 120000      # 120 seconds of evolution
+    let warmup: i32 = 30000      # judge regulation after 30 s
+
+    let mut room: Thermostat = Thermostat_new()
+
+    println("")
+    println("  THERMOSTAT as a flow  --  every 100 ms { heater becomes ... }")
+    println("  =============================================================")
+    println("")
+    println("      t [s]   temp [C]  heater")
+    println("    -------  ---------  ------")
+
+    let mut switches: i32 = 0
+    let mut prev_heater: f64 = room.heater
+    let mut reg_min: f64 = 1000.0
+    let mut reg_max: f64 = -1000.0
+    let mut saw_nan: i32 = 0
+
+    for k in 0 to steps + 1 {
+        if k % 10000 == 0 {
+            let t: f64 = k * dt
+            printf("    %7.1f", t)
+            printf("  %9.3f", room.temperature)
+            printf("  %6.0f", room.heater)
+            println("")
+        }
+
+        Thermostat_step(&room, dt)
+
+        if room.temperature != room.temperature {
+            saw_nan = 1
+        }
+        if room.heater != prev_heater {
+            switches = switches + 1
+            prev_heater = room.heater
+        }
+        if k > warmup {
+            if room.temperature < reg_min {
+                reg_min = room.temperature
+            }
+            if room.temperature > reg_max {
+                reg_max = room.temperature
+            }
+        }
+    }
+
+    println("")
+    print("    switches after warmup+startup : ")
+    printf("%.0f", switches as f64)
+    println("")
+    print("    regulated band                : ")
+    printf("%.3f", reg_min)
+    print(" .. ")
+    printf("%.3f C", reg_max)
+    println("")
+    println("")
+
+    if saw_nan == 1 {
+        println("    FAIL: temperature became NaN")
+        return 1
+    }
+    if switches < 4 {
+        println("    FAIL: heater never cycled")
+        return 2
+    }
+    # The sampled controller overshoots the band by at most a few sampling
+    # periods of heating or cooling; half a degree of margin is generous.
+    if reg_min < 19.0 {
+        println("    FAIL: temperature fell out of regulation")
+        return 3
+    }
+    if reg_max > 21.0 {
+        println("    FAIL: temperature rose out of regulation")
+        return 4
+    }
+    println("    OK: bang-bang control holds the band around 20 C")
+    return 0
+}
