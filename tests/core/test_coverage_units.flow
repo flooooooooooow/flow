@@ -1,0 +1,118 @@
+# Units of measure coverage: unit values through function calls and
+# struct fields, exponent composition chains, cancellation back to
+# dimensionless, and erasure to plain doubles at runtime. All constants
+# are powers of two so the double arithmetic is exact and results can be
+# compared with ==. Extends test_units_basic.flow.
+# Returns 0 if all checks pass, non-zero (test id) otherwise.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+unit Meter
+unit Second
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+struct Journey {
+    distance: Meter,
+    elapsed: Second,
+}
+
+function speed(d: Meter, t: Second) -> Velocity {
+    return d / t
+}
+
+function accel_of(d: Meter, t: Second) -> Accel {
+    return d / t / t
+}
+
+function ratio(a: Meter, b: Meter) -> f64 {
+    return a / b
+}
+
+function test_unit_through_function_call() -> bool {
+    let v: Velocity = speed(128.0 as Meter, 8.0 as Second)
+    return v as f64 == 16.0
+}
+
+function test_unit_through_struct_fields() -> bool {
+    let j: Journey = Journey { distance: 64.0 as Meter, elapsed: 4.0 as Second }
+    let v: Velocity = j.distance / j.elapsed
+    return v as f64 == 16.0
+}
+
+function test_composition_chain_meter_per_second_squared() -> bool {
+    let a: Accel = accel_of(32.0 as Meter, 2.0 as Second)
+    return a as f64 == 8.0
+}
+
+function test_multiply_cancels_back_to_meter() -> bool {
+    let v: Velocity = speed(128.0 as Meter, 8.0 as Second)
+    let t: Second = 0.5 as Second
+    let d: Meter = v * t
+    return d as f64 == 8.0
+}
+
+function test_cancellation_to_dimensionless() -> bool {
+    let r: f64 = ratio(6.0 as Meter, 2.0 as Meter)
+    return r * 2.0 == 6.0
+}
+
+function test_accel_times_time_squared_is_meter() -> bool {
+    let a: Accel = accel_of(32.0 as Meter, 2.0 as Second)
+    let t: Second = 4.0 as Second
+    let d: Meter = a * t * t
+    return d as f64 == 128.0
+}
+
+function test_same_dimension_comparison_through_calls() -> bool {
+    let fast: Velocity = speed(128.0 as Meter, 4.0 as Second)
+    let slow: Velocity = speed(128.0 as Meter, 64.0 as Second)
+    return fast > slow
+}
+
+function test_scalar_scaling_keeps_dimension() -> bool {
+    let j: Journey = Journey { distance: 16.0 as Meter, elapsed: 2.0 as Second }
+    let doubled: Meter = j.distance * 2.0
+    let halved: Meter = 0.5 * j.distance
+    return doubled as f64 == 32.0 && halved as f64 == 8.0
+}
+
+function main() -> i32 {
+    if !test_unit_through_function_call() {
+        printf("FAIL: unit_through_function_call\n", 0.0)
+        return 1
+    }
+    if !test_unit_through_struct_fields() {
+        printf("FAIL: unit_through_struct_fields\n", 0.0)
+        return 2
+    }
+    if !test_composition_chain_meter_per_second_squared() {
+        printf("FAIL: composition_chain\n", 0.0)
+        return 3
+    }
+    if !test_multiply_cancels_back_to_meter() {
+        printf("FAIL: multiply_cancels_back_to_meter\n", 0.0)
+        return 4
+    }
+    if !test_cancellation_to_dimensionless() {
+        printf("FAIL: cancellation_to_dimensionless\n", 0.0)
+        return 5
+    }
+    if !test_accel_times_time_squared_is_meter() {
+        printf("FAIL: accel_times_time_squared_is_meter\n", 0.0)
+        return 6
+    }
+    if !test_same_dimension_comparison_through_calls() {
+        printf("FAIL: same_dimension_comparison\n", 0.0)
+        return 7
+    }
+    if !test_scalar_scaling_keeps_dimension() {
+        printf("FAIL: scalar_scaling_keeps_dimension\n", 0.0)
+        return 8
+    }
+
+    printf("All units coverage tests passed\n", 0.0)
+    return 0
+}
