@@ -319,6 +319,9 @@ class MLIRGenerator:
         self.current_line = 1  # Track current source line for debug info
         self.emit_debug_info = True  # Enable DWARF debug info generation
         self._effect_handler_stack: List[Dict[str, str]] = [{}]
+        self._effects: Dict[str, EffectDecl] = {}  # effect name -> EffectDecl
+        self._capabilities: Dict[str, CapabilityDecl] = {}  # capability name -> CapabilityDecl
+        self._needs_effect_init = False  # True when vtable init must run before main
         self.inside_scf_for = False  # Track if we're inside scf.for
         self.declarations = []  # Store declarations for type lookup
         self.struct_layouts = {}  # Maps struct name to field offsets and types
@@ -462,7 +465,7 @@ class MLIRGenerator:
         if mlir_type.startswith("i"):
             return ssa_name, [f"{self.indent()}{ssa_name} = arith.constant 0 : {mlir_type}"]
         if mlir_type == "!llvm.ptr":
-            return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.null : {mlir_type}"]
+            return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.zero : {mlir_type}"]
         # Fallback to undef for aggregate/unknown types
         return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.undef : {mlir_type}"]
     
@@ -500,6 +503,9 @@ class MLIRGenerator:
         self.indent_level += 1
         
         # First pass: collect all function signatures in symbol table
+        self._effects = {}
+        self._capabilities = {}
+        self._effect_handler_stack = [{}]
         for decl in cpu_decls:
             if isinstance(decl, FunctionDecl):
                 if getattr(decl, "is_extern", False) and decl.name == "printf":
@@ -510,6 +516,30 @@ class MLIRGenerator:
                     'return_type': decl.return_type,
                     'parameters': decl.parameters,
                     'mlir_name': f"@{decl.name}"
+                }
+            elif isinstance(decl, EffectDecl):
+                self._effects[decl.name] = decl
+            elif isinstance(decl, CapabilityDecl):
+                self._capabilities[decl.name] = decl
+        self._needs_effect_init = bool(self._effects) and bool(self._capabilities)
+
+        # Register effect dispatch functions and capability methods so calls
+        # to them resolve signatures through the normal function-call path.
+        for effect in self._effects.values():
+            for op in effect.operations:
+                self.symbol_table[f"{effect.name}_{op.name}"] = {
+                    'type': 'function',
+                    'return_type': op.return_type,
+                    'parameters': op.parameters,
+                    'mlir_name': f"@{effect.name}_{op.name}",
+                }
+        for cap in self._capabilities.values():
+            for method in cap.methods:
+                self.symbol_table[f"{cap.name}_{method.name}"] = {
+                    'type': 'function',
+                    'return_type': method.return_type,
+                    'parameters': method.parameters,
+                    'mlir_name': f"@{cap.name}_{method.name}",
                 }
         
         # Second pass: generate all declarations to collect string constants
@@ -530,7 +560,14 @@ class MLIRGenerator:
                 continue
             else:
                 decl_code.append(f"// Unsupported declaration type: {type(decl).__name__}")
-        
+
+        # Fill capability vtables with function addresses at startup
+        # (llvm.mlir.addressof cannot reference func.func symbols, so the
+        # vtable globals start zeroed and @_flow_effects_init stores the
+        # addresses before main's body runs).
+        if self._needs_effect_init:
+            decl_code.append(self._generate_effects_init())
+
         # Add external function declarations (printf for I/O)
         if self.needs_printf:
             mlir_code.append(f"{self.indent()}llvm.func @printf(!llvm.ptr, ...) -> i32")
@@ -630,6 +667,9 @@ class MLIRGenerator:
         if param_prologue:
             mlir_code.append("\n".join(param_prologue))
 
+        if func.name == 'main' and self._needs_effect_init:
+            mlir_code.append(f"{self.indent()}func.call @_flow_effects_init() : () -> ()")
+
         body_mlir = self.generate_block(func.body)
         if body_mlir.strip():
             mlir_code.append(body_mlir)
@@ -699,6 +739,11 @@ class MLIRGenerator:
             return self.generate_for(stmt)
         elif isinstance(stmt, LayoutStatement):
             return self.generate_block(stmt.body)
+        elif isinstance(stmt, HandleStatement):
+            return self.generate_handle(stmt)
+        elif isinstance(stmt, (MethodCall, EffectCall)):
+            _, value_ops = self.generate_expression(stmt)
+            return "\n".join(value_ops)
         elif isinstance(stmt, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, VectorLiteral)):
             value_ssa, value_ops = self.generate_expression(stmt)
             # Expression statement: emit ops for side effects / computation, discard value.
@@ -1056,6 +1101,12 @@ class MLIRGenerator:
         then_yields = [self.symbol_table[v]['ssa_name'] for v in merged_vars]
         mlir_code.append(f"{self.indent()}scf.yield {', '.join(then_yields)} : {types_str}")
         self.indent_level -= 1
+
+        # Assignments mutate the shared var-entry dicts in place, so the
+        # then-branch bindings leak into the else region unless we restore the
+        # pre-if SSA names here. The else branch must observe pre-if state.
+        for v in merged_vars:
+            self.symbol_table[v]['ssa_name'] = old_ssas[v]
 
         mlir_code.append(f"{self.indent()}}} else {{")
         self.indent_level += 1
@@ -1625,18 +1676,48 @@ class MLIRGenerator:
         effects = handle_stmt.effects
         handlers = handle_stmt.handlers
         if len(handlers) == 1 and len(effects) > 1:
-            for effect in effects:
-                curr[effect] = handlers[0]
+            handler_map = {effect: handlers[0] for effect in effects}
         elif len(handlers) == len(effects):
-            for effect, handler in zip(effects, handlers):
-                curr[effect] = handler
+            handler_map = {effect: handler for effect, handler in zip(effects, handlers)}
         else:
             raise ValueError(f"handle expects 1 handler or the same count as effects; got {len(effects)} effects and {len(handlers)} handlers")
+        curr.update(handler_map)
+
+        lines: List[str] = []
+        restores: List[tuple[str, str]] = []
+        # Save the current handler pointer and install the capability vtable
+        # for each handled effect (mirrors the C backend's save/install pair).
+        for effect_name, handler_name in handler_map.items():
+            cap = self._capabilities.get(handler_name)
+            if effect_name not in self._effects or cap is None or effect_name not in cap.effects:
+                continue
+            vt_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            lines.append(f"{self.indent()}{vt_ssa} = llvm.mlir.addressof @_{handler_name}_{effect_name}_vtable : !llvm.ptr")
+            cur_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            lines.append(f"{self.indent()}{cur_ssa} = llvm.mlir.addressof @_current_{effect_name}_handler : !llvm.ptr")
+            prev_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            lines.append(f"{self.indent()}{prev_ssa} = llvm.load {cur_ssa} : !llvm.ptr -> !llvm.ptr")
+            lines.append(f"{self.indent()}llvm.store {vt_ssa}, {cur_ssa} : !llvm.ptr, !llvm.ptr")
+            restores.append((prev_ssa, cur_ssa))
+
         self._effect_handler_stack.append(curr)
         try:
-            return self.generate_block(handle_stmt.body)
+            body_mlir = self.generate_block(handle_stmt.body)
         finally:
             self._effect_handler_stack.pop()
+        if body_mlir.strip():
+            lines.append(body_mlir)
+
+        # Restore previous handlers in reverse order. Skip when the body ended
+        # in a terminator; ops after a terminator are invalid MLIR and the
+        # restore would be dead code anyway.
+        if not self._block_has_terminator(body_mlir):
+            for prev_ssa, cur_ssa in reversed(restores):
+                lines.append(f"{self.indent()}llvm.store {prev_ssa}, {cur_ssa} : !llvm.ptr, !llvm.ptr")
+        return "\n".join(lines)
 
     def generate_match(self, match_stmt: 'MatchStatement') -> str:
         # Always use SCF match as it supports struct destructuring
@@ -3230,34 +3311,74 @@ class MLIRGenerator:
 
         return result_ssa, ops
 
-    def generate_effect_call(self, effect_call: EffectCall) -> tuple[str, List[str]]:
-        handler = self._effect_handler_stack[-1].get(effect_call.effect_name)
-        if effect_call.effect_name == 'Log' and effect_call.operation in ('emit', 'debug'):
-            if handler == 'ConsoleLogger':
-                return self.generate_print_call(FunctionCall('print', effect_call.arguments))
-            if handler == 'SilentLogger':
-                dummy_ssa = f"%{self.function_counter}"
-                self.function_counter += 1
-                return dummy_ssa, [f"{self.indent()}{dummy_ssa} = arith.constant 0 : i32"]
+    def _resolve_effect_name(self, name: str) -> str:
+        """Resolve an effect-call receiver to a declared effect name.
 
-        ssa_name = f"%{self.function_counter}"
-        self.function_counter += 1
-        callee = f"@{effect_call.operation}"
-        arg_values: List[str] = []
-        ops: List[str] = []
-        for arg in effect_call.arguments:
-            v, vops = self.generate_expression(arg)
-            ops.extend(vops)
-            arg_values.append(v)
-        arg_types: List[str] = [self.get_expression_type(a) for a in effect_call.arguments]
-        ops.append(
-            f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(arg_values)}) : ({', '.join(arg_types)}) -> i32"
-        )
-        return ssa_name, ops
+        Mirrors the C backend: capability-typed variables resolve to their
+        effect, then the literal name, then capitalize/upper fallbacks.
+        """
+        var_info = self.symbol_table.get(name)
+        if var_info and var_info.get('type') == 'variable':
+            flow_type = var_info.get('flow_type')
+            type_name = getattr(flow_type, 'name', '') if flow_type else ''
+            if type_name.startswith('capability_'):
+                return type_name[len('capability_'):]
+            if type_name in self._effects:
+                return type_name
+        if name in self._effects:
+            return name
+        if name.capitalize() in self._effects:
+            return name.capitalize()
+        if name.upper() in self._effects:
+            return name.upper()
+        return name
+
+    def _effect_call_callee(self, effect_call: EffectCall) -> Optional[str]:
+        """Pick the callee for an effect call.
+
+        Inside a `handle` block whose capability implements the operation the
+        handler is known at compile time, so the capability function is called
+        directly (zero-cost substitution, same as the C backend). Everywhere
+        else the NULL-checked dispatch function is used.
+        """
+        effect_name = self._resolve_effect_name(effect_call.effect_name)
+        effect = self._effects.get(effect_name)
+        if effect is None:
+            return None
+        handler_name = self._effect_handler_stack[-1].get(effect_name)
+        cap = self._capabilities.get(handler_name) if handler_name else None
+        if cap is not None and any(m.name == effect_call.operation for m in cap.methods):
+            return f"{handler_name}_{effect_call.operation}"
+        if any(op.name == effect_call.operation for op in effect.operations):
+            return f"{effect_name}_{effect_call.operation}"
+        return None
+
+    def generate_effect_call(self, effect_call: EffectCall) -> tuple[str, List[str]]:
+        callee = self._effect_call_callee(effect_call)
+        if callee is not None:
+            return self.generate_function_call(FunctionCall(callee, effect_call.arguments))
+        # Unknown effect: fall back to calling a plain function named after
+        # the operation (legacy behavior for modules without effect decls).
+        return self.generate_function_call(FunctionCall(effect_call.operation, effect_call.arguments))
+
+    def _method_call_as_effect_call(self, method_call: MethodCall) -> Optional[EffectCall]:
+        if not isinstance(method_call.object, Variable):
+            return None
+        name = method_call.object.name
+        is_effect_receiver = name in self._effects
+        if not is_effect_receiver:
+            var_info = self.symbol_table.get(name)
+            if var_info and var_info.get('type') == 'variable':
+                flow_type = var_info.get('flow_type')
+                type_name = getattr(flow_type, 'name', '') if flow_type else ''
+                is_effect_receiver = type_name.startswith('capability_') or type_name in self._effects
+        if not is_effect_receiver:
+            return None
+        return EffectCall(name, method_call.method, method_call.arguments)
 
     def generate_method_call(self, method_call: MethodCall) -> tuple[str, List[str]]:
-        if isinstance(method_call.object, Variable):
-            effect_call = EffectCall(method_call.object.name, method_call.method, method_call.arguments)
+        effect_call = self._method_call_as_effect_call(method_call)
+        if effect_call is not None:
             return self.generate_effect_call(effect_call)
 
         # Desugar to function call with receiver as first argument.
@@ -3476,6 +3597,19 @@ class MLIRGenerator:
                 return self.flow_type_to_mlir(self.symbol_table[expr.name]['return_type'])
             else:
                 return 'i32'  # Default
+        elif isinstance(expr, EffectCall):
+            callee = self._effect_call_callee(expr)
+            name = callee if callee is not None else expr.operation
+            if name in self.symbol_table:
+                return self.flow_type_to_mlir(self.symbol_table[name]['return_type'])
+            return 'i32'  # Default
+        elif isinstance(expr, MethodCall):
+            effect_call = self._method_call_as_effect_call(expr)
+            if effect_call is not None:
+                return self.get_expression_type(effect_call)
+            if expr.method in self.symbol_table and self.symbol_table[expr.method].get('type') == 'function':
+                return self.flow_type_to_mlir(self.symbol_table[expr.method]['return_type'])
+            return 'i32'  # Default
         elif isinstance(expr, StructLiteral):
             struct_ty = self._struct_llvm_type(expr.struct_name)
             if struct_ty:
@@ -3565,27 +3699,181 @@ class MLIRGenerator:
     def _flow_type_to_mlir(self, flow_type: Type) -> str:
         return self.flow_type_to_mlir(flow_type)
     
+    def _effect_default_value(self, mlir_type: str, indent: str) -> tuple[str, List[str]]:
+        """Zeroed default for unhandled effect operations (mirrors the C backend)."""
+        ssa_name = f"%{self.function_counter}"
+        self.function_counter += 1
+        if mlir_type.startswith("f"):
+            return ssa_name, [f"{indent}{ssa_name} = arith.constant 0.0 : {mlir_type}"]
+        if mlir_type == "!llvm.ptr":
+            return ssa_name, [f"{indent}{ssa_name} = llvm.mlir.zero : {mlir_type}"]
+        if mlir_type.startswith("i"):
+            return ssa_name, [f"{indent}{ssa_name} = arith.constant 0 : {mlir_type}"]
+        return ssa_name, [f"{indent}{ssa_name} = llvm.mlir.undef : {mlir_type}"]
+
     def generate_effect(self, effect: EffectDecl) -> str:
-        mlir_code = []
-        mlir_code.append(f"{self.indent()}// Effect: {effect.name}")
-        mlir_code.append(f"{self.indent()}// Operations:")
-        for op in effect.operations:
+        """Emit the effect handler runtime: a current-handler pointer global
+        plus one NULL-checked dispatch function per operation.
+
+        The dispatch function loads the installed vtable (array of function
+        pointers), NULL-checks both the vtable and the slot, performs an
+        indirect call when handled, and returns a zeroed default otherwise.
+        """
+        ind = self.indent()
+        mlir_code = [f"{ind}// Effect: {effect.name}"]
+
+        # Current handler pointer, NULL until a handle block installs a vtable.
+        mlir_code.append(f"{ind}llvm.mlir.global internal @_current_{effect.name}_handler() {{addr_space = 0 : i32}} : !llvm.ptr {{")
+        zero_ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        mlir_code.append(f"{ind}  {zero_ssa} = llvm.mlir.zero : !llvm.ptr")
+        mlir_code.append(f"{ind}  llvm.return {zero_ssa} : !llvm.ptr")
+        mlir_code.append(f"{ind}}}")
+
+        for op_index, op in enumerate(effect.operations):
             param_types = [self.flow_type_to_mlir(p.type) for p in op.parameters]
             return_type = self.flow_type_to_mlir(op.return_type)
-            mlir_code.append(f"{self.indent()}//   {op.name}({', '.join(param_types)}) -> {return_type}")
+            is_void = return_type == '()'
+            args_sig = ', '.join(f"%arg{i}: {t}" for i, t in enumerate(param_types))
+            arg_names = ', '.join(f"%arg{i}" for i in range(len(param_types)))
+            call_sig = f"({', '.join(param_types)}) -> {return_type}"
+
+            mlir_code.append(f"{ind}func.func @{effect.name}_{op.name}({args_sig}) -> {return_type} {{")
+            i1 = ind + "  "
+            i2 = ind + "    "
+            i3 = ind + "      "
+            addr_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            handler_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            null_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            has_handler_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            mlir_code.append(f"{i1}{addr_ssa} = llvm.mlir.addressof @_current_{effect.name}_handler : !llvm.ptr")
+            mlir_code.append(f"{i1}{handler_ssa} = llvm.load {addr_ssa} : !llvm.ptr -> !llvm.ptr")
+            mlir_code.append(f"{i1}{null_ssa} = llvm.mlir.zero : !llvm.ptr")
+            mlir_code.append(f"{i1}{has_handler_ssa} = llvm.icmp \"ne\" {handler_ssa}, {null_ssa} : !llvm.ptr")
+
+            slot_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            fp_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            fp_ok_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+
+            if is_void:
+                mlir_code.append(f"{i1}scf.if {has_handler_ssa} {{")
+                mlir_code.append(f"{i2}{slot_ssa} = llvm.getelementptr {handler_ssa}[{op_index}] : (!llvm.ptr) -> !llvm.ptr, !llvm.ptr")
+                mlir_code.append(f"{i2}{fp_ssa} = llvm.load {slot_ssa} : !llvm.ptr -> !llvm.ptr")
+                mlir_code.append(f"{i2}{fp_ok_ssa} = llvm.icmp \"ne\" {fp_ssa}, {null_ssa} : !llvm.ptr")
+                mlir_code.append(f"{i2}scf.if {fp_ok_ssa} {{")
+                mlir_code.append(f"{i3}llvm.call {fp_ssa}({arg_names}) : !llvm.ptr, {call_sig}")
+                mlir_code.append(f"{i2}}}")
+                mlir_code.append(f"{i1}}}")
+                mlir_code.append(f"{i1}func.return")
+            else:
+                result_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                mlir_code.append(f"{i1}{result_ssa} = scf.if {has_handler_ssa} -> ({return_type}) {{")
+                mlir_code.append(f"{i2}{slot_ssa} = llvm.getelementptr {handler_ssa}[{op_index}] : (!llvm.ptr) -> !llvm.ptr, !llvm.ptr")
+                mlir_code.append(f"{i2}{fp_ssa} = llvm.load {slot_ssa} : !llvm.ptr -> !llvm.ptr")
+                mlir_code.append(f"{i2}{fp_ok_ssa} = llvm.icmp \"ne\" {fp_ssa}, {null_ssa} : !llvm.ptr")
+                inner_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                mlir_code.append(f"{i2}{inner_ssa} = scf.if {fp_ok_ssa} -> ({return_type}) {{")
+                call_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                mlir_code.append(f"{i3}{call_ssa} = llvm.call {fp_ssa}({arg_names}) : !llvm.ptr, {call_sig}")
+                mlir_code.append(f"{i3}scf.yield {call_ssa} : {return_type}")
+                mlir_code.append(f"{i2}}} else {{")
+                default_ssa, default_ops = self._effect_default_value(return_type, i3)
+                mlir_code.extend(default_ops)
+                mlir_code.append(f"{i3}scf.yield {default_ssa} : {return_type}")
+                mlir_code.append(f"{i2}}}")
+                mlir_code.append(f"{i2}scf.yield {inner_ssa} : {return_type}")
+                mlir_code.append(f"{i1}}} else {{")
+                default_ssa, default_ops = self._effect_default_value(return_type, i2)
+                mlir_code.extend(default_ops)
+                mlir_code.append(f"{i2}scf.yield {default_ssa} : {return_type}")
+                mlir_code.append(f"{i1}}}")
+                mlir_code.append(f"{i1}func.return {result_ssa} : {return_type}")
+            mlir_code.append(f"{ind}}}")
+
         return "\n".join(mlir_code)
-    
+
     def generate_capability(self, capability: CapabilityDecl) -> str:
-        mlir_code = []
-        mlir_code.append(f"{self.indent()}// Capability: {capability.name}")
-        mlir_code.append(f"{self.indent()}// Effects: {', '.join(capability.effects)}")
-        mlir_code.append(f"{self.indent()}// Methods:")
+        """Emit capability methods as plain functions plus one zero-initialized
+        vtable global per handled effect. Vtable slots are filled at startup by
+        @_flow_effects_init (see _generate_effects_init)."""
+        ind = self.indent()
+        mlir_code = [f"{ind}// Capability: {capability.name} (effects: {', '.join(capability.effects)})"]
+
         for method in capability.methods:
-            # Capability methods are currently metadata-only in the MLIR backend.
-            # Effect calls are lowered directly (see generate_effect_call).
-            param_types = [self.flow_type_to_mlir(p.type) for p in method.parameters]
-            return_type = self.flow_type_to_mlir(method.return_type)
-            mlir_code.append(f"{self.indent()}//   {method.name}({', '.join(param_types)}) -> {return_type}")
+            method_fn = FunctionDecl(
+                name=f"{capability.name}_{method.name}",
+                parameters=method.parameters,
+                return_type=method.return_type,
+                body=method.body,
+                attributes=[],
+            )
+            mlir_code.append(self.generate_function(method_fn))
+
+        for effect_name in capability.effects:
+            effect = self._effects.get(effect_name)
+            if effect is None:
+                continue
+            slot_count = len(effect.operations)
+            mlir_code.append(f"{ind}llvm.mlir.global internal @_{capability.name}_{effect_name}_vtable() {{addr_space = 0 : i32}} : !llvm.array<{slot_count} x ptr> {{")
+            null_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            mlir_code.append(f"{ind}  {null_ssa} = llvm.mlir.zero : !llvm.ptr")
+            acc_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            mlir_code.append(f"{ind}  {acc_ssa} = llvm.mlir.undef : !llvm.array<{slot_count} x ptr>")
+            for i in range(slot_count):
+                next_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                mlir_code.append(f"{ind}  {next_ssa} = llvm.insertvalue {null_ssa}, {acc_ssa}[{i}] : !llvm.array<{slot_count} x ptr>")
+                acc_ssa = next_ssa
+            mlir_code.append(f"{ind}  llvm.return {acc_ssa} : !llvm.array<{slot_count} x ptr>")
+            mlir_code.append(f"{ind}}}")
+
+        return "\n".join(mlir_code)
+
+    def _generate_effects_init(self) -> str:
+        """Emit @_flow_effects_init: stores every implemented capability method
+        address into its vtable slot. Called once at the top of main."""
+        ind = self.indent()
+        inner = ind + "  "
+        mlir_code = [f"{ind}func.func @_flow_effects_init() {{"]
+        for cap in self._capabilities.values():
+            for effect_name in cap.effects:
+                effect = self._effects.get(effect_name)
+                if effect is None:
+                    continue
+                vt_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                mlir_code.append(f"{inner}{vt_ssa} = llvm.mlir.addressof @_{cap.name}_{effect_name}_vtable : !llvm.ptr")
+                for op_index, op in enumerate(effect.operations):
+                    method = next((m for m in cap.methods if m.name == op.name), None)
+                    if method is None:
+                        continue  # unimplemented operation: slot stays NULL
+                    param_types = [self.flow_type_to_mlir(p.type) for p in method.parameters]
+                    return_type = self.flow_type_to_mlir(method.return_type)
+                    fn_type = f"({', '.join(param_types)}) -> {return_type}"
+                    fn_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    mlir_code.append(f"{inner}{fn_ssa} = func.constant @{cap.name}_{op.name} : {fn_type}")
+                    ptr_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    mlir_code.append(f"{inner}{ptr_ssa} = builtin.unrealized_conversion_cast {fn_ssa} : {fn_type} to !llvm.ptr")
+                    slot_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    mlir_code.append(f"{inner}{slot_ssa} = llvm.getelementptr {vt_ssa}[{op_index}] : (!llvm.ptr) -> !llvm.ptr, !llvm.ptr")
+                    mlir_code.append(f"{inner}llvm.store {ptr_ssa}, {slot_ssa} : !llvm.ptr, !llvm.ptr")
+        mlir_code.append(f"{inner}func.return")
+        mlir_code.append(f"{ind}}}")
         return "\n".join(mlir_code)
     
     def generate_struct(self, struct: StructDecl) -> str:
