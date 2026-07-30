@@ -1,0 +1,132 @@
+# CART-POLE GFX. The stabilized cart-pole of main.flow in a real window:
+# the LQR gain is derived at startup (same pipeline, same numbers), then
+# the closed loop runs live. Every five seconds the pole gets a kick and
+# the controller catches it again. The force on the cart is drawn as a
+# bar under the track.
+#
+# Run: ./flow gfx apps/cartpole/cartpole_gfx.flow
+# (opens a window; runs at most 1200 frames, Esc or close to quit early)
+
+import "stdlib/gfx.flow"
+import .model
+import .control
+
+extern {
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 900
+const WIN_H: i32 = 500
+const RAIL_Y: i32 = 380          # track height in the window
+const PX_PER_M: f64 = 200.0      # world scale
+const CART_W: i32 = 80
+const CART_H: i32 = 36
+const POLE_SEGS: i32 = 30        # pole drawn as small squares along its length
+const DT: f64 = 0.01             # integration step [s]
+const SUBSTEPS: i32 = 2          # physics steps per frame
+const MAX_FRAMES: i32 = 1200     # bounded frame budget, then exit cleanly
+const KICK_EVERY: i32 = 300      # frames between disturbance kicks
+const KICK_RATE: f64 = 0.5       # kick size [rad/s]
+
+function world_to_px(x: f64) -> i32 {
+    return (450.0 + x * PX_PER_M) as i32
+}
+
+function main() -> i32 {
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Cart-pole - Flow evolution demo")
+
+    let mut cart: CartPole = CartPole_new()
+
+    # Derive the gain exactly as main.flow does.
+    let ad: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let bd: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    cartpole_linearize(ad, bd, cart.cart_mass, cart.pole_mass,
+                       cart.half_length, cart.gravity, DT)
+    let q_diag: array<f64, 4> = [1.0, 1.0, 10.0, 1.0]
+    let gains: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let iters: i32 = cartpole_lqr_gains(ad, bd, q_diag, 0.1, gains, 5000)
+    if iters < 0 {
+        gfx_close(g)
+        return 1
+    }
+
+    cart.theta = 0.25             # initial shove
+
+    let mut kick_sign: f64 = 0.0 - 1.0
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if gfx_should_close(g) { break }
+        gfx_poll(g)
+        if gfx_key_down(g, KEY_ESC) { break }
+
+        # A kick every KICK_EVERY frames, alternating direction
+        if frame > 0 and frame % KICK_EVERY == 0 {
+            cart.theta_dot = cart.theta_dot + kick_sign * KICK_RATE
+            kick_sign = 0.0 - kick_sign
+        }
+
+        # --- Evolve: closed-loop physics, u = -K x -------------------------
+        let mut force: f64 = 0.0
+        for s in 0 to SUBSTEPS {
+            force = 0.0 - (gains[0] * cart.x + gains[1] * cart.x_dot
+                + gains[2] * cart.theta + gains[3] * cart.theta_dot)
+            cart.force = force
+            CartPole_step(&cart, DT)
+        }
+
+        # --- Render --------------------------------------------------------
+        gfx_clear(g, 10, 12, 18)
+
+        # track and center mark
+        gfx_fill_rect(g, 0, RAIL_Y, WIN_W, 3, 70, 75, 90)
+        gfx_fill_rect(g, 448, RAIL_Y + 3, 5, 8, 120, 120, 60)
+
+        # cart
+        let cx: i32 = world_to_px(cart.x)
+        gfx_fill_rect(g, cx - CART_W / 2, RAIL_Y - CART_H, CART_W, CART_H,
+                      90, 140, 200)
+
+        # pole: squares from the pivot outward; red once fallen
+        let pivot_x: f64 = cx as f64
+        let pivot_y: f64 = (RAIL_Y - CART_H) as f64
+        let pole_px: f64 = 2.0 * cart.half_length * PX_PER_M
+        let mut pr: i32 = 240
+        let mut pg: i32 = 170
+        let mut pb: i32 = 60
+        if cart.fallen == 1.0 {
+            pr = 230
+            pg = 60
+            pb = 50
+        }
+        for i in 0 to POLE_SEGS {
+            let frac: f64 = (i + 1) as f64 / POLE_SEGS as f64
+            let px: i32 = (pivot_x + pole_px * frac * sin(cart.theta)) as i32
+            let py: i32 = (pivot_y - pole_px * frac * cos(cart.theta)) as i32
+            gfx_fill_rect(g, px - 3, py - 3, 6, 6, pr, pg, pb)
+        }
+        # bob at the tip
+        let tip_x: i32 = (pivot_x + pole_px * sin(cart.theta)) as i32
+        let tip_y: i32 = (pivot_y - pole_px * cos(cart.theta)) as i32
+        gfx_fill_rect(g, tip_x - 6, tip_y - 6, 12, 12, 255, 220, 120)
+
+        # force bar under the track: length ~ |F|, direction = sign
+        let bar: i32 = (force * 6.0) as i32
+        if bar >= 0 {
+            gfx_fill_rect(g, 450, RAIL_Y + 40, bar + 1, 8, 100, 220, 130)
+        } else {
+            gfx_fill_rect(g, 450 + bar, RAIL_Y + 40, (0 - bar) + 1, 8,
+                          220, 120, 100)
+        }
+
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    if cart.fallen == 1.0 {
+        return 2
+    }
+    return 0
+}
