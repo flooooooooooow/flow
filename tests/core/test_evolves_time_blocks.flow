@@ -1,0 +1,84 @@
+# Runtime test for time blocks (card: time-blocks).
+# Spec: docs/vision/north-star.md sections 2.3 and 4.
+#
+# A clock flow stepped at dt = 1 ms carries an `every 10 ms` block that
+# increments a tick counter. Over a 2 second horizon that is exactly 200
+# firings: the accumulator gains 1 ms of integrated time per step and the
+# block fires each time it reaches the 10 ms period, first at t >= 10 ms.
+#
+# The test also checks the catch-up rule (a single 95 ms step fires the
+# block 9 times instead of dropping ticks), the phase rule (no firing
+# before one full period has elapsed), and the solver-block default step
+# (Clock_default_dt returns the declared 2 ms in seconds).
+#
+# Exits 0 on success.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+flow Clock {
+    state t     : f64 = 0.0
+    state ticks : f64 = 0.0
+
+    solver { dt 2 ms  method euler }
+
+    t evolves as 1.0
+
+    every 10 ms {
+        ticks becomes ticks + 1.0
+    }
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.001
+    let steps: i32 = 2000        # 2 seconds of integrated time
+    let expected: f64 = 200.0    # one firing per 10 ms period
+
+    let mut clock: Clock = Clock_new()
+
+    # Phase: after 9 steps only 9 ms has accumulated, below one period.
+    for k in 0 to 9 {
+        Clock_step(&clock, dt)
+    }
+    if clock.ticks != 0.0 {
+        printf("FAIL: fired before one full period, ticks %.1f\n", clock.ticks)
+        return 1
+    }
+
+    for k in 9 to steps {
+        Clock_step(&clock, dt)
+    }
+    printf("ticks after 2 s   : %.1f\n", clock.ticks)
+    if clock.ticks != expected {
+        printf("FAIL: expected %.1f firings\n", expected)
+        return 2
+    }
+
+    # Catch-up: one step of 95 ms fires the block 9 times; the 5 ms
+    # remainder stays in the accumulator for later steps.
+    let mut burst: Clock = Clock_new()
+    Clock_step(&burst, 0.095)
+    printf("ticks after 95 ms : %.1f\n", burst.ticks)
+    if burst.ticks != 9.0 {
+        printf("FAIL: catch-up expected 9 firings, got %.1f\n", burst.ticks)
+        return 3
+    }
+    Clock_step(&burst, 0.005)
+    if burst.ticks != 10.0 {
+        printf("FAIL: remainder lost, got %.1f\n", burst.ticks)
+        return 4
+    }
+
+    # Solver block: the declared default step, in seconds.
+    let default_dt: f64 = Clock_default_dt()
+    printf("default dt        : %.6f\n", default_dt)
+    if fabs(default_dt - 0.002) > 1e-12 {
+        printf("FAIL: default dt should be 0.002, got %.6f\n", default_dt)
+        return 5
+    }
+
+    printf("OK: 200 firings over 2 s, catch-up 9, default dt 2 ms %.0f\n", 0.0)
+    return 0
+}

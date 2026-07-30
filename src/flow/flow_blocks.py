@@ -20,6 +20,17 @@ then every state advances together. Name_derivs is generated as a separate
 function so a later card can swap RK4 into Name_step without touching the
 surface syntax or the Name_step signature. dt is caller-supplied, in seconds.
 
+Time blocks (spec section 4, card: time-blocks): each
+`every <duration> { ... }` block lowers to a hidden `__every_k_acc : i64`
+struct field holding accumulated integrated time in nanoseconds. Inside
+Name_step, after integration and before events, dt converts to integer
+nanoseconds once, each accumulator advances by it, and a catch-up loop
+fires the block body once per elapsed period (so dt > period does not
+drop ticks), bounded at 1024 firings per step. Body `becomes` updates
+stage synchronously exactly like `when` resets. A `solver { dt .. }`
+block lowers to Name_default_dt() returning the default fixed step in
+seconds; Name_step keeps its caller-supplied dt.
+
 Hybrid events (spec section 5, card: hybrid-events): each
 `when x reaches L { ... }` lowers to a hidden `__guard_k_prev : f64` struct
 field holding the previous end-of-step value of g = x - L. Inside Name_step,
@@ -66,6 +77,7 @@ from .parser import (
     VarDecl,
     Variable,
     VectorLiteral,
+    WhileStatement,
 )
 
 # Numeric types a flow member may have in this card's scope.
@@ -80,7 +92,21 @@ _PURE_MATH_FUNCTIONS = {
     "fmin", "fmax", "hypot",
 }
 
-_GENERATED_SUFFIXES = ("_new", "_init", "_derivs", "_step", "_outputs")
+_GENERATED_SUFFIXES = (
+    "_new", "_init", "_derivs", "_step", "_outputs", "_default_dt",
+)
+
+# Catch-up bound for `every` blocks: at most this many firings per step
+# (spec 4.3). The accumulator keeps any remainder, so ticks beyond the cap
+# are delayed to later steps rather than dropped; the trap the spec sketches
+# arrives with the constraints card's flow_panic machinery.
+_EVERY_CATCHUP_CAP = 1024
+
+# Default fixed step for simulation drivers when no solver block exists
+# (spec 2.3): 1 ms, in nanoseconds.
+_DEFAULT_DT_NS = 1_000_000
+
+_SOLVER_METHODS = ("euler",)
 
 
 def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
@@ -266,6 +292,68 @@ def _validate_flow(
             _check_pure(reset.expr, flow, f"'{reset.target} becomes'",
                         reset.line, local_pure_functions, source)
 
+    if flow.solver is not None:
+        if flow.solver.dt_ns <= 0:
+            raise _error(
+                f"solver dt of flow '{flow.name}' must be positive, "
+                f"got '{flow.solver.dt_text}'",
+                flow.solver.line, source,
+            )
+        if flow.solver.method not in _SOLVER_METHODS:
+            if flow.solver.method == "rk4":
+                raise _error(
+                    f"'method rk4' in the solver block of flow "
+                    f"'{flow.name}' is not yet implemented; euler is the "
+                    f"only integration method in this version",
+                    flow.solver.line, source,
+                )
+            raise _error(
+                f"unknown solver method '{flow.solver.method}' in flow "
+                f"'{flow.name}'; valid methods: euler",
+                flow.solver.line, source,
+            )
+
+    for every in flow.everys:
+        if every.period_ns <= 0:
+            raise _error(
+                f"'every {every.period_text}' in flow '{flow.name}' has a "
+                f"zero period; the period must be positive",
+                every.line, source,
+            )
+        seen_updates = set()
+        for upd in every.body:
+            if upd.target not in state_names:
+                raise _error(
+                    f"'{upd.target} becomes' in the "
+                    f"'every {every.period_text}' body of flow "
+                    f"'{flow.name}' requires '{upd.target}' to be a "
+                    f"declared state",
+                    upd.line, source,
+                )
+            if upd.target in seen_targets:
+                raise _error(
+                    f"state '{upd.target}' in flow '{flow.name}' has both "
+                    f"an 'evolves' declaration and a 'becomes' update in "
+                    f"an 'every' block; a state is continuous or discrete",
+                    upd.line, source,
+                    suggestion=(
+                        f"reset '{upd.target}' from a "
+                        f"'when {upd.target} reaches ...' event, or drop "
+                        f"its 'evolves' declaration"
+                    ),
+                )
+            if upd.target in seen_updates:
+                raise _error(
+                    f"state '{upd.target}' has two 'becomes' updates in "
+                    f"one 'every' body of flow '{flow.name}'; updates in a "
+                    f"block apply simultaneously, so each state has one "
+                    f"writer",
+                    upd.line, source,
+                )
+            seen_updates.add(upd.target)
+            _check_pure(upd.expr, flow, f"'{upd.target} becomes'",
+                        upd.line, local_pure_functions, source)
+
     for state in flow.states:
         _check_pure(state.initializer, flow, f"initializer of '{state.name}'",
                     state.line, local_pure_functions, source)
@@ -375,13 +463,15 @@ def _children(expr) -> List[Any]:
 
 def _lower_flow(flow: FlowDecl) -> List[Any]:
     # Field order: state, input, output, param (spec 1.2), then hidden
-    # per-event guard memory (spec 5.3). User members may not start with
-    # '__', so the hidden names cannot collide.
+    # per-every-block accumulators (spec 4.4) and per-event guard memory
+    # (spec 5.3). User members may not start with '__', so the hidden names
+    # cannot collide.
     ordered = (
         [(s.name, s.type) for s in flow.states]
         + [(i.name, i.type) for i in flow.inputs]
         + [(o.name, o.type) for o in flow.outputs]
         + [(p.name, p.type) for p in flow.params]
+        + [(f"__every_{k}_acc", Type("i64")) for k in range(len(flow.everys))]
         + [(f"__guard_{k}_prev", Type("f64")) for k in range(len(flow.whens))]
     )
     member_names = {name for name, _ in ordered}
@@ -403,6 +493,7 @@ def _lower_flow(flow: FlowDecl) -> List[Any]:
         _make_init(flow, member_names, member_types, has_outputs),
         _make_derivs(flow, member_names, member_types, evolved),
         _make_step(flow, member_names, member_types, evolved, has_outputs),
+        _make_default_dt(flow),
     ]
     if has_outputs:
         functions.append(_make_outputs(flow, member_names))
@@ -422,6 +513,18 @@ def _zero() -> Literal:
     # Float literals carry Type("f32") in this AST, exactly as the parser
     # builds them; the checker unifies them with f32 and f64 targets.
     return Literal("0.0", Type("f32"))
+
+
+def _zero_of(t: Type) -> Literal:
+    """Zero literal matching a member type: integer zero for the hidden
+    i64 accumulators, float zero for everything else."""
+    if t.name == "i64":
+        return _i64(0)
+    return _zero()
+
+
+def _i64(value: int) -> Literal:
+    return Literal(str(value), Type("i64"))
 
 
 def _rewrite(expr, member_names: Set[str]):
@@ -480,7 +583,7 @@ def _make_new(flow: FlowDecl, ordered) -> FunctionDecl:
         VarDecl(
             "self",
             Type(flow.name),
-            StructLiteral(flow.name, [(name, _zero()) for name, _ in ordered]),
+            StructLiteral(flow.name, [(name, _zero_of(t)) for name, t in ordered]),
             is_mutable=True,
         ),
         FunctionCall(f"{flow.name}_init", [UnaryOperation("&", Variable("self"))]),
@@ -492,9 +595,10 @@ def _make_new(flow: FlowDecl, ordered) -> FunctionDecl:
 def _make_init(flow: FlowDecl, member_names: Set[str], member_types,
                has_outputs: bool) -> FunctionDecl:
     """Name_init(self): apply declared defaults in order params, inputs,
-    states, then seed event guard memory from the init state, then compute
-    outputs. Initializers may reference members assigned earlier in that
-    order (params in state initializers is the common case)."""
+    states, then zero the every-block accumulators and seed event guard
+    memory from the init state, then compute outputs. Initializers may
+    reference members assigned earlier in that order (params in state
+    initializers is the common case)."""
     statements = []
     for param in flow.params:
         statements.append(
@@ -506,6 +610,8 @@ def _make_init(flow: FlowDecl, member_names: Set[str], member_types,
         statements.append(
             _assign_member(state.name, _rewrite(state.initializer, member_names))
         )
+    for k in range(len(flow.everys)):
+        statements.append(_assign_member(f"__every_{k}_acc", _i64(0)))
     for k, when in enumerate(flow.whens):
         statements.append(
             _assign_member(
@@ -566,8 +672,10 @@ def _guard_expr(when, member_names: Set[str], member_types):
 def _make_step(flow: FlowDecl, member_names, member_types, evolved,
                has_outputs) -> FunctionDecl:
     """Name_step(self, dt): explicit Euler with simultaneous update, then
-    hybrid events in declaration order, then output maps. dt is in seconds
-    (spec 2.3, 2.4; events per spec 5.2 and 5.3).
+    every-blocks due this tick in declaration order, then hybrid events in
+    declaration order, then output maps (the normative ordering of spec
+    1.4). dt is in seconds (spec 2.3, 2.4; every-blocks per spec 4.3 and
+    4.4; events per spec 5.2 and 5.3).
 
     Event firing test: strict sign comparison, (g < 0) != (g_prev < 0),
     plus the exact-hit case g == 0. The spec's section 5.3 sketch compares
@@ -610,6 +718,26 @@ def _make_step(flow: FlowDecl, member_names, member_types, evolved,
                 ),
             )
         )
+    if flow.everys:
+        # dt converts to integer nanoseconds once per step (spec 4.4);
+        # drift is bounded by the ns truncation per step.
+        statements.append(
+            VarDecl(
+                "__dt_ns",
+                Type("i64"),
+                CastExpression(
+                    BinaryOperation(
+                        Variable("dt"), "*",
+                        Literal("1000000000.0", Type("f32")),
+                    ),
+                    Type("i64"),
+                ),
+            )
+        )
+    for k, every in enumerate(flow.everys):
+        statements.extend(
+            _every_statements(k, every, member_names, member_types)
+        )
     for k, when in enumerate(flow.whens):
         statements.extend(
             _event_statements(k, when, member_names, member_types)
@@ -621,6 +749,76 @@ def _make_step(flow: FlowDecl, member_names, member_types, evolved,
         [Parameter("self", _self_ptr_type(flow.name)), Parameter("dt", Type("f64"))],
         Type("void"), statements,
     )
+
+
+def _every_statements(k: int, every, member_names: Set[str], member_types):
+    """Statements for one `every P { ... }` block inside Name_step
+    (spec 4.3, 4.4).
+
+        self.__every_k_acc = self.__every_k_acc + __dt_ns
+        let mut __every_k_n : i64 = 0
+        while self.__every_k_acc >= P && __every_k_n < 1024 {
+            self.__every_k_acc = self.__every_k_acc - P
+            __every_k_n = __every_k_n + 1
+            let __tick_k_t : T = <rhs from pre-block state> ...
+            self.t = __tick_k_t ...
+        }
+
+    The while loop is the catch-up form: dt > P fires the body once per
+    elapsed period, so slow stepping does not drop ticks. The counter
+    bounds a step at 1024 firings (spec 4.3); any remainder stays in the
+    accumulator for later steps. First firing lands at t >= P because the
+    accumulator starts at zero. Body writes stage synchronously, exactly
+    like `when` resets (spec 3.2).
+    """
+    acc_name = f"__every_{k}_acc"
+    counter = f"__every_{k}_n"
+    acc = FieldAccess(Variable("self"), acc_name)
+    period = _i64(every.period_ns)
+
+    body_stmts = [
+        _assign_member(acc_name, BinaryOperation(acc, "-", period)),
+        Assignment(
+            counter,
+            BinaryOperation(Variable(counter), "+", _i64(1)),
+        ),
+    ]
+    for upd in every.body:
+        body_stmts.append(
+            VarDecl(
+                f"__tick_{k}_{upd.target}",
+                Type(member_types[upd.target].name),
+                _rewrite(upd.expr, member_names),
+            )
+        )
+    for upd in every.body:
+        body_stmts.append(
+            _assign_member(upd.target, Variable(f"__tick_{k}_{upd.target}"))
+        )
+
+    due = BinaryOperation(
+        BinaryOperation(acc, ">=", period),
+        "&&",
+        BinaryOperation(Variable(counter), "<", _i64(_EVERY_CATCHUP_CAP)),
+    )
+    return [
+        _assign_member(acc_name, BinaryOperation(acc, "+", Variable("__dt_ns"))),
+        VarDecl(counter, Type("i64"), _i64(0), is_mutable=True),
+        WhileStatement(due, Block(body_stmts)),
+    ]
+
+
+def _make_default_dt(flow: FlowDecl) -> FunctionDecl:
+    """Name_default_dt() -> f64: the default fixed step in seconds for
+    simulation drivers (spec 2.3): the solver dt when a `solver` block is
+    declared, else 1 ms. Emitted as a flow_api function rather than a
+    #define because the lowering targets plain Flow AST shared by every
+    backend. Name_step keeps its caller-supplied dt either way.
+    """
+    dt_ns = flow.solver.dt_ns if flow.solver is not None else _DEFAULT_DT_NS
+    seconds = repr(dt_ns / 1e9)
+    statements = [ReturnStatement(Literal(seconds, Type("f32")))]
+    return _flow_fn(flow, "_default_dt", [], Type("f64"), statements)
 
 
 def _event_statements(k: int, when, member_names: Set[str], member_types):
