@@ -1,0 +1,103 @@
+# Runtime test for hybrid events (card: hybrid-events).
+# Spec: docs/vision/north-star.md section 5.
+#
+# The bouncing ball written in the new syntax: continuous flight under
+# gravity, and a `when height reaches 0.0` event that flips the velocity
+# with restitution 0.8 and clamps the height back to the surface.
+#
+# Acceptance bar: the ball bounces several times, successive rebound peaks
+# shrink by roughly restitution squared, and the state stays finite. The
+# guard is a sign-change test at dt resolution (spec 5.3), so the peak
+# ratios carry O(dt) event-location error and the tolerance is loose.
+#
+# Exits 0 on success.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+flow Ball {
+    state height      : f64 = 2.0
+    state velocity    : f64 = 0.0
+    param gravity     : f64 = 9.81
+    param restitution : f64 = 0.8
+
+    height evolves as velocity
+    velocity evolves as -gravity
+
+    when height reaches 0.0 {
+        velocity becomes -restitution * velocity
+        height becomes 0.0
+    }
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.001
+    let steps: i32 = 6000    # 6 seconds of evolution
+    let target_ratio: f64 = 0.64    # restitution squared
+
+    let mut ball: Ball = Ball_new()
+
+    let mut prev_velocity: f64 = 0.0
+    let mut peak: f64 = 2.0          # apex of the current flight
+    let mut prev_peak: f64 = 0.0
+    let mut bounces: i32 = 0
+    let mut checked_ratios: i32 = 0
+    let mut worst_ratio_err: f64 = 0.0
+
+    for k in 0 to steps {
+        Ball_step(&ball, dt)
+
+        # A bounce is the step where the event flipped the velocity sign.
+        if prev_velocity < 0.0 and ball.velocity > 0.0 {
+            bounces = bounces + 1
+            if bounces > 1 and prev_peak > 0.05 {
+                # Compare this completed flight's apex to the one before it.
+                let ratio: f64 = peak / prev_peak
+                let err: f64 = fabs(ratio - target_ratio)
+                if err > worst_ratio_err {
+                    worst_ratio_err = err
+                }
+                checked_ratios = checked_ratios + 1
+            }
+            prev_peak = peak
+            peak = 0.0
+        }
+        if ball.height > peak {
+            peak = ball.height
+        }
+        prev_velocity = ball.velocity
+    }
+
+    printf("bounces          : %.0f\n", bounces as f64)
+    printf("ratios checked   : %.0f\n", checked_ratios as f64)
+    printf("worst ratio err  : %.4f\n", worst_ratio_err)
+    printf("final height     : %.4f\n", ball.height)
+
+    # State must stay finite (NaN fails self-comparison).
+    if ball.height != ball.height {
+        printf("FAIL: height is NaN %.0f\n", 1.0)
+        return 1
+    }
+    if ball.velocity != ball.velocity {
+        printf("FAIL: velocity is NaN %.0f\n", 1.0)
+        return 2
+    }
+    if bounces < 4 {
+        printf("FAIL: expected at least 4 bounces %.0f\n", bounces as f64)
+        return 3
+    }
+    if checked_ratios < 3 {
+        printf("FAIL: expected at least 3 measurable rebounds %.0f\n",
+               checked_ratios as f64)
+        return 4
+    }
+    if worst_ratio_err > 0.12 {
+        printf("FAIL: peak decay drifted from restitution^2 by %.4f\n",
+               worst_ratio_err)
+        return 5
+    }
+    printf("OK: decaying bounces match restitution^2 %.0f\n", 0.0)
+    return 0
+}
