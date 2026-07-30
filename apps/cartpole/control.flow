@@ -1,0 +1,272 @@
+# CART-POLE CONTROL. Derives a stabilizing state-feedback gain for the
+# CartPole flow in model.flow, entirely in Flow, at program startup.
+# Nothing here is a magic number: the gain comes out of a discrete-time
+# LQR computation on the linearized plant, and every step of that
+# derivation is written below.
+#
+# Pipeline (state order x, x_dot, theta, theta_dot; scalar input F):
+#
+#   1. cartpole_linearize   analytic Jacobian of the nonlinear model at the
+#                           upright equilibrium, discretized by forward
+#                           Euler at the control period dt.
+#   2. cartpole_ctrb_rank   rank of [B, AB, A^2B, A^3B]; 4 means every
+#                           state is reachable through the cart force.
+#   3. cartpole_lqr_gains   fixed-point iteration of the discrete-time
+#                           Riccati equation. The input is scalar, so the
+#                           usual matrix inverse collapses to one division.
+#
+# Linearization derivation. At theta = 0, F = 0 the nonlinear equations of
+# model.flow reduce as sin(th) -> th, cos(th) -> 1, thd^2 terms -> 0:
+#
+#   theta_acc = (g th - F / (M + m)) / D0     with D0 = l (4/3 - m / (M + m))
+#   x_acc     = F / (M + m) - (m l / (M + m)) theta_acc
+#
+# so the continuous-time state matrices are
+#
+#       [ 0  1   0   0 ]        [  0 ]
+#   A = [ 0  0  a23  0 ]    B = [ b2 ]     a43 =  g / D0
+#       [ 0  0   0   1 ]        [  0 ]     b4  = -1 / ((M + m) D0)
+#       [ 0  0  a43  0 ]        [ b4 ]     a23 = -(m l / (M + m)) a43
+#                                          b2  =  1 / (M + m) - (m l / (M + m)) b4
+#
+# Discretization: Ad = I + A dt, Bd = B dt (forward Euler, matching the
+# Euler integrator that `evolves as` compiles to).
+#
+# Riccati iteration (value iteration for the infinite-horizon LQR):
+#
+#   P <- Q + Ad' P Ad - (Ad' P Bd)(Ad' P Bd)' / (R + Bd' P Bd)
+#
+# iterated until max |P_next - P| < 1e-9. P is symmetrized every iteration:
+# the update formula keeps only the symmetric part contracting, and the
+# open loop is unstable, so any asymmetric rounding residue would otherwise
+# grow with the open-loop dynamics and destroy convergence. The gain is
+#
+#   K = (Bd' P Ad) / (R + Bd' P Bd)        control law u = -K x.
+#
+# This file is a module used by main.flow and cartpole_gfx.flow.
+
+extern {
+    function fabs(x: f64) -> f64
+}
+
+# --- 4x4 helpers, row-major buffers ---------------------------------------
+
+function cp_mat4_mul(a: ptr<f64>, b: ptr<f64>, out: ptr<f64>) -> void {
+    for i in 0 to 4 {
+        for j in 0 to 4 {
+            let mut acc: f64 = 0.0
+            for k in 0 to 4 {
+                acc = acc + a[i * 4 + k] * b[k * 4 + j]
+            }
+            out[i * 4 + j] = acc
+        }
+    }
+}
+
+function cp_mat4_vec(a: ptr<f64>, v: ptr<f64>, out: ptr<f64>) -> void {
+    for i in 0 to 4 {
+        let mut acc: f64 = 0.0
+        for k in 0 to 4 {
+            acc = acc + a[i * 4 + k] * v[k]
+        }
+        out[i] = acc
+    }
+}
+
+function cp_mat4_transpose(a: ptr<f64>, out: ptr<f64>) -> void {
+    for i in 0 to 4 {
+        for j in 0 to 4 {
+            out[j * 4 + i] = a[i * 4 + j]
+        }
+    }
+}
+
+# --- 1. linearized, discretized plant -------------------------------------
+
+function cartpole_linearize(ad: ptr<f64>, bd: ptr<f64>,
+                            cart_mass: f64, pole_mass: f64,
+                            half_length: f64, gravity: f64,
+                            dt: f64) -> void {
+    let total: f64 = cart_mass + pole_mass
+    let d0: f64 = half_length * (4.0 / 3.0 - pole_mass / total)
+    let a43: f64 = gravity / d0
+    let b4: f64 = 0.0 - 1.0 / (total * d0)
+    let a23: f64 = 0.0 - (pole_mass * half_length / total) * a43
+    let b2: f64 = 1.0 / total - (pole_mass * half_length / total) * b4
+
+    # Ad = I + A dt
+    for i in 0 to 16 {
+        ad[i] = 0.0
+    }
+    ad[0] = 1.0
+    ad[1] = dt
+    ad[5] = 1.0
+    ad[6] = a23 * dt
+    ad[10] = 1.0
+    ad[11] = dt
+    ad[14] = a43 * dt
+    ad[15] = 1.0
+
+    # Bd = B dt
+    bd[0] = 0.0
+    bd[1] = b2 * dt
+    bd[2] = 0.0
+    bd[3] = b4 * dt
+}
+
+# --- 2. controllability ----------------------------------------------------
+
+# Rank of the controllability matrix C = [Bd, Ad Bd, Ad^2 Bd, Ad^3 Bd],
+# computed by Gaussian elimination with partial pivoting. The tolerance is
+# relative to the largest entry of C.
+function cartpole_ctrb_rank(ad: ptr<f64>, bd: ptr<f64>) -> i32 {
+    let c: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let col: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let nxt: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+
+    for i in 0 to 4 {
+        col[i] = bd[i]
+    }
+    for j in 0 to 4 {
+        for i in 0 to 4 {
+            c[i * 4 + j] = col[i]
+        }
+        cp_mat4_vec(ad, col, nxt)
+        for i in 0 to 4 {
+            col[i] = nxt[i]
+        }
+    }
+
+    let mut scale: f64 = 0.0
+    for i in 0 to 16 {
+        if fabs(c[i]) > scale {
+            scale = fabs(c[i])
+        }
+    }
+    if scale == 0.0 {
+        return 0
+    }
+    let tol: f64 = scale * 0.000000000001
+
+    let mut rank: i32 = 0
+    for pivot_col in 0 to 4 {
+        # find the largest entry in this column at or below row `rank`
+        let mut best: i32 = rank
+        for r in rank to 4 {
+            if fabs(c[r * 4 + pivot_col]) > fabs(c[best * 4 + pivot_col]) {
+                best = r
+            }
+        }
+        if fabs(c[best * 4 + pivot_col]) > tol {
+            # swap rows `best` and `rank`
+            for cc in 0 to 4 {
+                let tmp: f64 = c[rank * 4 + cc]
+                c[rank * 4 + cc] = c[best * 4 + cc]
+                c[best * 4 + cc] = tmp
+            }
+            # eliminate below
+            for r in rank + 1 to 4 {
+                let f: f64 = c[r * 4 + pivot_col] / c[rank * 4 + pivot_col]
+                for cc in 0 to 4 {
+                    c[r * 4 + cc] = c[r * 4 + cc] - f * c[rank * 4 + cc]
+                }
+            }
+            rank = rank + 1
+        }
+    }
+    return rank
+}
+
+# --- 3. LQR gain via the discrete Riccati fixed point ----------------------
+
+# q_diag: the four diagonal entries of Q. r: the scalar input weight.
+# Writes the gain row K into k_out (control law u = -K x).
+# Returns the number of iterations used, or -1 if the iteration did not
+# reach max |P_next - P| < 1e-9 within max_iter sweeps.
+function cartpole_lqr_gains(ad: ptr<f64>, bd: ptr<f64>,
+                            q_diag: ptr<f64>, r: f64,
+                            k_out: ptr<f64>, max_iter: i32) -> i32 {
+    let at: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let p: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let pa: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let atpa: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let pn: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let pb: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let atpb: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+
+    cp_mat4_transpose(ad, at)
+
+    # P starts at Q
+    for i in 0 to 16 {
+        p[i] = 0.0
+    }
+    for i in 0 to 4 {
+        p[i * 4 + i] = q_diag[i]
+    }
+
+    let mut converged_at: i32 = 0 - 1
+    for iter in 0 to max_iter {
+        cp_mat4_mul(p, ad, pa)          # PA   = P Ad
+        cp_mat4_mul(at, pa, atpa)       # AtPA = Ad' P Ad
+        cp_mat4_vec(p, bd, pb)          # PB   = P Bd
+        cp_mat4_vec(at, pb, atpb)       # AtPB = Ad' P Bd
+
+        let mut s: f64 = r
+        for i in 0 to 4 {
+            s = s + bd[i] * pb[i]       # s = R + Bd' P Bd (scalar)
+        }
+
+        for i in 0 to 4 {
+            for j in 0 to 4 {
+                let mut q_ij: f64 = 0.0
+                if i == j {
+                    q_ij = q_diag[i]
+                }
+                pn[i * 4 + j] = q_ij + atpa[i * 4 + j] - atpb[i] * atpb[j] / s
+            }
+        }
+
+        # Symmetrize: keeps the asymmetric rounding residue at zero, which
+        # would otherwise grow through the unstable open-loop dynamics.
+        for i in 0 to 4 {
+            for j in i + 1 to 4 {
+                let avg: f64 = 0.5 * (pn[i * 4 + j] + pn[j * 4 + i])
+                pn[i * 4 + j] = avg
+                pn[j * 4 + i] = avg
+            }
+        }
+
+        let mut delta: f64 = 0.0
+        for i in 0 to 16 {
+            if fabs(pn[i] - p[i]) > delta {
+                delta = fabs(pn[i] - p[i])
+            }
+            p[i] = pn[i]
+        }
+
+        if delta < 0.000000001 {
+            converged_at = iter + 1
+            break
+        }
+    }
+
+    if converged_at < 0 {
+        return 0 - 1
+    }
+
+    # K = (Bd' P Ad) / (R + Bd' P Bd) with the converged P
+    cp_mat4_mul(p, ad, pa)
+    cp_mat4_vec(p, bd, pb)
+    let mut s: f64 = r
+    for i in 0 to 4 {
+        s = s + bd[i] * pb[i]
+    }
+    for j in 0 to 4 {
+        let mut acc: f64 = 0.0
+        for i in 0 to 4 {
+            acc = acc + bd[i] * pa[i * 4 + j]
+        }
+        k_out[j] = acc / s
+    }
+    return converged_at
+}
