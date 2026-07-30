@@ -236,3 +236,15 @@ aspirational example programs in
 for what the gap looks like in practice, every file in
 [`examples/evolution/`](../../examples/evolution/README.md) opens with a
 North-star comment showing how the same system will read one day.
+
+## MLIR backend status
+
+Programs that use structs, including every `flow` block, now execute through
+the MLIR pipeline (`./flow jit` and `./flow mlir-run`) with the same results
+as the C backend. Struct literals, field reads, field stores, address-of, and
+pointer-to-struct parameters all lower to LLVM-dialect ops (insertvalue,
+extractvalue, getelementptr, load, store).
+`examples/evolution/pendulum_evolves.flow` and
+`tests/core/test_evolves_pendulum.flow` both pass under the JIT.
+Effect handlers and their vtables do not lower through MLIR yet; programs
+that use effects still need the C backend.
