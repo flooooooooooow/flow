@@ -687,6 +687,36 @@ class FlowEvolveDecl:
 
 
 @dataclass
+class FlowBecomesDecl:
+    """`x becomes expr` inside a `when` body: a staged discrete reset.
+
+    All `becomes` right-hand sides in one fired event read the same
+    pre-reset state, then every target is assigned together
+    (docs/vision/north-star.md 3.2).
+    """
+
+    target: str
+    expr: "Expression"
+    line: int = 0
+
+
+@dataclass
+class FlowWhenDecl:
+    """`when x reaches L { ... }`: a sign-change guard with a reset body.
+
+    Fires when the sign of `x - L` at end-of-step differs from its sign at
+    the previous step's end (docs/vision/north-star.md section 5, card:
+    hybrid-events). `when`, `reaches`, and `becomes` are contextual, so all
+    three remain ordinary identifiers outside this position.
+    """
+
+    guard_target: str
+    threshold: "Expression"
+    body: List[FlowBecomesDecl]
+    line: int = 0
+
+
+@dataclass
 class FlowDecl:
     """`flow Name { ... }`: a struct plus continuous dynamics.
 
@@ -702,6 +732,7 @@ class FlowDecl:
     outputs: List[FlowOutputDecl]
     params: List[FlowParamDecl]
     evolves: List[FlowEvolveDecl]
+    whens: List[FlowWhenDecl] = field(default_factory=list)
     is_exported: bool = False
     location: Optional[SourceLocation] = None
 
@@ -1500,9 +1531,11 @@ class Parser:
         Body items in this card's scope:
           state|input|output|param NAME : type [= expr]
           NAME evolves as expr
-        `flow`, `state`, `input`, `output`, `param`, `evolves` are contextual
-        keywords: each is recognized only by its position and one token of
-        lookahead, so all of them remain ordinary identifiers elsewhere.
+          when NAME reaches expr { NAME becomes expr ... }
+        `flow`, `state`, `input`, `output`, `param`, `evolves`, `when`,
+        `reaches`, `becomes` are contextual keywords: each is recognized only
+        by its position and at most two tokens of lookahead, so all of them
+        remain ordinary identifiers elsewhere.
         """
         start_token = self.current_token
         self.advance()  # consume contextual 'flow'
@@ -1517,6 +1550,7 @@ class Parser:
         outputs: List[FlowOutputDecl] = []
         params: List[FlowParamDecl] = []
         evolves: List[FlowEvolveDecl] = []
+        whens: List[FlowWhenDecl] = []
         section_words = ("state", "input", "output", "param")
 
         while self.current_token.type != TokenType.RBRACE:
@@ -1534,6 +1568,18 @@ class Parser:
                 tok.type == TokenType.IDENTIFIER
                 and self.lookahead.type == TokenType.IDENTIFIER
                 and self.lookahead.value == "evolves"
+            )
+            peek2 = (
+                self._peek2()
+                if tok.type == TokenType.IDENTIFIER
+                and tok.value == "when"
+                and self.lookahead.type == TokenType.IDENTIFIER
+                else None
+            )
+            is_when = (
+                peek2 is not None
+                and peek2.type == TokenType.IDENTIFIER
+                and peek2.value == "reaches"
             )
             if is_section:
                 kind = tok.value
@@ -1572,13 +1618,16 @@ class Parser:
                 self.expect(TokenType.AS)
                 rhs = self.parse_expression_without_assign()
                 evolves.append(FlowEvolveDecl(target, rhs, tok.line))
+            elif is_when:
+                whens.append(self._parse_flow_when(name))
             else:
                 raise self.error(
                     f"Unexpected item in flow '{name}' body",
                     suggestion=(
                         "flow bodies contain member declarations "
-                        "('state|input|output|param name : type [= expr]') and "
-                        "dynamics ('x evolves as expr')"
+                        "('state|input|output|param name : type [= expr]'), "
+                        "dynamics ('x evolves as expr'), and events "
+                        "('when x reaches expr { x becomes expr }')"
                     ),
                 )
 
@@ -1590,8 +1639,54 @@ class Parser:
             end_column=name_token.column - 1 + len(name),
         )
         return FlowDecl(
-            name, states, inputs, outputs, params, evolves, location=loc
+            name, states, inputs, outputs, params, evolves, whens, location=loc
         )
+
+    def _parse_flow_when(self, flow_name: str) -> FlowWhenDecl:
+        """Parse `when NAME reaches expr { NAME becomes expr ... }`.
+
+        Only the zero-crossing guard form exists in this card's scope; the
+        boolean edge form (`when cond { }`) is reserved by the spec
+        (docs/vision/north-star.md 5.1). Bodies contain `becomes` resets
+        only in this version.
+        """
+        when_token = self.current_token
+        self.advance()  # consume contextual 'when'
+        guard_target = self.expect(TokenType.IDENTIFIER).value
+        self.advance()  # consume contextual 'reaches'
+        threshold = self.parse_expression_without_assign()
+        self.expect(TokenType.LBRACE)
+
+        body: List[FlowBecomesDecl] = []
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise self.error(
+                    f"Unterminated 'when' body in flow '{flow_name}': "
+                    f"expected '}}' before end of file"
+                )
+            stmt_tok = self.current_token
+            is_becomes = (
+                stmt_tok.type == TokenType.IDENTIFIER
+                and self.lookahead.type == TokenType.IDENTIFIER
+                and self.lookahead.value == "becomes"
+            )
+            if not is_becomes:
+                raise self.error(
+                    f"Unexpected statement in 'when' body of flow "
+                    f"'{flow_name}'",
+                    suggestion=(
+                        "'when' bodies contain resets in this version: "
+                        "'x becomes expr'"
+                    ),
+                )
+            target = stmt_tok.value
+            self.advance()  # consume target
+            self.advance()  # consume contextual 'becomes'
+            rhs = self.parse_expression_without_assign()
+            body.append(FlowBecomesDecl(target, rhs, stmt_tok.line))
+
+        self.expect(TokenType.RBRACE)
+        return FlowWhenDecl(guard_target, threshold, body, when_token.line)
 
     def parse_enum(self) -> EnumDecl:
         """Parse enum declaration: enum Option<T> { Some(T), None }"""
