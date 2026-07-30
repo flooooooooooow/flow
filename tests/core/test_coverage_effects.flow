@@ -1,0 +1,236 @@
+# Zero-cost effect substitution coverage: multi-effect handle statements,
+# handle blocks inside loops and conditionals, a capability serving two
+# effects, nested handles of different effects, and effect calls in
+# deeply nested blocks. Uses value-returning operations so behavior is
+# checked through return values (unhandled calls return the default 0).
+# Returns 0 if all checks pass, non-zero (test id) otherwise.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+effect Scale {
+    apply(x: i32) -> i32,
+}
+
+effect Offset {
+    shift(x: i32) -> i32,
+}
+
+capability Doubler {
+    effect Scale,
+    function apply(x: i32) -> i32 {
+        return x * 2
+    },
+}
+
+capability Tripler {
+    effect Scale,
+    function apply(x: i32) -> i32 {
+        return x * 3
+    },
+}
+
+capability PlusTen {
+    effect Offset,
+    function shift(x: i32) -> i32 {
+        return x + 10
+    },
+}
+
+capability ScaleAndShift {
+    effect Scale, Offset,
+    function apply(x: i32) -> i32 {
+        return x * 5
+    },
+    function shift(x: i32) -> i32 {
+        return x + 100
+    },
+}
+
+function test_unhandled_effect_returns_default() -> bool {
+    # Offset has no handler installed here; dispatch falls back to the
+    # default value 0. (The call sits inside a handle block for Scale
+    # because strict mode only resolves effect calls lexically inside a
+    # handle block; see tests/unit/test_coverage_known_bugs.py.)
+    let mut v: i32 = -1
+    handle Scale with Doubler {
+        v = Offset.shift(21)
+    }
+    return v == 0
+}
+
+function test_multi_effect_handle_single_capability() -> bool {
+    let mut a: i32 = 0
+    let mut b: i32 = 0
+    handle Scale, Offset with ScaleAndShift {
+        a = Scale.apply(4)
+        b = Offset.shift(4)
+    }
+    return a == 20 && b == 104
+}
+
+function test_zipped_handlers() -> bool {
+    let mut a: i32 = 0
+    let mut b: i32 = 0
+    handle Scale, Offset with Doubler, PlusTen {
+        a = Scale.apply(4)
+        b = Offset.shift(4)
+    }
+    return a == 8 && b == 14
+}
+
+function test_capability_two_effects_handle_one() -> bool {
+    let mut bound: i32 = 0
+    let mut unbound: i32 = 0
+    handle Scale with ScaleAndShift {
+        bound = Scale.apply(3)
+        unbound = Offset.shift(3)
+    }
+    # Scale is bound (3 * 5); Offset was never handled, so it falls back
+    # to the default 0 even though ScaleAndShift could serve it.
+    return bound == 15 && unbound == 0
+}
+
+function test_handle_inside_loop() -> bool {
+    let mut total: i32 = 0
+    for i in 0 to 3 {
+        handle Scale with Doubler {
+            total = total + Scale.apply(i)
+        }
+    }
+    # 0*2 + 1*2 + 2*2 = 6
+    return total == 6
+}
+
+function test_handle_inside_conditional() -> bool {
+    let mut a: i32 = 0
+    let mut b: i32 = 0
+    if 1 == 1 {
+        handle Scale with Doubler {
+            a = Scale.apply(7)
+        }
+    } else {
+        a = -1
+    }
+    if 1 == 2 {
+        b = -1
+    } else {
+        handle Scale with Tripler {
+            b = Scale.apply(7)
+        }
+    }
+    return a == 14 && b == 21
+}
+
+function test_nested_handles_of_different_effects() -> bool {
+    let mut inner_scale: i32 = 0
+    let mut inner_shift: i32 = 0
+    let mut after_scale: i32 = 0
+    let mut after_shift: i32 = 0
+    handle Scale with Doubler {
+        handle Offset with PlusTen {
+            inner_scale = Scale.apply(6)
+            inner_shift = Offset.shift(6)
+        }
+        after_scale = Scale.apply(6)
+        after_shift = Offset.shift(6)
+    }
+    # Inside both handles: 6*2 and 6+10. After the inner block ends the
+    # Scale binding survives; Offset reverts to the unhandled default.
+    let inner_ok: bool = inner_scale == 12 && inner_shift == 16
+    let after_ok: bool = after_scale == 12 && after_shift == 0
+    return inner_ok && after_ok
+}
+
+function test_nested_handle_same_effect_restores() -> bool {
+    let mut outer_before: i32 = 0
+    let mut inner: i32 = 0
+    let mut outer_after: i32 = 0
+    handle Scale with Doubler {
+        outer_before = Scale.apply(5)
+        handle Scale with Tripler {
+            inner = Scale.apply(5)
+        }
+        outer_after = Scale.apply(5)
+    }
+    return outer_before == 10 && inner == 15 && outer_after == 10
+}
+
+function test_effect_call_in_deeply_nested_blocks() -> bool {
+    let mut total: i32 = 0
+    handle Scale with Tripler {
+        for i in 0 to 4 {
+            if i > 1 {
+                let mut j: i32 = 0
+                while j < 2 {
+                    total = total + Scale.apply(1)
+                    j = j + 1
+                }
+            }
+        }
+    }
+    # i in {2, 3}: two while iterations each, 3 per call: 4 * 3 = 12.
+    return total == 12
+}
+
+function test_handler_cleared_after_all_blocks() -> bool {
+    # Every previous handle block has ended, so both effects are back to
+    # the unhandled default. Each probe call sits inside a handle block
+    # for the OTHER effect to stay strict-clean.
+    let mut scale_cleared: i32 = -1
+    let mut offset_cleared: i32 = -1
+    handle Offset with PlusTen {
+        scale_cleared = Scale.apply(9)
+    }
+    handle Scale with Doubler {
+        offset_cleared = Offset.shift(9)
+    }
+    return scale_cleared == 0 && offset_cleared == 0
+}
+
+function main() -> i32 {
+    if !test_unhandled_effect_returns_default() {
+        printf("FAIL: unhandled_effect_returns_default\n", 0)
+        return 1
+    }
+    if !test_multi_effect_handle_single_capability() {
+        printf("FAIL: multi_effect_handle_single_capability\n", 0)
+        return 2
+    }
+    if !test_zipped_handlers() {
+        printf("FAIL: zipped_handlers\n", 0)
+        return 3
+    }
+    if !test_capability_two_effects_handle_one() {
+        printf("FAIL: capability_two_effects_handle_one\n", 0)
+        return 4
+    }
+    if !test_handle_inside_loop() {
+        printf("FAIL: handle_inside_loop\n", 0)
+        return 5
+    }
+    if !test_handle_inside_conditional() {
+        printf("FAIL: handle_inside_conditional\n", 0)
+        return 6
+    }
+    if !test_nested_handles_of_different_effects() {
+        printf("FAIL: nested_handles_of_different_effects\n", 0)
+        return 7
+    }
+    if !test_nested_handle_same_effect_restores() {
+        printf("FAIL: nested_handle_same_effect_restores\n", 0)
+        return 8
+    }
+    if !test_effect_call_in_deeply_nested_blocks() {
+        printf("FAIL: effect_call_in_deeply_nested_blocks\n", 0)
+        return 9
+    }
+    if !test_handler_cleared_after_all_blocks() {
+        printf("FAIL: handler_cleared_after_all_blocks\n", 0)
+        return 10
+    }
+
+    printf("All effect substitution coverage tests passed\n", 0)
+    return 0
+}
