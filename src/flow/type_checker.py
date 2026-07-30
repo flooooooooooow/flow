@@ -15,7 +15,7 @@ Source → Parser → AST → Type Checker → Typed AST → Code Generator
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
 
 from .parser import (
@@ -23,7 +23,7 @@ from .parser import (
     FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall,
     IfStatement, WhileStatement, ForStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl, TraitDecl,
-    TypeAliasDecl, DistinctTypeDecl, CastExpression,
+    TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
     MatchStatement, StructPattern, OrPattern, DeferStatement, TryExpr, Lambda,
     VectorLiteral,
 )
@@ -64,6 +64,11 @@ class SemanticType:
     size: Optional[int] = None  # For fixed-size arrays
     param_types: List['SemanticType'] = field(default_factory=list)  # For functions
     return_type: Optional['SemanticType'] = None  # For functions
+    # Dimension exponent vector for units of measure (north-star.md section 6).
+    # Indexed by base-unit declaration order, trailing zeros stripped, so the
+    # vector stays canonical as later base units are declared. None for
+    # ordinary (non-unit) types; only DISTINCT types carry dims.
+    dims: Optional[Tuple[int, ...]] = None
 
     def __str__(self) -> str:
         if self.kind == TypeKind.VOID:
@@ -305,6 +310,14 @@ class TypeChecker:
         self._return_type_sink: Optional[List[SemanticType]] = None
         self.trait_types: Dict[str, TraitDecl] = {}
         self.impl_pairs: set = set()  # (type_name, trait_name)
+        # Units of measure (north-star.md section 6). Base units are indexed
+        # in declaration order; every unit name maps to its canonical
+        # (trailing zeros stripped) dimension exponent vector. unit_canonical
+        # maps a vector back to the first declared unit with that dimension,
+        # for naming the results of * and /.
+        self.unit_base_order: List[str] = []
+        self.unit_dims: Dict[str, Tuple[int, ...]] = {}
+        self.unit_canonical: Dict[Tuple[int, ...], str] = {}
 
     def _is_numeric(self, t: SemanticType) -> bool:
         return t.kind in {
@@ -341,6 +354,151 @@ class TypeChecker:
         b_idx = order.index(b.kind) if b.kind in order else 0
         return SemanticType(order[max(a_idx, b_idx)])
 
+    # ---- Units of measure (north-star.md section 6) ----
+
+    @staticmethod
+    def _normalize_dims(dims) -> Tuple[int, ...]:
+        """Strip trailing zeros so vectors of different lengths compare equal
+        regardless of how many base units were declared when they were made."""
+        dims = list(dims)
+        while dims and dims[-1] == 0:
+            dims.pop()
+        return tuple(dims)
+
+    @staticmethod
+    def _combine_dims(a: Tuple[int, ...], b: Tuple[int, ...], sign: int) -> Tuple[int, ...]:
+        """Component-wise a + sign*b, padded to a common length, normalized."""
+        n = max(len(a), len(b))
+        a = list(a) + [0] * (n - len(a))
+        b = list(b) + [0] * (n - len(b))
+        return TypeChecker._normalize_dims(x + sign * y for x, y in zip(a, b))
+
+    def _register_unit(self, decl: UnitDecl) -> Optional[Tuple[int, ...]]:
+        """Record a `unit` declaration and return its dimension vector."""
+        loc = f"line {decl.line}: " if getattr(decl, 'line', 0) else ""
+        if decl.name in self.unit_dims:
+            self.errors.append(f"{loc}unit '{decl.name}' is already declared")
+            return self.unit_dims[decl.name]
+        if decl.factors is None:
+            # New base dimension: next index in declaration order.
+            index = len(self.unit_base_order)
+            self.unit_base_order.append(decl.name)
+            dims: Tuple[int, ...] = tuple([0] * index + [1])
+        else:
+            acc: Tuple[int, ...] = ()
+            for factor_name, exponent in decl.factors:
+                factor_dims = self.unit_dims.get(factor_name)
+                if factor_dims is None:
+                    self.errors.append(
+                        f"{loc}unknown unit '{factor_name}' in declaration of "
+                        f"'{decl.name}' (units must be declared before use)"
+                    )
+                    continue
+                scaled = tuple(x * exponent for x in factor_dims)
+                acc = self._combine_dims(acc, scaled, 1)
+            dims = acc
+        self.unit_dims[decl.name] = dims
+        if dims and dims not in self.unit_canonical:
+            self.unit_canonical[dims] = decl.name
+        return dims
+
+    def _dims_of(self, t: Optional[SemanticType]) -> Optional[Tuple[int, ...]]:
+        """The dimension vector of a type, or None for non-unit types."""
+        if t is None:
+            return None
+        if t.kind == TypeKind.TYPE_ALIAS and t.base_type is not None:
+            return self._dims_of(t.base_type)
+        if t.kind == TypeKind.DISTINCT:
+            return t.dims
+        return None
+
+    def _format_dims(self, dims: Tuple[int, ...]) -> str:
+        """Printable name for an anonymous dimensioned type, in the spec's
+        style: Meter*Kilogram/Second^2. An empty numerator prints as 1."""
+        numerator = []
+        denominator = []
+        for index, exponent in enumerate(dims):
+            if exponent == 0:
+                continue
+            base = (self.unit_base_order[index]
+                    if index < len(self.unit_base_order) else f"dim{index}")
+            magnitude = abs(exponent)
+            part = base if magnitude == 1 else f"{base}^{magnitude}"
+            (numerator if exponent > 0 else denominator).append(part)
+        text = "*".join(numerator) if numerator else "1"
+        for part in denominator:
+            text += f"/{part}"
+        return text
+
+    def _unit_result_type(self, dims: Tuple[int, ...]) -> SemanticType:
+        """The type of a * or / result with the given dimension vector: the
+        canonical declared unit when one exists, an anonymous dimensioned
+        type otherwise, and plain f64 when everything cancels."""
+        dims = self._normalize_dims(dims)
+        if not dims:
+            return SemanticType(TypeKind.F64)
+        name = self.unit_canonical.get(dims, self._format_dims(dims))
+        return SemanticType(
+            kind=TypeKind.DISTINCT,
+            name=name,
+            base_type=SemanticType(TypeKind.F64),
+            dims=dims,
+        )
+
+    def _check_dimensioned_op(
+        self,
+        op: BinaryOperation,
+        left_type: SemanticType,
+        right_type: SemanticType,
+        left_dims: Optional[Tuple[int, ...]],
+        right_dims: Optional[Tuple[int, ...]],
+    ) -> Optional[SemanticType]:
+        """Dimensional analysis for a binary op where at least one operand is
+        a unit type. Returns the result type, or None to fall through to the
+        ordinary checking path (used when the other operand is neither a unit
+        nor a numeric scalar, e.g. a string)."""
+        line = getattr(op, 'line', 0)
+        loc = f"line {line}: " if line else ""
+        operator = op.operator
+
+        if operator in ("*", "/"):
+            # Dimensionless numeric scalars multiply and divide freely.
+            if left_dims is None and not self._is_numeric(left_type):
+                return None
+            if right_dims is None and not self._is_numeric(right_type):
+                return None
+            sign = 1 if operator == "*" else -1
+            dims = self._combine_dims(left_dims or (), right_dims or (), sign)
+            return self._unit_result_type(dims)
+
+        if operator in ("+", "-", "%"):
+            if left_dims is None or right_dims is None or left_dims != right_dims:
+                if left_dims is None or right_dims is None:
+                    hint = ("a dimensionless value needs an explicit cast, "
+                            "e.g. `x as " + str(left_type if left_dims is not None else right_type) + "`")
+                else:
+                    hint = f"operands of '{operator}' must have the same dimension"
+                self.errors.append(
+                    f"{loc}dimensional error: {left_type} {operator} {right_type} ({hint})"
+                )
+            # Recover with the dimensioned side so errors do not cascade.
+            return left_type if left_dims is not None else right_type
+
+        if operator in ("==", "!=", "<", ">", "<=", ">="):
+            if left_dims is None or right_dims is None or left_dims != right_dims:
+                self.errors.append(
+                    f"{loc}dimensional error: {left_type} {operator} {right_type} "
+                    f"(comparison requires both operands to have the same dimension)"
+                )
+            return SemanticType(TypeKind.BOOL)
+
+        # Logical, bitwise, and shift operators have no dimensional meaning.
+        self.errors.append(
+            f"{loc}dimensional error: operator '{operator}' is not defined for "
+            f"unit types ({left_type} {operator} {right_type})"
+        )
+        return left_type if left_dims is not None else right_type
+
     def _can_coerce(self, actual: SemanticType, expected: SemanticType) -> bool:
         if actual is None or expected is None:
             return True
@@ -352,6 +510,14 @@ class TypeChecker:
             return True
         if actual == expected:
             return True
+        # Unit types agree when their dimension vectors agree (an anonymous
+        # Meter/Second result assigns to a declared Velocity, and vice versa).
+        actual_dims = self._dims_of(actual)
+        expected_dims = self._dims_of(expected)
+        if actual_dims is not None and expected_dims is not None:
+            return actual_dims == expected_dims
+        if actual_dims is not None or expected_dims is not None:
+            return False
         # Numeric widening/coercion
         if self._is_numeric(actual) and self._is_numeric(expected):
             return True
@@ -450,12 +616,17 @@ class TypeChecker:
                 self.struct_types[decl.name] = decl
 
             elif isinstance(decl, DistinctTypeDecl):
-                # Distinct types are opaque - incompatible with base type
+                # Distinct types are opaque - incompatible with base type.
+                # Unit declarations are distinct types plus a dimension vector.
                 base_type = self._parse_type(decl.base_type)
+                dims = None
+                if isinstance(decl, UnitDecl):
+                    dims = self._register_unit(decl)
                 distinct_type = SemanticType(
                     kind=TypeKind.DISTINCT,
                     name=decl.name,
-                    base_type=base_type
+                    base_type=base_type,
+                    dims=dims
                 )
                 symbol = Symbol(decl.name, distinct_type, "type",
                               getattr(decl, 'is_exported', False), decl)
@@ -1127,6 +1298,19 @@ class TypeChecker:
         if actual == target:
             return True
 
+        # Unit types: any numeric value casts into a unit (`9.81 as Accel` is
+        # the v1 way to give a literal a dimension), a unit casts back to any
+        # numeric type, and unit-to-unit casts require equal dimensions.
+        # Cross-dimension conversion goes through the numeric base explicitly.
+        actual_dims = self._dims_of(actual)
+        target_dims = self._dims_of(target)
+        if actual_dims is not None and target_dims is not None:
+            return actual_dims == target_dims
+        if target_dims is not None:
+            return self._is_numeric(actual)
+        if actual_dims is not None:
+            return self._is_numeric(target)
+
         # Distinct types: allow explicit casts to/from base type only.
         if target.kind == TypeKind.DISTINCT and target.base_type:
             return actual == target.base_type
@@ -1227,6 +1411,16 @@ class TypeChecker:
                 ):
                     return SemanticType(TypeKind.BOOL)
 
+        # Units of measure: dimensional analysis (north-star.md section 6)
+        left_dims = self._dims_of(left_type)
+        right_dims = self._dims_of(right_type)
+        if left_dims is not None or right_dims is not None:
+            result = self._check_dimensioned_op(
+                op, left_type, right_type, left_dims, right_dims
+            )
+            if result is not None:
+                return result
+
         # Allow numeric coercions
         if self._is_numeric(left_type) and self._is_numeric(right_type):
             common = self._numeric_common_type(left_type, right_type)
@@ -1260,6 +1454,9 @@ class TypeChecker:
             return operand_type
 
         if op.operator == "-":
+            # Negating a unit-typed quantity keeps its dimension.
+            if self._dims_of(operand_type) is not None:
+                return operand_type
             # Must be numeric
             if operand_type.kind not in [TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64,
                                        TypeKind.U8, TypeKind.U16, TypeKind.U32, TypeKind.U64,
@@ -1280,8 +1477,28 @@ class TypeChecker:
 
         return operand_type
 
+    # Transcendental functions take dimensionless arguments. `Radian` is the
+    # one unit allowed through: angles erase to dimensionless at these
+    # boundaries (north-star.md 6.2).
+    DIMENSIONLESS_MATH = {
+        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+        "sinh", "cosh", "tanh", "exp", "log", "log2", "log10",
+    }
+
     def _check_function_call(self, call: FunctionCall) -> SemanticType:
         """Type check a function call."""
+        if call.name in self.DIMENSIONLESS_MATH and call.arguments:
+            arg_types = [self._check_expression(arg) for arg in call.arguments]
+            if any(self._dims_of(t) is not None for t in arg_types):
+                for arg_type in arg_types:
+                    arg_dims = self._dims_of(arg_type)
+                    if arg_dims is None or arg_type.name == "Radian":
+                        continue
+                    self.errors.append(
+                        f"dimensional error: {call.name}() requires a "
+                        f"dimensionless or Radian argument, got {arg_type}"
+                    )
+                return SemanticType(TypeKind.F64)
         if call.name.startswith("array_"):
             elem_name = call.name[len("array_"):]
             elem_type = self._parse_named_scalar(elem_name)
@@ -1379,6 +1596,14 @@ class TypeChecker:
         """Check if actual type is compatible with expected type."""
         if actual == expected:
             return True
+
+        # Unit types: dimension vectors decide compatibility.
+        actual_dims = self._dims_of(actual)
+        expected_dims = self._dims_of(expected)
+        if actual_dims is not None and expected_dims is not None:
+            return actual_dims == expected_dims
+        if actual_dims is not None or expected_dims is not None:
+            return False
 
         # Capability compatibility: allow any struct to satisfy a capability type.
         if expected.kind == TypeKind.STRUCT and expected.name.startswith("capability_"):
@@ -1521,7 +1746,8 @@ class TypeChecker:
                 return SemanticType(
                     kind=TypeKind.DISTINCT,
                     name=parsed_type.name,
-                    base_type=base_type
+                    base_type=base_type,
+                    dims=self.unit_dims.get(parsed_type.name)
                 )
             else:
                 # Regular struct

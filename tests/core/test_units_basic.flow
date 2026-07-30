@@ -1,0 +1,79 @@
+# Units of measure: erased semantics (docs/vision/north-star.md section 6).
+# Card: flow-vision-units.
+#
+# Unit types are checker-only. At runtime every unit-typed value is a plain
+# f64, so the arithmetic below must compute exactly what unadorned f64
+# arithmetic would. Each check returns a distinct nonzero exit code on
+# failure; success prints a line and exits 0.
+
+unit Meter
+unit Second
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+function absf(x: f64) -> f64 {
+    if x < 0.0 {
+        return -x
+    }
+    return x
+}
+
+function approx(a: f64, b: f64) -> bool {
+    return absf(a - b) < 0.000001
+}
+
+function main() -> i32 {
+    let d: Meter = 100.0 as Meter
+    let t: Second = 8.0 as Second
+
+    # Division composes dimensions: Meter / Second = Velocity.
+    let v: Velocity = d / t
+    if !approx(v as f64, 12.5) {
+        return 1
+    }
+
+    # Multiplication cancels back: Velocity * Second = Meter.
+    let d2: Meter = v * t
+    if !approx(d2 as f64, 100.0) {
+        return 2
+    }
+
+    # Same-dimension addition.
+    let total: Meter = d + d2
+    if !approx(total as f64, 200.0) {
+        return 3
+    }
+
+    # Same-dimension division cancels to a dimensionless f64.
+    let ratio: f64 = total / d
+    if !approx(ratio, 2.0) {
+        return 4
+    }
+
+    # Dimensionless scalars multiply freely.
+    let stretched: Meter = d * 3.0
+    if !approx(stretched as f64, 300.0) {
+        return 5
+    }
+
+    # Second-order composition: Accel * Second = Velocity.
+    let g: Accel = 9.81 as Accel
+    let dv: Velocity = g * t
+    if !approx(dv as f64, 78.48) {
+        return 6
+    }
+
+    # Negation keeps the dimension.
+    let backwards: Velocity = -v
+    if !approx(backwards as f64, -12.5) {
+        return 7
+    }
+
+    # Same-dimension comparison.
+    if !(total > d) {
+        return 8
+    }
+
+    println("units erased ok")
+    return 0
+}
