@@ -130,6 +130,17 @@ class CGenerator:
         self._overload_resolver = OverloadResolver()
         self._mangled_names = {}  # original fn -> mangled name
 
+        # Lambda/closure lowering state
+        self._lambda_counter = 0
+        self._pending_lambdas = []  # (name, ret_c, params, body_lines)
+        self._pending_env_structs = []  # typedef lines for env/closure/fn types
+        self._closure_vars = {}  # var name -> lambda info (capturing lambdas)
+        self._fnptr_vars = {}  # var name -> lambda info (non-capturing lambdas)
+        self._capture_stack = []  # sets of captured names, one per nested lambda body
+        self._const_names = set()  # file-scope constants (reachable without capture)
+        self._lambda_insert_idx = None  # where lambda definitions get spliced in
+        self._last_lambda_info = None
+
     def _i(self) -> str:
         return "    " * self._indent
     
@@ -535,8 +546,16 @@ class CGenerator:
             lines.append(f"static const {self._c_type(const.type)} {_c_ident(const.name)} = {self._gen_expr(const.value)};")
             # Track constant types for print formatting
             self._var_types[const.name] = const.type
+            # File-scope constants stay reachable from lifted lambda
+            # functions, so they are never captured into closure envs.
+            self._const_names.add(const.name)
         if constants:
             lines.append("")
+
+        # Lambda definitions get spliced in here: after forward declarations
+        # and constants (both may be referenced from lambda bodies), before
+        # any function definition that may create a closure value.
+        self._lambda_insert_idx = len(lines)
 
         # Generate capability method definitions
         for cap_name, cap in self._capabilities.items():
@@ -549,25 +568,24 @@ class CGenerator:
             lines.extend(self._gen_function(fn))
             lines.append("")
         
-        # Emit any lambdas that were generated during function processing
-        if hasattr(self, '_pending_lambdas') and self._pending_lambdas:
-            # Insert lambda definitions before the first function
+        # Emit any lambdas that were generated during function processing.
+        # Env/closure typedefs come first (lambda signatures reference them),
+        # then the lifted static functions.
+        if self._pending_lambdas or self._pending_env_structs:
             lambda_lines = []
             lambda_lines.append("// Auto-generated lambda functions")
+            lambda_lines.extend(self._pending_env_structs)
             for lambda_name, ret_type, params, body_lines in self._pending_lambdas:
                 lambda_lines.append(f"static {ret_type} {lambda_name}({params}) {{")
                 for line in body_lines:
                     lambda_lines.append(f"    {line}")
                 lambda_lines.append("}")
             lambda_lines.append("")
-            
-            # Find where to insert (after structs, before functions)
-            insert_idx = 0
-            for i, line in enumerate(lines):
-                if line.startswith("int32_t main(") or (line and not line.startswith("#") and not line.startswith("typedef") and "(" in line and ")" in line):
-                    insert_idx = i
-                    break
-            
+
+            insert_idx = self._lambda_insert_idx
+            if insert_idx is None or insert_idx > len(lines):
+                insert_idx = len(lines)
+
             lines = lines[:insert_idx] + lambda_lines + lines[insert_idx:]
 
         return "\n".join(lines).rstrip() + "\n"
@@ -822,6 +840,9 @@ class CGenerator:
                 return self._var_types[expr.name]
             return Type("i32")  # Default fallback
         elif isinstance(expr, FunctionCall):
+            lambda_info = self._closure_vars.get(expr.name) or self._fnptr_vars.get(expr.name)
+            if lambda_info is not None:
+                return lambda_info.get("flow_ret") or Type("i32")
             resolved = self._overload_resolver.resolve_call(expr)
             ret = None
             if resolved:
@@ -1126,6 +1147,8 @@ class CGenerator:
         saved_var_types = self._var_types.copy()
         saved_resolver_var_types = self._overload_resolver._var_types.copy()
         saved_return_type = self._current_return_type
+        saved_closure_vars = self._closure_vars.copy()
+        saved_fnptr_vars = self._fnptr_vars.copy()
         self._current_return_type = fn.return_type
         
         # Track parameter types for overload resolution and effect call handling
@@ -1139,6 +1162,8 @@ class CGenerator:
         self._var_types = saved_var_types
         self._overload_resolver._var_types = saved_resolver_var_types
         self._current_return_type = saved_return_type
+        self._closure_vars = saved_closure_vars
+        self._fnptr_vars = saved_fnptr_vars
         self._indent -= 1
         lines.append("}")
         return lines
@@ -1175,6 +1200,15 @@ class CGenerator:
         if defer_stack is None:
             defer_stack = []
         if isinstance(st, VarDecl):
+            # A local declaration shadows any same-named captured variable
+            # for the rest of this lambda body.
+            if self._capture_stack:
+                self._capture_stack[-1].discard(st.name)
+
+            # Lambda initializers get closure-aware declarations.
+            if isinstance(st.initializer, Lambda):
+                return self._gen_lambda_decl(st)
+
             decl_type = st.type
             if decl_type and decl_type.name == "auto":
                 if st.initializer is not None:
@@ -1221,6 +1255,10 @@ class CGenerator:
                 target_expr = self._gen_lvalue_expr(st.target_expr)
                 return [f"{self._i()}{target_expr} = {self._gen_expr(st.value)};"]
             target_name = _sanitize_identifier(st.target)
+            if self._capture_stack and st.target in self._capture_stack[-1]:
+                # Assigning to a captured variable mutates the closure's own
+                # by-value copy; the original stays untouched.
+                target_name = f"_env->{target_name}"
             # Sized array variables are represented as C arrays (e.g.
             # `int32_t scale[7]`), which cannot be reassigned with `=` even
             # when the RHS is a function returning the same array<T, N> type
@@ -1635,6 +1673,11 @@ class CGenerator:
             return e.value
 
         if isinstance(e, Variable):
+            # Inside a lambda body, captured variables live in the closure
+            # environment. This substitution happens at AST level, so names
+            # that merely contain a capture as a substring stay intact.
+            if self._capture_stack and e.name in self._capture_stack[-1]:
+                return f"_env->{_c_ident(e.name)}"
             return _c_ident(e.name)
 
         if isinstance(e, StructLiteral):
@@ -1817,7 +1860,28 @@ class CGenerator:
             # Handle print/println intrinsics
             if e.name in ("print", "println"):
                 return self._gen_print_call(e.arguments, newline=(e.name == "println"))
-            
+
+            # Calls through closure variables: pass the environment as the
+            # hidden first argument. Non-capturing lambda variables are plain
+            # function pointers and take the default path below.
+            if e.name in self._closure_vars:
+                base = _sanitize_identifier(e.name)
+                if self._capture_stack and e.name in self._capture_stack[-1]:
+                    base = f"_env->{base}"
+                call_args = [f"&{base}.env"]
+                call_args.extend(self._gen_expr(a) for a in e.arguments)
+                return f"{base}.fn({', '.join(call_args)})"
+
+            # A non-capturing lambda variable that was itself captured into
+            # this lambda's environment is called through the env field.
+            if (
+                self._capture_stack
+                and e.name in self._capture_stack[-1]
+                and e.name in self._fnptr_vars
+            ):
+                args = ", ".join(self._gen_expr(a) for a in e.arguments)
+                return f"_env->{_c_ident(e.name)}({args})"
+
             # Resolve function overload
             resolved_name = self._overload_resolver.resolve_call(e)
             func_name = resolved_name if resolved_name else e.name
@@ -2029,41 +2093,105 @@ class CGenerator:
         
         return f"({elem_type}[]){{ {elements} }}"
     
+    def _filter_lambda_captures(self, e: Lambda) -> List[str]:
+        """Reduce the parser's free-variable list to real capturable locals.
+
+        The parser reports every free name in the lambda body. Only names
+        that are local variables in the creation scope need a snapshot:
+        file-scope constants, function names, effects, and capability
+        handles all stay reachable from the lifted static function.
+        """
+        captures = []
+        for cap in list(getattr(e, "captures", []) or []):
+            if cap in ("break", "continue"):
+                continue
+            if cap in self._const_names:
+                continue
+            if cap in self._effects:
+                continue
+            cap_type = self._var_types.get(cap)
+            if cap_type is None:
+                continue
+            if getattr(cap_type, "name", "").startswith("capability_"):
+                continue
+            captures.append(cap)
+        return captures
+
     def _gen_lambda(self, e: Lambda) -> str:
-        """Generate C closure: static function + env struct for captured variables."""
-        if not hasattr(self, '_lambda_counter'):
-            self._lambda_counter = 0
+        """Lower a lambda to a lifted static C function.
+
+        Non-capturing lambdas keep their bare-function-pointer form and ABI:
+        the expression is `&lambda_N` and the lifted function's signature
+        contains only the declared parameters.
+
+        Capturing lambdas lower to a closure value. Each one gets a struct
+        `lambda_N_closure { ret (*fn)(lambda_N_env*, params); lambda_N_env env; }`
+        and the lambda expression is a compound literal that snapshots every
+        captured variable by value into `env` at the point of creation.
+        Later writes to the original variable do not affect the closure, and
+        writes to a captured variable inside the lambda body only mutate the
+        closure's own copy. Captured pointers and arrays snapshot the
+        pointer; the pointed-to storage stays shared.
+        """
         self._lambda_counter += 1
         lambda_id = self._lambda_counter
         lambda_name = f"lambda_{lambda_id}"
         env_name = f"lambda_{lambda_id}_env"
+        closure_name = f"lambda_{lambda_id}_closure"
+        fn_typedef = f"lambda_{lambda_id}_fn"
 
-        captures = list(getattr(e, "captures", []) or [])
+        captures = self._filter_lambda_captures(e)
+        param_c_types = [
+            self._c_type(p.type) if p.type else "int32_t" for p in e.parameters
+        ]
+
+        # Env struct fields use the creation-scope types of the captures.
         if captures:
-            env_fields = []
-            for cap in captures:
-                cap_type = self._var_types.get(cap, Type("i32"))
-                env_fields.append(f"{self._c_type(cap_type)} {_c_ident(cap)};")
-            env_struct = f"typedef struct {{ {', '.join(env_fields)} }} {env_name};"
-            if not hasattr(self, '_pending_env_structs'):
-                self._pending_env_structs = []
-            self._pending_env_structs.append(env_struct)
+            env_fields = " ".join(
+                f"{self._c_type(self._var_types.get(cap, Type('i32')))} {_c_ident(cap)};"
+                for cap in captures
+            )
+            self._pending_env_structs.append(
+                f"typedef struct {{ {env_fields} }} {env_name};"
+            )
+
+        saved_var_types = self._var_types.copy()
+        saved_closure_vars = self._closure_vars.copy()
+        saved_fnptr_vars = self._fnptr_vars.copy()
+        for p in e.parameters:
+            self._var_types[p.name] = p.type or Type("i32")
+
+        # Infer the return type of expression-body lambdas without an
+        # explicit annotation so `|x| x * 2` returns a value in C.
+        flow_ret = e.return_type
+        if flow_ret is None and not isinstance(e.body, Block):
+            inferred = self._infer_expr_type(e.body)
+            if inferred is not None and inferred.name != "auto":
+                flow_ret = inferred
+        ret_type = self._c_type(flow_ret) if flow_ret else "void"
 
         param_parts = []
         if captures:
             param_parts.append(f"{env_name}* _env")
-        param_parts.extend(f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in e.parameters)
+        param_parts.extend(
+            f"{ct} {_c_ident(p.name)}" for ct, p in zip(param_c_types, e.parameters)
+        )
         params = ", ".join(param_parts) if param_parts else "void"
 
-        ret_type = self._c_type(e.return_type) if e.return_type else "void"
-
-        saved_var_types = self._var_types.copy()
         if captures:
-            for cap in captures:
-                if cap in saved_var_types:
-                    self._var_types[cap] = saved_var_types[cap]
+            fn_ptr_params = ", ".join([f"{env_name}*"] + param_c_types)
+            self._pending_env_structs.append(
+                f"typedef struct {{ {ret_type} (*fn)({fn_ptr_params}); "
+                f"{env_name} env; }} {closure_name};"
+            )
+        else:
+            fn_ptr_params = ", ".join(param_c_types) if param_c_types else "void"
+            self._pending_env_structs.append(
+                f"typedef {ret_type} (*{fn_typedef})({fn_ptr_params});"
+            )
 
         self._lambda_depth += 1
+        self._capture_stack.append(set(captures))
         try:
             if isinstance(e.body, Block):
                 body_lines = []
@@ -2071,30 +2199,65 @@ class CGenerator:
                     for line in self._gen_statement(stmt):
                         body_lines.append(line.lstrip())
             else:
-                body_lines = [f"return {self._gen_expr(e.body)};"]
+                body_expr = self._gen_expr(e.body)
+                if ret_type == "void":
+                    body_lines = [f"{body_expr};"]
+                else:
+                    body_lines = [f"return {body_expr};"]
         finally:
+            self._capture_stack.pop()
             self._lambda_depth -= 1
+            self._var_types = saved_var_types
+            self._closure_vars = saved_closure_vars
+            self._fnptr_vars = saved_fnptr_vars
 
-        self._var_types = saved_var_types
-
-        if captures:
-            for i, line in enumerate(body_lines):
-                for cap in captures:
-                    body_lines[i] = line.replace(_c_ident(cap), f"_env->{_c_ident(cap)}")
-
-        if not hasattr(self, '_pending_lambdas'):
-            self._pending_lambdas = []
         self._pending_lambdas.append((lambda_name, ret_type, params, body_lines))
 
+        self._last_lambda_info = {
+            "lambda_name": lambda_name,
+            "env_name": env_name,
+            "closure_name": closure_name,
+            "fn_typedef": fn_typedef,
+            "ret_c": ret_type,
+            "flow_ret": flow_ret,
+            "param_c_types": param_c_types,
+            "captures": captures,
+        }
+
         if captures:
+            # Snapshot each capture by value at creation. The initializer
+            # expressions are generated in the creation scope, so a nested
+            # lambda capturing an outer capture reads it from `_env`.
             init_fields = ", ".join(
-                f".{_c_ident(cap)} = {_c_ident(cap)}" for cap in captures
+                f".{_c_ident(cap)} = {self._gen_expr(Variable(cap))}"
+                for cap in captures
             )
             return (
-                f"(({ret_type} (*)({params}))(&{lambda_name})) "
-                f"/* closure env: ({env_name}){{ {init_fields} }} */"
+                f"(({closure_name}){{ .fn = &{lambda_name}, "
+                f".env = {{ {init_fields} }} }})"
             )
         return f"&{lambda_name}"
+
+    def _gen_lambda_decl(self, st: VarDecl) -> List[str]:
+        """Declare a variable initialized with a lambda expression.
+
+        A capturing lambda produces a closure-struct variable; calls through
+        it pass `&var.env` as the hidden first argument. A non-capturing
+        lambda produces a plain typed function pointer, so calls through it
+        keep the bare `var(args)` form.
+        """
+        init_expr = self._gen_lambda(st.initializer)
+        info = self._last_lambda_info
+        name = _sanitize_identifier(st.name)
+        if info["captures"]:
+            self._closure_vars[st.name] = info
+            self._var_types[st.name] = Type(info["closure_name"])
+            self._overload_resolver.set_var_type(st.name, info["closure_name"])
+            return [f"{self._i()}{info['closure_name']} {name} = {init_expr};"]
+        self._fnptr_vars[st.name] = info
+        self._var_types[st.name] = Type(info["fn_typedef"])
+        self._overload_resolver.set_var_type(st.name, info["fn_typedef"])
+        return [f"{self._i()}{info['fn_typedef']} {name} = {init_expr};"]
 
 
 def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_info: bool = False) -> str:

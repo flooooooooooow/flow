@@ -3061,15 +3061,36 @@ class Parser:
         return FunctionCall(name, arguments)
 
     def _collect_free_variables(self, node: Any, param_names: set, found: Optional[set] = None) -> List[str]:
-        """Collect variable names referenced in an expression/block but not in param_names."""
+        """Collect variable names referenced in an expression/block but not bound.
+
+        `param_names` holds every name bound at this point: lambda
+        parameters, locals declared earlier in the enclosing block, and
+        loop variables. Names bound inside the body never count as
+        captures. `break`/`continue` surface as Variable nodes and are
+        excluded.
+        """
         if found is None:
             found = set()
         if isinstance(node, Variable):
-            if node.name not in param_names and node.name != "self":
+            if node.name not in param_names and node.name not in ("self", "break", "continue"):
                 found.add(node.name)
+        elif isinstance(node, Lambda):
+            # A nested lambda's free names are free here too unless bound
+            # by the nested lambda's own parameters.
+            inner_bound = set(param_names) | {p.name for p in node.parameters}
+            self._collect_free_variables(node.body, inner_bound, found)
         elif isinstance(node, Block):
+            # Locals declared in the block bind the name for the
+            # statements that follow; the initializer itself is evaluated
+            # before the binding exists.
+            bound = set(param_names)
             for stmt in node.statements:
-                self._collect_free_variables(stmt, param_names, found)
+                if isinstance(stmt, VarDecl):
+                    if stmt.initializer is not None:
+                        self._collect_free_variables(stmt.initializer, bound, found)
+                    bound.add(stmt.name)
+                else:
+                    self._collect_free_variables(stmt, bound, found)
         elif isinstance(node, (BinaryOperation, UnaryOperation, CastExpression, TryExpr)):
             if isinstance(node, BinaryOperation):
                 self._collect_free_variables(node.left, param_names, found)
@@ -3081,6 +3102,12 @@ class Parser:
             elif isinstance(node, TryExpr):
                 self._collect_free_variables(node.operand, param_names, found)
         elif isinstance(node, FunctionCall):
+            # The callee name is collected too so a closure variable called
+            # inside a nested lambda gets captured. The C generator drops
+            # names that are not locals in the creation scope (global
+            # functions, builtins), so plain calls are unaffected.
+            if node.name not in param_names and node.name not in ("self", "break", "continue"):
+                found.add(node.name)
             for arg in node.arguments:
                 self._collect_free_variables(arg, param_names, found)
         elif isinstance(node, (FieldAccess, ArrayAccess)):
@@ -3103,7 +3130,10 @@ class Parser:
                 self._collect_free_variables(node.range_end, param_names, found)
                 if node.step:
                     self._collect_free_variables(node.step, param_names, found)
-                self._collect_free_variables(node.body, param_names, found)
+                # The loop variable is bound within the body.
+                self._collect_free_variables(
+                    node.body, set(param_names) | {node.variable}, found
+                )
             elif isinstance(node, MatchStatement):
                 self._collect_free_variables(node.value, param_names, found)
                 for case in node.cases:
