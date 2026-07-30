@@ -20,7 +20,7 @@
 |---|---|
 | evolves-syntax | **SHIPPED**: `flow` blocks, `state`/`input`/`output`/`param` members, `evolves as`, Euler `_step` with factored `_derivs`, `_new`/`_init`/`_outputs`; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/pendulum_evolves.flow` |
 | time-blocks | design |
-| hybrid-events | design |
+| hybrid-events | **SHIPPED** (zero-crossing form): `when x reaches L { x becomes expr ... }` with sign-change detection at step granularity, synchronous resets, hidden `__guard_k_prev` memory; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/bouncing_ball_evolves.flow` |
 | constraints | design |
 | connect | design |
 | represent-linear | design |
@@ -34,6 +34,19 @@ time-blocks card because its `dt 1 ms` form needs duration literals (§4.1);
 code can construct an instance with declared defaults. Flow members are
 limited to `f64` and `f32` in this version. Outputs require an inline map
 until `every`/`when` land.
+
+Shipped-scope notes for hybrid-events: the zero-crossing guard form is in.
+`when x reaches L` requires a continuous (`evolves`) state and a threshold
+built from params and literals; bodies contain `becomes` resets, staged and
+assigned together per §3.2, checked after integration in declaration order.
+The boolean edge form (§5.1), ordinary statements in event bodies, and
+crossing-time refinement (§5.3) stay open on this card. One deliberate
+divergence from the §5.3 sketch: the firing test compares strict signs,
+`(g < 0) != (g_prev < 0) || g == 0`, and `__guard_k_prev` stores the
+post-reset value of g. The sketch's `<=` comparison with a pre-reset store
+re-fires on the step after a reset lands the guard state exactly on the
+surface (the clamped bounce of A.2 would flip its own reset back every
+step). Semantics are otherwise as specified.
 
 ---
 
