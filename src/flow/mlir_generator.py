@@ -860,7 +860,7 @@ class MLIRGenerator:
                     if val_type != elem_type:
                         value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, elem_type)
                         ops.extend(cast_ops)
-                    gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type)
+                    gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type, elem_type)
                     ops.extend(gep_ops)
                     ops.append(f"{self.indent()}llvm.store {value_ssa}, {gep} : {elem_type}, !llvm.ptr")
                     return "\n".join(ops)
@@ -883,6 +883,11 @@ class MLIRGenerator:
 
                 ops.append(f"{self.indent()}memref.store {value_ssa}, {array_ssa}[{final_index}] : memref<?x{elem_type}>")
                 return "\n".join(ops)
+            elif isinstance(access, FieldAccess):
+                field_store = self._generate_field_store(access, assignment.value, value_ssa, ops)
+                if field_store is not None:
+                    return field_store
+                return f"{self.indent()}// Unsupported assignment target expression"
             else:
                 return f"{self.indent()}// Unsupported assignment target expression"
         
@@ -931,6 +936,63 @@ class MLIRGenerator:
         else:
             return f"{self.indent()}// Assignment to undefined variable: {assignment.target}"
     
+    def _generate_field_store(self, access: FieldAccess, value_expr, value_ssa: str, ops: List[str]) -> Optional[str]:
+        """Lower obj.field = value via GEP + scalar store.
+
+        Handles pointer-to-struct objects (self parameters) and alloca-backed
+        struct locals. Returns None when the target shape is unsupported.
+        """
+        base_ptr = None
+        struct_name = None
+        if isinstance(access.object, Variable):
+            var_info = self.symbol_table.get(access.object.name)
+            if not var_info:
+                return None
+            flow_type = var_info.get('flow_type')
+            if flow_type is not None and (
+                getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr_')
+            ):
+                base_ptr = var_info.get('ssa_name')
+                pointee = self._pointee_struct_type(flow_type)
+                struct_name = pointee.name if pointee is not None else None
+            elif var_info.get('alloca_ptr'):
+                base_ptr = var_info['alloca_ptr']
+                struct_name = flow_type.name if flow_type is not None else None
+        if not base_ptr or not struct_name:
+            return None
+
+        llvm_struct = self._struct_llvm_type(struct_name)
+        decl = self._get_struct_decl(struct_name)
+        if not llvm_struct or not decl:
+            return None
+        field_names = [f.name for f in decl.fields]
+        if access.field not in field_names:
+            return None
+        idx = field_names.index(access.field)
+
+        field_flow = self._determine_field_type(access)
+        field_ty = self.flow_type_to_mlir(field_flow) if field_flow else None
+        if not field_ty:
+            field_types = self._struct_field_types(llvm_struct)
+            field_ty = field_types[idx] if idx < len(field_types) else None
+        if not field_ty:
+            return None
+
+        val_type = self._ssa_types.get(value_ssa) or self.get_expression_type(value_expr)
+        if val_type != field_ty:
+            value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, field_ty)
+            ops.extend(cast_ops)
+
+        gep = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(
+            f"{self.indent()}{gep} = llvm.getelementptr {base_ptr}[0, {idx}] "
+            f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
+        )
+        self._ssa_types[gep] = '!llvm.ptr'
+        ops.append(f"{self.indent()}llvm.store {value_ssa}, {gep} : {field_ty}, !llvm.ptr")
+        return "\n".join(ops)
+
     def generate_if(self, if_stmt: IfStatement) -> str:
         if not if_stmt.elif_blocks:
             then_assigned = self._assigned_locals(if_stmt.then_block)
@@ -1758,6 +1820,26 @@ class MLIRGenerator:
         def _is_unsigned(ty: str) -> bool:
             return ty.startswith("u")
 
+        # Index/float casts go through i64
+        if from_type == "index" and to_type in ["f32", "f64"]:
+            mid = f"%{self.function_counter}"
+            self.function_counter += 1
+            self._ssa_types[mid] = "i64"
+            self._ssa_types[cast_name] = to_type
+            return cast_name, [
+                f"{self.indent()}{mid} = arith.index_cast {value_ssa} : index to i64",
+                f"{self.indent()}{cast_name} = arith.sitofp {mid} : i64 to {to_type}",
+            ]
+        if from_type in ["f32", "f64"] and to_type == "index":
+            mid = f"%{self.function_counter}"
+            self.function_counter += 1
+            self._ssa_types[mid] = "i64"
+            self._ssa_types[cast_name] = to_type
+            return cast_name, [
+                f"{self.indent()}{mid} = arith.fptosi {value_ssa} : {from_type} to i64",
+                f"{self.indent()}{cast_name} = arith.index_cast {mid} : i64 to index",
+            ]
+
         # Index casts
         if from_type == "index" and to_type.startswith("i"):
             self._ssa_types[cast_name] = to_type
@@ -1960,6 +2042,8 @@ class MLIRGenerator:
         return ssa_name, lines
     
     def generate_unary_operation(self, un_op: UnaryOperation) -> tuple[str, List[str]]:
+        if un_op.operator == '&':
+            return self._generate_address_of(un_op.operand)
         operand_ssa, operand_ops = self.generate_expression(un_op.operand)
         ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
@@ -2000,7 +2084,34 @@ class MLIRGenerator:
             return ssa_name, ops
         else:
             return f"// Unsupported unary operator: '{un_op.operator}' (type: {type(un_op.operator)})", operand_ops
-    
+
+    def _generate_address_of(self, operand: Expression) -> tuple[str, List[str]]:
+        """Lower &expr to an !llvm.ptr SSA value.
+
+        Variables become alloca-backed on first address-of, so writes through
+        the pointer stay visible to later reads (generate_variable and
+        generate_assignment both prefer alloca_ptr once it is set).
+        """
+        if isinstance(operand, Variable) and operand.name in self.symbol_table:
+            var_info = self.symbol_table[operand.name]
+            mlir_type = var_info.get('mlir_type')
+            ptr = var_info.get('alloca_ptr')
+            ops: List[str] = []
+            if not ptr and mlir_type:
+                value_ssa = var_info.get('ssa_name')
+                if value_ssa:
+                    ptr, ops = self._emit_alloca_store(value_ssa, mlir_type)
+                    var_info['alloca_ptr'] = ptr
+            if ptr:
+                self._ssa_types[ptr] = '!llvm.ptr'
+                return ptr, ops
+        # Fallback: spill the value of the expression to a fresh slot.
+        operand_ssa, operand_ops = self.generate_expression(operand)
+        ty = self._ssa_types.get(operand_ssa) or self.get_expression_type(operand)
+        ptr, spill_ops = self._emit_alloca_store(operand_ssa, ty)
+        self._ssa_types[ptr] = '!llvm.ptr'
+        return ptr, operand_ops + spill_ops
+
     def generate_field_access(self, field_access: FieldAccess) -> tuple[str, List[str]]:
         """Generate field access that loads values from struct memory"""
         obj_result = self.generate_expression(field_access.object)
@@ -2046,7 +2157,33 @@ class MLIRGenerator:
             self.function_counter += 1
             ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
             return ssa_name, ops
-        
+
+        # Pointer-to-struct objects: GEP to the field, then a scalar load.
+        ptr_base = self._field_pointer_base(field_access.object, obj_ssa)
+        if ptr_base is not None:
+            base_ptr, struct_name = ptr_base
+            llvm_struct = self._struct_llvm_type(struct_name)
+            decl = self._get_struct_decl(struct_name)
+            if llvm_struct and decl:
+                field_names = [f.name for f in decl.fields]
+                if field_access.field in field_names:
+                    idx = field_names.index(field_access.field)
+                    gep = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(
+                        f"{self.indent()}{gep} = llvm.getelementptr {base_ptr}[0, {idx}] "
+                        f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
+                    )
+                    self._ssa_types[gep] = '!llvm.ptr'
+                    load = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    field_ty = self.flow_type_to_mlir(field_type)
+                    ops.append(
+                        f"{self.indent()}{load} = llvm.load {gep} : !llvm.ptr -> {field_ty}"
+                    )
+                    self._ssa_types[load] = field_ty
+                    return load, ops
+
         # Prefer LLVM struct extraction when available.
         obj_type = self._determine_struct_type(field_access.object)
         if obj_type:
@@ -2349,22 +2486,52 @@ class MLIRGenerator:
                 break
         return 'f32'
 
+    def _pointee_struct_type(self, flow_type):
+        """Unwrap pointer flow types (ptr_X / is_pointer) to the pointee type."""
+        if flow_type is None:
+            return None
+        if getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr_'):
+            elem = getattr(flow_type, 'element_type', None)
+            if elem is not None:
+                return elem
+            if flow_type.name.startswith('ptr_'):
+                return Type(flow_type.name[4:])
+        return flow_type
+
+    def _field_pointer_base(self, obj_expr, obj_ssa: str):
+        """(ptr_ssa, struct_name) when obj_expr is a pointer-to-struct variable."""
+        if not isinstance(obj_expr, Variable):
+            return None
+        var_info = self.symbol_table.get(obj_expr.name)
+        if not var_info:
+            return None
+        flow_type = var_info.get('flow_type')
+        if flow_type is None:
+            return None
+        if not (getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr_')):
+            return None
+        pointee = self._pointee_struct_type(flow_type)
+        if pointee is None or pointee.name not in self.struct_layouts:
+            return None
+        base = var_info.get('ssa_name') or obj_ssa
+        return base, pointee.name
+
     def _determine_struct_type(self, expr):
         """Determine the struct type of an expression"""
         if hasattr(expr, 'name'):
             # This is a variable, find its declaration
             var_type = self._find_variable_type(expr.name)
-            return var_type
+            return self._pointee_struct_type(var_type)
         elif isinstance(expr, FieldAccess):
             # This is a field access, get the field type
             return self._determine_field_type(expr)
         return None
-    
+
     def _determine_field_type(self, field_access):
         """Determine the type of a field access by walking the struct hierarchy"""
         # Start with the base object
         current_type = None
-        
+
         # If the object is a variable, get its type from the AST
         if hasattr(field_access.object, 'name'):
             # This is a variable, find its declaration
@@ -2372,13 +2539,16 @@ class MLIRGenerator:
         elif isinstance(field_access.object, FieldAccess):
             # This is a nested field access, recurse
             current_type = self._determine_field_type(field_access.object)
-        
+
+        # Pointer-to-struct objects access fields of the pointee.
+        current_type = self._pointee_struct_type(current_type)
+
         # Walk through the fields
         if current_type and current_type.name in self.struct_layouts:
             layout = self.struct_layouts[current_type.name]
             if field_access.field in layout:
                 return layout[field_access.field]['type']
-        
+
         return None
     
     def _find_variable_type(self, var_name):
@@ -3186,7 +3356,7 @@ class MLIRGenerator:
             return arr_type == '!llvm.ptr'
         return self._elem_type_from_array_expr(access.array) is not None
 
-    def _emit_ptr_index_gep(self, ptr_ssa: str, index_ssa: str, index_type: str) -> tuple[str, List[str]]:
+    def _emit_ptr_index_gep(self, ptr_ssa: str, index_ssa: str, index_type: str, elem_type: Optional[str] = None) -> tuple[str, List[str]]:
         ops: List[str] = []
         if index_type == 'index':
             idx64 = f"%{self.function_counter}"
@@ -3202,9 +3372,10 @@ class MLIRGenerator:
 
         gep = f"%{self.function_counter}"
         self.function_counter += 1
+        gep_elem = elem_type or '!llvm.ptr'
         ops.append(
             f"{self.indent()}{gep} = llvm.getelementptr {ptr_ssa}[{index_ssa}] "
-            f": (!llvm.ptr, i64) -> !llvm.ptr, !llvm.ptr"
+            f": (!llvm.ptr, i64) -> !llvm.ptr, {gep_elem}"
         )
         self._ssa_types[gep] = '!llvm.ptr'
         return gep, ops
@@ -3240,7 +3411,7 @@ class MLIRGenerator:
 
         if self._is_pointer_array_ssa(array_ssa, access):
             elem_type = self._elem_type_from_array_expr(access.array) or 'f32'
-            gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type)
+            gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type, elem_type)
             ops.extend(gep_ops)
             ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
             self._ssa_types[ssa_name] = elem_type
@@ -3290,6 +3461,8 @@ class MLIRGenerator:
                 return '!llvm.ptr'
             return self._resolve_binary_operand_type(left_type, right_type)
         elif isinstance(expr, UnaryOperation):
+            if expr.operator == '&':
+                return '!llvm.ptr'
             return self.get_expression_type(expr.operand)
         elif isinstance(expr, ArrayLiteral):
             # Return memref type for array literals
@@ -3325,41 +3498,12 @@ class MLIRGenerator:
         elif isinstance(expr, CastExpression):
             return self.flow_type_to_mlir(expr.target_type)
         elif isinstance(expr, FieldAccess):
-            # Check if this is a nested field access
-            if isinstance(expr.object, FieldAccess):
-                # For nested field access, we need to check the field type of the parent
-                parent_obj_type = self.get_expression_type(expr.object.object)
-                if isinstance(parent_obj_type, str):
-                    class SimpleType:
-                        def __init__(self, name):
-                            self.name = name
-                    parent_obj_type = SimpleType(parent_obj_type)
-                
-                if parent_obj_type.name in self.struct_layouts:
-                    layout = self.struct_layouts[parent_obj_type.name]
-                    if expr.object.field in layout:
-                        parent_field_type = layout[expr.object.field]['type']
-                        if parent_field_type.name in self.struct_layouts:
-                            # This is a nested struct field access
-                            nested_layout = self.struct_layouts[parent_field_type.name]
-                            if expr.field in nested_layout:
-                                field_type = nested_layout[expr.field]['type']
-                                return self.flow_type_to_mlir(field_type)
-            
-            # Regular field access
-            obj_type = self.get_expression_type(expr.object)
-            if isinstance(obj_type, str):
-                # Convert string to Type-like object
-                class SimpleType:
-                    def __init__(self, name):
-                        self.name = name
-                obj_type = SimpleType(obj_type)
-            
-            if obj_type.name in self.struct_layouts:
-                layout = self.struct_layouts[obj_type.name]
-                if expr.field in layout:
-                    field_type = layout[expr.field]['type']
-                    return self.flow_type_to_mlir(field_type)
+            # Walk the struct hierarchy via flow types (handles nesting and
+            # pointer-to-struct objects). The old path compared MLIR type
+            # strings against struct names and always fell through to i32.
+            field_type = self._determine_field_type(expr)
+            if field_type is not None:
+                return self.flow_type_to_mlir(field_type)
             return 'i32'  # Default
         else:
             return 'i32'  # Default
