@@ -211,6 +211,7 @@ The `dsys` vocabulary is the shipped seed of Flow's founding vision
 | matrices as flat numbers | `position evolves as velocity` — dynamics as equations, any nonlinearity |
 | `when height reaches 0.0 { velocity becomes -0.8 * velocity }` | event location by root-finding inside the step; boolean edge guards |
 | `continuous` + Euler discretization | solver selection in a `deploy { solver RK4 }` block |
+| `every 100 ms { heater becomes … }` + `solver { dt 1 ms }` | multi-rate composition via `connect`; `after … within 200 ms` temporal guarantees |
 | `sense on plant { controllable … }` | `analyze Plant { poles, stability, controllability, observability }` |
 | `ga evolve on … { … }` | `control Plant { objective { minimize error } }` — PID/LQR/MPC synthesis |
 | `closed … { stable -> s }` + runtime check | `guarantee { stable }` — compilation fails if unprovable |
@@ -233,7 +234,17 @@ applies its `becomes` resets synchronously, all right-hand sides read
 from the same pre-reset state. Detection is at step granularity; locating
 the crossing inside the step is a later refinement. See
 `examples/evolution/bouncing_ball_evolves.flow` for the bouncing ball
-written this way. Time blocks, invariants, units, and `connect` remain
+written this way.
+
+Time blocks have shipped. Duration literals (`10 ms`, `500 us`, suffixes
+`ns`/`us`/`ms`/`s`/`min`) canonicalize to i64 nanoseconds at parse time.
+An `every <duration> { x becomes expr }` block inside a flow fires once
+per elapsed period of integrated time, with a catch-up loop when one step
+covers several periods, lowered to a hidden nanosecond accumulator in the
+struct. A `solver { dt 1 ms  method euler }` block pins the default fixed
+step, generated as `Name_default_dt()`; `Name_step` keeps caller-supplied
+dt. See `examples/evolution/thermostat_evolves.flow` for a sampled
+bang-bang controller written this way. Invariants and `connect` remain
 aspirational.
 
 The strategy is to grow this seed rather than build a second language beside
