@@ -1,0 +1,128 @@
+# Hybrid events coverage: several when-blocks firing in declaration
+# order within one step, an event resetting a different state than the
+# guard watches, and exact-hit guard semantics (fire once, never
+# re-fire). Power-of-two dt values make every threshold hit exact.
+# Extends the bouncing-ball and swap tests in tests/unit/test_hybrid_events.py.
+# Returns 0 if all checks pass, non-zero (test id) otherwise.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+flow TwoWhens {
+    state t : f64 = 0.0
+    state a : f64 = 1.0
+    state b : f64 = 0.0
+    t evolves as 1.0
+    when t reaches 1.0 {
+        a becomes a * 2.0
+    }
+    when t reaches 1.0 {
+        b becomes a
+    }
+}
+
+flow Counter {
+    state t : f64 = 0.0
+    state hits : f64 = 0.0
+    t evolves as 1.0
+    when t reaches 1.0 {
+        hits becomes hits + 1.0
+    }
+}
+
+flow TwoThresholds {
+    state t : f64 = 0.0
+    state low_hits : f64 = 0.0
+    state high_hits : f64 = 0.0
+    t evolves as 1.0
+    when t reaches 1.0 {
+        low_hits becomes low_hits + 1.0
+    }
+    when t reaches 2.0 {
+        high_hits becomes high_hits + 1.0
+    }
+}
+
+function test_second_when_sees_first_whens_reset() -> bool {
+    # Both events fire in the same step (t hits 1.0 exactly). Event 0
+    # doubles a; event 1 copies a into b and must observe the doubling.
+    let mut f: TwoWhens = TwoWhens_new()
+    for k in 0 to 4 {
+        TwoWhens_step(&f, 0.25)
+    }
+    return f.a == 2.0 && f.b == 2.0
+}
+
+function test_cross_state_reset_leaves_guard_state_alone() -> bool {
+    # The guard watches t but the reset writes hits; t keeps growing.
+    let mut c: Counter = Counter_new()
+    for k in 0 to 16 {
+        Counter_step(&c, 0.25)
+    }
+    return c.hits == 1.0 && c.t == 4.0
+}
+
+function test_exact_hit_fires_exactly_once() -> bool {
+    # t reaches 1.0 exactly at step 8 (dt = 0.125); the guard's == arm
+    # fires there and the sign then stays positive, so never again.
+    let mut c: Counter = Counter_new()
+    for k in 0 to 32 {
+        Counter_step(&c, 0.125)
+    }
+    return c.hits == 1.0
+}
+
+function test_separate_thresholds_fire_separately() -> bool {
+    let mut f: TwoThresholds = TwoThresholds_new()
+    # Run to t = 1.5: only the low threshold has been crossed.
+    for k in 0 to 6 {
+        TwoThresholds_step(&f, 0.25)
+    }
+    if f.low_hits != 1.0 {
+        return false
+    }
+    if f.high_hits != 0.0 {
+        return false
+    }
+    # Continue to t = 3.0: now the high threshold has fired too, once.
+    for k in 0 to 6 {
+        TwoThresholds_step(&f, 0.25)
+    }
+    return f.low_hits == 1.0 && f.high_hits == 1.0
+}
+
+function test_no_fire_below_threshold() -> bool {
+    # Stop just short of the threshold: t = 0.875 < 1.0.
+    let mut c: Counter = Counter_new()
+    for k in 0 to 7 {
+        Counter_step(&c, 0.125)
+    }
+    return c.hits == 0.0
+}
+
+function main() -> i32 {
+    if !test_second_when_sees_first_whens_reset() {
+        printf("FAIL: second_when_sees_first_whens_reset\n", 0.0)
+        return 1
+    }
+    if !test_cross_state_reset_leaves_guard_state_alone() {
+        printf("FAIL: cross_state_reset\n", 0.0)
+        return 2
+    }
+    if !test_exact_hit_fires_exactly_once() {
+        printf("FAIL: exact_hit_fires_exactly_once\n", 0.0)
+        return 3
+    }
+    if !test_separate_thresholds_fire_separately() {
+        printf("FAIL: separate_thresholds_fire_separately\n", 0.0)
+        return 4
+    }
+    if !test_no_fire_below_threshold() {
+        printf("FAIL: no_fire_below_threshold\n", 0.0)
+        return 5
+    }
+
+    printf("All hybrid event coverage tests passed\n", 0.0)
+    return 0
+}
