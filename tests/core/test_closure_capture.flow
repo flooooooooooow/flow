@@ -1,0 +1,57 @@
+# Closure capture: lambdas snapshot captured locals by value at creation.
+# Self-checking; exits 0 when every check passes.
+
+function check(got: i32, want: i32) -> i32 {
+    if got == want {
+        return 0
+    }
+    return 1
+}
+
+function main() -> i32 {
+    let failures: i32 = 0
+
+    # Capture one variable.
+    let a: i32 = 40
+    let add_a = |x: i32| -> i32 { return a + x }
+    failures = failures + check(add_a(2), 42)
+
+    # Capture two variables.
+    let b: i32 = 30
+    let c: i32 = 12
+    let add_bc = |x: i32| -> i32 { return b + c + x }
+    failures = failures + check(add_bc(0), 42)
+
+    # Snapshot semantics: mutating the local after creation is invisible.
+    let d: i32 = 5
+    let get_d = |unused: i32| -> i32 { return d }
+    d = 100
+    failures = failures + check(get_d(0), 5)
+
+    # Lambda created in a loop captures the loop variable per iteration.
+    let total: i32 = 0
+    for i in 0..5 {
+        let addi = |x: i32| -> i32 { return x + i }
+        total = total + addi(10)
+    }
+    failures = failures + check(total, 60)
+
+    # Nested lambdas: the inner lambda re-captures through the outer env.
+    let base: i32 = 7
+    let outer = |x: i32| -> i32 {
+        let inner = |y: i32| -> i32 { return y + base }
+        return inner(x) * 2
+    }
+    failures = failures + check(outer(3), 20)
+
+    # Non-capturing lambda stays a bare function pointer.
+    let doubler = |x: i32| -> i32 { return x * 2 }
+    failures = failures + check(doubler(21), 42)
+
+    if failures == 0 {
+        println("closure capture: all checks passed")
+        return 0
+    }
+    println("closure capture: failures")
+    return failures
+}
