@@ -1,0 +1,177 @@
+# CART-POLE, END TO END. Model, analysis, control synthesis, and closed-loop
+# simulation of the classic inverted-pendulum benchmark, in one language,
+# compiled to native code.
+#
+#   model.flow    the nonlinear plant as a `flow` block with hybrid
+#                 fall-detection events
+#   control.flow  linearization, controllability check, and LQR gain
+#                 synthesis via the discrete Riccati fixed point
+#   this file     wires them together: derives the gain at startup, shows
+#                 that the uncontrolled pole falls, then stabilizes the
+#                 same plant from a 0.25 rad shove and self-checks the run
+#
+# Run: ./flow run apps/cartpole/main.flow
+# Exit code 0 means every self-check passed.
+
+import .model
+import .control
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.01           # control and integration period [s]
+    let sim_steps: i32 = 1000    # 10 s closed loop
+    let theta0: f64 = 0.25       # initial shove [rad], ~14 degrees
+
+    println("")
+    println("  CART-POLE  --  model, analyze, control, simulate: one language")
+    println("  ===============================================================")
+    println("")
+
+    # --- The plant. Parameters live in one place: the flow declaration. ---
+    let mut cart: CartPole = CartPole_new()
+
+    # --- 1. Linearize at upright, discretize at the control period --------
+    let ad: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let bd: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    cartpole_linearize(ad, bd, cart.cart_mass, cart.pole_mass,
+                       cart.half_length, cart.gravity, dt)
+
+    # --- 2. Analysis: is the upright plant controllable through F? --------
+    let rank: i32 = cartpole_ctrb_rank(ad, bd)
+    print("    controllability rank : ")
+    printf("%.0f", rank as f64)
+    println("  (4 = fully controllable)")
+
+    # --- 3. Synthesis: LQR gain from the Riccati fixed point --------------
+    # Q weights the states (position 1, velocity 1, angle 10, rate 1: the
+    # angle matters most), R = 0.1 prices the force.
+    let q_diag: array<f64, 4> = [1.0, 1.0, 10.0, 1.0]
+    let r_weight: f64 = 0.1
+    let gains: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let iters: i32 = cartpole_lqr_gains(ad, bd, q_diag, r_weight, gains, 5000)
+    print("    riccati iterations   : ")
+    printf("%.0f", iters as f64)
+    println("")
+    print("    gain K               : [")
+    printf("%.4f", gains[0])
+    printf(", %.4f", gains[1])
+    printf(", %.4f", gains[2])
+    printf(", %.4f", gains[3])
+    println("]   (u = -K x)")
+    println("")
+
+    # --- 4. Control witness: without feedback the pole falls --------------
+    let mut open: CartPole = CartPole_new()
+    open.theta = 0.05                       # tiny tilt, no controller
+    let mut fall_time: f64 = 0.0 - 1.0
+    for k in 0 to 300 {                     # up to 3 s
+        open.force = 0.0
+        CartPole_step(&open, dt)
+        if open.fallen == 1.0 and fall_time < 0.0 {
+            fall_time = (k + 1) as f64 * dt
+        }
+    }
+    print("    open loop from 0.05 rad : falls at t = ")
+    printf("%.2f s", fall_time)
+    println("   (the `when theta reaches` event fires)")
+    println("")
+
+    # --- 5. Closed loop: same plant, shoved to 0.25 rad -------------------
+    cart.theta = theta0
+    println("    closed loop from 0.25 rad, u = -K x")
+    println("")
+    println("      t [s]      x [m]    theta [rad]   force [N]")
+    println("    -------   --------   ------------   ---------")
+
+    let mut max_abs_x: f64 = 0.0
+    let mut max_abs_force: f64 = 0.0
+    let mut settled_theta: f64 = 0.0     # max |theta| over the last 2 s
+    let mut saw_nan: i32 = 0
+
+    for k in 0 to sim_steps {
+        let force: f64 = 0.0 - (gains[0] * cart.x + gains[1] * cart.x_dot
+            + gains[2] * cart.theta + gains[3] * cart.theta_dot)
+        cart.force = force
+
+        if k % 100 == 0 {
+            print("    ")
+            printf("%7.2f", k as f64 * dt)
+            printf("   %8.4f", cart.x)
+            printf("   %12.6f", cart.theta)
+            printf("   %9.3f", force)
+            println("")
+        }
+
+        CartPole_step(&cart, dt)
+
+        if cart.x != cart.x or cart.theta != cart.theta {
+            saw_nan = 1
+        }
+        if fabs(cart.x) > max_abs_x {
+            max_abs_x = fabs(cart.x)
+        }
+        if fabs(force) > max_abs_force {
+            max_abs_force = fabs(force)
+        }
+        if k >= sim_steps - 200 and fabs(cart.theta) > settled_theta {
+            settled_theta = fabs(cart.theta)
+        }
+    }
+
+    print("    ")
+    printf("%7.2f", sim_steps as f64 * dt)
+    printf("   %8.4f", cart.x)
+    printf("   %12.6f", cart.theta)
+    println("           -")
+    println("")
+    print("    cart excursion  max|x|      : ")
+    printf("%.3f m", max_abs_x)
+    println("")
+    print("    force peak      max|F|      : ")
+    printf("%.1f N", max_abs_force)
+    println("")
+    print("    settled  max|theta| last 2s : ")
+    printf("%.6f rad", settled_theta)
+    println("")
+    println("")
+
+    # --- 6. Self-checks ----------------------------------------------------
+    if rank != 4 {
+        println("    FAIL: linearized plant is not fully controllable")
+        return 1
+    }
+    if iters < 0 {
+        println("    FAIL: riccati iteration did not converge")
+        return 2
+    }
+    if fall_time < 0.0 {
+        println("    FAIL: open-loop pole never triggered the fall event")
+        return 3
+    }
+    if saw_nan == 1 {
+        println("    FAIL: closed-loop state became NaN")
+        return 4
+    }
+    if cart.fallen != 0.0 {
+        println("    FAIL: controlled pole fell over")
+        return 5
+    }
+    if settled_theta > 0.001 {
+        println("    FAIL: pole not settled (|theta| > 0.001 rad in last 2 s)")
+        return 6
+    }
+    if fabs(cart.x) > 0.05 or fabs(cart.x_dot) > 0.05 {
+        println("    FAIL: cart did not return to the track center")
+        return 7
+    }
+    if max_abs_x > 1.0 {
+        println("    FAIL: cart excursion exceeded 1 m")
+        return 8
+    }
+    println("    OK: controllable, gains converged, pole upright, cart centered")
+    return 0
+}
