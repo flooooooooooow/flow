@@ -25,7 +25,7 @@
 | connect | design |
 | represent-linear | design |
 | analyze-block | design |
-| units | design |
+| units | **SHIPPED**: `unit Name` and `unit Name = expr` declarations (§6.2 grammar), dimension exponent vectors on `SemanticType`, dimensional analysis for `+`/`-`/`%`, `*`/`/` composition, comparisons, `as` casts for literals, `Radian` pass-through into trig builtins, erasure to `typedef double`; tests `tests/unit/test_units.py` + `tests/core/test_units_basic.flow`, example `examples/evolution/units_kinematics.flow` |
 
 Shipped-scope notes for evolves-syntax: the `solver` block is deferred to the
 time-blocks card because its `dt 1 ms` form needs duration literals (§4.1);
@@ -34,6 +34,17 @@ time-blocks card because its `dt 1 ms` form needs duration literals (§4.1);
 code can construct an instance with declared defaults. Flow members are
 limited to `f64` and `f32` in this version. Outputs require an inline map
 until `every`/`when` land.
+
+Shipped-scope notes for units: everything §6.4 defers stays deferred
+(inference through generics, rational exponents, affine units, unit-aware
+printing, general unit-suffixed literals). The §6.5 duration bridge is not
+wired because the time-blocks card has not landed. The `evolves as` dimension
+rule (§6.2 last bullet) waits on flow-block checking, which belongs to a
+separate card. Unit-to-unit `as` casts require equal dimensions;
+cross-dimension conversion goes through the numeric base explicitly. `%` and
+unary `-` follow the same-dimension rule of `+`/`-`. A dims vector is indexed
+by base-unit declaration order with trailing zeros stripped, so programs
+declare only the base dimensions they use.
 
 ---
 
