@@ -11,7 +11,7 @@ Flow AST that the type checker and every backend already understand:
     Name    Name_new()                       construct with declared defaults
     void    Name_init(Name* self)            (re)apply declared defaults
     void    Name_derivs(Name* self, ...)     dx/dt out-params, pre-step state
-    void    Name_step(Name* self, double dt) explicit Euler, then outputs
+    void    Name_step(Name* self, double dt) explicit Euler, events, outputs
     void    Name_outputs(Name* self)         inline output maps (if any)
 
 Integration semantics (spec 2.2, 2.4): all `evolves` right-hand sides are
@@ -19,6 +19,16 @@ evaluated against the pre-step state (simultaneous derivative evaluation),
 then every state advances together. Name_derivs is generated as a separate
 function so a later card can swap RK4 into Name_step without touching the
 surface syntax or the Name_step signature. dt is caller-supplied, in seconds.
+
+Hybrid events (spec section 5, card: hybrid-events): each
+`when x reaches L { ... }` lowers to a hidden `__guard_k_prev : f64` struct
+field holding the previous end-of-step value of g = x - L. Inside Name_step,
+after integration and before outputs, each event in declaration order
+computes g from the post-step state and fires when its sign differs from the
+stored previous sign (or g is exactly zero). A fired body applies its
+`becomes` resets synchronously: every right-hand side is evaluated from the
+same post-step, pre-reset state, then all targets are assigned together.
+Detection is at step granularity; root-finding refinement is a later card.
 
 The generated functions carry the "flow_api" attribute, which keeps their C
 names unmangled (src/flow/overload.py, src/flow/c_generator.py), so
@@ -42,6 +52,7 @@ from .parser import (
     FlowSyntaxError,
     FunctionCall,
     FunctionDecl,
+    IfStatement,
     Lambda,
     Literal,
     MethodCall,
@@ -211,6 +222,50 @@ def _validate_flow(
         _check_pure(ev.expr, flow, f"'{ev.target} evolves as'", ev.line,
                     local_pure_functions, source)
 
+    param_names = {p.name for p in flow.params}
+    for when in flow.whens:
+        if when.guard_target not in state_names:
+            raise _error(
+                f"'when {when.guard_target} reaches' in flow '{flow.name}' "
+                f"requires '{when.guard_target}' to be a declared state",
+                when.line, source,
+                suggestion=(
+                    f"declare 'state {when.guard_target} : f64 = 0.0' "
+                    f"or fix the name"
+                ),
+            )
+        if when.guard_target not in seen_targets:
+            raise _error(
+                f"'when {when.guard_target} reaches' in flow '{flow.name}' "
+                f"requires '{when.guard_target}' to be a continuous state",
+                when.line, source,
+                suggestion=(
+                    f"give '{when.guard_target}' an "
+                    f"'{when.guard_target} evolves as ...' declaration"
+                ),
+            )
+        _check_threshold(when.threshold, flow, when, param_names, source)
+        seen_resets = set()
+        for reset in when.body:
+            if reset.target not in state_names:
+                raise _error(
+                    f"'{reset.target} becomes' in the "
+                    f"'when {when.guard_target} reaches' body of flow "
+                    f"'{flow.name}' requires '{reset.target}' to be a "
+                    f"declared state",
+                    reset.line, source,
+                )
+            if reset.target in seen_resets:
+                raise _error(
+                    f"state '{reset.target}' has two 'becomes' resets in one "
+                    f"'when' body of flow '{flow.name}'; resets in an event "
+                    f"apply simultaneously, so each state has one writer",
+                    reset.line, source,
+                )
+            seen_resets.add(reset.target)
+            _check_pure(reset.expr, flow, f"'{reset.target} becomes'",
+                        reset.line, local_pure_functions, source)
+
     for state in flow.states:
         _check_pure(state.initializer, flow, f"initializer of '{state.name}'",
                     state.line, local_pure_functions, source)
@@ -220,6 +275,34 @@ def _validate_flow(
     for output in flow.outputs:
         _check_pure(output.expr, flow, f"output map of '{output.name}'",
                     output.line, local_pure_functions, source)
+
+
+def _check_threshold(expr, flow, when, param_names, source) -> None:
+    """Reject thresholds that can vary within a step (spec 5.1).
+
+    v1: a threshold is built from literals and params, combined with
+    arithmetic and casts. States, inputs, outputs, and calls are rejected.
+    """
+    if expr is None or isinstance(expr, Literal):
+        return
+    if isinstance(expr, Variable):
+        if expr.name in param_names:
+            return
+        raise _error(
+            f"threshold of 'when {when.guard_target} reaches' in flow "
+            f"'{flow.name}' references '{expr.name}'; thresholds must be "
+            f"constant over a step, built from params and literals (v1)",
+            when.line, source,
+        )
+    if isinstance(expr, (BinaryOperation, UnaryOperation, CastExpression)):
+        for child in _children(expr):
+            _check_threshold(child, flow, when, param_names, source)
+        return
+    raise _error(
+        f"threshold of 'when {when.guard_target} reaches' in flow "
+        f"'{flow.name}' must be built from params and literals (v1)",
+        when.line, source,
+    )
 
 
 def _check_pure(expr, flow, where, line, local_pure_functions, source) -> None:
@@ -291,12 +374,15 @@ def _children(expr) -> List[Any]:
 
 
 def _lower_flow(flow: FlowDecl) -> List[Any]:
-    # Field order: state, input, output, param (spec 1.2).
+    # Field order: state, input, output, param (spec 1.2), then hidden
+    # per-event guard memory (spec 5.3). User members may not start with
+    # '__', so the hidden names cannot collide.
     ordered = (
         [(s.name, s.type) for s in flow.states]
         + [(i.name, i.type) for i in flow.inputs]
         + [(o.name, o.type) for o in flow.outputs]
         + [(p.name, p.type) for p in flow.params]
+        + [(f"__guard_{k}_prev", Type("f64")) for k in range(len(flow.whens))]
     )
     member_names = {name for name, _ in ordered}
     member_types = {name: t for name, t in ordered}
@@ -314,9 +400,9 @@ def _lower_flow(flow: FlowDecl) -> List[Any]:
 
     functions = [
         _make_new(flow, ordered),
-        _make_init(flow, member_names, has_outputs),
+        _make_init(flow, member_names, member_types, has_outputs),
         _make_derivs(flow, member_names, member_types, evolved),
-        _make_step(flow, member_types, evolved, has_outputs),
+        _make_step(flow, member_names, member_types, evolved, has_outputs),
     ]
     if has_outputs:
         functions.append(_make_outputs(flow, member_names))
@@ -403,11 +489,12 @@ def _make_new(flow: FlowDecl, ordered) -> FunctionDecl:
     return _flow_fn(flow, "_new", [], Type(flow.name), statements)
 
 
-def _make_init(flow: FlowDecl, member_names: Set[str], has_outputs: bool) -> FunctionDecl:
+def _make_init(flow: FlowDecl, member_names: Set[str], member_types,
+               has_outputs: bool) -> FunctionDecl:
     """Name_init(self): apply declared defaults in order params, inputs,
-    states, then compute outputs. Initializers may reference members
-    assigned earlier in that order (params in state initializers is the
-    common case)."""
+    states, then seed event guard memory from the init state, then compute
+    outputs. Initializers may reference members assigned earlier in that
+    order (params in state initializers is the common case)."""
     statements = []
     for param in flow.params:
         statements.append(
@@ -418,6 +505,13 @@ def _make_init(flow: FlowDecl, member_names: Set[str], has_outputs: bool) -> Fun
     for state in flow.states:
         statements.append(
             _assign_member(state.name, _rewrite(state.initializer, member_names))
+        )
+    for k, when in enumerate(flow.whens):
+        statements.append(
+            _assign_member(
+                f"__guard_{k}_prev",
+                _guard_expr(when, member_names, member_types),
+            )
         )
     if has_outputs:
         statements.append(
@@ -457,9 +551,32 @@ def _make_derivs(flow: FlowDecl, member_names, member_types, evolved) -> Functio
     return _flow_fn(flow, "_derivs", parameters, Type("void"), statements)
 
 
-def _make_step(flow: FlowDecl, member_types, evolved, has_outputs) -> FunctionDecl:
+def _guard_expr(when, member_names: Set[str], member_types):
+    """g = self.<guard state> - threshold, widened to f64 (spec 5.3)."""
+    expr = BinaryOperation(
+        FieldAccess(Variable("self"), when.guard_target),
+        "-",
+        _rewrite(when.threshold, member_names),
+    )
+    if member_types[when.guard_target].name == "f32":
+        expr = CastExpression(expr, Type("f64"))
+    return expr
+
+
+def _make_step(flow: FlowDecl, member_names, member_types, evolved,
+               has_outputs) -> FunctionDecl:
     """Name_step(self, dt): explicit Euler with simultaneous update, then
-    output maps. dt is in seconds (spec 2.3, 2.4)."""
+    hybrid events in declaration order, then output maps. dt is in seconds
+    (spec 2.3, 2.4; events per spec 5.2 and 5.3).
+
+    Event firing test: strict sign comparison, (g < 0) != (g_prev < 0),
+    plus the exact-hit case g == 0. The spec's section 5.3 sketch compares
+    with <= and stores the pre-reset g; that combination re-fires on the
+    step after a reset that lands the guard state exactly on the surface
+    (the canonical clamped bounce, spec A.2), flipping the reset back.
+    Strict < and recomputing the stored guard from the post-reset state
+    keep the spec's step-granularity semantics and fire once per crossing.
+    """
     ordered_evolved = _in_state_order(flow, evolved)
     statements = []
     for ev in ordered_evolved:
@@ -493,6 +610,10 @@ def _make_step(flow: FlowDecl, member_types, evolved, has_outputs) -> FunctionDe
                 ),
             )
         )
+    for k, when in enumerate(flow.whens):
+        statements.extend(
+            _event_statements(k, when, member_names, member_types)
+        )
     if has_outputs:
         statements.append(FunctionCall(f"{flow.name}_outputs", [Variable("self")]))
     return _flow_fn(
@@ -500,6 +621,54 @@ def _make_step(flow: FlowDecl, member_types, evolved, has_outputs) -> FunctionDe
         [Parameter("self", _self_ptr_type(flow.name)), Parameter("dt", Type("f64"))],
         Type("void"), statements,
     )
+
+
+def _event_statements(k: int, when, member_names: Set[str], member_types):
+    """Statements for one `when x reaches L { ... }` event inside Name_step.
+
+        let __g_k : f64 = self.x - L
+        if (__g_k < 0.0) != (self.__guard_k_prev < 0.0) or __g_k == 0.0 {
+            let __reset_k_t : T = <rhs from post-step, pre-reset state> ...
+            self.t = __reset_k_t ...
+        }
+        self.__guard_k_prev = self.x - L    # post-reset value
+
+    All reset right-hand sides are evaluated before any target is written,
+    the same simultaneous semantics as `evolves as` (spec 3.2).
+    """
+    g_name = f"__g_{k}"
+    prev = FieldAccess(Variable("self"), f"__guard_{k}_prev")
+    fired = BinaryOperation(
+        BinaryOperation(
+            BinaryOperation(Variable(g_name), "<", _zero()),
+            "!=",
+            BinaryOperation(prev, "<", _zero()),
+        ),
+        "||",
+        BinaryOperation(Variable(g_name), "==", _zero()),
+    )
+    reset_stmts = []
+    for reset in when.body:
+        reset_stmts.append(
+            VarDecl(
+                f"__reset_{k}_{reset.target}",
+                Type(member_types[reset.target].name),
+                _rewrite(reset.expr, member_names),
+            )
+        )
+    for reset in when.body:
+        reset_stmts.append(
+            _assign_member(
+                reset.target, Variable(f"__reset_{k}_{reset.target}")
+            )
+        )
+    return [
+        VarDecl(g_name, Type("f64"),
+                _guard_expr(when, member_names, member_types)),
+        IfStatement(fired, Block(reset_stmts), [], None),
+        _assign_member(f"__guard_{k}_prev",
+                       _guard_expr(when, member_names, member_types)),
+    ]
 
 
 def _make_outputs(flow: FlowDecl, member_names: Set[str]) -> FunctionDecl:
