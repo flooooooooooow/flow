@@ -19,7 +19,7 @@
 | Card | Status |
 |---|---|
 | evolves-syntax | **SHIPPED**: `flow` blocks, `state`/`input`/`output`/`param` members, `evolves as`, Euler `_step` with factored `_derivs`, `_new`/`_init`/`_outputs`; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/pendulum_evolves.flow` |
-| time-blocks | design |
+| time-blocks | **SHIPPED**: duration literals (`ns`/`us`/`ms`/`s`/`min` suffixes canonicalized to i64 nanoseconds at parse time), `every <duration> { x becomes expr }` blocks with hidden `__every_k_acc` accumulators and a catch-up loop, `solver { dt 1 ms  method euler }` lowered to `Name_default_dt()`; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/thermostat_evolves.flow` |
 | hybrid-events | **SHIPPED** (zero-crossing form): `when x reaches L { x becomes expr ... }` with sign-change detection at step granularity, synchronous resets, hidden `__guard_k_prev` memory; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/bouncing_ball_evolves.flow` |
 | constraints | design |
 | connect | design |
@@ -48,10 +48,35 @@ re-fires on the step after a reset lands the guard state exactly on the
 surface (the clamped bounce of A.2 would flip its own reset back every
 step). Semantics are otherwise as specified.
 
+Shipped-scope notes for time-blocks: durations, `every` blocks, and the
+`solver` block are in, with the §1.4 step ordering (integration, `every`
+blocks, events, outputs) and the §4.3 semantics: integrated-time
+accumulation, first firing at t >= P, declaration-order firing,
+catch-up when dt exceeds the period. Every-block bodies contain `becomes`
+updates on states only, matching the shipped `when` scope; `let`,
+`if`/`match`, and calls as body statements (§4.2) stay open on a later
+card, and a pure same-file function in a `becomes` right-hand side covers
+branching until then. Assigning outputs from `every` bodies (§1.3) also
+stays open; outputs still require inline maps. A state with `evolves` may
+not take a `becomes` in an `every` block (the §2.1 exclusivity rule).
+Two deliberate divergences from the sketches. First, the §4.3 catch-up
+cap of 1024 firings per step bounds the loop instead of trapping: the
+remainder stays in the accumulator and fires on later steps, because the
+trap machinery (`flow_panic`) belongs to the constraints card. Second,
+the §2.3 default step is emitted as a generated `Name_default_dt()`
+returning seconds rather than a `#define NAME_DEFAULT_DT`, because the
+lowering targets plain Flow AST shared by every backend; `Name_step`
+keeps its caller-supplied dt either way, and the 1 ms fallback applies
+when no `solver` block exists. `method euler` is accepted; `method rk4`
+is rejected with a not-yet message. Durations remain the closed grammar
+of §4.1 (`every` and `solver dt` positions only); the §6.5 units bridge
+is still unwired.
+
 Shipped-scope notes for units: everything §6.4 defers stays deferred
 (inference through generics, rational exponents, affine units, unit-aware
 printing, general unit-suffixed literals). The §6.5 duration bridge is not
-wired because the time-blocks card has not landed. The `evolves as` dimension
+yet wired; time-blocks has since landed and durations stay the closed
+grammar of §4.1 until the bridge gets its own change. The `evolves as` dimension
 rule (§6.2 last bullet) waits on flow-block checking, which belongs to a
 separate card. Unit-to-unit `as` casts require equal dimensions;
 cross-dimension conversion goes through the numeric base explicitly. `%` and
