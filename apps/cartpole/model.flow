@@ -1,0 +1,92 @@
+# CART-POLE MODEL. The plant of the classic inverted-pendulum-on-a-cart
+# control benchmark, written as a `flow` block (docs/vision/north-star.md
+# sections 1, 2, 5). This file is the whole physical model: four continuous
+# states, one input, and two hybrid events that latch failure when the pole
+# leaves the recoverable cone.
+#
+# Equations are the frictionless cart-pole form from R. V. Florian,
+# "Correct equations for the dynamics of the cart-pole system" (2007),
+# which is also the model behind the Barto-Sutton benchmark:
+#
+#   theta_acc = ( g sin(th) + cos(th) (-F - m l thd^2 sin(th)) / (M + m) )
+#               / ( l (4/3 - m cos^2(th) / (M + m)) )
+#   x_acc     = ( F + m l (thd^2 sin(th) - theta_acc cos(th)) ) / (M + m)
+#
+# with M cart mass, m pole mass, l distance from pivot to the pole's center
+# of mass (half the pole length), g gravity, F horizontal force on the cart.
+# theta = 0 is upright and grows clockwise. Positive F pushes the cart in
+# the +x direction.
+#
+# This file is a module. Entry points: main.flow (batch run with
+# self-checks) and cartpole_gfx.flow (animation).
+
+extern {
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+}
+
+# The two accelerations are coupled: x_acc needs theta_acc. Factoring them
+# into named pure functions keeps each `evolves as` line readable, and the
+# compiler accepts the calls because both functions live in this file and
+# neither is extern (purity rule of north-star.md section 2.4).
+
+function cartpole_theta_acc(theta: f64, theta_dot: f64, force: f64,
+                            cart_mass: f64, pole_mass: f64,
+                            half_length: f64, gravity: f64) -> f64 {
+    let total: f64 = cart_mass + pole_mass
+    let sin_th: f64 = sin(theta)
+    let cos_th: f64 = cos(theta)
+    let pole_term: f64 = pole_mass * half_length * theta_dot * theta_dot * sin_th
+    let num: f64 = gravity * sin_th + cos_th * (0.0 - force - pole_term) / total
+    let den: f64 = half_length * (4.0 / 3.0 - pole_mass * cos_th * cos_th / total)
+    return num / den
+}
+
+function cartpole_x_acc(theta: f64, theta_dot: f64, force: f64,
+                        cart_mass: f64, pole_mass: f64,
+                        half_length: f64, gravity: f64) -> f64 {
+    let total: f64 = cart_mass + pole_mass
+    let sin_th: f64 = sin(theta)
+    let cos_th: f64 = cos(theta)
+    let theta_acc: f64 = cartpole_theta_acc(theta, theta_dot, force,
+                                            cart_mass, pole_mass,
+                                            half_length, gravity)
+    let pole_term: f64 = pole_mass * half_length
+        * (theta_dot * theta_dot * sin_th - theta_acc * cos_th)
+    return (force + pole_term) / total
+}
+
+flow CartPole {
+    state x         : f64 = 0.0     # cart position [m], 0 = track center
+    state x_dot     : f64 = 0.0     # cart velocity [m/s]
+    state theta     : f64 = 0.0     # pole angle from upright [rad]
+    state theta_dot : f64 = 0.0     # pole angular velocity [rad/s]
+    state fallen    : f64 = 0.0     # latches to 1.0 when the pole falls
+
+    input force     : f64           # horizontal force on the cart [N]
+
+    param cart_mass   : f64 = 1.0   # M [kg]
+    param pole_mass   : f64 = 0.1   # m [kg]
+    param half_length : f64 = 0.5   # l, pivot to pole center of mass [m]
+    param gravity     : f64 = 9.81  # g [m/s^2]
+    param fall_angle  : f64 = 0.6   # |theta| beyond this counts as fallen [rad]
+
+    x         evolves as x_dot
+    x_dot     evolves as cartpole_x_acc(theta, theta_dot, force,
+                                        cart_mass, pole_mass,
+                                        half_length, gravity)
+    theta     evolves as theta_dot
+    theta_dot evolves as cartpole_theta_acc(theta, theta_dot, force,
+                                            cart_mass, pole_mass,
+                                            half_length, gravity)
+
+    # Failure detection as hybrid events: crossing the cone boundary in
+    # either direction latches `fallen`. The guard is a zero-crossing test
+    # at step granularity (north-star.md section 5.3).
+    when theta reaches fall_angle {
+        fallen becomes 1.0
+    }
+    when theta reaches 0.0 - fall_angle {
+        fallen becomes 1.0
+    }
+}
