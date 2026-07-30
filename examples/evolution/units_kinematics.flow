@@ -1,0 +1,57 @@
+# Kinematics with units of measure (docs/vision/north-star.md section 6).
+# Card: flow-vision-units.
+#
+# A braking car, integrated with a fixed step. Every quantity carries its
+# dimension in the type system. The checker verifies each expression's
+# dimensions at compile time; the generated C is plain f64 arithmetic.
+#
+# The class of bug this catches, at compile time:
+#
+#     let position: Meter = ...
+#     let speed: MeterPerSecond = ...
+#     let wrong = position + speed
+#
+#     line N: dimensional error: Meter + MeterPerSecond
+#     (operands of '+' must have the same dimension)
+#
+# Mixing up a distance and a speed (the Mars Climate Orbiter class of
+# mistake) fails the build instead of producing a silently wrong number.
+
+unit Meter
+unit Second
+unit MeterPerSecond = Meter / Second
+unit MeterPerSecondSq = Meter / Second^2
+
+function main() -> i32 {
+    # A car at 30 m/s brakes at 5 m/s^2.
+    let mut position: Meter = 0.0 as Meter
+    let mut speed: MeterPerSecond = 30.0 as MeterPerSecond
+    let braking: MeterPerSecondSq = 5.0 as MeterPerSecondSq
+    let dt: Second = 0.01 as Second
+
+    let mut elapsed: Second = 0.0 as Second
+    let zero_speed: MeterPerSecond = 0.0 as MeterPerSecond
+
+    while speed > zero_speed {
+        # Each step is dimension-checked:
+        #   MeterPerSecond   * Second = Meter
+        #   MeterPerSecondSq * Second = MeterPerSecond
+        position = position + speed * dt
+        speed = speed - braking * dt
+        elapsed = elapsed + dt
+    }
+
+    # Closed form for comparison: v^2 / (2a) = 900 / 10 = 90 m,
+    # stopping time v / a = 6 s. Dimensions cancel to f64 for printing.
+    let meters: f64 = position as f64
+    let seconds: f64 = elapsed as f64
+    printf("stopped after %.1f m in %.2f s\n", meters, seconds)
+
+    if meters < 89.0 {
+        return 1
+    }
+    if meters > 91.0 {
+        return 1
+    }
+    return 0
+}
