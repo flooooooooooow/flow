@@ -327,6 +327,7 @@ class BinaryOperation:
     left: "Expression"
     operator: str
     right: "Expression"
+    line: int = 0  # Source line of the operator token (0 when unknown)
 
 
 @dataclass
@@ -636,6 +637,26 @@ class DistinctTypeDecl:
     name: str
     base_type: Type
     is_exported: bool = False
+
+
+@dataclass
+class UnitDecl(DistinctTypeDecl):
+    """Unit of measure declaration (docs/vision/north-star.md section 6):
+
+        unit Meter                      # new base dimension
+        unit Velocity = Meter / Second  # derived unit
+
+    A unit behaves exactly like `distinct type Name = f64` plus a dimension
+    exponent vector, so every downstream phase (codegen, module resolution)
+    treats it as a distinct type and erases it to its base numeric type.
+
+    `factors` is None for a base dimension. For a derived unit it is the
+    flattened right-hand side as (unit name, exponent) pairs; a factor after
+    `/` carries a negated exponent. The literal `1` contributes no factors.
+    """
+
+    factors: Optional[List[Tuple[str, int]]] = None
+    line: int = 0
 
 
 @dataclass
@@ -1060,6 +1081,17 @@ class Parser:
             and self._peek2().type == TokenType.LBRACE
         )
 
+    def _at_unit_decl(self) -> bool:
+        """True when positioned at `unit IDENT`, the contextual unit
+        declaration form (docs/vision/north-star.md 6.2). Only consulted at
+        the top level, where no other declaration starts with the identifier
+        `unit`, so `unit` stays a legal variable name everywhere else."""
+        return (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.current_token.value == "unit"
+            and self.lookahead.type == TokenType.IDENTIFIER
+        )
+
     def error(self, message: str, suggestion: str = None) -> FlowSyntaxError:
         """Create a syntax error with context."""
         return FlowSyntaxError(
@@ -1240,6 +1272,10 @@ class Parser:
                 declarations.append(decl)
             elif self.current_token.type == TokenType.DISTINCT:
                 decl = self.parse_distinct_type()
+                decl.is_exported = is_exported
+                declarations.append(decl)
+            elif self._at_unit_decl():
+                decl = self.parse_unit()
                 decl.is_exported = is_exported
                 declarations.append(decl)
             elif self.current_token.type == TokenType.MODULE:
@@ -1760,6 +1796,70 @@ class Parser:
             self.advance()
 
         return DistinctTypeDecl(name, base_type)
+
+    def parse_unit(self) -> UnitDecl:
+        """Parse a unit declaration (docs/vision/north-star.md 6.2):
+
+            unit Meter                      # new base dimension
+            unit Velocity = Meter / Second  # derived unit
+            unit Accel    = Meter / Second^2
+
+        Grammar:
+            unit_decl := "unit" IDENT
+                       | "unit" IDENT "=" unit_expr
+            unit_expr := factor (("*" | "/") factor)*
+            factor    := IDENT ("^" ["-"] INT)? | "1"
+
+        The spec grammar has no parentheses, so the right-hand side flattens
+        exactly into (name, exponent) pairs; "/" negates the exponent of the
+        factor that follows it. All units are f64-based in v1.
+        """
+        line = self.current_token.line
+        self.expect(TokenType.IDENTIFIER)  # the contextual keyword `unit`
+        name = self.expect(TokenType.IDENTIFIER).value
+        factors: Optional[List[Tuple[str, int]]] = None
+        if self.current_token.type == TokenType.ASSIGN:
+            self.advance()
+            factors = self._parse_unit_expr()
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
+        return UnitDecl(name, Type("f64"), factors=factors, line=line)
+
+    def _parse_unit_expr(self) -> List[Tuple[str, int]]:
+        factors = self._parse_unit_factor(1)
+        while self.current_token.type in (TokenType.STAR, TokenType.SLASH):
+            sign = 1 if self.current_token.type == TokenType.STAR else -1
+            self.advance()
+            factors.extend(self._parse_unit_factor(sign))
+        return factors
+
+    def _parse_unit_factor(self, sign: int) -> List[Tuple[str, int]]:
+        if self.current_token.type == TokenType.NUMBER:
+            if self.current_token.value != "1":
+                raise self.error(
+                    f"Expected a unit name or '1' in unit expression, "
+                    f"got '{self.current_token.value}'"
+                )
+            self.advance()
+            return []  # "1" is dimensionless: contributes no factors
+        name = self.expect(TokenType.IDENTIFIER).value
+        exponent = 1
+        if self.current_token.type == TokenType.CARET:
+            self.advance()
+            negative = False
+            if self.current_token.type == TokenType.MINUS:
+                negative = True
+                self.advance()
+            exp_token = self.expect(TokenType.NUMBER)
+            try:
+                exponent = int(exp_token.value)
+            except ValueError:
+                raise self.error(
+                    f"Unit exponent must be an integer, got '{exp_token.value}'"
+                )
+            if negative:
+                exponent = -exponent
+        return [(name, sign * exponent)]
 
     def parse_theorem(self) -> TheoremDecl:
         """Parse: theorem Nat/+.zero-left(m: Nat) { ... }"""
@@ -2563,9 +2663,10 @@ class Parser:
 
         while self.current_token.type in [TokenType.EQUALS, TokenType.NOT_EQUALS]:
             op = self.current_token.value
+            op_line = self.current_token.line
             self.advance()
             right = self.parse_comparison()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, op, right, line=op_line)
 
         return left
 
@@ -2579,9 +2680,10 @@ class Parser:
             TokenType.GREATER_EQUAL,
         ]:
             op = self.current_token.value
+            op_line = self.current_token.line
             self.advance()
             right = self.parse_shift()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, op, right, line=op_line)
 
         return left
 
@@ -2602,6 +2704,7 @@ class Parser:
 
         while self.current_token.type in [TokenType.PLUS, TokenType.MINUS]:
             op = self.current_token.value
+            op_line = self.current_token.line
             self.advance()
             right = self.parse_factor()
 
@@ -2610,10 +2713,10 @@ class Parser:
                 isinstance(right, Literal) and right.type.name == "string"
             ):
                 # String concatenation - keep as BinaryOperation, MLIR generator will handle it
-                left = BinaryOperation(left, op, right)
+                left = BinaryOperation(left, op, right, line=op_line)
             else:
                 # Numeric addition
-                left = BinaryOperation(left, op, right)
+                left = BinaryOperation(left, op, right, line=op_line)
 
         return left
 
@@ -2626,9 +2729,10 @@ class Parser:
             TokenType.PERCENT,
         ]:
             op = self.current_token.value
+            op_line = self.current_token.line
             self.advance()
             right = self.parse_cast()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, op, right, line=op_line)
 
         return left
 
