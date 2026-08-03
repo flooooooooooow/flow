@@ -104,6 +104,14 @@ clean:
 	@rm -f *.o *.ll *.mlir
 	@echo "✅ Cleaned build files"
 
+# Sync open ROADMAP.md items to GitHub issues ([roadmap] label)
+sync-roadmap:
+	@python3 scripts/sync_roadmap.py
+
+# Preview what sync-roadmap would change
+sync-roadmap-dry:
+	@python3 scripts/sync_roadmap.py --dry-run
+
 # Show help
 help:
 	@echo "FLOW Programming Language"
@@ -118,10 +126,12 @@ help:
 	@echo "  repl                       - Interactive REPL"
 	@echo "  install                    - Install dependencies"
 	@echo "  clean                      - Clean build files"
+	@echo "  sync-roadmap               - Mirror open ROADMAP.md items to GitHub issues"
+	@echo "  sync-roadmap-dry           - Preview the roadmap sync without changes"
 	@echo "  help                       - Show this help"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run PROGRAM=examples/minimal_turing.flow"
 	@echo "  make compile PROGRAM=examples/fibonacci.flow"
 
-.PHONY: all setup run compile mlir test test-stdlib test-all repl install clean help
+.PHONY: all setup run compile mlir test test-stdlib test-all repl install clean sync-roadmap sync-roadmap-dry help

@@ -13,6 +13,9 @@ This document tracks what we're building next and why.
 > **Live tracker:** day-to-day backlog and task status now live on the Helm board
 > (local kanban at `http://127.0.0.1:9470/app?project=flow`). This document stays
 > the strategic overview; the board is the source of truth for in-flight work.
+> Open items here mirror to GitHub issues as `[roadmap]` labels via
+> `scripts/sync_roadmap.py` (creates missing issues, closes + checks ones marked
+> done); `scripts/sync_issues.sh` then rounds trip state with `issues-checklist.md`.
 
 ---
 
