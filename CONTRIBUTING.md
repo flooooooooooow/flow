@@ -283,6 +283,32 @@ New roadmap items should include:
 
 ---
 
+## Roadmap Sync
+
+Open items in `ROADMAP.md` mirror to GitHub issues (label `roadmap`) so the
+tracker stays visible on GitHub. Two scripts handle it:
+
+- `scripts/sync_roadmap.py` — creates a GitHub issue for every open item
+  (🔲 status, `partial` status, unchecked `- [ ]` checkboxes, numbered 🔲
+  items, and the curated `KNOWN_GAPS` list). When an item is marked done in
+  `ROADMAP.md`, it closes the issue and checks the `issues-checklist.md` line.
+  Rewording an item updates the existing issue instead of creating a duplicate.
+- `scripts/sync_issues.sh` — rounds trip state between `issues-checklist.md`
+  and GitHub (closes issues checked locally, checks items closed on GitHub).
+
+Run it after editing `ROADMAP.md`:
+
+```bash
+make sync-roadmap-dry   # preview only
+make sync-roadmap       # apply
+```
+
+Each issue body carries a `ROADMAP-SYNC: <slug>` marker that keeps the binding
+stable across title edits. `issues-checklist.md` lines use the format
+`- [ ] #NNN [roadmap:<slug>] <title> <url>`.
+
+---
+
 ## The Meta-Goal
 
 Flow is an experiment in **human-AI collaborative language design**.
