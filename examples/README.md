@@ -81,9 +81,11 @@ declarative `dsys` surface syntax (see [dynamics/README.md](dynamics/README.md))
 
 ### Effects (`effects/`)
 Flow's unique algebraic effects (not available in Mojo/Julia):
+- `showcase.flow` - One business function, four handler stacks (production/test/nested/composed)
 - `dependency_injection.flow` - DI without frameworks
-- `state_effects.flow` - Implicit state threading
-- `async_effects.flow` - Async as effects
+- `state_effects.flow` - Swappable policy effects with explicitly-threaded state
+- `async_primitives.flow` - stdlib `Async`/`AsyncIO` via `handle`/`with`
+- `async_effects.flow` - Timeout/Retry as policy effects
 
 ### Audio (`audio/`)
 Real-time DSP:

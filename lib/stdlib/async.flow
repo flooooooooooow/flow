@@ -1,34 +1,110 @@
-# Async I/O via algebraic effects
-# Swap capabilities for epoll/kqueue/IOCP without changing call sites.
+# Async primitives via algebraic effects
+#
+# Call sites perform `Async` / `AsyncIO` operations; a capability supplies the
+# backend. Today that means a sync simulator or a blocking `usleep` — not a
+# fiber scheduler. Swap capabilities later (epoll/kqueue/IOCP) without changing
+# call sites. See docs/language/async-effects.md for implemented vs deferred.
 
-effect AsyncIO {
+extern {
+    function usleep(usec: i32) -> i32
+}
+
+# ---------------------------------------------------------------------------
+# Pedagogical concurrency ops (tail-resumptive; no true suspend/resume)
+# ---------------------------------------------------------------------------
+
+export effect Async {
+    delay(ms: i32) -> void,
+    spawn(task_id: i32) -> void,
+    join(task_id: i32) -> i32,
+}
+
+# ---------------------------------------------------------------------------
+# I/O-shaped ops (poll stubs + sleep)
+# ---------------------------------------------------------------------------
+
+export effect AsyncIO {
     poll_read(fd: i32, timeout_ms: i32) -> i32,
     poll_write(fd: i32, timeout_ms: i32) -> i32,
     sleep_ms(ms: i32) -> void,
 }
 
-effect TcpEffect {
+export effect TcpEffect {
     connect(host_hash: i32, port: i32) -> i32,
     send(fd: i32, buf: ptr<i8>, len: i32) -> i32,
     recv(fd: i32, buf: ptr<i8>, len: i32) -> i32,
 }
 
-capability BlockingAsyncIO {
+# ---------------------------------------------------------------------------
+# SimulatedAsync — deterministic sync stand-in for tests / demos
+#
+# Capabilities are currently stateless, so there is no task table:
+#   - delay / spawn are no-ops (virtual time; spawn marks intent only)
+#   - join(task_id) returns task_id * 10 as a stand-in completed result
+# ---------------------------------------------------------------------------
+
+export capability SimulatedAsync {
+    effect Async,
+
+    function delay(ms: i32) -> void {
+        return
+    },
+
+    function spawn(task_id: i32) -> void {
+        return
+    },
+
+    function join(task_id: i32) -> i32 {
+        return task_id * 10
+    },
+}
+
+# ---------------------------------------------------------------------------
+# BlockingAsyncIO — blocking sleep via usleep; poll_* pretend "ready"
+#
+# Not a real event loop. poll_* ignore timeout and return 1 (ready).
+# sleep_ms(0) is a no-op; positive ms blocks the calling thread.
+# ---------------------------------------------------------------------------
+
+export capability BlockingAsyncIO {
     effect AsyncIO,
 
     function poll_read(fd: i32, timeout_ms: i32) -> i32 {
-        return 0
+        return 1
     },
 
     function poll_write(fd: i32, timeout_ms: i32) -> i32 {
-        return 0
+        return 1
     },
 
     function sleep_ms(ms: i32) -> void {
+        if ms > 0 {
+            usleep(ms * 1000)
+        }
         return
     },
 }
 
-function async_echo_loop(fd: i32) -> void {
-    AsyncIO.poll_read(fd, 1000)
+# ---------------------------------------------------------------------------
+# Thin helpers (same ops; clearer call sites)
+# ---------------------------------------------------------------------------
+
+export function async_delay(ms: i32) -> void {
+    Async.delay(ms)
+}
+
+export function async_spawn(task_id: i32) -> void {
+    Async.spawn(task_id)
+}
+
+export function async_join(task_id: i32) -> i32 {
+    return Async.join(task_id)
+}
+
+export function async_sleep_ms(ms: i32) -> void {
+    AsyncIO.sleep_ms(ms)
+}
+
+export function async_poll_read(fd: i32, timeout_ms: i32) -> i32 {
+    return AsyncIO.poll_read(fd, timeout_ms)
 }
