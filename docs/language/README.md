@@ -12,9 +12,14 @@ Detailed documentation for the Flow programming language.
 | [Types](types.md) | Type system and primitive types |
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |
-| [Graphics](graphics.md) | Native 2D graphics — platform matrix (macOS / Linux stub / Windows) |
+| [Graphics](graphics.md) | Native 2D graphics — macOS Cocoa; Linux/Windows SDL2 (+ stub) |
+| [Shaders](shaders.md) | Fill-shader surface language (Metal on macOS) |
 | [WebAssembly](wasm.md) | Near-term Flow→C→emscripten path; native Flow-in-WASM deferred |
-| [Async via Effects](async-effects.md) | Async modeled as effects (no async/await keyword) |
+| [Async via Effects](async-effects.md) | FiberAsync / ThreadedAsync / NetpollAsyncIO (no async/await) |
+| [Concurrency vs Go](concurrency-vs-go.md) | Channels, fibers, OpenMP, measured benches |
+| [Replacing Go](replace-go.md) | Scorecard for Go-shaped workloads |
+| [Debugging](debugging.md) | `./flow debug`, `#line`, LLDB/GDB |
+| [Modules](modules.md) | Named imports + package paths |
 | [Language Design](language_design.md) | Design rationale |
 
 ## Quick Reference
@@ -49,4 +54,5 @@ let p: Point = Point { x: 1.0, y: 2.0 }
 if x > 0 { ... } elif x < 0 { ... } else { ... }
 while condition { ... }
 for i in 0 to n { ... }
+parallel for i in 0 to n { ... }   # OpenMP when available
 ```

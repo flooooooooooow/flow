@@ -1,0 +1,11 @@
+[package]
+name = "flowc"
+version = "0.1.0"
+description = "Flow compiler written in Flow (self-hosting bootstrap)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+
+[dev-dependencies]

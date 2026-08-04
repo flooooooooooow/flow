@@ -12,6 +12,8 @@ examples/
 ├── crypto/           # Cryptographic algorithms
 ├── data/             # Data processing
 ├── dynamics/         # Dynamical systems, control, GA search (dsys DSL)
+├── concurrency/      # Channels, select2, FiberAsync, netpoll, parallel for
+├── ecosystem/        # Registry packages: json, toml, http, sqlite demos
 ├── effects/          # Flow's unique effect system
 ├── evolution/        # Flagship vision suite: systems evolving through time
 ├── games/            # Interactive games with graphics
@@ -49,10 +51,23 @@ Fundamental algorithms demonstrating Flow syntax:
 - `prime_numbers.flow` - Loops and conditionals
 
 ### Games (`games/`)
-Interactive demonstrations with graphics:
+Interactive demonstrations with graphics (flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md)):
+- `chetris_gfx.flow` / `chetris_test.flow` - Chess×Tetris hybrid + mechanics suite
 - `tetris_gfx.flow` - Complete Tetris with native graphics
 - `2048_gfx.flow` - 2048 puzzle game
 - `2048.flow` - Terminal-based 2048
+
+### Ecosystem (`ecosystem/`)
+Registry package demos (`./flow install` then `./flow run` or `./flow run-native`):
+- Pure Flow: `json_demo`, `toml_demo`, `serde_demo`, `strings_demo`, `cli_demo`, `log_demo`, `testing_demo`, `collectionsx_demo`
+- Native: `http_get`, `sqlite_demo`, `sqlkit_demo`, `compress_demo`, `dns_demo`, `image_demo`, `ffi_demo`
+- End-to-end: `app_cache/` — cli + log + json + sqlite + sqlkit (offline; `USE_HTTP=0`)
+
+### Compilers (`compilers/` + `compiler/`)
+Self-hosting bootstrap (not a full compiler yet — see [compiler/README.md](../compiler/README.md)):
+- **`compiler/` (`flowc`)** — Flow-in-Flow front-end: token + lexer + AST + subset parser (no C emitter) — `./flow run compiler/src/main.flow`
+- `compilers/calculator.flow` - Recursive-descent expression parser
+- `compilers/flow_identifier_lexer.flow` / `flow_lexer.flow` - historical lexer seeds
 
 ### Machine Learning (`ml/`)
 Neural network framework:
@@ -79,9 +94,20 @@ declarative `dsys` surface syntax (see [dynamics/README.md](dynamics/README.md))
 - `ga_full_analysis.flow` - GA control search with unified analysis report
 - `lorenz_attractor.flow` - Chaos detection via Lyapunov separation proxy
 
+### Concurrency (`concurrency/`)
+Beat-Go track — see `docs/language/concurrency-vs-go.md`:
+- `channels.flow` - Real buffered channel send/recv/close
+- `select.flow` - Two-channel `select2` / `select2_try`
+- `parallel_for.flow` - Data-parallel loop (OpenMP when available)
+- `threaded_async.flow` - `ThreadedAsync` effect over real pthreads
+- `fiber_async.flow` - `FiberAsync` M:N fibers (`FLOW_MAXPROCS`)
+- `gomaxprocs.flow` - `async_set_maxprocs` (GOMAXPROCS analogue)
+- `netpoll.flow` - `NetpollAsyncIO` (kqueue/epoll)
+
 ### Effects (`effects/`)
 Flow's unique algebraic effects (not available in Mojo/Julia):
 - `showcase.flow` - One business function, four handler stacks (production/test/nested/composed)
+- `effect_rows.flow` - Signature effect rows (`with E`) under `--strict-effects`
 - `dependency_injection.flow` - DI without frameworks
 - `state_effects.flow` - Swappable policy effects with explicitly-threaded state
 - `async_primitives.flow` - stdlib `Async`/`AsyncIO` via `handle`/`with`

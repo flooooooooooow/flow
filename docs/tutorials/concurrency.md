@@ -1,8 +1,13 @@
 # Concurrency Patterns
 
 > Educational concurrency shapes that **run in the browser** via `printf`.
-> These lessons simulate mutexes and channels with arrays — no real threads.
-> Native threading APIs (when available) live under the intermediate / stdlib tracks.
+> Parts 1–3 simulate mutexes and channels with arrays — no real threads.
+>
+> **Real concurrency (shipped):** `lib/stdlib/concurrent.flow` (pthread channels,
+> WaitGroup, mutexes), `lib/stdlib/async.flow` (`FiberAsync` / `ThreadedAsync` /
+> `NetpollAsyncIO`), OpenMP `parallel for`, and runnable demos under
+> `examples/concurrency/`. Design + Go comparison:
+> [concurrency-vs-go.md](../language/concurrency-vs-go.md).
 
 ## Part 1: Mutex-shaped counters
 

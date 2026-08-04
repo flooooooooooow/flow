@@ -1,0 +1,19 @@
+# C-level Cont reset → shift → resume scaffold.
+# Run: ./flow run examples/concurrency/cont_reset.flow
+
+extern {
+    function flow_demo_cont_reset() -> i32
+}
+
+function main() -> i32 {
+    println("cont reset demo")
+    let r: i32 = flow_demo_cont_reset()
+    print("  reset/shift/resume -> ")
+    println(r)
+    if r != 100 {
+        println("FAIL")
+        return 1
+    }
+    println("OK")
+    return 0
+}

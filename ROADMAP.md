@@ -15,7 +15,7 @@ This document tracks what we're building next and why.
 > the strategic overview; the board is the source of truth for in-flight work.
 > Open items here mirror to GitHub issues as `[roadmap]` labels via
 > `scripts/sync_roadmap.py` (creates missing issues, closes + checks ones marked
-> done); `scripts/sync_issues.sh` then rounds trip state with `issues-checklist.md`.
+> done); `scripts/sync_issues.sh` then rounds trip state with `docs/project/issues-checklist.md`.
 
 ---
 
@@ -61,6 +61,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 | Declarative ordering Phase 1 | ✅ | `xs \|\> sort` / `sortBy [asc .f, …]` — [docs/language/ordering.md](docs/language/ordering.md); example `examples/basics/declarative_sort.flow` |
 | First-class GPU / unified memory | ✅ | `lib/stdlib/gpu_memory.flow` + Metal runtime — [docs/library/gpu-memory.md](docs/library/gpu-memory.md) |
 | Fill-shader surface language | ✅ | `shader fill` → Metal fragment + `./flow shader` — [docs/language/shaders.md](docs/language/shaders.md) |
+| Concurrency vs Go (Phase 1) | ✅ | Vision [docs/language/concurrency-vs-go.md](docs/language/concurrency-vs-go.md); real channels/WaitGroup/condvar; TLS effect handlers; `parallel for`→OpenMP; `ThreadedAsync` + `runtime/flow_concurrency.c` |
+| Concurrency vs Go (Phase 2) | ✅ | `select2`; aligned lazy-bind sync structs; Go microbenches ([benchmarks/concurrency/RESULTS.md](benchmarks/concurrency/RESULTS.md)) — Flow wins throughput/parallel fill; Go wins ping-pong |
+| Concurrency vs Go (Phase 3 fibers) | ✅ | M:N `FiberAsync` + ucontext prototype (shared ready queue) |
+| Concurrency vs Go (Phase 3b asm swap) | ✅ | `flow_fctx_*.S` — fiber ping-pong **~8.6ms vs Go ~21ms (~2.4×)** on arm64 (`maxprocs=1` microbench) — [RESULTS.md](benchmarks/concurrency/RESULTS.md) |
+| Replace Go (M:N + netpoll) | ✅ | M:N workers (`FLOW_MAXPROCS`); `NetpollAsyncIO` kqueue/epoll; fan-out bench; [replace-go.md](docs/language/replace-go.md) |
+| Replace Go (select4 + fiber IO + HTTP + race + cont) | ✅ | `select4`; fiber-parked poll; HTTP microbench; `FLOW_RACE=1`; `flow_cont` scaffold; GitHub CI disabled |
+| Compiler torture suite (C-grade) | ✅ Phase 1–4 | Phases 1–3 + Phase 4: `test-runtime` RT C link (crypto + http_mw stub); MLIR `while` CF operand syntax + fixed-shape memref load/store; nested-while/array parity; no remaining parity skips for control-flow/array programs — [DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 
 ### 📅 Short Term (This Month)
 
@@ -68,14 +75,46 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 |------|--------|--------|
 | Python package target | ✅ | Python interop |
 | Cross-platform graphics (Linux) | ✅ — [docs/language/graphics.md](docs/language/graphics.md) | `gfx_linux.c` SDL2 backend (stub fallback without headers); Windows tracked separately below |
-| Package registry design | ✅ | Deferred — [docs/project/package-registry.md](docs/project/package-registry.md); git deps until 3+ third-party packages |
+| Package registry design | ✅ | Package index shipped — [docs/project/package-registry.md](docs/project/package-registry.md); `flow add` / `search` / `publish`; git+path still supported |
+| Ecosystem seed packages (20-library track) | ✅ MVP | Full registry seed set + `examples/ecosystem/*` demos; `build_native` pulls dep `[native]` sources/libs |
+| Self-hosting `flowc` (lex+parse+Stage-A cgen) | ✅ partial | Frontend self-emit loop exists (`flowc_frontend.o` / `_self.o`, g2 if present); still missing typecheck, sole Flow driver, compiling production `src/flow` — [compiler/README.md](compiler/README.md) |
 | Effect system showcase | ✅ | `examples/effects/showcase.flow` + [docs/effects-showcase.md](docs/effects-showcase.md) with honest limitations |
 | Benchmark vs C comparison | ✅ | Performance credibility — see `benchmarks/suite/RESULTS.md` |
 | Documentation enhancements (comparisons with C and MOJO) | ✅ | Clear positioning |
 | Live DSP standard (single graph + buffer layout) | ✅ | Audio consistency |
 | Live plugin ABI registry | ✅ | Extensible DSP |
 | Live graph hot-swap handle | ✅ | Live coding |
-| RT-safety policy (no-alloc audio thread) | ✅ partial — [docs/library/rt-safety.md](docs/library/rt-safety.md) | Policy + checklist documented; `@rt_safe` attribute now compile-time enforces no direct/transitive `malloc`/`calloc`/`realloc`/`free`/`arena_create`/`arena_destroy` calls (#134); device/file/GPU/lock policy still unchecked |
+| RT-safety policy (no-alloc audio thread) | ✅ partial — [docs/library/rt-safety.md](docs/library/rt-safety.md) | `@rt_safe` compile-time rejects heap (#134) **and** blocking locks/waits (`mutex_lock`, `pthread_cond_wait`, …); device/file/GPU still policy-only |
+| Runtime-in-Flow (Phases 0–2+) | ✅ — [docs/project/runtime-in-flow.md](docs/project/runtime-in-flow.md) | Always-link `lib/runtime/*.flow`; crypto/tcp/http/audio-stub/live/threads/race glue in Flow; hot channel/fctx/Metal stay C/asm |
+
+### 📦 Application Ecosystem (20-library track)
+
+Goal: enough wrap/rewrite packages that Flow can ship real apps (CLI, server, desktop, tools).
+
+| # | Package | Status | Approach |
+|---|---------|--------|----------|
+| 1 | POSIX / libc surface | ✅ stdlib (`posix`, `io`, `memory`) | Wrap |
+| 2 | Strings / text | ✅ `strings` 0.1.0 (+ thin `string.flow`) | Rewrite; regex later |
+| 3 | Collections | ✅ `collectionsx` 0.1.0 (+ `collections.flow`) | Rewrite |
+| 4 | **json** | ✅ `json` 0.1.0 | Rewrite |
+| 5 | **toml** | ✅ `toml` 0.1.0 | Rewrite |
+| 6 | **http** (+ TLS via curl) | ✅ `http` 0.1.0 | Wrap libcurl |
+| 7 | Async I/O + DNS | ✅ `dns` 0.1.0 (+ runtime netpoll) | Wrap getaddrinfo |
+| 8 | **sqlite** | ✅ `sqlite` 0.1.0 | Wrap sqlite3 |
+| 9 | SQL helpers / migrations | ✅ `sqlkit` 0.1.0 | Thin Flow over sqlite |
+| 10 | Compression (zlib) | ✅ `compress` 0.1.0 | Wrap zlib (`-lz`) |
+| 11 | Logging / tracing | ✅ `log` 0.1.0 (`effect Log` + `ConsoleLog`) | Effects-native |
+| 12 | CLI / args / paths | ✅ `cli` 0.1.0 | Rewrite |
+| 13 | GUI / widgets | 🔶 partial (`ui*`, gfx) | Wrap platform / SDL |
+| 14 | Graphics / GPU | 🔶 stdlib + runtime | Wrap + Flow shaders |
+| 15 | Audio I/O + DSP | 🔶 stdlib audio | Rewrite graph; wrap device I/O |
+| 16 | Image decode | ✅ `image` 0.1.0 (PPM + stb PNG) | Native stb_image |
+| 17 | Math / linalg / RNG | 🔶 (`math`, `blas`, …) | Rewrite + BLAS wrap |
+| 18 | Serialization / IPC | ✅ `serde` 0.1.0 | Pure Flow LE pack |
+| 19 | Testing helpers | ✅ `testing` 0.1.0 (+ `tests/fuzz`) | Rewrite package API |
+| 20 | FFI glue kit | ✅ `ffi` 0.1.0 | Pack helpers + sizeof; bindgen later |
+
+**Next ecosystem slice:** real bindgen / richer file IO. Credibility demo: `examples/ecosystem/app_cache/` (cli+log+json+sqlite+sqlkit).
 
 ### 🧹 Repository Cleanup
 
@@ -87,7 +126,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 |------|---------|--------|--------|
 | `/bench.sh` | Empty (0 bytes), superseded by `scripts/bench.sh` | Deleted | ✅ |
 | `/run_bench.py` | Empty (0 bytes), superseded by `scripts/run_bench.py` | Deleted | ✅ |
-| `/flow_wasm.py` | Suspected duplicate of `wasm/flow_to_wasm.py` | Kept — inspection showed it is NOT a duplicate | ✅ |
+| `wasm/flow_wasm.py` | Suspected duplicate of `wasm/flow_to_wasm.py` | Kept (moved under `wasm/`) — not a duplicate | ✅ |
 | `/test_ci_locally.sh` | Dev utility loose at repo root | Moved to `scripts/test_ci_locally.sh` | ✅ |
 
 #### Medium Priority — Remove Empty Stubs
@@ -120,10 +159,10 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 
 | Task | Status | Impact |
 |------|--------|--------|
-| Windows graphics support | ✅ partial — [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux (`gfx_sdl_impl.inc`); `./flow gfx` picks it up on MSYS2/Git Bash/Cygwin; needs MSVC/clang smoke on real Windows |
-| Self-hosting components | 🔲 | Dogfooding |
+| Windows graphics support | ✅ partial — [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux; CI stub smoke on `windows-latest` (`FLOW_GFX_STUB`); full SDL2 window path still needs a real Windows + SDL2 run |
+| Self-hosting components | ✅ partial — Stage-A emits+links frontend → `flowc_frontend.o`; **self-emit** (+ g2 if present) → `flowc_frontend_self.o`; no typecheck; host still Python; not compiling production `src/flow` | Dogfooding |
 | WASM target | ✅ partial — Flow→C→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `scripts/build_wasm_hello.sh`); native Flow-in-WASM deferred | Web deployment |
-| GPU autodiff | 🔲 | ML performance |
+| GPU autodiff | ✅ partial — manual `@gpu` gradient kernels (`lib/stdlib/gpu_gradients.flow`); not a device AD transform | ML performance |
 
 ---
 
@@ -155,10 +194,33 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 - ✅ **NEW:** Strict-clean corpus (`./flow test --strict --tier2`, 215/215) with `# flow:lenient` pragma
 - ✅ **NEW:** Fuzzing harness (`tests/fuzz/run_fuzz.py`) wired into CI
 - ✅ **NEW:** LSP inline diagnostics, find references, rename (39-test harness in `scripts/test_lsp_server.py`)
+- ✅ **NEW:** Fail-loud unhandled effects (`FLOW_STRICT_EFFECTS=1` / `--strict-effects`)
+- ✅ **NEW:** Statement-level `#line` source maps for `./flow debug` (LLDB/GDB)
+- ✅ **NEW:** Single version source `src/flow/version.py` = 0.3.3 (CLI/REPL/LSP/pyproject)
+- ✅ **NEW:** Package registry (`registry/index.json`, `flow add`/`search`/`info`/`publish`)
+- ✅ **NEW:** Effect-row Phase 1 (`--strict-effects` compile-time unhandled check)
+- ✅ **NEW:** Effect-row Phase 2 (`function f() -> T with Log` signature rows)
+- ✅ **NEW:** Escaping closures via `(T) -> R` fat-pointer ABI
+- ✅ **NEW:** Registry seeds: `hello_lib`, `mathkit`, `ringbuf`, `flow-verify`
+- ✅ **NEW:** `./flow playground` + `docs/language/debugging.md`
+- ✅ **NEW:** Git-dep DX — URL shorthand, `--subdir`, lock `resolved.rev`, shallow clone
+- ✅ **NEW:** Windows gfx stub CI (`windows-gfx-stub` job + `runtime/tests/gfx_stub_smoke.c`)
+- ✅ **NEW:** First-class effect rows `(T) -> R with E`
+- ✅ **NEW:** Live `Tape`/`ArrayTape` reverse AD (`runtime/flow_tape.c`, `examples/ml/tape_mul.flow`)
+- ✅ **NEW:** `BlockingTcp` capability + `examples/concurrency/tcp_echo_once.flow`
+- ✅ **NEW:** Cont scaffold demo `cont_demo_shift` + playground WASM hello button
+- ✅ **NEW:** Stdlib API docs from per-function `#` comments (`gen_stdlib_docs.py`)
 
 **What's broken/missing:**
-- Postfix-chaining fixes are validated on the C backend only; the MLIR backend has
-  not been exercised against the new chained AST shapes
+- Soft zero defaults remain the language default (opt-in via
+  `FLOW_STRICT_EFFECTS=1` / `--strict-effects`)
+- ✅ **NEW:** DAP via `flow dap` / VS Code `type: flow` (lldb-dap proxy)
+- ✅ **NEW:** Playground WASM-local + Pyodide in-browser transpile (`/pyodide`)
+- ✅ **NEW:** Flow-frame `Cont.shift` resume (`FiberCont`, `cont_flow_resume.flow`)
+- ✅ **FIXED (#124):** MLIR lowers chained postfix stores/loads (`ptr[i].field`,
+  `bodies[0].pos.x`) via GEP+store/load; `array<Struct,N>` uses `llvm.alloca`
+  of N structs (not invalid `memref<Nx!llvm.struct>`). JIT covered in
+  `tests/unit/test_mlir_postfix_chaining.py`.
 - ✅ **FIXED (#117):** `break`/`continue` now have dedicated `BreakStatement`/
   `ContinueStatement` AST nodes (their own lexer keywords, not identifiers).
   The C generator emits `break;`/`continue;` directly from those nodes; the
@@ -481,10 +543,11 @@ let result: i32 = add5(10)  # 15
 ```
 
 **Tasks:**
-- [ ] Implement closure environment capture (automatic captures, not just explicit `self`)
+- [x] Implement closure environment capture (automatic captures, not just explicit `self`) — by-value snapshot; `|x| …` syntax; see `tests/unit/test_closure_capture.py`
 - [x] Decide: move vs copy semantics for captures
 - [x] Generate closure structs in C
 - [x] Test with higher-order functions
+- [x] Escaping/HOF ABI (uniform callable representation for return/store of capturing closures) — `(T)->R` fat pointer + heap env
 
 ---
 
@@ -550,9 +613,11 @@ json = { git = "https://github.com/..." }
 
 DWARF debug info, breakpoints, step-through.
 
-**Status:** Basic setup landed (C backend): `flow debug <program.flow>` builds with `-g -O0` and emits coarse `#line` mappings back to `.flow`.
+**Status:** C backend debugger shipped — [docs/language/debugging.md](docs/language/debugging.md):
+`flow debug <prog> [--break N|--break main] [--no-launch]` builds with `-g3 -O0`,
+statement-level `#line` maps, and launches LLDB/GDB.
 
-**Next:** Improve fidelity (statement-level mappings), and add an MLIR/LLVM debug story.
+**Next:** MLIR/LLVM debug story; web playground step-debugger (needs WASM compiler).
 
 ---
 
@@ -566,10 +631,10 @@ DWARF debug info, breakpoints, step-through.
 
 Make the MLIR backend actually optimize.
 
-- [ ] Loop vectorization
-- [ ] Function inlining
-- [ ] Dead code elimination
-- [ ] Constant propagation
+- [x] Loop vectorization — elementwise f32 loops → `vector.transfer_*` VF=4 + scalar remainder; C `#pragma clang loop vectorize`; see `tests/unit/test_mlir_vectorize.py` (#113)
+- [x] Function inlining — `inline` pass at O2/O3; `@inline`/`@noinline` emitted on `func.func` (#123)
+- [x] Dead code elimination — `symbol-dce` + `remove-dead-values` when available (#120)
+- [x] Constant propagation — `sccp` at O2/O3 with outcome tests (#126)
 
 ### 4.2 GPU Codegen
 **Priority:** Medium  
@@ -712,7 +777,7 @@ These are explicitly out of scope:
 8. [x] Clear remaining example cgen failures (`examples/STATUS.md`) ✅
 9. [x] Match guards + `|` alternation + nested literal & struct-in-struct patterns ✅ (bool/enum exhaustiveness real; integer range/gap analysis shipped — see Phase 2.1)
 10. [x] Manual memory stdlib (real heap) ✅ (`lib/stdlib/memory.flow`)
-11. [x] RT-safety policy for audio thread (no-alloc contract) ✅ partial — [docs/library/rt-safety.md](docs/library/rt-safety.md) (policy documented; `@rt_safe` attribute compile-time enforces no heap calls, direct or transitive, #134; device/file/GPU/lock policy still open)
+11. [x] RT-safety policy for audio thread (no-alloc contract) ✅ partial — [docs/library/rt-safety.md](docs/library/rt-safety.md) (`@rt_safe` enforces no heap #134 and no blocking locks/waits; device/file/GPU still open)
 
 ---
 
@@ -744,15 +809,14 @@ New stdlib modules added:
    - Socket address structures
    - DNS resolution stubs
 
-4. **concurrent.flow** ✅ - Concurrency
-   - Threads (pthread wrappers)
-   - Mutex (mutual exclusion)
-   - Condition variables
-   - Read-write locks
-   - Semaphores
-   - Channels (Go-style)
-   - Atomics (AtomicI32, AtomicI64, AtomicBool)
-   - SpinLock, Once, WaitGroup
+4. **concurrent.flow** ✅ - Concurrency (Phase 1 real, not shapes)
+   - Threads (`thread_spawn`/`join` via `flow_concurrency.c`)
+   - Mutex / CondVar / RwLock (pthread opaque storage)
+   - Semaphores (blocking wait/post)
+   - Channels: `send`/`try_send`/`recv`/`try_recv`/`close`
+   - Atomics (runtime wrappers; no clang builtin redecl)
+   - SpinLock, Once (`once_call_begin`/`end`), WaitGroup (`waitgroup_wait`)
+   - Design: [docs/language/concurrency-vs-go.md](docs/language/concurrency-vs-go.md)
 
 5. **string.flow** ✅ - String utilities
    - C string functions (strlen, strcmp, etc.)
@@ -767,13 +831,16 @@ New stdlib modules added:
 The language is feature-complete! Future work:
 
 1. ✅ **Polish & Docs** - Wiki live; comparison/effects/AD/stdlib autogen shipped 2026-07-28
-2. ✅ partial **Async primitives** - Effects-based story shipped as stdlib `Async`/`AsyncIO` + `SimulatedAsync`/`BlockingAsyncIO` (`lib/stdlib/async.flow`), runnable `examples/effects/async_primitives.flow`, runtime test; **deferred:** fiber scheduler, resumable continuations, real epoll/kqueue/IOCP ([docs/language/async-effects.md](docs/language/async-effects.md), #110)
-3. 🔲 **Debugger** - LLDB/GDB integration + web playground step-debugger (deferred; needs a wasm compiler build)
+2. ✅ partial **Async primitives** - `Async`/`AsyncIO` + `SimulatedAsync`/`ThreadedAsync`/`BlockingAsyncIO`; real pthread task table in `runtime/flow_concurrency.c`; TLS handlers; **deferred:** resumable continuations / full fiber scheduler, epoll/kqueue/IOCP ([docs/language/async-effects.md](docs/language/async-effects.md), [concurrency-vs-go.md](docs/language/concurrency-vs-go.md), #110)
+3. ✅ partial **Debugger** - `flow debug` + `#line` + `--break`/`--no-launch` ([debugging.md](docs/language/debugging.md)); playground step-debugger still deferred (#127)
 4. ✅ **Web Playground** - `docs/playground/index.html` is an honest, non-executing syntax explorer with 9 compile-verified samples
-5. 🔲 **Real-world projects** - Build something substantial to prove it out
-6. ✅ **Parser fix** - `ptr[0].field` / unified postfix chaining shipped end-to-end (parser + C codegen)
+5. ✅ **Real-world projects** - Chetris/Tetris/flowdb/linalg/ML documented as flagship proof ([docs/demos/chetris.md](docs/demos/chetris.md)) (#114)
+6. ✅ **Parser fix** - `ptr[0].field` / unified postfix chaining shipped end-to-end (parser + C + MLIR GEP stores)
 7. ✅ **Fuzz crashes** - array-size + nesting depth now clean `SyntaxError`s
 8. ✅ **Remaining codegen bugs** - prior ~7 cgen failures cleared; regenerate `examples/STATUS.md` after further compiler changes
+9. ✅ **Loop vectorization** - MLIR VF=4 elementwise f32 + Clang loop hints (#113)
+10. ✅ partial **GPU autodiff** - `@gpu` gradient kernels in `gpu_gradients.flow` (#118)
+11. ✅ partial **Self-hosting** - Stage-A dogfoods frontend modules + `cc -r` + **self-emit** loop (`./compiler/scripts/roundtrip.sh`); host still drives tests; missing typecheck / sole Flow driver / compiling production `src/flow` ([compiler/README.md](compiler/README.md))
 
 ---
 

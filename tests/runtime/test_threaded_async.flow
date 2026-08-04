@@ -1,0 +1,17 @@
+# Runtime test: ThreadedAsync spawn/join on real threads
+import "stdlib/async.flow"
+
+function main() -> i32 {
+    let mut total: i32 = 0
+    handle Async with ThreadedAsync {
+        async_spawn(1)
+        async_spawn(2)
+        async_spawn(3)
+        total = async_join(1) + async_join(2) + async_join(3)
+    }
+    # 10 + 20 + 30
+    if total != 60 {
+        return 1
+    }
+    return 0
+}

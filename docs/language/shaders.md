@@ -3,10 +3,12 @@
 A real (but focused) shading language for fullscreen fragment demos — lowers to Metal.
 
 ```bash
-./flow shader examples/gpu/shader_showcase.flow
+./flow shader examples/gpu/shader_showcase.flow          # all shaders in a GRID
+./flow shader examples/gpu/shader_showcase.flow --cycle  # one at a time
 ```
 
-**Gallery controls:** `←` / `→` / `Space` cycle · `1`–`9` jump · `Esc` quit
+**Grid controls (default):** click a cell to focus · `G` toggle grid/focus · `1`–`9` focus · `Esc` back to grid / quit  
+**Cycle controls:** `←` / `→` / `Space` · `G` grid · `Esc` quit
 
 ## Quick example
 
@@ -74,10 +76,14 @@ Swizzles: `.xyzw`, `.rgb`, …
 `examples/gpu/shader_showcase.flow` — 12 demos (plasma, ripple, waves, checker, noise, Mandelbrot, Julia, stars, rings, fire, spiral, grid).
 
 ```bash
-./flow shader examples/gpu/shader_showcase.flow
+./flow shader examples/gpu/shader_showcase.flow          # GRID — all 12 at once
+./flow shader examples/gpu/shader_showcase.flow --cycle  # one at a time
 ./flow shader examples/gpu/shader_showcase.flow --emit-only
 ./flow shader examples/gpu/shader_plasma.flow --name plasma
 ```
+
+**Grid:** click a cell to focus · `G` toggle · `1`–`9` focus · `Esc` back / quit  
+**Cycle:** `←` / `→` / `Space` · `G` for grid · `Esc` quit
 
 ## Pipeline
 

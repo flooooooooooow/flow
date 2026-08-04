@@ -1,0 +1,118 @@
+# Offline-first ecosystem mini app: CLI parse → log → sqlite/sqlkit → json.
+# Optional network path is gated by USE_HTTP (default 0) so CI stays reliable.
+import cli.lib { cli_get_option }
+import log.lib { Log, ConsoleLog, log_info, log_i32 }
+import json.lib { json_validate, json_get_i32, json_get_bool, json_path_get_i32 }
+import sqlite.lib { sqlite_open, sqlite_close, sqlite_query_i64 }
+import sqlkit.lib { sql_migrate_v1, sql_insert_i32, sql_count }
+import http.lib { http_get_into, http_alloc, http_free, HttpResponse }
+
+# Set to 1 to attempt http_get("https://example.com"); default stays offline.
+const USE_HTTP: i32 = 0
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+    function puts(s: ptr<u8>) -> i32
+}
+
+function parse_digits(buf: ptr<u8>, n: i32) -> i32 {
+    let mut value: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = buf[i]
+        if c < 48 or c > 57 {
+            return 0 - 1
+        }
+        value = value * 10 + (c - 48)
+        i = i + 1
+    }
+    return value
+}
+
+function main() -> i32 {
+    handle Log with ConsoleLog {
+        log_info("starting")
+
+        # Simulated argv (space-separated) — no real process args required.
+        let args: string = "--key answer --value 42"
+        let mut key_buf: array<u8, 64> = []
+        let mut val_buf: array<u8, 64> = []
+        let key_ptr: ptr<u8> = key_buf
+        let val_ptr: ptr<u8> = val_buf
+        let key_n: i32 = cli_get_option(args, "--key", key_ptr, 64)
+        let val_n: i32 = cli_get_option(args, "--value", val_ptr, 64)
+        let value_i: i32 = parse_digits(val_ptr, val_n)
+
+        log_info("parsed")
+        log_i32("value", value_i)
+
+        if key_n < 0 or val_n < 0 or value_i != 42 {
+            printf("parse_failed=%lld\n", 1 as i64)
+            return 1
+        }
+        # Build "key=<value>" for a single puts line.
+        let mut key_line: array<u8, 80> = []
+        let kl: ptr<u8> = key_line
+        kl[0] = 107
+        kl[1] = 101
+        kl[2] = 121
+        kl[3] = 61
+        let mut ki: i32 = 0
+        while ki < key_n {
+            kl[4 + ki] = key_ptr[ki]
+            ki = ki + 1
+        }
+        kl[4 + key_n] = 0
+        puts(kl)
+        printf("value=%lld\n", value_i as i64)
+
+        # Conceptual JSON blob stored alongside cache rows (parsed in-process).
+        let blob: string = "{\"answer\":42,\"ok\":true,\"nested\":{\"n\":7}}"
+        let valid: i32 = json_validate(blob)
+        let json_answer: i32 = json_get_i32(blob, "answer")
+        let json_ok: i32 = json_get_bool(blob, "ok")
+        let nested_n: i32 = json_path_get_i32(blob, "nested.n")
+        printf("json_valid=%lld\n", valid as i64)
+        printf("json_answer=%lld\n", json_answer as i64)
+        printf("json_ok=%lld\n", json_ok as i64)
+        printf("nested_n=%lld\n", nested_n as i64)
+
+        let db: ptr<void> = sqlite_open(":memory:")
+        if db == null {
+            printf("open_failed=%lld\n", 1 as i64)
+            return 1
+        }
+
+        let mig: i32 = sql_migrate_v1(db)
+        printf("migrate=%lld\n", mig as i64)
+
+        let rc1: i32 = sql_insert_i32(db)
+        let rc2: i32 = sql_insert_i32(db)
+        log_info("stored")
+
+        let n: i64 = sql_count(db)
+        let sum: i64 = sqlite_query_i64(db, "SELECT SUM(value) FROM items;")
+        log_info("loaded")
+        printf("count=%lld\n", n)
+        printf("sum=%lld\n", sum)
+        printf("insert=%lld\n", (rc1 + rc2) as i64)
+
+        sqlite_close(db)
+
+        # Optional online probe — never runs when USE_HTTP == 0.
+        if USE_HTTP == 1 {
+            let buf: ptr<i8> = http_alloc(4096)
+            let resp: HttpResponse = http_get_into("https://example.com", buf, 4096)
+            printf("http_status=%lld\n", resp.status)
+            printf("http_ok=%lld\n", resp.ok as i64)
+            http_free(buf)
+        }
+
+        if value_i == 42 and valid == 1 and json_answer == 42 and json_ok == 1 and nested_n == 7 and mig == 0 and rc1 == 0 and rc2 == 0 and n == 2 and sum == 84 {
+            printf("ok=%lld\n", 1 as i64)
+            return 0
+        }
+        printf("ok=%lld\n", 0 as i64)
+        return 1
+    }
+}

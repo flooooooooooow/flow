@@ -1,0 +1,551 @@
+# json — minimal JSON parse/query (pure Flow)
+# Top-level object keys + dotted/indexed path lookup (nested.y, items.0).
+# Nested objects/arrays are skipped structurally during key/index scan.
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+const JSON_OK: i32 = 1
+const JSON_ERR: i32 = 0
+const JSON_MISSING: i32 = -1
+
+function _json_is_ws(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function _json_skip_ws(data: ptr<u8>, i: i32, len: i32) -> i32 {
+    let mut p: i32 = i
+    while p < len and _json_is_ws(data[p]) == 1 {
+        p = p + 1
+    }
+    return p
+}
+
+function _json_bytes_eq(data: ptr<u8>, start: i32, n: i32, key: string) -> i32 {
+    let k: ptr<u8> = key
+    let klen: i32 = strlen(key) as i32
+    if n != klen {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if data[start + i] != k[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function _json_bytes_eq_range(a: ptr<u8>, a_off: i32, a_n: i32, b: ptr<u8>, b_off: i32, b_n: i32) -> i32 {
+    if a_n != b_n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < a_n {
+        if a[a_off + i] != b[b_off + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function _json_copy_bytes(dst: ptr<u8>, src: ptr<u8>, src_off: i32, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[src_off + i]
+        i = i + 1
+    }
+}
+
+function _json_seg_all_digits(path: ptr<u8>, start: i32, end: i32) -> i32 {
+    if end <= start {
+        return 0
+    }
+    let mut i: i32 = start
+    while i < end {
+        let c: i32 = path[i]
+        if c < 48 or c > 57 {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function _json_seg_parse_index(path: ptr<u8>, start: i32, end: i32) -> i32 {
+    let mut value: i32 = 0
+    let mut i: i32 = start
+    while i < end {
+        value = value * 10 + (path[i] - 48)
+        i = i + 1
+    }
+    return value
+}
+
+# Skip a JSON value starting at i. Returns index after the value, or -1 on error.
+function _json_skip_value(data: ptr<u8>, i: i32, len: i32) -> i32 {
+    let mut p: i32 = _json_skip_ws(data, i, len)
+    if p >= len {
+        return 0 - 1
+    }
+    let c: i32 = data[p]
+
+    if c == 34 {
+        p = p + 1
+        while p < len {
+            let ch: i32 = data[p]
+            if ch == 92 {
+                p = p + 2
+            } else {
+                if ch == 34 {
+                    return p + 1
+                }
+                p = p + 1
+            }
+        }
+        return 0 - 1
+    }
+
+    if c == 45 or (c >= 48 and c <= 57) {
+        if c == 45 {
+            p = p + 1
+        }
+        while p < len and data[p] >= 48 and data[p] <= 57 {
+            p = p + 1
+        }
+        if p < len and data[p] == 46 {
+            p = p + 1
+            while p < len and data[p] >= 48 and data[p] <= 57 {
+                p = p + 1
+            }
+        }
+        return p
+    }
+
+    if c == 116 {
+        if p + 3 < len and data[p + 1] == 114 and data[p + 2] == 117 and data[p + 3] == 101 {
+            return p + 4
+        }
+        return 0 - 1
+    }
+
+    if c == 102 {
+        if p + 4 < len and data[p + 1] == 97 and data[p + 2] == 108 and data[p + 3] == 115 and data[p + 4] == 101 {
+            return p + 5
+        }
+        return 0 - 1
+    }
+
+    if c == 110 {
+        if p + 3 < len and data[p + 1] == 117 and data[p + 2] == 108 and data[p + 3] == 108 {
+            return p + 4
+        }
+        return 0 - 1
+    }
+
+    if c == 123 {
+        p = p + 1
+        p = _json_skip_ws(data, p, len)
+        if p < len and data[p] == 125 {
+            return p + 1
+        }
+        while p < len {
+            p = _json_skip_ws(data, p, len)
+            if p >= len or data[p] != 34 {
+                return 0 - 1
+            }
+            p = _json_skip_value(data, p, len)
+            if p < 0 {
+                return 0 - 1
+            }
+            p = _json_skip_ws(data, p, len)
+            if p >= len or data[p] != 58 {
+                return 0 - 1
+            }
+            p = p + 1
+            p = _json_skip_value(data, p, len)
+            if p < 0 {
+                return 0 - 1
+            }
+            p = _json_skip_ws(data, p, len)
+            if p < len and data[p] == 44 {
+                p = p + 1
+            } else {
+                if p < len and data[p] == 125 {
+                    return p + 1
+                }
+                return 0 - 1
+            }
+        }
+        return 0 - 1
+    }
+
+    if c == 91 {
+        p = p + 1
+        p = _json_skip_ws(data, p, len)
+        if p < len and data[p] == 93 {
+            return p + 1
+        }
+        while p < len {
+            p = _json_skip_value(data, p, len)
+            if p < 0 {
+                return 0 - 1
+            }
+            p = _json_skip_ws(data, p, len)
+            if p < len and data[p] == 44 {
+                p = p + 1
+            } else {
+                if p < len and data[p] == 93 {
+                    return p + 1
+                }
+                return 0 - 1
+            }
+        }
+        return 0 - 1
+    }
+
+    return 0 - 1
+}
+
+function _json_parse_i32_at(data: ptr<u8>, i: i32, len: i32) -> i32 {
+    let mut p: i32 = _json_skip_ws(data, i, len)
+    let mut sign: i32 = 1
+    let mut value: i32 = 0
+    if p < len and data[p] == 45 {
+        sign = 0 - 1
+        p = p + 1
+    }
+    while p < len and data[p] >= 48 and data[p] <= 57 {
+        value = value * 10 + (data[p] - 48)
+        p = p + 1
+    }
+    return value * sign
+}
+
+# Find object key at `obj_at` (must point at `{`). Key is a byte range in `kdata`.
+# Returns start index of the matching value, or -1.
+function _find_object_key_at(data: ptr<u8>, obj_at: i32, len: i32, kdata: ptr<u8>, kstart: i32, kn: i32) -> i32 {
+    let mut p: i32 = _json_skip_ws(data, obj_at, len)
+    if p >= len or data[p] != 123 {
+        return 0 - 1
+    }
+    p = p + 1
+
+    while p < len {
+        p = _json_skip_ws(data, p, len)
+        if p < len and data[p] == 125 {
+            return 0 - 1
+        }
+        if p >= len or data[p] != 34 {
+            return 0 - 1
+        }
+        let key_start: i32 = p + 1
+        let mut q: i32 = key_start
+        while q < len and data[q] != 34 {
+            if data[q] == 92 {
+                q = q + 2
+            } else {
+                q = q + 1
+            }
+        }
+        if q >= len {
+            return 0 - 1
+        }
+        let key_len: i32 = q - key_start
+        p = q + 1
+        p = _json_skip_ws(data, p, len)
+        if p >= len or data[p] != 58 {
+            return 0 - 1
+        }
+        p = p + 1
+        p = _json_skip_ws(data, p, len)
+        if _json_bytes_eq_range(data, key_start, key_len, kdata, kstart, kn) == 1 {
+            return p
+        }
+        p = _json_skip_value(data, p, len)
+        if p < 0 {
+            return 0 - 1
+        }
+        p = _json_skip_ws(data, p, len)
+        if p < len and data[p] == 44 {
+            p = p + 1
+        } else {
+            if p < len and data[p] == 125 {
+                return 0 - 1
+            }
+            return 0 - 1
+        }
+    }
+    return 0 - 1
+}
+
+function _json_find_object_value(src: string, key: string) -> i32 {
+    let data: ptr<u8> = src
+    let k: ptr<u8> = key
+    let kn: i32 = strlen(key) as i32
+    return _find_object_key_at(data, 0, strlen(src) as i32, k, 0, kn)
+}
+
+# Find array element at index. `arr_at` must point at `[`. Returns value start or -1.
+function _find_array_elem_at(data: ptr<u8>, arr_at: i32, len: i32, index: i32) -> i32 {
+    let mut p: i32 = _json_skip_ws(data, arr_at, len)
+    if p >= len or data[p] != 91 {
+        return 0 - 1
+    }
+    p = p + 1
+    p = _json_skip_ws(data, p, len)
+    if p < len and data[p] == 93 {
+        return 0 - 1
+    }
+    let mut idx: i32 = 0
+    while p < len {
+        if idx == index {
+            return p
+        }
+        p = _json_skip_value(data, p, len)
+        if p < 0 {
+            return 0 - 1
+        }
+        p = _json_skip_ws(data, p, len)
+        if p < len and data[p] == 44 {
+            p = p + 1
+            p = _json_skip_ws(data, p, len)
+            idx = idx + 1
+        } else {
+            return 0 - 1
+        }
+    }
+    return 0 - 1
+}
+
+function _array_len_at(data: ptr<u8>, arr_at: i32, len: i32) -> i32 {
+    let mut p: i32 = _json_skip_ws(data, arr_at, len)
+    if p >= len or data[p] != 91 {
+        return 0 - 1
+    }
+    p = p + 1
+    p = _json_skip_ws(data, p, len)
+    if p < len and data[p] == 93 {
+        return 0
+    }
+    let mut count: i32 = 0
+    while p < len {
+        p = _json_skip_value(data, p, len)
+        if p < 0 {
+            return 0 - 1
+        }
+        count = count + 1
+        p = _json_skip_ws(data, p, len)
+        if p < len and data[p] == 44 {
+            p = p + 1
+            p = _json_skip_ws(data, p, len)
+        } else {
+            if p < len and data[p] == 93 {
+                return count
+            }
+            return 0 - 1
+        }
+    }
+    return 0 - 1
+}
+
+# Walk dotted/indexed path; return byte offset of the value, or -1.
+# Empty path resolves to the root value.
+function _resolve_path(src: string, path: string) -> i32 {
+    let data: ptr<u8> = src
+    let len: i32 = strlen(src) as i32
+    let pdata: ptr<u8> = path
+    let plen: i32 = strlen(path) as i32
+    let mut at: i32 = _json_skip_ws(data, 0, len)
+    if plen == 0 {
+        if at >= len {
+            return 0 - 1
+        }
+        return at
+    }
+
+    let mut pi: i32 = 0
+    while pi < plen {
+        let seg_start: i32 = pi
+        while pi < plen and pdata[pi] != 46 {
+            pi = pi + 1
+        }
+        let seg_end: i32 = pi
+        if pi < plen and pdata[pi] == 46 {
+            pi = pi + 1
+        }
+        if seg_end <= seg_start {
+            return 0 - 1
+        }
+
+        if _json_seg_all_digits(pdata, seg_start, seg_end) == 1 {
+            let index: i32 = _json_seg_parse_index(pdata, seg_start, seg_end)
+            at = _find_array_elem_at(data, at, len, index)
+        } else {
+            let kn: i32 = seg_end - seg_start
+            at = _find_object_key_at(data, at, len, pdata, seg_start, kn)
+        }
+        if at < 0 {
+            return 0 - 1
+        }
+    }
+    return at
+}
+
+export function json_validate(src: string) -> i32 {
+    let data: ptr<u8> = src
+    let len: i32 = strlen(src) as i32
+    let end: i32 = _json_skip_value(data, 0, len)
+    if end < 0 {
+        return JSON_ERR
+    }
+    end = _json_skip_ws(data, end, len)
+    if end == len {
+        return JSON_OK
+    }
+    return JSON_ERR
+}
+
+export function json_has_key(src: string, key: string) -> i32 {
+    if _json_find_object_value(src, key) >= 0 {
+        return JSON_OK
+    }
+    return JSON_ERR
+}
+
+export function json_get_i32(src: string, key: string) -> i32 {
+    let data: ptr<u8> = src
+    let at: i32 = _json_find_object_value(src, key)
+    if at < 0 {
+        return 0
+    }
+    return _json_parse_i32_at(data, at, strlen(src) as i32)
+}
+
+export function json_get_bool(src: string, key: string) -> i32 {
+    let data: ptr<u8> = src
+    let at: i32 = _json_find_object_value(src, key)
+    if at < 0 {
+        return JSON_MISSING
+    }
+    let p: i32 = _json_skip_ws(data, at, strlen(src) as i32)
+    if data[p] == 116 {
+        return 1
+    }
+    if data[p] == 102 {
+        return 0
+    }
+    return JSON_MISSING
+}
+
+export function json_get_string(src: string, key: string, out: ptr<u8>, out_cap: i32) -> i32 {
+    let data: ptr<u8> = src
+    let len: i32 = strlen(src) as i32
+    let at: i32 = _json_find_object_value(src, key)
+    if at < 0 {
+        return 0 - 1
+    }
+    let mut p: i32 = _json_skip_ws(data, at, len)
+    if p >= len or data[p] != 34 {
+        return 0 - 1
+    }
+    p = p + 1
+    let start: i32 = p
+    while p < len and data[p] != 34 {
+        if data[p] == 92 {
+            p = p + 2
+        } else {
+            p = p + 1
+        }
+    }
+    if p >= len {
+        return 0 - 1
+    }
+    let n: i32 = p - start
+    if n + 1 > out_cap {
+        return 0 - 1
+    }
+    _json_copy_bytes(out, data, start, n)
+    out[n] = 0
+    return n
+}
+
+export function json_path_has(src: string, path: string) -> i32 {
+    if _resolve_path(src, path) >= 0 {
+        return JSON_OK
+    }
+    return JSON_ERR
+}
+
+export function json_path_get_i32(src: string, path: string) -> i32 {
+    let data: ptr<u8> = src
+    let at: i32 = _resolve_path(src, path)
+    if at < 0 {
+        return 0
+    }
+    return _json_parse_i32_at(data, at, strlen(src) as i32)
+}
+
+export function json_path_get_bool(src: string, path: string) -> i32 {
+    let data: ptr<u8> = src
+    let at: i32 = _resolve_path(src, path)
+    if at < 0 {
+        return JSON_MISSING
+    }
+    let p: i32 = _json_skip_ws(data, at, strlen(src) as i32)
+    if data[p] == 116 {
+        return 1
+    }
+    if data[p] == 102 {
+        return 0
+    }
+    return JSON_MISSING
+}
+
+export function json_path_get_string(src: string, path: string, out: ptr<u8>, out_cap: i32) -> i32 {
+    let data: ptr<u8> = src
+    let len: i32 = strlen(src) as i32
+    let at: i32 = _resolve_path(src, path)
+    if at < 0 {
+        return 0 - 1
+    }
+    let mut p: i32 = _json_skip_ws(data, at, len)
+    if p >= len or data[p] != 34 {
+        return 0 - 1
+    }
+    p = p + 1
+    let start: i32 = p
+    while p < len and data[p] != 34 {
+        if data[p] == 92 {
+            p = p + 2
+        } else {
+            p = p + 1
+        }
+    }
+    if p >= len {
+        return 0 - 1
+    }
+    let n: i32 = p - start
+    if n + 1 > out_cap {
+        return 0 - 1
+    }
+    _json_copy_bytes(out, data, start, n)
+    out[n] = 0
+    return n
+}
+
+export function json_array_len(src: string, path_to_array: string) -> i32 {
+    let data: ptr<u8> = src
+    let len: i32 = strlen(src) as i32
+    let at: i32 = _resolve_path(src, path_to_array)
+    if at < 0 {
+        return 0 - 1
+    }
+    return _array_len_at(data, at, len)
+}

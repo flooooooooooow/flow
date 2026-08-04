@@ -1,0 +1,58 @@
+# Runtime test: channel send/recv/close
+import "stdlib/concurrent.flow"
+
+function main() -> i32 {
+    let mut ch: Channel_i32 = channel_i32_new(2)
+    let p: ptr<Channel_i32> = &ch
+    if !channel_i32_send(p, 7) {
+        return 1
+    }
+    if !channel_i32_send(p, 8) {
+        return 2
+    }
+    if channel_i32_try_send(p, 9) {
+        return 3
+    }
+    let mut x: i32 = 0
+    if !channel_i32_recv(p, &x) {
+        return 4
+    }
+    if x != 7 {
+        return 5
+    }
+    channel_i32_close(p)
+    if !channel_i32_recv(p, &x) {
+        return 6
+    }
+    if x != 8 {
+        return 7
+    }
+    if channel_i32_recv(p, &x) {
+        return 8
+    }
+    channel_i32_destroy(p)
+
+    let mut wg: WaitGroup = waitgroup_new()
+    waitgroup_add(&wg, 2)
+    waitgroup_done(&wg)
+    waitgroup_done(&wg)
+    waitgroup_wait(&wg)
+    if waitgroup_count(&wg) != 0 {
+        return 9
+    }
+
+    let mut once: Once = once_new()
+    let mut hits: i32 = 0
+    if once_call_begin(&once) {
+        hits = hits + 1
+        once_call_end(&once)
+    }
+    if once_call_begin(&once) {
+        hits = hits + 1
+        once_call_end(&once)
+    }
+    if hits != 1 {
+        return 10
+    }
+    return 0
+}

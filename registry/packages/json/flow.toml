@@ -1,0 +1,11 @@
+[package]
+name = "json"
+version = "0.1.0"
+description = "Minimal JSON parse/query helpers (pure Flow rewrite)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

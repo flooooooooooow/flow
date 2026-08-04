@@ -46,4 +46,4 @@ Flags: `GPU_MEM_DEFAULT`, `GPU_MEM_SHARED`, `GPU_MEM_PRIVATE`.
 
 - Header: `runtime/gpu_memory.h`
 - Metal: `runtime/gpu_metal.m`
-- Stub: `runtime/gpu_memory_stub.c`
+- Stub: `lib/runtime/gpu_memory_stub.flow` (non-Darwin; always-linked by `./flow`)

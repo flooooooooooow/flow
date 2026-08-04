@@ -89,7 +89,7 @@ export function lattice_allpass_design_from_poles(
     blk_buf: ptr<f64>,
     na_buf: ptr<f64>
 ) -> LatticeAllpassDesign {
-    let acc: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut acc: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let tmp: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let one: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let mut order: i32 = 0
@@ -114,8 +114,8 @@ export function lattice_allpass_design_from_poles(
     let spec: SchurLatticeSpec = schur_lattice_from_denominator(
         acc, order, k_buf, obs_buf, a_buf, ctrl_buf, apow_buf, blk_buf, na_buf
     )
-    let kf: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let obs: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut kf: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut obs: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let mut i: i32 = 0
     while i < order {
         kf[i] = f64_to_f32(k_buf[i])
@@ -150,7 +150,7 @@ export function lattice_allpass_modulate(ap: LatticeAllpass, rate: SampleRate) -
     let two_pi: f32 = 6.28318
     let t: f32 = ap.sample_count / rate.hz
     let omega: f32 = two_pi * ap.mod_rate_hz
-    let k_new: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut k_new: array<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let mut i: i32 = 0
     while i < ap.order {
         let arg: f32 = omega * t + ap.phase[i]
@@ -175,7 +175,7 @@ export function lattice_allpass_modulate(ap: LatticeAllpass, rate: SampleRate) -
 export function lattice_allpass_tick(ap: LatticeAllpass, input: f32) -> LatticeAllpass {
     let mut inp: f32 = input
     let mut y: f32 = 0.0
-    let g_new: array<f32, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut g_new: array<f32, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let mut i: i32 = 0
     while i < 32 {
         g_new[i] = ap.g[i]

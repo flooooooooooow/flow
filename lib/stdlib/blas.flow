@@ -277,7 +277,7 @@ export function solve(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32 {
 
 export function matmul(A: Mat, B: Mat) -> Mat {
     # Returns new matrix C = A @ B
-    let C: Mat = mat_new(A.rows, B.cols)
+    let mut C: Mat = mat_new(A.rows, B.cols)
     gemm(A, B, C)
     return C
 }

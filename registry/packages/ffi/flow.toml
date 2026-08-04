@@ -1,0 +1,14 @@
+[package]
+name = "ffi"
+version = "0.1.0"
+description = "FFI glue helpers for packing structs + bindgen seed (sizeof ptr)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]
+
+[native]
+sources = ["native/flow_ffi.c"]

@@ -17,6 +17,7 @@ from .parser import (
 from .type_checker import TypeChecker
 from .lsp_dynamics import dynamics_completion_items, dynamics_hover
 from .lsp_ordering import ordering_completion_items, ordering_hover
+from .version import __version__ as _FLOW_VERSION
 
 # LSP Message Types
 @dataclass
@@ -200,7 +201,7 @@ class FlowLanguageServer:
             },
             'serverInfo': {
                 'name': 'flow-lsp',
-                'version': '0.1.0',
+                'version': _FLOW_VERSION,
             }
         }
     

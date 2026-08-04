@@ -1,0 +1,40 @@
+# Flow runtime: public TCP socket API over thin BSD-socket kernels.
+
+extern {
+    function flow_rt_tcp_connect(host_hash: i32, port: i32) -> i32
+    function flow_rt_tcp_listen(port: i32) -> i32
+    function flow_rt_tcp_accept(listen_fd: i32) -> i32
+    function flow_rt_tcp_close(fd: i32) -> i32
+    function flow_rt_tcp_recv(fd: i32, buf: ptr<void>, len: i32) -> i32
+    function flow_rt_tcp_send(fd: i32, buf: ptr<void>, len: i32) -> i32
+}
+
+@flow_api
+export function flow_tcp_connect(host_hash: i32, port: i32) -> i32 {
+    return flow_rt_tcp_connect(host_hash, port)
+}
+
+@flow_api
+export function flow_tcp_listen(port: i32) -> i32 {
+    return flow_rt_tcp_listen(port)
+}
+
+@flow_api
+export function flow_tcp_accept(listen_fd: i32) -> i32 {
+    return flow_rt_tcp_accept(listen_fd)
+}
+
+@flow_api
+export function flow_tcp_close(fd: i32) -> i32 {
+    return flow_rt_tcp_close(fd)
+}
+
+@flow_api
+export function flow_tcp_recv(fd: i32, buf: ptr<void>, len: i32) -> i32 {
+    return flow_rt_tcp_recv(fd, buf, len)
+}
+
+@flow_api
+export function flow_tcp_send(fd: i32, buf: ptr<void>, len: i32) -> i32 {
+    return flow_rt_tcp_send(fd, buf, len)
+}

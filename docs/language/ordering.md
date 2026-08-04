@@ -34,4 +34,4 @@ See `examples/basics/declarative_sort.flow`.
 
 ## Later (PRD)
 
-Adaptive algorithm selection, GPU/SIMD/distributed backends, entropy as a first-class effect, `order { }` blocks, composable primitives (`split` / `partition` / `merge`), latency/memory objectives (`sort under 2ms`). Tracked in `Questions.md`.
+Adaptive algorithm selection, GPU/SIMD/distributed backends, entropy as a first-class effect, `order { }` blocks, composable primitives (`split` / `partition` / `merge`), latency/memory objectives (`sort under 2ms`). Tracked in [`docs/project/Questions.md`](../project/Questions.md).

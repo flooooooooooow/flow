@@ -36,7 +36,8 @@
     "theme": "dark"
   },
   "activationEvents": [
-    "onLanguage:flow"
+    "onLanguage:flow",
+    "onDebugResolve:flow"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -64,6 +65,37 @@
       {
         "command": "flow.restartLsp",
         "title": "FLOW: Restart Language Server"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "flow",
+        "label": "FLOW",
+        "languages": ["flow"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["flowFile"],
+            "properties": {
+              "flowFile": {
+                "type": "string",
+                "description": "Path to the .flow entry file to debug"
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory (Flow repo root recommended)"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "flow",
+            "request": "launch",
+            "name": "Debug Flow file",
+            "flowFile": "${file}",
+            "cwd": "${workspaceFolder}"
+          }
+        ]
       }
     ],
     "snippets": [

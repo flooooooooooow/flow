@@ -9,20 +9,26 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdatomic.h>
 
 #ifdef FLOW_AUDIO_BACKEND_MINIAUDIO
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
+/* Layout must match lib/runtime/audio_spsc.flow FlowSpscRingF32 */
 typedef struct FlowSpscRingF32 {
-    float* data;          // interleaved frames
-    uint32_t capacity;    // frames, power of two
-    uint32_t channels;
-    atomic_uint read_idx; // in frames
-    atomic_uint write_idx;
+    float* data;          /* interleaved frames */
+    int32_t capacity;     /* frames, power of two */
+    int32_t channels;
+    int32_t read_idx;     /* frames; accessed via flow_atomic_* in Flow */
+    int32_t write_idx;
 } FlowSpscRingF32;
+
+/* Implemented in lib/runtime/audio_spsc.flow */
+int32_t flow_audio_spsc_available_read(FlowSpscRingF32 *rb);
+int32_t flow_audio_spsc_available_write(FlowSpscRingF32 *rb);
+int32_t flow_audio_spsc_write(FlowSpscRingF32 *rb, const float *input, int32_t frames);
+int32_t flow_audio_spsc_read(FlowSpscRingF32 *rb, float *output, int32_t frames);
 
 typedef struct FlowAudioDevice {
     ma_device device;
@@ -108,10 +114,10 @@ static int flow_rb_init(FlowSpscRingF32* rb, uint32_t frames, uint32_t channels)
     uint32_t cap = flow_next_pow2(frames);
     rb->data = (float*)calloc((size_t)cap * channels, sizeof(float));
     if (!rb->data) return -1;
-    rb->capacity = cap;
-    rb->channels = channels;
-    atomic_store(&rb->read_idx, 0u);
-    atomic_store(&rb->write_idx, 0u);
+    rb->capacity = (int32_t)cap;
+    rb->channels = (int32_t)channels;
+    rb->read_idx = 0;
+    rb->write_idx = 0;
     return 0;
 }
 
@@ -121,54 +127,8 @@ static void flow_rb_uninit(FlowSpscRingF32* rb) {
     rb->data = NULL;
     rb->capacity = 0;
     rb->channels = 0;
-    atomic_store(&rb->read_idx, 0u);
-    atomic_store(&rb->write_idx, 0u);
-}
-
-static uint32_t flow_rb_available_read(const FlowSpscRingF32* rb) {
-    uint32_t r = atomic_load(&rb->read_idx);
-    uint32_t w = atomic_load(&rb->write_idx);
-    return w - r;
-}
-
-static uint32_t flow_rb_available_write(const FlowSpscRingF32* rb) {
-    return rb->capacity - flow_rb_available_read(rb);
-}
-
-static uint32_t flow_rb_write(FlowSpscRingF32* rb, const float* input, uint32_t frames) {
-    uint32_t avail = flow_rb_available_write(rb);
-    if (frames > avail) frames = avail;
-    uint32_t r = atomic_load(&rb->read_idx);
-    uint32_t w = atomic_load(&rb->write_idx);
-    uint32_t mask = rb->capacity - 1;
-    uint32_t first = rb->capacity - (w & mask);
-    if (first > frames) first = frames;
-    uint32_t second = frames - first;
-    size_t ch = rb->channels;
-    memcpy(rb->data + (size_t)(w & mask) * ch, input, (size_t)first * ch * sizeof(float));
-    if (second > 0) {
-        memcpy(rb->data, input + (size_t)first * ch, (size_t)second * ch * sizeof(float));
-    }
-    atomic_store(&rb->write_idx, w + frames);
-    (void)r;
-    return frames;
-}
-
-static uint32_t flow_rb_read(FlowSpscRingF32* rb, float* output, uint32_t frames) {
-    uint32_t avail = flow_rb_available_read(rb);
-    if (frames > avail) frames = avail;
-    uint32_t r = atomic_load(&rb->read_idx);
-    uint32_t mask = rb->capacity - 1;
-    uint32_t first = rb->capacity - (r & mask);
-    if (first > frames) first = frames;
-    uint32_t second = frames - first;
-    size_t ch = rb->channels;
-    memcpy(output, rb->data + (size_t)(r & mask) * ch, (size_t)first * ch * sizeof(float));
-    if (second > 0) {
-        memcpy(output + (size_t)first * ch, rb->data, (size_t)second * ch * sizeof(float));
-    }
-    atomic_store(&rb->read_idx, r + frames);
-    return frames;
+    rb->read_idx = 0;
+    rb->write_idx = 0;
 }
 
 static void flow_audio_data_callback(ma_device* device, void* output, const void* input, ma_uint32 frame_count) {
@@ -178,14 +138,14 @@ static void flow_audio_data_callback(ma_device* device, void* output, const void
     }
 
     if (dev->has_input && input != NULL) {
-        flow_rb_write(&dev->in_rb, (const float*)input, frame_count);
+        flow_audio_spsc_write(&dev->in_rb, (const float*)input, (int32_t)frame_count);
     }
 
     if (dev->has_output && output != NULL) {
-        ma_uint32 read_frames = flow_rb_read(&dev->out_rb, (float*)output, frame_count);
-        if (read_frames < frame_count) {
+        int32_t read_frames = flow_audio_spsc_read(&dev->out_rb, (float*)output, (int32_t)frame_count);
+        if (read_frames < (int32_t)frame_count) {
             size_t offset = (size_t)read_frames * dev->channels;
-            size_t remaining = (size_t)(frame_count - read_frames) * dev->channels;
+            size_t remaining = (size_t)(frame_count - (ma_uint32)read_frames) * dev->channels;
             float* out = (float*)output;
             memset(out + offset, 0, remaining * sizeof(float));
         }
@@ -347,28 +307,28 @@ int flow_audio_read_f32(FlowAudioDevice* dev, float* out, int frames) {
     if (!dev || !out || frames <= 0 || !dev->has_input) {
         return 0;
     }
-    return (int)flow_rb_read(&dev->in_rb, out, (ma_uint32)frames);
+    return (int)flow_audio_spsc_read(&dev->in_rb, out, frames);
 }
 
 int flow_audio_write_f32(FlowAudioDevice* dev, const float* in, int frames) {
     if (!dev || !in || frames <= 0 || !dev->has_output) {
         return 0;
     }
-    return (int)flow_rb_write(&dev->out_rb, in, (ma_uint32)frames);
+    return (int)flow_audio_spsc_write(&dev->out_rb, in, frames);
 }
 
 int flow_audio_available_read(FlowAudioDevice* dev) {
     if (!dev || !dev->has_input) {
         return 0;
     }
-    return (int)flow_rb_available_read(&dev->in_rb);
+    return (int)flow_audio_spsc_available_read(&dev->in_rb);
 }
 
 int flow_audio_available_write(FlowAudioDevice* dev) {
     if (!dev || !dev->has_output) {
         return 0;
     }
-    return (int)flow_rb_available_write(&dev->out_rb);
+    return (int)flow_audio_spsc_available_write(&dev->out_rb);
 }
 
 const char* flow_audio_last_error(FlowAudioDevice* dev) {
@@ -392,128 +352,5 @@ int flow_audio_has_output(FlowAudioDevice* dev) {
 }
 
 #else
-
-struct FlowAudioDevice {
-    FlowAudioConfig config;
-    char last_error[256];
-};
-
-static char flow_audio_last_error_global[256];
-
-static void flow_audio_set_global_error(const char* msg) {
-    if (!msg) {
-        flow_audio_last_error_global[0] = '\0';
-        return;
-    }
-    strncpy(flow_audio_last_error_global, msg, sizeof(flow_audio_last_error_global) - 1);
-    flow_audio_last_error_global[sizeof(flow_audio_last_error_global) - 1] = '\0';
-}
-
-static void flow_audio_set_error(FlowAudioDevice* dev, const char* msg) {
-    if (!dev) {
-        flow_audio_set_global_error(msg);
-        return;
-    }
-    if (!msg) {
-        dev->last_error[0] = '\0';
-        flow_audio_set_global_error("");
-        return;
-    }
-    strncpy(dev->last_error, msg, sizeof(dev->last_error) - 1);
-    dev->last_error[sizeof(dev->last_error) - 1] = '\0';
-    flow_audio_set_global_error(msg);
-}
-
-const char* flow_audio_probe_devices(void) {
-    flow_audio_set_global_error("audio backend not built (enable FLOW_AUDIO_BACKEND_MINIAUDIO)");
-    return flow_audio_last_error_global;
-}
-
-int flow_audio_open(const FlowAudioConfig* config, FlowAudioDevice** out_dev) {
-    if (!config || !out_dev) {
-        return -1;
-    }
-    FlowAudioDevice* dev = (FlowAudioDevice*)calloc(1, sizeof(FlowAudioDevice));
-    if (!dev) {
-        return -1;
-    }
-    dev->config = *config;
-    flow_audio_set_error(dev, "audio backend not built (enable FLOW_AUDIO_BACKEND_MINIAUDIO)");
-    *out_dev = dev;
-    return -1;
-}
-
-int flow_audio_start(FlowAudioDevice* dev) {
-    if (!dev) {
-        return -1;
-    }
-    flow_audio_set_error(dev, "audio backend not built (enable FLOW_AUDIO_BACKEND_MINIAUDIO)");
-    return -1;
-}
-
-int flow_audio_stop(FlowAudioDevice* dev) {
-    if (!dev) {
-        return -1;
-    }
-    return 0;
-}
-
-void flow_audio_close(FlowAudioDevice* dev) {
-    if (!dev) {
-        return;
-    }
-    free(dev);
-}
-
-int flow_audio_read_f32(FlowAudioDevice* dev, float* out, int frames) {
-    (void)out;
-    (void)frames;
-    if (!dev) {
-        return 0;
-    }
-    return 0;
-}
-
-int flow_audio_write_f32(FlowAudioDevice* dev, const float* in, int frames) {
-    (void)in;
-    if (!dev) {
-        return 0;
-    }
-    return frames;
-}
-
-int flow_audio_available_read(FlowAudioDevice* dev) {
-    if (!dev) {
-        return 0;
-    }
-    return 0;
-}
-
-int flow_audio_available_write(FlowAudioDevice* dev) {
-    if (!dev) {
-        return 0;
-    }
-    return 0;
-}
-
-const char* flow_audio_last_error(FlowAudioDevice* dev) {
-    if (!dev) {
-        if (flow_audio_last_error_global[0] != '\0') {
-            return flow_audio_last_error_global;
-        }
-        return "audio: device not initialized";
-    }
-    return dev->last_error;
-}
-
-int flow_audio_has_input(FlowAudioDevice* dev) {
-    (void)dev;
-    return 0;
-}
-
-int flow_audio_has_output(FlowAudioDevice* dev) {
-    (void)dev;
-    return 0;
-}
-
+/* No-backend stubs → lib/runtime/audio_device_stub.flow (always-linked unless FLOW_SKIP_AUDIO_STUB=1). */
 #endif

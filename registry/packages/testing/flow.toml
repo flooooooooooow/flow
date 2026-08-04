@@ -1,0 +1,11 @@
+[package]
+name = "testing"
+version = "0.1.0"
+description = "Assert helpers and a simple pass/fail test runner"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

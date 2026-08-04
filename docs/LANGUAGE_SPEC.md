@@ -1,15 +1,15 @@
 # FLOW Language Specification
 
-> **Version**: 0.2.0
-> **Last Updated**: 2026-01-09
+> **Version**: 0.3.3
+> **Last Updated**: 2026-08-04
 
 ## Overview
 
 FLOW is a statically-typed, systems programming language with first-class support for:
 - **Algebraic effects** for modular side-effect handling
 - **GPU computing** via Metal and CUDA backends
-- **Automatic differentiation** for machine learning
-- **WebAssembly** compilation for browser deployment
+- **Automatic differentiation** as library dual/reverse helpers (see [autodiff.md](library/autodiff.md))
+- **WebAssembly** via Flow→C→Emscripten (see [wasm.md](language/wasm.md))
 
 ## Quick Reference
 
@@ -66,7 +66,7 @@ flow test                 # Run all tests
 | `while` | ✅ | Control Flow |
 | `for` | ✅ | Control Flow |
 | `in` | ✅ | Control Flow |
-| `parallel` | ⚠️ | Control Flow (parsed, not optimized) |
+| `parallel` | ✅ | Control Flow (`parallel for` → OpenMP when available; serial fallback) |
 | `step` | ✅ | Control Flow |
 | `match` | ⚠️ | Pattern Matching (literals, structs, guards, `\|` alternation, nested literal fields; real exhaustiveness checking for `bool` and enum/ADT variants via path/const patterns, minimal stub for integers) |
 | `default` | ✅ | Pattern Matching |
@@ -339,6 +339,7 @@ extern "C" {
 | Array Literal | `[1, 2, 3]` | ✅ |
 | Struct Literal | `Point { x: 1.0, y: 2.0 }` | ✅ |
 | Vector Literal | `<1.0, 2.0, 3.0, 4.0>` | ⚠️ |
+| Lambda | `\|x: i32\| -> i32 { x + n }` | ✅ |
 
 ### 4.2 Operator Precedence (highest to lowest)
 
@@ -365,6 +366,26 @@ extern "C" {
 | `abs` | `(x: i32) -> i32` | ✅ |
 | `min` | `(a: T, b: T) -> T` | ✅ |
 | `max` | `(a: T, b: T) -> T` | ✅ |
+
+### 4.4 Lambdas / Closures
+
+Pipe-lambda syntax captures free local variables **by value** at creation
+time (snapshot semantics). The C backend lowers capturing lambdas to a
+`{ fn, env }` closure struct; non-capturing lambdas remain C function
+pointers.
+
+```flow
+let n: i32 = 5
+let add_n: (i32) -> i32 = |x: i32| -> i32 { return x + n }
+let result: i32 = add_n(10)  # 15
+```
+
+**Status notes:**
+- Automatic free-variable capture is implemented (C backend).
+- Escaping HOF ABI: declare `(T) -> R` (fat pointer `{fn, env}`); capturing
+  lambdas heap-copy their env so they can be returned or passed to HOFs.
+- Prefer `|params| -> Ret { … }` over the older manual
+  `struct + self` closure idiom.
 
 ---
 
@@ -427,25 +448,29 @@ while i < 10 {
 
 **Grammar:**
 ```
-for_stmt := 'for' IDENTIFIER 'in' expression '..' expression ('step' expression)? 'parallel'? block
+for_stmt := 'parallel'? 'for' IDENTIFIER 'in' expression ('..' | 'to') expression
+            ('step' expression)? block
 ```
 
-**Status:** ✅ Basic for loop, ⚠️ `parallel` keyword parsed but not optimized
+**Status:** ✅ Fully implemented. Prefix `parallel for` emits
+`#pragma omp parallel for` under `#ifdef _OPENMP` in the C backend;
+`./flow` passes `-fopenmp` when the toolchain supports it, otherwise the
+loop is correct and serial. See [concurrency-vs-go.md](language/concurrency-vs-go.md).
 
 **Example:**
 ```flow
-# Basic for loop
-for i in 0..10 {
+# Basic for loop (both `to` and `..` are accepted)
+for i in 0 to 10 {
     printf("%d\n", i)
 }
 
 # With step
-for i in 0..100 step 5 {
+for i in 0 to 100 step 5 {
     printf("%d\n", i)
 }
 
-# Parallel hint (not yet optimized)
-for i in 0..1000 parallel {
+# Data-parallel (OpenMP when available)
+parallel for i in 0 to 1000 {
     data[i] = i * 2
 }
 ```
@@ -458,6 +483,20 @@ return_stmt := 'return' expression?
 ```
 
 **Status:** ✅ Fully implemented
+
+### 5.6 Concurrency (language + stdlib)
+
+There is **no** language-level `go` / `select` / `async` keyword. Concurrency
+surfaces as:
+
+| Surface | Where | Notes |
+|---------|-------|-------|
+| `parallel for` | Language (§5.4) | OpenMP when available |
+| Channels, WaitGroup, mutex, threads | `lib/stdlib/concurrent.flow` | `channel_i32_select2` is 2-way only |
+| `Async` / `AsyncIO` effects | `lib/stdlib/async.flow` | `FiberAsync` (M:N), `ThreadedAsync`, `NetpollAsyncIO` |
+
+Design + measured Go comparison: [language/concurrency-vs-go.md](language/concurrency-vs-go.md).
+Async honesty: [language/async-effects.md](language/async-effects.md).
 
 ---
 
@@ -517,10 +556,11 @@ capability ConsoleLogger {
 
 **Grammar:**
 ```
-handle_stmt := 'handle' IDENTIFIER 'with' IDENTIFIER block
+handle_stmt := 'handle' IDENTIFIER (',' IDENTIFIER)* 'with' IDENTIFIER (',' IDENTIFIER)* block
 ```
 
-**Status:** ✅ Fully implemented with runtime dispatch
+**Status:** ✅ Fully implemented with runtime dispatch (multi-effect /
+multi-handler forms supported)
 
 **Example:**
 ```flow
@@ -529,8 +569,39 @@ function main() -> i32 {
         Log.emit("Hello from effects!")
         Log.level(3)
     }
+    # Multi-effect install (one capability may cover several effects)
+    handle Log, Notify with ConsoleLogger, ConsoleNotifier {
+        place_order()
+    }
     return 0
 }
+```
+
+### 6.3.1 Signature Effect Rows
+
+**Grammar (function declaration):**
+```
+function_decl := 'function' IDENTIFIER '(' parameters? ')' '->' type
+                 ('with' IDENTIFIER (',' IDENTIFIER)*)? block
+```
+
+**Status:** ✅ Implemented (enforced under `--strict-effects` or
+`FLOW_STRICT_EFFECTS=1`)
+
+A `with E1, E2` clause declares effects the function may perform. The body may
+use those effects without a local `handle`. Callers must cover the row via an
+enclosing `handle` or their own `with` clause. Soft zero defaults remain when
+`--strict-effects` is omitted. First-class types carry the same clause:
+`(string) -> void with Log`. See `examples/effects/effect_rows.flow` and
+[effects-showcase.md](effects-showcase.md).
+
+**Example:**
+```flow
+function greet(name: string) -> void with Log {
+    Log.emit(name)
+}
+
+let f: (string) -> void with Log = greet
 ```
 
 ### 6.4 Effect Implementation Details
@@ -538,7 +609,8 @@ function main() -> i32 {
 Effects are implemented via vtable-based runtime dispatch:
 
 1. Each effect generates a C struct for the handler vtable
-2. A global pointer tracks the current handler for each effect
+2. A `_Thread_local` pointer tracks the current handler for each effect
+   (safe across OS threads / `parallel for`)
 3. `handle` blocks save/restore the handler pointer
 4. Effect calls dispatch through the current handler's vtable
 
@@ -551,14 +623,18 @@ Effects are implemented via vtable-based runtime dispatch:
 **Grammar:**
 ```
 import_decl := 'import' STRING
+             | 'import' module_path ('{' symbols '}')?
+             | 'import' module_path 'as' IDENTIFIER
 ```
 
-**Status:** ✅ Fully implemented
+**Status:** ✅ Dot-path imports + legacy string imports both work.
+Prefer named modules; see [language/modules.md](language/modules.md).
 
 **Example:**
 ```flow
-import "lib/stdlib/math.flow"
-import "utils/helpers.flow"
+import "lib/stdlib/math.flow"          # legacy string path
+import std.math { sin, cos }           # named module + symbols
+import verify.nat as nat               # aliased module
 ```
 
 ### 7.2 Export Declaration
@@ -704,6 +780,7 @@ Complete list of AST nodes defined in `src/flow/parser.py`:
 | `OrPattern` | `\|`-alternation of literal patterns | patterns |
 | `ImportDecl` | Import statement | path |
 | `ConstDecl` | Constant declaration | name, type, value |
+| `Lambda` | Lambda / closure | parameters, return_type, body, captures |
 
 ---
 
@@ -749,11 +826,13 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Export | ✅ | ✅ | ✅ | ✅ |
 | Extern | ✅ | ✅ | ✅ | ⚠️ |
 | Match | ✅ | ⚠️ | ⚠️ | ✅ |
-| Parallel | ✅ | ❌ | ❌ | ⚠️ |
+| Parallel | ✅ | ✅ | ❌ | ✅ (OpenMP / serial) |
 | SIMD Vec | ✅ | ⚠️ | ⚠️ | ⚠️ |
 | Pointers | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| Lambdas / captures | ✅ | ✅ | ❌ | ✅ |
+| Postfix chaining | ✅ | ✅ | ✅ | ✅ |
 
 ---
 
-*Last updated: 2026-01-08*
-*Version: 0.1.0*
+*Last updated: 2026-08-04*
+*Version: 0.3.3*
