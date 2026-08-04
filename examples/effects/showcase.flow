@@ -1,4 +1,3 @@
-# flow:lenient - effect operations are not modeled by the strict checker (see docs/effects-showcase.md)
 # Effect System Showcase: One Service, Many Worlds
 #
 # A small checkout service written ONCE, with zero knowledge of its

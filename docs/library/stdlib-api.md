@@ -1,6 +1,6 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-07-28 by `scripts/gen_stdlib_docs.py`. Hand-written guides live alongside this page.
+> Auto-generated from `lib/stdlib/` on 2026-08-04 by `scripts/gen_stdlib_docs.py`. Hand-written guides live alongside this page.
 
 **76** modules scanned.
 
@@ -16,9 +16,17 @@
 
 ### `async.flow`
 
-Async I/O via algebraic effects Swap capabilities for epoll/kqueue/IOCP without changing call sites.
+Async primitives via algebraic effects  Call sites perform `Async` / `AsyncIO` operations; a capability supplies the
 
-*No `export` items found (internal / extern-only module).*
+**Functions:**
+
+| Name | Signature |
+|------|-----------|
+| `async_delay` | `(ms: i32) -> void` |
+| `async_spawn` | `(task_id: i32) -> void` |
+| `async_join` | `(task_id: i32) -> i32` |
+| `async_sleep_ms` | `(ms: i32) -> void` |
+| `async_poll_read` | `(fd: i32, timeout_ms: i32) -> i32` |
 
 ### `audio/clock.flow`
 

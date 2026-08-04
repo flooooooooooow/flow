@@ -1,124 +1,129 @@
-# flow:lenient - type checker does not yet register effect operations as callable functions
-# State Effects: Implicit State Threading
-# Shows how effects can handle mutable state without explicit passing
+# State Effects: Policy Effects with Explicitly-Threaded State
+# Shows how effects can swap the *policy* driving a stateful loop without
+# the caller's business logic knowing which policy is installed.
 #
-# This pattern is impossible in Mojo/Julia without manual threading
+# NOTE: this demo previously modeled the counter/accumulator/stack as
+# *stateful* capabilities passed as `capability EffectName` function
+# parameters (`counter: capability Counter`) and called mutating methods
+# like `counter.increment()` directly on them. That never worked: the C
+# backend routes every `Effect.op(...)` call through the effect's *global*
+# current-handler pointer, ignoring whatever was passed as an argument, and
+# nothing in this demo ever ran inside a `handle Counter with ...` block --
+# so the handler was always NULL, every op silently no-op'd/returned zero,
+# and the `while counter.get_count() < target` loop in `count_up_to` never
+# terminated (see docs/effects-showcase.md and ROADMAP.md).
+#
+# Flow's `capability { ... }` blocks are still stateless today (no `self`,
+# no fields -- see "Honest limitations" in docs/effects-showcase.md), so a
+# handler cannot privately own mutable state (a running count, a running
+# sum). The fix used here: model each effect as a *pure* operation over an
+# explicit value (`next(current) -> next_value`), thread the actual mutable
+# state through ordinary `let mut` locals in the business logic, and let
+# `handle ... with ...` swap which pure policy computes the next value.
+# That is exactly the "policy swaps, state stays put" shape effects are
+# good for, and it runs correctly with the compiler as it exists today.
 
 # ============================================================================
-# COUNTER EXAMPLE: State effect for a counter
+# COUNTER EXAMPLE: swappable step policy for a counter
 # ============================================================================
 
 effect Counter {
-    function get_count() -> i32
-    function increment()
-    function decrement()
-    function reset()
+    next(current: i32) -> i32,
+    prev(current: i32) -> i32,
 }
 
-# Business logic using the counter effect
-function count_up_to(counter: capability Counter, target: i32) {
-    while counter.get_count() < target {
-        counter.increment()
+# Business logic using the counter effect. `count` is an ordinary mutable
+# local -- the effect only supplies *how* to step it.
+function count_up_to(start: i32, target: i32) -> i32 {
+    let mut count: i32 = start
+    while count < target {
+        count = Counter.next(count)
     }
+    return count
 }
 
-function countdown(counter: capability Counter) {
-    while counter.get_count() > 0 {
+function countdown(start: i32) -> i32 {
+    let mut count: i32 = start
+    while count > 0 {
         print("T minus ")
-        println(counter.get_count())
-        counter.decrement()
+        println(count)
+        count = Counter.prev(count)
     }
     println("Liftoff!")
+    return count
 }
 
-# Handler implementation
-struct SimpleCounter {
-    value: i32
+capability UnitCounter {
+    effect Counter,
+
+    function next(current: i32) -> i32 {
+        return current + 1
+    },
+
+    function prev(current: i32) -> i32 {
+        return current - 1
+    },
 }
 
-impl Counter for SimpleCounter {
-    function get_count(self) -> i32 {
-        return self.value
-    }
-    
-    function increment(self) {
-        self.value = self.value + 1
-    }
-    
-    function decrement(self) {
-        self.value = self.value - 1
-    }
-    
-    function reset(self) {
-        self.value = 0
-    }
+# A different policy: same business logic, counts by twos.
+capability DoubleStepCounter {
+    effect Counter,
+
+    function next(current: i32) -> i32 {
+        return current + 2
+    },
+
+    function prev(current: i32) -> i32 {
+        return current - 2
+    },
 }
 
 # ============================================================================
-# ACCUMULATOR EXAMPLE: More complex state
+# ACCUMULATOR EXAMPLE: swappable combine policy over a running sum
 # ============================================================================
 
 effect Accumulator {
-    function add(x: f32)
-    function get_sum() -> f32
-    function get_count() -> i32
-    function get_average() -> f32
+    combine(sum: f32, x: f32) -> f32,
 }
 
-function compute_stats(acc: capability Accumulator, values: ptr<f32>, n: i32) {
+function compute_sum(values: ptr<f32>, n: i32) -> f32 {
+    let mut sum: f32 = 0.0
     for i in 0 to n {
-        acc.add(values[i])
+        sum = Accumulator.combine(sum, values[i])
     }
+    return sum
 }
 
-struct RunningStats {
-    sum: f32,
-    count: i32
+capability RunningSum {
+    effect Accumulator,
+
+    function combine(sum: f32, x: f32) -> f32 {
+        return sum + x
+    },
 }
 
-impl Accumulator for RunningStats {
-    function add(self, x: f32) {
-        self.sum = self.sum + x
-        self.count = self.count + 1
-    }
-    
-    function get_sum(self) -> f32 {
-        return self.sum
-    }
-    
-    function get_count(self) -> i32 {
-        return self.count
-    }
-    
-    function get_average(self) -> f32 {
-        if self.count == 0 {
-            return 0.0
+# A different policy: track the running maximum instead of the running sum.
+capability RunningMax {
+    effect Accumulator,
+
+    function combine(sum: f32, x: f32) -> f32 {
+        if x > sum {
+            return x
         }
-        return self.sum / self.count
-    }
+        return sum
+    },
 }
 
 # ============================================================================
-# STACK EXAMPLE: LIFO state
+# STACK EXAMPLE: plain owned mutable state (deliberately NOT an effect)
+#
+# A LIFO buffer is state a function *owns*, not an environmental capability
+# a caller swaps in -- there's only ever one reasonable "implementation" of
+# push/pop for a given backing array. Modeled here as an ordinary struct
+# manipulated through a pointer (mutation through `ptr<T>.field` works
+# today; see docs/effects-showcase.md for what capability plumbing does not
+# yet support).
 # ============================================================================
-
-effect Stack {
-    function push(x: i32)
-    function pop() -> i32
-    function peek() -> i32
-    function is_empty() -> i32
-}
-
-function reverse_array(stack: capability Stack, arr: ptr<i32>, n: i32) {
-    # Push all elements
-    for i in 0 to n {
-        stack.push(arr[i])
-    }
-    # Pop back in reverse order
-    for i in 0 to n {
-        arr[i] = stack.pop()
-    }
-}
 
 struct ArrayStack {
     data: ptr<i32>,
@@ -126,34 +131,27 @@ struct ArrayStack {
     capacity: i32
 }
 
-impl Stack for ArrayStack {
-    function push(self, x: i32) {
-        if self.top < self.capacity {
-            self.data[self.top] = x
-            self.top = self.top + 1
-        }
+function stack_push(stack: ptr<ArrayStack>, x: i32) {
+    if stack.top < stack.capacity {
+        stack.data[stack.top] = x
+        stack.top = stack.top + 1
     }
-    
-    function pop(self) -> i32 {
-        if self.top > 0 {
-            self.top = self.top - 1
-            return self.data[self.top]
-        }
-        return 0
+}
+
+function stack_pop(stack: ptr<ArrayStack>) -> i32 {
+    if stack.top > 0 {
+        stack.top = stack.top - 1
+        return stack.data[stack.top]
     }
-    
-    function peek(self) -> i32 {
-        if self.top > 0 {
-            return self.data[self.top - 1]
-        }
-        return 0
+    return 0
+}
+
+function reverse_array(stack: ptr<ArrayStack>, arr: ptr<i32>, n: i32) {
+    for i in 0 to n {
+        stack_push(stack, arr[i])
     }
-    
-    function is_empty(self) -> i32 {
-        if self.top == 0 {
-            return 1
-        }
-        return 0
+    for i in 0 to n {
+        arr[i] = stack_pop(stack)
     }
 }
 
@@ -165,66 +163,83 @@ function main() -> i32 {
     println("State Effects Demo")
     println("==================")
     println("")
-    
+
     # Counter demo
     println("=== Counter Effect ===")
-    let mut counter: SimpleCounter = SimpleCounter { value: 0 }
-    
-    count_up_to(counter, 5)
+    let mut counted: i32 = 0
+    handle Counter with UnitCounter {
+        counted = count_up_to(0, 5)
+    }
     print("Counted up to: ")
-    println(counter.value)
-    
-    counter.value = 3
-    countdown(counter)
-    
+    println(counted)
+
+    handle Counter with UnitCounter {
+        let ignored: i32 = countdown(3)
+    }
+
     println("")
-    
+    println("Same count_up_to, DoubleStepCounter policy:")
+    handle Counter with DoubleStepCounter {
+        counted = count_up_to(0, 5)
+    }
+    print("Counted up to (step 2, target 5): ")
+    println(counted)
+
+    println("")
+
     # Accumulator demo
     println("=== Accumulator Effect ===")
-    let mut stats: RunningStats = RunningStats { sum: 0.0, count: 0 }
-    
     let values: array<f32, 5> = [1.0, 2.0, 3.0, 4.0, 5.0]
     let values_ptr: ptr<f32> = values
-    
-    compute_stats(stats, values_ptr, 5)
-    
+
+    let mut sum: f32 = 0.0
+    handle Accumulator with RunningSum {
+        sum = compute_sum(values_ptr, 5)
+    }
     print("Sum: ")
-    println(stats.sum)
-    print("Count: ")
-    println(stats.count)
+    println(sum)
     print("Average: ")
-    println(stats.get_average())
-    
+    println(sum / 5.0)
+
+    let mut maximum: f32 = 0.0
+    handle Accumulator with RunningMax {
+        maximum = compute_sum(values_ptr, 5)
+    }
+    print("Max (same compute_sum, RunningMax policy): ")
+    println(maximum)
+
     println("")
-    
+
     # Stack demo
     println("=== Stack Effect ===")
     let stack_data: array<i32, 10> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     let stack_ptr: ptr<i32> = stack_data
     let mut stack: ArrayStack = ArrayStack { data: stack_ptr, top: 0, capacity: 10 }
-    
+    let stack_p: ptr<ArrayStack> = &stack
+
     let arr: array<i32, 5> = [1, 2, 3, 4, 5]
     let arr_ptr: ptr<i32> = arr
-    
-    print("Before reverse: ")
+
+    # NOTE: `print(i32_array_element)` mis-formats as a float (a pre-existing
+    # type-inference gap unrelated to this demo's effect usage), so this uses
+    # `printf("%d ", ...)` directly.
+    printf("Before reverse: ")
     for i in 0 to 5 {
-        print(arr[i])
-        print(" ")
+        printf("%d ", arr[i])
     }
-    println("")
-    
-    reverse_array(stack, arr_ptr, 5)
-    
-    print("After reverse:  ")
+    printf("\n")
+
+    reverse_array(stack_p, arr_ptr, 5)
+
+    printf("After reverse:  ")
     for i in 0 to 5 {
-        print(arr[i])
-        print(" ")
+        printf("%d ", arr[i])
     }
+    printf("\n")
+
     println("")
-    
-    println("")
-    println("Key insight: State is threaded through effects,")
-    println("not explicitly passed as parameters!")
-    
+    println("Key insight: business logic (count_up_to, compute_sum) never")
+    println("changed -- only the installed capability did.")
+
     return 0
 }
