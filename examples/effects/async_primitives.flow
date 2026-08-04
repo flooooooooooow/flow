@@ -1,0 +1,97 @@
+# Async primitives (effects-based) — minimal runnable slice
+#
+# Uses stdlib `Async` / `AsyncIO` with `handle ... with ...` (not the older
+# `capability Async` parameter style). No fiber scheduler: SimulatedAsync is a
+# deterministic sync stand-in; BlockingAsyncIO.sleep_ms blocks via usleep.
+#
+# Run:  ./flow run examples/effects/async_primitives.flow
+#
+# See docs/language/async-effects.md for implemented vs deferred.
+
+import "stdlib/async.flow"
+
+# Business logic depends only on the Async effect — no handler parameters.
+function fetch_user(user_id: i32) -> i32 {
+    async_delay(10)
+    return user_id * 10
+}
+
+function fetch_orders(user_id: i32) -> i32 {
+    async_delay(15)
+    return user_id * 5
+}
+
+function process_user(user_id: i32) -> i32 {
+    let data: i32 = fetch_user(user_id)
+    let orders: i32 = fetch_orders(user_id)
+    return data + orders
+}
+
+# "Parallel" fetch: spawn marks tasks, join collects simulated results.
+# Under SimulatedAsync, join(i) returns i * 10 (stateless formula).
+function fetch_all_users(num_users: i32) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to num_users {
+        async_spawn(i)
+    }
+    for i in 0 to num_users {
+        total = total + async_join(i)
+    }
+    return total
+}
+
+function demo_simulated() -> i32 {
+    printf("=== SimulatedAsync (sync stand-in) ===\n")
+    let mut user_result: i32 = 0
+    let mut batch: i32 = 0
+    handle Async with SimulatedAsync {
+        user_result = process_user(1)
+        batch = fetch_all_users(3)
+    }
+    # process_user(1) -> 10 + 5 = 15
+    # fetch_all_users(3) -> 0+10+20 = 30
+    printf("  process_user(1) = %d (expect 15)\n", user_result)
+    printf("  fetch_all_users(3) = %d (expect 30)\n", batch)
+    if user_result != 15 {
+        return 1
+    }
+    if batch != 30 {
+        return 2
+    }
+    return 0
+}
+
+function demo_blocking_io() -> i32 {
+    printf("=== BlockingAsyncIO (usleep + poll stubs) ===\n")
+    let mut ready: i32 = 0
+    handle AsyncIO with BlockingAsyncIO {
+        async_sleep_ms(1)
+        ready = async_poll_read(0, 0)
+    }
+    printf("  after sleep_ms(1), poll_read = %d (expect 1 / ready)\n", ready)
+    if ready != 1 {
+        return 3
+    }
+    return 0
+}
+
+function main() -> i32 {
+    printf("Async primitives demo\n")
+    printf("=====================\n\n")
+
+    let a: i32 = demo_simulated()
+    if a != 0 {
+        printf("FAIL: simulated demo (%d)\n", a)
+        return a
+    }
+    printf("\n")
+    let b: i32 = demo_blocking_io()
+    if b != 0 {
+        printf("FAIL: blocking I/O demo (%d)\n", b)
+        return b
+    }
+
+    printf("\nOK — effects-based async helpers work with handle/with.\n")
+    printf("Deferred: fiber scheduler, resumable continuations, real poll.\n")
+    return 0
+}

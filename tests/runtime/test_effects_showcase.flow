@@ -1,4 +1,3 @@
-# flow:lenient - effect operations are not modeled by the strict checker (see docs/effects-showcase.md)
 # Runtime test: effect-system showcase invariants
 # Guards the behaviours demonstrated by examples/effects/showcase.flow:
 #   1. Swapping handlers changes business outcomes with unchanged logic
