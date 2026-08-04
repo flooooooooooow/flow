@@ -1,4 +1,3 @@
-# flow:lenient - type checker does not yet model GPU capability methods (allocate) or array<f32> aliasing
 # GPU FFT Implementation using Effect-Based Programming
 # This demonstrates FLOW's capability for high-performance computing
 
@@ -37,6 +36,7 @@ extern {
     # Utility functions
     function length(arr: ptr<f32>) -> i32
     function array_f32(size: i32) -> ptr<f32>
+    function get_current_time() -> f64
 }
 
 # cuFFT constants
