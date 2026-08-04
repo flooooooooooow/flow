@@ -1,0 +1,45 @@
+# TCP echo sketch
+#
+# lib/stdlib/net.flow exists with TcpListener / socket externs, but today it
+# uses bare `extern function` forms that the module importer rejects. This
+# file inlines a thin shape demo with an `extern { }` block so it compiles.
+# A real accept/recv/send echo loop is still planned.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+    function socket(domain: i32, socket_type: i32, protocol: i32) -> i32
+}
+
+const AF_INET: i32 = 2
+const SOCK_STREAM: i32 = 1
+
+struct TcpListener {
+    fd: i32,
+    port: i32
+}
+
+function tcp_listener_new(port: i32) -> TcpListener {
+    let fd: i32 = socket(AF_INET, SOCK_STREAM, 0)
+    return TcpListener { fd: fd, port: port }
+}
+
+function main() -> i32 {
+    let port: i32 = 7777
+    let listener: TcpListener = tcp_listener_new(port)
+
+    printf("tcp_echo: listener fd=%d\n", listener.fd)
+    printf("tcp_echo: port=%d\n", listener.port)
+
+    # Planned echo loop:
+    #   bind / listen / accept
+    #   n = recv(client, buf, len, 0)
+    #   send(client, buf, n, 0)
+
+    if listener.fd < 0 {
+        printf("tcp_echo: socket() failed (%d)\n", listener.fd)
+        return 1
+    }
+
+    printf("tcp_echo: stdlib-shaped API ok (echo loop planned=%d)\n", 1)
+    return 0
+}
