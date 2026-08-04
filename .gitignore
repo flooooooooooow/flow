@@ -98,3 +98,7 @@ lake-packages/
 
 # Claude Code workspace (agent worktrees, local settings)
 .claude/
+
+# JUCE plugins — local build outputs and compiled test binaries
+plugins/*/build/
+plugins/SchurPhaser/tests/dsp_test
