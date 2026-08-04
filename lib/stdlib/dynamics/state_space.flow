@@ -3,6 +3,7 @@
 
 import "stdlib/dynamics/core.flow"
 
+# One discrete step: x_next = A x + B u.
 function state_step(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void {
     let n: i32 = sys.n
     let Bu: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -14,6 +15,7 @@ function state_step(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<
     }
 }
 
+# One continuous Euler step: x += dt (A x + B u).
 function state_step_continuous_euler(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void {
     let n: i32 = sys.n
     let dx: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -27,6 +29,7 @@ function state_step_continuous_euler(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f
     }
 }
 
+# Simulate discrete trajectory; writes states into x_out (steps × n).
 function rollout_discrete(
     sys: DynamicalSystem,
     x0: ptr<f64>,
@@ -52,7 +55,7 @@ function rollout_discrete(
     }
 }
 
-# Controllability matrix columns: A^k B for k = 0..n-1
+# Controllability matrix [B, AB, …, A^{n-1}B].
 function build_controllability_matrix(
     sys: DynamicalSystem,
     ctrl_buf: ptr<f64>,
@@ -80,6 +83,7 @@ function build_controllability_matrix(
     return ctrl
 }
 
+# Numerical rank estimate via column pivoting / elimination.
 function matrix_rank_estimate(m: Matrix, scratch: ptr<f64>) -> i32 {
     let rows: i32 = m.rows
     let cols: i32 = m.cols
@@ -117,6 +121,7 @@ function matrix_rank_estimate(m: Matrix, scratch: ptr<f64>) -> i32 {
     return rank
 }
 
+# 1 if controllability matrix has full rank n, else 0.
 function is_controllable(sys: DynamicalSystem, ctrl_buf: ptr<f64>, a_pow_buf: ptr<f64>, block_buf: ptr<f64>, next_a_buf: ptr<f64>, rank_scratch: ptr<f64>) -> i32 {
     let ctrl: Matrix = build_controllability_matrix(sys, ctrl_buf, a_pow_buf, block_buf, next_a_buf)
     let rank: i32 = matrix_rank_estimate(ctrl, rank_scratch)
@@ -126,7 +131,7 @@ function is_controllable(sys: DynamicalSystem, ctrl_buf: ptr<f64>, a_pow_buf: pt
     return 0
 }
 
-# Similarity transform: A' = T^{-1} A T,  B' = T^{-1} B
+# Apply similarity: A' = T^{-1} A T, B' = T^{-1} B.
 function apply_similarity(
     sys: DynamicalSystem,
     spec: TransformSpec,

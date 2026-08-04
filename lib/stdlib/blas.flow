@@ -127,6 +127,7 @@ extern {
 # MATRIX CREATION
 # ============================================================================
 
+# Allocate a zero-filled rows×cols matrix (row-major f64). Caller must mat_free.
 export function mat_new(rows: i32, cols: i32) -> Mat {
     let size: i64 = rows * cols * 8
     let data: ptr<f64> = malloc(size)
@@ -134,16 +135,19 @@ export function mat_new(rows: i32, cols: i32) -> Mat {
     return Mat { data: data, rows: rows, cols: cols, owns: 1 }
 }
 
+# Free matrix storage if owned (owns == 1); no-op for wrapped views.
 export function mat_free(m: Mat) -> void {
     if m.owns == 1 {
         free(m.data)
     }
 }
 
+# Wrap existing row-major buffer as Mat without taking ownership.
 export function mat_wrap(data: ptr<f64>, rows: i32, cols: i32) -> Mat {
     return Mat { data: data, rows: rows, cols: cols, owns: 0 }
 }
 
+# Deep-copy matrix into a new owned Mat.
 export function mat_clone(m: Mat) -> Mat {
     let result: Mat = mat_new(m.rows, m.cols)
     let size: i64 = m.rows * m.cols * 8
@@ -155,10 +159,12 @@ export function mat_clone(m: Mat) -> Mat {
 # ELEMENT ACCESS (row-major)
 # ============================================================================
 
+# Read element m[i, j] (0-based, row-major).
 export function mat_get(m: Mat, i: i32, j: i32) -> f64 {
     return m.data[i * m.cols + j]
 }
 
+# Write element m[i, j] = val (0-based, row-major).
 export function mat_set(m: Mat, i: i32, j: i32, val: f64) -> void {
     m.data[i * m.cols + j] = val
 }
@@ -167,6 +173,8 @@ export function mat_set(m: Mat, i: i32, j: i32, val: f64) -> void {
 # BLAS WRAPPERS (ergonomic API)
 # ============================================================================
 
+# Matrix product via BLAS dgemm: C = A @ B.
+# Shapes: A (m×k), B (k×n), C (m×n). Overwrites C.
 export function gemm(A: Mat, B: Mat, C: Mat) -> void {
     # C = A @ B
     # A: (m, k), B: (k, n), C: (m, n)
@@ -177,6 +185,7 @@ export function gemm(A: Mat, B: Mat, C: Mat) -> void {
                 m, n, k, 1.0, A.data, k, B.data, n, 0.0, C.data, n)
 }
 
+# Scaled GEMM: C = alpha * A @ B + beta * C (BLAS dgemm).
 export function gemm_alpha_beta(alpha: f64, A: Mat, B: Mat, beta: f64, C: Mat) -> void {
     # C = alpha * A @ B + beta * C
     let m: i32 = A.rows
@@ -186,25 +195,30 @@ export function gemm_alpha_beta(alpha: f64, A: Mat, B: Mat, beta: f64, C: Mat) -
                 m, n, k, alpha, A.data, k, B.data, n, beta, C.data, n)
 }
 
+# Matrix-vector product via BLAS dgemv: y = A @ x.
 export function gemv(A: Mat, x: ptr<f64>, y: ptr<f64>) -> void {
     # y = A @ x
     cblas_dgemv(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, A.rows, A.cols,
                 1.0, A.data, A.cols, x, 1, 0.0, y, 1)
 }
 
+# Dot product of length-n vectors via BLAS ddot: x · y.
 export function dot(x: ptr<f64>, y: ptr<f64>, n: i32) -> f64 {
     return cblas_ddot(n, x, 1, y, 1)
 }
 
+# Euclidean 2-norm of length-n vector via BLAS dnrm2: ||x||_2.
 export function norm2(x: ptr<f64>, n: i32) -> f64 {
     return cblas_dnrm2(n, x, 1)
 }
 
+# BLAS daxpy: y = alpha * x + y (in-place on y).
 export function axpy(alpha: f64, x: ptr<f64>, y: ptr<f64>, n: i32) -> void {
     # y = alpha * x + y
     cblas_daxpy(n, alpha, x, 1, y, 1)
 }
 
+# BLAS dscal: scale vector in place, x = alpha * x.
 export function scal(alpha: f64, x: ptr<f64>, n: i32) -> void {
     # x = alpha * x
     cblas_dscal(n, alpha, x, 1)
@@ -214,6 +228,8 @@ export function scal(alpha: f64, x: ptr<f64>, n: i32) -> void {
 # LAPACK WRAPPERS
 # ============================================================================
 
+# Solve A x = b via LAPACK dgesv (LU). Writes solution to x.
+# Returns 0 on success; non-zero info on failure. A is not modified.
 export function solve(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32 {
     # Solve A * x = b, result in x
     # Returns 0 on success, non-zero on failure
@@ -275,6 +291,7 @@ export function solve(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32 {
 # CONVENIENCE: MATLAB-STYLE OPERATORS
 # ============================================================================
 
+# Allocate and return C = A @ B (caller must mat_free C).
 export function matmul(A: Mat, B: Mat) -> Mat {
     # Returns new matrix C = A @ B
     let C: Mat = mat_new(A.rows, B.cols)
@@ -282,6 +299,7 @@ export function matmul(A: Mat, B: Mat) -> Mat {
     return C
 }
 
+# Return a new matrix that is the transpose of A.
 export function transpose(A: Mat) -> Mat {
     let result: Mat = mat_new(A.cols, A.rows)
     for i in 0 to A.rows {
@@ -292,6 +310,7 @@ export function transpose(A: Mat) -> Mat {
     return result
 }
 
+# n×n identity matrix (ones on diagonal).
 export function eye(n: i32) -> Mat {
     let m: Mat = mat_new(n, n)
     for i in 0 to n {
@@ -300,10 +319,12 @@ export function eye(n: i32) -> Mat {
     return m
 }
 
+# rows×cols zero matrix (alias for mat_new).
 export function zeros(rows: i32, cols: i32) -> Mat {
     return mat_new(rows, cols)
 }
 
+# rows×cols matrix filled with 1.0.
 export function ones(rows: i32, cols: i32) -> Mat {
     let m: Mat = mat_new(rows, cols)
     let size: i32 = rows * cols
