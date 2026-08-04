@@ -35,37 +35,83 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
+const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const node_1 = require("vscode-languageclient/node");
 let client;
-function activate(context) {
-    // Get LSP path from settings or use default
-    const config = vscode.workspace.getConfiguration('flow');
-    let lspPath = config.get('lspPath');
-    if (!lspPath) {
-        // Try to find flow-lsp in PATH or use python module
-        lspPath = 'python3';
+function findFlowRepoRoot(start) {
+    let dir = start;
+    for (let i = 0; i < 12 && dir; i++) {
+        const candidate = path.join(dir, 'src', 'flow', 'lsp_server.py');
+        if (fs.existsSync(candidate)) {
+            return dir;
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir)
+            break;
+        dir = parent;
     }
-    const serverOptions = {
-        command: lspPath,
+    return undefined;
+}
+function resolveServerOptions() {
+    const config = vscode.workspace.getConfiguration('flow');
+    const env = { ...process.env };
+    const customLsp = (config.get('lspPath') || '').trim();
+    if (customLsp) {
+        return {
+            command: customLsp,
+            args: [],
+            transport: node_1.TransportKind.stdio,
+            options: { env }
+        };
+    }
+    const python = (config.get('pythonPath') || 'python3').trim();
+    let repoPath = (config.get('repoPath') || '').trim();
+    if (!repoPath) {
+        const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        repoPath = findFlowRepoRoot(folder) || findFlowRepoRoot(__dirname) || '';
+    }
+    if (repoPath) {
+        const src = path.join(repoPath, 'src');
+        env.PYTHONPATH = env.PYTHONPATH ? `${src}${path.delimiter}${env.PYTHONPATH}` : src;
+    }
+    return {
+        command: python,
         args: ['-m', 'flow.lsp_server'],
         transport: node_1.TransportKind.stdio,
-        options: {
-            env: {
-                ...process.env,
-                PYTHONPATH: path.join(context.extensionPath, '..', '..', '..', 'src')
-            }
-        }
+        options: { env }
     };
-    const clientOptions = {
+}
+function clientOptions() {
+    return {
         documentSelector: [{ scheme: 'file', language: 'flow' }],
         synchronize: {
             fileEvents: vscode.workspace.createFileSystemWatcher('**/*.flow')
         }
     };
-    client = new node_1.LanguageClient('flowLanguageServer', 'FLOW Language Server', serverOptions, clientOptions);
-    client.start();
+}
+async function startClient() {
+    client = new node_1.LanguageClient('flowLanguageServer', 'FLOW Language Server', resolveServerOptions(), clientOptions());
+    try {
+        await client.start();
+    }
+    catch (err) {
+        vscode.window.showWarningMessage(`FLOW LSP did not start (${err}). Syntax highlighting still works. ` +
+            `Set flow.repoPath to your Flow checkout, or install the flow Python package. ` +
+            `See the FLOW Language extension README.`);
+    }
+}
+function activate(context) {
+    context.subscriptions.push(vscode.commands.registerCommand('flow.restartLsp', async () => {
+        if (client) {
+            await client.stop();
+            client = undefined;
+        }
+        await startClient();
+        vscode.window.showInformationMessage('FLOW language server restarted');
+    }));
+    void startClient();
 }
 function deactivate() {
     if (!client) {

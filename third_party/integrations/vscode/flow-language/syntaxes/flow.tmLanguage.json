@@ -39,11 +39,11 @@
       "patterns": [
         {
           "name": "keyword.control.flow",
-          "match": "\\b(if|elif|else|while|for|return|match|handle|with|parallel|in|step|to|and|or|not)\\b"
+          "match": "\\b(if|elif|else|while|for|return|match|default|handle|with|parallel|in|step|to|and|or|not|break|continue)\\b"
         },
         {
           "name": "keyword.declaration.flow",
-          "match": "\\b(function|let|struct|effect|capability|import|export|module)\\b"
+          "match": "\\b(function|let|mut|struct|enum|effect|capability|import|export|module|extern|const|theorem|assume|therefore|type|impl|trait)\\b"
         },
         {
           "name": "constant.language.flow",

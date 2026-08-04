@@ -251,20 +251,36 @@ See [docs/python-target.md](docs/python-target.md) for details.
 
 ---
 
+## Editor support (VS Code & Cursor)
+
+```bash
+# Local install from this repo
+./scripts/publish_vscode_extension.sh --install
+
+# Or after marketplace publish:
+#   cursor --install-extension flooooooooooow.flow-language
+#   code --install-extension flooooooooooow.flow-language
+```
+
+Extension lives at `third_party/integrations/vscode/flow-language/` (syntax + LSP).  
+Publishing: set `VSCE_PAT` and run `./scripts/publish_vscode_extension.sh --publish` — see that folder’s `PUBLISH.md`.
+
 ## Highlighted Examples
 
 ### Games (with Native Graphics)
 
+![Flow Tetris demo](docs/demos/tetris.gif)
+
 ```bash
 # Tetris - fully playable!
-./flow compile examples/games/tetris_gfx.flow
-clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
-    -framework Cocoa -framework CoreGraphics -framework QuartzCore \
-    -o build/tetris && ./build/tetris
+./flow gfx examples/games/tetris_gfx.flow
+# (or: compile + link runtime/gfx_macos.m / gfx_linux.c / gfx_windows.c)
+
+# Regenerate the demo GIF:
+#   python3 scripts/record_tetris_gif.py
 
 # 2048 puzzle
-./flow compile examples/games/2048_gfx.flow
-# ... same clang command
+./flow gfx examples/games/2048_gfx.flow
 ```
 
 ### Machine Learning
