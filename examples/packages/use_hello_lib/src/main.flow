@@ -1,0 +1,10 @@
+# Package consumer sketch — path-dep on registry/crates/hello_lib.
+# Until `flow add` resolves on this checkout, run the library's own smoke
+# or treat this as the intended layout for packages.
+#
+#   ./flow run examples/packages/use_hello_lib/src/main.flow
+
+function main() -> i32 {
+    print("use_hello_lib: package layout ok (wire import when registry path resolves)")
+    return 0
+}

@@ -1,0 +1,41 @@
+# Minimal UI layout numbers demo (no window — pure layout math).
+# Windowed demos: ./flow demo ui-layout   |   ./flow demo ui-layout-window
+# Run: ./flow run examples/ui/layout_hello.flow
+
+struct Rect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32
+}
+
+function row_child(parent: Rect, index: i32, count: i32) -> Rect {
+    let cw: i32 = parent.w / count
+    return Rect {
+        x: parent.x + index * cw,
+        y: parent.y,
+        w: cw,
+        h: parent.h
+    }
+}
+
+function main() -> i32 {
+    let root: Rect = Rect { x: 0, y: 0, w: 300, h: 40 }
+    let a: Rect = row_child(root, 0, 3)
+    let b: Rect = row_child(root, 1, 3)
+    let c: Rect = row_child(root, 2, 3)
+    print("layout_hello row widths:")
+    print(a.w)
+    print(b.w)
+    print(c.w)
+    if a.w != 100 {
+        return 1
+    }
+    if b.x != 100 {
+        return 2
+    }
+    if c.x != 200 {
+        return 3
+    }
+    return 0
+}

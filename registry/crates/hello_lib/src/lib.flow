@@ -1,0 +1,4 @@
+# Tiny sample library for the package-consumer example.
+export function hello_answer() -> i32 {
+    return 42
+}

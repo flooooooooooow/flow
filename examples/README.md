@@ -129,6 +129,24 @@ Generic programming:
 - `traits_demo.flow` - Trait-based polymorphism
 - `option_result_demo.flow` - Option/Result types
 
+
+### WASM (`wasm/`)
+- `hello_wasm.flow` - Fib smoke for Flow→C→WASM (`./flow wasm …`)
+
+### Packages (`packages/`)
+- `use_hello_lib/` - Path-dep package consumer layout
+
+### UI (`ui/`)
+- `layout_hello.flow` - Row layout math (no window)
+
+### Networking (`net/`)
+- `http_hello.flow` - Thin HTTP route slice (no sockets)
+- See also TCP echo once merged from examples roadmap PR
+
+### Concurrency (`concurrency/`)
+- `channels.flow` - send/recv/close
+- `pipeline.flow` - producer → transform → consumer
+
 ## Verified Compile Status
 
 See [STATUS.md](STATUS.md) for a machine-generated compile status table covering

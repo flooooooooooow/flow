@@ -1,0 +1,59 @@
+# Thin HTTP routing slice (stdlib-shaped demo — no live sockets).
+# Full server: apps/flow-http/http.flow
+# Run: ./flow run examples/net/http_hello.flow
+
+extern {
+    function printf(fmt: string) -> i32
+}
+
+const METHOD_GET: i32 = 1
+const STATUS_OK: i32 = 200
+const STATUS_NOT_FOUND: i32 = 404
+
+struct HttpRequest {
+    method: i32,
+    path_hash: i32
+}
+
+struct HttpResponse {
+    status: i32,
+    body_code: i32
+}
+
+function hash_path_lit(tag: i32) -> i32 {
+    # Stand-in for hashing "/hello" etc.
+    return tag
+}
+
+function route_request(req: HttpRequest) -> HttpResponse {
+    if req.method == METHOD_GET {
+        if req.path_hash == hash_path_lit(1) {
+            return HttpResponse { status: STATUS_OK, body_code: 1 }
+        }
+    }
+    return HttpResponse { status: STATUS_NOT_FOUND, body_code: 0 }
+}
+
+function main() -> i32 {
+    let ok_req: HttpRequest = HttpRequest {
+        method: METHOD_GET,
+        path_hash: hash_path_lit(1)
+    }
+    let miss: HttpRequest = HttpRequest {
+        method: METHOD_GET,
+        path_hash: hash_path_lit(99)
+    }
+    let a: HttpResponse = route_request(ok_req)
+    let b: HttpResponse = route_request(miss)
+    printf("http_hello: /hello -> ")
+    print(a.status)
+    printf("http_hello: /missing -> ")
+    print(b.status)
+    if a.status != STATUS_OK {
+        return 1
+    }
+    if b.status != STATUS_NOT_FOUND {
+        return 2
+    }
+    return 0
+}

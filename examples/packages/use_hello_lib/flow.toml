@@ -1,0 +1,7 @@
+[package]
+name = "use_hello_lib"
+version = "0.1.0"
+
+[dependencies]
+# Path dependency until the public registry is the default install source.
+hello_lib = { path = "../../../registry/crates/hello_lib" }
