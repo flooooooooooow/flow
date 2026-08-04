@@ -46,30 +46,22 @@ struct MetalInfo {
 
 ## 📊 Memory Management
 
-### GPU Memory Operations
+### GPU / Unified Memory (shipped)
+
+See **[gpu-memory.md](gpu-memory.md)** — `import "stdlib/gpu_memory.flow"`.
 
 ```flow
-# GPU memory allocation
-function gpu_allocate(size: i64) -> GPUPtr
-function gpu_free(ptr: GPUPtr) -> void
-function gpu_allocate_array<T>(size: i32) -> [T]
-function gpu_allocate_matrix<T>(rows: i32, cols: i32) -> [[T]]
+import "stdlib/gpu_memory.flow"
 
-# Memory transfer
-function gpu_copy_to_device(host_data: any, device_ptr: GPUPtr) -> void
-function gpu_copy_from_device(device_ptr: GPUPtr, size: i64) -> any
-function gpu_copy_device_to_device(src: GPUPtr, dst: GPUPtr, size: i64) -> void
+let buf: GpuBuffer = gpu_alloc(4096)          # shared/unified on Metal
+let u: GpuBuffer = unified_allocate(4096)     # alias
+gpu_copy_to_device(buf, host, 4096)
+gpu_copy_from_device(host, buf, 4096)
+let mapped: ptr<void> = gpu_host_ptr(buf)     # unified mapping
+gpu_free(buf)
 ```
 
-### Unified Memory (Apple Silicon)
-
-```flow
-# Unified memory operations
-function unified_allocate(size: i64) -> UnifiedPtr
-function unified_migrate_to_cpu(ptr: UnifiedPtr) -> void
-function unified_migrate_to_gpu(ptr: UnifiedPtr) -> void
-function unified_get_location(ptr: UnifiedPtr) -> MemoryLocation
-```
+CPU heap remains in [memory.md](memory.md). CUDA / explicit migrate APIs are future work.
 
 ## 🚀 GPU Computing
 

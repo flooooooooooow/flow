@@ -29,6 +29,29 @@ for n = 2. Continuous declarations are supported and are Euler-discretized
 (`Ad = I + dt*A`, `Bd = dt*B`) before analysis. Keep `generations` at 32 or
 below — the GA convergence history buffer holds 32 entries.
 
+## Namespaces (`dyn.` / `dynamics { }`)
+
+Bare keywords (`dsys`, `horizon`, `sense`, `ga evolve`, `closed`, `analyze`,
+`wfc`) still work. Prefer a namespace when you want the dynamics vocabulary
+out of the global soup (and clearer IntelliSense):
+
+```flow
+# Block namespace — body uses bare DSL lines
+dynamics {
+    dsys plant { discrete  dt 0.1  n 2 m 1 p 1
+        A 1.0 0.1 0.0 1.0  B 0.0 0.1  C 1.0 0.0 }
+    horizon rollout finite 50
+    sense on plant { controllable -> ok  spectral -> rho }
+}
+
+# Line prefix (short or long)
+dyn.horizon rollout finite 50
+dynamics.analyze plant ga k1 k2 over rollout -> report { full }
+```
+
+The VS Code / Cursor extension + LSP offer snippets for both forms
+(`dyn.dsys`, `sense on`, `dynamics { … }`, …).
+
 ---
 
 ## `dsys` — declare a system

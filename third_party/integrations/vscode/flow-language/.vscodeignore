@@ -6,6 +6,7 @@ tsconfig.json
 **/*.map
 **/*.ts
 !out/**/*.js
+!snippets/**
 node_modules/**
 *.vsix
 PUBLISH.md

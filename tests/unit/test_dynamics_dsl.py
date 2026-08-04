@@ -109,6 +109,66 @@ guide plant with k1 k2 through layout using guide over rollout {
 """
 
 
+NAMESPACED_BLOCK = """
+dynamics {
+    dsys plant {
+        discrete
+        dt 0.1
+        n 2 m 1 p 1
+        A 1.0 0.1 0.0 1.0
+        B 0.0 0.1
+        C 1.0 0.0
+    }
+    horizon rollout finite 50
+    sense on plant {
+        controllable -> plant_ok
+        spectral -> rho_open
+    }
+}
+
+function main() -> i32 {
+    return plant_ok
+}
+"""
+
+NAMESPACED_PREFIX = """
+dyn.dsys plant {
+    discrete
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+dynamics.horizon rollout finite 40
+dyn.sense on plant {
+    controllable -> ok
+}
+
+function main() -> i32 { return ok }
+"""
+
+
+class TestDynamicsNamespaces:
+    def test_dynamics_block_parses(self):
+        assert has_dynamics_dsl(NAMESPACED_BLOCK)
+        program, stripped = parse_dynamics_dsl(NAMESPACED_BLOCK)
+        assert "dynamics {" not in stripped
+        assert "dsys plant" not in stripped
+        assert "plant" in program.systems
+        assert program.horizons["rollout"].steps == 50
+        assert len(program.senses) == 1
+
+    def test_dyn_dot_prefix_parses(self):
+        program, stripped = parse_dynamics_dsl(NAMESPACED_PREFIX)
+        assert "dyn.dsys" not in stripped
+        assert "dynamics.horizon" not in stripped
+        assert program.systems["plant"].n == 2
+        assert program.horizons["rollout"].steps == 40
+        assert expand_dynamics_dsl(NAMESPACED_PREFIX).startswith(
+            'import "stdlib/dynamics/ga_analysis.flow"'
+        )
+
+
 class TestDynamicsDSLExpand:
     def test_expand_injects_import_at_top(self):
         out = expand_dynamics_dsl(SAMPLE)
