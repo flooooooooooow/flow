@@ -8,8 +8,8 @@ GPU experiments. This page is not a promise of Metal/CUDA/OpenCL product parity.
 | Platform | Backend file | Status | What you get today |
 |----------|--------------|--------|--------------------|
 | **macOS** | `runtime/gfx_macos.m` | ✅ Working | Cocoa window, software RGBA8 framebuffer, poll/keys, clear/fill_rect/present |
-| **Linux** | `runtime/gfx_linux.c` | 🔲 Stub | Same C symbols as macOS; `flow_gfx_init` returns `NULL` and logs to stderr |
-| **Windows** | — | 🔲 Missing | No `gfx_windows.c`; not started |
+| **Linux** | `runtime/gfx_linux.c` | ✅ SDL2 (stub fallback) | Real window + RGBA texture when SDL2 headers present; `-DFLOW_GFX_STUB` keeps the old null-init stub |
+| **Windows** | `runtime/gfx_windows.c` | ✅ partial — SDL2 shared with Linux; needs MSVC/clang smoke on Windows | Same SDL2 code path as Linux (`gfx_sdl_impl.inc`); compiles clean (incl. `-DFLOW_GFX_STUB`) but not yet run on real Windows hardware/CI |
 
 | Related path | Status | Notes |
 |--------------|--------|-------|
@@ -17,7 +17,7 @@ GPU experiments. This page is not a promise of Metal/CUDA/OpenCL product parity.
 | Vulkan sample bridges | Experimental | `runtime/vulkan_flow_*_bridge.cpp` — demos, not the stdlib 2D API |
 | CUDA / OpenCL “auto backend” | ❌ Not shipping | Older aspirational docs; do not rely on this |
 
-Cross-platform graphics (Linux) remains a short-term roadmap item:
+Cross-platform graphics (Linux ✅, Windows ✅ partial) is tracked in
 [ROADMAP.md](../../ROADMAP.md).
 
 ## What works (macOS)
@@ -44,30 +44,61 @@ gfx_close(g)
 Pixel format: RGBA8. Key codes are macOS `NSEvent.keyCode` values (constants in
 `gfx.flow`).
 
-## Linux stub (current)
+## Linux / Windows stub fallback
 
-`runtime/gfx_linux.c` matches the **macOS C ABI** so Linux links do not fail on
-missing symbols, but it does not open a window:
+Without SDL2 headers (or with `-DFLOW_GFX_STUB`), `gfx_linux.c` / `gfx_windows.c`
+keep the old ABI-compatible stub: `flow_gfx_init` returns `NULL`,
+`should_close` is always `1`. See `runtime/README.md`.
 
-- `flow_gfx_init` → prints a clear stub message, returns `NULL`
-- `flow_gfx_should_close` → always `1` (so loops exit instead of spinning)
-- other entry points → no-ops after a one-shot stderr warning
+## Linux build
 
-See `runtime/README.md`.
+```bash
+# Prefer pkg-config when available
+clang -O2 build/tetris_gfx.c runtime/gfx_linux.c \
+  $(pkg-config --cflags --libs sdl2) -o tetris_gfx
 
-## What’s needed next (Linux — small scope)
+# Or via the Flow CLI gfx runner (selects macOS vs Linux vs Windows backend):
+./flow gfx examples/games/tetris_gfx.flow
+```
 
-Not a Vulkan rewrite. Incremental path:
+`./flow`’s native gfx path links `gfx_linux.c` + SDL2 on Linux hosts.
+Keycodes are mapped to the macOS virtual codes in `gfx.flow` (A/S/D/W/R/arrows/Esc).
 
-1. **SDL2 window + texture** presenting an RGBA8 buffer (same layout as macOS).
-2. Implement every `flow_gfx_*` symbol with the **same signatures** as
-   `gfx_macos.m` / `gfx.flow` (opaque `void*` ctx).
-3. Map a small keycode set (document Linux vs macOS differences in `gfx.flow`).
-4. Teach the package/build path to link `gfx_linux.c` (+ `-lSDL2`) on Linux
-   instead of `gfx_macos.m`.
+## Windows build
 
-Optional later: Windows via SDL2 sharing most of the Linux code, or a thin
-Win32 GDI/DIB path. GPU compute remains a separate track from this 2D API.
+`gfx_windows.c` is a thin driver that shares its entire SDL2 implementation
+with Linux via `runtime/gfx_sdl_impl.inc` — same buffer layout, same keycode
+map, same ABI. This is a **practical slice**: it compiles clean (including
+`-DFLOW_GFX_STUB`) but has not yet been smoke-tested against a real
+MSVC/clang toolchain + SDL2 on Windows hardware or CI.
+
+```bash
+# MSYS2 / MinGW / Git Bash (clang or gcc), SDL2 dev package installed
+clang -O2 build/tetris_gfx.c runtime/gfx_windows.c \
+  $(sdl2-config --cflags --libs) -o tetris_gfx.exe
+
+# MSVC / clang-cl, SDL2 development libraries unpacked locally
+clang-cl build/tetris_gfx.c runtime\gfx_windows.c /I C:\SDL2\include ^
+  /link /LIBPATH:C:\SDL2\lib SDL2.lib SDL2main.lib /out:tetris_gfx.exe
+# copy SDL2.dll next to the exe (or add its folder to PATH) at runtime
+
+# Or via the Flow CLI gfx runner, from an MSYS2/Git Bash/Cygwin shell
+# (detected via `uname -s`; picks gfx_windows.c + sdl2-config/pkg-config):
+./flow gfx examples/games/tetris_gfx.flow
+```
+
+Still open: real Windows CI/hardware smoke test, richer key map, xvfb-style
+headless smoke for Linux CI.
+
+## What’s done / left (Linux + Windows)
+
+- [x] SDL2 window + streaming RGBA32 texture (same buffer layout as macOS)
+- [x] Full `flow_gfx_*` ABI parity
+- [x] Small keycode map → macOS codes
+- [x] `./flow` gfx link path picks `gfx_linux.c` / `gfx_windows.c` + SDL2 by host
+- [x] SDL2 implementation shared between Linux and Windows (`gfx_sdl_impl.inc`)
+- [ ] Real Windows (MSVC/clang) hardware or CI smoke test
+- [ ] xvfb-style headless CI smoke for Linux
 
 ## GPU / Metal notes
 
