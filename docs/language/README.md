@@ -13,6 +13,7 @@ Detailed documentation for the Flow programming language.
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |
 | [Graphics](graphics.md) | Native 2D graphics — platform matrix (macOS / Linux stub / Windows) |
+| [WebAssembly](wasm.md) | Near-term Flow→C→emscripten path; native Flow-in-WASM deferred |
 | [Async via Effects](async-effects.md) | Async modeled as effects (no async/await keyword) |
 | [Language Design](language_design.md) | Design rationale |
 

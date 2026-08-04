@@ -471,14 +471,17 @@
     </header>
 
     <div class="notice" id="notice">
-        <strong>Syntax explorer + optional browser interpreter.</strong>
-        Browse examples with highlighting and basic lint checks. When loaded from the wiki deploy,
-        <strong>Run (browser)</strong> executes via the same client-side interpreter as tutorials
-        (<code>flow-compile.js</code>) — not the native compiler. For real native runs use
-        <code>./flow run</code> (instructions in the right panel).
-        For hands-on lessons see
+        <strong>Three ways to run.</strong>
+        <strong>Check Syntax</strong> is editor lint only.
+        <strong>Run (browser)</strong> uses the tutorial interpreter (<code>flow-compile.js</code>) — not native.
+        <strong>Run (native local)</strong> talks to a loopback compile API
+        (<code>python3 scripts/playground_compile_server.py</code>) that uses the real Flow→C toolchain (#132).
+        Next WASM step: emscripten hello artifact (<code>scripts/build_wasm_hello.sh</code>,
+        <a href="../language/wasm.md" style="color: var(--accent)">language/wasm.md</a>);
+        in-browser Flow compiler remains deferred (#121).
+        Tutorials:
         <a href="../tutorials/index.html" style="color: var(--accent)">Interactive Tutorials</a>;
-        for heap/arena rules see
+        memory:
         <a href="../#library/memory.md" style="color: var(--accent)">Memory docs</a>.
     </div>
 
@@ -520,6 +523,12 @@
                         <polygon points="5 3 19 12 5 21 5 3"/>
                     </svg>
                     Run (browser)
+                </button>
+                <button class="btn btn-success" id="runNativeBtn" onclick="runNativeLocal()" title="Real Flow toolchain via localhost compile API" style="display: none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    Run (native local)
                 </button>
             </div>
         </div>
@@ -1121,6 +1130,12 @@ function main() -> i32 {
             });
         }
 
+        const NATIVE_COMPILE_URLS = [
+            'http://127.0.0.1:8765',
+            'http://localhost:8765'
+        ];
+        let nativeCompileBase = null;
+
         function enableBrowserRunIfAvailable() {
             if (!browserEngineAvailable()) return;
             const btn = document.getElementById('runBrowserBtn');
@@ -1128,7 +1143,99 @@ function main() -> i32 {
             const badge = document.getElementById('logoBadge');
             btn.style.display = '';
             shortcut.style.display = '';
-            badge.textContent = 'browser + syntax';
+            badge.textContent = nativeCompileBase ? 'native + browser' : 'browser + syntax';
+        }
+
+        async function probeNativeCompile() {
+            for (const base of NATIVE_COMPILE_URLS) {
+                try {
+                    const ctrl = new AbortController();
+                    const t = setTimeout(() => ctrl.abort(), 400);
+                    const res = await fetch(base + '/health', { signal: ctrl.signal });
+                    clearTimeout(t);
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    if (data && data.ok) {
+                        nativeCompileBase = base;
+                        const btn = document.getElementById('runNativeBtn');
+                        btn.style.display = '';
+                        const badge = document.getElementById('logoBadge');
+                        badge.textContent = browserEngineAvailable()
+                            ? 'native + browser'
+                            : 'native local';
+                        return;
+                    }
+                } catch (e) {
+                    /* server not running — fine */
+                }
+            }
+        }
+
+        async function runNativeLocal() {
+            const outputEl = document.getElementById('output');
+            const statusDot = document.getElementById('editorStatus');
+            const statusText = document.getElementById('editorStatusText');
+            document.getElementById('outputPanelLabel').textContent = 'Native local output';
+
+            if (!nativeCompileBase) {
+                await probeNativeCompile();
+            }
+            if (!nativeCompileBase) {
+                outputEl.className = 'output-content error';
+                outputEl.textContent =
+                    'Native compile API not reachable on 127.0.0.1:8765.\n\n' +
+                    'Start it from the repo root:\n' +
+                    '  python3 scripts/playground_compile_server.py\n\n' +
+                    'It binds loopback only, caps source size, and times out subprocesses.\n' +
+                    'See scripts/playground_compile_server.py for security notes.';
+                statusDot.className = 'status-dot error';
+                statusText.textContent = 'No compile API';
+                return;
+            }
+
+            statusDot.className = 'status-dot';
+            statusText.textContent = 'Compiling (native)…';
+            outputEl.className = 'output-content';
+            outputEl.textContent = 'Talking to ' + nativeCompileBase + '/compile …';
+
+            try {
+                const res = await fetch(nativeCompileBase + '/compile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source: editor.value })
+                });
+                const data = await res.json();
+                const banner =
+                    '── native local (' + (data.mode || 'native-local') + ') ──\n' +
+                    'Real Flow → C toolchain on your machine (not the browser interpreter).\n\n';
+                if (!data.ok) {
+                    outputEl.className = 'output-content error';
+                    outputEl.textContent =
+                        banner +
+                        (data.error || 'compile failed') + '\n' +
+                        (data.stderr ? '\n' + data.stderr : '') +
+                        (data.stdout ? '\n' + data.stdout : '');
+                    statusDot.className = 'status-dot error';
+                    statusText.textContent = 'Native error';
+                    return;
+                }
+                outputEl.className = 'output-content success';
+                outputEl.textContent =
+                    banner +
+                    (data.stdout || '(no stdout)\n') +
+                    (data.stderr ? '\n[stderr]\n' + data.stderr : '');
+                statusDot.className = 'status-dot success';
+                statusText.textContent = 'Ran (native local)';
+            } catch (e) {
+                nativeCompileBase = null;
+                document.getElementById('runNativeBtn').style.display = 'none';
+                outputEl.className = 'output-content error';
+                outputEl.textContent =
+                    'Native compile request failed: ' + (e && e.message ? e.message : e) +
+                    '\n\nIs python3 scripts/playground_compile_server.py still running?';
+                statusDot.className = 'status-dot error';
+                statusText.textContent = 'Native error';
+            }
         }
 
         // Load example
@@ -1249,6 +1356,7 @@ function main() -> i32 {
         loadFromUrl();
         refreshHighlight();
         enableBrowserRunIfAvailable();
+        probeNativeCompile();
         clearOutput();
     </script>
 </body>

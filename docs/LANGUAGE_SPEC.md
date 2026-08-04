@@ -643,11 +643,11 @@ let val: i32 = *p       # Dereference (not yet implemented)
 
 ### 9.3 WebAssembly
 
-**Status:** ⚠️ Via Emscripten (C → WASM)
+**Status:** ⚠️ Via Emscripten (C → WASM) — see [language/wasm.md](language/wasm.md)
 
-- Requires Emscripten toolchain
-- Most features work
-- No direct WASM emission
+- Near-term path: Flow → C → `emcc` (smoke: `scripts/build_wasm_hello.sh`)
+- Requires Emscripten toolchain locally; not required for CI
+- No direct WASM emission; native Flow-in-WASM compiler deferred
 
 ### 9.4 JIT Execution
 
