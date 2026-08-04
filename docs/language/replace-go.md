@@ -57,8 +57,8 @@ function main() -> i32 {
 
 ## Remaining gaps
 
-- TLS termination (stdlib `http` wraps curl; native accept-loop TLS still open)
 - Full compiler multi-shot `shift`/`reset` rewrite (fiber park + C reset scaffold ship)
+- Production TLS (cert files / ALPN / HTTP/2) — self-signed accept-loop ships
 
 ## Runtime map
 
@@ -71,7 +71,9 @@ function main() -> i32 {
 | Race hooks | `runtime/flow_race.c` (`FLOW_RACE=1`); `FLOW_TSAN=1` → `-fsanitize=thread` |
 | Cont scaffold | `runtime/flow_cont.c` (`Cont.shift` M:N-safe; `cont_reset.flow`) |
 | HTTP routed + mw | request-id + Bearer auth; fiber-per-conn (`http_fiber.flow`) |
+| HTTPS accept-loop | OpenSSL `flow_tls.c` / `http_tls.flow` (ephemeral self-signed) |
 | HTTP hello | `flow_http_serve_hello` / `examples/concurrency/http_hello.flow` |
+| HTTP client (curl) | `registry/packages/http` (GET/POST over HTTPS) |
 | POSIX sync + channels | `lib/stdlib/concurrent.flow` |
 | Effects surface | `lib/stdlib/async.flow` |
 
