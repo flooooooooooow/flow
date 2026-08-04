@@ -1,0 +1,182 @@
+# FLOW Shader Language — gallery showcase
+#
+#   ./flow shader examples/gpu/shader_showcase.flow
+#   ./flow shader examples/gpu/shader_showcase.flow --frames 2
+#
+# Controls: ← / → / Space cycle demos, 1–9 jump, Esc quit
+
+# ── Shared helpers ──────────────────────────────────────────────────
+
+fn pulse(t: f32, speed: f32) -> f32 {
+    return 0.5 + 0.5 * sin(t * speed)
+}
+
+fn rotate2(p: vec2, a: f32) -> vec2 {
+    let c: f32 = cos(a)
+    let s: f32 = sin(a)
+    return vec2(p.x * c - p.y * s, p.x * s + p.y * c)
+}
+
+fn hsv(h: f32, s: f32, v: f32) -> vec3 {
+    let k: vec3 = vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)
+    let p: vec3 = abs(fract(vec3(h) + k) * 6.0 - vec3(3.0))
+    return v * mix(vec3(1.0), clamp(p - vec3(1.0), 0.0, 1.0), s)
+}
+
+# ── 1. Plasma ───────────────────────────────────────────────────────
+
+shader fill plasma {
+    let u: f32 = uv.x
+    let v: f32 = uv.y
+    let t: f32 = time
+    color = vec4(
+        0.5 + 0.5 * sin(u * 10.0 + t),
+        0.5 + 0.5 * cos(v * 8.0 - t),
+        0.5 + 0.5 * sin((u + v) * 4.0 + t * 1.3),
+        1.0
+    )
+}
+
+# ── 2. Ripple tunnel ────────────────────────────────────────────────
+
+shader fill ripple {
+    let p: vec2 = uv - vec2(0.5)
+    let r: f32 = length(p)
+    let a: f32 = atan2(p.y, p.x) + time * 0.4
+    let bands: f32 = 0.5 + 0.5 * sin(r * 40.0 - time * 4.0)
+    let glow: f32 = 0.12 / (r + 0.04)
+    color = vec4(
+        bands * (0.35 + 0.65 * sin(a)),
+        bands * (0.35 + 0.65 * cos(a * 0.7)),
+        clamp(glow, 0.0, 1.0),
+        1.0
+    )
+}
+
+# ── 3. Gradient waves ───────────────────────────────────────────────
+
+shader fill waves {
+    let y: f32 = uv.y + 0.08 * sin(uv.x * 12.0 + time * 2.0)
+    let band: f32 = smoothstep(0.0, 0.02, abs(fract(y * 8.0) - 0.5) - 0.2)
+    let sky: vec3 = mix(vec3(0.05, 0.1, 0.25), vec3(0.4, 0.7, 1.0), uv.y)
+    color = vec4(sky * (0.4 + 0.6 * band), 1.0)
+}
+
+# ── 4. Checker spin ─────────────────────────────────────────────────
+
+shader fill checker {
+    let p: vec2 = rotate2(uv - vec2(0.5), time * 0.5) * 8.0
+    let c: f32 = mod(floor(p.x) + floor(p.y), 2.0)
+    let col: vec3 = mix(vec3(0.1, 0.1, 0.12), vec3(0.95, 0.85, 0.2), c)
+    color = vec4(col, 1.0)
+}
+
+# ── 5. Value noise field ────────────────────────────────────────────
+
+shader fill noise_field {
+    let p: vec2 = uv * 6.0 + vec2(time * 0.15, time * 0.08)
+    let n: f32 = fbm(p)
+    let col: vec3 = palette(n + time * 0.05)
+    color = vec4(col * (0.55 + 0.45 * n), 1.0)
+}
+
+# ── 6. Mandelbrot zoom ──────────────────────────────────────────────
+
+shader fill mandelbrot {
+    let scale: f32 = exp(-0.3 * fract(time * 0.05) * 8.0)
+    let center: vec2 = vec2(-0.745, 0.186)
+    let c: vec2 = center + (uv - vec2(0.5)) * scale * 2.5
+    var z: vec2 = vec2(0.0)
+    var i: f32 = 0.0
+    for k in 0 to 40 {
+        if length(z) < 4.0 {
+            z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c
+            i = i + 1.0
+        }
+    }
+    let t: f32 = i / 40.0
+    color = vec4(palette(t + time * 0.02), 1.0)
+}
+
+# ── 7. Julia set ────────────────────────────────────────────────────
+
+shader fill julia {
+    let c: vec2 = vec2(0.355 + 0.1 * sin(time * 0.4), 0.355 + 0.1 * cos(time * 0.3))
+    var z: vec2 = (uv - vec2(0.5)) * 2.8
+    var i: f32 = 0.0
+    for k in 0 to 48 {
+        if length(z) < 4.0 {
+            z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c
+            i = i + 1.0
+        }
+    }
+    color = vec4(hsv(i / 48.0 + time * 0.05, 0.85, smoothstep(0.0, 1.0, i / 48.0)), 1.0)
+}
+
+# ── 8. Starfield ────────────────────────────────────────────────────
+
+shader fill stars {
+    let p: vec2 = uv * 2.0 - vec2(1.0)
+    let aspect: f32 = resolution.x / resolution.y
+    let q: vec2 = vec2(p.x * aspect, p.y)
+    var col: vec3 = vec3(0.02, 0.02, 0.05)
+    for layer in 0 to 3 {
+        let speed: f32 = 0.2 + f32(layer) * 0.25
+        let cell: f32 = 8.0 + f32(layer) * 6.0
+        let gp: vec2 = q * cell + vec2(0.0, time * speed * cell)
+        let id: vec2 = floor(gp)
+        let f: vec2 = fract(gp) - vec2(0.5)
+        let h: f32 = hash(id)
+        let d: f32 = length(f)
+        let twinkle: f32 = pulse(time + h * 6.0, 3.0 + h * 4.0)
+        let star: f32 = smoothstep(0.08, 0.0, d) * step(0.92, h) * twinkle
+        col = col + vec3(star) * (0.6 + 0.4 * h)
+    }
+    color = vec4(col, 1.0)
+}
+
+# ── 9. Plasma rings ─────────────────────────────────────────────────
+
+shader fill rings {
+    let p: vec2 = uv - vec2(0.5)
+    let r: f32 = length(p)
+    var col: vec3 = vec3(0.0)
+    for i in 0 to 5 {
+        let rr: f32 = abs(r - (0.1 + f32(i) * 0.08 + 0.05 * sin(time + f32(i))))
+        let ring: f32 = smoothstep(0.02, 0.0, rr)
+        col = col + palette(f32(i) * 0.15 + time * 0.1) * ring
+    }
+    color = vec4(col, 1.0)
+}
+
+# ── 10. Fire / ember ────────────────────────────────────────────────
+
+shader fill fire {
+    let p: vec2 = vec2(uv.x * 3.0, (1.0 - uv.y) * 2.5 - time * 0.8)
+    let n: f32 = fbm(p)
+    let heat: f32 = n * (1.0 - uv.y)
+    let col: vec3 = mix(vec3(0.05, 0.0, 0.0), vec3(1.0, 0.35, 0.0), clamp(heat * 1.8, 0.0, 1.0))
+    col = mix(col, vec3(1.0, 0.95, 0.4), smoothstep(0.55, 0.9, heat))
+    color = vec4(col, 1.0)
+}
+
+# ── 11. Hypno spiral ────────────────────────────────────────────────
+
+shader fill spiral {
+    let p: vec2 = uv - vec2(0.5)
+    let a: f32 = atan2(p.y, p.x)
+    let r: f32 = length(p)
+    let s: f32 = fract(a / 6.28318 + r * 3.0 - time * 0.25)
+    let col: vec3 = palette(s)
+    color = vec4(col * smoothstep(0.7, 0.0, r), 1.0)
+}
+
+# ── 12. Grid glow ───────────────────────────────────────────────────
+
+shader fill grid {
+    let p: vec2 = (uv - vec2(0.5)) * vec2(resolution.x / resolution.y, 1.0) * 4.0
+    let g: vec2 = abs(fract(p) - vec2(0.5))
+    let line: f32 = smoothstep(0.05, 0.0, min(g.x, g.y))
+    let pulse: f32 = 0.3 + 0.7 * sin(time * 2.0 + p.x + p.y)
+    color = vec4(vec3(0.1, 0.8, 1.0) * line * pulse, 1.0)
+}

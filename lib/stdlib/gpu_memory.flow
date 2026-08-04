@@ -1,0 +1,182 @@
+# First-class GPU / unified memory
+#
+# CPU heap stays in stdlib/memory.flow.
+# This module owns device (and unified shared) buffers.
+#
+# Backend: Metal on macOS (shared = unified CPU/GPU). Stub elsewhere
+# (`gpu_available()` is false; alloc returns a null handle).
+#
+# Linked automatically by `./flow run` / `./flow debug`.
+
+extern {
+    function flow_gpu_available() -> i32
+    function flow_gpu_backend_name() -> string
+    function flow_gpu_alloc(size: i64, flags: i32) -> ptr<void>
+    function flow_gpu_free(buf: ptr<void>) -> void
+    function flow_gpu_size(buf: ptr<void>) -> i64
+    function flow_gpu_flags(buf: ptr<void>) -> i32
+    function flow_gpu_host_ptr(buf: ptr<void>) -> ptr<void>
+    function flow_gpu_copy_h2d(dst: ptr<void>, src: ptr<void>, nbytes: i64) -> i32
+    function flow_gpu_copy_d2h(dst: ptr<void>, src: ptr<void>, nbytes: i64) -> i32
+    function flow_gpu_copy_d2d(dst: ptr<void>, src: ptr<void>, nbytes: i64) -> i32
+    function flow_gpu_sync() -> void
+}
+
+# Allocation flags (match runtime/gpu_memory.h)
+export const GPU_MEM_DEFAULT: i32 = 0
+export const GPU_MEM_SHARED: i32 = 1
+export const GPU_MEM_PRIVATE: i32 = 2
+
+export struct GpuBuffer {
+    device: ptr<void>
+    size: i64
+    flags: i32
+}
+
+export function gpu_available() -> bool {
+    return flow_gpu_available() == 1
+}
+
+export function gpu_backend_name() -> string {
+    return flow_gpu_backend_name()
+}
+
+export function gpu_null_buffer() -> GpuBuffer {
+    return GpuBuffer { device: null, size: 0, flags: 0 }
+}
+
+export function gpu_is_null(buf: GpuBuffer) -> bool {
+    return buf.device == null
+}
+
+export function gpu_alloc_flags(size: i64, flags: i32) -> GpuBuffer {
+    if size <= 0 {
+        return gpu_null_buffer()
+    }
+    let h: ptr<void> = flow_gpu_alloc(size, flags)
+    if h == null {
+        return gpu_null_buffer()
+    }
+    let actual_flags: i32 = flow_gpu_flags(h)
+    return GpuBuffer { device: h, size: size, flags: actual_flags }
+}
+
+# Default = unified/shared on Metal
+export function gpu_alloc(size: i64) -> GpuBuffer {
+    return gpu_alloc_flags(size, GPU_MEM_SHARED)
+}
+
+export function gpu_alloc_unified(size: i64) -> GpuBuffer {
+    return gpu_alloc_flags(size, GPU_MEM_SHARED)
+}
+
+export function gpu_alloc_private(size: i64) -> GpuBuffer {
+    return gpu_alloc_flags(size, GPU_MEM_PRIVATE)
+}
+
+export function gpu_alloc_f32(count: i64) -> GpuBuffer {
+    return gpu_alloc(count * 4)
+}
+
+export function gpu_alloc_f64(count: i64) -> GpuBuffer {
+    return gpu_alloc(count * 8)
+}
+
+export function gpu_alloc_i32(count: i64) -> GpuBuffer {
+    return gpu_alloc(count * 4)
+}
+
+export function gpu_free(buf: GpuBuffer) -> void {
+    if buf.device != null {
+        flow_gpu_free(buf.device)
+    }
+}
+
+export function gpu_size(buf: GpuBuffer) -> i64 {
+    if buf.device == null {
+        return 0
+    }
+    return flow_gpu_size(buf.device)
+}
+
+# Host mapping for unified/shared buffers (null if private)
+export function gpu_host_ptr(buf: GpuBuffer) -> ptr<void> {
+    if buf.device == null {
+        return null
+    }
+    return flow_gpu_host_ptr(buf.device)
+}
+
+export function gpu_is_unified(buf: GpuBuffer) -> bool {
+    if buf.device == null {
+        return false
+    }
+    return gpu_host_ptr(buf) != null
+}
+
+export function gpu_copy_h2d(dst: GpuBuffer, src: ptr<void>, nbytes: i64) -> i32 {
+    if dst.device == null or src == null or nbytes <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_copy_h2d(dst.device, src, nbytes)
+}
+
+export function gpu_copy_d2h(dst: ptr<void>, src: GpuBuffer, nbytes: i64) -> i32 {
+    if dst == null or src.device == null or nbytes <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_copy_d2h(dst, src.device, nbytes)
+}
+
+# Typed convenience overloads (ptr<i32>/f32/f64 decay to void* at the ABI)
+export function gpu_copy_h2d_i32(dst: GpuBuffer, src: ptr<i32>, nbytes: i64) -> i32 {
+    let p: ptr<void> = src
+    return gpu_copy_h2d(dst, p, nbytes)
+}
+
+export function gpu_copy_d2h_i32(dst: ptr<i32>, src: GpuBuffer, nbytes: i64) -> i32 {
+    let p: ptr<void> = dst
+    return gpu_copy_d2h(p, src, nbytes)
+}
+
+export function gpu_copy_h2d_f32(dst: GpuBuffer, src: ptr<f32>, nbytes: i64) -> i32 {
+    let p: ptr<void> = src
+    return gpu_copy_h2d(dst, p, nbytes)
+}
+
+export function gpu_copy_d2h_f32(dst: ptr<f32>, src: GpuBuffer, nbytes: i64) -> i32 {
+    let p: ptr<void> = dst
+    return gpu_copy_d2h(p, src, nbytes)
+}
+
+export function gpu_copy_d2d(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32 {
+    if dst.device == null or src.device == null or nbytes <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_copy_d2d(dst.device, src.device, nbytes)
+}
+
+export function gpu_sync() -> void {
+    flow_gpu_sync()
+}
+
+# Aliases matching docs/library/core.md naming
+export function gpu_allocate(size: i64) -> GpuBuffer {
+    return gpu_alloc(size)
+}
+
+export function gpu_copy_to_device(dst: GpuBuffer, src: ptr<void>, nbytes: i64) -> i32 {
+    return gpu_copy_h2d(dst, src, nbytes)
+}
+
+export function gpu_copy_from_device(dst: ptr<void>, src: GpuBuffer, nbytes: i64) -> i32 {
+    return gpu_copy_d2h(dst, src, nbytes)
+}
+
+export function gpu_copy_device_to_device(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32 {
+    return gpu_copy_d2d(dst, src, nbytes)
+}
+
+export function unified_allocate(size: i64) -> GpuBuffer {
+    return gpu_alloc_unified(size)
+}

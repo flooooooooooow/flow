@@ -401,6 +401,39 @@ class FieldAccess:
 
 
 @dataclass
+class SortKey:
+    """One ordering key: `asc .score` / `desc .name` / bare `.id` (asc).
+
+    `field` is None when sorting primitive elements (whole value).
+    """
+
+    field: Optional[str]
+    descending: bool = False
+
+
+@dataclass
+class SortExpr:
+    """Declarative ordering: `xs |> sort by [desc .p, asc .t] stable`.
+
+    Phase 1 of the Ordering & Entropy PRD. Policies like `parallel` / `gpu`
+    and `with entropy` are parsed for forward compatibility; the C backend
+    currently lowers to a stable insertion sort.
+    """
+
+    array: "Expression"
+    keys: List[SortKey] = field(default_factory=list)
+    descending: bool = False  # whole-sort reverse (`sort descending`)
+    stable: bool = True
+    unique: bool = False
+    # Forward-compat policy flags (accepted, not yet specialized in codegen)
+    parallel: bool = False
+    adaptive: bool = False
+    compact: bool = False
+    policies: List[str] = field(default_factory=list)
+    entropy: Optional[str] = None  # None | "default" | "system" | "fast" | "secure" | "record" | seed int as str
+
+
+@dataclass
 class ArrayLiteral:
     elements: List["Expression"]
 
@@ -904,6 +937,7 @@ Expression = Union[
     CastExpression,
     Lambda,
     TryExpr,
+    SortExpr,
 ]
 Statement = Union[
     VarDecl,
@@ -3107,8 +3141,12 @@ class Parser:
         # Pipeline chaining: `x |> f(y)` lowers to `f(x, y)` and
         # `x |> f()` to `f(x)`. Left-associative, so `a |> f() |> g()` is
         # `(a |> f()) |> g()` == `g(f(a))`.
+        # Declarative ordering: `x |> sort by [asc .score, desc .name]`.
         while self.current_token.type == TokenType.PIPELINE:
             self.advance()
+            if self._at_declarative_sort():
+                left = self._parse_sort_pipeline(left)
+                continue
             rhs = self.parse_logical_or()
             if isinstance(rhs, FunctionCall):
                 lhs_arg = left
@@ -3122,13 +3160,190 @@ class Parser:
             else:
                 raise SyntaxError(
                     "Pipeline '|>' must be followed by a function call, method call, "
-                    "or function name (e.g. `x |> f()` or `x |> f`)"
+                    "function name, or declarative sort "
+                    "(e.g. `x |> f()`, `x |> f`, or `x |> sort by .score`)"
                 )
 
         return left
 
+    def _at_declarative_sort(self) -> bool:
+        tok = self.current_token
+        if tok.type != TokenType.IDENTIFIER:
+            return False
+        return tok.value in ("sort", "sortBy", "order")
+
+    def _parse_sort_key(self) -> SortKey:
+        """Parse `asc .field`, `desc .field`, or `.field` (asc)."""
+        descending = False
+        if (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.current_token.value in ("asc", "desc")
+        ):
+            descending = self.current_token.value == "desc"
+            self.advance()
+        if self.current_token.type != TokenType.DOT:
+            raise SyntaxError(
+                "Sort key expected `.field` (optionally prefixed with asc/desc)"
+            )
+        self.advance()
+        if self.current_token.type != TokenType.IDENTIFIER:
+            raise SyntaxError("Sort key expected field name after '.'")
+        field = self.current_token.value
+        self.advance()
+        return SortKey(field=field, descending=descending)
+
+    def _parse_sort_keys(self) -> List[SortKey]:
+        """Parse `.f`, `asc .f`, or `[desc .a, asc .b]`."""
+        if self.current_token.type == TokenType.LBRACKET:
+            self.advance()
+            keys: List[SortKey] = []
+            if self.current_token.type == TokenType.RBRACKET:
+                raise SyntaxError("Sort key list cannot be empty")
+            while True:
+                keys.append(self._parse_sort_key())
+                if self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    continue
+                break
+            if self.current_token.type != TokenType.RBRACKET:
+                raise SyntaxError("Expected ']' to close sort key list")
+            self.advance()
+            return keys
+        return [self._parse_sort_key()]
+
+    def _parse_sort_pipeline(self, array: Expression) -> SortExpr:
+        """Parse `sort` / `sortBy` / `order` and trailing modifiers after `|>`."""
+        if self.current_token.type != TokenType.IDENTIFIER:
+            raise SyntaxError("Expected sort/sortBy/order after '|>'")
+        head = self.current_token.value
+        self.advance()
+
+        keys: List[SortKey] = []
+        descending = False
+        stable = True
+        unique = False
+        parallel = False
+        adaptive = False
+        compact = False
+        policies: List[str] = []
+        entropy: Optional[str] = None
+
+        if head == "sortBy":
+            keys = self._parse_sort_keys()
+        elif head in ("sort", "order"):
+            if (
+                self.current_token.type == TokenType.IDENTIFIER
+                and self.current_token.value == "by"
+            ):
+                self.advance()
+                keys = self._parse_sort_keys()
+
+        # Trailing modifiers / policies / entropy
+        while True:
+            # Keyword tokens that double as sort policies
+            if self.current_token.type == TokenType.WITH:
+                self.advance()
+                if (
+                    self.current_token.type != TokenType.IDENTIFIER
+                    or self.current_token.value != "entropy"
+                ):
+                    raise SyntaxError("Expected 'entropy' after 'with' in sort pipeline")
+                self.advance()
+                if self.current_token.type == TokenType.LPAREN:
+                    self.advance()
+                    if self.current_token.type == TokenType.IDENTIFIER:
+                        tag = self.current_token.value
+                        self.advance()
+                        if tag == "seed":
+                            if self.current_token.type != TokenType.COLON:
+                                raise SyntaxError("Expected ':' after entropy seed")
+                            self.advance()
+                            if self.current_token.type != TokenType.NUMBER:
+                                raise SyntaxError("Expected integer seed for entropy")
+                            entropy = self.current_token.value
+                            self.advance()
+                        else:
+                            entropy = tag
+                    elif self.current_token.type == TokenType.NUMBER:
+                        entropy = self.current_token.value
+                        self.advance()
+                    else:
+                        raise SyntaxError("Invalid entropy(...) argument")
+                    if self.current_token.type != TokenType.RPAREN:
+                        raise SyntaxError("Expected ')' after entropy(...)")
+                    self.advance()
+                else:
+                    entropy = "default"
+                continue
+
+            if self.current_token.type == TokenType.PARALLEL:
+                parallel = True
+                policies.append("parallel")
+                self.advance()
+                continue
+
+            if self.current_token.type != TokenType.IDENTIFIER:
+                break
+            mod = self.current_token.value
+            if mod in ("stable",):
+                stable = True
+                self.advance()
+            elif mod in ("unstable",):
+                stable = False
+                self.advance()
+            elif mod in ("descending", "desc"):
+                # Global reverse. Prefer per-key `desc .field` when using `by`.
+                descending = True
+                self.advance()
+            elif mod in ("ascending", "asc"):
+                descending = False
+                self.advance()
+            elif mod == "unique":
+                unique = True
+                self.advance()
+            elif mod == "adaptive":
+                adaptive = True
+                policies.append(mod)
+                self.advance()
+            elif mod == "compact":
+                compact = True
+                policies.append(mod)
+                self.advance()
+            elif mod in (
+                "gpu",
+                "simd",
+                "external",
+                "streaming",
+                "distributed",
+                "cache",
+                "realtime",
+                "battery",
+                "throughput",
+                "approximate",
+                "learned",
+            ):
+                policies.append(mod)
+                self.advance()
+            else:
+                break
+
+        return SortExpr(
+            array=array,
+            keys=keys,
+            descending=descending,
+            stable=stable,
+            unique=unique,
+            parallel=parallel,
+            adaptive=adaptive,
+            compact=compact,
+            policies=policies,
+            entropy=entropy,
+        )
+
     def parse_assignment(self) -> Expression:
-        expr = self.parse_logical_or()
+        # Include pipeline (`|>` / declarative sort) so expression statements
+        # like `xs |> sort` and RHS forms parsed via `parse_expression` work.
+        expr = self.parse_expression_without_assign()
 
         # Check for compound assignment: +=, -=, *=, /=
         compound_ops = {
