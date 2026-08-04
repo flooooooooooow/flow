@@ -4,6 +4,7 @@
 extern {
     function flow_rt_cont_demo() -> i32
     function flow_rt_cont_reset_demo() -> i32
+    function flow_rt_cont_multishot_demo() -> i32
     function flow_rt_cont_arm_resume(value: i32) -> void
 }
 
@@ -20,6 +21,11 @@ export function flow_demo_cont_shift() -> i32 {
 @flow_api
 export function flow_demo_cont_reset() -> i32 {
     return flow_rt_cont_reset_demo()
+}
+
+@flow_api
+export function flow_demo_cont_multishot() -> i32 {
+    return flow_rt_cont_multishot_demo()
 }
 
 @flow_api

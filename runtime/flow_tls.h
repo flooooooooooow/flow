@@ -15,6 +15,12 @@ int32_t flow_rt_tls_available(void);
  * Returns 1 on success, 0 on fail, -1 if TLS unavailable. */
 int32_t flow_rt_https_selftest(int32_t port);
 
+/* PEM cert/key + ALPN http/1.1 selftest.
+ * Writes ephemeral PEM under build/, loads via SSL_CTX_use_*_file,
+ * negotiates ALPN http/1.1 (client offers h2+http/1.1).
+ * Returns 1 on success, 0 on fail, -1 if TLS unavailable. */
+int32_t flow_rt_https_pem_alpn_selftest(int32_t port);
+
 #ifdef __cplusplus
 }
 #endif
