@@ -1,0 +1,38 @@
+# Minimal UI layout demo using stdlib ui_layout.
+#
+#   ./flow run examples/ui/layout_hello.flow
+# Windowed cousins: ./flow demo ui-layout | ./flow demo ui-layout-window
+
+import "stdlib/ui_layout.flow"
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    let frames: array<UiLayoutFrame, 32> = []
+    let state_store: array<UiLayoutState, 1> = [
+        UiLayoutState{ frames: frames, top: 0, unit: 1.0, win_w: 0.0, win_h: 0.0 }
+    ]
+    ui_layout_bind(state_store)
+    ui_layout_set_view(_ui_state, 300.0, 200.0)
+
+    let mut sum: i32 = 0
+    ui_layout(30, 20, 1) {
+        ui_row(3, 1, 1, UI_JUSTIFY_CENTER) {
+            let a: UiRect = ui_box(_ui_state)
+            let b: UiRect = ui_box(_ui_state)
+            let c: UiRect = ui_box(_ui_state)
+            printf("row A.w=%d\n", a.w)
+            printf("row B.x=%d\n", b.x)
+            printf("row C.x=%d\n", c.x)
+            sum = sum + a.w + b.w + c.w
+        }
+    }
+
+    printf("layout_hello sum=%d\n", sum)
+    if sum <= 0 {
+        return 1
+    }
+    return 0
+}

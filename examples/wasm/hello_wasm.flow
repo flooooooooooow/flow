@@ -1,0 +1,24 @@
+# Minimal Flow program for the WASM path (Flow → C → emcc).
+#
+#   ./flow run examples/wasm/hello_wasm.flow          # native smoke
+#   ./flow wasm examples/wasm/hello_wasm.flow         # emit C/HTML (+ .wasm if emcc)
+#   ./scripts/build_wasm_hello.sh                    # CI-safe; skips without emcc
+#
+# emcc is not required for Flow→C. See examples/wasm/README.md and docs/language/wasm.md.
+
+function fib(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+function main() -> i32 {
+    let v: i32 = fib(10)
+    print("hello_wasm fib(10) = ")
+    println(v)
+    if v != 55 {
+        return 1
+    }
+    return 0
+}
