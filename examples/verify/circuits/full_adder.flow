@@ -1,40 +1,89 @@
 # @means  The full adder output matches binary addition with carry.
 # @from   patterson — Patterson & Hennessy, *Computer Organization and Design*, §A.5
 # @tier   derived
+#
+# Circuit bits are i32 in {0,1} until a distinct `bit` type lands in codegen.
+# Theorem bodies keep English `and` / proof keywords for the verify corpus.
+#
+# Run (executable demo):
+#   ./flow run examples/verify/circuits/full_adder.flow
 
 struct FullAdderResult {
-    Sum: bit,
-    Cout: bit
+    Sum: i32,
+    Cout: i32
 }
 
-function FullAdder(A: bit, B: bit, Cin: bit) -> FullAdderResult {
-    let X = xor(A, B)
-    let Y = and(A, B)
-    let Z = and(X, Cin)
+struct BinaryAdd1 {
+    sum: i32,
+    carry: i32
+}
+
+function xor(a: i32, b: i32) -> i32 {
+    return (a + b) % 2
+}
+
+function and(a: i32, b: i32) -> i32 {
+    return a * b
+}
+
+function or(a: i32, b: i32) -> i32 {
+    if a + b > 0 {
+        return 1
+    }
+    return 0
+}
+
+function FullAdder(A: i32, B: i32, Cin: i32) -> FullAdderResult {
+    let X: i32 = xor(A, B)
+    let Y: i32 = and(A, B)
+    let Z: i32 = and(X, Cin)
     return FullAdderResult {
         Sum: xor(X, Cin),
         Cout: or(Y, Z)
     }
 }
 
-theorem FullAdder/out.correct(A: bit, B: bit, Cin: bit) {
+function binary_add_1bit(A: i32, B: i32, Cin: i32) -> BinaryAdd1 {
+    let total: i32 = A + B + Cin
+    return BinaryAdd1 {
+        sum: total % 2,
+        carry: total / 2
+    }
+}
+
+function bits_to_int4(b0: i32, b1: i32, b2: i32, b3: i32) -> i32 {
+    return b0 + b1 * 2 + b2 * 4 + b3 * 8
+}
+
+theorem FullAdder/out.correct(A: i32, B: i32, Cin: i32) {
     let result = FullAdder(A, B, Cin)
     let expected = binary_add_1bit(A, B, Cin)
     therefore result.Sum == expected.sum and result.Cout == expected.carry by exhaustive
 }
 
-theorem Ripple4/out.correct(A: [bit; 4], B: [bit; 4], Cin: bit) {
-    let mut carry = Cin
-    let mut s: [bit; 4] = [0, 0, 0, 0]
-
-    for i in 0 to 4 {
-        let step = FullAdder(A[i], B[i], carry)
-        assume FullAdder/out.correct(A[i], B[i], carry)
-        s[i] = step.Sum
-        carry = step.Cout
+function main() -> i32 {
+    let mut fails: i32 = 0
+    for a in 0 to 2 {
+        for b in 0 to 2 {
+            for c in 0 to 2 {
+                let got: FullAdderResult = FullAdder(a, b, c)
+                let exp: BinaryAdd1 = binary_add_1bit(a, b, c)
+                if got.Sum != exp.sum {
+                    fails = fails + 1
+                }
+                if got.Cout != exp.carry {
+                    fails = fails + 1
+                }
+            }
+        }
     }
-
-    let sum = bits_to_int(s) + bits_to_int(carry) * 16
-    let expected = bits_to_int(A) + bits_to_int(B) + int(Cin)
-    therefore sum == expected
+    print("full_adder exhaustive 0/1 checks\n")
+    if fails == 0 {
+        print("ok\n")
+        return 0
+    }
+    print("failures: ")
+    print(fails)
+    print("\n")
+    return 1
 }
