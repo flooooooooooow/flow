@@ -1,15 +1,11 @@
-# Tiny fill-shader language demo
+# Single-demo alias — full gallery is shader_showcase.flow
 #
 #   ./flow shader examples/gpu/shader_plasma.flow
-#   ./flow shader examples/gpu/shader_plasma.flow --frames 3   # CI / headless-ish
-#   ./flow shader examples/gpu/shader_plasma.flow --emit-only
-#
-# Builtins: uv (0..1), time (seconds), color (vec4 you must assign)
 
 shader fill plasma {
-    let u = uv.x
-    let v = uv.y
-    let t = time
+    let u: f32 = uv.x
+    let v: f32 = uv.y
+    let t: f32 = time
     color = vec4(
         0.5 + 0.5 * sin(u * 10.0 + t),
         0.5 + 0.5 * cos(v * 8.0 - t),
