@@ -10,6 +10,7 @@ struct GAConfig {
     mutation: f64
 }
 
+# Quadratic state/input cost of closed-loop rollout with gains (k1,k2).
 function ga_rollout_cost(sys: DynamicalSystem, k1: f64, k2: f64, steps: i32) -> f64 {
     let n: i32 = sys.n
     let x: array<f64, 8> = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -25,6 +26,7 @@ function ga_rollout_cost(sys: DynamicalSystem, k1: f64, k2: f64, steps: i32) -> 
     return cost
 }
 
+# Deterministic pseudo-random in [0,1) from integer seed.
 function ga_hash(seed: i32) -> f64 {
     let s: i32 = seed * 1103515245 + 12345
     let v: i32 = s / 65536
@@ -32,11 +34,13 @@ function ga_hash(seed: i32) -> f64 {
     return (v % 1000) / 1000.0
 }
 
+# Mutate value by ±scale uniform noise.
 function ga_mutate(val: f64, scale: f64, seed: i32) -> f64 {
     let noise: f64 = ga_hash(seed) * 2.0 - 1.0
     return val + scale * noise
 }
 
+# Evolve feedback gains (k1,k2) by elitist GA; returns best fitness.
 function ga_evolve_control(
     sys: DynamicalSystem,
     steps: i32,

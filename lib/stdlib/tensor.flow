@@ -34,6 +34,7 @@ struct Tensor {
 # TENSOR CREATION
 # ============================================================================
 
+# Allocate a zero-filled 4D f32 tensor with shape (d0,d1,d2,d3).
 function tensor_zeros(d0: i32, d1: i32, d2: i32, d3: i32) -> Tensor {
     let size: i32 = d0 * d1 * d2 * d3
     let nbytes: i64 = (size as i64) * 4
@@ -49,6 +50,7 @@ function tensor_zeros(d0: i32, d1: i32, d2: i32, d3: i32) -> Tensor {
     }
 }
 
+# Allocate a 4D tensor filled with 1.0.
 function tensor_ones(d0: i32, d1: i32, d2: i32, d3: i32) -> Tensor {
     let t: Tensor = tensor_zeros(d0, d1, d2, d3)
     for i in 0 to t.size {
@@ -57,6 +59,7 @@ function tensor_ones(d0: i32, d1: i32, d2: i32, d3: i32) -> Tensor {
     return t
 }
 
+# Allocate a 4D tensor filled with constant val.
 function tensor_fill(d0: i32, d1: i32, d2: i32, d3: i32, val: f32) -> Tensor {
     let t: Tensor = tensor_zeros(d0, d1, d2, d3)
     for i in 0 to t.size {
@@ -65,6 +68,7 @@ function tensor_fill(d0: i32, d1: i32, d2: i32, d3: i32, val: f32) -> Tensor {
     return t
 }
 
+# Uniform random tensor in [0, 1) from LCG seeded by seed.
 function tensor_rand(d0: i32, d1: i32, d2: i32, d3: i32, seed: i32) -> Tensor {
     let t: Tensor = tensor_zeros(d0, d1, d2, d3)
     let mut s: i32 = seed
@@ -76,6 +80,7 @@ function tensor_rand(d0: i32, d1: i32, d2: i32, d3: i32, seed: i32) -> Tensor {
     return t
 }
 
+# Approximate N(0,1) samples via simplified Box-Muller (seeded LCG).
 function tensor_randn(d0: i32, d1: i32, d2: i32, d3: i32, seed: i32) -> Tensor {
     # Box-Muller transform for normal distribution
     let t: Tensor = tensor_zeros(d0, d1, d2, d3)
@@ -95,6 +100,7 @@ function tensor_randn(d0: i32, d1: i32, d2: i32, d3: i32, seed: i32) -> Tensor {
     return t
 }
 
+# Free tensor backing storage.
 function tensor_free(t: Tensor) {
     free(t.data)
 }
@@ -103,32 +109,37 @@ function tensor_free(t: Tensor) {
 # TENSOR INDEXING
 # ============================================================================
 
+# Flat row-major index for 4D coordinates (i0,i1,i2,i3).
 function tensor_idx(t: Tensor, i0: i32, i1: i32, i2: i32, i3: i32) -> i32 {
     return ((i0 * t.dim1 + i1) * t.dim2 + i2) * t.dim3 + i3
 }
 
+# Read element at 4D index.
 function tensor_get(t: Tensor, i0: i32, i1: i32, i2: i32, i3: i32) -> f32 {
     return t.data[tensor_idx(t, i0, i1, i2, i3)]
 }
 
+# Write element at 4D index.
 function tensor_set(t: Tensor, i0: i32, i1: i32, i2: i32, i3: i32, val: f32) {
     t.data[tensor_idx(t, i0, i1, i2, i3)] = val
 }
 
-# 2D shortcuts
+# Read 2D element t[i, j] (uses dim0×dim1 layout).
 function tensor_get2(t: Tensor, i: i32, j: i32) -> f32 {
     return t.data[i * t.dim1 + j]
 }
 
+# Write 2D element t[i, j] = val.
 function tensor_set2(t: Tensor, i: i32, j: i32, val: f32) {
     t.data[i * t.dim1 + j] = val
 }
 
-# 1D shortcuts
+# Read 1D / flat element at index i.
 function tensor_get1(t: Tensor, i: i32) -> f32 {
     return t.data[i]
 }
 
+# Write 1D / flat element at index i.
 function tensor_set1(t: Tensor, i: i32, val: f32) {
     t.data[i] = val
 }
@@ -137,6 +148,7 @@ function tensor_set1(t: Tensor, i: i32, val: f32) {
 # ELEMENT-WISE OPERATIONS
 # ============================================================================
 
+# Element-wise sum a + b (same shape).
 function tensor_add(a: Tensor, b: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
     for i in 0 to a.size {
@@ -145,6 +157,7 @@ function tensor_add(a: Tensor, b: Tensor) -> Tensor {
     return c
 }
 
+# Element-wise difference a - b (same shape).
 function tensor_sub(a: Tensor, b: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
     for i in 0 to a.size {
@@ -153,6 +166,7 @@ function tensor_sub(a: Tensor, b: Tensor) -> Tensor {
     return c
 }
 
+# Element-wise (Hadamard) product a * b.
 function tensor_mul(a: Tensor, b: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
     for i in 0 to a.size {
@@ -161,6 +175,7 @@ function tensor_mul(a: Tensor, b: Tensor) -> Tensor {
     return c
 }
 
+# Element-wise division a / b.
 function tensor_div(a: Tensor, b: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
     for i in 0 to a.size {
@@ -169,6 +184,7 @@ function tensor_div(a: Tensor, b: Tensor) -> Tensor {
     return c
 }
 
+# Scale all elements by scalar s: t * s.
 function tensor_scale(t: Tensor, s: f32) -> Tensor {
     let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
     for i in 0 to t.size {
@@ -177,6 +193,7 @@ function tensor_scale(t: Tensor, s: f32) -> Tensor {
     return c
 }
 
+# Add scalar s to every element: t + s.
 function tensor_add_scalar(t: Tensor, s: f32) -> Tensor {
     let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
     for i in 0 to t.size {
@@ -185,6 +202,7 @@ function tensor_add_scalar(t: Tensor, s: f32) -> Tensor {
     return c
 }
 
+# Element-wise negation: -t.
 function tensor_neg(t: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
     for i in 0 to t.size {
@@ -197,6 +215,7 @@ function tensor_neg(t: Tensor) -> Tensor {
 # ACTIVATION FUNCTIONS
 # ============================================================================
 
+# Element-wise ReLU: max(0, x).
 function tensor_relu(t: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
     for i in 0 to t.size {
@@ -209,6 +228,7 @@ function tensor_relu(t: Tensor) -> Tensor {
     return c
 }
 
+# Element-wise sigmoid: 1/(1+e^{-x}).
 function tensor_sigmoid(t: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
     for i in 0 to t.size {
@@ -218,6 +238,7 @@ function tensor_sigmoid(t: Tensor) -> Tensor {
     return c
 }
 
+# Element-wise hyperbolic tangent.
 function tensor_tanh(t: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
     for i in 0 to t.size {
@@ -228,6 +249,7 @@ function tensor_tanh(t: Tensor) -> Tensor {
     return c
 }
 
+# Softmax over flat elements (numerically stabilized).
 function tensor_softmax(t: Tensor) -> Tensor {
     # Assumes t is 2D: (batch, classes)
     let c: Tensor = tensor_zeros(t.dim0, t.dim1, 1, 1)
@@ -262,6 +284,7 @@ function tensor_softmax(t: Tensor) -> Tensor {
 # AUTODIFF (element-wise activation gradients)
 # ============================================================================
 
+# ReLU backward: grad_in = grad_out where output > 0 else 0.
 function tensor_relu_backward(output: Tensor, grad_out: Tensor) -> Tensor {
     let g: Tensor = tensor_zeros(output.dim0, output.dim1, output.dim2, output.dim3)
     for i in 0 to output.size {
@@ -274,6 +297,7 @@ function tensor_relu_backward(output: Tensor, grad_out: Tensor) -> Tensor {
     return g
 }
 
+# Sigmoid backward using saved output σ: grad *= σ(1-σ).
 function tensor_sigmoid_backward(output: Tensor, grad_out: Tensor) -> Tensor {
     let g: Tensor = tensor_zeros(output.dim0, output.dim1, output.dim2, output.dim3)
     for i in 0 to output.size {
@@ -283,6 +307,7 @@ function tensor_sigmoid_backward(output: Tensor, grad_out: Tensor) -> Tensor {
     return g
 }
 
+# Tanh backward using saved output t: grad *= (1 - t²).
 function tensor_tanh_backward(output: Tensor, grad_out: Tensor) -> Tensor {
     let g: Tensor = tensor_zeros(output.dim0, output.dim1, output.dim2, output.dim3)
     for i in 0 to output.size {
@@ -292,6 +317,7 @@ function tensor_tanh_backward(output: Tensor, grad_out: Tensor) -> Tensor {
     return g
 }
 
+# Mul backward w.r.t. a: grad_a = grad_out * b.
 function tensor_mul_backward_a(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
     let g: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
     for i in 0 to a.size {
@@ -300,6 +326,7 @@ function tensor_mul_backward_a(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor
     return g
 }
 
+# Mul backward w.r.t. b: grad_b = grad_out * a.
 function tensor_mul_backward_b(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
     let g: Tensor = tensor_zeros(b.dim0, b.dim1, b.dim2, b.dim3)
     for i in 0 to b.size {
@@ -312,6 +339,7 @@ function tensor_mul_backward_b(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor
 # MATRIX OPERATIONS
 # ============================================================================
 
+# Add bias vector b (1×cols) to each row of matrix a.
 function tensor_broadcast_add(a: Tensor, b: Tensor) -> Tensor {
     # Broadcast b over a on dim0 when b.dim0 == 1 (2D tensors)
     let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
@@ -329,6 +357,7 @@ function tensor_broadcast_add(a: Tensor, b: Tensor) -> Tensor {
     return c
 }
 
+# 2D matrix product C = A @ B (dim0×dim1 layouts).
 function tensor_matmul(a: Tensor, b: Tensor) -> Tensor {
     # a: (M, K), b: (K, N) -> c: (M, N)
     let M: i32 = a.dim0
@@ -350,6 +379,7 @@ function tensor_matmul(a: Tensor, b: Tensor) -> Tensor {
     return c
 }
 
+# Matmul backward w.r.t. A: grad_A = grad_out @ B^T.
 function tensor_matmul_backward_a(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
     # dL/dA = grad_out @ B^T   (M,N) @ (N,K) -> (M,K) — fused (no transpose temp)
     let M: i32 = grad_out.dim0
@@ -370,6 +400,7 @@ function tensor_matmul_backward_a(a: Tensor, b: Tensor, grad_out: Tensor) -> Ten
     return grad_a
 }
 
+# Matmul backward w.r.t. B: grad_B = A^T @ grad_out.
 function tensor_matmul_backward_b(a: Tensor, b: Tensor, grad_out: Tensor) -> Tensor {
     # dL/dB = A^T @ grad_out   (K,M) @ (M,N) -> (K,N) — fused (no transpose temp)
     let M: i32 = a.dim0
@@ -390,6 +421,7 @@ function tensor_matmul_backward_b(a: Tensor, b: Tensor, grad_out: Tensor) -> Ten
     return grad_b
 }
 
+# Transpose a 2D tensor (swap dim0 and dim1).
 function tensor_transpose(t: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(t.dim1, t.dim0, 1, 1)
 
@@ -406,6 +438,7 @@ function tensor_transpose(t: Tensor) -> Tensor {
 # REDUCTION OPERATIONS
 # ============================================================================
 
+# Sum of all elements.
 function tensor_sum(t: Tensor) -> f32 {
     let mut sum: f32 = 0.0
     for i in 0 to t.size {
@@ -414,10 +447,12 @@ function tensor_sum(t: Tensor) -> f32 {
     return sum
 }
 
+# Mean of all elements.
 function tensor_mean(t: Tensor) -> f32 {
     return tensor_sum(t) / t.size
 }
 
+# Maximum element value.
 function tensor_max(t: Tensor) -> f32 {
     let mut max_val: f32 = t.data[0]
     for i in 1 to t.size {
@@ -428,6 +463,7 @@ function tensor_max(t: Tensor) -> f32 {
     return max_val
 }
 
+# Minimum element value.
 function tensor_min(t: Tensor) -> f32 {
     let mut min_val: f32 = t.data[0]
     for i in 1 to t.size {
@@ -438,6 +474,7 @@ function tensor_min(t: Tensor) -> f32 {
     return min_val
 }
 
+# Flat index of the maximum element.
 function tensor_argmax(t: Tensor) -> i32 {
     let mut max_idx: i32 = 0
     let mut max_val: f32 = t.data[0]
@@ -454,6 +491,7 @@ function tensor_argmax(t: Tensor) -> i32 {
 # UTILITY
 # ============================================================================
 
+# Deep-copy tensor data into a new allocation.
 function tensor_copy(t: Tensor) -> Tensor {
     let c: Tensor = tensor_zeros(t.dim0, t.dim1, t.dim2, t.dim3)
     for i in 0 to t.size {
@@ -462,6 +500,7 @@ function tensor_copy(t: Tensor) -> Tensor {
     return c
 }
 
+# Print tensor shape and flat contents (debug).
 function tensor_print(t: Tensor) {
     print("Tensor(")
     print(t.dim0)

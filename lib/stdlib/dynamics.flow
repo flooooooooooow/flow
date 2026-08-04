@@ -23,6 +23,7 @@
 #
 # Examples: examples/dynamics/
 
+# Version stamp for the dynamics stdlib umbrella module.
 function dynamics_stdlib_version() -> i32 {
     return 1
 }
