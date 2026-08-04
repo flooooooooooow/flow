@@ -190,6 +190,17 @@ check_mlir_deps() {
     fi
 }
 
+# Concurrency runtime (channels / threads / atomics). Sets:
+#   FLOW_CONC_SOURCES, FLOW_CONC_CFLAGS, FLOW_CONC_LDFLAGS (bash arrays)
+flow_concurrency_flags() {
+    FLOW_CONC_SOURCES=(
+        "$SCRIPT_DIR/runtime/flow_concurrency.c"
+        "$SCRIPT_DIR/runtime/flow_race.c"
+    )
+    FLOW_CONC_CFLAGS=("-I$SCRIPT_DIR/runtime")
+    FLOW_CONC_LDFLAGS=("-pthread")
+}
+
 # Compile FLOW to executable
 compile_program() {
     local program="$1"
@@ -219,14 +230,16 @@ compile_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
-    if ! clang "${py_cflags[@]}" "$build_dir/$basename.c" \
+    flow_concurrency_flags
+    if ! clang "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
         "$SCRIPT_DIR/runtime/live_plugin.c" \
         "$SCRIPT_DIR/runtime/live_host.c" \
         "$SCRIPT_DIR/runtime/audio_simd.c" \
-        "${py_ldflags[@]}" -o "$build_dir/$basename" 2>/dev/null; then
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${py_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
         print_error "C compilation/linking failed"
         exit 1
     fi
@@ -1282,11 +1295,13 @@ run_runtime_tests() {
         extra_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         extra_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
-    clang_output=$(clang "${extra_cflags[@]}" "$c_file" \
+    flow_concurrency_flags
+    clang_output=$(clang "${extra_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" \
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
-        "${extra_ldflags[@]}" -o "$exe_file" -lm 2>&1)
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${extra_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$exe_file" -lm 2>&1)
         if [ $? -ne 0 ]; then
             print_error "✗ $rel_path (clang compile failed)"
             failed=$((failed + 1))
