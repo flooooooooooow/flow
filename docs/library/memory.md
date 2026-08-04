@@ -2,6 +2,8 @@
 
 Flow has **no garbage collector**. Heap memory is allocated and freed explicitly — same contract as C, with typed helpers and an arena bump allocator in `lib/stdlib/memory.flow`.
 
+For **GPU / unified** buffers see [gpu-memory.md](gpu-memory.md) (`lib/stdlib/gpu_memory.flow`).
+
 > [!important] Ownership is yours
 > Every successful `malloc` / `calloc` / `alloc_*` must be paired with `free`, or owned by an arena you later `arena_destroy`.
 
