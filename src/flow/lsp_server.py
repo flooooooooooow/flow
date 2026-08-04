@@ -15,6 +15,8 @@ from .parser import (
     FlowSyntaxError, TokenType
 )
 from .type_checker import TypeChecker
+from .lsp_dynamics import dynamics_completion_items, dynamics_hover
+from .lsp_ordering import ordering_completion_items, ordering_hover
 
 # LSP Message Types
 @dataclass
@@ -101,13 +103,14 @@ class FlowLanguageServer:
             'tanh': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Hyperbolic tangent'},
         }
         
-        # Keywords
+        # Keywords (core language — dynamics DSL lives in lsp_dynamics snippets)
         self.keywords = [
-            'function', 'let', 'return', 'if', 'else', 'elif', 'while', 'for',
-            'parallel', 'in', 'step', 'struct', 'enum', 'trait', 'impl',
-            'effect', 'capability', 'handle', 'with', 'match', 'default',
+            'function', 'let', 'mut', 'return', 'if', 'else', 'elif', 'while', 'for',
+            'break', 'continue', 'parallel', 'in', 'step', 'struct', 'enum', 'trait',
+            'impl', 'effect', 'capability', 'handle', 'with', 'match', 'default',
             'import', 'export', 'extern', 'const', 'module', 'test', 'self',
-            'array', 'ptr', 'vec', 'true', 'false'
+            'array', 'ptr', 'vec', 'true', 'false', 'theorem', 'assume', 'therefore',
+            'type', 'as', 'defer', 'try', 'or', 'and', 'not',
         ]
 
         # Reserved words for rename validation: mirrors the parser's
@@ -439,41 +442,81 @@ class FlowLanguageServer:
             'end': {'line': line, 'character': end},
         }
 
+    def _completion_prefix(self, text: str, line: int, character: int) -> str:
+        """Word / `dyn.` prefix at the cursor for filtering completions."""
+        lines = text.splitlines()
+        if line < 0 or line >= len(lines):
+            return ""
+        row = lines[line]
+        i = min(character, len(row))
+        start = i
+        while start > 0 and (row[start - 1].isalnum() or row[start - 1] in "._"):
+            start -= 1
+        return row[start:i]
+
     def _handle_completion(self, params: dict) -> List[dict]:
         """Handle textDocument/completion."""
         uri = params['textDocument']['uri']
-        params['position']
-        
-        items = []
-        
+        pos = params.get('position') or {}
+        line = int(pos.get('line', 0))
+        character = int(pos.get('character', 0))
+        text = self.documents.get(uri, '')
+        prefix = self._completion_prefix(text, line, character)
+
+        items: List[dict] = []
+
+        # Dynamics DSL + declarative ordering snippets
+        items.extend(dynamics_completion_items(prefix))
+        items.extend(ordering_completion_items(prefix))
+        seen = {it["label"] for it in items}
+
         # Add keywords
         for kw in self.keywords:
+            if kw in seen:
+                continue
+            if prefix and not kw.startswith(prefix):
+                continue
             items.append({
                 'label': kw,
                 'kind': 14,  # Keyword
                 'detail': 'keyword',
             })
-        
+            seen.add(kw)
+
         # Add types
         for t in self.builtin_types:
+            if t in seen:
+                continue
+            if prefix and not t.startswith(prefix):
+                continue
             items.append({
                 'label': t,
                 'kind': 21,  # TypeParameter
                 'detail': 'type',
             })
-        
+            seen.add(t)
+
         # Add built-in functions
         for name, info in self.builtin_functions.items():
+            if name in seen:
+                continue
+            if prefix and not name.startswith(prefix):
+                continue
             items.append({
                 'label': name,
                 'kind': 3,  # Function
                 'detail': f"({', '.join(info['params'])}) -> {info['return']}",
                 'documentation': info.get('doc', ''),
             })
-        
+            seen.add(name)
+
         # Add document symbols
         doc_symbols = self.symbols.get(uri, {})
         for name, info in doc_symbols.items():
+            if name in seen:
+                continue
+            if prefix and not name.startswith(prefix):
+                continue
             if info['kind'] == 'function':
                 params_str = ', '.join([f"{p[0]}: {p[1]}" for p in info['params']])
                 items.append({
@@ -499,11 +542,16 @@ class FlowLanguageServer:
                     'kind': 8,  # Interface
                     'detail': 'trait',
                 })
-        
+            seen.add(name)
+
         # Also add symbols from other open documents
         for other_uri, other_symbols in self.symbols.items():
             if other_uri != uri:
                 for name, info in other_symbols.items():
+                    if name in seen:
+                        continue
+                    if prefix and not name.startswith(prefix):
+                        continue
                     if info['kind'] == 'function':
                         params_str = ', '.join([f"{p[0]}: {p[1]}" for p in info['params']])
                         items.append({
@@ -517,7 +565,8 @@ class FlowLanguageServer:
                             'kind': 22,
                             'detail': 'struct',
                         })
-        
+                    seen.add(name)
+
         return items
     
     def _handle_hover(self, params: dict) -> Optional[dict]:
@@ -530,7 +579,25 @@ class FlowLanguageServer:
         
         if not word:
             return None
-        
+
+        dyn_doc = dynamics_hover(word)
+        if dyn_doc:
+            return {
+                'contents': {
+                    'kind': 'markdown',
+                    'value': dyn_doc,
+                }
+            }
+
+        ord_doc = ordering_hover(word)
+        if ord_doc:
+            return {
+                'contents': {
+                    'kind': 'markdown',
+                    'value': ord_doc,
+                }
+            }
+
         # Check built-in functions
         if word in self.builtin_functions:
             info = self.builtin_functions[word]
