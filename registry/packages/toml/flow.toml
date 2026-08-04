@@ -1,0 +1,11 @@
+[package]
+name = "toml"
+version = "0.1.0"
+description = "Minimal TOML key/value parser (pure Flow rewrite)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

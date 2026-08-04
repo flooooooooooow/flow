@@ -277,7 +277,7 @@ function tensor_relu_backward(output: Tensor, grad_out: Tensor) -> Tensor {
 function tensor_sigmoid_backward(output: Tensor, grad_out: Tensor) -> Tensor {
     let g: Tensor = tensor_zeros(output.dim0, output.dim1, output.dim2, output.dim3)
     for i in 0 to output.size {
-        let s: f32 = output.data[i]
+        let mut s: f32 = output.data[i]
         g.data[i] = grad_out.data[i] * s * (1.0 - s)
     }
     return g
@@ -316,10 +316,10 @@ function tensor_broadcast_add(a: Tensor, b: Tensor) -> Tensor {
     # Broadcast b over a on dim0 when b.dim0 == 1 (2D tensors)
     let c: Tensor = tensor_zeros(a.dim0, a.dim1, a.dim2, a.dim3)
     for i in 0 to a.dim0 {
-        let bi: i32 = 0
+        let mut bi: i32 = 0
         if b.dim0 > 1 { bi = i }
         for j in 0 to a.dim1 {
-            let bj: i32 = 0
+            let mut bj: i32 = 0
             if b.dim1 > 1 { bj = j }
             let ai: i32 = tensor_idx(a, i, j, 0, 0)
             let bi_idx: i32 = tensor_idx(b, bi, bj, 0, 0)

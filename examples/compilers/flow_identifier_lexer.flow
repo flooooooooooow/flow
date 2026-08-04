@@ -1,0 +1,281 @@
+# Flow identifier / keyword lexer (self-hosting seed)
+#
+# Dogfoods a reusable compiler frontend piece in Flow itself:
+# ASCII identifiers, keywords, punctuation, whitespace, `#` comments,
+# with byte offset + line/column tracking.
+#
+# Not a full Flow lexer (no strings, numbers, or operators beyond punctuation).
+
+extern {
+    function printf(fmt: string) -> i32
+}
+
+const TOK_EOF: i32 = 0
+const TOK_IDENT: i32 = 1
+const TOK_KEYWORD: i32 = 2
+const TOK_LPAREN: i32 = 3
+const TOK_RPAREN: i32 = 4
+const TOK_LBRACE: i32 = 5
+const TOK_RBRACE: i32 = 6
+const TOK_COLON: i32 = 7
+const TOK_COMMA: i32 = 8
+const TOK_SEMI: i32 = 9
+const TOK_DOT: i32 = 10
+const TOK_ERROR: i32 = 11
+
+const KW_LET: i32 = 1
+const KW_MUT: i32 = 2
+const KW_FUNCTION: i32 = 3
+const KW_RETURN: i32 = 4
+const KW_IF: i32 = 5
+const KW_ELSE: i32 = 6
+const KW_WHILE: i32 = 7
+const KW_FOR: i32 = 8
+const KW_IN: i32 = 9
+const KW_TO: i32 = 10
+const KW_STRUCT: i32 = 11
+const KW_EXTERN: i32 = 12
+
+struct Token {
+    kind: i32,
+    kw: i32,
+    start: i32,
+    end: i32,
+    line: i32,
+    col: i32
+}
+
+struct Lexer {
+    input: ptr<u8>,
+    len: i32,
+    pos: i32,
+    line: i32,
+    col: i32
+}
+
+function is_alpha(c: i32) -> i32 {
+    if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 {
+        return 1
+    }
+    return 0
+}
+
+function is_alnum(c: i32) -> i32 {
+    if is_alpha(c) == 1 {
+        return 1
+    }
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function lexer_new(input: ptr<u8>, len: i32) -> Lexer {
+    return Lexer { input: input, len: len, pos: 0, line: 1, col: 1 }
+}
+
+function lexer_peek(lex: Lexer) -> i32 {
+    if lex.pos >= lex.len {
+        return 0
+    }
+    return lex.input[lex.pos]
+}
+
+function lexer_bump(lex: ptr<Lexer>) {
+    let c: i32 = lex[0].input[lex[0].pos]
+    lex[0].pos = lex[0].pos + 1
+    if c == 10 {
+        lex[0].line = lex[0].line + 1
+        lex[0].col = 1
+    } else {
+        lex[0].col = lex[0].col + 1
+    }
+}
+
+function lexer_skip_trivia(lex: ptr<Lexer>) {
+    while lex[0].pos < lex[0].len {
+        let c: i32 = lex[0].input[lex[0].pos]
+        if is_space(c) == 1 {
+            lexer_bump(lex)
+        } else {
+            if c == 10 {
+                lexer_bump(lex)
+            } else {
+                if c == 35 {
+                    # `#` line comment
+                    while lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] != 10 {
+                        lexer_bump(lex)
+                    }
+                } else {
+                    return
+                }
+            }
+        }
+    }
+}
+
+function ident_eq(src: ptr<u8>, start: i32, end: i32, lit: ptr<u8>, lit_len: i32) -> i32 {
+    if end - start != lit_len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < lit_len {
+        if src[start + i] != lit[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    let let_kw: array<u8, 3> = [108, 101, 116]
+    let mut_kw: array<u8, 3> = [109, 117, 116]
+    let fn_kw: array<u8, 8> = [102, 117, 110, 99, 116, 105, 111, 110]
+    let ret_kw: array<u8, 6> = [114, 101, 116, 117, 114, 110]
+    let if_kw: array<u8, 2> = [105, 102]
+    let else_kw: array<u8, 4> = [101, 108, 115, 101]
+    let while_kw: array<u8, 5> = [119, 104, 105, 108, 101]
+    let for_kw: array<u8, 3> = [102, 111, 114]
+    let in_kw: array<u8, 2> = [105, 110]
+    let to_kw: array<u8, 2> = [116, 111]
+    let struct_kw: array<u8, 6> = [115, 116, 114, 117, 99, 116]
+    let extern_kw: array<u8, 6> = [101, 120, 116, 101, 114, 110]
+
+    let let_p: ptr<u8> = let_kw
+    let mut_p: ptr<u8> = mut_kw
+    let fn_p: ptr<u8> = fn_kw
+    let ret_p: ptr<u8> = ret_kw
+    let if_p: ptr<u8> = if_kw
+    let else_p: ptr<u8> = else_kw
+    let while_p: ptr<u8> = while_kw
+    let for_p: ptr<u8> = for_kw
+    let in_p: ptr<u8> = in_kw
+    let to_p: ptr<u8> = to_kw
+    let struct_p: ptr<u8> = struct_kw
+    let extern_p: ptr<u8> = extern_kw
+
+    if ident_eq(src, start, end, let_p, 3) == 1 { return KW_LET }
+    if ident_eq(src, start, end, mut_p, 3) == 1 { return KW_MUT }
+    if ident_eq(src, start, end, fn_p, 8) == 1 { return KW_FUNCTION }
+    if ident_eq(src, start, end, ret_p, 6) == 1 { return KW_RETURN }
+    if ident_eq(src, start, end, if_p, 2) == 1 { return KW_IF }
+    if ident_eq(src, start, end, else_p, 4) == 1 { return KW_ELSE }
+    if ident_eq(src, start, end, while_p, 5) == 1 { return KW_WHILE }
+    if ident_eq(src, start, end, for_p, 3) == 1 { return KW_FOR }
+    if ident_eq(src, start, end, in_p, 2) == 1 { return KW_IN }
+    if ident_eq(src, start, end, to_p, 2) == 1 { return KW_TO }
+    if ident_eq(src, start, end, struct_p, 6) == 1 { return KW_STRUCT }
+    if ident_eq(src, start, end, extern_p, 6) == 1 { return KW_EXTERN }
+    return 0
+}
+
+function make_tok(kind: i32, kw: i32, start: i32, end: i32, line: i32, col: i32) -> Token {
+    return Token { kind: kind, kw: kw, start: start, end: end, line: line, col: col }
+}
+
+function lexer_next(lex: ptr<Lexer>) -> Token {
+    lexer_skip_trivia(lex)
+    let start: i32 = lex[0].pos
+    let line: i32 = lex[0].line
+    let col: i32 = lex[0].col
+
+    if lex[0].pos >= lex[0].len {
+        return make_tok(TOK_EOF, 0, start, start, line, col)
+    }
+
+    let c: i32 = lex[0].input[lex[0].pos]
+
+    if is_alpha(c) == 1 {
+        lexer_bump(lex)
+        while lex[0].pos < lex[0].len and is_alnum(lex[0].input[lex[0].pos]) == 1 {
+            lexer_bump(lex)
+        }
+        let end: i32 = lex[0].pos
+        let kw: i32 = classify_keyword(lex[0].input, start, end)
+        if kw != 0 {
+            return make_tok(TOK_KEYWORD, kw, start, end, line, col)
+        }
+        return make_tok(TOK_IDENT, 0, start, end, line, col)
+    }
+
+    lexer_bump(lex)
+    if c == 40 { return make_tok(TOK_LPAREN, 0, start, start + 1, line, col) }
+    if c == 41 { return make_tok(TOK_RPAREN, 0, start, start + 1, line, col) }
+    if c == 123 { return make_tok(TOK_LBRACE, 0, start, start + 1, line, col) }
+    if c == 125 { return make_tok(TOK_RBRACE, 0, start, start + 1, line, col) }
+    if c == 58 { return make_tok(TOK_COLON, 0, start, start + 1, line, col) }
+    if c == 44 { return make_tok(TOK_COMMA, 0, start, start + 1, line, col) }
+    if c == 59 { return make_tok(TOK_SEMI, 0, start, start + 1, line, col) }
+    if c == 46 { return make_tok(TOK_DOT, 0, start, start + 1, line, col) }
+    return make_tok(TOK_ERROR, 0, start, start + 1, line, col)
+}
+
+function expect_kind(tok: Token, kind: i32) -> i32 {
+    if tok.kind == kind {
+        return 1
+    }
+    return 0
+}
+
+function expect_kw(tok: Token, kw: i32) -> i32 {
+    if tok.kind == TOK_KEYWORD and tok.kw == kw {
+        return 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # "function add(a: i32) {\n  return a\n}"
+    let src: array<u8, 35> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32,
+        97, 100, 100, 40, 97, 58, 32, 105, 51, 50, 41, 32, 123, 10,
+        32, 32, 114, 101, 116, 117, 114, 110, 32, 97, 10, 125
+    ]
+    let p: ptr<u8> = src
+    let mut lex: Lexer = lexer_new(p, 35)
+
+    let t0: Token = lexer_next(&lex)
+    let t1: Token = lexer_next(&lex)
+    let t2: Token = lexer_next(&lex)
+    let t3: Token = lexer_next(&lex)
+    let t4: Token = lexer_next(&lex)
+    let t5: Token = lexer_next(&lex)
+    let t6: Token = lexer_next(&lex)
+    let t7: Token = lexer_next(&lex)
+    let t8: Token = lexer_next(&lex)
+    let t9: Token = lexer_next(&lex)
+    let t10: Token = lexer_next(&lex)
+    let t11: Token = lexer_next(&lex)
+    let t12: Token = lexer_next(&lex)
+
+    let mut ok: i32 = 1
+    if expect_kw(t0, KW_FUNCTION) == 0 { ok = 0 }
+    if expect_kind(t1, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(t2, TOK_LPAREN) == 0 { ok = 0 }
+    if expect_kind(t3, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(t4, TOK_COLON) == 0 { ok = 0 }
+    if expect_kind(t5, TOK_IDENT) == 0 { ok = 0 }  # i32
+    if expect_kind(t6, TOK_RPAREN) == 0 { ok = 0 }
+    if expect_kind(t7, TOK_LBRACE) == 0 { ok = 0 }
+    if expect_kw(t8, KW_RETURN) == 0 { ok = 0 }
+    if expect_kind(t9, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(t10, TOK_RBRACE) == 0 { ok = 0 }
+    if expect_kind(t11, TOK_EOF) == 0 { ok = 0 }
+    if t0.line != 1 { ok = 0 }
+    if t8.line != 2 { ok = 0 }
+
+    if ok == 1 {
+        printf("flow_identifier_lexer: PASS\n")
+        return 0
+    }
+    printf("flow_identifier_lexer: FAIL\n")
+    return 1
+}

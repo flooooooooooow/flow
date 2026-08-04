@@ -1,4 +1,4 @@
-/* FLOW Shader Language viewer — Metal + Cocoa gallery. */
+/* FLOW Shader Language viewer — Metal grid / cycle gallery. */
 #ifdef __APPLE__
 
 #import <Cocoa/Cocoa.h>
@@ -6,6 +6,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #include "shader_view_metal.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,22 +18,35 @@ typedef struct {
     float height;
 } FlowShaderUniforms;
 
+@interface FlowClickThroughLabel : NSTextField
+@end
+@implementation FlowClickThroughLabel
+- (NSView *)hitTest:(NSPoint)point {
+    (void)point;
+    return nil; /* clicks go to the Metal grid view */
+}
+@end
+
 @interface FlowShaderView : NSView
 @property(nonatomic, strong) id<MTLDevice> device;
 @property(nonatomic, strong) id<MTLCommandQueue> queue;
 @property(nonatomic, strong) id<MTLLibrary> library;
 @property(nonatomic, strong) NSArray<id<MTLRenderPipelineState>> *pipelines;
 @property(nonatomic, strong) NSArray<NSString *> *entryNames;
+@property(nonatomic, strong) NSMutableArray<NSTextField *> *labels;
 @property(nonatomic, strong) CAMetalLayer *metalLayer;
 @property(nonatomic, assign) NSInteger index;
+@property(nonatomic, assign) BOOL gridMode;
 @property(nonatomic, assign) BOOL running;
 @property(nonatomic, assign) int32_t maxFrames;
 @property(nonatomic, assign) int32_t frameCount;
 @property(nonatomic, assign) uint64_t startAbs;
 @property(nonatomic, weak) NSWindow *hostWindow;
 - (void)setTitleForCurrent;
+- (void)layoutLabels;
 - (void)nextShader;
 - (void)prevShader;
+- (void)toggleGrid;
 @end
 
 @implementation FlowShaderView
@@ -43,7 +57,8 @@ typedef struct {
                       library:(id<MTLLibrary>)library
                     pipelines:(NSArray *)pipelines
                    entryNames:(NSArray<NSString *> *)entryNames
-                    maxFrames:(int32_t)maxFrames {
+                    maxFrames:(int32_t)maxFrames
+                     gridMode:(BOOL)gridMode {
     self = [super initWithFrame:frame];
     if (self) {
         self.device = device;
@@ -52,11 +67,13 @@ typedef struct {
         self.pipelines = pipelines;
         self.entryNames = entryNames;
         self.index = 0;
+        self.gridMode = gridMode && entryNames.count > 1;
         self.maxFrames = maxFrames;
         self.frameCount = 0;
         self.running = YES;
         self.startAbs = mach_absolute_time();
         self.wantsLayer = YES;
+        self.labels = [NSMutableArray array];
         CAMetalLayer *layer = [CAMetalLayer layer];
         layer.device = device;
         layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
@@ -64,20 +81,113 @@ typedef struct {
         layer.contentsScale = [[NSScreen mainScreen] backingScaleFactor];
         self.layer = layer;
         self.metalLayer = layer;
+
+        for (NSUInteger i = 0; i < entryNames.count; i++) {
+            NSString *name = entryNames[i];
+            if ([name hasSuffix:@"_frag"]) {
+                name = [name substringToIndex:name.length - 5];
+            }
+            FlowClickThroughLabel *label = [[FlowClickThroughLabel alloc] initWithFrame:NSZeroRect];
+            label.stringValue = name;
+            label.bezeled = NO;
+            label.drawsBackground = YES;
+            label.backgroundColor = [[NSColor blackColor] colorWithAlphaComponent:0.55];
+            label.textColor = [NSColor whiteColor];
+            label.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightMedium];
+            label.editable = NO;
+            label.selectable = NO;
+            label.alignment = NSTextAlignmentCenter;
+            [self addSubview:label];
+            [self.labels addObject:label];
+        }
     }
     return self;
 }
 
 - (BOOL)acceptsFirstResponder { return YES; }
 
+/*
+ * Grid layout shared by labels + hit-testing.
+ * AppKit/Metal both use bottom-left origin; row 0 is placed at the TOP
+ * (same as the Metal viewport math in drawFrame). Do NOT set isFlipped —
+ * that inverts clicks against CAMetalLayer content.
+ */
+- (void)gridMetricsForCount:(NSUInteger)n
+                       size:(NSSize)sz
+                       cols:(NSUInteger *)outCols
+                       rows:(NSUInteger *)outRows
+                        gap:(CGFloat *)outGap
+                      cellW:(CGFloat *)outCellW
+                      cellH:(CGFloat *)outCellH {
+    NSUInteger cols = (NSUInteger)ceil(sqrt((double)n));
+    if (cols < 1) cols = 1;
+    NSUInteger rows = (NSUInteger)ceil((double)n / (double)cols);
+    CGFloat gap = 4.0;
+    *outCols = cols;
+    *outRows = rows;
+    *outGap = gap;
+    *outCellW = (sz.width - gap * (cols + 1)) / cols;
+    *outCellH = (sz.height - gap * (rows + 1)) / rows;
+}
+
+- (NSRect)cellRectAtIndex:(NSUInteger)i count:(NSUInteger)n size:(NSSize)sz {
+    NSUInteger cols = 0, rows = 0;
+    CGFloat gap = 0, cellW = 0, cellH = 0;
+    [self gridMetricsForCount:n size:sz cols:&cols rows:&rows gap:&gap cellW:&cellW cellH:&cellH];
+    NSUInteger col = i % cols;
+    NSUInteger row = i / cols;
+    CGFloat x = gap + col * (cellW + gap);
+    /* Bottom-left of cell; row 0 sits at the top of the view */
+    CGFloat y = sz.height - gap - (row + 1) * cellH - row * gap;
+    return NSMakeRect(x, y, cellW, cellH);
+}
+
+- (void)setFrameSize:(NSSize)newSize {
+    [super setFrameSize:newSize];
+    [self layoutLabels];
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    [self layoutLabels];
+    [self setTitleForCurrent];
+}
+
+- (void)layoutLabels {
+    NSUInteger n = self.labels.count;
+    if (n == 0) return;
+    NSSize sz = self.bounds.size;
+    if (!self.gridMode) {
+        for (NSUInteger i = 0; i < n; i++) {
+            self.labels[i].hidden = (i != (NSUInteger)self.index);
+        }
+        NSTextField *lab = self.labels[(NSUInteger)self.index];
+        lab.frame = NSMakeRect(8, sz.height - 26, MIN(220, sz.width - 16), 18);
+        return;
+    }
+    for (NSUInteger i = 0; i < n; i++) {
+        NSTextField *lab = self.labels[i];
+        lab.hidden = NO;
+        NSRect cell = [self cellRectAtIndex:i count:n size:sz];
+        lab.frame = NSMakeRect(cell.origin.x + 4, cell.origin.y + cell.size.height - 20,
+                               cell.size.width - 8, 16);
+    }
+}
+
 - (void)setTitleForCurrent {
     if (!self.hostWindow || self.entryNames.count == 0) return;
+    if (self.gridMode) {
+        self.hostWindow.title = [NSString stringWithFormat:
+            @"FLOW shaders — grid (%lu)  [G toggle · click cell / 1-9 focus · Esc quit]",
+            (unsigned long)self.entryNames.count];
+        return;
+    }
     NSString *name = self.entryNames[self.index];
     if ([name hasSuffix:@"_frag"]) {
         name = [name substringToIndex:name.length - 5];
     }
     self.hostWindow.title = [NSString stringWithFormat:
-        @"FLOW shaders — %@  (%ld/%lu)  [←/→ or Space]",
+        @"FLOW shaders — %@  (%ld/%lu)  [G grid · ←/→ cycle · Esc quit]",
         name, (long)self.index + 1, (unsigned long)self.entryNames.count];
 }
 
@@ -85,6 +195,7 @@ typedef struct {
     if (self.pipelines.count == 0) return;
     self.index = (self.index + 1) % (NSInteger)self.pipelines.count;
     self.startAbs = mach_absolute_time();
+    [self layoutLabels];
     [self setTitleForCurrent];
 }
 
@@ -92,23 +203,62 @@ typedef struct {
     if (self.pipelines.count == 0) return;
     self.index = (self.index - 1 + (NSInteger)self.pipelines.count) % (NSInteger)self.pipelines.count;
     self.startAbs = mach_absolute_time();
+    [self layoutLabels];
     [self setTitleForCurrent];
+}
+
+- (void)toggleGrid {
+    if (self.pipelines.count <= 1) return;
+    self.gridMode = !self.gridMode;
+    [self layoutLabels];
+    [self setTitleForCurrent];
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    if (!self.gridMode) return;
+    NSPoint p = [self convertPoint:[event locationInWindow] fromView:nil];
+    NSUInteger n = self.pipelines.count;
+    if (n == 0) return;
+    NSSize sz = self.bounds.size;
+    /*
+     * CAMetalLayer as the view's layer reports mouse Y opposite the cell
+     * layout / viewport tiles (top-left click → bottom-left cell). Mirror
+     * the probe point into layout space before hit-testing.
+     */
+    p.y = sz.height - p.y;
+    for (NSUInteger i = 0; i < n; i++) {
+        NSRect cell = [self cellRectAtIndex:i count:n size:sz];
+        if (NSPointInRect(p, cell)) {
+            self.index = (NSInteger)i;
+            self.gridMode = NO;
+            self.startAbs = mach_absolute_time();
+            [self layoutLabels];
+            [self setTitleForCurrent];
+            return;
+        }
+    }
 }
 
 - (void)keyDown:(NSEvent *)event {
     NSString *chars = event.charactersIgnoringModifiers;
     if (event.keyCode == 53) { /* Esc */
+        if (!self.gridMode && self.pipelines.count > 1) {
+            self.gridMode = YES;
+            [self layoutLabels];
+            [self setTitleForCurrent];
+            return;
+        }
         self.running = NO;
         [self.window close];
         return;
     }
-    if (event.keyCode == 123) { /* left */
-        [self prevShader];
+    if (chars.length == 1 && ([chars characterAtIndex:0] == 'g' || [chars characterAtIndex:0] == 'G')) {
+        [self toggleGrid];
         return;
     }
-    if (event.keyCode == 124 || event.keyCode == 49) { /* right / space */
-        [self nextShader];
-        return;
+    if (!self.gridMode) {
+        if (event.keyCode == 123) { [self prevShader]; return; }
+        if (event.keyCode == 124 || event.keyCode == 49) { [self nextShader]; return; }
     }
     if (chars.length == 1) {
         unichar c = [chars characterAtIndex:0];
@@ -116,7 +266,9 @@ typedef struct {
             NSInteger idx = (NSInteger)(c - '1');
             if (idx < (NSInteger)self.pipelines.count) {
                 self.index = idx;
+                self.gridMode = NO;
                 self.startAbs = mach_absolute_time();
+                [self layoutLabels];
                 [self setTitleForCurrent];
             }
         }
@@ -142,24 +294,56 @@ typedef struct {
     uint64_t elapsed = mach_absolute_time() - self.startAbs;
     double seconds = (double)elapsed * (double)info.numer / (double)info.denom / 1.0e9;
 
-    FlowShaderUniforms uniforms;
-    uniforms.time = (float)seconds;
-    uniforms.width = (float)size.width;
-    uniforms.height = (float)size.height;
-
     MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = drawable.texture;
     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.04, 0.04, 0.05, 1);
 
-    id<MTLRenderPipelineState> pipeline = self.pipelines[self.index];
     id<MTLCommandBuffer> cmd = [self.queue commandBuffer];
     id<MTLRenderCommandEncoder> enc = [cmd renderCommandEncoderWithDescriptor:pass];
-    [enc setRenderPipelineState:pipeline];
-    [enc setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
-    [enc setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
-    [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+
+    NSUInteger n = self.pipelines.count;
+    if (self.gridMode && n > 1) {
+        NSUInteger cols = (NSUInteger)ceil(sqrt((double)n));
+        NSUInteger rows = (NSUInteger)ceil((double)n / (double)cols);
+        double gap = 4.0 * self.metalLayer.contentsScale;
+        double cellW = (size.width - gap * (cols + 1)) / cols;
+        double cellH = (size.height - gap * (rows + 1)) / rows;
+        for (NSUInteger i = 0; i < n; i++) {
+            NSUInteger col = i % cols;
+            NSUInteger row = i / cols;
+            double x = gap + col * (cellW + gap);
+            /* Metal viewport origin is bottom-left; row 0 at top of window */
+            double y = size.height - gap - (row + 1) * cellH - row * gap;
+
+            FlowShaderUniforms uniforms;
+            uniforms.time = (float)seconds;
+            uniforms.width = (float)cellW;
+            uniforms.height = (float)cellH;
+
+            MTLViewport vp = { x, y, cellW, cellH, 0.0, 1.0 };
+            MTLScissorRect sc = { (NSUInteger)x, (NSUInteger)y, (NSUInteger)cellW, (NSUInteger)cellH };
+            [enc setViewport:vp];
+            [enc setScissorRect:sc];
+            [enc setRenderPipelineState:self.pipelines[i]];
+            [enc setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
+            [enc setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
+            [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        }
+    } else {
+        FlowShaderUniforms uniforms;
+        uniforms.time = (float)seconds;
+        uniforms.width = (float)size.width;
+        uniforms.height = (float)size.height;
+        MTLViewport vp = { 0, 0, size.width, size.height, 0.0, 1.0 };
+        [enc setViewport:vp];
+        [enc setRenderPipelineState:self.pipelines[self.index]];
+        [enc setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
+        [enc setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
+        [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }
+
     [enc endEncoding];
     [cmd presentDrawable:drawable];
     [cmd commit];
@@ -168,7 +352,6 @@ typedef struct {
     if (self.maxFrames > 0 && self.frameCount >= self.maxFrames) {
         self.running = NO;
         [NSApp stop:nil];
-        /* NSApp stop needs a queued event before the run loop actually exits. */
         NSEvent *ev = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
                                          location:NSZeroPoint
                                     modifierFlags:0
@@ -188,7 +371,6 @@ typedef struct {
 @interface FlowShaderAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate>
 @property(nonatomic, strong) FlowShaderView *view;
 @property(nonatomic, strong) NSTimer *timer;
-@property(nonatomic, assign) int result;
 @end
 
 @implementation FlowShaderAppDelegate
@@ -228,7 +410,8 @@ static int flow_shader_show_impl(
     int32_t fragment_count,
     int32_t width,
     int32_t height,
-    int32_t max_frames
+    int32_t max_frames,
+    int32_t layout
 ) {
     if (!metal_source || !fragment_fns || fragment_count <= 0 || width <= 0 || height <= 0) {
         fprintf(stderr, "flow_shader_show: invalid arguments\n");
@@ -288,7 +471,8 @@ static int flow_shader_show_impl(
         FlowShaderAppDelegate *delegate = [[FlowShaderAppDelegate alloc] init];
         [NSApp setDelegate:delegate];
 
-        NSRect rect = NSMakeRect(80, 80, width, height);
+        BOOL grid = (layout == FLOW_SHADER_LAYOUT_GRID) && fragment_count > 1;
+        NSRect rect = NSMakeRect(40, 40, width, height);
         NSWindow *window = [[NSWindow alloc]
             initWithContentRect:rect
                       styleMask:(NSWindowStyleMaskTitled |
@@ -305,11 +489,13 @@ static int flow_shader_show_impl(
                                                             library:lib
                                                           pipelines:pipelines
                                                          entryNames:names
-                                                          maxFrames:max_frames];
+                                                          maxFrames:max_frames
+                                                           gridMode:grid];
         view.hostWindow = window;
         window.contentView = view;
         window.delegate = delegate;
         delegate.view = view;
+        [view layoutLabels];
         [view setTitleForCurrent];
         [window makeKeyAndOrderFront:nil];
         [NSApp activateIgnoringOtherApps:YES];
@@ -334,7 +520,9 @@ int flow_shader_show(
     int32_t max_frames
 ) {
     const char *fns[1] = { fragment_fn };
-    return flow_shader_show_impl(metal_source, fns, 1, width, height, max_frames);
+    return flow_shader_show_impl(
+        metal_source, fns, 1, width, height, max_frames, FLOW_SHADER_LAYOUT_CYCLE
+    );
 }
 
 int flow_shader_show_gallery(
@@ -346,7 +534,22 @@ int flow_shader_show_gallery(
     int32_t max_frames
 ) {
     return flow_shader_show_impl(
-        metal_source, fragment_fns, fragment_count, width, height, max_frames
+        metal_source, fragment_fns, fragment_count, width, height, max_frames,
+        FLOW_SHADER_LAYOUT_GRID
+    );
+}
+
+int flow_shader_show_gallery_ex(
+    const char *metal_source,
+    const char **fragment_fns,
+    int32_t fragment_count,
+    int32_t width,
+    int32_t height,
+    int32_t max_frames,
+    int32_t layout
+) {
+    return flow_shader_show_impl(
+        metal_source, fragment_fns, fragment_count, width, height, max_frames, layout
     );
 }
 
@@ -367,12 +570,13 @@ int flow_shader_show_file(
     return rc;
 }
 
-int flow_shader_show_gallery_file(
+static int flow_shader_gallery_file_common(
     const char *metal_path,
     const char *entries_path,
     int32_t width,
     int32_t height,
-    int32_t max_frames
+    int32_t max_frames,
+    int32_t layout
 ) {
     char *src = flow_read_file(metal_path, NULL);
     if (!src) {
@@ -396,9 +600,7 @@ int flow_shader_show_gallery_file(
         while (n > 0 && (line[n - 1] == '\r' || line[n - 1] == ' ')) {
             line[--n] = '\0';
         }
-        if (n > 0) {
-            fns[count++] = line;
-        }
+        if (n > 0) fns[count++] = line;
         line = strtok(NULL, "\n");
     }
     if (count == 0) {
@@ -407,10 +609,35 @@ int flow_shader_show_gallery_file(
         fprintf(stderr, "flow_shader_show_gallery_file: no entries\n");
         return 1;
     }
-    int rc = flow_shader_show_gallery(src, fns, count, width, height, max_frames);
+    int rc = flow_shader_show_gallery_ex(src, fns, count, width, height, max_frames, layout);
     free(src);
     free(entries_raw);
     return rc;
+}
+
+int flow_shader_show_gallery_file(
+    const char *metal_path,
+    const char *entries_path,
+    int32_t width,
+    int32_t height,
+    int32_t max_frames
+) {
+    return flow_shader_gallery_file_common(
+        metal_path, entries_path, width, height, max_frames, FLOW_SHADER_LAYOUT_GRID
+    );
+}
+
+int flow_shader_show_gallery_file_ex(
+    const char *metal_path,
+    const char *entries_path,
+    int32_t width,
+    int32_t height,
+    int32_t max_frames,
+    int32_t layout
+) {
+    return flow_shader_gallery_file_common(
+        metal_path, entries_path, width, height, max_frames, layout
+    );
 }
 
 #else /* !__APPLE__ */
@@ -425,17 +652,22 @@ int flow_shader_show(const char *a, const char *b, int32_t c, int32_t d, int32_t
 }
 int flow_shader_show_gallery(const char *a, const char **b, int32_t c, int32_t d, int32_t e, int32_t f) {
     (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;
-    fprintf(stderr, "flow_shader_show_gallery: macOS/Metal only\n");
+    return 1;
+}
+int flow_shader_show_gallery_ex(const char *a, const char **b, int32_t c, int32_t d, int32_t e, int32_t f, int32_t g) {
+    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;
     return 1;
 }
 int flow_shader_show_file(const char *a, const char *b, int32_t c, int32_t d, int32_t e) {
     (void)a;(void)b;(void)c;(void)d;(void)e;
-    fprintf(stderr, "flow_shader_show_file: macOS/Metal only\n");
     return 1;
 }
 int flow_shader_show_gallery_file(const char *a, const char *b, int32_t c, int32_t d, int32_t e) {
     (void)a;(void)b;(void)c;(void)d;(void)e;
-    fprintf(stderr, "flow_shader_show_gallery_file: macOS/Metal only\n");
+    return 1;
+}
+int flow_shader_show_gallery_file_ex(const char *a, const char *b, int32_t c, int32_t d, int32_t e, int32_t f) {
+    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;
     return 1;
 }
 

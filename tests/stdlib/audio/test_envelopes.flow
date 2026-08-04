@@ -11,7 +11,7 @@ import "stdlib/audio/envelopes.flow"
 
 function test_adsr_creation() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
+    let mut env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
     
     if adsr_is_idle(env) == false { return false }
     if adsr_value(env) != 0.0 { return false }
@@ -20,7 +20,7 @@ function test_adsr_creation() -> bool {
 
 function test_adsr_gate_on() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
+    let mut env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
     
     env = adsr_gate_on(env)
     
@@ -31,11 +31,11 @@ function test_adsr_gate_on() -> bool {
 
 function test_adsr_attack_ramp() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: ADSR = adsr_new_ms(2.27, 100.0, 0.7, 200.0, rate)
+    let mut env: ADSR = adsr_new_ms(2.27, 100.0, 0.7, 200.0, rate)
     
     env = adsr_gate_on(env)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 50 {
         env = adsr_tick(env)
         i = i + 1
@@ -49,11 +49,11 @@ function test_adsr_attack_ramp() -> bool {
 
 function test_adsr_reaches_sustain() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: ADSR = adsr_new_ms(1.0, 1.0, 0.5, 200.0, rate)
+    let mut env: ADSR = adsr_new_ms(1.0, 1.0, 0.5, 200.0, rate)
     
     env = adsr_gate_on(env)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 1000 {
         env = adsr_tick(env)
         i = i + 1
@@ -67,11 +67,11 @@ function test_adsr_reaches_sustain() -> bool {
 
 function test_adsr_release_to_idle() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: ADSR = adsr_new_ms(1.0, 1.0, 0.5, 5.0, rate)
+    let mut env: ADSR = adsr_new_ms(1.0, 1.0, 0.5, 5.0, rate)
     
     env = adsr_gate_on(env)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 500 {
         env = adsr_tick(env)
         i = i + 1
@@ -92,7 +92,7 @@ function test_adsr_release_to_idle() -> bool {
 
 function test_adsr_reset() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
+    let mut env: ADSR = adsr_new_ms(10.0, 100.0, 0.7, 200.0, rate)
     
     env = adsr_gate_on(env)
     env = adsr_tick(env)
@@ -109,24 +109,24 @@ function test_adsr_reset() -> bool {
 
 function test_ar_creation() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: AR = ar_new(seconds_new(0.01), seconds_new(0.1), rate)
+    let mut env: AR = ar_new(seconds_new(0.01), seconds_new(0.1), rate)
     return ar_is_active(env) == false
 }
 
 function test_ar_trigger() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: AR = ar_new(seconds_new(0.001), seconds_new(0.001), rate)
+    let mut env: AR = ar_new(seconds_new(0.001), seconds_new(0.001), rate)
     env = ar_trigger(env)
     return ar_is_active(env)
 }
 
 function test_ar_completes() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let env: AR = ar_new(seconds_new(0.001), seconds_new(0.001), rate)
+    let mut env: AR = ar_new(seconds_new(0.001), seconds_new(0.001), rate)
     
     env = ar_trigger(env)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 200 {
         env = ar_tick(env)
         i = i + 1
@@ -143,24 +143,24 @@ function test_ar_completes() -> bool {
 
 function test_ramp_creation() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.01), rate)
+    let mut r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.01), rate)
     return ramp_value(r) == 0.0
 }
 
 function test_ramp_start() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.01), rate)
+    let mut r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.01), rate)
     r = ramp_start(r)
     return r.is_active == true
 }
 
 function test_ramp_completion() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.001), rate)
+    let mut r: Ramp = ramp_new(0.0, 1.0, seconds_new(0.001), rate)
     
     r = ramp_start(r)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 100 {
         r = ramp_tick(r)
         i = i + 1
@@ -177,24 +177,24 @@ function test_ramp_completion() -> bool {
 
 function test_exp_decay_creation() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let e: ExpDecay = exp_decay_new(10.0, rate)
+    let mut e: ExpDecay = exp_decay_new(10.0, rate)
     return exp_decay_value(e) == 0.0
 }
 
 function test_exp_decay_trigger() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let e: ExpDecay = exp_decay_new(10.0, rate)
+    let mut e: ExpDecay = exp_decay_new(10.0, rate)
     e = exp_decay_trigger(e)
     return exp_decay_value(e) == 1.0
 }
 
 function test_exp_decay_decays() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let e: ExpDecay = exp_decay_new(1.0, rate)
+    let mut e: ExpDecay = exp_decay_new(1.0, rate)
     
     e = exp_decay_trigger(e)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 500 {
         e = exp_decay_tick(e)
         i = i + 1
@@ -208,8 +208,8 @@ function test_exp_decay_decays() -> bool {
 # =============================================================================
 
 function main() -> i32 {
-    let passed: i32 = 0
-    let failed: i32 = 0
+    let mut passed: i32 = 0
+    let mut failed: i32 = 0
     
     printf("=== Audio Envelopes Tests ===\n\n")
     

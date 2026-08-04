@@ -1,0 +1,11 @@
+[package]
+name = "ringbuf"
+version = "0.1.0"
+description = "SPSC power-of-two ring buffer for i32 (heap-backed)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

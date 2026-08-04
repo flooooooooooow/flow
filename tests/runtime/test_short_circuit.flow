@@ -1,0 +1,32 @@
+# Compiler-suite runtime: && / || short-circuit semantics via side effects
+
+function main() -> i32 {
+    let mut hits: i32 = 0
+    # false && <side> must not evaluate the right side
+    if false && { hits = hits + 1; true } {
+        return 1
+    }
+    if hits != 0 {
+        return 2
+    }
+    # true || <side> must not evaluate the right side
+    if true || { hits = hits + 1; false } {
+        # ok
+    } else {
+        return 3
+    }
+    if hits != 0 {
+        return 4
+    }
+    # true && <side> does evaluate
+    if true && { hits = hits + 1; true } {
+        # ok
+    } else {
+        return 5
+    }
+    if hits != 1 {
+        return 6
+    }
+    printf("short_circuit ok\n")
+    return 0
+}

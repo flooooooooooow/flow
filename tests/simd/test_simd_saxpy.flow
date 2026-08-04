@@ -1,15 +1,8 @@
-# SIMD SAXPY: a*x + y vectorizable loop (regression test for array indexing + memref load/store)
+# SIMD SAXPY: a*x + y — triggers MLIR VF=4 vectorization + Clang loop hints
 
 function saxpy(a: f32, x: memref_f32, y: memref_f32, out: memref_f32, n: i32) -> i32 {
-    for i in 0..n {
+    for i in 0 to n {
         out[i] = a * x[i] + y[i]
-    }
-    return 0
-}
-
-function debug_entry() -> i32 {
-    for i in 0..64 {
-        let tmp: i32 = i + 1
     }
     return 0
 }

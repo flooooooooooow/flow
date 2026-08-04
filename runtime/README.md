@@ -20,7 +20,7 @@ Contract is defined by `lib/stdlib/gfx.flow` and implemented for macOS in
 |------|----------|--------|
 | `gfx_macos.m` | macOS | **Working** — Cocoa window, software RGBA blit |
 | `gfx_linux.c` | Linux | **SDL2** when `<SDL2/SDL.h>` is present; otherwise stub (`-DFLOW_GFX_STUB`) |
-| `gfx_windows.c` | Windows | **SDL2 (partial)** — thin driver sharing `gfx_sdl_impl.inc` with Linux; compiles clean but not yet smoke-tested on real Windows (MSVC/clang) hardware/CI |
+| `gfx_windows.c` | Windows | **SDL2 (partial)** — thin driver sharing `gfx_sdl_impl.inc` with Linux; stub path smoked on `windows-latest` CI |
 
 Both `gfx_linux.c` and `gfx_windows.c` are thin drivers that `#include`
 `gfx_sdl_impl.inc`, which holds the actual SDL2 implementation (and its
@@ -36,13 +36,18 @@ See [docs/language/graphics.md](../docs/language/graphics.md).
 
 | File | Purpose |
 |------|---------|
-| `gpu_memory.h` / `gpu_metal.m` / `gpu_memory_stub.c` | First-class GPU/unified buffers (`stdlib/gpu_memory.flow`); Metal on Darwin, stub elsewhere — linked by `./flow run` |
-| `shader_view_metal.m` / `shader_host.c` | Fullscreen `shader fill` viewer for `./flow shader` |
-| `audio_*.c` / `audio_gpu_metal.m` | Audio I/O and Metal GPU audio helpers |
-| `flow_time.c` / `flow_sys_info.c` | Time / host info |
-| `live_host.c` / `live_plugin.c` | Live DSP host / plugin ABI |
+| `gpu_memory.h` / `gpu_metal.m` | First-class GPU/unified buffers; Metal on Darwin. Non-Darwin stub is `lib/runtime/gpu_memory_stub.flow` |
+| `shader_view_metal.m` / `shader_host.c` | Viewer ObjC + thin argv; orchestration in `lib/runtime/shader_host.flow` |
+| `flow_rt_support.c` / `flow_rt_task_store.c` | Thin forever helpers for Flow runtime modules |
+| `flow_rt_sysinfo.c` | Thin sysctl/uname probes; Flow owns `sysinfo_probes.flow` + `sysinfo_print.flow` |
+| `flow_tcp.c` / `flow_http_bench.c` / `flow_rt_crypto.c` | Socket/HTTP kernels + SHA-256/CSPRNG; public API in Flow |
+| `flow_concurrency.c` / `flow_fiber.c` / `flow_fctx_*.S` | Threads/atomics kernels; fiber scheduler + asm swap |
+| `audio_miniaudio.c` / `audio_gpu_metal.m` | Device I/O (+ Metal); stub in `audio_device_stub.flow`, SPSC in `audio_spsc.flow` |
+| `live_stubs.flow` (was `live_*.c`) | Live host/plugin placeholders |
 | `flow_python_embed.c` | Python embed target |
 | `vulkan_flow_*_bridge.cpp` | Experimental Vulkan sample bridges |
+
+See [docs/project/runtime-in-flow.md](../docs/project/runtime-in-flow.md) for the rewrite boundary.
 
 ## Build tip (macOS graphics)
 

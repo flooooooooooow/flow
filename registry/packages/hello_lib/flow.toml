@@ -1,0 +1,11 @@
+[package]
+name = "hello_lib"
+version = "0.1.0"
+description = "Sample Flow package for registry demos"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

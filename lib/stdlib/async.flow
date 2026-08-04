@@ -1,12 +1,40 @@
 # Async primitives via algebraic effects
 #
 # Call sites perform `Async` / `AsyncIO` operations; a capability supplies the
-# backend. Today that means a sync simulator or a blocking `usleep` — not a
-# fiber scheduler. Swap capabilities later (epoll/kqueue/IOCP) without changing
-# call sites. See docs/language/async-effects.md for implemented vs deferred.
+# backend. SimulatedAsync is a sync stand-in; ThreadedAsync uses real pthreads
+# via lib/runtime/concurrency_async.flow (+ flow_rt_task_store.c); BlockingAsyncIO uses usleep. True fibers
+# (suspend/resume) still need delimited continuations — see
+# docs/language/async-effects.md and docs/language/concurrency-vs-go.md.
 
 extern {
     function usleep(usec: i32) -> i32
+    function flow_async_spawn(task_id: i32, arg: i32) -> void
+    function flow_async_join(task_id: i32) -> i32
+    function flow_async_delay(ms: i32) -> void
+    function flow_fiber_async_spawn(task_id: i32, arg: i32) -> void
+    function flow_fiber_async_join(task_id: i32) -> i32
+    function flow_fiber_async_delay(ms: i32) -> void
+    function flow_fiber_set_maxprocs(n: i32) -> void
+    function flow_fiber_maxprocs() -> i32
+    function flow_netpoll_poll_read(fd: i32, timeout_ms: i32) -> i32
+    function flow_netpoll_poll_write(fd: i32, timeout_ms: i32) -> i32
+    function flow_netpoll_sleep_ms(ms: i32) -> void
+    function flow_netpoll_fiber_poll_read(fd: i32, timeout_ms: i32) -> i32
+    function flow_netpoll_fiber_poll_write(fd: i32, timeout_ms: i32) -> i32
+    function flow_cont_available() -> i32
+    function flow_demo_cont_shift() -> i32
+    function flow_demo_cont_reset() -> i32
+    function flow_cont_shift_i32() -> i32
+    # flow_cont_* / flow_demo_cont_* come from lib/runtime/cont.flow
+    function flow_cont_resume_pending(value: i32) -> i32
+    function flow_cont_has_pending() -> i32
+    function flow_cont_arm_resume(value: i32) -> void
+    function flow_tcp_connect(host_hash: i32, port: i32) -> i32
+    function flow_tcp_send(fd: i32, buf: ptr<i8>, len: i32) -> i32
+    function flow_tcp_recv(fd: i32, buf: ptr<i8>, len: i32) -> i32
+    function flow_tcp_listen(port: i32) -> i32
+    function flow_tcp_accept(listen_fd: i32) -> i32
+    function flow_tcp_close(fd: i32) -> i32
 }
 
 # ---------------------------------------------------------------------------
@@ -35,6 +63,36 @@ export effect TcpEffect {
     recv(fd: i32, buf: ptr<i8>, len: i32) -> i32,
 }
 
+# Real sockets via runtime/flow_tcp.c (loopback connect; send/recv).
+export capability BlockingTcp {
+    effect TcpEffect,
+
+    function connect(host_hash: i32, port: i32) -> i32 {
+        return flow_tcp_connect(host_hash, port)
+    },
+
+    function send(fd: i32, buf: ptr<i8>, len: i32) -> i32 {
+        return flow_tcp_send(fd, buf, len)
+    },
+
+    function recv(fd: i32, buf: ptr<i8>, len: i32) -> i32 {
+        return flow_tcp_recv(fd, buf, len)
+    },
+}
+
+# Convenience (not effect ops): listen/accept/close for echo demos.
+export function tcp_listen(port: i32) -> i32 {
+    return flow_tcp_listen(port)
+}
+
+export function tcp_accept(listen_fd: i32) -> i32 {
+    return flow_tcp_accept(listen_fd)
+}
+
+export function tcp_close(fd: i32) -> i32 {
+    return flow_tcp_close(fd)
+}
+
 # ---------------------------------------------------------------------------
 # SimulatedAsync — deterministic sync stand-in for tests / demos
 #
@@ -57,6 +115,62 @@ export capability SimulatedAsync {
     function join(task_id: i32) -> i32 {
         return task_id * 10
     },
+}
+
+# ---------------------------------------------------------------------------
+# ThreadedAsync — real OS threads for spawn/join; delay via usleep
+#
+# Unregistered task_ids fall back to the SimulatedAsync formula (id * 10)
+# after the worker finishes. Register custom work from C with
+# flow_task_register(task_id, fn). Not a fiber scheduler: no suspend/resume.
+# ---------------------------------------------------------------------------
+
+export capability ThreadedAsync {
+    effect Async,
+
+    function delay(ms: i32) -> void {
+        flow_async_delay(ms)
+    },
+
+    function spawn(task_id: i32) -> void {
+        flow_async_spawn(task_id, task_id)
+    },
+
+    function join(task_id: i32) -> i32 {
+        return flow_async_join(task_id)
+    },
+}
+
+# ---------------------------------------------------------------------------
+# FiberAsync — M:N cooperative fibers (runtime/flow_fiber.c)
+#
+# Multiplexes fibers across FLOW_MAXPROCS OS workers (default: CPU count),
+# like GOMAXPROCS. Call flow_fiber_set_maxprocs(n) before spawn to pin.
+# No delimited continuations yet: bodies are C trampolines / registered tasks.
+# ---------------------------------------------------------------------------
+
+export capability FiberAsync {
+    effect Async,
+
+    function delay(ms: i32) -> void {
+        flow_fiber_async_delay(ms)
+    },
+
+    function spawn(task_id: i32) -> void {
+        flow_fiber_async_spawn(task_id, task_id)
+    },
+
+    function join(task_id: i32) -> i32 {
+        return flow_fiber_async_join(task_id)
+    },
+}
+
+export function async_set_maxprocs(n: i32) -> void {
+    flow_fiber_set_maxprocs(n)
+}
+
+export function async_maxprocs() -> i32 {
+    return flow_fiber_maxprocs()
 }
 
 # ---------------------------------------------------------------------------
@@ -83,6 +197,73 @@ export capability BlockingAsyncIO {
         }
         return
     },
+}
+
+# ---------------------------------------------------------------------------
+# NetpollAsyncIO — real kqueue (Darwin/BSD) / epoll (Linux)
+# Go's netpoller analogue. Prefer this over BlockingAsyncIO for servers.
+# On a fiber, poll_* parks the fiber (runtime/flow_netpoll_fiber.c); off-fiber
+# they block the OS thread like a normal kevent/epoll wait.
+# ---------------------------------------------------------------------------
+
+export capability NetpollAsyncIO {
+    effect AsyncIO,
+
+    function poll_read(fd: i32, timeout_ms: i32) -> i32 {
+        return flow_netpoll_fiber_poll_read(fd, timeout_ms)
+    },
+
+    function poll_write(fd: i32, timeout_ms: i32) -> i32 {
+        return flow_netpoll_fiber_poll_write(fd, timeout_ms)
+    },
+
+    function sleep_ms(ms: i32) -> void {
+        flow_netpoll_sleep_ms(ms)
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Cont — one-shot fiber-backed delimited continuation (Flow-frame resume)
+#
+# Cont.shift() parks the current fiber (locals preserved). Call
+# cont_arm_resume(v) first to spawn a peer that supplies v. Requires
+# FiberCont (or FiberAsync) so main runs on a fiber.
+# ---------------------------------------------------------------------------
+
+export effect Cont {
+    shift() -> i32,
+}
+
+export capability FiberCont {
+    effect Cont,
+
+    function shift() -> i32 {
+        return flow_cont_shift_i32()
+    },
+}
+
+export function cont_scaffold_available() -> i32 {
+    return flow_cont_available()
+}
+
+export function cont_demo_shift() -> i32 {
+    return flow_demo_cont_shift()
+}
+
+export function cont_demo_reset() -> i32 {
+    return flow_demo_cont_reset()
+}
+
+export function cont_arm_resume(value: i32) -> void {
+    flow_cont_arm_resume(value)
+}
+
+export function cont_resume(value: i32) -> i32 {
+    return flow_cont_resume_pending(value)
+}
+
+export function cont_has_pending() -> i32 {
+    return flow_cont_has_pending()
 }
 
 # ---------------------------------------------------------------------------

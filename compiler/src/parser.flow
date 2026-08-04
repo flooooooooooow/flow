@@ -1,0 +1,1153 @@
+# @module flowc.parser
+# @means  Recursive-descent parser for a Flow core subset (self-hosting Phase 3).
+
+import .token {
+    Token, Lexer,
+    TOK_EOF, TOK_IDENT, TOK_KEYWORD, TOK_INT, TOK_STRING,
+    TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACK, TOK_RBRACK, TOK_DOT,
+    TOK_COLON, TOK_COMMA, TOK_ARROW,
+    TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP,
+    KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
+    KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
+    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR
+}
+import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
+import .ast {
+    AstArena, AstNode, AST_NONE,
+    AST_PROGRAM, AST_FN, AST_PARAM, AST_BLOCK, AST_LET, AST_RETURN,
+    AST_IF, AST_WHILE, AST_FOR, AST_STRUCT, AST_FIELD, AST_EXTERN,
+    AST_IMPORT, AST_EXPORT, AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT,
+    AST_BREAK, AST_CONTINUE, AST_STRING, AST_CONST, AST_CAST, AST_ARRAY_LIT,
+    AST_BINOP, AST_UNARY, AST_CALL, AST_IDENT, AST_INT,
+    AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
+    flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push
+}
+
+export struct Parser {
+    lex: Lexer,
+    cur: Token,
+    arena: AstArena,
+    err: i32
+}
+
+export function flowc_parser_new(input: ptr<u8>, len: i32, ast_cap: i32) -> Parser {
+    let mut lex: Lexer = flowc_lexer_new(input, len)
+    let cur: Token = flowc_lexer_next(&lex)
+    let arena: AstArena = flowc_ast_new(ast_cap)
+    return Parser { lex: lex, cur: cur, arena: arena, err: 0 }
+}
+
+export function flowc_parser_free(p: Parser) -> void {
+    flowc_ast_free(p.arena)
+}
+
+function flowc_parser_advance(p: ptr<Parser>) {
+    p[0].cur = flowc_lexer_next(&p[0].lex)
+}
+
+function flowc_parser_check(p: Parser, kind: i32) -> i32 {
+    if p.cur.kind == kind {
+        return 1
+    }
+    return 0
+}
+
+function flowc_parser_check_kw(p: Parser, kw: i32) -> i32 {
+    return flowc_token_is_kw(p.cur, kw)
+}
+
+function flowc_parser_eat(p: ptr<Parser>, kind: i32) -> i32 {
+    if p[0].cur.kind == kind {
+        flowc_parser_advance(p)
+        return 1
+    }
+    p[0].err = 1
+    return 0
+}
+
+function flowc_parser_eat_kw(p: ptr<Parser>, kw: i32) -> i32 {
+    if flowc_token_is_kw(p[0].cur, kw) == 1 {
+        flowc_parser_advance(p)
+        return 1
+    }
+    p[0].err = 1
+    return 0
+}
+
+function flowc_parse_int_span(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    let mut v: i32 = 0
+    let mut i: i32 = start
+    while i < end {
+        let c: i32 = src[i]
+        if c < 48 or c > 57 {
+            return v
+        }
+        v = v * 10 + (c - 48)
+        i = i + 1
+    }
+    return v
+}
+
+# Plain name, ptr<T> (a=inner, ival=0), or array<T, N> (a=inner, ival=N).
+function flowc_parse_type(p: ptr<Parser>) -> i32 {
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let start: i32 = p[0].cur.start
+    let end: i32 = p[0].cur.end
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_TYPE, start, end)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = start
+    p[0].arena.nodes[id].name_end = end
+    flowc_parser_advance(p)
+    if flowc_parser_check(p[0], TOK_LT) == 1 {
+        flowc_parser_advance(p)
+        let inner: i32 = flowc_parse_type(p)
+        if inner == AST_NONE {
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = inner
+        if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+            flowc_parser_advance(p)
+            if flowc_parser_check(p[0], TOK_INT) == 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+            let n: i32 = flowc_parse_int_span(p[0].lex.input, p[0].cur.start, p[0].cur.end)
+            p[0].arena.nodes[id].ival = n
+            flowc_parser_advance(p)
+        }
+        if flowc_parser_eat(p, TOK_GT) == 0 {
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].end = p[0].cur.start
+    }
+    return id
+}
+
+function flowc_parse_expr(p: ptr<Parser>) -> i32
+
+function flowc_parse_atom(p: ptr<Parser>) -> i32 {
+    let tok: Token = p[0].cur
+    if tok.kind == TOK_INT {
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_INT, tok.start, tok.end)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].ival = flowc_parse_int_span(p[0].lex.input, tok.start, tok.end)
+        flowc_parser_advance(p)
+        return id
+    }
+    if tok.kind == TOK_STRING {
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_STRING, tok.start, tok.end)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].name_start = tok.start
+        p[0].arena.nodes[id].name_end = tok.end
+        flowc_parser_advance(p)
+        return id
+    }
+    if flowc_token_is_kw(tok, KW_TRUE) == 1 or flowc_token_is_kw(tok, KW_FALSE) == 1 {
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_BOOL, tok.start, tok.end)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        if flowc_token_is_kw(tok, KW_TRUE) == 1 {
+            p[0].arena.nodes[id].ival = 1
+        } else {
+            p[0].arena.nodes[id].ival = 0
+        }
+        flowc_parser_advance(p)
+        return id
+    }
+    # `null` → AST_IDENT named "null"; Stage-A cgen emits NULL.
+    if flowc_token_is_kw(tok, KW_NULL) == 1 {
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, tok.start, tok.end)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].name_start = tok.start
+        p[0].arena.nodes[id].name_end = tok.end
+        flowc_parser_advance(p)
+        return id
+    }
+    if tok.kind == TOK_IDENT {
+        let name_s: i32 = tok.start
+        let name_e: i32 = tok.end
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+            flowc_parser_advance(p)
+            let mut args: i32 = AST_NONE
+            if flowc_parser_check(p[0], TOK_RPAREN) == 0 {
+                let first: i32 = flowc_parse_expr(p)
+                args = flowc_ast_chain_push(&p[0].arena, args, first)
+                while flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                    flowc_parser_advance(p)
+                    let arg: i32 = flowc_parse_expr(p)
+                    args = flowc_ast_chain_push(&p[0].arena, args, arg)
+                }
+            }
+            if flowc_parser_eat(p, TOK_RPAREN) == 0 {
+                return AST_NONE
+            }
+            let call: i32 = flowc_ast_alloc(&p[0].arena, AST_CALL, name_s, p[0].cur.start)
+            if call == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[call].name_start = name_s
+            p[0].arena.nodes[call].name_end = name_e
+            p[0].arena.nodes[call].a = args
+            return call
+        }
+        # Type { field: expr, ... } — only if `{` starts `ident :` (not a block).
+        # Avoids `while i < cap {` treating `cap { ... }` as a struct literal.
+        if flowc_parser_check(p[0], TOK_LBRACE) == 1 {
+            let saved_lex: Lexer = p[0].lex
+            let saved_cur: Token = p[0].cur
+            flowc_parser_advance(p)
+            let mut is_lit: i32 = 0
+            if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
+                is_lit = 1
+            } else {
+                if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                    flowc_parser_advance(p)
+                    if flowc_parser_check(p[0], TOK_COLON) == 1 {
+                        is_lit = 1
+                    }
+                }
+            }
+            if is_lit == 0 {
+                p[0].lex = saved_lex
+                p[0].cur = saved_cur
+            } else {
+                p[0].lex = saved_lex
+                p[0].cur = saved_cur
+                flowc_parser_advance(p)
+                let mut fields: i32 = AST_NONE
+                while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+                    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                        p[0].err = 1
+                        return AST_NONE
+                    }
+                    let fs: i32 = p[0].cur.start
+                    let fe: i32 = p[0].cur.end
+                    flowc_parser_advance(p)
+                    if flowc_parser_eat(p, TOK_COLON) == 0 {
+                        return AST_NONE
+                    }
+                    let val: i32 = flowc_parse_expr(p)
+                    let field: i32 = flowc_ast_alloc(&p[0].arena, AST_FIELD, fs, p[0].cur.start)
+                    if field == AST_NONE {
+                        p[0].err = 1
+                        return AST_NONE
+                    }
+                    p[0].arena.nodes[field].name_start = fs
+                    p[0].arena.nodes[field].name_end = fe
+                    p[0].arena.nodes[field].a = val
+                    fields = flowc_ast_chain_push(&p[0].arena, fields, field)
+                    if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                        flowc_parser_advance(p)
+                    } else {
+                        if flowc_parser_check(p[0], TOK_RBRACE) == 0 {
+                            p[0].err = 1
+                            return AST_NONE
+                        }
+                    }
+                }
+                if flowc_parser_eat(p, TOK_RBRACE) == 0 {
+                    return AST_NONE
+                }
+                let lit: i32 = flowc_ast_alloc(&p[0].arena, AST_STRUCT_LIT, name_s, p[0].cur.start)
+                if lit == AST_NONE {
+                    p[0].err = 1
+                    return AST_NONE
+                }
+                p[0].arena.nodes[lit].name_start = name_s
+                p[0].arena.nodes[lit].name_end = name_e
+                p[0].arena.nodes[lit].a = fields
+                return lit
+            }
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, name_s, name_e)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].name_start = name_s
+        p[0].arena.nodes[id].name_end = name_e
+        return id
+    }
+    if tok.kind == TOK_LPAREN {
+        flowc_parser_advance(p)
+        let inner: i32 = flowc_parse_expr(p)
+        if flowc_parser_eat(p, TOK_RPAREN) == 0 {
+            return AST_NONE
+        }
+        return inner
+    }
+    # [e1, e2, ...] array literal
+    if tok.kind == TOK_LBRACK {
+        let start: i32 = tok.start
+        flowc_parser_advance(p)
+        let mut elems: i32 = AST_NONE
+        if flowc_parser_check(p[0], TOK_RBRACK) == 0 {
+            let first: i32 = flowc_parse_expr(p)
+            elems = flowc_ast_chain_push(&p[0].arena, elems, first)
+            while flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                flowc_parser_advance(p)
+                let el: i32 = flowc_parse_expr(p)
+                elems = flowc_ast_chain_push(&p[0].arena, elems, el)
+            }
+        }
+        if flowc_parser_eat(p, TOK_RBRACK) == 0 {
+            return AST_NONE
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_ARRAY_LIT, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = elems
+        return id
+    }
+    p[0].err = 1
+    return AST_NONE
+}
+
+# atom (.field | [index])*
+function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
+    let mut base: i32 = flowc_parse_atom(p)
+    if base == AST_NONE {
+        return AST_NONE
+    }
+    while 1 == 1 {
+        if flowc_parser_check(p[0], TOK_DOT) == 1 {
+            flowc_parser_advance(p)
+            if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+            let fs: i32 = p[0].cur.start
+            let fe: i32 = p[0].cur.end
+            flowc_parser_advance(p)
+            let id: i32 = flowc_ast_alloc(&p[0].arena, AST_FIELD_ACCESS, 0, 0)
+            if id == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[id].a = base
+            p[0].arena.nodes[id].name_start = fs
+            p[0].arena.nodes[id].name_end = fe
+            base = id
+        } else {
+            if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
+                flowc_parser_advance(p)
+                let idx: i32 = flowc_parse_expr(p)
+                if flowc_parser_eat(p, TOK_RBRACK) == 0 {
+                    return AST_NONE
+                }
+                let id: i32 = flowc_ast_alloc(&p[0].arena, AST_INDEX, 0, 0)
+                if id == AST_NONE {
+                    p[0].err = 1
+                    return AST_NONE
+                }
+                p[0].arena.nodes[id].a = base
+                p[0].arena.nodes[id].b = idx
+                base = id
+            } else {
+                return base
+            }
+        }
+    }
+    return base
+}
+
+function flowc_parse_primary(p: ptr<Parser>) -> i32 {
+    let tok: Token = p[0].cur
+    if tok.kind == TOK_BANG or tok.kind == TOK_MINUS or tok.kind == TOK_AMP {
+        let op: i32 = tok.kind
+        let start: i32 = tok.start
+        flowc_parser_advance(p)
+        let operand: i32 = flowc_parse_primary(p)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_UNARY, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].ival = op
+        p[0].arena.nodes[id].a = operand
+        return id
+    }
+    return flowc_parse_postfix(p)
+}
+
+# primary (`as` Type)* — binds tighter than binary ops (host-compatible).
+function flowc_parse_cast(p: ptr<Parser>) -> i32 {
+    let mut base: i32 = flowc_parse_primary(p)
+    if base == AST_NONE {
+        return AST_NONE
+    }
+    while flowc_parser_check_kw(p[0], KW_AS) == 1 {
+        flowc_parser_advance(p)
+        let ty: i32 = flowc_parse_type(p)
+        if ty == AST_NONE {
+            return AST_NONE
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CAST, 0, 0)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = base
+        p[0].arena.nodes[id].b = ty
+        base = id
+    }
+    return base
+}
+
+# Map current token to a binop token kind (&&/||/…); keyword and/or → AMPAMP/BARBAR.
+# Returns -1 if not a binary operator.
+function flowc_parse_binop_kind(p: Parser) -> i32 {
+    let op: i32 = p.cur.kind
+    if op == TOK_BARBAR { return TOK_BARBAR }
+    if op == TOK_AMPAMP { return TOK_AMPAMP }
+    if op == TOK_EQEQ { return TOK_EQEQ }
+    if op == TOK_NE { return TOK_NE }
+    if op == TOK_LT { return TOK_LT }
+    if op == TOK_LE { return TOK_LE }
+    if op == TOK_GT { return TOK_GT }
+    if op == TOK_GE { return TOK_GE }
+    if op == TOK_PLUS { return TOK_PLUS }
+    if op == TOK_MINUS { return TOK_MINUS }
+    if op == TOK_STAR { return TOK_STAR }
+    if op == TOK_SLASH { return TOK_SLASH }
+    if op == TOK_PERCENT { return TOK_PERCENT }
+    if op == TOK_KEYWORD {
+        if p.cur.kw == KW_OR { return TOK_BARBAR }
+        if p.cur.kw == KW_AND { return TOK_AMPAMP }
+    }
+    return 0 - 1
+}
+
+function flowc_parse_binop_prec(op: i32) -> i32 {
+    if op == TOK_BARBAR { return 1 }
+    if op == TOK_AMPAMP { return 2 }
+    if op == TOK_EQEQ or op == TOK_NE { return 3 }
+    if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE { return 4 }
+    if op == TOK_PLUS or op == TOK_MINUS { return 5 }
+    if op == TOK_STAR or op == TOK_SLASH or op == TOK_PERCENT { return 6 }
+    return 0 - 1
+}
+
+function flowc_parse_binop_rhs(p: ptr<Parser>, min_prec: i32, lhs: i32) -> i32 {
+    let mut left: i32 = lhs
+    while 1 == 1 {
+        let op: i32 = flowc_parse_binop_kind(p[0])
+        let prec: i32 = flowc_parse_binop_prec(op)
+        if prec < min_prec {
+            return left
+        }
+        flowc_parser_advance(p)
+        let mut right: i32 = flowc_parse_cast(p)
+        while 1 == 1 {
+            let next: i32 = flowc_parse_binop_kind(p[0])
+            let next_prec: i32 = flowc_parse_binop_prec(next)
+            if next_prec <= prec {
+                break
+            }
+            right = flowc_parse_binop_rhs(p, prec + 1, right)
+        }
+        let node: i32 = flowc_ast_alloc(&p[0].arena, AST_BINOP, 0, 0)
+        if node == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[node].ival = op
+        p[0].arena.nodes[node].a = left
+        p[0].arena.nodes[node].b = right
+        left = node
+    }
+    return left
+}
+
+function flowc_parse_expr(p: ptr<Parser>) -> i32 {
+    let lhs: i32 = flowc_parse_cast(p)
+    if lhs == AST_NONE {
+        return AST_NONE
+    }
+    return flowc_parse_binop_rhs(p, 1, lhs)
+}
+
+function flowc_parse_block(p: ptr<Parser>) -> i32
+
+function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
+    if flowc_parser_check_kw(p[0], KW_LET) == 1 {
+        let start: i32 = p[0].cur.start
+        flowc_parser_advance(p)
+        let mut is_mut: i32 = 0
+        if flowc_parser_check_kw(p[0], KW_MUT) == 1 {
+            is_mut = 1
+            flowc_parser_advance(p)
+        }
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        let ns: i32 = p[0].cur.start
+        let ne: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        if flowc_parser_eat(p, TOK_COLON) == 0 {
+            return AST_NONE
+        }
+        let ty: i32 = flowc_parse_type(p)
+        if flowc_parser_eat(p, TOK_EQ) == 0 {
+            return AST_NONE
+        }
+        let init: i32 = flowc_parse_expr(p)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_LET, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].name_start = ns
+        p[0].arena.nodes[id].name_end = ne
+        p[0].arena.nodes[id].ival = is_mut
+        p[0].arena.nodes[id].a = ty
+        p[0].arena.nodes[id].b = init
+        return id
+    }
+    if flowc_parser_check_kw(p[0], KW_RETURN) == 1 {
+        let start: i32 = p[0].cur.start
+        flowc_parser_advance(p)
+        # Bare `return` (void): no expr when next token cannot start one.
+        let mut val: i32 = AST_NONE
+        let k: i32 = p[0].cur.kind
+        let mut is_expr: i32 = 0
+        if k == TOK_INT or k == TOK_STRING or k == TOK_IDENT or k == TOK_LPAREN or k == TOK_LBRACK {
+            is_expr = 1
+        }
+        if k == TOK_BANG or k == TOK_MINUS or k == TOK_AMP {
+            is_expr = 1
+        }
+        if flowc_token_is_kw(p[0].cur, KW_TRUE) == 1 or flowc_token_is_kw(p[0].cur, KW_FALSE) == 1 {
+            is_expr = 1
+        }
+        if flowc_token_is_kw(p[0].cur, KW_NULL) == 1 {
+            is_expr = 1
+        }
+        if is_expr == 1 {
+            val = flowc_parse_expr(p)
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_RETURN, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = val
+        return id
+    }
+    if flowc_parser_check_kw(p[0], KW_IF) == 1 {
+        let start: i32 = p[0].cur.start
+        flowc_parser_advance(p)
+        let cond: i32 = flowc_parse_expr(p)
+        let then_b: i32 = flowc_parse_block(p)
+        let mut else_b: i32 = AST_NONE
+        if flowc_parser_check_kw(p[0], KW_ELSE) == 1 {
+            flowc_parser_advance(p)
+            else_b = flowc_parse_block(p)
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_IF, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = cond
+        p[0].arena.nodes[id].b = then_b
+        p[0].arena.nodes[id].c = else_b
+        return id
+    }
+    if flowc_parser_check_kw(p[0], KW_WHILE) == 1 {
+        let start: i32 = p[0].cur.start
+        flowc_parser_advance(p)
+        let cond: i32 = flowc_parse_expr(p)
+        let body: i32 = flowc_parse_block(p)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_WHILE, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = cond
+        p[0].arena.nodes[id].b = body
+        return id
+    }
+    # for name in lo to hi { body }
+    if flowc_parser_check_kw(p[0], KW_FOR) == 1 {
+        let start: i32 = p[0].cur.start
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        let ns: i32 = p[0].cur.start
+        let ne: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        if flowc_parser_eat_kw(p, KW_IN) == 0 {
+            return AST_NONE
+        }
+        let lo: i32 = flowc_parse_expr(p)
+        if flowc_parser_eat_kw(p, KW_TO) == 0 {
+            return AST_NONE
+        }
+        let hi: i32 = flowc_parse_expr(p)
+        let body: i32 = flowc_parse_block(p)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_FOR, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].name_start = ns
+        p[0].arena.nodes[id].name_end = ne
+        p[0].arena.nodes[id].a = lo
+        p[0].arena.nodes[id].b = hi
+        p[0].arena.nodes[id].c = body
+        return id
+    }
+    if flowc_parser_check_kw(p[0], KW_BREAK) == 1 {
+        let start: i32 = p[0].cur.start
+        let end: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_BREAK, start, end)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        return id
+    }
+    if flowc_parser_check_kw(p[0], KW_CONTINUE) == 1 {
+        let start: i32 = p[0].cur.start
+        let end: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CONTINUE, start, end)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        return id
+    }
+    if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+        # Assign LHS may be IDENT / FIELD_ACCESS / INDEX (e.g. nodes[i].kind = 0).
+        let saved_start: i32 = p[0].cur.start
+        let expr: i32 = flowc_parse_expr(p)
+        let lk: i32 = p[0].arena.nodes[expr].kind
+        if flowc_parser_check(p[0], TOK_EQ) == 1 and (lk == AST_IDENT or lk == AST_FIELD_ACCESS or lk == AST_INDEX) {
+            flowc_parser_advance(p)
+            let rhs: i32 = flowc_parse_expr(p)
+            let id: i32 = flowc_ast_alloc(&p[0].arena, AST_ASSIGN, saved_start, p[0].cur.start)
+            if id == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[id].a = expr
+            p[0].arena.nodes[id].b = rhs
+            return id
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, saved_start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = expr
+        return id
+    }
+    p[0].err = 1
+    return AST_NONE
+}
+
+function flowc_parse_block(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat(p, TOK_LBRACE) == 0 {
+        return AST_NONE
+    }
+    let mut stmts: i32 = AST_NONE
+    while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+        let st: i32 = flowc_parse_stmt(p)
+        if st == AST_NONE {
+            return AST_NONE
+        }
+        stmts = flowc_ast_chain_push(&p[0].arena, stmts, st)
+    }
+    if flowc_parser_eat(p, TOK_RBRACE) == 0 {
+        return AST_NONE
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_BLOCK, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].a = stmts
+    return id
+}
+
+function flowc_parse_param(p: ptr<Parser>) -> i32 {
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    if flowc_parser_eat(p, TOK_COLON) == 0 {
+        return AST_NONE
+    }
+    let ty: i32 = flowc_parse_type(p)
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_PARAM, ns, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].a = ty
+    return id
+}
+
+function flowc_parse_function(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_FUNCTION) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    if flowc_parser_eat(p, TOK_LPAREN) == 0 {
+        return AST_NONE
+    }
+    let mut params: i32 = AST_NONE
+    if flowc_parser_check(p[0], TOK_RPAREN) == 0 {
+        let first: i32 = flowc_parse_param(p)
+        params = flowc_ast_chain_push(&p[0].arena, params, first)
+        while flowc_parser_check(p[0], TOK_COMMA) == 1 {
+            flowc_parser_advance(p)
+            let pr: i32 = flowc_parse_param(p)
+            params = flowc_ast_chain_push(&p[0].arena, params, pr)
+        }
+    }
+    if flowc_parser_eat(p, TOK_RPAREN) == 0 {
+        return AST_NONE
+    }
+    # `-> Type` optional; omitted return type means void (host-compatible).
+    let mut ret_ty: i32 = AST_NONE
+    if flowc_parser_check(p[0], TOK_ARROW) == 1 {
+        flowc_parser_advance(p)
+        ret_ty = flowc_parse_type(p)
+        if ret_ty == AST_NONE {
+            return AST_NONE
+        }
+    }
+    # Forward decl: `function name(...) -> T` with no `{ ... }` body (mutual recursion).
+    let mut body: i32 = AST_NONE
+    if flowc_parser_check(p[0], TOK_LBRACE) == 1 {
+        body = flowc_parse_block(p)
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_FN, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].a = params
+    p[0].arena.nodes[id].b = ret_ty
+    p[0].arena.nodes[id].c = body
+    return id
+}
+
+# struct Name { field: Type, ... }
+function flowc_parse_struct(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_STRUCT) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    if flowc_parser_eat(p, TOK_LBRACE) == 0 {
+        return AST_NONE
+    }
+    let mut fields: i32 = AST_NONE
+    while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        let fs: i32 = p[0].cur.start
+        let fe: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        if flowc_parser_eat(p, TOK_COLON) == 0 {
+            return AST_NONE
+        }
+        let ty: i32 = flowc_parse_type(p)
+        let field: i32 = flowc_ast_alloc(&p[0].arena, AST_FIELD, fs, p[0].cur.start)
+        if field == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[field].name_start = fs
+        p[0].arena.nodes[field].name_end = fe
+        p[0].arena.nodes[field].a = ty
+        fields = flowc_ast_chain_push(&p[0].arena, fields, field)
+        if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+            flowc_parser_advance(p)
+        } else {
+            if flowc_parser_check(p[0], TOK_RBRACE) == 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+        }
+    }
+    if flowc_parser_eat(p, TOK_RBRACE) == 0 {
+        return AST_NONE
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_STRUCT, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].a = fields
+    return id
+}
+
+# Shallow skip: extern { ... } with brace matching (bodies not typed yet).
+function flowc_parse_extern(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_EXTERN) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_eat(p, TOK_LBRACE) == 0 {
+        return AST_NONE
+    }
+    let mut depth: i32 = 1
+    while depth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+        if flowc_parser_check(p[0], TOK_LBRACE) == 1 {
+            depth = depth + 1
+            flowc_parser_advance(p)
+        } else {
+            if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
+                depth = depth - 1
+                flowc_parser_advance(p)
+            } else {
+                flowc_parser_advance(p)
+            }
+        }
+    }
+    if depth != 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXTERN, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    return id
+}
+
+# Optional `{ a, b, c }` → AST_IDENT sibling chain (AST_NONE if no brace).
+function flowc_parse_brace_idents(p: ptr<Parser>) -> i32 {
+    if flowc_parser_check(p[0], TOK_LBRACE) == 0 {
+        return AST_NONE
+    }
+    flowc_parser_advance(p)
+    let mut names: i32 = AST_NONE
+    if flowc_parser_check(p[0], TOK_RBRACE) == 0 {
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        let ns: i32 = p[0].cur.start
+        let ne: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        let first: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, ns, ne)
+        if first == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[first].name_start = ns
+        p[0].arena.nodes[first].name_end = ne
+        names = flowc_ast_chain_push(&p[0].arena, names, first)
+        while flowc_parser_check(p[0], TOK_COMMA) == 1 {
+            flowc_parser_advance(p)
+            if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+            let is: i32 = p[0].cur.start
+            let ie: i32 = p[0].cur.end
+            flowc_parser_advance(p)
+            let ident: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, is, ie)
+            if ident == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[ident].name_start = is
+            p[0].arena.nodes[ident].name_end = ie
+            names = flowc_ast_chain_push(&p[0].arena, names, ident)
+        }
+    }
+    if flowc_parser_eat(p, TOK_RBRACE) == 0 {
+        return AST_NONE
+    }
+    return names
+}
+
+# import .sibling { a, b } | import pkg.mod { a, b } | import "path.flow"
+# ival: 0 = dotted path, 1 = relative (.name), 2 = string path
+# a = optional brace-ident chain; name_start/end = path/string span
+function flowc_parse_import(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_IMPORT) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_check(p[0], TOK_STRING) == 1 {
+        let ns: i32 = p[0].cur.start
+        let ne: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_IMPORT, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].name_start = ns
+        p[0].arena.nodes[id].name_end = ne
+        p[0].arena.nodes[id].ival = 2
+        return id
+    }
+    let mut path_s: i32 = 0
+    let mut path_e: i32 = 0
+    let mut form: i32 = 0
+    if flowc_parser_check(p[0], TOK_DOT) == 1 {
+        path_s = p[0].cur.start
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        path_e = p[0].cur.end
+        flowc_parser_advance(p)
+        form = 1
+    } else {
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        path_s = p[0].cur.start
+        path_e = p[0].cur.end
+        flowc_parser_advance(p)
+        while flowc_parser_check(p[0], TOK_DOT) == 1 {
+            flowc_parser_advance(p)
+            if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+            path_e = p[0].cur.end
+            flowc_parser_advance(p)
+        }
+        form = 0
+    }
+    let names: i32 = flowc_parse_brace_idents(p)
+    if p[0].err != 0 {
+        return AST_NONE
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_IMPORT, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = path_s
+    p[0].arena.nodes[id].name_end = path_e
+    p[0].arena.nodes[id].ival = form
+    p[0].arena.nodes[id].a = names
+    return id
+}
+
+# const Name: Type = expr  (ival = 1 if export, else 0)
+function flowc_parse_const(p: ptr<Parser>, is_export: i32) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_CONST) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    if flowc_parser_eat(p, TOK_COLON) == 0 {
+        return AST_NONE
+    }
+    let ty: i32 = flowc_parse_type(p)
+    if flowc_parser_eat(p, TOK_EQ) == 0 {
+        return AST_NONE
+    }
+    let init: i32 = flowc_parse_expr(p)
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CONST, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].a = ty
+    p[0].arena.nodes[id].b = init
+    p[0].arena.nodes[id].ival = is_export
+    return id
+}
+
+# export function ... | export struct ... | export const ... | export a, b
+# a = AST_FN / AST_STRUCT, or AST_IDENT chain when ival=1 (bare list)
+# export const returns AST_CONST with ival=1 (not wrapped in AST_EXPORT)
+function flowc_parse_export(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_EXPORT) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_check_kw(p[0], KW_FUNCTION) == 1 {
+        let fn: i32 = flowc_parse_function(p)
+        if fn == AST_NONE {
+            return AST_NONE
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXPORT, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = fn
+        return id
+    }
+    if flowc_parser_check_kw(p[0], KW_STRUCT) == 1 {
+        let st: i32 = flowc_parse_struct(p)
+        if st == AST_NONE {
+            return AST_NONE
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXPORT, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = st
+        return id
+    }
+    if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
+        return flowc_parse_const(p, 1)
+    }
+    # bare: export a, b
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let mut names: i32 = AST_NONE
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    let first: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, ns, ne)
+    if first == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[first].name_start = ns
+    p[0].arena.nodes[first].name_end = ne
+    names = flowc_ast_chain_push(&p[0].arena, names, first)
+    while flowc_parser_check(p[0], TOK_COMMA) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        let is: i32 = p[0].cur.start
+        let ie: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        let ident: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, is, ie)
+        if ident == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[ident].name_start = is
+        p[0].arena.nodes[ident].name_end = ie
+        names = flowc_ast_chain_push(&p[0].arena, names, ident)
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXPORT, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].a = names
+    p[0].arena.nodes[id].ival = 1
+    return id
+}
+
+export function flowc_parse_program(p: ptr<Parser>) -> i32 {
+    let start: i32 = 0
+    let mut items: i32 = AST_NONE
+    while flowc_parser_check(p[0], TOK_EOF) == 0 {
+        let mut item: i32 = AST_NONE
+        if flowc_parser_check_kw(p[0], KW_IMPORT) == 1 {
+            item = flowc_parse_import(p)
+        } else {
+            if flowc_parser_check_kw(p[0], KW_EXPORT) == 1 {
+                item = flowc_parse_export(p)
+            } else {
+                if flowc_parser_check_kw(p[0], KW_FUNCTION) == 1 {
+                    item = flowc_parse_function(p)
+                } else {
+                    if flowc_parser_check_kw(p[0], KW_STRUCT) == 1 {
+                        item = flowc_parse_struct(p)
+                    } else {
+                        if flowc_parser_check_kw(p[0], KW_EXTERN) == 1 {
+                            item = flowc_parse_extern(p)
+                        } else {
+                            if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
+                                item = flowc_parse_const(p, 0)
+                            } else {
+                                p[0].err = 1
+                                return AST_NONE
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if item == AST_NONE {
+            return AST_NONE
+        }
+        items = flowc_ast_chain_push(&p[0].arena, items, item)
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_PROGRAM, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].a = items
+    return id
+}

@@ -184,8 +184,8 @@ function test_freq_to_period() -> bool {
 # =============================================================================
 
 function main() -> i32 {
-    let passed: i32 = 0
-    let failed: i32 = 0
+    let mut passed: i32 = 0
+    let mut failed: i32 = 0
     
     printf("=== Audio Core Tests ===\n\n")
     

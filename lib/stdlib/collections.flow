@@ -13,7 +13,7 @@ struct Vector_i32 {
 
 function vector_i32_new() -> Vector_i32 {
     let cap: i32 = 4
-    let data: ptr<i32> = null
+    let mut data: ptr<i32> = null
     if cap > 0 {
         data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
     }
@@ -39,7 +39,7 @@ struct Stack_i32 {
 }
 
 function stack_i32_new(cap: i32) -> Stack_i32 {
-    let data: ptr<i32> = null
+    let mut data: ptr<i32> = null
     if cap > 0 {
         data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
     }
@@ -67,7 +67,7 @@ struct Queue_i32 {
 }
 
 function queue_i32_new(cap: i32) -> Queue_i32 {
-    let data: ptr<i32> = null
+    let mut data: ptr<i32> = null
     if cap > 0 {
         data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
     }
@@ -109,7 +109,7 @@ function hash_string(s: string) -> i32 {
 }
 
 function hashmap_string_i32_new(cap: i32) -> HashMap_string_i32 {
-    let buckets: ptr<HashEntry_string_i32> = null
+    let mut buckets: ptr<HashEntry_string_i32> = null
     if cap > 0 {
         # HashEntry_string_i32 layout is pointer + i32 + bool + padding (~16 bytes on 64-bit).
         let entry_size: usize = 16
@@ -137,7 +137,7 @@ struct Set_i32 {
 }
 
 function set_i32_new(cap: i32) -> Set_i32 {
-    let data: ptr<i32> = null
+    let mut data: ptr<i32> = null
     if cap > 0 {
         data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
     }
@@ -190,7 +190,7 @@ struct PriorityQueue_i32 {
 }
 
 function pq_i32_new(cap: i32) -> PriorityQueue_i32 {
-    let data: ptr<i32> = null
+    let mut data: ptr<i32> = null
     if cap > 0 {
         data = calloc(cap as usize, sizeof_i32()) as ptr<i32>
     }

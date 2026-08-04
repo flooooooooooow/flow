@@ -19,14 +19,22 @@ Welcome to the Flow programming language documentation!
 - [Types](language/types.md) - Type system
 - [Functions](language/functions.md) - Function definitions
 - [Variables](language/variables.md) - Variables and mutability
-- [Graphics](language/graphics.md) - Native graphics API
+- [Graphics](language/graphics.md) - Native graphics API (macOS / Linux+SDL2 / Windows)
+- [Shaders](language/shaders.md) - Fill-shader surface language
+- [Async via Effects](language/async-effects.md) - FiberAsync / ThreadedAsync / NetpollAsyncIO
+- [Concurrency vs Go](language/concurrency-vs-go.md) - Channels, fibers, OpenMP
+- [Replacing Go](language/replace-go.md) - Scorecard for Go-shaped workloads
+- [Debugging](language/debugging.md) - `./flow debug` + `#line` / LLDB
+- [Modules](language/modules.md) - Named imports and packages
 
 ## Standard Library
 
 - [Core](library/core.md) - Built-in functions
-- [Autodiff](library/autodiff.md) - Automatic differentiation
+- [Stdlib Reference](library/stdlib-reference.md) - Core API tables (math, concurrent, async, …)
+- [Autodiff](library/autodiff.md) - Automatic differentiation (library, not compiler pass)
 - [Audio DSP](library/audio.md) - Real-time audio DSP utilities
 - [Memory](library/memory.md) - Memory management
+- [RT Safety](library/rt-safety.md) - `@rt_safe` heap/lock checks
 
 ## Third-Party Libraries
 
@@ -56,6 +64,7 @@ Welcome to the Flow programming language documentation!
 
 - [Contributing](project/CONTRIBUTING.md) - How to contribute, security policy
 - [Changelog](project/CHANGELOG.md) - Version history and audit fixes
+- [Package Registry](project/package-registry.md) - Local index, `search` / `add` / `publish`
 - [What's Next](NEXT.md) - Prioritized roadmap after v0.7.0 audit
 - [Audit Report (2026-02-10)](project/AUDIT_2026-02-10.md) - Latest full audit findings
 - [Development](DEVELOPMENT.md) - Building Flow
@@ -68,6 +77,7 @@ All examples are in the [`examples/`](../examples/) directory:
 examples/
 ├── basics/           # Hello world, fibonacci, etc.
 ├── games/            # Tetris, 2048 with graphics
+├── concurrency/      # Channels, fibers, netpoll, parallel for
 ├── ml/               # Machine learning framework
 ├── effects/          # Algebraic effects demos
 ├── neural_networks/  # Autodiff and backprop

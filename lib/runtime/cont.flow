@@ -1,0 +1,28 @@
+# Flow runtime: continuation probe + demo + arm orchestration.
+# Park/shift/reset kernels stay in runtime/flow_cont.c
+
+extern {
+    function flow_rt_cont_demo() -> i32
+    function flow_rt_cont_reset_demo() -> i32
+    function flow_rt_cont_arm_resume(value: i32) -> void
+}
+
+@flow_api
+export function flow_cont_available() -> i32 {
+    return 1
+}
+
+@flow_api
+export function flow_demo_cont_shift() -> i32 {
+    return flow_rt_cont_demo()
+}
+
+@flow_api
+export function flow_demo_cont_reset() -> i32 {
+    return flow_rt_cont_reset_demo()
+}
+
+@flow_api
+export function flow_cont_arm_resume(value: i32) -> void {
+    flow_rt_cont_arm_resume(value)
+}

@@ -1,0 +1,11 @@
+[package]
+name = "sqlkit"
+version = "0.1.0"
+description = "Thin SQL helpers (migrate/table_exists/insert/count) over flow_sqlite_*"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

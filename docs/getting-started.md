@@ -6,13 +6,13 @@ Get from zero to productive in 5 minutes.
 
 ### Requirements
 
-- Python 3.8+
+- Python 3.9+
 - Clang or GCC
 
 ### Setup
 
 ```bash
-git clone https://github.com/flow-lang/flow.git
+git clone https://github.com/flooooooooooow/flow.git
 cd flow
 ./flow --help
 ```

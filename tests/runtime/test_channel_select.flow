@@ -1,0 +1,37 @@
+import "stdlib/concurrent.flow"
+
+function main() -> i32 {
+    let mut a: Channel_i32 = channel_i32_new(1)
+    let mut b: Channel_i32 = channel_i32_new(1)
+    let mut x: i32 = 0
+    let mut y: i32 = 0
+    if channel_i32_select2_try(&a, &x, &b, &y) != -1 {
+        return 1
+    }
+    if !channel_i32_send(&a, 11) {
+        return 2
+    }
+    if channel_i32_select2_try(&a, &x, &b, &y) != 0 {
+        return 3
+    }
+    if x != 11 {
+        return 4
+    }
+    if !channel_i32_send(&b, 22) {
+        return 5
+    }
+    if channel_i32_select2(&a, &x, &b, &y) != 1 {
+        return 6
+    }
+    if y != 22 {
+        return 7
+    }
+    channel_i32_close(&a)
+    channel_i32_close(&b)
+    if channel_i32_select2(&a, &x, &b, &y) != -1 {
+        return 8
+    }
+    channel_i32_destroy(&a)
+    channel_i32_destroy(&b)
+    return 0
+}

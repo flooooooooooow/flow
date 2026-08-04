@@ -26,23 +26,23 @@ function main() -> i32 {
 | Metric | Count |
 |--------|-------|
 | **Total Lines of Code** | ~38,000 |
-| Flow source files | 189 files, 26k lines |
-| Python compiler | 21 files, 12k lines |
-| Standard library | 34 modules, 5k lines |
-| Test files | 85 tests |
-| Examples | 62 programs |
+| Flow source files | ~1,180 example/app programs; compiler + stdlib in tree |
+| Python compiler | 44 modules under `src/flow/` |
+| Standard library | 48 top-level `lib/stdlib/*.flow` (+ nested audio/ui/…) |
+| Tests | ~217 `.py` / `.flow` under `tests/` |
+| Examples compile status | 986/1193 pass (see `examples/STATUS.md`) |
 
 ---
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/flow-lang/flow.git
+git clone https://github.com/flooooooooooow/flow.git
 cd flow
 ./flow run examples/basics/hello_world.flow
 ```
 
-**Requirements:** Python 3.8+, Clang or GCC
+**Requirements:** Python 3.9+, Clang or GCC
 
 ---
 
@@ -55,8 +55,13 @@ flow/
 ├── flow-lsp                # Language Server Protocol launcher
 ├── README.md               # This file
 ├── ROADMAP.md              # Development roadmap
+├── VISION.md               # Founding vision
+├── CONTRIBUTING.md         # Collaboration guide
 ├── LICENSE                 # MIT License
 ├── Makefile                # Build automation
+│
+├── docs/project/           # Project meta (questions, issue checklist, writeups)
+├── wasm/                   # WebAssembly toolchain + demos
 │
 ├── src/flow/               # COMPILER (Python, 12k lines)
 │   ├── parser.py           # Lexer + Parser → AST (1.9k lines)
@@ -138,10 +143,13 @@ flow/
 │   ├── run_examples.sh
 │   └── ...
 │
-├── wasm/                   # WEBASSEMBLY (experimental)
+├── wasm/                   # WEBASSEMBLY toolchain + browser gallery
 │   └── ...
 │
-└── site/                   # MKDOCS WEBSITE
+├── demos/                  # Runnable graphics / Vulkan demos
+│   └── ...
+│
+└── site/                   # Custom wiki shell (HTML/CSS/JS; not MkDocs output)
     └── ...
 ```
 
@@ -204,8 +212,9 @@ See the full walkthrough in [docs/effects-showcase.md](docs/effects-showcase.md)
 ### Automatic Differentiation
 
 ```flow
-# Forward-mode autodiff built into the language
-# Used for neural networks, optimization, physics
+# Library autodiff (not a compiler pass): dual numbers + reverse helpers
+# See docs/library/autodiff.md — used for neural nets, optimization, physics
+# Demo: examples/ml/models/mlp_xor.flow
 ```
 
 ### FFI (C Interop)
@@ -225,15 +234,20 @@ extern {
 ```bash
 ./flow run <file>           # Compile and run
 ./flow compile <file>       # Compile only (output: build/)
+./flow debug <file>         # Debug build + LLDB/GDB (--break / --no-launch)
+./flow gfx <file>           # Native graphics (macOS / Linux+SDL2 / Windows)
+./flow shader <file>        # Fill-shader demo (Metal on macOS)
 ./flow audio <file>         # Compile and run with audio backend
-./flow compile-audio <file> # Compile with audio backend
 ./flow python <file>        # Generate Python wheel
-./flow test                 # Run test suite (strict type-checking by default)
+./flow test                 # Run test suite (lenient type-checking by default)
 ./flow test --strict --tier2 # Strict corpus + transpile/clang compile checks
+./flow search <query>       # Package registry search
+./flow add <pkg>            # Add dependency from local index / git / path
+./flow version              # Print Flow version (0.3.3)
 ./flow fmt <file>           # Format code
 ./flow repl                 # Interactive mode
 ./flow jit <file>           # JIT compile (requires LLVM)
-./flow lsp                  # Start language server
+./flow lsp                  # Start language server (diagnostics)
 ```
 
 ### Python Package Generation
@@ -354,7 +368,7 @@ Publishing: set `VSCE_PAT` and run `./scripts/publish_vscode_extension.sh --publ
 | Feature | Flow | Rust | Go | Mojo | Julia |
 |---------|------|------|-----|------|-------|
 | Algebraic Effects | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Built-in Autodiff | ✅ | ❌ | ❌ | ✅ | ✅ |
+| Library Autodiff | ✅ | ❌ | ❌ | ✅ | ✅ |
 | C Backend (portable) | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Native Graphics | ✅ | ❌ | ❌ | ❌ | ❌ |
 | No LLVM Required | ✅ | ❌ | ✅ | ❌ | ❌ |
@@ -371,7 +385,7 @@ Publishing: set `VSCE_PAT` and run `./scripts/publish_vscode_extension.sh --publ
 | **Syntax** | Modern, expressive syntax with type inference | Verbose, low-level syntax requiring explicit type declarations |
 | **Audio Programming** | Built-in audio abstractions and effects system | Requires external libraries and complex setup |
 | **Type Safety** | Strong static typing with advanced type system | Weak typing with manual casting required |
-| **Concurrency** | Built-in effect system for managing side effects | Manual thread management and mutex handling |
+| **Concurrency** | Effects + pthread channels/WaitGroup + FiberAsync (M:N) + OpenMP `parallel for` | Manual thread management and mutex handling |
 | **Development Speed** | Rapid prototyping with high-level abstractions | Slower development due to low-level details |
 | **Performance** | Compiles to efficient LLVM IR | Direct compilation to machine code |
 | **Learning Curve** | Gentle learning curve with intuitive syntax | Steep learning curve with complex concepts |
@@ -396,18 +410,18 @@ Flow's thesis ([VISION.md](VISION.md)) is that programs describe systems that ev
 
 - **Evolution as the Abstraction**: Model, analyze, and control dynamical systems in one file — `dsys` plants, `sense` analysis (controllability, spectral radius, Gramians), and GA-based gain search ship today (`examples/evolution/`, `examples/dynamics/`)
 - **Expressive Effects System**: Manage side effects cleanly without sacrificing performance
-- **Built-in Autodiff**: Forward and reverse mode as a language feature, not a library
+- **Library Autodiff**: Forward-mode dual numbers + reverse helpers / grad tools (not a compiler AD pass)
 - **Real-time Audio**: A first-class domain — native DSP paths and audio abstractions with minimal latency
 - **Modern Syntax**: Clean, readable code that's easy to maintain
 - **Performance**: Compiles to portable C (and MLIR/LLVM) for native speed
-- **Safety**: Memory-safe by default while allowing unsafe operations when needed
+- **Safety**: Explicit types and `@rt_safe` checks; optional manual memory
 
 ---
 
 ## Development
 
 ```bash
-# Run tests (strict mode is the default; tier-2 also compile-checks the corpus)
+# Run tests (lenient by default; use --strict / test-strict for strict mode)
 ./flow test
 ./flow test --strict --tier2
 
@@ -469,8 +483,12 @@ for details on what was fixed.
 
 - **[Getting Started](docs/getting-started.md)** - Installation, first program
 - **[Language Spec](docs/LANGUAGE_SPEC.md)** - Complete reference
+- **[Concurrency vs Go](docs/language/concurrency-vs-go.md)** - Channels, fibers, OpenMP, netpoll
+- **[Replacing Go](docs/language/replace-go.md)** - Scorecard for Go-shaped workloads
+- **[Async via Effects](docs/language/async-effects.md)** - FiberAsync / ThreadedAsync / NetpollAsyncIO
+- **[Package Registry](docs/project/package-registry.md)** - `search` / `add` / `publish`
 - **[Examples](examples/README.md)** - All example programs
-- **[Examples Compile Status](examples/STATUS.md)** - Verified compile status of every example (891/1170)
+- **[Examples Compile Status](examples/STATUS.md)** - Verified compile status (986/1193)
 - **[Effects Showcase](docs/effects-showcase.md)** - Algebraic effects walkthrough with honest limitations
 - **[What's Next](docs/NEXT.md)** - Prioritized roadmap
 - **[Changelog](docs/project/CHANGELOG.md)** - Version history and audit fixes

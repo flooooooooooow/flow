@@ -72,9 +72,9 @@ function dsys_euler_discretize(
     let I: Matrix = matrix_identity(id_buf, n)
     let A_scaled: Matrix = matrix_zeros(scaled_buf, n, n)
     matrix_scale(sys.A, sys.dt, A_scaled)
-    let Ad: Matrix = matrix_zeros(Ad_buf, n, n)
+    let mut Ad: Matrix = matrix_zeros(Ad_buf, n, n)
     matrix_add(I, A_scaled, Ad)
-    let Bd: Matrix = matrix_zeros(Bd_buf, n, m)
+    let mut Bd: Matrix = matrix_zeros(Bd_buf, n, m)
     matrix_scale(sys.B, sys.dt, Bd)
     return dsys_discrete(n, m, sys.p, sys.dt, Ad, Bd, sys.C)
 }

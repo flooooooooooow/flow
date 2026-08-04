@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Generate docs/library/stdlib-api.md from lib/stdlib/*.flow export signatures."""
+"""Generate docs/library/stdlib-api.md from lib/stdlib/*.flow export signatures.
+
+Attaches immediately preceding `# …` comment blocks to each export function
+(api-doc from comments).
+"""
 
 from __future__ import annotations
 
@@ -29,6 +33,14 @@ TRAIT_RE = re.compile(
     r"^export\s+trait\s+(\w+)",
     re.MULTILINE,
 )
+EFFECT_RE = re.compile(
+    r"^export\s+effect\s+(\w+)",
+    re.MULTILINE,
+)
+CAPABILITY_RE = re.compile(
+    r"^export\s+capability\s+(\w+)",
+    re.MULTILINE,
+)
 
 
 def module_title(path: Path) -> str:
@@ -48,17 +60,52 @@ def leading_doc(text: str) -> str:
     return " ".join(lines[:3]).strip()
 
 
+def preceding_comment_block(text: str, start: int) -> str:
+    """Collect contiguous `#` comment lines immediately above `start`."""
+    before = text[:start].rstrip("\n")
+    if not before:
+        return ""
+    lines = before.splitlines()
+    block: list[str] = []
+    i = len(lines) - 1
+    # Skip blank lines between comment and export
+    while i >= 0 and not lines[i].strip():
+        i -= 1
+    while i >= 0:
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            block.append(stripped.lstrip("# ").strip())
+            i -= 1
+            continue
+        break
+    block.reverse()
+    # Drop a pure separator line of hashes
+    cleaned = [b for b in block if b and not set(b) <= {"=", "-", "#"}]
+    return " ".join(cleaned[:4]).strip()
+
+
 def extract(path: Path) -> dict:
     text = path.read_text(encoding="utf-8", errors="replace")
+    fns = []
+    for m in FN_RE.finditer(text):
+        doc = preceding_comment_block(text, m.start())
+        fns.append(
+            (
+                m.group(1),
+                m.group(2).strip(),
+                (m.group(3) or "void").strip(),
+                doc,
+            )
+        )
     return {
         "doc": leading_doc(text),
         "structs": STRUCT_RE.findall(text),
         "traits": TRAIT_RE.findall(text),
+        "effects": EFFECT_RE.findall(text),
+        "capabilities": CAPABILITY_RE.findall(text),
         "consts": [(m.group(1), m.group(2).strip()) for m in CONST_RE.finditer(text)],
-        "fns": [
-            (m.group(1), m.group(2).strip(), (m.group(3) or "void").strip())
-            for m in FN_RE.finditer(text)
-        ],
+        "fns": fns,
     }
 
 
@@ -72,7 +119,8 @@ def main() -> int:
         "# Standard Library API (generated)",
         "",
         f"> Auto-generated from `lib/stdlib/` on {date.today().isoformat()} by "
-        "`scripts/gen_stdlib_docs.py`. Hand-written guides live alongside this page.",
+        "`scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments "
+        "immediately above each `export function`.",
         "",
         f"**{len(files)}** modules scanned.",
         "",
@@ -87,6 +135,17 @@ def main() -> int:
         lines.append("")
         if info["doc"]:
             lines.append(info["doc"])
+            lines.append("")
+        if info["effects"]:
+            lines.append(
+                "**Effects:** " + ", ".join(f"`{e}`" for e in info["effects"])
+            )
+            lines.append("")
+        if info["capabilities"]:
+            lines.append(
+                "**Capabilities:** "
+                + ", ".join(f"`{c}`" for c in info["capabilities"])
+            )
             lines.append("")
         if info["traits"]:
             lines.append("**Traits:** " + ", ".join(f"`{t}`" for t in info["traits"]))
@@ -103,15 +162,25 @@ def main() -> int:
         if info["fns"]:
             lines.append("**Functions:**")
             lines.append("")
-            lines.append("| Name | Signature |")
-            lines.append("|------|-----------|")
-            for name, params, ret in info["fns"][:80]:
+            lines.append("| Name | Signature | Docs |")
+            lines.append("|------|-----------|------|")
+            for name, params, ret, doc in info["fns"][:80]:
                 sig = f"{params} -> {ret}".replace("|", "\\|")
-                lines.append(f"| `{name}` | `{sig}` |")
+                doc_cell = (doc or "—").replace("|", "\\|")
+                lines.append(f"| `{name}` | `{sig}` | {doc_cell} |")
             if len(info["fns"]) > 80:
-                lines.append(f"| … | {len(info['fns']) - 80} more |")
+                lines.append(f"| … | {len(info['fns']) - 80} more | |")
             lines.append("")
-        if not any((info["structs"], info["fns"], info["traits"], info["consts"])):
+        if not any(
+            (
+                info["structs"],
+                info["fns"],
+                info["traits"],
+                info["consts"],
+                info["effects"],
+                info["capabilities"],
+            )
+        ):
             lines.append("*No `export` items found (internal / extern-only module).*")
             lines.append("")
 

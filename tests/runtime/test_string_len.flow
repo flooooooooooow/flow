@@ -1,0 +1,12 @@
+# Compiler-suite runtime: string length via strlen
+
+extern {
+    function strlen(s: string) -> i32
+}
+
+function main() -> i32 {
+    if strlen("flow") != 4 { return 1 }
+    if strlen("") != 0 { return 2 }
+    if strlen("hi") != 2 { return 3 }
+    return 0
+}

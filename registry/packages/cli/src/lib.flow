@@ -1,0 +1,190 @@
+# cli — args / env / path helpers (pure Flow; getenv via libc)
+# Args are a single space-separated command-line string, e.g.
+#   "--verbose --port 8080 input.txt"
+
+extern {
+    function strlen(s: string) -> i64
+    # libc getenv — declare as string (char*) to match libc; cast to ptr<u8> for copy
+    function getenv(name: string) -> string
+}
+
+const CLI_OK: i32 = 1
+const CLI_ERR: i32 = 0
+const CLI_MISSING: i32 = 0 - 1
+
+function _cli_is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function _cli_skip_ws(data: ptr<u8>, i: i32, len: i32) -> i32 {
+    let mut p: i32 = i
+    while p < len and _cli_is_space(data[p]) == 1 {
+        p = p + 1
+    }
+    return p
+}
+
+function _cli_token_end(data: ptr<u8>, i: i32, len: i32) -> i32 {
+    let mut p: i32 = i
+    while p < len and _cli_is_space(data[p]) == 0 {
+        p = p + 1
+    }
+    return p
+}
+
+function _cli_bytes_eq(data: ptr<u8>, start: i32, n: i32, s: string) -> i32 {
+    let k: ptr<u8> = s
+    let klen: i32 = strlen(s) as i32
+    if n != klen {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if data[start + i] != k[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function _cli_copy_bytes(dst: ptr<u8>, src: ptr<u8>, src_off: i32, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[src_off + i]
+        i = i + 1
+    }
+}
+
+function _cli_cstr_len(p: ptr<u8>) -> i32 {
+    let mut n: i32 = 0
+    while p[n] != 0 {
+        n = n + 1
+    }
+    return n
+}
+
+# True (1) if `flag` appears as a whole token in space-separated `args`.
+export function cli_flag_present(args: string, flag: string) -> i32 {
+    let data: ptr<u8> = args
+    let len: i32 = strlen(args) as i32
+    let mut p: i32 = 0
+    while p < len {
+        p = _cli_skip_ws(data, p, len)
+        if p >= len {
+            break
+        }
+        let start: i32 = p
+        let end: i32 = _cli_token_end(data, p, len)
+        if _cli_bytes_eq(data, start, end - start, flag) == 1 {
+            return CLI_OK
+        }
+        p = end
+    }
+    return CLI_ERR
+}
+
+# Copy the token after `flag` into `out` (NUL-terminated).
+# Supports "--port 8080" and "--port=8080".
+# Returns length written, or -1 if missing / overflow.
+export function cli_get_option(args: string, flag: string, out: ptr<u8>, out_cap: i32) -> i32 {
+    let data: ptr<u8> = args
+    let len: i32 = strlen(args) as i32
+    let flen: i32 = strlen(flag) as i32
+    let mut p: i32 = 0
+
+    while p < len {
+        p = _cli_skip_ws(data, p, len)
+        if p >= len {
+            break
+        }
+        let start: i32 = p
+        let end: i32 = _cli_token_end(data, p, len)
+        let tlen: i32 = end - start
+
+        if _cli_bytes_eq(data, start, tlen, flag) == 1 {
+            p = _cli_skip_ws(data, end, len)
+            if p >= len {
+                return CLI_MISSING
+            }
+            let vstart: i32 = p
+            let vend: i32 = _cli_token_end(data, p, len)
+            let n: i32 = vend - vstart
+            if n + 1 > out_cap {
+                return CLI_MISSING
+            }
+            _cli_copy_bytes(out, data, vstart, n)
+            out[n] = 0
+            return n
+        }
+
+        # --flag=value form
+        if tlen > flen and _cli_bytes_eq(data, start, flen, flag) == 1 and data[start + flen] == 61 {
+            let vstart: i32 = start + flen + 1
+            let n: i32 = end - vstart
+            if n + 1 > out_cap {
+                return CLI_MISSING
+            }
+            _cli_copy_bytes(out, data, vstart, n)
+            out[n] = 0
+            return n
+        }
+
+        p = end
+    }
+    return CLI_MISSING
+}
+
+# Copy getenv(name) into out. Returns length, or -1 if unset / overflow.
+export function cli_getenv(name: string, out: ptr<u8>, out_cap: i32) -> i32 {
+    let v: string = getenv(name)
+    let p: ptr<u8> = v
+    if p == null {
+        return CLI_MISSING
+    }
+    let n: i32 = _cli_cstr_len(p)
+    if n + 1 > out_cap {
+        return CLI_MISSING
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = p[i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+# Join path components with '/'. Skips a trailing slash on `a` if present.
+# Returns length written, or -1 on overflow.
+export function cli_path_join(a: string, b: string, out: ptr<u8>, out_cap: i32) -> i32 {
+    let ap: ptr<u8> = a
+    let bp: ptr<u8> = b
+    let alen: i32 = strlen(a) as i32
+    let blen: i32 = strlen(b) as i32
+    let mut a_use: i32 = alen
+    if a_use > 0 and ap[a_use - 1] == 47 {
+        a_use = a_use - 1
+    }
+    let mut b_off: i32 = 0
+    if blen > 0 and bp[0] == 47 {
+        b_off = 1
+    }
+    let b_use: i32 = blen - b_off
+    let n: i32 = a_use + 1 + b_use
+    if n + 1 > out_cap {
+        return CLI_MISSING
+    }
+    _cli_copy_bytes(out, ap, 0, a_use)
+    out[a_use] = 47
+    let mut i: i32 = 0
+    while i < b_use {
+        out[a_use + 1 + i] = bp[b_off + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}

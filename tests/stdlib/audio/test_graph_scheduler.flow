@@ -6,7 +6,7 @@ import "stdlib/audio/graph_scheduler.flow"
 function test_gain_node() -> bool {
     let rate: SampleRate = sample_rate_48000()
     let buf: AudioBufferF32 = audio_buffer_alloc_f32(4, 2, layout_interleaved())
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 4 {
         audio_buffer_set_f32(buf, i, 0, 1.0)
         audio_buffer_set_f32(buf, i, 1, 1.0)
@@ -35,8 +35,8 @@ function test_gain_node() -> bool {
 }
 
 function main() -> i32 {
-    let passed: i32 = 0
-    let failed: i32 = 0
+    let mut passed: i32 = 0
+    let mut failed: i32 = 0
     printf("=== Audio Graph Scheduler Tests ===\n\n")
 
     if test_gain_node() { printf("✓ gain_node\n"); passed = passed + 1 }
