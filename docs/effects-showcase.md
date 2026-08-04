@@ -201,27 +201,38 @@ runtime library.
 
 ## Honest limitations (found while building this)
 
-- **No effect typing / strict mode support.** Function signatures do not
-  declare which effects they perform, so the compiler cannot reject a
-  program that performs an unhandled effect — you get the runtime default
-  instead. Relatedly, `--strict` type-checking does not yet model effect
-  operations (`Inventory.stock_of` is reported as an undefined function);
-  the standard harness compiles effect programs in the default `--lenient`
-  mode.
-- **Handlers are stateless.** Capability methods are plain functions: no
-  `self`, and Flow has no mutable globals (only `const`), so a handler
-  cannot accumulate state (e.g. a real collecting test-spy or a metrics
-  counter). State-machine-style handlers need the struct + `impl` pattern
-  instead — but see the next point.
-- **The `capability EffectName` parameter style does not link.** The older
-  examples in `examples/effects/` (`dependency_injection.flow`,
-  `state_effects.flow`, `async_effects.flow`) pass handlers as
-  `db: capability Database` parameters backed by struct `impl`s. Today the
-  C backend emits calls to such functions but not their definitions, so
-  those examples transpile (and thus pass the tier-1 harness) but fail C
-  compilation under `./flow run`. This showcase uses only the
-  `handle`/`with` + `capability` declaration form, which compiles, links,
-  and runs end to end.
+- **No effect-row checking yet.** Function signatures do not declare which
+  effects they perform, so the compiler cannot reject a program that performs
+  an unhandled effect — you get the runtime default instead. `--strict`
+  type-checking does validate declared effect-operation names, arity, argument
+  types, and return types for `Effect.operation(...)` calls and
+  `capability EffectName` parameter method calls.
+- **`capability` declarations are stateless.** Capability methods are plain
+  functions: no `self`, and Flow has no mutable globals (only `const`), so
+  that form cannot accumulate state (e.g. a real collecting test-spy or a
+  metrics counter). State-machine-style handlers should use the struct +
+  `impl` pattern shown in `examples/effects/state_effects.flow`.
+- **No dynamic handler objects yet.** The `capability EffectName` parameter
+  style type-checks and generates C syntax-cleanly, but the C backend never
+  actually wires a passed-in argument to effect dispatch: every
+  `Effect.op(...)` call inside the function body compiles to a lookup
+  through that effect's *global* current-handler pointer, ignoring the
+  parameter entirely. With no `handle ... with ...` block installed around
+  the call, the handler stays `NULL` and every operation silently falls back
+  to its zeroed default — which can manifest as wrong output (nulls/zeros
+  where real values were expected) or, if a loop condition depends on a
+  mutation that never happens, an infinite loop. **This style is retired.**
+  The older demos in `examples/effects/` (`dependency_injection.flow`,
+  `state_effects.flow`, `async_effects.flow`) used to demonstrate this
+  broken pattern; they have been rewritten ([#119](https://github.com/flooooooooooow/flow/issues/119))
+  to use `capability { ... }` blocks installed via `handle ... with ...`
+  (the same style as this showcase). Where a demo genuinely needed mutable
+  state across calls (a running counter, an accumulating sum), the fix
+  threads that state through ordinary `let mut` locals in the caller and
+  models the effect as a *pure* operation on an explicit value (e.g.
+  `Counter.next(current) -> i32`) rather than a stateful method — capability
+  declarations are stateless (see below), so this is the pattern to reach
+  for until dynamic handler objects land.
 - **Resumable/one-shot continuation semantics are absent.** These are
   tail-resumptive handlers only (every operation returns straight to the
   call site). You cannot abort a computation from a handler, retry it, or

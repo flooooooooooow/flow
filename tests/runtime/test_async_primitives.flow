@@ -1,0 +1,55 @@
+# Runtime test: effects-based async primitives (stdlib async.flow)
+# Pins SimulatedAsync join formula + BlockingAsyncIO poll/sleep stubs.
+# Returns 0 if all pass, non-zero otherwise.
+
+import "stdlib/async.flow"
+
+function under_async() -> i32 {
+    async_delay(0)
+    async_spawn(2)
+    return async_join(2)
+}
+
+function under_io() -> i32 {
+    async_sleep_ms(0)
+    return async_poll_read(3, 100)
+}
+
+function test_simulated_join() -> bool {
+    let mut got: i32 = 0
+    handle Async with SimulatedAsync {
+        got = under_async()
+    }
+    return got == 20
+}
+
+function test_unhandled_async_defaults() -> bool {
+    # No handler: join defaults to 0
+    let bare: i32 = async_join(2)
+    return bare == 0
+}
+
+function test_blocking_poll_ready() -> bool {
+    let mut ready: i32 = 0
+    handle AsyncIO with BlockingAsyncIO {
+        ready = under_io()
+    }
+    return ready == 1
+}
+
+function main() -> i32 {
+    if !test_simulated_join() {
+        printf("FAIL: simulated_join\n")
+        return 1
+    }
+    if !test_unhandled_async_defaults() {
+        printf("FAIL: unhandled_async_defaults\n")
+        return 2
+    }
+    if !test_blocking_poll_ready() {
+        printf("FAIL: blocking_poll_ready\n")
+        return 3
+    }
+    printf("All async primitives tests passed\n")
+    return 0
+}

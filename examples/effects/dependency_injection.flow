@@ -1,8 +1,18 @@
-# flow:lenient - type checker does not yet register effect operations as callable functions
 # Dependency Injection via Effects
 # Demonstrates how Flow's effect system enables clean DI without frameworks
 #
 # This is a unique advantage of Flow over Mojo/Julia - neither has algebraic effects
+#
+# NOTE: this demo previously used the older `capability EffectName` *parameter*
+# style (business functions took a `db: capability Database` argument and
+# called methods on it). That style never actually wired the passed argument
+# to the effect dispatch mechanism -- the C backend always routed
+# `db.query(...)` through the current *global* handler for `Database`
+# regardless of what was passed in, so with no `handle ... with ...` block
+# installed the calls silently returned zeroed defaults (see
+# docs/effects-showcase.md). This version uses the modern
+# `capability { ... }` + `handle ... with ...` style (same as
+# `examples/effects/showcase.flow`), which is implemented end-to-end.
 
 # ============================================================================
 # THE PROBLEM: Hard-coded dependencies make testing difficult
@@ -19,127 +29,140 @@
 
 # Define an effect for database operations
 effect Database {
-    function query(sql: string) -> string
-    function execute(sql: string) -> i32
+    query(sql: string) -> string,
+    execute(sql: string) -> i32,
 }
 
 # Define an effect for logging
 effect Logger {
-    function log_info(msg: string)
-    function log_error(msg: string)
+    log_info(msg: string) -> void,
+    log_error(msg: string) -> void,
 }
 
 # Define an effect for configuration
 effect Config {
-    function get_config(key: string) -> string
+    get_config(key: string) -> string,
 }
 
 # ============================================================================
 # BUSINESS LOGIC (pure, testable, uses effects)
+# No handler parameters -- the caller's `handle ... with ...` block decides
+# which implementation runs.
 # ============================================================================
 
-function get_user_name(db: capability Database, log: capability Logger, user_id: i32) -> string {
-    log.log_info("Fetching user")
-    let result: string = db.query("SELECT name FROM users WHERE id = 1")
+function get_user_name(user_id: i32) -> string {
+    Logger.log_info("Fetching user")
+    let result: string = Database.query("SELECT name FROM users WHERE id = 1")
     return result
 }
 
-function create_user(db: capability Database, log: capability Logger, name: string) -> i32 {
-    log.log_info("Creating user")
-    let rows: i32 = db.execute("INSERT INTO users (name) VALUES ('test')")
+function create_user(name: string) -> i32 {
+    Logger.log_info("Creating user")
+    let rows: i32 = Database.execute("INSERT INTO users (name) VALUES ('test')")
     if rows > 0 {
-        log.log_info("User created successfully")
+        Logger.log_info("User created successfully")
     } else {
-        log.log_error("Failed to create user")
+        Logger.log_error("Failed to create user")
     }
     return rows
 }
 
-function get_app_setting(cfg: capability Config, log: capability Logger, key: string) -> string {
-    log.log_info("Reading config")
-    return cfg.get_config(key)
+function get_app_setting(key: string) -> string {
+    Logger.log_info("Reading config")
+    return Config.get_config(key)
 }
 
 # ============================================================================
 # PRODUCTION HANDLERS (real implementations)
 # ============================================================================
 
-struct ProductionDB {}
+capability ProductionDB {
+    effect Database,
 
-impl Database for ProductionDB {
-    function query(self, sql: string) -> string {
+    function query(sql: string) -> string {
         # In real code: connect to actual database
         return "John Doe"  # Simulated result
-    }
-    
-    function execute(self, sql: string) -> i32 {
+    },
+
+    function execute(sql: string) -> i32 {
         # In real code: execute actual SQL
         return 1  # Simulated: 1 row affected
-    }
+    },
 }
 
-struct ConsoleLogger {}
+capability ConsoleLogger {
+    effect Logger,
 
-impl Logger for ConsoleLogger {
-    function log_info(self, msg: string) {
+    function log_info(msg: string) -> void {
+        let m: string = msg
         print("[INFO] ")
-        println(msg)
-    }
-    
-    function log_error(self, msg: string) {
+        println(m)
+    },
+
+    function log_error(msg: string) -> void {
+        let m: string = msg
         print("[ERROR] ")
-        println(msg)
-    }
+        println(m)
+    },
 }
 
-struct EnvConfig {}
+capability EnvConfig {
+    effect Config,
 
-impl Config for EnvConfig {
-    function get_config(self, key: string) -> string {
+    function get_config(key: string) -> string {
         # In real code: read from environment or config file
         return "production_value"
-    }
+    },
 }
 
 # ============================================================================
 # TEST HANDLERS (mock implementations)
 # ============================================================================
 
-struct MockDB {
-    should_fail: i32
-}
+# Capabilities are stateless, so instead of one `MockDB { should_fail }`
+# struct we use two capabilities -- one per fixture behaviour.
+capability MockDBOk {
+    effect Database,
 
-impl Database for MockDB {
-    function query(self, sql: string) -> string {
+    function query(sql: string) -> string {
         return "Test User"  # Always return test data
-    }
-    
-    function execute(self, sql: string) -> i32 {
-        if self.should_fail == 1 {
-            return 0  # Simulate failure
-        }
+    },
+
+    function execute(sql: string) -> i32 {
         return 1
-    }
+    },
 }
 
-struct NullLogger {}
+capability MockDBFail {
+    effect Database,
 
-impl Logger for NullLogger {
-    function log_info(self, msg: string) {
+    function query(sql: string) -> string {
+        return "Test User"
+    },
+
+    function execute(sql: string) -> i32 {
+        return 0  # Simulate failure
+    },
+}
+
+capability NullLogger {
+    effect Logger,
+
+    function log_info(msg: string) -> void {
         # Do nothing - silent for tests
-    }
-    
-    function log_error(self, msg: string) {
+    },
+
+    function log_error(msg: string) -> void {
         # Do nothing
-    }
+    },
 }
 
-struct TestConfig {}
+capability TestConfig {
+    effect Config,
 
-impl Config for TestConfig {
-    function get_config(self, key: string) -> string {
+    function get_config(key: string) -> string {
         return "test_value"
-    }
+    },
 }
 
 # ============================================================================
@@ -150,43 +173,50 @@ function main() -> i32 {
     println("Dependency Injection via Effects")
     println("=================================")
     println("")
-    
+
     # --- Production mode ---
     println("=== Production Mode ===")
-    let prod_db: ProductionDB = ProductionDB {}
-    let prod_log: ConsoleLogger = ConsoleLogger {}
-    let prod_cfg: EnvConfig = EnvConfig {}
-    
-    let name: string = get_user_name(prod_db, prod_log, 1)
-    print("Got user: ")
-    println(name)
-    
-    let created: i32 = create_user(prod_db, prod_log, "Alice")
-    print("Created rows: ")
-    println(created)
-    
-    let setting: string = get_app_setting(prod_cfg, prod_log, "api_key")
-    print("Config value: ")
-    println(setting)
-    
+    handle Database with ProductionDB {
+        handle Logger with ConsoleLogger {
+            handle Config with EnvConfig {
+                let name: string = get_user_name(1)
+                print("Got user: ")
+                println(name)
+
+                let created: i32 = create_user("Alice")
+                print("Created rows: ")
+                println(created)
+
+                let setting: string = get_app_setting("api_key")
+                print("Config value: ")
+                println(setting)
+            }
+        }
+    }
+
     println("")
-    
+
     # --- Test mode ---
     println("=== Test Mode (with mocks) ===")
-    let mock_db: MockDB = MockDB { should_fail: 0 }
-    let null_log: NullLogger = NullLogger {}
-    let test_cfg: TestConfig = TestConfig {}
-    
-    let test_name: string = get_user_name(mock_db, null_log, 1)
-    print("Got test user: ")
-    println(test_name)
-    
-    # Test failure case
-    let fail_db: MockDB = MockDB { should_fail: 1 }
-    let fail_result: i32 = create_user(fail_db, null_log, "Bob")
-    print("Failed create result: ")
-    println(fail_result)
-    
+    handle Database with MockDBOk {
+        handle Logger with NullLogger {
+            handle Config with TestConfig {
+                let test_name: string = get_user_name(1)
+                print("Got test user: ")
+                println(test_name)
+            }
+        }
+    }
+
+    # Test failure case: same business logic, only the DB handler changes.
+    handle Database with MockDBFail {
+        handle Logger with NullLogger {
+            let fail_result: i32 = create_user("Bob")
+            print("Failed create result: ")
+            println(fail_result)
+        }
+    }
+
     println("")
     println("Benefits of Effect-based DI:")
     println("  1. No framework needed")
@@ -194,6 +224,6 @@ function main() -> i32 {
     println("  3. Easy mocking for tests")
     println("  4. Clear dependency contracts")
     println("  5. No runtime reflection")
-    
+
     return 0
 }
