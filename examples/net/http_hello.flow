@@ -1,9 +1,13 @@
-# Thin HTTP routing slice (stdlib-shaped demo — no live sockets).
-# Full server: apps/flow-http/http.flow
-# Run: ./flow run examples/net/http_hello.flow
+# Thin HTTP routing slice (API-shaped demo — no live sockets).
+# Fuller framework sketch: apps/flow-http/http.flow
+#
+#   ./flow run examples/net/http_hello.flow
+#
+# Honest status: routing/status helpers only. Real accept/recv/send
+# needs socket bindings (same story as examples/net/tcp_echo.flow if present).
 
 extern {
-    function printf(fmt: string) -> i32
+    function printf(fmt: string, val: i32) -> i32
 }
 
 const METHOD_GET: i32 = 1
@@ -21,7 +25,7 @@ struct HttpResponse {
 }
 
 function hash_path_lit(tag: i32) -> i32 {
-    # Stand-in for hashing "/hello" etc.
+    # Stand-in for hashing "/hello" etc. (apps/flow-http hashes real strings).
     return tag
 }
 
@@ -45,10 +49,8 @@ function main() -> i32 {
     }
     let a: HttpResponse = route_request(ok_req)
     let b: HttpResponse = route_request(miss)
-    printf("http_hello: /hello -> ")
-    print(a.status)
-    printf("http_hello: /missing -> ")
-    print(b.status)
+    printf("http_hello: /hello -> %d\n", a.status)
+    printf("http_hello: /missing -> %d\n", b.status)
     if a.status != STATUS_OK {
         return 1
     }

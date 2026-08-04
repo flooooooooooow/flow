@@ -1,7 +1,7 @@
 [package]
 name = "hello_lib"
 version = "0.1.0"
-description = "Sample Flow package for registry / path-dep demos"
+description = "Sample Flow package (local path copy for examples)"
 author = "Flow Contributors"
 license = "MIT"
 entry = "src/lib.flow"

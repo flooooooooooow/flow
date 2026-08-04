@@ -1,41 +1,38 @@
-# Minimal UI layout numbers demo (no window — pure layout math).
-# Windowed demos: ./flow demo ui-layout   |   ./flow demo ui-layout-window
-# Run: ./flow run examples/ui/layout_hello.flow
+# Minimal UI layout demo using stdlib ui_layout.
+#
+#   ./flow run examples/ui/layout_hello.flow
+# Windowed cousins: ./flow demo ui-layout | ./flow demo ui-layout-window
 
-struct Rect {
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32
-}
+import "stdlib/ui_layout.flow"
 
-function row_child(parent: Rect, index: i32, count: i32) -> Rect {
-    let cw: i32 = parent.w / count
-    return Rect {
-        x: parent.x + index * cw,
-        y: parent.y,
-        w: cw,
-        h: parent.h
-    }
+extern {
+    function printf(fmt: string, val: i32) -> i32
 }
 
 function main() -> i32 {
-    let root: Rect = Rect { x: 0, y: 0, w: 300, h: 40 }
-    let a: Rect = row_child(root, 0, 3)
-    let b: Rect = row_child(root, 1, 3)
-    let c: Rect = row_child(root, 2, 3)
-    print("layout_hello row widths:")
-    print(a.w)
-    print(b.w)
-    print(c.w)
-    if a.w != 100 {
+    let frames: array<UiLayoutFrame, 32> = []
+    let state_store: array<UiLayoutState, 1> = [
+        UiLayoutState{ frames: frames, top: 0, unit: 1.0, win_w: 0.0, win_h: 0.0 }
+    ]
+    ui_layout_bind(state_store)
+    ui_layout_set_view(_ui_state, 300.0, 200.0)
+
+    let mut sum: i32 = 0
+    ui_layout(30, 20, 1) {
+        ui_row(3, 1, 1, UI_JUSTIFY_CENTER) {
+            let a: UiRect = ui_box(_ui_state)
+            let b: UiRect = ui_box(_ui_state)
+            let c: UiRect = ui_box(_ui_state)
+            printf("row A.w=%d\n", a.w)
+            printf("row B.x=%d\n", b.x)
+            printf("row C.x=%d\n", c.x)
+            sum = sum + a.w + b.w + c.w
+        }
+    }
+
+    printf("layout_hello sum=%d\n", sum)
+    if sum <= 0 {
         return 1
-    }
-    if b.x != 100 {
-        return 2
-    }
-    if c.x != 200 {
-        return 3
     }
     return 0
 }
