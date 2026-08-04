@@ -1,0 +1,69 @@
+# Declarative ordering (Phase 1)
+# Intent: describe *what* order you want; compiler picks how (stable insertion today).
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+struct Player {
+    score: i32
+    name: i32
+}
+
+function main() -> i32 {
+    let mut xs: array<i32, 5> = [3, 1, 4, 1, 5]
+    xs |> sort
+    println("sorted ints:")
+    printf("%d", xs[0])
+    print(" ")
+    printf("%d", xs[1])
+    print(" ")
+    printf("%d", xs[2])
+    print(" ")
+    printf("%d", xs[3])
+    print(" ")
+    printf("%d", xs[4])
+    println("")
+
+    xs |> sort descending
+    println("descending:")
+    printf("%d", xs[0])
+    print(" ")
+    printf("%d", xs[4])
+    println("")
+
+    let mut players: array<Player, 4> = [
+        Player { score: 10, name: 2 },
+        Player { score: 30, name: 1 },
+        Player { score: 10, name: 1 },
+        Player { score: 20, name: 3 }
+    ]
+
+    # Multi-key: high score first, then name ascending
+    players |> sortBy [desc .score, asc .name]
+
+    println("players by score desc, name asc:")
+    printf("%d", players[0].score)
+    print("/")
+    printf("%d", players[0].name)
+    print(" ")
+    printf("%d", players[1].score)
+    print("/")
+    printf("%d", players[1].name)
+    print(" ")
+    printf("%d", players[2].score)
+    print("/")
+    printf("%d", players[2].name)
+    print(" ")
+    printf("%d", players[3].score)
+    print("/")
+    printf("%d", players[3].name)
+    println("")
+
+    # Equivalent surface forms + forward-compat policies
+    players |> sort by .name
+    players |> sort by [.name] stable
+    players |> sort by .score with entropy(seed: 42)
+
+    return 0
+}
