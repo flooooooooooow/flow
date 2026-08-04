@@ -40,7 +40,7 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/interop/` | 1 | 0 |
 | `examples/linalg/` | 3 | 0 |
 | `examples/ml/` | 6 | 0 |
-| `examples/neural_networks/` | 6 | 0 |
+| `examples/ml/autodiff/` | 6 | 0 |
 | `examples/numerical/` | 2 | 0 |
 | `examples/physics/` | 2 | 0 |
 | `examples/systems/` | 6 | 0 |
@@ -387,12 +387,12 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/ml/nn_layers.flow` | pass |  |
 | `examples/ml/optimizers.flow` | pass |  |
 | `examples/ml/tensor.flow` | pass |  |
-| `examples/neural_networks/autodiff_benchmark.flow` | pass |  |
-| `examples/neural_networks/autodiff_clean_syntax.flow` | pass |  |
-| `examples/neural_networks/neural_network.flow` | pass |  |
-| `examples/neural_networks/neural_network_backprop.flow` | pass |  |
-| `examples/neural_networks/nn_gradcheck.flow` | pass |  |
-| `examples/neural_networks/nn_xor.flow` | pass |  |
+| `examples/ml/autodiff/autodiff_benchmark.flow` | pass |  |
+| `examples/ml/autodiff/autodiff_clean_syntax.flow` | pass |  |
+| `examples/ml/autodiff/neural_network.flow` | pass |  |
+| `examples/ml/autodiff/neural_network_backprop.flow` | pass |  |
+| `examples/ml/autodiff/nn_gradcheck.flow` | pass |  |
+| `examples/ml/autodiff/nn_xor.flow` | pass |  |
 | `examples/numerical/ode_solver.flow` | pass |  |
 | `examples/numerical/optimization.flow` | pass |  |
 | `examples/physics/natural_physics.flow` | pass |  |

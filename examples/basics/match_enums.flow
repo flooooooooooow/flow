@@ -1,0 +1,25 @@
+# Basics: match on a simple enum
+# (Tourist-facing copy of the enums/match idea from generics_traits/.)
+
+enum TrafficLight {
+    Red,
+    Yellow,
+    Green
+}
+
+function wait_seconds(light: TrafficLight) -> i32 {
+    match light.tag {
+        TrafficLight_Red => { return 30 }
+        TrafficLight_Yellow => { return 5 }
+        TrafficLight_Green => { return 25 }
+    }
+    return -1
+}
+
+function main() -> i32 {
+    let stop: TrafficLight = TrafficLight { tag: TrafficLight_Red }
+    let go: TrafficLight = TrafficLight { tag: TrafficLight_Green }
+    printf("red waits %d s\n", wait_seconds(stop))
+    printf("green waits %d s\n", wait_seconds(go))
+    return 0
+}

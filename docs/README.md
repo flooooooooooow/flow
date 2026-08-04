@@ -68,9 +68,10 @@ All examples are in the [`examples/`](../examples/) directory:
 examples/
 ├── basics/           # Hello world, fibonacci, etc.
 ├── games/            # Tetris, 2048 with graphics
-├── ml/               # Machine learning framework
+├── ml/               # ML framework + autodiff/
 ├── effects/          # Algebraic effects demos
-├── neural_networks/  # Autodiff and backprop
+├── stats/            # Regression / stats
+├── net/              # Networking sketches
 └── ...
 ```
 
