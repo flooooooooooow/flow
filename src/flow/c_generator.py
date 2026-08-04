@@ -54,6 +54,8 @@ from .parser import (
     MatchStatement,
     MethodCall,
     ReturnStatement,
+    SortExpr,
+    SortKey,
     Statement,
     StructDecl,
     StructLiteral,
@@ -142,6 +144,8 @@ class CGenerator:
         self._lambda_counter = 0
         self._pending_lambdas = []  # (name, ret_c, params, body_lines)
         self._pending_env_structs = []  # typedef lines for env/closure/fn types
+        self._pending_sort_helpers: List[str] = []  # full C function source blocks
+        self._sort_helper_keys: set = set()  # dedupe keys for emitted helpers
         self._closure_vars = {}  # var name -> lambda info (capturing lambdas)
         self._fnptr_vars = {}  # var name -> lambda info (non-capturing lambdas)
         self._capture_stack = []  # sets of captured names, one per nested lambda body
@@ -579,22 +583,26 @@ class CGenerator:
         # Emit any lambdas that were generated during function processing.
         # Env/closure typedefs come first (lambda signatures reference them),
         # then the lifted static functions.
+        insert_extra: List[str] = []
         if self._pending_lambdas or self._pending_env_structs:
-            lambda_lines = []
-            lambda_lines.append("// Auto-generated lambda functions")
-            lambda_lines.extend(self._pending_env_structs)
+            insert_extra.append("// Auto-generated lambda functions")
+            insert_extra.extend(self._pending_env_structs)
             for lambda_name, ret_type, params, body_lines in self._pending_lambdas:
-                lambda_lines.append(f"static {ret_type} {lambda_name}({params}) {{")
+                insert_extra.append(f"static {ret_type} {lambda_name}({params}) {{")
                 for line in body_lines:
-                    lambda_lines.append(f"    {line}")
-                lambda_lines.append("}")
-            lambda_lines.append("")
+                    insert_extra.append(f"    {line}")
+                insert_extra.append("}")
+            insert_extra.append("")
+        if self._pending_sort_helpers:
+            insert_extra.append("// Auto-generated declarative sort helpers")
+            insert_extra.extend(self._pending_sort_helpers)
+            insert_extra.append("")
 
+        if insert_extra:
             insert_idx = self._lambda_insert_idx
             if insert_idx is None or insert_idx > len(lines):
                 insert_idx = len(lines)
-
-            lines = lines[:insert_idx] + lambda_lines + lines[insert_idx:]
+            lines = lines[:insert_idx] + insert_extra + lines[insert_idx:]
 
         return "\n".join(lines).rstrip() + "\n"
     
@@ -862,6 +870,8 @@ class CGenerator:
             if not ret:
                 ret = self._overload_resolver.get_return_type(expr.name)
             return Type(ret or "i32")
+        elif isinstance(expr, SortExpr):
+            return self._infer_expr_type(expr.array)
         elif isinstance(expr, StructLiteral):
             return Type(expr.struct_name)
         elif isinstance(expr, RecordUpdate):
@@ -1512,7 +1522,19 @@ class CGenerator:
             return [f"{self._i()}continue;"]
 
         # Expression statement
-        if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall, MethodCall)):
+        if isinstance(
+            st,
+            (
+                Literal,
+                Variable,
+                BinaryOperation,
+                UnaryOperation,
+                FunctionCall,
+                EffectCall,
+                MethodCall,
+                SortExpr,
+            ),
+        ):
             return [f"{self._i()}{self._gen_expr(st)};"]
 
         raise NotImplementedError(f"Unsupported statement: {type(st)}")
@@ -2216,6 +2238,9 @@ class CGenerator:
                 
             return f"({left_expr} {c_operator} {right_expr})"
 
+        if isinstance(e, SortExpr):
+            return self._gen_sort_expr(e)
+
         if isinstance(e, FunctionCall):
             # ui_layout_bind intrinsic: bind implicit UI state pointer
             if e.name == "ui_layout_bind" and len(e.arguments) == 1:
@@ -2737,6 +2762,122 @@ class CGenerator:
         self._var_types[st.name] = Type(info["fn_typedef"])
         self._overload_resolver.set_var_type(st.name, info["fn_typedef"])
         return [f"{self._i()}{info['fn_typedef']} {name} = {init_expr};"]
+
+    def _sort_cmp_fragment(
+        self,
+        lhs: str,
+        rhs: str,
+        keys: List[SortKey],
+        elem_type: Type,
+        global_desc: bool,
+    ) -> str:
+        """C expression: negative if lhs<rhs, positive if lhs>rhs, else 0."""
+        if not keys:
+            # Primitive / whole-element compare
+            if getattr(elem_type, "name", "") == "string":
+                core = f"strcmp({lhs}, {rhs})"
+            else:
+                core = f"(({lhs}) < ({rhs}) ? -1 : (({lhs}) > ({rhs}) ? 1 : 0))"
+            return f"(0 - ({core}))" if global_desc else core
+
+        parts: List[str] = []
+        for key in keys:
+            field = _c_ident(key.field or "")
+            left = f"({lhs}).{field}"
+            right = f"({rhs}).{field}"
+            ft = None
+            struct_fields = self._structs.get(elem_type.name, {})
+            if key.field in struct_fields:
+                ft = struct_fields[key.field]
+            desc = bool(key.descending) ^ bool(global_desc)
+            if ft is not None and getattr(ft, "name", "") == "string":
+                cmp_e = f"strcmp({left}, {right})"
+            else:
+                cmp_e = (
+                    f"(({left}) < ({right}) ? -1 : "
+                    f"(({left}) > ({right}) ? 1 : 0))"
+                )
+            if desc:
+                cmp_e = f"(0 - ({cmp_e}))"
+            parts.append(cmp_e)
+        if len(parts) == 1:
+            return parts[0]
+        # Lexicographic cascade; scalar compares may be evaluated twice (MVP).
+        chain = parts[-1]
+        for p in reversed(parts[:-1]):
+            chain = f"(({p}) != 0 ? ({p}) : ({chain}))"
+        return chain
+
+    def _ensure_sort_helper(self, expr: SortExpr, arr_type: Type) -> Tuple[str, int]:
+        """Register a static insertion-sort helper; return (name, n)."""
+        import hashlib
+
+        size = getattr(arr_type, "size", None)
+        elem = getattr(arr_type, "element_type", None)
+        if size is None or elem is None:
+            raise NotImplementedError(
+                "Declarative sort requires fixed-size array<T, N>"
+            )
+        elem_c = self._c_type(elem)
+        key_sig = ",".join(
+            f"{'d' if k.descending else 'a'}.{k.field or '_'}" for k in expr.keys
+        )
+        flags = (
+            f"g{'d' if expr.descending else 'a'}"
+            f"_u{1 if expr.unique else 0}"
+            f"_s{1 if expr.stable else 0}"
+        )
+        dedupe = f"{elem_c}|{size}|{key_sig}|{flags}"
+        helper = (
+            "__flow_sort_"
+            + hashlib.md5(dedupe.encode(), usedforsecurity=False).hexdigest()[:12]
+        )
+        if dedupe not in self._sort_helper_keys:
+            self._sort_helper_keys.add(dedupe)
+            cmp_ij = self._sort_cmp_fragment(
+                "a[j]", "key", expr.keys, elem, expr.descending
+            )
+            # Insertion sort (stable): shift while a[j] > key
+            body = [
+                f"static void {helper}({elem_c} *a, int32_t n) {{",
+                "    for (int32_t i = 1; i < n; i++) {",
+                f"        {elem_c} key = a[i];",
+                "        int32_t j = i - 1;",
+                f"        while (j >= 0 && ({cmp_ij}) > 0) {{",
+                "            a[j + 1] = a[j];",
+                "            j = j - 1;",
+                "        }",
+                "        a[j + 1] = key;",
+                "    }",
+            ]
+            if expr.unique:
+                cmp_wr = self._sort_cmp_fragment(
+                    "a[w - 1]", "a[r]", expr.keys, elem, expr.descending
+                )
+                body.extend(
+                    [
+                        "    int32_t w = 0;",
+                        "    for (int32_t r = 0; r < n; r++) {",
+                        f"        if (w == 0 || ({cmp_wr}) != 0) {{",
+                        "            a[w] = a[r];",
+                        "            w = w + 1;",
+                        "        }",
+                        "    }",
+                        "    /* unique: compacted prefix length is w; tail is stale */",
+                        "    (void)w;",
+                    ]
+                )
+            body.append("}")
+            self._pending_sort_helpers.append("\n".join(body))
+        return helper, int(size)
+
+    def _gen_sort_expr(self, e: SortExpr) -> str:
+        """Lower `xs |> sort ...` to an in-place helper call, yielding `xs`."""
+        arr_type = self._infer_expr_type(e.array)
+        helper, n = self._ensure_sort_helper(e, arr_type)
+        arr_c = self._gen_expr(e.array)
+        # In-place sort; expression value is the (mutated) array/pointer.
+        return f"({{ {helper}(({self._c_type(arr_type.element_type)}*)({arr_c}), {n}); {arr_c}; }})"
 
 
 def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_info: bool = False) -> str:

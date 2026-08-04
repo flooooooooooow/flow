@@ -8,40 +8,39 @@ Expanded before parse — desugars to stdlib dynamics calls.
 Syntax
 ------
 
-    dsys plant {
-        discrete
-        dt 0.1
-        n 2 m 1 p 1
-        A 1.0 0.1 0.0 1.0
-        B 0.0 0.1
-        C 1.0 0.0
+Bare forms and namespaced forms are equivalent. Prefer `dyn.*` / `dynamics { }`
+when you want the vocabulary out of the global keyword soup:
+
+    dynamics {
+        dsys plant {
+            discrete
+            dt 0.1
+            n 2 m 1 p 1
+            A 1.0 0.1 0.0 1.0
+            B 0.0 0.1
+            C 1.0 0.0
+        }
+        horizon rollout finite 50
+        sense on plant {
+            controllable -> plant_ok
+            spectral -> rho_open
+        }
+        ga evolve on plant over rollout -> k1 k2 {
+            population 12
+            generations 30
+            mutation 0.3
+        }
     }
 
+    # Or line-prefixed: dyn.horizon rollout finite 50
+    #                   dynamics.analyze plant ga k1 k2 over rollout -> report { full }
+
+    dsys plant { ... }   # bare form still works
     horizon rollout finite 50
-    horizon asymptotic infinite gamma 0.99
-
-    sense on plant {
-        controllable -> plant_ok
-        spectral -> rho_open
-        gramian finite rollout trace -> wc_fin
-        gramian infinite asymptotic trace -> wc_inf
-    }
-
-    ga evolve on plant over rollout -> k1 k2 {
-        population 12
-        generations 30
-        mutation 0.3
-    }
-
-    closed plant with k1 k2 {
-        spectral -> rho_cl
-        energy over rollout -> E_cl
-        stable -> stable_cl
-    }
-
-    analyze plant ga k1 k2 over rollout -> report {
-        full
-    }
+    sense on plant { controllable -> plant_ok  spectral -> rho_open }
+    ga evolve on plant over rollout -> k1 k2 { population 12 generations 30 mutation 0.3 }
+    closed plant with k1 k2 { spectral -> rho_cl  energy over rollout -> E_cl  stable -> stable_cl }
+    analyze plant ga k1 k2 over rollout -> report { full }
 
     wfc field layout {
         size 4 4
@@ -208,6 +207,67 @@ def _extract_brace_block(lines: List[str], start: int) -> Tuple[List[str], int]:
     return body, i
 
 
+_DYN_NS_RE = re.compile(r"^(?:dyn|dynamics)\.(.+)$")
+
+
+def _extract_brace_block_preserving(
+    lines: List[str], start: int
+) -> Tuple[List[str], int]:
+    """Extract `{ ... }` body while keeping nested braces in the returned lines.
+
+    Unlike `_extract_brace_block`, closing `}` lines of *inner* blocks are
+    preserved so the body can be re-parsed by `parse_dynamics_dsl`.
+    """
+    depth = 0
+    i = start
+    body: List[str] = []
+    while i < len(lines):
+        line = lines[i]
+        if i == start:
+            after = line.split("{", 1)[1] if "{" in line else ""
+            depth = 1 + after.count("{") - after.count("}")
+            if depth > 0:
+                if after.strip():
+                    body.append(after.rstrip())
+            else:
+                return body, i + 1
+        else:
+            depth += line.count("{") - line.count("}")
+            if depth > 0:
+                body.append(line)
+            else:
+                before, _, _rest = line.rpartition("}")
+                if before.strip():
+                    body.append(before.rstrip())
+                return body, i + 1
+        i += 1
+    return body, i
+
+
+def _merge_dynamics_program(dst: "DynamicsProgram", src: "DynamicsProgram") -> None:
+    """Merge `src` into `dst` (used for `dynamics { ... }` namespace blocks)."""
+    dst.systems.update(src.systems)
+    dst.horizons.update(src.horizons)
+    dst.senses.extend(src.senses)
+    dst.ga_evolutions.extend(src.ga_evolutions)
+    dst.closed_blocks.extend(src.closed_blocks)
+    dst.analyzes.extend(src.analyzes)
+    dst.wfc_fields.update(src.wfc_fields)
+    dst.couples.extend(src.couples)
+    dst.guides.extend(src.guides)
+
+
+def _strip_dynamics_namespace(line: str) -> str:
+    """Allow `dyn.dsys` / `dynamics.horizon` as namespaced aliases of bare DSL.
+
+    Bare forms (`dsys`, `horizon`, …) remain valid. Namespaced forms keep the
+    dynamics vocabulary out of the global identifier soup for editors and
+    future grammar work — see docs/language/dynamics-dsl.md § Namespaces.
+    """
+    m = _DYN_NS_RE.match(line)
+    return m.group(1).strip() if m else line
+
+
 def parse_dynamics_dsl(source: str) -> Tuple[DynamicsProgram, str]:
     """Parse DSL constructs and return program + source with DSL blocks removed."""
     program = DynamicsProgram()
@@ -221,6 +281,23 @@ def parse_dynamics_dsl(source: str) -> Tuple[DynamicsProgram, str]:
             out_lines.append(raw)
             i += 1
             continue
+
+        # Namespace block: dynamics { … } / dyn { … } — body uses bare DSL lines.
+        # Use raw extraction so nested `dsys { }` / `sense { }` keep their braces
+        # (the usual `_extract_brace_block` strips closing `}` and breaks re-parse).
+        if re.match(r"^(?:dyn|dynamics)\s*\{", line):
+            body_lines, i = _extract_brace_block_preserving(lines, i)
+            body_src = "\n".join(body_lines) + "\n"
+            inner_prog, leftover = parse_dynamics_dsl(body_src)
+            if leftover.strip():
+                raise SyntaxError(
+                    "dynamics { ... } block may only contain dynamics DSL "
+                    f"constructs; leftover:\n{leftover.strip()[:200]}"
+                )
+            _merge_dynamics_program(program, inner_prog)
+            continue
+
+        line = _strip_dynamics_namespace(line)
 
         if line.startswith("dsys "):
             m = re.match(r"dsys\s+(\w+)\s*\{", line)
@@ -586,6 +663,7 @@ def compile_dynamics_program(program: DynamicsProgram) -> str:
     for ga in program.ga_evolutions:
         ga_cfg_by_key[(ga.system, ga.horizon)] = ga
 
+    declared_gains: set = set()
     for gi, ga in enumerate(program.ga_evolutions):
         sysv = sys_vars[ga.system]
         steps = hz_steps.get(ga.horizon, 50)
@@ -593,6 +671,8 @@ def compile_dynamics_program(program: DynamicsProgram) -> str:
         tag = f"__ga_e{gi}"
         lines.append(f"    let mut {ga.k1_var}: f64 = 0.0")
         lines.append(f"    let mut {ga.k2_var}: f64 = 0.0")
+        declared_gains.add(ga.k1_var)
+        declared_gains.add(ga.k2_var)
         lines.append(f"    let {tag}_k1: array<f64, {pop}> = {_zero_f64_array(pop)}")
         lines.append(f"    let {tag}_k2: array<f64, {pop}> = {_zero_f64_array(pop)}")
         lines.append(f"    let {tag}_fit: array<f64, {pop}> = {_zero_f64_array(pop)}")
@@ -669,6 +749,13 @@ def compile_dynamics_program(program: DynamicsProgram) -> str:
             f"{bufs[4]}, {bufs[5]}, {bufs[6]}, {bufs[7]}, {bufs[8]}, {bufs[9]}, "
             f"{bufs[10]}, {bufs[11]})"
         )
+        # Gains may be fresh names (not from a prior `ga evolve`); declare them.
+        if analyze.k1_var not in declared_gains:
+            lines.append(f"    let mut {analyze.k1_var}: f64 = 0.0")
+            declared_gains.add(analyze.k1_var)
+        if analyze.k2_var not in declared_gains:
+            lines.append(f"    let mut {analyze.k2_var}: f64 = 0.0")
+            declared_gains.add(analyze.k2_var)
         lines.append(f"    {analyze.k1_var} = {tag}_bk1[0]")
         lines.append(f"    {analyze.k2_var} = {tag}_bk2[0]")
 
@@ -760,14 +847,17 @@ def expand_dynamics_dsl(source: str) -> str:
 
 
 def has_dynamics_dsl(source: str) -> bool:
+    # Bare forms and namespaced `dyn.*` / `dynamics.*` / `dynamics { ... }`.
+    ns = r"(?:(?:dyn|dynamics)\.)?"
     return bool(
-        re.search(r"^\s*dsys\s+\w+", source, re.MULTILINE)
-        or re.search(r"^\s*horizon\s+\w+", source, re.MULTILINE)
-        or re.search(r"^\s*sense\s+on\s+", source, re.MULTILINE)
-        or re.search(r"^\s*ga\s+evolve\s+", source, re.MULTILINE)
-        or re.search(r"^\s*closed\s+\w+", source, re.MULTILINE)
-        or re.search(r"^\s*analyze\s+\w+", source, re.MULTILINE)
-        or re.search(r"^\s*wfc\s+field\s+", source, re.MULTILINE)
-        or re.search(r"^\s*couple\s+\w+", source, re.MULTILINE)
-        or re.search(r"^\s*guide\s+\w+", source, re.MULTILINE)
+        re.search(rf"^\s*{ns}dsys\s+\w+", source, re.MULTILINE)
+        or re.search(rf"^\s*{ns}horizon\s+\w+", source, re.MULTILINE)
+        or re.search(rf"^\s*{ns}sense\s+on\s+", source, re.MULTILINE)
+        or re.search(rf"^\s*{ns}ga\s+evolve\s+", source, re.MULTILINE)
+        or re.search(rf"^\s*{ns}closed\s+\w+", source, re.MULTILINE)
+        or re.search(rf"^\s*{ns}analyze\s+\w+", source, re.MULTILINE)
+        or re.search(rf"^\s*{ns}wfc\s+field\s+", source, re.MULTILINE)
+        or re.search(rf"^\s*{ns}couple\s+\w+", source, re.MULTILINE)
+        or re.search(rf"^\s*{ns}guide\s+\w+", source, re.MULTILINE)
+        or re.search(r"^\s*(?:dyn|dynamics)\s*\{", source, re.MULTILINE)
     )

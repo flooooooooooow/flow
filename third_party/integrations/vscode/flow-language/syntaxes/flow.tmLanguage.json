@@ -5,6 +5,8 @@
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
+    { "include": "#dynamics" },
+    { "include": "#ordering" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#functions" },
@@ -12,6 +14,42 @@
     { "include": "#operators" }
   ],
   "repository": {
+    "dynamics": {
+      "patterns": [
+        {
+          "name": "keyword.control.dynamics.flow",
+          "match": "\\b(?:dyn|dynamics)\\.(?:dsys|horizon|sense|ga|closed|analyze|wfc|couple|guide)\\b"
+        },
+        {
+          "name": "keyword.control.dynamics.flow",
+          "match": "(?<=^|\\s)(?:dyn|dynamics)(?=\\s*\\{)"
+        },
+        {
+          "name": "keyword.control.dynamics.flow",
+          "match": "(?<=^|\\s)(?:dsys|horizon|sense|closed|analyze|(?:ga\\s+evolve)|(?:wfc\\s+field)|couple|guide)(?=\\s)"
+        },
+        {
+          "name": "keyword.other.dynamics.flow",
+          "match": "\\b(?:controllable|spectral|gramian|stable|population|generations|mutation|discrete|continuous)\\b"
+        }
+      ]
+    },
+    "ordering": {
+      "patterns": [
+        {
+          "name": "keyword.control.ordering.flow",
+          "match": "\\b(?:sortBy|sort|order)\\b"
+        },
+        {
+          "name": "keyword.other.ordering.flow",
+          "match": "\\b(?:asc|desc|ascending|descending|unique|adaptive|compact|entropy)\\b"
+        },
+        {
+          "name": "keyword.operator.pipeline.flow",
+          "match": "\\|>"
+        }
+      ]
+    },
     "comments": {
       "patterns": [
         {

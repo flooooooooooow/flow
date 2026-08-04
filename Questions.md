@@ -11,6 +11,48 @@ Format:
 
 ## Open Questions
 
+### 2026-08-04: Declarative ordering — Phase 2 scope
+
+**Context:** Phase 1 shipped (`docs/language/ordering.md`): `xs |> sort`,
+`sort by` / `sortBy [asc .f, desc .g]`, `stable`/`unique`/`descending`,
+plus parsed-but-ignored policies (`parallel`, `gpu`, `with entropy`, …).
+C backend lowers to in-place stable insertion on `array<T, N>`.
+
+**Open decisions for Phase 2:**
+1. **`unique` length** — keep compact-in-place with stale tail (current), or
+   return `(array, len)`, or shrink via slices?
+2. **Entropy** — first-class effect (`with entropy`) vs optional seed arg only?
+3. **`order { }` block** — required sugar, or keep pipeline-only?
+4. **Copy vs mutate** — pipeline looks pure; today is in-place. Pure
+   `sorted` copy as default?
+
+**Recommendation:** Keep Phase 1 semantics; decide (1) and (4) before
+advertising `unique` widely; defer GPU/distributed until adaptive selector
+exists.
+
+**Status:** 🔲 Pending (Phase 1 implemented 2026-08-04)
+
+---
+
+### 2026-08-04: Dynamics DSL namespace style
+
+**Context:** Top-level bare keywords `dsys` / `horizon` / `sense` / `ga` /
+`analyze` / `closed` collide with ordinary identifiers and the vision-layer
+`analyze Name { }` form. Editors need a clear namespace for IntelliSense.
+
+**Options:**
+1. Additive `dyn.` / `dynamics.` prefixes + `dynamics { … }` block (bare forms kept)
+2. Require namespace only; deprecate bare keywords
+3. No syntax change — IntelliSense-only labeling
+
+**Recommendation:** Option 1 (shipped). Bare forms remain; prefer namespaced
+forms in new code. See `docs/language/dynamics-dsl.md` § Namespaces and
+`examples/dynamics/ga_dsys_namespaced.flow`.
+
+**Status:** ✅ Resolved (Option 1 implemented 2026-08-04)
+
+---
+
 ### 2026-01-09: Web Playground Debugging Support
 
 **Context:** The web playground exists (`docs/playground/index.html`) but doesn't have debugging capabilities.

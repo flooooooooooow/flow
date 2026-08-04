@@ -92,6 +92,7 @@ show_help() {
     echo "  debug <program>   Compile with debug symbols and open debugger"
     echo "  window <program>  Run with SDL2 window backend"
     echo "  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)"
+    echo "  shader <program>  Run fill-shader demo (Metal window on macOS; see docs/language/shaders.md)"
     echo "  demo vulkan [basic|advanced]  Vulkan triangle / scene demos (macOS + MoltenVK)"
     echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout|layout|layout-dsl]"
     echo "  demo ui-layout[|-window]  UI layout demos (SDL2 for -window)"
@@ -102,7 +103,8 @@ show_help() {
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
     echo "  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)"
-    echo "  gpu <program>      Generate Metal/CUDA shaders"
+    echo "  gpu <program>      Generate @gpu compute kernels as Metal sources"
+    echo "  shader <program>   Run fill-shader demo (Metal; macOS)"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
     echo "  fmt <files...>    Format FLOW source files"
     echo ""
@@ -221,7 +223,16 @@ compile_program() {
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
     flow_concurrency_flags
-    if ! clang "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$build_dir/$basename.c" \
+    # First-class GPU memory: Metal on Darwin, stub elsewhere.
+    local gpu_sources=()
+    local gpu_ldflags=()
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_metal.m")
+        gpu_ldflags+=("-framework" "Metal" "-framework" "Foundation")
+    else
+        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_memory_stub.c")
+    fi
+    if ! clang "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
@@ -229,7 +240,8 @@ compile_program() {
         "$SCRIPT_DIR/runtime/live_host.c" \
         "$SCRIPT_DIR/runtime/audio_simd.c" \
         "${FLOW_CONC_SOURCES[@]}" \
-        "${py_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
+        "${gpu_sources[@]}" \
+        "${py_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" "${gpu_ldflags[@]}" -o "$build_dir/$basename" 2>/dev/null; then
         print_error "C compilation/linking failed"
         exit 1
     fi
@@ -269,12 +281,21 @@ debug_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
-    if ! clang -g -O0 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" \
+    local gpu_sources=()
+    local gpu_ldflags=()
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_metal.m")
+        gpu_ldflags+=("-framework" "Metal" "-framework" "Foundation")
+    else
+        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_memory_stub.c")
+    fi
+    if ! clang -g -O0 -fno-omit-frame-pointer "${py_cflags[@]}" -I"$SCRIPT_DIR/runtime" "$c_file" \
         "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_time.c" \
         "$SCRIPT_DIR/runtime/audio_simd.c" \
-        "${py_ldflags[@]}" -o "$exe_file" -lm; then
+        "${gpu_sources[@]}" \
+        "${py_ldflags[@]}" "${gpu_ldflags[@]}" -o "$exe_file" -lm; then
         print_error "C compilation/linking failed"
         exit 1
     fi
@@ -293,6 +314,83 @@ debug_program() {
         print_warning "No debugger found (lldb/gdb). Install one and run:"
         print_info "  lldb \"$exe_file\""
     fi
+}
+
+# Compile + show a `shader fill` demo (Metal window on macOS).
+run_fill_shader() {
+    local program="$1"
+    shift
+    local shader_name=""
+    local max_frames=0
+    local width=800
+    local height=600
+    local emit_only=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --name)
+                shader_name="${2:-}"
+                shift 2
+                ;;
+            --frames)
+                max_frames="${2:-0}"
+                shift 2
+                ;;
+            --size)
+                local wh="${2:-800x600}"
+                width="${wh%x*}"
+                height="${wh#*x}"
+                shift 2
+                ;;
+            --emit-only)
+                emit_only=1
+                shift
+                ;;
+            *)
+                print_error "Unknown shader option: $1"
+                exit 1
+                ;;
+        esac
+    done
+    print_info "Compiling fill-shader from $program..."
+    local shader_out="$SCRIPT_DIR/build/shaders"
+    mkdir -p "$shader_out"
+    local metal_path
+    metal_path=$(python3 - "$SCRIPT_DIR" "$program" "$shader_out" "$shader_name" <<'PY'
+import sys
+script_dir, program, out_dir, name = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+sys.path.insert(0, f"{script_dir}/src")
+from flow.shader_codegen import compile_shader_file
+path = compile_shader_file(program, out_dir, shader_name=name or None)
+print(path)
+PY
+) || {
+        print_error "Shader compilation failed"
+        exit 1
+    }
+    print_success "FLOW → Metal: $(basename "$metal_path")"
+    local entries_path="${metal_path%.metal}.entries"
+    if [ -f "$entries_path" ]; then
+        print_info "Gallery entries: $(wc -l < "$entries_path" | tr -d ' ') shader(s)"
+    fi
+    if [ "$emit_only" -eq 1 ]; then
+        print_info "Emit-only: $metal_path"
+        return 0
+    fi
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        print_error "flow shader viewer requires macOS (Metal). Use --emit-only to generate .metal."
+        exit 1
+    fi
+    local shader_exe="$SCRIPT_DIR/build/flow_shader_host"
+    if ! clang -O2 -fobjc-arc -I"$SCRIPT_DIR/runtime" \
+        "$SCRIPT_DIR/runtime/shader_host.c" \
+        "$SCRIPT_DIR/runtime/shader_view_metal.m" \
+        -framework Metal -framework Cocoa -framework QuartzCore \
+        -o "$shader_exe"; then
+        print_error "Failed to build shader host"
+        exit 1
+    fi
+    print_info "Running shader gallery ${width}x${height} (←/→ or Space to cycle, Esc to quit)..."
+    "$shader_exe" "$metal_path" "$width" "$height" "$max_frames"
 }
 
 # Run program
@@ -1698,6 +1796,16 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         EXIT_CODE=$?
         echo "----------------------------------------"
         print_success "Program finished with exit code: $EXIT_CODE"
+        ;;
+    "shader")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow shader <program.flow> [--name SHADER] [--frames N] [--size WxH] [--emit-only]"
+            exit 1
+        fi
+        require_flow_file "${1:-}"
+        check_deps
+        run_fill_shader "$@"
         ;;
     "gpu")
         shift
