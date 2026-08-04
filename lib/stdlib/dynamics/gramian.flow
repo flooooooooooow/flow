@@ -6,6 +6,7 @@
 
 import "stdlib/dynamics/state_space.flow"
 
+# Accumulate W += block * block^T (outer-product update).
 function gramian_add_outer(block: Matrix, W: Matrix) -> void {
     let n: i32 = block.rows
     let m: i32 = block.cols
@@ -20,6 +21,7 @@ function gramian_add_outer(block: Matrix, W: Matrix) -> void {
     }
 }
 
+# Finite-horizon controllability Gramian Wc(N) = Σ A^k B B^T (A^k)^T.
 function gramian_finite_horizon(
     sys: DynamicalSystem,
     h: Horizon,
@@ -43,6 +45,7 @@ function gramian_finite_horizon(
     return W
 }
 
+# Infinite-horizon controllability Gramian via iterative Lyapunov solve.
 function gramian_infinite_horizon(
     sys: DynamicalSystem,
     h: Horizon,
@@ -72,6 +75,7 @@ function gramian_infinite_horizon(
     return W
 }
 
+# Finite-horizon observability Gramian Wo(N) = Σ (A^k)^T C^T C A^k.
 function observability_gramian_finite(
     sys: DynamicalSystem,
     h: Horizon,

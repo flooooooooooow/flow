@@ -5,18 +5,22 @@ export const PI: f32 = 3.14159265358979323846
 export const E: f32 = 2.71828182845904523536
 export const GOLDEN_RATIO: f32 = 1.61803398874989484820
 
+# Add two f32 values: a + b.
 export function add(a: f32, b: f32) -> f32 {
     return a + b
 }
 
+# Subtract two f32 values: a - b.
 export function subtract(a: f32, b: f32) -> f32 {
     return a - b
 }
 
+# Multiply two f32 values: a * b.
 export function multiply(a: f32, b: f32) -> f32 {
     return a * b
 }
 
+# Divide a by b; returns 0 and prints on division by zero.
 export function divide(a: f32, b: f32) -> f32 {
     if b == 0.0 {
         print("Error: Division by zero")
@@ -25,6 +29,8 @@ export function divide(a: f32, b: f32) -> f32 {
     return a / b
 }
 
+# Integer-power via repeated multiply; supports negative exponents as reciprocal.
+# Exponent is treated as a whole number (loop count), not a general real power.
 export function power(base: f32, exponent: f32) -> f32 {
     if exponent == 0.0 {
         return 1.0
@@ -42,26 +48,32 @@ export function power(base: f32, exponent: f32) -> f32 {
     return result
 }
 
+# Sine of x (radians). Intrinsic in MLIR; stub returns 0 in C fallback.
 export function sin(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
 }
 
+# Cosine of x (radians). Intrinsic in MLIR; stub returns 0 in C fallback.
 export function cos(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
 }
 
+# Square root of x. Intrinsic in MLIR; stub returns 0 in C fallback.
+# Domain: x >= 0 for real results.
 export function sqrt(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
 }
 
+# Absolute value of x (fabs intrinsic in MLIR; stub returns 0 in C fallback).
 export function fabs(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
 }
 
+# Absolute value of x: |x|.
 export function abs(x: f32) -> f32 {
     if x < 0.0 {
         return -x
@@ -69,6 +81,7 @@ export function abs(x: f32) -> f32 {
     return x
 }
 
+# Tangent of x (radians): sin(x)/cos(x). Returns 0 if cos(x) == 0.
 export function tan(x: f32) -> f32 {
     let cos_val: f32 = cos(x)
     if cos_val == 0.0 {
@@ -78,6 +91,8 @@ export function tan(x: f32) -> f32 {
     return sin(x) / cos_val
 }
 
+# Natural logarithm ln(x) via Newton's method.
+# Domain: x > 0; returns 0 and prints for non-positive input.
 export function log(x: f32) -> f32 {
     if x <= 0.0 {
         print("Error: Logarithm of non-positive number")
@@ -101,6 +116,7 @@ export function log(x: f32) -> f32 {
     return guess
 }
 
+# Exponential e^x via Taylor series (20 terms).
 export function exp(x: f32) -> f32 {
     # Taylor series approximation for e^x
     let result: f32 = 1.0
@@ -119,6 +135,8 @@ export function exp(x: f32) -> f32 {
 }
 
 # Advanced mathematical functions
+
+# nth Fibonacci number (F(0)=0, F(1)=1); returns 0 for n <= 0.
 export function fibonacci(n: i32) -> i32 {
     if n <= 0 {
         return 0
@@ -140,6 +158,7 @@ export function fibonacci(n: i32) -> i32 {
     return b
 }
 
+# Greatest common divisor of a and b (Euclidean algorithm).
 export function gcd(a: i32, b: i32) -> i32 {
     while b != 0 {
         let temp: i32 = b
@@ -149,10 +168,12 @@ export function gcd(a: i32, b: i32) -> i32 {
     return a
 }
 
+# Least common multiple of a and b: |a*b|/gcd(a,b).
 export function lcm(a: i32, b: i32) -> i32 {
     return a * b / gcd(a, b)
 }
 
+# True if n is prime; false for n <= 1. Trial division up to sqrt(n).
 export function is_prime(n: i32) -> bool {
     if n <= 1 {
         return false
@@ -175,6 +196,7 @@ export function is_prime(n: i32) -> bool {
     return true
 }
 
+# Factorial n! as i64; returns 1 for n <= 1. Watch for overflow on large n.
 export function factorial_big(n: i32) -> i64 {
     if n <= 1 {
         return 1
