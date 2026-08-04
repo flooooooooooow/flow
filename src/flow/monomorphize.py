@@ -33,7 +33,8 @@ from .parser import (
     VarDecl, ReturnStatement, Assignment, IfStatement, WhileStatement,
     ForStatement, BinaryOperation, UnaryOperation, FunctionCall,
     Literal, StructLiteral, ArrayLiteral, FieldAccess,
-    ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter, CastExpression
+    ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter, CastExpression,
+    ExpectStatement, RecordUpdate,
 )
 
 
@@ -224,6 +225,8 @@ class Monomorphizer:
             self._scan_expression(stmt.range_start)
             self._scan_expression(stmt.range_end)
             self._scan_block(stmt.body)
+        elif isinstance(stmt, ExpectStatement):
+            self._scan_expression(stmt.condition)
         elif isinstance(stmt, Block):
             self._scan_block(stmt)
     
@@ -249,6 +252,7 @@ class Monomorphizer:
                     # Number of type params tells us how many args to expect
                     generic_def = self.generic_structs[base_name]
                     num_type_params = len(generic_def.type_params)
+
                     
                     # Split the suffix: "i32_f32" -> ["i32", "f32"]
                     suffix = struct_name[len(base_name)+1:]
@@ -372,6 +376,8 @@ class Monomorphizer:
                     return Type("string")
         elif isinstance(expr, StructLiteral):
             return Type(expr.struct_name)
+        elif isinstance(expr, RecordUpdate):
+            return self._expr_type(expr.base)
         elif isinstance(expr, ArrayLiteral):
             if expr.elements:
                 elem_type = self._expr_type(expr.elements[0])
@@ -582,6 +588,10 @@ class Monomorphizer:
             new_step = self._substitute_expression(stmt.step, type_map) if stmt.step else None
             new_body = self._substitute_block(stmt.body, type_map)
             return ForStatement(stmt.variable, new_start, new_end, new_step, new_body, stmt.is_parallel)
+        elif isinstance(stmt, ExpectStatement):
+            return ExpectStatement(
+                self._substitute_expression(stmt.condition, type_map), stmt.line
+            )
         elif isinstance(stmt, Block):
             return self._substitute_block(stmt, type_map)
         return stmt
@@ -599,6 +609,11 @@ class Monomorphizer:
             new_fields = [(n, self._substitute_expression(v, type_map)) for n, v in expr.fields]
             new_name = self._resolve_struct_literal_mangled_name(expr.struct_name, type_map)
             return StructLiteral(new_name, new_fields)
+        elif isinstance(expr, RecordUpdate):
+            return RecordUpdate(
+                self._substitute_expression(expr.base, type_map),
+                [(n, self._substitute_expression(v, type_map)) for n, v in expr.updates],
+            )
         elif isinstance(expr, BinaryOperation):
             new_left = self._substitute_expression(expr.left, type_map)
             new_right = self._substitute_expression(expr.right, type_map)
@@ -758,6 +773,8 @@ class Monomorphizer:
             new_step = self._rewrite_expression(stmt.step) if stmt.step else None
             new_body = self._rewrite_block(stmt.body)
             return ForStatement(stmt.variable, new_start, new_end, new_step, new_body, stmt.is_parallel)
+        elif isinstance(stmt, ExpectStatement):
+            return ExpectStatement(self._rewrite_expression(stmt.condition), stmt.line)
         elif isinstance(stmt, Block):
             return self._rewrite_block(stmt)
         return stmt
@@ -771,6 +788,11 @@ class Monomorphizer:
             new_fields = [(n, self._rewrite_expression(v)) for n, v in expr.fields]
             new_name = self._resolve_struct_literal_mangled_name(expr.struct_name)
             return StructLiteral(new_name, new_fields)
+        elif isinstance(expr, RecordUpdate):
+            return RecordUpdate(
+                self._rewrite_expression(expr.base),
+                [(n, self._rewrite_expression(v)) for n, v in expr.updates],
+            )
         elif isinstance(expr, BinaryOperation):
             new_left = self._rewrite_expression(expr.left)
             new_right = self._rewrite_expression(expr.right)

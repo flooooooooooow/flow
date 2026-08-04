@@ -1,5 +1,6 @@
 pytest==9.0.3
 numpy==1.26.4
+tomli==2.2.1
 ruff==0.6.9
 mypy==1.11.2
 bandit==1.7.9

@@ -1,4 +1,3 @@
-# flow:lenient - type checker does not yet model capability instances (capability_Notation vs NotationReader)
 # Notation Player - Load Music from Files with Effects
 #
 # Demonstrates FLOW's effect system for livecoding:
@@ -36,8 +35,6 @@ function main() -> i32 {
     let mut reader: NotationReader = notation_reader_new()
 
     # Load file (hardcoded for now, would read from file)
-    # Note: Capability syntax not yet fully supported in C backend
-    # Using direct struct access for now
     let success: bool = reader.load_file("hot_cross_buns.music")
 
     if not success {

@@ -11,7 +11,8 @@ from .parser import (
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
     HandleStatement, EffectCall, MethodCall,
-    MatchStatement, StructPattern, ConstDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl
+    MatchStatement, StructPattern, ListPattern, ConstDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl,
+    ExpectStatement, RecordUpdate,
 )
 
 class MLIRGenerator:
@@ -743,6 +744,11 @@ class MLIRGenerator:
             return self.generate_handle(stmt)
         elif isinstance(stmt, (MethodCall, EffectCall)):
             _, value_ops = self.generate_expression(stmt)
+            return "\n".join(value_ops)
+        elif isinstance(stmt, ExpectStatement):
+            # Evaluate the condition (for side effects). Runtime abort is only
+            # enforced by the C backend; here we at least compile the check.
+            _, value_ops = self.generate_expression(stmt.condition)
             return "\n".join(value_ops)
         elif isinstance(stmt, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, VectorLiteral)):
             value_ssa, value_ops = self.generate_expression(stmt)
@@ -1791,6 +1797,72 @@ class MLIRGenerator:
                                 'flow_type': field_decl.type,
                                 'type': 'variable'
                             }
+            elif isinstance(case.pattern, ListPattern):
+                # Array destructuring: check literal elements, bind the rest.
+                from flow.parser import Literal as LiteralExpr, Variable as Var
+
+                arr_temp = f"__match_arr_{self.function_counter}"
+                self.symbol_table[arr_temp] = {
+                    'ssa_name': val_ssa, 'mlir_type': val_type, 'type': 'variable'
+                }
+
+                elem_type = None
+                for elem in case.pattern.elements:
+                    if isinstance(elem, LiteralExpr):
+                        elem_type = elem.type
+                        break
+
+                literal_conds: List[str] = []
+                for idx, elem in enumerate(case.pattern.elements):
+                    if isinstance(elem, LiteralExpr):
+                        lit_type = elem_type or elem.type
+                        elem_lit = elem
+                        if elem.type.name != "string" and lit_type is not None:
+                            elem_lit = LiteralExpr(elem.value, lit_type)
+                        access = ArrayAccess(Variable(arr_temp), Literal(idx))
+                        access_ssa, access_ops = self.generate_array_access(access)
+                        mlir_code.extend(access_ops)
+                        lit_ssa, lit_ops = self.generate_literal(elem_lit)
+                        mlir_code.extend(lit_ops)
+                        acc_ty = self.get_expression_type(access)
+                        c1 = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        if "f" in acc_ty:
+                            mlir_code.append(
+                                f"{self.indent()}{c1} = arith.cmpf oeq, {access_ssa}, {lit_ssa} : {acc_ty}"
+                            )
+                        else:
+                            mlir_code.append(
+                                f"{self.indent()}{c1} = arith.cmpi eq, {access_ssa}, {lit_ssa} : {acc_ty}"
+                            )
+                        literal_conds.append(c1)
+                    elif isinstance(elem, Var) and elem.name != "_":
+                        access = ArrayAccess(Variable(arr_temp), Literal(idx))
+                        access_ssa, access_ops = self.generate_array_access(access)
+                        binding_ops.extend(access_ops)
+                        self.symbol_table[elem.name] = {
+                            'ssa_name': access_ssa,
+                            'mlir_type': self.get_expression_type(access),
+                            'flow_type': elem_type or Type("i32"),
+                            'type': 'variable'
+                        }
+
+                if literal_conds:
+                    cond_acc = literal_conds[0]
+                    for ci in literal_conds[1:]:
+                        and_ssa = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        mlir_code.append(
+                            f"{self.indent()}{and_ssa} = arith.andi {cond_acc}, {ci} : i1"
+                        )
+                        cond_acc = and_ssa
+                    cond_ssa = cond_acc
+                else:
+                    cond_ssa = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    mlir_code.append(f"{self.indent()}{cond_ssa} = arith.constant 1 : i1")
+                if saved_locals is None:
+                    saved_locals = self.symbol_table.copy()
             else:
                 pattern_ssa, pattern_ops = self.generate_expression(case.pattern)
                 mlir_code.extend(pattern_ops)
@@ -1881,6 +1953,8 @@ class MLIRGenerator:
             return self.generate_field_access(expr)
         elif isinstance(expr, StructLiteral):
             return self.generate_struct_literal(expr)
+        elif isinstance(expr, RecordUpdate):
+            return self.generate_record_update(expr)
         else:
             return f"// Unsupported expression type: {type(expr).__name__}", []
 
@@ -2651,6 +2725,70 @@ class MLIRGenerator:
                 pass
         return None
     
+    def generate_record_update(self, update: RecordUpdate) -> tuple[str, List[str]]:
+        """Generate a record update: `Point { ..p, x: 3 }`.
+
+        Evaluates the base struct, then inserts the override fields via
+        `llvm.insertvalue`, yielding an updated copy.
+        """
+        # Determine the struct name from the base expression's Flow type.
+        struct_name = None
+        if isinstance(update.base, Variable):
+            var_info = self.symbol_table.get(update.base.name)
+            if var_info and 'flow_type' in var_info:
+                struct_name = var_info['flow_type'].name
+        if struct_name is None:
+            base_mlir = self.get_expression_type(update.base)
+            for name in self.struct_layouts:
+                if self._struct_llvm_type(name) == base_mlir:
+                    struct_name = name
+                    break
+
+        if not struct_name:
+            # Unknown struct type; fall back to evaluating just the base.
+            return self.generate_expression(update.base)
+
+        llvm_struct = self._struct_llvm_type(struct_name)
+        decl = self._get_struct_decl(struct_name)
+        if not llvm_struct:
+            return self.generate_expression(update.base)
+
+        base_ssa, ops = self.generate_expression(update.base)
+        agg_name = base_ssa
+        override_types = {}
+        if decl:
+            for field in decl.fields:
+                if field.name in {n for n, _ in update.updates}:
+                    override_types[field.name] = self.flow_type_to_mlir(field.type)
+
+        for name, value in update.updates:
+            val_ssa, val_ops = self.generate_expression(value)
+            ops.extend(val_ops)
+            field_type = override_types.get(name)
+            if field_type is None:
+                field_type = self.get_expression_type(value)
+            val_ssa, cast_ops = self._emit_cast(
+                val_ssa, self.get_expression_type(value), field_type
+            )
+            ops.extend(cast_ops)
+            idx = self._struct_field_index(struct_name, name)
+            next_agg = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{next_agg} = llvm.insertvalue {val_ssa}, {agg_name}[{idx}] : {llvm_struct}"
+            )
+            agg_name = next_agg
+        self._ssa_types[agg_name] = llvm_struct
+        return agg_name, ops
+
+    def _struct_field_index(self, struct_name: str, field_name: str) -> int:
+        decl = self._get_struct_decl(struct_name)
+        if decl:
+            for idx, field in enumerate(decl.fields):
+                if field.name == field_name:
+                    return idx
+        return 0
+
     def generate_struct_literal(self, struct_literal: StructLiteral) -> tuple[str, List[str]]:
         """Generate struct literal with actual memory allocation and field storage"""
         struct_name = struct_literal.struct_name
@@ -2933,6 +3071,12 @@ class MLIRGenerator:
         # Handle printf intrinsic specially (format string + varargs)
         if func_call.name == 'printf':
             return self.generate_printf_call(func_call)
+
+        # dbg intrinsic: `dbg x` == `x`; evaluate the argument and yield its
+        # value. (Runtime printing is emitted by the C backend; in MLIR the
+        # operand is simply evaluated.)
+        if func_call.name == '__flow_dbg' and len(func_call.arguments) == 1:
+            return self.generate_expression(func_call.arguments[0])
 
         ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
