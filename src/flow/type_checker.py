@@ -27,6 +27,7 @@ from .parser import (
     TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
     MatchStatement, StructPattern, OrPattern, ListPattern, DeferStatement, TryExpr, Lambda,
     VectorLiteral, ExpectStatement, RecordUpdate, BreakStatement, ContinueStatement,
+    SortExpr,
 )
 
 
@@ -1560,9 +1561,69 @@ class TypeChecker:
             else:
                 ret = body_type
             return SemanticType(TypeKind.FUNCTION, param_types=param_types, return_type=ret)
+        elif isinstance(expr, SortExpr):
+            return self._check_sort_expr(expr)
         else:
             # For now, treat unknown expressions as unknown type
             return SemanticType(TypeKind.UNKNOWN)
+
+    def _check_sort_expr(self, expr: SortExpr) -> SemanticType:
+        """Type-check declarative `|> sort` / `|> sortBy` expressions."""
+        arr_type = self._check_expression(expr.array)
+        if arr_type.kind != TypeKind.ARRAY:
+            self.errors.append(
+                f"Declarative sort requires a sized array, got {arr_type}"
+            )
+            return arr_type
+        if arr_type.size is None:
+            self.errors.append(
+                "Declarative sort requires a fixed-size array (array<T, N>)"
+            )
+        elem = arr_type.element_type
+        if elem is None:
+            self.errors.append("Declarative sort could not determine element type")
+            return arr_type
+
+        numeric_ok = {
+            TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64,
+            TypeKind.U8, TypeKind.U16, TypeKind.U32, TypeKind.U64,
+            TypeKind.F32, TypeKind.F64, TypeKind.BOOL,
+        }
+        if expr.keys:
+            if elem.kind != TypeKind.STRUCT or not elem.name:
+                self.errors.append(
+                    "sort by .field requires an array of structs"
+                )
+                return arr_type
+            struct_def = self.struct_types.get(elem.name)
+            if not struct_def:
+                if self.strict:
+                    self.errors.append(f"Unknown struct type '{elem.name}' in sort")
+                return arr_type
+            field_map = {f.name: f for f in struct_def.fields}
+            for key in expr.keys:
+                if not key.field or key.field not in field_map:
+                    self.errors.append(
+                        f"Sort key '.{key.field}' is not a field of {elem.name}"
+                    )
+                    continue
+                ft = self._parse_type(field_map[key.field].type)
+                if ft.kind not in numeric_ok and ft.kind != TypeKind.STRING:
+                    self.errors.append(
+                        f"Sort key '.{key.field}' has unsupported type {ft} "
+                        "(need numeric or string)"
+                    )
+        else:
+            if elem.kind == TypeKind.STRUCT:
+                self.errors.append(
+                    "Sorting an array of structs requires `sort by .field` "
+                    "(or `sortBy [.field, ...]`)"
+                )
+            elif elem.kind not in numeric_ok and elem.kind != TypeKind.STRING:
+                self.errors.append(
+                    f"Cannot sort array of {elem} (need numeric or string elements)"
+                )
+        return arr_type
 
     def _can_cast(self, actual: SemanticType, target: SemanticType) -> bool:
         if actual == target:
