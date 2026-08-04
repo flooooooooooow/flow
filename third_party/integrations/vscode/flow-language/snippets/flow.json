@@ -1,0 +1,105 @@
+{
+  "dynamics namespace block": {
+    "prefix": ["dynamics", "dyn-block"],
+    "body": [
+      "dynamics {",
+      "    dsys ${1:plant} {",
+      "        discrete",
+      "        dt ${2:0.1}",
+      "        n ${3:2} m ${4:1} p ${5:1}",
+      "        A ${6:1.0 0.1 0.0 1.0}",
+      "        B ${7:0.0 0.1}",
+      "        C ${8:1.0 0.0}",
+      "    }",
+      "    horizon ${9:rollout} finite ${10:50}",
+      "    sense on ${1:plant} {",
+      "        controllable -> ${11:plant_ok}",
+      "        spectral -> ${12:rho_open}",
+      "    }",
+      "    $0",
+      "}"
+    ],
+    "description": "Namespaced dynamics DSL block (dsys + horizon + sense)"
+  },
+  "dyn.dsys": {
+    "prefix": ["dyn.dsys", "dsys"],
+    "body": [
+      "dyn.dsys ${1:plant} {",
+      "    ${2|discrete,continuous|}",
+      "    dt ${3:0.1}",
+      "    n ${4:2} m ${5:1} p ${6:1}",
+      "    A ${7:1.0 0.1 0.0 1.0}",
+      "    B ${8:0.0 0.1}",
+      "    C ${9:1.0 0.0}",
+      "}"
+    ],
+    "description": "Declare a linear plant (dynamics DSL)"
+  },
+  "dyn.horizon": {
+    "prefix": ["dyn.horizon", "horizon"],
+    "body": "dyn.horizon ${1:rollout} finite ${2:50}",
+    "description": "Finite analysis horizon"
+  },
+  "dyn.sense": {
+    "prefix": ["dyn.sense", "sense"],
+    "body": [
+      "dyn.sense on ${1:plant} {",
+      "    controllable -> ${2:plant_ok}",
+      "    spectral -> ${3:rho_open}",
+      "    $0",
+      "}"
+    ],
+    "description": "Open-loop sense bindings"
+  },
+  "dyn.ga evolve": {
+    "prefix": ["dyn.ga", "ga evolve"],
+    "body": [
+      "dyn.ga evolve on ${1:plant} over ${2:rollout} -> ${3:k1} ${4:k2} {",
+      "    population ${5:12}",
+      "    generations ${6:30}",
+      "    mutation ${7:0.3}",
+      "}"
+    ],
+    "description": "GA feedback gain search"
+  },
+  "dyn.closed": {
+    "prefix": ["dyn.closed", "closed"],
+    "body": [
+      "dyn.closed ${1:plant} with ${2:k1} ${3:k2} {",
+      "    spectral -> ${4:rho_cl}",
+      "    energy over ${5:rollout} -> ${6:E_cl}",
+      "    stable -> ${7:stable_cl}",
+      "}"
+    ],
+    "description": "Closed-loop certification"
+  },
+  "dyn.analyze": {
+    "prefix": ["dyn.analyze", "analyze"],
+    "body": [
+      "dyn.analyze ${1:plant} ga ${2:k1} ${3:k2} over ${4:rollout} -> ${5:report} {",
+      "    full",
+      "}"
+    ],
+    "description": "One-shot GAAnalysisReport pipeline"
+  },
+  "sort": {
+    "prefix": ["sort", "|> sort"],
+    "body": "${1:xs} |> sort",
+    "description": "Declarative ascending sort (in-place)"
+  },
+  "sortBy multi-key": {
+    "prefix": ["sortBy", "sort by"],
+    "body": "${1:xs} |> sortBy [${2|asc,desc|} .${3:score}, ${4|asc,desc|} .${5:name}]",
+    "description": "Declarative multi-key ordering"
+  },
+  "sort by field": {
+    "prefix": ["sort by field"],
+    "body": "${1:xs} |> sort by .${2:score}",
+    "description": "Sort struct array by one field"
+  },
+  "sort descending": {
+    "prefix": ["sort descending"],
+    "body": "${1:xs} |> sort descending",
+    "description": "Declarative descending sort"
+  }
+}

@@ -58,6 +58,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 | Wiki live at `/flow/` + tutorials | ✅ | marked wiki, 130+ interactive lessons, proof catalog, deploy via `scripts/deploy_wiki.py` |
 | Manual memory stdlib (real heap) | ✅ | `lib/stdlib/memory.flow` — libc malloc/calloc/realloc/free + arena; docs + tutorials |
 | Fuzz parse crashes (array size / nesting) | ✅ | Depth limit + `parse_array_size()` — see `tests/fuzz/test_crash_regressions.py` |
+| Declarative ordering Phase 1 | ✅ | `xs \|\> sort` / `sortBy [asc .f, …]` — [docs/language/ordering.md](docs/language/ordering.md); example `examples/basics/declarative_sort.flow` |
 
 ### 📅 Short Term (This Month)
 
