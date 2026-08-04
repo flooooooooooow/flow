@@ -17,13 +17,8 @@ make -C demos/vulkan_triangle run
 You can also use the FLOW CLI:
 
 ```bash
-./flow vulkan-demo
-```
-
-Basic demo alias:
-
-```bash
-./flow vulkan-demo-basic
+./flow demo vulkan
+# compat aliases: ./flow vulkan-demo  |  ./flow vulkan-demo-basic
 ```
 
 `run.sh` sets `VK_ICD_FILENAMES` and `VK_LAYER_PATH` for Homebrew installs.
