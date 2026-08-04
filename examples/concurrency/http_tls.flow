@@ -1,0 +1,27 @@
+# Native HTTPS accept-loop (OpenSSL, ephemeral self-signed cert).
+# Run: ./flow run examples/concurrency/http_tls.flow
+
+extern {
+    function flow_tls_available() -> i32
+    function flow_https_selftest(port: i32) -> i32
+}
+
+function main() -> i32 {
+    println("http TLS accept-loop demo")
+    let avail: i32 = flow_tls_available()
+    print("  openssl -> ")
+    println(avail)
+    if avail == 0 {
+        println("SKIP (OpenSSL not linked)")
+        return 0
+    }
+    let r: i32 = flow_https_selftest(18785)
+    print("  https selftest -> ")
+    println(r)
+    if r != 1 {
+        println("FAIL")
+        return 1
+    }
+    println("OK")
+    return 0
+}
