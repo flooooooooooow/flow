@@ -57,14 +57,14 @@ extern {
 
 1. Read ROADMAP.md for current priorities
 2. Read CONTRIBUTING.md for collaboration model
-3. Check Questions.md for unresolved decisions
+3. Check docs/project/Questions.md for unresolved decisions
 4. Run `./flow test` to verify baseline
 
 ## After Making Changes
 
 1. Verify: `./flow run <file>` works
 2. Update docs if behavior changed
-3. Add to Questions.md if decisions needed
+3. Add to docs/project/Questions.md if decisions needed
 4. Update ROADMAP.md if priorities shift
 
 ## Code Style
@@ -94,7 +94,7 @@ extern {
 ## AI Behavior Guidelines
 
 DO:
-- Check Questions.md before assuming
+- Check docs/project/Questions.md before assuming
 - Verify code compiles before committing
 - Update ROADMAP.md after completing tasks
 - Use existing patterns from codebase
@@ -109,7 +109,7 @@ DON'T:
 
 ## Questions Protocol
 
-When uncertain, add to Questions.md:
+When uncertain, add to docs/project/Questions.md:
 
 ```markdown
 ## [Date] Question Title

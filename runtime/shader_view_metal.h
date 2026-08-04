@@ -8,7 +8,12 @@
 extern "C" {
 #endif
 
-/* Single fragment entry. max_frames <= 0 runs until close/Esc. */
+/* Layout modes for multi-shader viewing */
+enum {
+    FLOW_SHADER_LAYOUT_CYCLE = 0, /* one shader at a time (←/→) */
+    FLOW_SHADER_LAYOUT_GRID  = 1  /* all shaders tiled in a grid */
+};
+
 int flow_shader_show(
     const char *metal_source,
     const char *fragment_fn,
@@ -17,7 +22,6 @@ int flow_shader_show(
     int32_t max_frames
 );
 
-/* Gallery: cycle fragment entries with Left/Right/Space. */
 int flow_shader_show_gallery(
     const char *metal_source,
     const char **fragment_fns,
@@ -25,6 +29,17 @@ int flow_shader_show_gallery(
     int32_t width,
     int32_t height,
     int32_t max_frames
+);
+
+/* Like show_gallery, with explicit layout (CYCLE or GRID). */
+int flow_shader_show_gallery_ex(
+    const char *metal_source,
+    const char **fragment_fns,
+    int32_t fragment_count,
+    int32_t width,
+    int32_t height,
+    int32_t max_frames,
+    int32_t layout
 );
 
 int flow_shader_show_file(
@@ -35,13 +50,21 @@ int flow_shader_show_file(
     int32_t max_frames
 );
 
-/* Load metal + sibling .entries list (one entry name per line). */
 int flow_shader_show_gallery_file(
     const char *metal_path,
     const char *entries_path,
     int32_t width,
     int32_t height,
     int32_t max_frames
+);
+
+int flow_shader_show_gallery_file_ex(
+    const char *metal_path,
+    const char *entries_path,
+    int32_t width,
+    int32_t height,
+    int32_t max_frames,
+    int32_t layout
 );
 
 #ifdef __cplusplus

@@ -1,0 +1,150 @@
+# @module flowc.ast
+# @means  Tagged AST arena for the Flow-in-Flow parser (index-based children).
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+export const AST_NONE: i32 = -1
+
+export const AST_PROGRAM: i32 = 1
+export const AST_FN: i32 = 2
+export const AST_PARAM: i32 = 3
+export const AST_BLOCK: i32 = 4
+export const AST_LET: i32 = 5
+export const AST_RETURN: i32 = 6
+export const AST_IF: i32 = 7
+export const AST_WHILE: i32 = 8
+export const AST_BINOP: i32 = 9
+export const AST_UNARY: i32 = 10
+export const AST_CALL: i32 = 11
+export const AST_IDENT: i32 = 12
+export const AST_INT: i32 = 13
+export const AST_TYPE: i32 = 14
+export const AST_ASSIGN: i32 = 15
+export const AST_EXPR_STMT: i32 = 16
+export const AST_BOOL: i32 = 17
+export const AST_ERROR: i32 = 18
+export const AST_FOR: i32 = 19
+export const AST_STRUCT: i32 = 20
+export const AST_FIELD: i32 = 21
+export const AST_EXTERN: i32 = 22
+export const AST_IMPORT: i32 = 23
+export const AST_EXPORT: i32 = 24
+export const AST_FIELD_ACCESS: i32 = 25
+export const AST_INDEX: i32 = 26
+export const AST_STRUCT_LIT: i32 = 27
+export const AST_BREAK: i32 = 28
+export const AST_CONTINUE: i32 = 29
+export const AST_STRING: i32 = 30
+export const AST_CONST: i32 = 31
+export const AST_CAST: i32 = 32
+export const AST_ARRAY_LIT: i32 = 33
+
+# a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
+# name_start/name_end = identifier/type span into source.
+# AST_TYPE: plain name, or ptr/array — a = inner type, ival = array size (0 if none).
+# AST_FIELD_ACCESS: a = base expr, name_* = field; AST_INDEX: a = base, b = index.
+# AST_STRUCT_LIT: name_* = type, a = AST_FIELD chain (a child = field expr).
+# AST_CONST: name_* = name, a = type (AST_TYPE), b = init expr, ival = 1 if export else 0.
+# AST_CAST: a = expr, b = target type (AST_TYPE).
+# AST_ASSIGN: a = lhs expr (IDENT / FIELD_ACCESS / INDEX), b = rhs expr.
+# AST_ARRAY_LIT: a = element expr chain (via next).
+export struct AstNode {
+    kind: i32,
+    start: i32,
+    end: i32,
+    a: i32,
+    b: i32,
+    c: i32,
+    next: i32,
+    ival: i32,
+    name_start: i32,
+    name_end: i32
+}
+
+export struct AstArena {
+    nodes: ptr<AstNode>,
+    len: i32,
+    cap: i32
+}
+
+export function flowc_ast_new(cap: i32) -> AstArena {
+    let size: i64 = (cap as i64) * 40
+    let raw: ptr<u8> = malloc(size)
+    let nodes: ptr<AstNode> = raw
+    let mut i: i32 = 0
+    while i < cap {
+        nodes[i].kind = 0
+        nodes[i].start = 0
+        nodes[i].end = 0
+        nodes[i].a = AST_NONE
+        nodes[i].b = AST_NONE
+        nodes[i].c = AST_NONE
+        nodes[i].next = AST_NONE
+        nodes[i].ival = 0
+        nodes[i].name_start = 0
+        nodes[i].name_end = 0
+        i = i + 1
+    }
+    return AstArena { nodes: nodes, len: 0, cap: cap }
+}
+
+export function flowc_ast_free(arena: AstArena) -> void {
+    let raw: ptr<u8> = arena.nodes
+    free(raw)
+}
+
+export function flowc_ast_alloc(arena: ptr<AstArena>, kind: i32, start: i32, end: i32) -> i32 {
+    if arena[0].len >= arena[0].cap {
+        return AST_NONE
+    }
+    let id: i32 = arena[0].len
+    arena[0].len = id + 1
+    arena[0].nodes[id].kind = kind
+    arena[0].nodes[id].start = start
+    arena[0].nodes[id].end = end
+    arena[0].nodes[id].a = AST_NONE
+    arena[0].nodes[id].b = AST_NONE
+    arena[0].nodes[id].c = AST_NONE
+    arena[0].nodes[id].next = AST_NONE
+    arena[0].nodes[id].ival = 0
+    arena[0].nodes[id].name_start = 0
+    arena[0].nodes[id].name_end = 0
+    return id
+}
+
+export function flowc_ast_count_kind(arena: AstArena, kind: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == kind {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+export function flowc_ast_chain_push(arena: ptr<AstArena>, head: i32, node: i32) -> i32 {
+    if head == AST_NONE {
+        return node
+    }
+    let mut cur: i32 = head
+    while arena[0].nodes[cur].next != AST_NONE {
+        cur = arena[0].nodes[cur].next
+    }
+    arena[0].nodes[cur].next = node
+    return head
+}
+
+export function flowc_ast_chain_len(arena: AstArena, head: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut cur: i32 = head
+    while cur != AST_NONE {
+        n = n + 1
+        cur = arena.nodes[cur].next
+    }
+    return n
+}

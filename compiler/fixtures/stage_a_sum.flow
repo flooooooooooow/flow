@@ -1,0 +1,12 @@
+# Stage-A cgen round-trip fixture: sum 0..9 == 45.
+# Pure functions only (no struct/extern) so emitted C is a runnable binary.
+
+function main() -> i32 {
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i < 10 {
+        s = s + i
+        i = i + 1
+    }
+    return s
+}

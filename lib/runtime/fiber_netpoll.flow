@@ -1,0 +1,11 @@
+# Flow runtime: fiber-parked netpoll demo harness.
+# kqueue/epoll + fiber park stay in runtime/flow_netpoll_fiber.c.
+
+extern {
+    function flow_rt_demo_fiber_netpoll_pipe() -> i32
+}
+
+@flow_api
+export function flow_demo_fiber_netpoll_pipe() -> i32 {
+    return flow_rt_demo_fiber_netpoll_pipe()
+}

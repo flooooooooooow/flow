@@ -625,6 +625,16 @@ class MLIRGenerator:
         return_type = self.flow_type_to_mlir(func.return_type)
         
         func_signature = f"func.func @{func.name}({', '.join([f'%arg{i}: {param_types[i]}' for i in range(len(param_types))])}) -> {return_type}"
+        attrs = getattr(func, "attributes", None) or []
+        attr_bits = []
+        # Honor parsed @inline / @noinline / @always_inline for the MLIR inline pass.
+        normalized = {a.split("(")[0] for a in attrs}
+        if "noinline" in normalized:
+            attr_bits.append("noinline")
+        elif "always_inline" in normalized or "inline" in normalized:
+            attr_bits.append("always_inline")
+        if attr_bits:
+            func_signature += " attributes {" + ", ".join(attr_bits) + "}"
         mlir_code.append(f"{self.indent()}{func_signature} {{")
         
         self.indent_level += 1
@@ -687,10 +697,17 @@ class MLIRGenerator:
     
     def generate_block(self, block: Block) -> str:
         mlir_code = []
-        # New lexical scope
-        self._symbol_stack.append(self.symbol_table)
-        self.symbol_table = self.symbol_table.copy()
-        
+        # New lexical scope (shallow copy). Locals declared here stay local;
+        # SSA updates to names that already existed in the parent must propagate
+        # back — otherwise nested while/for loop-carried values are lost when
+        # generate_while replaces symbol_table entries with new dicts.
+        parent_symbols = self.symbol_table
+        self._symbol_stack.append(parent_symbols)
+        self.symbol_table = parent_symbols.copy()
+        declared_here = {
+            stmt.name for stmt in block.statements if isinstance(stmt, VarDecl)
+        }
+
         for stmt in block.statements:
             stmt_mlir = self.generate_statement(stmt)
             if stmt_mlir.strip():
@@ -698,8 +715,12 @@ class MLIRGenerator:
                 # If this is a return statement, it should be the last one
                 if isinstance(stmt, ReturnStatement):
                     break
-        # Restore previous scope
+
+        child_symbols = self.symbol_table
         self.symbol_table = self._symbol_stack.pop()
+        for name, info in child_symbols.items():
+            if name in parent_symbols and name not in declared_here:
+                parent_symbols[name] = info
         return "\n".join(mlir_code)
 
     def _block_has_return(self, block: Block) -> bool:
@@ -713,6 +734,17 @@ class MLIRGenerator:
                     if self._block_has_return(elif_block):
                         return True
                 if stmt.else_block and self._block_has_return(stmt.else_block):
+                    return True
+            if isinstance(stmt, MatchStatement):
+                if all(self._block_has_return(c.body) for c in stmt.cases) and (
+                    stmt.default_case is not None
+                    and self._block_has_return(stmt.default_case)
+                ):
+                    return True
+                # Partial returns still count for "has a return somewhere"
+                if any(self._block_has_return(c.body) for c in stmt.cases):
+                    return True
+                if stmt.default_case and self._block_has_return(stmt.default_case):
                     return True
             if isinstance(stmt, WhileStatement):
                 if self._block_has_return(stmt.body):
@@ -734,6 +766,8 @@ class MLIRGenerator:
             return self.generate_assignment(stmt)
         elif isinstance(stmt, IfStatement):
             return self.generate_if(stmt)
+        elif isinstance(stmt, MatchStatement):
+            return self.generate_match(stmt)
         elif isinstance(stmt, WhileStatement):
             return self.generate_while(stmt)
         elif isinstance(stmt, ForStatement):
@@ -925,14 +959,19 @@ class MLIRGenerator:
                     final_index = index_cast
 
                 elem_type = 'f32'
+                memref_ty = f'memref<?x{elem_type}>'
                 if isinstance(access.array, Variable) and access.array.name in self.symbol_table:
                     arr_type = self.symbol_table[access.array.name].get('mlir_type', '')
-                    if 'i32' in arr_type and 'memref' in arr_type:
-                        elem_type = 'i32'
-                    elif 'f64' in arr_type:
-                        elem_type = 'f64'
+                    if arr_type.startswith('memref<'):
+                        memref_ty = arr_type
+                        if 'i32' in arr_type:
+                            elem_type = 'i32'
+                        elif 'f64' in arr_type:
+                            elem_type = 'f64'
+                        elif 'f32' in arr_type:
+                            elem_type = 'f32'
 
-                ops.append(f"{self.indent()}memref.store {value_ssa}, {array_ssa}[{final_index}] : memref<?x{elem_type}>")
+                ops.append(f"{self.indent()}memref.store {value_ssa}, {array_ssa}[{final_index}] : {memref_ty}")
                 return "\n".join(ops)
             elif isinstance(access, FieldAccess):
                 field_store = self._generate_field_store(access, assignment.value, value_ssa, ops)
@@ -987,45 +1026,178 @@ class MLIRGenerator:
         else:
             return f"{self.indent()}// Assignment to undefined variable: {assignment.target}"
     
-    def _generate_field_store(self, access: FieldAccess, value_expr, value_ssa: str, ops: List[str]) -> Optional[str]:
-        """Lower obj.field = value via GEP + scalar store.
+    def _array_elem_flow_type(self, access: ArrayAccess):
+        """Flow element type for arr[i], including ptr<T> / array<T,N> bases."""
+        arr = access.array
+        if isinstance(arr, Variable) and arr.name in self.symbol_table:
+            flow_type = self.symbol_table[arr.name].get('flow_type')
+            if flow_type is None:
+                return None
+            if getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr'):
+                return self._pointee_struct_type(flow_type)
+            if getattr(flow_type, 'is_array', False) or flow_type.name.startswith('array'):
+                return getattr(flow_type, 'element_type', None)
+            return None
+        if isinstance(arr, FieldAccess):
+            field_type = self._determine_field_type(arr)
+            if field_type is None:
+                return None
+            if getattr(field_type, 'is_pointer', False) or field_type.name.startswith('ptr'):
+                return self._pointee_struct_type(field_type)
+            if getattr(field_type, 'is_array', False) or field_type.name.startswith('array'):
+                return getattr(field_type, 'element_type', None)
+        if isinstance(arr, ArrayAccess):
+            # Nested index: elem type of outer is an array/pointer whose element we want.
+            outer_elem = self._array_elem_flow_type(arr)
+            if outer_elem is None:
+                return None
+            if getattr(outer_elem, 'is_pointer', False) or outer_elem.name.startswith('ptr'):
+                return self._pointee_struct_type(outer_elem)
+            if getattr(outer_elem, 'is_array', False) or outer_elem.name.startswith('array'):
+                return getattr(outer_elem, 'element_type', None)
+        return None
 
-        Handles pointer-to-struct objects (self parameters) and alloca-backed
-        struct locals. Returns None when the target shape is unsupported.
+    def _pointer_base_ssa(self, expr: Expression) -> Optional[tuple]:
+        """(ptr_ssa, ops) for an expression that is already an !llvm.ptr value."""
+        if isinstance(expr, Variable) and expr.name in self.symbol_table:
+            var_info = self.symbol_table[expr.name]
+            flow_type = var_info.get('flow_type')
+            mlir_type = var_info.get('mlir_type', '')
+            if flow_type is not None and (
+                getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr')
+            ):
+                return var_info.get('ssa_name'), []
+            # Fixed array<Struct,N> lowers to !llvm.ptr (first-element address).
+            if mlir_type == '!llvm.ptr' and flow_type is not None and (
+                getattr(flow_type, 'is_array', False) or flow_type.name.startswith('array')
+            ):
+                return var_info.get('alloca_ptr') or var_info.get('ssa_name'), []
+        if isinstance(expr, FieldAccess):
+            field_type = self._determine_field_type(expr)
+            if field_type is not None and (
+                getattr(field_type, 'is_pointer', False) or field_type.name.startswith('ptr')
+            ):
+                # Load the pointer field value.
+                field_ssa, field_ops = self.generate_field_access(expr)
+                return field_ssa, field_ops
+        return None
+
+    def _lvalue_address(self, expr: Expression) -> Optional[tuple]:
+        """Return (ptr_ssa, pointee_flow_type, ops) for an addressable lvalue.
+
+        Supports pointer-to-struct variables, alloca-backed struct locals,
+        ptr[i] element addresses, and nested field addresses (a.b.c / p[i].f.x).
         """
-        base_ptr = None
-        struct_name = None
-        if isinstance(access.object, Variable):
-            var_info = self.symbol_table.get(access.object.name)
+        if isinstance(expr, Variable):
+            var_info = self.symbol_table.get(expr.name)
             if not var_info:
                 return None
             flow_type = var_info.get('flow_type')
-            if flow_type is not None and (
-                getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr_')
-            ):
-                base_ptr = var_info.get('ssa_name')
-                pointee = self._pointee_struct_type(flow_type)
-                struct_name = pointee.name if pointee is not None else None
-            elif var_info.get('alloca_ptr'):
-                base_ptr = var_info['alloca_ptr']
-                struct_name = flow_type.name if flow_type is not None else None
-        if not base_ptr or not struct_name:
+            if var_info.get('alloca_ptr') and flow_type is not None:
+                return var_info['alloca_ptr'], flow_type, []
             return None
 
+        if isinstance(expr, ArrayAccess):
+            elem_flow = self._array_elem_flow_type(expr)
+            if elem_flow is None:
+                return None
+            base = self._pointer_base_ssa(expr.array)
+            if base is None:
+                # Array field / nested: take address of the array-bearing lvalue.
+                arr_addr = self._lvalue_address(expr.array)
+                if arr_addr is None:
+                    return None
+                arr_ptr, _arr_ty, arr_ops = arr_addr
+                ops = list(arr_ops)
+                index_ssa, index_ops = self.generate_expression(expr.index)
+                ops.extend(index_ops)
+                index_type = self._ssa_types.get(index_ssa, 'i32')
+                elem_mlir = self.flow_type_to_mlir(elem_flow)
+                gep, gep_ops = self._emit_ptr_index_gep(arr_ptr, index_ssa, index_type, elem_mlir)
+                ops.extend(gep_ops)
+                return gep, elem_flow, ops
+            ptr_ssa, base_ops = base
+            ops = list(base_ops)
+            index_ssa, index_ops = self.generate_expression(expr.index)
+            ops.extend(index_ops)
+            index_type = self._ssa_types.get(index_ssa, 'i32')
+            elem_mlir = self.flow_type_to_mlir(elem_flow)
+            gep, gep_ops = self._emit_ptr_index_gep(ptr_ssa, index_ssa, index_type, elem_mlir)
+            ops.extend(gep_ops)
+            return gep, elem_flow, ops
+
+        if isinstance(expr, FieldAccess):
+            # Pointer-to-struct object: the object SSA *is* the base pointer.
+            if isinstance(expr.object, Variable):
+                var_info = self.symbol_table.get(expr.object.name)
+                if var_info:
+                    flow_type = var_info.get('flow_type')
+                    if flow_type is not None and (
+                        getattr(flow_type, 'is_pointer', False)
+                        or flow_type.name.startswith('ptr')
+                    ):
+                        pointee = self._pointee_struct_type(flow_type)
+                        if pointee is None:
+                            return None
+                        base_ptr = var_info.get('ssa_name')
+                        if not base_ptr:
+                            return None
+                        return self._gep_struct_field(base_ptr, pointee.name, expr.field, [])
+
+            obj_addr = self._lvalue_address(expr.object)
+            if obj_addr is None:
+                return None
+            base_ptr, obj_flow, obj_ops = obj_addr
+            obj_flow = self._pointee_struct_type(obj_flow) or obj_flow
+            if obj_flow is None:
+                return None
+            return self._gep_struct_field(base_ptr, obj_flow.name, expr.field, list(obj_ops))
+
+        return None
+
+    def _gep_struct_field(
+        self, base_ptr: str, struct_name: str, field_name: str, ops: List[str]
+    ) -> Optional[tuple]:
+        """GEP base_ptr → field; return (field_ptr, field_flow_type, ops)."""
         llvm_struct = self._struct_llvm_type(struct_name)
         decl = self._get_struct_decl(struct_name)
         if not llvm_struct or not decl:
             return None
         field_names = [f.name for f in decl.fields]
-        if access.field not in field_names:
+        if field_name not in field_names:
             return None
-        idx = field_names.index(access.field)
+        idx = field_names.index(field_name)
+        field_flow = None
+        if struct_name in self.struct_layouts and field_name in self.struct_layouts[struct_name]:
+            field_flow = self.struct_layouts[struct_name][field_name]['type']
+        else:
+            for f in decl.fields:
+                if f.name == field_name:
+                    field_flow = f.type
+                    break
+        if field_flow is None:
+            return None
+        gep = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(
+            f"{self.indent()}{gep} = llvm.getelementptr {base_ptr}[0, {idx}] "
+            f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
+        )
+        self._ssa_types[gep] = '!llvm.ptr'
+        return gep, field_flow, ops
 
-        field_flow = self._determine_field_type(access)
+    def _generate_field_store(self, access: FieldAccess, value_expr, value_ssa: str, ops: List[str]) -> Optional[str]:
+        """Lower obj.field = value via GEP + store.
+
+        Handles pointer-to-struct objects, alloca-backed locals, ptr[i].field,
+        and nested chains such as bodies[0].pos.x.
+        """
+        addr = self._lvalue_address(access)
+        if addr is None:
+            return None
+        field_ptr, field_flow, addr_ops = addr
+        ops.extend(addr_ops)
         field_ty = self.flow_type_to_mlir(field_flow) if field_flow else None
-        if not field_ty:
-            field_types = self._struct_field_types(llvm_struct)
-            field_ty = field_types[idx] if idx < len(field_types) else None
         if not field_ty:
             return None
 
@@ -1034,14 +1206,7 @@ class MLIRGenerator:
             value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, field_ty)
             ops.extend(cast_ops)
 
-        gep = f"%{self.function_counter}"
-        self.function_counter += 1
-        ops.append(
-            f"{self.indent()}{gep} = llvm.getelementptr {base_ptr}[0, {idx}] "
-            f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
-        )
-        self._ssa_types[gep] = '!llvm.ptr'
-        ops.append(f"{self.indent()}llvm.store {value_ssa}, {gep} : {field_ty}, !llvm.ptr")
+        ops.append(f"{self.indent()}llvm.store {value_ssa}, {field_ptr} : {field_ty}, !llvm.ptr")
         return "\n".join(ops)
 
     def generate_if(self, if_stmt: IfStatement) -> str:
@@ -1074,6 +1239,15 @@ class MLIRGenerator:
                     for name in self._assigned_locals(stmt.else_block):
                         if name not in assigned:
                             assigned.append(name)
+            elif isinstance(stmt, WhileStatement):
+                # Nested loops may assign outer locals (loop-carried for parent).
+                for name in self._assigned_locals(stmt.body):
+                    if name not in assigned:
+                        assigned.append(name)
+            elif isinstance(stmt, ForStatement):
+                for name in self._assigned_locals(stmt.body):
+                    if name not in assigned:
+                        assigned.append(name)
         return assigned
 
     def _generate_scf_if_with_yield(
@@ -1301,6 +1475,12 @@ class MLIRGenerator:
         
         return "\n".join(mlir_code)
     
+    def _cf_successor_operands(self, ssa_names: List[str], mlir_types: List[str]) -> str:
+        """CF dialect successor operands: (%a, %b : i32, i32) — types once after all values."""
+        if not ssa_names:
+            return ""
+        return f"({', '.join(ssa_names)} : {', '.join(mlir_types)})"
+
     def generate_while(self, while_stmt: WhileStatement) -> str:
         mlir_code = []
         
@@ -1313,21 +1493,19 @@ class MLIRGenerator:
         end_block = self._new_block_label()
         
         # Prepare initial values for loop-carried variables
-        init_args = []
+        init_ssas: List[str] = []
+        init_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                init_args.append(var_info['ssa_name'])
+                init_ssas.append(var_info['ssa_name'])
+                init_types.append(var_info['mlir_type'])
         
         # Jump to header with initial values
-        if init_args:
-            # Add types to the arguments
-            init_args_with_types = []
-            for i, var_name in enumerate(loop_carried_vars):
-                if var_name in self.symbol_table:
-                    var_info = self.symbol_table[var_name]
-                    init_args_with_types.append(f"{init_args[i]} : {var_info['mlir_type']}")
-            mlir_code.append(f"{self.indent()}cf.br ^{header_block}({', '.join(init_args_with_types)})")
+        if init_ssas:
+            mlir_code.append(
+                f"{self.indent()}cf.br ^{header_block}{self._cf_successor_operands(init_ssas, init_types)}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
         
@@ -1356,17 +1534,20 @@ class MLIRGenerator:
         if condition_ops:
             mlir_code.append("\n".join(condition_ops))
         
-        # Branch based on condition
-        body_args = []
-        body_args_with_types = []
+        # Branch based on condition — both successors need loop-carried args
+        header_ssas: List[str] = []
+        header_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                body_args.append(self.symbol_table[var_name]['ssa_name'])
-                body_args_with_types.append(f"{self.symbol_table[var_name]['ssa_name']} : {var_info['mlir_type']}")
+                header_ssas.append(var_info['ssa_name'])
+                header_types.append(var_info['mlir_type'])
         
-        if body_args:
-            mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}({', '.join(body_args_with_types)}), ^{end_block}")
+        if header_ssas:
+            succ = self._cf_successor_operands(header_ssas, header_types)
+            mlir_code.append(
+                f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}{succ}, ^{end_block}{succ}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}, ^{end_block}")
         
@@ -1397,17 +1578,19 @@ class MLIRGenerator:
             mlir_code.append(body_mlir)
         
         # Prepare final values for next iteration
-        final_args = []
-        final_args_with_types = []
+        final_ssas: List[str] = []
+        final_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                final_args.append(self.symbol_table[var_name]['ssa_name'])
-                final_args_with_types.append(f"{self.symbol_table[var_name]['ssa_name']} : {var_info['mlir_type']}")
+                final_ssas.append(var_info['ssa_name'])
+                final_types.append(var_info['mlir_type'])
         
         # Branch back to header with updated values
-        if final_args:
-            mlir_code.append(f"{self.indent()}cf.br ^{header_block}({', '.join(final_args_with_types)})")
+        if final_ssas:
+            mlir_code.append(
+                f"{self.indent()}cf.br ^{header_block}{self._cf_successor_operands(final_ssas, final_types)}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
         
@@ -1452,8 +1635,280 @@ class MLIRGenerator:
                 assigned.update(self._collect_assigned_vars(stmt.body))
         return assigned
     
+    def _expr_is_loop_index(self, expr: Expression, iv_name: str) -> bool:
+        return isinstance(expr, Variable) and expr.name == iv_name
+
+    def _memref_scalar_base(self, expr: Expression, elem: str) -> Optional[str]:
+        """Return symbol name when expr is a memref/pointer array of `elem`."""
+        if not isinstance(expr, Variable) or expr.name not in self.symbol_table:
+            return None
+        info = self.symbol_table[expr.name]
+        mlir_ty = info.get("mlir_type", "")
+        flow_ty = info.get("flow_type")
+        if mlir_ty == f"memref<?x{elem}" or (
+            isinstance(mlir_ty, str) and mlir_ty.startswith("memref<") and f"x{elem}>" in mlir_ty
+        ):
+            return expr.name
+        if flow_ty is not None:
+            name = getattr(flow_ty, "name", "")
+            if name in (f"memref_{elem}", f"ptr_{elem}") or (
+                getattr(flow_ty, "is_pointer", False)
+                and getattr(flow_ty, "element_type", None) is not None
+                and flow_ty.element_type.name == elem
+            ):
+                return expr.name
+        return None
+
+    def _vectorizable_scalar_rhs(
+        self, expr: Expression, iv_name: str, allowed_bases: set, elem: str
+    ) -> bool:
+        """True when expr is loop-invariant or elem loads of allowed_bases[iv]."""
+        if isinstance(expr, Literal):
+            return True
+        if isinstance(expr, Variable):
+            return expr.name != iv_name  # invariant scalar / address
+        if isinstance(expr, ArrayAccess):
+            base = self._memref_scalar_base(expr.array, elem)
+            if base is None or base not in allowed_bases:
+                return False
+            return self._expr_is_loop_index(expr.index, iv_name)
+        if isinstance(expr, BinaryOperation):
+            ops_ok = ("+", "-", "*", "/") if elem.startswith("f") else ("+", "-", "*")
+            if expr.operator not in ops_ok:
+                return False
+            return (
+                self._vectorizable_scalar_rhs(expr.left, iv_name, allowed_bases, elem)
+                and self._vectorizable_scalar_rhs(expr.right, iv_name, allowed_bases, elem)
+            )
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            return self._vectorizable_scalar_rhs(expr.operand, iv_name, allowed_bases, elem)
+        return False
+
+    def _emit_vector_scalar_expr(
+        self, expr: Expression, iv_name: str, iv_ssa: str, ops: List[str], elem: str
+    ) -> str:
+        """Lower a vectorizable scalar RHS to vector<4x{elem}> SSA."""
+        vty = f"vector<4x{elem}>"
+        zero = "0.0" if elem.startswith("f") else "0"
+        if isinstance(expr, Literal):
+            val = expr.value
+            splat = f"%{self.function_counter}"
+            self.function_counter += 1
+            cst = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{cst} = arith.constant {val} : {elem}")
+            ops.append(
+                f"{self.indent()}{splat} = vector.broadcast {cst} : {elem} to {vty}"
+            )
+            self._ssa_types[splat] = vty
+            return splat
+        if isinstance(expr, Variable):
+            info = self.symbol_table[expr.name]
+            scalar = info["ssa_name"]
+            ty = info.get("mlir_type", elem)
+            if ty != elem:
+                scalar, cast_ops = self._emit_cast(scalar, ty, elem)
+                ops.extend(cast_ops)
+            splat = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{splat} = vector.broadcast {scalar} : {elem} to {vty}"
+            )
+            self._ssa_types[splat] = vty
+            return splat
+        if isinstance(expr, ArrayAccess):
+            base = expr.array.name
+            base_ssa = self.symbol_table[base]["ssa_name"]
+            pad = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{pad} = arith.constant {zero} : {elem}")
+            vec = f"%{self.function_counter}"
+            self.function_counter += 1
+            mlir_ty = self.symbol_table[base].get("mlir_type", f"memref<?x{elem}>")
+            if mlir_ty == "!llvm.ptr":
+                return None  # ptr bases not yet vector-transfer compatible
+            ops.append(
+                f"{self.indent()}{vec} = vector.transfer_read {base_ssa}[{iv_ssa}], {pad} "
+                f"{{in_bounds = [true]}} : {mlir_ty}, {vty}"
+            )
+            self._ssa_types[vec] = vty
+            return vec
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            inner = self._emit_vector_scalar_expr(expr.operand, iv_name, iv_ssa, ops, elem)
+            if inner is None:
+                return None
+            out = f"%{self.function_counter}"
+            self.function_counter += 1
+            if elem.startswith("f"):
+                ops.append(f"{self.indent()}{out} = arith.negf {inner} : {vty}")
+            else:
+                z = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{z} = arith.constant 0 : {elem}")
+                zb = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{zb} = vector.broadcast {z} : {elem} to {vty}")
+                ops.append(f"{self.indent()}{out} = arith.subi {zb}, {inner} : {vty}")
+            self._ssa_types[out] = vty
+            return out
+        if isinstance(expr, BinaryOperation):
+            left = self._emit_vector_scalar_expr(expr.left, iv_name, iv_ssa, ops, elem)
+            right = self._emit_vector_scalar_expr(expr.right, iv_name, iv_ssa, ops, elem)
+            if left is None or right is None:
+                return None
+            out = f"%{self.function_counter}"
+            self.function_counter += 1
+            if elem.startswith("f"):
+                op_map = {"+": "arith.addf", "-": "arith.subf", "*": "arith.mulf", "/": "arith.divf"}
+            else:
+                op_map = {"+": "arith.addi", "-": "arith.subi", "*": "arith.muli"}
+            ops.append(
+                f"{self.indent()}{out} = {op_map[expr.operator]} {left}, {right} : {vty}"
+            )
+            self._ssa_types[out] = vty
+            return out
+        raise ValueError("non-vectorizable expression reached emitter")
+
+    # Back-compat aliases used by older call sites / tests
+    def _memref_f32_base(self, expr: Expression) -> Optional[str]:
+        return self._memref_scalar_base(expr, "f32")
+
+    def _vectorizable_f32_rhs(self, expr: Expression, iv_name: str, allowed_bases: set) -> bool:
+        return self._vectorizable_scalar_rhs(expr, iv_name, allowed_bases, "f32")
+
+    def _emit_vector_f32_expr(self, expr: Expression, iv_name: str, iv_ssa: str, ops: List[str]) -> str:
+        return self._emit_vector_scalar_expr(expr, iv_name, iv_ssa, ops, "f32")
+
+    def _try_vectorize_elementwise_for(self, for_stmt: ForStatement) -> Optional[str]:
+        """Emit vector<4xT> transfer loops for simple elementwise f32/i32 bodies.
+
+        Pattern: `for i in lo to hi { out[i] = <expr using out/x/y[i] + scalars> }`
+        with no loop-carried scalars. Uses step-4 vector body + scalar remainder.
+        """
+        if for_stmt.is_parallel or for_stmt.step is not None:
+            return None
+        if not for_stmt.body or len(for_stmt.body.statements) != 1:
+            return None
+        stmt = for_stmt.body.statements[0]
+        if not isinstance(stmt, Assignment) or stmt.target_expr is None:
+            return None
+        access = stmt.target_expr
+        if not isinstance(access, ArrayAccess):
+            return None
+
+        elem = None
+        out_base = None
+        for candidate in ("f32", "i32"):
+            out_base = self._memref_scalar_base(access.array, candidate)
+            if out_base is not None:
+                elem = candidate
+                break
+        if out_base is None or elem is None:
+            return None
+        iv = for_stmt.variable
+        if not self._expr_is_loop_index(access.index, iv):
+            return None
+
+        bases = {out_base}
+
+        def walk(e):
+            if isinstance(e, ArrayAccess):
+                b = self._memref_scalar_base(e.array, elem)
+                if b:
+                    bases.add(b)
+                walk(e.index)
+            elif isinstance(e, BinaryOperation):
+                walk(e.left)
+                walk(e.right)
+            elif isinstance(e, UnaryOperation):
+                walk(e.operand)
+
+        walk(stmt.value)
+        if not self._vectorizable_scalar_rhs(stmt.value, iv, bases, elem):
+            return None
+        out_mlir = self.symbol_table[out_base].get("mlir_type", "")
+        if not (isinstance(out_mlir, str) and out_mlir.startswith("memref<") and f"x{elem}" in out_mlir):
+            flow_ty = self.symbol_table[out_base].get("flow_type")
+            if not (flow_ty and getattr(flow_ty, "name", "") == f"memref_{elem}"):
+                return None
+            out_mlir = f"memref<?x{elem}>"
+
+        for b in bases:
+            bty = self.symbol_table[b].get("mlir_type", "")
+            if bty == "!llvm.ptr":
+                return None
+
+        ops: List[str] = []
+        lower_bound, lower_ops = self.generate_expression(for_stmt.range_start)
+        upper_bound, upper_ops = self.generate_expression(for_stmt.range_end)
+        ops.extend(lower_ops)
+        ops.extend(upper_ops)
+
+        lb = f"%{self.function_counter}"; self.function_counter += 1
+        ub = f"%{self.function_counter}"; self.function_counter += 1
+        c0 = f"%{self.function_counter}"; self.function_counter += 1
+        c1 = f"%{self.function_counter}"; self.function_counter += 1
+        c4 = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
+        ops.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
+        ops.append(f"{self.indent()}{c0} = arith.constant 0 : index")
+        ops.append(f"{self.indent()}{c1} = arith.constant 1 : index")
+        ops.append(f"{self.indent()}{c4} = arith.constant 4 : index")
+
+        # n = ub - lb; n_vec = n - (n % 4); vec_ub = lb + n_vec
+        n = f"%{self.function_counter}"; self.function_counter += 1
+        rem = f"%{self.function_counter}"; self.function_counter += 1
+        n_vec = f"%{self.function_counter}"; self.function_counter += 1
+        vec_ub = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}{n} = arith.subi {ub}, {lb} : index")
+        ops.append(f"{self.indent()}{rem} = arith.remsi {n}, {c4} : index")
+        ops.append(f"{self.indent()}{n_vec} = arith.subi {n}, {rem} : index")
+        ops.append(f"{self.indent()}{vec_ub} = arith.addi {lb}, {n_vec} : index")
+
+        vty = f"vector<4x{elem}>"
+        # Vectorized loop
+        iv_v = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}scf.for {iv_v} = {lb} to {vec_ub} step {c4} {{")
+        self.indent_level += 1
+        self._ssa_types[iv_v] = "index"
+        self.symbol_table[iv] = {"type": "variable", "mlir_type": "index", "ssa_name": iv_v}
+        body_ops: List[str] = []
+        vec_val = self._emit_vector_scalar_expr(stmt.value, iv, iv_v, body_ops, elem)
+        if vec_val is None:
+            self.indent_level -= 1
+            return None
+        ops.extend(body_ops)
+        out_ssa = self.symbol_table[out_base]["ssa_name"]
+        ops.append(
+            f"{self.indent()}vector.transfer_write {vec_val}, {out_ssa}[{iv_v}] "
+            f"{{in_bounds = [true]}} : {vty}, {out_mlir}"
+        )
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        # Scalar remainder
+        iv_s = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}scf.for {iv_s} = {vec_ub} to {ub} step {c1} {{")
+        self.indent_level += 1
+        self._ssa_types[iv_s] = "index"
+        self.symbol_table[iv] = {"type": "variable", "mlir_type": "index", "ssa_name": iv_s}
+        # Reuse normal assignment lowering for the scalar tail.
+        old_inside = self.inside_scf_for
+        self.inside_scf_for = True
+        assign_mlir = self.generate_assignment(stmt)
+        if assign_mlir.strip():
+            ops.append(assign_mlir)
+        self.inside_scf_for = old_inside
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        ops.insert(0, f"{self.indent()}// flow: vectorized elementwise f32 loop (VF=4)")
+        return "\n".join(ops)
+
     def generate_for(self, for_stmt: ForStatement) -> str:
         mlir_code = []
+
+        vectorized = self._try_vectorize_elementwise_for(for_stmt)
+        if vectorized is not None:
+            return vectorized
         
         if for_stmt.is_parallel:
             # Use scf.parallel for parallel loops
@@ -1888,8 +2343,9 @@ class MLIRGenerator:
             if body.strip():
                 mlir_code.append(body)
             
-            # Branch to end
-            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+            # Skip cf.br after return/terminator (same guard as generate_if)
+            if not self._block_has_terminator(body):
+                mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
             
             self.indent_level -= 1
             
@@ -1910,15 +2366,28 @@ class MLIRGenerator:
             default_body = self.generate_block(match_stmt.default_case)
             if default_body.strip():
                 mlir_code.append(default_body)
-            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+            if not self._block_has_terminator(default_body):
+                mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
             self.indent_level -= 1
         else:
             # If no default, just make the last next label jump to end
             mlir_code.append(f"^{final_next_label}:")
             mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
         
-        # End block
+        # End block. When every arm already returned, nothing branches here —
+        # emit llvm.unreachable so the block stays well-formed. Otherwise the
+        # parent generate_block continues with statements after the match
+        # (they append after this label).
         mlir_code.append(f"^{end_label}:")
+        arms_terminate = all(self._block_has_return(c.body) for c in match_stmt.cases)
+        if match_stmt.default_case is not None:
+            arms_terminate = arms_terminate and self._block_has_return(
+                match_stmt.default_case
+            )
+        else:
+            arms_terminate = False  # fallthrough path exists via final_next
+        if arms_terminate:
+            mlir_code.append(f"{self.indent()}llvm.unreachable")
         
         return "\n".join(mlir_code)
     
@@ -2269,6 +2738,26 @@ class MLIRGenerator:
 
     def generate_field_access(self, field_access: FieldAccess) -> tuple[str, List[str]]:
         """Generate field access that loads values from struct memory"""
+        # Try to determine the field type by walking the struct hierarchy
+        field_type = self._determine_field_type(field_access)
+
+        # Addressable objects (ptr[i], nested fields, pointer/alloca bases):
+        # GEP to the field then a scalar/aggregate load — preferred over
+        # load-whole-struct + extractvalue (which fails for ptr[i].field).
+        if field_type is not None:
+            field_addr = self._lvalue_address(field_access)
+            if field_addr is not None:
+                field_ptr, _field_flow, addr_ops = field_addr
+                ops = list(addr_ops)
+                load = f"%{self.function_counter}"
+                self.function_counter += 1
+                field_ty = self.flow_type_to_mlir(field_type)
+                ops.append(
+                    f"{self.indent()}{load} = llvm.load {field_ptr} : !llvm.ptr -> {field_ty}"
+                )
+                self._ssa_types[load] = field_ty
+                return load, ops
+
         obj_result = self.generate_expression(field_access.object)
         if obj_result is None:
             # Fallback if object expression fails
@@ -2303,41 +2792,12 @@ class MLIRGenerator:
                     var_info["ssa_name"] = obj_ssa
                 self._ssa_types[obj_ssa] = obj_mlir
 
-        # Try to determine the field type by walking the struct hierarchy
-        field_type = self._determine_field_type(field_access)
-        
         if not field_type:
             # Default to i32 if we can't determine the type
             ssa_name = f"%{self.function_counter}"
             self.function_counter += 1
             ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
             return ssa_name, ops
-
-        # Pointer-to-struct objects: GEP to the field, then a scalar load.
-        ptr_base = self._field_pointer_base(field_access.object, obj_ssa)
-        if ptr_base is not None:
-            base_ptr, struct_name = ptr_base
-            llvm_struct = self._struct_llvm_type(struct_name)
-            decl = self._get_struct_decl(struct_name)
-            if llvm_struct and decl:
-                field_names = [f.name for f in decl.fields]
-                if field_access.field in field_names:
-                    idx = field_names.index(field_access.field)
-                    gep = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    ops.append(
-                        f"{self.indent()}{gep} = llvm.getelementptr {base_ptr}[0, {idx}] "
-                        f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
-                    )
-                    self._ssa_types[gep] = '!llvm.ptr'
-                    load = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    field_ty = self.flow_type_to_mlir(field_type)
-                    ops.append(
-                        f"{self.indent()}{load} = llvm.load {gep} : !llvm.ptr -> {field_ty}"
-                    )
-                    self._ssa_types[load] = field_ty
-                    return load, ops
 
         # Prefer LLVM struct extraction when available.
         obj_type = self._determine_struct_type(field_access.object)
@@ -2673,27 +3133,25 @@ class MLIRGenerator:
 
     def _determine_struct_type(self, expr):
         """Determine the struct type of an expression"""
-        if hasattr(expr, 'name'):
-            # This is a variable, find its declaration
+        if isinstance(expr, Variable):
             var_type = self._find_variable_type(expr.name)
             return self._pointee_struct_type(var_type)
         elif isinstance(expr, FieldAccess):
-            # This is a field access, get the field type
             return self._determine_field_type(expr)
+        elif isinstance(expr, ArrayAccess):
+            return self._array_elem_flow_type(expr)
         return None
 
     def _determine_field_type(self, field_access):
         """Determine the type of a field access by walking the struct hierarchy"""
-        # Start with the base object
         current_type = None
 
-        # If the object is a variable, get its type from the AST
-        if hasattr(field_access.object, 'name'):
-            # This is a variable, find its declaration
+        if isinstance(field_access.object, Variable):
             current_type = self._find_variable_type(field_access.object.name)
         elif isinstance(field_access.object, FieldAccess):
-            # This is a nested field access, recurse
             current_type = self._determine_field_type(field_access.object)
+        elif isinstance(field_access.object, ArrayAccess):
+            current_type = self._array_elem_flow_type(field_access.object)
 
         # Pointer-to-struct objects access fields of the pointee.
         current_type = self._pointee_struct_type(current_type)
@@ -3539,16 +3997,44 @@ class MLIRGenerator:
             ops.extend(vops)
             element_values.append(v)
 
-        # Create memref from elements - allocate and store each element
         elem_type = self.get_expression_type(array_literal.elements[0]) if array_literal.elements else 'f32'
         size = len(array_literal.elements)
-        
-        # Allocate memref
+
+        # Fixed arrays of LLVM structs cannot use memref (dialect reject).
+        # Lower like C `T arr[N]`: llvm.alloca of N elements, GEP + store.
+        if isinstance(elem_type, str) and elem_type.startswith("!llvm.struct"):
+            n_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{n_ssa} = llvm.mlir.constant({size} : i64) : i64")
+            alloc_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{alloc_ssa} = llvm.alloca {n_ssa} x {elem_type} "
+                f": (i64) -> !llvm.ptr"
+            )
+            self._ssa_types[alloc_ssa] = "!llvm.ptr"
+            for i, element_value in enumerate(element_values):
+                idx = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{idx} = llvm.mlir.constant({i} : i64) : i64")
+                gep = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(
+                    f"{self.indent()}{gep} = llvm.getelementptr {alloc_ssa}[{idx}] "
+                    f": (!llvm.ptr, i64) -> !llvm.ptr, {elem_type}"
+                )
+                self._ssa_types[gep] = "!llvm.ptr"
+                ops.append(
+                    f"{self.indent()}llvm.store {element_value}, {gep} "
+                    f": {elem_type}, !llvm.ptr"
+                )
+            return alloc_ssa, ops
+
+        # Scalar / memref-friendly element types
         alloc_ssa = f"%{self.function_counter}"
         self.function_counter += 1
         ops.append(f"{self.indent()}{alloc_ssa} = memref.alloc() : memref<{size}x{elem_type}>")
         
-        # Store each element
         for i, element_value in enumerate(element_values):
             index_ssa = f"%{self.function_counter}"
             self.function_counter += 1
@@ -3604,6 +4090,9 @@ class MLIRGenerator:
                     return self.flow_type_to_mlir(field_type.element_type)
                 if field_type.name.startswith('ptr_'):
                     return field_type.name[4:]
+            if field_type and (getattr(field_type, 'is_array', False) or field_type.name.startswith('array')):
+                if getattr(field_type, 'element_type', None):
+                    return self.flow_type_to_mlir(field_type.element_type)
         if isinstance(expr, Variable) and expr.name in self.symbol_table:
             flow_type = self.symbol_table[expr.name].get('flow_type')
             if flow_type and (getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr')):
@@ -3611,6 +4100,9 @@ class MLIRGenerator:
                     return self.flow_type_to_mlir(flow_type.element_type)
                 if flow_type.name.startswith('ptr_'):
                     return flow_type.name[4:]
+            if flow_type and (getattr(flow_type, 'is_array', False) or flow_type.name.startswith('array')):
+                if getattr(flow_type, 'element_type', None):
+                    return self.flow_type_to_mlir(flow_type.element_type)
         return None
 
     def _is_pointer_array_ssa(self, array_ssa: str, access: ArrayAccess) -> bool:
@@ -3691,16 +4183,19 @@ class MLIRGenerator:
             final_index = index_cast
 
         elem_type = 'f32'
+        memref_ty = f'memref<?x{elem_type}>'
         if isinstance(access.array, Variable) and access.array.name in self.symbol_table:
             arr_type = self.symbol_table[access.array.name].get('mlir_type', '')
-            if 'i32' in arr_type and 'memref' in arr_type:
-                elem_type = 'i32'
-            elif 'f64' in arr_type:
-                elem_type = 'f64'
-            elif 'f32' in arr_type:
-                elem_type = 'f32'
+            if arr_type.startswith('memref<'):
+                memref_ty = arr_type
+                if 'i32' in arr_type:
+                    elem_type = 'i32'
+                elif 'f64' in arr_type:
+                    elem_type = 'f64'
+                elif 'f32' in arr_type:
+                    elem_type = 'f32'
 
-        ops.append(f"{self.indent()}{ssa_name} = memref.load {array_ssa}[{final_index}] : memref<?x{elem_type}>")
+        ops.append(f"{self.indent()}{ssa_name} = memref.load {array_ssa}[{final_index}] : {memref_ty}")
         self._ssa_types[ssa_name] = elem_type
         return ssa_name, ops
     
@@ -3763,6 +4258,9 @@ class MLIRGenerator:
                 return f"memref<{total_size}xi8>"
             return 'i32'
         elif isinstance(expr, ArrayAccess):
+            elem_flow = self._array_elem_flow_type(expr)
+            if elem_flow is not None:
+                return self.flow_type_to_mlir(elem_flow)
             # Get element type from array
             if isinstance(expr.array, Variable) and expr.array.name in self.symbol_table:
                 arr_type = self.symbol_table[expr.array.name].get('mlir_type', '')
@@ -3803,12 +4301,19 @@ class MLIRGenerator:
             # memref_f32 -> memref<?xf32>
             elem = flow_type.name.replace('memref_', '')
             return f"memref<?x{elem}>"
-        elif flow_type.name.startswith('array_'):
-            # Array type: array_f32 -> memref<?xf32>
-            if elem_type:
+        elif flow_type.name.startswith('array_') or flow_type.name.startswith('array'):
+            # array_4_Note / array<T,N>. Struct elements lower to !llvm.ptr
+            # (llvm.alloca of N); memref cannot hold !llvm.struct elements.
+            if elem_type is not None:
+                elem_mlir = self.flow_type_to_mlir(elem_type)
+                if isinstance(elem_mlir, str) and elem_mlir.startswith("!llvm.struct"):
+                    return "!llvm.ptr"
+                if elem_type.name in self.struct_layouts or self._struct_llvm_type(elem_type.name):
+                    return "!llvm.ptr"
+                if flow_type.size:
+                    return f"memref<{flow_type.size}x{elem_type.name}>"
                 return f"memref<?x{elem_type.name}>"
-            else:
-                return "memref<?xi32>"
+            return "memref<?xi32>"
         elif flow_type.name.startswith('struct_'):
             # Struct type: struct_MyStruct -> !flow.struct<MyStruct>
             return f"!flow.struct<{flow_type.name.replace('struct_', '')}>"
@@ -3818,14 +4323,6 @@ class MLIRGenerator:
                 return f"vector<{flow_type.size}x{elem_type.name}>"
             else:
                 return 'vector<?x?xf32>'  # Fallback
-        elif flow_type.name.startswith('array'):
-            # Array type: array_100_i32 -> memref<100xi32>
-            if flow_type.size and elem_type:
-                return f"memref<{flow_type.size}x{elem_type.name}>"
-            elif elem_type:
-                return f"memref<?x{elem_type.name}>"
-            else:
-                return 'memref<?xi32>'  # Fallback
         elif flow_type.name.startswith('ptr_') or flow_type.is_pointer:
             # Pointer type: ptr_f32 -> !llvm.ptr
             return '!llvm.ptr'

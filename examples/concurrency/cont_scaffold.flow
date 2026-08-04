@@ -1,0 +1,25 @@
+# Delimited continuation scaffold — shift/resume demo
+# Run: ./flow run examples/concurrency/cont_scaffold.flow
+
+import "stdlib/async.flow"
+
+extern {
+    function flow_demo_cont_shift() -> i32
+}
+
+function main() -> i32 {
+    printf("continuation scaffold\n")
+    let avail: i32 = cont_scaffold_available()
+    printf("  flow_cont_available=%d\n", avail)
+    if avail != 1 {
+        return 1
+    }
+    let r: i32 = flow_demo_cont_shift()
+    printf("  shift(10)+resume(42) -> %d (expect 42)\n", r)
+    if r != 42 {
+        return 2
+    }
+    printf("  (Flow frames still cannot suspend mid-function)\n")
+    printf("OK\n")
+    return 0
+}

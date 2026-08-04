@@ -27,7 +27,7 @@ function schur_clamp_k(k: f64) -> f64 {
 
 # Step-down a monic denominator a[0..order-1] (a[0]=1 implied) to reflections k[0..order-1].
 function schur_step_down(a: ptr<f64>, order: i32, k_out: ptr<f64>) -> void {
-    let work: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut work: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let n: i32 = order
     let mut i: i32 = 0
     while i < n {
@@ -37,7 +37,7 @@ function schur_step_down(a: ptr<f64>, order: i32, k_out: ptr<f64>) -> void {
     let mut stage: i32 = n
     while stage > 0 {
         let idx: i32 = stage - 1
-        let kn: f64 = work[idx]
+        let mut kn: f64 = work[idx]
         kn = schur_clamp_k(kn)
         k_out[idx] = kn
         let denom: f64 = 1.0 - kn * kn
@@ -68,7 +68,7 @@ function levinson_durbin(
         return 0
     }
     let alpha: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let a_work: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut a_work: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let mut err: f64 = r[0]
     let mut m: i32 = 1
     while m <= order {
@@ -135,7 +135,7 @@ function compose_orthogonal_colligation(
     let mut stage: i32 = 0
     while stage < n - 1 {
         let ki: f64 = k[stage]
-        let c: f64 = sqrt(1.0 - ki * ki)
+        let mut c: f64 = sqrt(1.0 - ki * ki)
         let s: f64 = ki
         givens_apply_rows(a_buf, n, stage, stage + 1, c, s)
         stage = stage + 1
@@ -186,17 +186,17 @@ function schur_lattice_from_denominator(
     na_buf: ptr<f64>
 ) -> SchurLatticeSpec {
     schur_step_down(denom, order, k_out)
-    let A: Matrix = compose_orthogonal_colligation(k_out, order, a_buf)
+    let mut A: Matrix = compose_orthogonal_colligation(k_out, order, a_buf)
     let b_vec: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     build_colligation_input(order, b_vec)
-    let c_vec: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut c_vec: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     if order > 0 {
         c_vec[0] = 1.0
     }
     let Cm: Matrix = Matrix { data: c_vec, rows: 1, cols: order }
     let sys: DynamicalSystem = dsys_discrete(order, 1, 1, 1.0, A, Matrix { data: b_vec, rows: order, cols: 1 }, Cm)
     let ctrl: Matrix = build_controllability_matrix(sys, ctrl_buf, apow_buf, blk_buf, na_buf)
-    let c_can: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut c_can: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     if order > 0 {
         c_can[order - 1] = 1.0
     }

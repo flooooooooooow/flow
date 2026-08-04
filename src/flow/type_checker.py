@@ -22,7 +22,7 @@ from enum import Enum
 from .parser import (
     FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
     FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall, EffectCall,
-    IfStatement, WhileStatement, ForStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
+    IfStatement, WhileStatement, ForStatement, LayoutStatement, HandleStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl, TraitDecl,
     TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
     MatchStatement, StructPattern, OrPattern, ListPattern, DeferStatement, TryExpr, Lambda,
@@ -66,6 +66,8 @@ class SemanticType:
     size: Optional[int] = None  # For fixed-size arrays
     param_types: List['SemanticType'] = field(default_factory=list)  # For functions
     return_type: Optional['SemanticType'] = None  # For functions
+    # Effect row for first-class / named function types (`with E1, E2`)
+    effects: List[str] = field(default_factory=list)
     # Dimension exponent vector for units of measure (north-star.md section 6).
     # Indexed by base-unit declaration order, trailing zeros stripped, so the
     # vector stays canonical as later base units are declared. None for
@@ -102,7 +104,10 @@ class SemanticType:
             return f"ptr<{self.element_type}>"
         elif self.kind == TypeKind.FUNCTION:
             params = ", ".join(str(p) for p in self.param_types)
-            return f"({params}) -> {self.return_type}"
+            base = f"({params}) -> {self.return_type}"
+            if self.effects:
+                return f"{base} with {', '.join(self.effects)}"
+            return base
         elif self.kind == TypeKind.UNKNOWN:
             return self.name or "unknown"
         else:
@@ -134,7 +139,8 @@ class SemanticType:
                 self.base_type == other.base_type and
                 self.size == other.size and
                 self.param_types == other.param_types and
-                self.return_type == other.return_type)
+                self.return_type == other.return_type and
+                list(self.effects) == list(other.effects))
 
     def __hash__(self) -> int:
         return hash(
@@ -146,6 +152,7 @@ class SemanticType:
                 self.size,
                 tuple(self.param_types),
                 self.return_type,
+                tuple(self.effects),
             )
         )
 
@@ -292,7 +299,7 @@ class TypeChecker:
 
     # RT-safety (docs/library/rt-safety.md): the `@rt_safe` attribute marks a
     # function as callable from a hard real-time path. Its body (and anything
-    # it calls, transitively) must never touch the heap.
+    # it calls, transitively) must never touch the heap or take blocking locks.
     #
     # Direct heap primitives - always forbidden in an `@rt_safe` call chain.
     RT_UNSAFE_BUILTINS: frozenset = frozenset({
@@ -311,6 +318,22 @@ class TypeChecker:
     })
     RT_UNSAFE_HEAP_NAMES: frozenset = RT_UNSAFE_BUILTINS | RT_UNSAFE_STDLIB_NAMES
 
+    # Blocking / priority-inversion risks (locks & waits). Separate category
+    # so diagnostics can say "may block" rather than "allocates heap".
+    RT_UNSAFE_LOCK_NAMES: frozenset = frozenset({
+        'pthread_mutex_lock', 'pthread_mutex_trylock',
+        'pthread_cond_wait', 'pthread_cond_timedwait',
+        'pthread_rwlock_rdlock', 'pthread_rwlock_wrlock',
+        'mutex_lock', 'mutex_trylock',
+        'condvar_wait', 'rwlock_rdlock', 'rwlock_wrlock',
+        'rwlock_read_lock', 'rwlock_write_lock',  # legacy aliases
+        'sem_wait', 'semaphore_wait',
+    })
+    RT_UNSAFE_ALL_NAMES: frozenset = RT_UNSAFE_HEAP_NAMES | RT_UNSAFE_LOCK_NAMES
+    RT_UNSAFE_REASON_KIND: dict = {
+        **{n: 'heap' for n in RT_UNSAFE_HEAP_NAMES},
+        **{n: 'lock' for n in RT_UNSAFE_LOCK_NAMES},
+    }
     def __init__(self):
         self.global_scope = Scope()
         self.current_scope = self.global_scope
@@ -353,6 +376,15 @@ class TypeChecker:
         # Name of the `@rt_safe` function currently being checked, or None
         # when checking a function without that attribute.
         self._current_rt_safe_fn: Optional[str] = None
+
+        # Effect-row Phase 1: lexical handler stack (mirrors C codegen).
+        # When `check_effect_rows` is True, performing an effect with no
+        # active handler is a type error (compile-time fail-loud).
+        self._effect_handler_stack: List[Set[str]] = [set()]
+        self.check_effect_rows: bool = False
+        self._current_function_name: Optional[str] = None
+        # name -> declared effect row (`with E1, E2`)
+        self.function_effects: Dict[str, List[str]] = {}
 
     def _is_numeric(self, t: SemanticType) -> bool:
         return t.kind in {
@@ -584,11 +616,26 @@ class TypeChecker:
         # Null literal to pointer
         if actual.kind == TypeKind.NULL and expected.kind == TypeKind.POINTER:
             return True
-        # Bool <-> numeric coercion
+        # Bool <-> numeric: allowed only in lenient mode (C-style 0/1).
+        # Strict mode requires an explicit comparison or cast.
         if actual.kind == TypeKind.BOOL and self._is_numeric(expected):
-            return True
+            return not self.strict
         if expected.kind == TypeKind.BOOL and self._is_numeric(actual):
-            return True
+            return not self.strict
+        # Function / closure types: matching param/return; actual effects ⊆ expected
+        if actual.kind == TypeKind.FUNCTION and expected.kind == TypeKind.FUNCTION:
+            if len(actual.param_types) != len(expected.param_types):
+                return False
+            for a, e in zip(actual.param_types, expected.param_types):
+                if not self._can_coerce(a, e):
+                    return False
+            a_ret = actual.return_type or SemanticType(TypeKind.VOID)
+            e_ret = expected.return_type or SemanticType(TypeKind.VOID)
+            if not self._can_coerce(a_ret, e_ret):
+                return False
+            actual_eff = set(actual.effects or [])
+            expected_eff = set(expected.effects or [])
+            return actual_eff.issubset(expected_eff)
         # Struct coercion only in lenient mode
         if not self.strict and (actual.kind == TypeKind.STRUCT or expected.kind == TypeKind.STRUCT):
             return True
@@ -726,14 +773,24 @@ class TypeChecker:
     def _define_function(self, name: str, decl: FunctionDecl) -> None:
         param_types = [self._parse_type(p.type) for p in decl.parameters]
         return_type = self._parse_type(decl.return_type)
+        row = list(getattr(decl, "effects", None) or [])
         func_type = SemanticType(
             kind=TypeKind.FUNCTION,
             param_types=param_types,
-            return_type=return_type
+            return_type=return_type,
+            effects=row,
         )
         symbol = Symbol(name, func_type, "function",
                       getattr(decl, 'is_exported', False), decl)
         self.global_scope.define(symbol)
+        self.function_effects[name] = row
+        # Validate effect names in the row early
+        for effect_name in row:
+            if effect_name not in self.effect_types and self.strict:
+                self.errors.append(
+                    f"Function '{name}' declares unknown effect '{effect_name}' "
+                    f"in its `with` row"
+                )
 
     def _check_declarations(self, declarations: List[Any]) -> None:
         """Type check all declarations."""
@@ -799,7 +856,7 @@ class TypeChecker:
                     mangled_name = f"{decl.for_type.name}_{decl.trait_name}_{method.name}"
                     register(mangled_name, method.body)
 
-        unsafe_reason: Dict[str, str] = {name: name for name in self.RT_UNSAFE_HEAP_NAMES}
+        unsafe_reason: Dict[str, str] = {name: name for name in self.RT_UNSAFE_ALL_NAMES}
 
         changed = True
         while changed:
@@ -815,28 +872,37 @@ class TypeChecker:
 
         return unsafe_reason
 
+    def _rt_unsafe_kind(self, leaf_name: str) -> str:
+        return self.RT_UNSAFE_REASON_KIND.get(leaf_name, 'heap')
+
+    def _rt_unsafe_phrase(self, leaf_name: str) -> str:
+        kind = self._rt_unsafe_kind(leaf_name)
+        if kind == 'lock':
+            return "may block or cause priority inversion (lock/wait)"
+        return "allocates or frees heap memory"
+
     def _check_rt_safe_call(self, name: str) -> None:
         """If we're inside an `@rt_safe` function body, flag calls that reach
-        the heap (directly or transitively)."""
+        heap or blocking lock APIs (directly or transitively)."""
         if self._current_rt_safe_fn is None:
             return
         reason = self._rt_unsafe_reason.get(name)
         if reason is None:
             return
         fn = self._current_rt_safe_fn
+        phrase = self._rt_unsafe_phrase(reason)
         if reason == name:
             self.errors.append(
                 f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
-                f"'{name}', which allocates or frees heap memory "
+                f"'{name}', which {phrase} "
                 f"(see docs/library/rt-safety.md)"
             )
         else:
             self.errors.append(
                 f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
                 f"'{name}', which is not RT-safe because it calls '{reason}' "
-                f"(allocates or frees heap memory; see docs/library/rt-safety.md)"
+                f"({phrase}; see docs/library/rt-safety.md)"
             )
-
     def _check_trait_bounds(self, func: FunctionDecl) -> None:
         """Validate generic type parameter trait bounds when concrete types are known."""
         type_params = getattr(func, "type_params", None) or []
@@ -864,7 +930,14 @@ class TypeChecker:
         # function's body, flag any call that reaches the heap.
         attrs = getattr(func, 'attributes', None) or []
         prev_rt_safe_fn = self._current_rt_safe_fn
+        prev_fn_name = self._current_function_name
         self._current_rt_safe_fn = func.name if 'rt_safe' in attrs else None
+        self._current_function_name = func.name
+
+        # Effect-row Phase 2: declared `with E…` effects are assumed available
+        # in the body (caller must supply them via handle or its own row).
+        declared_row = set(getattr(func, "effects", None) or [])
+        self._effect_handler_stack.append(declared_row)
 
         try:
             # Add parameters to scope
@@ -892,8 +965,10 @@ class TypeChecker:
                         )
 
         finally:
+            self._effect_handler_stack.pop()
             self.current_scope = func_scope.parent
             self._current_rt_safe_fn = prev_rt_safe_fn
+            self._current_function_name = prev_fn_name
 
     def _check_const(self, const: ConstDecl) -> None:
         """Type check a constant declaration."""
@@ -928,7 +1003,7 @@ class TypeChecker:
             return self._check_while_stmt(stmt)
         elif isinstance(stmt, ForStatement):
             return self._check_for_stmt(stmt)
-        elif isinstance(stmt, (FunctionCall, EffectCall)):
+        elif isinstance(stmt, (FunctionCall, EffectCall, MethodCall)):
             return self._check_expression(stmt)
         elif isinstance(stmt, LayoutStatement):
             for arg in stmt.args:
@@ -948,8 +1023,44 @@ class TypeChecker:
             return SemanticType(TypeKind.VOID)
         elif isinstance(stmt, (BreakStatement, ContinueStatement)):
             return SemanticType(TypeKind.VOID)
+        elif isinstance(stmt, HandleStatement):
+            return self._check_handle_stmt(stmt)
         else:
             return SemanticType(TypeKind.VOID)
+
+    def _active_effect_handlers(self) -> Set[str]:
+        """Union of effect names with a handler installed in any outer scope."""
+        active: Set[str] = set()
+        for frame in self._effect_handler_stack:
+            active |= frame
+        return active
+
+    def _check_handle_stmt(self, stmt: HandleStatement) -> SemanticType:
+        """Type-check `handle E1, E2 with Cap { … }` and push effect rows."""
+        installed: Set[str] = set()
+        for effect_name in stmt.effects:
+            if effect_name not in self.effect_types:
+                if self.strict:
+                    self.errors.append(
+                        f"Unknown effect '{effect_name}' in handle statement"
+                    )
+                continue
+            installed.add(effect_name)
+        for handler_name in stmt.handlers:
+            if (
+                handler_name not in self.capability_types
+                and self.current_scope.lookup(handler_name) is None
+                and self.strict
+            ):
+                self.warnings.append(
+                    f"Handle handler '{handler_name}' is not a known capability"
+                )
+
+        self._effect_handler_stack.append(installed)
+        try:
+            return self._check_block(stmt.body)
+        finally:
+            self._effect_handler_stack.pop()
 
     def _bind_struct_pattern(self, pattern: "StructPattern", case_scope: "Scope") -> None:
         """Type-check a (possibly nested) StructPattern and bind its variables.
@@ -1379,8 +1490,15 @@ class TypeChecker:
             self.errors.append(f"Undefined variable '{assign.target}'")
             return SemanticType(TypeKind.VOID)
         
-        # Check mutability (auto-promote to mutable for now)
+        # Mutability: strict rejects assign to immutable `let`; lenient
+        # auto-promotes (legacy corpus / demos).
         if not symbol.is_mutable:
+            if self.strict:
+                self.errors.append(
+                    f"Cannot assign to immutable variable '{assign.target}' "
+                    f"(use 'let mut')"
+                )
+                return SemanticType(TypeKind.VOID)
             symbol.is_mutable = True
 
         expr_type = self._check_expression(assign.value)
@@ -1393,10 +1511,10 @@ class TypeChecker:
 
     def _check_if_stmt(self, if_stmt: IfStatement) -> SemanticType:
         """Type check an if statement."""
-        # Condition must be bool
         cond_type = self._check_expression(if_stmt.condition)
-        if cond_type.kind != TypeKind.BOOL and not self._is_numeric(cond_type):
-            self.errors.append(f"If condition must be bool, got {cond_type}")
+        if cond_type.kind != TypeKind.BOOL:
+            if self.strict or not self._is_numeric(cond_type):
+                self.errors.append(f"If condition must be bool, got {cond_type}")
 
         # Check then block
         then_type = self._check_block(if_stmt.then_block)
@@ -1404,8 +1522,9 @@ class TypeChecker:
         # Check elif blocks
         for elif_cond, elif_block in if_stmt.elif_blocks:
             cond_type = self._check_expression(elif_cond)
-            if cond_type.kind != TypeKind.BOOL and not self._is_numeric(cond_type):
-                self.errors.append(f"If condition must be bool, got {cond_type}")
+            if cond_type.kind != TypeKind.BOOL:
+                if self.strict or not self._is_numeric(cond_type):
+                    self.errors.append(f"If condition must be bool, got {cond_type}")
             self._check_block(elif_block)
 
         # Check else block if present
@@ -1418,10 +1537,10 @@ class TypeChecker:
 
     def _check_while_stmt(self, while_stmt: WhileStatement) -> SemanticType:
         """Type check a while statement."""
-        # Condition must be bool
         cond_type = self._check_expression(while_stmt.condition)
-        if cond_type.kind != TypeKind.BOOL and not self._is_numeric(cond_type):
-            self.errors.append(f"While condition must be bool, got {cond_type}")
+        if cond_type.kind != TypeKind.BOOL:
+            if self.strict or not self._is_numeric(cond_type):
+                self.errors.append(f"While condition must be bool, got {cond_type}")
 
         # Check body
         self._check_block(while_stmt.body)
@@ -1894,6 +2013,21 @@ class TypeChecker:
                     f"{idx} expects {expected}, got {actual}"
                 )
 
+        # Effect-row Phase 1: unhandled perform is a type error when enabled
+        # (wired from --strict-effects). Soft runtime defaults remain otherwise.
+        if self.check_effect_rows and call.effect_name not in self._active_effect_handlers():
+            where = (
+                f" in '{self._current_function_name}'"
+                if self._current_function_name
+                else ""
+            )
+            self.errors.append(
+                f"Unhandled effect '{call.effect_name}.{call.operation}'{where} "
+                f"— wrap in `handle {call.effect_name} with …`, declare "
+                f"`with {call.effect_name}` on the function, or omit "
+                f"--strict-effects to allow zero defaults"
+            )
+
         return self._parse_type(operation.return_type)
 
     def _check_function_call(self, call: FunctionCall) -> SemanticType:
@@ -1945,6 +2079,26 @@ class TypeChecker:
         if symbol.type.kind != TypeKind.FUNCTION:
             self.errors.append(f"'{call.name}' is not a function")
             return SemanticType(TypeKind.VOID)
+
+        # Effect-row Phase 2/3: callee row (named or first-class type) in scope
+        if self.check_effect_rows:
+            needed = set(self.function_effects.get(call.name, []))
+            if symbol.type.kind == TypeKind.FUNCTION:
+                needed |= set(symbol.type.effects or [])
+            if needed:
+                active = self._active_effect_handlers()
+                missing = sorted(needed - active)
+                if missing:
+                    where = (
+                        f" from '{self._current_function_name}'"
+                        if self._current_function_name
+                        else ""
+                    )
+                    self.errors.append(
+                        f"Call to '{call.name}'{where} requires effect(s) "
+                        f"{', '.join(missing)} — handle them or declare "
+                        f"`with {', '.join(missing)}` on the caller"
+                    )
 
         # Handle overloads
         candidates = symbol.overloads if symbol.overloads else [symbol.type]
@@ -2230,6 +2384,22 @@ class TypeChecker:
         """Convert a parsed Type to a SemanticType."""
         if parsed_type.name == "auto":
             return SemanticType(TypeKind.UNKNOWN, name="auto")
+        # Function / closure types: (T1, T2) -> R → name fn_T1_T2__R
+        if parsed_type.name.startswith("fn_") and "__" in parsed_type.name:
+            params = [
+                self._parse_type(t) for t in (parsed_type.type_args or [])
+            ]
+            if parsed_type.element_type is not None:
+                ret = self._parse_type(parsed_type.element_type)
+            else:
+                ret = SemanticType(TypeKind.VOID)
+            return SemanticType(
+                TypeKind.FUNCTION,
+                name=parsed_type.name,
+                param_types=params,
+                return_type=ret,
+                effects=list(getattr(parsed_type, "effects", None) or []),
+            )
         if parsed_type.type_args:
             base_name = parsed_type.name.split("_", 1)[0]
             if base_name in self.generic_struct_types:

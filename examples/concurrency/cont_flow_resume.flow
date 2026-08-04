@@ -1,0 +1,26 @@
+# Flow-frame continuation: Cont.shift parks mid-function; resume restores locals.
+# Run: ./flow run examples/concurrency/cont_flow_resume.flow
+
+import "stdlib/async.flow"
+
+function work() -> i32 {
+    let local: i32 = 7
+    cont_arm_resume(42)
+    let v: i32 = Cont.shift()
+    # After resume, `local` is still 7 on this fiber stack.
+    return local + v
+}
+
+function main() -> i32 {
+    let mut result: i32 = -1
+    handle Cont with FiberCont {
+        result = work()
+    }
+    printf("cont flow resume: 7+42=%d\n", result)
+    if result != 49 {
+        printf("FAIL\n")
+        return 1
+    }
+    printf("OK\n")
+    return 0
+}

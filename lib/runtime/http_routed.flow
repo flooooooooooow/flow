@@ -1,0 +1,86 @@
+# Flow runtime: HTTP routed serve + middleware chain + fiber-per-conn serve.
+# Recv/parse + snprintf reply kernels stay in runtime/flow_tcp.c.
+
+extern {
+    function flow_rt_tcp_listen(port: i32) -> i32
+    function flow_rt_tcp_accept(listen_fd: i32) -> i32
+    function flow_rt_tcp_close(fd: i32) -> i32
+    function flow_rt_http_recv_route_kind(cfd: i32) -> i32
+    function flow_rt_http_reply(fd: i32, status: i32, content_type: string, body: string, body_len: i32) -> i32
+    function flow_rt_http_routed_selftest(port: i32) -> i32
+    function flow_rt_http_fiber_selftest(port: i32) -> i32
+    function flow_rt_http_mw_enable(on: i32) -> void
+    function flow_rt_http_mw_auth_enable(on: i32) -> void
+    function flow_rt_http_mw_auth_required() -> i32
+    function flow_rt_http_last_auth_ok() -> i32
+}
+
+# route_kind: 0=GET /, 1=GET /api, 2=GET /health, 3=other/404, <0=fail
+# Middleware chain: (1) request-id via reply kernel (2) optional Bearer auth on /api
+@flow_api
+export function flow_http_route_one(cfd: i32) -> void {
+    let kind: i32 = flow_rt_http_recv_route_kind(cfd)
+    if kind < 0 {
+        return
+    }
+    if kind == 1 {
+        if flow_rt_http_mw_auth_required() != 0 {
+            if flow_rt_http_last_auth_ok() == 0 {
+                let _: i32 = flow_rt_http_reply(cfd, 401, "text/plain", "unauthorized\n", 13)
+                return
+            }
+        }
+    }
+    if kind == 0 {
+        let __: i32 = flow_rt_http_reply(cfd, 200, "text/plain", "Hello from Flow\n", 16)
+        return
+    }
+    if kind == 1 {
+        let ___: i32 = flow_rt_http_reply(cfd, 200, "application/json", "{\"ok\":true}\n", 12)
+        return
+    }
+    if kind == 2 {
+        let ____: i32 = flow_rt_http_reply(cfd, 200, "text/plain", "ok\n", 3)
+        return
+    }
+    let _____: i32 = flow_rt_http_reply(cfd, 404, "text/plain", "not found\n", 10)
+}
+
+@flow_api
+export function flow_http_mw_enable(on: i32) -> void {
+    flow_rt_http_mw_enable(on)
+}
+
+@flow_api
+export function flow_http_mw_auth_enable(on: i32) -> void {
+    flow_rt_http_mw_auth_enable(on)
+}
+
+@flow_api
+export function flow_http_routed_serve(port: i32, n_req: i32) -> i32 {
+    let lfd: i32 = flow_rt_tcp_listen(port)
+    if lfd < 0 {
+        return -1
+    }
+    let mut served: i32 = 0
+    while served < n_req {
+        let cfd: i32 = flow_rt_tcp_accept(lfd)
+        if cfd >= 0 {
+            flow_http_route_one(cfd)
+            let _: i32 = flow_rt_tcp_close(cfd)
+            served = served + 1
+        }
+    }
+    let __: i32 = flow_rt_tcp_close(lfd)
+    return served
+}
+
+@flow_api
+export function flow_http_routed_selftest(port: i32) -> i32 {
+    return flow_rt_http_routed_selftest(port)
+}
+
+@flow_api
+export function flow_http_fiber_selftest(port: i32) -> i32 {
+    return flow_rt_http_fiber_selftest(port)
+}

@@ -183,7 +183,7 @@ function run_demo() -> i32 {
     print("Running enhanced memory tests...")
     print("==================================")
     
-    let passed: i32 = 0
+    let mut passed: i32 = 0
     let total: i32 = 6
     
     if test_basic_allocation() { passed = passed + 1 }

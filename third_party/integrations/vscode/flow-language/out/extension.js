@@ -102,6 +102,32 @@ async function startClient() {
             `See the FLOW Language extension README.`);
     }
 }
+class FlowDebugAdapterFactory {
+    createDebugAdapterDescriptor() {
+        const config = vscode.workspace.getConfiguration('flow');
+        const python = (config.get('pythonPath') || 'python3').trim();
+        let repoPath = (config.get('repoPath') || '').trim();
+        if (!repoPath) {
+            const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            repoPath = findFlowRepoRoot(folder) || findFlowRepoRoot(__dirname) || '';
+        }
+        const env = {};
+        for (const [k, v] of Object.entries(process.env)) {
+            if (typeof v === 'string')
+                env[k] = v;
+        }
+        if (repoPath) {
+            const src = path.join(repoPath, 'src');
+            env.PYTHONPATH = env.PYTHONPATH
+                ? `${src}${path.delimiter}${env.PYTHONPATH}`
+                : src;
+        }
+        return new vscode.DebugAdapterExecutable(python, ['-m', 'flow.dap_server'], {
+            env,
+            cwd: repoPath || undefined
+        });
+    }
+}
 function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('flow.restartLsp', async () => {
         if (client) {
@@ -111,6 +137,7 @@ function activate(context) {
         await startClient();
         vscode.window.showInformationMessage('FLOW language server restarted');
     }));
+    context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('flow', new FlowDebugAdapterFactory()));
     void startClient();
 }
 function deactivate() {

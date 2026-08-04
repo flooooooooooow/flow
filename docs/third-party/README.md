@@ -4,7 +4,7 @@ Flow ships a focused standard library in `lib/stdlib/`. The packages below are *
 
 | Package | Location | Proofs | Description |
 |---------|----------|--------|-------------|
-| **[flow-verify](flow-verify.md)** | `lib/verify/` + `examples/verify/` | 519 | Formal math with Claim Paths and stepped `.proof.md` writeups |
+| **[flow-verify](flow-verify.md)** | `lib/verify/` + `examples/verify/` | ~1056 `.proof.md` under `examples/verify/` | Formal math with Claim Paths and stepped `.proof.md` writeups |
 
 ---
 
@@ -31,9 +31,9 @@ core-Flow regression.
 
 ## Adding a third-party package
 
-1. Place sources under `lib/<name>/` or `examples/<name>/`
-2. Add a page under `docs/third-party/<name>.md`
-3. Register it in this index and in `site/wiki-nav.json`
+1. Place sources under `lib/<name>/`, `registry/packages/<name>/`, or an external git repo
+2. Add a `flow.toml` and run `./flow publish` (or `./flow publish --git … --tag …`)
+3. Add a page under `docs/third-party/<name>.md` and link it here
 4. Run `./scripts/build_wiki.py` before deploy
 
-Packages should declare their own `flow.toml` when they become independently installable.
+Install for consumers: `./flow add <name>` — see [package-registry.md](../project/package-registry.md).

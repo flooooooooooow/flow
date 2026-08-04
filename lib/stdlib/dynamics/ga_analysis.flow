@@ -36,7 +36,7 @@ function ga_closed_loop_matrix(
     bk_buf: ptr<f64>
 ) -> DynamicalSystem {
     let n: i32 = sys.n
-    let K: array<f64, 2> = [k1, k2]
+    let mut K: array<f64, 2> = [k1, k2]
     let BK: Matrix = matrix_zeros(bk_buf, n, n)
     for i in 0 to n {
         for j in 0 to n {
@@ -62,9 +62,9 @@ function matrix_spectral_radius_2x2(m: Matrix) -> f64 {
     let s: f64 = sqrt(disc)
     let l1: f64 = (tr + s) / 2.0
     let l2: f64 = (tr - s) / 2.0
-    let a1: f64 = l1
+    let mut a1: f64 = l1
     if a1 < 0.0 { a1 = 0.0 - a1 }
-    let a2: f64 = l2
+    let mut a2: f64 = l2
     if a2 < 0.0 { a2 = 0.0 - a2 }
     if a1 > a2 { return a1 }
     return a2
@@ -121,7 +121,7 @@ function ga_closed_loop_energy(closed: DynamicalSystem, steps: i32) -> f64 {
     let n: i32 = closed.n
     let x: array<f64, 8> = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let xn: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
     let mut energy: f64 = 0.0
     for t in 0 to steps {
         energy = energy + x[0] * x[0] + x[1] * x[1]
@@ -179,7 +179,7 @@ function ga_analyze_control_search(
 
     let closed: DynamicalSystem = ga_closed_loop_matrix(plant, best_k1[0], best_k2[0], acl_buf, bk_buf)
     let rho_closed: f64 = matrix_spectral_radius_2x2(closed.A)
-    let stable: i32 = 0
+    let mut stable: i32 = 0
     if rho_closed < 1.0 {
         stable = 1
     }

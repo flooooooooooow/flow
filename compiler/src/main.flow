@@ -1,0 +1,1294 @@
+# flowc — Flow compiler written in Flow (self-hosting bootstrap)
+#
+# Phase 3: lex + parse a core subset, dump AST stats.
+# Phase 4: Stage-A C emit of a tiny AST subset into a buffer.
+# Bootstrap host: today's Python→C compiler runs this package.
+
+import .token {
+    TOK_KEYWORD, TOK_IDENT, TOK_INT, TOK_EOF, KW_LET, KW_FUNCTION, KW_BREAK, KW_CONTINUE,
+    KW_CONST, KW_AS
+}
+import .lexer { flowc_lexer_new, flowc_lexer_next }
+import .ast {
+    AST_FN, AST_LET, AST_RETURN, AST_IF, AST_FOR, AST_STRUCT, AST_FIELD, AST_EXTERN,
+    AST_IMPORT, AST_EXPORT, AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT,
+    AST_BREAK, AST_CONTINUE, AST_STRING, AST_CONST, AST_CAST, AST_ASSIGN, AST_TYPE, AST_NONE,
+    AST_CALL, AST_BINOP, AST_INT, AST_IDENT,
+    flowc_ast_count_kind, flowc_ast_chain_len
+}
+import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
+import .fileio { flowc_read_file, flowc_write_file }
+import .cgen { flowc_cgen_emit }
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+    function puts(s: string) -> i32
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function getenv(name: string) -> string
+}
+
+# Non-null and non-empty getenv result → 1, else 0.
+function flowc_env_set(name: string) -> i32 {
+    let v: string = getenv(name)
+    let p: ptr<u8> = v
+    if p == null {
+        return 0
+    }
+    if strlen(v) == 0 {
+        return 0
+    }
+    return 1
+}
+
+# FLOWC_IN / FLOWC_OUT emit path: read .flow, Stage-A cgen, write C (or stdout).
+# Returns 0 on success, 1 on failure. Does not run self-tests.
+function flowc_emit_mode() -> i32 {
+    let in_path: string = getenv("FLOWC_IN")
+    let src_cap: i32 = 65536
+    let src: ptr<u8> = malloc(src_cap as i64)
+    if src == null {
+        puts("flowc emit: malloc src failed")
+        return 1
+    }
+    let mut zi: i32 = 0
+    while zi < src_cap {
+        src[zi] = 0
+        zi = zi + 1
+    }
+    let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    if nsrc <= 0 {
+        puts("flowc emit: read FLOWC_IN failed")
+        free(src)
+        return 1
+    }
+    src[nsrc] = 0
+
+    # Modules like ast.flow need a large arena (nested index/field assigns).
+    let mut p: Parser = flowc_parser_new(src, nsrc, 8192)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        puts("flowc emit: parse failed")
+        printf("flowc emit: at %d\n", p.cur.start)
+        printf("flowc emit: arena_len=%d\n", p.arena.len)
+        flowc_parser_free(p)
+        free(src)
+        return 1
+    }
+
+    let out_cap: i32 = 262144
+    let out: ptr<u8> = malloc(out_cap as i64)
+    if out == null {
+        puts("flowc emit: malloc out failed")
+        flowc_parser_free(p)
+        free(src)
+        return 1
+    }
+    zi = 0
+    while zi < out_cap {
+        out[zi] = 0
+        zi = zi + 1
+    }
+
+    let nout: i32 = flowc_cgen_emit(p.arena, root, src, out, out_cap)
+    if nout <= 0 {
+        puts("flowc emit: cgen failed")
+        free(out)
+        flowc_parser_free(p)
+        free(src)
+        return 1
+    }
+
+    let mut rc: i32 = 0
+    if flowc_env_set("FLOWC_OUT") == 1 {
+        let out_path: string = getenv("FLOWC_OUT")
+        if flowc_write_file(out_path, out, nout) != 0 {
+            puts("flowc emit: write FLOWC_OUT failed")
+            rc = 1
+        }
+    } else {
+        if nout < out_cap {
+            out[nout] = 0
+        }
+        puts(out)
+    }
+
+    free(out)
+    flowc_parser_free(p)
+    free(src)
+    return rc
+}
+
+function flowc_bytes_contains(hay: ptr<u8>, hay_len: i32, needle: string) -> i32 {
+    let np: ptr<u8> = needle
+    let nlen: i32 = strlen(needle) as i32
+    if nlen == 0 {
+        return 1
+    }
+    if nlen > hay_len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i <= hay_len - nlen {
+        let mut j: i32 = 0
+        let mut ok: i32 = 1
+        while j < nlen {
+            if hay[i + j] != np[j] {
+                ok = 0
+                break
+            }
+            j = j + 1
+        }
+        if ok == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Fixture path is relative to repo root (same as `./flow run compiler/src/main.flow`).
+# Self-tests assume cwd = repository root.
+
+function expect_kind(kind: i32, want: i32) -> i32 {
+    if kind == want {
+        return 1
+    }
+    return 0
+}
+
+function test_lexer_smoke() -> i32 {
+    # `let x: i32 = 42`
+    let a: array<u8, 15> = [108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 52, 50]
+    let ap: ptr<u8> = a
+    let mut la = flowc_lexer_new(ap, 15)
+    let t0 = flowc_lexer_next(&la)
+    let t1 = flowc_lexer_next(&la)
+    let t2 = flowc_lexer_next(&la)
+    let t3 = flowc_lexer_next(&la)
+    let t4 = flowc_lexer_next(&la)
+    let t5 = flowc_lexer_next(&la)
+    let t6 = flowc_lexer_next(&la)
+    let mut ok: i32 = 1
+    if expect_kind(t0.kind, TOK_KEYWORD) == 0 { ok = 0 }
+    if t0.kw != KW_LET { ok = 0 }
+    if expect_kind(t1.kind, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(t5.kind, TOK_INT) == 0 { ok = 0 }
+    if expect_kind(t6.kind, TOK_EOF) == 0 { ok = 0 }
+    return ok
+}
+
+function test_parse_core() -> i32 {
+    # function add(a: i32, b: i32) -> i32 {
+    #   let mut s: i32 = a + b
+    #   return s
+    # }
+    # function main() -> i32 {
+    #   let x: i32 = add(20, 22)
+    #   if x == 42 {
+    #     return x
+    #   } else {
+    #     return 0
+    #   }
+    # }
+    let src: array<u8, 220> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32,
+        105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32,
+        115, 58, 32, 105, 51, 50, 32, 61, 32, 97, 32, 43, 32, 98, 10, 32,
+        32, 114, 101, 116, 117, 114, 110, 32, 115, 10, 125, 10, 102, 117, 110, 99,
+        116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105,
+        51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51,
+        50, 32, 61, 32, 97, 100, 100, 40, 50, 48, 44, 32, 50, 50, 41, 10,
+        32, 32, 105, 102, 32, 120, 32, 61, 61, 32, 52, 50, 32, 123, 10, 32,
+        32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 10, 32, 32, 125, 32,
+        101, 108, 115, 101, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114,
+        110, 32, 48, 10, 32, 32, 125, 10, 125, 10, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    # Exact length of source without trailing zeros: count until first 0 after '}'
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 220 and sp[len] != 0 {
+        len = len + 1
+    }
+
+    let mut p: Parser = flowc_parser_new(sp, len, 512)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let n_fn: i32 = flowc_ast_count_kind(p.arena, AST_FN)
+    let n_let: i32 = flowc_ast_count_kind(p.arena, AST_LET)
+    let n_ret: i32 = flowc_ast_count_kind(p.arena, AST_RETURN)
+    let n_if: i32 = flowc_ast_count_kind(p.arena, AST_IF)
+    let n_call: i32 = flowc_ast_count_kind(p.arena, AST_CALL)
+    let n_binop: i32 = flowc_ast_count_kind(p.arena, AST_BINOP)
+    let n_int: i32 = flowc_ast_count_kind(p.arena, AST_INT)
+
+    printf("fns=%d\n", n_fn)
+    printf("lets=%d\n", n_let)
+    printf("returns=%d\n", n_ret)
+    printf("ifs=%d\n", n_if)
+    printf("calls=%d\n", n_call)
+    printf("binops=%d\n", n_binop)
+    printf("ints=%d\n", n_int)
+    printf("nodes=%d\n", p.arena.len)
+    printf("err=%d\n", p.err)
+
+    if n_fn != 2 { ok = 0 }
+    if n_let != 2 { ok = 0 }
+    if n_ret != 3 { ok = 0 }
+    if n_if != 1 { ok = 0 }
+    if n_call != 1 { ok = 0 }
+    if n_binop < 2 { ok = 0 }
+
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_for() -> i32 {
+    # function f() -> i32 {
+    #   for i in 0 to 10 {
+    #     let x: i32 = i
+    #   }
+    #   return 0
+    # }
+    let src: array<u8, 80> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 102, 111, 114, 32, 105, 32, 105, 110,
+        32, 48, 32, 116, 111, 32, 49, 48, 32, 123, 10, 32, 32, 32, 32, 108,
+        101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 105, 10, 32, 32,
+        125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 80 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_for: i32 = flowc_ast_count_kind(p.arena, AST_FOR)
+    let n_let: i32 = flowc_ast_count_kind(p.arena, AST_LET)
+    printf("fors=%d\n", n_for)
+    printf("for_lets=%d\n", n_let)
+    if n_for != 1 { ok = 0 }
+    if n_let != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_struct() -> i32 {
+    # struct Point { x: i32, y: i32 }
+    # function origin() -> i32 { return 0 }
+    let src: array<u8, 80> = [
+        115, 116, 114, 117, 99, 116, 32, 80, 111, 105, 110, 116, 32, 123, 10, 32,
+        32, 120, 58, 32, 105, 51, 50, 44, 10, 32, 32, 121, 58, 32, 105, 51,
+        50, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 111, 114, 105,
+        103, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32,
+        32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 80 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_st: i32 = flowc_ast_count_kind(p.arena, AST_STRUCT)
+    let n_field: i32 = flowc_ast_count_kind(p.arena, AST_FIELD)
+    let n_fn: i32 = flowc_ast_count_kind(p.arena, AST_FN)
+    printf("structs=%d\n", n_st)
+    printf("fields=%d\n", n_field)
+    printf("struct_fns=%d\n", n_fn)
+    if n_st != 1 { ok = 0 }
+    if n_field != 2 { ok = 0 }
+    if n_fn != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_extern() -> i32 {
+    # extern { function puts(s: string) -> i32 }
+    # function main() -> i32 { return 0 }
+    let src: array<u8, 88> = [
+        101, 120, 116, 101, 114, 110, 32, 123, 10, 32, 32, 102, 117, 110, 99, 116,
+        105, 111, 110, 32, 112, 117, 116, 115, 40, 115, 58, 32, 115, 116, 114, 105,
+        110, 103, 41, 32, 45, 62, 32, 105, 51, 50, 10, 125, 10, 102, 117, 110,
+        99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48,
+        10, 125, 10, 0, 0, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 88 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_ex: i32 = flowc_ast_count_kind(p.arena, AST_EXTERN)
+    let n_fn: i32 = flowc_ast_count_kind(p.arena, AST_FN)
+    printf("externs=%d\n", n_ex)
+    printf("extern_fns=%d\n", n_fn)
+    if n_ex != 1 { ok = 0 }
+    if n_fn != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_import_export() -> i32 {
+    # import .token { TOK_EOF }
+    # import pkg.mod { a, b }
+    # import "path.flow"
+    # export function add(a: i32, b: i32) -> i32 { return a }
+    # export struct Point { x: i32 }
+    # function main() -> i32 { return 0 }
+    let src: array<u8, 200> = [
+        105, 109, 112, 111, 114, 116, 32, 46, 116, 111, 107, 101, 110, 32, 123, 32,
+        84, 79, 75, 95, 69, 79, 70, 32, 125, 10, 105, 109, 112, 111, 114, 116,
+        32, 112, 107, 103, 46, 109, 111, 100, 32, 123, 32, 97, 44, 32, 98, 32,
+        125, 10, 105, 109, 112, 111, 114, 116, 32, 34, 112, 97, 116, 104, 46, 102,
+        108, 111, 119, 34, 10, 101, 120, 112, 111, 114, 116, 32, 102, 117, 110, 99,
+        116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32, 105, 51, 50, 44,
+        32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32,
+        123, 32, 114, 101, 116, 117, 114, 110, 32, 97, 32, 125, 10, 101, 120, 112,
+        111, 114, 116, 32, 115, 116, 114, 117, 99, 116, 32, 80, 111, 105, 110, 116,
+        32, 123, 32, 120, 58, 32, 105, 51, 50, 32, 125, 10, 102, 117, 110, 99,
+        116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105,
+        51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 48, 32, 125, 10,
+        0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 200 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 512)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_imp: i32 = flowc_ast_count_kind(p.arena, AST_IMPORT)
+    let n_exp: i32 = flowc_ast_count_kind(p.arena, AST_EXPORT)
+    let n_fn: i32 = flowc_ast_count_kind(p.arena, AST_FN)
+    let n_st: i32 = flowc_ast_count_kind(p.arena, AST_STRUCT)
+    printf("imports=%d\n", n_imp)
+    printf("exports=%d\n", n_exp)
+    printf("ie_fns=%d\n", n_fn)
+    printf("ie_structs=%d\n", n_st)
+    if n_imp != 3 { ok = 0 }
+    if n_exp != 2 { ok = 0 }
+    if n_fn != 2 { ok = 0 }
+    if n_st != 1 { ok = 0 }
+    # relative import ival=1; string import ival=2
+    let mut rel: i32 = 0
+    let mut str_form: i32 = 0
+    let mut i: i32 = 0
+    while i < p.arena.len {
+        if p.arena.nodes[i].kind == AST_IMPORT {
+            if p.arena.nodes[i].ival == 1 { rel = rel + 1 }
+            if p.arena.nodes[i].ival == 2 { str_form = str_form + 1 }
+        }
+        i = i + 1
+    }
+    printf("import_rel=%d\n", rel)
+    printf("import_str=%d\n", str_form)
+    if rel != 1 { ok = 0 }
+    if str_form != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_export_bare() -> i32 {
+    # export a, b
+    # function main() -> i32 { return 0 }
+    let src: array<u8, 48> = [
+        101, 120, 112, 111, 114, 116, 32, 97, 44, 32, 98, 10, 102, 117, 110, 99,
+        116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105,
+        51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 48, 32, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 48, 128)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_exp: i32 = flowc_ast_count_kind(p.arena, AST_EXPORT)
+    let n_fn: i32 = flowc_ast_count_kind(p.arena, AST_FN)
+    printf("bare_exports=%d\n", n_exp)
+    printf("bare_fns=%d\n", n_fn)
+    if n_exp != 1 { ok = 0 }
+    if n_fn != 1 { ok = 0 }
+    let mut bare: i32 = 0
+    let mut i: i32 = 0
+    while i < p.arena.len {
+        if p.arena.nodes[i].kind == AST_EXPORT and p.arena.nodes[i].ival == 1 {
+            bare = bare + 1
+            let n_names: i32 = flowc_ast_chain_len(p.arena, p.arena.nodes[i].a)
+            printf("bare_names=%d\n", n_names)
+            if n_names != 2 { ok = 0 }
+        }
+        i = i + 1
+    }
+    if bare != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_for() -> i32 {
+    # function f() -> i32 {
+    #   for i in 0 to 10 {
+    #     let x: i32 = i
+    #   }
+    #   return 0
+    # }
+    let src: array<u8, 80> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 102, 111, 114, 32, 105, 32, 105, 110,
+        32, 48, 32, 116, 111, 32, 49, 48, 32, 123, 10, 32, 32, 32, 32, 108,
+        101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 105, 10, 32, 32,
+        125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 80 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 1024
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_for: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_for_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "for (") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "int32_t i") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "i = i + 1") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "i < ") == 0 { ok = 0 }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_logic() -> i32 {
+    # function f(a: i32, b: i32) -> i32 {
+    #   return a && b
+    # }
+    # function g(x: i32, y: i32) -> i32 {
+    #   return x == 1 || y == 2
+    # }
+    let src: array<u8, 128> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 97, 58, 32, 105, 51,
+        50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51,
+        50, 32, 123, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 97, 32, 38,
+        38, 32, 98, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 103,
+        40, 120, 58, 32, 105, 51, 50, 44, 32, 121, 58, 32, 105, 51, 50, 41,
+        32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 114, 101, 116, 117,
+        114, 110, 32, 120, 32, 61, 61, 32, 49, 32, 124, 124, 32, 121, 32, 61,
+        61, 32, 50, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 128 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 1024
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_logic: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_logic_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "&&") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "||") == 0 { ok = 0 }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_string() -> i32 {
+    # function main() -> i32 {
+    #   let s: string = "hi"
+    #   return 0
+    # }
+    let src: array<u8, 64> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32,
+        45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 115,
+        58, 32, 115, 116, 114, 105, 110, 103, 32, 61, 32, 34, 104, 105, 34, 10,
+        32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 64 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 1024
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_string: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_string_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "\"hi\"") == 0 { ok = 0 }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_emit() -> i32 {
+    # Same program as test_parse_core — emit C and scan for expected substrings.
+    let src: array<u8, 220> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32,
+        105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32,
+        115, 58, 32, 105, 51, 50, 32, 61, 32, 97, 32, 43, 32, 98, 10, 32,
+        32, 114, 101, 116, 117, 114, 110, 32, 115, 10, 125, 10, 102, 117, 110, 99,
+        116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105,
+        51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51,
+        50, 32, 61, 32, 97, 100, 100, 40, 50, 48, 44, 32, 50, 50, 41, 10,
+        32, 32, 105, 102, 32, 120, 32, 61, 61, 32, 52, 50, 32, 123, 10, 32,
+        32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 10, 32, 32, 125, 32,
+        101, 108, 115, 101, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114,
+        110, 32, 48, 10, 32, 32, 125, 10, 125, 10, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 220 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 512)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 2048
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "int32_t") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "add") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "return") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "#include <stdint.h>") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "if (") == 0 { ok = 0 }
+
+    if n > 0 and n < cap {
+        bp[n] = 0
+        puts("--- cgen output ---")
+        puts(bp)
+        puts("--- end cgen ---")
+    }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_fixture_file() -> i32 {
+    # Path tried: compiler/fixtures/hello_subset.flow (repo root cwd).
+    let path: string = "compiler/fixtures/hello_subset.flow"
+    let cap: i32 = 4096
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("fixture: malloc failed")
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_read_file(path, bp, cap - 1)
+    printf("fixture_bytes=%d\n", n)
+    if n <= 0 {
+        puts("fixture: open/read failed (cwd must be repo root)")
+        free(bp)
+        return 0
+    }
+    bp[n] = 0
+
+    let mut p: Parser = flowc_parser_new(bp, n, 512)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let n_fn: i32 = flowc_ast_count_kind(p.arena, AST_FN)
+    let n_let: i32 = flowc_ast_count_kind(p.arena, AST_LET)
+    let n_ret: i32 = flowc_ast_count_kind(p.arena, AST_RETURN)
+    let n_if: i32 = flowc_ast_count_kind(p.arena, AST_IF)
+    let n_for: i32 = flowc_ast_count_kind(p.arena, AST_FOR)
+    let n_st: i32 = flowc_ast_count_kind(p.arena, AST_STRUCT)
+    let n_field: i32 = flowc_ast_count_kind(p.arena, AST_FIELD)
+    let n_ex: i32 = flowc_ast_count_kind(p.arena, AST_EXTERN)
+    let n_call: i32 = flowc_ast_count_kind(p.arena, AST_CALL)
+
+    printf("fixture_fns=%d\n", n_fn)
+    printf("fixture_lets=%d\n", n_let)
+    printf("fixture_returns=%d\n", n_ret)
+    printf("fixture_ifs=%d\n", n_if)
+    printf("fixture_fors=%d\n", n_for)
+    printf("fixture_structs=%d\n", n_st)
+    printf("fixture_fields=%d\n", n_field)
+    printf("fixture_externs=%d\n", n_ex)
+    printf("fixture_calls=%d\n", n_call)
+    printf("fixture_nodes=%d\n", p.arena.len)
+    printf("fixture_err=%d\n", p.err)
+
+    if n_fn != 2 { ok = 0 }
+    if n_st != 1 { ok = 0 }
+    if n_field != 2 { ok = 0 }
+    if n_ex != 1 { ok = 0 }
+    if n_if != 1 { ok = 0 }
+    if n_for != 1 { ok = 0 }
+    if n_call != 1 { ok = 0 }
+    if n_let < 2 { ok = 0 }
+    if n_ret < 2 { ok = 0 }
+
+    flowc_parser_free(p)
+    free(bp)
+    return ok
+}
+
+function test_parse_ptr_array_types() -> i32 {
+    # function f(p: ptr<i32>, a: array<i32, 4>) -> i32 {
+    #   return 0
+    # }
+    let src: array<u8, 64> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 112, 58, 32, 112, 116,
+        114, 60, 105, 51, 50, 62, 44, 32, 97, 58, 32, 97, 114, 114, 97, 121,
+        60, 105, 51, 50, 44, 32, 52, 62, 41, 32, 45, 62, 32, 105, 51, 50,
+        32, 123, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 64, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let mut n_generic: i32 = 0
+    let mut array_n: i32 = 0
+    let mut i: i32 = 0
+    while i < p.arena.len {
+        if p.arena.nodes[i].kind == AST_TYPE and p.arena.nodes[i].a != AST_NONE {
+            n_generic = n_generic + 1
+            if p.arena.nodes[i].ival == 4 { array_n = array_n + 1 }
+        }
+        i = i + 1
+    }
+    printf("generic_types=%d\n", n_generic)
+    printf("array_size4=%d\n", array_n)
+    if n_generic != 2 { ok = 0 }
+    if array_n != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_field_index() -> i32 {
+    # function f() -> i32 {
+    #   let x: i32 = p.x
+    #   let y: i32 = a[0]
+    #   return y
+    # }
+    let src: array<u8, 74> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105,
+        51, 50, 32, 61, 32, 112, 46, 120, 10, 32, 32, 108, 101, 116, 32, 121,
+        58, 32, 105, 51, 50, 32, 61, 32, 97, 91, 48, 93, 10, 32, 32, 114,
+        101, 116, 117, 114, 110, 32, 121, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 74, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_fa: i32 = flowc_ast_count_kind(p.arena, AST_FIELD_ACCESS)
+    let n_ix: i32 = flowc_ast_count_kind(p.arena, AST_INDEX)
+    printf("field_access=%d\n", n_fa)
+    printf("index=%d\n", n_ix)
+    if n_fa != 1 { ok = 0 }
+    if n_ix != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_struct_lit() -> i32 {
+    # function f() -> i32 {
+    #   let p: Point = Point { x: 1, y: 2 }
+    #   return 0
+    # }
+    let src: array<u8, 73> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 112, 58, 32, 80,
+        111, 105, 110, 116, 32, 61, 32, 80, 111, 105, 110, 116, 32, 123, 32, 120,
+        58, 32, 49, 44, 32, 121, 58, 32, 50, 32, 125, 10, 32, 32, 114, 101,
+        116, 117, 114, 110, 32, 48, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 73, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_lit: i32 = flowc_ast_count_kind(p.arena, AST_STRUCT_LIT)
+    printf("struct_lits=%d\n", n_lit)
+    if n_lit != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_break_continue() -> i32 {
+    # break / continue keywords + statements
+    let kw: array<u8, 14> = [98, 114, 101, 97, 107, 32, 99, 111, 110, 116, 105, 110, 117, 101]
+    let kp: ptr<u8> = kw
+    let mut la = flowc_lexer_new(kp, 14)
+    let t0 = flowc_lexer_next(&la)
+    let t1 = flowc_lexer_next(&la)
+    let mut ok: i32 = 1
+    if expect_kind(t0.kind, TOK_KEYWORD) == 0 { ok = 0 }
+    if t0.kw != KW_BREAK { ok = 0 }
+    if expect_kind(t1.kind, TOK_KEYWORD) == 0 { ok = 0 }
+    if t1.kw != KW_CONTINUE { ok = 0 }
+
+    # function f() -> i32 {
+    #   while 1 {
+    #     break
+    #     continue
+    #   }
+    #   return 0
+    # }
+    let src: array<u8, 74> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 119, 104, 105, 108, 101, 32, 49, 32,
+        123, 10, 32, 32, 32, 32, 98, 114, 101, 97, 107, 10, 32, 32, 32, 32,
+        99, 111, 110, 116, 105, 110, 117, 101, 10, 32, 32, 125, 10, 32, 32, 114,
+        101, 116, 117, 114, 110, 32, 48, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 74, 256)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_br: i32 = flowc_ast_count_kind(p.arena, AST_BREAK)
+    let n_co: i32 = flowc_ast_count_kind(p.arena, AST_CONTINUE)
+    printf("breaks=%d\n", n_br)
+    printf("continues=%d\n", n_co)
+    if n_br != 1 { ok = 0 }
+    if n_co != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_string_lit() -> i32 {
+    # function f() -> i32 {
+    #   let s: string = "hi"
+    #   return 0
+    # }
+    let src: array<u8, 58> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 115, 58, 32, 115,
+        116, 114, 105, 110, 103, 32, 61, 32, 34, 104, 105, 34, 10, 32, 32, 114,
+        101, 116, 117, 114, 110, 32, 48, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 58, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_str: i32 = flowc_ast_count_kind(p.arena, AST_STRING)
+    printf("strings=%d\n", n_str)
+    if n_str != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_const() -> i32 {
+    # const keyword + const X / export const Y
+    let kw: array<u8, 5> = [99, 111, 110, 115, 116]
+    let kp: ptr<u8> = kw
+    let mut la = flowc_lexer_new(kp, 5)
+    let t0 = flowc_lexer_next(&la)
+    let mut ok: i32 = 1
+    if expect_kind(t0.kind, TOK_KEYWORD) == 0 { ok = 0 }
+    if t0.kw != KW_CONST { ok = 0 }
+
+    # const X: i32 = 42
+    # export const Y: i32 = 7
+    # function main() -> i32 { return 0 }
+    let src: array<u8, 78> = [
+        99, 111, 110, 115, 116, 32, 88, 58, 32, 105, 51, 50, 32, 61, 32, 52,
+        50, 10, 101, 120, 112, 111, 114, 116, 32, 99, 111, 110, 115, 116, 32, 89,
+        58, 32, 105, 51, 50, 32, 61, 32, 55, 10, 102, 117, 110, 99, 116, 105,
+        111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50,
+        32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 48, 32, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 78, 256)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_c: i32 = flowc_ast_count_kind(p.arena, AST_CONST)
+    printf("consts=%d\n", n_c)
+    if n_c != 2 { ok = 0 }
+    let mut exported: i32 = 0
+    let mut i: i32 = 0
+    while i < p.arena.len {
+        if p.arena.nodes[i].kind == AST_CONST and p.arena.nodes[i].ival == 1 {
+            exported = exported + 1
+        }
+        i = i + 1
+    }
+    printf("export_consts=%d\n", exported)
+    if exported != 1 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_const() -> i32 {
+    # export const N: i32 = 7
+    # const M: i32 = 5
+    # function main() -> i32 {
+    #     return N + M
+    # }
+    let src: array<u8, 85> = [
+        101, 120, 112, 111, 114, 116, 32, 99, 111, 110, 115, 116, 32, 78, 58, 32,
+        105, 51, 50, 32, 61, 32, 55, 10, 99, 111, 110, 115, 116, 32, 77, 58,
+        32, 105, 51, 50, 32, 61, 32, 53, 10, 102, 117, 110, 99, 116, 105, 111,
+        110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32,
+        123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 78, 32, 43,
+        32, 77, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 85, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 1024
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_const: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_const_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "static const int32_t") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "N") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "7") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "M") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "5") == 0 { ok = 0 }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_struct() -> i32 {
+    # struct Point {
+    #     x: i32,
+    #     y: i32
+    # }
+    #
+    # function main() -> i32 {
+    #     let p: Point = Point { x: 20, y: 22 }
+    #     return p.x + p.y
+    # }
+    let src: array<u8, 136> = [
+        115, 116, 114, 117, 99, 116, 32, 80, 111, 105, 110, 116, 32, 123, 10, 32,
+        32, 32, 32, 120, 58, 32, 105, 51, 50, 44, 10, 32, 32, 32, 32, 121,
+        58, 32, 105, 51, 50, 10, 125, 10, 10, 102, 117, 110, 99, 116, 105, 111,
+        110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32,
+        123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 112, 58, 32, 80, 111, 105,
+        110, 116, 32, 61, 32, 80, 111, 105, 110, 116, 32, 123, 32, 120, 58, 32,
+        50, 48, 44, 32, 121, 58, 32, 50, 50, 32, 125, 10, 32, 32, 32, 32,
+        114, 101, 116, 117, 114, 110, 32, 112, 46, 120, 32, 43, 32, 112, 46, 121,
+        10, 125, 10, 0, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 136 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 2048
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_struct: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_struct_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "typedef struct") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "Point") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "int32_t x") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "int32_t y") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, ".x = ") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, ".y = ") == 0 { ok = 0 }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_ptr() -> i32 {
+    # function f(p: ptr<i32>) -> i32 {
+    #     return p[0]
+    # }
+    let src: array<u8, 51> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 112, 58, 32, 112, 116,
+        114, 60, 105, 51, 50, 62, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123,
+        10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 112, 91, 48, 93,
+        10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 51, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 1024
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_ptr: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_ptr_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "int32_t*") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "p[0]") == 0 { ok = 0 }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_cast() -> i32 {
+    # KW_AS + AST_CAST nodes for `(x as i64) as i32`
+    let kw: array<u8, 2> = [97, 115]
+    let kp: ptr<u8> = kw
+    let mut la = flowc_lexer_new(kp, 2)
+    let t0 = flowc_lexer_next(&la)
+    let mut ok: i32 = 1
+    if expect_kind(t0.kind, TOK_KEYWORD) == 0 { ok = 0 }
+    if t0.kw != KW_AS { ok = 0 }
+
+    # function f() -> i32 {
+    #     let x: i32 = 1
+    #     return (x as i64) as i32
+    # }
+    let src: array<u8, 72> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32,
+        105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 120, 58,
+        32, 105, 51, 50, 32, 61, 32, 49, 10, 32, 32, 32, 32, 114, 101, 116,
+        117, 114, 110, 32, 40, 120, 32, 97, 115, 32, 105, 54, 52, 41, 32, 97,
+        115, 32, 105, 51, 50, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 72, 256)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_cast: i32 = flowc_ast_count_kind(p.arena, AST_CAST)
+    printf("casts=%d\n", n_cast)
+    if n_cast != 2 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_parse_index_assign() -> i32 {
+    # p[0] = 40  → AST_ASSIGN with INDEX lhs
+    # function main() -> i32 {
+    #     let mut x: i32 = 0
+    #     let mut y: i32 = 0
+    #     let p: ptr<i32> = &x
+    #     let q: ptr<i32> = &y
+    #     p[0] = 40
+    #     q[0] = 2
+    #     return p[0] + q[0]
+    # }
+    let src: array<u8, 173> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32,
+        45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116,
+        32, 109, 117, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 48, 10,
+        32, 32, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 121, 58, 32, 105,
+        51, 50, 32, 61, 32, 48, 10, 32, 32, 32, 32, 108, 101, 116, 32, 112,
+        58, 32, 112, 116, 114, 60, 105, 51, 50, 62, 32, 61, 32, 38, 120, 10,
+        32, 32, 32, 32, 108, 101, 116, 32, 113, 58, 32, 112, 116, 114, 60, 105,
+        51, 50, 62, 32, 61, 32, 38, 121, 10, 32, 32, 32, 32, 112, 91, 48,
+        93, 32, 61, 32, 52, 48, 10, 32, 32, 32, 32, 113, 91, 48, 93, 32,
+        61, 32, 50, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 112,
+        91, 48, 93, 32, 43, 32, 113, 91, 48, 93, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 173, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_as: i32 = flowc_ast_count_kind(p.arena, AST_ASSIGN)
+    let n_ix: i32 = flowc_ast_count_kind(p.arena, AST_INDEX)
+    printf("assigns=%d\n", n_as)
+    printf("indexes=%d\n", n_ix)
+    if n_as != 2 { ok = 0 }
+    if n_ix < 2 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_cast() -> i32 {
+    # function main() -> i32 {
+    #     let x: i32 = 40
+    #     let y: i64 = (x as i64) + 2
+    #     return (y as i32)
+    # }
+    let src: array<u8, 101> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32,
+        45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116,
+        32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 52, 48, 10, 32, 32, 32,
+        32, 108, 101, 116, 32, 121, 58, 32, 105, 54, 52, 32, 61, 32, 40, 120,
+        32, 97, 115, 32, 105, 54, 52, 41, 32, 43, 32, 50, 10, 32, 32, 32,
+        32, 114, 101, 116, 117, 114, 110, 32, 40, 121, 32, 97, 115, 32, 105, 51,
+        50, 41, 10, 125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 101, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 1024
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_cast: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_cast_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "int64_t") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, ")(") == 0 { ok = 0 }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function test_cgen_void() -> i32 {
+    # function g() -> void { }
+    # function main() -> i32 { return 0 }
+    let src: array<u8, 66> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 103, 40, 41, 32, 45, 62, 32,
+        118, 111, 105, 100, 32, 123, 10, 125, 10, 10, 102, 117, 110, 99, 116, 105,
+        111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50,
+        32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10,
+        125, 10
+    ]
+    let sp: ptr<u8> = src
+    let mut p: Parser = flowc_parser_new(sp, 66, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+
+    let cap: i32 = 1024
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_void: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_void_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "void g") == 0 { ok = 0 }
+
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+function main() -> i32 {
+    if flowc_env_set("FLOWC_IN") == 1 {
+        return flowc_emit_mode()
+    }
+
+    puts("flowc: self-hosting bootstrap")
+    let lex_ok: i32 = test_lexer_smoke()
+    printf("lexer_ok=%d\n", lex_ok)
+    let parse_ok: i32 = test_parse_core()
+    printf("parse_ok=%d\n", parse_ok)
+    let for_ok: i32 = test_parse_for()
+    printf("for_ok=%d\n", for_ok)
+    let struct_ok: i32 = test_parse_struct()
+    printf("struct_ok=%d\n", struct_ok)
+    let extern_ok: i32 = test_parse_extern()
+    printf("extern_ok=%d\n", extern_ok)
+    let ie_ok: i32 = test_parse_import_export()
+    printf("import_export_ok=%d\n", ie_ok)
+    let bare_ok: i32 = test_parse_export_bare()
+    printf("export_bare_ok=%d\n", bare_ok)
+    let fixture_ok: i32 = test_parse_fixture_file()
+    printf("fixture_ok=%d\n", fixture_ok)
+    let ty_ok: i32 = test_parse_ptr_array_types()
+    printf("ptr_array_ok=%d\n", ty_ok)
+    let fi_ok: i32 = test_parse_field_index()
+    printf("field_index_ok=%d\n", fi_ok)
+    let lit_ok: i32 = test_parse_struct_lit()
+    printf("struct_lit_ok=%d\n", lit_ok)
+    let bc_ok: i32 = test_parse_break_continue()
+    printf("break_continue_ok=%d\n", bc_ok)
+    let str_ok: i32 = test_parse_string_lit()
+    printf("string_ok=%d\n", str_ok)
+    let const_ok: i32 = test_parse_const()
+    printf("const_ok=%d\n", const_ok)
+    let cgen_ok: i32 = test_cgen_emit()
+    printf("cgen_ok=%d\n", cgen_ok)
+    let for_cgen_ok: i32 = test_cgen_for()
+    printf("cgen_for_ok=%d\n", for_cgen_ok)
+    let logic_ok: i32 = test_cgen_logic()
+    printf("cgen_logic_ok=%d\n", logic_ok)
+    let string_cgen_ok: i32 = test_cgen_string()
+    printf("cgen_string_ok=%d\n", string_cgen_ok)
+    let cgen_const_ok: i32 = test_cgen_const()
+    printf("cgen_const_ok=%d\n", cgen_const_ok)
+    let cgen_struct_ok: i32 = test_cgen_struct()
+    printf("cgen_struct_ok=%d\n", cgen_struct_ok)
+    let cgen_ptr_ok: i32 = test_cgen_ptr()
+    printf("cgen_ptr_ok=%d\n", cgen_ptr_ok)
+    let cast_ok: i32 = test_parse_cast()
+    printf("cast_ok=%d\n", cast_ok)
+    let idx_as_ok: i32 = test_parse_index_assign()
+    printf("index_assign_ok=%d\n", idx_as_ok)
+    let cgen_cast_ok: i32 = test_cgen_cast()
+    printf("cgen_cast_ok=%d\n", cgen_cast_ok)
+    let cgen_void_ok: i32 = test_cgen_void()
+    printf("cgen_void_ok=%d\n", cgen_void_ok)
+    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 {
+        puts("flowc: PASS")
+        return 0
+    }
+    puts("flowc: FAIL")
+    return 1
+}

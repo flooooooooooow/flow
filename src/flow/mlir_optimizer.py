@@ -9,7 +9,8 @@ import subprocess
 import tempfile
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
 
 class MLIROptimizer:
     """MLIR optimization pipeline for FLOW."""
@@ -21,11 +22,9 @@ class MLIROptimizer:
   }
 }
 """
-    
+
     def __init__(self, mlir_opt_path: str = None):
         if mlir_opt_path is None:
-            # Try to find mlir-opt in common locations
-            import shutil
             mlir_opt_path = shutil.which("mlir-opt")
             if mlir_opt_path is None:
                 # Try Homebrew LLVM
@@ -34,6 +33,7 @@ class MLIROptimizer:
                     mlir_opt_path = "mlir-opt"  # Fallback
         self.mlir_opt = mlir_opt_path
         self._opt_capable: Optional[bool] = None
+        self._pass_support: dict = {}
 
     @staticmethod
     def _copy_if_different(src: str, dst: str) -> None:
@@ -69,7 +69,92 @@ class MLIROptimizer:
             Path(probe_out).unlink(missing_ok=True)
         return self._opt_capable
 
-    def optimize(self, input_mlir: str, output_mlir: str, 
+    def _pass_available(self, pipeline: str) -> bool:
+        """Probe whether a pass pipeline fragment is accepted by this mlir-opt."""
+        if pipeline in self._pass_support:
+            return self._pass_support[pipeline]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".mlir", delete=False) as tmp:
+            tmp.write(self._PROBE_MLIR)
+            probe_in = tmp.name
+        probe_out = probe_in + ".out"
+        try:
+            result = subprocess.run(
+                [
+                    self.mlir_opt,
+                    "--mlir-print-op-on-diagnostic=false",
+                    f"--pass-pipeline={pipeline}",
+                    probe_in,
+                    "-o",
+                    probe_out,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            ok = result.returncode == 0
+        except Exception:
+            ok = False
+        finally:
+            Path(probe_in).unlink(missing_ok=True)
+            Path(probe_out).unlink(missing_ok=True)
+        self._pass_support[pipeline] = ok
+        return ok
+
+    def build_pipeline(
+        self,
+        optimization_level: str = "O2",
+        enable_vectorization: bool = True,
+        enable_loop_fusion: bool = True,
+        enable_mem2reg: bool = True,
+        enable_sccp: bool = True,
+        enable_licm: bool = True,
+        enable_gvn: bool = True,
+        enable_dce: bool = True,
+        enable_inline: bool = True,
+    ) -> str:
+        """Build a pass pipeline string honoring flags and toolchain support."""
+        del enable_mem2reg, enable_licm, enable_gvn  # reserved; not yet mapped
+
+        func_passes: List[str] = []
+        module_passes: List[str] = []
+
+        if optimization_level in ["O1", "O2", "O3"]:
+            func_passes.extend(["canonicalize", "cse"])
+
+        if enable_sccp and optimization_level in ["O2", "O3"]:
+            func_passes.append("sccp")
+
+        if enable_dce and optimization_level in ["O2", "O3"]:
+            # Prefer remove-dead-values when present; always try symbol-dce.
+            if self._pass_available(
+                "builtin.module(func.func(remove-dead-values))"
+            ):
+                func_passes.append("remove-dead-values")
+            module_passes.append("symbol-dce")
+
+        if enable_inline and optimization_level in ["O2", "O3"]:
+            if self._pass_available("builtin.module(inline)"):
+                module_passes.append("inline")
+
+        # Loop fusion is not vectorization; only enable when explicitly requested
+        # and the affine dialect pass is available. Real vectorization is #113.
+        if enable_loop_fusion and enable_vectorization and optimization_level == "O3":
+            if self._pass_available(
+                "builtin.module(func.func(affine-loop-fusion))"
+            ):
+                func_passes.append("affine-loop-fusion")
+
+        parts: List[str] = []
+        if func_passes:
+            parts.append(f"func.func({','.join(func_passes)})")
+        parts.extend(module_passes)
+        # Run canonicalize once more after inline/DCE to fold leftovers.
+        if optimization_level in ["O1", "O2", "O3"] and module_passes:
+            parts.append("func.func(canonicalize,cse)")
+        if not parts:
+            parts.append("func.func(canonicalize)")
+        return f"builtin.module({','.join(parts)})"
+
+    def optimize(self, input_mlir: str, output_mlir: str,
                  enable_vectorization: bool = True,
                  enable_loop_fusion: bool = True,
                  enable_mem2reg: bool = True,
@@ -77,50 +162,30 @@ class MLIROptimizer:
                  enable_licm: bool = True,
                  enable_gvn: bool = True,
                  enable_dce: bool = True,
+                 enable_inline: bool = True,
                  optimization_level: str = "O2") -> int:
         """
         Apply MLIR optimization passes.
-        
-        Args:
-            input_mlir: Path to input MLIR file
-            output_mlir: Path to output MLIR file
-            enable_vectorization: Enable loop vectorization
-            enable_loop_fusion: Enable loop fusion
-            enable_mem2reg: Enable memory-to-register promotion
-            enable_sccp: Enable sparse conditional constant propagation
-            enable_licm: Enable loop invariant code motion
-            enable_gvn: Enable global value numbering
-            enable_dce: Enable dead code elimination
-            optimization_level: O0, O1, O2, or O3
-        
+
         Returns:
             Exit code of mlir-opt process
         """
-        
-        # Build optimization pipeline - use available passes
-        pipeline_parts = []
-        
-        # Basic optimizations that are always available
-        if optimization_level in ["O1", "O2", "O3"]:
-            pipeline_parts.append("canonicalize")
-            pipeline_parts.append("cse")
-        
-        if optimization_level in ["O2", "O3"]:
-            pipeline_parts.append("sccp")
-        
-        # Vectorization (if available)
-        if enable_vectorization and optimization_level == "O3":
-            # Try vectorization but skip if not available
-            pipeline_parts.append("affine-loop-fusion")
-        
-        # Build full pipeline
-        pipeline = f"builtin.module(func.func({','.join(pipeline_parts)}))"
-
         if not self._toolchain_supports_flow_mlir():
             self._copy_if_different(input_mlir, output_mlir)
             return 0
 
-        # Run mlir-opt with optimization pipeline
+        pipeline = self.build_pipeline(
+            optimization_level=optimization_level,
+            enable_vectorization=enable_vectorization,
+            enable_loop_fusion=enable_loop_fusion,
+            enable_mem2reg=enable_mem2reg,
+            enable_sccp=enable_sccp,
+            enable_licm=enable_licm,
+            enable_gvn=enable_gvn,
+            enable_dce=enable_dce,
+            enable_inline=enable_inline,
+        )
+
         cmd = [
             self.mlir_opt,
             "--mlir-print-op-on-diagnostic=false",
@@ -129,7 +194,7 @@ class MLIROptimizer:
             "-o",
             output_mlir
         ]
-        
+
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
@@ -144,7 +209,22 @@ class MLIROptimizer:
         except Exception as e:
             print(f"Error running MLIR optimizer: {e}", file=sys.stderr)
             return 1
-    
+
+    def optimize_source(self, mlir_source: str, **kwargs) -> Tuple[str, int]:
+        """Optimize an in-memory MLIR string; return (output_source, exit_code)."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".mlir", delete=False) as inp:
+            inp.write(mlir_source)
+            in_path = inp.name
+        out_path = in_path + ".opt.mlir"
+        try:
+            code = self.optimize(in_path, out_path, **kwargs)
+            if code == 0 and Path(out_path).exists():
+                return Path(out_path).read_text(), code
+            return mlir_source, code
+        finally:
+            Path(in_path).unlink(missing_ok=True)
+            Path(out_path).unlink(missing_ok=True)
+
     def analyze_vectorization(self, mlir_file: str) -> List[str]:
         """Analyze vectorization opportunities."""
         cmd = [
@@ -154,7 +234,7 @@ class MLIROptimizer:
             "--mlir-pass-statistics",
             mlir_file
         ]
-        
+
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
@@ -163,18 +243,15 @@ class MLIROptimizer:
                 return []
         except Exception:
             return []
-    
+
     def get_optimization_report(self, mlir_file: str) -> str:
         """Generate optimization report."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mlir', delete=False) as tmp:
             tmp.write(Path(mlir_file).read_text())
             tmp_path = tmp.name
-        
+
         try:
-            # Run with statistics using the same known-available passes as optimize()
-            # Keep this conservative: some Homebrew LLVM builds may not include optional passes.
-            pipeline_parts: List[str] = ["canonicalize", "cse", "sccp"]
-            pipeline = f"builtin.module(func.func({','.join(pipeline_parts)}))"
+            pipeline = self.build_pipeline(optimization_level="O2")
 
             cmd = [
                 self.mlir_opt,
@@ -183,24 +260,25 @@ class MLIROptimizer:
                 f"--pass-pipeline={pipeline}",
                 tmp_path,
             ]
-            
+
             result = subprocess.run(cmd, capture_output=True, text=True)
-            
+
             report = []
             report.append("=== MLIR Optimization Report ===")
             report.append(f"Input file: {mlir_file}")
+            report.append(f"Pipeline: {pipeline}")
             report.append("")
-            
+
             if result.stdout:
                 report.append("Pass Statistics:")
                 report.append(result.stdout)
-            
+
             if result.stderr:
                 report.append("Diagnostics:")
                 report.append(result.stderr)
-            
+
             return "\n".join(report)
-            
+
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
@@ -213,33 +291,33 @@ def optimize_mlir_file(input_file: str, output_file: str, **kwargs) -> int:
 
 if __name__ == "__main__":
     import sys
-    
+
     if len(sys.argv) < 3:
         print("Usage: python mlir_optimizer.py <input.mlir> <output.mlir> [--vectorization] [--no-vectorization] [--O0|--O1|--O2|--O3]")
         sys.exit(1)
-    
+
     input_file = sys.argv[1]
     output_file = sys.argv[2]
-    
+
     # Parse options
     enable_vectorization = "--no-vectorization" not in sys.argv
     optimization_level = "O2"
-    
+
     for arg in sys.argv:
         if arg.startswith("--O"):
             optimization_level = arg[1:]
-    
+
     optimizer = MLIROptimizer()
     result = optimizer.optimize(
-        input_file, 
+        input_file,
         output_file,
         enable_vectorization=enable_vectorization,
         optimization_level=optimization_level
     )
-    
+
     if result == 0:
         print(f"Optimized {input_file} -> {output_file}")
     else:
         print(f"Optimization failed with exit code {result}")
-    
+
     sys.exit(result)

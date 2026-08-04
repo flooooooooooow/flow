@@ -1,0 +1,14 @@
+[package]
+name = "dns"
+version = "0.1.0"
+description = "Hostname resolution via getaddrinfo (first IPv4)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]
+
+[native]
+sources = ["native/flow_dns.c"]

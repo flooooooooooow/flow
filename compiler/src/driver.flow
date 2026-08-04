@@ -1,0 +1,112 @@
+# Stage-A Flow driver — getenv FLOWC_IN / FLOWC_OUT → parse → cgen → write.
+#
+# Emitted alone (imports skipped) and linked with flowc_frontend.o:
+#   FLOWC_IN=... FLOWC_OUT=... ./compiler/build/stage_a_driver_flow
+#
+# Keeps the hand-written C host (host/stage_a_driver.c) as a CLI fallback.
+
+import .fileio { flowc_read_file, flowc_write_file }
+import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
+import .cgen { flowc_cgen_emit }
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+    function puts(s: string) -> i32
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function getenv(name: string) -> string
+}
+
+# Non-null and non-empty getenv result → 1, else 0.
+function flowc_driver_env_set(name: string) -> i32 {
+    let v: string = getenv(name)
+    let p: ptr<u8> = v
+    if p == null {
+        return 0
+    }
+    if strlen(v) == 0 {
+        return 0
+    }
+    return 1
+}
+
+function main() -> i32 {
+    if flowc_driver_env_set("FLOWC_IN") == 0 {
+        puts("stage_a_driver_flow: set FLOWC_IN and FLOWC_OUT")
+        return 2
+    }
+    if flowc_driver_env_set("FLOWC_OUT") == 0 {
+        puts("stage_a_driver_flow: set FLOWC_IN and FLOWC_OUT")
+        return 2
+    }
+
+    let in_path: string = getenv("FLOWC_IN")
+    let out_path: string = getenv("FLOWC_OUT")
+
+    let src_cap: i32 = 65536
+    let src: ptr<u8> = malloc(src_cap as i64)
+    if src == null {
+        puts("stage_a_driver_flow: malloc src failed")
+        return 1
+    }
+    let mut zi: i32 = 0
+    while zi < src_cap {
+        src[zi] = 0
+        zi = zi + 1
+    }
+    let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    if nsrc <= 0 {
+        puts("stage_a_driver_flow: read FLOWC_IN failed")
+        free(src)
+        return 1
+    }
+    src[nsrc] = 0
+
+    let mut p: Parser = flowc_parser_new(src, nsrc, 8192)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        puts("stage_a_driver_flow: parse failed")
+        printf("stage_a_driver_flow: at %d\n", p.cur.start)
+        printf("stage_a_driver_flow: arena_len=%d\n", p.arena.len)
+        flowc_parser_free(p)
+        free(src)
+        return 1
+    }
+
+    let out_cap: i32 = 262144
+    let out: ptr<u8> = malloc(out_cap as i64)
+    if out == null {
+        puts("stage_a_driver_flow: malloc out failed")
+        flowc_parser_free(p)
+        free(src)
+        return 1
+    }
+    zi = 0
+    while zi < out_cap {
+        out[zi] = 0
+        zi = zi + 1
+    }
+
+    let nout: i32 = flowc_cgen_emit(p.arena, root, src, out, out_cap)
+    if nout <= 0 {
+        puts("stage_a_driver_flow: cgen failed")
+        free(out)
+        flowc_parser_free(p)
+        free(src)
+        return 1
+    }
+
+    if flowc_write_file(out_path, out, nout) != 0 {
+        puts("stage_a_driver_flow: write FLOWC_OUT failed")
+        free(out)
+        flowc_parser_free(p)
+        free(src)
+        return 1
+    }
+
+    free(out)
+    flowc_parser_free(p)
+    free(src)
+    return 0
+}

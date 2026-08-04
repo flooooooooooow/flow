@@ -179,7 +179,7 @@ The C backend implements effects with vtable-based dynamic dispatch
 (`src/flow/c_generator.py`):
 
 - each `effect` generates a handler struct of function pointers plus one
-  global current-handler pointer;
+  `_Thread_local` current-handler pointer;
 - each `capability` generates plain C functions and a static vtable
   instance per handled effect;
 - `handle E with H { ... }` saves the current pointer, installs `H`'s
@@ -196,17 +196,57 @@ The C backend implements effects with vtable-based dynamic dispatch
   installed capability does not implement.
 
 Cost: zero for effect calls written inside a `handle` block; one indirect
-call where dispatch stays dynamic. No allocation, no continuations, no
-runtime library.
+call where dispatch stays dynamic. The vtable/`handle` mechanism itself
+allocates nothing and has no continuations. Capabilities such as
+`FiberAsync` / `NetpollAsyncIO` pull in C runtime (`runtime/flow_fiber.c`,
+`flow_netpoll.c`) when used.
+
+## Fail-loud / effect-row Phase 1 + 2
+
+Unhandled operations still default to zero / no-op unless you opt in:
+
+```bash
+# Runtime abort (any C-backend binary):
+FLOW_STRICT_EFFECTS=1 ./flow run examples/effects/showcase.flow
+
+# Compile-time: type-checker rejects unhandled performs + hard abort in C:
+./flow transpile prog.flow --c --strict-effects -o build/prog.c
+```
+
+`--strict-effects` enables:
+
+1. **Phase 1 — lexical handlers.** Tracks `handle E with …` and reports
+   `Unhandled effect 'E.op'` for bare performs.
+2. **Phase 2 — signature rows.** Functions may declare effects they may
+   perform:
+
+```flow
+function greet(name: string) -> void with Log {
+    Log.info(name)   # ok: Log assumed for the body
+}
+
+function main() -> i32 {
+    handle Log with Console {
+        greet("hi")  # ok: handler covers greet's row
+    }
+    # greet("x")     # error under --strict-effects: requires Log
+    return 0
+}
+```
+
+A callee's `with E…` row must be covered by an enclosing `handle` or by the
+caller's own `with` row. First-class function types also carry rows:
+`(string) -> void with Log`. See `examples/effects/effect_rows.flow`.
+
+Default remains soft zeros so existing demos (including “safe defaults” below)
+keep working.
 
 ## Honest limitations (found while building this)
 
-- **No effect-row checking yet.** Function signatures do not declare which
-  effects they perform, so the compiler cannot reject a program that performs
-  an unhandled effect — you get the runtime default instead. `--strict`
-  type-checking does validate declared effect-operation names, arity, argument
-  types, and return types for `Effect.operation(...)` calls and
-  `capability EffectName` parameter method calls.
+- **Effect rows are opt-in via `--strict-effects`.** Without the flag, soft
+  zero defaults still apply and signature rows are not enforced. `--strict`
+  type-checking always validates declared effect-operation names, arity,
+  argument types, and return types for `Effect.operation(...)` calls.
 - **`capability` declarations are stateless.** Capability methods are plain
   functions: no `self`, and Flow has no mutable globals (only `const`), so
   that form cannot accumulate state (e.g. a real collecting test-spy or a
@@ -216,7 +256,7 @@ runtime library.
   style type-checks and generates C syntax-cleanly, but the C backend never
   actually wires a passed-in argument to effect dispatch: every
   `Effect.op(...)` call inside the function body compiles to a lookup
-  through that effect's *global* current-handler pointer, ignoring the
+  through that effect's `_Thread_local` current-handler pointer, ignoring the
   parameter entirely. With no `handle ... with ...` block installed around
   the call, the handler stays `NULL` and every operation silently falls back
   to its zeroed default — which can manifest as wrong output (nulls/zeros
@@ -242,11 +282,12 @@ runtime library.
   not see parameter types inside capability method bodies (a string
   parameter prints as a float). Workaround used in the showcase: copy the
   parameter to a typed local (`let m: string = msg`) or use `printf`.
-- **No handler-stack polymorphism in returns.** Effect operations returning
+- **Soft defaults without `--strict-effects`.** Effect operations returning
   `void`/`i32`/`string` work; unhandled operations default to zero, which
-  is convenient (section [5]) but silent — combined with the missing effect
-  typing, forgetting a `handle` block is easy to do and invisible until
-  runtime.
+  is convenient (section [5]) but silent. Opt in to compile-time unhandled
+  errors and signature effect rows (`function f() -> T with E`) via
+  `--strict-effects` / `FLOW_STRICT_EFFECTS=1` (Phases 1–2 shipped).
+  First-class function *types* with effect rows are still open.
 
 ## Files
 

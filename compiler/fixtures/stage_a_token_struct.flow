@@ -1,0 +1,19 @@
+export const TOK_IDENT: i32 = 1
+
+struct Token {
+    kind: i32,
+    kw: i32,
+    start: i32,
+    end: i32,
+    line: i32,
+    col: i32
+}
+
+function flowc_make_tok(kind: i32, kw: i32, start: i32, end: i32, line: i32, col: i32) -> Token {
+    return Token { kind: kind, kw: kw, start: start, end: end, line: line, col: col }
+}
+
+function main() -> i32 {
+    let t: Token = flowc_make_tok(TOK_IDENT, 0, 10, 15, 1, 2)
+    return t.kind + t.start + t.end
+}

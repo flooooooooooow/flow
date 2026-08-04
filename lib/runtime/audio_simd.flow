@@ -1,0 +1,65 @@
+# Flow runtime: interleaved f32 gain/mix/copy (replaces runtime/audio_simd.c)
+# Same loops as lib/stdlib/audio/simd.flow portable path; -O2 auto-vectorizes.
+
+@flow_api
+export function flow_audio_gain_interleaved_f32_fast(data: ptr<f32>, frames: i32, channels: i32, gain: f32) -> void {
+    if data == null {
+        return
+    }
+    if frames <= 0 {
+        return
+    }
+    if channels <= 0 {
+        return
+    }
+    let total: i32 = frames * channels
+    let mut i: i32 = 0
+    while i < total {
+        data[i] = data[i] * gain
+        i = i + 1
+    }
+}
+
+@flow_api
+export function flow_audio_mix_interleaved_f32_fast(dst: ptr<f32>, src: ptr<f32>, frames: i32, channels: i32) -> void {
+    if dst == null {
+        return
+    }
+    if src == null {
+        return
+    }
+    if frames <= 0 {
+        return
+    }
+    if channels <= 0 {
+        return
+    }
+    let total: i32 = frames * channels
+    let mut i: i32 = 0
+    while i < total {
+        dst[i] = dst[i] + src[i]
+        i = i + 1
+    }
+}
+
+@flow_api
+export function flow_audio_copy_interleaved_f32_fast(dst: ptr<f32>, src: ptr<f32>, frames: i32, channels: i32) -> void {
+    if dst == null {
+        return
+    }
+    if src == null {
+        return
+    }
+    if frames <= 0 {
+        return
+    }
+    if channels <= 0 {
+        return
+    }
+    let total: i32 = frames * channels
+    let mut i: i32 = 0
+    while i < total {
+        dst[i] = src[i]
+        i = i + 1
+    }
+}

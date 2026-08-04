@@ -1,0 +1,10 @@
+# Stage-A cgen round-trip fixture: Point { 20, 22 } → p.x + p.y == 42.
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 20, y: 22 }
+    return p.x + p.y
+}

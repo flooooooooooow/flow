@@ -1,0 +1,16 @@
+# Flow runtime: race-detector probe wrappers (TLS tables stay in flow_race.c).
+
+extern {
+    function flow_rt_race_init() -> void
+    function flow_rt_race_enabled() -> i32
+}
+
+@flow_api
+export function flow_race_init() -> void {
+    flow_rt_race_init()
+}
+
+@flow_api
+export function flow_race_enabled() -> i32 {
+    return flow_rt_race_enabled()
+}

@@ -9,7 +9,7 @@ GPU experiments. This page is not a promise of Metal/CUDA/OpenCL product parity.
 |----------|--------------|--------|--------------------|
 | **macOS** | `runtime/gfx_macos.m` | ✅ Working | Cocoa window, software RGBA8 framebuffer, poll/keys, clear/fill_rect/present |
 | **Linux** | `runtime/gfx_linux.c` | ✅ SDL2 (stub fallback) | Real window + RGBA texture when SDL2 headers present; `-DFLOW_GFX_STUB` keeps the old null-init stub |
-| **Windows** | `runtime/gfx_windows.c` | ✅ partial — SDL2 shared with Linux; needs MSVC/clang smoke on Windows | Same SDL2 code path as Linux (`gfx_sdl_impl.inc`); compiles clean (incl. `-DFLOW_GFX_STUB`) but not yet run on real Windows hardware/CI |
+| **Windows** | `runtime/gfx_windows.c` | ✅ partial — SDL2 shared with Linux; stub CI on Windows | Same SDL2 path as Linux (`gfx_sdl_impl.inc`); `FLOW_GFX_STUB` smoke on `windows-latest` CI; full SDL2 window path still needs a real Windows + SDL2 run |
 
 | Related path | Status | Notes |
 |--------------|--------|-------|
@@ -68,9 +68,9 @@ Keycodes are mapped to the macOS virtual codes in `gfx.flow` (A/S/D/W/R/arrows/E
 
 `gfx_windows.c` is a thin driver that shares its entire SDL2 implementation
 with Linux via `runtime/gfx_sdl_impl.inc` — same buffer layout, same keycode
-map, same ABI. This is a **practical slice**: it compiles clean (including
-`-DFLOW_GFX_STUB`) but has not yet been smoke-tested against a real
-MSVC/clang toolchain + SDL2 on Windows hardware or CI.
+map, same ABI. CI compiles and runs the stub path on `windows-latest`
+(`runtime/tests/gfx_stub_smoke.c` + `-DFLOW_GFX_STUB`). A full SDL2 window
+smoke on Windows agents is still outstanding.
 
 ```bash
 # MSYS2 / MinGW / Git Bash (clang or gcc), SDL2 dev package installed
@@ -104,8 +104,8 @@ headless smoke for Linux CI.
 
 - Prefer treating Metal and Vulkan as **optional native runtimes**, not as the
   default “graphics” story for demos and games.
-- For games and tutorials, target `gfx.flow` + software fill until a real Linux
-  backend lands.
+- For games and tutorials, target `gfx.flow` + software fill (macOS Cocoa;
+  Linux/Windows via SDL2 when headers are present, stub otherwise).
 - Do not assume automatic Metal/CUDA/OpenCL selection from Flow source.
 
 ## Related

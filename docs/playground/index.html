@@ -476,9 +476,9 @@
         <strong>Run (browser)</strong> uses the tutorial interpreter (<code>flow-compile.js</code>) — not native.
         <strong>Run (native local)</strong> talks to a loopback compile API
         (<code>python3 scripts/playground_compile_server.py</code>) that uses the real Flow→C toolchain (#132).
-        Next WASM step: emscripten hello artifact (<code>scripts/build_wasm_hello.sh</code>,
-        <a href="../language/wasm.md" style="color: var(--accent)">language/wasm.md</a>);
-        in-browser Flow compiler remains deferred (#121).
+        <strong>WASM hello</strong> loads a local emscripten artifact when present
+        (<code>./flow wasm</code> / <code>scripts/build_wasm_hello.sh</code> →
+        <code>build/wasm_hello/hello.html</code>). Full in-browser Flow compiler remains deferred (#121).
         Tutorials:
         <a href="../tutorials/index.html" style="color: var(--accent)">Interactive Tutorials</a>;
         memory:
@@ -529,6 +529,15 @@
                         <polygon points="5 3 19 12 5 21 5 3"/>
                     </svg>
                     Run (native local)
+                </button>
+                <button class="btn" id="runWasmBtn" onclick="runWasmLocal()" title="Flow→C→emcc via localhost compile API">
+                    Run (WASM local)
+                </button>
+                <button class="btn" onclick="openWasmHello()" title="Open build/wasm_hello/hello.html if built">
+                    WASM hello
+                </button>
+                <button class="btn" onclick="openPyodide()" title="In-browser Flow→C via Pyodide">
+                    Browser transpile
                 </button>
             </div>
         </div>
@@ -1169,6 +1178,67 @@ function main() -> i32 {
                     /* server not running — fine */
                 }
             }
+        }
+
+        function openPyodide() {
+            const href = (nativeCompileBase || 'http://127.0.0.1:8765') + '/pyodide';
+            window.open(href, '_blank', 'noopener');
+        }
+
+        async function runWasmLocal() {
+            const outputEl = document.getElementById('output');
+            document.getElementById('outputPanelLabel').textContent = 'WASM local output';
+            if (!nativeCompileBase) await probeNativeCompile();
+            if (!nativeCompileBase) {
+                outputEl.className = 'output-content error';
+                outputEl.textContent = 'Compile API not reachable. Start: ./flow playground';
+                return;
+            }
+            outputEl.textContent = 'Compiling via emcc…';
+            try {
+                const res = await fetch(nativeCompileBase + '/compile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source: editor.value, target: 'wasm' })
+                });
+                const data = await res.json();
+                const banner = '── wasm-local (' + (data.mode || 'wasm') + ') ──\\n';
+                outputEl.className = data.ok ? 'output-content success' : 'output-content error';
+                outputEl.textContent = banner + (data.stdout || '') + (data.stderr ? '\\n' + data.stderr : '') +
+                    (data.error ? '\\n' + data.error : '') +
+                    (data.c_preview ? '\\n\\n── C preview ──\\n' + data.c_preview : '');
+            } catch (e) {
+                outputEl.className = 'output-content error';
+                outputEl.textContent = String(e);
+            }
+        }
+
+        async function openWasmHello() {
+            const outputEl = document.getElementById('output');
+            const candidates = [
+                '../../build/wasm_hello/hello.html',
+                '/build/wasm_hello/hello.html',
+            ];
+            document.getElementById('outputPanelLabel').textContent = 'WASM hello';
+            for (const href of candidates) {
+                try {
+                    const res = await fetch(href, { method: 'HEAD' });
+                    if (res.ok) {
+                        window.open(href, '_blank', 'noopener');
+                        outputEl.className = 'output-content success';
+                        outputEl.textContent =
+                            'Opened ' + href + '\n\nBuild with:\n  ./scripts/build_wasm_hello.sh\n  ./flow wasm examples/basics/hello_world.flow';
+                        return;
+                    }
+                } catch (e) { /* try next */ }
+            }
+            outputEl.className = 'output-content error';
+            outputEl.textContent =
+                'No build/wasm_hello/hello.html found.\n\n' +
+                'From the repo root (needs emcc):\n' +
+                '  ./scripts/build_wasm_hello.sh\n' +
+                '  python3 -m http.server 8765 --directory build/wasm_hello\n\n' +
+                'Native-local Run still uses the real Flow→C toolchain on localhost.';
         }
 
         async function runNativeLocal() {

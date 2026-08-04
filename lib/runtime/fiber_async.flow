@@ -1,0 +1,99 @@
+# Flow runtime: FiberAsync capability (logic over thin C storage/trampoline).
+# Storage: runtime/flow_rt_fiber_async.c — scheduler/swap stays in flow_fiber.c
+
+extern {
+    function flow_fiber_init() -> void
+    function flow_fiber_yield() -> void
+    function flow_fiber_run() -> void
+    function flow_fiber_run_until(id: i32) -> void
+    function flow_fiber_current_id() -> i32
+    function flow_rt_fiber_task_max() -> i32
+    function flow_rt_fiber_task_set_fn(id: i32, fn: ptr<void>) -> void
+    function flow_rt_fiber_task_get_fn(id: i32) -> ptr<void>
+    function flow_rt_fiber_task_set_arg(id: i32, arg: i32) -> void
+    function flow_rt_fiber_task_get_arg(id: i32) -> i32
+    function flow_rt_fiber_task_set_result(id: i32, result: i32) -> void
+    function flow_rt_fiber_task_get_result(id: i32) -> i32
+    function flow_rt_fiber_task_set_done(id: i32, done: i32) -> void
+    function flow_rt_fiber_task_get_done(id: i32) -> i32
+    function flow_rt_fiber_task_set_fiber_id(id: i32, fid: i32) -> void
+    function flow_rt_fiber_task_get_fiber_id(id: i32) -> i32
+    function flow_rt_call_task_fn(fn: ptr<void>, arg: i32) -> i32
+    function flow_rt_fiber_spawn_task(task_id: i32) -> i32
+    function flow_rt_usleep(usec: i32) -> void
+    function flow_netpoll_fiber_sleep_ms(ms: i32) -> void
+}
+
+@flow_api
+export function flow_fiber_async_worker(task_id: i32) -> void {
+    let fn: ptr<void> = flow_rt_fiber_task_get_fn(task_id)
+    let arg: i32 = flow_rt_fiber_task_get_arg(task_id)
+    let mut result: i32 = 0
+    if fn != null {
+        result = flow_rt_call_task_fn(fn, arg)
+    } else {
+        result = task_id * 10
+    }
+    flow_rt_fiber_task_set_result(task_id, result)
+    flow_rt_fiber_task_set_done(task_id, 1)
+}
+
+@flow_api
+export function flow_fiber_async_spawn(task_id: i32, arg: i32) -> void {
+    let max: i32 = flow_rt_fiber_task_max()
+    if task_id < 0 {
+        return
+    }
+    if task_id >= max {
+        return
+    }
+    flow_fiber_init()
+    flow_rt_fiber_task_set_arg(task_id, arg)
+    flow_rt_fiber_task_set_done(task_id, 0)
+    flow_rt_fiber_task_set_result(task_id, 0)
+    let fid: i32 = flow_rt_fiber_spawn_task(task_id)
+    flow_rt_fiber_task_set_fiber_id(task_id, fid)
+}
+
+@flow_api
+export function flow_fiber_async_join(task_id: i32) -> i32 {
+    let max: i32 = flow_rt_fiber_task_max()
+    if task_id < 0 {
+        return 0
+    }
+    if task_id >= max {
+        return 0
+    }
+    flow_fiber_init()
+    # Wait on the done flag (not only fiber DONE): another worker may finish
+    # our fiber while run_until watches a stale/wrong fid.
+    while flow_rt_fiber_task_get_done(task_id) == 0 {
+        if flow_fiber_current_id() >= 0 {
+            flow_fiber_yield()
+        } else {
+            let fid: i32 = flow_rt_fiber_task_get_fiber_id(task_id)
+            if fid >= 0 {
+                flow_fiber_run_until(fid)
+            } else {
+                flow_fiber_run()
+            }
+            if flow_rt_fiber_task_get_done(task_id) == 0 {
+                # Fiber may still be running on a pool worker — brief backoff.
+                flow_rt_usleep(200)
+            }
+        }
+    }
+    return flow_rt_fiber_task_get_result(task_id)
+}
+
+@flow_api
+export function flow_fiber_async_delay(ms: i32) -> void {
+    if ms <= 0 {
+        return
+    }
+    if flow_fiber_current_id() >= 0 {
+        flow_netpoll_fiber_sleep_ms(ms)
+        return
+    }
+    flow_rt_usleep(ms * 1000)
+}

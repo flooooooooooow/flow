@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flow — in-browser transpile (Pyodide)</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; background: #0d1117; color: #e6edf3; }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid #30363d; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: calc(100vh - 64px); }
+    textarea, pre { margin: 0; width: 100%; height: 100%; box-sizing: border-box;
+      background: #161b22; color: #e6edf3; border: 0; padding: 1rem; font: 13px/1.45 ui-monospace, monospace; }
+    pre { overflow: auto; white-space: pre-wrap; border-left: 1px solid #30363d; }
+    .bar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    button { background: #238636; color: #fff; border: 0; border-radius: 6px; padding: 0.45rem 0.9rem; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    .muted { color: #8b949e; font-size: 0.9rem; }
+    a { color: #58a6ff; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } pre { border-left: 0; border-top: 1px solid #30363d; min-height: 40vh; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <strong>Flow → C in the browser</strong>
+      <button id="run" disabled>Loading…</button>
+      <span class="muted" id="status">Bootstrapping Pyodide</span>
+    </div>
+    <p class="muted" style="margin: 0.5rem 0 0;">
+      Runs <code>flow.parser</code> + <code>flow.c_generator</code> via
+      <a href="https://pyodide.org">Pyodide</a>, loading sources from
+      <code>http://127.0.0.1:8765/flow-src/</code> (start with
+      <code>./flow playground</code>). Transpile-only — use native-local / WASM for execution.
+    </p>
+  </header>
+  <main>
+    <textarea id="src">function main() -> i32 {
+    printf("hello from pyodide\\n")
+    return 0
+}
+</textarea>
+    <pre id="out">/* C output appears here */</pre>
+  </main>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
+  <script type="module">
+    const API = (location.port === '8765') ? location.origin : 'http://127.0.0.1:8765';
+    const status = document.getElementById('status');
+    const btn = document.getElementById('run');
+    const out = document.getElementById('out');
+
+    const MODULES = [
+      'parser.py', 'overload.py', 'type_checker.py',
+      'module_resolver.py', 'monomorphize.py', 'c_generator.py',
+    ];
+
+    async function main() {
+      status.textContent = 'Loading Pyodide…';
+      const pyodide = await loadPyodide({
+        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.5/full/',
+      });
+
+      pyodide.FS.mkdirTree('/flow');
+      pyodide.FS.writeFile('/flow/__init__.py', '');
+      for (const name of MODULES) {
+        status.textContent = `Fetching ${name}…`;
+        const res = await fetch(`${API}/flow-src/${name}`);
+        if (!res.ok) throw new Error(`${name}: HTTP ${res.status} — is the compile server up?`);
+        pyodide.FS.writeFile(`/flow/${name}`, await res.text());
+      }
+
+      status.textContent = 'Importing Flow modules…';
+      await pyodide.runPythonAsync(`
+import sys
+sys.path.insert(0, '/')
+from flow.parser import parse_flow_code
+from flow.c_generator import flow_to_c
+`);
+
+      btn.disabled = false;
+      btn.textContent = 'Transpile → C';
+      status.textContent = 'Ready';
+
+      btn.onclick = async () => {
+        btn.disabled = true;
+        status.textContent = 'Transpiling…';
+        try {
+          pyodide.globals.set('user_src', document.getElementById('src').value);
+          const c = await pyodide.runPythonAsync(`
+from flow.parser import parse_flow_code
+from flow.c_generator import flow_to_c
+flow_to_c(parse_flow_code(user_src), source_file='main.flow')
+`);
+          out.textContent = c || '/* empty */';
+          status.textContent = 'OK';
+        } catch (e) {
+          out.textContent = String(e);
+          status.textContent = 'Error';
+        }
+        btn.disabled = false;
+      };
+    }
+
+    main().catch((e) => {
+      status.textContent = 'Failed';
+      out.textContent = String(e) + '\\n\\nStart: ./flow playground\\nThen open http://127.0.0.1:8765/pyodide';
+    });
+  </script>
+</body>
+</html>

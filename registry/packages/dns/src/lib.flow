@@ -1,0 +1,26 @@
+# dns — hostname resolution via getaddrinfo (first IPv4)
+
+extern {
+    function flow_dns_lookup(hostname: string, buf: ptr<i8>, buflen: i64) -> i64
+    function flow_dns_lookup_u32(hostname: string) -> u32
+    function malloc(size: i64) -> ptr<i8>
+    function free(p: ptr<i8>) -> void
+}
+
+# Write dotted IPv4 into buf. Returns length, or -1 on failure.
+export function dns_lookup(hostname: string, buf: ptr<i8>, buflen: i64) -> i64 {
+    return flow_dns_lookup(hostname, buf, buflen)
+}
+
+# First IPv4 as network-order u32. Returns 0 on failure.
+export function dns_lookup_u32(hostname: string) -> u32 {
+    return flow_dns_lookup_u32(hostname)
+}
+
+export function dns_alloc(size: i64) -> ptr<i8> {
+    return malloc(size)
+}
+
+export function dns_free(p: ptr<i8>) -> void {
+    free(p)
+}

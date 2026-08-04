@@ -1,0 +1,24 @@
+# Two OS threads ping-pong N messages (runtime C channel, same alg as Go)
+# Measures pthread+mutex channel vs goroutine+chan.
+
+import "stdlib/time.flow"
+
+extern {
+    function flow_bench_chan_pingpong_ns(n: i32, buf: i32) -> i64
+}
+
+const N: i32 = 1000000
+const BUF: i32 = 64
+
+function main() -> i32 {
+    # warmup
+    let _: i64 = flow_bench_chan_pingpong_ns(1000, BUF)
+    let ns: i64 = flow_bench_chan_pingpong_ns(N, BUF)
+    if ns < 0 {
+        printf("flow_chan_pingpong failed\n")
+        return 1
+    }
+    let ms: f64 = ns as f64 / 1000000.0
+    printf("flow_chan_pingpong n=%d buf=%d ms=%.3f\n", N, BUF, ms)
+    return 0
+}

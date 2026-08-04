@@ -1,0 +1,17 @@
+# Real HTTP server with routing — self-test hits /, /api, /missing
+# Run: ./flow run examples/concurrency/http_routed.flow
+
+extern {
+    function flow_http_routed_selftest(port: i32) -> i32
+}
+
+function main() -> i32 {
+    printf("http routed server demo\n")
+    let r: i32 = flow_http_routed_selftest(18782)
+    printf("  selftest -> %d (expect 1)\n", r)
+    if r != 1 {
+        return 1
+    }
+    printf("OK\n")
+    return 0
+}

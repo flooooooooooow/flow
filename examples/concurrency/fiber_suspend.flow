@@ -1,0 +1,37 @@
+# FiberAsync runs main on a fiber — delay/park suspends mid-function Flow frames.
+# Run: ./flow run examples/concurrency/fiber_suspend.flow
+
+import "stdlib/async.flow"
+
+extern {
+    function flow_fiber_current_id() -> i32
+}
+
+function work() -> i32 {
+    # Mid-function suspend via Async.delay while on a fiber
+    let before: i32 = flow_fiber_current_id()
+    async_delay(1)
+    let after: i32 = flow_fiber_current_id()
+    if before < 0 {
+        return -1
+    }
+    if after != before {
+        return -2
+    }
+    return before
+}
+
+function main() -> i32 {
+    printf("fiber suspend demo\n")
+    let mut id: i32 = -1
+    handle Async with FiberAsync {
+        id = work()
+    }
+    printf("  fiber id during suspend=%d (expect >= 0)\n", id)
+    if id < 0 {
+        printf("FAIL\n")
+        return 1
+    }
+    printf("OK\n")
+    return 0
+}
