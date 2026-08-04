@@ -1,0 +1,13 @@
+[package]
+name = "use_hello_lib"
+version = "0.1.0"
+description = "Tiny consumer of hello_lib via path dependency"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+# Local path dep (also mirrors registry/crates/hello_lib).
+hello_lib = { path = "../hello_lib" }
+
+[dev-dependencies]

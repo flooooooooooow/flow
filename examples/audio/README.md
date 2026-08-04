@@ -1,5 +1,16 @@
 # Audio Examples
 
+## rt_safe_callback.flow
+Minimal `@rt_safe` process block — stack locals and fixed-bound loops only.
+Compile-time checker rejects heap calls from `@rt_safe` (see `docs/library/rt-safety.md`).
+
+```bash
+./flow run examples/audio/rt_safe_callback.flow
+```
+
+## lattice_allpass_phase_engine.flow
+Larger `@rt_safe` DSP demo (Schur lattice phase engine).
+
 ## loopback_effects.flow
 Real-time input -> effect chain -> output loopback.
 
