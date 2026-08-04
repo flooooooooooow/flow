@@ -1,0 +1,27 @@
+# Package consumer — path dependency on ../hello_lib
+#
+# From this directory:
+#   PYTHONPATH=../../../src python3 -m flow.package install
+#   cd ../../.. && ./flow run examples/packages/use_hello_lib/src/main.flow
+#
+# Or after install, from repo root:
+#   ./flow run examples/packages/use_hello_lib/src/main.flow
+
+import hello_lib.lib { greet, add, hello_answer }
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    greet("flow")
+    printf("add(2, 3) = %d\n", add(2, 3))
+    printf("hello_answer = %d\n", hello_answer())
+    if add(2, 3) != 5 {
+        return 1
+    }
+    if hello_answer() != 42 {
+        return 2
+    }
+    return 0
+}

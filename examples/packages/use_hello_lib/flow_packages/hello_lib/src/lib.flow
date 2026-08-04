@@ -1,0 +1,15 @@
+# hello_lib — sample package (path or registry)
+
+export function greet(name: string) -> i32 {
+    print("hello from hello_lib, ")
+    println(name)
+    return 0
+}
+
+export function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+export function hello_answer() -> i32 {
+    return 42
+}

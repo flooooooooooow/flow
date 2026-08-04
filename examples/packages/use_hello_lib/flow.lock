@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "packages": {
+    "hello_lib": {
+      "version": {
+        "path": "../hello_lib"
+      },
+      "source": "path"
+    }
+  }
+}

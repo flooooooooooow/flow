@@ -1,0 +1,71 @@
+# Producer → transform → consumer pipeline over Go-style channels.
+# Run: ./flow run examples/concurrency/pipeline.flow
+#
+# Stages communicate with channel_i32_send / channel_i32_recv.
+# (Single-threaded demo of the dataflow shape; threaded workers come next.)
+
+import "stdlib/concurrent.flow"
+
+function produce(out: ptr<Channel_i32>, n: i32) -> i32 {
+    for i in 1 to n + 1 {
+        if !channel_i32_send(out, i) {
+            return 1
+        }
+    }
+    channel_i32_close(out)
+    return 0
+}
+
+function transform(inp: ptr<Channel_i32>, out: ptr<Channel_i32>) -> i32 {
+    let mut v: i32 = 0
+    while channel_i32_recv(inp, &v) {
+        # Double each value
+        if !channel_i32_send(out, v * 2) {
+            return 1
+        }
+    }
+    channel_i32_close(out)
+    return 0
+}
+
+function consume(inp: ptr<Channel_i32>) -> i32 {
+    let mut v: i32 = 0
+    let mut sum: i32 = 0
+    let mut count: i32 = 0
+    while channel_i32_recv(inp, &v) {
+        sum = sum + v
+        count = count + 1
+        printf("  stage3 got %d\n", v)
+    }
+    printf("pipeline: count=%d sum=%d (expect count=5 sum=30)\n", count, sum)
+    if count != 5 {
+        return 1
+    }
+    if sum != 30 {
+        return 2
+    }
+    return 0
+}
+
+function main() -> i32 {
+    printf("Channel pipeline demo\n")
+    let mut a: Channel_i32 = channel_i32_new(8)
+    let mut b: Channel_i32 = channel_i32_new(8)
+    let ap: ptr<Channel_i32> = &a
+    let bp: ptr<Channel_i32> = &b
+
+    if produce(ap, 5) != 0 {
+        return 10
+    }
+    if transform(ap, bp) != 0 {
+        return 11
+    }
+    if consume(bp) != 0 {
+        return 12
+    }
+
+    channel_i32_destroy(ap)
+    channel_i32_destroy(bp)
+    printf("OK\n")
+    return 0
+}
