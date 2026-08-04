@@ -91,7 +91,7 @@ show_help() {
     echo "  compile-audio <program> [--mlir]  Compile with audio backend"
     echo "  debug <program>   Compile with debug symbols and open debugger"
     echo "  window <program>  Run with SDL2 window backend"
-    echo "  gfx <program>     Run with native FLOW gfx backend (macOS)"
+    echo "  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)"
     echo "  vulkan-demo       Build and run Vulkan triangle demo (macOS + MoltenVK)"
     echo "  vulkan-demo-basic  Alias for vulkan-demo"
     echo "  vulkan-demo-advanced  Build and run Vulkan scene demo"
@@ -599,12 +599,66 @@ run_gfx_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
-    if ! clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
-        "$SCRIPT_DIR/runtime/flow_time.c" \
-        -framework Cocoa -framework CoreGraphics -framework QuartzCore \
-        "${py_ldflags[@]}" \
-        -o "$exe_file" -lm 2>/dev/null; then
-        print_error "Native gfx build failed (clang/frameworks)"
+    local gfx_ok=0
+    local host_kernel
+    host_kernel="$(uname -s)"
+    if [[ "$host_kernel" == "Darwin" ]]; then
+        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
+            "$SCRIPT_DIR/runtime/flow_time.c" \
+            -framework Cocoa -framework CoreGraphics -framework QuartzCore \
+            "${py_ldflags[@]}" \
+            -o "$exe_file" -lm 2>/dev/null; then
+            gfx_ok=1
+        fi
+    elif [[ "$host_kernel" == MINGW* || "$host_kernel" == MSYS* || "$host_kernel" == CYGWIN* ]]; then
+        # Windows (MSYS2/Git Bash/Cygwin shell running this script): shares
+        # the exact same SDL2 implementation as Linux via
+        # runtime/gfx_sdl_impl.inc, compiled through runtime/gfx_windows.c
+        # (falls back to stub if headers missing — pass -DFLOW_GFX_STUB to
+        # force stub). Native MSVC/clang-cl builds outside this script should
+        # link runtime/gfx_windows.c directly — see its header comment for
+        # exact commands.
+        local sdl_cflags=()
+        local sdl_libs=(-lSDL2)
+        if command -v sdl2-config >/dev/null 2>&1; then
+            # shellcheck disable=SC2207
+            sdl_cflags=($(sdl2-config --cflags))
+            # shellcheck disable=SC2207
+            sdl_libs=($(sdl2-config --libs))
+        elif command -v pkg-config >/dev/null 2>&1 && pkg-config --exists sdl2; then
+            # shellcheck disable=SC2207
+            sdl_cflags=($(pkg-config --cflags sdl2))
+            # shellcheck disable=SC2207
+            sdl_libs=($(pkg-config --libs sdl2))
+        fi
+        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_windows.c" \
+            "$SCRIPT_DIR/runtime/flow_time.c" \
+            "${sdl_cflags[@]}" "${sdl_libs[@]}" \
+            "${py_ldflags[@]}" \
+            -o "$exe_file" -lm 2>/dev/null; then
+            gfx_ok=1
+        fi
+    else
+        # Linux: SDL2 backend in runtime/gfx_linux.c (falls back to stub if
+        # headers missing — pass -DFLOW_GFX_STUB to force stub).
+        local sdl_cflags=()
+        local sdl_libs=(-lSDL2)
+        if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists sdl2; then
+            # shellcheck disable=SC2207
+            sdl_cflags=($(pkg-config --cflags sdl2))
+            # shellcheck disable=SC2207
+            sdl_libs=($(pkg-config --libs sdl2))
+        fi
+        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_linux.c" \
+            "$SCRIPT_DIR/runtime/flow_time.c" \
+            "${sdl_cflags[@]}" "${sdl_libs[@]}" \
+            "${py_ldflags[@]}" \
+            -o "$exe_file" -lm 2>/dev/null; then
+            gfx_ok=1
+        fi
+    fi
+    if [[ "$gfx_ok" -ne 1 ]]; then
+        print_error "Native gfx build failed (clang / platform graphics libs)"
         exit 1
     fi
     print_success "Built: $exe_file"
