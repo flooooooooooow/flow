@@ -38,6 +38,27 @@ def copy_docs() -> None:
             shutil.copy2(item, target)
 
 
+def rewrite_repo_href_for_wiki(href: str) -> str:
+    """Map docs/ VISION links in ROADMAP.md to wiki paths under project/."""
+    path, frag = (href.split("#", 1) + [""])[:2]
+    frag = f"#{frag}" if frag else ""
+
+    if path.startswith("docs/"):
+        return f"../{path[len('docs/'):]}{frag}"
+    if path == "VISION.md":
+        return f"../VISION.md{frag}"
+    # examples/, benchmarks/, compiler/ stay repo-relative; the link checker
+    # accepts those when the files exist in the checkout.
+    return href
+
+
+def rewrite_repo_links_for_wiki(text: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        return f"]({rewrite_repo_href_for_wiki(match.group(1))})"
+
+    return re.sub(r"\]\(([^)]+)\)", repl, text)
+
+
 def copy_extras() -> None:
     for name in ("README.md", "mkdocs.yml"):
         src = ROOT / name
@@ -52,7 +73,10 @@ def copy_extras() -> None:
     if roadmap.exists():
         dest = OUT / "project" / "language-roadmap.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(roadmap, dest)
+        dest.write_text(
+            rewrite_repo_links_for_wiki(roadmap.read_text(encoding="utf-8")),
+            encoding="utf-8",
+        )
 
     results = ROOT / "benchmarks" / "suite" / "RESULTS.md"
     if results.exists():
