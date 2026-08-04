@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import List
 from .parser import (
     parse_flow_code, FunctionDecl, StructDecl, ImportDecl, VarDecl, ReturnStatement, IfStatement, Block, BinaryOperation, FunctionCall,
-    Literal, Variable, StructLiteral, Type
+    Literal, Variable, StructLiteral, Type, BreakStatement, ContinueStatement
 )
 
 
@@ -59,6 +59,10 @@ class Formatter:
         elif isinstance(stmt, ReturnStatement):
             val = f" {self._format_expr(stmt.value)}" if stmt.value else ""
             return [f"{prefix}return{val}"]
+        elif isinstance(stmt, BreakStatement):
+            return [f"{prefix}break"]
+        elif isinstance(stmt, ContinueStatement):
+            return [f"{prefix}continue"]
         elif isinstance(stmt, IfStatement):
             lines = [f"{prefix}if {self._format_expr(stmt.condition)} {{"]
             lines.extend(self._format_block(stmt.then_block, indent + 1))

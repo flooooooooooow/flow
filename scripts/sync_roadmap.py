@@ -48,12 +48,8 @@ LABEL_DESC = "Open ROADMAP.md item synced by scripts/sync_roadmap.py"
 # once resolved so the item is treated as done.
 KNOWN_GAPS = [
     "MLIR backend not exercised against new chained AST shapes",
-    "`break`/`continue` have no dedicated AST nodes (lexed as identifiers, "
-    "special-cased in C generator)",
     "Three older effects demos transpile but do not link (capability parameter "
     "style)",
-    "Integer match exhaustiveness is only a minimal warning stub (no range/gap "
-    "analysis)",
 ]
 
 _CODE = re.compile(r"`([^`]*)`")

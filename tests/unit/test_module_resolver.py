@@ -6,7 +6,7 @@ import warnings
 import pytest
 
 from flow.module_resolver import ModuleResolver, get_module_resolver
-from flow.parser import Lexer, Parser, ImportDecl, ExportDecl
+from flow.parser import Lexer, Parser, ImportDecl, ExportDecl, OrPattern
 from flow.project_config import load_project_config
 
 
@@ -69,6 +69,68 @@ function sub(a: i32, b: i32) -> i32 {
 """
         decl = Parser(Lexer(code)).parse()[0]
         assert decl.name == "sub"
+
+    def test_parse_operator_suffixed_module_path(self):
+        code = "import verify.Nat/+ { zero-left, succ-right }"
+        imp = Parser(Lexer(code)).parse()[0]
+        assert imp.path == "verify.Nat/+"
+        assert imp.symbols == ["zero-left", "succ-right"]
+
+    def test_parse_operator_suffixed_or_morphism(self):
+        code = "import verify.Bool/|| { commutes }"
+        imp = Parser(Lexer(code)).parse()[0]
+        assert imp.path == "verify.Bool/||"
+
+    def test_parse_named_morphism_module_path(self):
+        code = "import verify.RingBuffer/fifo { order-kept }"
+        imp = Parser(Lexer(code)).parse()[0]
+        assert imp.path == "verify.RingBuffer/fifo"
+
+    def test_parse_morphism_with_facet_import(self):
+        # Lexer may emit CLAIM_PATH for Domain/op.facet as one token.
+        code = "import verify.Nat/+.zero-right"
+        imp = Parser(Lexer(code)).parse()[0]
+        assert imp.path == "verify.Nat/+.zero-right"
+
+    def test_division_still_works_outside_imports(self):
+        code = """
+function div(a: i32, b: i32) -> i32 {
+    return a / b
+}
+"""
+        decl = Parser(Lexer(code)).parse()[0]
+        assert decl.name == "div"
+
+
+class TestOrStructPatterns:
+    def test_parse_struct_or_pattern(self):
+        code = """
+struct Point { x: i32, y: i32 }
+function f(p: Point) -> i32 {
+    match p {
+        Point(0, y) | Point(1, y) => { return y }
+        _ => { return -1 }
+    }
+}
+"""
+        decls = Parser(Lexer(code)).parse()
+        fn = decls[1]
+        arm = fn.body.statements[0].cases[0]
+        assert isinstance(arm.pattern, OrPattern)
+        assert len(arm.pattern.patterns) == 2
+
+    def test_struct_or_disagreeing_bindings_is_error(self):
+        code = """
+struct Point { x: i32, y: i32 }
+function f(p: Point) -> i32 {
+    match p {
+        Point(0, y) | Point(1, z) => { return 0 }
+        _ => { return -1 }
+    }
+}
+"""
+        with pytest.raises(SyntaxError, match="same names"):
+            Parser(Lexer(code)).parse()
 
     def test_parse_import_alias(self):
         code = "import verify.nat as nat"
@@ -194,3 +256,25 @@ function main() -> i32 {
         finally:
             if os.path.exists(fixture):
                 os.remove(fixture)
+
+    def test_resolve_operator_suffixed_verify_nat_plus(self):
+        """`import verify.Nat/+ { zero-left }` → lib/verify/Nat.flow."""
+        repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        nat = os.path.join(repo, "lib", "verify", "Nat.flow")
+        order = os.path.join(repo, "lib", "verify", "Nat-order.flow")
+        if not os.path.exists(nat) or not os.path.exists(order):
+            pytest.skip("lib/verify Nat modules missing")
+        # Resolve from a real repo file so flow.toml [paths].verify applies.
+        resolver = get_module_resolver(order)
+        assert os.path.abspath(nat) in resolver.modules
+
+    def test_verify_citation_import_allows_missing_plain_facet(self):
+        """Non-hyphenated facet citations in examples/verify/ are allowed."""
+        repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        consumer = os.path.join(
+            repo, "examples", "verify", "math", "derived", "Nat-plus-succ-left.flow"
+        )
+        if not os.path.exists(consumer):
+            pytest.skip("Nat-plus-succ-left.flow missing")
+        resolver = get_module_resolver(consumer)
+        assert resolver.modules  # resolves despite `{ commutes }` citation
