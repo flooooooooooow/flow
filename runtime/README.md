@@ -36,6 +36,7 @@ See [docs/language/graphics.md](../docs/language/graphics.md).
 
 | File | Purpose |
 |------|---------|
+| `gpu_memory.h` / `gpu_metal.m` / `gpu_memory_stub.c` | First-class GPU/unified buffers (`stdlib/gpu_memory.flow`); Metal on Darwin, stub elsewhere — linked by `./flow run` |
 | `audio_*.c` / `audio_gpu_metal.m` | Audio I/O and Metal GPU audio helpers |
 | `flow_time.c` / `flow_sys_info.c` | Time / host info |
 | `live_host.c` / `live_plugin.c` | Live DSP host / plugin ABI |
