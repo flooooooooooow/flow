@@ -2783,17 +2783,20 @@ class CGenerator:
         parts: List[str] = []
         for key in keys:
             field = _c_ident(key.field or "")
-            l = f"({lhs}).{field}"
-            r = f"({rhs}).{field}"
+            left = f"({lhs}).{field}"
+            right = f"({rhs}).{field}"
             ft = None
             struct_fields = self._structs.get(elem_type.name, {})
             if key.field in struct_fields:
                 ft = struct_fields[key.field]
             desc = bool(key.descending) ^ bool(global_desc)
             if ft is not None and getattr(ft, "name", "") == "string":
-                cmp_e = f"strcmp({l}, {r})"
+                cmp_e = f"strcmp({left}, {right})"
             else:
-                cmp_e = f"(({l}) < ({r}) ? -1 : (({l}) > ({r}) ? 1 : 0))"
+                cmp_e = (
+                    f"(({left}) < ({right}) ? -1 : "
+                    f"(({left}) > ({right}) ? 1 : 0))"
+                )
             if desc:
                 cmp_e = f"(0 - ({cmp_e}))"
             parts.append(cmp_e)
@@ -2825,7 +2828,10 @@ class CGenerator:
             f"_s{1 if expr.stable else 0}"
         )
         dedupe = f"{elem_c}|{size}|{key_sig}|{flags}"
-        helper = "__flow_sort_" + hashlib.md5(dedupe.encode()).hexdigest()[:12]
+        helper = (
+            "__flow_sort_"
+            + hashlib.md5(dedupe.encode(), usedforsecurity=False).hexdigest()[:12]
+        )
         if dedupe not in self._sort_helper_keys:
             self._sort_helper_keys.add(dedupe)
             cmp_ij = self._sort_cmp_fragment(
