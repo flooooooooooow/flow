@@ -67,6 +67,10 @@ function phase_engine_new(k: ptr<f64>, order: i32, depth: f32, rate_hz: f32) -> 
 }
 
 # Per-sample retune every reflection, then cascade all-pass section.
+# @rt_safe: only touches stack locals and fixed-size arrays returned by
+# value - no heap allocation, safe to call from the audio callback once
+# `pe` has been built by phase_engine_new() during setup.
+@rt_safe
 function phase_engine_sample(pe: PhaseEngine, x: f32, fs: f64) -> PhaseEngine {
     let two_pi: f32 = 6.28318
     let t: f32 = pe.sample / fs

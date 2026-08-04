@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import os
 import warnings
+from itertools import product
 from pathlib import Path
-from typing import List, Dict, Set, Any, Optional, Tuple
+from typing import List, Dict, Set, Any, Optional, Tuple, Iterator
 
 from .dynamics_dsl import expand_dynamics_dsl, has_dynamics_dsl
 from .parser import Lexer, Parser, ImportDecl, ImplDecl, ExportDecl, ModuleDecl
@@ -181,6 +182,36 @@ class ModuleResolver:
 
         return self._resolve_absolute_dot_path(module_path)
 
+    @staticmethod
+    def _filesystem_stems(part: str) -> List[str]:
+        """Map a logical module-path segment to filesystem stem candidates.
+
+        Claim-path morphisms (`Nat/+`, `Bool/||`) are logical addresses;
+        on disk they usually live as the domain file (`Nat.flow`). Prefer
+        the literal stem first (`Nat/+.flow`) then the domain-only fallback.
+        """
+        stems = [part]
+        if "/" in part:
+            domain = part.split("/", 1)[0]
+            if domain and domain not in stems:
+                stems.append(domain)
+        return stems
+
+    def _iter_flow_candidates(
+        self, root: str, file_parts: List[str]
+    ) -> Iterator[str]:
+        """Yield absolute .flow candidate paths for a module-path prefix."""
+        options = [self._filesystem_stems(p) for p in file_parts]
+        seen: Set[str] = set()
+        for combo in product(*options):
+            candidate = os.path.join(root, *combo)
+            if not candidate.endswith(".flow"):
+                candidate += ".flow"
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            yield candidate
+
     def _resolve_relative_dot_path(
         self, module_path: str, base_dir: str
     ) -> Tuple[str, Optional[List[str]]]:
@@ -192,11 +223,9 @@ class ModuleResolver:
         for i in range(len(parts), 0, -1):
             file_parts = parts[:i]
             sym_parts = parts[i:]
-            candidate = os.path.join(base_dir, *file_parts)
-            if not candidate.endswith(".flow"):
-                candidate += ".flow"
-            if os.path.exists(candidate):
-                return os.path.abspath(candidate), sym_parts or None
+            for candidate in self._iter_flow_candidates(base_dir, file_parts):
+                if os.path.exists(candidate):
+                    return os.path.abspath(candidate), sym_parts or None
 
         raise FileNotFoundError(
             f"Could not resolve relative import '{module_path}' from {base_dir}"
@@ -216,6 +245,12 @@ class ModuleResolver:
         elif parts[0] in self.project.paths:
             root = os.path.join(self.project.project_root, self.project.paths[parts[0]])
             roots.append((root, parts[1:]))
+        elif parts[0] in self.project.dependencies:
+            package_root = os.path.join(
+                self.project.project_root, "flow_packages", parts[0]
+            )
+            roots.append((os.path.join(package_root, "src"), parts[1:]))
+            roots.append((package_root, parts[1:]))
         else:
             # stdlib/ prefix compatibility: stdlib.math -> lib/stdlib/math.flow
             if parts[0] == "stdlib":
@@ -230,14 +265,12 @@ class ModuleResolver:
             for i in range(len(rest), 0, -1):
                 file_parts = rest[:i]
                 sym_parts = rest[i:]
-                candidate = os.path.join(root, *file_parts)
-                if not candidate.endswith(".flow"):
-                    candidate += ".flow"
-                if candidate in seen:
-                    continue
-                seen.add(candidate)
-                if os.path.exists(candidate):
-                    return os.path.abspath(candidate), sym_parts or None
+                for candidate in self._iter_flow_candidates(root, file_parts):
+                    if candidate in seen:
+                        continue
+                    seen.add(candidate)
+                    if os.path.exists(candidate):
+                        return os.path.abspath(candidate), sym_parts or None
 
         raise FileNotFoundError(f"Could not resolve import '{module_path}'")
 
@@ -272,6 +305,19 @@ class ModuleResolver:
 
         raise FileNotFoundError(f"Could not resolve import '{import_path}'")
 
+    @staticmethod
+    def _is_verify_citation_module(resolved_path: str) -> bool:
+        """True for flow-verify proof modules (lib/verify, examples/verify).
+
+        Their `import … { facet }` brace lists are dependency citations
+        (claim facets / kebab names), not bindings into `module_info.symbols`
+        — declarations are claim-path / guillemet-named and are pulled in
+        transitively via the resolved file regardless of the brace list.
+        """
+        norm = resolved_path.replace("\\", "/")
+        return "/lib/verify/" in norm or norm.endswith("/lib/verify") \
+            or "/examples/verify/" in norm
+
     def _validate_import_symbols(
         self,
         imp: ImportDecl,
@@ -284,19 +330,17 @@ class ModuleResolver:
         module_info = self.modules.get(resolved_path)
         if not module_info:
             return
+        # Morphism imports (`verify.Nat/+ { zero-left }`) and verify-corpus
+        # sibling citations (`import .Nat-plus-commutes { commutes }`) use
+        # the brace list as documentation only — never as a real binding.
+        citation_module = (
+            self._is_verify_citation_module(resolved_path)
+            or ("/" in (imp.path or ""))
+        )
         for sym in import_symbols:
-            if "-" in sym:
-                # Hyphenated import symbols (e.g. `{ inv-unique }`) can only
-                # come from a hyphenated `import .Some-File { ... }` — no
-                # declaration name in Flow can itself contain a hyphen, so
-                # these never correspond to a real `module_info.symbols`
-                # entry. In practice they're used as dependency citations
-                # (documenting which sibling proof file this one relies on)
-                # rather than as an actual imported binding, and the
-                # referenced declarations are pulled in transitively via
-                # `resolved_path` regardless of this list. Skip existence
-                # validation for them instead of rejecting every such
-                # citation-only import.
+            if "-" in sym or citation_module:
+                # Hyphenated names can never match a Flow declaration;
+                # verify/morphism brace lists are citation-only (see above).
                 continue
             if sym not in module_info.symbols:
                 raise ValueError(

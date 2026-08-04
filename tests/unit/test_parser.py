@@ -24,6 +24,8 @@ from flow.parser import (
     IfStatement,
     WhileStatement,
     ForStatement,
+    BreakStatement,
+    ContinueStatement,
     Parameter,
 )
 from tests.conftest import EDGE_CASES, ERROR_CASES, TestHelpers
@@ -422,6 +424,48 @@ class TestParser:
         assert isinstance(for_stmt, ForStatement)
         assert for_stmt.variable == "i"
         assert for_stmt.is_parallel == False
+
+    def test_break_continue_have_dedicated_ast_nodes(self, parser):
+        """`break`/`continue` lex as their own keywords and parse to
+        dedicated statement nodes, not bare `Variable` identifiers."""
+        code = """
+        function test() -> i32 {
+            let mut i: i32 = 0
+            while i < 10 {
+                if i == 5 {
+                    break
+                }
+                if i == 2 {
+                    i = i + 1
+                    continue
+                }
+                i = i + 1
+            }
+            return i
+        }
+        """
+        ast = parser.parse(code)
+        func = ast[0]
+        while_stmt = func.body.statements[1]
+        assert isinstance(while_stmt, WhileStatement)
+
+        break_if = while_stmt.body.statements[0]
+        break_stmt = break_if.then_block.statements[0]
+        assert isinstance(break_stmt, BreakStatement)
+        assert not isinstance(break_stmt, Variable)
+
+        continue_if = while_stmt.body.statements[1]
+        continue_stmt = continue_if.then_block.statements[1]
+        assert isinstance(continue_stmt, ContinueStatement)
+        assert not isinstance(continue_stmt, Variable)
+
+    def test_break_continue_tokenize_as_keywords(self):
+        """`break`/`continue` tokenize to dedicated TokenTypes, not
+        TokenType.IDENTIFIER."""
+        lexer = Lexer("break continue")
+        tokens = lexer.tokenize()
+        assert tokens[0].type == TokenType.BREAK
+        assert tokens[1].type == TokenType.CONTINUE
 
     def test_return_statements(self, parser):
         """Test parsing return statements."""

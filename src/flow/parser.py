@@ -97,6 +97,8 @@ class TokenType(Enum):
     ELIF = "ELIF"
     WHILE = "WHILE"
     FOR = "FOR"
+    BREAK = "BREAK"
+    CONTINUE = "CONTINUE"
     PARALLEL = "PARALLEL"
     IN = "IN"
     STEP = "STEP"
@@ -156,6 +158,8 @@ class TokenType(Enum):
     NULL = "NULL"  # null pointer literal
     DEFER = "DEFER"
     QUESTION = "QUESTION"  # ? operator for Result propagation
+    DBG = "DBG"  # dbg tracing keyword: dbg expr evaluates to expr, prints it
+    EXPECT = "EXPECT"  # Runtime assertion: expect <expr>
 
     # Symbols
     LPAREN = "LPAREN"
@@ -185,6 +189,7 @@ class TokenType(Enum):
     SLASH = "SLASH"
     PERCENT = "PERCENT"
     PIPE = "PIPE"  # For lambdas: |x| { ... } and bitwise OR
+    PIPELINE = "PIPELINE"  # For pipeline chaining: x |> f(y)
     AMPERSAND = "AMPERSAND"  # For bitwise AND
     CARET = "CARET"  # For bitwise XOR
     TILDE = "TILDE"  # For bitwise NOT
@@ -335,6 +340,17 @@ class Lambda:
 
 
 @dataclass
+class StringInterpolation:
+    """Interpolated string literal: `"Hello ${name}!"`.
+
+    `parts` alternates between literal text (as `Literal` of type `string`)
+    and interpolated `Expression` nodes (which are stringified at codegen).
+    """
+
+    parts: List["Expression"]
+
+
+@dataclass
 class BinaryOperation:
     left: "Expression"
     operator: str
@@ -363,6 +379,19 @@ class Variable:
 class StructLiteral:
     struct_name: str
     fields: List[tuple]  # List of (field_name, field_value)
+
+
+@dataclass
+class RecordUpdate:
+    """Record update: `Point { ..p, x: 3 }` copies `p` then overrides `x`.
+
+    `base` is the struct expression whose fields are copied; `updates` is the
+    list of (field_name, field_value) overrides. The full field list of the
+    struct is filled in at codegen time from the struct declaration.
+    """
+
+    base: "Expression"
+    updates: List[tuple]  # List of (field_name, field_value)
 
 
 @dataclass
@@ -533,12 +562,26 @@ class StructPattern:
 
 
 @dataclass
-class OrPattern:
-    """Multiple alternative patterns for one match arm: `1 | 2 | 3 => ...`.
+class ListPattern:
+    """A match pattern for arrays: `[]`, `[x]`, `[a, b]`, `[_, 5]`.
 
-    Scope is intentionally narrow: alternatives must be literal patterns
-    (no variable bindings), since binding a name to one of several
-    differently-shaped alternatives is ambiguous.
+    `elements` holds one entry per array slot. A `Variable` entry binds that
+    slot to a name (unless the name is `_`, which means no binding); a
+    `Literal` entry requires the slot to equal that literal.
+    """
+
+    elements: List["Expression"]
+
+
+@dataclass
+class OrPattern:
+    """Multiple alternative patterns for one match arm: `1 | 2 | 3 => ...`
+    or `Point(0, y) | Point(1, y) => ...`.
+
+    Alternatives are either all literals (no bindings) or all struct
+    patterns whose flattened binding names agree across every alternative
+    (same names in the same order). Mixing literals with structs, or
+    disagreeing binding names, is a syntax error.
     """
 
     patterns: List["Expression"]
@@ -562,6 +605,33 @@ class DeferStatement:
     """Deferred cleanup: defer expr; runs at scope exit (LIFO)."""
 
     expr: "Expression"
+
+
+@dataclass
+class BreakStatement:
+    """`break`; exits the nearest enclosing `while`/`for` loop."""
+
+    line: int = 0
+
+
+@dataclass
+class ContinueStatement:
+    """`continue`; skips to the next iteration of the nearest enclosing loop."""
+
+    line: int = 0
+
+
+@dataclass
+class ExpectStatement:
+    """Runtime assertion: `expect <expr>`; aborts with an error if false.
+
+    Mirrors Roc's `expect` keyword: the condition is checked at runtime and a
+    failure is a hard error (Roc fails compilation; Flow, being a runtime
+    systems language, aborts the program with a diagnostic).
+    """
+
+    condition: "Expression"
+    line: int = 0
 
 
 @dataclass
@@ -830,6 +900,7 @@ Expression = Union[
     MethodCall,
     StructPattern,
     OrPattern,
+    ListPattern,
     CastExpression,
     Lambda,
     TryExpr,
@@ -848,6 +919,8 @@ Statement = Union[
     LayoutStatement,
     MatchStatement,
     DeferStatement,
+    BreakStatement,
+    ContinueStatement,
     ImportDecl,
     ExportDecl,
     ConstDecl,
@@ -877,6 +950,8 @@ class Lexer:
             "else": TokenType.ELSE,
             "while": TokenType.WHILE,
             "for": TokenType.FOR,
+            "break": TokenType.BREAK,
+            "continue": TokenType.CONTINUE,
             "in": TokenType.IN,
             "parallel": TokenType.PARALLEL,
             "step": TokenType.STEP,
@@ -915,6 +990,8 @@ class Lexer:
             "false": TokenType.BOOLEAN,
             "null": TokenType.NULL,
             "defer": TokenType.DEFER,
+            "dbg": TokenType.DBG,
+            "expect": TokenType.EXPECT,
             "module": TokenType.MODULE,
             "void": TokenType.VOID,
             "i8": TokenType.I8,
@@ -951,6 +1028,7 @@ class Lexer:
             (r"GREATER_EQUAL", r">="),
             (r"AND", r"&&"),
             (r"OR", r"\|\|"),
+            (r"PIPELINE", r"\|>"),  # Pipeline chaining: x |> f(y)
             (r"PIPE", r"\|"),  # Bitwise OR (or lambda)
             (r"AMPERSAND", r"&"),  # Bitwise AND
             (r"CARET", r"\^"),  # Bitwise XOR
@@ -1473,18 +1551,65 @@ class Parser:
             name += "-" + self.expect(TokenType.IDENTIFIER).value
         return name
 
+    def _parse_morphism_suffix(self) -> str:
+        """Parse the morphism half of a Domain/op module-path segment.
+
+        Matches the claim-path morphism grammar:
+        `||` | `+` | `=` | `*` | IDENTIFIER (e.g. `out`, `vectorize`).
+        Only called from `_parse_module_path_segment` after a `/`.
+        """
+        tok = self.current_token
+        if tok.type == TokenType.OR:
+            self.advance()
+            return "||"
+        if tok.type == TokenType.PLUS:
+            self.advance()
+            return "+"
+        if tok.type == TokenType.ASSIGN:
+            self.advance()
+            return "="
+        if tok.type == TokenType.STAR:
+            self.advance()
+            return "*"
+        if tok.type == TokenType.IDENTIFIER:
+            return self.expect(TokenType.IDENTIFIER).value
+        raise SyntaxError(
+            f"Expected morphism after '/' in module path, got {tok.type}"
+        )
+
+    def _parse_module_path_segment(self) -> str:
+        """Parse one dotted module-path segment.
+
+        Allows:
+        - hyphenated names: `Group-inv-unique`
+        - operator-suffixed claim morphisms: `Nat/+`, `Bool/||`, `RingBuffer/fifo`
+        - a whole CLAIM_PATH token (`Nat/+.zero-left`) when the lexer
+          already glued Domain/op.facet together (e.g. trailing facet import)
+        """
+        if self.current_token.type == TokenType.CLAIM_PATH:
+            value = self.current_token.value
+            self.advance()
+            return value
+
+        name = self._parse_dashed_identifier()
+        if self.current_token.type == TokenType.SLASH:
+            self.advance()
+            name += "/" + self._parse_morphism_suffix()
+        return name
+
     def _parse_module_path(self) -> str:
         """Parse dotted module path: verify.nat, std.math, .sibling_mod,
-        .Group-inv-unique (hyphenated segments allowed)."""
+        .Group-inv-unique, verify.Nat/+ (hyphenated + operator-suffixed
+        segments allowed)."""
         relative = False
         if self.current_token.type == TokenType.DOT:
             relative = True
             self.advance()
 
-        segments: List[str] = [self._parse_dashed_identifier()]
+        segments: List[str] = [self._parse_module_path_segment()]
         while self.current_token.type == TokenType.DOT:
             self.advance()
-            segments.append(self._parse_dashed_identifier())
+            segments.append(self._parse_module_path_segment())
 
         if relative:
             return "." + ".".join(segments)
@@ -2493,6 +2618,14 @@ class Parser:
             self.advance()
             expr = self.parse_expression_without_assign()
             return DeferStatement(expr)
+        elif self.current_token.type == TokenType.BREAK:
+            token = self.expect(TokenType.BREAK)
+            return BreakStatement(line=token.line)
+        elif self.current_token.type == TokenType.CONTINUE:
+            token = self.expect(TokenType.CONTINUE)
+            return ContinueStatement(line=token.line)
+        elif self.current_token.type == TokenType.EXPECT:
+            return self.parse_expect()
         else:
             return self.parse_expression_statement()
 
@@ -2522,6 +2655,11 @@ class Parser:
             self.advance()
             method = self.expect(TokenType.IDENTIFIER).value
         return ThereforeStmt(expression=expression, method=method)
+
+    def parse_expect(self) -> ExpectStatement:
+        token = self.expect(TokenType.EXPECT)
+        condition = self.parse_expression_without_assign()
+        return ExpectStatement(condition, line=token.line)
 
     def parse_effect(self) -> EffectDecl:
         self.expect(TokenType.EFFECT)
@@ -2663,18 +2801,69 @@ class Parser:
             self.advance()
             alternatives.append(self._finalize_pattern_atom(self.parse_bitwise_xor()))
 
-        for alt in alternatives:
-            if not isinstance(alt, Literal):
-                raise SyntaxError(
-                    "`|` in a match pattern only supports literal alternatives "
-                    "(e.g. `1 | 2 | 3 => ...`); variable bindings and struct "
-                    "patterns cannot be combined with `|`"
-                )
+        all_literals = all(isinstance(alt, Literal) for alt in alternatives)
+        all_structs = all(isinstance(alt, StructPattern) for alt in alternatives)
+        all_lists = all(isinstance(alt, ListPattern) for alt in alternatives)
+        if not all_literals and not all_structs and not all_lists:
+            raise SyntaxError(
+                "`|` in a match pattern requires either all-literal alternatives "
+                "(e.g. `1 | 2 | 3 => ...`) or all-struct alternatives with the "
+                "same binding names (e.g. `Point(0, y) | Point(1, y) => ...`) "
+                "or all-list alternatives of the same length "
+                "(e.g. `[0, x] | [1, x] => ...`)"
+            )
+        if all_structs:
+            expected = self._or_pattern_binding_names(alternatives[0])
+            for alt in alternatives[1:]:
+                names = self._or_pattern_binding_names(alt)
+                if names != expected:
+                    raise SyntaxError(
+                        "`|` struct alternatives must bind the same names in "
+                        f"the same order (got {names!r} vs {expected!r})"
+                    )
+                if alt.struct_name != alternatives[0].struct_name:
+                    raise SyntaxError(
+                        "`|` struct alternatives must use the same struct type "
+                        f"(got {alt.struct_name!r} vs "
+                        f"{alternatives[0].struct_name!r})"
+                    )
+        if all_lists:
+            expected = self._or_pattern_binding_names(alternatives[0])
+            for alt in alternatives[1:]:
+                names = self._or_pattern_binding_names(alt)
+                if len(alt.elements) != len(alternatives[0].elements):
+                    raise SyntaxError(
+                        "`|` list alternatives must have the same length "
+                        f"(got {len(alt.elements)} vs {len(alternatives[0].elements)})"
+                    )
+                if names != expected:
+                    raise SyntaxError(
+                        "`|` list alternatives must bind the same names in "
+                        f"the same order (got {names!r} vs {expected!r})"
+                    )
 
         return OrPattern(alternatives)
 
+    @staticmethod
+    def _or_pattern_binding_names(pattern: Any) -> List[str]:
+        """Flatten binding names from a (possibly nested) struct/list pattern."""
+        if isinstance(pattern, ListPattern):
+            return [
+                elem.name
+                for elem in pattern.elements
+                if isinstance(elem, Variable) and elem.name != "_"
+            ]
+        names: List[str] = []
+        field_patterns = pattern.field_patterns or {}
+        for i, binding in enumerate(pattern.bindings):
+            if i in field_patterns:
+                names.extend(Parser._or_pattern_binding_names(field_patterns[i]))
+            elif binding != "_":
+                names.append(binding)
+        return names
+
     def _finalize_pattern_atom(self, pattern: "Expression") -> "Expression":
-        """Convert a parsed pattern atom into a StructPattern where applicable.
+        """Convert a parsed pattern atom into a StructPattern/ListPattern where applicable.
 
         Struct patterns are parsed as `FunctionCall` (`Point(a, b)`). Arguments
         that are plain variables become bindings; literal arguments become
@@ -2682,7 +2871,20 @@ class Parser:
         binds field 1 to `y`); arguments that are themselves struct patterns
         (`Inner(x)`) recurse into `field_patterns`, so `Outer(Inner(x), y)`
         matches field 0 against the nested pattern and binds field 1 to `y`.
+
+        Array patterns are parsed as `ArrayLiteral` (`[x]`, `[_, 5]`). Each
+        element that is a plain variable becomes a binding; each literal
+        becomes a value check on that slot.
         """
+        if isinstance(pattern, ArrayLiteral):
+            elements: List["Expression"] = []
+            for elem in pattern.elements:
+                if isinstance(elem, (Variable, Literal)):
+                    elements.append(elem)
+                else:
+                    return pattern
+            return ListPattern(elements)
+
         if not isinstance(pattern, FunctionCall):
             return pattern
 
@@ -2865,7 +3067,30 @@ class Parser:
         return self.parse_assignment()
 
     def parse_expression_without_assign(self) -> Expression:
-        return self.parse_logical_or()
+        left = self.parse_logical_or()
+
+        # Pipeline chaining: `x |> f(y)` lowers to `f(x, y)` and
+        # `x |> f()` to `f(x)`. Left-associative, so `a |> f() |> g()` is
+        # `(a |> f()) |> g()` == `g(f(a))`.
+        while self.current_token.type == TokenType.PIPELINE:
+            self.advance()
+            rhs = self.parse_logical_or()
+            if isinstance(rhs, FunctionCall):
+                lhs_arg = left
+                left = FunctionCall(rhs.name, [lhs_arg] + list(rhs.arguments))
+            elif isinstance(rhs, MethodCall):
+                # `x |> obj.m()` -> `obj.m(x)`
+                left = MethodCall(rhs.object, rhs.method, [left] + list(rhs.arguments))
+            elif isinstance(rhs, Variable):
+                # Bare function name: `x |> f` -> `f(x)`
+                left = FunctionCall(rhs.name, [left])
+            else:
+                raise SyntaxError(
+                    "Pipeline '|>' must be followed by a function call, method call, "
+                    "or function name (e.g. `x |> f()` or `x |> f`)"
+                )
+
+        return left
 
     def parse_assignment(self) -> Expression:
         expr = self.parse_logical_or()
@@ -3075,6 +3300,17 @@ class Parser:
         return expr
 
     def parse_unary(self) -> Expression:
+        if self.current_token.type == TokenType.DBG:
+            # `dbg expr` evaluates to expr and, as a side effect, prints it.
+            # Lowered to a builtin call handled by each backend.
+            self.advance()
+            self._enter_nesting("expression")
+            try:
+                operand = self.parse_unary()
+            finally:
+                self.nesting_depth -= 1
+            return FunctionCall("__flow_dbg", [operand])
+
         if self.current_token.type in [
             TokenType.MINUS,
             TokenType.NOT,
@@ -3120,6 +3356,8 @@ class Parser:
         elif self.current_token.type == TokenType.STRING_LITERAL:
             value = self.current_token.value
             self.advance()
+            if "${" in value:
+                return self._parse_interpolated_string(value)
             return Literal(value, Type("string"))
 
         elif self.current_token.type == TokenType.NULL:
@@ -3262,6 +3500,12 @@ class Parser:
             else:
                 return Variable(name)
 
+        elif self.current_token.type == TokenType.LBRACE and self.lookahead.type == TokenType.DOTDOT:
+            # Anonymous record update: `{ ..person, age: 31 }` (Roc syntax).
+            # Flow blocks are statements, never expressions, so a `{ ..` in
+            # expression position is unambiguous.
+            return self.parse_struct_literal("")
+
         elif self.current_token.type == TokenType.LPAREN:
             self.advance()
             expr = self.parse_expression_without_assign()
@@ -3278,7 +3522,6 @@ class Parser:
             raise SyntaxError(
                 f"Unexpected token in expression: {self.current_token.type}"
             )
-
     def parse_function_call(self, name: str) -> FunctionCall:
         self.expect(TokenType.LPAREN)
         arguments = []
@@ -3298,13 +3541,13 @@ class Parser:
         `param_names` holds every name bound at this point: lambda
         parameters, locals declared earlier in the enclosing block, and
         loop variables. Names bound inside the body never count as
-        captures. `break`/`continue` surface as Variable nodes and are
-        excluded.
+        captures. `break`/`continue` are dedicated statement nodes (not
+        `Variable`s), so they never reach this branch.
         """
         if found is None:
             found = set()
         if isinstance(node, Variable):
-            if node.name not in param_names and node.name not in ("self", "break", "continue"):
+            if node.name not in param_names and node.name != "self":
                 found.add(node.name)
         elif isinstance(node, Lambda):
             # A nested lambda's free names are free here too unless bound
@@ -3338,7 +3581,7 @@ class Parser:
             # inside a nested lambda gets captured. The C generator drops
             # names that are not locals in the creation scope (global
             # functions, builtins), so plain calls are unaffected.
-            if node.name not in param_names and node.name not in ("self", "break", "continue"):
+            if node.name not in param_names and node.name != "self":
                 found.add(node.name)
             for arg in node.arguments:
                 self._collect_free_variables(arg, param_names, found)
@@ -3436,11 +3679,28 @@ class Parser:
         captures = self._collect_free_variables(body, param_names)
         return Lambda(parameters, return_type, body, captures=captures)
 
-    def parse_struct_literal(self, struct_name: str) -> "StructLiteral":
+    def parse_struct_literal(self, struct_name: str) -> "Expression":
         # If current token is LBRACE, expect it and advance
         # Otherwise, we're already positioned correctly
         if self.current_token.type == TokenType.LBRACE:
             self.expect(TokenType.LBRACE)
+
+        # Record update form: `Name { ..expr, field: value }` - copy `expr`
+        # and override the listed fields.
+        if self.current_token.type == TokenType.DOTDOT:
+            self.advance()
+            base = self.parse_expression_without_assign()
+            updates: List[tuple] = []
+            while self.current_token.type == TokenType.COMMA:
+                self.advance()
+                if self.current_token.type == TokenType.RBRACE:
+                    break
+                field_name = self.expect(TokenType.IDENTIFIER).value
+                self.expect(TokenType.COLON)
+                field_value = self.parse_expression_without_assign()
+                updates.append((field_name, field_value))
+            self.expect(TokenType.RBRACE)
+            return RecordUpdate(base, updates)
 
         fields = []
 
@@ -3499,6 +3759,65 @@ class Parser:
                 expr = ArrayAccess(expr, index)
 
         return expr
+
+    def _parse_interpolated_string(self, literal_value: str) -> "Expression":
+        """Parse a string literal containing `${...}` interpolations.
+
+        The lexer tokenizes the entire quoted string (including `${...}`
+        segments) as one STRING_LITERAL token because the interpolated
+        expression source has no unescaped quotes. Here we split it back out
+        and build a left-associated `+` concatenation chain:
+
+            `"a ${b} c"`  ->  `"a " + b + " c"`
+
+        Both backends already lower string `+` to concatenation, so no
+        codegen changes are required for interpolation to work.
+        """
+        content = literal_value[1:-1]
+        parts: List["Expression"] = []
+
+        cursor = 0
+        i = 0
+        while i < len(content):
+            if content.startswith("${", i):
+                # Emit any literal text accumulated before this interpolation.
+                if i > cursor:
+                    lit = content[cursor:i]
+                    parts.append(Literal(f'"{lit}"', Type("string")))
+                # Find the matching closing brace (no nested interpolations).
+                j = content.find("}", i + 2)
+                if j == -1:
+                    raise SyntaxError("Unterminated interpolation: missing '}' in string")
+                inner_src = content[i + 2:j]
+                if not inner_src.strip():
+                    raise SyntaxError("Empty interpolation '${}' is not allowed")
+                try:
+                    sub_lexer = Lexer(inner_src)
+                    sub_parser = Parser(sub_lexer)
+                    inner = sub_parser.parse_expression_without_assign()
+                except SyntaxError as e:
+                    raise SyntaxError(
+                        f"Invalid expression in string interpolation '${inner_src}': {e}"
+                    )
+                parts.append(inner)
+                cursor = j + 1
+                i = j + 1
+            else:
+                i += 1
+
+        # Trailing literal text after the last interpolation.
+        if cursor < len(content):
+            lit = content[cursor:]
+            parts.append(Literal(f'"{lit}"', Type("string")))
+
+        if not parts:
+            return Literal('""', Type("string"))
+
+        # Left-associate the concatenation chain.
+        result = parts[0]
+        for part in parts[1:]:
+            result = BinaryOperation(result, "+", part)
+        return result
 
 
 def parse_flow_code(code: str) -> List[Any]:

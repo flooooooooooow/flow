@@ -21,7 +21,7 @@ Not supported yet:
 
 from __future__ import annotations
 
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 from .parser import (
     ArrayAccess,
@@ -29,15 +29,19 @@ from .parser import (
     Assignment,
     BinaryOperation,
     Block,
+    BreakStatement,
     CapabilityDecl,
     CapabilityMethod,
     ConstDecl,
+    ContinueStatement,
     DeferStatement,
     EffectCall,
     EffectDecl,
     EnumDecl,
     Expression,
     CastExpression,
+    ExpectStatement,
+    RecordUpdate,
     FieldAccess,
     FunctionCall,
     FunctionDecl,
@@ -55,6 +59,7 @@ from .parser import (
     StructLiteral,
     StructPattern,
     OrPattern,
+    ListPattern,
     TraitDecl,
     TryExpr,
     Type,
@@ -119,10 +124,13 @@ class CGenerator:
         self._debug_info = debug_info
         self._bounds_check = bounds_check
         self._current_return_type: Type | None = None
+        self._current_tco_fn: str | None = None
+        self._current_tco_params: List[str] = []
         
         # Effect system tracking
         self._effects = {}  # effect_name -> EffectDecl
         self._capabilities = {}  # capability_name -> CapabilityDecl
+        self._impl_methods = {}  # (type_name, method_name) -> [Type_Trait_method]
         self._effect_handler_stack = [{}]  # Stack of {effect_name -> capability_name}
         self._lambda_depth = 0  # >0 while generating a lambda body (closures may outlive the enclosing handle block)
         
@@ -827,6 +835,10 @@ class CGenerator:
             self._collect_structs_from_expr(expr.right)
         elif isinstance(expr, UnaryOperation):
             self._collect_structs_from_expr(expr.operand)
+        elif isinstance(expr, RecordUpdate):
+            self._collect_structs_from_expr(expr.base)
+            for _, value in expr.updates:
+                self._collect_structs_from_expr(value)
         elif isinstance(expr, FunctionCall):
             for arg in expr.arguments:
                 self._collect_structs_from_expr(arg)
@@ -852,6 +864,9 @@ class CGenerator:
             return Type(ret or "i32")
         elif isinstance(expr, StructLiteral):
             return Type(expr.struct_name)
+        elif isinstance(expr, RecordUpdate):
+            inferred = self._infer_expr_type(expr.base)
+            return inferred if inferred else Type("i32")
         elif isinstance(expr, FieldAccess):
             obj_type = self._infer_expr_type(expr.object)
             # Unwrap pointers so ptr<Struct> field access resolves the struct
@@ -876,7 +891,13 @@ class CGenerator:
                         return Type(base_type.name[len(prefix):])
             return Type("i32")
         elif isinstance(expr, MethodCall):
-            # Desugars to method(object, args...)
+            impl_method = self._impl_method_for_receiver(
+                self._infer_expr_type(expr.object), expr.method
+            )
+            if impl_method:
+                return self._infer_expr_type(
+                    FunctionCall(impl_method, [expr.object] + list(expr.arguments))
+                )
             return self._infer_expr_type(
                 FunctionCall(expr.method, [expr.object] + list(expr.arguments))
             )
@@ -1155,8 +1176,32 @@ class CGenerator:
         for param in fn.parameters:
             self._overload_resolver.set_var_type(param.name, self._type_to_string(param.type))
             self._var_types[param.name] = param.type
-        
+
+        # Tail-call optimization: if the function is self-recursive at the tail
+        # (a `return self(...)` in tail position) and has no defers, rewrite the
+        # body into a `for(;;)` loop that reassigns the parameters and continues.
+        # This converts recursion into constant-stack iteration (Roc's loop story).
+        tco_tail = self._tail_self_calls(fn)
+        self._current_tco_fn = fn.name if tco_tail else None
+        self._current_tco_params = [p.name for p in fn.parameters] if tco_tail else []
+        if tco_tail:
+            lines.append(f"{self._i()}for (;;) {{")
+            self._indent += 1
+
         lines.extend(self._gen_block(fn.body))
+
+        if tco_tail:
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+            # The loop is the only exit; emit a defensive return so C always
+            # sees a return path even though it is unreachable.
+            ret_type = fn.return_type
+            if ret_type and ret_type.name not in ("void", "auto") and ret_type.name:
+                lines.append(f"{self._i()}return {self._zero_value_for_c_type(ret_type)};")
+            else:
+                lines.append(f"{self._i()}return;")
+        self._current_tco_fn = None
+        self._current_tco_params = []
         
         # Restore var_types scope
         self._var_types = saved_var_types
@@ -1166,6 +1211,148 @@ class CGenerator:
         self._fnptr_vars = saved_fnptr_vars
         self._indent -= 1
         lines.append("}")
+        return lines
+
+    def _zero_value_for_c_type(self, t: Type) -> str:
+        """Return a valid zero-valued C expression for a Flow type.
+
+        Used for the (unreachable) return after a TCO loop.
+        """
+        name = t.name if hasattr(t, "name") else ""
+        if name in ("bool",):
+            return "false"
+        if name in ("f32", "f64", "float", "double"):
+            return "0.0"
+        if name in ("string", "str"):
+            return '""'
+        if name.startswith("ptr_") or getattr(t, "is_pointer", False) or name.startswith("array_"):
+            return "NULL"
+        return "0"
+
+    def _tail_self_calls(self, fn: FunctionDecl) -> bool:
+        """Detect whether a function has a self-recursive call in tail position.
+
+        Tail position means the call's value is what the function returns on
+        every path (the last statement of the body, or the last statement of
+        every branch of a trailing if/else). When true, `_gen_function` wraps
+        the body in a `for(;;)` loop and `return self(...)` becomes a parameter
+        reassignment + `continue`.
+        """
+        if getattr(fn, "has_self", False) or getattr(fn, "is_closure", False):
+            return False
+        # No parameters to iterate on means a self-call cannot lower to a loop.
+        if not fn.parameters:
+            return False
+        body = fn.body
+        if any(isinstance(s, DeferStatement) for s in body.statements):
+            return False
+        return self._block_has_tail_self_call(body, fn.name, len(fn.parameters))
+
+    def _block_has_tail_self_call(self, block: "Block", fn_name: str, nparams: int) -> bool:
+        """Recursively check a block's tail statements for a self-call."""
+        if not block.statements:
+            return False
+        return self._statement_is_tail_self_call(block.statements[-1], fn_name, nparams)
+
+    def _statement_is_tail_self_call(
+        self, st: "Statement", fn_name: str, nparams: int
+    ) -> bool:
+        """Check a single tail statement (or trailing if/else) for a self-call.
+
+        A statement is a "tail" position when every path through it is a path
+        out of the function (a return or self-call). We return True if it (a)
+        is guaranteed to terminate (every branch ends in a return / self-call)
+        and (b) contains at least one self-call among those terminal returns.
+        """
+        if isinstance(st, ReturnStatement):
+            return self._return_is_self_call(st, fn_name, nparams)
+        if isinstance(st, IfStatement):
+            # Every branch must terminate the function for the if to be in tail
+            # position (then the whole if returns → the loop can resume only via
+            # a self call). At least one branch must be a self call.
+            branches = [st.then_block] + [b for _, b in st.elif_blocks]
+            if st.else_block:
+                branches.append(st.else_block)
+            else:
+                # No else: if the condition is false the statement does not
+                # terminate → not a tail position.
+                return False
+            has_self = False
+            for b in branches:
+                if not self._statement_terminates(b, fn_name, nparams):
+                    return False
+                if self._statement_is_tail_self_call(b, fn_name, nparams):
+                    has_self = True
+            return has_self
+        if isinstance(st, Block):
+            return self._block_has_tail_self_call(st, fn_name, nparams)
+        return False
+
+    def _statement_terminates(self, st: "Statement", fn_name: str, nparams: int) -> bool:
+        """Whether every path through `st` ends in a return (or self tail call)."""
+        if isinstance(st, ReturnStatement):
+            return st.value is not None or fn_name is not None
+        if isinstance(st, IfStatement):
+            if st.else_block is None:
+                return False
+            branches = [st.then_block] + [b for _, b in st.elif_blocks] + [st.else_block]
+            return all(self._statement_terminates(b, fn_name, nparams) for b in branches)
+        if isinstance(st, Block):
+            if not st.statements:
+                return False
+            return self._statement_terminates(st.statements[-1], fn_name, nparams)
+        return False
+
+    def _statement_has_nonlocal_return(self, st: "Statement") -> bool:
+        if isinstance(st, ReturnStatement):
+            return True
+        if isinstance(st, IfStatement):
+            return any(
+                self._statement_has_nonlocal_return(s)
+                for s in [st.then_block] + [b for _, b in st.elif_blocks]
+                + ([st.else_block] if st.else_block else [])
+            )
+        if isinstance(st, WhileStatement):
+            return self._statement_has_nonlocal_return(st.body)
+        if isinstance(st, ForStatement):
+            return self._statement_has_nonlocal_return(st.body)
+        if isinstance(st, Block):
+            return self._statement_has_nonlocal_return(st)
+        return False
+
+    def _return_is_self_call(self, st: "ReturnStatement", fn_name: str, nparams: int) -> bool:
+        if not st.value:
+            return False
+        if not isinstance(st.value, FunctionCall):
+            return False
+        # The body references the (mangled) call name, e.g. `countdown_i32_i32`,
+        # while `fn_name` is the unmangled `countdown`. Compare base names.
+        call_name = st.value.name
+        if fn_name != call_name and not call_name.startswith(fn_name + "_"):
+            return False
+        # A self tail call must pass exactly the function's parameters (the
+        # loop reassigns them), which is the usual accumulator pattern.
+        return len(st.value.arguments) == nparams
+
+    def _tco_loop_continue(self, call: FunctionCall) -> List[str]:
+        """Lower a self-recursive tail call to param reassignment + continue.
+
+        Each argument is captured into a temp first so the reassignments don't
+        clobber each other (e.g. `f(n - 1, acc + n)`).
+        """
+        lines: List[str] = []
+        temps = []
+        for i, arg in enumerate(call.arguments):
+            arg_c = self._gen_expr(arg)
+            t = f"_tco_{i}_{id(call) & 0xFFFF}"
+            temps.append(t)
+            param_name = self._current_tco_params[i]
+            ptype = self._var_types.get(param_name)
+            ctype = self._c_type(ptype) if ptype else "int32_t"
+            lines.append(f"{self._i()}{ctype} {t} = {arg_c};")
+        for i, param in enumerate(self._current_tco_params):
+            lines.append(f"{self._i()}{_c_ident(param)} = {temps[i]};")
+        lines.append(f"{self._i()}continue;")
         return lines
 
     def _gen_defers(self, defers: List[DeferStatement]) -> List[str]:
@@ -1273,6 +1460,18 @@ class CGenerator:
         if isinstance(st, ReturnStatement):
             if st.value is None:
                 return [f"{self._i()}return;"]
+            # Tail-call optimization: a self-recursive call in tail position
+            # becomes parameter reassignment + `continue` inside the loop.
+            if (
+                self._current_tco_fn
+                and isinstance(st.value, FunctionCall)
+                and (
+                    st.value.name == self._current_tco_fn
+                    or st.value.name.startswith(self._current_tco_fn + "_")
+                )
+                and len(st.value.arguments) == len(self._current_tco_params)
+            ):
+                return self._tco_loop_continue(st.value)
             return [f"{self._i()}return {self._gen_expr(st.value)};"]
 
         if isinstance(st, IfStatement):
@@ -1296,11 +1495,21 @@ class CGenerator:
         if isinstance(st, DeferStatement):
             return []  # Collected by _gen_block
 
-        # Loop control: the parser currently surfaces `break`/`continue` as
-        # bare Variable statements; emit the C keywords directly instead of
-        # a mangled identifier.
-        if isinstance(st, Variable) and st.name in ("break", "continue"):
-            return [f"{self._i()}{st.name};"]
+        # Runtime assertion: `expect <expr>` aborts with a diagnostic if false.
+        if isinstance(st, ExpectStatement):
+            cond = self._gen_expr(st.condition)
+            return [
+                f"{self._i()}if (!({cond})) {{",
+                f"{self._i()}    fprintf(stderr, \"expect failed (line {st.line})\\n\");",
+                f"{self._i()}    exit(1);",
+                f"{self._i()}}}",
+            ]
+
+        # Loop control: dedicated AST nodes map straight to the C keywords.
+        if isinstance(st, BreakStatement):
+            return [f"{self._i()}break;"]
+        if isinstance(st, ContinueStatement):
+            return [f"{self._i()}continue;"]
 
         # Expression statement
         if isinstance(st, (Literal, Variable, BinaryOperation, UnaryOperation, FunctionCall, EffectCall, MethodCall)):
@@ -1421,6 +1630,37 @@ class CGenerator:
 
         return conds, binds
 
+    def _gen_list_pattern_match(
+        self, pattern: "ListPattern", value_expr: str, elem_type: Optional[Type] = None
+    ) -> Tuple[List[str], List[str]]:
+        """Lower a ListPattern against `value_expr` (a C array expression).
+
+        Returns `(conds, binds)` like `_gen_struct_pattern_match`: `conds` are
+        C boolean expressions that must all hold (literal element checks);
+        `binds` are C variable declarations for the element bindings. Element
+        type comes from the match value's array type when known, else from the
+        first literal element, else i32.
+        """
+        conds: List[str] = []
+        binds: List[str] = []
+        if elem_type is None or elem_type.name in ("auto", "void", "i32"):
+            for elem in pattern.elements:
+                if isinstance(elem, Literal) and elem.type.name != "string":
+                    elem_type = elem.type
+                    break
+        if elem_type is None:
+            elem_type = Type("i32")
+        c_elem = self._c_type(elem_type)
+        for i, elem in enumerate(pattern.elements):
+            access = f"{value_expr}[{i}]"
+            if isinstance(elem, Literal):
+                conds.append(self._gen_literal_eq_cond(access, elem))
+            elif isinstance(elem, Variable) and elem.name != "_":
+                binds.append(f"{c_elem} {_c_ident(elem.name)} = {access}")
+                self._overload_resolver.set_var_type(elem.name, elem_type.name)
+                self._var_types[elem.name] = elem_type
+        return conds, binds
+
     def _gen_match(self, st: MatchStatement) -> List[str]:
         """Generate C switch/if-else chain from FLOW match statement."""
         lines: List[str] = []
@@ -1488,8 +1728,92 @@ class CGenerator:
                     if case.guard is not None:
                         cond = f"({cond}) && ({self._gen_expr(case.guard)})"
                 elif isinstance(pattern, OrPattern):
+                    if pattern.patterns and isinstance(
+                        pattern.patterns[0], StructPattern
+                    ):
+                        # Struct alternatives: OR of each alt's match conds,
+                        # bindings taken from the first alt (binding names
+                        # already validated identical by the parser).
+                        alt_conds: List[str] = []
+                        struct_binds: List[str] = []
+                        for i, alt in enumerate(pattern.patterns):
+                            assert isinstance(alt, StructPattern)
+                            literal_conds, binds = self._gen_struct_pattern_match(
+                                alt, match_expr
+                            )
+                            term = " && ".join(literal_conds) if literal_conds else "1"
+                            alt_conds.append(f"({term})" if literal_conds else "1")
+                            if i == 0:
+                                struct_binds = binds
+                        cond = " || ".join(alt_conds) if alt_conds else "1"
+                        if case.guard is not None:
+                            guard_expr = self._gen_expr(case.guard)
+                            if struct_binds:
+                                bind_decls = " ".join(f"{b};" for b in struct_binds)
+                                cond = (
+                                    f"({cond}) && "
+                                    f"({{ {bind_decls} {guard_expr}; }})"
+                                )
+                            else:
+                                cond = f"({cond}) && ({guard_expr})"
+                        branch_kw = "if" if first else "} else if"
+                        first = False
+                        lines.append(f"{self._i()}{branch_kw} ({cond}) {{")
+                        self._indent += 1
+                        for bind_stmt in struct_binds:
+                            lines.append(f"{self._i()}{bind_stmt};")
+                        lines.extend(self._gen_block(case.body))
+                        self._indent -= 1
+                        continue
+                    if pattern.patterns and isinstance(
+                        pattern.patterns[0], ListPattern
+                    ):
+                        # List alternatives: OR of each alt's element conds,
+                        # bindings taken from the first alt (binding names
+                        # already validated identical by the parser).
+                        alt_conds: List[str] = []
+                        list_binds: List[str] = []
+                        arr_type = self._infer_match_type(st.value)
+                        elem_t = getattr(arr_type, "element_type", None)
+                        if elem_t is None and arr_type.name.startswith("array_"):
+                            rest = arr_type.name[len("array_"):]
+                            if "_" in rest:
+                                parts = rest.split("_")
+                                if parts[0].isdigit():
+                                    rest = "_".join(parts[1:])
+                            elem_t = Type(rest)
+                        for i, alt in enumerate(pattern.patterns):
+                            assert isinstance(alt, ListPattern)
+                            elem_conds, binds = self._gen_list_pattern_match(
+                                alt, match_expr, elem_t
+                            )
+                            term = " && ".join(elem_conds) if elem_conds else "1"
+                            alt_conds.append(f"({term})" if elem_conds else "1")
+                            if i == 0:
+                                list_binds = binds
+                        cond = " || ".join(alt_conds) if alt_conds else "1"
+                        if case.guard is not None:
+                            guard_expr = self._gen_expr(case.guard)
+                            if list_binds:
+                                bind_decls = " ".join(f"{b};" for b in list_binds)
+                                cond = (
+                                    f"({cond}) && "
+                                    f"({{ {bind_decls} {guard_expr}; }})"
+                                )
+                            else:
+                                cond = f"({cond}) && ({guard_expr})"
+                        branch_kw = "if" if first else "} else if"
+                        first = False
+                        lines.append(f"{self._i()}{branch_kw} ({cond}) {{")
+                        self._indent += 1
+                        for bind_stmt in list_binds:
+                            lines.append(f"{self._i()}{bind_stmt};")
+                        lines.extend(self._gen_block(case.body))
+                        self._indent -= 1
+                        continue
                     cond = " || ".join(
-                        self._gen_literal_eq_cond(match_expr, alt) for alt in pattern.patterns
+                        self._gen_literal_eq_cond(match_expr, alt)
+                        for alt in pattern.patterns
                     )
                     if case.guard is not None:
                         cond = f"({cond}) && ({self._gen_expr(case.guard)})"
@@ -1544,6 +1868,37 @@ class CGenerator:
                     lines.append(f"{self._i()}{branch_kw} ({cond}) {{")
                     self._indent += 1
                     for bind_stmt in struct_binds:
+                        lines.append(f"{self._i()}{bind_stmt};")
+                    lines.extend(self._gen_block(case.body))
+                    self._indent -= 1
+                    continue
+                elif isinstance(pattern, ListPattern):
+                    arr_type = self._infer_match_type(st.value)
+                    elem_t = getattr(arr_type, "element_type", None)
+                    if elem_t is None and arr_type.name.startswith("array_"):
+                        rest = arr_type.name[len("array_"):]
+                        if "_" in rest:
+                            parts = rest.split("_")
+                            if parts[0].isdigit():
+                                rest = "_".join(parts[1:])
+                        elem_t = Type(rest)
+                    list_conds, list_binds = self._gen_list_pattern_match(
+                        pattern, match_expr, elem_t
+                    )
+                    cond_terms = list(list_conds)
+                    if case.guard is not None:
+                        guard_expr = self._gen_expr(case.guard)
+                        if list_binds:
+                            bind_decls = " ".join(f"{b};" for b in list_binds)
+                            cond_terms.append(f"({{ {bind_decls} {guard_expr}; }})")
+                        else:
+                            cond_terms.append(f"({guard_expr})")
+                    cond = " && ".join(cond_terms) if cond_terms else "1"
+                    branch_kw = "if" if first else "} else if"
+                    first = False
+                    lines.append(f"{self._i()}{branch_kw} ({cond}) {{")
+                    self._indent += 1
+                    for bind_stmt in list_binds:
                         lines.append(f"{self._i()}{bind_stmt};")
                     lines.extend(self._gen_block(case.body))
                     self._indent -= 1
@@ -1729,6 +2084,35 @@ class CGenerator:
             fields = ", ".join(field_parts)
             return f"({struct_c_name}){{ {fields} }}"
 
+        if isinstance(e, RecordUpdate):
+            # `Point { ..p, x: 3 }` -> `({ Point _ru = p; _ru.x = 3; _ru; })`
+            inferred = self._infer_expr_type(e.base)
+            struct_name = inferred.name if inferred else None
+            struct_c_name = _c_ident(struct_name)
+            if not struct_name or struct_name not in self._structs:
+                struct_c_name = _c_ident(struct_name or "")
+            tmp = f"_flow_rupdate_{id(e) & 0xFFFFFF}"
+            base_c = self._gen_expr(e.base)
+            stmts = [f"{struct_c_name} {tmp} = {base_c};"]
+            struct_fields = self._structs.get(struct_name, {})
+
+            def ru_is_array_field(name):
+                ft = struct_fields.get(name)
+                return bool(ft and getattr(ft, "name", "").startswith("array_"))
+
+            for name, value in e.updates:
+                c_field = _c_ident(name)
+                if ru_is_array_field(name):
+                    if isinstance(value, ArrayLiteral):
+                        value_expr = self._gen_array_literal(value, as_initializer=False)
+                    else:
+                        value_expr = self._gen_expr(value)
+                    stmts.append(f"memcpy({tmp}.{c_field}, {value_expr}, sizeof({tmp}.{c_field}));")
+                else:
+                    stmts.append(f"{tmp}.{c_field} = {self._gen_expr(value)};")
+            stmts.append(f"{tmp};")
+            return "({ " + " ".join(stmts) + " })"
+
         if isinstance(e, FieldAccess):
             obj_expr = self._gen_expr(e.object)
             if self._is_pointer_expr(e.object):
@@ -1837,6 +2221,27 @@ class CGenerator:
             if e.name == "ui_layout_bind" and len(e.arguments) == 1:
                 arg_expr = self._gen_expr(e.arguments[0])
                 return f"(_ui_state = (void*){arg_expr})"
+            # dbg intrinsic: evaluate the operand once, print it to stderr as a side
+            # effect, and yield the operand's value so the surrounding program
+            # is unaffected (`dbg x` == `x`).
+            if e.name == "__flow_dbg" and len(e.arguments) == 1:
+                arg = e.arguments[0]
+                arg_expr = self._gen_expr(arg)
+                inferred = self._infer_expr_type(arg)
+                type_name = inferred.name if inferred else None
+                tmp = f"_dbgv_{id(e) & 0xFFFFFF}"
+                if type_name == "string":
+                    rendered = tmp
+                elif type_name == "bool":
+                    rendered = f"({tmp} ? \"true\" : \"false\")"
+                else:
+                    fmt = self._printf_format_for_type_name(type_name)
+                    buf = f"_dbgbuf_{id(e) & 0xFFFFFF}"
+                    rendered = f'({{ char {buf}[64]; snprintf({buf}, sizeof({buf}), "{fmt}", {tmp}); {buf}; }})'
+                return (
+                    f'({{ __typeof__({arg_expr}) {tmp} = {arg_expr}; '
+                    f'fprintf(stderr, "dbg: %s\\n", {rendered}); {tmp}; }})'
+                )
             # Handle len() builtin for arrays and slices
             if e.name == "len":
                 if len(e.arguments) == 1:
@@ -1882,18 +2287,28 @@ class CGenerator:
                 args = ", ".join(self._gen_expr(a) for a in e.arguments)
                 return f"_env->{_c_ident(e.name)}({args})"
 
+            overloads = self._overload_resolver.get_overloads(e.name)
+            if any(getattr(ov.function, "is_extern", False) for ov in overloads):
+                args = ", ".join(self._gen_expr(a) for a in e.arguments)
+                return f"{_c_ident(e.name)}({args})"
+
             # Resolve function overload
             resolved_name = self._overload_resolver.resolve_call(e)
             func_name = resolved_name if resolved_name else e.name
             func_name = _c_ident(func_name)
-            
-            # Check if we need to pass address for capability parameters
-            overloads = self._overload_resolver.get_overloads(e.name)
+
             target_overload = None
             for ov in overloads:
                 if ov.mangled_name == func_name:
                     target_overload = ov
                     break
+
+            implicit_effect_args: list[str] = []
+            if target_overload is None and overloads:
+                implicit_match = self._resolve_call_with_implicit_effect_args(e, overloads)
+                if implicit_match is not None:
+                    target_overload, implicit_effect_args = implicit_match
+                    func_name = _c_ident(target_overload.mangled_name)
             
             # Generate arguments, taking address of structs for capability parameters
             arg_strs = []
@@ -1907,6 +2322,7 @@ class CGenerator:
                         if isinstance(arg, Variable):
                             arg_expr = f"&{arg_expr}"
                 arg_strs.append(arg_expr)
+            arg_strs.extend(implicit_effect_args)
             
             args = ", ".join(arg_strs)
             return f"{func_name}({args})"
@@ -2002,6 +2418,13 @@ class CGenerator:
                 effect_call = EffectCall(e.object.name, e.method, e.arguments)
                 return self._gen_effect_call(effect_call)
 
+        receiver_type = self._infer_expr_type(e.object)
+        impl_method = self._impl_method_for_receiver(receiver_type, e.method)
+        if impl_method:
+            return self._gen_expr(
+                FunctionCall(impl_method, [e.object] + list(e.arguments))
+            )
+
         # Desugar to a normal function call with the receiver as the first argument.
         # Many stdlib modules implement "methods" as plain functions taking
         # `ptr<Struct>` as their first parameter (effects/capabilities aren't
@@ -2023,6 +2446,64 @@ class CGenerator:
 
         args = [receiver] + e.arguments
         return self._gen_expr(FunctionCall(e.method, args))
+
+    def _type_name_for_method_receiver(self, t: Type | None) -> str | None:
+        if t is None:
+            return None
+        if getattr(t, "element_type", None) is not None and (
+            getattr(t, "is_pointer", False) or t.name.startswith("ptr_")
+        ):
+            return t.element_type.name
+        if t.name.startswith("ptr_"):
+            return t.name[len("ptr_"):]
+        return t.name
+
+    def _impl_method_for_receiver(self, receiver_type: Type | None, method: str) -> str | None:
+        type_name = self._type_name_for_method_receiver(receiver_type)
+        if not type_name:
+            return None
+        candidates = self._impl_methods.get((type_name, method), [])
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    def _resolve_call_with_implicit_effect_args(self, call: FunctionCall, overloads):
+        """Resolve f(args) to f(args, GPU, FFT) inside a matching handle block."""
+        matches = []
+        arg_types = [self._overload_resolver.get_expr_type(arg) for arg in call.arguments]
+        active_effects = self._effect_handler_stack[-1]
+
+        for overload in overloads:
+            if len(overload.param_types) < len(arg_types):
+                continue
+
+            explicit_ok = True
+            for param_type, arg_type in zip(overload.param_types, arg_types):
+                if arg_type is None:
+                    continue
+                if not self._overload_resolver._types_compatible(param_type, arg_type):
+                    explicit_ok = False
+                    break
+            if not explicit_ok:
+                continue
+
+            implicit_args = []
+            for param_type in overload.param_types[len(arg_types):]:
+                effect_name = (
+                    param_type[len("capability_"):]
+                    if param_type.startswith("capability_")
+                    else param_type
+                )
+                if effect_name not in self._effects or effect_name not in active_effects:
+                    implicit_args = None
+                    break
+                implicit_args.append(f"({_c_ident(param_type)}){{  }}")
+            if implicit_args is not None:
+                matches.append((overload, implicit_args))
+
+        if len(matches) == 1:
+            return matches[0]
+        return None
     
     def _gen_lvalue_expr(self, e: Expression) -> str:
         """Generate an assignable C lvalue (no bounds-check ternaries)."""
@@ -2103,8 +2584,6 @@ class CGenerator:
         """
         captures = []
         for cap in list(getattr(e, "captures", []) or []):
-            if cap in ("break", "continue"):
-                continue
             if cap in self._const_names:
                 continue
             if cap in self._effects:
@@ -2281,8 +2760,12 @@ def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_
         for impl in impls:
             type_name = impl.for_type.name
             for method in impl.methods:
+                original_method_name = method.name
                 # Mangle name: Type_Trait_method
-                method.name = f"{type_name}_{impl.trait_name}_{method.name}"
+                method.name = f"{type_name}_{impl.trait_name}_{original_method_name}"
+                generator._impl_methods.setdefault(
+                    (type_name, original_method_name), []
+                ).append(method.name)
                 
                 # If method has self, add it as first parameter if not already present
                 if getattr(method, 'has_self', False):

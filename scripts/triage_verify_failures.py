@@ -75,18 +75,17 @@ FEATURE_CHECKS: list[tuple[str, Callable[[str], bool], str]] = [
     (
         "hyphenated import path/symbols",
         _regex_check(r"^\s*import\s+\S*[A-Za-z]-[A-Za-z]", re.M),
-        "`import .Group-inv-unique { inv-unique }` — sibling proof files are "
-        "named with hyphens and imported by that hyphenated name. The "
-        "imported symbol is a dependency citation only; it's never called "
-        "in the body (claim paths are used instead). Module-path/import-list "
-        "parsing does not special-case hyphens, so `Group-inv-unique` lexes "
-        "as MINUS-separated identifiers.",
+        "`import .Group-inv-unique { inv-unique }` — **now parsed** "
+        "(dashed identifiers in import paths/symbol lists). Residual tags "
+        "here usually mean the file still fails for another reason while "
+        "also containing a hyphenated import.",
     ),
     (
         "operator-suffixed module path (e.g. `Nat/+`)",
         _regex_check(r"^\s*import\s+\S*/[+\-*/]", re.M),
-        "`import verify.Nat/+ { zero-left }` embeds an operator symbol "
-        "directly in the module path segment.",
+        "`import verify.Nat/+ { zero-left }` — **now parsed + resolved** "
+        "to `Domain.flow` under `[paths].verify`. Residual tags usually "
+        "overlap with another failure class.",
     ),
     (
         "non-triple guillemet claim coordinate",

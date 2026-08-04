@@ -84,6 +84,60 @@ def test_or_pattern_integer_literals_warn():
     assert any("Non-exhaustive match" in w for w in result.warnings)
 
 
+def test_integer_gap_inside_span_is_reported():
+    result = _check(
+        """
+        function f(x: i32) -> i32 {
+            match x {
+                0 | 1 | 3 => { return 1 }
+            }
+            return -1
+        }
+        """
+    )
+    assert result.errors == []
+    joined = " | ".join(result.warnings)
+    assert "gaps in [0, 3]" in joined
+    assert "2" in joined
+
+
+def test_integer_contiguous_span_still_warns_outside():
+    result = _check(
+        """
+        function f(x: i32) -> i32 {
+            match x {
+                0 => { return 0 }
+                1 => { return 1 }
+                2 => { return 2 }
+            }
+            return -1
+        }
+        """
+    )
+    assert result.errors == []
+    joined = " | ".join(result.warnings)
+    assert "contiguous cover [0, 2]" in joined
+    assert "outside that span" in joined
+
+
+def test_guarded_integer_arm_does_not_cover():
+    result = _check(
+        """
+        function f(x: i32) -> i32 {
+            match x {
+                0 if x >= 0 => { return 0 }
+                1 => { return 1 }
+            }
+            return -1
+        }
+        """
+    )
+    assert result.errors == []
+    # Only unguarded `1` counts; still non-exhaustive (and 0 is a gap if
+    # another unguarded value expands the span — here span is just {1}).
+    assert any("Non-exhaustive match" in w for w in result.warnings)
+
+
 def test_bool_match_missing_false_warns():
     result = _check(
         """
