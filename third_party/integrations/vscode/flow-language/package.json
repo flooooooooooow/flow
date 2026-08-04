@@ -1,15 +1,40 @@
 {
   "name": "flow-language",
   "displayName": "FLOW Language",
-  "description": "Language support for FLOW programming language",
-  "version": "0.1.0",
-  "publisher": "flow-lang",
+  "description": "Syntax highlighting and LSP support for the FLOW programming language (effects, autodiff, C backend).",
+  "version": "0.1.1",
+  "publisher": "flooooooooooow",
+  "author": "Flow contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/flooooooooooow/flow",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/flooooooooooow/flow.git",
+    "directory": "third_party/integrations/vscode/flow-language"
+  },
+  "bugs": {
+    "url": "https://github.com/flooooooooooow/flow/issues"
+  },
+  "qna": "https://github.com/flooooooooooow/flow/discussions",
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": [
     "Programming Languages"
   ],
+  "keywords": [
+    "flow",
+    "flow-lang",
+    "algebraic effects",
+    "autodiff",
+    "dsl",
+    "syntax"
+  ],
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
+  },
   "activationEvents": [
     "onLanguage:flow"
   ],
@@ -18,8 +43,13 @@
     "languages": [
       {
         "id": "flow",
-        "aliases": ["FLOW", "flow"],
-        "extensions": [".flow"],
+        "aliases": [
+          "FLOW",
+          "flow"
+        ],
+        "extensions": [
+          ".flow"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -30,6 +60,12 @@
         "path": "./syntaxes/flow.tmLanguage.json"
       }
     ],
+    "commands": [
+      {
+        "command": "flow.restartLsp",
+        "title": "FLOW: Restart Language Server"
+      }
+    ],
     "configuration": {
       "type": "object",
       "title": "FLOW",
@@ -37,7 +73,17 @@
         "flow.lspPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the FLOW LSP server (flow-lsp)"
+          "description": "Optional path to a dedicated FLOW LSP binary. When empty, uses python3 -m flow.lsp_server."
+        },
+        "flow.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Python used to launch flow.lsp_server when flow.lspPath is empty."
+        },
+        "flow.repoPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a Flow language checkout (adds <repo>/src to PYTHONPATH). Auto-detected from the workspace when possible."
         }
       }
     }
@@ -45,11 +91,15 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies",
+    "publish:vsce": "vsce publish --no-dependencies",
+    "publish:ovsx": "ovsx publish --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^3.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {
