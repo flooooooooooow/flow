@@ -16,6 +16,10 @@ OUT = ROOT / "build" / "wiki"
 
 SKIP_DOCS = {"playground"}
 
+VERIFY_LIB_ROOT = ROOT / "lib" / "verify"
+VERIFY_EXAMPLES_ROOT = ROOT / "examples" / "verify"
+IMPORT_LINE_RE = re.compile(r"^\s*import\s+(\S+)", re.MULTILINE)
+
 
 def copy_tree(src: Path, dst: Path) -> None:
     if dst.exists():
@@ -272,6 +276,116 @@ def write_euclid_indexes(ex_rows: list[dict]) -> list[dict]:
     return nav_items
 
 
+def build_proof_graph() -> dict:
+    """Static proof-dependency graph for the flow-verify catalog (issue #133).
+
+    Design choice — nodes are *modules* (one per .flow file), not individual
+    theorems: a module holds dozens of theorems, so per-theorem nodes would
+    blow past any sane node budget without adding real structure to a
+    dependency view. `lib/verify` is small (~24 files) and is included in
+    full as the graph's anchor set. Of `examples/verify`, only
+    `math/derived/*.flow` actually uses the `import` mechanism — every other
+    example directory (euclid, geometry, circuits, analysis, transforms,
+    systems, …) is a self-contained, zero-import proof — so those ~1000
+    files contribute no edges and are left out entirely rather than padding
+    the graph with disconnected nodes. In practice this keeps the graph at a
+    few hundred nodes, comfortably under the ~800 cap called out in the
+    issue, with no sampling/truncation needed.
+    """
+
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+    edge_seen: set[tuple[str, str]] = set()
+
+    def ensure_node(node_id: str, label: str, group: str, path: str | None) -> None:
+        if node_id not in nodes:
+            entry = {"id": node_id, "label": label, "group": group}
+            if path:
+                entry["path"] = path
+            nodes[node_id] = entry
+        elif path and "path" not in nodes[node_id]:
+            nodes[node_id]["path"] = path
+
+    def proof_doc_path(prefix: str, rel: str) -> str | None:
+        proof_rel = rel[: -len(".flow")] + ".proof.md"
+        src_root = VERIFY_LIB_ROOT if prefix == "lib" else VERIFY_EXAMPLES_ROOT
+        if not (src_root / proof_rel).exists():
+            return None
+        return f"third-party/flow-verify/proofs/{prefix}/{proof_rel}"
+
+    def resolve_target(token: str, home_dotted_dir: str) -> tuple[str, str, str, str | None] | None:
+        token = token.strip()
+        if not token:
+            return None
+        if token.startswith('"'):
+            # Quoted file-path import (e.g. a stdlib companion) — outside the
+            # verify/examples module tree, kept as a small "external" leaf.
+            raw = token.strip('"')
+            return f"external.{raw}", Path(raw).stem, "external", None
+        if token.startswith("."):
+            # Relative import: `.Sibling` resolves inside the importer's own directory.
+            name = token[1:].split("/")[0]
+            if not name:
+                return None
+            node_id = f"{home_dotted_dir}.{name}"
+            if node_id.startswith("verify."):
+                group, id_prefix = "lib", "verify"
+            else:
+                group, id_prefix = "examples", "examples"
+            rel = node_id[len(id_prefix) + 1 :].replace(".", "/") + ".flow"
+            return node_id, name, group, proof_doc_path(group, rel)
+        # Absolute module path, e.g. "verify.Nat" or "verify.Nat/+" (operator import).
+        base = token.split("/")[0]
+        label = base.split(".")[-1]
+        if base.startswith("verify."):
+            rel = base[len("verify.") :].replace(".", "/") + ".flow"
+            return base, label, "lib", proof_doc_path("lib", rel)
+        return base, label, "external", None
+
+    # (root, id-prefix used inside node ids, group label, include-even-without-imports)
+    sources = (
+        (VERIFY_LIB_ROOT, "verify", "lib", True),
+        (VERIFY_EXAMPLES_ROOT, "examples", "examples", False),
+    )
+    for root_dir, id_prefix, group, include_all in sources:
+        if not root_dir.exists():
+            continue
+        for flow_path in sorted(root_dir.rglob("*.flow")):
+            rel = flow_path.relative_to(root_dir).as_posix()
+            text = flow_path.read_text(encoding="utf-8", errors="replace")
+            import_tokens = [m.group(1) for m in IMPORT_LINE_RE.finditer(text)]
+
+            if not include_all and not import_tokens:
+                continue  # examples/*: only import-connected modules earn a node
+
+            node_id = f"{id_prefix}.{rel[: -len('.flow')].replace('/', '.')}"
+            label = Path(rel).stem
+            ensure_node(node_id, label, group, proof_doc_path(group, rel))
+
+            home_dotted_dir = node_id.rsplit(".", 1)[0]
+            for token in import_tokens:
+                resolved = resolve_target(token, home_dotted_dir)
+                if not resolved:
+                    continue
+                target_id, target_label, target_group, target_path = resolved
+                ensure_node(target_id, target_label, target_group, target_path)
+                key = (node_id, target_id)
+                if node_id != target_id and key not in edge_seen:
+                    edge_seen.add(key)
+                    edges.append({"from": node_id, "to": target_id})
+
+    return {
+        "nodes": sorted(nodes.values(), key=lambda n: (n["group"], n["id"])),
+        "edges": sorted(edges, key=lambda e: (e["from"], e["to"])),
+    }
+
+
+def write_proof_graph() -> dict:
+    graph = build_proof_graph()
+    (OUT / "proof-graph.json").write_text(json.dumps(graph, indent=2) + "\n", encoding="utf-8")
+    return graph
+
+
 CHANGELOG_HEADING = re.compile(r"^## \[(?P<ver>[^\]]+)\](?: - (?P<date>.+))?$")
 
 
@@ -496,6 +610,7 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                     {"label": "Effects Showcase", "path": "effects-showcase.md"},
                     {"label": "Async via Effects", "path": "language/async-effects.md"},
                     {"label": "Graphics", "path": "language/graphics.md"},
+                    {"label": "WebAssembly", "path": "language/wasm.md"},
                     {"label": "Design Notes", "path": "language/language_design.md"},
                 ],
             },
@@ -523,6 +638,7 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                     {"label": "flow-verify", "path": "third-party/flow-verify.md"},
                     {"label": "Parser Status", "path": "third-party/flow-verify-parser-status.md"},
                     {"label": "Proof Catalog", "path": "third-party/flow-verify-catalog.md"},
+                    {"label": "Proof Dependency Graph", "path": "third-party/proof-graph.md"},
                 ],
             },
             {
@@ -758,6 +874,7 @@ def copy_site_shell() -> None:
         "flow-compile.js",
         "tutorial-runner.js",
         "tutorial-runner.css",
+        "proof-graph.html",
     )
     for name in shell_files:
         src = SITE / name
@@ -806,6 +923,7 @@ def main() -> None:
     copy_site_shell()
     build_tutorial_exercises()
     write_llms_txt()
+    graph = write_proof_graph()
     run_pagefind()
 
     total = len(lib_rows) + len(ex_rows)
@@ -813,6 +931,7 @@ def main() -> None:
     pf_note = " · Pagefind index" if pf.exists() else " · Pagefind skipped (local search-index.json)"
     print(f"Wiki built → {OUT}")
     print(f"  {total} proofs · {len(euclid_nav)} Euclid books · nav + search index generated{pf_note}")
+    print(f"  proof-graph.json: {len(graph['nodes'])} nodes · {len(graph['edges'])} edges")
 
 
 if __name__ == "__main__":
