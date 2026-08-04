@@ -1,4 +1,4 @@
-/* Fullscreen Metal fill-shader viewer for FLOW `shader fill` demos. */
+/* Fullscreen Metal fill-shader viewer for FLOW Shader Language demos. */
 #ifndef FLOW_SHADER_VIEW_METAL_H
 #define FLOW_SHADER_VIEW_METAL_H
 
@@ -8,10 +8,7 @@
 extern "C" {
 #endif
 
-/* Show a window running `fragment_fn` from `metal_source`.
- * Returns 0 on clean close, non-zero on error.
- * max_frames <= 0 means run until the window is closed (or Esc).
- */
+/* Single fragment entry. max_frames <= 0 runs until close/Esc. */
 int flow_shader_show(
     const char *metal_source,
     const char *fragment_fn,
@@ -20,10 +17,28 @@ int flow_shader_show(
     int32_t max_frames
 );
 
-/* Convenience: load Metal source from a file path. */
+/* Gallery: cycle fragment entries with Left/Right/Space. */
+int flow_shader_show_gallery(
+    const char *metal_source,
+    const char **fragment_fns,
+    int32_t fragment_count,
+    int32_t width,
+    int32_t height,
+    int32_t max_frames
+);
+
 int flow_shader_show_file(
     const char *metal_path,
     const char *fragment_fn,
+    int32_t width,
+    int32_t height,
+    int32_t max_frames
+);
+
+/* Load metal + sibling .entries list (one entry name per line). */
+int flow_shader_show_gallery_file(
+    const char *metal_path,
+    const char *entries_path,
     int32_t width,
     int32_t height,
     int32_t max_frames

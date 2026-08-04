@@ -1,46 +1,88 @@
-# FLOW Fill Shaders
+# FLOW Shader Language (FSL)
 
-A tiny surface language for fullscreen fragment demos — Shadertoy-simple, Metal under the hood.
+A real (but focused) shading language for fullscreen fragment demos — lowers to Metal.
+
+```bash
+./flow shader examples/gpu/shader_showcase.flow
+```
+
+**Gallery controls:** `←` / `→` / `Space` cycle · `1`–`9` jump · `Esc` quit
+
+## Quick example
 
 ```flow
-shader fill plasma {
-    let u = uv.x
-    let v = uv.y
-    color = vec4(
-        0.5 + 0.5 * sin(u * 10.0 + time),
-        0.5 + 0.5 * cos(v * 8.0 - time),
-        0.5, 1.0
-    )
+fn pulse(t: f32, speed: f32) -> f32 {
+    return 0.5 + 0.5 * sin(t * speed)
+}
+
+shader fill neon {
+    let p: vec2 = uv - vec2(0.5)
+    let r: f32 = length(p)
+    let col: vec3 = palette(r + time * 0.2) * pulse(time, 3.0)
+    color = vec4(col, 1.0)
 }
 ```
 
+## Language
+
+### Declarations
+
+| Form | Meaning |
+|------|---------|
+| `fn name(a: T, b: U) -> V { ... }` | Helper function (file scope) |
+| `shader fill Name { ... }` | Fullscreen fragment entry |
+| `let x: T = ...` / `var x: T = ...` | Locals (`var` for reassignment) |
+| `return expr` | Return from `fn` |
+| `if cond { ... } else { ... }` | Brace blocks (else-if ok) |
+| `for i in 0 to N { ... }` | Integer loop (`i` is `int`) |
+
+### Types
+
+`f32`, `i32`, `bool`, `vec2`, `vec3`, `vec4`  
+Casts: `f32(x)`, `i32(x)`  
+Constructors: `vec2(...)`, `vec3(...)`, `vec4(...)`  
+Swizzles: `.xyzw`, `.rgb`, …
+
+### Builtins (inputs)
+
+| Name | Type | Notes |
+|------|------|-------|
+| `uv` | `vec2` | `[0,1]`, y flipped (top-left origin) |
+| `time` | `f32` | Seconds since launch / since last switch |
+| `resolution` | `vec2` | Drawable size in pixels |
+| `color` | `vec4` | **Required** output assign |
+
+### Builtins (math)
+
+`sin` `cos` `tan` `asin` `acos` `atan` `atan2`  
+`abs` `sign` `floor` `ceil` `fract` `mod`  
+`sqrt` `pow` `exp` `log` `min` `max` `clamp` `saturate`  
+`mix` `step` `smoothstep`  
+`length` `distance` `dot` `cross` `normalize` `reflect` `refract`
+
+### Builtins (FSL stdlib)
+
+| Name | Role |
+|------|------|
+| `hash(x)` / `hash(p)` | 1D / 2D hash → `f32` |
+| `noise(p)` | Value noise |
+| `fbm(p)` | 5-octave fractal noise |
+| `palette(t)` | Cosine palette → `vec3` |
+
+## Showcase
+
+`examples/gpu/shader_showcase.flow` — 12 demos (plasma, ripple, waves, checker, noise, Mandelbrot, Julia, stars, rings, fire, spiral, grid).
+
 ```bash
-./flow shader examples/gpu/shader_plasma.flow
-./flow shader examples/gpu/shader_plasma.flow --frames 3
-./flow shader examples/gpu/shader_ripple.flow --size 1280x720
-./flow shader examples/gpu/shader_plasma.flow --emit-only   # write .metal only
+./flow shader examples/gpu/shader_showcase.flow
+./flow shader examples/gpu/shader_showcase.flow --emit-only
+./flow shader examples/gpu/shader_plasma.flow --name plasma
 ```
-
-## Language (v1)
-
-| Construct | Meaning |
-|-----------|---------|
-| `shader fill Name { ... }` | Fullscreen fragment shader |
-| `uv` | `vec2` in `[0,1]` (y flipped for top-left origin) |
-| `time` | Seconds since launch (`f32`) |
-| `color = vec4(...)` | Required output |
-| `let x = ...` | Locals |
-| `if cond` / `else` | Single-statement branches |
-| `vec2` / `vec3` / `vec4` | Constructors |
-| `.xyzw` / `.rgb` | Swizzles |
-| `sin` `cos` `abs` `sqrt` `min` `max` `fract` `length` `mix` `smoothstep` `clamp` `pow` … | Metal builtins |
-
-No textures, no vertex attributes, no compute in this surface (use `@gpu` + `./flow gpu` for compute).
 
 ## Pipeline
 
-1. `src/flow/shader_dsl.py` extracts / parses the block  
-2. `src/flow/shader_codegen.py` emits MSL (`build/shaders/<name>_fill.metal`)  
-3. `runtime/shader_view_metal.m` opens a Cocoa + `CAMetalLayer` window  
+1. `src/flow/shader_dsl.py` — lex/parse FSL  
+2. `src/flow/shader_codegen.py` — emit MSL (+ hash/noise prelude)  
+3. `runtime/shader_view_metal.m` — Cocoa + `CAMetalLayer` gallery viewer  
 
-macOS only for the live viewer; `--emit-only` works anywhere Python runs.
+macOS for the live window; `--emit-only` works anywhere.

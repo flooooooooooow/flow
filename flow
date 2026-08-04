@@ -365,6 +365,10 @@ PY
         exit 1
     }
     print_success "FLOW → Metal: $(basename "$metal_path")"
+    local entries_path="${metal_path%.metal}.entries"
+    if [ -f "$entries_path" ]; then
+        print_info "Gallery entries: $(wc -l < "$entries_path" | tr -d ' ') shader(s)"
+    fi
     if [ "$emit_only" -eq 1 ]; then
         print_info "Emit-only: $metal_path"
         return 0
@@ -373,10 +377,8 @@ PY
         print_error "flow shader viewer requires macOS (Metal). Use --emit-only to generate .metal."
         exit 1
     fi
-    local entry
-    entry=$(tr -d '[:space:]' < "${metal_path%.metal}.entry")
     local shader_exe="$SCRIPT_DIR/build/flow_shader_host"
-    if ! clang -O2 -I"$SCRIPT_DIR/runtime" \
+    if ! clang -O2 -fobjc-arc -I"$SCRIPT_DIR/runtime" \
         "$SCRIPT_DIR/runtime/shader_host.c" \
         "$SCRIPT_DIR/runtime/shader_view_metal.m" \
         -framework Metal -framework Cocoa -framework QuartzCore \
@@ -384,8 +386,8 @@ PY
         print_error "Failed to build shader host"
         exit 1
     fi
-    print_info "Running shader ($entry) ${width}x${height}..."
-    "$shader_exe" "$metal_path" "$entry" "$width" "$height" "$max_frames"
+    print_info "Running shader gallery ${width}x${height} (←/→ or Space to cycle, Esc to quit)..."
+    "$shader_exe" "$metal_path" "$width" "$height" "$max_frames"
 }
 
 # Run program
