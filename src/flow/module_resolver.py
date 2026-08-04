@@ -13,8 +13,43 @@ from pathlib import Path
 from typing import List, Dict, Set, Any, Optional, Tuple, Iterator
 
 from .dynamics_dsl import expand_dynamics_dsl, has_dynamics_dsl
-from .parser import Lexer, Parser, ImportDecl, ImplDecl, ExportDecl, ModuleDecl
+from .parser import (
+    Lexer,
+    Parser,
+    ImportDecl,
+    ImplDecl,
+    ExportDecl,
+    ModuleDecl,
+    FunctionDecl,
+    Type,
+    Block,
+    ReturnStatement,
+    Literal,
+)
 from .project_config import load_project_config
+from .shader_dsl import extract_shader_module, has_fill_shader_dsl
+
+
+def _fill_shader_host_stub() -> List[Any]:
+    """Host-Flow stub so fill-shader modules can pass the C transpile corpus.
+
+    Fill shaders are compiled by `./flow shader` / `shader_codegen`, not the
+    host C backend. Tier-2 still runs every tracked `examples/**/*.flow` through
+    `flow.transpiler --c`, so FSL modules need a harmless host entry point.
+    """
+    return [
+        FunctionDecl(
+            name="main",
+            parameters=[],
+            return_type=Type(name="i32"),
+            body=Block(
+                statements=[
+                    ReturnStatement(value=Literal(value="0", type=Type(name="i32")))
+                ]
+            ),
+            attributes=[],
+        )
+    ]
 
 
 class ModuleSymbol:
@@ -91,12 +126,22 @@ class ModuleResolver:
         with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
 
-        if has_dynamics_dsl(code):
-            code = expand_dynamics_dsl(code)
+        # Fill-shader dialect (`shader fill` / FSL `fn`) is not host Flow.
+        # Validate the FSL module, then provide a stub main for C transpile.
+        if has_fill_shader_dsl(code):
+            mod = extract_shader_module(code)
+            if not mod.fills:
+                raise SyntaxError(
+                    f"Fill-shader module has no `shader fill` blocks: {file_path}"
+                )
+            declarations = _fill_shader_host_stub()
+        else:
+            if has_dynamics_dsl(code):
+                code = expand_dynamics_dsl(code)
 
-        lexer = Lexer(code)
-        parser = Parser(lexer)
-        declarations = parser.parse()
+            lexer = Lexer(code)
+            parser = Parser(lexer)
+            declarations = parser.parse()
 
         imports = [d for d in declarations if isinstance(d, ImportDecl)]
         others = [

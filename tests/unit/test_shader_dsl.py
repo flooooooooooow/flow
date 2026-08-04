@@ -1,7 +1,13 @@
 """Unit tests for FLOW Shader Language (FSL)."""
 
+from flow.module_resolver import resolve_modules
 from flow.shader_codegen import compile_shader_file, generate_metal_for_module, generate_metal_source
-from flow.shader_dsl import extract_fill_shaders, extract_shader_module, parse_shader_body
+from flow.shader_dsl import (
+    extract_fill_shaders,
+    extract_shader_module,
+    has_fill_shader_dsl,
+    parse_shader_body,
+)
 
 
 PLASMA = """
@@ -92,3 +98,19 @@ def test_showcase_extracts_many():
     metal = generate_metal_for_module(mod)
     assert "mandelbrot_frag" in metal
     assert "julia_frag" in metal
+
+
+def test_has_fill_shader_dsl():
+    assert has_fill_shader_dsl(PLASMA)
+    assert has_fill_shader_dsl(RICH)
+    assert not has_fill_shader_dsl('function main() -> i32 { return 0 }')
+
+
+def test_fill_shader_modules_resolve_for_c_transpile():
+    """FSL examples must resolve via host stub so tier-2 C transpile passes."""
+    from pathlib import Path
+
+    for name in ("shader_plasma.flow", "shader_ripple.flow", "shader_showcase.flow"):
+        path = Path("examples/gpu") / name
+        decls = resolve_modules(str(path))
+        assert any(getattr(d, "name", None) == "main" for d in decls)

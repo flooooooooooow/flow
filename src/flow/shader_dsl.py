@@ -131,6 +131,11 @@ def extract_fill_shaders(source: str) -> List[FillShader]:
     return extract_shader_module(source).fills
 
 
+def has_fill_shader_dsl(source: str) -> bool:
+    """True when the source is a fill-shader (FSL) module, not host Flow."""
+    return bool(_SHADER_HEAD.search(source))
+
+
 # ── Lexer / parser ──────────────────────────────────────────────────
 
 class _Tok:
