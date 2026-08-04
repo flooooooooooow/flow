@@ -2,12 +2,17 @@
 
 from flow.parser import (
     AssumeStmt,
+    BinaryOperation,
+    ForStatement,
+    FunctionCall,
+    FunctionDecl,
     IfStatement,
     Lexer,
     Parser,
     TheoremDecl,
     ThereforeStmt,
     TokenType,
+    VarDecl,
 )
 
 
@@ -66,3 +71,84 @@ class TestTheoremParser:
         decls = _parse("export Nat/+.zero-left, Nat/+.succ-right")
         assert len(decls) == 1
         assert decls[0].symbols == ["Nat/+.zero-left", "Nat/+.succ-right"]
+
+
+class TestEnglishLogicalOperators:
+    """English `and`/`or` are soft keywords: infix == &&/||, also usable as names."""
+
+    def test_infix_and_or_normalize_to_symbolic(self):
+        decls = _parse(
+            """
+            function f(a: bool, b: bool, c: bool) -> bool {
+                return a and b or c
+            }
+            """
+        )
+        fn = decls[0]
+        assert isinstance(fn, FunctionDecl)
+        ret = fn.body.statements[0]
+        expr = ret.value
+        # a and b or c  →  (a && b) || c
+        assert isinstance(expr, BinaryOperation)
+        assert expr.operator == "||"
+        assert isinstance(expr.left, BinaryOperation)
+        assert expr.left.operator == "&&"
+
+    def test_and_or_as_function_names_and_calls(self):
+        decls = _parse(
+            """
+            function and(a: i32, b: i32) -> i32 { return a }
+            function or(a: i32, b: i32) -> i32 { return a }
+            function f() -> i32 {
+                let x: i32 = and(1, 0)
+                let y: i32 = or(1, 0)
+                return x
+            }
+            """
+        )
+        assert [d.name for d in decls if isinstance(d, FunctionDecl)] == [
+            "and",
+            "or",
+            "f",
+        ]
+        f = decls[2]
+        x = f.body.statements[0]
+        assert isinstance(x, VarDecl)
+        assert isinstance(x.initializer, FunctionCall)
+        assert x.initializer.name == "and"
+
+    def test_therefore_english_and_by_exhaustive(self):
+        decls = _parse(
+            """
+            theorem FullAdder/out.correct(A: i32, B: i32, Cin: i32) {
+                therefore A == B and Cin == 0 by exhaustive
+            }
+            """
+        )
+        thm = decls[0]
+        assert isinstance(thm, TheoremDecl)
+        th = thm.body.statements[0]
+        assert isinstance(th, ThereforeStmt)
+        assert th.method == "exhaustive"
+        assert isinstance(th.expression, BinaryOperation)
+        assert th.expression.operator == "&&"
+
+    def test_step_is_contextual_for_range_keyword(self):
+        decls = _parse(
+            """
+            function f() -> i32 {
+                let step: i32 = 1
+                let mut s: i32 = 0
+                for i in 0 to 10 step 2 {
+                    s = s + i
+                }
+                return s + step
+            }
+            """
+        )
+        fn = decls[0]
+        assert isinstance(fn.body.statements[0], VarDecl)
+        assert fn.body.statements[0].name == "step"
+        loop = fn.body.statements[2]
+        assert isinstance(loop, ForStatement)
+        assert loop.step is not None

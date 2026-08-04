@@ -954,7 +954,8 @@ class Lexer:
             "continue": TokenType.CONTINUE,
             "in": TokenType.IN,
             "parallel": TokenType.PARALLEL,
-            "step": TokenType.STEP,
+            # `step` is contextual (only meaningful after a for-range), so it
+            # stays an IDENTIFIER. parse_for recognizes the bare word "step".
             "to": TokenType.TO,
             "match": TokenType.MATCH,
             "default": TokenType.DEFAULT,
@@ -1270,13 +1271,27 @@ class Parser:
             suggestion=suggestion or get_suggestion(message),
         )
 
+    # Soft keywords usable as names (function/var/param) while remaining
+    # operators in infix/unary position. `test` is historical; `and`/`or`
+    # appear as bit-op helpers in the verify corpus.
+    _SOFT_IDENTIFIER_TYPES = frozenset(
+        {
+            TokenType.TEST,
+            TokenType.AND,
+            TokenType.OR,
+        }
+    )
+
     def expect(self, token_type: TokenType):
         if self.current_token.type == token_type:
             token = self.current_token
             self.advance()
             return token
-        if token_type == TokenType.IDENTIFIER and self.current_token.type == TokenType.TEST:
-            # Allow 'test' as an identifier in contexts like `function test()`
+        if (
+            token_type == TokenType.IDENTIFIER
+            and self.current_token.type in self._SOFT_IDENTIFIER_TYPES
+        ):
+            # Allow soft keywords as identifiers: `function test()`, `function and(...)`
             token = self.current_token
             self.advance()
             return token
@@ -2325,11 +2340,23 @@ class Parser:
         body = self.parse_block()
         return TheoremDecl(claim_path=claim_path, parameters=parameters, body=body)
 
+    def _expect_name(self) -> str:
+        """Expect an identifier, including soft keywords usable as names (`and`/`or`)."""
+        if self.current_token.type in (
+            TokenType.IDENTIFIER,
+            TokenType.AND,
+            TokenType.OR,
+        ):
+            name = self.current_token.value
+            self.advance()
+            return name
+        return self.expect(TokenType.IDENTIFIER).value
+
     def parse_function(self) -> FunctionDecl:
         start_token = self.current_token
         self.expect(TokenType.FUNCTION)
         name_token = self.current_token
-        name = self.expect(TokenType.IDENTIFIER).value
+        name = self._expect_name()
 
         # Parse optional type parameters: function foo<T, U>(...)
         type_params = []
@@ -3049,7 +3076,15 @@ class Parser:
         range_end = self.parse_expression_without_assign()
 
         step = None
-        if self.current_token.type == TokenType.STEP:
+        # Contextual keyword: `for i in 0 to 10 step 2` — `step` is otherwise
+        # a normal identifier (e.g. `let step = FullAdder(...)`).
+        if (
+            self.current_token.type == TokenType.STEP
+            or (
+                self.current_token.type == TokenType.IDENTIFIER
+                and self.current_token.value == "step"
+            )
+        ):
             self.advance()
             step = self.parse_expression_without_assign()
 
@@ -3154,10 +3189,11 @@ class Parser:
         left = self.parse_logical_and()
 
         while self.current_token.type == TokenType.OR:
-            op = self.current_token.value
+            # English `or` and symbolic `||` share TokenType.OR; normalize
+            # both to `||` so the AST matches existing typecheck/codegen.
             self.advance()
             right = self.parse_logical_and()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, "||", right)
 
         return left
 
@@ -3165,10 +3201,11 @@ class Parser:
         left = self.parse_bitwise_or()
 
         while self.current_token.type == TokenType.AND:
-            op = self.current_token.value
+            # English `and` and symbolic `&&` share TokenType.AND; normalize
+            # both to `&&` so the AST matches existing typecheck/codegen.
             self.advance()
             right = self.parse_bitwise_or()
-            left = BinaryOperation(left, op, right)
+            left = BinaryOperation(left, "&&", right)
 
         return left
 
@@ -3403,7 +3440,14 @@ class Parser:
             self.expect(TokenType.RBRACKET)
             return ArrayLiteral(elements)
 
-        elif self.current_token.type == TokenType.IDENTIFIER:
+        elif self.current_token.type in (
+            TokenType.IDENTIFIER,
+            # Soft keywords: `and`/`or` are infix logical operators, but proof
+            # corpora also use them as bit-op function names (`and(a, b)`).
+            # In primary position they behave like identifiers.
+            TokenType.AND,
+            TokenType.OR,
+        ):
             name = self.current_token.value
             self.advance()
 
