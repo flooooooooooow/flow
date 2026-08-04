@@ -43,6 +43,97 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 
 ---
 
+## Examples & domains roadmap
+
+Tourist-facing demos and domain coverage. Canonical “one entrypoint per domain”
+lives in [examples/README.md](examples/README.md). The `examples/verify/` tree is
+a proof corpus, not the showcase.
+
+### Further structure
+
+- [x] Merge `examples/neural_networks/` → `examples/ml/autodiff/`
+- [x] Fold `examples/system/` → `examples/systems/` (`system_info.flow`)
+- [x] Remove misleading `examples/graphics/shader_showcase.flow` catalog stub (keep `shader_demo.flow`)
+- [x] Add Tier-0 stubs: `stats/`, `net/`, `basics/result_pipeline`, `basics/match_enums`
+- [x] Canonical entrypoints table in `examples/README.md`
+- [ ] Concurrency pipeline example once channel send/recv is exposed
+- [ ] UI layout tourist example under `examples/` (stdlib/tests exist today)
+- [ ] Packages / WASM showcase entrypoints
+- [ ] Regenerate `examples/STATUS.md` after layout settles
+
+### Tier 0 — Minimum domains
+
+| Domain | Entrypoint / note | Status |
+|--------|-------------------|--------|
+| Networking | `examples/net/tcp_echo.flow` (API shape; full echo loop planned) | partial |
+| HTTP slice | `apps/flow-http/http.flow` | ✅ |
+| Stats | `examples/stats/regression_gd.flow` | ✅ |
+| FFI / C | `examples/interop/python_embed.flow` (Python FFI); thin C-FFI demo still thin | partial |
+| WASM | `./flow wasm` path exists; no tourist example yet | 🔲 |
+| Packages | registry design deferred; no showcase package demo | 🔲 |
+| Errors / Result | `examples/basics/result_pipeline.flow` | ✅ |
+| Match | `examples/basics/match_enums.flow` | ✅ |
+| RT audio `@rt_safe` | `examples/audio/lattice_allpass_phase_engine.flow` | ✅ |
+| Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`) — corpus ahead of checker | partial |
+| UI layout | stdlib + tests; no `examples/` tourist file yet | 🔲 |
+| Concurrency pipeline | deferred — `Channel_i32` in stdlib lacks send/recv | 🔲 |
+
+### Tier 1 — Vision domains
+
+| Domain | Intent | Status |
+|--------|--------|--------|
+| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | partial |
+| Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
+| Units | Typed units / dimensional analysis showcase | 🔲 |
+| Digital twin lite | Small plant + observer narrative | 🔲 |
+| Embedded RT | Constrained / no-alloc RT path beyond audio policy | 🔲 |
+| Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |
+
+### Tier 2 — Competitive completeness
+
+| Domain | Intent | Status |
+|--------|--------|--------|
+| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | 🔲 |
+| JSON / TSV | Data interchange demos | 🔲 |
+| Compiler dogfood | Grow `examples/compilers/` into a real lexer/parser story | partial |
+| Physics DSL honesty | Document what `physics/` can/can't do | partial |
+| Linalg QR / eigen | Beyond LU / matrix_ops | 🔲 |
+| Games twin | Second polished interactive beyond Tetris/2048 | partial |
+
+### Syntax & weirdness to showcase
+
+**Must-demo (link from canonical map when stable):**
+
+| Feature | Where today / target |
+|---------|----------------------|
+| `\|>` pipe | docs + add a basics demo when surface is stable |
+| `parallel for` | concurrency / GPU examples when API lands |
+| `handle` / `with` | `examples/effects/showcase.flow` |
+| Shader fill | real shader path (not catalog stub) — keep `shader_demo.flow` honest |
+| `dsys` | `examples/dynamics/ga_dsys_syntax.flow` |
+| Postfix chaining | recovered systems examples (`ring_buffer`, …) |
+| Closures | `examples/generics_traits/closures_demo.flow` |
+| `match` | `examples/basics/match_enums.flow` |
+| `@gpu` | `examples/gpu/` |
+| Theorems / verify | `examples/verify/` corpus (repair full_adder first) |
+
+**Avoid showcasing:**
+
+- Ignored / no-op attributes
+- Broken capability demos
+- Duplicate XOR nets as the only ML story (keep one canonical: `ml/models/mlp_xor.flow`)
+
+### Sequencing
+
+| Sprint | Focus |
+|--------|--------|
+| **A** | Structure cleanup + Tier-0 stubs (this PR): merge autodiff, fold system/, stats/net/result/match |
+| **B** | Wire real TCP echo + concurrency pipeline; UI layout tourist example |
+| **C** | Shader×sim + units / digital-twin lite; regenerate STATUS |
+| **D** | Tier-2 competitive gaps (QR/eigen, JSON, crypto breadth, WASM/packages entrypoints) |
+
+---
+
 ## Now: v0.4.0 Focus
 
 ### 🎯 Immediate Priorities (This Week)

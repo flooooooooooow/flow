@@ -1,0 +1,70 @@
+# Result pipeline — chain fallible steps with stdlib Result helpers.
+
+import "stdlib/result.flow"
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function parse_positive(n: i32) -> Result_i32_string {
+    if n > 0 {
+        return ok_i32(n)
+    }
+    return err_i32("expected a positive integer")
+}
+
+function double_checked(n: i32) -> Result_i32_string {
+    let product: i32 = n * 2
+    if product < n {
+        return err_i32("overflow doubling")
+    }
+    return ok_i32(product)
+}
+
+function clamp_under(n: i32, limit: i32) -> Result_i32_string {
+    if n > limit {
+        return err_i32("value exceeds limit")
+    }
+    return ok_i32(n)
+}
+
+# Pipeline: parse → double → clamp
+function pipeline(raw: i32) -> Result_i32_string {
+    let first: Result_i32_string = parse_positive(raw)
+    if is_err_i32(first) {
+        return first
+    }
+    let second: Result_i32_string = double_checked(unwrap_result_i32(first))
+    if is_err_i32(second) {
+        return second
+    }
+    return clamp_under(unwrap_result_i32(second), 100)
+}
+
+function main() -> i32 {
+    # 20 → 40 (ok); -3 → err; 60 → 120 → clamp err
+    let mut failures: i32 = 0
+
+    let r0: Result_i32_string = pipeline(20)
+    if is_err_i32(r0) {
+        failures = failures + 1
+    } else {
+        printf("pipeline(20) = %d\n", unwrap_result_i32(r0))
+    }
+
+    let r1: Result_i32_string = pipeline(-3)
+    if is_ok_i32(r1) {
+        failures = failures + 1
+    } else {
+        printf("pipeline(-3) correctly failed (%d)\n", 1)
+    }
+
+    let r2: Result_i32_string = pipeline(60)
+    if is_ok_i32(r2) {
+        failures = failures + 1
+    } else {
+        printf("pipeline(60) clamp rejected (%d)\n", 1)
+    }
+
+    return failures
+}
