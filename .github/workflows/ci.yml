@@ -16,6 +16,7 @@ on:
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
+      - 'plugins/**'
   pull_request:
     branches: [main, master]
     paths:
@@ -31,6 +32,7 @@ on:
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
+      - 'plugins/**'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -50,6 +52,7 @@ jobs:
       libs: ${{ steps.filter.outputs.libs }}
       runtime: ${{ steps.filter.outputs.runtime }}
       workflow: ${{ steps.filter.outputs.workflow }}
+      plugins: ${{ steps.filter.outputs.plugins }}
       deps: ${{ steps.filter.outputs.deps }}
     steps:
       - uses: actions/checkout@v5
@@ -72,6 +75,8 @@ jobs:
               - '.github/**'
               - 'flow'
               - 'scripts/**'
+            plugins:
+              - 'plugins/**'
             deps:
               - 'requirements.lock'
               - 'requirements.txt'
@@ -187,6 +192,21 @@ jobs:
           PYTHONPATH: src
         run: python3 tests/fuzz/run_fuzz.py --seconds 30 --seed 1234
 
+  plugin-dsp:
+    name: Plugin DSP test
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.plugins == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build and run Schur DSP correctness tests
+        run: |
+          cd plugins/SchurPhaser
+          ./tests/run.sh
+
   flow-examples:
     name: Example smoke
     runs-on: ubuntu-latest
@@ -236,6 +256,7 @@ jobs:
       - pytest
       - fuzz
       - flow-examples
+      - plugin-dsp
     if: always()
     steps:
       - name: Require passing jobs
@@ -280,4 +301,8 @@ jobs:
           check pytest '${{ needs.pytest.result }}' "$pytest_req"
           check fuzz '${{ needs.fuzz.result }}' "$fuzz_req"
           check flow-examples '${{ needs.flow-examples.result }}' "$ex_req"
+          plugins='${{ needs.changes.outputs.plugins }}'
+          plugin_req=false
+          if [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then plugin_req=true; fi
+          check plugin-dsp '${{ needs.plugin-dsp.result }}' "$plugin_req"
           exit $fail
