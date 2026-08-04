@@ -1,0 +1,59 @@
+# Linear regression via plain f32 gradient descent
+# Fits y ≈ a*x + b on a tiny synthetic dataset (no autodiff required).
+
+extern {
+    function printf(fmt: string, val: f32) -> i32
+    function fabsf(x: f32) -> f32
+}
+
+function predict(a: f32, b: f32, x: f32) -> f32 {
+    return a * x + b
+}
+
+function mse(a: f32, b: f32, xs: array<f32, 4>, ys: array<f32, 4>) -> f32 {
+    let mut total: f32 = 0.0
+    let mut i: i32 = 0
+    while i < 4 {
+        let err: f32 = predict(a, b, xs[i]) - ys[i]
+        total = total + err * err
+        i = i + 1
+    }
+    return total / 4.0
+}
+
+function main() -> i32 {
+    # True line: y = 2x + 1
+    let xs: array<f32, 4> = [0.0, 1.0, 2.0, 3.0]
+    let ys: array<f32, 4> = [1.0, 3.0, 5.0, 7.0]
+
+    let mut a: f32 = 0.0
+    let mut b: f32 = 0.0
+    let lr: f32 = 0.05
+    let mut epoch: i32 = 0
+
+    while epoch < 200 {
+        let mut da: f32 = 0.0
+        let mut db: f32 = 0.0
+        let mut i: i32 = 0
+        while i < 4 {
+            let err: f32 = predict(a, b, xs[i]) - ys[i]
+            da = da + err * xs[i]
+            db = db + err
+            i = i + 1
+        }
+        a = a - lr * (da / 2.0)
+        b = b - lr * (db / 2.0)
+        epoch = epoch + 1
+    }
+
+    printf("fitted a ≈ %f\n", a)
+    printf("fitted b ≈ %f\n", b)
+    printf("final MSE ≈ %f\n", mse(a, b, xs, ys))
+
+    if fabsf(a - 2.0) < 0.1 {
+        if fabsf(b - 1.0) < 0.1 {
+            return 0
+        }
+    }
+    return 1
+}

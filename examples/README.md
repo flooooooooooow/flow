@@ -6,7 +6,7 @@ Comprehensive examples demonstrating Flow's capabilities across multiple domains
 
 ```
 examples/
-├── basics/           # Fundamental algorithms and syntax
+├── basics/           # Fundamental algorithms, Result, match
 ├── audio/            # Real-time audio DSP (@rt_safe demos)
 ├── compilers/        # Language implementation demos
 ├── concurrency/      # Channels / pipelines (Go-style runtime)
@@ -19,16 +19,25 @@ examples/
 ├── generics_traits/  # Generic programming and traits
 ├── gpu/              # GPU/Metal computation
 ├── graphics/         # Rendering and shaders
+├── interop/          # FFI / Python embedding
 ├── linalg/           # Linear algebra
 ├── ml/               # Machine learning framework
+│   ├── models/       # Trained demos (XOR MLP, …)
+│   └── autodiff/     # Autodiff + neural-net examples (was neural_networks/)
 ├── net/              # Networking sketches (HTTP / TCP)
-├── neural_networks/  # Autodiff and neural networks
 ├── numerical/        # Scientific computing
 ├── packages/         # Path-dependency package consumer
-├── systems/          # Systems programming primitives
+├── physics/          # Physics DSL experiments
+├── stats/            # Statistics / regression
+├── systems/          # Systems programming + system_info
 ├── ui/               # UI layout (stdlib ui_layout)
+├── verify/           # flow-verify proof corpus (not the tourist showcase)
 └── wasm/             # WASM target smoke (Flow→C→emcc)
 ```
+
+> **Note:** `verify/` is a large proof / theorem corpus written ahead of the
+> verification checker. Prefer the **Canonical entrypoints** tables below for
+> “show me Flow” demos — not random files under `verify/`.
 
 ## Canonical entrypoints (Tier-0)
 
@@ -60,6 +69,36 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 ./build/tetris_gfx
 ```
 
+## Canonical entrypoints
+
+One tourist-facing entrypoint per domain. Prefer these when demoing or linking from docs.
+
+| Domain | Path | Run command |
+|--------|------|-------------|
+| Basics / hello | `examples/basics/hello_world.flow` | `./flow run examples/basics/hello_world.flow` |
+| Errors / Result | `examples/basics/result_pipeline.flow` | `./flow run examples/basics/result_pipeline.flow` |
+| Match / enums | `examples/basics/match_enums.flow` | `./flow run examples/basics/match_enums.flow` |
+| Effects | `examples/effects/showcase.flow` | `./flow run examples/effects/showcase.flow` |
+| ML (XOR net) | `examples/ml/models/mlp_xor.flow` | `./flow run examples/ml/models/mlp_xor.flow` |
+| Autodiff / NN | `examples/ml/autodiff/nn_xor.flow` | `./flow run examples/ml/autodiff/nn_xor.flow` |
+| Stats / regression | `examples/stats/regression_gd.flow` | `./flow run examples/stats/regression_gd.flow` |
+| Evolution (flagship) | `examples/evolution/spring_mass_control.flow` | `./flow run examples/evolution/spring_mass_control.flow` |
+| Dynamics / `dsys` | `examples/dynamics/ga_dsys_syntax.flow` | `./flow run examples/dynamics/ga_dsys_syntax.flow` |
+| Games / graphics | `examples/games/tetris_gfx.flow` | `./flow gfx examples/games/tetris_gfx.flow` |
+| Shaders | `examples/graphics/shader_demo.flow` | `./flow run examples/graphics/shader_demo.flow` |
+| GPU / SIMD | `examples/gpu/simd_saxpy.flow` | `./flow run examples/gpu/simd_saxpy.flow` |
+| Linalg | `examples/linalg/matrix_ops.flow` | `./flow run examples/linalg/matrix_ops.flow` |
+| Numerical | `examples/numerical/ode_solver.flow` | `./flow run examples/numerical/ode_solver.flow` |
+| Systems | `examples/systems/ring_buffer.flow` | `./flow run examples/systems/ring_buffer.flow` |
+| System info | `examples/systems/system_info.flow` | `./flow run examples/systems/system_info.flow` |
+| Networking | `examples/net/tcp_echo.flow` | `./flow run examples/net/tcp_echo.flow` |
+| Interop / FFI | `examples/interop/python_embed.flow` | `./flow run examples/interop/python_embed.flow` |
+| Audio / RT | `examples/audio/lattice_allpass_phase_engine.flow` | `./flow run examples/audio/lattice_allpass_phase_engine.flow` |
+| Generics / traits | `examples/generics_traits/generics_demo.flow` | `./flow run examples/generics_traits/generics_demo.flow` |
+| Verify (repair) | `examples/verify/circuits/full_adder.flow` | proof corpus — see `full_adder.proof.md` |
+| HTTP slice | `apps/flow-http/http.flow` | `./flow run apps/flow-http/http.flow` |
+| Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
+
 ## Categories
 
 ### Basics (`basics/`)
@@ -68,6 +107,8 @@ Fundamental algorithms demonstrating Flow syntax:
 - `fibonacci.flow` - Recursive functions
 - `bubble_sort.flow` - Array manipulation
 - `prime_numbers.flow` - Loops and conditionals
+- `result_pipeline.flow` - Option/Result-style error chaining
+- `match_enums.flow` - `match` on a simple enum
 
 ### Games (`games/`)
 Interactive demonstrations with graphics:
@@ -76,11 +117,18 @@ Interactive demonstrations with graphics:
 - `2048.flow` - Terminal-based 2048
 
 ### Machine Learning (`ml/`)
-Neural network framework:
+Neural network framework + autodiff:
 - `tensor.flow` - N-dimensional tensor type
 - `nn_layers.flow` - Dense layers, activations
 - `optimizers.flow` - SGD, Adam, RMSprop
 - `models/mlp_xor.flow` - XOR learning demo (trains successfully!)
+- `autodiff/` - Autodiff benchmarks, backprop, `nn_xor.flow` (merged from `neural_networks/`)
+
+### Stats (`stats/`)
+- `regression_gd.flow` - Gradient-descent line fit (plain f32 math)
+
+### Networking (`net/`)
+- `tcp_echo.flow` - TCP listener shape demo (full echo loop planned)
 
 ### Evolution (`evolution/`)
 The flagship suite for Flow's founding vision — systems that evolve through time,
@@ -117,12 +165,7 @@ Real-time DSP:
 - `bus_graph_demo.flow` - Parallel bus routing demo
 - `gpu_gain_demo.flow` - GPU gain demo (CPU fallback)
 - `live_graph_demo.flow` - Live graph single-standard demo
-
-### Neural Networks (`neural_networks/`)
-Autodiff and backpropagation:
-- `autodiff_benchmark.flow` - Automatic differentiation
-- `nn_xor.flow` - XOR neural network
-- `neural_network_backprop.flow` - Backpropagation demo
+- `lattice_allpass_phase_engine.flow` - `@rt_safe` phase engine
 
 ### Linear Algebra (`linalg/`)
 Matrix operations (Julia territory):
@@ -139,7 +182,7 @@ Low-level systems programming:
 - `memory_pool.flow` - O(1) pool allocator
 - `ring_buffer.flow` - Lock-free SPSC queue
 - `hash_table.flow` - Open addressing hash table
-- `system_info.flow` - OS/CPU info via stdlib
+- `system_info.flow` - OS/CPU info via stdlib (was `examples/system/`)
 
 ### GPU (`gpu/`)
 Metal GPU computation:
@@ -147,11 +190,20 @@ Metal GPU computation:
 - `simd_saxpy.flow` - SIMD operations
 - `vector_add_gpu.flow` - GPU vector addition
 
+### Graphics (`graphics/`)
+- `graphics.flow` - Basic rendering helpers
+- `shader_demo.flow` - Shader language catalog demo (keep; old `shader_showcase.flow` stub removed)
+
 ### Generics & Traits (`generics_traits/`)
 Generic programming:
 - `generics_demo.flow` - Generic type examples
 - `traits_demo.flow` - Trait-based polymorphism
 - `option_result_demo.flow` - Option/Result types
+- `enum_match_exhaustive.flow` - Exhaustive match (deeper than `basics/match_enums.flow`)
+
+### Verify (`verify/`)
+Proof corpus for `flow-verify` (theorems, circuits, derived claims). Not the
+primary showcase — see [verify/circuits/full_adder.proof.md](verify/circuits/full_adder.proof.md).
 
 
 ### WASM (`wasm/`)
@@ -191,11 +243,13 @@ A few examples known to compile *and run* successfully:
 | Sort Benchmark | `./flow run benchmarks/micro/sort_benchmark.flow` |
 | Benchmark Runner | `./flow run benchmarks/runner.flow` |
 | Generics Demo | `./flow run examples/generics_traits/generics_demo.flow` |
-| Neural Network | `./flow run examples/neural_networks/nn_xor.flow` |
+| Autodiff XOR | `./flow run examples/ml/autodiff/nn_xor.flow` |
+| Stats GD | `./flow run examples/stats/regression_gd.flow` |
+| Result pipeline | `./flow run examples/basics/result_pipeline.flow` |
 
 ## Adding New Examples
 
 1. Create a `.flow` file in the appropriate directory
 2. Include a `main() -> i32` function
 3. Test with `./flow run path/to/example.flow`
-4. Update this README
+4. Update this README (and the canonical entrypoints table when adding a domain)

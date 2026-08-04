@@ -87,8 +87,9 @@ flow/
 ├── examples/               # EXAMPLES (62 programs, 12k lines)
 │   ├── basics/             # Hello world, fibonacci, sorting (12 files)
 │   ├── games/              # Tetris, 2048 with graphics (7 files, 4.7k lines)
-│   ├── ml/                 # Machine learning framework (4 files)
-│   ├── neural_networks/    # Autodiff, backprop (6 files)
+│   ├── ml/                 # ML framework + autodiff/ (was neural_networks/)
+│   ├── stats/              # Regression / stats stubs
+│   ├── net/                # Networking sketches
 │   ├── effects/            # Algebraic effects demos (3 files)
 │   ├── linalg/             # Linear algebra (2 files)
 │   ├── numerical/          # ODE solvers, optimization (2 files)
