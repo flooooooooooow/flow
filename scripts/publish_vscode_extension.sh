@@ -42,7 +42,12 @@ fi
 
 echo "Packaging…"
 "${VSCE[@]}" package --no-dependencies
+# shellcheck disable=SC2012 # intentional: newest-by-mtime via ls -t
 VSIX="$(ls -t flow-language-*.vsix | head -1)"
+if [[ -z "${VSIX}" ]]; then
+  echo "error: no flow-language-*.vsix produced" >&2
+  exit 1
+fi
 echo "Built $EXT/$VSIX"
 
 if [[ "$INSTALL" -eq 1 ]]; then
