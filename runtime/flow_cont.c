@@ -82,6 +82,13 @@ void *flow_cont_resume(flow_cont *k, void *value) {
     return value;
 }
 
+/* Multi-shot: same captured k can be resumed repeatedly (scaffold; no stack copy). */
+void *flow_cont_resume_multi(flow_cont *k, void *value) {
+    if (!k || !k->live) return NULL;
+    k->value = value;
+    return value;
+}
+
 void flow_cont_free(flow_cont *k) {
     if (!k) return;
     free(k->stack);
@@ -196,4 +203,19 @@ int32_t flow_rt_cont_reset_demo(void) {
     flow_cont_free(k);
     if ((intptr_t)r2 != 100) return -2;
     return 100;
+}
+
+int32_t flow_rt_cont_multishot_demo(void) {
+    flow_cont *k = NULL;
+    void *r = flow_reset_ex(demo_shift_body, NULL, &k);
+    if ((intptr_t)r != 10 || !k) {
+        flow_cont_free(k);
+        return -1;
+    }
+    void *a = flow_cont_resume_multi(k, (void *)(intptr_t)10);
+    void *b = flow_cont_resume_multi(k, (void *)(intptr_t)20);
+    void *c = flow_cont_resume(k, (void *)(intptr_t)99);
+    flow_cont_free(k);
+    if ((intptr_t)a != 10 || (intptr_t)b != 20 || (intptr_t)c != 99) return -2;
+    return (int32_t)((intptr_t)a + (intptr_t)b); /* 30 */
 }

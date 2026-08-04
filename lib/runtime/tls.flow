@@ -3,6 +3,7 @@
 extern {
     function flow_rt_tls_available() -> i32
     function flow_rt_https_selftest(port: i32) -> i32
+    function flow_rt_https_pem_alpn_selftest(port: i32) -> i32
 }
 
 @flow_api
@@ -13,4 +14,9 @@ export function flow_tls_available() -> i32 {
 @flow_api
 export function flow_https_selftest(port: i32) -> i32 {
     return flow_rt_https_selftest(port)
+}
+
+@flow_api
+export function flow_https_pem_alpn_selftest(port: i32) -> i32 {
+    return flow_rt_https_pem_alpn_selftest(port)
 }
