@@ -7,8 +7,9 @@ Comprehensive examples demonstrating Flow's capabilities across multiple domains
 ```
 examples/
 ├── basics/           # Fundamental algorithms and syntax
-├── audio/            # Real-time audio DSP
+├── audio/            # Real-time audio DSP (@rt_safe demos)
 ├── compilers/        # Language implementation demos
+├── concurrency/      # Channels / pipelines (Go-style runtime)
 ├── crypto/           # Cryptographic algorithms
 ├── data/             # Data processing
 ├── dynamics/         # Dynamical systems, control, GA search (dsys DSL)
@@ -20,10 +21,30 @@ examples/
 ├── graphics/         # Rendering and shaders
 ├── linalg/           # Linear algebra
 ├── ml/               # Machine learning framework
+├── net/              # Networking sketches (HTTP / TCP)
 ├── neural_networks/  # Autodiff and neural networks
 ├── numerical/        # Scientific computing
-└── systems/          # Systems programming primitives
+├── packages/         # Path-dependency package consumer
+├── systems/          # Systems programming primitives
+├── ui/               # UI layout (stdlib ui_layout)
+└── wasm/             # WASM target smoke (Flow→C→emcc)
 ```
+
+## Canonical entrypoints (Tier-0)
+
+| Domain | Path | Run command |
+|--------|------|-------------|
+| Basics / hello | `examples/basics/hello_world.flow` | `./flow run examples/basics/hello_world.flow` |
+| Effects | `examples/effects/showcase.flow` | `./flow run examples/effects/showcase.flow` |
+| ML (XOR net) | `examples/ml/models/mlp_xor.flow` | `./flow run examples/ml/models/mlp_xor.flow` |
+| Audio / `@rt_safe` | `examples/audio/rt_safe_callback.flow` | `./flow run examples/audio/rt_safe_callback.flow` |
+| Audio / DSP | `examples/audio/lattice_allpass_phase_engine.flow` | `./flow run examples/audio/lattice_allpass_phase_engine.flow` |
+| UI layout | `examples/ui/layout_hello.flow` | `./flow run examples/ui/layout_hello.flow` |
+| UI (windowed) | `demos/ui_layout_flow` | `./flow demo ui-layout` |
+| HTTP slice | `examples/net/http_hello.flow` | `./flow run examples/net/http_hello.flow` |
+| Packages | `examples/packages/use_hello_lib/` | `python3 -m flow.package install` then `./flow run …/src/main.flow` |
+| WASM | `examples/wasm/hello_wasm.flow` | `./flow run` / `./flow wasm examples/wasm/hello_wasm.flow` |
+| Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
 
 ## Quick Start
 
@@ -89,6 +110,8 @@ Flow's unique algebraic effects (not available in Mojo/Julia):
 
 ### Audio (`audio/`)
 Real-time DSP:
+- `rt_safe_callback.flow` - Minimal `@rt_safe` process block (no heap)
+- `lattice_allpass_phase_engine.flow` - `@rt_safe` phase engine
 - `loopback_effects.flow` - Input -> effect chain -> output (requires audio backend)
 - `offline_graph_demo.flow` - Offline graph processing demo
 - `bus_graph_demo.flow` - Parallel bus routing demo
@@ -129,6 +152,26 @@ Generic programming:
 - `generics_demo.flow` - Generic type examples
 - `traits_demo.flow` - Trait-based polymorphism
 - `option_result_demo.flow` - Option/Result types
+
+
+### WASM (`wasm/`)
+- `hello_wasm.flow` - Fib smoke for Flow→C→WASM (`./flow run` / `./flow wasm …`; emcc optional)
+- See [wasm/README.md](wasm/README.md) and `docs/language/wasm.md`
+
+### Packages (`packages/`)
+- `hello_lib/` + `use_hello_lib/` - Path-dep consumer (`flow.toml` → `flow_packages/`)
+- See [packages/README.md](packages/README.md)
+
+### UI (`ui/`)
+- `layout_hello.flow` - stdlib `ui_layout` row boxes (no window)
+- Windowed: `./flow demo ui-layout`
+
+### Networking (`net/`)
+- `http_hello.flow` - Thin HTTP route/status slice (no live sockets; see `apps/flow-http/http.flow`)
+
+### Concurrency (`concurrency/`)
+- `channels.flow` - send/recv/close
+- `pipeline.flow` - producer → transform → consumer
 
 ## Verified Compile Status
 
