@@ -89,6 +89,31 @@ function test_nested_guard_false() -> bool {
     return guarded_nested(o) == 2
 }
 
+# --- Nested / struct patterns inside `|` alternation --------------------
+
+function or_nested(o: Outer) -> i32 {
+    match o {
+        Outer(Inner(0), tag) | Outer(Inner(1), tag) => { return 10 + tag }
+        Outer(Inner(x), tag) => { return x + tag }
+    }
+    return -1
+}
+
+function test_or_nested_first_alt() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 0, y: 0 }, tag: 3 }
+    return or_nested(o) == 13
+}
+
+function test_or_nested_second_alt() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 1, y: 0 }, tag: 4 }
+    return or_nested(o) == 14
+}
+
+function test_or_nested_falls_through() -> bool {
+    let o: Outer = Outer { inner: Inner { x: 9, y: 0 }, tag: 1 }
+    return or_nested(o) == 10
+}
+
 function main() -> i32 {
     if !test_nested_inner_literal() {
         printf("FAIL: nested_inner_literal\n", 0)
@@ -121,6 +146,18 @@ function main() -> i32 {
     if !test_nested_guard_false() {
         printf("FAIL: nested_guard_false\n", 0)
         return 8
+    }
+    if !test_or_nested_first_alt() {
+        printf("FAIL: or_nested_first_alt\n", 0)
+        return 9
+    }
+    if !test_or_nested_second_alt() {
+        printf("FAIL: or_nested_second_alt\n", 0)
+        return 10
+    }
+    if !test_or_nested_falls_through() {
+        printf("FAIL: or_nested_falls_through\n", 0)
+        return 11
     }
 
     printf("All nested match tests passed\n", 0)

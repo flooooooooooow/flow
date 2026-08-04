@@ -99,22 +99,22 @@
 - [x] #100 [CI-M1] CI: dependencies are unpinned (no lockfile; installs latest pytest) (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/100
 - [x] #101 [CI-M2] CI: lint job is syntax-only; missing ruff/mypy/shellcheck (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/101
 - [x] #102 [CI-M3] CI: no SAST/dependency/security scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/102
-- [ ] #110 [roadmap:async-primitives] Async primitives https://github.com/flooooooooooow/flow/issues/110
+- [x] #110 [roadmap:async-primitives] Async primitives https://github.com/flooooooooooow/flow/issues/110
 - [ ] #111 [roadmap:windows-graphics-support] Windows graphics support https://github.com/flooooooooooow/flow/issues/111
 - [ ] #112 [roadmap:implement-closure-environment-capture-automatic-captures-not-just-explicit-self] Implement closure environment capture (automatic captures, not just explicit self) https://github.com/flooooooooooow/flow/issues/112
 - [ ] #113 [roadmap:loop-vectorization] Loop vectorization https://github.com/flooooooooooow/flow/issues/113
 - [ ] #114 [roadmap:real-world-projects] Real-world projects https://github.com/flooooooooooow/flow/issues/114
-- [ ] #115 [roadmap:integer-match-exhaustiveness-is-only-a-minimal-warning-stub-no-range-gap-analysis] Integer match exhaustiveness is only a minimal warning stub (no range/gap analysis) https://github.com/flooooooooooow/flow/issues/115
+- [x] #115 [roadmap:integer-match-exhaustiveness-is-only-a-minimal-warning-stub-no-range-gap-analysis] Integer match exhaustiveness is only a minimal warning stub (no range/gap analysis) https://github.com/flooooooooooow/flow/issues/115
 - [ ] #116 [roadmap:rt-safety-policy-no-alloc-audio-thread] RT-safety policy (no-alloc audio thread) https://github.com/flooooooooooow/flow/issues/116
-- [ ] #117 [roadmap:break-continue-have-no-dedicated-ast-nodes-lexed-as-identifiers-special-cased-in-c-generator] break/continue have no dedicated AST nodes (lexed as identifiers, special-cased in C generator) https://github.com/flooooooooooow/flow/issues/117
+- [x] #117 [roadmap:break-continue-have-no-dedicated-ast-nodes-lexed-as-identifiers-special-cased-in-c-generator] break/continue have no dedicated AST nodes (lexed as identifiers, special-cased in C generator) https://github.com/flooooooooooow/flow/issues/117
 - [ ] #118 [roadmap:gpu-autodiff] GPU autodiff https://github.com/flooooooooooow/flow/issues/118
-- [ ] #119 [roadmap:three-older-effects-demos-transpile-but-do-not-link-capability-parameter-style] Three older effects demos transpile but do not link (capability parameter style) https://github.com/flooooooooooow/flow/issues/119
+- [x] #119 [roadmap:three-older-effects-demos-transpile-but-do-not-link-capability-parameter-style] Three older effects demos transpile but do not link (capability parameter style) https://github.com/flooooooooooow/flow/issues/119
 - [ ] #120 [roadmap:dead-code-elimination] Dead code elimination https://github.com/flooooooooooow/flow/issues/120
 - [ ] #121 [roadmap:wasm-target] WASM target https://github.com/flooooooooooow/flow/issues/121
-- [ ] #122 [roadmap:record-tetris-demo-gif] Record Tetris demo GIF https://github.com/flooooooooooow/flow/issues/122
+- [x] #122 [roadmap:record-tetris-demo-gif] Record Tetris demo GIF https://github.com/flooooooooooow/flow/issues/122
 - [ ] #123 [roadmap:function-inlining] Function inlining https://github.com/flooooooooooow/flow/issues/123
 - [ ] #124 [roadmap:mlir-backend-not-exercised-against-new-chained-ast-shapes] MLIR backend not exercised against new chained AST shapes https://github.com/flooooooooooow/flow/issues/124
-- [ ] #125 [roadmap:cross-platform-graphics-linux] Cross-platform graphics (Linux) https://github.com/flooooooooooow/flow/issues/125
+- [x] #125 [roadmap:cross-platform-graphics-linux] Cross-platform graphics (Linux) https://github.com/flooooooooooow/flow/issues/125
 - [ ] #126 [roadmap:constant-propagation] Constant propagation https://github.com/flooooooooooow/flow/issues/126
 - [ ] #127 [roadmap:debugger] Debugger https://github.com/flooooooooooow/flow/issues/127
 - [ ] #128 [roadmap:self-hosting-components] Self-hosting components https://github.com/flooooooooooow/flow/issues/128

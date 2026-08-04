@@ -14,18 +14,19 @@ Source → Parser → AST → Type Checker → Typed AST → Code Generator
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Set
 from enum import Enum
 
 from .parser import (
     FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
-    FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall,
+    FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall, EffectCall,
     IfStatement, WhileStatement, ForStatement, LayoutStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl, TraitDecl,
     TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
-    MatchStatement, StructPattern, OrPattern, DeferStatement, TryExpr, Lambda,
-    VectorLiteral,
+    MatchStatement, StructPattern, OrPattern, ListPattern, DeferStatement, TryExpr, Lambda,
+    VectorLiteral, ExpectStatement, RecordUpdate, BreakStatement, ContinueStatement,
 )
 
 
@@ -288,12 +289,34 @@ class TypeChecker:
         'write': TypeKind.VOID,
     }
 
+    # RT-safety (docs/library/rt-safety.md): the `@rt_safe` attribute marks a
+    # function as callable from a hard real-time path. Its body (and anything
+    # it calls, transitively) must never touch the heap.
+    #
+    # Direct heap primitives - always forbidden in an `@rt_safe` call chain.
+    RT_UNSAFE_BUILTINS: frozenset = frozenset({
+        'malloc', 'calloc', 'realloc', 'free', 'alloc', 'dealloc',
+    })
+    # `lib/stdlib/memory.flow` helpers that call the primitives above
+    # directly, so they are unsafe by name even though they aren't builtins.
+    # `arena_alloc*` / `arena_reset` / `arena_used` / `arena_remaining` are
+    # intentionally NOT listed: a bump allocation from an already-created
+    # arena does not allocate/free, so it stays RT-safe (see rt-safety.md,
+    # "Allowed on the audio thread"). Only creating/destroying/growing the
+    # arena's backing storage is forbidden.
+    RT_UNSAFE_STDLIB_NAMES: frozenset = frozenset({
+        'alloc_bytes', 'alloc_zeroed', 'alloc_i32', 'alloc_f32', 'alloc_f64',
+        'arena_create', 'arena_destroy',
+    })
+    RT_UNSAFE_HEAP_NAMES: frozenset = RT_UNSAFE_BUILTINS | RT_UNSAFE_STDLIB_NAMES
+
     def __init__(self):
         self.global_scope = Scope()
         self.current_scope = self.global_scope
         self.errors: List[str] = []
         self.warnings: List[str] = []
         self.struct_types: Dict[str, StructDecl] = {}
+        self.generic_struct_types: Dict[str, StructDecl] = {}
         self.effect_types: Dict[str, EffectDecl] = {}
         self.capability_types: Dict[str, CapabilityDecl] = {}
         # Enum/ADT metadata, used for match exhaustiveness checking and to
@@ -310,6 +333,7 @@ class TypeChecker:
         self._return_type_sink: Optional[List[SemanticType]] = None
         self.trait_types: Dict[str, TraitDecl] = {}
         self.impl_pairs: set = set()  # (type_name, trait_name)
+        self.impl_methods: Dict[Tuple[str, str], List[str]] = {}
         # Units of measure (north-star.md section 6). Base units are indexed
         # in declaration order; every unit name maps to its canonical
         # (trailing zeros stripped) dimension exponent vector. unit_canonical
@@ -318,6 +342,16 @@ class TypeChecker:
         self.unit_base_order: List[str] = []
         self.unit_dims: Dict[str, Tuple[int, ...]] = {}
         self.unit_canonical: Dict[Tuple[int, ...], str] = {}
+
+        # RT-safety (docs/library/rt-safety.md): maps a function name to the
+        # name of the (transitively) closest heap-touching call it reaches,
+        # e.g. {"delay_fill": "arena_create"}. Populated by `check()` before
+        # function bodies are checked. Empty means no `@rt_safe` functions
+        # were seen or the pass hasn't run yet.
+        self._rt_unsafe_reason: Dict[str, str] = {}
+        # Name of the `@rt_safe` function currently being checked, or None
+        # when checking a function without that attribute.
+        self._current_rt_safe_fn: Optional[str] = None
 
     def _is_numeric(self, t: SemanticType) -> bool:
         return t.kind in {
@@ -541,6 +575,8 @@ class TypeChecker:
             return True
         # Array element coercion
         if actual.kind == TypeKind.ARRAY and expected.kind == TypeKind.ARRAY:
+            if actual.size == 0:
+                return True
             if actual.element_type and expected.element_type:
                 return self._can_coerce(actual.element_type, expected.element_type)
             return True
@@ -568,6 +604,11 @@ class TypeChecker:
         # Phase 2: Collect function signatures and global symbols
         self._collect_symbols(declarations)
 
+        # Phase 2.5: Build the RT-safety call graph (which functions reach
+        # the heap, directly or transitively) so `@rt_safe` violations can be
+        # reported at the call site during Phase 3.
+        self._rt_unsafe_reason = self._compute_rt_unsafe_functions(declarations)
+
         # Phase 3: Type check all declarations
         self._check_declarations(declarations)
 
@@ -586,6 +627,8 @@ class TypeChecker:
                     self.errors.append(f"Struct '{decl.name}' already defined")
                 else:
                     self.struct_types[decl.name] = decl
+                    if decl.type_params:
+                        self.generic_struct_types[decl.name] = decl
             elif isinstance(decl, EnumDecl):
                 # Enums are represented as structs with a 'tag' field
                 # For simplicity in type checking, register as a struct
@@ -651,6 +694,10 @@ class TypeChecker:
                     self.trait_types[decl.name] = decl
             elif isinstance(decl, ImplDecl):
                 self.impl_pairs.add((decl.for_type.name, decl.trait_name))
+                for method in decl.methods:
+                    self.impl_methods.setdefault(
+                        (decl.for_type.name, method.name), []
+                    ).append(f"{decl.for_type.name}_{decl.trait_name}_{method.name}")
 
     def _collect_symbols(self, declarations: List[Any]) -> None:
         """Collect function signatures and global symbols."""
@@ -699,6 +746,96 @@ class TypeChecker:
                 self._check_const(decl)
             # Other declaration types don't need additional checking yet
 
+    def _iter_call_names(self, node: Any, seen: Set[int]) -> "list[str]":
+        """Recursively collect every `FunctionCall.name` reachable from `node`.
+
+        Walks the AST generically via dataclass fields so it doesn't need to
+        know every statement/expression type. Used to build the RT-safety
+        call graph (see `_compute_rt_unsafe_functions`).
+        """
+        names: list[str] = []
+        if node is None:
+            return names
+        if isinstance(node, FunctionCall):
+            names.append(node.name)
+        if dataclasses.is_dataclass(node) and not isinstance(node, type):
+            node_id = id(node)
+            if node_id in seen:
+                return names
+            seen.add(node_id)
+            for f in dataclasses.fields(node):
+                names.extend(self._iter_call_names(getattr(node, f.name), seen))
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                names.extend(self._iter_call_names(item, seen))
+        elif isinstance(node, dict):
+            for value in node.values():
+                names.extend(self._iter_call_names(value, seen))
+        return names
+
+    def _compute_rt_unsafe_functions(self, declarations: List[Any]) -> Dict[str, str]:
+        """Compute which user-defined functions touch the heap.
+
+        Returns a map from function name to the name of the nearest
+        heap-touching call it reaches (itself, for `RT_UNSAFE_HEAP_NAMES`
+        members; a callee's name otherwise). This is a simple fixed-point
+        over the direct-call graph, so it also catches indirect/transitive
+        allocation (e.g. an RT-safe function calling a helper that itself
+        calls `malloc`).
+        """
+        direct_calls: Dict[str, Set[str]] = {}
+
+        def register(name: str, body: Optional[Block]) -> None:
+            if body is None:
+                return
+            direct_calls[name] = set(self._iter_call_names(body, set()))
+
+        for decl in declarations:
+            if isinstance(decl, FunctionDecl) and not getattr(decl, 'is_extern', False):
+                register(decl.name, decl.body)
+            elif isinstance(decl, ImplDecl):
+                for method in decl.methods:
+                    mangled_name = f"{decl.for_type.name}_{decl.trait_name}_{method.name}"
+                    register(mangled_name, method.body)
+
+        unsafe_reason: Dict[str, str] = {name: name for name in self.RT_UNSAFE_HEAP_NAMES}
+
+        changed = True
+        while changed:
+            changed = False
+            for name, callees in direct_calls.items():
+                if name in unsafe_reason:
+                    continue
+                for callee in callees:
+                    if callee in unsafe_reason:
+                        unsafe_reason[name] = callee
+                        changed = True
+                        break
+
+        return unsafe_reason
+
+    def _check_rt_safe_call(self, name: str) -> None:
+        """If we're inside an `@rt_safe` function body, flag calls that reach
+        the heap (directly or transitively)."""
+        if self._current_rt_safe_fn is None:
+            return
+        reason = self._rt_unsafe_reason.get(name)
+        if reason is None:
+            return
+        fn = self._current_rt_safe_fn
+        if reason == name:
+            self.errors.append(
+                f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
+                f"'{name}', which allocates or frees heap memory "
+                f"(see docs/library/rt-safety.md)"
+            )
+        else:
+            self.errors.append(
+                f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
+                f"'{name}', which is not RT-safe because it calls '{reason}' "
+                f"(allocates or frees heap memory; see docs/library/rt-safety.md)"
+            )
+
     def _check_trait_bounds(self, func: FunctionDecl) -> None:
         """Validate generic type parameter trait bounds when concrete types are known."""
         type_params = getattr(func, "type_params", None) or []
@@ -721,6 +858,12 @@ class TypeChecker:
         # Create function scope
         func_scope = Scope(parent=self.current_scope)
         self.current_scope = func_scope
+
+        # `@rt_safe` (docs/library/rt-safety.md): while checking this
+        # function's body, flag any call that reaches the heap.
+        attrs = getattr(func, 'attributes', None) or []
+        prev_rt_safe_fn = self._current_rt_safe_fn
+        self._current_rt_safe_fn = func.name if 'rt_safe' in attrs else None
 
         try:
             # Add parameters to scope
@@ -749,6 +892,7 @@ class TypeChecker:
 
         finally:
             self.current_scope = func_scope.parent
+            self._current_rt_safe_fn = prev_rt_safe_fn
 
     def _check_const(self, const: ConstDecl) -> None:
         """Type check a constant declaration."""
@@ -783,7 +927,7 @@ class TypeChecker:
             return self._check_while_stmt(stmt)
         elif isinstance(stmt, ForStatement):
             return self._check_for_stmt(stmt)
-        elif isinstance(stmt, FunctionCall):
+        elif isinstance(stmt, (FunctionCall, EffectCall)):
             return self._check_expression(stmt)
         elif isinstance(stmt, LayoutStatement):
             for arg in stmt.args:
@@ -793,6 +937,15 @@ class TypeChecker:
             return self._check_match_stmt(stmt)
         elif isinstance(stmt, DeferStatement):
             self._check_expression(stmt.expr)
+            return SemanticType(TypeKind.VOID)
+        elif isinstance(stmt, ExpectStatement):
+            condition_type = self._check_expression(stmt.condition)
+            if condition_type.kind != TypeKind.BOOL:
+                self.errors.append(
+                    f"expect condition must be a bool, got {condition_type}"
+                )
+            return SemanticType(TypeKind.VOID)
+        elif isinstance(stmt, (BreakStatement, ContinueStatement)):
             return SemanticType(TypeKind.VOID)
         else:
             return SemanticType(TypeKind.VOID)
@@ -870,6 +1023,43 @@ class TypeChecker:
                 values.extend(self._bool_literal_values(alt))
             return values
         return []
+
+    def _integer_literal_values(self, pattern: Any) -> List[int]:
+        """Collect concrete integer values a literal/OrPattern covers."""
+        if isinstance(pattern, Literal):
+            try:
+                return [int(pattern.value)]
+            except (TypeError, ValueError):
+                return []
+        if isinstance(pattern, OrPattern):
+            values: List[int] = []
+            for alt in pattern.patterns:
+                values.extend(self._integer_literal_values(alt))
+            return values
+        return []
+
+    @staticmethod
+    def _format_int_gaps(covered: set, lo: int, hi: int, limit: int = 8) -> str:
+        """Describe missing integers in [lo, hi], compressed into ranges."""
+        gaps: List[str] = []
+        x = lo
+        while x <= hi and len(gaps) < limit:
+            if x in covered:
+                x += 1
+                continue
+            start = x
+            while x <= hi and x not in covered:
+                x += 1
+            end = x - 1
+            gaps.append(str(start) if start == end else f"{start}..{end}")
+        remaining = 0
+        while x <= hi:
+            if x not in covered:
+                remaining += 1
+            x += 1
+        if remaining:
+            gaps.append(f"+{remaining} more")
+        return ", ".join(gaps)
 
     def _lookup_const_symbol(self, name: str) -> Optional["Symbol"]:
         """Resolve `name` to a global `const` symbol, if it is one.
@@ -964,13 +1154,14 @@ class TypeChecker:
            *real* exhaustiveness check (not a stub) - if every arm is a bool
            literal (or `|` of those) and the set of covered values is not
            `{true, false}`, and there's no wildcard/`default`, warn.
-        3. Integer matches: a minimal stub. If every arm is an integer literal
-           (or `|` of those) and there's no wildcard/`default`, warn - even
-           though listing all `i32`/`i64`/etc. values is never actually
-           achievable, so this only catches the "forgot the wildcard" case,
-           not true integer-domain coverage. It does NOT attempt range/gap
-           analysis (e.g. it won't tell you that `0 | 1` on a `bool`-like i32
-           still misses other in-range values).
+        3. Integer matches: range/gap analysis over the literal arms. Unguarded
+           integer literal / `|` arms contribute concrete covered values. If
+           there's no wildcard/`default`, warn with:
+             - gaps inside [min(covered), max(covered)] (e.g. `0 | 1 | 3`
+               reports a gap at `2`), and
+             - a note that the full integer domain outside that span is also
+               uncovered (i32/i64 can never be listed exhaustively).
+           Guarded arms do not count as covering their literal.
 
         Warnings are collected on `TypeCheckResult.warnings`, not hard errors.
         """
@@ -988,6 +1179,7 @@ class TypeChecker:
         all_bool_literals = True
         saw_bool_literal = False
         covered_bools: set = set()
+        covered_ints: set = set()
 
         for case in match_stmt.cases:
             pat = case.pattern
@@ -996,11 +1188,14 @@ class TypeChecker:
                 continue
             if self._is_integer_literal_pattern(pat):
                 saw_int_literal = True
+                if case.guard is None:
+                    covered_ints.update(self._integer_literal_values(pat))
             else:
                 all_int_literals = False
             if self._is_bool_literal_pattern(pat):
                 saw_bool_literal = True
-                covered_bools.update(self._bool_literal_values(pat))
+                if case.guard is None:
+                    covered_bools.update(self._bool_literal_values(pat))
             else:
                 all_bool_literals = False
 
@@ -1016,10 +1211,30 @@ class TypeChecker:
             return
 
         if all_int_literals and saw_int_literal:
-            self.warnings.append(
-                "Non-exhaustive match: integer literal patterns do not cover all "
-                "values (add `_` or `default`)"
+            if not covered_ints:
+                # Only guarded integer arms — still not exhaustive.
+                self.warnings.append(
+                    "Non-exhaustive match: integer patterns are all guarded or "
+                    "empty; add `_` or `default` for the remaining values"
+                )
+                return
+            lo = min(covered_ints)
+            hi = max(covered_ints)
+            span = hi - lo + 1
+            missing_inside = span - len(covered_ints)
+            parts = [
+                "Non-exhaustive match: integer literal patterns do not cover "
+                "all values"
+            ]
+            if missing_inside > 0:
+                gap_desc = self._format_int_gaps(covered_ints, lo, hi)
+                parts.append(f"gaps in [{lo}, {hi}]: {gap_desc}")
+            else:
+                parts.append(f"contiguous cover [{lo}, {hi}]")
+            parts.append(
+                "values outside that span also uncovered (add `_` or `default`)"
             )
+            self.warnings.append("; ".join(parts))
 
     def _check_match_stmt(self, match_stmt: MatchStatement) -> SemanticType:
         """Type check a match statement."""
@@ -1037,6 +1252,27 @@ class TypeChecker:
                         )
             elif isinstance(case.pattern, StructPattern):
                 self._bind_struct_pattern(case.pattern, case_scope)
+            elif isinstance(case.pattern, ListPattern):
+                if value_type.kind != TypeKind.ARRAY:
+                    if self.strict:
+                        self.errors.append(
+                            f"List pattern {case.pattern} requires an array value, got {value_type}"
+                        )
+                else:
+                    elem_type = value_type.element_type or SemanticType(TypeKind.I32)
+                    for elem in case.pattern.elements:
+                        if isinstance(elem, Variable) and elem.name != "_":
+                            case_scope.define(
+                                Symbol(elem.name, elem_type, "variable")
+                            )
+                        elif isinstance(elem, Literal):
+                            lit_type = self._check_literal(elem)
+                            if not self._can_coerce(lit_type, elem_type) and not self._can_coerce(elem_type, lit_type):
+                                if self.strict:
+                                    self.errors.append(
+                                        f"List pattern element {lit_type} incompatible with "
+                                        f"array element type {elem_type}"
+                                    )
             elif isinstance(case.pattern, OrPattern):
                 for alt in case.pattern.patterns:
                     if isinstance(alt, Literal):
@@ -1046,6 +1282,14 @@ class TypeChecker:
                                 self.errors.append(
                                     f"Match pattern {pat_type} incompatible with value type {value_type}"
                                 )
+                    elif isinstance(alt, StructPattern):
+                        # Bindings agree across alternatives (parser-checked);
+                        # bind once from the first struct alt below.
+                        pass
+                if case.pattern.patterns and isinstance(
+                    case.pattern.patterns[0], StructPattern
+                ):
+                    self._bind_struct_pattern(case.pattern.patterns[0], case_scope)
             elif isinstance(case.pattern, Variable):
                 const_symbol = self._lookup_const_symbol(case.pattern.name)
                 if const_symbol is not None:
@@ -1215,11 +1459,24 @@ class TypeChecker:
             return self._check_unary_op(expr)
         elif isinstance(expr, FunctionCall):
             return self._check_function_call(expr)
+        elif isinstance(expr, EffectCall):
+            return self._check_effect_call(expr)
         elif isinstance(expr, MethodCall):
+            effect_name = self._effect_name_for_method_receiver(expr.object)
+            if effect_name is not None:
+                return self._check_effect_call(EffectCall(effect_name, expr.method, expr.arguments))
+            receiver_type = self._check_expression(expr.object)
+            impl_method = self._impl_method_for_receiver(receiver_type, expr.method)
+            if impl_method is not None:
+                return self._check_function_call(
+                    FunctionCall(impl_method, [expr.object] + list(expr.arguments))
+                )
             desugared = FunctionCall(expr.method, [expr.object] + list(expr.arguments))
             return self._check_function_call(desugared)
         elif isinstance(expr, StructLiteral):
             return self._check_struct_literal(expr)
+        elif isinstance(expr, RecordUpdate):
+            return self._check_record_update(expr)
         elif isinstance(expr, ArrayLiteral):
             if expr.elements:
                 elem_type = self._check_expression(expr.elements[0])
@@ -1273,23 +1530,36 @@ class TypeChecker:
                 self.errors.append(f"Try operator '?' requires Result type, got {operand_type}")
             return SemanticType(TypeKind.VOID)
         elif isinstance(expr, Lambda):
+            lambda_scope = Scope(parent=self.current_scope)
+            param_types = []
             for p in expr.parameters:
                 if p.type and p.type.name != "auto":
-                    self._parse_type(p.type)
-            # Returns inside a lambda body belong to the lambda, not the
-            # enclosing function's return-type collection.
+                    pt = self._parse_type(p.type)
+                else:
+                    pt = SemanticType(TypeKind.UNKNOWN)
+                param_types.append(pt)
+                lambda_scope.define(Symbol(p.name, pt, "variable", is_mutable=True))
+            # Parameters and body locals live in the lambda's own scope, and
+            # returns inside the body belong to the lambda, not the enclosing
+            # function's return-type collection.
+            prev_scope = self.current_scope
             prev_sink = self._return_type_sink
+            self.current_scope = lambda_scope
             self._return_type_sink = []
             try:
                 if isinstance(expr.body, Block):
                     self._check_block(expr.body)
+                    body_type = SemanticType(TypeKind.VOID)
                 else:
-                    self._check_expression(expr.body)
+                    body_type = self._check_expression(expr.body)
             finally:
                 self._return_type_sink = prev_sink
+                self.current_scope = prev_scope
             if expr.return_type:
-                return self._parse_type(expr.return_type)
-            return SemanticType(TypeKind.VOID)
+                ret = self._parse_type(expr.return_type)
+            else:
+                ret = body_type
+            return SemanticType(TypeKind.FUNCTION, param_types=param_types, return_type=ret)
         else:
             # For now, treat unknown expressions as unknown type
             return SemanticType(TypeKind.UNKNOWN)
@@ -1485,8 +1755,96 @@ class TypeChecker:
         "sinh", "cosh", "tanh", "exp", "log", "log2", "log10",
     }
 
+    def _effect_name_for_method_receiver(self, receiver: Any) -> Optional[str]:
+        """Return the effect name for `Effect.op()` or `capability.op()` calls."""
+        if not isinstance(receiver, Variable):
+            return None
+        if receiver.name in self.effect_types:
+            return receiver.name
+        symbol = self.current_scope.lookup(receiver.name)
+        if symbol and symbol.type.name.startswith("capability_"):
+            return symbol.type.name[len("capability_"):]
+        if symbol and symbol.type.name in self.effect_types:
+            return symbol.type.name
+        return None
+
+    def _struct_name_for_method_receiver(self, receiver_type: SemanticType) -> Optional[str]:
+        if receiver_type.kind == TypeKind.STRUCT:
+            return receiver_type.name
+        if receiver_type.kind == TypeKind.POINTER and receiver_type.element_type:
+            if receiver_type.element_type.kind == TypeKind.STRUCT:
+                return receiver_type.element_type.name
+        return None
+
+    def _impl_method_for_receiver(self, receiver_type: SemanticType, method: str) -> Optional[str]:
+        struct_name = self._struct_name_for_method_receiver(receiver_type)
+        if not struct_name:
+            return None
+
+        candidates = self.impl_methods.get((struct_name, method), [])
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            self.errors.append(
+                f"Ambiguous method '{method}' for type '{struct_name}' "
+                f"({', '.join(candidates)})"
+            )
+        return None
+
+    def _check_effect_call(self, call: EffectCall) -> SemanticType:
+        """Type check an algebraic effect operation call."""
+        effect = self.effect_types.get(call.effect_name)
+        if effect is None:
+            for arg in call.arguments:
+                self._check_expression(arg)
+            if self.strict:
+                self.errors.append(f"Unknown effect '{call.effect_name}'")
+            return SemanticType(TypeKind.UNKNOWN)
+
+        operation = None
+        for candidate in effect.operations:
+            if candidate.name == call.operation:
+                operation = candidate
+                break
+
+        if operation is None:
+            for arg in call.arguments:
+                self._check_expression(arg)
+            if self.strict:
+                self.errors.append(
+                    f"Effect '{call.effect_name}' has no operation '{call.operation}'"
+                )
+            return SemanticType(TypeKind.UNKNOWN)
+
+        arg_types = [self._check_expression(arg) for arg in call.arguments]
+        param_types = [self._parse_type(param.type) for param in operation.parameters]
+        if len(arg_types) != len(param_types):
+            if self.strict:
+                self.errors.append(
+                    f"Effect operation '{call.effect_name}.{call.operation}' expects "
+                    f"{len(param_types)} argument(s), got {len(arg_types)}"
+                )
+            return self._parse_type(operation.return_type)
+
+        for idx, (actual, expected) in enumerate(zip(arg_types, param_types), start=1):
+            if not self._can_coerce(actual, expected):
+                self.errors.append(
+                    f"Effect operation '{call.effect_name}.{call.operation}' argument "
+                    f"{idx} expects {expected}, got {actual}"
+                )
+
+        return self._parse_type(operation.return_type)
+
     def _check_function_call(self, call: FunctionCall) -> SemanticType:
         """Type check a function call."""
+        self._check_rt_safe_call(call.name)
+        # dbg expr: evaluates to expr, so its type is the operand's type.
+        if call.name == "__flow_dbg":
+            if len(call.arguments) != 1:
+                if self.strict:
+                    self.errors.append("dbg requires exactly one argument")
+                return SemanticType(TypeKind.VOID)
+            return self._check_expression(call.arguments[0])
         if call.name in self.DIMENSIONLESS_MATH and call.arguments:
             arg_types = [self._check_expression(arg) for arg in call.arguments]
             if any(self._dims_of(t) is not None for t in arg_types):
@@ -1566,6 +1924,7 @@ class TypeChecker:
     def _check_struct_literal(self, struct_lit: StructLiteral) -> SemanticType:
         """Type check a struct literal."""
         struct_name = struct_lit.struct_name
+        self._ensure_generic_struct_instance(struct_name)
         if struct_name not in self.struct_types:
             return SemanticType(TypeKind.STRUCT, name=struct_name)
 
@@ -1590,6 +1949,37 @@ class TypeChecker:
                     f"Struct '{struct_name}' field '{field_name}' expects {expected_type}, got {provided_fields[field_name]}"
                 )
 
+        return SemanticType(TypeKind.STRUCT, name=struct_name)
+
+    def _check_record_update(self, update: "RecordUpdate") -> SemanticType:
+        """Type check a record update: `Point { ..p, x: 3 }`.
+
+        The result type matches the base struct; each override field is
+        checked against that struct's field type and must exist.
+        """
+        base_type = self._check_expression(update.base)
+        struct_name = base_type.name if hasattr(base_type, "name") else None
+        if struct_name is None or struct_name not in self.struct_types:
+            if self.strict:
+                self.errors.append(
+                    f"record update base must be a struct, got {struct_name or base_type}"
+                )
+            return SemanticType(TypeKind.STRUCT, name=struct_name or "")
+        struct_def = self.struct_types[struct_name]
+        expected_fields = {f.name: self._parse_type(f.type) for f in struct_def.fields}
+        for field_name, field_value in update.updates:
+            if field_name not in expected_fields:
+                self.errors.append(
+                    f"record update: struct '{struct_name}' has no field '{field_name}'"
+                )
+                expected = SemanticType(TypeKind.UNKNOWN)
+            else:
+                expected = expected_fields[field_name]
+            actual = self._check_expression(field_value)
+            if not self._can_coerce(actual, expected):
+                self.errors.append(
+                    f"record update: field '{field_name}' expects {expected}, got {actual}"
+                )
         return SemanticType(TypeKind.STRUCT, name=struct_name)
 
     def _is_compatible(self, actual: SemanticType, expected: SemanticType) -> bool:
@@ -1624,6 +2014,12 @@ class TypeChecker:
                 return True
             if expected.element_type and expected.element_type.kind in [TypeKind.U8, TypeKind.I8]:
                 return True
+
+        # Struct-to-pointer method sugar: `reader.load_file()` desugars to
+        # `load_file(reader, ...)`, and the C backend passes `&reader` when
+        # the selected overload expects `ptr<Reader>`.
+        if actual.kind == TypeKind.STRUCT and expected.kind == TypeKind.POINTER:
+            return True
 
         # String to pointer
         if actual.kind == TypeKind.STRING and expected.kind == TypeKind.POINTER:
@@ -1680,10 +2076,107 @@ class TypeChecker:
         }
         return mapping.get(name)
 
+    def _generic_type_args_from_name(self, name: str) -> Optional[Tuple[str, List[ParsedType]]]:
+        if "_" not in name:
+            return None
+        base_name = name.split("_", 1)[0]
+        generic = self.generic_struct_types.get(base_name)
+        if generic is None:
+            return None
+
+        suffix = name[len(base_name) + 1:]
+        parts = suffix.split("_")
+        type_param_count = len(generic.type_params)
+        if len(parts) < type_param_count:
+            return None
+        return base_name, [ParsedType(part) for part in parts[:type_param_count]]
+
+    def _substitute_parsed_type(
+        self, parsed_type: ParsedType, type_map: Dict[str, ParsedType]
+    ) -> ParsedType:
+        if parsed_type.name in type_map and not parsed_type.type_args:
+            replacement = type_map[parsed_type.name]
+            return ParsedType(
+                replacement.name,
+                is_pointer=replacement.is_pointer,
+                is_reference=replacement.is_reference,
+                is_capability=getattr(replacement, "is_capability", False),
+                size=replacement.size,
+                element_type=replacement.element_type,
+                type_args=replacement.type_args,
+            )
+
+        element_type = (
+            self._substitute_parsed_type(parsed_type.element_type, type_map)
+            if parsed_type.element_type
+            else None
+        )
+        type_args = (
+            [self._substitute_parsed_type(arg, type_map) for arg in parsed_type.type_args]
+            if parsed_type.type_args
+            else None
+        )
+        return ParsedType(
+            parsed_type.name,
+            is_pointer=parsed_type.is_pointer,
+            is_reference=parsed_type.is_reference,
+            is_capability=getattr(parsed_type, "is_capability", False),
+            size=parsed_type.size,
+            element_type=element_type,
+            type_args=type_args,
+        )
+
+    def _ensure_generic_struct_instance(
+        self, name: str, type_args: Optional[List[ParsedType]] = None
+    ) -> bool:
+        if name in self.struct_types:
+            return True
+
+        base_name = name.split("_", 1)[0]
+        generic = self.generic_struct_types.get(base_name)
+        if generic is None:
+            parsed = self._generic_type_args_from_name(name)
+            if parsed is None:
+                return False
+            base_name, type_args = parsed
+            generic = self.generic_struct_types.get(base_name)
+        elif type_args is None:
+            parsed = self._generic_type_args_from_name(name)
+            if parsed is None:
+                return False
+            _, type_args = parsed
+
+        if not type_args or len(type_args) != len(generic.type_params):
+            return False
+
+        type_map = {
+            param.name: arg for param, arg in zip(generic.type_params, type_args)
+        }
+        fields = [
+            Parameter(field.name, self._substitute_parsed_type(field.type, type_map))
+            for field in generic.fields
+        ]
+        self.struct_types[name] = StructDecl(
+            name,
+            fields,
+            getattr(generic, "is_exported", False),
+            [],
+            getattr(generic, "location", None),
+        )
+        return True
+
     def _parse_type(self, parsed_type: ParsedType) -> SemanticType:
         """Convert a parsed Type to a SemanticType."""
         if parsed_type.name == "auto":
             return SemanticType(TypeKind.UNKNOWN, name="auto")
+        if parsed_type.type_args:
+            base_name = parsed_type.name.split("_", 1)[0]
+            if base_name in self.generic_struct_types:
+                self._ensure_generic_struct_instance(parsed_type.name, parsed_type.type_args)
+                return SemanticType(TypeKind.STRUCT, name=parsed_type.name)
+        if parsed_type.name not in self.struct_types:
+            if self._ensure_generic_struct_instance(parsed_type.name):
+                return SemanticType(TypeKind.STRUCT, name=parsed_type.name)
         if parsed_type.name.startswith("memref_"):
             elem_name = parsed_type.name[len("memref_"):]
             elem_type = self._parse_named_scalar(elem_name)
@@ -1726,6 +2219,11 @@ class TypeChecker:
             return SemanticType(TypeKind.POINTER, element_type=self._parse_type(parsed_type.element_type))
         elif parsed_type.name.startswith("array_") and parsed_type.element_type:
             return SemanticType(TypeKind.ARRAY, element_type=self._parse_type(parsed_type.element_type), size=parsed_type.size)
+        elif parsed_type.name.startswith("array_"):
+            elem_name = parsed_type.name[len("array_"):]
+            elem_type = self._parse_named_scalar(elem_name)
+            if elem_type:
+                return SemanticType(TypeKind.ARRAY, element_type=elem_type, size=parsed_type.size)
         elif parsed_type.name.startswith("memref_"):
             element_name = parsed_type.name[len("memref_"):]
             element_type = self._parse_type(ParsedType(element_name))
@@ -1755,4 +2253,3 @@ class TypeChecker:
         else:
             # Unknown type (e.g., generic parameter)
             return SemanticType(TypeKind.UNKNOWN, name=parsed_type.name)
-
