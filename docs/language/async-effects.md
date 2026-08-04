@@ -87,6 +87,7 @@ Business logic depends only on the effect — swap `SimulatedAsync`,
 | Fiber-aware nonblocking TCP | `BlockingTcp` is sync sockets; park-on-poll still via `NetpollAsyncIO` |
 | `Cont` + `FiberCont` (Flow-frame resume) | ✅ `Cont.shift` parks fiber (M:N-safe); `cont_arm_resume` — `cont_flow_resume.flow` |
 | Fiber-per-conn HTTP + auth mw | ✅ `http_fiber.flow` (`Bearer flow` on `/api`) |
+| HTTPS accept-loop (OpenSSL) | ✅ `http_tls.flow` (ephemeral self-signed) |
 | N-way `select` / `default` | ✅ `select2` + `select4` (+ `_try`) |
 | `async` / `await` syntax sugar | Only after the runtime model is solid — do **not** add keywords first |
 | Stateful handlers (`capability` with mutable task tables) | Capabilities are currently stateless; use struct+`impl` workarounds elsewhere |

@@ -1,0 +1,16 @@
+# Flow runtime: TLS / HTTPS accept-loop harness (OpenSSL via runtime/flow_tls.c).
+
+extern {
+    function flow_rt_tls_available() -> i32
+    function flow_rt_https_selftest(port: i32) -> i32
+}
+
+@flow_api
+export function flow_tls_available() -> i32 {
+    return flow_rt_tls_available()
+}
+
+@flow_api
+export function flow_https_selftest(port: i32) -> i32 {
+    return flow_rt_https_selftest(port)
+}
