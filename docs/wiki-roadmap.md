@@ -56,8 +56,8 @@
 | Task | Notes |
 |------|-------|
 | Pagefind wiki search | ✅ | `scripts/build_pagefind.sh` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
-| Playground: compile via WASM or API | partial ✅ | browser interpreter wired (`flow-compile.js` / Run (browser)); native WASM deferred |
-| Proof graph visualization | Claim Path dependency edges |
+| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `scripts/playground_compile_server.py` (#132); next: emscripten hello artifact (`scripts/build_wasm_hello.sh`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
+| Proof graph visualization | ✅ partial — module-level `import` graph (`third-party/proof-graph.md`, `scripts/build_wiki.py::build_proof_graph`); per-theorem Claim Path edges still open |
 | Dark/light theme toggle | ✅ Header **Theme** button; `localStorage` key `flow-wiki-theme` |
 
 ---
@@ -81,6 +81,7 @@ The **language** roadmap (`ROADMAP.md`) tracks compiler features. The **wiki** r
 |--------------------|------------------|
 | Verification checker ships | Update `language/verification.md` status |
 | Linux graphics | `language/graphics.md` platform section |
+| WASM (C→emscripten) | `language/wasm.md` + playground note (#121 / #132) |
 | Package registry | Third-party publishing guide |
 | `flow-lang.org` | Phase 4 DNS + migration |
 

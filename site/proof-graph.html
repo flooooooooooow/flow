@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Proof Dependency Graph — Flow Docs</title>
+<meta name="description" content="Interactive module-level dependency graph for the flow-verify proof catalog.">
+<style>
+    :root {
+        --bg: #090c10;
+        --surface: #0f1419;
+        --surface-2: #161b22;
+        --border: #21262d;
+        --border-light: #30363d;
+        --text: #e6edf3;
+        --text-muted: #8b949e;
+        --text-faint: #6e7681;
+        --accent: #4493f8;
+        --purple: #bc8cff;
+        --gray: #8b949e;
+        --warn: #d29922;
+        --radius: 8px;
+        --mono: 'IBM Plex Mono', ui-monospace, monospace;
+        --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        overflow: hidden;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .pg-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        padding: 0.6rem 0.9rem;
+        border-bottom: 1px solid var(--border);
+        background: rgba(9, 12, 16, 0.92);
+        backdrop-filter: blur(8px);
+        position: relative;
+        z-index: 5;
+    }
+    .pg-title {
+        font-weight: 600;
+        font-size: 0.95rem;
+        white-space: nowrap;
+    }
+    .pg-stats {
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        font-family: var(--mono);
+        white-space: nowrap;
+    }
+    .pg-search {
+        flex: 1 1 160px;
+        max-width: 260px;
+        min-width: 120px;
+        padding: 0.35rem 0.6rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border-light);
+        background: var(--surface-2);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 0.85rem;
+    }
+    .pg-search:focus { outline: 1px solid var(--accent); }
+    .pg-legend {
+        display: flex;
+        gap: 0.6rem;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        flex-wrap: wrap;
+    }
+    .pg-legend button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: transparent;
+        border: 1px solid var(--border-light);
+        color: var(--text-muted);
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem 0.15rem 0.4rem;
+        cursor: pointer;
+        font-family: var(--sans);
+        font-size: 0.78rem;
+    }
+    .pg-legend button.off { opacity: 0.35; }
+    .pg-legend .dot {
+        width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+    }
+    .pg-spacer { flex: 1 1 auto; min-width: 0; }
+    .pg-back {
+        font-size: 0.82rem;
+        white-space: nowrap;
+    }
+
+    .pg-canvas-wrap {
+        position: relative;
+        width: 100%;
+        height: calc(100% - 49px);
+    }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+    canvas.dragging { cursor: grabbing; }
+
+    .pg-hint {
+        position: absolute;
+        left: 0.9rem;
+        bottom: 0.75rem;
+        font-size: 0.72rem;
+        color: var(--text-faint);
+        font-family: var(--mono);
+        pointer-events: none;
+        user-select: none;
+    }
+
+    .pg-loading {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        pointer-events: none;
+    }
+
+    .pg-panel {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        width: 260px;
+        max-width: calc(100% - 1.5rem);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 0.85rem 0.9rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        font-size: 0.85rem;
+        display: none;
+    }
+    .pg-panel.visible { display: block; }
+    .pg-panel h3 {
+        margin: 0 0 0.3rem;
+        font-size: 0.95rem;
+        word-break: break-word;
+    }
+    .pg-panel .pg-group-tag {
+        display: inline-block;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+        border: 1px solid var(--border-light);
+        border-radius: 999px;
+        padding: 0.05rem 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .pg-panel .pg-id {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--text-faint);
+        word-break: break-all;
+        margin-bottom: 0.5rem;
+    }
+    .pg-panel .pg-degree {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        margin-bottom: 0.6rem;
+    }
+    .pg-panel .pg-open {
+        display: inline-block;
+        padding: 0.35rem 0.7rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        font-size: 0.8rem;
+    }
+    .pg-panel .pg-open:hover { background: rgba(68, 147, 248, 0.12); text-decoration: none; }
+    .pg-panel .pg-close {
+        position: absolute;
+        top: 0.4rem;
+        right: 0.5rem;
+        background: none;
+        border: none;
+        color: var(--text-faint);
+        font-size: 1rem;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    @media (max-width: 640px) {
+        .pg-legend { display: none; }
+        .pg-title { font-size: 0.85rem; }
+    }
+</style>
+</head>
+<body>
+    <header class="pg-header">
+        <span class="pg-title">Proof Dependency Graph</span>
+        <span class="pg-stats" id="pgStats">loading…</span>
+        <input type="search" id="pgSearch" class="pg-search" placeholder="Filter modules…" autocomplete="off">
+        <div class="pg-legend" id="pgLegend"></div>
+        <div class="pg-spacer"></div>
+        <a class="pg-back" href="index.html#third-party/proof-graph.md">← Back to docs</a>
+    </header>
+    <div class="pg-canvas-wrap">
+        <canvas id="pgCanvas"></canvas>
+        <div class="pg-loading" id="pgLoading">Loading proof-graph.json…</div>
+        <div class="pg-hint">drag to pan · scroll/pinch to zoom · click a node for details</div>
+        <div class="pg-panel" id="pgPanel">
+            <button class="pg-close" id="pgPanelClose" aria-label="Close">✕</button>
+            <span class="pg-group-tag" id="pgPanelGroup"></span>
+            <h3 id="pgPanelTitle"></h3>
+            <div class="pg-id" id="pgPanelId"></div>
+            <div class="pg-degree" id="pgPanelDegree"></div>
+            <a class="pg-open" id="pgPanelOpen" href="#" target="_top">Open proof page →</a>
+        </div>
+    </div>
+
+<script>
+(function () {
+    'use strict';
+
+    const GROUP_COLORS = {
+        lib: '#4493f8',
+        examples: '#bc8cff',
+        external: '#8b949e',
+    };
+    const GROUP_LABELS = { lib: 'lib/verify', examples: 'examples/verify', external: 'external' };
+    // Hard safety cap — the builder already keeps us well under this, but a
+    // huge future corpus should degrade gracefully instead of freezing mobile.
+    const MAX_NODES_DRAWN = 800;
+
+    const canvas = document.getElementById('pgCanvas');
+    const ctx = canvas.getContext('2d');
+    const loadingEl = document.getElementById('pgLoading');
+    const statsEl = document.getElementById('pgStats');
+    const searchEl = document.getElementById('pgSearch');
+    const legendEl = document.getElementById('pgLegend');
+    const panelEl = document.getElementById('pgPanel');
+
+    let nodes = [];
+    let edges = [];
+    let nodeById = new Map();
+    let adjacency = new Map(); // id -> Set(neighbor ids)
+    let hiddenGroups = new Set();
+    let selected = null;
+    let hovered = null;
+    let searchTerm = '';
+
+    let camera = { x: 0, y: 0, scale: 1 };
+    let dragging = false;
+    let dragMoved = false;
+    let lastPointer = { x: 0, y: 0 };
+    let simRunning = false;
+    let needsRedraw = true;
+
+    function resizeCanvas() {
+        const wrap = canvas.parentElement;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.floor(wrap.clientWidth * dpr));
+        canvas.height = Math.max(1, Math.floor(wrap.clientHeight * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        needsRedraw = true;
+    }
+
+    function worldToScreen(x, y) {
+        const w = canvas.width / (window.devicePixelRatio > 2 ? 2 : (window.devicePixelRatio || 1));
+        const h = canvas.height / (window.devicePixelRatio > 2 ? 2 : (window.devicePixelRatio || 1));
+        return {
+            x: (x - camera.x) * camera.scale + w / 2,
+            y: (y - camera.y) * camera.scale + h / 2,
+        };
+    }
+
+    function screenToWorld(sx, sy) {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const w = canvas.width / dpr;
+        const h = canvas.height / dpr;
+        return {
+            x: (sx - w / 2) / camera.scale + camera.x,
+            y: (sy - h / 2) / camera.scale + camera.y,
+        };
+    }
+
+    function degreeOf(id) {
+        return (adjacency.get(id) || new Set()).size;
+    }
+
+    function buildAdjacency() {
+        adjacency = new Map();
+        for (const n of nodes) adjacency.set(n.id, new Set());
+        for (const e of edges) {
+            if (!adjacency.has(e.from) || !adjacency.has(e.to)) continue;
+            adjacency.get(e.from).add(e.to);
+            adjacency.get(e.to).add(e.from);
+        }
+    }
+
+    function layoutGraph() {
+        const n = nodes.length;
+        const width = 1200, height = 800;
+        const k = Math.sqrt((width * height) / Math.max(n, 1)) * 0.85;
+        for (const node of nodes) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * Math.min(width, height) * 0.4;
+            node.x = Math.cos(angle) * r;
+            node.y = Math.sin(angle) * r;
+        }
+        const idx = new Map(nodes.map((nd, i) => [nd.id, i]));
+        const edgeIdx = edges
+            .map((e) => [idx.get(e.from), idx.get(e.to)])
+            .filter(([a, b]) => a !== undefined && b !== undefined);
+
+        const totalIterations = n > 500 ? 70 : n > 200 ? 110 : 160;
+        const perFrame = 4;
+        let iter = 0;
+        let temperature = width / 8;
+
+        simRunning = true;
+
+        function step() {
+            const batchEnd = Math.min(iter + perFrame, totalIterations);
+            for (; iter < batchEnd; iter++) {
+                for (let i = 0; i < n; i++) {
+                    let fx = 0, fy = 0;
+                    for (let j = 0; j < n; j++) {
+                        if (i === j) continue;
+                        const dx = nodes[i].x - nodes[j].x;
+                        const dy = nodes[i].y - nodes[j].y;
+                        const dist2 = dx * dx + dy * dy || 0.01;
+                        const dist = Math.sqrt(dist2);
+                        const force = (k * k) / dist2;
+                        fx += (dx / dist) * force;
+                        fy += (dy / dist) * force;
+                    }
+                    nodes[i]._fx = fx;
+                    nodes[i]._fy = fy;
+                }
+                for (const [a, b] of edgeIdx) {
+                    const dx = nodes[a].x - nodes[b].x;
+                    const dy = nodes[a].y - nodes[b].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+                    const force = (dist * dist) / (k * 6);
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    nodes[a]._fx -= fx; nodes[a]._fy -= fy;
+                    nodes[b]._fx += fx; nodes[b]._fy += fy;
+                }
+                for (const node of nodes) {
+                    const disp = Math.sqrt(node._fx * node._fx + node._fy * node._fy) || 0.01;
+                    const lim = Math.min(disp, temperature);
+                    node.x += (node._fx / disp) * lim;
+                    node.y += (node._fy / disp) * lim;
+                    node.x = Math.max(-width, Math.min(width, node.x));
+                    node.y = Math.max(-height, Math.min(height, node.y));
+                }
+                temperature *= 0.96;
+            }
+            needsRedraw = true;
+            requestFrame();
+            if (iter < totalIterations) {
+                requestAnimationFrame(step);
+            } else {
+                simRunning = false; // pause: no continuous animation once settled
+                fitToView();
+            }
+        }
+        requestAnimationFrame(step);
+    }
+
+    function fitToView() {
+        if (!nodes.length) return;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const n of nodes) {
+            minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+            minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+        }
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const w = canvas.width / dpr, h = canvas.height / dpr;
+        const spanX = Math.max(maxX - minX, 50);
+        const spanY = Math.max(maxY - minY, 50);
+        camera.x = (minX + maxX) / 2;
+        camera.y = (minY + maxY) / 2;
+        camera.scale = Math.min(w / spanX, h / spanY, 1.6) * 0.9;
+        needsRedraw = true;
+    }
+
+    function nodeRadius(n) {
+        return 3 + Math.min(degreeOf(n.id), 12) * 0.7;
+    }
+
+    let frameRequested = false;
+    function requestFrame() {
+        if (frameRequested) return;
+        frameRequested = true;
+        requestAnimationFrame(() => {
+            frameRequested = false;
+            draw();
+        });
+    }
+
+    function draw() {
+        if (!needsRedraw && !simRunning) return;
+        needsRedraw = false;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const w = canvas.width / dpr, h = canvas.height / dpr;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#090c10';
+        ctx.fillRect(0, 0, w, h);
+
+        const visibleIds = new Set();
+        for (const n of nodes) {
+            if (hiddenGroups.has(n.group)) continue;
+            visibleIds.add(n.id);
+        }
+
+        const neighborSet = selected ? (adjacency.get(selected.id) || new Set()) : null;
+        const hoverNeighbors = hovered ? (adjacency.get(hovered.id) || new Set()) : null;
+
+        // Edges
+        ctx.lineWidth = 1;
+        for (const e of edges) {
+            if (!visibleIds.has(e.from) || !visibleIds.has(e.to)) continue;
+            const a = nodeById.get(e.from), b = nodeById.get(e.to);
+            if (!a || !b) continue;
+            const pa = worldToScreen(a.x, a.y);
+            const pb = worldToScreen(b.x, b.y);
+            const isFocused = (selected && (e.from === selected.id || e.to === selected.id)) ||
+                (hovered && (e.from === hovered.id || e.to === hovered.id));
+            ctx.strokeStyle = isFocused ? 'rgba(68, 147, 248, 0.85)' : 'rgba(139, 148, 158, 0.18)';
+            ctx.beginPath();
+            ctx.moveTo(pa.x, pa.y);
+            ctx.lineTo(pb.x, pb.y);
+            ctx.stroke();
+        }
+
+        // Nodes
+        for (const n of nodes) {
+            if (hiddenGroups.has(n.group)) continue;
+            const p = worldToScreen(n.x, n.y);
+            const r = nodeRadius(n) * Math.min(Math.max(camera.scale, 0.55), 1.4);
+            const matchesSearch = searchTerm && n.label.toLowerCase().includes(searchTerm);
+            const isDimmed = (selected && n.id !== selected.id && !neighborSet.has(n.id)) ||
+                (searchTerm && !matchesSearch);
+
+            ctx.globalAlpha = isDimmed ? 0.22 : 1;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = GROUP_COLORS[n.group] || '#8b949e';
+            ctx.fill();
+
+            if (n === selected || n === hovered || matchesSearch) {
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = n === selected ? '#ffffff' : '#d29922';
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+
+            const showLabel = camera.scale > 0.55 && (nodes.length < 160 || r > 4 || n === selected || n === hovered || matchesSearch);
+            if (showLabel && !isDimmed) {
+                ctx.fillStyle = 'rgba(230, 237, 243, 0.85)';
+                ctx.font = '10px "IBM Plex Mono", ui-monospace, monospace';
+                ctx.fillText(n.label, p.x + r + 3, p.y + 3);
+            }
+        }
+    }
+
+    function hitTest(sx, sy) {
+        let best = null, bestDist = Infinity;
+        for (const n of nodes) {
+            if (hiddenGroups.has(n.group)) continue;
+            const p = worldToScreen(n.x, n.y);
+            const r = Math.max(nodeRadius(n) * camera.scale, 6);
+            const dx = p.x - sx, dy = p.y - sy;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d <= r && d < bestDist) { best = n; bestDist = d; }
+        }
+        return best;
+    }
+
+    function openPanel(node) {
+        selected = node;
+        needsRedraw = true;
+        requestFrame();
+        if (!node) { panelEl.classList.remove('visible'); return; }
+        document.getElementById('pgPanelGroup').textContent = GROUP_LABELS[node.group] || node.group;
+        document.getElementById('pgPanelTitle').textContent = node.label;
+        document.getElementById('pgPanelId').textContent = node.id;
+        const deg = degreeOf(node.id);
+        document.getElementById('pgPanelDegree').textContent = `${deg} connection${deg === 1 ? '' : 's'}`;
+        const openLink = document.getElementById('pgPanelOpen');
+        if (node.path) {
+            openLink.style.display = 'inline-block';
+            openLink.href = 'index.html#' + encodeURIComponent(node.path);
+        } else {
+            openLink.style.display = 'none';
+        }
+        panelEl.classList.add('visible');
+    }
+
+    function bindEvents() {
+        window.addEventListener('resize', () => { resizeCanvas(); requestFrame(); });
+
+        canvas.addEventListener('pointerdown', (e) => {
+            dragging = true;
+            dragMoved = false;
+            lastPointer = { x: e.clientX, y: e.clientY };
+            canvas.classList.add('dragging');
+            canvas.setPointerCapture(e.pointerId);
+        });
+        canvas.addEventListener('pointermove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+            if (dragging) {
+                const dx = e.clientX - lastPointer.x;
+                const dy = e.clientY - lastPointer.y;
+                if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragMoved = true;
+                camera.x -= dx / camera.scale;
+                camera.y -= dy / camera.scale;
+                lastPointer = { x: e.clientX, y: e.clientY };
+                needsRedraw = true;
+                requestFrame();
+            } else {
+                const hit = hitTest(sx, sy);
+                if (hit !== hovered) {
+                    hovered = hit;
+                    canvas.style.cursor = hit ? 'pointer' : 'grab';
+                    needsRedraw = true;
+                    requestFrame();
+                }
+            }
+        });
+        canvas.addEventListener('pointerup', (e) => {
+            dragging = false;
+            canvas.classList.remove('dragging');
+            if (!dragMoved) {
+                const rect = canvas.getBoundingClientRect();
+                const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+                openPanel(hit);
+            }
+        });
+        canvas.addEventListener('pointercancel', () => { dragging = false; canvas.classList.remove('dragging'); });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const before = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+            const zoomFactor = Math.exp(-e.deltaY * 0.0015);
+            camera.scale = Math.min(Math.max(camera.scale * zoomFactor, 0.08), 6);
+            const after = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+            camera.x += before.x - after.x;
+            camera.y += before.y - after.y;
+            needsRedraw = true;
+            requestFrame();
+        }, { passive: false });
+
+        document.getElementById('pgPanelClose').addEventListener('click', () => openPanel(null));
+
+        searchEl.addEventListener('input', () => {
+            searchTerm = searchEl.value.trim().toLowerCase();
+            needsRedraw = true;
+            requestFrame();
+        });
+    }
+
+    function buildLegend() {
+        legendEl.innerHTML = '';
+        const counts = { lib: 0, examples: 0, external: 0 };
+        for (const n of nodes) counts[n.group] = (counts[n.group] || 0) + 1;
+        for (const group of ['lib', 'examples', 'external']) {
+            if (!counts[group]) continue;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.innerHTML = `<span class="dot" style="background:${GROUP_COLORS[group]}"></span>${GROUP_LABELS[group]} (${counts[group]})`;
+            btn.addEventListener('click', () => {
+                if (hiddenGroups.has(group)) hiddenGroups.delete(group);
+                else hiddenGroups.add(group);
+                btn.classList.toggle('off', hiddenGroups.has(group));
+                needsRedraw = true;
+                requestFrame();
+            });
+            legendEl.appendChild(btn);
+        }
+    }
+
+    async function init() {
+        resizeCanvas();
+        bindEvents();
+        try {
+            const res = await fetch('proof-graph.json');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            nodes = (data.nodes || []).slice(0, MAX_NODES_DRAWN);
+            const keepIds = new Set(nodes.map((n) => n.id));
+            edges = (data.edges || []).filter((e) => keepIds.has(e.from) && keepIds.has(e.to));
+            nodeById = new Map(nodes.map((n) => [n.id, n]));
+            buildAdjacency();
+            buildLegend();
+            const truncated = (data.nodes || []).length > MAX_NODES_DRAWN;
+            statsEl.textContent = `${nodes.length} modules · ${edges.length} imports` + (truncated ? ' (truncated)' : '');
+            loadingEl.style.display = 'none';
+            layoutGraph();
+            requestFrame();
+        } catch (err) {
+            loadingEl.textContent = `Could not load proof-graph.json (${err.message}). Run scripts/build_wiki.py first.`;
+        }
+    }
+
+    init();
+})();
+</script>
+</body>
+</html>

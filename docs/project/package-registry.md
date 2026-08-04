@@ -13,9 +13,9 @@ Flow already has a project/dependency surface:
 | Piece | Role today |
 |-------|------------|
 | `flow.toml` | Package name, entry, `[paths]`, `[dependencies]`, `[native]` |
-| Local deps | Path / stdlib resolution; `flow_packages/` + `flow.lock` stubs |
-| Git deps | Documented shape (`{ git = "...", tag = "..." }`); not a full fetch pipeline yet |
-| Registry | Placeholder URL in `package.py` — no public index, no publish flow |
+| Local deps | `path` dependencies install into `flow_packages/<name>` and update `flow.lock` |
+| Git deps | `{ git = "...", tag = "..." }` clones into `flow_packages/<name>` and checks out the requested ref |
+| Registry | Deferred — bare name/version dependencies fail honestly until a public index exists |
 
 There is **one** documented third-party package in the wiki: [flow-verify](../third-party/flow-verify.md). That is not enough demand to justify a central registry.
 
@@ -55,7 +55,7 @@ Revisit a minimal static registry only when:
 1. At least **three** independently maintained packages appear in [docs/third-party](../third-party/README.md), and  
 2. Authors actually need name-based install (not just git URLs).
 
-Until then, do not implement `REGISTRY_URL` publish/search, and do not advertise a package index on the wiki home.
+Until then, do not implement publish/search, and do not advertise a package index on the wiki home.
 
 ---
 
@@ -71,11 +71,25 @@ my_lib = { path = "../my_lib" }
 audio_dsp = { git = "https://github.com/example/flow-audio-dsp", tag = "v0.3" }
 ```
 
+Run:
+
+```bash
+./flow install
+```
+
+Installed dependencies are placed under `flow_packages/<name>` and pinned in
+`flow.lock`. Dot imports resolve through the package name:
+
+```flow
+import audio_dsp.reverb { process_reverb }
+```
+
 Authors should:
 
 1. Publish a git repo with its own `flow.toml`.
 2. Consumers pin by tag or commit.
-3. Optionally add a wiki page under `docs/third-party/` for discoverability (see below).
+3. Consumers run `./flow install`.
+4. Optionally add a wiki page under `docs/third-party/` for discoverability (see below).
 
 ---
 
