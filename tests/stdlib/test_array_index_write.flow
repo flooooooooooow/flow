@@ -1,8 +1,0 @@
-function write_at(out: memref_f32, i: i32, a: f32) -> i32 {
-    out[i] = a
-    return 0
-}
-
-function main() -> i32 {
-    return 0
-}

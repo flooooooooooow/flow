@@ -116,6 +116,7 @@ Low-level systems programming:
 - `memory_pool.flow` - O(1) pool allocator
 - `ring_buffer.flow` - Lock-free SPSC queue
 - `hash_table.flow` - Open addressing hash table
+- `system_info.flow` - OS/CPU info via stdlib
 
 ### GPU (`gpu/`)
 Metal GPU computation:

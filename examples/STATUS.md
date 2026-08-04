@@ -36,15 +36,14 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/games/` | 7 | 0 |
 | `examples/generics_traits/` | 10 | 0 |
 | `examples/gpu/` | 12 | 0 |
-| `examples/graphics/` | 3 | 0 |
+| `examples/graphics/` | 2 | 0 |
 | `examples/interop/` | 1 | 0 |
 | `examples/linalg/` | 3 | 0 |
 | `examples/ml/` | 6 | 0 |
 | `examples/neural_networks/` | 6 | 0 |
 | `examples/numerical/` | 2 | 0 |
 | `examples/physics/` | 2 | 0 |
-| `examples/system/` | 1 | 0 |
-| `examples/systems/` | 5 | 0 |
+| `examples/systems/` | 6 | 0 |
 | `examples/verify/` | 848 | 206 |
 
 ## Failures
@@ -378,7 +377,6 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/gpu/vector_add_gpu.flow` | pass |  |
 | `examples/graphics/graphics.flow` | pass |  |
 | `examples/graphics/shader_demo.flow` | pass |  |
-| `examples/graphics/shader_showcase.flow` | pass |  |
 | `examples/interop/python_embed.flow` | pass |  |
 | `examples/linalg/blas_demo.flow` | pass |  |
 | `examples/linalg/lu_decomposition.flow` | pass |  |
@@ -399,7 +397,7 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/numerical/optimization.flow` | pass |  |
 | `examples/physics/natural_physics.flow` | pass |  |
 | `examples/physics/natural_syntax_demo.flow` | pass |  |
-| `examples/system/system_info.flow` | pass |  |
+| `examples/systems/system_info.flow` | pass |  |
 | `examples/systems/arena_frame.flow` | pass |  |
 | `examples/systems/hash_table.flow` | pass |  |
 | `examples/systems/manual_memory.flow` | pass |  |

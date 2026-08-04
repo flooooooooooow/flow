@@ -92,10 +92,10 @@ flow/
 │   ├── effects/            # Algebraic effects demos (3 files)
 │   ├── linalg/             # Linear algebra (2 files)
 │   ├── numerical/          # ODE solvers, optimization (2 files)
-│   ├── systems/            # Memory pools, hash tables (3 files)
+│   ├── systems/            # Memory pools, hash tables, system info
 │   ├── gpu/                # GPU/SIMD examples (8 files)
 │   ├── generics_traits/    # Generic programming (9 files)
-│   ├── graphics/           # Rendering, shaders (3 files)
+│   ├── graphics/           # Rendering, shaders
 │   ├── crypto/             # SHA-256 (1 file)
 │   ├── data/               # CSV parsing (1 file)
 │   └── compilers/          # Expression calculator (1 file)
@@ -307,7 +307,7 @@ Publishing: set `VSCE_PAT` and run `./scripts/publish_vscode_extension.sh --publ
 
 ```bash
 # System info (native helpers)
-./flow run examples/system/system_info.flow
+./flow run examples/systems/system_info.flow
 
 # Python embedding (CPython via framework on macOS)
 ./flow run examples/interop/python_embed.flow
