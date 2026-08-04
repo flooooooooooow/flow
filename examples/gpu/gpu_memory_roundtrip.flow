@@ -1,0 +1,110 @@
+# First-class GPU / unified memory round-trip
+#
+#   ./flow run examples/gpu/gpu_memory_roundtrip.flow
+#
+# On macOS: Metal shared buffers (unified CPU/GPU).
+# Elsewhere: gpu_available() is false and we exit 0 after printing stub.
+
+import "stdlib/gpu_memory.flow"
+import "stdlib/memory.flow"
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    println("gpu backend:")
+    println(gpu_backend_name())
+
+    if !gpu_available() {
+        println("GPU memory backend unavailable (stub) — OK")
+        return 0
+    }
+
+    let n: i64 = 8
+    let bytes: i64 = n * 4
+
+    let host: ptr<i32> = alloc_i32(n)
+    let out: ptr<i32> = alloc_i32(n)
+    if host == null or out == null {
+        println("host alloc failed")
+        return 1
+    }
+
+    let mut i: i64 = 0
+    while i < n {
+        host[i] = (i + 1) as i32
+        out[i] = 0
+        i = i + 1
+    }
+
+    let gpu: GpuBuffer = gpu_alloc_i32(n)
+    if gpu_is_null(gpu) {
+        println("gpu_alloc failed")
+        free(host)
+        free(out)
+        return 1
+    }
+
+    let rc1: i32 = gpu_copy_h2d_i32(gpu, host, bytes)
+    let rc2: i32 = gpu_copy_d2h_i32(out, gpu, bytes)
+    gpu_sync()
+
+    if rc1 != 0 or rc2 != 0 {
+        println("copy failed")
+        gpu_free(gpu)
+        free(host)
+        free(out)
+        return 1
+    }
+
+    print("round-trip:")
+    i = 0
+    let mut ok: i32 = 1
+    while i < n {
+        print(" ")
+        printf("%d", out[i])
+        if out[i] != host[i] {
+            ok = 0
+        }
+        i = i + 1
+    }
+    println("")
+
+    if gpu_is_unified(gpu) {
+        let mapped_v: ptr<void> = gpu_host_ptr(gpu)
+        if mapped_v == null {
+            println("expected host mapping for unified buffer")
+            ok = 0
+        } else {
+            let mapped: ptr<i32> = mapped_v
+            print("unified host_ptr[0] = ")
+            printf("%d", mapped[0])
+            println("")
+        }
+    }
+
+    let gpu2: GpuBuffer = gpu_alloc_private(bytes)
+    if !gpu_is_null(gpu2) {
+        let rc3: i32 = gpu_copy_d2d(gpu2, gpu, bytes)
+        let rc4: i32 = gpu_copy_d2h_i32(out, gpu2, bytes)
+        if rc3 != 0 or rc4 != 0 or out[0] != 1 {
+            println("private d2d path failed")
+            ok = 0
+        } else {
+            println("private buffer d2d+d2h ok")
+        }
+        gpu_free(gpu2)
+    }
+
+    gpu_free(gpu)
+    free(host)
+    free(out)
+
+    if ok == 1 {
+        println("PASS")
+        return 0
+    }
+    println("FAIL")
+    return 1
+}
