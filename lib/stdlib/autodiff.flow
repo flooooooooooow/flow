@@ -21,17 +21,17 @@ struct Dual {
     grad: f32    # The derivative (tangent)
 }
 
-# Create a dual number for a variable (derivative = 1)
+# Seed forward-mode AD: Dual(x, 1) so ∂/∂x propagates.
 export function dual_var(x: f32) -> Dual {
     return Dual { val: x, grad: 1.0 }
 }
 
-# Create a dual number for a constant (derivative = 0)
+# Lift a constant into Dual space: Dual(x, 0).
 export function dual_const(x: f32) -> Dual {
     return Dual { val: x, grad: 0.0 }
 }
 
-# Addition
+# Dual addition: (a+b, a'+b').
 export function dual_add(a: Dual, b: Dual) -> Dual {
     return Dual { 
         val: a.val + b.val, 
@@ -39,7 +39,7 @@ export function dual_add(a: Dual, b: Dual) -> Dual {
     }
 }
 
-# Subtraction
+# Dual subtraction: (a-b, a'-b').
 export function dual_sub(a: Dual, b: Dual) -> Dual {
     return Dual { 
         val: a.val - b.val, 
@@ -47,7 +47,7 @@ export function dual_sub(a: Dual, b: Dual) -> Dual {
     }
 }
 
-# Multiplication (product rule)
+# Dual multiply via product rule: (ab, a'b + ab').
 export function dual_mul(a: Dual, b: Dual) -> Dual {
     return Dual { 
         val: a.val * b.val, 
@@ -55,7 +55,7 @@ export function dual_mul(a: Dual, b: Dual) -> Dual {
     }
 }
 
-# Division (quotient rule)
+# Dual divide via quotient rule: a/b with derivative (a'b - ab')/b².
 export function dual_div(a: Dual, b: Dual) -> Dual {
     let b_sq: f32 = b.val * b.val
     return Dual { 
@@ -64,7 +64,7 @@ export function dual_div(a: Dual, b: Dual) -> Dual {
     }
 }
 
-# Power (x^n where n is constant)
+# Dual power x^n for constant n: derivative n x^{n-1} x'.
 export function dual_pow(x: Dual, n: f32) -> Dual {
     let val_pow: f32 = pow(x.val, n)
     return Dual {
@@ -73,7 +73,7 @@ export function dual_pow(x: Dual, n: f32) -> Dual {
     }
 }
 
-# Square
+# Dual square x² with derivative 2x x'.
 export function dual_sq(x: Dual) -> Dual {
     return Dual {
         val: x.val * x.val,
@@ -81,7 +81,7 @@ export function dual_sq(x: Dual) -> Dual {
     }
 }
 
-# Square root
+# Dual square root √x; domain x.val > 0.
 export function dual_sqrt(x: Dual) -> Dual {
     let s: f32 = sqrt(x.val)
     return Dual {
@@ -90,7 +90,7 @@ export function dual_sqrt(x: Dual) -> Dual {
     }
 }
 
-# Exponential
+# Dual exponential e^x with derivative e^x x'.
 export function dual_exp(x: Dual) -> Dual {
     let e: f32 = exp(x.val)
     return Dual {
@@ -99,7 +99,7 @@ export function dual_exp(x: Dual) -> Dual {
     }
 }
 
-# Natural log
+# Dual natural log ln(x); domain x.val > 0.
 export function dual_log(x: Dual) -> Dual {
     return Dual {
         val: log(x.val),
@@ -107,7 +107,7 @@ export function dual_log(x: Dual) -> Dual {
     }
 }
 
-# Sine
+# Dual sine (radians): (sin x, cos(x) x').
 export function dual_sin(x: Dual) -> Dual {
     return Dual {
         val: sin(x.val),
@@ -115,7 +115,7 @@ export function dual_sin(x: Dual) -> Dual {
     }
 }
 
-# Cosine
+# Dual cosine (radians): (cos x, -sin(x) x').
 export function dual_cos(x: Dual) -> Dual {
     return Dual {
         val: cos(x.val),
@@ -123,7 +123,7 @@ export function dual_cos(x: Dual) -> Dual {
     }
 }
 
-# Tangent
+# Dual tangent (radians): derivative x' / cos²(x).
 export function dual_tan(x: Dual) -> Dual {
     let c: f32 = cos(x.val)
     return Dual {
@@ -132,7 +132,7 @@ export function dual_tan(x: Dual) -> Dual {
     }
 }
 
-# ReLU (rectified linear unit) - common in ML
+# Dual ReLU: max(0,x); gradient is 0 for x <= 0.
 export function dual_relu(x: Dual) -> Dual {
     if x.val > 0.0 {
         return x
@@ -141,7 +141,7 @@ export function dual_relu(x: Dual) -> Dual {
     }
 }
 
-# Sigmoid
+# Dual sigmoid σ(x)=1/(1+e^{-x}); derivative σ(1-σ)x'.
 export function dual_sigmoid(x: Dual) -> Dual {
     let s: f32 = 1.0 / (1.0 + exp(-1.0 * x.val))
     return Dual {
@@ -150,7 +150,7 @@ export function dual_sigmoid(x: Dual) -> Dual {
     }
 }
 
-# Tanh
+# Dual tanh; derivative (1 - tanh²x) x'.
 export function dual_tanh(x: Dual) -> Dual {
     let t: f32 = tanh(x.val)
     return Dual {
@@ -190,8 +190,8 @@ struct Tracked {
 # HELPER: Numerical gradient check
 # =============================================================================
 
-# Compute numerical gradient using finite differences
-# Useful for testing autodiff implementations
+# Central finite-difference gradient: (f+ - f-) / (2ε).
+# Useful for checking autodiff implementations.
 export function numerical_grad(f_plus: f32, f_minus: f32, epsilon: f32) -> f32 {
     return (f_plus - f_minus) / (2.0 * epsilon)
 }
@@ -201,10 +201,12 @@ export function numerical_grad(f_plus: f32, f_minus: f32, epsilon: f32) -> f32 {
 # HELPER: Extract value and gradient from dual
 # =============================================================================
 
+# Extract primal value from a Dual.
 export function dual_val(d: Dual) -> f32 {
     return d.val
 }
 
+# Extract forward-mode derivative (tangent) from a Dual.
 export function dual_grad(d: Dual) -> f32 {
     return d.grad
 }
@@ -213,12 +215,12 @@ export function dual_grad(d: Dual) -> f32 {
 # SHORT ALIASES - Less typing!
 # =============================================================================
 
-# Short alias: create dual variable (derivative = 1)
+# Alias for dual_var: Dual(x, 1).
 export function dx(x: f32) -> Dual {
     return Dual { val: x, grad: 1.0 }
 }
 
-# Short alias: create dual constant (derivative = 0)  
+# Alias for dual_const: Dual(x, 0).
 export function d(x: f32) -> Dual {
     return Dual { val: x, grad: 0.0 }
 }
@@ -231,69 +233,69 @@ export function d(x: f32) -> Dual {
 
 # --- add: Addition ---
 
-# add(Dual, Dual) -> Dual
+# Overloaded Dual+Dual addition with forward gradients.
 export function add(a: Dual, b: Dual) -> Dual {
     return Dual { val: a.val + b.val, grad: a.grad + b.grad }
 }
 
-# add(Dual, f32) -> Dual
+# Add Dual and scalar constant.
 export function add(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val + b, grad: a.grad }
 }
 
-# add(f32, Dual) -> Dual
+# Add scalar constant and Dual.
 export function add(a: f32, b: Dual) -> Dual {
     return Dual { val: a + b.val, grad: b.grad }
 }
 
 # --- sub: Subtraction ---
 
-# sub(Dual, Dual) -> Dual
+# Overloaded Dual−Dual subtraction with forward gradients.
 export function sub(a: Dual, b: Dual) -> Dual {
     return Dual { val: a.val - b.val, grad: a.grad - b.grad }
 }
 
-# sub(Dual, f32) -> Dual
+# Subtract scalar from Dual.
 export function sub(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val - b, grad: a.grad }
 }
 
-# sub(f32, Dual) -> Dual
+# Subtract Dual from scalar (gradient negated).
 export function sub(a: f32, b: Dual) -> Dual {
     return Dual { val: a - b.val, grad: -b.grad }
 }
 
 # --- mul: Multiplication ---
 
-# mul(Dual, Dual) -> Dual (product rule)
+# Overloaded Dual×Dual multiply (product rule).
 export function mul(a: Dual, b: Dual) -> Dual {
     return Dual { val: a.val * b.val, grad: a.grad * b.val + a.val * b.grad }
 }
 
-# mul(Dual, f32) -> Dual
+# Scale Dual by scalar.
 export function mul(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val * b, grad: a.grad * b }
 }
 
-# mul(f32, Dual) -> Dual
+# Scale Dual by scalar (left multiply).
 export function mul(a: f32, b: Dual) -> Dual {
     return Dual { val: a * b.val, grad: a * b.grad }
 }
 
 # --- div: Division ---
 
-# div(Dual, Dual) -> Dual (quotient rule)
+# Dual÷Dual division (quotient rule); named ddiv to avoid C div.
 export function ddiv(a: Dual, b: Dual) -> Dual {
     let b_sq: f32 = b.val * b.val
     return Dual { val: a.val / b.val, grad: (a.grad * b.val - a.val * b.grad) / b_sq }
 }
 
-# div(Dual, f32) -> Dual - named 'divs' to avoid C stdlib conflict with div()
+# Divide Dual by scalar; named divs to avoid C div conflict.
 export function divs(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val / b, grad: a.grad / b }
 }
 
-# div(f32, Dual) -> Dual
+# Divide scalar by Dual (reciprocal-style quotient rule).
 export function rdiv(a: f32, b: Dual) -> Dual {
     let b_sq: f32 = b.val * b.val
     return Dual { val: a / b.val, grad: -a * b.grad / b_sq }
@@ -301,18 +303,25 @@ export function rdiv(a: f32, b: Dual) -> Dual {
 
 # --- Legacy aliases (for backwards compatibility) ---
 
+# Legacy alias: scalar + Dual.
 export function addc(a: f32, b: Dual) -> Dual { return add(a, b) }
+# Legacy alias: scalar − Dual.
 export function rsub(a: f32, b: Dual) -> Dual { return sub(a, b) }
+# Legacy alias: scalar × Dual.
 export function smul(a: f32, b: Dual) -> Dual { return mul(a, b) }
+# Scale Dual by scalar (alias of mul).
 export function scale(a: f32, b: Dual) -> Dual { return mul(a, b) }
 
 # --- Pure scalar versions (for convenience in expressions) ---
 
+# Scalar addition (overload for mixed Dual expressions).
 export function add(a: f32, b: f32) -> f32 { return a + b }
+# Scalar subtraction overload.
 export function sub(a: f32, b: f32) -> f32 { return a - b }
+# Scalar multiplication overload.
 export function mul(a: f32, b: f32) -> f32 { return a * b }
 
-# Negate
+# Negate Dual value and gradient.
 export function neg(a: Dual) -> Dual {
     return Dual { val: -a.val, grad: -a.grad }
 }
@@ -322,37 +331,37 @@ export function neg(a: Dual) -> Dual {
 # =============================================================================
 # Note: These delegate to dual_* versions to avoid shadowing C math functions
 
-# Sigmoid (short alias)
+# Short alias for dual_sigmoid.
 export function sigmoid(x: Dual) -> Dual {
     return dual_sigmoid(x)
 }
 
-# Natural log (short alias) 
+# Short alias for dual_log (natural logarithm).
 export function ln(x: Dual) -> Dual {
     return dual_log(x)
 }
 
-# Alias: log = ln for those who prefer log()
+# Alias of ln / dual_log on Dual.
 export function log(x: Dual) -> Dual {
     return dual_log(x)
 }
 
-# Exponential (short alias)
+# Short alias for dual_exp.
 export function e(x: Dual) -> Dual {
     return dual_exp(x)
 }
 
-# Sine (short alias) - use dual_sin for Duals
+# Dual sine alias (avoids shadowing C sin).
 export function sinD(x: Dual) -> Dual {
     return dual_sin(x)
 }
 
-# Cosine (short alias) - use dual_cos for Duals  
+# Dual cosine alias (avoids shadowing C cos).
 export function cosD(x: Dual) -> Dual {
     return dual_cos(x)
 }
 
-# Tanh (short alias) - use dual_tanh for Duals
+# Dual tanh alias (avoids shadowing C tanh).
 export function tanhD(x: Dual) -> Dual {
     return dual_tanh(x)
 }
@@ -361,36 +370,36 @@ export function tanhD(x: Dual) -> Dual {
 # COMBINED OPERATIONS - Common patterns in one call
 # =============================================================================
 
-# Square: x²
+# Dual square x².
 export function sq(x: Dual) -> Dual {
     return Dual { val: x.val * x.val, grad: 2.0 * x.val * x.grad }
 }
 
-# Cube: x³  
+# Dual cube x³.
 export function cube(x: Dual) -> Dual {
     let x2: f32 = x.val * x.val
     return Dual { val: x2 * x.val, grad: 3.0 * x2 * x.grad }
 }
 
-# Fourth power: x⁴
+# Dual fourth power x⁴.
 export function pow4(x: Dual) -> Dual {
     let x2: f32 = x.val * x.val
     let x3: f32 = x2 * x.val
     return Dual { val: x2 * x2, grad: 4.0 * x3 * x.grad }
 }
 
-# (x - c)² for a constant c
+# Squared residual (x − c)² for constant c.
 export function sq_diff(x: Dual, c: f32) -> Dual {
     let diff: f32 = x.val - c
     return Dual { val: diff * diff, grad: 2.0 * diff * x.grad }
 }
 
-# a*x + b (linear)
+# Affine map a*x + b on Dual.
 export function linear(x: Dual, a: f32, b: f32) -> Dual {
     return Dual { val: a * x.val + b, grad: a * x.grad }
 }
 
-# a*x² + b*x + c (quadratic)
+# Quadratic a*x² + b*x + c on Dual.
 export function quadratic(x: Dual, a: f32, b: f32, c: f32) -> Dual {
     let x2: f32 = x.val * x.val
     return Dual { 
@@ -399,7 +408,7 @@ export function quadratic(x: Dual, a: f32, b: f32, c: f32) -> Dual {
     }
 }
 
-# sin(a*x) where a is constant
+# Dual sin(a*x) for constant scale a.
 export function sin_scaled(x: Dual, a: f32) -> Dual {
     return Dual {
         val: sin(a * x.val),
@@ -407,7 +416,7 @@ export function sin_scaled(x: Dual, a: f32) -> Dual {
     }
 }
 
-# cos(a*x) where a is constant
+# Dual cos(a*x) for constant scale a.
 export function cos_scaled(x: Dual, a: f32) -> Dual {
     return Dual {
         val: cos(a * x.val),
@@ -415,7 +424,7 @@ export function cos_scaled(x: Dual, a: f32) -> Dual {
     }
 }
 
-# exp(a*x) where a is constant
+# Dual exp(a*x) for constant scale a.
 export function exp_scaled(x: Dual, a: f32) -> Dual {
     let e: f32 = exp(a * x.val)
     return Dual { val: e, grad: a * e * x.grad }
@@ -425,17 +434,17 @@ export function exp_scaled(x: Dual, a: f32) -> Dual {
 # CHAIN HELPERS - Common compositions
 # =============================================================================
 
-# f + g
+# Chain helper: Dual sum f + g.
 export function chain_add(f: Dual, g: Dual) -> Dual {
     return dual_add(f, g)
 }
 
-# f * g
+# Chain helper: Dual product f * g.
 export function chain_mul(f: Dual, g: Dual) -> Dual {
     return dual_mul(f, g)
 }
 
-# a*f + b*g (weighted sum)
+# Weighted Dual sum: a*f + b*g.
 export function weighted_sum(f: Dual, a: f32, g: Dual, b: f32) -> Dual {
     return Dual {
         val: a * f.val + b * g.val,
@@ -443,7 +452,7 @@ export function weighted_sum(f: Dual, a: f32, g: Dual, b: f32) -> Dual {
     }
 }
 
-# Sum of three terms
+# Sum of three Dual values (and their gradients).
 export function sum3(a: Dual, b: Dual, c: Dual) -> Dual {
     return Dual {
         val: a.val + b.val + c.val,

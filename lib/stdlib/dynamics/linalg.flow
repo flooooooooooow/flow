@@ -12,6 +12,7 @@ struct Matrix {
     cols: i32
 }
 
+# Zero-fill buffer and wrap as rows×cols Matrix.
 function matrix_zeros(data: ptr<f64>, rows: i32, cols: i32) -> Matrix {
     let size: i32 = rows * cols
     for i in 0 to size {
@@ -20,6 +21,7 @@ function matrix_zeros(data: ptr<f64>, rows: i32, cols: i32) -> Matrix {
     return Matrix { data: data, rows: rows, cols: cols }
 }
 
+# Write n×n identity into buffer and wrap as Matrix.
 function matrix_identity(data: ptr<f64>, n: i32) -> Matrix {
     for i in 0 to n * n {
         data[i] = 0.0
@@ -30,14 +32,17 @@ function matrix_identity(data: ptr<f64>, n: i32) -> Matrix {
     return Matrix { data: data, rows: n, cols: n }
 }
 
+# Read m[i, j] (row-major).
 function matrix_get(m: Matrix, i: i32, j: i32) -> f64 {
     return m.data[i * m.cols + j]
 }
 
+# Write m[i, j] = val (row-major).
 function matrix_set(m: Matrix, i: i32, j: i32, val: f64) -> void {
     m.data[i * m.cols + j] = val
 }
 
+# Copy all elements from src into dst (same shape).
 function matrix_copy(src: Matrix, dst: Matrix) -> void {
     let n: i32 = src.rows * src.cols
     for i in 0 to n {
@@ -45,6 +50,7 @@ function matrix_copy(src: Matrix, dst: Matrix) -> void {
     }
 }
 
+# Element-wise matrix sum into result.
 function matrix_add(a: Matrix, b: Matrix, result: Matrix) -> void {
     for i in 0 to a.rows {
         for j in 0 to a.cols {
@@ -53,6 +59,7 @@ function matrix_add(a: Matrix, b: Matrix, result: Matrix) -> void {
     }
 }
 
+# Element-wise matrix difference into result.
 function matrix_sub(a: Matrix, b: Matrix, result: Matrix) -> void {
     for i in 0 to a.rows {
         for j in 0 to a.cols {
@@ -61,6 +68,7 @@ function matrix_sub(a: Matrix, b: Matrix, result: Matrix) -> void {
     }
 }
 
+# Scale matrix by scalar into result.
 function matrix_scale(a: Matrix, scalar: f64, result: Matrix) -> void {
     for i in 0 to a.rows {
         for j in 0 to a.cols {
@@ -69,6 +77,7 @@ function matrix_scale(a: Matrix, scalar: f64, result: Matrix) -> void {
     }
 }
 
+# Dense matrix product result = A @ B.
 function matrix_mul(a: Matrix, b: Matrix, result: Matrix) -> void {
     let M: i32 = a.rows
     let K: i32 = a.cols
@@ -84,6 +93,7 @@ function matrix_mul(a: Matrix, b: Matrix, result: Matrix) -> void {
     }
 }
 
+# Transpose A into result.
 function matrix_transpose(a: Matrix, result: Matrix) -> void {
     for i in 0 to a.rows {
         for j in 0 to a.cols {
@@ -92,6 +102,7 @@ function matrix_transpose(a: Matrix, result: Matrix) -> void {
     }
 }
 
+# Trace: sum of diagonal entries.
 function matrix_trace(m: Matrix) -> f64 {
     let mut dim: i32 = m.rows
     if m.cols < dim {
@@ -104,6 +115,7 @@ function matrix_trace(m: Matrix) -> f64 {
     return sum
 }
 
+# Matrix-vector product y = M x.
 function matvec(m: Matrix, x: ptr<f64>, y: ptr<f64>) -> void {
     for i in 0 to m.rows {
         let mut sum: f64 = 0.0
@@ -114,24 +126,28 @@ function matvec(m: Matrix, x: ptr<f64>, y: ptr<f64>) -> void {
     }
 }
 
+# Copy length-n vector src → dst.
 function vec_copy(src: ptr<f64>, dst: ptr<f64>, n: i32) -> void {
     for i in 0 to n {
         dst[i] = src[i]
     }
 }
 
+# In-place scale: x = s * x.
 function vec_scale(x: ptr<f64>, n: i32, s: f64) -> void {
     for i in 0 to n {
         x[i] = x[i] * s
     }
 }
 
+# Element-wise vector sum out = a + b.
 function vec_add(a: ptr<f64>, b: ptr<f64>, n: i32, out: ptr<f64>) -> void {
     for i in 0 to n {
         out[i] = a[i] + b[i]
     }
 }
 
+# Dot product of length-n vectors.
 function vec_dot(a: ptr<f64>, b: ptr<f64>, n: i32) -> f64 {
     let mut sum: f64 = 0.0
     for i in 0 to n {
@@ -140,6 +156,7 @@ function vec_dot(a: ptr<f64>, b: ptr<f64>, n: i32) -> f64 {
     return sum
 }
 
+# Euclidean 2-norm ||x||_2.
 function vec_norm(x: ptr<f64>, n: i32) -> f64 {
     return sqrt(vec_dot(x, x, n))
 }

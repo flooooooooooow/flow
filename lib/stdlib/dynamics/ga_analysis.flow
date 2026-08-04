@@ -27,7 +27,7 @@ struct GAAnalysisReport {
     stable_closed_loop: i32
 }
 
-# Closed loop x+ = (A - B K) x  for u = -K x,  B is n×1, K = [k1, k2]
+# Closed-loop discrete plant A−BK for state feedback u = −Kx.
 function ga_closed_loop_matrix(
     sys: DynamicalSystem,
     k1: f64,
@@ -50,6 +50,7 @@ function ga_closed_loop_matrix(
     return dsys_discrete(n, 0, sys.p, sys.dt, Acl, zero_b, sys.C)
 }
 
+# Spectral radius of a 2×2 matrix (max |eigenvalue|).
 function matrix_spectral_radius_2x2(m: Matrix) -> f64 {
     let tr: f64 = matrix_get(m, 0, 0) + matrix_get(m, 1, 1)
     let det: f64 = matrix_get(m, 0, 0) * matrix_get(m, 1, 1) - matrix_get(m, 0, 1) * matrix_get(m, 1, 0)
@@ -70,6 +71,7 @@ function matrix_spectral_radius_2x2(m: Matrix) -> f64 {
     return a2
 }
 
+# Evolve GA gains while recording per-generation best cost history.
 function ga_evolve_traced(
     sys: DynamicalSystem,
     steps: i32,
@@ -117,6 +119,7 @@ function ga_evolve_traced(
     return fit_pop[best_i]
 }
 
+# Sum of squared state energy over a closed-loop free response.
 function ga_closed_loop_energy(closed: DynamicalSystem, steps: i32) -> f64 {
     let n: i32 = closed.n
     let x: array<f64, 8> = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -131,6 +134,7 @@ function ga_closed_loop_energy(closed: DynamicalSystem, steps: i32) -> f64 {
     return energy
 }
 
+# Generations until cost is within tol of the final best.
 function ga_fitness_convergence_gen(cost_history: ptr<f64>, generations: i32, tol: f64) -> i32 {
     if generations < 2 {
         return 0
@@ -147,6 +151,7 @@ function ga_fitness_convergence_gen(cost_history: ptr<f64>, generations: i32, to
     return generations
 }
 
+# Unified plant/closed-loop/GA report: controllability, Gramians, fitness.
 function ga_analyze_control_search(
     plant: DynamicalSystem,
     steps: i32,
