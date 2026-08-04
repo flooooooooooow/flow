@@ -60,6 +60,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 | Fuzz parse crashes (array size / nesting) | ✅ | Depth limit + `parse_array_size()` — see `tests/fuzz/test_crash_regressions.py` |
 | Declarative ordering Phase 1 | ✅ | `xs \|\> sort` / `sortBy [asc .f, …]` — [docs/language/ordering.md](docs/language/ordering.md); example `examples/basics/declarative_sort.flow` |
 | First-class GPU / unified memory | ✅ | `lib/stdlib/gpu_memory.flow` + Metal runtime — [docs/library/gpu-memory.md](docs/library/gpu-memory.md) |
+| Fill-shader surface language | ✅ | `shader fill` → Metal fragment + `./flow shader` — [docs/language/shaders.md](docs/language/shaders.md) |
 
 ### 📅 Short Term (This Month)
 
