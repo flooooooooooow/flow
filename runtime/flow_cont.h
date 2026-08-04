@@ -35,6 +35,9 @@ void flow_cont_arm_resume(int32_t value); /* → lib/runtime/cont.flow */
 int32_t flow_rt_cont_demo(void);
 /* reset → shift(7) → resume(100); returns 100 on success. */
 int32_t flow_rt_cont_reset_demo(void);
+/* Multi-shot: resume same k with 10 then 20; returns 30 on success. */
+int32_t flow_rt_cont_multishot_demo(void);
+void *flow_cont_resume_multi(flow_cont *k, void *value);
 
 #ifdef __cplusplus
 }

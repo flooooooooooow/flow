@@ -37,7 +37,7 @@ Strategy: [docs/language/replace-go.md](../../docs/language/replace-go.md)
   **not** yet a Flow stdlib API — pthread `channel_i32_*` is the public surface.
 - HTTP routed server: `/`, `/api`, `/health`, 404 + `X-Request-Id` middleware
   (`examples/concurrency/http_middleware.flow`).
-- HTTPS accept-loop (OpenSSL, self-signed): `examples/concurrency/http_tls.flow`.
+- HTTPS accept-loop (OpenSSL PEM + ALPN http/1.1): `examples/concurrency/http_tls.flow`.
 
 ## Runtime features (Go replacement)
 
