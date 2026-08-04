@@ -1,6 +1,8 @@
 # What's Next for Flow
 
-> Strategic priorities after the v0.7.0 security audit (Feb 2026)
+> Strategic priorities after the v0.7.0 security audit (Feb 2026).
+>
+> **Which doc?** [`ROADMAP.md`](../ROADMAP.md) = full feature backlog · this file = near-term product focus · [`wiki-roadmap.md`](wiki-roadmap.md) = docs/wiki delivery.
 
 ## Current State Assessment
 
@@ -23,17 +25,16 @@
 - Targeted fuzzing harness (`tests/fuzz/`) runs in CI
 - LSP: inline diagnostics, find references, rename (39-test scripted harness)
 - Compile status of all examples tracked honestly in `../examples/STATUS.md`
-  (891/1170 compile, 76.2%)
+  (986/1193 compile, 82.6% as of 2026-08-04)
 
 **What Needs Work:**
-- 2 known parser crashes from fuzzing (xfail regressions): `ValueError` in
-  `parse_type` on float array sizes, `RecursionError` on ~70 nested parens
-- 8 remaining C-codegen failures listed in `../examples/STATUS.md`
-- MLIR backend not yet validated against the new postfix-chain AST shapes
+- Remaining failures are mostly under `examples/verify/` (flow-verify ahead of
+  the parser) — see [flow-verify-parser-status.md](third-party/flow-verify-parser-status.md)
 - Older `capability EffectName`-style effects examples transpile but don't link
   (see [effects-showcase.md](effects-showcase.md))
-- Benchmark results not yet published
-- Graphics is macOS-only
+- Graphics: Linux/Windows SDL2 shipped; Windows full-window CI smoke still open
+- Delimited continuations / N-way `select` / fiber-aware netpoll still open
+  (see [concurrency-vs-go.md](language/concurrency-vs-go.md))
 
 ---
 

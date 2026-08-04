@@ -43,3 +43,11 @@ def test_flow_gpu_codegen_vector_add_tutorial():
     _cleanup(["vec_add_gpu*.metal", "vec_add_gpu*_host.m"])
     _run_flow_gpu(ROOT / "examples" / "gpu" / "flow_gpu_vector_add.flow")
     assert (BUILD_GPU / "vec_add_gpu.metal").exists()
+
+
+def test_flow_gpu_codegen_gradients():
+    _cleanup(["gpu_mse_grad*.metal", "gpu_relu_grad*.metal", "gpu_sigmoid_grad*.metal", "gpu_scale_grad*.metal"])
+    _run_flow_gpu(ROOT / "lib" / "stdlib" / "gpu_gradients.flow")
+    assert (BUILD_GPU / "gpu_mse_grad.metal").exists()
+    assert (BUILD_GPU / "gpu_relu_grad.metal").exists()
+    assert (BUILD_GPU / "gpu_sigmoid_grad.metal").exists()

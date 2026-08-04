@@ -1,0 +1,15 @@
+[package]
+name = "compress"
+version = "0.1.0"
+description = "zlib wrap for deflate/inflate (compress/uncompress)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]
+
+[native]
+sources = ["native/flow_compress.c"]
+libs = ["z"]

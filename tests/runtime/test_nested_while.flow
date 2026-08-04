@@ -1,0 +1,18 @@
+# Compiler-suite runtime: nested while counters
+
+function main() -> i32 {
+    let mut outer: i32 = 0
+    let mut s: i32 = 0
+    while outer < 3 {
+        let mut inner: i32 = 0
+        while inner < 4 {
+            s = s + 1
+            inner = inner + 1
+        }
+        outer = outer + 1
+    }
+    if s != 12 {
+        return 1
+    }
+    return 0
+}

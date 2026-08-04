@@ -1,0 +1,36 @@
+# image package demo — decode embedded PNG (+ PPM), print width*height
+import image.lib {
+    image_alloc, image_free,
+    image_decode_embedded_png, image_decode_embedded_ppm,
+    image_load_test_pattern, FlowImage
+}
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+}
+
+function main() -> i32 {
+    let buf: ptr<i8> = image_alloc(64)
+
+    let png: FlowImage = image_decode_embedded_png(buf, 64)
+    let png_pixels: i64 = (png.width * png.height) as i64
+    printf("png_ok=%lld\n", png.ok as i64)
+    printf("png_width=%lld\n", png.width as i64)
+    printf("png_height=%lld\n", png.height as i64)
+    printf("png_pixels=%lld\n", png_pixels)
+
+    let ppm: FlowImage = image_decode_embedded_ppm(buf, 64)
+    let ppm_pixels: i64 = (ppm.width * ppm.height) as i64
+    printf("ppm_ok=%lld\n", ppm.ok as i64)
+    printf("ppm_pixels=%lld\n", ppm_pixels)
+
+    let pat: FlowImage = image_load_test_pattern(buf, 64)
+    printf("pattern_ok=%lld\n", pat.ok as i64)
+    printf("pattern_pixels=%lld\n", (pat.width * pat.height) as i64)
+
+    image_free(buf)
+    if png.ok == 1 and png_pixels == 4 and ppm.ok == 1 and ppm_pixels == 4 and pat.ok == 1 {
+        return 0
+    }
+    return 1
+}

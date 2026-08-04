@@ -1,0 +1,27 @@
+# Flow runtime: concurrency microbenchmark harnesses.
+# Hot channel/sum loops stay in tight C (flow_rt_cchan.c); timing/API in Flow.
+
+extern {
+    function flow_rt_monotonic_ns() -> i64
+    function flow_rt_bench_chan_pingpong_body(n: i32, buf: i32, t0_ns: i64) -> i64
+    function flow_rt_bench_parallel_sum_body(n: i32) -> i64
+}
+
+@flow_api
+export function flow_bench_chan_pingpong_ns(n: i32, buf: i32) -> i64 {
+    if n <= 0 {
+        return 0
+    }
+    let t0: i64 = flow_rt_monotonic_ns()
+    let rc: i64 = flow_rt_bench_chan_pingpong_body(n, buf, t0)
+    if rc < 0 {
+        return -1
+    }
+    let t1: i64 = flow_rt_monotonic_ns()
+    return t1 - t0
+}
+
+@flow_api
+export function flow_bench_parallel_sum(n: i32) -> i64 {
+    return flow_rt_bench_parallel_sum_body(n)
+}

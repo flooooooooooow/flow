@@ -84,9 +84,12 @@ class TestStructIRShape:
         assert "llvm.mlir.undef : !llvm.struct<(f64, f64)>" in mlir
         assert "llvm.insertvalue" in mlir
 
-    def test_field_access_emits_extractvalue(self):
+    def test_field_access_emits_load_or_extract(self):
+        """Field reads may use extractvalue (by-value) or GEP+load (addressable)."""
         mlir = _generate(STRUCT_LITERAL_PROGRAM)
-        assert "llvm.extractvalue" in mlir
+        assert "llvm.extractvalue" in mlir or (
+            "llvm.getelementptr" in mlir and "llvm.load" in mlir
+        )
 
     def test_field_add_uses_float_arith(self):
         """p.x + p.y on f64 fields must lower to addf, never addi."""

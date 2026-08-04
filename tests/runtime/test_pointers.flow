@@ -1,0 +1,17 @@
+# Compiler-suite runtime: address-of + pointer field / load
+
+struct Cell { value: i32 }
+
+function bump(c: ptr<Cell>) -> void {
+    c[0].value = c[0].value + 1
+}
+
+function main() -> i32 {
+    let mut cell: Cell = Cell { value: 41 }
+    bump(&cell)
+    if cell.value != 42 { return 1 }
+
+    let p: ptr<Cell> = &cell
+    if p[0].value != 42 { return 2 }
+    return 0
+}

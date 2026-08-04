@@ -11,8 +11,8 @@ function factorial(n: i32) -> i32 {
 
 # Unbounded while loop
 function count_up(limit: i32) -> i32 {
-    let counter: i32 = 0
-    let sum: i32 = 0
+    let mut counter: i32 = 0
+    let mut sum: i32 = 0
     
     while counter < limit {
         sum = sum + counter
@@ -33,8 +33,8 @@ function absolute_value(x: i32) -> i32 {
 
 # State machine
 function flip_flop(initial_state: i32, steps: i32) -> i32 {
-    let state: i32 = initial_state
-    let current_step: i32 = 0
+    let mut state: i32 = initial_state
+    let mut current_step: i32 = 0
     
     while current_step < steps {
         if state == 0 {

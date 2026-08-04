@@ -140,7 +140,7 @@ export function distortion_process(dist: Distortion, input: f32) -> f32 {
     let toned: f32 = clipped * dist.tone + clipped * 0.5 * (1.0 - dist.tone)
 
     # Mix
-    let output: f32 = input * (1.0 - dist.mix) + toned * dist.mix
+    let mut output: f32 = input * (1.0 - dist.mix) + toned * dist.mix
 
     return output
 }
@@ -289,7 +289,7 @@ export function compressor_process(comp: Compressor, input: f32) -> f32 {
     }
 
     # Apply gain reduction
-    let output: f32 = input * new_gain
+    let mut output: f32 = input * new_gain
 
     return output
 }

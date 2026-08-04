@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -1420,8 +1421,13 @@ def _build_tier_index(theorems: List[TheoremDoc]) -> Dict[str, str]:
     return {thm.claim_path: thm.meta.tier for thm in theorems if thm.meta.tier}
 
 
+@lru_cache(maxsize=1)
 def _global_tier_index() -> Dict[str, str]:
-    """Cross-file tiers so assumes respect definitional vs derived boundaries."""
+    """Cross-file tiers so assumes respect definitional vs derived boundaries.
+
+    Cached: render paths call this once per theorem; rescanning the verify
+    corpus each time made unit tests hang under a 30s timeout.
+    """
     try:
         from flow.know import _default_search_roots, scan_claim_index
 
@@ -1437,7 +1443,8 @@ def _global_tier_index() -> Dict[str, str]:
 
 
 def _merged_tier_index(doc: ModuleDoc) -> Dict[str, str]:
-    merged = _global_tier_index()
+    # Copy: `_global_tier_index` is cached and must not be mutated in place.
+    merged = dict(_global_tier_index())
     merged.update(_build_tier_index(doc.theorems))
     return merged
 

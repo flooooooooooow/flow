@@ -80,7 +80,7 @@ require_flow_file() {
 
 # Show help
 show_help() {
-    echo "FLOW Programming Language v0.1"
+    echo "FLOW Programming Language v0.3.3"
     echo ""
     echo "Usage: flow [OPTIONS] <program.flow>"
     echo ""
@@ -89,7 +89,7 @@ show_help() {
     echo "  compile <program>  Compile program only"
     echo "  audio <program> [--mlir]   Compile and run with audio backend"
     echo "  compile-audio <program> [--mlir]  Compile with audio backend"
-    echo "  debug <program>   Compile with debug symbols and open debugger"
+    echo "  debug <program> [--break N|--break main] [--no-launch]  Debug build (+ optional LLDB/GDB)"
     echo "  window <program>  Run with SDL2 window backend"
     echo "  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)"
     echo "  shader <program>  Run fill-shader demo (Metal window on macOS; see docs/language/shaders.md)"
@@ -134,22 +134,31 @@ show_help() {
     echo "  test-matmul       Run matmul optimization demo + print assembly"
     echo "  test-all          Run FLOW + Python tests"
     echo ""
-    echo "Project:"
-    echo "  python <program>  Generate Python package (wheel)"
-    echo "                    --name      Module name (default: filename)"
-    echo "                    --version   Package version (default: 0.1.0)"
-    echo "                    --source    Generate source only (no wheel)"
-    echo "  wasm <program>    Compile to WebAssembly"
-    echo "  install           Install dependencies"
-    echo "  repl              Start interactive REPL"
-    echo "  init [name]       Initialize a new project"
-    echo "  add <package>     Add a dependency"
+    echo "Project / packages:"
+    echo "  init [name]       Initialize a new project (flow.toml)"
+    echo "  add <package>     Add dependency (name, name@^1.0, --git, --path)"
+    echo "  pkg install       Install flow.toml dependencies → flow_packages/"
+    echo "  search [query]    Search the Flow package registry"
+    echo "  info <package>    Show package versions / source"
+    echo "  publish           Register package in local registry/index.json"
     echo "  build             Build the project"
     echo "  build-native      Build with native sources (uses flow.toml)"
     echo "  run-native        Build and run with native sources"
     echo "  clean             Clean build artifacts"
+    echo "  install           Install project deps if flow.toml exists; else LLVM tools"
+    echo "  setup             Install LLVM / compiler tooling"
+    echo "  python <program>  Generate Python package (wheel)"
+    echo "  wasm <program>    Compile to WebAssembly"
+    echo "  repl              Start interactive REPL"
     echo "  examples          List example programs"
+    echo "  playground        Start native-local compile API + open playground docs"
+    echo "  dap <file>        Debug Adapter (IDE) / opens flow debug on TTY"
+    echo "  version           Print Flow version (0.3.3)"
     echo "  help              Show this help"
+    echo ""
+    echo "Environment:"
+    echo "  FLOW_STRICT_EFFECTS=1  Abort on unhandled effect ops (C backend)"
+    echo "                         Also enables compile-time effect-row checks with --strict-effects"
     echo ""
     echo "Examples:"
     echo "  flow run examples/fibonacci.flow"
@@ -192,6 +201,95 @@ check_mlir_deps() {
     fi
 }
 
+# Concurrency runtime + optional OpenMP (parallel for). Sets:
+#   FLOW_CONC_SOURCES, FLOW_CONC_CFLAGS, FLOW_CONC_LDFLAGS (bash arrays)
+flow_concurrency_flags() {
+    FLOW_CONC_SOURCES=(
+        "$SCRIPT_DIR/runtime/flow_concurrency.c"
+        "$SCRIPT_DIR/runtime/flow_fiber.c"
+        "$SCRIPT_DIR/runtime/flow_fctx_init.c"
+        "$SCRIPT_DIR/runtime/flow_netpoll.c"
+        "$SCRIPT_DIR/runtime/flow_netpoll_fiber.c"
+        "$SCRIPT_DIR/runtime/flow_http_bench.c"
+        "$SCRIPT_DIR/runtime/flow_tcp.c"
+        "$SCRIPT_DIR/runtime/flow_race.c"
+        "$SCRIPT_DIR/runtime/flow_cont.c"
+        "$SCRIPT_DIR/runtime/flow_rt_tape_store.c"
+        "$SCRIPT_DIR/runtime/flow_rt_support.c"
+        "$SCRIPT_DIR/runtime/flow_rt_task_store.c"
+        "$SCRIPT_DIR/runtime/flow_rt_fiber_async.c"
+        "$SCRIPT_DIR/runtime/flow_rt_parallel.c"
+        "$SCRIPT_DIR/runtime/flow_rt_cchan.c"
+        "$SCRIPT_DIR/runtime/flow_rt_sysinfo.c"
+        "$SCRIPT_DIR/runtime/flow_rt_crypto.c"
+    )
+    case "$(uname -m)" in
+        arm64|aarch64)
+            FLOW_CONC_SOURCES+=("$SCRIPT_DIR/runtime/flow_fctx_arm64.S")
+            ;;
+        x86_64|amd64)
+            FLOW_CONC_SOURCES+=("$SCRIPT_DIR/runtime/flow_fctx_x86_64.S")
+            ;;
+    esac
+    FLOW_CONC_CFLAGS=("-I$SCRIPT_DIR/runtime")
+    FLOW_CONC_LDFLAGS=("-pthread")
+    # Probe OpenMP once per shell invocation (Apple clang needs libomp).
+    if [ -z "${FLOW_OPENMP_PROBED:-}" ]; then
+        FLOW_OPENMP_PROBED=1
+        FLOW_OPENMP_FLAGS=()
+        local probe="$SCRIPT_DIR/build/.omp_probe.c"
+        mkdir -p "$SCRIPT_DIR/build"
+        printf 'int main(void){return 0;}\n' > "$probe"
+        if clang -fopenmp "$probe" -o "$SCRIPT_DIR/build/.omp_probe" -lomp 2>/dev/null; then
+            FLOW_OPENMP_FLAGS=("-fopenmp" "-lomp")
+        elif clang -fopenmp "$probe" -o "$SCRIPT_DIR/build/.omp_probe" 2>/dev/null; then
+            FLOW_OPENMP_FLAGS=("-fopenmp")
+        elif clang -Xpreprocessor -fopenmp "$probe" -o "$SCRIPT_DIR/build/.omp_probe" -lomp 2>/dev/null; then
+            FLOW_OPENMP_FLAGS=("-Xpreprocessor" "-fopenmp" "-lomp")
+        fi
+        rm -f "$probe" "$SCRIPT_DIR/build/.omp_probe"
+    fi
+    if [ "${#FLOW_OPENMP_FLAGS[@]}" -gt 0 ]; then
+        FLOW_CONC_CFLAGS+=("${FLOW_OPENMP_FLAGS[@]}")
+        FLOW_CONC_LDFLAGS+=("${FLOW_OPENMP_FLAGS[@]}")
+    fi
+}
+
+# Always-linked Flow runtime modules (lib/runtime/*.flow → build/runtime_flow/*.c).
+# Sets FLOW_RUNTIME_FLOW_SOURCES. Skips gpu_memory_stub.flow on Darwin (Metal provides ABI).
+flow_runtime_flow_sources() {
+    FLOW_RUNTIME_FLOW_SOURCES=()
+    local rt_dir="$SCRIPT_DIR/lib/runtime"
+    local out_dir="$SCRIPT_DIR/build/runtime_flow"
+    mkdir -p "$out_dir"
+    if [ ! -d "$rt_dir" ]; then
+        return 0
+    fi
+    local f base out
+    for f in "$rt_dir"/*.flow; do
+        [ -f "$f" ] || continue
+        base=$(basename "$f" .flow)
+        # Platform GPU: Metal on Darwin, Flow stub elsewhere.
+        if [ "$base" = "gpu_memory_stub" ] && [ "$(uname -s)" = "Darwin" ]; then
+            continue
+        fi
+        # Shader host is a standalone CLI binary, not always-linked.
+        if [ "$base" = "shader_host" ]; then
+            continue
+        fi
+        # Real miniaudio backend provides flow_audio_*; skip Flow stub then.
+        if [ "$base" = "audio_device_stub" ] && [ "${FLOW_SKIP_AUDIO_STUB:-}" = "1" ]; then
+            continue
+        fi
+        out="$out_dir/${base}.c"
+        if ! python3 -m "$FLOWC_MODULE" "$f" --c --library --lenient -o "$out" 2>/dev/null; then
+            print_error "Flow runtime module failed: $base.flow"
+            exit 1
+        fi
+        FLOW_RUNTIME_FLOW_SOURCES+=("$out")
+    done
+}
+
 # Compile FLOW to executable
 compile_program() {
     local program="$1"
@@ -221,24 +319,34 @@ compile_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
-    # First-class GPU memory: Metal on Darwin, stub elsewhere.
+    # First-class GPU memory: Metal on Darwin, Flow stub elsewhere.
     local gpu_sources=()
     local gpu_ldflags=()
     if [[ "$(uname -s)" == "Darwin" ]]; then
         gpu_sources+=("$SCRIPT_DIR/runtime/gpu_metal.m")
         gpu_ldflags+=("-framework" "Metal" "-framework" "Foundation")
-    else
-        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_memory_stub.c")
     fi
-    if ! clang "${py_cflags[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
-        "$SCRIPT_DIR/runtime/flow_sys_info.c" \
+    # else: lib/runtime/gpu_memory_stub.flow via flow_runtime_flow_sources
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    # FLOW_CFLAGS overrides (e.g. FLOW_CFLAGS='-O2' for benches)
+    # FLOW_TSAN=1 adds -fsanitize=thread (ThreadSanitizer; slower, finds data races)
+    # shellcheck disable=SC2206
+    local -a flow_cflags_extra=()
+    if [ -n "${FLOW_CFLAGS:-}" ]; then
+        # shellcheck disable=SC2206
+        flow_cflags_extra=(${FLOW_CFLAGS})
+    fi
+    if [ "${FLOW_TSAN:-}" = "1" ]; then
+        flow_cflags_extra+=("-fsanitize=thread" "-g" "-fno-omit-frame-pointer")
+        FLOW_CONC_LDFLAGS+=("-fsanitize=thread")
+    fi
+    if ! clang ${flow_cflags_extra[@]+"${flow_cflags_extra[@]}"} "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
-        "$SCRIPT_DIR/runtime/flow_time.c" \
-        "$SCRIPT_DIR/runtime/live_plugin.c" \
-        "$SCRIPT_DIR/runtime/live_host.c" \
-        "$SCRIPT_DIR/runtime/audio_simd.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
         "${gpu_sources[@]}" \
-        "${py_ldflags[@]}" "${gpu_ldflags[@]}" -o "$build_dir/$basename" 2>/dev/null; then
+        "${py_ldflags[@]}" "${gpu_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
         print_error "C compilation/linking failed"
         exit 1
     fi
@@ -248,8 +356,50 @@ compile_program() {
 }
 
 # Compile with debug symbols and open a debugger (LLDB preferred).
+# Usage: flow debug <program.flow> [--break N|--break main] [--no-launch]
 debug_program() {
-    local program="$1"
+    local program=""
+    local break_spec="main"
+    local no_launch=0
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --break)
+                break_spec="${2:-}"
+                if [ -z "$break_spec" ]; then
+                    print_error "--break requires a line number or 'main'"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            --no-launch|--keep)
+                # --keep retained for compatibility; debug builds always live in build/
+                no_launch=1
+                shift
+                ;;
+            -h|--help)
+                echo "Usage: flow debug <program.flow> [--break N|--break main] [--no-launch]"
+                echo "  --break N     Break at Flow source line N (LLDB/GDB)"
+                echo "  --break main  Break at main (default)"
+                echo "  --no-launch   Build only; print paths and exit"
+                exit 0
+                ;;
+            -*)
+                print_error "Unknown debug option: $1"
+                exit 1
+                ;;
+            *)
+                if [ -z "$program" ]; then
+                    program="$1"
+                else
+                    print_error "Unexpected argument: $1"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
@@ -266,8 +416,8 @@ debug_program() {
     
     print_info "Compiling $program (debug)..."
     
-    # FLOW to C with coarse source mappings (#line) enabled
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c --debug-info --lenient -o "$c_file"; then
+    # FLOW to C with statement-level #line mappings (see --debug-info)
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --debug-info -o "$c_file"; then
         print_error "FLOW compilation failed"
         exit 1
     fi
@@ -283,30 +433,54 @@ debug_program() {
     if [[ "$(uname -s)" == "Darwin" ]]; then
         gpu_sources+=("$SCRIPT_DIR/runtime/gpu_metal.m")
         gpu_ldflags+=("-framework" "Metal" "-framework" "Foundation")
-    else
-        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_memory_stub.c")
     fi
-    if ! clang -g -O0 -fno-omit-frame-pointer "${py_cflags[@]}" -I"$SCRIPT_DIR/runtime" "$c_file" \
-        "$SCRIPT_DIR/runtime/flow_sys_info.c" \
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    # -g3 keeps macro info; -fno-omit-frame-pointer helps backtraces.
+    # Absolute path in #line lets LLDB open the .flow file when stopped.
+    if ! clang -g3 -O0 -fno-omit-frame-pointer "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$c_file" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
-        "$SCRIPT_DIR/runtime/flow_time.c" \
-        "$SCRIPT_DIR/runtime/audio_simd.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
         "${gpu_sources[@]}" \
-        "${py_ldflags[@]}" "${gpu_ldflags[@]}" -o "$exe_file" -lm; then
+        "${py_ldflags[@]}" "${gpu_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$exe_file" -lm; then
         print_error "C compilation/linking failed"
         exit 1
     fi
     print_success "Built debug binary: $exe_file"
+    local abs_program
+    abs_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
+    print_info "Source maps: #line → $abs_program (statement-level)"
+    print_info "C mapping file: $c_file"
+
+    if [ "$no_launch" -eq 1 ]; then
+        print_info "Skipping debugger launch (--no-launch). Run manually:"
+        print_info "  lldb \"$exe_file\""
+        return 0
+    fi
     
-    # Launch debugger
+    # Launch debugger with Flow source path hint
+    local break_cmd=""
+    local gdb_break=""
+    if [ "$break_spec" = "main" ]; then
+        break_cmd="breakpoint set --name main"
+        gdb_break="break main"
+    elif [[ "$break_spec" =~ ^[0-9]+$ ]]; then
+        break_cmd="breakpoint set --file \"$abs_program\" --line $break_spec"
+        gdb_break="break $abs_program:$break_spec"
+    else
+        print_error "--break expects 'main' or a numeric Flow line"
+        exit 1
+    fi
+
     if command -v lldb &> /dev/null; then
-        print_info "Launching LLDB..."
-        print_info "Tip: (lldb) b main ; run ; bt"
-        lldb "$exe_file"
+        print_info "Launching LLDB ($break_spec)..."
+        print_info "Tip: step with 'n'/'s'; 'frame variable'; 'source list'"
+        lldb "$exe_file" -o "settings set target.source-map . \"$(dirname "$abs_program")\"" \
+            -o "$break_cmd" -o "run"
     elif command -v gdb &> /dev/null; then
-        print_info "Launching GDB..."
-        print_info "Tip: (gdb) break main ; run ; bt"
-        gdb "$exe_file"
+        print_info "Launching GDB ($break_spec)..."
+        gdb -ex "$gdb_break" -ex "run" "$exe_file"
     else
         print_warning "No debugger found (lldb/gdb). Install one and run:"
         print_info "  lldb \"$exe_file\""
@@ -319,9 +493,10 @@ run_fill_shader() {
     shift
     local shader_name=""
     local max_frames=0
-    local width=800
-    local height=600
+    local width=1280
+    local height=720
     local emit_only=0
+    local layout="--grid"
     while [ $# -gt 0 ]; do
         case "$1" in
             --name)
@@ -333,10 +508,18 @@ run_fill_shader() {
                 shift 2
                 ;;
             --size)
-                local wh="${2:-800x600}"
+                local wh="${2:-1280x720}"
                 width="${wh%x*}"
                 height="${wh#*x}"
                 shift 2
+                ;;
+            --grid)
+                layout="--grid"
+                shift
+                ;;
+            --cycle)
+                layout="--cycle"
+                shift
                 ;;
             --emit-only)
                 emit_only=1
@@ -378,16 +561,28 @@ PY
         exit 1
     fi
     local shader_exe="$SCRIPT_DIR/build/flow_shader_host"
+    local shader_flow_c="$SCRIPT_DIR/build/runtime_flow/shader_host.c"
+    mkdir -p "$SCRIPT_DIR/build/runtime_flow"
+    if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/runtime/shader_host.flow" \
+        --c --library --lenient -o "$shader_flow_c" 2>/dev/null; then
+        print_error "Failed to transpile shader_host.flow"
+        exit 1
+    fi
     if ! clang -O2 -fobjc-arc -I"$SCRIPT_DIR/runtime" \
         "$SCRIPT_DIR/runtime/shader_host.c" \
+        "$shader_flow_c" \
         "$SCRIPT_DIR/runtime/shader_view_metal.m" \
         -framework Metal -framework Cocoa -framework QuartzCore \
         -o "$shader_exe"; then
         print_error "Failed to build shader host"
         exit 1
     fi
-    print_info "Running shader gallery ${width}x${height} (←/→ or Space to cycle, Esc to quit)..."
-    "$shader_exe" "$metal_path" "$width" "$height" "$max_frames"
+    if [ "$layout" = "--grid" ]; then
+        print_info "Running shader GRID ${width}x${height} (all at once · click cell / G / Esc)..."
+    else
+        print_info "Running shader CYCLE ${width}x${height} (←/→ · G for grid · Esc)..."
+    fi
+    "$shader_exe" "$layout" "$metal_path" "$width" "$height" "$max_frames"
 }
 
 # Run program
@@ -424,7 +619,7 @@ compile_audio_program() {
     local py_ldflags=()
     local audio_cflags=()
     local audio_ldflags=()
-    local audio_sources=("$SCRIPT_DIR/runtime/audio_miniaudio.c" "$SCRIPT_DIR/runtime/audio_simd.c" "$SCRIPT_DIR/runtime/live_plugin.c" "$SCRIPT_DIR/runtime/live_host.c")
+    local audio_sources=("$SCRIPT_DIR/runtime/audio_miniaudio.c")
     
     local use_mlir=0
     if [ "$backend" = "--mlir" ] || [ "${FLOW_AUDIO_BACKEND:-}" = "mlir" ]; then
@@ -451,8 +646,10 @@ compile_audio_program() {
 
     if [ -f "$SCRIPT_DIR/third_party/miniaudio.h" ]; then
         audio_cflags+=("-I$SCRIPT_DIR/third_party" "-DFLOW_AUDIO_BACKEND_MINIAUDIO")
+        FLOW_SKIP_AUDIO_STUB=1
     else
-        print_warning "miniaudio.h not found; building with stub backend (no real-time audio)"
+        print_warning "miniaudio.h not found; building with Flow audio stub (no real-time audio)"
+        audio_sources=()
     fi
 
     case "$(uname -s)" in
@@ -474,12 +671,14 @@ compile_audio_program() {
         flow_input="$build_dir/$basename.ll"
     fi
 
-    if ! clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "$flow_input" \
-        "$SCRIPT_DIR/runtime/flow_sys_info.c" \
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    if ! clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$flow_input" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
-        "$SCRIPT_DIR/runtime/flow_time.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
         "${audio_sources[@]}" \
-        "${py_ldflags[@]}" "${audio_ldflags[@]}" -o "$build_dir/$basename" 2>/dev/null; then
+        "${py_ldflags[@]}" "${audio_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
         print_error "C compilation/linking failed"
         exit 1
     fi
@@ -553,11 +752,13 @@ run_window_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
+    flow_runtime_flow_sources
     # shellcheck disable=SC2086
     if ! clang -O2 -fno-omit-frame-pointer $sdl_cflags "${py_cflags[@]}" "$c_file" \
-        "$SCRIPT_DIR/runtime/flow_sys_info.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
-        "$SCRIPT_DIR/runtime/flow_time.c" \
+        "$SCRIPT_DIR/runtime/flow_rt_support.c" \
+        "$SCRIPT_DIR/runtime/flow_rt_sysinfo.c" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
         "${py_ldflags[@]}" -o "$exe_file" $sdl_libs -lm 2>/dev/null; then
         print_error "C compilation/linking failed (SDL2)"
         exit 1
@@ -697,12 +898,14 @@ run_gfx_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
+    flow_runtime_flow_sources
     local gfx_ok=0
     local host_kernel
     host_kernel="$(uname -s)"
     if [[ "$host_kernel" == "Darwin" ]]; then
         if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
-            "$SCRIPT_DIR/runtime/flow_time.c" \
+            "$SCRIPT_DIR/runtime/flow_rt_support.c" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
             -framework Cocoa -framework CoreGraphics -framework QuartzCore \
             "${py_ldflags[@]}" \
             -o "$exe_file" -lm 2>/dev/null; then
@@ -730,7 +933,8 @@ run_gfx_program() {
             sdl_libs=($(pkg-config --libs sdl2))
         fi
         if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_windows.c" \
-            "$SCRIPT_DIR/runtime/flow_time.c" \
+            "$SCRIPT_DIR/runtime/flow_rt_support.c" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
             "${sdl_cflags[@]}" "${sdl_libs[@]}" \
             "${py_ldflags[@]}" \
             -o "$exe_file" -lm 2>/dev/null; then
@@ -748,7 +952,8 @@ run_gfx_program() {
             sdl_libs=($(pkg-config --libs sdl2))
         fi
         if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_linux.c" \
-            "$SCRIPT_DIR/runtime/flow_time.c" \
+            "$SCRIPT_DIR/runtime/flow_rt_support.c" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
             "${sdl_cflags[@]}" "${sdl_libs[@]}" \
             "${py_ldflags[@]}" \
             -o "$exe_file" -lm 2>/dev/null; then
@@ -1334,24 +1539,29 @@ run_runtime_tests() {
     local failed=0
     local failed_files=""
     
-    local program_list=()
+    # Bash 3.2 + set -u: empty "${arr[@]}" is an unbound-variable error.
+    # Collect paths into a newline list, then iterate with while-read.
+    local program_list_file
+    program_list_file="$(mktemp 2>/dev/null || mktemp -t flow_rt_list)"
     if [ ${#targets[@]} -gt 0 ]; then
         for t in "${targets[@]}"; do
             if [ -f "$t" ]; then
-                program_list+=("$t")
+                printf '%s\n' "$t" >> "$program_list_file"
             elif [ -d "$t" ]; then
-                while read program; do
-                    [ -n "$program" ] && program_list+=("$program")
-                done < <(find "$t" -name "*.flow" -not -path "*/wip/*" 2>/dev/null)
+                find "$t" -name "*.flow" ! -path "*/wip/*" 2>/dev/null >> "$program_list_file" || true
             fi
         done
     else
-        while read program; do
-            [ -n "$program" ] && program_list+=("$program")
-        done < <(find "$runtime_dir" -name "*.flow" -not -path "*/wip/*" 2>/dev/null)
+        find "$runtime_dir" -name "*.flow" ! -path "*/wip/*" 2>/dev/null >> "$program_list_file" || true
     fi
 
-    for program in "${program_list[@]}"; do
+    if [ ! -s "$program_list_file" ]; then
+        rm -f "$program_list_file"
+        print_error "No runtime test programs found under $runtime_dir"
+        exit 1
+    fi
+
+    while IFS= read -r program; do
         if [ -z "$program" ]; then continue; fi
         total=$((total + 1))
         local rel_path=${program#$SCRIPT_DIR/}
@@ -1361,32 +1571,49 @@ run_runtime_tests() {
         local exe_file="$build_dir/${basename}"
         
         # Step 1: Transpile FLOW to C
+        # || true / status vars: set -e must not abort before we record failures
         local transpile_output
-        transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file" 2>&1)
-        if [ $? -ne 0 ]; then
+        local transpile_status=0
+        transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file" 2>&1) || transpile_status=$?
+        if [ "$transpile_status" -ne 0 ] || [ ! -f "$c_file" ]; then
             print_error "✗ $rel_path (transpile failed)"
+            if [ $verbose -eq 1 ] && [ -n "$transpile_output" ]; then
+                echo "$transpile_output"
+            fi
             failed=$((failed + 1))
             failed_files="$failed_files\n  - $rel_path (transpile)"
             continue
         fi
         
-    # Step 2: Compile C to executable
-    local clang_output
-    local extra_cflags=()
-    local extra_ldflags=()
-    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
-    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
-    if [ -d "$py_header_dir" ]; then
-        extra_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
-        extra_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
-    fi
-    clang_output=$(clang "${extra_cflags[@]}" "$c_file" \
-        "$SCRIPT_DIR/runtime/flow_sys_info.c" \
-        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
-        "$SCRIPT_DIR/runtime/flow_time.c" \
-        "${extra_ldflags[@]}" -o "$exe_file" -lm 2>&1)
-        if [ $? -ne 0 ]; then
+        # Step 2: Compile C to executable
+        local clang_output
+        local clang_status=0
+        local extra_cflags=()
+        local extra_ldflags=()
+        local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+        local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+        if [ -d "$py_header_dir" ]; then
+            extra_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+            extra_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+        fi
+        flow_concurrency_flags
+        flow_runtime_flow_sources
+        clang_output=$(clang "${extra_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" \
+            "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+            "${FLOW_CONC_SOURCES[@]}" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
+            "${extra_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$exe_file" -lm 2>&1) || clang_status=$?
+        if [ "$clang_status" -ne 0 ]; then
             print_error "✗ $rel_path (clang compile failed)"
+            if [ -n "$clang_output" ]; then
+                if [ $verbose -eq 1 ]; then
+                    echo "$clang_output"
+                else
+                    # Always show a short snippet so silent undefined-symbol
+                    # failures are diagnosable without --verbose.
+                    echo "$clang_output" | tail -n 12
+                fi
+            fi
             failed=$((failed + 1))
             failed_files="$failed_files\n  - $rel_path (clang)"
             continue
@@ -1394,8 +1621,8 @@ run_runtime_tests() {
         
         # Step 3: Run the executable and check exit code
         local run_output
-        run_output=$("$exe_file" 2>&1)
-        local exit_code=$?
+        local exit_code=0
+        run_output=$("$exe_file" 2>&1) || exit_code=$?
         
         # Check for expected output file (optional)
         local expected_file="${program%.flow}.expected"
@@ -1429,9 +1656,10 @@ run_runtime_tests() {
             failed_files="$failed_files\n  - $rel_path (exit=$exit_code)"
         fi
         
-    done
+    done < "$program_list_file"
     
     # Cleanup
+    rm -f "$program_list_file"
     rm -rf "$build_dir"
     
     echo "----------------------------------------"
@@ -1612,6 +1840,9 @@ install_deps() {
 
 # Main command dispatcher
 case "${1:-help}" in
+    "version"|"--version"|"-V")
+        echo "flow 0.3.3"
+        ;;
     "run")
         check_deps
         run_program "${2:-}"
@@ -1628,8 +1859,19 @@ case "${1:-help}" in
         check_deps
         compile_audio_program "${2:-}" "${3:-}"
         ;;
+    "dap")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow dap <program.flow>"
+            print_info "IDE: VS Code FLOW debugger type (lldb-dap). CLI opens ./flow debug."
+            exit 1
+        fi
+        require_flow_file "${1:-}"
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.dap_server "$@"
+        ;;
     "debug")
-        debug_program "${2:-}"
+        shift
+        debug_program "$@"
         ;;
     "window")
         run_window_program "${2:-}"
@@ -1795,7 +2037,7 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
     "shader")
         shift
         if [ -z "${1:-}" ]; then
-            print_error "Usage: flow shader <program.flow> [--name SHADER] [--frames N] [--size WxH] [--emit-only]"
+            print_error "Usage: flow shader <program.flow> [--grid|--cycle] [--name SHADER] [--frames N] [--size WxH] [--emit-only]"
             exit 1
         fi
         require_flow_file "${1:-}"
@@ -1980,6 +2222,7 @@ for f in sys.argv[1:]:
         run_tests --strict
         ;;
     "test-runtime")
+        shift
         check_deps
         run_runtime_tests "$@"
         ;;
@@ -2053,13 +2296,76 @@ for f in sys.argv[1:]:
         shift
         if [ -z "${1:-}" ]; then
             print_error "Usage: flow wasm <program.flow>"
+            print_info "Requires emcc (Emscripten). See docs/language/wasm.md"
+            print_info "Smoke without a file: ./scripts/build_wasm_hello.sh"
             exit 1
         fi
         require_flow_file "${1:-}"
-        python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "${1:-}"
+        print_info "Flow → C → WASM (see docs/language/wasm.md)"
+        if ! python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "${1:-}"; then
+            print_error "WASM conversion failed"
+            exit 1
+        fi
+        if ! command -v emcc >/dev/null 2>&1; then
+            print_warning "emcc not on PATH — C/HTML were written; install emsdk to emit .wasm"
+            print_info "  docs: docs/language/wasm.md"
+        fi
+        ;;
+    "playground")
+        # Runnable playground: loopback Flow→C API + pointer to the UI.
+        local pg_port="${2:-8765}"
+        print_info "Starting playground compile server on 127.0.0.1:${pg_port}"
+        print_info "UI: docs/playground/index.html  (or wiki /flow/ playground)"
+        print_info "Click: Run (native local)"
+        print_info "Docs: docs/language/debugging.md · docs/language/wasm.md"
+        if command -v open >/dev/null 2>&1; then
+            open "$SCRIPT_DIR/docs/playground/index.html" 2>/dev/null || true
+        fi
+        python3 "$SCRIPT_DIR/scripts/playground_compile_server.py" --port "$pg_port"
+        ;;
+    "setup"|"install-tools")
+        install_deps
         ;;
     "install")
-        install_deps
+        # Install project deps when flow.toml present; else tooling.
+        if [ -f "flow.toml" ] || [ "${2:-}" = "--deps" ]; then
+            python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+raise SystemExit(0 if FlowPackageManager().install() else 1)
+"
+        elif [ "${2:-}" = "--tools" ]; then
+            install_deps
+        else
+            print_info "No flow.toml here — installing compiler tools (LLVM)."
+            print_info "For package deps: cd <project> && ./flow install   or  ./flow pkg install"
+            install_deps
+        fi
+        ;;
+    "pkg")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow pkg <install|add|search|info|publish|init|…>"
+            exit 1
+        fi
+        python3 -m flow.package "$@"
+        ;;
+    "search")
+        shift
+        python3 -m flow.package search "$@"
+        ;;
+    "info")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow info <package>"
+            exit 1
+        fi
+        python3 -m flow.package info "$@"
+        ;;
+    "publish")
+        shift
+        python3 -m flow.package publish "$@"
         ;;
     "repl")
         check_deps
@@ -2072,46 +2378,18 @@ main()
         ;;
     "init")
         shift
-        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
-import sys
-
-script_dir = sys.argv[1]
-arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.package import FlowPackageManager
-
-pm = FlowPackageManager()
-pm.init(arg)
-PY
+        python3 -m flow.package init "$@"
         ;;
     "add")
         shift
-        if [ -z "$1" ]; then
-            print_error "Usage: flow add <package>"
+        if [ $# -eq 0 ]; then
+            print_error "Usage: flow add <package[@version]> | <git-url> | --git URL [--name NAME] [--subdir DIR] | --path DIR --name NAME"
             exit 1
         fi
-        python3 - "$SCRIPT_DIR" "$1" <<'PY'
-import sys
-
-script_dir = sys.argv[1]
-package = sys.argv[2]
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.package import FlowPackageManager
-
-pm = FlowPackageManager()
-pm.add(package)
-PY
+        python3 -m flow.package add "$@"
         ;;
     "build")
-        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager()
-pm.build()
-"
+        python3 -m flow.package build
         ;;
     "build-native")
         shift

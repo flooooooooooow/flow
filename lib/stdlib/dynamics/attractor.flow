@@ -37,7 +37,7 @@ function rk4_step_n(x: ptr<f64>, n: i32, dt: f64, sys_id: i32, out: ptr<f64>) ->
     let k2: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let k3: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let k4: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let tmp: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut tmp: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     attractor_field(x, n, sys_id, k1)
     for i in 0 to n {
         tmp[i] = x[i] + 0.5 * dt * k1[i]
@@ -87,7 +87,7 @@ function lyapunov_proxy(
     traj_a: ptr<f64>,
     traj_b: ptr<f64>
 ) -> f64 {
-    let pert: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut pert: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     for i in 0 to n {
         pert[i] = x0[i]
     }

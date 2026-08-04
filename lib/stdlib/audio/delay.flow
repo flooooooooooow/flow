@@ -41,7 +41,7 @@ export function delay_new(max_time: Seconds, rate: SampleRate) -> DelayState {
 # Set delay time
 export function delay_set_time(d: DelayState, time: Seconds, rate: SampleRate) -> DelayState {
     let new_samples: Samples = seconds_to_samples(time, rate)
-    let delay: i64 = new_samples.count
+    let mut delay: i64 = new_samples.count
     if delay > d.max_samples {
         delay = d.max_samples
     }
@@ -59,7 +59,7 @@ export function delay_set_time(d: DelayState, time: Seconds, rate: SampleRate) -
 
 # Set feedback amount
 export function delay_set_feedback(d: DelayState, fb: f32) -> DelayState {
-    let feedback: f32 = fb
+    let mut feedback: f32 = fb
     if feedback >= 1.0 {
         feedback = 0.99  # Prevent infinite feedback
     }
@@ -77,7 +77,7 @@ export function delay_set_feedback(d: DelayState, fb: f32) -> DelayState {
 
 # Set wet/dry mix
 export function delay_set_mix(d: DelayState, mix: f32) -> DelayState {
-    let m: f32 = mix
+    let mut m: f32 = mix
     if m > 1.0 {
         m = 1.0
     }
@@ -95,7 +95,7 @@ export function delay_set_mix(d: DelayState, mix: f32) -> DelayState {
 
 # Advance write position (call after writing sample)
 export function delay_advance(d: DelayState) -> DelayState {
-    let new_pos: i64 = d.write_pos + 1
+    let mut new_pos: i64 = d.write_pos + 1
     if new_pos >= d.max_samples {
         new_pos = 0
     }
@@ -110,7 +110,7 @@ export function delay_advance(d: DelayState) -> DelayState {
 
 # Calculate read position
 export function delay_read_pos(d: DelayState) -> i64 {
-    let read_pos: i64 = d.write_pos - d.delay_samples
+    let mut read_pos: i64 = d.write_pos - d.delay_samples
     if read_pos < 0 {
         read_pos = read_pos + d.max_samples
     }
@@ -188,7 +188,7 @@ export function allpass_delay_new(time_ms: f32, coeff: f32, rate: SampleRate) ->
 
 # Advance position
 export function allpass_delay_advance(a: AllpassDelay) -> AllpassDelay {
-    let new_pos: i64 = a.write_pos + 1
+    let mut new_pos: i64 = a.write_pos + 1
     if new_pos >= a.delay_samples {
         new_pos = 0
     }
@@ -225,7 +225,7 @@ export function comb_new(time_ms: f32, feedback: f32, damping: f32, rate: Sample
 
 # Advance position  
 export function comb_advance(c: CombFilter) -> CombFilter {
-    let new_pos: i64 = c.write_pos + 1
+    let mut new_pos: i64 = c.write_pos + 1
     if new_pos >= c.delay_samples {
         new_pos = 0
     }
@@ -267,7 +267,7 @@ export function mod_delay_new(base_time: Seconds, mod_depth_ms: f32, mod_rate: f
 
 # Advance modulation phase
 export function mod_delay_tick(m: ModDelay) -> ModDelay {
-    let new_phase: f64 = m.mod_phase + m.mod_increment
+    let mut new_phase: f64 = m.mod_phase + m.mod_increment
     if new_phase >= 1.0 {
         new_phase = new_phase - 1.0
     }

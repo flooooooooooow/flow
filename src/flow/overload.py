@@ -69,8 +69,10 @@ class OverloadResolver:
         
         # Create mangled name. Functions generated from `flow` blocks keep
         # their plain names: Name_step(Name*, double) is a stable C API
-        # (docs/vision/north-star.md 1.4).
-        if "flow_api" in (getattr(func, "attributes", None) or []):
+        # (docs/vision/north-star.md 1.4). Monomorphized generics already
+        # encode type args (`channel_new_i32`) — do not double-suffix.
+        attrs = getattr(func, "attributes", None) or []
+        if "flow_api" in attrs or "monomorphized" in attrs:
             mangled = name
         else:
             mangled = self._mangle_name(name, param_types)

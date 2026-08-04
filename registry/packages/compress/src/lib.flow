@@ -1,0 +1,18 @@
+# compress — zlib deflate/inflate wrapper
+
+extern {
+    function flow_compress_deflate(src: ptr<u8>, src_len: i64, dst: ptr<u8>, dst_cap: i64) -> i64
+    function flow_compress_inflate(src: ptr<u8>, src_len: i64, dst: ptr<u8>, dst_cap: i64) -> i64
+}
+
+# Compress `src_len` bytes at `src` into `dst` (capacity `dst_cap`).
+# Returns compressed length, or -1 on error.
+export function compress_deflate(src: ptr<u8>, src_len: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
+    return flow_compress_deflate(src, src_len, dst, dst_cap)
+}
+
+# Decompress `src_len` bytes at `src` into `dst` (capacity `dst_cap`).
+# Returns decompressed length, or -1 on error.
+export function compress_inflate(src: ptr<u8>, src_len: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
+    return flow_compress_inflate(src, src_len, dst, dst_cap)
+}

@@ -1,0 +1,34 @@
+# Live reverse-mode Tape via ArrayTape (runtime/flow_tape.c).
+# Computes z = x * y and ∂z/∂x, ∂z/∂y.
+#
+# Run: ./flow run examples/ml/tape_mul.flow
+
+import "stdlib/autodiff.flow"
+
+function main() -> i32 {
+    let mut gx: f32 = 0.0
+    let mut gy: f32 = 0.0
+    handle Tape with ArrayTape {
+        Tape.reset()
+        let x: i32 = Tape.track(3.0)
+        let y: i32 = Tape.track(4.0)
+        let z: i32 = Tape.mul(x, y)
+        Tape.backward(z)
+        gx = Tape.get_grad(x)
+        gy = Tape.get_grad(y)
+        printf("z = x*y = 3*4; dz/dx = %f (expect 4), dz/dy = %f (expect 3)\n", gx, gy)
+    }
+    if gx < 3.9 {
+        return 1
+    }
+    if gx > 4.1 {
+        return 1
+    }
+    if gy < 2.9 {
+        return 2
+    }
+    if gy > 3.1 {
+        return 2
+    }
+    return 0
+}

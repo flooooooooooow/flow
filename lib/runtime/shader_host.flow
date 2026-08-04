@@ -1,0 +1,27 @@
+# Flow runtime: shader host orchestration (Metal viewer stays in ObjC).
+# Invoked by thin C argv shim in runtime/shader_host.c
+
+extern {
+    function flow_shader_show_file(metal: string, entry: string, width: i32, height: i32, max_frames: i32) -> i32
+    function flow_shader_show_gallery_file_ex(metal: string, entries: string, width: i32, height: i32, max_frames: i32, layout: i32) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+@flow_api
+export function flow_shader_host_run(
+    gallery: i32,
+    layout: i32,
+    metal: string,
+    entries: string,
+    width: i32,
+    height: i32,
+    max_frames: i32
+) -> i32 {
+    if gallery != 0 {
+        return flow_shader_show_gallery_file_ex(metal, entries, width, height, max_frames, layout)
+    }
+    if strcmp(entries, "") != 0 {
+        return flow_shader_show_gallery_file_ex(metal, entries, width, height, max_frames, layout)
+    }
+    return flow_shader_show_file(metal, "shader_frag", width, height, max_frames)
+}

@@ -116,7 +116,15 @@ def _c_ident(name: str) -> str:
 
 
 class CGenerator:
-    def __init__(self, *, source_file: str | None = None, debug_info: bool = False, bounds_check: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        source_file: str | None = None,
+        debug_info: bool = False,
+        bounds_check: bool = True,
+        strict_effects: bool = False,
+        library: bool = False,
+    ) -> None:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
         self._enums = {}  # name -> EnumDecl
@@ -124,7 +132,11 @@ class CGenerator:
         self._var_types = {}  # name -> Type
         self._source_file = source_file
         self._debug_info = debug_info
+        self._strict_effects = strict_effects
+        self._library = library
         self._bounds_check = bounds_check
+        self._uses_parallel_for = False
+        self._uses_fiber_main = False  # wrap main() on a fiber for mid-function suspend
         self._current_return_type: Type | None = None
         self._current_tco_fn: str | None = None
         self._current_tco_params: List[str] = []
@@ -148,6 +160,9 @@ class CGenerator:
         self._sort_helper_keys: set = set()  # dedupe keys for emitted helpers
         self._closure_vars = {}  # var name -> lambda info (capturing lambdas)
         self._fnptr_vars = {}  # var name -> lambda info (non-capturing lambdas)
+        self._fn_fat_vars = set()  # vars typed as (T)->R fat-pointer closures
+        self._pending_fn_bridges = []  # static bridge fns for non-capturing → fat
+        self._fn_typedefs_emitted = set()
         self._capture_stack = []  # sets of captured names, one per nested lambda body
         self._const_names = set()  # file-scope constants (reachable without capture)
         self._lambda_insert_idx = None  # where lambda definitions get spliced in
@@ -274,7 +289,11 @@ class CGenerator:
         lines.append("#include <math.h>")
         
         lines.append("")
-        lines.append("void* _ui_state = NULL;")
+        # Library modules must not export a shared _ui_state (link conflict with main TU).
+        if self._library:
+            lines.append("static void* _ui_state = NULL;")
+        else:
+            lines.append("void* _ui_state = NULL;")
         lines.append("")
 
         # Provide a default i32_to_f32 helper if not defined in Flow code
@@ -287,6 +306,18 @@ class CGenerator:
         if not has_i32_to_f32_def:
             lines.append("static inline float i32_to_f32(int32_t v) { return (float)v; }")
             lines.append("")
+
+        # Host stub for @gpu kernels: real device id comes from Metal/CUDA codegen.
+        has_gpu_thread_id = False
+        if functions:
+            for fn in functions:
+                if fn.name == "gpu_thread_id":
+                    has_gpu_thread_id = True
+                    break
+        if not has_gpu_thread_id:
+            lines.append("/* Host stub for @gpu kernels (device codegen replaces this). */")
+            lines.append("static inline int32_t gpu_thread_id(void) { return 0; }")
+            lines.append("")
         
         # Register effects and capabilities for dispatch
         if effects:
@@ -296,6 +327,9 @@ class CGenerator:
         if capabilities:
             for capability in capabilities:
                 self._capabilities[capability.name] = capability
+                if capability.name in ("FiberAsync", "FiberCont"):
+                    # Fiber backends → run main on a fiber so park suspends Flow frames.
+                    self._uses_fiber_main = True
         
         # Pre-collect structs from struct declarations so we can emit them before effect runtime
         if structs:
@@ -383,6 +417,11 @@ class CGenerator:
         
         # Register all functions for overload resolution
         for fn in functions:
+            # Library / always-linked runtime modules need stable C ABI names.
+            if self._library and "flow_api" not in (getattr(fn, "attributes", None) or []):
+                attrs = list(getattr(fn, "attributes", None) or [])
+                attrs.append("flow_api")
+                fn.attributes = attrs
             self._overload_resolver.register_function(fn)
         
         # Build mangled name map
@@ -391,9 +430,15 @@ class CGenerator:
             if getattr(fn, "is_extern", False):
                 self._mangled_names[id(fn)] = fn.name
                 continue
+            # Monomorphized generics already encode type args in the name
+            # (`channel_new_i32`); overload mangling would double-suffix them.
+            if "monomorphized" in (getattr(fn, "attributes", None) or []):
+                self._mangled_names[id(fn)] = fn.name
+                continue
             # Functions generated from `flow` blocks keep their plain names:
             # Name_step(Name*, double) is a stable C embedding API.
-            if "flow_api" in (getattr(fn, "attributes", None) or []):
+            # Library runtime modules also keep plain names (C ABI for always-link).
+            if self._library or "flow_api" in (getattr(fn, "attributes", None) or []):
                 self._mangled_names[id(fn)] = fn.name
                 continue
             param_types = tuple(self._type_to_string(p.type) for p in fn.parameters)
@@ -439,6 +484,29 @@ class CGenerator:
         # Emit struct definitions in dependency order
         # Include structs already emitted for effects
         emitted = set(effect_structs_emitted)
+
+        # Escaping function types must be fully defined before forward decls
+        # that use them as parameter/return types.
+        for fn in functions:
+            if self._is_fn_type(fn.return_type):
+                self._ensure_fn_typedef(fn.return_type)
+            for p in fn.parameters:
+                if self._is_fn_type(p.type):
+                    self._ensure_fn_typedef(p.type)
+        if self._fn_typedefs_emitted:
+            for line in list(self._pending_env_structs):
+                if line.startswith("typedef struct {") and "void* env;" in line:
+                    lines.append(line)
+            # Keep non-fn pending structs for the lambda insert block; drop
+            # the fn typedefs we already emitted so they are not duplicated.
+            self._pending_env_structs = [
+                line
+                for line in self._pending_env_structs
+                if not (line.startswith("typedef struct {") and "void* env;" in line
+                        and "(*fn)(void*" in line)
+            ]
+            if self._fn_typedefs_emitted:
+                lines.append("")
 
         # Forward-declare every remaining struct as `typedef struct Name Name;`
         # so that pointer fields (e.g. `ptr<Route>` inside `HttpServer`) can
@@ -532,7 +600,10 @@ class CGenerator:
         # Standard C library functions that don't need declarations (covered by includes)
         stdlib_functions = {'malloc', 'free', 'calloc', 'realloc', 'printf', 'sprintf',
                            'snprintf', 'fprintf', 'puts', 'putchar', 'getchar', 'fflush',
-                           'memcpy', 'memset', 'strlen', 'strcmp', 'strcpy', 'strcat'}
+                           'memcpy', 'memset', 'strlen', 'strcmp', 'strcpy', 'strcat',
+                           'getenv', 'putenv',
+                           # FILE* APIs — use <stdio.h> decls; Flow extern types are approximate
+                           'fopen', 'fclose', 'fread', 'fwrite', 'fseek', 'ftell', 'fgets', 'fputs'}
         primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
@@ -550,6 +621,15 @@ class CGenerator:
                 )
                 if all_primitive:
                     continue  # Skip C math function
+            # Fiber-wrapped main: forward-declare the body, not `main` itself.
+            if (
+                self._uses_fiber_main
+                and fn.name == "main"
+                and len(fn.parameters) == 0
+                and not self._library
+            ):
+                lines.append("static int32_t __flow_main_body(void);")
+                continue
             lines.append(self._c_function_decl(fn) + ";")
         lines.append("")
 
@@ -674,8 +754,51 @@ class CGenerator:
         lines: List[str] = []
         
         lines.append("/* ===== Effect Handler Runtime ===== */")
+        lines.append(
+            "/* Delimited continuations: runtime/flow_cont.c scaffold only — "
+            "Flow frames cannot suspend mid-function yet. */"
+        )
         lines.append("")
+        if effects:
+            # Opt-in fail-loud for unhandled ops: compile with --strict-effects, or
+            # set FLOW_STRICT_EFFECTS=1 at runtime. Default remains zeroed no-ops
+            # (see docs/effects-showcase.md) until effect-row typing lands.
+            if self._strict_effects:
+                lines.append("#define FLOW_STRICT_EFFECTS_COMPILE 1")
+                lines.append("")
+            lines.append("static int _flow_strict_effects(void) {")
+            if self._strict_effects:
+                lines.append("    return 1;")
+            else:
+                lines.append("    static int cached = -1;")
+                lines.append("    if (cached < 0) {")
+                lines.append('        const char *e = getenv("FLOW_STRICT_EFFECTS");')
+                lines.append('        cached = (e && e[0] == \'1\') ? 1 : 0;')
+                lines.append("    }")
+                lines.append("    return cached;")
+            lines.append("}")
+            lines.append("")
+            lines.append(
+                "static void _flow_unhandled_effect(const char *effect, const char *op) {"
+            )
+            lines.append("    if (_flow_strict_effects()) {")
+            lines.append(
+                '        fprintf(stderr, "flow: unhandled effect %s.%s '
+                '(set FLOW_STRICT_EFFECTS=0 to allow zero defaults)\\n", effect, op);'
+            )
+            lines.append("        abort();")
+            lines.append("    }")
+            lines.append("}")
+            lines.append("")
         
+        if effects:
+            # Shared by fiber-local effect handler slots below.
+            lines.append("extern int32_t flow_fiber_current_id(void);")
+            lines.append("#ifndef FLOW_FIBER_MAX")
+            lines.append("#define FLOW_FIBER_MAX 4096")
+            lines.append("#endif")
+            lines.append("")
+
         # For each effect, generate a struct holding function pointers for its operations
         for effect in effects:
             effect_name = effect.name
@@ -691,8 +814,31 @@ class CGenerator:
             lines.append(f"}} {safe_effect_name}_Handler;")
             lines.append("")
             
-            # Global handler pointer (thread-local for multi-threaded code)
-            lines.append(f"static {safe_effect_name}_Handler* _current_{safe_effect_name}_handler = NULL;")
+            # Handler pointer: fiber-local when on a fiber (work-stealing migrates
+            # OS threads), otherwise thread-local for ThreadedAsync / host code.
+            lines.append(
+                f"static _Thread_local {safe_effect_name}_Handler* "
+                f"_tls_{safe_effect_name}_handler = NULL;"
+            )
+            lines.append(
+                f"static {safe_effect_name}_Handler* "
+                f"_fiber_{safe_effect_name}_handler[FLOW_FIBER_MAX];"
+            )
+            lines.append(
+                f"static inline {safe_effect_name}_Handler** "
+                f"_slot_{safe_effect_name}_handler(void) {{"
+            )
+            lines.append("    int32_t _fid = flow_fiber_current_id();")
+            lines.append(
+                f"    if (_fid >= 0 && _fid < FLOW_FIBER_MAX) "
+                f"return &_fiber_{safe_effect_name}_handler[_fid];"
+            )
+            lines.append(f"    return &_tls_{safe_effect_name}_handler;")
+            lines.append("}")
+            lines.append(
+                f"#define _current_{safe_effect_name}_handler "
+                f"(*_slot_{safe_effect_name}_handler())"
+            )
             lines.append("")
             
             # Generate dispatch functions for each operation
@@ -700,31 +846,47 @@ class CGenerator:
                 ret_type = self._c_type(op.return_type)
                 params_with_names = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in op.parameters])
                 param_names = ", ".join([_c_ident(p.name) for p in op.parameters])
+                op_ident = _c_ident(op.name)
                 
-                lines.append(f"{ret_type} {safe_effect_name}_{_c_ident(op.name)}({params_with_names}) {{")
+                lines.append(f"{ret_type} {safe_effect_name}_{op_ident}({params_with_names}) {{")
+                lines.append(
+                    f"    if (_current_{safe_effect_name}_handler && "
+                    f"_current_{safe_effect_name}_handler->{op_ident}) {{"
+                )
                 if ret_type == "void":
-                    lines.append(f"    if (_current_{safe_effect_name}_handler && _current_{safe_effect_name}_handler->{_c_ident(op.name)}) {{")
                     if param_names:
-                        lines.append(f"        _current_{safe_effect_name}_handler->{_c_ident(op.name)}({param_names});")
+                        lines.append(
+                            f"        _current_{safe_effect_name}_handler->{op_ident}({param_names});"
+                        )
                     else:
-                        lines.append(f"        _current_{safe_effect_name}_handler->{_c_ident(op.name)}();")
-                    lines.append("    }")
+                        lines.append(
+                            f"        _current_{safe_effect_name}_handler->{op_ident}();"
+                        )
+                    lines.append("        return;")
                 else:
-                    lines.append(f"    if (_current_{safe_effect_name}_handler && _current_{safe_effect_name}_handler->{_c_ident(op.name)}) {{")
                     if param_names:
-                        lines.append(f"        return _current_{safe_effect_name}_handler->{_c_ident(op.name)}({param_names});")
+                        lines.append(
+                            f"        return _current_{safe_effect_name}_handler->"
+                            f"{op_ident}({param_names});"
+                        )
                     else:
-                        lines.append(f"        return _current_{safe_effect_name}_handler->{_c_ident(op.name)}();")
-                    lines.append("    }")
-                    # Return default value if no handler
-                    if "int" in ret_type or ret_type in ["int32_t", "int64_t", "int8_t", "int16_t"]:
-                        lines.append("    return 0;")
-                    elif ret_type in ["float", "double"]:
-                        lines.append("    return 0.0;")
-                    elif ret_type == "char*":
-                        lines.append("    return NULL;")
-                    else:
-                        lines.append(f"    return ({ret_type}){{0}};")
+                        lines.append(
+                            f"        return _current_{safe_effect_name}_handler->{op_ident}();"
+                        )
+                lines.append("    }")
+                lines.append(
+                    f'    _flow_unhandled_effect("{safe_effect_name}", "{op_ident}");'
+                )
+                if ret_type == "void":
+                    lines.append("    return;")
+                elif "int" in ret_type or ret_type in ["int32_t", "int64_t", "int8_t", "int16_t"]:
+                    lines.append("    return 0;")
+                elif ret_type in ["float", "double"]:
+                    lines.append("    return 0.0;")
+                elif ret_type == "char*":
+                    lines.append("    return NULL;")
+                else:
+                    lines.append(f"    return ({ret_type}){{0}};")
                 lines.append("}")
                 lines.append("")
         
@@ -1037,9 +1199,78 @@ class CGenerator:
         # Vector types are not structs
         if t.name.startswith("vec"):
             return False
+        # Escaping function / closure types are fat-pointer typedefs, not structs
+        if t.name.startswith("fn_") and "__" in t.name:
+            return False
         return True
 
+    def _is_fn_type(self, t: Optional[Type]) -> bool:
+        return bool(t and getattr(t, "name", "").startswith("fn_") and "__" in t.name)
+
+    def _ensure_fn_typedef(self, t: Type) -> str:
+        """Emit typedef for escaping closure type (T1,T2)->R as a fat pointer."""
+        c_name = _c_ident(t.name)  # fn_i32__i32 → fn_i32__i32
+        if c_name in self._fn_typedefs_emitted:
+            return c_name
+        self._fn_typedefs_emitted.add(c_name)
+        params = list(getattr(t, "type_args", None) or [])
+        ret = getattr(t, "element_type", None) or Type("void")
+        ret_c = self._c_type(ret)
+        param_cs = [self._c_type(p) for p in params]
+        fn_params = ", ".join(["void*"] + param_cs) if param_cs else "void*"
+        self._pending_env_structs.append(
+            f"typedef struct {{ {ret_c} (*fn)({fn_params}); void* env; }} {c_name};"
+        )
+        return c_name
+
+    def _wrap_lambda_as_fn_type(self, info: dict, fn_type: Type) -> tuple:
+        """Return (c_expr, prelude_lines) converting last lambda into a fat pointer."""
+        fat = self._ensure_fn_typedef(fn_type)
+        ret_c = info["ret_c"]
+        param_cs = info["param_c_types"]
+        fn_params = ", ".join(["void* _env"] + [
+            f"{ct} a{i}" for i, ct in enumerate(param_cs)
+        ])
+        call_args = ", ".join(f"a{i}" for i in range(len(param_cs)))
+        prelude: List[str] = []
+        if info["captures"]:
+            env_name = info["env_name"]
+            lambda_name = info["lambda_name"]
+            # Heap-copy env so the closure can escape the creating stack frame.
+            prelude.append(
+                f"{env_name}* _flow_env = ({env_name}*)malloc(sizeof({env_name}));"
+            )
+            init_fields = ", ".join(
+                f".{_c_ident(cap)} = {self._gen_expr(Variable(cap))}"
+                for cap in info["captures"]
+            )
+            prelude.append(f"*_flow_env = ({env_name}){{ {init_fields} }};")
+            cast_fn = f"({ret_c} (*)({', '.join(['void*'] + param_cs)}))"
+            expr = (
+                f"(({fat}){{ .fn = {cast_fn}&{lambda_name}, .env = _flow_env }})"
+            )
+            return expr, prelude
+        # Non-capturing: bridge void* env away
+        bridge = f"{info['lambda_name']}_bridge"
+        if call_args:
+            body = f"return {info['lambda_name']}({call_args});"
+        else:
+            body = f"return {info['lambda_name']}();"
+        if ret_c == "void":
+            body = (
+                f"{info['lambda_name']}({call_args});"
+                if call_args
+                else f"{info['lambda_name']}();"
+            )
+        self._pending_lambdas.append(
+            (bridge, ret_c, fn_params, [f"(void)_env;", body])
+        )
+        expr = f"(({fat}){{ .fn = &{bridge}, .env = NULL }})"
+        return expr, prelude
+
     def _c_type(self, t: Type) -> str:
+        if self._is_fn_type(t):
+            return self._ensure_fn_typedef(t)
         if t.name == "auto":
             return "int32_t"  # Default auto-inferred type (standard C)
         if t.name == "i32":
@@ -1139,6 +1370,22 @@ class CGenerator:
         name = _c_ident(name)
         return f"{ret} {name}({params})"
 
+    def _sizeof_c_type_from_mangled(self, mangled_suffix: str) -> str:
+        """Map sizeof_<Type> mangled suffix to a C type name."""
+        prim = {
+            "i8": "int8_t", "u8": "uint8_t",
+            "i16": "int16_t", "u16": "uint16_t",
+            "i32": "int32_t", "u32": "uint32_t",
+            "i64": "int64_t", "u64": "uint64_t",
+            "f32": "float", "f64": "double",
+            "bool": "bool", "void": "void",
+        }
+        if mangled_suffix in prim:
+            return prim[mangled_suffix]
+        if mangled_suffix.startswith("ptr_"):
+            return "void*"
+        return _c_ident(mangled_suffix)
+
     def _gen_function(self, fn: FunctionDecl) -> List[str]:
         # Extern functions are declarations only (no emitted definition).
         if getattr(fn, "is_extern", False):
@@ -1146,6 +1393,13 @@ class CGenerator:
         # Forward declarations are declarations only (already have forward decl).
         if getattr(fn, "is_forward_decl", False):
             return []
+        # sizeof<T>() intrinsic — monomorphizes to sizeof_i32 etc.; emit C sizeof.
+        if fn.name.startswith("sizeof_") and len(fn.parameters) == 0:
+            c_ty = self._sizeof_c_type_from_mangled(fn.name[len("sizeof_"):])
+            return [
+                f"int64_t {_c_ident(fn.name)}(void) {{ "
+                f"return (int64_t)sizeof({c_ty}); }}"
+            ]
         # Skip math functions that are provided by the standard library
         # BUT only if they take primitive float types (not custom types like Dual)
         math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow', 'tanh'}
@@ -1171,7 +1425,18 @@ class CGenerator:
             except Exception:
                 pass
 
-        lines.append(self._c_function_decl(fn, use_mangled=True) + " {")
+        # FiberAsync programs: emit user main as __flow_main_body and wrap with
+        # flow_fiber_run_main so park/yield suspend real Flow frames mid-function.
+        is_fiber_main = (
+            self._uses_fiber_main
+            and fn.name == "main"
+            and len(fn.parameters) == 0
+            and not self._library
+        )
+        if is_fiber_main:
+            lines.append("static int32_t __flow_main_body(void) {")
+        else:
+            lines.append(self._c_function_decl(fn, use_mangled=True) + " {")
         self._indent += 1
         
         # Save current var_types scope and create new scope for this function
@@ -1186,6 +1451,9 @@ class CGenerator:
         for param in fn.parameters:
             self._overload_resolver.set_var_type(param.name, self._type_to_string(param.type))
             self._var_types[param.name] = param.type
+            if self._is_fn_type(param.type):
+                self._fn_fat_vars.add(param.name)
+                self._ensure_fn_typedef(param.type)
 
         # Tail-call optimization: if the function is self-recursive at the tail
         # (a `return self(...)` in tail position) and has no defers, rewrite the
@@ -1221,6 +1489,11 @@ class CGenerator:
         self._fnptr_vars = saved_fnptr_vars
         self._indent -= 1
         lines.append("}")
+        if is_fiber_main:
+            lines.append("")
+            lines.append("/* FiberAsync: main runs on a fiber (mid-function suspend). */")
+            lines.append("extern int32_t flow_fiber_run_main(int32_t (*fn)(void));")
+            lines.append("int main(void) { return (int)flow_fiber_run_main(__flow_main_body); }")
         return lines
 
     def _zero_value_for_c_type(self, t: Type) -> str:
@@ -1393,9 +1666,47 @@ class CGenerator:
             lines.extend(self._gen_defers(defer_stack))
         return lines
 
+    def _debug_line_for(self, node: Any) -> List[str]:
+        """Emit a #line directive mapping generated C back to Flow source."""
+        if not self._debug_info or not self._source_file:
+            return []
+        loc = getattr(node, "location", None)
+        if loc is None:
+            return []
+        try:
+            src_line = int(loc.line) + 1
+        except Exception:
+            return []
+        # Escape backslashes/quotes so paths survive the C preprocessor.
+        path = str(self._source_file).replace("\\", "\\\\").replace('"', '\\"')
+        return [f'#line {src_line} "{path}"']
+
     def _gen_statement(self, st: Statement, defer_stack: List[DeferStatement] | None = None) -> List[str]:
         if defer_stack is None:
             defer_stack = []
+        prefix = self._debug_line_for(st)
+        body = self._gen_statement_body(st, defer_stack)
+        if not prefix:
+            return body
+        # Indent #line like surrounding code so nested blocks stay readable;
+        # the preprocessor ignores leading whitespace on #line.
+        out = [f"{self._i()}{prefix[0]}"] + body
+        # Extra map for initializers / return values when they carry their own
+        # location (finer stepping inside multi-part statements).
+        if self._debug_info:
+            extra_node = None
+            if isinstance(st, VarDecl) and st.initializer is not None:
+                extra_node = st.initializer
+            elif isinstance(st, ReturnStatement) and getattr(st, "value", None) is not None:
+                extra_node = st.value
+            if extra_node is not None:
+                extra = self._debug_line_for(extra_node)
+                if extra and extra != prefix:
+                    # Place before the generated body line (after stmt #line).
+                    out = [f"{self._i()}{prefix[0]}", f"{self._i()}{extra[0]}"] + body
+        return out
+
+    def _gen_statement_body(self, st: Statement, defer_stack: List[DeferStatement]) -> List[str]:
         if isinstance(st, VarDecl):
             # A local declaration shadows any same-named captured variable
             # for the rest of this lambda body.
@@ -1417,6 +1728,8 @@ class CGenerator:
             # Track variable type for overload resolution and expression inference
             self._overload_resolver.set_var_type(st.name, self._type_to_string(decl_type))
             self._var_types[st.name] = decl_type
+            if self._is_fn_type(decl_type):
+                self._fn_fat_vars.add(st.name)
 
             # Sized arrays: prefer real stack arrays (e.g. `int32_t a[16]`) so indexing works.
             if decl_type and decl_type.name.startswith("array_") and decl_type.size and decl_type.element_type:
@@ -1438,7 +1751,19 @@ class CGenerator:
             safe_name = _sanitize_identifier(st.name)
             if st.initializer is None:
                 return [f"{self._i()}{c_t} {safe_name};"]
-            init_expr = self._gen_expr(st.initializer)
+            # If mono left a bare generic literal name but the decl type is
+            # specialized (`Pair` vs `Pair_i32_bool`), retarget the literal
+            # so the compound cast matches the variable type.
+            init = st.initializer
+            if (
+                isinstance(init, StructLiteral)
+                and decl_type
+                and getattr(decl_type, "name", None)
+                and init.struct_name != decl_type.name
+                and decl_type.name.startswith(init.struct_name + "_")
+            ):
+                init = StructLiteral(decl_type.name, init.fields)
+            init_expr = self._gen_expr(init)
             if getattr(decl_type, "is_pointer", False) or decl_type.name.startswith("ptr_"):
                 # Flow permits implicit pointer conversions (e.g. ptr<u8> ->
                 # ptr<HashEntry>); modern clang treats the uncasted C as an
@@ -1482,6 +1807,14 @@ class CGenerator:
                 and len(st.value.arguments) == len(self._current_tco_params)
             ):
                 return self._tco_loop_continue(st.value)
+            # Escaping: return a lambda as a fat-pointer `(T)->R` value.
+            if isinstance(st.value, Lambda) and self._is_fn_type(self._current_return_type):
+                self._gen_lambda(st.value)
+                info = self._last_lambda_info
+                expr, prelude = self._wrap_lambda_as_fn_type(info, self._current_return_type)
+                lines = [f"{self._i()}{line}" for line in prelude]
+                lines.append(f"{self._i()}return {expr};")
+                return lines
             return [f"{self._i()}return {self._gen_expr(st.value)};"]
 
         if isinstance(st, IfStatement):
@@ -1573,7 +1906,12 @@ class CGenerator:
         return lines
     
     def _gen_for(self, st: ForStatement) -> List[str]:
-        """Generate C for loop from FLOW for statement."""
+        """Generate C for loop from FLOW for statement.
+
+        `parallel for` emits an OpenMP pragma (canonical ascending form) when
+        the compiler defines `_OPENMP`. Without OpenMP the loop is correct and
+        serial — see docs/language/concurrency-vs-go.md.
+        """
         lines: List[str] = []
         var = st.variable
         safe_var = _c_ident(var)
@@ -1588,10 +1926,51 @@ class CGenerator:
         # Track the loop variable type
         self._var_types[var] = Type("i32")
         self._overload_resolver.set_var_type(var, "i32")
-        
-        # Generate standard C for loop
+
+        is_parallel = getattr(st, "is_parallel", False)
+        if is_parallel:
+            self._uses_parallel_for = True
+
         lines.append(f"{self._i()}int32_t {step_var} = {step};")
-        lines.append(f"{self._i()}for (int32_t {safe_var} = {start}; ({step_var} > 0) ? {safe_var} < {end} : {safe_var} > {end}; {safe_var} += {step_var}) {{")
+        # Hint Clang/GCC to auto-vectorize simple counted loops (#113).
+        if not is_parallel:
+            lines.append(f"{self._i()}#pragma clang loop vectorize(enable) interleave(enable)")
+            lines.append(f"{self._i()}#pragma GCC ivdep")
+        if is_parallel:
+            # OpenMP needs a canonical ascending for; descending stays serial.
+            lines.append(f"{self._i()}if ({step_var} > 0) {{")
+            self._indent += 1
+            lines.append(f"{self._i()}#ifdef _OPENMP")
+            lines.append(f"{self._i()}#pragma omp parallel for")
+            lines.append(f"{self._i()}#endif")
+            lines.append(
+                f"{self._i()}for (int32_t {safe_var} = {start}; "
+                f"{safe_var} < {end}; {safe_var} += {step_var}) {{"
+            )
+            self._indent += 1
+            lines.extend(self._gen_block(st.body))
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+            self._indent -= 1
+            lines.append(f"{self._i()}}} else if ({step_var} < 0) {{")
+            self._indent += 1
+            lines.append(
+                f"{self._i()}for (int32_t {safe_var} = {start}; "
+                f"{safe_var} > {end}; {safe_var} += {step_var}) {{"
+            )
+            self._indent += 1
+            lines.extend(self._gen_block(st.body))
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+            return lines
+
+        lines.append(
+            f"{self._i()}for (int32_t {safe_var} = {start}; "
+            f"({step_var} > 0) ? {safe_var} < {end} : {safe_var} > {end}; "
+            f"{safe_var} += {step_var}) {{"
+        )
         self._indent += 1
         lines.extend(self._gen_block(st.body))
         self._indent -= 1
@@ -2242,6 +2621,10 @@ class CGenerator:
             return self._gen_sort_expr(e)
 
         if isinstance(e, FunctionCall):
+            # sizeof<T>() / sizeof_i32() intrinsic — prefer inline C sizeof
+            if e.name.startswith("sizeof_") and len(e.arguments) == 0:
+                c_ty = self._sizeof_c_type_from_mangled(e.name[len("sizeof_"):])
+                return f"(int64_t)sizeof({c_ty})"
             # ui_layout_bind intrinsic: bind implicit UI state pointer
             if e.name == "ui_layout_bind" and len(e.arguments) == 1:
                 arg_expr = self._gen_expr(e.arguments[0])
@@ -2290,6 +2673,15 @@ class CGenerator:
             # Handle print/println intrinsics
             if e.name in ("print", "println"):
                 return self._gen_print_call(e.arguments, newline=(e.name == "println"))
+
+            # Escaping fat-pointer closures: (T)->R values carry {fn, env}.
+            if e.name in self._fn_fat_vars or self._is_fn_type(self._var_types.get(e.name)):
+                base = _sanitize_identifier(e.name)
+                if self._capture_stack and e.name in self._capture_stack[-1]:
+                    base = f"_env->{base}"
+                call_args = [f"{base}.env"]
+                call_args.extend(self._gen_expr(a) for a in e.arguments)
+                return f"{base}.fn({', '.join(call_args)})"
 
             # Calls through closure variables: pass the environment as the
             # hidden first argument. Non-capturing lambda variables are plain
@@ -2749,19 +3141,35 @@ class CGenerator:
         it pass `&var.env` as the hidden first argument. A non-capturing
         lambda produces a plain typed function pointer, so calls through it
         keep the bare `var(args)` form.
+
+        When the declared type is `(T)->R`, lower to an escaping fat pointer
+        (`{fn, env}`) so the value can be returned or passed to HOFs.
         """
-        init_expr = self._gen_lambda(st.initializer)
+        # Generate the lambda first so `_last_lambda_info` is populated.
+        concrete = self._gen_lambda(st.initializer)
         info = self._last_lambda_info
         name = _sanitize_identifier(st.name)
+        decl_type = st.type
+        if decl_type and decl_type.name == "auto":
+            decl_type = None
+        if self._is_fn_type(decl_type):
+            expr, prelude = self._wrap_lambda_as_fn_type(info, decl_type)
+            fat = self._ensure_fn_typedef(decl_type)
+            self._fn_fat_vars.add(st.name)
+            self._var_types[st.name] = decl_type
+            self._overload_resolver.set_var_type(st.name, decl_type.name)
+            lines = [f"{self._i()}{line}" for line in prelude]
+            lines.append(f"{self._i()}{fat} {name} = {expr};")
+            return lines
         if info["captures"]:
             self._closure_vars[st.name] = info
             self._var_types[st.name] = Type(info["closure_name"])
             self._overload_resolver.set_var_type(st.name, info["closure_name"])
-            return [f"{self._i()}{info['closure_name']} {name} = {init_expr};"]
+            return [f"{self._i()}{info['closure_name']} {name} = {concrete};"]
         self._fnptr_vars[st.name] = info
         self._var_types[st.name] = Type(info["fn_typedef"])
         self._overload_resolver.set_var_type(st.name, info["fn_typedef"])
-        return [f"{self._i()}{info['fn_typedef']} {name} = {init_expr};"]
+        return [f"{self._i()}{info['fn_typedef']} {name} = {concrete};"]
 
     def _sort_cmp_fragment(
         self,
@@ -2874,10 +3282,24 @@ class CGenerator:
         return f"({{ {helper}(({self._c_type(arr_type.element_type)}*)({arr_c}), {n}); {arr_c}; }})"
 
 
-def flow_to_c(declarations: List[Any], *, source_file: str | None = None, debug_info: bool = False) -> str:
+def flow_to_c(
+    declarations: List[Any],
+    *,
+    source_file: str | None = None,
+    debug_info: bool = False,
+    strict_effects: bool = False,
+    library: bool = False,
+) -> str:
     """Convert FLOW declarations to C code"""
     try:
-        generator = CGenerator(source_file=source_file, debug_info=debug_info)
+        generator = CGenerator(
+            source_file=source_file,
+            debug_info=debug_info,
+            strict_effects=strict_effects,
+            library=library,
+            # Runtime modules are trusted ABI; skip per-access bounds checks for speed.
+            bounds_check=not library,
+        )
         
         # Separate declarations by type
         constants = [d for d in declarations if isinstance(d, ConstDecl)]

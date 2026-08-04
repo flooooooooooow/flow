@@ -81,7 +81,7 @@ def test_dot_import_resolves_installed_path_dependency(tmp_path):
     assert "add_one" in resolver.symbol_table
 
 
-def test_registry_dependency_without_source_fails_honestly(tmp_path, capsys):
+def test_unknown_registry_dependency_fails_honestly(tmp_path, capsys):
     (tmp_path / "flow.toml").write_text(
         '[package]\nname = "app"\nversion = "0.1.0"\n\n'
         "[dependencies]\n"
@@ -92,4 +92,169 @@ def test_registry_dependency_without_source_fails_honestly(tmp_path, capsys):
     manager = FlowPackageManager(str(tmp_path))
 
     assert not manager.install()
-    assert "Registry dependency 'missing' is not supported yet" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Unknown dependency" in out or "not found" in out.lower()
+
+
+def test_git_url_helpers():
+    assert FlowPackageManager._looks_like_git_url(
+        "https://github.com/org/mylib.git"
+    )
+    assert FlowPackageManager._looks_like_git_url("git@github.com:org/mylib.git")
+    assert FlowPackageManager._infer_git_name(
+        "https://github.com/org/mylib.git"
+    ) == "mylib"
+    assert FlowPackageManager._normalize_git_url(
+        "git+https://github.com/org/mylib.git"
+    ) == "https://github.com/org/mylib.git"
+
+
+def test_add_git_url_shorthand_and_lock_rev(tmp_path):
+    import subprocess
+
+    # Bare-ish repo with a Flow package at root
+    repo = tmp_path / "mylib.git"
+    work = tmp_path / "mylib-work"
+    work.mkdir()
+    (work / "flow.toml").write_text(
+        '[package]\nname = "mylib"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    (work / "src").mkdir()
+    (work / "src" / "lib.flow").write_text(
+        "export function one() -> i32 { return 1 }\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init"], cwd=work, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "test"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=work, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "clone", "--bare", str(work), str(repo)],
+        check=True,
+        capture_output=True,
+    )
+
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "flow.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n[dependencies]\n',
+        encoding="utf-8",
+    )
+
+    manager = FlowPackageManager(str(app))
+    assert manager.add(f"file://{repo}")
+    assert (app / "flow_packages" / "mylib" / "src" / "lib.flow").exists()
+    lock = (app / "flow.lock").read_text(encoding="utf-8")
+    assert '"source": "git"' in lock
+    assert '"rev"' in lock
+    toml = (app / "flow.toml").read_text(encoding="utf-8")
+    assert "mylib" in toml and "git" in toml
+
+
+def test_git_subdir_install(tmp_path):
+    import subprocess
+
+    work = tmp_path / "mono-work"
+    pkg = work / "packages" / "ring"
+    pkg.mkdir(parents=True)
+    (pkg / "flow.toml").write_text(
+        '[package]\nname = "ring"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    (pkg / "src").mkdir()
+    (pkg / "src" / "lib.flow").write_text(
+        "export function capacity() -> i32 { return 8 }\n",
+        encoding="utf-8",
+    )
+    (work / "README.md").write_text("mono\n", encoding="utf-8")
+    subprocess.run(["git", "init"], cwd=work, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "test"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=work, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+    bare = tmp_path / "mono.git"
+    subprocess.run(
+        ["git", "clone", "--bare", str(work), str(bare)],
+        check=True,
+        capture_output=True,
+    )
+
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "flow.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n[dependencies]\n',
+        encoding="utf-8",
+    )
+    manager = FlowPackageManager(str(app))
+    assert manager.add(
+        "ring",
+        git=f"file://{bare}",
+        subdir="packages/ring",
+    )
+    assert (app / "flow_packages" / "ring" / "src" / "lib.flow").exists()
+    assert not (app / "flow_packages" / "ring" / "README.md").exists()
+
+
+def test_collect_dependency_native_from_installed_package(tmp_path):
+    dep = tmp_path / "httpish"
+    (dep / "native").mkdir(parents=True)
+    (dep / "src").mkdir(parents=True)
+    (dep / "flow.toml").write_text(
+        '[package]\nname = "httpish"\nversion = "0.1.0"\n\n'
+        "[native]\n"
+        'sources = ["native/bridge.c"]\n'
+        'libs = ["curl"]\n',
+        encoding="utf-8",
+    )
+    (dep / "native" / "bridge.c").write_text("int x;\n", encoding="utf-8")
+    (dep / "src" / "lib.flow").write_text("export function n() -> i32 { return 1 }\n", encoding="utf-8")
+
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "flow.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        "[dependencies]\n"
+        'httpish = { path = "../httpish" }\n',
+        encoding="utf-8",
+    )
+    mgr = FlowPackageManager(str(app))
+    assert mgr.install()
+    config = mgr.load_config()
+    sources, frameworks, libs, cflags, ldflags = mgr._collect_dependency_native(config)
+    assert any(s.endswith("bridge.c") for s in sources)
+    assert "curl" in libs
+    assert frameworks == []
+    assert cflags == []
+    assert ldflags == []
