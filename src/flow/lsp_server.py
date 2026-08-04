@@ -8,13 +8,17 @@ import json
 import sys
 import re
 import threading
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from .parser import (
     Lexer, Parser, FunctionDecl, StructDecl, EnumDecl, TraitDecl,
-    FlowSyntaxError, TokenType
+    TheoremDecl, FlowSyntaxError, TokenType
 )
 from .type_checker import TypeChecker
+from .lsp_dynamics import dynamics_hover
+from .lsp_ordering import ordering_hover
+from .lsp_syntax import syntax_hover, syntax_token_at_position
 
 # LSP Message Types
 @dataclass
@@ -72,6 +76,8 @@ class FlowLanguageServer:
     def __init__(self):
         self.documents: Dict[str, str] = {}  # uri -> content
         self.symbols: Dict[str, Dict[str, Any]] = {}  # uri -> {name: symbol_info}
+        self.stdlib_symbols: Dict[str, Dict[str, Any]] = {}  # name -> symbol_info
+        self._stdlib_indexed = False
         self.running = True
         self._write_lock = threading.Lock()  # serializes stdout writes
         self._debounce_timers: Dict[str, threading.Timer] = {}  # uri -> pending analysis
@@ -80,34 +86,78 @@ class FlowLanguageServer:
         self.builtin_types = [
             'i8', 'i16', 'i32', 'i64', 'i128',
             'u8', 'u16', 'u32', 'u64', 'u128',
-            'f32', 'f64', 'bool', 'void', 'string'
+            'f32', 'f64', 'bool', 'void', 'string',
+            'array', 'ptr', 'vec', 'bit',
         ]
         
         # Built-in functions
         self.builtin_functions = {
-            'print': {'params': ['value: any'], 'return': 'void', 'doc': 'Print a value to stdout'},
-            'printf': {'params': ['format: string', '...'], 'return': 'void', 'doc': 'Print formatted output (C-style)'},
-            'sqrt': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Square root'},
-            'sin': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Sine function'},
-            'cos': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Cosine function'},
-            'tan': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Tangent function'},
-            'exp': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Exponential function'},
-            'log': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Natural logarithm'},
-            'pow': {'params': ['x: f64', 'y: f64'], 'return': 'f64', 'doc': 'Power function'},
-            'abs': {'params': ['x: i32'], 'return': 'i32', 'doc': 'Absolute value (integer)'},
-            'fabs': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Absolute value (float)'},
-            'floor': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Floor function'},
-            'ceil': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Ceiling function'},
-            'tanh': {'params': ['x: f64'], 'return': 'f64', 'doc': 'Hyperbolic tangent'},
+            'print': {'params': ['value: any'], 'return': 'void',
+                      'doc': 'Print a value to stdout.'},
+            'printf': {'params': ['format: string', '...'], 'return': 'void',
+                       'doc': 'Print formatted output (C-style format string).'},
+            'sqrt': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Square root of x (√x).'},
+            'sin': {'params': ['x: f64'], 'return': 'f64',
+                    'doc': 'Sine of x (radians).'},
+            'cos': {'params': ['x: f64'], 'return': 'f64',
+                    'doc': 'Cosine of x (radians).'},
+            'tan': {'params': ['x: f64'], 'return': 'f64',
+                    'doc': 'Tangent of x (radians).'},
+            'asin': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Arcsine of x; result in radians.'},
+            'acos': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Arccosine of x; result in radians.'},
+            'atan': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Arctangent of x; result in radians.'},
+            'atan2': {'params': ['y: f64', 'x: f64'], 'return': 'f64',
+                      'doc': 'Arctangent of y/x using both signs for the quadrant.'},
+            'exp': {'params': ['x: f64'], 'return': 'f64',
+                    'doc': 'Exponential e^x.'},
+            'log': {'params': ['x: f64'], 'return': 'f64',
+                    'doc': 'Natural logarithm (ln x).'},
+            'log10': {'params': ['x: f64'], 'return': 'f64',
+                      'doc': 'Base-10 logarithm of x.'},
+            'log2': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Base-2 logarithm of x.'},
+            'pow': {'params': ['x: f64', 'y: f64'], 'return': 'f64',
+                    'doc': 'Raise x to the power y (x^y).'},
+            'abs': {'params': ['x: i32'], 'return': 'i32',
+                    'doc': 'Absolute value |x| for integers.'},
+            'fabs': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Absolute value |x| for floating-point.'},
+            'floor': {'params': ['x: f64'], 'return': 'f64',
+                      'doc': 'Greatest integer ≤ x (as f64).'},
+            'ceil': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Smallest integer ≥ x (as f64).'},
+            'round': {'params': ['x: f64'], 'return': 'f64',
+                      'doc': 'Nearest integer to x (as f64).'},
+            'trunc': {'params': ['x: f64'], 'return': 'f64',
+                      'doc': 'Truncate fractional part toward zero.'},
+            'fmod': {'params': ['x: f64', 'y: f64'], 'return': 'f64',
+                     'doc': 'Floating-point remainder of x/y.'},
+            'min': {'params': ['a: f64', 'b: f64'], 'return': 'f64',
+                    'doc': 'Return the smaller of a and b.'},
+            'max': {'params': ['a: f64', 'b: f64'], 'return': 'f64',
+                    'doc': 'Return the larger of a and b.'},
+            'sinh': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Hyperbolic sine of x.'},
+            'cosh': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Hyperbolic cosine of x.'},
+            'tanh': {'params': ['x: f64'], 'return': 'f64',
+                     'doc': 'Hyperbolic tangent of x.'},
+            'hypot': {'params': ['x: f64', 'y: f64'], 'return': 'f64',
+                      'doc': 'Euclidean norm √(x² + y²) without overflow.'},
         }
         
         # Keywords
         self.keywords = [
             'function', 'let', 'return', 'if', 'else', 'elif', 'while', 'for',
-            'parallel', 'in', 'step', 'struct', 'enum', 'trait', 'impl',
+            'parallel', 'in', 'step', 'to', 'struct', 'enum', 'trait', 'impl',
             'effect', 'capability', 'handle', 'with', 'match', 'default',
             'import', 'export', 'extern', 'const', 'module', 'test', 'self',
-            'array', 'ptr', 'vec', 'true', 'false'
+            'array', 'ptr', 'vec', 'true', 'false', 'mut', 'inline',
+            'theorem', 'assume', 'therefore', 'shader', 'unit',
         ]
 
         # Reserved words for rename validation: mirrors the parser's
@@ -253,56 +303,306 @@ class FlowLanguageServer:
             sys.stderr.flush()
     
     def _analyze_document(self, uri: str):
-        """Analyze a document and extract symbols."""
+        """Analyze a document and extract symbols (including preceding # docs)."""
         text = self.documents.get(uri, '')
-        symbols = {}
-        
+        self.symbols[uri] = self._extract_symbols_from_text(text)
+
+    def _extract_symbols_from_text(
+        self, text: str, *, exported_only: bool = False
+    ) -> Dict[str, Dict[str, Any]]:
+        """Parse text and build a name -> symbol_info map with doc comments."""
+        symbols: Dict[str, Dict[str, Any]] = {}
+        lines = text.split('\n')
+
         try:
             lexer = Lexer(text)
             parser = Parser(lexer, source=text)
             declarations = parser.parse()
-            
-            for decl in declarations:
-                if isinstance(decl, FunctionDecl):
-                    loc = decl.location
-                    symbols[decl.name] = {
-                        'kind': 'function',
-                        'params': [(p.name, p.type.name) for p in decl.parameters],
-                        'return': decl.return_type.name,
-                        'line': loc.line if loc else 0,
-                        'column': loc.column if loc else 0,
-                        'end_line': loc.end_line if loc else 0,
-                        'end_column': loc.end_column if loc else 0,
-                    }
-                elif isinstance(decl, StructDecl):
-                    loc = decl.location
-                    symbols[decl.name] = {
-                        'kind': 'struct',
-                        'fields': [(f.name, f.type.name) for f in decl.fields],
-                        'line': loc.line if loc else 0,
-                        'column': loc.column if loc else 0,
-                        'end_line': loc.end_line if loc else 0,
-                        'end_column': loc.end_column if loc else 0,
-                    }
-                elif isinstance(decl, EnumDecl):
-                    symbols[decl.name] = {
-                        'kind': 'enum',
-                        'variants': [v.name for v in decl.variants],
-                        'line': 0,
-                        'column': 0,
-                    }
-                elif isinstance(decl, TraitDecl):
-                    symbols[decl.name] = {
-                        'kind': 'trait',
-                        'methods': [m.name for m in decl.methods],
-                        'line': 0,
-                        'column': 0,
-                    }
         except Exception:
-            # Parse error - still store partial symbols
-            pass
+            # Fallback: regex-scan exports so stdlib hover still works on
+            # files the parser cannot fully load.
+            return self._extract_symbols_regex(text, exported_only=exported_only)
 
-        self.symbols[uri] = symbols
+        for decl in declarations:
+            if exported_only and not getattr(decl, 'is_exported', False):
+                continue
+
+            if isinstance(decl, FunctionDecl):
+                loc = decl.location
+                # Prefer regex line of `function name` for doc attachment —
+                # SourceLocation sometimes lands on the preceding `#` comment.
+                decl_line = self._find_decl_line(lines, 'function', decl.name)
+                if decl_line == 0 and loc is not None:
+                    decl_line = loc.line
+                symbols[decl.name] = {
+                    'kind': 'function',
+                    'params': [(p.name, p.type.name) for p in decl.parameters],
+                    'return': decl.return_type.name,
+                    'line': loc.line if loc else decl_line,
+                    'column': loc.column if loc else 0,
+                    'end_line': loc.end_line if loc else decl_line,
+                    'end_column': loc.end_column if loc else 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': bool(getattr(decl, 'is_exported', False)),
+                }
+            elif isinstance(decl, StructDecl):
+                loc = decl.location
+                decl_line = loc.line if loc else self._find_decl_line(
+                    lines, 'struct', decl.name
+                )
+                symbols[decl.name] = {
+                    'kind': 'struct',
+                    'fields': [(f.name, f.type.name) for f in decl.fields],
+                    'line': loc.line if loc else decl_line,
+                    'column': loc.column if loc else 0,
+                    'end_line': loc.end_line if loc else decl_line,
+                    'end_column': loc.end_column if loc else 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': bool(getattr(decl, 'is_exported', False)),
+                }
+            elif isinstance(decl, EnumDecl):
+                decl_line = self._find_decl_line(lines, 'enum', decl.name)
+                symbols[decl.name] = {
+                    'kind': 'enum',
+                    'variants': [v.name for v in decl.variants],
+                    'line': decl_line,
+                    'column': 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': bool(getattr(decl, 'is_exported', False)),
+                }
+            elif isinstance(decl, TraitDecl):
+                decl_line = self._find_decl_line(lines, 'trait', decl.name)
+                symbols[decl.name] = {
+                    'kind': 'trait',
+                    'methods': [m.name for m in decl.methods],
+                    'line': decl_line,
+                    'column': 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': bool(getattr(decl, 'is_exported', False)),
+                }
+            elif isinstance(decl, TheoremDecl):
+                name = decl.claim_path
+                decl_line = self._find_decl_line(lines, 'theorem', name)
+                params = [(p.name, p.type.name) for p in decl.parameters]
+                symbols[name] = {
+                    'kind': 'theorem',
+                    'params': params,
+                    'return': 'void',
+                    'line': decl_line,
+                    'column': 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': bool(getattr(decl, 'is_exported', False)),
+                }
+
+        return symbols
+
+    _MODIFIER_LINE_RE = re.compile(
+        r'^\s*(export|inline|always_inline|noinline)\s*$'
+    )
+    _ATTR_LINE_RE = re.compile(r'^\s*@[A-Za-z_][A-Za-z0-9_]*\s*$')
+
+    def _doc_comment_above(self, lines: List[str], decl_line: int) -> str:
+        """Collect consecutive `#` comments immediately above a declaration.
+
+        Skips blank lines and declaration modifiers (`export`, `inline`, `@attr`)
+        that sit between the comment block and the keyword. Blank lines inside
+        the comment block are preserved. Stops at the first non-comment line.
+        Includes `# @means` / `# @from` / `# @tier` / `# @needs` metadata lines.
+        """
+        if decl_line <= 0 or decl_line > len(lines):
+            # decl_line is 0-based; allow 0
+            pass
+        if decl_line < 0 or not lines:
+            return ''
+
+        i = decl_line - 1
+        # Skip modifiers / attributes / blanks glued to the declaration head.
+        while i >= 0:
+            raw = lines[i]
+            stripped = raw.strip()
+            if (
+                stripped == ''
+                or self._MODIFIER_LINE_RE.match(raw)
+                or self._ATTR_LINE_RE.match(raw)
+                or stripped in ('export', 'inline', 'always_inline', 'noinline')
+            ):
+                i -= 1
+                continue
+            # Also skip a line that is only `export` + keyword start on next line
+            # already handled; if the decl line itself included `export function`,
+            # comments are directly above — fall through.
+            break
+
+        if i < 0 or not lines[i].lstrip().startswith('#'):
+            return ''
+
+        # Collect the contiguous comment block (upward), allowing blank lines
+        # inside the block only.
+        block_end = i
+        while i >= 0:
+            stripped = lines[i].strip()
+            if stripped.startswith('#'):
+                i -= 1
+                continue
+            if stripped == '':
+                # Peek further: blank allowed only if more comments continue above.
+                j = i - 1
+                while j >= 0 and lines[j].strip() == '':
+                    j -= 1
+                if j >= 0 and lines[j].lstrip().startswith('#'):
+                    i -= 1
+                    continue
+                break
+            break
+
+        block_start = i + 1
+        doc_lines: List[str] = []
+        for idx in range(block_start, block_end + 1):
+            stripped = lines[idx].strip()
+            if stripped.startswith('#'):
+                # Keep `# @means ...` metadata; strip a single leading `#`.
+                body = stripped[1:]
+                if body.startswith(' '):
+                    body = body[1:]
+                doc_lines.append(body)
+            elif stripped == '':
+                doc_lines.append('')
+        # Trim leading/trailing blank lines in the prose
+        while doc_lines and doc_lines[0] == '':
+            doc_lines.pop(0)
+        while doc_lines and doc_lines[-1] == '':
+            doc_lines.pop()
+        return '\n'.join(doc_lines)
+
+    def _find_decl_line(self, lines: List[str], kind: str, name: str) -> int:
+        """Best-effort 0-based line of `kind name` (handles claim paths)."""
+        # Claim paths may contain `/`, `+`, `.`, etc.
+        escaped = re.escape(name)
+        pattern = re.compile(
+            rf'^\s*(?:export\s+)?(?:inline\s+)?{kind}\s+{escaped}\b'
+        )
+        for idx, line in enumerate(lines):
+            if pattern.search(line):
+                return idx
+        # Softer fallback: kind + name substring
+        soft = re.compile(rf'\b{kind}\b')
+        for idx, line in enumerate(lines):
+            if soft.search(line) and name in line:
+                return idx
+        return 0
+
+    def _extract_symbols_regex(
+        self, text: str, *, exported_only: bool = False
+    ) -> Dict[str, Dict[str, Any]]:
+        """Regex fallback when the parser cannot load a file."""
+        symbols: Dict[str, Dict[str, Any]] = {}
+        lines = text.split('\n')
+        decl_re = re.compile(
+            r'^\s*(?P<export>export\s+)?'
+            r'(?:inline\s+)?'
+            r'(?P<kind>function|struct|enum|trait|theorem)\s+'
+            r'(?P<name>[A-Za-z_][A-Za-z0-9_/.+\-]*)'
+        )
+        for idx, line in enumerate(lines):
+            m = decl_re.match(line)
+            if not m:
+                continue
+            if exported_only and not m.group('export'):
+                continue
+            kind = m.group('kind')
+            name = m.group('name')
+            info: Dict[str, Any] = {
+                'kind': kind if kind != 'theorem' else 'theorem',
+                'line': idx,
+                'column': 0,
+                'doc': self._doc_comment_above(lines, idx),
+                'exported': bool(m.group('export')),
+            }
+            if kind == 'function':
+                info['params'] = []
+                info['return'] = 'void'
+            elif kind == 'struct':
+                info['fields'] = []
+            elif kind == 'enum':
+                info['variants'] = []
+            elif kind == 'trait':
+                info['methods'] = []
+            elif kind == 'theorem':
+                info['params'] = []
+                info['return'] = 'void'
+            symbols[name] = info
+        return symbols
+
+    def _repo_root(self) -> Path:
+        """Repository root discovered from this module's location."""
+        # src/flow/lsp_server.py -> repo root
+        return Path(__file__).resolve().parent.parent.parent
+
+    @staticmethod
+    def _stdlib_doc_rank(info: Dict[str, Any]) -> int:
+        """Higher rank wins on name collisions across stdlib files."""
+        path = (info.get('stdlib_path') or '').replace('\\', '/')
+        base = path.rsplit('/', 1)[-1]
+        # Prefer core numeric modules over AD/GPU overload wrappers.
+        priority = {
+            'math.flow': 100,
+            'vec.flow': 90,
+            'blas.flow': 80,
+            'tensor.flow': 70,
+            'array.flow': 60,
+            'collections.flow': 50,
+        }
+        rank = priority.get(base, 10)
+        doc = (info.get('doc') or '').strip()
+        if not doc:
+            return 0
+        # Penalize section-banner docs that swallowed file headers.
+        if doc.lstrip().startswith('===') or doc.lstrip().startswith('---'):
+            rank -= 40
+        if len(doc) > 400:
+            rank -= 20
+        return rank
+
+    def _ensure_stdlib_indexed(self) -> None:
+        """Scan lib/stdlib/**/*.flow for exported symbols + doc comments."""
+        if self._stdlib_indexed:
+            return
+        self._stdlib_indexed = True
+        stdlib_root = self._repo_root() / 'lib' / 'stdlib'
+        if not stdlib_root.is_dir():
+            return
+        for path in sorted(stdlib_root.rglob('*.flow')):
+            try:
+                text = path.read_text(encoding='utf-8')
+            except OSError:
+                continue
+            try:
+                file_syms = self._extract_symbols_from_text(
+                    text, exported_only=True
+                )
+            except Exception:
+                continue
+            for name, info in file_syms.items():
+                info = dict(info)
+                info['stdlib_path'] = str(
+                    path.relative_to(self._repo_root())
+                )
+                existing = self.stdlib_symbols.get(name)
+                if existing is None:
+                    self.stdlib_symbols[name] = info
+                    continue
+                new_doc = (info.get('doc') or '').strip()
+                old_doc = (existing.get('doc') or '').strip()
+                # Later files win when they carry docs (math.flow after
+                # autodiff.flow so plain `add`/`sin` get the numeric docs).
+                # Never let an empty later decl erase a documented one.
+                if new_doc and (
+                    not old_doc
+                    or self._stdlib_doc_rank(info) >= self._stdlib_doc_rank(
+                        existing
+                    )
+                ):
+                    self.stdlib_symbols[name] = info
 
     # ------------------------------------------------------------------
     # Diagnostics
@@ -521,98 +821,154 @@ class FlowLanguageServer:
         return items
     
     def _handle_hover(self, params: dict) -> Optional[dict]:
-        """Handle textDocument/hover."""
+        """Handle textDocument/hover.
+
+        Resolution order:
+          1. dynamics DSL keywords (`dsys`, `dyn.…`, …)
+          2. declarative ordering (`sort`, `sortBy`, …)
+          3. syntax / operators (`|>`, `match`, `@gpu`, types, …)
+          4. built-in functions (signature + prose doc)
+          5. symbols in the current document (signature + `#` doc comments)
+          6. symbols in other open documents
+          7. exported stdlib symbols (cached from lib/stdlib)
+        """
         uri = params['textDocument']['uri']
         pos = params['position']
-        
+        line = pos['line']
+        character = pos['character']
+
         text = self.documents.get(uri, '')
-        word = self._get_word_at_position(text, pos['line'], pos['character'])
-        
+        word = self._get_word_at_position(text, line, character)
+        syntax_tok = syntax_token_at_position(text, line, character)
+
+        # Dynamics / ordering only apply to identifier-like tokens.
+        if word:
+            dyn_doc = dynamics_hover(word)
+            if dyn_doc:
+                return self._markdown_hover(dyn_doc)
+
+            ord_doc = ordering_hover(word)
+            if ord_doc:
+                return self._markdown_hover(ord_doc)
+
+        # Operators (e.g. `|>`) may yield an empty `word`; prefer syntax token.
+        tok = syntax_tok or word
+        if tok:
+            syn_doc = syntax_hover(tok)
+            if syn_doc:
+                return self._markdown_hover(syn_doc)
+
         if not word:
             return None
-        
-        # Check built-in functions
+
+        # Built-in functions (enrich with stdlib `#` docs when available)
         if word in self.builtin_functions:
             info = self.builtin_functions[word]
-            return {
-                'contents': {
-                    'kind': 'markdown',
-                    'value': f"```flow\nfunction {word}({', '.join(info['params'])}) -> {info['return']}\n```\n\n{info.get('doc', '')}"
-                }
-            }
-        
-        # Check built-in types
+            prose = info.get('doc', '')
+            self._ensure_stdlib_indexed()
+            std = self.stdlib_symbols.get(word) or {}
+            std_doc = (std.get('doc') or '').strip()
+            if std_doc and (
+                not prose or len(std_doc) > len(prose)
+            ):
+                prose = std_doc
+            value = (
+                f"```flow\nfunction {word}({', '.join(info['params'])}) "
+                f"-> {info['return']}\n```"
+            )
+            if prose:
+                value += f"\n\n{prose}"
+            if std.get('stdlib_path'):
+                value += f"\n\n*stdlib:* `{std['stdlib_path']}`"
+            return self._markdown_hover(value)
+
+        # Built-in types (syntax catalog may already have covered these)
         if word in self.builtin_types:
-            type_docs = {
-                'i32': 'Signed 32-bit integer',
-                'i64': 'Signed 64-bit integer',
-                'f32': 'Single-precision floating point',
-                'f64': 'Double-precision floating point',
-                'bool': 'Boolean (true/false)',
-                'void': 'No return value',
-                'string': 'UTF-8 string',
-            }
-            doc = type_docs.get(word, 'Built-in type')
-            return {
-                'contents': {
-                    'kind': 'markdown',
-                    'value': f"**{word}**\n\n{doc}"
-                }
-            }
-        
-        # Check document symbols in current file
+            syn_doc = syntax_hover(word)
+            if syn_doc:
+                return self._markdown_hover(syn_doc)
+            return self._markdown_hover(f"**{word}**\n\nBuilt-in type")
+
+        # Current document symbols
         doc_symbols = self.symbols.get(uri, {})
         hover_info = self._get_hover_for_symbol(word, doc_symbols)
         if hover_info:
             return hover_info
-        
-        # Check symbols in all open documents
+
+        # Other open documents
         for other_uri, other_symbols in self.symbols.items():
             if other_uri != uri:
                 hover_info = self._get_hover_for_symbol(word, other_symbols)
                 if hover_info:
                     return hover_info
-        
+
+        # Stdlib cache (lazy if init indexing was skipped)
+        self._ensure_stdlib_indexed()
+        hover_info = self._get_hover_for_symbol(word, self.stdlib_symbols)
+        if hover_info:
+            return hover_info
+
         return None
-    
+
+    @staticmethod
+    def _markdown_hover(value: str) -> dict:
+        return {
+            'contents': {
+                'kind': 'markdown',
+                'value': value,
+            }
+        }
+
     def _get_hover_for_symbol(self, word: str, symbols: Dict) -> Optional[dict]:
-        """Generate hover content for a symbol."""
+        """Generate hover content for a symbol, including `doc` when present."""
         if word not in symbols:
             return None
-        
+
         info = symbols[word]
+        doc = (info.get('doc') or '').strip()
+        stdlib_note = ''
+        if info.get('stdlib_path'):
+            stdlib_note = f"\n\n*stdlib:* `{info['stdlib_path']}`"
+
         if info['kind'] == 'function':
-            params_str = ', '.join([f"{p[0]}: {p[1]}" for p in info['params']])
-            return {
-                'contents': {
-                    'kind': 'markdown',
-                    'value': f"```flow\nfunction {word}({params_str}) -> {info['return']}\n```"
-                }
-            }
-        elif info['kind'] == 'struct':
-            fields_str = '\n'.join([f"    {f[0]}: {f[1]}" for f in info['fields']])
-            return {
-                'contents': {
-                    'kind': 'markdown',
-                    'value': f"```flow\nstruct {word} {{\n{fields_str}\n}}\n```"
-                }
-            }
-        elif info['kind'] == 'enum':
+            params = info.get('params') or []
+            params_str = ', '.join([f"{p[0]}: {p[1]}" for p in params])
+            ret = info.get('return', 'void')
+            value = f"```flow\nfunction {word}({params_str}) -> {ret}\n```"
+            if doc:
+                value += f"\n\n{doc}"
+            value += stdlib_note
+            return self._markdown_hover(value)
+        if info['kind'] == 'theorem':
+            params = info.get('params') or []
+            params_str = ', '.join([f"{p[0]}: {p[1]}" for p in params])
+            value = f"```flow\ntheorem {word}({params_str})\n```"
+            if doc:
+                value += f"\n\n{doc}"
+            return self._markdown_hover(value)
+        if info['kind'] == 'struct':
+            fields = info.get('fields') or []
+            fields_str = '\n'.join([f"    {f[0]}: {f[1]}" for f in fields])
+            value = f"```flow\nstruct {word} {{\n{fields_str}\n}}\n```"
+            if doc:
+                value += f"\n\n{doc}"
+            value += stdlib_note
+            return self._markdown_hover(value)
+        if info['kind'] == 'enum':
             variants_str = ', '.join(info.get('variants', []))
-            return {
-                'contents': {
-                    'kind': 'markdown',
-                    'value': f"```flow\nenum {word} {{ {variants_str} }}\n```"
-                }
-            }
-        elif info['kind'] == 'trait':
+            value = f"```flow\nenum {word} {{ {variants_str} }}\n```"
+            if doc:
+                value += f"\n\n{doc}"
+            return self._markdown_hover(value)
+        if info['kind'] == 'trait':
             methods_str = ', '.join(info.get('methods', []))
-            return {
-                'contents': {
-                    'kind': 'markdown',
-                    'value': f"```flow\ntrait {word} {{\n  // methods: {methods_str}\n}}\n```"
-                }
-            }
+            value = (
+                f"```flow\ntrait {word} {{\n"
+                f"  # methods: {methods_str}\n}}\n```"
+            )
+            if doc:
+                value += f"\n\n{doc}"
+            return self._markdown_hover(value)
         return None
     
     def _handle_definition(self, params: dict) -> Optional[dict]:
