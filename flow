@@ -222,6 +222,7 @@ flow_concurrency_flags() {
         "$SCRIPT_DIR/runtime/flow_rt_cchan.c"
         "$SCRIPT_DIR/runtime/flow_rt_sysinfo.c"
         "$SCRIPT_DIR/runtime/flow_rt_crypto.c"
+        "$SCRIPT_DIR/runtime/flow_tls.c"
     )
     case "$(uname -m)" in
         arm64|aarch64)
@@ -233,6 +234,37 @@ flow_concurrency_flags() {
     esac
     FLOW_CONC_CFLAGS=("-I$SCRIPT_DIR/runtime")
     FLOW_CONC_LDFLAGS=("-pthread")
+    # Probe OpenSSL once (HTTPS accept-loop / flow_tls.c).
+    if [ -z "${FLOW_OPENSSL_PROBED:-}" ]; then
+        FLOW_OPENSSL_PROBED=1
+        FLOW_OPENSSL_CFLAGS=()
+        FLOW_OPENSSL_LDFLAGS=()
+        local ossl_prefix=""
+        if command -v brew >/dev/null 2>&1; then
+            ossl_prefix="$(brew --prefix openssl@3 2>/dev/null || brew --prefix openssl 2>/dev/null || true)"
+        fi
+        local probe="$SCRIPT_DIR/build/.ossl_probe.c"
+        mkdir -p "$SCRIPT_DIR/build"
+        printf '#include <openssl/ssl.h>\nint main(void){SSL_CTX_new(TLS_method());return 0;}\n' > "$probe"
+        if [ -n "$ossl_prefix" ] && clang -I"$ossl_prefix/include" "$probe" -L"$ossl_prefix/lib" -lssl -lcrypto -o "$SCRIPT_DIR/build/.ossl_probe" 2>/dev/null; then
+            FLOW_OPENSSL_CFLAGS=("-DFLOW_HAS_OPENSSL=1" "-I$ossl_prefix/include")
+            FLOW_OPENSSL_LDFLAGS=("-L$ossl_prefix/lib" "-Wl,-rpath,$ossl_prefix/lib" "-lssl" "-lcrypto")
+        elif pkg-config --exists openssl 2>/dev/null && clang $(pkg-config --cflags openssl) "$probe" $(pkg-config --libs openssl) -o "$SCRIPT_DIR/build/.ossl_probe" 2>/dev/null; then
+            # shellcheck disable=SC2207
+            FLOW_OPENSSL_CFLAGS=("-DFLOW_HAS_OPENSSL=1" $(pkg-config --cflags openssl))
+            # shellcheck disable=SC2207
+            FLOW_OPENSSL_LDFLAGS=($(pkg-config --libs openssl))
+        else
+            FLOW_OPENSSL_CFLAGS=("-DFLOW_HAS_OPENSSL=0")
+        fi
+        rm -f "$probe" "$SCRIPT_DIR/build/.ossl_probe"
+    fi
+    if [ "${#FLOW_OPENSSL_CFLAGS[@]}" -gt 0 ]; then
+        FLOW_CONC_CFLAGS+=("${FLOW_OPENSSL_CFLAGS[@]}")
+    fi
+    if [ "${#FLOW_OPENSSL_LDFLAGS[@]}" -gt 0 ]; then
+        FLOW_CONC_LDFLAGS+=("${FLOW_OPENSSL_LDFLAGS[@]}")
+    fi
     # Probe OpenMP once per shell invocation (Apple clang needs libomp).
     if [ -z "${FLOW_OPENMP_PROBED:-}" ]; then
         FLOW_OPENMP_PROBED=1
