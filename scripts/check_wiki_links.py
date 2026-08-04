@@ -17,8 +17,23 @@ SKIP_FILES = {
     "mkdocs.yml",
 }
 
+# Repo paths that are intentionally linked from docs but not mirrored into the wiki.
+REPO_LINK_PREFIXES = (
+    "examples/",
+    "benchmarks/",
+    "compiler/",
+    "runtime/",
+    "lib/",
+    "src/",
+    "tests/",
+    "plugins/",
+    "scripts/",
+    "registry/",
+)
+
 
 def resolve_link(source: Path, href: str) -> Path | None:
+    """Return a path that must exist, or None if the link should be skipped."""
     href = href.split("#")[0].strip()
     if not href or href.startswith(("http://", "https://", "mailto:", "#")):
         return None
@@ -29,7 +44,22 @@ def resolve_link(source: Path, href: str) -> Path | None:
     if relative.is_relative_to(WIKI) and relative.exists():
         return relative
 
+    # Repo-root docs/ links still appear in some project pages before rewrite.
+    if href.startswith("docs/"):
+        stripped = (WIKI / href[len("docs/") :]).resolve()
+        if stripped.is_relative_to(WIKI):
+            return stripped
+
     absolute = (WIKI / href).resolve()
+    if absolute.is_relative_to(WIKI) and absolute.exists():
+        return absolute
+
+    # Allow repo-root links that point at real tracked files outside the wiki tree.
+    if href.startswith(REPO_LINK_PREFIXES) or href in {"VISION.md", "ROADMAP.md"}:
+        repo_target = (ROOT / href).resolve()
+        if repo_target.is_relative_to(ROOT) and repo_target.exists():
+            return repo_target
+
     if absolute.is_relative_to(WIKI):
         return absolute
     return None
