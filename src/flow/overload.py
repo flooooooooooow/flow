@@ -282,6 +282,13 @@ class OverloadResolver:
         ptr_type = self._ptr_type_for_array(actual)
         if ptr_type and expected == ptr_type:
             return True
+        if expected.startswith("ptr_") and actual == expected[len("ptr_"):]:
+            return True
+        # Capability parameters are opaque handler slots in the C backend.
+        # A concrete struct value can satisfy `capability Effect` and is
+        # passed by address at the call site.
+        if expected.startswith("capability_"):
+            return actual not in self.PRIMITIVES and not actual.startswith("ptr_")
         # Allow f32/f64 interchangeability for now
         if expected in ('f32', 'f64') and actual in ('f32', 'f64'):
             return True

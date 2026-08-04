@@ -7,7 +7,7 @@ Manages FLOW projects and dependencies.
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 import subprocess
 import signal
@@ -69,8 +69,8 @@ class FlowPackage:
     author: str = ""
     license: str = "MIT"
     entry: str = "src/main.flow"
-    dependencies: Dict[str, str] = None
-    dev_dependencies: Dict[str, str] = None
+    dependencies: Dict[str, Any] = None
+    dev_dependencies: Dict[str, Any] = None
     # Native linking support
     native_sources: List[str] = None  # e.g., ["runtime/gfx_macos.m"]
     frameworks: List[str] = None  # macOS frameworks, e.g., ["Cocoa", "CoreGraphics"]
@@ -108,14 +108,14 @@ class FlowPackage:
             "[dependencies]",
         ]
         
-        for name, version in self.dependencies.items():
-            lines.append(f'{name} = "{version}"')
+        for name, spec in self.dependencies.items():
+            lines.append(f"{name} = {self._toml_value(spec)}")
         
         lines.append("")
         lines.append("[dev-dependencies]")
         
-        for name, version in self.dev_dependencies.items():
-            lines.append(f'{name} = "{version}"')
+        for name, spec in self.dev_dependencies.items():
+            lines.append(f"{name} = {self._toml_value(spec)}")
         
         # Native linking section
         if self.native_sources or self.frameworks or self.libs:
@@ -138,6 +138,20 @@ class FlowPackage:
                 lines.append(f'ldflags = [{ldflags_str}]')
         
         return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _toml_value(value: Any) -> str:
+        """Render the small TOML subset used by flow.toml package specs."""
+        if isinstance(value, dict):
+            parts = []
+            for key, item in value.items():
+                parts.append(f"{key} = {FlowPackage._toml_value(item)}")
+            return "{ " + ", ".join(parts) + " }"
+        if isinstance(value, list):
+            return "[" + ", ".join(FlowPackage._toml_value(item) for item in value) + "]"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return f'"{str(value)}"'
     
     @classmethod
     def from_toml(cls, toml_str: str) -> 'FlowPackage':
@@ -305,8 +319,17 @@ flow_packages/
             self._update_lock_entry(package_name, version, "stdlib" if (Path(__file__).parent.parent.parent / "lib" / "stdlib" / f"{package_name}.flow").exists() else "registry")
         return ok
     
-    def install_package(self, package_name: str, version: str = "*") -> bool:
-        """Install a package from the stdlib or registry."""
+    def _copy_package_dir(self, source: Path, dest: Path) -> None:
+        """Copy a package directory without carrying build artifacts."""
+        ignore = shutil.ignore_patterns(
+            ".git", "build", "flow_packages", "__pycache__", "*.pyc"
+        )
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(source, dest, ignore=ignore)
+
+    def install_package(self, package_name: str, spec: Any = "*") -> bool:
+        """Install a package from stdlib, a local path, or a git URL."""
         self.packages_dir.mkdir(exist_ok=True)
         
         # Check if it's a stdlib package
@@ -317,6 +340,50 @@ flow_packages/
             shutil.copy(stdlib_path, dest)
             print(f"{self.GREEN}✓ Installed {package_name} from stdlib{self.RESET}")
             return True
+
+        if isinstance(spec, dict):
+            if "path" in spec:
+                source = (self.project_dir / str(spec["path"])).resolve()
+                if not source.exists():
+                    print(f"{self.RED}Path dependency not found: {source}{self.RESET}")
+                    return False
+                dest = self.packages_dir / package_name
+                if source.is_dir():
+                    self._copy_package_dir(source, dest)
+                else:
+                    dest.parent.mkdir(exist_ok=True)
+                    shutil.copy(source, dest.with_suffix(".flow"))
+                print(f"{self.GREEN}✓ Installed {package_name} from {source}{self.RESET}")
+                return True
+
+            if "git" in spec:
+                git_url = str(spec["git"])
+                dest = self.packages_dir / package_name
+                ref = spec.get("tag") or spec.get("rev") or spec.get("branch")
+                try:
+                    if dest.exists():
+                        subprocess.run(
+                            ["git", "-C", str(dest), "fetch", "--tags", "--prune"],
+                            check=True,
+                        )
+                    else:
+                        subprocess.run(
+                            ["git", "clone", git_url, str(dest)],
+                            check=True,
+                        )
+                    if ref:
+                        subprocess.run(
+                            ["git", "-C", str(dest), "checkout", str(ref)],
+                            check=True,
+                        )
+                    print(f"{self.GREEN}✓ Installed {package_name} from git{self.RESET}")
+                    return True
+                except subprocess.CalledProcessError as e:
+                    print(f"{self.RED}Git dependency install failed for {package_name}: {e}{self.RESET}")
+                    return False
+
+            print(f"{self.RED}Unsupported dependency spec for {package_name}: {spec}{self.RESET}")
+            return False
         
         # Check if it's a local file
         local_path = self.project_dir / f"{package_name}.flow"
@@ -324,9 +391,11 @@ flow_packages/
             print(f"{self.YELLOW}{package_name} is a local file{self.RESET}")
             return True
         
-        # For now, just mark as "available via import"
-        print(f"{self.YELLOW}Package {package_name} will be resolved at compile time{self.RESET}")
-        return True
+        print(
+            f"{self.RED}Registry dependency '{package_name}' is not supported yet. "
+            f"Use {{ path = \"...\" }} or {{ git = \"...\", tag = \"...\" }}.{self.RESET}"
+        )
+        return False
     
     def install(self) -> bool:
         """Install all dependencies and refresh flow.lock."""
@@ -339,13 +408,21 @@ flow_packages/
         success = True
         lock = self._read_lock()
         lock.setdefault("packages", {})
-        for name, version in config.dependencies.items():
-            pinned = lock.get("packages", {}).get(name, {}).get("version", version)
+        for name, spec in config.dependencies.items():
+            locked_entry = lock.get("packages", {}).get(name, {})
+            pinned = locked_entry.get("version", spec)
             if not self.install_package(name, pinned):
                 success = False
             else:
                 stdlib_path = Path(__file__).parent.parent.parent / "lib" / "stdlib" / f"{name}.flow"
-                source = "stdlib" if stdlib_path.exists() else "registry"
+                if stdlib_path.exists():
+                    source = "stdlib"
+                elif isinstance(pinned, dict) and "path" in pinned:
+                    source = "path"
+                elif isinstance(pinned, dict) and "git" in pinned:
+                    source = "git"
+                else:
+                    source = "registry"
                 lock["packages"][name] = {"version": pinned, "source": source}
         
         if success:
