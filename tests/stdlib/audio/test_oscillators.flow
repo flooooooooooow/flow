@@ -152,8 +152,8 @@ function test_lfo_sine_at_zero() -> bool {
 # =============================================================================
 
 function main() -> i32 {
-    let passed: i32 = 0
-    let failed: i32 = 0
+    let mut passed: i32 = 0
+    let mut failed: i32 = 0
     
     printf("=== Audio Oscillators Tests ===\n\n")
     

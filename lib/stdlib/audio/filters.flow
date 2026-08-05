@@ -31,7 +31,7 @@ export function onepole_lowpass(cutoff_hz: f32, rate: SampleRate) -> OnePole {
     # Approximation: coeff ≈ 1 - (2π * cutoff / sample_rate) for low cutoffs
     let two_pi: f32 = 6.28318
     let ratio: f32 = cutoff_hz / rate.hz
-    let coeff: f32 = 1.0 - two_pi * ratio
+    let mut coeff: f32 = 1.0 - two_pi * ratio
     if coeff < 0.0 {
         coeff = 0.0
     }
@@ -48,7 +48,7 @@ export function onepole_smooth(time_ms: f32, rate: SampleRate) -> OnePole {
     if time_samples < 1.0 {
         return OnePole { coeff: 0.0, state: 0.0 }
     }
-    let coeff: f32 = 1.0 - 1.0 / time_samples
+    let mut coeff: f32 = 1.0 - 1.0 / time_samples
     if coeff < 0.0 {
         coeff = 0.0
     }
@@ -94,7 +94,7 @@ export struct DCBlocker {
 # Create DC blocker (default: ~10Hz cutoff at 44.1kHz)
 export function dcblocker_new(rate: SampleRate) -> DCBlocker {
     # R = 1 - (2π * 10 / sample_rate)
-    let coeff: f32 = 1.0 - 62.83 / rate.hz
+    let mut coeff: f32 = 1.0 - 62.83 / rate.hz
     if coeff < 0.9 {
         coeff = 0.9
     }
@@ -312,7 +312,7 @@ export function svf_new(cutoff: f32, q: f32, rate: SampleRate) -> SVF {
     # g = tan(π * cutoff / sample_rate)
     let pi_fc: f32 = 3.14159 * cutoff / rate.hz
     # tan approximation for small angles
-    let g: f32 = pi_fc + pi_fc * pi_fc * pi_fc / 3.0
+    let mut g: f32 = pi_fc + pi_fc * pi_fc * pi_fc / 3.0
     let k: f32 = 1.0 / q
     return SVF { g: g, k: k, ic1eq: 0.0, ic2eq: 0.0 }
 }

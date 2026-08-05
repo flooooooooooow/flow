@@ -34,7 +34,7 @@ from .parser import (
     ForStatement, BinaryOperation, UnaryOperation, FunctionCall,
     Literal, StructLiteral, ArrayLiteral, FieldAccess,
     ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter, CastExpression,
-    ExpectStatement, RecordUpdate,
+    ExpectStatement, RecordUpdate, Variable,
 )
 
 
@@ -76,7 +76,25 @@ class MonomorphRequest:
         return f"{self.name}_{args_str}"
     
     def _type_to_str(self, t: Type) -> str:
-        """Convert type to string for name mangling (unambiguous)."""
+        """Convert type to string for name mangling.
+
+        Plain named types (i32, Point, …) use the short form so mangled
+        names match the parser (`channel_new<i32>` → `channel_new_i32`).
+        Compound types keep the unambiguous N-length encoding.
+        """
+        is_plain = (
+            t
+            and t.name
+            and not getattr(t, "is_pointer", False)
+            and not getattr(t, "is_reference", False)
+            and not getattr(t, "is_capability", False)
+            and t.size is None
+            and t.element_type is None
+            and not t.type_args
+        )
+        if is_plain:
+            return t.name
+
         parts: List[str] = []
         if getattr(t, "is_pointer", False):
             parts.append("P")
@@ -229,15 +247,16 @@ class Monomorphizer:
             self._scan_expression(stmt.condition)
         elif isinstance(stmt, Block):
             self._scan_block(stmt)
+        elif isinstance(stmt, (FunctionCall, BinaryOperation, UnaryOperation, FieldAccess,
+                               ArrayAccess, StructLiteral, CastExpression, Variable, Literal)):
+            # Bare expression statements (e.g. channel_close<i32>(&ch))
+            self._scan_expression(stmt)
     
     def _scan_expression(self, expr: Expression) -> None:
         """Scan an expression for generic usages."""
         if isinstance(expr, FunctionCall):
-            # Check if this is a generic function call
-            if expr.name in self.generic_functions:
-                # Try to infer type args from arguments
-                self._request_function_mono(expr)
-            # Scan arguments
+            # Bare generic name or parser-mangled (`channel_new_i32`, `sizeof_i32`)
+            self._request_function_mono(expr)
             for arg in expr.arguments:
                 self._scan_expression(arg)
         elif isinstance(expr, StructLiteral):
@@ -316,31 +335,61 @@ class Monomorphizer:
         if t.element_type:
             self._scan_type(t.element_type, type_params)
     
+    def _match_generic_function(self, call_name: str):
+        """Resolve call name → (GenericDef, type_args|None).
+
+        Handles bare names and parser-mangled forms (`channel_new_i32`,
+        zero-arg `sizeof_i32`).
+        """
+        if call_name in self.generic_functions:
+            return self.generic_functions[call_name], None
+        best = None
+        best_len = -1
+        for gname, gdef in self.generic_functions.items():
+            prefix = gname + "_"
+            if call_name.startswith(prefix) and len(gname) > best_len:
+                suffix = call_name[len(prefix):]
+                nparams = len(gdef.type_params)
+                if nparams == 1 and suffix:
+                    best = (gdef, [Type(suffix)])
+                    best_len = len(gname)
+                elif nparams > 1 and suffix:
+                    parts = suffix.split("_")
+                    if len(parts) == nparams:
+                        best = (gdef, [Type(p) for p in parts])
+                        best_len = len(gname)
+        return best if best else (None, None)
+
     def _request_function_mono(self, call: FunctionCall) -> None:
         """Request monomorphization for a function call."""
-        if not call.arguments or call.name not in self.generic_functions:
+        generic_def, mangled_args = self._match_generic_function(call.name)
+        if not generic_def:
             return
 
-        generic_def = self.generic_functions[call.name]
         original = generic_def.decl
         num_type_params = len(generic_def.type_params)
+        gname = generic_def.name
 
-        # If the call has explicit type arguments, use them directly
-        if hasattr(call, 'type_args') and call.type_args and len(call.type_args) == num_type_params:
-            req = MonomorphRequest(call.name, call.type_args)
+        if mangled_args and len(mangled_args) == num_type_params:
+            req = MonomorphRequest(gname, mangled_args)
             self.function_requests[req.mangled_name] = req
             return
 
-        # Otherwise, infer type args from arguments by matching parameter types
-        # to the generic type parameters.
-        type_param_map: dict = {}  # type_param_name -> concrete Type
+        if hasattr(call, 'type_args') and call.type_args and len(call.type_args) == num_type_params:
+            req = MonomorphRequest(gname, call.type_args)
+            self.function_requests[req.mangled_name] = req
+            return
+
+        if not call.arguments:
+            return
+
+        type_param_map: dict = {}
         for arg, param in zip(call.arguments, original.parameters):
             self._infer_type_arg(arg, param.type, generic_def.type_params, type_param_map)
 
-        # Build type_args list in order of generic_def.type_params
         if len(type_param_map) == num_type_params:
             type_args = [type_param_map[tp] for tp in generic_def.type_params]
-            req = MonomorphRequest(call.name, type_args)
+            req = MonomorphRequest(gname, type_args)
             self.function_requests[req.mangled_name] = req
 
     def _infer_type_arg(self, arg: Expression, param_type: Type,
@@ -388,16 +437,28 @@ class Monomorphizer:
         return None
     
     def _generate_specializations(self) -> None:
-        """Generate all requested specializations."""
-        # Generate struct specializations
-        for mangled_name, req in self.struct_requests.items():
-            if mangled_name not in self.generated_structs:
-                self._generate_struct(req)
+        """Generate all requested specializations (worklist — nested calls may enqueue more)."""
+        pending_structs = list(self.struct_requests.items())
+        while pending_structs:
+            mangled_name, req = pending_structs.pop()
+            if mangled_name in self.generated_structs:
+                continue
+            before = set(self.struct_requests)
+            self._generate_struct(req)
+            for k, v in self.struct_requests.items():
+                if k not in before:
+                    pending_structs.append((k, v))
 
-        # Generate function specializations
-        for mangled_name, req in self.function_requests.items():
-            if mangled_name not in self.generated_functions:
-                self._generate_function(req)
+        pending_fns = list(self.function_requests.items())
+        while pending_fns:
+            mangled_name, req = pending_fns.pop()
+            if mangled_name in self.generated_functions:
+                continue
+            before = set(self.function_requests)
+            self._generate_function(req)
+            for k, v in self.function_requests.items():
+                if k not in before:
+                    pending_fns.append((k, v))
 
     def _check_instantiation_depth(self, name: str) -> None:
         """Guard against infinite recursive instantiation."""
@@ -468,16 +529,20 @@ class Monomorphizer:
         new_body = self._substitute_block(original.body, type_map)
         
         # Create specialized function
+        attrs = list(getattr(original, "attributes", None) or [])
+        if "monomorphized" not in attrs:
+            attrs.append("monomorphized")
         specialized = FunctionDecl(
             name=req.mangled_name,
             parameters=new_params,
             return_type=new_return,
             body=new_body,
-            attributes=original.attributes,
+            attributes=attrs,
             is_exported=original.is_exported,
             is_extern=original.is_extern,
             type_params=[],  # No longer generic
             location=getattr(original, "location", None),
+            effects=list(getattr(original, "effects", None) or []),
         )
         # Preserve other attributes
         if hasattr(original, "has_self"):
@@ -522,6 +587,19 @@ class Monomorphizer:
         self.struct_requests[req.mangled_name] = req
         return req.mangled_name
 
+    def _rewrite_mangled_type_name(self, name: str, type_map: Dict[str, Type]) -> str:
+        """Rewrite parser-mangled names that embed type params: Chan_T → Chan_i32."""
+        if not name or not type_map:
+            return name
+        rewritten = name
+        for tp, concrete in sorted(type_map.items(), key=lambda kv: -len(kv[0])):
+            cname = concrete.name if concrete and concrete.name else "void"
+            # Segment-safe replace: _T_ / _T$ / ^T_
+            parts = rewritten.split("_")
+            parts = [cname if p == tp else p for p in parts]
+            rewritten = "_".join(parts)
+        return rewritten
+
     def _substitute_type(self, t: Type, type_map: Dict[str, Type]) -> Type:
         """Substitute type parameters with concrete types."""
         if not t:
@@ -530,6 +608,42 @@ class Monomorphizer:
         # Check if this is a type parameter
         if t.name in type_map:
             return type_map[t.name]
+
+        # Parser-mangled nested names: ptr_Chan_T, Chan_T, etc.
+        if t.name and type_map:
+            rewritten = self._rewrite_mangled_type_name(t.name, type_map)
+            if rewritten != t.name:
+                base_name = rewritten.split("_")[0]
+                # Concrete generic struct? e.g. Chan_Point
+                if base_name in self.generic_structs and "_" in rewritten:
+                    gdef = self.generic_structs[base_name]
+                    suffix = rewritten[len(base_name) + 1:]
+                    parts = suffix.split("_")
+                    n = len(gdef.type_params)
+                    if len(parts) >= n:
+                        args = [Type(parts[i]) for i in range(n)]
+                        req = MonomorphRequest(base_name, args)
+                        self.struct_requests[req.mangled_name] = req
+                        return Type(
+                            req.mangled_name,
+                            is_pointer=t.is_pointer,
+                            is_reference=t.is_reference,
+                            is_capability=getattr(t, "is_capability", False),
+                            size=t.size,
+                        )
+                return Type(
+                    rewritten,
+                    is_pointer=t.is_pointer,
+                    is_reference=t.is_reference,
+                    is_capability=getattr(t, "is_capability", False),
+                    size=t.size,
+                    element_type=self._substitute_type(t.element_type, type_map)
+                    if t.element_type
+                    else None,
+                    type_args=[self._substitute_type(a, type_map) for a in t.type_args]
+                    if t.type_args
+                    else None,
+                )
         
         # Handle generic types with type arguments
         if t.type_args:
@@ -594,17 +708,34 @@ class Monomorphizer:
             )
         elif isinstance(stmt, Block):
             return self._substitute_block(stmt, type_map)
+        # Expression statements (bare calls) are stored as Expression nodes in the block.
+        elif isinstance(stmt, (FunctionCall, BinaryOperation, UnaryOperation, FieldAccess,
+                               ArrayAccess, StructLiteral, CastExpression, Variable, Literal)):
+            return self._substitute_expression(stmt, type_map)
         return stmt
     
     def _substitute_expression(self, expr: Expression, type_map: Dict[str, Type]) -> Expression:
         """Substitute types in an expression."""
         if isinstance(expr, FunctionCall):
             new_args = [self._substitute_expression(a, type_map) for a in expr.arguments]
-            # Check if calling a generic function
-            if expr.name in self.generic_functions:
-                # TODO: Proper type argument inference
+            new_name = expr.name
+            # Rewrite parser-mangled calls that still mention type params:
+            # sizeof_T / channel_bind_T → sizeof_i32 / channel_bind_i32
+            for tp, concrete in sorted(type_map.items(), key=lambda kv: -len(kv[0])):
+                token = f"_{tp}"
+                if new_name.endswith(token):
+                    base = new_name[: -len(token)]
+                    # Prefer short concrete name (matches parser mangling).
+                    cname = concrete.name if concrete and concrete.name else "void"
+                    new_name = f"{base}_{cname}"
+                    if base in self.generic_functions:
+                        req = MonomorphRequest(base, [concrete])
+                        self.function_requests[req.mangled_name] = req
+                    break
+            if new_name in self.generic_functions:
+                # Bare generic name left — try infer from args (best-effort)
                 pass
-            return FunctionCall(expr.name, new_args)
+            return FunctionCall(new_name, new_args)
         elif isinstance(expr, StructLiteral):
             new_fields = [(n, self._substitute_expression(v, type_map)) for n, v in expr.fields]
             new_name = self._resolve_struct_literal_mangled_name(expr.struct_name, type_map)
@@ -709,8 +840,17 @@ class Monomorphizer:
         new_body = self._rewrite_block(fn.body)
         
         new_fn = FunctionDecl(
-            fn.name, new_params, new_return, new_body, fn.attributes,
-            fn.is_exported, fn.is_extern, fn.type_params, getattr(fn, "has_self", False), getattr(fn, "location", None)
+            fn.name,
+            new_params,
+            new_return,
+            new_body,
+            fn.attributes,
+            fn.is_exported,
+            fn.is_extern,
+            fn.type_params,
+            getattr(fn, "has_self", False),
+            getattr(fn, "location", None),
+            list(getattr(fn, "effects", None) or []),
         )
         # Preserve has_self attribute for impl methods (constructor param is best-effort).
         if hasattr(fn, "has_self"):
@@ -749,6 +889,27 @@ class Monomorphizer:
         if isinstance(stmt, VarDecl):
             new_type = self._rewrite_type(stmt.type)
             new_init = self._rewrite_expression(stmt.initializer) if stmt.initializer else None
+            # Bare `Pair { … }` with annotated `Pair<i32, bool>` must use the
+            # specialized mangled name so C emits `(Pair_i32_bool){…}`.
+            if (
+                isinstance(new_init, StructLiteral)
+                and new_type
+                and new_type.name
+                and new_init.struct_name in self.generic_structs
+                and new_type.name.startswith(new_init.struct_name + "_")
+            ):
+                # Ensure a specialization request exists for the annotation.
+                base = new_init.struct_name
+                # Prefer an already-recorded request matching the mangled name.
+                if new_type.name not in self.struct_requests:
+                    # Rebuild type args from the rewritten annotation when
+                    # the original Type still carries type_args.
+                    type_args = list(getattr(stmt.type, "type_args", None) or [])
+                    if type_args:
+                        req = MonomorphRequest(base, type_args)
+                        self.struct_requests[req.mangled_name] = req
+                        new_type = Type(req.mangled_name, type_args=[])
+                new_init = StructLiteral(new_type.name, new_init.fields)
             return VarDecl(stmt.name, new_type, new_init, is_mutable=getattr(stmt, "is_mutable", False))
         elif isinstance(stmt, ReturnStatement):
             new_value = self._rewrite_expression(stmt.value) if stmt.value else None

@@ -1,6 +1,6 @@
 /* Opt-in race / deadlock hooks. Enable with FLOW_RACE=1.
- * Tracks per-thread lock stacks and reports lock-order inversions.
- * Not a full ThreadSanitizer — a cheap development aid.
+ * - Lock-order inversion detection
+ * - Shadow memory for channel/buffer touches (happens-before via locks)
  */
 #include "flow_race.h"
 
@@ -17,8 +17,13 @@
 #define FLOW_RACE_EDGES 512
 #endif
 
-static int g_enabled = -1; /* -1 unset, 0 off, 1 on */
+#ifndef FLOW_RACE_SHADOW
+#define FLOW_RACE_SHADOW 4096
+#endif
+
+static int g_enabled = -1;
 static pthread_mutex_t g_edge_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_shadow_mu = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct {
     void *locks[FLOW_RACE_DEPTH];
@@ -26,6 +31,7 @@ typedef struct {
 } lock_stack;
 
 static _Thread_local lock_stack g_stack;
+static _Thread_local unsigned long g_tid_key;
 
 typedef struct {
     void *before;
@@ -35,17 +41,36 @@ typedef struct {
 static lock_edge g_edges[FLOW_RACE_EDGES];
 static int g_nedges = 0;
 
-void flow_race_init(void) {
+typedef struct {
+    void *addr;
+    int32_t size;
+    unsigned long last_writer;
+    unsigned long last_reader;
+    int held_locks; /* bitmask of whether writer held any lock */
+} shadow_slot;
+
+static shadow_slot g_shadow[FLOW_RACE_SHADOW];
+static int g_nshadow = 0;
+
+static unsigned long tid_key(void) {
+    if (g_tid_key == 0) {
+        g_tid_key = (unsigned long)pthread_self();
+        if (g_tid_key == 0) g_tid_key = 1;
+    }
+    return g_tid_key;
+}
+
+void flow_rt_race_init(void) {
     if (g_enabled >= 0) return;
     const char *e = getenv("FLOW_RACE");
     g_enabled = (e && e[0] == '1') ? 1 : 0;
     if (g_enabled) {
-        fprintf(stderr, "[flow-race] enabled (lock-order + touch hooks)\n");
+        fprintf(stderr, "[flow-race] enabled (lock-order + shadow memory)\n");
     }
 }
 
-int flow_race_enabled(void) {
-    if (g_enabled < 0) flow_race_init();
+int flow_rt_race_enabled(void) {
+    if (g_enabled < 0) flow_rt_race_init();
     return g_enabled;
 }
 
@@ -73,7 +98,7 @@ static void add_edge(void *before, void *after) {
 }
 
 void flow_race_mutex_lock(void *mu) {
-    if (!flow_race_enabled() || !mu) return;
+    if (!flow_rt_race_enabled() || !mu) return;
     for (int i = 0; i < g_stack.n; i++) {
         add_edge(g_stack.locks[i], mu);
     }
@@ -83,7 +108,7 @@ void flow_race_mutex_lock(void *mu) {
 }
 
 void flow_race_mutex_unlock(void *mu) {
-    if (!flow_race_enabled() || !mu) return;
+    if (!flow_rt_race_enabled() || !mu) return;
     for (int i = g_stack.n - 1; i >= 0; i--) {
         if (g_stack.locks[i] == mu) {
             memmove(&g_stack.locks[i], &g_stack.locks[i + 1],
@@ -94,15 +119,61 @@ void flow_race_mutex_unlock(void *mu) {
     }
 }
 
+static shadow_slot *shadow_find(void *addr) {
+    for (int i = 0; i < g_nshadow; i++) {
+        if (g_shadow[i].addr == addr) return &g_shadow[i];
+    }
+    if (g_nshadow >= FLOW_RACE_SHADOW) return NULL;
+    shadow_slot *s = &g_shadow[g_nshadow++];
+    memset(s, 0, sizeof(*s));
+    s->addr = addr;
+    return s;
+}
+
+static void shadow_touch(void *addr, int32_t size, int is_write) {
+    if (!addr) return;
+    unsigned long me = tid_key();
+    int locked = g_stack.n > 0;
+    pthread_mutex_lock(&g_shadow_mu);
+    shadow_slot *s = shadow_find(addr);
+    if (!s) {
+        pthread_mutex_unlock(&g_shadow_mu);
+        return;
+    }
+    s->size = size;
+    if (is_write) {
+        if (s->last_writer && s->last_writer != me && !locked && !s->held_locks) {
+            fprintf(stderr,
+                    "[flow-race] WARNING: data race write %p size=%d "
+                    "threads %lx / %lx (no common lock)\n",
+                    addr, size, s->last_writer, me);
+        }
+        if (s->last_reader && s->last_reader != me && !locked && !s->held_locks) {
+            fprintf(stderr,
+                    "[flow-race] WARNING: data race write-after-read %p "
+                    "threads %lx / %lx\n",
+                    addr, s->last_reader, me);
+        }
+        s->last_writer = me;
+        s->held_locks = locked;
+    } else {
+        if (s->last_writer && s->last_writer != me && !locked && !s->held_locks) {
+            fprintf(stderr,
+                    "[flow-race] WARNING: data race read %p size=%d "
+                    "threads %lx / %lx (no common lock)\n",
+                    addr, size, s->last_writer, me);
+        }
+        s->last_reader = me;
+    }
+    pthread_mutex_unlock(&g_shadow_mu);
+}
+
 void flow_race_read(void *addr, int32_t size) {
-    (void)size;
-    if (!flow_race_enabled() || !addr) return;
-    /* Hook point for future shadow-state; currently a no-op touch. */
-    (void)addr;
+    if (!flow_rt_race_enabled()) return;
+    shadow_touch(addr, size, 0);
 }
 
 void flow_race_write(void *addr, int32_t size) {
-    (void)size;
-    if (!flow_race_enabled() || !addr) return;
-    (void)addr;
+    if (!flow_rt_race_enabled()) return;
+    shadow_touch(addr, size, 1);
 }

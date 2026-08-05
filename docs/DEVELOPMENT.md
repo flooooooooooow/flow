@@ -214,6 +214,69 @@ build/
 - IDE integration
 - Package manager
 
+## Compiler torture suite (C-grade)
+
+Aim: regression coverage comparable to a C compiler suite — sema rejection,
+middle-end specialization, C ABI contracts, backend parity, executable pins.
+
+| Layer | Where | How to run |
+|-------|-------|------------|
+| Sema matrix | `tests/unit/test_type_checker.py` | `pytest` |
+| Monomorphize | `tests/unit/test_monomorphize.py` | `pytest` |
+| C ABI / lowering | `tests/unit/test_c_generator_abi.py` | `pytest` |
+| C ↔ MLIR parity | `tests/unit/test_backend_parity.py` | `pytest` (MLIR tools for parity half) |
+| Nesting torture | `tests/unit/test_torture_nesting.py` | `pytest` |
+| Pipeline smoke | `tests/unit/test_compiler_pipeline.py` | `pytest` |
+| Runtime exit-code | `tests/runtime/test_*_ops.flow` etc. | `./flow test-runtime` |
+| LSP JSON-RPC | `tests/integration/test_lsp_server.py` | `pytest` (wraps `scripts/test_lsp_server.py`) |
+| Fuzz | `tests/fuzz/` | `python3 tests/fuzz/run_fuzz.py` |
+| Tier-2 transpile | git-tracked `tests/**/*.flow` | `./flow test --tier2` |
+
+Shared helpers: `tests/unit/compiler_helpers.py`.
+
+Pytest only collects **git-tracked** files under `tests/` unless
+`FLOW_PYTEST_ALL=1` — `git add` new modules so CI sees them.
+
+### Strict vs lenient (wired 2026-08-04)
+
+CLI `--strict` / `--lenient` now sets `TypeChecker.strict`:
+
+| Rule | `--strict` (default for CLI flag) | `--lenient` |
+|------|-----------------------------------|-------------|
+| bool ↔ numeric coerce | reject | allow |
+| `if` / `while` condition | must be `bool` | numeric OK |
+| assign to immutable `let` | reject (use `let mut`) | auto-promote |
+| bare generic `Pair {…}` with `Pair<T,…>` annotation | specialized C cast | same (mono fix) |
+
+`./flow test` / `test-runtime` still transpile with `--lenient` so the legacy
+corpus keeps compiling while unit tests pin strict behavior.
+
+### Phase 3 notes
+
+- MLIR now dispatches `MatchStatement` (was a no-op comment); returning arms
+  skip the trailing `cf.br`; exhaustive matches end with `llvm.unreachable`.
+- `tests/unit/test_backend_parity.py` includes bool + i32 match parity.
+- 25 tracked `tests/**/*.flow` files were rewritten `let` → `let mut` for
+  reassigned locals (strict imm-only failures on the test corpus → 0).
+  Remaining strict failures are mostly missing imports under standalone
+  typecheck (module-resolved at transpile time).
+
+### Phase 4 notes
+
+- `./flow test-runtime` always-links `runtime/flow_rt_crypto.c` with the
+  concurrency bundle; stub `flow_rt_http_mw_enable` in `flow_tcp.c` so
+  `lib/runtime/http_routed.flow` can link.
+- MLIR `while` CF successor operands use `(%a, %b : i32, i32)` (types once);
+  exit edge forwards loop-carried args into the end block.
+- Fixed-shape `memref.store` / `memref.load` use `memref<Nxi32>` from the
+  symbol table (was hardcoded `memref<?xi…>` → mlir-opt failure).
+- Nested `while`: `_assigned_locals` recurses into nested loops; `generate_block`
+  propagates SSA updates for parent locals (shallow scope copy was dropping
+  loop-carried values after nested `while` replaced symbol entries).
+- Parity suite covers nested while / array mutate; pins in
+  `tests/unit/test_mlir_while_cf.py`. Clang link failures in `test-runtime`
+  print a short error snippet without `--verbose`.
+
 ## 📚 References
 
 - [MLIR Documentation](https://mlir.llvm.org/)

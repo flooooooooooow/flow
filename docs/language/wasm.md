@@ -15,6 +15,14 @@ Flow source  →  Flow C backend  →  emcc (Emscripten)  →  .wasm + JS glue
 | C → WASM | `emcc` from [Emscripten](https://emscripten.org/) | Optional local install; **not** required for CI |
 | Browser | `.wasm` + generated JS | Serve over HTTP (module loading needs a server) |
 
+Playground (local compile API):
+
+```bash
+./flow playground
+# UI buttons: Run (WASM local) → POST /compile {"target":"wasm"}
+#             Browser transpile → http://127.0.0.1:8765/pyodide  (Pyodide Flow→C)
+```
+
 Smoke test (skips cleanly if `emcc` is missing — CI-safe, exit 0):
 
 ```bash
@@ -46,30 +54,27 @@ emcc build/hello_world.c -o build/wasm_hello/hello.js \
 ```
 
 See also older helpers under `scripts/build_wasm.sh`, `wasm/flow_to_wasm.py`, and
-`demos/wasm/` — those are experiments; `build_wasm_hello.sh` is the documented
-minimal path for issue #121.
+`wasm/flow_wasm.py` / `wasm/wasm_examples/` — those are the browser gallery;
+`build_wasm_hello.sh` is the documented minimal path for issue #121.
 
 ## What works today
 
 - ✅ C backend output is valid input for `emcc` for small programs (`main` returning `i32`, stdio)
 - ✅ Checked-in harness + optional script for a hello artifact (`wasm/hello_harness.c`)
 - ✅ Playground **Run (native local)** — loopback API that runs real Flow→C on the machine ([#132](https://github.com/flooooooooooow/flow/issues/132))
+- ✅ Playground **Run (WASM local)** — same API with `target: "wasm"` (needs `emcc` + `node`)
+- ✅ **Browser transpile** — Pyodide loads `flow.parser` / `flow.c_generator` from `/flow-src/` (`docs/playground/pyodide.html`)
 - ⚠️ Larger programs (effects handlers, graphics, heavy libc) may need extra `emcc` flags / stubs
-- ❌ No first-class `flow wasm` product target with stable flags in CI
-- ❌ No Flow compiler binary compiled to WASM (self-host / in-browser toolchain)
+- ❌ No clang/emcc compiled into the browser tab (Pyodide is transpile-only)
 
 ## Deferred (not this slice)
 
 | Goal | Why deferred |
 |------|----------------|
-| Native Flow-in-WASM compiler | Heavy: Python toolchain + deps → WASM, or a rewritten subset |
-| Playground “compile in browser” via emscripten artifact of the full compiler | Same; next incremental step is serving a **hello** WASM artifact, not the compiler |
+| Full clang-in-browser execution | Needs WASI toolchain in-tab; Pyodide covers Flow→C only |
 | Direct WASM emission (skip C) | No IR→WASM backend planned near-term |
 
-Roadmap row: [ROADMAP.md](../../ROADMAP.md) — **WASM target** is partial ✅ via C→Emscripten.
-
-Playground / wiki: native-local compile API exists (#132). Next playground step is an
-emscripten hello artifact; full in-browser Flow compile remains under #121.
+Roadmap row: [ROADMAP.md](../../ROADMAP.md) — **WASM target** is partial ✅ via C→Emscripten + playground WASM/Pyodide.
 
 ## Related docs
 

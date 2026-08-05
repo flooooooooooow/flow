@@ -154,8 +154,10 @@ Should compile to C switch statements where possible."
 
 | Information | Location |
 |-------------|----------|
-| Project vision | README.md |
+| Project vision | VISION.md / README.md |
 | Current priorities | ROADMAP.md |
+| Open questions | docs/project/Questions.md |
+| Issue checklist | docs/project/issues-checklist.md |
 | Next actions | docs/NEXT.md |
 | Language rules | docs/LANGUAGE_SPEC.md |
 | Code patterns | Existing codebase |
@@ -291,9 +293,9 @@ tracker stays visible on GitHub. Two scripts handle it:
 - `scripts/sync_roadmap.py` — creates a GitHub issue for every open item
   (🔲 status, `partial` status, unchecked `- [ ]` checkboxes, numbered 🔲
   items, and the curated `KNOWN_GAPS` list). When an item is marked done in
-  `ROADMAP.md`, it closes the issue and checks the `issues-checklist.md` line.
+  `ROADMAP.md`, it closes the issue and checks the `docs/project/issues-checklist.md` line.
   Rewording an item updates the existing issue instead of creating a duplicate.
-- `scripts/sync_issues.sh` — rounds trip state between `issues-checklist.md`
+- `scripts/sync_issues.sh` — rounds trip state between `docs/project/issues-checklist.md`
   and GitHub (closes issues checked locally, checks items closed on GitHub).
 
 Run it after editing `ROADMAP.md`:
@@ -304,7 +306,7 @@ make sync-roadmap       # apply
 ```
 
 Each issue body carries a `ROADMAP-SYNC: <slug>` marker that keeps the binding
-stable across title edits. `issues-checklist.md` lines use the format
+stable across title edits. `docs/project/issues-checklist.md` lines use the format
 `- [ ] #NNN [roadmap:<slug>] <title> <url>`.
 
 ---

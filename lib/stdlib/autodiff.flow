@@ -166,18 +166,46 @@ export function dual_tanh(x: Dual) -> Dual {
 # Uses FLOW's effect system to record a computation tape,
 # then replay it backwards to compute gradients.
 
+# Live reverse-mode tape (runtime/flow_tape.c). Prefer ArrayTape capability.
 effect Tape {
-    # Record an operation to the tape
-    record(op: i32, inputs: array<i32>, output: i32, local_grad: f32) -> void,
-    
-    # Create a new tracked variable, returns its index
+    reset() -> void,
     track(value: f32) -> i32,
-    
-    # Get the gradient for a variable
-    get_grad(idx: i32) -> f32,
-    
-    # Trigger backward pass from a variable
+    mul(a: i32, b: i32) -> i32,
+    add(a: i32, b: i32) -> i32,
     backward(idx: i32) -> void,
+    get_grad(idx: i32) -> f32,
+}
+
+extern {
+    function flow_tape_reset() -> void
+    function flow_tape_track(value: f32) -> i32
+    function flow_tape_mul(a: i32, b: i32) -> i32
+    function flow_tape_add(a: i32, b: i32) -> i32
+    function flow_tape_backward(idx: i32) -> void
+    function flow_tape_get_grad(idx: i32) -> f32
+}
+
+# Fixed-buffer reverse tape — real backward pass for mul/add graphs.
+capability ArrayTape {
+    effect Tape,
+    function reset() -> void {
+        flow_tape_reset()
+    },
+    function track(value: f32) -> i32 {
+        return flow_tape_track(value)
+    },
+    function mul(a: i32, b: i32) -> i32 {
+        return flow_tape_mul(a, b)
+    },
+    function add(a: i32, b: i32) -> i32 {
+        return flow_tape_add(a, b)
+    },
+    function backward(idx: i32) -> void {
+        flow_tape_backward(idx)
+    },
+    function get_grad(idx: i32) -> f32 {
+        return flow_tape_get_grad(idx)
+    },
 }
 
 # A tracked value in reverse mode

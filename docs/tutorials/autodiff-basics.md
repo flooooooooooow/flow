@@ -1,14 +1,14 @@
 # Autodiff Basics
 
 > Dual numbers and derivative intuition (educational).
-
+> Stdlib `Dual` in `lib/stdlib/autodiff.flow` uses **`f32`** — match that here.
 
 ## Part 1: Dual numbers
 
 ### 1.1 Dual multiply
 
 ```flow
-struct Dual { val: f64, grad: f64 }
+struct Dual { val: f32, grad: f32 }
 
 function dmul(a: Dual, b: Dual) -> Dual {
     return Dual {
@@ -27,7 +27,7 @@ function main() -> i32 {
 ### 1.2 Dual add + mul
 
 ```flow
-struct Dual { val: f64, grad: f64 }
+struct Dual { val: f32, grad: f32 }
 
 function dadd(a: Dual, b: Dual) -> Dual {
     return Dual { val: a.val + b.val, grad: a.grad + b.grad }

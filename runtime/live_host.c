@@ -1,2 +1,2 @@
-// Live host support (stub - not yet implemented)
-// This file is referenced in the flow script but functionality is not yet implemented
+/* Stubs moved to lib/runtime/live_stubs.flow */
+#error "runtime/live_host.c removed; use lib/runtime/live_stubs.flow"

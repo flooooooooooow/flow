@@ -22,11 +22,9 @@
  * Force the no-window stub (e.g. headless CI without SDL2):
  *   clang -DFLOW_GFX_STUB prog.c runtime/gfx_windows.c -o prog.exe
  *
- * STATUS: this is a practical slice, not a fully verified Windows backend.
- * The SDL2 code path is identical to the Linux backend (same shared .inc)
- * and compiles clean under `-DFLOW_GFX_STUB` on macOS CI, but it has NOT yet
- * been smoke-tested against a real MSVC/clang toolchain + SDL2 on Windows.
- * See ROADMAP.md and docs/language/graphics.md; please report build issues.
+ * STATUS: practical slice. Stub path is smoked on windows-latest CI
+ * (runtime/tests/gfx_stub_smoke.c + -DFLOW_GFX_STUB). Full SDL2 window
+ * path still needs a real Windows + SDL2 run. See docs/language/graphics.md.
  *
  * Keycodes: Flow's gfx.flow uses macOS virtual keycodes (KEY_A=0, …).
  * This backend maps SDL scancodes → those same codes so demos stay portable.
