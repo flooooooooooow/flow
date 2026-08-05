@@ -906,6 +906,47 @@ Legacy `dsys` / `dynamics { }` and vision-form `analyze plant { lqr { Q… R… 
 
 CUDA/OpenCL backends are **not** shipping.
 
+### 10.7 Recording and GIF output
+
+**Status:** ✅ (headless recorder + pure-Flow stdlib encoder)
+
+Two shipped surfaces for turning Flow programs into images and animations.
+
+**Headless recorder.** `./flow record <program.flow>` builds a gfx program
+against the recording backend and runs it without a window, writing numbered
+P6 PPM frames. The recorder logic itself is Flow (`lib/runtime/gfx_record.flow`);
+`runtime/gfx_record.c` keeps only the `flow_gfx_*` ABI table and framebuffer.
+Environment contract:
+
+| Variable | Meaning | Default |
+|----------|---------|---------|
+| `FLOW_GFX_RECORD_DIR` | output directory for frames | `./frames` |
+| `FLOW_GFX_RECORD_FRAMES` | stop after N presented frames | `240` |
+| `FLOW_GFX_RECORD_SKIP` | keep every Nth frame | `1` |
+| `FLOW_GFX_RECORD_KEYS` | scripted input windows, `first-last:keycode` CSV | none |
+
+**Stdlib GIF encoder.** `lib/stdlib/gif.flow` is a GIF89a animated encoder in
+pure Flow: fixed 256-entry palette (6x7x6 RGB cube plus 4 grays), correct
+GIF-variant LZW (9 to 12 bit codes, clear/EOI, 4096-entry dictionary,
+255-byte sub-blocks), and a NETSCAPE2.0 infinite-loop extension. Only libc
+`fopen`/`fwrite`/`fputc`/`fclose` and `malloc`/`free` cross the FFI line.
+Open-file state is held in module statics (section 3.3.1).
+
+```flow
+import stdlib.gif { gif_begin, gif_add_frame_rgb, gif_end }
+
+function main() -> i32 {
+    gif_begin("out.gif", 128, 128, 5)   # 5 cs/frame, loops forever
+    gif_add_frame_rgb(pixels, 128, 128) # RGB24, row-major
+    gif_end()
+    return 0
+}
+```
+
+- Example: `examples/graphics/gif_writer.flow` (24-frame animation)
+- Tests: `tests/lang/test_gif_encoder.flow`, `tests/unit/test_gif_flow_encoder.py`
+  (Pillow decodes the output as ground truth)
+
 ---
 
 ## Appendix A: AST Node Reference
