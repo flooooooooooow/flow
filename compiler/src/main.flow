@@ -153,7 +153,7 @@ function flowc_emit_mode() -> i32 {
             return 1
         }
     } else {
-        let src_cap: i32 = 65536
+        let src_cap: i32 = 262144
         let src: ptr<u8> = malloc(src_cap as i64)
         if src == null {
             puts("flowc emit: malloc src failed")
@@ -175,7 +175,7 @@ function flowc_emit_mode() -> i32 {
         src[nsrc] = 0
 
         # Modules like ast.flow need a large arena (nested index/field assigns).
-        let mut p: Parser = flowc_parser_new(src, nsrc, 8192)
+        let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
             puts("flowc emit: parse failed")
