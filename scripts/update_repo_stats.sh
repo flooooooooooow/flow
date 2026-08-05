@@ -101,19 +101,38 @@ run_python() {
   fi
 }
 
-if run_flow; then
-  # Nothing else proves the Flow counter agrees with the reference, so diff
-  # them on every run. A silent divergence in published numbers would be
-  # worse than a loud failure.
+flow_rc=0
+run_flow || flow_rc=$?
+
+if [[ "$flow_rc" -eq 0 ]]; then
+  # Flow ran cleanly. In write mode it just rewrote the files; in check mode
+  # it confirmed they already matched its own output. Either way, demand that
+  # the Python reference agrees — otherwise we published truncated JSON once
+  # and would do it again.
   if "$PY" scripts/update_repo_stats.py --check >/dev/null 2>&1; then
     exit 0
   fi
   echo "repo_stats: Flow output disagrees with the Python reference:" >&2
   "$PY" scripts/update_repo_stats.py --check >&2 || true
+  mkdir -p build/repo-stats
+  cp -f docs/generated/repository-stats.json \
+    build/repo-stats/flow-disagreed.json 2>/dev/null || true
   if [[ "$MODE" == "write" ]]; then
     echo "repo_stats: rewriting with Python so the numbers stay correct" >&2
     "$PY" scripts/update_repo_stats.py >&2
+    echo "repo_stats: published Python output; Flow parity still broken" >&2
+    # Exit 0 so CI can still commit the corrected numbers. A later parity
+    # step re-runs under --check and surfaces the Flow bug without blocking
+    # the README refresh.
+    exit 0
   fi
+  exit 1
+fi
+
+if [[ "$MODE" == "check" && "$flow_rc" -eq 1 ]]; then
+  # Flow itself reported stale/mismatched output. Do not mask that by falling
+  # through to the Python reference, which would exit 0 against its own files.
+  echo "repo_stats: Flow counter reported a mismatch (exit $flow_rc)" >&2
   exit 1
 fi
 
