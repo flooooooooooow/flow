@@ -1,0 +1,13 @@
+# Stage-A dogfood: stripped subset of compiler/src/token.flow constants
+# (no Token/Lexer structs). TOK_PLUS + KW_FUNCTION + TOK_INT == 29.
+export const TOK_EOF: i32 = 0
+export const TOK_IDENT: i32 = 1
+export const TOK_INT: i32 = 3
+export const TOK_PLUS: i32 = 24
+export const KW_LET: i32 = 1
+export const KW_FUNCTION: i32 = 2
+
+function main() -> i32 {
+    # TOK_PLUS + KW_FUNCTION + TOK_INT = 24+2+3 = 29
+    return TOK_PLUS + KW_FUNCTION + TOK_INT
+}

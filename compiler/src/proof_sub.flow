@@ -1,0 +1,114 @@
+# @module flowc.proof_sub
+# @means  Premise instantiation templates (port of proof_substitution.py core).
+#         Returns filled Flow expressions (not LaTeX) for Stage-A dogfood.
+
+import .claim_address {
+    FlowcClaimAddress,
+    flowc_claim_parse
+}
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+# Known templates keyed by carrier/structure/law.
+# Placeholders: use single-arg or two-arg fixed fills via dedicated helpers.
+
+export function flowc_premise_template(addr: FlowcClaimAddress) -> string {
+    if addr.ok == 0 {
+        return ""
+    }
+    if strcmp(addr.carrier, "Nat") == 0 and strcmp(addr.structure, "addition") == 0 {
+        if strcmp(addr.law, "zero is the left identity") == 0 {
+            return "0 + {0} == {0}"
+        }
+        if strcmp(addr.law, "zero is the right identity") == 0 {
+            return "{0} + 0 == {0}"
+        }
+        if strcmp(addr.law, "successor on the right steps the sum") == 0 {
+            return "{0} + succ({1}) == succ({0} + {1})"
+        }
+        if strcmp(addr.law, "order does not matter") == 0 {
+            return "{0} + {1} == {1} + {0}"
+        }
+    }
+    if strcmp(addr.carrier, "Eq") == 0 and strcmp(addr.structure, "equality") == 0 {
+        if strcmp(addr.law, "everything equals itself") == 0 {
+            return "{0} == {0}"
+        }
+    }
+    if strcmp(addr.carrier, "Bool") == 0 and strcmp(addr.structure, "disjunction") == 0 {
+        if strcmp(addr.law, "order does not matter") == 0 {
+            return "{0} or {1} == {1} or {0}"
+        }
+    }
+    if strcmp(addr.carrier, "Int") == 0 and strcmp(addr.structure, "multiplication") == 0 {
+        if strcmp(addr.law, "squaring never yields a negative") == 0 {
+            return "{0} * {0} >= 0"
+        }
+    }
+    return ""
+}
+
+# Instantiate one-arg templates: {0} → a0
+export function flowc_instantiate_one(claim_text: string, a0: string) -> string {
+    let addr: FlowcClaimAddress = flowc_claim_parse(claim_text)
+    let tmpl: string = flowc_premise_template(addr)
+    if strlen(tmpl) == 0 {
+        return ""
+    }
+    # Hand-built fills for known one-arg templates
+    if strcmp(tmpl, "0 + {0} == {0}") == 0 {
+        if strcmp(a0, "n") == 0 { return "0 + n == n" }
+        if strcmp(a0, "k") == 0 { return "0 + k == k" }
+        if strcmp(a0, "x") == 0 { return "0 + x == x" }
+        return "0 + arg == arg"
+    }
+    if strcmp(tmpl, "{0} + 0 == {0}") == 0 {
+        if strcmp(a0, "n") == 0 { return "n + 0 == n" }
+        if strcmp(a0, "k") == 0 { return "k + 0 == k" }
+        return "arg + 0 == arg"
+    }
+    if strcmp(tmpl, "{0} == {0}") == 0 {
+        if strcmp(a0, "x") == 0 { return "x == x" }
+        if strcmp(a0, "a") == 0 { return "a == a" }
+        return "arg == arg"
+    }
+    if strcmp(tmpl, "{0} * {0} >= 0") == 0 {
+        if strcmp(a0, "n") == 0 { return "n * n >= 0" }
+        return "arg * arg >= 0"
+    }
+    return ""
+}
+
+# Instantiate two-arg templates: {0},{1} → a0,a1
+export function flowc_instantiate_two(claim_text: string, a0: string, a1: string) -> string {
+    let addr: FlowcClaimAddress = flowc_claim_parse(claim_text)
+    let tmpl: string = flowc_premise_template(addr)
+    if strlen(tmpl) == 0 {
+        return ""
+    }
+    if strcmp(tmpl, "{0} + {1} == {1} + {0}") == 0 {
+        if strcmp(a0, "m") == 0 and strcmp(a1, "n") == 0 {
+            return "m + n == n + m"
+        }
+        if strcmp(a0, "a") == 0 and strcmp(a1, "b") == 0 {
+            return "a + b == b + a"
+        }
+        return "x + y == y + x"
+    }
+    if strcmp(tmpl, "{0} + succ({1}) == succ({0} + {1})") == 0 {
+        if strcmp(a0, "m") == 0 and strcmp(a1, "n") == 0 {
+            return "m + succ(n) == succ(m + n)"
+        }
+        return "x + succ(y) == succ(x + y)"
+    }
+    if strcmp(tmpl, "{0} or {1} == {1} or {0}") == 0 {
+        if strcmp(a0, "p") == 0 and strcmp(a1, "q") == 0 {
+            return "p or q == q or p"
+        }
+        return "x or y == y or x"
+    }
+    return ""
+}

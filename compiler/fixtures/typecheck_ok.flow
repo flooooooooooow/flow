@@ -1,0 +1,11 @@
+# Stage-A typecheck fixture (good): defined names, matching arity, i32 returns.
+# Used with FLOWC_TYPECHECK=1 on the emit path.
+
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+function main() -> i32 {
+    let x: i32 = add(20, 22)
+    return x
+}

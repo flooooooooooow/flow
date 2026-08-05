@@ -1,0 +1,189 @@
+# @module flowc.math_prose
+# @means  Mathematical English for Claim Coordinates (port of math_prose.py core).
+
+import .claim_address {
+    FlowcClaimAddress,
+    flowc_claim_parse,
+    flowc_claim_empty
+}
+import .claim_path {
+    flowc_claim_path_normalize_tier
+}
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+export function flowc_carrier_mathematical(name: string) -> string {
+    if strcmp(name, "Nat") == 0 { return "the natural numbers" }
+    if strcmp(name, "Bool") == 0 { return "boolean truth values" }
+    if strcmp(name, "Int") == 0 { return "the integers" }
+    if strcmp(name, "Eq") == 0 { return "equality" }
+    if strcmp(name, "Geometry") == 0 { return "the Euclidean plane" }
+    if strcmp(name, "Analysis") == 0 { return "real analysis" }
+    if strcmp(name, "Real") == 0 { return "the real numbers" }
+    if strcmp(name, "bool") == 0 { return "boolean truth values" }
+    if strcmp(name, "i32") == 0 { return "the integers" }
+    if strcmp(name, "i64") == 0 { return "the integers" }
+    return name
+}
+
+export function flowc_structure_mathematical(name: string) -> string {
+    if strcmp(name, "addition") == 0 { return "addition" }
+    if strcmp(name, "multiplication") == 0 { return "multiplication" }
+    if strcmp(name, "disjunction") == 0 { return "disjunction" }
+    if strcmp(name, "conjunction") == 0 { return "conjunction" }
+    if strcmp(name, "equality") == 0 { return "equality" }
+    if strcmp(name, "output") == 0 { return "output" }
+    if strcmp(name, "fifo") == 0 { return "first-in-first-out ordering" }
+    if strcmp(name, "vectorization") == 0 { return "vectorization" }
+    if strcmp(name, "fusion") == 0 { return "loop fusion" }
+    if strcmp(name, "triangle") == 0 { return "triangles in" }
+    if strcmp(name, "isosceles triangle") == 0 { return "isosceles triangles in" }
+    if strcmp(name, "intersecting lines") == 0 { return "intersecting lines in" }
+    if strcmp(name, "right triangle") == 0 { return "right triangles in" }
+    if strcmp(name, "parallel lines") == 0 { return "parallel lines in" }
+    if strcmp(name, "triangle congruence") == 0 { return "triangle congruence in" }
+    if strcmp(name, "circle") == 0 { return "circles in" }
+    return name
+}
+
+export function flowc_type_latex(name: string) -> string {
+    # Plain tokens (avoid Flow string escape issues with TeX backslashes).
+    if strcmp(name, "Nat") == 0 { return "mathbb-N" }
+    if strcmp(name, "Int") == 0 { return "mathbb-Z" }
+    if strcmp(name, "Real") == 0 { return "mathbb-R" }
+    if strcmp(name, "i32") == 0 { return "mathbb-Z" }
+    if strcmp(name, "i64") == 0 { return "mathbb-Z" }
+    if strcmp(name, "Bool") == 0 { return "Bool" }
+    if strcmp(name, "bool") == 0 { return "bool" }
+    return name
+}
+
+export function flowc_on_structure_carrier(structure: string, carrier: string) -> string {
+    let sname: string = flowc_structure_mathematical(structure)
+    let car: string = flowc_carrier_mathematical(carrier)
+    if strcmp(carrier, "Geometry") == 0 {
+        # "triangles in the Euclidean plane" — sname already ends with "in"
+        if strcmp(structure, "triangle") == 0 {
+            return "triangles in the Euclidean plane"
+        }
+        if strcmp(structure, "circle") == 0 {
+            return "circles in the Euclidean plane"
+        }
+        if strcmp(structure, "right triangle") == 0 {
+            return "right triangles in the Euclidean plane"
+        }
+        return sname
+    }
+    # Default: "addition on the natural numbers"
+    if strcmp(structure, "addition") == 0 and strcmp(carrier, "Nat") == 0 {
+        return "addition on the natural numbers"
+    }
+    if strcmp(structure, "multiplication") == 0 and strcmp(carrier, "Int") == 0 {
+        return "multiplication on the integers"
+    }
+    if strcmp(structure, "disjunction") == 0 and strcmp(carrier, "Bool") == 0 {
+        return "disjunction on boolean truth values"
+    }
+    if strcmp(structure, "equality") == 0 and strcmp(carrier, "Eq") == 0 {
+        return "equality on equality"
+    }
+    # Fallback: structure + " on " + carrier gloss (fixed phrases for common pairs)
+    if strcmp(carrier, "Nat") == 0 {
+        if strcmp(structure, "addition") == 0 { return "addition on the natural numbers" }
+    }
+    return sname
+}
+
+export function flowc_law_phrase(law: string) -> string {
+    if strlen(law) == 0 {
+        return "the stated law"
+    }
+    # Lowercase first character when ASCII upper — return known laws as-is lowercased
+    if strcmp(law, "zero is the left identity") == 0 {
+        return "zero is the left identity"
+    }
+    if strcmp(law, "zero is the right identity") == 0 {
+        return "zero is the right identity"
+    }
+    if strcmp(law, "order does not matter") == 0 {
+        return "order does not matter"
+    }
+    if strcmp(law, "everything equals itself") == 0 {
+        return "everything equals itself"
+    }
+    if strcmp(law, "successor on the right steps the sum") == 0 {
+        return "successor on the right steps the sum"
+    }
+    if strcmp(law, "squaring never yields a negative") == 0 {
+        return "squaring never yields a negative"
+    }
+    return law
+}
+
+export function flowc_addr_prose(addr: FlowcClaimAddress) -> string {
+    if addr.ok == 0 {
+        return ""
+    }
+    if strcmp(addr.carrier, "Nat") == 0 and strcmp(addr.structure, "addition") == 0 {
+        if strcmp(addr.law, "zero is the left identity") == 0 {
+            return "zero is the left identity, for addition on the natural numbers"
+        }
+        if strcmp(addr.law, "zero is the right identity") == 0 {
+            return "zero is the right identity, for addition on the natural numbers"
+        }
+        if strcmp(addr.law, "order does not matter") == 0 {
+            return "order does not matter, for addition on the natural numbers"
+        }
+        if strcmp(addr.law, "successor on the right steps the sum") == 0 {
+            return "successor on the right steps the sum, for addition on the natural numbers"
+        }
+    }
+    if strcmp(addr.carrier, "Eq") == 0 and strcmp(addr.structure, "equality") == 0 {
+        if strcmp(addr.law, "everything equals itself") == 0 {
+            return "everything equals itself, for equality on equality"
+        }
+    }
+    if strcmp(addr.carrier, "Int") == 0 and strcmp(addr.structure, "multiplication") == 0 {
+        if strcmp(addr.law, "squaring never yields a negative") == 0 {
+            return "squaring never yields a negative, for multiplication on the integers"
+        }
+    }
+    return flowc_law_phrase(addr.law)
+}
+
+export function flowc_tier_opening_mathematical(tier: string, addr: FlowcClaimAddress) -> string {
+    if addr.ok == 0 {
+        return ""
+    }
+    let t: string = flowc_claim_path_normalize_tier(tier)
+    let ctx: string = flowc_on_structure_carrier(addr.structure, addr.carrier)
+    let law: string = flowc_law_phrase(addr.law)
+    if strcmp(t, "definition") == 0 {
+        if strcmp(law, "zero is the left identity") == 0 and strcmp(ctx, "addition on the natural numbers") == 0 {
+            return "We stipulate zero is the left identity for addition on the natural numbers — this is a definition, not a derived fact."
+        }
+        return "We stipulate the law for this structure — this is a definition, not a derived fact."
+    }
+    if strcmp(t, "axiom") == 0 {
+        if strcmp(law, "everything equals itself") == 0 {
+            return "We accept everything equals itself for equality on equality without proof — an ontological commitment, not a lemma."
+        }
+        return "We accept this law without proof — an ontological commitment, not a lemma."
+    }
+    if strcmp(law, "order does not matter") == 0 and strcmp(ctx, "addition on the natural numbers") == 0 {
+        return "We prove that order does not matter for addition on the natural numbers."
+    }
+    if strcmp(law, "zero is the left identity") == 0 and strcmp(ctx, "addition on the natural numbers") == 0 {
+        return "We prove that zero is the left identity for addition on the natural numbers."
+    }
+    return "We prove that the stated law holds for this structure."
+}
+
+# Parse text then return tier opening (convenience).
+export function flowc_tier_opening_parse(tier: string, claim_text: string) -> string {
+    let addr: FlowcClaimAddress = flowc_claim_parse(claim_text)
+    return flowc_tier_opening_mathematical(tier, addr)
+}

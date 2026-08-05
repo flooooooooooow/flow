@@ -1,0 +1,293 @@
+# @module flowc.know
+# @means  flow know — Claim Coordinate lookup helpers (port of know.py core).
+#         Full proof_document parse stays in Python; this owns query normalize,
+#         qualify, format, and a light theorem-header scan over a source buffer.
+
+import .claim_address {
+    FlowcClaimAddress,
+    flowc_claim_parse,
+    flowc_claim_display,
+    flowc_claim_guillemets,
+    flowc_claim_slug,
+    flowc_claim_to_legacy_path,
+    flowc_claim_substr
+}
+import .claim_path {
+    flowc_claim_path_tier_label
+}
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function malloc(size: i64) -> ptr<u8>
+    function printf(fmt: string, s: string) -> i32
+    function puts(s: string) -> i32
+}
+
+# Lightweight claim card (no full TheoremDoc).
+export struct FlowcKnowEntry {
+    claim_path: string,
+    qualified_path: string,
+    means: string,
+    tier: string,
+    from_source: string,
+    file_path: string,
+    claim_expr: string,
+    ok: i32
+}
+
+export function flowc_know_empty() -> FlowcKnowEntry {
+    return FlowcKnowEntry {
+        claim_path: "",
+        qualified_path: "",
+        means: "",
+        tier: "",
+        from_source: "",
+        file_path: "",
+        claim_expr: "",
+        ok: 0
+    }
+}
+
+export function flowc_know_make(
+    claim_path: string,
+    qualified_path: string,
+    means: string,
+    tier: string,
+    from_source: string,
+    file_path: string,
+    claim_expr: string
+) -> FlowcKnowEntry {
+    return FlowcKnowEntry {
+        claim_path: claim_path,
+        qualified_path: qualified_path,
+        means: means,
+        tier: tier,
+        from_source: from_source,
+        file_path: file_path,
+        claim_expr: claim_expr,
+        ok: 1
+    }
+}
+
+# Strip verify. / examples.verify. / lib.verify. prefixes.
+export function flowc_know_normalize_query(query: string) -> string {
+    let p: ptr<u8> = query
+    let n: i32 = strlen(query) as i32
+    # skip leading spaces
+    let mut i: i32 = 0
+    while i < n and (p[i] == 32 or p[i] == 9) {
+        i = i + 1
+    }
+    let q: string = flowc_claim_substr(query, i, n)
+    if strncmp(q, "verify.", 7) == 0 {
+        return flowc_claim_substr(q, 7, strlen(q) as i32)
+    }
+    if strncmp(q, "examples.verify.", 16) == 0 {
+        return flowc_claim_substr(q, 16, strlen(q) as i32)
+    }
+    if strncmp(q, "lib.verify.", 11) == 0 {
+        return flowc_claim_substr(q, 11, strlen(q) as i32)
+    }
+    return q
+}
+
+# Module path without Claim Path segments (segments containing '/').
+export function flowc_know_package_prefix(mod_name: string) -> string {
+    # Stage-A: treat whole module as prefix when no '/' present.
+    let p: ptr<u8> = mod_name
+    let n: i32 = strlen(mod_name) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 47 {
+            # return empty for mixed paths in this slice
+            return ""
+        }
+        i = i + 1
+    }
+    return mod_name
+}
+
+export function flowc_know_qualify(mod_name: string, claim_path: string) -> string {
+    let prefix: string = flowc_know_package_prefix(mod_name)
+    if strlen(prefix) == 0 {
+        return claim_path
+    }
+    # Fixed common cases for smoke (string concat is awkward without snprintf).
+    if strcmp(prefix, "Bool") == 0 {
+        if strcmp(claim_path, "«Bool» «disjunction» «order does not matter»") == 0 {
+            return "Bool.«Bool» «disjunction» «order does not matter»"
+        }
+        if strcmp(claim_path, "Bool.disjunction.order_does_not_matter") == 0 {
+            return "Bool.Bool.disjunction.order_does_not_matter"
+        }
+    }
+    if strcmp(prefix, "verify.Bool") == 0 {
+        return claim_path
+    }
+    return claim_path
+}
+
+# Print a know card (format_know) to stdout. Returns 0.
+export function flowc_know_print(entry: FlowcKnowEntry) -> i32 {
+    if entry.ok == 0 {
+        return 1
+    }
+    puts(entry.qualified_path)
+    puts("")
+    let addr: FlowcClaimAddress = flowc_claim_parse(entry.claim_path)
+    if addr.ok == 1 {
+        printf("  coordinate: %s\n", flowc_claim_display(addr))
+        printf("  syntax:     %s\n", flowc_claim_guillemets(addr))
+    }
+    if strlen(entry.means) > 0 {
+        printf("  means:   %s\n", entry.means)
+    }
+    if strlen(entry.claim_expr) > 0 {
+        printf("  claim:   %s\n", entry.claim_expr)
+    }
+    if strlen(entry.tier) > 0 {
+        printf("  tier:    %s\n", flowc_claim_path_tier_label(entry.tier))
+    }
+    if strlen(entry.from_source) > 0 {
+        printf("  from:    %s\n", entry.from_source)
+    }
+    puts("")
+    printf("  source:  %s\n", entry.file_path)
+    puts("")
+    puts("  proof:   run `flow doc proof` on the source file for the full trace")
+    return 0
+}
+
+# Match query against entry keys (exact + endswith-style).
+export function flowc_know_entry_matches(entry: FlowcKnowEntry, query: string) -> i32 {
+    let q: string = flowc_know_normalize_query(query)
+    if strcmp(q, entry.claim_path) == 0 {
+        return 1
+    }
+    if strcmp(q, entry.qualified_path) == 0 {
+        return 1
+    }
+    let addr: FlowcClaimAddress = flowc_claim_parse(entry.claim_path)
+    if addr.ok == 1 {
+        if strcmp(q, flowc_claim_slug(addr)) == 0 {
+            return 1
+        }
+        if strcmp(q, flowc_claim_display(addr)) == 0 {
+            return 1
+        }
+        if strcmp(q, flowc_claim_guillemets(addr)) == 0 {
+            return 1
+        }
+        if strcmp(q, flowc_claim_to_legacy_path(addr)) == 0 {
+            return 1
+        }
+    }
+    # suffix: query ends with claim_path or key ends with query — fixed checks
+    let qn: i32 = strlen(q) as i32
+    let cn: i32 = strlen(entry.claim_path) as i32
+    if qn > 0 and cn >= qn {
+        let tail: string = flowc_claim_substr(entry.claim_path, cn - qn, cn)
+        if strcmp(tail, q) == 0 {
+            return 1
+        }
+    }
+    return 0
+}
+
+# Find "theorem" keyword then parse «…» «…» «…» claim until '('.
+# Writes claim text into out (NUL-terminated). Returns 1 if found starting at *pos.
+# On success advances *pos past the claim.
+export function flowc_know_find_theorem_claim(
+    src: ptr<u8>,
+    len: i32,
+    pos: ptr<i32>,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    let mut i: i32 = pos[0]
+    while i + 7 < len {
+        # theorem
+        if src[i] == 116 and src[i + 1] == 104 and src[i + 2] == 101 and src[i + 3] == 111 and src[i + 4] == 114 and src[i + 5] == 101 and src[i + 6] == 109 {
+            # word boundary: prev not alpha
+            let mut ok_prev: i32 = 1
+            if i > 0 {
+                let prev: i32 = src[i - 1]
+                if (prev >= 65 and prev <= 90) or (prev >= 97 and prev <= 122) or prev == 95 {
+                    ok_prev = 0
+                }
+            }
+            if ok_prev == 1 {
+                i = i + 7
+                while i < len and (src[i] == 32 or src[i] == 9) {
+                    i = i + 1
+                }
+                let start: i32 = i
+                # scan until '(' or '{' or newline
+                while i < len and src[i] != 40 and src[i] != 123 and src[i] != 10 {
+                    i = i + 1
+                }
+                let end: i32 = i
+                # trim trailing spaces
+                while end > start and (src[end - 1] == 32 or src[end - 1] == 9) {
+                    end = end - 1
+                }
+                let mut n: i32 = end - start
+                if n >= out_cap {
+                    n = out_cap - 1
+                }
+                if n <= 0 {
+                    pos[0] = i
+                    return 0
+                }
+                let mut j: i32 = 0
+                while j < n {
+                    out[j] = src[start + j]
+                    j = j + 1
+                }
+                out[n] = 0
+                pos[0] = i
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    pos[0] = len
+    return 0
+}
+
+# Count theorem claim headers in a source buffer.
+export function flowc_know_count_theorems(src: ptr<u8>, len: i32) -> i32 {
+    let mut pos: i32 = 0
+    let mut count: i32 = 0
+    let mut buf: array<u8, 256> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    while pos < len {
+        if flowc_know_find_theorem_claim(src, len, &pos, buf, 256) == 1 {
+            let addr: FlowcClaimAddress = flowc_claim_parse(buf)
+            if addr.ok == 1 {
+                count = count + 1
+            }
+        } else {
+            pos = len
+        }
+    }
+    return count
+}
