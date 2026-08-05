@@ -11,6 +11,72 @@ Format:
 
 ## Open Questions
 
+### 2026-08-05: `gfx_run` — callback vs block sugar?
+
+**Context:** Pattern adoption ([pattern-adoption.md](pattern-adoption.md)) wants
+to kill the repeated poll/esc/clear/present loop in every gfx demo. Two sketches:
+
+**Options:**
+1. Stdlib/runtime callback — `flow_gfx_run` + user `flow_gfx_frame(g, frame) -> i32`
+   (works today; slightly awkward naming).
+2. Block sugar — `gfx_run(g, max_frames: N) { … }` (nicer; needs parser/lowering).
+3. Both — A now, B later when frame blocks exist.
+
+**Recommendation:** Option 3 (ship A immediately; B only if demos still feel heavy).
+
+**Status:** 🔲 Pending
+
+---
+
+### 2026-08-05: `represent phase_portrait` — language form or stdlib trail helper?
+
+**Context:** Lorenz north-star wants `represent phase_portrait(x, z) { trail … }`
+inside a `flow`. We already have `represent linear`.
+
+**Options:**
+1. Full `represent phase_portrait` lowering (ring buffer + window + maps).
+2. Stdlib-only `portrait_trail_*` helpers; keep `represent` for linear/analysis.
+3. Hybrid — stdlib trail now; grammar sugar later that expands to helpers.
+
+**Recommendation:** Option 3 — get Lorenz under 60 lines without blocking on gfx DSL.
+
+**Status:** 🔲 Pending
+
+---
+
+### 2026-08-05: LQR n>2 — stdlib first or extend `dsys`?
+
+**Context:** Cartpole control reimplements 4×4 Riccati because dynamics DSL is n=2.
+
+**Options:**
+1. Stdlib `lqr`/`dare` over LAPACK/Accelerate; DSL stays n=2 until matrix literals mature.
+2. Extend `dsys`/`analyze`/`lqr` to arbitrary n in the DSL immediately.
+3. Codegen-only for fixed n=4 cartpole (one-off).
+
+**Recommendation:** Option 1 — general, dogfoods BLAS, unblocks cartpole without
+rushing DSL matrix codegen.
+
+**Status:** 🔲 Pending
+
+---
+
+### 2026-08-05: Field / laplacian — stdlib MVP or grammar card?
+
+**Context:** `heat_diffusion.flow` is nested Euler; vision wants
+`T evolves as alpha * laplacian(T)`.
+
+**Options:**
+1. Stdlib `laplacian_1d` + ordinary `flow` over array-backed state (no new keywords).
+2. Full `field` / `boundary` grammar from north-star.
+3. Defer until after Lorenz/`gfx_run` land.
+
+**Recommendation:** Option 1 for P2 MVP; grammar as follow-on card.
+
+**Status:** 🔲 Pending
+
+---
+
+
 ### 2026-08-05: Self-hosting cutover — when does `./flow` drop Python?
 
 **Context:** Plan in `docs/project/self-hosting.md`. Stage-A `flowc` exists
