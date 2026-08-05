@@ -1,0 +1,78 @@
+# know + fingerprint dogfood
+# flow:lenient: strict checker gap, string vs byte-buffer coercions (ptr<u8>, array<u8, N>). Board card flow-strict-string-buffer-coercions.
+
+import "compiler/src/claim_address.flow"
+import "compiler/src/claim_path.flow"
+import "compiler/src/know.flow"
+
+extern {
+    function printf(fmt: string, s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let mut failed: i32 = 0
+
+    let q: string = flowc_know_normalize_query("verify.Bool.disjunction.order_does_not_matter")
+    if strcmp(q, "Bool.disjunction.order_does_not_matter") != 0 {
+        printf("%s\n", "FAIL: normalize_query")
+        failed = 1
+    }
+
+    let fp: string = flowc_claim_fingerprint("0 + n == n by plus")
+    printf("fp: %s\n", fp)
+    if strcmp(fp, "0+n=n") != 0 {
+        printf("%s\n", "FAIL: fingerprint")
+        failed = 1
+    }
+
+    let key: string = flowc_claim_fingerprint_key("Nat", "addition", fp)
+    if strcmp(key, "Nat/addition#0+n=n") != 0 {
+        printf("%s\n", "FAIL: fingerprint_key")
+        failed = 1
+    }
+
+    let entry: FlowcKnowEntry = flowc_know_make(
+        "«Bool» «disjunction» «order does not matter»",
+        "Bool.«Bool» «disjunction» «order does not matter»",
+        "A or B gives the same result as B or A",
+        "derived",
+        "boole",
+        "lib/verify/Bool.flow",
+        "a or b == b or a"
+    )
+
+    if flowc_know_entry_matches(entry, "Bool.disjunction.order_does_not_matter") != 1 {
+        printf("%s\n", "FAIL: match slug")
+        failed = 1
+    }
+    if flowc_know_entry_matches(entry, "verify.«Bool» «disjunction» «order does not matter»") != 1 {
+        printf("%s\n", "FAIL: match guillemets with prefix")
+        failed = 1
+    }
+
+    # Scan a tiny buffer with two theorems
+    let src: string = "theorem «Bool» «disjunction» «order does not matter» (a: bool) {\n theorem «Nat» «addition» «zero is the left identity» (n: Nat) {\n"
+    let p: ptr<u8> = src
+    let n: i32 = 0
+    while p[n] != 0 {
+        n = n + 1
+    }
+    let count: i32 = flowc_know_count_theorems(p, n)
+    printf("theorems: ")
+    if count == 2 {
+        puts("2")
+    } else {
+        printf("%s\n", "FAIL: theorem count")
+        failed = 1
+    }
+
+    let _: i32 = flowc_know_print(entry)
+
+    if failed == 1 {
+        return 1
+    }
+    printf("%s\n", "know+fingerprint: PASS")
+    return 0
+}

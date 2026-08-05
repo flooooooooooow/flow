@@ -281,7 +281,8 @@ export function flowc_know_count_theorems(src: ptr<u8>, len: i32) -> i32 {
     ]
     while pos < len {
         if flowc_know_find_theorem_claim(src, len, &pos, buf, 256) == 1 {
-            let addr: FlowcClaimAddress = flowc_claim_parse(buf)
+            let claim: string = buf
+            let addr: FlowcClaimAddress = flowc_claim_parse(claim)
             if addr.ok == 1 {
                 count = count + 1
             }
