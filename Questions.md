@@ -91,7 +91,11 @@ as a bootstrap; production is still `src/flow/*.py`.
 **Recommendation:** (1) with a published parity checklist; keep (2) as escape
 hatch for one release after cutover.
 
-**Status:** 🔲 Pending
+**Resolution (2026-08-05):** Soft dual-host now — `./flow run|compile`
+defaults to `FLOW_HOST=flowc` (Stage-A); escape hatch `FLOW_HOST=python`.
+Hard drop of Python from the compile path is Phase D (#153).
+
+**Status:** ✅ Resolved (soft cutover; Phase D retires Python)
 
 ### 2026-08-04: Declarative ordering — Phase 2 scope
 
