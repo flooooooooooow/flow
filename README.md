@@ -360,6 +360,11 @@ real `gfx` backend, not a re-creation.
 | ![Lorenz attractor](docs/demos/lorenz.gif) | ![Flow Tetris](docs/demos/tetris.gif) | ![Flow 2048](docs/demos/2048.gif) |
 | **Lorenz attractor** — a `flow` block with an RK4 solver | **Tetris** — rotation, line clears, scoring, ghost piece | **2048** — grid logic and tile merging |
 
+**23 complete games ship in `examples/games/`** — arcade, puzzle, and board,
+each with a recorded gameplay GIF: see the
+[game gallery](docs/demos/games.md) ([wiki version](https://flooooooooooow.github.io/flow/#demos/games.md))
+and the [examples index](examples/README.md).
+
 ```bash
 # Tetris - fully playable!
 ./flow gfx examples/games/tetris_gfx.flow
