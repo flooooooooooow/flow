@@ -1,0 +1,526 @@
+# FROGGER - Complete Implementation
+#
+# Controls:
+#   Arrows or WASD - Hop one cell
+#   Space          - Start (from title)
+#   R              - Restart (when game over)
+#   Esc            - Quit
+#
+# Features:
+#   - 13x13 grid: start strip, 5 car lanes, median, 5 river lanes, 5 home slots
+#   - Car lanes with varying speeds and directions (fixed-point movement)
+#   - River lanes with logs you must ride; off-log means drowning
+#   - Lives, countdown timer bar, hop/home/level scoring
+#   - Level progression speeds every lane up; title / playing / game-over states
+
+import "stdlib/gfx.flow"
+
+const KEY_SPACE: i32 = 49
+
+const CELL: i32 = 40
+const COLS: i32 = 13
+const WIN_W: i32 = 520
+const HUD_H: i32 = 40
+const WIN_H: i32 = 588
+
+const START_ROW: i32 = 12
+const START_FP: i32 = 1952
+
+const STATE_TITLE: i32 = 0
+const STATE_PLAYING: i32 = 1
+const STATE_GAMEOVER: i32 = 2
+
+# ============================================================================
+# RECT DIGITS (3x5 pixel font)
+# ============================================================================
+
+function draw_digit(g: Gfx, x: i32, y: i32, d: i32, scale: i32, cr: i32, cg: i32, cb: i32) {
+    let mut p0: i32 = 7
+    let mut p1: i32 = 5
+    let mut p2: i32 = 5
+    let mut p3: i32 = 5
+    let mut p4: i32 = 7
+
+    if d == 1 { p0 = 2; p1 = 6; p2 = 2; p3 = 2; p4 = 7 }
+    if d == 2 { p0 = 7; p1 = 1; p2 = 7; p3 = 4; p4 = 7 }
+    if d == 3 { p0 = 7; p1 = 1; p2 = 7; p3 = 1; p4 = 7 }
+    if d == 4 { p0 = 5; p1 = 5; p2 = 7; p3 = 1; p4 = 1 }
+    if d == 5 { p0 = 7; p1 = 4; p2 = 7; p3 = 1; p4 = 7 }
+    if d == 6 { p0 = 7; p1 = 4; p2 = 7; p3 = 5; p4 = 7 }
+    if d == 7 { p0 = 7; p1 = 1; p2 = 1; p3 = 1; p4 = 1 }
+    if d == 8 { p0 = 7; p1 = 5; p2 = 7; p3 = 5; p4 = 7 }
+    if d == 9 { p0 = 7; p1 = 5; p2 = 7; p3 = 1; p4 = 7 }
+
+    let rows: array<i32, 5> = [p0, p1, p2, p3, p4]
+
+    for row in 0 to 5 {
+        let bits: i32 = rows[row]
+        for col in 0 to 3 {
+            let mut mask: i32 = 4
+            let mut sh: i32 = col
+            while sh > 0 {
+                mask = mask / 2
+                sh = sh - 1
+            }
+            if (bits / mask) % 2 == 1 {
+                gfx_fill_rect(g, x + col * scale, y + row * scale, scale - 1, scale - 1, cr, cg, cb)
+            }
+        }
+    }
+}
+
+function draw_number(g: Gfx, x: i32, y: i32, n: i32, scale: i32, cr: i32, cg: i32, cb: i32) {
+    if n == 0 {
+        draw_digit(g, x, y, 0, scale, cr, cg, cb)
+        return
+    }
+
+    let digits: array<i32, 10> = [0,0,0,0,0,0,0,0,0,0]
+    let mut count: i32 = 0
+    let mut v: i32 = n
+    while v > 0 and count < 10 {
+        digits[count] = v % 10
+        v = v / 10
+        count = count + 1
+    }
+
+    let mut dx: i32 = 0
+    let mut i: i32 = count - 1
+    while i >= 0 {
+        draw_digit(g, x + dx, y, digits[i], scale, cr, cg, cb)
+        dx = dx + 4 * scale
+        i = i - 1
+    }
+}
+
+# ============================================================================
+# LANES
+# Lanes 0..4 are river rows 1..5, lanes 5..9 are road rows 7..11.
+# Object x is stored in 1/8 pixel fixed point over [0, wrap); the on-screen
+# left edge is x/8 - width so objects cross the whole window either way.
+# ============================================================================
+
+function lane_row(l: i32) -> i32 {
+    if l < 5 { return l + 1 }
+    return l + 2
+}
+
+function lane_dir(l: i32) -> i32 {
+    if l % 2 == 0 { return 1 }
+    return -1
+}
+
+function lane_w(l: i32) -> i32 {
+    if l == 0 { return 96 }
+    if l == 1 { return 64 }
+    if l == 2 { return 128 }
+    if l == 3 { return 64 }
+    if l == 4 { return 96 }
+    if l == 5 { return 40 }
+    if l == 6 { return 48 }
+    if l == 7 { return 40 }
+    if l == 8 { return 64 }
+    return 40
+}
+
+function lane_speed(l: i32, level: i32) -> i32 {
+    let mut base: i32 = 8
+    if l == 1 { base = 12 }
+    if l == 2 { base = 6 }
+    if l == 3 { base = 14 }
+    if l == 4 { base = 9 }
+    if l == 5 { base = 12 }
+    if l == 6 { base = 16 }
+    if l == 7 { base = 10 }
+    if l == 8 { base = 22 }
+    if l == 9 { base = 14 }
+    let mut s: i32 = base + (level - 1) * 3
+    if s > 40 { s = 40 }
+    return s
+}
+
+function reset_objects(ox: ptr<i32>) {
+    for l in 0 to 10 {
+        let w: i32 = lane_w(l)
+        let wrap: i32 = (WIN_W + w) * 8
+        for k in 0 to 3 {
+            let mut v: i32 = (k * wrap) / 3 + l * 199
+            while v >= wrap { v = v - wrap }
+            ox[l * 3 + k] = v
+        }
+    }
+}
+
+function row_y(r: i32) -> i32 {
+    return HUD_H + r * CELL
+}
+
+function home_cx(s: i32) -> i32 {
+    return (2 + s * 2) * CELL + CELL / 2
+}
+
+function timer_max(level: i32) -> i32 {
+    let mut t: i32 = 1800 - (level - 1) * 150
+    if t < 900 { t = 900 }
+    return t
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+function main() -> i32 {
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "FROGGER - Flow")
+
+    # 10 lanes x 3 objects, fixed-point x positions
+    let obj_x: array<i32, 30> = [
+        0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0
+    ]
+    let obj_ptr: ptr<i32> = obj_x
+    let home: array<i32, 5> = [0,0,0,0,0]
+
+    let mut state: i32 = STATE_TITLE
+    let mut score: i32 = 0
+    let mut lives: i32 = 4
+    let mut level: i32 = 1
+    let mut frog_row: i32 = START_ROW
+    let mut frog_fp: i32 = START_FP
+    let mut best_row: i32 = START_ROW
+    let mut timer: i32 = 1800
+    let mut death_timer: i32 = 0
+    let mut frame: i32 = 0
+    let mut reset_all: i32 = 0
+
+    let mut last_up: i32 = 0
+    let mut last_down: i32 = 0
+    let mut last_left: i32 = 0
+    let mut last_right: i32 = 0
+    let mut last_space: i32 = 0
+    let mut last_r: i32 = 0
+
+    reset_objects(obj_ptr)
+
+    while !gfx_should_close(g) {
+        gfx_poll(g)
+        if gfx_key_down(g, KEY_ESC) { break }
+
+        # ---- input snapshot + edges ----
+        let mut up_now: i32 = 0
+        let mut down_now: i32 = 0
+        let mut left_now: i32 = 0
+        let mut right_now: i32 = 0
+        let mut space_now: i32 = 0
+        let mut r_now: i32 = 0
+        if gfx_key_down(g, KEY_UP) or gfx_key_down(g, KEY_W) { up_now = 1 }
+        if gfx_key_down(g, KEY_DOWN) or gfx_key_down(g, KEY_S) { down_now = 1 }
+        if gfx_key_down(g, KEY_LEFT) or gfx_key_down(g, KEY_A) { left_now = 1 }
+        if gfx_key_down(g, KEY_RIGHT) or gfx_key_down(g, KEY_D) { right_now = 1 }
+        if gfx_key_down(g, KEY_SPACE) { space_now = 1 }
+        if gfx_key_down(g, KEY_R) { r_now = 1 }
+
+        let mut up_edge: i32 = 0
+        let mut down_edge: i32 = 0
+        let mut left_edge: i32 = 0
+        let mut right_edge: i32 = 0
+        let mut space_edge: i32 = 0
+        let mut r_edge: i32 = 0
+        if up_now == 1 and last_up == 0 { up_edge = 1 }
+        if down_now == 1 and last_down == 0 { down_edge = 1 }
+        if left_now == 1 and last_left == 0 { left_edge = 1 }
+        if right_now == 1 and last_right == 0 { right_edge = 1 }
+        if space_now == 1 and last_space == 0 { space_edge = 1 }
+        if r_now == 1 and last_r == 0 { r_edge = 1 }
+        last_up = up_now
+        last_down = down_now
+        last_left = left_now
+        last_right = right_now
+        last_space = space_now
+        last_r = r_now
+
+        # ---- state transitions ----
+        if state == STATE_TITLE and space_edge == 1 {
+            reset_all = 1
+            state = STATE_PLAYING
+        }
+        if state == STATE_GAMEOVER and r_edge == 1 {
+            reset_all = 1
+            state = STATE_PLAYING
+        }
+
+        if reset_all == 1 {
+            reset_all = 0
+            score = 0
+            lives = 4
+            level = 1
+            for s in 0 to 5 { home[s] = 0 }
+            reset_objects(obj_ptr)
+            frog_row = START_ROW
+            frog_fp = START_FP
+            best_row = START_ROW
+            timer = timer_max(1)
+            death_timer = 0
+        }
+
+        # ---- game logic ----
+        if state == STATE_PLAYING {
+            # Lane objects always move
+            for l in 0 to 10 {
+                let w: i32 = lane_w(l)
+                let wrap: i32 = (WIN_W + w) * 8
+                let sp: i32 = lane_speed(l, level)
+                let d: i32 = lane_dir(l)
+                for k in 0 to 3 {
+                    let mut v: i32 = obj_x[l * 3 + k] + d * sp
+                    if v >= wrap { v = v - wrap }
+                    if v < 0 { v = v + wrap }
+                    obj_x[l * 3 + k] = v
+                }
+            }
+
+            let mut kill: i32 = 0
+
+            if death_timer == 0 {
+                # Hops
+                if up_edge == 1 and frog_row > 0 {
+                    frog_row = frog_row - 1
+                    if frog_row < best_row {
+                        score = score + 10
+                        best_row = frog_row
+                    }
+                }
+                if down_edge == 1 and frog_row < START_ROW {
+                    frog_row = frog_row + 1
+                }
+                if left_edge == 1 {
+                    frog_fp = frog_fp - 320
+                    if frog_fp < 0 { frog_fp = 0 }
+                }
+                if right_edge == 1 {
+                    frog_fp = frog_fp + 320
+                    if frog_fp > (WIN_W - 36) * 8 { frog_fp = (WIN_W - 36) * 8 }
+                }
+
+                # Home row: land in an open slot or die against the hedge
+                if frog_row == 0 {
+                    let fc: i32 = frog_fp / 8 + 16
+                    let mut placed: i32 = 0
+                    for s in 0 to 5 {
+                        if placed == 0 and home[s] == 0 {
+                            let mut dxs: i32 = fc - home_cx(s)
+                            if dxs < 0 { dxs = 0 - dxs }
+                            if dxs < 18 {
+                                home[s] = 1
+                                placed = 1
+                                score = score + 50 + timer / 60
+                            }
+                        }
+                    }
+                    if placed == 1 {
+                        let mut filled: i32 = 0
+                        for s in 0 to 5 {
+                            if home[s] == 1 { filled = filled + 1 }
+                        }
+                        if filled == 5 {
+                            score = score + 1000
+                            level = level + 1
+                            for s in 0 to 5 { home[s] = 0 }
+                        }
+                        frog_row = START_ROW
+                        frog_fp = START_FP
+                        best_row = START_ROW
+                        timer = timer_max(level)
+                    } else {
+                        kill = 1
+                    }
+                }
+
+                # Countdown
+                timer = timer - 1
+                if timer <= 0 {
+                    timer = 0
+                    kill = 1
+                }
+
+                let fpx: i32 = frog_fp / 8
+
+                # Road lanes: cars kill on contact
+                if frog_row >= 7 and frog_row <= 11 {
+                    let l: i32 = frog_row - 2
+                    let w: i32 = lane_w(l)
+                    for k in 0 to 3 {
+                        let cx: i32 = obj_x[l * 3 + k] / 8 - w
+                        if fpx + 28 > cx + 2 and fpx + 4 < cx + w - 2 { kill = 1 }
+                    }
+                }
+
+                # River lanes: ride a log or drown
+                if frog_row >= 1 and frog_row <= 5 {
+                    let l: i32 = frog_row - 1
+                    let w: i32 = lane_w(l)
+                    let fc: i32 = fpx + 16
+                    let mut onlog: i32 = 0
+                    for k in 0 to 3 {
+                        let cx: i32 = obj_x[l * 3 + k] / 8 - w
+                        if fc >= cx and fc < cx + w { onlog = 1 }
+                    }
+                    if onlog == 1 {
+                        frog_fp = frog_fp + lane_dir(l) * lane_speed(l, level)
+                        if frog_fp < -128 { kill = 1 }
+                        if frog_fp > (WIN_W - 16) * 8 { kill = 1 }
+                    } else {
+                        kill = 1
+                    }
+                }
+            }
+
+            if kill == 1 and death_timer == 0 {
+                death_timer = 40
+            }
+            if death_timer > 0 {
+                death_timer = death_timer - 1
+                if death_timer == 0 {
+                    lives = lives - 1
+                    if lives <= 0 {
+                        lives = 0
+                        state = STATE_GAMEOVER
+                    } else {
+                        frog_row = START_ROW
+                        frog_fp = START_FP
+                        best_row = START_ROW
+                        timer = timer_max(level)
+                    }
+                }
+            }
+        }
+
+        # ---- draw ----
+        gfx_clear(g, 15, 15, 25)
+
+        # HUD: score, lives, level
+        gfx_fill_rect(g, 0, 0, WIN_W, HUD_H, 25, 25, 40)
+        draw_number(g, 12, 10, score, 3, 255, 255, 255)
+        for i in 0 to lives {
+            gfx_fill_rect(g, 210 + i * 26, 14, 18, 12, 60, 220, 80)
+        }
+        draw_number(g, WIN_W - 40, 10, level, 3, 255, 200, 100)
+
+        # Rows
+        for r in 0 to 13 {
+            let y: i32 = row_y(r)
+            if r == 0 {
+                gfx_fill_rect(g, 0, y, WIN_W, CELL, 20, 90, 40)
+            } elif r >= 1 and r <= 5 {
+                gfx_fill_rect(g, 0, y, WIN_W, CELL, 30, 60, 160)
+            } elif r == 6 or r == 12 {
+                gfx_fill_rect(g, 0, y, WIN_W, CELL, 40, 130, 55)
+            } else {
+                gfx_fill_rect(g, 0, y, WIN_W, CELL, 42, 42, 50)
+            }
+        }
+
+        # Road lane dashes
+        for r in 8 to 12 {
+            let y: i32 = row_y(r)
+            for d in 0 to 9 {
+                gfx_fill_rect(g, d * 60 + 10, y - 1, 24, 2, 200, 200, 200)
+            }
+        }
+
+        # Home slots
+        for s in 0 to 5 {
+            let scx: i32 = home_cx(s)
+            gfx_fill_rect(g, scx - 20, row_y(0) + 4, 40, 32, 12, 40, 90)
+            if home[s] == 1 {
+                gfx_fill_rect(g, scx - 14, row_y(0) + 8, 28, 24, 60, 220, 80)
+                gfx_fill_rect(g, scx - 10, row_y(0) + 10, 5, 5, 255, 255, 255)
+                gfx_fill_rect(g, scx + 5, row_y(0) + 10, 5, 5, 255, 255, 255)
+            }
+        }
+
+        # Lane objects
+        for l in 0 to 10 {
+            let w: i32 = lane_w(l)
+            let y: i32 = row_y(lane_row(l))
+            for k in 0 to 3 {
+                let cx: i32 = obj_x[l * 3 + k] / 8 - w
+                if l < 5 {
+                    # Log
+                    gfx_fill_rect(g, cx, y + 8, w, 24, 150, 105, 60)
+                    gfx_fill_rect(g, cx, y + 8, 6, 24, 110, 75, 40)
+                    gfx_fill_rect(g, cx + w - 6, y + 8, 6, 24, 110, 75, 40)
+                } else {
+                    # Car
+                    let mut cr: i32 = 220
+                    let mut cg: i32 = 80
+                    let mut cb: i32 = 80
+                    if l == 6 { cr = 230; cg = 230; cb = 80 }
+                    if l == 7 { cr = 200; cg = 120; cb = 220 }
+                    if l == 8 { cr = 240; cg = 140; cb = 60 }
+                    if l == 9 { cr = 120; cg = 200; cb = 240 }
+                    gfx_fill_rect(g, cx, y + 8, w, 24, cr, cg, cb)
+                    if lane_dir(l) > 0 {
+                        gfx_fill_rect(g, cx + w - 12, y + 12, 8, 16, 30, 30, 40)
+                    } else {
+                        gfx_fill_rect(g, cx + 4, y + 12, 8, 16, 30, 30, 40)
+                    }
+                }
+            }
+        }
+
+        # Frog
+        if state != STATE_TITLE {
+            let fpx: i32 = frog_fp / 8
+            let fy: i32 = row_y(frog_row)
+            if death_timer > 0 {
+                gfx_fill_rect(g, fpx, fy + 4, 32, 32, 230, 70, 50)
+                gfx_fill_rect(g, fpx + 4, fy + 18, 24, 4, 255, 255, 255)
+                gfx_fill_rect(g, fpx + 14, fy + 8, 4, 24, 255, 255, 255)
+            } else {
+                gfx_fill_rect(g, fpx, fy + 4, 32, 32, 60, 220, 80)
+                gfx_fill_rect(g, fpx + 3, fy + 6, 6, 6, 255, 255, 255)
+                gfx_fill_rect(g, fpx + 23, fy + 6, 6, 6, 255, 255, 255)
+                gfx_fill_rect(g, fpx + 5, fy + 8, 3, 3, 20, 20, 20)
+                gfx_fill_rect(g, fpx + 25, fy + 8, 3, 3, 20, 20, 20)
+            }
+        }
+
+        # Timer bar
+        let tmax: i32 = timer_max(level)
+        gfx_fill_rect(g, 16, 564, WIN_W - 32, 14, 30, 30, 45)
+        let mut tw: i32 = (WIN_W - 32) * timer / tmax
+        if tw < 0 { tw = 0 }
+        if tw > WIN_W - 32 { tw = WIN_W - 32 }
+        if timer * 3 > tmax {
+            gfx_fill_rect(g, 16, 564, tw, 14, 80, 220, 100)
+        } else {
+            gfx_fill_rect(g, 16, 564, tw, 14, 230, 80, 60)
+        }
+
+        # Title overlay
+        if state == STATE_TITLE {
+            gfx_fill_rect(g, WIN_W / 2 - 140, 240, 280, 60, 60, 220, 80)
+            gfx_fill_rect(g, WIN_W / 2 - 132, 248, 264, 44, 10, 60, 25)
+            if (frame / 30) % 2 == 0 {
+                gfx_fill_rect(g, WIN_W / 2 - 90, 320, 180, 14, 255, 255, 255)
+            }
+        }
+
+        # Game-over overlay
+        if state == STATE_GAMEOVER {
+            gfx_fill_rect(g, WIN_W / 2 - 140, 230, 280, 96, 170, 0, 0)
+            gfx_fill_rect(g, WIN_W / 2 - 132, 238, 264, 80, 40, 0, 0)
+            draw_number(g, WIN_W / 2 - 90, 258, score, 5, 255, 255, 255)
+            if (frame / 30) % 2 == 0 {
+                gfx_fill_rect(g, WIN_W / 2 - 90, 336, 180, 12, 255, 120, 120)
+            }
+        }
+
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
