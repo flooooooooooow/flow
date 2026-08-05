@@ -4,6 +4,23 @@ The GIFs in this folder are produced by running the real Flow programs. They are
 not illustrations of what the programs would look like — the pixels come from
 the same drawing calls the native window would receive.
 
+## Naming contract
+
+Every game in `examples/games/` has a gameplay GIF at
+`docs/demos/games/<name>.gif`, where `<name>` is the game's file name without
+the `_gfx.flow` suffix (`snake_gfx.flow` → `games/snake.gif`). The three
+original demos also keep their GIFs directly in this folder (`lorenz.gif`,
+`tetris.gif`, `2048.gif`); `tetris.gif` and `2048.gif` are copied into
+`games/` as well so the games directory covers every game.
+
+Regenerate everything with:
+
+```bash
+python3 scripts/record_demos.py           # all demos, straight into docs/demos/
+python3 scripts/record_demos.py frogger   # just one
+python3 scripts/record_demos.py --check   # list which GIFs exist and their sizes
+```
+
 ## How it works
 
 `runtime/gfx_record.c` implements the same API as the windowed backends
@@ -65,4 +82,11 @@ Two things to keep in mind when writing a script:
 Add an entry to `DEMOS` in `scripts/record_demos.py` with the program path, a
 frame budget, and — if it is interactive — a key script. Frame count, `skip`,
 and `duration_ms` together set the length and pace of the GIF; `scale` shrinks
-large windows so the file stays small enough for a docs page.
+large windows so the file stays small enough for a docs page (games target
+320–480 px wide and under ~500 KB, hard cap 1 MB).
+
+Because the recorder and the games are fully deterministic (fixed RNG seeds,
+frame-counted input), a key script is a repeatable flight plan. The longer
+scripts in `record_demos.py` were derived by simulating a game's exact integer
+logic offline and searching for input that plays well — the committed frame
+windows encode that play, and re-recording reproduces it bit for bit.
