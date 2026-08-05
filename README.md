@@ -254,8 +254,9 @@ extern {
 ## CLI Reference
 
 ```bash
-./flow run <file>           # Compile and run
+./flow run <file>           # Compile and run (default host: flowc)
 ./flow compile <file>       # Compile only (output: build/)
+FLOW_HOST=python ./flow run <file>  # Full Python-host language surface
 ./flow audio <file>         # Compile and run with audio backend
 ./flow compile-audio <file> # Compile with audio backend
 ./flow python <file>        # Generate Python wheel
@@ -266,6 +267,8 @@ extern {
 ./flow jit <file>           # JIT compile (requires LLVM)
 ./flow lsp                  # Start language server
 ```
+
+Host switch: `FLOW_HOST=flowc|python|auto` (default `flowc` for `run`/`compile`).
 
 ### Python Package Generation
 
