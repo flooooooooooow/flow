@@ -1,0 +1,394 @@
+# JUMPER - doodle-jump style vertical platformer
+#
+# Controls:
+#   Left/Right or A/D - steer in the air (wraps around screen edges)
+#   Space             - start game
+#   R                 - restart after game over
+#   Esc               - quit
+#
+# Features:
+#   - Auto-bounce on platforms, camera scrolls up with the player
+#   - Height-based score
+#   - Platform types: static (green), moving (blue), crumbling one-use (tan)
+#   - Springs on some static platforms for super jumps
+#   - Screen wrap on the sides, fall off the bottom = game over
+#   - Title, playing and game-over states with restart
+
+import "stdlib/gfx.flow"
+
+const KEY_SPACE: i32 = 49
+
+const WIN_W: i32 = 400
+const WIN_H: i32 = 600
+const FP: i32 = 16                  # fixed-point scale
+const PW: i32 = 28                  # player size
+const PH: i32 = 28
+const PLAT_W: i32 = 60
+const PLAT_H: i32 = 12
+const NUM_PLATS: i32 = 10
+
+const GRAVITY: i32 = 6
+const BOUNCE_V: i32 = -140
+const SPRING_V: i32 = -230
+
+const STATE_TITLE: i32 = 0
+const STATE_PLAYING: i32 = 1
+const STATE_GAMEOVER: i32 = 2
+
+const TYPE_STATIC: i32 = 0
+const TYPE_MOVING: i32 = 1
+const TYPE_CRUMBLE: i32 = 2
+
+# ============================================================================
+# RNG
+# ============================================================================
+
+function rng_next(seed: u32) -> u32 {
+    return seed * 1664525 + 1013904223
+}
+
+function rng_range(seed: u32, max: i32) -> i32 {
+    let mut val: i32 = seed % max
+    if val < 0 { val = 0 - val }
+    return val
+}
+
+# ============================================================================
+# NUMBER DRAWING (3x5 rect digits)
+# ============================================================================
+
+function draw_digit(g: Gfx, x: i32, y: i32, d: i32, scale: i32, cr: i32, cg: i32, cb: i32) {
+    let mut p0: i32 = 7
+    let mut p1: i32 = 5
+    let mut p2: i32 = 5
+    let mut p3: i32 = 5
+    let mut p4: i32 = 7
+
+    if d == 1 { p0 = 2; p1 = 6; p2 = 2; p3 = 2; p4 = 7 }
+    if d == 2 { p0 = 7; p1 = 1; p2 = 7; p3 = 4; p4 = 7 }
+    if d == 3 { p0 = 7; p1 = 1; p2 = 7; p3 = 1; p4 = 7 }
+    if d == 4 { p0 = 5; p1 = 5; p2 = 7; p3 = 1; p4 = 1 }
+    if d == 5 { p0 = 7; p1 = 4; p2 = 7; p3 = 1; p4 = 7 }
+    if d == 6 { p0 = 7; p1 = 4; p2 = 7; p3 = 5; p4 = 7 }
+    if d == 7 { p0 = 7; p1 = 1; p2 = 1; p3 = 1; p4 = 1 }
+    if d == 8 { p0 = 7; p1 = 5; p2 = 7; p3 = 5; p4 = 7 }
+    if d == 9 { p0 = 7; p1 = 5; p2 = 7; p3 = 1; p4 = 7 }
+
+    let rows: array<i32, 5> = [p0, p1, p2, p3, p4]
+
+    for row in 0 to 5 {
+        let bits: i32 = rows[row]
+        for col in 0 to 3 {
+            let mut mask: i32 = 4
+            let mut sh: i32 = col
+            while sh > 0 {
+                mask = mask / 2
+                sh = sh - 1
+            }
+            if (bits / mask) % 2 == 1 {
+                gfx_fill_rect(g, x + col * scale, y + row * scale, scale - 1, scale - 1, cr, cg, cb)
+            }
+        }
+    }
+}
+
+function draw_number(g: Gfx, x: i32, y: i32, n: i32, scale: i32, cr: i32, cg: i32, cb: i32) {
+    if n == 0 {
+        draw_digit(g, x, y, 0, scale, cr, cg, cb)
+        return
+    }
+
+    let digits: array<i32, 10> = [0,0,0,0,0,0,0,0,0,0]
+    let mut count: i32 = 0
+    let mut v: i32 = n
+    while v > 0 and count < 10 {
+        digits[count] = v % 10
+        v = v / 10
+        count = count + 1
+    }
+
+    let mut dx: i32 = 0
+    let mut i: i32 = count - 1
+    while i >= 0 {
+        draw_digit(g, x + dx, y, digits[i], scale, cr, cg, cb)
+        dx = dx + 4 * scale
+        i = i - 1
+    }
+}
+
+# ============================================================================
+# DRAWING
+# ============================================================================
+
+function draw_platform(g: Gfx, x: i32, y: i32, ptype: i32, spring: i32, alive: i32) {
+    if alive == 0 { return }
+    let mut cr: i32 = 70
+    let mut cg: i32 = 200
+    let mut cb: i32 = 80
+    if ptype == TYPE_MOVING { cr = 80; cg = 160; cb = 240 }
+    if ptype == TYPE_CRUMBLE { cr = 200; cg = 160; cb = 110 }
+    gfx_fill_rect(g, x, y, PLAT_W, PLAT_H, cr, cg, cb)
+    gfx_fill_rect(g, x, y, PLAT_W, 3, cr + 40, cg + 40, cb + 40)
+    if ptype == TYPE_CRUMBLE {
+        # cracks
+        gfx_fill_rect(g, x + 14, y + 3, 3, PLAT_H - 3, 120, 90, 60)
+        gfx_fill_rect(g, x + 38, y + 3, 3, PLAT_H - 3, 120, 90, 60)
+    }
+    if spring == 1 {
+        gfx_fill_rect(g, x + PLAT_W / 2 - 7, y - 8, 14, 8, 180, 180, 190)
+        gfx_fill_rect(g, x + PLAT_W / 2 - 9, y - 11, 18, 4, 220, 60, 60)
+    }
+}
+
+function draw_player(g: Gfx, x: i32, y: i32, vy: i32) {
+    gfx_fill_rect(g, x, y, PW, PH, 190, 230, 60)
+    # legs stretch when falling
+    if vy > 0 {
+        gfx_fill_rect(g, x + 4, y + PH, 6, 5, 190, 230, 60)
+        gfx_fill_rect(g, x + PW - 10, y + PH, 6, 5, 190, 230, 60)
+    }
+    # eyes
+    gfx_fill_rect(g, x + 5, y + 7, 6, 6, 255, 255, 255)
+    gfx_fill_rect(g, x + 17, y + 7, 6, 6, 255, 255, 255)
+    gfx_fill_rect(g, x + 7, y + 9, 3, 3, 30, 30, 30)
+    gfx_fill_rect(g, x + 19, y + 9, 3, 3, 30, 30, 30)
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+function main() -> i32 {
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "JUMPER - Flow")
+
+    # platform state (world coordinates in pixels, y grows downward)
+    let plat_x: array<i32, 10> = [0,0,0,0,0,0,0,0,0,0]
+    let plat_y: array<i32, 10> = [0,0,0,0,0,0,0,0,0,0]
+    let plat_type: array<i32, 10> = [0,0,0,0,0,0,0,0,0,0]
+    let plat_spring: array<i32, 10> = [0,0,0,0,0,0,0,0,0,0]
+    let plat_alive: array<i32, 10> = [1,1,1,1,1,1,1,1,1,1]
+    let plat_dx: array<i32, 10> = [1,1,1,1,1,1,1,1,1,1]
+
+    let mut state: i32 = STATE_TITLE
+    let mut px: i32 = 0                 # fixed point *16
+    let mut py: i32 = 0
+    let mut vx: i32 = 0
+    let mut vy: i32 = 0
+    let mut cam: i32 = 0                # fixed point, world y of screen top
+    let mut score: i32 = 0
+    let mut frame: i32 = 0
+    let mut rng_seed: u32 = 20260805
+
+    let mut last_space: i32 = 0
+    let mut last_r: i32 = 0
+
+    while !gfx_should_close(g) {
+        gfx_poll(g)
+        if gfx_key_down(g, KEY_ESC) { break }
+        frame = frame + 1
+
+        # ---- input ----
+        let mut left_now: i32 = 0
+        let mut right_now: i32 = 0
+        let mut space_now: i32 = 0
+        let mut r_now: i32 = 0
+        if gfx_key_down(g, KEY_LEFT) or gfx_key_down(g, KEY_A) { left_now = 1 }
+        if gfx_key_down(g, KEY_RIGHT) or gfx_key_down(g, KEY_D) { right_now = 1 }
+        if gfx_key_down(g, KEY_SPACE) { space_now = 1 }
+        if gfx_key_down(g, KEY_R) { r_now = 1 }
+
+        let mut space_edge: i32 = 0
+        let mut r_edge: i32 = 0
+        if space_now == 1 and last_space == 0 { space_edge = 1 }
+        if r_now == 1 and last_r == 0 { r_edge = 1 }
+        last_space = space_now
+        last_r = r_now
+
+        # ---- state transitions ----
+        let mut want_start: i32 = 0
+        if state == STATE_TITLE and space_edge == 1 { want_start = 1 }
+        if state == STATE_GAMEOVER and r_edge == 1 { want_start = 1 }
+        if want_start == 1 {
+            state = STATE_PLAYING
+            px = (WIN_W / 2 - PW / 2) * FP
+            py = 500 * FP
+            vx = 0
+            vy = BOUNCE_V
+            cam = 0
+            score = 0
+            # initial ladder of platforms, one right under the player
+            for i in 0 to NUM_PLATS {
+                plat_y[i] = 560 - i * 55
+                plat_type[i] = TYPE_STATIC
+                plat_spring[i] = 0
+                plat_alive[i] = 1
+                plat_dx[i] = 1
+                if i == 0 {
+                    plat_x[i] = WIN_W / 2 - PLAT_W / 2
+                } else {
+                    rng_seed = rng_next(rng_seed)
+                    plat_x[i] = rng_range(rng_seed, WIN_W - PLAT_W)
+                }
+            }
+        }
+
+        # ---- gameplay ----
+        if state == STATE_PLAYING {
+            # steering
+            if left_now == 1 { vx = vx - 5 }
+            if right_now == 1 { vx = vx + 5 }
+            if left_now == 0 and right_now == 0 { vx = vx * 7 / 8 }
+            if vx > 64 { vx = 64 }
+            if vx < -64 { vx = -64 }
+
+            # physics
+            let prev_bottom: i32 = py + PH * FP
+            vy = vy + GRAVITY
+            if vy > 160 { vy = 160 }
+            px = px + vx
+            py = py + vy
+            let new_bottom: i32 = py + PH * FP
+
+            # screen wrap
+            if px < 0 - PW * FP { px = WIN_W * FP }
+            if px > WIN_W * FP { px = 0 - PW * FP }
+
+            # moving platforms drift back and forth
+            for i in 0 to NUM_PLATS {
+                if plat_type[i] == TYPE_MOVING and plat_alive[i] == 1 {
+                    plat_x[i] = plat_x[i] + plat_dx[i] * 2
+                    if plat_x[i] < 0 { plat_x[i] = 0; plat_dx[i] = 1 }
+                    if plat_x[i] > WIN_W - PLAT_W { plat_x[i] = WIN_W - PLAT_W; plat_dx[i] = -1 }
+                }
+            }
+
+            # bounce on platforms while falling
+            if vy > 0 {
+                for i in 0 to NUM_PLATS {
+                    if plat_alive[i] == 1 {
+                        let top_fp: i32 = plat_y[i] * FP
+                        if prev_bottom <= top_fp and new_bottom >= top_fp {
+                            let pxp: i32 = px / FP
+                            if pxp + PW > plat_x[i] and pxp < plat_x[i] + PLAT_W {
+                                if plat_spring[i] == 1 {
+                                    vy = SPRING_V
+                                } else {
+                                    vy = BOUNCE_V
+                                }
+                                py = top_fp - PH * FP
+                                if plat_type[i] == TYPE_CRUMBLE {
+                                    plat_alive[i] = 0
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            # camera follows upward only
+            let cam_target: i32 = py - 250 * FP
+            if cam_target < cam { cam = cam_target }
+
+            # height score: how far the camera has climbed
+            let climbed: i32 = (0 - cam) / FP / 10
+            if climbed > score { score = climbed }
+
+            # recycle platforms that scrolled off the bottom
+            for i in 0 to NUM_PLATS {
+                if plat_y[i] * FP > cam + (WIN_H + 30) * FP {
+                    # find the current highest platform
+                    let mut top_y: i32 = 999999
+                    for j in 0 to NUM_PLATS {
+                        if plat_y[j] < top_y { top_y = plat_y[j] }
+                    }
+                    rng_seed = rng_next(rng_seed)
+                    let mut gap: i32 = 50 + rng_range(rng_seed, 45)
+                    let mut extra: i32 = score / 25
+                    if extra > 35 { extra = 35 }
+                    gap = gap + extra
+                    plat_y[i] = top_y - gap
+                    rng_seed = rng_next(rng_seed)
+                    plat_x[i] = rng_range(rng_seed, WIN_W - PLAT_W)
+                    plat_alive[i] = 1
+                    plat_spring[i] = 0
+                    plat_dx[i] = 1
+
+                    # platform type mix hardens with height
+                    rng_seed = rng_next(rng_seed)
+                    let t: i32 = rng_range(rng_seed, 10)
+                    plat_type[i] = TYPE_STATIC
+                    if score > 30 and (t == 7 or t == 8) { plat_type[i] = TYPE_MOVING }
+                    if score > 80 and t == 9 { plat_type[i] = TYPE_CRUMBLE }
+
+                    if plat_type[i] == TYPE_STATIC {
+                        rng_seed = rng_next(rng_seed)
+                        if rng_range(rng_seed, 6) == 0 { plat_spring[i] = 1 }
+                    }
+                }
+            }
+
+            # fell off the bottom
+            if py - cam > (WIN_H + 30) * FP {
+                state = STATE_GAMEOVER
+            }
+        }
+
+        # ---- drawing ----
+        gfx_clear(g, 24, 26, 52)
+        # parallax stars
+        let star_shift: i32 = (0 - cam / FP) / 4
+        for s in 0 to 12 {
+            let sx: i32 = (s * 137 + 31) % WIN_W
+            let sy: i32 = ((s * 211 + 67 + star_shift) % WIN_H + WIN_H) % WIN_H
+            gfx_fill_rect(g, sx, sy, 3, 3, 90, 95, 140)
+        }
+
+        if state == STATE_TITLE {
+            gfx_fill_rect(g, WIN_W / 2 - 130, 110, 260, 80, 15, 16, 34)
+            gfx_fill_rect(g, WIN_W / 2 - 122, 118, 244, 64, 190, 230, 60)
+            # sample platforms and jumper
+            draw_platform(g, WIN_W / 2 - 110, 320, TYPE_STATIC, 0, 1)
+            draw_platform(g, WIN_W / 2 - 30, 270, TYPE_MOVING, 0, 1)
+            draw_platform(g, WIN_W / 2 + 50, 220, TYPE_CRUMBLE, 0, 1)
+            draw_platform(g, WIN_W / 2 - 30, 380, TYPE_STATIC, 1, 1)
+            let bob: i32 = (frame / 4) % 20
+            let mut bounce_y: i32 = bob
+            if bob > 10 { bounce_y = 20 - bob }
+            draw_player(g, WIN_W / 2 - PW / 2, 430 + bounce_y, 0)
+            if (frame / 25) % 2 == 0 {
+                gfx_fill_rect(g, WIN_W / 2 - 90, 520, 180, 14, 240, 240, 240)
+            }
+        } else {
+            # platforms
+            for i in 0 to NUM_PLATS {
+                let sy: i32 = plat_y[i] - cam / FP
+                if sy > -20 and sy < WIN_H + 20 {
+                    draw_platform(g, plat_x[i], sy, plat_type[i], plat_spring[i], plat_alive[i])
+                }
+            }
+
+            # player
+            let psx: i32 = px / FP
+            let psy: i32 = (py - cam) / FP
+            draw_player(g, psx, psy, vy)
+
+            # score
+            gfx_fill_rect(g, 6, 6, 120, 40, 15, 16, 34)
+            draw_number(g, 14, 14, score, 5, 255, 255, 255)
+
+            if state == STATE_GAMEOVER {
+                gfx_fill_rect(g, WIN_W / 2 - 140, 220, 280, 110, 15, 16, 34)
+                gfx_fill_rect(g, WIN_W / 2 - 132, 228, 264, 36, 200, 40, 40)
+                draw_number(g, WIN_W / 2 - 90, 276, score, 8, 255, 255, 255)
+                if (frame / 25) % 2 == 0 {
+                    gfx_fill_rect(g, WIN_W / 2 - 70, 350, 140, 10, 240, 240, 240)
+                }
+            }
+        }
+
+        gfx_present(g)
+    }
+
+    gfx_close(g)
+    return 0
+}
