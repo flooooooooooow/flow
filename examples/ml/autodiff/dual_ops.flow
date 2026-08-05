@@ -1,0 +1,43 @@
+# Dual operator sugar (pattern-adoption #161).
+# `a * a + b` resolves through Dual overloads instead of dual_mul/dual_add.
+#
+# Run: ./flow run examples/ml/autodiff/dual_ops.flow
+
+import "stdlib/autodiff.flow"
+
+extern {
+    function printf(fmt: string, val: f32) -> i32
+    function fabsf(x: f32) -> f32
+}
+
+function f(x: Dual) -> Dual {
+    # f(x) = x^2 + 3x + 1  →  f' = 2x + 3
+    return x * x + 3.0 * x + 1.0
+}
+
+function main() -> i32 {
+    let x: Dual = dx(2.0)
+    let y: Dual = f(x)
+    print("f(2) = ")
+    printf("%.4f", y.val)
+    println("")
+    print("f'(2) = ")
+    printf("%.4f", y.grad)
+    println("")
+
+    let z: Dual = -x + y / 2.0
+    print("(-x + y/2).val = ")
+    printf("%.4f", z.val)
+    println("")
+
+    if fabsf(y.val - 11.0) > 0.001 {
+        println("FAIL: value")
+        return 1
+    }
+    if fabsf(y.grad - 7.0) > 0.001 {
+        println("FAIL: gradient")
+        return 1
+    }
+    println("OK: Dual +, -, *, / and unary -")
+    return 0
+}
