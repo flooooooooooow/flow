@@ -1,0 +1,76 @@
+name: Publish VS Code extension to Open VSX
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'vscode-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open-vsx-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/integrations/vscode/flow-language
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: third_party/integrations/vscode/flow-language/package-lock.json
+
+      - name: Verify publishing secret
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::error::Repository secret OVSX_PAT is not configured."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Compile extension
+        run: npm run compile
+
+      - name: Package extension
+        run: npx --no-install vsce package --no-dependencies
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-language-vsix
+          path: third_party/integrations/vscode/flow-language/flow-language-*.vsix
+          if-no-files-found: error
+
+      - name: Claim Open VSX namespace if needed
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            https://open-vsx.org/api/quilio)"
+          if [ "$status" = "404" ]; then
+            npx --yes ovsx create-namespace quilio --pat "$OVSX_PAT"
+          elif [ "$status" != "200" ]; then
+            echo "::error::Open VSX namespace check returned HTTP $status."
+            exit 1
+          fi
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --yes ovsx publish flow-language-*.vsix --pat "$OVSX_PAT"
