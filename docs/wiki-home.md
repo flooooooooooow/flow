@@ -104,6 +104,9 @@ scripted input.
 
 </div>
 
+**[Full game gallery →](demos/games.md)** — all 23 games with recorded
+gameplay, run commands, and sources.
+
 ---
 
 ## Start here
@@ -114,6 +117,7 @@ scripted input.
 | [Interactive Tutorials](tutorials/index.html) | Edit &amp; run **130+** lessons (incl. manual memory) |
 | [Beginner guide](tutorials/beginner.md) | Variables, functions, control flow |
 | [Playground](playground/index.html) | Syntax explorer with verified examples (compile locally with `./flow run`) |
+| [Game gallery](demos/games.md) | 23 complete games, each with a recorded GIF |
 | [Comparison](comparison.md) | Flow vs C, Rust, Zig, Mojo |
 | [Effects showcase](effects-showcase.md) | Algebraic effects with honest limitations |
 | [Autodiff guide](library/autodiff-guide.md) | Forward/reverse AD patterns |
