@@ -26,7 +26,7 @@ story. Adoption first; new sugar second.
 | P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ partial | [#162](https://github.com/flooooooooooow/flow/issues/162) |
 | P2 | Field / `laplacian` PDE surface | language ✅ partial | [#163](https://github.com/flooooooooooow/flow/issues/163) |
 | P2 | Dual + Tensor operators + mutable params | language ✅ partial | [#161](https://github.com/flooooooooooow/flow/issues/161) |
-| P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering ✅ partial | [#160](https://github.com/flooooooooooow/flow/issues/160) |
+| P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering ✅ | [#160](https://github.com/flooooooooooow/flow/issues/160) |
 
 ---
 
@@ -215,25 +215,27 @@ nested index soup. ✅ Grammar card remains open.
 overloads (`mul`/`add`/…) in the C generator + typechecker. Demo:
 `examples/ml/autodiff/dual_ops.flow`.
 
-**Still open:** mutable struct fields / param-vector updates so `nn.flow`
-drops multi-way `param_set` rebuilds; Tensor operators.
+**Also shipped:** `nn.flow` `param_set` / `_step` use mut field assignment
+instead of full-struct rebuilds.
+
+**Still open:** Tensor operators; compiler `loss.grad`.
 
 ```flow
-let y: Dual = sin(a * a + b)   # shipped for Dual arithmetic
-struct Net { mut w: … }        # follow-on
+let y: Dual = sin(a * a + b)   # shipped
+let mut n: Net2x2x1 = net
+n.w00 = n.w00 - lr * g.dw00    # shipped
 ```
 
 ---
 
 ### 10. Closed-loop `plant.step`
 
-**Shipped MVP:** `spring_mass_control.flow` simulates via stdlib
-`dsys_continuous` → `dsys_euler_discretize` → `state_step` (no hand Ad/Bd).
-Analysis still uses the `dsys` DSL block; coefficients are duplicated once in
-`spring_mass_discrete()` until the DSL exposes `__dsys_plant` to user scope.
+**Shipped:** DSL expansion aliases `let plant: DynamicalSystem = __dsys_plant`.
+`spring_mass_control.flow` steps with `plant_step(plant, …)`. `plant_step` is
+an alias of `state_step`.
 
-**Follow-on:** bind analyzed plant into main; `connect` Closed_step for
-nonlinear plants (`robot_connect` already shows the composition shape).
+**Follow-on:** nonlinear `connect` Closed_step sharing analysis plant
+(`robot_connect` already shows composition shape).
 
 ---
 

@@ -61,16 +61,19 @@ export function net2x2x1_param_get(net: Net2x2x1, idx: i32) -> f32 {
 }
 
 export function net2x2x1_param_set(net: Net2x2x1, idx: i32, value: f32) -> Net2x2x1 {
-    if idx == 0 { return Net2x2x1 { w00: value,   w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
-    if idx == 1 { return Net2x2x1 { w00: net.w00, w01: value,   w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
-    if idx == 2 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: value,   w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
-    if idx == 3 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: value,   b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
-    if idx == 4 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: value,   b1: net.b1, v0: net.v0, v1: net.v1, c: net.c } }
-    if idx == 5 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: value,   v0: net.v0, v1: net.v1, c: net.c } }
-    if idx == 6 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: value,   v1: net.v1, c: net.c } }
-    if idx == 7 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: value,   c: net.c } }
-    if idx == 8 { return Net2x2x1 { w00: net.w00, w01: net.w01, w10: net.w10, w11: net.w11, b0: net.b0, b1: net.b1, v0: net.v0, v1: net.v1, c: value } }
-    return net
+    # Mutate a local copy via field assignment (#161) instead of a 9-way
+    # full-struct literal rebuild.
+    let mut n: Net2x2x1 = net
+    if idx == 0 { n.w00 = value }
+    if idx == 1 { n.w01 = value }
+    if idx == 2 { n.w10 = value }
+    if idx == 3 { n.w11 = value }
+    if idx == 4 { n.b0 = value }
+    if idx == 5 { n.b1 = value }
+    if idx == 6 { n.v0 = value }
+    if idx == 7 { n.v1 = value }
+    if idx == 8 { n.c = value }
+    return n
 }
 
 export function net2x2x1_grad_get(g: Grads2x2x1, idx: i32) -> f32 {
@@ -170,17 +173,18 @@ export function net2x2x1_grads_xor(net: Net2x2x1) -> Grads2x2x1 {
 }
 
 export function net2x2x1_step(net: Net2x2x1, grads: Grads2x2x1, lr: f32) -> Net2x2x1 {
-    return Net2x2x1 {
-        w00: net.w00 - lr * grads.dw00,
-        w01: net.w01 - lr * grads.dw01,
-        w10: net.w10 - lr * grads.dw10,
-        w11: net.w11 - lr * grads.dw11,
-        b0:  net.b0  - lr * grads.db0,
-        b1:  net.b1  - lr * grads.db1,
-        v0:  net.v0  - lr * grads.dv0,
-        v1:  net.v1  - lr * grads.dv1,
-        c:   net.c   - lr * grads.dc
-    }
+    # In-place field updates on a local mut copy (#161).
+    let mut n: Net2x2x1 = net
+    n.w00 = n.w00 - lr * grads.dw00
+    n.w01 = n.w01 - lr * grads.dw01
+    n.w10 = n.w10 - lr * grads.dw10
+    n.w11 = n.w11 - lr * grads.dw11
+    n.b0 = n.b0 - lr * grads.db0
+    n.b1 = n.b1 - lr * grads.db1
+    n.v0 = n.v0 - lr * grads.dv0
+    n.v1 = n.v1 - lr * grads.dv1
+    n.c = n.c - lr * grads.dc
+    return n
 }
 
 export function net2x2x1_gradcheck_xor(net: Net2x2x1, eps: f32) -> f32 {
@@ -318,21 +322,21 @@ export function net2x4x1_grads_xor(net: Net2x4x1) -> Grads2x4x1 {
 }
 
 export function net2x4x1_step(net: Net2x4x1, grads: Grads2x4x1, lr: f32) -> Net2x4x1 {
-    return Net2x4x1 {
-        w00: net.w00 - lr * grads.dw00, w01: net.w01 - lr * grads.dw01,
-        w10: net.w10 - lr * grads.dw10, w11: net.w11 - lr * grads.dw11,
-        w20: net.w20 - lr * grads.dw20, w21: net.w21 - lr * grads.dw21,
-        w30: net.w30 - lr * grads.dw30, w31: net.w31 - lr * grads.dw31,
-        b0:  net.b0  - lr * grads.db0,
-        b1:  net.b1  - lr * grads.db1,
-        b2:  net.b2  - lr * grads.db2,
-        b3:  net.b3  - lr * grads.db3,
-        v0:  net.v0  - lr * grads.dv0,
-        v1:  net.v1  - lr * grads.dv1,
-        v2:  net.v2  - lr * grads.dv2,
-        v3:  net.v3  - lr * grads.dv3,
-        c:   net.c   - lr * grads.dc
-    }
+    let mut n: Net2x4x1 = net
+    n.w00 = n.w00 - lr * grads.dw00; n.w01 = n.w01 - lr * grads.dw01
+    n.w10 = n.w10 - lr * grads.dw10; n.w11 = n.w11 - lr * grads.dw11
+    n.w20 = n.w20 - lr * grads.dw20; n.w21 = n.w21 - lr * grads.dw21
+    n.w30 = n.w30 - lr * grads.dw30; n.w31 = n.w31 - lr * grads.dw31
+    n.b0 = n.b0 - lr * grads.db0
+    n.b1 = n.b1 - lr * grads.db1
+    n.b2 = n.b2 - lr * grads.db2
+    n.b3 = n.b3 - lr * grads.db3
+    n.v0 = n.v0 - lr * grads.dv0
+    n.v1 = n.v1 - lr * grads.dv1
+    n.v2 = n.v2 - lr * grads.dv2
+    n.v3 = n.v3 - lr * grads.dv3
+    n.c = n.c - lr * grads.dc
+    return n
 }
 
 # -----------------------------------------------------------------------------
@@ -501,31 +505,23 @@ export function net2x8x1_grads_xor(net: Net2x8x1) -> Grads2x8x1 {
 }
 
 export function net2x8x1_step(net: Net2x8x1, grads: Grads2x8x1, lr: f32) -> Net2x8x1 {
-    return Net2x8x1 {
-        w00: net.w00 - lr * grads.dw00, w01: net.w01 - lr * grads.dw01,
-        w10: net.w10 - lr * grads.dw10, w11: net.w11 - lr * grads.dw11,
-        w20: net.w20 - lr * grads.dw20, w21: net.w21 - lr * grads.dw21,
-        w30: net.w30 - lr * grads.dw30, w31: net.w31 - lr * grads.dw31,
-        w40: net.w40 - lr * grads.dw40, w41: net.w41 - lr * grads.dw41,
-        w50: net.w50 - lr * grads.dw50, w51: net.w51 - lr * grads.dw51,
-        w60: net.w60 - lr * grads.dw60, w61: net.w61 - lr * grads.dw61,
-        w70: net.w70 - lr * grads.dw70, w71: net.w71 - lr * grads.dw71,
-        b0:  net.b0  - lr * grads.db0,
-        b1:  net.b1  - lr * grads.db1,
-        b2:  net.b2  - lr * grads.db2,
-        b3:  net.b3  - lr * grads.db3,
-        b4:  net.b4  - lr * grads.db4,
-        b5:  net.b5  - lr * grads.db5,
-        b6:  net.b6  - lr * grads.db6,
-        b7:  net.b7  - lr * grads.db7,
-        v0:  net.v0  - lr * grads.dv0,
-        v1:  net.v1  - lr * grads.dv1,
-        v2:  net.v2  - lr * grads.dv2,
-        v3:  net.v3  - lr * grads.dv3,
-        v4:  net.v4  - lr * grads.dv4,
-        v5:  net.v5  - lr * grads.dv5,
-        v6:  net.v6  - lr * grads.dv6,
-        v7:  net.v7  - lr * grads.dv7,
-        c:   net.c   - lr * grads.dc
-    }
+    let mut n: Net2x8x1 = net
+    n.w00 = n.w00 - lr * grads.dw00; n.w01 = n.w01 - lr * grads.dw01
+    n.w10 = n.w10 - lr * grads.dw10; n.w11 = n.w11 - lr * grads.dw11
+    n.w20 = n.w20 - lr * grads.dw20; n.w21 = n.w21 - lr * grads.dw21
+    n.w30 = n.w30 - lr * grads.dw30; n.w31 = n.w31 - lr * grads.dw31
+    n.w40 = n.w40 - lr * grads.dw40; n.w41 = n.w41 - lr * grads.dw41
+    n.w50 = n.w50 - lr * grads.dw50; n.w51 = n.w51 - lr * grads.dw51
+    n.w60 = n.w60 - lr * grads.dw60; n.w61 = n.w61 - lr * grads.dw61
+    n.w70 = n.w70 - lr * grads.dw70; n.w71 = n.w71 - lr * grads.dw71
+    n.b0 = n.b0 - lr * grads.db0; n.b1 = n.b1 - lr * grads.db1
+    n.b2 = n.b2 - lr * grads.db2; n.b3 = n.b3 - lr * grads.db3
+    n.b4 = n.b4 - lr * grads.db4; n.b5 = n.b5 - lr * grads.db5
+    n.b6 = n.b6 - lr * grads.db6; n.b7 = n.b7 - lr * grads.db7
+    n.v0 = n.v0 - lr * grads.dv0; n.v1 = n.v1 - lr * grads.dv1
+    n.v2 = n.v2 - lr * grads.dv2; n.v3 = n.v3 - lr * grads.dv3
+    n.v4 = n.v4 - lr * grads.dv4; n.v5 = n.v5 - lr * grads.dv5
+    n.v6 = n.v6 - lr * grads.dv6; n.v7 = n.v7 - lr * grads.dv7
+    n.c = n.c - lr * grads.dc
+    return n
 }
