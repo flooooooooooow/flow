@@ -71,6 +71,11 @@ export function flm_optim_steps() -> i32 {
     return flm_opt_steps
 }
 
+# True once flm_optim_init has allocated the Adam state.
+export function flm_optim_ready() -> bool {
+    return flm_opt_ready
+}
+
 # Global L2 norm of the gradient arena, measured before clipping.
 export function flm_last_grad_norm() -> f32 {
     return flm_last_gnorm

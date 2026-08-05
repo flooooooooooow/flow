@@ -34,7 +34,6 @@ import .util {
     flm_alloc_f32,
     flm_zero_f32,
     flm_exp,
-    flm_log,
     flm_sqrt,
     flm_tanh,
     flm_rand_normal
