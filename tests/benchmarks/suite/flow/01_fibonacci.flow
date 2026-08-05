@@ -1,0 +1,68 @@
+# Fibonacci Benchmark - Tests recursive function call overhead
+# Computes fib(N) using naive recursion
+# This is intentionally NOT optimized to measure raw call overhead
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+
+function fib(n: i32) -> i64 {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+function benchmark(n: i32, iterations: i32) -> f64 {
+    let start: i64 = clock()
+    
+    let mut result: i64 = 0
+    for i in 0 to iterations {
+        result = fib(n)
+    }
+    
+    let end: i64 = clock()
+    let elapsed: f64 = (end - start) / CLOCKS_PER_SEC
+    
+    print("  fib(")
+    print(n)
+    print(") = ")
+    print(result)
+    print(" | ")
+    printf("%.4f", elapsed)
+    print(" sec | ")
+    let rate: f64 = iterations / elapsed
+    printf("%.2f", rate)
+    println(" calls/sec")
+    
+    return elapsed
+}
+
+function main() -> i32 {
+    println("==============================================")
+    println("  FIBONACCI BENCHMARK (Naive Recursive)")
+    println("==============================================")
+    println("")
+    
+    # Warm up
+    let warmup: i64 = fib(20)
+    
+    # Benchmark different sizes
+    println("N=35 (1 iteration):")
+    let t1: f64 = benchmark(35, 1)
+    
+    println("")
+    println("N=40 (1 iteration):")
+    let t2: f64 = benchmark(40, 1)
+    
+    println("")
+    println("N=30 (10 iterations):")
+    let t3: f64 = benchmark(30, 10)
+    
+    println("")
+    println("Benchmark complete.")
+    return 0
+}

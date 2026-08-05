@@ -1,0 +1,95 @@
+# Flow runtime: no-backend audio device stubs (always-linked).
+# Skipped when ./flow audio links miniaudio (FLOW_SKIP_AUDIO_STUB=1).
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+@flow_api
+export function flow_audio_probe_devices() -> string {
+    return "audio backend not built (enable FLOW_AUDIO_BACKEND_MINIAUDIO)"
+}
+
+@flow_api
+export function flow_audio_open(config: ptr<void>, out_dev: ptr<ptr<void> >) -> i32 {
+    let _: ptr<void> = config
+    if out_dev == null {
+        return -1
+    }
+    # Allocate a 1-byte opaque handle so close() has something to free.
+    let dev: ptr<void> = malloc(1)
+    out_dev[0] = dev
+    return -1
+}
+
+@flow_api
+export function flow_audio_start(dev: ptr<void>) -> i32 {
+    if dev == null {
+        return -1
+    }
+    return -1
+}
+
+@flow_api
+export function flow_audio_stop(dev: ptr<void>) -> i32 {
+    if dev == null {
+        return -1
+    }
+    return 0
+}
+
+@flow_api
+export function flow_audio_close(dev: ptr<void>) -> void {
+    if dev != null {
+        free(dev)
+    }
+}
+
+@flow_api
+export function flow_audio_read_f32(dev: ptr<void>, out: ptr<f32>, frames: i32) -> i32 {
+    let _: ptr<void> = dev
+    let __: ptr<f32> = out
+    let ___: i32 = frames
+    return 0
+}
+
+@flow_api
+export function flow_audio_write_f32(dev: ptr<void>, input: ptr<f32>, frames: i32) -> i32 {
+    let _: ptr<void> = dev
+    let __: ptr<f32> = input
+    if frames < 0 {
+        return 0
+    }
+    return frames
+}
+
+@flow_api
+export function flow_audio_available_read(dev: ptr<void>) -> i32 {
+    let _: ptr<void> = dev
+    return 0
+}
+
+@flow_api
+export function flow_audio_available_write(dev: ptr<void>) -> i32 {
+    let _: ptr<void> = dev
+    return 0
+}
+
+@flow_api
+export function flow_audio_last_error(dev: ptr<void>) -> string {
+    let _: ptr<void> = dev
+    return "audio backend not built (enable FLOW_AUDIO_BACKEND_MINIAUDIO)"
+}
+
+@flow_api
+export function flow_audio_has_input(dev: ptr<void>) -> i32 {
+    let _: ptr<void> = dev
+    return 0
+}
+
+@flow_api
+export function flow_audio_has_output(dev: ptr<void>) -> i32 {
+    let _: ptr<void> = dev
+    return 0
+}

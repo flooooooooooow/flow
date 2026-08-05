@@ -1,0 +1,57 @@
+# ringbuf — SPSC power-of-two ring buffer (extracted from examples/systems)
+
+extern {
+    function malloc(size: i64) -> ptr<i32>
+    function free(p: ptr<i32>) -> void
+}
+
+export struct RingBuffer {
+    data: ptr<i32>,
+    capacity: i32,
+    write_idx: i32,
+    read_idx: i32
+}
+
+export function ring_create(capacity: i32) -> RingBuffer {
+    let data: ptr<i32> = malloc(capacity * 4)
+    for i in 0 to capacity {
+        data[i] = 0
+    }
+    return RingBuffer {
+        data: data,
+        capacity: capacity,
+        write_idx: 0,
+        read_idx: 0
+    }
+}
+
+export function ring_destroy(rb: RingBuffer) -> void {
+    free(rb.data)
+}
+
+export function ring_size(rb: RingBuffer) -> i32 {
+    let mut diff: i32 = rb.write_idx - rb.read_idx
+    if diff < 0 {
+        diff = diff + rb.capacity
+    }
+    return diff
+}
+
+export function ring_push(rb: ptr<RingBuffer>, value: i32) -> i32 {
+    let next_write: i32 = (rb[0].write_idx + 1) % rb[0].capacity
+    if next_write == rb[0].read_idx {
+        return 0
+    }
+    rb[0].data[rb[0].write_idx] = value
+    rb[0].write_idx = next_write
+    return 1
+}
+
+export function ring_pop(rb: ptr<RingBuffer>) -> i32 {
+    if rb[0].write_idx == rb[0].read_idx {
+        return 0
+    }
+    let value: i32 = rb[0].data[rb[0].read_idx]
+    rb[0].read_idx = (rb[0].read_idx + 1) % rb[0].capacity
+    return value
+}

@@ -1,0 +1,66 @@
+# Flow runtime: sysinfo print / feature-string glue.
+# Probe predicates → lib/runtime/sysinfo_probes.flow (+ flow_rt_sysinfo.c).
+
+extern {
+    function printf(fmt: string) -> i32
+    function has_sse4() -> i32
+    function has_avx() -> i32
+    function has_avx2() -> i32
+    function has_avx512f() -> i32
+    function has_avx512_vnni() -> i32
+    function has_neon() -> i32
+    function is_apple_m1() -> i32
+    function has_intel_amx() -> i32
+}
+
+@flow_api
+export function print_kv_str(label: string, val: string) -> void {
+    printf("%s %s\n", label, val)
+}
+
+@flow_api
+export function print_kv_i32(label: string, val: i32) -> void {
+    printf("%s %d\n", label, val)
+}
+
+@flow_api
+export function _cpu_features_string() -> string {
+    let mut out: string = ""
+    let mut any: i32 = 0
+    if has_sse4() != 0 {
+        out = out + " sse4"
+        any = 1
+    }
+    if has_avx() != 0 {
+        out = out + " avx"
+        any = 1
+    }
+    if has_avx2() != 0 {
+        out = out + " avx2"
+        any = 1
+    }
+    if has_avx512f() != 0 {
+        out = out + " avx512f"
+        any = 1
+    }
+    if has_avx512_vnni() != 0 {
+        out = out + " avx512_vnni"
+        any = 1
+    }
+    if has_intel_amx() != 0 {
+        out = out + " intel_amx"
+        any = 1
+    }
+    if has_neon() != 0 {
+        out = out + " neon"
+        any = 1
+    }
+    if is_apple_m1() != 0 {
+        out = out + " Apple M1"
+        any = 1
+    }
+    if any == 0 {
+        return " (none)"
+    }
+    return out
+}

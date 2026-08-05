@@ -1,0 +1,122 @@
+# log — effects-native leveled logging (v0.1.0)
+#
+# Exports `effect Log { write, write_i32 }` and a default `ConsoleLog`
+# capability. Helpers (`log_info`, `log_warn`, `log_error`, `log_debug`,
+# `log_i32`) perform Log so callers wrap with:
+#   handle Log with ConsoleLog { ... }
+# Level filtering lives in ConsoleLog via FLOW_LOG_LEVEL env (capabilities
+# are stateless). `log_set_level` / `log_get_level` tune that default
+# handler only; custom handlers can ignore env entirely.
+
+extern {
+    function putenv(s: string) -> i32
+    function getenv(name: string) -> ptr<u8>
+}
+
+const LOG_TRACE: i32 = 0
+const LOG_DEBUG: i32 = 1
+const LOG_INFO: i32 = 2
+const LOG_WARN: i32 = 3
+const LOG_ERROR: i32 = 4
+
+export effect Log {
+    write(level: i32, msg: string) -> void,
+    write_i32(level: i32, msg: string, val: i32) -> void,
+}
+
+function _put_level(level: i32) -> void {
+    if level <= 0 {
+        putenv("FLOW_LOG_LEVEL=0")
+    } else {
+        if level == 1 {
+            putenv("FLOW_LOG_LEVEL=1")
+        } else {
+            if level == 2 {
+                putenv("FLOW_LOG_LEVEL=2")
+            } else {
+                if level == 3 {
+                    putenv("FLOW_LOG_LEVEL=3")
+                } else {
+                    putenv("FLOW_LOG_LEVEL=4")
+                }
+            }
+        }
+    }
+}
+
+export function log_set_level(level: i32) -> void {
+    if level < 0 {
+        _put_level(0)
+    } else {
+        if level > 4 {
+            _put_level(4)
+        } else {
+            _put_level(level)
+        }
+    }
+}
+
+export function log_get_level() -> i32 {
+    let p: ptr<u8> = getenv("FLOW_LOG_LEVEL")
+    let addr: i64 = p as i64
+    if addr == 0 {
+        return LOG_INFO
+    }
+    let c: i32 = p[0]
+    if c >= 48 and c <= 52 {
+        return c - 48
+    }
+    return LOG_INFO
+}
+
+export capability ConsoleLog {
+    effect Log,
+
+    function write(level: i32, msg: string) -> void {
+        if level >= log_get_level() {
+            if level <= LOG_TRACE {
+                printf("[TRACE] %s\n", msg)
+            } else {
+                if level == LOG_DEBUG {
+                    printf("[DEBUG] %s\n", msg)
+                } else {
+                    if level == LOG_INFO {
+                        printf("[INFO] %s\n", msg)
+                    } else {
+                        if level == LOG_WARN {
+                            printf("[WARN] %s\n", msg)
+                        } else {
+                            printf("[ERROR] %s\n", msg)
+                        }
+                    }
+                }
+            }
+        }
+    },
+
+    function write_i32(level: i32, msg: string, val: i32) -> void {
+        if level >= log_get_level() {
+            printf("[INFO] %s %d\n", msg, val)
+        }
+    },
+}
+
+export function log_debug(msg: string) -> void with Log {
+    Log.write(LOG_DEBUG, msg)
+}
+
+export function log_info(msg: string) -> void with Log {
+    Log.write(LOG_INFO, msg)
+}
+
+export function log_warn(msg: string) -> void with Log {
+    Log.write(LOG_WARN, msg)
+}
+
+export function log_error(msg: string) -> void with Log {
+    Log.write(LOG_ERROR, msg)
+}
+
+export function log_i32(msg: string, val: i32) -> void with Log {
+    Log.write_i32(LOG_INFO, msg, val)
+}

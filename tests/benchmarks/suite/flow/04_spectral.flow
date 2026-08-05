@@ -1,0 +1,106 @@
+# Spectral Norm Benchmark - From the Computer Language Benchmarks Game
+# Computes the largest eigenvalue using power iteration
+# Tests floating-point performance and memory access patterns
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+
+function A(i: i32, j: i32) -> f64 {
+    # A[i,j] = 1.0 / ((i+j)*(i+j+1)/2 + i + 1)
+    let div: f64 = ((i + j) * (i + j + 1)) / 2 + i + 1
+    return 1.0 / div
+}
+
+function mult_Av(v: ptr<f64>, Av: ptr<f64>, n: i32) {
+    for i in 0 to n {
+        let mut sum: f64 = 0.0
+        for j in 0 to n {
+            sum = sum + A(i, j) * v[j]
+        }
+        Av[i] = sum
+    }
+}
+
+function mult_Atv(v: ptr<f64>, Atv: ptr<f64>, n: i32) {
+    for i in 0 to n {
+        let mut sum: f64 = 0.0
+        for j in 0 to n {
+            sum = sum + A(j, i) * v[j]
+        }
+        Atv[i] = sum
+    }
+}
+
+function mult_AtAv(v: ptr<f64>, AtAv: ptr<f64>, tmp: ptr<f64>, n: i32) {
+    mult_Av(v, tmp, n)
+    mult_Atv(tmp, AtAv, n)
+}
+
+function spectral_norm(n: i32) -> f64 {
+    let u: array<f64, 10000> = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    let v: array<f64, 10000> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let tmp: array<f64, 10000> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    
+    let u_ptr: ptr<f64> = u
+    let v_ptr: ptr<f64> = v
+    let tmp_ptr: ptr<f64> = tmp
+    
+    # Initialize u to 1.0
+    for i in 0 to n {
+        u[i] = 1.0
+    }
+    
+    # Power iteration
+    for i in 0 to 10 {
+        mult_AtAv(u_ptr, v_ptr, tmp_ptr, n)
+        mult_AtAv(v_ptr, u_ptr, tmp_ptr, n)
+    }
+    
+    # Compute spectral norm
+    let mut vBv: f64 = 0.0
+    let mut vv: f64 = 0.0
+    
+    for i in 0 to n {
+        vBv = vBv + u[i] * v[i]
+        vv = vv + v[i] * v[i]
+    }
+    
+    return sqrt(vBv / vv)
+}
+
+function main() -> i32 {
+    println("==============================================")
+    println("  SPECTRAL NORM BENCHMARK")
+    println("==============================================")
+    println("")
+    
+    let sizes: array<i32, 5> = [100, 500, 1000, 2000, 5500]
+    
+    for s in 0 to 5 {
+        let n: i32 = sizes[s]
+        
+        print("N = ")
+        print(n)
+        print(": ")
+        
+        let start: i64 = clock()
+        let result: f64 = spectral_norm(n)
+        let end: i64 = clock()
+        
+        let elapsed: f64 = (end - start) / CLOCKS_PER_SEC
+        
+        printf("%.9f", result)
+        print(" | ")
+        printf("%.3f", elapsed)
+        println(" sec")
+    }
+    
+    println("")
+    println("Benchmark complete.")
+    return 0
+}

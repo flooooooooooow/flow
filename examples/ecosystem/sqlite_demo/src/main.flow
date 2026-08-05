@@ -1,0 +1,25 @@
+# sqlite package demo — in-memory DB
+import sqlite.lib { sqlite_open, sqlite_close, sqlite_exec, sqlite_query_i64 }
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+}
+
+function main() -> i32 {
+    let db: ptr<void> = sqlite_open(":memory:")
+    if db == null {
+        printf("open_failed=%lld\n", 1 as i64)
+        return 1
+    }
+    let rc1: i32 = sqlite_exec(db, "CREATE TABLE t(x INTEGER);")
+    let rc2: i32 = sqlite_exec(db, "INSERT INTO t(x) VALUES (21);")
+    let rc3: i32 = sqlite_exec(db, "INSERT INTO t(x) VALUES (21);")
+    let sum: i64 = sqlite_query_i64(db, "SELECT SUM(x) FROM t;")
+    printf("exec=%lld\n", (rc1 + rc2 + rc3) as i64)
+    printf("sum=%lld\n", sum)
+    sqlite_close(db)
+    if sum == 42 {
+        return 0
+    }
+    return 1
+}

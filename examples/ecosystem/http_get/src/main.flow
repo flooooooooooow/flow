@@ -1,0 +1,21 @@
+# http package demo — GET example.com with timeout + Accept header
+import http.lib { http_get_ex, http_alloc, http_free, HttpResponse }
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+}
+
+function main() -> i32 {
+    let buf: ptr<i8> = http_alloc(4096)
+    let headers: string = "Accept: text/html\nUser-Agent: flow-http-demo/0.1"
+    let resp: HttpResponse = http_get_ex("https://example.com", headers, 15, buf, 4096)
+    printf("status=%lld\n", resp.status)
+    printf("body_len=%lld\n", resp.body_len)
+    printf("ok=%lld\n", resp.ok as i64)
+    printf("curl_err=%lld\n", resp.curl_err)
+    http_free(buf)
+    if resp.ok == 1 {
+        return 0
+    }
+    return 1
+}

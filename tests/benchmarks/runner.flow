@@ -1,0 +1,315 @@
+# Benchmark Runner
+# Runs performance tests and compares against baseline
+#
+# This tool provides a consistent way to benchmark Flow code
+# and compare against C/Mojo/Julia implementations
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+}
+
+const CLOCKS_PER_SEC: i64 = 1000000
+
+# ============================================================================
+# TIMING UTILITIES
+# ============================================================================
+
+function time_ms() -> f64 {
+    let c: i64 = clock()
+    return c * 1000.0 / CLOCKS_PER_SEC
+}
+
+# ============================================================================
+# BENCHMARK WORKLOADS
+# ============================================================================
+
+# Workload 1: Array sum (memory bandwidth)
+function workload_array_sum(data: ptr<i32>, n: i32) -> i32 {
+    let mut sum: i32 = 0
+    for i in 0 to n {
+        sum = sum + data[i]
+    }
+    return sum
+}
+
+# Workload 2: Fibonacci (recursion)
+function fib(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+# Workload 3: Prime sieve (memory + branching)
+function count_primes(limit: i32, sieve: ptr<i32>) -> i32 {
+    # Initialize sieve
+    for i in 0 to limit {
+        sieve[i] = 1
+    }
+    sieve[0] = 0
+    sieve[1] = 0
+    
+    let mut i: i32 = 2
+    while i * i < limit {
+        if sieve[i] == 1 {
+            let mut j: i32 = i * i
+            while j < limit {
+                sieve[j] = 0
+                j = j + i
+            }
+        }
+        i = i + 1
+    }
+    
+    let mut count: i32 = 0
+    for i in 0 to limit {
+        count = count + sieve[i]
+    }
+    return count
+}
+
+# Workload 4: Matrix multiply small (compute bound)
+function matmul_small(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, n: i32) {
+    for i in 0 to n {
+        for j in 0 to n {
+            let mut sum: f64 = 0.0
+            for k in 0 to n {
+                sum = sum + A[i * n + k] * B[k * n + j]
+            }
+            C[i * n + j] = sum
+        }
+    }
+}
+
+# ============================================================================
+# COMPUTE STATISTICS
+# ============================================================================
+
+function compute_mean(times: ptr<f64>, n: i32) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to n {
+        sum = sum + times[i]
+    }
+    return sum / n
+}
+
+function compute_min(times: ptr<f64>, n: i32) -> f64 {
+    let mut min_val: f64 = times[0]
+    for i in 1 to n {
+        if times[i] < min_val { min_val = times[i] }
+    }
+    return min_val
+}
+
+function compute_max(times: ptr<f64>, n: i32) -> f64 {
+    let mut max_val: f64 = times[0]
+    for i in 1 to n {
+        if times[i] > max_val { max_val = times[i] }
+    }
+    return max_val
+}
+
+function compute_stddev(times: ptr<f64>, n: i32, mean: f64) -> f64 {
+    let mut sq_sum: f64 = 0.0
+    for i in 0 to n {
+        let diff: f64 = times[i] - mean
+        sq_sum = sq_sum + diff * diff
+    }
+    return sqrt(sq_sum / n)
+}
+
+# ============================================================================
+# BENCHMARK RUNNERS
+# ============================================================================
+
+function run_array_sum_bench(warmup: i32, iterations: i32, times: ptr<f64>) {
+    let data: array<i32, 10000> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let data_ptr: ptr<i32> = data
+    
+    for i in 0 to 10000 {
+        data[i] = i
+    }
+    
+    # Warmup
+    for w in 0 to warmup {
+        let dummy: i32 = workload_array_sum(data_ptr, 10000)
+    }
+    
+    # Measure
+    for i in 0 to iterations {
+        let start: f64 = time_ms()
+        let dummy: i32 = workload_array_sum(data_ptr, 10000)
+        let end: f64 = time_ms()
+        times[i] = end - start
+    }
+}
+
+function run_fib_bench(warmup: i32, iterations: i32, times: ptr<f64>) {
+    # Warmup
+    for w in 0 to warmup {
+        let dummy: i32 = fib(25)
+    }
+    
+    # Measure
+    for i in 0 to iterations {
+        let start: f64 = time_ms()
+        let dummy: i32 = fib(25)
+        let end: f64 = time_ms()
+        times[i] = end - start
+    }
+}
+
+function run_primes_bench(warmup: i32, iterations: i32, times: ptr<f64>) {
+    let sieve: array<i32, 10000> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let sieve_ptr: ptr<i32> = sieve
+    
+    # Warmup
+    for w in 0 to warmup {
+        let dummy: i32 = count_primes(10000, sieve_ptr)
+    }
+    
+    # Measure
+    for i in 0 to iterations {
+        let start: f64 = time_ms()
+        let dummy: i32 = count_primes(10000, sieve_ptr)
+        let end: f64 = time_ms()
+        times[i] = end - start
+    }
+}
+
+function run_matmul_bench(warmup: i32, iterations: i32, times: ptr<f64>) {
+    let A: array<f64, 256> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let B: array<f64, 256> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let C: array<f64, 256> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let A_ptr: ptr<f64> = A
+    let B_ptr: ptr<f64> = B
+    let C_ptr: ptr<f64> = C
+    
+    for i in 0 to 256 {
+        A[i] = i * 0.1
+        B[i] = (256 - i) * 0.1
+    }
+    
+    # Warmup
+    for w in 0 to warmup {
+        matmul_small(A_ptr, B_ptr, C_ptr, 16)
+    }
+    
+    # Measure
+    for i in 0 to iterations {
+        let start: f64 = time_ms()
+        matmul_small(A_ptr, B_ptr, C_ptr, 16)
+        let end: f64 = time_ms()
+        times[i] = end - start
+    }
+}
+
+# ============================================================================
+# REPORTING
+# ============================================================================
+
+function print_benchmark_result(name: string, times: ptr<f64>, n: i32, c_baseline_ms: f64) {
+    let mean: f64 = compute_mean(times, n)
+    let min_val: f64 = compute_min(times, n)
+    let max_val: f64 = compute_max(times, n)
+    let std_dev: f64 = compute_stddev(times, n, mean)
+    
+    println("----------------------------------------")
+    print("Benchmark: ")
+    println(name)
+    print("  Iterations: ")
+    println(n)
+    print("  Mean time:  ")
+    printf("%.3f", mean)
+    println(" ms")
+    print("  Min time:   ")
+    printf("%.3f", min_val)
+    println(" ms")
+    print("  Max time:   ")
+    printf("%.3f", max_val)
+    println(" ms")
+    print("  Std dev:    ")
+    printf("%.3f", std_dev)
+    println(" ms")
+    
+    if mean > 0.0 {
+        print("  Ops/sec:    ")
+        printf("%.1f", 1000.0 / mean)
+        println("")
+    }
+    
+    let ratio: f64 = mean / c_baseline_ms
+    print("  vs C:       ")
+    printf("%.2f", ratio)
+    print("x (")
+    if ratio <= 1.1 {
+        println("EXCELLENT)")
+    } elif ratio <= 2.0 {
+        println("GOOD)")
+    } elif ratio <= 5.0 {
+        println("ACCEPTABLE)")
+    } else {
+        println("NEEDS WORK)")
+    }
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+function main() -> i32 {
+    println("========================================")
+    println("     FLOW BENCHMARK RUNNER v1.0        ")
+    println("========================================")
+    println("")
+    
+    let warmup: i32 = 3
+    let iterations: i32 = 10
+    
+    print("Warmup runs: ")
+    println(warmup)
+    print("Measured runs: ")
+    println(iterations)
+    println("")
+    
+    let times: array<f64, 100> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let times_ptr: ptr<f64> = times
+    
+    # Benchmark 1: Array Sum
+    run_array_sum_bench(warmup, iterations, times_ptr)
+    print_benchmark_result("Array Sum (10K elements)", times_ptr, iterations, 0.01)
+    
+    # Benchmark 2: Fibonacci
+    run_fib_bench(warmup, iterations, times_ptr)
+    print_benchmark_result("Fibonacci(25)", times_ptr, iterations, 1.0)
+    
+    # Benchmark 3: Prime Sieve
+    run_primes_bench(warmup, iterations, times_ptr)
+    print_benchmark_result("Prime Sieve (10K)", times_ptr, iterations, 0.05)
+    
+    # Benchmark 4: Matrix Multiply
+    run_matmul_bench(warmup, iterations, times_ptr)
+    print_benchmark_result("MatMul (16x16)", times_ptr, iterations, 0.01)
+    
+    println("")
+    println("========================================")
+    println("           SUMMARY                      ")
+    println("========================================")
+    println("")
+    println("Performance rating guide:")
+    println("  EXCELLENT: Within 10% of C")
+    println("  GOOD:      Within 2x of C")
+    println("  ACCEPTABLE: Within 5x of C")
+    println("  NEEDS WORK: More than 5x slower")
+    println("")
+    println("To compare with other languages:")
+    println("  - Compile equivalent C code with -O3")
+    println("  - Run Julia benchmark with @btime")
+    println("  - Run Mojo benchmark with mojo run")
+    println("")
+    println("Benchmark runner complete!")
+    
+    return 0
+}
