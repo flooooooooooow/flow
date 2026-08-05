@@ -1,0 +1,213 @@
+# Flow runtime: headless gfx recorder logic. Env parsing, the key-injection
+# schedule, frame counting, and PPM frame writing live here; runtime/gfx_record.c
+# keeps only the flow_gfx_* ABI symbol table and the framebuffer memory.
+#
+# Linked only by `./flow record` (skipped in the always-linked runtime pack so
+# normal gfx builds keep their real backend).
+
+extern {
+    function getenv(name: string) -> ptr<u8>
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function snprintf(buf: string, cap: i64, fmt: string) -> i32
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fprintf(f: ptr<void>, fmt: string) -> i32
+    function fwrite(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function fclose(f: ptr<void>) -> i32
+    function mkdir(path: string, mode: i32) -> i32
+}
+
+function rec_is_space(c: u8) -> bool {
+    return c == 32 or (c >= 9 and c <= 13)
+}
+
+# strtol(base 10) equivalent over a NUL-terminated byte string. Starts at
+# pos[0]; on success writes the value to val[0], advances pos[0] past the
+# consumed characters, and returns true. On no-digits it leaves pos[0]
+# untouched and returns false (strtol's end == nptr case).
+function rec_parse_i64(s: ptr<u8>, pos: ptr<i64>, val: ptr<i64>) -> bool {
+    let mut i: i64 = pos[0]
+    while rec_is_space(s[i]) {
+        i = i + 1
+    }
+    let mut neg: bool = false
+    if s[i] == 45 {
+        neg = true
+        i = i + 1
+    }
+    if !neg and s[i] == 43 {
+        i = i + 1
+    }
+    let start: i64 = i
+    let mut v: i64 = 0
+    while s[i] >= 48 and s[i] <= 57 {
+        v = v * 10 + ((s[i] as i64) - 48)
+        i = i + 1
+    }
+    if i == start {
+        return false
+    }
+    if neg {
+        v = 0 - v
+    }
+    val[0] = v
+    pos[0] = i
+    return true
+}
+
+# Positive integer from the environment; `fallback` when unset, empty,
+# unparsable, or not positive.
+@flow_api
+export function flow_gfx_rec_env_int(name: string, fallback: i32) -> i32 {
+    let raw: ptr<u8> = getenv(name)
+    if raw == null {
+        return fallback
+    }
+    if raw[0] == 0 {
+        return fallback
+    }
+    let pos_a: array<i64, 1> = [0]
+    let val_a: array<i64, 1> = [0]
+    let pos: ptr<i64> = pos_a
+    let val: ptr<i64> = val_a
+    if !rec_parse_i64(raw, pos, val) {
+        return fallback
+    }
+    if val[0] <= 0 {
+        return fallback
+    }
+    return val[0] as i32
+}
+
+# Output directory from FLOW_GFX_RECORD_DIR (default "frames"), copied into
+# `out` (capacity `cap`) and created with mode 0755.
+@flow_api
+export function flow_gfx_rec_env_dir(out: ptr<u8>, cap: i64) -> void {
+    let raw: ptr<u8> = getenv("FLOW_GFX_RECORD_DIR")
+    let mut dir: string = "frames"
+    if raw != null and raw[0] != 0 {
+        dir = raw as string
+    }
+    snprintf(out as string, cap, "%s", dir)
+    mkdir(out as string, 493)
+}
+
+# Parses FLOW_GFX_RECORD_KEYS: comma-separated "first-last:keycode" or
+# "frame:keycode" windows over presented-frame numbers. Fills the three
+# parallel arrays (capacity `cap`) and returns the window count.
+@flow_api
+export function flow_gfx_rec_parse_keys(first: ptr<i32>, last: ptr<i32>, code: ptr<i32>, cap: i32) -> i32 {
+    let spec: ptr<u8> = getenv("FLOW_GFX_RECORD_KEYS")
+    if spec == null {
+        return 0
+    }
+    let pos_a: array<i64, 1> = [0]
+    let val_a: array<i64, 1> = [0]
+    let pos: ptr<i64> = pos_a
+    let val: ptr<i64> = val_a
+    let mut count: i32 = 0
+    while spec[pos[0]] != 0 and count < cap {
+        while spec[pos[0]] == 44 or spec[pos[0]] == 32 {
+            pos[0] = pos[0] + 1
+        }
+        if spec[pos[0]] == 0 {
+            break
+        }
+        if !rec_parse_i64(spec, pos, val) {
+            break
+        }
+        let win_first: i64 = val[0]
+        let mut win_last: i64 = win_first
+        if spec[pos[0]] == 45 {
+            pos[0] = pos[0] + 1
+            if !rec_parse_i64(spec, pos, val) {
+                break
+            }
+            win_last = val[0]
+        }
+        if spec[pos[0]] != 58 {
+            break
+        }
+        pos[0] = pos[0] + 1
+        if !rec_parse_i64(spec, pos, val) {
+            break
+        }
+        if win_last < win_first {
+            win_last = win_first
+        }
+        first[count] = win_first as i32
+        last[count] = win_last as i32
+        code[count] = val[0] as i32
+        count = count + 1
+    }
+    return count
+}
+
+# Scripted key state: 1 when any window with this keycode covers the current
+# presented-frame number.
+@flow_api
+export function flow_gfx_rec_key_down(presented: i32, keycode: i32, first: ptr<i32>, last: ptr<i32>, code: ptr<i32>, count: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < count {
+        if code[i] == keycode {
+            if presented >= first[i] and presented <= last[i] {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Close once the program asked to (closing != 0) or the frame budget is spent.
+@flow_api
+export function flow_gfx_rec_should_close(closing: i32, presented: i32, max_frames: i32) -> i32 {
+    if closing != 0 or presented >= max_frames {
+        return 1
+    }
+    return 0
+}
+
+# One numbered binary P6 frame: header, then RGB triples (alpha dropped).
+# Returns true when the file was opened and written.
+function rec_write_ppm(dir: ptr<u8>, index: i32, width: i32, height: i32, pixels: ptr<u8>, err: ptr<void>) -> bool {
+    let path: ptr<u8> = malloc(1152) as ptr<u8>
+    if path == null {
+        return false
+    }
+    snprintf(path as string, 1152, "%s/frame_%05d.ppm", dir as string, index)
+    let f: ptr<void> = fopen(path as string, "wb")
+    if f == null {
+        fprintf(err, "[gfx-record] cannot write %s\n", path as string)
+        free(path as ptr<void>)
+        return false
+    }
+    fprintf(f, "P6\n%d %d\n255\n", width, height)
+    let n: i64 = (width as i64) * (height as i64)
+    let mut i: i64 = 0
+    while i < n {
+        fwrite((pixels + i * 4) as ptr<void>, 1, 3, f)
+        i = i + 1
+    }
+    fclose(f)
+    free(path as ptr<void>)
+    return true
+}
+
+# A presented frame: write it when the skip and budget allow, then advance the
+# counters. Returns 1 when the frame budget is now spent (recorder should
+# close). Diagnostics go to `err` (the C side passes stderr).
+@flow_api
+export function flow_gfx_rec_present(dir: ptr<u8>, width: i32, height: i32, pixels: ptr<u8>, skip: i32, max_frames: i32, presented: ptr<i32>, written: ptr<i32>, err: ptr<void>) -> i32 {
+    let p: i32 = presented[0]
+    if p % skip == 0 and p < max_frames {
+        if rec_write_ppm(dir, written[0], width, height, pixels, err) {
+            written[0] = written[0] + 1
+        }
+    }
+    presented[0] = p + 1
+    if p + 1 >= max_frames {
+        return 1
+    }
+    return 0
+}
