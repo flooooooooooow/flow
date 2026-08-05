@@ -77,6 +77,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* So flowc_typecheck can print the input path in diagnostics. */
+    setenv("FLOWC_IN", argv[1], 1);
+
     /* Stage-A typecheck ON by default (same as Flow driver / main emit path).
      * Opt-out: FLOWC_TYPECHECK=0 or FLOWC_NO_TYPECHECK=1. */
     {
