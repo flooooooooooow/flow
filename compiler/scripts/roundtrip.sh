@@ -73,11 +73,6 @@ compile_module() {
 
 run_case stage_a_sum 45
 run_case stage_a_for_sum 45
-run_case stage_a_for_dotdot 45
-if ! grep -Fq 'for (int32_t i = 0; i < 10; i = i + 1)' compiler/build/stage_a_for_dotdot.c; then
-    echo "FAIL stage_a_for_dotdot: expected C for-loop from 0..10 range" >&2
-    exit 1
-fi
 run_case stage_a_const 12
 run_case stage_a_struct 42
 # Dogfood: token.flow const subset (requires AST_CONST=31 emit).

@@ -263,8 +263,8 @@ check generated C string constants.
 | [`palindrome.flow`](../examples/basics/palindrome.flow) | yes | `/` `%`; exit 1 |
 | [`bubble_sort.flow`](../examples/basics/bubble_sort.flow) | yes | while / locals; exit 2 |
 | [`simple_search.flow`](../examples/basics/simple_search.flow) | yes | if-chain; exit 5 |
-| `simple_for.flow` | partial | `0..n` now Stage-A (`stage_a_for_dotdot`); still needs `printf` / extern I/O |
-| `dot_product.flow` | no | `memref_f32` / `0..n` |
+| `simple_for.flow` | partial | needs migration from legacy `0..n` to current `0 to n`, plus `printf` / extern I/O |
+| `dot_product.flow` | no | `memref_f32` / legacy `0..n` |
 | `declarative_sort.flow` | no | `\|\>` pipe, `println`, extern I/O |
 | `type_safety_demo.flow` | no | `type` / `distinct type` / `println` |
 
