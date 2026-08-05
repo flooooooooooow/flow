@@ -1,0 +1,112 @@
+{
+  "areas": {
+    "applications": {
+      "files": 8,
+      "lines": 1537
+    },
+    "documentation": {
+      "files": 82,
+      "lines": 17739
+    },
+    "examples": {
+      "files": 139,
+      "lines": 18541
+    },
+    "python_compiler": {
+      "files": 44,
+      "lines": 34628
+    },
+    "registry_packages": {
+      "files": 2,
+      "lines": 26
+    },
+    "runtime": {
+      "files": 24,
+      "lines": 3606
+    },
+    "self_hosted_compiler": {
+      "files": 17,
+      "lines": 8592
+    },
+    "standard_library": {
+      "files": 82,
+      "lines": 15165
+    },
+    "tests": {
+      "files": 201,
+      "lines": 20398
+    },
+    "verify_corpus": {
+      "files": 1078,
+      "lines": 18715
+    }
+  },
+  "badges": {
+    "examples": "139 examples",
+    "flow": "77.3k Flow LOC",
+    "loc": "169k LOC",
+    "proofs": "1078 verify files",
+    "stdlib": "82 modules",
+    "tests": "201 tests"
+  },
+  "commit": "3be6dd8fda4c",
+  "generated_at": "2026-08-05T14:22:35+01:00",
+  "languages": {
+    "C": {
+      "files": 47,
+      "lines": 4138
+    },
+    "C++": {
+      "files": 13,
+      "lines": 6450
+    },
+    "C/C++ headers": {
+      "files": 21,
+      "lines": 1460
+    },
+    "CSS": {
+      "files": 4,
+      "lines": 1609
+    },
+    "Flow": {
+      "files": 1526,
+      "lines": 77338
+    },
+    "HTML": {
+      "files": 27,
+      "lines": 6371
+    },
+    "JavaScript": {
+      "files": 12,
+      "lines": 3529
+    },
+    "Objective-C": {
+      "files": 4,
+      "lines": 1234
+    },
+    "Objective-C++": {
+      "files": 1,
+      "lines": 327
+    },
+    "Python": {
+      "files": 176,
+      "lines": 62793
+    },
+    "Rust": {
+      "files": 5,
+      "lines": 303
+    },
+    "Shell": {
+      "files": 32,
+      "lines": 3690
+    }
+  },
+  "methodology": "Tracked source files only; physical lines include comments and blanks; third_party and generated/build directories are excluded.",
+  "proof_documents": 1080,
+  "schema_version": 1,
+  "totals": {
+    "source_files": 1868,
+    "source_lines": 169242,
+    "tracked_files": 4464
+  }
+}

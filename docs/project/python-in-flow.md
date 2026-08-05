@@ -67,6 +67,11 @@ them as part of Phase D; call them via the escape hatch:
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |
 
+Where a Flow port replaces a Python script that still exists, the Python
+stays as the reference and the shim diffs the two on every run. The repo
+stats counter works this way: `update_repo_stats.sh` runs Flow, then fails
+loudly if `update_repo_stats.py` disagrees with what Flow wrote.
+
 | Still rewrite priority | Target |
 |---|---|
 | Grow parser/cgen | more of production C path |
