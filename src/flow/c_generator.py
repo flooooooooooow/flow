@@ -534,7 +534,9 @@ class CGenerator:
         # vs stdio.h/stdlib.h otherwise break `./flow run compiler/src/main.flow`).
         stdlib_functions = {'malloc', 'free', 'calloc', 'realloc', 'printf', 'sprintf',
                            'snprintf', 'fprintf', 'puts', 'putchar', 'getchar', 'fflush',
-                           'memcpy', 'memset', 'strlen', 'strcmp', 'strcpy', 'strcat',
+                           'memcpy', 'memmove', 'memset', 'memcmp',
+                           'strlen', 'strcmp', 'strncmp', 'strcpy', 'strncpy',
+                           'strcat', 'strncat', 'strchr', 'strstr',
                            'fopen', 'fclose', 'fread', 'fwrite', 'fseek', 'ftell', 'getenv'}
         primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
