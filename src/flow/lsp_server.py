@@ -5,6 +5,7 @@ Provides IntelliSense features: completion, hover, diagnostics, go-to-definition
 """
 
 import json
+import os
 import sys
 import re
 import threading
@@ -13,12 +14,15 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from .parser import (
     Lexer, Parser, FunctionDecl, StructDecl, EnumDecl, TraitDecl,
-    TheoremDecl, FlowSyntaxError, TokenType
+    TheoremDecl, ConstDecl, EffectDecl, TypeAliasDecl, DistinctTypeDecl,
+    VarDecl, Block, IfStatement, WhileStatement, ForStatement,
+    CapabilityDecl, ImportDecl, ExportDecl, FlowSyntaxError, TokenType, Type,
 )
 from .type_checker import TypeChecker
 from .lsp_dynamics import dynamics_completion_items, dynamics_hover
 from .lsp_ordering import ordering_completion_items, ordering_hover
-from .lsp_syntax import syntax_hover, syntax_token_at_position
+from .lsp_syntax import syntax_hover, syntax_token_at_position, MULTI_CHAR_OPS
+from . import lsp_intel
 
 # LSP Message Types
 @dataclass
@@ -76,6 +80,14 @@ class FlowLanguageServer:
     def __init__(self):
         self.documents: Dict[str, str] = {}  # uri -> content
         self.symbols: Dict[str, Dict[str, Any]] = {}  # uri -> {name: symbol_info}
+        # Locals/params/for-vars ordered by declaration line (for hover/def).
+        self.bindings: Dict[str, List[Dict[str, Any]]] = {}
+        # Depth-1 imported exports: uri -> {name: symbol_info with source uri}
+        self.import_symbols: Dict[str, Dict[str, Any]] = {}
+        # Per-document type intel from TypeChecker
+        # { global_types: {name: type_str}, struct_fields: {Struct: [(f,t)]},
+        #   errors: [str], symbol_kinds: {name: kind} }
+        self.type_cache: Dict[str, Dict[str, Any]] = {}
         self.stdlib_symbols: Dict[str, Dict[str, Any]] = {}  # name -> symbol_info
         self._stdlib_indexed = False
         self.running = True
@@ -287,6 +299,9 @@ class FlowLanguageServer:
             timer.cancel()
         self.documents.pop(uri, None)
         self.symbols.pop(uri, None)
+        self.bindings.pop(uri, None)
+        self.import_symbols.pop(uri, None)
+        self.type_cache.pop(uri, None)
         # Clear any diagnostics still shown for the closed document
         self._send_notification('textDocument/publishDiagnostics',
                                 {'uri': uri, 'diagnostics': []})
@@ -304,29 +319,138 @@ class FlowLanguageServer:
             sys.stderr.flush()
     
     def _analyze_document(self, uri: str):
-        """Analyze a document and extract symbols (including preceding # docs)."""
+        """Analyze a document: symbols, locals, imports, and type intel."""
         text = self.documents.get(uri, '')
-        self.symbols[uri] = self._extract_symbols_from_text(text)
+        symbols, bindings, declarations = self._extract_symbols_and_bindings(text)
+        file_path = lsp_intel.uri_to_path(uri)
+
+        import_syms: Dict[str, Dict[str, Any]] = {}
+        imported_decls: List[Any] = []
+        if declarations is not None and file_path:
+            try:
+                import_syms, imported_decls = lsp_intel.index_imports(
+                    file_path, declarations
+                )
+            except Exception as e:
+                sys.stderr.write(f"LSP import index error: {e}\n")
+                sys.stderr.flush()
+
+        # Merge imports into the document symbol map (local names win).
+        merged = dict(import_syms)
+        merged.update(symbols)
+        self.symbols[uri] = merged
+        self.bindings[uri] = bindings
+        self.import_symbols[uri] = import_syms
+
+        # Typecheck with imported decls so package symbols resolve.
+        type_info: Dict[str, Any] = {
+            'global_types': {},
+            'symbol_kinds': {},
+            'struct_fields': {},
+            'errors': [],
+        }
+        if declarations is not None:
+            try:
+                result = lsp_intel.run_typecheck(declarations, imported_decls)
+                global_types = {}
+                symbol_kinds = {}
+                for name, sym in (result.symbol_table or {}).items():
+                    global_types[name] = str(sym.type)
+                    symbol_kinds[name] = sym.kind
+                type_info['global_types'] = global_types
+                type_info['symbol_kinds'] = symbol_kinds
+                type_info['struct_fields'] = dict(result.struct_fields or {})
+                type_info['errors'] = list(result.errors or [])
+                # Prefer checker-inferred types on locals when available.
+                lsp_intel.enrich_bindings_with_types(
+                    self.bindings[uri], result.locals or []
+                )
+                # Also index local structs into struct_fields from symbols
+                for name, info in merged.items():
+                    if info.get('kind') == 'struct' and name not in type_info['struct_fields']:
+                        type_info['struct_fields'][name] = list(
+                            info.get('fields') or []
+                        )
+            except Exception as e:
+                sys.stderr.write(f"LSP type intel error: {e}\n")
+                sys.stderr.flush()
+        # Fallback struct fields from parsed symbols even if typecheck fails
+        if not type_info['struct_fields']:
+            for name, info in merged.items():
+                if info.get('kind') == 'struct':
+                    type_info['struct_fields'][name] = list(
+                        info.get('fields') or []
+                    )
+        self.type_cache[uri] = type_info
 
     def _extract_symbols_from_text(
         self, text: str, *, exported_only: bool = False
     ) -> Dict[str, Dict[str, Any]]:
         """Parse text and build a name -> symbol_info map with doc comments."""
+        symbols, _bindings, _decls = self._extract_symbols_and_bindings(
+            text, exported_only=exported_only
+        )
+        return symbols
+
+    @staticmethod
+    def _type_to_str(t: Optional[Type]) -> str:
+        if t is None:
+            return 'unknown'
+        name = getattr(t, 'name', None) or 'unknown'
+        if getattr(t, 'is_pointer', False):
+            return f'ptr<{name}>'
+        args = getattr(t, 'type_args', None)
+        if args:
+            inner = ', '.join(FlowLanguageServer._type_to_str(a) for a in args)
+            return f'{name}<{inner}>'
+        elem = getattr(t, 'element_type', None)
+        if elem is not None and name in ('array', 'vec', 'ptr'):
+            return f'{name}<{FlowLanguageServer._type_to_str(elem)}>'
+        return name
+
+    def _extract_symbols_and_bindings(
+        self, text: str, *, exported_only: bool = False
+    ) -> tuple:
+        """Parse text → (top-level symbols, local/param bindings, declarations|None)."""
         symbols: Dict[str, Dict[str, Any]] = {}
+        bindings: List[Dict[str, Any]] = []
         lines = text.split('\n')
 
+        declarations = None
+        src = text
         try:
-            lexer = Lexer(text)
-            parser = Parser(lexer, source=text)
+            from .dynamics_dsl import has_dynamics_dsl, expand_dynamics_dsl
+            if has_dynamics_dsl(src):
+                src = expand_dynamics_dsl(src)
+        except Exception:
+            pass
+        try:
+            lexer = Lexer(src)
+            parser = Parser(lexer, source=src)
             declarations = parser.parse()
         except Exception:
-            # Fallback: regex-scan exports so stdlib hover still works on
-            # files the parser cannot fully load.
-            return self._extract_symbols_regex(text, exported_only=exported_only)
+            # Mid-edit recovery: `return p.` → `return p._flow_incomplete`
+            recovered = self._recover_incomplete_syntax(src)
+            if recovered != src:
+                try:
+                    lexer = Lexer(recovered)
+                    parser = Parser(lexer, source=recovered)
+                    declarations = parser.parse()
+                    src = recovered
+                except Exception:
+                    declarations = None
+            if declarations is None:
+                # Fallback: regex-scan exports so stdlib hover still works on
+                # files the parser cannot fully load.
+                return self._extract_symbols_regex(
+                    text, exported_only=exported_only
+                ), [], None
 
         for decl in declarations:
             if exported_only and not getattr(decl, 'is_exported', False):
-                continue
+                # Effects/aliases may not set is_exported; skip unless present.
+                if not isinstance(decl, (EffectDecl,)):
+                    continue
 
             if isinstance(decl, FunctionDecl):
                 loc = decl.location
@@ -335,30 +459,54 @@ class FlowLanguageServer:
                 decl_line = self._find_decl_line(lines, 'function', decl.name)
                 if decl_line == 0 and loc is not None:
                     decl_line = loc.line
+                # SourceLocation lines are 1-based in some paths; normalize.
+                line0 = loc.line if loc else decl_line
+                if loc is not None and loc.line > 0 and loc.line >= len(lines):
+                    line0 = decl_line
+                # Prefer 0-based decl_line from regex when available.
+                if decl_line is not None:
+                    line0 = decl_line
                 symbols[decl.name] = {
                     'kind': 'function',
-                    'params': [(p.name, p.type.name) for p in decl.parameters],
-                    'return': decl.return_type.name,
-                    'line': loc.line if loc else decl_line,
+                    'params': [
+                        (p.name, self._type_to_str(p.type)) for p in decl.parameters
+                    ],
+                    'return': self._type_to_str(decl.return_type),
+                    'line': line0,
                     'column': loc.column if loc else 0,
-                    'end_line': loc.end_line if loc else decl_line,
-                    'end_column': loc.end_column if loc else 0,
+                    'end_line': (loc.end_line if loc else line0),
+                    'end_column': (
+                        loc.end_column if loc else (0 + len(decl.name))
+                    ),
                     'doc': self._doc_comment_above(lines, decl_line),
                     'exported': bool(getattr(decl, 'is_exported', False)),
                 }
+                if not exported_only:
+                    self._collect_function_bindings(
+                        decl, lines, decl_line, bindings
+                    )
             elif isinstance(decl, StructDecl):
                 loc = decl.location
                 decl_line = loc.line if loc else self._find_decl_line(
                     lines, 'struct', decl.name
                 )
+                if isinstance(decl_line, int) and loc is not None and loc.line:
+                    # Prefer regex 0-based line when find works
+                    found = self._find_decl_line(lines, 'struct', decl.name)
+                    if found:
+                        decl_line = found
                 symbols[decl.name] = {
                     'kind': 'struct',
-                    'fields': [(f.name, f.type.name) for f in decl.fields],
-                    'line': loc.line if loc else decl_line,
+                    'fields': [
+                        (f.name, self._type_to_str(f.type)) for f in decl.fields
+                    ],
+                    'line': decl_line if isinstance(decl_line, int) else 0,
                     'column': loc.column if loc else 0,
                     'end_line': loc.end_line if loc else decl_line,
                     'end_column': loc.end_column if loc else 0,
-                    'doc': self._doc_comment_above(lines, decl_line),
+                    'doc': self._doc_comment_above(
+                        lines, decl_line if isinstance(decl_line, int) else 0
+                    ),
                     'exported': bool(getattr(decl, 'is_exported', False)),
                 }
             elif isinstance(decl, EnumDecl):
@@ -384,7 +532,9 @@ class FlowLanguageServer:
             elif isinstance(decl, TheoremDecl):
                 name = decl.claim_path
                 decl_line = self._find_decl_line(lines, 'theorem', name)
-                params = [(p.name, p.type.name) for p in decl.parameters]
+                params = [
+                    (p.name, self._type_to_str(p.type)) for p in decl.parameters
+                ]
                 symbols[name] = {
                     'kind': 'theorem',
                     'params': params,
@@ -394,8 +544,256 @@ class FlowLanguageServer:
                     'doc': self._doc_comment_above(lines, decl_line),
                     'exported': bool(getattr(decl, 'is_exported', False)),
                 }
+                if not exported_only:
+                    self._collect_theorem_bindings(
+                        decl, lines, decl_line, bindings
+                    )
+            elif isinstance(decl, ConstDecl):
+                decl_line = self._find_decl_line(lines, 'const', decl.name)
+                if exported_only and not getattr(decl, 'is_exported', False):
+                    continue
+                symbols[decl.name] = {
+                    'kind': 'const',
+                    'type': self._type_to_str(decl.type),
+                    'line': decl_line,
+                    'column': 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': bool(getattr(decl, 'is_exported', False)),
+                }
+            elif isinstance(decl, EffectDecl):
+                decl_line = self._find_decl_line(lines, 'effect', decl.name)
+                ops = [
+                    f"{op.name}({', '.join(p.name for p in op.parameters)})"
+                    for op in decl.operations
+                ]
+                symbols[decl.name] = {
+                    'kind': 'effect',
+                    'operations': ops,
+                    'line': decl_line,
+                    'column': 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': True,
+                }
+            elif isinstance(decl, (TypeAliasDecl, DistinctTypeDecl)):
+                keyword = 'type'
+                decl_line = self._find_decl_line(lines, keyword, decl.name)
+                # Distinct/unit may use `distinct type` / `unit type`
+                if decl_line == 0:
+                    for i, row in enumerate(lines):
+                        if re.search(
+                            rf'\btype\s+{re.escape(decl.name)}\b', row
+                        ):
+                            decl_line = i
+                            break
+                if exported_only and not getattr(decl, 'is_exported', False):
+                    continue
+                base = self._type_to_str(getattr(decl, 'base_type', None))
+                symbols[decl.name] = {
+                    'kind': 'type',
+                    'type': base,
+                    'line': decl_line,
+                    'column': 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': bool(getattr(decl, 'is_exported', False)),
+                }
+            elif isinstance(decl, CapabilityDecl):
+                decl_line = self._find_decl_line(lines, 'capability', decl.name)
+                symbols[decl.name] = {
+                    'kind': 'capability',
+                    'effects': list(decl.effects or []),
+                    'line': decl_line,
+                    'column': 0,
+                    'doc': self._doc_comment_above(lines, decl_line),
+                    'exported': True,
+                }
 
-        return symbols
+        return symbols, bindings, declarations
+
+    @staticmethod
+    def _recover_incomplete_syntax(text: str) -> str:
+        """Best-effort fixups so mid-edit buffers still parse for intel."""
+        lines = text.split('\n')
+        out = []
+        for row in lines:
+            # Trailing field/method access: `p.` or `p.  `
+            if re.search(r'[A-Za-z_][A-Za-z0-9_]*\s*\.\s*$', row):
+                out.append(row.rstrip() + '_flow_incomplete')
+            else:
+                out.append(row)
+        return '\n'.join(out)
+
+    def _collect_function_bindings(
+        self,
+        decl: FunctionDecl,
+        lines: List[str],
+        decl_line: int,
+        bindings: List[Dict[str, Any]],
+    ) -> None:
+        """Index parameters and let/for bindings inside a function."""
+        # Scan a window for `name:` param occurrences on the signature.
+        sig_end = min(len(lines), decl_line + 40)
+        for p in decl.parameters:
+            line, col = decl_line, 0
+            for i in range(decl_line, sig_end):
+                m = re.search(
+                    rf'\b{re.escape(p.name)}\s*:', lines[i]
+                )
+                if m:
+                    line, col = i, m.start()
+                    break
+            bindings.append({
+                'name': p.name,
+                'kind': 'parameter',
+                'type': self._type_to_str(p.type),
+                'line': line,
+                'column': col,
+                'end_column': col + len(p.name),
+                'mutable': False,
+                'container': decl.name,
+            })
+        body = getattr(decl, 'body', None)
+        if body is not None:
+            self._walk_block_bindings(
+                body, lines, bindings, container=decl.name, search_from=decl_line
+            )
+
+    def _collect_theorem_bindings(
+        self,
+        decl: TheoremDecl,
+        lines: List[str],
+        decl_line: int,
+        bindings: List[Dict[str, Any]],
+    ) -> None:
+        for p in decl.parameters:
+            line, col = decl_line, 0
+            for i in range(decl_line, min(len(lines), decl_line + 20)):
+                m = re.search(rf'\b{re.escape(p.name)}\s*:', lines[i])
+                if m:
+                    line, col = i, m.start()
+                    break
+            bindings.append({
+                'name': p.name,
+                'kind': 'parameter',
+                'type': self._type_to_str(p.type),
+                'line': line,
+                'column': col,
+                'end_column': col + len(p.name),
+                'mutable': False,
+                'container': decl.claim_path,
+            })
+
+    def _walk_block_bindings(
+        self,
+        block: Block,
+        lines: List[str],
+        bindings: List[Dict[str, Any]],
+        *,
+        container: str,
+        search_from: int,
+    ) -> int:
+        """Walk statements; return next line hint for scanning."""
+        cursor = search_from
+        if block is None:
+            return cursor
+        for stmt in block.statements:
+            if isinstance(stmt, VarDecl):
+                line = self._find_let_line(lines, stmt.name, cursor)
+                col = 0
+                row = lines[line] if 0 <= line < len(lines) else ''
+                m = re.search(rf'\b{re.escape(stmt.name)}\b', row)
+                if m:
+                    col = m.start()
+                bindings.append({
+                    'name': stmt.name,
+                    'kind': 'variable',
+                    'type': self._type_to_str(stmt.type),
+                    'line': line,
+                    'column': col,
+                    'end_column': col + len(stmt.name),
+                    'mutable': bool(stmt.is_mutable),
+                    'container': container,
+                })
+                cursor = max(cursor, line)
+            elif isinstance(stmt, ForStatement):
+                line = self._find_for_var_line(lines, stmt.variable, cursor)
+                col = 0
+                row = lines[line] if 0 <= line < len(lines) else ''
+                m = re.search(rf'\b{re.escape(stmt.variable)}\b', row)
+                if m:
+                    col = m.start()
+                bindings.append({
+                    'name': stmt.variable,
+                    'kind': 'variable',
+                    'type': 'i32',
+                    'line': line,
+                    'column': col,
+                    'end_column': col + len(stmt.variable),
+                    'mutable': False,
+                    'container': container,
+                    'detail': 'for-loop variable',
+                })
+                cursor = max(cursor, line)
+                cursor = self._walk_block_bindings(
+                    stmt.body, lines, bindings,
+                    container=container, search_from=cursor,
+                )
+            elif isinstance(stmt, IfStatement):
+                cursor = self._walk_block_bindings(
+                    stmt.then_block, lines, bindings,
+                    container=container, search_from=cursor,
+                )
+                for _cond, blk in stmt.elif_blocks or []:
+                    cursor = self._walk_block_bindings(
+                        blk, lines, bindings,
+                        container=container, search_from=cursor,
+                    )
+                if stmt.else_block is not None:
+                    cursor = self._walk_block_bindings(
+                        stmt.else_block, lines, bindings,
+                        container=container, search_from=cursor,
+                    )
+            elif isinstance(stmt, WhileStatement):
+                cursor = self._walk_block_bindings(
+                    stmt.body, lines, bindings,
+                    container=container, search_from=cursor,
+                )
+        return cursor
+
+    def _find_let_line(self, lines: List[str], name: str, start: int = 0) -> int:
+        pat = re.compile(
+            rf'^\s*let\s+(?:mut\s+)?{re.escape(name)}\b'
+        )
+        for i in range(max(0, start), len(lines)):
+            if pat.search(lines[i]):
+                return i
+        # Fallback: any let with the name
+        pat2 = re.compile(rf'\blet\s+(?:mut\s+)?{re.escape(name)}\b')
+        for i in range(len(lines)):
+            if pat2.search(lines[i]):
+                return i
+        return max(0, start)
+
+    def _find_for_var_line(
+        self, lines: List[str], name: str, start: int = 0
+    ) -> int:
+        pat = re.compile(rf'^\s*for\s+{re.escape(name)}\b')
+        for i in range(max(0, start), len(lines)):
+            if pat.search(lines[i]):
+                return i
+        return max(0, start)
+
+    def _find_binding(
+        self, uri: str, word: str, line: int
+    ) -> Optional[Dict[str, Any]]:
+        """Nearest binding of `word` declared at or before `line`."""
+        best = None
+        for b in self.bindings.get(uri, []):
+            if b.get('name') != word:
+                continue
+            if b.get('line', 0) <= line:
+                if best is None or b['line'] >= best['line']:
+                    best = b
+        return best
 
     _MODIFIER_LINE_RE = re.compile(
         r'^\s*(export|inline|always_inline|noinline)\s*$'
@@ -523,7 +921,7 @@ class FlowLanguageServer:
                 info['params'] = []
                 info['return'] = 'void'
             elif kind == 'struct':
-                info['fields'] = []
+                info['fields'] = self._regex_struct_fields(lines, idx)
             elif kind == 'enum':
                 info['variants'] = []
             elif kind == 'trait':
@@ -533,6 +931,27 @@ class FlowLanguageServer:
                 info['return'] = 'void'
             symbols[name] = info
         return symbols
+
+    @staticmethod
+    def _regex_struct_fields(
+        lines: List[str], start: int
+    ) -> List[tuple]:
+        """Pull `name: type` fields from a struct body (regex fallback)."""
+        fields: List[tuple] = []
+        field_re = re.compile(
+            r'([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_<>]*)'
+        )
+        # Same-line body: struct Point { x: f32, y: f32 }
+        for i in range(start, min(start + 40, len(lines))):
+            row = lines[i]
+            for m in field_re.finditer(row):
+                fname, ftype = m.group(1), m.group(2)
+                if fname in ('struct', 'function', 'enum', 'trait'):
+                    continue
+                fields.append((fname, ftype))
+            if i > start and re.search(r'^\s*\}', row):
+                break
+        return fields
 
     def _repo_root(self) -> Path:
         """Repository root discovered from this module's location."""
@@ -588,6 +1007,10 @@ class FlowLanguageServer:
                 info['stdlib_path'] = str(
                     path.relative_to(self._repo_root())
                 )
+                try:
+                    info['uri'] = path.resolve().as_uri()
+                except Exception:
+                    info['uri'] = path.as_uri()
                 existing = self.stdlib_symbols.get(name)
                 if existing is None:
                     self.stdlib_symbols[name] = info
@@ -614,13 +1037,13 @@ class FlowLanguageServer:
         text = self.documents.get(uri)
         if text is None:
             return
-        diagnostics = self._compute_diagnostics(text)
+        diagnostics = self._compute_diagnostics(text, uri=uri)
         self._send_notification('textDocument/publishDiagnostics', {
             'uri': uri,
             'diagnostics': diagnostics,
         })
 
-    def _compute_diagnostics(self, text: str) -> List[dict]:
+    def _compute_diagnostics(self, text: str, uri: Optional[str] = None) -> List[dict]:
         """Run the FLOW parser + type checker over text, return LSP diagnostics.
 
         Parser/lexer errors are severity 1 (Error); type-checker findings are
@@ -676,13 +1099,17 @@ class FlowLanguageServer:
             })
             return diagnostics
 
-        # Phase 2: type check (findings are strings without locations, so we
-        # locate the first identifier the message quotes to place the range)
+        # Phase 2: type errors from analyze cache when available; else check now
         try:
-            checker = TypeChecker()
-            result = checker.check(declarations)
+            cached_errors = None
+            if uri and uri in self.type_cache:
+                cached_errors = (self.type_cache.get(uri) or {}).get('errors')
+            if cached_errors is None:
+                checker = TypeChecker()
+                result = checker.check(declarations)
+                cached_errors = result.errors
             seen = set()
-            for err in result.errors:
+            for err in cached_errors or []:
                 if err in seen:  # checker can report the same finding twice
                     continue
                 seen.add(err)
@@ -761,6 +1188,11 @@ class FlowLanguageServer:
         text = self.documents.get(uri, '')
         prefix = self._completion_prefix(text, line, character)
 
+        # Field completion after `recv.`
+        recv = lsp_intel.receiver_before_dot(text, line, character)
+        if recv:
+            return self._complete_fields(uri, recv, line, prefix)
+
         items: List[dict] = []
 
         # Dynamics DSL + declarative ordering snippets
@@ -808,6 +1240,29 @@ class FlowLanguageServer:
             })
             seen.add(name)
 
+        # Locals / parameters in the current document
+        for b in self.bindings.get(uri, []):
+            name = b.get('name') or ''
+            if name in seen:
+                continue
+            if prefix and not name.startswith(prefix):
+                continue
+            detail = b.get('detail') or (
+                f"{'mut ' if b.get('mutable') else ''}{b.get('type', '?')}"
+            )
+            kind = 6 if b.get('kind') == 'variable' else 6  # Variable
+            if b.get('kind') == 'parameter':
+                kind = 6
+            items.append({
+                'label': name,
+                'kind': kind,
+                'detail': detail,
+                'documentation': (
+                    f"{b.get('kind', 'binding')} in `{b.get('container', '')}`"
+                ),
+            })
+            seen.add(name)
+
         # Add document symbols
         doc_symbols = self.symbols.get(uri, {})
         for name, info in doc_symbols.items():
@@ -815,32 +1270,10 @@ class FlowLanguageServer:
                 continue
             if prefix and not name.startswith(prefix):
                 continue
-            if info['kind'] == 'function':
-                params_str = ', '.join([f"{p[0]}: {p[1]}" for p in info['params']])
-                items.append({
-                    'label': name,
-                    'kind': 3,  # Function
-                    'detail': f"({params_str}) -> {info['return']}",
-                })
-            elif info['kind'] == 'struct':
-                items.append({
-                    'label': name,
-                    'kind': 22,  # Struct
-                    'detail': 'struct',
-                })
-            elif info['kind'] == 'enum':
-                items.append({
-                    'label': name,
-                    'kind': 10,  # Enum
-                    'detail': 'enum',
-                })
-            elif info['kind'] == 'trait':
-                items.append({
-                    'label': name,
-                    'kind': 8,  # Interface
-                    'detail': 'trait',
-                })
-            seen.add(name)
+            item = self._completion_item_for_symbol(name, info)
+            if item:
+                items.append(item)
+                seen.add(name)
 
         # Also add symbols from other open documents
         for other_uri, other_symbols in self.symbols.items():
@@ -850,22 +1283,110 @@ class FlowLanguageServer:
                         continue
                     if prefix and not name.startswith(prefix):
                         continue
-                    if info['kind'] == 'function':
-                        params_str = ', '.join([f"{p[0]}: {p[1]}" for p in info['params']])
-                        items.append({
-                            'label': name,
-                            'kind': 3,
-                            'detail': f"({params_str}) -> {info['return']}",
-                        })
-                    elif info['kind'] == 'struct':
-                        items.append({
-                            'label': name,
-                            'kind': 22,
-                            'detail': 'struct',
-                        })
+                    item = self._completion_item_for_symbol(name, info)
+                    if item:
+                        items.append(item)
+                        seen.add(name)
+
+        # Stdlib exports (filtered by prefix; skip huge dump when empty prefix)
+        if prefix:
+            self._ensure_stdlib_indexed()
+            for name, info in self.stdlib_symbols.items():
+                if name in seen:
+                    continue
+                if not name.startswith(prefix):
+                    continue
+                item = self._completion_item_for_symbol(name, info)
+                if item:
+                    doc = (info.get('doc') or '').strip()
+                    if info.get('stdlib_path'):
+                        doc = (doc + f"\n\nstdlib: {info['stdlib_path']}").strip()
+                    if doc:
+                        item['documentation'] = doc
+                    items.append(item)
                     seen.add(name)
 
         return items
+
+    def _complete_fields(
+        self, uri: str, recv: str, line: int, prefix: str
+    ) -> List[dict]:
+        """Complete struct fields for `recv.`."""
+        cache = self.type_cache.get(uri) or {}
+        struct_fields = dict(cache.get('struct_fields') or {})
+        global_types = cache.get('global_types') or {}
+        # Ensure local struct symbols contribute fields
+        for name, info in self.symbols.get(uri, {}).items():
+            if info.get('kind') == 'struct' and name not in struct_fields:
+                struct_fields[name] = list(info.get('fields') or [])
+
+        type_str = lsp_intel.lookup_receiver_type(
+            recv, line, self.bindings.get(uri, []), global_types
+        )
+        if not type_str:
+            sym = self.symbols.get(uri, {}).get(recv)
+            if sym and sym.get('kind') == 'const':
+                type_str = sym.get('type')
+        type_name = lsp_intel.resolve_type_name(
+            type_str or '', global_types, struct_fields
+        )
+        if not type_name and recv in struct_fields:
+            type_name = recv
+        fields = struct_fields.get(type_name or '', [])
+        # `prefix` from `_completion_prefix` is the field fragment after `.`
+        # because that helper stops at non-identifier chars including `.` —
+        # actually it includes `.` in the charset! Strip through last dot.
+        field_prefix = prefix
+        if '.' in prefix:
+            field_prefix = prefix.rsplit('.', 1)[-1]
+        items = []
+        for fname, ftype in fields:
+            if field_prefix and not fname.startswith(field_prefix):
+                continue
+            items.append({
+                'label': fname,
+                'kind': 5,  # Field
+                'detail': str(ftype),
+                'documentation': f'Field of `{type_name}`',
+                'insertText': fname,
+            })
+        return items
+
+    @staticmethod
+    def _completion_item_for_symbol(name: str, info: Dict[str, Any]) -> Optional[dict]:
+        kind = info.get('kind')
+        if kind == 'function':
+            params_str = ', '.join(
+                [f"{p[0]}: {p[1]}" for p in (info.get('params') or [])]
+            )
+            return {
+                'label': name,
+                'kind': 3,
+                'detail': f"({params_str}) -> {info.get('return', 'void')}",
+            }
+        if kind == 'struct':
+            return {'label': name, 'kind': 22, 'detail': 'struct'}
+        if kind == 'enum':
+            return {'label': name, 'kind': 10, 'detail': 'enum'}
+        if kind == 'trait':
+            return {'label': name, 'kind': 8, 'detail': 'trait'}
+        if kind == 'theorem':
+            return {'label': name, 'kind': 12, 'detail': 'theorem'}
+        if kind == 'const':
+            return {
+                'label': name,
+                'kind': 21,
+                'detail': f"const {info.get('type', '?')}",
+            }
+        if kind == 'effect':
+            return {'label': name, 'kind': 8, 'detail': 'effect'}
+        if kind in ('type', 'capability'):
+            return {
+                'label': name,
+                'kind': 21,
+                'detail': kind,
+            }
+        return None
     
     def _handle_hover(self, params: dict) -> Optional[dict]:
         """Handle textDocument/hover.
@@ -873,11 +1394,14 @@ class FlowLanguageServer:
         Resolution order:
           1. dynamics DSL keywords (`dsys`, `dyn.…`, …)
           2. declarative ordering (`sort`, `sortBy`, …)
-          3. syntax / operators (`|>`, `match`, `@gpu`, types, …)
-          4. built-in functions (signature + prose doc)
+          3. multi-char operators (`|>`, `->`, …) via syntax token
+          4. locals / parameters at cursor (typed bindings)
           5. symbols in the current document (signature + `#` doc comments)
-          6. symbols in other open documents
-          7. exported stdlib symbols (cached from lib/stdlib)
+          6. built-in functions (signature + prose doc)
+          7. symbols in other open documents
+          8. exported stdlib symbols (cached from lib/stdlib)
+          9. syntax / keyword catalog (match, let, types, …)
+          10. bare built-in type name
         """
         uri = params['textDocument']['uri']
         pos = params['position']
@@ -888,8 +1412,38 @@ class FlowLanguageServer:
         word = self._get_word_at_position(text, line, character)
         syntax_tok = syntax_token_at_position(text, line, character)
 
-        # Dynamics / ordering only apply to identifier-like tokens.
+        # Operators first (cursor on `|>` etc. — word may be empty).
+        if syntax_tok and syntax_tok in MULTI_CHAR_OPS:
+            syn_doc = syntax_hover(syntax_tok)
+            if syn_doc:
+                return self._markdown_hover(syn_doc)
+
+        # Field access: `p.x`
+        field_acc = lsp_intel.field_access_at(text, line, character)
+        if field_acc:
+            hover = self._hover_for_field(uri, line, field_acc[0], field_acc[1])
+            if hover:
+                return hover
+
         if word:
+            # User bindings / symbols beat catalogs (sort/dsys keyword essays).
+            binding = self._find_binding(uri, word, line)
+            if binding:
+                return self._hover_for_binding(binding)
+
+            doc_symbols = self.symbols.get(uri, {})
+            hover_info = self._get_hover_for_symbol(word, doc_symbols)
+            if hover_info:
+                # Enrich with typechecker type when present
+                return self._enrich_hover_with_type(uri, word, hover_info)
+
+            # Imported symbols (also merged into doc_symbols, but keep explicit)
+            imp = self.import_symbols.get(uri, {}).get(word)
+            if imp:
+                hover_info = self._get_hover_for_symbol(word, {word: imp})
+                if hover_info:
+                    return hover_info
+
             dyn_doc = dynamics_hover(word)
             if dyn_doc:
                 return self._markdown_hover(dyn_doc)
@@ -898,64 +1452,122 @@ class FlowLanguageServer:
             if ord_doc:
                 return self._markdown_hover(ord_doc)
 
-        # Operators (e.g. `|>`) may yield an empty `word`; prefer syntax token.
+            # Built-in functions (enrich with stdlib `#` docs when available)
+            if word in self.builtin_functions:
+                info = self.builtin_functions[word]
+                prose = info.get('doc', '')
+                self._ensure_stdlib_indexed()
+                std = self.stdlib_symbols.get(word) or {}
+                std_doc = (std.get('doc') or '').strip()
+                if std_doc and (
+                    not prose or len(std_doc) > len(prose)
+                ):
+                    prose = std_doc
+                value = (
+                    f"```flow\nfunction {word}({', '.join(info['params'])}) "
+                    f"-> {info['return']}\n```"
+                )
+                if prose:
+                    value += f"\n\n{prose}"
+                if std.get('stdlib_path'):
+                    value += f"\n\n*stdlib:* `{std['stdlib_path']}`"
+                return self._markdown_hover(value)
+
+            # Other open documents
+            for other_uri, other_symbols in self.symbols.items():
+                if other_uri != uri:
+                    hover_info = self._get_hover_for_symbol(word, other_symbols)
+                    if hover_info:
+                        return hover_info
+
+            # Stdlib cache (lazy if init indexing was skipped)
+            self._ensure_stdlib_indexed()
+            hover_info = self._get_hover_for_symbol(word, self.stdlib_symbols)
+            if hover_info:
+                return hover_info
+
+        # Keyword / type catalog (after user symbols so bindings win)
         tok = syntax_tok or word
         if tok:
             syn_doc = syntax_hover(tok)
             if syn_doc:
                 return self._markdown_hover(syn_doc)
 
-        if not word:
-            return None
-
-        # Built-in functions (enrich with stdlib `#` docs when available)
-        if word in self.builtin_functions:
-            info = self.builtin_functions[word]
-            prose = info.get('doc', '')
-            self._ensure_stdlib_indexed()
-            std = self.stdlib_symbols.get(word) or {}
-            std_doc = (std.get('doc') or '').strip()
-            if std_doc and (
-                not prose or len(std_doc) > len(prose)
-            ):
-                prose = std_doc
-            value = (
-                f"```flow\nfunction {word}({', '.join(info['params'])}) "
-                f"-> {info['return']}\n```"
-            )
-            if prose:
-                value += f"\n\n{prose}"
-            if std.get('stdlib_path'):
-                value += f"\n\n*stdlib:* `{std['stdlib_path']}`"
-            return self._markdown_hover(value)
-
-        # Built-in types (syntax catalog may already have covered these)
-        if word in self.builtin_types:
-            syn_doc = syntax_hover(word)
-            if syn_doc:
-                return self._markdown_hover(syn_doc)
+        if word and word in self.builtin_types:
             return self._markdown_hover(f"**{word}**\n\nBuilt-in type")
 
-        # Current document symbols
-        doc_symbols = self.symbols.get(uri, {})
-        hover_info = self._get_hover_for_symbol(word, doc_symbols)
-        if hover_info:
-            return hover_info
-
-        # Other open documents
-        for other_uri, other_symbols in self.symbols.items():
-            if other_uri != uri:
-                hover_info = self._get_hover_for_symbol(word, other_symbols)
-                if hover_info:
-                    return hover_info
-
-        # Stdlib cache (lazy if init indexing was skipped)
-        self._ensure_stdlib_indexed()
-        hover_info = self._get_hover_for_symbol(word, self.stdlib_symbols)
-        if hover_info:
-            return hover_info
-
         return None
+
+    def _hover_for_binding(self, binding: Dict[str, Any]) -> dict:
+        name = binding.get('name', '?')
+        typ = binding.get('type', 'unknown')
+        kind = binding.get('kind', 'variable')
+        mut = 'mut ' if binding.get('mutable') else ''
+        container = binding.get('container') or ''
+        detail = binding.get('detail')
+        if kind == 'parameter':
+            header = f"```flow\n{name}: {typ}\n```\n\nParameter"
+        else:
+            header = f"```flow\nlet {mut}{name}: {typ}\n```\n\nLocal variable"
+        if binding.get('typed'):
+            header += " *(typechecked)*"
+        if detail:
+            header += f" ({detail})"
+        if container:
+            header += f" in `{container}`"
+        return self._markdown_hover(header)
+
+    def _hover_for_field(
+        self, uri: str, line: int, recv: str, field: str
+    ) -> Optional[dict]:
+        cache = self.type_cache.get(uri) or {}
+        struct_fields = dict(cache.get('struct_fields') or {})
+        for name, info in self.symbols.get(uri, {}).items():
+            if info.get('kind') == 'struct' and name not in struct_fields:
+                struct_fields[name] = list(info.get('fields') or [])
+        global_types = cache.get('global_types') or {}
+        type_str = lsp_intel.lookup_receiver_type(
+            recv, line, self.bindings.get(uri, []), global_types
+        )
+        type_name = lsp_intel.resolve_type_name(
+            type_str or '', global_types, struct_fields
+        )
+        if not type_name:
+            return None
+        for fname, ftype in struct_fields.get(type_name, []):
+            if fname == field:
+                return self._markdown_hover(
+                    f"```flow\n{field}: {ftype}\n```\n\n"
+                    f"Field of `{type_name}` (receiver `{recv}: {type_str}`)"
+                )
+        return None
+
+    def _enrich_hover_with_type(
+        self, uri: str, word: str, hover_info: dict
+    ) -> dict:
+        cache = self.type_cache.get(uri) or {}
+        typ = (cache.get('global_types') or {}).get(word)
+        kind = (cache.get('symbol_kinds') or {}).get(word)
+        if not typ:
+            return hover_info
+        value = hover_info.get('contents', {}).get('value') or ''
+        if typ and typ not in value:
+            note = f"\n\n*type:* `{typ}`"
+            if kind:
+                note = f"\n\n*typechecked {kind}:* `{typ}`"
+            hover_info = {
+                'contents': {
+                    'kind': 'markdown',
+                    'value': value + note,
+                }
+            }
+        # Imported path note
+        imp = self.import_symbols.get(uri, {}).get(word)
+        if imp and imp.get('uri') and 'imported from' not in value:
+            hover_info['contents']['value'] += (
+                f"\n\n*imported from:* `{imp['uri']}`"
+            )
+        return hover_info
 
     @staticmethod
     def _markdown_hover(value: str) -> dict:
@@ -1016,7 +1628,51 @@ class FlowLanguageServer:
             if doc:
                 value += f"\n\n{doc}"
             return self._markdown_hover(value)
+        if info['kind'] == 'const':
+            typ = info.get('type', 'unknown')
+            value = f"```flow\nconst {word}: {typ}\n```"
+            if doc:
+                value += f"\n\n{doc}"
+            value += stdlib_note
+            return self._markdown_hover(value)
+        if info['kind'] == 'effect':
+            ops = ', '.join(info.get('operations') or [])
+            value = f"```flow\neffect {word} {{ {ops} }}\n```"
+            if doc:
+                value += f"\n\n{doc}"
+            return self._markdown_hover(value)
+        if info['kind'] == 'type':
+            base = info.get('type', 'unknown')
+            value = f"```flow\ntype {word} = {base}\n```"
+            if doc:
+                value += f"\n\n{doc}"
+            value += stdlib_note
+            return self._markdown_hover(value)
+        if info['kind'] == 'capability':
+            effects = ', '.join(info.get('effects') or [])
+            value = f"```flow\ncapability {word} {{ {effects} }}\n```"
+            if doc:
+                value += f"\n\n{doc}"
+            return self._markdown_hover(value)
         return None
+
+    @staticmethod
+    def _location_from_symbol(
+        uri: str, word: str, info: Dict[str, Any]
+    ) -> dict:
+        line = int(info.get('line', 0) or 0)
+        column = int(info.get('column', 0) or 0)
+        end_line = int(info.get('end_line', line) or line)
+        end_column = int(info.get('end_column', column + len(word)) or 0)
+        if end_column <= column:
+            end_column = column + len(word)
+        return {
+            'uri': uri,
+            'range': {
+                'start': {'line': line, 'character': column},
+                'end': {'line': end_line, 'character': end_column},
+            },
+        }
     
     def _handle_definition(self, params: dict) -> Optional[dict]:
         """Handle textDocument/definition."""
@@ -1028,38 +1684,96 @@ class FlowLanguageServer:
         
         if not word:
             return None
+
+        # Locals / parameters first
+        binding = self._find_binding(uri, word, pos['line'])
+        if binding:
+            return self._location_from_symbol(uri, word, binding)
+
+        # Field access → struct field declaration when possible
+        field_acc = lsp_intel.field_access_at(
+            text, pos['line'], pos['character']
+        )
+        if field_acc:
+            recv, field = field_acc
+            loc = self._definition_for_field(uri, pos['line'], recv, field)
+            if loc:
+                return loc
         
-        # Check document symbols in current file
+        # Check document symbols in current file (local decls win over imports)
         doc_symbols = self.symbols.get(uri, {})
         if word in doc_symbols:
             info = doc_symbols[word]
-            line = info.get('line', 0)
-            column = info.get('column', 0)
-            end_column = info.get('end_column', column + len(word))
-            return {
-                'uri': uri,
-                'range': {
-                    'start': {'line': line, 'character': column},
-                    'end': {'line': line, 'character': end_column},
-                }
-            }
+            target_uri = info.get('uri') or uri
+            # Don't jump to import uri for a local definition without imported flag
+            if info.get('imported') and info.get('uri'):
+                target_uri = info['uri']
+            elif not info.get('imported'):
+                target_uri = uri
+            return self._location_from_symbol(target_uri, word, info)
+
+        # Explicit import map
+        imp = self.import_symbols.get(uri, {}).get(word)
+        if imp and imp.get('uri'):
+            return self._location_from_symbol(imp['uri'], word, imp)
         
         # Check symbols in all open documents (cross-file go-to-definition)
         for other_uri, other_symbols in self.symbols.items():
             if other_uri != uri and word in other_symbols:
                 info = other_symbols[word]
-                line = info.get('line', 0)
-                column = info.get('column', 0)
-                end_column = info.get('end_column', column + len(word))
-                return {
-                    'uri': other_uri,
-                    'range': {
-                        'start': {'line': line, 'character': column},
-                        'end': {'line': line, 'character': end_column},
-                    }
-                }
+                target = info.get('uri') or other_uri
+                return self._location_from_symbol(target, word, info)
+
+        # Stdlib export → jump into lib/stdlib file
+        self._ensure_stdlib_indexed()
+        std = self.stdlib_symbols.get(word)
+        if std and std.get('uri'):
+            return self._location_from_symbol(std['uri'], word, std)
         
         return None
+
+    def _definition_for_field(
+        self, uri: str, line: int, recv: str, field: str
+    ) -> Optional[dict]:
+        cache = self.type_cache.get(uri) or {}
+        struct_fields = cache.get('struct_fields') or {}
+        global_types = cache.get('global_types') or {}
+        type_str = lsp_intel.lookup_receiver_type(
+            recv, line, self.bindings.get(uri, []), global_types
+        )
+        type_name = lsp_intel.resolve_type_name(
+            type_str or '', global_types, struct_fields
+        )
+        if not type_name:
+            return None
+        # Prefer struct decl in current file / imports
+        info = self.symbols.get(uri, {}).get(type_name)
+        if not info:
+            return None
+        target_uri = info.get('uri') or uri
+        # Point at the struct name; field column best-effort via text search
+        loc = self._location_from_symbol(target_uri, type_name, info)
+        target_text = self.documents.get(target_uri)
+        if target_text is None and target_uri.startswith('file://'):
+            path = lsp_intel.uri_to_path(target_uri)
+            if path and os.path.isfile(path):
+                try:
+                    target_text = Path(path).read_text(encoding='utf-8')
+                except OSError:
+                    target_text = None
+        if target_text:
+            for i, row in enumerate(target_text.split('\n')):
+                m = re.search(rf'\b{re.escape(field)}\s*:', row)
+                if m:
+                    loc['range'] = {
+                        'start': {'line': i, 'character': m.start()},
+                        'end': {
+                            'line': i,
+                            'character': m.start() + len(field),
+                        },
+                    }
+                    break
+        return loc
     
     def _handle_document_symbol(self, params: dict) -> List[dict]:
         """Handle textDocument/documentSymbol."""
@@ -1072,25 +1786,36 @@ class FlowLanguageServer:
             'struct': 23,
             'enum': 10,
             'trait': 11,
+            'theorem': 12,
+            'const': 14,       # Constant
+            'effect': 11,
+            'type': 5,         # Class (approx for type alias)
+            'capability': 11,
         }
         
         symbols = []
         for name, info in doc_symbols.items():
             kind = kind_map.get(info['kind'], 12)
-            line = info.get('line', 0)
-            column = info.get('column', 0)
-            end_column = info.get('end_column', column + len(name))
+            line = int(info.get('line', 0) or 0)
+            column = int(info.get('column', 0) or 0)
+            end_line = int(info.get('end_line', line) or line)
+            end_column = int(
+                info.get('end_column', column + len(name)) or (column + len(name))
+            )
+            if end_column <= column:
+                end_column = column + max(len(name), 1)
             
             symbols.append({
                 'name': name,
                 'kind': kind,
+                'detail': info.get('kind'),
                 'range': {
                     'start': {'line': line, 'character': column},
-                    'end': {'line': line, 'character': end_column + 50},  # Approximate end
+                    'end': {'line': end_line, 'character': end_column},
                 },
                 'selectionRange': {
                     'start': {'line': line, 'character': column},
-                    'end': {'line': line, 'character': end_column},
+                    'end': {'line': line, 'character': column + len(name)},
                 },
             })
         
@@ -1140,17 +1865,24 @@ class FlowLanguageServer:
                 })
         return locations
 
-    def _resolve_symbol(self, uri: str, word: str):
-        """Resolve word against the symbol indexes the same way definition
-        does: current file first, then any other open document.
+    def _resolve_symbol(self, uri: str, word: str, line: Optional[int] = None):
+        """Resolve word against bindings, document symbols, then stdlib.
 
-        Returns (decl_uri, decl_info) or (None, None) for local names.
+        Returns (decl_uri, decl_info) or (None, None).
         """
+        if line is not None:
+            binding = self._find_binding(uri, word, line)
+            if binding:
+                return uri, binding
         if word in self.symbols.get(uri, {}):
             return uri, self.symbols[uri][word]
         for other_uri, other_symbols in self.symbols.items():
             if other_uri != uri and word in other_symbols:
                 return other_uri, other_symbols[word]
+        self._ensure_stdlib_indexed()
+        std = self.stdlib_symbols.get(word)
+        if std and std.get('uri'):
+            return std['uri'], std
         return None, None
 
     def _collect_reference_locations(self, uri: str, word: str):
