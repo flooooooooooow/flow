@@ -1,0 +1,39 @@
+# Optional live HTTP probe (needs libcurl + registry http native).
+#
+#   cd apps/http_json_cache
+#   ../../flow run-native src/live_http.flow
+#
+# Or from repo root after installing path deps into flow_packages/:
+#   ./flow run-native apps/http_json_cache/src/live_http.flow
+#
+# Fetches https://example.com, then validates a canned JSON cache entry
+# with the same json helpers as main.flow (network body is HTML, not JSON).
+
+import http.lib { http_get_into, http_alloc, http_free, HttpResponse }
+import json.lib { json_validate, json_get_i32 }
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+}
+
+function main() -> i32 {
+    let buf: ptr<i8> = http_alloc(4096)
+    let resp: HttpResponse = http_get_into("https://example.com", buf, 4096)
+    printf("http_status=%lld\n", resp.status)
+    printf("http_body_len=%lld\n", resp.body_len)
+    printf("http_ok=%lld\n", resp.ok as i64)
+    printf("curl_err=%lld\n", resp.curl_err)
+    http_free(buf)
+
+    # Local JSON cache path still works without the network body.
+    let cached: string = "{\"answer\":42}"
+    let valid: i32 = json_validate(cached)
+    let answer: i32 = json_get_i32(cached, "answer")
+    printf("json_valid=%lld\n", valid as i64)
+    printf("json_answer=%lld\n", answer as i64)
+
+    if resp.ok == 1 and valid == 1 and answer == 42 {
+        return 0
+    }
+    return 1
+}
