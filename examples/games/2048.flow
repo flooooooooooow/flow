@@ -28,7 +28,7 @@ function board_set(b: array<i32, 16>, r: i32, c: i32, v: i32) -> void {
 }
 
 function board_clear(b: array<i32, 16>) -> void {
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 16 {
         b[i] = 0
         i = i + 1
@@ -69,9 +69,9 @@ function draw_board(b: array<i32, 16>, score: i32) -> void {
     print("+------+------+------+------+")
     ui_newline()
 
-    let r: i32 = 0
+    let mut r: i32 = 0
     while r < 4 {
-        let c: i32 = 0
+        let mut c: i32 = 0
         while c < 4 {
             let v: i32 = board_get(b, r, c)
             draw_cell(v)
@@ -91,8 +91,8 @@ function draw_board(b: array<i32, 16>, score: i32) -> void {
 }
 
 function count_empty(b: array<i32, 16>) -> i32 {
-    let n: i32 = 0
-    let i: i32 = 0
+    let mut n: i32 = 0
+    let mut i: i32 = 0
     while i < 16 {
         if b[i] == 0 { n = n + 1 }
         i = i + 1
@@ -105,12 +105,12 @@ function spawn_tile(b: array<i32, 16>) -> bool {
     if empty == 0 { return false }
 
     let pick: i32 = rand() % empty
-    let i: i32 = 0
-    let seen: i32 = 0
+    let mut i: i32 = 0
+    let mut seen: i32 = 0
     while i < 16 {
         if b[i] == 0 {
             if seen == pick {
-                let r: i32 = rand() % 10
+                let mut r: i32 = rand() % 10
                 if r == 0 { b[i] = 4 } else { b[i] = 2 }
                 return true
             }
@@ -124,9 +124,9 @@ function spawn_tile(b: array<i32, 16>) -> bool {
 function can_move(b: array<i32, 16>) -> bool {
     if count_empty(b) > 0 { return true }
     # Adjacent equal?
-    let r: i32 = 0
+    let mut r: i32 = 0
     while r < 4 {
-        let c: i32 = 0
+        let mut c: i32 = 0
         while c < 4 {
             let v: i32 = board_get(b, r, c)
             if c < 3 && v == board_get(b, r, c + 1) { return true }
@@ -146,10 +146,10 @@ function write_line_left(b: array<i32, 16>, r: i32, v0: i32, v1: i32, v2: i32, v
 }
 
 function move_left(b: array<i32, 16>) -> MoveResult {
-    let moved: bool = false
-    let gained: i32 = 0
+    let mut moved: bool = false
+    let mut gained: i32 = 0
 
-    let r: i32 = 0
+    let mut r: i32 = 0
     while r < 4 {
         let a0: i32 = board_get(b, r, 0)
         let a1: i32 = board_get(b, r, 1)
@@ -159,7 +159,7 @@ function move_left(b: array<i32, 16>) -> MoveResult {
         # Compute output line (stack array)
         let out: array<i32, 4> = [0, 0, 0, 0]
 
-        let k: i32 = 0
+        let mut k: i32 = 0
         if a0 != 0 {
             out[k] = a0
             k = k + 1
@@ -205,10 +205,10 @@ function move_left(b: array<i32, 16>) -> MoveResult {
 }
 
 function move_right(b: array<i32, 16>) -> MoveResult {
-    let moved: bool = false
-    let gained: i32 = 0
+    let mut moved: bool = false
+    let mut gained: i32 = 0
 
-    let r: i32 = 0
+    let mut r: i32 = 0
     while r < 4 {
         let a0: i32 = board_get(b, r, 3)
         let a1: i32 = board_get(b, r, 2)
@@ -217,7 +217,7 @@ function move_right(b: array<i32, 16>) -> MoveResult {
 
         let out: array<i32, 4> = [0, 0, 0, 0]
 
-        let k: i32 = 0
+        let mut k: i32 = 0
         if a0 != 0 {
             out[k] = a0
             k = k + 1
@@ -269,10 +269,10 @@ function move_right(b: array<i32, 16>) -> MoveResult {
 }
 
 function move_up(b: array<i32, 16>) -> MoveResult {
-    let moved: bool = false
-    let gained: i32 = 0
+    let mut moved: bool = false
+    let mut gained: i32 = 0
 
-    let c: i32 = 0
+    let mut c: i32 = 0
     while c < 4 {
         let a0: i32 = board_get(b, 0, c)
         let a1: i32 = board_get(b, 1, c)
@@ -280,7 +280,7 @@ function move_up(b: array<i32, 16>) -> MoveResult {
         let a3: i32 = board_get(b, 3, c)
 
         let out: array<i32, 4> = [0, 0, 0, 0]
-        let k: i32 = 0
+        let mut k: i32 = 0
         if a0 != 0 {
             out[k] = a0
             k = k + 1
@@ -328,10 +328,10 @@ function move_up(b: array<i32, 16>) -> MoveResult {
 }
 
 function move_down(b: array<i32, 16>) -> MoveResult {
-    let moved: bool = false
-    let gained: i32 = 0
+    let mut moved: bool = false
+    let mut gained: i32 = 0
 
-    let c: i32 = 0
+    let mut c: i32 = 0
     while c < 4 {
         let a0: i32 = board_get(b, 3, c)
         let a1: i32 = board_get(b, 2, c)
@@ -339,7 +339,7 @@ function move_down(b: array<i32, 16>) -> MoveResult {
         let a3: i32 = board_get(b, 0, c)
 
         let out: array<i32, 4> = [0, 0, 0, 0]
-        let k: i32 = 0
+        let mut k: i32 = 0
         if a0 != 0 {
             out[k] = a0
             k = k + 1
@@ -388,7 +388,7 @@ function move_down(b: array<i32, 16>) -> MoveResult {
 }
 
 function read_move() -> i32 {
-    let c: i32 = ui_read_non_newline_char()
+    let mut c: i32 = ui_read_non_newline_char()
     ui_consume_line()
     return c
 }
@@ -409,7 +409,7 @@ function main() -> i32 {
     spawn_tile(board)
     spawn_tile(board)
 
-    let score: i32 = 0
+    let mut score: i32 = 0
 
     while true {
         draw_board(board, score)
@@ -419,13 +419,13 @@ function main() -> i32 {
             break
         }
 
-        let k: i32 = read_move()
+        let mut k: i32 = read_move()
         if k == 113 {  # 'q'
             print("bye\n")
             break
         }
 
-        let res: MoveResult = MoveResult { moved: false, gained: 0 }
+        let mut res: MoveResult = MoveResult { moved: false, gained: 0 }
         if k == 97 {  # 'a'
             res = move_left(board)
         } elif k == 100 {  # 'd'

@@ -370,8 +370,8 @@ function board_set_color(colors: ptr<i32>, x: i32, y: i32, color: i32) {
 
 function tetro_fits(blocks: ptr<i32>, kind: i32, rot: i32, tx: i32, ty: i32) -> i32 {
     for i in 0 to 4 {
-        let dx: i32 = get_tetro_block(kind, rot, i, 0)
-        let dy: i32 = get_tetro_block(kind, rot, i, 1)
+        let mut dx: i32 = get_tetro_block(kind, rot, i, 0)
+        let mut dy: i32 = get_tetro_block(kind, rot, i, 1)
         let bx: i32 = tx + dx
         let by: i32 = ty + dy
         
@@ -397,8 +397,8 @@ function lock_tetromino(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
     let piece_type: i32 = tetro_to_piece(kind)
     
     for i in 0 to 4 {
-        let dx: i32 = get_tetro_block(kind, rot, i, 0)
-        let dy: i32 = get_tetro_block(kind, rot, i, 1)
+        let mut dx: i32 = get_tetro_block(kind, rot, i, 0)
+        let mut dy: i32 = get_tetro_block(kind, rot, i, 1)
         let bx: i32 = tx + dx
         let by: i32 = ty + dy
         
@@ -451,10 +451,10 @@ function drop_rows_above(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>, c
 }
 
 function process_line_clears(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>) -> i32 {
-    let lines_cleared: i32 = 0
+    let mut lines_cleared: i32 = 0
     
     # Check from bottom to top
-    let y: i32 = BOARD_HEIGHT - 1
+    let mut y: i32 = BOARD_HEIGHT - 1
     while y >= 0 {
         if is_row_full(blocks, y) == 1 {
             clear_row(blocks, pieces, colors, y)
@@ -492,13 +492,13 @@ function find_king(pieces: ptr<i32>, colors: ptr<i32>, player: i32) -> i32 {
 
 function is_valid_pawn_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
                             fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
-    let direction: i32 = 1  # White moves down (toward row 7)
+    let mut direction: i32 = 1  # White moves down (toward row 7)
     if player == COLOR_BLACK {
         direction = -1  # Black moves up (toward row 0)
     }
     
-    let dx: i32 = tx - fx
-    let dy: i32 = ty - fy
+    let mut dx: i32 = tx - fx
+    let mut dy: i32 = ty - fy
     
     # Forward move (must have block at destination, no piece there)
     if dx == 0 and dy == direction {
@@ -522,8 +522,8 @@ function is_valid_pawn_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>
 
 function is_valid_rook_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
                             fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
-    let dx: i32 = tx - fx
-    let dy: i32 = ty - fy
+    let mut dx: i32 = tx - fx
+    let mut dy: i32 = ty - fy
     
     # Must move in straight line
     if dx != 0 and dy != 0 {
@@ -534,16 +534,16 @@ function is_valid_rook_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>
     }
     
     # Get step direction
-    let sx: i32 = 0
-    let sy: i32 = 0
+    let mut sx: i32 = 0
+    let mut sy: i32 = 0
     if dx > 0 { sx = 1 }
     if dx < 0 { sx = -1 }
     if dy > 0 { sy = 1 }
     if dy < 0 { sy = -1 }
     
     # Check path is clear (must have blocks, no pieces blocking)
-    let cx: i32 = fx + sx
-    let cy: i32 = fy + sy
+    let mut cx: i32 = fx + sx
+    let mut cy: i32 = fy + sy
     while cx != tx or cy != ty {
         if board_get_block(blocks, cx, cy) == 0 {
             return 0  # No block to move through
@@ -571,13 +571,13 @@ function is_valid_rook_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>
 
 function is_valid_knight_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
                               fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
-    let dx: i32 = tx - fx
-    let dy: i32 = ty - fy
+    let mut dx: i32 = tx - fx
+    let mut dy: i32 = ty - fy
     if dx < 0 { dx = 0 - dx }
     if dy < 0 { dy = 0 - dy }
     
     # L-shape: 2+1 or 1+2
-    let valid_shape: i32 = 0
+    let mut valid_shape: i32 = 0
     if dx == 2 and dy == 1 { valid_shape = 1 }
     if dx == 1 and dy == 2 { valid_shape = 1 }
     
@@ -601,10 +601,10 @@ function is_valid_knight_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i3
 
 function is_valid_bishop_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
                               fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
-    let dx: i32 = tx - fx
-    let dy: i32 = ty - fy
-    let adx: i32 = dx
-    let ady: i32 = dy
+    let mut dx: i32 = tx - fx
+    let mut dy: i32 = ty - fy
+    let mut adx: i32 = dx
+    let mut ady: i32 = dy
     if adx < 0 { adx = 0 - adx }
     if ady < 0 { ady = 0 - ady }
     
@@ -614,14 +614,14 @@ function is_valid_bishop_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i3
     }
     
     # Get step direction
-    let sx: i32 = 1
-    let sy: i32 = 1
+    let mut sx: i32 = 1
+    let mut sy: i32 = 1
     if dx < 0 { sx = -1 }
     if dy < 0 { sy = -1 }
     
     # Check path
-    let cx: i32 = fx + sx
-    let cy: i32 = fy + sy
+    let mut cx: i32 = fx + sx
+    let mut cy: i32 = fy + sy
     while cx != tx or cy != ty {
         if board_get_block(blocks, cx, cy) == 0 {
             return 0
@@ -656,8 +656,8 @@ function is_valid_queen_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32
 
 function is_valid_king_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
                             fx: i32, fy: i32, tx: i32, ty: i32, player: i32) -> i32 {
-    let dx: i32 = tx - fx
-    let dy: i32 = ty - fy
+    let mut dx: i32 = tx - fx
+    let mut dy: i32 = ty - fy
     if dx < 0 { dx = 0 - dx }
     if dy < 0 { dy = 0 - dy }
     
@@ -755,7 +755,7 @@ function is_in_check(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>, playe
     let kx: i32 = king_idx % BOARD_WIDTH
     let ky: i32 = king_idx / BOARD_WIDTH
     
-    let opponent: i32 = COLOR_WHITE
+    let mut opponent: i32 = COLOR_WHITE
     if player == COLOR_WHITE {
         opponent = COLOR_BLACK
     }
@@ -841,11 +841,11 @@ function draw_board(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
         
         for x in 0 to BOARD_WIDTH {
             # Check if this cell is part of falling tetromino
-            let is_tetro: i32 = 0
+            let mut is_tetro: i32 = 0
             if phase == PHASE_TETRIS {
                 for i in 0 to 4 {
-                    let dx: i32 = get_tetro_block(tetro_kind, tetro_rot, i, 0)
-                    let dy: i32 = get_tetro_block(tetro_kind, tetro_rot, i, 1)
+                    let mut dx: i32 = get_tetro_block(tetro_kind, tetro_rot, i, 0)
+                    let mut dy: i32 = get_tetro_block(tetro_kind, tetro_rot, i, 1)
                     if tetro_x + dx == x and tetro_y + dy == y {
                         is_tetro = 1
                     }
@@ -853,7 +853,7 @@ function draw_board(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
             }
             
             # Check selection highlight
-            let is_selected: i32 = 0
+            let mut is_selected: i32 = 0
             if has_sel == 1 and sel_x == x and sel_y == y {
                 is_selected = 1
             }
@@ -1047,7 +1047,7 @@ function main() -> i32 {
     
     ui_hide_cursor()
     
-    let running: i32 = 1
+    let mut running: i32 = 1
     while running == 1 {
         # Draw current state
         draw_board(blocks_ptr, pieces_ptr, colors_ptr,

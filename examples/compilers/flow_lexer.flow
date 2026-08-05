@@ -259,7 +259,7 @@ function lexer_next(lex: ptr<Lexer>) -> Token {
     }
 
     # Multi-char operators
-    let n1: i32 = 0
+    let mut n1: i32 = 0
     if lex[0].pos + 1 < lex[0].len {
         n1 = lex[0].input[lex[0].pos + 1]
     }

@@ -1,4 +1,5 @@
 # FLOW_RACE=1 lock-order detector demo
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Run: FLOW_RACE=1 ./flow run examples/concurrency/race_hooks.flow
 
 import "stdlib/concurrent.flow"

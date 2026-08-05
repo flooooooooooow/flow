@@ -18,7 +18,7 @@ function get(b: array<i32, 16>, r: i32, c: i32) -> i32 { return b[idx(r, c)] }
 function set(b: array<i32, 16>, r: i32, c: i32, v: i32) -> void { b[idx(r, c)] = v }
 
 function clear_board(b: array<i32, 16>) -> void {
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 16 {
         b[i] = 0
         i = i + 1
@@ -26,8 +26,8 @@ function clear_board(b: array<i32, 16>) -> void {
 }
 
 function count_empty(b: array<i32, 16>) -> i32 {
-    let n: i32 = 0
-    let i: i32 = 0
+    let mut n: i32 = 0
+    let mut i: i32 = 0
     while i < 16 {
         if b[i] == 0 { n = n + 1 }
         i = i + 1
@@ -35,7 +35,8 @@ function count_empty(b: array<i32, 16>) -> i32 {
     return n
 }
 
-function spawn_tile(b: array<i32, 16>, seed: u32) -> u32 {
+function spawn_tile(b: array<i32, 16>, seed_in: u32) -> u32 {
+    let mut seed: u32 = seed_in
     let empty = count_empty(b)
     if empty == 0 { return seed }
 
@@ -45,8 +46,8 @@ function spawn_tile(b: array<i32, 16>, seed: u32) -> u32 {
     seed = seed_next(seed)
     let make4: bool = (seed % 10) == 0
 
-    let i: i32 = 0
-    let seen: i32 = 0
+    let mut i: i32 = 0
+    let mut seen: i32 = 0
     while i < 16 {
         if b[i] == 0 {
             if seen == pick {
@@ -62,11 +63,11 @@ function spawn_tile(b: array<i32, 16>, seed: u32) -> u32 {
 
 function can_move(b: array<i32, 16>) -> bool {
     if count_empty(b) > 0 { return true }
-    let r: i32 = 0
+    let mut r: i32 = 0
     while r < 4 {
-        let c: i32 = 0
+        let mut c: i32 = 0
         while c < 4 {
-            let v = get(b, r, c)
+            let mut v = get(b, r, c)
             if c < 3 && v == get(b, r, c + 1) { return true }
             if r < 3 && v == get(b, r + 1, c) { return true }
             c = c + 1
@@ -79,12 +80,12 @@ function can_move(b: array<i32, 16>) -> bool {
 struct Line { v0: i32, v1: i32, v2: i32, v3: i32, gained: i32 }
 
 function move_line(a0: i32, a1: i32, a2: i32, a3: i32) -> Line {
-    let v0: i32 = 0
-    let v1: i32 = 0
-    let v2: i32 = 0
-    let v3: i32 = 0
-    let gained: i32 = 0
-    let k: i32 = 0
+    let mut v0: i32 = 0
+    let mut v1: i32 = 0
+    let mut v2: i32 = 0
+    let mut v3: i32 = 0
+    let mut gained: i32 = 0
+    let mut k: i32 = 0
 
     if a0 != 0 {
         if k == 0 { v0 = a0 }
@@ -138,9 +139,9 @@ function move_line(a0: i32, a1: i32, a2: i32, a3: i32) -> Line {
 }
 
 function move_left(b: array<i32, 16>) -> MoveResult {
-    let moved: bool = false
-    let gained: i32 = 0
-    let r: i32 = 0
+    let mut moved: bool = false
+    let mut gained: i32 = 0
+    let mut r: i32 = 0
     while r < 4 {
         let a0: i32 = get(b, r, 0)
         let a1: i32 = get(b, r, 1)
@@ -159,9 +160,9 @@ function move_left(b: array<i32, 16>) -> MoveResult {
 }
 
 function move_right(b: array<i32, 16>) -> MoveResult {
-    let moved: bool = false
-    let gained: i32 = 0
-    let r: i32 = 0
+    let mut moved: bool = false
+    let mut gained: i32 = 0
+    let mut r: i32 = 0
     while r < 4 {
         let a0: i32 = get(b, r, 3)
         let a1: i32 = get(b, r, 2)
@@ -180,9 +181,9 @@ function move_right(b: array<i32, 16>) -> MoveResult {
 }
 
 function move_up(b: array<i32, 16>) -> MoveResult {
-    let moved: bool = false
-    let gained: i32 = 0
-    let c: i32 = 0
+    let mut moved: bool = false
+    let mut gained: i32 = 0
+    let mut c: i32 = 0
     while c < 4 {
         let a0: i32 = get(b, 0, c)
         let a1: i32 = get(b, 1, c)
@@ -201,9 +202,9 @@ function move_up(b: array<i32, 16>) -> MoveResult {
 }
 
 function move_down(b: array<i32, 16>) -> MoveResult {
-    let moved: bool = false
-    let gained: i32 = 0
-    let c: i32 = 0
+    let mut moved: bool = false
+    let mut gained: i32 = 0
+    let mut c: i32 = 0
     while c < 4 {
         let a0: i32 = get(b, 3, c)
         let a1: i32 = get(b, 2, c)
@@ -253,12 +254,12 @@ function digit_row(d: i32, row: i32) -> i32 {
 }
 
 function draw_digit(g: Gfx, x: i32, y: i32, d: i32, scale: i32, r: i32, g2: i32, b: i32) -> void {
-    let row: i32 = 0
+    let mut row: i32 = 0
     while row < 5 {
         let bits = digit_row(d, row)
-        let col: i32 = 0
+        let mut col: i32 = 0
         while col < 3 {
-            let on: bool = false
+            let mut on: bool = false
             if col == 0 { on = ((bits / 4) % 2) == 1 }
             elif col == 1 { on = ((bits / 2) % 2) == 1 }
             else { on = (bits % 2) == 1 }
@@ -274,15 +275,15 @@ function draw_digit(g: Gfx, x: i32, y: i32, d: i32, scale: i32, r: i32, g2: i32,
 function draw_number(g: Gfx, x: i32, y: i32, n: i32, scale: i32, r: i32, g2: i32, b: i32) -> void {
     if n <= 0 { return }
     let buf: array<i32, 5> = [0,0,0,0,0]
-    let len: i32 = 0
-    let v: i32 = n
+    let mut len: i32 = 0
+    let mut v: i32 = n
     while v > 0 && len < 5 {
         buf[len] = v % 10
         v = v / 10
         len = len + 1
     }
-    let i: i32 = len - 1
-    let dx: i32 = 0
+    let mut i: i32 = len - 1
+    let mut dx: i32 = 0
     while i >= 0 {
         draw_digit(g, x + dx, y, buf[i], scale, r, g2, b)
         dx = dx + 4 * scale
@@ -293,18 +294,18 @@ function draw_number(g: Gfx, x: i32, y: i32, n: i32, scale: i32, r: i32, g2: i32
 function main() -> i32 {
     let g: Gfx = gfx_open(560, 680, "FLOW 2048 (native gfx)")
     let board: array<i32, 16> = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]
-    let score: i32 = 0
-    let seed: u32 = 1
+    let mut score: i32 = 0
+    let mut seed: u32 = 1
 
     clear_board(board)
     seed = spawn_tile(board, seed)
     seed = spawn_tile(board, seed)
 
-    let prev_left: bool = false
-    let prev_right: bool = false
-    let prev_up: bool = false
-    let prev_down: bool = false
-    let prev_r: bool = false
+    let mut prev_left: bool = false
+    let mut prev_right: bool = false
+    let mut prev_up: bool = false
+    let mut prev_down: bool = false
+    let mut prev_r: bool = false
 
     while !gfx_should_close(g) {
         gfx_poll(g)
@@ -321,8 +322,8 @@ function main() -> i32 {
         }
         prev_r = r_now
 
-        let moved: bool = false
-        let gained: i32 = 0
+        let mut moved: bool = false
+        let mut gained: i32 = 0
 
         let left_now = gfx_key_down(g, KEY_LEFT) || gfx_key_down(g, KEY_A)
         let right_now = gfx_key_down(g, KEY_RIGHT) || gfx_key_down(g, KEY_D)
@@ -330,19 +331,19 @@ function main() -> i32 {
         let down_now = gfx_key_down(g, KEY_DOWN) || gfx_key_down(g, KEY_S)
 
         if left_now && !prev_left {
-            let r: MoveResult = move_left(board)
+            let mut r: MoveResult = move_left(board)
             moved = r.moved
             gained = r.gained
         } elif right_now && !prev_right {
-            let r: MoveResult = move_right(board)
+            let mut r: MoveResult = move_right(board)
             moved = r.moved
             gained = r.gained
         } elif up_now && !prev_up {
-            let r: MoveResult = move_up(board)
+            let mut r: MoveResult = move_up(board)
             moved = r.moved
             gained = r.gained
         } elif down_now && !prev_down {
-            let r: MoveResult = move_down(board)
+            let mut r: MoveResult = move_down(board)
             moved = r.moved
             gained = r.gained
         }
@@ -368,11 +369,11 @@ function main() -> i32 {
         # board background
         gfx_fill_rect(g, board_x - gap, board_y - gap, 4*cell + 5*gap, 4*cell + 5*gap, 187, 173, 160)
 
-        let rr: i32 = 0
+        let mut rr: i32 = 0
         while rr < 4 {
-            let cc: i32 = 0
+            let mut cc: i32 = 0
             while cc < 4 {
-                let v: i32 = get(board, rr, cc)
+                let mut v: i32 = get(board, rr, cc)
                 let rgb3: Rgb = tile_rgb(v)
                 let x: i32 = board_x + gap + cc*(cell+gap)
                 let y: i32 = board_y + gap + rr*(cell+gap)
