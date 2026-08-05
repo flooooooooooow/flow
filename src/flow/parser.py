@@ -382,6 +382,22 @@ class StructLiteral:
 
 
 @dataclass
+class ForkRecord:
+    """An anonymous fork block: `source |> { a = pipeline, ... }`.
+
+    Each field value already has `source` piped through its stages (built the
+    same way as a named fork's branches). The record has no declared type yet;
+    `desugar_fork_records` (a post-parse pass) infers each field's type from the
+    outermost call's return type, synthesizes a struct, and rewrites this into a
+    `StructLiteral` of that struct. The node never survives `parse()`, so no
+    later phase — type checker, backends, tooling — needs to know about it.
+    """
+
+    fields: List[tuple]  # List of (field_name, source-piped value)
+    line: int = 0
+
+
+@dataclass
 class RecordUpdate:
     """Record update: `Point { ..p, x: 3 }` copies `p` then overrides `x`.
 
@@ -1305,6 +1321,7 @@ class Parser:
         self.lookahead = self.lexer.next_token()
         self.struct_names = set()
         self.nesting_depth = 0
+        self._has_fork_record = False
 
     def _enter_nesting(self, kind: str = "expression") -> None:
         """Bump the nesting depth; reject pathologically deep input cleanly
@@ -1573,6 +1590,10 @@ class Parser:
             from .flow_blocks import expand_flow_decls
 
             declarations = expand_flow_decls(declarations, source=self.source)
+        if self._has_fork_record:
+            from .fork_records import desugar_fork_records
+
+            declarations = desugar_fork_records(declarations)
         return declarations
 
     def parse_module(self) -> ModuleDecl:
@@ -3386,31 +3407,41 @@ class Parser:
         )
 
     def _at_fork_block(self) -> bool:
-        """True at `Record {` immediately after `|>` — a fork block.
+        """True at a fork block immediately after `|>`.
 
-        A struct literal can never be a plain pipe target (you can't call
-        one), so `|> Ident {` is unambiguous and free to claim.
+        Two forms: `Record { … }` (named) and `{ … }` (anonymous, an inferred
+        record). A struct literal can never be a plain pipe target (you can't
+        call one) and a bare `{` is not a valid pipe target either, so both are
+        unambiguous and free to claim.
         """
+        if self.current_token.type == TokenType.LBRACE:
+            return True
         return (
             self.current_token.type == TokenType.IDENTIFIER
             and self.lookahead.type == TokenType.LBRACE
         )
 
-    def _parse_fork_block(self, source: Expression) -> StructLiteral:
-        """Parse `Record { field = <pipeline>, … }` after `|>`.
+    def _parse_fork_block(self, source: Expression):
+        """Parse a fork block after `|>`.
 
-        A fork block applies several pipelines to the *same* incoming value
-        and collects them into a record: each `field = stage…` branch is the
-        pipeline `source |> stage…`, and the block lowers to a struct literal
-        of the named `Record`. Branches read with `=` (not the struct-literal
-        `:`) to keep the fork/record forms visually distinct.
+        A fork block applies several pipelines to the *same* incoming value and
+        collects them into a record: each `field = stage…` branch is the
+        pipeline `source |> stage…`. Branches read with `=` (not the
+        struct-literal `:`) to keep the fork/record forms visually distinct.
+
+        `Record { … }` lowers directly to a `StructLiteral` of the named record.
+        `{ … }` (no name) produces a `ForkRecord`, whose record type is inferred
+        by a post-parse pass.
 
         Note: `source` is substituted into every branch, so a non-trivial
         source (a call, not a variable) is evaluated once per branch. Bind it
         with `let` first when that matters.
         """
-        record_name = self.current_token.value
-        self.advance()  # record name
+        record_name = None
+        if self.current_token.type == TokenType.IDENTIFIER:
+            record_name = self.current_token.value
+            self.advance()  # record name
+        line = self.current_token.line
         self.expect(TokenType.LBRACE)
 
         fields: List[tuple] = []
@@ -3437,6 +3468,9 @@ class Parser:
         if not fields:
             raise self.error("Fork block must have at least one `field = …` branch")
         self.expect(TokenType.RBRACE)
+        if record_name is None:
+            self._has_fork_record = True
+            return ForkRecord(fields, line)
         return StructLiteral(record_name, fields)
 
     def _parse_fork_branch(self, source: Expression) -> Expression:

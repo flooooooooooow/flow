@@ -220,9 +220,28 @@ distinctly. The block lowers to a struct literal of the named record, which is
 type-checked against that struct's declared fields like any other literal. The
 result is itself a value, so a fork can sit mid-pipeline: `x |> R { … } |> f`.
 
-The record type is named on purpose: the piped value is substituted into every
-branch, so a non-trivial `source` (a call rather than a variable) is evaluated
-once per branch — bind it with `let` first when that matters.
+Dropping the record name makes it **anonymous** — the record type is inferred
+rather than declared:
+
+```flow
+let s = n |> {
+    doubled  = twice,
+    squared  = square,
+    plus_ten = add(_, 10),
+}
+# s : { doubled: i32, squared: i32, plus_ten: i32 }, inferred from the
+# return types of twice / square / add — no struct declared anywhere.
+```
+
+Each field takes the return type of the function its branch pipeline ends in, so
+branches must bottom out in a call whose return type is known; a branch that
+can't be typed structurally (e.g. a method call on an inferred receiver) has to
+name the record instead. Anonymous records with the same field signature share
+one synthesized type.
+
+Whether named or anonymous, the piped value is substituted into every branch, so
+a non-trivial `source` (a call rather than a variable) is evaluated once per
+branch — bind it with `let` first when that matters.
 
 ## Grammar (Simplified EBNF)
 
