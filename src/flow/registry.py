@@ -188,8 +188,10 @@ class FlowRegistry:
 
     def _fetch_remote(self, url: str) -> dict:
         cache = _cache_dir() / "index.json"
+        if not url.startswith(("https://", "http://")):
+            raise ValueError(f"registry URL must be http(s): {url}")
         try:
-            with urllib.request.urlopen(url, timeout=15) as resp:
+            with urllib.request.urlopen(url, timeout=15) as resp:  # nosec B310 - scheme checked above
                 raw = resp.read().decode("utf-8")
             cache.write_text(raw, encoding="utf-8")
             return json.loads(raw)

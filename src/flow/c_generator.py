@@ -796,8 +796,13 @@ class CGenerator:
             lines.append("")
         
         if effects:
-            # Shared by fiber-local effect handler slots below.
-            lines.append("extern int32_t flow_fiber_current_id(void);")
+            # Shared by fiber-local effect handler slots below. Weak fallback so
+            # standalone builds (plain `cc file.c`, no fiber runtime) still link;
+            # the strong definition in runtime/flow_fiber.c wins when present.
+            lines.append(
+                "__attribute__((weak)) int32_t flow_fiber_current_id(void) "
+                "{ return -1; }"
+            )
             lines.append("#ifndef FLOW_FIBER_MAX")
             lines.append("#define FLOW_FIBER_MAX 4096")
             lines.append("#endif")
@@ -3345,7 +3350,7 @@ class CGenerator:
             f"_s{1 if expr.stable else 0}"
         )
         dedupe = f"{elem_c}|{size}|{key_sig}|{flags}"
-        helper = "__flow_sort_" + hashlib.md5(dedupe.encode()).hexdigest()[:12]
+        helper = "__flow_sort_" + hashlib.md5(dedupe.encode(), usedforsecurity=False).hexdigest()[:12]
         if dedupe not in self._sort_helper_keys:
             self._sort_helper_keys.add(dedupe)
             cmp_ij = self._sort_cmp_fragment(
