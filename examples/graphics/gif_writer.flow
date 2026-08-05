@@ -1,0 +1,101 @@
+# Animated GIF from pure Flow: 24 frames of a square bouncing over a
+# gradient, written with the stdlib GIF89a encoder (lib/stdlib/gif.flow).
+# Output: build/gif_demo.gif. Prints the byte size and exits 0.
+
+import stdlib.gif { gif_begin, gif_add_frame_rgb, gif_end }
+
+extern {
+    function mkdir(path: string, mode: i32) -> i32
+    function printf(fmt: string, v: i64) -> i32
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fseek(f: ptr<void>, off: i64, whence: i32) -> i32
+    function ftell(f: ptr<void>) -> i64
+    function fclose(f: ptr<void>) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+const WIDTH: i32 = 128
+const HEIGHT: i32 = 128
+const FRAMES: i32 = 24
+const SQUARE: i32 = 24
+
+function draw_frame(buf: ptr<u8>, frame: i32) -> void {
+    # Gradient background.
+    let mut y: i32 = 0
+    while y < HEIGHT {
+        let mut x: i32 = 0
+        while x < WIDTH {
+            let j: i32 = (y * WIDTH + x) * 3
+            buf[j] = (x * 2) as u8
+            buf[j + 1] = (y * 2) as u8
+            buf[j + 2] = 60 as u8
+            x = x + 1
+        }
+        y = y + 1
+    }
+
+    # Bouncing square: x sweeps right, y follows a triangle wave.
+    let sx: i32 = 8 + frame * 4
+    let mut sy: i32 = 0
+    if frame < 12 {
+        sy = 8 + frame * 8
+    } else {
+        sy = 8 + (23 - frame) * 8
+    }
+    let mut dy: i32 = 0
+    while dy < SQUARE {
+        let mut dx: i32 = 0
+        while dx < SQUARE {
+            let j: i32 = ((sy + dy) * WIDTH + (sx + dx)) * 3
+            buf[j] = 255 as u8
+            buf[j + 1] = 210 as u8
+            buf[j + 2] = 40 as u8
+            dx = dx + 1
+        }
+        dy = dy + 1
+    }
+}
+
+function file_size(path: string) -> i64 {
+    let f: ptr<void> = fopen(path, "rb")
+    if f == null {
+        return 0 - 1
+    }
+    fseek(f, 0, 2)
+    let size: i64 = ftell(f)
+    fclose(f)
+    return size
+}
+
+function main() -> i32 {
+    mkdir("build", 493)
+    if gif_begin("build/gif_demo.gif", WIDTH, HEIGHT, 5) != 0 {
+        return 1
+    }
+
+    let buf: ptr<u8> = malloc((WIDTH as i64) * (HEIGHT as i64) * 3) as ptr<u8>
+    if buf == null {
+        return 5
+    }
+
+    let mut frame: i32 = 0
+    while frame < FRAMES {
+        draw_frame(buf, frame)
+        if gif_add_frame_rgb(buf, WIDTH, HEIGHT) != 0 {
+            return 2
+        }
+        frame = frame + 1
+    }
+    free(buf as ptr<void>)
+    if gif_end() != 0 {
+        return 3
+    }
+
+    let size: i64 = file_size("build/gif_demo.gif")
+    if size <= 0 {
+        return 4
+    }
+    printf("build/gif_demo.gif: %lld bytes\n", size)
+    return 0
+}
