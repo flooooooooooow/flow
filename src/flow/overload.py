@@ -8,7 +8,7 @@ Uses name mangling to generate unique C function names.
 
 from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
-from .parser import FunctionDecl, Type, Expression, Variable, Literal, FunctionCall, StructLiteral, FieldAccess, BinaryOperation
+from .parser import FunctionDecl, Type, Expression, Variable, Literal, FunctionCall, StructLiteral, FieldAccess, BinaryOperation, UnaryOperation
 
 
 @dataclass
@@ -155,6 +155,14 @@ class OverloadResolver:
         elif isinstance(expr, StructLiteral):
             return expr.struct_name
         
+        elif isinstance(expr, UnaryOperation):
+            operand_t = self.get_expr_type(expr.operand)
+            if expr.operator in ("!", "not"):
+                return "bool"
+            if expr.operator == "-" and operand_t == "Dual":
+                return "Dual"
+            return operand_t
+        
         elif isinstance(expr, BinaryOperation):
             # Binary ops usually preserve type of operands
             left_type = self.get_expr_type(expr.left)
@@ -162,6 +170,9 @@ class OverloadResolver:
             # Comparison ops return bool
             if expr.operator in ('==', '!=', '<', '<=', '>', '>=', '&&', '||'):
                 return "bool"
+            # Dual arithmetic promotes to Dual (pattern-adoption #161).
+            if left_type == "Dual" or right_type == "Dual":
+                return "Dual"
             # Arithmetic with float promotes to float
             if left_type == "f32" or right_type == "f32":
                 return "f32"
