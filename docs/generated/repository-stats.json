@@ -6,15 +6,15 @@
     },
     "documentation": {
       "files": 82,
-      "lines": 17739
+      "lines": 17856
     },
     "examples": {
-      "files": 139,
-      "lines": 18541
+      "files": 144,
+      "lines": 18745
     },
     "python_compiler": {
-      "files": 44,
-      "lines": 34628
+      "files": 45,
+      "lines": 35216
     },
     "registry_packages": {
       "files": 2,
@@ -33,8 +33,8 @@
       "lines": 15165
     },
     "tests": {
-      "files": 201,
-      "lines": 20398
+      "files": 204,
+      "lines": 21039
     },
     "verify_corpus": {
       "files": 1078,
@@ -42,15 +42,15 @@
     }
   },
   "badges": {
-    "examples": "139 examples",
-    "flow": "77.3k Flow LOC",
-    "loc": "169k LOC",
+    "examples": "144 examples",
+    "flow": "78.2k Flow LOC",
+    "loc": "172k LOC",
     "proofs": "1078 verify files",
     "stdlib": "82 modules",
-    "tests": "201 tests"
+    "tests": "204 tests"
   },
-  "commit": "3be6dd8fda4c",
-  "generated_at": "2026-08-05T14:22:35+01:00",
+  "commit": "1b781319923a",
+  "generated_at": "2026-08-05T19:25:45+01:00",
   "languages": {
     "C": {
       "files": 47,
@@ -69,8 +69,8 @@
       "lines": 1609
     },
     "Flow": {
-      "files": 1526,
-      "lines": 77338
+      "files": 1532,
+      "lines": 78239
     },
     "HTML": {
       "files": 27,
@@ -89,24 +89,24 @@
       "lines": 327
     },
     "Python": {
-      "files": 176,
-      "lines": 62793
+      "files": 181,
+      "lines": 64419
     },
     "Rust": {
       "files": 5,
       "lines": 303
     },
     "Shell": {
-      "files": 32,
-      "lines": 3690
+      "files": 33,
+      "lines": 3810
     }
   },
   "methodology": "Tracked source files only; physical lines include comments and blanks; third_party and generated/build directories are excluded.",
   "proof_documents": 1080,
   "schema_version": 1,
   "totals": {
-    "source_files": 1868,
-    "source_lines": 169242,
-    "tracked_files": 4464
+    "source_files": 1880,
+    "source_lines": 171889,
+    "tracked_files": 4479
   }
 }
