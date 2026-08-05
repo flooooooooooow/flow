@@ -1,0 +1,240 @@
+# Metal GPU status check for the digits MLP: what runs on the GPU today.
+#
+#   FLOW_HOST=python ./flow run examples/ml/digits_mlp_metal.flow
+#
+# Honest scope. Flow's Metal runtime currently exposes:
+#   - unified (shared CPU/GPU) buffers        flow_gpu_alloc / flow_gpu_host_ptr
+#   - one dispatchable compute kernel         flow_gpu_mul_f32 (elementwise mul)
+# The @gpu matmul kernels in lib/stdlib/gpu_kernels.flow compile to Metal
+# source with `./flow gpu`, but there is no runtime loader to launch them
+# from a running Flow program yet. So the digits training loop cannot run
+# on the GPU. What CAN run is the elementwise piece of the backward pass:
+# the ReLU gradient gate dh = da * mask.
+#
+# This program:
+#   1. reports the GPU backend,
+#   2. runs the digits model's ReLU backward gate on Metal and checks it
+#      against the CPU result (PASS gate),
+#   3. times elementwise mul on CPU vs GPU dispatch at growing sizes so
+#      the crossover point is measured rather than guessed.
+#
+# Exits 0 with a skip message when no Metal device is present.
+
+extern {
+    function malloc(size: i64) -> ptr<f32>
+    function free(p: ptr<f32>) -> void
+    function flow_rt_monotonic_ns() -> i64
+    function flow_gpu_available() -> i32
+    function flow_gpu_backend_name() -> string
+    function flow_gpu_alloc(size: i64, flags: i32) -> ptr<void>
+    function flow_gpu_free(buf: ptr<void>) -> void
+    function flow_gpu_host_ptr(buf: ptr<void>) -> ptr<void>
+    function flow_gpu_mul_f32(out: ptr<void>, a: ptr<void>, b: ptr<void>, n: i64) -> i32
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const GPU_MEM_SHARED: i32 = 1
+const HIDDEN: i32 = 32
+const BATCH: i32 = 250
+
+let mut rng_state: i64 = 42
+
+function lcg_uniform() -> f32 {
+    rng_state = (rng_state * 1103515245 + 12345) % 2147483648
+    return (rng_state as f32) / 2147483648.0
+}
+
+function abs_f32(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+# ---------------------------------------------------------------------------
+# Part 1: the digits MLP ReLU backward gate on Metal.
+# dh[j] = da[j] * mask[j], mask[j] = 1 if pre-activation > 0 else 0.
+# This is exactly gpu_relu_grad from lib/stdlib/gpu_gradients.flow,
+# expressed with the one kernel the runtime can dispatch today.
+# ---------------------------------------------------------------------------
+
+function relu_gate_check() -> i32 {
+    let n: i64 = (BATCH as i64) * (HIDDEN as i64)   # one minibatch of hidden grads
+    let bytes: i64 = n * 4
+
+    # Unified buffers: CPU writes through host_ptr, GPU reads in place.
+    let d_pre: ptr<void> = flow_gpu_alloc(bytes, GPU_MEM_SHARED)
+    let d_da: ptr<void> = flow_gpu_alloc(bytes, GPU_MEM_SHARED)
+    let d_dh: ptr<void> = flow_gpu_alloc(bytes, GPU_MEM_SHARED)
+    if d_pre == null or d_da == null or d_dh == null {
+        println("  gpu_alloc failed")
+        return 1
+    }
+
+    let mask: ptr<f32> = flow_gpu_host_ptr(d_pre) as ptr<f32>
+    let da: ptr<f32> = flow_gpu_host_ptr(d_da) as ptr<f32>
+    let dh: ptr<f32> = flow_gpu_host_ptr(d_dh) as ptr<f32>
+
+    # Deterministic pre-activations -> mask, and upstream grads
+    let mut i: i64 = 0
+    while i < n {
+        let pre: f32 = lcg_uniform() - 0.5
+        if pre > 0.0 {
+            mask[i] = 1.0
+        } else {
+            mask[i] = 0.0
+        }
+        da[i] = 2.0 * (lcg_uniform() - 0.5)
+        i = i + 1
+    }
+
+    # GPU: dh = da * mask
+    if flow_gpu_mul_f32(d_dh, d_da, d_pre, n) != 0 {
+        println("  flow_gpu_mul_f32 dispatch failed")
+        return 1
+    }
+
+    # CPU reference, compared elementwise
+    let mut bad: i32 = 0
+    i = 0
+    while i < n {
+        let want: f32 = da[i] * mask[i]
+        if abs_f32(dh[i] - want) > 0.000001 {
+            bad = bad + 1
+        }
+        i = i + 1
+    }
+
+    flow_gpu_free(d_pre)
+    flow_gpu_free(d_da)
+    flow_gpu_free(d_dh)
+
+    print("  relu backward gate on Metal: ")
+    let count: f64 = n as f64
+    printf("%.0f elements, ", count)
+    if bad == 0 {
+        println("GPU == CPU")
+        return 0
+    }
+    print("mismatches: ")
+    println(bad)
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# Part 2: CPU vs GPU elementwise multiply timing.
+# GPU time includes command buffer encode + dispatch + waitUntilCompleted,
+# which is the real cost a training step would pay per kernel launch.
+# ---------------------------------------------------------------------------
+
+function bench_size(n: i64) -> void {
+    let bytes: i64 = n * 4
+    let d_a: ptr<void> = flow_gpu_alloc(bytes, GPU_MEM_SHARED)
+    let d_b: ptr<void> = flow_gpu_alloc(bytes, GPU_MEM_SHARED)
+    let d_o: ptr<void> = flow_gpu_alloc(bytes, GPU_MEM_SHARED)
+    if d_a == null or d_b == null or d_o == null {
+        println("  gpu_alloc failed for bench")
+        return
+    }
+    let a: ptr<f32> = flow_gpu_host_ptr(d_a) as ptr<f32>
+    let b: ptr<f32> = flow_gpu_host_ptr(d_b) as ptr<f32>
+    let o: ptr<f32> = flow_gpu_host_ptr(d_o) as ptr<f32>
+    let cpu_out: ptr<f32> = malloc(bytes)
+
+    let mut i: i64 = 0
+    while i < n {
+        a[i] = lcg_uniform()
+        b[i] = lcg_uniform()
+        i = i + 1
+    }
+
+    # Warm-up dispatch (first launch pays pipeline setup)
+    let warm: i32 = flow_gpu_mul_f32(d_o, d_a, d_b, n)
+
+    # Best of 3 for both sides
+    let mut cpu_ns: i64 = 0
+    for r in 0 to 3 {
+        let t0: i64 = flow_rt_monotonic_ns()
+        i = 0
+        while i < n {
+            cpu_out[i] = a[i] * b[i]
+            i = i + 1
+        }
+        let t1: i64 = flow_rt_monotonic_ns()
+        if r == 0 or t1 - t0 < cpu_ns {
+            cpu_ns = t1 - t0
+        }
+    }
+
+    let mut gpu_ns: i64 = 0
+    for r in 0 to 3 {
+        let t0: i64 = flow_rt_monotonic_ns()
+        let rc: i32 = flow_gpu_mul_f32(d_o, d_a, d_b, n)
+        let t1: i64 = flow_rt_monotonic_ns()
+        if rc != 0 {
+            println("  dispatch failed")
+        }
+        if r == 0 or t1 - t0 < gpu_ns {
+            gpu_ns = t1 - t0
+        }
+    }
+
+    # Spot-check GPU result
+    let mut ok: i32 = 1
+    i = 0
+    while i < n {
+        if abs_f32(o[i] - cpu_out[i]) > 0.000001 {
+            ok = 0
+        }
+        i = i + 7919
+    }
+
+    print("  n=")
+    printf("%.0f", n as f64)
+    print("  cpu ms ")
+    printf("%.3f", (cpu_ns as f64) / 1000000.0)
+    print("  gpu ms ")
+    printf("%.3f", (gpu_ns as f64) / 1000000.0)
+    if ok == 1 {
+        println("  (results match)")
+    } else {
+        println("  (MISMATCH)")
+    }
+
+    flow_gpu_free(d_a)
+    flow_gpu_free(d_b)
+    flow_gpu_free(d_o)
+    free(cpu_out)
+}
+
+function main() -> i32 {
+    println("digits_mlp_metal: Metal GPU path status")
+    print("  backend: ")
+    println(flow_gpu_backend_name())
+
+    if flow_gpu_available() != 1 {
+        println("  no Metal device, skip (OK)")
+        return 0
+    }
+
+    let rc: i32 = relu_gate_check()
+    if rc != 0 {
+        println("FAIL")
+        return 1
+    }
+
+    println("  elementwise mul, CPU loop vs GPU dispatch (best of 3):")
+    bench_size(65536)      # 64K
+    bench_size(1048576)    # 1M
+    bench_size(4194304)    # 4M
+    bench_size(16777216)   # 16M
+
+    println("")
+    println("  runtime gaps that keep the rest of training on the CPU:")
+    println("   - no runtime loader for @gpu kernels: gpu_matmul_row emits")
+    println("     Metal source via ./flow gpu but cannot be launched from Flow")
+    println("   - only elementwise mul is dispatchable (flow_gpu_mul_f32)")
+    println("   - so layer matmuls, softmax and the update all stay on CPU")
+    println("PASS")
+    return 0
+}
