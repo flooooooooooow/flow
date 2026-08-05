@@ -1,0 +1,49 @@
+# Claim Coordinates demo — Flow port of src/flow/claim_address.py
+#
+# Run from repo root:
+#   ./flow run examples/compilers/claim_address_demo.flow
+
+import "compiler/src/claim_address.flow"
+
+extern {
+    function printf(fmt: string, s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    let mut failed: i32 = 0
+
+    let g: FlowcClaimAddress = flowc_claim_parse(
+        "«Nat» «addition» «zero is the left identity»"
+    )
+    if g.ok == 0 {
+        printf("%s\n", "FAIL: guillemet parse")
+        failed = 1
+    } else {
+        let slug: string = flowc_claim_slug(g)
+        printf("slug: %s\n", slug)
+        if strcmp(slug, "Nat.addition.zero_is_the_left_identity") != 0 {
+            printf("%s\n", "FAIL: unexpected slug")
+            failed = 1
+        }
+    }
+
+    let leg: FlowcClaimAddress = flowc_claim_parse("Nat/+.zero-left")
+    if leg.ok == 0 {
+        printf("%s\n", "FAIL: legacy parse")
+        failed = 1
+    } else {
+        let disp: string = flowc_claim_display(leg)
+        printf("display: %s\n", disp)
+        if strcmp(disp, "Nat › addition › zero is the left identity") != 0 {
+            printf("%s\n", "FAIL: unexpected display")
+            failed = 1
+        }
+    }
+
+    if failed == 1 {
+        return 1
+    }
+    printf("%s\n", "claim_address: PASS")
+    return 0
+}
