@@ -11,7 +11,7 @@ from .parser import (
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
     HandleStatement, EffectCall, MethodCall,
-    MatchStatement, StructPattern, ListPattern, ConstDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl,
+    MatchStatement, StructPattern, ListPattern, ConstDecl, StaticDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl,
     ExpectStatement, RecordUpdate,
 )
 
@@ -474,8 +474,17 @@ class MLIRGenerator:
         return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.undef : {mlir_type}"]
     
     def generate_module(self, declarations: List[Any], emit_gpu: bool = False) -> str:
+        # Module statics (top-level `let mut`) have no MLIR lowering yet.
+        # Fail loudly rather than miscompiling reads/writes to them.
+        for decl in declarations:
+            if isinstance(decl, StaticDecl):
+                raise NotImplementedError(
+                    f"module statics not yet supported in MLIR backend "
+                    f"(static '{decl.name}'); use the C backend (--c)"
+                )
+
         mlir_code = []
-        
+
         # Reset state for new module
         self.string_constants = {}
         self.string_counter = 0

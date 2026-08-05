@@ -333,6 +333,41 @@ const PI: f32 = 3.14159
 const MAX_SIZE: i32 = 1024
 ```
 
+### 3.3.1 Module Statics
+
+**Grammar:**
+```
+static_decl := 'let' 'mut' IDENTIFIER ':' type '=' expression
+```
+
+A top-level `let mut` declares module-level mutable state. Functions in the
+same module read and write it like a normal variable. The type annotation is
+required and the initializer must be a compile-time constant.
+
+Allowed types: primitives (`i32`/`i64`/`u8`/`u32`/`f32`/`f64`/`bool`), fixed
+arrays of primitives (`array<T, N>` with a full literal initializer), and
+`ptr<T>` initialized to `null`. Anything else is a type error.
+
+**Status:** ✅ C backend. The MLIR backend reports "module statics not yet
+supported in MLIR backend" instead of compiling them.
+
+**Example:**
+```flow
+let mut counter: i32 = 0
+let mut table: array<i32, 4> = [0, 0, 0, 0]
+let mut head: ptr<Node> = null
+
+function bump() -> i32 {
+    counter = counter + 1
+    return counter
+}
+```
+
+**C lowering:** always a file-scope `static`, so each translation unit keeps
+its statics private. Arrays lower to C static arrays with brace initializers;
+an all-zero array literal lowers to `{0}`. A top-level `let` without `mut` is
+a syntax error; use `const` for immutable module-level values.
+
 ### 3.4 Struct Declaration
 
 **Grammar:**
