@@ -405,6 +405,30 @@ docs/
 - **Windows**: CUDA backend support (OpenCL planned)
 - **Cross-Platform**: Automatic GPU backend detection
 
+## [0.9.0] - 2026-08-05
+
+### Consolidation release
+
+Every open branch, worktree, stash, and PR merged into `main`; the repository
+now has a single branch tagged `v0.9.0`.
+
+### Added
+- **Go-style concurrency runtime** — fibers, channels (`Chan<T>` with monomorphization), select, work stealing, netpoll, multi-shot continuations, TLS/HTTPS accept loop, HTTP over fibers. C kernels under `runtime/`, Flow wrappers under `lib/runtime/`, 25 examples under `examples/concurrency/`.
+- **Package registry** — `registry/` with 16 seed packages and ecosystem demo projects.
+- **Pipeline `choose`** — state-driven stage selection: `x |> choose sel { A => f, B => g }`.
+- **VS Code extension 0.3.0** — debug adapter, test explorer, snippets, file icon, published under the `quilio` Open VSX namespace; `flow-pack` and `flow-themes` companions.
+- **Recorded demo gallery** — headless `./flow record` backend and GIFs regenerated from the real programs.
+- Runtime-in-Flow build wiring (`flow_runtime_flow_sources`), `FLOW_CFLAGS` / `FLOW_TSAN` overrides, OpenSSL and OpenMP probes.
+
+### Changed
+- **Stricter type checking** — `let` immutability enforced (use `let mut`), bool vs i32 distinction, overload arity checks; corpus updated.
+- LANGUAGE_SPEC refreshed to match shipped surfaces; spec version now tracks the release.
+- Version metadata aligned to **0.9.0** (`flow.toml`, `pyproject.toml`, wiki hero).
+
+### Notes
+- flowc self-hosting is through Phase D slice 1 (pip-free Stage-A compile in CI); Python remains the production compiler.
+- Known strict-checker gaps carry `flow:lenient` pragmas with board cards (generic channel intrinsics, string vs byte-buffer coercions, capability parameters).
+
 ## [0.8.0] - 2026-08-05
 
 ### Official public release

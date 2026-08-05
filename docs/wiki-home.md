@@ -1,6 +1,6 @@
 <div class="wiki-hero">
 
-<p class="wiki-hero-eyebrow">Flow · v0.8</p>
+<p class="wiki-hero-eyebrow">Flow · v0.9</p>
 
 <h1 class="wiki-hero-title">Write with effects.<br>Compile like C.</h1>
 
@@ -160,7 +160,7 @@ Formal math proofs live in the **third-party** [flow-verify](third-party/flow-ve
 
 | | |
 |---|---|
-| Version | 0.7.0 ([changelog](project/CHANGELOG.md)) |
+| Version | 0.9.0 ([changelog](project/CHANGELOG.md)) |
 | License | MIT |
 | Repository | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
 | Docs | [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) |

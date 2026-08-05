@@ -101,11 +101,11 @@ nearby multi-rule extension block when applying.)
 | `lexer.flow` | `compiler/src/lexer.flow` |
 
 Copies with provenance headers live in
-[`samples/Flow/`](samples/Flow/).
+[`samples/Flow/`](linguist/samples/Flow/).
 
 ## PR checklist (fill when opening)
 
-See [`PR_TEMPLATE.md`](PR_TEMPLATE.md).
+See [`PR_TEMPLATE.md`](linguist/PR_TEMPLATE.md).
 
 ## Local repo until upstream lands
 
