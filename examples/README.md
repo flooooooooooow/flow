@@ -109,6 +109,7 @@ Fundamental algorithms demonstrating Flow syntax:
 - `prime_numbers.flow` - Loops and conditionals
 - `result_pipeline.flow` - Option/Result-style error chaining
 - `pipeline_placeholder.flow` - `|>` pipeline with `_` argument placeholder
+- `pipeline_fork.flow` - `|>` fork block: one value into a record of pipelines
 - `match_enums.flow` - `match` on a simple enum
 
 ### Games (`games/`)
