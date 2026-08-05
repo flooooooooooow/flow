@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Flow documentation
+    url: https://flooooooooooow.github.io/flow/
+    about: Language reference, tutorials, and vision docs
+  - name: Security vulnerability
+    url: https://github.com/flooooooooooow/flow/security/advisories/new
+    about: Please report security issues privately (see SECURITY.md)

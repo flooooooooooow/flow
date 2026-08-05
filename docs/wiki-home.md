@@ -1,6 +1,6 @@
 <div class="wiki-hero">
 
-<p class="wiki-hero-eyebrow">Flow · v0.7</p>
+<p class="wiki-hero-eyebrow">Flow · v0.8</p>
 
 <h1 class="wiki-hero-title">Write with effects.<br>Compile like C.</h1>
 
