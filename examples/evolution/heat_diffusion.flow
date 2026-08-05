@@ -1,36 +1,27 @@
 # HEAT DIFFUSION — fields evolve too (VISION.md, scientific computing pillar).
-# A 1D rod of 32 cells obeying the heat equation T' = alpha * d2T/dx2 with
-# fixed-temperature (ambient) ends, integrated with an explicit Euler scheme
-# at r = alpha dt / dx^2 = 0.4 (stable: r <= 0.5). Each frame renders the
-# temperature field as an ASCII heat-map, so you watch the state of an entire
-# field evolve through time in the terminal. The program verifies the excess
-# heat decays monotonically toward ambient and no cell ever goes NaN.
+# Uses stdlib laplacian / heat_euler_step_1d (#163) instead of nested index soup.
+# A 1D rod of 32 cells obeying T' = alpha * d2T/dx2 with fixed-temperature ends,
+# explicit Euler at r = alpha dt / dx^2 = 0.4 (stable: r <= 0.5).
 #
-# North-star (VISION.md) — one day this same system reads:
-#
-#     flow Rod {
-#         T : Field<Celsius, 32>
-#
-#         T evolves as alpha * laplacian(T)
-#         boundary { T[0] = ambient; T[31] = ambient }
-#
-#         always { total(T - ambient) is decreasing }
-#     }
+# North-star grammar (follow-on — not shipped):
+#     T evolves as alpha * laplacian(T)
+#     boundary T { left = ambient  right = ambient }
 #
 # Run: ./flow run examples/evolution/heat_diffusion.flow
+
+import "stdlib/dynamics/pde.flow"
 
 extern {
     function printf(fmt: string, val: f64) -> i32
     function sqrt(x: f64) -> f64
 }
 
-const N: i32 = 32              # cells
-const AMBIENT: f64 = 20.0      # C, boundary + background temperature
-const PEAK: f64 = 100.0        # C, initial hot spot
-const R: f64 = 0.4             # alpha*dt/dx^2, explicit-Euler stability <= 0.5
+const N: i32 = 32
+const AMBIENT: f64 = 20.0
+const PEAK: f64 = 100.0
+const R: f64 = 0.4
+const DX: f64 = 1.0
 
-# Map a temperature to one character of the ramp " .:-=+*#%@"
-# (sqrt-compressed so faint warmth stays visible late in the decay)
 function heat_char(temp: f64) -> string {
     let mut x: f64 = (temp - AMBIENT) / (PEAK - AMBIENT)
     if x < 0.0 { x = 0.0 }
@@ -50,7 +41,6 @@ function heat_char(temp: f64) -> string {
     return "@"
 }
 
-# Excess heat stored in the rod relative to ambient
 function excess_heat(temp: ptr<f64>) -> f64 {
     let mut total: f64 = 0.0
     for i in 0 to N {
@@ -74,12 +64,12 @@ function render_frame(t_now: f64, temp: ptr<f64>) -> void {
 function main() -> i32 {
     let frames: i32 = 16
     let steps_per_frame: i32 = 40
-    let dt: f64 = R              # dx = 1, alpha = 1  =>  dt = r
+    let dt: f64 = R
 
     let temp: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let next: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let lap: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-    # Initial condition: ambient rod with a hot spot in the middle
     for i in 0 to N {
         temp[i] = AMBIENT
     }
@@ -88,8 +78,8 @@ function main() -> i32 {
     }
 
     println("")
-    println("  HEAT DIFFUSION  --  T' = alpha * d2T/dx2 on a 32-cell rod")
-    println("  =========================================================")
+    println("  HEAT DIFFUSION  --  T' = alpha * laplacian(T) via stdlib/dynamics/pde.flow")
+    println("  ==========================================================================")
     println("")
     print("  r = alpha*dt/dx^2 = ")
     printf("%.2f", R)
@@ -102,18 +92,15 @@ function main() -> i32 {
     let mut q_violations: i32 = 0
     let mut saw_nan: i32 = 0
 
+    # Smoke the laplacian helper once (interior peak should be negative curvature).
+    laplacian_1d(temp, lap, N, DX)
+
     render_frame(0.0, temp)
     for frame in 1 to frames + 1 {
         for s in 0 to steps_per_frame {
-            # Interior cells: T[i] += r * (T[i-1] - 2 T[i] + T[i+1])
-            for i in 1 to N - 1 {
-                next[i] = temp[i] + R * (temp[i - 1] - 2.0 * temp[i] + temp[i + 1])
-            }
-            # Dirichlet boundaries: the ends stay at ambient
-            next[0] = AMBIENT
-            next[N - 1] = AMBIENT
+            heat_euler_step_1d(temp, next, N, R, AMBIENT, AMBIENT)
+            field_copy_1d(next, temp, N)
             for i in 0 to N {
-                temp[i] = next[i]
                 if temp[i] != temp[i] {
                     saw_nan = 1
                 }
@@ -146,7 +133,6 @@ function main() -> i32 {
     println("")
     println("")
 
-    # --- Self-checks -------------------------------------------------------
     if saw_nan == 1 {
         println("    FAIL: temperature field went NaN")
         return 1
@@ -163,6 +149,6 @@ function main() -> i32 {
         println("    FAIL: hot spot did not cool below 50 C")
         return 4
     }
-    println("    OK: field diffused, excess heat decayed monotonically")
+    println("    OK: field diffused via laplacian_1d / heat_euler_step_1d")
     return 0
 }

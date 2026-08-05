@@ -1,0 +1,148 @@
+# Discrete LQR helpers (pattern-adoption #162).
+# Scalar-input (m=1) discrete Riccati fixed-point for n <= 8.
+# Prefer this over private mini-linalg in apps until LAPACK DARE lands.
+# Import: import "stdlib/dynamics/lqr.flow"
+
+extern {
+    function fabs(x: f64) -> f64
+}
+
+const LQR_MAX_N: i32 = 8
+
+function _lqr_matmul(a: ptr<f64>, b: ptr<f64>, out: ptr<f64>, n: i32) -> void {
+    for i in 0 to n {
+        for j in 0 to n {
+            let mut acc: f64 = 0.0
+            for k in 0 to n {
+                acc = acc + a[i * n + k] * b[k * n + j]
+            }
+            out[i * n + j] = acc
+        }
+    }
+}
+
+function _lqr_matvec(a: ptr<f64>, v: ptr<f64>, out: ptr<f64>, n: i32) -> void {
+    for i in 0 to n {
+        let mut acc: f64 = 0.0
+        for k in 0 to n {
+            acc = acc + a[i * n + k] * v[k]
+        }
+        out[i] = acc
+    }
+}
+
+function _lqr_transpose(a: ptr<f64>, out: ptr<f64>, n: i32) -> void {
+    for i in 0 to n {
+        for j in 0 to n {
+            out[j * n + i] = a[i * n + j]
+        }
+    }
+}
+
+# Discrete LQR for Ad (n×n), Bd (n×1), diagonal Q, scalar R.
+# Writes gain row K into k_out (length n); control law u = -K x.
+# Returns iteration count on success, or -1 if n out of range / no converge.
+export function dlqr_diag_q_scalar_u(
+    ad: ptr<f64>,
+    bd: ptr<f64>,
+    q_diag: ptr<f64>,
+    r: f64,
+    n: i32,
+    k_out: ptr<f64>,
+    max_iter: i32
+) -> i32 {
+    if n < 1 {
+        return 0 - 1
+    }
+    if n > LQR_MAX_N {
+        return 0 - 1
+    }
+
+    let at: array<f64, 64> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let p: array<f64, 64> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let pa: array<f64, 64> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let atpa: array<f64, 64> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let pn: array<f64, 64> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let pb: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let atpb: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    _lqr_transpose(ad, at, n)
+
+    let nn: i32 = n * n
+    for i in 0 to nn {
+        p[i] = 0.0
+    }
+    for i in 0 to n {
+        p[i * n + i] = q_diag[i]
+    }
+
+    let mut converged_at: i32 = 0 - 1
+    for iter in 0 to max_iter {
+        _lqr_matmul(p, ad, pa, n)
+        _lqr_matmul(at, pa, atpa, n)
+        _lqr_matvec(p, bd, pb, n)
+        _lqr_matvec(at, pb, atpb, n)
+
+        let mut s: f64 = r
+        for i in 0 to n {
+            s = s + bd[i] * pb[i]
+        }
+
+        for i in 0 to n {
+            for j in 0 to n {
+                let mut q_ij: f64 = 0.0
+                if i == j {
+                    q_ij = q_diag[i]
+                }
+                pn[i * n + j] = q_ij + atpa[i * n + j] - atpb[i] * atpb[j] / s
+            }
+        }
+
+        for i in 0 to n {
+            for j in i + 1 to n {
+                let avg: f64 = 0.5 * (pn[i * n + j] + pn[j * n + i])
+                pn[i * n + j] = avg
+                pn[j * n + i] = avg
+            }
+        }
+
+        let mut delta: f64 = 0.0
+        for i in 0 to nn {
+            if fabs(pn[i] - p[i]) > delta {
+                delta = fabs(pn[i] - p[i])
+            }
+            p[i] = pn[i]
+        }
+
+        if delta < 0.000000001 {
+            converged_at = iter + 1
+            break
+        }
+    }
+
+    if converged_at < 0 {
+        return 0 - 1
+    }
+
+    _lqr_matmul(p, ad, pa, n)
+    _lqr_matvec(p, bd, pb, n)
+    let mut s2: f64 = r
+    for i in 0 to n {
+        s2 = s2 + bd[i] * pb[i]
+    }
+    # K_j = (Bd' P Ad)_j / s  = sum_i Bd_i * (P Ad)_{i j} / s
+    for j in 0 to n {
+        let mut acc: f64 = 0.0
+        for i in 0 to n {
+            acc = acc + bd[i] * pa[i * n + j]
+        }
+        k_out[j] = acc / s2
+    }
+    return converged_at
+}
+
+# Alias matching pattern-adoption sketch naming.
+export function lqr_diag_q(ad: ptr<f64>, bd: ptr<f64>, q_diag: ptr<f64>, r: f64,
+                           n: i32, k_out: ptr<f64>, max_iter: i32) -> i32 {
+    return dlqr_diag_q_scalar_u(ad, bd, q_diag, r, n, k_out, max_iter)
+}
