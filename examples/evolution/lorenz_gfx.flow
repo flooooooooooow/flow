@@ -1,10 +1,12 @@
 # LORENZ GFX — live simulation wow demo (VISION.md: digital twins).
 # Declares the attractor as a `flow` with `solver { method rk4 }`, steps it
-# each frame, and draws an (x, z) fading trail via gfx_frame_pump (#164/#165).
+# each frame, and draws an (x, z) fading trail via portrait helpers + gfx_frame_pump
+# (#164/#165). Full `represent phase_portrait` grammar is follow-on.
 #
 # Run: ./flow gfx examples/evolution/lorenz_gfx.flow
 
 import "stdlib/gfx.flow"
+import "stdlib/dynamics/portrait.flow"
 
 const WIN_W: i32 = 900
 const WIN_H: i32 = 700
@@ -27,20 +29,11 @@ flow Lorenz {
     z evolves as x * y - beta * z
 }
 
-function project_x(x: f64) -> i32 {
-    return ((x + 25.0) * 17.6 + 10.0) as i32
-}
-
-function project_z(z: f64) -> i32 {
-    return (670.0 - z * 12.0) as i32
-}
-
 function main() -> i32 {
     let g: Gfx = gfx_open(WIN_W, WIN_H, "Lorenz attractor - Flow evolution demo")
     let mut sys: Lorenz = Lorenz_new()
     let dt: f64 = Lorenz_default_dt()
 
-    # Warm up onto the attractor before drawing
     for w in 0 to 200 {
         Lorenz_step(&sys, dt)
     }
@@ -50,6 +43,8 @@ function main() -> i32 {
     let mut head: i32 = 0
     let mut count: i32 = 0
     let mut frame: i32 = 0
+    let head_ptr: ptr<i32> = &head
+    let count_ptr: ptr<i32> = &count
 
     while frame < MAX_FRAMES {
         if !gfx_frame_pump(g) { break }
@@ -58,23 +53,20 @@ function main() -> i32 {
             Lorenz_step(&sys, dt)
         }
 
-        trail_x[head] = sys.x
-        trail_z[head] = sys.z
-        head = (head + 1) % TRAIL
-        if count < TRAIL { count = count + 1 }
+        trail_push_2d(trail_x, trail_z, TRAIL, head_ptr, count_ptr, sys.x, sys.z)
 
         gfx_clear(g, 8, 8, 16)
         for i in 0 to count {
-            let idx: i32 = (head + TRAIL - count + i) % TRAIL
-            let px: i32 = project_x(trail_x[idx])
-            let py: i32 = project_z(trail_z[idx])
+            let idx: i32 = trail_index(head, count, TRAIL, i)
+            let px: i32 = project_axis(trail_x[idx], -25.0, 25.0, WIN_W, 10)
+            let py: i32 = project_axis(trail_z[idx], 55.0, 0.0, WIN_H, 30)
             let b: i32 = 25 + (230 * (i + 1)) / count
             let mut size: i32 = 2
             if i >= count - 12 { size = 3 }
             gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)
         }
-        let hx: i32 = project_x(sys.x)
-        let hz: i32 = project_z(sys.z)
+        let hx: i32 = project_axis(sys.x, -25.0, 25.0, WIN_W, 10)
+        let hz: i32 = project_axis(sys.z, 55.0, 0.0, WIN_H, 30)
         gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)
 
         gfx_present(g)

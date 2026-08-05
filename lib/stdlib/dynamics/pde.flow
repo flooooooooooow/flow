@@ -1,0 +1,45 @@
+# PDE helpers (pattern-adoption #163).
+# Stdlib MVP for field evolution without `field` / `boundary` grammar yet.
+# Import: import "stdlib/dynamics/pde.flow"
+
+# Second difference at interior index i: (u[i-1] - 2 u[i] + u[i+1]) / dx^2.
+# Caller must ensure 0 < i < n-1.
+export function laplacian_1d_at(u: ptr<f64>, i: i32, dx: f64) -> f64 {
+    let dx2: f64 = dx * dx
+    return (u[i - 1] - 2.0 * u[i] + u[i + 1]) / dx2
+}
+
+# Write laplacian into out for interior cells; out[0] and out[n-1] set to 0.
+export function laplacian_1d(u: ptr<f64>, out: ptr<f64>, n: i32, dx: f64) -> void {
+    out[0] = 0.0
+    out[n - 1] = 0.0
+    for i in 1 to n - 1 {
+        out[i] = laplacian_1d_at(u, i, dx)
+    }
+}
+
+# One explicit Euler heat step with Dirichlet ends:
+#   next[i] = u[i] + r * (u[i-1] - 2 u[i] + u[i+1])   for interior
+#   next[0] = left_bc, next[n-1] = right_bc
+# where r = alpha * dt / dx^2 (stable for r <= 0.5 on a unit grid).
+export function heat_euler_step_1d(
+    u: ptr<f64>,
+    next: ptr<f64>,
+    n: i32,
+    r: f64,
+    left_bc: f64,
+    right_bc: f64
+) -> void {
+    for i in 1 to n - 1 {
+        next[i] = u[i] + r * (u[i - 1] - 2.0 * u[i] + u[i + 1])
+    }
+    next[0] = left_bc
+    next[n - 1] = right_bc
+}
+
+# Copy n samples from src into dst.
+export function field_copy_1d(src: ptr<f64>, dst: ptr<f64>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+}
