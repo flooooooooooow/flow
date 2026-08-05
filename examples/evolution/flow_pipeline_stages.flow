@@ -35,7 +35,9 @@ flow Limiter {
 
 flow Chain {
     input signal : f64
-    output result : f64 = signal |> Gain |> Limiter
+    # `Gain { k: 3.0 }` overrides the stage's `k` param (colon = value; a fork
+    # block would use `=`). Drop the braces to keep the stage's defaults.
+    output result : f64 = signal |> Gain { k: 3.0 } |> Limiter
 }
 
 function main() -> i32 {
@@ -49,7 +51,7 @@ function main() -> i32 {
         i = i + 1
     }
 
-    # Gain -> k * signal = 2.0; Limiter tracks it -> 2.0
-    printf("pipeline result (expect ~2.0) = %f\n", c.result)
+    # Gain -> k * signal = 3.0 (k overridden); Limiter tracks it -> 3.0
+    printf("pipeline result (expect ~3.0) = %f\n", c.result)
     return 0
 }

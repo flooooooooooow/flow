@@ -22,6 +22,7 @@ from typing import Dict, List, Optional
 from .parser import (
     ForkBlock,
     ForkSource,
+    FlowStage,
     StructLiteral,
     StructDecl,
     Parameter,
@@ -129,6 +130,16 @@ class _Desugarer:
         if isinstance(node, Block):
             self._process_block(node)
             return node
+        if isinstance(node, FlowStage):
+            # Flow-stage param blocks are resolved only inside a flow output
+            # pipeline (by _expand_flow_pipelines). One reaching here was used
+            # somewhere that has no flow-stage meaning.
+            raise ForkRecordError(
+                "flow stage params `{} {{ ... }}` (line {}) are only valid for a"
+                " flow used as a pipeline stage inside a flow `output`".format(
+                    node.name, node.line
+                )
+            )
         if isinstance(node, ForkBlock):
             # Resolve nested forks in the source and branch templates first.
             source = self._resolve(node.source, hoisted)
