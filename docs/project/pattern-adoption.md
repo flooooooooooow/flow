@@ -26,7 +26,7 @@ story. Adoption first; new sugar second.
 | P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ partial | [#162](https://github.com/flooooooooooow/flow/issues/162) |
 | P2 | Field / `laplacian` PDE surface | language ✅ partial | [#163](https://github.com/flooooooooooow/flow/issues/163) |
 | P2 | Dual + Tensor operators + mutable params | language ✅ partial | [#161](https://github.com/flooooooooooow/flow/issues/161) |
-| P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering | [#160](https://github.com/flooooooooooow/flow/issues/160) |
+| P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering ✅ partial | [#160](https://github.com/flooooooooooow/flow/issues/160) |
 
 ---
 
@@ -227,25 +227,13 @@ struct Net { mut w: … }        # follow-on
 
 ### 10. Closed-loop `plant.step`
 
-**Today:** `spring_mass_control.flow` analyzes with `dsys`, then re-hardcodes
-A/B Euler in `main`.
+**Shipped MVP:** `spring_mass_control.flow` simulates via stdlib
+`dsys_continuous` → `dsys_euler_discretize` → `state_step` (no hand Ad/Bd).
+Analysis still uses the `dsys` DSL block; coefficients are duplicated once in
+`spring_mass_discrete()` until the DSL exposes `__dsys_plant` to user scope.
 
-**Sketch:**
-```flow
-flow Plant { … evolves as … }
-flow Ctrl { … }
-flow Closed {
-    plant : Plant
-    ctrl  : Ctrl
-    connect { plant.y -> ctrl.y;  ctrl.u -> plant.u }
-}
-# main
-let mut s = Closed_new()
-Closed_step(&s, dt)
-```
-
-Reuse shipped `connect`; add helper that builds a steppable plant from
-`represent linear` / analyzed `dsys` so analysis and simulation share one model.
+**Follow-on:** bind analyzed plant into main; `connect` Closed_step for
+nonlinear plants (`robot_connect` already shows the composition shape).
 
 ---
 
