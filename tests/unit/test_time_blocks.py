@@ -400,17 +400,19 @@ flow F {
             "needs a 'dt' setting",
         )
 
-    def test_solver_rk4_not_yet(self):
-        self.check_error(
-            """
+    def test_solver_rk4_accepted(self):
+        code = """
 flow F {
     state x : f64 = 0.0
     solver { dt 1 ms  method rk4 }
     x evolves as 1.0
 }
-""",
-            "not yet implemented",
-        )
+"""
+        flow = flow_of(parse_raw(code))
+        assert flow.solver is not None
+        assert flow.solver.method == "rk4"
+        result = TypeChecker().check(parse_lowered(code))
+        assert result.errors == []
 
     def test_solver_unknown_method_rejected(self):
         self.check_error(
@@ -563,6 +565,25 @@ flow Plain {
         c_code = self.generate()
         assert "void Counter_step(Counter* self, double dt)" in c_code
 
+    def test_rk4_step_calls_derivs_four_times(self):
+        code = """
+flow Ramp {
+    state x : f64 = 0.0
+    state v : f64 = 1.0
+    solver { dt 1 ms  method rk4 }
+    x evolves as v
+    v evolves as 0.0 - x
+}
+"""
+        step = self.step_body(flow_to_c(parse_lowered(code)), "Ramp")
+        assert step.count("Ramp_derivs(self,") == 4
+        assert "double y0_x = self->x;" in step
+        assert "double y0_v = self->v;" in step
+        assert "double k1_x = 0.0;" in step
+        assert "double k4_v = 0.0;" in step
+        # Classic combine uses dt/6.
+        assert "/ 6.0)" in step or "/ 6.0" in step
+
 
 class TestEndToEnd:
     @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
@@ -593,6 +614,71 @@ function main() -> i32 {
         assert float(steady) == 100.0
         assert float(burst) == 9.0
         assert float(default_dt) == pytest.approx(0.001)
+
+    @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
+    def test_rk4_matches_reference_and_moves_state(self, tmp_path):
+        # Constant-rate ODE is exact under RK4; also check against a
+        # hand-rolled classic RK4 for a linear spring (x'' = -x).
+        program = """
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+flow Spring {
+    state x : f64 = 1.0
+    state v : f64 = 0.0
+    solver { dt 1 ms  method rk4 }
+    x evolves as v
+    v evolves as 0.0 - x
+}
+
+flow Ramp {
+    state x : f64 = 0.0
+    solver { dt 1 ms  method rk4 }
+    x evolves as 1.0
+}
+
+function main() -> i32 {
+    let mut s: Spring = Spring_new()
+    let x0: f64 = s.x
+    for k in 0 to 100 {
+        Spring_step(&s, 0.01)
+    }
+    printf("%.15f\\n", s.x)
+    printf("%.15f\\n", s.v)
+    if fabs(s.x - x0) < 1e-12 {
+        return 2
+    }
+    if s.x != s.x or s.v != s.v {
+        return 3
+    }
+
+    let mut r: Ramp = Ramp_new()
+    for k in 0 to 8 {
+        Ramp_step(&r, 0.25)
+    }
+    printf("%.15f\\n", r.x)
+    return 0
+}
+"""
+        out = run_flow_program(program, tmp_path, "rk4_e2e")
+        sx, sv, ramp_x = (float(line) for line in out.split())
+
+        def rk4_spring(x, v, dt, steps):
+            for _ in range(steps):
+                k1x, k1v = v, -x
+                k2x, k2v = v + 0.5 * dt * k1v, -(x + 0.5 * dt * k1x)
+                k3x, k3v = v + 0.5 * dt * k2v, -(x + 0.5 * dt * k2x)
+                k4x, k4v = v + dt * k3v, -(x + dt * k3x)
+                x = x + (dt / 6.0) * (k1x + 2 * k2x + 2 * k3x + k4x)
+                v = v + (dt / 6.0) * (k1v + 2 * k2v + 2 * k3v + k4v)
+            return x, v
+
+        ref_x, ref_v = rk4_spring(1.0, 0.0, 0.01, 100)
+        assert abs(sx - ref_x) < 1e-9
+        assert abs(sv - ref_v) < 1e-9
+        assert abs(ramp_x - 2.0) < 1e-12
 
     @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
     def test_every_updates_are_simultaneous(self, tmp_path):
