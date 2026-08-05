@@ -3343,33 +3343,107 @@ class Parser:
 
     def parse_expression_without_assign(self) -> Expression:
         left = self.parse_logical_or()
+        return self._parse_pipeline_chain(left)
 
-        # Pipeline chaining: `x |> f(y)` lowers to `f(x, y)` and
-        # `x |> f()` to `f(x)`. Left-associative, so `a |> f() |> g()` is
-        # `(a |> f()) |> g()` == `g(f(a))`.
-        # Declarative ordering: `x |> sort by [asc .score, desc .name]`.
+    def _parse_pipeline_chain(self, left: Expression) -> Expression:
+        """Consume a run of `|>` stages, threading `left` through each.
+
+        `x |> f(y)` lowers to `f(x, y)` and `x |> f()` to `f(x)`. It is
+        left-associative, so `a |> f() |> g()` is `g(f(a))`. Three stage
+        shapes get special handling before the generic call lowering:
+        declarative ordering (`|> sort by …`), and fork blocks
+        (`|> Record { field = … }`, see `_parse_fork_block`).
+        """
         while self.current_token.type == TokenType.PIPELINE:
             self.advance()
+            if self._at_fork_block():
+                left = self._parse_fork_block(left)
+                continue
             if self._at_declarative_sort():
                 left = self._parse_sort_pipeline(left)
                 continue
             rhs = self.parse_logical_or()
-            if isinstance(rhs, FunctionCall):
-                args = self._insert_pipe_arg(left, list(rhs.arguments))
-                left = FunctionCall(rhs.name, args)
-            elif isinstance(rhs, MethodCall):
-                # `x |> obj.m()` -> `obj.m(x)`; `x |> obj.m(_, y)` -> `obj.m(x, y)`
-                args = self._insert_pipe_arg(left, list(rhs.arguments))
-                left = MethodCall(rhs.object, rhs.method, args)
-            elif isinstance(rhs, Variable):
-                # Bare function name: `x |> f` -> `f(x)`
-                left = FunctionCall(rhs.name, [left])
-            else:
-                raise SyntaxError(
-                    "Pipeline '|>' must be followed by a function call, method call, "
-                    "function name, or declarative sort "
-                    "(e.g. `x |> f()`, `x |> f`, or `x |> sort by .score`)"
+            left = self._apply_pipe(left, rhs)
+        return left
+
+    def _apply_pipe(self, left: Expression, rhs: Expression) -> Expression:
+        """Insert `left` into a single piped stage `rhs`."""
+        if isinstance(rhs, FunctionCall):
+            args = self._insert_pipe_arg(left, list(rhs.arguments))
+            return FunctionCall(rhs.name, args)
+        if isinstance(rhs, MethodCall):
+            # `x |> obj.m()` -> `obj.m(x)`; `x |> obj.m(_, y)` -> `obj.m(x, y)`
+            args = self._insert_pipe_arg(left, list(rhs.arguments))
+            return MethodCall(rhs.object, rhs.method, args)
+        if isinstance(rhs, Variable):
+            # Bare function name: `x |> f` -> `f(x)`
+            return FunctionCall(rhs.name, [left])
+        raise SyntaxError(
+            "Pipeline '|>' must be followed by a function call, method call, "
+            "function name, declarative sort, or fork block "
+            "(e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, "
+            "or `x |> Record { a = f, b = g }`)"
+        )
+
+    def _at_fork_block(self) -> bool:
+        """True at `Record {` immediately after `|>` — a fork block.
+
+        A struct literal can never be a plain pipe target (you can't call
+        one), so `|> Ident {` is unambiguous and free to claim.
+        """
+        return (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.lookahead.type == TokenType.LBRACE
+        )
+
+    def _parse_fork_block(self, source: Expression) -> StructLiteral:
+        """Parse `Record { field = <pipeline>, … }` after `|>`.
+
+        A fork block applies several pipelines to the *same* incoming value
+        and collects them into a record: each `field = stage…` branch is the
+        pipeline `source |> stage…`, and the block lowers to a struct literal
+        of the named `Record`. Branches read with `=` (not the struct-literal
+        `:`) to keep the fork/record forms visually distinct.
+
+        Note: `source` is substituted into every branch, so a non-trivial
+        source (a call, not a variable) is evaluated once per branch. Bind it
+        with `let` first when that matters.
+        """
+        record_name = self.current_token.value
+        self.advance()  # record name
+        self.expect(TokenType.LBRACE)
+
+        fields: List[tuple] = []
+        seen = set()
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type != TokenType.IDENTIFIER:
+                raise self.error("Expected a fork field name before '='")
+            field_name = self.current_token.value
+            self.advance()
+            if self.current_token.type == TokenType.COLON:
+                raise self.error(
+                    "Fork block fields use '=' (a pipeline), not ':'; "
+                    "write `{}  = source-pipeline`".format(field_name)
                 )
+            self.expect(TokenType.ASSIGN)
+            if field_name in seen:
+                raise self.error(
+                    "Duplicate fork field '{}'".format(field_name)
+                )
+            seen.add(field_name)
+            fields.append((field_name, self._parse_fork_branch(source)))
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        if not fields:
+            raise self.error("Fork block must have at least one `field = …` branch")
+        self.expect(TokenType.RBRACE)
+        return StructLiteral(record_name, fields)
+
+    def _parse_fork_branch(self, source: Expression) -> Expression:
+        """One fork branch: pipe `source` through the branch's stages."""
+        rhs = self.parse_logical_or()
+        value = self._apply_pipe(source, rhs)
+        return self._parse_pipeline_chain(value)
 
         return left
 
