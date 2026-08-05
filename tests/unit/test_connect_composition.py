@@ -281,3 +281,227 @@ class TestLowering:
         names = {d.name for d in decls if isinstance(d, FunctionDecl)}
         assert "Chain_step" in names
         assert "Chain_new" in names
+
+
+# A parent flow port (input/state) driving a child input: `signal -> g.x`.
+PARENT_SOURCE = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+
+flow Chain {
+    input signal : f64
+    g : Gain
+
+    connect {
+        signal -> g.x
+    }
+}
+"""
+
+
+class TestParentSource:
+    def test_bare_source_parses_as_parent_port(self):
+        flows = {d.name: d for d in parse_raw(PARENT_SOURCE) if isinstance(d, FlowDecl)}
+        conn = flows["Chain"].connections[0]
+        # Empty src_member marks a parent-port source.
+        assert (conn.src_member, conn.src_port, conn.dst_member, conn.dst_port) == (
+            "", "signal", "g", "x",
+        )
+
+    def test_parent_source_copies_from_self_field(self):
+        c = flow_to_c(parse_lowered(PARENT_SOURCE))
+        # Parent input is a field on self directly, copied into the child input
+        # before the child steps.
+        assert "self->g.x = self->signal" in c
+        copy = c.index("self->g.x = self->signal")
+        step = c.index("Gain_step((&(self->g)), dt)")
+        assert copy < step
+
+    def test_parent_source_is_strict_clean(self):
+        assert TypeChecker().check(parse_lowered(PARENT_SOURCE)).errors == []
+
+    def test_bare_source_must_be_a_real_parent_port(self):
+        code = PARENT_SOURCE.replace("signal -> g.x", "nope -> g.x")
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected FlowSyntaxError")
+        except FlowSyntaxError as exc:
+            assert "not a port of this flow" in str(exc)
+
+    def test_parent_output_source_rejected(self):
+        # A parent *output* is not a valid source (only input/state).
+        code = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    y evolves as x - y
+}
+
+flow Chain {
+    input signal : f64
+    output echo : f64 = signal
+    g : Gain
+
+    connect {
+        echo -> g.x
+    }
+}
+"""
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected FlowSyntaxError")
+        except FlowSyntaxError as exc:
+            assert "must be an input or state" in str(exc)
+
+
+# `output y = signal |> FlowA |> FlowB` — flows composed as pipeline stages.
+STAGES = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+
+flow Limiter {
+    state z : f64 = 0.0
+    input w : f64
+    output out : f64 = z
+    z evolves as w - z
+}
+
+flow Chain {
+    input signal : f64
+    output result : f64 = signal |> Gain |> Limiter
+}
+"""
+
+
+class TestFlowPipelineStages:
+    def _chain(self, decls):
+        # After lowering, Chain is a struct; inspect its lowered step in C.
+        return flow_to_c(decls)
+
+    def test_stages_become_children_and_wires(self):
+        raw = {d.name: d for d in parse_raw(STAGES) if isinstance(d, FlowDecl)}
+        # parse_raw skips flow expansion, so the sugar is still a call chain.
+        chain = raw["Chain"]
+        assert chain.children == []
+        # The output expr is the |>-lowered nested call Limiter(Gain(signal)).
+        assert chain.outputs[0].expr.name == "Limiter"
+
+    def test_lowered_pipeline_wiring_and_order(self):
+        c = flow_to_c(parse_lowered(STAGES))
+        # Two synthesized stage children.
+        assert "Gain __result_stage0;" in c
+        assert "Limiter __result_stage1;" in c
+        # Source -> stage0 -> stage1, output reads the last stage.
+        assert "self->__result_stage0.x = self->signal" in c
+        assert "self->__result_stage1.w = self->__result_stage0.out" in c
+        assert "self->result = self->__result_stage1.out" in c
+        # Copy precedes the corresponding child step.
+        assert c.index("self->__result_stage0.x = self->signal") < c.index(
+            "Gain_step((&(self->__result_stage0)), dt)"
+        )
+
+    def test_lowered_pipeline_is_strict_clean(self):
+        assert TypeChecker().check(parse_lowered(STAGES)).errors == []
+
+    def test_multi_input_stage_rejected(self):
+        code = """
+flow Two {
+    state s : f64 = 0.0
+    input a : f64
+    input b : f64
+    output o : f64 = s
+    s evolves as a
+}
+flow Ch {
+    input sig : f64
+    output r : f64 = sig |> Two
+}
+"""
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected FlowSyntaxError")
+        except FlowSyntaxError as exc:
+            assert "exactly one input" in str(exc)
+
+    def test_plain_function_output_is_not_desugared(self):
+        # A non-flow callee in output position stays an ordinary call.
+        code = """
+function double(v: f64) -> f64 { return v * 2.0 }
+flow F {
+    state s : f64 = 1.0
+    output o : f64 = double(s)
+    s evolves as 0.0
+}
+"""
+        decls = parse_lowered(code)
+        f = next(d for d in decls if isinstance(d, StructDecl) and d.name == "F")
+        # No synthesized stage fields were added.
+        assert not any(field.name.startswith("__") for field in f.fields)
+
+
+# A stage with a parameter override: `Gain { k: 3.0 }` (colon = value form).
+STAGE_PARAMS = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+
+flow Chain {
+    input signal : f64
+    output result : f64 = signal |> Gain { k: 3.0 }
+}
+"""
+
+
+class TestStageParams:
+    def test_override_applied_in_init(self):
+        c = flow_to_c(parse_lowered(STAGE_PARAMS))
+        # The override lands in Chain_init, after the stage's own init.
+        assert "self->__result_stage0.k = 3.0" in c
+        assert c.index("Gain_init") < c.index("self->__result_stage0.k = 3.0")
+
+    def test_stage_params_are_strict_clean(self):
+        assert TypeChecker().check(parse_lowered(STAGE_PARAMS)).errors == []
+
+    def test_unknown_param_rejected(self):
+        code = STAGE_PARAMS.replace("k: 3.0", "bogus: 3.0")
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected FlowSyntaxError")
+        except FlowSyntaxError as exc:
+            assert "has no param 'bogus'" in str(exc)
+
+    def test_stage_params_outside_flow_rejected(self):
+        # `Name { p: v }` in a function body has no flow-stage meaning.
+        code = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+function main() -> i32 {
+    let z = 5 |> Gain { k: 3.0 }
+    return 0
+}
+"""
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected an error")
+        except Exception as exc:
+            assert "stage" in str(exc)

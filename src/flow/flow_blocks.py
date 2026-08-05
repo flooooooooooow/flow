@@ -69,7 +69,10 @@ from .parser import (
     CastExpression,
     EffectCall,
     FieldAccess,
+    FlowChildDecl,
+    FlowConnection,
     FlowDecl,
+    FlowStage,
     FlowSyntaxError,
     FunctionCall,
     FunctionDecl,
@@ -119,6 +122,126 @@ _DEFAULT_DT_NS = 1_000_000
 _SOLVER_METHODS = ("euler", "rk4")
 
 
+def _single_port(ports, flow_name: str, kind: str, source: str, line):
+    """The sole input/output port of a flow used as a pipeline stage."""
+    if len(ports) != 1:
+        raise _error(
+            f"flow '{flow_name}' used as a pipeline stage must have exactly one "
+            f"{kind} (has {len(ports)}); wire it with `connect` explicitly",
+            line, source,
+        )
+    return ports[0]
+
+
+def _check_stage_params(stage, params, flow_name: str, source: str, line) -> None:
+    """Each override must name a real `param` of the stage flow."""
+    if not params:
+        return
+    param_names = {p.name for p in stage.params}
+    for name, _value in params:
+        if name not in param_names:
+            raise _error(
+                f"flow stage '{stage.name}' in '{flow_name}' has no param "
+                f"'{name}'",
+                line, source,
+                suggestion=(
+                    "stage overrides set `param` fields; declared params are: "
+                    + (", ".join(sorted(param_names)) or "(none)")
+                ),
+            )
+
+
+def _source_port(expr: Any):
+    """Read a pipeline source as (member, port).
+
+    A bare variable is a parent input/state (member ""); `child.port` is a
+    sibling child's port. Anything else is not a valid stage source.
+    """
+    if isinstance(expr, Variable):
+        return "", expr.name
+    if isinstance(expr, FieldAccess) and isinstance(expr.object, Variable):
+        return expr.object.name, expr.field
+    return None
+
+
+def _expand_flow_pipelines(
+    flow: FlowDecl, flow_by_name: Dict[str, FlowDecl], source: str
+) -> None:
+    """Desugar `output y = src |> FlowA |> FlowB` into children + connections.
+
+    The `|>` operator already lowered the surface pipeline to nested calls
+    `FlowB(FlowA(src))`. When those callees are flows (not functions), each
+    becomes a child instance wired in sequence: `src -> A.in`, `A.out -> B.in`,
+    and the output maps to the last stage's output. Reads of a stage's output
+    happen before it steps that tick, so each stage adds one tick of delay
+    (a sampled, state-broken pipeline — spec §8.3).
+    """
+    new_children: List[Any] = []
+    new_connections: List[Any] = []
+    for output in flow.outputs:
+        # Unwrap the outer-to-inner chain of flow-typed stages. A stage is a
+        # bare flow call `Flow(arg)` (no params) or a `FlowStage` (with `{...}`
+        # param overrides).
+        stages: List[tuple] = []  # (FlowDecl, params)
+        cur = output.expr
+        while True:
+            if isinstance(cur, FlowStage):
+                if cur.name not in flow_by_name:
+                    raise _error(
+                        f"'{cur.name} {{ ... }}' in output '{output.name}' of "
+                        f"'{flow.name}' names '{cur.name}', which is not a flow",
+                        output.line, source,
+                    )
+                stages.append((flow_by_name[cur.name], cur.params))
+                cur = cur.arg
+            elif isinstance(cur, FunctionCall) and cur.name in flow_by_name:
+                if len(cur.arguments) != 1:
+                    raise _error(
+                        f"flow stage '{cur.name}' in output '{output.name}' of "
+                        f"'{flow.name}' takes only the piped value",
+                        output.line, source,
+                    )
+                stages.append((flow_by_name[cur.name], None))
+                cur = cur.arguments[0]
+            else:
+                break
+        if not stages:
+            continue
+        stages.reverse()  # data-flow order: first-applied first
+
+        src = _source_port(cur)
+        if src is None:
+            raise _error(
+                f"flow pipeline for output '{output.name}' of '{flow.name}' "
+                f"must start from a port (an input/state, or `child.port`)",
+                output.line, source,
+            )
+
+        prev_member, prev_port = src
+        for i, (stage, params) in enumerate(stages):
+            child_name = f"__{output.name}_stage{i}"
+            _check_stage_params(stage, params, flow.name, source, output.line)
+            new_children.append(
+                FlowChildDecl(child_name, Type(stage.name), output.line,
+                              synthesized=True, params=params)
+            )
+            in_port = _single_port(stage.inputs, stage.name, "input",
+                                   source, output.line)
+            out_port = _single_port(stage.outputs, stage.name, "output",
+                                    source, output.line)
+            new_connections.append(
+                FlowConnection(prev_member, prev_port, child_name,
+                               in_port.name, output.line)
+            )
+            prev_member, prev_port = child_name, out_port.name
+        # Output now reads the last stage's output port.
+        output.expr = FieldAccess(Variable(prev_member), prev_port)
+
+    if new_children:
+        flow.children = list(flow.children or []) + new_children
+        flow.connections = list(flow.connections or []) + new_connections
+
+
 def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
     """Replace every FlowDecl with its synthesized struct and functions.
 
@@ -154,6 +277,7 @@ def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
     result: List[Any] = []
     for decl in declarations:
         if isinstance(decl, FlowDecl):
+            _expand_flow_pipelines(decl, flow_by_name, source)
             _validate_flow(
                 decl, local_pure_functions, taken_names, source, flow_by_name
             )
@@ -239,7 +363,7 @@ def _validate_flow(
                 f"flow '{flow.name}' declares '{child.name}' twice",
                 child.line, source,
             )
-        if child.name.startswith("__"):
+        if child.name.startswith("__") and not getattr(child, "synthesized", False):
             raise _error(
                 f"flow member '{child.name}' may not start with '__' "
                 f"(reserved for compiler-generated fields)",
@@ -440,9 +564,11 @@ def _validate_connect(
 ) -> None:
     """Port direction/type checks and algebraic-loop detection (spec §8.2).
 
-    Stage-1: unconnected child inputs are legal (embedder-driven before
-    Name_step). Parent re-export of child inputs and parent `becomes` into
-    `child.input` are NOT YET.
+    Unconnected child inputs are legal (embedder-driven before Name_step). A
+    connection source may be a sibling child's output/state (`child.port`) or,
+    written bare (`port -> child.input`), an input or state of the enclosing
+    flow — the parent value is copied into the child input at the start of the
+    child-stepping phase. Parent `becomes` into `child.input` is still NOT YET.
     """
     child_by_name = {c.name: c for c in children}
     if connections and not children:
@@ -455,7 +581,8 @@ def _validate_connect(
 
     driven: Dict[Tuple[str, str], Any] = {}
     for conn in connections:
-        if conn.src_member not in child_by_name:
+        parent_source = conn.src_member == ""
+        if not parent_source and conn.src_member not in child_by_name:
             raise _error(
                 f"connection source '{conn.src_member}.{conn.src_port}' in "
                 f"flow '{flow.name}' names unknown nested member "
@@ -469,33 +596,56 @@ def _validate_connect(
                 f"'{conn.dst_member}'",
                 conn.line, source,
             )
-        if conn.src_member == conn.dst_member:
+        if not parent_source and conn.src_member == conn.dst_member:
             raise _error(
                 f"connection in flow '{flow.name}' wires "
                 f"'{conn.src_member}' to itself; Stage-1 connect is "
                 f"between sibling subflows only",
                 conn.line, source,
             )
-        src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
-        dst_flow = flow_by_name[child_by_name[conn.dst_member].type.name]
-        src_kind, src_type = _lookup_port(src_flow, conn.src_port)
-        if src_kind is None:
-            raise _error(
-                f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
-                f"is not a port of '{src_flow.name}'",
-                conn.line, source,
-                suggestion=(
-                    f"connect sources must be an output or state of "
-                    f"'{src_flow.name}'"
-                ),
-            )
-        if src_kind not in ("output", "state"):
-            raise _error(
-                f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
-                f"is a {src_kind}; connection sources must be an output "
-                f"or state",
-                conn.line, source,
-            )
+        if parent_source:
+            # Bare `port -> child.input`: the source is a port of this flow.
+            dst_flow = flow_by_name[child_by_name[conn.dst_member].type.name]
+            src_kind, src_type = _lookup_port(flow, conn.src_port)
+            if src_kind is None:
+                raise _error(
+                    f"connection source '{conn.src_port}' in flow "
+                    f"'{flow.name}' is not a port of this flow",
+                    conn.line, source,
+                    suggestion=(
+                        f"a bare source must be an input or state of "
+                        f"'{flow.name}'; a child source is written "
+                        f"'child.port'"
+                    ),
+                )
+            if src_kind not in ("input", "state"):
+                raise _error(
+                    f"connection source '{conn.src_port}' in flow "
+                    f"'{flow.name}' is a {src_kind}; a parent source must be "
+                    f"an input or state",
+                    conn.line, source,
+                )
+        else:
+            src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
+            dst_flow = flow_by_name[child_by_name[conn.dst_member].type.name]
+            src_kind, src_type = _lookup_port(src_flow, conn.src_port)
+            if src_kind is None:
+                raise _error(
+                    f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
+                    f"is not a port of '{src_flow.name}'",
+                    conn.line, source,
+                    suggestion=(
+                        f"connect sources must be an output or state of "
+                        f"'{src_flow.name}'"
+                    ),
+                )
+            if src_kind not in ("output", "state"):
+                raise _error(
+                    f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
+                    f"is a {src_kind}; connection sources must be an output "
+                    f"or state",
+                    conn.line, source,
+                )
         dst_kind, dst_type = _lookup_port(dst_flow, conn.dst_port)
         if dst_kind is None:
             raise _error(
@@ -531,6 +681,9 @@ def _validate_connect(
     # combinationally from inputs (spec §8.2). State-broken edges are fine.
     combo_edges: List[Tuple[str, str, Any]] = []
     for conn in connections:
+        if conn.src_member == "":
+            # Parent source: a root, cannot be part of a child-to-child cycle.
+            continue
         src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
         if _port_is_combinational(src_flow, conn.src_port):
             combo_edges.append((conn.src_member, conn.dst_member, conn))
@@ -648,6 +801,10 @@ def _topo_child_order(
     indeg = {n: 0 for n in names}
     adj: Dict[str, List[str]] = {n: [] for n in names}
     for conn in connections:
+        if conn.src_member not in child_by_name:
+            # Parent-port source: available before any child steps, so it
+            # imposes no ordering constraint between children.
+            continue
         src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
         if not _port_is_combinational(src_flow, conn.src_port):
             continue
@@ -987,6 +1144,18 @@ def _make_init(flow: FlowDecl, member_names: Set[str], member_types,
                 ],
             )
         )
+        # Stage param overrides are applied after the child's own init, so they
+        # win over the stage flow's declared defaults.
+        for pname, pvalue in getattr(child, "params", None) or []:
+            statements.append(
+                Assignment(
+                    "",
+                    _rewrite(pvalue, member_names),
+                    target_expr=FieldAccess(
+                        FieldAccess(Variable("self"), child.name), pname
+                    ),
+                )
+            )
     for k in range(len(flow.everys)):
         statements.append(_assign_member(f"__every_{k}_acc", _i64(0)))
     for k, when in enumerate(flow.whens):
@@ -1297,10 +1466,14 @@ def _child_step_statements(
     statements: List[Any] = []
     for child in ordered:
         for conn in by_dst.get(child.name, []):
-            src = FieldAccess(
-                FieldAccess(Variable("self"), conn.src_member),
-                conn.src_port,
-            )
+            if conn.src_member == "":
+                # Parent-port source: a field on `self` directly.
+                src = FieldAccess(Variable("self"), conn.src_port)
+            else:
+                src = FieldAccess(
+                    FieldAccess(Variable("self"), conn.src_member),
+                    conn.src_port,
+                )
             dst = FieldAccess(
                 FieldAccess(Variable("self"), conn.dst_member),
                 conn.dst_port,
