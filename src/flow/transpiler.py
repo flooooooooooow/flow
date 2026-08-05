@@ -48,6 +48,21 @@ def _active_modes(args, backend: str) -> set[str]:
     return base
 
 
+def mlir_opt_kwargs_from_args(args) -> dict:
+    """Map CLI `--no-*` / `--opt-level` flags to MLIROptimizer.optimize kwargs."""
+    return {
+        "enable_vectorization": not getattr(args, "no_vectorization", False),
+        "enable_loop_fusion": not getattr(args, "no_loop_fusion", False),
+        "enable_mem2reg": not getattr(args, "no_mem2reg", False),
+        "enable_sccp": not getattr(args, "no_sccp", False),
+        "enable_licm": not getattr(args, "no_licm", False),
+        "enable_gvn": not getattr(args, "no_cse", False),
+        "enable_dce": not getattr(args, "no_dce", False),
+        "enable_inline": not getattr(args, "no_inline", False),
+        "optimization_level": getattr(args, "opt_level", "O2"),
+    }
+
+
 def _function_allowed(fn: FunctionDecl, active_modes: set[str]) -> bool:
     attrs = getattr(fn, "attributes", []) or []
     guard_modes: list[str] = []
@@ -79,7 +94,7 @@ def _filter_declarations(declarations, active_modes: set[str]):
 
 def main():
     parser = argparse.ArgumentParser(description="FLOW Language Transpiler")
-    parser.add_argument("input", help="Input FLOW file")
+    parser.add_argument("input", nargs="?", help="Input FLOW file")
     parser.add_argument("-o", "--output", help="Output file (default: stdout)")
     parser.add_argument("--mlir", action="store_true", help="Output MLIR (default)")
     parser.add_argument("--c", action="store_true", help="Output C code")
@@ -111,6 +126,31 @@ def main():
     )
     parser.add_argument(
         "--no-loop-fusion", action="store_true", help="Disable loop fusion"
+    )
+    parser.add_argument(
+        "--no-mem2reg", action="store_true", help="Disable mem2reg (O2+)"
+    )
+    parser.add_argument(
+        "--no-sccp", action="store_true", help="Disable SCCP (O2+)"
+    )
+    parser.add_argument(
+        "--no-licm", action="store_true", help="Disable loop-invariant code motion (O2+)"
+    )
+    parser.add_argument(
+        "--no-cse",
+        action="store_true",
+        help="Disable CSE (GVN stand-in; O1+)",
+    )
+    parser.add_argument(
+        "--no-dce", action="store_true", help="Disable symbol-dce + canonicalize (O1+)"
+    )
+    parser.add_argument(
+        "--no-inline", action="store_true", help="Disable module inliner (O2+)"
+    )
+    parser.add_argument(
+        "--print-pass-pipeline",
+        action="store_true",
+        help="Print the mlir-opt --pass-pipeline for the selected flags and exit",
     )
     parser.add_argument(
         "--opt-report", action="store_true", help="Generate optimization report"
@@ -172,6 +212,15 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if getattr(args, "print_pass_pipeline", False):
+        from .mlir_optimizer import MLIROptimizer
+
+        print(MLIROptimizer.build_pass_pipeline(**mlir_opt_kwargs_from_args(args)))
+        sys.exit(0)
+
+    if not args.input:
+        parser.error("the following arguments are required: input")
 
     if args.c and args.llvm:
         print("Error: --llvm is only valid for MLIR backend (remove --c).", file=sys.stderr)
@@ -438,12 +487,11 @@ def main():
 
                     # Optimize
                     optimizer = MLIROptimizer()
+                    opt_kwargs = mlir_opt_kwargs_from_args(args)
                     opt_result = optimizer.optimize(
                         tmp_path,
                         tmp_path,
-                        enable_vectorization=not args.no_vectorization,
-                        enable_loop_fusion=not args.no_loop_fusion,
-                        optimization_level=args.opt_level,
+                        **opt_kwargs,
                     )
 
                     if opt_result != 0:
@@ -456,7 +504,9 @@ def main():
 
                     # Generate optimization report if requested
                     if args.opt_report:
-                        report = optimizer.get_optimization_report(tmp_path)
+                        report = optimizer.get_optimization_report(
+                            tmp_path, **opt_kwargs
+                        )
                         print(report, file=sys.stderr)
                 finally:
                     if tmp_path and Path(tmp_path).exists():

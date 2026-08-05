@@ -109,3 +109,84 @@ class TestMLIROptimizerPassPipeline:
         # module-level passes sit outside func.func
         assert "inline," in pipeline or pipeline.startswith("builtin.module(inline,")
         assert "symbol-dce" in pipeline
+
+
+class TestMLIROptCLIFlags:
+    """CLI `--no-*` flags map onto optimizer kwargs (#166)."""
+
+    def test_kwargs_from_args_defaults(self):
+        from types import SimpleNamespace
+        from flow.transpiler import mlir_opt_kwargs_from_args
+
+        args = SimpleNamespace(
+            no_vectorization=False,
+            no_loop_fusion=False,
+            no_mem2reg=False,
+            no_sccp=False,
+            no_licm=False,
+            no_cse=False,
+            no_dce=False,
+            no_inline=False,
+            opt_level="O2",
+        )
+        kwargs = mlir_opt_kwargs_from_args(args)
+        assert kwargs["enable_vectorization"] is True
+        assert kwargs["enable_inline"] is True
+        assert kwargs["enable_sccp"] is True
+        assert kwargs["optimization_level"] == "O2"
+
+    def test_kwargs_from_args_disables(self):
+        from types import SimpleNamespace
+        from flow.transpiler import mlir_opt_kwargs_from_args
+
+        args = SimpleNamespace(
+            no_vectorization=True,
+            no_loop_fusion=True,
+            no_mem2reg=True,
+            no_sccp=True,
+            no_licm=True,
+            no_cse=True,
+            no_dce=True,
+            no_inline=True,
+            opt_level="O3",
+        )
+        kwargs = mlir_opt_kwargs_from_args(args)
+        names, _ = _names(**kwargs)
+        assert "affine-super-vectorize" not in names
+        assert "affine-loop-fusion" not in names
+        assert "mem2reg" not in names
+        assert "sccp" not in names
+        assert "loop-invariant-code-motion" not in names
+        assert "cse" not in names
+        assert "symbol-dce" not in names
+        assert "inline" not in names
+
+    def test_print_pass_pipeline_cli(self, tmp_path):
+        import subprocess
+        import sys
+
+        env = {**__import__("os").environ, "PYTHONPATH": str(
+            __import__("pathlib").Path(__file__).resolve().parents[2] / "src"
+        )}
+        r = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "flow.transpiler",
+                "--print-pass-pipeline",
+                "--opt-level",
+                "O2",
+                "--no-inline",
+                "--no-sccp",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(__import__("pathlib").Path(__file__).resolve().parents[2]),
+        )
+        assert r.returncode == 0, r.stderr
+        out = r.stdout.strip()
+        assert out.startswith("builtin.module(")
+        assert "inline" not in MLIROptimizer.pipeline_pass_names(out)
+        assert "sccp" not in MLIROptimizer.pipeline_pass_names(out)
+        assert "canonicalize" in MLIROptimizer.pipeline_pass_names(out)
