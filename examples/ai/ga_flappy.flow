@@ -1,0 +1,252 @@
+# GA-FLAPPY - neuroevolution on headless flappy.
+#
+# Re-simulates the physics of examples/games/flappy_gfx.flow without graphics:
+# same fixed-point gravity/flap/terminal velocity, same pipe layout, spacing,
+# random gaps (same LCG) and collision rules.
+#
+# Controller: linear threshold policy over 3 inputs, 4 genes per genome:
+#   flap when w0 * (gap_center - bird_y) + w1 * vel + w2 * dist + w3 > 0
+# evolved with the stdlib/ai.flow genetic algorithm (tournament selection,
+# elitism, uniform crossover, gaussian mutation).
+#
+# Prints best fitness per generation, then evaluates the champion against a
+# random-flap baseline on fresh seeds. Exits 0 only if the champion clears
+# vastly more pipes than random.
+#
+# Run: ./flow run examples/ai/ga_flappy.flow
+
+import "stdlib/ai.flow"
+
+extern {
+    function printf(fmt: string, v: f64) -> i32
+}
+
+# Constants copied from examples/games/flappy_gfx.flow.
+const GROUND_Y: i32 = 600
+const BIRD_X: i32 = 120
+const BIRD_SZ: i32 = 26
+const PIPE_W: i32 = 64
+const GAP_H: i32 = 150
+const PIPE_SPACING: i32 = 220
+
+const GENOME_DIM: i32 = 4
+const POP: i32 = 32
+const GENERATIONS: i32 = 15
+const FIT_FRAME_CAP: i32 = 3000
+const EVAL_FRAME_CAP: i32 = 6000
+
+# Same LCG as the game (environment randomness for pipe gaps).
+function env_rng_next(seed: u32) -> u32 {
+    return seed * 1664525 + 1013904223
+}
+
+function env_rng_range(seed: u32, max: i32) -> i32 {
+    let mut val: i32 = (seed % (max as u32)) as i32
+    if val < 0 { val = 0 - val }
+    return val
+}
+
+# Simulate one flappy run with a linear threshold controller.
+# mode 0: return fitness = frames survived + 200 * pipes passed
+# mode 1: return pipes passed
+# random_flap true ignores the weights and flaps with probability 1/10.
+function fly(w0: f32, w1: f32, w2: f32, w3: f32, seed: u32, frame_cap: i32, mode: i32, random_flap: bool) -> f32 {
+    let pipe_x: array<i32, 3> = [0, 0, 0]
+    let gap_top: array<i32, 3> = [0, 0, 0]
+    let passed: array<i32, 3> = [0, 0, 0]
+
+    let mut rng_seed: u32 = seed
+    let mut i: i32 = 0
+    while i < 3 {
+        pipe_x[i] = 520 + i * PIPE_SPACING
+        rng_seed = env_rng_next(rng_seed)
+        gap_top[i] = 80 + env_rng_range(rng_seed, 300)
+        passed[i] = 0
+        i = i + 1
+    }
+
+    # Bird physics in 1/16 pixel fixed point, same reset as the game.
+    let mut y_fp: i32 = 4800
+    let mut vel_fp: i32 = -70
+    let mut score: i32 = 0
+    let mut frame: i32 = 0
+    let mut dead: bool = false
+
+    while !dead and frame < frame_cap {
+        # ---- controller ----
+        let by: i32 = y_fp / 16
+
+        # Nearest pipe still ahead of the bird.
+        let mut best_x: i32 = 100000
+        let mut best_gap: i32 = 225
+        let mut p: i32 = 0
+        while p < 3 {
+            if pipe_x[p] + PIPE_W >= BIRD_X and pipe_x[p] < best_x {
+                best_x = pipe_x[p]
+                best_gap = gap_top[p]
+            }
+            p = p + 1
+        }
+
+        let gap_center: i32 = best_gap + GAP_H / 2
+        let x0: f32 = ((gap_center - (by + BIRD_SZ / 2)) as f32) / 100.0
+        let x1: f32 = (vel_fp as f32) / 100.0
+        let x2: f32 = ((best_x - BIRD_X) as f32) / 100.0
+
+        let mut flap: bool = false
+        if random_flap {
+            if ai_rand_range(10) == 0 { flap = true }
+        } else {
+            if w0 * x0 + w1 * x1 + w2 * x2 + w3 > 0.0 { flap = true }
+        }
+
+        # ---- physics, same as the game ----
+        if flap { vel_fp = -70 }
+        vel_fp = vel_fp + 5
+        if vel_fp > 140 { vel_fp = 140 }
+        y_fp = y_fp + vel_fp
+        if y_fp < 0 {
+            y_fp = 0
+            vel_fp = 0
+        }
+        let by2: i32 = y_fp / 16
+
+        # Pipes scroll and respawn; speed rises gently with score.
+        let mut speed: i32 = 2 + score / 20
+        if speed > 4 { speed = 4 }
+        let mut j: i32 = 0
+        while j < 3 {
+            pipe_x[j] = pipe_x[j] - speed
+            if pipe_x[j] < 0 - PIPE_W {
+                pipe_x[j] = pipe_x[j] + 3 * PIPE_SPACING
+                rng_seed = env_rng_next(rng_seed)
+                gap_top[j] = 80 + env_rng_range(rng_seed, 300)
+                passed[j] = 0
+            }
+            if passed[j] == 0 and pipe_x[j] + PIPE_W < BIRD_X {
+                passed[j] = 1
+                score = score + 1
+            }
+            j = j + 1
+        }
+
+        # Collision.
+        if by2 + BIRD_SZ >= GROUND_Y { dead = true }
+        let mut k: i32 = 0
+        while k < 3 {
+            if BIRD_X + BIRD_SZ > pipe_x[k] + 4 and BIRD_X < pipe_x[k] + PIPE_W - 4 {
+                if by2 < gap_top[k] or by2 + BIRD_SZ > gap_top[k] + GAP_H { dead = true }
+            }
+            k = k + 1
+        }
+
+        frame = frame + 1
+    }
+
+    if mode == 1 {
+        return score as f32
+    }
+    return (frame as f32) + 200.0 * (score as f32)
+}
+
+# Fitness of genome i: average over two seeds so champions generalize.
+function genome_fitness(i: i32) -> f32 {
+    let w0: f32 = ga_get(i, 0)
+    let w1: f32 = ga_get(i, 1)
+    let w2: f32 = ga_get(i, 2)
+    let w3: f32 = ga_get(i, 3)
+    let f1: f32 = fly(w0, w1, w2, w3, 424242 as u32, FIT_FRAME_CAP, 0, false)
+    let f2: f32 = fly(w0, w1, w2, w3, 971131 as u32, FIT_FRAME_CAP, 0, false)
+    return (f1 + f2) / 2.0
+}
+
+function main() -> i32 {
+    println("GA-FLAPPY: neuroevolution on headless flappy (fixed-point physics)")
+    println("genome = 4 weights of a linear flap threshold, stdlib/ai.flow GA")
+    println("")
+
+    # Random-flap baseline: average pipes over 20 fresh-seed runs.
+    ai_seed(31337 as u32)
+    let mut base_total: f32 = 0.0
+    let mut b: i32 = 0
+    while b < 20 {
+        let seed: u32 = 555000 + (b as u32) * 77
+        base_total = base_total + fly(0.0, 0.0, 0.0, 0.0, seed, EVAL_FRAME_CAP, 1, true)
+        b = b + 1
+    }
+    let base_avg: f32 = base_total / 20.0
+    print("random-flap baseline: avg pipes ")
+    printf("%.2f", base_avg as f64)
+    println(" over 20 runs")
+    println("")
+
+    # Evolve.
+    ga_init(POP, GENOME_DIM, 4321 as u32)
+    println("evolving 15 generations (pop 32, elite 25%, sigma 0.15):")
+    let mut gen: i32 = 0
+    while gen < GENERATIONS {
+        let mut mean_fit: f32 = 0.0
+        let mut i: i32 = 0
+        while i < POP {
+            let f: f32 = genome_fitness(i)
+            ga_fitness_set(i, f)
+            mean_fit = mean_fit + f
+            i = i + 1
+        }
+        mean_fit = mean_fit / (POP as f32)
+        let best: i32 = ga_best_index()
+        let best_fit: f32 = ga_best_fitness()
+        let bp: f32 = fly(ga_get(best, 0), ga_get(best, 1), ga_get(best, 2), ga_get(best, 3),
+                          424242 as u32, FIT_FRAME_CAP, 1, false)
+        let gen_no: i32 = gen + 1
+        print("  gen ")
+        print(gen_no)
+        print("  best_fitness ")
+        printf("%.0f", best_fit as f64)
+        print("  mean_fitness ")
+        printf("%.0f", mean_fit as f64)
+        print("  pipes ")
+        printf("%.0f", bp as f64)
+        println("")
+
+        # Remember the champion genome in slot 0 via elitism, then evolve.
+        if gen < GENERATIONS - 1 {
+            ga_evolve(0.25, 0.15)
+        }
+        gen = gen + 1
+    }
+    println("")
+
+    # Evaluate the champion on fresh seeds (never used during evolution).
+    let champ: i32 = ga_best_index()
+    let c0: f32 = ga_get(champ, 0)
+    let c1: f32 = ga_get(champ, 1)
+    let c2: f32 = ga_get(champ, 2)
+    let c3: f32 = ga_get(champ, 3)
+    let mut champ_total: f32 = 0.0
+    let mut e: i32 = 0
+    while e < 20 {
+        let seed2: u32 = 555000 + (e as u32) * 77
+        champ_total = champ_total + fly(c0, c1, c2, c3, seed2, EVAL_FRAME_CAP, 1, false)
+        e = e + 1
+    }
+    let champ_avg: f32 = champ_total / 20.0
+
+    print("champion policy : avg pipes ")
+    printf("%.2f", champ_avg as f64)
+    println(" over 20 fresh-seed runs")
+    print("random baseline : avg pipes ")
+    printf("%.2f", base_avg as f64)
+    println("")
+    print("margin          : ")
+    printf("%.2f", (champ_avg - base_avg) as f64)
+    println(" pipes per run")
+    println("")
+
+    if champ_avg >= base_avg + 10.0 and champ_avg >= 10.0 {
+        println("PASS: evolved policy clears >= 10 more pipes than random")
+        return 0
+    }
+    println("FAIL: evolved policy did not clear the margin")
+    return 1
+}
