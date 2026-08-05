@@ -1,0 +1,6 @@
+# Stage-A multi-file bundle: import sibling, emit one TU → exit 42.
+import .bundle_lib { N, twice }
+
+function main() -> i32 {
+    return twice(N)
+}

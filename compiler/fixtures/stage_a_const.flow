@@ -1,0 +1,7 @@
+# Stage-A cgen round-trip fixture: N + M == 12.
+export const N: i32 = 7
+const M: i32 = 5
+
+function main() -> i32 {
+    return N + M
+}

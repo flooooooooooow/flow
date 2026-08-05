@@ -1,0 +1,6 @@
+# Bundle typecheck OK: import sibling exports; FLOWC_BUNDLE=1 + default typecheck.
+import .bundle_lib { N, twice }
+
+function main() -> i32 {
+    return twice(N)
+}

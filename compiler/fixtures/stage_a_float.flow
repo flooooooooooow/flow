@@ -1,0 +1,8 @@
+# Stage-A cgen: f32/f64 types + float literals → exit 42.
+
+function main() -> i32 {
+    let x: f32 = 40.5
+    let y: f64 = 1.5
+    let z: f32 = x + (y as f32)
+    return (z as i32)
+}
