@@ -118,3 +118,15 @@
 - [ ] #126 [roadmap:constant-propagation] Constant propagation https://github.com/flooooooooooow/flow/issues/126
 - [ ] #127 [roadmap:debugger] Debugger https://github.com/flooooooooooow/flow/issues/127
 - [ ] #128 [roadmap:self-hosting-components] Self-hosting components https://github.com/flooooooooooow/flow/issues/128
+- [ ] #159 [roadmap:canonicalize-evolution-demos-onto-flow-evolves] Canonicalize evolution demos onto flow/evolves https://github.com/flooooooooooow/flow/issues/159
+- [ ] #160 [roadmap:closed-loop-plant-step-from-dsys-connect] Closed-loop plant.step from dsys/connect https://github.com/flooooooooooow/flow/issues/160
+- [ ] #161 [roadmap:dual-tensor-operators-mutable-params] Dual + Tensor operators + mutable params https://github.com/flooooooooooow/flow/issues/161
+- [ ] #162 [roadmap:dynamics-dsl-lqr-beyond-n-2] Dynamics DSL / LQR beyond n=2 https://github.com/flooooooooooow/flow/issues/162
+- [ ] #163 [roadmap:field-laplacian-pde-surface] Field / laplacian PDE surface https://github.com/flooooooooooow/flow/issues/163
+- [ ] #164 [roadmap:gfx-run-frame-helper] gfx_run frame helper https://github.com/flooooooooooow/flow/issues/164
+- [ ] #165 [roadmap:lorenz-as-flow-represent-phase-portrait] Lorenz as flow + represent phase_portrait https://github.com/flooooooooooow/flow/issues/165
+- [ ] #166 [roadmap:mlir-opt-pass-flags] MLIR opt pass flags https://github.com/flooooooooooow/flow/issues/166
+- [ ] #167 [roadmap:owned-httpresponse-json-decode-helpers] Owned HttpResponse + JSON decode helpers https://github.com/flooooooooooow/flow/issues/167
+- [ ] #168 [roadmap:route-linalg-examples-through-blas-flow] Route linalg examples through blas.flow https://github.com/flooooooooooow/flow/issues/168
+- [ ] #169 [roadmap:tier-0-tourist-examples] Tier-0 tourist examples https://github.com/flooooooooooow/flow/issues/169
+- [ ] #170 [roadmap:wire-ml-demos-through-dual-grad-codegen] Wire ML demos through Dual / grad codegen https://github.com/flooooooooooow/flow/issues/170
