@@ -1,0 +1,172 @@
+# GPU mul backward MVP — compare Metal kernels to CPU tensor reference
+#
+#   ./flow run examples/gpu/gpu_mul_backward.flow
+#
+# Soft-skips (exit 0) when GPU unavailable. Exits non-zero on mismatch
+# when a Metal backend is present.
+
+import "stdlib/gpu_memory.flow"
+import "stdlib/gpu_gradients.flow"
+import "stdlib/memory.flow"
+import "stdlib/tensor.flow"
+
+extern {
+    function printf(fmt: string, val: f32) -> i32
+}
+
+function abs_f32(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+function fill_pattern(p: ptr<f32>, n: i64, seed: f32) -> void {
+    let mut i: i64 = 0
+    while i < n {
+        p[i] = seed + (i as f32) * 0.1
+        i = i + 1
+    }
+}
+
+function compare_f32(gpu: ptr<f32>, cpu: ptr<f32>, n: i64, tol: f32) -> i32 {
+    let mut i: i64 = 0
+    while i < n {
+        let d: f32 = abs_f32(gpu[i] - cpu[i])
+        if d > tol {
+            print("mismatch at ")
+            printf("%f", i as f32)
+            print(": gpu=")
+            printf("%f", gpu[i])
+            print(" cpu=")
+            printf("%f", cpu[i])
+            println("")
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function main() -> i32 {
+    println("gpu_mul_backward")
+    println(gpu_backend_name())
+
+    if !gpu_available() {
+        println("GPU unavailable — skip (OK)")
+        return 0
+    }
+
+    let n: i64 = 8
+    let bytes: i64 = n * 4
+    let tol: f32 = 0.00001
+
+    # Host tensors for CPU reference (shape n×1×1×1)
+    let a_t: Tensor = tensor_zeros(n as i32, 1, 1, 1)
+    let b_t: Tensor = tensor_zeros(n as i32, 1, 1, 1)
+    let go_t: Tensor = tensor_zeros(n as i32, 1, 1, 1)
+    fill_pattern(a_t.data, n, 1.0)
+    fill_pattern(b_t.data, n, 2.0)
+    fill_pattern(go_t.data, n, 0.5)
+
+    let cpu_ga: Tensor = tensor_mul_backward_a(a_t, b_t, go_t)
+    let cpu_gb: Tensor = tensor_mul_backward_b(a_t, b_t, go_t)
+
+    # Device buffers
+    let d_a: GpuBuffer = gpu_alloc_f32(n)
+    let d_b: GpuBuffer = gpu_alloc_f32(n)
+    let d_go: GpuBuffer = gpu_alloc_f32(n)
+    let d_ga: GpuBuffer = gpu_alloc_f32(n)
+    let d_gb: GpuBuffer = gpu_alloc_f32(n)
+    let d_out: GpuBuffer = gpu_alloc_f32(n)
+
+    if gpu_is_null(d_a) or gpu_is_null(d_b) or gpu_is_null(d_go) or gpu_is_null(d_ga) or gpu_is_null(d_gb) or gpu_is_null(d_out) {
+        println("gpu_alloc failed")
+        return 1
+    }
+
+    if gpu_copy_h2d_f32(d_a, a_t.data, bytes) != 0 or gpu_copy_h2d_f32(d_b, b_t.data, bytes) != 0 or gpu_copy_h2d_f32(d_go, go_t.data, bytes) != 0 {
+        println("H2D failed")
+        return 1
+    }
+
+    # Optional forward mul smoke: out = a * b
+    let rc_fwd: i32 = gpu_mul_f32(d_out, d_a, d_b, n)
+    let rc_a: i32 = gpu_mul_backward_a_f32(d_ga, d_go, d_b, n)
+    let rc_b: i32 = gpu_mul_backward_b_f32(d_gb, d_go, d_a, n)
+    gpu_sync()
+
+    if rc_fwd != 0 or rc_a != 0 or rc_b != 0 {
+        println("GPU kernel failed")
+        return 1
+    }
+
+    let host_ga: ptr<f32> = alloc_f32(n)
+    let host_gb: ptr<f32> = alloc_f32(n)
+    let host_out: ptr<f32> = alloc_f32(n)
+    if host_ga == null or host_gb == null or host_out == null {
+        println("host alloc failed")
+        return 1
+    }
+
+    if gpu_copy_d2h_f32(host_ga, d_ga, bytes) != 0 or gpu_copy_d2h_f32(host_gb, d_gb, bytes) != 0 or gpu_copy_d2h_f32(host_out, d_out, bytes) != 0 {
+        println("D2H failed")
+        return 1
+    }
+
+    # Check forward against a*b
+    let mut ok: i32 = 1
+    let mut i: i64 = 0
+    while i < n {
+        let want: f32 = a_t.data[i] * b_t.data[i]
+        if abs_f32(host_out[i] - want) > tol {
+            print("fwd mismatch at ")
+            printf("%f", i as f32)
+            println("")
+            ok = 0
+        }
+        i = i + 1
+    }
+
+    if compare_f32(host_ga, cpu_ga.data, n, tol) == 0 {
+        println("backward_a mismatch")
+        ok = 0
+    }
+    if compare_f32(host_gb, cpu_gb.data, n, tol) == 0 {
+        println("backward_b mismatch")
+        ok = 0
+    }
+
+    print("sample grad_a[0] gpu=")
+    printf("%f", host_ga[0])
+    print(" cpu=")
+    printf("%f", cpu_ga.data[0])
+    println("")
+    print("sample grad_b[0] gpu=")
+    printf("%f", host_gb[0])
+    print(" cpu=")
+    printf("%f", cpu_gb.data[0])
+    println("")
+
+    gpu_free(d_a)
+    gpu_free(d_b)
+    gpu_free(d_go)
+    gpu_free(d_ga)
+    gpu_free(d_gb)
+    gpu_free(d_out)
+    free(host_ga)
+    free(host_gb)
+    free(host_out)
+    tensor_free(a_t)
+    tensor_free(b_t)
+    tensor_free(go_t)
+    tensor_free(cpu_ga)
+    tensor_free(cpu_gb)
+
+    if ok == 1 {
+        println("PASS")
+        return 0
+    }
+    println("FAIL")
+    return 1
+}

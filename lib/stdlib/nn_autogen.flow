@@ -1,4 +1,4 @@
-# Auto-generated backprop for XOR loss (2x2x1) via tools/flow_grad_flow.py
+# Auto-generated backprop for XOR loss (2x2x1) via scripts/tools/grad/flow_grad_flow.py
 #
 # This file demonstrates "no hand-written backprop": gradients are generated from
 # `xor_loss_clean`.
