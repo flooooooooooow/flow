@@ -1,0 +1,27 @@
+# Data-parallel loop — OpenMP when available, else serial (still correct)
+# Run: ./flow run examples/concurrency/parallel_for.flow
+
+function main() -> i32 {
+    printf("parallel for demo\n")
+    let mut sum: i32 = 0
+    let n: i32 = 1000
+    let mut arr: array<i32, 1000> = []
+
+    parallel for i in 0 to n {
+        arr[i] = i
+    }
+
+    # Reduction stays serial (OpenMP reduction not yet lowered)
+    for i in 0 to n {
+        sum = sum + arr[i]
+    }
+
+    # 0..999 sum = 999*1000/2 = 499500
+    printf("  sum = %d (expect 499500)\n", sum)
+    if sum != 499500 {
+        printf("FAIL\n")
+        return 1
+    }
+    printf("OK\n")
+    return 0
+}
