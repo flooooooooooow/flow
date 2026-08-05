@@ -1,0 +1,357 @@
+# GIF89a animated encoder, pure Flow. Writes an infinite-loop animation
+# with a fixed 256-color global palette and correct GIF-variant LZW
+# compression. Only libc file I/O and malloc/free cross the FFI line.
+#
+# Usage:
+#   gif_begin("out.gif", w, h, delay_cs)   open file, write header
+#   gif_add_frame_rgb(pixels, w, h)        RGB24 row-major frame
+#   gif_end()                              trailer, close
+#
+# Palette: a 6x7x6 RGB cube (252 entries) plus 4 grays. gif_map_rgb maps
+# any 24-bit color to its nearest entry with integer math.
+
+extern {
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function fputc(c: i32, f: ptr<void>) -> i32
+    function fclose(f: ptr<void>) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+# --- encoder state (module statics) ---
+
+let mut gif_file: ptr<void> = null
+let mut gif_width: i32 = 0
+let mut gif_height: i32 = 0
+let mut gif_delay_cs: i32 = 0
+
+# LZW output: current 255-byte sub-block and the LSB-first bit accumulator.
+let mut gif_block: ptr<u8> = null
+let mut gif_block_len: i32 = 0
+let mut gif_bit_acc: u32 = 0
+let mut gif_bit_cnt: i32 = 0
+
+# --- palette ---
+# Entries 0..251: 6x7x6 RGB cube, index = r*42 + g*6 + b with
+# r,b in 0..5 (value = level*51) and g in 0..6 (value = level*255/6).
+# Entries 252..255: grays 32, 96, 160, 224.
+
+function gif_pal_r(i: i32) -> i32 {
+    if i >= 252 {
+        return 32 + (i - 252) * 64
+    }
+    return (i / 42) * 51
+}
+
+function gif_pal_g(i: i32) -> i32 {
+    if i >= 252 {
+        return 32 + (i - 252) * 64
+    }
+    return (((i / 6) % 7) * 255) / 6
+}
+
+function gif_pal_b(i: i32) -> i32 {
+    if i >= 252 {
+        return 32 + (i - 252) * 64
+    }
+    return (i % 6) * 51
+}
+
+# Nearest palette index for a 24-bit color, integer math only: quantize to
+# the cube, then let one of the 4 grays win when it is strictly closer.
+export function gif_map_rgb(r: i32, g: i32, b: i32) -> i32 {
+    let ri: i32 = (r * 5 + 127) / 255
+    let gi: i32 = (g * 6 + 127) / 255
+    let bi: i32 = (b * 5 + 127) / 255
+    let qr: i32 = ri * 51
+    let qg: i32 = (gi * 255) / 6
+    let qb: i32 = bi * 51
+    let mut best: i32 = ri * 42 + gi * 6 + bi
+    let mut best_d: i32 = (r - qr) * (r - qr) + (g - qg) * (g - qg) + (b - qb) * (b - qb)
+    let mut k: i32 = 0
+    while k < 4 {
+        let gv: i32 = 32 + k * 64
+        let d: i32 = (r - gv) * (r - gv) + (g - gv) * (g - gv) + (b - gv) * (b - gv)
+        if d < best_d {
+            best_d = d
+            best = 252 + k
+        }
+        k = k + 1
+    }
+    return best
+}
+
+# --- low-level output ---
+
+function gif_w16(v: i32) -> void {
+    fputc(v & 255, gif_file)
+    fputc((v >> 8) & 255, gif_file)
+}
+
+function gif_flush_block() -> void {
+    if gif_block_len > 0 {
+        fputc(gif_block_len, gif_file)
+        fwrite(gif_block as ptr<void>, 1, gif_block_len as i64, gif_file)
+        gif_block_len = 0
+    }
+}
+
+function gif_out_byte(b: i32) -> void {
+    gif_block[gif_block_len] = b as u8
+    gif_block_len = gif_block_len + 1
+    if gif_block_len == 255 {
+        gif_flush_block()
+    }
+}
+
+# Append `width` bits of `code`, LSB-first (the GIF bit order).
+function gif_out_code(code: i32, width: i32) -> void {
+    gif_bit_acc = gif_bit_acc | ((code as u32) << (gif_bit_cnt as u32))
+    gif_bit_cnt = gif_bit_cnt + width
+    while gif_bit_cnt >= 8 {
+        gif_out_byte((gif_bit_acc & 255) as i32)
+        gif_bit_acc = gif_bit_acc >> 8
+        gif_bit_cnt = gif_bit_cnt - 8
+    }
+}
+
+# --- LZW (GIF variant) ---
+# 8-bit minimum code size: clear = 256, end-of-information = 257, first
+# dictionary code = 258, code width 9..12 bits, dictionary cleared at 4096.
+# The string table lives in an open-addressing hash: key packs
+# (prefix code, next byte), value is the assigned code.
+
+function gif_lzw_hash_reset(hkey: ptr<i32>) -> void {
+    let mut i: i32 = 0
+    while i < 8192 {
+        hkey[i] = 0 - 1
+        i = i + 1
+    }
+}
+
+function gif_lzw_encode(idx: ptr<u8>, n: i64) -> i32 {
+    let hkey: ptr<i32> = malloc(8192 * 4) as ptr<i32>
+    let hcode: ptr<i32> = malloc(8192 * 4) as ptr<i32>
+    if hkey == null or hcode == null {
+        if hkey != null {
+            free(hkey as ptr<void>)
+        }
+        if hcode != null {
+            free(hcode as ptr<void>)
+        }
+        return 1
+    }
+    gif_lzw_hash_reset(hkey)
+
+    let clear_code: i32 = 256
+    let eoi_code: i32 = 257
+    let mut next_code: i32 = 258
+    let mut width: i32 = 9
+
+    gif_bit_acc = 0
+    gif_bit_cnt = 0
+    gif_block_len = 0
+
+    fputc(8, gif_file)
+    gif_out_code(clear_code, width)
+
+    let mut prefix: i32 = idx[0] as i32
+    let mut i: i64 = 1
+    while i < n {
+        let c: i32 = idx[i] as i32
+        let key: i32 = (prefix << 8) | c
+        let mut h: i32 = (prefix * 61 + c) & 8191
+        let mut found: i32 = 0 - 1
+        while hkey[h] != 0 - 1 {
+            if hkey[h] == key {
+                found = hcode[h]
+                break
+            }
+            h = (h + 1) & 8191
+        }
+        if found != 0 - 1 {
+            prefix = found
+        } else {
+            gif_out_code(prefix, width)
+            # Width grows one code after the table crosses a power of two:
+            # the decoder learns each entry one code later than we add it.
+            if next_code > (1 << width) - 1 and width < 12 {
+                width = width + 1
+            }
+            if next_code < 4096 {
+                hkey[h] = key
+                hcode[h] = next_code
+                next_code = next_code + 1
+            } else {
+                # Table full: clear (at 12 bits) and start over.
+                gif_out_code(clear_code, width)
+                gif_lzw_hash_reset(hkey)
+                next_code = 258
+                width = 9
+            }
+            prefix = c
+        }
+        i = i + 1
+    }
+
+    gif_out_code(prefix, width)
+    if next_code > (1 << width) - 1 and width < 12 {
+        width = width + 1
+    }
+    gif_out_code(eoi_code, width)
+    while gif_bit_cnt > 0 {
+        gif_out_byte((gif_bit_acc & 255) as i32)
+        gif_bit_acc = gif_bit_acc >> 8
+        gif_bit_cnt = gif_bit_cnt - 8
+    }
+    gif_bit_cnt = 0
+    gif_flush_block()
+    fputc(0, gif_file)
+
+    free(hkey as ptr<void>)
+    free(hcode as ptr<void>)
+    return 0
+}
+
+# --- public API ---
+
+# Opens `path` and writes the GIF89a header, logical screen descriptor,
+# global color table, and a NETSCAPE2.0 infinite-loop extension.
+# `delay_cs` is the per-frame delay in centiseconds. Returns 0 on success.
+export function gif_begin(path: string, width: i32, height: i32, delay_cs: i32) -> i32 {
+    if gif_file != null {
+        return 1
+    }
+    if width <= 0 or height <= 0 or width > 65535 or height > 65535 {
+        return 2
+    }
+    let f: ptr<void> = fopen(path, "wb")
+    if f == null {
+        return 3
+    }
+    let blk: ptr<u8> = malloc(255) as ptr<u8>
+    if blk == null {
+        fclose(f)
+        return 4
+    }
+    gif_file = f
+    gif_block = blk
+    gif_width = width
+    gif_height = height
+    gif_delay_cs = delay_cs
+    gif_block_len = 0
+    gif_bit_acc = 0
+    gif_bit_cnt = 0
+
+    # Header: "GIF89a"
+    fputc(71, gif_file)
+    fputc(73, gif_file)
+    fputc(70, gif_file)
+    fputc(56, gif_file)
+    fputc(57, gif_file)
+    fputc(97, gif_file)
+
+    # Logical screen descriptor: global color table, 8 bits/channel,
+    # 256 entries (packed = 0xF7), background index 0, no aspect ratio.
+    gif_w16(width)
+    gif_w16(height)
+    fputc(247, gif_file)
+    fputc(0, gif_file)
+    fputc(0, gif_file)
+
+    # Global color table: 256 RGB triples.
+    let mut i: i32 = 0
+    while i < 256 {
+        fputc(gif_pal_r(i), gif_file)
+        fputc(gif_pal_g(i), gif_file)
+        fputc(gif_pal_b(i), gif_file)
+        i = i + 1
+    }
+
+    # NETSCAPE2.0 application extension: loop forever.
+    fputc(33, gif_file)
+    fputc(255, gif_file)
+    fputc(11, gif_file)
+    fputc(78, gif_file)   # N
+    fputc(69, gif_file)   # E
+    fputc(84, gif_file)   # T
+    fputc(83, gif_file)   # S
+    fputc(67, gif_file)   # C
+    fputc(65, gif_file)   # A
+    fputc(80, gif_file)   # P
+    fputc(69, gif_file)   # E
+    fputc(50, gif_file)   # 2
+    fputc(46, gif_file)   # .
+    fputc(48, gif_file)   # 0
+    fputc(3, gif_file)
+    fputc(1, gif_file)
+    gif_w16(0)            # loop count 0 = forever
+    fputc(0, gif_file)
+    return 0
+}
+
+# Adds one full frame. `pixels` is RGB24, row-major, width*height*3 bytes.
+# Dimensions must match gif_begin. Returns 0 on success.
+export function gif_add_frame_rgb(pixels: ptr<u8>, width: i32, height: i32) -> i32 {
+    if gif_file == null {
+        return 1
+    }
+    if width != gif_width or height != gif_height {
+        return 2
+    }
+    let n: i64 = (width as i64) * (height as i64)
+    if n <= 0 {
+        return 2
+    }
+    let idx: ptr<u8> = malloc(n) as ptr<u8>
+    if idx == null {
+        return 3
+    }
+    let mut p: i64 = 0
+    while p < n {
+        let j: i64 = p * 3
+        idx[p] = gif_map_rgb(pixels[j] as i32, pixels[j + 1] as i32, pixels[j + 2] as i32) as u8
+        p = p + 1
+    }
+
+    # Graphic control extension: disposal = keep, per-frame delay.
+    fputc(33, gif_file)
+    fputc(249, gif_file)
+    fputc(4, gif_file)
+    fputc(4, gif_file)
+    gif_w16(gif_delay_cs)
+    fputc(0, gif_file)
+    fputc(0, gif_file)
+
+    # Image descriptor: full frame at (0,0), global palette, no interlace.
+    fputc(44, gif_file)
+    gif_w16(0)
+    gif_w16(0)
+    gif_w16(width)
+    gif_w16(height)
+    fputc(0, gif_file)
+
+    let rc: i32 = gif_lzw_encode(idx, n)
+    free(idx as ptr<void>)
+    return rc
+}
+
+# Writes the trailer and closes the file. Returns 0 on success.
+export function gif_end() -> i32 {
+    if gif_file == null {
+        return 1
+    }
+    fputc(59, gif_file)
+    fclose(gif_file)
+    gif_file = null
+    free(gif_block as ptr<void>)
+    gif_block = null
+    gif_width = 0
+    gif_height = 0
+    gif_delay_cs = 0
+    gif_block_len = 0
+    gif_bit_acc = 0
+    gif_bit_cnt = 0
+    return 0
+}
