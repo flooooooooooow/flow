@@ -5,8 +5,8 @@
       "lines": 1537
     },
     "documentation": {
-      "files": 82,
-      "lines": 17877
+      "files": 83,
+      "lines": 17917
     },
     "examples": {
       "files": 147,
@@ -14,7 +14,7 @@
     },
     "python_compiler": {
       "files": 46,
-      "lines": 35913
+      "lines": 35992
     },
     "registry_packages": {
       "files": 2,
@@ -33,8 +33,8 @@
       "lines": 15166
     },
     "tests": {
-      "files": 207,
-      "lines": 21439
+      "files": 208,
+      "lines": 21572
     },
     "verify_corpus": {
       "files": 1078,
@@ -47,10 +47,10 @@
     "loc": "173k LOC",
     "proofs": "1078 verify files",
     "stdlib": "82 modules",
-    "tests": "207 tests"
+    "tests": "208 tests"
   },
-  "commit": "a3d9762f5770",
-  "generated_at": "2026-08-05T20:04:41+01:00",
+  "commit": "1aafc287addd",
+  "generated_at": "2026-08-05T20:16:46+01:00",
   "languages": {
     "C": {
       "files": 47,
@@ -89,8 +89,8 @@
       "lines": 327
     },
     "Python": {
-      "files": 185,
-      "lines": 65516
+      "files": 186,
+      "lines": 65728
     },
     "Rust": {
       "files": 5,
@@ -98,15 +98,15 @@
     },
     "Shell": {
       "files": 33,
-      "lines": 3810
+      "lines": 3829
     }
   },
   "methodology": "Tracked source files only; physical lines include comments and blanks; third_party and generated/build directories are excluded.",
   "proof_documents": 1080,
   "schema_version": 1,
   "totals": {
-    "source_files": 1887,
-    "source_lines": 173162,
-    "tracked_files": 4486
+    "source_files": 1888,
+    "source_lines": 173393,
+    "tracked_files": 4488
   }
 }
