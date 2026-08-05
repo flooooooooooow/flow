@@ -253,3 +253,25 @@ void flow_gfx_present(void* handle) {
         [ctx->view displayIfNeeded];
     }
 }
+
+// User programs that call gfx_run / flow_gfx_run must define this symbol.
+// Return 1 to continue, 0 to quit. Weak default keeps demos that only use
+// gfx_frame_pump linkable without providing a frame callback.
+__attribute__((weak)) int32_t flow_gfx_frame(void* handle, int32_t frame) {
+    (void)handle;
+    (void)frame;
+    return 0;
+}
+
+int32_t flow_gfx_run(void* handle, int32_t max_frames) {
+    if (!handle || max_frames <= 0) return 0;
+    // KEY_ESC in lib/stdlib/gfx.flow
+    const int32_t key_esc = 53;
+    for (int32_t frame = 0; frame < max_frames; frame++) {
+        flow_gfx_poll(handle);
+        if (flow_gfx_should_close(handle)) return frame;
+        if (flow_gfx_key_down(handle, key_esc)) return frame;
+        if (!flow_gfx_frame(handle, frame)) return frame;
+    }
+    return max_frames;
+}
