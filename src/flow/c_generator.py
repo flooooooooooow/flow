@@ -610,7 +610,8 @@ class CGenerator:
                            'strcat', 'strncat', 'strchr', 'strstr',
                            'getenv', 'putenv',
                            # FILE* APIs — use <stdio.h> decls; Flow extern types are approximate
-                           'fopen', 'fclose', 'fread', 'fwrite', 'fseek', 'ftell', 'fgets', 'fputs'}
+                           'fopen', 'fclose', 'fread', 'fwrite', 'fseek', 'ftell', 'fgets', 'fputs',
+                           'fputc', 'fgetc'}
         primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
