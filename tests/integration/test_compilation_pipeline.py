@@ -429,8 +429,8 @@ class TestComplexPrograms:
         """Test compilation of loop constructs."""
         flow_code = """
         function sum_range(start: i32, end: i32) -> i32 {
-            let sum: i32 = 0
-            let i: i32 = start
+            let mut sum: i32 = 0
+            let mut i: i32 = start
             
             while i <= end {
                 sum = sum + i
