@@ -62,6 +62,7 @@ nav:
     - Advanced: tutorials/advanced.md
     - Dynamics: tutorials/dynamics.md
     - Game AI: tutorials/game-ai.md
+    - ML on a MacBook: tutorials/ml-on-macbook.md
   - Documentation:
     - Wiki Strategy: wiki-strategy.md
     - Wiki Roadmap: wiki-roadmap.md

@@ -49,6 +49,7 @@ examples/
 | Basics / hello | `examples/basics/hello_world.flow` | `./flow run examples/basics/hello_world.flow` |
 | Effects | `examples/effects/showcase.flow` | `./flow run examples/effects/showcase.flow` |
 | ML (XOR net) | `examples/ml/models/mlp_xor.flow` | `./flow run examples/ml/models/mlp_xor.flow` |
+| ML (digits trainer) | `examples/ml/digits_mlp.flow` | `FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow` |
 | Audio / `@rt_safe` | `examples/audio/rt_safe_callback.flow` | `./flow run examples/audio/rt_safe_callback.flow` |
 | Audio / DSP | `examples/audio/lattice_allpass_phase_engine.flow` | `./flow run examples/audio/lattice_allpass_phase_engine.flow` |
 | UI layout | `examples/ui/layout_hello.flow` | `./flow run examples/ui/layout_hello.flow` |
@@ -177,7 +178,12 @@ Neural network framework + autodiff:
 - `optimizers.flow` - SGD, Adam, RMSprop
 - `models/mlp_xor.flow` - XOR via grad codegen (`nn_autogen`)
 - `models/mlp_xor_from_scratch.flow` - pedagogical hand backprop
+- `digits_mlp.flow` - 10-class 8x8 digits MLP, synthetic dataset generated in Flow, minibatch SGD + momentum, 90% accuracy gate (`FLOW_HOST=python ./flow run`)
+- `digits_mlp_parallel.flow` - same model with pthread gradient-accumulation shards; prints measured serial vs parallel speedup
+- `digits_mlp_metal.flow` - Metal GPU status: unified buffers, elementwise kernel parity + CPU/GPU crossover timings
 - `autodiff/` - Autodiff benchmarks, backprop, `nn_xor.flow` (merged from `neural_networks/`)
+
+See the walkthrough with measured timings: [docs/tutorials/ml-on-macbook.md](../docs/tutorials/ml-on-macbook.md)
 
 ### Stats (`stats/`)
 - `regression_gd.flow` - Gradient-descent line fit (plain f32 math)

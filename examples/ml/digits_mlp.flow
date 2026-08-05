@@ -1,0 +1,420 @@
+# Multi-class digits MLP trained from scratch on the CPU.
+#
+#   FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow
+#
+# Dataset: synthetic 8x8 "digits" rendered in Flow by a procedural
+# seven-segment glyph renderer, augmented with LCG-driven shift, intensity
+# and noise jitter. 200 train + 40 test samples per class, 10 classes.
+# No downloads, no embedded blobs: every pixel is computed at startup.
+#
+# Model: 64 -> 32 (relu) -> 10 (softmax + cross-entropy), 2410 parameters.
+# Weights live in module statics (LANGUAGE_SPEC 3.3.1). Manual backprop,
+# minibatch SGD with momentum. Deterministic: fixed LCG seed, serial loop.
+#
+# Gate: prints PASS and exits 0 only if test accuracy >= 90%.
+
+extern {
+    function malloc(size: i64) -> ptr<f32>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+    function free(p: ptr<f32>) -> void
+    function expf(x: f32) -> f32
+    function logf(x: f32) -> f32
+    function flow_rt_monotonic_ns() -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+const N_CLASSES: i32 = 10
+const IMG: i32 = 64            # 8x8 pixels
+const HIDDEN: i32 = 32
+const TRAIN_PER_CLASS: i32 = 200
+const TEST_PER_CLASS: i32 = 40
+const N_TRAIN: i32 = 2000
+const N_TEST: i32 = 400
+const BATCH: i32 = 32
+const EPOCHS: i32 = 20
+const LR: f32 = 0.15
+const MOMENTUM: f32 = 0.9
+
+# ---------------------------------------------------------------------------
+# Module statics: weights, momentum, gradients, dataset, scratch
+# (spec 3.3.1: ptr<T> statics start null, allocated once in init)
+# ---------------------------------------------------------------------------
+
+let mut w1: ptr<f32> = null    # IMG x HIDDEN
+let mut b1: ptr<f32> = null    # HIDDEN
+let mut w2: ptr<f32> = null    # HIDDEN x N_CLASSES
+let mut b2: ptr<f32> = null    # N_CLASSES
+
+let mut vw1: ptr<f32> = null
+let mut vb1: ptr<f32> = null
+let mut vw2: ptr<f32> = null
+let mut vb2: ptr<f32> = null
+
+let mut gw1: ptr<f32> = null
+let mut gb1: ptr<f32> = null
+let mut gw2: ptr<f32> = null
+let mut gb2: ptr<f32> = null
+
+let mut train_x: ptr<f32> = null   # N_TRAIN x IMG
+let mut train_y: ptr<i32> = null
+let mut test_x: ptr<f32> = null    # N_TEST x IMG
+let mut test_y: ptr<i32> = null
+let mut order: ptr<i32> = null     # shuffled train indices
+
+# Per-sample scratch
+let mut hid_pre: ptr<f32> = null   # HIDDEN
+let mut hid_act: ptr<f32> = null   # HIDDEN
+let mut logits: ptr<f32> = null    # N_CLASSES
+let mut probs: ptr<f32> = null     # N_CLASSES
+
+let mut rng_state: i64 = 42
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG
+# ---------------------------------------------------------------------------
+
+function lcg_next() -> i32 {
+    rng_state = (rng_state * 1103515245 + 12345) % 2147483648
+    return rng_state as i32
+}
+
+function lcg_range(n: i32) -> i32 {
+    return lcg_next() % n
+}
+
+function lcg_uniform() -> f32 {
+    return (lcg_next() as f32) / 2147483648.0
+}
+
+# ---------------------------------------------------------------------------
+# Procedural glyph renderer: seven-segment digits on an 8x8 grid
+#
+# Segment bits: 1=top 2=top-right 4=bottom-right 8=bottom
+#               16=bottom-left 32=top-left 64=middle
+# ---------------------------------------------------------------------------
+
+function seg_mask(digit: i32) -> i32 {
+    if digit == 0 { return 63 }
+    if digit == 1 { return 6 }
+    if digit == 2 { return 91 }
+    if digit == 3 { return 79 }
+    if digit == 4 { return 102 }
+    if digit == 5 { return 109 }
+    if digit == 6 { return 125 }
+    if digit == 7 { return 7 }
+    if digit == 8 { return 127 }
+    return 111    # 9
+}
+
+# Render the clean glyph for a digit into out[64] (values 0.0 / 1.0).
+# The glyph occupies rows 0..6, cols 1..6, so every jitter shift
+# (dx in -1..1, dy in 0..1) keeps all strokes inside the 8x8 frame.
+function render_glyph(out: ptr<f32>, digit: i32) -> void {
+    for i in 0 to IMG {
+        out[i] = 0.0
+    }
+    let mask: i32 = seg_mask(digit)
+    # Horizontal segments: rows 0 / 3 / 6, cols 2..5
+    for c in 2 to 6 {
+        if mask % 2 == 1 { out[0 * 8 + c] = 1.0 }            # top (bit 1)
+        if (mask / 64) % 2 == 1 { out[3 * 8 + c] = 1.0 }     # middle (bit 64)
+        if (mask / 8) % 2 == 1 { out[6 * 8 + c] = 1.0 }      # bottom (bit 8)
+    }
+    # Vertical segments at cols 1 and 6: top half rows 1..2, bottom rows 4..5
+    for r in 1 to 3 {
+        if (mask / 32) % 2 == 1 { out[r * 8 + 1] = 1.0 }     # top-left (bit 32)
+        if (mask / 2) % 2 == 1 { out[r * 8 + 6] = 1.0 }      # top-right (bit 2)
+    }
+    for r in 4 to 6 {
+        if (mask / 16) % 2 == 1 { out[r * 8 + 1] = 1.0 }     # bottom-left (bit 16)
+        if (mask / 4) % 2 == 1 { out[r * 8 + 6] = 1.0 }      # bottom-right (bit 4)
+    }
+}
+
+# Write one augmented sample: shifted, intensity-jittered, noisy glyph.
+function render_sample(out: ptr<f32>, glyph: ptr<f32>) -> void {
+    let dx: i32 = lcg_range(3) - 1
+    let dy: i32 = lcg_range(2)
+    let intensity: f32 = 0.7 + 0.3 * lcg_uniform()
+    for r in 0 to 8 {
+        for c in 0 to 8 {
+            let sr: i32 = r - dy
+            let sc: i32 = c - dx
+            let mut v: f32 = 0.0
+            if sr >= 0 and sr < 8 and sc >= 0 and sc < 8 {
+                v = glyph[sr * 8 + sc] * intensity
+            }
+            v = v + 0.1 * (lcg_uniform() - 0.5)
+            if v < 0.0 { v = 0.0 }
+            if v > 1.0 { v = 1.0 }
+            out[r * 8 + c] = v
+        }
+    }
+    # Salt noise: two random pixels get random values
+    for k in 0 to 2 {
+        out[lcg_range(IMG)] = lcg_uniform()
+    }
+}
+
+function build_dataset() -> void {
+    let glyph: ptr<f32> = malloc((IMG as i64) * 4)
+    let mut train_i: i32 = 0
+    let mut test_i: i32 = 0
+    for d in 0 to N_CLASSES {
+        render_glyph(glyph, d)
+        for s in 0 to TRAIN_PER_CLASS {
+            render_sample(train_x + (train_i as i64) * (IMG as i64), glyph)
+            train_y[train_i] = d
+            train_i = train_i + 1
+        }
+        for s in 0 to TEST_PER_CLASS {
+            render_sample(test_x + (test_i as i64) * (IMG as i64), glyph)
+            test_y[test_i] = d
+            test_i = test_i + 1
+        }
+    }
+    free(glyph)
+}
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+
+function alloc_zeroed(count: i32) -> ptr<f32> {
+    let p: ptr<f32> = malloc((count as i64) * 4)
+    for i in 0 to count {
+        p[i] = 0.0
+    }
+    return p
+}
+
+function init_model() -> void {
+    w1 = alloc_zeroed(IMG * HIDDEN)
+    b1 = alloc_zeroed(HIDDEN)
+    w2 = alloc_zeroed(HIDDEN * N_CLASSES)
+    b2 = alloc_zeroed(N_CLASSES)
+    vw1 = alloc_zeroed(IMG * HIDDEN)
+    vb1 = alloc_zeroed(HIDDEN)
+    vw2 = alloc_zeroed(HIDDEN * N_CLASSES)
+    vb2 = alloc_zeroed(N_CLASSES)
+    gw1 = alloc_zeroed(IMG * HIDDEN)
+    gb1 = alloc_zeroed(HIDDEN)
+    gw2 = alloc_zeroed(HIDDEN * N_CLASSES)
+    gb2 = alloc_zeroed(N_CLASSES)
+    hid_pre = alloc_zeroed(HIDDEN)
+    hid_act = alloc_zeroed(HIDDEN)
+    logits = alloc_zeroed(N_CLASSES)
+    probs = alloc_zeroed(N_CLASSES)
+
+    # Small uniform init, deterministic via the LCG
+    for i in 0 to IMG * HIDDEN {
+        w1[i] = 0.2 * (lcg_uniform() - 0.5)
+    }
+    for i in 0 to HIDDEN * N_CLASSES {
+        w2[i] = 0.4 * (lcg_uniform() - 0.5)
+    }
+}
+
+# Forward pass for sample x; fills hid_pre/hid_act/logits/probs.
+# Returns cross-entropy loss against label.
+function forward(x: ptr<f32>, label: i32) -> f32 {
+    for j in 0 to HIDDEN {
+        let mut acc: f32 = b1[j]
+        for i in 0 to IMG {
+            acc = acc + x[i] * w1[i * HIDDEN + j]
+        }
+        hid_pre[j] = acc
+        if acc > 0.0 {
+            hid_act[j] = acc
+        } else {
+            hid_act[j] = 0.0
+        }
+    }
+    for k in 0 to N_CLASSES {
+        let mut acc: f32 = b2[k]
+        for j in 0 to HIDDEN {
+            acc = acc + hid_act[j] * w2[j * N_CLASSES + k]
+        }
+        logits[k] = acc
+    }
+    # Stable softmax
+    let mut mx: f32 = logits[0]
+    for k in 1 to N_CLASSES {
+        if logits[k] > mx { mx = logits[k] }
+    }
+    let mut denom: f32 = 0.0
+    for k in 0 to N_CLASSES {
+        let e: f32 = expf(logits[k] - mx)
+        probs[k] = e
+        denom = denom + e
+    }
+    for k in 0 to N_CLASSES {
+        probs[k] = probs[k] / denom
+    }
+    return 0.0 - logf(probs[label] + 0.0000001)
+}
+
+# Backward pass for the sample last passed through forward().
+# Accumulates into gw1/gb1/gw2/gb2.
+function backward(x: ptr<f32>, label: i32) -> void {
+    # dlogits = probs - onehot(label), reuse probs in place
+    probs[label] = probs[label] - 1.0
+    for k in 0 to N_CLASSES {
+        gb2[k] = gb2[k] + probs[k]
+    }
+    for j in 0 to HIDDEN {
+        let a: f32 = hid_act[j]
+        let mut da: f32 = 0.0
+        for k in 0 to N_CLASSES {
+            gw2[j * N_CLASSES + k] = gw2[j * N_CLASSES + k] + a * probs[k]
+            da = da + probs[k] * w2[j * N_CLASSES + k]
+        }
+        # relu gate
+        let mut dh: f32 = 0.0
+        if hid_pre[j] > 0.0 {
+            dh = da
+        }
+        gb1[j] = gb1[j] + dh
+        for i in 0 to IMG {
+            gw1[i * HIDDEN + j] = gw1[i * HIDDEN + j] + x[i] * dh
+        }
+    }
+}
+
+function zero_grads() -> void {
+    for i in 0 to IMG * HIDDEN { gw1[i] = 0.0 }
+    for i in 0 to HIDDEN { gb1[i] = 0.0 }
+    for i in 0 to HIDDEN * N_CLASSES { gw2[i] = 0.0 }
+    for i in 0 to N_CLASSES { gb2[i] = 0.0 }
+}
+
+function momentum_update(p: ptr<f32>, v: ptr<f32>, g: ptr<f32>, count: i32, scale: f32) -> void {
+    for i in 0 to count {
+        v[i] = MOMENTUM * v[i] - LR * g[i] * scale
+        p[i] = p[i] + v[i]
+    }
+}
+
+function apply_update(batch_size: i32) -> void {
+    let scale: f32 = 1.0 / (batch_size as f32)
+    momentum_update(w1, vw1, gw1, IMG * HIDDEN, scale)
+    momentum_update(b1, vb1, gb1, HIDDEN, scale)
+    momentum_update(w2, vw2, gw2, HIDDEN * N_CLASSES, scale)
+    momentum_update(b2, vb2, gb2, N_CLASSES, scale)
+}
+
+function predict(x: ptr<f32>) -> i32 {
+    let ignored: f32 = forward(x, 0)
+    let mut best: i32 = 0
+    let mut best_p: f32 = probs[0]
+    for k in 1 to N_CLASSES {
+        if probs[k] > best_p {
+            best_p = probs[k]
+            best = k
+        }
+    }
+    return best
+}
+
+function test_accuracy() -> f32 {
+    let mut correct: i32 = 0
+    for s in 0 to N_TEST {
+        let x: ptr<f32> = test_x + (s as i64) * (IMG as i64)
+        if predict(x) == test_y[s] {
+            correct = correct + 1
+        }
+    }
+    return (correct as f32) / (N_TEST as f32)
+}
+
+function shuffle_order() -> void {
+    let mut i: i32 = N_TRAIN - 1
+    while i > 0 {
+        let j: i32 = lcg_range(i + 1)
+        let tmp: i32 = order[i]
+        order[i] = order[j]
+        order[j] = tmp
+        i = i - 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    println("digits_mlp: 8x8 synthetic digits, 64 -> 32 (relu) -> 10 (softmax CE)")
+    let n_params: i32 = IMG * HIDDEN + HIDDEN + HIDDEN * N_CLASSES + N_CLASSES
+    print("  params: ")
+    println(n_params)
+    print("  train samples: ")
+    println(N_TRAIN)
+    print("  test samples: ")
+    println(N_TEST)
+
+    let t_start: i64 = flow_rt_monotonic_ns()
+
+    train_x = malloc((N_TRAIN as i64) * (IMG as i64) * 4)
+    test_x = malloc((N_TEST as i64) * (IMG as i64) * 4)
+    train_y = calloc(N_TRAIN as i64, 4)
+    test_y = calloc(N_TEST as i64, 4)
+    order = calloc(N_TRAIN as i64, 4)
+    for i in 0 to N_TRAIN {
+        order[i] = i
+    }
+
+    build_dataset()
+    init_model()
+
+    let t_data: i64 = flow_rt_monotonic_ns()
+    print("  dataset+init ms: ")
+    printf("%.2f\n", ((t_data - t_start) as f64) / 1000000.0)
+
+    for epoch in 0 to EPOCHS {
+        shuffle_order()
+        let mut loss_sum: f32 = 0.0
+        let mut cursor: i32 = 0
+        while cursor < N_TRAIN {
+            let mut bsz: i32 = BATCH
+            if cursor + bsz > N_TRAIN {
+                bsz = N_TRAIN - cursor
+            }
+            zero_grads()
+            for b in 0 to bsz {
+                let idx: i32 = order[cursor + b]
+                let x: ptr<f32> = train_x + (idx as i64) * (IMG as i64)
+                loss_sum = loss_sum + forward(x, train_y[idx])
+                backward(x, train_y[idx])
+            }
+            apply_update(bsz)
+            cursor = cursor + bsz
+        }
+        let acc: f32 = test_accuracy()
+        print("  epoch ")
+        print(epoch)
+        print(" train_loss ")
+        printf("%.4f", (loss_sum / (N_TRAIN as f32)) as f64)
+        print(" test_acc ")
+        printf("%.2f%%\n", (acc * 100.0) as f64)
+    }
+
+    let t_end: i64 = flow_rt_monotonic_ns()
+    let train_ms: f64 = ((t_end - t_data) as f64) / 1000000.0
+    print("  training ms: ")
+    printf("%.2f\n", train_ms)
+
+    let final_acc: f32 = test_accuracy()
+    print("final test accuracy: ")
+    printf("%.2f%%\n", (final_acc * 100.0) as f64)
+
+    if final_acc >= 0.90 {
+        println("PASS")
+        return 0
+    }
+    println("FAIL: below 90% accuracy gate")
+    return 1
+}
