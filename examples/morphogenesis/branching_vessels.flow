@@ -1,0 +1,376 @@
+# BRANCHING VESSELS: leaf venation by space colonization.
+#
+# MODEL (Runions, Fuhrer, Lane, Federl, Rolland-Lagan, Prusinkiewicz, 2005)
+#   Scatter auxin sources through the leaf blade. A vein grows toward the
+#   sources that are closer to it than to any other vein, and a source that
+#   has been reached stops signalling. Nobody plans the branching pattern;
+#   it falls out of the competition for sources.
+#
+#     for every live source s:
+#         n = nearest vein node to s, if within the influence radius
+#         add the unit vector (s - n) to n's accumulator
+#     for every node n with a nonempty accumulator:
+#         grow a child at n + D * normalize(accumulator)
+#     kill every source within the kill radius of any node
+#
+# PARAMETERS
+#   900 sources in a leaf blade, influence radius 24, kill radius 3.0,
+#   segment length D 1.5, one colonization round per displayed frame,
+#   root at the petiole. Vein thickness is the subtree size, so the trunk
+#   thickens as the crown fills.
+#
+# KEYS
+#   1 LEAF     blade-shaped source region, one midrib and side veins
+#   2 DISC     circular canopy, radially symmetric branching
+#   3 DENSE    1.6x the sources and a tighter kill radius, finer venation
+#   R regrow    P pause    Esc quit
+#
+# PHENOMENON
+#   The vein order is emergent. Early growth is a single midrib because all
+#   the sources pull the same way; as the tip advances the source cloud
+#   splits behind it and the midrib forks, and every fork repeats the same
+#   split at a smaller scale. The final network has no repeated motif that
+#   was written down anywhere.
+#
+# Run: ./flow gfx examples/morphogenesis/branching_vessels.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function sqrt(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+}
+
+const GRID: i32 = 128
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+
+const SRC_CAP: i32 = 1600
+const NODE_CAP: i32 = 12000
+const SEG_LEN: f64 = 1.5
+const INFLUENCE: f64 = 24.0
+const PI: f64 = 3.141592653589793
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 168943271
+let mut src_count: i32 = 0
+let mut node_count: i32 = 0
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function mode_name(m: i32) -> string {
+    if m == 1 { return "DISC" }
+    if m == 2 { return "DENSE" }
+    return "LEAF"
+}
+
+function mode_sources(m: i32) -> i32 {
+    if m == 2 { return 1440 }
+    return 900
+}
+
+function mode_kill(m: i32) -> f64 {
+    if m == 2 { return 2.2 }
+    return 3.0
+}
+
+# Is (x, y) inside the source region for this mode?
+function in_blade(x: f64, y: f64, m: i32) -> bool {
+    if m == 1 {
+        let dx: f64 = x - 64.0
+        let dy: f64 = y - 58.0
+        return dx * dx + dy * dy < 2500.0
+    }
+    if y < 10.0 or y > 112.0 { return false }
+    let s: f64 = (112.0 - y) / 102.0
+    let halfw: f64 = 47.0 * pow(sin(PI * s), 0.75)
+    let dx: f64 = x - 64.0
+    if dx < 0.0 { return 0.0 - dx < halfw }
+    return dx < halfw
+}
+
+function scatter(sx: ptr<f64>, sy: ptr<f64>, alive: ptr<i32>, m: i32) -> void {
+    let want: i32 = mode_sources(m)
+    src_count = 0
+    let mut tries: i32 = 0
+    while src_count < want and tries < 200000 {
+        tries = tries + 1
+        let x: f64 = 4.0 + 120.0 * rng_unit()
+        let y: f64 = 4.0 + 120.0 * rng_unit()
+        if in_blade(x, y, m) {
+            sx[src_count] = x
+            sy[src_count] = y
+            alive[src_count] = 1
+            src_count = src_count + 1
+        }
+    }
+}
+
+function reset(sx: ptr<f64>, sy: ptr<f64>, alive: ptr<i32>,
+               nx: ptr<f64>, ny: ptr<f64>, parent: ptr<i32>,
+               weight: ptr<i32>, m: i32) -> void {
+    scatter(sx, sy, alive, m)
+    node_count = 1
+    nx[0] = 64.0
+    ny[0] = 122.0
+    parent[0] = -1
+    weight[0] = 1
+    if m == 1 {
+        ny[0] = 116.0
+    }
+}
+
+function bump_weights(parent: ptr<i32>, weight: ptr<i32>, from: i32) -> void {
+    let mut p: i32 = from
+    let mut guard: i32 = 0
+    while p >= 0 and guard < 4096 {
+        weight[p] = weight[p] + 1
+        p = parent[p]
+        guard = guard + 1
+    }
+}
+
+# One colonization round. Returns the number of veins added.
+function colonize(sx: ptr<f64>, sy: ptr<f64>, alive: ptr<i32>,
+                  nx: ptr<f64>, ny: ptr<f64>, parent: ptr<i32>,
+                  weight: ptr<i32>, ax: ptr<f64>, ay: ptr<f64>,
+                  hits: ptr<i32>, kill_r: f64) -> i32 {
+    for i in 0 to node_count {
+        ax[i] = 0.0
+        ay[i] = 0.0
+        hits[i] = 0
+    }
+
+    let inf2: f64 = INFLUENCE * INFLUENCE
+    let kill2: f64 = kill_r * kill_r
+
+    for s in 0 to src_count {
+        if alive[s] == 1 {
+            let mut best: i32 = -1
+            let mut bestd: f64 = inf2
+            for i in 0 to node_count {
+                let dx: f64 = sx[s] - nx[i]
+                let dy: f64 = sy[s] - ny[i]
+                let d2: f64 = dx * dx + dy * dy
+                if d2 < bestd {
+                    bestd = d2
+                    best = i
+                }
+            }
+            if best >= 0 {
+                if bestd < kill2 {
+                    alive[s] = 0
+                } else {
+                    let dx: f64 = sx[s] - nx[best]
+                    let dy: f64 = sy[s] - ny[best]
+                    let len: f64 = sqrt(dx * dx + dy * dy)
+                    ax[best] = ax[best] + dx / len
+                    ay[best] = ay[best] + dy / len
+                    hits[best] = hits[best] + 1
+                }
+            }
+        }
+    }
+
+    let base: i32 = node_count
+    let mut added: i32 = 0
+    for i in 0 to base {
+        if hits[i] > 0 and node_count < NODE_CAP {
+            let len: f64 = sqrt(ax[i] * ax[i] + ay[i] * ay[i])
+            if len > 0.0001 {
+                let k: i32 = node_count
+                nx[k] = nx[i] + SEG_LEN * ax[i] / len
+                ny[k] = ny[i] + SEG_LEN * ay[i] / len
+                parent[k] = i
+                weight[k] = 1
+                node_count = node_count + 1
+                bump_weights(parent, weight, i)
+                added = added + 1
+            }
+        }
+    }
+    return added
+}
+
+function live_sources(alive: ptr<i32>) -> i32 {
+    let mut n: i32 = 0
+    for s in 0 to src_count {
+        n = n + alive[s]
+    }
+    return n
+}
+
+# Thick short strokes between a node and its parent.
+function draw_segment(g: Gfx, x0: f64, y0: f64, x1: f64, y1: f64, w: i32,
+                      r: i32, gg: i32, b: i32) -> void {
+    let sx0: i32 = (x0 * (CELL_PX as f64)) as i32
+    let sy0: i32 = FIELD_Y + (y0 * (CELL_PX as f64)) as i32
+    let sx1: i32 = (x1 * (CELL_PX as f64)) as i32
+    let sy1: i32 = FIELD_Y + (y1 * (CELL_PX as f64)) as i32
+    let mut dx: i32 = sx1 - sx0
+    let mut dy: i32 = sy1 - sy0
+    if dx < 0 { dx = 0 - dx }
+    if dy < 0 { dy = 0 - dy }
+    let mut steps: i32 = dx
+    if dy > steps { steps = dy }
+    if steps < 1 { steps = 1 }
+    for k in 0 to steps + 1 {
+        let t: f64 = (k as f64) / (steps as f64)
+        let px: i32 = sx0 + ((sx1 - sx0) as f64 * t) as i32
+        let py: i32 = sy0 + ((sy1 - sy0) as f64 * t) as i32
+        gfx_fill_rect(g, px - w / 2, py - w / 2, w, w, r, gg, b)
+    }
+}
+
+function draw_scene(g: Gfx, sx: ptr<f64>, sy: ptr<f64>, alive: ptr<i32>,
+                    nx: ptr<f64>, ny: ptr<f64>, parent: ptr<i32>,
+                    weight: ptr<i32>) -> void {
+    for s in 0 to src_count {
+        if alive[s] == 1 {
+            let px: i32 = (sx[s] * (CELL_PX as f64)) as i32
+            let py: i32 = FIELD_Y + (sy[s] * (CELL_PX as f64)) as i32
+            gfx_fill_rect(g, px, py, 2, 2, 46, 74, 52)
+        }
+    }
+    for i in 1 to node_count {
+        let p: i32 = parent[i]
+        let mut w: i32 = 1
+        let ww: i32 = weight[i]
+        if ww > 4 { w = 2 }
+        if ww > 40 { w = 3 }
+        if ww > 300 { w = 4 }
+        if ww > 1500 { w = 5 }
+        let mut shade: f64 = (ww as f64) / 400.0
+        if shade > 1.0 { shade = 1.0 }
+        let r: i32 = (112.0 + 143.0 * shade) as i32
+        let gg: i32 = (188.0 + 58.0 * shade) as i32
+        let b: i32 = (98.0 + 62.0 * shade) as i32
+        draw_segment(g, nx[p], ny[p], nx[i], ny[i], w, r, gg, b)
+    }
+}
+
+function draw_hud(g: Gfx, mode: i32, nodes: i32, live: i32, round: i32,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "BRANCHING VESSELS  VENATION", 2,
+                                232, 244, 230)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "BLADE", 1, 142, 160, 140)
+    let t3: i32 = gfx_draw_text(g, 46, 28, mode_name(mode), 1, 180, 250, 170)
+    let t4: i32 = gfx_draw_text(g, 116, 28, "VEIN NODES", 1, 142, 160, 140)
+    let t5: i32 = gfx_draw_int(g, 182, 28, nodes, 1, 232, 244, 230)
+    let t6: i32 = gfx_draw_text(g, 238, 28, "LIVE SOURCES", 1, 142, 160, 140)
+    let t7: i32 = gfx_draw_int(g, 316, 28, live, 1, 232, 244, 230)
+    let t8: i32 = gfx_draw_text(g, 366, 28, "ROUND", 1, 142, 160, 140)
+    let t9: i32 = gfx_draw_int(g, 404, 28, round, 1, 232, 244, 230)
+    let ta: i32 = gfx_draw_text(g, 8, 42,
+        "D 1.5  influence 24  1 LEAF  2 DISC  3 DENSE  R REGROW  P PAUSE",
+        1, 104, 120, 102)
+    if paused {
+        let tb: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tc: i32 = gfx_draw_text(g, 8, 572,
+        "each vein grows toward the sources nearest to it, then consumes them",
+        1, 118, 134, 116)
+    let td: i32 = gfx_draw_text(g, 8, 582,
+        "stroke width is subtree size, so vein order is measured not assigned",
+        1, 118, 134, 116)
+}
+
+function main() -> i32 {
+    let sx: array<f64, 1600> = [0.0, 0.0, 0.0, 0.0]
+    let sy: array<f64, 1600> = [0.0, 0.0, 0.0, 0.0]
+    let alive: array<i32, 1600> = [0, 0, 0, 0]
+    let nx: array<f64, 12000> = [0.0, 0.0, 0.0, 0.0]
+    let ny: array<f64, 12000> = [0.0, 0.0, 0.0, 0.0]
+    let parent: array<i32, 12000> = [0, 0, 0, 0]
+    let weight: array<i32, 12000> = [0, 0, 0, 0]
+    let ax: array<f64, 12000> = [0.0, 0.0, 0.0, 0.0]
+    let ay: array<f64, 12000> = [0.0, 0.0, 0.0, 0.0]
+    let hits: array<i32, 12000> = [0, 0, 0, 0]
+
+    let mut mode: i32 = 0
+    reset(sx, sy, alive, nx, ny, parent, weight, mode)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Branching vessels - Flow morphogenesis")
+
+    let mut round: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reset_held: bool = false
+    let mut hold: i32 = 0
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != mode {
+            mode = want
+            reset(sx, sy, alive, nx, ny, parent, weight, mode)
+            round = 0
+            hold = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held {
+                reset(sx, sy, alive, nx, ny, parent, weight, mode)
+                round = 0
+                hold = 0
+            }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        let mut added: i32 = 0
+        if !paused {
+            added = colonize(sx, sy, alive, nx, ny, parent, weight,
+                             ax, ay, hits, mode_kill(mode))
+            round = round + 1
+        }
+
+        if added == 0 and round > 4 {
+            hold = hold + 1
+            if hold > 150 {
+                reset(sx, sy, alive, nx, ny, parent, weight, mode)
+                round = 0
+                hold = 0
+            }
+        }
+
+        gfx_clear(g, 10, 16, 12)
+        draw_scene(g, sx, sy, alive, nx, ny, parent, weight)
+        draw_hud(g, mode, node_count, live_sources(alive), round, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
