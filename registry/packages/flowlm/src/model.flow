@@ -1,0 +1,873 @@
+# flowlm/model — one causal self-attention block, forward and manual backward.
+#
+# Shape of the network, for a sequence of n <= T token ids:
+#
+#   h    = tok_emb[x_t] + pos_emb[t]                     (n, D)
+#   n1   = layernorm(h; ln1_g, ln1_b)                    (n, D)
+#   q,k,v= n1 @ Wq/Wk/Wv + bq/bk/bv                      (n, D)
+#   s    = q @ k^T / sqrt(D), causal mask s[t][u>t]      (n, n)
+#   a    = softmax_row(s)                                (n, n)
+#   c    = a @ v                                         (n, D)
+#   h2   = h + (c @ Wo + bo)                             (n, D)
+#   n2   = layernorm(h2; ln2_g, ln2_b)                   (n, D)
+#   f    = tanh(n2 @ W1 + b1)                            (n, F)
+#   h3   = h2 + (f @ W2 + b2)                            (n, D)
+#   nf   = layernorm(h3; lnf_g, lnf_b)                   (n, D)
+#   z    = nf @ Wout + bout                              (n, V)
+#   loss = mean_t cross_entropy(z[t], y[t])
+#
+# tanh is used in the MLP rather than relu: it is smooth everywhere, so the
+# finite-difference gradient check in gradcheck.flow has no kinks to trip on.
+#
+# All parameters live in one flat f32 arena (a module-static ptr<f32>), with
+# per-tensor offsets computed at init. Gradients live in a second arena of the
+# same shape, so Adam and gradient clipping are single flat loops.
+#
+# Dot products accumulate in f64 and are stored back as f32. That costs
+# nothing measurable at this size and keeps the finite-difference check honest.
+
+extern {
+    function log(x: f64) -> f64
+}
+
+import .util {
+    flm_alloc_f32,
+    flm_zero_f32,
+    flm_exp,
+    flm_log,
+    flm_sqrt,
+    flm_tanh,
+    flm_rand_normal
+}
+
+# Compile-time caps. Actual dimensions are set at init and may be smaller;
+# the gradient check runs a deliberately tiny configuration.
+const FLM_MAX_VOCAB: i32 = 96
+const FLM_MAX_DMODEL: i32 = 32
+const FLM_MAX_CTX: i32 = 32
+const FLM_MAX_FF: i32 = 128
+
+const FLM_NTENSOR: i32 = 22
+const FLM_LN_EPS: f32 = 0.00001
+
+# Tensor ids (index into the offset/size tables).
+const FLM_T_TOK: i32 = 0
+const FLM_T_POS: i32 = 1
+const FLM_T_LN1G: i32 = 2
+const FLM_T_LN1B: i32 = 3
+const FLM_T_WQ: i32 = 4
+const FLM_T_BQ: i32 = 5
+const FLM_T_WK: i32 = 6
+const FLM_T_BK: i32 = 7
+const FLM_T_WV: i32 = 8
+const FLM_T_BV: i32 = 9
+const FLM_T_WO: i32 = 10
+const FLM_T_BO: i32 = 11
+const FLM_T_LN2G: i32 = 12
+const FLM_T_LN2B: i32 = 13
+const FLM_T_W1: i32 = 14
+const FLM_T_B1: i32 = 15
+const FLM_T_W2: i32 = 16
+const FLM_T_B2: i32 = 17
+const FLM_T_LNFG: i32 = 18
+const FLM_T_LNFB: i32 = 19
+const FLM_T_WOUT: i32 = 20
+const FLM_T_BOUT: i32 = 21
+
+# ---------------------------------------------------------------------------
+# Module statics: dimensions, parameter arena, activation arena
+# ---------------------------------------------------------------------------
+
+let mut flm_v: i32 = 0
+let mut flm_d: i32 = 0
+let mut flm_t: i32 = 0
+let mut flm_f: i32 = 0
+let mut flm_np: i32 = 0
+let mut flm_ready: bool = false
+
+let mut flm_toff: array<i32, 22> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+]
+let mut flm_tlen: array<i32, 22> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+]
+
+let mut flm_p: ptr<f32> = null
+let mut flm_g: ptr<f32> = null
+
+# Forward activations.
+let mut a_h: ptr<f32> = null
+let mut a_n1: ptr<f32> = null
+let mut a_mu1: ptr<f32> = null
+let mut a_rs1: ptr<f32> = null
+let mut a_q: ptr<f32> = null
+let mut a_k: ptr<f32> = null
+let mut a_v: ptr<f32> = null
+let mut a_att: ptr<f32> = null
+let mut a_ctx: ptr<f32> = null
+let mut a_ao: ptr<f32> = null
+let mut a_h2: ptr<f32> = null
+let mut a_n2: ptr<f32> = null
+let mut a_mu2: ptr<f32> = null
+let mut a_rs2: ptr<f32> = null
+let mut a_z1: ptr<f32> = null
+let mut a_f1: ptr<f32> = null
+let mut a_mo: ptr<f32> = null
+let mut a_h3: ptr<f32> = null
+let mut a_nf: ptr<f32> = null
+let mut a_muf: ptr<f32> = null
+let mut a_rsf: ptr<f32> = null
+let mut a_logit: ptr<f32> = null
+let mut a_prob: ptr<f32> = null
+
+# Activation gradients.
+let mut d_h: ptr<f32> = null
+let mut d_n1: ptr<f32> = null
+let mut d_q: ptr<f32> = null
+let mut d_k: ptr<f32> = null
+let mut d_v: ptr<f32> = null
+let mut d_att: ptr<f32> = null
+let mut d_sc: ptr<f32> = null
+let mut d_ctx: ptr<f32> = null
+let mut d_ao: ptr<f32> = null
+let mut d_h2: ptr<f32> = null
+let mut d_n2: ptr<f32> = null
+let mut d_z1: ptr<f32> = null
+let mut d_f1: ptr<f32> = null
+let mut d_mo: ptr<f32> = null
+let mut d_h3: ptr<f32> = null
+let mut d_nf: ptr<f32> = null
+let mut d_logit: ptr<f32> = null
+
+# ---------------------------------------------------------------------------
+# Introspection
+# ---------------------------------------------------------------------------
+
+export function flm_max_vocab() -> i32 {
+    return FLM_MAX_VOCAB
+}
+
+export function flm_max_dmodel() -> i32 {
+    return FLM_MAX_DMODEL
+}
+
+export function flm_max_ctx() -> i32 {
+    return FLM_MAX_CTX
+}
+
+export function flm_max_ff() -> i32 {
+    return FLM_MAX_FF
+}
+
+export function flm_dim_v() -> i32 {
+    return flm_v
+}
+
+export function flm_dim_d() -> i32 {
+    return flm_d
+}
+
+export function flm_dim_t() -> i32 {
+    return flm_t
+}
+
+export function flm_dim_f() -> i32 {
+    return flm_f
+}
+
+export function flm_param_count() -> i32 {
+    return flm_np
+}
+
+export function flm_tensor_count() -> i32 {
+    return FLM_NTENSOR
+}
+
+export function flm_tensor_offset(i: i32) -> i32 {
+    if i < 0 or i >= FLM_NTENSOR {
+        return 0 - 1
+    }
+    return flm_toff[i]
+}
+
+export function flm_tensor_size(i: i32) -> i32 {
+    if i < 0 or i >= FLM_NTENSOR {
+        return 0
+    }
+    return flm_tlen[i]
+}
+
+export function flm_tensor_name(i: i32) -> string {
+    if i == FLM_T_TOK { return "tok_emb  [V,D]" }
+    if i == FLM_T_POS { return "pos_emb  [T,D]" }
+    if i == FLM_T_LN1G { return "ln1_gamma[D]  " }
+    if i == FLM_T_LN1B { return "ln1_beta [D]  " }
+    if i == FLM_T_WQ { return "Wq       [D,D]" }
+    if i == FLM_T_BQ { return "bq       [D]  " }
+    if i == FLM_T_WK { return "Wk       [D,D]" }
+    if i == FLM_T_BK { return "bk       [D]  " }
+    if i == FLM_T_WV { return "Wv       [D,D]" }
+    if i == FLM_T_BV { return "bv       [D]  " }
+    if i == FLM_T_WO { return "Wo       [D,D]" }
+    if i == FLM_T_BO { return "bo       [D]  " }
+    if i == FLM_T_LN2G { return "ln2_gamma[D]  " }
+    if i == FLM_T_LN2B { return "ln2_beta [D]  " }
+    if i == FLM_T_W1 { return "W1       [D,F]" }
+    if i == FLM_T_B1 { return "b1       [F]  " }
+    if i == FLM_T_W2 { return "W2       [F,D]" }
+    if i == FLM_T_B2 { return "b2       [D]  " }
+    if i == FLM_T_LNFG { return "lnf_gamma[D]  " }
+    if i == FLM_T_LNFB { return "lnf_beta [D]  " }
+    if i == FLM_T_WOUT { return "Wout     [D,V]" }
+    return "bout     [V]  "
+}
+
+export function flm_params_ptr() -> ptr<f32> {
+    return flm_p
+}
+
+export function flm_grads_ptr() -> ptr<f32> {
+    return flm_g
+}
+
+export function flm_is_ready() -> bool {
+    return flm_ready
+}
+
+# ---------------------------------------------------------------------------
+# Init
+# ---------------------------------------------------------------------------
+
+function flm_place(id: i32, size: i32, cursor: i32) -> i32 {
+    flm_toff[id] = cursor
+    flm_tlen[id] = size
+    return cursor + size
+}
+
+# Allocate the model. Returns the parameter count, or -1 if any dimension
+# exceeds its compile-time cap.
+export function flm_model_init(vocab: i32, dmodel: i32, ctx: i32, dff: i32) -> i32 {
+    if vocab < 2 or vocab > FLM_MAX_VOCAB {
+        return 0 - 1
+    }
+    if dmodel < 1 or dmodel > FLM_MAX_DMODEL {
+        return 0 - 1
+    }
+    if ctx < 2 or ctx > FLM_MAX_CTX {
+        return 0 - 1
+    }
+    if dff < 1 or dff > FLM_MAX_FF {
+        return 0 - 1
+    }
+
+    flm_v = vocab
+    flm_d = dmodel
+    flm_t = ctx
+    flm_f = dff
+
+    let d: i32 = dmodel
+    let mut c: i32 = 0
+    c = flm_place(FLM_T_TOK, vocab * d, c)
+    c = flm_place(FLM_T_POS, ctx * d, c)
+    c = flm_place(FLM_T_LN1G, d, c)
+    c = flm_place(FLM_T_LN1B, d, c)
+    c = flm_place(FLM_T_WQ, d * d, c)
+    c = flm_place(FLM_T_BQ, d, c)
+    c = flm_place(FLM_T_WK, d * d, c)
+    c = flm_place(FLM_T_BK, d, c)
+    c = flm_place(FLM_T_WV, d * d, c)
+    c = flm_place(FLM_T_BV, d, c)
+    c = flm_place(FLM_T_WO, d * d, c)
+    c = flm_place(FLM_T_BO, d, c)
+    c = flm_place(FLM_T_LN2G, d, c)
+    c = flm_place(FLM_T_LN2B, d, c)
+    c = flm_place(FLM_T_W1, d * dff, c)
+    c = flm_place(FLM_T_B1, dff, c)
+    c = flm_place(FLM_T_W2, dff * d, c)
+    c = flm_place(FLM_T_B2, d, c)
+    c = flm_place(FLM_T_LNFG, d, c)
+    c = flm_place(FLM_T_LNFB, d, c)
+    c = flm_place(FLM_T_WOUT, d * vocab, c)
+    c = flm_place(FLM_T_BOUT, vocab, c)
+    flm_np = c
+
+    flm_p = flm_alloc_f32(flm_np)
+    flm_g = flm_alloc_f32(flm_np)
+
+    let td: i32 = ctx * d
+    let tt: i32 = ctx * ctx
+    let tf: i32 = ctx * dff
+    let tv: i32 = ctx * vocab
+
+    a_h = flm_alloc_f32(td)
+    a_n1 = flm_alloc_f32(td)
+    a_mu1 = flm_alloc_f32(ctx)
+    a_rs1 = flm_alloc_f32(ctx)
+    a_q = flm_alloc_f32(td)
+    a_k = flm_alloc_f32(td)
+    a_v = flm_alloc_f32(td)
+    a_att = flm_alloc_f32(tt)
+    a_ctx = flm_alloc_f32(td)
+    a_ao = flm_alloc_f32(td)
+    a_h2 = flm_alloc_f32(td)
+    a_n2 = flm_alloc_f32(td)
+    a_mu2 = flm_alloc_f32(ctx)
+    a_rs2 = flm_alloc_f32(ctx)
+    a_z1 = flm_alloc_f32(tf)
+    a_f1 = flm_alloc_f32(tf)
+    a_mo = flm_alloc_f32(td)
+    a_h3 = flm_alloc_f32(td)
+    a_nf = flm_alloc_f32(td)
+    a_muf = flm_alloc_f32(ctx)
+    a_rsf = flm_alloc_f32(ctx)
+    a_logit = flm_alloc_f32(tv)
+    a_prob = flm_alloc_f32(tv)
+
+    d_h = flm_alloc_f32(td)
+    d_n1 = flm_alloc_f32(td)
+    d_q = flm_alloc_f32(td)
+    d_k = flm_alloc_f32(td)
+    d_v = flm_alloc_f32(td)
+    d_att = flm_alloc_f32(tt)
+    d_sc = flm_alloc_f32(tt)
+    d_ctx = flm_alloc_f32(td)
+    d_ao = flm_alloc_f32(td)
+    d_h2 = flm_alloc_f32(td)
+    d_n2 = flm_alloc_f32(td)
+    d_z1 = flm_alloc_f32(tf)
+    d_f1 = flm_alloc_f32(tf)
+    d_mo = flm_alloc_f32(td)
+    d_h3 = flm_alloc_f32(td)
+    d_nf = flm_alloc_f32(td)
+    d_logit = flm_alloc_f32(tv)
+
+    flm_ready = true
+    return flm_np
+}
+
+function flm_fill_normal(off: i32, n: i32, sd: f32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        flm_p[off + i] = flm_rand_normal() * sd
+        i = i + 1
+    }
+}
+
+function flm_fill_const(off: i32, n: i32, value: f32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        flm_p[off + i] = value
+        i = i + 1
+    }
+}
+
+# Initialize weights. Matrices get 1/sqrt(fan_in), embeddings get `emb_sd`,
+# layernorm gains start at 1 and every bias at 0.
+export function flm_model_randomize(emb_sd: f32) -> void {
+    let d: f32 = flm_d as f32
+    let inv_d: f32 = 1.0 / flm_sqrt(d)
+    let inv_f: f32 = 1.0 / flm_sqrt(flm_f as f32)
+
+    flm_fill_normal(flm_toff[FLM_T_TOK], flm_tlen[FLM_T_TOK], emb_sd)
+    flm_fill_normal(flm_toff[FLM_T_POS], flm_tlen[FLM_T_POS], emb_sd)
+    flm_fill_const(flm_toff[FLM_T_LN1G], flm_tlen[FLM_T_LN1G], 1.0)
+    flm_fill_const(flm_toff[FLM_T_LN1B], flm_tlen[FLM_T_LN1B], 0.0)
+    flm_fill_normal(flm_toff[FLM_T_WQ], flm_tlen[FLM_T_WQ], inv_d)
+    flm_fill_const(flm_toff[FLM_T_BQ], flm_tlen[FLM_T_BQ], 0.0)
+    flm_fill_normal(flm_toff[FLM_T_WK], flm_tlen[FLM_T_WK], inv_d)
+    flm_fill_const(flm_toff[FLM_T_BK], flm_tlen[FLM_T_BK], 0.0)
+    flm_fill_normal(flm_toff[FLM_T_WV], flm_tlen[FLM_T_WV], inv_d)
+    flm_fill_const(flm_toff[FLM_T_BV], flm_tlen[FLM_T_BV], 0.0)
+    flm_fill_normal(flm_toff[FLM_T_WO], flm_tlen[FLM_T_WO], inv_d)
+    flm_fill_const(flm_toff[FLM_T_BO], flm_tlen[FLM_T_BO], 0.0)
+    flm_fill_const(flm_toff[FLM_T_LN2G], flm_tlen[FLM_T_LN2G], 1.0)
+    flm_fill_const(flm_toff[FLM_T_LN2B], flm_tlen[FLM_T_LN2B], 0.0)
+    flm_fill_normal(flm_toff[FLM_T_W1], flm_tlen[FLM_T_W1], inv_d)
+    flm_fill_const(flm_toff[FLM_T_B1], flm_tlen[FLM_T_B1], 0.0)
+    flm_fill_normal(flm_toff[FLM_T_W2], flm_tlen[FLM_T_W2], inv_f)
+    flm_fill_const(flm_toff[FLM_T_B2], flm_tlen[FLM_T_B2], 0.0)
+    flm_fill_const(flm_toff[FLM_T_LNFG], flm_tlen[FLM_T_LNFG], 1.0)
+    flm_fill_const(flm_toff[FLM_T_LNFB], flm_tlen[FLM_T_LNFB], 0.0)
+    flm_fill_normal(flm_toff[FLM_T_WOUT], flm_tlen[FLM_T_WOUT], inv_d)
+    flm_fill_const(flm_toff[FLM_T_BOUT], flm_tlen[FLM_T_BOUT], 0.0)
+}
+
+export function flm_zero_grads() -> void {
+    flm_zero_f32(flm_g, flm_np)
+}
+
+# ---------------------------------------------------------------------------
+# Building blocks
+# ---------------------------------------------------------------------------
+
+# out[t] = gamma * (x[t] - mean) / sqrt(var + eps) + beta, per row of width D.
+function flm_layernorm(x: ptr<f32>, out: ptr<f32>, mu: ptr<f32>, rs: ptr<f32>,
+                       gi: i32, bi: i32, n: i32) -> void {
+    let dm: i32 = flm_d
+    let inv: f64 = 1.0 / (dm as f64)
+    let mut t: i32 = 0
+    while t < n {
+        let base: i32 = t * dm
+        let mut sum: f64 = 0.0
+        let mut i: i32 = 0
+        while i < dm {
+            sum = sum + (x[base + i] as f64)
+            i = i + 1
+        }
+        let m: f64 = sum * inv
+        let mut var: f64 = 0.0
+        i = 0
+        while i < dm {
+            let dv: f64 = (x[base + i] as f64) - m
+            var = var + dv * dv
+            i = i + 1
+        }
+        var = var * inv
+        let r: f32 = 1.0 / flm_sqrt((var as f32) + FLM_LN_EPS)
+        mu[t] = m as f32
+        rs[t] = r
+        i = 0
+        while i < dm {
+            let xh: f32 = (x[base + i] - (m as f32)) * r
+            out[base + i] = flm_p[gi + i] * xh + flm_p[bi + i]
+            i = i + 1
+        }
+        t = t + 1
+    }
+}
+
+# Backward through layernorm. Accumulates parameter gradients into flm_g and
+# adds the input gradient into dx.
+function flm_layernorm_bwd(x: ptr<f32>, dy: ptr<f32>, dx: ptr<f32>,
+                           mu: ptr<f32>, rs: ptr<f32>,
+                           gi: i32, bi: i32, n: i32) -> void {
+    let dm: i32 = flm_d
+    let inv: f64 = 1.0 / (dm as f64)
+    let mut t: i32 = 0
+    while t < n {
+        let base: i32 = t * dm
+        let m: f32 = mu[t]
+        let r: f32 = rs[t]
+        let mut s1: f64 = 0.0
+        let mut s2: f64 = 0.0
+        let mut i: i32 = 0
+        while i < dm {
+            let xh: f32 = (x[base + i] - m) * r
+            let dxh: f32 = dy[base + i] * flm_p[gi + i]
+            flm_g[gi + i] = flm_g[gi + i] + dy[base + i] * xh
+            flm_g[bi + i] = flm_g[bi + i] + dy[base + i]
+            s1 = s1 + (dxh as f64)
+            s2 = s2 + (dxh as f64) * (xh as f64)
+            i = i + 1
+        }
+        let m1: f32 = (s1 * inv) as f32
+        let m2: f32 = (s2 * inv) as f32
+        i = 0
+        while i < dm {
+            let xh: f32 = (x[base + i] - m) * r
+            let dxh: f32 = dy[base + i] * flm_p[gi + i]
+            dx[base + i] = dx[base + i] + r * (dxh - m1 - xh * m2)
+            i = i + 1
+        }
+        t = t + 1
+    }
+}
+
+# out[t][o] = sum_i x[t][i] * W[i][o] + b[o]. Pass bi < 0 for no bias.
+function flm_linear(x: ptr<f32>, out: ptr<f32>, wi: i32, bi: i32,
+                    n: i32, din: i32, dout: i32) -> void {
+    let mut t: i32 = 0
+    while t < n {
+        let xb: i32 = t * din
+        let ob: i32 = t * dout
+        let mut o: i32 = 0
+        while o < dout {
+            let mut acc: f64 = 0.0
+            if bi >= 0 {
+                acc = flm_p[bi + o] as f64
+            }
+            let mut i: i32 = 0
+            while i < din {
+                acc = acc + (x[xb + i] as f64) * (flm_p[wi + i * dout + o] as f64)
+                i = i + 1
+            }
+            out[ob + o] = acc as f32
+            o = o + 1
+        }
+        t = t + 1
+    }
+}
+
+# Backward through flm_linear. Accumulates dW/db into flm_g and adds dx.
+function flm_linear_bwd(x: ptr<f32>, dy: ptr<f32>, dx: ptr<f32>,
+                        wi: i32, bi: i32, n: i32, din: i32, dout: i32) -> void {
+    let mut t: i32 = 0
+    while t < n {
+        let xb: i32 = t * din
+        let ob: i32 = t * dout
+        let mut i: i32 = 0
+        while i < din {
+            let xv: f32 = x[xb + i]
+            let mut acc: f64 = 0.0
+            let mut o: i32 = 0
+            while o < dout {
+                let gy: f32 = dy[ob + o]
+                flm_g[wi + i * dout + o] = flm_g[wi + i * dout + o] + xv * gy
+                acc = acc + (flm_p[wi + i * dout + o] as f64) * (gy as f64)
+                o = o + 1
+            }
+            dx[xb + i] = dx[xb + i] + (acc as f32)
+            i = i + 1
+        }
+        if bi >= 0 {
+            let mut o2: i32 = 0
+            while o2 < dout {
+                flm_g[bi + o2] = flm_g[bi + o2] + dy[ob + o2]
+                o2 = o2 + 1
+            }
+        }
+        t = t + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Forward
+# ---------------------------------------------------------------------------
+
+# Runs the whole stack on inp[0..n) with targets tgt[0..n) and returns the mean
+# cross-entropy in nats. Activations are kept for the backward pass.
+export function flm_forward(inp: ptr<i32>, tgt: ptr<i32>, n: i32) -> f64 {
+    let dm: i32 = flm_d
+    let vv: i32 = flm_v
+    let ff: i32 = flm_f
+    let tok: i32 = flm_toff[FLM_T_TOK]
+    let pos: i32 = flm_toff[FLM_T_POS]
+
+    # Embedding
+    let mut t: i32 = 0
+    while t < n {
+        let base: i32 = t * dm
+        let e: i32 = tok + inp[t] * dm
+        let pb: i32 = pos + t * dm
+        let mut i: i32 = 0
+        while i < dm {
+            a_h[base + i] = flm_p[e + i] + flm_p[pb + i]
+            i = i + 1
+        }
+        t = t + 1
+    }
+
+    # Pre-attention layernorm
+    flm_layernorm(a_h, a_n1, a_mu1, a_rs1, flm_toff[FLM_T_LN1G], flm_toff[FLM_T_LN1B], n)
+
+    # Q, K, V
+    flm_linear(a_n1, a_q, flm_toff[FLM_T_WQ], flm_toff[FLM_T_BQ], n, dm, dm)
+    flm_linear(a_n1, a_k, flm_toff[FLM_T_WK], flm_toff[FLM_T_BK], n, dm, dm)
+    flm_linear(a_n1, a_v, flm_toff[FLM_T_WV], flm_toff[FLM_T_BV], n, dm, dm)
+
+    # Causal scaled dot-product attention (single head)
+    let scale: f32 = 1.0 / flm_sqrt(dm as f32)
+    t = 0
+    while t < n {
+        let arow: i32 = t * flm_t
+        let qb: i32 = t * dm
+        # scores for u <= t, tracking the row max for a stable softmax
+        let mut top: f32 = 0.0 - 1000000.0
+        let mut u: i32 = 0
+        while u <= t {
+            let kb: i32 = u * dm
+            let mut acc: f64 = 0.0
+            let mut i: i32 = 0
+            while i < dm {
+                acc = acc + (a_q[qb + i] as f64) * (a_k[kb + i] as f64)
+                i = i + 1
+            }
+            let s: f32 = (acc as f32) * scale
+            a_att[arow + u] = s
+            if s > top {
+                top = s
+            }
+            u = u + 1
+        }
+        # exp / normalize
+        let mut denom: f64 = 0.0
+        u = 0
+        while u <= t {
+            let e: f32 = flm_exp(a_att[arow + u] - top)
+            a_att[arow + u] = e
+            denom = denom + (e as f64)
+            u = u + 1
+        }
+        let inv_denom: f32 = (1.0 / denom) as f32
+        u = 0
+        while u <= t {
+            a_att[arow + u] = a_att[arow + u] * inv_denom
+            u = u + 1
+        }
+        # masked-out positions stay exactly zero
+        u = t + 1
+        while u < n {
+            a_att[arow + u] = 0.0
+            u = u + 1
+        }
+        # context = sum_u att[t][u] * v[u]
+        let cb: i32 = t * dm
+        let mut i2: i32 = 0
+        while i2 < dm {
+            let mut acc2: f64 = 0.0
+            let mut u2: i32 = 0
+            while u2 <= t {
+                acc2 = acc2 + (a_att[arow + u2] as f64) * (a_v[u2 * dm + i2] as f64)
+                u2 = u2 + 1
+            }
+            a_ctx[cb + i2] = acc2 as f32
+            i2 = i2 + 1
+        }
+        t = t + 1
+    }
+
+    # Attention output projection + residual
+    flm_linear(a_ctx, a_ao, flm_toff[FLM_T_WO], flm_toff[FLM_T_BO], n, dm, dm)
+    let mut idx: i32 = 0
+    while idx < n * dm {
+        a_h2[idx] = a_h[idx] + a_ao[idx]
+        idx = idx + 1
+    }
+
+    # MLP block
+    flm_layernorm(a_h2, a_n2, a_mu2, a_rs2, flm_toff[FLM_T_LN2G], flm_toff[FLM_T_LN2B], n)
+    flm_linear(a_n2, a_z1, flm_toff[FLM_T_W1], flm_toff[FLM_T_B1], n, dm, ff)
+    idx = 0
+    while idx < n * ff {
+        a_f1[idx] = flm_tanh(a_z1[idx])
+        idx = idx + 1
+    }
+    flm_linear(a_f1, a_mo, flm_toff[FLM_T_W2], flm_toff[FLM_T_B2], n, ff, dm)
+    idx = 0
+    while idx < n * dm {
+        a_h3[idx] = a_h2[idx] + a_mo[idx]
+        idx = idx + 1
+    }
+
+    # Final layernorm + output projection
+    flm_layernorm(a_h3, a_nf, a_muf, a_rsf, flm_toff[FLM_T_LNFG], flm_toff[FLM_T_LNFB], n)
+    flm_linear(a_nf, a_logit, flm_toff[FLM_T_WOUT], flm_toff[FLM_T_BOUT], n, dm, vv)
+
+    # Softmax + cross entropy
+    let mut loss: f64 = 0.0
+    t = 0
+    while t < n {
+        let lb: i32 = t * vv
+        let mut top: f32 = a_logit[lb]
+        let mut j: i32 = 1
+        while j < vv {
+            if a_logit[lb + j] > top {
+                top = a_logit[lb + j]
+            }
+            j = j + 1
+        }
+        let mut denom: f64 = 0.0
+        j = 0
+        while j < vv {
+            let e: f32 = flm_exp(a_logit[lb + j] - top)
+            a_prob[lb + j] = e
+            denom = denom + (e as f64)
+            j = j + 1
+        }
+        let inv_denom: f32 = (1.0 / denom) as f32
+        j = 0
+        while j < vv {
+            a_prob[lb + j] = a_prob[lb + j] * inv_denom
+            j = j + 1
+        }
+        let y: i32 = tgt[t]
+        loss = loss - ((a_logit[lb + y] - top) as f64) + flm_dlog(denom)
+        t = t + 1
+    }
+    return loss / (n as f64)
+}
+
+# Double-precision log for the loss only. The rest of the model is f32; the
+# log-partition term is the one place where f32 rounding would show up as
+# noise in the finite-difference gradient check.
+function flm_dlog(x: f64) -> f64 {
+    return log(x)
+}
+
+# Probability the model assigns to token `j` at position `t` (post-forward).
+export function flm_prob_at(t: i32, j: i32) -> f32 {
+    return a_prob[t * flm_v + j]
+}
+
+# ---------------------------------------------------------------------------
+# Backward
+# ---------------------------------------------------------------------------
+
+# Backpropagates the loss of the most recent flm_forward with the same inputs.
+# Gradients accumulate into flm_g; call flm_zero_grads() before a batch.
+export function flm_backward(inp: ptr<i32>, tgt: ptr<i32>, n: i32) -> void {
+    let dm: i32 = flm_d
+    let vv: i32 = flm_v
+    let ff: i32 = flm_f
+    let nd: i32 = n * dm
+    let nf_: i32 = n * ff
+    let nv: i32 = n * vv
+
+    flm_zero_f32(d_h, nd)
+    flm_zero_f32(d_n1, nd)
+    flm_zero_f32(d_q, nd)
+    flm_zero_f32(d_k, nd)
+    flm_zero_f32(d_v, nd)
+    flm_zero_f32(d_att, n * flm_t)
+    flm_zero_f32(d_sc, n * flm_t)
+    flm_zero_f32(d_ctx, nd)
+    flm_zero_f32(d_ao, nd)
+    flm_zero_f32(d_h2, nd)
+    flm_zero_f32(d_n2, nd)
+    flm_zero_f32(d_z1, nf_)
+    flm_zero_f32(d_f1, nf_)
+    flm_zero_f32(d_mo, nd)
+    flm_zero_f32(d_h3, nd)
+    flm_zero_f32(d_nf, nd)
+    flm_zero_f32(d_logit, nv)
+
+    # d/dlogits of mean cross-entropy = (softmax - onehot) / n
+    let inv_n: f32 = 1.0 / (n as f32)
+    let mut t: i32 = 0
+    while t < n {
+        let lb: i32 = t * vv
+        let mut j: i32 = 0
+        while j < vv {
+            d_logit[lb + j] = a_prob[lb + j] * inv_n
+            j = j + 1
+        }
+        d_logit[lb + tgt[t]] = d_logit[lb + tgt[t]] - inv_n
+        t = t + 1
+    }
+
+    # Output projection and final layernorm
+    flm_linear_bwd(a_nf, d_logit, d_nf, flm_toff[FLM_T_WOUT], flm_toff[FLM_T_BOUT], n, dm, vv)
+    flm_layernorm_bwd(a_h3, d_nf, d_h3, a_muf, a_rsf,
+                      flm_toff[FLM_T_LNFG], flm_toff[FLM_T_LNFB], n)
+
+    # h3 = h2 + mo
+    let mut i: i32 = 0
+    while i < nd {
+        d_h2[i] = d_h2[i] + d_h3[i]
+        d_mo[i] = d_h3[i]
+        i = i + 1
+    }
+
+    # MLP
+    flm_linear_bwd(a_f1, d_mo, d_f1, flm_toff[FLM_T_W2], flm_toff[FLM_T_B2], n, ff, dm)
+    i = 0
+    while i < nf_ {
+        let f: f32 = a_f1[i]
+        d_z1[i] = d_f1[i] * (1.0 - f * f)
+        i = i + 1
+    }
+    flm_linear_bwd(a_n2, d_z1, d_n2, flm_toff[FLM_T_W1], flm_toff[FLM_T_B1], n, dm, ff)
+    flm_layernorm_bwd(a_h2, d_n2, d_h2, a_mu2, a_rs2,
+                      flm_toff[FLM_T_LN2G], flm_toff[FLM_T_LN2B], n)
+
+    # h2 = h + ao
+    i = 0
+    while i < nd {
+        d_h[i] = d_h[i] + d_h2[i]
+        d_ao[i] = d_h2[i]
+        i = i + 1
+    }
+
+    # Attention output projection
+    flm_linear_bwd(a_ctx, d_ao, d_ctx, flm_toff[FLM_T_WO], flm_toff[FLM_T_BO], n, dm, dm)
+
+    # ctx[t] = sum_{u<=t} att[t][u] * v[u]
+    t = 0
+    while t < n {
+        let arow: i32 = t * flm_t
+        let cb: i32 = t * dm
+        let mut u: i32 = 0
+        while u <= t {
+            let vb: i32 = u * dm
+            let mut acc: f64 = 0.0
+            let av: f32 = a_att[arow + u]
+            let mut j: i32 = 0
+            while j < dm {
+                acc = acc + (d_ctx[cb + j] as f64) * (a_v[vb + j] as f64)
+                d_v[vb + j] = d_v[vb + j] + av * d_ctx[cb + j]
+                j = j + 1
+            }
+            d_att[arow + u] = acc as f32
+            u = u + 1
+        }
+        t = t + 1
+    }
+
+    # softmax backward, row by row
+    t = 0
+    while t < n {
+        let arow: i32 = t * flm_t
+        let mut dot: f64 = 0.0
+        let mut u: i32 = 0
+        while u <= t {
+            dot = dot + (a_att[arow + u] as f64) * (d_att[arow + u] as f64)
+            u = u + 1
+        }
+        let dotf: f32 = dot as f32
+        u = 0
+        while u <= t {
+            d_sc[arow + u] = a_att[arow + u] * (d_att[arow + u] - dotf)
+            u = u + 1
+        }
+        t = t + 1
+    }
+
+    # scores = q . k * scale
+    let scale: f32 = 1.0 / flm_sqrt(dm as f32)
+    t = 0
+    while t < n {
+        let arow: i32 = t * flm_t
+        let qb: i32 = t * dm
+        let mut u: i32 = 0
+        while u <= t {
+            let kb: i32 = u * dm
+            let gs: f32 = d_sc[arow + u] * scale
+            let mut j: i32 = 0
+            while j < dm {
+                d_q[qb + j] = d_q[qb + j] + gs * a_k[kb + j]
+                d_k[kb + j] = d_k[kb + j] + gs * a_q[qb + j]
+                j = j + 1
+            }
+            u = u + 1
+        }
+        t = t + 1
+    }
+
+    # Q, K, V projections
+    flm_linear_bwd(a_n1, d_q, d_n1, flm_toff[FLM_T_WQ], flm_toff[FLM_T_BQ], n, dm, dm)
+    flm_linear_bwd(a_n1, d_k, d_n1, flm_toff[FLM_T_WK], flm_toff[FLM_T_BK], n, dm, dm)
+    flm_linear_bwd(a_n1, d_v, d_n1, flm_toff[FLM_T_WV], flm_toff[FLM_T_BV], n, dm, dm)
+
+    # Pre-attention layernorm
+    flm_layernorm_bwd(a_h, d_n1, d_h, a_mu1, a_rs1,
+                      flm_toff[FLM_T_LN1G], flm_toff[FLM_T_LN1B], n)
+
+    # Embeddings
+    let tok: i32 = flm_toff[FLM_T_TOK]
+    let pos: i32 = flm_toff[FLM_T_POS]
+    t = 0
+    while t < n {
+        let base: i32 = t * dm
+        let e: i32 = tok + inp[t] * dm
+        let pb: i32 = pos + t * dm
+        let mut j: i32 = 0
+        while j < dm {
+            flm_g[e + j] = flm_g[e + j] + d_h[base + j]
+            flm_g[pb + j] = flm_g[pb + j] + d_h[base + j]
+            j = j + 1
+        }
+        t = t + 1
+    }
+}
