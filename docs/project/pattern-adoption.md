@@ -23,7 +23,7 @@ story. Adoption first; new sugar second.
 | P1 | Route linalg examples through `blas.flow` | adoption ✅ | [#168](https://github.com/flooooooooooow/flow/issues/168) |
 | P1 | Wire ML demos through Dual / grad codegen | adoption + docs ✅ | [#170](https://github.com/flooooooooooow/flow/issues/170) |
 | P1 | Owned `HttpResponse` + JSON decode helpers | API ✅ | [#167](https://github.com/flooooooooooow/flow/issues/167) |
-| P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ partial | [#162](https://github.com/flooooooooooow/flow/issues/162) |
+| P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ | [#162](https://github.com/flooooooooooow/flow/issues/162) |
 | P2 | Field / `laplacian` PDE surface | language ✅ | [#163](https://github.com/flooooooooooow/flow/issues/163) |
 | P2 | Dual + Tensor operators + mutable params | language ✅ partial | [#161](https://github.com/flooooooooooow/flow/issues/161) |
 | P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering ✅ | [#160](https://github.com/flooooooooooow/flow/issues/160) |
@@ -184,9 +184,24 @@ ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 `dlqr_diag_q_scalar_u` / `lqr_diag_q` for n≤8, scalar input. Cartpole
 `cartpole_lqr_gains` is a thin wrapper (no private Riccati loop).
 
-**Follow-on:** LAPACK DARE; `analyze { lqr { … } }` for n>2 in the DSL.
+**Also shipped:** vision-form DSL
+```flow
+analyze plant {
+    lqr {
+        Q 1.0 1.0 1.0 1.0
+        R 1.0
+        -> k0 k1 k2 k3
+    }
+}
+```
+→ `dlqr_diag_q_scalar_u` on the (discretized) plant. Demos:
+`spring_mass_lqr.flow` (n=2 continuous), `chain4_lqr.flow` (n=4).
 
-**Exit (stdlib):** Cartpole control has no private mini-ARE. ✅ DSL card open.
+**Follow-on:** LAPACK DARE; poles/controllability items in the same
+`analyze Name { … }` block.
+
+**Exit (stdlib + DSL lqr):** Cartpole has no private mini-ARE ✅; DSL
+`analyze { lqr }` works for n≤8 ✅.
 
 ---
 
