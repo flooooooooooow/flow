@@ -1,0 +1,84 @@
+# Sample for GitHub Linguist — sourced from https://github.com/flooooooooooow/flow/blob/main/examples/linalg/lu_decomposition.flow
+# License: MIT (same as the Flow repository)
+#
+# LU / linear solve via stdlib BLAS (pattern-adoption #168).
+# For the hand-written Doolittle / pivot walkthrough see
+#   examples/linalg/lu_decomposition_pedagogical.flow
+#
+# Run (macOS): ./flow run examples/linalg/lu_decomposition.flow
+# Links Accelerate automatically on Darwin.
+
+import "stdlib/blas.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function main() -> i32 {
+    println("LU / solve via stdlib/blas.flow")
+    println("================================")
+
+    # Well-conditioned 3x3 system: A x = b
+    let A: Mat = mat_new(3, 3)
+    mat_set(A, 0, 0, 4.0); mat_set(A, 0, 1, 1.0); mat_set(A, 0, 2, 1.0)
+    mat_set(A, 1, 0, 1.0); mat_set(A, 1, 1, 3.0); mat_set(A, 1, 2, 1.0)
+    mat_set(A, 2, 0, 1.0); mat_set(A, 2, 1, 1.0); mat_set(A, 2, 2, 2.0)
+
+    let b: array<f64, 3> = [6.0, 5.0, 4.0]
+    let x: array<f64, 3> = [0.0, 0.0, 0.0]
+    let b_ptr: ptr<f64> = b
+    let x_ptr: ptr<f64> = x
+
+    let info: i32 = solve(A, b_ptr, x_ptr)
+    print("  dgesv info = ")
+    println(info)
+
+    print("  x = [")
+    printf("%.6f", x[0])
+    print(", ")
+    printf("%.6f", x[1])
+    print(", ")
+    printf("%.6f", x[2])
+    println("]")
+
+    # Residual r = A x - b via gemv into a scratch vector
+    let Ax: array<f64, 3> = [0.0, 0.0, 0.0]
+    let Ax_ptr: ptr<f64> = Ax
+    gemv(A, x_ptr, Ax_ptr)
+    let mut max_res: f64 = 0.0
+    for i in 0 to 3 {
+        let mut r: f64 = Ax[i] - b[i]
+        if r < 0.0 {
+            r = 0.0 - r
+        }
+        if r > max_res {
+            max_res = r
+        }
+    }
+    print("  max |Ax-b| = ")
+    printf("%.2e", max_res)
+    println("")
+
+    # Optional: factor a clone with getrf
+    let Af: Mat = mat_clone(A)
+    let piv: array<i32, 3> = [0, 0, 0]
+    let piv_ptr: ptr<i32> = piv
+    let finfo: i32 = lu_factor(Af, piv_ptr)
+    print("  getrf info = ")
+    println(finfo)
+
+    mat_free(Af)
+    mat_free(A)
+
+    if info != 0 {
+        return 1
+    }
+    if finfo != 0 {
+        return 1
+    }
+    if max_res > 1.0e-9 {
+        return 1
+    }
+    println("  OK: solve + lu_factor via BLAS/LAPACK")
+    return 0
+}

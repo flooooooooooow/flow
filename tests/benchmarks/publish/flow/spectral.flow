@@ -1,0 +1,77 @@
+# Spectral norm, from the Computer Language Benchmarks Game.
+# N = 500, 10 power iterations. Timed region is the power iteration
+# plus the final norm computation.
+
+extern {
+    function clock_gettime_nsec_np(clock_id: i32) -> i64
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+}
+
+const N: i32 = 500
+
+function A(i: i32, j: i32) -> f64 {
+    let div: f64 = ((i + j) * (i + j + 1)) / 2 + i + 1
+    return 1.0 / div
+}
+
+function mult_Av(v: ptr<f64>, Av: ptr<f64>, n: i32) {
+    for i in 0 to n {
+        let mut sum: f64 = 0.0
+        for j in 0 to n {
+            sum = sum + A(i, j) * v[j]
+        }
+        Av[i] = sum
+    }
+}
+
+function mult_Atv(v: ptr<f64>, Atv: ptr<f64>, n: i32) {
+    for i in 0 to n {
+        let mut sum: f64 = 0.0
+        for j in 0 to n {
+            sum = sum + A(j, i) * v[j]
+        }
+        Atv[i] = sum
+    }
+}
+
+function mult_AtAv(v: ptr<f64>, AtAv: ptr<f64>, tmp: ptr<f64>, n: i32) {
+    mult_Av(v, tmp, n)
+    mult_Atv(tmp, AtAv, n)
+}
+
+function main() -> i32 {
+    let u: array<f64, 500> = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    let v: array<f64, 500> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let tmp: array<f64, 500> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    let u_ptr: ptr<f64> = u
+    let v_ptr: ptr<f64> = v
+    let tmp_ptr: ptr<f64> = tmp
+
+    for i in 0 to N {
+        u[i] = 1.0
+    }
+
+    let t0: i64 = clock_gettime_nsec_np(6)
+
+    for i in 0 to 10 {
+        mult_AtAv(u_ptr, v_ptr, tmp_ptr, N)
+        mult_AtAv(v_ptr, u_ptr, tmp_ptr, N)
+    }
+
+    let mut vBv: f64 = 0.0
+    let mut vv: f64 = 0.0
+    for i in 0 to N {
+        vBv = vBv + u[i] * v[i]
+        vv = vv + v[i] * v[i]
+    }
+    let result: f64 = sqrt(vBv / vv)
+
+    let t1: i64 = clock_gettime_nsec_np(6)
+    let secs: f64 = (t1 - t0) / 1000000000.0
+
+    printf("result %.9f\n", result)
+    printf("seconds %.9f\n", secs)
+    return 0
+}

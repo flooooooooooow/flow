@@ -1,4 +1,5 @@
 # GPU FFT Implementation using Effect-Based Programming
+# flow:lenient: strict checker gap, capability parameters and gpu kernel externs inside handle blocks. Board card flow-strict-effect-ops.
 # This demonstrates FLOW's capability for high-performance computing
 
 # External CUDA runtime functions (would be provided by CUDA headers)
@@ -256,10 +257,10 @@ function analyze_audio_signal(audio_data: array_f32, sample_rate: i32) -> array_
         let spectrum: array_f32 = compute_spectrum(audio_data)
         
         # Find dominant frequency
-        let max_magnitude: f32 = 0.0
-        let dominant_freq: i32 = 0
+        let mut max_magnitude: f32 = 0.0
+        let mut dominant_freq: i32 = 0
         
-        let i: i32 = 0
+        let mut i: i32 = 0
         while i < length(spectrum) / 2 {
             let magnitude: f32 = sqrt(spectrum[i * 2] * spectrum[i * 2] + spectrum[i * 2 + 1] * spectrum[i * 2 + 1])
             if magnitude > max_magnitude {
@@ -286,7 +287,7 @@ function process_image(image_data: array_f32, width: i32, height: i32) -> array_
         
         # Apply frequency domain filter (simple high-pass filter)
         let filtered: array_f32 = array_f32(length(spectrum))
-        let i: i32 = 0
+        let mut i: i32 = 0
         while i < length(spectrum) / 2 {
             let freq_x: i32 = (i % width) - width / 2
             let freq_y: i32 = (i / width) - height / 2
@@ -313,7 +314,7 @@ function process_image(image_data: array_f32, width: i32, height: i32) -> array_
 # Performance benchmark
 function benchmark_fft(size: i32, iterations: i32) -> f64 {
     let test_data: array_f32 = array_f32(size)
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < size {
         test_data[i] = sin(2.0 * 3.14159 * i / size)
         i = i + 1
@@ -321,7 +322,7 @@ function benchmark_fft(size: i32, iterations: i32) -> f64 {
     
     let start_time: f64 = get_current_time()
     
-    let j: i32 = 0
+    let mut j: i32 = 0
     while j < iterations {
         handle GPU, FFT with CUDAGPU {
             let spectrum: array_f32 = compute_spectrum(test_data)
@@ -338,7 +339,7 @@ function benchmark_fft(size: i32, iterations: i32) -> f64 {
 function main() -> i32 {
     # Test audio analysis
     let audio_samples: array_f32 = array_f32(1024)
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 1024 {
         audio_samples[i] = sin(2.0 * 3.14159 * 440.0 * i / 44100.0)  # 440 Hz tone
         i = i + 1
@@ -353,7 +354,7 @@ function main() -> i32 {
     
     # Test image processing
     let test_image: array_f32 = array_f32(256 * 256)
-    let k: i32 = 0
+    let mut k: i32 = 0
     while k < 256 * 256 {
         test_image[k] = (k % 256) / 255.0
         k = k + 1

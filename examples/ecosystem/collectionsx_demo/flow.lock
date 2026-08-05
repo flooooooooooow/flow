@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "packages": {
+    "collectionsx": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "/Users/abhishekshivakumar/flow/registry/packages/collectionsx"
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+import "stdlib/async.flow"
+
+function main() -> i32 {
+    handle AsyncIO with NetpollAsyncIO {
+        async_sleep_ms(1)
+    }
+    return 0
+}

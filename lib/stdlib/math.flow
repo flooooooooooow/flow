@@ -39,8 +39,8 @@ export function power(base: f32, exponent: f32) -> f32 {
         return 1.0 / power(base, -exponent)
     }
     
-    let result: f32 = 1.0
-    let i: f32 = 0.0
+    let mut result: f32 = 1.0
+    let mut i: f32 = 0.0
     while i < exponent {
         result = result * base
         i = i + 1.0
@@ -100,9 +100,9 @@ export function log(x: f32) -> f32 {
     }
     
     # Natural logarithm using Newton's method
-    let guess: f32 = 1.0
+    let mut guess: f32 = 1.0
     let epsilon: f32 = 0.0001
-    let iterations: i32 = 0
+    let mut iterations: i32 = 0
     
     while iterations < 100 {
         let new_guess: f32 = guess + (x / power(E, guess) - 1.0)
@@ -119,11 +119,11 @@ export function log(x: f32) -> f32 {
 # Exponential e^x via Taylor series (20 terms).
 export function exp(x: f32) -> f32 {
     # Taylor series approximation for e^x
-    let result: f32 = 1.0
-    let term: f32 = 1.0
-    let factorial: f32 = 1.0
+    let mut result: f32 = 1.0
+    let mut term: f32 = 1.0
+    let mut factorial: f32 = 1.0
     
-    let n: i32 = 1
+    let mut n: i32 = 1
     while n <= 20 {
         term = term * x
         factorial = factorial * n
@@ -145,9 +145,9 @@ export function fibonacci(n: i32) -> i32 {
         return 1
     }
     
-    let a: i32 = 0
-    let b: i32 = 1
-    let i: i32 = 2
+    let mut a: i32 = 0
+    let mut b: i32 = 1
+    let mut i: i32 = 2
     while i <= n {
         let temp: i32 = a + b
         a = b
@@ -160,12 +160,14 @@ export function fibonacci(n: i32) -> i32 {
 
 # Greatest common divisor of a and b (Euclidean algorithm).
 export function gcd(a: i32, b: i32) -> i32 {
-    while b != 0 {
-        let temp: i32 = b
-        b = a % b
-        a = temp
+    let mut x: i32 = a
+    let mut y: i32 = b
+    while y != 0 {
+        let temp: i32 = y
+        y = x % y
+        x = temp
     }
-    return a
+    return x
 }
 
 # Least common multiple of a and b: |a*b|/gcd(a,b).
@@ -185,7 +187,7 @@ export function is_prime(n: i32) -> bool {
         return false
     }
     
-    let i: i32 = 5
+    let mut i: i32 = 5
     while i * i <= n {
         if n % i == 0 or n % (i + 2) == 0 {
             return false
@@ -202,8 +204,8 @@ export function factorial_big(n: i32) -> i64 {
         return 1
     }
     
-    let result: i64 = 1
-    let i: i32 = 2
+    let mut result: i64 = 1
+    let mut i: i32 = 2
     while i <= n {
         result = result * i
         i = i + 1

@@ -8,8 +8,8 @@
 extern "C" {
 #endif
 
-void flow_race_init(void);
-int flow_race_enabled(void);
+void flow_race_init(void);      /* → lib/runtime/race.flow */
+int flow_race_enabled(void);    /* → lib/runtime/race.flow */
 
 /* Mutex / lock-order tracking */
 void flow_race_mutex_lock(void *mu);

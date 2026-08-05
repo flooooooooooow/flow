@@ -1,0 +1,11 @@
+[package]
+name = "cli"
+version = "0.1.0"
+description = "CLI args/env/paths helpers (pure Flow rewrite)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

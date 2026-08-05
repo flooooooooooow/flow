@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bi-directional sync between issues-checklist.md and GitHub issues.
+# Bi-directional sync between docs/project/issues-checklist.md and GitHub issues.
 # - If an issue is closed on GitHub, mark [x] locally.
 # - If an issue is [x] locally and open on GitHub, close it (optionally comment).
 #
@@ -11,7 +11,7 @@ set -euo pipefail
 # Requires: gh (authenticated), jq
 
 REPO="flooooooooooow/flow"
-FILE="issues-checklist.md"
+FILE="docs/project/issues-checklist.md"
 COMMENT=""
 DRY_RUN=0
 VERBOSE=0

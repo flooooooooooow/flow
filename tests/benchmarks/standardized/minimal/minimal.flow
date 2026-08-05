@@ -1,0 +1,6 @@
+# Minimal program - test initialization overhead
+# Equivalent to C: int main() { return 0; }
+
+function main() -> i32 {
+    return 0
+}

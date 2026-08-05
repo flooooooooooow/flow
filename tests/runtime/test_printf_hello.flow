@@ -1,0 +1,7 @@
+# Compiler-suite runtime: printf stdout golden (see .expected)
+
+function main() -> i32 {
+    printf("hello compiler suite\n")
+    printf("answer=%d\n", 42)
+    return 0
+}

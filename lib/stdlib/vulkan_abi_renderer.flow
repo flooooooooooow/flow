@@ -65,7 +65,7 @@ export function abi_renderer_set_viewport(r: AbiRenderer, width: i32, height: i3
 
 export function abi_renderer_set_window_scale(r: AbiRenderer, scale: f32, force_square: bool) -> void {
     if !r.ready { return }
-    let fs: i32 = 0
+    let mut fs: i32 = 0
     if force_square { fs = 1 }
     flow_vk_set_window_scale(scale, fs)
 }

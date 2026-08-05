@@ -1,0 +1,10 @@
+# hello_lib — sample registry package
+
+export function greet(name: string) -> i32 {
+    printf("hello from hello_lib, %s\n", name)
+    return 0
+}
+
+export function add(a: i32, b: i32) -> i32 {
+    return a + b
+}

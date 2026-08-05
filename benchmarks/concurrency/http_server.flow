@@ -1,0 +1,16 @@
+# HTTP server microbench (C runtime accept loop). Compare to http_server.go
+
+extern {
+    function flow_bench_http_server_rps(port: i32, n_req: i32) -> i64
+}
+
+const N: i32 = 2000
+const PORT: i32 = 18765
+
+function main() -> i32 {
+    let ok: i64 = flow_bench_http_server_rps(PORT, N)
+    if ok < 0 {
+        return 1
+    }
+    return 0
+}

@@ -1,0 +1,16 @@
+# Flow runtime: monotonic wall time (replaces runtime/flow_time.c)
+# Linked into every `flow run` binary via ./flow always-transpile pack.
+
+extern {
+    function flow_rt_monotonic_timespec(sec_out: ptr<i64>, nsec_out: ptr<i64>) -> i32
+}
+
+@flow_api
+export function jit_time() -> f64 {
+    let mut sec: i64 = 0
+    let mut nsec: i64 = 0
+    if flow_rt_monotonic_timespec(&sec, &nsec) != 0 {
+        return 0.0
+    }
+    return (sec as f64) + (nsec as f64) / 1000000000.0
+}

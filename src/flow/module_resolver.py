@@ -136,6 +136,10 @@ class ModuleResolver:
                 )
             declarations = _fill_shader_host_stub()
         else:
+            from .field_dsl import expand_field_dsl, has_field_dsl
+
+            if has_field_dsl(code):
+                code = expand_field_dsl(code)
             if has_dynamics_dsl(code):
                 code = expand_dynamics_dsl(code)
 

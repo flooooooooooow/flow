@@ -1,0 +1,400 @@
+# Flow lexer Phase 2 (self-hosting) — historical seed demo.
+#
+# The live self-hosting tree is `compiler/` (`flowc`): lexer + subset parser.
+# Run: `./flow run compiler/src/main.flow`
+#
+# Extends the identifier/keyword seed with:
+# - integer / float literals (decimal)
+# - string literals (source spans; no unescape yet)
+# - multi-char operators: -> == != <= >= && ||
+# - single-char operators and punctuation
+#
+# Streaming API: lexer_next(lex) -> Token with byte spans.
+
+extern {
+    function printf(fmt: string) -> i32
+}
+
+const TOK_EOF: i32 = 0
+const TOK_IDENT: i32 = 1
+const TOK_KEYWORD: i32 = 2
+const TOK_INT: i32 = 3
+const TOK_FLOAT: i32 = 4
+const TOK_STRING: i32 = 5
+const TOK_LPAREN: i32 = 6
+const TOK_RPAREN: i32 = 7
+const TOK_LBRACE: i32 = 8
+const TOK_RBRACE: i32 = 9
+const TOK_LBRACK: i32 = 10
+const TOK_RBRACK: i32 = 11
+const TOK_COLON: i32 = 12
+const TOK_COMMA: i32 = 13
+const TOK_SEMI: i32 = 14
+const TOK_DOT: i32 = 15
+const TOK_ARROW: i32 = 16
+const TOK_EQ: i32 = 17
+const TOK_EQEQ: i32 = 18
+const TOK_NE: i32 = 19
+const TOK_LT: i32 = 20
+const TOK_LE: i32 = 21
+const TOK_GT: i32 = 22
+const TOK_GE: i32 = 23
+const TOK_PLUS: i32 = 24
+const TOK_MINUS: i32 = 25
+const TOK_STAR: i32 = 26
+const TOK_SLASH: i32 = 27
+const TOK_AMPAMP: i32 = 28
+const TOK_BARBAR: i32 = 29
+const TOK_BANG: i32 = 30
+const TOK_ERROR: i32 = 31
+
+const KW_LET: i32 = 1
+const KW_FUNCTION: i32 = 2
+const KW_RETURN: i32 = 3
+const KW_IF: i32 = 4
+const KW_ELSE: i32 = 5
+const KW_WHILE: i32 = 6
+const KW_FOR: i32 = 7
+const KW_IN: i32 = 8
+const KW_TO: i32 = 9
+const KW_STRUCT: i32 = 10
+
+struct Token {
+    kind: i32,
+    kw: i32,
+    start: i32,
+    end: i32,
+    line: i32,
+    col: i32
+}
+
+struct Lexer {
+    input: ptr<u8>,
+    len: i32,
+    pos: i32,
+    line: i32,
+    col: i32
+}
+
+function is_alpha(c: i32) -> i32 {
+    if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 {
+        return 1
+    }
+    return 0
+}
+
+function is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function is_alnum(c: i32) -> i32 {
+    if is_alpha(c) == 1 or is_digit(c) == 1 {
+        return 1
+    }
+    return 0
+}
+
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function lexer_new(input: ptr<u8>, len: i32) -> Lexer {
+    return Lexer { input: input, len: len, pos: 0, line: 1, col: 1 }
+}
+
+function lexer_bump(lex: ptr<Lexer>) {
+    let c: i32 = lex[0].input[lex[0].pos]
+    lex[0].pos = lex[0].pos + 1
+    if c == 10 {
+        lex[0].line = lex[0].line + 1
+        lex[0].col = 1
+    } else {
+        lex[0].col = lex[0].col + 1
+    }
+}
+
+function lexer_skip_trivia(lex: ptr<Lexer>) {
+    while lex[0].pos < lex[0].len {
+        let c: i32 = lex[0].input[lex[0].pos]
+        if is_space(c) == 1 {
+            lexer_bump(lex)
+        } else {
+            if c == 10 {
+                lexer_bump(lex)
+            } else {
+                if c == 35 {
+                    while lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] != 10 {
+                        lexer_bump(lex)
+                    }
+                } else {
+                    return
+                }
+            }
+        }
+    }
+}
+
+function ident_eq(src: ptr<u8>, start: i32, end: i32, lit: ptr<u8>, lit_len: i32) -> i32 {
+    if end - start != lit_len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < lit_len {
+        if src[start + i] != lit[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    let let_kw: array<u8, 3> = [108, 101, 116]
+    let fn_kw: array<u8, 8> = [102, 117, 110, 99, 116, 105, 111, 110]
+    let ret_kw: array<u8, 6> = [114, 101, 116, 117, 114, 110]
+    let if_kw: array<u8, 2> = [105, 102]
+    let else_kw: array<u8, 4> = [101, 108, 115, 101]
+    let while_kw: array<u8, 5> = [119, 104, 105, 108, 101]
+    let for_kw: array<u8, 3> = [102, 111, 114]
+    let in_kw: array<u8, 2> = [105, 110]
+    let to_kw: array<u8, 2> = [116, 111]
+    let struct_kw: array<u8, 6> = [115, 116, 114, 117, 99, 116]
+    let let_p: ptr<u8> = let_kw
+    let fn_p: ptr<u8> = fn_kw
+    let ret_p: ptr<u8> = ret_kw
+    let if_p: ptr<u8> = if_kw
+    let else_p: ptr<u8> = else_kw
+    let while_p: ptr<u8> = while_kw
+    let for_p: ptr<u8> = for_kw
+    let in_p: ptr<u8> = in_kw
+    let to_p: ptr<u8> = to_kw
+    let struct_p: ptr<u8> = struct_kw
+    if ident_eq(src, start, end, let_p, 3) == 1 { return KW_LET }
+    if ident_eq(src, start, end, fn_p, 8) == 1 { return KW_FUNCTION }
+    if ident_eq(src, start, end, ret_p, 6) == 1 { return KW_RETURN }
+    if ident_eq(src, start, end, if_p, 2) == 1 { return KW_IF }
+    if ident_eq(src, start, end, else_p, 4) == 1 { return KW_ELSE }
+    if ident_eq(src, start, end, while_p, 5) == 1 { return KW_WHILE }
+    if ident_eq(src, start, end, for_p, 3) == 1 { return KW_FOR }
+    if ident_eq(src, start, end, in_p, 2) == 1 { return KW_IN }
+    if ident_eq(src, start, end, to_p, 2) == 1 { return KW_TO }
+    if ident_eq(src, start, end, struct_p, 6) == 1 { return KW_STRUCT }
+    return 0
+}
+
+function make_tok(kind: i32, kw: i32, start: i32, end: i32, line: i32, col: i32) -> Token {
+    return Token { kind: kind, kw: kw, start: start, end: end, line: line, col: col }
+}
+
+function lexer_next(lex: ptr<Lexer>) -> Token {
+    lexer_skip_trivia(lex)
+    let start: i32 = lex[0].pos
+    let line: i32 = lex[0].line
+    let col: i32 = lex[0].col
+
+    if lex[0].pos >= lex[0].len {
+        return make_tok(TOK_EOF, 0, start, start, line, col)
+    }
+
+    let c: i32 = lex[0].input[lex[0].pos]
+
+    # Identifier / keyword
+    if is_alpha(c) == 1 {
+        lexer_bump(lex)
+        while lex[0].pos < lex[0].len and is_alnum(lex[0].input[lex[0].pos]) == 1 {
+            lexer_bump(lex)
+        }
+        let end: i32 = lex[0].pos
+        let kw: i32 = classify_keyword(lex[0].input, start, end)
+        if kw != 0 {
+            return make_tok(TOK_KEYWORD, kw, start, end, line, col)
+        }
+        return make_tok(TOK_IDENT, 0, start, end, line, col)
+    }
+
+    # Number: int or float
+    if is_digit(c) == 1 {
+        lexer_bump(lex)
+        while lex[0].pos < lex[0].len and is_digit(lex[0].input[lex[0].pos]) == 1 {
+            lexer_bump(lex)
+        }
+        let mut is_float: i32 = 0
+        if lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] == 46 {
+            # Peek next: digit required for float
+            if lex[0].pos + 1 < lex[0].len and is_digit(lex[0].input[lex[0].pos + 1]) == 1 {
+                is_float = 1
+                lexer_bump(lex)
+                while lex[0].pos < lex[0].len and is_digit(lex[0].input[lex[0].pos]) == 1 {
+                    lexer_bump(lex)
+                }
+            }
+        }
+        let end: i32 = lex[0].pos
+        if is_float == 1 {
+            return make_tok(TOK_FLOAT, 0, start, end, line, col)
+        }
+        return make_tok(TOK_INT, 0, start, end, line, col)
+    }
+
+    # String literal "..."
+    if c == 34 {
+        lexer_bump(lex)
+        while lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] != 34 {
+            if lex[0].input[lex[0].pos] == 92 and lex[0].pos + 1 < lex[0].len {
+                lexer_bump(lex)
+            }
+            lexer_bump(lex)
+        }
+        if lex[0].pos < lex[0].len {
+            lexer_bump(lex)  # closing quote
+            return make_tok(TOK_STRING, 0, start, lex[0].pos, line, col)
+        }
+        return make_tok(TOK_ERROR, 0, start, lex[0].pos, line, col)
+    }
+
+    # Multi-char operators
+    let mut n1: i32 = 0
+    if lex[0].pos + 1 < lex[0].len {
+        n1 = lex[0].input[lex[0].pos + 1]
+    }
+    if c == 45 and n1 == 62 {  # ->
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_ARROW, 0, start, start + 2, line, col)
+    }
+    if c == 61 and n1 == 61 {  # ==
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_EQEQ, 0, start, start + 2, line, col)
+    }
+    if c == 33 and n1 == 61 {  # !=
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_NE, 0, start, start + 2, line, col)
+    }
+    if c == 60 and n1 == 61 {  # <=
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_LE, 0, start, start + 2, line, col)
+    }
+    if c == 62 and n1 == 61 {  # >=
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_GE, 0, start, start + 2, line, col)
+    }
+    if c == 38 and n1 == 38 {  # &&
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_AMPAMP, 0, start, start + 2, line, col)
+    }
+    if c == 124 and n1 == 124 {  # ||
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_BARBAR, 0, start, start + 2, line, col)
+    }
+
+    lexer_bump(lex)
+    if c == 40 { return make_tok(TOK_LPAREN, 0, start, start + 1, line, col) }
+    if c == 41 { return make_tok(TOK_RPAREN, 0, start, start + 1, line, col) }
+    if c == 123 { return make_tok(TOK_LBRACE, 0, start, start + 1, line, col) }
+    if c == 125 { return make_tok(TOK_RBRACE, 0, start, start + 1, line, col) }
+    if c == 91 { return make_tok(TOK_LBRACK, 0, start, start + 1, line, col) }
+    if c == 93 { return make_tok(TOK_RBRACK, 0, start, start + 1, line, col) }
+    if c == 58 { return make_tok(TOK_COLON, 0, start, start + 1, line, col) }
+    if c == 44 { return make_tok(TOK_COMMA, 0, start, start + 1, line, col) }
+    if c == 59 { return make_tok(TOK_SEMI, 0, start, start + 1, line, col) }
+    if c == 46 { return make_tok(TOK_DOT, 0, start, start + 1, line, col) }
+    if c == 61 { return make_tok(TOK_EQ, 0, start, start + 1, line, col) }
+    if c == 60 { return make_tok(TOK_LT, 0, start, start + 1, line, col) }
+    if c == 62 { return make_tok(TOK_GT, 0, start, start + 1, line, col) }
+    if c == 43 { return make_tok(TOK_PLUS, 0, start, start + 1, line, col) }
+    if c == 45 { return make_tok(TOK_MINUS, 0, start, start + 1, line, col) }
+    if c == 42 { return make_tok(TOK_STAR, 0, start, start + 1, line, col) }
+    if c == 47 { return make_tok(TOK_SLASH, 0, start, start + 1, line, col) }
+    if c == 33 { return make_tok(TOK_BANG, 0, start, start + 1, line, col) }
+    return make_tok(TOK_ERROR, 0, start, start + 1, line, col)
+}
+
+function expect_kind(tok: Token, kind: i32) -> i32 {
+    if tok.kind == kind { return 1 }
+    return 0
+}
+
+function main() -> i32 {
+    let mut ok: i32 = 1
+
+    # `let x: i32 = 42`
+    let a: array<u8, 15> = [108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 52, 50]
+    let ap: ptr<u8> = a
+    let mut la: Lexer = lexer_new(ap, 15)
+    let a0: Token = lexer_next(&la)
+    let a1: Token = lexer_next(&la)
+    let a2: Token = lexer_next(&la)
+    let a3: Token = lexer_next(&la)
+    let a4: Token = lexer_next(&la)
+    let a5: Token = lexer_next(&la)
+    let a6: Token = lexer_next(&la)
+    if expect_kind(a0, TOK_KEYWORD) == 0 { ok = 0 }
+    if expect_kind(a1, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(a2, TOK_COLON) == 0 { ok = 0 }
+    if expect_kind(a3, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(a4, TOK_EQ) == 0 { ok = 0 }
+    if expect_kind(a5, TOK_INT) == 0 { ok = 0 }
+    if expect_kind(a6, TOK_EOF) == 0 { ok = 0 }
+
+    # `3.14 + 2`
+    let b: array<u8, 8> = [51, 46, 49, 52, 32, 43, 32, 50]
+    let bp: ptr<u8> = b
+    let mut lb: Lexer = lexer_new(bp, 8)
+    let b0: Token = lexer_next(&lb)
+    let b1: Token = lexer_next(&lb)
+    let b2: Token = lexer_next(&lb)
+    if expect_kind(b0, TOK_FLOAT) == 0 { ok = 0 }
+    if expect_kind(b1, TOK_PLUS) == 0 { ok = 0 }
+    if expect_kind(b2, TOK_INT) == 0 { ok = 0 }
+
+    # `"hi" -> ==`
+    let c: array<u8, 10> = [34, 104, 105, 34, 32, 45, 62, 32, 61, 61]
+    let cp: ptr<u8> = c
+    let mut lc: Lexer = lexer_new(cp, 10)
+    let c0: Token = lexer_next(&lc)
+    let c1: Token = lexer_next(&lc)
+    let c2: Token = lexer_next(&lc)
+    let c3: Token = lexer_next(&lc)
+    if expect_kind(c0, TOK_STRING) == 0 { ok = 0 }
+    if expect_kind(c1, TOK_ARROW) == 0 { ok = 0 }
+    if expect_kind(c2, TOK_EQEQ) == 0 { ok = 0 }
+    if expect_kind(c3, TOK_EOF) == 0 { ok = 0 }
+
+    # `a && b || c != d`
+    let d: array<u8, 16> = [97, 32, 38, 38, 32, 98, 32, 124, 124, 32, 99, 32, 33, 61, 32, 100]
+    let dp: ptr<u8> = d
+    let mut ld: Lexer = lexer_new(dp, 16)
+    let d0: Token = lexer_next(&ld)
+    let d1: Token = lexer_next(&ld)
+    let d2: Token = lexer_next(&ld)
+    let d3: Token = lexer_next(&ld)
+    let d4: Token = lexer_next(&ld)
+    let d5: Token = lexer_next(&ld)
+    let d6: Token = lexer_next(&ld)
+    if expect_kind(d0, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(d1, TOK_AMPAMP) == 0 { ok = 0 }
+    if expect_kind(d2, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(d3, TOK_BARBAR) == 0 { ok = 0 }
+    if expect_kind(d4, TOK_IDENT) == 0 { ok = 0 }
+    if expect_kind(d5, TOK_NE) == 0 { ok = 0 }
+    if expect_kind(d6, TOK_IDENT) == 0 { ok = 0 }
+
+    if ok == 1 {
+        printf("flow_lexer: PASS\n")
+        return 0
+    }
+    printf("flow_lexer: FAIL\n")
+    return 1
+}

@@ -1,0 +1,80 @@
+# image — PPM P6 + PNG decode via stb_image (RGBA8)
+
+extern {
+    function flow_image_decode_ppm(bytes: ptr<i8>, len: i64, w: ptr<i32>, h: ptr<i32>, out_rgba: ptr<i8>, out_cap: i64) -> i32
+    function flow_image_decode(bytes: ptr<i8>, len: i64, w: ptr<i32>, h: ptr<i32>, out_rgba: ptr<i8>, out_cap: i64) -> i32
+    function flow_image_load_test_pattern(w: ptr<i32>, h: ptr<i32>, out_rgba: ptr<i8>, out_cap: i64) -> i32
+    function flow_image_decode_embedded_ppm(w: ptr<i32>, h: ptr<i32>, out_rgba: ptr<i8>, out_cap: i64) -> i32
+    function flow_image_decode_embedded_png(w: ptr<i32>, h: ptr<i32>, out_rgba: ptr<i8>, out_cap: i64) -> i32
+    function malloc(size: i64) -> ptr<i8>
+    function free(p: ptr<i8>) -> void
+}
+
+export struct FlowImage {
+    width: i32,
+    height: i32,
+    ok: i32
+}
+
+export function image_alloc(size: i64) -> ptr<i8> {
+    return malloc(size)
+}
+
+export function image_free(p: ptr<i8>) -> void {
+    free(p)
+}
+
+export function image_decode_ppm(bytes: ptr<i8>, len: i64, out_rgba: ptr<i8>, out_cap: i64) -> FlowImage {
+    let mut w: i32 = 0
+    let mut h: i32 = 0
+    let rc: i32 = flow_image_decode_ppm(bytes, len, &w, &h, out_rgba, out_cap)
+    let mut ok: i32 = 0
+    if rc == 0 {
+        ok = 1
+    }
+    return FlowImage { width: w, height: h, ok: ok }
+}
+
+export function image_decode(bytes: ptr<i8>, len: i64, out_rgba: ptr<i8>, out_cap: i64) -> FlowImage {
+    let mut w: i32 = 0
+    let mut h: i32 = 0
+    let rc: i32 = flow_image_decode(bytes, len, &w, &h, out_rgba, out_cap)
+    let mut ok: i32 = 0
+    if rc == 0 {
+        ok = 1
+    }
+    return FlowImage { width: w, height: h, ok: ok }
+}
+
+export function image_load_test_pattern(out_rgba: ptr<i8>, out_cap: i64) -> FlowImage {
+    let mut w: i32 = 0
+    let mut h: i32 = 0
+    let rc: i32 = flow_image_load_test_pattern(&w, &h, out_rgba, out_cap)
+    let mut ok: i32 = 0
+    if rc == 0 {
+        ok = 1
+    }
+    return FlowImage { width: w, height: h, ok: ok }
+}
+
+export function image_decode_embedded_ppm(out_rgba: ptr<i8>, out_cap: i64) -> FlowImage {
+    let mut w: i32 = 0
+    let mut h: i32 = 0
+    let rc: i32 = flow_image_decode_embedded_ppm(&w, &h, out_rgba, out_cap)
+    let mut ok: i32 = 0
+    if rc == 0 {
+        ok = 1
+    }
+    return FlowImage { width: w, height: h, ok: ok }
+}
+
+export function image_decode_embedded_png(out_rgba: ptr<i8>, out_cap: i64) -> FlowImage {
+    let mut w: i32 = 0
+    let mut h: i32 = 0
+    let rc: i32 = flow_image_decode_embedded_png(&w, &h, out_rgba, out_cap)
+    let mut ok: i32 = 0
+    if rc == 0 {
+        ok = 1
+    }
+    return FlowImage { width: w, height: h, ok: ok }
+}

@@ -53,7 +53,7 @@ run_case() {
 
 # Compile a real flowc module to a C object (no link/run — modules have no main).
 # Optional further args: header paths for `cc -include` (imported sibling types/consts).
-# Frontend dogfood opts out of Stage-A typecheck (imports/extern not fully resolved).
+# Typecheck stays on (default); imports seed names so frontend modules resolve.
 compile_module() {
     local name="$1"
     local src="$2"
@@ -65,7 +65,7 @@ compile_module() {
     echo "=== compile_module ${name} ==="
     # Always host-emit frontend modules so edits to compiler/src are picked up
     # even when a stale stage_a_driver_flow binary exists from a prior roundtrip.
-    FLOWC_TYPECHECK=0 FLOWC_FORCE_HOST=1 stage_a_emit "$src" "$c_out"
+    FLOWC_FORCE_HOST=1 stage_a_emit "$src" "$c_out"
     local h
     for h in "$@"; do
         cc_args+=(-include "$h")
@@ -399,7 +399,6 @@ echo "PASS FLOWC_BUNDLE fixtures"
 # (deps first). No flowc_c_to_hdr.py / cc -include — Token/TOK_* live in the same file.
 echo "=== FLOWC_BUNDLE lexer (token+lexer one TU) ==="
 FLOWC_FORCE_HOST=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-FLOWC_TYPECHECK=0 \
     stage_a_emit compiler/src/lexer.flow compiler/build/bundle_lexer.c
 if ! grep -Fq 'typedef struct Token' compiler/build/bundle_lexer.c; then
     echo "FAIL FLOWC_BUNDLE lexer: expected Token from token.flow in bundled C" >&2
@@ -429,7 +428,6 @@ echo "PASS FLOWC_BUNDLE lexer (token+lexer one TU)"
 # (deps first). Needs 1MB out_cap in main/driver. No flowc_c_to_hdr.py / -include.
 echo "=== FLOWC_BUNDLE parser (token+ast+lexer+parser one TU) ==="
 FLOWC_FORCE_HOST=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-FLOWC_TYPECHECK=0 \
     stage_a_emit compiler/src/parser.flow compiler/build/bundle_parser.c
 if ! grep -Fq 'flowc_parse_program' compiler/build/bundle_parser.c; then
     echo "FAIL FLOWC_BUNDLE parser: expected flowc_parse_program from parser.flow" >&2
@@ -480,13 +478,30 @@ rm -f compiler/build/typecheck_undef.c
 set +e
 FLOWC_FORCE_HOST=1 stage_a_emit \
     compiler/fixtures/typecheck_undef.flow \
-    compiler/build/typecheck_undef.c
+    compiler/build/typecheck_undef.c \
+    >compiler/build/typecheck_undef.log 2>&1
 tc_bad_rc=$?
 set -e
 echo "typecheck_undef emit rc=$tc_bad_rc"
 test "$tc_bad_rc" -ne 0
 if [[ -f compiler/build/typecheck_undef.c ]]; then
     echo "FAIL FLOWC_TYPECHECK: undef fixture should not write C" >&2
+    exit 1
+fi
+if ! grep -Fq 'flowc tc: unbound ident' compiler/build/typecheck_undef.log; then
+    echo "FAIL FLOWC_TYPECHECK: expected unbound ident diagnostic" >&2
+    cat compiler/build/typecheck_undef.log >&2
+    exit 1
+fi
+# `return y` is on line 5 of typecheck_undef.flow (1-based).
+if ! grep -Eq 'flowc tc: at 5:' compiler/build/typecheck_undef.log; then
+    echo "FAIL FLOWC_TYPECHECK: expected location-rich diagnostic (at 5:…)" >&2
+    cat compiler/build/typecheck_undef.log >&2
+    exit 1
+fi
+if ! grep -Fq 'compiler/fixtures/typecheck_undef.flow' compiler/build/typecheck_undef.log; then
+    echo "FAIL FLOWC_TYPECHECK: expected file path in diagnostic" >&2
+    cat compiler/build/typecheck_undef.log >&2
     exit 1
 fi
 # Opt-out still emits the undef fixture (typecheck skipped).

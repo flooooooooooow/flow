@@ -1,0 +1,69 @@
+# TcpEffect via BlockingTcp — one loopback accept/send/recv round-trip.
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
+# Server listens; client connects and sends "ping"; server echoes.
+#
+# Run: ./flow run examples/concurrency/tcp_echo_once.flow
+
+import "stdlib/async.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<i8>
+    function free(p: ptr<i8>) -> void
+    function memcpy(dst: ptr<i8>, src: ptr<i8>, n: i64) -> ptr<i8>
+}
+
+function main() -> i32 {
+    let port: i32 = 18765
+    let lfd: i32 = tcp_listen(port)
+    if lfd < 0 {
+        printf("listen failed\n")
+        return 1
+    }
+
+    let mut ok: i32 = 0
+    handle TcpEffect with BlockingTcp {
+        let cfd: i32 = TcpEffect.connect(0, port)
+        if cfd < 0 {
+            printf("connect failed\n")
+            let _c: i32 = tcp_close(lfd)
+            return 2
+        }
+        let afd: i32 = tcp_accept(lfd)
+        if afd < 0 {
+            printf("accept failed\n")
+            let _a: i32 = tcp_close(cfd)
+            let _b: i32 = tcp_close(lfd)
+            return 3
+        }
+
+        let msg: ptr<i8> = "ping"
+        let nsend: i32 = TcpEffect.send(cfd, msg, 4)
+        let buf: ptr<i8> = malloc(16)
+        let nrecv: i32 = TcpEffect.recv(afd, buf, 16)
+        # Echo back
+        let _e: i32 = TcpEffect.send(afd, buf, nrecv)
+        let buf2: ptr<i8> = malloc(16)
+        let n2: i32 = TcpEffect.recv(cfd, buf2, 16)
+
+        printf("sent=%d recv_server=%d echo_client=%d\n", nsend, nrecv, n2)
+        if nsend == 4 {
+            if nrecv == 4 {
+                if n2 == 4 {
+                    ok = 1
+                }
+            }
+        }
+
+        free(buf)
+        free(buf2)
+        let _1: i32 = tcp_close(afd)
+        let _2: i32 = tcp_close(cfd)
+    }
+    let _3: i32 = tcp_close(lfd)
+    if ok == 1 {
+        printf("tcp echo ok\n")
+        return 0
+    }
+    printf("tcp echo failed\n")
+    return 4
+}

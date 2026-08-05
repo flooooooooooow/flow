@@ -1,0 +1,29 @@
+{
+  "extensionPack": [
+    "quilio.flow-language",
+    "quilio.flow-themes",
+    "vadimcn.vscode-lldb"
+  ],
+  "name": "flow-pack",
+  "displayName": "Flow Pack",
+  "description": "Flow language + themes + CodeLLDB for integrated debugging.",
+  "version": "0.3.0",
+  "publisher": "quilio",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Extension Packs"
+  ],
+  "keywords": [
+    "flow",
+    "extension pack",
+    "lldb"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/flooooooooooow/flow.git",
+    "directory": "third_party/integrations/vscode/flow-pack"
+  }
+}

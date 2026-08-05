@@ -1,0 +1,93 @@
+# serde — minimal little-endian binary encode/decode (pure Flow)
+# Wire format for a (i32, string) message:
+#   [i32 LE][i32 LE strlen][utf-8 bytes]
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+const SERDE_OK: i32 = 1
+const SERDE_ERR: i32 = 0
+
+export function serde_write_i32(buf: ptr<u8>, offset: i32, value: i32) -> i32 {
+    let mut v: i32 = value
+    let mut i: i32 = 0
+    while i < 4 {
+        buf[offset + i] = (v & 255) as u8
+        v = v >> 8
+        i = i + 1
+    }
+    return offset + 4
+}
+
+export function serde_read_i32(buf: ptr<u8>, offset: i32) -> i32 {
+    let b0: i32 = buf[offset] as i32
+    let b1: i32 = buf[offset + 1] as i32
+    let b2: i32 = buf[offset + 2] as i32
+    let b3: i32 = buf[offset + 3] as i32
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+export function serde_write_string(buf: ptr<u8>, offset: i32, cap: i32, s: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    if offset + 4 + n > cap {
+        return 0 - 1
+    }
+    let mut p: i32 = serde_write_i32(buf, offset, n)
+    let src: ptr<u8> = s
+    let mut i: i32 = 0
+    while i < n {
+        buf[p + i] = src[i]
+        i = i + 1
+    }
+    return p + n
+}
+
+# Pack (i32, string) into buf. Returns total bytes written, or -1 on overflow.
+export function serde_pack(buf: ptr<u8>, cap: i32, value: i32, s: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    if 8 + n > cap {
+        return 0 - 1
+    }
+    let mut p: i32 = serde_write_i32(buf, 0, value)
+    p = serde_write_string(buf, p, cap, s)
+    return p
+}
+
+# Unpack i32 from a packed message (offset 0).
+export function serde_unpack_i32(buf: ptr<u8>, len: i32) -> i32 {
+    if len < 4 {
+        return 0
+    }
+    return serde_read_i32(buf, 0)
+}
+
+# Unpack length-prefixed string after the leading i32 into out (NUL-terminated).
+# Returns string length, or -1 on error.
+export function serde_unpack_string(buf: ptr<u8>, len: i32, out: ptr<u8>, out_cap: i32) -> i32 {
+    if len < 8 {
+        return 0 - 1
+    }
+    let n: i32 = serde_read_i32(buf, 4)
+    if n < 0 or 8 + n > len {
+        return 0 - 1
+    }
+    if n + 1 > out_cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = buf[8 + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+export function serde_ok() -> i32 {
+    return SERDE_OK
+}
+
+export function serde_err() -> i32 {
+    return SERDE_ERR
+}

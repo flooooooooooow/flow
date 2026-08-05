@@ -48,7 +48,7 @@ export function phasor_new_with_phase(freq: f64, rate: SampleRate, initial_phase
 
 # Advance the phasor by one sample (returns new state)
 export function phasor_tick(p: Phasor) -> Phasor {
-    let new_phase: f64 = p.phase + p.increment
+    let mut new_phase: f64 = p.phase + p.increment
     # Wrap to [0.0, 1.0)
     if new_phase >= 1.0 {
         new_phase = new_phase - 1.0
@@ -89,7 +89,7 @@ export function phasor_sync(p: Phasor, target_phase: f64) -> Phasor {
 # Sine wave: sin(2π * phase)
 export function sine(phase: f64) -> f32 {
     # Taylor series approximation for sin(2π * phase)
-    let x: f64 = phase * TWO_PI
+    let mut x: f64 = phase * TWO_PI
     # Normalize to [-π, π] for better accuracy
     if x > PI {
         x = x - TWO_PI
@@ -131,7 +131,7 @@ export function pulse(phase: f64, width: f64) -> f32 {
 
 # Triangle wave: 4 * |phase - 0.5| - 1
 export function triangle(phase: f64) -> f32 {
-    let centered: f64 = phase - 0.5
+    let mut centered: f64 = phase - 0.5
     if centered < 0.0 {
         centered = -centered
     }
@@ -158,19 +158,19 @@ function polyblep(t: f64, dt: f64) -> f64 {
 
 # Band-limited saw using PolyBLEP
 export function saw_blep(phase: f64, increment: f64) -> f32 {
-    let naive: f64 = 2.0 * phase - 1.0
+    let mut naive: f64 = 2.0 * phase - 1.0
     let correction: f64 = polyblep(phase, increment)
     return naive - correction
 }
 
 # Band-limited square using PolyBLEP
 export function square_blep(phase: f64, increment: f64) -> f32 {
-    let naive: f64 = 1.0
+    let mut naive: f64 = 1.0
     if phase >= 0.5 {
         naive = -1.0
     }
     let correction1: f64 = polyblep(phase, increment)
-    let phase2: f64 = phase + 0.5
+    let mut phase2: f64 = phase + 0.5
     if phase2 >= 1.0 {
         phase2 = phase2 - 1.0
     }
@@ -195,7 +195,7 @@ export function noise_new(seed: i64) -> NoiseState {
 # Generate next random sample and update state
 export function noise_tick(n: NoiseState) -> NoiseState {
     # LCG: seed = (seed * 1103515245 + 12345) mod 2^31
-    let new_seed: i64 = n.seed * 1103515245 + 12345
+    let mut new_seed: i64 = n.seed * 1103515245 + 12345
     # Keep in positive range
     if new_seed < 0 {
         new_seed = -new_seed

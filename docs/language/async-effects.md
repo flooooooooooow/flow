@@ -2,11 +2,15 @@
 
 Flow models asynchronous / concurrent work with **algebraic effects**, not with
 `async` / `await` keywords. Call sites perform effect operations; a capability
-(handler) supplies the backend (sync simulator, blocking sleep, or — later —
-a real event loop).
+(handler) supplies the backend (`SimulatedAsync`, `ThreadedAsync`, `FiberAsync`,
+`BlockingAsyncIO`, or `NetpollAsyncIO`).
 
 This matches the comparison table in [docs/comparison.md](../comparison.md):
 async is “modeled via effects (no `async` keyword).”
+
+Umbrella + measured Go comparison:
+[concurrency-vs-go.md](concurrency-vs-go.md) ·
+[replace-go.md](replace-go.md).
 
 ## Intent
 
@@ -27,46 +31,71 @@ function main() -> i32 {
 }
 ```
 
-Business logic depends only on the effect — swap `SimulatedAsync` vs a future
-epoll/kqueue capability without changing call sites.
+Business logic depends only on the effect — swap `SimulatedAsync`,
+`ThreadedAsync`, or `FiberAsync` without changing call sites. Swap
+`BlockingAsyncIO` vs `NetpollAsyncIO` the same way for `AsyncIO`.
 
-## Implemented (this slice)
+## Implemented
 
 | Piece | Status |
 |-------|--------|
 | `lib/stdlib/async.flow` — `Async` effect (`delay`, `spawn`, `join`) | ✅ |
 | Helpers `async_delay` / `async_spawn` / `async_join` / `async_sleep_ms` / `async_poll_read` | ✅ |
-| `SimulatedAsync` capability — deterministic sync stand-in | ✅ |
-| `AsyncIO` effect + `BlockingAsyncIO` (`sleep_ms` → `usleep`; poll stubs return ready) | ✅ |
-| `TcpEffect` declaration (ops only; no capability yet) | ✅ stub |
-| Runnable demo: `examples/effects/async_primitives.flow` (`./flow run`) | ✅ |
-| Runtime test: `tests/runtime/test_async_primitives.flow` | ✅ |
-| Preferred install style: `handle … with …` (same as effects showcase) | ✅ |
+| `async_set_maxprocs` / `async_maxprocs` (`FLOW_MAXPROCS` env) | ✅ |
+| `SimulatedAsync` — deterministic sync stand-in | ✅ |
+| `ThreadedAsync` — real pthreads via `runtime/flow_concurrency.c` | ✅ |
+| `FiberAsync` — **M:N** cooperative fibers via `runtime/flow_fiber.c` | ✅ |
+| Asm context switch (`flow_fctx_arm64.S` / `x86_64.S`) | ✅ |
+| `AsyncIO` + `BlockingAsyncIO` (`sleep_ms` → `usleep`; poll stubs return ready) | ✅ |
+| `NetpollAsyncIO` — real kqueue (Darwin) / epoll (Linux) | ✅ |
+| Fiber channel ping-pong + fan-out benches (beat Go) | ✅ |
+| `TcpEffect` + `BlockingTcp` (loopback connect/send/recv) | ✅ `runtime/flow_tcp.c` |
+| Demos: `examples/effects/async_primitives.flow`, `examples/concurrency/*` | ✅ |
+| Runtime tests: `tests/runtime/test_{fiber_async,threaded_async,netpoll,…}.flow` | ✅ |
+| Preferred install style: `handle … with …` | ✅ |
 
 ### Semantics today (honest)
 
-- **Tail-resumptive only.** Every op returns straight to the call site. There is
-  no “suspend here / resume later,” no fiber table, no work-stealing scheduler.
-- **`SimulatedAsync` is stateless.** Capabilities have no `self` / task map, so
-  `spawn` is a no-op marker and `join(task_id)` returns `task_id * 10` as a
-  deterministic stand-in for a completed task result.
-- **`BlockingAsyncIO.sleep_ms`** blocks the calling thread via POSIX `usleep`
-  when `ms > 0`. `poll_read` / `poll_write` ignore the timeout and return `1`
-  (ready) — not a real poller.
-- **Unhandled ops** still default to zero / no-op (same as the rest of the
-  effect system).
+- **FiberAsync runs `main` on a fiber** so `Async.delay` / netpoll park
+  suspend real Flow frames mid-function (see `examples/concurrency/fiber_suspend.flow`).
+  Delimited `shift`/`reset` that capture and restore an arbitrary Flow frame
+  are still a C scaffold (`flow_cont_*`) — not a full compiler rewrite yet.
+  `ThreadedAsync` runs registered C tasks on OS threads.
+- **`FiberAsync` is M:N.** Workers = `FLOW_MAXPROCS` / CPU count by default
+  (`async_set_maxprocs(n)` before first spawn; values `< 1` clamp to **1**,
+  not “auto”). Ready work uses **per-worker deques + work-stealing**; effect
+  handlers are **fiber-local** so fibers can migrate OS threads safely.
+  The ping-pong microbench forces `maxprocs=1` for a fair switch measurement.
+- **`SimulatedAsync` is stateless.** `spawn` is a no-op marker; `join(task_id)`
+  returns `task_id * 10` as a deterministic stand-in.
+- **`BlockingAsyncIO.sleep_ms`** blocks via POSIX `usleep` when `ms > 0`.
+  `poll_read` / `poll_write` ignore the timeout and return `1` (ready).
+- **`NetpollAsyncIO`** uses real kqueue/epoll. On a fiber, `poll_read` /
+  `poll_write` **park the fiber** (`flow_netpoll_fiber_*`); off-fiber they
+  block the OS thread. `sleep_ms` still uses the blocking timer path.
+- **Unhandled ops** still default to zero / no-op unless `--strict-effects` /
+  `FLOW_STRICT_EFFECTS=1` is set ([effects-showcase.md](../effects-showcase.md)).
 
 ## Deferred
 
 | Item | Why deferred |
 |------|----------------|
-| Resumable / one-shot continuations | Needed for a real scheduler, generators, cancel; not in the C backend yet |
-| Fiber / task runtime | Would invent a runtime not patterned elsewhere in the repo |
-| epoll / kqueue / IOCP backends behind `AsyncIO` | OS event loops; keep the effect surface stable until then |
-| `TcpEffect` capability | Needs real sockets + the poll backend above |
-| Effect-row typing / `--strict` for performed effects | Broader effect-system work ([effects showcase limitations](../effects-showcase.md)) |
+| Full compiler `shift`/`reset` rewrite | Fiber park + C reset/`resume_multi`/`clone` ship; true stack-frame restore still open |
+| Delimited continuations / Flow-stack suspend | ✅ main-on-fiber park; C `flow_reset`/`flow_shift` scaffold (`cont_reset.flow`) |
+| M:N work-stealing | ✅ per-worker deques (`work_steal.flow`) |
+| Fiber-aware netpoll | ✅ `flow_netpoll_fiber_*` via `NetpollAsyncIO` |
+| Fiber-aware nonblocking TCP | `BlockingTcp` is sync sockets; park-on-poll still via `NetpollAsyncIO` |
+| `Cont` + `FiberCont` (Flow-frame resume) | ✅ `Cont.shift` parks fiber (M:N-safe); `cont_arm_resume` — `cont_flow_resume.flow` |
+| Fiber-per-conn HTTP + auth mw | ✅ `http_fiber.flow` (`Bearer flow` on `/api`) |
+| HTTPS accept-loop (OpenSSL) | ✅ PEM + ALPN `http/1.1` + minimal HTTP/2 `h2` (`http_tls.flow`) |
+| Cont multi-shot scaffold | ✅ `resume_multi` + `clone`/stack-blob (`cont_multishot.flow`, `cont_stackcopy.flow`) |
+| N-way `select` / `default` | ✅ `select2` + `select4` (+ `_try`) |
 | `async` / `await` syntax sugar | Only after the runtime model is solid — do **not** add keywords first |
 | Stateful handlers (`capability` with mutable task tables) | Capabilities are currently stateless; use struct+`impl` workarounds elsewhere |
+
+Effect-row typing (`function f() -> T with E1, E2`) and `--strict-effects` already
+ship — see [LANGUAGE_SPEC §6.3.1](../LANGUAGE_SPEC.md#631-signature-effect-rows)
+and [effects-showcase.md](../effects-showcase.md).
 
 ## Older demos
 
@@ -82,17 +111,17 @@ for Timeout/Retry, which the stdlib doesn't cover yet.
 
 1. Keep new async demos on `handle`/`with` + `lib/stdlib/async.flow`.
 2. Decide whether async needs **delimited continuations** (or an explicit
-   fiber/runtime API). Without that, “async effects” stay pedagogical +
-   blocking-sleep helpers.
-3. Grow `BlockingAsyncIO` (or a sibling) into a real poll backend; keep call
-   sites on `AsyncIO.*` unchanged.
+   fiber/runtime API). Without that, Flow-level “suspend here” stays unavailable.
+3. Grow `NetpollAsyncIO` toward fiber-parked IO; keep call sites on `AsyncIO.*`.
 4. Optional later: surface sugar that desugars to effects — only if the runtime
-   model is solid ([ROADMAP](../../ROADMAP.md) marks async primitives partial).
+   model is solid.
 
 ## Related
 
+- [concurrency-vs-go.md](concurrency-vs-go.md) — tracks + Go comparison
+- [replace-go.md](replace-go.md) — scorecard for replacing Go
 - [Effects Showcase](../effects-showcase.md) — runnable effect demo + limitations
 - [LANGUAGE_SPEC §6](../LANGUAGE_SPEC.md#6-effect-system) — effect grammar
 - `lib/stdlib/async.flow` — effect declarations + capabilities
 - `examples/effects/async_primitives.flow` — runnable stdlib demo
-- `examples/effects/async_effects.flow` — Timeout/Retry as policy effects
+- `examples/concurrency/` — fibers, channels, netpoll, `parallel for`

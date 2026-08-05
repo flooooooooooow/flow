@@ -1,0 +1,48 @@
+# JSON parsing benchmark
+# Note: Flow doesn't have a built-in JSON parser yet, so this tests
+# manual parsing of a simple JSON structure (fair comparison baseline)
+#
+# Parses: {"x": 1.0, "y": 2.0, "z": 3.0} * 1,000,000 times
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+const NUM_ITERATIONS: i32 = 1000000
+
+# Simple JSON-like record
+struct Point {
+    x: f64,
+    y: f64,
+    z: f64
+}
+
+# Manual "parse" - simulates extracting values from JSON
+# In a real benchmark, this would use a JSON library
+function parse_point(x_val: f64, y_val: f64, z_val: f64) -> Point {
+    return Point { x: x_val, y: y_val, z: z_val }
+}
+
+function main() -> i32 {
+    let start: i64 = clock()
+    
+    let mut sum: f64 = 0.0
+    
+    for i in 0 to NUM_ITERATIONS {
+        # Simulate parsing JSON: {"x": i, "y": i*2, "z": i*3}
+        let p: Point = parse_point(i * 1.0, i * 2.0, i * 3.0)
+        sum = sum + p.x + p.y + p.z
+    }
+    
+    let end: i64 = clock()
+    let elapsed_us: f64 = (end - start) / CLOCKS_PER_SEC * 1000000.0
+    
+    printf("%.1f", elapsed_us)
+    print(" µs (checksum: ")
+    printf("%.0f", sum)
+    println(")")
+    
+    return 0
+}

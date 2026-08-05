@@ -24,7 +24,13 @@ IMPORT_LINE_RE = re.compile(r"^\s*import\s+(\S+)", re.MULTILINE)
 def copy_tree(src: Path, dst: Path) -> None:
     if dst.exists():
         shutil.rmtree(dst)
-    shutil.copytree(src, dst)
+    # Tool caches such as Lean's `.lake/` are not documentation sources and
+    # can contain links that only make sense inside the local dependency tree.
+    shutil.copytree(
+        src,
+        dst,
+        ignore=shutil.ignore_patterns(".*", "__pycache__", "*.pyc"),
+    )
 
 
 def copy_docs() -> None:
@@ -836,13 +842,22 @@ def run_pagefind() -> None:
     import subprocess
     import sys
 
+    if os.environ.get("FLOW_WIKI_SKIP_PAGEFIND"):
+        print("Pagefind skipped: FLOW_WIKI_SKIP_PAGEFIND set")
+        return
     script = ROOT / "scripts" / "build_pagefind.sh"
     if not script.exists():
         print("Pagefind skipped: scripts/build_pagefind.sh missing")
         return
     env = os.environ.copy()
     env["FLOW_WIKI_OUT"] = str(OUT)
-    result = subprocess.run(["bash", str(script)], cwd=ROOT, env=env)
+    try:
+        # npx fetches the indexer on first use and can stall indefinitely on a
+        # slow or offline network; the local search index is a fine fallback.
+        result = subprocess.run(["bash", str(script)], cwd=ROOT, env=env, timeout=180)
+    except subprocess.TimeoutExpired:
+        print("Pagefind timed out after 180s (search falls back to search-index.json)", file=sys.stderr)
+        return
     if result.returncode != 0:
         print("Pagefind step exited non-zero (search falls back to search-index.json)", file=sys.stderr)
 
@@ -899,6 +914,8 @@ def copy_site_shell() -> None:
         "wiki.js",
         "grammar-viewer.js",
         "flow-compile.js",
+        "flow-lang.js",
+        "flow-editor.js",
         "tutorial-runner.js",
         "tutorial-runner.css",
         "proof-graph.html",

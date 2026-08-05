@@ -18,7 +18,7 @@ function main() -> i32 {
     }
 
     let buf: AudioBufferF32 = audio_buffer_alloc_f32(256, 2, layout_interleaved())
-    let osc: Phasor = phasor_new(440.0, rate)
+    let mut osc: Phasor = phasor_new(440.0, rate)
     let amp: f32 = 0.3
 
     if audio_device_start(dev) != AUDIO_OK {
@@ -30,14 +30,14 @@ function main() -> i32 {
 
     printf("Playing 440 Hz sine wave for ~2 seconds...\n")
 
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 375 {
         # Wait until the ring buffer has space
         while audio_available_write(dev) < 256 {
             usleep(1000)
         }
 
-        let j: i32 = 0
+        let mut j: i32 = 0
         while j < 256 {
             let sample: f32 = sine(phasor_value(osc)) * amp
             audio_buffer_set_f32(buf, j, 0, sample)

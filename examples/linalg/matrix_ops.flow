@@ -166,7 +166,7 @@ function vector_normalize(v: ptr<f64>, n: i32) -> void {
 
 function matrix_trace(m: Matrix) -> f64 {
     let mut sum: f64 = 0.0
-    let n: i32 = m.rows
+    let mut n: i32 = m.rows
     if m.cols < n { n = m.cols }
     for i in 0 to n {
         sum = sum + matrix_get(m, i, i)

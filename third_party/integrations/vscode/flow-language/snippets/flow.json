@@ -1,4 +1,184 @@
 {
+  "function": {
+    "prefix": ["fn", "function"],
+    "body": [
+      "function ${1:name}(${2:args}) -> ${3:i32} {",
+      "    $0",
+      "    return 0",
+      "}"
+    ],
+    "description": "Function with return type"
+  },
+  "function void": {
+    "prefix": ["fnvoid", "procedure"],
+    "body": [
+      "function ${1:name}(${2:args}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Void function"
+  },
+  "main": {
+    "prefix": ["main", "fnmain"],
+    "body": [
+      "function main() -> i32 {",
+      "    $0",
+      "    return 0",
+      "}"
+    ],
+    "description": "Program entry point"
+  },
+  "let": {
+    "prefix": "let",
+    "body": "let ${1:name}: ${2:i32} = ${3:0}",
+    "description": "Immutable binding"
+  },
+  "let mut": {
+    "prefix": ["letmut", "mut"],
+    "body": "let mut ${1:name}: ${2:i32} = ${3:0}",
+    "description": "Mutable binding"
+  },
+  "struct": {
+    "prefix": "struct",
+    "body": [
+      "struct ${1:Name} {",
+      "    ${2:field}: ${3:i32},",
+      "    $0",
+      "}"
+    ],
+    "description": "Struct declaration"
+  },
+  "effect": {
+    "prefix": "effect",
+    "body": [
+      "effect ${1:Name} {",
+      "    ${2:op}(${3:args}) -> ${4:i32},",
+      "    $0",
+      "}"
+    ],
+    "description": "Algebraic effect interface"
+  },
+  "capability": {
+    "prefix": ["capability", "cap"],
+    "body": [
+      "capability ${1:Name} for ${2:Effect} {",
+      "    function ${3:op}(${4:args}) -> ${5:i32} {",
+      "        $0",
+      "        return 0",
+      "    }",
+      "}"
+    ],
+    "description": "Effect capability (handler)"
+  },
+  "handle": {
+    "prefix": "handle",
+    "body": [
+      "handle ${1:Effect} with ${2:Capability} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Install effect handler for a dynamic scope"
+  },
+  "extern": {
+    "prefix": "extern",
+    "body": [
+      "extern {",
+      "    function ${1:name}(${2:args}) -> ${3:i32}",
+      "}"
+    ],
+    "description": "FFI extern block"
+  },
+  "import": {
+    "prefix": "import",
+    "body": "import \"${1:stdlib/math.flow}\"",
+    "description": "Import a Flow module"
+  },
+  "export function": {
+    "prefix": ["exportfn", "export function"],
+    "body": [
+      "export function ${1:name}(${2:args}) -> ${3:i32} {",
+      "    $0",
+      "    return 0",
+      "}"
+    ],
+    "description": "Exported function"
+  },
+  "for range": {
+    "prefix": ["for", "forin"],
+    "body": [
+      "for ${1:i} in ${2:0} to ${3:n} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Inclusive for-range loop (0 to n)"
+  },
+  "while": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition} {",
+      "    $0",
+      "}"
+    ],
+    "description": "While loop"
+  },
+  "if else": {
+    "prefix": ["if", "ifel"],
+    "body": [
+      "if ${1:condition} {",
+      "    $2",
+      "} else {",
+      "    $0",
+      "}"
+    ],
+    "description": "If / else"
+  },
+  "match": {
+    "prefix": "match",
+    "body": [
+      "match ${1:value} {",
+      "    ${2:pattern} => {",
+      "        $0",
+      "    }",
+      "    default => {",
+      "    }",
+      "}"
+    ],
+    "description": "Match expression"
+  },
+  "flow evolves": {
+    "prefix": ["flow", "evolves"],
+    "body": [
+      "flow ${1:System} {",
+      "    state ${2:x}: ${3:f64} = ${4:0.0}",
+      "    state ${5:v}: ${6:f64} = ${7:0.0}",
+      "",
+      "    ${2:x} evolves as ${5:v}",
+      "    ${5:v} evolves as ${8:-(gravity / length) * sin(${2:x})}",
+      "    $0",
+      "}"
+    ],
+    "description": "Evolution system (flow / evolves as)"
+  },
+  "test assert": {
+    "prefix": ["assert", "expect"],
+    "body": "expect(${1:condition})",
+    "description": "Expectation / assert helper"
+  },
+  "println": {
+    "prefix": ["println", "print"],
+    "body": "println(${1:\"hello\"})",
+    "description": "Print with newline"
+  },
+  "ptr type": {
+    "prefix": "ptr",
+    "body": "ptr<${1:i32}>",
+    "description": "Pointer type"
+  },
+  "array type": {
+    "prefix": "array",
+    "body": "array<${1:i32}, ${2:16}>",
+    "description": "Fixed array type"
+  },
   "dynamics namespace block": {
     "prefix": ["dynamics", "dyn-block"],
     "body": [
@@ -101,5 +281,16 @@
     "prefix": ["sort descending"],
     "body": "${1:xs} |> sort descending",
     "description": "Declarative descending sort"
+  },
+  "shader fill": {
+    "prefix": ["shader", "shader fill"],
+    "body": [
+      "shader fill ${1:name} {",
+      "    fn color(uv: vec2) -> vec4 {",
+      "        return vec4(${2:uv.x}, ${3:uv.y}, ${4:0.2}, 1.0)",
+      "    }",
+      "}"
+    ],
+    "description": "Fill-shader (FSL) fragment"
   }
 }

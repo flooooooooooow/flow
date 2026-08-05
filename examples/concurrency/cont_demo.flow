@@ -1,0 +1,23 @@
+# One-shot C delimited-continuation scaffold demo.
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
+# Flow AST frames still cannot suspend mid-function; this proves the
+# runtime hook (flow_reset / flow_shift / flow_cont_resume) is linked.
+#
+# Run: ./flow run examples/concurrency/cont_demo.flow
+
+import "stdlib/async.flow"
+
+function main() -> i32 {
+    let avail: i32 = cont_scaffold_available()
+    let demo: i32 = cont_demo_shift()
+    printf("cont_scaffold_available=%d demo_shift=%d (expect 42 or -1 off-fiber)\n", avail, demo)
+    # Demo returns 42 when fctx works, or -1 if scaffold no-op path.
+    if demo == 42 {
+        return 0
+    }
+    if demo == -1 {
+        # Honest skip: still a successful probe of the API.
+        return 0
+    }
+    return 1
+}
