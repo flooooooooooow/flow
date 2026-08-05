@@ -121,7 +121,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 | Task | Status | Impact |
 |------|--------|--------|
 | Windows graphics support | ✅ partial — [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux (`gfx_sdl_impl.inc`); `./flow gfx` picks it up on MSYS2/Git Bash/Cygwin; needs MSVC/clang smoke on real Windows |
-| Self-hosting components | 🔲 | Dogfooding |
+| Self-hosting components | ✅ partial — Stage-A `flowc` (bundle resolve/typecheck, lexer/parser/cgen one-TU dogfood, typed-null `flowc_tc_init`, `FLOWC_FORCE_HOST`); see [compiler/README.md](compiler/README.md) | Dogfooding; Python still first-emit host |
 | WASM target | ✅ partial — Flow→C→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `scripts/build_wasm_hello.sh`, `examples/wasm/hello_wasm.flow`); native Flow-in-WASM deferred | Web deployment |
 | Tier-0 tourist examples | ✅ partial — `examples/{wasm,packages,ui,net}/` + `audio/rt_safe_callback.flow` (see [examples/README.md](examples/README.md) Canonical table); channels under `examples/concurrency/` | Demo surface |
 | GPU autodiff | 🔲 | ML performance |
