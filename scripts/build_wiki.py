@@ -735,6 +735,7 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                     {"label": "Wiki Strategy", "path": "wiki-strategy.md"},
                     {"label": "Wiki Roadmap", "path": "wiki-roadmap.md"},
                     {"label": "Language Roadmap", "path": "project/language-roadmap.md"},
+                    {"label": "Self-Hosting", "path": "project/self-hosting.md"},
                 ],
             },
             {
@@ -747,6 +748,7 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                     {"label": "Benchmarks", "path": "project/benchmark-results.md"},
                     {"label": "Structure", "path": "project/PROJECT_STRUCTURE.md"},
                     {"label": "Package Registry", "path": "project/package-registry.md"},
+                    {"label": "Self-Hosting Plan", "path": "project/self-hosting.md"},
                 ],
             },
             {

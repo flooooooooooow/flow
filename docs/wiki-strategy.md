@@ -1,6 +1,7 @@
 # Wiki Strategy
 
-> **Status:** Active · **Owner:** Flow project · **Live URL:** [abhishek-shivakumar.com/flow](https://abhishek-shivakumar.com/flow/) (also [/transpile/](https://abhishek-shivakumar.com/transpile/))
+> **Status:** Active · **Owner:** Flow project · **Live URL:** [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)  
+> VPS `/flow/` + `/transpile/` deploy is **disabled** (GitHub Pages only).
 
 This document defines how Flow documentation should be built, organized, and maintained long term.
 
@@ -15,7 +16,7 @@ The wiki is **not** a dump of markdown files. It is a product with:
 1. **Clear information architecture** — every page has one job
 2. **Consistent rendering** — grammar, proofs, and tutorials look intentional
 3. **Automated freshness** — proof catalogs and nav generated from source
-4. **Deployable artifacts** — one command from repo to VPS
+4. **Deployable artifacts** — push to `main` → GitHub Pages
 
 ---
 
@@ -28,7 +29,7 @@ The wiki is **not** a dump of markdown files. It is a product with:
 | **Two speeds** | Tutorials change slowly; grammar/spec track the compiler |
 | **Proofs are first-class** | `flow-verify` is a third-party library section, not an appendix |
 | **No orphan pages** | Every doc appears in `wiki-nav.json` or is linked from a parent |
-| **Deploy is boring** | `./scripts/deploy_wiki.py` → tarball → VPS extract |
+| **Deploy is boring** | `.github/workflows/wiki.yml` → GitHub Pages |
 
 ---
 
@@ -43,7 +44,7 @@ Home (wiki-home.md)
 ├── Third-Party    → flow-verify + proof corpus (628+ stepped proofs)
 ├── Tutorials      → beginner → advanced learning path
 ├── Tooling        → CLI, Python target, development guide
-└── Project        → contributing, changelog, wiki roadmap, language roadmap
+└── Project        → contributing, changelog, wiki roadmap, language roadmap, self-hosting
 ```
 
 ### Page types & rendering
@@ -73,10 +74,12 @@ site/{html,css,js}        ├─ wiki-nav.json      (nav)
                           ├─ releases.md / versions.json  (from CHANGELOG)
                           └─ euclid-book-*.md   (generated indexes)
 
-build/wiki/ ─► deploy_wiki.py ─► /var/www/transpile/ (VPS)
+build/wiki/ ─► GitHub Actions (wiki.yml) ─► flooooooooooow.github.io/flow/
 ```
 
 **Rule:** Never edit files in `build/wiki/` by hand. Always change source and rebuild.
+
+VPS deploy is off. Local build: `python3 scripts/deploy_wiki.py` (builds only). Emergency VPS: `FLOW_WIKI_VPS=1`.
 
 ---
 
@@ -115,7 +118,7 @@ We deliberately **do not** use MkDocs for the live site today — the custom she
 3. **API autogen** — stdlib signatures from `flow doc` or LSP
 4. **Pagefind** — ✅ optional post-build index (`scripts/build_pagefind.sh`); ⌘K prefers Pagefind, falls back to `search-index.json`
 5. **Playground embed** — runnable snippets from tutorial pages
-6. **CI deploy** — GitHub Action on `docs/` or `site/` change → VPS webhook
+6. **CI deploy** — ✅ GitHub Pages via `wiki.yml` on `docs/` / `site/` change
 
 See [Wiki Roadmap](wiki-roadmap.md) for phased delivery.
 
