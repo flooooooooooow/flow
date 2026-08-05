@@ -1,0 +1,621 @@
+# @module flowc.claim_address
+# @means  Claim Coordinates — permanent addressing (port of src/flow/claim_address.py).
+#         Manual string scanning only (no regex). Symbols prefixed flowc_claim_*.
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+}
+
+# UTF-8 « = C2 AB, » = C2 BB
+const FLOWC_CLAIM_GUIL_OPEN0: i32 = 194
+const FLOWC_CLAIM_GUIL_OPEN1: i32 = 171
+const FLOWC_CLAIM_GUIL_CLOSE0: i32 = 194
+const FLOWC_CLAIM_GUIL_CLOSE1: i32 = 187
+
+export struct FlowcClaimAddress {
+    carrier: string,
+    structure: string,
+    law: string,
+    ok: i32
+}
+
+export function flowc_claim_empty() -> FlowcClaimAddress {
+    return FlowcClaimAddress {
+        carrier: "",
+        structure: "",
+        law: "",
+        ok: 0
+    }
+}
+
+export function flowc_claim_make(carrier: string, structure: string, law: string) -> FlowcClaimAddress {
+    return FlowcClaimAddress {
+        carrier: carrier,
+        structure: structure,
+        law: law,
+        ok: 1
+    }
+}
+
+function flowc_claim_is_ws(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_claim_is_alpha(c: i32) -> i32 {
+    if c >= 65 and c <= 90 {
+        return 1
+    }
+    if c >= 97 and c <= 122 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_claim_is_alnum(c: i32) -> i32 {
+    if flowc_claim_is_alpha(c) == 1 {
+        return 1
+    }
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_claim_is_lower(c: i32) -> i32 {
+    if c >= 97 and c <= 122 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_claim_to_lower(c: i32) -> i32 {
+    if c >= 65 and c <= 90 {
+        return c + 32
+    }
+    return c
+}
+
+function flowc_claim_is_alnum_slug(c: i32) -> i32 {
+    if c >= 97 and c <= 122 {
+        return 1
+    }
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_claim_substr(s: string, start: i32, end: i32) -> string {
+    if end <= start {
+        return ""
+    }
+    let src: ptr<u8> = s
+    let n: i32 = end - start
+    let buf: ptr<u8> = malloc((n as i64) + 1)
+    let mut i: i32 = 0
+    while i < n {
+        buf[i] = src[start + i]
+        i = i + 1
+    }
+    buf[n] = 0
+    let out: string = buf
+    return out
+}
+
+export function flowc_claim_strip(s: string) -> string {
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut lo: i32 = 0
+    let mut hi: i32 = n
+    while lo < hi and flowc_claim_is_ws(p[lo]) == 1 {
+        lo = lo + 1
+    }
+    while hi > lo and flowc_claim_is_ws(p[hi - 1]) == 1 {
+        hi = hi - 1
+    }
+    return flowc_claim_substr(s, lo, hi)
+}
+
+# Drop trailing " (...)" annotation: strip then cut at first '('.
+export function flowc_claim_strip_paren(s: string) -> string {
+    let t: string = flowc_claim_strip(s)
+    let p: ptr<u8> = t
+    let n: i32 = strlen(t) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 40 {
+            return flowc_claim_strip(flowc_claim_substr(t, 0, i))
+        }
+        i = i + 1
+    }
+    return t
+}
+
+# slug_phrase: lower + non-alnum → '_' + strip '_'
+export function flowc_claim_slug_phrase(text: string) -> string {
+    let s: string = flowc_claim_strip(text)
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n as i64) + 1)
+    let mut j: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = flowc_claim_to_lower(p[i])
+        if flowc_claim_is_alnum_slug(c) == 1 {
+            buf[j] = c
+            j = j + 1
+        } else {
+            if j > 0 and buf[j - 1] != 95 {
+                buf[j] = 95
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    while j > 0 and buf[j - 1] == 95 {
+        j = j - 1
+    }
+    buf[j] = 0
+    let out: string = buf
+    return out
+}
+
+# STRUCTURE_SYMBOL_TO_NAME
+export function flowc_claim_structure_name(sym: string) -> string {
+    if strcmp(sym, "+") == 0 {
+        return "addition"
+    }
+    if strcmp(sym, "*") == 0 {
+        return "multiplication"
+    }
+    if strcmp(sym, "||") == 0 {
+        return "disjunction"
+    }
+    if strcmp(sym, "&&") == 0 {
+        return "conjunction"
+    }
+    if strcmp(sym, "=") == 0 {
+        return "equality"
+    }
+    if strcmp(sym, "out") == 0 {
+        return "output"
+    }
+    if strcmp(sym, "fifo") == 0 {
+        return "fifo"
+    }
+    if strcmp(sym, "vectorize") == 0 {
+        return "vectorization"
+    }
+    if strcmp(sym, "fuse") == 0 {
+        return "fusion"
+    }
+    return sym
+}
+
+# FACET_TO_LAW
+export function flowc_claim_facet_law(facet: string) -> string {
+    if strcmp(facet, "zero-left") == 0 {
+        return "zero is the left identity"
+    }
+    if strcmp(facet, "zero-right") == 0 {
+        return "zero is the right identity"
+    }
+    if strcmp(facet, "succ-right") == 0 {
+        return "successor on the right steps the sum"
+    }
+    if strcmp(facet, "succ-left") == 0 {
+        return "successor on the left steps the sum"
+    }
+    if strcmp(facet, "commutes") == 0 {
+        return "order does not matter"
+    }
+    if strcmp(facet, "assoc") == 0 {
+        return "parentheses do not matter"
+    }
+    if strcmp(facet, "reflexive") == 0 {
+        return "everything equals itself"
+    }
+    if strcmp(facet, "symmetric") == 0 {
+        return "equality reverses"
+    }
+    if strcmp(facet, "transitive") == 0 {
+        return "equality chains"
+    }
+    if strcmp(facet, "square-nonneg") == 0 {
+        return "squaring never yields a negative"
+    }
+    if strcmp(facet, "correct") == 0 {
+        return "output matches specification"
+    }
+    if strcmp(facet, "semantics-equal") == 0 {
+        return "optimized code matches naive code"
+    }
+    if strcmp(facet, "order-kept") == 0 {
+        return "order is preserved"
+    }
+    # fallback: hyphens → spaces
+    let p: ptr<u8> = facet
+    let n: i32 = strlen(facet) as i32
+    let buf: ptr<u8> = malloc((n as i64) + 1)
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 45 {
+            buf[i] = 32
+        } else {
+            buf[i] = p[i]
+        }
+        i = i + 1
+    }
+    buf[n] = 0
+    let out: string = buf
+    return out
+}
+
+# Reverse: structure name → symbol
+export function flowc_claim_structure_sym(name: string) -> string {
+    if strcmp(name, "addition") == 0 {
+        return "+"
+    }
+    if strcmp(name, "multiplication") == 0 {
+        return "*"
+    }
+    if strcmp(name, "disjunction") == 0 {
+        return "||"
+    }
+    if strcmp(name, "conjunction") == 0 {
+        return "&&"
+    }
+    if strcmp(name, "equality") == 0 {
+        return "="
+    }
+    if strcmp(name, "output") == 0 {
+        return "out"
+    }
+    if strcmp(name, "fifo") == 0 {
+        return "fifo"
+    }
+    if strcmp(name, "vectorization") == 0 {
+        return "vectorize"
+    }
+    if strcmp(name, "fusion") == 0 {
+        return "fuse"
+    }
+    return name
+}
+
+# Reverse: law → facet
+export function flowc_claim_law_facet(law: string) -> string {
+    if strcmp(law, "zero is the left identity") == 0 {
+        return "zero-left"
+    }
+    if strcmp(law, "zero is the right identity") == 0 {
+        return "zero-right"
+    }
+    if strcmp(law, "successor on the right steps the sum") == 0 {
+        return "succ-right"
+    }
+    if strcmp(law, "successor on the left steps the sum") == 0 {
+        return "succ-left"
+    }
+    if strcmp(law, "order does not matter") == 0 {
+        return "commutes"
+    }
+    if strcmp(law, "parentheses do not matter") == 0 {
+        return "assoc"
+    }
+    if strcmp(law, "everything equals itself") == 0 {
+        return "reflexive"
+    }
+    if strcmp(law, "equality reverses") == 0 {
+        return "symmetric"
+    }
+    if strcmp(law, "equality chains") == 0 {
+        return "transitive"
+    }
+    if strcmp(law, "squaring never yields a negative") == 0 {
+        return "square-nonneg"
+    }
+    if strcmp(law, "output matches specification") == 0 {
+        return "correct"
+    }
+    if strcmp(law, "optimized code matches naive code") == 0 {
+        return "semantics-equal"
+    }
+    if strcmp(law, "order is preserved") == 0 {
+        return "order-kept"
+    }
+    # fallback: slug with '_' → '-'
+    let slug: string = flowc_claim_slug_phrase(law)
+    let p: ptr<u8> = slug
+    let n: i32 = strlen(slug) as i32
+    let buf: ptr<u8> = malloc((n as i64) + 1)
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 95 {
+            buf[i] = 45
+        } else {
+            buf[i] = p[i]
+        }
+        i = i + 1
+    }
+    buf[n] = 0
+    let out: string = buf
+    return out
+}
+
+export function flowc_claim_slug(addr: FlowcClaimAddress) -> string {
+    return addr.carrier + "." + addr.structure + "." + flowc_claim_slug_phrase(addr.law)
+}
+
+export function flowc_claim_guillemets(addr: FlowcClaimAddress) -> string {
+    return "«" + addr.carrier + "» «" + addr.structure + "» «" + addr.law + "»"
+}
+
+export function flowc_claim_display(addr: FlowcClaimAddress) -> string {
+    return addr.carrier + " › " + addr.structure + " › " + addr.law
+}
+
+export function flowc_claim_to_legacy_path(addr: FlowcClaimAddress) -> string {
+    let sym: string = flowc_claim_structure_sym(addr.structure)
+    let facet: string = flowc_claim_law_facet(addr.law)
+    return addr.carrier + "/" + sym + "." + facet
+}
+
+export function flowc_claim_legacy_to_address(carrier: string, structure_sym: string, facet: string) -> FlowcClaimAddress {
+    let structure: string = flowc_claim_structure_name(structure_sym)
+    let law: string = flowc_claim_facet_law(facet)
+    return flowc_claim_make(carrier, structure, law)
+}
+
+function flowc_claim_at_guil_open(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if i + 1 >= n {
+        return 0
+    }
+    if p[i] == FLOWC_CLAIM_GUIL_OPEN0 and p[i + 1] == FLOWC_CLAIM_GUIL_OPEN1 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_claim_at_guil_close(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if i + 1 >= n {
+        return 0
+    }
+    if p[i] == FLOWC_CLAIM_GUIL_CLOSE0 and p[i + 1] == FLOWC_CLAIM_GUIL_CLOSE1 {
+        return 1
+    }
+    return 0
+}
+
+# Find next » starting at i; returns byte index of » or -1.
+function flowc_claim_find_guil_close(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let mut j: i32 = i
+    while j + 1 < n {
+        if flowc_claim_at_guil_close(p, j, n) == 1 {
+            return j
+        }
+        j = j + 1
+    }
+    return -1
+}
+
+# Skip ASCII whitespace from i.
+function flowc_claim_skip_ws(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let mut j: i32 = i
+    while j < n and flowc_claim_is_ws(p[j]) == 1 {
+        j = j + 1
+    }
+    return j
+}
+
+# Parse «carrier» «structure» «law» (prefix match; trailing junk ignored like Python re.match).
+function flowc_claim_parse_guillemets(raw: string) -> FlowcClaimAddress {
+    let p: ptr<u8> = raw
+    let n: i32 = strlen(raw) as i32
+    let mut i: i32 = 0
+    if flowc_claim_at_guil_open(p, i, n) == 0 {
+        return flowc_claim_empty()
+    }
+    i = i + 2
+    let c0: i32 = i
+    let c1: i32 = flowc_claim_find_guil_close(p, i, n)
+    if c1 < 0 {
+        return flowc_claim_empty()
+    }
+    let carrier: string = flowc_claim_strip(flowc_claim_substr(raw, c0, c1))
+    i = c1 + 2
+    i = flowc_claim_skip_ws(p, i, n)
+    if flowc_claim_at_guil_open(p, i, n) == 0 {
+        return flowc_claim_empty()
+    }
+    i = i + 2
+    let s0: i32 = i
+    let s1: i32 = flowc_claim_find_guil_close(p, i, n)
+    if s1 < 0 {
+        return flowc_claim_empty()
+    }
+    let structure: string = flowc_claim_strip(flowc_claim_substr(raw, s0, s1))
+    i = s1 + 2
+    i = flowc_claim_skip_ws(p, i, n)
+    if flowc_claim_at_guil_open(p, i, n) == 0 {
+        return flowc_claim_empty()
+    }
+    i = i + 2
+    let l0: i32 = i
+    let l1: i32 = flowc_claim_find_guil_close(p, i, n)
+    if l1 < 0 {
+        return flowc_claim_empty()
+    }
+    let law: string = flowc_claim_strip(flowc_claim_substr(raw, l0, l1))
+    return flowc_claim_make(carrier, structure, law)
+}
+
+# Parse structure after '/': || | single +|=|* | [a-z][a-zA-Z0-9_-]*
+# Returns end index exclusive, or -1.
+function flowc_claim_parse_structure_end(p: ptr<u8>, start: i32, n: i32) -> i32 {
+    if start >= n {
+        return -1
+    }
+    # ||
+    if start + 1 < n and p[start] == 124 and p[start + 1] == 124 {
+        return start + 2
+    }
+    # single + | = *
+    let c: i32 = p[start]
+    if c == 43 or c == 124 or c == 61 or c == 42 {
+        return start + 1
+    }
+    # [a-z][a-zA-Z0-9_-]*
+    if flowc_claim_is_lower(c) == 0 {
+        return -1
+    }
+    let mut j: i32 = start + 1
+    while j < n {
+        let d: i32 = p[j]
+        if flowc_claim_is_alnum(d) == 1 or d == 95 or d == 45 {
+            j = j + 1
+        } else {
+            return j
+        }
+    }
+    return j
+}
+
+# Legacy: Carrier/structure.facet (full-string match like Python $).
+function flowc_claim_parse_legacy(raw: string) -> FlowcClaimAddress {
+    let p: ptr<u8> = raw
+    let n: i32 = strlen(raw) as i32
+    if n < 5 {
+        return flowc_claim_empty()
+    }
+    # carrier: [A-Za-z][A-Za-z0-9_]*
+    if flowc_claim_is_alpha(p[0]) == 0 {
+        return flowc_claim_empty()
+    }
+    let mut i: i32 = 1
+    while i < n and (flowc_claim_is_alnum(p[i]) == 1 or p[i] == 95) {
+        i = i + 1
+    }
+    if i >= n or p[i] != 47 {
+        return flowc_claim_empty()
+    }
+    let carrier: string = flowc_claim_substr(raw, 0, i)
+    i = i + 1
+    let struct_start: i32 = i
+    let struct_end: i32 = flowc_claim_parse_structure_end(p, struct_start, n)
+    if struct_end < 0 or struct_end >= n or p[struct_end] != 46 {
+        return flowc_claim_empty()
+    }
+    let structure_sym: string = flowc_claim_substr(raw, struct_start, struct_end)
+    i = struct_end + 1
+    # facet: [a-z][a-z0-9-]+  (at least 2 chars)
+    if i >= n or flowc_claim_is_lower(p[i]) == 0 {
+        return flowc_claim_empty()
+    }
+    let facet_start: i32 = i
+    i = i + 1
+    let mut facet_chars: i32 = 1
+    while i < n {
+        let d: i32 = p[i]
+        if flowc_claim_is_lower(d) == 1 or (d >= 48 and d <= 57) or d == 45 {
+            i = i + 1
+            facet_chars = facet_chars + 1
+        } else {
+            return flowc_claim_empty()
+        }
+    }
+    if facet_chars < 2 {
+        return flowc_claim_empty()
+    }
+    let facet: string = flowc_claim_substr(raw, facet_start, i)
+    return flowc_claim_legacy_to_address(carrier, structure_sym, facet)
+}
+
+# Canonical slug: carrier.structure.law_slug (at least two dots).
+function flowc_claim_parse_slug(raw: string) -> FlowcClaimAddress {
+    let p: ptr<u8> = raw
+    let n: i32 = strlen(raw) as i32
+    let mut dots: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 46 {
+            dots = dots + 1
+        }
+        i = i + 1
+    }
+    if dots < 2 {
+        return flowc_claim_empty()
+    }
+    let mut d1: i32 = -1
+    i = 0
+    while i < n {
+        if p[i] == 46 {
+            d1 = i
+            i = n
+        } else {
+            i = i + 1
+        }
+    }
+    if d1 < 0 {
+        return flowc_claim_empty()
+    }
+    let mut d2: i32 = -1
+    i = d1 + 1
+    while i < n {
+        if p[i] == 46 {
+            d2 = i
+            i = n
+        } else {
+            i = i + 1
+        }
+    }
+    if d2 < 0 {
+        return flowc_claim_empty()
+    }
+    let carrier: string = flowc_claim_substr(raw, 0, d1)
+    let structure: string = flowc_claim_substr(raw, d1 + 1, d2)
+    let law_slug: string = flowc_claim_substr(raw, d2 + 1, n)
+    # '_' → ' '
+    let lp: ptr<u8> = law_slug
+    let ln: i32 = strlen(law_slug) as i32
+    let buf: ptr<u8> = malloc((ln as i64) + 1)
+    let mut j: i32 = 0
+    while j < ln {
+        if lp[j] == 95 {
+            buf[j] = 32
+        } else {
+            buf[j] = lp[j]
+        }
+        j = j + 1
+    }
+    buf[ln] = 0
+    let law: string = buf
+    return flowc_claim_make(carrier, structure, law)
+}
+
+export function flowc_claim_parse(text: string) -> FlowcClaimAddress {
+    let raw: string = flowc_claim_strip_paren(text)
+    let g: FlowcClaimAddress = flowc_claim_parse_guillemets(raw)
+    if g.ok == 1 {
+        return g
+    }
+    let leg: FlowcClaimAddress = flowc_claim_parse_legacy(raw)
+    if leg.ok == 1 {
+        return leg
+    }
+    let slug: FlowcClaimAddress = flowc_claim_parse_slug(raw)
+    if slug.ok == 1 {
+        return slug
+    }
+    return flowc_claim_empty()
+}
+
+export function flowc_claim_try_parse(text: string) -> FlowcClaimAddress {
+    return flowc_claim_parse(text)
+}

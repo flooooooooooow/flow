@@ -1,0 +1,6 @@
+# Stage-A multi-file link smoke: import skipped at emit; link with math.o.
+import .math { add }
+
+function main() -> i32 {
+    return add(40, 2)
+}
