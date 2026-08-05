@@ -1,0 +1,5 @@
+# Sibling library for Stage-A FLOWC_BUNDLE emit (twice(N) → 42).
+export const N: i32 = 21
+export function twice(x: i32) -> i32 {
+    return x + x
+}

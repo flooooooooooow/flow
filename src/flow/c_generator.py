@@ -529,10 +529,13 @@ class CGenerator:
                          'sqrt', 'cbrt', 'pow', 'exp', 'exp2', 'log', 'log2', 'log10',
                          'fabs', 'abs', 'floor', 'ceil', 'round', 'fmod',
                          'fmin', 'fmax', 'hypot'}
-        # Standard C library functions that don't need declarations (covered by includes)
+        # Standard C library functions that don't need declarations (covered by includes).
+        # Include FILE*/stdlib names used by flowc fileio + emit (conflicting prototypes
+        # vs stdio.h/stdlib.h otherwise break `./flow run compiler/src/main.flow`).
         stdlib_functions = {'malloc', 'free', 'calloc', 'realloc', 'printf', 'sprintf',
                            'snprintf', 'fprintf', 'puts', 'putchar', 'getchar', 'fflush',
-                           'memcpy', 'memset', 'strlen', 'strcmp', 'strcpy', 'strcat'}
+                           'memcpy', 'memset', 'strlen', 'strcmp', 'strcpy', 'strcat',
+                           'fopen', 'fclose', 'fread', 'fwrite', 'fseek', 'ftell', 'getenv'}
         primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
