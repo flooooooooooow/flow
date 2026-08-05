@@ -281,3 +281,80 @@ class TestLowering:
         names = {d.name for d in decls if isinstance(d, FunctionDecl)}
         assert "Chain_step" in names
         assert "Chain_new" in names
+
+
+# A parent flow port (input/state) driving a child input: `signal -> g.x`.
+PARENT_SOURCE = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+
+flow Chain {
+    input signal : f64
+    g : Gain
+
+    connect {
+        signal -> g.x
+    }
+}
+"""
+
+
+class TestParentSource:
+    def test_bare_source_parses_as_parent_port(self):
+        flows = {d.name: d for d in parse_raw(PARENT_SOURCE) if isinstance(d, FlowDecl)}
+        conn = flows["Chain"].connections[0]
+        # Empty src_member marks a parent-port source.
+        assert (conn.src_member, conn.src_port, conn.dst_member, conn.dst_port) == (
+            "", "signal", "g", "x",
+        )
+
+    def test_parent_source_copies_from_self_field(self):
+        c = flow_to_c(parse_lowered(PARENT_SOURCE))
+        # Parent input is a field on self directly, copied into the child input
+        # before the child steps.
+        assert "self->g.x = self->signal" in c
+        copy = c.index("self->g.x = self->signal")
+        step = c.index("Gain_step((&(self->g)), dt)")
+        assert copy < step
+
+    def test_parent_source_is_strict_clean(self):
+        assert TypeChecker().check(parse_lowered(PARENT_SOURCE)).errors == []
+
+    def test_bare_source_must_be_a_real_parent_port(self):
+        code = PARENT_SOURCE.replace("signal -> g.x", "nope -> g.x")
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected FlowSyntaxError")
+        except FlowSyntaxError as exc:
+            assert "not a port of this flow" in str(exc)
+
+    def test_parent_output_source_rejected(self):
+        # A parent *output* is not a valid source (only input/state).
+        code = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    y evolves as x - y
+}
+
+flow Chain {
+    input signal : f64
+    output echo : f64 = signal
+    g : Gain
+
+    connect {
+        echo -> g.x
+    }
+}
+"""
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected FlowSyntaxError")
+        except FlowSyntaxError as exc:
+            assert "must be an input or state" in str(exc)
