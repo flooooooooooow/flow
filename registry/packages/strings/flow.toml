@@ -1,0 +1,11 @@
+[package]
+name = "strings"
+version = "0.1.0"
+description = "Richer UTF-8/byte string helpers (starts/ends/contains, trim, slice, parse)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

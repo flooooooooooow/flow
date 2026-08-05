@@ -1,0 +1,57 @@
+# ffi — little-endian buffer packing helpers + bindgen seed (sizeof ptr)
+# Packing is pure Flow. flow_ffi_sizeof_ptr is a tiny native stub (no dlopen).
+
+extern {
+    function flow_ffi_sizeof_ptr() -> i64
+    function malloc(size: i64) -> ptr<i8>
+    function free(p: ptr<i8>) -> void
+}
+
+export function ffi_alloc(size: i64) -> ptr<i8> {
+    return malloc(size)
+}
+
+export function ffi_free(p: ptr<i8>) -> void {
+    free(p)
+}
+
+export function ffi_write_u8(buf: ptr<i8>, off: i32, val: i32) -> void {
+    buf[off] = (val & 255) as i8
+}
+
+export function ffi_read_u8(buf: ptr<i8>, off: i32) -> i32 {
+    return (buf[off] as i32) & 255
+}
+
+export function ffi_write_i32_le(buf: ptr<i8>, off: i32, val: i32) -> void {
+    buf[off] = (val & 255) as i8
+    buf[off + 1] = ((val >> 8) & 255) as i8
+    buf[off + 2] = ((val >> 16) & 255) as i8
+    buf[off + 3] = ((val >> 24) & 255) as i8
+}
+
+export function ffi_read_i32_le(buf: ptr<i8>, off: i32) -> i32 {
+    let b0: i32 = (buf[off] as i32) & 255
+    let b1: i32 = (buf[off + 1] as i32) & 255
+    let b2: i32 = (buf[off + 2] as i32) & 255
+    let b3: i32 = (buf[off + 3] as i32) & 255
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+export function ffi_write_i64_le(buf: ptr<i8>, off: i32, val: i64) -> void {
+    let lo: i32 = (val & 4294967295) as i32
+    let hi: i32 = ((val >> 32) & 4294967295) as i32
+    ffi_write_i32_le(buf, off, lo)
+    ffi_write_i32_le(buf, off + 4, hi)
+}
+
+export function ffi_read_i64_le(buf: ptr<i8>, off: i32) -> i64 {
+    let lo: i64 = (ffi_read_i32_le(buf, off) as i64) & 4294967295
+    let hi: i64 = (ffi_read_i32_le(buf, off + 4) as i64) & 4294967295
+    return lo | (hi << 32)
+}
+
+# Native bindgen seed: sizeof(void*) on this platform.
+export function ffi_sizeof_ptr() -> i64 {
+    return flow_ffi_sizeof_ptr()
+}

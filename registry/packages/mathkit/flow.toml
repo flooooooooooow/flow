@@ -1,0 +1,11 @@
+[package]
+name = "mathkit"
+version = "0.1.0"
+description = "Small integer/float helpers for Flow apps"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]
