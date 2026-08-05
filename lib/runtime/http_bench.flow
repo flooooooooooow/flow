@@ -1,25 +1,88 @@
-# Flow runtime: HTTP microbench harness (sockets stay in C).
+# Flow runtime: HTTP microbench harness. Serve and client loops live in Flow
+# over the tcp kernels; only the threaded accept-loop server stays in C.
 
 extern {
     function flow_rt_monotonic_ns() -> i64
-    function flow_rt_http_serve_hello(port: i32, n_req: i32) -> i64
-    function flow_rt_http_bench_run(port: i32, n_req: i32) -> i64
+    function flow_rt_tcp_listen(port: i32) -> i32
+    function flow_rt_tcp_accept(listen_fd: i32) -> i32
+    function flow_rt_tcp_close(fd: i32) -> i32
+    function flow_rt_tcp_recv(fd: i32, buf: ptr<void>, len: i32) -> i32
+    function flow_rt_tcp_connect(host_hash: i32, port: i32) -> i32
+    function flow_rt_tcp_send_str(fd: i32, s: string, len: i32) -> i32
+    function flow_rt_http_reply(fd: i32, status: i32, content_type: string, body: string, body_len: i32) -> i32
+    function flow_rt_http_bench_srv_start(port: i32) -> i32
+    function flow_rt_http_bench_srv_stop() -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
     function printf(fmt: string) -> i32
 }
 
+# Serve `n_req` requests with a fixed hello response, then stop.
 @flow_api
 export function flow_http_serve_hello(port: i32, n_req: i32) -> i64 {
-    return flow_rt_http_serve_hello(port, n_req)
+    let fd: i32 = flow_rt_tcp_listen(port)
+    if fd < 0 {
+        return -1
+    }
+    let buf: ptr<void> = malloc(1024)
+    let mut served: i64 = 0
+    while served < (n_req as i64) {
+        let cfd: i32 = flow_rt_tcp_accept(fd)
+        if cfd < 0 {
+            continue
+        }
+        flow_rt_tcp_recv(cfd, buf, 1024)
+        flow_rt_http_reply(cfd, 200, "text/plain", "Hello from Flow", 15)
+        flow_rt_tcp_close(cfd)
+        served = served + 1
+    }
+    free(buf)
+    flow_rt_tcp_close(fd)
+    return served
+}
+
+# One GET against the loopback server; 1 on success, 0 on failure.
+function flow_http_bench_get(port: i32, buf: ptr<void>) -> i32 {
+    let c: i32 = flow_rt_tcp_connect(0, port)
+    if c < 0 {
+        return 0
+    }
+    let mut got: i32 = 0
+    if flow_rt_tcp_send_str(c, "GET / HTTP/1.0\r\n\r\n", 18) > 0 {
+        if flow_rt_tcp_recv(c, buf, 256) > 0 {
+            got = 1
+        }
+    }
+    flow_rt_tcp_close(c)
+    return got
 }
 
 @flow_api
 export function flow_bench_http_server_rps(port: i32, n_req: i32) -> i64 {
-    let t0: i64 = flow_rt_monotonic_ns()
-    let mut ok: i64 = flow_rt_http_bench_run(port, n_req)
-    let t1: i64 = flow_rt_monotonic_ns()
-    if ok < 0 {
+    if flow_rt_http_bench_srv_start(port) < 0 {
         return -1
     }
+    let buf: ptr<void> = malloc(256)
+
+    # Warmup connections.
+    let mut w: i32 = 0
+    while w < 20 {
+        flow_http_bench_get(port, buf)
+        w = w + 1
+    }
+
+    let t0: i64 = flow_rt_monotonic_ns()
+    let mut ok: i64 = 0
+    let mut i: i32 = 0
+    while i < n_req {
+        ok = ok + (flow_http_bench_get(port, buf) as i64)
+        i = i + 1
+    }
+    let t1: i64 = flow_rt_monotonic_ns()
+
+    flow_rt_http_bench_srv_stop()
+    free(buf)
+
     let sec: f64 = (t1 - t0) as f64 / 1000000000.0
     let mut rps: f64 = 0.0
     if sec > 0.0 {
