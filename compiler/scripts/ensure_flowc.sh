@@ -31,7 +31,8 @@ fi
 
 echo "ensure_flowc: no driver yet — bootstrapping Gen0 (Phase-A roundtrip)..." >&2
 chmod +x ./flow compiler/scripts/*.sh
-FLOWC_PHASE_A_ONLY=1 ./compiler/scripts/roundtrip.sh >/dev/null
+# Bootstrap must use the Python host (Gen0); avoid recurse via FLOW_HOST=flowc.
+FLOW_HOST=python FLOWC_PHASE_A_ONLY=1 ./compiler/scripts/roundtrip.sh >/dev/null
 
 if ! pick_flowc >/dev/null; then
     echo "ensure_flowc: bootstrap finished but no stage_a_driver* binary found" >&2

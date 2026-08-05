@@ -70,18 +70,26 @@ flow_host_mode() {
 }
 
 flow_resolve_flowc() {
+    local driver=""
     if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
-        printf '%s\n' "$FLOWC_BIN"
-        return 0
+        driver="$FLOWC_BIN"
+    else
+        driver="$(FLOW_HOST=python bash "$SCRIPT_DIR/compiler/scripts/ensure_flowc.sh")" || true
     fi
-    bash "$SCRIPT_DIR/compiler/scripts/ensure_flowc.sh"
+    if [[ -z "$driver" || ! -x "$driver" ]]; then
+        print_error "No Stage-A flowc driver (set FLOWC_BIN or run compiler/scripts/roundtrip.sh)"
+        return 1
+    fi
+    printf '%s\n' "$driver"
 }
 
 flowc_emit_to_c() {
     local program="$1"
     local c_out="$2"
     local driver
-    driver="$(flow_resolve_flowc)"
+    if ! driver="$(flow_resolve_flowc)"; then
+        return 1
+    fi
     print_info "flowc emit via $driver"
     FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" "$driver" "$program" "$c_out"
 }
