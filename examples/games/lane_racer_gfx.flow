@@ -1,0 +1,434 @@
+# LANE RACER - top-down 4-lane racing game
+#
+# Controls:
+#   Left/Right or A/D - change lane
+#   Space             - start game
+#   R                 - restart after game over
+#   Esc               - quit
+#
+# Features:
+#   - 4 lanes of oncoming traffic, density and speed ramp with distance
+#   - Near-miss bonus: +50 when a car whooshes past in an adjacent lane
+#   - Distance-based score plus bonuses
+#   - Fuel gauge that drains over time; grab green fuel cans to refill
+#   - Crash or empty tank = game over, R to restart
+#   - Title, playing and game-over states
+
+import "stdlib/gfx.flow"
+
+const KEY_SPACE: i32 = 49
+
+const WIN_W: i32 = 480
+const WIN_H: i32 = 640
+const ROAD_X: i32 = 80
+const LANE_W: i32 = 80
+const CAR_W: i32 = 44
+const CAR_H: i32 = 70
+const PLAYER_Y: i32 = 520
+const MAX_CARS: i32 = 8
+const FUEL_MAX: i32 = 900
+
+const STATE_TITLE: i32 = 0
+const STATE_PLAYING: i32 = 1
+const STATE_GAMEOVER: i32 = 2
+
+# ============================================================================
+# RNG
+# ============================================================================
+
+function rng_next(seed: u32) -> u32 {
+    return seed * 1664525 + 1013904223
+}
+
+function rng_range(seed: u32, max: i32) -> i32 {
+    let mut val: i32 = seed % max
+    if val < 0 { val = 0 - val }
+    return val
+}
+
+function iabs(v: i32) -> i32 {
+    let mut r: i32 = v
+    if r < 0 { r = 0 - r }
+    return r
+}
+
+function lane_left(lane: i32) -> i32 {
+    return ROAD_X + lane * LANE_W + (LANE_W - CAR_W) / 2
+}
+
+# ============================================================================
+# NUMBER DRAWING (3x5 rect digits)
+# ============================================================================
+
+function draw_digit(g: Gfx, x: i32, y: i32, d: i32, scale: i32, cr: i32, cg: i32, cb: i32) {
+    let mut p0: i32 = 7
+    let mut p1: i32 = 5
+    let mut p2: i32 = 5
+    let mut p3: i32 = 5
+    let mut p4: i32 = 7
+
+    if d == 1 { p0 = 2; p1 = 6; p2 = 2; p3 = 2; p4 = 7 }
+    if d == 2 { p0 = 7; p1 = 1; p2 = 7; p3 = 4; p4 = 7 }
+    if d == 3 { p0 = 7; p1 = 1; p2 = 7; p3 = 1; p4 = 7 }
+    if d == 4 { p0 = 5; p1 = 5; p2 = 7; p3 = 1; p4 = 1 }
+    if d == 5 { p0 = 7; p1 = 4; p2 = 7; p3 = 1; p4 = 7 }
+    if d == 6 { p0 = 7; p1 = 4; p2 = 7; p3 = 5; p4 = 7 }
+    if d == 7 { p0 = 7; p1 = 1; p2 = 1; p3 = 1; p4 = 1 }
+    if d == 8 { p0 = 7; p1 = 5; p2 = 7; p3 = 5; p4 = 7 }
+    if d == 9 { p0 = 7; p1 = 5; p2 = 7; p3 = 1; p4 = 7 }
+
+    let rows: array<i32, 5> = [p0, p1, p2, p3, p4]
+
+    for row in 0 to 5 {
+        let bits: i32 = rows[row]
+        for col in 0 to 3 {
+            let mut mask: i32 = 4
+            let mut sh: i32 = col
+            while sh > 0 {
+                mask = mask / 2
+                sh = sh - 1
+            }
+            if (bits / mask) % 2 == 1 {
+                gfx_fill_rect(g, x + col * scale, y + row * scale, scale - 1, scale - 1, cr, cg, cb)
+            }
+        }
+    }
+}
+
+function draw_number(g: Gfx, x: i32, y: i32, n: i32, scale: i32, cr: i32, cg: i32, cb: i32) {
+    if n == 0 {
+        draw_digit(g, x, y, 0, scale, cr, cg, cb)
+        return
+    }
+
+    let digits: array<i32, 10> = [0,0,0,0,0,0,0,0,0,0]
+    let mut count: i32 = 0
+    let mut v: i32 = n
+    while v > 0 and count < 10 {
+        digits[count] = v % 10
+        v = v / 10
+        count = count + 1
+    }
+
+    let mut dx: i32 = 0
+    let mut i: i32 = count - 1
+    while i >= 0 {
+        draw_digit(g, x + dx, y, digits[i], scale, cr, cg, cb)
+        dx = dx + 4 * scale
+        i = i - 1
+    }
+}
+
+# ============================================================================
+# DRAWING
+# ============================================================================
+
+function draw_car(g: Gfx, x: i32, y: i32, cr: i32, cg: i32, cb: i32, is_player: i32) {
+    # body
+    gfx_fill_rect(g, x, y + 6, CAR_W, CAR_H - 12, cr, cg, cb)
+    gfx_fill_rect(g, x + 5, y, CAR_W - 10, CAR_H, cr, cg, cb)
+    # windshield + rear window
+    gfx_fill_rect(g, x + 8, y + 12, CAR_W - 16, 12, 170, 220, 240)
+    gfx_fill_rect(g, x + 8, y + CAR_H - 22, CAR_W - 16, 10, 120, 160, 180)
+    # wheels
+    gfx_fill_rect(g, x - 3, y + 8, 5, 14, 20, 20, 20)
+    gfx_fill_rect(g, x + CAR_W - 2, y + 8, 5, 14, 20, 20, 20)
+    gfx_fill_rect(g, x - 3, y + CAR_H - 22, 5, 14, 20, 20, 20)
+    gfx_fill_rect(g, x + CAR_W - 2, y + CAR_H - 22, 5, 14, 20, 20, 20)
+    if is_player == 1 {
+        # racing stripe
+        gfx_fill_rect(g, x + CAR_W / 2 - 3, y + 2, 6, CAR_H - 4, 240, 240, 240)
+    }
+}
+
+function draw_fuel_can(g: Gfx, x: i32, y: i32) {
+    gfx_fill_rect(g, x + 6, y + 14, 32, 40, 40, 190, 70)
+    gfx_fill_rect(g, x + 12, y + 6, 12, 10, 40, 190, 70)
+    gfx_fill_rect(g, x + 12, y + 26, 20, 16, 230, 250, 230)
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+function main() -> i32 {
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "LANE RACER - Flow")
+
+    # traffic slots
+    let car_lane: array<i32, 8> = [0,0,0,0,0,0,0,0]
+    let car_y: array<i32, 8> = [0,0,0,0,0,0,0,0]        # fixed point *16
+    let car_active: array<i32, 8> = [0,0,0,0,0,0,0,0]
+    let car_kind: array<i32, 8> = [0,0,0,0,0,0,0,0]     # 0 car, 1 fuel can
+    let car_passed: array<i32, 8> = [0,0,0,0,0,0,0,0]
+
+    let mut state: i32 = STATE_TITLE
+    let mut player_lane: i32 = 1
+    let mut player_x: i32 = 0                    # pixels, animates to lane
+    let mut distance_fp: i32 = 0                 # fixed point *16 pixels
+    let mut speed_fp: i32 = 56
+    let mut fuel: i32 = FUEL_MAX
+    let mut bonus_score: i32 = 0
+    let mut score: i32 = 0
+    let mut spawn_timer: i32 = 0
+    let mut near_flash: i32 = 0
+    let mut crash_reason: i32 = 0                # 0 crash, 1 out of fuel
+    let mut frame: i32 = 0
+    let mut rng_seed: u32 = 4242
+
+    let mut last_left: i32 = 0
+    let mut last_right: i32 = 0
+    let mut last_space: i32 = 0
+    let mut last_r: i32 = 0
+
+    player_x = lane_left(player_lane)
+
+    while !gfx_should_close(g) {
+        gfx_poll(g)
+        if gfx_key_down(g, KEY_ESC) { break }
+        frame = frame + 1
+
+        # ---- input with edge detection ----
+        let mut left_now: i32 = 0
+        let mut right_now: i32 = 0
+        let mut space_now: i32 = 0
+        let mut r_now: i32 = 0
+        if gfx_key_down(g, KEY_LEFT) or gfx_key_down(g, KEY_A) { left_now = 1 }
+        if gfx_key_down(g, KEY_RIGHT) or gfx_key_down(g, KEY_D) { right_now = 1 }
+        if gfx_key_down(g, KEY_SPACE) { space_now = 1 }
+        if gfx_key_down(g, KEY_R) { r_now = 1 }
+
+        let mut left_edge: i32 = 0
+        let mut right_edge: i32 = 0
+        let mut space_edge: i32 = 0
+        let mut r_edge: i32 = 0
+        if left_now == 1 and last_left == 0 { left_edge = 1 }
+        if right_now == 1 and last_right == 0 { right_edge = 1 }
+        if space_now == 1 and last_space == 0 { space_edge = 1 }
+        if r_now == 1 and last_r == 0 { r_edge = 1 }
+        last_left = left_now
+        last_right = right_now
+        last_space = space_now
+        last_r = r_now
+
+        # ---- state transitions ----
+        let mut want_start: i32 = 0
+        if state == STATE_TITLE and space_edge == 1 { want_start = 1 }
+        if state == STATE_GAMEOVER and r_edge == 1 { want_start = 1 }
+        if want_start == 1 {
+            state = STATE_PLAYING
+            player_lane = 1
+            player_x = lane_left(player_lane)
+            distance_fp = 0
+            speed_fp = 56
+            fuel = FUEL_MAX
+            bonus_score = 0
+            score = 0
+            spawn_timer = 0
+            near_flash = 0
+            for i in 0 to MAX_CARS {
+                car_active[i] = 0
+            }
+        }
+
+        # ---- gameplay ----
+        if state == STATE_PLAYING {
+            if left_edge == 1 and player_lane > 0 { player_lane = player_lane - 1 }
+            if right_edge == 1 and player_lane < 3 { player_lane = player_lane + 1 }
+
+            # slide the drawn car toward its lane
+            let target_x: i32 = lane_left(player_lane)
+            if player_x < target_x {
+                player_x = player_x + 12
+                if player_x > target_x { player_x = target_x }
+            }
+            if player_x > target_x {
+                player_x = player_x - 12
+                if player_x < target_x { player_x = target_x }
+            }
+
+            # speed ramps with distance
+            let dist_px: i32 = distance_fp / 16
+            speed_fp = 56 + dist_px / 300
+            if speed_fp > 160 { speed_fp = 160 }
+            distance_fp = distance_fp + speed_fp
+
+            # fuel drain
+            fuel = fuel - 1
+            if fuel <= 0 {
+                fuel = 0
+                crash_reason = 1
+                state = STATE_GAMEOVER
+            }
+
+            # spawning, denser with distance
+            let mut spawn_delay: i32 = 60 - dist_px / 400
+            if spawn_delay < 22 { spawn_delay = 22 }
+            spawn_timer = spawn_timer + 1
+            if spawn_timer >= spawn_delay {
+                spawn_timer = 0
+                # find a free slot
+                let mut slot: i32 = -1
+                for i in 0 to MAX_CARS {
+                    if slot < 0 and car_active[i] == 0 { slot = i }
+                }
+                if slot >= 0 {
+                    rng_seed = rng_next(rng_seed)
+                    let lane: i32 = rng_range(rng_seed, 4)
+                    # keep spawn lanes from stacking right on top of each other
+                    let mut blocked: i32 = 0
+                    for i in 0 to MAX_CARS {
+                        if car_active[i] == 1 and car_lane[i] == lane and car_y[i] / 16 < 180 {
+                            blocked = 1
+                        }
+                    }
+                    if blocked == 0 {
+                        car_active[slot] = 1
+                        car_lane[slot] = lane
+                        car_y[slot] = 0 - 90 * 16
+                        car_passed[slot] = 0
+                        rng_seed = rng_next(rng_seed)
+                        if rng_range(rng_seed, 6) == 0 {
+                            car_kind[slot] = 1
+                        } else {
+                            car_kind[slot] = 0
+                        }
+                    }
+                }
+            }
+
+            # move traffic, check collisions and bonuses
+            for i in 0 to MAX_CARS {
+                if car_active[i] == 1 {
+                    car_y[i] = car_y[i] + speed_fp
+                    let cy: i32 = car_y[i] / 16
+
+                    if cy > WIN_H + 20 {
+                        car_active[i] = 0
+                    } else {
+                        # near-miss bonus once the car has fully passed the player
+                        if car_kind[i] == 0 and car_passed[i] == 0 and cy > PLAYER_Y + CAR_H {
+                            car_passed[i] = 1
+                            if iabs(car_lane[i] - player_lane) == 1 {
+                                bonus_score = bonus_score + 50
+                                near_flash = 20
+                            }
+                        }
+
+                        # overlap with the player rectangle
+                        if car_lane[i] == player_lane and cy < PLAYER_Y + CAR_H and cy + CAR_H > PLAYER_Y {
+                            if car_kind[i] == 1 {
+                                fuel = fuel + 300
+                                if fuel > FUEL_MAX { fuel = FUEL_MAX }
+                                bonus_score = bonus_score + 25
+                                car_active[i] = 0
+                            } else {
+                                crash_reason = 0
+                                state = STATE_GAMEOVER
+                            }
+                        }
+                    }
+                }
+            }
+
+            if near_flash > 0 { near_flash = near_flash - 1 }
+            score = distance_fp / 256 + bonus_score
+        }
+
+        # ---- drawing ----
+        # grass
+        gfx_clear(g, 30, 110, 45)
+        # road
+        gfx_fill_rect(g, ROAD_X, 0, LANE_W * 4, WIN_H, 55, 55, 60)
+        # edge lines
+        gfx_fill_rect(g, ROAD_X - 6, 0, 6, WIN_H, 230, 200, 60)
+        gfx_fill_rect(g, ROAD_X + LANE_W * 4, 0, 6, WIN_H, 230, 200, 60)
+
+        # scrolling dashed lane separators
+        let dash_off: i32 = (distance_fp / 16) % 48
+        for l in 1 to 4 {
+            let lx: i32 = ROAD_X + l * LANE_W - 2
+            let mut dy: i32 = dash_off - 48
+            while dy < WIN_H {
+                gfx_fill_rect(g, lx, dy, 4, 24, 220, 220, 220)
+                dy = dy + 48
+            }
+        }
+
+        if state == STATE_TITLE {
+            # title card
+            gfx_fill_rect(g, WIN_W / 2 - 150, 100, 300, 90, 20, 20, 30)
+            gfx_fill_rect(g, WIN_W / 2 - 142, 108, 284, 74, 200, 40, 40)
+            draw_car(g, WIN_W / 2 - CAR_W / 2, 250, 40, 90, 220, 1)
+            draw_car(g, WIN_W / 2 - CAR_W / 2 - 90, 320, 200, 60, 40, 0)
+            draw_car(g, WIN_W / 2 - CAR_W / 2 + 90, 300, 220, 140, 40, 0)
+            if (frame / 25) % 2 == 0 {
+                gfx_fill_rect(g, WIN_W / 2 - 90, 440, 180, 14, 240, 240, 240)
+            }
+        } else {
+            # traffic
+            for i in 0 to MAX_CARS {
+                if car_active[i] == 1 {
+                    let cx: i32 = lane_left(car_lane[i])
+                    let cy: i32 = car_y[i] / 16
+                    if car_kind[i] == 1 {
+                        draw_fuel_can(g, cx, cy)
+                    } else {
+                        let mut cr: i32 = 200
+                        let mut cg: i32 = 60
+                        let mut cb: i32 = 40
+                        if i % 3 == 1 { cr = 220; cg = 140; cb = 40 }
+                        if i % 3 == 2 { cr = 150; cg = 60; cb = 200 }
+                        draw_car(g, cx, cy, cr, cg, cb, 0)
+                    }
+                }
+            }
+
+            # player
+            draw_car(g, player_x, PLAYER_Y, 40, 90, 220, 1)
+
+            # near-miss flash: white border pulses
+            if near_flash > 0 {
+                gfx_fill_rect(g, ROAD_X, 0, LANE_W * 4, 6, 255, 255, 255)
+                gfx_fill_rect(g, ROAD_X, WIN_H - 6, LANE_W * 4, 6, 255, 255, 255)
+            }
+
+            # HUD: score
+            gfx_fill_rect(g, 6, 6, 150, 40, 15, 15, 22)
+            draw_number(g, 14, 14, score, 5, 255, 255, 255)
+
+            # HUD: fuel bar
+            gfx_fill_rect(g, WIN_W - 216, 6, 210, 26, 15, 15, 22)
+            let fw: i32 = fuel * 200 / FUEL_MAX
+            let mut fr: i32 = 60
+            let mut fg: i32 = 200
+            if fuel < FUEL_MAX / 4 {
+                fr = 220
+                fg = 50
+            }
+            gfx_fill_rect(g, WIN_W - 211, 11, fw, 16, fr, fg, 50)
+
+            # HUD: speed bar
+            gfx_fill_rect(g, WIN_W - 216, 38, 210, 12, 15, 15, 22)
+            let sw: i32 = (speed_fp - 56) * 2
+            gfx_fill_rect(g, WIN_W - 211, 41, 10 + sw, 6, 255, 140, 40)
+
+            if state == STATE_GAMEOVER {
+                gfx_fill_rect(g, WIN_W / 2 - 150, 220, 300, 120, 15, 15, 22)
+                if crash_reason == 0 {
+                    gfx_fill_rect(g, WIN_W / 2 - 142, 228, 284, 40, 200, 40, 40)
+                } else {
+                    gfx_fill_rect(g, WIN_W / 2 - 142, 228, 284, 40, 200, 140, 30)
+                }
+                draw_number(g, WIN_W / 2 - 100, 284, score, 8, 255, 255, 255)
+                if (frame / 25) % 2 == 0 {
+                    gfx_fill_rect(g, WIN_W / 2 - 70, 360, 140, 10, 240, 240, 240)
+                }
+            }
+        }
+
+        gfx_present(g)
+    }
+
+    gfx_close(g)
+    return 0
+}
