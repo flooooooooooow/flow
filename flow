@@ -158,6 +158,7 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  debug <program>   Compile with debug symbols and open debugger"
     echo "  window <program>  Run with SDL2 window backend"
     echo "  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)"
+    echo "  record <program>  Run a gfx program headless, writing frames as PPMs (see runtime/gfx_record.c)"
     echo "  shader <program>  Run fill-shader demo (Metal window on macOS; see docs/language/shaders.md)"
     echo "  demo vulkan [basic|advanced]  Vulkan triangle / scene demos (macOS + MoltenVK)"
     echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout|layout|layout-dsl]"
@@ -165,7 +166,7 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  Compat aliases (same as demo …): vulkan-demo[-basic|-advanced], vulkan-2048,"
     echo "    vulkan-tetris, vulkan-snake, vulkan-pong, vulkan-breakout,"
     echo "    vulkan-layout[-dsl], ui-layout[-window]"
-    echo "  mlir <program>     Generate MLIR only"
+    echo "  mlir <program> [flags]  Generate MLIR (pass --optimize / --opt-level / --no-*)"
     echo "  mlir-run <program> Compile via MLIR and run"
     echo "  jit <program>      JIT compile and run (fastest)"
     echo "  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)"
@@ -871,6 +872,42 @@ run_gfx_program() {
     print_success "Built: $exe_file"
     
     print_info "Running..."
+    "$exe_file"
+}
+
+# Build a gfx program against the headless recording backend and run it, so demo
+# frames come from the real program instead of a mock-up. Configured through
+# FLOW_GFX_RECORD_* — see runtime/gfx_record.c.
+record_gfx_program() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+
+    check_deps
+    mkdir -p "$build_dir"
+
+    local c_file="$build_dir/$basename.record.c"
+    local exe_file="$build_dir/$basename.record"
+
+    print_info "Compiling $program (headless recorder)..."
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C: $(basename "$c_file")"
+
+    if ! clang -O2 -fno-omit-frame-pointer "$c_file" \
+        "$SCRIPT_DIR/runtime/gfx_record.c" \
+        "$SCRIPT_DIR/runtime/flow_time.c" \
+        -o "$exe_file" -lm; then
+        print_error "Recorder build failed"
+        exit 1
+    fi
+    print_success "Built: $exe_file"
+
+    print_info "Recording..."
     "$exe_file"
 }
 
@@ -1752,6 +1789,9 @@ case "${1:-help}" in
         ;;
     "gfx")
         run_gfx_program "${2:-}"
+        ;;
+    "record")
+        record_gfx_program "${2:-}"
         ;;
     "vulkan-demo")
         run_vulkan_demo
