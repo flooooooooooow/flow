@@ -5,7 +5,7 @@ import "stdlib/audio/simd.flow"
 
 function test_gain_fast() -> bool {
     let buf: AudioBufferF32 = audio_buffer_alloc_f32(4, 2, layout_interleaved())
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 4 {
         audio_buffer_set_f32(buf, i, 0, 1.0)
         audio_buffer_set_f32(buf, i, 1, 1.0)
@@ -19,8 +19,8 @@ function test_gain_fast() -> bool {
 }
 
 function main() -> i32 {
-    let passed: i32 = 0
-    let failed: i32 = 0
+    let mut passed: i32 = 0
+    let mut failed: i32 = 0
     printf("=== Audio SIMD Gain Tests ===\n\n")
 
     if test_gain_fast() { printf("✓ gain_fast\n"); passed = passed + 1 }

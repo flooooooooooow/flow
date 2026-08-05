@@ -1,0 +1,12 @@
+[package]
+name = "json_demo"
+version = "0.1.0"
+description = "Demo for registry package json"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+json = "0.1.0"
+
+[dev-dependencies]

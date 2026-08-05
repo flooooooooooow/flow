@@ -1,0 +1,11 @@
+[package]
+name = "log"
+version = "0.1.0"
+description = "Effects-native leveled logging (Log effect + ConsoleLog)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

@@ -1,0 +1,30 @@
+# Compiler-suite runtime: recursion + mutual recursion
+
+function fact(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    }
+    return n * fact(n - 1)
+}
+
+function even(n: i32) -> bool {
+    if n == 0 {
+        return true
+    }
+    return odd(n - 1)
+}
+
+function odd(n: i32) -> bool {
+    if n == 0 {
+        return false
+    }
+    return even(n - 1)
+}
+
+function main() -> i32 {
+    if fact(6) != 720 { return 1 }
+    if !even(10) { return 2 }
+    if odd(10) { return 3 }
+    if !odd(7) { return 4 }
+    return 0
+}

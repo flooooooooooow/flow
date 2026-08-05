@@ -13,7 +13,7 @@ extern "C" {
 typedef void (*flow_thread_fn)(void *arg);
 typedef int32_t (*flow_task_fn)(int32_t arg);
 
-/* OS threads */
+/* OS threads — public API in lib/runtime/threads.flow; kernels are flow_rt_thread_*. */
 int64_t flow_thread_spawn(flow_thread_fn fn, void *arg);
 int32_t flow_thread_join(int64_t tid);
 void flow_thread_yield(void);

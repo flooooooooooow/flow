@@ -1,125 +1,152 @@
-# Package Registry Design
+# Package Registry
 
-**Status:** Deferred (design only — no implementation)  
-**Date:** 2026-07-28  
-**Related:** [Questions.md](../../Questions.md) · [Third-party libs](../third-party/README.md) · [Modules](../language/modules.md)
+**Status:** Implemented (local index + git/path; hosted API deferred)  
+**Date:** 2026-08-04  
+**Related:** [modules](../language/modules.md) · [third-party](../third-party/README.md)
 
----
-
-## Current state
-
-Flow already has a project/dependency surface:
-
-| Piece | Role today |
-|-------|------------|
-| `flow.toml` | Package name, entry, `[paths]`, `[dependencies]`, `[native]` |
-| Local deps | `path` dependencies install into `flow_packages/<name>` and update `flow.lock` |
-| Git deps | `{ git = "...", tag = "..." }` clones into `flow_packages/<name>` and checks out the requested ref |
-| Registry | Deferred — bare name/version dependencies fail honestly until a public index exists |
-
-There is **one** documented third-party package in the wiki: [flow-verify](../third-party/flow-verify.md). That is not enough demand to justify a central registry.
+Flow ships a name-based **package** manager: a versioned index, search/info/publish,
+plus path and git dependencies.
 
 ---
 
-## Options
+## Quick start
 
-### 1. Git-only longer
+```bash
+./flow init my_app
+cd my_app
 
-Keep `flow.toml` deps as path + git URLs. Improve `flow add` / install to clone and pin (tag/commit) into `flow.lock`. No central index.
+# Name resolve from the bundled index
+./flow add hello_lib
+# or pin / caret:
+./flow add hello_lib@0.1.0
+./flow add hello_lib@^0.1
 
-- **Pros:** Matches Zig/Go early ecosystems; zero hosting; works for private packages.
-- **Cons:** Discovery is manual; no “browse packages” UX.
-
-### 2. Minimal static registry
-
-A static JSON (or TOML) index on the docs VPS — name → git URL + versions. CLI resolves names through the index, still fetches via git.
-
-- **Pros:** Name-based `flow add foo`; cheap to host; wiki can generate a package list.
-- **Cons:** Needs maintainers, naming policy, and trust story before there are packages to list.
-
-### 3. Defer central registry
-
-Ship no registry until the ecosystem has **3+ real third-party packages** (beyond in-tree / flow-verify). Document git/path deps as the supported path.
-
-- **Pros:** Avoids empty crates.io-shaped infrastructure; design can follow real package shapes.
-- **Cons:** No branded package search until that bar is met.
-
----
-
-## Recommendation
-
-**Option 3: defer**, with **git (+ local path) as the documented dependency path**.
-
-Revisit a minimal static registry only when:
-
-1. At least **three** independently maintained packages appear in [docs/third-party](../third-party/README.md), and  
-2. Authors actually need name-based install (not just git URLs).
-
-Until then, do not implement publish/search, and do not advertise a package index on the wiki home.
-
----
-
-## Supported path (until then)
+./flow install          # refresh flow_packages/ + flow.lock
+./flow search verify
+./flow info hello_lib
+```
 
 ```toml
 # flow.toml
 [dependencies]
-# Local / in-monorepo
-my_lib = { path = "../my_lib" }
-
-# Remote — preferred for third-party
-audio_dsp = { git = "https://github.com/example/flow-audio-dsp", tag = "v0.3" }
+hello_lib = "0.1.0"                                    # registry
+mathkit   = { path = "../mathkit" }                    # local
+audio_dsp = { git = "https://github.com/org/repo", tag = "v0.3" }
+ringbuf   = { git = "https://github.com/org/mono", tag = "v1", subdir = "packages/ringbuf" }
 ```
 
-Run:
+Git installs pin the resolved commit SHA in `flow.lock` under `resolved.rev`.
+URL shorthand works from the CLI:
 
 ```bash
-./flow install
+./flow add https://github.com/org/mylib.git --tag v0.1
+./flow add --git https://github.com/org/mono --name ringbuf --subdir packages/ringbuf --tag v1
 ```
-
-Installed dependencies are placed under `flow_packages/<name>` and pinned in
-`flow.lock`. Dot imports resolve through the package name:
 
 ```flow
-import audio_dsp.reverb { process_reverb }
+import hello_lib.lib { greet, add }
 ```
 
-Authors should:
-
-1. Publish a git repo with its own `flow.toml`.
-2. Consumers pin by tag or commit.
-3. Consumers run `./flow install`.
-4. Optionally add a wiki page under `docs/third-party/` for discoverability (see below).
+Installed packages land in `flow_packages/<name>/` and are pinned in `flow.lock`.
 
 ---
 
-## Wiki third-party interaction
+## Commands
 
-The [third-party section](../third-party/README.md) is the **human discovery layer**, not a registry:
+| Command | What it does |
+|---------|----------------|
+| `./flow init [name]` | Create `flow.toml` + `src/main.flow` |
+| `./flow add foo` / `foo@^1.0` | Add a registry package |
+| `./flow add https://…/foo.git [--tag v0.1]` | Git URL shorthand (name inferred) |
+| `./flow add --git URL [--name foo] [--tag v0.1] [--subdir path]` | Git dependency |
+| `./flow add --path ../foo --name foo` | Add a path dependency |
+| `./flow search [query]` | Search the package index |
+| `./flow info <package>` | Show versions / source |
+| `./flow publish` | Register this package in the local index |
+| `./flow build` | Build the project |
 
-| Concern | Owner |
+Also: `./flow pkg <subcommand>` → `python -m flow.package …`.
+
+`./flow install` installs **project dependencies** when `flow.toml` exists.
+Use `./flow setup` (or `./flow install --tools`) for LLVM/compiler tooling.
+
+---
+
+## Index format
+
+Bundled index: [`registry/index.json`](../../registry/index.json)
+
+```json
+{
+  "version": 1,
+  "name": "flow-packages",
+  "packages": {
+    "hello_lib": {
+      "description": "…",
+      "license": "MIT",
+      "versions": [
+        { "version": "0.1.0", "yanked": false, "path": "registry/packages/hello_lib" }
+      ]
+    }
+  }
+}
+```
+
+A version entry is either:
+
+- **`path`** — repo-relative (or absolute) directory with its own `flow.toml`
+- **`git`** (+ optional `tag` / `rev` / `branch`) — cloned into `flow_packages/`
+
+### Overrides
+
+| Env | Meaning |
+|-----|---------|
+| `FLOW_REGISTRY_PATH` | Local `index.json` |
+| `FLOW_REGISTRY_URL` | Remote JSON URL (cached under `~/.flow/cache/`) |
+| `FLOW_HOME` | Override `~/.flow` |
+
+Version requirements: `*`, exact (`0.1.0`), `^1.2.3`, `>=0.1.0`.
+
+---
+
+## Publishing
+
+```bash
+cd my_package        # has flow.toml with name + version
+./flow publish       # if inside the Flow monorepo → path entry
+./flow publish --git https://github.com/you/my_package --tag v0.1.0
+./flow publish --dry-run
+```
+
+This updates `registry/index.json` (or `FLOW_REGISTRY_PATH`). There is **no**
+account/API server yet — sharing means committing the index change or opening a
+PR against the Flow repo (or hosting your own index JSON behind
+`FLOW_REGISTRY_URL`).
+
+---
+
+## Bundled packages
+
+| Package | Source |
 |---------|--------|
-| “What packages exist?” | Wiki table in `docs/third-party/README.md` |
-| “How do I install?” | This doc + git URL in each package page |
-| “How do I resolve imports?” | `flow.toml` + module resolver ([modules](../language/modules.md)) |
-| Name → URL index | Deferred (option 2 later) |
+| `hello_lib` | `registry/packages/hello_lib` (sample) |
+| `mathkit` | `registry/packages/mathkit` |
+| `ringbuf` | `registry/packages/ringbuf` |
+| `json` / `toml` / `serde` / `strings` / `cli` / `log` / `testing` / `collectionsx` | Pure Flow app libs under `registry/packages/` |
+| `http` / `sqlite` / `sqlkit` / `compress` / `dns` / `image` / `ffi` | Native wraps (`[native]` + system libs where needed) |
+| `flow-verify` | `lib/verify` |
 
-When a new package qualifies:
+Demos: `examples/ecosystem/*_demo/` (and `http_get`). Native deps: `./flow install` then `./flow run-native`.
 
-1. Add `docs/third-party/<name>.md` (overview, git URL, license, status).
-2. Link it from `docs/third-party/README.md` and wiki nav.
-3. Keep install instructions as **git clone / `flow.toml` git dep** — not `flow add` from a registry.
-
-The wiki does **not** become an automatic package host. It catalogs packages the project chooses to highlight; git remains the source of truth for bits.
+Human discovery still lives under [docs/third-party](../third-party/README.md).
 
 ---
 
-## Out of scope (for now)
+## Out of scope (still)
 
-- Central publish API or account system  
-- Semver solver beyond lock-file pins  
-- Mirroring / CDN of package tarballs  
-- Replacing path deps for in-repo libs (`lib/verify`, stdlib)
+- Hosted publish API / accounts / yank server  
+- Full semver solver with dependency graphs (lock pins direct deps only)  
+- CDN tarball mirrors  
 
 ---
 
@@ -127,4 +154,6 @@ The wiki does **not** become an automatic package host. It catalogs packages the
 
 | Date | Decision |
 |------|----------|
-| 2026-07-28 | Defer central registry; document git deps; design captured here |
+| 2026-07-28 | Deferred central registry; git/path only |
+| 2026-08-04 | Ship local package index + search/add/publish; remote URL optional |
+| 2026-08-04 | Seed app ecosystem packages (`json`/`toml` rewrite; `http`/`sqlite` wrap); `build_native` collects dep `[native]` |

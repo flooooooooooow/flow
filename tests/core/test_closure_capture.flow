@@ -9,7 +9,7 @@ function check(got: i32, want: i32) -> i32 {
 }
 
 function main() -> i32 {
-    let failures: i32 = 0
+    let mut failures: i32 = 0
 
     # Capture one variable.
     let a: i32 = 40
@@ -23,13 +23,13 @@ function main() -> i32 {
     failures = failures + check(add_bc(0), 42)
 
     # Snapshot semantics: mutating the local after creation is invisible.
-    let d: i32 = 5
+    let mut d: i32 = 5
     let get_d = |unused: i32| -> i32 { return d }
     d = 100
     failures = failures + check(get_d(0), 5)
 
     # Lambda created in a loop captures the loop variable per iteration.
-    let total: i32 = 0
+    let mut total: i32 = 0
     for i in 0..5 {
         let addi = |x: i32| -> i32 { return x + i }
         total = total + addi(10)

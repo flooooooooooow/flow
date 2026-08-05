@@ -1,0 +1,18 @@
+import "stdlib/vulkan_renderer.flow"
+
+function main() -> i32 {
+    let mut r: Renderer = renderer_advanced()
+    r = renderer_set_window(r, 1024, 720, "Flow Vulkan Advanced")
+    r = renderer_set_clear(r, 0.03, 0.03, 0.07)
+    r = renderer_set_texture(r, "__PICK__")
+    r = renderer_set_texture2(r, "__PICK__")
+    r = renderer_set_camera(r, 3.2, 0.35, 0.7)
+    r = renderer_set_camera_speed(r, 1.6, 0.25)
+    r = renderer_set_camera_smoothing(r, 0.18)
+    r = renderer_set_material1(r, 1.0, 0.85, 0.7)
+    r = renderer_set_material2(r, 0.7, 0.85, 1.0)
+    r = renderer_set_instances(r, 25)
+    r = renderer_set_trace(r, true)
+    r = renderer_set_validation(r, true)
+    return renderer_run(r)
+}

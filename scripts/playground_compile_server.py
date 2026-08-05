@@ -67,6 +67,7 @@ def compile_and_maybe_run(
     do_run: bool,
     transpile_timeout: float,
     run_timeout: float,
+    target: str = "native",
 ) -> dict:
     if len(source.encode("utf-8", errors="replace")) > MAX_SOURCE_BYTES:
         return {
@@ -123,11 +124,87 @@ def compile_and_maybe_run(
 
         c_preview = c_path.read_text(encoding="utf-8", errors="replace")[:6000]
 
-        if not do_run:
+        if target == "c" or (not do_run and target != "wasm"):
             return {
                 "ok": True,
-                "mode": "native-local-transpile",
-                "stdout": "Transpile OK (run disabled on server).\n",
+                "mode": "transpile-c",
+                "stdout": "Transpile OK (C only).\n",
+                "c_preview": c_preview,
+            }
+
+        if target == "wasm":
+            emcc = shutil.which("emcc")
+            if not emcc:
+                return {
+                    "ok": False,
+                    "mode": "wasm-local",
+                    "error": "emcc not on PATH (install emsdk)",
+                    "c_preview": c_preview,
+                }
+            js_out = Path(tmp) / "main.js"
+            try:
+                cp = subprocess.run(
+                    [
+                        emcc,
+                        str(c_path),
+                        "-O1",
+                        "-s",
+                        "WASM=1",
+                        "-s",
+                        "EXPORTED_FUNCTIONS=['_main']",
+                        "-o",
+                        str(js_out),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=transpile_timeout + 30,
+                    cwd=tmp,
+                )
+            except subprocess.TimeoutExpired:
+                return {
+                    "ok": False,
+                    "mode": "wasm-local",
+                    "error": "emcc exceeded timeout",
+                    "c_preview": c_preview,
+                }
+            if cp.returncode != 0 or not js_out.exists():
+                return {
+                    "ok": False,
+                    "mode": "wasm-local",
+                    "error": "emcc failed",
+                    "stderr": (cp.stderr or "")[-4000:],
+                    "c_preview": c_preview,
+                }
+            # Node can execute the modularized/non-modularized emcc output.
+            node = shutil.which("node")
+            if not node or not do_run:
+                return {
+                    "ok": True,
+                    "mode": "wasm-local",
+                    "stdout": "WASM build OK (run skipped or node missing).\n",
+                    "c_preview": c_preview,
+                }
+            try:
+                rp = subprocess.run(
+                    [node, str(js_out)],
+                    capture_output=True,
+                    text=True,
+                    timeout=run_timeout,
+                    cwd=tmp,
+                )
+            except subprocess.TimeoutExpired:
+                return {
+                    "ok": False,
+                    "mode": "wasm-local",
+                    "error": f"wasm run exceeded {run_timeout}s",
+                    "c_preview": c_preview,
+                }
+            return {
+                "ok": rp.returncode == 0,
+                "mode": "wasm-local",
+                "exit_code": rp.returncode,
+                "stdout": (rp.stdout or "")[-8000:],
+                "stderr": (rp.stderr or "")[-4000:],
                 "c_preview": c_preview,
             }
 
@@ -213,16 +290,51 @@ def make_handler(do_run: bool, transpile_timeout: float, run_timeout: float):
             self._send(204, {})
 
         def do_GET(self) -> None:  # noqa: N802
-            if self.path in ("/", "/health"):
+            path = urlparse(self.path).path
+            if path in ("/", "/health"):
                 self._send(
                     200,
                     {
                         "ok": True,
                         "service": "flow-playground-compile",
                         "run": do_run,
+                        "targets": ["native", "c", "wasm"],
                         "max_source_bytes": MAX_SOURCE_BYTES,
+                        "pyodide": "/pyodide",
                     },
                 )
+                return
+            # Serve Flow Python sources for in-browser Pyodide transpile.
+            if path.startswith("/flow-src/"):
+                rel = path[len("/flow-src/") :]
+                if ".." in rel or rel.startswith("/"):
+                    self._send(400, {"ok": False, "error": "bad path"})
+                    return
+                root = (REPO_ROOT / "src" / "flow").resolve()
+                target = (root / rel).resolve()
+                if not str(target).startswith(str(root)) or not target.is_file():
+                    self._send(404, {"ok": False, "error": "not found"})
+                    return
+                data = target.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Access-Control-Allow-Origin", _cors_origin(self))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path == "/pyodide":
+                page = (REPO_ROOT / "docs" / "playground" / "pyodide.html")
+                if not page.is_file():
+                    self._send(404, {"ok": False, "error": "pyodide.html missing"})
+                    return
+                data = page.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Access-Control-Allow-Origin", _cors_origin(self))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             self._send(404, {"ok": False, "error": "not found"})
 
@@ -244,11 +356,15 @@ def make_handler(do_run: bool, transpile_timeout: float, run_timeout: float):
             if not isinstance(source, str) or not source.strip():
                 self._send(400, {"ok": False, "error": "missing source string"})
                 return
+            target = str(data.get("target") or "native")
+            if target not in ("native", "c", "wasm"):
+                target = "native"
             result = compile_and_maybe_run(
                 source,
-                do_run=do_run,
+                do_run=do_run if target != "c" else False,
                 transpile_timeout=transpile_timeout,
                 run_timeout=run_timeout,
+                target=target,
             )
             self._send(200 if result.get("ok") else 422, result)
 

@@ -29,7 +29,7 @@ function main() -> i32 {
 
     let guide: CoupledGuidance = couple_ga_wfc_guidance(report, 1.5, 2.0, 7, 20)
 
-    let cells: array<i32, 16> = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+    let mut cells: array<i32, 16> = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
     let opts: array<i32, 48> = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
     cells[0] = 1
     let grid: WFCGrid = WFCGrid { width: 4, height: 4, cells: cells, options: opts }

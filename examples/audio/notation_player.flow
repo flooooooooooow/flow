@@ -73,7 +73,7 @@ function main() -> i32 {
     # Play each note from the notation
     let samples_per_sixteenth: i32 = 7200  # 100 BPM at 48kHz
 
-    let note_idx: i32 = 0
+    let mut note_idx: i32 = 0
     while note_idx < note_count {
         # Get note from notation
         let note: MusicNote = reader.get_note(note_idx)

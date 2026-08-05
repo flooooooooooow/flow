@@ -12,7 +12,7 @@
 import .fileio { flowc_read_file, flowc_write_file }
 import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
 import .cgen { flowc_cgen_emit }
-import .typecheck { flowc_typecheck }
+import .typecheck { flowc_typecheck, flowc_typecheck_ex }
 import .resolve { flowc_bundle_emit, flowc_bundle_typecheck, flowc_resolve_dirname }
 
 extern {
@@ -127,7 +127,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         return 0
     }
 
-    let src_cap: i32 = 65536
+    let src_cap: i32 = 262144
     let src: ptr<u8> = malloc(src_cap as i64)
     if src == null {
         puts("stage_a_driver_flow: malloc src failed")
@@ -148,7 +148,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
     }
     src[nsrc] = 0
 
-    let mut p: Parser = flowc_parser_new(src, nsrc, 8192)
+    let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
     let root: i32 = flowc_parse_program(&p)
     if root < 0 or p.err != 0 {
         puts("stage_a_driver_flow: parse failed")
@@ -160,9 +160,9 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         return 1
     }
 
-    # Stage-A typecheck ON by default (opt-out for frontend dogfood modules).
+    # Stage-A typecheck ON by default (opt-out for intentional bad fixtures).
     if flowc_driver_want_typecheck() == 1 {
-        let tc_errs: i32 = flowc_typecheck(p.arena, root, src)
+        let tc_errs: i32 = flowc_typecheck_ex(p.arena, root, src, in_path)
         if tc_errs > 0 {
             puts("stage_a_driver_flow: typecheck failed")
             printf("stage_a_driver_flow: tc_errs=%d\n", tc_errs)

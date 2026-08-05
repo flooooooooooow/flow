@@ -45,7 +45,7 @@ export function ui2d_shutdown(ui: Ui2D) -> void {
 
 export function ui2d_poll(ui: Ui2D) -> Ui2D {
     # Poll quit event (window close)
-    let quit: bool = ui.should_quit
+    let mut quit: bool = ui.should_quit
     let ev_buf: array<SDLEvent, 1> = [SDLEvent {
         w0: 0, w1: 0, w2: 0, w3: 0, w4: 0, w5: 0, w6: 0,
         w7: 0, w8: 0, w9: 0, w10: 0, w11: 0, w12: 0, w13: 0
@@ -110,13 +110,13 @@ function digit_row(d: i32, row: i32) -> i32 {
 }
 
 export function ui2d_draw_digit(ui: Ui2D, x: i32, y: i32, d: i32, scale: i32, c: Color) -> void {
-    let row: i32 = 0
+    let mut row: i32 = 0
     while row < 5 {
         let bits: i32 = digit_row(d, row)
-        let col: i32 = 0
+        let mut col: i32 = 0
         while col < 3 {
             # Avoid bitwise/shift ops (not currently supported everywhere).
-            let on: bool = false
+            let mut on: bool = false
             if col == 0 { on = ((bits / 4) % 2) == 1 }
             elif col == 1 { on = ((bits / 2) % 2) == 1 }
             else { on = (bits % 2) == 1 }
@@ -134,9 +134,9 @@ export function ui2d_draw_number(ui: Ui2D, x: i32, y: i32, n: i32, scale: i32, c
     if n <= 0 { return }
 
     # Extract digits into fixed buffer reversed
-    let buf: array<i32, 5> = [0, 0, 0, 0, 0]
-    let len: i32 = 0
-    let v: i32 = n
+    let mut buf: array<i32, 5> = [0, 0, 0, 0, 0]
+    let mut len: i32 = 0
+    let mut v: i32 = n
     while v > 0 && len < 5 {
         buf[len] = v % 10
         v = v / 10
@@ -144,8 +144,8 @@ export function ui2d_draw_number(ui: Ui2D, x: i32, y: i32, n: i32, scale: i32, c
     }
 
     # Draw reversed (most significant first)
-    let i: i32 = len - 1
-    let dx: i32 = 0
+    let mut i: i32 = len - 1
+    let mut dx: i32 = 0
     while i >= 0 {
         ui2d_draw_digit(ui, x + dx, y, buf[i], scale, c)
         dx = dx + (4 * scale)  # 3 px + 1 gap

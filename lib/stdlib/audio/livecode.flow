@@ -107,7 +107,7 @@ export function snare() -> f32 {
     let tone: f32 = sine(0.3)     # 200Hz tone
 
     let env_decay: f32 = 0.2
-    let output: f32 = (noise * 0.7 + tone * 0.3) * env_decay
+    let mut output: f32 = (noise * 0.7 + tone * 0.3) * env_decay
 
     return output * 0.6
 }
@@ -250,7 +250,7 @@ export function euclidean_pattern(k: i32, n: i32, clock: Clock, pos: i64) -> f32
 
 # Play a note from a scale by degree (0-6)
 export function scale_note(root: i32, scale_type: i32, degree: i32) -> i32 {
-    let scale: array<i32, 7> = [0, 0, 0, 0, 0, 0, 0]
+    let mut scale: array<i32, 7> = [0, 0, 0, 0, 0, 0, 0]
 
     if scale_type == 0 {
         scale = scale_major(root)

@@ -77,7 +77,7 @@ export function samples_to_seconds(s: Samples, rate: SampleRate) -> Seconds {
 
 # Convert seconds to samples: seconds * sample_rate (rounded)
 export function seconds_to_samples(t: Seconds, rate: SampleRate) -> Samples {
-    let count: f64 = t.value * rate.hz
+    let mut count: f64 = t.value * rate.hz
     # Round to nearest sample
     let rounded: i64 = count + 0.5
     return Samples { count: rounded }
@@ -90,7 +90,7 @@ export function samples_per_ms(rate: SampleRate) -> f64 {
 
 # Convert milliseconds to samples
 export function ms_to_samples(ms: f64, rate: SampleRate) -> Samples {
-    let count: f64 = ms * rate.hz / 1000.0
+    let mut count: f64 = ms * rate.hz / 1000.0
     let rounded: i64 = count + 0.5
     return Samples { count: rounded }
 }
@@ -139,8 +139,8 @@ export function frame_scale(f: Frame, gain: f32) -> Frame {
 # Pan a mono signal (-1.0 = full left, 0.0 = center, 1.0 = full right)
 export function frame_pan(value: f32, pan: f32) -> Frame {
     # Equal-power panning approximation
-    let left_gain: f32 = 1.0 - pan
-    let right_gain: f32 = 1.0 + pan
+    let mut left_gain: f32 = 1.0 - pan
+    let mut right_gain: f32 = 1.0 + pan
     if left_gain > 1.0 {
         left_gain = 1.0
     }
@@ -224,9 +224,9 @@ export function audio_buffer_empty_f32() -> AudioBufferF32 {
 export function audio_buffer_alloc_f32(frames: i32, channels: i32, layout: Layout) -> AudioBufferF32 {
     let total: i32 = frames * channels
     let bytes: i32 = total * 4
-    let raw: ptr<f32> = malloc(bytes)
+    let mut raw: ptr<f32> = malloc(bytes)
     if raw != null {
-        let i: i32 = 0
+        let mut i: i32 = 0
         while i < total {
             raw[i] = 0.0
             i = i + 1
@@ -267,7 +267,7 @@ export function audio_buffer_set_f32(buf: AudioBufferF32, frame: i32, channel: i
 export function audio_buffer_zero_f32(buf: AudioBufferF32) -> void {
     let total: i32 = buf.frames * buf.channels
     if buf.data != null {
-        let i: i32 = 0
+        let mut i: i32 = 0
         while i < total {
             buf.data[i] = 0.0
             i = i + 1
@@ -276,13 +276,13 @@ export function audio_buffer_zero_f32(buf: AudioBufferF32) -> void {
 }
 
 export function audio_buffer_copy_interleaved_f32(dst: AudioBufferF32, src: AudioBufferF32, frames: i32) -> void {
-    let count: i32 = frames
+    let mut count: i32 = frames
     if count > dst.frames { count = dst.frames }
     if count > src.frames { count = src.frames }
     let channels: i32 = dst.channels
     if channels != src.channels { return }
     let total: i32 = count * channels
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < total {
         dst.data[i] = src.data[i]
         i = i + 1
@@ -290,13 +290,13 @@ export function audio_buffer_copy_interleaved_f32(dst: AudioBufferF32, src: Audi
 }
 
 export function audio_buffer_add_interleaved_f32(dst: AudioBufferF32, src: AudioBufferF32, frames: i32) -> void {
-    let count: i32 = frames
+    let mut count: i32 = frames
     if count > dst.frames { count = dst.frames }
     if count > src.frames { count = src.frames }
     let channels: i32 = dst.channels
     if channels != src.channels { return }
     let total: i32 = count * channels
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < total {
         dst.data[i] = dst.data[i] + src.data[i]
         i = i + 1
@@ -375,16 +375,16 @@ export function midi_to_freq(note: i32) -> f32 {
     let semitones: f32 = note - 69
     let octaves: f32 = semitones / 12.0
     # 2^octaves approximation
-    let freq: f32 = 440.0
+    let mut freq: f32 = 440.0
     # Simple approximation for common range
     if octaves > 0.0 {
-        let i: i32 = 0
+        let mut i: i32 = 0
         while i < octaves * 12.0 {
             freq = freq * 1.05946  # 2^(1/12)
             i = i + 1
         }
     } else {
-        let i: i32 = 0
+        let mut i: i32 = 0
         while i < -octaves * 12.0 {
             freq = freq / 1.05946
             i = i + 1

@@ -311,7 +311,7 @@ export function lu_factor(A: Mat, pivots: ptr<i32>) -> i32 {
 # Allocate and return C = A @ B (caller must mat_free C).
 export function matmul(A: Mat, B: Mat) -> Mat {
     # Returns new matrix C = A @ B
-    let C: Mat = mat_new(A.rows, B.cols)
+    let mut C: Mat = mat_new(A.rows, B.cols)
     gemm(A, B, C)
     return C
 }

@@ -41,7 +41,7 @@ function main() -> i32 {
     print("🎨 FLOW Shader Demo")
     print("==================")
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 4 {
         let shader: ShaderInfo = get_shader_info(i)
         print_shader_info(shader)

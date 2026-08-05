@@ -19,14 +19,14 @@ story. Adoption first; new sugar second.
 |----------|------|------|-------|
 | P0 | Canonicalize evolution demos onto `flow` / `evolves` / `when` | adoption ✅ | [#159](https://github.com/flooooooooooow/flow/issues/159) |
 | P0 | `gfx_run` frame helper | stdlib ✅ | [#164](https://github.com/flooooooooooow/flow/issues/164) |
-| P0 | Lorenz as `flow` + phase-portrait trail | language + demo ✅ partial | [#165](https://github.com/flooooooooooow/flow/issues/165) |
+| P0 | Lorenz as `flow` + phase-portrait trail | language + demo ✅ | [#165](https://github.com/flooooooooooow/flow/issues/165) |
 | P1 | Route linalg examples through `blas.flow` | adoption ✅ | [#168](https://github.com/flooooooooooow/flow/issues/168) |
 | P1 | Wire ML demos through Dual / grad codegen | adoption + docs ✅ | [#170](https://github.com/flooooooooooow/flow/issues/170) |
 | P1 | Owned `HttpResponse` + JSON decode helpers | API ✅ | [#167](https://github.com/flooooooooooow/flow/issues/167) |
-| P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ partial | [#162](https://github.com/flooooooooooow/flow/issues/162) |
-| P2 | Field / `laplacian` PDE surface | language ✅ partial | [#163](https://github.com/flooooooooooow/flow/issues/163) |
-| P2 | Dual + Tensor operators + mutable params | language ✅ partial | [#161](https://github.com/flooooooooooow/flow/issues/161) |
-| P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering ✅ partial | [#160](https://github.com/flooooooooooow/flow/issues/160) |
+| P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ | [#162](https://github.com/flooooooooooow/flow/issues/162) |
+| P2 | Field / `laplacian` PDE surface | language ✅ | [#163](https://github.com/flooooooooooow/flow/issues/163) |
+| P2 | Dual + Tensor operators + mutable params | language ✅ | [#161](https://github.com/flooooooooooow/flow/issues/161) |
+| P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering ✅ | [#160](https://github.com/flooooooooooow/flow/issues/160) |
 
 ---
 
@@ -130,10 +130,11 @@ flow Lorenz {
 **MVP split:**
 1. Port dynamics to `flow Lorenz` + `solver { method rk4 }` ✅
 2. Trail/project helpers in `stdlib/dynamics/portrait.flow` ✅
-   (`trail_push_2d`, `trail_index`, `project_axis`); draw loop still in `main`
-   until `represent phase_portrait` lowers.
+3. `represent phase_portrait(x, z) { trail…; window…; map… }` lowers to
+   `{Name}_portrait_frame` + win/trail consts ✅ (`lorenz_gfx.flow` ~70 lines)
 
-**Exit:** no manual `nxt[]` ODE copy ✅; file ~80 lines (grammar card still open for ≤60).
+**Exit:** no manual `nxt[]` ODE copy ✅; portrait draw is generated from
+`represent` ✅. Window open / `gfx_present` / trail buffers remain in `main`.
 
 ---
 
@@ -183,9 +184,24 @@ ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 `dlqr_diag_q_scalar_u` / `lqr_diag_q` for n≤8, scalar input. Cartpole
 `cartpole_lqr_gains` is a thin wrapper (no private Riccati loop).
 
-**Follow-on:** LAPACK DARE; `analyze { lqr { … } }` for n>2 in the DSL.
+**Also shipped:** vision-form DSL
+```flow
+analyze plant {
+    lqr {
+        Q 1.0 1.0 1.0 1.0
+        R 1.0
+        -> k0 k1 k2 k3
+    }
+}
+```
+→ `dlqr_diag_q_scalar_u` on the (discretized) plant. Demos:
+`spring_mass_lqr.flow` (n=2 continuous), `chain4_lqr.flow` (n=4).
 
-**Exit (stdlib):** Cartpole control has no private mini-ARE. ✅ DSL card open.
+**Follow-on:** LAPACK DARE; poles/controllability items in the same
+`analyze Name { … }` block.
+
+**Exit (stdlib + DSL lqr):** Cartpole has no private mini-ARE ✅; DSL
+`analyze { lqr }` works for n≤8 ✅.
 
 ---
 
@@ -195,17 +211,15 @@ ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 `laplacian_1d_at`, `heat_euler_step_1d`). Tourist
 `examples/evolution/heat_diffusion.flow` steps via the helper.
 
-**North-star grammar (follow-on):**
+**Also shipped:** Stage-1 grammar expander (`field_dsl.py`):
 ```flow
 field T : f64[32] on Line
-param alpha : f64 = 0.1
-
-T evolves as alpha * laplacian(T)
-boundary T { left = 1.0  right = 0.0 }
+T evolves as laplacian(T)
+boundary T { left = AMBIENT  right = AMBIENT }
 ```
+→ `T_field_step(u, next, r)`. Heat demo uses this surface.
 
-**Exit (stdlib):** heat demo reads as evolution via laplacian helper, not
-nested index soup. ✅ Grammar card remains open.
+**Exit:** heat demo reads as field evolution ✅. 2D / `on Plane` follow-on.
 
 ---
 
@@ -215,25 +229,32 @@ nested index soup. ✅ Grammar card remains open.
 overloads (`mul`/`add`/…) in the C generator + typechecker. Demo:
 `examples/ml/autodiff/dual_ops.flow`.
 
-**Still open:** mutable struct fields / param-vector updates so `nn.flow`
-drops multi-way `param_set` rebuilds; Tensor operators.
+**Also shipped:** `nn.flow` `param_set` / `_step` use mut field assignment
+instead of full-struct rebuilds.
+
+**Shipped (Tensor ops):** element-wise `+ - * /` and `t * s` / `t + s`
+lower to `tensor_*` helpers. Demo: `examples/ml/autodiff/tensor_ops.flow`.
+Matmul stays `tensor_matmul`.
+
+**Still open:** compiler `loss.grad` (optional follow-on).
 
 ```flow
-let y: Dual = sin(a * a + b)   # shipped for Dual arithmetic
-struct Net { mut w: … }        # follow-on
+let y: Dual = sin(a * a + b)   # shipped
+let mut n: Net2x2x1 = net
+n.w00 = n.w00 - lr * g.dw00    # shipped
+let z: Tensor = a * b + 1.0    # shipped (element-wise / add_scalar)
 ```
 
----
+**Exit:** AD / NN / Tensor call sites look like math ✅. `loss.grad` card open.
 
 ### 10. Closed-loop `plant.step`
 
-**Shipped MVP:** `spring_mass_control.flow` simulates via stdlib
-`dsys_continuous` → `dsys_euler_discretize` → `state_step` (no hand Ad/Bd).
-Analysis still uses the `dsys` DSL block; coefficients are duplicated once in
-`spring_mass_discrete()` until the DSL exposes `__dsys_plant` to user scope.
+**Shipped:** DSL expansion aliases `let plant: DynamicalSystem = __dsys_plant`.
+`spring_mass_control.flow` steps with `plant_step(plant, …)`. `plant_step` is
+an alias of `state_step`.
 
-**Follow-on:** bind analyzed plant into main; `connect` Closed_step for
-nonlinear plants (`robot_connect` already shows the composition shape).
+**Follow-on:** nonlinear `connect` Closed_step sharing analysis plant
+(`robot_connect` already shows composition shape).
 
 ---
 

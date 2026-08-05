@@ -1,0 +1,46 @@
+# Mandelbrot set membership count on a 400x400 grid, 100 max iterations.
+# Region: x in [-2.0, 0.5], y in [-1.25, 1.25].
+# Result is the integer count of points that stay bounded.
+
+extern {
+    function clock_gettime_nsec_np(clock_id: i32) -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const W: i32 = 400
+const H: i32 = 400
+const MAXI: i32 = 100
+
+function mandel_count() -> i32 {
+    let mut count: i32 = 0
+    for py in 0 to H {
+        let cy: f64 = 2.5 * py / H - 1.25
+        for px in 0 to W {
+            let cx: f64 = 2.5 * px / W - 2.0
+            let mut zx: f64 = 0.0
+            let mut zy: f64 = 0.0
+            let mut iter: i32 = 0
+            while zx * zx + zy * zy <= 4.0 and iter < MAXI {
+                let tmp: f64 = zx * zx - zy * zy + cx
+                zy = 2.0 * zx * zy + cy
+                zx = tmp
+                iter = iter + 1
+            }
+            if iter == MAXI {
+                count = count + 1
+            }
+        }
+    }
+    return count
+}
+
+function main() -> i32 {
+    let t0: i64 = clock_gettime_nsec_np(6)
+    let count: i32 = mandel_count()
+    let t1: i64 = clock_gettime_nsec_np(6)
+    let secs: f64 = (t1 - t0) / 1000000000.0
+    print("result ")
+    println(count)
+    printf("seconds %.9f\n", secs)
+    return 0
+}
