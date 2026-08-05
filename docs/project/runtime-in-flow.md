@@ -47,6 +47,26 @@ Thin forever C: `flow_rt_support.c`, `flow_rt_task_store.c`, `flow_rt_fiber_asyn
 `./flow` transpiles `lib/runtime/*.flow` with `--c --library --lenient` and links them
 into every binary. `FLOW_SKIP_AUDIO_STUB=1` when `./flow audio` links miniaudio.
 
+## Phase 3 — push the boundary (planned)
+
+Rewrite order, respecting the stay-native table above. Each step keeps the
+gates below green and preserves observable behavior.
+
+| Wave | Move to Flow | How |
+|---|---|---|
+| 1 | `flow_rt_crypto.c` SHA-256 core | Pure computation; port transform/init/update/final to `crypto.flow`; keep `flow_rt_random_bytes` as a 10-line C shim over `getentropy`/`arc4random` |
+| 1 | `gfx_record.c` recorder logic | PPM writing, env parsing, key script via `fopen`/`getenv` externs; C keeps nothing but the gfx ABI symbol table |
+| 1 | `flow_http_bench.c` harness | Finish the port into `http_bench.flow` |
+| 1 | `flow_rt_sysinfo.c` probes | `sysconf`/`sysctlbyname` via externs into `sysinfo_probes.flow` |
+| 2 | `flow_tcp.c` setup + accept loops | `socket`/`bind`/`listen`/`accept`/`setsockopt` are plain C ABI; extern them from `tcp.flow`; sockaddr built in a byte buffer |
+| 2 | `flow_tls.c` session logic | OpenSSL calls extern'd from `tls.flow`; PEM/self-test logic in Flow; C keeps only the `FLOW_HAS_OPENSSL` guard shims |
+| 2 | `flow_cont.c` demo/probe surface | Demos and arming logic to `cont.flow`; park/shift/reset stays native |
+| 3 | Thin-shim shrink | Reduce `flow_rt_support/task_store/tape_store` to the fn-pointer trampolines only; everything else in Flow |
+
+Stays native regardless: fctx asm + init, fiber worker loop, pthread/atomic
+kernels, race TLS tables, cchan and parallel-for hot loops, netpoll kqueue/epoll,
+Metal/Cocoa/SDL, miniaudio device, CPython embed.
+
 ## Gates
 
 ```bash
