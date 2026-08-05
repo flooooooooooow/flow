@@ -1,0 +1,5 @@
+function main() -> i32 {
+    let mut x = 20
+    let y = 22
+    return x + y
+}

@@ -52,6 +52,8 @@ deps-first with a growing seed of dependency exports (`FLOWC_TYPECHECK=0` opts o
 preambles after the first module. Dotted `import pkg.mod` is skipped for now.
 Bundle can also emit a real frontend pair (`lexer.flow` → `token.flow` +
 `lexer.flow` in one TU) so `cc -c` needs no `flowc_c_to_hdr.py` `-include`.
+**`FLOWC_BUNDLE=1` + typecheck also covers `compiler/src/main.flow`** (inferred
+`let` + larger src/AST caps; Stage-A gap slice for self-hosting Phase B).
 
 ```bash
 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/fixtures \
