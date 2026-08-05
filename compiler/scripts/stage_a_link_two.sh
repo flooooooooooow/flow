@@ -22,13 +22,13 @@ emit_one() {
     local src="$1"
     local c_out="$2"
     # Prefer Stage-A Flow driver when built (dogfood); else Python host bootstrap.
-    # Import-skipped packages: opt out of default-on typecheck (unresolved calls).
+    # Typecheck on: `import .math { add }` seeds the name for main.flow.
     if [[ -x compiler/build/stage_a_driver_flow ]]; then
-        FLOWC_TYPECHECK=0 ./compiler/build/stage_a_driver_flow "$src" "$c_out"
+        ./compiler/build/stage_a_driver_flow "$src" "$c_out"
     else
         export FLOWC_IN="$src"
         export FLOWC_OUT="$c_out"
-        FLOWC_TYPECHECK=0 ./flow run compiler/src/main.flow
+        ./flow run compiler/src/main.flow
     fi
 }
 

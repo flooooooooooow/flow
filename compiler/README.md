@@ -32,14 +32,15 @@ When `FLOWC_IN` is set to a non-empty path, `main` skips self-tests and instead:
 4. Writes output to `FLOWC_OUT` if set, otherwise prints the buffer to stdout
 
 Typecheck is **on by default** for fixture/app emits (`driver.flow`, C
-`stage_a_driver`, and this emit path). Opt out for frontend modules that still
-use unresolved imports/extern the subset checker cannot fully resolve:
+`stage_a_driver`, and this emit path). Opt out only for intentional emit of
+known-bad fixtures (roundtrip checks `typecheck_undef` / `bundle_tc_bad`):
 
 - `FLOWC_TYPECHECK=0`
 - `FLOWC_NO_TYPECHECK=1`
 
 `FLOWC_TYPECHECK=1` remains an explicit on (redundant with the default).
-Roundtrip `compile_module` / self-emit dogfood paths pass `FLOWC_TYPECHECK=0`.
+Roundtrip `compile_module` / self-emit / frontend bundle dogfood keep typecheck
+**on** (imports seed names; `extern` blocks allow unknown calls).
 
 ### Multi-file bundle (`FLOWC_BUNDLE=1`)
 
@@ -63,8 +64,8 @@ FLOWC_OUT=compiler/build/bundle_main.c \
 cc -O0 -o compiler/build/bundle_main compiler/build/bundle_main.c
 ./compiler/build/bundle_main   # expect exit 42
 
-# Frontend dogfood (no -include): token then lexer in one C file.
-FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src FLOWC_TYPECHECK=0 \
+# Frontend dogfood (no -include): token then lexer in one C file (typecheck on).
+FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
 FLOWC_IN=compiler/src/lexer.flow FLOWC_OUT=compiler/build/bundle_lexer.c \
   ./flow run compiler/src/main.flow
 cc -O0 -c compiler/build/bundle_lexer.c -o compiler/build/bundle_lexer.o
@@ -222,7 +223,8 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
   obvious i32/string return mismatch, `break`/`continue` outside loop, unknown
   struct field on typed base / struct lit). Linked into `flowc_frontend.o` /
   self / g2. On by default on emit; opt out with `FLOWC_TYPECHECK=0` or
-  `FLOWC_NO_TYPECHECK=1` so frontend dogfood still emits)
+  `FLOWC_NO_TYPECHECK=1` for intentional emit of known-bad fixtures. Diagnostics
+  include `flowc tc: at line:col`.)
 - Multi-file package resolve beyond Stage-A MVP — **partial:**
   [`src/resolve.flow`](src/resolve.flow) loads `import .sibling` / `import "path"`
   under `FLOWC_DIR` and `flowc_bundle_emit` concatenates C (deps then entry);
