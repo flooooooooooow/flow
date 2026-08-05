@@ -10,8 +10,9 @@ let, mut, true, false, effect, capability, extern, and, or, not
 ## Literals
 
 ```flow
-# Integers
-42, -17, 0xFF, 0b1010
+# Integers (decimal and hex)
+42, -17, 0xFF
+# Binary 0b… is not lexed yet — use decimal/hex
 
 # Floats
 3.14, -0.001, 1.5e10

@@ -1,0 +1,560 @@
+[
+  {
+    "rank": 1,
+    "title": "Record Tetris demo GIF",
+    "category": "Immediate Priorities (This Week)",
+    "final_score": 3.4519708067315924,
+    "confidence": 0.3532130696022583,
+    "consensus": "moderate",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.7547169811320753,
+      "extended": 3.3125,
+      "specialized": 3.0532544378698216,
+      "persona": 3.3223684210526314,
+      "temporal": 3.8604651162790704,
+      "chaos": 3.2444444444444445
+    },
+    "supporters": [
+      "UserExperienceAgent",
+      "SystemsProgrammerAgent",
+      "CommunityMomentumAgent",
+      "ProductManagerAgent",
+      "MomentumAgent"
+    ],
+    "detractors": [
+      "LearningCurveAgent",
+      "CuriousAgent",
+      "RandomAgent",
+      "ContrarianAgent",
+      "PerfectionistAgent"
+    ]
+  },
+  {
+    "rank": 2,
+    "title": "Benchmark vs C comparison",
+    "category": "Short Term (This Month)",
+    "final_score": 3.3110963949170173,
+    "confidence": 0.426330040683476,
+    "consensus": "moderate",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.4528301886792456,
+      "extended": 3.3125,
+      "specialized": 2.8994082840236683,
+      "persona": 3.2236842105263155,
+      "temporal": 3.7093023255813953,
+      "chaos": 3.4
+    },
+    "supporters": [
+      "SystemsProgrammerAgent",
+      "UserExperienceAgent",
+      "CommunityMomentumAgent",
+      "StrategicAlignmentAgent",
+      "CompetitivePressureAgent"
+    ],
+    "detractors": [
+      "ParanoidAgent",
+      "PerfectionistAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "ContrarianAgent"
+    ]
+  },
+  {
+    "rank": 3,
+    "title": "Cross-platform graphics (Linux)",
+    "category": "Short Term (This Month)",
+    "final_score": 3.2584277625957623,
+    "confidence": 0.4563497856566636,
+    "consensus": "moderate",
+    "chaos_verdict": "\ud83d\ude08 Chaos is skeptical",
+    "scores": {
+      "core": 3.5283018867924527,
+      "extended": 3.1249999999999996,
+      "specialized": 2.798816568047337,
+      "persona": 3.052631578947368,
+      "temporal": 3.9302325581395356,
+      "chaos": 2.9555555555555553
+    },
+    "supporters": [
+      "BlockerDetectionAgent",
+      "DependencyChainAgent",
+      "PriorityAgent",
+      "SystemsProgrammerAgent",
+      "ProductManagerAgent"
+    ],
+    "detractors": [
+      "ContrarianAgent",
+      "PerfectionistAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "RandomAgent"
+    ]
+  },
+  {
+    "rank": 4,
+    "title": "Windows graphics support",
+    "category": "Medium Term (This Quarter)",
+    "final_score": 3.20349205909155,
+    "confidence": 0.40162256429945864,
+    "consensus": "moderate",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.6037735849056607,
+      "extended": 3.125,
+      "specialized": 2.7218934911242596,
+      "persona": 2.953947368421052,
+      "temporal": 3.6279069767441863,
+      "chaos": 3.088888888888889
+    },
+    "supporters": [
+      "BlockerDetectionAgent",
+      "DependencyChainAgent",
+      "SystemsProgrammerAgent",
+      "PriorityAgent",
+      "ProductManagerAgent"
+    ],
+    "detractors": [
+      "TechnicalDebtAgent",
+      "VCInvestorAgent",
+      "EffortAgent",
+      "LazyAgent",
+      "RandomAgent"
+    ]
+  },
+  {
+    "rank": 5,
+    "title": "WASM target",
+    "category": "Medium Term (This Quarter)",
+    "final_score": 3.1958162657128124,
+    "confidence": 0.3436210444161596,
+    "consensus": "weak",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.5849056603773586,
+      "extended": 2.999999999999999,
+      "specialized": 2.8639053254437865,
+      "persona": 2.874999999999999,
+      "temporal": 3.604651162790698,
+      "chaos": 3.2222222222222228
+    },
+    "supporters": [
+      "BlockerDetectionAgent",
+      "ImpactAgent",
+      "DependencyChainAgent",
+      "PriorityAgent",
+      "DifferentiatorAgent"
+    ],
+    "detractors": [
+      "ParanoidAgent",
+      "EffortAgent",
+      "RiskAgent",
+      "ContrarianAgent",
+      "LazyAgent"
+    ]
+  },
+  {
+    "rank": 6,
+    "title": "GPU autodiff",
+    "category": "Medium Term (This Quarter)",
+    "final_score": 3.0052068598757673,
+    "confidence": 0.36431358184854823,
+    "consensus": "moderate",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.018867924528302,
+      "extended": 2.375,
+      "specialized": 3.136094674556213,
+      "persona": 3.1907894736842106,
+      "temporal": 3.162790697674418,
+      "chaos": 3.088888888888889
+    },
+    "supporters": [
+      "DifferentiatorAgent",
+      "ImpactAgent",
+      "AudioDSPAgent",
+      "PriorityAgent",
+      "LanguageDesignerAgent"
+    ],
+    "detractors": [
+      "EffortAgent",
+      "RiskAgent",
+      "RandomAgent",
+      "ContrarianAgent",
+      "LazyAgent"
+    ]
+  },
+  {
+    "rank": 7,
+    "title": "Implement closure environment capture (automatic captures, not just explicit `self`)",
+    "category": "2.4 Closures (Full)",
+    "final_score": 2.9770759901968122,
+    "confidence": 0.4975753235005713,
+    "consensus": "moderate",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.458333333333333,
+      "specialized": 3.2366863905325447,
+      "persona": 3.269736842105263,
+      "temporal": 2.6395348837209305,
+      "chaos": 3.222222222222222
+    },
+    "supporters": [
+      "StrategicAlignmentAgent",
+      "SystemsProgrammerAgent",
+      "AudioDSPAgent",
+      "LanguageDesignAgent",
+      "CompilerEngineerAgent"
+    ],
+    "detractors": [
+      "PerfectionistAgent",
+      "ContrarianAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ]
+  },
+  {
+    "rank": 8,
+    "title": "Debugger",
+    "category": "Next",
+    "final_score": 2.9622714650414084,
+    "confidence": 0.5076276251092519,
+    "consensus": "strong",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.5283018867924527,
+      "extended": 2.7499999999999996,
+      "specialized": 2.5621301775147924,
+      "persona": 2.7960526315789473,
+      "temporal": 2.8255813953488373,
+      "chaos": 3.444444444444444
+    },
+    "supporters": [
+      "SafetyAgent",
+      "UserExperienceAgent",
+      "PriorityAgent",
+      "ProductManagerAgent",
+      "ImpactAgent"
+    ],
+    "detractors": [
+      "ContrarianAgent",
+      "PerfectionistAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ]
+  },
+  {
+    "rank": 9,
+    "title": "RT-safety policy (no-alloc audio thread)",
+    "category": "Short Term (This Month)",
+    "final_score": 2.9029660034909073,
+    "confidence": 0.4687540849830256,
+    "consensus": "moderate",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.0,
+      "specialized": 2.9467455621301775,
+      "persona": 3.335526315789474,
+      "temporal": 2.9767441860465107,
+      "chaos": 3.0
+    },
+    "supporters": [
+      "SecurityEngineerAgent",
+      "SafetyAgent",
+      "AudioEngineerAgent",
+      "SystemsProgrammerAgent",
+      "AudioDSPAgent"
+    ],
+    "detractors": [
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent",
+      "OptimistAgent",
+      "RandomAgent"
+    ]
+  },
+  {
+    "rank": 10,
+    "title": "Self-hosting components",
+    "category": "Medium Term (This Quarter)",
+    "final_score": 2.872904212686249,
+    "confidence": 0.402784237761036,
+    "consensus": "moderate",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.207547169811321,
+      "extended": 2.5624999999999996,
+      "specialized": 2.6390532544378695,
+      "persona": 2.80921052631579,
+      "temporal": 2.965116279069767,
+      "chaos": 3.0444444444444447
+    },
+    "supporters": [
+      "ImpactAgent",
+      "LanguageDesignerAgent",
+      "PriorityAgent",
+      "SystemsProgrammerAgent",
+      "CommunityMomentumAgent"
+    ],
+    "detractors": [
+      "RandomAgent",
+      "EffortAgent",
+      "RiskAgent",
+      "ContrarianAgent",
+      "LazyAgent"
+    ]
+  },
+  {
+    "rank": 11,
+    "title": "Loop vectorization",
+    "category": "4.1 MLIR Optimization",
+    "final_score": 2.822152290414813,
+    "confidence": 0.5867641243927519,
+    "consensus": "strong",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.458333333333333,
+      "specialized": 2.6568047337278107,
+      "persona": 3.125,
+      "temporal": 2.6395348837209305,
+      "chaos": 3.022222222222222
+    },
+    "supporters": [
+      "CompilerEngineerAgent",
+      "DifferentiatorAgent",
+      "SystemsProgrammerAgent",
+      "AudioEngineerAgent",
+      "InteropAgent"
+    ],
+    "detractors": [
+      "ContrarianAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent",
+      "RandomAgent"
+    ]
+  },
+  {
+    "rank": 12,
+    "title": "Function inlining",
+    "category": "4.1 MLIR Optimization",
+    "final_score": 2.7005089809577383,
+    "confidence": 0.6094875162046669,
+    "consensus": "unanimous",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.4583333333333335,
+      "specialized": 2.479289940828402,
+      "persona": 2.677631578947368,
+      "temporal": 2.6395348837209305,
+      "chaos": 3.088888888888889
+    },
+    "supporters": [
+      "CompilerEngineerAgent",
+      "SystemsProgrammerAgent",
+      "InteropAgent",
+      "PriorityAgent",
+      "CompilerFocusAgent"
+    ],
+    "detractors": [
+      "ContrarianAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent",
+      "RandomAgent"
+    ]
+  },
+  {
+    "rank": 13,
+    "title": "Real-world projects",
+    "category": "Next",
+    "final_score": 2.6960478188067984,
+    "confidence": 0.5807579590631577,
+    "consensus": "strong",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.5625000000000004,
+      "specialized": 2.467455621301775,
+      "persona": 2.5723684210526314,
+      "temporal": 2.63953488372093,
+      "chaos": 3.155555555555556
+    },
+    "supporters": [
+      "SystemsProgrammerAgent",
+      "SkepticalEngineerAgent",
+      "InteropAgent",
+      "MarketingValueAgent",
+      "PriorityAgent"
+    ],
+    "detractors": [
+      "ContrarianAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "RandomAgent",
+      "VCInvestorAgent"
+    ]
+  },
+  {
+    "rank": 14,
+    "title": "Consider flattening",
+    "category": "Repository Cleanup",
+    "final_score": 2.6612424838471114,
+    "confidence": 0.5709344779381332,
+    "consensus": "strong",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.375,
+      "specialized": 2.349112426035503,
+      "persona": 2.618421052631579,
+      "temporal": 2.6395348837209296,
+      "chaos": 3.3111111111111113
+    },
+    "supporters": [
+      "SystemsProgrammerAgent",
+      "PriorityAgent",
+      "OpenSourceMaintainerAgent",
+      "InteropAgent",
+      "BlockerDetectionAgent"
+    ],
+    "detractors": [
+      "PerfectionistAgent",
+      "ContrarianAgent",
+      "LazyAgent",
+      "VCInvestorAgent",
+      "RandomAgent"
+    ]
+  },
+  {
+    "rank": 15,
+    "title": "Consider subdirs by purpose",
+    "category": "Repository Cleanup",
+    "final_score": 2.653464706069334,
+    "confidence": 0.5887012440248975,
+    "consensus": "strong",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.375,
+      "specialized": 2.3491124260355027,
+      "persona": 2.6184210526315788,
+      "temporal": 2.6395348837209305,
+      "chaos": 3.155555555555556
+    },
+    "supporters": [
+      "SystemsProgrammerAgent",
+      "PriorityAgent",
+      "InteropAgent",
+      "OpenSourceMaintainerAgent",
+      "BlockerDetectionAgent"
+    ],
+    "detractors": [
+      "ContrarianAgent",
+      "PerfectionistAgent",
+      "LazyAgent",
+      "RandomAgent",
+      "VCInvestorAgent"
+    ]
+  },
+  {
+    "rank": 16,
+    "title": "Async primitives",
+    "category": "Next",
+    "final_score": 2.636067744661124,
+    "confidence": 0.5689160947874145,
+    "consensus": "strong",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 2.9811320754716983,
+      "extended": 2.0,
+      "specialized": 2.5502958579881656,
+      "persona": 2.618421052631579,
+      "temporal": 2.6395348837209305,
+      "chaos": 3.222222222222222
+    },
+    "supporters": [
+      "SystemsProgrammerAgent",
+      "ImpactAgent",
+      "PriorityAgent",
+      "EmbeddedDeveloperAgent",
+      "InteropAgent"
+    ],
+    "detractors": [
+      "PerfectionistAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent",
+      "RiskAgent"
+    ]
+  },
+  {
+    "rank": 17,
+    "title": "Constant propagation",
+    "category": "4.1 MLIR Optimization",
+    "final_score": 2.636058783719079,
+    "confidence": 0.5887012440248975,
+    "consensus": "strong",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.0,
+      "specialized": 2.467455621301775,
+      "persona": 2.6776315789473677,
+      "temporal": 2.6395348837209305,
+      "chaos": 3.222222222222222
+    },
+    "supporters": [
+      "SystemsProgrammerAgent",
+      "CompilerEngineerAgent",
+      "PriorityAgent",
+      "InteropAgent",
+      "BlockerDetectionAgent"
+    ],
+    "detractors": [
+      "ContrarianAgent",
+      "PerfectionistAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ]
+  },
+  {
+    "rank": 18,
+    "title": "Dead code elimination",
+    "category": "4.1 MLIR Optimization",
+    "final_score": 2.6123901446658246,
+    "confidence": 0.5951680732836294,
+    "consensus": "strong",
+    "chaos_verdict": "\ud83c\udfb2 Chaos is neutral",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.0,
+      "specialized": 2.3491124260355027,
+      "persona": 2.6776315789473686,
+      "temporal": 2.63953488372093,
+      "chaos": 3.222222222222222
+    },
+    "supporters": [
+      "CompilerEngineerAgent",
+      "SystemsProgrammerAgent",
+      "PriorityAgent",
+      "InteropAgent",
+      "BlockerDetectionAgent"
+    ],
+    "detractors": [
+      "PerfectionistAgent",
+      "ContrarianAgent",
+      "LazyAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ]
+  }
+]

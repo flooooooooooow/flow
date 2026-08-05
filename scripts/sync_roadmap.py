@@ -9,7 +9,7 @@ Source of truth: ROADMAP.md. Open items are any of:
   * the curated KNOWN_GAPS list (prose gaps in Current State)
 
 For every open item a stable slug is derived. The slug maps to a GitHub
-issue (label ``roadmap``) and a line in ``issues-checklist.md`` of the form:
+issue (label ``roadmap``) and a line in ``docs/project/issues-checklist.md`` of the form:
 
   - [ ] #NNN [roadmap:<slug>] <title> <url>
 
@@ -22,7 +22,7 @@ checkbox is checked, or it stops matching an open rule), ``sync_roadmap.py``
 closes the GitHub issue and flips the checklist line to ``- [x]``.
 
 Usage:
-  scripts/sync_roadmap.py [--roadmap ROADMAP.md] [--checklist issues-checklist.md]
+  scripts/sync_roadmap.py [--roadmap ROADMAP.md] [--checklist docs/project/issues-checklist.md]
                           [--repo owner/name] [--dry-run] [--verbose]
 
 Requires: gh (authenticated). Pure Python stdlib otherwise.
@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 ROADMAP_DEFAULT = "ROADMAP.md"
-CHECKLIST_DEFAULT = "issues-checklist.md"
+CHECKLIST_DEFAULT = "docs/project/issues-checklist.md"
 REPO_DEFAULT = "flooooooooooow/flow"
 LABEL = "roadmap"
 LABEL_COLOR = "5319E7"

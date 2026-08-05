@@ -11,8 +11,8 @@ function fibonacci(n: i32) -> i32 {
 
 # Unbounded while loop
 function count_up(n: i32) -> i32 {
-    let i: i32 = 0
-    let sum: i32 = 0
+    let mut i: i32 = 0
+    let mut sum: i32 = 0
     
     while i < n {
         sum = sum + i

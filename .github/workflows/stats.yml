@@ -1,0 +1,117 @@
+name: Repository Stats
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: repository-stats
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: Refresh README metrics
+    if: >
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          # Stats are attributed to the last non-stats commit, which means
+          # walking back through history.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-python
+
+      # GitHub's ubuntu-latest image includes clang. Avoid apt-get update here:
+      # unrelated third-party repositories configured on the image can fail
+      # (for example packages.microsoft.com returning 403) and block stats.
+      - name: Verify clang
+        run: |
+          command -v clang
+          clang --version
+
+      - name: Generate tracked-file statistics
+        run: |
+          chmod +x scripts/update_repo_stats.sh
+          ./scripts/update_repo_stats.sh
+
+      # Published numbers must match the Python reference. Flow is preferred
+      # at generation time, but a C-backend concat bug once truncated its JSON;
+      # the shim falls back to Python so the README still updates.
+      - name: Verify deterministic output
+        run: python scripts/update_repo_stats.py --check
+
+      - name: Check Flow counter parity
+        id: flow_parity
+        continue-on-error: true
+        run: |
+          ./scripts/update_repo_stats.sh --check
+          if [[ -f build/repo-stats/flow-disagreed.json ]]; then
+            echo "Flow JSON captured at build/repo-stats/flow-disagreed.json"
+          fi
+
+      - name: Upload machine-readable statistics
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-stats
+          path: |
+            docs/generated/repository-stats.json
+            build/repo-stats/flow-disagreed.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # main is protected, so the bot cannot push directly. Open (or refresh)
+      # a dedicated PR instead; merge it once checks are green.
+      - name: Open or update statistics PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add README.md docs/generated/repository-stats.json
+          if git diff --cached --quiet; then
+            echo "Repository statistics are already current."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m 'docs: refresh repository statistics [skip ci]'
+          git push -u origin HEAD:chore/repository-stats --force
+          echo "Pushed chore/repository-stats"
+
+          # Creating PRs requires the repo setting
+          # "Allow GitHub Actions to create and approve pull requests".
+          # When that is off, leave the branch for a human (or a later run
+          # after the setting is flipped) rather than failing the job.
+          if gh pr view chore/repository-stats --json number >/dev/null 2>&1; then
+            echo "Updated existing statistics PR."
+            gh pr view chore/repository-stats --json url --jq .url
+            exit 0
+          fi
+          if gh pr create \
+              --base main \
+              --head chore/repository-stats \
+              --title 'docs: refresh repository statistics' \
+              --body 'Automated refresh of the README statistics block and `docs/generated/repository-stats.json` from tracked files. Safe to merge when CI is green; the commit subject includes `[skip ci]` so merging it does not re-trigger a CI loop.'; then
+            exit 0
+          fi
+          echo "::warning::Could not open a PR (Actions may lack create-PR permission)."
+          echo "Branch is ready: https://github.com/${{ github.repository }}/pull/new/chore/repository-stats"
+          exit 0
+
+      - name: Fail if Flow counter still diverges
+        if: steps.flow_parity.outcome == 'failure'
+        run: |
+          echo "Flow repo-stats output still disagrees with the Python reference."
+          echo "The README was updated from Python; fix the Flow counter next."
+          exit 1

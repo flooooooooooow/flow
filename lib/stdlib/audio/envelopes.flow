@@ -135,9 +135,9 @@ export function adsr_gate_off(e: ADSR) -> ADSR {
 
 # Advance envelope by one sample
 export function adsr_tick(e: ADSR) -> ADSR {
-    let new_value: f32 = e.current_value
-    let new_position: i64 = e.position + 1
-    let new_stage: EnvStage = e.stage
+    let mut new_value: f32 = e.current_value
+    let mut new_position: i64 = e.position + 1
+    let mut new_stage: EnvStage = e.stage
     
     if e.stage.idle {
         new_value = 0.0
@@ -152,7 +152,7 @@ export function adsr_tick(e: ADSR) -> ADSR {
             # Cast to f32 to avoid integer division
             let pos_f: f32 = e.position
             let samples_f: f32 = e.attack_samples
-            let progress: f32 = pos_f / samples_f
+            let mut progress: f32 = pos_f / samples_f
             new_value = progress
             if progress >= 1.0 {
                 new_value = 1.0
@@ -171,7 +171,7 @@ export function adsr_tick(e: ADSR) -> ADSR {
             # Cast to f32 to avoid integer division
             let pos_f: f32 = e.position
             let samples_f: f32 = e.decay_samples
-            let progress: f32 = pos_f / samples_f
+            let mut progress: f32 = pos_f / samples_f
             new_value = 1.0 - progress * (1.0 - e.sustain_level)
             if progress >= 1.0 {
                 new_value = e.sustain_level
@@ -195,7 +195,7 @@ export function adsr_tick(e: ADSR) -> ADSR {
             # Cast to f32 to avoid integer division
             let pos_f: f32 = e.position
             let samples_f: f32 = e.release_samples
-            let progress: f32 = pos_f / samples_f
+            let mut progress: f32 = pos_f / samples_f
             new_value = e.release_start * (1.0 - progress)
             if progress >= 1.0 {
                 new_value = 0.0
@@ -286,9 +286,9 @@ export function ar_trigger(e: AR) -> AR {
 
 # Advance by one sample
 export function ar_tick(e: AR) -> AR {
-    let new_value: f32 = e.current_value
-    let new_position: i64 = e.position + 1
-    let new_stage: EnvStage = e.stage
+    let mut new_value: f32 = e.current_value
+    let mut new_position: i64 = e.position + 1
+    let mut new_stage: EnvStage = e.stage
     
     if e.stage.idle {
         new_value = 0.0
@@ -303,7 +303,7 @@ export function ar_tick(e: AR) -> AR {
             # Cast to f32 to avoid integer division
             let pos_f: f32 = e.position
             let samples_f: f32 = e.attack_samples
-            let progress: f32 = pos_f / samples_f
+            let mut progress: f32 = pos_f / samples_f
             new_value = progress
             if progress >= 1.0 {
                 new_value = 1.0
@@ -322,7 +322,7 @@ export function ar_tick(e: AR) -> AR {
             # Cast to f32 to avoid integer division
             let pos_f: f32 = e.position
             let samples_f: f32 = e.release_samples
-            let progress: f32 = pos_f / samples_f
+            let mut progress: f32 = pos_f / samples_f
             new_value = 1.0 - progress
             if progress >= 1.0 {
                 new_value = 0.0
@@ -409,8 +409,8 @@ export function ramp_tick(r: Ramp) -> Ramp {
         return r
     }
     
-    let new_position: i64 = r.position + 1
-    let progress: f32 = 0.0
+    let mut new_position: i64 = r.position + 1
+    let mut progress: f32 = 0.0
     if r.duration_samples > 0 {
         # Cast to f32 to avoid integer division
         let pos_f: f32 = r.position
@@ -431,7 +431,7 @@ export function ramp_tick(r: Ramp) -> Ramp {
         }
     }
     
-    let new_value: f32 = r.start_value + progress * (r.end_value - r.start_value)
+    let mut new_value: f32 = r.start_value + progress * (r.end_value - r.start_value)
     
     return Ramp {
         start_value: r.start_value,
@@ -464,7 +464,7 @@ export function exp_decay_new(time_constant_ms: f32, rate: SampleRate) -> ExpDec
     # decay_coeff = e^(-1/(time_constant * sample_rate))
     # Approximation: coeff ≈ 1 - 1/(time_constant * sample_rate)
     let time_samples: f32 = time_constant_ms * rate.hz / 1000.0
-    let coeff: f32 = 1.0 - 1.0 / time_samples
+    let mut coeff: f32 = 1.0 - 1.0 / time_samples
     if coeff < 0.0 {
         coeff = 0.0
     }
@@ -489,7 +489,7 @@ export function exp_decay_trigger(e: ExpDecay) -> ExpDecay {
 
 # Advance by one sample
 export function exp_decay_tick(e: ExpDecay) -> ExpDecay {
-    let new_value: f32 = e.current_value * e.decay_coeff
+    let mut new_value: f32 = e.current_value * e.decay_coeff
     if new_value < e.threshold {
         new_value = 0.0
     }

@@ -1,0 +1,5 @@
+[package]
+name = "ui_layout_flow"
+version = "0.1.0"
+description = "Flow UI layout-only example"
+entry = "src/main.flow"

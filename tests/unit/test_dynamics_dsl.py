@@ -72,6 +72,7 @@ class TestDynamicsDSLCompiler:
         code = compile_dynamics_program(program)
         assert "dsys_discrete" in code
         assert "__dsys_plant" in code
+        assert "let plant: DynamicalSystem = __dsys_plant" in code
         assert "horizon_finite(50)" in code
 
     def test_compile_emits_ga_evolve(self):
@@ -298,6 +299,85 @@ class TestRepresentLinear:
         assert "represent linear" not in out
 
 
+REPRESENT_PHASE_PORTRAIT = """
+import "stdlib/gfx.flow"
+import "stdlib/dynamics/portrait.flow"
+
+flow Lorenz {
+    state x : f64 = 1.0
+    state z : f64 = 1.0
+    x evolves as 0.0
+    z evolves as 0.0
+
+    represent phase_portrait(x, z) {
+        trail 320
+        window 900, 700
+        map x in [-25, 25] -> col
+        map z in [0, 55] -> row
+    }
+}
+
+function main() -> i32 {
+    return 0
+}
+"""
+
+
+class TestRepresentPhasePortrait:
+    def test_strips_and_parses_portrait(self):
+        program, stripped = parse_dynamics_dsl(REPRESENT_PHASE_PORTRAIT)
+        assert "represent phase_portrait" not in stripped
+        assert len(program.portraits) == 1
+        p = program.portraits[0]
+        assert p.flow_name == "Lorenz"
+        assert p.axis0 == "x"
+        assert p.axis1 == "z"
+        assert p.trail == 320
+        assert p.win_w == 900
+        assert p.maps["x"] == (-25.0, 25.0, "col")
+        assert p.maps["z"] == (0.0, 55.0, "row")
+
+    def test_expand_emits_portrait_frame(self):
+        out = expand_dynamics_dsl(REPRESENT_PHASE_PORTRAIT)
+        assert "Lorenz_portrait_frame" in out
+        assert "Lorenz_portrait_trail" in out
+        assert "trail_push_2d" in out
+        assert "project_axis" in out
+        assert "    represent phase_portrait" not in out
+        # row axis inverts for screen y
+        assert "project_axis(zs[idx], 55.0, 0.0" in out
+
+    def test_portrait_outside_flow_errors(self):
+        src = (
+            "represent phase_portrait(x, z) {\n"
+            "    trail 10\n"
+            "    window 100, 100\n"
+            "    map x in [0, 1] -> col\n"
+            "    map z in [0, 1] -> row\n"
+            "}\n"
+            "function main() -> i32 { return 0 }\n"
+        )
+        with pytest.raises(SyntaxError, match="inside"):
+            parse_dynamics_dsl(src)
+
+    def test_portrait_missing_map_errors(self):
+        src = (
+            "flow F {\n"
+            "    state x : f64 = 0.0\n"
+            "    state z : f64 = 0.0\n"
+            "    x evolves as 0.0\n"
+            "    represent phase_portrait(x, z) {\n"
+            "        trail 10\n"
+            "        window 100, 100\n"
+            "        map x in [0, 1] -> col\n"
+            "    }\n"
+            "}\n"
+            "function main() -> i32 { return 0 }\n"
+        )
+        with pytest.raises(SyntaxError, match="need map for both"):
+            parse_dynamics_dsl(src)
+
+
 class TestDynamicsDSLWFC:
     def test_parse_wfc_and_couple(self):
         program, stripped = parse_dynamics_dsl(WFC_SAMPLE)
@@ -319,3 +399,57 @@ class TestDynamicsDSLWFC:
     def test_expand_imports_coupling_module(self):
         out = expand_dynamics_dsl(WFC_SAMPLE)
         assert 'import "stdlib/dynamics/wfc_ga_coupling.flow"' in out
+
+ANALYZE_LQR = """
+dsys plant {
+    discrete
+    dt 0.1
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+
+analyze plant {
+    lqr {
+        Q 1.0 1.0
+        R 1.0
+        -> k1 k2
+    }
+}
+
+function main() -> i32 {
+    return 0
+}
+"""
+
+
+class TestAnalyzeLqr:
+    def test_parse_vision_analyze_lqr(self):
+        program, stripped = parse_dynamics_dsl(ANALYZE_LQR)
+        assert "analyze plant" not in stripped
+        assert len(program.analyze_lqrs) == 1
+        lqr = program.analyze_lqrs[0]
+        assert lqr.system == "plant"
+        assert lqr.q_diag == [1.0, 1.0]
+        assert lqr.r == 1.0
+        assert lqr.gain_vars == ["k1", "k2"]
+
+    def test_expand_emits_dlqr(self):
+        out = expand_dynamics_dsl(ANALYZE_LQR)
+        assert "dlqr_diag_q_scalar_u" in out
+        assert 'import "stdlib/dynamics/lqr.flow"' in out
+        assert "let k1: f64" in out
+        assert "1.0" in out  # R must stay f64 literal
+
+    def test_ga_form_still_works(self):
+        src = (
+            "dsys plant {\n discrete\n dt 0.1\n n 2 m 1 p 1\n"
+            " A 1.0 0.1 0.0 1.0\n B 0.0 0.1\n C 1.0 0.0\n}\n"
+            "horizon h finite 10\n"
+            "analyze plant ga k1 k2 over h -> report { full }\n"
+            "function main() -> i32 { return 0 }\n"
+        )
+        program, _ = parse_dynamics_dsl(src)
+        assert len(program.analyzes) == 1
+        assert program.analyze_lqrs == []

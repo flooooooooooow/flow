@@ -56,10 +56,10 @@ a proof corpus, not the showcase.
 - [x] Remove misleading `examples/graphics/shader_showcase.flow` catalog stub (keep `shader_demo.flow`)
 - [x] Add Tier-0 stubs: `stats/`, `net/`, `basics/result_pipeline`, `basics/match_enums`
 - [x] Canonical entrypoints table in `examples/README.md`
-- [ ] Concurrency pipeline example once channel send/recv is exposed
-- [ ] UI layout tourist example under `examples/` (stdlib/tests exist today)
-- [ ] Packages / WASM showcase entrypoints
+- [x] UI layout tourist example under `examples/` (`examples/ui/layout_hello.flow`)
+- [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
 - [ ] Regenerate `examples/STATUS.md` after layout settles
+- [ ] Concurrency pipeline example once channel send/recv is exposed
 
 ### Tier 0 — Minimum domains
 
@@ -69,13 +69,13 @@ a proof corpus, not the showcase.
 | HTTP slice | `apps/flow-http/http.flow` | ✅ |
 | Stats | `examples/stats/regression_gd.flow` | ✅ |
 | FFI / C | `examples/interop/python_embed.flow` (Python FFI); thin C-FFI demo still thin | partial |
-| WASM | `./flow wasm` path exists; no tourist example yet | 🔲 |
-| Packages | registry design deferred; no showcase package demo | 🔲 |
+| WASM | `examples/wasm/hello_wasm.flow` | ✅ |
+| Packages | `examples/packages/use_hello_lib/` | ✅ |
 | Errors / Result | `examples/basics/result_pipeline.flow` | ✅ |
 | Match | `examples/basics/match_enums.flow` | ✅ |
 | RT audio `@rt_safe` | `examples/audio/lattice_allpass_phase_engine.flow` | ✅ |
 | Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`) — corpus ahead of checker | partial |
-| UI layout | stdlib + tests; no `examples/` tourist file yet | 🔲 |
+| UI layout | `examples/ui/layout_hello.flow` | ✅ |
 | Concurrency pipeline | deferred — `Channel_i32` in stdlib lacks send/recv | 🔲 |
 
 ### Tier 1 — Vision domains
@@ -179,14 +179,14 @@ hand-rolled C-shaped loops. API sketches live in
 |------|--------|--------|
 | Canonicalize evolution demos onto flow/evolves | ✅ [#159](https://github.com/flooooooooooow/flow/issues/159) | Demote hand RK4; README leads with `*_evolves` / `*_rk4` / `when` |
 | gfx_run frame helper | ✅ [#164](https://github.com/flooooooooooow/flow/issues/164) | `gfx_frame_pump` + runtime `flow_gfx_run` / `gfx_run` |
-| Lorenz as flow + represent phase_portrait | ✅ partial [#165](https://github.com/flooooooooooow/flow/issues/165) | `flow Lorenz` + rk4 + `gfx_frame_pump` + `dynamics/portrait.flow` trail; grammar `represent phase_portrait` still open |
+| Lorenz as flow + represent phase_portrait | ✅ [#165](https://github.com/flooooooooooow/flow/issues/165) | `flow Lorenz` + rk4 + `represent phase_portrait` → `{Name}_portrait_frame` |
 | Route linalg examples through blas.flow | ✅ [#168](https://github.com/flooooooooooow/flow/issues/168) | `getrf`/`lu_factor` + tourist `lu_decomposition.flow` via `solve`; hand LU → pedagogical twin |
 | Wire ML demos through Dual / grad codegen | ✅ [#170](https://github.com/flooooooooooow/flow/issues/170) | Tourist XOR uses `nn_autogen`; hand backprop → `mlp_xor_from_scratch.flow` |
 | Owned HttpResponse + JSON decode helpers | ✅ [#167](https://github.com/flooooooooooow/flow/issues/167) | `HttpBody` + `http_get` / `http_body_free`; live cache app drops buf ceremony |
-| Dynamics DSL / LQR beyond n=2 | ✅ partial [#162](https://github.com/flooooooooooow/flow/issues/162) | `dynamics/lqr.flow` dlqr n≤8 scalar-u; cartpole uses it; DSL `analyze { lqr }` still open |
-| Field / laplacian PDE surface | ✅ partial [#163](https://github.com/flooooooooooow/flow/issues/163) | `dynamics/pde.flow` + heat demo; `field`/`boundary` grammar follow-on |
-| Dual + Tensor operators + mutable params | ✅ partial [#161](https://github.com/flooooooooooow/flow/issues/161) | Dual `+ - * /` and unary `-` rewrite to overloads; mutable `nn` params still open |
-| Closed-loop plant.step from dsys/connect | ✅ partial [#160](https://github.com/flooooooooooow/flow/issues/160) | spring_mass uses `state_step` on stdlib-discretized plant; DSL plant binding follow-on |
+| Dynamics DSL / LQR beyond n=2 | ✅ [#162](https://github.com/flooooooooooow/flow/issues/162) | `analyze { lqr }` → dlqr n≤8; spring_mass_lqr + chain4_lqr demos |
+| Field / laplacian PDE surface | ✅ [#163](https://github.com/flooooooooooow/flow/issues/163) | `field`/`boundary`/`evolves as laplacian` → `T_field_step`; heat demo |
+| Dual + Tensor operators + mutable params | ✅ [#161](https://github.com/flooooooooooow/flow/issues/161) | Dual ops + mut nn + Tensor `+ - * /` / scale; `loss.grad` optional |
+| Closed-loop plant.step from dsys/connect | ✅ [#160](https://github.com/flooooooooooow/flow/issues/160) | DSL exposes `plant` alias; spring_mass uses `plant_step(plant, …)` |
 
 ### 🧹 Repository Cleanup
 
@@ -234,7 +234,8 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 | Windows graphics support | ✅ partial — [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux (`gfx_sdl_impl.inc`); `./flow gfx` picks it up on MSYS2/Git Bash/Cygwin; needs MSVC/clang smoke on real Windows |
 | Self-hosting components | 🔲 | Dogfooding |
 | WASM target | ✅ partial — Flow→C→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `scripts/build_wasm_hello.sh`, `examples/wasm/hello_wasm.flow`); native Flow-in-WASM deferred | Web deployment |
-| Tier-0 tourist examples | ✅ partial — `examples/{wasm,packages,ui,net}/` + `audio/rt_safe_callback.flow` (see [examples/README.md](examples/README.md) Canonical table); channels under `examples/concurrency/` | Demo surface |
+| Tier-0 tourist examples | ✅ [#169](https://github.com/flooooooooooow/flow/issues/169) | Canonical table in examples/README; UI/WASM/packages present; concurrency pipeline deferred |
+| MLIR opt pass flags | ✅ [#166](https://github.com/flooooooooooow/flow/issues/166) | `--opt-level` + `--no-{vectorization,loop-fusion,mem2reg,sccp,licm,cse,dce,inline}` + `--print-pass-pipeline` |
 | GPU autodiff | 🔲 | ML performance |
 
 ---
@@ -269,8 +270,11 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 - ✅ **NEW:** LSP inline diagnostics, find references, rename (39-test harness in `scripts/test_lsp_server.py`)
 
 **What's broken/missing:**
-- Postfix-chaining fixes are validated on the C backend only; the MLIR backend has
-  not been exercised against the new chained AST shapes
+- ✅ **FIXED (#124):** MLIR backend exercised against chained postfix AST shapes
+  (`ptr[i].field`, `ptr[i].pos.x`, `make().x`, `array[i].field`, method call on
+  index). Type resolution no longer mistakes `FunctionCall.name` for a variable;
+  field stores lower via GEP chains; struct arrays use `!llvm.array` alloca
+  (memref cannot hold `!llvm.struct`). See `tests/unit/test_mlir_chained_ast.py`.
 - ✅ **FIXED (#117):** `break`/`continue` now have dedicated `BreakStatement`/
   `ContinueStatement` AST nodes (their own lexer keywords, not identifiers).
   The C generator emits `break;`/`continue;` directly from those nodes; the
@@ -314,7 +318,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 - ✅ Trait bounds — `<T: Display>` stored in AST
 - ✅ MLIR backend — Full pipeline: FLOW → MLIR → LLVM → native
 - ✅ LSP — go-to-definition, hover, autocomplete
-- ✅ Closures — Manual pattern with `self: Type`
+- ✅ Closures — Automatic by-value capture (`|x| …` + env/closure structs)
 - ✅ REPL — `flow repl` for interactive development
 - ✅ JIT — `flow jit` for fast execution via MLIR
 - ✅ Package manager — `flow init`, `flow add`, `flow build`
@@ -593,7 +597,10 @@ let result: i32 = add5(10)  # 15
 ```
 
 **Tasks:**
-- [ ] Implement closure environment capture (automatic captures, not just explicit `self`)
+- [x] Implement closure environment capture (automatic captures, not just explicit `self`)
+  - By-value env snapshot + `lambda_N_closure { fn, env }` in C backend
+  - Free-variable analysis covers locals, loop vars, nested lambdas, struct/array literals
+  - Remaining gap: escaping/HOF uniform ABI (return a capturing closure from a function)
 - [x] Decide: move vs copy semantics for captures
 - [x] Generate closure structs in C
 - [x] Test with higher-order functions
@@ -816,10 +823,10 @@ These are explicitly out of scope:
    - `impl Display for Point { ... }` works
    - Self parameter injected as first param in C
    - Method name mangling: Type_Trait_method
-2. [x] Closures/lambdas (partial) ✅
+2. [x] Closures/lambdas ✅
    - Lambda parsing: `|x: i32| -> i32 { return x * x }`
-   - Lambda C codegen: generates static functions
-   - IIFE pattern needs work (tracked for future)
+   - Automatic by-value capture + `lambda_N_closure { fn, env }` C lowering
+   - IIFE / escaping-HOF uniform ABI still tracked as follow-up
 3. [x] Better error messages ✅
    - FlowSyntaxError with source context
    - Shows line number, column, source line
@@ -827,7 +834,7 @@ These are explicitly out of scope:
    - Helpful suggestions for common errors
 
 **Next priorities:**
-1. [x] Full closure captures ✅ (manual closure pattern with explicit `self: Type`)
+1. [x] Full closure captures ✅ (automatic by-value env capture; escaping HOF ABI follow-up)
 2. [x] Trait bounds stored in AST ✅ (`<T: Display>` -> TypeParameter)
 3. [x] Enums / algebraic data types ✅ (tagged unions in C)
 4. [x] WASM build improvements ✅ (`flow wasm` command)

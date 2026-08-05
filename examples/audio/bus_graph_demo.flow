@@ -35,7 +35,7 @@ function main() -> i32 {
     let g: BusGraph = bus_graph_init(rate, buses, nodes, scratch)
 
     # Input on bus0
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 8 {
         audio_buffer_set_f32(g.buses[0].buffer, i, 0, 1.0)
         audio_buffer_set_f32(g.buses[0].buffer, i, 1, 0.8)

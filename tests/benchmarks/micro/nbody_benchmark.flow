@@ -1,0 +1,275 @@
+# N-Body Gravitational Simulation Benchmark
+# Simulates gravitational interactions between N bodies
+#
+# This is a classic O(N^2) benchmark that stresses floating-point performance
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+}
+
+const CLOCKS_PER_SEC: i64 = 1000000
+const G: f64 = 6.67430e-11  # Gravitational constant
+const SOFTENING: f64 = 1e-9  # Softening factor to avoid singularities
+const DT: f64 = 0.01  # Time step
+
+struct Body {
+    x: f64,
+    y: f64,
+    z: f64,
+    vx: f64,
+    vy: f64,
+    vz: f64,
+    mass: f64
+}
+
+# ============================================================================
+# NAIVE N-BODY - O(N^2) pairwise forces
+# ============================================================================
+
+function nbody_step_naive(bodies: ptr<Body>, n: i32) {
+    # Compute forces and update velocities
+    for i in 0 to n {
+        let mut ax: f64 = 0.0
+        let mut ay: f64 = 0.0
+        let mut az: f64 = 0.0
+        
+        for j in 0 to n {
+            if i != j {
+                let dx: f64 = bodies[j].x - bodies[i].x
+                let dy: f64 = bodies[j].y - bodies[i].y
+                let dz: f64 = bodies[j].z - bodies[i].z
+                
+                let dist_sq: f64 = dx * dx + dy * dy + dz * dz + SOFTENING
+                let dist: f64 = sqrt(dist_sq)
+                let inv_dist3: f64 = 1.0 / (dist * dist_sq)
+                
+                let f: f64 = G * bodies[j].mass * inv_dist3
+                ax = ax + f * dx
+                ay = ay + f * dy
+                az = az + f * dz
+            }
+        }
+        
+        bodies[i].vx = bodies[i].vx + ax * DT
+        bodies[i].vy = bodies[i].vy + ay * DT
+        bodies[i].vz = bodies[i].vz + az * DT
+    }
+    
+    # Update positions
+    for i in 0 to n {
+        bodies[i].x = bodies[i].x + bodies[i].vx * DT
+        bodies[i].y = bodies[i].y + bodies[i].vy * DT
+        bodies[i].z = bodies[i].z + bodies[i].vz * DT
+    }
+}
+
+# ============================================================================
+# SYMMETRIC N-BODY - Uses Newton's 3rd law to halve computations
+# ============================================================================
+
+function nbody_step_symmetric(bodies: ptr<Body>, forces: ptr<f64>, n: i32) {
+    # Clear force accumulators (3 components per body)
+    for i in 0 to n * 3 {
+        forces[i] = 0.0
+    }
+    
+    # Compute forces using symmetry: F_ij = -F_ji
+    for i in 0 to n {
+        for j in i + 1 to n {
+            let dx: f64 = bodies[j].x - bodies[i].x
+            let dy: f64 = bodies[j].y - bodies[i].y
+            let dz: f64 = bodies[j].z - bodies[i].z
+            
+            let dist_sq: f64 = dx * dx + dy * dy + dz * dz + SOFTENING
+            let dist: f64 = sqrt(dist_sq)
+            let inv_dist3: f64 = 1.0 / (dist * dist_sq)
+            
+            let fx: f64 = G * bodies[i].mass * bodies[j].mass * inv_dist3 * dx
+            let fy: f64 = G * bodies[i].mass * bodies[j].mass * inv_dist3 * dy
+            let fz: f64 = G * bodies[i].mass * bodies[j].mass * inv_dist3 * dz
+            
+            # Apply equal and opposite forces
+            forces[i * 3] = forces[i * 3] + fx
+            forces[i * 3 + 1] = forces[i * 3 + 1] + fy
+            forces[i * 3 + 2] = forces[i * 3 + 2] + fz
+            
+            forces[j * 3] = forces[j * 3] - fx
+            forces[j * 3 + 1] = forces[j * 3 + 1] - fy
+            forces[j * 3 + 2] = forces[j * 3 + 2] - fz
+        }
+    }
+    
+    # Update velocities and positions
+    for i in 0 to n {
+        let ax: f64 = forces[i * 3] / bodies[i].mass
+        let ay: f64 = forces[i * 3 + 1] / bodies[i].mass
+        let az: f64 = forces[i * 3 + 2] / bodies[i].mass
+        
+        bodies[i].vx = bodies[i].vx + ax * DT
+        bodies[i].vy = bodies[i].vy + ay * DT
+        bodies[i].vz = bodies[i].vz + az * DT
+        
+        bodies[i].x = bodies[i].x + bodies[i].vx * DT
+        bodies[i].y = bodies[i].y + bodies[i].vy * DT
+        bodies[i].z = bodies[i].z + bodies[i].vz * DT
+    }
+}
+
+# ============================================================================
+# ENERGY CALCULATION
+# ============================================================================
+
+function total_energy(bodies: ptr<Body>, n: i32) -> f64 {
+    let mut kinetic: f64 = 0.0
+    let mut potential: f64 = 0.0
+    
+    for i in 0 to n {
+        let v2: f64 = bodies[i].vx * bodies[i].vx + 
+                      bodies[i].vy * bodies[i].vy + 
+                      bodies[i].vz * bodies[i].vz
+        kinetic = kinetic + 0.5 * bodies[i].mass * v2
+    }
+    
+    for i in 0 to n {
+        for j in i + 1 to n {
+            let dx: f64 = bodies[j].x - bodies[i].x
+            let dy: f64 = bodies[j].y - bodies[i].y
+            let dz: f64 = bodies[j].z - bodies[i].z
+            let dist: f64 = sqrt(dx * dx + dy * dy + dz * dz)
+            potential = potential - G * bodies[i].mass * bodies[j].mass / dist
+        }
+    }
+    
+    return kinetic + potential
+}
+
+# ============================================================================
+# INITIALIZATION
+# ============================================================================
+
+function init_bodies(bodies: ptr<Body>, n: i32, seed: u32) -> u32 {
+    let mut s: u32 = seed
+    
+    for i in 0 to n {
+        # Random positions in a cube
+        s = s * 1664525 + 1013904223
+        bodies[i].x = (s % 1000) * 0.002 - 1.0
+        s = s * 1664525 + 1013904223
+        bodies[i].y = (s % 1000) * 0.002 - 1.0
+        s = s * 1664525 + 1013904223
+        bodies[i].z = (s % 1000) * 0.002 - 1.0
+        
+        # Small random velocities
+        s = s * 1664525 + 1013904223
+        bodies[i].vx = (s % 1000) * 0.0001 - 0.05
+        s = s * 1664525 + 1013904223
+        bodies[i].vy = (s % 1000) * 0.0001 - 0.05
+        s = s * 1664525 + 1013904223
+        bodies[i].vz = (s % 1000) * 0.0001 - 0.05
+        
+        # Random masses
+        s = s * 1664525 + 1013904223
+        bodies[i].mass = 1e10 + (s % 1000) * 1e8
+    }
+    
+    return s
+}
+
+# ============================================================================
+# MAIN BENCHMARK
+# ============================================================================
+
+function main() -> i32 {
+    println("========================================================")
+    println("       ")
+    println("========================================================")
+    println("")
+    
+    let num_steps: i32 = 10
+    let body_counts: array<i32, 4> = [64, 128, 256, 512]
+    
+    for b in 0 to 4 {
+        let n: i32 = body_counts[b]
+        
+        println("====================================================")
+        print("N = ")
+        print(n)
+        print(" bodies, ")
+        print(num_steps)
+        println(" steps")
+        print("Interactions per step: ")
+        println(n * (n - 1) / 2)
+        println("====================================================")
+        
+        # Allocate bodies and forces
+        let bodies: array<Body, 512> = [
+            Body { x: 0.0, y: 0.0, z: 0.0, vx: 0.0, vy: 0.0, vz: 0.0, mass: 1e10 },
+            Body { x: 0.0, y: 0.0, z: 0.0, vx: 0.0, vy: 0.0, vz: 0.0, mass: 1e10 },
+            Body { x: 0.0, y: 0.0, z: 0.0, vx: 0.0, vy: 0.0, vz: 0.0, mass: 1e10 },
+            Body { x: 0.0, y: 0.0, z: 0.0, vx: 0.0, vy: 0.0, vz: 0.0, mass: 1e10 },
+            Body { x: 0.0, y: 0.0, z: 0.0, vx: 0.0, vy: 0.0, vz: 0.0, mass: 1e10 },
+            Body { x: 0.0, y: 0.0, z: 0.0, vx: 0.0, vy: 0.0, vz: 0.0, mass: 1e10 },
+            Body { x: 0.0, y: 0.0, z: 0.0, vx: 0.0, vy: 0.0, vz: 0.0, mass: 1e10 },
+            Body { x: 0.0, y: 0.0, z: 0.0, vx: 0.0, vy: 0.0, vz: 0.0, mass: 1e10 }
+        ]
+        let forces: array<f64, 1536> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
+        let bodies_ptr: ptr<Body> = bodies
+        let forces_ptr: ptr<f64> = forces
+        
+        # Initialize
+        let seed: u32 = init_bodies(bodies_ptr, n, 42)
+        
+        # Benchmark naive
+        let e0_naive: f64 = total_energy(bodies_ptr, n)
+        let start_naive: i64 = clock()
+        for step in 0 to num_steps {
+            nbody_step_naive(bodies_ptr, n)
+        }
+        let end_naive: i64 = clock()
+        let time_naive: f64 = (end_naive - start_naive) / CLOCKS_PER_SEC
+        let e1_naive: f64 = total_energy(bodies_ptr, n)
+        
+        let interactions: f64 = n * (n - 1) * num_steps
+        let ips_naive: f64 = interactions / time_naive
+        
+        print("  Naive:     ")
+        printf("%.3f", time_naive * 1000.0)
+        print(" ms, ")
+        printf("%.2f", ips_naive / 1e6)
+        println(" M interactions/s")
+        
+        # Re-initialize and benchmark symmetric
+        let seed2: u32 = init_bodies(bodies_ptr, n, 42)
+        
+        let start_sym: i64 = clock()
+        for step in 0 to num_steps {
+            nbody_step_symmetric(bodies_ptr, forces_ptr, n)
+        }
+        let end_sym: i64 = clock()
+        let time_sym: f64 = (end_sym - start_sym) / CLOCKS_PER_SEC
+        
+        let ips_sym: f64 = interactions / time_sym
+        
+        print("  Symmetric: ")
+        printf("%.3f", time_sym * 1000.0)
+        print(" ms, ")
+        printf("%.2f", ips_sym / 1e6)
+        println(" M interactions/s")
+        
+        let speedup: f64 = time_naive / time_sym
+        print("  Speedup:   ")
+        printf("%.2f", speedup)
+        println("x")
+        
+        println("")
+    }
+    
+    println("Benchmark complete.")
+    return 0
+}

@@ -1,0 +1,47 @@
+# Generic Chan<T> via monomorphization
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
+# Run: ./flow run examples/concurrency/generic_channel.flow
+
+import "stdlib/concurrent.flow"
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function main() -> i32 {
+    printf("generic Chan<T> demo\n")
+
+    let mut ci: Chan<i32> = channel_new<i32>(4)
+    let mut v: i32 = 0
+    if !channel_send<i32>(&ci, 42) {
+        return 1
+    }
+    if !channel_recv<i32>(&ci, &v) {
+        return 2
+    }
+    printf("  Chan<i32> -> %d\n", v)
+    if v != 42 {
+        return 3
+    }
+    channel_close<i32>(&ci)
+    channel_destroy<i32>(&ci)
+
+    let mut cp: Chan<Point> = channel_new<Point>(2)
+    let mut p: Point = Point { x: 0, y: 0 }
+    if !channel_send<Point>(&cp, Point { x: 3, y: 4 }) {
+        return 4
+    }
+    if !channel_recv<Point>(&cp, &p) {
+        return 5
+    }
+    printf("  Chan<Point> -> (%d, %d)\n", p.x, p.y)
+    if p.x != 3 or p.y != 4 {
+        return 6
+    }
+    channel_close<Point>(&cp)
+    channel_destroy<Point>(&cp)
+
+    printf("OK\n")
+    return 0
+}

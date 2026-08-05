@@ -1,0 +1,16 @@
+[package]
+name = "vulkan_flow_advanced"
+version = "0.1.0"
+description = "Flow Vulkan advanced demo"
+entry = "src/main.flow"
+
+[dependencies]
+
+[dev-dependencies]
+
+[native]
+sources = ["../../runtime/vulkan_flow_advanced_bridge.cpp", "../../lib/stdlib/native/vulkan_scene.cpp", "../../demos/vulkan_triangle/main.cpp"]
+libs = ["vulkan", "glfw"]
+cflags = ["-std=c++17", "-O2", "-I/opt/homebrew/opt/vulkan-headers/include", "-I/opt/homebrew/opt/glfw/include"]
+ldflags = ["-L/opt/homebrew/opt/vulkan-loader/lib", "-L/opt/homebrew/opt/molten-vk/lib", "-L/opt/homebrew/opt/glfw/lib", "-Wl,-rpath,/opt/homebrew/opt/vulkan-loader/lib", "-Wl,-rpath,/opt/homebrew/opt/molten-vk/lib", "-Wl,-rpath,/opt/homebrew/opt/vulkan-validationlayers/lib"]
+frameworks = ["CoreGraphics", "ImageIO", "CoreFoundation", "CoreText"]

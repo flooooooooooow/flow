@@ -216,3 +216,62 @@ function setup(size: i64) -> ptr<void> {
 """
     ))
     assert errors == [], errors
+
+
+MUTEX_EXTERN = """
+extern {
+    function pthread_mutex_lock(m: ptr<void>) -> i32
+    function pthread_cond_wait(c: ptr<void>, m: ptr<void>) -> i32
+}
+"""
+
+
+def test_rt_safe_function_calling_mutex_lock_is_rejected():
+    errors = rt_errors(check_strict(
+        MUTEX_EXTERN
+        + """
+@rt_safe
+function process(m: ptr<void>) -> i32 {
+    pthread_mutex_lock(m)
+    return 0
+}
+"""
+    ))
+    assert len(errors) == 1, errors
+    assert "pthread_mutex_lock" in errors[0]
+    assert "block" in errors[0] or "priority" in errors[0]
+
+
+def test_rt_safe_function_calling_mutex_wrapper_is_rejected():
+    errors = rt_errors(check_strict(
+        MUTEX_EXTERN
+        + """
+function mutex_lock(m: ptr<void>) -> i32 {
+    return pthread_mutex_lock(m)
+}
+
+@rt_safe
+function process(m: ptr<void>) -> i32 {
+    mutex_lock(m)
+    return 0
+}
+"""
+    ))
+    assert len(errors) == 1, errors
+    assert "mutex_lock" in errors[0]
+    assert "block" in errors[0] or "priority" in errors[0]
+
+
+def test_rt_safe_function_calling_condvar_wait_is_rejected():
+    errors = rt_errors(check_strict(
+        MUTEX_EXTERN
+        + """
+@rt_safe
+function wait_for(c: ptr<void>, m: ptr<void>) -> i32 {
+    pthread_cond_wait(c, m)
+    return 0
+}
+"""
+    ))
+    assert len(errors) == 1, errors
+    assert "pthread_cond_wait" in errors[0]

@@ -1,0 +1,36 @@
+# Effect-row Phase 2: declare effects on the signature with `with E`.
+# Under `--strict-effects`, callers must handle (or re-declare) those effects.
+#
+# Soft defaults remain the language default without the flag:
+#   ./flow run examples/effects/effect_rows.flow
+# Strict:
+#   ./flow transpile examples/effects/effect_rows.flow --c --strict-effects -o /tmp/er.c
+
+effect Log {
+    info(msg: string) -> void,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("%s\n", msg)
+    },
+}
+
+# Declares that this function may perform Log; body needs no local handle.
+function greet(name: string) -> void with Log {
+    Log.info("hello")
+    Log.info(name)
+}
+
+function shout() -> void with Log {
+    greet("world")
+    Log.info("!")
+}
+
+function main() -> i32 {
+    handle Log with Console {
+        shout()
+    }
+    return 0
+}

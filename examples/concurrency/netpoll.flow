@@ -1,0 +1,15 @@
+# NetpollAsyncIO — real kqueue/epoll (Go netpoller analogue)
+# Run: ./flow run examples/concurrency/netpoll.flow
+
+import "stdlib/async.flow"
+
+function main() -> i32 {
+    printf("NetpollAsyncIO demo\n")
+    handle AsyncIO with NetpollAsyncIO {
+        async_sleep_ms(1)
+    }
+    # poll on a pipe pair would be ideal; sleep path proves kqueue timer works.
+    printf("  sleep_ms(1) via kqueue/epoll timer OK\n")
+    printf("OK\n")
+    return 0
+}

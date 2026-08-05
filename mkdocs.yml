@@ -94,9 +94,10 @@ nav:
     - Language Spec: LANGUAGE_SPEC.md
   - Effects Showcase: effects-showcase.md
   - Project:
-    - Structure: project/PROJECT_STRUCTURE.md
     - Changelog: project/CHANGELOG.md
     - Contributing: project/CONTRIBUTING.md
+    - Questions: project/Questions.md
+    - Architecture: project/architecture-writeup.md
   - Research:
     - Turing Proof: research/turing_proof.md
     - Research Paper: research/FLOW_RESEARCH_PAPER.md

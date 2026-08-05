@@ -169,7 +169,7 @@ export function memory_check_write(ptr: i32, size: i32) -> bool {
 
 export function memory_fill_pattern(ptr: i32, pattern: i32, count: i32) -> void {
     # Fill memory with 32-bit pattern repeated
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < count {
         # Store pattern at memory location
         # This would need proper memory store intrinsic
@@ -267,7 +267,7 @@ export function memory_pool_destroy(pool: MemoryPool) -> void {
 # Memory debugging utilities
 export function memory_dump(ptr: i32, size: i32, bytes_per_line: i32) -> void {
     # Dump memory contents in hex format for debugging
-    let i: i32 = 0
+    let mut i: i32 = 0
     
     while i < size {
         # Print address
@@ -276,7 +276,7 @@ export function memory_dump(ptr: i32, size: i32, bytes_per_line: i32) -> void {
         print(": ")
         
         # Print hex bytes (simplified)
-        let j: i32 = 0
+        let mut j: i32 = 0
         while j < bytes_per_line and i + j < size {
             print("00 ")
             j = j + 1

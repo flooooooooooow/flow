@@ -1,0 +1,19 @@
+# Fiber-per-connection HTTP + auth middleware selftest.
+# Run: FLOW_MAXPROCS=4 ./flow run examples/concurrency/http_fiber.flow
+
+extern {
+    function flow_http_fiber_selftest(port: i32) -> i32
+}
+
+function main() -> i32 {
+    println("http fiber-per-conn + auth mw")
+    let r: i32 = flow_http_fiber_selftest(18784)
+    print("  selftest -> ")
+    println(r)
+    if r != 1 {
+        println("FAIL")
+        return 1
+    }
+    println("OK")
+    return 0
+}

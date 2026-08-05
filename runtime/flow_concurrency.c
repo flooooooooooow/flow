@@ -41,7 +41,7 @@ static void *flow_thread_trampoline(void *p) {
     return NULL;
 }
 
-int64_t flow_thread_spawn(flow_thread_fn fn, void *arg) {
+int64_t flow_rt_thread_spawn(flow_thread_fn fn, void *arg) {
     if (!fn) return -1;
     flow_thread_pack *pack = (flow_thread_pack *)malloc(sizeof(*pack));
     if (!pack) return -1;
@@ -73,7 +73,7 @@ int64_t flow_thread_spawn(flow_thread_fn fn, void *arg) {
     return (int64_t)slot;
 }
 
-int32_t flow_thread_join(int64_t tid) {
+int32_t flow_rt_thread_join(int64_t tid) {
     if (tid < 0 || tid >= FLOW_MAX_THREADS) return -1;
     pthread_mutex_lock(&g_threads_mu);
     if (!g_threads[tid].used) {
@@ -90,7 +90,7 @@ int32_t flow_thread_join(int64_t tid) {
     return rc == 0 ? 0 : -1;
 }
 
-void flow_thread_yield(void) {
+void flow_rt_thread_yield(void) {
 #if defined(_POSIX_PRIORITY_SCHEDULING) || defined(__APPLE__) || defined(__linux__)
     sched_yield();
 #else
@@ -98,86 +98,9 @@ void flow_thread_yield(void) {
 #endif
 }
 
-/* ---- parallel for ------------------------------------------------------ */
-
-typedef struct {
-    int32_t start;
-    int32_t end;
-    int32_t step;
-    flow_par_body_fn body;
-    void *ctx;
-} flow_par_job;
-
-static void *flow_par_worker(void *p) {
-    flow_par_job *job = (flow_par_job *)p;
-    if (job->step == 0) return NULL;
-    if (job->step > 0) {
-        for (int32_t i = job->start; i < job->end; i += job->step) {
-            job->body(i, job->ctx);
-        }
-    } else {
-        for (int32_t i = job->start; i > job->end; i += job->step) {
-            job->body(i, job->ctx);
-        }
-    }
-    return NULL;
-}
-
-void flow_parallel_for_i32(int32_t start, int32_t end, int32_t step,
-                           flow_par_body_fn body, void *ctx) {
-    if (!body || step == 0) return;
-
-    /* Count iterations */
-    int64_t n = 0;
-    if (step > 0) {
-        for (int32_t i = start; i < end; i += step) n++;
-    } else {
-        for (int32_t i = start; i > end; i += step) n++;
-    }
-    if (n <= 0) return;
-    if (n < 2) {
-        flow_par_job job = {start, end, step, body, ctx};
-        flow_par_worker(&job);
-        return;
-    }
-
-    int workers = FLOW_PAR_WORKERS;
-    if ((int64_t)workers > n) workers = (int)n;
-
-    pthread_t threads[FLOW_PAR_WORKERS];
-    flow_par_job jobs[FLOW_PAR_WORKERS];
-    int32_t chunk = (int32_t)((n + workers - 1) / workers);
-
-    for (int w = 0; w < workers; w++) {
-        int64_t i0 = (int64_t)w * chunk;
-        int64_t i1 = i0 + chunk;
-        if (i0 >= n) {
-            jobs[w].body = NULL;
-            continue;
-        }
-        if (i1 > n) i1 = n;
-
-        int32_t s = start + (int32_t)(i0 * step);
-        int32_t e = start + (int32_t)(i1 * step);
-        jobs[w].start = s;
-        jobs[w].end = e;
-        jobs[w].step = step;
-        jobs[w].body = body;
-        jobs[w].ctx = ctx;
-        if (pthread_create(&threads[w], NULL, flow_par_worker, &jobs[w]) != 0) {
-            /* Fallback: run this chunk on the caller */
-            flow_par_worker(&jobs[w]);
-            jobs[w].body = NULL;
-        }
-    }
-    for (int w = 0; w < workers; w++) {
-        if (jobs[w].body) pthread_join(threads[w], NULL);
-    }
-}
-
-/* Async task table + delay → lib/runtime/concurrency_async.flow
- * (+ runtime/flow_rt_task_store.c storage/trampoline).
- * Microbenchmarks → lib/runtime/concurrency_benches.flow.
+/* Parallel-for → lib/runtime/concurrency_parallel.flow (+ flow_rt_parallel.c).
+ * Async → lib/runtime/concurrency_async.flow.
+ * Microbenchmarks → lib/runtime/concurrency_benches.flow (+ flow_rt_cchan.c).
  */
 
 /* ---- atomics wrappers -------------------------------------------------- */

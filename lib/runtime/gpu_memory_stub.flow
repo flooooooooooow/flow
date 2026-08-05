@@ -1,0 +1,57 @@
+# Flow runtime: GPU memory stub for non-Apple hosts (replaces gpu_memory_stub.c).
+# Darwin still links runtime/gpu_metal.m.
+
+@flow_api
+export function flow_gpu_available() -> i32 {
+    return 0
+}
+
+@flow_api
+export function flow_gpu_backend_name() -> string {
+    return "stub"
+}
+
+@flow_api
+export function flow_gpu_alloc(size: i64, flags: i32) -> ptr<void> {
+    return null
+}
+
+@flow_api
+export function flow_gpu_free(buf: ptr<void>) -> void {
+    return
+}
+
+@flow_api
+export function flow_gpu_size(buf: ptr<void>) -> i64 {
+    return 0
+}
+
+@flow_api
+export function flow_gpu_flags(buf: ptr<void>) -> i32 {
+    return 0
+}
+
+@flow_api
+export function flow_gpu_host_ptr(buf: ptr<void>) -> ptr<void> {
+    return null
+}
+
+@flow_api
+export function flow_gpu_copy_h2d(dst_gpu: ptr<void>, src_host: ptr<void>, nbytes: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_copy_d2h(dst_host: ptr<void>, src_gpu: ptr<void>, nbytes: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_copy_d2d(dst_gpu: ptr<void>, src_gpu: ptr<void>, nbytes: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_sync() -> void {
+    return
+}

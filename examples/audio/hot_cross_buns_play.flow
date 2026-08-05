@@ -100,7 +100,7 @@ function main() -> i32 {
     let samples_per_sixteenth: i32 = 7200
 
     # Play each note
-    let note_idx: i32 = 0
+    let mut note_idx: i32 = 0
     while note_idx < 17 {
         let note: Note = melody[note_idx]
         let freq: f64 = note_to_freq(note.midi)

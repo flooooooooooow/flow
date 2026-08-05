@@ -1,12 +1,14 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-08-04 by `scripts/gen_stdlib_docs.py`. Hand-written guides live alongside this page.
+> Auto-generated from `lib/stdlib/` on 2026-08-05 by `scripts/gen_stdlib_docs.py`. Hand-written guides live alongside this page.
 
-**76** modules scanned.
+**82** modules scanned.
 
 ## Modules
 
 ### `array.flow`
+
+Sum the first `size` elements of an f32 array.
 
 **Functions:**
 
@@ -748,8 +750,11 @@ FLOW Automatic Differentiation Library  Two modes:
 | `mul` | `(a: Dual, b: Dual) -> Dual` |
 | `mul` | `(a: Dual, b: f32) -> Dual` |
 | `mul` | `(a: f32, b: Dual) -> Dual` |
+| `div` | `(a: Dual, b: Dual) -> Dual` |
 | `ddiv` | `(a: Dual, b: Dual) -> Dual` |
+| `div` | `(a: Dual, b: f32) -> Dual` |
 | `divs` | `(a: Dual, b: f32) -> Dual` |
+| `div` | `(a: f32, b: Dual) -> Dual` |
 | `rdiv` | `(a: f32, b: Dual) -> Dual` |
 | `addc` | `(a: f32, b: Dual) -> Dual` |
 | `rsub` | `(a: f32, b: Dual) -> Dual` |
@@ -825,6 +830,8 @@ BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux) Import: import 
 | `axpy` | `(alpha: f64, x: ptr<f64>, y: ptr<f64>, n: i32) -> void` |
 | `scal` | `(alpha: f64, x: ptr<f64>, n: i32) -> void` |
 | `solve` | `(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32` |
+| `getrf` | `(A: Mat, pivots: ptr<i32>) -> i32` |
+| `lu_factor` | `(A: Mat, pivots: ptr<i32>) -> i32` |
 | `matmul` | `(A: Mat, B: Mat) -> Mat` |
 | `transpose` | `(A: Mat) -> Mat` |
 | `eye` | `(n: i32) -> Mat` |
@@ -839,7 +846,7 @@ FLOW Collections Standard Library HashMap, Set, Queue, Stack, Vector
 
 ### `concurrent.flow`
 
-FLOW Concurrency Standard Library Threads, mutexes, channels, atomics
+FLOW Concurrency Standard Library Threads, mutexes, channels, atomics — real pthread/atomic backends. See docs/language/concurrency-vs-go.md
 
 *No `export` items found (internal / extern-only module).*
 
@@ -885,6 +892,66 @@ Dynamics linear algebra (f64, caller-provided buffers) Import: import "stdlib/dy
 
 *No `export` items found (internal / extern-only module).*
 
+### `dynamics/lqr.flow`
+
+Discrete LQR helpers (pattern-adoption #162). Scalar-input (m=1) discrete Riccati fixed-point for n <= 8. Prefer this over private mini-linalg in apps until LAPACK DARE lands.
+
+**Functions:**
+
+| Name | Signature |
+|------|-----------|
+| `dlqr_diag_q_scalar_u` | `(
+    ad: ptr<f64>,
+    bd: ptr<f64>,
+    q_diag: ptr<f64>,
+    r: f64,
+    n: i32,
+    k_out: ptr<f64>,
+    max_iter: i32
+) -> i32` |
+| `lqr_diag_q` | `(ad: ptr<f64>, bd: ptr<f64>, q_diag: ptr<f64>, r: f64,
+                           n: i32, k_out: ptr<f64>, max_iter: i32) -> i32` |
+
+### `dynamics/pde.flow`
+
+PDE helpers (pattern-adoption #163). Stdlib MVP for field evolution without `field` / `boundary` grammar yet. Import: import "stdlib/dynamics/pde.flow"
+
+**Functions:**
+
+| Name | Signature |
+|------|-----------|
+| `laplacian_1d_at` | `(u: ptr<f64>, i: i32, dx: f64) -> f64` |
+| `laplacian_1d` | `(u: ptr<f64>, out: ptr<f64>, n: i32, dx: f64) -> void` |
+| `heat_euler_step_1d` | `(
+    u: ptr<f64>,
+    next: ptr<f64>,
+    n: i32,
+    r: f64,
+    left_bc: f64,
+    right_bc: f64
+) -> void` |
+| `field_copy_1d` | `(src: ptr<f64>, dst: ptr<f64>, n: i32) -> void` |
+
+### `dynamics/portrait.flow`
+
+Phase-portrait trail helpers (pattern-adoption #165). Ring-buffer + project helpers until `represent phase_portrait` lowers. Import: import "stdlib/dynamics/portrait.flow"
+
+**Functions:**
+
+| Name | Signature |
+|------|-----------|
+| `trail_push_2d` | `(
+    xs: ptr<f64>,
+    zs: ptr<f64>,
+    capacity: i32,
+    head: ptr<i32>,
+    count: ptr<i32>,
+    x: f64,
+    z: f64
+) -> void` |
+| `trail_index` | `(head: i32, count: i32, capacity: i32, i: i32) -> i32` |
+| `project_axis` | `(v: f64, vmin: f64, vmax: f64, width: i32, pad: i32) -> i32` |
+
 ### `dynamics/schur_lattice.flow`
 
 Schur / lattice / orthogonal-colligation route for all-pass synthesis Import: import "stdlib/dynamics/schur_lattice.flow"
@@ -895,7 +962,12 @@ Schur / lattice / orthogonal-colligation route for all-pass synthesis Import: im
 
 State-space simulation, controllability, transformations Import: import "stdlib/dynamics/state_space.flow"
 
-*No `export` items found (internal / extern-only module).*
+**Functions:**
+
+| Name | Signature |
+|------|-----------|
+| `state_step` | `(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void` |
+| `plant_step` | `(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void` |
 
 ### `dynamics/wfc.flow`
 
@@ -917,7 +989,7 @@ Flow Dynamical Systems Standard Library  Declarative DSL via structs (no new key
 
 ### `gfx.flow`
 
-gfx: explicit native graphics API (macOS backend)  This is an explicit, minimal API designed for games/demos.
+gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runtime/gfx_macos.m, runtime/gfx_linux.c, runtime/gfx_windows.c
 
 **Functions:**
 
@@ -931,12 +1003,71 @@ gfx: explicit native graphics API (macOS backend)  This is an explicit, minimal 
 | `gfx_clear` | `(g: Gfx, r: i32, g2: i32, b: i32) -> void` |
 | `gfx_fill_rect` | `(g: Gfx, x: i32, y: i32, w: i32, h: i32, r: i32, g2: i32, b: i32) -> void` |
 | `gfx_present` | `(g: Gfx) -> void` |
+| `gfx_frame_pump` | `(g: Gfx) -> bool` |
+| `gfx_run` | `(g: Gfx, max_frames: i32) -> i32` |
+
+### `gpu_gradients.flow`
+
+GPU gradient helpers (MVP)  Thin wrappers over Metal elementwise mul / mul-backward kernels.
+
+**Functions:**
+
+| Name | Signature |
+|------|-----------|
+| `gpu_mul_f32` | `(out: GpuBuffer, a: GpuBuffer, b: GpuBuffer, n: i64) -> i32` |
+| `gpu_mul_backward_a_f32` | `(grad_a: GpuBuffer, grad_out: GpuBuffer, b: GpuBuffer, n: i64) -> i32` |
+| `gpu_mul_backward_b_f32` | `(grad_b: GpuBuffer, grad_out: GpuBuffer, a: GpuBuffer, n: i64) -> i32` |
 
 ### `gpu_kernels.flow`
 
 GPU kernels for ML workloads (Metal/CUDA codegen via @gpu) Mojo-style: annotate kernels, compile with `flow gpu <file>`
 
 *No `export` items found (internal / extern-only module).*
+
+### `gpu_memory.flow`
+
+First-class GPU / unified memory  CPU heap stays in stdlib/memory.flow.
+
+**Structs:** `GpuBuffer`
+
+**Constants:**
+
+- `GPU_MEM_DEFAULT: i32`
+- `GPU_MEM_SHARED: i32`
+- `GPU_MEM_PRIVATE: i32`
+
+**Functions:**
+
+| Name | Signature |
+|------|-----------|
+| `gpu_available` | `() -> bool` |
+| `gpu_backend_name` | `() -> string` |
+| `gpu_null_buffer` | `() -> GpuBuffer` |
+| `gpu_is_null` | `(buf: GpuBuffer) -> bool` |
+| `gpu_alloc_flags` | `(size: i64, flags: i32) -> GpuBuffer` |
+| `gpu_alloc` | `(size: i64) -> GpuBuffer` |
+| `gpu_alloc_unified` | `(size: i64) -> GpuBuffer` |
+| `gpu_alloc_private` | `(size: i64) -> GpuBuffer` |
+| `gpu_alloc_f32` | `(count: i64) -> GpuBuffer` |
+| `gpu_alloc_f64` | `(count: i64) -> GpuBuffer` |
+| `gpu_alloc_i32` | `(count: i64) -> GpuBuffer` |
+| `gpu_free` | `(buf: GpuBuffer) -> void` |
+| `gpu_size` | `(buf: GpuBuffer) -> i64` |
+| `gpu_host_ptr` | `(buf: GpuBuffer) -> ptr<void>` |
+| `gpu_is_unified` | `(buf: GpuBuffer) -> bool` |
+| `gpu_copy_h2d` | `(dst: GpuBuffer, src: ptr<void>, nbytes: i64) -> i32` |
+| `gpu_copy_d2h` | `(dst: ptr<void>, src: GpuBuffer, nbytes: i64) -> i32` |
+| `gpu_copy_h2d_i32` | `(dst: GpuBuffer, src: ptr<i32>, nbytes: i64) -> i32` |
+| `gpu_copy_d2h_i32` | `(dst: ptr<i32>, src: GpuBuffer, nbytes: i64) -> i32` |
+| `gpu_copy_h2d_f32` | `(dst: GpuBuffer, src: ptr<f32>, nbytes: i64) -> i32` |
+| `gpu_copy_d2h_f32` | `(dst: ptr<f32>, src: GpuBuffer, nbytes: i64) -> i32` |
+| `gpu_copy_d2d` | `(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32` |
+| `gpu_sync` | `() -> void` |
+| `gpu_allocate` | `(size: i64) -> GpuBuffer` |
+| `gpu_copy_to_device` | `(dst: GpuBuffer, src: ptr<void>, nbytes: i64) -> i32` |
+| `gpu_copy_from_device` | `(dst: ptr<void>, src: GpuBuffer, nbytes: i64) -> i32` |
+| `gpu_copy_device_to_device` | `(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32` |
+| `unified_allocate` | `(size: i64) -> GpuBuffer` |
 
 ### `gpu_sim.flow`
 
@@ -1173,7 +1304,7 @@ Minimal Neural Network utilities (stdlib)  Purpose: reusable training/prediction
 
 ### `nn_autogen.flow`
 
-Auto-generated backprop for XOR loss (2x2x1) via tools/flow_grad_flow.py  This file demonstrates "no hand-written backprop": gradients are generated from
+Auto-generated backprop for XOR loss (2x2x1) via scripts/tools/grad/flow_grad_flow.py  This file demonstrates "no hand-written backprop": gradients are generated from
 
 **Functions:**
 
@@ -1212,6 +1343,19 @@ Option Type Represents an optional value: either Some(value) or None
 FLOW POSIX Standard Library File I/O, processes, environment, and system calls
 
 *No `export` items found (internal / extern-only module).*
+
+### `process.flow`
+
+Process / host-command helpers Runtime: flow_run_cmd / flow_have_cmd in runtime/flow_sys_info.c
+
+**Functions:**
+
+| Name | Signature |
+|------|-----------|
+| `run_cmd` | `(cmd: string) -> i32` |
+| `have_cmd` | `(name: string) -> bool` |
+| `env_is` | `(name: string, want: string) -> bool` |
+| `str_eq` | `(a: string, b: string) -> bool` |
 
 ### `python_embed.flow`
 

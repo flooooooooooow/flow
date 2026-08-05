@@ -1,17 +1,35 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "FLOW",
+  "name": "Flow",
   "scopeName": "source.flow",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#strings" },
-    { "include": "#dynamics" },
-    { "include": "#ordering" },
-    { "include": "#keywords" },
-    { "include": "#types" },
-    { "include": "#functions" },
-    { "include": "#numbers" },
-    { "include": "#operators" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#dynamics"
+    },
+    {
+      "include": "#ordering"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#operators"
+    }
   ],
   "repository": {
     "dynamics": {
@@ -77,15 +95,19 @@
       "patterns": [
         {
           "name": "keyword.control.flow",
-          "match": "\\b(if|elif|else|while|for|return|match|default|handle|with|parallel|in|step|to|and|or|not|break|continue)\\b"
+          "match": "\\b(if|elif|else|while|for|return|match|default|handle|with|parallel|in|step|to|and|or|not|break|continue|when|always)\\b"
         },
         {
           "name": "keyword.declaration.flow",
-          "match": "\\b(function|let|mut|struct|enum|effect|capability|import|export|module|extern|const|theorem|assume|therefore|type|impl|trait)\\b"
+          "match": "\\b(function|let|mut|struct|enum|effect|capability|import|export|module|extern|const|theorem|assume|therefore|type|impl|trait|flow|state|shader)\\b"
+        },
+        {
+          "name": "keyword.operator.evolution.flow",
+          "match": "\\bevolves\\s+as\\b"
         },
         {
           "name": "constant.language.flow",
-          "match": "\\b(true|false)\\b"
+          "match": "\\b(true|false|null)\\b"
         }
       ]
     },
@@ -125,5 +147,8 @@
         }
       ]
     }
-  }
+  },
+  "fileTypes": [
+    "flow"
+  ]
 }

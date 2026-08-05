@@ -1,39 +1,82 @@
-# GPU gradient helpers (MVP)
+# GPU gradient kernels (manual reverse-mode building blocks)
 #
-# Thin wrappers over Metal elementwise mul / mul-backward kernels.
-# Buffers are the same GpuBuffer handles from stdlib/gpu_memory.flow.
+# These are elementwise backward kernels for ML training on GPU, not a
+# compiler autodiff transform. Pair with forward kernels in gpu_kernels.flow
+# and CPU autodiff helpers in autodiff*.flow.
 #
-#   grad_a = grad_out * b
-#   grad_b = grad_out * a
+# Emit Metal:  ./flow gpu lib/stdlib/gpu_gradients.flow
 
-import "stdlib/gpu_memory.flow"
-
-extern {
-    function flow_gpu_mul_f32(out: ptr<void>, a: ptr<void>, b: ptr<void>, n: i64) -> i32
-    function flow_gpu_mul_backward_a_f32(grad_a: ptr<void>, grad_out: ptr<void>, b: ptr<void>, n: i64) -> i32
-    function flow_gpu_mul_backward_b_f32(grad_b: ptr<void>, grad_out: ptr<void>, a: ptr<void>, n: i64) -> i32
+@gpu
+function gpu_mse_grad(pred: ptr<f32>, target: ptr<f32>, grad: ptr<f32>, n: i32) -> void {
+    # d/dpred mean((pred - target)^2) = 2*(pred - target)/n
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        let inv_n: f32 = 1.0 / (n as f32)
+        grad[i] = 2.0 * (pred[i] - target[i]) * inv_n
+    }
 }
 
-# Elementwise mul forward: out[i] = a[i] * b[i]
-export function gpu_mul_f32(out: GpuBuffer, a: GpuBuffer, b: GpuBuffer, n: i64) -> i32 {
-    if gpu_is_null(out) or gpu_is_null(a) or gpu_is_null(b) or n <= 0 {
-        return 0 - 1
+@gpu
+function gpu_relu_grad(x: ptr<f32>, dout: ptr<f32>, dx: ptr<f32>, n: i32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        if x[i] > 0.0 {
+            dx[i] = dout[i]
+        } else {
+            dx[i] = 0.0
+        }
     }
-    return flow_gpu_mul_f32(out.device, a.device, b.device, n)
 }
 
-# Mul backward w.r.t. a: grad_a[i] = grad_out[i] * b[i]
-export function gpu_mul_backward_a_f32(grad_a: GpuBuffer, grad_out: GpuBuffer, b: GpuBuffer, n: i64) -> i32 {
-    if gpu_is_null(grad_a) or gpu_is_null(grad_out) or gpu_is_null(b) or n <= 0 {
-        return 0 - 1
+@gpu
+function gpu_sigmoid_grad(y: ptr<f32>, dout: ptr<f32>, dx: ptr<f32>, n: i32) -> void {
+    # y = sigmoid(x); dx = dout * y * (1 - y)
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        dx[i] = dout[i] * y[i] * (1.0 - y[i])
     }
-    return flow_gpu_mul_backward_a_f32(grad_a.device, grad_out.device, b.device, n)
 }
 
-# Mul backward w.r.t. b: grad_b[i] = grad_out[i] * a[i]
-export function gpu_mul_backward_b_f32(grad_b: GpuBuffer, grad_out: GpuBuffer, a: GpuBuffer, n: i64) -> i32 {
-    if gpu_is_null(grad_b) or gpu_is_null(grad_out) or gpu_is_null(a) or n <= 0 {
-        return 0 - 1
+@gpu
+function gpu_scale_grad(dout: ptr<f32>, dx: ptr<f32>, n: i32, alpha: f32) -> void {
+    # forward: out = alpha * inp  =>  dx = alpha * dout
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        dx[i] = dout[i] * alpha
     }
-    return flow_gpu_mul_backward_b_f32(grad_b.device, grad_out.device, a.device, n)
+}
+
+# CPU reference helpers for tests / host-side checks
+function cpu_mse_grad(pred: f32, target: f32, n: i32) -> f32 {
+    let inv_n: f32 = 1.0 / (n as f32)
+    return 2.0 * (pred - target) * inv_n
+}
+
+function cpu_relu_grad(x: f32, dout: f32) -> f32 {
+    if x > 0.0 {
+        return dout
+    }
+    return 0.0
+}
+
+function cpu_sigmoid_grad(y: f32, dout: f32) -> f32 {
+    return dout * y * (1.0 - y)
+}
+
+function main() -> i32 {
+    let g: f32 = cpu_mse_grad(1.0, 0.0, 2)
+    # 2*(1-0)/2 = 1.0
+    let r: f32 = cpu_relu_grad(-1.0, 3.0)
+    let s: f32 = cpu_sigmoid_grad(0.5, 2.0)
+    # 2 * 0.5 * 0.5 = 0.5
+    if g == 1.0 {
+        if r == 0.0 {
+            if s == 0.5 {
+                println("gpu_gradients: cpu refs ok; use `flow gpu` for Metal")
+                return 0
+            }
+        }
+    }
+    println("gpu_gradients: FAIL")
+    return 1
 }
