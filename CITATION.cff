@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+title: "Flow Programming Language"
+message: "If you use Flow in research or products, please cite it as below."
+type: software
+authors:
+  - family-names: Shivakumar
+    given-names: Abhishek
+repository-code: "https://github.com/flooooooooooow/flow"
+url: "https://flooooooooooow.github.io/flow/"
+license: MIT
+version: 0.8.0
+date-released: "2026-08-05"
+keywords:
+  - programming-language
+  - algebraic-effects
+  - automatic-differentiation
+  - systems-programming
+  - real-time
+  - compilers
+abstract: >-
+  Flow is a statically typed compiled language for describing systems that
+  evolve through time, with algebraic effects, automatic differentiation,
+  dynamics and control analysis, and portable C / MLIR backends.
