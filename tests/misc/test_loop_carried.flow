@@ -1,7 +1,7 @@
 # Test loop-carried variables (accumulator pattern)
 
 function sum_to_n(n: i32) -> i32 {
-    let sum: i32 = 0
+    let mut sum: i32 = 0
     for i in 0..n {
         sum = sum + i
     }

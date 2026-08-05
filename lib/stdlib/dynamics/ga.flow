@@ -14,7 +14,7 @@ struct GAConfig {
 function ga_rollout_cost(sys: DynamicalSystem, k1: f64, k2: f64, steps: i32) -> f64 {
     let n: i32 = sys.n
     let x: array<f64, 8> = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
     let xn: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let mut cost: f64 = 0.0
     for t in 0 to steps {
@@ -29,7 +29,7 @@ function ga_rollout_cost(sys: DynamicalSystem, k1: f64, k2: f64, steps: i32) -> 
 # Deterministic pseudo-random in [0,1) from integer seed.
 function ga_hash(seed: i32) -> f64 {
     let s: i32 = seed * 1103515245 + 12345
-    let v: i32 = s / 65536
+    let mut v: i32 = s / 65536
     if v < 0 { v = 0 - v }
     return (v % 1000) / 1000.0
 }

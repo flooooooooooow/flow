@@ -70,7 +70,7 @@ export function audio_graph_init(rate: SampleRate, nodes: array<AudioNode, 32>) 
         ],
         node_type: audio_node_default()
     }
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 32 {
         g.nodes[i] = nodes[i]
         i = i + 1
@@ -177,7 +177,7 @@ export function audio_graph_add_pan(g: AudioGraph, pan: f32) -> AudioGraph {
 export function audio_graph_process_interleaved(g: AudioGraph, buf: AudioBufferF32, frames: i32) -> AudioGraph {
     let graph: AudioGraph = g
     let count: i32 = graph.count
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < count {
         let node: AudioNode = graph.nodes[i]
         let mut lp_l: Biquad = node.lp_l
@@ -189,7 +189,7 @@ export function audio_graph_process_interleaved(g: AudioGraph, buf: AudioBufferF
                 let gain: f32 = db_to_linear(node.gain_db)
                 audio_gain_interleaved_f32(buf.data, frames, buf.channels, gain)
             } elif node.kind == AUDIO_NODE_LOWPASS {
-                let f: i32 = 0
+                let mut f: i32 = 0
                 while f < frames {
                     let l: f32 = audio_buffer_get_f32(buf, f, 0)
                     let mut r: f32 = l
@@ -205,7 +205,7 @@ export function audio_graph_process_interleaved(g: AudioGraph, buf: AudioBufferF
                     f = f + 1
                 }
             } elif node.kind == AUDIO_NODE_DELAY {
-                let f: i32 = 0
+                let mut f: i32 = 0
                 while f < frames {
                     let l: f32 = audio_buffer_get_f32(buf, f, 0)
                     let mut r: f32 = l
@@ -221,7 +221,7 @@ export function audio_graph_process_interleaved(g: AudioGraph, buf: AudioBufferF
                     f = f + 1
                 }
             } elif node.kind == AUDIO_NODE_PAN {
-                let f: i32 = 0
+                let mut f: i32 = 0
                 while f < frames {
                     let l: f32 = audio_buffer_get_f32(buf, f, 0)
                     let mut r: f32 = l

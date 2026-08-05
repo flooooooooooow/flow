@@ -116,6 +116,11 @@ def main():
         "--debug-info", action="store_true", help="Emit DWARF debug info in MLIR"
     )
     parser.add_argument(
+        "--strict-effects",
+        action="store_true",
+        help="Abort on unhandled effect ops (also: FLOW_STRICT_EFFECTS=1 at runtime)",
+    )
+    parser.add_argument(
         "--opt-level",
         choices=["O0", "O1", "O2", "O3"],
         default="O2",
@@ -192,6 +197,11 @@ def main():
         "--lenient", action="store_true", help="Lenient type checking (warnings only)"
     )
     parser.add_argument(
+        "--library",
+        action="store_true",
+        help="Emit a linkable runtime/library TU (static _ui_state, no name mangling)",
+    )
+    parser.add_argument(
         "--python", action="store_true", help="Generate Python package (wheel)"
     )
     parser.add_argument(
@@ -257,6 +267,13 @@ def main():
 
         # Type checking phase
         type_checker = TypeChecker()
+        # Wire CLI --strict/--lenient into checker policy (bool↔numeric,
+        # immutable assign, non-bool if/while, unknown annotations, …).
+        type_checker.strict = strict_mode
+        # --strict-effects enables compile-time effect-row checking (Phase 1)
+        # in addition to runtime abort on unhandled ops.
+        if getattr(args, "strict_effects", False):
+            type_checker.check_effect_rows = True
         type_result = type_checker.check(declarations)
 
         if type_result.errors:
@@ -444,8 +461,18 @@ def main():
         try:
             # For the C backend, reuse --debug-info to emit coarse source mappings
             # (via C preprocessor #line directives) for LLDB/GDB.
+            src_path = args.input
+            if args.debug_info:
+                try:
+                    src_path = str(Path(args.input).resolve())
+                except Exception:
+                    src_path = args.input
             out_code = flow_to_c(
-                declarations, source_file=args.input, debug_info=args.debug_info
+                declarations,
+                source_file=src_path,
+                debug_info=args.debug_info,
+                strict_effects=args.strict_effects,
+                library=args.library,
             )
             overload_warnings = getattr(flow_to_c, "last_warnings", None)
             if overload_warnings:

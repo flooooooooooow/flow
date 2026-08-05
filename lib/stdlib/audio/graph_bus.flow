@@ -95,12 +95,12 @@ export function bus_graph_init(rate: SampleRate, buses: array<AudioBus, 8>, node
         bus_type: empty,
         node_type: bus_node_default()
     }
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 8 {
         g.buses[i] = buses[i]
         i = i + 1
     }
-    let j: i32 = 0
+    let mut j: i32 = 0
     while j < 64 {
         g.nodes[j] = nodes[j]
         j = j + 1
@@ -109,7 +109,7 @@ export function bus_graph_init(rate: SampleRate, buses: array<AudioBus, 8>, node
 }
 
 export function bus_graph_free(g: BusGraph) -> void {
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < g.bus_count {
         audio_buffer_free_f32(g.buses[i].buffer)
         i = i + 1
@@ -222,7 +222,7 @@ export function bus_graph_add_pan(g: BusGraph, input_bus: i32, output_bus: i32, 
 }
 
 export function bus_graph_clear_buses(g: BusGraph) -> void {
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < g.bus_count {
         audio_buffer_zero_f32(g.buses[i].buffer)
         i = i + 1
@@ -232,7 +232,7 @@ export function bus_graph_clear_buses(g: BusGraph) -> void {
 export function bus_graph_process(g: BusGraph, frames: i32) -> BusGraph {
     let graph: BusGraph = g
     let nodes: i32 = graph.node_count
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < nodes {
         let node: BusNode = graph.nodes[i]
         let mut lp_l: Biquad = node.lp_l
@@ -245,7 +245,7 @@ export function bus_graph_process(g: BusGraph, frames: i32) -> BusGraph {
             if in_ok and out_ok {
                 let in_buf: AudioBufferF32 = graph.buses[node.input_bus].buffer
                 let out_buf: AudioBufferF32 = graph.buses[node.output_bus].buffer
-                let work: AudioBufferF32 = graph.scratch
+                let mut work: AudioBufferF32 = graph.scratch
 
                 if node.input_bus != node.output_bus {
                     audio_copy_interleaved_f32(work.data, in_buf.data, frames, in_buf.channels)
@@ -257,7 +257,7 @@ export function bus_graph_process(g: BusGraph, frames: i32) -> BusGraph {
                     let gain: f32 = db_to_linear(node.gain_db)
                     audio_gain_interleaved_f32(work.data, frames, work.channels, gain)
                 } elif node.kind == BUS_NODE_LOWPASS {
-                    let f: i32 = 0
+                    let mut f: i32 = 0
                     while f < frames {
                         let l: f32 = audio_buffer_get_f32(work, f, 0)
                         let mut r: f32 = l
@@ -273,7 +273,7 @@ export function bus_graph_process(g: BusGraph, frames: i32) -> BusGraph {
                         f = f + 1
                     }
                 } elif node.kind == BUS_NODE_DELAY {
-                    let f: i32 = 0
+                    let mut f: i32 = 0
                     while f < frames {
                         let l: f32 = audio_buffer_get_f32(work, f, 0)
                         let mut r: f32 = l
@@ -289,7 +289,7 @@ export function bus_graph_process(g: BusGraph, frames: i32) -> BusGraph {
                         f = f + 1
                     }
                 } elif node.kind == BUS_NODE_PAN {
-                    let f: i32 = 0
+                    let mut f: i32 = 0
                     while f < frames {
                         let l: f32 = audio_buffer_get_f32(work, f, 0)
                         let mut r: f32 = l

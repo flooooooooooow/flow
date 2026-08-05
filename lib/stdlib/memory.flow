@@ -19,6 +19,12 @@ export function sizeof_f32() -> i64 { return 4 }
 export function sizeof_f64() -> i64 { return 8 }
 export function sizeof_ptr() -> i64 { return 8 }
 
+# Generic sizeof — C backend emits `(int64_t)sizeof(T)` after monomorphization.
+# Body is a placeholder; never executed as written.
+function sizeof<T>() -> i64 {
+    return 0
+}
+
 export function alignof_i32() -> i64 { return 4 }
 export function alignof_i64() -> i64 { return 8 }
 export function alignof_f32() -> i64 { return 4 }
@@ -132,7 +138,7 @@ export function arena_reset(arena: ptr<Arena>) -> void {
 export function arena_destroy(arena: ptr<Arena>) -> void {
     let a: Arena = arena[0]
     if a.buffer != null {
-        let p: ptr<void> = a.buffer
+        let mut p: ptr<void> = a.buffer
         free(p)
     }
     arena[0].buffer = null

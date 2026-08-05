@@ -20,8 +20,8 @@ function test_delay_one_sample() -> bool {
 }
 
 function main() -> i32 {
-    let passed: i32 = 0
-    let failed: i32 = 0
+    let mut passed: i32 = 0
+    let mut failed: i32 = 0
     printf("=== Audio Delay Line Tests ===\n\n")
 
     if test_delay_one_sample() { printf("✓ delay_one_sample\n"); passed = passed + 1 }

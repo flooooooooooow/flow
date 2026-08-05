@@ -1,0 +1,19 @@
+# flow:lenient - generic sizeof_T not visible to strict typecheck before mono
+import "stdlib/concurrent.flow"
+
+function main() -> i32 {
+    let mut ch: Channel_i64 = channel_i64_new(2)
+    let mut v: i64 = 0
+    if !channel_i64_send(&ch, 42) {
+        return 1
+    }
+    if !channel_i64_recv(&ch, &v) {
+        return 2
+    }
+    if v != 42 {
+        return 3
+    }
+    channel_i64_close(&ch)
+    channel_i64_destroy(&ch)
+    return 0
+}

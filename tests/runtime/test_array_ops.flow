@@ -1,0 +1,18 @@
+# Compiler-suite runtime: array read/write + sum
+
+function main() -> i32 {
+    let mut xs: array<i32, 5> = [1, 2, 3, 4, 5]
+    if xs[0] != 1 { return 1 }
+    if xs[4] != 5 { return 2 }
+
+    xs[2] = 30
+    if xs[2] != 30 { return 3 }
+
+    let mut s: i32 = 0
+    for i in 0 to 5 {
+        s = s + xs[i]
+    }
+    # 1+2+30+4+5 = 42
+    if s != 42 { return 4 }
+    return 0
+}
