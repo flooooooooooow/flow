@@ -1,0 +1,36 @@
+# Flow-native language test: integer arithmetic.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[arith]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function main() -> i32 {
+    let a: i32 = 40
+    let b: i32 = 2
+    if a + b != 42 {
+        return 1
+    }
+    if 10 - 4 != 6 {
+        return 2
+    }
+    if 6 * 7 != 42 {
+        return 3
+    }
+    if 20 / 4 != 5 {
+        return 4
+    }
+    if 17 % 5 != 2 {
+        return 5
+    }
+    # Precedence: 2 + (3 * 4), never (2 + 3) * 4.
+    if 2 + 3 * 4 != 14 {
+        return 6
+    }
+    if (2 + 3) * 4 != 20 {
+        return 7
+    }
+    let neg: i32 = -5
+    if 10 + neg != 5 {
+        return 8
+    }
+    return 0
+}
