@@ -701,6 +701,12 @@ export function flm_prob_at(t: i32, j: i32) -> f32 {
     return a_prob[t * flm_v + j]
 }
 
+# Raw logit for token `j` at position `t` (post-forward). Sampling needs these
+# rather than the probabilities, so temperature can be applied before softmax.
+export function flm_logit_at(t: i32, j: i32) -> f32 {
+    return a_logit[t * flm_v + j]
+}
+
 # ---------------------------------------------------------------------------
 # Backward
 # ---------------------------------------------------------------------------
