@@ -927,6 +927,9 @@ class CGenerator:
             # Dual arithmetic promotes to Dual (pattern-adoption #161).
             if left.name == "Dual" or right.name == "Dual":
                 return Type("Dual")
+            # Tensor element-wise / scale (#161).
+            if left.name == "Tensor" or right.name == "Tensor":
+                return Type("Tensor")
             if left.name == "f64" or right.name == "f64":
                 return Type("f64")
             if left.name == "f32" or right.name == "f32":
@@ -2208,6 +2211,40 @@ class CGenerator:
                     return self._gen_expr(
                         FunctionCall(dual_binop[e.operator], [e.left, e.right])
                     )
+                # Tensor element-wise (#161): a * b -> tensor_mul(a, b).
+                # Tensor * f32 / f32 * Tensor -> tensor_scale; Tensor + f32 ->
+                # tensor_add_scalar. Matmul stays tensor_matmul(...).
+                if (left_t and left_t.name == "Tensor") or (
+                    right_t and right_t.name == "Tensor"
+                ):
+                    tensor_binop = {
+                        "+": "tensor_add",
+                        "-": "tensor_sub",
+                        "*": "tensor_mul",
+                        "/": "tensor_div",
+                    }
+                    if left_t and right_t and left_t.name == "Tensor" and right_t.name == "Tensor":
+                        return self._gen_expr(
+                            FunctionCall(tensor_binop[e.operator], [e.left, e.right])
+                        )
+                    if e.operator == "*" and left_t and right_t:
+                        if left_t.name == "Tensor":
+                            return self._gen_expr(
+                                FunctionCall("tensor_scale", [e.left, e.right])
+                            )
+                        if right_t.name == "Tensor":
+                            return self._gen_expr(
+                                FunctionCall("tensor_scale", [e.right, e.left])
+                            )
+                    if e.operator == "+" and left_t and right_t:
+                        if left_t.name == "Tensor":
+                            return self._gen_expr(
+                                FunctionCall("tensor_add_scalar", [e.left, e.right])
+                            )
+                        if right_t.name == "Tensor":
+                            return self._gen_expr(
+                                FunctionCall("tensor_add_scalar", [e.right, e.left])
+                            )
 
             left_expr = self._gen_expr(e.left)
             right_expr = self._gen_expr(e.right)

@@ -173,6 +173,9 @@ class OverloadResolver:
             # Dual arithmetic promotes to Dual (pattern-adoption #161).
             if left_type == "Dual" or right_type == "Dual":
                 return "Dual"
+            # Tensor element-wise / scale (#161).
+            if left_type == "Tensor" or right_type == "Tensor":
+                return "Tensor"
             # Arithmetic with float promotes to float
             if left_type == "f32" or right_type == "f32":
                 return "f32"

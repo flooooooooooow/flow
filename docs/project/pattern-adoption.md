@@ -25,7 +25,7 @@ story. Adoption first; new sugar second.
 | P1 | Owned `HttpResponse` + JSON decode helpers | API ✅ | [#167](https://github.com/flooooooooooow/flow/issues/167) |
 | P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ | [#162](https://github.com/flooooooooooow/flow/issues/162) |
 | P2 | Field / `laplacian` PDE surface | language ✅ | [#163](https://github.com/flooooooooooow/flow/issues/163) |
-| P2 | Dual + Tensor operators + mutable params | language ✅ partial | [#161](https://github.com/flooooooooooow/flow/issues/161) |
+| P2 | Dual + Tensor operators + mutable params | language ✅ | [#161](https://github.com/flooooooooooow/flow/issues/161) |
 | P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering ✅ | [#160](https://github.com/flooooooooooow/flow/issues/160) |
 
 ---
@@ -232,15 +232,20 @@ overloads (`mul`/`add`/…) in the C generator + typechecker. Demo:
 **Also shipped:** `nn.flow` `param_set` / `_step` use mut field assignment
 instead of full-struct rebuilds.
 
-**Still open:** Tensor operators; compiler `loss.grad`.
+**Shipped (Tensor ops):** element-wise `+ - * /` and `t * s` / `t + s`
+lower to `tensor_*` helpers. Demo: `examples/ml/autodiff/tensor_ops.flow`.
+Matmul stays `tensor_matmul`.
+
+**Still open:** compiler `loss.grad` (optional follow-on).
 
 ```flow
 let y: Dual = sin(a * a + b)   # shipped
 let mut n: Net2x2x1 = net
 n.w00 = n.w00 - lr * g.dw00    # shipped
+let z: Tensor = a * b + 1.0    # shipped (element-wise / add_scalar)
 ```
 
----
+**Exit:** AD / NN / Tensor call sites look like math ✅. `loss.grad` card open.
 
 ### 10. Closed-loop `plant.step`
 
