@@ -93,7 +93,7 @@ export function ui_flush() -> void {
 }
 
 export function ui_print_spaces(n: i32) -> void {
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < n {
         print(" ")
         i = i + 1
@@ -108,7 +108,7 @@ export function ui_read_char() -> i32 {
 
 export function ui_read_non_newline_char() -> i32 {
     # Returns first non-newline / non-carriage-return character.
-    let c: i32 = ui_read_char()
+    let mut c: i32 = ui_read_char()
     while c == 10 || c == 13 {  # '\n' or '\r'
         c = ui_read_char()
     }
@@ -117,7 +117,7 @@ export function ui_read_non_newline_char() -> i32 {
 
 export function ui_consume_line() -> void {
     # Drain stdin until newline so simple line-buffered inputs feel less clunky.
-    let c: i32 = ui_read_char()
+    let mut c: i32 = ui_read_char()
     while c != 10 && c != -1 {
         c = ui_read_char()
     }

@@ -32,7 +32,7 @@ function do_logging() -> i32 {
 }
 
 function test_effect_handler() -> bool {
-    let result: i32 = 0
+    let mut result: i32 = 0
     handle Log with ConsoleLogger {
         result = do_logging()
     }
@@ -40,7 +40,7 @@ function test_effect_handler() -> bool {
 }
 
 function test_null_logger() -> bool {
-    let result: i32 = 0
+    let mut result: i32 = 0
     handle Log with NullLogger {
         result = do_logging()
     }
@@ -48,8 +48,8 @@ function test_null_logger() -> bool {
 }
 
 function test_nested_handlers() -> bool {
-    let outer_result: i32 = 0
-    let inner_result: i32 = 0
+    let mut outer_result: i32 = 0
+    let mut inner_result: i32 = 0
     
     handle Log with ConsoleLogger {
         Log.emit("Outer scope")

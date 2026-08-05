@@ -61,7 +61,7 @@ def demo_wasm_build():
     # Create demo WebAssembly examples
     print("\n📋 Step 2: Creating WebAssembly demo files...")
     
-    demo_dir = Path("wasm_demo")
+    demo_dir = Path(__file__).parent / "wasm_examples"
     demo_dir.mkdir(exist_ok=True)
     
     # Create mock WebAssembly files for demonstration

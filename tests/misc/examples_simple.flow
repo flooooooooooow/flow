@@ -16,8 +16,8 @@ function factorial(n: i32) -> i32 {
 
 # Array processing with individual variables
 function sum_array() -> i32 {
-    let sum: i32 = 0
-    let i: i32 = 0
+    let mut sum: i32 = 0
+    let mut i: i32 = 0
     
     while i < 10 {
         sum = sum + i  # Sum indices 0-9
@@ -29,7 +29,7 @@ function sum_array() -> i32 {
 
 # For loop example
 function process_data() -> i32 {
-    let total: i32 = 0
+    let mut total: i32 = 0
     
     for i in 0..100 {
         total = total + i
@@ -51,8 +51,8 @@ function max(a: i32, b: i32) -> i32 {
 function main() -> i32 {
     let result: i32 = add(10, 20)
     let fact: i32 = factorial(5)
-    let sum: i32 = sum_array()
-    let total: i32 = process_data()
+    let mut sum: i32 = sum_array()
+    let mut total: i32 = process_data()
     let maximum: i32 = max(15, 25)
     
     return result + fact + sum + total + maximum

@@ -1,6 +1,10 @@
 # FLOW Standard Library Reference
 
-Complete API reference for all standard library modules.
+Core API reference for commonly used standard library modules.
+There are ~48 top-level modules under `lib/stdlib/` (plus audio/, ui/, …);
+this page covers the subset below. See also [memory.md](memory.md),
+[gpu-memory.md](gpu-memory.md), [autodiff.md](autodiff.md),
+[rt-safety.md](rt-safety.md), and [async-effects.md](../language/async-effects.md).
 
 ## Table of Contents
 
@@ -12,55 +16,51 @@ Complete API reference for all standard library modules.
 6. [posix.flow](#posixflow)
 7. [net.flow](#netflow)
 8. [concurrent.flow](#concurrentflow)
-9. [autodiff.flow](#autodiffflow)
+9. [async.flow](#asyncflow)
+10. [autodiff.flow](#autodiffflow)
 
 ---
 
 ## math.flow
 
-Mathematical functions.
+Mathematical helpers in `lib/stdlib/math.flow` (mostly **`f32`**).
+Bare C `math.h` names (`sin`, `cos`, `floor`, …) are also available via the
+C backend as FFI/passthrough — those are **not** the same as the Flow exports
+below.
 
-### Trigonometric
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `sin` | `(f64) -> f64` | Sine |
-| `cos` | `(f64) -> f64` | Cosine |
-| `tan` | `(f64) -> f64` | Tangent |
-| `asin` | `(f64) -> f64` | Arc sine |
-| `acos` | `(f64) -> f64` | Arc cosine |
-| `atan` | `(f64) -> f64` | Arc tangent |
-| `atan2` | `(f64, f64) -> f64` | Two-argument arc tangent |
-
-### Exponential & Logarithmic
+### Arithmetic
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `exp` | `(f64) -> f64` | e^x |
-| `log` | `(f64) -> f64` | Natural logarithm |
-| `log10` | `(f64) -> f64` | Base-10 logarithm |
-| `log2` | `(f64) -> f64` | Base-2 logarithm |
-| `pow` | `(f64, f64) -> f64` | Power (x^y) |
+| `add` / `subtract` / `multiply` / `divide` | `(f32, f32) -> f32` | Basic ops |
+| `power` | `(f32, f32) -> f32` | Integer-ish power via loop |
+| `abs` / `fabs` | `(f32) -> f32` | Absolute value |
 
-### Other
+### Trig / exp / log / root
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `sqrt` | `(f64) -> f64` | Square root |
-| `abs` | `(f64) -> f64` | Absolute value |
-| `floor` | `(f64) -> f64` | Floor |
-| `ceil` | `(f64) -> f64` | Ceiling |
-| `round` | `(f64) -> f64` | Round to nearest |
-| `min` | `(f64, f64) -> f64` | Minimum |
-| `max` | `(f64, f64) -> f64` | Maximum |
+| `sin` / `cos` / `tan` | `(f32) -> f32` | Trig (`sin`/`cos` are MLIR intrinsics / C-backed) |
+| `sqrt` | `(f32) -> f32` | Square root |
+| `log` | `(f32) -> f32` | Natural log (Newton) |
+| `exp` | `(f32) -> f32` | e^x (Taylor) |
+
+### Integer helpers
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `fibonacci` | `(i32) -> i32` | Fibonacci |
+| `gcd` / `lcm` | `(i32, i32) -> i32` | GCD / LCM |
+| `is_prime` | `(i32) -> bool` | Primality |
+| `factorial_big` | `(i32) -> i64` | Factorial |
 
 ### Constants
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `PI` | 3.14159... | π |
-| `E` | 2.71828... | Euler's number |
-| `TAU` | 6.28318... | 2π |
+| Constant | Type | Description |
+|----------|------|-------------|
+| `PI` | `f32` | π |
+| `E` | `f32` | Euler's number |
+| `GOLDEN_RATIO` | `f32` | φ |
 
 ---
 
@@ -395,7 +395,8 @@ const SOCK_DGRAM: i32 = 2
 
 ## concurrent.flow
 
-Concurrency primitives.
+POSIX-style concurrency primitives (`lib/stdlib/concurrent.flow`). See
+[concurrency-vs-go.md](../language/concurrency-vs-go.md).
 
 ### Thread
 
@@ -403,41 +404,30 @@ Concurrency primitives.
 struct Thread { id: i64, running: bool }
 ```
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `thread_new` | `() -> Thread` | Create thread |
-| `thread_is_running` | `(Thread) -> bool` | Check running |
+| Function | Description |
+|----------|-------------|
+| `thread_new` / `thread_spawn` / `thread_join` / `thread_is_running` | OS threads via `flow_thread_*` |
 
-### Mutex
+### Mutex / CondVar / RwLock
 
-```flow
-struct Mutex { locked: bool, owner: i64 }
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `mutex_new` | `() -> Mutex` | Create mutex |
-| `mutex_is_locked` | `(Mutex) -> bool` | Check locked |
+| Function | Description |
+|----------|-------------|
+| `mutex_new` / `bind` / `lock` / `unlock` / `trylock` / `destroy` | pthread mutex |
+| `condvar_new` / `bind` / `wait` / `signal` / `broadcast` / `destroy` | condition variable |
+| `rwlock_new` / `bind` / `rdlock` / `wrlock` / `unlock` / `destroy` | reader/writer lock |
 
 ### Channel_i32
 
-```flow
-struct Channel_i32 {
-    buffer: ptr<i32>,
-    capacity: i32,
-    size: i32,
-    head: i32,
-    tail: i32,
-    closed: bool
-}
-```
+Go-style buffered channel (pthread mutex + condvars). Fiber channels used by
+benches live in `runtime/flow_fiber.c` and are **not** exported here.
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `channel_i32_new` | `(i32) -> Channel_i32` | Create channel |
-| `channel_i32_is_empty` | `(Channel_i32) -> bool` | Check empty |
-| `channel_i32_is_full` | `(Channel_i32) -> bool` | Check full |
-| `channel_i32_is_closed` | `(Channel_i32) -> bool` | Check closed |
+| Function | Description |
+|----------|-------------|
+| `channel_i32_new` / `bind` | Create / lazy-bind |
+| `channel_i32_send` / `try_send` / `recv` / `try_recv` | Blocking / non-blocking |
+| `channel_i32_close` / `destroy` | Close / free buffer |
+| `channel_i32_len` / `is_empty` / `is_full` / `is_closed` | Queries |
+| `channel_i32_select2_try` / `channel_i32_select2` | Two-way select (0/1/-1) |
 
 ### Atomics
 
@@ -447,49 +437,77 @@ struct AtomicI64 { value: i64 }
 struct AtomicBool { value: bool }
 ```
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `atomic_i32_new` | `(i32) -> AtomicI32` | Create atomic |
-| `atomic_i64_new` | `(i64) -> AtomicI64` | Create atomic |
-| `atomic_bool_new` | `(bool) -> AtomicBool` | Create atomic |
+| Function | Description |
+|----------|-------------|
+| `atomic_i32_new` / `load` / `store` (+ i64 / bool) | Create + ordered access |
+| `MEMORY_ORDER_RELAXED` … `MEMORY_ORDER_SEQ_CST` | Order constants |
 
 ### Synchronization
 
-```flow
-struct WaitGroup { count: i32 }
-struct SpinLock { locked: bool }
-struct Once { done: bool }
-```
+| Function | Description |
+|----------|-------------|
+| `waitgroup_add` / `done` / `wait` / `count` | Go-style WaitGroup (condvar wait) |
+| `once_new` / `bind` / `once_call_begin` / `once_call_end` / `once_is_done` | Run-once init |
+| `spinlock_new` / `lock` / `unlock` / `is_locked` | Busy-wait lock |
+| `semaphore_new` / `bind` / `wait` / `post` / `count` | Blocking semaphore |
+
+---
+
+## async.flow
+
+Algebraic-effect async surface (`lib/stdlib/async.flow`). Full honesty notes:
+[async-effects.md](../language/async-effects.md).
+
+### Effects
+
+| Effect | Ops |
+|--------|-----|
+| `Async` | `delay(ms)`, `spawn(task_id)`, `join(task_id) -> i32` |
+| `AsyncIO` | `poll_read` / `poll_write` / `sleep_ms` |
+| `TcpEffect` + `BlockingTcp` | `connect` / `send` / `recv` via `runtime/flow_tcp.c` |
+
+### Capabilities
+
+| Capability | Backend |
+|------------|---------|
+| `SimulatedAsync` | Deterministic sync stand-in (`join` → `id * 10`) |
+| `ThreadedAsync` | OS threads (`runtime/flow_concurrency.c`) |
+| `FiberAsync` | M:N cooperative fibers (`runtime/flow_fiber.c` + asm fctx) |
+| `BlockingAsyncIO` | `usleep`; poll stubs return ready |
+| `NetpollAsyncIO` | Real kqueue (Darwin) / epoll (Linux) |
+
+### Helpers
+
+| Function | Description |
+|----------|-------------|
+| `async_delay` / `async_spawn` / `async_join` | Thin `Async.*` wrappers |
+| `async_sleep_ms` / `async_poll_read` | Thin `AsyncIO.*` wrappers |
+| `async_set_maxprocs(n)` / `async_maxprocs()` | Fiber worker count (`FLOW_MAXPROCS`; `< 1` clamps to 1) |
 
 ---
 
 ## autodiff.flow
 
-Automatic differentiation.
+Automatic differentiation library (`lib/stdlib/autodiff.flow`).
+**Library AD, not a compiler pass** — see [autodiff.md](autodiff.md).
 
 ### Dual Numbers
 
 ```flow
-struct Dual { val: f64, grad: f64 }
+struct Dual { val: f32, grad: f32 }
 ```
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `dual` | `(f64, f64) -> Dual` | Create dual number |
-| `dual_add` | `(Dual, Dual) -> Dual` | Add |
-| `dual_sub` | `(Dual, Dual) -> Dual` | Subtract |
-| `dual_mul` | `(Dual, Dual) -> Dual` | Multiply |
-| `dual_div` | `(Dual, Dual) -> Dual` | Divide |
-| `dual_sin` | `(Dual) -> Dual` | Sine |
-| `dual_cos` | `(Dual) -> Dual` | Cosine |
-| `dual_exp` | `(Dual) -> Dual` | Exponential |
-| `dual_log` | `(Dual) -> Dual` | Natural log |
-| `dual_sigmoid` | `(Dual) -> Dual` | Sigmoid |
-| `dual_tanh` | `(Dual) -> Dual` | Hyperbolic tangent |
+| `dual_var` | `(f32) -> Dual` | Variable (grad = 1) |
+| `dual_const` / `d` | `(f32) -> Dual` | Constant (grad = 0) |
+| `dx` | `(f32) -> Dual` | Alias of `dual_var` |
+| `dual_add` / `sub` / `mul` / `div` | `(Dual, Dual) -> Dual` | Arithmetic |
+| `dual_pow` / `dual_sq` / `dual_sqrt` | | Powers / roots |
+| `dual_sin` / `cos` / `tan` / `exp` / `log` | `(Dual) -> Dual` | Elementary |
+| `dual_relu` / `dual_sigmoid` / `dual_tanh` | `(Dual) -> Dual` | Activations |
+| `dual_val` / `dual_grad` | `(Dual) -> f32` | Accessors |
 
-### Helpers
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `get_val` | `(Dual) -> f64` | Get value |
-| `get_grad` | `(Dual) -> f64` | Get gradient |
+Overloaded `add` / `sub` / `mul` / `neg` and helpers (`sigmoid`, `ln`, …)
+are also exported — see the source for the full list. GPU elementwise
+backward kernels: `lib/stdlib/gpu_gradients.flow`.
