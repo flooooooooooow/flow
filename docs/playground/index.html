@@ -1119,6 +1119,13 @@ function main() -> i32 {
 
             window.requestAnimationFrame(() => {
                 const result = FlowCompile.run(editor.value);
+                if (result.unsupported) {
+                    outputEl.className = 'output-content';
+                    outputEl.textContent = result.error;
+                    statusDot.className = 'status-dot';
+                    statusText.textContent = 'Native only';
+                    return;
+                }
                 if (!result.ok) {
                     outputEl.className = 'output-content error';
                     outputEl.textContent =
@@ -1135,7 +1142,7 @@ function main() -> i32 {
                 outputEl.className = 'output-content success';
                 outputEl.textContent = banner + (result.output || '(no output)\n');
                 statusDot.className = 'status-dot success';
-                statusText.textContent = 'Ran (browser)';
+                statusText.textContent = 'Exited ' + result.exitCode;
             });
         }
 
