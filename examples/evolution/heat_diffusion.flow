@@ -1,11 +1,6 @@
 # HEAT DIFFUSION — fields evolve too (VISION.md, scientific computing pillar).
-# Uses stdlib laplacian / heat_euler_step_1d (#163) instead of nested index soup.
-# A 1D rod of 32 cells obeying T' = alpha * d2T/dx2 with fixed-temperature ends,
-# explicit Euler at r = alpha dt / dx^2 = 0.4 (stable: r <= 0.5).
-#
-# North-star grammar (follow-on — not shipped):
-#     T evolves as alpha * laplacian(T)
-#     boundary T { left = ambient  right = ambient }
+# North-star `field` / `boundary` / `evolves as laplacian` (#163) lowers to
+# T_field_step → heat_euler_step_1d. Explicit Euler at r = 0.4 (stable: r <= 0.5).
 #
 # Run: ./flow run examples/evolution/heat_diffusion.flow
 
@@ -21,6 +16,10 @@ const AMBIENT: f64 = 20.0
 const PEAK: f64 = 100.0
 const R: f64 = 0.4
 const DX: f64 = 1.0
+
+field T : f64[32] on Line
+T evolves as laplacian(T)
+boundary T { left = AMBIENT  right = AMBIENT }
 
 function heat_char(temp: f64) -> string {
     let mut x: f64 = (temp - AMBIENT) / (PEAK - AMBIENT)
@@ -78,7 +77,7 @@ function main() -> i32 {
     }
 
     println("")
-    println("  HEAT DIFFUSION  --  T' = alpha * laplacian(T) via stdlib/dynamics/pde.flow")
+    println("  HEAT DIFFUSION  --  field T evolves as laplacian(T)")
     println("  ==========================================================================")
     println("")
     print("  r = alpha*dt/dx^2 = ")
@@ -98,7 +97,7 @@ function main() -> i32 {
     render_frame(0.0, temp)
     for frame in 1 to frames + 1 {
         for s in 0 to steps_per_frame {
-            heat_euler_step_1d(temp, next, N, R, AMBIENT, AMBIENT)
+            T_field_step(temp, next, R)
             field_copy_1d(next, temp, N)
             for i in 0 to N {
                 if temp[i] != temp[i] {
@@ -149,6 +148,6 @@ function main() -> i32 {
         println("    FAIL: hot spot did not cool below 50 C")
         return 4
     }
-    println("    OK: field diffused via laplacian_1d / heat_euler_step_1d")
+    println("    OK: field T / boundary / T_field_step")
     return 0
 }
