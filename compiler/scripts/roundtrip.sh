@@ -625,6 +625,43 @@ if ! grep -Fq '(int32_t)(z)' compiler/build/stage_a_float.c; then
     exit 1
 fi
 
+# match statement — after frontend rebuild so the Stage-A driver can parse it.
+# Arms: int literals (incl. negative), `_` wildcard, binding ident catch-all.
+run_case stage_a_match 42
+if ! grep -Fq 'int32_t __flowc_match = v;' compiler/build/stage_a_match.c; then
+    echo "FAIL stage_a_match: expected scrutinee temp __flowc_match" >&2
+    exit 1
+fi
+if ! grep -Fq '} else if (__flowc_match == -1) {' compiler/build/stage_a_match.c; then
+    echo "FAIL stage_a_match: expected else-if chain with negative literal" >&2
+    exit 1
+fi
+if ! grep -Fq 'int32_t other = __flowc_match;' compiler/build/stage_a_match.c; then
+    echo "FAIL stage_a_match: expected binding arm decl" >&2
+    exit 1
+fi
+# Unsupported pattern forms (struct patterns) must be rejected with a message.
+rm -f compiler/build/match_unsupported.c
+set +e
+FLOWC_FORCE_HOST=1 stage_a_emit \
+    compiler/fixtures/match_unsupported.flow \
+    compiler/build/match_unsupported.c \
+    >compiler/build/match_unsupported.log 2>&1
+match_bad_rc=$?
+set -e
+echo "match_unsupported emit rc=$match_bad_rc"
+test "$match_bad_rc" -ne 0
+if [[ -f compiler/build/match_unsupported.c ]]; then
+    echo "FAIL stage_a_match: unsupported-pattern fixture should not write C" >&2
+    exit 1
+fi
+if ! grep -Fq 'struct patterns not supported in Stage-A match' compiler/build/match_unsupported.log; then
+    echo "FAIL stage_a_match: expected unsupported-pattern diagnostic" >&2
+    cat compiler/build/match_unsupported.log >&2
+    exit 1
+fi
+echo "PASS stage_a_match fixtures"
+
 # Mini self-host: prefer Flow driver CLI when present (built above); C driver
 # fallback. Ends with stage_a_driver_flow_self (Flow driver + self frontend).
 ./compiler/scripts/stage_a_self_emit.sh
