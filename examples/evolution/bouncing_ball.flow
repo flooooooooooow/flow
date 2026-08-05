@@ -1,23 +1,8 @@
-# BOUNCING BALL — the hybrid-systems pillar of the Flow vision (VISION.md).
-# Continuous evolution (ballistic flight under gravity) punctuated by discrete
-# events (impact): when the height crosses zero the integrator solves for the
-# exact impact instant inside the step, then applies the restitution reset
-# velocity := -0.8 * velocity. Every bounce is logged and compared against the
-# closed-form prediction, and the program verifies that the ball settles.
-#
-# North-star (VISION.md) — one day this same system reads:
-#
-#     flow Ball {
-#         height   : Meter
-#         velocity : Meter / Second
-#
-#         height evolves as velocity
-#         velocity evolves as -gravity
-#
-#         when height reaches 0 {
-#             velocity becomes -0.8 * velocity
-#         }
-#     }
+# BOUNCING BALL (pedagogical) — hand event location + restitution.
+# Prefer the declarative hybrid form:
+#   examples/evolution/bouncing_ball_evolves.flow   (when height reaches 0)
+# This file keeps the exact-impact quadratic solve so you can compare against
+# the O(dt) zero-crossing `when` lowering.
 #
 # Run: ./flow run examples/evolution/bouncing_ball.flow
 

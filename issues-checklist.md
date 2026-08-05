@@ -118,12 +118,12 @@
 - [ ] #126 [roadmap:constant-propagation] Constant propagation https://github.com/flooooooooooow/flow/issues/126
 - [ ] #127 [roadmap:debugger] Debugger https://github.com/flooooooooooow/flow/issues/127
 - [ ] #128 [roadmap:self-hosting-components] Self-hosting components https://github.com/flooooooooooow/flow/issues/128
-- [ ] #159 [roadmap:canonicalize-evolution-demos-onto-flow-evolves] Canonicalize evolution demos onto flow/evolves https://github.com/flooooooooooow/flow/issues/159
+- [x] #159 [roadmap:canonicalize-evolution-demos-onto-flow-evolves] Canonicalize evolution demos onto flow/evolves https://github.com/flooooooooooow/flow/issues/159
 - [ ] #160 [roadmap:closed-loop-plant-step-from-dsys-connect] Closed-loop plant.step from dsys/connect https://github.com/flooooooooooow/flow/issues/160
 - [ ] #161 [roadmap:dual-tensor-operators-mutable-params] Dual + Tensor operators + mutable params https://github.com/flooooooooooow/flow/issues/161
 - [ ] #162 [roadmap:dynamics-dsl-lqr-beyond-n-2] Dynamics DSL / LQR beyond n=2 https://github.com/flooooooooooow/flow/issues/162
 - [ ] #163 [roadmap:field-laplacian-pde-surface] Field / laplacian PDE surface https://github.com/flooooooooooow/flow/issues/163
-- [ ] #164 [roadmap:gfx-run-frame-helper] gfx_run frame helper https://github.com/flooooooooooow/flow/issues/164
+- [x] #164 [roadmap:gfx-run-frame-helper] gfx_run frame helper https://github.com/flooooooooooow/flow/issues/164
 - [ ] #165 [roadmap:lorenz-as-flow-represent-phase-portrait] Lorenz as flow + represent phase_portrait https://github.com/flooooooooooow/flow/issues/165
 - [ ] #166 [roadmap:mlir-opt-pass-flags] MLIR opt pass flags https://github.com/flooooooooooow/flow/issues/166
 - [ ] #167 [roadmap:owned-httpresponse-json-decode-helpers] Owned HttpResponse + JSON decode helpers https://github.com/flooooooooooow/flow/issues/167
