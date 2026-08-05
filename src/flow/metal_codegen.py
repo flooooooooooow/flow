@@ -232,10 +232,14 @@ class MetalCodegen:
         """Generate for loop."""
         lines = []
         var = stmt.variable
-        start = self.generate_expression(stmt.start)
-        end = self.generate_expression(stmt.end)
-        
-        lines.append(f"{self.indent()}for (int {var} = {start}; {var} < {end}; {var}++) {{")
+        start = self.generate_expression(stmt.range_start)
+        end = self.generate_expression(stmt.range_end)
+
+        if stmt.step is not None:
+            step = self.generate_expression(stmt.step)
+            lines.append(f"{self.indent()}for (int {var} = {start}; {var} < {end}; {var} += {step}) {{")
+        else:
+            lines.append(f"{self.indent()}for (int {var} = {start}; {var} < {end}; {var}++) {{")
         
         self.indent_level += 1
         lines.extend(self.generate_block(stmt.body))
