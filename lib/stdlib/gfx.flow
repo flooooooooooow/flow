@@ -1,7 +1,12 @@
-# gfx: explicit native graphics API (macOS backend)
+# gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)
 #
-# This is an explicit, minimal API designed for games/demos.
-# Backend implementation: `runtime/gfx_macos.m`
+# Backend: runtime/gfx_macos.m, runtime/gfx_linux.c, runtime/gfx_windows.c
+#
+# Frame loop helpers (#164):
+#   gfx_frame_pump(g)  — poll + Esc/close; return false to quit
+#   gfx_run(g, n)      — C loop calling user `flow_gfx_frame(ctx, frame) -> i32`
+#                        (1 = continue, 0 = quit). Define that symbol in your
+#                        program when using gfx_run.
 
 struct Gfx {
     ctx: ptr<void>
@@ -27,6 +32,7 @@ extern { function flow_gfx_key_down(ctx: ptr<void>, keycode: i32) -> i32 }
 extern { function flow_gfx_clear(ctx: ptr<void>, r: u8, g: u8, b: u8) -> void }
 extern { function flow_gfx_fill_rect(ctx: ptr<void>, x: i32, y: i32, w: i32, h: i32, r: u8, g: u8, b: u8) -> void }
 extern { function flow_gfx_present(ctx: ptr<void>) -> void }
+extern { function flow_gfx_run(ctx: ptr<void>, max_frames: i32) -> i32 }
 
 export function gfx_open(w: i32, h: i32, title: string) -> Gfx {
     return Gfx { ctx: flow_gfx_init(w, h, title) }
@@ -60,3 +66,20 @@ export function gfx_present(g: Gfx) -> void {
     flow_gfx_present(g.ctx)
 }
 
+# Poll events; return false if the window should close or Esc is down.
+export function gfx_frame_pump(g: Gfx) -> bool {
+    gfx_poll(g)
+    if gfx_should_close(g) {
+        return false
+    }
+    if gfx_key_down(g, KEY_ESC) {
+        return false
+    }
+    return true
+}
+
+# Run up to max_frames, calling user-defined flow_gfx_frame(ctx, frame) each
+# tick. Returns the number of frames completed. Requires linking the gfx runtime.
+export function gfx_run(g: Gfx, max_frames: i32) -> i32 {
+    return flow_gfx_run(g.ctx, max_frames)
+}

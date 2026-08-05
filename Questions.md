@@ -22,9 +22,10 @@ to kill the repeated poll/esc/clear/present loop in every gfx demo. Two sketches
 2. Block sugar — `gfx_run(g, max_frames: N) { … }` (nicer; needs parser/lowering).
 3. Both — A now, B later when frame blocks exist.
 
-**Recommendation:** Option 3 (ship A immediately; B only if demos still feel heavy).
+**Recommendation:** Option 3 (shipped MVP): `gfx_frame_pump` for inline loops;
+`flow_gfx_run` / `gfx_run` calling weak-overridable `flow_gfx_frame`. Block sugar deferred.
 
-**Status:** 🔲 Pending
+**Status:** ✅ Resolved (Option 3 MVP 2026-08-05)
 
 ---
 
@@ -38,9 +39,9 @@ inside a `flow`. We already have `represent linear`.
 2. Stdlib-only `portrait_trail_*` helpers; keep `represent` for linear/analysis.
 3. Hybrid — stdlib trail now; grammar sugar later that expands to helpers.
 
-**Recommendation:** Option 3 — get Lorenz under 60 lines without blocking on gfx DSL.
+**Recommendation:** Option 3 — Lorenz now uses `flow` + trail in `main`; grammar sugar later.
 
-**Status:** 🔲 Pending
+**Status:** ✅ Resolved for MVP (stdlib trail helpers / grammar still open as follow-on)
 
 ---
 
