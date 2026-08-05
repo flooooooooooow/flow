@@ -284,21 +284,36 @@ export function mul(a: f32, b: Dual) -> Dual {
 
 # --- div: Division ---
 
-# Dual÷Dual division (quotient rule); named ddiv to avoid C div.
-export function ddiv(a: Dual, b: Dual) -> Dual {
+# Dual÷Dual division (quotient rule). Prefer this name for operator `/` sugar.
+export function div(a: Dual, b: Dual) -> Dual {
     let b_sq: f32 = b.val * b.val
     return Dual { val: a.val / b.val, grad: (a.grad * b.val - a.val * b.grad) / b_sq }
 }
 
-# Divide Dual by scalar; named divs to avoid C div conflict.
-export function divs(a: Dual, b: f32) -> Dual {
+# Dual÷Dual division (quotient rule); legacy name ddiv.
+export function ddiv(a: Dual, b: Dual) -> Dual {
+    return div(a, b)
+}
+
+# Divide Dual by scalar.
+export function div(a: Dual, b: f32) -> Dual {
     return Dual { val: a.val / b, grad: a.grad / b }
 }
 
+# Divide Dual by scalar; named divs to avoid C div conflict historically.
+export function divs(a: Dual, b: f32) -> Dual {
+    return div(a, b)
+}
+
 # Divide scalar by Dual (reciprocal-style quotient rule).
-export function rdiv(a: f32, b: Dual) -> Dual {
+export function div(a: f32, b: Dual) -> Dual {
     let b_sq: f32 = b.val * b.val
     return Dual { val: a / b.val, grad: -a * b.grad / b_sq }
+}
+
+# Divide scalar by Dual; legacy name rdiv.
+export function rdiv(a: f32, b: Dual) -> Dual {
+    return div(a, b)
 }
 
 # --- Legacy aliases (for backwards compatibility) ---
