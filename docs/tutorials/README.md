@@ -28,6 +28,7 @@ Step-by-step tracks with **browser compile & run** on every complete `main` exam
 | [audio-basics.md](audio-basics.md) | Sample / DSP loops |
 | [advanced.md](advanced.md) | Effects deep-dive |
 | [dynamics.md](dynamics.md) | Control / `dsys` path |
+| [game-ai.md](game-ai.md) | Training game AIs: Q-learning, GA, policy gradients |
 | [projects.md](projects.md) | Mini projects |
 
 ## Learning paths

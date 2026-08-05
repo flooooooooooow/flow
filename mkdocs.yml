@@ -61,6 +61,7 @@ nav:
     - Intermediate: tutorials/intermediate.md
     - Advanced: tutorials/advanced.md
     - Dynamics: tutorials/dynamics.md
+    - Game AI: tutorials/game-ai.md
   - Documentation:
     - Wiki Strategy: wiki-strategy.md
     - Wiki Roadmap: wiki-roadmap.md
