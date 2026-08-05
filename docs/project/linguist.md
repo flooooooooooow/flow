@@ -18,6 +18,27 @@ stop treating this repo as “mostly Python”.
 libdefs (`foo.js.flow`), not this language. Any Linguist PR **must** ship a
 heuristic (and samples for both sides if they keep sharing `.flow`).
 
+## Decision (2026-08-05): wait, prepare, then one PR
+
+Linguist closes PRs below the usage threshold: for a shared extension, at
+least 2,000 indexed files in the last year, excluding forks, with spread
+across unrelated users; results dominated by the owner org are filtered out.
+Flow does not clear that bar yet, so no PR now.
+
+While usage grows, keep ready in `docs/project/linguist/`:
+
+1. Two or more representative, licensed Flow samples.
+2. Representative `.js.flow` JavaScript libdefs as the competing corpus.
+3. Heuristic rules keyed to stable syntax (`let mut`, `evolves as`), never
+   repository paths or owner names.
+4. A local cross-validation breakdown showing both corpora classify correctly.
+
+Display name stays **Flow** (canonical project name; no current Flow entry or
+`.flow` extension in `languages.yml`). An alias like `flow-lang` can aid
+selection without changing the displayed name. When the owner-filtered search
+clears 2,000 with real repository diversity, open a single PR: Flow entry plus
+the `.flow` disambiguation heuristic together.
+
 Search snippets to cite (re-run before opening the PR):
 
 ```text
