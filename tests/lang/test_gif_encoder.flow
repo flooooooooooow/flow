@@ -1,0 +1,112 @@
+# Flow-native language test: the stdlib GIF89a encoder (lib/stdlib/gif.flow).
+# Encodes a tiny 8x8 two-frame animation, re-reads the file bytes, and checks
+# the container: "GIF89a" magic, screen dimensions, trailer byte, plausible
+# size, and the palette mapper. Exit 0 on success; a nonzero exit identifies
+# the failing check.
+
+import stdlib.gif { gif_begin, gif_add_frame_rgb, gif_end, gif_map_rgb }
+
+extern {
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fread(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function fclose(f: ptr<void>) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+function fill(buf: ptr<u8>, r: i32, g: i32, b: i32) -> void {
+    let mut i: i32 = 0
+    while i < 64 {
+        buf[i * 3] = r as u8
+        buf[i * 3 + 1] = g as u8
+        buf[i * 3 + 2] = b as u8
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    # Palette mapper: exact corners and a near-gray that the gray ramp wins.
+    if gif_map_rgb(0, 0, 0) != 0 {
+        return 10
+    }
+    if gif_map_rgb(255, 255, 255) != 251 {
+        return 11
+    }
+    if gif_map_rgb(100, 100, 100) != 253 {
+        return 12
+    }
+
+    let path: string = "/tmp/flow_gif_lang_test.gif"
+    if gif_begin(path, 8, 8, 10) != 0 {
+        return 1
+    }
+    # A second begin while open must fail.
+    if gif_begin(path, 8, 8, 10) == 0 {
+        return 2
+    }
+
+    let frame: ptr<u8> = malloc(192) as ptr<u8>
+    if frame == null {
+        return 3
+    }
+    fill(frame, 255, 0, 0)
+    if gif_add_frame_rgb(frame, 8, 8) != 0 {
+        return 4
+    }
+    # Mismatched dimensions must be rejected.
+    if gif_add_frame_rgb(frame, 4, 4) == 0 {
+        return 5
+    }
+    fill(frame, 0, 0, 255)
+    if gif_add_frame_rgb(frame, 8, 8) != 0 {
+        return 6
+    }
+    free(frame as ptr<void>)
+    if gif_end() != 0 {
+        return 7
+    }
+    # End without an open file must fail.
+    if gif_end() == 0 {
+        return 8
+    }
+
+    # Re-read the produced bytes.
+    let f: ptr<void> = fopen(path, "rb")
+    if f == null {
+        return 20
+    }
+    let buf: ptr<u8> = malloc(4096) as ptr<u8>
+    if buf == null {
+        fclose(f)
+        return 21
+    }
+    let n: i64 = fread(buf as ptr<void>, 1, 4096, f)
+    fclose(f)
+
+    # Header + logical screen + 256-entry palette + loop extension is 819
+    # bytes before any frame data; two tiny frames stay well under 2 KB.
+    if n < 830 or n >= 2048 {
+        return 22
+    }
+
+    # Magic: "GIF89a"
+    if buf[0] != 71 or buf[1] != 73 or buf[2] != 70 {
+        return 23
+    }
+    if buf[3] != 56 or buf[4] != 57 or buf[5] != 97 {
+        return 24
+    }
+
+    # Logical screen dimensions: 8 x 8, little-endian u16 pairs.
+    if buf[6] != 8 or buf[7] != 0 or buf[8] != 8 or buf[9] != 0 {
+        return 25
+    }
+
+    # Trailer byte.
+    if buf[n - 1] != 59 {
+        return 26
+    }
+
+    free(buf as ptr<void>)
+    return 0
+}
