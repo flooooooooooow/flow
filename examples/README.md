@@ -82,7 +82,7 @@ One tourist-facing entrypoint per domain. Prefer these when demoing or linking f
 | ML (XOR net) | `examples/ml/models/mlp_xor.flow` | `./flow run examples/ml/models/mlp_xor.flow` |
 | Autodiff / NN | `examples/ml/autodiff/nn_xor.flow` | `./flow run examples/ml/autodiff/nn_xor.flow` |
 | Stats / regression | `examples/stats/regression_gd.flow` | `./flow run examples/stats/regression_gd.flow` |
-| Evolution (flagship) | `examples/evolution/spring_mass_control.flow` | `./flow run examples/evolution/spring_mass_control.flow` |
+| Evolution (flagship) | `examples/evolution/pendulum_evolves.flow` | `./flow run examples/evolution/pendulum_evolves.flow` |
 | Dynamics / `dsys` | `examples/dynamics/ga_dsys_syntax.flow` | `./flow run examples/dynamics/ga_dsys_syntax.flow` |
 | Games / graphics | `examples/games/tetris_gfx.flow` | `./flow gfx examples/games/tetris_gfx.flow` |
 | Shaders | `examples/graphics/shader_demo.flow` | `./flow run examples/graphics/shader_demo.flow` |
@@ -131,13 +131,14 @@ Neural network framework + autodiff:
 - `tcp_echo.flow` - TCP listener shape demo (full echo loop planned)
 
 ### Evolution (`evolution/`)
-The flagship suite for Flow's founding vision — systems that evolve through time,
-each self-checking a physical guarantee (see [evolution/README.md](evolution/README.md)):
-- `pendulum.flow` - Nonlinear damped pendulum, RK4, energy guarantee
-- `bouncing_ball.flow` - Hybrid system: continuous flight + discrete impact events
-- `spring_mass_control.flow` - Model → analyze → control in one file (`dsys` DSL)
-- `heat_diffusion.flow` - 1D heat equation with ASCII heat-map frames
-- `lorenz_gfx.flow` - Lorenz attractor live in a window (`./flow gfx`)
+The flagship suite for Flow's founding vision — systems that evolve through time
+(see [evolution/README.md](evolution/README.md)). Prefer declarative files:
+- `pendulum_evolves.flow` / `pendulum_rk4.flow` / `pendulum_always.flow` — `flow` + `evolves`
+- `bouncing_ball_evolves.flow` — `when … reaches` hybrid bounce
+- `robot_connect.flow` — `connect` composition
+- `spring_mass_control.flow` — Model → analyze → control (`dsys` DSL)
+- `lorenz_gfx.flow` — `flow Lorenz` live in a window (`./flow gfx`)
+- `pendulum.flow` / `bouncing_ball.flow` — pedagogical hand integrators only
 
 ### Dynamics (`dynamics/`)
 Dynamical systems, analysis, and control via `stdlib/dynamics` and the
