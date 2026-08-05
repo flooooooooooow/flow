@@ -19,6 +19,7 @@ PIPELINE_EXAMPLES = [
     "pipeline_placeholder.flow",
     "pipeline_fork.flow",
     "pipeline_fork_inferred.flow",
+    "pipeline_choose.flow",
 ]
 
 # Flow-composition examples live under examples/evolution.
