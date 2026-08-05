@@ -80,7 +80,7 @@ require_flow_file() {
 
 # Show help
 show_help() {
-    echo "FLOW Programming Language v0.1"
+    echo "Flow Programming Language v0.8.0"
     echo ""
     echo "Usage: flow [OPTIONS] <program.flow>"
     echo ""

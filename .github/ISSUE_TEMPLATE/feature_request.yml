@@ -1,0 +1,30 @@
+---
+name: Language / feature proposal
+description: Propose a language or toolchain change
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Sketch syntax, semantics, or API. Link ROADMAP / Questions.md if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: design
+    attributes:
+      label: Design authority
+      options:
+        - label: I understand language design decisions are human-final (see CONTRIBUTING.md)
+          required: true
