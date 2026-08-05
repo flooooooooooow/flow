@@ -114,6 +114,29 @@ flow Motor {
         assert "self->voltage =" not in derivs
 
 
+class TestRk4SolverMethod:
+    RK4 = """
+flow Spring {
+    state x : f64 = 1.0
+    state v : f64 = 0.0
+    solver { dt 1 ms  method rk4 }
+    x evolves as v
+    v evolves as 0.0 - x
+}
+"""
+
+    def test_rk4_lowering_is_strict_clean(self):
+        result = TypeChecker().check(parse_lowered(self.RK4))
+        assert result.errors == []
+
+    def test_rk4_step_emits_four_derivs_stages(self):
+        c = flow_to_c(parse_lowered(self.RK4))
+        step = c.split("void Spring_step(Spring* self, double dt) {", 1)[1]
+        step = step.split("\n}", 1)[0]
+        assert step.count("Spring_derivs(self,") == 4
+        assert "y0_x" in step and "k4_v" in step
+
+
 class TestIndependentInstances:
     @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
     def test_two_instances_of_one_flow_step_independently(self, tmp_path):

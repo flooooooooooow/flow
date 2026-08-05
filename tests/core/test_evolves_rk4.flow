@@ -1,0 +1,39 @@
+# Runtime test for `solver { method rk4 }` (docs/vision/north-star.md §2.4).
+# Constant-rate ODE is exact under RK4; exit 0 when state advances to the
+# expected value and stays finite.
+
+extern {
+    function fabs(x: f64) -> f64
+}
+
+flow Ramp {
+    state x : f64 = 0.0
+    solver { dt 1 ms  method rk4 }
+    x evolves as 1.0
+}
+
+function main() -> i32 {
+    let mut r: Ramp = Ramp_new()
+    let x0: f64 = r.x
+    let dt: f64 = 0.25
+    let steps: i32 = 8
+
+    for k in 0 to steps {
+        Ramp_step(&r, dt)
+    }
+
+    if r.x != r.x {
+        return 1
+    }
+    if fabs(r.x - x0) < 1e-12 {
+        return 2
+    }
+    # 8 * 0.25 * 1.0 = 2.0 exactly under RK4 for constant derivative.
+    if fabs(r.x - 2.0) > 1e-12 {
+        return 3
+    }
+    if fabs(Ramp_default_dt() - 0.001) > 1e-15 {
+        return 4
+    }
+    return 0
+}
