@@ -16,7 +16,7 @@ from .parser import (
     Lexer, Parser, FunctionDecl, StructDecl, EnumDecl, TraitDecl,
     TheoremDecl, ConstDecl, EffectDecl, TypeAliasDecl, DistinctTypeDecl,
     VarDecl, Block, IfStatement, WhileStatement, ForStatement,
-    CapabilityDecl, ImportDecl, ExportDecl, FlowSyntaxError, TokenType, Type,
+    CapabilityDecl, FlowSyntaxError, TokenType, Type,
 )
 from .type_checker import TypeChecker
 from .lsp_dynamics import dynamics_completion_items, dynamics_hover
