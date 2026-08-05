@@ -10,6 +10,7 @@ let selectedVersion = null;
 let searchFilter = 'all';
 let pagefindApi = null;
 let searchRenderToken = 0;
+let searchFocusIndex = -1;
 
 const VERSION_STORAGE_KEY = 'flow-wiki-version';
 const THEME_STORAGE_KEY = 'flow-wiki-theme';
@@ -367,11 +368,16 @@ function assignHeadingIds(container) {
     });
 }
 
+let tocObserver = null;
+
 function buildPageToc(container) {
     const tocCol = document.getElementById('tocColumn');
     const tocNav = document.getElementById('pageToc');
     assignHeadingIds(container);
-    const headings = container.querySelectorAll('h2, h3');
+    const headings = [...container.querySelectorAll('h2, h3')];
+
+    tocObserver?.disconnect();
+    tocObserver = null;
 
     if (headings.length < 2) {
         tocCol.hidden = true;
@@ -381,6 +387,7 @@ function buildPageToc(container) {
     tocCol.hidden = false;
     tocNav.innerHTML = '';
 
+    const links = new Map();
     headings.forEach((h) => {
         const li = document.createElement('li');
         if (h.tagName === 'H3') li.className = 'toc-h3';
@@ -393,7 +400,57 @@ function buildPageToc(container) {
         });
         li.appendChild(a);
         tocNav.appendChild(li);
+        links.set(h.id, a);
     });
+
+    spyOnHeadings(headings, links, tocCol);
+}
+
+/** Highlights the TOC entry for the heading nearest the top of the viewport. */
+function spyOnHeadings(headings, links, tocCol) {
+    const visible = new Set();
+
+    const setActive = () => {
+        let id = null;
+        if (visible.size) {
+            id = headings.find((h) => visible.has(h.id))?.id || null;
+        } else {
+            // Nothing intersecting (long section) — fall back to the last heading passed.
+            const top = window.scrollY + parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop || '0') + 4;
+            for (const h of headings) {
+                if (h.getBoundingClientRect().top + window.scrollY <= top) id = h.id;
+            }
+        }
+        for (const [key, a] of links) a.classList.toggle('active', key === id);
+
+        const active = id && links.get(id);
+        if (active && tocCol.scrollHeight > tocCol.clientHeight) {
+            const box = active.getBoundingClientRect();
+            const col = tocCol.getBoundingClientRect();
+            if (box.top < col.top || box.bottom > col.bottom) {
+                active.scrollIntoView({ block: 'nearest' });
+            }
+        }
+    };
+
+    tocObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (entry.isIntersecting) visible.add(entry.target.id);
+            else visible.delete(entry.target.id);
+        }
+        setActive();
+    }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+
+    headings.forEach((h) => tocObserver.observe(h));
+    setActive();
+}
+
+function updateReadProgress() {
+    const bar = document.getElementById('readProgress');
+    if (!bar) return;
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const ratio = max > 20 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+    bar.style.transform = `scaleX(${ratio})`;
 }
 
 function renderMath(el) {
@@ -505,7 +562,12 @@ async function loadDoc(path) {
             if (path.startsWith('tutorials/')) {
                 initTutorialRunners(content, { autoMain: true });
             }
+            // After the runners claim their blocks, so interactive embeds keep
+            // their own chrome instead of getting a second header.
+            enhanceCodeBlocks(content);
+            wrapTables(content);
             buildPageToc(content);
+            addHeadingAnchors(content);
             if (anchor) {
                 const target = document.getElementById(anchor);
                 if (target) setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -535,36 +597,52 @@ async function loadDoc(path) {
             if (firstP && firstP.textContent.length < 220) {
                 leadEl.textContent = firstP.textContent;
                 leadEl.hidden = false;
+                // Only a leading subtitle gets promoted into the header; drop
+                // the original so it does not read twice.
+                const lead = [...content.children].find((el) => el.tagName !== 'H1');
+                if (lead === firstP) firstP.remove();
             }
         }
 
         document.body.classList.toggle('page-home', path === 'wiki-home.md');
+        document.body.classList.toggle('page-wide', path.endsWith('.ebnf'));
         if (path === 'wiki-home.md') {
+            // The home page's only H1 *is* the hero headline — keep it. Any
+            // stray H1 outside the hero would duplicate .doc-title, so drop it.
             const hero = content.querySelector('.wiki-hero');
             const h1 = content.querySelector('h1');
-            if (hero && h1) h1.remove();
+            if (hero && h1 && !hero.contains(h1)) h1.remove();
         }
 
         const loc = anchor ? `${path}#${anchor}` : path;
         history.replaceState(null, '', `#${encodeURIComponent(loc)}`);
         document.title = `${displayTitle} — Flow Docs`;
         if (!anchor) window.scrollTo({ top: 0, behavior: 'instant' });
+        updateReadProgress();
     } catch (err) {
-        document.body.classList.remove('page-home');
+        document.body.classList.remove('page-home', 'page-wide');
         content.innerHTML = renderNotFound(path, err.message);
     }
 }
 
 function transformAdmonitions(container) {
-    const types = ['note', 'tip', 'warning', 'important', 'caution'];
     container.querySelectorAll('blockquote').forEach((bq) => {
         const first = bq.querySelector('p');
         if (!first) return;
-        const m = first.textContent.match(/^\[!(note|tip|warning|important|caution)\]\s*(.*)$/i);
+
+        // The marker sits in the paragraph's leading text node. Strip it there
+        // rather than dropping the whole paragraph, because the rest of that
+        // first paragraph usually carries the callout's prose and links.
+        const lead = first.firstChild;
+        if (!lead || lead.nodeType !== Node.TEXT_NODE) return;
+        const m = lead.nodeValue.match(/^\s*\[!(note|tip|warning|important|caution)\]([^\n]*)(?:\n|$)/i);
         if (!m) return;
+
         const kind = m[1].toLowerCase();
         const title = m[2].trim() || kind;
-        first.remove();
+        lead.nodeValue = lead.nodeValue.slice(m[0].length);
+        if (!first.textContent.trim() && !first.firstElementChild) first.remove();
+
         const body = document.createElement('div');
         body.className = 'admonition-body';
         while (bq.firstChild) body.appendChild(bq.firstChild);
@@ -573,6 +651,102 @@ function transformAdmonitions(container) {
         wrap.innerHTML = `<div class="admonition-title">${escapeHtml(title)}</div>`;
         wrap.appendChild(body);
         bq.replaceWith(wrap);
+    });
+}
+
+/* ── Content enhancement ── */
+
+const LANG_LABELS = {
+    sh: 'shell', bash: 'shell', zsh: 'shell', console: 'shell',
+    js: 'javascript', ts: 'typescript', py: 'python',
+    md: 'markdown', yml: 'yaml', 'c++': 'cpp',
+};
+
+function enhanceCodeBlocks(container) {
+    container.querySelectorAll('pre').forEach((pre) => {
+        if (pre.closest('.code-block, .flow-runner')) return;
+        if (pre.classList.contains('wiki-hero-code') || pre.classList.contains('ebnf-block')) return;
+        const code = pre.querySelector('code');
+        if (!code) return;
+
+        const cls = [...code.classList].find((c) => c.startsWith('language-'));
+        const raw = cls ? cls.slice('language-'.length) : '';
+        const lang = LANG_LABELS[raw] || raw;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'code-block';
+        if (raw) wrap.dataset.lang = raw;
+
+        const head = document.createElement('div');
+        head.className = 'code-block-head';
+        const label = document.createElement('span');
+        label.className = 'code-lang';
+        label.textContent = lang || 'code';
+        head.appendChild(label);
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'code-copy';
+        btn.textContent = 'Copy';
+        btn.setAttribute('aria-label', 'Copy code to clipboard');
+        btn.addEventListener('click', () => copyToClipboard(btn, code.textContent));
+        head.appendChild(btn);
+
+        pre.replaceWith(wrap);
+        wrap.appendChild(head);
+        wrap.appendChild(pre);
+    });
+}
+
+async function copyToClipboard(btn, text) {
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (__) { /* give up quietly */ }
+        ta.remove();
+    }
+    btn.textContent = 'Copied';
+    btn.classList.add('copied');
+    clearTimeout(btn._resetTimer);
+    btn._resetTimer = setTimeout(() => {
+        btn.textContent = 'Copy';
+        btn.classList.remove('copied');
+    }, 1600);
+}
+
+/** Wide tables need their own scroll container so they never blow out the column. */
+function wrapTables(container) {
+    container.querySelectorAll('table').forEach((table) => {
+        if (table.closest('.table-wrap')) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'table-wrap';
+        table.replaceWith(wrap);
+        wrap.appendChild(table);
+    });
+}
+
+function addHeadingAnchors(container) {
+    container.querySelectorAll('h2[id], h3[id], h4[id]').forEach((h) => {
+        if (h.querySelector('.heading-anchor')) return;
+        const a = document.createElement('a');
+        a.className = 'heading-anchor';
+        a.href = `#${encodeURIComponent(currentPath)}`;
+        a.textContent = '#';
+        a.setAttribute('aria-label', `Link to “${h.textContent.trim()}”`);
+        a.addEventListener('click', (e) => {
+            e.preventDefault();
+            const loc = `#${encodeURIComponent(`${currentPath}#${h.id}`)}`;
+            history.replaceState(null, '', loc);
+            h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            navigator.clipboard?.writeText(new URL(loc, window.location.href).href).catch(() => {});
+        });
+        h.prepend(a);
     });
 }
 
@@ -659,6 +833,7 @@ function openSearch() {
     const input = document.getElementById('searchInput');
     input.value = '';
     input.focus();
+    searchFocusIndex = -1;
     if (pagefindApi && typeof pagefindApi.init === 'function') {
         try { pagefindApi.init(); } catch (_) { /* already inited */ }
     }
@@ -705,6 +880,30 @@ function pagefindUrlToWikiPath(url) {
     return path;
 }
 
+function searchButtons() {
+    return [...document.querySelectorAll('#searchResults li button:not([disabled])')];
+}
+
+function setSearchFocus(index) {
+    const buttons = searchButtons();
+    if (!buttons.length) {
+        searchFocusIndex = -1;
+        return;
+    }
+    searchFocusIndex = (index + buttons.length) % buttons.length;
+    buttons.forEach((b, i) => b.classList.toggle('focused', i === searchFocusIndex));
+    buttons[searchFocusIndex].scrollIntoView({ block: 'nearest' });
+}
+
+function moveSearchFocus(delta) {
+    setSearchFocus(searchFocusIndex < 0 ? (delta > 0 ? 0 : -1) : searchFocusIndex + delta);
+}
+
+function activateSearchFocus() {
+    const buttons = searchButtons();
+    (buttons[searchFocusIndex] || buttons[0])?.click();
+}
+
 function renderSearchHitList(hits) {
     const ul = document.getElementById('searchResults');
     ul.innerHTML = '';
@@ -729,8 +928,11 @@ function renderSearchHitList(hits) {
         ul.appendChild(li);
     }
     if (!hits.length) {
-        ul.innerHTML = '<li><button type="button" disabled style="opacity:0.5">No results</button></li>';
+        ul.innerHTML = '<li class="search-empty">No matching pages. Try a different term or category.</li>';
+        searchFocusIndex = -1;
+        return;
     }
+    setSearchFocus(0);
 }
 
 function scoreLocalSearchEntry(entry, q, terms) {
@@ -833,7 +1035,7 @@ function closeMobileSidebar() {
 }
 
 function githubEditUrl(path) {
-    const base = 'https://github.com/flooooooooooow/flow/edit/main/';
+    const base = 'https://github.com/abhishekshivakumar/transpile/edit/main/';
     if (path === 'project/language-roadmap.md') return `${base}ROADMAP.md`;
     if (path === 'project/benchmark-results.md') return `${base}benchmarks/suite/RESULTS.md`;
     if (path.startsWith('third-party/flow-verify/proofs/lib/')) {
@@ -881,12 +1083,19 @@ function bindEvents() {
     document.getElementById('searchOverlay').addEventListener('click', (e) => {
         if (e.target.id === 'searchOverlay') closeSearch();
     });
-    document.getElementById('searchInput').addEventListener('input', (e) => {
+    const searchInput = document.getElementById('searchInput');
+    searchInput.addEventListener('input', (e) => {
         const value = e.target.value;
         if (pagefindApi && typeof pagefindApi.preload === 'function' && value.trim()) {
             pagefindApi.preload(value.trim());
         }
         renderSearchResults(value);
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); moveSearchFocus(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearchFocus(-1); }
+        else if (e.key === 'Enter') { e.preventDefault(); activateSearchFocus(); }
     });
     document.getElementById('sidebarToggle').addEventListener('click', () => {
         const open = !document.getElementById('sidebar').classList.contains('open');
@@ -921,6 +1130,18 @@ function bindEvents() {
     });
 
     window.addEventListener('hashchange', routeFromHash);
+
+    let progressQueued = false;
+    window.addEventListener('scroll', () => {
+        if (progressQueued) return;
+        progressQueued = true;
+        requestAnimationFrame(() => {
+            progressQueued = false;
+            updateReadProgress();
+        });
+    }, { passive: true });
+    window.addEventListener('resize', updateReadProgress, { passive: true });
+    updateReadProgress();
 }
 
 document.addEventListener('DOMContentLoaded', init);

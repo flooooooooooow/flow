@@ -64,6 +64,48 @@ and dual C / MLIR backends at native speed.
 
 ---
 
+## See it run
+
+Every clip below is a recording of the compiled program itself — the frames come
+straight out of the native `gfx` backend, not from a mock-up. Regenerate them all
+with `python3 scripts/record_demos.py`.
+
+<div class="wiki-demo-grid">
+
+<figure class="wiki-demo">
+<img src="demos/lorenz.gif" alt="Lorenz attractor traced in real time" loading="lazy">
+<figcaption>
+
+**[Lorenz attractor](../examples/evolution/lorenz_gfx.flow)** — a `flow` block with
+an RK4 solver, stepped and drawn each frame.
+
+</figcaption>
+</figure>
+
+<figure class="wiki-demo">
+<img src="demos/tetris.gif" alt="Tetris being played" loading="lazy">
+<figcaption>
+
+**[Tetris](../examples/games/tetris_gfx.flow)** — a complete game loop: rotation,
+line clears, scoring, ghost piece.
+
+</figcaption>
+</figure>
+
+<figure class="wiki-demo">
+<img src="demos/2048.gif" alt="2048 tiles merging" loading="lazy">
+<figcaption>
+
+**[2048](../examples/games/2048_gfx.flow)** — grid logic and tile merging under
+scripted input.
+
+</figcaption>
+</figure>
+
+</div>
+
+---
+
 ## Start here
 
 | Path | What you'll do |
