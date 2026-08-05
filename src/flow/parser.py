@@ -382,6 +382,52 @@ class StructLiteral:
 
 
 @dataclass
+class ForkSource:
+    """Placeholder for a fork block's piped value inside a branch template.
+
+    A fork branch is parsed as a pipeline whose head is this node; the fork
+    desugaring substitutes the real source (or a hoisted temp binding it) for
+    every `ForkSource` before the fork is lowered.
+    """
+
+
+@dataclass
+class ForkBlock:
+    """A fork block: `source |> [Record] { a = pipeline, ... }`.
+
+    Each branch value is a template pipeline over `ForkSource` (e.g.
+    `magnitude(fft(ForkSource()))`). `record_name` is the named record, or
+    None for the anonymous inferred form. `desugar_forks` (a post-parse pass)
+    binds `source` once when it is non-trivial, substitutes it into the
+    branches, infers a record type for the anonymous form, and rewrites this
+    into a `StructLiteral`. The node never survives `parse()`, so no later
+    phase — type checker, backends, tooling — needs to know about it.
+    """
+
+    record_name: Optional[str]
+    source: "Expression"
+    branches: List[tuple]  # List of (field_name, template over ForkSource)
+    line: int = 0
+
+
+@dataclass
+class FlowStage:
+    """A flow used as a pipeline stage with parameter overrides.
+
+    `source |> Gain { k: 3.0 }` parses to this (the `:` delimiter, versus a
+    fork block's `=`). It is resolved only inside a flow `output` pipeline, by
+    `_expand_flow_pipelines`, into a child instance whose params are set after
+    init. A `FlowStage` that survives flow expansion (i.e. used outside a flow
+    stage pipeline) is a compile error.
+    """
+
+    name: str
+    arg: "Expression"
+    params: List[tuple]  # List of (param_name, value)
+    line: int = 0
+
+
+@dataclass
 class RecordUpdate:
     """Record update: `Point { ..p, x: 3 }` copies `p` then overrides `x`.
 
@@ -907,11 +953,17 @@ class FlowChildDecl:
     name: str
     type: Type
     line: int = 0
+    synthesized: bool = False  # compiler-generated (e.g. a `|>` flow stage)
+    params: Optional[List[tuple]] = None  # stage param overrides (name, value)
 
 
 @dataclass
 class FlowConnection:
     """One wire `src_member.src_port -> dst_member.dst_port` inside `connect`.
+
+    An empty `src_member` marks a bare parent-port source (`port -> child.in`),
+    where `src_port` names an input or state of the enclosing flow rather than a
+    child's port.
 
     Spec: docs/vision/north-star.md §8.1.
     """
@@ -1305,6 +1357,7 @@ class Parser:
         self.lookahead = self.lexer.next_token()
         self.struct_names = set()
         self.nesting_depth = 0
+        self._has_fork = False
 
     def _enter_nesting(self, kind: str = "expression") -> None:
         """Bump the nesting depth; reject pathologically deep input cleanly
@@ -1573,6 +1626,10 @@ class Parser:
             from .flow_blocks import expand_flow_decls
 
             declarations = expand_flow_decls(declarations, source=self.source)
+        if self._has_fork:
+            from .fork_records import desugar_forks
+
+            declarations = desugar_forks(declarations)
         return declarations
 
     def parse_module(self) -> ModuleDecl:
@@ -2080,9 +2137,17 @@ class Parser:
                     f"expected '}}' before end of file"
                 )
             src_tok = self.current_token
-            src_member = self.expect(TokenType.IDENTIFIER).value
-            self.expect(TokenType.DOT)
-            src_port = self.expect(TokenType.IDENTIFIER).value
+            first = self.expect(TokenType.IDENTIFIER).value
+            if self.current_token.type == TokenType.DOT:
+                # `child.port` — a sibling subflow's output/state.
+                self.advance()
+                src_member = first
+                src_port = self.expect(TokenType.IDENTIFIER).value
+            else:
+                # Bare `port` — a port of the enclosing (parent) flow.
+                # Empty src_member marks a parent source.
+                src_member = ""
+                src_port = first
             self.expect(TokenType.ARROW)
             dst_member = self.expect(TokenType.IDENTIFIER).value
             self.expect(TokenType.DOT)
@@ -3343,34 +3408,184 @@ class Parser:
 
     def parse_expression_without_assign(self) -> Expression:
         left = self.parse_logical_or()
+        return self._parse_pipeline_chain(left)
 
-        # Pipeline chaining: `x |> f(y)` lowers to `f(x, y)` and
-        # `x |> f()` to `f(x)`. Left-associative, so `a |> f() |> g()` is
-        # `(a |> f()) |> g()` == `g(f(a))`.
-        # Declarative ordering: `x |> sort by [asc .score, desc .name]`.
+    def _parse_pipeline_chain(self, left: Expression) -> Expression:
+        """Consume a run of `|>` stages, threading `left` through each.
+
+        `x |> f(y)` lowers to `f(x, y)` and `x |> f()` to `f(x)`. It is
+        left-associative, so `a |> f() |> g()` is `g(f(a))`. Three stage
+        shapes get special handling before the generic call lowering:
+        declarative ordering (`|> sort by …`), and fork blocks
+        (`|> Record { field = … }`, see `_parse_fork_block`).
+        """
         while self.current_token.type == TokenType.PIPELINE:
             self.advance()
+            if self._at_fork_block():
+                left = self._parse_fork_block(left)
+                continue
             if self._at_declarative_sort():
                 left = self._parse_sort_pipeline(left)
                 continue
             rhs = self.parse_logical_or()
-            if isinstance(rhs, FunctionCall):
-                lhs_arg = left
-                left = FunctionCall(rhs.name, [lhs_arg] + list(rhs.arguments))
-            elif isinstance(rhs, MethodCall):
-                # `x |> obj.m()` -> `obj.m(x)`
-                left = MethodCall(rhs.object, rhs.method, [left] + list(rhs.arguments))
-            elif isinstance(rhs, Variable):
-                # Bare function name: `x |> f` -> `f(x)`
-                left = FunctionCall(rhs.name, [left])
-            else:
-                raise SyntaxError(
-                    "Pipeline '|>' must be followed by a function call, method call, "
-                    "function name, or declarative sort "
-                    "(e.g. `x |> f()`, `x |> f`, or `x |> sort by .score`)"
-                )
-
+            left = self._apply_pipe(left, rhs)
         return left
+
+    def _apply_pipe(self, left: Expression, rhs: Expression) -> Expression:
+        """Insert `left` into a single piped stage `rhs`."""
+        if isinstance(rhs, FunctionCall):
+            args = self._insert_pipe_arg(left, list(rhs.arguments))
+            return FunctionCall(rhs.name, args)
+        if isinstance(rhs, MethodCall):
+            # `x |> obj.m()` -> `obj.m(x)`; `x |> obj.m(_, y)` -> `obj.m(x, y)`
+            args = self._insert_pipe_arg(left, list(rhs.arguments))
+            return MethodCall(rhs.object, rhs.method, args)
+        if isinstance(rhs, Variable):
+            # Bare function name: `x |> f` -> `f(x)`
+            return FunctionCall(rhs.name, [left])
+        raise SyntaxError(
+            "Pipeline '|>' must be followed by a function call, method call, "
+            "function name, declarative sort, or fork block "
+            "(e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, "
+            "or `x |> Record { a = f, b = g }`)"
+        )
+
+    def _at_fork_block(self) -> bool:
+        """True at a fork block immediately after `|>`.
+
+        Two forms: `Record { … }` (named) and `{ … }` (anonymous, an inferred
+        record). A struct literal can never be a plain pipe target (you can't
+        call one) and a bare `{` is not a valid pipe target either, so both are
+        unambiguous and free to claim.
+        """
+        if self.current_token.type == TokenType.LBRACE:
+            return True
+        return (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.lookahead.type == TokenType.LBRACE
+        )
+
+    def _parse_fork_block(self, source: Expression):
+        """Parse a fork block after `|>`.
+
+        A fork block applies several pipelines to the *same* incoming value and
+        collects them into a record: each `field = stage…` branch is the
+        pipeline `source |> stage…`. Branches read with `=` (not the
+        struct-literal `:`) to keep the fork/record forms visually distinct.
+
+        `Record { … }` names the record; `{ … }` infers it. Both produce a
+        `ForkBlock` whose branch templates pipe a `ForkSource` placeholder; the
+        post-parse `desugar_forks` pass binds the source once, substitutes it,
+        and lowers to a `StructLiteral`.
+        """
+        record_name = None
+        if self.current_token.type == TokenType.IDENTIFIER:
+            record_name = self.current_token.value
+            self.advance()  # record name
+        line = self.current_token.line
+        self.expect(TokenType.LBRACE)
+
+        # `:` fields mean a flow stage's parameter overrides (value form);
+        # `=` fields mean a fork block (pipeline form). Peek the delimiter.
+        if (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.lookahead.type == TokenType.COLON
+        ):
+            if record_name is None:
+                raise self.error(
+                    "an anonymous `|> { ... }` is a fork block and uses '=' "
+                    "branches; ':' parameter fields need a named flow stage"
+                )
+            return self._parse_stage_params(record_name, source, line)
+
+        fields: List[tuple] = []
+        seen = set()
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type != TokenType.IDENTIFIER:
+                raise self.error("Expected a fork field name before '='")
+            field_name = self.current_token.value
+            self.advance()
+            if self.current_token.type == TokenType.COLON:
+                raise self.error(
+                    "Fork block fields use '=' (a pipeline), not ':'; "
+                    "write `{}  = source-pipeline`".format(field_name)
+                )
+            self.expect(TokenType.ASSIGN)
+            if field_name in seen:
+                raise self.error(
+                    "Duplicate fork field '{}'".format(field_name)
+                )
+            seen.add(field_name)
+            fields.append((field_name, self._parse_fork_branch()))
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        if not fields:
+            raise self.error("Fork block must have at least one `field = …` branch")
+        self.expect(TokenType.RBRACE)
+        self._has_fork = True
+        return ForkBlock(record_name, source, fields, line)
+
+    def _parse_fork_branch(self) -> Expression:
+        """One fork branch: a pipeline over the `ForkSource` placeholder."""
+        rhs = self.parse_logical_or()
+        value = self._apply_pipe(ForkSource(), rhs)
+        return self._parse_pipeline_chain(value)
+
+    def _parse_stage_params(self, name: str, source: Expression, line: int):
+        """Parse `Name { p: v, q: w }` after `|>` — a flow stage with params."""
+        params: List[tuple] = []
+        seen = set()
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type != TokenType.IDENTIFIER:
+                raise self.error("Expected a parameter name in flow stage params")
+            pname = self.current_token.value
+            self.advance()
+            self.expect(TokenType.COLON)
+            if pname in seen:
+                raise self.error(
+                    "Duplicate stage parameter '{}'".format(pname)
+                )
+            seen.add(pname)
+            params.append((pname, self.parse_expression()))
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        if not params:
+            raise self.error(
+                "flow stage '{}' has empty '{{}}'; drop the braces or add "
+                "`param: value` overrides".format(name)
+            )
+        self.expect(TokenType.RBRACE)
+        self._has_fork = True  # ensure the post-parse walk runs to catch strays
+        return FlowStage(name, source, params, line)
+
+    @staticmethod
+    def _is_pipe_placeholder(expr: Expression) -> bool:
+        """A bare `_` in a piped call marks where the piped value goes."""
+        return isinstance(expr, Variable) and expr.name == "_"
+
+    def _insert_pipe_arg(
+        self, piped: Expression, args: List[Expression]
+    ) -> List[Expression]:
+        """Position the piped value inside a `|>` call's argument list.
+
+        Default (no placeholder): prepend, so `x |> f(y)` -> `f(x, y)`.
+        With a `_` placeholder: substitute at that slot, so
+        `x |> clamp(0.0, _, 1.0)` -> `clamp(0.0, x, 1.0)`. The placeholder
+        keeps the piped value out of the leading position when a later
+        argument is the natural pipe target. Exactly one `_` is allowed;
+        more than one is rejected since the piped value would be duplicated.
+        """
+        holes = [i for i, a in enumerate(args) if self._is_pipe_placeholder(a)]
+        if not holes:
+            return [piped] + args
+        if len(holes) > 1:
+            raise self.error(
+                "Pipeline placeholder '_' may appear at most once per '|>' stage "
+                "(found {}); the piped value fills a single slot".format(len(holes))
+            )
+        out = list(args)
+        out[holes[0]] = piped
+        return out
 
     def _at_declarative_sort(self) -> bool:
         tok = self.current_token
