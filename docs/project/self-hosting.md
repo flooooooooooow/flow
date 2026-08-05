@@ -87,8 +87,10 @@ Expand `flowc` until it parses/emits everything the **compiler sources themselve
 
 **Progress (2026-08-05):** inferred `let` (no `: Type`), larger resolve/emit
 src+AST caps, and `FLOWC_BUNDLE=1` typecheck of `compiler/src/main.flow` green.
-Remaining: shrink intentional `FLOWC_TYPECHECK=0` on dogfood object paths where
-extern/import seeding still needs work; location-rich diagnostics.
+Dogfood `compile_module` / self-emit / frontend bundles no longer force
+`FLOWC_TYPECHECK=0` (imports seed names). Typecheck diagnostics print
+`flowc tc: at line:col`. Remaining: richer file-path prefixes on diagnostics;
+close #151 when Phase B exit criteria are fully met.
 
 ### Phase C — `flowc` replaces Python for `./flow run|build`  *(done — soft cutover)*
 

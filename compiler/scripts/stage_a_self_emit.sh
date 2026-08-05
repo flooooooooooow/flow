@@ -31,8 +31,8 @@ self_emit_module() {
     local -a cc_args=(-O0 -c)
 
     echo "=== self_emit ${name} ==="
-    # Frontend modules: imports/extern — opt out of default-on typecheck.
-    FLOWC_TYPECHECK=0 "./${STAGE_A_DRIVER}" "$src" "$c_out"
+    # Typecheck on (default): imports seed names; extern blocks allow unknown calls.
+    "./${STAGE_A_DRIVER}" "$src" "$c_out"
     local h
     for h in "$@"; do
         cc_args+=(-include "$h")
@@ -118,7 +118,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/self_resolve.c compiler/build/self_resolve.h
 
-FLOWC_TYPECHECK=0 "./${STAGE_A_DRIVER}" \
+"./${STAGE_A_DRIVER}" \
     compiler/src/driver.flow \
     compiler/build/self_driver.c
 if ! grep -Fq 'int main(int argc, char **argv)' compiler/build/self_driver.c; then
