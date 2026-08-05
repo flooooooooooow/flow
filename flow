@@ -2487,7 +2487,7 @@ for f in sys.argv[1:]:
         ;;
     "playground")
         # Runnable playground: loopback Flow→C API + pointer to the UI.
-        local pg_port="${2:-8765}"
+        pg_port="${2:-8765}"
         print_info "Starting playground compile server on 127.0.0.1:${pg_port}"
         print_info "UI: docs/playground/index.html  (or wiki /flow/ playground)"
         print_info "Click: Run (native local)"
