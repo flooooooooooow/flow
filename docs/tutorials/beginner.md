@@ -111,15 +111,15 @@ function main() -> i32 {
 ```flow
 function main() -> i32 {
     # Count from 1 to 5
-    let i = 1
+    let mut i = 1
     while i <= 5 {
         printf("%d\n", i)
         i = i + 1
     }
     
     # Sum 1 to 100
-    let sum = 0
-    let n = 1
+    let mut sum = 0
+    let mut n = 1
     while n <= 100 {
         sum = sum + n
         n = n + 1
@@ -169,7 +169,7 @@ function add(a: i32, b: i32) -> i32 {
 
 # Multiple parameters
 function power(base: i32, exp: i32) -> i32 {
-    let result = 1
+    let mut result = 1
     for i in 0..exp {
         result = result * base
     }
@@ -261,7 +261,7 @@ function main() -> i32 {
     printf("Last: %d\n", arr[4])
     
     # Sum all elements
-    let sum = 0
+    let mut sum = 0
     for i in 0..5 {
         sum = sum + arr[i]
     }
@@ -324,15 +324,16 @@ function main() -> i32 {
 ```flow
 function day_name(day: i32) -> string {
     match day {
-        1 => return "Monday"
-        2 => return "Tuesday"
-        3 => return "Wednesday"
-        4 => return "Thursday"
-        5 => return "Friday"
-        6 => return "Saturday"
-        7 => return "Sunday"
-        default => return "Invalid"
+        1 => { return "Monday" }
+        2 => { return "Tuesday" }
+        3 => { return "Wednesday" }
+        4 => { return "Thursday" }
+        5 => { return "Friday" }
+        6 => { return "Saturday" }
+        7 => { return "Sunday" }
+        default { return "Invalid" }
     }
+    return "Invalid"
 }
 
 function main() -> i32 {
@@ -385,7 +386,7 @@ function is_prime(n: i32) -> bool {
     if n < 2 {
         return false
     }
-    let i = 2
+    let mut i = 2
     while i * i <= n {
         if n % i == 0 {
             return false
