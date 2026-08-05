@@ -120,5 +120,6 @@ Formal math proofs live in the **third-party** [flow-verify](third-party/flow-ve
 |---|---|
 | Version | 0.7.0 ([changelog](project/CHANGELOG.md)) |
 | License | MIT |
-| Repository | [github.com/abhishekshivakumar/transpile](https://github.com/abhishekshivakumar/transpile) |
+| Repository | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
+| Docs | [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) |
 | Roadmap | [Language](project/language-roadmap.md) · [Wiki](wiki-roadmap.md) |
