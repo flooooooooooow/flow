@@ -17,7 +17,7 @@
   },
   "qna": "https://github.com/flooooooooooow/flow/discussions",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.125.0"
   },
   "categories": [
     "Programming Languages"
