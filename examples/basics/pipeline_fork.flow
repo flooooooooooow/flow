@@ -5,8 +5,8 @@
 # `Record`. Branches read with `=` (a pipeline) rather than the struct-literal
 # `:` (a value), which keeps the fork and record forms visually distinct.
 #
-# Note: `source` is substituted into every branch, so bind a non-trivial
-# source with `let` first if you don't want it recomputed per branch.
+# The forked source is evaluated once and shared across the branches: a
+# non-trivial source (a call) is hoisted to a temp, not recomputed per branch.
 
 extern {
     function printf(fmt: string, val: i32) -> i32
