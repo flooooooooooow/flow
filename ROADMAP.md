@@ -186,7 +186,7 @@ hand-rolled C-shaped loops. API sketches live in
 | Dynamics DSL / LQR beyond n=2 | ✅ partial [#162](https://github.com/flooooooooooow/flow/issues/162) | `dynamics/lqr.flow` dlqr n≤8 scalar-u; cartpole uses it; DSL `analyze { lqr }` still open |
 | Field / laplacian PDE surface | ✅ partial [#163](https://github.com/flooooooooooow/flow/issues/163) | `dynamics/pde.flow` + heat demo; `field`/`boundary` grammar follow-on |
 | Dual + Tensor operators + mutable params | ✅ partial [#161](https://github.com/flooooooooooow/flow/issues/161) | Dual `+ - * /` and unary `-` rewrite to overloads; mutable `nn` params still open |
-| Closed-loop plant.step from dsys/connect | 🔲 [#160](https://github.com/flooooooooooow/flow/issues/160) | Analysis plant and sim share one steppable model |
+| Closed-loop plant.step from dsys/connect | ✅ partial [#160](https://github.com/flooooooooooow/flow/issues/160) | spring_mass uses `state_step` on stdlib-discretized plant; DSL plant binding follow-on |
 
 ### 🧹 Repository Cleanup
 
