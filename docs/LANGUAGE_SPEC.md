@@ -1,6 +1,6 @@
 # FLOW Language Specification
 
-> **Version**: 0.3.4
+> **Version**: 0.9.0
 > **Last Updated**: 2026-08-05
 
 ## Overview
@@ -978,4 +978,4 @@ Methods in `src/flow/c_generator.py` and their coverage:
 ---
 
 *Last updated: 2026-08-05*
-*Version: 0.3.4*
+*Version: 0.9.0*
