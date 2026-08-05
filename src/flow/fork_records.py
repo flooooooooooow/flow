@@ -1,36 +1,37 @@
-"""Post-parse desugaring of anonymous fork records.
+"""Post-parse desugaring of fork blocks (`source |> [Record] { a = f, ... }`).
 
-An anonymous fork block
+Both the named and anonymous forms parse to a `ForkBlock` whose branches are
+pipelines over a `ForkSource` placeholder. This pass:
 
-    let s = mic |> { spectrum = fft |> magnitude, loudness = rms }
+  1. Binds `source` to a temp `let` when it is non-trivial (a call, not a
+     variable/field), so the piped value is evaluated **once** even though it
+     feeds every branch — hoisting the binding just above the statement the fork
+     appears in.
+  2. Substitutes that binding (or the trivial source directly) for `ForkSource`.
+  3. For the anonymous form, infers each field's type from the outermost call's
+     return type and synthesizes a struct; identical field signatures share one.
+  4. Rewrites the `ForkBlock` into a `StructLiteral`.
 
-parses to a `ForkRecord` node. This pass turns each one into a synthesized
-struct plus a `StructLiteral` of it, so every later phase (type checker, all
-backends, tooling) sees an ordinary named record and needs no special support:
-
-    struct __ForkRecord_0 { spectrum: Spectrum, loudness: f32 }
-    let s = __ForkRecord_0 { spectrum: magnitude(fft(mic)), loudness: rms(mic) }
-
-A field's type is the declared return type of the outermost call in its branch
-value — pipeline branches bottom out in a function call, so this is exact for
-the common case. Branches that don't end in a resolvable call (e.g. a method
-call on an inferred receiver) can't be typed structurally here; those must name
-the record explicitly (`source |> Name { … }`), and this pass says so.
-
-Records with identical field signatures share one synthesized struct, so
-repeated forks don't emit a struct apiece.
+Everything downstream — type checker, all backends, tooling — then sees an
+ordinary named record and needs no fork-specific support.
 """
 
 import dataclasses
 from typing import Dict, List, Optional
 
 from .parser import (
-    ForkRecord,
+    ForkBlock,
+    ForkSource,
     StructLiteral,
     StructDecl,
     Parameter,
+    VarDecl,
+    Variable,
+    FieldAccess,
+    Literal,
     FunctionCall,
     FunctionDecl,
+    Block,
     Type,
 )
 
@@ -40,82 +41,142 @@ class ForkRecordError(Exception):
 
 
 def _return_type_map(declarations: List[object]) -> Dict[str, Type]:
-    """Map function name -> declared return type (includes externs)."""
     types: Dict[str, Type] = {}
     for decl in declarations:
         if isinstance(decl, FunctionDecl) and decl.return_type is not None:
-            # First declaration wins; overloads share a return type in practice.
             types.setdefault(decl.name, decl.return_type)
     return types
 
 
-def _infer_field_type(value: object, returns: Dict[str, Type]) -> Optional[Type]:
-    """Field type = return type of the outermost call in a branch value."""
-    if isinstance(value, FunctionCall):
-        return returns.get(value.name)
-    return None
+def _is_trivial(expr: object) -> bool:
+    """A source cheap and side-effect-free to repeat across branches."""
+    if isinstance(expr, (Variable, Literal, ForkSource)):
+        return True
+    if isinstance(expr, FieldAccess):
+        return _is_trivial(expr.object)
+    return False
+
+
+def _subst_source(node: object, replacement: object) -> object:
+    """Replace every ForkSource in a branch template with `replacement`."""
+    if isinstance(node, ForkSource):
+        return replacement
+    if dataclasses.is_dataclass(node) and not isinstance(node, type):
+        for f in dataclasses.fields(node):
+            setattr(node, f.name, _subst_source(getattr(node, f.name), replacement))
+        return node
+    if isinstance(node, list):
+        return [_subst_source(x, replacement) for x in node]
+    if isinstance(node, tuple):
+        return tuple(_subst_source(x, replacement) for x in node)
+    return node
 
 
 class _Desugarer:
     def __init__(self, returns: Dict[str, Type]):
         self._returns = returns
         self._synth: List[StructDecl] = []
-        # signature (tuple of (name, type_str)) -> synthesized struct name
         self._by_sig: Dict[tuple, str] = {}
+        self._tmp = 0
 
     @property
     def synthesized(self) -> List[StructDecl]:
         return self._synth
 
-    def _struct_for(self, fork: ForkRecord) -> StructLiteral:
-        params: List[Parameter] = []
-        sig_parts: List[tuple] = []
-        for field_name, value in fork.fields:
-            field_type = _infer_field_type(value, self._returns)
-            if field_type is None:
-                raise ForkRecordError(
-                    "cannot infer the type of fork field '{}'"
-                    " (line {}): an anonymous fork record's fields must end in a"
-                    " function whose return type is known. Name the record"
-                    " instead: `source |> RecordName {{ ... }}`".format(
-                        field_name, fork.line
-                    )
-                )
-            params.append(Parameter(field_name, field_type))
-            sig_parts.append((field_name, getattr(field_type, "name", str(field_type))))
+    # --- record synthesis / lowering -------------------------------------
 
-        sig = tuple(sig_parts)
-        name = self._by_sig.get(sig)
+    def _infer_field_type(self, value: object) -> Optional[Type]:
+        if isinstance(value, FunctionCall):
+            return self._returns.get(value.name)
+        return None
+
+    def _lower(self, fork: ForkBlock, source: object) -> StructLiteral:
+        """Turn a fork into a struct literal, substituting `source` for holes."""
+        fields = [(name, _subst_source(tmpl, source)) for name, tmpl in fork.branches]
+        if fork.record_name is not None:
+            return StructLiteral(fork.record_name, fields)
+
+        params: List[Parameter] = []
+        sig: List[tuple] = []
+        for field_name, value in fields:
+            ftype = self._infer_field_type(value)
+            if ftype is None:
+                raise ForkRecordError(
+                    "cannot infer the type of fork field '{}' (line {}): an"
+                    " anonymous fork record's fields must end in a function whose"
+                    " return type is known. Name the record instead:"
+                    " `source |> RecordName {{ ... }}`".format(field_name, fork.line)
+                )
+            params.append(Parameter(field_name, ftype))
+            sig.append((field_name, getattr(ftype, "name", str(ftype))))
+
+        key = tuple(sig)
+        name = self._by_sig.get(key)
         if name is None:
             name = "__ForkRecord_{}".format(len(self._by_sig))
-            self._by_sig[sig] = name
+            self._by_sig[key] = name
             self._synth.append(StructDecl(name=name, fields=params))
-        return StructLiteral(name, list(fork.fields))
+        return StructLiteral(name, fields)
 
-    def transform(self, node: object) -> object:
-        """Recursively replace ForkRecord nodes, innermost first."""
-        if isinstance(node, ForkRecord):
-            # Resolve nested forks inside branch values first.
-            node.fields = [(fn, self.transform(v)) for fn, v in node.fields]
-            return self._struct_for(node)
+    # --- traversal with statement-level hoisting -------------------------
+
+    def _resolve(self, node: object, hoisted: List[object]) -> object:
+        """Resolve forks in an expression, appending temp `let`s to `hoisted`.
+
+        Nested `Block`s are handled by `_process_block` so their forks hoist
+        into *their* statement list, not an outer one.
+        """
+        if isinstance(node, Block):
+            self._process_block(node)
+            return node
+        if isinstance(node, ForkBlock):
+            # Resolve nested forks in the source and branch templates first.
+            source = self._resolve(node.source, hoisted)
+            node.branches = [
+                (name, self._resolve(tmpl, hoisted)) for name, tmpl in node.branches
+            ]
+            # Hoist a non-trivial source to a temp so it is evaluated once. This
+            # needs a surrounding statement list; without one (`hoisted is None`)
+            # we fall back to inlining the source into each branch.
+            if hoisted is not None and not _is_trivial(source):
+                tmp_name = "__fork_src_{}".format(self._tmp)
+                self._tmp += 1
+                hoisted.append(
+                    VarDecl(name=tmp_name, type=Type(name="auto"),
+                            initializer=source, is_mutable=False)
+                )
+                source = Variable(tmp_name)
+            return self._lower(node, source)
         if dataclasses.is_dataclass(node) and not isinstance(node, type):
             for f in dataclasses.fields(node):
-                setattr(node, f.name, self.transform(getattr(node, f.name)))
+                setattr(node, f.name, self._resolve(getattr(node, f.name), hoisted))
             return node
         if isinstance(node, list):
-            return [self.transform(x) for x in node]
+            return [self._resolve(x, hoisted) for x in node]
         if isinstance(node, tuple):
-            return tuple(self.transform(x) for x in node)
+            return tuple(self._resolve(x, hoisted) for x in node)
         return node
 
+    def _process_block(self, block: Block) -> None:
+        new_statements: List[object] = []
+        for stmt in block.statements:
+            hoisted: List[object] = []
+            stmt = self._resolve(stmt, hoisted)
+            new_statements.extend(hoisted)
+            new_statements.append(stmt)
+        block.statements = new_statements
 
-def desugar_fork_records(declarations: List[object]) -> List[object]:
-    """Rewrite anonymous fork records in-place; append synthesized structs."""
-    returns = _return_type_map(declarations)
-    desugarer = _Desugarer(returns)
+    def transform_decl(self, decl: object) -> None:
+        # Pass None (no enclosing statement list): forks reachable through a
+        # Block hoist into it; any outside one inline their source instead.
+        self._resolve(decl, None)
+
+
+def desugar_forks(declarations: List[object]) -> List[object]:
+    """Rewrite fork blocks in-place; prepend any synthesized record structs."""
+    desugarer = _Desugarer(_return_type_map(declarations))
     for decl in declarations:
-        desugarer.transform(decl)
+        desugarer.transform_decl(decl)
     if desugarer.synthesized:
-        # Prepend so the struct is declared before any use.
         return list(desugarer.synthesized) + list(declarations)
     return declarations

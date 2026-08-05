@@ -59,3 +59,37 @@ def test_inferred_fork_synthesizes_a_struct(tmp_path):
     assert result.returncode == 0, result.stderr
     # 3 user functions + main + printf extern = 5; 1 synthesized struct.
     assert "1 structs" in result.stderr
+
+
+_SINGLE_EVAL_SRC = """
+struct Pair { a: i32, b: i32 }
+function twice(x: i32) -> i32 { return x * 2 }
+function square(x: i32) -> i32 { return x * x }
+function frames(x: i32) -> i32 { return x + 1 }
+function main() -> i32 {
+    let p: Pair = frames(7) |> Pair { a = twice, b = square }
+    return p.a
+}
+"""
+
+
+def test_fork_source_hoisted_once_in_generated_c(tmp_path):
+    """A non-trivial fork source is bound to one temp in the emitted C."""
+    src = tmp_path / "single_eval.flow"
+    src.write_text(_SINGLE_EVAL_SRC)
+    out = tmp_path / "single_eval.c"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT / "src") + (
+        ":" + env["PYTHONPATH"] if "PYTHONPATH" in env else ""
+    )
+    result = subprocess.run(
+        ["python3", "-m", "flow.transpiler", str(src), "--c", "-o", str(out)],
+        capture_output=True, text=True, cwd=ROOT, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    c = out.read_text()
+    # The source is bound to one temp (`__fork_src_0 = frames...(7)`) and both
+    # branches read that temp: one definition + two uses == three occurrences,
+    # so the source runs once rather than once per field.
+    assert c.count("__fork_src_0") == 3
+    assert "= frames" in c  # the temp's initializer is the source call
