@@ -1,4 +1,5 @@
 # FLOW_MAXPROCS / async_set_maxprocs — Go GOMAXPROCS analogue
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Run: ./flow run examples/concurrency/gomaxprocs.flow
 
 import "stdlib/async.flow"

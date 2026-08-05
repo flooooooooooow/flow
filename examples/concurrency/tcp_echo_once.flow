@@ -1,4 +1,5 @@
 # TcpEffect via BlockingTcp — one loopback accept/send/recv round-trip.
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Server listens; client connects and sends "ping"; server echoes.
 #
 # Run: ./flow run examples/concurrency/tcp_echo_once.flow
