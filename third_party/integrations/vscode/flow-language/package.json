@@ -1,8 +1,8 @@
 {
   "name": "flow-language",
   "displayName": "FLOW Language",
-  "description": "Syntax highlighting and LSP support for the FLOW programming language (effects, autodiff, C backend).",
-  "version": "0.1.3",
+  "description": "Flow language support: syntax, snippets, tasks, run/compile, and LSP (effects, autodiff, C backend).",
+  "version": "0.3.0",
   "publisher": "quilio",
   "author": "Flow contributors",
   "license": "MIT",
@@ -20,7 +20,12 @@
     "vscode": "^1.125.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Snippets",
+    "Debuggers",
+    "Testing",
+    "Formatters",
+    "Other"
   ],
   "keywords": [
     "flow",
@@ -28,15 +33,21 @@
     "algebraic effects",
     "autodiff",
     "dsl",
-    "syntax"
+    "syntax",
+    "lsp",
+    "debugger",
+    "testing"
   ],
+  "extensionDependencies": [],
+  "extensionPack": [],
   "icon": "images/icon.png",
   "galleryBanner": {
     "color": "#0f172a",
     "theme": "dark"
   },
   "activationEvents": [
-    "onLanguage:flow"
+    "onLanguage:flow",
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -45,12 +56,17 @@
         "id": "flow",
         "aliases": [
           "FLOW",
+          "Flow",
           "flow"
         ],
         "extensions": [
           ".flow"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/flow-file.svg",
+          "dark": "./images/flow-file.svg"
+        }
       }
     ],
     "grammars": [
@@ -63,13 +79,178 @@
     "commands": [
       {
         "command": "flow.restartLsp",
-        "title": "FLOW: Restart Language Server"
+        "title": "FLOW: Restart Language Server",
+        "category": "Flow"
+      },
+      {
+        "command": "flow.runFile",
+        "title": "FLOW: Run Current File",
+        "category": "Flow",
+        "icon": "$(play)"
+      },
+      {
+        "command": "flow.compileFile",
+        "title": "FLOW: Compile Current File",
+        "category": "Flow",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "flow.formatFile",
+        "title": "FLOW: Format Current File",
+        "category": "Flow",
+        "icon": "$(symbol-ruler)"
+      },
+      {
+        "command": "flow.debugFile",
+        "title": "FLOW: Debug Current File",
+        "category": "Flow",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "flow.debugBuildOnly",
+        "title": "FLOW: Build Debug Binary",
+        "category": "Flow"
+      },
+      {
+        "command": "flow.refreshTests",
+        "title": "FLOW: Refresh Test Explorer",
+        "category": "Flow"
+      },
+      {
+        "command": "flow.openDocs",
+        "title": "FLOW: Open Documentation",
+        "category": "Flow"
       }
     ],
+    "keybindings": [
+      {
+        "command": "flow.runFile",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorLangId == flow"
+      },
+      {
+        "command": "flow.compileFile",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorLangId == flow"
+      },
+      {
+        "command": "flow.debugFile",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "editorLangId == flow"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "flow.runFile",
+          "when": "resourceLangId == flow",
+          "group": "navigation@1"
+        },
+        {
+          "command": "flow.debugFile",
+          "when": "resourceLangId == flow",
+          "group": "navigation@2"
+        },
+        {
+          "command": "flow.compileFile",
+          "when": "resourceLangId == flow",
+          "group": "navigation@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "flow.runFile",
+          "when": "resourceLangId == flow",
+          "group": "flow@1"
+        },
+        {
+          "command": "flow.debugFile",
+          "when": "resourceLangId == flow",
+          "group": "flow@2"
+        },
+        {
+          "command": "flow.compileFile",
+          "when": "resourceLangId == flow",
+          "group": "flow@3"
+        },
+        {
+          "command": "flow.formatFile",
+          "when": "resourceLangId == flow",
+          "group": "flow@4"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "flow.runFile",
+          "when": "editorLangId == flow"
+        },
+        {
+          "command": "flow.compileFile",
+          "when": "editorLangId == flow"
+        },
+        {
+          "command": "flow.debugFile",
+          "when": "editorLangId == flow"
+        },
+        {
+          "command": "flow.formatFile",
+          "when": "editorLangId == flow"
+        }
+      ]
+    },
+    "configurationDefaults": {
+      "[flow]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "quilio.flow-language",
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
+      }
+    },
     "snippets": [
       {
         "language": "flow",
         "path": "./snippets/flow.json"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "flow",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Flow CLI subcommand (run, compile, test, …)"
+          },
+          "file": {
+            "type": "string",
+            "description": "Optional .flow path relative to workspace"
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "flow",
+        "owner": "flow",
+        "fileLocation": [
+          "relative",
+          "${workspaceFolder}"
+        ],
+        "pattern": [
+          {
+            "regexp": "^(.*\\.flow):(\\d+):(\\d+):\\s+(error|warning):\\s+(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "message": 5
+          }
+        ]
       }
     ],
     "configuration": {
