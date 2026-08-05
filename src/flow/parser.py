@@ -942,6 +942,10 @@ class FlowChildDecl:
 class FlowConnection:
     """One wire `src_member.src_port -> dst_member.dst_port` inside `connect`.
 
+    An empty `src_member` marks a bare parent-port source (`port -> child.in`),
+    where `src_port` names an input or state of the enclosing flow rather than a
+    child's port.
+
     Spec: docs/vision/north-star.md §8.1.
     """
 
@@ -2114,9 +2118,17 @@ class Parser:
                     f"expected '}}' before end of file"
                 )
             src_tok = self.current_token
-            src_member = self.expect(TokenType.IDENTIFIER).value
-            self.expect(TokenType.DOT)
-            src_port = self.expect(TokenType.IDENTIFIER).value
+            first = self.expect(TokenType.IDENTIFIER).value
+            if self.current_token.type == TokenType.DOT:
+                # `child.port` — a sibling subflow's output/state.
+                self.advance()
+                src_member = first
+                src_port = self.expect(TokenType.IDENTIFIER).value
+            else:
+                # Bare `port` — a port of the enclosing (parent) flow.
+                # Empty src_member marks a parent source.
+                src_member = ""
+                src_port = first
             self.expect(TokenType.ARROW)
             dst_member = self.expect(TokenType.IDENTIFIER).value
             self.expect(TokenType.DOT)

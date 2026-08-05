@@ -1,0 +1,47 @@
+# Parent-port `connect` source: a bare `signal -> g.x` wires the enclosing
+# flow's own input (or state) into a child input, not just child-to-child.
+#
+# `Chain` has no dynamics of its own — it drives a `Gain` subflow from its
+# `signal` input. Chain_step copies `self.signal` into `self.g.x` before
+# stepping the child, so the child tracks the parent input each tick.
+#
+# Run: ./flow run examples/evolution/parent_input_connect.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+
+    # First-order low-pass toward k * x.
+    y evolves as k * x - y
+}
+
+flow Chain {
+    input signal : f64
+    g : Gain
+
+    connect {
+        signal -> g.x
+    }
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.01
+    let mut c: Chain = Chain_new()
+    c.signal = 1.0
+
+    let mut i: i32 = 0
+    while i < 2000 {
+        Chain_step(&c, dt)
+        i = i + 1
+    }
+
+    # y -> k * signal = 2.0
+    printf("gain output (expect ~2.0) = %f\n", c.g.out)
+    return 0
+}
