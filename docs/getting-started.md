@@ -6,18 +6,26 @@ Get from zero to productive in 5 minutes.
 
 ### Requirements
 
-- Python 3.8+
-- Clang or GCC
+- Python 3.9+
+- Clang or GCC (Xcode Command Line Tools on macOS)
 
-### Setup
+### Homebrew
 
 ```bash
-git clone https://github.com/flow-lang/flow.git
-cd flow
-./flow --help
+brew tap flooooooooooow/flow
+brew install flow
+flow version
 ```
 
-No pip install needed - Flow runs directly.
+### From source
+
+```bash
+git clone https://github.com/flooooooooooow/flow.git
+cd flow
+./flow version
+```
+
+No pip install needed — Flow runs directly from the repo (or the Homebrew prefix).
 
 ## Hello World
 

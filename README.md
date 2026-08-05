@@ -14,7 +14,7 @@
 | **Docs** | [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) |
 | **Version** | **0.8.0** |
 | **License** | MIT |
-| **Install** | Clone + `./flow run …` (Homebrew tap coming with the release formula) |
+| **Install** | `brew tap flooooooooooow/flow && brew install flow` · or clone + `./flow run …` |
 
 > **Why Flow exists:** [VISION](VISION.md) — evolution as the primary abstraction.  
 > **Self-hosting:** [plan](docs/project/self-hosting.md) · Stage-A `flowc` lives in [`compiler/`](compiler/).
@@ -47,6 +47,19 @@ flow run hello.flow
 ---
 
 ## Quick Start
+
+### Homebrew (macOS / Linuxbrew)
+
+```bash
+brew tap flooooooooooow/flow
+brew install flow
+flow version
+flow run examples/basics/hello_world.flow
+```
+
+Track `main` with `brew install --HEAD flow`. Formula source: [`packaging/homebrew`](packaging/homebrew).
+
+### From source
 
 ```bash
 git clone https://github.com/flooooooooooow/flow.git
