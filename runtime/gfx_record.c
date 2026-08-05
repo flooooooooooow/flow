@@ -6,8 +6,13 @@
 // real compiled program rather than by a re-implementation of it, and they can
 // be regenerated on a machine with no display (CI included).
 //
+// This file keeps only the flow_gfx_* ABI symbol table and the framebuffer
+// memory. The recorder logic (env parsing, key-injection schedule, frame
+// counting, PPM writing) lives in lib/runtime/gfx_record.flow; `./flow record`
+// transpiles that module and links it next to this file.
+//
 // Build (example):
-//   clang -O2 prog.c runtime/gfx_record.c runtime/flow_time.c -o prog -lm
+//   clang -O2 prog.c build/runtime_flow/gfx_record.c runtime/gfx_record.c -o prog -lm
 //
 // Configured entirely through the environment so no program needs changing:
 //   FLOW_GFX_RECORD_DIR     output directory for frames   (default ./frames)
@@ -28,75 +33,40 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
 
 #define FLOW_GFX_MAX_KEY_WINDOWS 128
 
-typedef struct {
-    int32_t first;
-    int32_t last;
-    int32_t keycode;
-} FlowGfxKeyWindow;
+// Recorder logic exports from lib/runtime/gfx_record.flow.
+int32_t flow_gfx_rec_env_int(const char *name, int32_t fallback);
+void flow_gfx_rec_env_dir(uint8_t *out, int64_t cap);
+int32_t flow_gfx_rec_parse_keys(int32_t *first, int32_t *last, int32_t *code,
+                                int32_t cap);
+int32_t flow_gfx_rec_key_down(int32_t presented, int32_t keycode,
+                              int32_t *first, int32_t *last, int32_t *code,
+                              int32_t count);
+int32_t flow_gfx_rec_should_close(int32_t closing, int32_t presented,
+                                  int32_t max_frames);
+int32_t flow_gfx_rec_present(uint8_t *dir, int32_t width, int32_t height,
+                             uint8_t *pixels, int32_t skip, int32_t max_frames,
+                             int32_t *presented, int32_t *written, void *err);
 
 typedef struct {
     int width;
     int height;
     uint8_t *pixels; // width*height*4 RGBA
 
-    char dir[1024];
+    uint8_t dir[1024];
     int32_t max_frames;
     int32_t skip;
     int32_t presented; // frames the program has drawn
     int32_t written;   // frames actually saved
     bool should_close;
 
-    FlowGfxKeyWindow keys[FLOW_GFX_MAX_KEY_WINDOWS];
-    int key_count;
+    int32_t key_first[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t key_last[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t key_code[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t key_count;
 } FlowGfxRecorder;
-
-static int32_t flow_gfx_env_int(const char *name, int32_t fallback) {
-    const char *raw = getenv(name);
-    if (!raw || !*raw) return fallback;
-    char *end = NULL;
-    long value = strtol(raw, &end, 10);
-    if (end == raw || value <= 0) return fallback;
-    return (int32_t)value;
-}
-
-// Parses "first-last:keycode" / "frame:keycode" entries separated by commas.
-static void flow_gfx_parse_keys(FlowGfxRecorder *rec, const char *spec) {
-    if (!spec || !*spec) return;
-    const char *p = spec;
-    while (*p && rec->key_count < FLOW_GFX_MAX_KEY_WINDOWS) {
-        while (*p == ',' || *p == ' ') p++;
-        if (!*p) break;
-
-        char *end = NULL;
-        long first = strtol(p, &end, 10);
-        if (end == p) break;
-        p = end;
-
-        long last = first;
-        if (*p == '-') {
-            p++;
-            last = strtol(p, &end, 10);
-            if (end == p) break;
-            p = end;
-        }
-        if (*p != ':') break;
-        p++;
-        long code = strtol(p, &end, 10);
-        if (end == p) break;
-        p = end;
-
-        if (last < first) last = first;
-        rec->keys[rec->key_count].first = (int32_t)first;
-        rec->keys[rec->key_count].last = (int32_t)last;
-        rec->keys[rec->key_count].keycode = (int32_t)code;
-        rec->key_count++;
-    }
-}
 
 void *flow_gfx_init(int32_t w, int32_t h, const char *title_utf8) {
     if (w <= 0 || h <= 0) return NULL;
@@ -111,16 +81,16 @@ void *flow_gfx_init(int32_t w, int32_t h, const char *title_utf8) {
         return NULL;
     }
 
-    const char *dir = getenv("FLOW_GFX_RECORD_DIR");
-    snprintf(rec->dir, sizeof(rec->dir), "%s", (dir && *dir) ? dir : "frames");
-    mkdir(rec->dir, 0755);
-
-    rec->max_frames = flow_gfx_env_int("FLOW_GFX_RECORD_FRAMES", 240);
-    rec->skip = flow_gfx_env_int("FLOW_GFX_RECORD_SKIP", 1);
-    flow_gfx_parse_keys(rec, getenv("FLOW_GFX_RECORD_KEYS"));
+    flow_gfx_rec_env_dir(rec->dir, (int64_t)sizeof(rec->dir));
+    rec->max_frames = flow_gfx_rec_env_int("FLOW_GFX_RECORD_FRAMES", 240);
+    rec->skip = flow_gfx_rec_env_int("FLOW_GFX_RECORD_SKIP", 1);
+    rec->key_count = flow_gfx_rec_parse_keys(rec->key_first, rec->key_last,
+                                             rec->key_code,
+                                             FLOW_GFX_MAX_KEY_WINDOWS);
 
     fprintf(stderr, "[gfx-record] %s — %dx%d, up to %d frames → %s\n",
-            title_utf8 ? title_utf8 : "(untitled)", w, h, rec->max_frames, rec->dir);
+            title_utf8 ? title_utf8 : "(untitled)", w, h, rec->max_frames,
+            (const char *)rec->dir);
     return rec;
 }
 
@@ -136,7 +106,8 @@ void flow_gfx_shutdown(void *handle) {
 int32_t flow_gfx_should_close(void *handle) {
     FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
     if (!rec) return 1;
-    return (rec->should_close || rec->presented >= rec->max_frames) ? 1 : 0;
+    return flow_gfx_rec_should_close(rec->should_close ? 1 : 0, rec->presented,
+                                     rec->max_frames);
 }
 
 void flow_gfx_poll(void *handle) {
@@ -146,13 +117,8 @@ void flow_gfx_poll(void *handle) {
 int32_t flow_gfx_key_down(void *handle, int32_t keycode) {
     FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
     if (!rec) return 0;
-    for (int i = 0; i < rec->key_count; i++) {
-        if (rec->keys[i].keycode != keycode) continue;
-        if (rec->presented >= rec->keys[i].first && rec->presented <= rec->keys[i].last) {
-            return 1;
-        }
-    }
-    return 0;
+    return flow_gfx_rec_key_down(rec->presented, keycode, rec->key_first,
+                                 rec->key_last, rec->key_code, rec->key_count);
 }
 
 void flow_gfx_clear(void *handle, uint8_t r, uint8_t g, uint8_t b) {
@@ -192,31 +158,14 @@ void flow_gfx_fill_rect(void *handle, int32_t x, int32_t y, int32_t w, int32_t h
     }
 }
 
-static void flow_gfx_write_ppm(FlowGfxRecorder *rec) {
-    char path[1152];
-    snprintf(path, sizeof(path), "%s/frame_%05d.ppm", rec->dir, rec->written);
-    FILE *f = fopen(path, "wb");
-    if (!f) {
-        fprintf(stderr, "[gfx-record] cannot write %s\n", path);
-        return;
-    }
-    fprintf(f, "P6\n%d %d\n255\n", rec->width, rec->height);
-    size_t n = (size_t)rec->width * (size_t)rec->height;
-    for (size_t i = 0; i < n; i++) {
-        fwrite(&rec->pixels[i * 4], 1, 3, f); // drop alpha
-    }
-    fclose(f);
-    rec->written++;
-}
-
 void flow_gfx_present(void *handle) {
     FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
     if (!rec || !rec->pixels) return;
-    if (rec->presented % rec->skip == 0 && rec->presented < rec->max_frames) {
-        flow_gfx_write_ppm(rec);
+    if (flow_gfx_rec_present(rec->dir, rec->width, rec->height, rec->pixels,
+                             rec->skip, rec->max_frames, &rec->presented,
+                             &rec->written, stderr)) {
+        rec->should_close = true;
     }
-    rec->presented++;
-    if (rec->presented >= rec->max_frames) rec->should_close = true;
 }
 
 // Mirrors the weak default in the windowed backends.
