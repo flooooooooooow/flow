@@ -749,6 +749,7 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                     {"label": "Structure", "path": "project/PROJECT_STRUCTURE.md"},
                     {"label": "Package Registry", "path": "project/package-registry.md"},
                     {"label": "Self-Hosting Plan", "path": "project/self-hosting.md"},
+                    {"label": "Release Process", "path": "project/RELEASING.md"},
                 ],
             },
             {

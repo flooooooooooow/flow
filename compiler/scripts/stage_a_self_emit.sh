@@ -94,7 +94,7 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_typecheck.o \
     compiler/build/self_resolve.o
 for sym in flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path; do
-    if ! nm compiler/build/flowc_frontend_self.o | grep -q "$sym"; then
+    if ! nm compiler/build/flowc_frontend_self.o | grep "$sym" >/dev/null; then
         echo "FAIL stage_a_self_emit: ${sym} missing from flowc_frontend_self.o" >&2
         exit 1
     fi

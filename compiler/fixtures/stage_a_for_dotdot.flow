@@ -1,5 +1,6 @@
-# Stage-A cgen round-trip: for-loop with legacy `0..N` range syntax → exit 45.
-# Same semantics as `for i in 0 to 10` (sum 0..9).
+# Negative syntax fixture retained for parser experiments.
+# `0..N` is legacy syntax and is intentionally not part of the Stage-A
+# roundtrip. Current Flow uses `for i in 0 to N`.
 
 function main() -> i32 {
     let mut s: i32 = 0
