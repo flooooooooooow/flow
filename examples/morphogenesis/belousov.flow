@@ -1,0 +1,280 @@
+# BELOUSOV-ZHABOTINSKY: spiral waves in an excitable medium.
+#
+# MODEL (Barkley's two-variable reduction of the BZ reaction)
+#   u is the fast excitation variable (bromous acid), v the slow recovery
+#   variable (the oxidised catalyst). A cell at rest that is pushed past the
+#   threshold (v + b) / a fires, drags its neighbours over the threshold by
+#   diffusion, then sits refractory while v decays. A wavefront with a free
+#   end curls around that end forever.
+#
+#     du/dt = Du * lap(u) + (1/eps) * u * (1 - u) * (u - (v + b) / a)
+#     dv/dt = u - v
+#
+#   Both lines are the body of `flow BzCell`. v does not diffuse.
+#
+# PARAMETERS
+#   eps 0.02 (time-scale separation)   a 0.75   b (see presets)
+#   Du 1.0, dx 1.0, five-point laplacian, no-flux boundaries.
+#   dt 0.01 explicit Euler, 128 x 128 grid, 40 steps per displayed frame.
+#
+# KEYS
+#   1 RIGID (b 0.02)   2 MEANDER (b 0.01)   3 WIDE CORE (b 0.05)
+#   R reseed    P pause    Esc quit
+#
+# PHENOMENON
+#   The initial condition is four broken plane waves, nothing more. Each
+#   broken end winds itself into a rotating spiral, the spirals collide, and
+#   the medium fills with the target-and-spiral texture of a real BZ dish.
+#   No spiral is drawn anywhere in this file; they are what the two lines
+#   above do when a wavefront has an end.
+#
+# Run: ./flow gfx examples/morphogenesis/belousov.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 40
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow BzCell {
+    state u : f64 = 0.0
+    state v : f64 = 0.0
+
+    param lap_u : f64 = 0.0
+    param du    : f64 = 1.0
+    param eps   : f64 = 0.02
+    param a     : f64 = 0.75
+    param b     : f64 = 0.02
+
+    solver { dt 10 ms  method euler }
+
+    u evolves as du * lap_u + (1.0 / eps) * u * (1.0 - u) * (u - (v + b) / a)
+    v evolves as u - v
+}
+
+let mut rng_state: u32 = 1046527061
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_jitter(span: i32) -> i32 {
+    return ((rng_next() >> 13) % ((2 * span + 1) as u32)) as i32 - span
+}
+
+function preset_b(p: i32) -> f64 {
+    if p == 1 { return 0.01 }
+    if p == 2 { return 0.05 }
+    return 0.02
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "MEANDER" }
+    if p == 2 { return "WIDE CORE" }
+    return "RIGID"
+}
+
+# Four broken plane waves, one per quadrant. A wavefront (u = 1) sits above a
+# band of refractory medium (v > 0) whose edge cuts the front in half; the
+# free end is the seed of a spiral.
+function seed_field(u: ptr<f64>, v: ptr<f64>, a: f64) -> void {
+    let half: i32 = GRID / 2
+    for i in 0 to CELLS {
+        u[i] = 0.0
+        v[i] = 0.0
+    }
+    for qy in 0 to 2 {
+        for qx in 0 to 2 {
+            let ox: i32 = qx * half
+            let oy: i32 = qy * half
+            let cx: i32 = ox + half / 2 + rng_jitter(9)
+            let cy: i32 = oy + half / 2 + rng_jitter(9)
+            for y in oy to oy + half {
+                for x in ox to ox + half {
+                    let i: i32 = y * GRID + x
+                    if y < cy and x >= cx and x < cx + 3 {
+                        u[i] = 1.0
+                    }
+                    if y < cy and x >= cx + 3 {
+                        v[i] = a * 0.6
+                    }
+                }
+            }
+        }
+    }
+}
+
+# No-flux (zero-gradient) laplacian: a closed petri dish, not a torus.
+function lap_at(f: ptr<f64>, x: i32, y: i32) -> f64 {
+    let mut xm: i32 = x - 1
+    let mut xp: i32 = x + 1
+    let mut ym: i32 = y - 1
+    let mut yp: i32 = y + 1
+    if xm < 0 { xm = 0 }
+    if xp >= GRID { xp = GRID - 1 }
+    if ym < 0 { ym = 0 }
+    if yp >= GRID { yp = GRID - 1 }
+    let r: i32 = y * GRID
+    return f[r + xm] + f[r + xp] + f[ym * GRID + x] + f[yp * GRID + x]
+           - 4.0 * f[r + x]
+}
+
+function evolve(u: ptr<f64>, v: ptr<f64>, un: ptr<f64>, vn: ptr<f64>,
+                b: f64, dt: f64) -> void {
+    let mut cell: BzCell = BzCell_new()
+    cell.b = b
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            cell.u = u[i]
+            cell.v = v[i]
+            cell.lap_u = lap_at(u, x, y)
+            BzCell_step(&cell, dt)
+            if cell.u < 0.0 { cell.u = 0.0 }
+            if cell.u > 1.0 { cell.u = 1.0 }
+            if cell.v < 0.0 { cell.v = 0.0 }
+            un[i] = cell.u
+            vn[i] = cell.v
+        }
+    }
+}
+
+function excited_fraction(u: ptr<f64>) -> f64 {
+    let mut n: i32 = 0
+    for i in 0 to CELLS {
+        if u[i] > 0.5 { n = n + 1 }
+    }
+    return (n as f64) / (CELLS as f64)
+}
+
+# Excited front rides bright over a violet refractory tail.
+function draw_field(g: Gfx, u: ptr<f64>, v: ptr<f64>) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let mut e: f64 = u[i]
+            if e < 0.0 { e = 0.0 }
+            if e > 1.0 { e = 1.0 }
+            let mut w: f64 = v[i] * 1.6
+            if w < 0.0 { w = 0.0 }
+            if w > 1.0 { w = 1.0 }
+            let mut r: f64 = 16.0 + 90.0 * w + 230.0 * e
+            let mut gg: f64 = 10.0 + 30.0 * w + 235.0 * e * e
+            let mut bb: f64 = 34.0 + 150.0 * w + 120.0 * e * e * e
+            if r > 255.0 { r = 255.0 }
+            if gg > 255.0 { gg = 255.0 }
+            if bb > 255.0 { bb = 255.0 }
+            gfx_fill_rect(g, x * CELL_PX, FIELD_Y + y * CELL_PX,
+                          CELL_PX, CELL_PX, r as i32, gg as i32, bb as i32)
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, b: f64, excited: f64,
+                  steps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "BELOUSOV-ZHABOTINSKY SPIRALS", 2,
+                                236, 232, 244)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "TIP", 1, 150, 145, 170)
+    let t3: i32 = gfx_draw_text(g, 32, 28, preset_name(preset), 1, 255, 190, 120)
+    let t4: i32 = gfx_draw_text(g, 116, 28, "b", 1, 150, 145, 170)
+    let t5: i32 = gfx_draw_fixed(g, 128, 28, b, 3, 1, 236, 232, 244)
+    let t6: i32 = gfx_draw_text(g, 182, 28, "EXCITED", 1, 150, 145, 170)
+    let t7: i32 = gfx_draw_fixed(g, 232, 28, excited * 100.0, 1, 1, 236, 232, 244)
+    let t8: i32 = gfx_draw_text(g, 274, 28, "PCT", 1, 150, 145, 170)
+    let t9: i32 = gfx_draw_text(g, 306, 28, "STEPS", 1, 150, 145, 170)
+    let ta: i32 = gfx_draw_int(g, 344, 28, steps, 1, 236, 232, 244)
+    let tb: i32 = gfx_draw_text(g, 8, 42,
+        "eps 0.02  a 0.75  Du 1.0   1 RIGID  2 MEANDER  3 WIDE CORE  R RESEED  P PAUSE",
+        1, 108, 104, 126)
+    if paused {
+        let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let td: i32 = gfx_draw_text(g, 8, 572,
+        "u evolves as Du*lap(u) + (1/eps)*u*(1-u)*(u - (v+b)/a)", 1,
+        120, 118, 145)
+    let te: i32 = gfx_draw_text(g, 8, 582,
+        "v evolves as u - v          excitable, not oscillatory: waves need a front",
+        1, 120, 118, 145)
+}
+
+function main() -> i32 {
+    let ua: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let va: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ub: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let vb: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+
+    let a_thresh: f64 = 0.75
+    let mut preset: i32 = 0
+    let mut b: f64 = preset_b(preset)
+    seed_field(ua, va, a_thresh)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Belousov-Zhabotinsky - Flow morphogenesis")
+    let dt: f64 = BzCell_default_dt()
+
+    let mut steps: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            b = preset_b(preset)
+            seed_field(ua, va, a_thresh)
+            steps = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(ua, va, a_thresh)
+                steps = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(ua, va, ub, vb, b, dt)
+                evolve(ub, vb, ua, va, b, dt)
+                steps = steps + 2
+            }
+        }
+
+        gfx_clear(g, 10, 8, 18)
+        draw_field(g, ua, va)
+        draw_hud(g, preset, b, excited_fraction(ua), steps, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
