@@ -936,6 +936,7 @@ class FlowChildDecl:
     name: str
     type: Type
     line: int = 0
+    synthesized: bool = False  # compiler-generated (e.g. a `|>` flow stage)
 
 
 @dataclass

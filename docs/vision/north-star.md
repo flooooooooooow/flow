@@ -617,6 +617,24 @@ flow Robot {
 no new parsing; the checker learns that a field whose type is a `flow` makes
 this a *composite* flow.
 
+**Flows as pipeline stages.** An `output` whose value pipes through flow-typed
+stages is sugar for the children + wiring above:
+
+```flow
+flow Chain {
+    input signal : f64
+    output result : f64 = signal |> Gain |> Limiter
+}
+```
+
+Each single-input/single-output stage becomes a synthesized child; the source
+and adjacent stages are wired in sequence (`signal -> Gain.x`,
+`Gain.out -> Limiter.w`) and the output reads the last stage. A stage's output
+is read before it steps that tick, so each stage adds one tick of delay — a
+sampled, state-broken pipeline (§8.3). Stage parameter overrides
+(`Gain { k = 3.0 }`) are not yet supported; wire those flows with explicit
+`connect`.
+
 ### 8.2 Checking
 
 - LHS must be an `output` (or `state`, explicitly allowed — reading a state as
