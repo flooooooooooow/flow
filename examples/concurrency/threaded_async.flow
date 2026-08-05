@@ -1,0 +1,32 @@
+# Effects-native concurrency — ThreadedAsync over real pthreads
+# Run: ./flow run examples/concurrency/threaded_async.flow
+
+import "stdlib/async.flow"
+
+function fetch_all(n: i32) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to n {
+        async_spawn(i)
+    }
+    for i in 0 to n {
+        total = total + async_join(i)
+    }
+    return total
+}
+
+function main() -> i32 {
+    printf("ThreadedAsync demo\n")
+    let mut batch: i32 = 0
+    handle Async with ThreadedAsync {
+        async_delay(1)
+        batch = fetch_all(4)
+    }
+    # Default unregistered tasks: join(i) -> i * 10 → 0+10+20+30 = 60
+    printf("  fetch_all(4) = %d (expect 60)\n", batch)
+    if batch != 60 {
+        printf("FAIL\n")
+        return 1
+    }
+    printf("OK\n")
+    return 0
+}

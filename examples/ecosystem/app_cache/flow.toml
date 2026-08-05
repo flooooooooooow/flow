@@ -1,0 +1,17 @@
+[package]
+name = "app_cache"
+version = "0.1.0"
+description = "End-to-end offline demo: cli + log + json + sqlite + sqlkit (+ optional http)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+cli = "0.1.0"
+log = "0.1.0"
+json = "0.1.0"
+sqlite = "0.1.0"
+sqlkit = "0.1.0"
+http = "0.1.0"
+
+[dev-dependencies]

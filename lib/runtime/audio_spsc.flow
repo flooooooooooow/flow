@@ -1,0 +1,105 @@
+# Flow runtime: lock-free SPSC float ring (RT-safe hot path).
+# Used by runtime/audio_miniaudio.c device callback / read/write facade.
+# Indices are i32; callers use flow_atomic_* for visibility.
+
+extern {
+    function flow_atomic_load_i32(ptr: ptr<i32>, memorder: i32) -> i32
+    function flow_atomic_store_i32(ptr: ptr<i32>, val: i32, memorder: i32) -> void
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function memset(dst: ptr<void>, val: i32, n: i64) -> ptr<void>
+}
+
+# Layout must match FlowSpscRingF32 in audio_miniaudio.c (after Flow rewrite).
+struct FlowSpscRingF32 {
+    data: ptr<f32>,
+    capacity: i32,
+    channels: i32,
+    read_idx: i32,
+    write_idx: i32,
+}
+
+@flow_api
+export function flow_audio_spsc_available_read(rb: ptr<FlowSpscRingF32>) -> i32 {
+    if rb == null {
+        return 0
+    }
+    let r: i32 = flow_atomic_load_i32(&rb.read_idx, 0)
+    let w: i32 = flow_atomic_load_i32(&rb.write_idx, 0)
+    return w - r
+}
+
+@flow_api
+export function flow_audio_spsc_available_write(rb: ptr<FlowSpscRingF32>) -> i32 {
+    if rb == null {
+        return 0
+    }
+    return rb.capacity - flow_audio_spsc_available_read(rb)
+}
+
+@flow_api
+export function flow_audio_spsc_write(rb: ptr<FlowSpscRingF32>, input: ptr<f32>, frames: i32) -> i32 {
+    if rb == null {
+        return 0
+    }
+    if input == null {
+        return 0
+    }
+    let mut n: i32 = frames
+    let avail: i32 = flow_audio_spsc_available_write(rb)
+    if n > avail {
+        n = avail
+    }
+    if n <= 0 {
+        return 0
+    }
+    let w: i32 = flow_atomic_load_i32(&rb.write_idx, 0)
+    let mask: i32 = rb.capacity - 1
+    let mut first: i32 = rb.capacity - (w & mask)
+    if first > n {
+        first = n
+    }
+    let second: i32 = n - first
+    let ch: i32 = rb.channels
+    let dst0: ptr<f32> = &rb.data[(w & mask) * ch]
+    memcpy(dst0 as ptr<void>, input as ptr<void>, (first as i64) * (ch as i64) * 4)
+    if second > 0 {
+        let src1: ptr<f32> = &input[first * ch]
+        memcpy(rb.data as ptr<void>, src1 as ptr<void>, (second as i64) * (ch as i64) * 4)
+    }
+    flow_atomic_store_i32(&rb.write_idx, w + n, 0)
+    return n
+}
+
+@flow_api
+export function flow_audio_spsc_read(rb: ptr<FlowSpscRingF32>, output: ptr<f32>, frames: i32) -> i32 {
+    if rb == null {
+        return 0
+    }
+    if output == null {
+        return 0
+    }
+    let mut n: i32 = frames
+    let avail: i32 = flow_audio_spsc_available_read(rb)
+    if n > avail {
+        n = avail
+    }
+    if n <= 0 {
+        return 0
+    }
+    let r: i32 = flow_atomic_load_i32(&rb.read_idx, 0)
+    let mask: i32 = rb.capacity - 1
+    let mut first: i32 = rb.capacity - (r & mask)
+    if first > n {
+        first = n
+    }
+    let second: i32 = n - first
+    let ch: i32 = rb.channels
+    let src0: ptr<f32> = &rb.data[(r & mask) * ch]
+    memcpy(output as ptr<void>, src0 as ptr<void>, (first as i64) * (ch as i64) * 4)
+    if second > 0 {
+        let dst1: ptr<f32> = &output[first * ch]
+        memcpy(dst1 as ptr<void>, rb.data as ptr<void>, (second as i64) * (ch as i64) * 4)
+    }
+    flow_atomic_store_i32(&rb.read_idx, r + n, 0)
+    return n
+}

@@ -1,0 +1,187 @@
+import "../../vulkan_abi/renderer.flow"
+import "stdlib/vulkan_abi_renderer.flow"
+import "stdlib/ui_layout.flow"
+
+const ALIGN_START: i32 = UI_JUSTIFY_START
+const ALIGN_CENTER: i32 = UI_JUSTIFY_CENTER
+const ALIGN_END: i32 = UI_JUSTIFY_END
+
+function i32_to_f32(v: i32) -> f32 { return v * 1.0 }
+
+ 
+
+function upload_quad_mesh(renderer: AbiRenderer) -> void {
+    let verts: array<f32, 32> = [
+        -0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 0.0,
+         0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 0.0,
+         0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 1.0,
+        -0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 1.0
+    ]
+    let inds: array<u16, 6> = [0, 1, 2, 2, 3, 0]
+    abi_renderer_upload_mesh(renderer, verts, 4, inds, 6)
+}
+
+function upload_white_texture(renderer: AbiRenderer) -> void {
+    let tex: array<u8, 4> = [255, 255, 255, 0]
+    let tex_id: i32 = abi_renderer_create_texture(renderer, 1, 1)
+    abi_renderer_update_texture(renderer, tex_id, tex, 1, 1)
+}
+
+function push_tile(inst: ptr<f32>, idx: i32, x: f32, y: f32, size: f32, r: f32, g: f32, b: f32) -> i32 {
+    let base: i32 = idx * 12
+    inst[base + 0] = x
+    inst[base + 1] = y
+    inst[base + 2] = 0.0
+    inst[base + 3] = size
+    inst[base + 4] = 0.0
+    inst[base + 5] = 0.0
+    inst[base + 6] = 1.0
+    inst[base + 7] = 1.0
+    inst[base + 8] = r
+    inst[base + 9] = g
+    inst[base + 10] = b
+    inst[base + 11] = 1.0
+    return idx + 1
+}
+
+function fill_rect_tiles(inst: ptr<f32>, idx: i32, x0: f32, y0: f32, cols: i32, rows: i32, tile: f32, r: f32, g: f32, b: f32) -> i32 {
+    let i: i32 = 0
+    let j: i32 = 0
+    let out: i32 = idx
+    while j < rows {
+        i = 0
+        while i < cols {
+            let x: f32 = x0 + i32_to_f32(i) * tile
+            let y: f32 = y0 + i32_to_f32(j) * tile
+            out = push_tile(inst, out, x, y, tile * 0.95, r, g, b)
+            i = i + 1
+        }
+        j = j + 1
+    }
+    return out
+}
+
+function layout_box_draw(state: ptr<UiLayoutState>, instances: ptr<f32>, count: ptr<i32>, rect: UiRect, r: f32, g: f32, b: f32) -> void {
+    if rect.w <= 0 || rect.h <= 0 { return }
+    let x0: f32 = i32_to_f32(rect.x) * state[0].unit
+    let y0: f32 = i32_to_f32(rect.y) * state[0].unit
+    count[0] = fill_rect_tiles(instances, count[0], x0, y0, rect.w, rect.h, state[0].unit, r, g, b)
+}
+
+function layout_box_fill(state: ptr<UiLayoutState>, instances: ptr<f32>, count: ptr<i32>, r: f32, g: f32, b: f32) -> void {
+    let rect: UiRect = ui_box(state)
+    layout_box_draw(state, instances, count, rect, r, g, b)
+}
+
+function layout_box_fixed(state: ptr<UiLayoutState>, instances: ptr<f32>, count: ptr<i32>, w: i32, h: i32, align_x: i32, align_y: i32, r: f32, g: f32, b: f32) -> void {
+    let rect: UiRect = ui_box(state)
+    if rect.w <= 0 || rect.h <= 0 { return }
+    let cw: i32 = w
+    let ch: i32 = h
+    if cw > rect.w { cw = rect.w }
+    if ch > rect.h { ch = rect.h }
+    let dx: i32 = 0
+    let dy: i32 = 0
+    if align_x == ALIGN_END { dx = rect.w - cw }
+    if align_x == ALIGN_CENTER { dx = (rect.w - cw) / 2 }
+    if align_y == ALIGN_END { dy = rect.h - ch }
+    if align_y == ALIGN_CENTER { dy = (rect.h - ch) / 2 }
+    let x0: f32 = i32_to_f32(rect.x + dx) * state[0].unit
+    let y0: f32 = i32_to_f32(rect.y + dy) * state[0].unit
+    count[0] = fill_rect_tiles(instances, count[0], x0, y0, cw, ch, state[0].unit, r, g, b)
+}
+
+function layout_box_auto(state: ptr<UiLayoutState>, instances: ptr<f32>, count: ptr<i32>, align_x: i32, align_y: i32, r: f32, g: f32, b: f32) -> void {
+    let rect: UiRect = ui_box(state)
+    if rect.w <= 0 || rect.h <= 0 { return }
+    let size: i32 = rect.w
+    if rect.h < size { size = rect.h }
+    size = (size * 8) / 10
+    let dx: i32 = 0
+    let dy: i32 = 0
+    if align_x == ALIGN_END { dx = rect.w - size }
+    if align_x == ALIGN_CENTER { dx = (rect.w - size) / 2 }
+    if align_y == ALIGN_END { dy = rect.h - size }
+    if align_y == ALIGN_CENTER { dy = (rect.h - size) / 2 }
+    let x0: f32 = i32_to_f32(rect.x + dx) * state[0].unit
+    let y0: f32 = i32_to_f32(rect.y + dy) * state[0].unit
+    count[0] = fill_rect_tiles(instances, count[0], x0, y0, size, size, state[0].unit, r, g, b)
+}
+
+function main() -> i32 {
+    let width: i32 = 960
+    let height: i32 = 640
+    flow_vk_set_window_scale(1.0, 0)
+    if flow_vk_2048_init(width, height, "Flow Vulkan Layout DSL", 3000) != 0 {
+        return 1
+    }
+
+    let renderer: AbiRenderer = abi_renderer_init()
+    abi_renderer_set_clear(renderer, 0.05, 0.05, 0.06)
+    abi_renderer_set_viewport(renderer, width, height)
+    upload_quad_mesh(renderer)
+    upload_white_texture(renderer)
+
+    let inst_handle: i32 = abi_renderer_create_instance_buffer(renderer, 3000)
+    let instances: array<f32, 36000> = [0.0]
+    let frames_init: array<UiLayoutFrame, 32> = [
+        UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }
+    ]
+    let state_store: array<UiLayoutState, 1> = [
+        UiLayoutState{
+            frames: frames_init,
+            top: 0,
+            unit: 1.0,
+            win_w: 0.0,
+            win_h: 0.0,
+        }
+    ]
+    ui_layout_bind(state_store)
+    let count_store: array<i32, 1> = [0]
+
+    while flow_vk_2048_should_close() == 0 && abi_renderer_begin_frame(renderer) == 1 {
+        flow_vk_2048_poll()
+        ui_layout_set_view(_ui_state, i32_to_f32(width), i32_to_f32(height))
+        count_store[0] = 0
+
+        ui_layout(48, 32, 2) {
+            ui_stack() {
+                layout_box_fill(_ui_state, instances, count_store, 0.09, 0.09, 0.11)
+            }
+            ui_column(3, 2, 0, ALIGN_START) {
+                ui_row(2, 2, 1, ALIGN_CENTER) {
+                    ui_column(3, 1, 0, ALIGN_START) {
+                        layout_box_auto(_ui_state, instances, count_store, ALIGN_CENTER, ALIGN_CENTER, 0.16, 0.18, 0.22)
+                        layout_box_fixed(_ui_state, instances, count_store, 10, 4, ALIGN_START, ALIGN_CENTER, 0.18, 0.26, 0.38)
+                        layout_box_fixed(_ui_state, instances, count_store, 6, 6, ALIGN_END, ALIGN_END, 0.22, 0.32, 0.24)
+                    }
+                    ui_column(2, 1, 0, ALIGN_START) {
+                        ui_row(2, 1, 0, ALIGN_START) {
+                            layout_box_fill(_ui_state, instances, count_store, 0.20, 0.22, 0.26)
+                            layout_box_auto(_ui_state, instances, count_store, ALIGN_END, ALIGN_CENTER, 0.20, 0.30, 0.20)
+                        }
+                        ui_grid(2, 2, 1, 0, ALIGN_CENTER, ALIGN_CENTER) {
+                            layout_box_fill(_ui_state, instances, count_store, 0.26, 0.22, 0.22)
+                            layout_box_fixed(_ui_state, instances, count_store, 5, 5, ALIGN_CENTER, ALIGN_CENTER, 0.22, 0.24, 0.32)
+                            layout_box_auto(_ui_state, instances, count_store, ALIGN_START, ALIGN_END, 0.18, 0.22, 0.30)
+                            layout_box_fill(_ui_state, instances, count_store, 0.28, 0.20, 0.26)
+                        }
+                    }
+                }
+                ui_row(1, 0, 0, ALIGN_CENTER) {
+                    layout_box_fill(_ui_state, instances, count_store, 0.14, 0.14, 0.18)
+                }
+                ui_stack() {
+                    layout_box_auto(_ui_state, instances, count_store, ALIGN_CENTER, ALIGN_CENTER, 0.10, 0.10, 0.12)
+                }
+            }
+        }
+
+        abi_renderer_update_instance_buffer(renderer, inst_handle, instances, count_store[0])
+        abi_renderer_draw_instance_buffer(renderer, inst_handle, count_store[0])
+        abi_renderer_end_frame(renderer)
+    }
+
+    flow_vk_2048_shutdown()
+    return 0
+}

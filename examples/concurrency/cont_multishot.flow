@@ -1,0 +1,19 @@
+# Multi-shot Cont scaffold: resume the same captured k twice.
+# Run: ./flow run examples/concurrency/cont_multishot.flow
+
+extern {
+    function flow_demo_cont_multishot() -> i32
+}
+
+function main() -> i32 {
+    println("cont multishot demo")
+    let r: i32 = flow_demo_cont_multishot()
+    print("  resume_multi 10+20 -> ")
+    println(r)
+    if r != 30 {
+        println("FAIL")
+        return 1
+    }
+    println("OK")
+    return 0
+}

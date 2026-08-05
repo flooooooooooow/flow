@@ -1,0 +1,35 @@
+# Flow runtime: fiber microbench harnesses.
+# fchan + fiber spawn stay in flow_fiber.c (asm-coupled).
+
+extern {
+    function flow_rt_bench_fiber_chan_pingpong_body(n: i32, buf: i32) -> i64
+    function flow_rt_bench_fiber_fanout_sum_body(n: i32, fibers: i32) -> i64
+    function flow_rt_fiber_local_pops() -> i64
+    function flow_rt_fiber_steals() -> i64
+    function flow_rt_fiber_steal_stats_reset() -> void
+}
+
+@flow_api
+export function flow_bench_fiber_chan_pingpong_ns(n: i32, buf: i32) -> i64 {
+    return flow_rt_bench_fiber_chan_pingpong_body(n, buf)
+}
+
+@flow_api
+export function flow_bench_fiber_fanout_sum(n: i32, fibers: i32) -> i64 {
+    return flow_rt_bench_fiber_fanout_sum_body(n, fibers)
+}
+
+@flow_api
+export function flow_fiber_local_pops() -> i64 {
+    return flow_rt_fiber_local_pops()
+}
+
+@flow_api
+export function flow_fiber_steals() -> i64 {
+    return flow_rt_fiber_steals()
+}
+
+@flow_api
+export function flow_fiber_steal_stats_reset() -> void {
+    flow_rt_fiber_steal_stats_reset()
+}

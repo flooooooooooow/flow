@@ -1,0 +1,11 @@
+[package]
+name = "collectionsx"
+version = "0.1.0"
+description = "Growable VecI32 and open-addressing MapI32 (i32→i32)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

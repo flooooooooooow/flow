@@ -1,0 +1,54 @@
+# Record creation benchmark - test memory allocation
+# Creates 8,388,608 records (same as the standardized benchmark)
+#
+# Tests struct allocation performance
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+const NUM_RECORDS: i32 = 8388608  # 8 * 1024 * 1024
+
+struct Record {
+    x: f64,
+    y: f64,
+    z: f64
+}
+
+function main() -> i32 {
+    let start: i64 = clock()
+    
+    # Allocate flat array of records (more idiomatic for Flow)
+    let record_size: i64 = 24  # sizeof(Record) = 3 * 8 = 24
+    let records: ptr<Record> = malloc(NUM_RECORDS * record_size)
+    
+    # Create records
+    for i in 0 to NUM_RECORDS {
+        records[i].x = i * 1.0
+        records[i].y = i * 2.0
+        records[i].z = i * 3.0
+    }
+    
+    # Verify (prevent optimization)
+    let mut sum: f64 = 0.0
+    for i in 0 to NUM_RECORDS {
+        sum = sum + records[i].x + records[i].y + records[i].z
+    }
+    
+    # Cleanup
+    free(records)
+    
+    let end: i64 = clock()
+    let elapsed_us: f64 = (end - start) / CLOCKS_PER_SEC * 1000000.0
+    
+    printf("%.1f", elapsed_us)
+    print(" µs (checksum: ")
+    printf("%.0f", sum)
+    println(")")
+    
+    return 0
+}

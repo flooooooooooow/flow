@@ -1,0 +1,262 @@
+[0;34m╔══════════════════════════════════════════════════════════════╗[0m
+[0;34m║           FLOW LANGUAGE BENCHMARK SUITE                      ║[0m
+[0;34m╚══════════════════════════════════════════════════════════════╝[0m
+
+[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[1;33m  BENCHMARK: fibonacci[0m
+[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+[0;32m[C] Compiling with: clang -O3 -march=native -ffast-math[0m
+
+[0;32m[Flow] Compiling with same flags as C...[0m
+Resolving modules...
+Type warnings (lenient mode):
+  ⚠ Const 'CLOCKS_PER_SEC' has type f32 but should be f64
+  ⚠ Variable 'result' initialized with i32 but annotated as i64
+  ⚠ Binary operator '/' requires matching types, got i64 and f64
+  ⚠ Variable 'elapsed' initialized with i64 but annotated as f64
+  ⚠ Function 'printf' argument 0 expects string, got f32
+  ... and 3 more
+Parsed 5 functions, 0 structs, 0 effects, 0 capabilities
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+static const double CLOCKS_PER_SEC = 1000000.0;
+int64_t clock(void);
+int64_t fib_i32(int32_t n);
+double benchmark_i32_i32(int32_t n, int32_t iterations);
+int32_t main(void);
+int64_t fib_i32(int32_t n) {
+    if (n < 2) {
+        return n;
+    }
+    return (fib_i32((n - 1)) + fib_i32((n - 2)));
+}
+double benchmark_i32_i32(int32_t n, int32_t iterations) {
+    int64_t start = clock();
+    int64_t result = 0;
+    for (int32_t i = 0; i < iterations; i += 1) {
+        result = fib_i32(n);
+    }
+    int64_t end = clock();
+    double elapsed = ((end - start) / CLOCKS_PER_SEC);
+    printf("  fib(");
+    printf("%d", n);
+    printf(") = ");
+    printf("%lld", result);
+    printf(" | ");
+    printf("%.4f", elapsed);
+    printf(" sec | ");
+    double rate = (iterations / elapsed);
+    printf("%.2f", rate);
+    printf(" calls/sec\n");
+    return elapsed;
+}
+int32_t main(void) {
+    printf("==============================================\n");
+    printf("  FIBONACCI BENCHMARK (Naive Recursive)\n");
+    printf("==============================================\n");
+    printf("\n");
+    int64_t warmup = fib_i32(20);
+    printf("N=35 (1 iteration):\n");
+    double t1 = benchmark_i32_i32(35, 1);
+    printf("\n");
+    printf("N=40 (1 iteration):\n");
+    double t2 = benchmark_i32_i32(40, 1);
+    printf("\n");
+    printf("N=30 (10 iterations):\n");
+    double t3 = benchmark_i32_i32(30, 10);
+    printf("\n");
+    printf("Benchmark complete.\n");
+    return 0;
+}
+
+[0;34m────────────────────────────────────────[0m
+[0;34m  C (clang -O3)[0m
+[0;34m────────────────────────────────────────[0m
+==============================================
+  FIBONACCI BENCHMARK (Naive Recursive) - C
+==============================================
+
+N=35 (1 iteration):
+  fib(35) = 9227465 | 0.0160 sec | 62.54 calls/sec
+
+N=40 (1 iteration):
+  fib(40) = 102334155 | 0.1740 sec | 5.75 calls/sec
+
+N=30 (10 iterations):
+  fib(30) = 832040 | 0.0014 sec | 7278.02 calls/sec
+
+Benchmark complete.
+
+[0;34m────────────────────────────────────────[0m
+[0;34m  Flow (compiled to C)[0m
+[0;34m────────────────────────────────────────[0m
+==============================================
+  FIBONACCI BENCHMARK (Naive Recursive)
+==============================================
+
+N=35 (1 iteration):
+  fib(35) = 9227465 | 0.0152 sec | 65.84 calls/sec
+
+N=40 (1 iteration):
+  fib(40) = 102334155 | 0.1710 sec | 5.85 calls/sec
+
+N=30 (10 iterations):
+  fib(30) = 832040 | 0.0014 sec | 7220.22 calls/sec
+
+Benchmark complete.
+
+[0;34m────────────────────────────────────────[0m
+[0;34m  Python 3[0m
+[0;34m────────────────────────────────────────[0m
+==============================================
+  FIBONACCI BENCHMARK (Naive Recursive) - Python
+==============================================
+
+N=35 (1 iteration):
+  fib(35) = 9227465 | 1.3096 sec | 0.76 calls/sec
+
+N=40 (1 iteration):
+  fib(40) = 102334155 | 14.0864 sec | 0.07 calls/sec
+
+N=30 (10 iterations):
+  fib(30) = 832040 | 1.1909 sec | 8.40 calls/sec
+
+Benchmark complete.
+
+[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[1;33m  BENCHMARK: nbody[0m
+[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+[0;32m[C] Compiling with: clang -O3 -march=native -ffast-math[0m
+
+[0;32m[Flow] Compiling with same flags as C...[0m
+Resolving modules...
+Type warnings (lenient mode):
+  ⚠ Const 'CLOCKS_PER_SEC' has type f32 but should be f64
+  ⚠ Const 'PI' has type f32 but should be f64
+  ⚠ Const 'SOLAR_MASS' has type f32 but should be f64
+  ⚠ Const 'DAYS_PER_YEAR' has type f32 but should be f64
+  ⚠ Variable 'dx' initialized with void but annotated as f64
+  ... and 54 more
+Parsed 7 functions, 1 structs, 0 effects, 0 capabilities
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+static const double CLOCKS_PER_SEC = 1000000.0;
+static const double PI = 3.141592653589793;
+static const double SOLAR_MASS = 39.47841760435743;
+static const double DAYS_PER_YEAR = 365.24;
+typedef struct {
+    double mass;
+    double vx;
+    double vy;
+    double vz;
+    double x;
+    double y;
+    double z;
+} Body;
+int64_t clock(void);
+double sqrt(double x);
+void advance_ptr_Body_i32_f64(Body* bodies, int32_t n, double dt);
+double energy_ptr_Body_i32(Body* bodies, int32_t n);
+void offset_momentum_ptr_Body_i32(Body* bodies, int32_t n);
+int32_t main(void);
+void advance_ptr_Body_i32_f64(Body* bodies, int32_t n, double dt) {
+    for (int32_t i = 0; i < n; i += 1) {
+        for (int32_t j = (i + 1); j < n; j += 1) {
+            double dx = (bodies[i].x - bodies[j].x);
+            double dy = (bodies[i].y - bodies[j].y);
+            double dz = (bodies[i].z - bodies[j].z);
+            double d2 = (((dx * dx) + (dy * dy)) + (dz * dz));
+            double mag = (dt / (d2 * sqrt(d2)));
+            double mm_i = (bodies[i].mass * mag);
+            double mm_j = (bodies[j].mass * mag);
+            bodies[i].vx = (bodies[i].vx - (dx * mm_j));
+            bodies[i].vy = (bodies[i].vy - (dy * mm_j));
+            bodies[i].vz = (bodies[i].vz - (dz * mm_j));
+            bodies[j].vx = (bodies[j].vx + (dx * mm_i));
+            bodies[j].vy = (bodies[j].vy + (dy * mm_i));
+            bodies[j].vz = (bodies[j].vz + (dz * mm_i));
+        }
+    }
+    for (int32_t i = 0; i < n; i += 1) {
+        bodies[i].x = (bodies[i].x + (dt * bodies[i].vx));
+        bodies[i].y = (bodies[i].y + (dt * bodies[i].vy));
+        bodies[i].z = (bodies[i].z + (dt * bodies[i].vz));
+    }
+}
+double energy_ptr_Body_i32(Body* bodies, int32_t n) {
+    double e = 0.0;
+    for (int32_t i = 0; i < n; i += 1) {
+        double v2 = (((bodies[i].vx * bodies[i].vx) + (bodies[i].vy * bodies[i].vy)) + (bodies[i].vz * bodies[i].vz));
+        e = (e + ((0.5 * bodies[i].mass) * v2));
+        for (int32_t j = (i + 1); j < n; j += 1) {
+            double dx = (bodies[i].x - bodies[j].x);
+            double dy = (bodies[i].y - bodies[j].y);
+            double dz = (bodies[i].z - bodies[j].z);
+            double d = sqrt((((dx * dx) + (dy * dy)) + (dz * dz)));
+            e = (e - ((bodies[i].mass * bodies[j].mass) / d));
+        }
+    }
+    return e;
+}
+void offset_momentum_ptr_Body_i32(Body* bodies, int32_t n) {
+    double px = 0.0;
+    double py = 0.0;
+    double pz = 0.0;
+    for (int32_t i = 0; i < n; i += 1) {
+        px = (px + (bodies[i].vx * bodies[i].mass));
+        py = (py + (bodies[i].vy * bodies[i].mass));
+        pz = (pz + (bodies[i].vz * bodies[i].mass));
+    }
+    bodies[0].vx = (0.0 - (px / SOLAR_MASS));
+    bodies[0].vy = (0.0 - (py / SOLAR_MASS));
+    bodies[0].vz = (0.0 - (pz / SOLAR_MASS));
+}
+int32_t main(void) {
+    printf("==============================================\n");
+    printf("  N-BODY BENCHMARK (Solar System)\n");
+    printf("==============================================\n");
+    printf("\n");
+    Body bodies[5] = { (Body){ .x = 0.0, .y = 0.0, .z = 0.0, .vx = 0.0, .vy = 0.0, .vz = 0.0, .mass = SOLAR_MASS }, (Body){ .x = 4.84143144246472090, .y = (-1.16032004402742839), .z = (-0.103622044471123109), .vx = (0.00166007664274403694 * DAYS_PER_YEAR), .vy = (0.00769901118419740425 * DAYS_PER_YEAR), .vz = ((-0.0000690460016972063023) * DAYS_PER_YEAR), .mass = (0.000954791938424326609 * SOLAR_MASS) }, (Body){ .x = 8.34336671824457987, .y = 4.12479856412430479, .z = (-0.403523417114321381), .vx = ((-0.00276742510726862411) * DAYS_PER_YEAR), .vy = (0.00499852801234917238 * DAYS_PER_YEAR), .vz = (0.0000230417297573763929 * DAYS_PER_YEAR), .mass = (0.000285885980666130812 * SOLAR_MASS) }, (Body){ .x = 12.8943695621391310, .y = (-15.1111514016986312), .z = (-0.223307578892655734), .vx = (0.00296460137564761618 * DAYS_PER_YEAR), .vy = (0.00237847173959480950 * DAYS_PER_YEAR), .vz = ((-0.0000296589568540237556) * DAYS_PER_YEAR), .mass = (0.0000436624404335156298 * SOLAR_MASS) }, (Body){ .x = 15.3796971148509165, .y = (-25.9193146099879641), .z = 0.179258772950371181, .vx = (0.00268067772490389322 * DAYS_PER_YEAR), .vy = (0.00162824170038242295 * DAYS_PER_YEAR), .vz = ((-0.0000951592254519715870) * DAYS_PER_YEAR), .mass = (0.0000515138902046611451 * SOLAR_MASS) } };
+    Body* bodies_ptr = bodies;
+    offset_momentum_ptr_Body_i32(bodies_ptr, 5);
+    double e0 = energy_ptr_Body_i32(bodies_ptr, 5);
+    printf("Initial energy: ");
+    printf("%.9f", e0);
+    printf("\n");
+    int32_t iterations[3] = { 1000000, 10000000, 50000000 };
+    for (int32_t idx = 0; idx < 3; idx += 1) {
+        int32_t n = iterations[idx];
+        Body bodies_reset[5] = { (Body){ .x = 0.0, .y = 0.0, .z = 0.0, .vx = 0.0, .vy = 0.0, .vz = 0.0, .mass = SOLAR_MASS }, (Body){ .x = 4.84143144246472090, .y = (-1.16032004402742839), .z = (-0.103622044471123109), .vx = (0.00166007664274403694 * DAYS_PER_YEAR), .vy = (0.00769901118419740425 * DAYS_PER_YEAR), .vz = ((-0.0000690460016972063023) * DAYS_PER_YEAR), .mass = (0.000954791938424326609 * SOLAR_MASS) }, (Body){ .x = 8.34336671824457987, .y = 4.12479856412430479, .z = (-0.403523417114321381), .vx = ((-0.00276742510726862411) * DAYS_PER_YEAR), .vy = (0.00499852801234917238 * DAYS_PER_YEAR), .vz = (0.0000230417297573763929 * DAYS_PER_YEAR), .mass = (0.000285885980666130812 * SOLAR_MASS) }, (Body){ .x = 12.8943695621391310, .y = (-15.1111514016986312), .z = (-0.223307578892655734), .vx = (0.00296460137564761618 * DAYS_PER_YEAR), .vy = (0.00237847173959480950 * DAYS_PER_YEAR), .vz = ((-0.0000296589568540237556) * DAYS_PER_YEAR), .mass = (0.0000436624404335156298 * SOLAR_MASS) }, (Body){ .x = 15.3796971148509165, .y = (-25.9193146099879641), .z = 0.179258772950371181, .vx = (0.00268067772490389322 * DAYS_PER_YEAR), .vy = (0.00162824170038242295 * DAYS_PER_YEAR), .vz = ((-0.0000951592254519715870) * DAYS_PER_YEAR), .mass = (0.0000515138902046611451 * SOLAR_MASS) } };
+        Body* b_ptr = bodies_reset;
+        offset_momentum_ptr_Body_i32(b_ptr, 5);
+        printf("Running ");
+        printf("%d", n);
+        printf(" iterations...\n");
+        int64_t start = clock();
+        for (int32_t i = 0; i < n; i += 1) {
+            advance_ptr_Body_i32_f64(b_ptr, 5, 0.01);
+        }
+        int64_t end = clock();
+        double elapsed = ((end - start) / CLOCKS_PER_SEC);
+        double e1 = energy_ptr_Body_i32(b_ptr, 5);
+        printf("  Time: ");
+        printf("%.3f", elapsed);
+        printf(" sec | Energy: ");
+        printf("%.9f", e1);
+        printf(" | ");
+        printf("%.2f", ((n / elapsed) / 1000000.0));
+        printf(" M steps/sec\n");
+    }
+    printf("\n");
+    printf("Benchmark complete.\n");
+    return 0;
+}
+clang: error: no such file or directory: 'build/02_nbody.c'

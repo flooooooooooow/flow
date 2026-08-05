@@ -1,0 +1,92 @@
+# Flow runtime: parallel-for chunk orchestration.
+# Hot worker loop + pthread create: runtime/flow_rt_parallel.c
+# Note: param name is `stride` — `step` is a reserved keyword in Flow.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function flow_rt_par_workers() -> i32
+    function flow_rt_par_job_sizeof() -> i64
+    function flow_rt_par_job_set(job: ptr<void>, start: i32, end: i32, stride: i32, body: ptr<void>, ctx: ptr<void>) -> void
+    function flow_rt_par_job_at_offset(base: ptr<void>, job_sz: i64, index: i32, out_job: ptr<ptr<void> >) -> i32
+    function flow_rt_par_run_job(job: ptr<void>) -> void
+    function flow_rt_par_spawn(job: ptr<void>, out_thread: ptr<i64>) -> i32
+    function flow_rt_par_join(thread: i64) -> i32
+}
+
+@flow_api
+export function flow_parallel_for_i32(start: i32, end: i32, stride: i32, body: ptr<void>, ctx: ptr<void>) -> void {
+    if body == null {
+        return
+    }
+    if stride == 0 {
+        return
+    }
+    let mut n: i64 = 0
+    if stride > 0 {
+        let mut i: i32 = start
+        while i < end {
+            n = n + 1
+            i = i + stride
+        }
+    } else {
+        let mut i: i32 = start
+        while i > end {
+            n = n + 1
+            i = i + stride
+        }
+    }
+    if n <= 0 {
+        return
+    }
+    let job_sz: i64 = flow_rt_par_job_sizeof()
+    if n < 2 {
+        let one: ptr<void> = malloc(job_sz)
+        flow_rt_par_job_set(one, start, end, stride, body, ctx)
+        flow_rt_par_run_job(one)
+        free(one)
+        return
+    }
+    let mut workers: i32 = flow_rt_par_workers()
+    if (workers as i64) > n {
+        workers = n as i32
+    }
+    let chunk: i32 = ((n + (workers as i64) - 1) / (workers as i64)) as i32
+    let jobs: ptr<void> = malloc(job_sz * (workers as i64))
+    let mut tids: ptr<i64> = malloc((workers as i64) * 8) as ptr<i64>
+    let mut w: i32 = 0
+    while w < workers {
+        let i0: i64 = (w as i64) * (chunk as i64)
+        let mut i1: i64 = i0 + (chunk as i64)
+        let mut job: ptr<void> = null
+        let _: i32 = flow_rt_par_job_at_offset(jobs, job_sz, w, &job)
+        if i0 >= n {
+            flow_rt_par_job_set(job, 0, 0, stride, null, ctx)
+            tids[w] = -1
+        } else {
+            if i1 > n {
+                i1 = n
+            }
+            let s: i32 = start + ((i0 * (stride as i64)) as i32)
+            let e: i32 = start + ((i1 * (stride as i64)) as i32)
+            flow_rt_par_job_set(job, s, e, stride, body, ctx)
+            let mut th: i64 = 0
+            if flow_rt_par_spawn(job, &th) != 0 {
+                flow_rt_par_run_job(job)
+                tids[w] = -1
+            } else {
+                tids[w] = th
+            }
+        }
+        w = w + 1
+    }
+    w = 0
+    while w < workers {
+        if tids[w] >= 0 {
+            let __: i32 = flow_rt_par_join(tids[w])
+        }
+        w = w + 1
+    }
+    free(jobs)
+    free(tids as ptr<void>)
+}

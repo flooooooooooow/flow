@@ -1,0 +1,49 @@
+# sqlkit demo — migrate + insert/count over in-memory sqlite
+import sqlite.lib { sqlite_open, sqlite_close }
+import sqlkit.lib {
+    sql_migrate_v1,
+    sql_table_exists,
+    sql_migrations_table_exists,
+    sql_insert_i32,
+    sql_count
+}
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+}
+
+function main() -> i32 {
+    let db: ptr<void> = sqlite_open(":memory:")
+    if db == null {
+        printf("open_failed=%lld\n", 1 as i64)
+        return 1
+    }
+
+    let before: i32 = sql_table_exists(db)
+    printf("exists_before=%lld\n", before as i64)
+
+    let mig: i32 = sql_migrate_v1(db)
+    printf("migrate=%lld\n", mig as i64)
+
+    let mig_tbl: i32 = sql_migrations_table_exists(db)
+    let after: i32 = sql_table_exists(db)
+    printf("migrations_exists=%lld\n", mig_tbl as i64)
+    printf("exists_after=%lld\n", after as i64)
+
+    let rc1: i32 = sql_insert_i32(db)
+    let rc2: i32 = sql_insert_i32(db)
+    let n: i64 = sql_count(db)
+    printf("insert=%lld\n", (rc1 + rc2) as i64)
+    printf("count=%lld\n", n)
+
+    # Idempotent second migrate should stay ok
+    let mig2: i32 = sql_migrate_v1(db)
+    printf("migrate2=%lld\n", mig2 as i64)
+
+    sqlite_close(db)
+
+    if before == 0 && mig == 0 && after == 1 && mig_tbl == 1 && rc1 == 0 && rc2 == 0 && n == 2 && mig2 == 0 {
+        return 0
+    }
+    return 1
+}

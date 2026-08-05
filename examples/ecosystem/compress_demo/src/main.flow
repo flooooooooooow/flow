@@ -1,0 +1,45 @@
+# compress package demo — deflate/inflate roundtrip
+import compress.lib { compress_deflate, compress_inflate }
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+}
+
+function main() -> i32 {
+    # "HelloFlow" (9 bytes)
+    let src: array<u8, 9> = [72, 101, 108, 108, 111, 70, 108, 111, 119]
+    let mut compressed: array<u8, 64> = []
+    let mut restored: array<u8, 64> = []
+
+    let src_ptr: ptr<u8> = src
+    let c_ptr: ptr<u8> = compressed
+    let r_ptr: ptr<u8> = restored
+
+    let clen: i64 = compress_deflate(src_ptr, 9, c_ptr, 64)
+    printf("compressed_len=%lld\n", clen)
+    if clen < 0 {
+        printf("deflate_failed=%lld\n", 1 as i64)
+        return 1
+    }
+
+    let rlen: i64 = compress_inflate(c_ptr, clen, r_ptr, 64)
+    printf("restored_len=%lld\n", rlen)
+    if rlen != 9 {
+        printf("inflate_failed=%lld\n", 1 as i64)
+        return 1
+    }
+
+    let mut ok: i64 = 1
+    let mut i: i64 = 0
+    while i < 9 {
+        if restored[i as i32] != src[i as i32] {
+            ok = 0
+        }
+        i = i + 1
+    }
+    printf("roundtrip_ok=%lld\n", ok)
+    if ok == 1 {
+        return 0
+    }
+    return 1
+}

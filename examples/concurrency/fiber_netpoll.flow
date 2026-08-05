@@ -1,0 +1,17 @@
+# Fiber-parked netpoll — park fiber on pipe read (not OS thread)
+# Run: ./flow run examples/concurrency/fiber_netpoll.flow
+
+extern {
+    function flow_demo_fiber_netpoll_pipe() -> i32
+}
+
+function main() -> i32 {
+    printf("fiber netpoll demo\n")
+    let r: i32 = flow_demo_fiber_netpoll_pipe()
+    printf("  pipe poll -> %d (expect 1)\n", r)
+    if r != 1 {
+        return 1
+    }
+    printf("OK\n")
+    return 0
+}

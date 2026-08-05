@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flow Playground - Run Real Flow Code</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --accent: #58a6ff;
+            --success: #3fb950;
+            --error: #f85149;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent), #a371f7);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+        
+        h1 { font-size: 1.25rem; }
+        
+        .badge {
+            background: var(--success);
+            color: #000;
+            padding: 0.2rem 0.6rem;
+            border-radius: 1rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .toolbar {
+            background: var(--surface);
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        select, button {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        
+        button:hover { background: var(--border); }
+        button.primary { background: var(--success); color: #000; border-color: var(--success); }
+        button.primary:hover { opacity: 0.9; }
+        
+        .editor-container {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            min-height: 0;
+        }
+        
+        @media (max-width: 800px) {
+            .editor-container { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+        }
+        
+        .panel {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+        }
+        
+        .panel:last-child { border-right: none; }
+        
+        .panel-header {
+            background: var(--surface);
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #8b949e;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .panel-content {
+            flex: 1;
+            overflow: auto;
+            min-height: 0;
+        }
+        
+        #editor {
+            width: 100%;
+            height: 100%;
+            padding: 1rem;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            border: none;
+            resize: none;
+            outline: none;
+        }
+        
+        #output {
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            background: #0a0a0a;
+        }
+        
+        .output-success { color: var(--success); }
+        .output-error { color: var(--error); }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #8b949e;
+        }
+        
+        .status-dot.success { background: var(--success); }
+        .status-dot.error { background: var(--error); }
+        .status-dot.running { background: #d29922; animation: pulse 1s infinite; }
+        
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        footer {
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            font-size: 0.75rem;
+            color: #8b949e;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        footer a { color: var(--accent); text-decoration: none; }
+        
+        kbd {
+            background: var(--border);
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">F</div>
+            <h1>Flow Playground</h1>
+        </div>
+        <span class="badge">🔥 REAL EXECUTION</span>
+    </header>
+    
+    <main>
+        <div class="toolbar">
+            <select id="examples" onchange="loadExample()">
+                <option value="hello">Hello World</option>
+                <option value="fibonacci">Fibonacci</option>
+                <option value="factorial">Factorial</option>
+                <option value="loops">Loops</option>
+                <option value="structs">Structs</option>
+                <option value="math">Math Functions</option>
+            </select>
+            <button class="primary" onclick="runCode()">▶ Run</button>
+            <button onclick="clearOutput()">Clear</button>
+        </div>
+        
+        <div class="editor-container">
+            <div class="panel">
+                <div class="panel-header">
+                    <span>main.flow</span>
+                    <span class="status">
+                        <span class="status-dot" id="status"></span>
+                        <span id="statusText">Ready</span>
+                    </span>
+                </div>
+                <div class="panel-content">
+                    <textarea id="editor" spellcheck="false"></textarea>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <div class="panel-header">
+                    <span>Output</span>
+                    <span id="timing"></span>
+                </div>
+                <div class="panel-content">
+                    <div id="output">Click "Run" to execute your Flow code.</div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <footer>
+        <div>
+            <a href="../">Demos</a> · 
+            <a href="../mandelbrot/">Mandelbrot</a> · 
+            <a href="https://github.com/abhishekshivakumar/transpile">GitHub</a>
+        </div>
+        <div><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to run</div>
+    </footer>
+    
+    <script>
+        const examples = {
+            hello: `# Hello World in Flow
+function main() -> i32 {
+    println("Hello, World!")
+    println("Welcome to the Flow Playground!")
+    println("This code is ACTUALLY running - not simulated!")
+    return 0
+}`,
+            fibonacci: `# Fibonacci sequence
+function fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+function main() -> i32 {
+    println("Fibonacci sequence:")
+    for i in 0 to 15 {
+        let result: i32 = fibonacci(i)
+        print("fib(")
+        print(i)
+        print(") = ")
+        println(result)
+    }
+    return 0
+}`,
+            factorial: `# Factorial calculation
+function factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+function main() -> i32 {
+    println("Factorials:")
+    for i in 0 to 12 {
+        let result: i32 = factorial(i)
+        print(i)
+        print("! = ")
+        println(result)
+    }
+    return 0
+}`,
+            loops: `# Loop examples
+function main() -> i32 {
+    println("For loop:")
+    for i in 0 to 5 {
+        print("  i = ")
+        println(i)
+    }
+    
+    println("")
+    println("While loop:")
+    let mut j: i32 = 10
+    while j > 0 {
+        print("  j = ")
+        println(j)
+        j = j - 2
+    }
+    
+    println("")
+    println("Nested loops:")
+    for x in 0 to 3 {
+        for y in 0 to 3 {
+            print("(")
+            print(x)
+            print(",")
+            print(y)
+            print(") ")
+        }
+        println("")
+    }
+    
+    return 0
+}`,
+            structs: `# Struct example
+struct Point {
+    x: f64,
+    y: f64
+}
+
+function distance(p1x: f64, p1y: f64, p2x: f64, p2y: f64) -> f64 {
+    let dx: f64 = p2x - p1x
+    let dy: f64 = p2y - p1y
+    return sqrt(dx * dx + dy * dy)
+}
+
+function main() -> i32 {
+    let x1: f64 = 0.0
+    let y1: f64 = 0.0
+    let x2: f64 = 3.0
+    let y2: f64 = 4.0
+    
+    println("Point 1: (0, 0)")
+    println("Point 2: (3, 4)")
+    print("Distance: ")
+    let d: f64 = distance(x1, y1, x2, y2)
+    println(d)
+    
+    return 0
+}`,
+            math: `# Math functions demo
+function main() -> i32 {
+    println("Math functions in Flow:")
+    println("")
+    
+    print("sqrt(16) = ")
+    println(sqrt(16.0))
+    
+    print("sin(0) = ")
+    println(sin(0.0))
+    
+    print("cos(0) = ")
+    println(cos(0.0))
+    
+    print("exp(1) = ")
+    println(exp(1.0))
+    
+    print("log(e) = ")
+    println(log(2.718281828))
+    
+    print("abs(-42) = ")
+    println(abs(-42.0))
+    
+    print("pow(2, 10) = ")
+    println(pow(2.0, 10.0))
+    
+    return 0
+}`
+        };
+        
+        const editor = document.getElementById('editor');
+        editor.value = examples.hello;
+        
+        function loadExample() {
+            const select = document.getElementById('examples');
+            editor.value = examples[select.value];
+            clearOutput();
+        }
+        
+        function setStatus(status, text) {
+            document.getElementById('status').className = 'status-dot ' + status;
+            document.getElementById('statusText').textContent = text;
+        }
+        
+        function clearOutput() {
+            document.getElementById('output').textContent = 'Click "Run" to execute your Flow code.';
+            document.getElementById('output').className = '';
+            document.getElementById('timing').textContent = '';
+            setStatus('', 'Ready');
+        }
+        
+        async function runCode() {
+            const code = editor.value;
+            const outputEl = document.getElementById('output');
+            
+            setStatus('running', 'Compiling...');
+            outputEl.textContent = 'Compiling Flow to JavaScript...';
+            
+            // Give UI time to update
+            await new Promise(r => setTimeout(r, 10));
+            
+            try {
+                const startCompile = performance.now();
+                
+                // Parse and generate JS (this is the magic!)
+                const js = compileFlowToJS(code);
+                
+                const compileTime = performance.now() - startCompile;
+                
+                setStatus('running', 'Running...');
+                outputEl.textContent = 'Running...';
+                
+                await new Promise(r => setTimeout(r, 10));
+                
+                const startRun = performance.now();
+                
+                // Execute the generated JavaScript
+                eval(js);
+                const result = __flow_run();
+                
+                const runTime = performance.now() - startRun;
+                
+                if (result.success) {
+                    outputEl.className = 'output-success';
+                    outputEl.textContent = result.output + '\n\n✅ Exit code: ' + result.result;
+                    setStatus('success', 'Success');
+                } else {
+                    outputEl.className = 'output-error';
+                    outputEl.textContent = result.output + '\n\n❌ Error: ' + result.error;
+                    setStatus('error', 'Error');
+                }
+                
+                document.getElementById('timing').textContent = 
+                    `Compile: ${compileTime.toFixed(1)}ms | Run: ${runTime.toFixed(1)}ms`;
+                
+            } catch (e) {
+                outputEl.className = 'output-error';
+                outputEl.textContent = '❌ Compilation Error:\n' + e.toString();
+                setStatus('error', 'Error');
+            }
+        }
+        
+        // Mini Flow-to-JS compiler (simplified version)
+        function compileFlowToJS(flowCode) {
+            // This is a simplified in-browser compiler
+            // In production, this would call the real Python transpiler via API
+            
+            let js = `
+// Flow Runtime
+const __flow_runtime = {
+    output: [],
+    print: function(s) { this.output.push(String(s)); },
+    println: function(s) { this.output.push(String(s) + '\\n'); },
+    printf: function(fmt, ...args) {
+        let i = 0;
+        const result = fmt.replace(/%([dfsi\\.0-9]*[dfsi])/g, (m, spec) => {
+            const v = args[i++];
+            if (spec.endsWith('f')) {
+                const prec = spec.match(/\\.(\\d+)/);
+                return prec ? v.toFixed(parseInt(prec[1])) : v.toFixed(6);
+            }
+            if (spec.endsWith('d') || spec.endsWith('i')) return Math.floor(v);
+            return v;
+        });
+        this.output.push(result);
+    },
+    getOutput: function() { return this.output.join(''); },
+    clearOutput: function() { this.output = []; }
+};
+
+const sqrt = Math.sqrt;
+const sin = Math.sin;
+const cos = Math.cos;
+const exp = Math.exp;
+const log = Math.log;
+const abs = Math.abs;
+const floor = Math.floor;
+const ceil = Math.ceil;
+const pow = Math.pow;
+const clock = () => performance.now() * 1000;
+`;
+            
+            // Parse and convert Flow to JS
+            const lines = flowCode.split('\n');
+            let inFunction = false;
+            let braceDepth = 0;
+            let currentFunc = '';
+            
+            for (let line of lines) {
+                const trimmed = line.trim();
+                
+                // Skip comments
+                if (trimmed.startsWith('#') || trimmed.startsWith('//')) {
+                    js += '// ' + trimmed.substring(1).trim() + '\n';
+                    continue;
+                }
+                
+                // Skip empty lines
+                if (!trimmed) {
+                    js += '\n';
+                    continue;
+                }
+                
+                // Skip struct declarations for now
+                if (trimmed.startsWith('struct ')) {
+                    // Skip until closing brace
+                    continue;
+                }
+                
+                // Function declaration
+                const funcMatch = trimmed.match(/^function\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*\w+)?\s*\{?$/);
+                if (funcMatch) {
+                    const name = funcMatch[1];
+                    const params = funcMatch[2]
+                        .split(',')
+                        .map(p => p.trim().split(':')[0].trim())
+                        .filter(p => p)
+                        .join(', ');
+                    js += `function ${name}(${params}) {\n`;
+                    inFunction = true;
+                    braceDepth = 1;
+                    continue;
+                }
+                
+                // Track braces
+                for (const c of trimmed) {
+                    if (c === '{') braceDepth++;
+                    if (c === '}') braceDepth--;
+                }
+                
+                // Convert Flow syntax to JS
+                let jsLine = trimmed;
+                
+                // let declarations
+                jsLine = jsLine.replace(/let\s+mut\s+(\w+)\s*:\s*\w+\s*=/, 'let $1 =');
+                jsLine = jsLine.replace(/let\s+(\w+)\s*:\s*\w+\s*=/, 'const $1 =');
+                
+                // print/println
+                jsLine = jsLine.replace(/println\(([^)]*)\)/, '__flow_runtime.println($1)');
+                jsLine = jsLine.replace(/print\(([^)]*)\)/, '__flow_runtime.print($1)');
+                jsLine = jsLine.replace(/printf\(([^)]*)\)/, '__flow_runtime.printf($1)');
+                
+                // for loops: for i in 0 to 10 -> for (let i = 0; i < 10; i++)
+                jsLine = jsLine.replace(
+                    /for\s+(\w+)\s+in\s+(\d+)\s+to\s+(\d+)\s*\{?/,
+                    'for (let $1 = $2; $1 < $3; $1++) {'
+                );
+                
+                // while loops
+                jsLine = jsLine.replace(/while\s+(.+)\s*\{/, 'while ($1) {');
+                
+                // if/else
+                jsLine = jsLine.replace(/if\s+(.+)\s*\{/, 'if ($1) {');
+                jsLine = jsLine.replace(/\}\s*else\s*\{/, '} else {');
+                
+                // Boolean operators
+                jsLine = jsLine.replace(/\band\b/g, '&&');
+                jsLine = jsLine.replace(/\bor\b/g, '||');
+                jsLine = jsLine.replace(/\bnot\b/g, '!');
+                
+                // Add semicolons where needed
+                if (!jsLine.endsWith('{') && !jsLine.endsWith('}') && !jsLine.endsWith(';') && jsLine.trim()) {
+                    if (!jsLine.includes('//')) {
+                        jsLine += ';';
+                    }
+                }
+                
+                js += '    '.repeat(Math.max(0, braceDepth - 1)) + jsLine + '\n';
+                
+                if (braceDepth === 0 && inFunction) {
+                    inFunction = false;
+                    js += '\n';
+                }
+            }
+            
+            // Add entry point
+            js += `
+function __flow_run() {
+    __flow_runtime.clearOutput();
+    try {
+        const result = typeof main === 'function' ? main() : 0;
+        return { success: true, output: __flow_runtime.getOutput(), result: result };
+    } catch (e) {
+        return { success: false, output: __flow_runtime.getOutput(), error: e.toString() };
+    }
+}
+`;
+            
+            return js;
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                runCode();
+            }
+        });
+    </script>
+</body>
+</html>

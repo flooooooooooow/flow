@@ -1,0 +1,49 @@
+# strings package demo
+import strings.lib {
+    str_starts_with,
+    str_ends_with,
+    str_contains,
+    str_index_of,
+    str_to_i32,
+    str_trim_ws,
+    str_slice
+}
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    let s: string = "hello world"
+
+    printf("starts_he=%d\n", str_starts_with(s, "he"))
+    printf("starts_wo=%d\n", str_starts_with(s, "wo"))
+    printf("ends_ld=%d\n", str_ends_with(s, "ld"))
+    printf("ends_he=%d\n", str_ends_with(s, "he"))
+    printf("contains_lo_w=%d\n", str_contains(s, "lo w"))
+    printf("contains_xyz=%d\n", str_contains(s, "xyz"))
+    printf("index_world=%d\n", str_index_of(s, "world"))
+    printf("index_missing=%d\n", str_index_of(s, "xyz"))
+    printf("to_i32=%d\n", str_to_i32("  -42x"))
+    printf("to_i32_pos=%d\n", str_to_i32("100"))
+
+    let mut trim_buf: array<u8, 64> = []
+    let trim_ptr: ptr<u8> = trim_buf
+    let trim_n: i32 = str_trim_ws("  hi  ", trim_ptr, 64)
+    printf("trim_len=%d\n", trim_n)
+    if trim_n >= 0 {
+        printf("trim_c0=%d\n", trim_ptr[0])
+        printf("trim_c1=%d\n", trim_ptr[1])
+    }
+
+    let mut slice_buf: array<u8, 64> = []
+    let slice_ptr: ptr<u8> = slice_buf
+    let slice_n: i32 = str_slice(s, 6, 11, slice_ptr, 64)
+    printf("slice_len=%d\n", slice_n)
+    if slice_n >= 0 {
+        printf("slice_c0=%d\n", slice_ptr[0])
+        printf("slice_c1=%d\n", slice_ptr[1])
+    }
+
+    return 0
+}
