@@ -5,12 +5,12 @@ import .token {
     Token, Lexer,
     TOK_EOF, TOK_IDENT, TOK_KEYWORD, TOK_INT, TOK_FLOAT, TOK_STRING,
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACK, TOK_RBRACK, TOK_DOT, TOK_DOTDOT,
-    TOK_COLON, TOK_COMMA, TOK_ARROW,
+    TOK_COLON, TOK_COMMA, TOK_ARROW, TOK_FATARROW,
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
-    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR
+    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -21,7 +21,12 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_STRING, AST_CONST, AST_CAST, AST_ARRAY_LIT,
     AST_BINOP, AST_UNARY, AST_CALL, AST_IDENT, AST_INT, AST_FLOAT,
     AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
+    AST_MATCH, AST_MATCH_ARM,
     flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push
+}
+
+extern {
+    function puts(s: string) -> i32
 }
 
 export struct Parser {
@@ -643,6 +648,114 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].a = lo
         p[0].arena.nodes[id].b = hi
         p[0].arena.nodes[id].c = body
+        return id
+    }
+    # match expr { pattern => block, ... }
+    # Stage-A patterns: int literal (optional leading `-`), `_` wildcard, or a
+    # binding ident (catch-all). Guards / struct / list / or-patterns are
+    # rejected with a diagnostic (Python host keeps the full surface).
+    if flowc_parser_check_kw(p[0], KW_MATCH) == 1 {
+        let start: i32 = p[0].cur.start
+        flowc_parser_advance(p)
+        let scrut: i32 = flowc_parse_expr(p)
+        if scrut == AST_NONE {
+            return AST_NONE
+        }
+        if flowc_parser_eat(p, TOK_LBRACE) == 0 {
+            return AST_NONE
+        }
+        let mut arms: i32 = AST_NONE
+        while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+            let arm_start: i32 = p[0].cur.start
+            let mut pat_kind: i32 = 0
+            let mut pat: i32 = AST_NONE
+            let mut bind_s: i32 = 0
+            let mut bind_e: i32 = 0
+            let mut neg: i32 = 0
+            if flowc_parser_check(p[0], TOK_MINUS) == 1 {
+                neg = 1
+                flowc_parser_advance(p)
+            }
+            if flowc_parser_check(p[0], TOK_INT) == 1 {
+                let tok: Token = p[0].cur
+                pat = flowc_ast_alloc(&p[0].arena, AST_INT, tok.start, tok.end)
+                if pat == AST_NONE {
+                    p[0].err = 1
+                    return AST_NONE
+                }
+                let mut v: i32 = flowc_parse_int_span(p[0].lex.input, tok.start, tok.end)
+                if neg == 1 {
+                    v = 0 - v
+                }
+                p[0].arena.nodes[pat].ival = v
+                flowc_parser_advance(p)
+                pat_kind = 0
+            } else {
+                if neg == 1 or flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                    if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
+                        puts("flowc parse: list patterns not supported in Stage-A match")
+                    } else {
+                        puts("flowc parse: unsupported match pattern (Stage-A: int literal, `_`, or binding ident)")
+                    }
+                    p[0].err = 1
+                    return AST_NONE
+                }
+                bind_s = p[0].cur.start
+                bind_e = p[0].cur.end
+                flowc_parser_advance(p)
+                # ident( → struct pattern (unsupported in Stage-A).
+                if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                    puts("flowc parse: struct patterns not supported in Stage-A match")
+                    p[0].err = 1
+                    return AST_NONE
+                }
+                # bare `_` is a wildcard; any other ident binds the scrutinee.
+                if bind_e - bind_s == 1 and p[0].lex.input[bind_s] == 95 {
+                    pat_kind = 1
+                } else {
+                    pat_kind = 2
+                }
+            }
+            if flowc_parser_check_kw(p[0], KW_IF) == 1 {
+                puts("flowc parse: match guards not supported in Stage-A")
+                p[0].err = 1
+                return AST_NONE
+            }
+            if flowc_parser_check(p[0], TOK_FATARROW) == 0 {
+                puts("flowc parse: expected => after match pattern (or/struct/list patterns unsupported in Stage-A)")
+                p[0].err = 1
+                return AST_NONE
+            }
+            flowc_parser_advance(p)
+            let body: i32 = flowc_parse_block(p)
+            if body == AST_NONE {
+                return AST_NONE
+            }
+            let arm: i32 = flowc_ast_alloc(&p[0].arena, AST_MATCH_ARM, arm_start, p[0].cur.start)
+            if arm == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[arm].ival = pat_kind
+            p[0].arena.nodes[arm].a = pat
+            p[0].arena.nodes[arm].b = body
+            p[0].arena.nodes[arm].name_start = bind_s
+            p[0].arena.nodes[arm].name_end = bind_e
+            arms = flowc_ast_chain_push(&p[0].arena, arms, arm)
+            if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                flowc_parser_advance(p)
+            }
+        }
+        if flowc_parser_eat(p, TOK_RBRACE) == 0 {
+            return AST_NONE
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_MATCH, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = scrut
+        p[0].arena.nodes[id].b = arms
         return id
     }
     if flowc_parser_check_kw(p[0], KW_BREAK) == 1 {
