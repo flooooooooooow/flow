@@ -20,8 +20,10 @@ its own evolution and exits nonzero if the guarantee fails.
 | [`robot_connect.flow`](robot_connect.flow) | `connect { … }` | Nested plant + controller wiring |
 | [`pendulum_represent_linear.flow`](pendulum_represent_linear.flow) | `represent linear` | Bridge to `dsys` analysis |
 | [`spring_mass_control.flow`](spring_mass_control.flow) | `dsys` / `sense` / `ga` / `closed` | Model → analyze → control |
-| [`lorenz_gfx.flow`](lorenz_gfx.flow) | `flow` + portrait trail + `gfx_frame_pump` | Live Lorenz (x,z) trail |
-| [`heat_diffusion.flow`](heat_diffusion.flow) | `laplacian_1d` / `heat_euler_step_1d` | 1D heat + ASCII frames |
+| [`spring_mass_lqr.flow`](spring_mass_lqr.flow) | `analyze { lqr }` | Same plant, discrete LQR gains |
+| [`chain4_lqr.flow`](chain4_lqr.flow) | `analyze { lqr }` n=4 | LQR beyond n=2 |
+| [`lorenz_gfx.flow`](lorenz_gfx.flow) | `flow` + `represent phase_portrait` | Live Lorenz (x,z) trail |
+| [`heat_diffusion.flow`](heat_diffusion.flow) | `field` / `boundary` / laplacian | 1D heat + ASCII frames |
 
 ```
 ./flow run examples/evolution/pendulum_evolves.flow

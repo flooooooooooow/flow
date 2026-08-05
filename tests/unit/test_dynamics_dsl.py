@@ -399,3 +399,57 @@ class TestDynamicsDSLWFC:
     def test_expand_imports_coupling_module(self):
         out = expand_dynamics_dsl(WFC_SAMPLE)
         assert 'import "stdlib/dynamics/wfc_ga_coupling.flow"' in out
+
+ANALYZE_LQR = """
+dsys plant {
+    discrete
+    dt 0.1
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+
+analyze plant {
+    lqr {
+        Q 1.0 1.0
+        R 1.0
+        -> k1 k2
+    }
+}
+
+function main() -> i32 {
+    return 0
+}
+"""
+
+
+class TestAnalyzeLqr:
+    def test_parse_vision_analyze_lqr(self):
+        program, stripped = parse_dynamics_dsl(ANALYZE_LQR)
+        assert "analyze plant" not in stripped
+        assert len(program.analyze_lqrs) == 1
+        lqr = program.analyze_lqrs[0]
+        assert lqr.system == "plant"
+        assert lqr.q_diag == [1.0, 1.0]
+        assert lqr.r == 1.0
+        assert lqr.gain_vars == ["k1", "k2"]
+
+    def test_expand_emits_dlqr(self):
+        out = expand_dynamics_dsl(ANALYZE_LQR)
+        assert "dlqr_diag_q_scalar_u" in out
+        assert 'import "stdlib/dynamics/lqr.flow"' in out
+        assert "let k1: f64" in out
+        assert "1.0" in out  # R must stay f64 literal
+
+    def test_ga_form_still_works(self):
+        src = (
+            "dsys plant {\n discrete\n dt 0.1\n n 2 m 1 p 1\n"
+            " A 1.0 0.1 0.0 1.0\n B 0.0 0.1\n C 1.0 0.0\n}\n"
+            "horizon h finite 10\n"
+            "analyze plant ga k1 k2 over h -> report { full }\n"
+            "function main() -> i32 { return 0 }\n"
+        )
+        program, _ = parse_dynamics_dsl(src)
+        assert len(program.analyzes) == 1
+        assert program.analyze_lqrs == []
