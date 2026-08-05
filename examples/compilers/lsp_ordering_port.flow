@@ -1,0 +1,65 @@
+# Flow port of src/flow/lsp_ordering.py — ordering IntelliSense strings.
+# Python LSP still owns JSON-RPC; this is the data/table rewrite.
+
+extern {
+    function printf(fmt: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+# Returns 1 if word is a known ordering keyword.
+export function flowc_ordering_known(word: string) -> i32 {
+    if strcmp(word, "sort") == 0 { return 1 }
+    if strcmp(word, "sortBy") == 0 { return 1 }
+    if strcmp(word, "asc") == 0 { return 1 }
+    if strcmp(word, "desc") == 0 { return 1 }
+    if strcmp(word, "unique") == 0 { return 1 }
+    if strcmp(word, "entropy") == 0 { return 1 }
+    if strcmp(word, "order") == 0 { return 1 }
+    return 0
+}
+
+# Prints a one-line gloss (demo / CLI); full markdown hover stays in Python for now.
+export function flowc_ordering_print_gloss(word: string) -> i32 {
+    if strcmp(word, "sort") == 0 {
+        printf("sort: declarative ordering (xs |> sort)\n")
+        return 1
+    }
+    if strcmp(word, "sortBy") == 0 {
+        printf("sortBy: multi-key sort (xs |> sortBy [asc .f, ...])\n")
+        return 1
+    }
+    if strcmp(word, "asc") == 0 {
+        printf("asc: ascending key\n")
+        return 1
+    }
+    if strcmp(word, "desc") == 0 {
+        printf("desc: descending key\n")
+        return 1
+    }
+    if strcmp(word, "unique") == 0 {
+        printf("unique: sort then compact adjacent duplicates\n")
+        return 1
+    }
+    if strcmp(word, "entropy") == 0 {
+        printf("entropy: allow randomized strategies (Phase 2)\n")
+        return 1
+    }
+    if strcmp(word, "order") == 0 {
+        printf("order: declarative ordering head\n")
+        return 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    if flowc_ordering_known("sort") != 1 {
+        return 1
+    }
+    if flowc_ordering_known("nope") != 0 {
+        return 2
+    }
+    let _: i32 = flowc_ordering_print_gloss("sort")
+    printf("lsp_ordering Flow port ok\n")
+    return 0
+}

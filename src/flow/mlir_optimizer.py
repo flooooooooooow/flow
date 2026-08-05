@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+
 class MLIROptimizer:
     """MLIR optimization pipeline for FLOW."""
 
@@ -39,6 +40,117 @@ class MLIROptimizer:
     def _copy_if_different(src: str, dst: str) -> None:
         if Path(src).resolve() != Path(dst).resolve():
             shutil.copyfile(src, dst)
+
+    @staticmethod
+    def build_pass_pipeline(
+        enable_vectorization: bool = True,
+        enable_loop_fusion: bool = True,
+        enable_mem2reg: bool = True,
+        enable_sccp: bool = True,
+        enable_licm: bool = True,
+        enable_gvn: bool = True,
+        enable_dce: bool = True,
+        enable_inline: bool = True,
+        optimization_level: str = "O2",
+    ) -> str:
+        """
+        Build an mlir-opt --pass-pipeline string from flags and O-level.
+
+        Inspectable without running mlir-opt (for unit tests).
+
+        Nesting notes:
+        - ``inline`` and ``symbol-dce`` are module-level (need a symbol table).
+        - Most other passes nest under ``func.func(...)``.
+        - ``affine-super-vectorize`` requires affine/scf loop IR from the
+          generator; on today's func/arith-only FLOW MLIR it is a no-op / soft
+          no-effect until the generator emits affine or scf loops.
+        - MLIR has no standalone ``gvn`` pass; ``enable_gvn`` maps to ``cse``.
+        """
+        level = optimization_level
+        o1_plus = level in ("O1", "O2", "O3")
+        o2_plus = level in ("O2", "O3")
+        o3 = level == "O3"
+
+        module_prefix: List[str] = []
+        func_passes: List[str] = []
+        module_suffix: List[str] = []
+
+        if o1_plus:
+            func_passes.append("canonicalize")
+            # enable_gvn → cse (no dedicated MLIR GVN pass)
+            if enable_gvn:
+                func_passes.append("cse")
+
+        if o2_plus:
+            if enable_inline:
+                module_prefix.append("inline")
+            if enable_sccp:
+                func_passes.append("sccp")
+            if enable_mem2reg:
+                func_passes.append("mem2reg")
+            if enable_licm:
+                func_passes.append("loop-invariant-code-motion")
+            if enable_loop_fusion:
+                func_passes.append("affine-loop-fusion")
+
+        if o3 and enable_vectorization:
+            # Best available mlir-opt vectorize pass. Needs affine/scf loops
+            # from the generator; otherwise this pass has nothing to transform.
+            func_passes.append("affine-super-vectorize")
+
+        if enable_dce and o1_plus:
+            # symbol-dce is module-scoped; follow with a canonicalize round
+            module_suffix.append("symbol-dce")
+            module_suffix.append("canonicalize")
+
+        return MLIROptimizer._format_pipeline(module_prefix, func_passes, module_suffix)
+
+    @staticmethod
+    def _format_pipeline(
+        module_prefix: List[str],
+        func_passes: List[str],
+        module_suffix: List[str],
+    ) -> str:
+        parts: List[str] = []
+        parts.extend(module_prefix)
+        if func_passes:
+            parts.append(f"func.func({','.join(func_passes)})")
+        parts.extend(module_suffix)
+        if not parts:
+            return "builtin.module()"
+        return f"builtin.module({','.join(parts)})"
+
+    @staticmethod
+    def pipeline_pass_names(pipeline: str) -> List[str]:
+        """Extract ordered pass names from a pipeline string (test helper)."""
+        # Strip outer builtin.module(...)
+        inner = pipeline
+        if inner.startswith("builtin.module(") and inner.endswith(")"):
+            inner = inner[len("builtin.module(") : -1]
+        names: List[str] = []
+        i = 0
+        while i < len(inner):
+            if inner.startswith("func.func(", i):
+                j = inner.find(")", i)
+                nested = inner[i + len("func.func(") : j]
+                if nested:
+                    names.extend(p for p in nested.split(",") if p)
+                i = j + 1
+                if i < len(inner) and inner[i] == ",":
+                    i += 1
+                continue
+            # next comma-separated module-level pass
+            j = inner.find(",", i)
+            if j < 0:
+                token = inner[i:].strip()
+                if token:
+                    names.append(token)
+                break
+            token = inner[i:j].strip()
+            if token:
+                names.append(token)
+            i = j + 1
+        return names
 
     def _toolchain_supports_flow_mlir(self) -> bool:
         """Return True when mlir-opt can parse FLOW's func/arith dialect mix."""
@@ -77,6 +189,7 @@ class MLIROptimizer:
                  enable_licm: bool = True,
                  enable_gvn: bool = True,
                  enable_dce: bool = True,
+                 enable_inline: bool = True,
                  optimization_level: str = "O2") -> int:
         """
         Apply MLIR optimization passes.
@@ -84,37 +197,30 @@ class MLIROptimizer:
         Args:
             input_mlir: Path to input MLIR file
             output_mlir: Path to output MLIR file
-            enable_vectorization: Enable loop vectorization
-            enable_loop_fusion: Enable loop fusion
-            enable_mem2reg: Enable memory-to-register promotion
-            enable_sccp: Enable sparse conditional constant propagation
-            enable_licm: Enable loop invariant code motion
-            enable_gvn: Enable global value numbering
-            enable_dce: Enable dead code elimination
+            enable_vectorization: Enable loop vectorization (O3; needs affine/scf)
+            enable_loop_fusion: Enable affine loop fusion (O2+)
+            enable_mem2reg: Enable memory-to-register promotion (O2+)
+            enable_sccp: Enable sparse conditional constant propagation (O2+)
+            enable_licm: Enable loop invariant code motion (O2+)
+            enable_gvn: Enable CSE as GVN stand-in (O1+; no MLIR gvn pass)
+            enable_dce: Enable symbol-dce + canonicalize round (O1+)
+            enable_inline: Enable module inliner (O2+; default True)
             optimization_level: O0, O1, O2, or O3
         
         Returns:
             Exit code of mlir-opt process
         """
-        
-        # Build optimization pipeline - use available passes
-        pipeline_parts = []
-        
-        # Basic optimizations that are always available
-        if optimization_level in ["O1", "O2", "O3"]:
-            pipeline_parts.append("canonicalize")
-            pipeline_parts.append("cse")
-        
-        if optimization_level in ["O2", "O3"]:
-            pipeline_parts.append("sccp")
-        
-        # Vectorization (if available)
-        if enable_vectorization and optimization_level == "O3":
-            # Try vectorization but skip if not available
-            pipeline_parts.append("affine-loop-fusion")
-        
-        # Build full pipeline
-        pipeline = f"builtin.module(func.func({','.join(pipeline_parts)}))"
+        pipeline = self.build_pass_pipeline(
+            enable_vectorization=enable_vectorization,
+            enable_loop_fusion=enable_loop_fusion,
+            enable_mem2reg=enable_mem2reg,
+            enable_sccp=enable_sccp,
+            enable_licm=enable_licm,
+            enable_gvn=enable_gvn,
+            enable_dce=enable_dce,
+            enable_inline=enable_inline,
+            optimization_level=optimization_level,
+        )
 
         if not self._toolchain_supports_flow_mlir():
             self._copy_if_different(input_mlir, output_mlir)
@@ -171,10 +277,8 @@ class MLIROptimizer:
             tmp_path = tmp.name
         
         try:
-            # Run with statistics using the same known-available passes as optimize()
-            # Keep this conservative: some Homebrew LLVM builds may not include optional passes.
-            pipeline_parts: List[str] = ["canonicalize", "cse", "sccp"]
-            pipeline = f"builtin.module(func.func({','.join(pipeline_parts)}))"
+            # Same pipeline construction as optimize() so reports match flags.
+            pipeline = self.build_pass_pipeline(optimization_level="O2")
 
             cmd = [
                 self.mlir_opt,
