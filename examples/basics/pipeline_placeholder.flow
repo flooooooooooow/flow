@@ -1,0 +1,31 @@
+# Pipeline placeholder `_` — route the piped value to any argument slot.
+#
+# `|>` normally prepends the piped value: `x |> f(y)` == `f(x, y)`.
+# A single `_` overrides that and marks exactly where the value goes,
+# which matters when the natural target is not the first parameter.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function clamp(lo: i32, x: i32, hi: i32) -> i32 {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+function main() -> i32 {
+    # The value flows into the *middle* argument of clamp via `_`.
+    let high: i32 = 150 |> clamp(0, _, 100)   # clamp(0, 150, 100) -> 100
+    let low: i32  = -5  |> clamp(0, _, 100)   # clamp(0, -5, 100)  -> 0
+    let mid: i32  = 42  |> clamp(0, _, 100)   # clamp(0, 42, 100)  -> 42
+
+    printf("clamp(150) = %d\n", high)
+    printf("clamp(-5)  = %d\n", low)
+    printf("clamp(42)  = %d\n", mid)
+    return 0
+}

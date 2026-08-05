@@ -173,6 +173,32 @@ arr[0]
 matrix[i * width + j]
 ```
 
+### Pipeline
+
+`|>` is forward composition: the value on the left becomes an argument to the
+call on the right. It is left-associative, so a chain reads top-to-bottom in
+the order the data flows.
+
+```flow
+x |> f            # f(x)
+x |> f(y)         # f(x, y)      — piped value is prepended
+x |> obj.m(y)     # obj.m(x, y)  — works for method calls too
+a |> f() |> g()   # g(f(a))      — left-associative chain
+```
+
+By default the piped value is inserted as the **first** argument. A single `_`
+placeholder overrides that, routing the piped value to whichever slot you mark
+instead:
+
+```flow
+signal |> lowpass(cutoff)      # lowpass(signal, cutoff)
+value  |> clamp(0.0, _, 1.0)   # clamp(0.0, value, 1.0)
+x      |> mix(_, sidechain, k) # mix(x, sidechain, k)  — explicit leading slot
+```
+
+At most one `_` may appear per stage — the piped value fills exactly one slot,
+so two placeholders would duplicate it and are rejected at parse time.
+
 ## Grammar (Simplified EBNF)
 
 ```ebnf
