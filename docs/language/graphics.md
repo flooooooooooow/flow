@@ -32,14 +32,19 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 ```flow
 # Sketch — see examples that use gfx.flow
 let g = gfx_open(640, 480, "Demo")
-while !gfx_should_close(g) {
-    gfx_poll(g)
+let mut frame: i32 = 0
+while frame < 1000 {
+    if !gfx_frame_pump(g) { break }   # poll + Esc/close
     gfx_clear(g, 20, 20, 30)
     gfx_fill_rect(g, 100, 100, 50, 50, 200, 80, 80)
     gfx_present(g)
+    frame = frame + 1
 }
 gfx_close(g)
 ```
+
+For a C-driven loop that calls a user `flow_gfx_frame(ctx, frame) -> i32`
+callback each tick, use `gfx_run(g, max_frames)` (runtime `flow_gfx_run`).
 
 Pixel format: RGBA8. Key codes are macOS `NSEvent.keyCode` values (constants in
 `gfx.flow`).
