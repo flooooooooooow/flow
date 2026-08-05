@@ -17,6 +17,17 @@ Syntax, snippets, formatter, debug, test explorer, tasks, and LSP for
 
 ## Install
 
+### From the marketplace (once published)
+
+Search **"FLOW Language"** by `quilio`, or:
+
+```bash
+cursor --install-extension quilio.flow-language
+code --install-extension quilio.flow-language
+```
+
+### From this repo
+
 ```bash
 cd third_party/integrations/vscode
 ./install-local.sh
@@ -28,12 +39,9 @@ Reload the window. Optional: install CodeLLDB when prompted, or:
 cursor --install-extension vadimcn.vscode-lldb
 ```
 
-### Marketplace
+### Publishing
 
-```bash
-export VSCE_PAT=…   # Azure DevOps PAT
-./publish.sh
-```
+See `PUBLISH.md` (Open VSX under the `quilio` namespace).
 
 ## Commands
 
