@@ -1,0 +1,355 @@
+# Q-SNAKE - tabular Q-learning on headless snake.
+#
+# Re-simulates the rules of examples/games/snake_gfx.flow without graphics:
+# same 20x15 grid, same LCG food spawning, death on wall or self collision.
+#
+# State: 7-bit hash of (danger left/ahead/right, food left/right/ahead/behind),
+#        all relative to the snake's heading. 128 distinct states.
+# Actions: 0 = turn left, 1 = straight, 2 = turn right.
+# Rewards: +10 food, -10 death, +0.2 toward food / -0.25 away, -2 starvation.
+#
+# Trains with stdlib/ai.flow tabular Q-learning, prints the learning curve,
+# then evaluates the greedy policy against a random-policy baseline on the
+# same set of environment seeds. Exits 0 only if the trained agent wins by
+# a wide margin.
+#
+# Run: ./flow run examples/ai/q_snake.flow
+
+import "stdlib/ai.flow"
+
+extern {
+    function printf(fmt: string, v: f64) -> i32
+}
+
+const GRID_W: i32 = 20
+const GRID_H: i32 = 15
+const MAX_LEN: i32 = 300
+const N_ACTIONS: i32 = 3
+
+const POLICY_TRAIN: i32 = 0
+const POLICY_GREEDY: i32 = 1
+const POLICY_RANDOM: i32 = 2
+
+const STEP_CAP: i32 = 1000
+const HUNGER_CAP: i32 = 150
+
+# Same LCG as the game (environment randomness, kept separate from the
+# agent's stdlib/ai.flow RNG).
+function env_rng_next(seed: u32) -> u32 {
+    return seed * 1664525 + 1013904223
+}
+
+function env_rng_range(seed: u32, max: i32) -> i32 {
+    let mut val: i32 = (seed % (max as u32)) as i32
+    if val < 0 { val = 0 - val }
+    return val
+}
+
+function hits_body(sxp: ptr<i32>, syp: ptr<i32>, len: i32, x: i32, y: i32) -> bool {
+    let mut i: i32 = 0
+    while i < len {
+        if sxp[i] == x and syp[i] == y { return true }
+        i = i + 1
+    }
+    return false
+}
+
+function cell_deadly(sxp: ptr<i32>, syp: ptr<i32>, len: i32, x: i32, y: i32) -> bool {
+    if x < 0 or x >= GRID_W or y < 0 or y >= GRID_H { return true }
+    return hits_body(sxp, syp, len, x, y)
+}
+
+function abs_i32(v: i32) -> i32 {
+    if v < 0 { return 0 - v }
+    return v
+}
+
+# Compact state: 3 danger bits + 4 food-direction bits, all heading-relative.
+function state_of(sxp: ptr<i32>, syp: ptr<i32>, len: i32, dx: i32, dy: i32, fx: i32, fy: i32) -> i32 {
+    let hx: i32 = sxp[0]
+    let hy: i32 = syp[0]
+
+    # Heading-relative directions: left = (dy, -dx), right = (-dy, dx).
+    let lx: i32 = dy
+    let ly: i32 = 0 - dx
+    let rx: i32 = 0 - dy
+    let ry: i32 = dx
+
+    let mut s: i32 = 0
+    if cell_deadly(sxp, syp, len, hx + lx, hy + ly) { s = s + 1 }
+    if cell_deadly(sxp, syp, len, hx + dx, hy + dy) { s = s + 2 }
+    if cell_deadly(sxp, syp, len, hx + rx, hy + ry) { s = s + 4 }
+
+    # Food direction: dot with heading (ahead/behind), cross sign (left/right).
+    let vx: i32 = fx - hx
+    let vy: i32 = fy - hy
+    let dot: i32 = vx * dx + vy * dy
+    let cross: i32 = dx * vy - dy * vx
+    if dot > 0 { s = s + 8 }
+    if dot < 0 { s = s + 16 }
+    if cross < 0 { s = s + 32 }
+    if cross > 0 { s = s + 64 }
+    return s
+}
+
+# Play one episode. Returns the score (foods eaten).
+# policy: POLICY_TRAIN (epsilon-greedy + Q updates), POLICY_GREEDY, POLICY_RANDOM.
+function run_episode(policy: i32, epsilon: f32, alpha: f32, gamma: f32, env_seed: u32) -> i32 {
+    let snake_x: array<i32, 300> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let snake_y: array<i32, 300> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let sxp: ptr<i32> = snake_x
+    let syp: ptr<i32> = snake_y
+
+    # Reset exactly like the game.
+    let mut snake_len: i32 = 3
+    snake_x[0] = 5; snake_y[0] = 7
+    snake_x[1] = 4; snake_y[1] = 7
+    snake_x[2] = 3; snake_y[2] = 7
+    let mut dir_x: i32 = 1
+    let mut dir_y: i32 = 0
+    let mut score: i32 = 0
+    let mut rng_seed: u32 = env_seed
+
+    # First food, never on the snake.
+    let mut food_x: i32 = 14
+    let mut food_y: i32 = 7
+    let mut placed: i32 = 0
+    let mut tries: i32 = 0
+    while placed == 0 and tries < 1000 {
+        rng_seed = env_rng_next(rng_seed)
+        let fx: i32 = env_rng_range(rng_seed, GRID_W)
+        rng_seed = env_rng_next(rng_seed)
+        let fy: i32 = env_rng_range(rng_seed, GRID_H)
+        if !hits_body(sxp, syp, snake_len, fx, fy) {
+            food_x = fx
+            food_y = fy
+            placed = 1
+        }
+        tries = tries + 1
+    }
+
+    let mut steps: i32 = 0
+    let mut hunger: i32 = 0
+    let mut alive: bool = true
+
+    while alive and steps < STEP_CAP {
+        let s: i32 = state_of(sxp, syp, snake_len, dir_x, dir_y, food_x, food_y)
+
+        let mut a: i32 = 1
+        if policy == POLICY_TRAIN {
+            a = q_select(s, N_ACTIONS, epsilon)
+        } elif policy == POLICY_GREEDY {
+            a = q_best(s, N_ACTIONS)
+        } else {
+            a = ai_rand_range(N_ACTIONS)
+        }
+
+        # Apply the turn.
+        if a == 0 {
+            let ndx: i32 = dir_y
+            let ndy: i32 = 0 - dir_x
+            dir_x = ndx
+            dir_y = ndy
+        } elif a == 2 {
+            let ndx2: i32 = 0 - dir_y
+            let ndy2: i32 = dir_x
+            dir_x = ndx2
+            dir_y = ndy2
+        }
+
+        let old_dist: i32 = abs_i32(snake_x[0] - food_x) + abs_i32(snake_y[0] - food_y)
+        let hx: i32 = snake_x[0] + dir_x
+        let hy: i32 = snake_y[0] + dir_y
+
+        if hx < 0 or hx >= GRID_W or hy < 0 or hy >= GRID_H
+           or hits_body(sxp, syp, snake_len, hx, hy) {
+            alive = false
+            if policy == POLICY_TRAIN {
+                q_update_terminal(s, a, -10.0, alpha)
+            }
+        } else {
+            let mut grew: bool = false
+            if hx == food_x and hy == food_y { grew = true }
+            if grew and snake_len < MAX_LEN {
+                snake_len = snake_len + 1
+            }
+
+            # Shift body toward the tail, then place the new head.
+            let mut i: i32 = snake_len - 1
+            while i >= 1 {
+                snake_x[i] = snake_x[i - 1]
+                snake_y[i] = snake_y[i - 1]
+                i = i - 1
+            }
+            snake_x[0] = hx
+            snake_y[0] = hy
+
+            let mut r: f32 = 0.0
+            if grew {
+                score = score + 1
+                hunger = 0
+                r = 10.0
+
+                # Spawn new food off the snake.
+                let mut placed2: i32 = 0
+                let mut tries2: i32 = 0
+                while placed2 == 0 and tries2 < 1000 {
+                    rng_seed = env_rng_next(rng_seed)
+                    let fx2: i32 = env_rng_range(rng_seed, GRID_W)
+                    rng_seed = env_rng_next(rng_seed)
+                    let fy2: i32 = env_rng_range(rng_seed, GRID_H)
+                    if !hits_body(sxp, syp, snake_len, fx2, fy2) {
+                        food_x = fx2
+                        food_y = fy2
+                        placed2 = 1
+                    }
+                    tries2 = tries2 + 1
+                }
+            } else {
+                hunger = hunger + 1
+                let new_dist: i32 = abs_i32(hx - food_x) + abs_i32(hy - food_y)
+                if new_dist < old_dist {
+                    r = 0.2
+                } else {
+                    r = -0.25
+                }
+            }
+
+            if hunger > HUNGER_CAP {
+                # Starved out: end the episode with a small penalty.
+                alive = false
+                if policy == POLICY_TRAIN {
+                    q_update_terminal(s, a, -2.0, alpha)
+                }
+            } else {
+                if policy == POLICY_TRAIN {
+                    let s2: i32 = state_of(sxp, syp, snake_len, dir_x, dir_y, food_x, food_y)
+                    q_update(s, a, r, s2, N_ACTIONS, alpha, gamma)
+                }
+            }
+        }
+
+        steps = steps + 1
+    }
+
+    return score
+}
+
+function eval_policy(policy: i32, episodes: i32) -> f32 {
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < episodes {
+        let seed: u32 = 4242 + (i as u32) * 13
+        total = total + run_episode(policy, 0.0, 0.0, 0.0, seed)
+        i = i + 1
+    }
+    return (total as f32) / (episodes as f32)
+}
+
+function main() -> i32 {
+    println("Q-SNAKE: tabular Q-learning on headless snake (20x15 grid)")
+    println("state = 7 bits (danger LAR + food dir), 3 actions, stdlib/ai.flow")
+    println("")
+
+    let episodes: i32 = 4000
+    let decay_over: i32 = 3000
+    let alpha: f32 = 0.10
+    let gamma: f32 = 0.90
+    let eval_eps: i32 = 100
+
+    # Random baseline on the evaluation seeds.
+    ai_seed(9999 as u32)
+    let base_avg: f32 = eval_policy(POLICY_RANDOM, eval_eps)
+    print("random baseline: avg score ")
+    printf("%.2f", base_avg as f64)
+    print(" over ")
+    print(eval_eps)
+    println(" episodes")
+    println("")
+
+    # Train.
+    q_init(1234 as u32)
+    println("training 4000 episodes (epsilon 1.00 -> 0.05 over 3000):")
+    let mut window: i32 = 0
+    let mut ep: i32 = 0
+    while ep < episodes {
+        let eps: f32 = q_epsilon(ep, decay_over, 1.0, 0.05)
+        let seed: u32 = 777 + (ep as u32) * 101
+        window = window + run_episode(POLICY_TRAIN, eps, alpha, gamma, seed)
+        ep = ep + 1
+        if ep % 250 == 0 {
+            let avg: f32 = (window as f32) / 250.0
+            print("  episode ")
+            print(ep)
+            print("  avg_score ")
+            printf("%.2f", avg as f64)
+            print("  epsilon ")
+            printf("%.2f", eps as f64)
+            println("")
+            window = 0
+        }
+    }
+    println("")
+
+    # Evaluate greedy policy on the same seeds as the baseline.
+    let q_avg: f32 = eval_policy(POLICY_GREEDY, eval_eps)
+    print("trained (greedy): avg score ")
+    printf("%.2f", q_avg as f64)
+    print(" over ")
+    print(eval_eps)
+    println(" episodes")
+    print("random baseline : avg score ")
+    printf("%.2f", base_avg as f64)
+    println("")
+    print("margin          : ")
+    printf("%.2f", (q_avg - base_avg) as f64)
+    println(" foods per episode")
+    println("")
+
+    if q_avg >= base_avg + 5.0 and q_avg >= 5.0 {
+        println("PASS: trained agent beats the random baseline by >= 5 foods")
+        return 0
+    }
+    println("FAIL: trained agent did not clear the margin")
+    return 1
+}
