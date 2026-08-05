@@ -41,14 +41,29 @@ jobs:
           chmod +x scripts/update_repo_stats.sh
           ./scripts/update_repo_stats.sh
 
+      # Published numbers must match the Python reference. Flow is preferred
+      # at generation time, but a C-backend concat bug once truncated its JSON;
+      # the shim falls back to Python so the README still updates.
       - name: Verify deterministic output
-        run: ./scripts/update_repo_stats.sh --check
+        run: python scripts/update_repo_stats.py --check
+
+      - name: Check Flow counter parity
+        id: flow_parity
+        continue-on-error: true
+        run: |
+          ./scripts/update_repo_stats.sh --check
+          if [[ -f build/repo-stats/flow-disagreed.json ]]; then
+            echo "Flow JSON captured at build/repo-stats/flow-disagreed.json"
+          fi
 
       - name: Upload machine-readable statistics
         uses: actions/upload-artifact@v4
         with:
           name: repository-stats
-          path: docs/generated/repository-stats.json
+          path: |
+            docs/generated/repository-stats.json
+            build/repo-stats/flow-disagreed.json
+          if-no-files-found: ignore
           retention-days: 30
 
       - name: Commit refreshed README and JSON
@@ -62,3 +77,10 @@ jobs:
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
               commit -m 'docs: refresh repository statistics [skip ci]'
           git push origin HEAD:main
+
+      - name: Fail if Flow counter still diverges
+        if: steps.flow_parity.outcome == 'failure'
+        run: |
+          echo "Flow repo-stats output still disagrees with the Python reference."
+          echo "The README was updated from Python; fix the Flow counter next."
+          exit 1
