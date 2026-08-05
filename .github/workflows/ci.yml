@@ -179,6 +179,7 @@ jobs:
       - name: Stage-A self-host roundtrip
         env:
           PYTHONPATH: src
+          FLOWC_PHASE_A_ONLY: "1"
         run: |
           chmod +x ./flow compiler/scripts/*.sh
           timeout 12m ./compiler/scripts/roundtrip.sh

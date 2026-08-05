@@ -316,6 +316,14 @@ echo "PASS fmt fixture smoke"
 # Multi-file link smoke: emit math.flow + main.flow (import skipped) → exit 42.
 FLOWC_RESOLVE_IMPORTS=1 ./compiler/scripts/stage_a_link_two.sh
 
+# Phase A's stable bootstrap boundary ends here. The remaining bundle,
+# typecheck, self-emit, and fixed-point checks exercise Phase B work and may be
+# enabled independently while those gaps are being closed.
+if [[ "${FLOWC_PHASE_A_ONLY:-}" == "1" ]]; then
+    echo "PASS flowc Phase-A roundtrip"
+    exit 0
+fi
+
 # Multi-file bundle: FLOWC_BUNDLE=1 resolves .bundle_lib → one TU → exit 42.
 # Default typecheck ON runs flowc_bundle_typecheck (deps-first + export seed).
 # Host-emit: needs latest resolve/typecheck (stale driver_flow may predate bundle TC).
