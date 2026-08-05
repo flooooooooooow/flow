@@ -1,0 +1,43 @@
+# Flow-native language test: match on bool and i32 with default arm.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[bool_match]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[i32_match]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function as_i(b: bool) -> i32 {
+    match b {
+        true => { return 1 }
+        false => { return 0 }
+    }
+    return -1
+}
+
+function classify(n: i32) -> i32 {
+    match n {
+        0 => { return 10 }
+        1 => { return 20 }
+        default { return 30 }
+    }
+}
+
+function main() -> i32 {
+    if as_i(true) != 1 {
+        return 1
+    }
+    if as_i(false) != 0 {
+        return 2
+    }
+    if classify(0) != 10 {
+        return 3
+    }
+    if classify(1) != 20 {
+        return 4
+    }
+    if classify(9) != 30 {
+        return 5
+    }
+    if as_i(true) + as_i(false) + classify(0) + classify(1) + classify(9) != 61 {
+        return 6
+    }
+    return 0
+}
