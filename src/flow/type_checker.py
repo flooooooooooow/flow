@@ -1788,7 +1788,25 @@ class TypeChecker:
         if target.kind == TypeKind.POINTER and actual.kind in ints:
             return True
 
+        # `string` is a byte pointer at the C level, so casting between it and
+        # a byte-sized pointer preserves the representation. This is what FFI
+        # code needs when it hands buffers to C and reads C strings back.
+        if self._is_byte_pointer(actual) and target.kind == TypeKind.STRING:
+            return True
+        if actual.kind == TypeKind.STRING and self._is_byte_pointer(target):
+            return True
+
         return False
+
+    @staticmethod
+    def _is_byte_pointer(t: SemanticType) -> bool:
+        """True for `ptr<i8>`, `ptr<u8>`, `ptr<void>`, and untyped pointers."""
+        if t.kind != TypeKind.POINTER:
+            return False
+        element = t.element_type
+        if element is None:
+            return True
+        return element.kind in {TypeKind.I8, TypeKind.U8, TypeKind.VOID}
 
     def _check_literal(self, lit: Literal) -> SemanticType:
         """Type check a literal."""

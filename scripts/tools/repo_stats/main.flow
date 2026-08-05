@@ -1,0 +1,697 @@
+# Repository statistics counter, written in Flow.
+#
+# Reads the tracked-file list and commit metadata that
+# scripts/update_repo_stats.sh dumps into build/repo-stats/, counts
+# physical lines per language and per project area, then rewrites the
+# stats block in README.md and docs/generated/repository-stats.json.
+#
+# Flow has no process-spawning story yet, so the shell shim runs git and
+# leaves the output in files this program can read. Everything after that
+# — parsing, counting, JSON and Markdown emission — happens here.
+#
+# scripts/update_repo_stats.py is the reference implementation and must
+# produce byte-identical output; the shim cross-checks the two.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i32
+    function fwrite(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i32
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: i32) -> i32
+    function mkdir(path: string, mode: i32) -> i32
+}
+
+const START_MARK: string = "<!-- repo-stats:start -->"
+const END_MARK: string = "<!-- repo-stats:end -->"
+const LANG_N: i32 = 12
+const AREA_N: i32 = 10
+const READ_CAP: i32 = 8388608
+
+function str_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+# Byte-by-byte rather than strncmp: declaring strncmp extern collides with
+# the prototype string.h already provides.
+function starts_with(s: string, prefix: string) -> bool {
+    let n: i64 = strlen(prefix)
+    if strlen(s) < n {
+        return false
+    }
+    let sp: ptr<u8> = s as ptr<u8>
+    let pp: ptr<u8> = prefix as ptr<u8>
+    let mut i: i64 = 0
+    while i < n {
+        if sp[i as i32] != pp[i as i32] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function ends_with(s: string, suffix: string) -> bool {
+    let sl: i64 = strlen(s)
+    let ul: i64 = strlen(suffix)
+    if sl < ul {
+        return false
+    }
+    let sp: ptr<u8> = s as ptr<u8>
+    let up: ptr<u8> = suffix as ptr<u8>
+    let mut i: i64 = 0
+    while i < ul {
+        if sp[(sl - ul + i) as i32] != up[i as i32] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# True when `part` appears as a whole path component.
+function path_has_part(path: string, part: string) -> bool {
+    if str_eq(path, part) {
+        return true
+    }
+    if starts_with(path, part + "/") {
+        return true
+    }
+    if ends_with(path, "/" + part) {
+        return true
+    }
+    let needle: string = "/" + part + "/"
+    let hay: ptr<u8> = path as ptr<u8>
+    let np: ptr<u8> = needle as ptr<u8>
+    let hlen: i32 = strlen(path) as i32
+    let nlen: i32 = strlen(needle) as i32
+    if nlen > hlen {
+        return false
+    }
+    let mut i: i32 = 0
+    while i <= hlen - nlen {
+        let mut j: i32 = 0
+        let mut ok: i32 = 1
+        while j < nlen {
+            if hay[i + j] != np[j] {
+                ok = 0
+                break
+            }
+            j = j + 1
+        }
+        if ok == 1 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function is_excluded(path: string) -> bool {
+    if starts_with(path, ".git/") or starts_with(path, "build/") or starts_with(path, "dist/") {
+        return true
+    }
+    if starts_with(path, "third_party/") or starts_with(path, "node_modules/") {
+        return true
+    }
+    if path_has_part(path, "__pycache__") or path_has_part(path, ".venv") {
+        return true
+    }
+    if path_has_part(path, ".mypy_cache") or path_has_part(path, ".pytest_cache") or path_has_part(path, ".ruff_cache") {
+        return true
+    }
+    if path_has_part(path, "build") or path_has_part(path, "dist") or path_has_part(path, "node_modules") {
+        return true
+    }
+    return false
+}
+
+function under_prefix(path: string, prefix: string) -> bool {
+    if str_eq(path, prefix) {
+        return true
+    }
+    return starts_with(path, prefix + "/")
+}
+
+# Physical lines: newline count, plus a trailing partial line. Read in
+# chunks rather than per character, since an extern fgetc would collide
+# with the stdio prototype.
+function count_file_lines(path: string) -> i32 {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return 0
+    }
+    let chunk: ptr<u8> = malloc(4096) as ptr<u8>
+    let mut lines: i32 = 0
+    let mut last: i32 = 10
+    let mut n: i32 = fread(chunk, 1, 4096, fp)
+    while n > 0 {
+        let mut i: i32 = 0
+        while i < n {
+            let ch: i32 = chunk[i] as i32
+            if ch == 10 {
+                lines = lines + 1
+            }
+            last = ch
+            i = i + 1
+        }
+        n = fread(chunk, 1, 4096, fp)
+    }
+    let _c: i32 = fclose(fp)
+    free(chunk)
+    if last != 10 and last != -1 {
+        lines = lines + 1
+    }
+    return lines
+}
+
+function i32_str(n: i32) -> string {
+    let buf: ptr<i8> = malloc(48) as ptr<i8>
+    let _n: i32 = snprintf(buf, 48, "%d", n)
+    return buf as string
+}
+
+# Thousands separators, matching Python's "{n:,}".
+function group_i32(n: i32) -> string {
+    if n < 0 {
+        return "-" + group_i32(0 - n)
+    }
+    if n < 1000 {
+        return i32_str(n)
+    }
+    let tail: i32 = n % 1000
+    let mut tail_str: string = i32_str(tail)
+    if tail < 10 {
+        tail_str = "00" + tail_str
+    } else {
+        if tail < 100 {
+            tail_str = "0" + tail_str
+        }
+    }
+    return group_i32(n / 1000) + "," + tail_str
+}
+
+# Badge text, matching Python's compact(): one rounded decimal below 100k.
+function compact_loc(n: i32) -> string {
+    if n < 1000 {
+        return group_i32(n)
+    }
+    if n < 100000 {
+        let tenths: i32 = (n + 50) / 100
+        return i32_str(tenths / 10) + "." + i32_str(tenths % 10) + "k"
+    }
+    return group_i32((n + 500) / 1000) + "k"
+}
+
+function lang_name(i: i32) -> string {
+    if i == 0 { return "Flow" }
+    if i == 1 { return "Python" }
+    if i == 2 { return "C" }
+    if i == 3 { return "C/C++ headers" }
+    if i == 4 { return "Objective-C" }
+    if i == 5 { return "Objective-C++" }
+    if i == 6 { return "C++" }
+    if i == 7 { return "Rust" }
+    if i == 8 { return "JavaScript" }
+    if i == 9 { return "TypeScript" }
+    if i == 10 { return "HTML" }
+    if i == 11 { return "CSS" }
+    return "?"
+}
+
+# Language slot for a path, -2 for Shell (counted separately, since it has
+# no fixed slot) and -1 for anything that is not tracked source.
+function lang_index_for(path: string) -> i32 {
+    if ends_with(path, ".flow") { return 0 }
+    if ends_with(path, ".py") { return 1 }
+    if ends_with(path, ".c") { return 2 }
+    if ends_with(path, ".h") { return 3 }
+    if ends_with(path, ".mm") { return 5 }
+    if ends_with(path, ".m") { return 4 }
+    if ends_with(path, ".cpp") or ends_with(path, ".cc") { return 6 }
+    if ends_with(path, ".rs") { return 7 }
+    if ends_with(path, ".js") { return 8 }
+    if ends_with(path, ".ts") or ends_with(path, ".tsx") { return 9 }
+    if ends_with(path, ".html") { return 10 }
+    if ends_with(path, ".css") { return 11 }
+    if ends_with(path, ".sh") { return -2 }
+    return -1
+}
+
+# Area slots: 0 python_compiler, 1 self_hosted_compiler, 2 standard_library,
+# 3 runtime, 4 examples, 5 verify_corpus, 6 tests, 7 applications,
+# 8 registry_packages, 9 documentation.
+function bump_area(af: ptr<i32>, al: ptr<i32>, path: string, lines: i32) -> void {
+    if under_prefix(path, "src/flow") and ends_with(path, ".py") {
+        af[0] = af[0] + 1
+        al[0] = al[0] + lines
+    }
+    if under_prefix(path, "compiler/src") and ends_with(path, ".flow") {
+        af[1] = af[1] + 1
+        al[1] = al[1] + lines
+    }
+    if under_prefix(path, "lib/stdlib") and ends_with(path, ".flow") {
+        af[2] = af[2] + 1
+        al[2] = al[2] + lines
+    }
+    if under_prefix(path, "runtime") {
+        if ends_with(path, ".c") or ends_with(path, ".h") or ends_with(path, ".m") or ends_with(path, ".mm") or ends_with(path, ".cc") or ends_with(path, ".cpp") {
+            af[3] = af[3] + 1
+            al[3] = al[3] + lines
+        }
+    }
+    if under_prefix(path, "examples") and ends_with(path, ".flow") and under_prefix(path, "examples/verify") == false {
+        af[4] = af[4] + 1
+        al[4] = al[4] + lines
+    }
+    if ends_with(path, ".flow") and (under_prefix(path, "examples/verify") or under_prefix(path, "lib/verify")) {
+        af[5] = af[5] + 1
+        al[5] = al[5] + lines
+    }
+    if under_prefix(path, "tests") and (ends_with(path, ".py") or ends_with(path, ".flow")) {
+        af[6] = af[6] + 1
+        al[6] = al[6] + lines
+    }
+    if under_prefix(path, "apps") and ends_with(path, ".flow") {
+        af[7] = af[7] + 1
+        al[7] = al[7] + lines
+    }
+    if under_prefix(path, "registry/packages") and ends_with(path, "flow.toml") {
+        af[8] = af[8] + 1
+        al[8] = al[8] + lines
+    }
+    if under_prefix(path, "docs") and ends_with(path, ".md") {
+        af[9] = af[9] + 1
+        al[9] = al[9] + lines
+    }
+}
+
+function is_proof_doc(path: string) -> bool {
+    if ends_with(path, ".proof.md") == false {
+        return false
+    }
+    return under_prefix(path, "examples/verify") or under_prefix(path, "lib/verify") or under_prefix(path, "docs")
+}
+
+function read_whole_file(path: string, cap: i32) -> string {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return ""
+    }
+    let buf: ptr<u8> = malloc(cap as i64) as ptr<u8>
+    let n: i32 = fread(buf, 1, cap - 1, fp)
+    let _c: i32 = fclose(fp)
+    if n < 0 {
+        free(buf)
+        return ""
+    }
+    buf[n] = 0
+    return buf as string
+}
+
+function write_whole_file(path: string, text: string) -> i32 {
+    let fp: ptr<void> = fopen(path, "wb")
+    if fp == null {
+        return 1
+    }
+    let n: i32 = strlen(text) as i32
+    let wrote: i32 = fwrite(text as ptr<u8>, 1, n, fp)
+    let _c: i32 = fclose(fp)
+    if wrote != n {
+        return 1
+    }
+    return 0
+}
+
+function find_substr(hay: string, needle: string) -> i32 {
+    let h: ptr<u8> = hay as ptr<u8>
+    let n: ptr<u8> = needle as ptr<u8>
+    let hlen: i32 = strlen(hay) as i32
+    let nlen: i32 = strlen(needle) as i32
+    if nlen == 0 {
+        return 0
+    }
+    if nlen > hlen {
+        return -1
+    }
+    let mut i: i32 = 0
+    while i <= hlen - nlen {
+        let mut j: i32 = 0
+        let mut ok: i32 = 1
+        while j < nlen {
+            if h[i + j] != n[j] {
+                ok = 0
+                break
+            }
+            j = j + 1
+        }
+        if ok == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+function slice_str(s: string, start: i32, end: i32) -> string {
+    if end < start {
+        return ""
+    }
+    let n: i32 = end - start
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let sp: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = sp[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return out as string
+}
+
+function parse_meta_line(line: string, key: string) -> string {
+    let prefix: string = key + "="
+    if starts_with(line, prefix) == false {
+        return ""
+    }
+    return slice_str(line, strlen(prefix) as i32, strlen(line) as i32)
+}
+
+function area_pair_json(key: string, files: i32, lines: i32) -> string {
+    return "    \"" + key + "\": {\n      \"files\": " + i32_str(files) + ",\n      \"lines\": " + i32_str(lines) + "\n    }"
+}
+
+function lang_files(lf: ptr<i32>, name: string) -> i32 {
+    let mut i: i32 = 0
+    while i < LANG_N {
+        if str_eq(lang_name(i), name) {
+            return lf[i]
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function lang_lines(ll: ptr<i32>, name: string) -> i32 {
+    let mut i: i32 = 0
+    while i < LANG_N {
+        if str_eq(lang_name(i), name) {
+            return ll[i]
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Keys are emitted in sorted order to match json.dumps(sort_keys=True).
+function emit_json(lf: ptr<i32>, ll: ptr<i32>, af: ptr<i32>, al: ptr<i32>, shell_files: i32, shell_lines: i32, tracked: i32, source_files: i32, source_lines: i32, proofs: i32, commit: string, generated_at: string) -> string {
+    let flow_lines: i32 = lang_lines(ll, "Flow")
+    let mut out: string = "{\n  \"areas\": {\n"
+    out = out + area_pair_json("applications", af[7], al[7]) + ",\n"
+    out = out + area_pair_json("documentation", af[9], al[9]) + ",\n"
+    out = out + area_pair_json("examples", af[4], al[4]) + ",\n"
+    out = out + area_pair_json("python_compiler", af[0], al[0]) + ",\n"
+    out = out + area_pair_json("registry_packages", af[8], al[8]) + ",\n"
+    out = out + area_pair_json("runtime", af[3], al[3]) + ",\n"
+    out = out + area_pair_json("self_hosted_compiler", af[1], al[1]) + ",\n"
+    out = out + area_pair_json("standard_library", af[2], al[2]) + ",\n"
+    out = out + area_pair_json("tests", af[6], al[6]) + ",\n"
+    out = out + area_pair_json("verify_corpus", af[5], al[5]) + "\n"
+    out = out + "  },\n  \"badges\": {\n"
+    out = out + "    \"examples\": \"" + i32_str(af[4]) + " examples\",\n"
+    out = out + "    \"flow\": \"" + compact_loc(flow_lines) + " Flow LOC\",\n"
+    out = out + "    \"loc\": \"" + compact_loc(source_lines) + " LOC\",\n"
+    out = out + "    \"proofs\": \"" + i32_str(af[5]) + " verify files\",\n"
+    out = out + "    \"stdlib\": \"" + i32_str(af[2]) + " modules\",\n"
+    out = out + "    \"tests\": \"" + i32_str(af[6]) + " tests\"\n"
+    out = out + "  },\n"
+    out = out + "  \"commit\": \"" + commit + "\",\n"
+    out = out + "  \"generated_at\": \"" + generated_at + "\",\n"
+    out = out + "  \"languages\": {\n"
+
+    let names: array<string, 13> = ["C", "C++", "C/C++ headers", "CSS", "Flow", "HTML", "JavaScript", "Objective-C", "Objective-C++", "Python", "Rust", "Shell", "TypeScript"]
+    let mut first: i32 = 1
+    let mut ni: i32 = 0
+    while ni < 13 {
+        let want: string = names[ni]
+        let mut files: i32 = 0
+        let mut lines: i32 = 0
+        if str_eq(want, "Shell") {
+            files = shell_files
+            lines = shell_lines
+        } else {
+            files = lang_files(lf, want)
+            lines = lang_lines(ll, want)
+        }
+        if files > 0 or lines > 0 {
+            if first == 0 {
+                out = out + ",\n"
+            }
+            first = 0
+            out = out + "    \"" + want + "\": {\n      \"files\": " + i32_str(files) + ",\n      \"lines\": " + i32_str(lines) + "\n    }"
+        }
+        ni = ni + 1
+    }
+    out = out + "\n  },\n"
+    out = out + "  \"methodology\": \"Tracked source files only; physical lines include comments and blanks; third_party and generated/build directories are excluded.\",\n"
+    out = out + "  \"proof_documents\": " + i32_str(proofs) + ",\n"
+    out = out + "  \"schema_version\": 1,\n"
+    out = out + "  \"totals\": {\n"
+    out = out + "    \"source_files\": " + i32_str(source_files) + ",\n"
+    out = out + "    \"source_lines\": " + i32_str(source_lines) + ",\n"
+    out = out + "    \"tracked_files\": " + i32_str(tracked) + "\n"
+    out = out + "  }\n}\n"
+    return out
+}
+
+function emit_readme_block(lf: ptr<i32>, ll: ptr<i32>, af: ptr<i32>, al: ptr<i32>, shell_files: i32, shell_lines: i32, source_files: i32, source_lines: i32, proofs: i32, commit: string) -> string {
+    let flow_files: i32 = lang_files(lf, "Flow")
+    let flow_lines: i32 = lang_lines(ll, "Flow")
+    let mut out: string = START_MARK + "\n"
+    out = out + "| Metric | Files / modules | Physical lines |\n|---|---:|---:|\n"
+    out = out + "| **Tracked source** | " + group_i32(source_files) + " | " + group_i32(source_lines) + " |\n"
+    out = out + "| **Flow language** | " + group_i32(flow_files) + " | " + group_i32(flow_lines) + " |\n"
+    out = out + "| **Python compiler (`src/flow`)** | " + group_i32(af[0]) + " | " + group_i32(al[0]) + " |\n"
+    out = out + "| **Self-hosted compiler (`compiler/src`)** | " + group_i32(af[1]) + " | " + group_i32(al[1]) + " |\n"
+    out = out + "| **Standard library modules** | " + group_i32(af[2]) + " | " + group_i32(al[2]) + " |\n"
+    out = out + "| **Native runtime** | " + group_i32(af[3]) + " | " + group_i32(al[3]) + " |\n"
+    out = out + "| **Examples (excluding verify corpus)** | " + group_i32(af[4]) + " | " + group_i32(al[4]) + " |\n"
+    out = out + "| **Verify corpus** | " + group_i32(af[5]) + " | " + group_i32(al[5]) + " |\n"
+    out = out + "| **Tests (`.py` + `.flow`)** | " + group_i32(af[6]) + " | " + group_i32(al[6]) + " |\n"
+    out = out + "| **Application programs** | " + group_i32(af[7]) + " | " + group_i32(al[7]) + " |\n"
+    out = out + "| **Registry packages** | " + group_i32(af[8]) + " | — |\n"
+    out = out + "| **Documentation pages** | " + group_i32(af[9]) + " | " + group_i32(al[9]) + " |\n"
+    out = out + "\n<details>\n<summary>Tracked source by language</summary>\n\n"
+    out = out + "| Language | Files | Physical lines |\n|---|---:|---:|\n"
+
+    # Order by lines descending, ties by name, matching the Python sort key.
+    let order: ptr<i32> = malloc((LANG_N as i64) * 4) as ptr<i32>
+    let mut oi: i32 = 0
+    while oi < LANG_N {
+        order[oi] = oi
+        oi = oi + 1
+    }
+    let mut a: i32 = 0
+    while a < LANG_N {
+        let mut b: i32 = a + 1
+        while b < LANG_N {
+            let ia: i32 = order[a]
+            let ib: i32 = order[b]
+            if ll[ib] > ll[ia] or (ll[ib] == ll[ia] and strcmp(lang_name(ib), lang_name(ia)) < 0) {
+                order[a] = ib
+                order[b] = ia
+            }
+            b = b + 1
+        }
+        a = a + 1
+    }
+
+    # Shell has no language slot, so splice it into the ordered list.
+    let mut shell_done: i32 = 0
+    let mut k: i32 = 0
+    while k < LANG_N {
+        let idx: i32 = order[k]
+        if lf[idx] > 0 or ll[idx] > 0 {
+            if shell_done == 0 and (shell_lines > ll[idx] or (shell_lines == ll[idx] and strcmp("Shell", lang_name(idx)) < 0)) {
+                if shell_files > 0 or shell_lines > 0 {
+                    out = out + "| Shell | " + group_i32(shell_files) + " | " + group_i32(shell_lines) + " |\n"
+                    shell_done = 1
+                }
+            }
+            out = out + "| " + lang_name(idx) + " | " + group_i32(lf[idx]) + " | " + group_i32(ll[idx]) + " |\n"
+        }
+        k = k + 1
+    }
+    if shell_done == 0 and (shell_files > 0 or shell_lines > 0) {
+        out = out + "| Shell | " + group_i32(shell_files) + " | " + group_i32(shell_lines) + " |\n"
+    }
+
+    out = out + "\n</details>\n\n"
+    out = out + "*Generated by CI from tracked files at `" + commit + "`. Proof documents: " + group_i32(proofs) + ". [Raw JSON](docs/generated/repository-stats.json) · [Flow counter](scripts/tools/repo_stats/main.flow) · [Python fallback](scripts/update_repo_stats.py).*\n"
+    out = out + END_MARK
+    return out
+}
+
+function main() -> i32 {
+    let lf: ptr<i32> = malloc((LANG_N as i64) * 4) as ptr<i32>
+    let ll: ptr<i32> = malloc((LANG_N as i64) * 4) as ptr<i32>
+    let af: ptr<i32> = malloc((AREA_N as i64) * 4) as ptr<i32>
+    let al: ptr<i32> = malloc((AREA_N as i64) * 4) as ptr<i32>
+    let mut zi: i32 = 0
+    while zi < LANG_N {
+        lf[zi] = 0
+        ll[zi] = 0
+        zi = zi + 1
+    }
+    zi = 0
+    while zi < AREA_N {
+        af[zi] = 0
+        al[zi] = 0
+        zi = zi + 1
+    }
+
+    let list_text: string = read_whole_file("build/repo-stats/files.txt", READ_CAP)
+    let meta_text: string = read_whole_file("build/repo-stats/meta.txt", 4096)
+    if strlen(list_text) == 0 {
+        print("repo_stats: missing build/repo-stats/files.txt")
+        return 1
+    }
+
+    let mut commit: string = "unknown"
+    let mut generated_at: string = "unknown"
+    let mp: ptr<u8> = meta_text as ptr<u8>
+    let mlen: i32 = strlen(meta_text) as i32
+    let mut ms: i32 = 0
+    let mut mi: i32 = 0
+    while mi <= mlen {
+        if mi == mlen or mp[mi] == 10 {
+            if mi > ms {
+                let line: string = slice_str(meta_text, ms, mi)
+                let c: string = parse_meta_line(line, "commit")
+                let g: string = parse_meta_line(line, "generated_at")
+                if strlen(c) > 0 {
+                    commit = c
+                }
+                if strlen(g) > 0 {
+                    generated_at = g
+                }
+            }
+            ms = mi + 1
+        }
+        mi = mi + 1
+    }
+
+    let mut tracked: i32 = 0
+    let mut source_files: i32 = 0
+    let mut source_lines: i32 = 0
+    let mut proofs: i32 = 0
+    let mut shell_files: i32 = 0
+    let mut shell_lines: i32 = 0
+    let lp: ptr<u8> = list_text as ptr<u8>
+    let llen: i32 = strlen(list_text) as i32
+    let mut ls: i32 = 0
+    let mut li2: i32 = 0
+    while li2 <= llen {
+        if li2 == llen or lp[li2] == 10 {
+            if li2 > ls {
+                let mut path: string = slice_str(list_text, ls, li2)
+                if ends_with(path, "\r") {
+                    path = slice_str(path, 0, strlen(path) as i32 - 1)
+                }
+                if strlen(path) > 0 and is_excluded(path) == false {
+                    tracked = tracked + 1
+                    if is_proof_doc(path) {
+                        proofs = proofs + 1
+                    }
+                    let idx: i32 = lang_index_for(path)
+                    if idx >= 0 or idx == -2 {
+                        let lines: i32 = count_file_lines(path)
+                        source_files = source_files + 1
+                        source_lines = source_lines + lines
+                        if idx == -2 {
+                            shell_files = shell_files + 1
+                            shell_lines = shell_lines + lines
+                        } else {
+                            lf[idx] = lf[idx] + 1
+                            ll[idx] = ll[idx] + lines
+                        }
+                        bump_area(af, al, path, lines)
+                    } else {
+                        # Docs and package manifests carry area counts but no
+                        # language counts.
+                        if ends_with(path, ".md") or ends_with(path, "flow.toml") {
+                            let lines2: i32 = count_file_lines(path)
+                            bump_area(af, al, path, lines2)
+                        }
+                    }
+                }
+            }
+            ls = li2 + 1
+        }
+        li2 = li2 + 1
+    }
+
+    let json_text: string = emit_json(lf, ll, af, al, shell_files, shell_lines, tracked, source_files, source_lines, proofs, commit, generated_at)
+    let block: string = emit_readme_block(lf, ll, af, al, shell_files, shell_lines, source_files, source_lines, proofs, commit)
+
+    let _mk: i32 = mkdir("docs/generated", 493)
+    let flag: string = read_whole_file("build/repo-stats/mode.txt", 64)
+    let mut check_mode: i32 = 0
+    if starts_with(flag, "check") {
+        check_mode = 1
+    }
+
+    if check_mode == 1 {
+        let old_json: string = read_whole_file("docs/generated/repository-stats.json", READ_CAP)
+        let old_readme: string = read_whole_file("README.md", READ_CAP)
+        let rs: i32 = find_substr(old_readme, START_MARK)
+        let re: i32 = find_substr(old_readme, END_MARK)
+        let mut stale: i32 = 0
+        if str_eq(old_json, json_text) == false {
+            stale = 1
+            print("repo_stats: JSON stale")
+        }
+        if rs < 0 or re < 0 {
+            stale = 1
+            print("repo_stats: README markers missing")
+        } else {
+            let end_len: i32 = strlen(END_MARK) as i32
+            let old_block: string = slice_str(old_readme, rs, re + end_len)
+            if str_eq(old_block, block) == false {
+                stale = 1
+                print("repo_stats: README stats block stale")
+            }
+        }
+        if stale == 1 {
+            return 1
+        }
+        print("Repository statistics are current")
+        return 0
+    }
+
+    if write_whole_file("docs/generated/repository-stats.json", json_text) != 0 {
+        print("repo_stats: failed to write JSON")
+        return 1
+    }
+
+    let readme: string = read_whole_file("README.md", READ_CAP)
+    let rs2: i32 = find_substr(readme, START_MARK)
+    let re2: i32 = find_substr(readme, END_MARK)
+    if rs2 < 0 or re2 < 0 {
+        print("repo_stats: README markers missing")
+        return 1
+    }
+    let end_len2: i32 = strlen(END_MARK) as i32
+    let before: string = slice_str(readme, 0, rs2)
+    let after: string = slice_str(readme, re2 + end_len2, strlen(readme) as i32)
+    let new_readme: string = before + block + after
+    if write_whole_file("README.md", new_readme) != 0 {
+        print("repo_stats: failed to write README")
+        return 1
+    }
+    print("Updated README.md and docs/generated/repository-stats.json")
+    return 0
+}
