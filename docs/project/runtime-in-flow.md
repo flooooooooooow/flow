@@ -58,10 +58,17 @@ gates below green and preserves observable behavior.
 | 1 | `gfx_record.c` recorder logic | PPM writing, env parsing, key script via `fopen`/`getenv` externs; C keeps nothing but the gfx ABI symbol table |
 | 1 | `flow_http_bench.c` harness | Finish the port into `http_bench.flow` |
 | 1 | `flow_rt_sysinfo.c` probes | `sysconf`/`sysctlbyname` via externs into `sysinfo_probes.flow` |
-| 2 | `flow_tcp.c` setup + accept loops | `socket`/`bind`/`listen`/`accept`/`setsockopt` are plain C ABI; extern them from `tcp.flow`; sockaddr built in a byte buffer |
-| 2 | `flow_tls.c` session logic | OpenSSL calls extern'd from `tls.flow`; PEM/self-test logic in Flow; C keeps only the `FLOW_HAS_OPENSSL` guard shims |
-| 2 | `flow_cont.c` demo/probe surface | Demos and arming logic to `cont.flow`; park/shift/reset stays native |
+| 2 | `flow_tls.c` session logic | HTTP/2 framing, HPACK literals, read/write retry loops, and selftest orchestration in `tls.flow`; OpenSSL calls become guarded 3-line C shims |
 | 3 | Thin-shim shrink | Reduce `flow_rt_support/task_store/tape_store` to the fn-pointer trampolines only; everything else in Flow |
+
+Findings from wave 1 (2026-08-05): `flow_rt_sysinfo.c` is irreducible platform
+glue (`#if` per-OS branches, per-OS `_SC_*` constants) and stays as-is.
+`flow_tcp.c` socket setup stays native because `sockaddr_in` layout differs per
+OS (`sin_len` on BSD/macOS). `flow_cont.c` demo bodies must run as C callbacks
+on fiber stacks, so the demo surface is already at the boundary. Done in wave 1:
+SHA-256 core (`crypto.flow`, bit-exact vs hashlib) and the HTTP bench serve +
+client loops (`http_bench.flow`); C keeps the CSPRNG and the threaded
+accept-loop server.
 
 Stays native regardless: fctx asm + init, fiber worker loop, pthread/atomic
 kernels, race TLS tables, cchan and parallel-for hot loops, netpoll kqueue/epoll,
