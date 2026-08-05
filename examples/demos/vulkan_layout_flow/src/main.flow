@@ -1,0 +1,125 @@
+import "../../vulkan_abi/renderer.flow"
+import "stdlib/vulkan_abi_renderer.flow"
+
+function min_f32(a: f32, b: f32) -> f32 { if a < b { return a } return b }
+function i32_to_f32(v: i32) -> f32 { return v * 1.0 }
+
+function upload_quad_mesh(renderer: AbiRenderer) -> void {
+    let verts: array<f32, 32> = [
+        -0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 0.0,
+         0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 0.0,
+         0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 1.0,
+        -0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 1.0
+    ]
+    let inds: array<u16, 6> = [0, 1, 2, 2, 3, 0]
+    abi_renderer_upload_mesh(renderer, verts, 4, inds, 6)
+}
+
+function upload_white_texture(renderer: AbiRenderer) -> void {
+    let tex: array<u8, 4> = [255, 255, 255, 0]
+    let tex_id: i32 = abi_renderer_create_texture(renderer, 1, 1)
+    abi_renderer_update_texture(renderer, tex_id, tex, 1, 1)
+}
+
+function push_tile(inst: ptr<f32>, idx: i32, x: f32, y: f32, size: f32, r: f32, g: f32, b: f32) -> i32 {
+    let base: i32 = idx * 12
+    inst[base + 0] = x
+    inst[base + 1] = y
+    inst[base + 2] = 0.0
+    inst[base + 3] = size
+    inst[base + 4] = 0.0
+    inst[base + 5] = 0.0
+    inst[base + 6] = 1.0
+    inst[base + 7] = 1.0
+    inst[base + 8] = r
+    inst[base + 9] = g
+    inst[base + 10] = b
+    inst[base + 11] = 1.0
+    return idx + 1
+}
+
+function fill_rect_tiles(inst: ptr<f32>, idx: i32, x0: f32, y0: f32, cols: i32, rows: i32, tile: f32, r: f32, g: f32, b: f32) -> i32 {
+    let i: i32 = 0
+    let j: i32 = 0
+    let out: i32 = idx
+    while j < rows {
+        i = 0
+        while i < cols {
+            let x: f32 = x0 + i32_to_f32(i) * tile
+            let y: f32 = y0 + i32_to_f32(j) * tile
+            out = push_tile(inst, out, x, y, tile * 0.95, r, g, b)
+            i = i + 1
+        }
+        j = j + 1
+    }
+    return out
+}
+
+function layout_ui(inst: ptr<f32>, width: f32, height: f32) -> i32 {
+    let tile: f32 = min_f32(width / 48.0, height / 32.0)
+    let pad_tiles: i32 = 2
+    let x0: f32 = i32_to_f32(pad_tiles) * tile
+    let y0: f32 = i32_to_f32(pad_tiles) * tile
+    let cols: i32 = 48 - pad_tiles * 2
+    let rows: i32 = 32 - pad_tiles * 2
+
+    let idx: i32 = 0
+    # background panel
+    idx = fill_rect_tiles(inst, idx, x0, y0, cols, rows, tile, 0.08, 0.08, 0.09)
+
+    # top bar
+    idx = fill_rect_tiles(inst, idx, x0 + tile, y0 + i32_to_f32(rows - 4) * tile, cols - 2, 3, tile, 0.12, 0.12, 0.14)
+
+    # sidebar
+    idx = fill_rect_tiles(inst, idx, x0 + tile, y0 + tile, 8, rows - 6, tile, 0.14, 0.14, 0.18)
+
+    # cards grid (3 x 2)
+    let card_w: i32 = 10
+    let card_h: i32 = 7
+    let gap: i32 = 2
+    let gx: f32 = x0 + i32_to_f32(11) * tile
+    let gy: f32 = y0 + i32_to_f32(rows - 6 - card_h) * tile
+    let r: i32 = 0
+    while r < 2 {
+        let c: i32 = 0
+        while c < 3 {
+            let cx: f32 = gx + i32_to_f32(c * (card_w + gap)) * tile
+            let cy: f32 = gy - i32_to_f32(r * (card_h + gap)) * tile
+            idx = fill_rect_tiles(inst, idx, cx, cy, card_w, card_h, tile, 0.20, 0.20, 0.26)
+            c = c + 1
+        }
+        r = r + 1
+    }
+
+    # footer strip
+    idx = fill_rect_tiles(inst, idx, x0 + i32_to_f32(11) * tile, y0 + tile, cols - 12, 2, tile, 0.16, 0.16, 0.20)
+
+    return idx
+}
+
+function main() -> i32 {
+    let width: i32 = 960
+    let height: i32 = 640
+    flow_vk_set_window_scale(1.0, 0)
+    if flow_vk_2048_init(width, height, "Flow Vulkan Layout UI", 1500) != 0 {
+        return 1
+    }
+    let renderer: AbiRenderer = abi_renderer_init()
+    abi_renderer_set_clear(renderer, 0.05, 0.05, 0.06)
+    abi_renderer_set_viewport(renderer, width, height)
+    upload_quad_mesh(renderer)
+    upload_white_texture(renderer)
+
+    let inst_handle: i32 = abi_renderer_create_instance_buffer(renderer, 1500)
+    let instances: array<f32, 18000> = [0.0]
+    let count: i32 = layout_ui(instances, i32_to_f32(width), i32_to_f32(height))
+
+    while flow_vk_2048_should_close() == 0 && abi_renderer_begin_frame(renderer) == 1 {
+        flow_vk_2048_poll()
+        abi_renderer_update_instance_buffer(renderer, inst_handle, instances, count)
+        abi_renderer_draw_instance_buffer(renderer, inst_handle, count)
+        abi_renderer_end_frame(renderer)
+    }
+    flow_vk_2048_shutdown()
+    return 0
+}
