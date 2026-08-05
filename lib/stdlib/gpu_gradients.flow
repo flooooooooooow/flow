@@ -1,0 +1,39 @@
+# GPU gradient helpers (MVP)
+#
+# Thin wrappers over Metal elementwise mul / mul-backward kernels.
+# Buffers are the same GpuBuffer handles from stdlib/gpu_memory.flow.
+#
+#   grad_a = grad_out * b
+#   grad_b = grad_out * a
+
+import "stdlib/gpu_memory.flow"
+
+extern {
+    function flow_gpu_mul_f32(out: ptr<void>, a: ptr<void>, b: ptr<void>, n: i64) -> i32
+    function flow_gpu_mul_backward_a_f32(grad_a: ptr<void>, grad_out: ptr<void>, b: ptr<void>, n: i64) -> i32
+    function flow_gpu_mul_backward_b_f32(grad_b: ptr<void>, grad_out: ptr<void>, a: ptr<void>, n: i64) -> i32
+}
+
+# Elementwise mul forward: out[i] = a[i] * b[i]
+export function gpu_mul_f32(out: GpuBuffer, a: GpuBuffer, b: GpuBuffer, n: i64) -> i32 {
+    if gpu_is_null(out) or gpu_is_null(a) or gpu_is_null(b) or n <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_mul_f32(out.device, a.device, b.device, n)
+}
+
+# Mul backward w.r.t. a: grad_a[i] = grad_out[i] * b[i]
+export function gpu_mul_backward_a_f32(grad_a: GpuBuffer, grad_out: GpuBuffer, b: GpuBuffer, n: i64) -> i32 {
+    if gpu_is_null(grad_a) or gpu_is_null(grad_out) or gpu_is_null(b) or n <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_mul_backward_a_f32(grad_a.device, grad_out.device, b.device, n)
+}
+
+# Mul backward w.r.t. b: grad_b[i] = grad_out[i] * a[i]
+export function gpu_mul_backward_b_f32(grad_b: GpuBuffer, grad_out: GpuBuffer, a: GpuBuffer, n: i64) -> i32 {
+    if gpu_is_null(grad_b) or gpu_is_null(grad_out) or gpu_is_null(a) or n <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_mul_backward_b_f32(grad_b.device, grad_out.device, a.device, n)
+}
