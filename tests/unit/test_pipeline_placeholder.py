@@ -116,10 +116,12 @@ def test_fork_source_may_be_a_pipeline_stage():
     )
 
 
-def test_fork_colon_field_rejected():
+def test_colon_block_is_stage_params_not_fork():
+    # `Name { a: v }` (colon) is a flow-stage param block, not a fork. Outside a
+    # flow `output` pipeline it has no meaning and is rejected as such.
     with pytest.raises(Exception) as exc:
         _lower("src |> R { a: f }")
-    assert "'='" in str(exc.value)
+    assert "flow" in str(exc.value) and "stage" in str(exc.value)
 
 
 def test_fork_empty_block_rejected():
