@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
-"""Render docs/demos/tetris.gif — a short demo reel matching tetris_gfx colors.
+"""DEPRECATED — superseded by scripts/record_demos.py.
 
-The live game (`./flow gfx examples/games/tetris_gfx.flow`) opens a native
-window; this script bakes a portable GIF from the same palette/layout so the
-wiki and README can show motion without a display. Regenerate anytime:
+This script never ran any Flow code. It re-draws a Tetris-looking animation in
+Pillow using a hardcoded copy of the palette, layout, and a canned piece
+sequence, which is why it drifts from the real game.
 
-  python3 scripts/record_tetris_gif.py
+Recordings now come from the program itself: runtime/gfx_record.c gives the gfx
+API a headless backend that writes each presented frame to disk, so
 
-Requires Pillow.
+  python3 scripts/record_demos.py tetris
+
+produces docs/demos/tetris.gif from examples/games/tetris_gfx.flow. Running
+this file will overwrite that genuine recording with the mock-up; it is kept
+only until the new pipeline has been run on a machine that can execute freshly
+compiled binaries, and is safe to delete after that.
 """
 
 from __future__ import annotations

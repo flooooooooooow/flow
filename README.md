@@ -350,21 +350,34 @@ folder’s `PUBLISH.md`.
 
 ## Highlighted Examples
 
-### Games (with Native Graphics)
+### Native Graphics
 
-![Flow Tetris demo](docs/demos/tetris.gif)
+Each clip is a recording of the compiled program — the frames come out of the
+real `gfx` backend, not a re-creation.
+
+| | | |
+|:---:|:---:|:---:|
+| ![Lorenz attractor](docs/demos/lorenz.gif) | ![Flow Tetris](docs/demos/tetris.gif) | ![Flow 2048](docs/demos/2048.gif) |
+| **Lorenz attractor** — a `flow` block with an RK4 solver | **Tetris** — rotation, line clears, scoring, ghost piece | **2048** — grid logic and tile merging |
 
 ```bash
 # Tetris - fully playable!
 ./flow gfx examples/games/tetris_gfx.flow
 # (or: compile + link runtime/gfx_macos.m / gfx_linux.c / gfx_windows.c)
 
-# Regenerate the demo GIF:
-#   python3 scripts/record_tetris_gif.py
-
 # 2048 puzzle
 ./flow gfx examples/games/2048_gfx.flow
+
+# Lorenz attractor (dynamics + graphics)
+./flow gfx examples/evolution/lorenz_gfx.flow
+
+# Regenerate every demo GIF (headless, no display needed):
+#   python3 scripts/record_demos.py
 ```
+
+`./flow record <program>` runs any `gfx` program against the headless backend in
+`runtime/gfx_record.c`, writing each presented frame as a PPM. See
+[docs/demos/README.md](docs/demos/README.md).
 
 ### Machine Learning
 
