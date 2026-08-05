@@ -224,7 +224,7 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
   struct field on typed base / struct lit). Linked into `flowc_frontend.o` /
   self / g2. On by default on emit; opt out with `FLOWC_TYPECHECK=0` or
   `FLOWC_NO_TYPECHECK=1` for intentional emit of known-bad fixtures. Diagnostics
-  include `flowc tc: at line:col`.)
+  include `flowc tc: file` + path and `flowc tc: at line:col`.)
 - Multi-file package resolve beyond Stage-A MVP — **partial:**
   [`src/resolve.flow`](src/resolve.flow) loads `import .sibling` / `import "path"`
   under `FLOWC_DIR` and `flowc_bundle_emit` concatenates C (deps then entry);
