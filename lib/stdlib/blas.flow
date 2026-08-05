@@ -287,6 +287,23 @@ export function solve(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32 {
     return info
 }
 
+# In-place LU factorization via LAPACK dgetrf. Overwrites A with L/U factors.
+# pivots must point at at least min(A.rows, A.cols) i32 slots (max 1024 here).
+# Returns LAPACK info (0 = success).
+export function getrf(A: Mat, pivots: ptr<i32>) -> i32 {
+    let mut m: i32 = A.rows
+    let mut n: i32 = A.cols
+    let mut lda: i32 = A.cols
+    let mut info: i32 = 0
+    dgetrf_(&m, &n, A.data, &lda, pivots, &info)
+    return info
+}
+
+# Alias for getrf — matches pattern-adoption sketch naming.
+export function lu_factor(A: Mat, pivots: ptr<i32>) -> i32 {
+    return getrf(A, pivots)
+}
+
 # ============================================================================
 # CONVENIENCE: MATLAB-STYLE OPERATORS
 # ============================================================================

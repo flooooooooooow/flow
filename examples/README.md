@@ -121,7 +121,8 @@ Neural network framework + autodiff:
 - `tensor.flow` - N-dimensional tensor type
 - `nn_layers.flow` - Dense layers, activations
 - `optimizers.flow` - SGD, Adam, RMSprop
-- `models/mlp_xor.flow` - XOR learning demo (trains successfully!)
+- `models/mlp_xor.flow` - XOR via grad codegen (`nn_autogen`)
+- `models/mlp_xor_from_scratch.flow` - pedagogical hand backprop
 - `autodiff/` - Autodiff benchmarks, backprop, `nn_xor.flow` (merged from `neural_networks/`)
 
 ### Stats (`stats/`)
@@ -170,8 +171,10 @@ Real-time DSP:
 
 ### Linear Algebra (`linalg/`)
 Matrix operations (Julia territory):
+- `blas_demo.flow` - Accelerate/OpenBLAS via `stdlib/blas.flow`
+- `lu_decomposition.flow` - `solve` + `lu_factor` (tourist)
+- `lu_decomposition_pedagogical.flow` - hand Doolittle / pivoted LU
 - `matrix_ops.flow` - Basic matrix operations
-- `lu_decomposition.flow` - LU factorization
 
 ### Numerical (`numerical/`)
 Scientific computing:
