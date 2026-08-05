@@ -1,9 +1,11 @@
-# XOR training using stdlib neural network helpers (reverse-mode backprop style)
+# XOR training via grad codegen (nn_autogen) — same tourist path as
+# examples/ml/models/mlp_xor.flow. Hand grads: net2x2x1_grads_xor in nn.flow.
 
 import "lib/stdlib/nn.flow"
+import "lib/stdlib/nn_autogen.flow"
 
 function main() -> i32 {
-    printf("=== XOR training via lib/stdlib/nn.flow ===\n\n")
+    printf("=== XOR training via nn_autogen (grad codegen) ===\n\n")
 
     let mut net: Net2x2x1 = Net2x2x1 {
         w00: 0.5, w01: 0.9,
@@ -25,8 +27,8 @@ function main() -> i32 {
     let epochs: i32 = 500
 
     printf("Training %d epochs (lr=%.1f)...\n", epochs, lr)
-    for epoch in 0..epochs {
-        let g: Grads2x2x1 = net2x2x1_grads_xor(net)
+    for epoch in 0 to epochs {
+        let g: Grads2x2x1 = net2x2x1_grads_xor_autogen(net)
         net = net2x2x1_step(net, g, lr)
         if epoch % 100 == 0 {
             printf("  epoch %d: loss=%.4f\n", epoch, net2x2x1_loss_xor(net))
