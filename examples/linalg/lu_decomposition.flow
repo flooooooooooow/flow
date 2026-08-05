@@ -1,342 +1,81 @@
-# LU Decomposition
-# Factors a matrix A into lower (L) and upper (U) triangular matrices
-# Such that A = L * U
+# LU / linear solve via stdlib BLAS (pattern-adoption #168).
+# For the hand-written Doolittle / pivot walkthrough see
+#   examples/linalg/lu_decomposition_pedagogical.flow
 #
-# Used for solving linear systems, computing determinants, and matrix inversion
+# Run (macOS): ./flow run examples/linalg/lu_decomposition.flow
+# Links Accelerate automatically on Darwin.
+
+import "stdlib/blas.flow"
 
 extern {
-    function sqrt(x: f64) -> f64
     function printf(fmt: string, val: f64) -> i32
-    function fabs(x: f64) -> f64
 }
-
-# ============================================================================
-# MATRIX HELPERS
-# ============================================================================
-
-function mat_get(data: ptr<f64>, n: i32, i: i32, j: i32) -> f64 {
-    return data[i * n + j]
-}
-
-function mat_set(data: ptr<f64>, n: i32, i: i32, j: i32, val: f64) {
-    data[i * n + j] = val
-}
-
-function mat_copy(src: ptr<f64>, dst: ptr<f64>, size: i32) {
-    for i in 0 to size {
-        dst[i] = src[i]
-    }
-}
-
-function mat_print(data: ptr<f64>, rows: i32, cols: i32, name: string) {
-    print(name)
-    println(":")
-    for i in 0 to rows {
-        print("  [")
-        for j in 0 to cols {
-            printf("%.4f", mat_get(data, cols, i, j))
-            if j < cols - 1 {
-                print(", ")
-            }
-        }
-        println("]")
-    }
-}
-
-# ============================================================================
-# LU DECOMPOSITION (Doolittle's method, no pivoting)
-# ============================================================================
-
-function lu_decompose(A: ptr<f64>, L: ptr<f64>, U: ptr<f64>, n: i32) -> i32 {
-    # Initialize L to identity, U to zeros
-    for i in 0 to n {
-        for j in 0 to n {
-            if i == j {
-                mat_set(L, n, i, j, 1.0)
-            } else {
-                mat_set(L, n, i, j, 0.0)
-            }
-            mat_set(U, n, i, j, 0.0)
-        }
-    }
-    
-    # Doolittle's algorithm
-    for i in 0 to n {
-        # Upper triangular
-        for k in i to n {
-            let mut sum: f64 = 0.0
-            for j in 0 to i {
-                sum = sum + mat_get(L, n, i, j) * mat_get(U, n, j, k)
-            }
-            mat_set(U, n, i, k, mat_get(A, n, i, k) - sum)
-        }
-        
-        # Lower triangular
-        for k in i + 1 to n {
-            let mut sum: f64 = 0.0
-            for j in 0 to i {
-                sum = sum + mat_get(L, n, k, j) * mat_get(U, n, j, i)
-            }
-            let u_ii: f64 = mat_get(U, n, i, i)
-            if fabs(u_ii) < 1e-10 {
-                # Singular matrix
-                return 0
-            }
-            mat_set(L, n, k, i, (mat_get(A, n, k, i) - sum) / u_ii)
-        }
-    }
-    
-    return 1
-}
-
-# ============================================================================
-# LU WITH PARTIAL PIVOTING (more numerically stable)
-# ============================================================================
-
-function lu_decompose_pivoted(A: ptr<f64>, L: ptr<f64>, U: ptr<f64>, P: ptr<i32>, n: i32) -> i32 {
-    # Copy A to U (we'll transform U in place)
-    mat_copy(A, U, n * n)
-    
-    # Initialize L to zeros, P to identity permutation
-    for i in 0 to n {
-        P[i] = i
-        for j in 0 to n {
-            mat_set(L, n, i, j, 0.0)
-        }
-    }
-    
-    for k in 0 to n {
-        # Find pivot
-        let mut max_val: f64 = fabs(mat_get(U, n, k, k))
-        let mut max_row: i32 = k
-        
-        for i in k + 1 to n {
-            let val: f64 = fabs(mat_get(U, n, i, k))
-            if val > max_val {
-                max_val = val
-                max_row = i
-            }
-        }
-        
-        if max_val < 1e-10 {
-            return 0  # Singular matrix
-        }
-        
-        # Swap rows in U and P
-        if max_row != k {
-            let tmp_p: i32 = P[k]
-            P[k] = P[max_row]
-            P[max_row] = tmp_p
-            
-            for j in 0 to n {
-                let tmp: f64 = mat_get(U, n, k, j)
-                mat_set(U, n, k, j, mat_get(U, n, max_row, j))
-                mat_set(U, n, max_row, j, tmp)
-            }
-            
-            # Swap rows in L (only columns < k)
-            for j in 0 to k {
-                let tmp: f64 = mat_get(L, n, k, j)
-                mat_set(L, n, k, j, mat_get(L, n, max_row, j))
-                mat_set(L, n, max_row, j, tmp)
-            }
-        }
-        
-        # Set L diagonal
-        mat_set(L, n, k, k, 1.0)
-        
-        # Eliminate below pivot
-        for i in k + 1 to n {
-            let factor: f64 = mat_get(U, n, i, k) / mat_get(U, n, k, k)
-            mat_set(L, n, i, k, factor)
-            
-            for j in k to n {
-                let val: f64 = mat_get(U, n, i, j) - factor * mat_get(U, n, k, j)
-                mat_set(U, n, i, j, val)
-            }
-        }
-    }
-    
-    return 1
-}
-
-# ============================================================================
-# FORWARD/BACKWARD SUBSTITUTION
-# ============================================================================
-
-function forward_substitute(L: ptr<f64>, b: ptr<f64>, y: ptr<f64>, n: i32) {
-    # Solve Ly = b for y
-    for i in 0 to n {
-        let mut sum: f64 = 0.0
-        for j in 0 to i {
-            sum = sum + mat_get(L, n, i, j) * y[j]
-        }
-        y[i] = b[i] - sum
-    }
-}
-
-function backward_substitute(U: ptr<f64>, y: ptr<f64>, x: ptr<f64>, n: i32) {
-    # Solve Ux = y for x
-    let mut i: i32 = n - 1
-    while i >= 0 {
-        let mut sum: f64 = 0.0
-        for j in i + 1 to n {
-            sum = sum + mat_get(U, n, i, j) * x[j]
-        }
-        x[i] = (y[i] - sum) / mat_get(U, n, i, i)
-        i = i - 1
-    }
-}
-
-# ============================================================================
-# SOLVE LINEAR SYSTEM Ax = b
-# ============================================================================
-
-function solve_lu(A: ptr<f64>, b: ptr<f64>, x: ptr<f64>, n: i32) -> i32 {
-    # Allocate L and U
-    let L: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let U: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let y: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
-    
-    let L_ptr: ptr<f64> = L
-    let U_ptr: ptr<f64> = U
-    let y_ptr: ptr<f64> = y
-    
-    # Decompose
-    let success: i32 = lu_decompose(A, L_ptr, U_ptr, n)
-    if success == 0 {
-        return 0
-    }
-    
-    # Solve Ly = b
-    forward_substitute(L_ptr, b, y_ptr, n)
-    
-    # Solve Ux = y
-    backward_substitute(U_ptr, y_ptr, x, n)
-    
-    return 1
-}
-
-# ============================================================================
-# DETERMINANT VIA LU
-# ============================================================================
-
-function determinant_lu(A: ptr<f64>, n: i32) -> f64 {
-    let L: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let U: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let L_ptr: ptr<f64> = L
-    let U_ptr: ptr<f64> = U
-    
-    let success: i32 = lu_decompose(A, L_ptr, U_ptr, n)
-    if success == 0 {
-        return 0.0
-    }
-    
-    # det(A) = det(L) * det(U) = 1 * product of U diagonal
-    let mut det: f64 = 1.0
-    for i in 0 to n {
-        det = det * mat_get(U_ptr, n, i, i)
-    }
-    
-    return det
-}
-
-# ============================================================================
-# DEMO
-# ============================================================================
 
 function main() -> i32 {
-    println("LU Decomposition Demo")
-    println("=====================")
-    println("")
-    
-    # Example matrix
-    let A: array<f64, 9> = [
-        2.0, 1.0, 1.0,
-        4.0, 3.0, 3.0,
-        8.0, 7.0, 9.0
-    ]
-    let L: array<f64, 9> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let U: array<f64, 9> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    
-    let A_ptr: ptr<f64> = A
-    let L_ptr: ptr<f64> = L
-    let U_ptr: ptr<f64> = U
-    
-    mat_print(A_ptr, 3, 3, "Matrix A")
-    println("")
-    
-    # LU decomposition
-    let success: i32 = lu_decompose(A_ptr, L_ptr, U_ptr, 3)
-    
-    if success == 1 {
-        mat_print(L_ptr, 3, 3, "Lower triangular L")
-        println("")
-        
-        mat_print(U_ptr, 3, 3, "Upper triangular U")
-        println("")
-        
-        # Verify: compute L * U
-        let LU: array<f64, 9> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        let LU_ptr: ptr<f64> = LU
-        
-        for i in 0 to 3 {
-            for j in 0 to 3 {
-                let mut sum: f64 = 0.0
-                for k in 0 to 3 {
-                    sum = sum + mat_get(L_ptr, 3, i, k) * mat_get(U_ptr, 3, k, j)
-                }
-                mat_set(LU_ptr, 3, i, j, sum)
-            }
+    println("LU / solve via stdlib/blas.flow")
+    println("================================")
+
+    # Well-conditioned 3x3 system: A x = b
+    let A: Mat = mat_new(3, 3)
+    mat_set(A, 0, 0, 4.0); mat_set(A, 0, 1, 1.0); mat_set(A, 0, 2, 1.0)
+    mat_set(A, 1, 0, 1.0); mat_set(A, 1, 1, 3.0); mat_set(A, 1, 2, 1.0)
+    mat_set(A, 2, 0, 1.0); mat_set(A, 2, 1, 1.0); mat_set(A, 2, 2, 2.0)
+
+    let b: array<f64, 3> = [6.0, 5.0, 4.0]
+    let x: array<f64, 3> = [0.0, 0.0, 0.0]
+    let b_ptr: ptr<f64> = b
+    let x_ptr: ptr<f64> = x
+
+    let info: i32 = solve(A, b_ptr, x_ptr)
+    print("  dgesv info = ")
+    println(info)
+
+    print("  x = [")
+    printf("%.6f", x[0])
+    print(", ")
+    printf("%.6f", x[1])
+    print(", ")
+    printf("%.6f", x[2])
+    println("]")
+
+    # Residual r = A x - b via gemv into a scratch vector
+    let Ax: array<f64, 3> = [0.0, 0.0, 0.0]
+    let Ax_ptr: ptr<f64> = Ax
+    gemv(A, x_ptr, Ax_ptr)
+    let mut max_res: f64 = 0.0
+    for i in 0 to 3 {
+        let mut r: f64 = Ax[i] - b[i]
+        if r < 0.0 {
+            r = 0.0 - r
         }
-        
-        mat_print(LU_ptr, 3, 3, "Verification L*U")
-        println("")
-        
-        # Solve Ax = b
-        println("Solving Ax = b where b = [1, 2, 3]:")
-        let b: array<f64, 3> = [1.0, 2.0, 3.0]
-        let x: array<f64, 3> = [0.0, 0.0, 0.0]
-        let b_ptr: ptr<f64> = b
-        let x_ptr: ptr<f64> = x
-        
-        let solved: i32 = solve_lu(A_ptr, b_ptr, x_ptr, 3)
-        if solved == 1 {
-            print("  x = [")
-            for i in 0 to 3 {
-                printf("%.4f", x[i])
-                if i < 2 {
-                    print(", ")
-                }
-            }
-            println("]")
-            
-            # Verify
-            print("  Verification A*x = [")
-            for i in 0 to 3 {
-                let mut sum: f64 = 0.0
-                for j in 0 to 3 {
-                    sum = sum + mat_get(A_ptr, 3, i, j) * x[j]
-                }
-                printf("%.4f", sum)
-                if i < 2 {
-                    print(", ")
-                }
-            }
-            println("]")
+        if r > max_res {
+            max_res = r
         }
-        
-        println("")
-        
-        # Determinant
-        let det: f64 = determinant_lu(A_ptr, 3)
-        print("Determinant of A: ")
-        printf("%.4f", det)
-        println("")
-        
-    } else {
-        println("Matrix is singular!")
     }
-    
+    print("  max |Ax-b| = ")
+    printf("%.2e", max_res)
+    println("")
+
+    # Optional: factor a clone with getrf
+    let Af: Mat = mat_clone(A)
+    let piv: array<i32, 3> = [0, 0, 0]
+    let piv_ptr: ptr<i32> = piv
+    let finfo: i32 = lu_factor(Af, piv_ptr)
+    print("  getrf info = ")
+    println(finfo)
+
+    mat_free(Af)
+    mat_free(A)
+
+    if info != 0 {
+        return 1
+    }
+    if finfo != 0 {
+        return 1
+    }
+    if max_res > 1.0e-9 {
+        return 1
+    }
+    println("  OK: solve + lu_factor via BLAS/LAPACK")
     return 0
 }

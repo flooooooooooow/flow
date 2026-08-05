@@ -1,231 +1,78 @@
-# XOR Neural Network
-# Classic demo: learning XOR function with a 2-layer MLP
+# XOR MLP via grad codegen (pattern-adoption #170).
+# No hand-written dense_backward — gradients come from
+# scripts/tools/grad/flow_grad_flow.py → nn_xor_loss_clean_grad.flow
+# wrapped by lib/stdlib/nn_autogen.flow.
 #
-# Architecture: 2 -> 4 -> 1
-# This demonstrates that Flow can train neural networks
+# Hand backprop walkthrough:
+#   examples/ml/models/mlp_xor_from_scratch.flow
+#
+# Architecture: 2 → 2 (sigmoid) → 1 (sigmoid). Tourist path for AD honesty.
+#
+# Run: ./flow run examples/ml/models/mlp_xor.flow
+
+import "lib/stdlib/nn.flow"
+import "lib/stdlib/nn_autogen.flow"
 
 extern {
-    function sqrt(x: f64) -> f64
-    function exp(x: f64) -> f64
-    function printf(fmt: string, val: f64) -> i32
+    function printf(fmt: string, val: f32) -> i32
 }
-
-# ============================================================================
-# ACTIVATION FUNCTIONS
-# ============================================================================
-
-function sigmoid(x: f32) -> f32 {
-    let e: f64 = exp(0.0 - x)
-    return 1.0 / (1.0 + e)
-}
-
-function sigmoid_deriv(s: f32) -> f32 {
-    return s * (1.0 - s)
-}
-
-# ============================================================================
-# NETWORK (using arrays instead of malloc)
-# ============================================================================
-
-# Layer 1: 2 inputs -> 4 hidden
-# w1[i][j] = w1_flat[i * 4 + j], i in [0,2), j in [0,4)
-
-function forward_pass(
-    x0: f32, x1: f32,
-    w1: ptr<f32>, b1: ptr<f32>,
-    w2: ptr<f32>, b2: f32,
-    h1: ptr<f32>, a1: ptr<f32>
-) -> f32 {
-    # Layer 1
-    for j in 0 to 4 {
-        let val: f32 = x0 * w1[j] + x1 * w1[4 + j] + b1[j]
-        h1[j] = val
-        a1[j] = sigmoid(val)
-    }
-    
-    # Layer 2
-    let mut h2: f32 = b2
-    for i in 0 to 4 {
-        h2 = h2 + a1[i] * w2[i]
-    }
-    
-    return sigmoid(h2)
-}
-
-function train_step(
-    x0: f32, x1: f32, target: f32,
-    w1: ptr<f32>, b1: ptr<f32>,
-    w2: ptr<f32>, b2: ptr<f32>,
-    h1: ptr<f32>, a1: ptr<f32>,
-    dw1: ptr<f32>, db1: ptr<f32>,
-    dw2: ptr<f32>,
-    lr: f32
-) -> f32 {
-    # Forward pass
-    for j in 0 to 4 {
-        let val: f32 = x0 * w1[j] + x1 * w1[4 + j] + b1[j]
-        h1[j] = val
-        a1[j] = sigmoid(val)
-    }
-    
-    let mut h2: f32 = b2[0]
-    for i in 0 to 4 {
-        h2 = h2 + a1[i] * w2[i]
-    }
-    let output: f32 = sigmoid(h2)
-    
-    # Loss
-    let diff: f32 = output - target
-    let loss: f32 = diff * diff
-    
-    # Backward pass
-    let d_output: f32 = diff * sigmoid_deriv(output)
-    
-    # Layer 2 gradients
-    for i in 0 to 4 {
-        dw2[i] = d_output * a1[i]
-    }
-    let db2_val: f32 = d_output
-    
-    # Layer 1 gradients
-    for j in 0 to 4 {
-        let d_a1: f32 = d_output * w2[j]
-        let d_h1: f32 = d_a1 * sigmoid_deriv(a1[j])
-        
-        db1[j] = d_h1
-        dw1[j] = d_h1 * x0
-        dw1[4 + j] = d_h1 * x1
-    }
-    
-    # Update weights
-    for i in 0 to 8 {
-        w1[i] = w1[i] - lr * dw1[i]
-    }
-    for i in 0 to 4 {
-        b1[i] = b1[i] - lr * db1[i]
-        w2[i] = w2[i] - lr * dw2[i]
-    }
-    b2[0] = b2[0] - lr * db2_val
-    
-    return loss
-}
-
-# ============================================================================
-# MAIN
-# ============================================================================
 
 function main() -> i32 {
-    println("XOR Neural Network Training")
-    println("===========================")
+    println("XOR Neural Network (grad codegen)")
+    println("=================================")
+    println("Architecture: 2 -> 2 (sigmoid) -> 1 (sigmoid)")
+    println("Grads: net2x2x1_grads_xor_autogen (flow_grad_flow.py)")
     println("")
-    println("Architecture: 2 -> 4 (sigmoid) -> 1 (sigmoid)")
+
+    let mut net: Net2x2x1 = Net2x2x1 {
+        w00: 0.5, w01: 0.9,
+        w10: 0.4, w11: 1.0,
+        b0: -0.8, b1: -0.1,
+        v0: -1.2, v1: 1.1,
+        c: -0.3
+    }
+
+    print("Before loss = ")
+    printf("%.4f", net2x2x1_loss_xor(net))
     println("")
-    
-    # Network weights (fixed-size arrays)
-    let w1: array<f32, 8> = [0.5, -0.3, 0.2, 0.4, -0.1, 0.6, -0.2, 0.3]
-    let b1: array<f32, 4> = [0.0, 0.0, 0.0, 0.0]
-    let w2: array<f32, 4> = [0.4, -0.5, 0.3, -0.2]
-    let b2: array<f32, 1> = [0.0]
-    
-    # Gradients
-    let dw1: array<f32, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let db1: array<f32, 4> = [0.0, 0.0, 0.0, 0.0]
-    let dw2: array<f32, 4> = [0.0, 0.0, 0.0, 0.0]
-    
-    # Hidden states
-    let h1: array<f32, 4> = [0.0, 0.0, 0.0, 0.0]
-    let a1: array<f32, 4> = [0.0, 0.0, 0.0, 0.0]
-    
-    let w1_ptr: ptr<f32> = w1
-    let b1_ptr: ptr<f32> = b1
-    let w2_ptr: ptr<f32> = w2
-    let b2_ptr: ptr<f32> = b2
-    let dw1_ptr: ptr<f32> = dw1
-    let db1_ptr: ptr<f32> = db1
-    let dw2_ptr: ptr<f32> = dw2
-    let h1_ptr: ptr<f32> = h1
-    let a1_ptr: ptr<f32> = a1
-    
-    # XOR data
-    let x0s: array<f32, 4> = [0.0, 0.0, 1.0, 1.0]
-    let x1s: array<f32, 4> = [0.0, 1.0, 0.0, 1.0]
-    let ys: array<f32, 4> = [0.0, 1.0, 1.0, 0.0]
-    
+
     let lr: f32 = 2.0
-    let epochs: i32 = 5000
-    
-    println("Training...")
-    
+    let epochs: i32 = 500
     for epoch in 0 to epochs {
-        let mut total_loss: f32 = 0.0
-        
-        for i in 0 to 4 {
-            let loss: f32 = train_step(
-                x0s[i], x1s[i], ys[i],
-                w1_ptr, b1_ptr, w2_ptr, b2_ptr,
-                h1_ptr, a1_ptr,
-                dw1_ptr, db1_ptr, dw2_ptr,
-                lr
-            )
-            total_loss = total_loss + loss
-        }
-        
-        if epoch % 1000 == 0 {
-            print("Epoch ")
+        let g: Grads2x2x1 = net2x2x1_grads_xor_autogen(net)
+        net = net2x2x1_step(net, g, lr)
+        if epoch % 100 == 0 {
+            print("  epoch ")
             print(epoch)
-            print(": Loss = ")
-            printf("%.6f", total_loss / 4.0)
+            print(": loss = ")
+            printf("%.4f", net2x2x1_loss_xor(net))
             println("")
         }
     }
-    
+
     println("")
-    println("Final predictions:")
-    
-    let mut correct: i32 = 0
-    for i in 0 to 4 {
-        let pred: f32 = forward_pass(
-            x0s[i], x1s[i],
-            w1_ptr, b1_ptr, w2_ptr, b2[0],
-            h1_ptr, a1_ptr
-        )
-        
-        let mut rounded: i32 = 0
-        if pred > 0.5 { rounded = 1 }
-        
-        let mut expected: i32 = 0
-        if ys[i] > 0.5 { expected = 1 }
-        
-        print("  ")
-        print(x0s[i])
-        print(" XOR ")
-        print(x1s[i])
-        print(" = ")
-        printf("%.4f", pred)
-        print(" -> ")
-        print(rounded)
-        print(" (expected ")
-        print(expected)
-        print(") ")
-        
-        if rounded == expected {
-            println("[OK]")
-            correct = correct + 1
-        } else {
-            println("[FAIL]")
-        }
-    }
-    
+    println("After:")
+    print("  0^0 = ")
+    printf("%.3f", net2x2x1_predict(net, 0.0, 0.0))
+    println(" (want ~0)")
+    print("  0^1 = ")
+    printf("%.3f", net2x2x1_predict(net, 0.0, 1.0))
+    println(" (want ~1)")
+    print("  1^0 = ")
+    printf("%.3f", net2x2x1_predict(net, 1.0, 0.0))
+    println(" (want ~1)")
+    print("  1^1 = ")
+    printf("%.3f", net2x2x1_predict(net, 1.0, 1.0))
+    println(" (want ~0)")
+    print("  loss = ")
+    printf("%.4f", net2x2x1_loss_xor(net))
     println("")
-    print("Accuracy: ")
-    print(correct)
-    println("/4")
-    
-    if correct == 4 {
-        println("SUCCESS: Network learned XOR!")
-        return 0
-    } else {
-        println("Network needs more training")
+
+    let final_loss: f32 = net2x2x1_loss_xor(net)
+    if final_loss > 0.15 {
+        println("FAIL: loss did not converge")
         return 1
     }
+    println("OK: trained without hand dense_backward")
+    return 0
 }

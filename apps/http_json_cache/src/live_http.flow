@@ -6,10 +6,11 @@
 # Or from repo root after installing path deps into flow_packages/:
 #   ./flow run-native apps/http_json_cache/src/live_http.flow
 #
+# Uses owned HttpBody (http_get / http_body_free) — no caller buffer ceremony.
 # Fetches https://example.com, then validates a canned JSON cache entry
 # with the same json helpers as main.flow (network body is HTML, not JSON).
 
-import http.lib { http_get_into, http_alloc, http_free, HttpResponse }
+import http.lib { http_get, http_body_free, HttpBody }
 import json.lib { json_validate, json_get_i32 }
 
 extern {
@@ -17,13 +18,13 @@ extern {
 }
 
 function main() -> i32 {
-    let buf: ptr<i8> = http_alloc(4096)
-    let resp: HttpResponse = http_get_into("https://example.com", buf, 4096)
-    printf("http_status=%lld\n", resp.status)
-    printf("http_body_len=%lld\n", resp.body_len)
-    printf("http_ok=%lld\n", resp.ok as i64)
-    printf("curl_err=%lld\n", resp.curl_err)
-    http_free(buf)
+    let body: HttpBody = http_get("https://example.com")
+    printf("http_status=%lld\n", body.status)
+    printf("http_body_len=%lld\n", body.body_len)
+    printf("http_ok=%lld\n", body.ok as i64)
+    printf("curl_err=%lld\n", body.curl_err)
+    let http_ok: i32 = body.ok
+    http_body_free(body)
 
     # Local JSON cache path still works without the network body.
     let cached: string = "{\"answer\":42}"
@@ -32,7 +33,7 @@ function main() -> i32 {
     printf("json_valid=%lld\n", valid as i64)
     printf("json_answer=%lld\n", answer as i64)
 
-    if resp.ok == 1 and valid == 1 and answer == 42 {
+    if http_ok == 1 and valid == 1 and answer == 42 {
         return 0
     }
     return 1
