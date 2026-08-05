@@ -722,7 +722,8 @@ export function flowc_cgen_emit_ex(arena: AstArena, root: i32, src: ptr<u8>, out
         return 0 - 1
     }
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
-    if (flags & 1) == 0 {
+    # bit0 without requiring Stage-A bitwise operators during self-parse.
+    if (flags % 2) == 0 {
         flowc_cgen_puts(&w, "#include <stdint.h>\n")
         flowc_cgen_puts(&w, "#include <stdlib.h>\n")
         # AST_EXTERN body is brace-skipped (no prototypes). Include libc headers for FILE*/strlen.
