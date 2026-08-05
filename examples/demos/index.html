@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flow Demos - Real WebAssembly Execution</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --accent: #58a6ff;
+            --wasm: #ff7b72;
+            --js: #f0db4f;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 2rem;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--wasm), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        
+        .tagline { color: #8b949e; font-size: 1.1rem; }
+        
+        main {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .section-title {
+            font-size: 1.5rem;
+            margin: 2rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 1rem;
+            font-weight: 600;
+        }
+        
+        .badge.wasm { background: var(--wasm); color: #000; }
+        .badge.js { background: var(--js); color: #000; }
+        
+        .demos-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+        
+        .demo-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.2s;
+        }
+        
+        .demo-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+        
+        .demo-card h3 {
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .demo-card p {
+            color: #8b949e;
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .demo-meta {
+            font-size: 0.75rem;
+            color: #6e7681;
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .info-box {
+            background: rgba(255, 123, 114, 0.1);
+            border: 1px solid var(--wasm);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 2rem 0;
+            font-size: 0.9rem;
+        }
+        
+        .info-box h4 { color: var(--wasm); margin-bottom: 0.5rem; }
+        
+        code {
+            background: var(--border);
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        
+        footer {
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 1.5rem;
+            text-align: center;
+            color: #8b949e;
+        }
+        
+        footer a { color: var(--accent); text-decoration: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🔥 Flow Demos</h1>
+        <p class="tagline">Real WebAssembly execution - not JavaScript simulation</p>
+    </header>
+    
+    <main>
+        <h2 class="section-title">
+            WebAssembly Examples
+            <span class="badge wasm">REAL WASM</span>
+        </h2>
+        
+        <p style="color: #8b949e; margin-bottom: 1rem;">
+            These demos compile Flow → C → WebAssembly bytecode. The computation runs natively in your browser's WASM engine.
+        </p>
+        
+        <div class="demos-grid">
+            <a href="wasm/examples/particles/particles.html" class="demo-card">
+                <h3>⚛️ Particle Physics <span class="badge wasm">WASM</span></h3>
+                <p>200 particles with gravity, friction, bouncing. Click to interact!</p>
+                <div class="demo-meta">
+                    <span>4.7KB WASM</span>
+                    <span>Visual + Interactive</span>
+                </div>
+            </a>
+            
+            <a href="wasm/examples/fibonacci/fibonacci.html" class="demo-card">
+                <h3>📐 Fibonacci <span class="badge wasm">WASM</span></h3>
+                <p>Classic recursive Fibonacci sequence compiled to WASM.</p>
+                <div class="demo-meta">
+                    <span>179 bytes WASM</span>
+                    <span>Recursive</span>
+                </div>
+            </a>
+            
+            <a href="wasm/examples/hello/hello_world.html" class="demo-card">
+                <h3>👋 Hello World <span class="badge wasm">WASM</span></h3>
+                <p>The simplest Flow program compiled to WebAssembly.</p>
+                <div class="demo-meta">
+                    <span>127 bytes WASM</span>
+                    <span>printf</span>
+                </div>
+            </a>
+            
+            <a href="wasm/examples/loops/loops.html" class="demo-card">
+                <h3>🔄 Loops <span class="badge wasm">WASM</span></h3>
+                <p>For loops and while loops running as native WASM.</p>
+                <div class="demo-meta">
+                    <span>128 bytes WASM</span>
+                    <span>Control flow</span>
+                </div>
+            </a>
+        </div>
+        
+        <h2 class="section-title">
+            JavaScript Playground
+            <span class="badge js">JS</span>
+        </h2>
+        
+        <p style="color: #8b949e; margin-bottom: 1rem;">
+            Quick prototyping with Flow → JavaScript transpilation. Runs in-browser without compilation.
+        </p>
+        
+        <div class="demos-grid">
+            <a href="playground/" class="demo-card">
+                <h3>💻 Code Playground <span class="badge js">JS</span></h3>
+                <p>Write Flow code and see it run instantly. Good for quick experiments.</p>
+                <div class="demo-meta">
+                    <span>Flow → JS</span>
+                    <span>No compile step</span>
+                </div>
+            </a>
+        </div>
+        
+        <div class="info-box">
+            <h4>🔬 What's the difference?</h4>
+            <p><strong>WASM demos:</strong> Flow → C → Emscripten → <code>.wasm</code> bytecode → Browser WASM engine → Native execution</p>
+            <p style="margin-top: 0.5rem;"><strong>JS playground:</strong> Flow → JavaScript → Browser JS engine. Faster to iterate, but not native performance.</p>
+        </div>
+        
+        <h2 class="section-title">Compile Your Own</h2>
+        
+        <p style="color: #8b949e;">
+            Compile any Flow file to WebAssembly:
+        </p>
+        
+        <pre style="background: var(--surface); padding: 1rem; border-radius: 8px; margin-top: 1rem; overflow-x: auto;">
+<code style="background: none;">$ python3 scripts/wasm/flow_wasm.py my_program.flow -o output/
+
+🔄 Compiling my_program.flow to WebAssembly...
+  1. Parsing Flow source...
+  2. Generating C code...
+  3. Compiling to WebAssembly...
+  ✅ Generated my_program.wasm (XXX bytes)
+  4. Generating HTML wrapper...
+  ✅ Generated my_program.html
+
+🎉 Done! Open output/my_program.html in a browser to run.</code></pre>
+    </main>
+    
+    <footer>
+        <a href="https://github.com/abhishekshivakumar/transpile">GitHub</a> · 
+        <a href="../benchmarks/suite/RESULTS.md">Benchmarks</a> · 
+        <a href="../docs/">Documentation</a>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,414 @@
+import "./game.flow"
+import "../../vulkan_abi/renderer.flow"
+import "stdlib/vulkan_abi_renderer.flow"
+
+extern {
+    function malloc(size: i32) -> ptr<u8>
+    function free(ptr: ptr<u8>) -> void
+    function memset(dest: ptr<u8>, c: i32, n: i32) -> ptr<u8>
+}
+
+function min_f32(a: f32, b: f32) -> f32 { if a < b { return a } return b }
+function max_f32(a: f32, b: f32) -> f32 { if a > b { return a } return b }
+function clamp_u8(v: i32) -> i32 {
+    if v < 0 { return 0 }
+    if v > 255 { return 255 }
+    return v
+}
+
+function upload_quad_mesh(renderer: AbiRenderer) -> void {
+    # pos.xyz, color.rgb, uv.xy
+    let verts: array<f32, 32> = [
+        -0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 0.0,
+         0.5, -0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 0.0,
+         0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   1.0, 1.0,
+        -0.5,  0.5, 0.0,   1.0, 1.0, 1.0,   0.0, 1.0
+    ]
+    let inds: array<u16, 6> = [0, 1, 2, 2, 3, 0]
+    abi_renderer_upload_mesh(renderer, verts, 4, inds, 6)
+}
+
+function label_index(v: i32) -> i32 {
+    if v == 0 { return 0 }
+    if v == 2 { return 1 }
+    if v == 4 { return 2 }
+    if v == 8 { return 3 }
+    if v == 16 { return 4 }
+    if v == 32 { return 5 }
+    if v == 64 { return 6 }
+    if v == 128 { return 7 }
+    if v == 256 { return 8 }
+    if v == 512 { return 9 }
+    if v == 1024 { return 10 }
+    if v == 2048 { return 11 }
+    return 0
+}
+
+function tile_color(v: i32, out: ptr<f32>) -> void {
+    # out[0..3] = r,g,b,a
+    if v == 0 { out[0]=0.20; out[1]=0.19; out[2]=0.18; out[3]=1.0; return }
+    if v == 2 { out[0]=0.93; out[1]=0.89; out[2]=0.85; out[3]=1.0; return }
+    if v == 4 { out[0]=0.93; out[1]=0.87; out[2]=0.78; out[3]=1.0; return }
+    if v == 8 { out[0]=0.95; out[1]=0.69; out[2]=0.47; out[3]=1.0; return }
+    if v == 16 { out[0]=0.96; out[1]=0.58; out[2]=0.39; out[3]=1.0; return }
+    if v == 32 { out[0]=0.96; out[1]=0.49; out[2]=0.37; out[3]=1.0; return }
+    if v == 64 { out[0]=0.96; out[1]=0.37; out[2]=0.23; out[3]=1.0; return }
+    if v == 128 { out[0]=0.93; out[1]=0.81; out[2]=0.45; out[3]=1.0; return }
+    if v == 256 { out[0]=0.93; out[1]=0.80; out[2]=0.38; out[3]=1.0; return }
+    if v == 512 { out[0]=0.93; out[1]=0.78; out[2]=0.31; out[3]=1.0; return }
+    if v == 1024 { out[0]=0.93; out[1]=0.76; out[2]=0.25; out[3]=1.0; return }
+    if v == 2048 { out[0]=0.93; out[1]=0.75; out[2]=0.20; out[3]=1.0; return }
+    out[0]=0.23; out[1]=0.23; out[2]=0.23; out[3]=1.0
+}
+
+function i32_to_f32(v: i32) -> f32 { return v * 1.0 }
+
+const LAYOUT_UI: i32 = 0
+const LAYOUT_GRID: i32 = 3
+
+struct LayoutFrame {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    kind: i32,
+    cols: i32,
+    rows: i32,
+    gap: i32,
+    index: i32,
+}
+
+struct LayoutState {
+    frames: array<LayoutFrame, 32>,
+    top: i32,
+    unit: f32,
+    win_w: f32,
+    win_h: f32,
+}
+
+function layout_begin_frame(state: ptr<LayoutState>, win_w: f32, win_h: f32) -> void {
+    state[0].top = 0
+    state[0].win_w = win_w
+    state[0].win_h = win_h
+}
+
+function layout_push(state: ptr<LayoutState>, frame: LayoutFrame) -> void {
+    if state[0].top >= 32 { return }
+    state[0].frames[state[0].top] = frame
+    state[0].top = state[0].top + 1
+}
+
+function layout_pop(state: ptr<LayoutState>) -> void {
+    if state[0].top <= 0 { return }
+    state[0].top = state[0].top - 1
+}
+
+function layout_peek(state: ptr<LayoutState>) -> LayoutFrame {
+    if state[0].top <= 0 {
+        return LayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, index: 0 }
+    }
+    return state[0].frames[state[0].top - 1]
+}
+
+function layout_update_top(state: ptr<LayoutState>, frame: LayoutFrame) -> void {
+    if state[0].top <= 0 { return }
+    state[0].frames[state[0].top - 1] = frame
+}
+
+function layout_claim(state: ptr<LayoutState>) -> LayoutFrame {
+    let frame: LayoutFrame = layout_peek(state)
+    if frame.kind == LAYOUT_GRID {
+        let gap: i32 = frame.gap
+        let cols: i32 = frame.cols
+        let rows: i32 = frame.rows
+        let cell_w: i32 = (frame.w - (cols - 1) * gap) / cols
+        let cell_h: i32 = (frame.h - (rows - 1) * gap) / rows
+        let row_idx: i32 = frame.index / cols
+        let col: i32 = frame.index - row_idx * cols
+        let x: i32 = frame.x + col * (cell_w + gap)
+        let y: i32 = frame.y + row_idx * (cell_h + gap)
+        let out: LayoutFrame = LayoutFrame{ x: x, y: y, w: cell_w, h: cell_h, kind: 0, cols: 0, rows: 0, gap: 0, index: 0 }
+        frame.index = frame.index + 1
+        layout_update_top(state, frame)
+        return out
+    }
+    return frame
+}
+
+function layout_next_rect(state: ptr<LayoutState>) -> LayoutFrame { return layout_claim(state) }
+
+function ui_layout_begin(state: ptr<LayoutState>, cols: i32, rows: i32, pad: i32) -> void {
+    let unit: f32 = min_f32(state[0].win_w / i32_to_f32(cols), state[0].win_h / i32_to_f32(rows))
+    state[0].unit = unit
+    let frame: LayoutFrame = LayoutFrame{
+        x: pad,
+        y: pad,
+        w: cols - pad * 2,
+        h: rows - pad * 2,
+        kind: LAYOUT_UI,
+        cols: 0,
+        rows: 0,
+        gap: 0,
+        index: 0,
+    }
+    layout_push(state, frame)
+}
+
+function ui_layout_end(state: ptr<LayoutState>) -> void { state[0].top = 0 }
+
+function ui_grid_begin(state: ptr<LayoutState>, cols: i32, rows: i32, gap: i32, pad: i32, justify_x: i32, justify_y: i32) -> void {
+    let rect: LayoutFrame = layout_claim(state)
+    let frame: LayoutFrame = LayoutFrame{ x: rect.x, y: rect.y, w: rect.w, h: rect.h, kind: LAYOUT_GRID, cols: cols, rows: rows, gap: gap, index: 0 }
+    layout_push(state, frame)
+}
+
+function ui_grid_end(state: ptr<LayoutState>) -> void { layout_pop(state) }
+
+function fill_instances(board: ptr<i32>, out: ptr<f32>, count: i32, width: f32, height: f32, state: ptr<LayoutState>) -> void {
+    let atlas_cols: f32 = 12.0
+    let atlas_u: f32 = 1.0 / atlas_cols
+    let pad_uv: f32 = 2.0
+    let cell: f32 = 64.0
+    let pad_u: f32 = pad_uv / (cell * atlas_cols)
+    let pad_v: f32 = pad_uv / cell
+    layout_begin_frame(state, width, height)
+
+    ui_layout(state, 4, 4, 0) {
+        ui_grid(state, 4, 4, 0, 0, 0, 0) {
+            let i: i32 = 0
+            while i < count {
+                let rect: LayoutFrame = layout_next_rect(state)
+                let cell_size: f32 = i32_to_f32(rect.w) * state[0].unit
+                let x: f32 = i32_to_f32(rect.x) * state[0].unit + cell_size * 0.5
+                let y: f32 = (height - i32_to_f32(rect.y + rect.h) * state[0].unit) + cell_size * 0.5
+                let tile_size: f32 = cell_size * 0.85
+
+                let v: i32 = board[i]
+                let label: i32 = label_index(v)
+                let u0: f32 = i32_to_f32(label) * atlas_u + pad_u
+                let v0: f32 = pad_v
+                let u_scale: f32 = atlas_u - pad_u * 2.0
+                let v_scale: f32 = 1.0 - pad_v * 2.0
+
+                let base: i32 = i * 12
+                out[base + 0] = x
+                out[base + 1] = y
+                out[base + 2] = 0.0
+                out[base + 3] = tile_size / 1.2
+                if v == 0 {
+                    out[base + 4] = 0.0
+                    out[base + 5] = 0.0
+                    out[base + 6] = 0.0
+                    out[base + 7] = 0.0
+                } else {
+                    out[base + 4] = u0
+                    out[base + 5] = v0
+                    out[base + 6] = u_scale
+                    out[base + 7] = v_scale
+                }
+                tile_color(v, out + base + 8)
+
+                i = i + 1
+            }
+        }
+    }
+}
+
+function set_px(buf: ptr<u8>, width: i32, height: i32, x: i32, y: i32, r: i32, g: i32, b: i32, a: i32) -> void {
+    if x < 0 { return }
+    if y < 0 { return }
+    if x >= width { return }
+    if y >= height { return }
+    let idx: i32 = ((height - 1 - y) * width + x) * 4
+    buf[idx + 0] = clamp_u8(r)
+    buf[idx + 1] = clamp_u8(g)
+    buf[idx + 2] = clamp_u8(b)
+    buf[idx + 3] = clamp_u8(a)
+}
+
+function draw_rect(buf: ptr<u8>, width: i32, height: i32, x0: i32, y0: i32, x1: i32, y1: i32) -> void {
+    let y: i32 = y0
+    while y < y1 {
+        let x: i32 = x0
+        while x < x1 {
+            set_px(buf, width, height, x, y, 255, 255, 255, 255)
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+function draw_segment(buf: ptr<u8>, width: i32, height: i32, ox: i32, oy: i32, w: i32, h: i32, seg: i32) -> void {
+    let t: i32 = 4
+    let m: i32 = 2
+    let mid: i32 = h / 2
+    if seg == 0 { # A
+        draw_rect(buf, width, height, ox + m, oy + m, ox + w - m, oy + m + t)
+    } elif seg == 1 { # B
+        draw_rect(buf, width, height, ox + w - m - t, oy + m, ox + w - m, oy + mid - t / 2)
+    } elif seg == 2 { # C
+        draw_rect(buf, width, height, ox + w - m - t, oy + mid + t / 2, ox + w - m, oy + h - m)
+    } elif seg == 3 { # D
+        draw_rect(buf, width, height, ox + m, oy + h - m - t, ox + w - m, oy + h - m)
+    } elif seg == 4 { # E
+        draw_rect(buf, width, height, ox + m, oy + mid + t / 2, ox + m + t, oy + h - m)
+    } elif seg == 5 { # F
+        draw_rect(buf, width, height, ox + m, oy + m, ox + m + t, oy + mid - t / 2)
+    } elif seg == 6 { # G
+        draw_rect(buf, width, height, ox + m, oy + mid - t / 2, ox + w - m, oy + mid + t / 2)
+    }
+}
+
+function draw_digit(buf: ptr<u8>, width: i32, height: i32, ox: i32, oy: i32, w: i32, h: i32, digit: i32) -> void {
+    if digit == 0 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); draw_segment(buf, width, height, ox, oy, w, h, 4); draw_segment(buf, width, height, ox, oy, w, h, 5); return }
+    if digit == 1 { draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); return }
+    if digit == 2 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 4); draw_segment(buf, width, height, ox, oy, w, h, 3); return }
+    if digit == 3 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); return }
+    if digit == 4 { draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); return }
+    if digit == 5 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); return }
+    if digit == 6 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); draw_segment(buf, width, height, ox, oy, w, h, 4); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); return }
+    if digit == 7 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); return }
+    if digit == 8 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); draw_segment(buf, width, height, ox, oy, w, h, 4); draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); return }
+    if digit == 9 { draw_segment(buf, width, height, ox, oy, w, h, 0); draw_segment(buf, width, height, ox, oy, w, h, 1); draw_segment(buf, width, height, ox, oy, w, h, 2); draw_segment(buf, width, height, ox, oy, w, h, 3); draw_segment(buf, width, height, ox, oy, w, h, 5); draw_segment(buf, width, height, ox, oy, w, h, 6); return }
+}
+
+function draw_number(buf: ptr<u8>, width: i32, height: i32, cell_x: i32, cell_y: i32, cell_w: i32, cell_h: i32, value: i32) -> void {
+    if value == 0 { return }
+    let digits: array<i32, 4> = [0,0,0,0]
+    let tmp: i32 = value
+    let len: i32 = 0
+    while tmp > 0 && len < 4 {
+        digits[len] = tmp % 10
+        tmp = tmp / 10
+        len = len + 1
+    }
+    let i: i32 = 0
+    while i < len / 2 {
+        let t: i32 = digits[i]
+        digits[i] = digits[len - 1 - i]
+        digits[len - 1 - i] = t
+        i = i + 1
+    }
+    let pad: i32 = 6
+    let inner_w: i32 = cell_w - pad * 2
+    let digit_w: i32 = inner_w / len
+    let digit_h: i32 = cell_h - pad * 2
+    i = 0
+    while i < len {
+        let ox: i32 = cell_x + pad + i * digit_w
+        let oy: i32 = cell_y + pad
+        draw_digit(buf, width, height, ox, oy, digit_w, digit_h, digits[i])
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let width: i32 = 900 / 4
+    let height: i32 = 900 / 4
+    if flow_vk_2048_init(width, height, "Flow Vulkan 2048", 16) != 0 {
+        return 1
+    }
+    let renderer: AbiRenderer = abi_renderer_init()
+    let instance_handle: i32 = abi_renderer_create_instance_buffer(renderer, 16)
+    upload_quad_mesh(renderer)
+    abi_renderer_set_clear(renderer, 0.10, 0.09, 0.08)
+    abi_renderer_set_camera(renderer, 2.5, 0.3, 0.6)
+    abi_renderer_set_viewport(renderer, width, height)
+
+    # Build a simple 7-seg digit atlas in Flow and upload to Vulkan.
+    let cell: i32 = 64
+    let cols: i32 = 12
+    let atlas_w: i32 = cell * cols
+    let atlas_h: i32 = cell
+    let atlas_size: i32 = atlas_w * atlas_h * 4
+    let atlas: ptr<u8> = malloc(atlas_size)
+    memset(atlas, 0, atlas_size)
+
+    let labels: array<i32, 12> = [0,2,4,8,16,32,64,128,256,512,1024,2048]
+    let li: i32 = 0
+    while li < 12 {
+        let value: i32 = labels[li]
+        let cx: i32 = li * cell
+        draw_number(atlas, atlas_w, atlas_h, cx, 0, cell, cell, value)
+        li = li + 1
+    }
+    let texture_handle: i32 = abi_renderer_create_texture(renderer, atlas_w, atlas_h)
+    abi_renderer_update_texture(renderer, texture_handle, atlas, atlas_w, atlas_h)
+
+    let board: array<i32, 16> = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]
+    let score_buf: array<i32, 1> = [0]
+    let rng_buf: array<i32, 1> = [1]
+    let board_ptr: ptr<i32> = board
+    let score_ptr: ptr<i32> = score_buf
+    let rng_ptr: ptr<i32> = rng_buf
+
+    flow_2048_init(board_ptr, score_ptr, rng_ptr)
+
+    let instances: array<f32, 192> = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+                                      0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+    let inst_ptr: ptr<f32> = instances
+    let frames_init: array<LayoutFrame, 32> = [
+        LayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, index: 0 }
+    ]
+    let layout_state_store: array<LayoutState, 1> = [
+        LayoutState{
+            frames: frames_init,
+            top: 0,
+            unit: 1.0,
+            win_w: 0.0,
+            win_h: 0.0,
+        }
+    ]
+    let layout_state: ptr<LayoutState> = layout_state_store
+
+    let left_down: bool = false
+    let right_down: bool = false
+    let up_down: bool = false
+    let down_down: bool = false
+    let restart_down: bool = false
+
+    while flow_vk_2048_should_close() == 0 && abi_renderer_begin_frame(renderer) == 1 {
+        flow_vk_2048_poll()
+
+        let left: bool = flow_vk_2048_key_down(263) == 1 || flow_vk_2048_key_down(65) == 1
+        let right: bool = flow_vk_2048_key_down(262) == 1 || flow_vk_2048_key_down(68) == 1
+        let up: bool = flow_vk_2048_key_down(265) == 1 || flow_vk_2048_key_down(87) == 1
+        let down: bool = flow_vk_2048_key_down(264) == 1 || flow_vk_2048_key_down(83) == 1
+        let restart: bool = flow_vk_2048_key_down(82) == 1
+
+        if left && !left_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 0) }
+        if right && !right_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 1) }
+        if up && !up_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 3) }
+        if down && !down_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 2) }
+        if restart && !restart_down { flow_2048_step(board_ptr, score_ptr, rng_ptr, 4) }
+
+        left_down = left
+        right_down = right
+        up_down = up
+        down_down = down
+        restart_down = restart
+
+        fill_instances(board_ptr, inst_ptr, 16, i32_to_f32(width), i32_to_f32(height), layout_state)
+        abi_renderer_update_instance_buffer(renderer, instance_handle, inst_ptr, 16)
+        abi_renderer_draw_instance_buffer(renderer, instance_handle, 16)
+        abi_renderer_end_frame(renderer)
+    }
+
+    free(atlas)
+    flow_vk_2048_shutdown()
+    return 0
+}
