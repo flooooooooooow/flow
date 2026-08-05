@@ -1554,10 +1554,24 @@ class TypeChecker:
 
     def _check_var_decl(self, var: VarDecl) -> SemanticType:
         """Type check a variable declaration."""
+        # A declaration with no initializer (`let mut r: T`) declares its type;
+        # it is assigned before use, so there is nothing to coerce-check.
         if var.initializer is None:
-            expr_type = SemanticType(TypeKind.UNKNOWN)
-        else:
-            expr_type = self._check_expression(var.initializer)
+            if var.type and var.type.name != "auto":
+                expected_type = self._parse_type(var.type)
+            else:
+                expected_type = SemanticType(TypeKind.UNKNOWN)
+            is_mutable = getattr(var, 'is_mutable', False)
+            self.current_scope.define(
+                Symbol(var.name, expected_type, "variable", is_mutable=is_mutable)
+            )
+            self._record_local(
+                var.name, expected_type, kind='variable',
+                container=getattr(self, '_lsp_container', '') or '', mutable=is_mutable,
+            )
+            return expected_type
+
+        expr_type = self._check_expression(var.initializer)
 
         if var.type and var.type.name != "auto":  # Explicit type annotation
             expected_type = self._parse_type(var.type)
