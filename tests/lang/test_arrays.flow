@@ -1,0 +1,31 @@
+# Flow-native language test: fixed-size arrays, indexing, mutation in loops.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_sum]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_mutate_loop]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function main() -> i32 {
+    let mut xs: array<i32, 4> = [10, 20, 30, 40]
+    xs[1] = 25
+    let mut s: i32 = 0
+    for i in 0 to 4 {
+        s = s + xs[i]
+    }
+    if s != 105 {
+        return 1
+    }
+
+    let mut ys: array<i32, 5> = [1, 2, 3, 4, 5]
+    let mut i: i32 = 0
+    while i < 5 {
+        ys[i] = ys[i] * 2
+        i = i + 1
+    }
+    if ys[0] + ys[4] != 12 {
+        return 2
+    }
+    if ys[2] != 6 {
+        return 3
+    }
+    return 0
+}

@@ -1,0 +1,73 @@
+# Flow-native language test: if/elif/else, while, for.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[if_else]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[while_sum]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[for_sum]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[nested_while]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[while_break_via_cond]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function branch_of(x: i32) -> i32 {
+    if x > 5 {
+        return 1
+    } elif x == 3 {
+        return 2
+    } else {
+        return 3
+    }
+}
+
+function main() -> i32 {
+    if branch_of(9) != 1 {
+        return 1
+    }
+    if branch_of(3) != 2 {
+        return 2
+    }
+    if branch_of(0) != 3 {
+        return 3
+    }
+
+    let mut i: i32 = 0
+    let mut s: i32 = 0
+    while i < 10 {
+        s = s + i
+        i = i + 1
+    }
+    if s != 45 {
+        return 4
+    }
+
+    let mut fs: i32 = 0
+    for j in 0 to 10 {
+        fs = fs + j
+    }
+    if fs != 45 {
+        return 5
+    }
+
+    let mut outer: i32 = 0
+    let mut count: i32 = 0
+    while outer < 3 {
+        let mut inner: i32 = 0
+        while inner < 4 {
+            count = count + 1
+            inner = inner + 1
+        }
+        outer = outer + 1
+    }
+    if count != 12 {
+        return 6
+    }
+
+    let mut n: i32 = 1
+    let mut steps: i32 = 0
+    while n < 100 {
+        n = n + n
+        steps = steps + 1
+    }
+    if n != 128 or steps != 7 {
+        return 7
+    }
+    return 0
+}
