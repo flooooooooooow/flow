@@ -420,6 +420,9 @@ class FlowLanguageServer:
         src = text
         try:
             from .dynamics_dsl import has_dynamics_dsl, expand_dynamics_dsl
+            from .field_dsl import has_field_dsl, expand_field_dsl
+            if has_field_dsl(src):
+                src = expand_field_dsl(src)
             if has_dynamics_dsl(src):
                 src = expand_dynamics_dsl(src)
         except Exception:

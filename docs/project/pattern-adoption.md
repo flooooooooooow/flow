@@ -24,7 +24,7 @@ story. Adoption first; new sugar second.
 | P1 | Wire ML demos through Dual / grad codegen | adoption + docs ✅ | [#170](https://github.com/flooooooooooow/flow/issues/170) |
 | P1 | Owned `HttpResponse` + JSON decode helpers | API ✅ | [#167](https://github.com/flooooooooooow/flow/issues/167) |
 | P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ partial | [#162](https://github.com/flooooooooooow/flow/issues/162) |
-| P2 | Field / `laplacian` PDE surface | language ✅ partial | [#163](https://github.com/flooooooooooow/flow/issues/163) |
+| P2 | Field / `laplacian` PDE surface | language ✅ | [#163](https://github.com/flooooooooooow/flow/issues/163) |
 | P2 | Dual + Tensor operators + mutable params | language ✅ partial | [#161](https://github.com/flooooooooooow/flow/issues/161) |
 | P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering ✅ | [#160](https://github.com/flooooooooooow/flow/issues/160) |
 
@@ -196,17 +196,15 @@ ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 `laplacian_1d_at`, `heat_euler_step_1d`). Tourist
 `examples/evolution/heat_diffusion.flow` steps via the helper.
 
-**North-star grammar (follow-on):**
+**Also shipped:** Stage-1 grammar expander (`field_dsl.py`):
 ```flow
 field T : f64[32] on Line
-param alpha : f64 = 0.1
-
-T evolves as alpha * laplacian(T)
-boundary T { left = 1.0  right = 0.0 }
+T evolves as laplacian(T)
+boundary T { left = AMBIENT  right = AMBIENT }
 ```
+→ `T_field_step(u, next, r)`. Heat demo uses this surface.
 
-**Exit (stdlib):** heat demo reads as evolution via laplacian helper, not
-nested index soup. ✅ Grammar card remains open.
+**Exit:** heat demo reads as field evolution ✅. 2D / `on Plane` follow-on.
 
 ---
 
