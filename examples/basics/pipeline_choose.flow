@@ -1,0 +1,36 @@
+# Pipeline `choose` — a state-driven stage that picks which pipeline runs.
+#
+# `src |> choose selector { A => f, B => g }` applies the arm chosen by
+# `selector` to the piped value. It lowers to a hidden temp plus a `match`, so
+# the result flows on like any other stage: `... |> choose … |> normalize`.
+#
+# This is the "pipeline topology can itself change" idea — the shape of the
+# computation depends on a value (here an enum tag).
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+enum Mode { Double, Triple }
+
+function double(x: i32) -> i32 { return x * 2 }
+function triple(x: i32) -> i32 { return x * 3 }
+
+function run(m: Mode, x: i32) -> i32 {
+    # Pick the stage by mode, then add one via a following stage.
+    return x
+        |> choose m.tag {
+            Mode_Double => double,
+            Mode_Triple => triple,
+        }
+        |> double
+}
+
+function main() -> i32 {
+    let d: Mode = Mode { tag: Mode_Double }
+    let t: Mode = Mode { tag: Mode_Triple }
+
+    printf("double-then-double(10) = %d\n", run(d, 10))  # (10*2)*2 = 40
+    printf("triple-then-double(10) = %d\n", run(t, 10))  # (10*3)*2 = 60
+    return 0
+}

@@ -428,6 +428,24 @@ class FlowStage:
 
 
 @dataclass
+class ChooseBlock:
+    """A state-driven pipeline stage: `source |> choose sel { A => f, B => g }`.
+
+    Selects which stage pipeline runs based on `selector` (typically an enum
+    state). Each arm value is a template pipeline over `ForkSource` (the piped
+    value). `desugar_forks` binds `source` once, infers the result type from the
+    arms, and lowers this to a hoisted `let mut __choose_N` plus a `match`
+    statement that assigns the chosen arm — so no value-form `match` is needed
+    and no later phase sees this node.
+    """
+
+    selector: "Expression"
+    source: "Expression"
+    arms: List[tuple]  # List of (pattern, template over ForkSource)
+    line: int = 0
+
+
+@dataclass
 class RecordUpdate:
     """Record update: `Point { ..p, x: 3 }` copies `p` then overrides `x`.
 
@@ -3421,6 +3439,9 @@ class Parser:
         """
         while self.current_token.type == TokenType.PIPELINE:
             self.advance()
+            if self._at_choose_block():
+                left = self._parse_choose_block(left)
+                continue
             if self._at_fork_block():
                 left = self._parse_fork_block(left)
                 continue
@@ -3530,6 +3551,63 @@ class Parser:
         rhs = self.parse_logical_or()
         value = self._apply_pipe(ForkSource(), rhs)
         return self._parse_pipeline_chain(value)
+
+    def _at_choose_block(self) -> bool:
+        """True at `choose selector {` after `|>`.
+
+        `choose` is contextual: `x |> choose(a, b)` stays an ordinary call, and
+        `x |> choose` stays `choose(x)`. Only `choose` followed by the start of
+        a selector expression (an identifier or `self`) is the choose form.
+        """
+        if not (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.current_token.value == "choose"
+        ):
+            return False
+        return self.lookahead.type in (TokenType.IDENTIFIER, TokenType.SELF)
+
+    def _parse_choose_block(self, source: Expression) -> "ChooseBlock":
+        """Parse `choose selector { pattern => stage, ... }` after `|>`.
+
+        Each arm's stage is a pipeline over the piped value (like a fork
+        branch). Lowered by `desugar_forks` to a hoisted temp + `match`.
+        """
+        self.advance()  # consume 'choose'
+        selector = self._parse_choose_selector()
+        line = self.current_token.line
+        self.expect(TokenType.LBRACE)
+
+        arms: List[tuple] = []
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise self.error("Unterminated 'choose' block: expected '}'")
+            pattern = self.parse_match_pattern()
+            self.expect(TokenType.FAT_ARROW)
+            arms.append((pattern, self._parse_fork_branch()))
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        if not arms:
+            raise self.error("'choose' block needs at least one `pattern => stage` arm")
+        self.expect(TokenType.RBRACE)
+        self._has_fork = True
+        return ChooseBlock(selector, source, arms, line)
+
+    def _parse_choose_selector(self) -> Expression:
+        """Parse the `choose` selector: a variable or `self.field` chain.
+
+        Deliberately narrow (no struct-literal, no call) so a trailing `{`
+        starts the arm block. Bind a computed selector to a state/let first.
+        """
+        if self.current_token.type == TokenType.SELF:
+            expr: Expression = Variable("self")
+            self.advance()
+        else:
+            expr = Variable(self.expect(TokenType.IDENTIFIER).value)
+        while self.current_token.type == TokenType.DOT:
+            self.advance()
+            field = self.expect(TokenType.IDENTIFIER).value
+            expr = FieldAccess(expr, field)
+        return expr
 
     def _parse_stage_params(self, name: str, source: Expression, line: int):
         """Parse `Name { p: v, q: w }` after `|>` — a flow stage with params."""
