@@ -117,7 +117,7 @@ Fundamental algorithms demonstrating Flow syntax:
 - `match_enums.flow` - `match` on a simple enum
 
 ### Games (`games/`)
-23 complete games, all playable via `./flow gfx <file>` (or headless via `./flow record <file>`). Every game has a recorded gameplay GIF in the [game gallery](../docs/demos/games.md). Flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md).
+23 complete games, all playable via `./flow gfx <file>` (or headless via `./flow record <file>`). Flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md).
 
 Arcade:
 - `snake_gfx.flow` - Snake with growth, speed-up, wall/self death
