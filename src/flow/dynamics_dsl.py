@@ -199,6 +199,26 @@ class RepresentLinearDecl:
 
 
 @dataclass
+class RepresentPhasePortraitDecl:
+    """`represent phase_portrait(a, b) { … }` → `{Name}_portrait_frame` helper.
+
+    Stage-1 lowers trail push + 2D projection draw; window open/present stay in
+    main (pattern-adoption #165).
+    """
+
+    flow_name: str
+    axis0: str
+    axis1: str
+    trail: int = 320
+    win_w: int = 900
+    win_h: int = 700
+    pad_x: int = 10
+    pad_y: int = 30
+    # axis_name -> (lo, hi, "col"|"row")
+    maps: Dict[str, Tuple[float, float, str]] = field(default_factory=dict)
+
+
+@dataclass
 class DynamicsProgram:
     systems: Dict[str, DsysDecl] = field(default_factory=dict)
     horizons: Dict[str, HorizonDecl] = field(default_factory=dict)
@@ -210,6 +230,7 @@ class DynamicsProgram:
     couples: List[CoupleDecl] = field(default_factory=list)
     guides: List[GuideDecl] = field(default_factory=list)
     represents: List[RepresentLinearDecl] = field(default_factory=list)
+    portraits: List[RepresentPhasePortraitDecl] = field(default_factory=list)
 
 
 def _strip_comments(line: str) -> str:
@@ -293,6 +314,7 @@ def _merge_dynamics_program(dst: "DynamicsProgram", src: "DynamicsProgram") -> N
     dst.couples.extend(src.couples)
     dst.guides.extend(src.guides)
     dst.represents.extend(src.represents)
+    dst.portraits.extend(src.portraits)
 
 
 def _strip_dynamics_namespace(line: str) -> str:
@@ -310,9 +332,18 @@ _REPRESENT_RESERVED = frozenset({"koopman", "transfer_function", "frequency"})
 _REPRESENT_HEAD_RE = re.compile(
     r"^represent\s+(\w+)(?:\s+(?:for\s+)?(\w+))?\s*\{"
 )
+_REPRESENT_PORTRAIT_HEAD_RE = re.compile(
+    r"^represent\s+phase_portrait\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*\{"
+)
 _FLOW_HEAD_RE = re.compile(r"^flow\s+(\w+)\s*\{")
 _AT_POINT_RE = re.compile(r"^at\s*\((.*)\)\s*$")
 _NAMED_LIST_RE = re.compile(r"^(inputs|outputs)\s*\((.*)\)\s*$")
+_PORTRAIT_TRAIL_RE = re.compile(r"^trail\s+(\d+)\s*$")
+_PORTRAIT_WINDOW_RE = re.compile(r"^window\s+(\d+)\s*,\s*(\d+)\s*$")
+_PORTRAIT_MAP_RE = re.compile(
+    r"^map\s+(\w+)\s+in\s*\[\s*([+\-\d.eE]+)\s*,\s*([+\-\d.eE]+)\s*\]\s*"
+    r"->\s*(col|row)\s*$"
+)
 
 
 def _parse_at_point(inner: str) -> Dict[str, float]:
@@ -506,20 +537,87 @@ def _represent_to_dsys(rep: RepresentLinearDecl) -> DsysDecl:
     )
 
 
+def _parse_represent_phase_portrait_body(
+    flow_name: str,
+    axis0: str,
+    axis1: str,
+    body_lines: List[str],
+) -> RepresentPhasePortraitDecl:
+    """Parse `represent phase_portrait(a, b) { trail …; window …; map … }`."""
+    decl = RepresentPhasePortraitDecl(
+        flow_name=flow_name, axis0=axis0, axis1=axis1
+    )
+    for bl in body_lines:
+        b = _strip_comments(bl)
+        if not b:
+            continue
+        trail_m = _PORTRAIT_TRAIL_RE.match(b)
+        if trail_m:
+            decl.trail = int(trail_m.group(1))
+            if decl.trail <= 0:
+                raise SyntaxError(
+                    f"represent phase_portrait for '{flow_name}': "
+                    "trail must be positive"
+                )
+            continue
+        win_m = _PORTRAIT_WINDOW_RE.match(b)
+        if win_m:
+            decl.win_w = int(win_m.group(1))
+            decl.win_h = int(win_m.group(2))
+            continue
+        map_m = _PORTRAIT_MAP_RE.match(b)
+        if map_m:
+            axis = map_m.group(1)
+            if axis not in (axis0, axis1):
+                raise SyntaxError(
+                    f"represent phase_portrait for '{flow_name}': map axis "
+                    f"'{axis}' is not one of ({axis0}, {axis1})"
+                )
+            try:
+                lo = float(map_m.group(2))
+                hi = float(map_m.group(3))
+            except ValueError as exc:
+                raise SyntaxError(
+                    f"represent phase_portrait for '{flow_name}': invalid "
+                    f"range in map for '{axis}'"
+                ) from exc
+            kind = map_m.group(4)
+            decl.maps[axis] = (lo, hi, kind)
+            continue
+        raise SyntaxError(
+            f"unknown item in represent phase_portrait for '{flow_name}': {b}"
+        )
+
+    if axis0 not in decl.maps or axis1 not in decl.maps:
+        raise SyntaxError(
+            f"represent phase_portrait for '{flow_name}': need map for both "
+            f"'{axis0}' and '{axis1}'"
+        )
+    kinds = {decl.maps[axis0][2], decl.maps[axis1][2]}
+    if kinds != {"col", "row"}:
+        raise SyntaxError(
+            f"represent phase_portrait for '{flow_name}': maps must assign "
+            "one axis to col and one to row"
+        )
+    return decl
+
+
 def _extract_represent_blocks(
     source: str,
-) -> Tuple[List[RepresentLinearDecl], str]:
-    """Strip `represent …` blocks from source; return linear decls + remainder.
+) -> Tuple[List[RepresentLinearDecl], List[RepresentPhasePortraitDecl], str]:
+    """Strip `represent …` blocks from source; return decls + remainder.
 
     Recognizes:
       - inside `flow Name { … represent linear { … } … }`
       - top-level `represent linear Name { … }` / `represent linear for Name { … }`
+      - `represent phase_portrait(a, b) { … }` inside a flow (#165)
       - `represent nonlinear { … }` as a no-op strip
       - reserved kinds → SyntaxError ("not yet implemented")
     """
     lines = source.splitlines()
     out_lines: List[str] = []
     represents: List[RepresentLinearDecl] = []
+    portraits: List[RepresentPhasePortraitDecl] = []
     i = 0
     brace_depth = 0
     current_flow: Optional[str] = None
@@ -540,6 +638,29 @@ def _extract_represent_blocks(
             i += 1
             continue
 
+        portrait_m = _REPRESENT_PORTRAIT_HEAD_RE.match(line) if line else None
+        if portrait_m:
+            body_lines, next_i = _extract_brace_block(lines, i)
+            if (
+                current_flow is None
+                or flow_body_depth is None
+                or brace_depth < flow_body_depth
+            ):
+                raise SyntaxError(
+                    "represent phase_portrait(...) must appear inside "
+                    "`flow Name { ... }`"
+                )
+            portraits.append(
+                _parse_represent_phase_portrait_body(
+                    current_flow,
+                    portrait_m.group(1),
+                    portrait_m.group(2),
+                    body_lines,
+                )
+            )
+            i = next_i
+            continue
+
         rep_m = _REPRESENT_HEAD_RE.match(line) if line else None
         if rep_m:
             kind = rep_m.group(1)
@@ -551,6 +672,12 @@ def _extract_represent_blocks(
                 i = next_i
                 continue
 
+            if kind == "phase_portrait":
+                raise SyntaxError(
+                    "represent phase_portrait needs axes: "
+                    "`represent phase_portrait(x, z) { ... }`"
+                )
+
             if kind in _REPRESENT_RESERVED:
                 raise SyntaxError(
                     f"represent {kind}: not yet implemented "
@@ -561,7 +688,7 @@ def _extract_represent_blocks(
             if kind != "linear":
                 raise SyntaxError(
                     f"unknown represent kind '{kind}'; expected linear, "
-                    "nonlinear, or a reserved form "
+                    "nonlinear, phase_portrait, or a reserved form "
                     "(koopman|transfer_function|frequency)"
                 )
 
@@ -602,15 +729,16 @@ def _extract_represent_blocks(
         out_lines.append(raw)
         i += 1
 
-    return represents, "\n".join(out_lines)
+    return represents, portraits, "\n".join(out_lines)
 
 
 def parse_dynamics_dsl(source: str) -> Tuple[DynamicsProgram, str]:
     """Parse DSL constructs and return program + source with DSL blocks removed."""
-    represents, source = _extract_represent_blocks(source)
+    represents, portraits, source = _extract_represent_blocks(source)
 
     program = DynamicsProgram()
     program.represents = represents
+    program.portraits = portraits
     for rep in represents:
         dsys = _represent_to_dsys(rep)
         if dsys.name in program.systems:
@@ -1181,13 +1309,87 @@ def inject_dynamics_setup(flow_source: str, setup: str) -> str:
     return flow_source[:insert_at] + "\n" + setup + flow_source[insert_at:]
 
 
+def inject_before_main(flow_source: str, helpers: str) -> str:
+    """Insert generated helpers immediately before `function main`."""
+    if not helpers.strip():
+        return flow_source
+    marker = re.search(r"\nfunction\s+main\s*\(", flow_source)
+    if not marker:
+        return flow_source.rstrip() + "\n\n" + helpers.strip() + "\n"
+    return (
+        flow_source[: marker.start()]
+        + "\n\n"
+        + helpers.strip()
+        + "\n"
+        + flow_source[marker.start() :]
+    )
+
+
+def _portrait_axis_project(
+    decl: RepresentPhasePortraitDecl, axis: str
+) -> Tuple[float, float]:
+    """Return (vmin, vmax) for project_axis; invert range for row (screen y)."""
+    lo, hi, kind = decl.maps[axis]
+    if kind == "row":
+        return hi, lo
+    return lo, hi
+
+
+def compile_phase_portraits(program: DynamicsProgram) -> str:
+    """Emit `{Name}_portrait_frame` helpers from represent phase_portrait."""
+    chunks: List[str] = []
+    for p in program.portraits:
+        a0_lo, a0_hi = _portrait_axis_project(p, p.axis0)
+        a1_lo, a1_hi = _portrait_axis_project(p, p.axis1)
+        chunks.append(
+            f"# generated from represent phase_portrait for {p.flow_name}\n"
+            f"const {p.flow_name}_portrait_trail: i32 = {p.trail}\n"
+            f"const {p.flow_name}_portrait_win_w: i32 = {p.win_w}\n"
+            f"const {p.flow_name}_portrait_win_h: i32 = {p.win_h}\n"
+            f"\n"
+            f"function {p.flow_name}_portrait_frame(\n"
+            f"    g: Gfx,\n"
+            f"    xs: ptr<f64>,\n"
+            f"    zs: ptr<f64>,\n"
+            f"    head: ptr<i32>,\n"
+            f"    count: ptr<i32>,\n"
+            f"    {p.axis0}: f64,\n"
+            f"    {p.axis1}: f64\n"
+            f") -> void {{\n"
+            f"    trail_push_2d(xs, zs, {p.trail}, head, count, "
+            f"{p.axis0}, {p.axis1})\n"
+            f"    let h: i32 = head[0]\n"
+            f"    let c: i32 = count[0]\n"
+            f"    gfx_clear(g, 8, 8, 16)\n"
+            f"    for i in 0 to c {{\n"
+            f"        let idx: i32 = trail_index(h, c, {p.trail}, i)\n"
+            f"        let px: i32 = project_axis(xs[idx], {a0_lo}, {a0_hi}, "
+            f"{p.win_w}, {p.pad_x})\n"
+            f"        let py: i32 = project_axis(zs[idx], {a1_lo}, {a1_hi}, "
+            f"{p.win_h}, {p.pad_y})\n"
+            f"        let b: i32 = 25 + (230 * (i + 1)) / c\n"
+            f"        let mut size: i32 = 2\n"
+            f"        if i >= c - 12 {{ size = 3 }}\n"
+            f"        gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)\n"
+            f"    }}\n"
+            f"    let hx: i32 = project_axis({p.axis0}, {a0_lo}, {a0_hi}, "
+            f"{p.win_w}, {p.pad_x})\n"
+            f"    let hz: i32 = project_axis({p.axis1}, {a1_lo}, {a1_hi}, "
+            f"{p.win_h}, {p.pad_y})\n"
+            f"    gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)\n"
+            f"}}\n"
+        )
+    return "\n".join(chunks)
+
+
 def expand_dynamics_dsl(source: str) -> str:
     """Full pipeline: parse DSL blocks, compile, inject into main."""
     if not has_dynamics_dsl(source):
         return source
     program, stripped = parse_dynamics_dsl(source)
     setup = compile_dynamics_program(program)
-    if not setup:
+    portraits = compile_phase_portraits(program)
+    if not setup and not portraits:
         return stripped
     merged = stripped
     needs_coupling = bool(program.wfc_fields or program.couples or program.guides)
@@ -1202,7 +1404,16 @@ def expand_dynamics_dsl(source: str) -> str:
         merged = 'import "stdlib/dynamics/wfc_ga_coupling.flow"\n\n' + merged
     elif needs_ga and 'import "stdlib/dynamics/ga_analysis.flow"' not in merged:
         merged = 'import "stdlib/dynamics/ga_analysis.flow"\n\n' + merged
-    return inject_dynamics_setup(merged, setup)
+    if program.portraits:
+        if 'import "stdlib/dynamics/portrait.flow"' not in merged:
+            merged = 'import "stdlib/dynamics/portrait.flow"\n' + merged
+        if 'import "stdlib/gfx.flow"' not in merged:
+            merged = 'import "stdlib/gfx.flow"\n' + merged
+    if portraits:
+        merged = inject_before_main(merged, portraits)
+    if setup:
+        merged = inject_dynamics_setup(merged, setup)
+    return merged
 
 
 def has_dynamics_dsl(source: str) -> bool:
