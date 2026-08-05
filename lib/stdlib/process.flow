@@ -1,0 +1,26 @@
+# Process / host-command helpers
+# Runtime: flow_run_cmd / flow_have_cmd in runtime/flow_sys_info.c
+
+extern {
+    function flow_run_cmd(cmd: string) -> i32
+    function flow_have_cmd(name: string) -> i32
+    function flow_env_eq(name: string, want: string) -> i32
+    function flow_str_eq(a: string, b: string) -> i32
+    function flow_puts(s: string) -> i32
+}
+
+export function run_cmd(cmd: string) -> i32 {
+    return flow_run_cmd(cmd)
+}
+
+export function have_cmd(name: string) -> bool {
+    return flow_have_cmd(name) != 0
+}
+
+export function env_is(name: string, want: string) -> bool {
+    return flow_env_eq(name, want) != 0
+}
+
+export function str_eq(a: string, b: string) -> bool {
+    return flow_str_eq(a, b) != 0
+}
