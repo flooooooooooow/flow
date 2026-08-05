@@ -113,6 +113,7 @@ Fundamental algorithms demonstrating Flow syntax:
 - `pipeline_placeholder.flow` - `|>` pipeline with `_` argument placeholder
 - `pipeline_fork.flow` - `|>` fork block: one value into a named record of pipelines
 - `pipeline_fork_inferred.flow` - `|>` anonymous fork block with an inferred record type
+- `pipeline_choose.flow` - `|>` `choose` stage: state-driven pipeline selection
 - `match_enums.flow` - `match` on a simple enum
 
 ### Games (`games/`)

@@ -246,6 +246,28 @@ hoisted to a temporary binding just above the statement, so `frames(1024)` in
 `x |> frames(1024) |> { … }` runs a single time no matter how many branches read
 it.
 
+#### `choose` — a state-driven stage
+
+A `choose` stage selects which pipeline runs based on a value, so the shape of
+the computation can depend on state:
+
+```flow
+return x
+    |> choose mode.tag {
+        Mode_Double => double,
+        Mode_Triple => triple,
+    }
+    |> normalize
+```
+
+Each `pattern => stage` arm is a pipeline over the piped value; `choose` applies
+the arm the selector matches. It lowers to a hoisted `let mut __choose : T` plus
+a `match` that assigns the chosen arm (`T` is the arms' common return type), so
+the result is an ordinary value that flows on to later stages. The source is
+evaluated once, like a fork. `choose` is contextual: `x |> choose(a, b)` and a
+bare `x |> choose` stay ordinary calls — only `choose selector { … }` is the
+stage form.
+
 ## Grammar (Simplified EBNF)
 
 ```ebnf
