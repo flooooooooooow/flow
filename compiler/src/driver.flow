@@ -127,7 +127,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         return 0
     }
 
-    let src_cap: i32 = 65536
+    let src_cap: i32 = 262144
     let src: ptr<u8> = malloc(src_cap as i64)
     if src == null {
         puts("stage_a_driver_flow: malloc src failed")
@@ -148,7 +148,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
     }
     src[nsrc] = 0
 
-    let mut p: Parser = flowc_parser_new(src, nsrc, 8192)
+    let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
     let root: i32 = flowc_parse_program(&p)
     if root < 0 or p.err != 0 {
         puts("stage_a_driver_flow: parse failed")
