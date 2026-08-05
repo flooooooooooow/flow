@@ -1,0 +1,12 @@
+# Repository-wide review ownership.
+* @godofecht
+
+# Language implementation and self-hosting compiler.
+/src/flow/ @godofecht
+/compiler/ @godofecht
+/runtime/ @godofecht
+
+# Release, CI, and security-sensitive metadata.
+/.github/ @godofecht
+/SECURITY.md @godofecht
+/packaging/ @godofecht
