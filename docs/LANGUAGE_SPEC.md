@@ -1,37 +1,44 @@
 # FLOW Language Specification
 
-> **Version**: 0.2.0
-> **Last Updated**: 2026-01-09
+> **Version**: 0.3.4
+> **Last Updated**: 2026-08-05
 
 ## Overview
 
 FLOW is a statically-typed, systems programming language with first-class support for:
 - **Algebraic effects** for modular side-effect handling
-- **GPU computing** via Metal and CUDA backends
-- **Automatic differentiation** for machine learning
-- **WebAssembly** compilation for browser deployment
+- **Evolution / dynamics DSLs** (`flow` / `evolves as`, units of measure, `field` PDE, `analyze` LQR) — see [§10](#10-domain--dsl-surfaces)
+- **Native graphics** (macOS Metal/Cocoa; Linux/Windows SDL2) and **fill shaders** (`shader fill`) — see [graphics.md](language/graphics.md) / [shaders.md](language/shaders.md)
+- **GPU memory helpers** via Metal on macOS (stdlib); CUDA/OpenCL are **not** shipping
+- **Automatic differentiation** as library dual/reverse helpers (see [autodiff.md](library/autodiff.md))
+- **WebAssembly** via Flow→C→Emscripten (see [wasm.md](language/wasm.md))
 
 ## Quick Reference
 
 ### Commands
 ```bash
-flow run <file.flow>      # Compile and run
+flow run <file.flow>      # Compile and run (default host: flowc; escape: FLOW_HOST=python)
 flow compile <file.flow>  # Compile to executable
 flow fmt <file.flow>      # Format source code
 flow test                 # Run all tests
+flow jit <file.flow>      # MLIR JIT (requires LLVM/MLIR toolchain)
+flow gfx <file.flow>      # Native graphics programs
+flow shader <file.flow>   # Fill-shader surface → Metal / C
+flow debug <file.flow>    # Launch with debugger (#line maps)
 ```
 
---- v0.1.0
+---
 
 > **AUTHORITATIVE REFERENCE** — This document is the single source of truth for the FLOW language.
 > All other documentation references this spec. Features marked ✅ are implemented, ⚠️ are partial, ❌ are planned.
+> Focused pages under [docs/language/](language/) are preferred for learning; this file owns status matrices and edge cases.
 
 ---
 
 ## Table of Contents
 
 1. [Lexical Structure](#1-lexical-structure)
-2. [Types](#2-types)
+2. [Types](#2-types) (incl. [§2.6 Units](#26-units-of-measure))
 3. [Declarations](#3-declarations)
 4. [Expressions](#4-expressions)
 5. [Statements](#5-statements)
@@ -39,6 +46,7 @@ flow test                 # Run all tests
 7. [Module System](#7-module-system)
 8. [Memory Model](#8-memory-model)
 9. [Compilation Targets](#9-compilation-targets)
+10. [Domain / DSL Surfaces](#10-domain--dsl-surfaces)
 
 ---
 
@@ -66,15 +74,33 @@ flow test                 # Run all tests
 | `while` | ✅ | Control Flow |
 | `for` | ✅ | Control Flow |
 | `in` | ✅ | Control Flow |
-| `parallel` | ⚠️ | Control Flow (parsed, not optimized) |
+| `parallel` | ✅ | Control Flow (`parallel for` → OpenMP when available; serial fallback) |
 | `step` | ✅ | Control Flow |
 | `match` | ⚠️ | Pattern Matching (literals, structs, guards, `\|` alternation, nested literal fields; real exhaustiveness checking for `bool` and enum/ADT variants via path/const patterns, minimal stub for integers) |
 | `default` | ✅ | Pattern Matching |
+| `mut` | ✅ | Mutability (`let mut`) |
+| `to` | ✅ | Range (`for i in 0 to n`) — preferred over `..` |
+| `break` | ✅ | Control Flow |
+| `continue` | ✅ | Control Flow |
+| `defer` | ✅ | Control Flow (run on scope exit) |
+| `enum` | ✅ | Declaration |
+| `trait` | ✅ | Declaration |
+| `impl` | ✅ | Declaration |
+| `type` | ✅ | Type alias |
+| `distinct` | ✅ | Nominal / distinct type |
+| `as` | ✅ | Explicit cast |
+| `and` / `or` / `not` | ✅ | Logical (alongside `&&` / `\|\|` / `!`) |
+| `null` | ✅ | Null pointer literal |
+| `dbg` / `expect` / `test` | ⚠️ | Debug / assert / test helpers (parsed; coverage varies by host) |
 | `inline` | ⚠️ | Optimization Hint (parsed, ignored) |
 | `noinline` | ⚠️ | Optimization Hint (parsed, ignored) |
 | `always_inline` | ⚠️ | Optimization Hint (parsed, ignored) |
 | `target` | ⚠️ | Platform Target (parsed, ignored) |
-| `module` | ❌ | Namespace (not implemented) |
+| `module` | ⚠️ | Parsed and flattened into the import graph; **not** a true nested namespace |
+| `theorem` / `assume` / `therefore` | ⚠️ | Verification surface (`flow-verify` / design — see [verification.md](language/verification.md)) |
+| `unit` | ✅ | Units of measure (§2.6) |
+| `flow` | ✅ | Evolution block (§10.1) — contextual keyword |
+| `ui_layout` / `ui_row` / `ui_column` / `ui_stack` / `ui_grid` | ⚠️ | UI layout sugar (parsed; host-dependent) |
 
 ### 1.2 Operators
 
@@ -91,11 +117,15 @@ flow test                 # Run all tests
 | `>` | Comparison | ✅ |
 | `<=` | Comparison | ✅ |
 | `>=` | Comparison | ✅ |
-| `&&` | Logical | ✅ |
-| `\|\|` | Logical | ✅ |
-| `!` | Logical | ✅ |
+| `&&` / `and` | Logical | ✅ |
+| `\|\|` / `or` | Logical | ✅ |
+| `!` / `not` | Logical | ✅ |
+| `&` `|` `^` `~` `<<` `>>` | Bitwise | ✅ |
 | `=` | Assignment | ✅ |
-| `..` | Range | ✅ |
+| `to` | Range keyword | ✅ (canonical `for` range) |
+| `..` | Range | ✅ (accepted alias of `to`) |
+| `\|>` | Pipe | ✅ (declarative ordering — §4.5) |
+| `&` / `*` | Address-of / deref | ✅ (unary; see §8.3) |
 | `->` | Type Arrow | ✅ |
 | `=>` | Match Arrow | ✅ |
 | `::` | Scope Resolution | ✅ (effects only) |
@@ -105,7 +135,8 @@ flow test                 # Run all tests
 
 | Literal Type | Syntax | Status |
 |--------------|--------|--------|
-| Integer | `42`, `-17`, `0x1F`, `0b1010` | ✅ (decimal), ⚠️ (hex/bin parsed) |
+| Integer | `42`, `-17`, `0x1F` | ✅ decimal and hex |
+| Integer (binary) | `0b1010` | ❌ not lexed (use decimal/hex) |
 | Float | `3.14`, `-0.5`, `1e-6` | ✅ |
 | Boolean | `true`, `false` | ✅ |
 | String | `"hello"`, `"line\n"` | ✅ |
@@ -198,6 +229,29 @@ let id: UserId = raw as UserId
 let back: i64 = id as i64
 ```
 
+### 2.6 Units of Measure
+
+**Status:** ✅ Shipped (dimensional analysis at check time; erase to `f64` / `typedef double` at runtime)
+
+A `unit` declaration creates a numeric type that carries a physical dimension:
+
+```flow
+unit Meter
+unit Second
+unit Velocity = Meter / Second
+unit Accel    = Meter / Second^2
+unit Hertz    = 1 / Second
+
+let d: Meter  = 100.0 as Meter
+let t: Second = 8.0 as Second
+let v: Velocity = d / t
+```
+
+- Bare `unit Name` declares a base dimension; `unit Name = expr` derives via `*`, `/`, and integer `^`.
+- Literals take a unit with `as`. Addition/subtraction require matching dimensions; `*`/`/` compose them.
+- `Radian` may pass through trig builtins as dimensionless.
+- Focused write-up: [types.md — Units](language/types.md); example: `examples/evolution/units_kinematics.flow`; design: [north-star.md](vision/north-star.md).
+
 ---
 
 ## 3. Declarations
@@ -251,16 +305,17 @@ Use `--mode` in the CLI to override mode detection when needed.
 
 **Grammar:**
 ```
-var_decl := 'let' IDENTIFIER (':' type)? '=' expression
+var_decl := 'let' 'mut'? IDENTIFIER (':' type)? '=' expression
 ```
 
-**Status:** ✅ Fully implemented (type annotation optional with inference)
+**Status:** ✅ Fully implemented (type annotation optional with inference; `mut` for mutation)
 
 **Example:**
 ```flow
-let x: i32 = 42
-let y = 3.14          # Inferred as f32
-let name = "Alice"    # Inferred as string
+let x: i32 = 42          # Immutable
+let mut counter: i32 = 0 # Mutable
+let y = 3.14             # Inferred as f32
+let name = "Alice"       # Inferred as string
 ```
 
 ### 3.3 Constant Declaration
@@ -320,6 +375,15 @@ extern "C" {
 }
 ```
 
+### 3.6 Attributes (selected)
+
+| Attribute | Status | Notes |
+|-----------|--------|-------|
+| `@only` / `@guard` | ✅ | Effect / capability attributes (§3.1.1) |
+| `@rt_safe` | ✅ | Real-time safety annotation — see [rt-safety.md](library/rt-safety.md) |
+
+Enums (`enum`), traits (`trait` / `impl`), and `flow` / `unit` declarations are covered in §1.1 and §10; full field grammars live in the focused pages and EBNF.
+
 ---
 
 ## 4. Expressions
@@ -339,6 +403,7 @@ extern "C" {
 | Array Literal | `[1, 2, 3]` | ✅ |
 | Struct Literal | `Point { x: 1.0, y: 2.0 }` | ✅ |
 | Vector Literal | `<1.0, 2.0, 3.0, 4.0>` | ⚠️ |
+| Lambda | `\|x: i32\| -> i32 { x + n }` | ✅ |
 
 ### 4.2 Operator Precedence (highest to lowest)
 
@@ -366,6 +431,39 @@ extern "C" {
 | `min` | `(a: T, b: T) -> T` | ✅ |
 | `max` | `(a: T, b: T) -> T` | ✅ |
 
+### 4.4 Lambdas / Closures
+
+Pipe-lambda syntax captures free local variables **by value** at creation
+time (snapshot semantics). The C backend lowers capturing lambdas to a
+`{ fn, env }` closure struct; non-capturing lambdas remain C function
+pointers.
+
+```flow
+let n: i32 = 5
+let add_n: (i32) -> i32 = |x: i32| -> i32 { return x + n }
+let result: i32 = add_n(10)  # 15
+```
+
+**Status notes:**
+- Automatic free-variable capture is implemented (C backend).
+- Escaping HOF ABI: declare `(T) -> R` (fat pointer `{fn, env}`); capturing
+  lambdas heap-copy their env so they can be returned or passed to HOFs.
+- Prefer `|params| -> Ret { … }` over the older manual
+  `struct + self` closure idiom.
+
+### 4.5 Pipe / Declarative Ordering
+
+**Status:** ✅
+
+```flow
+let ys = xs |> sort
+let zs = xs |> sortBy [asc .key, desc .tie]
+```
+
+See [ordering.md](language/ordering.md) and `examples/basics/declarative_sort.flow`.
+
+**Related (library, not core syntax):** Dual / Tensor arithmetic overloads (`+ - * /`, scale, add_scalar) are implemented in the C generator + stdlib — see pattern-adoption notes and `examples/ml/autodiff/tensor_ops.flow`.
+
 ---
 
 ## 5. Statements
@@ -374,12 +472,14 @@ extern "C" {
 
 | Statement | Status |
 |-----------|--------|
-| Variable Declaration | ✅ |
+| Variable Declaration | ✅ (`let` / `let mut`) |
 | Assignment | ✅ |
 | Return | ✅ |
 | If/Elif/Else | ✅ |
 | While Loop | ✅ |
-| For Loop | ✅ |
+| For Loop | ✅ (`to` preferred; `..` alias) |
+| `break` / `continue` | ✅ |
+| `defer` | ✅ |
 | Handle Statement | ✅ |
 | Match Statement | ⚠️ (literals/structs/guards/`\|`/nested-literal fields/struct-in-struct patterns work; exhaustiveness is real for `bool` and enum/ADT variants via path/const patterns, minimal stub for plain integers) |
 | Expression Statement | ✅ |
@@ -427,25 +527,29 @@ while i < 10 {
 
 **Grammar:**
 ```
-for_stmt := 'for' IDENTIFIER 'in' expression '..' expression ('step' expression)? 'parallel'? block
+for_stmt := 'parallel'? 'for' IDENTIFIER 'in' expression ('..' | 'to') expression
+            ('step' expression)? block
 ```
 
-**Status:** ✅ Basic for loop, ⚠️ `parallel` keyword parsed but not optimized
+**Status:** ✅ Fully implemented. Prefix `parallel for` emits
+`#pragma omp parallel for` under `#ifdef _OPENMP` in the C backend;
+`./flow` passes `-fopenmp` when the toolchain supports it, otherwise the
+loop is correct and serial. See [concurrency-vs-go.md](language/concurrency-vs-go.md).
 
 **Example:**
 ```flow
-# Basic for loop
-for i in 0..10 {
+# Basic for loop (both `to` and `..` are accepted)
+for i in 0 to 10 {
     printf("%d\n", i)
 }
 
 # With step
-for i in 0..100 step 5 {
+for i in 0 to 100 step 5 {
     printf("%d\n", i)
 }
 
-# Parallel hint (not yet optimized)
-for i in 0..1000 parallel {
+# Data-parallel (OpenMP when available)
+parallel for i in 0 to 1000 {
     data[i] = i * 2
 }
 ```
@@ -458,6 +562,20 @@ return_stmt := 'return' expression?
 ```
 
 **Status:** ✅ Fully implemented
+
+### 5.6 Concurrency (language + stdlib)
+
+There is **no** language-level `go` / `select` / `async` keyword. Concurrency
+surfaces as:
+
+| Surface | Where | Notes |
+|---------|-------|-------|
+| `parallel for` | Language (§5.4) | OpenMP when available |
+| Channels, WaitGroup, mutex, threads | `lib/stdlib/concurrent.flow` | `channel_i32_select2` and `channel_i32_select4` |
+| `Async` / `AsyncIO` effects | `lib/stdlib/async.flow` | `FiberAsync` (M:N), `ThreadedAsync`, `NetpollAsyncIO` |
+
+Design + measured Go comparison: [language/concurrency-vs-go.md](language/concurrency-vs-go.md).
+Async honesty: [language/async-effects.md](language/async-effects.md).
 
 ---
 
@@ -517,10 +635,11 @@ capability ConsoleLogger {
 
 **Grammar:**
 ```
-handle_stmt := 'handle' IDENTIFIER 'with' IDENTIFIER block
+handle_stmt := 'handle' IDENTIFIER (',' IDENTIFIER)* 'with' IDENTIFIER (',' IDENTIFIER)* block
 ```
 
-**Status:** ✅ Fully implemented with runtime dispatch
+**Status:** ✅ Fully implemented with runtime dispatch (multi-effect /
+multi-handler forms supported)
 
 **Example:**
 ```flow
@@ -529,8 +648,39 @@ function main() -> i32 {
         Log.emit("Hello from effects!")
         Log.level(3)
     }
+    # Multi-effect install (one capability may cover several effects)
+    handle Log, Notify with ConsoleLogger, ConsoleNotifier {
+        place_order()
+    }
     return 0
 }
+```
+
+### 6.3.1 Signature Effect Rows
+
+**Grammar (function declaration):**
+```
+function_decl := 'function' IDENTIFIER '(' parameters? ')' '->' type
+                 ('with' IDENTIFIER (',' IDENTIFIER)*)? block
+```
+
+**Status:** ✅ Implemented (enforced under `--strict-effects` or
+`FLOW_STRICT_EFFECTS=1`)
+
+A `with E1, E2` clause declares effects the function may perform. The body may
+use those effects without a local `handle`. Callers must cover the row via an
+enclosing `handle` or their own `with` clause. Soft zero defaults remain when
+`--strict-effects` is omitted. First-class types carry the same clause:
+`(string) -> void with Log`. See `examples/effects/effect_rows.flow` and
+[effects-showcase.md](effects-showcase.md).
+
+**Example:**
+```flow
+function greet(name: string) -> void with Log {
+    Log.emit(name)
+}
+
+let f: (string) -> void with Log = greet
 ```
 
 ### 6.4 Effect Implementation Details
@@ -538,7 +688,8 @@ function main() -> i32 {
 Effects are implemented via vtable-based runtime dispatch:
 
 1. Each effect generates a C struct for the handler vtable
-2. A global pointer tracks the current handler for each effect
+2. A `_Thread_local` pointer tracks the current handler for each effect
+   (safe across OS threads / `parallel for`)
 3. `handle` blocks save/restore the handler pointer
 4. Effect calls dispatch through the current handler's vtable
 
@@ -551,14 +702,18 @@ Effects are implemented via vtable-based runtime dispatch:
 **Grammar:**
 ```
 import_decl := 'import' STRING
+             | 'import' module_path ('{' symbols '}')?
+             | 'import' module_path 'as' IDENTIFIER
 ```
 
-**Status:** ✅ Fully implemented
+**Status:** ✅ Dot-path imports + legacy string imports both work.
+Prefer named modules; see [language/modules.md](language/modules.md).
 
 **Example:**
 ```flow
-import "lib/stdlib/math.flow"
-import "utils/helpers.flow"
+import "lib/stdlib/math.flow"          # legacy string path
+import std.math { sin, cos }           # named module + symbols
+import verify.nat as nat               # aliased module
 ```
 
 ### 7.2 Export Declaration
@@ -614,11 +769,14 @@ Import paths are resolved relative to:
 
 ```flow
 let x: i32 = 42
-let p: ptr<i32> = &x    # Address-of (not yet implemented)
-let val: i32 = *p       # Dereference (not yet implemented)
+let p: ptr<i32> = &x       # Address-of
+let val: i32 = *p          # Dereference
+# Postfix chaining (field through index) is supported on the C backend:
+#   cells[i].field   /   ptr[0].field
 ```
 
-**Status:** ⚠️ Pointer types parsed, limited operations
+**Status:** ✅ Address-of, dereference, and `ptr[i].field` / postfix chaining on the C backend.
+Example: `tests/runtime/test_pointers.flow`.
 
 ---
 
@@ -640,6 +798,7 @@ let val: i32 = *p       # Dereference (not yet implemented)
 - Basic function/control flow generation
 - LLVM dialect lowering
 - Limited effect support
+- Full CLI pass toggles + `--print-pass-pipeline`: see [mlir-opt-flags.md](language/mlir-opt-flags.md)
 
 ### 9.3 WebAssembly
 
@@ -661,6 +820,56 @@ let val: i32 = *p       # Dereference (not yet implemented)
 **Requirements:** `mlir-opt`, `mlir-translate`, and `clang` on `PATH` (e.g. `brew install llvm` on macOS)
 
 **Related (AOT, not in-memory JIT):** `flow mlir-run` lowers MLIR → LLVM object file → links and runs
+
+---
+
+## 10. Domain / DSL Surfaces
+
+These are first-class language / pre-parse surfaces shipped alongside the core grammar. Status is relative to the Python host (`FLOW_HOST=python`) unless noted. Stage-A `flowc` covers a subset (see [self-hosting.md](project/self-hosting.md)).
+
+### 10.1 `flow` / `evolves as` / representation
+
+**Status:** ✅
+
+Plant-style evolution blocks: `state` / `param` / `solver` (`rk4` and friends), `every`, `when` / `reaches` / `becomes`, and `represent phase_portrait {…}` (emits `{Name}_portrait_frame`).
+
+- Design cards: [north-star.md](vision/north-star.md)
+- Checklist: [pattern-adoption.md](project/pattern-adoption.md)
+- Examples under `examples/evolution/` and `examples/compilers/`
+
+### 10.2 Dynamics / `analyze` / LQR
+
+**Status:** ✅ (pre-parse expander)
+
+Legacy `dsys` / `dynamics { }` and vision-form `analyze plant { lqr { Q… R… → k… } }` (diagonal Q, scalar R, `n ≤ 8`) expand to Flow + helpers such as `dlqr_diag_q_scalar_u`.
+
+- [dynamics-dsl.md](language/dynamics-dsl.md)
+- Examples: `examples/control/spring_mass_lqr.flow`, `chain4_lqr.flow`
+
+### 10.3 `field` / `boundary` / Laplacian PDE
+
+**Status:** ✅ (Stage-1 expander in `field_dsl.py`)
+
+`field` / `boundary` / `evolves as laplacian` → `T_field_step` helpers. Heat demo and pattern-adoption #163.
+
+### 10.4 Fill shaders
+
+**Status:** ✅ Metal on macOS (`shader fill` + `./flow shader`)
+
+- [shaders.md](language/shaders.md)
+
+### 10.5 Native graphics
+
+**Status:** ✅ macOS Cocoa; Linux/Windows SDL2 (+ stub without headers)
+
+- [graphics.md](language/graphics.md)
+- `./flow gfx`
+
+### 10.6 GPU memory (stdlib)
+
+**Status:** ✅ Metal path; stub elsewhere — [gpu-memory.md](library/gpu-memory.md)
+
+CUDA/OpenCL backends are **not** shipping.
 
 ---
 
@@ -704,6 +913,7 @@ Complete list of AST nodes defined in `src/flow/parser.py`:
 | `OrPattern` | `\|`-alternation of literal patterns | patterns |
 | `ImportDecl` | Import statement | path |
 | `ConstDecl` | Constant declaration | name, type, value |
+| `Lambda` | Lambda / closure | parameters, return_type, body, captures |
 
 ---
 
@@ -735,13 +945,16 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Feature | Parser | C Gen | MLIR Gen | Docs |
 |---------|--------|-------|----------|------|
 | Functions | ✅ | ✅ | ✅ | ✅ |
-| Variables | ✅ | ✅ | ✅ | ✅ |
+| Variables (`let` / `mut`) | ✅ | ✅ | ✅ | ✅ |
 | Constants | ✅ | ✅ | ✅ | ✅ |
 | Structs | ✅ | ✅ | ✅ | ✅ |
+| Enums / traits / impl | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| Units of measure | ✅ | ✅ | ❌ | ✅ |
 | Arrays | ✅ | ✅ | ⚠️ | ✅ |
 | If/Else | ✅ | ✅ | ✅ | ✅ |
 | While | ✅ | ✅ | ✅ | ✅ |
-| For | ✅ | ✅ | ⚠️ | ✅ |
+| For (`to` / `..`) | ✅ | ✅ | ⚠️ | ✅ |
+| `break` / `continue` / `defer` | ✅ | ✅ | ⚠️ | ⚠️ |
 | Effects | ✅ | ✅ | ⚠️ | ✅ |
 | Capabilities | ✅ | ✅ | ⚠️ | ✅ |
 | Handle | ✅ | ✅ | ⚠️ | ✅ |
@@ -749,11 +962,20 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Export | ✅ | ✅ | ✅ | ✅ |
 | Extern | ✅ | ✅ | ✅ | ⚠️ |
 | Match | ✅ | ⚠️ | ⚠️ | ✅ |
-| Parallel | ✅ | ❌ | ❌ | ⚠️ |
+| Parallel | ✅ | ✅ | ❌ | ✅ (OpenMP / serial) |
 | SIMD Vec | ✅ | ⚠️ | ⚠️ | ⚠️ |
-| Pointers | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| Pointers (`&` / `*` / `ptr[i].field`) | ✅ | ✅ | ⚠️ | ✅ |
+| Lambdas / captures | ✅ | ✅ | ❌ | ✅ |
+| Postfix chaining | ✅ | ✅ | ✅ | ✅ |
+| Pipe / `sort` / `sortBy` | ✅ | ✅ | ❌ | ✅ |
+| `flow` / evolves / phase_portrait | ✅ | ✅ | ❌ | ✅ |
+| Dynamics / LQR / `field` PDE | ✅ (expander) | ✅ | ❌ | ✅ |
+| Fill shaders / gfx | ✅ | ✅ | ❌ | ✅ |
+| `module` (flatten only) | ✅ | ✅ | ✅ | ⚠️ |
+| Binary `0b…` literals | ❌ | ❌ | ❌ | ✅ (documented gap) |
+| Dual / Tensor ops | ✅ | ✅ | ⚠️ | ⚠️ |
 
 ---
 
-*Last updated: 2026-01-08*
-*Version: 0.1.0*
+*Last updated: 2026-08-05*
+*Version: 0.3.4*
