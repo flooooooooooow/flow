@@ -1,0 +1,219 @@
+# Sorting Algorithm Benchmark
+# Compares quicksort, mergesort, and heapsort implementations
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const CLOCKS_PER_SEC: i64 = 1000000
+
+# ============================================================================
+# DATA GENERATION (must be before main)
+# ============================================================================
+
+function generate_random(arr: ptr<i32>, n: i32, seed: i32) -> i32 {
+    let mut s: i32 = seed
+    for i in 0 to n {
+        s = (s * 1103515245 + 12345) % 2147483647
+        if s < 0 { s = 0 - s }
+        arr[i] = s % 1000000
+    }
+    return s
+}
+
+function copy_array(src: ptr<i32>, dst: ptr<i32>, n: i32) {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+}
+
+function is_sorted(arr: ptr<i32>, n: i32) -> i32 {
+    for i in 0 to n - 1 {
+        if arr[i] > arr[i + 1] {
+            return 0
+        }
+    }
+    return 1
+}
+
+# ============================================================================
+# QUICKSORT - Average O(N log N), worst O(N^2)
+# ============================================================================
+
+function partition(arr: ptr<i32>, low: i32, high: i32) -> i32 {
+    let pivot: i32 = arr[high]
+    let mut i: i32 = low - 1
+    
+    for j in low to high {
+        if arr[j] < pivot {
+            i = i + 1
+            let temp: i32 = arr[i]
+            arr[i] = arr[j]
+            arr[j] = temp
+        }
+    }
+    
+    let temp: i32 = arr[i + 1]
+    arr[i + 1] = arr[high]
+    arr[high] = temp
+    
+    return i + 1
+}
+
+function quicksort_impl(arr: ptr<i32>, low: i32, high: i32) {
+    if low < high {
+        let pi: i32 = partition(arr, low, high)
+        quicksort_impl(arr, low, pi - 1)
+        quicksort_impl(arr, pi + 1, high)
+    }
+}
+
+function quicksort(arr: ptr<i32>, n: i32) {
+    quicksort_impl(arr, 0, n - 1)
+}
+
+# ============================================================================
+# HEAPSORT - O(N log N) guaranteed
+# ============================================================================
+
+function heapify(arr: ptr<i32>, n: i32, i: i32) {
+    let mut largest: i32 = i
+    let left: i32 = 2 * i + 1
+    let right: i32 = 2 * i + 2
+    
+    if left < n and arr[left] > arr[largest] {
+        largest = left
+    }
+    
+    if right < n and arr[right] > arr[largest] {
+        largest = right
+    }
+    
+    if largest != i {
+        let temp: i32 = arr[i]
+        arr[i] = arr[largest]
+        arr[largest] = temp
+        heapify(arr, n, largest)
+    }
+}
+
+function heapsort(arr: ptr<i32>, n: i32) {
+    # Build max heap
+    let mut i: i32 = n / 2 - 1
+    while i >= 0 {
+        heapify(arr, n, i)
+        i = i - 1
+    }
+    
+    # Extract elements from heap
+    i = n - 1
+    while i > 0 {
+        let temp: i32 = arr[0]
+        arr[0] = arr[i]
+        arr[i] = temp
+        heapify(arr, i, 0)
+        i = i - 1
+    }
+}
+
+# ============================================================================
+# INSERTION SORT - O(N^2) but fast for small arrays
+# ============================================================================
+
+function insertion_sort(arr: ptr<i32>, n: i32) {
+    for i in 1 to n {
+        let key: i32 = arr[i]
+        let mut j: i32 = i - 1
+        
+        while j >= 0 and arr[j] > key {
+            arr[j + 1] = arr[j]
+            j = j - 1
+        }
+        arr[j + 1] = key
+    }
+}
+
+# ============================================================================
+# MAIN BENCHMARK
+# ============================================================================
+
+function main() -> i32 {
+    println("========================================================")
+    println("         SORTING ALGORITHM BENCHMARK (Flow)             ")
+    println("========================================================")
+    println("")
+    
+    let n: i32 = 5000
+    
+    println("----------------------------------------------------")
+    print("Array size: ")
+    println(n)
+    println("----------------------------------------------------")
+    
+    # Allocate arrays
+    let original: array<i32, 5000> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let working: array<i32, 5000> = [0, 0, 0, 0, 0, 0, 0, 0]
+    
+    let original_ptr: ptr<i32> = original
+    let working_ptr: ptr<i32> = working
+    
+    # Generate random data
+    let seed: i32 = generate_random(original_ptr, n, 12345)
+    
+    println("Random data generated")
+    
+    # Quicksort
+    copy_array(original_ptr, working_ptr, n)
+    let start_qs: i64 = clock()
+    quicksort(working_ptr, n)
+    let end_qs: i64 = clock()
+    let time_qs: f64 = (end_qs - start_qs) / CLOCKS_PER_SEC
+    let sorted_qs: i32 = is_sorted(working_ptr, n)
+    
+    print("Quicksort:  ")
+    printf("%.3f", time_qs * 1000.0)
+    if sorted_qs == 1 {
+        println(" ms [OK]")
+    } else {
+        println(" ms [FAIL]")
+    }
+    
+    # Heapsort
+    copy_array(original_ptr, working_ptr, n)
+    let start_hs: i64 = clock()
+    heapsort(working_ptr, n)
+    let end_hs: i64 = clock()
+    let time_hs: f64 = (end_hs - start_hs) / CLOCKS_PER_SEC
+    let sorted_hs: i32 = is_sorted(working_ptr, n)
+    
+    print("Heapsort:   ")
+    printf("%.3f", time_hs * 1000.0)
+    if sorted_hs == 1 {
+        println(" ms [OK]")
+    } else {
+        println(" ms [FAIL]")
+    }
+    
+    # Insertion sort (only for smaller array)
+    let n_small: i32 = 1000
+    let seed2: i32 = generate_random(original_ptr, n_small, 54321)
+    copy_array(original_ptr, working_ptr, n_small)
+    let start_is: i64 = clock()
+    insertion_sort(working_ptr, n_small)
+    let end_is: i64 = clock()
+    let time_is: f64 = (end_is - start_is) / CLOCKS_PER_SEC
+    let sorted_is: i32 = is_sorted(working_ptr, n_small)
+    
+    print("Insertion (1000):  ")
+    printf("%.3f", time_is * 1000.0)
+    if sorted_is == 1 {
+        println(" ms [OK]")
+    } else {
+        println(" ms [FAIL]")
+    }
+    
+    println("")
+    println("Benchmark complete.")
+    return 0
+}
