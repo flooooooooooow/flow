@@ -1,0 +1,11 @@
+[package]
+name = "serde"
+version = "0.1.0"
+description = "Minimal length-prefixed binary encode/decode for i32 and string (pure Flow)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

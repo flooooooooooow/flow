@@ -1,0 +1,15 @@
+[package]
+name = "image"
+version = "0.1.0"
+description = "Minimal image decode (PPM P6 + PNG via stb_image; RGBA out)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]
+
+[native]
+sources = ["native/flow_image.c"]
+libs = []

@@ -1,0 +1,43 @@
+# sqlite — SQLite3 wrapper
+
+extern {
+    function flow_sqlite_open(path: string) -> ptr<void>
+    function flow_sqlite_close(db: ptr<void>) -> void
+    function flow_sqlite_exec(db: ptr<void>, sql: string) -> i32
+    function flow_sqlite_query_i64(db: ptr<void>, sql: string, out: ptr<i64>) -> i32
+    function flow_sqlite_errmsg(db: ptr<void>) -> string
+}
+
+export function sqlite_open(path: string) -> ptr<void> {
+    return flow_sqlite_open(path)
+}
+
+export function sqlite_close(db: ptr<void>) -> void {
+    flow_sqlite_close(db)
+}
+
+export function sqlite_exec(db: ptr<void>, sql: string) -> i32 {
+    return flow_sqlite_exec(db, sql)
+}
+
+# Returns the integer result, or 0 if query failed (check sqlite_query_ok).
+export function sqlite_query_i64(db: ptr<void>, sql: string) -> i64 {
+    let mut out: i64 = 0
+    let rc: i32 = flow_sqlite_query_i64(db, sql, &out)
+    if rc != 0 {
+        return 0
+    }
+    return out
+}
+
+export function sqlite_query_i64_ok(db: ptr<void>, sql: string, out: ptr<i64>) -> i32 {
+    let rc: i32 = flow_sqlite_query_i64(db, sql, out)
+    if rc == 0 {
+        return 1
+    }
+    return 0
+}
+
+export function sqlite_errmsg(db: ptr<void>) -> string {
+    return flow_sqlite_errmsg(db)
+}
