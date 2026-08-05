@@ -177,9 +177,9 @@ hand-rolled C-shaped loops. API sketches live in
 
 | Task | Status | Impact |
 |------|--------|--------|
-| Canonicalize evolution demos onto flow/evolves | 🔲 [#159](https://github.com/flooooooooooow/flow/issues/159) | Demote hand RK4; README/STATUS lead with `*_evolves` / `*_rk4` / `when` |
-| gfx_run frame helper | 🔲 [#164](https://github.com/flooooooooooow/flow/issues/164) | Kill poll/clear/present ceremony in Lorenz/Tetris/2048/cartpole |
-| Lorenz as flow + represent phase_portrait | 🔲 [#165](https://github.com/flooooooooooow/flow/issues/165) | Wow demo matches VISION north-star; no `nxt[]` copy loop |
+| Canonicalize evolution demos onto flow/evolves | ✅ [#159](https://github.com/flooooooooooow/flow/issues/159) | Demote hand RK4; README leads with `*_evolves` / `*_rk4` / `when` |
+| gfx_run frame helper | ✅ [#164](https://github.com/flooooooooooow/flow/issues/164) | `gfx_frame_pump` + runtime `flow_gfx_run` / `gfx_run` |
+| Lorenz as flow + represent phase_portrait | ✅ partial [#165](https://github.com/flooooooooooow/flow/issues/165) | `flow Lorenz` + rk4 + `gfx_frame_pump`; trail manual until `represent phase_portrait` |
 | Route linalg examples through blas.flow | 🔲 [#168](https://github.com/flooooooooooow/flow/issues/168) | Thin LU/solve wrappers; pedagogical loops marked secondary |
 | Wire ML demos through Dual / grad codegen | 🔲 [#170](https://github.com/flooooooooooow/flow/issues/170) | Honest AD story; drop hand `dense_backward` from tourist XOR |
 | Owned HttpResponse + JSON decode helpers | 🔲 [#167](https://github.com/flooooooooooow/flow/issues/167) | `http_get` returns owned body; cache app loses buf/len ceremony |

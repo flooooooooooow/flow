@@ -233,6 +233,24 @@ void flow_gfx_present(void* handle) {
     SDL_RenderPresent(ctx->renderer);
 }
 
+__attribute__((weak)) int32_t flow_gfx_frame(void* handle, int32_t frame) {
+    (void)handle;
+    (void)frame;
+    return 0;
+}
+
+int32_t flow_gfx_run(void* handle, int32_t max_frames) {
+    if (!handle || max_frames <= 0) return 0;
+    const int32_t key_esc = 53;
+    for (int32_t frame = 0; frame < max_frames; frame++) {
+        flow_gfx_poll(handle);
+        if (flow_gfx_should_close(handle)) return frame;
+        if (flow_gfx_key_down(handle, key_esc)) return frame;
+        if (!flow_gfx_frame(handle, frame)) return frame;
+    }
+    return max_frames;
+}
+
 #else /* FLOW_GFX_STUB or no SDL2 headers */
 
 #ifndef FLOW_GFX_STUB_MSG
@@ -306,6 +324,19 @@ void flow_gfx_fill_rect(void* handle, int32_t x, int32_t y, int32_t w, int32_t h
 void flow_gfx_present(void* handle) {
     (void)handle;
     flow_gfx_sdl_warn_once();
+}
+
+__attribute__((weak)) int32_t flow_gfx_frame(void* handle, int32_t frame) {
+    (void)handle;
+    (void)frame;
+    return 0;
+}
+
+int32_t flow_gfx_run(void* handle, int32_t max_frames) {
+    (void)handle;
+    (void)max_frames;
+    flow_gfx_sdl_warn_once();
+    return 0;
 }
 
 #endif /* FLOW_GFX_USE_SDL2 */
