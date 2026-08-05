@@ -184,6 +184,7 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "                    --verbose   Show error details"
     echo "  test-strict       Shortcut for: test --strict"
     echo "  test-runtime      Run runtime tests (compile + execute)"
+    echo "  test-lang         Run tests/lang/ language tests (strict transpile + compile + execute)"
     echo "  test-mlir         Run MLIR verification (requires LLVM)"
     echo "  test-python       Run Python unit tests"
     echo "  test-interop      Run interop runtime tests"
@@ -1848,6 +1849,149 @@ run_runtime_tests() {
     fi
 }
 
+# Run Flow-native language tests (tests/lang/): strict transpile, clang
+# compile, then execute. A test passes when it exits 0; a nonzero exit
+# identifies the failing check inside the file. Mirrors run_runtime_tests
+# but always transpiles with --strict (tests/lang/ is strict-only).
+run_lang_tests() {
+    print_info "Running FLOW language tests (tests/lang/, strict)..."
+
+    local lang_dir="$SCRIPT_DIR/tests/lang"
+    local build_dir
+    build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_lang_test)"
+    local verbose=0
+    local targets=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --verbose|-v)
+                verbose=1
+                shift
+                ;;
+            *)
+                targets+=("$1")
+                shift
+                ;;
+        esac
+    done
+    mkdir -p "$build_dir"
+
+    if [ ! -d "$lang_dir" ]; then
+        print_error "No language tests directory found at $lang_dir"
+        exit 1
+    fi
+
+    local total=0
+    local passed=0
+    local failed=0
+    local failed_files=""
+
+    # Bash 3.2 + set -u: empty "${arr[@]}" is an unbound-variable error.
+    # Collect paths into a newline list, then iterate with while-read.
+    local program_list_file
+    program_list_file="$(mktemp 2>/dev/null || mktemp -t flow_lang_list)"
+    if [ ${#targets[@]} -gt 0 ]; then
+        for t in "${targets[@]}"; do
+            if [ -f "$t" ]; then
+                printf '%s\n' "$t" >> "$program_list_file"
+            elif [ -d "$t" ]; then
+                find "$t" -name "*.flow" ! -path "*/wip/*" 2>/dev/null >> "$program_list_file" || true
+            fi
+        done
+    else
+        find "$lang_dir" -name "*.flow" ! -path "*/wip/*" 2>/dev/null >> "$program_list_file" || true
+    fi
+
+    if [ ! -s "$program_list_file" ]; then
+        rm -f "$program_list_file"
+        print_error "No language test programs found under $lang_dir"
+        exit 1
+    fi
+
+    while IFS= read -r program; do
+        if [ -z "$program" ]; then continue; fi
+        total=$((total + 1))
+        local rel_path=${program#$SCRIPT_DIR/}
+        local basename
+        basename=$(basename "$program" .flow)
+        local c_file="$build_dir/${basename}.c"
+        local exe_file="$build_dir/${basename}"
+
+        # Step 1: Transpile FLOW to C (strict; tests/lang/ must be strict-clean)
+        # || true / status vars: set -e must not abort before we record failures
+        local transpile_output
+        local transpile_status=0
+        transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --strict -o "$c_file" 2>&1) || transpile_status=$?
+        if [ "$transpile_status" -ne 0 ] || [ ! -f "$c_file" ]; then
+            print_error "✗ $rel_path (strict transpile failed)"
+            if [ -n "$transpile_output" ]; then
+                echo "$transpile_output" | tail -n 12
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (transpile)"
+            continue
+        fi
+
+        # Step 2: Compile C to executable
+        local clang_output
+        local clang_status=0
+        clang_output=$(clang -Wno-everything "$c_file" -o "$exe_file" -lm 2>&1) || clang_status=$?
+        if [ "$clang_status" -ne 0 ]; then
+            print_error "✗ $rel_path (clang compile failed)"
+            if [ -n "$clang_output" ]; then
+                if [ $verbose -eq 1 ]; then
+                    echo "$clang_output"
+                else
+                    echo "$clang_output" | tail -n 12
+                fi
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (clang)"
+            continue
+        fi
+
+        # Step 3: Run the executable; exit 0 = pass, nonzero = failing check
+        local run_output
+        local exit_code=0
+        run_output=$("$exe_file" 2>&1) || exit_code=$?
+
+        if [ $exit_code -eq 0 ]; then
+            print_success "✓ $rel_path"
+            if [ $verbose -eq 1 ] && [ -n "$run_output" ]; then
+                echo "---- output: $rel_path ----"
+                echo "$run_output"
+                echo "---------------------------"
+            fi
+            passed=$((passed + 1))
+        else
+            print_error "✗ $rel_path (exit code $exit_code)"
+            if [ -n "$run_output" ]; then
+                echo "---- output: $rel_path ----"
+                echo "$run_output"
+                echo "---------------------------"
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (exit=$exit_code)"
+        fi
+
+    done < "$program_list_file"
+
+    # Cleanup
+    rm -f "$program_list_file"
+    rm -rf "$build_dir"
+
+    echo "----------------------------------------"
+    if [ $failed -eq 0 ]; then
+        print_success "All $total language tests passed!"
+    else
+        print_error "Language test failures: $failed/$total"
+        if [ -n "$failed_files" ]; then
+            echo -e "\nFailed files:$failed_files"
+        fi
+        exit 1
+    fi
+}
+
 # Run MLIR verification tests (optional - requires MLIR toolchain)
 run_mlir_tests() {
     print_info "Running MLIR verification tests..."
@@ -2399,6 +2543,11 @@ for f in sys.argv[1:]:
         shift
         check_deps
         run_runtime_tests "$@"
+        ;;
+    "test-lang")
+        shift
+        check_deps
+        run_lang_tests "$@"
         ;;
     "test-mlir")
         check_deps
