@@ -1,0 +1,29 @@
+# dns package demo — resolve localhost
+import dns.lib { dns_lookup, dns_lookup_u32, dns_alloc, dns_free }
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+    function puts(s: ptr<i8>) -> i32
+}
+
+function main() -> i32 {
+    let buf: ptr<i8> = dns_alloc(64)
+    let n: i64 = dns_lookup("localhost", buf, 64)
+    let ip: u32 = dns_lookup_u32("localhost")
+
+    printf("len=%lld\n", n)
+    printf("ip_u32=%lld\n", ip as i64)
+    if n > 0 {
+        puts(buf)
+    }
+
+    dns_free(buf)
+
+    # localhost → 127.0.0.1 (len 9) and non-zero network-order address
+    if n == 9 and (ip as i64) != 0 {
+        printf("ok=%lld\n", 1 as i64)
+        return 0
+    }
+    printf("ok=%lld\n", 0 as i64)
+    return 1
+}

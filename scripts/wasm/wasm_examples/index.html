@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLOW WebAssembly Examples</title>
+    <style>
+        body { 
+            font-family: system-ui, sans-serif; margin: 0; padding: 40px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh; color: #eee;
+        }
+        h1 { text-align: center; color: #00d4ff; }
+        .subtitle { text-align: center; color: #888; margin-bottom: 40px; }
+        .grid { 
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px; max-width: 1000px; margin: 0 auto;
+        }
+        .example-card {
+            background: #0f0f23; padding: 20px; border-radius: 12px;
+            text-decoration: none; color: #eee; text-align: center;
+            border: 1px solid #333; transition: all 0.2s;
+        }
+        .example-card:hover { 
+            border-color: #00d4ff; transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0, 212, 255, 0.2);
+        }
+        .icon { font-size: 2em; display: block; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🚀 FLOW WebAssembly Examples</h1>
+    <p class="subtitle">Click any example to see FLOW compiled to WebAssembly</p>
+    <div class="grid">
+        <a href="fibonacci.html" class="example-card"><span class="icon">📄</span>fibonacci</a>
+<a href="factorial.html" class="example-card"><span class="icon">📄</span>factorial</a>
+<a href="gcd.html" class="example-card"><span class="icon">📄</span>gcd</a>
+<a href="hello_world.html" class="example-card"><span class="icon">📄</span>hello_world</a>
+<a href="loops.html" class="example-card"><span class="icon">📄</span>loops</a>
+<a href="power.html" class="example-card"><span class="icon">📄</span>power</a>
+<a href="palindrome.html" class="example-card"><span class="icon">📄</span>palindrome</a>
+<a href="bubble_sort.html" class="example-card"><span class="icon">📄</span>bubble_sort</a>
+<a href="simple_search.html" class="example-card"><span class="icon">📄</span>simple_search</a>
+<a href="effects_working.html" class="example-card"><span class="icon">📄</span>effects_working</a>
+    </div>
+</body>
+</html>

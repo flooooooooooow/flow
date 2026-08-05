@@ -1,0 +1,23 @@
+# Minimal HTTP server — serves N "Hello from Flow" responses then exits
+# Run: ./flow run examples/concurrency/http_hello.flow
+# In another terminal while it runs: curl http://127.0.0.1:18770/
+#
+# Note: accepts in-process via a client helper after listen; for a long-lived
+# server bump n_req and hit with curl.
+
+extern {
+    function flow_http_serve_hello(port: i32, n_req: i32) -> i64
+    function flow_bench_http_server_rps(port: i32, n_req: i32) -> i64
+}
+
+function main() -> i32 {
+    printf("http hello — self-test via RPS helper on :18770\n")
+    # RPS helper is the end-to-end path (listen + client GETs).
+    let ok: i64 = flow_bench_http_server_rps(18770, 50)
+    if ok < 50 {
+        printf("FAIL served=%lld\n", ok)
+        return 1
+    }
+    printf("OK\n")
+    return 0
+}

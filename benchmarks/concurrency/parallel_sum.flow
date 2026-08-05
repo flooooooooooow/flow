@@ -1,0 +1,36 @@
+# Data-parallel fill via `parallel for`, then serial checksum
+# Compare with parallel_sum.go (goroutine chunked fill)
+
+import "stdlib/time.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+const N: i32 = 8000000
+
+function main() -> i32 {
+    let arr: ptr<i32> = malloc(N as i64 * 4) as ptr<i32>
+    let t0: f64 = get_time()
+    parallel for i in 0 to N {
+        arr[i] = i
+    }
+    let mut total: i64 = 0
+    let mut i: i32 = 0
+    while i < N {
+        total = total + (arr[i] as i64)
+        i = i + 1
+    }
+    let t1: f64 = get_time()
+    free(arr as ptr<void>)
+    let n64: i64 = N as i64
+    let want: i64 = (n64 - 1) * n64 / 2
+    let ms: f64 = (t1 - t0) * 1000.0
+    printf("flow_parallel_sum n=%d ms=%.3f checksum=%lld want=%lld\n",
+           N, ms, total, want)
+    if total != want {
+        return 1
+    }
+    return 0
+}

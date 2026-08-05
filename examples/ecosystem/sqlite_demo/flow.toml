@@ -1,0 +1,12 @@
+[package]
+name = "sqlite_demo"
+version = "0.1.0"
+description = "Demo for registry package sqlite"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+sqlite = "0.1.0"
+
+[dev-dependencies]

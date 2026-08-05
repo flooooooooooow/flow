@@ -1,0 +1,31 @@
+# log package demo — effects-native API
+import log.lib {
+    Log, ConsoleLog,
+    log_set_level, log_get_level, log_info, log_warn, log_error, log_debug, log_i32
+}
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    handle Log with ConsoleLog {
+        printf("default_level=%d\n", log_get_level())
+
+        log_info("hello from log")
+        log_warn("something odd")
+        log_error("something broke")
+        log_debug("hidden at INFO")
+        log_i32("answer", 42)
+
+        log_set_level(1)
+        printf("level_now=%d\n", log_get_level())
+        log_debug("visible at DEBUG")
+        log_info("still visible")
+
+        log_set_level(4)
+        log_info("hidden at ERROR")
+        log_error("only errors")
+    }
+    return 0
+}

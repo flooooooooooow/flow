@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLOW → WASM: simple_search</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0; padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh; color: #eee;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; color: #00d4ff; margin-bottom: 30px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+        .panel { 
+            background: #0f0f23; border-radius: 12px; 
+            border: 1px solid #333; overflow: hidden;
+        }
+        .panel-header { 
+            background: #1a1a3e; padding: 12px 16px;
+            font-weight: 600; color: #00d4ff;
+            border-bottom: 1px solid #333;
+        }
+        .panel-content { 
+            padding: 16px; font-family: 'Fira Code', monospace;
+            font-size: 13px; line-height: 1.5;
+            max-height: 400px; overflow: auto;
+            white-space: pre-wrap; color: #a0ffa0;
+        }
+        .c-code { color: #87ceeb; }
+        #output { 
+            background: #0a0a1a; min-height: 150px;
+            color: #0f0; font-family: monospace;
+        }
+        .controls { text-align: center; margin: 20px 0; }
+        button { 
+            background: #00d4ff; color: #000; border: none;
+            padding: 12px 32px; border-radius: 8px;
+            font-size: 16px; font-weight: 600;
+            cursor: pointer; margin: 0 8px;
+            transition: all 0.2s;
+        }
+        button:hover { background: #00fff7; transform: translateY(-2px); }
+        button:disabled { background: #555; color: #888; cursor: not-allowed; transform: none; }
+        #status { text-align: center; margin: 15px 0; font-size: 14px; color: #888; }
+        .badge { 
+            display: inline-block; padding: 4px 12px; 
+            border-radius: 20px; font-size: 12px;
+            background: #00d4ff22; color: #00d4ff;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 FLOW → WebAssembly <span class="badge">simple_search</span></h1>
+        
+        <div class="grid">
+            <div class="panel">
+                <div class="panel-header">📝 FLOW Source</div>
+                <div class="panel-content"># Simple Search - FLOW version
+function get_array_value(pos: i32) -&gt; i32 {
+    # Simulate array: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91]
+    if pos == 0 { return 2 }
+    if pos == 1 { return 5 }
+    if pos == 2 { return 8 }
+    if pos == 3 { return 12 }
+    if pos == 4 { return 16 }
+    if pos == 5 { return 23 }
+    if pos == 6 { return 38 }
+    if pos == 7 { return 56 }
+    if pos == 8 { return 72 }
+    if pos == 9 { return 91 }
+    return -1
+}
+
+function linear_search(item: i32) -&gt; i32 {
+    let index: i32 = 0
+    
+    while index &lt; 10 {
+        let current: i32 = get_array_value(index)
+        if current == item {
+            return index
+        }
+        index = index + 1
+    }
+    
+    return -1
+}
+
+function main() -&gt; i32 {
+    let number: i32 = 23
+    let location: i32 = linear_search(number)
+    return location
+}
+</div>
+            </div>
+            <div class="panel">
+                <div class="panel-header">⚙️ Generated C</div>
+                <div class="panel-content c-code">#include &lt;stdint.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+
+int32_t get_array_value(int32_t pos);
+int32_t linear_search(int32_t item);
+int32_t main();
+
+int32_t get_array_value(int32_t pos) {
+    if (pos == 0) {
+        return 2;
+    }
+    if (pos == 1) {
+        return 5;
+    }
+    if (pos == 2) {
+        return 8;
+    }
+    if (pos == 3) {
+        return 12;
+    }
+    if (pos == 4) {
+        return 16;
+    }
+    if (pos == 5) {
+        return 23;
+    }
+    if (pos == 6) {
+        return 38;
+    }
+    if (pos == 7) {
+        return 56;
+    }
+    if (pos == 8) {
+        return 72;
+    }
+    if (pos == 9) {
+        return 91;
+    }
+    return (-1);
+}
+
+int32_t linear_search(int32_t item) {
+    int32_t index = 0;
+    while (index &lt; 10) {
+        int32_t current = get_array_value(index);
+        if (current == item) {
+            return index;
+        }
+        index = (index + 1);
+    }
+    return (-1);
+}
+
+int32_t main() {
+    int32_t number = 23;
+    int32_t location = linear_search(number);
+    return location;
+}
+</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="runBtn" onclick="runCode()" disabled>▶️ Run WebAssembly</button>
+            <button onclick="document.getElementById('output').textContent=''">🗑️ Clear</button>
+        </div>
+        
+        <div id="status">Loading...</div>
+        
+        <div class="panel">
+            <div class="panel-header">📤 Output</div>
+            <div class="panel-content" id="output">Waiting for execution...</div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('status').textContent = '⚠️ WASM not available - showing generated C code';
+        document.getElementById('runBtn').style.display = 'none';
+        document.getElementById('output').textContent = 'Install Emscripten to compile and run in browser:\n\n' +
+            'brew install emscripten\n' +
+            '# or\n' +
+            'git clone https://github.com/emscripten-core/emsdk.git third_party/emsdk\n' +
+            'cd third_party/emsdk && ./emsdk install latest && ./emsdk activate latest';
+    </script>
+</body>
+</html>

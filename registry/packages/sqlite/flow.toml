@@ -1,0 +1,15 @@
+[package]
+name = "sqlite"
+version = "0.1.0"
+description = "SQLite3 wrapper (open/exec/query_i64)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]
+
+[native]
+sources = ["native/flow_sqlite.c"]
+libs = ["sqlite3"]

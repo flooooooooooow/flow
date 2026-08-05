@@ -1,0 +1,37 @@
+# collectionsx package demo — VecI32 + MapI32
+import collectionsx.lib {
+    VecI32, MapI32,
+    vec_i32_create, vec_i32_push, vec_i32_get, vec_i32_len, vec_i32_destroy,
+    map_i32_create, map_i32_put, map_i32_get, map_i32_has, map_i32_destroy
+}
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    # --- VecI32: push past initial capacity to force grow ---
+    let mut v: VecI32 = vec_i32_create()
+    let vp: ptr<VecI32> = &v
+    for i in 0 to 10 {
+        vec_i32_push(vp, (i + 1) * 10)
+    }
+    printf("vec_len=%d\n", vec_i32_len(v))
+    printf("vec[0]=%d\n", vec_i32_get(v, 0))
+    printf("vec[9]=%d\n", vec_i32_get(v, 9))
+    vec_i32_destroy(v)
+
+    # --- MapI32: put / get / has ---
+    let mut m: MapI32 = map_i32_create()
+    let mp: ptr<MapI32> = &m
+    map_i32_put(mp, 1, 100)
+    map_i32_put(mp, 2, 200)
+    map_i32_put(mp, 42, 420)
+    printf("has_2=%d\n", map_i32_has(m, 2))
+    printf("has_3=%d\n", map_i32_has(m, 3))
+    printf("get_1=%d\n", map_i32_get(m, 1))
+    printf("get_42=%d\n", map_i32_get(m, 42))
+    map_i32_destroy(m)
+
+    return 0
+}
