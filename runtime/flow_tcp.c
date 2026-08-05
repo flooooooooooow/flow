@@ -1,4 +1,7 @@
-/* Thin TCP / HTTP route kernels for Flow harnesses (lib/runtime/tcp.flow, http_routed.flow). */
+/* Thin TCP socket kernels for Flow harnesses (lib/runtime/tcp.flow,
+ * http_routed.flow). The HTTP text protocol (request parse, route mapping,
+ * reply formatting) lives in lib/runtime/http_routed.flow; this file keeps
+ * sockets, the middleware state globals, and the selftest thread harnesses. */
 #include "flow_fiber.h"
 
 #include <arpa/inet.h>
@@ -70,36 +73,13 @@ int32_t flow_rt_tcp_send(int32_t fd, const void *buf, int32_t len) {
     return (int32_t)n;
 }
 
-static int32_t flow_rt_http_parse_request(const char *req, int32_t req_len,
-                                          char *out_path, int32_t path_cap) {
-    if (!req || req_len <= 0 || !out_path || path_cap < 2) return -1;
-    const char *p = req;
-    const char *end = req + req_len;
-    int method = 0;
-    if (req_len >= 3 && memcmp(p, "GET", 3) == 0) {
-        method = 1;
-        p += 3;
-    } else if (req_len >= 4 && memcmp(p, "POST", 4) == 0) {
-        method = 2;
-        p += 4;
-    } else if (req_len >= 3 && memcmp(p, "PUT", 3) == 0) {
-        method = 3;
-        p += 3;
-    } else if (req_len >= 6 && memcmp(p, "DELETE", 6) == 0) {
-        method = 4;
-        p += 6;
-    } else {
-        return 0;
-    }
-    while (p < end && *p == ' ') p++;
-    int i = 0;
-    while (p < end && *p != ' ' && *p != '\r' && *p != '\n' && i < path_cap - 1) {
-        out_path[i++] = *p++;
-    }
-    out_path[i] = '\0';
-    return method;
-}
-
+/* Middleware state shims. Flow has no module statics yet, so state that must
+ * persist across flow_http_* calls (and across the selftest server threads)
+ * stays in C globals behind getters/setters:
+ *   - g_http_mw_reqid / g_http_mw_auth: middleware enable flags
+ *   - g_http_req_seq: atomic X-Request-Id counter
+ *   - g_http_last_auth_ok: auth-scan result recorded by the Flow parser
+ * The protocol logic that reads them lives in lib/runtime/http_routed.flow. */
 static int g_http_mw_reqid = 1;
 static int g_http_mw_auth = 0; /* /api requires Authorization: Bearer flow */
 static uint64_t g_http_req_seq = 0;
@@ -113,67 +93,24 @@ void flow_rt_http_mw_auth_enable(int32_t on) {
     g_http_mw_auth = on ? 1 : 0;
 }
 
-int32_t flow_rt_http_last_auth_ok(void) {
-    return g_http_last_auth_ok ? 1 : 0;
-}
-
-static int header_has_bearer_flow(const char *req) {
-    const char *p = strstr(req, "Authorization:");
-    if (!p) p = strstr(req, "authorization:");
-    if (!p) return 0;
-    return strstr(p, "Bearer flow") != NULL || strstr(p, "bearer flow") != NULL;
-}
-
-int32_t flow_rt_http_reply(int32_t fd, int32_t status, const char *content_type,
-                           const char *body, int32_t body_len) {
-    if (fd < 0 || !body || body_len < 0) return -1;
-    const char *reason = "OK";
-    if (status == 404) reason = "Not Found";
-    else if (status == 400) reason = "Bad Request";
-    else if (status == 500) reason = "Internal Server Error";
-    else if (status == 201) reason = "Created";
-    else if (status == 401) reason = "Unauthorized";
-    if (!content_type) content_type = "text/plain";
-    char hdr[384];
-    int n;
-    if (g_http_mw_reqid) {
-        uint64_t rid = __atomic_add_fetch(&g_http_req_seq, 1, __ATOMIC_RELAXED);
-        n = snprintf(hdr, sizeof(hdr),
-                     "HTTP/1.1 %d %s\r\nContent-Type: %s\r\n"
-                     "X-Request-Id: %llu\r\n"
-                     "Content-Length: %d\r\nConnection: close\r\n\r\n",
-                     status, reason, content_type,
-                     (unsigned long long)rid, body_len);
-    } else {
-        n = snprintf(hdr, sizeof(hdr),
-                     "HTTP/1.1 %d %s\r\nContent-Type: %s\r\n"
-                     "Content-Length: %d\r\nConnection: close\r\n\r\n",
-                     status, reason, content_type, body_len);
-    }
-    if (n <= 0) return -1;
-    if (flow_rt_tcp_send(fd, hdr, n) < 0) return -1;
-    if (body_len > 0 && flow_rt_tcp_send(fd, body, body_len) < 0) return -1;
-    return n + body_len;
-}
-
-/* route_kind: 0=GET /, 1=GET /api, 2=GET /health, 3=other/404, <0=fail */
-int32_t flow_rt_http_recv_route_kind(int32_t cfd) {
-    char buf[2048];
-    char path[256];
-    int32_t n = flow_rt_tcp_recv(cfd, buf, (int32_t)sizeof(buf) - 1);
-    if (n <= 0) return -1;
-    buf[n] = '\0';
-    g_http_last_auth_ok = header_has_bearer_flow(buf);
-    int32_t method = flow_rt_http_parse_request(buf, n, path, (int32_t)sizeof(path));
-    if (method != 1) return 3;
-    if (path[0] == '/' && path[1] == '\0') return 0;
-    if (strcmp(path, "/api") == 0) return 1;
-    if (strcmp(path, "/health") == 0) return 2;
-    return 3;
+int32_t flow_rt_http_mw_reqid_enabled(void) {
+    return g_http_mw_reqid ? 1 : 0;
 }
 
 int32_t flow_rt_http_mw_auth_required(void) {
     return g_http_mw_auth ? 1 : 0;
+}
+
+int64_t flow_rt_http_next_req_id(void) {
+    return (int64_t)__atomic_add_fetch(&g_http_req_seq, 1, __ATOMIC_RELAXED);
+}
+
+int32_t flow_rt_http_last_auth_ok(void) {
+    return g_http_last_auth_ok ? 1 : 0;
+}
+
+void flow_rt_http_set_last_auth_ok(int32_t ok) {
+    g_http_last_auth_ok = ok ? 1 : 0;
 }
 
 /* flow_http_route_one / flow_http_routed_serve → lib/runtime/http_routed.flow */
