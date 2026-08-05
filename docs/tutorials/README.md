@@ -25,6 +25,7 @@ Step-by-step tracks with **browser compile & run** on every complete `main` exam
 | [systems.md](systems.md) | Rings, pools, bits |
 | [effects-basics.md](effects-basics.md) | Effect-shaped design |
 | [autodiff-basics.md](autodiff-basics.md) | Dual numbers |
+| [ml-on-macbook.md](ml-on-macbook.md) | Training real models on a MacBook: digits MLP, parallel shards, Metal status |
 | [audio-basics.md](audio-basics.md) | Sample / DSP loops |
 | [advanced.md](advanced.md) | Effects deep-dive |
 | [dynamics.md](dynamics.md) | Control / `dsys` path |
@@ -35,7 +36,7 @@ Step-by-step tracks with **browser compile & run** on every complete `main` exam
 
 1. **New to Flow:** beginner → control → functions → structs → arrays → projects  
 2. **Systems / C background:** pointers → **memory** → systems → algorithms  
-3. **ML / DSP:** autodiff-basics → audio-basics → [autodiff guide](../library/autodiff-guide.md)  
+3. **ML / DSP:** autodiff-basics → [ml-on-macbook](ml-on-macbook.md) → audio-basics → [autodiff guide](../library/autodiff-guide.md)  
 4. **Vision / control:** intermediate → dynamics → [VISION.md](../../VISION.md)
 
 ## Manual memory (native)
