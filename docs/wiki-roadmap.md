@@ -1,7 +1,6 @@
 # Wiki Roadmap
 
-> Phased plan for [abhishek-shivakumar.com/flow](https://abhishek-shivakumar.com/flow/)  
-> (also at [/transpile/](https://abhishek-shivakumar.com/transpile/))  
+> Phased plan for [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)  
 > Strategy: [wiki-strategy.md](wiki-strategy.md)
 
 ---
@@ -17,9 +16,10 @@
 | Third-party `flow-verify` section (1000+ proofs) | ✅ |
 | Euclid book index pages (auto-generated) | ✅ |
 | Build script (`scripts/build_wiki.py`) | ✅ |
-| Deploy script (`scripts/deploy_wiki.py`) | ✅ |
+| Deploy script (`scripts/deploy_wiki.py`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
 | Version dropdown + changelog | ✅ |
-| VPS live deploy (`/flow/` + `/transpile/`) | ✅ |
+| GitHub Pages deploy (`wiki.yml`) | ✅ |
+| VPS live deploy (`/flow/` + `/transpile/`) | ❌ disabled |
 | Grammar page + EBNF viewer | ✅ |
 | Language roadmap linked in nav | ✅ |
 | Admonitions (`note/tip/warning/important/caution`) | ✅ |
@@ -69,7 +69,7 @@
 | `flow-lang.org` DNS + SSL | Redirect from `/flow/` + `/transpile/` |
 | Versioned doc sets (`/v0.8/`, `/latest/`) | Build matrix in CI |
 | Package docs (`flow.toml` dependencies) | Per-package subsites |
-| CI auto-deploy on `main` | Webhook to VPS |
+| CI auto-deploy on `main` | ✅ GitHub Pages (`wiki.yml`) |
 
 ---
 
@@ -105,7 +105,7 @@ The **language** roadmap (`ROADMAP.md`) tracks compiler features. The **wiki** r
 3. Run `python3 scripts/build_wiki.py` (also runs Pagefind if `node`/`npx` are available)
 4. Optional re-index only: `./scripts/build_pagefind.sh`
 5. Preview: `cd build/wiki && python3 -m http.server 8777`
-6. Deploy: `python3 scripts/deploy_wiki.py`
+6. Preview: `cd build/wiki && python3 -m http.server 8777` — production deploys from `main` via GitHub Pages
 
 ### Releases / changelog
 
