@@ -1,0 +1,325 @@
+# L-SYSTEM TREE: a three-dimensional branching grammar, projected and
+# moving in wind.
+#
+# MODEL
+#   The same idea as lsystem_plant.flow lifted off the plane. Every branch
+#   carries an orthonormal frame: its growth direction d and a vector u
+#   across it. Each branch spawns three children, each a genuine rotation of
+#   the parent frame by `tilt` about an azimuth 120 degrees apart:
+#
+#     d_child = rotate(d_parent, tilt, 120 deg * k + jitter(branch id))
+#     d_child = normalize(d_child + wind(t, depth))
+#     length  = length_parent * ratio
+#
+#   The tree is rebuilt by recursion every frame, so the wind term is part
+#   of the growth rule rather than a deformation applied afterwards. The
+#   branch id seeds the jitter, so the same tree reappears each frame and
+#   only the wind moves. Rotating a frame, rather than adding to a polar
+#   angle, is what keeps the crown upright instead of folding over.
+#
+# PROJECTION
+#   Perspective from a camera 300 units in front of the tree, focal 300.
+#   Nearer branches are drawn thicker and lighter, which is the only depth
+#   cue in the picture.
+#
+# PARAMETERS
+#   7 levels, 3 children each: 3280 segments. Growth reveals one level
+#   roughly every 8 frames, then the wind runs continuously.
+#
+# KEYS
+#   1 OAK      tilt 34 deg  ratio 0.74  stiff, spreading
+#   2 POPLAR   tilt 17 deg  ratio 0.79  narrow, upright
+#   3 WILLOW   tilt 48 deg  ratio 0.70  wide and droopy, sways hardest
+#   R regrow    P pause (freezes the wind)    Esc quit
+#
+# PHENOMENON
+#   Two numbers, tilt and ratio, separate three recognisable tree habits.
+#   The sway amplitude scales with depth, so the trunk barely moves while
+#   the tips whip, which is what makes it read as a real tree rather than
+#   a rotating fractal.
+#
+# Run: ./flow gfx examples/morphogenesis/lsystem_tree.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+
+const LEVELS: i32 = 7
+const CAM_D: f64 = 300.0
+const FOCAL: f64 = 300.0
+const CX: f64 = 256.0
+const CY: f64 = 445.0
+const DEG: f64 = 0.017453292519943295
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 6072024
+let mut drawn_segments: i32 = 0
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+# Branch identity hash: stable across frames, so only the wind animates.
+function hash_unit(id: u32) -> f64 {
+    let mut h: u32 = id * 2654435761
+    h = h ^ (h >> 15)
+    h = h * 2246822519
+    h = h ^ (h >> 13)
+    let bits: i32 = ((h >> 8) % 2048) as i32
+    return (bits as f64) / 1024.0 - 1.0
+}
+
+function preset_tilt(p: i32) -> f64 {
+    if p == 1 { return 17.0 }
+    if p == 2 { return 48.0 }
+    return 34.0
+}
+
+function preset_ratio(p: i32) -> f64 {
+    if p == 1 { return 0.79 }
+    if p == 2 { return 0.70 }
+    return 0.74
+}
+
+function preset_sway(p: i32) -> f64 {
+    if p == 1 { return 2.2 }
+    if p == 2 { return 5.5 }
+    return 3.2
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "POPLAR" }
+    if p == 2 { return "WILLOW" }
+    return "OAK"
+}
+
+function project_x(x: f64, z: f64) -> i32 {
+    return (CX + FOCAL * x / (z + CAM_D)) as i32
+}
+
+function project_y(y: f64, z: f64) -> i32 {
+    return (FIELD_Y as f64 + CY + FOCAL * y / (z + CAM_D)) as i32
+}
+
+function stroke(g: Gfx, x0: f64, y0: f64, z0: f64, x1: f64, y1: f64, z1: f64,
+                w: i32, r: i32, gg: i32, b: i32) -> void {
+    let sx0: i32 = project_x(x0, z0)
+    let sy0: i32 = project_y(y0, z0)
+    let sx1: i32 = project_x(x1, z1)
+    let sy1: i32 = project_y(y1, z1)
+    let mut dx: i32 = sx1 - sx0
+    let mut dy: i32 = sy1 - sy0
+    if dx < 0 { dx = 0 - dx }
+    if dy < 0 { dy = 0 - dy }
+    let mut steps: i32 = dx
+    if dy > steps { steps = dy }
+    if steps < 1 { steps = 1 }
+    if steps > 90 { steps = 90 }
+    for k in 0 to steps + 1 {
+        let f: f64 = (k as f64) / (steps as f64)
+        let px: i32 = sx0 + ((sx1 - sx0) as f64 * f) as i32
+        let py: i32 = sy0 + ((sy1 - sy0) as f64 * f) as i32
+        gfx_fill_rect(g, px - w / 2, py - w / 2, w, w, r, gg, b)
+    }
+}
+
+# One branch, then its three children. The branch carries its own frame:
+# `d` is the growth direction and `u` a unit vector across it, so children
+# are a true rotation of the parent rather than an accumulated angle.
+# `grow` is the number of levels that have appeared so far, fractionally.
+function branch(g: Gfx, x: f64, y: f64, z: f64,
+                dx: f64, dy: f64, dz: f64, ux: f64, uy: f64, uz: f64,
+                length: f64, depth: i32, id: u32, t: f64,
+                tilt: f64, ratio: f64, sway: f64, grow: f64) -> void {
+    if depth > LEVELS { return }
+    let mut portion: f64 = grow - (depth as f64)
+    if portion <= 0.0 { return }
+    if portion > 1.0 { portion = 1.0 }
+
+    let len: f64 = length * portion
+    let x1: f64 = x + len * dx
+    let y1: f64 = y + len * dy
+    let z1: f64 = z + len * dz
+
+    let shade: f64 = (depth as f64) / (LEVELS as f64)
+    let near: f64 = 1.0 - (z + CAM_D) / (CAM_D + 220.0)
+    let mut lift: f64 = 0.65 + 0.5 * near
+    if lift < 0.4 { lift = 0.4 }
+    if lift > 1.25 { lift = 1.25 }
+    let mut r: f64 = (128.0 - 62.0 * shade) * lift
+    let mut gg: f64 = (86.0 + 128.0 * shade) * lift
+    let mut b: f64 = (54.0 + 44.0 * shade) * lift
+    if r > 255.0 { r = 255.0 }
+    if gg > 255.0 { gg = 255.0 }
+    if b > 255.0 { b = 255.0 }
+
+    let mut w: i32 = LEVELS - depth - 2
+    if w < 1 { w = 1 }
+    stroke(g, x, y, z, x1, y1, z1, w, r as i32, gg as i32, b as i32)
+    drawn_segments = drawn_segments + 1
+
+    if depth == LEVELS and portion > 0.9 {
+        let lx: i32 = project_x(x1, z1)
+        let ly: i32 = project_y(y1, z1)
+        gfx_fill_rect(g, lx - 2, ly - 2, 4, 4,
+                      (78.0 * lift) as i32, (196.0 * lift) as i32,
+                      (92.0 * lift) as i32)
+        return
+    }
+
+    # Third frame axis: w = d x u.
+    let wx: f64 = dy * uz - dz * uy
+    let wy: f64 = dz * ux - dx * uz
+    let wz: f64 = dx * uy - dy * ux
+
+    for k in 0 to 3 {
+        let cid: u32 = id * 3 + (k as u32) + 1
+        let jphi: f64 = 30.0 * hash_unit(cid)
+        let jt: f64 = 9.0 * hash_unit(cid * 7 + 11)
+        let a: f64 = (120.0 * (k as f64) + jphi) * DEG
+        let ang: f64 = (tilt + jt) * DEG
+        let cs: f64 = cos(ang)
+        let sn: f64 = sin(ang)
+        let rx: f64 = ux * cos(a) + wx * sin(a)
+        let ry: f64 = uy * cos(a) + wy * sin(a)
+        let rz: f64 = uz * cos(a) + wz * sin(a)
+
+        # Wind: a lateral push whose amplitude grows with depth.
+        let phase: f64 = t * 1.7 + (depth as f64) * 0.8 + 6.0 * hash_unit(cid)
+        let amp: f64 = 0.014 * sway * ((depth as f64) + 1.0)
+        let mut cdx: f64 = dx * cs + rx * sn + amp * sin(phase)
+        let mut cdy: f64 = dy * cs + ry * sn
+        let mut cdz: f64 = dz * cs + rz * sn + 0.4 * amp * cos(phase * 0.7)
+        let mut n: f64 = sqrt(cdx * cdx + cdy * cdy + cdz * cdz)
+        if n < 0.000001 { n = 1.0 }
+        cdx = cdx / n
+        cdy = cdy / n
+        cdz = cdz / n
+
+        # Re-orthogonalise the across-vector against the new direction.
+        let dot: f64 = ux * cdx + uy * cdy + uz * cdz
+        let mut cux: f64 = ux - cdx * dot
+        let mut cuy: f64 = uy - cdy * dot
+        let mut cuz: f64 = uz - cdz * dot
+        let mut m: f64 = sqrt(cux * cux + cuy * cuy + cuz * cuz)
+        if m < 0.001 {
+            cux = wx
+            cuy = wy
+            cuz = wz
+            m = 1.0
+        }
+        cux = cux / m
+        cuy = cuy / m
+        cuz = cuz / m
+
+        branch(g, x1, y1, z1, cdx, cdy, cdz, cux, cuy, cuz,
+               length * ratio, depth + 1, cid, t, tilt, ratio, sway, grow)
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, tilt: f64, ratio: f64, segs: i32,
+                  grow: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "L-SYSTEM TREE  3D + WIND", 2,
+                                234, 240, 228)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "HABIT", 1, 142, 156, 136)
+    let t3: i32 = gfx_draw_text(g, 46, 28, preset_name(preset), 1, 190, 248, 160)
+    let t4: i32 = gfx_draw_text(g, 116, 28, "TILT", 1, 142, 156, 136)
+    let t5: i32 = gfx_draw_fixed(g, 148, 28, tilt, 1, 1, 234, 240, 228)
+    let t6: i32 = gfx_draw_text(g, 196, 28, "RATIO", 1, 142, 156, 136)
+    let t7: i32 = gfx_draw_fixed(g, 234, 28, ratio, 2, 1, 234, 240, 228)
+    let t8: i32 = gfx_draw_text(g, 282, 28, "SEGMENTS", 1, 142, 156, 136)
+    let t9: i32 = gfx_draw_int(g, 338, 28, segs, 1, 234, 240, 228)
+    let ta: i32 = gfx_draw_text(g, 390, 28, "LEVEL", 1, 142, 156, 136)
+    let tb: i32 = gfx_draw_fixed(g, 428, 28, grow, 1, 1, 234, 240, 228)
+    let tc: i32 = gfx_draw_text(g, 8, 42,
+        "1 OAK  2 POPLAR  3 WILLOW  R REGROW  P PAUSE (freezes the wind)",
+        1, 104, 116, 100)
+    if paused {
+        let td: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let te: i32 = gfx_draw_text(g, 8, 572,
+        "d_child = normalize(rotate(d, tilt, azimuth) + wind(t, depth))", 1,
+        116, 128, 110)
+    let tf: i32 = gfx_draw_text(g, 8, 582,
+        "sway amplitude scales with depth: the trunk holds, the tips whip",
+        1, 116, 128, 110)
+}
+
+function main() -> i32 {
+    let mut preset: i32 = 0
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "L-system tree - Flow morphogenesis")
+
+    let mut t: f64 = 0.0
+    let mut grow: f64 = 0.0
+    let mut root_id: u32 = rng_next() % 100000
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut new_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            grow = 0.0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !new_held {
+                root_id = rng_next() % 100000
+                grow = 0.0
+            }
+            new_held = true
+        } else {
+            new_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            t = t + 0.05
+            if grow < (LEVELS + 1) as f64 {
+                grow = grow + 0.125
+            }
+        }
+
+        gfx_clear(g, 12, 15, 20)
+        drawn_segments = 0
+        branch(g, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0,
+               84.0, 0, root_id, t,
+               preset_tilt(preset), preset_ratio(preset), preset_sway(preset),
+               grow)
+        draw_hud(g, preset, preset_tilt(preset), preset_ratio(preset),
+                 drawn_segments, grow, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
