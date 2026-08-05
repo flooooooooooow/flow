@@ -270,11 +270,8 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 - ✅ **NEW:** LSP inline diagnostics, find references, rename (39-test harness in `scripts/test_lsp_server.py`)
 
 **What's broken/missing:**
-- ✅ **FIXED (#124):** MLIR backend exercised against chained postfix AST shapes
-  (`ptr[i].field`, `ptr[i].pos.x`, `make().x`, `array[i].field`, method call on
-  index). Type resolution no longer mistakes `FunctionCall.name` for a variable;
-  field stores lower via GEP chains; struct arrays use `!llvm.array` alloca
-  (memref cannot hold `!llvm.struct`). See `tests/unit/test_mlir_chained_ast.py`.
+- Postfix-chaining fixes are validated on the C backend only; the MLIR backend has
+  not been exercised against the new chained AST shapes
 - ✅ **FIXED (#117):** `break`/`continue` now have dedicated `BreakStatement`/
   `ContinueStatement` AST nodes (their own lexer keywords, not identifiers).
   The C generator emits `break;`/`continue;` directly from those nodes; the

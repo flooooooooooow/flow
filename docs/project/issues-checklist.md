@@ -113,7 +113,7 @@
 - [ ] #121 [roadmap:wasm-target] WASM target https://github.com/flooooooooooow/flow/issues/121
 - [x] #122 [roadmap:record-tetris-demo-gif] Record Tetris demo GIF https://github.com/flooooooooooow/flow/issues/122
 - [ ] #123 [roadmap:function-inlining] Function inlining https://github.com/flooooooooooow/flow/issues/123
-- [x] #124 [roadmap:mlir-backend-not-exercised-against-new-chained-ast-shapes] MLIR backend not exercised against new chained AST shapes https://github.com/flooooooooooow/flow/issues/124
+- [ ] #124 [roadmap:mlir-backend-not-exercised-against-new-chained-ast-shapes] MLIR backend not exercised against new chained AST shapes https://github.com/flooooooooooow/flow/issues/124
 - [x] #125 [roadmap:cross-platform-graphics-linux] Cross-platform graphics (Linux) https://github.com/flooooooooooow/flow/issues/125
 - [ ] #126 [roadmap:constant-propagation] Constant propagation https://github.com/flooooooooooow/flow/issues/126
 - [ ] #127 [roadmap:debugger] Debugger https://github.com/flooooooooooow/flow/issues/127
