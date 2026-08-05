@@ -1,0 +1,343 @@
+# Real-Time Audio Callback Benchmark
+# Tests hard real-time performance: fixed buffer, no allocations,
+# parameter automation, and measures MAX latency + jitter.
+#
+# Simulates a synthesizer with:
+# - Multiple oscillators (wavetable)
+# - Filter with parameter smoothing
+# - Envelope generator
+# - Mixing and gain control
+#
+# Key metrics: max callback time, jitter (stddev), deadline misses
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+const PI: f64 = 3.14159265358979323846
+const TWO_PI: f64 = 6.28318530717958647692
+
+const SAMPLE_RATE: f64 = 48000.0
+const BUFFER_SIZE: i32 = 256  # ~5.3ms at 48kHz
+const NUM_VOICES: i32 = 8
+const WAVETABLE_SIZE: i32 = 2048
+
+# Pre-computed wavetable (sine wave)
+struct Oscillator {
+    phase: f64,
+    phase_inc: f64,
+    amplitude: f64
+}
+
+struct Filter {
+    cutoff: f64,
+    resonance: f64,
+    # State variables (biquad)
+    z1: f64,
+    z2: f64,
+    # Smoothed parameters (exponential smoothing)
+    cutoff_smooth: f64,
+    resonance_smooth: f64
+}
+
+struct Envelope {
+    attack: f64,
+    decay: f64,
+    sustain: f64,
+    release: f64,
+    phase: f64,
+    level: f64,
+    stage: i32  # 0=off, 1=attack, 2=decay, 3=sustain, 4=release
+}
+
+struct Voice {
+    osc: Oscillator,
+    filter: Filter,
+    env: Envelope,
+    active: i32
+}
+
+
+# Initialize wavetable with sine wave
+function init_wavetable(table: ptr<f64>) {
+    for i in 0 to WAVETABLE_SIZE {
+        let phase: f64 = i / WAVETABLE_SIZE * TWO_PI
+        table[i] = sin(phase)
+    }
+}
+
+# Initialize a voice
+function init_voice(v: ptr<Voice>, freq: f64) {
+    v[0].osc.phase = 0.0
+    v[0].osc.phase_inc = freq / SAMPLE_RATE
+    v[0].osc.amplitude = 0.5
+    
+    v[0].filter.cutoff = 0.3
+    v[0].filter.resonance = 0.5
+    v[0].filter.z1 = 0.0
+    v[0].filter.z2 = 0.0
+    v[0].filter.cutoff_smooth = 0.3
+    v[0].filter.resonance_smooth = 0.5
+    
+    v[0].env.attack = 0.001
+    v[0].env.decay = 0.0005
+    v[0].env.sustain = 0.7
+    v[0].env.release = 0.0001
+    v[0].env.phase = 0.0
+    v[0].env.level = 0.0
+    v[0].env.stage = 1  # Start in attack
+    
+    v[0].active = 1
+}
+
+# Process one voice for one sample
+function process_voice_sample(
+    wavetable: ptr<f64>,
+    voice: ptr<Voice>,
+    smooth_coeff: f64
+) -> f64 {
+    # Oscillator - wavetable lookup
+    let phase_idx: i32 = voice[0].osc.phase * WAVETABLE_SIZE
+    let idx: i32 = phase_idx % WAVETABLE_SIZE
+    let osc_out: f64 = wavetable[idx] * voice[0].osc.amplitude
+    
+    voice[0].osc.phase = voice[0].osc.phase + voice[0].osc.phase_inc
+    if voice[0].osc.phase >= 1.0 {
+        voice[0].osc.phase = voice[0].osc.phase - 1.0
+    }
+    
+    # Filter - simple lowpass with smoothing
+    voice[0].filter.cutoff_smooth = voice[0].filter.cutoff_smooth + smooth_coeff * (voice[0].filter.cutoff - voice[0].filter.cutoff_smooth)
+    let alpha: f64 = voice[0].filter.cutoff_smooth
+    let filt_out: f64 = (1.0 - alpha) * osc_out + alpha * voice[0].filter.z1
+    voice[0].filter.z1 = filt_out
+    
+    # Envelope
+    let env_level: f64 = voice[0].env.level
+    if voice[0].env.stage == 1 {
+        voice[0].env.level = voice[0].env.level + voice[0].env.attack
+        if voice[0].env.level >= 1.0 {
+            voice[0].env.level = 1.0
+            voice[0].env.stage = 2
+        }
+    }
+    if voice[0].env.stage == 2 {
+        voice[0].env.level = voice[0].env.level - voice[0].env.decay * (voice[0].env.level - voice[0].env.sustain)
+        if voice[0].env.level <= voice[0].env.sustain + 0.001 {
+            voice[0].env.level = voice[0].env.sustain
+            voice[0].env.stage = 3
+        }
+    }
+    
+    return filt_out * env_level
+}
+
+# Process one audio callback
+# Returns the callback duration in microseconds
+function process_callback(
+    wavetable: ptr<f64>,
+    voices: ptr<Voice>,
+    num_voices: i32,
+    buffer: ptr<f64>,
+    buffer_size: i32,
+    param_automation: f64
+) -> f64 {
+    let start: i64 = clock()
+    
+    # Clear buffer
+    for i in 0 to buffer_size {
+        buffer[i] = 0.0
+    }
+    
+    # Process each voice
+    let smooth_coeff: f64 = 0.001
+    for v in 0 to num_voices {
+        if voices[v].active == 1 {
+            # Apply parameter automation (modulate filter cutoff)
+            voices[v].filter.cutoff = 0.2 + 0.3 * param_automation
+            
+            for i in 0 to buffer_size {
+                let sample: f64 = process_voice_sample(wavetable, &voices[v], smooth_coeff)
+                buffer[i] = buffer[i] + sample
+            }
+        }
+    }
+    
+    # Master gain / limiting
+    for i in 0 to buffer_size {
+        let mut sample: f64 = buffer[i] * 0.125  # -18dB headroom for 8 voices
+        # Soft clip
+        if sample > 1.0 {
+            sample = 1.0
+        }
+        if sample < -1.0 {
+            sample = -1.0
+        }
+        buffer[i] = sample
+    }
+    
+    let end: i64 = clock()
+    return (end - start) / CLOCKS_PER_SEC * 1000000.0  # Return microseconds
+}
+
+function main() -> i32 {
+    println("==============================================")
+    println("  REAL-TIME AUDIO CALLBACK BENCHMARK")
+    println("==============================================")
+    println("")
+    print("Sample rate: ")
+    print(SAMPLE_RATE)
+    println(" Hz")
+    print("Buffer size: ")
+    print(BUFFER_SIZE)
+    print(" samples (")
+    printf("%.2f", BUFFER_SIZE / SAMPLE_RATE * 1000.0)
+    println(" ms)")
+    print("Voices: ")
+    println(NUM_VOICES)
+    println("")
+    
+    # Calculate deadline in microseconds
+    let deadline_us: f64 = BUFFER_SIZE / SAMPLE_RATE * 1000000.0
+    print("Hard deadline: ")
+    printf("%.1f", deadline_us)
+    println(" µs")
+    println("")
+    
+    # Initialize wavetable
+    let wavetable: array<f64, 2048> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let table_ptr: ptr<f64> = wavetable
+    init_wavetable(table_ptr)
+    
+    # Initialize voices at different frequencies (chord)
+    let voices: array<Voice, 8> = [
+        Voice { osc: Oscillator { phase: 0.0, phase_inc: 0.0, amplitude: 0.5 },
+                filter: Filter { cutoff: 0.3, resonance: 0.5, z1: 0.0, z2: 0.0, cutoff_smooth: 0.3, resonance_smooth: 0.5 },
+                env: Envelope { attack: 0.001, decay: 0.0005, sustain: 0.7, release: 0.0001, phase: 0.0, level: 0.0, stage: 0 },
+                active: 0 },
+        Voice { osc: Oscillator { phase: 0.0, phase_inc: 0.0, amplitude: 0.5 },
+                filter: Filter { cutoff: 0.3, resonance: 0.5, z1: 0.0, z2: 0.0, cutoff_smooth: 0.3, resonance_smooth: 0.5 },
+                env: Envelope { attack: 0.001, decay: 0.0005, sustain: 0.7, release: 0.0001, phase: 0.0, level: 0.0, stage: 0 },
+                active: 0 },
+        Voice { osc: Oscillator { phase: 0.0, phase_inc: 0.0, amplitude: 0.5 },
+                filter: Filter { cutoff: 0.3, resonance: 0.5, z1: 0.0, z2: 0.0, cutoff_smooth: 0.3, resonance_smooth: 0.5 },
+                env: Envelope { attack: 0.001, decay: 0.0005, sustain: 0.7, release: 0.0001, phase: 0.0, level: 0.0, stage: 0 },
+                active: 0 },
+        Voice { osc: Oscillator { phase: 0.0, phase_inc: 0.0, amplitude: 0.5 },
+                filter: Filter { cutoff: 0.3, resonance: 0.5, z1: 0.0, z2: 0.0, cutoff_smooth: 0.3, resonance_smooth: 0.5 },
+                env: Envelope { attack: 0.001, decay: 0.0005, sustain: 0.7, release: 0.0001, phase: 0.0, level: 0.0, stage: 0 },
+                active: 0 },
+        Voice { osc: Oscillator { phase: 0.0, phase_inc: 0.0, amplitude: 0.5 },
+                filter: Filter { cutoff: 0.3, resonance: 0.5, z1: 0.0, z2: 0.0, cutoff_smooth: 0.3, resonance_smooth: 0.5 },
+                env: Envelope { attack: 0.001, decay: 0.0005, sustain: 0.7, release: 0.0001, phase: 0.0, level: 0.0, stage: 0 },
+                active: 0 },
+        Voice { osc: Oscillator { phase: 0.0, phase_inc: 0.0, amplitude: 0.5 },
+                filter: Filter { cutoff: 0.3, resonance: 0.5, z1: 0.0, z2: 0.0, cutoff_smooth: 0.3, resonance_smooth: 0.5 },
+                env: Envelope { attack: 0.001, decay: 0.0005, sustain: 0.7, release: 0.0001, phase: 0.0, level: 0.0, stage: 0 },
+                active: 0 },
+        Voice { osc: Oscillator { phase: 0.0, phase_inc: 0.0, amplitude: 0.5 },
+                filter: Filter { cutoff: 0.3, resonance: 0.5, z1: 0.0, z2: 0.0, cutoff_smooth: 0.3, resonance_smooth: 0.5 },
+                env: Envelope { attack: 0.001, decay: 0.0005, sustain: 0.7, release: 0.0001, phase: 0.0, level: 0.0, stage: 0 },
+                active: 0 },
+        Voice { osc: Oscillator { phase: 0.0, phase_inc: 0.0, amplitude: 0.5 },
+                filter: Filter { cutoff: 0.3, resonance: 0.5, z1: 0.0, z2: 0.0, cutoff_smooth: 0.3, resonance_smooth: 0.5 },
+                env: Envelope { attack: 0.001, decay: 0.0005, sustain: 0.7, release: 0.0001, phase: 0.0, level: 0.0, stage: 0 },
+                active: 0 }
+    ]
+    let voices_ptr: ptr<Voice> = voices
+    
+    # Initialize voices with frequencies (C major chord + octave)
+    let freqs: array<f64, 8> = [261.63, 329.63, 392.00, 523.25, 659.26, 783.99, 130.81, 196.00]
+    for v in 0 to NUM_VOICES {
+        init_voice(&voices[v], freqs[v])
+    }
+    
+    # Audio output buffer
+    let buffer: array<f64, 256> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let buf_ptr: ptr<f64> = buffer
+    
+    # Statistics
+    let mut total_time: f64 = 0.0
+    let mut max_time: f64 = 0.0
+    let mut min_time: f64 = 1000000.0
+    let mut sum_sq: f64 = 0.0  # For variance
+    let mut deadline_misses: i32 = 0
+    
+    # Run 10 seconds of audio (at 48kHz with 256 buffer = ~1875 callbacks)
+    let num_callbacks: i32 = 10 * 48000 / BUFFER_SIZE
+    
+    print("Running ")
+    print(num_callbacks)
+    println(" callbacks (10 sec audio)...")
+    println("")
+    
+    for cb in 0 to num_callbacks {
+        # Simulate parameter automation (LFO on filter cutoff)
+        let param: f64 = 0.5 + 0.5 * sin(cb * 0.01)
+        
+        let callback_time: f64 = process_callback(table_ptr, voices_ptr, NUM_VOICES, buf_ptr, BUFFER_SIZE, param)
+        
+        total_time = total_time + callback_time
+        sum_sq = sum_sq + callback_time * callback_time
+        
+        if callback_time > max_time {
+            max_time = callback_time
+        }
+        if callback_time < min_time {
+            min_time = callback_time
+        }
+        if callback_time > deadline_us {
+            deadline_misses = deadline_misses + 1
+        }
+    }
+    
+    let avg_time: f64 = total_time / num_callbacks
+    let variance: f64 = sum_sq / num_callbacks - avg_time * avg_time
+    let jitter: f64 = sqrt(variance)
+    
+    println("Results:")
+    println("─────────────────────────────────────────────")
+    print("  Average callback time: ")
+    printf("%.1f", avg_time)
+    println(" µs")
+    
+    print("  Min callback time:     ")
+    printf("%.1f", min_time)
+    println(" µs")
+    
+    print("  Max callback time:     ")
+    printf("%.1f", max_time)
+    println(" µs")
+    
+    print("  Jitter (stddev):       ")
+    printf("%.1f", jitter)
+    println(" µs")
+    
+    print("  CPU usage:             ")
+    printf("%.1f", avg_time / deadline_us * 100.0)
+    println("%")
+    
+    print("  Deadline misses:       ")
+    print(deadline_misses)
+    print(" / ")
+    print(num_callbacks)
+    if deadline_misses == 0 {
+        println(" ✓")
+    } else {
+        println(" ✗")
+    }
+    
+    print("  Headroom:              ")
+    printf("%.1f", deadline_us - max_time)
+    println(" µs")
+    
+    println("")
+    println("Benchmark complete.")
+    return 0
+}

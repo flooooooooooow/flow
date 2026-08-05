@@ -1,0 +1,296 @@
+# Fast Fourier Transform Benchmark
+# Cooley-Tukey radix-2 FFT implementation
+#
+# Computes the Discrete Fourier Transform in O(N log N) time
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const CLOCKS_PER_SEC: i64 = 1000000
+const PI: f64 = 3.14159265358979323846
+
+# ============================================================================
+# COMPLEX NUMBER OPERATIONS
+# ============================================================================
+
+struct Complex {
+    re: f64,
+    im: f64
+}
+
+function complex_add(a: Complex, b: Complex) -> Complex {
+    return Complex { re: a.re + b.re, im: a.im + b.im }
+}
+
+function complex_sub(a: Complex, b: Complex) -> Complex {
+    return Complex { re: a.re - b.re, im: a.im - b.im }
+}
+
+function complex_mul(a: Complex, b: Complex) -> Complex {
+    return Complex {
+        re: a.re * b.re - a.im * b.im,
+        im: a.re * b.im + a.im * b.re
+    }
+}
+
+function complex_exp(theta: f64) -> Complex {
+    return Complex { re: cos(theta), im: sin(theta) }
+}
+
+function complex_abs(c: Complex) -> f64 {
+    return sqrt(c.re * c.re + c.im * c.im)
+}
+
+# ============================================================================
+# BIT REVERSAL
+# ============================================================================
+
+function bit_reverse(x: i32, bits: i32) -> i32 {
+    let mut result: i32 = 0
+    let mut val: i32 = x
+    for i in 0 to bits {
+        result = result << 1
+        result = result | (val & 1)
+        val = val >> 1
+    }
+    return result
+}
+
+function log2_int(n: i32) -> i32 {
+    let mut bits: i32 = 0
+    let mut val: i32 = n
+    while val > 1 {
+        val = val >> 1
+        bits = bits + 1
+    }
+    return bits
+}
+
+# ============================================================================
+# COOLEY-TUKEY FFT - In-place, radix-2
+# ============================================================================
+
+function fft_cooley_tukey(data: ptr<Complex>, n: i32) {
+    let bits: i32 = log2_int(n)
+    
+    # Bit-reversal permutation
+    for i in 0 to n {
+        let j: i32 = bit_reverse(i, bits)
+        if i < j {
+            let temp: Complex = data[i]
+            data[i] = data[j]
+            data[j] = temp
+        }
+    }
+    
+    # Butterfly operations
+    let mut size: i32 = 2
+    while size <= n {
+        let half: i32 = size / 2
+        let angle_step: f64 = 0.0 - 2.0 * PI / size
+        
+        let mut k: i32 = 0
+        while k < n {
+            for j in 0 to half {
+                let angle: f64 = angle_step * j
+                let twiddle: Complex = complex_exp(angle)
+                
+                let even_idx: i32 = k + j
+                let odd_idx: i32 = k + j + half
+                
+                let even: Complex = data[even_idx]
+                let odd: Complex = data[odd_idx]
+                let t: Complex = complex_mul(twiddle, odd)
+                
+                data[even_idx] = complex_add(even, t)
+                data[odd_idx] = complex_sub(even, t)
+            }
+            k = k + size
+        }
+        size = size * 2
+    }
+}
+
+# ============================================================================
+# INVERSE FFT
+# ============================================================================
+
+function ifft(data: ptr<Complex>, n: i32) {
+    # Conjugate
+    for i in 0 to n {
+        data[i].im = 0.0 - data[i].im
+    }
+    
+    # Forward FFT
+    fft_cooley_tukey(data, n)
+    
+    # Conjugate and scale
+    let scale: f64 = 1.0 / n
+    for i in 0 to n {
+        data[i].re = data[i].re * scale
+        data[i].im = 0.0 - data[i].im * scale
+    }
+}
+
+# ============================================================================
+# NAIVE DFT - O(N^2) for verification
+# ============================================================================
+
+function dft_naive(input: ptr<Complex>, output: ptr<Complex>, n: i32) {
+    for k in 0 to n {
+        output[k].re = 0.0
+        output[k].im = 0.0
+        
+        for j in 0 to n {
+            let angle: f64 = 0.0 - 2.0 * PI * k * j / n
+            let twiddle: Complex = complex_exp(angle)
+            let product: Complex = complex_mul(input[j], twiddle)
+            output[k].re = output[k].re + product.re
+            output[k].im = output[k].im + product.im
+        }
+    }
+}
+
+# ============================================================================
+# VERIFICATION
+# ============================================================================
+
+function max_error(a: ptr<Complex>, b: ptr<Complex>, n: i32) -> f64 {
+    let mut max_err: f64 = 0.0
+    for i in 0 to n {
+        let err_re: f64 = a[i].re - b[i].re
+        let err_im: f64 = a[i].im - b[i].im
+        let err: f64 = sqrt(err_re * err_re + err_im * err_im)
+        if err > max_err {
+            max_err = err
+        }
+    }
+    return max_err
+}
+
+# ============================================================================
+# TEST SIGNAL GENERATION
+# ============================================================================
+
+function generate_signal(data: ptr<Complex>, n: i32, freq: f64) {
+    for i in 0 to n {
+        let t: f64 = i / n
+        data[i].re = sin(2.0 * PI * freq * t) + 0.5 * sin(4.0 * PI * freq * t)
+        data[i].im = 0.0
+    }
+}
+
+# ============================================================================
+# MAIN BENCHMARK
+# ============================================================================
+
+function main() -> i32 {
+    println("========================================================")
+    println("       ")
+    println("========================================================")
+    println("")
+    
+    let sizes: array<i32, 5> = [64, 128, 256, 512, 1024]
+    let num_iterations: i32 = 100
+    
+    for s in 0 to 5 {
+        let n: i32 = sizes[s]
+        
+        println("====================================================")
+        print("N = ")
+        print(n)
+        print(", ")
+        print(num_iterations)
+        println(" iterations")
+        println("====================================================")
+        
+        # Allocate data
+        let data: array<Complex, 1024> = [
+            Complex { re: 0.0, im: 0.0 }, Complex { re: 0.0, im: 0.0 },
+            Complex { re: 0.0, im: 0.0 }, Complex { re: 0.0, im: 0.0 },
+            Complex { re: 0.0, im: 0.0 }, Complex { re: 0.0, im: 0.0 },
+            Complex { re: 0.0, im: 0.0 }, Complex { re: 0.0, im: 0.0 }
+        ]
+        let data_ptr: ptr<Complex> = data
+        
+        # Generate test signal
+        generate_signal(data_ptr, n, 8.0)
+        
+        # Benchmark FFT
+        let start: i64 = clock()
+        for iter in 0 to num_iterations {
+            # Reset signal
+            generate_signal(data_ptr, n, 8.0)
+            # Forward FFT
+            fft_cooley_tukey(data_ptr, n)
+        }
+        let end: i64 = clock()
+        let time_fft: f64 = (end - start) / CLOCKS_PER_SEC / num_iterations
+        
+        # O(N log N) operations
+        let log_n: i32 = log2_int(n)
+        let ops: f64 = 5.0 * n * log_n  # Approximate flops per FFT
+        let gflops: f64 = ops / time_fft / 1e9
+        
+        print("  FFT time:     ")
+        printf("%.3f", time_fft * 1000000.0)
+        print(" µs, ")
+        printf("%.3f", gflops)
+        println(" GFLOPS")
+        
+        # Test forward-inverse roundtrip
+        generate_signal(data_ptr, n, 8.0)
+        
+        # Store original
+        let original: array<Complex, 1024> = [
+            Complex { re: 0.0, im: 0.0 }, Complex { re: 0.0, im: 0.0 },
+            Complex { re: 0.0, im: 0.0 }, Complex { re: 0.0, im: 0.0 },
+            Complex { re: 0.0, im: 0.0 }, Complex { re: 0.0, im: 0.0 },
+            Complex { re: 0.0, im: 0.0 }, Complex { re: 0.0, im: 0.0 }
+        ]
+        for i in 0 to n {
+            original[i] = data[i]
+        }
+        let original_ptr: ptr<Complex> = original
+        
+        # Forward then inverse
+        fft_cooley_tukey(data_ptr, n)
+        ifft(data_ptr, n)
+        
+        # Check error
+        let err: f64 = max_error(original_ptr, data_ptr, n)
+        print("  Roundtrip error: ")
+        printf("%.2e", err)
+        if err < 1e-10 {
+            println(" ✓")
+        } else {
+            println(" (warning: high error)")
+        }
+        
+        # Find dominant frequency
+        generate_signal(data_ptr, n, 8.0)
+        fft_cooley_tukey(data_ptr, n)
+        
+        let mut max_mag: f64 = 0.0
+        let mut max_idx: i32 = 0
+        for i in 1 to n / 2 {
+            let mag: f64 = complex_abs(data[i])
+            if mag > max_mag {
+                max_mag = mag
+                max_idx = i
+            }
+        }
+        print("  Dominant freq bin: ")
+        println(max_idx)
+        
+        println("")
+    }
+    
+    println("Benchmark complete.")
+    return 0
+}
