@@ -1,0 +1,46 @@
+# flowlm — a character language model small enough to train on a laptop CPU.
+#
+# This is the package entry point. Importing it pulls in every submodule:
+#
+#     import flowlm.lib
+#
+# brings the whole public surface into scope. To be explicit about what you
+# depend on, import the submodule instead and name the symbols:
+#
+#     import flowlm.model { flm_model_init, flm_forward, flm_backward }
+#     import flowlm.train { flm_train_step, flm_sample }
+#
+# Both forms work. Flow's module resolver has no re-export: a brace list is
+# checked against the declarations in the named file, so `flowlm.lib` cannot
+# forward `flowlm.model`'s symbols under its own name. The submodules are the
+# addressable units; this file is the convenience aggregator.
+#
+# Submodules
+#   flowlm.util       allocation, deterministic LCG, f32 libm wrappers, printing
+#   flowlm.corpus     the embedded ~5 KB training text
+#   flowlm.tokenizer  char vocabulary + capped mini-BPE
+#   flowlm.model      one causal self-attention block, forward and manual backward
+#   flowlm.train      Adam, gradient clipping, LR schedule, sampling, perplexity
+#   flowlm.gradcheck  analytic vs finite-difference self-test
+#
+# Typical use:
+#
+#   flm_vocab_fit(bytes, n)
+#   flm_encode_chars(bytes, n, ids, cap)
+#   flm_model_init(flm_char_count(), 32, 32, 128)
+#   flm_model_randomize(0.08)
+#   flm_optim_init()
+#   loop: flm_train_step(ids, n_ids, 32, 8, lr, 1.0)
+#   flm_sample(prompt, prompt_len, out, 200, 0.8)
+
+import .util
+import .corpus
+import .tokenizer
+import .model
+import .train
+import .gradcheck
+
+# Package version, as a single integer: major * 10000 + minor * 100 + patch.
+export function flm_version() -> i32 {
+    return 100
+}
