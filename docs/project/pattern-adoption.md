@@ -19,7 +19,7 @@ story. Adoption first; new sugar second.
 |----------|------|------|-------|
 | P0 | Canonicalize evolution demos onto `flow` / `evolves` / `when` | adoption ✅ | [#159](https://github.com/flooooooooooow/flow/issues/159) |
 | P0 | `gfx_run` frame helper | stdlib ✅ | [#164](https://github.com/flooooooooooow/flow/issues/164) |
-| P0 | Lorenz as `flow` + phase-portrait trail | language + demo ✅ partial | [#165](https://github.com/flooooooooooow/flow/issues/165) |
+| P0 | Lorenz as `flow` + phase-portrait trail | language + demo ✅ | [#165](https://github.com/flooooooooooow/flow/issues/165) |
 | P1 | Route linalg examples through `blas.flow` | adoption ✅ | [#168](https://github.com/flooooooooooow/flow/issues/168) |
 | P1 | Wire ML demos through Dual / grad codegen | adoption + docs ✅ | [#170](https://github.com/flooooooooooow/flow/issues/170) |
 | P1 | Owned `HttpResponse` + JSON decode helpers | API ✅ | [#167](https://github.com/flooooooooooow/flow/issues/167) |
@@ -130,10 +130,11 @@ flow Lorenz {
 **MVP split:**
 1. Port dynamics to `flow Lorenz` + `solver { method rk4 }` ✅
 2. Trail/project helpers in `stdlib/dynamics/portrait.flow` ✅
-   (`trail_push_2d`, `trail_index`, `project_axis`); draw loop still in `main`
-   until `represent phase_portrait` lowers.
+3. `represent phase_portrait(x, z) { trail…; window…; map… }` lowers to
+   `{Name}_portrait_frame` + win/trail consts ✅ (`lorenz_gfx.flow` ~70 lines)
 
-**Exit:** no manual `nxt[]` ODE copy ✅; file ~80 lines (grammar card still open for ≤60).
+**Exit:** no manual `nxt[]` ODE copy ✅; portrait draw is generated from
+`represent` ✅. Window open / `gfx_present` / trail buffers remain in `main`.
 
 ---
 
