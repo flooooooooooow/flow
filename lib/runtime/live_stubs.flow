@@ -1,0 +1,26 @@
+# Flow runtime: live DSP host/plugin ABI placeholders.
+# Real hot-swap / plugin loading is not implemented yet; these symbols
+# keep linkability after runtime/live_{host,plugin}.c were removed.
+
+@flow_api
+export function flow_live_host_available() -> i32 {
+    return 0
+}
+
+@flow_api
+export function flow_live_plugin_available() -> i32 {
+    return 0
+}
+
+@flow_api
+export function flow_live_plugin_load(path: string) -> i32 {
+    # Unused until a real plugin loader lands.
+    let _: string = path
+    return -1
+}
+
+@flow_api
+export function flow_live_plugin_unload(id: i32) -> i32 {
+    let _: i32 = id
+    return -1
+}

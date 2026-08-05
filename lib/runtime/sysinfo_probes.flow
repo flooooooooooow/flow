@@ -1,0 +1,88 @@
+# Flow runtime: host/CPU probes over thin sysctl helpers.
+
+extern {
+    function flow_rt_num_cores() -> i32
+    function flow_rt_os_is_linux() -> i32
+    function flow_rt_os_is_windows() -> i32
+    function flow_rt_os_is_macos() -> i32
+    function flow_rt_sysctl_has(key: string, token: string) -> i32
+    function flow_rt_has_neon() -> i32
+    function flow_rt_current_cpu() -> string
+    function flow_rt_current_arch() -> string
+}
+
+@flow_api
+export function num_cores() -> i32 {
+    return flow_rt_num_cores()
+}
+
+@flow_api
+export function os_is_linux() -> i32 {
+    return flow_rt_os_is_linux()
+}
+
+@flow_api
+export function os_is_windows() -> i32 {
+    return flow_rt_os_is_windows()
+}
+
+@flow_api
+export function os_is_macos() -> i32 {
+    return flow_rt_os_is_macos()
+}
+
+@flow_api
+export function has_sse4() -> i32 {
+    if flow_rt_sysctl_has("machdep.cpu.features", "SSE4.2") != 0 {
+        return 1
+    }
+    if flow_rt_sysctl_has("machdep.cpu.features", "SSE4.1") != 0 {
+        return 1
+    }
+    return flow_rt_sysctl_has("machdep.cpu.features", "SSE4")
+}
+
+@flow_api
+export function has_avx() -> i32 {
+    return flow_rt_sysctl_has("machdep.cpu.features", "AVX")
+}
+
+@flow_api
+export function has_avx2() -> i32 {
+    return flow_rt_sysctl_has("machdep.cpu.leaf7_features", "AVX2")
+}
+
+@flow_api
+export function has_avx512f() -> i32 {
+    return flow_rt_sysctl_has("machdep.cpu.leaf7_features", "AVX512F")
+}
+
+@flow_api
+export function has_avx512_vnni() -> i32 {
+    return flow_rt_sysctl_has("machdep.cpu.leaf7_features", "AVX512VNNI")
+}
+
+@flow_api
+export function has_neon() -> i32 {
+    return flow_rt_has_neon()
+}
+
+@flow_api
+export function is_apple_m1() -> i32 {
+    return flow_rt_sysctl_has("machdep.cpu.brand_string", "Apple M1")
+}
+
+@flow_api
+export function has_intel_amx() -> i32 {
+    return flow_rt_sysctl_has("machdep.cpu.leaf7_features", "AMX")
+}
+
+@flow_api
+export function current_cpu() -> string {
+    return flow_rt_current_cpu()
+}
+
+@flow_api
+export function current_arch() -> string {
+    return flow_rt_current_arch()
+}

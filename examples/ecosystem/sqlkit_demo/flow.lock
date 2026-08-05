@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "packages": {
+    "sqlite": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "/Users/abhishekshivakumar/flow/registry/packages/sqlite"
+      }
+    },
+    "sqlkit": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "/Users/abhishekshivakumar/flow/registry/packages/sqlkit"
+      }
+    }
+  }
+}

@@ -1,0 +1,416 @@
+[
+  {
+    "id": "item-001",
+    "title": "Record Tetris demo GIF",
+    "category": "Immediate Priorities (This Week)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:5",
+      "platform:2",
+      "debt:2",
+      "marketing:5"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 5,
+      "impact": 3,
+      "dependency": 4,
+      "risk": 5,
+      "final": 3.5445544554455437
+    },
+    "rank": 1
+  },
+  {
+    "id": "item-003",
+    "title": "Benchmark vs C comparison",
+    "category": "Short Term (This Month)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:5",
+      "platform:2",
+      "debt:2",
+      "marketing:5"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 4,
+      "risk": 5,
+      "final": 3.386138613861386
+    },
+    "rank": 2
+  },
+  {
+    "id": "item-007",
+    "title": "Windows graphics support",
+    "category": "Medium Term (This Quarter)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:4",
+      "platform:5",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 4,
+      "effort": 1,
+      "impact": 4,
+      "dependency": 5,
+      "risk": 3,
+      "final": 3.3762376237623757
+    },
+    "rank": 3
+  },
+  {
+    "id": "item-002",
+    "title": "Cross-platform graphics (Linux)",
+    "category": "Short Term (This Month)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:4",
+      "platform:5",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 4,
+      "effort": 3,
+      "impact": 4,
+      "dependency": 3,
+      "risk": 3,
+      "final": 3.3366336633663365
+    },
+    "rank": 4
+  },
+  {
+    "id": "item-009",
+    "title": "WASM target",
+    "category": "Medium Term (This Quarter)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:5",
+      "debt:2",
+      "marketing:4"
+    ],
+    "scores": {
+      "priority": 4,
+      "effort": 1,
+      "impact": 5,
+      "dependency": 5,
+      "risk": 1,
+      "final": 3.3069306930693063
+    },
+    "rank": 5
+  },
+  {
+    "id": "item-017",
+    "title": "Debugger",
+    "category": "Next",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:5",
+      "platform:2",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 4,
+      "effort": 3,
+      "impact": 4,
+      "dependency": 3,
+      "risk": 3,
+      "final": 3.158415841584158
+    },
+    "rank": 6
+  },
+  {
+    "id": "item-008",
+    "title": "Self-hosting components",
+    "category": "Medium Term (This Quarter)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:5"
+    ],
+    "scores": {
+      "priority": 4,
+      "effort": 1,
+      "impact": 5,
+      "dependency": 3,
+      "risk": 1,
+      "final": 2.9009900990099005
+    },
+    "rank": 7
+  },
+  {
+    "id": "item-018",
+    "title": "Real-world projects",
+    "category": "Next",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:5"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.7920792079207915
+    },
+    "rank": 8
+  },
+  {
+    "id": "item-011",
+    "title": "Implement closure environment capture (automatic captures, not just explicit `self`)",
+    "category": "2.4 Closures (Full)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:4",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.742574257425742
+    },
+    "rank": 9
+  },
+  {
+    "id": "item-012",
+    "title": "Loop vectorization",
+    "category": "4.1 MLIR Optimization",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:4",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.742574257425742
+    },
+    "rank": 10
+  },
+  {
+    "id": "item-013",
+    "title": "Function inlining",
+    "category": "4.1 MLIR Optimization",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:4",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.742574257425742
+    },
+    "rank": 11
+  },
+  {
+    "id": "item-010",
+    "title": "GPU autodiff",
+    "category": "Medium Term (This Quarter)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:4"
+    ],
+    "scores": {
+      "priority": 4,
+      "effort": 1,
+      "impact": 5,
+      "dependency": 2,
+      "risk": 1,
+      "final": 2.712871287128712
+    },
+    "rank": 12
+  },
+  {
+    "id": "item-005",
+    "title": "Consider subdirs by purpose",
+    "category": "Repository Cleanup",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:5",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.7029702970297027
+    },
+    "rank": 13
+  },
+  {
+    "id": "item-006",
+    "title": "Consider flattening",
+    "category": "Repository Cleanup",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:5",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.7029702970297027
+    },
+    "rank": 14
+  },
+  {
+    "id": "item-004",
+    "title": "RT-safety policy (no-alloc audio thread)",
+    "category": "Short Term (This Month)",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.5247524752475243
+    },
+    "rank": 15
+  },
+  {
+    "id": "item-014",
+    "title": "Dead code elimination",
+    "category": "4.1 MLIR Optimization",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.5247524752475243
+    },
+    "rank": 16
+  },
+  {
+    "id": "item-015",
+    "title": "Constant propagation",
+    "category": "4.1 MLIR Optimization",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 3,
+      "dependency": 3,
+      "risk": 3,
+      "final": 2.5247524752475243
+    },
+    "rank": 17
+  },
+  {
+    "id": "item-016",
+    "title": "Async primitives",
+    "category": "Next",
+    "description": "",
+    "status": "pending",
+    "tags": [
+      "compiler:2",
+      "ux:2",
+      "platform:2",
+      "debt:2",
+      "marketing:2"
+    ],
+    "scores": {
+      "priority": 3,
+      "effort": 3,
+      "impact": 4,
+      "dependency": 3,
+      "risk": 1,
+      "final": 2.5148514851485144
+    },
+    "rank": 18
+  }
+]

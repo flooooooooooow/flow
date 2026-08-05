@@ -1,0 +1,61 @@
+# sqlkit — thin SQL helpers over flow_sqlite_* (same native as sqlite package).
+# Takes db: ptr<void>; no package dependency on sqlite — consumers link sqlite native.
+
+extern {
+    function flow_sqlite_exec(db: ptr<void>, sql: string) -> i32
+    function flow_sqlite_query_i64(db: ptr<void>, sql: string, out: ptr<i64>) -> i32
+}
+
+function _sql_query_i64(db: ptr<void>, sql: string) -> i64 {
+    let mut out: i64 = 0
+    let rc: i32 = flow_sqlite_query_i64(db, sql, &out)
+    if rc != 0 {
+        return 0
+    }
+    return out
+}
+
+# Create schema_migrations + apply sample v1 (items table). Idempotent.
+export function sql_migrate_v1(db: ptr<void>) -> i32 {
+    let rc1: i32 = flow_sqlite_exec(db, "CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY);")
+    if rc1 != 0 {
+        return rc1
+    }
+    let applied: i64 = _sql_query_i64(db, "SELECT COUNT(*) FROM schema_migrations WHERE version = 1;")
+    if applied > 0 {
+        return 0
+    }
+    let rc2: i32 = flow_sqlite_exec(db, "CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, value INTEGER);")
+    if rc2 != 0 {
+        return rc2
+    }
+    return flow_sqlite_exec(db, "INSERT INTO schema_migrations(version) VALUES (1);")
+}
+
+# 1 if table `items` exists, else 0.
+export function sql_table_exists(db: ptr<void>) -> i32 {
+    let n: i64 = _sql_query_i64(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='items';")
+    if n > 0 {
+        return 1
+    }
+    return 0
+}
+
+# 1 if schema_migrations exists, else 0.
+export function sql_migrations_table_exists(db: ptr<void>) -> i32 {
+    let n: i64 = _sql_query_i64(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_migrations';")
+    if n > 0 {
+        return 1
+    }
+    return 0
+}
+
+# Insert a fixed demo row into items (value=42). Requires sql_migrate_v1 first.
+export function sql_insert_i32(db: ptr<void>) -> i32 {
+    return flow_sqlite_exec(db, "INSERT INTO items(value) VALUES (42);")
+}
+
+# COUNT(*) from items.
+export function sql_count(db: ptr<void>) -> i64 {
+    return _sql_query_i64(db, "SELECT COUNT(*) FROM items;")
+}

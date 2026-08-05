@@ -1,0 +1,30 @@
+# Work-stealing scheduler demo: fan-out then report local pops vs steals.
+# Run: FLOW_MAXPROCS=4 ./flow run examples/concurrency/work_steal.flow
+
+extern {
+    function flow_bench_fiber_fanout_sum(n: i32, fibers: i32) -> i64
+    function flow_fiber_local_pops() -> i64
+    function flow_fiber_steals() -> i64
+    function flow_fiber_steal_stats_reset() -> void
+}
+
+function main() -> i32 {
+    println("work-steal demo")
+    flow_fiber_steal_stats_reset()
+    let sum: i64 = flow_bench_fiber_fanout_sum(100000, 32)
+    let local: i64 = flow_fiber_local_pops()
+    let steals: i64 = flow_fiber_steals()
+    print("  sum=")
+    print(sum)
+    print(" local_pops=")
+    print(local)
+    print(" steals=")
+    println(steals)
+    if sum <= 0 {
+        println("FAIL")
+        return 1
+    }
+    # With FLOW_MAXPROCS>1, steals are common; with 1, steals stay 0.
+    println("OK")
+    return 0
+}

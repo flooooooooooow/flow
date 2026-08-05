@@ -1,0 +1,14 @@
+# toml package demo
+import toml.lib { toml_get_i32, toml_get_bool, toml_has_key }
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    let src: string = "name = \"flow\"\nport = 8080\n\n[db]\nenabled = true\n"
+    printf("has_port=%d\n", toml_has_key(src, "port"))
+    printf("port=%d\n", toml_get_i32(src, "port"))
+    printf("db.enabled=%d\n", toml_get_bool(src, "db.enabled"))
+    return 0
+}

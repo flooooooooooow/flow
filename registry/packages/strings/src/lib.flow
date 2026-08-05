@@ -1,0 +1,178 @@
+# strings — richer byte/ASCII string helpers (pure Flow)
+# Complements thin lib/stdlib/string.flow; no strncmp/memcpy — byte loops only.
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+const STR_OK: i32 = 1
+const STR_ERR: i32 = 0
+const STR_MISSING: i32 = 0 - 1
+
+function _is_ws(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function _copy_bytes(dst: ptr<u8>, src: ptr<u8>, src_off: i32, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[src_off + i]
+        i = i + 1
+    }
+}
+
+# 1 if `s` begins with `prefix` (byte-wise). Empty prefix always matches.
+export function str_starts_with(s: string, prefix: string) -> i32 {
+    let data: ptr<u8> = s
+    let pre: ptr<u8> = prefix
+    let slen: i32 = strlen(s) as i32
+    let plen: i32 = strlen(prefix) as i32
+    if plen > slen {
+        return STR_ERR
+    }
+    let mut i: i32 = 0
+    while i < plen {
+        if data[i] != pre[i] {
+            return STR_ERR
+        }
+        i = i + 1
+    }
+    return STR_OK
+}
+
+# 1 if `s` ends with `suffix` (byte-wise). Empty suffix always matches.
+export function str_ends_with(s: string, suffix: string) -> i32 {
+    let data: ptr<u8> = s
+    let suf: ptr<u8> = suffix
+    let slen: i32 = strlen(s) as i32
+    let flen: i32 = strlen(suffix) as i32
+    if flen > slen {
+        return STR_ERR
+    }
+    let off: i32 = slen - flen
+    let mut i: i32 = 0
+    while i < flen {
+        if data[off + i] != suf[i] {
+            return STR_ERR
+        }
+        i = i + 1
+    }
+    return STR_OK
+}
+
+# First byte index of `needle` in `hay`, or -1 if missing. Empty needle → 0.
+export function str_index_of(hay: string, needle: string) -> i32 {
+    let data: ptr<u8> = hay
+    let nd: ptr<u8> = needle
+    let hlen: i32 = strlen(hay) as i32
+    let nlen: i32 = strlen(needle) as i32
+    if nlen == 0 {
+        return 0
+    }
+    if nlen > hlen {
+        return STR_MISSING
+    }
+    let last: i32 = hlen - nlen
+    let mut i: i32 = 0
+    while i <= last {
+        let mut j: i32 = 0
+        let mut ok: i32 = 1
+        while j < nlen {
+            if data[i + j] != nd[j] {
+                ok = 0
+                break
+            }
+            j = j + 1
+        }
+        if ok == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    return STR_MISSING
+}
+
+# 1 if `needle` occurs in `s` (byte-wise).
+export function str_contains(s: string, needle: string) -> i32 {
+    if str_index_of(s, needle) >= 0 {
+        return STR_OK
+    }
+    return STR_ERR
+}
+
+# Parse optional leading whitespace, optional '-', then decimal digits.
+# Stops at first non-digit. Empty / no digits → 0.
+export function str_to_i32(s: string) -> i32 {
+    let data: ptr<u8> = s
+    let len: i32 = strlen(s) as i32
+    let mut p: i32 = 0
+    while p < len and _is_ws(data[p]) == 1 {
+        p = p + 1
+    }
+    let mut sign: i32 = 1
+    if p < len and data[p] == 45 {
+        sign = 0 - 1
+        p = p + 1
+    }
+    let mut value: i32 = 0
+    let mut any: i32 = 0
+    while p < len and data[p] >= 48 and data[p] <= 57 {
+        value = value * 10 + (data[p] - 48)
+        any = 1
+        p = p + 1
+    }
+    if any == 0 {
+        return 0
+    }
+    return value * sign
+}
+
+# Copy `s` with leading/trailing whitespace removed into `out` (NUL-terminated).
+# Returns length written, or -1 on overflow.
+export function str_trim_ws(s: string, out: ptr<u8>, out_cap: i32) -> i32 {
+    let data: ptr<u8> = s
+    let len: i32 = strlen(s) as i32
+    let mut start: i32 = 0
+    while start < len and _is_ws(data[start]) == 1 {
+        start = start + 1
+    }
+    let mut end: i32 = len
+    while end > start and _is_ws(data[end - 1]) == 1 {
+        end = end - 1
+    }
+    let n: i32 = end - start
+    if n + 1 > out_cap {
+        return STR_MISSING
+    }
+    _copy_bytes(out, data, start, n)
+    out[n] = 0
+    return n
+}
+
+# Copy substring `s[start:end)` into `out` (NUL-terminated).
+# Clamps to string bounds. Returns length written, or -1 on bad range / overflow.
+export function str_slice(s: string, start: i32, end: i32, out: ptr<u8>, out_cap: i32) -> i32 {
+    let data: ptr<u8> = s
+    let len: i32 = strlen(s) as i32
+    if start < 0 or end < start {
+        return STR_MISSING
+    }
+    let mut a: i32 = start
+    let mut b: i32 = end
+    if a > len {
+        a = len
+    }
+    if b > len {
+        b = len
+    }
+    let n: i32 = b - a
+    if n + 1 > out_cap {
+        return STR_MISSING
+    }
+    _copy_bytes(out, data, a, n)
+    out[n] = 0
+    return n
+}
