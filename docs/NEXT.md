@@ -29,7 +29,7 @@
 - 2 known parser crashes from fuzzing (xfail regressions): `ValueError` in
   `parse_type` on float array sizes, `RecursionError` on ~70 nested parens
 - 8 remaining C-codegen failures listed in `../examples/STATUS.md`
-- MLIR backend not yet validated against the new postfix-chain AST shapes
+- ✅ MLIR backend validated against postfix-chain AST shapes (`test_mlir_chained_ast.py`)
 - Older `capability EffectName`-style effects examples transpile but don't link
   (see [effects-showcase.md](effects-showcase.md))
 - Benchmark results not yet published
