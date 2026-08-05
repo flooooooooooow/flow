@@ -44,12 +44,18 @@ cd apps/http_json_cache
 
 ## Live HTTP (libcurl)
 
-`src/live_http.flow` GETs `https://example.com` through registry `http`, then
-runs a local JSON check:
+`src/live_http.flow` uses owned `HttpBody` (`http_get` / `http_body_free`) —
+no caller buffer allocate/free ceremony — then runs a local JSON check:
 
 ```bash
 cd apps/http_json_cache
 ../../flow run-native src/live_http.flow
+```
+
+```flow
+let body: HttpBody = http_get("https://example.com")
+# ... status / body_len / ok ...
+http_body_free(body)
 ```
 
 Requires system libcurl. The app `[native]` section points at

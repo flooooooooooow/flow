@@ -1,0 +1,125 @@
+# http — libcurl client wrapper (GET/POST, headers, timeouts)
+
+extern {
+    function flow_http_request(
+        method: string,
+        url: string,
+        headers_nl: string,
+        body: string,
+        content_type: string,
+        timeout_secs: i64,
+        buf: ptr<i8>,
+        buflen: i64,
+        status_out: ptr<i64>,
+        curl_err_out: ptr<i64>
+    ) -> i64
+    function flow_http_get(url: string, buf: ptr<i8>, buflen: i64, status_out: ptr<i64>) -> i64
+    function flow_http_post(url: string, content_type: string, body: string, buf: ptr<i8>, buflen: i64, status_out: ptr<i64>) -> i64
+    function malloc(size: i64) -> ptr<i8>
+    function free(p: ptr<i8>) -> void
+}
+
+# status: HTTP status (0 if no response). body_len: bytes written, or -1 on transport error.
+# ok: 1 when body_len >= 0 and 200 <= status < 400.
+# curl_err: 0 on curl success; positive CURLcode on network/libcurl failure; -1 on bad args.
+export struct HttpResponse {
+    status: i64,
+    body_len: i64,
+    ok: i32,
+    curl_err: i64
+}
+
+function _http_ok(body_len: i64, status: i64) -> i32 {
+    if body_len >= 0 and status >= 200 and status < 400 {
+        return 1
+    }
+    return 0
+}
+
+# GET with optional '\n'-separated headers ("Name: value") and timeout (seconds; <=0 => 30).
+export function http_get_ex(url: string, headers: string, timeout_secs: i64, buf: ptr<i8>, buflen: i64) -> HttpResponse {
+    let mut status: i64 = 0
+    let mut curl_err: i64 = 0
+    let n: i64 = flow_http_request("GET", url, headers, "", "", timeout_secs, buf, buflen, &status, &curl_err)
+    return HttpResponse {
+        status: status,
+        body_len: n,
+        ok: _http_ok(n, status),
+        curl_err: curl_err
+    }
+}
+
+# POST with headers, content-type, body, and timeout.
+export function http_post_ex(
+    url: string,
+    headers: string,
+    content_type: string,
+    body: string,
+    timeout_secs: i64,
+    buf: ptr<i8>,
+    buflen: i64
+) -> HttpResponse {
+    let mut status: i64 = 0
+    let mut curl_err: i64 = 0
+    let n: i64 = flow_http_request("POST", url, headers, body, content_type, timeout_secs, buf, buflen, &status, &curl_err)
+    return HttpResponse {
+        status: status,
+        body_len: n,
+        ok: _http_ok(n, status),
+        curl_err: curl_err
+    }
+}
+
+# Thin wrappers: default 30s timeout, no custom headers.
+export function http_get_into(url: string, buf: ptr<i8>, buflen: i64) -> HttpResponse {
+    return http_get_ex(url, "", 30, buf, buflen)
+}
+
+export function http_post_into(url: string, content_type: string, body: string, buf: ptr<i8>, buflen: i64) -> HttpResponse {
+    return http_post_ex(url, "", content_type, body, 30, buf, buflen)
+}
+
+# Convenience: allocate a buffer, GET, return response metadata (caller frees buf via http_free).
+export function http_alloc(size: i64) -> ptr<i8> {
+    return malloc(size)
+}
+
+export function http_free(p: ptr<i8>) -> void {
+    free(p)
+}
+
+# Owned response body (pattern-adoption #167). Caller must http_body_free.
+export struct HttpBody {
+    status: i64,
+    body_len: i64,
+    ok: i32,
+    curl_err: i64,
+    data: ptr<i8>,
+    capacity: i64
+}
+
+# GET into an owned buffer (default capacity 65536 if capacity <= 0).
+export function http_get(url: string) -> HttpBody {
+    return http_get_cap(url, 65536)
+}
+
+export function http_get_cap(url: string, capacity: i64) -> HttpBody {
+    let mut cap: i64 = capacity
+    if cap <= 0 {
+        cap = 65536
+    }
+    let data: ptr<i8> = malloc(cap)
+    let resp: HttpResponse = http_get_into(url, data, cap)
+    return HttpBody {
+        status: resp.status,
+        body_len: resp.body_len,
+        ok: resp.ok,
+        curl_err: resp.curl_err,
+        data: data,
+        capacity: cap
+    }
+}
+
+export function http_body_free(body: HttpBody) -> void {
+    free(body.data)
+}

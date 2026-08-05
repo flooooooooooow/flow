@@ -46,7 +46,8 @@ The generated code can be imported and used for NN training:
 - Input loss: `lib/stdlib/nn_xor_loss_clean.flow`
 - Generated grads: `lib/stdlib/nn_xor_loss_clean_grad.flow`
 - Wrapper: `lib/stdlib/nn_autogen.flow`
-- Training demo: `examples/nn_xor_autogen.flow`
+- Training demo (tourist): `examples/ml/models/mlp_xor.flow`
+- Hand-backprop twin: `examples/ml/models/mlp_xor_from_scratch.flow`
 
 ## NN stdlib (`lib/stdlib/nn.flow`)
 
