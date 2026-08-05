@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 mkdir -p compiler/build
+# Gen0 bootstrap + dogfood of compiler/src via ./flow always uses the Python host.
+# (Default FLOW_HOST=flowc is for user Stage-A programs after a driver exists.)
+export FLOW_HOST=python
 
 # Emit Flow → C. Prefer Stage-A Flow driver when built (fast, low mem); else
 # Python host bootstrap for latest Stage-A sources. Force host with FLOWC_FORCE_HOST=1

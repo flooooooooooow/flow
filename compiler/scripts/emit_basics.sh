@@ -11,6 +11,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 mkdir -p compiler/build/basics
+export FLOW_HOST=python
 
 stage_a_emit() {
     local src="$1"

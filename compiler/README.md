@@ -4,15 +4,18 @@
 implemented in Flow itself, run today by the production Python→C host under
 [`src/flow/`](../src/flow/).
 
-It is **not** a drop-in replacement for `./flow`. A Stage-A C emitter may be
-present (`src/cgen.flow`); `flowc` still cannot compile itself end-to-end.
+Stage-A `flowc` is the **default host** for `./flow run` and `./flow compile`
+(`FLOW_HOST=flowc`). Use `FLOW_HOST=python` for the full Python language surface
+(tests, MLIR, gfx, DSLs). Drivers live under `compiler/build/`; if none exist,
+`compiler/scripts/ensure_flowc.sh` bootstraps Gen0 via Phase-A roundtrip.
 
 ## How to run
 
-From the repo root:
+From the repo root (default host = flowc for Stage-A programs):
 
 ```bash
-./flow run compiler/src/main.flow
+./flow run examples/basics/hello_world.flow
+FLOW_HOST=python ./flow run compiler/src/main.flow
 ```
 
 Expected exit: `flowc: PASS` (lexer smoke + in-memory parse tests + disk

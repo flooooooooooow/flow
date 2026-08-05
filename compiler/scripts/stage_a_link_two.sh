@@ -13,6 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 mkdir -p compiler/build/pkg_add
+export FLOW_HOST=python
 
 PKG="compiler/fixtures/pkg_add"
 BUILD="compiler/build/pkg_add"
