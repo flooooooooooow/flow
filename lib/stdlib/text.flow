@@ -1,0 +1,149 @@
+# Text drawing for the gfx backends: blits stdlib/font.flow glyphs as rects.
+#
+# Games used to hand-roll seven-segment digits out of rectangles. This draws
+# real characters instead, at integer pixel scales, with left / centered /
+# right alignment and edge clipping.
+
+import "stdlib/gfx.flow"
+import "stdlib/font.flow"
+
+# One character. Returns the x advance so callers can chain.
+export function gfx_draw_char(g: Gfx, x: i32, y: i32, ch: i32, scale: i32,
+                              r: i32, gr: i32, b: i32) -> i32 {
+    let w: i32 = font_char_width()
+    let h: i32 = font_char_height()
+    if scale <= 0 {
+        return 0
+    }
+    let mut row: i32 = 0
+    while row < h {
+        let mut col: i32 = 0
+        while col < w {
+            if font_pixel(ch, col, row) {
+                gfx_fill_rect(g, x + col * scale, y + row * scale, scale, scale, r, gr, b)
+            }
+            col = col + 1
+        }
+        row = row + 1
+    }
+    return (w + 1) * scale
+}
+
+export function gfx_draw_text(g: Gfx, x: i32, y: i32, s: string, scale: i32,
+                              r: i32, gr: i32, b: i32) -> i32 {
+    if scale <= 0 {
+        return 0
+    }
+    let bytes: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    let mut pen: i32 = x
+    while bytes[i] != 0 {
+        pen = pen + gfx_draw_char(g, pen, y, bytes[i] as i32, scale, r, gr, b)
+        i = i + 1
+    }
+    return pen - x
+}
+
+# Centered on `cx`.
+export function gfx_draw_text_centered(g: Gfx, cx: i32, y: i32, s: string, scale: i32,
+                                       r: i32, gr: i32, b: i32) -> i32 {
+    let w: i32 = font_text_width(s, scale)
+    return gfx_draw_text(g, cx - w / 2, y, s, scale, r, gr, b)
+}
+
+# Right edge at `rx`.
+export function gfx_draw_text_right(g: Gfx, rx: i32, y: i32, s: string, scale: i32,
+                                    r: i32, gr: i32, b: i32) -> i32 {
+    let w: i32 = font_text_width(s, scale)
+    return gfx_draw_text(g, rx - w, y, s, scale, r, gr, b)
+}
+
+# Integers without going through string formatting: draw digits directly so
+# callers need no scratch buffer.
+export function gfx_draw_int(g: Gfx, x: i32, y: i32, n: i32, scale: i32,
+                             r: i32, gr: i32, b: i32) -> i32 {
+    if scale <= 0 {
+        return 0
+    }
+    let mut pen: i32 = x
+    let mut v: i32 = n
+    if v < 0 {
+        pen = pen + gfx_draw_char(g, pen, y, 45, scale, r, gr, b)
+        v = 0 - v
+    }
+    let digits: array<i32, 12> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let dp: ptr<i32> = digits
+    let mut count: i32 = 0
+    if v == 0 {
+        dp[0] = 0
+        count = 1
+    }
+    while v > 0 {
+        dp[count] = v % 10
+        v = v / 10
+        count = count + 1
+    }
+    let mut k: i32 = count - 1
+    while k >= 0 {
+        pen = pen + gfx_draw_char(g, pen, y, 48 + dp[k], scale, r, gr, b)
+        k = k - 1
+    }
+    return pen - x
+}
+
+export function gfx_draw_int_right(g: Gfx, rx: i32, y: i32, n: i32, scale: i32,
+                                   r: i32, gr: i32, b: i32) -> i32 {
+    let w: i32 = font_int_width(n, scale)
+    return gfx_draw_int(g, rx - w, y, n, scale, r, gr, b)
+}
+
+# Zero-padded to `width` digits (clock and score displays).
+export function gfx_draw_int_padded(g: Gfx, x: i32, y: i32, n: i32, width: i32, scale: i32,
+                                    r: i32, gr: i32, b: i32) -> i32 {
+    if scale <= 0 {
+        return 0
+    }
+    let mut digits: i32 = 1
+    let mut v: i32 = n
+    if v < 0 {
+        v = 0 - v
+    }
+    let mut t: i32 = v
+    while t >= 10 {
+        digits = digits + 1
+        t = t / 10
+    }
+    let mut pen: i32 = x
+    let mut pad: i32 = width - digits
+    while pad > 0 {
+        pen = pen + gfx_draw_char(g, pen, y, 48, scale, r, gr, b)
+        pad = pad - 1
+    }
+    pen = pen + gfx_draw_int(g, pen, y, v, scale, r, gr, b)
+    return pen - x
+}
+
+# Fixed-point float with `decimals` places (no printf, no allocation).
+export function gfx_draw_fixed(g: Gfx, x: i32, y: i32, value: f64, decimals: i32, scale: i32,
+                               r: i32, gr: i32, b: i32) -> i32 {
+    let mut pen: i32 = x
+    let mut v: f64 = value
+    if v < 0.0 {
+        pen = pen + gfx_draw_char(g, pen, y, 45, scale, r, gr, b)
+        v = 0.0 - v
+    }
+    let mut scale10: i32 = 1
+    let mut d: i32 = 0
+    while d < decimals {
+        scale10 = scale10 * 10
+        d = d + 1
+    }
+    let whole: i32 = v as i32
+    let frac: i32 = ((v - (whole as f64)) * (scale10 as f64) + 0.5) as i32
+    pen = pen + gfx_draw_int(g, pen, y, whole, scale, r, gr, b)
+    if decimals > 0 {
+        pen = pen + gfx_draw_char(g, pen, y, 46, scale, r, gr, b)
+        pen = pen + gfx_draw_int_padded(g, pen, y, frac, decimals, scale, r, gr, b)
+    }
+    return pen - x
+}
