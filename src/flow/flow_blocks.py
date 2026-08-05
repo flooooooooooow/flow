@@ -69,6 +69,8 @@ from .parser import (
     CastExpression,
     EffectCall,
     FieldAccess,
+    FlowChildDecl,
+    FlowConnection,
     FlowDecl,
     FlowSyntaxError,
     FunctionCall,
@@ -119,6 +121,95 @@ _DEFAULT_DT_NS = 1_000_000
 _SOLVER_METHODS = ("euler", "rk4")
 
 
+def _single_port(ports, flow_name: str, kind: str, source: str, line):
+    """The sole input/output port of a flow used as a pipeline stage."""
+    if len(ports) != 1:
+        raise _error(
+            f"flow '{flow_name}' used as a pipeline stage must have exactly one "
+            f"{kind} (has {len(ports)}); wire it with `connect` explicitly",
+            line, source,
+        )
+    return ports[0]
+
+
+def _source_port(expr: Any):
+    """Read a pipeline source as (member, port).
+
+    A bare variable is a parent input/state (member ""); `child.port` is a
+    sibling child's port. Anything else is not a valid stage source.
+    """
+    if isinstance(expr, Variable):
+        return "", expr.name
+    if isinstance(expr, FieldAccess) and isinstance(expr.object, Variable):
+        return expr.object.name, expr.field
+    return None
+
+
+def _expand_flow_pipelines(
+    flow: FlowDecl, flow_by_name: Dict[str, FlowDecl], source: str
+) -> None:
+    """Desugar `output y = src |> FlowA |> FlowB` into children + connections.
+
+    The `|>` operator already lowered the surface pipeline to nested calls
+    `FlowB(FlowA(src))`. When those callees are flows (not functions), each
+    becomes a child instance wired in sequence: `src -> A.in`, `A.out -> B.in`,
+    and the output maps to the last stage's output. Reads of a stage's output
+    happen before it steps that tick, so each stage adds one tick of delay
+    (a sampled, state-broken pipeline — spec §8.3).
+    """
+    new_children: List[Any] = []
+    new_connections: List[Any] = []
+    for output in flow.outputs:
+        expr = output.expr
+        # Unwrap the outer-to-inner call chain of flow-typed stages.
+        stages: List[FlowDecl] = []
+        cur = expr
+        while isinstance(cur, FunctionCall) and cur.name in flow_by_name:
+            if len(cur.arguments) != 1:
+                raise _error(
+                    f"flow stage '{cur.name}' in output '{output.name}' of "
+                    f"'{flow.name}' takes only the piped value; stage params "
+                    f"are not supported yet",
+                    output.line, source,
+                )
+            stages.append(flow_by_name[cur.name])
+            cur = cur.arguments[0]
+        if not stages:
+            continue
+        stages.reverse()  # data-flow order: first-applied first
+
+        src = _source_port(cur)
+        if src is None:
+            raise _error(
+                f"flow pipeline for output '{output.name}' of '{flow.name}' "
+                f"must start from a port (an input/state, or `child.port`)",
+                output.line, source,
+            )
+
+        prev_member, prev_port = src
+        for i, stage in enumerate(stages):
+            child_name = f"__{output.name}_stage{i}"
+            new_children.append(
+                FlowChildDecl(child_name, Type(stage.name), output.line,
+                              synthesized=True)
+            )
+            in_port = _single_port(stage.inputs, stage.name, "input",
+                                   source, output.line)
+            out_port = _single_port(stage.outputs, stage.name, "output",
+                                    source, output.line)
+            new_connections.append(
+                FlowConnection(prev_member, prev_port, child_name,
+                               in_port.name, output.line)
+            )
+            prev_member, prev_port = child_name, out_port.name
+        # Output now reads the last stage's output port.
+        output.expr = FieldAccess(Variable(prev_member), prev_port)
+
+    if new_children:
+        flow.children = list(flow.children or []) + new_children
+        flow.connections = list(flow.connections or []) + new_connections
+
+
 def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
     """Replace every FlowDecl with its synthesized struct and functions.
 
@@ -154,6 +245,7 @@ def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
     result: List[Any] = []
     for decl in declarations:
         if isinstance(decl, FlowDecl):
+            _expand_flow_pipelines(decl, flow_by_name, source)
             _validate_flow(
                 decl, local_pure_functions, taken_names, source, flow_by_name
             )
@@ -239,7 +331,7 @@ def _validate_flow(
                 f"flow '{flow.name}' declares '{child.name}' twice",
                 child.line, source,
             )
-        if child.name.startswith("__"):
+        if child.name.startswith("__") and not getattr(child, "synthesized", False):
             raise _error(
                 f"flow member '{child.name}' may not start with '__' "
                 f"(reserved for compiler-generated fields)",

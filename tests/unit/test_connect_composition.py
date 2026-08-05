@@ -358,3 +358,93 @@ flow Chain {
             raise AssertionError("expected FlowSyntaxError")
         except FlowSyntaxError as exc:
             assert "must be an input or state" in str(exc)
+
+
+# `output y = signal |> FlowA |> FlowB` — flows composed as pipeline stages.
+STAGES = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+
+flow Limiter {
+    state z : f64 = 0.0
+    input w : f64
+    output out : f64 = z
+    z evolves as w - z
+}
+
+flow Chain {
+    input signal : f64
+    output result : f64 = signal |> Gain |> Limiter
+}
+"""
+
+
+class TestFlowPipelineStages:
+    def _chain(self, decls):
+        # After lowering, Chain is a struct; inspect its lowered step in C.
+        return flow_to_c(decls)
+
+    def test_stages_become_children_and_wires(self):
+        raw = {d.name: d for d in parse_raw(STAGES) if isinstance(d, FlowDecl)}
+        # parse_raw skips flow expansion, so the sugar is still a call chain.
+        chain = raw["Chain"]
+        assert chain.children == []
+        # The output expr is the |>-lowered nested call Limiter(Gain(signal)).
+        assert chain.outputs[0].expr.name == "Limiter"
+
+    def test_lowered_pipeline_wiring_and_order(self):
+        c = flow_to_c(parse_lowered(STAGES))
+        # Two synthesized stage children.
+        assert "Gain __result_stage0;" in c
+        assert "Limiter __result_stage1;" in c
+        # Source -> stage0 -> stage1, output reads the last stage.
+        assert "self->__result_stage0.x = self->signal" in c
+        assert "self->__result_stage1.w = self->__result_stage0.out" in c
+        assert "self->result = self->__result_stage1.out" in c
+        # Copy precedes the corresponding child step.
+        assert c.index("self->__result_stage0.x = self->signal") < c.index(
+            "Gain_step((&(self->__result_stage0)), dt)"
+        )
+
+    def test_lowered_pipeline_is_strict_clean(self):
+        assert TypeChecker().check(parse_lowered(STAGES)).errors == []
+
+    def test_multi_input_stage_rejected(self):
+        code = """
+flow Two {
+    state s : f64 = 0.0
+    input a : f64
+    input b : f64
+    output o : f64 = s
+    s evolves as a
+}
+flow Ch {
+    input sig : f64
+    output r : f64 = sig |> Two
+}
+"""
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected FlowSyntaxError")
+        except FlowSyntaxError as exc:
+            assert "exactly one input" in str(exc)
+
+    def test_plain_function_output_is_not_desugared(self):
+        # A non-flow callee in output position stays an ordinary call.
+        code = """
+function double(v: f64) -> f64 { return v * 2.0 }
+flow F {
+    state s : f64 = 1.0
+    output o : f64 = double(s)
+    s evolves as 0.0
+}
+"""
+        decls = parse_lowered(code)
+        f = next(d for d in decls if isinstance(d, StructDecl) and d.name == "F")
+        # No synthesized stage fields were added.
+        assert not any(field.name.startswith("__") for field in f.fields)
