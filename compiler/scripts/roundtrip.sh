@@ -150,11 +150,11 @@ done
 # Linkability smoke: both objects resolve (no main — relocatable link).
 cc -r -o compiler/build/token_lexer_flowc.o \
     compiler/build/token_flowc.o compiler/build/lexer_flowc.o
-if ! nm compiler/build/lexer_flowc.o | grep -q 'flowc_lexer_next'; then
+if ! nm compiler/build/lexer_flowc.o | grep 'flowc_lexer_next' >/dev/null; then
     echo "FAIL compile_module lexer: flowc_lexer_next missing from object" >&2
     exit 1
 fi
-if ! nm compiler/build/token_flowc.o | grep -q 'TOK_EOF'; then
+if ! nm compiler/build/token_flowc.o | grep 'TOK_EOF' >/dev/null; then
     echo "FAIL compile_module lexer: TOK_EOF missing from token object" >&2
     exit 1
 fi
@@ -279,7 +279,7 @@ cc -r -o compiler/build/flowc_jsgen_fmt.o \
     compiler/build/jsgen_flowc.o \
     compiler/build/fmt_flowc.o
 for sym in flowc_jsgen_emit flowc_fmt_emit; do
-    if ! nm compiler/build/flowc_jsgen_fmt.o | grep -q "$sym"; then
+    if ! nm compiler/build/flowc_jsgen_fmt.o | grep "$sym" >/dev/null; then
         echo "FAIL jsgen/fmt link smoke: ${sym} missing from flowc_jsgen_fmt.o" >&2
         exit 1
     fi
@@ -404,11 +404,11 @@ if [[ "$bundle_lexer_stdint" -ne 1 ]]; then
     exit 1
 fi
 cc -O0 -c compiler/build/bundle_lexer.c -o compiler/build/bundle_lexer.o
-if ! nm compiler/build/bundle_lexer.o | grep -q 'flowc_lexer_next'; then
+if ! nm compiler/build/bundle_lexer.o | grep 'flowc_lexer_next' >/dev/null; then
     echo "FAIL FLOWC_BUNDLE lexer: flowc_lexer_next missing from object" >&2
     exit 1
 fi
-if ! nm compiler/build/bundle_lexer.o | grep -q 'TOK_EOF'; then
+if ! nm compiler/build/bundle_lexer.o | grep 'TOK_EOF' >/dev/null; then
     echo "FAIL FLOWC_BUNDLE lexer: TOK_EOF missing from object" >&2
     exit 1
 fi
@@ -442,11 +442,11 @@ if [[ "$bundle_parser_stdint" -ne 1 ]]; then
     exit 1
 fi
 cc -O0 -c compiler/build/bundle_parser.c -o compiler/build/bundle_parser.o
-if ! nm compiler/build/bundle_parser.o | grep -q 'flowc_parse_program'; then
+if ! nm compiler/build/bundle_parser.o | grep 'flowc_parse_program' >/dev/null; then
     echo "FAIL FLOWC_BUNDLE parser: flowc_parse_program missing from object" >&2
     exit 1
 fi
-if ! nm compiler/build/bundle_parser.o | grep -q 'flowc_lexer_next'; then
+if ! nm compiler/build/bundle_parser.o | grep 'flowc_lexer_next' >/dev/null; then
     echo "FAIL FLOWC_BUNDLE parser: flowc_lexer_next missing from object" >&2
     exit 1
 fi
@@ -499,7 +499,7 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/typecheck_flowc.o \
     compiler/build/resolve_flowc.o
 for sym in flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path; do
-    if ! nm compiler/build/flowc_frontend.o | grep -q "$sym"; then
+    if ! nm compiler/build/flowc_frontend.o | grep "$sym" >/dev/null; then
         echo "FAIL link smoke: ${sym} missing from flowc_frontend.o" >&2
         exit 1
     fi
