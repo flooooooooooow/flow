@@ -27,7 +27,7 @@ export function delay_line_empty() -> DelayLineF32 {
 
 export function delay_line_new(max_ms: f32, rate: SampleRate) -> DelayLineF32 {
     let max_s: Samples = ms_to_samples(max_ms, rate)
-    let frames: i32 = max_s.count
+    let mut frames: i32 = max_s.count
     if frames < 1 { frames = 1 }
     let buf: AudioBufferF32 = audio_buffer_alloc_f32(frames, 1, layout_planar())
     return DelayLineF32 {
@@ -42,7 +42,7 @@ export function delay_line_new(max_ms: f32, rate: SampleRate) -> DelayLineF32 {
 
 export function delay_line_set_time(d: DelayLineF32, time_ms: f32, rate: SampleRate) -> DelayLineF32 {
     let s: Samples = ms_to_samples(time_ms, rate)
-    let delay: i32 = s.count
+    let mut delay: i32 = s.count
     if delay < 0 { delay = 0 }
     if delay >= d.buffer.frames { delay = d.buffer.frames - 1 }
     return DelayLineF32 {
@@ -56,7 +56,7 @@ export function delay_line_set_time(d: DelayLineF32, time_ms: f32, rate: SampleR
 }
 
 export function delay_line_set_feedback(d: DelayLineF32, fb: f32) -> DelayLineF32 {
-    let f: f32 = fb
+    let mut f: f32 = fb
     if f < 0.0 { f = 0.0 }
     if f >= 1.0 { f = 0.99 }
     return DelayLineF32 {
@@ -70,7 +70,7 @@ export function delay_line_set_feedback(d: DelayLineF32, fb: f32) -> DelayLineF3
 }
 
 export function delay_line_set_mix(d: DelayLineF32, mix: f32) -> DelayLineF32 {
-    let m: f32 = mix
+    let mut m: f32 = mix
     if m < 0.0 { m = 0.0 }
     if m > 1.0 { m = 1.0 }
     return DelayLineF32 {
@@ -88,13 +88,13 @@ export function delay_line_tick(d: DelayLineF32, input: f32) -> DelayLineF32 {
     if max_frames <= 0 {
         return d
     }
-    let read_pos: i32 = d.write_pos - d.delay_samples
+    let mut read_pos: i32 = d.write_pos - d.delay_samples
     if read_pos < 0 { read_pos = read_pos + max_frames }
     let delayed: f32 = audio_buffer_get_f32(d.buffer, read_pos, 0)
     let write_val: f32 = input + delayed * d.feedback
     audio_buffer_set_f32(d.buffer, d.write_pos, 0, write_val)
     let out: f32 = input * (1.0 - d.wet) + delayed * d.wet
-    let next_pos: i32 = d.write_pos + 1
+    let mut next_pos: i32 = d.write_pos + 1
     if next_pos >= max_frames { next_pos = 0 }
     return DelayLineF32 {
         buffer: d.buffer,

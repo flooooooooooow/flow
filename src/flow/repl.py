@@ -41,7 +41,8 @@ class FlowREPL:
         
     def print_banner(self):
         """Print welcome banner."""
-        print(f"{self.BOLD}FLOW REPL v0.3.0{self.RESET}")
+        from .version import __version__
+        print(f"{self.BOLD}FLOW REPL v{__version__}{self.RESET}")
         print(f"Type expressions, statements, or {self.YELLOW}:help{self.RESET} for commands")
         print(f"Press {self.YELLOW}Ctrl+D{self.RESET} or type {self.YELLOW}:quit{self.RESET} to exit")
         print()

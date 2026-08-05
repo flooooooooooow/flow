@@ -59,8 +59,14 @@ supports attributes on `function` declarations.
   without the checker knowing).
 - Device/file/network calls (`audio_device_open`, syscalls, GPU submit) are
   still policy-only, not name-checked.
-- No enforcement for unbounded loops, unbounded `printf`, or locks — those
-  remain a review-time concern.
+- No enforcement for unbounded loops or unbounded `printf` — those remain a
+  review-time concern.
+- **Locks are compile-time checked:** `pthread_mutex_lock` /
+  `pthread_cond_wait` / `pthread_rwlock_rdlock` / `pthread_rwlock_wrlock` /
+  Flow `mutex_lock` / `condvar_wait` / `rwlock_rdlock` / `rwlock_wrlock` /
+  `semaphore_wait` / `sem_wait` (and transitive wrappers) are rejected inside
+  `@rt_safe` with a “may block / priority inversion” diagnostic. Blocking
+  channel ops (`channel_i32_send` / `recv` / `select2`) are not yet name-checked.
 
 ## Thread model
 
@@ -70,7 +76,11 @@ supports attributes on `function` declarations.
 | Process | Audio callback | Read/write samples, run filters/graphs, pull control values |
 | Control | Main / UI / MIDI | Mutate parameters via atomics, lock-free queues, or double-buffered state |
 
-The I/O layer (`stdlib/audio/io.flow` + `runtime/audio_*.c`) uses ring buffers so Flow user code does not register a C function pointer; the same deadline rules still apply to anything that fills or drains those buffers under load.
+The I/O layer (`stdlib/audio/io.flow` + `runtime/audio_miniaudio.c`) uses an SPSC
+ring whose hot path is Flow (`lib/runtime/audio_spsc.flow` over `flow_atomic_*`) so
+user code does not register a C function pointer; the same deadline rules still
+apply to anything that fills or drains those buffers under load. No heap, locks,
+or blocking waits inside the ring ops.
 
 ## Allowed on the audio thread
 
@@ -91,7 +101,7 @@ The I/O layer (`stdlib/audio/io.flow` + `runtime/audio_*.c`) uses ring buffers s
 | `audio_buffer_alloc_*`, delay-line create/resize | Setup-only |
 | `audio_device_open` / `start` / `stop` / `close` | Syscalls and driver work |
 | File, network, GPU submit, Metal/CUDA allocate | Blocking / jitter |
-| Unbounded locks, `mutex`, waiting on UI | Priority inversion, glitches |
+| Unbounded locks, `mutex`, `cond_wait`, waiting on UI | Priority inversion, glitches — **compile-time checked** for known lock/wait names in `@rt_safe` |
 | Dynamic string formatting / unbounded `printf` in release | Allocation and I/O |
 | Resizing graphs, hot-loading plugins mid-callback without a prep stage | Hidden allocation and races |
 

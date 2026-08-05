@@ -31,8 +31,8 @@ function pow_f32(base: f32, exp: i32) -> f64 {
 
 function adam_create(lr: f32, size: i32) -> Adam {
     let nbytes: i64 = (size as i64) * 4
-    let m: ptr<f32> = malloc(nbytes)
-    let v: ptr<f32> = malloc(nbytes)
+    let mut m: ptr<f32> = malloc(nbytes)
+    let mut v: ptr<f32> = malloc(nbytes)
     for i in 0 to size {
         m[i] = 0.0
         v[i] = 0.0

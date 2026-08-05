@@ -95,10 +95,29 @@ lake-packages/
 
 # LaTeX
 *.aux
+docs/research/**/*.out
 
 # Claude Code workspace (agent worktrees, local settings)
 .claude/
 
+# Local tool caches
+.ruff_cache/
+
+# Packaging / accidental output dirs
+dist/
+
+# Graphics demo rebuild artifacts (keep .vert/.frag / .flow sources)
+*.spv
+/demos/vulkan_triangle/vulkan_triangle
+/demos/vulkan_scene/vulkan_scene
+
+# Regenerable WASM binaries (HTML/.flow sources stay tracked)
+**/*.wasm
+
 # JUCE plugins — local build outputs and compiled test binaries
 plugins/*/build/
 plugins/SchurPhaser/tests/dsp_test
+
+# Package manager install trees (recreated by `./flow install`)
+flow_packages/
+**/flow_packages/

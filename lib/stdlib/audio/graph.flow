@@ -126,7 +126,7 @@ export function effect_chain_update(c: EffectChain,
                                     delay_ms: f32,
                                     feedback: f32,
                                     mix: f32) -> EffectChain {
-    let out: EffectChain = effect_chain_set_gain_db(c, gain_db)
+    let mut out: EffectChain = effect_chain_set_gain_db(c, gain_db)
     out = effect_chain_set_pan(out, pan)
     if enable_lowpass {
         out = effect_chain_enable_lowpass(out, cutoff, 0.707, out.rate)
@@ -173,9 +173,9 @@ export function effect_chain_tick(c: EffectChain, input: Frame) -> EffectChain {
     let mut left: f32 = input.left * smoothed_gain
     let mut right: f32 = input.right * smoothed_gain
 
-    let lp_l: Biquad = c.lowpass_l
-    let lp_r: Biquad = c.lowpass_r
-    let cs: ParamSmoother = c.cutoff_smoother
+    let mut lp_l: Biquad = c.lowpass_l
+    let mut lp_r: Biquad = c.lowpass_r
+    let mut cs: ParamSmoother = c.cutoff_smoother
     if c.enable_lowpass {
         cs = param_smoother_tick(c.cutoff_smoother)
         let cutoff: f32 = param_smoother_value(cs)
@@ -187,8 +187,8 @@ export function effect_chain_tick(c: EffectChain, input: Frame) -> EffectChain {
         right = biquad_output(lp_r)
     }
 
-    let dl_l: DelayLineF32 = c.delay_l
-    let dl_r: DelayLineF32 = c.delay_r
+    let mut dl_l: DelayLineF32 = c.delay_l
+    let mut dl_r: DelayLineF32 = c.delay_r
     if c.enable_delay {
         dl_l = delay_line_tick(dl_l, left)
         dl_r = delay_line_tick(dl_r, right)
@@ -196,7 +196,7 @@ export function effect_chain_tick(c: EffectChain, input: Frame) -> EffectChain {
         right = delay_line_output(dl_r)
     }
 
-    let out: Frame = Frame { left: left, right: right }
+    let mut out: Frame = Frame { left: left, right: right }
     if c.pan != 0.0 {
         let mono: f32 = (left + right) * 0.5
         out = frame_pan(mono, c.pan)
@@ -223,26 +223,26 @@ export function effect_chain_output(c: EffectChain) -> Frame {
 }
 
 export function effect_chain_process_interleaved(c: EffectChain, buf: AudioBufferF32) -> EffectChain {
-    let chain: EffectChain = c
+    let mut chain: EffectChain = c
     let frames: i32 = buf.frames
     let channels: i32 = buf.channels
     if channels < 2 {
-        let i: i32 = 0
+        let mut i: i32 = 0
         while i < frames {
             let s: f32 = audio_buffer_get_f32(buf, i, 0)
             chain = effect_chain_tick(chain, frame_mono(s))
-            let out: Frame = effect_chain_output(chain)
+            let mut out: Frame = effect_chain_output(chain)
             audio_buffer_set_f32(buf, i, 0, out.left)
             i = i + 1
         }
         return chain
     }
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < frames {
         let l: f32 = audio_buffer_get_f32(buf, i, 0)
         let r: f32 = audio_buffer_get_f32(buf, i, 1)
         chain = effect_chain_tick(chain, frame_new(l, r))
-        let out: Frame = effect_chain_output(chain)
+        let mut out: Frame = effect_chain_output(chain)
         audio_buffer_set_f32(buf, i, 0, out.left)
         audio_buffer_set_f32(buf, i, 1, out.right)
         i = i + 1
@@ -251,28 +251,28 @@ export function effect_chain_process_interleaved(c: EffectChain, buf: AudioBuffe
 }
 
 export function effect_chain_process_interleaved_frames(c: EffectChain, buf: AudioBufferF32, frames: i32) -> EffectChain {
-    let chain: EffectChain = c
+    let mut chain: EffectChain = c
     let max_frames: i32 = buf.frames
-    let count: i32 = frames
+    let mut count: i32 = frames
     if count > max_frames { count = max_frames }
     let channels: i32 = buf.channels
     if channels < 2 {
-        let i: i32 = 0
+        let mut i: i32 = 0
         while i < count {
             let s: f32 = audio_buffer_get_f32(buf, i, 0)
             chain = effect_chain_tick(chain, frame_mono(s))
-            let out: Frame = effect_chain_output(chain)
+            let mut out: Frame = effect_chain_output(chain)
             audio_buffer_set_f32(buf, i, 0, out.left)
             i = i + 1
         }
         return chain
     }
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < count {
         let l: f32 = audio_buffer_get_f32(buf, i, 0)
         let r: f32 = audio_buffer_get_f32(buf, i, 1)
         chain = effect_chain_tick(chain, frame_new(l, r))
-        let out: Frame = effect_chain_output(chain)
+        let mut out: Frame = effect_chain_output(chain)
         audio_buffer_set_f32(buf, i, 0, out.left)
         audio_buffer_set_f32(buf, i, 1, out.right)
         i = i + 1

@@ -1,6 +1,6 @@
 # Vision
 
-> The canonical, full vision document lives at the repo root: [`VISION.md`](https://github.com/flow-lang/flow/blob/main/VISION.md). This page is the one-screen distillation.
+> The canonical, full vision document lives at the repo root: [`VISION.md`](https://github.com/flooooooooooow/flow/blob/main/VISION.md). This page is the one-screen distillation.
 
 Flow is built around **evolution**, not computation. Programs describe how systems evolve through time — as mathematical systems with explicit state, dynamics, timing, constraints, and guarantees — and the compiler turns that description into deterministic, production-ready code.
 
@@ -27,7 +27,7 @@ The goal: replace the fragmented Python → MATLAB → Simulink → C toolchain 
 
 ## Where we are
 
-The general-purpose core (types, generics, effects, autodiff, C/MLIR backends) is shipped, and a seed of the dynamics story exists today: the `dsys` declarative syntax with controllability/spectral/gramian analysis and GA-based control search (see `examples/dynamics/`). The full pillar-by-pillar status table is in [`VISION.md`](https://github.com/flow-lang/flow/blob/main/VISION.md#where-flow-is-today); the gaps are tracked on the project board under the **Vision: Evolution** epic.
+The general-purpose core (types, generics, effects, library autodiff, C/MLIR backends) is shipped, and a seed of the dynamics story exists today: the `dsys` declarative syntax with controllability/spectral/gramian analysis and GA-based control search (see `examples/dynamics/`). The full pillar-by-pillar status table is in [`VISION.md`](https://github.com/flooooooooooow/flow/blob/main/VISION.md#where-flow-is-today); the gaps are tracked on the project board under the **Vision: Evolution** epic.
 
 The core vision constructs are now in the compiler. `flow Name { ... }` blocks with `state` declarations and `x evolves as expr` continuous dynamics parse, type check, and compile to native code: a struct plus a generated `Name_step(self, dt)` that evaluates every derivative from the pre-step state and integrates with explicit Euler. Hybrid events work inside the same blocks: `when height reaches 0.0 { velocity becomes -0.8 * velocity }` fires on zero crossings and applies resets synchronously. Units of measure (`unit Meter`, `unit MeterPerSecond = Meter / Second`) carry dimension vectors through the type checker and erase to plain `f64` at codegen, so dimensional bugs fail at compile time and cost nothing at runtime.
 

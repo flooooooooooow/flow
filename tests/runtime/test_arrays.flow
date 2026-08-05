@@ -29,7 +29,7 @@ function test_struct_array() -> bool {
         data4: 50
     }
     
-    let sum: i32 = arr.data0 + arr.data2 + arr.data4
+    let mut sum: i32 = arr.data0 + arr.data2 + arr.data4
     return sum == 90
 }
 
@@ -43,7 +43,7 @@ function test_array_access_via_function() -> bool {
     }
     
     # Sum elements via accessor function
-    let sum: i32 = 0
+    let mut sum: i32 = 0
     sum = sum + get_element(arr, 0)
     sum = sum + get_element(arr, 1)
     sum = sum + get_element(arr, 2)

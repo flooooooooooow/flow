@@ -8,11 +8,11 @@ Where Flow sits relative to systems and AI/ML languages. For the dynamics / cont
 |-----------|------|---|------|-----|------|
 | **Memory model** | Manual + helpers; no GC | Manual | Ownership / borrow checker | Manual + allocators | Ownership (Rust-like) |
 | **Effects / side effects** | Algebraic effects (first-class) | Conventions / errno | `Result` + traits | Error unions | Python-style + extras |
-| **Autodiff** | Built into the language | Libraries | Libraries (e.g. burn) | Libraries | Core ML feature |
+| **Autodiff** | Stdlib + tools (not a compiler AD pass) | Libraries | Libraries (e.g. burn) | Libraries | Core ML feature |
 | **Audio / DSP** | First-class stdlib paths | External libs | Ecosystem crates | DIY / C interop | Not a focus |
 | **Compile target** | Portable C (+ MLIR/LLVM) | Native object code | LLVM | LLVM / C ABI | Machine code + Python interop |
 | **Syntax feel** | Explicit types, Rust/Go-ish | Low-level | Strict / expressive | Explicit / C-like | Python-like |
-| **Package story** | Early (`flow.toml`) | Headers / build systems | crates.io | zig fetch | Modular / evolving |
+| **Package story** | Local registry index + git/path (`flow.toml`) | Headers / build systems | crates.io | zig fetch | Modular / evolving |
 | **Learning curve** | Moderate | Steep for safety | Steep | Moderate–steep | Easy if you know Python |
 | **Best fit today** | Audio, dynamics seed, systems demos | Embedded, OS, ABI glue | Safe systems at scale | Tooling, interop, freestanding | AI/ML productivity |
 
@@ -30,25 +30,29 @@ Where Flow sits relative to systems and AI/ML languages. For the dynamics / cont
 
 | | Flow | C | Rust | Zig | Mojo |
 |-|------|---|------|-----|------|
-| Threads | POSIX wrappers in stdlib | pthreads / OS | `std::thread` + async | std.Thread | Runtime / Python model |
-| Side-effect control | Effect handlers | Informal | Types + `unsafe` | Explicit errors | Framework-dependent |
-| Async | Modeled via effects (no `async` keyword) | Callbacks / libs | `async`/`await` | Manual / event loops | Interactive notebooks |
+| Threads | POSIX + `runtime/flow_concurrency.c` | pthreads / OS | `std::thread` + async | std.Thread | Runtime / Python model |
+| Channels / WaitGroup | Real buffered channels in `concurrent.flow` | DIY | channels crate / sync | DIY | Framework-dependent |
+| Data-parallel | `parallel for` → OpenMP when available | OpenMP / TBB | rayon | DIY | Hardware accel |
+| Side-effect control | Effect handlers (`_Thread_local`) | Informal | Types + `unsafe` | Explicit errors | Framework-dependent |
+| Async | Effects (`SimulatedAsync` / `ThreadedAsync` / `FiberAsync` / `NetpollAsyncIO`; no `async` keyword) | Callbacks / libs | `async`/`await` | Manual / event loops | Interactive notebooks |
+
+Vs **Go** specifically: see [concurrency-vs-go.md](language/concurrency-vs-go.md) and [replace-go.md](language/replace-go.md) — effects + no-GC + data-parallel is the wedge. Flow ships `NetpollAsyncIO` + 2-way `select2`; Go still leads on mature netpoller integration / N-way `select`.
 
 ### Differentiation & numerics
 
 | | Flow | C | Rust | Zig | Mojo |
 |-|------|---|------|-----|------|
-| Forward / reverse AD | Language-level | Manual / libs | Ecosystem | Ecosystem | Native focus |
+| Forward / reverse AD | Stdlib dual numbers + grad tools | Manual / libs | Ecosystem | Ecosystem | Native focus |
 | SIMD | `vec4` / stdlib | Intrinsics | `std::simd` | `@Vector` | Hardware accel for ML |
 | GPU | Experimental `@gpu` / Metal path | CUDA/OpenCL by hand | Growing | Via C | Strong ML path |
 
 ## When to choose what
 
-**Choose Flow** when you want algebraic effects, built-in autodiff, and audio/dynamics-oriented systems code that still emits portable C.
+**Choose Flow** when you want algebraic effects, library autodiff, and audio/dynamics-oriented systems code that still emits portable C.
 
 **Choose C** when you need maximum ABI control, tiny runtimes, or to meet an existing C-only interface.
 
-**Choose Rust** when memory safety at scale and a mature package ecosystem matter more than effects/AD as language features.
+**Choose Rust** when memory safety at scale and a mature package ecosystem matter more than effects + stdlib AD.
 
 **Choose Zig** when you want explicit allocators, superb C interop, and a modern “better C” toolchain.
 
