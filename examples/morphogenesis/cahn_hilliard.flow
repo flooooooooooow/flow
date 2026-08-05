@@ -1,0 +1,260 @@
+# CAHN-HILLIARD: phase separation and spinodal decomposition.
+#
+# MODEL
+#   c is a conserved composition field, -1 for one phase and +1 for the other.
+#   A homogeneous mixture quenched into the two-phase region is unstable: the
+#   free energy F = integral of (c^2 - 1)^2 / 4 + eps^2 |grad c|^2 / 2 falls
+#   fastest when the mixture unmixes. Because c is conserved, the dynamics are
+#   the divergence of a flux rather than a straight relaxation.
+#
+#     mu   = c^3 - c - eps^2 * lap(c)          chemical potential
+#     dc/dt = M * lap(mu)                      conserved (Model B) dynamics
+#
+#   The second line is the body of `flow ChCell`; the grid pass computes mu
+#   and lap(mu) and hands each cell its own value.
+#
+# PARAMETERS
+#   M 1.0   eps^2 1.0   dx 1.0   dt 0.01 explicit Euler
+#   (fourth-order operator, so the stable dt is small: 2 / (M*eps^2*64))
+#   128 x 128 periodic grid, 40 steps per displayed frame.
+#
+# KEYS
+#   1 SYMMETRIC   mean c  0.00   bicontinuous, two interpenetrating phases
+#   2 DROPLETS    mean c  0.35   minority phase rounds up into islands
+#   3 INVERSE     mean c -0.35   the same, phases exchanged
+#   R reseed    P pause    Esc quit
+#
+# PHENOMENON
+#   Watch the readout. Total composition never moves, because the dynamics
+#   are a divergence. Interface length falls monotonically: fine mottling
+#   at first, then domains that swallow their neighbours and coarsen without
+#   limit. This is what a cooling alloy, a curdling emulsion and a polymer
+#   blend all do.
+#
+# Run: ./flow gfx examples/morphogenesis/cahn_hilliard.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 40
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow ChCell {
+    state c : f64 = 0.0
+
+    param lap_mu : f64 = 0.0    # lap of the chemical potential, per cell
+    param mob    : f64 = 1.0    # mobility M
+
+    solver { dt 10 ms  method euler }
+
+    c evolves as mob * lap_mu
+}
+
+let mut rng_state: u32 = 1234567891
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_signed() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 32768.0 - 1.0
+}
+
+function preset_mean(p: i32) -> f64 {
+    if p == 1 { return 0.35 }
+    if p == 2 { return -0.35 }
+    return 0.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "DROPLETS" }
+    if p == 2 { return "INVERSE" }
+    return "SYMMETRIC"
+}
+
+function seed_field(c: ptr<f64>, mean: f64) -> void {
+    for i in 0 to CELLS {
+        c[i] = mean + 0.05 * rng_signed()
+    }
+}
+
+function laplacian(src: ptr<f64>, dst: ptr<f64>) -> void {
+    for y in 0 to GRID {
+        let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+        let yp: i32 = ((y + 1) % GRID) * GRID
+        let r: i32 = y * GRID
+        for x in 0 to GRID {
+            let xm: i32 = (x + GRID - 1) % GRID
+            let xp: i32 = (x + 1) % GRID
+            dst[r + x] = src[r + xm] + src[r + xp] + src[ym + x] + src[yp + x]
+                         - 4.0 * src[r + x]
+        }
+    }
+}
+
+function evolve(c: ptr<f64>, lap_c: ptr<f64>, mu: ptr<f64>, lap_mu: ptr<f64>,
+                eps2: f64, dt: f64) -> void {
+    laplacian(c, lap_c)
+    for i in 0 to CELLS {
+        let v: f64 = c[i]
+        mu[i] = v * v * v - v - eps2 * lap_c[i]
+    }
+    laplacian(mu, lap_mu)
+    let mut cell: ChCell = ChCell_new()
+    for i in 0 to CELLS {
+        cell.c = c[i]
+        cell.lap_mu = lap_mu[i]
+        ChCell_step(&cell, dt)
+        c[i] = cell.c
+    }
+}
+
+function mean_composition(c: ptr<f64>) -> f64 {
+    let mut s: f64 = 0.0
+    for i in 0 to CELLS {
+        s = s + c[i]
+    }
+    return s / (CELLS as f64)
+}
+
+# Interface length: how many horizontal or vertical bonds join opposite phases.
+function interface_bonds(c: ptr<f64>) -> i32 {
+    let mut n: i32 = 0
+    for y in 0 to GRID {
+        let r: i32 = y * GRID
+        let rp: i32 = ((y + 1) % GRID) * GRID
+        for x in 0 to GRID {
+            let xp: i32 = (x + 1) % GRID
+            let here: bool = c[r + x] > 0.0
+            if here != (c[r + xp] > 0.0) { n = n + 1 }
+            if here != (c[rp + x] > 0.0) { n = n + 1 }
+        }
+    }
+    return n
+}
+
+# Two phases: cold slate against warm copper, sharp interface.
+function draw_field(g: Gfx, c: ptr<f64>) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let mut t: f64 = c[y * GRID + x]
+            if t < -1.0 { t = -1.0 }
+            if t > 1.0 { t = 1.0 }
+            let s: f64 = (t + 1.0) * 0.5
+            let mut rr: f64 = 34.0 + 208.0 * s
+            let mut gg: f64 = 58.0 + 96.0 * s
+            let mut bb: f64 = 96.0 - 40.0 * s
+            if rr > 255.0 { rr = 255.0 }
+            if gg > 255.0 { gg = 255.0 }
+            if bb < 0.0 { bb = 0.0 }
+            gfx_fill_rect(g, x * CELL_PX, FIELD_Y + y * CELL_PX,
+                          CELL_PX, CELL_PX, rr as i32, gg as i32, bb as i32)
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, mean: f64, bonds: i32,
+                  steps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "CAHN-HILLIARD  SPINODAL DECOMPOSITION",
+                                2, 240, 236, 230)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "QUENCH", 1, 145, 150, 158)
+    let t3: i32 = gfx_draw_text(g, 50, 28, preset_name(preset), 1, 250, 175, 110)
+    let t4: i32 = gfx_draw_text(g, 128, 28, "MEAN c", 1, 145, 150, 158)
+    let t5: i32 = gfx_draw_fixed(g, 172, 28, mean, 4, 1, 240, 236, 230)
+    let t6: i32 = gfx_draw_text(g, 240, 28, "INTERFACE", 1, 145, 150, 158)
+    let t7: i32 = gfx_draw_int(g, 302, 28, bonds, 1, 240, 236, 230)
+    let t8: i32 = gfx_draw_text(g, 366, 28, "STEPS", 1, 145, 150, 158)
+    let t9: i32 = gfx_draw_int(g, 404, 28, steps, 1, 240, 236, 230)
+    let ta: i32 = gfx_draw_text(g, 8, 42,
+        "M 1.0  eps^2 1.0  dt 0.01   1 SYMMETRIC  2 DROPLETS  3 INVERSE  R RESEED  P PAUSE",
+        1, 108, 112, 120)
+    if paused {
+        let tb: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tc: i32 = gfx_draw_text(g, 8, 572,
+        "mu = c^3 - c - eps^2*lap(c)      c evolves as M*lap(mu)", 1,
+        122, 126, 138)
+    let td: i32 = gfx_draw_text(g, 8, 582,
+        "a divergence, so MEAN c is conserved while INTERFACE only falls", 1,
+        122, 126, 138)
+}
+
+function main() -> i32 {
+    let c: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let lap_c: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let mu: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let lap_mu: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+
+    let eps2: f64 = 1.0
+    let mut preset: i32 = 0
+    seed_field(c, preset_mean(preset))
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Cahn-Hilliard - Flow morphogenesis")
+    let dt: f64 = ChCell_default_dt()
+
+    let mut steps: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            seed_field(c, preset_mean(preset))
+            steps = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(c, preset_mean(preset))
+                steps = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS {
+                evolve(c, lap_c, mu, lap_mu, eps2, dt)
+                steps = steps + 1
+            }
+        }
+
+        gfx_clear(g, 12, 14, 20)
+        draw_field(g, c)
+        draw_hud(g, preset, mean_composition(c), interface_bonds(c), steps, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
