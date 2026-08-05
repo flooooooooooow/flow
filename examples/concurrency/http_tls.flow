@@ -1,10 +1,11 @@
-# Native HTTPS: self-signed + PEM/ALPN http/1.1.
+# Native HTTPS: self-signed + PEM/ALPN http/1.1 + HTTP/2 (h2).
 # Run: ./flow run examples/concurrency/http_tls.flow
 
 extern {
     function flow_tls_available() -> i32
     function flow_https_selftest(port: i32) -> i32
     function flow_https_pem_alpn_selftest(port: i32) -> i32
+    function flow_https_h2_selftest(port: i32) -> i32
 }
 
 function main() -> i32 {
@@ -20,14 +21,21 @@ function main() -> i32 {
     print("  https mem selftest -> ")
     println(r1)
     let r2: i32 = flow_https_pem_alpn_selftest(18786)
-    print("  https pem+alpn selftest -> ")
+    print("  https pem+alpn http/1.1 -> ")
     println(r2)
+    let r3: i32 = flow_https_h2_selftest(18787)
+    print("  https h2 selftest -> ")
+    println(r3)
     if r1 != 1 {
         println("FAIL mem")
         return 1
     }
     if r2 != 1 {
         println("FAIL pem/alpn")
+        return 1
+    }
+    if r3 != 1 {
+        println("FAIL h2")
         return 1
     }
     println("OK")

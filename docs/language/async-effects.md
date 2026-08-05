@@ -80,15 +80,15 @@ Business logic depends only on the effect — swap `SimulatedAsync`,
 
 | Item | Why deferred |
 |------|----------------|
-| Full compiler `shift`/`reset` rewrite | Fiber park + C reset/`resume_multi` ship; stack-copy multi-shot restore still open |
+| Full compiler `shift`/`reset` rewrite | Fiber park + C reset/`resume_multi`/`clone` ship; true stack-frame restore still open |
 | Delimited continuations / Flow-stack suspend | ✅ main-on-fiber park; C `flow_reset`/`flow_shift` scaffold (`cont_reset.flow`) |
 | M:N work-stealing | ✅ per-worker deques (`work_steal.flow`) |
 | Fiber-aware netpoll | ✅ `flow_netpoll_fiber_*` via `NetpollAsyncIO` |
 | Fiber-aware nonblocking TCP | `BlockingTcp` is sync sockets; park-on-poll still via `NetpollAsyncIO` |
 | `Cont` + `FiberCont` (Flow-frame resume) | ✅ `Cont.shift` parks fiber (M:N-safe); `cont_arm_resume` — `cont_flow_resume.flow` |
 | Fiber-per-conn HTTP + auth mw | ✅ `http_fiber.flow` (`Bearer flow` on `/api`) |
-| HTTPS accept-loop (OpenSSL) | ✅ PEM cert/key + ALPN `http/1.1` (`http_tls.flow`) |
-| Cont multi-shot scaffold | ✅ `flow_cont_resume_multi` / `cont_multishot.flow` |
+| HTTPS accept-loop (OpenSSL) | ✅ PEM + ALPN `http/1.1` + minimal HTTP/2 `h2` (`http_tls.flow`) |
+| Cont multi-shot scaffold | ✅ `resume_multi` + `clone`/stack-blob (`cont_multishot.flow`, `cont_stackcopy.flow`) |
 | N-way `select` / `default` | ✅ `select2` + `select4` (+ `_try`) |
 | `async` / `await` syntax sugar | Only after the runtime model is solid — do **not** add keywords first |
 | Stateful handlers (`capability` with mutable task tables) | Capabilities are currently stateless; use struct+`impl` workarounds elsewhere |

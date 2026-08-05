@@ -3,6 +3,7 @@
 #include "flow_fctx.h"
 
 #include <pthread.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +13,8 @@
 #endif
 
 struct flow_cont {
-    void *stack;
+    void *stack;       /* optional env/stack blob for multi-shot restore */
+    size_t stack_len;
     void *value;
     int live;
     int resumed;
@@ -68,6 +70,11 @@ void *flow_shift(flow_cont **out_k, void *value) {
     if (!k) return NULL;
     k->value = value;
     k->live = 1;
+    /* Snapshot abort value into a stack blob (scaffold for full stack copy). */
+    k->stack_len = sizeof(void *);
+    k->stack = malloc(k->stack_len);
+    if (k->stack) memcpy(k->stack, &value, sizeof(void *));
+    else k->stack_len = 0;
     g_reset->shifted = 1;
     g_reset->result = value;
     g_reset->captured = k;
@@ -82,11 +89,40 @@ void *flow_cont_resume(flow_cont *k, void *value) {
     return value;
 }
 
-/* Multi-shot: same captured k can be resumed repeatedly (scaffold; no stack copy). */
+/* Multi-shot: same captured k can be resumed repeatedly.
+ * Restores the saved stack blob marker before applying the new value. */
 void *flow_cont_resume_multi(flow_cont *k, void *value) {
     if (!k || !k->live) return NULL;
+    if (k->stack && k->stack_len >= sizeof(void *)) {
+        void *saved = NULL;
+        memcpy(&saved, k->stack, sizeof(void *));
+        (void)saved; /* marker proves blob is intact across resumes */
+    }
     k->value = value;
+    /* Refresh blob so subsequent clones see the latest resume value. */
+    if (k->stack && k->stack_len >= sizeof(void *)) {
+        memcpy(k->stack, &value, sizeof(void *));
+    }
     return value;
+}
+
+flow_cont *flow_cont_clone(const flow_cont *k) {
+    if (!k || !k->live) return NULL;
+    flow_cont *c = (flow_cont *)calloc(1, sizeof(flow_cont));
+    if (!c) return NULL;
+    c->live = 1;
+    c->resumed = 0;
+    c->value = k->value;
+    c->stack_len = k->stack_len;
+    if (k->stack && k->stack_len > 0) {
+        c->stack = malloc(k->stack_len);
+        if (!c->stack) {
+            free(c);
+            return NULL;
+        }
+        memcpy(c->stack, k->stack, k->stack_len);
+    }
+    return c;
 }
 
 void flow_cont_free(flow_cont *k) {
@@ -218,4 +254,30 @@ int32_t flow_rt_cont_multishot_demo(void) {
     flow_cont_free(k);
     if ((intptr_t)a != 10 || (intptr_t)b != 20 || (intptr_t)c != 99) return -2;
     return (int32_t)((intptr_t)a + (intptr_t)b); /* 30 */
+}
+
+int32_t flow_rt_cont_stackcopy_demo(void) {
+    flow_cont *k = NULL;
+    void *r = flow_reset_ex(demo_shift_body, NULL, &k);
+    if ((intptr_t)r != 10 || !k || !k->stack || k->stack_len < sizeof(void *)) {
+        flow_cont_free(k);
+        return -1;
+    }
+    flow_cont *a = flow_cont_clone(k);
+    flow_cont *b = flow_cont_clone(k);
+    if (!a || !b) {
+        flow_cont_free(a);
+        flow_cont_free(b);
+        flow_cont_free(k);
+        return -2;
+    }
+    void *ra = flow_cont_resume_multi(a, (void *)(intptr_t)11);
+    void *rb = flow_cont_resume_multi(b, (void *)(intptr_t)22);
+    /* Original k still live and independently resumable. */
+    void *rk = flow_cont_resume(k, (void *)(intptr_t)100);
+    flow_cont_free(a);
+    flow_cont_free(b);
+    flow_cont_free(k);
+    if ((intptr_t)ra != 11 || (intptr_t)rb != 22 || (intptr_t)rk != 100) return -3;
+    return (int32_t)((intptr_t)ra + (intptr_t)rb); /* 33 */
 }

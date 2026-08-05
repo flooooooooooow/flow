@@ -37,7 +37,11 @@ int32_t flow_rt_cont_demo(void);
 int32_t flow_rt_cont_reset_demo(void);
 /* Multi-shot: resume same k with 10 then 20; returns 30 on success. */
 int32_t flow_rt_cont_multishot_demo(void);
+/* Clone + stack-blob restore: resume clone(a)=11, clone(b)=22 → 33. */
+int32_t flow_rt_cont_stackcopy_demo(void);
 void *flow_cont_resume_multi(flow_cont *k, void *value);
+/* Deep-copy a live cont (including stack blob) for multi-shot identity. */
+flow_cont *flow_cont_clone(const flow_cont *k);
 
 #ifdef __cplusplus
 }
