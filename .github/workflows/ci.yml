@@ -195,7 +195,12 @@ jobs:
           echo "Using flowc: $FLOWC_BIN"
           ./flow run examples/basics/hello_world.flow
           ./flow compile examples/basics/fibonacci.flow
+          # fibonacci.flow main returns fib(10) == 55 as process exit status
+          set +e
           ./build/fibonacci
+          ec=$?
+          set -e
+          test "$ec" -eq 55
 
   pytest:
     name: Python tests
