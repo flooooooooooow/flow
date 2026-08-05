@@ -6,8 +6,8 @@ Get from zero to productive in 5 minutes.
 
 ### Requirements
 
-- Python 3.9+
 - Clang or GCC (Xcode Command Line Tools on macOS)
+- Python 3.9+ (only for `FLOW_HOST=python`, tests, MLIR/gfx, and first-time Gen0 bootstrap)
 
 ### Homebrew
 
@@ -25,15 +25,14 @@ cd flow
 ./flow version
 ```
 
-No pip install needed — Flow runs directly from the repo (or the Homebrew prefix).
+`./flow run` / `./flow compile` default to Stage-A **flowc** (`FLOW_HOST=flowc`). Use `FLOW_HOST=python` for the full language surface (I/O helpers, DSLs, tests). See [self-hosting](project/self-hosting.md).
 
 ## Hello World
 
-Create `hello.flow`:
+Create `hello.flow` (Stage-A subset — works with the default flowc host):
 
 ```flow
 function main() -> i32 {
-    println("Hello, Flow!")
     return 0
 }
 ```
@@ -42,6 +41,12 @@ Run it:
 
 ```bash
 ./flow run hello.flow
+```
+
+For `println` and other full-language features:
+
+```bash
+FLOW_HOST=python ./flow run hello.flow
 ```
 
 ## Language Basics
