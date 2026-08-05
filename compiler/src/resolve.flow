@@ -4,6 +4,8 @@
 # MVP: resolve `import .sibling` (ival=1) and `import "path"` (ival=2);
 # skip dotted `pkg.mod` (ival=0). Bundle emit concatenates deps then entry
 # into one TU (first module writes includes; rest use flowc_cgen_emit_ex flags&1).
+# Gather is BFS (discovery order); emit/typecheck topo-sort to deps-first so
+# shared imports (token before lexer+parser) are never emitted too late.
 # flowc_bundle_typecheck: deps-first check with growing seed of dep exports.
 
 import .ast {
@@ -340,6 +342,132 @@ function flowc_resolve_gather(
     return n
 }
 
+
+# True if every in-bundle import of `path` is already present in `out_store[0..out_n)`.
+function flowc_resolve_deps_ready(
+    path: string,
+    search_dir: string,
+    all_store: ptr<u8>,
+    all_n: i32,
+    out_store: ptr<u8>,
+    out_n: i32,
+    src: ptr<u8>,
+    imp_path: ptr<u8>
+) -> i32 {
+    let mut zi: i32 = 0
+    while zi < FLOWC_RESOLVE_SRC_CAP {
+        src[zi] = 0
+        zi = zi + 1
+    }
+    let nsrc: i32 = flowc_read_file(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
+    if nsrc <= 0 {
+        return 0
+    }
+    src[nsrc] = 0
+    let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut ii: i32 = 0
+    while ii < p.arena.len {
+        if p.arena.nodes[ii].kind == AST_IMPORT {
+            let form: i32 = p.arena.nodes[ii].ival
+            if form == 1 or form == 2 {
+                let plen: i32 = flowc_resolve_sibling_path(
+                    src,
+                    p.arena.nodes[ii].name_start,
+                    p.arena.nodes[ii].name_end,
+                    search_dir,
+                    imp_path,
+                    FLOWC_RESOLVE_PATH_CAP
+                )
+                if plen < 0 {
+                    flowc_parser_free(p)
+                    return 0
+                }
+                # Only care about deps that are part of this bundle.
+                if flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path) >= 0 {
+                    if flowc_resolve_find_path(out_store, out_n, FLOWC_RESOLVE_PATH_CAP, imp_path) < 0 {
+                        flowc_parser_free(p)
+                        return 0
+                    }
+                }
+            }
+        }
+        ii = ii + 1
+    }
+    flowc_parser_free(p)
+    return 1
+}
+
+# Convert BFS discovery order into deps-first order (Kahn / repeated ready scan).
+# Writes into out_store; returns count or -1 on cycle/failure.
+function flowc_resolve_topo(
+    all_store: ptr<u8>,
+    all_n: i32,
+    search_dir: string,
+    out_store: ptr<u8>
+) -> i32 {
+    let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
+    let imp_path: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    let placed: ptr<u8> = malloc(FLOWC_RESOLVE_MAX_MODS as i64)
+    if src == null or imp_path == null or placed == null {
+        if src != null {
+            free(src)
+        }
+        if imp_path != null {
+            free(imp_path)
+        }
+        if placed != null {
+            free(placed)
+        }
+        return 0 - 1
+    }
+    let mut pi: i32 = 0
+    while pi < FLOWC_RESOLVE_MAX_MODS {
+        placed[pi] = 0
+        pi = pi + 1
+    }
+    let mut out_n: i32 = 0
+    while out_n < all_n {
+        let mut progress: i32 = 0
+        let mut i: i32 = 0
+        while i < all_n {
+            if placed[i] == 0 {
+                let slot: ptr<u8> = all_store + (i * FLOWC_RESOLVE_PATH_CAP)
+                let mpath: string = slot
+                if flowc_resolve_deps_ready(
+                    mpath, search_dir, all_store, all_n, out_store, out_n, src, imp_path
+                ) == 1 {
+                    let n2: i32 = flowc_resolve_append_path(out_store, out_n, mpath)
+                    if n2 < 0 {
+                        free(placed)
+                        free(imp_path)
+                        free(src)
+                        return 0 - 1
+                    }
+                    out_n = n2
+                    placed[i] = 1
+                    progress = 1
+                }
+            }
+            i = i + 1
+        }
+        if progress == 0 {
+            free(placed)
+            free(imp_path)
+            free(src)
+            return 0 - 1
+        }
+    }
+    free(placed)
+    free(imp_path)
+    free(src)
+    return out_n
+}
+
 # Emit one module's C into `out` (remaining capacity `out_cap`).
 # flags forwarded to flowc_cgen_emit_ex.
 function flowc_resolve_emit_one(path: string, out: ptr<u8>, out_cap: i32, flags: i32) -> i32 {
@@ -394,10 +522,28 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
         return 1
     }
 
+    let order_store: ptr<u8> = malloc((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP) as i64)
+    if order_store == null {
+        free(path_store)
+        return 1
+    }
+    zi = 0
+    while zi < psz {
+        order_store[zi] = 0
+        zi = zi + 1
+    }
+    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, order_store)
+    if norder <= 0 {
+        free(order_store)
+        free(path_store)
+        return 1
+    }
+
     # Typed null: bare `null` breaks host C mangling (emits flowc_tc_init not _ptr_u8).
     let no_src: ptr<u8> = null
     let mut ctx: TcCtx = flowc_tc_init(no_src)
     if ctx.ns == null {
+        free(order_store)
         free(path_store)
         return 1
     }
@@ -405,16 +551,16 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
     let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
     if src == null {
         flowc_tc_free(&ctx)
+        free(order_store)
         free(path_store)
         return 1
     }
 
     let mut total_err: i32 = 0
-    # Reverse BFS: deepest deps first, entry last (same order as emit).
-    let mut mi: i32 = nmods
-    while mi > 0 {
-        mi = mi - 1
-        let slot: ptr<u8> = path_store + (mi * FLOWC_RESOLVE_PATH_CAP)
+    # Deps-first topo order (shared imports before dependents).
+    let mut mi: i32 = 0
+    while mi < norder {
+        let slot: ptr<u8> = order_store + (mi * FLOWC_RESOLVE_PATH_CAP)
         let mpath: string = slot
 
         zi = 0
@@ -426,6 +572,7 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
         if nsrc <= 0 {
             free(src)
             flowc_tc_free(&ctx)
+            free(order_store)
             free(path_store)
             return 1
         }
@@ -437,6 +584,7 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
             flowc_parser_free(p)
             free(src)
             flowc_tc_free(&ctx)
+            free(order_store)
             free(path_store)
             return 1
         }
@@ -450,16 +598,18 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
         flowc_tc_seed_export(&ctx, p.arena, root, src)
 
         flowc_parser_free(p)
+        mi = mi + 1
     }
 
     free(src)
     flowc_tc_free(&ctx)
+    free(order_store)
     free(path_store)
     return total_err
 }
 
 # Resolve entry + relative/string imports, emit concatenated C (deps then entry).
-# Gather is BFS (entry first); emit reverses so deps come first.
+# Gather is BFS; topo-sort to deps-first so shared imports precede dependents.
 # Returns bytes written, or -1 on failure.
 export function flowc_bundle_emit(
     entry_path: string,
@@ -484,13 +634,28 @@ export function flowc_bundle_emit(
         return 0 - 1
     }
 
+    let order_store: ptr<u8> = malloc((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP) as i64)
+    if order_store == null {
+        free(path_store)
+        return 0 - 1
+    }
+    zi = 0
+    while zi < psz {
+        order_store[zi] = 0
+        zi = zi + 1
+    }
+    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, order_store)
+    if norder <= 0 {
+        free(order_store)
+        free(path_store)
+        return 0 - 1
+    }
+
     let mut written: i32 = 0
-    # Reverse BFS order: last discovered (deepest deps) first, entry last.
-    let mut mi: i32 = nmods
+    let mut mi: i32 = 0
     let mut first: i32 = 1
-    while mi > 0 {
-        mi = mi - 1
-        let slot: ptr<u8> = path_store + (mi * FLOWC_RESOLVE_PATH_CAP)
+    while mi < norder {
+        let slot: ptr<u8> = order_store + (mi * FLOWC_RESOLVE_PATH_CAP)
         let mpath: string = slot
         let mut flags: i32 = 0
         if first == 0 {
@@ -500,11 +665,13 @@ export function flowc_bundle_emit(
         let dest: ptr<u8> = out + written
         let rem: i32 = out_cap - written
         if rem <= 0 {
+            free(order_store)
             free(path_store)
             return 0 - 1
         }
         let n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags)
         if n <= 0 {
+            free(order_store)
             free(path_store)
             return 0 - 1
         }
@@ -513,8 +680,10 @@ export function flowc_bundle_emit(
             out[written] = 10
             written = written + 1
         }
+        mi = mi + 1
     }
 
+    free(order_store)
     free(path_store)
     return written
 }
