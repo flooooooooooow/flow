@@ -1,10 +1,11 @@
-/* HTTP socket bodies for Flow harness (lib/runtime/http_bench.flow). */
+/* Threaded accept-loop server for the Flow HTTP bench.
+ * Serve and client loops live in lib/runtime/http_bench.flow; C keeps only
+ * the background server thread (pthread + volatile stop flag) and a
+ * string-typed send shim. */
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -14,8 +15,12 @@ static const char *RESP =
 
 typedef struct {
     int listen_fd;
+    int port;
     volatile int stop;
 } http_srv;
+
+static http_srv g_srv;
+static pthread_t g_srv_thread;
 
 static void *accept_loop(void *arg) {
     http_srv *s = (http_srv *)arg;
@@ -33,11 +38,7 @@ static void *accept_loop(void *arg) {
     return NULL;
 }
 
-int64_t flow_rt_http_serve_hello(int32_t port, int32_t n_req) {
-    static const char *HELLO =
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"
-        "Content-Length: 15\r\nConnection: close\r\n\r\n"
-        "Hello from Flow";
+int32_t flow_rt_http_bench_srv_start(int32_t port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
     int yes = 1;
@@ -47,85 +48,39 @@ int64_t flow_rt_http_serve_hello(int32_t port, int32_t n_req) {
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = htons((uint16_t)port);
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 || listen(fd, 32) < 0) {
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 || listen(fd, 128) < 0) {
         close(fd);
         return -1;
     }
-    int64_t served = 0;
-    char buf[1024];
-    while (served < n_req) {
-        int cfd = accept(fd, NULL, NULL);
-        if (cfd < 0) continue;
-        (void)recv(cfd, buf, sizeof(buf), 0);
-        (void)send(cfd, HELLO, (int)strlen(HELLO), 0);
-        close(cfd);
-        served++;
+    g_srv.listen_fd = fd;
+    g_srv.port = port;
+    g_srv.stop = 0;
+    if (pthread_create(&g_srv_thread, NULL, accept_loop, &g_srv) != 0) {
+        close(fd);
+        return -1;
     }
-    close(fd);
-    return served;
+    return fd;
 }
 
-/* Client GETs against accept_loop server; returns completed count (no timing). */
-int64_t flow_rt_http_bench_run(int32_t port, int32_t n_req) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return -1;
-    int yes = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons((uint16_t)port);
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(fd);
-        return -1;
-    }
-    if (listen(fd, 128) < 0) {
-        close(fd);
-        return -1;
-    }
-
-    http_srv srv = {.listen_fd = fd, .stop = 0};
-    pthread_t th;
-    if (pthread_create(&th, NULL, accept_loop, &srv) != 0) {
-        close(fd);
-        return -1;
-    }
-
-    for (int i = 0; i < 20; i++) {
-        int c = socket(AF_INET, SOCK_STREAM, 0);
-        if (c < 0) continue;
-        if (connect(c, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            const char *req = "GET / HTTP/1.0\r\n\r\n";
-            send(c, req, (int)strlen(req), 0);
-            char b[256];
-            (void)recv(c, b, sizeof(b), 0);
-        }
-        close(c);
-    }
-
-    int64_t ok = 0;
-    for (int i = 0; i < n_req; i++) {
-        int c = socket(AF_INET, SOCK_STREAM, 0);
-        if (c < 0) continue;
-        if (connect(c, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            const char *req = "GET / HTTP/1.0\r\n\r\n";
-            if (send(c, req, (int)strlen(req), 0) > 0) {
-                char b[256];
-                if (recv(c, b, sizeof(b), 0) > 0) ok++;
-            }
-        }
-        close(c);
-    }
-
-    srv.stop = 1;
+int32_t flow_rt_http_bench_srv_stop(void) {
+    g_srv.stop = 1;
+    /* Poke the accept loop awake. */
     int poke = socket(AF_INET, SOCK_STREAM, 0);
     if (poke >= 0) {
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = htons((uint16_t)g_srv.port);
         (void)connect(poke, (struct sockaddr *)&addr, sizeof(addr));
         close(poke);
     }
-    close(fd);
-    pthread_join(th, NULL);
-    return ok;
+    close(g_srv.listen_fd);
+    pthread_join(g_srv_thread, NULL);
+    return 0;
+}
+
+int32_t flow_rt_tcp_send_str(int32_t fd, const char *s, int32_t len) {
+    if (fd < 0 || !s || len <= 0) return -1;
+    return (int32_t)send(fd, s, (size_t)len, 0);
 }
