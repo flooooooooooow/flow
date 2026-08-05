@@ -1,0 +1,20 @@
+# Stage-A match: struct patterns are NOT supported — emit must fail with a
+# clear diagnostic (roundtrip asserts the message and that no C is written).
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 1, y: 2 }
+    match p {
+        Point(a, b) => {
+            return a
+        }
+        _ => {
+            return 0
+        }
+    }
+    return 0
+}
