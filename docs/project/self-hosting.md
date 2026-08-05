@@ -1,6 +1,6 @@
 # Self-Hosting Plan — Rewrite the Compiler in Flow
 
-> **Status:** Active plan · **Tracker:** GitHub issues labeled `self-hosting` · **Bootstrap tree:** [`compiler/`](../../compiler/) (landing progressively; not yet on `main` as of this doc’s first cut)
+> **Status:** Active · Phases A–B on `main` · Phase C soft cutover (`FLOW_HOST`) · **Tracker:** GitHub issues labeled `self-hosting` · **Bootstrap tree:** [`compiler/`](../../compiler/)
 >
 > Goal: retire `src/flow/*.py` as the production compiler and make **`flowc`** (Flow→C, written in Flow) the sole host.
 
@@ -85,11 +85,14 @@ Expand `flowc` until it parses/emits everything the **compiler sources themselve
 
 **Exit:** `FLOWC_BUNDLE=1` builds all of `compiler/src` without `FLOWC_TYPECHECK=0` hacks except documented externs.
 
-### Phase C — `flowc` replaces Python for `./flow run|build`
+### Phase C — `flowc` replaces Python for `./flow run|build`  *(in progress)*
 
-- Thin `./flow` shim: prefer `compiler/build/stage_a_driver_flow_self` (or packaged `flowc`).
-- Parity suite: tier-0 + tier-1 examples compile under both hosts; diff or run outputs.
-- Keep `FLOW_HOST=python` escape hatch.
+- Thin `./flow` shim: `FLOW_HOST=flowc` (default) | `python` | `auto`.
+- Resolve driver via `compiler/scripts/ensure_flowc.sh` (prefers
+  `stage_a_driver_flow_self`, bootstraps Gen0 with Phase-A roundtrip if needed).
+- CI: after `roundtrip.sh`, smoke `FLOW_HOST=flowc ./flow run examples/basics/hello_world.flow`.
+- Example/benchmark jobs keep `FLOW_HOST=python` until Stage-A covers the full
+  language surface (Phase D).
 
 **Exit:** default `./flow run examples/basics/hello_world.flow` does not import `src/flow/parser.py`.
 

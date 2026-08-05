@@ -184,6 +184,24 @@ jobs:
           # Full roundtrip: Phase-A fixtures + Phase-B bundle/topo/self-emit path.
           timeout 20m ./compiler/scripts/roundtrip.sh
 
+      - name: Phase C host smoke (FLOW_HOST=flowc)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: flowc
+        run: |
+          chmod +x ./flow compiler/scripts/*.sh
+          FLOWC_BIN="$(./compiler/scripts/ensure_flowc.sh)"
+          export FLOWC_BIN
+          echo "Using flowc: $FLOWC_BIN"
+          ./flow run examples/basics/hello_world.flow
+          ./flow compile examples/basics/fibonacci.flow
+          # fibonacci.flow main returns fib(10) == 55 as process exit status
+          set +e
+          ./build/fibonacci
+          ec=$?
+          set -e
+          test "$ec" -eq 55
+
   pytest:
     name: Python tests
     runs-on: ubuntu-latest
@@ -249,6 +267,8 @@ jobs:
       - name: hello_world + fibonacci
         env:
           PYTHONPATH: src
+          # Example smoke stays on the full-language Python host until Phase D.
+          FLOW_HOST: python
         run: |
           chmod +x ./flow
           ./flow run examples/basics/hello_world.flow
@@ -267,6 +287,7 @@ jobs:
       - name: Fibonacci benchmark
         env:
           PYTHONPATH: src
+          FLOW_HOST: python
         run: |
           chmod +x ./flow
           ./flow compile benchmarks/suite/flow/01_fibonacci.flow
