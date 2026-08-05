@@ -72,6 +72,7 @@ class TestDynamicsDSLCompiler:
         code = compile_dynamics_program(program)
         assert "dsys_discrete" in code
         assert "__dsys_plant" in code
+        assert "let plant: DynamicalSystem = __dsys_plant" in code
         assert "horizon_finite(50)" in code
 
     def test_compile_emits_ga_evolve(self):

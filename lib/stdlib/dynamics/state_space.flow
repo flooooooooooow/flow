@@ -4,7 +4,7 @@
 import "stdlib/dynamics/core.flow"
 
 # One discrete step: x_next = A x + B u.
-function state_step(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void {
+export function state_step(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void {
     let n: i32 = sys.n
     let Bu: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let Ax: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -13,6 +13,11 @@ function state_step(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<
     for i in 0 to n {
         x_next[i] = Ax[i] + Bu[i]
     }
+}
+
+# Alias matching pattern-adoption naming (`plant.step` surface).
+export function plant_step(sys: DynamicalSystem, x: ptr<f64>, u: ptr<f64>, x_next: ptr<f64>) -> void {
+    state_step(sys, x, u, x_next)
 }
 
 # One continuous Euler step: x += dt (A x + B u).
