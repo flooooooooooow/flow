@@ -20,11 +20,20 @@ from flow.parser import (
 
 
 def _lower(expr_src: str):
-    """Parse `let r = <expr_src>` in main and return the lowered initializer."""
+    """Parse `let r = <expr_src>` in main and return `r`'s lowered initializer.
+
+    Fork desugaring may hoist a `let __fork_src_* = …` above `let r`, so find
+    `r` by name rather than by position.
+    """
     src = "function main() -> i32 { let r = " + expr_src + "\nreturn 0 }"
+    fn = _main(src)
+    r = next(s for s in fn.body.statements if getattr(s, "name", None) == "r")
+    return r.initializer
+
+
+def _main(src: str):
     decls = Parser(Lexer(src)).parse()
-    fn = next(d for d in decls if isinstance(d, FunctionDecl) and d.name == "main")
-    return fn.body.statements[0].initializer
+    return next(d for d in decls if isinstance(d, FunctionDecl) and d.name == "main")
 
 
 def _render(node) -> str:
@@ -92,9 +101,18 @@ def test_fork_result_can_continue_pipeline():
 
 
 def test_fork_source_may_be_a_pipeline_stage():
-    r = _lower("x |> frames(1024) |> Out { lo = lowpass, hi = highpass }")
-    assert _render(r) == (
-        "Out{lo: lowpass(frames(x, 1024)), hi: highpass(frames(x, 1024))}"
+    # A non-trivial source (a call) is hoisted to a temp and evaluated once,
+    # so both branches reference the temp rather than repeating frames(x, 1024).
+    fn = _main(
+        "function main() -> i32 { let r = "
+        "x |> frames(1024) |> Out { lo = lowpass, hi = highpass }\nreturn 0 }"
+    )
+    stmts = fn.body.statements
+    hoist = next(s for s in stmts if getattr(s, "name", "").startswith("__fork_src"))
+    assert _render(hoist.initializer) == "frames(x, 1024)"
+    r = next(s for s in stmts if getattr(s, "name", None) == "r")
+    assert _render(r.initializer) == (
+        "Out{{lo: lowpass({t}), hi: highpass({t})}}".format(t=hoist.name)
     )
 
 
@@ -169,6 +187,33 @@ def test_anon_fork_dedups_identical_records():
     """
     structs = [d for d in _parse_program(src) if isinstance(d, StructDecl)]
     assert len(structs) == 1
+
+
+def test_trivial_source_is_not_hoisted():
+    # A plain variable source is cheap and side-effect-free, so it is inlined
+    # into each branch rather than bound to a temp.
+    fn = _main(
+        "function main() -> i32 { let r = "
+        "v |> R { a = f, b = g }\nreturn 0 }"
+    )
+    assert not any(
+        getattr(s, "name", "").startswith("__fork_src") for s in fn.body.statements
+    )
+
+
+def test_nontrivial_source_hoisted_once_for_all_branches():
+    fn = _main(
+        "function main() -> i32 { let r = "
+        "make(k) |> R { a = f, b = g, c = h }\nreturn 0 }"
+    )
+    hoists = [
+        s for s in fn.body.statements if getattr(s, "name", "").startswith("__fork_src")
+    ]
+    assert len(hoists) == 1  # one temp, not one per branch
+    r = next(s for s in fn.body.statements if getattr(s, "name", None) == "r")
+    assert _render(r.initializer) == (
+        "R{{a: f({t}), b: g({t}), c: h({t})}}".format(t=hoists[0].name)
+    )
 
 
 def test_anon_fork_uninferrable_field_errors():

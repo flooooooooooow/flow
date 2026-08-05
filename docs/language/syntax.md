@@ -239,9 +239,11 @@ can't be typed structurally (e.g. a method call on an inferred receiver) has to
 name the record instead. Anonymous records with the same field signature share
 one synthesized type.
 
-Whether named or anonymous, the piped value is substituted into every branch, so
-a non-trivial `source` (a call rather than a variable) is evaluated once per
-branch — bind it with `let` first when that matters.
+Whether named or anonymous, the piped value is evaluated **once** and shared
+across every branch: a non-trivial `source` (a call rather than a variable) is
+hoisted to a temporary binding just above the statement, so `frames(1024)` in
+`x |> frames(1024) |> { … }` runs a single time no matter how many branches read
+it.
 
 ## Grammar (Simplified EBNF)
 

@@ -382,18 +382,31 @@ class StructLiteral:
 
 
 @dataclass
-class ForkRecord:
-    """An anonymous fork block: `source |> { a = pipeline, ... }`.
+class ForkSource:
+    """Placeholder for a fork block's piped value inside a branch template.
 
-    Each field value already has `source` piped through its stages (built the
-    same way as a named fork's branches). The record has no declared type yet;
-    `desugar_fork_records` (a post-parse pass) infers each field's type from the
-    outermost call's return type, synthesizes a struct, and rewrites this into a
-    `StructLiteral` of that struct. The node never survives `parse()`, so no
-    later phase — type checker, backends, tooling — needs to know about it.
+    A fork branch is parsed as a pipeline whose head is this node; the fork
+    desugaring substitutes the real source (or a hoisted temp binding it) for
+    every `ForkSource` before the fork is lowered.
     """
 
-    fields: List[tuple]  # List of (field_name, source-piped value)
+
+@dataclass
+class ForkBlock:
+    """A fork block: `source |> [Record] { a = pipeline, ... }`.
+
+    Each branch value is a template pipeline over `ForkSource` (e.g.
+    `magnitude(fft(ForkSource()))`). `record_name` is the named record, or
+    None for the anonymous inferred form. `desugar_forks` (a post-parse pass)
+    binds `source` once when it is non-trivial, substitutes it into the
+    branches, infers a record type for the anonymous form, and rewrites this
+    into a `StructLiteral`. The node never survives `parse()`, so no later
+    phase — type checker, backends, tooling — needs to know about it.
+    """
+
+    record_name: Optional[str]
+    source: "Expression"
+    branches: List[tuple]  # List of (field_name, template over ForkSource)
     line: int = 0
 
 
@@ -1321,7 +1334,7 @@ class Parser:
         self.lookahead = self.lexer.next_token()
         self.struct_names = set()
         self.nesting_depth = 0
-        self._has_fork_record = False
+        self._has_fork = False
 
     def _enter_nesting(self, kind: str = "expression") -> None:
         """Bump the nesting depth; reject pathologically deep input cleanly
@@ -1590,10 +1603,10 @@ class Parser:
             from .flow_blocks import expand_flow_decls
 
             declarations = expand_flow_decls(declarations, source=self.source)
-        if self._has_fork_record:
-            from .fork_records import desugar_fork_records
+        if self._has_fork:
+            from .fork_records import desugar_forks
 
-            declarations = desugar_fork_records(declarations)
+            declarations = desugar_forks(declarations)
         return declarations
 
     def parse_module(self) -> ModuleDecl:
@@ -3429,13 +3442,10 @@ class Parser:
         pipeline `source |> stage…`. Branches read with `=` (not the
         struct-literal `:`) to keep the fork/record forms visually distinct.
 
-        `Record { … }` lowers directly to a `StructLiteral` of the named record.
-        `{ … }` (no name) produces a `ForkRecord`, whose record type is inferred
-        by a post-parse pass.
-
-        Note: `source` is substituted into every branch, so a non-trivial
-        source (a call, not a variable) is evaluated once per branch. Bind it
-        with `let` first when that matters.
+        `Record { … }` names the record; `{ … }` infers it. Both produce a
+        `ForkBlock` whose branch templates pipe a `ForkSource` placeholder; the
+        post-parse `desugar_forks` pass binds the source once, substitutes it,
+        and lowers to a `StructLiteral`.
         """
         record_name = None
         if self.current_token.type == TokenType.IDENTIFIER:
@@ -3462,21 +3472,19 @@ class Parser:
                     "Duplicate fork field '{}'".format(field_name)
                 )
             seen.add(field_name)
-            fields.append((field_name, self._parse_fork_branch(source)))
+            fields.append((field_name, self._parse_fork_branch()))
             if self.current_token.type == TokenType.COMMA:
                 self.advance()
         if not fields:
             raise self.error("Fork block must have at least one `field = …` branch")
         self.expect(TokenType.RBRACE)
-        if record_name is None:
-            self._has_fork_record = True
-            return ForkRecord(fields, line)
-        return StructLiteral(record_name, fields)
+        self._has_fork = True
+        return ForkBlock(record_name, source, fields, line)
 
-    def _parse_fork_branch(self, source: Expression) -> Expression:
-        """One fork branch: pipe `source` through the branch's stages."""
+    def _parse_fork_branch(self) -> Expression:
+        """One fork branch: a pipeline over the `ForkSource` placeholder."""
         rhs = self.parse_logical_or()
-        value = self._apply_pipe(source, rhs)
+        value = self._apply_pipe(ForkSource(), rhs)
         return self._parse_pipeline_chain(value)
 
         return left
