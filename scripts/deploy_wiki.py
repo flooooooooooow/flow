@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Build and deploy the Flow wiki to the VPS."""
+"""Build the Flow wiki locally. VPS deploy is disabled — docs ship via GitHub Pages.
+
+CI: `.github/workflows/wiki.yml` → GitHub Pages
+   https://flooooooooooow.github.io/flow/
+
+Legacy VPS deploy remains behind FLOW_WIKI_VPS=1 for emergencies only.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build" / "wiki"
 AISSH = Path("/Users/abhishekshivakumar/website/aissh")
 REMOTE_DIR = "/var/www/transpile"
+PAGES_URL = "https://flooooooooooow.github.io/flow/"
 
 
 def main() -> int:
@@ -21,6 +28,14 @@ def main() -> int:
     if not BUILD.exists():
         print("Build directory missing", file=sys.stderr)
         return 1
+
+    if os.environ.get("FLOW_WIKI_VPS", "").strip() not in ("1", "true", "yes"):
+        print("Wiki built →", BUILD)
+        print("VPS deploy disabled. Docs publish via GitHub Pages:")
+        print(" ", PAGES_URL)
+        print("Preview locally:  cd build/wiki && python3 -m http.server 8777")
+        print("Emergency VPS:    FLOW_WIKI_VPS=1 python3 scripts/deploy_wiki.py")
+        return 0
 
     sys.path.insert(0, str(AISSH))
     from ssh_client import get_config  # noqa: E402

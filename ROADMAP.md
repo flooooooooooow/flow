@@ -146,7 +146,7 @@ a proof corpus, not the showcase.
 | Record Tetris demo GIF | ✅ | `docs/demos/tetris.gif` via `scripts/record_tetris_gif.py` (palette/layout match `tetris_gfx.flow`); live play: `./flow gfx examples/games/tetris_gfx.flow` |
 | Strict-clean test corpus | ✅ | `./flow test --strict --tier2` passes all 215 tracked corpus files; `# flow:lenient - <reason>` pragma for intentional exceptions |
 | Targeted fuzzing harness | ✅ | `tests/fuzz/` (mutation/grammar/pipeline targets, seeded, auto-shrink); known crashes fixed as clean `SyntaxError` regressions |
-| Wiki live at `/flow/` + tutorials | ✅ | marked wiki, 130+ interactive lessons, proof catalog, deploy via `scripts/deploy_wiki.py` |
+| Wiki live at GitHub Pages + tutorials | ✅ | marked wiki, 130+ interactive lessons, proof catalog; deploy via `.github/workflows/wiki.yml` → [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) (VPS deploy disabled) |
 | Manual memory stdlib (real heap) | ✅ | `lib/stdlib/memory.flow` — libc malloc/calloc/realloc/free + arena; docs + tutorials |
 | Fuzz parse crashes (array size / nesting) | ✅ | Depth limit + `parse_array_size()` — see `tests/fuzz/test_crash_regressions.py` |
 | Declarative ordering Phase 1 | ✅ | `xs \|\> sort` / `sortBy [asc .f, …]` — [docs/language/ordering.md](docs/language/ordering.md); example `examples/basics/declarative_sort.flow` |
@@ -699,8 +699,22 @@ let c: f32x4 = simd_add(a, b)  # (6.0, 8.0, 10.0, 12.0)
 
 ## Phase 5: Ecosystem (Long-term)
 
-### 5.1 Self-Hosting
-Rewrite the compiler in FLOW itself.
+### 5.1 Self-Hosting — rewrite Python → Flow
+**Priority:** High (strategic)  
+**Plan:** [docs/project/self-hosting.md](docs/project/self-hosting.md)  
+**Issues:** GitHub label `self-hosting`
+
+Replace `src/flow/*.py` as the production compiler with **`flowc`** (Flow→C written in Flow under `compiler/`).
+
+| Phase | Goal | Status |
+|-------|------|--------|
+| **A** | Land `compiler/` + Stage-A roundtrip/self-emit on `main` + CI | 🔲 |
+| **B** | Close Stage-A gaps so `flowc` sources compile under `flowc` | 🔲 |
+| **C** | `./flow` defaults to `flowc`; Python via `FLOW_HOST=python` | 🔲 |
+| **D** | Retire Python from the compile critical path | 🔲 |
+| **E** | Packaging, optional MLIR/GPU as separate tracks | 🔲 |
+
+Bootstrap already exists locally in many worktrees (`compiler/src/{lexer,parser,cgen,…}.flow`, fixed-point scripts). This roadmap item tracks **merge + cutover**, not a greenfield rewrite.
 
 ### 5.2 Standard Library Expansion (Complete ✅)
 See **Standard Library Expansion (Complete ✅)** below for the module list.
@@ -742,8 +756,8 @@ These are explicitly out of scope:
 | **0.3.0** | shipped | Feature-complete core |
 | **0.3.1** | next | Stabilization, docs polish, version unification |
 | **0.4.0** | later | Tooling upgrades (LSP refs/rename/diagnostics), perf/MLIR polish |
-| **0.5.0** | later | Ecosystem experiments (playground, debugger, packages) |
-| **1.0.0** | when earned | “Boring” stability + real-world validation |
+| **0.5.0** | later | Self-hosting Phase A–C (`flowc` default host); ecosystem experiments |
+| **1.0.0** | when earned | “Boring” stability + real-world validation + Python off compile path |
 
 ---
 
