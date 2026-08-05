@@ -1,0 +1,61 @@
+# Flow-native language test: struct literals, field access, nesting,
+# arrays of structs with per-element field reads.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[struct_fields]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[nested_struct]
+#   tests/unit/test_postfix_chaining.py::test_generated_c_compiles_and_passes[ARRAY_OF_STRUCTS_PROGRAM]
+#   tests/unit/test_c_generator_abi.py::test_e2e_struct_field_math
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+struct Seg {
+    a: Point,
+    b: Point
+}
+
+struct Note {
+    pitch: i32,
+    duration: i32
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 20, y: 22 }
+    if p.x + p.y != 42 {
+        return 1
+    }
+
+    let s: Seg = Seg {
+        a: Point { x: 1, y: 2 },
+        b: Point { x: 4, y: 6 }
+    }
+    let dx: i32 = s.b.x - s.a.x
+    let dy: i32 = s.b.y - s.a.y
+    if dx * dx + dy * dy != 25 {
+        return 2
+    }
+
+    let melody: array<Note, 4> = [
+        Note { pitch: 60, duration: 1 },
+        Note { pitch: 62, duration: 2 },
+        Note { pitch: 64, duration: 3 },
+        Note { pitch: 65, duration: 4 }
+    ]
+    let mut total: i32 = 0
+    for i in 0 to 4 {
+        total = total + melody[i].duration
+    }
+    if total != 10 {
+        return 3
+    }
+
+    let mut q: Point = Point { x: 1, y: 2 }
+    q.x = 40
+    if q.x + q.y != 42 {
+        return 4
+    }
+    return 0
+}
