@@ -56,10 +56,10 @@ a proof corpus, not the showcase.
 - [x] Remove misleading `examples/graphics/shader_showcase.flow` catalog stub (keep `shader_demo.flow`)
 - [x] Add Tier-0 stubs: `stats/`, `net/`, `basics/result_pipeline`, `basics/match_enums`
 - [x] Canonical entrypoints table in `examples/README.md`
-- [ ] Concurrency pipeline example once channel send/recv is exposed
-- [ ] UI layout tourist example under `examples/` (stdlib/tests exist today)
-- [ ] Packages / WASM showcase entrypoints
+- [x] UI layout tourist example under `examples/` (`examples/ui/layout_hello.flow`)
+- [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
 - [ ] Regenerate `examples/STATUS.md` after layout settles
+- [ ] Concurrency pipeline example once channel send/recv is exposed
 
 ### Tier 0 — Minimum domains
 
@@ -69,13 +69,13 @@ a proof corpus, not the showcase.
 | HTTP slice | `apps/flow-http/http.flow` | ✅ |
 | Stats | `examples/stats/regression_gd.flow` | ✅ |
 | FFI / C | `examples/interop/python_embed.flow` (Python FFI); thin C-FFI demo still thin | partial |
-| WASM | `./flow wasm` path exists; no tourist example yet | 🔲 |
-| Packages | registry design deferred; no showcase package demo | 🔲 |
+| WASM | `examples/wasm/hello_wasm.flow` | ✅ |
+| Packages | `examples/packages/use_hello_lib/` | ✅ |
 | Errors / Result | `examples/basics/result_pipeline.flow` | ✅ |
 | Match | `examples/basics/match_enums.flow` | ✅ |
 | RT audio `@rt_safe` | `examples/audio/lattice_allpass_phase_engine.flow` | ✅ |
 | Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`) — corpus ahead of checker | partial |
-| UI layout | stdlib + tests; no `examples/` tourist file yet | 🔲 |
+| UI layout | `examples/ui/layout_hello.flow` | ✅ |
 | Concurrency pipeline | deferred — `Channel_i32` in stdlib lacks send/recv | 🔲 |
 
 ### Tier 1 — Vision domains
@@ -185,7 +185,7 @@ hand-rolled C-shaped loops. API sketches live in
 | Owned HttpResponse + JSON decode helpers | ✅ [#167](https://github.com/flooooooooooow/flow/issues/167) | `HttpBody` + `http_get` / `http_body_free`; live cache app drops buf ceremony |
 | Dynamics DSL / LQR beyond n=2 | ✅ [#162](https://github.com/flooooooooooow/flow/issues/162) | `analyze { lqr }` → dlqr n≤8; spring_mass_lqr + chain4_lqr demos |
 | Field / laplacian PDE surface | ✅ [#163](https://github.com/flooooooooooow/flow/issues/163) | `field`/`boundary`/`evolves as laplacian` → `T_field_step`; heat demo |
-| Dual + Tensor operators + mutable params | ✅ partial [#161](https://github.com/flooooooooooow/flow/issues/161) | Dual ops + mut field `nn` step/param_set; Tensor ops still open |
+| Dual + Tensor operators + mutable params | ✅ [#161](https://github.com/flooooooooooow/flow/issues/161) | Dual ops + mut nn + Tensor `+ - * /` / scale; `loss.grad` optional |
 | Closed-loop plant.step from dsys/connect | ✅ [#160](https://github.com/flooooooooooow/flow/issues/160) | DSL exposes `plant` alias; spring_mass uses `plant_step(plant, …)` |
 
 ### 🧹 Repository Cleanup
@@ -234,7 +234,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 | Windows graphics support | ✅ partial — [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux (`gfx_sdl_impl.inc`); `./flow gfx` picks it up on MSYS2/Git Bash/Cygwin; needs MSVC/clang smoke on real Windows |
 | Self-hosting components | 🔲 | Dogfooding |
 | WASM target | ✅ partial — Flow→C→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `scripts/build_wasm_hello.sh`, `examples/wasm/hello_wasm.flow`); native Flow-in-WASM deferred | Web deployment |
-| Tier-0 tourist examples | ✅ partial — `examples/{wasm,packages,ui,net}/` + `audio/rt_safe_callback.flow` (see [examples/README.md](examples/README.md) Canonical table); channels under `examples/concurrency/` | Demo surface |
+| Tier-0 tourist examples | ✅ [#169](https://github.com/flooooooooooow/flow/issues/169) | Canonical table in examples/README; UI/WASM/packages present; concurrency pipeline deferred |
 | GPU autodiff | 🔲 | ML performance |
 
 ---

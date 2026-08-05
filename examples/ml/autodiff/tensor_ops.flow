@@ -1,0 +1,55 @@
+# Tensor operator sugar (pattern-adoption #161).
+# Element-wise `+ - * /` and `t * scale` lower to tensor_* helpers.
+# Matmul stays explicit: tensor_matmul(a, b).
+#
+# Run: ./flow run examples/ml/autodiff/tensor_ops.flow
+
+import "stdlib/tensor.flow"
+
+extern {
+    function printf(fmt: string, val: f32) -> i32
+    function fabsf(x: f32) -> f32
+}
+
+function main() -> i32 {
+    let a: Tensor = tensor_fill(1, 2, 1, 1, 2.0)
+    let b: Tensor = tensor_fill(1, 2, 1, 1, 3.0)
+
+    let s: Tensor = a + b
+    let d: Tensor = b - a
+    let p: Tensor = a * b
+    let q: Tensor = b / a
+    let scaled: Tensor = a * 10.0
+    let shifted: Tensor = a + 1.0
+
+    print("a+b[0] = ")
+    printf("%.1f", s.data[0])
+    println("")
+    print("a*10[1] = ")
+    printf("%.1f", scaled.data[1])
+    println("")
+
+    let mut fail: i32 = 0
+    if fabsf(s.data[0] - 5.0) > 0.001 { fail = 1 }
+    if fabsf(d.data[0] - 1.0) > 0.001 { fail = 1 }
+    if fabsf(p.data[0] - 6.0) > 0.001 { fail = 1 }
+    if fabsf(q.data[0] - 1.5) > 0.001 { fail = 1 }
+    if fabsf(scaled.data[0] - 20.0) > 0.001 { fail = 1 }
+    if fabsf(shifted.data[0] - 3.0) > 0.001 { fail = 1 }
+
+    tensor_free(a)
+    tensor_free(b)
+    tensor_free(s)
+    tensor_free(d)
+    tensor_free(p)
+    tensor_free(q)
+    tensor_free(scaled)
+    tensor_free(shifted)
+
+    if fail == 1 {
+        println("FAIL: tensor ops")
+        return 1
+    }
+    println("OK: tensor + - * / and scale")
+    return 0
+}
