@@ -1410,11 +1410,14 @@ class CGenerator:
         if getattr(fn, "is_forward_decl", False):
             return []
         # sizeof<T>() intrinsic — monomorphizes to sizeof_i32 etc.; emit C sizeof.
+        # Keep the declared return type so the definition matches the forward
+        # declaration (stdlib defines e.g. `sizeof_i32() -> i32`).
         if fn.name.startswith("sizeof_") and len(fn.parameters) == 0:
             c_ty = self._sizeof_c_type_from_mangled(fn.name[len("sizeof_"):])
+            c_ret = self._c_type(fn.return_type)
             return [
-                f"int64_t {_c_ident(fn.name)}(void) {{ "
-                f"return (int64_t)sizeof({c_ty}); }}"
+                f"{c_ret} {_c_ident(fn.name)}(void) {{ "
+                f"return ({c_ret})sizeof({c_ty}); }}"
             ]
         # Skip math functions that are provided by the standard library
         # BUT only if they take primitive float types (not custom types like Dual)

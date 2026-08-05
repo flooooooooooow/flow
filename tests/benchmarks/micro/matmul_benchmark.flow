@@ -114,7 +114,7 @@ function matmul_unrolled(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, M: i32, N: i32, 
 function verify_result(C1: ptr<f64>, C2: ptr<f64>, size: i32) -> i32 {
     let eps: f64 = 1e-10
     for i in 0 to size {
-        let diff: f64 = C1[i] - C2[i]
+        let mut diff: f64 = C1[i] - C2[i]
         if diff < 0.0 { diff = 0.0 - diff }
         if diff > eps {
             return 0
