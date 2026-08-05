@@ -883,7 +883,7 @@ class FlowEveryDecl:
 
 @dataclass
 class FlowSolverDecl:
-    """`solver { dt <duration> method euler }` (docs/vision/north-star.md
+    """`solver { dt <duration> method euler|rk4 }` (docs/vision/north-star.md
     2.3): pins the default fixed step used by simulation drivers and the
     integration method. It does not change the `Name_step` signature; dt
     stays caller-supplied.
@@ -896,13 +896,75 @@ class FlowSolverDecl:
 
 
 @dataclass
+class FlowChildDecl:
+    """`plant : Motor` — a nested flow-typed member of a composite flow.
+
+    Spec: docs/vision/north-star.md §8. The type name must name another
+    `flow` in the same compilation unit. Lowered as an embedded struct
+    field; the parent's step copies `connect` wires then calls Child_step.
+    """
+
+    name: str
+    type: Type
+    line: int = 0
+
+
+@dataclass
+class FlowConnection:
+    """One wire `src_member.src_port -> dst_member.dst_port` inside `connect`.
+
+    Spec: docs/vision/north-star.md §8.1.
+    """
+
+    src_member: str
+    src_port: str
+    dst_member: str
+    dst_port: str
+    line: int = 0
+
+
+@dataclass
+class FlowInvariantClause:
+    """One boolean expression inside an `always` or `never` block
+    (docs/vision/north-star.md 5.4). `text` is the source slice used in
+    the runtime violation diagnostic.
+    """
+
+    expr: "Expression"
+    text: str = ""
+    line: int = 0
+
+
+@dataclass
+class FlowAlwaysDecl:
+    """`always { expr ... }`: runtime-checked invariants that must hold
+    after every completed step (docs/vision/north-star.md 5.4).
+    """
+
+    clauses: List[FlowInvariantClause]
+    line: int = 0
+
+
+@dataclass
+class FlowNeverDecl:
+    """`never { expr ... }`: runtime-checked invariants that must stay
+    false after every completed step (docs/vision/north-star.md 5.4).
+    Each clause is a full boolean expression; conjunction of states is
+    written with `&&` (no implicit conjunction magic).
+    """
+
+    clauses: List[FlowInvariantClause]
+    line: int = 0
+
+
+@dataclass
 class FlowDecl:
     """`flow Name { ... }`: a struct plus continuous dynamics.
 
     Recognized contextually (`flow` stays a legal identifier everywhere else).
     Lowered by src/flow/flow_blocks.py into a StructDecl plus generated
-    Name_new/Name_init/Name_derivs/Name_step/Name_outputs functions.
-    Spec: docs/vision/north-star.md sections 1 and 2.
+    Name_new/Name_init/Name_derivs/Name_step/Name_outputs/Name_check functions.
+    Spec: docs/vision/north-star.md sections 1, 2, and 5.4.
     """
 
     name: str
@@ -913,7 +975,11 @@ class FlowDecl:
     evolves: List[FlowEvolveDecl]
     whens: List[FlowWhenDecl] = field(default_factory=list)
     everys: List[FlowEveryDecl] = field(default_factory=list)
+    alwayses: List[FlowAlwaysDecl] = field(default_factory=list)
+    nevers: List[FlowNeverDecl] = field(default_factory=list)
     solver: Optional[FlowSolverDecl] = None
+    children: List[FlowChildDecl] = field(default_factory=list)
+    connections: List[FlowConnection] = field(default_factory=list)
     is_exported: bool = False
     location: Optional[SourceLocation] = None
 
@@ -1797,12 +1863,16 @@ class Parser:
 
         Body items in this card's scope:
           state|input|output|param NAME : type [= expr]
+          NAME : FlowType                  # nested flow member (§8)
           NAME evolves as expr
           when NAME reaches expr { NAME becomes expr ... }
+          always { expr ... } / never { expr ... }
+          connect { NAME.NAME -> NAME.NAME ... }
         `flow`, `state`, `input`, `output`, `param`, `evolves`, `when`,
-        `reaches`, `becomes` are contextual keywords: each is recognized only
-        by its position and at most two tokens of lookahead, so all of them
-        remain ordinary identifiers elsewhere.
+        `reaches`, `becomes`, `always`, `never`, `connect` are contextual
+        keywords: each is recognized only by its position and at most two
+        tokens of lookahead, so all of them remain ordinary identifiers
+        elsewhere.
         """
         start_token = self.current_token
         self.advance()  # consume contextual 'flow'
@@ -1819,6 +1889,10 @@ class Parser:
         evolves: List[FlowEvolveDecl] = []
         whens: List[FlowWhenDecl] = []
         everys: List[FlowEveryDecl] = []
+        alwayses: List[FlowAlwaysDecl] = []
+        nevers: List[FlowNeverDecl] = []
+        children: List[FlowChildDecl] = []
+        connections: List[FlowConnection] = []
         solver: Optional[FlowSolverDecl] = None
         section_words = ("state", "input", "output", "param")
 
@@ -1864,6 +1938,33 @@ class Parser:
                 tok.type == TokenType.IDENTIFIER
                 and tok.value == "solver"
                 and self.lookahead.type == TokenType.LBRACE
+            )
+            # `always { ... }` / `never { ... }`: the word immediately before
+            # '{' is the invariant form; elsewhere both stay identifiers.
+            is_always = (
+                tok.type == TokenType.IDENTIFIER
+                and tok.value == "always"
+                and self.lookahead.type == TokenType.LBRACE
+            )
+            is_never = (
+                tok.type == TokenType.IDENTIFIER
+                and tok.value == "never"
+                and self.lookahead.type == TokenType.LBRACE
+            )
+            # `connect { ... }`: `connect` directly before '{' is the
+            # composition block (docs/vision/north-star.md §8).
+            is_connect = (
+                tok.type == TokenType.IDENTIFIER
+                and tok.value == "connect"
+                and self.lookahead.type == TokenType.LBRACE
+            )
+            # `plant : Motor`: bare `name : Type` (no section word) is a
+            # nested flow member. Section words take the is_section path
+            # above; `state x : f64` never reaches here.
+            is_child = (
+                tok.type == TokenType.IDENTIFIER
+                and tok.value not in section_words
+                and self.lookahead.type == TokenType.COLON
             )
             if is_section:
                 kind = tok.value
@@ -1914,15 +2015,39 @@ class Parser:
                         suggestion="merge the settings into one solver block",
                     )
                 solver = self._parse_flow_solver(name)
+            elif is_always:
+                alwayses.append(self._parse_flow_invariant(name, "always"))
+            elif is_never:
+                nevers.append(self._parse_flow_invariant(name, "never"))
+            elif is_connect:
+                connections.extend(self._parse_flow_connect(name))
+            elif is_child:
+                child_name = tok.value
+                self.advance()  # consume member name
+                self.expect(TokenType.COLON)
+                child_type = self.parse_type()
+                if self.current_token.type == TokenType.ASSIGN:
+                    raise self.error(
+                        f"nested flow member '{child_name}' in flow '{name}' "
+                        f"cannot have an initializer; children are constructed "
+                        f"by {child_type.name}_new inside the parent",
+                        suggestion="remove the '= ...' part",
+                    )
+                children.append(
+                    FlowChildDecl(child_name, child_type, tok.line)
+                )
             else:
                 raise self.error(
                     f"Unexpected item in flow '{name}' body",
                     suggestion=(
                         "flow bodies contain member declarations "
                         "('state|input|output|param name : type [= expr]'), "
+                        "nested flow members ('plant : Motor'), "
                         "dynamics ('x evolves as expr'), events "
                         "('when x reaches expr { x becomes expr }'), "
                         "discrete blocks ('every 10 ms { x becomes expr }'), "
+                        "composition ('connect { a.out -> b.in }'), "
+                        "invariants ('always { expr }' / 'never { expr }'), "
                         "and settings ('solver { dt 1 ms }')"
                     ),
                 )
@@ -1936,8 +2061,89 @@ class Parser:
         )
         return FlowDecl(
             name, states, inputs, outputs, params, evolves, whens, everys,
-            solver, location=loc
+            alwayses, nevers, solver,
+            children=children, connections=connections, location=loc
         )
+
+    def _parse_flow_connect(self, flow_name: str) -> List[FlowConnection]:
+        """Parse `connect { a.out -> b.in ... }` (docs/vision/north-star.md §8).
+
+        Grammar: connection := IDENT '.' IDENT '->' IDENT '.' IDENT
+        """
+        self.advance()  # consume contextual 'connect'
+        self.expect(TokenType.LBRACE)
+        connections: List[FlowConnection] = []
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise self.error(
+                    f"Unterminated 'connect' body in flow '{flow_name}': "
+                    f"expected '}}' before end of file"
+                )
+            src_tok = self.current_token
+            src_member = self.expect(TokenType.IDENTIFIER).value
+            self.expect(TokenType.DOT)
+            src_port = self.expect(TokenType.IDENTIFIER).value
+            self.expect(TokenType.ARROW)
+            dst_member = self.expect(TokenType.IDENTIFIER).value
+            self.expect(TokenType.DOT)
+            dst_port = self.expect(TokenType.IDENTIFIER).value
+            connections.append(
+                FlowConnection(
+                    src_member, src_port, dst_member, dst_port, src_tok.line
+                )
+            )
+        self.expect(TokenType.RBRACE)
+        return connections
+
+    def _parse_flow_invariant(
+        self, flow_name: str, kind: str
+    ) -> "FlowAlwaysDecl | FlowNeverDecl":
+        """Parse `always { expr+ }` or `never { expr+ }`
+        (docs/vision/north-star.md 5.4). Each clause is one boolean
+        expression; `expression+` rejects an empty body.
+        """
+        block_token = self.current_token
+        self.advance()  # consume contextual 'always' / 'never'
+        self.expect(TokenType.LBRACE)
+        clauses: List[FlowInvariantClause] = []
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise self.error(
+                    f"Unterminated '{kind}' body in flow '{flow_name}': "
+                    f"expected '}}' before end of file"
+                )
+            start_tok = self.current_token
+            expr = self.parse_expression_without_assign()
+            text = self._source_between(start_tok, self.current_token)
+            clauses.append(FlowInvariantClause(expr, text, start_tok.line))
+        self.expect(TokenType.RBRACE)
+        if not clauses:
+            raise self.error(
+                f"'{kind}' block in flow '{flow_name}' needs at least one "
+                f"boolean expression",
+                suggestion=f"write '{kind} {{ x < 1.0 }}' or remove the block",
+            )
+        if kind == "always":
+            return FlowAlwaysDecl(clauses, block_token.line)
+        return FlowNeverDecl(clauses, block_token.line)
+
+    def _source_between(self, start_tok: Token, end_tok: Token) -> str:
+        """Source text from start_tok through the token before end_tok."""
+        if not self.source:
+            return ""
+        lines = self.source.split("\n")
+        sl, sc = start_tok.line - 1, max(start_tok.column - 1, 0)
+        el, ec = end_tok.line - 1, max(end_tok.column - 1, 0)
+        if sl < 0 or sl >= len(lines):
+            return ""
+        if sl == el:
+            return lines[sl][sc:ec].strip()
+        parts = [lines[sl][sc:]]
+        for i in range(sl + 1, min(el, len(lines))):
+            parts.append(lines[i])
+        if 0 <= el < len(lines):
+            parts.append(lines[el][:ec])
+        return " ".join(p.strip() for p in parts if p.strip())
 
     def _parse_flow_when(self, flow_name: str) -> FlowWhenDecl:
         """Parse `when NAME reaches expr { NAME becomes expr ... }`.
@@ -2116,7 +2322,7 @@ class Parser:
                     f"'{flow_name}'",
                     suggestion=(
                         "solver blocks contain 'dt <duration>' and "
-                        "'method euler'"
+                        "'method euler' or 'method rk4'"
                     ),
                 )
         self.expect(TokenType.RBRACE)

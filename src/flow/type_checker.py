@@ -191,6 +191,10 @@ class TypeCheckResult:
     symbol_table: Dict[str, Symbol]
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    # LSP / IDE extras (optional; safe defaults for existing callers)
+    struct_fields: Dict[str, List[Tuple[str, str]]] = field(default_factory=dict)
+    # Ordered local/param bindings seen during check: {name,type,kind,container,mutable}
+    locals: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class TypeChecker:
@@ -222,6 +226,7 @@ class TypeChecker:
         'strncmp': TypeKind.I32,
         'exit': TypeKind.VOID,
         'abort': TypeKind.VOID,
+        'flow_panic': TypeKind.VOID,
         'atexit': TypeKind.I32,
         'fopen': TypeKind.POINTER,
         'fclose': TypeKind.I32,
@@ -292,7 +297,11 @@ class TypeChecker:
 
     # RT-safety (docs/library/rt-safety.md): the `@rt_safe` attribute marks a
     # function as callable from a hard real-time path. Its body (and anything
-    # it calls, transitively) must never touch the heap.
+    # it calls, transitively) must never touch the heap, open devices/files,
+    # submit GPU work that allocates/syncs, or take blocking locks.
+    #
+    # Matching is exact name match only (see `_check_rt_safe_call`); every
+    # concrete symbol that should be banned must be listed below.
     #
     # Direct heap primitives - always forbidden in an `@rt_safe` call chain.
     RT_UNSAFE_BUILTINS: frozenset = frozenset({
@@ -309,7 +318,62 @@ class TypeChecker:
         'alloc_bytes', 'alloc_zeroed', 'alloc_i32', 'alloc_f32', 'alloc_f64',
         'arena_create', 'arena_destroy',
     })
-    RT_UNSAFE_HEAP_NAMES: frozenset = RT_UNSAFE_BUILTINS | RT_UNSAFE_STDLIB_NAMES
+    # Audio device lifecycle + buffer alloc (lib/stdlib/audio/io.flow,
+    # lib/stdlib/audio.flow). Ring-buffer read/write helpers and pure
+    # predicates (`audio_device_ok`, `audio_device_has_*`, `audio_device_config`)
+    # stay allowed.
+    RT_UNSAFE_AUDIO_NAMES: frozenset = frozenset({
+        'audio_device_open', 'audio_device_start', 'audio_device_stop',
+        'audio_device_close',
+        'flow_audio_open', 'flow_audio_start', 'flow_audio_stop',
+        'flow_audio_close',
+        'audio_probe_devices', 'flow_audio_probe_devices',
+        'audio_buffer_alloc_f32', 'audio_buffer_free_f32',
+        'delay_line_new',
+    })
+    # File I/O (lib/stdlib/posix.flow wrappers + common C stdio names if
+    # exposed via extern).
+    RT_UNSAFE_FILE_NAMES: frozenset = frozenset({
+        'file_open', 'file_close',
+        'fopen', 'fread', 'fwrite', 'fclose',
+    })
+    # GPU alloc / free / copy / sync (lib/stdlib/gpu_memory.flow +
+    # runtime/gpu_memory.h, plus Metal buffer create builtin).
+    RT_UNSAFE_GPU_NAMES: frozenset = frozenset({
+        'flow_gpu_alloc', 'flow_gpu_free',
+        'flow_gpu_copy_h2d', 'flow_gpu_copy_d2h', 'flow_gpu_copy_d2d',
+        'flow_gpu_sync',
+        'gpu_alloc_flags', 'gpu_alloc', 'gpu_alloc_unified', 'gpu_alloc_private',
+        'gpu_alloc_f32', 'gpu_alloc_f64', 'gpu_alloc_i32', 'gpu_allocate',
+        'gpu_free',
+        'gpu_copy_h2d', 'gpu_copy_d2h', 'gpu_copy_d2d',
+        'gpu_copy_h2d_i32', 'gpu_copy_d2h_i32',
+        'gpu_copy_h2d_f32', 'gpu_copy_d2h_f32',
+        'gpu_copy_to_device', 'gpu_copy_from_device', 'gpu_copy_device_to_device',
+        'gpu_sync',
+        'metal_create_buffer',
+    })
+    # Blocking locks / thread create-join (lib/stdlib/concurrent.flow).
+    # `mutex_is_locked` is a non-blocking field read and is intentionally
+    # omitted. Atomics stay allowed.
+    RT_UNSAFE_LOCK_NAMES: frozenset = frozenset({
+        'mutex_new', 'mutex_bind', 'mutex_lock', 'mutex_unlock',
+        'mutex_trylock', 'mutex_destroy',
+        'pthread_mutex_init', 'pthread_mutex_lock', 'pthread_mutex_unlock',
+        'pthread_mutex_trylock', 'pthread_mutex_destroy',
+        'pthread_create', 'pthread_join',
+        'flow_thread_spawn', 'flow_thread_join',
+        'flow_race_mutex_lock', 'flow_race_mutex_unlock',
+        'pthread_cond_wait',
+    })
+    RT_UNSAFE_HEAP_NAMES: frozenset = (
+        RT_UNSAFE_BUILTINS
+        | RT_UNSAFE_STDLIB_NAMES
+        | RT_UNSAFE_AUDIO_NAMES
+        | RT_UNSAFE_FILE_NAMES
+        | RT_UNSAFE_GPU_NAMES
+        | RT_UNSAFE_LOCK_NAMES
+    )
 
     def __init__(self):
         self.global_scope = Scope()
@@ -345,7 +409,7 @@ class TypeChecker:
         self.unit_canonical: Dict[Tuple[int, ...], str] = {}
 
         # RT-safety (docs/library/rt-safety.md): maps a function name to the
-        # name of the (transitively) closest heap-touching call it reaches,
+        # name of the (transitively) closest banned call it reaches,
         # e.g. {"delay_fill": "arena_create"}. Populated by `check()` before
         # function bodies are checked. Empty means no `@rt_safe` functions
         # were seen or the pass hasn't run yet.
@@ -598,6 +662,7 @@ class TypeChecker:
         """Main entry point for type checking."""
         self.errors = []
         self.warnings = []
+        self._lsp_locals: List[Dict[str, Any]] = []
 
         # Phase 1: Collect type definitions (structs, effects, capabilities)
         self._collect_types(declarations)
@@ -605,20 +670,53 @@ class TypeChecker:
         # Phase 2: Collect function signatures and global symbols
         self._collect_symbols(declarations)
 
-        # Phase 2.5: Build the RT-safety call graph (which functions reach
-        # the heap, directly or transitively) so `@rt_safe` violations can be
-        # reported at the call site during Phase 3.
+        # Phase 2.5: Build the RT-safety call graph (which functions reach a
+        # banned API, directly or transitively) so `@rt_safe` violations can
+        # be reported at the call site during Phase 3.
         self._rt_unsafe_reason = self._compute_rt_unsafe_functions(declarations)
 
         # Phase 3: Type check all declarations
         self._check_declarations(declarations)
+
+        struct_fields: Dict[str, List[Tuple[str, str]]] = {}
+        for sname, sdecl in self.struct_types.items():
+            fields: List[Tuple[str, str]] = []
+            for f in getattr(sdecl, 'fields', None) or []:
+                try:
+                    fields.append((f.name, str(self._parse_type(f.type))))
+                except Exception:
+                    fields.append((f.name, getattr(getattr(f, 'type', None), 'name', 'unknown') or 'unknown'))
+            struct_fields[sname] = fields
 
         return TypeCheckResult(
             typed_ast=declarations,  # For now, just return the original AST
             symbol_table=dict(self.global_scope.symbols),
             errors=self.errors,
             warnings=self.warnings,
+            struct_fields=struct_fields,
+            locals=list(self._lsp_locals),
         )
+
+    def _record_local(
+        self,
+        name: str,
+        typ: SemanticType,
+        *,
+        kind: str,
+        container: str,
+        mutable: bool = False,
+    ) -> None:
+        """Record a local/param for LSP hover (best-effort, ordered)."""
+        locals_list = getattr(self, '_lsp_locals', None)
+        if locals_list is None:
+            return
+        locals_list.append({
+            'name': name,
+            'type': str(typ),
+            'kind': kind,
+            'container': container,
+            'mutable': mutable,
+        })
 
     def _collect_types(self, declarations: List[Any]) -> None:
         """Collect struct, effect, capability, type alias, and distinct type definitions."""
@@ -775,14 +873,14 @@ class TypeChecker:
         return names
 
     def _compute_rt_unsafe_functions(self, declarations: List[Any]) -> Dict[str, str]:
-        """Compute which user-defined functions touch the heap.
+        """Compute which user-defined functions are RT-unsafe.
 
         Returns a map from function name to the name of the nearest
-        heap-touching call it reaches (itself, for `RT_UNSAFE_HEAP_NAMES`
+        banned call it reaches (itself, for `RT_UNSAFE_HEAP_NAMES`
         members; a callee's name otherwise). This is a simple fixed-point
         over the direct-call graph, so it also catches indirect/transitive
-        allocation (e.g. an RT-safe function calling a helper that itself
-        calls `malloc`).
+        violations (e.g. an RT-safe function calling a helper that itself
+        calls `malloc` or `mutex_lock`).
         """
         direct_calls: Dict[str, Set[str]] = {}
 
@@ -817,7 +915,8 @@ class TypeChecker:
 
     def _check_rt_safe_call(self, name: str) -> None:
         """If we're inside an `@rt_safe` function body, flag calls that reach
-        the heap (directly or transitively)."""
+        a banned API (heap, device/file I/O, GPU alloc/sync, or blocking lock),
+        directly or transitively."""
         if self._current_rt_safe_fn is None:
             return
         reason = self._rt_unsafe_reason.get(name)
@@ -827,14 +926,15 @@ class TypeChecker:
         if reason == name:
             self.errors.append(
                 f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
-                f"'{name}', which allocates or frees heap memory "
-                f"(see docs/library/rt-safety.md)"
+                f"'{name}', which is forbidden on an RT-safe path "
+                f"(heap, device/file I/O, GPU, or blocking lock; "
+                f"see docs/library/rt-safety.md)"
             )
         else:
             self.errors.append(
                 f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
                 f"'{name}', which is not RT-safe because it calls '{reason}' "
-                f"(allocates or frees heap memory; see docs/library/rt-safety.md)"
+                f"(forbidden on an RT-safe path; see docs/library/rt-safety.md)"
             )
 
     def _check_trait_bounds(self, func: FunctionDecl) -> None:
@@ -861,7 +961,7 @@ class TypeChecker:
         self.current_scope = func_scope
 
         # `@rt_safe` (docs/library/rt-safety.md): while checking this
-        # function's body, flag any call that reaches the heap.
+        # function's body, flag any call that reaches a banned RT-unsafe API.
         attrs = getattr(func, 'attributes', None) or []
         prev_rt_safe_fn = self._current_rt_safe_fn
         self._current_rt_safe_fn = func.name if 'rt_safe' in attrs else None
@@ -872,16 +972,23 @@ class TypeChecker:
                 param_type = self._parse_type(param.type)
                 symbol = Symbol(param.name, param_type, "variable")
                 func_scope.define(symbol)
+                self._record_local(
+                    param.name, param_type,
+                    kind='parameter', container=func.name, mutable=False,
+                )
 
             # Type check function body, collecting return types as we go so
             # return expressions are resolved in their proper scopes.
             prev_sink = self._return_type_sink
+            prev_container = getattr(self, '_lsp_container', None)
             self._return_type_sink = []
+            self._lsp_container = func.name
             try:
                 self._check_block(func.body)
                 returns = self._return_type_sink
             finally:
                 self._return_type_sink = prev_sink
+                self._lsp_container = prev_container
             expected_return = self._parse_type(func.return_type)
 
             if returns:
@@ -1349,6 +1456,12 @@ class TypeChecker:
         is_mutable = getattr(var, 'is_mutable', False)
         symbol = Symbol(var.name, expected_type, "variable", is_mutable=is_mutable)
         self.current_scope.define(symbol)
+        self._record_local(
+            var.name, expected_type,
+            kind='variable',
+            container=getattr(self, '_lsp_container', '') or '',
+            mutable=is_mutable,
+        )
 
         return expected_type
 
@@ -1440,6 +1553,12 @@ class TypeChecker:
         loop_scope = Scope(parent=self.current_scope)
         iter_type = SemanticType(TypeKind.I32)
         loop_scope.define(Symbol(for_stmt.variable, iter_type, "variable", is_mutable=True))
+        self._record_local(
+            for_stmt.variable, iter_type,
+            kind='variable',
+            container=getattr(self, '_lsp_container', '') or '',
+            mutable=True,
+        )
         prev = self.current_scope
         self.current_scope = loop_scope
         try:

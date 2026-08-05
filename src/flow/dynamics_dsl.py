@@ -42,6 +42,23 @@ when you want the vocabulary out of the global keyword soup:
     closed plant with k1 k2 { spectral -> rho_cl  energy over rollout -> E_cl  stable -> stable_cl }
     analyze plant ga k1 k2 over rollout -> report { full }
 
+    # Bridge from nonlinear `flow` → dsys (north-star §9 / represent-linear card).
+    # Inside a flow body, or top-level `represent linear Name { ... }`.
+    # Stage-1: explicit A/B/C matrices (manual linear model). Automatic
+    # Jacobian-at-`at` linearization is not yet implemented — omitting A
+    # raises "linearization coefficients required".
+    #
+    # flow Pendulum { ... represent linear { at (...)  A ... B ... C ... } }
+    # → synthesizes dsys Pendulum_lin { continuous ... } for sense/ga/analyze.
+    #
+    # `represent nonlinear { }` is a recognized no-op (the flow *is* the
+    # nonlinear model). `koopman` / `transfer_function` / `frequency` are
+    # reserved and rejected with "not yet implemented".
+    #
+    # Grammar collision for `analyze` (vision form vs legacy GA form): one
+    # token of lookahead after the name — `{` ⇒ vision (future); `ga` ⇒
+    # legacy. Both remain supported (north-star §9.4).
+
     wfc field layout {
         size 4 4
         tiles 3
@@ -65,6 +82,7 @@ when you want the vocabulary out of the global keyword soup:
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -163,6 +181,24 @@ class GuideDecl:
 
 
 @dataclass
+class RepresentLinearDecl:
+    """Manual (or future auto) linearization attached to a flow → `Name_lin` dsys."""
+
+    flow_name: str
+    mode: str = "continuous"  # continuous | discrete
+    dt: float = 0.001
+    n: int = 0
+    m: int = 0
+    p: int = 0
+    A: List[float] = field(default_factory=list)
+    B: List[float] = field(default_factory=list)
+    C: List[float] = field(default_factory=list)
+    at_point: Dict[str, float] = field(default_factory=dict)
+    inputs: List[str] = field(default_factory=list)
+    outputs: List[str] = field(default_factory=list)
+
+
+@dataclass
 class DynamicsProgram:
     systems: Dict[str, DsysDecl] = field(default_factory=dict)
     horizons: Dict[str, HorizonDecl] = field(default_factory=dict)
@@ -173,6 +209,7 @@ class DynamicsProgram:
     analyzes: List[AnalyzeDecl] = field(default_factory=list)
     couples: List[CoupleDecl] = field(default_factory=list)
     guides: List[GuideDecl] = field(default_factory=list)
+    represents: List[RepresentLinearDecl] = field(default_factory=list)
 
 
 def _strip_comments(line: str) -> str:
@@ -255,6 +292,7 @@ def _merge_dynamics_program(dst: "DynamicsProgram", src: "DynamicsProgram") -> N
     dst.wfc_fields.update(src.wfc_fields)
     dst.couples.extend(src.couples)
     dst.guides.extend(src.guides)
+    dst.represents.extend(src.represents)
 
 
 def _strip_dynamics_namespace(line: str) -> str:
@@ -268,9 +306,320 @@ def _strip_dynamics_namespace(line: str) -> str:
     return m.group(1).strip() if m else line
 
 
+_REPRESENT_RESERVED = frozenset({"koopman", "transfer_function", "frequency"})
+_REPRESENT_HEAD_RE = re.compile(
+    r"^represent\s+(\w+)(?:\s+(?:for\s+)?(\w+))?\s*\{"
+)
+_FLOW_HEAD_RE = re.compile(r"^flow\s+(\w+)\s*\{")
+_AT_POINT_RE = re.compile(r"^at\s*\((.*)\)\s*$")
+_NAMED_LIST_RE = re.compile(r"^(inputs|outputs)\s*\((.*)\)\s*$")
+
+
+def _parse_at_point(inner: str) -> Dict[str, float]:
+    """Parse `angle: 0.0, velocity: 0.0` bindings inside `at (...)`."""
+    point: Dict[str, float] = {}
+    inner = inner.strip()
+    if not inner:
+        return point
+    for part in inner.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            raise SyntaxError(
+                f"invalid `at` binding '{part}' in represent linear; "
+                "expected name: value"
+            )
+        name, val = [x.strip() for x in part.split(":", 1)]
+        if not re.match(r"^\w+$", name):
+            raise SyntaxError(f"invalid state name in `at`: {name}")
+        try:
+            point[name] = float(val)
+        except ValueError as exc:
+            raise SyntaxError(
+                f"invalid numeric value in `at` for '{name}': {val}"
+            ) from exc
+    return point
+
+
+def _parse_name_list(inner: str) -> List[str]:
+    inner = inner.strip()
+    if not inner:
+        return []
+    names = []
+    for part in inner.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if not re.match(r"^\w+$", part):
+            raise SyntaxError(f"invalid name in represent linear list: {part}")
+        names.append(part)
+    return names
+
+
+def _parse_represent_linear_body(
+    flow_name: str, body_lines: List[str]
+) -> RepresentLinearDecl:
+    """Parse the body of `represent linear { ... }` into a decl.
+
+    Stage-1 requires explicit A (and typically B/C) matrices. An `at (...)`
+    operating point alone is not enough yet — automatic Jacobian evaluation
+    is deferred (north-star §9.2 v1 goal; not shipped here).
+    """
+    decl = RepresentLinearDecl(flow_name=flow_name)
+    for bl in body_lines:
+        b = _strip_comments(bl)
+        if not b:
+            continue
+        at_m = _AT_POINT_RE.match(b)
+        if at_m:
+            decl.at_point = _parse_at_point(at_m.group(1))
+            continue
+        list_m = _NAMED_LIST_RE.match(b)
+        if list_m:
+            kind, inner = list_m.group(1), list_m.group(2)
+            names = _parse_name_list(inner)
+            if kind == "inputs":
+                decl.inputs = names
+            else:
+                decl.outputs = names
+            continue
+        if b == "continuous":
+            decl.mode = "continuous"
+        elif b == "discrete":
+            decl.mode = "discrete"
+        elif b.startswith("dt "):
+            decl.dt = float(b.split()[1])
+        elif b.startswith("n "):
+            parts = b.split()
+            decl.n = int(parts[1])
+            if "m" in parts:
+                decl.m = int(parts[parts.index("m") + 1])
+            if "p" in parts:
+                decl.p = int(parts[parts.index("p") + 1])
+        elif b.startswith("A "):
+            decl.A = _parse_floats(b[2:])
+        elif b.startswith("B "):
+            decl.B = _parse_floats(b[2:])
+        elif b.startswith("C "):
+            decl.C = _parse_floats(b[2:])
+        else:
+            raise SyntaxError(
+                f"unknown item in represent linear for '{flow_name}': {b}"
+            )
+    return decl
+
+
+def _represent_to_dsys(rep: RepresentLinearDecl) -> DsysDecl:
+    """Lower a represent-linear decl to a synthesized `Name_lin` DsysDecl."""
+    if not rep.A:
+        hint = ""
+        if rep.at_point:
+            hint = (
+                f" (operating point at {rep.at_point} was given, but "
+                "automatic Jacobian linearization is not yet implemented)"
+            )
+        raise SyntaxError(
+            f"represent linear for '{rep.flow_name}': linearization "
+            f"coefficients required{hint}; supply explicit A (and optional "
+            "B/C) matrices in the represent linear block, e.g. "
+            "`A 0.0 1.0 -9.81 0.0`"
+        )
+    n = rep.n
+    if n <= 0:
+        root = int(round(math.sqrt(len(rep.A))))
+        if root * root != len(rep.A) or root < 1:
+            raise SyntaxError(
+                f"represent linear for '{rep.flow_name}': A must list n×n "
+                f"floats (got {len(rep.A)} values); or set `n` explicitly"
+            )
+        n = root
+    elif len(rep.A) != n * n:
+        raise SyntaxError(
+            f"represent linear for '{rep.flow_name}': A has {len(rep.A)} "
+            f"entries but n={n} expects {n * n}"
+        )
+
+    m = rep.m
+    B = list(rep.B)
+    if not B:
+        if m < 0:
+            m = 0
+        # Zero B column count when omitted (open dynamics / spectral-only).
+        if m == 0 and rep.inputs:
+            m = len(rep.inputs)
+            B = [0.0] * (n * m)
+        elif m == 0:
+            B = [0.0]
+        else:
+            B = [0.0] * (n * m)
+    else:
+        if m <= 0:
+            if len(B) % n != 0:
+                raise SyntaxError(
+                    f"represent linear for '{rep.flow_name}': B length "
+                    f"{len(B)} is not a multiple of n={n}"
+                )
+            m = len(B) // n
+        elif len(B) != n * m:
+            raise SyntaxError(
+                f"represent linear for '{rep.flow_name}': B has {len(B)} "
+                f"entries but n={n} m={m} expects {n * m}"
+            )
+
+    p = rep.p
+    C = list(rep.C)
+    if not C:
+        if p <= 0:
+            p = n
+        if p != n:
+            raise SyntaxError(
+                f"represent linear for '{rep.flow_name}': supply C (p×n) "
+                f"when p != n (got p={p}, n={n})"
+            )
+        # Identity observation when C omitted.
+        C = [1.0 if i == j else 0.0 for i in range(p) for j in range(n)]
+    else:
+        if p <= 0:
+            if len(C) % n != 0:
+                raise SyntaxError(
+                    f"represent linear for '{rep.flow_name}': C length "
+                    f"{len(C)} is not a multiple of n={n}"
+                )
+            p = len(C) // n
+        elif len(C) != p * n:
+            raise SyntaxError(
+                f"represent linear for '{rep.flow_name}': C has {len(C)} "
+                f"entries but p={p} n={n} expects {p * n}"
+            )
+
+    return DsysDecl(
+        name=f"{rep.flow_name}_lin",
+        mode=rep.mode,
+        dt=rep.dt,
+        n=n,
+        m=m,
+        p=p,
+        A=list(rep.A),
+        B=B,
+        C=C,
+    )
+
+
+def _extract_represent_blocks(
+    source: str,
+) -> Tuple[List[RepresentLinearDecl], str]:
+    """Strip `represent …` blocks from source; return linear decls + remainder.
+
+    Recognizes:
+      - inside `flow Name { … represent linear { … } … }`
+      - top-level `represent linear Name { … }` / `represent linear for Name { … }`
+      - `represent nonlinear { … }` as a no-op strip
+      - reserved kinds → SyntaxError ("not yet implemented")
+    """
+    lines = source.splitlines()
+    out_lines: List[str] = []
+    represents: List[RepresentLinearDecl] = []
+    i = 0
+    brace_depth = 0
+    current_flow: Optional[str] = None
+    flow_body_depth: Optional[int] = None
+
+    while i < len(lines):
+        raw = lines[i]
+        line = _strip_comments(raw)
+
+        flow_m = _FLOW_HEAD_RE.match(line) if line else None
+        if flow_m and brace_depth == 0:
+            current_flow = flow_m.group(1)
+            # Body depth is the depth after this line's braces are applied.
+            delta = raw.count("{") - raw.count("}")
+            flow_body_depth = brace_depth + delta
+            out_lines.append(raw)
+            brace_depth += delta
+            i += 1
+            continue
+
+        rep_m = _REPRESENT_HEAD_RE.match(line) if line else None
+        if rep_m:
+            kind = rep_m.group(1)
+            explicit_name = rep_m.group(2)
+            body_lines, next_i = _extract_brace_block(lines, i)
+
+            if kind == "nonlinear":
+                # Recognized no-op: the enclosing flow is the nonlinear model.
+                i = next_i
+                continue
+
+            if kind in _REPRESENT_RESERVED:
+                raise SyntaxError(
+                    f"represent {kind}: not yet implemented "
+                    "(Stage-1 ships `represent linear` with explicit A/B/C; "
+                    "see docs/vision/north-star.md §9)"
+                )
+
+            if kind != "linear":
+                raise SyntaxError(
+                    f"unknown represent kind '{kind}'; expected linear, "
+                    "nonlinear, or a reserved form "
+                    "(koopman|transfer_function|frequency)"
+                )
+
+            flow_name = explicit_name
+            if flow_name is None:
+                if (
+                    current_flow is not None
+                    and flow_body_depth is not None
+                    and brace_depth >= flow_body_depth
+                ):
+                    flow_name = current_flow
+                else:
+                    raise SyntaxError(
+                        "represent linear { ... } at top level needs a flow "
+                        "name: `represent linear Name { ... }` or place the "
+                        "block inside `flow Name { ... }`"
+                    )
+
+            rep = _parse_represent_linear_body(flow_name, body_lines)
+            represents.append(rep)
+            # Do not copy represent lines into out_lines (stripped).
+            # Brace depth: the block's braces never entered the outer count
+            # because we skipped via _extract_brace_block — no depth change.
+            i = next_i
+            continue
+
+        # Track braces for flow-body association (skip empty/comment-only).
+        if raw.strip():
+            brace_depth += raw.count("{") - raw.count("}")
+            if (
+                current_flow is not None
+                and flow_body_depth is not None
+                and brace_depth < flow_body_depth
+            ):
+                current_flow = None
+                flow_body_depth = None
+
+        out_lines.append(raw)
+        i += 1
+
+    return represents, "\n".join(out_lines)
+
+
 def parse_dynamics_dsl(source: str) -> Tuple[DynamicsProgram, str]:
     """Parse DSL constructs and return program + source with DSL blocks removed."""
+    represents, source = _extract_represent_blocks(source)
+
     program = DynamicsProgram()
+    program.represents = represents
+    for rep in represents:
+        dsys = _represent_to_dsys(rep)
+        if dsys.name in program.systems:
+            raise SyntaxError(
+                f"represent linear for '{rep.flow_name}' conflicts with an "
+                f"existing dsys '{dsys.name}'"
+            )
+        program.systems[dsys.name] = dsys
+
     lines = source.splitlines()
     out_lines: List[str] = []
     i = 0
@@ -329,6 +678,11 @@ def parse_dynamics_dsl(source: str) -> Tuple[DynamicsProgram, str]:
                     decl.B = _parse_floats(b[2:])
                 elif b.startswith("C "):
                     decl.C = _parse_floats(b[2:])
+            if name in program.systems:
+                raise SyntaxError(
+                    f"dsys '{name}' redeclared (conflicts with a prior dsys "
+                    f"or represent linear → '{name}')"
+                )
             program.systems[name] = decl
             continue
 
@@ -860,4 +1214,5 @@ def has_dynamics_dsl(source: str) -> bool:
         or re.search(rf"^\s*{ns}couple\s+\w+", source, re.MULTILINE)
         or re.search(rf"^\s*{ns}guide\s+\w+", source, re.MULTILINE)
         or re.search(r"^\s*(?:dyn|dynamics)\s*\{", source, re.MULTILINE)
+        or re.search(r"^\s*represent\s+\w+", source, re.MULTILINE)
     )

@@ -187,6 +187,117 @@ class TestDynamicsDSLExpand:
         assert expand_dynamics_dsl(plain) == plain
 
 
+REPRESENT_IN_FLOW = """
+flow Pendulum {
+    state angle : f64 = 0.0
+    state velocity : f64 = 0.0
+    angle evolves as velocity
+    velocity evolves as -9.81 * angle
+
+    represent linear {
+        at (angle: 0.0, velocity: 0.0)
+        outputs (angle)
+        continuous
+        dt 0.01
+        A 0.0 1.0 -9.81 0.0
+        B 0.0 1.0
+        C 1.0 0.0
+    }
+}
+
+sense on Pendulum_lin {
+    controllable -> lin_ok
+    spectral -> lin_rho
+}
+
+function main() -> i32 {
+    return lin_ok
+}
+"""
+
+REPRESENT_TOP_LEVEL = """
+represent linear Plant {
+    discrete
+    dt 0.1
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+
+sense on Plant_lin {
+    spectral -> rho
+}
+
+function main() -> i32 { return 0 }
+"""
+
+REPRESENT_AT_ONLY = """
+represent linear Plant {
+    at (x: 0.0, v: 0.0)
+    outputs (x)
+}
+
+function main() -> i32 { return 0 }
+"""
+
+
+class TestRepresentLinear:
+    def test_has_dynamics_dsl_detects_represent(self):
+        assert has_dynamics_dsl(REPRESENT_IN_FLOW)
+        assert has_dynamics_dsl("represent linear Foo { A 0.0 1.0 0.0 0.0 }\n")
+
+    def test_strips_represent_from_flow_body(self):
+        program, stripped = parse_dynamics_dsl(REPRESENT_IN_FLOW)
+        assert "represent linear" not in stripped
+        assert "flow Pendulum" in stripped
+        assert "angle evolves as velocity" in stripped
+        assert "Pendulum_lin" in program.systems
+        sys = program.systems["Pendulum_lin"]
+        assert sys.mode == "continuous"
+        assert sys.n == 2
+        assert sys.m == 1
+        assert sys.A == [0.0, 1.0, -9.81, 0.0]
+        assert len(program.represents) == 1
+        assert program.represents[0].at_point == {"angle": 0.0, "velocity": 0.0}
+
+    def test_top_level_represent_linear_name(self):
+        program, stripped = parse_dynamics_dsl(REPRESENT_TOP_LEVEL)
+        assert "represent linear" not in stripped
+        assert "Plant_lin" in program.systems
+        assert program.systems["Plant_lin"].mode == "discrete"
+
+    def test_at_without_A_errors(self):
+        with pytest.raises(SyntaxError, match="linearization coefficients required"):
+            parse_dynamics_dsl(REPRESENT_AT_ONLY)
+
+    def test_reserved_represent_kind_errors(self):
+        src = "represent koopman {\n  observables 4\n}\nfunction main() -> i32 { return 0 }\n"
+        with pytest.raises(SyntaxError, match="not yet implemented"):
+            parse_dynamics_dsl(src)
+
+    def test_nonlinear_represent_is_noop(self):
+        src = (
+            "flow Ball {\n"
+            "    state h : f64 = 1.0\n"
+            "    h evolves as 0.0\n"
+            "    represent nonlinear { }\n"
+            "}\n"
+            "function main() -> i32 { return 0 }\n"
+        )
+        program, stripped = parse_dynamics_dsl(src)
+        assert "represent nonlinear" not in stripped
+        assert program.systems == {}
+        assert program.represents == []
+
+    def test_expand_emits_continuous_dsys(self):
+        out = expand_dynamics_dsl(REPRESENT_IN_FLOW)
+        assert "dsys_continuous" in out
+        assert "__dsys_Pendulum_lin" in out
+        assert "is_controllable" in out
+        assert "represent linear" not in out
+
+
 class TestDynamicsDSLWFC:
     def test_parse_wfc_and_couple(self):
         program, stripped = parse_dynamics_dsl(WFC_SAMPLE)
