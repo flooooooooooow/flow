@@ -1,0 +1,19 @@
+# Cont clone + stack-blob restore scaffold.
+# Run: ./flow run examples/concurrency/cont_stackcopy.flow
+
+extern {
+    function flow_demo_cont_stackcopy() -> i32
+}
+
+function main() -> i32 {
+    println("cont stackcopy demo")
+    let r: i32 = flow_demo_cont_stackcopy()
+    print("  clone resume 11+22 -> ")
+    println(r)
+    if r != 33 {
+        println("FAIL")
+        return 1
+    }
+    println("OK")
+    return 0
+}
