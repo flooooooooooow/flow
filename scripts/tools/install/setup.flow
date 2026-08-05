@@ -1,0 +1,221 @@
+# Flow host installer — written in Flow.
+#
+# Ensures the toolchain pieces needed so `./flow run <file>` just works
+# (including graphics demos that auto-select the gfx backend).
+#
+# Invoked by: ./flow install
+
+import "stdlib/process.flow"
+import "stdlib/sys_info.flow"
+
+function say(msg: string) -> void {
+    flow_puts(msg)
+}
+
+function ok(msg: string) -> void {
+    flow_puts("[ok] " + msg)
+}
+
+function warn(msg: string) -> void {
+    flow_puts("[warn] " + msg)
+}
+
+function info(msg: string) -> void {
+    flow_puts("[..] " + msg)
+}
+
+function fail(msg: string) -> i32 {
+    flow_puts("[fail] " + msg)
+    return 1
+}
+
+function have(name: string) -> bool {
+    return have_cmd(name)
+}
+
+function pkg_manager() -> string {
+    if have("brew") {
+        return "brew"
+    }
+    if have("apt-get") {
+        return "apt"
+    }
+    if have("dnf") {
+        return "dnf"
+    }
+    if have("pacman") {
+        return "pacman"
+    }
+    return "none"
+}
+
+function install_pkg(pkg: string) -> i32 {
+    let pm: string = pkg_manager()
+    if str_eq(pm, "brew") {
+        info("brew install " + pkg)
+        return run_cmd("brew install " + pkg)
+    }
+    if str_eq(pm, "apt") {
+        info("sudo apt-get install -y " + pkg)
+        return run_cmd("sudo apt-get install -y " + pkg)
+    }
+    if str_eq(pm, "dnf") {
+        info("sudo dnf install -y " + pkg)
+        return run_cmd("sudo dnf install -y " + pkg)
+    }
+    if str_eq(pm, "pacman") {
+        info("sudo pacman -S --noconfirm " + pkg)
+        return run_cmd("sudo pacman -S --noconfirm " + pkg)
+    }
+    warn("no supported package manager (brew/apt/dnf/pacman)")
+    return 1
+}
+
+function ensure(cmd_name: string, pkg: string, required: bool) -> i32 {
+    if have(cmd_name) {
+        ok(cmd_name + " found")
+        return 0
+    }
+    info(cmd_name + " missing — installing")
+    let code: i32 = install_pkg(pkg)
+    if code != 0 {
+        if required {
+            return fail("could not install " + pkg)
+        }
+        warn("optional package failed: " + pkg)
+        return 0
+    }
+    if have(cmd_name) {
+        ok(cmd_name + " installed")
+        return 0
+    }
+    if required {
+        return fail(cmd_name + " still missing after install")
+    }
+    warn(cmd_name + " still missing (optional)")
+    return 0
+}
+
+function ensure_clang() -> i32 {
+    if have("clang") {
+        ok("clang found")
+        return 0
+    }
+    if have("gcc") {
+        ok("gcc found (clang missing; gcc may work for some builds)")
+        return 0
+    }
+    say("")
+    say("clang is required to compile Flow programs.")
+    if os_is_macos() {
+        say("  Install Xcode Command Line Tools:")
+        say("    xcode-select --install")
+    } else {
+        if os_is_linux() {
+            say("  Install a C compiler, e.g.:")
+            say("    sudo apt-get install -y clang")
+            say("    sudo dnf install -y clang")
+        } else {
+            say("  Install clang or gcc, then re-run ./flow install")
+        }
+    }
+    return fail("no C compiler on PATH")
+}
+
+function ensure_gfx_deps() -> i32 {
+    if os_is_macos() {
+        ok("macOS gfx uses Cocoa (no SDL2 required)")
+        return 0
+    }
+    let rc: i32 = 0
+    if ensure("pkg-config", "pkg-config", false) != 0 {
+        rc = 1
+    }
+    if have("pkg-config") {
+        let sdl: i32 = run_cmd("pkg-config --exists sdl2")
+        if sdl == 0 {
+            ok("SDL2 found (pkg-config sdl2)")
+            return rc
+        }
+    }
+    info("SDL2 missing — installing (needed for gfx / window on this OS)")
+    let code: i32 = 1
+    let pm: string = pkg_manager()
+    if str_eq(pm, "brew") {
+        code = install_pkg("sdl2")
+    } else {
+        if str_eq(pm, "apt") {
+            code = install_pkg("libsdl2-dev")
+        } else {
+            if str_eq(pm, "dnf") {
+                code = install_pkg("SDL2-devel")
+            } else {
+                if str_eq(pm, "pacman") {
+                    code = install_pkg("sdl2")
+                } else {
+                    warn("install SDL2 manually for graphics demos")
+                    return rc
+                }
+            }
+        }
+    }
+    if code != 0 {
+        warn("SDL2 install failed — ./flow run still works for non-gfx programs")
+        return rc
+    }
+    ok("SDL2 installed")
+    return rc
+}
+
+function ensure_llvm_optional() -> i32 {
+    if have("mlir-opt") {
+        ok("mlir-opt found (MLIR backend ready)")
+        return 0
+    }
+    # Skip heavy optional install unless explicitly requested.
+    #   FLOW_INSTALL_LLVM=1 ./flow install
+    if !env_is("FLOW_INSTALL_LLVM", "1") {
+        info("mlir-opt not found (optional; set FLOW_INSTALL_LLVM=1 to brew-install)")
+        return 0
+    }
+    if have("brew") {
+        info("LLVM/MLIR — installing via brew (FLOW_INSTALL_LLVM=1)")
+        let code: i32 = install_pkg("llvm")
+        if code == 0 {
+            ok("llvm installed — you may need brew --prefix llvm on PATH")
+            return 0
+        }
+        warn("llvm install skipped/failed (optional)")
+        return 0
+    }
+    info("mlir-opt not found (optional; only needed for MLIR/JIT)")
+    return 0
+}
+
+function main() -> i32 {
+    say("Flow install (host toolchain)")
+    say("OS: " + os_name())
+    say("")
+
+    if ensure_clang() != 0 {
+        return 1
+    }
+
+    if have("python3") {
+        ok("python3 found")
+    } else {
+        return fail("python3 is required on PATH")
+    }
+
+    if ensure_gfx_deps() != 0 {
+        warn("graphics deps incomplete")
+    }
+
+    ensure_llvm_optional()
+
+    say("")
+    say("Done. You can now run:")
+    say("  ./flow run examples/basics/hello_world.flow")
+    say("  ./flow run examples/evolution/lorenz_gfx.flow")
+    return 0
+}
