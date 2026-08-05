@@ -1,0 +1,44 @@
+# Stage-A cgen round-trip: match statement → exit 42.
+# Arms: int literals (incl. negative), `_` wildcard, binding ident catch-all.
+
+function classify(v: i32) -> i32 {
+    let mut r: i32 = 0
+    match v {
+        0 => {
+            r = 1
+        }
+        -1 => {
+            r = 2
+        },
+        7 => {
+            r = 30
+        }
+        _ => {
+            r = 4
+        }
+    }
+    return r
+}
+
+function tail_bind(v: i32) -> i32 {
+    let mut r: i32 = 0
+    match v {
+        1 => {
+            r = 100
+        }
+        other => {
+            r = other + 1
+        }
+    }
+    return r
+}
+
+function main() -> i32 {
+    let mut total: i32 = 0
+    total = total + classify(7)       # 30
+    total = total + classify(0)       # 1
+    total = total + classify(-1)      # 2
+    total = total + classify(99)      # 4 (wildcard)
+    total = total + tail_bind(4)      # 5 (binding: 4 + 1)
+    return total                      # 42
+}
