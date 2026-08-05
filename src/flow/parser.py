@@ -3558,8 +3558,6 @@ class Parser:
         self._has_fork = True  # ensure the post-parse walk runs to catch strays
         return FlowStage(name, source, params, line)
 
-        return left
-
     @staticmethod
     def _is_pipe_placeholder(expr: Expression) -> bool:
         """A bare `_` in a piped call marks where the piped value goes."""
