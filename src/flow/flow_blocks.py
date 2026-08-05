@@ -440,9 +440,11 @@ def _validate_connect(
 ) -> None:
     """Port direction/type checks and algebraic-loop detection (spec §8.2).
 
-    Stage-1: unconnected child inputs are legal (embedder-driven before
-    Name_step). Parent re-export of child inputs and parent `becomes` into
-    `child.input` are NOT YET.
+    Unconnected child inputs are legal (embedder-driven before Name_step). A
+    connection source may be a sibling child's output/state (`child.port`) or,
+    written bare (`port -> child.input`), an input or state of the enclosing
+    flow — the parent value is copied into the child input at the start of the
+    child-stepping phase. Parent `becomes` into `child.input` is still NOT YET.
     """
     child_by_name = {c.name: c for c in children}
     if connections and not children:
@@ -455,7 +457,8 @@ def _validate_connect(
 
     driven: Dict[Tuple[str, str], Any] = {}
     for conn in connections:
-        if conn.src_member not in child_by_name:
+        parent_source = conn.src_member == ""
+        if not parent_source and conn.src_member not in child_by_name:
             raise _error(
                 f"connection source '{conn.src_member}.{conn.src_port}' in "
                 f"flow '{flow.name}' names unknown nested member "
@@ -469,33 +472,56 @@ def _validate_connect(
                 f"'{conn.dst_member}'",
                 conn.line, source,
             )
-        if conn.src_member == conn.dst_member:
+        if not parent_source and conn.src_member == conn.dst_member:
             raise _error(
                 f"connection in flow '{flow.name}' wires "
                 f"'{conn.src_member}' to itself; Stage-1 connect is "
                 f"between sibling subflows only",
                 conn.line, source,
             )
-        src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
-        dst_flow = flow_by_name[child_by_name[conn.dst_member].type.name]
-        src_kind, src_type = _lookup_port(src_flow, conn.src_port)
-        if src_kind is None:
-            raise _error(
-                f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
-                f"is not a port of '{src_flow.name}'",
-                conn.line, source,
-                suggestion=(
-                    f"connect sources must be an output or state of "
-                    f"'{src_flow.name}'"
-                ),
-            )
-        if src_kind not in ("output", "state"):
-            raise _error(
-                f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
-                f"is a {src_kind}; connection sources must be an output "
-                f"or state",
-                conn.line, source,
-            )
+        if parent_source:
+            # Bare `port -> child.input`: the source is a port of this flow.
+            dst_flow = flow_by_name[child_by_name[conn.dst_member].type.name]
+            src_kind, src_type = _lookup_port(flow, conn.src_port)
+            if src_kind is None:
+                raise _error(
+                    f"connection source '{conn.src_port}' in flow "
+                    f"'{flow.name}' is not a port of this flow",
+                    conn.line, source,
+                    suggestion=(
+                        f"a bare source must be an input or state of "
+                        f"'{flow.name}'; a child source is written "
+                        f"'child.port'"
+                    ),
+                )
+            if src_kind not in ("input", "state"):
+                raise _error(
+                    f"connection source '{conn.src_port}' in flow "
+                    f"'{flow.name}' is a {src_kind}; a parent source must be "
+                    f"an input or state",
+                    conn.line, source,
+                )
+        else:
+            src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
+            dst_flow = flow_by_name[child_by_name[conn.dst_member].type.name]
+            src_kind, src_type = _lookup_port(src_flow, conn.src_port)
+            if src_kind is None:
+                raise _error(
+                    f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
+                    f"is not a port of '{src_flow.name}'",
+                    conn.line, source,
+                    suggestion=(
+                        f"connect sources must be an output or state of "
+                        f"'{src_flow.name}'"
+                    ),
+                )
+            if src_kind not in ("output", "state"):
+                raise _error(
+                    f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
+                    f"is a {src_kind}; connection sources must be an output "
+                    f"or state",
+                    conn.line, source,
+                )
         dst_kind, dst_type = _lookup_port(dst_flow, conn.dst_port)
         if dst_kind is None:
             raise _error(
@@ -531,6 +557,9 @@ def _validate_connect(
     # combinationally from inputs (spec §8.2). State-broken edges are fine.
     combo_edges: List[Tuple[str, str, Any]] = []
     for conn in connections:
+        if conn.src_member == "":
+            # Parent source: a root, cannot be part of a child-to-child cycle.
+            continue
         src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
         if _port_is_combinational(src_flow, conn.src_port):
             combo_edges.append((conn.src_member, conn.dst_member, conn))
@@ -648,6 +677,10 @@ def _topo_child_order(
     indeg = {n: 0 for n in names}
     adj: Dict[str, List[str]] = {n: [] for n in names}
     for conn in connections:
+        if conn.src_member not in child_by_name:
+            # Parent-port source: available before any child steps, so it
+            # imposes no ordering constraint between children.
+            continue
         src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
         if not _port_is_combinational(src_flow, conn.src_port):
             continue
@@ -1297,10 +1330,14 @@ def _child_step_statements(
     statements: List[Any] = []
     for child in ordered:
         for conn in by_dst.get(child.name, []):
-            src = FieldAccess(
-                FieldAccess(Variable("self"), conn.src_member),
-                conn.src_port,
-            )
+            if conn.src_member == "":
+                # Parent-port source: a field on `self` directly.
+                src = FieldAccess(Variable("self"), conn.src_port)
+            else:
+                src = FieldAccess(
+                    FieldAccess(Variable("self"), conn.src_member),
+                    conn.src_port,
+                )
             dst = FieldAccess(
                 FieldAccess(Variable("self"), conn.dst_member),
                 conn.dst_port,

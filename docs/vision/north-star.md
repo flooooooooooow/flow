@@ -590,8 +590,14 @@ Known grammar conflicts, decided:
 
 ```
 connect_block := "connect" "{" connection* "}"
-connection    := IDENT "." IDENT "->" IDENT "." IDENT
+connection    := source "->" IDENT "." IDENT
+source        := IDENT "." IDENT   // a sibling child's output/state
+               | IDENT             // a bare input/state of the enclosing flow
 ```
+
+A bare source (`signal -> child.in`) wires one of the enclosing flow's own
+inputs (or states) into a child input; the parent value is copied into the
+child at the start of the child-stepping phase, just like a sibling source.
 
 Flow-body only, in a flow whose fields include flow-typed members:
 
@@ -614,7 +620,8 @@ this a *composite* flow.
 ### 8.2 Checking
 
 - LHS must be an `output` (or `state`, explicitly allowed — reading a state as
-  a signal is physical) of the named member; RHS must be an `input`.
+  a signal is physical) of the named member, or a bare `input`/`state` of the
+  enclosing flow; RHS must be an `input`.
 - Types (and dims, post-units) must match exactly. No implicit scaling.
 - Each `input` may have at most one incoming connection; unconnected inputs
   of members must be driven by the parent (parent `every`/`becomes` writing
