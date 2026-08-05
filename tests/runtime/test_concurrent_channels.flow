@@ -1,4 +1,5 @@
 # Runtime test: channel send/recv/close
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 import "stdlib/concurrent.flow"
 
 function main() -> i32 {

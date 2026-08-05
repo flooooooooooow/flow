@@ -1,4 +1,5 @@
 # Channel_i64 — 64-bit payloads (pointers-as-i64 / large IDs)
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Run: ./flow run examples/concurrency/channels_i64.flow
 
 import "stdlib/concurrent.flow"

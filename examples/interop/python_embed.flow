@@ -4,7 +4,7 @@ import "stdlib/python_embed.flow"
 function main() -> i32 {
     print_line("Hello FLOW!")
     print_line("Countdown:")
-    let x: i32 = 9
+    let mut x: i32 = 9
     while x > 0 {
         print(x)
         x = x - 3
