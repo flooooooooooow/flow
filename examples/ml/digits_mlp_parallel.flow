@@ -1,0 +1,528 @@
+# Data-parallel gradient accumulation for the digits MLP.
+# flow:lenient: strict checker cannot yet type a function passed as ptr<void>
+# (flow_parallel_for_i32 body callback). Everything else follows strict rules.
+#
+#   FLOW_HOST=python ./flow run examples/ml/digits_mlp_parallel.flow
+#
+# Same dataset and model as examples/ml/digits_mlp.flow (8x8 procedural
+# seven-segment digits, 64 -> 32 relu -> 10 softmax CE, module statics).
+# Each minibatch is split into SHARDS shards. Every shard accumulates
+# gradients into its own buffers; shards run on real pthreads via the
+# runtime's flow_parallel_for_i32. The reduction runs serially in fixed
+# shard order, so serial and parallel training are bit-for-bit identical.
+#
+# The program times an identical training run serially and in parallel,
+# reports the measured speedup, checks the two runs agree exactly, and
+# gates PASS on the 90% test-accuracy bar.
+
+extern {
+    function malloc(size: i64) -> ptr<f32>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+    function free(p: ptr<f32>) -> void
+    function expf(x: f32) -> f32
+    function logf(x: f32) -> f32
+    function flow_rt_monotonic_ns() -> i64
+    function flow_rt_par_workers() -> i32
+    function flow_parallel_for_i32(start: i32, end: i32, stride: i32, body: ptr<void>, ctx: ptr<void>) -> void
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const N_CLASSES: i32 = 10
+const IMG: i32 = 64
+const HIDDEN: i32 = 32
+const TRAIN_PER_CLASS: i32 = 200
+const TEST_PER_CLASS: i32 = 40
+const N_TRAIN: i32 = 2000
+const N_TEST: i32 = 400
+const BATCH: i32 = 250
+const SHARDS: i32 = 8
+const EPOCHS: i32 = 30
+const LR: f32 = 0.3
+const MOMENTUM: f32 = 0.9
+
+# Model + optimizer state (module statics, spec 3.3.1)
+let mut w1: ptr<f32> = null
+let mut b1: ptr<f32> = null
+let mut w2: ptr<f32> = null
+let mut b2: ptr<f32> = null
+let mut vw1: ptr<f32> = null
+let mut vb1: ptr<f32> = null
+let mut vw2: ptr<f32> = null
+let mut vb2: ptr<f32> = null
+
+# Reduced gradients
+let mut gw1: ptr<f32> = null
+let mut gb1: ptr<f32> = null
+let mut gw2: ptr<f32> = null
+let mut gb2: ptr<f32> = null
+
+# Per-shard gradient buffers and activation scratch (disjoint slices)
+let mut sg_w1: ptr<f32> = null     # SHARDS x (IMG*HIDDEN)
+let mut sg_b1: ptr<f32> = null     # SHARDS x HIDDEN
+let mut sg_w2: ptr<f32> = null     # SHARDS x (HIDDEN*N_CLASSES)
+let mut sg_b2: ptr<f32> = null     # SHARDS x N_CLASSES
+let mut s_pre: ptr<f32> = null     # SHARDS x HIDDEN
+let mut s_act: ptr<f32> = null     # SHARDS x HIDDEN
+let mut s_logit: ptr<f32> = null   # SHARDS x N_CLASSES
+let mut s_prob: ptr<f32> = null    # SHARDS x N_CLASSES
+
+# Dataset
+let mut train_x: ptr<f32> = null
+let mut train_y: ptr<i32> = null
+let mut test_x: ptr<f32> = null
+let mut test_y: ptr<i32> = null
+let mut order: ptr<i32> = null
+
+# Current-minibatch window shared with shard workers
+let mut cur_start: i32 = 0
+let mut cur_size: i32 = 0
+
+let mut rng_state: i64 = 42
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG (same generator and seed as digits_mlp.flow)
+# ---------------------------------------------------------------------------
+
+function lcg_next() -> i32 {
+    rng_state = (rng_state * 1103515245 + 12345) % 2147483648
+    return rng_state as i32
+}
+
+function lcg_range(n: i32) -> i32 {
+    return lcg_next() % n
+}
+
+function lcg_uniform() -> f32 {
+    return (lcg_next() as f32) / 2147483648.0
+}
+
+# ---------------------------------------------------------------------------
+# Procedural glyph dataset (identical to digits_mlp.flow)
+# ---------------------------------------------------------------------------
+
+function seg_mask(digit: i32) -> i32 {
+    if digit == 0 { return 63 }
+    if digit == 1 { return 6 }
+    if digit == 2 { return 91 }
+    if digit == 3 { return 79 }
+    if digit == 4 { return 102 }
+    if digit == 5 { return 109 }
+    if digit == 6 { return 125 }
+    if digit == 7 { return 7 }
+    if digit == 8 { return 127 }
+    return 111
+}
+
+function render_glyph(out: ptr<f32>, digit: i32) -> void {
+    for i in 0 to IMG {
+        out[i] = 0.0
+    }
+    let mask: i32 = seg_mask(digit)
+    for c in 2 to 6 {
+        if mask % 2 == 1 { out[0 * 8 + c] = 1.0 }
+        if (mask / 64) % 2 == 1 { out[3 * 8 + c] = 1.0 }
+        if (mask / 8) % 2 == 1 { out[6 * 8 + c] = 1.0 }
+    }
+    for r in 1 to 3 {
+        if (mask / 32) % 2 == 1 { out[r * 8 + 1] = 1.0 }
+        if (mask / 2) % 2 == 1 { out[r * 8 + 6] = 1.0 }
+    }
+    for r in 4 to 6 {
+        if (mask / 16) % 2 == 1 { out[r * 8 + 1] = 1.0 }
+        if (mask / 4) % 2 == 1 { out[r * 8 + 6] = 1.0 }
+    }
+}
+
+function render_sample(out: ptr<f32>, glyph: ptr<f32>) -> void {
+    let dx: i32 = lcg_range(3) - 1
+    let dy: i32 = lcg_range(2)
+    let intensity: f32 = 0.7 + 0.3 * lcg_uniform()
+    for r in 0 to 8 {
+        for c in 0 to 8 {
+            let sr: i32 = r - dy
+            let sc: i32 = c - dx
+            let mut v: f32 = 0.0
+            if sr >= 0 and sr < 8 and sc >= 0 and sc < 8 {
+                v = glyph[sr * 8 + sc] * intensity
+            }
+            v = v + 0.1 * (lcg_uniform() - 0.5)
+            if v < 0.0 { v = 0.0 }
+            if v > 1.0 { v = 1.0 }
+            out[r * 8 + c] = v
+        }
+    }
+    for k in 0 to 2 {
+        out[lcg_range(IMG)] = lcg_uniform()
+    }
+}
+
+function build_dataset() -> void {
+    let glyph: ptr<f32> = malloc((IMG as i64) * 4)
+    let mut train_i: i32 = 0
+    let mut test_i: i32 = 0
+    for d in 0 to N_CLASSES {
+        render_glyph(glyph, d)
+        for s in 0 to TRAIN_PER_CLASS {
+            render_sample(train_x + (train_i as i64) * (IMG as i64), glyph)
+            train_y[train_i] = d
+            train_i = train_i + 1
+        }
+        for s in 0 to TEST_PER_CLASS {
+            render_sample(test_x + (test_i as i64) * (IMG as i64), glyph)
+            test_y[test_i] = d
+            test_i = test_i + 1
+        }
+    }
+    free(glyph)
+}
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+
+function alloc_zeroed(count: i32) -> ptr<f32> {
+    let p: ptr<f32> = malloc((count as i64) * 4)
+    for i in 0 to count {
+        p[i] = 0.0
+    }
+    return p
+}
+
+function alloc_all() -> void {
+    w1 = alloc_zeroed(IMG * HIDDEN)
+    b1 = alloc_zeroed(HIDDEN)
+    w2 = alloc_zeroed(HIDDEN * N_CLASSES)
+    b2 = alloc_zeroed(N_CLASSES)
+    vw1 = alloc_zeroed(IMG * HIDDEN)
+    vb1 = alloc_zeroed(HIDDEN)
+    vw2 = alloc_zeroed(HIDDEN * N_CLASSES)
+    vb2 = alloc_zeroed(N_CLASSES)
+    gw1 = alloc_zeroed(IMG * HIDDEN)
+    gb1 = alloc_zeroed(HIDDEN)
+    gw2 = alloc_zeroed(HIDDEN * N_CLASSES)
+    gb2 = alloc_zeroed(N_CLASSES)
+    sg_w1 = alloc_zeroed(SHARDS * IMG * HIDDEN)
+    sg_b1 = alloc_zeroed(SHARDS * HIDDEN)
+    sg_w2 = alloc_zeroed(SHARDS * HIDDEN * N_CLASSES)
+    sg_b2 = alloc_zeroed(SHARDS * N_CLASSES)
+    s_pre = alloc_zeroed(SHARDS * HIDDEN)
+    s_act = alloc_zeroed(SHARDS * HIDDEN)
+    s_logit = alloc_zeroed(SHARDS * N_CLASSES)
+    s_prob = alloc_zeroed(SHARDS * N_CLASSES)
+}
+
+# Reset weights, momentum and RNG so serial and parallel runs start
+# from the exact same state.
+function reset_model() -> void {
+    rng_state = 12345
+    for i in 0 to IMG * HIDDEN {
+        w1[i] = 0.2 * (lcg_uniform() - 0.5)
+        vw1[i] = 0.0
+    }
+    for i in 0 to HIDDEN {
+        b1[i] = 0.0
+        vb1[i] = 0.0
+    }
+    for i in 0 to HIDDEN * N_CLASSES {
+        w2[i] = 0.4 * (lcg_uniform() - 0.5)
+        vw2[i] = 0.0
+    }
+    for i in 0 to N_CLASSES {
+        b2[i] = 0.0
+        vb2[i] = 0.0
+    }
+    for i in 0 to N_TRAIN {
+        order[i] = i
+    }
+}
+
+# Forward + backward for one sample inside shard s, accumulating into
+# that shard's private gradient buffers. Uses only shard-local scratch.
+function shard_sample(s: i32, x: ptr<f32>, label: i32) -> void {
+    let pre: ptr<f32> = s_pre + (s as i64) * (HIDDEN as i64)
+    let act: ptr<f32> = s_act + (s as i64) * (HIDDEN as i64)
+    let lg: ptr<f32> = s_logit + (s as i64) * (N_CLASSES as i64)
+    let pb: ptr<f32> = s_prob + (s as i64) * (N_CLASSES as i64)
+    let g1: ptr<f32> = sg_w1 + (s as i64) * ((IMG * HIDDEN) as i64)
+    let gb1s: ptr<f32> = sg_b1 + (s as i64) * (HIDDEN as i64)
+    let g2: ptr<f32> = sg_w2 + (s as i64) * ((HIDDEN * N_CLASSES) as i64)
+    let gb2s: ptr<f32> = sg_b2 + (s as i64) * (N_CLASSES as i64)
+
+    for j in 0 to HIDDEN {
+        let mut acc: f32 = b1[j]
+        for i in 0 to IMG {
+            acc = acc + x[i] * w1[i * HIDDEN + j]
+        }
+        pre[j] = acc
+        if acc > 0.0 {
+            act[j] = acc
+        } else {
+            act[j] = 0.0
+        }
+    }
+    for k in 0 to N_CLASSES {
+        let mut acc: f32 = b2[k]
+        for j in 0 to HIDDEN {
+            acc = acc + act[j] * w2[j * N_CLASSES + k]
+        }
+        lg[k] = acc
+    }
+    let mut mx: f32 = lg[0]
+    for k in 1 to N_CLASSES {
+        if lg[k] > mx { mx = lg[k] }
+    }
+    let mut denom: f32 = 0.0
+    for k in 0 to N_CLASSES {
+        let e: f32 = expf(lg[k] - mx)
+        pb[k] = e
+        denom = denom + e
+    }
+    for k in 0 to N_CLASSES {
+        pb[k] = pb[k] / denom
+    }
+
+    # Backward: dlogits = probs - onehot
+    pb[label] = pb[label] - 1.0
+    for k in 0 to N_CLASSES {
+        gb2s[k] = gb2s[k] + pb[k]
+    }
+    for j in 0 to HIDDEN {
+        let a: f32 = act[j]
+        let mut da: f32 = 0.0
+        for k in 0 to N_CLASSES {
+            g2[j * N_CLASSES + k] = g2[j * N_CLASSES + k] + a * pb[k]
+            da = da + pb[k] * w2[j * N_CLASSES + k]
+        }
+        let mut dh: f32 = 0.0
+        if pre[j] > 0.0 {
+            dh = da
+        }
+        gb1s[j] = gb1s[j] + dh
+        for i in 0 to IMG {
+            g1[i * HIDDEN + j] = g1[i * HIDDEN + j] + x[i] * dh
+        }
+    }
+}
+
+# Gradient work for shard s over the current minibatch window.
+# Contiguous split: shard s takes samples [s*chunk, min((s+1)*chunk, size)).
+function shard_grad(s: i32) -> void {
+    let g1: ptr<f32> = sg_w1 + (s as i64) * ((IMG * HIDDEN) as i64)
+    let gb1s: ptr<f32> = sg_b1 + (s as i64) * (HIDDEN as i64)
+    let g2: ptr<f32> = sg_w2 + (s as i64) * ((HIDDEN * N_CLASSES) as i64)
+    let gb2s: ptr<f32> = sg_b2 + (s as i64) * (N_CLASSES as i64)
+    for i in 0 to IMG * HIDDEN { g1[i] = 0.0 }
+    for i in 0 to HIDDEN { gb1s[i] = 0.0 }
+    for i in 0 to HIDDEN * N_CLASSES { g2[i] = 0.0 }
+    for i in 0 to N_CLASSES { gb2s[i] = 0.0 }
+
+    let chunk: i32 = (cur_size + SHARDS - 1) / SHARDS
+    let lo: i32 = s * chunk
+    let mut hi: i32 = lo + chunk
+    if hi > cur_size { hi = cur_size }
+    let mut b: i32 = lo
+    while b < hi {
+        let idx: i32 = order[cur_start + b]
+        let x: ptr<f32> = train_x + (idx as i64) * (IMG as i64)
+        shard_sample(s, x, train_y[idx])
+        b = b + 1
+    }
+}
+
+# pthread entry point: unmangled (@flow_api) so it can be passed as a
+# C function pointer to flow_parallel_for_i32.
+@flow_api
+function shard_body(s: i32, ctx: ptr<void>) -> void {
+    shard_grad(s)
+}
+
+# Reduce shard gradients in fixed order (deterministic f32 sum order).
+function reduce_shards() -> void {
+    for i in 0 to IMG * HIDDEN { gw1[i] = 0.0 }
+    for i in 0 to HIDDEN { gb1[i] = 0.0 }
+    for i in 0 to HIDDEN * N_CLASSES { gw2[i] = 0.0 }
+    for i in 0 to N_CLASSES { gb2[i] = 0.0 }
+    for s in 0 to SHARDS {
+        let g1: ptr<f32> = sg_w1 + (s as i64) * ((IMG * HIDDEN) as i64)
+        let gb1s: ptr<f32> = sg_b1 + (s as i64) * (HIDDEN as i64)
+        let g2: ptr<f32> = sg_w2 + (s as i64) * ((HIDDEN * N_CLASSES) as i64)
+        let gb2s: ptr<f32> = sg_b2 + (s as i64) * (N_CLASSES as i64)
+        for i in 0 to IMG * HIDDEN { gw1[i] = gw1[i] + g1[i] }
+        for i in 0 to HIDDEN { gb1[i] = gb1[i] + gb1s[i] }
+        for i in 0 to HIDDEN * N_CLASSES { gw2[i] = gw2[i] + g2[i] }
+        for i in 0 to N_CLASSES { gb2[i] = gb2[i] + gb2s[i] }
+    }
+}
+
+function momentum_update(p: ptr<f32>, v: ptr<f32>, g: ptr<f32>, count: i32, scale: f32) -> void {
+    for i in 0 to count {
+        v[i] = MOMENTUM * v[i] - LR * g[i] * scale
+        p[i] = p[i] + v[i]
+    }
+}
+
+function apply_update(batch_size: i32) -> void {
+    let scale: f32 = 1.0 / (batch_size as f32)
+    momentum_update(w1, vw1, gw1, IMG * HIDDEN, scale)
+    momentum_update(b1, vb1, gb1, HIDDEN, scale)
+    momentum_update(w2, vw2, gw2, HIDDEN * N_CLASSES, scale)
+    momentum_update(b2, vb2, gb2, N_CLASSES, scale)
+}
+
+function shuffle_order() -> void {
+    let mut i: i32 = N_TRAIN - 1
+    while i > 0 {
+        let j: i32 = lcg_range(i + 1)
+        let tmp: i32 = order[i]
+        order[i] = order[j]
+        order[j] = tmp
+        i = i - 1
+    }
+}
+
+# Serial evaluation reusing shard 0 scratch
+function predict(x: ptr<f32>) -> i32 {
+    let pb: ptr<f32> = s_prob
+    let lg: ptr<f32> = s_logit
+    let act: ptr<f32> = s_act
+    for j in 0 to HIDDEN {
+        let mut acc: f32 = b1[j]
+        for i in 0 to IMG {
+            acc = acc + x[i] * w1[i * HIDDEN + j]
+        }
+        if acc > 0.0 {
+            act[j] = acc
+        } else {
+            act[j] = 0.0
+        }
+    }
+    let mut best: i32 = 0
+    let mut best_v: f32 = 0.0
+    for k in 0 to N_CLASSES {
+        let mut acc: f32 = b2[k]
+        for j in 0 to HIDDEN {
+            acc = acc + act[j] * w2[j * N_CLASSES + k]
+        }
+        lg[k] = acc
+        if k == 0 or acc > best_v {
+            best_v = acc
+            best = k
+        }
+    }
+    let ignored: f32 = pb[0]
+    return best
+}
+
+function test_accuracy() -> f32 {
+    let mut correct: i32 = 0
+    for s in 0 to N_TEST {
+        let x: ptr<f32> = test_x + (s as i64) * (IMG as i64)
+        if predict(x) == test_y[s] {
+            correct = correct + 1
+        }
+    }
+    return (correct as f32) / (N_TEST as f32)
+}
+
+# One full training run. use_threads != 0 uses pthread shards.
+# Returns gradient+update wall time in ns (excludes eval prints).
+function train_run(use_threads: i32) -> i64 {
+    reset_model()
+    let mut grad_ns: i64 = 0
+    for epoch in 0 to EPOCHS {
+        shuffle_order()
+        let mut cursor: i32 = 0
+        while cursor < N_TRAIN {
+            let mut bsz: i32 = BATCH
+            if cursor + bsz > N_TRAIN {
+                bsz = N_TRAIN - cursor
+            }
+            cur_start = cursor
+            cur_size = bsz
+            let t0: i64 = flow_rt_monotonic_ns()
+            if use_threads != 0 {
+                flow_parallel_for_i32(0, SHARDS, 1, shard_body, null)
+            } else {
+                for s in 0 to SHARDS {
+                    shard_grad(s)
+                }
+            }
+            reduce_shards()
+            apply_update(bsz)
+            let t1: i64 = flow_rt_monotonic_ns()
+            grad_ns = grad_ns + (t1 - t0)
+            cursor = cursor + bsz
+        }
+    }
+    return grad_ns
+}
+
+function main() -> i32 {
+    println("digits_mlp_parallel: shard gradient accumulation on pthreads")
+    print("  runtime workers: ")
+    println(flow_rt_par_workers())
+    print("  shards: ")
+    println(SHARDS)
+    print("  batch: ")
+    println(BATCH)
+    print("  epochs: ")
+    println(EPOCHS)
+
+    alloc_all()
+    train_x = malloc((N_TRAIN as i64) * (IMG as i64) * 4)
+    test_x = malloc((N_TEST as i64) * (IMG as i64) * 4)
+    train_y = calloc(N_TRAIN as i64, 4)
+    test_y = calloc(N_TEST as i64, 4)
+    order = calloc(N_TRAIN as i64, 4)
+    build_dataset()
+
+    # Each configuration runs three full trainings; report the fastest
+    # (scheduler noise on a busy laptop only ever slows a run down).
+    let reps: i32 = 3
+
+    # Serial reference runs
+    let mut serial_ns: i64 = 0
+    for r in 0 to reps {
+        let ns: i64 = train_run(0)
+        if r == 0 or ns < serial_ns {
+            serial_ns = ns
+        }
+    }
+    let acc_serial: f32 = test_accuracy()
+    print("  serial:   grad+update ms ")
+    printf("%.2f", (serial_ns as f64) / 1000000.0)
+    print(" (best of 3)  test_acc ")
+    printf("%.2f%%\n", (acc_serial * 100.0) as f64)
+
+    # Parallel runs: identical shard decomposition, shards on pthreads
+    let mut par_ns: i64 = 0
+    for r in 0 to reps {
+        let ns: i64 = train_run(1)
+        if r == 0 or ns < par_ns {
+            par_ns = ns
+        }
+    }
+    let acc_par: f32 = test_accuracy()
+    print("  parallel: grad+update ms ")
+    printf("%.2f", (par_ns as f64) / 1000000.0)
+    print(" (best of 3)  test_acc ")
+    printf("%.2f%%\n", (acc_par * 100.0) as f64)
+
+    let speedup: f64 = (serial_ns as f64) / (par_ns as f64)
+    print("  speedup: ")
+    printf("%.2fx\n", speedup)
+
+    # Determinism check: fixed reduction order makes both runs identical
+    if acc_serial != acc_par {
+        println("FAIL: serial and parallel runs disagree")
+        return 1
+    }
+    println("  serial == parallel accuracy (deterministic reduction) OK")
+
+    if acc_par >= 0.90 {
+        println("PASS")
+        return 0
+    }
+    println("FAIL: below 90% accuracy gate")
+    return 1
+}
