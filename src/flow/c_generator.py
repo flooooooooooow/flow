@@ -924,6 +924,9 @@ class CGenerator:
                 return Type("bool")
             left = self._infer_expr_type(expr.left)
             right = self._infer_expr_type(expr.right)
+            # Dual arithmetic promotes to Dual (pattern-adoption #161).
+            if left.name == "Dual" or right.name == "Dual":
+                return Type("Dual")
             if left.name == "f64" or right.name == "f64":
                 return Type("f64")
             if left.name == "f32" or right.name == "f32":
@@ -2179,6 +2182,9 @@ class CGenerator:
                 # `(!x) < 10` without this.
                 return f"(!({self._gen_expr(e.operand)}))"
             if op == "-":
+                operand_t = self._infer_expr_type(e.operand)
+                if operand_t and operand_t.name == "Dual":
+                    return self._gen_expr(FunctionCall("neg", [e.operand]))
                 return f"(-{self._gen_expr(e.operand)})"
             if op == "~":
                 return f"(~{self._gen_expr(e.operand)})"
@@ -2193,6 +2199,16 @@ class CGenerator:
             return f"({op} {self._gen_expr(e.operand)})"  # Add space for unknown operators
 
         if isinstance(e, BinaryOperation):
+            # Dual operator sugar (#161): a * b -> mul(a, b) when Dual is involved.
+            dual_binop = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+            if e.operator in dual_binop:
+                left_t = self._infer_expr_type(e.left)
+                right_t = self._infer_expr_type(e.right)
+                if (left_t and left_t.name == "Dual") or (right_t and right_t.name == "Dual"):
+                    return self._gen_expr(
+                        FunctionCall(dual_binop[e.operator], [e.left, e.right])
+                    )
+
             left_expr = self._gen_expr(e.left)
             right_expr = self._gen_expr(e.right)
 
