@@ -14,11 +14,11 @@ Works in **VS Code** and **Cursor** (same VSIX).
 
 ### From the marketplace (once published)
 
-Search **“FLOW Language”** by `flooooooooooow`, or:
+Search **“FLOW Language”** by `quilio`, or:
 
 ```bash
-cursor --install-extension flooooooooooow.flow-language
-code --install-extension flooooooooooow.flow-language
+cursor --install-extension quilio.flow-language
+code --install-extension quilio.flow-language
 ```
 
 ### From this repo (local VSIX)
