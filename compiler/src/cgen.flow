@@ -13,7 +13,7 @@ import .ast {
     AST_STRUCT, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE, AST_INDEX,
     AST_EXTERN, AST_IMPORT, AST_EXPORT, AST_CONST, AST_CAST, AST_ARRAY_LIT,
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
-    AST_BREAK, AST_CONTINUE
+    AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM
 }
 
 extern {
@@ -553,6 +553,54 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
         return
     }
+    if kind == AST_MATCH {
+        # Stage-A lowering: scrutinee in a temp + if/else-if chain (mirrors the
+        # Python host's non-switch match path). Catch-all arm (wildcard `_` or
+        # binding ident) becomes the final else; a binding arm declares
+        # `int32_t name = __flowc_match;` before its body.
+        flowc_cgen_puts(w, "  { int32_t __flowc_match = ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_puts(w, ";\n")
+        let mut arm: i32 = arena.nodes[id].b
+        let mut n_lit: i32 = 0
+        let mut chain_open: i32 = 0
+        while arm != AST_NONE {
+            if arena.nodes[arm].ival == 0 {
+                if n_lit == 0 {
+                    flowc_cgen_puts(w, "  if (__flowc_match == ")
+                } else {
+                    flowc_cgen_puts(w, "} else if (__flowc_match == ")
+                }
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[arm].a)
+                flowc_cgen_puts(w, ") {\n")
+                n_lit = n_lit + 1
+                chain_open = 1
+            } else {
+                if n_lit > 0 {
+                    flowc_cgen_puts(w, "} else {\n")
+                }
+                if arena.nodes[arm].ival == 2 {
+                    flowc_cgen_puts(w, "  int32_t ")
+                    flowc_cgen_put_span(w, src, arena.nodes[arm].name_start, arena.nodes[arm].name_end)
+                    flowc_cgen_puts(w, " = __flowc_match;\n")
+                }
+            }
+            let body: i32 = arena.nodes[arm].b
+            if body != AST_NONE {
+                let mut st: i32 = arena.nodes[body].a
+                while st != AST_NONE {
+                    flowc_cgen_emit_stmt(w, arena, src, st)
+                    st = arena.nodes[st].next
+                }
+            }
+            arm = arena.nodes[arm].next
+        }
+        if chain_open == 1 {
+            flowc_cgen_puts(w, "}\n")
+        }
+        flowc_cgen_puts(w, "  }\n")
+        return
+    }
     if kind == AST_BREAK {
         flowc_cgen_puts(w, "  break;\n")
         return
@@ -726,19 +774,12 @@ export function flowc_cgen_emit_ex(arena: AstArena, root: i32, src: ptr<u8>, out
     if (flags % 2) == 0 {
         flowc_cgen_puts(&w, "#include <stdint.h>\n")
         flowc_cgen_puts(&w, "#include <stdlib.h>\n")
-        # AST_EXTERN body is brace-skipped (no prototypes). Include libc headers for FILE*/strlen.
-        let mut has_extern: i32 = 0
-        let mut scan: i32 = arena.nodes[root].a
-        while scan != AST_NONE {
-            if arena.nodes[scan].kind == AST_EXTERN {
-                has_extern = 1
-            }
-            scan = arena.nodes[scan].next
-        }
-        if has_extern == 1 {
-            flowc_cgen_puts(&w, "#include <stdio.h>\n")
-            flowc_cgen_puts(&w, "#include <string.h>\n")
-        }
+        # AST_EXTERN bodies are brace-skipped (no prototypes), and in bundle
+        # TUs only the first module emits the preamble — later modules may
+        # declare externs (e.g. parser diagnostics call puts). Always include
+        # the libc headers used by Stage-A externs (FILE*/strlen/puts).
+        flowc_cgen_puts(&w, "#include <stdio.h>\n")
+        flowc_cgen_puts(&w, "#include <string.h>\n")
         flowc_cgen_putc(&w, 10)
     }
 

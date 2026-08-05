@@ -89,8 +89,20 @@ Expand `flowc` until it parses/emits everything the **compiler sources themselve
 src+AST caps, and `FLOWC_BUNDLE=1` typecheck of `compiler/src/main.flow` green.
 Dogfood `compile_module` / self-emit / frontend bundles no longer force
 `FLOWC_TYPECHECK=0` (imports seed names). Typecheck diagnostics print
-`flowc tc: file` + path and `flowc tc: at line:col`. Remaining: close #151
-when Phase B exit criteria are fully met (match / richer string ops as needed).
+`flowc tc: file` + path and `flowc tc: at line:col`.
+
+**Progress (2026-08-05, match subset):** Stage-A `match` statement landed end
+to end (lexer `match` keyword + `=>` token, parser, AST_MATCH/AST_MATCH_ARM,
+typecheck, cgen). Subset: int-literal arms (incl. negative), `_` wildcard, and
+a binding-ident catch-all; lowering is a `__flowc_match` temp + if/else-if
+chain (mirrors the Python host's non-switch path). Guards, or-patterns,
+struct patterns, and list patterns are rejected with clear diagnostics
+(fixtures `stage_a_match` exit 42 and `match_unsupported` in roundtrip).
+Typecheck rejects obvious non-integer scrutinees and non-final catch-all arms.
+C backend only: `jsgen` / `fmt` do not lower AST_MATCH yet. Remaining for the
+Phase B exit (#151): richer string ops for diagnostics as needed; `match` on
+enum-tag constants stays out until Stage-A has enums (bare idents bind, per
+Python-host semantics).
 
 ### Phase C — `flowc` replaces Python for `./flow run|build`  *(done — soft cutover)*
 
