@@ -146,6 +146,17 @@ class AnalyzeDecl:
 
 
 @dataclass
+class AnalyzeLqrDecl:
+    """`analyze plant { lqr { Q … R … -> k0 … } }` → dlqr_diag_q_scalar_u (#162)."""
+
+    system: str
+    q_diag: List[float] = field(default_factory=list)
+    r: float = 1.0
+    gain_vars: List[str] = field(default_factory=list)
+    max_iter: int = 200
+
+
+@dataclass
 class WFCDecl:
     name: str
     width: int = 4
@@ -231,6 +242,7 @@ class DynamicsProgram:
     guides: List[GuideDecl] = field(default_factory=list)
     represents: List[RepresentLinearDecl] = field(default_factory=list)
     portraits: List[RepresentPhasePortraitDecl] = field(default_factory=list)
+    analyze_lqrs: List[AnalyzeLqrDecl] = field(default_factory=list)
 
 
 def _strip_comments(line: str) -> str:
@@ -315,6 +327,7 @@ def _merge_dynamics_program(dst: "DynamicsProgram", src: "DynamicsProgram") -> N
     dst.guides.extend(src.guides)
     dst.represents.extend(src.represents)
     dst.portraits.extend(src.portraits)
+    dst.analyze_lqrs.extend(src.analyze_lqrs)
 
 
 def _strip_dynamics_namespace(line: str) -> str:
@@ -901,16 +914,33 @@ def parse_dynamics_dsl(source: str) -> Tuple[DynamicsProgram, str]:
             continue
 
         if line.startswith("analyze "):
-            m = re.match(
+            ga_m = re.match(
                 r"analyze\s+(\w+)\s+ga\s+(\w+)\s+(\w+)\s+over\s+(\w+)\s*->\s*(\w+)\s*\{",
                 line,
             )
-            if not m:
-                raise SyntaxError(f"Invalid analyze block: {line}")
-            program.analyzes.append(
-                AnalyzeDecl(m.group(1), m.group(2), m.group(3), m.group(4), m.group(5))
-            )
-            body_lines, i = _extract_brace_block(lines, i)
+            if ga_m:
+                program.analyzes.append(
+                    AnalyzeDecl(
+                        ga_m.group(1),
+                        ga_m.group(2),
+                        ga_m.group(3),
+                        ga_m.group(4),
+                        ga_m.group(5),
+                    )
+                )
+                body_lines, i = _extract_brace_block(lines, i)
+                continue
+
+            brace_m = re.match(r"analyze\s+(\w+)\s*\{", line)
+            if not brace_m:
+                raise SyntaxError(
+                    f"Invalid analyze block: {line} "
+                    "(expected `analyze Name ga k1 k2 over H -> r {{…}}` "
+                    "or `analyze Name {{ lqr {{ … }} }}`)"
+                )
+            system = brace_m.group(1)
+            body_lines, i = _extract_brace_block_preserving(lines, i)
+            _parse_analyze_vision_body(program, system, body_lines)
             continue
 
         if line.startswith("wfc field "):
@@ -992,9 +1022,121 @@ def parse_dynamics_dsl(source: str) -> Tuple[DynamicsProgram, str]:
     return program, "\n".join(out_lines)
 
 
+def _parse_lqr_block_body(
+    system: str, body_lines: List[str]
+) -> AnalyzeLqrDecl:
+    """Parse `lqr { Q …; R …; -> k0 k1 … }` inside `analyze Name { … }`."""
+    decl = AnalyzeLqrDecl(system=system)
+    for bl in body_lines:
+        b = _strip_comments(bl)
+        if not b:
+            continue
+        if b.startswith("Q "):
+            decl.q_diag = _parse_floats(b[2:])
+            continue
+        if b.startswith("R "):
+            parts = b.split()
+            if len(parts) != 2:
+                raise SyntaxError(
+                    f"analyze {system} lqr: expected `R <scalar>`, got '{b}'"
+                )
+            decl.r = float(parts[1])
+            continue
+        if b.startswith("max_iter "):
+            decl.max_iter = int(b.split()[1])
+            continue
+        if b.startswith("->"):
+            names = b[2:].strip().split()
+            if not names:
+                raise SyntaxError(
+                    f"analyze {system} lqr: `->` needs gain variable names"
+                )
+            for name in names:
+                if not re.match(r"^\w+$", name):
+                    raise SyntaxError(
+                        f"analyze {system} lqr: invalid gain name '{name}'"
+                    )
+            decl.gain_vars = names
+            continue
+        raise SyntaxError(
+            f"analyze {system} lqr: unknown item '{b}' "
+            "(expected Q / R / max_iter / -> gains)"
+        )
+    if not decl.q_diag:
+        raise SyntaxError(f"analyze {system} lqr: missing `Q …` diagonal")
+    if not decl.gain_vars:
+        raise SyntaxError(
+            f"analyze {system} lqr: missing `-> k0 k1 …` gain bindings"
+        )
+    if len(decl.gain_vars) != len(decl.q_diag):
+        raise SyntaxError(
+            f"analyze {system} lqr: Q has {len(decl.q_diag)} entries but "
+            f"-> lists {len(decl.gain_vars)} gains (need one gain per state)"
+        )
+    return decl
+
+
+def _parse_analyze_vision_body(
+    program: DynamicsProgram, system: str, body_lines: List[str]
+) -> None:
+    """Vision-form `analyze Name { … }` — Stage-1 ships nested `lqr { … }`."""
+    i = 0
+    saw_item = False
+    while i < len(body_lines):
+        b = _strip_comments(body_lines[i])
+        if not b:
+            i += 1
+            continue
+        if b.startswith("lqr") and "{" in b:
+            # Re-join into a mini source so brace extract works on nested body.
+            mini = body_lines[i:]
+            # Find lqr head line index 0 in mini
+            lqr_body, next_rel = _extract_brace_block(mini, 0)
+            program.analyze_lqrs.append(
+                _parse_lqr_block_body(system, lqr_body)
+            )
+            saw_item = True
+            i += next_rel
+            continue
+        if b == "lqr":
+            # `lqr` alone then `{` on next line
+            if i + 1 >= len(body_lines) or "{" not in body_lines[i + 1]:
+                raise SyntaxError(
+                    f"analyze {system}: expected `lqr {{ … }}`"
+                )
+            mini = body_lines[i + 1 :]
+            lqr_body, next_rel = _extract_brace_block(mini, 0)
+            program.analyze_lqrs.append(
+                _parse_lqr_block_body(system, lqr_body)
+            )
+            saw_item = True
+            i = i + 1 + next_rel
+            continue
+        raise SyntaxError(
+            f"analyze {system}: Stage-1 supports `lqr {{ … }}` only; "
+            f"got '{b}'"
+        )
+    if not saw_item:
+        raise SyntaxError(
+            f"analyze {system}: empty body — add `lqr {{ Q … R … -> … }}`"
+        )
+
+
 def _flat_array(vals: List[float], name: str) -> str:
-    inner = ", ".join(f"{v:.17g}" for v in vals)
+    inner = ", ".join(_flow_f64(v) for v in vals)
     return f"let {name}: array<f64, {max(len(vals), 1)}> = [{inner}]"
+
+
+def _flow_f64(v: float) -> str:
+    """Format a float literal that the Flow lexer always treats as f64."""
+    s = f"{v:.17g}"
+    if s.startswith("."):
+        s = "0" + s
+    if s.startswith("-."):
+        s = "-0" + s[1:]
+    if "e" not in s and "E" not in s and "." not in s:
+        s += ".0"
+    return s
 
 
 def _zero_f64_array(size: int) -> str:
@@ -1025,6 +1167,7 @@ def compile_dynamics_program(program: DynamicsProgram) -> str:
             program.ga_evolutions,
             program.closed_blocks,
             program.analyzes,
+            program.analyze_lqrs,
             program.couples,
             program.guides,
         ]
@@ -1246,6 +1389,43 @@ def compile_dynamics_program(program: DynamicsProgram) -> str:
         lines.append(f"    {analyze.k1_var} = {tag}_bk1[0]")
         lines.append(f"    {analyze.k2_var} = {tag}_bk2[0]")
 
+    for li, lqr in enumerate(program.analyze_lqrs):
+        if lqr.system not in program.systems:
+            raise SyntaxError(
+                f"analyze {lqr.system} lqr: unknown dsys '{lqr.system}'"
+            )
+        sys = program.systems[lqr.system]
+        if sys.m != 1:
+            raise SyntaxError(
+                f"analyze {lqr.system} lqr: Stage-1 needs scalar input "
+                f"(m=1), got m={sys.m}"
+            )
+        if len(lqr.q_diag) != sys.n:
+            raise SyntaxError(
+                f"analyze {lqr.system} lqr: Q length {len(lqr.q_diag)} "
+                f"!= n={sys.n}"
+            )
+        if sys.n > 8:
+            raise SyntaxError(
+                f"analyze {lqr.system} lqr: n={sys.n} exceeds LQR_MAX_N=8"
+            )
+        sysv = sys_vars[lqr.system]
+        tag = f"__lqr_{li}"
+        n = sys.n
+        lines.append(f"    {_flat_array(lqr.q_diag, f'{tag}_q')}")
+        lines.append(
+            f"    let mut {tag}_k: array<f64, {n}> = {_zero_f64_array(n)}"
+        )
+        # Use the (possibly Euler-discretized) plant matrices so continuous
+        # dsys works the same as discrete.
+        lines.append(
+            f"    let {tag}_iters: i32 = dlqr_diag_q_scalar_u("
+            f"{sysv}.A.data, {sysv}.B.data, {tag}_q, {_flow_f64(lqr.r)}, {n}, "
+            f"{tag}_k, {lqr.max_iter})"
+        )
+        for gi, gname in enumerate(lqr.gain_vars):
+            lines.append(f"    let {gname}: f64 = {tag}_k[{gi}]")
+
     for couple in program.couples:
         wf = program.wfc_fields[couple.field]
         grid_var = f"__wfc_{couple.field}"
@@ -1399,11 +1579,14 @@ def expand_dynamics_dsl(source: str) -> str:
         or program.ga_evolutions
         or program.closed_blocks
         or program.analyzes
+        or program.analyze_lqrs
     )
     if needs_coupling and 'import "stdlib/dynamics/wfc_ga_coupling.flow"' not in merged:
         merged = 'import "stdlib/dynamics/wfc_ga_coupling.flow"\n\n' + merged
     elif needs_ga and 'import "stdlib/dynamics/ga_analysis.flow"' not in merged:
         merged = 'import "stdlib/dynamics/ga_analysis.flow"\n\n' + merged
+    if program.analyze_lqrs and 'import "stdlib/dynamics/lqr.flow"' not in merged:
+        merged = 'import "stdlib/dynamics/lqr.flow"\n' + merged
     if program.portraits:
         if 'import "stdlib/dynamics/portrait.flow"' not in merged:
             merged = 'import "stdlib/dynamics/portrait.flow"\n' + merged
