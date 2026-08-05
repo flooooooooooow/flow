@@ -184,7 +184,7 @@ hand-rolled C-shaped loops. API sketches live in
 | Wire ML demos through Dual / grad codegen | ✅ [#170](https://github.com/flooooooooooow/flow/issues/170) | Tourist XOR uses `nn_autogen`; hand backprop → `mlp_xor_from_scratch.flow` |
 | Owned HttpResponse + JSON decode helpers | ✅ [#167](https://github.com/flooooooooooow/flow/issues/167) | `HttpBody` + `http_get` / `http_body_free`; live cache app drops buf ceremony |
 | Dynamics DSL / LQR beyond n=2 | ✅ partial [#162](https://github.com/flooooooooooow/flow/issues/162) | `dynamics/lqr.flow` dlqr n≤8 scalar-u; cartpole uses it; DSL `analyze { lqr }` still open |
-| Field / laplacian PDE surface | ✅ partial [#163](https://github.com/flooooooooooow/flow/issues/163) | `dynamics/pde.flow` + heat demo; `field`/`boundary` grammar follow-on |
+| Field / laplacian PDE surface | ✅ [#163](https://github.com/flooooooooooow/flow/issues/163) | `field`/`boundary`/`evolves as laplacian` → `T_field_step`; heat demo |
 | Dual + Tensor operators + mutable params | ✅ partial [#161](https://github.com/flooooooooooow/flow/issues/161) | Dual ops + mut field `nn` step/param_set; Tensor ops still open |
 | Closed-loop plant.step from dsys/connect | ✅ [#160](https://github.com/flooooooooooow/flow/issues/160) | DSL exposes `plant` alias; spring_mass uses `plant_step(plant, …)` |
 
