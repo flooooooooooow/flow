@@ -27,7 +27,7 @@
 | | |
 |--|--|
 | **Docs** | [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) |
-| **Version** | **0.8.0** |
+| **Version** | **0.9.0** |
 | **License** | MIT |
 | **Install** | `brew tap flooooooooooow/flow && brew install flow` · or clone + `./flow run …` |
 
