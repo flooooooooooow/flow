@@ -1,0 +1,217 @@
+# collectionsx — practical growable vector + open-addressing hashmap (i32 keys)
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+# =============================================================================
+# VecI32 — growable i32 vector (capacity doubles on push)
+# =============================================================================
+
+export struct VecI32 {
+    data: ptr<i32>,
+    len: i32,
+    capacity: i32
+}
+
+export function vec_i32_create() -> VecI32 {
+    let cap: i32 = 4
+    let raw: ptr<u8> = malloc(cap * 4)
+    let data: ptr<i32> = raw
+    for i in 0 to cap {
+        data[i] = 0
+    }
+    return VecI32 {
+        data: data,
+        len: 0,
+        capacity: cap
+    }
+}
+
+export function vec_i32_len(v: VecI32) -> i32 {
+    return v.len
+}
+
+export function vec_i32_get(v: VecI32, index: i32) -> i32 {
+    if index < 0 {
+        return 0
+    }
+    if index >= v.len {
+        return 0
+    }
+    return v.data[index]
+}
+
+function vec_i32_grow(v: ptr<VecI32>) -> void {
+    let old_cap: i32 = v[0].capacity
+    let new_cap: i32 = old_cap * 2
+    if new_cap < 4 {
+        new_cap = 4
+    }
+    let new_raw: ptr<u8> = malloc(new_cap * 4)
+    let new_data: ptr<i32> = new_raw
+    let old_data: ptr<i32> = v[0].data
+    for i in 0 to v[0].len {
+        new_data[i] = old_data[i]
+    }
+    for j in v[0].len to new_cap {
+        new_data[j] = 0
+    }
+    let old_raw: ptr<u8> = old_data
+    free(old_raw)
+    v[0].data = new_data
+    v[0].capacity = new_cap
+}
+
+export function vec_i32_push(v: ptr<VecI32>, value: i32) -> void {
+    if v[0].len >= v[0].capacity {
+        vec_i32_grow(v)
+    }
+    v[0].data[v[0].len] = value
+    v[0].len = v[0].len + 1
+}
+
+export function vec_i32_destroy(v: VecI32) -> void {
+    let raw: ptr<u8> = v.data
+    free(raw)
+}
+
+# =============================================================================
+# MapI32 — open-addressing hash map i32 → i32 (linear probe)
+# =============================================================================
+
+# state: 0 = empty, 1 = occupied
+
+export struct MapEntryI32 {
+    key: i32,
+    value: i32,
+    state: i32
+}
+
+export struct MapI32 {
+    entries: ptr<MapEntryI32>,
+    capacity: i32,
+    size: i32
+}
+
+function map_hash(key: i32) -> i32 {
+    let mut h: i32 = key
+    h = ((h >> 16) ^ h) * 0x45d9f3b
+    h = ((h >> 16) ^ h) * 0x45d9f3b
+    h = (h >> 16) ^ h
+    if h < 0 {
+        h = 0 - h
+    }
+    return h
+}
+
+function map_alloc_entries(capacity: i32) -> ptr<MapEntryI32> {
+    # MapEntryI32 ≈ 12 bytes (key, value, state)
+    let raw: ptr<u8> = malloc(capacity * 12)
+    let entries: ptr<MapEntryI32> = raw
+    for i in 0 to capacity {
+        entries[i].key = 0
+        entries[i].value = 0
+        entries[i].state = 0
+    }
+    return entries
+}
+
+export function map_i32_create() -> MapI32 {
+    let cap: i32 = 16
+    let entries: ptr<MapEntryI32> = map_alloc_entries(cap)
+    return MapI32 {
+        entries: entries,
+        capacity: cap,
+        size: 0
+    }
+}
+
+function map_find_slot(m: MapI32, key: i32) -> i32 {
+    let mut idx: i32 = map_hash(key) % m.capacity
+    let start: i32 = idx
+    while m.entries[idx].state == 1 {
+        if m.entries[idx].key == key {
+            return idx
+        }
+        idx = (idx + 1) % m.capacity
+        if idx == start {
+            return 0 - 1
+        }
+    }
+    return idx
+}
+
+function map_rehash(m: ptr<MapI32>, new_cap: i32) -> void {
+    let old_entries: ptr<MapEntryI32> = m[0].entries
+    let old_cap: i32 = m[0].capacity
+    let new_entries: ptr<MapEntryI32> = map_alloc_entries(new_cap)
+    m[0].entries = new_entries
+    m[0].capacity = new_cap
+    m[0].size = 0
+    for i in 0 to old_cap {
+        if old_entries[i].state == 1 {
+            let idx: i32 = map_find_slot(m[0], old_entries[i].key)
+            new_entries[idx].key = old_entries[i].key
+            new_entries[idx].value = old_entries[i].value
+            new_entries[idx].state = 1
+            m[0].size = m[0].size + 1
+        }
+    }
+    let old_raw: ptr<u8> = old_entries
+    free(old_raw)
+}
+
+export function map_i32_put(m: ptr<MapI32>, key: i32, value: i32) -> i32 {
+    # Grow when load would exceed ~70%
+    if (m[0].size + 1) * 100 >= m[0].capacity * 70 {
+        map_rehash(m, m[0].capacity * 2)
+    }
+    let idx: i32 = map_find_slot(m[0], key)
+    if idx < 0 {
+        return 0
+    }
+    if m[0].entries[idx].state != 1 {
+        m[0].size = m[0].size + 1
+    }
+    m[0].entries[idx].key = key
+    m[0].entries[idx].value = value
+    m[0].entries[idx].state = 1
+    return 1
+}
+
+export function map_i32_get(m: MapI32, key: i32) -> i32 {
+    let mut idx: i32 = map_hash(key) % m.capacity
+    let start: i32 = idx
+    while m.entries[idx].state == 1 {
+        if m.entries[idx].key == key {
+            return m.entries[idx].value
+        }
+        idx = (idx + 1) % m.capacity
+        if idx == start {
+            return 0
+        }
+    }
+    return 0
+}
+
+export function map_i32_has(m: MapI32, key: i32) -> i32 {
+    let mut idx: i32 = map_hash(key) % m.capacity
+    let start: i32 = idx
+    while m.entries[idx].state == 1 {
+        if m.entries[idx].key == key {
+            return 1
+        }
+        idx = (idx + 1) % m.capacity
+        if idx == start {
+            return 0
+        }
+    }
+    return 0
+}
+
+export function map_i32_destroy(m: MapI32) -> void {
+    let raw: ptr<u8> = m.entries
+    free(raw)
+}
