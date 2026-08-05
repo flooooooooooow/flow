@@ -24,7 +24,13 @@ IMPORT_LINE_RE = re.compile(r"^\s*import\s+(\S+)", re.MULTILINE)
 def copy_tree(src: Path, dst: Path) -> None:
     if dst.exists():
         shutil.rmtree(dst)
-    shutil.copytree(src, dst)
+    # Tool caches such as Lean's `.lake/` are not documentation sources and
+    # can contain links that only make sense inside the local dependency tree.
+    shutil.copytree(
+        src,
+        dst,
+        ignore=shutil.ignore_patterns(".*", "__pycache__", "*.pyc"),
+    )
 
 
 def copy_docs() -> None:
