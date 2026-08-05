@@ -995,7 +995,6 @@ class TypeChecker:
         if reason is None:
             return
         fn = self._current_rt_safe_fn
-        phrase = self._rt_unsafe_phrase(reason)
         if reason == name:
             self.errors.append(
                 f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
