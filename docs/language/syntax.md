@@ -173,6 +173,78 @@ arr[0]
 matrix[i * width + j]
 ```
 
+### Pipeline
+
+`|>` is forward composition: the value on the left becomes an argument to the
+call on the right. It is left-associative, so a chain reads top-to-bottom in
+the order the data flows.
+
+```flow
+x |> f            # f(x)
+x |> f(y)         # f(x, y)      — piped value is prepended
+x |> obj.m(y)     # obj.m(x, y)  — works for method calls too
+a |> f() |> g()   # g(f(a))      — left-associative chain
+```
+
+By default the piped value is inserted as the **first** argument. A single `_`
+placeholder overrides that, routing the piped value to whichever slot you mark
+instead:
+
+```flow
+signal |> lowpass(cutoff)      # lowpass(signal, cutoff)
+value  |> clamp(0.0, _, 1.0)   # clamp(0.0, value, 1.0)
+x      |> mix(_, sidechain, k) # mix(x, sidechain, k)  — explicit leading slot
+```
+
+At most one `_` may appear per stage — the piped value fills exactly one slot,
+so two placeholders would duplicate it and are rejected at parse time.
+
+#### Fork blocks
+
+A **fork block** applies several pipelines to the *same* value and collects the
+results into a record:
+
+```flow
+let s: Stats = n |> Stats {
+    doubled  = twice,
+    squared  = square,
+    plus_ten = add(_, 10),
+}
+# == Stats { doubled: twice(n), squared: square(n), plus_ten: add(n, 10) }
+```
+
+Each `field = stage…` branch is the pipeline `source |> stage…`, so branch
+stages compose (and take placeholders) exactly like any other pipeline. Branches
+use `=` — not the struct-literal `:` — so the fork and the record it builds read
+distinctly. The block lowers to a struct literal of the named record, which is
+type-checked against that struct's declared fields like any other literal. The
+result is itself a value, so a fork can sit mid-pipeline: `x |> R { … } |> f`.
+
+Dropping the record name makes it **anonymous** — the record type is inferred
+rather than declared:
+
+```flow
+let s = n |> {
+    doubled  = twice,
+    squared  = square,
+    plus_ten = add(_, 10),
+}
+# s : { doubled: i32, squared: i32, plus_ten: i32 }, inferred from the
+# return types of twice / square / add — no struct declared anywhere.
+```
+
+Each field takes the return type of the function its branch pipeline ends in, so
+branches must bottom out in a call whose return type is known; a branch that
+can't be typed structurally (e.g. a method call on an inferred receiver) has to
+name the record instead. Anonymous records with the same field signature share
+one synthesized type.
+
+Whether named or anonymous, the piped value is evaluated **once** and shared
+across every branch: a non-trivial `source` (a call rather than a variable) is
+hoisted to a temporary binding just above the statement, so `frames(1024)` in
+`x |> frames(1024) |> { … }` runs a single time no matter how many branches read
+it.
+
 ## Grammar (Simplified EBNF)
 
 ```ebnf

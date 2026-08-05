@@ -590,8 +590,14 @@ Known grammar conflicts, decided:
 
 ```
 connect_block := "connect" "{" connection* "}"
-connection    := IDENT "." IDENT "->" IDENT "." IDENT
+connection    := source "->" IDENT "." IDENT
+source        := IDENT "." IDENT   // a sibling child's output/state
+               | IDENT             // a bare input/state of the enclosing flow
 ```
+
+A bare source (`signal -> child.in`) wires one of the enclosing flow's own
+inputs (or states) into a child input; the parent value is copied into the
+child at the start of the child-stepping phase, just like a sibling source.
 
 Flow-body only, in a flow whose fields include flow-typed members:
 
@@ -611,10 +617,37 @@ flow Robot {
 no new parsing; the checker learns that a field whose type is a `flow` makes
 this a *composite* flow.
 
+**Flows as pipeline stages.** An `output` whose value pipes through flow-typed
+stages is sugar for the children + wiring above:
+
+```flow
+flow Chain {
+    input signal : f64
+    output result : f64 = signal |> Gain |> Limiter
+}
+```
+
+Each single-input/single-output stage becomes a synthesized child; the source
+and adjacent stages are wired in sequence (`signal -> Gain.x`,
+`Gain.out -> Limiter.w`) and the output reads the last stage. A stage's output
+is read before it steps that tick, so each stage adds one tick of delay — a
+sampled, state-broken pipeline (§8.3).
+
+A stage may override the stage flow's params with a `{ param: value }` block
+(the `:` value form, distinct from a fork block's `=` pipeline form):
+
+```flow
+output result : f64 = signal |> Gain { k: 3.0 } |> Limiter
+```
+
+The overrides are applied after the stage's own init, so they win over its
+declared defaults.
+
 ### 8.2 Checking
 
 - LHS must be an `output` (or `state`, explicitly allowed — reading a state as
-  a signal is physical) of the named member; RHS must be an `input`.
+  a signal is physical) of the named member, or a bare `input`/`state` of the
+  enclosing flow; RHS must be an `input`.
 - Types (and dims, post-units) must match exactly. No implicit scaling.
 - Each `input` may have at most one incoming connection; unconnected inputs
   of members must be driven by the parent (parent `every`/`becomes` writing
