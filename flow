@@ -145,7 +145,7 @@ require_flow_file() {
 
 # Show help
 show_help() {
-    echo "Flow Programming Language v0.8.0"
+    echo "Flow Programming Language v0.9.0"
     echo ""
     echo "Usage: flow [OPTIONS] <program.flow>"
     echo ""
@@ -210,7 +210,7 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  examples          List example programs"
     echo "  playground        Start native-local compile API + open playground docs"
     echo "  dap <file>        Debug Adapter (IDE) / opens flow debug on TTY"
-    echo "  version           Print Flow version (0.8.0)"
+    echo "  version           Print Flow version (0.9.0)"
     echo "  help              Show this help"
     echo ""
     echo "Environment:"
@@ -2012,7 +2012,7 @@ install_deps() {
 # Main command dispatcher
 case "${1:-help}" in
     "version"|"--version"|"-V")
-        echo "Flow 0.8.0"
+        echo "Flow 0.9.0"
         echo "host: $(flow_host_mode) (override with FLOW_HOST=flowc|python|auto)"
         ;;
     "run")
