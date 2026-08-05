@@ -21,20 +21,31 @@ PIPELINE_EXAMPLES = [
     "pipeline_fork_inferred.flow",
 ]
 
+# Flow-composition examples live under examples/evolution.
+EVOLUTION = ROOT / "examples" / "evolution"
+FLOW_EXAMPLES = [
+    "parent_input_connect.flow",
+    "flow_pipeline_stages.flow",
+]
 
-def _run_transpiler(example: str, out: Path, extra_args):
+
+def _transpile(path: Path, out: Path, extra_args):
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT / "src") + (
         ":" + env["PYTHONPATH"] if "PYTHONPATH" in env else ""
     )
     return subprocess.run(
-        ["python3", "-m", "flow.transpiler", str(EXAMPLES / example), "-o", str(out)]
+        ["python3", "-m", "flow.transpiler", str(path), "-o", str(out)]
         + list(extra_args),
         capture_output=True,
         text=True,
         cwd=ROOT,
         env=env,
     )
+
+
+def _run_transpiler(example: str, out: Path, extra_args):
+    return _transpile(EXAMPLES / example, out, extra_args)
 
 
 @pytest.mark.parametrize("example", PIPELINE_EXAMPLES)
@@ -71,6 +82,18 @@ function main() -> i32 {
     return p.a
 }
 """
+
+
+@pytest.mark.parametrize("example", FLOW_EXAMPLES)
+def test_flow_example_compiles_mlir(example, tmp_path):
+    result = _transpile(EVOLUTION / example, tmp_path / (example + ".mlir"), [])
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("example", FLOW_EXAMPLES)
+def test_flow_example_compiles_c(example, tmp_path):
+    result = _transpile(EVOLUTION / example, tmp_path / (example + ".c"), ["--c"])
+    assert result.returncode == 0, result.stderr
 
 
 def test_fork_source_hoisted_once_in_generated_c(tmp_path):
