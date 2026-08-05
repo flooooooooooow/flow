@@ -251,6 +251,8 @@ a free path.
 | `flm_perplexity(loss: f64) -> f64` | `exp(loss)` |
 | `flm_sample(prompt, prompt_len, out, count, temperature) -> i32` | sample ids with a rolling context |
 | `flm_last_grad_norm() -> f32` | pre-clip norm from the last step |
+| `flm_optim_steps() -> i32` | Adam updates applied so far |
+| `flm_optim_ready() -> bool` | true once `flm_optim_init` has run |
 
 Adam bias correction keeps running products of `beta1^t` and `beta2^t` rather
 than calling `pow` every step. Sampling shifts the context window left once it
