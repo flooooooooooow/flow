@@ -1,0 +1,64 @@
+name: Repository Stats
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repository-stats
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: Refresh README metrics
+    if: >
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          # Stats are attributed to the last non-stats commit, which means
+          # walking back through history.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-python
+
+      - name: Install clang
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq clang
+
+      - name: Generate tracked-file statistics
+        run: |
+          chmod +x scripts/update_repo_stats.sh
+          ./scripts/update_repo_stats.sh
+
+      - name: Verify deterministic output
+        run: ./scripts/update_repo_stats.sh --check
+
+      - name: Upload machine-readable statistics
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-stats
+          path: docs/generated/repository-stats.json
+          retention-days: 30
+
+      - name: Commit refreshed README and JSON
+        run: |
+          git add README.md docs/generated/repository-stats.json
+          if git diff --cached --quiet; then
+            echo "Repository statistics are already current."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m 'docs: refresh repository statistics [skip ci]'
+          git push origin HEAD:main
