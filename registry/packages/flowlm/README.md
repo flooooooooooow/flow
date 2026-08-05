@@ -279,10 +279,12 @@ Numbers below are measured, not estimated.
 | Max parameters | 20,032 |
 | Demo parameters | 15,677 (V=29, D=32, T=32, F=128) |
 | Corpus | 5131 bytes, 29 distinct characters |
-| Demo training | 3000 steps x batch 8, ~4 s at `-O2`, ~23 s at `-O0` |
+| Demo training | 3000 steps x batch 8: ~4 s at `-O2`, ~23 s at `-O0` |
+| Demo end to end | ~48 s wall for `FLOW_HOST=python ./flow run`, transpile and clang included |
+| Gradient check | ~0.05 s |
 | Held-out loss | 2.04 nats/char (7.70 ppl) vs 3.37 baseline (29.0 ppl) |
 | Train loss | 0.74 nats/char |
-| Gradient check | 263 parameters, 22 tensors, worst relative error 5.3e-3 |
+| Gradient check scope | 263 parameters, 22 tensors, worst relative error 5.3e-3 |
 
 ## What does not work
 
