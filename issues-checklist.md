@@ -125,7 +125,7 @@
 - [ ] #163 [roadmap:field-laplacian-pde-surface] Field / laplacian PDE surface https://github.com/flooooooooooow/flow/issues/163
 - [x] #164 [roadmap:gfx-run-frame-helper] gfx_run frame helper https://github.com/flooooooooooow/flow/issues/164
 - [ ] #165 [roadmap:lorenz-as-flow-represent-phase-portrait] Lorenz as flow + represent phase_portrait https://github.com/flooooooooooow/flow/issues/165
-- [ ] #166 [roadmap:mlir-opt-pass-flags] MLIR opt pass flags https://github.com/flooooooooooow/flow/issues/166
+- [x] #166 [roadmap:mlir-opt-pass-flags] MLIR opt pass flags https://github.com/flooooooooooow/flow/issues/166
 - [ ] #167 [roadmap:owned-httpresponse-json-decode-helpers] Owned HttpResponse + JSON decode helpers https://github.com/flooooooooooow/flow/issues/167
 - [ ] #168 [roadmap:route-linalg-examples-through-blas-flow] Route linalg examples through blas.flow https://github.com/flooooooooooow/flow/issues/168
 - [ ] #169 [roadmap:tier-0-tourist-examples] Tier-0 tourist examples https://github.com/flooooooooooow/flow/issues/169

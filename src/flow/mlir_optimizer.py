@@ -270,15 +270,14 @@ class MLIROptimizer:
         except Exception:
             return []
     
-    def get_optimization_report(self, mlir_file: str) -> str:
-        """Generate optimization report."""
+    def get_optimization_report(self, mlir_file: str, **opt_kwargs) -> str:
+        """Generate optimization report using the same pipeline as optimize()."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mlir', delete=False) as tmp:
             tmp.write(Path(mlir_file).read_text())
             tmp_path = tmp.name
         
         try:
-            # Same pipeline construction as optimize() so reports match flags.
-            pipeline = self.build_pass_pipeline(optimization_level="O2")
+            pipeline = self.build_pass_pipeline(**opt_kwargs)
 
             cmd = [
                 self.mlir_opt,
@@ -293,6 +292,7 @@ class MLIROptimizer:
             report = []
             report.append("=== MLIR Optimization Report ===")
             report.append(f"Input file: {mlir_file}")
+            report.append(f"Pass pipeline: {pipeline}")
             report.append("")
             
             if result.stdout:
@@ -319,27 +319,50 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) < 3:
-        print("Usage: python mlir_optimizer.py <input.mlir> <output.mlir> [--vectorization] [--no-vectorization] [--O0|--O1|--O2|--O3]")
+        print(
+            "Usage: python mlir_optimizer.py <input.mlir> <output.mlir> "
+            "[--O0|--O1|--O2|--O3] [--no-vectorization] [--no-loop-fusion] "
+            "[--no-mem2reg] [--no-sccp] [--no-licm] [--no-cse] [--no-dce] "
+            "[--no-inline] [--print-pass-pipeline]"
+        )
         sys.exit(1)
     
     input_file = sys.argv[1]
     output_file = sys.argv[2]
-    
-    # Parse options
-    enable_vectorization = "--no-vectorization" not in sys.argv
+    argv = sys.argv[3:]
+
+    enable_vectorization = "--no-vectorization" not in argv
+    enable_loop_fusion = "--no-loop-fusion" not in argv
+    enable_mem2reg = "--no-mem2reg" not in argv
+    enable_sccp = "--no-sccp" not in argv
+    enable_licm = "--no-licm" not in argv
+    enable_gvn = "--no-cse" not in argv
+    enable_dce = "--no-dce" not in argv
+    enable_inline = "--no-inline" not in argv
     optimization_level = "O2"
     
-    for arg in sys.argv:
-        if arg.startswith("--O"):
-            optimization_level = arg[1:]
-    
-    optimizer = MLIROptimizer()
-    result = optimizer.optimize(
-        input_file, 
-        output_file,
+    for arg in argv:
+        if arg.startswith("--O") and arg[3:].isdigit():
+            optimization_level = arg[2:]
+
+    kwargs = dict(
         enable_vectorization=enable_vectorization,
-        optimization_level=optimization_level
+        enable_loop_fusion=enable_loop_fusion,
+        enable_mem2reg=enable_mem2reg,
+        enable_sccp=enable_sccp,
+        enable_licm=enable_licm,
+        enable_gvn=enable_gvn,
+        enable_dce=enable_dce,
+        enable_inline=enable_inline,
+        optimization_level=optimization_level,
     )
+
+    if "--print-pass-pipeline" in argv:
+        print(MLIROptimizer.build_pass_pipeline(**kwargs))
+        sys.exit(0)
+
+    optimizer = MLIROptimizer()
+    result = optimizer.optimize(input_file, output_file, **kwargs)
     
     if result == 0:
         print(f"Optimized {input_file} -> {output_file}")
