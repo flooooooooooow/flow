@@ -13,7 +13,7 @@ import .ast {
     AST_FN, AST_LET, AST_RETURN, AST_IF, AST_FOR, AST_STRUCT, AST_FIELD, AST_EXTERN,
     AST_IMPORT, AST_EXPORT, AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT,
     AST_BREAK, AST_CONTINUE, AST_STRING, AST_CONST, AST_CAST, AST_ASSIGN, AST_TYPE, AST_NONE,
-    AST_CALL, AST_BINOP, AST_INT, AST_IDENT,
+    AST_CALL, AST_BINOP, AST_INT, AST_IDENT, AST_MATCH, AST_MATCH_ARM,
     flowc_ast_count_kind, flowc_ast_chain_len
 }
 import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
@@ -1847,6 +1847,143 @@ function test_fmt_emit() -> i32 {
     return ok
 }
 
+# Stage-A match: int-literal arm + binding catch-all → AST_MATCH / AST_MATCH_ARM.
+function test_parse_match() -> i32 {
+    # function f(v: i32) -> i32 {
+    #   let mut r: i32 = 0
+    #   match v {
+    #     1 => {
+    #       r = 10
+    #     }
+    #     n => {
+    #       r = n + 1
+    #     }
+    #   }
+    #   return r
+    # }
+    let src: array<u8, 144> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 118, 58, 32, 105, 51,
+        50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101,
+        116, 32, 109, 117, 116, 32, 114, 58, 32, 105, 51, 50, 32, 61, 32, 48,
+        10, 32, 32, 109, 97, 116, 99, 104, 32, 118, 32, 123, 10, 32, 32, 32,
+        32, 49, 32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 32,
+        61, 32, 49, 48, 10, 32, 32, 32, 32, 125, 10, 32, 32, 32, 32, 110,
+        32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 32, 61, 32,
+        110, 32, 43, 32, 49, 10, 32, 32, 32, 32, 125, 10, 32, 32, 125, 10,
+        32, 32, 114, 101, 116, 117, 114, 110, 32, 114, 10, 125, 10, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 144 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let n_match: i32 = flowc_ast_count_kind(p.arena, AST_MATCH)
+    let n_arm: i32 = flowc_ast_count_kind(p.arena, AST_MATCH_ARM)
+    printf("matches=%d\n", n_match)
+    printf("match_arms=%d\n", n_arm)
+    if n_match != 1 { ok = 0 }
+    if n_arm != 2 { ok = 0 }
+    # Typecheck: binding arm name resolves inside its block → 0 errs.
+    let errs: i32 = flowc_typecheck(p.arena, root, sp)
+    printf("match_tc_errs=%d\n", errs)
+    if errs != 0 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
+# Stage-A match cgen: temp + if/else chain + binding decl in final else.
+function test_cgen_match() -> i32 {
+    # Same program as test_parse_match.
+    let src: array<u8, 144> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 118, 58, 32, 105, 51,
+        50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101,
+        116, 32, 109, 117, 116, 32, 114, 58, 32, 105, 51, 50, 32, 61, 32, 48,
+        10, 32, 32, 109, 97, 116, 99, 104, 32, 118, 32, 123, 10, 32, 32, 32,
+        32, 49, 32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 32,
+        61, 32, 49, 48, 10, 32, 32, 32, 32, 125, 10, 32, 32, 32, 32, 110,
+        32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 32, 61, 32,
+        110, 32, 43, 32, 49, 10, 32, 32, 32, 32, 125, 10, 32, 32, 125, 10,
+        32, 32, 114, 101, 116, 117, 114, 110, 32, 114, 10, 125, 10, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 144 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let cap: i32 = 4096
+    let bp: ptr<u8> = malloc(cap as i64)
+    if bp == null {
+        puts("cgen_match: malloc failed")
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        bp[zi] = 0
+        zi = zi + 1
+    }
+    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    printf("cgen_match_bytes=%d\n", n)
+    if n <= 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "int32_t __flowc_match = v;") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "if (__flowc_match == 1) {") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "} else {") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "int32_t n = __flowc_match;") == 0 { ok = 0 }
+    free(bp)
+    flowc_parser_free(p)
+    return ok
+}
+
+# Stage-A typecheck: catch-all match arm before another arm → >0 errs.
+function test_typecheck_match_catchall() -> i32 {
+    # function f(v: i32) -> i32 {
+    #   match v {
+    #     _ => {
+    #       return 1
+    #     }
+    #     2 => {
+    #       return 2
+    #     }
+    #   }
+    #   return 0
+    # }
+    let src: array<u8, 128> = [
+        102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 118, 58, 32, 105, 51,
+        50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 109, 97,
+        116, 99, 104, 32, 118, 32, 123, 10, 32, 32, 32, 32, 95, 32, 61, 62,
+        32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32,
+        49, 10, 32, 32, 32, 32, 125, 10, 32, 32, 32, 32, 50, 32, 61, 62,
+        32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32,
+        50, 10, 32, 32, 32, 32, 125, 10, 32, 32, 125, 10, 32, 32, 114, 101,
+        116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let sp: ptr<u8> = src
+    let mut len: i32 = 0
+    while len < 128 and sp[len] != 0 {
+        len = len + 1
+    }
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let errs: i32 = flowc_typecheck(p.arena, root, sp)
+    printf("tc_match_catchall_errs=%d\n", errs)
+    if errs <= 0 { ok = 0 }
+    flowc_parser_free(p)
+    return ok
+}
+
 function main() -> i32 {
     if flowc_env_set("FLOWC_IN") == 1 {
         return flowc_emit_mode()
@@ -1921,6 +2058,12 @@ function main() -> i32 {
     printf("typecheck_break_outside=%d\n", tc_bo)
     let tc_bf: i32 = test_typecheck_bad_field()
     printf("typecheck_bad_field=%d\n", tc_bf)
+    let match_ok: i32 = test_parse_match()
+    printf("match_ok=%d\n", match_ok)
+    let cgen_match_ok: i32 = test_cgen_match()
+    printf("cgen_match_ok=%d\n", cgen_match_ok)
+    let tc_mc: i32 = test_typecheck_match_catchall()
+    printf("typecheck_match_catchall=%d\n", tc_mc)
     let fmt_ok: i32 = test_fmt_emit()
     printf("fmt_ok=%d\n", fmt_ok)
     let resolve_ok: i32 = test_resolve_sibling()
@@ -1929,7 +2072,7 @@ function main() -> i32 {
     printf("bundle_tc_ok=%d\n", bundle_tc_ok)
     let bundle_ok: i32 = test_bundle_emit()
     printf("bundle_ok=%d\n", bundle_ok)
-    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 and jsgen_ok == 1 and tc_ok == 1 and tc_bad == 1 and tc_av == 1 and tc_dl == 1 and tc_dc == 1 and tc_au == 1 and tc_bo == 1 and tc_bf == 1 and fmt_ok == 1 and resolve_ok == 1 and bundle_tc_ok == 1 and bundle_ok == 1 {
+    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 and jsgen_ok == 1 and tc_ok == 1 and tc_bad == 1 and tc_av == 1 and tc_dl == 1 and tc_dc == 1 and tc_au == 1 and tc_bo == 1 and tc_bf == 1 and match_ok == 1 and cgen_match_ok == 1 and tc_mc == 1 and fmt_ok == 1 and resolve_ok == 1 and bundle_tc_ok == 1 and bundle_ok == 1 {
         puts("flowc: PASS")
         return 0
     }

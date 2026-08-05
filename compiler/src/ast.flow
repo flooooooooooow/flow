@@ -42,6 +42,8 @@ export const AST_CONST: i32 = 31
 export const AST_CAST: i32 = 32
 export const AST_ARRAY_LIT: i32 = 33
 export const AST_FLOAT: i32 = 34
+export const AST_MATCH: i32 = 35
+export const AST_MATCH_ARM: i32 = 36
 
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
@@ -53,6 +55,10 @@ export const AST_FLOAT: i32 = 34
 # AST_ASSIGN: a = lhs expr (IDENT / FIELD_ACCESS / INDEX), b = rhs expr.
 # AST_ARRAY_LIT: a = element expr chain (via next).
 # AST_FLOAT: name_start/name_end = source span of the float literal (e.g. 1.5).
+# AST_MATCH: a = scrutinee expr, b = AST_MATCH_ARM chain (via next).
+# AST_MATCH_ARM: ival = pattern kind (0 int literal, 1 `_` wildcard, 2 binding
+# ident), a = pattern expr (AST_INT for kind 0, else AST_NONE), b = arm block,
+# name_start/name_end = binding name span for kind 2.
 export struct AstNode {
     kind: i32,
     start: i32,
