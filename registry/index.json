@@ -219,6 +219,18 @@
         }
       ]
     },
+    "flowlm": {
+      "description": "Tiny character language model: char/BPE tokenizer, causal self-attention, manual backprop, Adam, gradient checking",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/flowlm",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/flowlm"
+        }
+      ]
+    },
     "flow-verify": {
       "description": "Formal mathematics library \u2014 Claim Paths and stepped proofs",
       "homepage": "https://github.com/flooooooooooow/flow/tree/main/lib/verify",

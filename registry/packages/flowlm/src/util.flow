@@ -1,0 +1,184 @@
+# flowlm/util — allocation, deterministic RNG, f32 math wrappers, printing.
+#
+# Everything the rest of the package needs from libc lives here. The f32 libm
+# names (expf/logf/sqrtf/tanhf/cosf/fabsf) are declared as plain externs; the C
+# backend emits prototypes that match <math.h> exactly, so no compiler change
+# was needed to use them.
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function memset(dst: ptr<void>, c: i32, n: i64) -> ptr<void>
+    function expf(x: f32) -> f32
+    function logf(x: f32) -> f32
+    function sqrtf(x: f32) -> f32
+    function tanhf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function fabsf(x: f32) -> f32
+    function printf(fmt: string, v: f64) -> i32
+    function putchar(c: i32) -> i32
+}
+
+const FLM_PI: f32 = 3.14159265
+const FLM_LCG_MUL: u32 = 1664525
+const FLM_LCG_ADD: u32 = 1013904223
+
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+
+export function flm_alloc_f32(n: i32) -> ptr<f32> {
+    let raw: ptr<void> = malloc((n as i64) * 4)
+    memset(raw, 0, (n as i64) * 4)
+    return raw as ptr<f32>
+}
+
+export function flm_alloc_i32(n: i32) -> ptr<i32> {
+    let raw: ptr<void> = malloc((n as i64) * 4)
+    memset(raw, 0, (n as i64) * 4)
+    return raw as ptr<i32>
+}
+
+export function flm_alloc_u8(n: i32) -> ptr<u8> {
+    let raw: ptr<void> = malloc(n as i64)
+    memset(raw, 0, n as i64)
+    return raw as ptr<u8>
+}
+
+export function flm_zero_f32(p: ptr<f32>, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        p[i] = 0.0
+        i = i + 1
+    }
+}
+
+export function flm_copy_f32(dst: ptr<f32>, src: ptr<f32>, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Deterministic RNG (32-bit LCG; wraps like uint32_t in C)
+# ---------------------------------------------------------------------------
+
+let mut flm_rng_state: u32 = 12345
+
+export function flm_srand(seed: i32) -> void {
+    flm_rng_state = seed as u32
+    if flm_rng_state == 0 {
+        flm_rng_state = 12345
+    }
+}
+
+export function flm_rand_u32() -> u32 {
+    flm_rng_state = flm_rng_state * FLM_LCG_MUL + FLM_LCG_ADD
+    return flm_rng_state
+}
+
+# Uniform in [0, 1). Uses the high 24 bits (the low bits of an LCG are weak).
+export function flm_rand_uniform() -> f32 {
+    let bits: u32 = flm_rand_u32() >> 8
+    return (bits as f32) / 16777216.0
+}
+
+# Standard normal via Box-Muller. Deterministic given the seed.
+export function flm_rand_normal() -> f32 {
+    let mut u1: f32 = flm_rand_uniform()
+    if u1 < 0.0000001 {
+        u1 = 0.0000001
+    }
+    let u2: f32 = flm_rand_uniform()
+    let r: f32 = sqrtf(0.0 - 2.0 * logf(u1))
+    return r * cosf(2.0 * FLM_PI * u2)
+}
+
+# Uniform integer in [0, n). n must be positive.
+export function flm_rand_below(n: i32) -> i32 {
+    if n <= 1 {
+        return 0
+    }
+    let bits: u32 = flm_rand_u32() >> 8
+    return (bits as i32) % n
+}
+
+# ---------------------------------------------------------------------------
+# Math wrappers (single-precision)
+# ---------------------------------------------------------------------------
+
+export function flm_exp(x: f32) -> f32 {
+    return expf(x)
+}
+
+export function flm_log(x: f32) -> f32 {
+    return logf(x)
+}
+
+export function flm_sqrt(x: f32) -> f32 {
+    return sqrtf(x)
+}
+
+export function flm_tanh(x: f32) -> f32 {
+    return tanhf(x)
+}
+
+export function flm_cos(x: f32) -> f32 {
+    return cosf(x)
+}
+
+export function flm_abs(x: f32) -> f32 {
+    return fabsf(x)
+}
+
+export function flm_max_f32(a: f32, b: f32) -> f32 {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+export function flm_min_f32(a: f32, b: f32) -> f32 {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+export function flm_max_i32(a: i32, b: i32) -> i32 {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+export function flm_min_i32(a: i32, b: i32) -> i32 {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+# ---------------------------------------------------------------------------
+# Printing
+# ---------------------------------------------------------------------------
+
+export function flm_print_f(label: string, v: f64) -> void {
+    print(label)
+    printf("%.6f", v)
+}
+
+export function flm_println_f(label: string, v: f64) -> void {
+    flm_print_f(label, v)
+    println("")
+}
+
+export function flm_print_sci(label: string, v: f64) -> void {
+    print(label)
+    printf("%.3e", v)
+}
+
+export function flm_putc(byte_value: i32) -> void {
+    putchar(byte_value)
+}
