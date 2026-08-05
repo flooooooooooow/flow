@@ -1,0 +1,338 @@
+# flowlm — train a character language model from scratch, in Flow.
+#
+# Single file, no dependencies beyond libc. It fits a character vocabulary on
+# an embedded 5 KB corpus, checks every analytic gradient against finite
+# differences, trains a 20k-parameter causal-attention model with Adam, and
+# samples from it at three temperatures.
+#
+# Run:
+#   FLOW_HOST=python ./flow run examples/ai/flowlm_charlm.flow
+#
+# Exit code 0 means the gradient check passed and the held-out loss came in
+# under the gate printed at the end. Roughly a minute on a laptop CPU at -O0.
+#
+# The package itself lives in registry/packages/flowlm.
+
+import registry.packages.flowlm.src.util {
+    flm_alloc_i32,
+    flm_alloc_u8,
+    flm_srand,
+    flm_print_f,
+    flm_println_f,
+    flm_print_sci,
+    flm_putc
+}
+import registry.packages.flowlm.src.corpus {
+    flm_corpus_len,
+    flm_corpus_load
+}
+import registry.packages.flowlm.src.tokenizer {
+    flm_vocab_fit,
+    flm_vocab_size,
+    flm_merge_count,
+    flm_encode_chars,
+    flm_decode,
+    flm_bpe_train,
+    flm_bpe_counts_size
+}
+import registry.packages.flowlm.src.model {
+    flm_model_init,
+    flm_model_randomize,
+    flm_param_count
+}
+import registry.packages.flowlm.src.train {
+    flm_optim_init,
+    flm_lr_schedule,
+    flm_train_step,
+    flm_eval_loss,
+    flm_perplexity,
+    flm_last_grad_norm,
+    flm_sample
+}
+import registry.packages.flowlm.src.gradcheck {
+    flm_gradcheck,
+    flm_gradcheck_worst,
+    flm_gradcheck_tol
+}
+
+extern {
+    function log(x: f64) -> f64
+}
+
+const DEMO_SEED: i32 = 424242
+const D_MODEL: i32 = 32
+const CTX: i32 = 32
+const D_FF: i32 = 128
+const STEPS: i32 = 3000
+const BATCH: i32 = 8
+const WARMUP: i32 = 60
+const BASE_LR: f32 = 0.012
+const MIN_FRAC: f32 = 0.05
+const CLIP: f32 = 1.0
+const REPORT_EVERY: i32 = 200
+const TRAIN_WINDOWS: i32 = 64
+const TRAIN_STRIDE: i32 = 61
+const HELD_WINDOWS: i32 = 48
+const HELD_STRIDE: i32 = 9
+const LOSS_GATE: f64 = 2.60
+const SAMPLE_LEN: i32 = 220
+const BPE_MERGES: i32 = 24
+
+function rule() -> void {
+    println("----------------------------------------------------------------------")
+}
+
+# Decode ids to bytes and write them to stdout.
+function emit_ids(ids: ptr<i32>, n: i32, scratch: ptr<u8>, cap: i32) -> void {
+    let written: i32 = flm_decode(ids, n, scratch, cap)
+    let mut i: i32 = 0
+    while i < written {
+        flm_putc(scratch[i] as i32)
+        i = i + 1
+    }
+}
+
+# A crude horizontal bar so the loss curve is visible in the terminal.
+function bar(value: f64, full: f64, width: i32) -> void {
+    let mut cells: i32 = ((value / full) * (width as f64)) as i32
+    if cells < 0 {
+        cells = 0
+    }
+    if cells > width {
+        cells = width
+    }
+    let mut i: i32 = 0
+    while i < cells {
+        flm_putc(35)
+        i = i + 1
+    }
+    while i < width {
+        flm_putc(46)
+        i = i + 1
+    }
+}
+
+function show_sample(prompt: ptr<i32>, prompt_len: i32, out: ptr<i32>,
+                     scratch: ptr<u8>, cap: i32, temp: f32, seed: i32) -> void {
+    flm_srand(seed)
+    print("  temperature ")
+    flm_print_f("", temp as f64)
+    println("")
+    print("  | ")
+    let n: i32 = flm_sample(prompt, prompt_len, out, SAMPLE_LEN, temp)
+    emit_ids(out, n, scratch, cap)
+    println("")
+    println("")
+}
+
+function main() -> i32 {
+    println("")
+    println("flowlm — a character language model written in Flow")
+    rule()
+
+    # ---------------------------------------------------------------- corpus
+    let nbytes: i32 = flm_corpus_len()
+    let text: ptr<u8> = flm_alloc_u8(nbytes + 1)
+    let got: i32 = flm_corpus_load(text, nbytes + 1)
+    print("corpus bytes            : ")
+    print(got)
+    println("")
+
+    let nchars: i32 = flm_vocab_fit(text, got)
+    if nchars < 0 {
+        println("corpus has more distinct bytes than the vocabulary cap")
+        return 1
+    }
+    print("distinct characters     : ")
+    print(nchars)
+    println("")
+
+    let ids: ptr<i32> = flm_alloc_i32(got + 1)
+    let nids: i32 = flm_encode_chars(text, got, ids, got + 1)
+    print("char tokens             : ")
+    print(nids)
+    println("")
+    let baseline: f64 = log(nchars as f64)
+    flm_println_f("uniform baseline (nats) : ", baseline)
+
+    # 90/10 split. The held-out tail is never sampled during training, so the
+    # gate at the bottom is measured on text the model has not been fitted to.
+    let n_train: i32 = (nids * 9) / 10
+    let n_held: i32 = nids - n_train
+    let held: ptr<i32> = flm_alloc_i32(n_held + 1)
+    let mut hi: i32 = 0
+    while hi < n_held {
+        held[hi] = ids[n_train + hi]
+        hi = hi + 1
+    }
+    print("train / held-out tokens : ")
+    print(n_train)
+    print(" / ")
+    print(n_held)
+    println("")
+    println("")
+
+    # ------------------------------------------------------------------- BPE
+    println("mini-BPE (same tokenizer, capped merges)")
+    let bpe_ids: ptr<i32> = flm_alloc_i32(nids + 1)
+    let mut c: i32 = 0
+    while c < nids {
+        bpe_ids[c] = ids[c]
+        c = c + 1
+    }
+    let counts: ptr<i32> = flm_alloc_i32(flm_bpe_counts_size())
+    let nbpe: i32 = flm_bpe_train(bpe_ids, nids, BPE_MERGES, counts)
+    print("  merges learned        : ")
+    print(flm_merge_count())
+    println("")
+    print("  tokens after merging  : ")
+    print(nbpe)
+    println("")
+    print("  vocabulary            : ")
+    print(flm_vocab_size())
+    println("")
+    let rt: ptr<u8> = flm_alloc_u8(got + 16)
+    let rtn: i32 = flm_decode(bpe_ids, nbpe, rt, got + 16)
+    let mut exact: bool = rtn == got
+    let mut ri: i32 = 0
+    while ri < got {
+        if rt[ri] != text[ri] {
+            exact = false
+        }
+        ri = ri + 1
+    }
+    if exact {
+        println("  decode round-trip     : exact")
+    } else {
+        println("  decode round-trip     : MISMATCH")
+        return 1
+    }
+    println("")
+    println("  The model below trains on the char tokens, not the BPE ones: the")
+    println("  merged vocabulary is shown because the tokenizer supports it, but")
+    println("  5 KB is far too little text for subword units to help.")
+    println("")
+
+    # -------------------------------------------------------- gradient check
+    rule()
+    println("gradient check: analytic vs central finite differences")
+    println("")
+    let gc_ok: bool = flm_gradcheck(true)
+    println("")
+    if !gc_ok {
+        println("GRADIENT CHECK FAILED — refusing to report a training curve")
+        return 1
+    }
+    print("gradient check: PASS (worst ")
+    flm_print_sci("", flm_gradcheck_worst())
+    print(" < tolerance ")
+    flm_print_sci("", flm_gradcheck_tol())
+    println(")")
+    println("")
+
+    # -------------------------------------------------------------- training
+    rule()
+    let np: i32 = flm_model_init(nchars, D_MODEL, CTX, D_FF)
+    if np < 0 {
+        println("model_init rejected the demo configuration")
+        return 1
+    }
+    flm_srand(DEMO_SEED)
+    flm_model_randomize(0.08)
+    flm_optim_init()
+
+    print("model: V=")
+    print(nchars)
+    print(" d_model=")
+    print(D_MODEL)
+    print(" context=")
+    print(CTX)
+    print(" d_ff=")
+    print(D_FF)
+    print(" blocks=1 heads=1")
+    println("")
+    print("parameters              : ")
+    print(flm_param_count())
+    println("")
+    print("steps                   : ")
+    print(STEPS)
+    print(" x batch ")
+    print(BATCH)
+    println("")
+    println("")
+
+    println("  step     lr      loss    ppl   |grad|  curve (0 .. baseline)")
+    println("  --------------------------------------------------------------------")
+
+    let mut step: i32 = 0
+    while step < STEPS {
+        let lr: f32 = flm_lr_schedule(step, BASE_LR, WARMUP, STEPS, MIN_FRAC)
+        let loss: f64 = flm_train_step(ids, n_train, CTX, BATCH, lr, CLIP)
+        if step % REPORT_EVERY == 0 or step == STEPS - 1 {
+            print("  ")
+            print(step)
+            print("   ")
+            flm_print_f("", lr as f64)
+            print("  ")
+            flm_print_f("", loss)
+            print("  ")
+            flm_print_f("", flm_perplexity(loss))
+            print("  ")
+            flm_print_f("", flm_last_grad_norm() as f64)
+            print("  ")
+            bar(loss, baseline, 28)
+            println("")
+        }
+        step = step + 1
+    }
+    println("")
+
+    # ------------------------------------------------------------ evaluation
+    let train_loss: f64 = flm_eval_loss(ids, n_train, CTX, TRAIN_WINDOWS, TRAIN_STRIDE)
+    let eval_loss: f64 = flm_eval_loss(held, n_held, CTX, HELD_WINDOWS, HELD_STRIDE)
+    let ppl: f64 = flm_perplexity(eval_loss)
+    rule()
+    flm_println_f("train loss    (nats/char) : ", train_loss)
+    flm_println_f("held-out loss (nats/char) : ", eval_loss)
+    flm_println_f("uniform baseline          : ", baseline)
+    println("")
+    flm_println_f("held-out perplexity       : ", ppl)
+    flm_println_f("baseline perplexity       : ", flm_perplexity(baseline))
+    flm_println_f("held-out bits per char    : ", eval_loss / log(2.0))
+    println("")
+    println("The gap between train and held-out is the memorisation you would")
+    println("expect from 15k parameters fitted to 5 KB of text. It is reported")
+    println("rather than hidden.")
+    println("")
+
+    # --------------------------------------------------------------- samples
+    rule()
+    println("samples (same prompt, three temperatures)")
+    println("")
+    let prompt: ptr<i32> = flm_alloc_i32(CTX)
+    let ptext: ptr<u8> = flm_alloc_u8(16)
+    ptext[0] = 116
+    ptext[1] = 104
+    ptext[2] = 101
+    ptext[3] = 32
+    let plen: i32 = flm_encode_chars(ptext, 4, prompt, CTX)
+    let out: ptr<i32> = flm_alloc_i32(SAMPLE_LEN + 1)
+    let scratch: ptr<u8> = flm_alloc_u8(SAMPLE_LEN * 4 + 16)
+    let scap: i32 = SAMPLE_LEN * 4 + 16
+
+    show_sample(prompt, plen, out, scratch, scap, 0.4, 7)
+    show_sample(prompt, plen, out, scratch, scap, 0.7, 7)
+    show_sample(prompt, plen, out, scratch, scap, 1.0, 7)
+
+    # ------------------------------------------------------------------ gate
+    rule()
+    flm_println_f("gate: held-out loss must be below ", LOSS_GATE)
+    flm_print_f("      uniform baseline is          ", baseline)
+    println(" nats")
+    if eval_loss < LOSS_GATE {
+        println("PASS")
+        return 0
+    }
+    println("FAIL")
+    return 1
+}

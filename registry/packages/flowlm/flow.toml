@@ -1,0 +1,11 @@
+[package]
+name = "flowlm"
+version = "0.1.0"
+description = "Tiny character language model in pure Flow: tokenizer, single-block causal attention, manual backprop, Adam, gradient checking"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]

@@ -1,0 +1,304 @@
+# flowlm/tokenizer — character vocabulary plus a capped mini-BPE.
+#
+# The vocabulary tables are module statics (LANGUAGE_SPEC 3.3.1): fixed arrays
+# of primitives with full literal initializers, filled at fit time.
+#
+# Two layers:
+#   1. char level — every distinct byte in the corpus gets an id, assigned in
+#      ascending byte order so the mapping is deterministic across runs.
+#   2. mini-BPE  — greedy most-frequent-adjacent-pair merges on top of the
+#      char ids, capped by FLM_MERGE_CAP and by the vocabulary cap.
+
+const FLM_VOCAB_CAP: i32 = 96
+const FLM_MERGE_CAP: i32 = 32
+
+# byte -> char-level id, or -1 when the byte never appeared in the corpus.
+let mut flm_byte_to_id: array<i32, 256> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+]
+
+# char-level id -> byte. Only the first flm_nchars entries are meaningful.
+let mut flm_id_to_byte: array<i32, 96> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+]
+
+# Merge table: merge k rewrites the pair (a[k], b[k]) as id flm_nchars + k.
+let mut flm_merge_a: array<i32, 32> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+]
+let mut flm_merge_b: array<i32, 32> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+]
+
+let mut flm_nchars: i32 = 0
+let mut flm_nmerges: i32 = 0
+
+export function flm_vocab_cap() -> i32 {
+    return FLM_VOCAB_CAP
+}
+
+export function flm_merge_cap() -> i32 {
+    return FLM_MERGE_CAP
+}
+
+# Total vocabulary: char-level symbols plus learned merges.
+export function flm_vocab_size() -> i32 {
+    return flm_nchars + flm_nmerges
+}
+
+export function flm_char_count() -> i32 {
+    return flm_nchars
+}
+
+export function flm_merge_count() -> i32 {
+    return flm_nmerges
+}
+
+export function flm_vocab_reset() -> void {
+    let mut i: i32 = 0
+    while i < 256 {
+        flm_byte_to_id[i] = 0 - 1
+        i = i + 1
+    }
+    i = 0
+    while i < FLM_VOCAB_CAP {
+        flm_id_to_byte[i] = 0
+        i = i + 1
+    }
+    flm_nchars = 0
+    flm_nmerges = 0
+}
+
+# Fit the char-level vocabulary on `n` bytes. Returns the vocabulary size, or
+# -1 if the text holds more distinct bytes than FLM_VOCAB_CAP.
+export function flm_vocab_fit(data: ptr<u8>, n: i32) -> i32 {
+    flm_vocab_reset()
+    let seen: array<i32, 256> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let seen_p: ptr<i32> = seen
+    let mut i: i32 = 0
+    while i < n {
+        seen_p[data[i] as i32] = 1
+        i = i + 1
+    }
+    let mut next_id: i32 = 0
+    let mut b: i32 = 0
+    while b < 256 {
+        if seen_p[b] == 1 {
+            if next_id >= FLM_VOCAB_CAP {
+                flm_vocab_reset()
+                return 0 - 1
+            }
+            flm_byte_to_id[b] = next_id
+            flm_id_to_byte[next_id] = b
+            next_id = next_id + 1
+        }
+        b = b + 1
+    }
+    flm_nchars = next_id
+    return flm_nchars
+}
+
+# Char-level id for a byte, or -1 when the byte is not in the vocabulary.
+export function flm_char_id(byte_value: i32) -> i32 {
+    if byte_value < 0 or byte_value > 255 {
+        return 0 - 1
+    }
+    return flm_byte_to_id[byte_value]
+}
+
+# Byte behind a char-level id, or -1 for merged / out-of-range ids.
+export function flm_id_char(id: i32) -> i32 {
+    if id < 0 or id >= flm_nchars {
+        return 0 - 1
+    }
+    return flm_id_to_byte[id]
+}
+
+# Encode bytes to char-level ids. Unknown bytes are skipped.
+# Returns the number of ids written, or -1 on overflow.
+export function flm_encode_chars(data: ptr<u8>, n: i32, out: ptr<i32>, cap: i32) -> i32 {
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let id: i32 = flm_char_id(data[i] as i32)
+        if id >= 0 {
+            if w >= cap {
+                return 0 - 1
+            }
+            out[w] = id
+            w = w + 1
+        }
+        i = i + 1
+    }
+    return w
+}
+
+# Write the bytes behind one id into `out` at `pos`; returns the new position.
+# Merged ids expand recursively into their two children.
+function flm_expand_id(id: i32, out: ptr<u8>, cap: i32, pos: i32) -> i32 {
+    if pos >= cap {
+        return pos
+    }
+    if id < 0 {
+        return pos
+    }
+    if id < flm_nchars {
+        out[pos] = flm_id_to_byte[id] as u8
+        return pos + 1
+    }
+    let k: i32 = id - flm_nchars
+    if k >= flm_nmerges {
+        return pos
+    }
+    let after_a: i32 = flm_expand_id(flm_merge_a[k], out, cap, pos)
+    return flm_expand_id(flm_merge_b[k], out, cap, after_a)
+}
+
+# Decode ids back to bytes, NUL-terminating when there is room.
+# Returns the number of bytes written.
+export function flm_decode(ids: ptr<i32>, n: i32, out: ptr<u8>, cap: i32) -> i32 {
+    let mut pos: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        pos = flm_expand_id(ids[i], out, cap, pos)
+        i = i + 1
+    }
+    if pos < cap {
+        out[pos] = 0
+    }
+    return pos
+}
+
+# Rewrite every occurrence of (a, b) in `ids[0..n)` as `new_id`, in place.
+# Returns the new length.
+function flm_merge_pair_inplace(ids: ptr<i32>, n: i32, a: i32, b: i32, new_id: i32) -> i32 {
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if i + 1 < n and ids[i] == a and ids[i + 1] == b {
+            ids[w] = new_id
+            w = w + 1
+            i = i + 2
+        } else {
+            ids[w] = ids[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    return w
+}
+
+# Learn up to `max_merges` merges on `ids[0..n)`, rewriting the buffer in place.
+# Returns the new sequence length; flm_merge_count() reports how many merges
+# were learned. Stops early when no pair repeats or the vocab cap is reached.
+export function flm_bpe_train(ids: ptr<i32>, n: i32, max_merges: i32, counts: ptr<i32>) -> i32 {
+    let mut len: i32 = n
+    let mut budget: i32 = max_merges
+    if budget > FLM_MERGE_CAP {
+        budget = FLM_MERGE_CAP
+    }
+    flm_nmerges = 0
+    let stride: i32 = FLM_VOCAB_CAP
+    let mut m: i32 = 0
+    while m < budget {
+        if flm_nchars + flm_nmerges >= FLM_VOCAB_CAP {
+            return len
+        }
+        let mut c: i32 = 0
+        while c < stride * stride {
+            counts[c] = 0
+            c = c + 1
+        }
+        let mut i: i32 = 0
+        while i + 1 < len {
+            let a: i32 = ids[i]
+            let b: i32 = ids[i + 1]
+            if a >= 0 and a < stride and b >= 0 and b < stride {
+                counts[a * stride + b] = counts[a * stride + b] + 1
+            }
+            i = i + 1
+        }
+        let mut best: i32 = 1
+        let mut best_a: i32 = 0 - 1
+        let mut best_b: i32 = 0 - 1
+        let mut ai: i32 = 0
+        while ai < stride {
+            let mut bi: i32 = 0
+            while bi < stride {
+                let v: i32 = counts[ai * stride + bi]
+                if v > best {
+                    best = v
+                    best_a = ai
+                    best_b = bi
+                }
+                bi = bi + 1
+            }
+            ai = ai + 1
+        }
+        if best_a < 0 {
+            return len
+        }
+        let new_id: i32 = flm_nchars + flm_nmerges
+        flm_merge_a[flm_nmerges] = best_a
+        flm_merge_b[flm_nmerges] = best_b
+        flm_nmerges = flm_nmerges + 1
+        len = flm_merge_pair_inplace(ids, len, best_a, best_b, new_id)
+        m = m + 1
+    }
+    return len
+}
+
+# Apply the learned merges (in learn order) to an existing id sequence.
+export function flm_bpe_apply(ids: ptr<i32>, n: i32) -> i32 {
+    let mut len: i32 = n
+    let mut k: i32 = 0
+    while k < flm_nmerges {
+        len = flm_merge_pair_inplace(ids, len, flm_merge_a[k], flm_merge_b[k], flm_nchars + k)
+        k = k + 1
+    }
+    return len
+}
+
+# Scratch size the caller must allocate for flm_bpe_train's `counts` buffer.
+export function flm_bpe_counts_size() -> i32 {
+    return FLM_VOCAB_CAP * FLM_VOCAB_CAP
+}

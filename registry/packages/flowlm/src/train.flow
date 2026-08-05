@@ -1,0 +1,299 @@
+# flowlm/train — Adam with global-norm clipping, an LR schedule, sampling and
+# perplexity evaluation.
+#
+# One training step:
+#   1. zero the gradient arena
+#   2. for each of `batch` random windows: forward, backward (grads accumulate)
+#   3. scale the arena by 1/batch
+#   4. clip by global L2 norm, then apply Adam
+#
+# Bias correction keeps running products of beta1^t and beta2^t rather than
+# calling pow every step.
+
+import .util {
+    flm_alloc_f32,
+    flm_alloc_i32,
+    flm_exp,
+    flm_sqrt,
+    flm_cos,
+    flm_rand_below,
+    flm_rand_uniform
+}
+import .model {
+    flm_dim_t,
+    flm_dim_v,
+    flm_param_count,
+    flm_params_ptr,
+    flm_grads_ptr,
+    flm_zero_grads,
+    flm_forward,
+    flm_backward,
+    flm_logit_at
+}
+
+extern {
+    function exp(x: f64) -> f64
+}
+
+const FLM_TRAIN_PI: f32 = 3.14159265
+
+let mut flm_opt_m: ptr<f32> = null
+let mut flm_opt_v: ptr<f32> = null
+let mut flm_opt_b1t: f32 = 1.0
+let mut flm_opt_b2t: f32 = 1.0
+let mut flm_opt_steps: i32 = 0
+let mut flm_opt_ready: bool = false
+
+let mut flm_scr_in: ptr<i32> = null
+let mut flm_scr_tg: ptr<i32> = null
+let mut flm_scr_ctx: ptr<i32> = null
+let mut flm_scr_prob: ptr<f32> = null
+
+let mut flm_last_gnorm: f32 = 0.0
+
+# Allocate optimizer state and scratch buffers. Call after flm_model_init.
+export function flm_optim_init() -> void {
+    let np: i32 = flm_param_count()
+    flm_opt_m = flm_alloc_f32(np)
+    flm_opt_v = flm_alloc_f32(np)
+    flm_opt_b1t = 1.0
+    flm_opt_b2t = 1.0
+    flm_opt_steps = 0
+    let ctx: i32 = flm_dim_t()
+    flm_scr_in = flm_alloc_i32(ctx)
+    flm_scr_tg = flm_alloc_i32(ctx)
+    flm_scr_ctx = flm_alloc_i32(ctx)
+    flm_scr_prob = flm_alloc_f32(flm_dim_v())
+    flm_opt_ready = true
+}
+
+export function flm_optim_steps() -> i32 {
+    return flm_opt_steps
+}
+
+# True once flm_optim_init has allocated the Adam state.
+export function flm_optim_ready() -> bool {
+    return flm_opt_ready
+}
+
+# Global L2 norm of the gradient arena, measured before clipping.
+export function flm_last_grad_norm() -> f32 {
+    return flm_last_gnorm
+}
+
+# Linear warmup then cosine decay down to min_frac * base_lr.
+export function flm_lr_schedule(step: i32, base_lr: f32, warmup: i32,
+                                total: i32, min_frac: f32) -> f32 {
+    if warmup > 0 and step < warmup {
+        return base_lr * ((step + 1) as f32) / (warmup as f32)
+    }
+    if total <= warmup {
+        return base_lr
+    }
+    let mut frac: f32 = ((step - warmup) as f32) / ((total - warmup) as f32)
+    if frac > 1.0 {
+        frac = 1.0
+    }
+    let cosine: f32 = 0.5 * (1.0 + flm_cos(FLM_TRAIN_PI * frac))
+    return base_lr * (min_frac + (1.0 - min_frac) * cosine)
+}
+
+# Scale every gradient by `s`.
+function flm_scale_grads(s: f32) -> void {
+    let g: ptr<f32> = flm_grads_ptr()
+    let np: i32 = flm_param_count()
+    let mut i: i32 = 0
+    while i < np {
+        g[i] = g[i] * s
+        i = i + 1
+    }
+}
+
+# Clip the gradient arena to a global L2 norm of `max_norm`. Returns the norm
+# before clipping. A non-positive max_norm disables clipping.
+export function flm_clip_grads(max_norm: f32) -> f32 {
+    let g: ptr<f32> = flm_grads_ptr()
+    let np: i32 = flm_param_count()
+    let mut sq: f64 = 0.0
+    let mut i: i32 = 0
+    while i < np {
+        sq = sq + (g[i] as f64) * (g[i] as f64)
+        i = i + 1
+    }
+    let norm: f32 = flm_sqrt(sq as f32)
+    flm_last_gnorm = norm
+    if max_norm > 0.0 and norm > max_norm {
+        flm_scale_grads(max_norm / norm)
+    }
+    return norm
+}
+
+# One Adam update over the whole parameter arena.
+export function flm_adam_step(lr: f32, beta1: f32, beta2: f32, eps: f32) -> void {
+    let p: ptr<f32> = flm_params_ptr()
+    let g: ptr<f32> = flm_grads_ptr()
+    let np: i32 = flm_param_count()
+    flm_opt_b1t = flm_opt_b1t * beta1
+    flm_opt_b2t = flm_opt_b2t * beta2
+    let c1: f32 = 1.0 / (1.0 - flm_opt_b1t)
+    let c2: f32 = 1.0 / (1.0 - flm_opt_b2t)
+    let mut i: i32 = 0
+    while i < np {
+        let gi: f32 = g[i]
+        let m: f32 = beta1 * flm_opt_m[i] + (1.0 - beta1) * gi
+        let v: f32 = beta2 * flm_opt_v[i] + (1.0 - beta2) * gi * gi
+        flm_opt_m[i] = m
+        flm_opt_v[i] = v
+        p[i] = p[i] - lr * (m * c1) / (flm_sqrt(v * c2) + eps)
+        i = i + 1
+    }
+    flm_opt_steps = flm_opt_steps + 1
+}
+
+# Copy a window of `seq_len` ids starting at `start` into the scratch buffers,
+# with targets shifted one position right.
+function flm_fill_window(ids: ptr<i32>, start: i32, seq_len: i32) -> void {
+    let mut i: i32 = 0
+    while i < seq_len {
+        flm_scr_in[i] = ids[start + i]
+        flm_scr_tg[i] = ids[start + i + 1]
+        i = i + 1
+    }
+}
+
+# One optimizer step over `batch` random windows. Returns the mean loss in nats
+# across the batch (measured before the update).
+export function flm_train_step(ids: ptr<i32>, nids: i32, seq_len: i32, batch: i32,
+                               lr: f32, clip: f32) -> f64 {
+    let span: i32 = nids - seq_len - 1
+    if span < 1 {
+        return 0.0
+    }
+    flm_zero_grads()
+    let mut total: f64 = 0.0
+    let mut b: i32 = 0
+    while b < batch {
+        let start: i32 = flm_rand_below(span)
+        flm_fill_window(ids, start, seq_len)
+        total = total + flm_forward(flm_scr_in, flm_scr_tg, seq_len)
+        flm_backward(flm_scr_in, flm_scr_tg, seq_len)
+        b = b + 1
+    }
+    flm_scale_grads(1.0 / (batch as f32))
+    flm_clip_grads(clip)
+    flm_adam_step(lr, 0.9, 0.999, 0.00000001)
+    return total / (batch as f64)
+}
+
+# Deterministic held-out style sweep: `count` windows at a fixed stride.
+# Returns the mean loss in nats. No gradients, no state change.
+export function flm_eval_loss(ids: ptr<i32>, nids: i32, seq_len: i32,
+                              count: i32, stride: i32) -> f64 {
+    let span: i32 = nids - seq_len - 1
+    if span < 1 or count < 1 {
+        return 0.0
+    }
+    let mut total: f64 = 0.0
+    let mut n: i32 = 0
+    let mut start: i32 = 0
+    while n < count {
+        if start > span {
+            start = start % span
+        }
+        flm_fill_window(ids, start, seq_len)
+        total = total + flm_forward(flm_scr_in, flm_scr_tg, seq_len)
+        start = start + stride
+        n = n + 1
+    }
+    return total / (n as f64)
+}
+
+# Per-token perplexity from a mean cross-entropy in nats.
+export function flm_perplexity(loss: f64) -> f64 {
+    return exp(loss)
+}
+
+# Sample `count` ids after a prompt, appending them to `out`.
+# `temperature` > 0; lower is greedier. Returns the number of ids written.
+export function flm_sample(prompt: ptr<i32>, prompt_len: i32,
+                           out: ptr<i32>, count: i32, temperature: f32) -> i32 {
+    let ctx_max: i32 = flm_dim_t()
+    let vv: i32 = flm_dim_v()
+    let mut temp: f32 = temperature
+    if temp < 0.01 {
+        temp = 0.01
+    }
+
+    # seed the rolling context with (the tail of) the prompt
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    let first: i32 = flm_max0(prompt_len - ctx_max)
+    i = first
+    while i < prompt_len {
+        flm_scr_ctx[n] = prompt[i]
+        n = n + 1
+        i = i + 1
+    }
+    if n == 0 {
+        flm_scr_ctx[0] = 0
+        n = 1
+    }
+
+    let mut written: i32 = 0
+    while written < count {
+        # forward on the current context; targets are unused here
+        flm_forward(flm_scr_ctx, flm_scr_ctx, n)
+        let last: i32 = n - 1
+        let mut top: f32 = flm_logit_at(last, 0) / temp
+        let mut j: i32 = 1
+        while j < vv {
+            let z: f32 = flm_logit_at(last, j) / temp
+            if z > top {
+                top = z
+            }
+            j = j + 1
+        }
+        let mut denom: f64 = 0.0
+        j = 0
+        while j < vv {
+            let e: f32 = flm_exp(flm_logit_at(last, j) / temp - top)
+            flm_scr_prob[j] = e
+            denom = denom + (e as f64)
+            j = j + 1
+        }
+        let r: f64 = (flm_rand_uniform() as f64) * denom
+        let mut acc: f64 = 0.0
+        let mut pick: i32 = vv - 1
+        j = 0
+        while j < vv {
+            acc = acc + (flm_scr_prob[j] as f64)
+            if acc >= r {
+                pick = j
+                j = vv
+            } else {
+                j = j + 1
+            }
+        }
+        out[written] = pick
+        written = written + 1
+        if n < ctx_max {
+            flm_scr_ctx[n] = pick
+            n = n + 1
+        } else {
+            let mut s: i32 = 0
+            while s < ctx_max - 1 {
+                flm_scr_ctx[s] = flm_scr_ctx[s + 1]
+                s = s + 1
+            }
+            flm_scr_ctx[ctx_max - 1] = pick
+        }
+    }
+    return written
+}
+
+function flm_max0(x: i32) -> i32 {
+    if x < 0 {
+        return 0
+    }
+    return x
+}
