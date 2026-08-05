@@ -72,6 +72,7 @@ from .parser import (
     FlowChildDecl,
     FlowConnection,
     FlowDecl,
+    FlowStage,
     FlowSyntaxError,
     FunctionCall,
     FunctionDecl,
@@ -132,6 +133,24 @@ def _single_port(ports, flow_name: str, kind: str, source: str, line):
     return ports[0]
 
 
+def _check_stage_params(stage, params, flow_name: str, source: str, line) -> None:
+    """Each override must name a real `param` of the stage flow."""
+    if not params:
+        return
+    param_names = {p.name for p in stage.params}
+    for name, _value in params:
+        if name not in param_names:
+            raise _error(
+                f"flow stage '{stage.name}' in '{flow_name}' has no param "
+                f"'{name}'",
+                line, source,
+                suggestion=(
+                    "stage overrides set `param` fields; declared params are: "
+                    + (", ".join(sorted(param_names)) or "(none)")
+                ),
+            )
+
+
 def _source_port(expr: Any):
     """Read a pipeline source as (member, port).
 
@@ -160,20 +179,32 @@ def _expand_flow_pipelines(
     new_children: List[Any] = []
     new_connections: List[Any] = []
     for output in flow.outputs:
-        expr = output.expr
-        # Unwrap the outer-to-inner call chain of flow-typed stages.
-        stages: List[FlowDecl] = []
-        cur = expr
-        while isinstance(cur, FunctionCall) and cur.name in flow_by_name:
-            if len(cur.arguments) != 1:
-                raise _error(
-                    f"flow stage '{cur.name}' in output '{output.name}' of "
-                    f"'{flow.name}' takes only the piped value; stage params "
-                    f"are not supported yet",
-                    output.line, source,
-                )
-            stages.append(flow_by_name[cur.name])
-            cur = cur.arguments[0]
+        # Unwrap the outer-to-inner chain of flow-typed stages. A stage is a
+        # bare flow call `Flow(arg)` (no params) or a `FlowStage` (with `{...}`
+        # param overrides).
+        stages: List[tuple] = []  # (FlowDecl, params)
+        cur = output.expr
+        while True:
+            if isinstance(cur, FlowStage):
+                if cur.name not in flow_by_name:
+                    raise _error(
+                        f"'{cur.name} {{ ... }}' in output '{output.name}' of "
+                        f"'{flow.name}' names '{cur.name}', which is not a flow",
+                        output.line, source,
+                    )
+                stages.append((flow_by_name[cur.name], cur.params))
+                cur = cur.arg
+            elif isinstance(cur, FunctionCall) and cur.name in flow_by_name:
+                if len(cur.arguments) != 1:
+                    raise _error(
+                        f"flow stage '{cur.name}' in output '{output.name}' of "
+                        f"'{flow.name}' takes only the piped value",
+                        output.line, source,
+                    )
+                stages.append((flow_by_name[cur.name], None))
+                cur = cur.arguments[0]
+            else:
+                break
         if not stages:
             continue
         stages.reverse()  # data-flow order: first-applied first
@@ -187,11 +218,12 @@ def _expand_flow_pipelines(
             )
 
         prev_member, prev_port = src
-        for i, stage in enumerate(stages):
+        for i, (stage, params) in enumerate(stages):
             child_name = f"__{output.name}_stage{i}"
+            _check_stage_params(stage, params, flow.name, source, output.line)
             new_children.append(
                 FlowChildDecl(child_name, Type(stage.name), output.line,
-                              synthesized=True)
+                              synthesized=True, params=params)
             )
             in_port = _single_port(stage.inputs, stage.name, "input",
                                    source, output.line)
@@ -1112,6 +1144,18 @@ def _make_init(flow: FlowDecl, member_names: Set[str], member_types,
                 ],
             )
         )
+        # Stage param overrides are applied after the child's own init, so they
+        # win over the stage flow's declared defaults.
+        for pname, pvalue in getattr(child, "params", None) or []:
+            statements.append(
+                Assignment(
+                    "",
+                    _rewrite(pvalue, member_names),
+                    target_expr=FieldAccess(
+                        FieldAccess(Variable("self"), child.name), pname
+                    ),
+                )
+            )
     for k in range(len(flow.everys)):
         statements.append(_assign_member(f"__every_{k}_acc", _i64(0)))
     for k, when in enumerate(flow.whens):

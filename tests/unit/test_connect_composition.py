@@ -448,3 +448,60 @@ flow F {
         f = next(d for d in decls if isinstance(d, StructDecl) and d.name == "F")
         # No synthesized stage fields were added.
         assert not any(field.name.startswith("__") for field in f.fields)
+
+
+# A stage with a parameter override: `Gain { k: 3.0 }` (colon = value form).
+STAGE_PARAMS = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+
+flow Chain {
+    input signal : f64
+    output result : f64 = signal |> Gain { k: 3.0 }
+}
+"""
+
+
+class TestStageParams:
+    def test_override_applied_in_init(self):
+        c = flow_to_c(parse_lowered(STAGE_PARAMS))
+        # The override lands in Chain_init, after the stage's own init.
+        assert "self->__result_stage0.k = 3.0" in c
+        assert c.index("Gain_init") < c.index("self->__result_stage0.k = 3.0")
+
+    def test_stage_params_are_strict_clean(self):
+        assert TypeChecker().check(parse_lowered(STAGE_PARAMS)).errors == []
+
+    def test_unknown_param_rejected(self):
+        code = STAGE_PARAMS.replace("k: 3.0", "bogus: 3.0")
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected FlowSyntaxError")
+        except FlowSyntaxError as exc:
+            assert "has no param 'bogus'" in str(exc)
+
+    def test_stage_params_outside_flow_rejected(self):
+        # `Name { p: v }` in a function body has no flow-stage meaning.
+        code = """
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+function main() -> i32 {
+    let z = 5 |> Gain { k: 3.0 }
+    return 0
+}
+"""
+        try:
+            parse_lowered(code)
+            raise AssertionError("expected an error")
+        except Exception as exc:
+            assert "stage" in str(exc)

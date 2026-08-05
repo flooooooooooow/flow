@@ -411,6 +411,23 @@ class ForkBlock:
 
 
 @dataclass
+class FlowStage:
+    """A flow used as a pipeline stage with parameter overrides.
+
+    `source |> Gain { k: 3.0 }` parses to this (the `:` delimiter, versus a
+    fork block's `=`). It is resolved only inside a flow `output` pipeline, by
+    `_expand_flow_pipelines`, into a child instance whose params are set after
+    init. A `FlowStage` that survives flow expansion (i.e. used outside a flow
+    stage pipeline) is a compile error.
+    """
+
+    name: str
+    arg: "Expression"
+    params: List[tuple]  # List of (param_name, value)
+    line: int = 0
+
+
+@dataclass
 class RecordUpdate:
     """Record update: `Point { ..p, x: 3 }` copies `p` then overrides `x`.
 
@@ -937,6 +954,7 @@ class FlowChildDecl:
     type: Type
     line: int = 0
     synthesized: bool = False  # compiler-generated (e.g. a `|>` flow stage)
+    params: Optional[List[tuple]] = None  # stage param overrides (name, value)
 
 
 @dataclass
@@ -3467,6 +3485,19 @@ class Parser:
         line = self.current_token.line
         self.expect(TokenType.LBRACE)
 
+        # `:` fields mean a flow stage's parameter overrides (value form);
+        # `=` fields mean a fork block (pipeline form). Peek the delimiter.
+        if (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.lookahead.type == TokenType.COLON
+        ):
+            if record_name is None:
+                raise self.error(
+                    "an anonymous `|> { ... }` is a fork block and uses '=' "
+                    "branches; ':' parameter fields need a named flow stage"
+                )
+            return self._parse_stage_params(record_name, source, line)
+
         fields: List[tuple] = []
         seen = set()
         while self.current_token.type != TokenType.RBRACE:
@@ -3499,6 +3530,33 @@ class Parser:
         rhs = self.parse_logical_or()
         value = self._apply_pipe(ForkSource(), rhs)
         return self._parse_pipeline_chain(value)
+
+    def _parse_stage_params(self, name: str, source: Expression, line: int):
+        """Parse `Name { p: v, q: w }` after `|>` — a flow stage with params."""
+        params: List[tuple] = []
+        seen = set()
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type != TokenType.IDENTIFIER:
+                raise self.error("Expected a parameter name in flow stage params")
+            pname = self.current_token.value
+            self.advance()
+            self.expect(TokenType.COLON)
+            if pname in seen:
+                raise self.error(
+                    "Duplicate stage parameter '{}'".format(pname)
+                )
+            seen.add(pname)
+            params.append((pname, self.parse_expression()))
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+        if not params:
+            raise self.error(
+                "flow stage '{}' has empty '{{}}'; drop the braces or add "
+                "`param: value` overrides".format(name)
+            )
+        self.expect(TokenType.RBRACE)
+        self._has_fork = True  # ensure the post-parse walk runs to catch strays
+        return FlowStage(name, source, params, line)
 
         return left
 

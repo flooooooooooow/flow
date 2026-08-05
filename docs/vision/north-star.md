@@ -631,9 +631,17 @@ Each single-input/single-output stage becomes a synthesized child; the source
 and adjacent stages are wired in sequence (`signal -> Gain.x`,
 `Gain.out -> Limiter.w`) and the output reads the last stage. A stage's output
 is read before it steps that tick, so each stage adds one tick of delay — a
-sampled, state-broken pipeline (§8.3). Stage parameter overrides
-(`Gain { k = 3.0 }`) are not yet supported; wire those flows with explicit
-`connect`.
+sampled, state-broken pipeline (§8.3).
+
+A stage may override the stage flow's params with a `{ param: value }` block
+(the `:` value form, distinct from a fork block's `=` pipeline form):
+
+```flow
+output result : f64 = signal |> Gain { k: 3.0 } |> Limiter
+```
+
+The overrides are applied after the stage's own init, so they win over its
+declared defaults.
 
 ### 8.2 Checking
 
