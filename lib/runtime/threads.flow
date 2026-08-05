@@ -1,0 +1,22 @@
+# Flow runtime: thread API wrappers (pthread kernels stay in flow_concurrency.c).
+
+extern {
+    function flow_rt_thread_spawn(fn: ptr<void>, arg: ptr<void>) -> i64
+    function flow_rt_thread_join(tid: i64) -> i32
+    function flow_rt_thread_yield() -> void
+}
+
+@flow_api
+export function flow_thread_spawn(fn: ptr<void>, arg: ptr<void>) -> i64 {
+    return flow_rt_thread_spawn(fn, arg)
+}
+
+@flow_api
+export function flow_thread_join(tid: i64) -> i32 {
+    return flow_rt_thread_join(tid)
+}
+
+@flow_api
+export function flow_thread_yield() -> void {
+    flow_rt_thread_yield()
+}

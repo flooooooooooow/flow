@@ -1,0 +1,26 @@
+# FLOW_MAXPROCS / async_set_maxprocs — Go GOMAXPROCS analogue
+# Run: ./flow run examples/concurrency/gomaxprocs.flow
+
+import "stdlib/async.flow"
+
+function main() -> i32 {
+    async_set_maxprocs(2)
+    printf("maxprocs=%d (expect 2)\n", async_maxprocs())
+    if async_maxprocs() != 2 {
+        return 1
+    }
+    let mut total: i32 = 0
+    handle Async with FiberAsync {
+        async_spawn(1)
+        async_spawn(2)
+        async_spawn(3)
+        async_spawn(4)
+        total = async_join(1) + async_join(2) + async_join(3) + async_join(4)
+    }
+    printf("  sum=%d (expect 100)\n", total)
+    if total != 100 {
+        return 2
+    }
+    printf("OK\n")
+    return 0
+}

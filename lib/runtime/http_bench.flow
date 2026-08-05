@@ -1,0 +1,30 @@
+# Flow runtime: HTTP microbench harness (sockets stay in C).
+
+extern {
+    function flow_rt_monotonic_ns() -> i64
+    function flow_rt_http_serve_hello(port: i32, n_req: i32) -> i64
+    function flow_rt_http_bench_run(port: i32, n_req: i32) -> i64
+    function printf(fmt: string) -> i32
+}
+
+@flow_api
+export function flow_http_serve_hello(port: i32, n_req: i32) -> i64 {
+    return flow_rt_http_serve_hello(port, n_req)
+}
+
+@flow_api
+export function flow_bench_http_server_rps(port: i32, n_req: i32) -> i64 {
+    let t0: i64 = flow_rt_monotonic_ns()
+    let mut ok: i64 = flow_rt_http_bench_run(port, n_req)
+    let t1: i64 = flow_rt_monotonic_ns()
+    if ok < 0 {
+        return -1
+    }
+    let sec: f64 = (t1 - t0) as f64 / 1000000000.0
+    let mut rps: f64 = 0.0
+    if sec > 0.0 {
+        rps = (ok as f64) / sec
+    }
+    printf("flow_http_server n=%d ok=%lld rps=%.1f\n", n_req, ok, rps)
+    return ok
+}
