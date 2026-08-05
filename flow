@@ -287,7 +287,6 @@ flow_concurrency_flags() {
         "$SCRIPT_DIR/runtime/flow_tcp.c"
         "$SCRIPT_DIR/runtime/flow_race.c"
         "$SCRIPT_DIR/runtime/flow_cont.c"
-        "$SCRIPT_DIR/runtime/flow_rt_tape_store.c"
         "$SCRIPT_DIR/runtime/flow_rt_support.c"
         "$SCRIPT_DIR/runtime/flow_rt_task_store.c"
         "$SCRIPT_DIR/runtime/flow_rt_fiber_async.c"
