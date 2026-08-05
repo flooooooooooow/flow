@@ -1,0 +1,499 @@
+# MATCH-3 - Complete Implementation
+#
+# Controls:
+#   Arrows      - Move cursor (or swap when a gem is selected)
+#   Space       - Select gem under cursor / deselect
+#   R           - Restart
+#   Esc         - Quit
+#
+# Features:
+#   - 8x8 grid, 6 gem colors, no matches on the initial board
+#   - Select with Space, then an arrow swaps with the adjacent gem
+#   - Invalid swaps revert
+#   - Matches of 3+ clear, gravity refill, cascade chains
+#   - Score with cascade multiplier, move limit, game over + restart
+
+import "stdlib/gfx.flow"
+
+# ============================================================================
+# KEY CODES
+# ============================================================================
+
+const KEY_SPACE: i32 = 49
+
+# ============================================================================
+# GAME CONSTANTS
+# ============================================================================
+
+const N: i32 = 8
+const NCELLS: i32 = 64
+const NCOLORS: i32 = 6
+const CELL_SIZE: i32 = 48
+const GRID_X: i32 = 40
+const GRID_Y: i32 = 40
+const MOVE_LIMIT: i32 = 20
+const FLASH_FRAMES: i32 = 14
+
+const STATE_IDLE: i32 = 0
+const STATE_FLASH: i32 = 1
+const STATE_GAMEOVER: i32 = 2
+
+# ============================================================================
+# RANDOM NUMBER GENERATOR
+# ============================================================================
+
+function rng_next(seed: u32) -> u32 {
+    return seed * 1664525 + 1013904223
+}
+
+function rng_range(seed: u32, max: i32) -> i32 {
+    let mut val: i32 = seed % max
+    if val < 0 { val = 0 - val }
+    return val
+}
+
+# ============================================================================
+# DRAWING HELPERS
+# ============================================================================
+
+function draw_digit(g: Gfx, x: i32, y: i32, d: i32, scale: i32, cr: i32, cg: i32, cb: i32) {
+    let mut p0: i32 = 7
+    let mut p1: i32 = 5
+    let mut p2: i32 = 5
+    let mut p3: i32 = 5
+    let mut p4: i32 = 7
+
+    if d == 1 { p0 = 2; p1 = 6; p2 = 2; p3 = 2; p4 = 7 }
+    if d == 2 { p0 = 7; p1 = 1; p2 = 7; p3 = 4; p4 = 7 }
+    if d == 3 { p0 = 7; p1 = 1; p2 = 7; p3 = 1; p4 = 7 }
+    if d == 4 { p0 = 5; p1 = 5; p2 = 7; p3 = 1; p4 = 1 }
+    if d == 5 { p0 = 7; p1 = 4; p2 = 7; p3 = 1; p4 = 7 }
+    if d == 6 { p0 = 7; p1 = 4; p2 = 7; p3 = 5; p4 = 7 }
+    if d == 7 { p0 = 7; p1 = 1; p2 = 1; p3 = 1; p4 = 1 }
+    if d == 8 { p0 = 7; p1 = 5; p2 = 7; p3 = 5; p4 = 7 }
+    if d == 9 { p0 = 7; p1 = 5; p2 = 7; p3 = 1; p4 = 7 }
+
+    let rows: array<i32, 5> = [p0, p1, p2, p3, p4]
+
+    for row in 0 to 5 {
+        let bits: i32 = rows[row]
+        for col in 0 to 3 {
+            let mut mask: i32 = 4
+            let mut sh: i32 = col
+            while sh > 0 {
+                mask = mask / 2
+                sh = sh - 1
+            }
+            if (bits / mask) % 2 == 1 {
+                gfx_fill_rect(g, x + col * scale, y + row * scale, scale - 1, scale - 1, cr, cg, cb)
+            }
+        }
+    }
+}
+
+function draw_number(g: Gfx, x: i32, y: i32, n: i32, scale: i32, cr: i32, cg: i32, cb: i32) {
+    if n <= 0 {
+        draw_digit(g, x, y, 0, scale, cr, cg, cb)
+        return
+    }
+
+    let digits: array<i32, 10> = [0,0,0,0,0,0,0,0,0,0]
+    let mut count: i32 = 0
+    let mut v: i32 = n
+    while v > 0 and count < 10 {
+        digits[count] = v % 10
+        v = v / 10
+        count = count + 1
+    }
+
+    let mut dx: i32 = 0
+    let mut i: i32 = count - 1
+    while i >= 0 {
+        draw_digit(g, x + dx, y, digits[i], scale, cr, cg, cb)
+        dx = dx + 4 * scale
+        i = i - 1
+    }
+}
+
+# ============================================================================
+# GEM COLORS
+# ============================================================================
+
+function gem_r(v: i32) -> i32 {
+    if v == 1 { return 235 }
+    if v == 2 { return 60 }
+    if v == 3 { return 70 }
+    if v == 4 { return 240 }
+    if v == 5 { return 175 }
+    return 65
+}
+
+function gem_g(v: i32) -> i32 {
+    if v == 1 { return 75 }
+    if v == 2 { return 200 }
+    if v == 3 { return 120 }
+    if v == 4 { return 205 }
+    if v == 5 { return 95 }
+    return 210
+}
+
+function gem_b(v: i32) -> i32 {
+    if v == 1 { return 75 }
+    if v == 2 { return 90 }
+    if v == 3 { return 240 }
+    if v == 4 { return 70 }
+    if v == 5 { return 235 }
+    return 205
+}
+
+# ============================================================================
+# BOARD LOGIC
+# ============================================================================
+
+function m3_idx(x: i32, y: i32) -> i32 {
+    return y * N + x
+}
+
+# Fill the board with random gems, never creating an initial match.
+function init_board(board: ptr<i32>, seed: u32) -> u32 {
+    let mut s: u32 = seed
+    for y in 0 to N {
+        for x in 0 to N {
+            let mut ok: i32 = 0
+            let mut v: i32 = 1
+            while ok == 0 {
+                s = rng_next(s)
+                v = 1 + rng_range(s, NCOLORS)
+                ok = 1
+                if x >= 2 {
+                    if board[m3_idx(x - 1, y)] == v and board[m3_idx(x - 2, y)] == v { ok = 0 }
+                }
+                if y >= 2 {
+                    if board[m3_idx(x, y - 1)] == v and board[m3_idx(x, y - 2)] == v { ok = 0 }
+                }
+            }
+            board[m3_idx(x, y)] = v
+        }
+    }
+    return s
+}
+
+# Mark all runs of 3+ (rows and columns); return number of marked cells.
+function find_matches(board: ptr<i32>, marked: ptr<i32>) -> i32 {
+    for i in 0 to NCELLS { marked[i] = 0 }
+
+    # Horizontal runs
+    for y in 0 to N {
+        let mut x: i32 = 0
+        while x < N {
+            let v: i32 = board[m3_idx(x, y)]
+            let mut run: i32 = 1
+            while x + run < N and board[m3_idx(x + run, y)] == v { run = run + 1 }
+            if v != 0 and run >= 3 {
+                for k in 0 to run { marked[m3_idx(x + k, y)] = 1 }
+            }
+            x = x + run
+        }
+    }
+
+    # Vertical runs
+    for x in 0 to N {
+        let mut y: i32 = 0
+        while y < N {
+            let v: i32 = board[m3_idx(x, y)]
+            let mut run: i32 = 1
+            while y + run < N and board[m3_idx(x, y + run)] == v { run = run + 1 }
+            if v != 0 and run >= 3 {
+                for k in 0 to run { marked[m3_idx(x, y + k)] = 1 }
+            }
+            y = y + run
+        }
+    }
+
+    let mut cnt: i32 = 0
+    for i in 0 to NCELLS {
+        if marked[i] == 1 { cnt = cnt + 1 }
+    }
+    return cnt
+}
+
+# Drop gems down and refill empty cells with random gems.
+function gravity_refill(board: ptr<i32>, seed: u32) -> u32 {
+    let mut s: u32 = seed
+    for x in 0 to N {
+        let mut write_y: i32 = N - 1
+        let mut read_y: i32 = N - 1
+        while read_y >= 0 {
+            if board[m3_idx(x, read_y)] != 0 {
+                board[m3_idx(x, write_y)] = board[m3_idx(x, read_y)]
+                write_y = write_y - 1
+            }
+            read_y = read_y - 1
+        }
+        while write_y >= 0 {
+            s = rng_next(s)
+            board[m3_idx(x, write_y)] = 1 + rng_range(s, NCOLORS)
+            write_y = write_y - 1
+        }
+    }
+    return s
+}
+
+# ============================================================================
+# DRAWING
+# ============================================================================
+
+function draw_game(g: Gfx, board: ptr<i32>, marked: ptr<i32>,
+                   cur_x: i32, cur_y: i32, sel: i32, state: i32,
+                   score: i32, moves_left: i32, chain: i32) {
+    gfx_clear(g, 24, 24, 34)
+
+    # Board background
+    let bw: i32 = N * CELL_SIZE
+    gfx_fill_rect(g, GRID_X - 4, GRID_Y - 4, bw + 8, bw + 8, 55, 55, 75)
+    gfx_fill_rect(g, GRID_X, GRID_Y, bw, bw, 16, 16, 24)
+
+    # Gems
+    for y in 0 to N {
+        for x in 0 to N {
+            let i: i32 = m3_idx(x, y)
+            let v: i32 = board[i]
+            let sx: i32 = GRID_X + x * CELL_SIZE
+            let sy: i32 = GRID_Y + y * CELL_SIZE
+            if v != 0 {
+                let r: i32 = gem_r(v)
+                let gr: i32 = gem_g(v)
+                let b: i32 = gem_b(v)
+                gfx_fill_rect(g, sx + 5, sy + 5, CELL_SIZE - 10, CELL_SIZE - 10, r, gr, b)
+                gfx_fill_rect(g, sx + 9, sy + 9, CELL_SIZE - 26, 6, 255, 255, 255)
+                if state == STATE_FLASH and marked[i] == 1 {
+                    gfx_fill_rect(g, sx + 8, sy + 8, CELL_SIZE - 16, CELL_SIZE - 16, 255, 255, 255)
+                }
+            }
+        }
+    }
+
+    # Cursor: white outline (yellow when a gem is selected)
+    let ux: i32 = GRID_X + cur_x * CELL_SIZE
+    let uy: i32 = GRID_Y + cur_y * CELL_SIZE
+    let mut ur: i32 = 255
+    let mut ug: i32 = 255
+    let mut ub: i32 = 255
+    if sel == 1 { ur = 255; ug = 220; ub = 40 }
+    gfx_fill_rect(g, ux, uy, CELL_SIZE, 4, ur, ug, ub)
+    gfx_fill_rect(g, ux, uy + CELL_SIZE - 4, CELL_SIZE, 4, ur, ug, ub)
+    gfx_fill_rect(g, ux, uy, 4, CELL_SIZE, ur, ug, ub)
+    gfx_fill_rect(g, ux + CELL_SIZE - 4, uy, 4, CELL_SIZE, ur, ug, ub)
+
+    # Right panel
+    let panel_x: i32 = GRID_X + bw + 24
+
+    # State indicator
+    if state == STATE_GAMEOVER {
+        gfx_fill_rect(g, panel_x, GRID_Y, 110, 28, 210, 50, 50)
+    } else {
+        gfx_fill_rect(g, panel_x, GRID_Y, 110, 28, 60, 120, 200)
+    }
+
+    # Score
+    gfx_fill_rect(g, panel_x, GRID_Y + 48, 60, 4, 150, 150, 150)
+    draw_number(g, panel_x, GRID_Y + 62, score, 5, 255, 255, 255)
+
+    # Moves left
+    gfx_fill_rect(g, panel_x, GRID_Y + 118, 50, 4, 150, 150, 150)
+    draw_number(g, panel_x, GRID_Y + 132, moves_left, 5, 255, 200, 100)
+
+    # Cascade chain multiplier
+    gfx_fill_rect(g, panel_x, GRID_Y + 188, 50, 4, 150, 150, 150)
+    draw_number(g, panel_x, GRID_Y + 202, chain, 5, 100, 220, 160)
+
+    # Moves-left bar
+    gfx_fill_rect(g, panel_x, GRID_Y + 260, 110, 12, 40, 40, 60)
+    let mut mw: i32 = moves_left * 110 / MOVE_LIMIT
+    if mw < 0 { mw = 0 }
+    gfx_fill_rect(g, panel_x, GRID_Y + 260, mw, 12, 255, 140, 40)
+
+    gfx_present(g)
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+function main() -> i32 {
+    let win_w: i32 = GRID_X + N * CELL_SIZE + 24 + 150
+    let win_h: i32 = GRID_Y + N * CELL_SIZE + 40
+
+    let g: Gfx = gfx_open(win_w, win_h, "MATCH-3 - Flow Implementation")
+
+    let board: array<i32, 64> = [
+        0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0
+    ]
+    let marked: array<i32, 64> = [
+        0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0
+    ]
+    let board_ptr: ptr<i32> = board
+    let marked_ptr: ptr<i32> = marked
+
+    let mut rng_seed: u32 = 777777
+    let mut cur_x: i32 = 3
+    let mut cur_y: i32 = 3
+    let mut sel: i32 = 0
+    let mut state: i32 = STATE_IDLE
+    let mut score: i32 = 0
+    let mut moves_left: i32 = MOVE_LIMIT
+    let mut chain: i32 = 1
+    let mut pending: i32 = 0
+    let mut flash_timer: i32 = 0
+    let mut frame_count: i32 = 0
+
+    rng_seed = init_board(board_ptr, rng_seed)
+
+    # Input edge state
+    let mut last_left: i32 = 0
+    let mut last_right: i32 = 0
+    let mut last_up: i32 = 0
+    let mut last_down: i32 = 0
+    let mut last_space: i32 = 0
+    let mut last_r: i32 = 0
+
+    while !gfx_should_close(g) {
+        gfx_poll(g)
+
+        if gfx_key_down(g, KEY_ESC) { break }
+
+        let mut left_now: i32 = 0
+        let mut right_now: i32 = 0
+        let mut up_now: i32 = 0
+        let mut down_now: i32 = 0
+        let mut space_now: i32 = 0
+        let mut r_now: i32 = 0
+
+        if gfx_key_down(g, KEY_LEFT) { left_now = 1 }
+        if gfx_key_down(g, KEY_RIGHT) { right_now = 1 }
+        if gfx_key_down(g, KEY_UP) { up_now = 1 }
+        if gfx_key_down(g, KEY_DOWN) { down_now = 1 }
+        if gfx_key_down(g, KEY_SPACE) { space_now = 1 }
+        if gfx_key_down(g, KEY_R) { r_now = 1 }
+
+        let mut left_edge: i32 = 0
+        let mut right_edge: i32 = 0
+        let mut up_edge: i32 = 0
+        let mut down_edge: i32 = 0
+        let mut space_edge: i32 = 0
+        let mut r_edge: i32 = 0
+
+        if left_now == 1 and last_left == 0 { left_edge = 1 }
+        if right_now == 1 and last_right == 0 { right_edge = 1 }
+        if up_now == 1 and last_up == 0 { up_edge = 1 }
+        if down_now == 1 and last_down == 0 { down_edge = 1 }
+        if space_now == 1 and last_space == 0 { space_edge = 1 }
+        if r_now == 1 and last_r == 0 { r_edge = 1 }
+
+        last_left = left_now
+        last_right = right_now
+        last_up = up_now
+        last_down = down_now
+        last_space = space_now
+        last_r = r_now
+
+        # Restart
+        if r_edge == 1 {
+            rng_seed = rng_seed + frame_count
+            rng_seed = rng_next(rng_seed)
+            rng_seed = init_board(board_ptr, rng_seed)
+            for i in 0 to NCELLS { marked[i] = 0 }
+            score = 0
+            moves_left = MOVE_LIMIT
+            chain = 1
+            sel = 0
+            state = STATE_IDLE
+        }
+
+        if state == STATE_IDLE {
+            if space_edge == 1 {
+                if sel == 1 { sel = 0 } else { sel = 1 }
+            }
+
+            let mut dx: i32 = 0
+            let mut dy: i32 = 0
+            if left_edge == 1 { dx = 0 - 1 }
+            elif right_edge == 1 { dx = 1 }
+            elif up_edge == 1 { dy = 0 - 1 }
+            elif down_edge == 1 { dy = 1 }
+
+            if dx != 0 or dy != 0 {
+                if sel == 0 {
+                    # Move cursor
+                    let mut tx: i32 = cur_x + dx
+                    let mut ty: i32 = cur_y + dy
+                    if tx < 0 { tx = 0 }
+                    if tx > N - 1 { tx = N - 1 }
+                    if ty < 0 { ty = 0 }
+                    if ty > N - 1 { ty = N - 1 }
+                    cur_x = tx
+                    cur_y = ty
+                } else {
+                    # Swap with adjacent gem in the pressed direction
+                    let tx: i32 = cur_x + dx
+                    let ty: i32 = cur_y + dy
+                    if tx >= 0 and tx < N and ty >= 0 and ty < N {
+                        let ia: i32 = m3_idx(cur_x, cur_y)
+                        let ib: i32 = m3_idx(tx, ty)
+                        let tmp: i32 = board[ia]
+                        board[ia] = board[ib]
+                        board[ib] = tmp
+
+                        let mcount: i32 = find_matches(board_ptr, marked_ptr)
+                        if mcount > 0 {
+                            moves_left = moves_left - 1
+                            chain = 1
+                            pending = mcount
+                            flash_timer = FLASH_FRAMES
+                            state = STATE_FLASH
+                        } else {
+                            # Invalid swap: revert
+                            let tmp2: i32 = board[ia]
+                            board[ia] = board[ib]
+                            board[ib] = tmp2
+                        }
+                    }
+                    sel = 0
+                }
+            }
+        } elif state == STATE_FLASH {
+            flash_timer = flash_timer - 1
+            if flash_timer <= 0 {
+                # Score with cascade multiplier, clear, drop, refill
+                score = score + pending * 10 * chain
+                for i in 0 to NCELLS {
+                    if marked[i] == 1 { board[i] = 0 }
+                }
+                rng_seed = gravity_refill(board_ptr, rng_seed)
+
+                let mcount: i32 = find_matches(board_ptr, marked_ptr)
+                if mcount > 0 {
+                    chain = chain + 1
+                    pending = mcount
+                    flash_timer = FLASH_FRAMES
+                } else {
+                    if moves_left <= 0 {
+                        state = STATE_GAMEOVER
+                    } else {
+                        state = STATE_IDLE
+                    }
+                }
+            }
+        }
+
+        frame_count = frame_count + 1
+
+        draw_game(g, board_ptr, marked_ptr, cur_x, cur_y, sel, state,
+                  score, moves_left, chain)
+    }
+
+    gfx_close(g)
+    return 0
+}
