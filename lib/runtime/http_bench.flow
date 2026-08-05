@@ -9,7 +9,8 @@ extern {
     function flow_rt_tcp_recv(fd: i32, buf: ptr<void>, len: i32) -> i32
     function flow_rt_tcp_connect(host_hash: i32, port: i32) -> i32
     function flow_rt_tcp_send_str(fd: i32, s: string, len: i32) -> i32
-    function flow_rt_http_reply(fd: i32, status: i32, content_type: string, body: string, body_len: i32) -> i32
+    # Flow-side reply formatter from http_routed.flow (linked into every binary).
+    function flow_http_reply(fd: i32, status: i32, content_type: string, body: string, body_len: i32) -> i32
     function flow_rt_http_bench_srv_start(port: i32) -> i32
     function flow_rt_http_bench_srv_stop() -> i32
     function malloc(size: i64) -> ptr<void>
@@ -32,7 +33,7 @@ export function flow_http_serve_hello(port: i32, n_req: i32) -> i64 {
             continue
         }
         flow_rt_tcp_recv(cfd, buf, 1024)
-        flow_rt_http_reply(cfd, 200, "text/plain", "Hello from Flow", 15)
+        flow_http_reply(cfd, 200, "text/plain", "Hello from Flow", 15)
         flow_rt_tcp_close(cfd)
         served = served + 1
     }

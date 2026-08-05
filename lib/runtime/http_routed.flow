@@ -1,49 +1,248 @@
 # Flow runtime: HTTP routed serve + middleware chain + fiber-per-conn serve.
-# Recv/parse + snprintf reply kernels stay in runtime/flow_tcp.c.
+# The HTTP text protocol lives here: request parse, route-kind mapping, auth
+# header scan, and response formatting. runtime/flow_tcp.c keeps only the
+# BSD-socket kernels, the middleware state globals (Flow has no module
+# statics yet), and the threaded/fiber selftest harnesses.
 
 extern {
+    function strlen(s: string) -> i64
     function flow_rt_tcp_listen(port: i32) -> i32
     function flow_rt_tcp_accept(listen_fd: i32) -> i32
     function flow_rt_tcp_close(fd: i32) -> i32
-    function flow_rt_http_recv_route_kind(cfd: i32) -> i32
-    function flow_rt_http_reply(fd: i32, status: i32, content_type: string, body: string, body_len: i32) -> i32
+    function flow_rt_tcp_recv(fd: i32, buf: ptr<void>, len: i32) -> i32
+    function flow_rt_tcp_send(fd: i32, buf: ptr<void>, len: i32) -> i32
     function flow_rt_http_routed_selftest(port: i32) -> i32
     function flow_rt_http_fiber_selftest(port: i32) -> i32
     function flow_rt_http_mw_enable(on: i32) -> void
     function flow_rt_http_mw_auth_enable(on: i32) -> void
+    function flow_rt_http_mw_reqid_enabled() -> i32
     function flow_rt_http_mw_auth_required() -> i32
+    function flow_rt_http_next_req_id() -> i64
     function flow_rt_http_last_auth_ok() -> i32
+    function flow_rt_http_set_last_auth_ok(ok: i32) -> void
 }
 
+# ---- byte helpers ----
+
+# Copy string bytes into dst at offset `at`; returns new offset.
+function http_append_str(dst: ptr<u8>, at: i32, s: string) -> i32 {
+    let sp: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        dst[at + i] = sp[i]
+        i = i + 1
+    }
+    return at + n
+}
+
+# Append v (>= 0) in decimal; returns new offset.
+function http_append_dec(dst: ptr<u8>, at: i32, v: i64) -> i32 {
+    if v <= 0 {
+        dst[at] = 48 as u8
+        return at + 1
+    }
+    let mut tmp: array<u8, 20> = []
+    let tp: ptr<u8> = tmp
+    let mut n: i32 = 0
+    let mut x: i64 = v
+    while x > 0 {
+        tp[n] = (48 + ((x % 10) as i32)) as u8
+        x = x / 10
+        n = n + 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        dst[at + i] = tp[n - 1 - i]
+        i = i + 1
+    }
+    return at + n
+}
+
+# Bytewise search for `needle` in buf[from..blen); index or -1.
+function http_buf_find(buf: ptr<u8>, blen: i32, from: i32, needle: string) -> i32 {
+    let nd: ptr<u8> = needle
+    let nlen: i32 = strlen(needle) as i32
+    if nlen == 0 {
+        return from
+    }
+    let last: i32 = blen - nlen
+    let mut i: i32 = from
+    while i <= last {
+        let mut j: i32 = 0
+        let mut hit: i32 = 1
+        while j < nlen {
+            if buf[i + j] != nd[j] {
+                hit = 0
+                break
+            }
+            j = j + 1
+        }
+        if hit == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+# 1 if buf[start..end) equals s byte-for-byte.
+function http_token_is(buf: ptr<u8>, start: i32, end: i32, s: string) -> i32 {
+    let sp: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    if end - start != n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if buf[start + i] != sp[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# ---- HTTP text protocol ----
+
+function http_status_reason(status: i32) -> string {
+    if status == 404 {
+        return "Not Found"
+    }
+    if status == 400 {
+        return "Bad Request"
+    }
+    if status == 500 {
+        return "Internal Server Error"
+    }
+    if status == 201 {
+        return "Created"
+    }
+    if status == 401 {
+        return "Unauthorized"
+    }
+    return "OK"
+}
+
+# Auth middleware scan: Authorization header carrying a "Bearer flow" token.
+function http_has_bearer_flow(buf: ptr<u8>, blen: i32) -> i32 {
+    let mut h: i32 = http_buf_find(buf, blen, 0, "Authorization:")
+    if h < 0 {
+        h = http_buf_find(buf, blen, 0, "authorization:")
+    }
+    if h < 0 {
+        return 0
+    }
+    if http_buf_find(buf, blen, h, "Bearer flow") >= 0 {
+        return 1
+    }
+    if http_buf_find(buf, blen, h, "bearer flow") >= 0 {
+        return 1
+    }
+    return 0
+}
+
+# Format and send one HTTP/1.1 response: status line, Content-Type, optional
+# X-Request-Id (request-id middleware), Content-Length, Connection: close.
+# Returns bytes written or -1. Callers pass short content types; the 384-byte
+# header buffer matches the old C kernel's cap.
+@flow_api
+export function flow_http_reply(fd: i32, status: i32, content_type: string, body: string, body_len: i32) -> i32 {
+    if fd < 0 or body_len < 0 {
+        return -1
+    }
+    let mut hdr: array<u8, 384> = []
+    let hp: ptr<u8> = hdr
+    let mut at: i32 = http_append_str(hp, 0, "HTTP/1.1 ")
+    at = http_append_dec(hp, at, status as i64)
+    at = http_append_str(hp, at, " ")
+    at = http_append_str(hp, at, http_status_reason(status))
+    at = http_append_str(hp, at, "\r\nContent-Type: ")
+    at = http_append_str(hp, at, content_type)
+    if flow_rt_http_mw_reqid_enabled() != 0 {
+        at = http_append_str(hp, at, "\r\nX-Request-Id: ")
+        at = http_append_dec(hp, at, flow_rt_http_next_req_id())
+    }
+    at = http_append_str(hp, at, "\r\nContent-Length: ")
+    at = http_append_dec(hp, at, body_len as i64)
+    at = http_append_str(hp, at, "\r\nConnection: close\r\n\r\n")
+    if flow_rt_tcp_send(fd, hp as ptr<void>, at) < 0 {
+        return -1
+    }
+    if body_len > 0 {
+        let bp: ptr<u8> = body
+        if flow_rt_tcp_send(fd, bp as ptr<void>, body_len) < 0 {
+            return -1
+        }
+    }
+    return at + body_len
+}
+
+# Recv one request and classify it.
 # route_kind: 0=GET /, 1=GET /api, 2=GET /health, 3=other/404, <0=fail
-# Middleware chain: (1) request-id via reply kernel (2) optional Bearer auth on /api
+# Side effect: records whether the request carried a Bearer flow token.
+@flow_api
+export function flow_http_recv_route_kind(cfd: i32) -> i32 {
+    let mut buf: array<u8, 2048> = []
+    let bp: ptr<u8> = buf
+    let n: i32 = flow_rt_tcp_recv(cfd, bp as ptr<void>, 2047)
+    if n <= 0 {
+        return -1
+    }
+    flow_rt_http_set_last_auth_ok(http_has_bearer_flow(bp, n))
+    # Only GET has routes; POST/PUT/DELETE and garbage all map to 404.
+    if http_token_is(bp, 0, 3, "GET") == 0 {
+        return 3
+    }
+    let mut p: i32 = 3
+    while p < n and (bp[p] as i32) == 32 {
+        p = p + 1
+    }
+    let mut e: i32 = p
+    while e < n and (bp[e] as i32) != 32 and (bp[e] as i32) != 13 and (bp[e] as i32) != 10 {
+        e = e + 1
+    }
+    if http_token_is(bp, p, e, "/") == 1 {
+        return 0
+    }
+    if http_token_is(bp, p, e, "/api") == 1 {
+        return 1
+    }
+    if http_token_is(bp, p, e, "/health") == 1 {
+        return 2
+    }
+    return 3
+}
+
+# Middleware chain: (1) request-id header in flow_http_reply (2) optional
+# Bearer auth on /api.
 @flow_api
 export function flow_http_route_one(cfd: i32) -> void {
-    let kind: i32 = flow_rt_http_recv_route_kind(cfd)
+    let kind: i32 = flow_http_recv_route_kind(cfd)
     if kind < 0 {
         return
     }
     if kind == 1 {
         if flow_rt_http_mw_auth_required() != 0 {
             if flow_rt_http_last_auth_ok() == 0 {
-                let _: i32 = flow_rt_http_reply(cfd, 401, "text/plain", "unauthorized\n", 13)
+                let _: i32 = flow_http_reply(cfd, 401, "text/plain", "unauthorized\n", 13)
                 return
             }
         }
     }
     if kind == 0 {
-        let __: i32 = flow_rt_http_reply(cfd, 200, "text/plain", "Hello from Flow\n", 16)
+        let __: i32 = flow_http_reply(cfd, 200, "text/plain", "Hello from Flow\n", 16)
         return
     }
     if kind == 1 {
-        let ___: i32 = flow_rt_http_reply(cfd, 200, "application/json", "{\"ok\":true}\n", 12)
+        let ___: i32 = flow_http_reply(cfd, 200, "application/json", "{\"ok\":true}\n", 12)
         return
     }
     if kind == 2 {
-        let ____: i32 = flow_rt_http_reply(cfd, 200, "text/plain", "ok\n", 3)
+        let ____: i32 = flow_http_reply(cfd, 200, "text/plain", "ok\n", 3)
         return
     }
-    let _____: i32 = flow_rt_http_reply(cfd, 404, "text/plain", "not found\n", 10)
+    let _____: i32 = flow_http_reply(cfd, 404, "text/plain", "not found\n", 10)
 }
 
 @flow_api
