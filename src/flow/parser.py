@@ -4269,6 +4269,21 @@ class Parser:
             self._collect_free_variables(node.object if hasattr(node, 'object') else node.array, param_names, found)
             if isinstance(node, ArrayAccess):
                 self._collect_free_variables(node.index, param_names, found)
+        elif isinstance(node, StructLiteral):
+            for _fname, fval in node.fields:
+                self._collect_free_variables(fval, param_names, found)
+        elif isinstance(node, RecordUpdate):
+            self._collect_free_variables(node.base, param_names, found)
+            for _fname, fval in node.updates:
+                self._collect_free_variables(fval, param_names, found)
+        elif isinstance(node, (ArrayLiteral, VectorLiteral)):
+            for elem in node.elements:
+                self._collect_free_variables(elem, param_names, found)
+        elif isinstance(node, StringInterpolation):
+            for part in node.parts:
+                self._collect_free_variables(part, param_names, found)
+        elif isinstance(node, SortExpr):
+            self._collect_free_variables(node.array, param_names, found)
         elif isinstance(node, (IfStatement, WhileStatement, ForStatement, MatchStatement)):
             if isinstance(node, IfStatement):
                 self._collect_free_variables(node.condition, param_names, found)

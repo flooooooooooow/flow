@@ -152,6 +152,54 @@ def test_env_snapshot_uses_creation_scope_types():
     assert "typedef struct { double scale; } lambda_1_env;" in c
 
 
+def test_capture_through_struct_literal_field():
+    # Free names inside struct-literal fields must be captured; previously
+    # StructLiteral was skipped by free-variable collection, so `n` stayed
+    # a bare identifier in the lifted function and failed to compile.
+    c = gen(
+        """
+    let n: i32 = 5
+    let f = |z: i32| -> i32 {
+        let q: Point = Point { x: n, y: z }
+        return q.x + q.y
+    }
+    let r: i32 = f(3)
+""",
+        prelude="struct Point { x: i32, y: i32 }\n",
+    )
+    assert "typedef struct { int32_t n; } lambda_1_env;" in c
+    assert "_env->n" in c
+    assert ".env = { .n = n }" in c
+
+
+def test_capture_through_array_literal_element():
+    c = gen(
+        """
+    let n: i32 = 7
+    let f = |z: i32| -> i32 {
+        let xs: [i32; 2] = [n, z]
+        return xs[0] + xs[1]
+    }
+    let r: i32 = f(3)
+"""
+    )
+    assert "typedef struct { int32_t n; } lambda_1_env;" in c
+    assert "_env->n" in c
+
+
+def test_capture_struct_value_via_field_access():
+    c = gen(
+        """
+    let p: Point = Point { x: 1, y: 2 }
+    let f = |z: i32| -> i32 { return p.x + z }
+    let r: i32 = f(3)
+""",
+        prelude="struct Point { x: i32, y: i32 }\n",
+    )
+    assert "typedef struct { Point p; } lambda_1_env;" in c
+    assert "_env->p.x" in c
+
+
 # ---------------------------------------------------------------------------
 # End-to-end compile-and-run
 # ---------------------------------------------------------------------------
