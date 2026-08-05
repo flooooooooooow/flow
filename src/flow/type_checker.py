@@ -428,6 +428,9 @@ class TypeChecker:
     def _is_dual(self, t: SemanticType) -> bool:
         return t.kind == TypeKind.STRUCT and t.name == "Dual"
 
+    def _is_tensor(self, t: SemanticType) -> bool:
+        return t.kind == TypeKind.STRUCT and t.name == "Tensor"
+
     def _is_integer(self, t: SemanticType) -> bool:
         return t.kind in {
             TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64, TypeKind.I128,
@@ -1882,6 +1885,17 @@ class TypeChecker:
                         return SemanticType(TypeKind.STRUCT, name="Dual")
             if op.operator in ["==", "!=", "<", ">", "<=", ">="]:
                 return SemanticType(TypeKind.BOOL)
+
+        # Tensor arithmetic (#161): element-wise Tensor⊕Tensor; * / + with f32.
+        if self._is_tensor(left_type) or self._is_tensor(right_type):
+            if op.operator in ["+", "-", "*", "/"]:
+                if self._is_tensor(left_type) and self._is_tensor(right_type):
+                    return SemanticType(TypeKind.STRUCT, name="Tensor")
+                if op.operator in ["*", "+"] and (
+                    (self._is_tensor(left_type) and self._is_numeric(right_type))
+                    or (self._is_numeric(left_type) and self._is_tensor(right_type))
+                ):
+                    return SemanticType(TypeKind.STRUCT, name="Tensor")
 
         # Allow numeric coercions
         if self._is_numeric(left_type) and self._is_numeric(right_type):
