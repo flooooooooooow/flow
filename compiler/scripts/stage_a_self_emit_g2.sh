@@ -103,6 +103,8 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/g2_fileio.c compiler/build/g2_fileio.h
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/g2_cgen.c compiler/build/g2_cgen.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/g2_typecheck.c compiler/build/g2_typecheck.h
 
 g2_emit_module resolve \
     compiler/build/g2_token.h \
@@ -110,7 +112,8 @@ g2_emit_module resolve \
     compiler/build/g2_lexer.h \
     compiler/build/g2_parser.h \
     compiler/build/g2_fileio.h \
-    compiler/build/g2_cgen.h
+    compiler/build/g2_cgen.h \
+    compiler/build/g2_typecheck.h
 
 # Relocatable link: proves driver_self-emitted frontend objects resolve together.
 cc -r -o compiler/build/flowc_frontend_g2.o \
