@@ -21,6 +21,20 @@ typedef struct FlowGpuBuffer {
 
 static id<MTLDevice> g_device = nil;
 static id<MTLCommandQueue> g_queue = nil;
+static id<MTLComputePipelineState> g_mulElemPSO = nil;
+
+/* Elementwise mul — also used for mul backward (grad_a = go*b, grad_b = go*a). */
+static const char *kGpuGradMetalSource =
+    "#include <metal_stdlib>\n"
+    "using namespace metal;\n"
+    "kernel void mul_elem_f32(device float* out [[buffer(0)]],\n"
+    "                         const device float* x [[buffer(1)]],\n"
+    "                         const device float* y [[buffer(2)]],\n"
+    "                         constant uint& n [[buffer(3)]],\n"
+    "                         uint gid [[thread_position_in_grid]]) {\n"
+    "    if (gid >= n) return;\n"
+    "    out[gid] = x[gid] * y[gid];\n"
+    "}\n";
 
 static id<MTLBuffer> flow_gpu_mtl(FlowGpuBuffer *buf) {
     if (!buf || !buf->mtl_ref) {
@@ -220,6 +234,111 @@ int flow_gpu_copy_d2d(void *dst_gpu, void *src_gpu, int64_t nbytes) {
 
 void flow_gpu_sync(void) {
     /* Per-copy waits already flush work. */
+}
+
+static int flow_gpu_compute_init(void) {
+    if (flow_gpu_metal_init() != 0) {
+        return -1;
+    }
+    if (g_mulElemPSO != nil) {
+        return 0;
+    }
+    @autoreleasepool {
+        NSError *error = nil;
+        NSString *source = [NSString stringWithUTF8String:kGpuGradMetalSource];
+        id<MTLLibrary> lib = [g_device newLibraryWithSource:source options:nil error:&error];
+        if (lib == nil) {
+            return -1;
+        }
+        id<MTLFunction> fn = [lib newFunctionWithName:@"mul_elem_f32"];
+        if (fn == nil) {
+            return -1;
+        }
+        g_mulElemPSO = [g_device newComputePipelineStateWithFunction:fn error:&error];
+        if (g_mulElemPSO == nil) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* Dispatch out[i] = x[i] * y[i] for n floats on existing GpuBuffer handles. */
+static int flow_gpu_dispatch_mul_elem(void *out_gpu, void *x_gpu, void *y_gpu, int64_t n) {
+    if (!out_gpu || !x_gpu || !y_gpu || n <= 0) {
+        return -1;
+    }
+    if (flow_gpu_compute_init() != 0) {
+        return -1;
+    }
+
+    FlowGpuBuffer *out = (FlowGpuBuffer *)out_gpu;
+    FlowGpuBuffer *x = (FlowGpuBuffer *)x_gpu;
+    FlowGpuBuffer *y = (FlowGpuBuffer *)y_gpu;
+    int64_t nbytes = n * (int64_t)sizeof(float);
+    if (nbytes > out->size || nbytes > x->size || nbytes > y->size) {
+        return -1;
+    }
+
+    id<MTLBuffer> out_mtl = flow_gpu_mtl(out);
+    id<MTLBuffer> x_mtl = flow_gpu_mtl(x);
+    id<MTLBuffer> y_mtl = flow_gpu_mtl(y);
+    if (!out_mtl || !x_mtl || !y_mtl) {
+        return -1;
+    }
+
+    @autoreleasepool {
+        uint32_t count = (uint32_t)n;
+        id<MTLBuffer> nBuf = [g_device newBufferWithBytes:&count
+                                                  length:sizeof(uint32_t)
+                                                 options:MTLResourceStorageModeShared];
+        if (!nBuf) {
+            return -1;
+        }
+
+        id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+        if (!cmd) {
+            return -1;
+        }
+        id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+        if (!enc) {
+            return -1;
+        }
+
+        [enc setComputePipelineState:g_mulElemPSO];
+        [enc setBuffer:out_mtl offset:0 atIndex:0];
+        [enc setBuffer:x_mtl offset:0 atIndex:1];
+        [enc setBuffer:y_mtl offset:0 atIndex:2];
+        [enc setBuffer:nBuf offset:0 atIndex:3];
+
+        MTLSize grid = MTLSizeMake((NSUInteger)n, 1, 1);
+        NSUInteger tg = g_mulElemPSO.maxTotalThreadsPerThreadgroup;
+        if (tg == 0) {
+            tg = 256;
+        }
+        if (tg > (NSUInteger)n) {
+            tg = (NSUInteger)n;
+        }
+        MTLSize group = MTLSizeMake(tg, 1, 1);
+        [enc dispatchThreads:grid threadsPerThreadgroup:group];
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+    }
+    return 0;
+}
+
+int flow_gpu_mul_f32(void *out_gpu, void *a_gpu, void *b_gpu, int64_t n) {
+    return flow_gpu_dispatch_mul_elem(out_gpu, a_gpu, b_gpu, n);
+}
+
+int flow_gpu_mul_backward_a_f32(void *grad_a_gpu, void *grad_out_gpu, void *b_gpu, int64_t n) {
+    /* grad_a = grad_out * b */
+    return flow_gpu_dispatch_mul_elem(grad_a_gpu, grad_out_gpu, b_gpu, n);
+}
+
+int flow_gpu_mul_backward_b_f32(void *grad_b_gpu, void *grad_out_gpu, void *a_gpu, int64_t n) {
+    /* grad_b = grad_out * a */
+    return flow_gpu_dispatch_mul_elem(grad_b_gpu, grad_out_gpu, a_gpu, n);
 }
 
 #endif /* __APPLE__ */

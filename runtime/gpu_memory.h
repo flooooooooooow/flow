@@ -47,6 +47,17 @@ int flow_gpu_copy_d2d(void *dst_gpu, void *src_gpu, int64_t nbytes);
 /* Wait for outstanding GPU work issued by this runtime */
 void flow_gpu_sync(void);
 
+/* Elementwise f32 kernels over GpuBuffer handles (n floats).
+ * Return 0 on success, -1 on error / unavailable.
+ *
+ *   mul:           out[i]    = a[i] * b[i]
+ *   mul_backward_a: grad_a[i] = grad_out[i] * b[i]
+ *   mul_backward_b: grad_b[i] = grad_out[i] * a[i]
+ */
+int flow_gpu_mul_f32(void *out_gpu, void *a_gpu, void *b_gpu, int64_t n);
+int flow_gpu_mul_backward_a_f32(void *grad_a_gpu, void *grad_out_gpu, void *b_gpu, int64_t n);
+int flow_gpu_mul_backward_b_f32(void *grad_b_gpu, void *grad_out_gpu, void *a_gpu, int64_t n);
+
 #ifdef __cplusplus
 }
 #endif
