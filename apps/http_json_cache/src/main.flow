@@ -1,0 +1,152 @@
+# HTTP + JSON response cache (offline-first MVP)
+#
+# Default path needs no network and no libcurl: canned JSON bodies are
+# stored in a tiny in-memory cache, then queried with registry `json`.
+# Set USE_LIVE_HTTP to 1 and run with `flow run-native` (libcurl) to probe
+# a real URL — see README.md.
+#
+#   ./flow run apps/http_json_cache/src/main.flow
+
+import json.lib {
+    json_validate,
+    json_get_i32,
+    json_get_bool,
+    json_path_get_i32
+}
+
+# Flip to 1 only when linking registry/packages/http (libcurl) via run-native.
+const USE_LIVE_HTTP: i32 = 0
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+}
+
+# Fixed-slot cache: url_tag → JSON body string (body is a string literal id).
+struct CacheEntry {
+    url_tag: i32,
+    body_id: i32,
+    hits: i32
+}
+
+const CACHE_SLOTS: i32 = 4
+const BODY_USERS: i32 = 1
+const BODY_REPO: i32 = 2
+const BODY_EMPTY: i32 = 0
+
+function body_for_id(id: i32) -> string {
+    if id == BODY_USERS {
+        return "{\"ok\":true,\"count\":3,\"nested\":{\"n\":7}}"
+    }
+    if id == BODY_REPO {
+        return "{\"ok\":true,\"count\":1,\"nested\":{\"n\":42}}"
+    }
+    return "{}"
+}
+
+function cache_lookup(entries: ptr<CacheEntry>, url_tag: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < CACHE_SLOTS {
+        if entries[i].url_tag == url_tag and entries[i].body_id != BODY_EMPTY {
+            entries[i].hits = entries[i].hits + 1
+            return entries[i].body_id
+        }
+        i = i + 1
+    }
+    return BODY_EMPTY
+}
+
+function cache_store(entries: ptr<CacheEntry>, url_tag: i32, body_id: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < CACHE_SLOTS {
+        if entries[i].body_id == BODY_EMPTY or entries[i].url_tag == url_tag {
+            entries[i].url_tag = url_tag
+            entries[i].body_id = body_id
+            entries[i].hits = 0
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Simulated fetch: known url_tags map to canned JSON (stand-in for http_get).
+function fetch_canned(url_tag: i32) -> i32 {
+    if url_tag == 1 {
+        return BODY_USERS
+    }
+    if url_tag == 2 {
+        return BODY_REPO
+    }
+    return BODY_EMPTY
+}
+
+function get_cached_json(entries: ptr<CacheEntry>, url_tag: i32) -> string {
+    let hit: i32 = cache_lookup(entries, url_tag)
+    if hit != BODY_EMPTY {
+        printf("cache_hit url_tag=%lld\n", url_tag as i64)
+        return body_for_id(hit)
+    }
+    let fetched: i32 = fetch_canned(url_tag)
+    if fetched == BODY_EMPTY {
+        printf("cache_miss_empty url_tag=%lld\n", url_tag as i64)
+        return "{}"
+    }
+    let stored: i32 = cache_store(entries, url_tag, fetched)
+    printf("cache_store url_tag=%lld\n", url_tag as i64)
+    printf("stored=%lld\n", stored as i64)
+    return body_for_id(fetched)
+}
+
+function check_payload(blob: string, expect_count: i32, expect_n: i32) -> i32 {
+    let valid: i32 = json_validate(blob)
+    let ok: i32 = json_get_bool(blob, "ok")
+    let count: i32 = json_get_i32(blob, "count")
+    let nested: i32 = json_path_get_i32(blob, "nested.n")
+    printf("json_valid=%lld\n", valid as i64)
+    printf("json_ok=%lld\n", ok as i64)
+    printf("json_count=%lld\n", count as i64)
+    printf("nested_n=%lld\n", nested as i64)
+    if valid == 1 and ok == 1 and count == expect_count and nested == expect_n {
+        return 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    let mut slots: array<CacheEntry, 4> = [
+        CacheEntry { url_tag: 0, body_id: 0, hits: 0 },
+        CacheEntry { url_tag: 0, body_id: 0, hits: 0 },
+        CacheEntry { url_tag: 0, body_id: 0, hits: 0 },
+        CacheEntry { url_tag: 0, body_id: 0, hits: 0 }
+    ]
+    let entries: ptr<CacheEntry> = slots
+
+    # First request: miss → store → parse
+    let users: string = get_cached_json(entries, 1)
+    let a: i32 = check_payload(users, 3, 7)
+
+    # Second request: hit → same body
+    let users2: string = get_cached_json(entries, 1)
+    let b: i32 = check_payload(users2, 3, 7)
+
+    # Different URL tag: another miss/store
+    let repo: string = get_cached_json(entries, 2)
+    let c: i32 = check_payload(repo, 1, 42)
+
+    # Confirm hit counter moved on the first slot
+    let hits: i32 = entries[0].hits
+    printf("slot0_hits=%lld\n", hits as i64)
+
+    if USE_LIVE_HTTP == 1 {
+        # Live path is intentionally not compiled into the default `flow run`
+        # binary (would need libcurl). Use src/live_http.flow + run-native.
+        printf("live_http_skipped_in_default_build=%lld\n", 1 as i64)
+    }
+
+    if a == 1 and b == 1 and c == 1 and hits >= 1 {
+        printf("ok=%lld\n", 1 as i64)
+        return 0
+    }
+    printf("ok=%lld\n", 0 as i64)
+    return 1
+}
