@@ -52,6 +52,73 @@ resolve_llvm_path() {
     LLVM_PATH="/opt/homebrew/opt/llvm/bin"
 }
 
+# ---------------------------------------------------------------------------
+# Host selection (Phase C self-hosting cutover)
+#   FLOW_HOST=flowc   — Stage-A flowc driver only (default for run/compile)
+#   FLOW_HOST=python  — legacy Python transpiler
+#   FLOW_HOST=auto    — try flowc, fall back to python with a warning
+# ---------------------------------------------------------------------------
+flow_host_mode() {
+    local mode="${FLOW_HOST:-flowc}"
+    case "$mode" in
+        flowc|python|auto) printf '%s\n' "$mode" ;;
+        *)
+            print_error "Unknown FLOW_HOST='$mode' (expected flowc|python|auto)"
+            exit 1
+            ;;
+    esac
+}
+
+flow_resolve_flowc() {
+    if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
+        printf '%s\n' "$FLOWC_BIN"
+        return 0
+    fi
+    bash "$SCRIPT_DIR/compiler/scripts/ensure_flowc.sh"
+}
+
+flowc_emit_to_c() {
+    local program="$1"
+    local c_out="$2"
+    local driver
+    driver="$(flow_resolve_flowc)"
+    print_info "flowc emit via $driver"
+    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" "$driver" "$program" "$c_out"
+}
+
+flowc_link_c() {
+    local c_file="$1"
+    local exe_file="$2"
+    if ! clang -O0 -o "$exe_file" "$c_file" 2>/dev/null; then
+        if ! cc -O0 -o "$exe_file" "$c_file"; then
+            print_error "C compilation/linking failed (flowc host)"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+compile_program_flowc() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    mkdir -p "$build_dir"
+    print_info "Compiling $program (host=flowc)..."
+    if ! flowc_emit_to_c "$program" "$build_dir/$basename.c"; then
+        print_error "flowc emit failed (Stage-A subset?). Use FLOW_HOST=python for full language."
+        return 1
+    fi
+    print_success "FLOW → C: $basename.c"
+    if ! flowc_link_c "$build_dir/$basename.c" "$build_dir/$basename"; then
+        return 1
+    fi
+    print_success "C → Executable: $basename"
+    print_success "🚀 Ready to run: $build_dir/$basename"
+    return 0
+}
+
 require_flow_file() {
     local program="${1:-}"
     if [ -z "$program" ]; then
@@ -77,6 +144,7 @@ show_help() {
     echo "Options:"
     echo "  run <program>     Compile and run program"
     echo "  compile <program>  Compile program only"
+echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  audio <program> [--mlir]   Compile and run with audio backend"
     echo "  compile-audio <program> [--mlir]  Compile with audio backend"
     echo "  debug <program>   Compile with debug symbols and open debugger"
@@ -143,16 +211,24 @@ show_help() {
 
 # Check dependencies
 check_deps() {
-    if ! command -v python3 &> /dev/null; then
-        print_error "Python 3 is required"
+    local mode
+    mode="$(flow_host_mode)"
+
+    if ! command -v clang &> /dev/null && ! command -v cc &> /dev/null; then
+        print_error "clang or cc is required"
         exit 1
     fi
 
-    if ! command -v clang &> /dev/null; then
-        print_error "clang is required"
+    # flowc-only run/compile: Python is only needed to bootstrap Gen0 once.
+    if [[ "$mode" == "flowc" ]]; then
+        return 0
+    fi
+
+    if ! command -v python3 &> /dev/null; then
+        print_error "Python 3 is required for FLOW_HOST=$mode"
         exit 1
     fi
-    
+
     # Module import check
     python3 -c "import $FLOWC_MODULE" 2>/dev/null || {
         print_error "FLOW compiler module not found ($FLOWC_MODULE). Check PYTHONPATH/src layout."
@@ -190,8 +266,33 @@ flow_concurrency_flags() {
     FLOW_CONC_LDFLAGS=("-pthread")
 }
 
-# Compile FLOW to executable
+# Compile FLOW to executable (host-selected)
 compile_program() {
+    local program="$1"
+    local mode
+    mode="$(flow_host_mode)"
+    case "$mode" in
+        flowc)
+            compile_program_flowc "$program"
+            return $?
+            ;;
+        python)
+            compile_program_python "$program"
+            return $?
+            ;;
+        auto)
+            if compile_program_flowc "$program"; then
+                return 0
+            fi
+            print_warning "flowc failed — falling back to FLOW_HOST=python"
+            compile_program_python "$program"
+            return $?
+            ;;
+    esac
+}
+
+# Legacy Python-host compile path
+compile_program_python() {
     local program="$1"
     require_flow_file "$program"
     local basename
@@ -1617,6 +1718,7 @@ install_deps() {
 case "${1:-help}" in
     "version"|"--version"|"-V")
         echo "Flow 0.8.0"
+        echo "host: $(flow_host_mode) (override with FLOW_HOST=flowc|python|auto)"
         ;;
     "run")
         check_deps
