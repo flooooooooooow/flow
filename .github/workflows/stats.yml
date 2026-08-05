@@ -82,16 +82,27 @@ jobs:
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
               commit -m 'docs: refresh repository statistics [skip ci]'
           git push -u origin HEAD:chore/repository-stats --force
+          echo "Pushed chore/repository-stats"
+
+          # Creating PRs requires the repo setting
+          # "Allow GitHub Actions to create and approve pull requests".
+          # When that is off, leave the branch for a human (or a later run
+          # after the setting is flipped) rather than failing the job.
           if gh pr view chore/repository-stats --json number >/dev/null 2>&1; then
             echo "Updated existing statistics PR."
             gh pr view chore/repository-stats --json url --jq .url
-          else
-            gh pr create \
+            exit 0
+          fi
+          if gh pr create \
               --base main \
               --head chore/repository-stats \
               --title 'docs: refresh repository statistics' \
-              --body 'Automated refresh of the README statistics block and `docs/generated/repository-stats.json` from tracked files. Safe to merge when CI is green; the commit subject includes `[skip ci]` so merging it does not re-trigger a CI loop.'
+              --body 'Automated refresh of the README statistics block and `docs/generated/repository-stats.json` from tracked files. Safe to merge when CI is green; the commit subject includes `[skip ci]` so merging it does not re-trigger a CI loop.'; then
+            exit 0
           fi
+          echo "::warning::Could not open a PR (Actions may lack create-PR permission)."
+          echo "Branch is ready: https://github.com/${{ github.repository }}/pull/new/chore/repository-stats"
+          exit 0
 
       - name: Fail if Flow counter still diverges
         if: steps.flow_parity.outcome == 'failure'
