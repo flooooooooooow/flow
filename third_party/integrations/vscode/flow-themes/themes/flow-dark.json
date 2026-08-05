@@ -1,0 +1,69 @@
+{
+  "name": "Flow Dark",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#0b1220",
+    "editor.foreground": "#e2e8f0",
+    "editorLineNumber.foreground": "#475569",
+    "editorLineNumber.activeForeground": "#94a3b8",
+    "editor.selectionBackground": "#1e3a5f",
+    "editor.lineHighlightBackground": "#111827",
+    "editorCursor.foreground": "#5B8DEF",
+    "sideBar.background": "#080e1a",
+    "activityBar.background": "#060a14",
+    "statusBar.background": "#0f172a",
+    "statusBar.foreground": "#cbd5e1",
+    "titleBar.activeBackground": "#0f172a",
+    "tab.activeBackground": "#0b1220",
+    "tab.inactiveBackground": "#080e1a",
+    "focusBorder": "#5B8DEF",
+    "button.background": "#5B8DEF",
+    "list.activeSelectionBackground": "#1e3a5f",
+    "terminal.ansiBlue": "#5B8DEF",
+    "terminal.ansiCyan": "#22d3ee",
+    "terminal.ansiGreen": "#34d399"
+  },
+  "tokenColors": [
+    {
+      "scope": ["comment", "comment.line"],
+      "settings": { "foreground": "#64748b", "fontStyle": "italic" }
+    },
+    {
+      "scope": ["string", "string.quoted"],
+      "settings": { "foreground": "#86efac" }
+    },
+    {
+      "scope": ["constant.numeric", "constant.language"],
+      "settings": { "foreground": "#fbbf24" }
+    },
+    {
+      "scope": [
+        "keyword.control",
+        "keyword.declaration",
+        "keyword.operator.evolution",
+        "storage.type"
+      ],
+      "settings": { "foreground": "#5B8DEF" }
+    },
+    {
+      "scope": ["keyword.control.dynamics", "keyword.other.dynamics"],
+      "settings": { "foreground": "#a78bfa" }
+    },
+    {
+      "scope": ["keyword.control.ordering", "keyword.operator.pipeline"],
+      "settings": { "foreground": "#22d3ee" }
+    },
+    {
+      "scope": ["entity.name.function"],
+      "settings": { "foreground": "#93c5fd" }
+    },
+    {
+      "scope": ["storage.type.flow"],
+      "settings": { "foreground": "#f9a8d4" }
+    },
+    {
+      "scope": ["keyword.operator"],
+      "settings": { "foreground": "#94a3b8" }
+    }
+  ]
+}

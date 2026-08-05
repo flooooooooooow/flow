@@ -1,0 +1,230 @@
+# Sparse Matrix-Vector Multiply (SpMV) Benchmark
+# The classic "compiler killer" - tests irregular memory access, pointer chasing,
+# and cache behavior. Uses CSR (Compressed Sparse Row) format.
+#
+# SpMV: y = A * x, where A is sparse
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+    function rand() -> i32
+    function srand(seed: u32) -> void
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+
+# CSR Format: values[], col_indices[], row_ptrs[]
+# For row i: values[row_ptrs[i]..row_ptrs[i+1]] are the non-zero values
+#            col_indices[row_ptrs[i]..row_ptrs[i+1]] are their column positions
+
+function spmv_csr(
+    values: ptr<f64>,
+    col_indices: ptr<i32>,
+    row_ptrs: ptr<i32>,
+    x: ptr<f64>,
+    y: ptr<f64>,
+    num_rows: i32
+) {
+    for i in 0 to num_rows {
+        let row_start: i32 = row_ptrs[i]
+        let row_end: i32 = row_ptrs[i + 1]
+        let mut sum: f64 = 0.0
+        
+        let mut j: i32 = row_start
+        while j < row_end {
+            let col: i32 = col_indices[j]
+            sum = sum + values[j] * x[col]
+            j = j + 1
+        }
+        y[i] = sum
+    }
+}
+
+# Unrolled version - process 4 elements at a time where possible
+function spmv_csr_unrolled(
+    values: ptr<f64>,
+    col_indices: ptr<i32>,
+    row_ptrs: ptr<i32>,
+    x: ptr<f64>,
+    y: ptr<f64>,
+    num_rows: i32
+) {
+    for i in 0 to num_rows {
+        let row_start: i32 = row_ptrs[i]
+        let row_end: i32 = row_ptrs[i + 1]
+        let row_len: i32 = row_end - row_start
+        
+        let mut sum0: f64 = 0.0
+        let mut sum1: f64 = 0.0
+        let mut sum2: f64 = 0.0
+        let mut sum3: f64 = 0.0
+        
+        # Process 4 at a time
+        let unroll_end: i32 = row_start + (row_len / 4) * 4
+        let mut j: i32 = row_start
+        while j < unroll_end {
+            sum0 = sum0 + values[j] * x[col_indices[j]]
+            sum1 = sum1 + values[j + 1] * x[col_indices[j + 1]]
+            sum2 = sum2 + values[j + 2] * x[col_indices[j + 2]]
+            sum3 = sum3 + values[j + 3] * x[col_indices[j + 3]]
+            j = j + 4
+        }
+        
+        # Handle remainder
+        while j < row_end {
+            sum0 = sum0 + values[j] * x[col_indices[j]]
+            j = j + 1
+        }
+        
+        y[i] = sum0 + sum1 + sum2 + sum3
+    }
+}
+
+# Generate a random sparse matrix in CSR format
+# Returns number of non-zeros
+function generate_sparse_matrix(
+    values: ptr<f64>,
+    col_indices: ptr<i32>,
+    row_ptrs: ptr<i32>,
+    n: i32,
+    nnz_per_row: i32,
+    seed: u32
+) -> i32 {
+    let mut s: u32 = seed
+    let mut nnz: i32 = 0
+    
+    for i in 0 to n {
+        row_ptrs[i] = nnz
+        
+        # Generate nnz_per_row random column indices for this row
+        for k in 0 to nnz_per_row {
+            s = s * 1664525 + 1013904223
+            let col: i32 = (s % n)
+            col_indices[nnz] = col
+            
+            s = s * 1664525 + 1013904223
+            values[nnz] = (s % 1000) * 0.001
+            
+            nnz = nnz + 1
+        }
+    }
+    row_ptrs[n] = nnz
+    
+    return nnz
+}
+
+function init_vector(v: ptr<f64>, n: i32, seed: u32) {
+    let mut s: u32 = seed
+    for i in 0 to n {
+        s = s * 1664525 + 1013904223
+        v[i] = (s % 1000) * 0.001
+    }
+}
+
+function checksum(v: ptr<f64>, n: i32) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to n {
+        sum = sum + v[i]
+    }
+    return sum
+}
+
+function main() -> i32 {
+    println("==============================================")
+    println("  SpMV BENCHMARK (Sparse Matrix-Vector)")
+    println("==============================================")
+    println("")
+    println("CSR format, random sparse matrices")
+    println("")
+    
+    # Test configurations: (matrix_size, nnz_per_row, iterations)
+    # Smaller sizes due to stack allocation limits
+    let sizes: array<i32, 4> = [1000, 2000, 4000, 8000]
+    let nnz_per_row: i32 = 10  # Average 10 non-zeros per row (1% density for 1000x1000)
+    
+    for s in 0 to 4 {
+        let n: i32 = sizes[s]
+        let max_nnz: i32 = n * nnz_per_row
+        
+        print("Matrix: ")
+        print(n)
+        print("x")
+        print(n)
+        print(", ~")
+        print(nnz_per_row)
+        print(" nnz/row, ")
+        print(max_nnz)
+        println(" total nnz")
+        
+        # Allocate CSR structure
+        let values: array<f64, 80000> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let col_indices: array<i32, 80000> = [0, 0, 0, 0, 0, 0, 0, 0]
+        let row_ptrs: array<i32, 8001> = [0, 0, 0, 0, 0, 0, 0, 0]
+        let x: array<f64, 8000> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let y: array<f64, 8000> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
+        let values_ptr: ptr<f64> = values
+        let col_ptr: ptr<i32> = col_indices
+        let row_ptr: ptr<i32> = row_ptrs
+        let x_ptr: ptr<f64> = x
+        let y_ptr: ptr<f64> = y
+        
+        # Generate sparse matrix and input vector
+        let seed1: u32 = 42
+        let nnz: i32 = generate_sparse_matrix(values_ptr, col_ptr, row_ptr, n, nnz_per_row, seed1)
+        let seed2: u32 = 123
+        init_vector(x_ptr, n, seed2)
+        
+        # Determine iterations based on size
+        let iterations: i32 = 100000 / n + 1
+        
+        # Benchmark basic SpMV
+        let start1: i64 = clock()
+        for iter in 0 to iterations {
+            spmv_csr(values_ptr, col_ptr, row_ptr, x_ptr, y_ptr, n)
+        }
+        let end1: i64 = clock()
+        let time1: f64 = (end1 - start1) / CLOCKS_PER_SEC
+        let check1: f64 = checksum(y_ptr, n)
+        
+        # Calculate GFLOPS: 2 * nnz * iterations (multiply + add per non-zero)
+        let flops1: f64 = 2.0 * nnz * iterations
+        let gflops1: f64 = flops1 / time1 / 1e9
+        
+        print("  Basic:    ")
+        printf("%.3f", time1)
+        print(" sec | ")
+        printf("%.3f", gflops1)
+        print(" GFLOPS | checksum: ")
+        printf("%.6f", check1)
+        println("")
+        
+        # Benchmark unrolled SpMV
+        let start2: i64 = clock()
+        for iter in 0 to iterations {
+            spmv_csr_unrolled(values_ptr, col_ptr, row_ptr, x_ptr, y_ptr, n)
+        }
+        let end2: i64 = clock()
+        let time2: f64 = (end2 - start2) / CLOCKS_PER_SEC
+        let check2: f64 = checksum(y_ptr, n)
+        
+        let flops2: f64 = 2.0 * nnz * iterations
+        let gflops2: f64 = flops2 / time2 / 1e9
+        
+        print("  Unrolled: ")
+        printf("%.3f", time2)
+        print(" sec | ")
+        printf("%.3f", gflops2)
+        print(" GFLOPS | checksum: ")
+        printf("%.6f", check2)
+        println("")
+        
+        print("  Speedup: ")
+        printf("%.2f", time1 / time2)
+        println("x")
+        println("")
+    }
+    
+    println("Benchmark complete.")
+    return 0
+}

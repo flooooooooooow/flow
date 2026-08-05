@@ -240,6 +240,8 @@ class Type:
     size: Optional[int] = None
     element_type: Optional["Type"] = None
     type_args: Optional[List["Type"]] = None  # Generic type arguments
+    # Effect-row on first-class function types: `(i32) -> i32 with Log`
+    effects: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -270,6 +272,10 @@ class FunctionDecl:
     )  # Generic type parameters like <T, U>
     has_self: bool = False  # Whether this is a method with self parameter
     location: Optional[SourceLocation] = None  # For LSP go-to-definition
+    # Effect-row Phase 2: `function f() -> T with Log, Inventory { … }`
+    # Declares effects this function may perform; callers must handle them
+    # (or declare them too) when `--strict-effects` / check_effect_rows is on.
+    effects: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -2715,10 +2721,27 @@ class Parser:
             self.advance()
             return_type = self.parse_type()
 
+        # Effect row: `with Log, Inventory` (after return type, before body)
+        effects: List[str] = []
+        if self.current_token.type == TokenType.WITH:
+            self.advance()
+            effects.append(self.expect(TokenType.IDENTIFIER).value)
+            while self.current_token.type == TokenType.COMMA:
+                self.advance()
+                effects.append(self.expect(TokenType.IDENTIFIER).value)
+
         # Check for forward declaration (no body)
         if self.current_token.type != TokenType.LBRACE:
             # Forward declaration - empty body
-            func = FunctionDecl(name, parameters, return_type, Block([]), type_params)
+            func = FunctionDecl(
+                name,
+                parameters,
+                return_type,
+                Block([]),
+                [],
+                type_params=type_params,
+                effects=effects,
+            )
             func.is_forward_decl = True
             if has_self:
                 func.has_self = True
@@ -2742,6 +2765,7 @@ class Parser:
             [],
             type_params=type_params,
             location=loc,
+            effects=effects,
         )
         # Store has_self as an attribute (for impl methods)
         fn.has_self = has_self
@@ -2914,6 +2938,33 @@ class Parser:
                 element_type=element_type,
             )
 
+        # Function / closure type: (T1, T2) -> R [with E…]  (escaping HOF ABI)
+        elif self.current_token.type == TokenType.LPAREN:
+            self.advance()
+            param_types: List[Type] = []
+            if self.current_token.type != TokenType.RPAREN:
+                param_types.append(self.parse_type())
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    param_types.append(self.parse_type())
+            self.expect(TokenType.RPAREN)
+            self.expect(TokenType.ARROW)
+            return_type = self.parse_type()
+            effects: List[str] = []
+            if self.current_token.type == TokenType.WITH:
+                self.advance()
+                effects.append(self.expect(TokenType.IDENTIFIER).value)
+                while self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    effects.append(self.expect(TokenType.IDENTIFIER).value)
+            args_key = "_".join(p.name for p in param_types) if param_types else "void"
+            return Type(
+                f"fn_{args_key}__{return_type.name}",
+                type_args=param_types,
+                element_type=return_type,
+                effects=effects,
+            )
+
         else:
             raise SyntaxError(f"Unexpected type token: {self.current_token.type}")
 
@@ -2933,7 +2984,23 @@ class Parser:
         # Nested blocks (if/while/for/match bodies) recurse through here.
         self._enter_nesting("statement")
         try:
-            return self._parse_statement_impl()
+            start = self.current_token
+            stmt = self._parse_statement_impl()
+            # Attach source location for debugger #line mapping / LSP (best-effort).
+            # Token lines/columns are 1-based; SourceLocation is 0-based.
+            if getattr(stmt, "location", None) is None and start is not None:
+                try:
+                    setattr(
+                        stmt,
+                        "location",
+                        SourceLocation(
+                            line=max(0, start.line - 1),
+                            column=max(0, start.column - 1),
+                        ),
+                    )
+                except Exception:
+                    pass
+            return stmt
         finally:
             self.nesting_depth -= 1
 
@@ -4347,6 +4414,21 @@ class Parser:
             self._collect_free_variables(node.object if hasattr(node, 'object') else node.array, param_names, found)
             if isinstance(node, ArrayAccess):
                 self._collect_free_variables(node.index, param_names, found)
+        elif isinstance(node, StructLiteral):
+            for _fname, fval in node.fields:
+                self._collect_free_variables(fval, param_names, found)
+        elif isinstance(node, RecordUpdate):
+            self._collect_free_variables(node.base, param_names, found)
+            for _fname, fval in node.updates:
+                self._collect_free_variables(fval, param_names, found)
+        elif isinstance(node, (ArrayLiteral, VectorLiteral)):
+            for elem in node.elements:
+                self._collect_free_variables(elem, param_names, found)
+        elif isinstance(node, StringInterpolation):
+            for part in node.parts:
+                self._collect_free_variables(part, param_names, found)
+        elif isinstance(node, SortExpr):
+            self._collect_free_variables(node.array, param_names, found)
         elif isinstance(node, (IfStatement, WhileStatement, ForStatement, MatchStatement)):
             if isinstance(node, IfStatement):
                 self._collect_free_variables(node.condition, param_names, found)

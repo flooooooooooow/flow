@@ -1,0 +1,53 @@
+# channel_i32_select2 — non-blocking + blocking select over two channels
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
+# Run: ./flow run examples/concurrency/select.flow
+
+import "stdlib/concurrent.flow"
+
+function main() -> i32 {
+    printf("select demo\n")
+    let mut a: Channel_i32 = channel_i32_new(2)
+    let mut b: Channel_i32 = channel_i32_new(2)
+    let ap: ptr<Channel_i32> = &a
+    let bp: ptr<Channel_i32> = &b
+
+    if !channel_i32_send(bp, 42) {
+        return 1
+    }
+
+    let mut x: i32 = 0
+    let mut y: i32 = 0
+    let which: i32 = channel_i32_select2_try(ap, &x, bp, &y)
+    printf("  try select -> %d (expect 1), y=%d (expect 42)\n", which, y)
+    if which != 1 or y != 42 {
+        return 2
+    }
+
+    if !channel_i32_send(ap, 7) {
+        return 3
+    }
+    if !channel_i32_send(bp, 8) {
+        return 4
+    }
+    let w2: i32 = channel_i32_select2(ap, &x, bp, &y)
+    printf("  blocking select -> %d val a=%d b=%d\n", w2, x, y)
+    if w2 < 0 {
+        return 5
+    }
+
+    channel_i32_close(ap)
+    channel_i32_close(bp)
+    # drain
+    while channel_i32_select2_try(ap, &x, bp, &y) >= 0 {
+    }
+    let done: i32 = channel_i32_select2(ap, &x, bp, &y)
+    printf("  both closed+empty -> %d (expect -1)\n", done)
+    if done != -1 {
+        return 6
+    }
+
+    channel_i32_destroy(ap)
+    channel_i32_destroy(bp)
+    printf("OK\n")
+    return 0
+}

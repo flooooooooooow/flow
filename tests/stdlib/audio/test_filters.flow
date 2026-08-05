@@ -11,7 +11,7 @@ import "stdlib/audio/filters.flow"
 
 function test_onepole_creation() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: OnePole = onepole_lowpass(1000.0, rate)
+    let mut f: OnePole = onepole_lowpass(1000.0, rate)
     
     if f.coeff < 0.0 { return false }
     if f.coeff > 1.0 { return false }
@@ -21,7 +21,7 @@ function test_onepole_creation() -> bool {
 
 function test_onepole_tick() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: OnePole = onepole_lowpass(1000.0, rate)
+    let mut f: OnePole = onepole_lowpass(1000.0, rate)
     
     let f2: OnePole = onepole_tick(f, 1.0)
     
@@ -32,9 +32,9 @@ function test_onepole_tick() -> bool {
 
 function test_onepole_convergence() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: OnePole = onepole_lowpass(5000.0, rate)
+    let mut f: OnePole = onepole_lowpass(5000.0, rate)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 1000 {
         f = onepole_tick(f, 1.0)
         i = i + 1
@@ -45,7 +45,7 @@ function test_onepole_convergence() -> bool {
 
 function test_onepole_reset() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: OnePole = onepole_lowpass(1000.0, rate)
+    let mut f: OnePole = onepole_lowpass(1000.0, rate)
     f = onepole_tick(f, 1.0)
     f = onepole_reset(f)
     return onepole_output(f) == 0.0
@@ -57,7 +57,7 @@ function test_onepole_reset() -> bool {
 
 function test_dcblocker_creation() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let dc: DCBlocker = dcblocker_new(rate)
+    let mut dc: DCBlocker = dcblocker_new(rate)
     
     if dc.x1 != 0.0 { return false }
     if dc.y1 != 0.0 { return false }
@@ -66,9 +66,9 @@ function test_dcblocker_creation() -> bool {
 
 function test_dcblocker_removes_dc() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let dc: DCBlocker = dcblocker_new(rate)
+    let mut dc: DCBlocker = dcblocker_new(rate)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 10000 {
         dc = dcblocker_tick(dc, 0.5)
         i = i + 1
@@ -84,7 +84,7 @@ function test_dcblocker_removes_dc() -> bool {
 # =============================================================================
 
 function test_biquad_bypass() -> bool {
-    let f: Biquad = biquad_bypass()
+    let mut f: Biquad = biquad_bypass()
     if f.b0 != 1.0 { return false }
     if f.b1 != 0.0 { return false }
     if f.a1 != 0.0 { return false }
@@ -93,7 +93,7 @@ function test_biquad_bypass() -> bool {
 
 function test_biquad_lowpass_creation() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
+    let mut f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
     
     if f.b0 < -10.0 { return false }
     if f.b0 > 10.0 { return false }
@@ -104,7 +104,7 @@ function test_biquad_lowpass_creation() -> bool {
 
 function test_biquad_tick() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
+    let mut f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
     
     let f2: Biquad = biquad_tick(f, 1.0)
     
@@ -116,7 +116,7 @@ function test_biquad_tick() -> bool {
 
 function test_biquad_process() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: Biquad = biquad_lowpass(10000.0, 0.707, rate)
+    let mut f: Biquad = biquad_lowpass(10000.0, 0.707, rate)
     
     let out: f32 = biquad_process(f, 1.0)
     
@@ -126,7 +126,7 @@ function test_biquad_process() -> bool {
 
 function test_biquad_reset() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
+    let mut f: Biquad = biquad_lowpass(1000.0, 0.707, rate)
     f = biquad_tick(f, 1.0)
     f = biquad_reset(f)
     
@@ -141,7 +141,7 @@ function test_biquad_reset() -> bool {
 
 function test_svf_creation() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: SVF = svf_new(1000.0, 0.707, rate)
+    let mut f: SVF = svf_new(1000.0, 0.707, rate)
     
     if f.ic1eq != 0.0 { return false }
     if f.ic2eq != 0.0 { return false }
@@ -150,7 +150,7 @@ function test_svf_creation() -> bool {
 
 function test_svf_tick() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: SVF = svf_new(1000.0, 0.707, rate)
+    let mut f: SVF = svf_new(1000.0, 0.707, rate)
     
     let f2: SVF = svf_tick_lowpass(f, 1.0)
     
@@ -162,9 +162,9 @@ function test_svf_tick() -> bool {
 
 function test_svf_lowpass_convergence() -> bool {
     let rate: SampleRate = sample_rate_44100()
-    let f: SVF = svf_new(5000.0, 0.707, rate)
+    let mut f: SVF = svf_new(5000.0, 0.707, rate)
     
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 100 {
         f = svf_tick_lowpass(f, 1.0)
         i = i + 1
@@ -178,8 +178,8 @@ function test_svf_lowpass_convergence() -> bool {
 # =============================================================================
 
 function main() -> i32 {
-    let passed: i32 = 0
-    let failed: i32 = 0
+    let mut passed: i32 = 0
+    let mut failed: i32 = 0
     
     printf("=== Audio Filters Tests ===\n\n")
     

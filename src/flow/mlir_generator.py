@@ -327,6 +327,8 @@ class MLIRGenerator:
         self.declarations = []  # Store declarations for type lookup
         self.struct_layouts = {}  # Maps struct name to field offsets and types
         self._ssa_types: Dict[str, str] = {}  # Maps SSA name -> MLIR type string
+        # Maps pointer SSA / var name -> !llvm.array<N x T> for struct-element arrays
+        self._llvm_array_types: Dict[str, str] = {}
         self.type_aliases = {}  # name -> base Type
         self.distinct_types = {}  # name -> base Type
         self.struct_llvm_types: Dict[str, Optional[str]] = {}
@@ -341,6 +343,7 @@ class MLIRGenerator:
         self._tensor_extract_origins: Dict[str, tuple[str, int]] = {}
         self._composite_call_results: set[str] = set()
         self._tensor_param_ssas: set[str] = set()
+        self._llvm_array_types = {}
 
     def indent(self) -> str:
         return "  " * self.indent_level
@@ -815,6 +818,10 @@ class MLIRGenerator:
                 ptr, alloc_ops = self._emit_alloca_store(init_value, mlir_type)
                 init_ops.extend(alloc_ops)
                 var_entry["alloca_ptr"] = ptr
+            llvm_array_ty = self._llvm_array_types.get(init_value)
+            if llvm_array_ty:
+                var_entry["llvm_array_type"] = llvm_array_ty
+                self._llvm_array_types[var_decl.name] = llvm_array_ty
             self.symbol_table[var_decl.name] = var_entry
 
             return "\n".join(init_ops)
@@ -990,27 +997,15 @@ class MLIRGenerator:
     def _generate_field_store(self, access: FieldAccess, value_expr, value_ssa: str, ops: List[str]) -> Optional[str]:
         """Lower obj.field = value via GEP + scalar store.
 
-        Handles pointer-to-struct objects (self parameters) and alloca-backed
-        struct locals. Returns None when the target shape is unsupported.
+        Handles pointer-to-struct objects, alloca-backed struct locals, and
+        chained postfix lvalues such as bodies[0].id / bodies[0].pos.x.
+        Returns None when the target shape is unsupported.
         """
-        base_ptr = None
-        struct_name = None
-        if isinstance(access.object, Variable):
-            var_info = self.symbol_table.get(access.object.name)
-            if not var_info:
-                return None
-            flow_type = var_info.get('flow_type')
-            if flow_type is not None and (
-                getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr_')
-            ):
-                base_ptr = var_info.get('ssa_name')
-                pointee = self._pointee_struct_type(flow_type)
-                struct_name = pointee.name if pointee is not None else None
-            elif var_info.get('alloca_ptr'):
-                base_ptr = var_info['alloca_ptr']
-                struct_name = flow_type.name if flow_type is not None else None
-        if not base_ptr or not struct_name:
+        addr = self._address_of_struct_lvalue(access.object)
+        if addr is None:
             return None
+        base_ptr, base_ops, struct_name = addr
+        ops.extend(base_ops)
 
         llvm_struct = self._struct_llvm_type(struct_name)
         decl = self._get_struct_decl(struct_name)
@@ -2653,6 +2648,57 @@ class MLIRGenerator:
                 return Type(flow_type.name[4:])
         return flow_type
 
+    def _is_pointer_flow_type(self, flow_type) -> bool:
+        if flow_type is None:
+            return False
+        return bool(
+            getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr_')
+        )
+
+    def _flow_type_of_expr(self, expr) -> Optional[Type]:
+        """Resolve the FLOW type of an expression, including chained postfix shapes.
+
+        Must use isinstance checks (not hasattr(..., 'name')): FunctionCall also
+        has a .name field (the callee), which is not a variable binding.
+        """
+        if isinstance(expr, Variable):
+            return self._find_variable_type(expr.name)
+        if isinstance(expr, FieldAccess):
+            return self._determine_field_type(expr)
+        if isinstance(expr, ArrayAccess):
+            arr_ty = self._flow_type_of_expr(expr.array)
+            if arr_ty is None:
+                return None
+            if self._is_pointer_flow_type(arr_ty):
+                return self._pointee_struct_type(arr_ty)
+            elem = getattr(arr_ty, 'element_type', None)
+            if elem is not None:
+                return elem
+            return None
+        if isinstance(expr, FunctionCall):
+            info = self.symbol_table.get(expr.name)
+            if info and info.get('type') == 'function':
+                return info.get('return_type')
+            return None
+        if isinstance(expr, MethodCall):
+            effect_call = self._method_call_as_effect_call(expr)
+            if effect_call is not None:
+                return self._flow_type_of_expr(effect_call)
+            info = self.symbol_table.get(expr.method)
+            if info and info.get('type') == 'function':
+                return info.get('return_type')
+            return None
+        if isinstance(expr, EffectCall):
+            callee = self._effect_call_callee(expr)
+            name = callee if callee is not None else expr.operation
+            info = self.symbol_table.get(name)
+            if info:
+                return info.get('return_type')
+            return None
+        if isinstance(expr, StructLiteral):
+            return Type(expr.struct_name)
+        return None
+
     def _field_pointer_base(self, obj_expr, obj_ssa: str):
         """(ptr_ssa, struct_name) when obj_expr is a pointer-to-struct variable."""
         if not isinstance(obj_expr, Variable):
@@ -2663,7 +2709,7 @@ class MLIRGenerator:
         flow_type = var_info.get('flow_type')
         if flow_type is None:
             return None
-        if not (getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr_')):
+        if not self._is_pointer_flow_type(flow_type):
             return None
         pointee = self._pointee_struct_type(flow_type)
         if pointee is None or pointee.name not in self.struct_layouts:
@@ -2671,34 +2717,103 @@ class MLIRGenerator:
         base = var_info.get('ssa_name') or obj_ssa
         return base, pointee.name
 
-    def _determine_struct_type(self, expr):
-        """Determine the struct type of an expression"""
-        if hasattr(expr, 'name'):
-            # This is a variable, find its declaration
-            var_type = self._find_variable_type(expr.name)
-            return self._pointee_struct_type(var_type)
-        elif isinstance(expr, FieldAccess):
-            # This is a field access, get the field type
-            return self._determine_field_type(expr)
+    def _address_of_struct_lvalue(self, expr) -> Optional[tuple]:
+        """Address of a struct-typed lvalue for chained field stores.
+
+        Returns (ptr_ssa, ops, struct_name) or None when the shape is not an
+        addressable LLVM pointer-backed struct (e.g. pure SSA values).
+        Supports Variable (ptr / alloca), ArrayAccess on ptr-to-struct, and
+        nested FieldAccess into struct fields — the shapes produced by
+        unified postfix chaining such as bodies[0].pos.x = v.
+        """
+        if isinstance(expr, Variable):
+            var_info = self.symbol_table.get(expr.name)
+            if not var_info:
+                return None
+            flow_type = var_info.get('flow_type')
+            if flow_type is None:
+                return None
+            if self._is_pointer_flow_type(flow_type):
+                pointee = self._pointee_struct_type(flow_type)
+                if pointee is None or pointee.name not in self.struct_layouts:
+                    return None
+                return var_info.get('ssa_name'), [], pointee.name
+            if var_info.get('alloca_ptr') and flow_type.name in self.struct_layouts:
+                return var_info['alloca_ptr'], [], flow_type.name
+            return None
+
+        if isinstance(expr, ArrayAccess):
+            arr_ty = self._flow_type_of_expr(expr.array)
+            array_result = self.generate_expression(expr.array)
+            if not array_result:
+                return None
+            array_ssa, array_ops = array_result
+            index_ssa, index_ops = self.generate_expression(expr.index)
+            ops: List[str] = list(array_ops) + list(index_ops)
+            index_type = self._ssa_types.get(index_ssa, 'i32')
+            if isinstance(expr.index, Variable) and expr.index.name in self.symbol_table:
+                index_type = self.symbol_table[expr.index.name].get('mlir_type', index_type)
+
+            # array<Struct, N> lowered as !llvm.ptr to !llvm.array<N x struct>
+            llvm_array_ty = self._llvm_array_type_for(expr.array, array_ssa)
+            if llvm_array_ty is not None:
+                elem_flow = self._flow_type_of_expr(expr)
+                if elem_flow is None or elem_flow.name not in self.struct_layouts:
+                    return None
+                gep, gep_ops = self._emit_llvm_array_index_gep(
+                    array_ssa, index_ssa, index_type, llvm_array_ty
+                )
+                ops.extend(gep_ops)
+                return gep, ops, elem_flow.name
+
+            if not self._is_pointer_flow_type(arr_ty):
+                return None
+            pointee = self._pointee_struct_type(arr_ty)
+            if pointee is None or pointee.name not in self.struct_layouts:
+                return None
+            llvm_elem = self._struct_llvm_type(pointee.name) or self.flow_type_to_mlir(pointee)
+            gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type, llvm_elem)
+            ops.extend(gep_ops)
+            return gep, ops, pointee.name
+
+        if isinstance(expr, FieldAccess):
+            parent = self._address_of_struct_lvalue(expr.object)
+            if parent is None:
+                return None
+            parent_ptr, parent_ops, parent_struct = parent
+            decl = self._get_struct_decl(parent_struct)
+            llvm_struct = self._struct_llvm_type(parent_struct)
+            if not decl or not llvm_struct:
+                return None
+            field_names = [f.name for f in decl.fields]
+            if expr.field not in field_names:
+                return None
+            field_ty = self._determine_field_type(expr)
+            if field_ty is None or field_ty.name not in self.struct_layouts:
+                return None
+            idx = field_names.index(expr.field)
+            ops = list(parent_ops)
+            gep = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{gep} = llvm.getelementptr {parent_ptr}[0, {idx}] "
+                f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
+            )
+            self._ssa_types[gep] = '!llvm.ptr'
+            return gep, ops, field_ty.name
+
         return None
 
+    def _determine_struct_type(self, expr):
+        """Determine the struct type of an expression (including chained postfix)."""
+        return self._pointee_struct_type(self._flow_type_of_expr(expr))
+
     def _determine_field_type(self, field_access):
-        """Determine the type of a field access by walking the struct hierarchy"""
-        # Start with the base object
-        current_type = None
-
-        # If the object is a variable, get its type from the AST
-        if hasattr(field_access.object, 'name'):
-            # This is a variable, find its declaration
-            current_type = self._find_variable_type(field_access.object.name)
-        elif isinstance(field_access.object, FieldAccess):
-            # This is a nested field access, recurse
-            current_type = self._determine_field_type(field_access.object)
-
+        """Determine the type of a field access by walking the struct hierarchy."""
+        current_type = self._flow_type_of_expr(field_access.object)
         # Pointer-to-struct objects access fields of the pointee.
         current_type = self._pointee_struct_type(current_type)
 
-        # Walk through the fields
         if current_type and current_type.name in self.struct_layouts:
             layout = self.struct_layouts[current_type.name]
             if field_access.field in layout:
@@ -2711,6 +2826,10 @@ class MLIRGenerator:
         # First check symbol table (fast, handles locals)
         if var_name in self.symbol_table:
             var_info = self.symbol_table[var_name]
+            # Functions are not variables — their .name colliding with Variable
+            # lookup is why make().x used to resolve as i32.
+            if var_info.get('type') == 'function':
+                return None
             if 'flow_type' in var_info:
                 return var_info['flow_type']
             # Fallback: try to reconstruct from mlir_type (imperfect)
@@ -3539,22 +3658,52 @@ class MLIRGenerator:
             ops.extend(vops)
             element_values.append(v)
 
-        # Create memref from elements - allocate and store each element
         elem_type = self.get_expression_type(array_literal.elements[0]) if array_literal.elements else 'f32'
         size = len(array_literal.elements)
-        
-        # Allocate memref
+
+        # !llvm.struct is not a valid memref element type. Lower struct arrays
+        # as an alloca of !llvm.array<N x struct> and return the pointer.
+        if elem_type.startswith('!llvm.struct'):
+            array_ty = f"!llvm.array<{size} x {elem_type}>"
+            one = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{one} = llvm.mlir.constant(1 : i64) : i64")
+            ptr = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{ptr} = llvm.alloca {one} x {array_ty} : (i64) -> !llvm.ptr"
+            )
+            self._ssa_types[ptr] = '!llvm.ptr'
+            self._llvm_array_types[ptr] = array_ty
+            for i, element_value in enumerate(element_values):
+                idx = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{idx} = llvm.mlir.constant({i} : i64) : i64")
+                gep = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(
+                    f"{self.indent()}{gep} = llvm.getelementptr {ptr}[0, {idx}] "
+                    f": (!llvm.ptr, i64) -> !llvm.ptr, {array_ty}"
+                )
+                self._ssa_types[gep] = '!llvm.ptr'
+                ops.append(
+                    f"{self.indent()}llvm.store {element_value}, {gep} : {elem_type}, !llvm.ptr"
+                )
+            return ptr, ops
+
+        # Scalar / memref-compatible element arrays
         alloc_ssa = f"%{self.function_counter}"
         self.function_counter += 1
-        ops.append(f"{self.indent()}{alloc_ssa} = memref.alloc() : memref<{size}x{elem_type}>")
-        
-        # Store each element
+        memref_ty = f"memref<{size}x{elem_type}>"
+        ops.append(f"{self.indent()}{alloc_ssa} = memref.alloc() : {memref_ty}")
+        self._ssa_types[alloc_ssa] = memref_ty
+
         for i, element_value in enumerate(element_values):
             index_ssa = f"%{self.function_counter}"
             self.function_counter += 1
             ops.append(f"{self.indent()}{index_ssa} = arith.constant {i} : index")
-            ops.append(f"{self.indent()}memref.store {element_value}, {alloc_ssa}[{index_ssa}] : memref<{size}x{elem_type}>")
-        
+            ops.append(f"{self.indent()}memref.store {element_value}, {alloc_ssa}[{index_ssa}] : {memref_ty}")
+
         return alloc_ssa, ops
 
     def generate_vector_literal(self, vector_literal) -> tuple[str, List[str]]:
@@ -3621,19 +3770,47 @@ class MLIRGenerator:
             return arr_type == '!llvm.ptr'
         return self._elem_type_from_array_expr(access.array) is not None
 
-    def _emit_ptr_index_gep(self, ptr_ssa: str, index_ssa: str, index_type: str, elem_type: Optional[str] = None) -> tuple[str, List[str]]:
+    def _llvm_array_type_for(self, array_expr: Expression, array_ssa: str) -> Optional[str]:
+        if array_ssa in self._llvm_array_types:
+            return self._llvm_array_types[array_ssa]
+        if isinstance(array_expr, Variable):
+            info = self.symbol_table.get(array_expr.name) or {}
+            return info.get('llvm_array_type') or self._llvm_array_types.get(array_expr.name)
+        return None
+
+    def _index_to_i64(self, index_ssa: str, index_type: str) -> tuple[str, List[str]]:
         ops: List[str] = []
+        if index_type == 'i64':
+            return index_ssa, ops
+        idx64 = f"%{self.function_counter}"
+        self.function_counter += 1
         if index_type == 'index':
-            idx64 = f"%{self.function_counter}"
-            self.function_counter += 1
             ops.append(f"{self.indent()}{idx64} = arith.index_cast {index_ssa} : index to i64")
-            index_ssa = idx64
-        elif index_type != 'i64':
-            idx64 = f"%{self.function_counter}"
-            self.function_counter += 1
+        else:
             ext_op = "arith.extui" if index_type.startswith('u') else "arith.extsi"
             ops.append(f"{self.indent()}{idx64} = {ext_op} {index_ssa} : {index_type} to i64")
-            index_ssa = idx64
+        return idx64, ops
+
+    def _emit_llvm_array_index_gep(
+        self, ptr_ssa: str, index_ssa: str, index_type: str, array_ty: str
+    ) -> tuple[str, List[str]]:
+        """GEP into !llvm.array<N x T> pointed to by ptr: gep ptr[0, index]."""
+        ops: List[str] = []
+        index_ssa, cast_ops = self._index_to_i64(index_ssa, index_type)
+        ops.extend(cast_ops)
+        gep = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(
+            f"{self.indent()}{gep} = llvm.getelementptr {ptr_ssa}[0, {index_ssa}] "
+            f": (!llvm.ptr, i64) -> !llvm.ptr, {array_ty}"
+        )
+        self._ssa_types[gep] = '!llvm.ptr'
+        return gep, ops
+
+    def _emit_ptr_index_gep(self, ptr_ssa: str, index_ssa: str, index_type: str, elem_type: Optional[str] = None) -> tuple[str, List[str]]:
+        ops: List[str] = []
+        index_ssa, cast_ops = self._index_to_i64(index_ssa, index_type)
+        ops.extend(cast_ops)
 
         gep = f"%{self.function_counter}"
         self.function_counter += 1
@@ -3644,6 +3821,28 @@ class MLIRGenerator:
         )
         self._ssa_types[gep] = '!llvm.ptr'
         return gep, ops
+
+    def _memref_element_type(self, memref_ty: str) -> Optional[str]:
+        """Extract the element type from a memref<...> type string."""
+        if not memref_ty.startswith('memref<') or not memref_ty.endswith('>'):
+            return None
+        inner = memref_ty[len('memref<'):-1]
+        i = 0
+        while i < len(inner):
+            if inner[i] == '?':
+                i += 1
+            elif inner[i].isdigit():
+                while i < len(inner) and inner[i].isdigit():
+                    i += 1
+            else:
+                break
+            if i < len(inner) and inner[i] == 'x':
+                i += 1
+                if i < len(inner) and (inner[i] == '?' or inner[i].isdigit()):
+                    continue
+                break
+            break
+        return inner[i:] if i < len(inner) else None
 
     def generate_array_access(self, access: ArrayAccess) -> tuple[str, List[str]]:
         """Generate memref.load or llvm.load for array[index] access."""
@@ -3674,8 +3873,29 @@ class MLIRGenerator:
         if isinstance(access.index, Variable) and access.index.name in self.symbol_table:
             index_type = self.symbol_table[access.index.name].get('mlir_type', index_type)
 
+        llvm_array_ty = self._llvm_array_type_for(access.array, array_ssa)
+        if llvm_array_ty is not None:
+            elem_flow = self._flow_type_of_expr(access)
+            elem_type = (
+                self.flow_type_to_mlir(elem_flow)
+                if elem_flow is not None
+                else 'i32'
+            )
+            gep, gep_ops = self._emit_llvm_array_index_gep(
+                array_ssa, index_ssa, index_type, llvm_array_ty
+            )
+            ops.extend(gep_ops)
+            ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
+            self._ssa_types[ssa_name] = elem_type
+            return ssa_name, ops
+
         if self._is_pointer_array_ssa(array_ssa, access):
-            elem_type = self._elem_type_from_array_expr(access.array) or 'f32'
+            elem_flow = self._flow_type_of_expr(access)
+            elem_type = (
+                self.flow_type_to_mlir(elem_flow)
+                if elem_flow is not None
+                else (self._elem_type_from_array_expr(access.array) or 'f32')
+            )
             gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type, elem_type)
             ops.extend(gep_ops)
             ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
@@ -3690,8 +3910,18 @@ class MLIRGenerator:
             ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : i32 to index")
             final_index = index_cast
 
-        elem_type = 'f32'
-        if isinstance(access.array, Variable) and access.array.name in self.symbol_table:
+        arr_mlir = self._ssa_types.get(array_ssa)
+        if not arr_mlir and isinstance(access.array, Variable) and access.array.name in self.symbol_table:
+            arr_mlir = self.symbol_table[access.array.name].get('mlir_type', '')
+
+        elem_type = None
+        if arr_mlir:
+            elem_type = self._memref_element_type(arr_mlir)
+        if not elem_type:
+            elem_flow = self._flow_type_of_expr(access)
+            if elem_flow is not None:
+                elem_type = self.flow_type_to_mlir(elem_flow)
+        if not elem_type and isinstance(access.array, Variable) and access.array.name in self.symbol_table:
             arr_type = self.symbol_table[access.array.name].get('mlir_type', '')
             if 'i32' in arr_type and 'memref' in arr_type:
                 elem_type = 'i32'
@@ -3699,8 +3929,11 @@ class MLIRGenerator:
                 elem_type = 'f64'
             elif 'f32' in arr_type:
                 elem_type = 'f32'
+        if not elem_type:
+            elem_type = 'f32'
 
-        ops.append(f"{self.indent()}{ssa_name} = memref.load {array_ssa}[{final_index}] : memref<?x{elem_type}>")
+        load_memref = arr_mlir if arr_mlir and arr_mlir.startswith('memref<') else f"memref<?x{elem_type}>"
+        ops.append(f"{self.indent()}{ssa_name} = memref.load {array_ssa}[{final_index}] : {load_memref}")
         self._ssa_types[ssa_name] = elem_type
         return ssa_name, ops
     
@@ -3730,9 +3963,11 @@ class MLIRGenerator:
                 return '!llvm.ptr'
             return self.get_expression_type(expr.operand)
         elif isinstance(expr, ArrayLiteral):
-            # Return memref type for array literals
+            # Scalar arrays -> memref; struct arrays -> !llvm.ptr to !llvm.array
             if expr.elements:
                 elem_type = self.get_expression_type(expr.elements[0])
+                if elem_type.startswith('!llvm.struct'):
+                    return '!llvm.ptr'
                 size = len(expr.elements)
                 return f"memref<{size}x{elem_type}>"
             return "memref<?xf32>"  # Default
@@ -3763,9 +3998,15 @@ class MLIRGenerator:
                 return f"memref<{total_size}xi8>"
             return 'i32'
         elif isinstance(expr, ArrayAccess):
-            # Get element type from array
+            elem_flow = self._flow_type_of_expr(expr)
+            if elem_flow is not None:
+                return self.flow_type_to_mlir(elem_flow)
+            # Get element type from array memref annotation
             if isinstance(expr.array, Variable) and expr.array.name in self.symbol_table:
                 arr_type = self.symbol_table[expr.array.name].get('mlir_type', '')
+                elem = self._memref_element_type(arr_type) if arr_type else None
+                if elem:
+                    return elem
                 if 'f32' in arr_type:
                     return 'f32'
                 elif 'f64' in arr_type:
@@ -3804,9 +4045,16 @@ class MLIRGenerator:
             elem = flow_type.name.replace('memref_', '')
             return f"memref<?x{elem}>"
         elif flow_type.name.startswith('array_'):
-            # Array type: array_f32 -> memref<?xf32>
+            # Array type: array_f32 / array_4_Note
             if elem_type:
-                return f"memref<?x{elem_type.name}>"
+                elem_mlir = self.flow_type_to_mlir(elem_type)
+                # Struct elements use llvm.array alloca (!llvm.ptr); memref cannot
+                # hold !llvm.struct elements.
+                if elem_mlir.startswith('!llvm.struct'):
+                    return '!llvm.ptr'
+                if flow_type.size:
+                    return f"memref<{flow_type.size}x{elem_mlir}>"
+                return f"memref<?x{elem_mlir}>"
             else:
                 return "memref<?xi32>"
         elif flow_type.name.startswith('struct_'):
@@ -3819,11 +4067,14 @@ class MLIRGenerator:
             else:
                 return 'vector<?x?xf32>'  # Fallback
         elif flow_type.name.startswith('array'):
-            # Array type: array_100_i32 -> memref<100xi32>
-            if flow_type.size and elem_type:
-                return f"memref<{flow_type.size}x{elem_type.name}>"
-            elif elem_type:
-                return f"memref<?x{elem_type.name}>"
+            # Array type: array_100_i32 / array<Note, 4>
+            if elem_type:
+                elem_mlir = self.flow_type_to_mlir(elem_type)
+                if elem_mlir.startswith('!llvm.struct'):
+                    return '!llvm.ptr'
+                if flow_type.size:
+                    return f"memref<{flow_type.size}x{elem_mlir}>"
+                return f"memref<?x{elem_mlir}>"
             else:
                 return 'memref<?xi32>'  # Fallback
         elif flow_type.name.startswith('ptr_') or flow_type.is_pointer:

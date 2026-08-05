@@ -1,7 +1,7 @@
 import "stdlib/ui_layout.flow"
 
 function hash_rect(h: i32, r: UiRect) -> i32 {
-    let out: i32 = h
+    let mut out: i32 = h
     out = out * 131 + r.x
     out = out * 131 + r.y
     out = out * 131 + r.w

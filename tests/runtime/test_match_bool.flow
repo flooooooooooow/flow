@@ -1,0 +1,15 @@
+# Compiler-suite runtime: bool match exhaustiveness path
+
+function as_i32(b: bool) -> i32 {
+    match b {
+        true => { return 1 }
+        false => { return 0 }
+    }
+    return -1
+}
+
+function main() -> i32 {
+    if as_i32(true) != 1 { return 1 }
+    if as_i32(false) != 0 { return 2 }
+    return 0
+}

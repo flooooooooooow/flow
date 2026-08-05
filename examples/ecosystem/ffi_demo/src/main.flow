@@ -1,0 +1,33 @@
+# ffi package demo — LE pack/unpack + native sizeof(void*)
+import ffi.lib {
+    ffi_alloc, ffi_free, ffi_write_i32_le, ffi_read_i32_le,
+    ffi_write_u8, ffi_read_u8, ffi_sizeof_ptr
+}
+
+extern {
+    function printf(fmt: string, val: i64) -> i32
+}
+
+function main() -> i32 {
+    let buf: ptr<i8> = ffi_alloc(16)
+    ffi_write_i32_le(buf, 0, 305419896)
+    ffi_write_i32_le(buf, 4, 0 - 42)
+    ffi_write_u8(buf, 8, 255)
+
+    let a: i32 = ffi_read_i32_le(buf, 0)
+    let b: i32 = ffi_read_i32_le(buf, 4)
+    let c: i32 = ffi_read_u8(buf, 8)
+    let psz: i64 = ffi_sizeof_ptr()
+
+    printf("i32_le=%lld\n", a as i64)
+    printf("neg=%lld\n", b as i64)
+    printf("u8=%lld\n", c as i64)
+    printf("sizeof_ptr=%lld\n", psz)
+
+    ffi_free(buf)
+
+    if a == 305419896 and b == (0 - 42) and c == 255 and psz >= 4 {
+        return 0
+    }
+    return 1
+}

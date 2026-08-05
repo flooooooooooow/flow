@@ -1,0 +1,76 @@
+# Particle Physics - Returns pointer to data, JS reads from WASM memory
+
+function rand_lcg(seed: ptr<i32>) -> f64 {
+    let s: i32 = seed[0]
+    s = s * 1103515245 + 12345
+    seed[0] = s
+    let val: i32 = s
+    if val < 0 {
+        val = 0 - val
+    }
+    return (val % 10000) / 10000.0
+}
+
+# Returns pointer to particle data (200 particles * 4 f64 each)
+function particle_init(w: f64, h: f64) -> ptr<f64> {
+    let p: ptr<f64> = malloc(200 * 4 * 8)
+    let seed: ptr<i32> = malloc(4)
+    seed[0] = 42
+    
+    for i in 0 to 200 {
+        let idx: i32 = i * 4
+        p[idx] = rand_lcg(seed) * w
+        p[idx + 1] = rand_lcg(seed) * h * 0.3
+        p[idx + 2] = (rand_lcg(seed) - 0.5) * 5.0
+        p[idx + 3] = rand_lcg(seed) * 2.0
+    }
+    
+    free(seed)
+    return p
+}
+
+# Step physics
+function particle_step(p: ptr<f64>, w: f64, h: f64) -> i32 {
+    for i in 0 to 200 {
+        let idx: i32 = i * 4
+        
+        let x: f64 = p[idx]
+        let y: f64 = p[idx + 1]
+        let vx: f64 = p[idx + 2]
+        let vy: f64 = p[idx + 3]
+        
+        vy = vy + 0.2
+        vx = vx * 0.997
+        vy = vy * 0.997
+        
+        x = x + vx
+        y = y + vy
+        
+        if x < 4.0 {
+            x = 4.0
+            vx = 0.0 - vx * 0.8
+        }
+        if x > w - 4.0 {
+            x = w - 4.0
+            vx = 0.0 - vx * 0.8
+        }
+        if y < 4.0 {
+            y = 4.0
+            vy = 0.0 - vy * 0.8
+        }
+        if y > h - 4.0 {
+            y = h - 4.0
+            vy = 0.0 - vy * 0.8
+        }
+        
+        p[idx] = x
+        p[idx + 1] = y
+        p[idx + 2] = vx
+        p[idx + 3] = vy
+    }
+    return 200
+}
+
+function main() -> i32 {
+    return 0
+}

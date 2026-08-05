@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "name": "flow-packages",
+  "description": "Official Flow package index. Bundled with the compiler; override with FLOW_REGISTRY_URL or FLOW_REGISTRY_PATH.",
+  "packages": {
+    "hello_lib": {
+      "description": "Sample Flow package for registry demos (greet / add)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/hello_lib",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/hello_lib"
+        }
+      ]
+    },
+    "mathkit": {
+      "description": "Small integer/float helpers (clamp, abs, lerp)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/mathkit",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/mathkit"
+        }
+      ]
+    },
+    "ringbuf": {
+      "description": "SPSC power-of-two ring buffer for i32",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/ringbuf",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/ringbuf"
+        }
+      ]
+    },
+    "json": {
+      "description": "Minimal JSON parse/query helpers (pure Flow rewrite)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/json",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/json"
+        }
+      ]
+    },
+    "toml": {
+      "description": "Minimal TOML key/value parser (pure Flow rewrite)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/toml",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/toml"
+        }
+      ]
+    },
+    "http": {
+      "description": "HTTP client wrapping libcurl (GET/POST into caller buffer)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/http",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/http"
+        }
+      ]
+    },
+    "sqlite": {
+      "description": "SQLite3 wrapper (open/exec/query_i64)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/sqlite",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/sqlite"
+        }
+      ]
+    },
+    "sqlkit": {
+      "description": "Thin SQL helpers (migrate/table_exists/insert/count) over flow_sqlite_*",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/sqlkit",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/sqlkit"
+        }
+      ]
+    },
+    "compress": {
+      "description": "zlib wrap for deflate/inflate (compress/uncompress)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/compress",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/compress"
+        }
+      ]
+    },
+    "image": {
+      "description": "Minimal image decode (PPM P6 from memory + test pattern; RGBA out)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/image",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/image"
+        }
+      ]
+    },
+    "cli": {
+      "description": "CLI args/env/paths helpers (pure Flow rewrite)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/cli",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/cli"
+        }
+      ]
+    },
+    "collectionsx": {
+      "description": "Growable VecI32 and open-addressing MapI32 (i32→i32)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/collectionsx",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/collectionsx"
+        }
+      ]
+    },
+    "strings": {
+      "description": "Richer UTF-8/byte string helpers (starts/ends/contains, trim, slice, parse)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/strings",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/strings"
+        }
+      ]
+    },
+    "dns": {
+      "description": "Hostname resolution via getaddrinfo (first IPv4)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/dns",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/dns"
+        }
+      ]
+    },
+    "serde": {
+      "description": "Minimal length-prefixed binary encode/decode for i32 and string (pure Flow)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/serde",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/serde"
+        }
+      ]
+    },
+    "log": {
+      "description": "Simple leveled logging (printf)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/log",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/log"
+        }
+      ]
+    },
+    "testing": {
+      "description": "Assert helpers and a simple pass/fail test runner",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/testing",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/testing"
+        }
+      ]
+    },
+    "ffi": {
+      "description": "FFI glue helpers for packing structs + bindgen seed (sizeof ptr)",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/registry/packages/ffi",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "registry/packages/ffi"
+        }
+      ]
+    },
+    "flow-verify": {
+      "description": "Formal mathematics library \u2014 Claim Paths and stepped proofs",
+      "homepage": "https://github.com/flooooooooooow/flow/tree/main/lib/verify",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "lib/verify"
+        }
+      ]
+    }
+  }
+}

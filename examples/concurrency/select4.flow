@@ -1,0 +1,59 @@
+# channel_i32_select4 — N-way select + try (default)
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
+# Run: ./flow run examples/concurrency/select4.flow
+
+import "stdlib/concurrent.flow"
+
+function main() -> i32 {
+    printf("select4 demo\n")
+    let mut a: Channel_i32 = channel_i32_new(2)
+    let mut b: Channel_i32 = channel_i32_new(2)
+    let mut c: Channel_i32 = channel_i32_new(2)
+    let mut d: Channel_i32 = channel_i32_new(2)
+    let mut va: i32 = 0
+    let mut vb: i32 = 0
+    let mut vc: i32 = 0
+    let mut vd: i32 = 0
+
+    # default / none ready
+    let none: i32 = channel_i32_select4_try(&a, &va, &b, &vb, &c, &vc, &d, &vd)
+    printf("  try empty -> %d (expect -1)\n", none)
+    if none != -1 {
+        return 1
+    }
+
+    if !channel_i32_send(&c, 99) {
+        return 2
+    }
+    let which: i32 = channel_i32_select4_try(&a, &va, &b, &vb, &c, &vc, &d, &vd)
+    printf("  try -> %d val=%d (expect 2, 99)\n", which, vc)
+    if which != 2 or vc != 99 {
+        return 3
+    }
+
+    if !channel_i32_send(&d, 7) {
+        return 4
+    }
+    let w2: i32 = channel_i32_select4(&a, &va, &b, &vb, &c, &vc, &d, &vd)
+    printf("  blocking -> %d (expect 3)\n", w2)
+    if w2 != 3 or vd != 7 {
+        return 5
+    }
+
+    channel_i32_close(&a)
+    channel_i32_close(&b)
+    channel_i32_close(&c)
+    channel_i32_close(&d)
+    let done: i32 = channel_i32_select4(&a, &va, &b, &vb, &c, &vc, &d, &vd)
+    printf("  all closed -> %d (expect -1)\n", done)
+    if done != -1 {
+        return 6
+    }
+
+    channel_i32_destroy(&a)
+    channel_i32_destroy(&b)
+    channel_i32_destroy(&c)
+    channel_i32_destroy(&d)
+    printf("OK\n")
+    return 0
+}

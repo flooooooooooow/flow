@@ -1,7 +1,8 @@
 # Audio SIMD Helpers
 #
-# Backed by runtime/audio_simd.c. These are safe CPU fast paths that can be
-# auto-vectorized by the compiler.
+# Portable loops live here; the always-linked Flow runtime module
+# lib/runtime/audio_simd.flow provides the same symbols as the old
+# runtime/audio_simd.c fast path (auto-vectorized under -O2).
 
 extern { function flow_audio_gain_interleaved_f32_fast(data: ptr<f32>, frames: i32, channels: i32, gain: f32) -> void }
 extern { function flow_audio_mix_interleaved_f32_fast(dst: ptr<f32>, src: ptr<f32>, frames: i32, channels: i32) -> void }
@@ -10,21 +11,21 @@ extern { function flow_audio_copy_interleaved_f32_fast(dst: ptr<f32>, src: ptr<f
 # Portable implementation (no external link required)
 export function audio_gain_interleaved_f32(data: ptr<f32>, frames: i32, channels: i32, gain: f32) -> void {
     let total: i32 = frames * channels
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < total {
         data[i] = data[i] * gain
         i = i + 1
     }
 }
 
-# Optional fast path (requires runtime/audio_simd.c)
+# Optional fast path (lib/runtime/audio_simd.flow, always linked by ./flow run)
 export function audio_gain_interleaved_f32_fast(data: ptr<f32>, frames: i32, channels: i32, gain: f32) -> void {
     flow_audio_gain_interleaved_f32_fast(data, frames, channels, gain)
 }
 
 export function audio_mix_interleaved_f32(dst: ptr<f32>, src: ptr<f32>, frames: i32, channels: i32) -> void {
     let total: i32 = frames * channels
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < total {
         dst[i] = dst[i] + src[i]
         i = i + 1
@@ -33,7 +34,7 @@ export function audio_mix_interleaved_f32(dst: ptr<f32>, src: ptr<f32>, frames: 
 
 export function audio_copy_interleaved_f32(dst: ptr<f32>, src: ptr<f32>, frames: i32, channels: i32) -> void {
     let total: i32 = frames * channels
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < total {
         dst[i] = src[i]
         i = i + 1

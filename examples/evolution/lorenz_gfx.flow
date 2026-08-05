@@ -1,16 +1,12 @@
 # LORENZ GFX — live simulation wow demo (VISION.md: digital twins).
-# Declares the attractor as a `flow` with `solver { method rk4 }`, steps it
-# each frame, and draws an (x, z) fading trail via portrait helpers + gfx_frame_pump
-# (#164/#165). Full `represent phase_portrait` grammar is follow-on.
+# Declares the attractor as a `flow` with `solver { method rk4 }` and
+# `represent phase_portrait` (#165). Trail draw lowers to Lorenz_portrait_frame.
 #
 # Run: ./flow gfx examples/evolution/lorenz_gfx.flow
 
 import "stdlib/gfx.flow"
 import "stdlib/dynamics/portrait.flow"
 
-const WIN_W: i32 = 900
-const WIN_H: i32 = 700
-const TRAIL: i32 = 320
 const SUBSTEPS: i32 = 3
 const MAX_FRAMES: i32 = 2000
 
@@ -27,10 +23,20 @@ flow Lorenz {
     x evolves as sigma * (y - x)
     y evolves as x * (rho - z) - y
     z evolves as x * y - beta * z
+
+    represent phase_portrait(x, z) {
+        trail 320
+        window 900, 700
+        map x in [-25, 25] -> col
+        map z in [0, 55] -> row
+    }
 }
 
 function main() -> i32 {
-    let g: Gfx = gfx_open(WIN_W, WIN_H, "Lorenz attractor - Flow evolution demo")
+    let g: Gfx = gfx_open(
+        Lorenz_portrait_win_w, Lorenz_portrait_win_h,
+        "Lorenz attractor - Flow evolution demo"
+    )
     let mut sys: Lorenz = Lorenz_new()
     let dt: f64 = Lorenz_default_dt()
 
@@ -43,8 +49,6 @@ function main() -> i32 {
     let mut head: i32 = 0
     let mut count: i32 = 0
     let mut frame: i32 = 0
-    let head_ptr: ptr<i32> = &head
-    let count_ptr: ptr<i32> = &count
 
     while frame < MAX_FRAMES {
         if !gfx_frame_pump(g) { break }
@@ -53,22 +57,9 @@ function main() -> i32 {
             Lorenz_step(&sys, dt)
         }
 
-        trail_push_2d(trail_x, trail_z, TRAIL, head_ptr, count_ptr, sys.x, sys.z)
-
-        gfx_clear(g, 8, 8, 16)
-        for i in 0 to count {
-            let idx: i32 = trail_index(head, count, TRAIL, i)
-            let px: i32 = project_axis(trail_x[idx], -25.0, 25.0, WIN_W, 10)
-            let py: i32 = project_axis(trail_z[idx], 55.0, 0.0, WIN_H, 30)
-            let b: i32 = 25 + (230 * (i + 1)) / count
-            let mut size: i32 = 2
-            if i >= count - 12 { size = 3 }
-            gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)
-        }
-        let hx: i32 = project_axis(sys.x, -25.0, 25.0, WIN_W, 10)
-        let hz: i32 = project_axis(sys.z, 55.0, 0.0, WIN_H, 30)
-        gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)
-
+        Lorenz_portrait_frame(
+            g, trail_x, trail_z, &head, &count, sys.x, sys.z
+        )
         gfx_present(g)
         frame = frame + 1
     }

@@ -1,0 +1,37 @@
+# Channel_i64 — 64-bit payloads (pointers-as-i64 / large IDs)
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
+# Run: ./flow run examples/concurrency/channels_i64.flow
+
+import "stdlib/concurrent.flow"
+
+function main() -> i32 {
+    printf("channel_i64 demo\n")
+    let mut a: Channel_i64 = channel_i64_new(2)
+    let mut b: Channel_i64 = channel_i64_new(2)
+    let mut x: i64 = 0
+    let mut y: i64 = 0
+    if !channel_i64_send(&a, 1000000000000) {
+        return 1
+    }
+    if !channel_i64_recv(&a, &x) {
+        return 2
+    }
+    printf("  recv a=%lld\n", x)
+    if x != 1000000000000 {
+        return 3
+    }
+    if !channel_i64_send(&b, 7) {
+        return 4
+    }
+    let which: i32 = channel_i64_select2_try(&a, &x, &b, &y)
+    printf("  select2_try -> %d y=%lld (expect 1, 7)\n", which, y)
+    if which != 1 or y != 7 {
+        return 5
+    }
+    channel_i64_close(&a)
+    channel_i64_close(&b)
+    channel_i64_destroy(&a)
+    channel_i64_destroy(&b)
+    printf("OK\n")
+    return 0
+}

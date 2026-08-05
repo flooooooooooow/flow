@@ -38,6 +38,8 @@ extern {
     function flow_atomic_cas_i32(ptr: ptr<i32>, expected: ptr<i32>, desired: i32, weak: bool, success_memorder: i32, failure_memorder: i32) -> bool
     function flow_race_mutex_lock(mu: ptr<void>) -> void
     function flow_race_mutex_unlock(mu: ptr<void>) -> void
+    function flow_race_read(addr: ptr<void>, size: i32) -> void
+    function flow_race_write(addr: ptr<void>, size: i32) -> void
     function __atomic_load_n_i64(ptr: ptr<i64>, memorder: i32) -> i64
     function __atomic_store_n_i64(ptr: ptr<i64>, val: i64, memorder: i32) -> void
     function __atomic_fetch_add_i64(ptr: ptr<i64>, val: i64, memorder: i32) -> i64
@@ -296,6 +298,157 @@ function semaphore_count(s: Semaphore) -> i32 {
 # Channel (Go-style buffered communication)
 # =============================================================================
 
+# Generic Chan<T> — monomorphized to Chan_i32 / Chan_Point / etc.
+# (Named Chan to avoid clashing with hand-specialized Channel_i32.) / Channel_Point / etc.
+# Prefer this for new code. Channel_i32 / Channel_i64 remain as aliases.
+function sizeof<T>() -> i64 {
+    return 0
+}
+
+struct Chan<T> {
+    buffer: ptr<T>,
+    _lock: array<u8, 64>,
+    _not_empty: array<u8, 64>,
+    _not_full: array<u8, 64>,
+    capacity: i32,
+    size: i32,
+    head: i32,
+    tail: i32,
+    closed: bool,
+    _bound: bool
+}
+
+function channel_new<T>(cap: i32) -> Chan<T> {
+    let mut n: i32 = cap
+    if n < 1 {
+        n = 1
+    }
+    let es: i64 = sizeof<T>()
+    let buf: ptr<T> = malloc(n as i64 * es) as ptr<T>
+    return Chan<T> {
+        buffer: buf,
+        _lock: [],
+        _not_empty: [],
+        _not_full: [],
+        capacity: n,
+        size: 0,
+        head: 0,
+        tail: 0,
+        closed: false,
+        _bound: false
+    }
+}
+
+function channel_bind<T>(ch: ptr<Chan<T> >) -> void {
+    if ch._bound {
+        return
+    }
+    pthread_mutex_init(&ch._lock as ptr<void>, null)
+    pthread_cond_init(&ch._not_empty as ptr<void>, null)
+    pthread_cond_init(&ch._not_full as ptr<void>, null)
+    ch._bound = true
+}
+
+function channel_try_send<T>(ch: ptr<Chan<T> >, val: T) -> bool {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    if ch.closed or ch.size >= ch.capacity {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    flow_race_write(ch.buffer as ptr<void>, ch.size)
+    ch.buffer[ch.tail] = val
+    ch.tail = (ch.tail + 1) % ch.capacity
+    ch.size = ch.size + 1
+    pthread_cond_signal(&ch._not_empty as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_send<T>(ch: ptr<Chan<T> >, val: T) -> bool {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    while ch.size >= ch.capacity and !ch.closed {
+        pthread_cond_wait(&ch._not_full as ptr<void>, &ch._lock as ptr<void>)
+    }
+    if ch.closed {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    ch.buffer[ch.tail] = val
+    ch.tail = (ch.tail + 1) % ch.capacity
+    ch.size = ch.size + 1
+    pthread_cond_signal(&ch._not_empty as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_try_recv<T>(ch: ptr<Chan<T> >, out: ptr<T>) -> bool {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    if ch.size == 0 {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    out[0] = ch.buffer[ch.head]
+    ch.head = (ch.head + 1) % ch.capacity
+    ch.size = ch.size - 1
+    pthread_cond_signal(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_recv<T>(ch: ptr<Chan<T> >, out: ptr<T>) -> bool {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    while ch.size == 0 and !ch.closed {
+        pthread_cond_wait(&ch._not_empty as ptr<void>, &ch._lock as ptr<void>)
+    }
+    if ch.size == 0 {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    out[0] = ch.buffer[ch.head]
+    ch.head = (ch.head + 1) % ch.capacity
+    ch.size = ch.size - 1
+    pthread_cond_signal(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_close<T>(ch: ptr<Chan<T> >) -> void {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    ch.closed = true
+    pthread_cond_broadcast(&ch._not_empty as ptr<void>)
+    pthread_cond_broadcast(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+}
+
+function channel_destroy<T>(ch: ptr<Chan<T> >) -> void {
+    if ch._bound {
+        pthread_mutex_destroy(&ch._lock as ptr<void>)
+        pthread_cond_destroy(&ch._not_empty as ptr<void>)
+        pthread_cond_destroy(&ch._not_full as ptr<void>)
+        ch._bound = false
+    }
+    free(ch.buffer as ptr<void>)
+}
+
+function channel_select2_try<T>(
+    a: ptr<Chan<T> >, a_out: ptr<T>,
+    b: ptr<Chan<T> >, b_out: ptr<T>
+) -> i32 {
+    if channel_try_recv<T>(a, a_out) {
+        return 0
+    }
+    if channel_try_recv<T>(b, b_out) {
+        return 1
+    }
+    return -1
+}
+
+# Hand-specialized Channel_i32 (kept for existing call sites)
 struct Channel_i32 {
     # ptr first → struct align 8; sync arrays follow at aligned offsets.
     buffer: ptr<i32>,
@@ -313,7 +466,7 @@ struct Channel_i32 {
 # Build an unbound channel value. Sync primitives are initialized on the
 # *final* storage by channel_i32_bind / first send-recv (never copy a live mutex).
 function channel_i32_new(cap: i32) -> Channel_i32 {
-    let n: i32 = cap
+    let mut n: i32 = cap
     if n < 1 {
         n = 1
     }
@@ -561,7 +714,7 @@ struct Channel_i64 {
 }
 
 function channel_i64_new(cap: i32) -> Channel_i64 {
-    let n: i32 = cap
+    let mut n: i32 = cap
     if n < 1 {
         n = 1
     }
@@ -784,7 +937,7 @@ function spinlock_new() -> SpinLock {
 }
 
 function spinlock_lock(sl: ptr<SpinLock>) -> void {
-    let expected: bool = false
+    let mut expected: bool = false
     while !__atomic_compare_exchange_n_bool(&sl._flag.value, &expected, true, false, MEMORY_ORDER_ACQUIRE, MEMORY_ORDER_RELAXED) {
         expected = false
     }

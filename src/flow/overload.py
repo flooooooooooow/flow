@@ -69,8 +69,10 @@ class OverloadResolver:
         
         # Create mangled name. Functions generated from `flow` blocks keep
         # their plain names: Name_step(Name*, double) is a stable C API
-        # (docs/vision/north-star.md 1.4).
-        if "flow_api" in (getattr(func, "attributes", None) or []):
+        # (docs/vision/north-star.md 1.4). Monomorphized generics already
+        # encode type args (`channel_new_i32`) — do not double-suffix.
+        attrs = getattr(func, "attributes", None) or []
+        if "flow_api" in attrs or "monomorphized" in attrs:
             mangled = name
         else:
             mangled = self._mangle_name(name, param_types)
@@ -173,6 +175,9 @@ class OverloadResolver:
             # Dual arithmetic promotes to Dual (pattern-adoption #161).
             if left_type == "Dual" or right_type == "Dual":
                 return "Dual"
+            # Tensor element-wise / scale (#161).
+            if left_type == "Tensor" or right_type == "Tensor":
+                return "Tensor"
             # Arithmetic with float promotes to float
             if left_type == "f32" or right_type == "f32":
                 return "f32"
@@ -294,6 +299,12 @@ class OverloadResolver:
         if ptr_type and expected == ptr_type:
             return True
         if expected.startswith("ptr_") and actual == expected[len("ptr_"):]:
+            return True
+        # Bare `null` is typed as ptr_void; it must adopt any callee ptr<T>
+        # so overload mangling picks the parameter type (e.g. ptr_u8).
+        if actual == "ptr_void" and (
+            expected.startswith("ptr_") or expected == "ptr_void"
+        ):
             return True
         # Capability parameters are opaque handler slots in the C backend.
         # A concrete struct value can satisfy `capability Effect` and is

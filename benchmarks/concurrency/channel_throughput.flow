@@ -1,0 +1,46 @@
+# Single-threaded buffered channel throughput (Flow Channel_i32)
+# Buffer capacity == N so send-all then recv-all does not deadlock.
+# Compare with channel_throughput.go — same N / buf.
+# Run via: benchmarks/concurrency/run.sh
+
+import "stdlib/concurrent.flow"
+import "stdlib/time.flow"
+
+const N: i32 = 200000
+const BUF: i32 = 200000
+
+function main() -> i32 {
+    let mut ch: Channel_i32 = channel_i32_new(BUF)
+    let p: ptr<Channel_i32> = &ch
+    let t0: f64 = get_time()
+    let mut i: i32 = 0
+    while i < N {
+        if !channel_i32_send(p, i) {
+            printf("send fail at %d\n", i)
+            return 1
+        }
+        i = i + 1
+    }
+    let mut sum: i64 = 0
+    let mut v: i32 = 0
+    i = 0
+    while i < N {
+        if !channel_i32_recv(p, &v) {
+            printf("recv fail at %d\n", i)
+            return 2
+        }
+        sum = sum + (v as i64)
+        i = i + 1
+    }
+    let t1: f64 = get_time()
+    channel_i32_destroy(p)
+    let ms: f64 = (t1 - t0) * 1000.0
+    let n64: i64 = N as i64
+    let want: i64 = (n64 - 1) * n64 / 2
+    printf("flow_channel_throughput n=%d buf=%d ms=%.3f checksum=%lld want=%lld\n",
+           N, BUF, ms, sum, want)
+    if sum != want {
+        return 3
+    }
+    return 0
+}

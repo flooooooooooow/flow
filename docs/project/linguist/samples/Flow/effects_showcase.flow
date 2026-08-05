@@ -1,0 +1,270 @@
+# Sample for GitHub Linguist — sourced from https://github.com/flooooooooooow/flow/blob/main/examples/effects/showcase.flow
+# License: MIT (same as the Flow repository)
+#
+# Effect System Showcase: One Service, Many Worlds
+#
+# A small checkout service written ONCE, with zero knowledge of its
+# environment. Every side effect (logging, clock, inventory, notifications)
+# goes through an algebraic effect. `handle ... with ...` installs a handler
+# for a dynamic scope: the SAME business logic runs against production
+# handlers, test handlers, or any mix -- with no parameters threaded, no
+# interfaces passed, no framework, no monad transformers.
+#
+# Run it:   ./flow run examples/effects/showcase.flow
+#
+# What to watch for in the output:
+#   1. The same `place_order` calls produce different decisions under the
+#      production vs. test handler stacks (different inventory handlers).
+#   2. A nested `handle` silences logging for one region, then the outer
+#      handler is restored automatically.
+#   3. Handlers compose: the production logger itself calls the Clock
+#      effect, so swapping ONLY the clock changes every log line.
+#   4. With no handler installed, effect operations fall back to safe
+#      defaults (no-ops that return zero).
+
+# ============================================================================
+# EFFECT INTERFACES
+# The only thing business logic ever sees.
+# ============================================================================
+
+effect Log {
+    info(msg: string) -> void,
+    warn(msg: string) -> void,
+}
+
+effect Clock {
+    now() -> i32,
+}
+
+effect Inventory {
+    stock_of(sku: i32) -> i32,
+    reserve(sku: i32, qty: i32) -> i32,
+}
+
+effect Notify {
+    send(recipient: string, msg: string) -> void,
+}
+
+# ============================================================================
+# BUSINESS LOGIC
+# Written once. No handler parameters. No dependency injection plumbing.
+# It does not know (or care) whether it is in production, in a test,
+# or in a partially-mocked hybrid environment.
+# ============================================================================
+
+function place_order(sku: i32, qty: i32) -> i32 {
+    Log.info("order received")
+    let available: i32 = Inventory.stock_of(sku)
+    if available < qty {
+        Log.warn("insufficient stock -- rejecting order")
+        Notify.send("ops@shop.example", "restock needed")
+        return -1
+    }
+    let order_id: i32 = Inventory.reserve(sku, qty)
+    Log.info("stock reserved")
+    Notify.send("customer@shop.example", "order confirmed")
+    return order_id
+}
+
+function run_batch() -> i32 {
+    let mut accepted: i32 = 0
+
+    printf("order A: sku=1001 qty=2\n")
+    let a: i32 = place_order(1001, 2)
+    if a > 0 {
+        printf("  ACCEPTED (order id %d)\n", a)
+        accepted = accepted + 1
+    } else {
+        printf("  REJECTED\n")
+    }
+
+    printf("order B: sku=2002 qty=5\n")
+    let b: i32 = place_order(2002, 5)
+    if b > 0 {
+        printf("  ACCEPTED (order id %d)\n", b)
+        accepted = accepted + 1
+    } else {
+        printf("  REJECTED\n")
+    }
+
+    return accepted
+}
+
+# ============================================================================
+# PRODUCTION HANDLERS
+# Real-world behaviour: timestamped ops logging, warehouse stock levels,
+# outbound email. (IO is simulated with printf, but the shape is real.)
+# ============================================================================
+
+capability WallClock {
+    effect Clock,
+    function now() -> i32 {
+        # A real build would read the system clock here.
+        return 1721224800
+    },
+}
+
+# NOTE: this handler CALLS ANOTHER EFFECT (Clock) from inside its own
+# implementation. Handlers compose through the same dispatch mechanism
+# as business code.
+capability OpsLogger {
+    effect Log,
+    function info(msg: string) -> void {
+        let t: i32 = Clock.now()
+        let m: string = msg
+        printf("  [%d] INFO  %s\n", t, m)
+    },
+    function warn(msg: string) -> void {
+        let t: i32 = Clock.now()
+        let m: string = msg
+        printf("  [%d] WARN  %s\n", t, m)
+    },
+}
+
+capability WarehouseInventory {
+    effect Inventory,
+    function stock_of(sku: i32) -> i32 {
+        # Simulated warehouse DB: sku 1001 is in stock, sku 2002 is scarce.
+        if sku == 1001 {
+            return 8
+        }
+        if sku == 2002 {
+            return 1
+        }
+        return 0
+    },
+    function reserve(sku: i32, qty: i32) -> i32 {
+        # Simulated DB write, returns new order id.
+        return 500000 + sku
+    },
+}
+
+capability EmailNotifier {
+    effect Notify,
+    function send(recipient: string, msg: string) -> void {
+        let r: string = recipient
+        let m: string = msg
+        printf("  --> email to %s: %s\n", r, m)
+    },
+}
+
+# ============================================================================
+# TEST HANDLERS
+# Deterministic fixtures, silent logs, captured notifications.
+# ONE capability may handle SEVERAL effects: TestBackend covers both
+# Inventory and Notify.
+# ============================================================================
+
+capability FrozenClock {
+    effect Clock,
+    function now() -> i32 {
+        return 0
+    },
+}
+
+capability SilentLogger {
+    effect Log,
+    function info(msg: string) -> void {
+    },
+    function warn(msg: string) -> void {
+    },
+}
+
+capability TestBackend {
+    effect Inventory, Notify,
+    function stock_of(sku: i32) -> i32 {
+        # Fixture: everything is plentiful in tests.
+        return 99
+    },
+    function reserve(sku: i32, qty: i32) -> i32 {
+        return 42
+    },
+    function send(recipient: string, msg: string) -> void {
+        let r: string = recipient
+        printf("  (test captured a notification for %s)\n", r)
+    },
+}
+
+# ============================================================================
+# THE DEMO
+# ============================================================================
+
+function main() -> i32 {
+    printf("=====================================================\n")
+    printf(" FLOW EFFECT SYSTEM SHOWCASE: one service, many worlds\n")
+    printf("=====================================================\n")
+    printf("business logic: place_order(sku, qty) -- written once,\n")
+    printf("compiled once, no environment parameters.\n")
+
+    # ------------------------------------------------------------------
+    printf("\n--- [1] PRODUCTION stack ---------------------------\n")
+    printf("handle Log,Clock,Inventory,Notify with production handlers\n\n")
+    let mut prod_accepted: i32 = 0
+    handle Clock with WallClock {
+        handle Log with OpsLogger {
+            handle Inventory with WarehouseInventory {
+                handle Notify with EmailNotifier {
+                    prod_accepted = run_batch()
+                }
+            }
+        }
+    }
+    printf("\nproduction result: %d of 2 orders accepted\n", prod_accepted)
+
+    # ------------------------------------------------------------------
+    printf("\n--- [2] TEST stack: SAME code, zero changes --------\n")
+    printf("handle Log with SilentLogger; Inventory,Notify with TestBackend\n\n")
+    let mut test_accepted: i32 = 0
+    handle Log with SilentLogger {
+        handle Inventory, Notify with TestBackend {
+            test_accepted = run_batch()
+        }
+    }
+    printf("\ntest result: %d of 2 orders accepted (fixture stock)\n", test_accepted)
+    printf("no log noise, no real email -- and place_order was not edited\n")
+
+    # ------------------------------------------------------------------
+    printf("\n--- [3] DYNAMIC SCOPE: silence one region ----------\n")
+    handle Clock with WallClock {
+        handle Log with OpsLogger {
+            handle Inventory with WarehouseInventory {
+                handle Notify with EmailNotifier {
+                    printf("outer scope logs loudly:\n")
+                    Log.info("before quiet region")
+                    handle Log with SilentLogger {
+                        printf("inner quiet region (order still processed):\n")
+                        let q: i32 = place_order(1001, 1)
+                        printf("  order id %d, but not a single log line\n", q)
+                    }
+                    printf("outer handler restored automatically:\n")
+                    Log.info("after quiet region")
+                }
+            }
+        }
+    }
+
+    # ------------------------------------------------------------------
+    printf("\n--- [4] COMPOSED HANDLERS: swap ONLY the clock -----\n")
+    printf("OpsLogger asks the Clock effect for timestamps, so replacing\n")
+    printf("just the Clock handler re-times every log line:\n\n")
+    handle Log with OpsLogger {
+        handle Clock with WallClock {
+            Log.info("with WallClock")
+        }
+        handle Clock with FrozenClock {
+            Log.info("with FrozenClock")
+        }
+    }
+
+    # ------------------------------------------------------------------
+    printf("\n--- [5] NO HANDLER: safe defaults ------------------\n")
+    printf("calling place_order with NO handlers installed:\n")
+    let bare: i32 = place_order(1001, 2)
+    printf("  returned %d -- unhandled stock_of() defaulted to 0,\n", bare)
+    printf("  logs and notifications were silent no-ops\n")
+
+    printf("\n=====================================================\n")
+    printf(" same compiled function. four different worlds.\n")
+    printf("=====================================================\n")
+    return 0
+}

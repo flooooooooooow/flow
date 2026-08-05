@@ -1,0 +1,5 @@
+[package]
+name = "ui_layout_window_flow"
+version = "0.1.0"
+description = "Flow UI layout windowed demo"
+entry = "src/main.flow"

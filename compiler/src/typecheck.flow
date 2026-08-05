@@ -16,6 +16,9 @@ extern {
     function malloc(size: i64) -> ptr<u8>
     function free(p: ptr<u8>) -> void
     function strlen(s: string) -> i64
+    function puts(s: string) -> i32
+    function printf(fmt: string, val: i32) -> i32
+    function getenv(name: string) -> string
 }
 
 # Scratch name table for Stage-A scope / fn lookup.
@@ -42,7 +45,9 @@ export struct TcCtx {
     seed_buf: ptr<u8>,
     seed_cap: i32,
     seed_len: i32,
-    seed_nlen: i32
+    seed_nlen: i32,
+    # Optional source path for diagnostics (may be empty).
+    path: string
 }
 
 function flowc_tc_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -109,6 +114,57 @@ function flowc_tc_err(ctx: ptr<TcCtx>) {
     ctx[0].err = ctx[0].err + 1
 }
 
+# Best-effort stderr note: label, optional file path, `at line:col`, span bytes.
+function flowc_tc_note(ctx: ptr<TcCtx>, label: string, start: i32, end: i32) {
+    puts(label)
+    let path: string = ctx[0].path
+    if path != null {
+        let plen: i64 = strlen(path)
+        if plen > 0 {
+            puts("flowc tc: file")
+            puts(path)
+        }
+    }
+    let src: ptr<u8> = ctx[0].src
+    if src == null {
+        return
+    }
+    let mut line: i32 = 1
+    let mut col: i32 = 1
+    let mut i: i32 = 0
+    while i < start {
+        if src[i] == 10 {
+            line = line + 1
+            col = 1
+        } else {
+            col = col + 1
+        }
+        i = i + 1
+    }
+    printf("flowc tc: at %d", line)
+    printf(":%d\n", col)
+    if end <= start {
+        return
+    }
+    let n: i32 = end - start
+    if n > 120 {
+        n = 120
+    }
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    if buf == null {
+        return
+    }
+    i = 0
+    while i < n {
+        buf[i] = src[start + i]
+        i = i + 1
+    }
+    buf[n] = 0
+    let s: string = buf
+    puts(s)
+    free(buf)
+}
+
 function flowc_tc_push_mark(ctx: ptr<TcCtx>) {
     if ctx[0].mlen < ctx[0].mcap {
         ctx[0].marks[ctx[0].mlen] = ctx[0].nlen
@@ -125,6 +181,7 @@ function flowc_tc_pop_mark(ctx: ptr<TcCtx>) {
 
 function flowc_tc_bind(ctx: ptr<TcCtx>, start: i32, end: i32, kind: i32, arity: i32) {
     if ctx[0].nlen >= ctx[0].ncap {
+        puts("flowc tc: name table full (raise ncap)")
         flowc_tc_err(ctx)
         return
     }
@@ -330,6 +387,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
+            flowc_tc_note(ctx, "flowc tc: unbound ident", ns, ne)
             flowc_tc_err(ctx)
         }
         return
@@ -340,6 +398,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
             # extern { ... } bodies are brace-skipped — allow unknown calls.
             if ctx[0].has_extern == 0 {
+                flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne)
                 flowc_tc_err(ctx)
             }
         } else {
@@ -347,6 +406,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
             if arity >= 0 {
                 let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[id].a)
                 if nargs != arity {
+                    flowc_tc_note(ctx, "flowc tc: arity mismatch", ns, ne)
                     flowc_tc_err(ctx)
                 }
             }
@@ -609,10 +669,12 @@ function flowc_tc_seed_bind(ctx: ptr<TcCtx>, dep_src: ptr<u8>, start: i32, end: 
         return
     }
     if ctx[0].seed_len + n > ctx[0].seed_cap {
+        puts("flowc tc: seed buffer full (raise seed_cap)")
         flowc_tc_err(ctx)
         return
     }
     if ctx[0].nlen >= ctx[0].ncap {
+        puts("flowc tc: name table full while seeding (raise ncap)")
         flowc_tc_err(ctx)
         return
     }
@@ -678,9 +740,11 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
 
 # Allocate name tables + empty seed buffer. On failure ns == null (and tables freed).
 export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
-    let ncap: i32 = 512
-    let mcap: i32 = 64
-    let seed_cap: i32 = 4096
+    # Bundle-checking `main.flow` seeds every frontend export then binds
+    # main's own symbols — 512 was too small (silent tc_errs=1).
+    let ncap: i32 = 4096
+    let mcap: i32 = 128
+    let seed_cap: i32 = 32768
     let raw_ns: ptr<u8> = malloc((ncap as i64) * 4)
     let raw_ne: ptr<u8> = malloc((ncap as i64) * 4)
     let raw_nk: ptr<u8> = malloc((ncap as i64) * 4)
@@ -724,7 +788,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
             seed_buf: null,
             seed_cap: 0,
             seed_len: 0,
-            seed_nlen: 0
+            seed_nlen: 0,
+            path: ""
         }
     }
     let mut zi: i32 = 0
@@ -755,7 +820,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         seed_buf: raw_seed,
         seed_cap: seed_cap,
         seed_len: 0,
-        seed_nlen: 0
+        seed_nlen: 0,
+        path: ""
     }
 }
 
@@ -797,6 +863,10 @@ export function flowc_tc_reset_module(ctx: ptr<TcCtx>, src: ptr<u8>) {
     ctx[0].has_extern = 0
 }
 
+export function flowc_tc_set_path(ctx: ptr<TcCtx>, path: string) {
+    ctx[0].path = path
+}
+
 # collect_globals + check_fns; returns error count for this module (ctx.err).
 export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i32) -> i32 {
     if root == AST_NONE or root < 0 {
@@ -814,7 +884,8 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
 
 # Stage-A typecheck / name resolution (single file, empty seed).
 # Returns error count (0 = ok). Needs `src` for name spans.
-export function flowc_typecheck(arena: AstArena, root: i32, src: ptr<u8>) -> i32 {
+# `path` is printed in diagnostics when non-empty (may be null).
+export function flowc_typecheck_ex(arena: AstArena, root: i32, src: ptr<u8>, path: string) -> i32 {
     if root == AST_NONE or root < 0 {
         return 1
     }
@@ -826,10 +897,18 @@ export function flowc_typecheck(arena: AstArena, root: i32, src: ptr<u8>) -> i32
     if ctx.ns == null {
         return 1
     }
+    if path != null {
+        ctx.path = path
+    }
 
     flowc_tc_check_program(&ctx, arena, root)
 
     let errs: i32 = ctx.err
     flowc_tc_free(&ctx)
     return errs
+}
+
+# Uses FLOWC_IN as the diagnostic file path when set.
+export function flowc_typecheck(arena: AstArena, root: i32, src: ptr<u8>) -> i32 {
+    return flowc_typecheck_ex(arena, root, src, getenv("FLOWC_IN"))
 }

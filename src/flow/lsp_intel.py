@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
 from .dynamics_dsl import expand_dynamics_dsl, has_dynamics_dsl
+from .field_dsl import expand_field_dsl, has_field_dsl
 from .module_resolver import ModuleResolver
 from .parser import (
     ConstDecl,
@@ -49,6 +50,8 @@ def path_to_uri(path: str) -> str:
 def parse_source(text: str) -> Optional[List[Any]]:
     try:
         src = text
+        if has_field_dsl(src):
+            src = expand_field_dsl(src)
         if has_dynamics_dsl(src):
             src = expand_dynamics_dsl(src)
         return Parser(Lexer(src), source=src).parse()

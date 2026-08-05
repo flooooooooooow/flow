@@ -1,57 +1,68 @@
 # FLOW Language for VS Code & Cursor
 
-Syntax highlighting and optional LSP for [FLOW](https://github.com/flooooooooooow/flow) — a language with algebraic effects, autodiff, and a portable C backend.
+Syntax, snippets, formatter, debug, test explorer, tasks, and LSP for
+[FLOW](https://github.com/flooooooooooow/flow).
 
-Works in **VS Code** and **Cursor** (same VSIX).
+## Features (0.3)
 
-## Features
-
-- `.flow` language mode + TextMate grammar
-- LSP client → `python3 -m flow.lsp_server` (go-to-def, hover, completions, diagnostics when the server is available)
-- Command: **FLOW: Restart Language Server**
+| Area | What you get |
+|------|----------------|
+| Language | `.flow` grammar, icons, folding, bracket colorization |
+| LSP | hover, go-to-def, refs, rename, completions, **format**, highlights, diagnostics |
+| Edit | rich snippets; format on save (default) |
+| Run | **Run** / **Compile** title buttons; `Cmd+Shift+R` / `B` |
+| Debug | **Debug Current File** → build `-g` binary → CodeLLDB / cppdbg / terminal `lldb` |
+| Test | Testing view: `tests/**/*.flow`, `tests/unit`, CLI suites |
+| Themes | install **Flow Pack** for Flow Dark / Dim + CodeLLDB |
 
 ## Install
 
 ### From the marketplace (once published)
 
-Search **“FLOW Language”** by `flooooooooooow`, or:
+Search **"FLOW Language"** by `quilio`, or:
 
 ```bash
-cursor --install-extension flooooooooooow.flow-language
-code --install-extension flooooooooooow.flow-language
+cursor --install-extension quilio.flow-language
+code --install-extension quilio.flow-language
 ```
 
-### From this repo (local VSIX)
+### From this repo
 
 ```bash
-cd third_party/integrations/vscode/flow-language
-npm install
-npm run compile
-npx vsce package --no-dependencies
-cursor --install-extension ./flow-language-*.vsix --force
-code --install-extension ./flow-language-*.vsix --force
+cd third_party/integrations/vscode
+./install-local.sh
 ```
 
-## LSP setup
+Reload the window. Optional: install CodeLLDB when prompted, or:
 
-The extension looks for the Flow checkout automatically when you open this repo. Otherwise set:
+```bash
+cursor --install-extension vadimcn.vscode-lldb
+```
+
+### Publishing
+
+See `PUBLISH.md` (Open VSX under the `quilio` namespace).
+
+## Commands
+
+| Command | Shortcut |
+|---------|----------|
+| FLOW: Run Current File | `Cmd+Shift+R` |
+| FLOW: Compile Current File | `Cmd+Shift+B` |
+| FLOW: Debug Current File | `Cmd+Shift+D` |
+| FLOW: Format Current File | Format Document |
+| FLOW: Restart Language Server | — |
+| FLOW: Refresh Test Explorer | — |
+
+## Settings
 
 | Setting | Purpose |
 |---------|---------|
-| `flow.repoPath` | Absolute path to the Flow git checkout (`…/flow`) |
-| `flow.pythonPath` | Python that can import `flow` (default `python3`) |
-| `flow.lspPath` | Optional dedicated LSP binary (skips Python module) |
+| `flow.repoPath` | Flow checkout (auto-detected here) |
+| `flow.pythonPath` | Python for LSP / debug transpile |
+| `flow.lspPath` | Optional dedicated LSP binary |
 
-Quick local check:
+## Related
 
-```bash
-cd /path/to/flow
-PYTHONPATH=src python3 -m flow.lsp_server
-# should sit waiting on stdio — Ctrl-C to stop
-```
-
-Syntax highlighting works even if the LSP fails to start.
-
-## Publish (maintainers)
-
-See [PUBLISH.md](./PUBLISH.md).
+- `flow-themes` — Flow Dark / Flow Dim
+- `flow-pack` — language + themes + CodeLLDB

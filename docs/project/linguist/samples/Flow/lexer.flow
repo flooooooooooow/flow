@@ -1,0 +1,307 @@
+# Sample for GitHub Linguist — sourced from https://github.com/flooooooooooow/flow/blob/main/compiler/src/lexer.flow
+# License: MIT (same as the Flow repository)
+#
+# @module flowc.lexer
+# @means  Streaming lexer for Flow source (Phase 2+ keywords for self-hosting).
+
+import .token {
+    Token, Lexer, flowc_make_tok,
+    TOK_EOF, TOK_IDENT, TOK_KEYWORD, TOK_INT, TOK_FLOAT, TOK_STRING,
+    TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACK, TOK_RBRACK,
+    TOK_COLON, TOK_COMMA, TOK_SEMI, TOK_DOT, TOK_DOTDOT, TOK_ARROW,
+    TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG,
+    TOK_ERROR, TOK_AMP,
+    KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
+    KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
+    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR
+}
+
+function flowc_lex_is_alpha(c: i32) -> i32 {
+    if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_lex_is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_lex_is_alnum(c: i32) -> i32 {
+    if flowc_lex_is_alpha(c) == 1 or flowc_lex_is_digit(c) == 1 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_lex_is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_lexer_new(input: ptr<u8>, len: i32) -> Lexer {
+    return Lexer { input: input, len: len, pos: 0, line: 1, col: 1 }
+}
+
+function flowc_lexer_bump(lex: ptr<Lexer>) {
+    let c: i32 = lex[0].input[lex[0].pos]
+    lex[0].pos = lex[0].pos + 1
+    if c == 10 {
+        lex[0].line = lex[0].line + 1
+        lex[0].col = 1
+    } else {
+        lex[0].col = lex[0].col + 1
+    }
+}
+
+function flowc_lexer_skip_trivia(lex: ptr<Lexer>) {
+    while lex[0].pos < lex[0].len {
+        let c: i32 = lex[0].input[lex[0].pos]
+        if flowc_lex_is_space(c) == 1 {
+            flowc_lexer_bump(lex)
+        } else {
+            if c == 10 {
+                flowc_lexer_bump(lex)
+            } else {
+                if c == 35 {
+                    while lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] != 10 {
+                        flowc_lexer_bump(lex)
+                    }
+                } else {
+                    return
+                }
+            }
+        }
+    }
+}
+
+function flowc_lex_ident_eq(src: ptr<u8>, start: i32, end: i32, lit: ptr<u8>, lit_len: i32) -> i32 {
+    if end - start != lit_len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < lit_len {
+        if src[start + i] != lit[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    let let_kw: array<u8, 3> = [108, 101, 116]
+    let fn_kw: array<u8, 8> = [102, 117, 110, 99, 116, 105, 111, 110]
+    let ret_kw: array<u8, 6> = [114, 101, 116, 117, 114, 110]
+    let if_kw: array<u8, 2> = [105, 102]
+    let else_kw: array<u8, 4> = [101, 108, 115, 101]
+    let while_kw: array<u8, 5> = [119, 104, 105, 108, 101]
+    let for_kw: array<u8, 3> = [102, 111, 114]
+    let in_kw: array<u8, 2> = [105, 110]
+    let to_kw: array<u8, 2> = [116, 111]
+    let struct_kw: array<u8, 6> = [115, 116, 114, 117, 99, 116]
+    let mut_kw: array<u8, 3> = [109, 117, 116]
+    let extern_kw: array<u8, 6> = [101, 120, 116, 101, 114, 110]
+    let true_kw: array<u8, 4> = [116, 114, 117, 101]
+    let false_kw: array<u8, 5> = [102, 97, 108, 115, 101]
+    let null_kw: array<u8, 4> = [110, 117, 108, 108]
+    let import_kw: array<u8, 6> = [105, 109, 112, 111, 114, 116]
+    let export_kw: array<u8, 6> = [101, 120, 112, 111, 114, 116]
+    let break_kw: array<u8, 5> = [98, 114, 101, 97, 107]
+    let continue_kw: array<u8, 8> = [99, 111, 110, 116, 105, 110, 117, 101]
+    let const_kw: array<u8, 5> = [99, 111, 110, 115, 116]
+    let as_kw: array<u8, 2> = [97, 115]
+    let and_kw: array<u8, 3> = [97, 110, 100]
+    let or_kw: array<u8, 2> = [111, 114]
+    let p: ptr<u8> = let_kw
+    if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_LET }
+    p = fn_kw
+    if flowc_lex_ident_eq(src, start, end, p, 8) == 1 { return KW_FUNCTION }
+    p = ret_kw
+    if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_RETURN }
+    p = if_kw
+    if flowc_lex_ident_eq(src, start, end, p, 2) == 1 { return KW_IF }
+    p = else_kw
+    if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_ELSE }
+    p = while_kw
+    if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_WHILE }
+    p = for_kw
+    if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_FOR }
+    p = in_kw
+    if flowc_lex_ident_eq(src, start, end, p, 2) == 1 { return KW_IN }
+    p = to_kw
+    if flowc_lex_ident_eq(src, start, end, p, 2) == 1 { return KW_TO }
+    p = struct_kw
+    if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_STRUCT }
+    p = mut_kw
+    if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_MUT }
+    p = extern_kw
+    if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_EXTERN }
+    p = true_kw
+    if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_TRUE }
+    p = false_kw
+    if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_FALSE }
+    p = null_kw
+    if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_NULL }
+    p = import_kw
+    if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_IMPORT }
+    p = export_kw
+    if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_EXPORT }
+    p = break_kw
+    if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_BREAK }
+    p = continue_kw
+    if flowc_lex_ident_eq(src, start, end, p, 8) == 1 { return KW_CONTINUE }
+    p = const_kw
+    if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_CONST }
+    p = as_kw
+    if flowc_lex_ident_eq(src, start, end, p, 2) == 1 { return KW_AS }
+    p = and_kw
+    if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_AND }
+    p = or_kw
+    if flowc_lex_ident_eq(src, start, end, p, 2) == 1 { return KW_OR }
+    return 0
+}
+
+export function flowc_lexer_next(lex: ptr<Lexer>) -> Token {
+    flowc_lexer_skip_trivia(lex)
+    let start: i32 = lex[0].pos
+    let line: i32 = lex[0].line
+    let col: i32 = lex[0].col
+
+    if lex[0].pos >= lex[0].len {
+        return flowc_make_tok(TOK_EOF, 0, start, start, line, col)
+    }
+
+    let c: i32 = lex[0].input[lex[0].pos]
+
+    if flowc_lex_is_alpha(c) == 1 {
+        flowc_lexer_bump(lex)
+        while lex[0].pos < lex[0].len and flowc_lex_is_alnum(lex[0].input[lex[0].pos]) == 1 {
+            flowc_lexer_bump(lex)
+        }
+        let end: i32 = lex[0].pos
+        let kw: i32 = flowc_lex_classify_keyword(lex[0].input, start, end)
+        if kw != 0 {
+            return flowc_make_tok(TOK_KEYWORD, kw, start, end, line, col)
+        }
+        return flowc_make_tok(TOK_IDENT, 0, start, end, line, col)
+    }
+
+    if flowc_lex_is_digit(c) == 1 {
+        flowc_lexer_bump(lex)
+        while lex[0].pos < lex[0].len and flowc_lex_is_digit(lex[0].input[lex[0].pos]) == 1 {
+            flowc_lexer_bump(lex)
+        }
+        let mut is_float: i32 = 0
+        if lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] == 46 {
+            if lex[0].pos + 1 < lex[0].len and flowc_lex_is_digit(lex[0].input[lex[0].pos + 1]) == 1 {
+                is_float = 1
+                flowc_lexer_bump(lex)
+                while lex[0].pos < lex[0].len and flowc_lex_is_digit(lex[0].input[lex[0].pos]) == 1 {
+                    flowc_lexer_bump(lex)
+                }
+            }
+        }
+        let end: i32 = lex[0].pos
+        if is_float == 1 {
+            return flowc_make_tok(TOK_FLOAT, 0, start, end, line, col)
+        }
+        return flowc_make_tok(TOK_INT, 0, start, end, line, col)
+    }
+
+    if c == 34 {
+        flowc_lexer_bump(lex)
+        while lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] != 34 {
+            if lex[0].input[lex[0].pos] == 92 and lex[0].pos + 1 < lex[0].len {
+                flowc_lexer_bump(lex)
+            }
+            flowc_lexer_bump(lex)
+        }
+        if lex[0].pos < lex[0].len {
+            flowc_lexer_bump(lex)
+            return flowc_make_tok(TOK_STRING, 0, start, lex[0].pos, line, col)
+        }
+        return flowc_make_tok(TOK_ERROR, 0, start, lex[0].pos, line, col)
+    }
+
+    let n1: i32 = 0
+    if lex[0].pos + 1 < lex[0].len {
+        n1 = lex[0].input[lex[0].pos + 1]
+    }
+    if c == 45 and n1 == 62 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_ARROW, 0, start, start + 2, line, col)
+    }
+    if c == 61 and n1 == 61 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_EQEQ, 0, start, start + 2, line, col)
+    }
+    if c == 33 and n1 == 61 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_NE, 0, start, start + 2, line, col)
+    }
+    if c == 60 and n1 == 61 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_LE, 0, start, start + 2, line, col)
+    }
+    if c == 62 and n1 == 61 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_GE, 0, start, start + 2, line, col)
+    }
+    if c == 38 and n1 == 38 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_AMPAMP, 0, start, start + 2, line, col)
+    }
+    if c == 124 and n1 == 124 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_BARBAR, 0, start, start + 2, line, col)
+    }
+
+    flowc_lexer_bump(lex)
+    if c == 40 { return flowc_make_tok(TOK_LPAREN, 0, start, start + 1, line, col) }
+    if c == 41 { return flowc_make_tok(TOK_RPAREN, 0, start, start + 1, line, col) }
+    if c == 123 { return flowc_make_tok(TOK_LBRACE, 0, start, start + 1, line, col) }
+    if c == 125 { return flowc_make_tok(TOK_RBRACE, 0, start, start + 1, line, col) }
+    if c == 91 { return flowc_make_tok(TOK_LBRACK, 0, start, start + 1, line, col) }
+    if c == 93 { return flowc_make_tok(TOK_RBRACK, 0, start, start + 1, line, col) }
+    if c == 58 { return flowc_make_tok(TOK_COLON, 0, start, start + 1, line, col) }
+    if c == 44 { return flowc_make_tok(TOK_COMMA, 0, start, start + 1, line, col) }
+    if c == 59 { return flowc_make_tok(TOK_SEMI, 0, start, start + 1, line, col) }
+    if c == 46 and n1 == 46 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_DOTDOT, 0, start, start + 2, line, col)
+    }
+    if c == 46 { return flowc_make_tok(TOK_DOT, 0, start, start + 1, line, col) }
+    if c == 61 { return flowc_make_tok(TOK_EQ, 0, start, start + 1, line, col) }
+    if c == 60 { return flowc_make_tok(TOK_LT, 0, start, start + 1, line, col) }
+    if c == 62 { return flowc_make_tok(TOK_GT, 0, start, start + 1, line, col) }
+    if c == 43 { return flowc_make_tok(TOK_PLUS, 0, start, start + 1, line, col) }
+    if c == 45 { return flowc_make_tok(TOK_MINUS, 0, start, start + 1, line, col) }
+    if c == 42 { return flowc_make_tok(TOK_STAR, 0, start, start + 1, line, col) }
+    if c == 47 { return flowc_make_tok(TOK_SLASH, 0, start, start + 1, line, col) }
+    if c == 37 { return flowc_make_tok(TOK_PERCENT, 0, start, start + 1, line, col) }
+    if c == 33 { return flowc_make_tok(TOK_BANG, 0, start, start + 1, line, col) }
+    if c == 38 { return flowc_make_tok(TOK_AMP, 0, start, start + 1, line, col) }
+    return flowc_make_tok(TOK_ERROR, 0, start, start + 1, line, col)
+}
+
+export function flowc_token_is_kw(tok: Token, kw: i32) -> i32 {
+    if tok.kind == TOK_KEYWORD and tok.kw == kw {
+        return 1
+    }
+    return 0
+}

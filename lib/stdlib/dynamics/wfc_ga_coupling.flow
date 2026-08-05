@@ -85,7 +85,7 @@ function couple_ga_wfc_guidance(
 }
 
 function wfc_run_guided(grid: WFCGrid, tile_count: i32, guide: CoupledGuidance) -> WFCRunReport {
-    let steps: i32 = wfc_run_collapse(grid, tile_count, guide.seed, guide.max_steps)
+    let mut steps: i32 = wfc_run_collapse(grid, tile_count, guide.seed, guide.max_steps)
     let collapsed: i32 = wfc_count_collapsed(grid)
     let walls: f64 = wfc_wall_fraction(grid)
     let ent: f64 = wfc_mean_entropy(grid, tile_count)
@@ -98,7 +98,7 @@ function wfc_run_guided(grid: WFCGrid, tile_count: i32, guide: CoupledGuidance) 
 }
 
 function dsys_scale_input(sys: DynamicalSystem, scale: f64, b_buf: ptr<f64>) -> DynamicalSystem {
-    let n: i32 = sys.n
+    let mut n: i32 = sys.n
     let m: i32 = sys.m
     let Bs: Matrix = matrix_zeros(b_buf, n, m)
     for i in 0 to n {
@@ -120,7 +120,7 @@ function guided_layout_rollout_energy(
     state_bias: f64,
     steps: i32
 ) -> f64 {
-    let n: i32 = closed.n
+    let mut n: i32 = closed.n
     let x: array<f64, 8> = [1.0 + state_bias, state_bias, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let xn: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let u: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
@@ -147,9 +147,9 @@ function guide_state_evolution(
     let scaled: DynamicalSystem = dsys_scale_input(plant, guide.b_scale, b_buf)
     let closed: DynamicalSystem = ga_closed_loop_matrix(scaled, k1, k2, acl_buf, bk_buf)
     let bias: f64 = layout_state_bias(wfc, guide)
-    let energy: f64 = guided_layout_rollout_energy(closed, bias, steps)
+    let mut energy: f64 = guided_layout_rollout_energy(closed, bias, steps)
     let rho: f64 = matrix_spectral_radius_2x2(closed.A)
-    let stable: i32 = 0
+    let mut stable: i32 = 0
     if rho < 1.0 {
         stable = 1
     }

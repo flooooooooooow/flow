@@ -1,13 +1,4 @@
-#include <stdint.h>
-#include <time.h>
-
-// Provides jit_time() for native builds (seconds as f64)
-double jit_time() {
-    struct timespec ts;
-#if defined(CLOCK_MONOTONIC)
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-#else
-    clock_gettime(CLOCK_REALTIME, &ts);
-#endif
-    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
-}
+/* Moved to lib/runtime/time.flow — linked via ./flow always-transpile pack.
+ * Thin clock helper: runtime/flow_rt_support.c (flow_rt_monotonic_timespec).
+ */
+#error "runtime/flow_time.c removed; use lib/runtime/time.flow (see docs/project/runtime-in-flow.md)"

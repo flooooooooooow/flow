@@ -1,0 +1,67 @@
+# Sample for GitHub Linguist — sourced from https://github.com/flooooooooooow/flow/blob/main/examples/concurrency/channels.flow
+# License: MIT (same as the Flow repository)
+#
+# Go-style channels — real send/recv/close (pthread mutex + condvar)
+# Run: ./flow run examples/concurrency/channels.flow
+# See docs/language/concurrency-vs-go.md
+
+import "stdlib/concurrent.flow"
+
+function main() -> i32 {
+    printf("Channel demo\n")
+    let mut ch: Channel_i32 = channel_i32_new(4)
+    let chp: ptr<Channel_i32> = &ch
+
+    if !channel_i32_send(chp, 10) {
+        printf("FAIL: send 10\n")
+        return 1
+    }
+    if !channel_i32_send(chp, 20) {
+        printf("FAIL: send 20\n")
+        return 2
+    }
+    if !channel_i32_try_send(chp, 30) {
+        printf("FAIL: try_send 30\n")
+        return 3
+    }
+
+    let mut a: i32 = 0
+    let mut b: i32 = 0
+    if !channel_i32_recv(chp, &a) {
+        printf("FAIL: recv a\n")
+        return 4
+    }
+    if !channel_i32_try_recv(chp, &b) {
+        printf("FAIL: try_recv b\n")
+        return 5
+    }
+    printf("  recv %d, %d (expect 10, 20)\n", a, b)
+    if a != 10 or b != 20 {
+        return 6
+    }
+
+    channel_i32_close(chp)
+    if channel_i32_send(chp, 99) {
+        printf("FAIL: send on closed channel should fail\n")
+        return 7
+    }
+
+    # Drain remaining
+    let mut c: i32 = 0
+    if !channel_i32_recv(chp, &c) {
+        printf("FAIL: drain after close\n")
+        return 8
+    }
+    printf("  drained %d (expect 30)\n", c)
+    if c != 30 {
+        return 9
+    }
+    if channel_i32_recv(chp, &c) {
+        printf("FAIL: recv on empty closed channel should fail\n")
+        return 10
+    }
+
+    channel_i32_destroy(chp)
+    printf("OK\n")
+    return 0
+}

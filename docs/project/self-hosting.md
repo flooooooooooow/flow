@@ -85,6 +85,13 @@ Expand `flowc` until it parses/emits everything the **compiler sources themselve
 
 **Exit:** `FLOWC_BUNDLE=1` builds all of `compiler/src` without `FLOWC_TYPECHECK=0` hacks except documented externs.
 
+**Progress (2026-08-05):** inferred `let` (no `: Type`), larger resolve/emit
+src+AST caps, and `FLOWC_BUNDLE=1` typecheck of `compiler/src/main.flow` green.
+Dogfood `compile_module` / self-emit / frontend bundles no longer force
+`FLOWC_TYPECHECK=0` (imports seed names). Typecheck diagnostics print
+`flowc tc: file` + path and `flowc tc: at line:col`. Remaining: close #151
+when Phase B exit criteria are fully met (match / richer string ops as needed).
+
 ### Phase C — `flowc` replaces Python for `./flow run|build`  *(done — soft cutover)*
 
 - Thin `./flow` shim: `FLOW_HOST=flowc` (default) | `python` | `auto`.

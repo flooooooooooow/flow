@@ -1,0 +1,38 @@
+# Crypto self-test via always-linked lib/runtime/crypto.flow
+
+extern {
+    function printf(fmt: string) -> i32
+    function flow_sha256(data: ptr<void>, len: i64, out: ptr<void>) -> void
+    function flow_random_bytes(buf: ptr<void>, len: i64) -> i32
+}
+
+function main() -> i32 {
+    # SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    let mut out: array<u8, 32> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let want: array<u8, 32> = [
+        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
+        0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
+        0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55
+    ]
+    let empty: ptr<void> = null
+    flow_sha256(empty, 0, out)
+    let mut i: i32 = 0
+    while i < 32 {
+        if out[i] != want[i] {
+            printf("sha256 empty FAIL\n")
+            return 1
+        }
+        i = i + 1
+    }
+    let mut rnd: array<u8, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if flow_random_bytes(rnd, 16) != 0 {
+        printf("random FAIL\n")
+        return 2
+    }
+    printf("crypto runtime ok\n")
+    return 0
+}

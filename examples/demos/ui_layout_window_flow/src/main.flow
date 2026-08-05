@@ -1,0 +1,86 @@
+import "stdlib/ui_layout.flow"
+import "stdlib/ui2d.flow"
+
+function min_i32(a: i32, b: i32) -> i32 { if a < b { return a } return b }
+
+function draw_grid(ui: Ui2D, cols: i32, rows: i32, unit: i32, color: Color) -> void {
+    let w: i32 = cols * unit
+    let h: i32 = rows * unit
+    let i: i32 = 0
+    while i <= cols {
+        let x: i32 = i * unit
+        ui2d_fill_rect(ui, x, 0, 1, h, color)
+        i = i + 1
+    }
+    let j: i32 = 0
+    while j <= rows {
+        let y: i32 = j * unit
+        ui2d_fill_rect(ui, 0, y, w, 1, color)
+        j = j + 1
+    }
+}
+
+function draw_labeled_rect(ui: Ui2D, rect: UiRect, unit: i32, color: Color, label: i32, debug: bool) -> void {
+    let x: i32 = rect.x * unit
+    let y: i32 = rect.y * unit
+    let w: i32 = rect.w * unit
+    let h: i32 = rect.h * unit
+    ui2d_fill_rect(ui, x, y, w, h, color)
+    if label > 0 {
+        let scale: i32 = 3
+        ui2d_draw_number(ui, x + 6, y + 6, label, scale, rgb(240, 240, 240))
+    }
+    if debug {
+        print(label)
+        print(": ")
+        print(rect.x)
+        print(",")
+        print(rect.y)
+        print(" ")
+        print(rect.w)
+        print("x")
+        println(rect.h)
+    }
+}
+
+function main() -> i32 {
+    let ui: Ui2D = ui2d_init("Flow Layout UI", 900, 600)
+    if ui.should_quit { return 1 }
+
+    let frames: array<UiLayoutFrame, 32> = [UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }, UiLayoutFrame{ x: 0, y: 0, w: 0, h: 0, kind: 0, cols: 0, rows: 0, gap: 0, pad: 0, justify_x: 0, justify_y: 0, index: 0 }]
+    let state_store: array<UiLayoutState, 1> = [UiLayoutState{ frames: frames, top: 0, unit: 1.0, win_w: 0.0, win_h: 0.0 }]
+    ui_layout_bind(state_store)
+
+    let current: Ui2D = ui
+    let unit_px: i32 = min_i32(900 / 30, 600 / 20)
+    let mut printed: bool = false
+    while !current.should_quit {
+        current = ui2d_poll(current)
+        ui2d_begin(current, rgb(15, 16, 20))
+
+        ui_layout_set_view(_ui_state, 900.0, 600.0)
+        draw_grid(current, 30, 20, unit_px, rgb(26, 28, 34))
+        ui_layout(30, 20, 1) {
+            ui_row(3, 1, 1, UI_JUSTIFY_CENTER) {
+                draw_labeled_rect(current, ui_box(_ui_state), unit_px, rgb(40, 42, 52), 1, !printed)
+                draw_labeled_rect(current, ui_box(_ui_state), unit_px, rgb(60, 64, 78), 2, !printed)
+                draw_labeled_rect(current, ui_box(_ui_state), unit_px, rgb(48, 52, 66), 3, !printed)
+            }
+            ui_grid(2, 2, 1, 1, UI_JUSTIFY_CENTER, UI_JUSTIFY_CENTER) {
+                draw_labeled_rect(current, ui_box(_ui_state), unit_px, rgb(80, 92, 120), 4, !printed)
+                draw_labeled_rect(current, ui_box(_ui_state), unit_px, rgb(72, 84, 110), 5, !printed)
+                draw_labeled_rect(current, ui_box(_ui_state), unit_px, rgb(92, 104, 132), 6, !printed)
+                draw_labeled_rect(current, ui_box(_ui_state), unit_px, rgb(64, 74, 98), 7, !printed)
+            }
+            ui_row(1, 0, 0, UI_JUSTIFY_CENTER) {
+                draw_labeled_rect(current, ui_box(_ui_state), unit_px, rgb(30, 32, 40), 8, !printed)
+            }
+        }
+        if !printed { printed = true }
+
+        ui2d_end(current)
+    }
+
+    ui2d_shutdown(current)
+    return 0
+}

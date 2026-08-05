@@ -1,0 +1,22 @@
+# FLOW_RACE=1 lock-order detector demo
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
+# Run: FLOW_RACE=1 ./flow run examples/concurrency/race_hooks.flow
+
+import "stdlib/concurrent.flow"
+
+function main() -> i32 {
+    printf("race hooks demo\n")
+    let mut a: Mutex = mutex_new()
+    let mut b: Mutex = mutex_new()
+    mutex_lock(&a)
+    mutex_lock(&b)
+    mutex_unlock(&b)
+    mutex_unlock(&a)
+    # Inverse order — with FLOW_RACE=1 prints lock-order warning to stderr
+    mutex_lock(&b)
+    mutex_lock(&a)
+    mutex_unlock(&a)
+    mutex_unlock(&b)
+    printf("OK\n")
+    return 0
+}

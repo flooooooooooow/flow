@@ -36,7 +36,7 @@ function test_bus_mix() -> bool {
 
     # Put signal on bus0
     let buf0: AudioBufferF32 = g.buses[0].buffer
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 4 {
         audio_buffer_set_f32(buf0, i, 0, 1.0)
         audio_buffer_set_f32(buf0, i, 1, 1.0)
@@ -48,7 +48,7 @@ function test_bus_mix() -> bool {
 
     bus_graph_clear_buses(g2)
     # Restore bus0 input
-    let j: i32 = 0
+    let mut j: i32 = 0
     while j < 4 {
         audio_buffer_set_f32(g2.buses[0].buffer, j, 0, 1.0)
         audio_buffer_set_f32(g2.buses[0].buffer, j, 1, 1.0)
@@ -64,8 +64,8 @@ function test_bus_mix() -> bool {
 }
 
 function main() -> i32 {
-    let passed: i32 = 0
-    let failed: i32 = 0
+    let mut passed: i32 = 0
+    let mut failed: i32 = 0
     printf("=== Audio Bus Graph Tests ===\n\n")
 
     if test_bus_mix() { printf("✓ bus_mix\n"); passed = passed + 1 }

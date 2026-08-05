@@ -362,3 +362,22 @@ def test_c_backend_keeps_extern_calls_unmangled():
     assert "int64_t cuda_malloc(int32_t size);" in c
     assert "cuda_malloc(16)" in c
     assert "cuda_malloc_i32" not in c
+
+
+def test_bare_null_arg_mangles_to_callee_ptr_param():
+    """Bare null is ptr_void; call sites must still select ptr<T> mangling."""
+    c = flow_to_c(
+        parse_flow_code(
+            """
+            function flowc_tc_init(src: ptr<u8>) -> i32 {
+                return 0
+            }
+
+            function main() -> i32 {
+                return flowc_tc_init(null)
+            }
+            """
+        )
+    )
+    assert "flowc_tc_init_ptr_u8(NULL)" in c
+    assert "flowc_tc_init(NULL)" not in c

@@ -2,8 +2,8 @@
 import "stdlib/ml_opt.flow"
 
 function main() -> i32 {
-    let params: ptr<f32> = malloc(16)
-    let grads: ptr<f32> = malloc(16)
+    let mut params: ptr<f32> = malloc(16)
+    let mut grads: ptr<f32> = malloc(16)
     params[0] = 1.0
     params[1] = 2.0
     params[2] = 3.0

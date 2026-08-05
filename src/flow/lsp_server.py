@@ -237,6 +237,12 @@ class FlowLanguageServer:
             result = self._handle_prepare_rename(params)
         elif method == 'textDocument/rename':
             result = self._handle_rename(params)
+        elif method == 'textDocument/formatting':
+            result = self._handle_formatting(params)
+        elif method == 'textDocument/rangeFormatting':
+            result = self._handle_range_formatting(params)
+        elif method == 'textDocument/documentHighlight':
+            result = self._handle_document_highlight(params)
 
         return result
 
@@ -257,10 +263,13 @@ class FlowLanguageServer:
                 'documentSymbolProvider': True,
                 'referencesProvider': True,
                 'renameProvider': {'prepareProvider': True},
+                'documentFormattingProvider': True,
+                'documentRangeFormattingProvider': True,
+                'documentHighlightProvider': True,
             },
             'serverInfo': {
                 'name': 'flow-lsp',
-                'version': '0.1.0',
+                'version': '0.2.0',
             }
         }
     
@@ -420,6 +429,9 @@ class FlowLanguageServer:
         src = text
         try:
             from .dynamics_dsl import has_dynamics_dsl, expand_dynamics_dsl
+            from .field_dsl import has_field_dsl, expand_field_dsl
+            if has_field_dsl(src):
+                src = expand_field_dsl(src)
             if has_dynamics_dsl(src):
                 src = expand_dynamics_dsl(src)
         except Exception:
@@ -2028,6 +2040,65 @@ class FlowLanguageServer:
                 'newText': new_name,
             })
         return {'changes': changes}
+
+    def _format_document_text(self, text: str) -> Optional[str]:
+        """Return formatted source, or None if formatting fails / is a no-op."""
+        try:
+            from .formatter import Formatter
+            formatted = Formatter().format_file(text)
+        except Exception:
+            return None
+        if formatted == text:
+            return None
+        # Ensure trailing newline (common editor expectation)
+        if formatted and not formatted.endswith('\n'):
+            formatted += '\n'
+        return formatted
+
+    def _full_document_edit(self, text: str, new_text: str) -> List[dict]:
+        lines = text.split('\n')
+        end_line = max(0, len(lines) - 1)
+        end_char = len(lines[end_line]) if lines else 0
+        return [{
+            'range': {
+                'start': {'line': 0, 'character': 0},
+                'end': {'line': end_line, 'character': end_char},
+            },
+            'newText': new_text,
+        }]
+
+    def _handle_formatting(self, params: dict) -> List[dict]:
+        """Handle textDocument/formatting via the Flow Formatter."""
+        uri = params['textDocument']['uri']
+        text = self.documents.get(uri, '')
+        formatted = self._format_document_text(text)
+        if formatted is None:
+            return []
+        return self._full_document_edit(text, formatted)
+
+    def _handle_range_formatting(self, params: dict) -> List[dict]:
+        """Range formatting: format the whole file (AST formatter is whole-doc)."""
+        return self._handle_formatting(params)
+
+    def _handle_document_highlight(self, params: dict) -> List[dict]:
+        """Highlight all occurrences of the symbol under the cursor."""
+        uri = params['textDocument']['uri']
+        text = self.documents.get(uri, '')
+        if not text:
+            return []
+        pos = params['position']
+        word = self._get_word_at_position(text, pos['line'], pos['character'])
+        if not word or not self._is_valid_identifier(word):
+            return []
+        if word in self.reserved_names:
+            return []
+        highlights = []
+        for loc in self._find_references_in_text(text, word):
+            highlights.append({
+                'range': loc['range'],
+                'kind': 1,  # Text
+            })
+        return highlights
 
     def _get_word_at_position(self, text: str, line: int, character: int) -> str:
         """Get the word at a given position in the text."""

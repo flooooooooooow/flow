@@ -83,11 +83,12 @@ If you don't have Emscripten installed:
 ```
 wasm/
 ├── flow_to_wasm.py      # Main converter script
+├── flow_wasm.py         # Flow → C → Emscripten compiler
 ├── wasm_build_system.py # Batch build system
 ├── demo_wasm_build.py   # Demo builder
+├── hello_harness.c      # Minimal emcc smoke harness
 ├── README.md            # This file
-├── wasm_demo/           # Pre-built demos
-└── wasm_examples/       # Generated examples
+└── wasm_examples/       # Browser gallery (HTML + generated C)
 ```
 
 ## Usage Examples
