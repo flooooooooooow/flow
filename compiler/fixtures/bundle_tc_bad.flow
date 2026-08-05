@@ -1,0 +1,6 @@
+# Bundle typecheck FAIL: undefined call; FLOWC_BUNDLE=1 with typecheck on should reject.
+import .bundle_lib { N, twice }
+
+function main() -> i32 {
+    return no_such(N)
+}

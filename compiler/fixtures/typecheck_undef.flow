@@ -1,0 +1,6 @@
+# Stage-A typecheck fixture (bad): undefined identifier `y`.
+# FLOWC_TYPECHECK=1 must reject before cgen.
+
+function main() -> i32 {
+    return y
+}

@@ -1,0 +1,9 @@
+# Stage-A cgen round-trip: address-of + ptr index → exit 42.
+
+function main() -> i32 {
+    let mut x: i32 = 40
+    let mut y: i32 = 2
+    let px: ptr<i32> = &x
+    let py: ptr<i32> = &y
+    return px[0] + py[0]
+}
