@@ -1,0 +1,184 @@
+# Bitmap font: 5x7 glyphs for printable ASCII (32..126).
+#
+# Renderer-agnostic on purpose. This module only answers "which pixels are lit
+# for this character", so it drives windowed graphics (stdlib/text.flow), the
+# headless recorder, and GIF frames alike.
+#
+# Each glyph is 7 rows; each row is the low 5 bits of a u8, MSB-of-5 leftmost:
+# bit 4 is the leftmost column, bit 0 the rightmost.
+
+const FONT_W: i32 = 5
+const FONT_H: i32 = 7
+const FONT_FIRST: i32 = 32
+const FONT_LAST: i32 = 126
+
+# 95 characters x 7 rows.
+let mut FONT_ROWS: array<u8, 665> = [
+        0, 0, 0, 0, 0, 0, 0,
+        4, 4, 4, 4, 4, 0, 4,
+        10, 10, 0, 0, 0, 0, 0,
+        10, 31, 10, 10, 31, 10, 0,
+        4, 15, 20, 14, 5, 30, 4,
+        25, 25, 2, 4, 8, 19, 19,
+        12, 18, 20, 8, 21, 18, 13,
+        4, 4, 0, 0, 0, 0, 0,
+        2, 4, 8, 8, 8, 4, 2,
+        8, 4, 2, 2, 2, 4, 8,
+        0, 21, 14, 31, 14, 21, 0,
+        0, 4, 4, 31, 4, 4, 0,
+        0, 0, 0, 0, 12, 4, 8,
+        0, 0, 0, 31, 0, 0, 0,
+        0, 0, 0, 0, 0, 12, 12,
+        1, 2, 2, 4, 8, 8, 16,
+        14, 17, 19, 21, 25, 17, 14,
+        4, 12, 4, 4, 4, 4, 14,
+        14, 17, 1, 2, 4, 8, 31,
+        31, 2, 4, 2, 1, 17, 14,
+        2, 6, 10, 18, 31, 2, 2,
+        31, 16, 30, 1, 1, 17, 14,
+        6, 8, 16, 30, 17, 17, 14,
+        31, 1, 2, 4, 8, 8, 8,
+        14, 17, 17, 14, 17, 17, 14,
+        14, 17, 17, 15, 1, 2, 12,
+        0, 12, 12, 0, 12, 12, 0,
+        0, 12, 12, 0, 12, 4, 8,
+        2, 4, 8, 16, 8, 4, 2,
+        0, 0, 31, 0, 31, 0, 0,
+        8, 4, 2, 1, 2, 4, 8,
+        14, 17, 1, 2, 4, 0, 4,
+        14, 17, 23, 21, 23, 16, 14,
+        14, 17, 17, 31, 17, 17, 17,
+        30, 17, 17, 30, 17, 17, 30,
+        14, 17, 16, 16, 16, 17, 14,
+        28, 18, 17, 17, 17, 18, 28,
+        31, 16, 16, 30, 16, 16, 31,
+        31, 16, 16, 30, 16, 16, 16,
+        14, 17, 16, 23, 17, 17, 15,
+        17, 17, 17, 31, 17, 17, 17,
+        14, 4, 4, 4, 4, 4, 14,
+        7, 2, 2, 2, 2, 18, 12,
+        17, 18, 20, 24, 20, 18, 17,
+        16, 16, 16, 16, 16, 16, 31,
+        17, 27, 21, 21, 17, 17, 17,
+        17, 17, 25, 21, 19, 17, 17,
+        14, 17, 17, 17, 17, 17, 14,
+        30, 17, 17, 30, 16, 16, 16,
+        14, 17, 17, 17, 21, 18, 13,
+        30, 17, 17, 30, 20, 18, 17,
+        15, 16, 16, 14, 1, 1, 30,
+        31, 4, 4, 4, 4, 4, 4,
+        17, 17, 17, 17, 17, 17, 14,
+        17, 17, 17, 17, 17, 10, 4,
+        17, 17, 17, 21, 21, 27, 17,
+        17, 17, 10, 4, 10, 17, 17,
+        17, 17, 10, 4, 4, 4, 4,
+        31, 1, 2, 4, 8, 16, 31,
+        14, 8, 8, 8, 8, 8, 14,
+        16, 8, 8, 4, 2, 2, 1,
+        14, 2, 2, 2, 2, 2, 14,
+        4, 10, 17, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 31,
+        8, 4, 0, 0, 0, 0, 0,
+        0, 0, 14, 1, 15, 17, 15,
+        16, 16, 30, 17, 17, 17, 30,
+        0, 0, 14, 16, 16, 17, 14,
+        1, 1, 15, 17, 17, 17, 15,
+        0, 0, 14, 17, 31, 16, 14,
+        6, 9, 8, 30, 8, 8, 8,
+        0, 15, 17, 17, 15, 1, 14,
+        16, 16, 30, 17, 17, 17, 17,
+        4, 0, 12, 4, 4, 4, 14,
+        2, 0, 6, 2, 2, 18, 12,
+        16, 16, 18, 20, 24, 20, 18,
+        12, 4, 4, 4, 4, 4, 14,
+        0, 0, 26, 21, 21, 17, 17,
+        0, 0, 30, 17, 17, 17, 17,
+        0, 0, 14, 17, 17, 17, 14,
+        0, 30, 17, 17, 30, 16, 16,
+        0, 15, 17, 17, 15, 1, 1,
+        0, 0, 22, 25, 16, 16, 16,
+        0, 0, 15, 16, 14, 1, 30,
+        8, 8, 30, 8, 8, 9, 6,
+        0, 0, 17, 17, 17, 19, 13,
+        0, 0, 17, 17, 17, 10, 4,
+        0, 0, 17, 17, 21, 21, 10,
+        0, 0, 17, 10, 4, 10, 17,
+        0, 17, 17, 17, 15, 1, 14,
+        0, 0, 31, 2, 4, 8, 31,
+        6, 4, 4, 8, 4, 4, 6,
+        4, 4, 4, 4, 4, 4, 4,
+        12, 4, 4, 2, 4, 4, 12,
+        0, 0, 13, 18, 0, 0, 0
+    ]
+
+export function font_char_width() -> i32 {
+    return FONT_W
+}
+
+export function font_char_height() -> i32 {
+    return FONT_H
+}
+
+# Row bit pattern for `ch` at `row` (0..6). Unknown characters render blank.
+export function font_glyph_row(ch: i32, row: i32) -> u8 {
+    if row < 0 or row >= FONT_H {
+        return 0
+    }
+    if ch < FONT_FIRST or ch > FONT_LAST {
+        return 0
+    }
+    let idx: i32 = (ch - FONT_FIRST) * FONT_H + row
+    return FONT_ROWS[idx]
+}
+
+# True when the glyph for `ch` lights the pixel at (col, row).
+export function font_pixel(ch: i32, col: i32, row: i32) -> bool {
+    if col < 0 or col >= FONT_W {
+        return false
+    }
+    let bits: u8 = font_glyph_row(ch, row)
+    let shift: i32 = FONT_W - 1 - col
+    return ((bits as i32) >> shift) % 2 == 1
+}
+
+# Width in pixels of `s` drawn at `scale`, including one blank column between
+# characters (no trailing gap).
+export function font_text_width(s: string, scale: i32) -> i32 {
+    if scale <= 0 {
+        return 0
+    }
+    let bytes: ptr<u8> = s as ptr<u8>
+    let mut n: i32 = 0
+    while bytes[n] != 0 {
+        n = n + 1
+    }
+    if n == 0 {
+        return 0
+    }
+    return n * (FONT_W + 1) * scale - scale
+}
+
+export function font_text_height(scale: i32) -> i32 {
+    if scale <= 0 {
+        return 0
+    }
+    return FONT_H * scale
+}
+
+# Digits needed to render `n` (a lone minus sign counts as one).
+export function font_int_width(n: i32, scale: i32) -> i32 {
+    if scale <= 0 {
+        return 0
+    }
+    let mut digits: i32 = 1
+    let mut v: i32 = n
+    if v < 0 {
+        digits = digits + 1
+        v = 0 - v
+    }
+    while v >= 10 {
+        digits = digits + 1
+        v = v / 10
+    }
+    return digits * (FONT_W + 1) * scale - scale
+}

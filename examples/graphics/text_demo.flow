@@ -1,0 +1,50 @@
+# Text rendering: full character set, scales, alignment, numeric helpers.
+# Run: ./flow gfx examples/graphics/text_demo.flow
+# Record: FLOW_GFX_RECORD_FRAMES=40 ./flow record examples/graphics/text_demo.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+function main() -> i32 {
+    let g: Gfx = gfx_open(640, 420, "Flow text rendering")
+    let mut frame: i32 = 0
+    while frame < 100000 {
+        if !gfx_frame_pump(g) {
+            frame = 100000
+        } else {
+            gfx_clear(g, 12, 14, 22)
+
+            gfx_draw_text(g, 20, 20, "FLOW TEXT RENDERING", 3, 240, 240, 255)
+            gfx_draw_text(g, 20, 56, "stdlib/font.flow + stdlib/text.flow", 1, 150, 160, 190)
+
+            gfx_draw_text(g, 20, 90, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 2, 120, 220, 255)
+            gfx_draw_text(g, 20, 116, "abcdefghijklmnopqrstuvwxyz", 2, 120, 255, 190)
+            gfx_draw_text(g, 20, 142, "0123456789 !\"#$%&'()*+,-./", 2, 255, 210, 120)
+            gfx_draw_text(g, 20, 168, ":;<=>?@[]^_`{|}~", 2, 255, 150, 180)
+
+            gfx_draw_text(g, 20, 210, "scale 1 - the small print", 1, 200, 200, 210)
+            gfx_draw_text(g, 20, 226, "scale 2", 2, 200, 200, 210)
+            gfx_draw_text(g, 20, 252, "scale 3", 3, 200, 200, 210)
+
+            gfx_draw_text(g, 320, 210, "left", 2, 180, 220, 255)
+            gfx_draw_text_centered(g, 480, 236, "centered", 2, 180, 220, 255)
+            gfx_draw_text_right(g, 620, 262, "right", 2, 180, 220, 255)
+            gfx_fill_rect(g, 480, 200, 1, 90, 60, 70, 90)
+            gfx_fill_rect(g, 620, 200, 1, 90, 60, 70, 90)
+
+            gfx_draw_text(g, 20, 300, "SCORE", 2, 160, 170, 200)
+            gfx_draw_int(g, 110, 300, frame * 17, 2, 255, 255, 255)
+            gfx_draw_text(g, 20, 328, "TIME", 2, 160, 170, 200)
+            gfx_draw_int_padded(g, 110, 328, frame % 60, 2, 2, 255, 255, 255)
+            gfx_draw_text(g, 20, 356, "RATE", 2, 160, 170, 200)
+            gfx_draw_fixed(g, 110, 356, 59.94, 2, 2, 255, 255, 255)
+            gfx_draw_text_right(g, 620, 356, "right-aligned score:", 1, 160, 170, 200)
+            gfx_draw_int_right(g, 620, 372, 1234567, 2, 255, 230, 120)
+
+            gfx_present(g)
+            frame = frame + 1
+        }
+    }
+    gfx_close(g)
+    return 0
+}
