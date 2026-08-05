@@ -108,6 +108,7 @@ Fundamental algorithms demonstrating Flow syntax:
 - `bubble_sort.flow` - Array manipulation
 - `prime_numbers.flow` - Loops and conditionals
 - `result_pipeline.flow` - Option/Result-style error chaining
+- `pipeline_placeholder.flow` - `|>` pipeline with `_` argument placeholder
 - `match_enums.flow` - `match` on a simple enum
 
 ### Games (`games/`)

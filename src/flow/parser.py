@@ -3355,11 +3355,12 @@ class Parser:
                 continue
             rhs = self.parse_logical_or()
             if isinstance(rhs, FunctionCall):
-                lhs_arg = left
-                left = FunctionCall(rhs.name, [lhs_arg] + list(rhs.arguments))
+                args = self._insert_pipe_arg(left, list(rhs.arguments))
+                left = FunctionCall(rhs.name, args)
             elif isinstance(rhs, MethodCall):
-                # `x |> obj.m()` -> `obj.m(x)`
-                left = MethodCall(rhs.object, rhs.method, [left] + list(rhs.arguments))
+                # `x |> obj.m()` -> `obj.m(x)`; `x |> obj.m(_, y)` -> `obj.m(x, y)`
+                args = self._insert_pipe_arg(left, list(rhs.arguments))
+                left = MethodCall(rhs.object, rhs.method, args)
             elif isinstance(rhs, Variable):
                 # Bare function name: `x |> f` -> `f(x)`
                 left = FunctionCall(rhs.name, [left])
@@ -3371,6 +3372,35 @@ class Parser:
                 )
 
         return left
+
+    @staticmethod
+    def _is_pipe_placeholder(expr: Expression) -> bool:
+        """A bare `_` in a piped call marks where the piped value goes."""
+        return isinstance(expr, Variable) and expr.name == "_"
+
+    def _insert_pipe_arg(
+        self, piped: Expression, args: List[Expression]
+    ) -> List[Expression]:
+        """Position the piped value inside a `|>` call's argument list.
+
+        Default (no placeholder): prepend, so `x |> f(y)` -> `f(x, y)`.
+        With a `_` placeholder: substitute at that slot, so
+        `x |> clamp(0.0, _, 1.0)` -> `clamp(0.0, x, 1.0)`. The placeholder
+        keeps the piped value out of the leading position when a later
+        argument is the natural pipe target. Exactly one `_` is allowed;
+        more than one is rejected since the piped value would be duplicated.
+        """
+        holes = [i for i, a in enumerate(args) if self._is_pipe_placeholder(a)]
+        if not holes:
+            return [piped] + args
+        if len(holes) > 1:
+            raise self.error(
+                "Pipeline placeholder '_' may appear at most once per '|>' stage "
+                "(found {}); the piped value fills a single slot".format(len(holes))
+            )
+        out = list(args)
+        out[holes[0]] = piped
+        return out
 
     def _at_declarative_sort(self) -> bool:
         tok = self.current_token
