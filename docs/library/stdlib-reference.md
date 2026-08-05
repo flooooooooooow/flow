@@ -18,6 +18,7 @@ this page covers the subset below. See also [memory.md](memory.md),
 8. [concurrent.flow](#concurrentflow)
 9. [async.flow](#asyncflow)
 10. [autodiff.flow](#autodiffflow)
+11. [gif.flow](#gifflow)
 
 ---
 
@@ -511,3 +512,21 @@ struct Dual { val: f32, grad: f32 }
 Overloaded `add` / `sub` / `mul` / `neg` and helpers (`sigmoid`, `ln`, …)
 are also exported — see the source for the full list. GPU elementwise
 backward kernels: `lib/stdlib/gpu_gradients.flow`.
+
+---
+
+## gif.flow
+
+GIF89a animated encoder in pure Flow (`lib/stdlib/gif.flow`). Fixed
+256-entry palette (6x7x6 RGB cube plus 4 grays), GIF-variant LZW
+compression, NETSCAPE2.0 infinite loop. State lives in module statics, so
+one file can be open at a time. See spec section 10.7.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `gif_begin` | `(string, i32, i32, i32) -> i32` | Open path, write header + palette + loop extension; delay in centiseconds |
+| `gif_add_frame_rgb` | `(ptr<u8>, i32, i32) -> i32` | Add one RGB24 row-major frame (dims must match `gif_begin`) |
+| `gif_end` | `() -> i32` | Write trailer, close file |
+| `gif_map_rgb` | `(i32, i32, i32) -> i32` | Nearest palette index for a 24-bit color |
+
+All functions return 0 on success. Example: `examples/graphics/gif_writer.flow`.
