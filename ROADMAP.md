@@ -168,6 +168,26 @@ a proof corpus, not the showcase.
 | Live graph hot-swap handle | ✅ | Live coding |
 | RT-safety policy (no-alloc audio thread) | ✅ partial — [docs/library/rt-safety.md](docs/library/rt-safety.md) | Policy + checklist documented; `@rt_safe` attribute now compile-time enforces no direct/transitive `malloc`/`calloc`/`realloc`/`free`/`arena_create`/`arena_destroy` calls (#134); device/file/GPU/lock policy still unchecked |
 
+### ✨ Pattern adoption (less code, cooler surfaces)
+
+Canonical demos should use shipped `flow` / `evolves` / AD / BLAS instead of
+hand-rolled C-shaped loops. API sketches live in
+[pattern-adoption.md](docs/project/pattern-adoption.md). Open items below sync to GitHub
+`[roadmap]` issues via `scripts/sync_roadmap.py`.
+
+| Task | Status | Impact |
+|------|--------|--------|
+| Canonicalize evolution demos onto flow/evolves | 🔲 [#159](https://github.com/flooooooooooow/flow/issues/159) | Demote hand RK4; README/STATUS lead with `*_evolves` / `*_rk4` / `when` |
+| gfx_run frame helper | 🔲 [#164](https://github.com/flooooooooooow/flow/issues/164) | Kill poll/clear/present ceremony in Lorenz/Tetris/2048/cartpole |
+| Lorenz as flow + represent phase_portrait | 🔲 [#165](https://github.com/flooooooooooow/flow/issues/165) | Wow demo matches VISION north-star; no `nxt[]` copy loop |
+| Route linalg examples through blas.flow | 🔲 [#168](https://github.com/flooooooooooow/flow/issues/168) | Thin LU/solve wrappers; pedagogical loops marked secondary |
+| Wire ML demos through Dual / grad codegen | 🔲 [#170](https://github.com/flooooooooooow/flow/issues/170) | Honest AD story; drop hand `dense_backward` from tourist XOR |
+| Owned HttpResponse + JSON decode helpers | 🔲 [#167](https://github.com/flooooooooooow/flow/issues/167) | `http_get` returns owned body; cache app loses buf/len ceremony |
+| Dynamics DSL / LQR beyond n=2 | 🔲 [#162](https://github.com/flooooooooooow/flow/issues/162) | Cartpole drops private 4×4 Riccati; prefer stdlib `lqr` then DSL |
+| Field / laplacian PDE surface | 🔲 [#163](https://github.com/flooooooooooow/flow/issues/163) | `heat_diffusion` → `T evolves as α * laplacian(T)` |
+| Dual + Tensor operators + mutable params | 🔲 [#161](https://github.com/flooooooooooow/flow/issues/161) | `a * b` on Dual; kill `param_set` rebuilds in `nn.flow` |
+| Closed-loop plant.step from dsys/connect | 🔲 [#160](https://github.com/flooooooooooow/flow/issues/160) | Analysis plant and sim share one steppable model |
+
 ### 🧹 Repository Cleanup
 
 The repo has accumulated stray files, empty stubs, and misplaced artifacts. This section tracks the cleanup plan.
