@@ -753,11 +753,10 @@ These are explicitly out of scope:
 
 | Version | Target | Key Features |
 |---------|--------|--------------|
-| **0.3.0** | shipped | Feature-complete core |
-| **0.3.1** | next | Stabilization, docs polish, version unification |
-| **0.4.0** | later | Tooling upgrades (LSP refs/rename/diagnostics), perf/MLIR polish |
-| **0.5.0** | later | Self-hosting Phase A–C (`flowc` default host); ecosystem experiments |
-| **1.0.0** | when earned | “Boring” stability + real-world validation + Python off compile path |
+| **0.7.0** | tagged | Security audit closure (98/98), CI hardening |
+| **0.8.0** | **current** | Official public release: Pages docs, `flowc` Stage-A, ordering/GPU/shaders, Homebrew |
+| **0.9.0** | later | Self-hosting Phase C (`flowc` default host) |
+| **1.0.0** | when earned | “Boring” stability + Python off compile path |
 
 ---
 

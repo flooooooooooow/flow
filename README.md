@@ -1,12 +1,24 @@
 # Flow Programming Language
 
-[![CI](https://github.com/abhishekshivakumar/transpile/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekshivakumar/transpile/actions/workflows/ci.yml)
+[![CI](https://github.com/flooooooooooow/flow/actions/workflows/ci.yml/badge.svg)](https://github.com/flooooooooooow/flow/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-0A7EA4)](https://flooooooooooow.github.io/flow/)
+[![Release](https://img.shields.io/github/v/release/flooooooooooow/flow?include_prereleases&sort=semver)](https://github.com/flooooooooooow/flow/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 <img src="docs/assets/flow-mascot.png" alt="Flowy the Hedgehog" width="180" align="right">
 
-A statically-typed, compiled language for describing **systems that evolve through time** — with **algebraic effects**, **automatic differentiation**, **native dynamics/control analysis**, and **native graphics**.
+**Flow** is a statically typed, compiled programming language for describing **systems that evolve through time** — with **algebraic effects**, **automatic differentiation**, **dynamics / control analysis**, and **native graphics**.
 
-> **Why Flow exists:** see [VISION.md](VISION.md) — evolution as the primary abstraction.
+| | |
+|--|--|
+| **Docs** | [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) |
+| **Version** | **0.8.0** |
+| **License** | MIT |
+| **Install** | Clone + `./flow run …` (Homebrew tap coming with the release formula) |
+
+> **Why Flow exists:** [VISION](VISION.md) — evolution as the primary abstraction.  
+> **Self-hosting:** [plan](docs/project/self-hosting.md) · Stage-A `flowc` lives in [`compiler/`](compiler/).
+> **Governance:** [GOVERNANCE.md](GOVERNANCE.md) · **Cite:** [CITATION.cff](CITATION.cff)
 
 ```flow
 function main() -> i32 {
@@ -16,7 +28,7 @@ function main() -> i32 {
 ```
 
 ```bash
-./flow run hello.flow
+flow run hello.flow
 ```
 
 ---
@@ -37,12 +49,16 @@ function main() -> i32 {
 ## Quick Start
 
 ```bash
-git clone https://github.com/flow-lang/flow.git
+git clone https://github.com/flooooooooooow/flow.git
 cd flow
 ./flow run examples/basics/hello_world.flow
 ```
 
-**Requirements:** Python 3.8+, Clang or GCC
+**Requirements:** Python 3.9+, Clang or GCC (Xcode Command Line Tools on macOS).
+
+Optional: `./flow install` places `flow` on your PATH (`~/.local/bin`).
+
+**Cite:** [CITATION.cff](CITATION.cff). **Security:** [SECURITY.md](SECURITY.md). **Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ---
 

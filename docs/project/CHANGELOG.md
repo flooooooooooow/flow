@@ -405,6 +405,28 @@ docs/
 - **Windows**: CUDA backend support (OpenCL planned)
 - **Cross-Platform**: Automatic GPU backend detection
 
+## [0.8.0] - 2026-08-05
+
+### Official public release
+
+First annotated git tags and GitHub Releases for Flow. Documentation ships from
+[GitHub Pages](https://flooooooooooow.github.io/flow/). VPS wiki deploy is disabled.
+
+### Added
+- **Self-hosting bootstrap (`flowc`)** — Flow-written Stage-A compiler under `compiler/` (lexer, parser, AST, cgen, typecheck, resolve, roundtrip/self-emit). Plan: `docs/project/self-hosting.md`.
+- **Declarative ordering** — `xs |> sort` / `sortBy` (Phase 1).
+- **GPU / unified memory** + fill-shader surface language.
+- **Dynamics namespaces**, connect composition, `always`/`never` constraints, units, RK4 solver path.
+- **GitHub Pages** wiki deploy (`.github/workflows/wiki.yml`); community files (`CODE_OF_CONDUCT`, `SECURITY`, `CITATION.cff`).
+- **Homebrew tap** packaging (when `packaging/homebrew` lands on `main`)
+### Changed
+- Docs homepage and badges point at `flooooooooooow/flow`.
+- Version metadata aligned to **0.8.0** (`flow.toml`, `pyproject.toml`, wiki hero).
+
+### Notes
+- Production compiler remains Python (`src/flow/`) with `flowc` as the self-host ladder (Phases A–E on the roadmap).
+- Prior unreleased notes below are folded into this cut.
+
 ## [0.7.0] - 2026-02-09
 
 ### Security Audit & Hardening
@@ -470,6 +492,6 @@ See the [GitHub Issues](https://github.com/flooooooooooow/flow/issues) page for 
 ## [Unreleased]
 
 ### Planned
-- **Regression Coverage**: Add tests for audit fixes to prevent regressions
-- **Developer Experience**: Improve diagnostics and error recovery
-- **Package Manager Integration**
+- Self-hosting Phases B–E (`flowc` default host)
+- Package registry beyond git deps
+- Custom domain for docs
