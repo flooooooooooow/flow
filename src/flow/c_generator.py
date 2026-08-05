@@ -1525,7 +1525,15 @@ class CGenerator:
             return [f"{self._i()}continue;"]
 
         # Expression statement
-        if isinstance(
+        if self._is_bare_expr_stmt(st):
+            return [f"{self._i()}{self._gen_expr(st)};"]
+
+        raise NotImplementedError(f"Unsupported statement: {type(st)}")
+
+    @staticmethod
+    def _is_bare_expr_stmt(st: object) -> bool:
+        """True if `st` is an expression used as a statement (not a control stmt)."""
+        return isinstance(
             st,
             (
                 Literal,
@@ -1536,11 +1544,17 @@ class CGenerator:
                 EffectCall,
                 MethodCall,
                 SortExpr,
+                FieldAccess,
+                ArrayAccess,
+                CastExpression,
+                TryExpr,
+                StructLiteral,
+                ArrayLiteral,
+                VectorLiteral,
+                Lambda,
+                RecordUpdate,
             ),
-        ):
-            return [f"{self._i()}{self._gen_expr(st)};"]
-
-        raise NotImplementedError(f"Unsupported statement: {type(st)}")
+        )
 
     def _gen_if(self, st: IfStatement) -> List[str]:
         lines: List[str] = []
@@ -2160,7 +2174,10 @@ class CGenerator:
         if isinstance(e, UnaryOperation):
             op = e.operator
             if op == "!" or op == "not":
-                return f"(!{self._gen_expr(e.operand)})"
+                # Operand needs its own parens: comparisons are emitted
+                # without an outer group, so `(!x < 10)` would mean
+                # `(!x) < 10` without this.
+                return f"(!({self._gen_expr(e.operand)}))"
             if op == "-":
                 return f"(-{self._gen_expr(e.operand)})"
             if op == "~":
@@ -2269,6 +2286,14 @@ class CGenerator:
                 return (
                     f'({{ __typeof__({arg_expr}) {tmp} = {arg_expr}; '
                     f'fprintf(stderr, "dbg: %s\\n", {rendered}); {tmp}; }})'
+                )
+            # Runtime invariant trap for flow always/never (north-star §5.4).
+            # Uses exit(1) like `expect` (not abort) so captured subprocess
+            # runs do not hang behind a crash reporter on macOS.
+            if e.name == "flow_panic" and len(e.arguments) == 1:
+                msg = self._gen_expr(e.arguments[0])
+                return (
+                    f'(fprintf(stderr, "%s\\n", {msg}), exit(1))'
                 )
             # Handle len() builtin for arrays and slices
             if e.name == "len":
@@ -2670,11 +2695,24 @@ class CGenerator:
 
         # Infer the return type of expression-body lambdas without an
         # explicit annotation so `|x| x * 2` returns a value in C.
+        # Block bodies whose last statement is a bare expression get the
+        # same treatment: `|y| { x + y }` is an implicit return.
         flow_ret = e.return_type
-        if flow_ret is None and not isinstance(e.body, Block):
-            inferred = self._infer_expr_type(e.body)
-            if inferred is not None and inferred.name != "auto":
-                flow_ret = inferred
+        block_tail_expr = None
+        if isinstance(e.body, Block) and e.body.statements:
+            last = e.body.statements[-1]
+            if not isinstance(last, ReturnStatement) and self._is_bare_expr_stmt(last):
+                block_tail_expr = last
+        if flow_ret is None:
+            infer_from = None
+            if not isinstance(e.body, Block):
+                infer_from = e.body
+            elif block_tail_expr is not None:
+                infer_from = block_tail_expr
+            if infer_from is not None:
+                inferred = self._infer_expr_type(infer_from)
+                if inferred is not None and inferred.name not in ("auto", "void"):
+                    flow_ret = inferred
         ret_type = self._c_type(flow_ret) if flow_ret else "void"
 
         param_parts = []
@@ -2702,7 +2740,15 @@ class CGenerator:
         try:
             if isinstance(e.body, Block):
                 body_lines = []
-                for stmt in e.body.statements:
+                stmts = list(e.body.statements)
+                if (
+                    block_tail_expr is not None
+                    and ret_type != "void"
+                    and stmts
+                    and stmts[-1] is block_tail_expr
+                ):
+                    stmts[-1] = ReturnStatement(block_tail_expr)
+                for stmt in stmts:
                     for line in self._gen_statement(stmt):
                         body_lines.append(line.lstrip())
             else:

@@ -1,0 +1,89 @@
+# ROBOT COMPOSITION via `connect`. Nested flow members wired by
+# `connect { a.out -> b.in }` (docs/vision/north-star.md §8, card: connect).
+#
+# Motor is a first-order plant; Controller is a sampled P controller that
+# writes a state (`cmd`) so the feedback loop is state-broken (legal) rather
+# than an algebraic loop through a combinational output map. Robot_step
+# copies connected ports in topo order, then steps each child with the
+# parent's dt.
+#
+# Stage-1: unconnected child inputs (here `controller.setpoint`) are
+# embedder-driven before Robot_step. Parent re-export / `becomes` into
+# child inputs is NOT YET.
+#
+# Run: ./flow run examples/evolution/robot_connect.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+flow Motor {
+    state speed : f64 = 0.0
+    input voltage : f64
+    output speed_out : f64 = speed
+    param damping : f64 = 0.5
+
+    speed evolves as voltage - damping * speed
+}
+
+flow Controller {
+    state cmd : f64 = 0.0
+    input setpoint : f64
+    input feedback : f64
+    output command : f64 = cmd
+    param kp : f64 = 2.0
+
+    every 1 ms {
+        cmd becomes kp * (setpoint - feedback)
+    }
+}
+
+flow Robot {
+    plant : Motor
+    controller : Controller
+
+    connect {
+        controller.command -> plant.voltage
+        plant.speed_out -> controller.feedback
+    }
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.001
+    let steps: i32 = 5000
+    let print_every: i32 = 1000
+    let target: f64 = 1.0
+
+    let mut robot: Robot = Robot_new()
+    robot.controller.setpoint = target
+
+    println("")
+    println("  ROBOT connect  --  controller.command -> plant.voltage")
+    println("  =====================================================")
+    println("")
+    println("      t [s]     speed      command")
+    println("    -------  ---------  ----------")
+
+    for k in 0 to steps + 1 {
+        let t: f64 = (k as f64) * dt
+        if k % print_every == 0 {
+            print("    ")
+            printf("%7.2f", t)
+            printf("  %9.4f", robot.plant.speed)
+            printf("  %10.4f", robot.controller.cmd)
+            println("")
+        }
+        Robot_step(&robot, dt)
+    }
+
+    let err: f64 = fabs(robot.plant.speed - target)
+    println("")
+    if err < 0.05 {
+        println("  OK: plant speed settled near setpoint")
+        return 0
+    }
+    println("  FAIL: plant speed did not settle near setpoint")
+    printf("  |speed - target| = %f\n", err)
+    return 1
+}

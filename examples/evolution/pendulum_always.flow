@@ -1,0 +1,65 @@
+# PENDULUM with runtime-checked angle bounds (`always { }`).
+#
+# Same continuous model as pendulum_evolves.flow, plus an `always` block
+# that traps if |angle| leaves (-π, π). The compiler lowers the clauses
+# into Pendulum_check and calls it at the end of every Pendulum_step
+# (after events and outputs). A violation calls flow_panic → abort.
+#
+# Spec: docs/vision/north-star.md §5.4 (card: constraints).
+# Run: ./flow run examples/evolution/pendulum_always.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+flow Pendulum {
+    state angle    : f64 = 2.0
+    state velocity : f64 = 0.0
+    param gravity  : f64 = 9.81
+    param length   : f64 = 1.0
+    param damping  : f64 = 0.5
+
+    angle evolves as velocity
+    velocity evolves as -(gravity / length) * sin(angle) - damping * velocity
+
+    always {
+        angle < 3.15
+        angle > -3.15
+    }
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.001
+    let steps: i32 = 24000
+
+    let mut p: Pendulum = Pendulum_new()
+
+    println("")
+    println("  PENDULUM  --  always { |angle| < 3.15 }")
+    println("  ========================================")
+    println("")
+
+    for k in 0 to steps {
+        Pendulum_step(&p, dt)
+    }
+
+    print("    final angle    : ")
+    printf("%.6f rad", p.angle)
+    println("")
+    print("    final velocity : ")
+    printf("%.6f rad/s", p.velocity)
+    println("")
+
+    if fabs(p.angle) > 0.02 or fabs(p.velocity) > 0.02 {
+        println("    FAIL: pendulum did not settle")
+        return 1
+    }
+    if Pendulum_check(&p) != 0 {
+        println("    FAIL: invariants broken at rest")
+        return 2
+    }
+    println("    OK: settled inside always bounds")
+    return 0
+}
