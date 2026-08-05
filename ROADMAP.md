@@ -179,7 +179,7 @@ hand-rolled C-shaped loops. API sketches live in
 |------|--------|--------|
 | Canonicalize evolution demos onto flow/evolves | ✅ [#159](https://github.com/flooooooooooow/flow/issues/159) | Demote hand RK4; README leads with `*_evolves` / `*_rk4` / `when` |
 | gfx_run frame helper | ✅ [#164](https://github.com/flooooooooooow/flow/issues/164) | `gfx_frame_pump` + runtime `flow_gfx_run` / `gfx_run` |
-| Lorenz as flow + represent phase_portrait | ✅ partial [#165](https://github.com/flooooooooooow/flow/issues/165) | `flow Lorenz` + rk4 + `gfx_frame_pump` + `dynamics/portrait.flow` trail; grammar `represent phase_portrait` still open |
+| Lorenz as flow + represent phase_portrait | ✅ [#165](https://github.com/flooooooooooow/flow/issues/165) | `flow Lorenz` + rk4 + `represent phase_portrait` → `{Name}_portrait_frame` |
 | Route linalg examples through blas.flow | ✅ [#168](https://github.com/flooooooooooow/flow/issues/168) | `getrf`/`lu_factor` + tourist `lu_decomposition.flow` via `solve`; hand LU → pedagogical twin |
 | Wire ML demos through Dual / grad codegen | ✅ [#170](https://github.com/flooooooooooow/flow/issues/170) | Tourist XOR uses `nn_autogen`; hand backprop → `mlp_xor_from_scratch.flow` |
 | Owned HttpResponse + JSON decode helpers | ✅ [#167](https://github.com/flooooooooooow/flow/issues/167) | `HttpBody` + `http_get` / `http_body_free`; live cache app drops buf ceremony |

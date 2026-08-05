@@ -299,6 +299,85 @@ class TestRepresentLinear:
         assert "represent linear" not in out
 
 
+REPRESENT_PHASE_PORTRAIT = """
+import "stdlib/gfx.flow"
+import "stdlib/dynamics/portrait.flow"
+
+flow Lorenz {
+    state x : f64 = 1.0
+    state z : f64 = 1.0
+    x evolves as 0.0
+    z evolves as 0.0
+
+    represent phase_portrait(x, z) {
+        trail 320
+        window 900, 700
+        map x in [-25, 25] -> col
+        map z in [0, 55] -> row
+    }
+}
+
+function main() -> i32 {
+    return 0
+}
+"""
+
+
+class TestRepresentPhasePortrait:
+    def test_strips_and_parses_portrait(self):
+        program, stripped = parse_dynamics_dsl(REPRESENT_PHASE_PORTRAIT)
+        assert "represent phase_portrait" not in stripped
+        assert len(program.portraits) == 1
+        p = program.portraits[0]
+        assert p.flow_name == "Lorenz"
+        assert p.axis0 == "x"
+        assert p.axis1 == "z"
+        assert p.trail == 320
+        assert p.win_w == 900
+        assert p.maps["x"] == (-25.0, 25.0, "col")
+        assert p.maps["z"] == (0.0, 55.0, "row")
+
+    def test_expand_emits_portrait_frame(self):
+        out = expand_dynamics_dsl(REPRESENT_PHASE_PORTRAIT)
+        assert "Lorenz_portrait_frame" in out
+        assert "Lorenz_portrait_trail" in out
+        assert "trail_push_2d" in out
+        assert "project_axis" in out
+        assert "    represent phase_portrait" not in out
+        # row axis inverts for screen y
+        assert "project_axis(zs[idx], 55.0, 0.0" in out
+
+    def test_portrait_outside_flow_errors(self):
+        src = (
+            "represent phase_portrait(x, z) {\n"
+            "    trail 10\n"
+            "    window 100, 100\n"
+            "    map x in [0, 1] -> col\n"
+            "    map z in [0, 1] -> row\n"
+            "}\n"
+            "function main() -> i32 { return 0 }\n"
+        )
+        with pytest.raises(SyntaxError, match="inside"):
+            parse_dynamics_dsl(src)
+
+    def test_portrait_missing_map_errors(self):
+        src = (
+            "flow F {\n"
+            "    state x : f64 = 0.0\n"
+            "    state z : f64 = 0.0\n"
+            "    x evolves as 0.0\n"
+            "    represent phase_portrait(x, z) {\n"
+            "        trail 10\n"
+            "        window 100, 100\n"
+            "        map x in [0, 1] -> col\n"
+            "    }\n"
+            "}\n"
+            "function main() -> i32 { return 0 }\n"
+        )
+        with pytest.raises(SyntaxError, match="need map for both"):
+            parse_dynamics_dsl(src)
+
+
 class TestDynamicsDSLWFC:
     def test_parse_wfc_and_couple(self):
         program, stripped = parse_dynamics_dsl(WFC_SAMPLE)
