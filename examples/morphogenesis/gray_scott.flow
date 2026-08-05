@@ -1,0 +1,323 @@
+# GRAY-SCOTT REACTION-DIFFUSION: the canonical morphogenesis model.
+#
+# MODEL
+#   Two chemicals diffuse and react. U is fed in from outside, V consumes it
+#   in the autocatalytic reaction U + 2V -> 3V, and both are removed. The
+#   whole of pattern formation lives in two numbers: the feed rate F and the
+#   kill rate k.
+#
+#     du/dt = Du * lap(u) - u*v^2 + F * (1 - u)
+#     dv/dt = Dv * lap(v) + u*v^2 - (F + k) * v
+#
+#   Those two lines appear verbatim in the `flow GrayScottCell` block below.
+#   The compiler turns them into GrayScottCell_step; the grid loop supplies
+#   each cell's laplacian and steps it forward by dt. This is VISION.md's
+#   claim in miniature: the mathematical model is the executable program.
+#
+# NUMERICS
+#   Du = 1.0, Dv = 0.5, dt = 1.0, nine-point laplacian with weights
+#   (center -1, orthogonal 0.2, diagonal 0.05), periodic boundaries.
+#   128 x 128 grid, 40 Euler steps per displayed frame.
+#
+# PARAMETERS / KEYS
+#   1  SOLITONS   F 0.030  k 0.062     dividing dots that stop dividing
+#   2  MITOSIS    F 0.0367 k 0.0649    cells that split forever
+#   3  CORAL      F 0.0545 k 0.062     branching reef fronts
+#   4  MAZE       F 0.029  k 0.057     labyrinth of equal-width stripes
+#   5  HOLES      F 0.039  k 0.058     inverse spots punched out of a sheet
+#   R  reseed     P  pause             Esc quit
+#
+# PHENOMENON
+#   One reaction, one grid, one integrator. Changing F and k alone moves the
+#   field between dots, stripes, mazes and endlessly dividing blobs.
+#
+# Run: ./flow gfx examples/morphogenesis/gray_scott.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 40
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+const KEY_5: i32 = 23
+
+# ---------------------------------------------------------------------------
+# The model. Two equations; everything else in this file is scaffolding.
+# ---------------------------------------------------------------------------
+
+flow GrayScottCell {
+    state u : f64 = 1.0
+    state v : f64 = 0.0
+
+    param lap_u : f64 = 0.0     # supplied per cell by the grid loop
+    param lap_v : f64 = 0.0
+    param du    : f64 = 1.0     # diffusion of the substrate
+    param dv    : f64 = 0.5     # diffusion of the autocatalyst
+    param feed  : f64 = 0.035
+    param kill  : f64 = 0.065
+
+    solver { dt 1 s  method euler }
+
+    u evolves as du * lap_u - u * v * v + feed * (1.0 - u)
+    v evolves as dv * lap_v + u * v * v - (feed + kill) * v
+}
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG
+# ---------------------------------------------------------------------------
+
+let mut rng_state: u32 = 2463534242
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 13) % (n as u32)) as i32
+}
+
+# ---------------------------------------------------------------------------
+# Presets
+# ---------------------------------------------------------------------------
+
+function preset_feed(p: i32) -> f64 {
+    if p == 1 { return 0.0367 }
+    if p == 2 { return 0.0545 }
+    if p == 3 { return 0.029 }
+    if p == 4 { return 0.039 }
+    return 0.030
+}
+
+function preset_kill(p: i32) -> f64 {
+    if p == 1 { return 0.0649 }
+    if p == 2 { return 0.062 }
+    if p == 3 { return 0.057 }
+    if p == 4 { return 0.058 }
+    return 0.062
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "MITOSIS" }
+    if p == 2 { return "CORAL" }
+    if p == 3 { return "MAZE" }
+    if p == 4 { return "HOLES" }
+    return "SOLITONS"
+}
+
+# ---------------------------------------------------------------------------
+# Field setup and evolution
+# ---------------------------------------------------------------------------
+
+function seed_field(u: ptr<f64>, v: ptr<f64>) -> void {
+    for i in 0 to CELLS {
+        u[i] = 1.0
+        v[i] = 0.0
+    }
+    # Scattered inoculations, so pattern nucleates everywhere at once.
+    for blob in 0 to 40 {
+        let cx: i32 = rng_below(GRID)
+        let cy: i32 = rng_below(GRID)
+        for dy in -3 to 4 {
+            for dx in -3 to 4 {
+                let x: i32 = (cx + dx + GRID) % GRID
+                let y: i32 = (cy + dy + GRID) % GRID
+                let i: i32 = y * GRID + x
+                u[i] = 0.5 + 0.02 * rng_unit()
+                v[i] = 0.25 + 0.02 * rng_unit()
+            }
+        }
+    }
+}
+
+# Nine-point laplacian on a periodic lattice.
+function lap_at(f: ptr<f64>, x: i32, y: i32) -> f64 {
+    let xm: i32 = (x + GRID - 1) % GRID
+    let xp: i32 = (x + 1) % GRID
+    let ym: i32 = (y + GRID - 1) % GRID
+    let yp: i32 = (y + 1) % GRID
+    let r: i32 = y * GRID
+    let rm: i32 = ym * GRID
+    let rp: i32 = yp * GRID
+    let orth: f64 = f[r + xm] + f[r + xp] + f[rm + x] + f[rp + x]
+    let diag: f64 = f[rm + xm] + f[rm + xp] + f[rp + xm] + f[rp + xp]
+    return 0.2 * orth + 0.05 * diag - f[r + x]
+}
+
+function evolve(u: ptr<f64>, v: ptr<f64>, un: ptr<f64>, vn: ptr<f64>,
+                feed: f64, kill: f64, dt: f64) -> void {
+    let mut cell: GrayScottCell = GrayScottCell_new()
+    cell.feed = feed
+    cell.kill = kill
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            cell.u = u[i]
+            cell.v = v[i]
+            cell.lap_u = lap_at(u, x, y)
+            cell.lap_v = lap_at(v, x, y)
+            GrayScottCell_step(&cell, dt)
+            un[i] = cell.u
+            vn[i] = cell.v
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+# Deep indigo -> teal -> amber -> white as v rises.
+function shade_r(t: f64) -> i32 {
+    let mut c: f64 = 0.0
+    if t < 0.5 { c = 20.0 + 40.0 * t }
+    if t >= 0.5 { c = 40.0 + 430.0 * (t - 0.5) }
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function shade_g(t: f64) -> i32 {
+    let mut c: f64 = 24.0 + 300.0 * t
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function shade_b(t: f64) -> i32 {
+    let mut c: f64 = 48.0 + 220.0 * t
+    if t > 0.6 { c = 180.0 - 200.0 * (t - 0.6) }
+    if c < 30.0 { c = 30.0 }
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function draw_field(g: Gfx, v: ptr<f64>) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let mut t: f64 = v[y * GRID + x] * 3.2
+            if t < 0.0 { t = 0.0 }
+            if t > 1.0 { t = 1.0 }
+            gfx_fill_rect(g, x * CELL_PX, FIELD_Y + y * CELL_PX,
+                          CELL_PX, CELL_PX,
+                          shade_r(t), shade_g(t), shade_b(t))
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, feed: f64, kill: f64,
+                  steps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "GRAY-SCOTT REACTION-DIFFUSION", 2,
+                                235, 240, 250)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "PRESET ", 1, 150, 165, 190)
+    let t3: i32 = gfx_draw_text(g, 50, 28, preset_name(preset), 1, 255, 205, 110)
+    let t4: i32 = gfx_draw_text(g, 130, 28, "F", 1, 150, 165, 190)
+    let t5: i32 = gfx_draw_fixed(g, 142, 28, feed, 4, 1, 235, 240, 250)
+    let t6: i32 = gfx_draw_text(g, 200, 28, "k", 1, 150, 165, 190)
+    let t7: i32 = gfx_draw_fixed(g, 212, 28, kill, 4, 1, 235, 240, 250)
+    let t8: i32 = gfx_draw_text(g, 270, 28, "EULER STEPS", 1, 150, 165, 190)
+    let t9: i32 = gfx_draw_int(g, 342, 28, steps, 1, 235, 240, 250)
+    let ta: i32 = gfx_draw_text(g, 8, 42, "1 SOLITONS  2 MITOSIS  3 CORAL  4 MAZE  5 HOLES  R RESEED  P PAUSE",
+                                1, 110, 125, 150)
+    if paused {
+        let tb: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tc: i32 = gfx_draw_text(g, 8, 572,
+                                "u evolves as du*lap(u) - u*v^2 + F*(1-u)", 1,
+                                120, 140, 170)
+    let td: i32 = gfx_draw_text(g, 8, 582,
+                                "v evolves as dv*lap(v) + u*v^2 - (F+k)*v", 1,
+                                120, 140, 170)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    let ua: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let va: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ub: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let vb: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+
+    seed_field(ua, va)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Gray-Scott - Flow morphogenesis")
+    let dt: f64 = GrayScottCell_default_dt()
+
+    let mut preset: i32 = 0
+    let mut feed: f64 = preset_feed(preset)
+    let mut kill: f64 = preset_kill(preset)
+    let mut steps: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if gfx_key_down(g, KEY_5) { want = 4 }
+        if want >= 0 and want != preset {
+            preset = want
+            feed = preset_feed(preset)
+            kill = preset_kill(preset)
+            seed_field(ua, va)
+            steps = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(ua, va)
+                steps = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            # SUBSTEPS is even, so the field lands back in (ua, va).
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(ua, va, ub, vb, feed, kill, dt)
+                evolve(ub, vb, ua, va, feed, kill, dt)
+                steps = steps + 2
+            }
+        }
+
+        gfx_clear(g, 8, 10, 16)
+        draw_field(g, va)
+        draw_hud(g, preset, feed, kill, steps, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
