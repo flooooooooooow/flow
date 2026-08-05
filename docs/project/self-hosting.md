@@ -99,7 +99,8 @@ Expand `flowc` until it parses/emits everything the **compiler sources themselve
 
 - **Done (slice 1):** `flowc-compile` CI job downloads a Stage-A driver artifact and
   compiles Stage-A programs with **no `pip install`** (and no Gen0 bootstrap).
-  Bootstrap (`flowc-bootstrap`) still uses a bare Python interpreter for Gen0 only.
+  Bootstrap (`flowc-bootstrap`) still uses the Python host + pip for Gen0 only
+  (transpiler → gpu_runtime → numpy today).
 - Keep dynamics / shader / verify / LSP as **optional Python host plugins** via
   `FLOW_HOST=python` (see [python-in-flow.md](python-in-flow.md)).
 - Do not delete production `src/flow/*.py` until Stage-A covers their call sites
