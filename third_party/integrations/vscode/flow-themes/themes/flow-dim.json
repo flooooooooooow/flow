@@ -1,0 +1,43 @@
+{
+  "name": "Flow Dim",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#12141a",
+    "editor.foreground": "#d1d5db",
+    "editorLineNumber.foreground": "#4b5563",
+    "editor.selectionBackground": "#1f2937",
+    "editor.lineHighlightBackground": "#181b22",
+    "editorCursor.foreground": "#93c5fd",
+    "sideBar.background": "#0e1014",
+    "activityBar.background": "#0a0c10",
+    "statusBar.background": "#111827",
+    "focusBorder": "#64748b",
+    "button.background": "#3b82f6"
+  },
+  "tokenColors": [
+    {
+      "scope": ["comment"],
+      "settings": { "foreground": "#6b7280", "fontStyle": "italic" }
+    },
+    {
+      "scope": ["string"],
+      "settings": { "foreground": "#6ee7b7" }
+    },
+    {
+      "scope": ["constant.numeric", "constant.language"],
+      "settings": { "foreground": "#fcd34d" }
+    },
+    {
+      "scope": ["keyword", "storage.type"],
+      "settings": { "foreground": "#60a5fa" }
+    },
+    {
+      "scope": ["entity.name.function"],
+      "settings": { "foreground": "#93c5fd" }
+    },
+    {
+      "scope": ["keyword.control.dynamics", "keyword.other.dynamics"],
+      "settings": { "foreground": "#c4b5fd" }
+    }
+  ]
+}
