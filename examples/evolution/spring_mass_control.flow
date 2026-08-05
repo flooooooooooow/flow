@@ -2,23 +2,17 @@
 # The plant is declared once as continuous physics (`dsys ... continuous`);
 # the compiler discretizes it, `sense` proves it controllable and measures the
 # open-loop spectral radius, `ga evolve` searches feedback gains, and `closed`
-# certifies the closed loop. main() then plays both systems side by side.
-# This is the vision's model -> analyze -> control pipeline, running today.
+# certifies the closed loop. main() then plays both systems side by side
+# by rebuilding the same continuous plant through stdlib and stepping with
+# `state_step` (#160) — no hand-coded Ad/Bd Euler constants.
 #
-# North-star (VISION.md) — one day this same system reads:
-#
-#     flow SpringMass {
-#         position : Meter
-#         velocity : Meter / Second
-#
-#         position evolves as velocity
-#         velocity evolves as -(k/m) * position - (c/m) * velocity + u/m
-#     }
-#
-#     analyze SpringMass { controllability, stability }
-#     control SpringMass { objective { minimize error } }
+# Follow-on: bind the DSL's discretized `__dsys_plant` into user scope so the
+# rebuild below disappears entirely.
 #
 # Run: ./flow run examples/evolution/spring_mass_control.flow
+
+import "stdlib/dynamics/core.flow"
+import "stdlib/dynamics/state_space.flow"
 
 extern {
     function printf(fmt: string, val: f64) -> i32
@@ -26,8 +20,6 @@ extern {
 }
 
 # --- MODEL: mass-spring-damper, m = 1 kg, k = 1 N/m, c = 0.2 N s/m ---------
-#   x1' = x2
-#   x2' = -x1 - 0.2 x2 + u
 dsys plant {
     continuous
     dt 0.1
@@ -39,25 +31,38 @@ dsys plant {
 
 horizon rollout finite 60
 
-# --- ANALYZE: is the plant even controllable? How stable is it? ------------
 sense on plant {
     controllable -> plant_ok
     spectral -> rho_open
     gramian finite rollout trace -> reach_energy
 }
 
-# --- CONTROL: evolve state-feedback gains u = -k1 x1 - k2 x2 ---------------
 ga evolve on plant over rollout -> k1 k2 {
     population 16
     generations 40
     mutation 0.3
 }
 
-# --- CERTIFY: close the loop and re-analyze --------------------------------
 closed plant with k1 k2 {
     spectral -> rho_cl
     energy over rollout -> E_cl
     stable -> stable_cl
+}
+
+# Same continuous coefficients as the `dsys plant` block above.
+function spring_mass_discrete() -> DynamicalSystem {
+    let A_buf: array<f64, 4> = [0.0, 1.0, -1.0, -0.2]
+    let B_buf: array<f64, 2> = [0.0, 1.0]
+    let C_buf: array<f64, 2> = [1.0, 0.0]
+    let Ad_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let Bd_buf: array<f64, 2> = [0.0, 0.0]
+    let id_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let sc_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let A: Matrix = Matrix { data: A_buf, rows: 2, cols: 2 }
+    let B: Matrix = Matrix { data: B_buf, rows: 2, cols: 1 }
+    let C: Matrix = Matrix { data: C_buf, rows: 1, cols: 2 }
+    let cont: DynamicalSystem = dsys_continuous(2, 1, 1, 0.1, A, B, C)
+    return dsys_euler_discretize(cont, Ad_buf, Bd_buf, id_buf, sc_buf)
 }
 
 function main() -> i32 {
@@ -92,46 +97,38 @@ function main() -> i32 {
     if stable_cl == 1 { println("yes") } else { println("NO") }
     println("")
 
-    # --- SIMULATE: release from x = 1 m, open loop vs closed loop ----------
-    # Same Euler-discretized plant the analysis used (dt = 0.1 s).
-    let a11: f64 = 1.0
-    let a12: f64 = 0.1
-    let a21: f64 = -0.1
-    let a22: f64 = 0.98
-    let b1: f64 = 0.0
-    let b2: f64 = 0.1
-
-    let mut xo1: f64 = 1.0
-    let mut xo2: f64 = 0.0
-    let mut xc1: f64 = 1.0
-    let mut xc2: f64 = 0.0
+    let plant_d: DynamicalSystem = spring_mass_discrete()
+    let mut xo: array<f64, 2> = [1.0, 0.0]
+    let mut xc: array<f64, 2> = [1.0, 0.0]
+    let mut xn: array<f64, 2> = [0.0, 0.0]
+    let u0: array<f64, 1> = [0.0]
+    let mut u: array<f64, 1> = [0.0]
     let mut open_acc: f64 = 0.0
     let mut closed_acc: f64 = 0.0
 
-    println("  --- Step comparison: release from x = 1 m ---")
+    println("  --- Step comparison: release from x = 1 m (state_step) ---")
     println("      t [s]    open x [m]   closed x [m]")
     println("    -------   -----------   ------------")
     for k in 0 to 61 {
         if k % 6 == 0 {
             print("    ")
             printf("%7.1f", k as f64 * 0.1)
-            printf("   %11.4f", xo1)
-            printf("   %12.4f", xc1)
+            printf("   %11.4f", xo[0])
+            printf("   %12.4f", xc[0])
             println("")
         }
-        # open loop: u = 0
-        let no1: f64 = a11 * xo1 + a12 * xo2
-        let no2: f64 = a21 * xo1 + a22 * xo2
-        xo1 = no1
-        xo2 = no2
-        # closed loop: u = -k1 x1 - k2 x2
-        let u: f64 = 0.0 - k1 * xc1 - k2 * xc2
-        let nc1: f64 = a11 * xc1 + a12 * xc2 + b1 * u
-        let nc2: f64 = a21 * xc1 + a22 * xc2 + b2 * u
-        xc1 = nc1
-        xc2 = nc2
-        open_acc = open_acc + xo1 * xo1
-        closed_acc = closed_acc + xc1 * xc1
+        u0[0] = 0.0
+        state_step(plant_d, xo, u0, xn)
+        xo[0] = xn[0]
+        xo[1] = xn[1]
+
+        u[0] = 0.0 - k1 * xc[0] - k2 * xc[1]
+        state_step(plant_d, xc, u, xn)
+        xc[0] = xn[0]
+        xc[1] = xn[1]
+
+        open_acc = open_acc + xo[0] * xo[0]
+        closed_acc = closed_acc + xc[0] * xc[0]
     }
 
     println("")
@@ -143,7 +140,6 @@ function main() -> i32 {
     println("")
     println("")
 
-    # --- Self-checks -------------------------------------------------------
     if plant_ok != 1 {
         println("    FAIL: plant not controllable")
         return 1
@@ -160,10 +156,10 @@ function main() -> i32 {
         println("    FAIL: closed loop did not outperform open loop")
         return 4
     }
-    if fabs(xc1) > 0.1 {
+    if fabs(xc[0]) > 0.1 {
         println("    FAIL: closed loop did not settle within 6 s")
         return 5
     }
-    println("    OK: controllable plant, stable evolved loop, faster settling")
+    println("    OK: controllable plant, stable evolved loop, faster settling via state_step")
     return 0
 }
