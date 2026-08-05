@@ -1,0 +1,69 @@
+# testing — assert helpers + simple test runner (pure Flow)
+# Counters live in a heap block stashed in the process-global `_ui_state` slot
+# (same builtin UI layout uses). Call test_begin before asserts; do not mix with
+# ui_layout in the same process.
+
+extern {
+    function printf(fmt: string) -> i32
+    function printf(fmt: string, a: string) -> i32
+    function printf(fmt: string, a: i32, b: i32) -> i32
+    function malloc(size: i64) -> ptr<i32>
+}
+
+# Layout: [0] = pass count, [1] = fail count
+function _counters() -> ptr<i32> {
+    if _ui_state == null {
+        let p: ptr<i32> = malloc(8)
+        p[0] = 0
+        p[1] = 0
+        _ui_state = p
+    }
+    return _ui_state as ptr<i32>
+}
+
+export function test_begin(name: string) -> void {
+    let s: ptr<i32> = _counters()
+    s[0] = 0
+    s[1] = 0
+    printf("test: %s\n", name)
+}
+
+export function assert_eq_i32(a: i32, b: i32) -> i32 {
+    let s: ptr<i32> = _counters()
+    if a == b {
+        s[0] = s[0] + 1
+        return 1
+    }
+    s[1] = s[1] + 1
+    printf("FAIL assert_eq_i32: %d != %d\n", a, b)
+    return 0
+}
+
+export function assert_true(c: i32) -> i32 {
+    let s: ptr<i32> = _counters()
+    if c != 0 {
+        s[0] = s[0] + 1
+        return 1
+    }
+    s[1] = s[1] + 1
+    printf("FAIL assert_true\n")
+    return 0
+}
+
+export function test_pass_count() -> i32 {
+    return _counters()[0]
+}
+
+export function test_fail_count() -> i32 {
+    return _counters()[1]
+}
+
+# Prints pass/fail summary. Returns 0 if all passed, 1 if any failed.
+export function test_end() -> i32 {
+    let s: ptr<i32> = _counters()
+    printf("result: pass=%d fail=%d\n", s[0], s[1])
+    if s[1] == 0 {
+        return 0
+    }
+    return 1
+}
