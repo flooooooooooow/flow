@@ -57,8 +57,8 @@ function main() -> i32 {
 
 ## Remaining gaps
 
-- Full compiler multi-shot `shift`/`reset` rewrite (C `resume_multi` + fiber park ship; stack-copy restore still open)
-- HTTP/2 over ALPN (server negotiates `http/1.1` today)
+- Full compiler multi-shot `shift`/`reset` rewrite (C `resume_multi` / `clone` + stack-blob ship; true stack-frame restore still open)
+- Full HTTP/2 (HPACK dynamic table, multiplexing, server push) — minimal h2 preface/HEADERS/DATA selftest ships
 
 ## Runtime map
 
@@ -69,9 +69,9 @@ function main() -> i32 {
 | Netpoller | `runtime/flow_netpoll.c` + `flow_netpoll_fiber.c` |
 | HTTP microbench | `runtime/flow_http_bench.c` |
 | Race hooks | `runtime/flow_race.c` (`FLOW_RACE=1`); `FLOW_TSAN=1` → `-fsanitize=thread` |
-| Cont scaffold | `Cont.shift` M:N-safe; reset + `resume_multi` (`cont_multishot.flow`) |
+| Cont scaffold | `Cont.shift` M:N-safe; `resume_multi` + `clone`/stack-blob (`cont_stackcopy.flow`) |
 | HTTP routed + mw | request-id + Bearer auth; fiber-per-conn (`http_fiber.flow`) |
-| HTTPS accept-loop | OpenSSL PEM cert/key + ALPN `http/1.1` (`http_tls.flow`) |
+| HTTPS accept-loop | OpenSSL PEM + ALPN `http/1.1` + minimal `h2` (`http_tls.flow`) |
 | HTTP hello | `flow_http_serve_hello` / `examples/concurrency/http_hello.flow` |
 | HTTP client (curl) | `registry/packages/http` (GET/POST over HTTPS) |
 | POSIX sync + channels | `lib/stdlib/concurrent.flow` |
