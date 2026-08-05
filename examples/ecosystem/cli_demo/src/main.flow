@@ -1,0 +1,61 @@
+# cli package demo
+import cli.lib { cli_flag_present, cli_get_option, cli_getenv, cli_path_join }
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    let args: string = "--verbose --port 8080 input.txt"
+
+    printf("verbose=%d\n", cli_flag_present(args, "--verbose"))
+    printf("quiet=%d\n", cli_flag_present(args, "--quiet"))
+
+    let mut port_buf: array<u8, 64> = []
+    let port_ptr: ptr<u8> = port_buf
+    let port_n: i32 = cli_get_option(args, "--port", port_ptr, 64)
+    printf("port_len=%d\n", port_n)
+    # Expect "8080" → digits 8,0,8,0
+    if port_n == 4 {
+        let d0: i32 = port_ptr[0] - 48
+        let d1: i32 = port_ptr[1] - 48
+        let d2: i32 = port_ptr[2] - 48
+        let d3: i32 = port_ptr[3] - 48
+        printf("port=%d\n", d0 * 1000 + d1 * 100 + d2 * 10 + d3)
+    }
+
+    let eq_args: string = "--port=9090"
+    let eq_n: i32 = cli_get_option(eq_args, "--port", port_ptr, 64)
+    printf("eq_port_len=%d\n", eq_n)
+    if eq_n == 4 {
+        let e0: i32 = port_ptr[0] - 48
+        let e1: i32 = port_ptr[1] - 48
+        let e2: i32 = port_ptr[2] - 48
+        let e3: i32 = port_ptr[3] - 48
+        printf("eq_port=%d\n", e0 * 1000 + e1 * 100 + e2 * 10 + e3)
+    }
+
+    let mut path_buf: array<u8, 128> = []
+    let path_ptr: ptr<u8> = path_buf
+    let path_n: i32 = cli_path_join("/usr/local", "bin", path_ptr, 128)
+    printf("path_len=%d\n", path_n)
+
+    let mut env_buf: array<u8, 256> = []
+    let env_ptr: ptr<u8> = env_buf
+    let env_n: i32 = cli_getenv("PATH", env_ptr, 256)
+    if env_n < 0 {
+        # PATH may exceed 256; treat overflow/missing as absent for this check
+        let env_big: i32 = cli_getenv("HOME", env_ptr, 256)
+        if env_big < 0 {
+            printf("env_ok=%d\n", 0)
+        } else {
+            printf("env_ok=%d\n", 1)
+            printf("home_len=%d\n", env_big)
+        }
+    } else {
+        printf("env_ok=%d\n", 1)
+        printf("path_env_len=%d\n", env_n)
+    }
+
+    return 0
+}
