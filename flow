@@ -1124,7 +1124,6 @@ record_gfx_program() {
 
     if ! clang -O2 -fno-omit-frame-pointer "$c_file" \
         "$SCRIPT_DIR/runtime/gfx_record.c" \
-        "$SCRIPT_DIR/runtime/flow_time.c" \
         -o "$exe_file" -lm; then
         print_error "Recorder build failed"
         exit 1
