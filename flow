@@ -382,6 +382,11 @@ flow_runtime_flow_sources() {
         if [ "$base" = "shader_host" ]; then
             continue
         fi
+        # Recorder logic is linked only by `flow record` (runtime/gfx_record.c
+        # provides the gfx ABI there; real backends provide it everywhere else).
+        if [ "$base" = "gfx_record" ]; then
+            continue
+        fi
         # Real miniaudio backend provides flow_audio_*; skip Flow stub then.
         if [ "$base" = "audio_device_stub" ] && [ "${FLOW_SKIP_AUDIO_STUB:-}" = "1" ]; then
             continue
@@ -1123,7 +1128,19 @@ record_gfx_program() {
     fi
     print_success "FLOW → C: $(basename "$c_file")"
 
+    # Recorder logic lives in lib/runtime/gfx_record.flow; transpile just that
+    # module (the recorder stays a slim standalone build, no runtime pack).
+    local rec_logic_c="$build_dir/runtime_flow/gfx_record.c"
+    mkdir -p "$build_dir/runtime_flow"
+    if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/runtime/gfx_record.flow" \
+        --c --library --lenient -o "$rec_logic_c" 2>/dev/null; then
+        print_error "Flow runtime module failed: gfx_record.flow"
+        exit 1
+    fi
+    print_success "FLOW → C: runtime_flow/gfx_record.c"
+
     if ! clang -O2 -fno-omit-frame-pointer "$c_file" \
+        "$rec_logic_c" \
         "$SCRIPT_DIR/runtime/gfx_record.c" \
         -o "$exe_file" -lm; then
         print_error "Recorder build failed"
