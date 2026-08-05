@@ -52,16 +52,6 @@ resolve_llvm_path() {
     LLVM_PATH="/opt/homebrew/opt/llvm/bin"
 }
 
-# Auto-discover Homebrew LLVM and prepend to PATH for JIT/MLIR commands
-resolve_llvm_path
-if [ -n "$LLVM_PATH" ] && [ -d "$LLVM_PATH" ]; then
-    export LLVM_PATH
-    case ":$PATH:" in
-        *":$LLVM_PATH:"*) ;;
-        *) export PATH="$LLVM_PATH:$PATH" ;;
-    esac
-fi
-
 require_flow_file() {
     local program="${1:-}"
     if [ -z "$program" ]; then
@@ -172,6 +162,13 @@ check_deps() {
 
 check_mlir_deps() {
     resolve_llvm_path
+    export LLVM_PATH
+    if [ -d "$LLVM_PATH" ]; then
+        case ":$PATH:" in
+            *":$LLVM_PATH:"*) ;;
+            *) export PATH="$LLVM_PATH:$PATH" ;;
+        esac
+    fi
     if [ ! -x "$LLVM_PATH/mlir-opt" ]; then
         print_error "MLIR tools not found. Run './flow install' (or brew install llvm)"
         exit 1
@@ -1459,6 +1456,7 @@ run_runtime_tests() {
 # Run MLIR verification tests (optional - requires MLIR toolchain)
 run_mlir_tests() {
     print_info "Running MLIR verification tests..."
+    resolve_llvm_path
     
     # Check if MLIR tools are available
     if ! command -v "$LLVM_PATH/mlir-opt" &> /dev/null; then
@@ -1617,6 +1615,9 @@ install_deps() {
 
 # Main command dispatcher
 case "${1:-help}" in
+    "version"|"--version"|"-V")
+        echo "Flow 0.8.0"
+        ;;
     "run")
         check_deps
         run_program "${2:-}"
