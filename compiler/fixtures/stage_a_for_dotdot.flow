@@ -1,0 +1,10 @@
+# Stage-A cgen round-trip: for-loop with legacy `0..N` range syntax → exit 45.
+# Same semantics as `for i in 0 to 10` (sum 0..9).
+
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 0..10 {
+        s = s + i
+    }
+    return s
+}

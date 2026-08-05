@@ -1,0 +1,83 @@
+# @module flowc.token
+# @means  Token kinds and lexer/parser shared types for the Flow-in-Flow compiler.
+
+export const TOK_EOF: i32 = 0
+export const TOK_IDENT: i32 = 1
+export const TOK_KEYWORD: i32 = 2
+export const TOK_INT: i32 = 3
+export const TOK_FLOAT: i32 = 4
+export const TOK_STRING: i32 = 5
+export const TOK_LPAREN: i32 = 6
+export const TOK_RPAREN: i32 = 7
+export const TOK_LBRACE: i32 = 8
+export const TOK_RBRACE: i32 = 9
+export const TOK_LBRACK: i32 = 10
+export const TOK_RBRACK: i32 = 11
+export const TOK_COLON: i32 = 12
+export const TOK_COMMA: i32 = 13
+export const TOK_SEMI: i32 = 14
+export const TOK_DOT: i32 = 15
+export const TOK_ARROW: i32 = 16
+export const TOK_EQ: i32 = 17
+export const TOK_EQEQ: i32 = 18
+export const TOK_NE: i32 = 19
+export const TOK_LT: i32 = 20
+export const TOK_LE: i32 = 21
+export const TOK_GT: i32 = 22
+export const TOK_GE: i32 = 23
+export const TOK_PLUS: i32 = 24
+export const TOK_MINUS: i32 = 25
+export const TOK_STAR: i32 = 26
+export const TOK_SLASH: i32 = 27
+export const TOK_AMPAMP: i32 = 28
+export const TOK_BARBAR: i32 = 29
+export const TOK_BANG: i32 = 30
+export const TOK_ERROR: i32 = 31
+export const TOK_AMP: i32 = 32
+export const TOK_PERCENT: i32 = 33
+export const TOK_DOTDOT: i32 = 34
+
+export const KW_LET: i32 = 1
+export const KW_FUNCTION: i32 = 2
+export const KW_RETURN: i32 = 3
+export const KW_IF: i32 = 4
+export const KW_ELSE: i32 = 5
+export const KW_WHILE: i32 = 6
+export const KW_FOR: i32 = 7
+export const KW_IN: i32 = 8
+export const KW_TO: i32 = 9
+export const KW_STRUCT: i32 = 10
+export const KW_MUT: i32 = 11
+export const KW_EXTERN: i32 = 12
+export const KW_TRUE: i32 = 13
+export const KW_FALSE: i32 = 14
+export const KW_NULL: i32 = 15
+export const KW_IMPORT: i32 = 16
+export const KW_EXPORT: i32 = 17
+export const KW_BREAK: i32 = 18
+export const KW_CONTINUE: i32 = 19
+export const KW_CONST: i32 = 20
+export const KW_AS: i32 = 21
+export const KW_AND: i32 = 22
+export const KW_OR: i32 = 23
+
+export struct Token {
+    kind: i32,
+    kw: i32,
+    start: i32,
+    end: i32,
+    line: i32,
+    col: i32
+}
+
+export struct Lexer {
+    input: ptr<u8>,
+    len: i32,
+    pos: i32,
+    line: i32,
+    col: i32
+}
+
+export function flowc_make_tok(kind: i32, kw: i32, start: i32, end: i32, line: i32, col: i32) -> Token {
+    return Token { kind: kind, kw: kw, start: start, end: end, line: line, col: col }
+}
