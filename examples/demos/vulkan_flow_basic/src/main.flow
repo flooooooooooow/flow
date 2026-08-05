@@ -1,0 +1,9 @@
+import "stdlib/vulkan_renderer.flow"
+
+function main() -> i32 {
+    let mut r: Renderer = renderer_basic()
+    r = renderer_set_window(r, 800, 600, "Flow Vulkan Basic")
+    r = renderer_set_clear(r, 0.02, 0.02, 0.04)
+    r = renderer_set_trace(r, true)
+    return renderer_run(r)
+}
