@@ -1,12 +1,30 @@
-/* Interactive Flow tutorial embeds */
+/* ============================================================================
+   Interactive Flow tutorials — runner, code editor, and program walkthrough
+   ----------------------------------------------------------------------------
+   Everything here reads the theme tokens defined in wiki.css. Selectors that
+   render inside .markdown-body are deliberately two classes deep so the
+   generic `.markdown-body pre` rules cannot capture the runner's panes.
+   ========================================================================== */
+
+:root {
+    --flow-code-size: 0.82rem;
+    --flow-code-line: 21px;
+    --flow-code-pad-y: 0.85rem;
+    --flow-code-pad-x: 1rem;
+    --flow-code-gutter: 3rem;
+}
+
+/* ── Runner shell ────────────────────────────────────────────────────────── */
 
 .flow-runner {
-    margin: 1.25rem 0 1.75rem;
-    border: 1px solid var(--border-light, #30363d);
-    border-radius: var(--radius, 8px);
-    background: var(--surface-2, #161b22);
+    container-type: inline-size;
+    margin: 1.5rem 0 1.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
     overflow: hidden;
-    font-family: var(--mono, 'IBM Plex Mono', monospace);
+    font-family: var(--mono);
+    box-shadow: var(--shadow-sm);
 }
 
 .flow-runner-header {
@@ -14,17 +32,18 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    background: var(--surface, #0f1419);
-    border-bottom: 1px solid var(--border, #21262d);
+    padding: 0.5rem 0.5rem 0.5rem 0.9rem;
+    background: var(--surface-3);
+    border-bottom: 1px solid var(--border);
 }
 
 .flow-runner-title {
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted, #8b949e);
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
 }
 
 .flow-runner-actions {
@@ -36,148 +55,481 @@
 .flow-runner-status {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.4rem;
+    font-family: var(--sans);
     font-size: 0.72rem;
-    color: var(--text-faint, #6e7681);
+    color: var(--text-muted);
 }
 
 .flow-runner-dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--text-faint, #6e7681);
+    background: var(--text-faint);
 }
 
-.flow-runner-dot.running { background: var(--accent, #4493f8); animation: flow-pulse 1s infinite; }
-.flow-runner-dot.ok { background: var(--green, #3fb950); }
-.flow-runner-dot.err { background: #f85149; }
+.flow-runner-dot.running { background: var(--accent); animation: flow-pulse 1s infinite; }
+.flow-runner-dot.ok { background: var(--green); }
+.flow-runner-dot.err { background: var(--danger); }
 
 @keyframes flow-pulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    50% { opacity: 0.35; }
 }
 
 .flow-runner-btn {
-    padding: 0.3rem 0.65rem;
-    border-radius: 6px;
-    border: 1px solid var(--border-light, #30363d);
-    background: var(--surface-2, #161b22);
-    color: var(--text, #e6edf3);
+    padding: 0.32rem 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--sans);
     font-size: 0.78rem;
-    font-family: inherit;
+    font-weight: 550;
     cursor: pointer;
+    transition: all var(--fast);
 }
 
 .flow-runner-btn:hover {
-    border-color: var(--accent, #4493f8);
-    color: var(--accent, #4493f8);
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
 }
 
 .flow-runner-btn-primary {
-    background: var(--accent-soft, rgba(68, 147, 248, 0.12));
-    border-color: var(--accent, #4493f8);
-    color: var(--accent, #4493f8);
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+    font-weight: 650;
+}
+
+.flow-runner-btn-primary:hover {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: var(--on-accent);
+}
+
+.flow-runner-btn:disabled,
+.flow-runner-btn:disabled:hover {
+    opacity: 0.45;
+    cursor: not-allowed;
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text-muted);
 }
 
 .flow-runner-body {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    min-height: 200px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    min-height: 220px;
+}
+
+/* Side-by-side only when the runner itself is wide enough for two readable
+   columns — it is embedded in a narrow docs column as well as the wide app. */
+@container (max-width: 760px) {
+    .flow-runner-body { grid-template-columns: minmax(0, 1fr); }
+    .flow-runner-editor { border-right: none; border-bottom: 1px solid var(--border); }
+    .flow-runner-output { min-height: 0; }
+    .flow-runner .flow-runner-pane { min-height: 90px; }
 }
 
 @media (max-width: 900px) {
-    .flow-runner-body { grid-template-columns: 1fr; }
+    .flow-runner-body { grid-template-columns: minmax(0, 1fr); }
 }
 
 .flow-runner-editor {
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--border, #21262d);
+    min-width: 0;
+    border-right: 1px solid var(--border);
 }
 
-.flow-runner-editor textarea {
+@media (max-width: 900px) {
+    .flow-runner-editor { border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+/* ── Highlighted code editor ─────────────────────────────────────────────── */
+
+.flow-code {
+    position: relative;
     flex: 1;
-    min-height: 180px;
-    padding: 0.85rem 1rem;
+    display: grid;
+    grid-template-columns: var(--flow-code-gutter) minmax(0, 1fr);
+    background: var(--surface-2);
+    min-height: calc(var(--flow-code-rows, 10) * var(--flow-code-line) + 2 * var(--flow-code-pad-y));
+    overflow: hidden;
+}
+
+.flow-code-gutter {
+    overflow: hidden;
+    padding: var(--flow-code-pad-y) 0;
+    border-right: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+    user-select: none;
+}
+
+.flow-code-ln {
+    display: block;
+    height: var(--flow-code-line);
+    line-height: var(--flow-code-line);
+    padding-right: 0.7rem;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: var(--flow-code-size);
+    color: var(--text-faint);
+    opacity: 0.6;
+    transition: color var(--fast), background var(--fast), opacity var(--fast);
+}
+
+.flow-code-ln.lit {
+    color: var(--accent);
+    background: var(--accent-soft);
+    opacity: 1;
+    font-weight: 600;
+}
+
+.flow-code-area {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* The view and the input must share identical text metrics or the caret drifts. */
+.flow-code .flow-code-view,
+.flow-code .flow-code-input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: var(--flow-code-pad-y) var(--flow-code-pad-x);
     border: none;
-    resize: vertical;
-    background: #0d1117;
-    color: #e6edf3;
-    font-family: inherit;
-    font-size: 0.82rem;
-    line-height: 1.55;
+    border-radius: 0;
+    background: transparent;
+    font-family: var(--mono);
+    font-size: var(--flow-code-size);
+    line-height: var(--flow-code-line);
+    letter-spacing: normal;
+    white-space: pre;
+    word-break: normal;
+    overflow-wrap: normal;
     tab-size: 4;
 }
 
-.flow-runner-editor textarea:focus {
-    outline: none;
-    box-shadow: inset 0 0 0 1px var(--accent, #4493f8);
+.flow-code .flow-code-view {
+    overflow: hidden;
+    pointer-events: none;
+    color: var(--syn-var);
 }
+
+.flow-code .flow-code-view code {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: inherit;
+}
+
+.flow-code .flow-code-input {
+    overflow: auto;
+    resize: none;
+    color: transparent;
+    caret-color: var(--accent);
+    -webkit-text-fill-color: transparent;
+}
+
+.flow-code .flow-code-input:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.flow-code .flow-code-input::selection {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.flow-code-marks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    will-change: transform;
+}
+
+.flow-code-mark {
+    position: absolute;
+    left: 0;
+    right: 0;
+    background: var(--accent-soft);
+    border-left: 2px solid var(--accent);
+    animation: flow-mark-in 0.16s var(--ease);
+}
+
+@keyframes flow-mark-in { from { opacity: 0; } }
+
+/* ── Output panes ────────────────────────────────────────────────────────── */
 
 .flow-runner-output {
     display: flex;
     flex-direction: column;
-    min-height: 180px;
+    min-width: 0;
+    min-height: 200px;
+    background: var(--surface-2);
 }
 
 .flow-runner-tabs {
     display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--border, #21262d);
-    background: var(--surface, #0f1419);
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface-3) 55%, transparent);
 }
 
 .flow-runner-tab {
-    padding: 0.4rem 0.75rem;
+    position: relative;
+    padding: 0.42rem 0.8rem;
     border: none;
     background: transparent;
-    color: var(--text-muted, #8b949e);
+    color: var(--text-muted);
+    font-family: var(--sans);
     font-size: 0.72rem;
-    font-family: inherit;
+    font-weight: 550;
     cursor: pointer;
     border-bottom: 2px solid transparent;
+    transition: color var(--fast), border-color var(--fast);
 }
+
+.flow-runner-tab:hover { color: var(--text); }
 
 .flow-runner-tab.active {
-    color: var(--text, #e6edf3);
-    border-bottom-color: var(--accent, #4493f8);
+    color: var(--accent);
+    border-bottom-color: var(--accent);
 }
 
-.flow-runner-pane {
+.flow-runner .flow-runner-pane {
     flex: 1;
     margin: 0;
-    padding: 0.75rem 1rem;
+    padding: 0.8rem 1rem;
+    border: none;
+    border-radius: 0;
     overflow: auto;
+    font-family: var(--mono);
     font-size: 0.78rem;
-    line-height: 1.5;
+    line-height: 1.55;
     white-space: pre-wrap;
     word-break: break-word;
-    background: #0d1117;
-    color: #c9d1d9;
-    min-height: 140px;
+    background: transparent;
+    color: var(--text);
+    min-height: 150px;
 }
 
-.flow-runner-pane.error { color: #f85149; }
-.flow-runner-pane.success { color: #3fb950; }
-
-.flow-runner-pane[hidden] { display: none; }
+.flow-runner .flow-runner-pane.error { color: var(--danger); }
+.flow-runner .flow-runner-pane.success { color: var(--green); }
+.flow-runner .flow-runner-pane.idle { color: var(--text-muted); font-family: var(--sans); }
+.flow-runner .flow-runner-pane[hidden] { display: none; }
 
 .flow-runner-hint {
-    padding: 0.35rem 0.75rem;
-    font-size: 0.7rem;
-    color: var(--text-faint, #6e7681);
-    border-top: 1px solid var(--border, #21262d);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+    padding: 0.4rem 0.9rem;
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: var(--surface-3);
+    border-top: 1px solid var(--border);
 }
 
 .flow-runner-hint kbd {
     padding: 0.1rem 0.35rem;
     border-radius: 4px;
-    border: 1px solid var(--border-light, #30363d);
-    background: var(--surface, #0f1419);
-    font-size: 0.68rem;
+    border: 1px solid var(--border-light);
+    background: var(--surface);
+    /* System UI first: the webfonts have no glyph for ⌘ and render tofu. */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', var(--sans);
+    font-size: 0.7rem;
+    color: var(--text);
 }
 
-/* Standalone tutorials app */
+/* ── Program walkthrough ─────────────────────────────────────────────────── */
+
+.tutorials-walkthrough {
+    margin: 0 0 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+.walk-head {
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface-3) 50%, transparent);
+}
+
+.walk-head h2 {
+    margin: 0;
+    font-family: var(--sans);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.walk-head p {
+    margin: 0.2rem 0 0;
+    font-size: 0.78rem;
+    color: var(--text-faint);
+}
+
+.walk-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0.5rem;
+}
+
+.walk-steps > .walk-step {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.6rem 0.7rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    cursor: default;
+    transition: background var(--fast), border-color var(--fast);
+}
+
+.walk-step.lit {
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+}
+
+.walk-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.walk-index {
+    flex-shrink: 0;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--surface-3);
+    border: 1px solid var(--border-light);
+    color: var(--text-muted);
+    font-family: var(--sans);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.walk-steps > .walk-step.lit .walk-index {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.walk-body { min-width: 0; flex: 1; }
+
+.walk-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0 0 0.2rem;
+}
+
+.walk-title code {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text);
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+.walk-kind {
+    font-family: var(--sans);
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--accent-line);
+}
+
+.walk-kind-struct,
+.walk-kind-enum,
+.walk-kind-type {
+    background: var(--purple-soft);
+    color: var(--purple);
+    border-color: color-mix(in srgb, var(--purple) 30%, transparent);
+}
+
+.walk-kind-extern,
+.walk-kind-import {
+    background: var(--warn-soft);
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.walk-kind-effect,
+.walk-kind-capability,
+.walk-kind-flow {
+    background: var(--green-soft);
+    color: var(--green);
+    border-color: color-mix(in srgb, var(--green) 30%, transparent);
+}
+
+.walk-detail {
+    margin: 0;
+    font-family: var(--sans);
+    font-size: 0.83rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.walk-lines {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--text-faint);
+    white-space: nowrap;
+}
+
+.walk-sub {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0 0 0 0.9rem;
+    border-left: 1px solid var(--border);
+}
+
+.walk-sub .walk-step {
+    display: grid;
+    grid-template-columns: minmax(0, auto) 1fr auto;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.28rem 0.45rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+}
+
+.walk-sub code {
+    font-family: var(--mono);
+    font-size: 0.735rem;
+    color: var(--text);
+    background: none;
+    border: none;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.walk-sub .walk-detail { font-size: 0.775rem; }
+
+@media (max-width: 760px) {
+    .walk-sub .walk-step { grid-template-columns: 1fr; gap: 0.15rem; }
+    .walk-lines { display: none; }
+}
+
+/* ── Standalone tutorials app ────────────────────────────────────────────── */
+
 .tutorials-shell {
     min-height: 100vh;
     display: flex;
@@ -191,8 +543,8 @@
     justify-content: space-between;
     gap: 0.75rem 1.25rem;
     padding: 0.75rem 1.25rem;
-    border-bottom: 1px solid var(--border, #21262d);
-    background: var(--surface, #0f1419);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
 }
 
 .tutorials-tracks {
@@ -202,48 +554,53 @@
 }
 
 .tutorials-track {
-    padding: 0.35rem 0.7rem;
+    padding: 0.32rem 0.75rem;
     border-radius: 999px;
-    border: 1px solid var(--border-light, #30363d);
+    border: 1px solid var(--border-light);
     background: transparent;
-    color: var(--text-muted, #8b949e);
-    font-size: 0.78rem;
-    font-family: var(--sans, inherit);
+    color: var(--text-muted);
+    font-size: 0.775rem;
+    font-weight: 500;
+    font-family: var(--sans);
     cursor: pointer;
+    transition: all var(--fast);
 }
 
-.tutorials-track:hover { color: var(--text, #e6edf3); border-color: var(--accent, #4493f8); }
+.tutorials-track:hover { color: var(--text); border-color: var(--border-strong); }
+
 .tutorials-track.active {
-    color: var(--accent, #4493f8);
-    border-color: var(--accent, #4493f8);
-    background: var(--accent-soft, rgba(68,147,248,0.12));
+    color: var(--accent);
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+    font-weight: 600;
 }
 
 .tutorials-progress {
     display: flex;
     align-items: center;
     gap: 0.65rem;
-    min-width: 180px;
+    min-width: 190px;
 }
 
 .tutorials-progress-bar {
     flex: 1;
     height: 6px;
     border-radius: 999px;
-    background: var(--border, #21262d);
+    background: var(--surface-3);
     overflow: hidden;
 }
 
 .tutorials-progress-bar span {
     display: block;
     height: 100%;
-    background: var(--green, #3fb950);
+    background: linear-gradient(90deg, var(--accent), var(--green));
     border-radius: inherit;
+    transition: width var(--med);
 }
 
 .tutorials-progress-label {
     font-size: 0.72rem;
-    color: var(--text-faint, #6e7681);
+    color: var(--text-muted);
     white-space: nowrap;
 }
 
@@ -251,36 +608,42 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 300px 1fr;
+    grid-template-columns: 300px minmax(0, 1fr);
 }
 
 @media (max-width: 860px) {
-    .tutorials-app { grid-template-columns: 1fr; }
-    .tutorials-sidebar { max-height: 220px; border-right: none; border-bottom: 1px solid var(--border, #21262d); }
+    .tutorials-app { grid-template-columns: minmax(0, 1fr); }
+    .tutorials-sidebar {
+        max-height: 220px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
 }
 
 .tutorials-sidebar {
-    border-right: 1px solid var(--border, #21262d);
-    background: var(--surface, #0f1419);
+    border-right: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 60%, transparent);
     overflow-y: auto;
-    padding: 0.75rem 0 1.5rem;
+    padding: 0.85rem 0 1.5rem;
 }
 
 .tutorials-sidebar > h2 {
-    font-size: 0.7rem;
+    font-size: 0.66rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-faint, #6e7681);
-    padding: 0 1rem;
-    margin-bottom: 0.35rem;
+    letter-spacing: 0.09em;
+    color: var(--text-faint);
+    padding: 0 1.15rem;
+    margin-bottom: 0.4rem;
 }
 
 .tutorials-section {
-    font-size: 0.68rem;
+    font-size: 0.66rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--text-faint, #6e7681);
-    padding: 0.85rem 1rem 0.25rem;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    padding: 0.9rem 1.15rem 0.3rem;
     margin: 0;
 }
 
@@ -290,129 +653,129 @@
     gap: 0.55rem;
     width: 100%;
     text-align: left;
-    padding: 0.5rem 1rem;
+    padding: 0.42rem 1.15rem;
     border: none;
     background: transparent;
-    color: var(--text-muted, #8b949e);
-    font-family: var(--sans, inherit);
-    font-size: 0.86rem;
+    color: var(--text-muted);
+    font-family: var(--sans);
+    font-size: 0.855rem;
     cursor: pointer;
     border-left: 2px solid transparent;
+    transition: background var(--fast), color var(--fast);
 }
 
+/* Carries the done/not-done state, so it holds full text contrast. */
 .tutorials-lesson-mark {
     width: 1rem;
     text-align: center;
     font-size: 0.75rem;
-    color: var(--text-faint, #6e7681);
+    color: var(--text-muted);
 }
 
-.tutorials-lesson.done .tutorials-lesson-mark { color: var(--green, #3fb950); }
-.tutorials-lesson:hover { color: var(--text, #e6edf3); background: var(--accent-soft, rgba(68,147,248,0.08)); }
+.tutorials-lesson.done .tutorials-lesson-mark { color: var(--green); }
+.tutorials-lesson:hover { color: var(--text); background: var(--surface-2); }
+
 .tutorials-lesson.active {
-    color: var(--accent, #4493f8);
-    border-left-color: var(--accent, #4493f8);
-    background: var(--accent-soft, rgba(68,147,248,0.12));
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 600;
 }
 
 .tutorials-empty {
-    padding: 1rem;
-    color: var(--text-faint, #6e7681);
+    padding: 1rem 1.15rem;
+    color: var(--text-muted);
     font-size: 0.85rem;
 }
 
 .tutorials-main {
-    padding: 1.5rem 2rem 2.5rem;
+    padding: 1.75rem 2rem 3rem;
     overflow-y: auto;
+    max-width: 1100px;
 }
 
 .tutorials-main h1 {
-    font-size: 1.5rem;
-    margin: 0.35rem 0 0.5rem;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    margin: 0.35rem 0 0.4rem;
 }
 
 .tutorials-meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.45rem;
     font-size: 0.78rem;
-    color: var(--text-muted, #8b949e);
+    color: var(--text-muted);
 }
 
 .tutorials-track-badge {
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: 0.68rem;
-    font-weight: 600;
-    color: var(--accent, #4493f8);
+    letter-spacing: 0.08em;
+    font-size: 0.66rem;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
 }
 
-.tutorials-meta-sep { opacity: 0.5; }
+.tutorials-meta-sep { opacity: 0.4; }
 
 .tutorials-done-pill {
     margin-left: 0.25rem;
-    padding: 0.15rem 0.45rem;
+    padding: 0.12rem 0.5rem;
     border-radius: 999px;
-    background: rgba(63, 185, 80, 0.15);
-    color: var(--green, #3fb950);
-    font-size: 0.68rem;
-    font-weight: 600;
+    background: var(--green-soft);
+    border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
+    color: var(--green);
+    font-size: 0.66rem;
+    font-weight: 700;
 }
 
 .tutorials-lead {
-    color: var(--text-muted, #8b949e);
-    margin-bottom: 1rem;
-    max-width: 60ch;
-}
-
-.tutorials-goals {
-    margin: 0 0 1.25rem;
-    padding-left: 1.2rem;
-    color: var(--text-muted, #8b949e);
-    font-size: 0.9rem;
-    max-width: 60ch;
-}
-
-.tutorials-goals li { margin: 0.25rem 0; }
-.tutorials-goals code {
-    font-family: var(--mono, 'IBM Plex Mono', monospace);
-    font-size: 0.82em;
-    color: var(--text, #e6edf3);
+    color: var(--text-muted);
+    margin-bottom: 1.25rem;
+    max-width: 62ch;
 }
 
 .tutorials-check {
-    margin: 0.85rem 0 1.25rem;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    border: 1px solid var(--border-light, #30363d);
+    margin: 1rem 0 1.25rem;
+    padding: 0.8rem 1rem;
+    border-radius: var(--radius);
+    font-size: 0.86rem;
+    border: 1px solid var(--border-light);
+    color: var(--text-muted);
 }
 
 .tutorials-check.pass {
-    border-color: rgba(63, 185, 80, 0.45);
-    background: rgba(63, 185, 80, 0.1);
-    color: var(--green, #3fb950);
+    border-color: color-mix(in srgb, var(--green) 40%, transparent);
+    background: var(--green-soft);
+    color: var(--green);
 }
 
 .tutorials-check.fail {
-    border-color: rgba(248, 81, 73, 0.45);
-    background: rgba(248, 81, 73, 0.08);
-    color: #f85149;
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+    background: var(--danger-soft);
+    color: var(--danger);
 }
 
 .tutorials-check.hint {
-    border-color: rgba(68, 147, 248, 0.35);
-    background: rgba(68, 147, 248, 0.08);
-    color: var(--text-muted, #8b949e);
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+    color: var(--text-muted);
 }
 
 .tutorials-check pre {
     margin: 0.5rem 0 0;
-    padding: 0.55rem 0.7rem;
-    border-radius: 6px;
-    background: #0d1117;
-    color: #c9d1d9;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--mono);
     font-size: 0.78rem;
     white-space: pre-wrap;
 }
@@ -421,14 +784,7 @@
     display: flex;
     justify-content: space-between;
     gap: 0.75rem;
-    margin-top: 0.5rem;
-}
-
-.tutorials-nav .flow-runner-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+    margin-top: 1rem;
 }
 
 .tutorials-app .flow-runner { margin-top: 0; }
-.tutorials-app .flow-runner-body { min-height: 320px; }
-.tutorials-app .flow-runner-editor textarea { min-height: 300px; }
