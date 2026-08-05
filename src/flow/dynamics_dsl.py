@@ -957,6 +957,11 @@ def compile_dynamics_program(program: DynamicsProgram) -> str:
                 f"Matrix {{ data: __dsys_{name}_B, rows: {sys.n}, cols: {sys.m} }}, "
                 f"Matrix {{ data: __dsys_{name}_C, rows: {sys.p}, cols: {sys.n} }})"
             )
+        # Public alias so main can `state_step(plant, …)` without rebuilding
+        # the matrices (pattern-adoption #160). Internal `__dsys_*` name stays
+        # for sense/ga/closed expansion.
+        if name.isidentifier() and name != var:
+            lines.append(f"    let {name}: DynamicalSystem = {var}")
 
     for wf_name, wf in program.wfc_fields.items():
         cells_n = wf.width * wf.height

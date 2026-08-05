@@ -2,17 +2,10 @@
 # The plant is declared once as continuous physics (`dsys ... continuous`);
 # the compiler discretizes it, `sense` proves it controllable and measures the
 # open-loop spectral radius, `ga evolve` searches feedback gains, and `closed`
-# certifies the closed loop. main() then plays both systems side by side
-# by rebuilding the same continuous plant through stdlib and stepping with
-# `state_step` (#160) — no hand-coded Ad/Bd Euler constants.
-#
-# Follow-on: bind the DSL's discretized `__dsys_plant` into user scope so the
-# rebuild below disappears entirely.
+# certifies the closed loop. main() then steps the *same* discretized plant
+# via the public `plant` binding (#160) + `state_step` — no Ad/Bd rebuild.
 #
 # Run: ./flow run examples/evolution/spring_mass_control.flow
-
-import "stdlib/dynamics/core.flow"
-import "stdlib/dynamics/state_space.flow"
 
 extern {
     function printf(fmt: string, val: f64) -> i32
@@ -49,22 +42,6 @@ closed plant with k1 k2 {
     stable -> stable_cl
 }
 
-# Same continuous coefficients as the `dsys plant` block above.
-function spring_mass_discrete() -> DynamicalSystem {
-    let A_buf: array<f64, 4> = [0.0, 1.0, -1.0, -0.2]
-    let B_buf: array<f64, 2> = [0.0, 1.0]
-    let C_buf: array<f64, 2> = [1.0, 0.0]
-    let Ad_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
-    let Bd_buf: array<f64, 2> = [0.0, 0.0]
-    let id_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
-    let sc_buf: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
-    let A: Matrix = Matrix { data: A_buf, rows: 2, cols: 2 }
-    let B: Matrix = Matrix { data: B_buf, rows: 2, cols: 1 }
-    let C: Matrix = Matrix { data: C_buf, rows: 1, cols: 2 }
-    let cont: DynamicalSystem = dsys_continuous(2, 1, 1, 0.1, A, B, C)
-    return dsys_euler_discretize(cont, Ad_buf, Bd_buf, id_buf, sc_buf)
-}
-
 function main() -> i32 {
     println("")
     println("  SPRING-MASS CONTROL  --  model -> analyze -> control, one file")
@@ -97,7 +74,7 @@ function main() -> i32 {
     if stable_cl == 1 { println("yes") } else { println("NO") }
     println("")
 
-    let plant_d: DynamicalSystem = spring_mass_discrete()
+    # `plant` is the DSL-discretized DynamicalSystem (injected alias).
     let mut xo: array<f64, 2> = [1.0, 0.0]
     let mut xc: array<f64, 2> = [1.0, 0.0]
     let mut xn: array<f64, 2> = [0.0, 0.0]
@@ -106,7 +83,7 @@ function main() -> i32 {
     let mut open_acc: f64 = 0.0
     let mut closed_acc: f64 = 0.0
 
-    println("  --- Step comparison: release from x = 1 m (state_step) ---")
+    println("  --- Step comparison: release from x = 1 m (plant + state_step) ---")
     println("      t [s]    open x [m]   closed x [m]")
     println("    -------   -----------   ------------")
     for k in 0 to 61 {
@@ -118,12 +95,12 @@ function main() -> i32 {
             println("")
         }
         u0[0] = 0.0
-        state_step(plant_d, xo, u0, xn)
+        plant_step(plant, xo, u0, xn)
         xo[0] = xn[0]
         xo[1] = xn[1]
 
         u[0] = 0.0 - k1 * xc[0] - k2 * xc[1]
-        state_step(plant_d, xc, u, xn)
+        plant_step(plant, xc, u, xn)
         xc[0] = xn[0]
         xc[1] = xn[1]
 
@@ -160,6 +137,6 @@ function main() -> i32 {
         println("    FAIL: closed loop did not settle within 6 s")
         return 5
     }
-    println("    OK: controllable plant, stable evolved loop, faster settling via state_step")
+    println("    OK: shared plant binding + state_step closed loop")
     return 0
 }
