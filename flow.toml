@@ -1,6 +1,6 @@
 [package]
 name = "flow"
-version = "0.8.0"
+version = "0.9.0"
 description = "Flow programming language"
 entry = "examples/basics/hello_world.flow"
 
