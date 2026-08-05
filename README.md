@@ -339,12 +339,14 @@ See [docs/python-target.md](docs/python-target.md) for details.
 ./scripts/publish_vscode_extension.sh --install
 
 # Or after marketplace publish:
-#   cursor --install-extension flooooooooooow.flow-language
-#   code --install-extension flooooooooooow.flow-language
+#   cursor --install-extension quilio.flow-language
+#   code --install-extension quilio.flow-language
 ```
 
 Extension lives at `third_party/integrations/vscode/flow-language/` (syntax + LSP).  
-Publishing: set `VSCE_PAT` and run `./scripts/publish_vscode_extension.sh --publish` — see that folder’s `PUBLISH.md`.
+Publishing: push a `vscode-v*` tag to run the Open VSX workflow (publisher `quilio`), or
+publish locally with `OVSX_PAT ./scripts/publish_vscode_extension.sh --ovsx` — see that
+folder’s `PUBLISH.md`.
 
 ## Highlighted Examples
 
