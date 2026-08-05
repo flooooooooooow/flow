@@ -117,11 +117,36 @@ Fundamental algorithms demonstrating Flow syntax:
 - `match_enums.flow` - `match` on a simple enum
 
 ### Games (`games/`)
-Interactive demonstrations with graphics (flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md)):
+23 complete games, all playable via `./flow gfx <file>` (or headless via `./flow record <file>`). Flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md).
+
+Arcade:
+- `snake_gfx.flow` - Snake with growth, speed-up, wall/self death
+- `pong_gfx.flow` - Pong vs AI, hit-position bounce angles, first to 7
+- `breakout_gfx.flow` - 6 brick rows, lives, staged speed-ups, level rebuild
+- `asteroids_gfx.flow` - Inertial ship, splitting asteroids, waves
+- `tetris_gfx.flow` - Complete Tetris: 7 tetrominoes, ghost piece, levels
+- `invaders_gfx.flow` - Marching alien grid, bombs, destructible bunkers
+- `flappy_gfx.flow` - Gravity/flap physics, pipe gaps, session best score
+- `frogger_gfx.flow` - Car lanes, ride-or-drown logs, home slots, timer
+- `missile_gfx.flow` - Missile Command: crosshair, blast rings, six cities
+- `maze_chase_gfx.flow` - Maze, pellets, 3 ghost styles, power-mode chains
+- `lane_racer_gfx.flow` - 4-lane traffic dodger, near-miss bonus, fuel
+- `jumper_gfx.flow` - Vertical platformer: moving/crumbling platforms, springs
+
+Puzzle and logic:
+- `minesweeper_gfx.flow` - 16x16, 40 mines, flood fill, safe first click
+- `sokoban_gfx.flow` - 5 levels, push mechanics, undo, move counter
+- `match3_gfx.flow` - 8x8 gems, cascade chains, move limit
+- `lightsout_gfx.flow` - 5x5 cross-toggle, always-solvable scrambles
+- `hanoi_gfx.flow` - 3-7 disks, legality enforcement, optimal-move compare
+- `simon_gfx.flow` - Growing color sequences, strict fail, session best
+- `2048_gfx.flow` - 2048 puzzle game (also `2048.flow` for the terminal)
+
+Board:
+- `connect4_gfx.flow` - vs AI (takes wins, blocks losses), falling-disc animation
+- `othello_gfx.flow` - vs corner-aware AI, staged flip animation, pass handling
+- `checkers_gfx.flow` - Hotseat, forced captures, multi-jump chains, kings
 - `chetris_gfx.flow` / `chetris_test.flow` - Chess×Tetris hybrid + mechanics suite
-- `tetris_gfx.flow` - Complete Tetris with native graphics
-- `2048_gfx.flow` - 2048 puzzle game
-- `2048.flow` - Terminal-based 2048
 
 ### Ecosystem (`ecosystem/`)
 Registry package demos (`./flow install` then `./flow run` or `./flow run-native`):
