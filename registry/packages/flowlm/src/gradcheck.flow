@@ -1,0 +1,203 @@
+# flowlm/gradcheck — analytic gradients against central finite differences.
+#
+# This is the correctness anchor for the package. Nothing about a falling loss
+# curve proves the backward pass is right; a curve can fall with a wrong sign
+# on a small tensor and you would never notice. So: build a deliberately tiny
+# model, run one forward/backward, then for every single parameter recompute
+#
+#     numeric = (L(theta + eps) - L(theta - eps)) / (2 eps)
+#
+# and compare against the analytic gradient. Errors are reported per tensor,
+# so a broken derivation shows up as one bad row rather than one bad number.
+#
+# The model stores parameters in f32, so the achievable agreement is limited by
+# rounding, not by the derivation. Around 1e-3 relative is what a correct f32
+# implementation gives here; 1e-2 is the pass gate.
+
+import .util {
+    flm_alloc_i32,
+    flm_srand,
+    flm_rand_below,
+    flm_println_f,
+    flm_print_sci
+}
+import .model {
+    flm_model_init,
+    flm_model_randomize,
+    flm_zero_grads,
+    flm_forward,
+    flm_backward,
+    flm_param_count,
+    flm_params_ptr,
+    flm_grads_ptr,
+    flm_tensor_count,
+    flm_tensor_offset,
+    flm_tensor_size,
+    flm_tensor_name
+}
+
+const FLM_GC_EPS: f32 = 0.004
+const FLM_GC_TOL: f64 = 0.01
+
+let mut flm_gc_worst: f64 = 0.0
+let mut flm_gc_worst_tensor: i32 = 0
+
+export function flm_gradcheck_worst() -> f64 {
+    return flm_gc_worst
+}
+
+export function flm_gradcheck_worst_tensor() -> i32 {
+    return flm_gc_worst_tensor
+}
+
+export function flm_gradcheck_tol() -> f64 {
+    return FLM_GC_TOL
+}
+
+export function flm_gradcheck_eps() -> f32 {
+    return FLM_GC_EPS
+}
+
+# Relative error with a floor, so parameters whose true gradient is ~0 do not
+# blow the ratio up on pure rounding noise.
+function flm_rel_err(analytic: f64, numeric: f64) -> f64 {
+    let mut denom: f64 = 0.0
+    if analytic < 0.0 {
+        denom = 0.0 - analytic
+    } else {
+        denom = analytic
+    }
+    let mut nb: f64 = numeric
+    if nb < 0.0 {
+        nb = 0.0 - nb
+    }
+    if nb > denom {
+        denom = nb
+    }
+    if denom < 0.002 {
+        denom = 0.002
+    }
+    let mut diff: f64 = analytic - numeric
+    if diff < 0.0 {
+        diff = 0.0 - diff
+    }
+    return diff / denom
+}
+
+# Run the full check. Returns true when every tensor is within tolerance.
+# `verbose` prints one line per tensor.
+export function flm_gradcheck(verbose: bool) -> bool {
+    let vocab: i32 = 7
+    let dmodel: i32 = 4
+    let ctx: i32 = 5
+    let dff: i32 = 8
+
+    let np: i32 = flm_model_init(vocab, dmodel, ctx, dff)
+    if np < 0 {
+        println("gradcheck: model_init rejected the tiny config")
+        return false
+    }
+    flm_srand(20260806)
+    flm_model_randomize(0.35)
+
+    # A fixed pseudo-random window; targets are the next-token shift.
+    let inp: ptr<i32> = flm_alloc_i32(ctx)
+    let tgt: ptr<i32> = flm_alloc_i32(ctx)
+    let mut i: i32 = 0
+    while i < ctx {
+        inp[i] = flm_rand_below(vocab)
+        i = i + 1
+    }
+    i = 0
+    while i < ctx {
+        tgt[i] = (inp[i] + 1 + flm_rand_below(vocab - 1)) % vocab
+        i = i + 1
+    }
+
+    let params: ptr<f32> = flm_params_ptr()
+    let grads: ptr<f32> = flm_grads_ptr()
+
+    let base_loss: f64 = flm_forward(inp, tgt, ctx)
+    flm_zero_grads()
+    flm_backward(inp, tgt, ctx)
+
+    print("  config: V=")
+    print(vocab)
+    print(" D=")
+    print(dmodel)
+    print(" T=")
+    print(ctx)
+    print(" F=")
+    print(dff)
+    print("  params=")
+    print(np)
+    println("")
+    flm_println_f("  base loss (nats): ", base_loss)
+    println("")
+    if verbose {
+        println("  tensor            n    max rel err   worst analytic   worst numeric")
+        println("  ---------------------------------------------------------------------")
+    }
+
+    flm_gc_worst = 0.0
+    flm_gc_worst_tensor = 0
+    let mut all_ok: bool = true
+    let eps: f32 = FLM_GC_EPS
+    let nt: i32 = flm_tensor_count()
+    let mut ti: i32 = 0
+    while ti < nt {
+        let off: i32 = flm_tensor_offset(ti)
+        let len: i32 = flm_tensor_size(ti)
+        let mut worst: f64 = 0.0
+        let mut worst_a: f64 = 0.0
+        let mut worst_n: f64 = 0.0
+        let mut j: i32 = 0
+        while j < len {
+            let idx: i32 = off + j
+            let saved: f32 = params[idx]
+            params[idx] = saved + eps
+            let lp: f64 = flm_forward(inp, tgt, ctx)
+            params[idx] = saved - eps
+            let lm: f64 = flm_forward(inp, tgt, ctx)
+            params[idx] = saved
+            let numeric: f64 = (lp - lm) / (2.0 * (eps as f64))
+            let analytic: f64 = grads[idx] as f64
+            let err: f64 = flm_rel_err(analytic, numeric)
+            if err > worst {
+                worst = err
+                worst_a = analytic
+                worst_n = numeric
+            }
+            j = j + 1
+        }
+        if worst > flm_gc_worst {
+            flm_gc_worst = worst
+            flm_gc_worst_tensor = ti
+        }
+        let ok: bool = worst <= FLM_GC_TOL
+        if !ok {
+            all_ok = false
+        }
+        if verbose {
+            print("  ")
+            print(flm_tensor_name(ti))
+            print(" ")
+            print(len)
+            flm_print_sci("   ", worst)
+            flm_print_sci("     ", worst_a)
+            flm_print_sci("     ", worst_n)
+            if ok {
+                println("  ok")
+            } else {
+                println("  FAIL")
+            }
+        }
+        ti = ti + 1
+    }
+    println("")
+    flm_print_sci("  worst relative error over all parameters: ", flm_gc_worst)
+    println("")
+    print("  worst tensor: ")
+    println(flm_tensor_name(flm_gc_worst_tensor))
+    return all_ok
+}

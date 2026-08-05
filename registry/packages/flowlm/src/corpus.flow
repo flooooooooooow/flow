@@ -1,0 +1,126 @@
+# flowlm/corpus — the embedded training text.
+#
+# Original prose written for this package (MIT, same as the rest of flowlm).
+# No copyrighted material. It is deliberately small, lowercase, and repetitive:
+# about 5.2 KB over a 31-symbol alphabet, which is roughly the smallest corpus
+# on which a 20k-parameter model shows clearly learned character statistics.
+#
+# Stored as chunks so no single string literal gets unwieldy. Call
+# flm_corpus_len() / flm_corpus_load() to get one contiguous byte buffer.
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+const FLM_CORPUS_CHUNKS: i32 = 24
+
+export function flm_corpus_chunk_count() -> i32 {
+    return FLM_CORPUS_CHUNKS
+}
+
+export function flm_corpus_chunk(i: i32) -> string {
+    if i == 0 {
+        return "the harbour wakes before the town does. the water moves first, then the boats, then the gulls, then the men who mend the nets. i keep the tide log because someone must, and because the sea keeps no record of itself.\n"
+    }
+    if i == 1 {
+        return "each morning i walk the stone pier and read the marks on the wall. the marks are old. some were cut by hands that are long gone. the sea rises to them and falls away from them, and the marks stay where they are.\n"
+    }
+    if i == 2 {
+        return "the log has three columns. the hour, the height, the weather. i write the hour first because the hour is certain. i write the height second because the height is measured. i write the weather last because the weather is a guess.\n"
+    }
+    if i == 3 {
+        return "a guess is not a lie if you mark it as a guess. that is the first rule of the log. the second rule is that you write it down before you go inside, while the cold is still on your hands and the numbers are still true.\n"
+    }
+    if i == 4 {
+        return "in winter the water is slow and grey and it comes up the wall in small steady steps. in summer it is quick and bright and it slaps the stone and runs back. the log does not care which season it is. the log wants the number.\n"
+    }
+    if i == 5 {
+        return "there is a boat called the wren that goes out at four and comes back at noon. there is a boat called the heron that goes out at noon and comes back at four. between them the harbour is never empty and never full.\n"
+    }
+    if i == 6 {
+        return "the man who kept the log before me kept it for thirty years. his hand was small and even. he never crossed a word out. when i began, i crossed out many words, and he told me that a crossed word is still a record.\n"
+    }
+    if i == 7 {
+        return "he said, the sea will not read your book. write it for the next keeper. write it plain. do not write that the water was angry. write that the water rose two feet in an hour and that the wind came from the north.\n"
+    }
+    if i == 8 {
+        return "so i write it plain. the water rose two feet in an hour. the wind came from the north. the wren stayed in. the heron went out and turned back at the point. three gulls sat on the rail and did not move all morning.\n"
+    }
+    if i == 9 {
+        return "a tide log is a strange kind of book. it has no story in it, and yet if you read a year of it you know the year. you know when the storms came. you know when the boats stopped going out. you know when the ice held.\n"
+    }
+    if i == 10 {
+        return "the numbers are small and the pages are many and the meaning is somewhere between them. i do not think the meaning is in any single line. i think it is in the shape the lines make when you hold the book at arm's length.\n"
+    }
+    if i == 11 {
+        return "in the shed at the end of the pier there is a lamp, a kettle, a stool, and a shelf of old logs. the oldest is from a year i cannot read because the ink has gone brown and the paper has gone soft at the edges.\n"
+    }
+    if i == 12 {
+        return "i can still read the numbers though. ink fades but a number is stubborn. the words go first. the words go and the numbers stay, and that is a lesson about writing that i did not expect to learn on a stone pier.\n"
+    }
+    if i == 13 {
+        return "the bell on the point rings when the fog comes in. it is not a warning so much as a habit. the boats know the water better than the bell does. still, when the bell stops, everyone looks up, and nobody says why.\n"
+    }
+    if i == 14 {
+        return "i have kept the log for eleven years. i have missed four mornings. one for a fever, one for a funeral, and two for a storm that took the door off the shed and put it in the water twenty yards out from the wall.\n"
+    }
+    if i == 15 {
+        return "on those four mornings i wrote the word missed and nothing else. that is also a record. the next keeper will see the word and know that a person kept this book, and that a person is not a machine that never sleeps.\n"
+    }
+    if i == 16 {
+        return "the young ones ask me why we still write it by hand when there is a gauge on the far wall that writes the height every ten minutes onto a paper drum. i tell them the gauge is better than me at the number itself.\n"
+    }
+    if i == 17 {
+        return "but the gauge does not see the wren turn back. the gauge does not see the ice on the rail or the man who stands at the end of the pier for an hour and then goes home. the log holds what the gauge cannot hold.\n"
+    }
+    if i == 18 {
+        return "a record is a promise to someone you will never meet. you keep it plain so they can use it. you keep it honest so they can trust it. you keep it every day so that the gaps mean something when they come at last.\n"
+    }
+    if i == 19 {
+        return "the tide comes twice a day and it does not hurry and it does not wait. it has been doing this since before the pier, before the town, before the word for water. the log is eleven years old. the tide finds that odd.\n"
+    }
+    if i == 20 {
+        return "still, i go out at six and i read the wall and i write the hour, the height, and my guess at the weather. the kettle goes on. the lamp goes off. the boats go out. the gulls take the rail. the day begins in order.\n"
+    }
+    if i == 21 {
+        return "when i am gone someone else will hold the pen. they will write the hour first because the hour is certain. they will write the height second because the height is measured. they will guess at the weather last.\n"
+    }
+    if i == 22 {
+        return "and if they are careful they will mark the guess as a guess, and the book will keep on being true. that is all a log is. a long quiet argument that the world can be written down if you are patient with it.\n"
+    }
+    return "the sea keeps no record of itself. that is why we keep one. the water forgets the wall as soon as it leaves it, and the marks stay, and the numbers stay, and the next keeper reads them and walks out on the stone.\n"
+}
+
+# Total byte length of the corpus.
+export function flm_corpus_len() -> i32 {
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < FLM_CORPUS_CHUNKS {
+        total = total + (strlen(flm_corpus_chunk(i)) as i32)
+        i = i + 1
+    }
+    return total
+}
+
+# Copy the whole corpus into `out` (must hold flm_corpus_len() bytes).
+# Returns the number of bytes written.
+export function flm_corpus_load(out: ptr<u8>, cap: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < FLM_CORPUS_CHUNKS {
+        let chunk: string = flm_corpus_chunk(i)
+        let src: ptr<u8> = chunk
+        let len: i32 = strlen(chunk) as i32
+        let mut j: i32 = 0
+        while j < len {
+            if n >= cap {
+                return n
+            }
+            out[n] = src[j]
+            n = n + 1
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return n
+}
