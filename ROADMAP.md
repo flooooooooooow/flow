@@ -235,6 +235,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 | Self-hosting components | 🔲 | Dogfooding |
 | WASM target | ✅ partial — Flow→C→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `scripts/build_wasm_hello.sh`, `examples/wasm/hello_wasm.flow`); native Flow-in-WASM deferred | Web deployment |
 | Tier-0 tourist examples | ✅ [#169](https://github.com/flooooooooooow/flow/issues/169) | Canonical table in examples/README; UI/WASM/packages present; concurrency pipeline deferred |
+| MLIR opt pass flags | ✅ [#166](https://github.com/flooooooooooow/flow/issues/166) | `--opt-level` + `--no-{vectorization,loop-fusion,mem2reg,sccp,licm,cse,dce,inline}` + `--print-pass-pipeline` |
 | GPU autodiff | 🔲 | ML performance |
 
 ---
