@@ -52,3 +52,27 @@ int flow_gpu_copy_d2d(void *dst_gpu, void *src_gpu, int64_t nbytes) {
 }
 
 void flow_gpu_sync(void) {}
+
+int flow_gpu_mul_f32(void *out_gpu, void *a_gpu, void *b_gpu, int64_t n) {
+    (void)out_gpu;
+    (void)a_gpu;
+    (void)b_gpu;
+    (void)n;
+    return -1;
+}
+
+int flow_gpu_mul_backward_a_f32(void *grad_a_gpu, void *grad_out_gpu, void *b_gpu, int64_t n) {
+    (void)grad_a_gpu;
+    (void)grad_out_gpu;
+    (void)b_gpu;
+    (void)n;
+    return -1;
+}
+
+int flow_gpu_mul_backward_b_f32(void *grad_b_gpu, void *grad_out_gpu, void *a_gpu, int64_t n) {
+    (void)grad_b_gpu;
+    (void)grad_out_gpu;
+    (void)a_gpu;
+    (void)n;
+    return -1;
+}
