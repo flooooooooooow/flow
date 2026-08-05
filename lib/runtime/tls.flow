@@ -1,10 +1,30 @@
-# Flow runtime: TLS / HTTPS accept-loop harness (OpenSSL via runtime/flow_tls.c).
+# Flow runtime: TLS / HTTPS accept-loop harness.
+# Protocol logic (HTTP/1.1 reply, HTTP/2 frames/HPACK literals, selftest
+# orchestration) lives here; OpenSSL ctx/cert machinery and per-call SSL
+# shims stay in runtime/flow_tls.c. Shims return -2 / null when OpenSSL
+# is not linked.
 
 extern {
+    function strlen(s: string) -> i64
+    function flow_rt_usleep(usec: i32) -> void
     function flow_rt_tls_available() -> i32
-    function flow_rt_https_selftest(port: i32) -> i32
-    function flow_rt_https_pem_alpn_selftest(port: i32) -> i32
-    function flow_rt_https_h2_selftest(port: i32) -> i32
+    function flow_rt_tls_tcp_listen(port: i32) -> i32
+    function flow_rt_tls_tcp_accept(lfd: i32) -> i32
+    function flow_rt_tls_tcp_connect(port: i32) -> i32
+    function flow_rt_tls_sock_timeouts(fd: i32, sec: i32) -> void
+    function flow_rt_tls_fd_close(fd: i32) -> i32
+    function flow_rt_tls_ctx_server_mem(prefer_h2: i32) -> ptr<void>
+    function flow_rt_tls_ctx_server_pem(prefer_h2: i32) -> ptr<void>
+    function flow_rt_tls_ctx_client(offer_alpn: i32) -> ptr<void>
+    function flow_rt_tls_ctx_free(ctx: ptr<void>) -> void
+    function flow_rt_ssl_accept_fd(ctx: ptr<void>, fd: i32) -> ptr<void>
+    function flow_rt_ssl_connect_fd(ctx: ptr<void>, fd: i32) -> ptr<void>
+    function flow_rt_ssl_read(ssl: ptr<void>, buf: ptr<void>, len: i32) -> i32
+    function flow_rt_ssl_write(ssl: ptr<void>, buf: ptr<void>, len: i32) -> i32
+    function flow_rt_ssl_shutdown_free(ssl: ptr<void>) -> void
+    function flow_rt_ssl_alpn_selected(ssl: ptr<void>) -> i32
+    function flow_rt_tls_serve_spawn(ctx: ptr<void>, lfd: i32) -> i32
+    function flow_rt_tls_serve_join() -> i32
 }
 
 @flow_api
@@ -12,17 +32,545 @@ export function flow_tls_available() -> i32 {
     return flow_rt_tls_available()
 }
 
+# ---- byte helpers ----
+
+# Copy string bytes into dst at offset `at`; returns new offset.
+function tls_append_str(dst: ptr<u8>, at: i32, s: string) -> i32 {
+    let sp: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        dst[at + i] = sp[i]
+        i = i + 1
+    }
+    return at + n
+}
+
+# 1 if `needle` occurs in buf[0..blen) (byte-wise), else 0.
+function tls_buf_contains(buf: ptr<u8>, blen: i32, needle: string) -> i32 {
+    let nd: ptr<u8> = needle
+    let nlen: i32 = strlen(needle) as i32
+    if nlen == 0 {
+        return 1
+    }
+    if nlen > blen {
+        return 0
+    }
+    let last: i32 = blen - nlen
+    let mut i: i32 = 0
+    while i <= last {
+        let mut j: i32 = 0
+        let mut ok: i32 = 1
+        while j < nlen {
+            if buf[i + j] != nd[j] {
+                ok = 0
+                break
+            }
+            j = j + 1
+        }
+        if ok == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# ---- SSL retry loops ----
+
+function tls_write_all(ssl: ptr<void>, buf: ptr<u8>, len: i32) -> i32 {
+    let mut off: i32 = 0
+    while off < len {
+        let chunk: ptr<u8> = &buf[off]
+        let n: i32 = flow_rt_ssl_write(ssl, chunk as ptr<void>, len - off)
+        if n <= 0 {
+            return -1
+        }
+        off = off + n
+    }
+    return 0
+}
+
+function tls_read_exact(ssl: ptr<void>, buf: ptr<u8>, len: i32) -> i32 {
+    let mut off: i32 = 0
+    while off < len {
+        let chunk: ptr<u8> = &buf[off]
+        let n: i32 = flow_rt_ssl_read(ssl, chunk as ptr<void>, len - off)
+        if n <= 0 {
+            return -1
+        }
+        off = off + n
+    }
+    return 0
+}
+
+# ---- minimal HTTP/2 (RFC 7540/7541 literals, no Huffman) ----
+
+function h2_client_preface() -> string {
+    return "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+}
+
+# 9-byte frame header: 24-bit length (BE), type, flags, 31-bit stream id.
+function h2_write_frame(ssl: ptr<void>, ftype: i32, fflags: i32, sid: i32, payload: ptr<u8>, len: i32) -> i32 {
+    let mut hdr: array<u8, 9> = []
+    let hp: ptr<u8> = hdr
+    hp[0] = ((len >> 16) & 255) as u8
+    hp[1] = ((len >> 8) & 255) as u8
+    hp[2] = (len & 255) as u8
+    hp[3] = ftype as u8
+    hp[4] = fflags as u8
+    hp[5] = ((sid >> 24) & 127) as u8
+    hp[6] = ((sid >> 16) & 255) as u8
+    hp[7] = ((sid >> 8) & 255) as u8
+    hp[8] = (sid & 255) as u8
+    if tls_write_all(ssl, hp, 9) < 0 {
+        return -1
+    }
+    if len > 0 {
+        if tls_write_all(ssl, payload, len) < 0 {
+            return -1
+        }
+    }
+    return 0
+}
+
+# Reads one frame; stores type/flags/stream via out pointers.
+# Returns payload length (>= 0) or -1 on error / oversized payload.
+function h2_read_frame(ssl: ptr<void>, ftype: ptr<i32>, fflags: ptr<i32>, sid: ptr<i32>, payload: ptr<u8>, cap: i32) -> i32 {
+    let mut hdr: array<u8, 9> = []
+    let hp: ptr<u8> = hdr
+    if tls_read_exact(ssl, hp, 9) < 0 {
+        return -1
+    }
+    let len: i32 = ((hp[0] as i32) << 16) | ((hp[1] as i32) << 8) | (hp[2] as i32)
+    ftype[0] = hp[3] as i32
+    fflags[0] = hp[4] as i32
+    sid[0] = (((hp[5] as i32) & 127) << 24) | ((hp[6] as i32) << 16) | ((hp[7] as i32) << 8) | (hp[8] as i32)
+    if len > cap {
+        return -1
+    }
+    if len > 0 {
+        if tls_read_exact(ssl, payload, len) < 0 {
+            return -1
+        }
+    }
+    return len
+}
+
+# HPACK Literal Header Field without Indexing - New Name (lens < 127).
+function hpack_lit(out: ptr<u8>, cap: i32, name: string, value: string) -> i32 {
+    let nl: i32 = strlen(name) as i32
+    let vl: i32 = strlen(value) as i32
+    if nl > 126 or vl > 126 {
+        return -1
+    }
+    let need: i32 = 1 + 1 + nl + 1 + vl
+    if need > cap {
+        return -1
+    }
+    let mut i: i32 = 0
+    out[i] = 0
+    i = i + 1
+    out[i] = nl as u8
+    i = i + 1
+    i = tls_append_str(out, i, name)
+    out[i] = vl as u8
+    i = i + 1
+    i = tls_append_str(out, i, value)
+    return i
+}
+
+function h2_build_req_headers(out: ptr<u8>, cap: i32, path: string) -> i32 {
+    let mut hi: i32 = 0
+    let mut sub: ptr<u8> = &out[hi]
+    let mut n: i32 = hpack_lit(sub, cap - hi, ":method", "GET")
+    if n < 0 {
+        return -1
+    }
+    hi = hi + n
+    sub = &out[hi]
+    n = hpack_lit(sub, cap - hi, ":path", path)
+    if n < 0 {
+        return -1
+    }
+    hi = hi + n
+    sub = &out[hi]
+    n = hpack_lit(sub, cap - hi, ":scheme", "https")
+    if n < 0 {
+        return -1
+    }
+    hi = hi + n
+    sub = &out[hi]
+    n = hpack_lit(sub, cap - hi, ":authority", "localhost")
+    if n < 0 {
+        return -1
+    }
+    hi = hi + n
+    return hi
+}
+
+function h2_build_resp_headers(out: ptr<u8>, cap: i32) -> i32 {
+    let mut hi: i32 = 0
+    let mut sub: ptr<u8> = &out[hi]
+    let mut n: i32 = hpack_lit(sub, cap - hi, ":status", "200")
+    if n < 0 {
+        return -1
+    }
+    hi = hi + n
+    sub = &out[hi]
+    n = hpack_lit(sub, cap - hi, "content-type", "text/plain")
+    if n < 0 {
+        return -1
+    }
+    hi = hi + n
+    return hi
+}
+
+# ---- server-side handlers (run on the accept thread) ----
+
+function tls_handle_h2(ssl: ptr<void>) -> i32 {
+    let mut preface: array<u8, 24> = []
+    let pp: ptr<u8> = preface
+    if tls_read_exact(ssl, pp, 24) < 0 {
+        return -1
+    }
+    let want: string = h2_client_preface()
+    let wp: ptr<u8> = want
+    let mut k: i32 = 0
+    while k < 24 {
+        if pp[k] != wp[k] {
+            return -1
+        }
+        k = k + 1
+    }
+
+    # Server SETTINGS (empty).
+    if h2_write_frame(ssl, 4, 0, 0, null, 0) < 0 {
+        return -1
+    }
+
+    let mut got_headers: i32 = 0
+    let mut payload: array<u8, 4096> = []
+    let pl: ptr<u8> = payload
+    let mut ftype: i32 = 0
+    let mut fflags: i32 = 0
+    let mut sid: i32 = 0
+    let mut i: i32 = 0
+    while i < 40 and got_headers == 0 {
+        let len: i32 = h2_read_frame(ssl, &ftype, &fflags, &sid, pl, 4096)
+        if len < 0 {
+            return -1
+        }
+        if ftype == 4 {
+            # SETTINGS: ACK unless it is an ACK itself.
+            if (fflags & 1) == 0 {
+                if h2_write_frame(ssl, 4, 1, 0, null, 0) < 0 {
+                    return -1
+                }
+            }
+        }
+        if ftype == 1 {
+            # HEADERS
+            got_headers = 1
+        }
+        # WINDOW_UPDATE (0x8) / PING (0x6): ignore for selftest.
+        i = i + 1
+    }
+    if got_headers == 0 {
+        return -1
+    }
+
+    let mut hpack: array<u8, 256> = []
+    let hb: ptr<u8> = hpack
+    let hi: i32 = h2_build_resp_headers(hb, 256)
+    if hi < 0 {
+        return -1
+    }
+    # HEADERS + END_HEADERS
+    if h2_write_frame(ssl, 1, 4, 1, hb, hi) < 0 {
+        return -1
+    }
+    let body: string = "Hello H2\n"
+    let bp: ptr<u8> = body
+    # DATA + END_STREAM
+    if h2_write_frame(ssl, 0, 1, 1, bp, 9) < 0 {
+        return -1
+    }
+    return 0
+}
+
+function tls_handle_http11(ssl: ptr<void>) -> void {
+    let mut buf: array<u8, 2048> = []
+    let bp: ptr<u8> = buf
+    let n: i32 = flow_rt_ssl_read(ssl, bp as ptr<void>, 2047)
+    if n > 0 {
+        let resp: string = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 10\r\nConnection: close\r\n\r\nHello TLS\n"
+        let rp: ptr<u8> = resp
+        let _: i32 = flow_rt_ssl_write(ssl, rp as ptr<void>, strlen(resp) as i32)
+    }
+}
+
+# One accepted connection: TLS accept, dispatch by ALPN, shutdown.
+# Called from the C pthread trampoline (flow_rt_tls_serve_spawn).
+@flow_api
+export function flow_tls_serve_one_conn(ctx: ptr<void>, lfd: i32) -> i32 {
+    let cfd: i32 = flow_rt_tls_tcp_accept(lfd)
+    if cfd < 0 {
+        return -1
+    }
+    flow_rt_tls_sock_timeouts(cfd, 3)
+    let ssl: ptr<void> = flow_rt_ssl_accept_fd(ctx, cfd)
+    if ssl == null {
+        let _: i32 = flow_rt_tls_fd_close(cfd)
+        return -1
+    }
+    let alpn: i32 = flow_rt_ssl_alpn_selected(ssl)
+    if alpn == 2 {
+        let __: i32 = tls_handle_h2(ssl)
+    } else {
+        tls_handle_http11(ssl)
+    }
+    flow_rt_ssl_shutdown_free(ssl)
+    let ___: i32 = flow_rt_tls_fd_close(cfd)
+    return 0
+}
+
+# ---- test clients ----
+
+function tls_client_teardown(ssl: ptr<void>, ctx: ptr<void>, fd: i32) -> void {
+    flow_rt_ssl_shutdown_free(ssl)
+    flow_rt_tls_ctx_free(ctx)
+    let _: i32 = flow_rt_tls_fd_close(fd)
+}
+
+# offer_alpn: 0=none, 1=h2+http/1.1, 2=h2 only, 3=http/1.1 only
+# Returns response length read (0 on empty), -1 on connect/handshake failure.
+# alpn_out[0]: 0=none, 1=http/1.1, 2=h2.
+function tls_client_get(port: i32, path: string, offer_alpn: i32, out: ptr<u8>, out_cap: i32, alpn_out: ptr<i32>) -> i32 {
+    let c: i32 = flow_rt_tls_tcp_connect(port)
+    if c < 0 {
+        return -1
+    }
+    let ctx: ptr<void> = flow_rt_tls_ctx_client(offer_alpn)
+    if ctx == null {
+        let _: i32 = flow_rt_tls_fd_close(c)
+        return -1
+    }
+    let ssl: ptr<void> = flow_rt_ssl_connect_fd(ctx, c)
+    if ssl == null {
+        flow_rt_tls_ctx_free(ctx)
+        let __: i32 = flow_rt_tls_fd_close(c)
+        return -1
+    }
+    alpn_out[0] = flow_rt_ssl_alpn_selected(ssl)
+
+    let mut req: array<u8, 128> = []
+    let rp: ptr<u8> = req
+    let mut pos: i32 = tls_append_str(rp, 0, "GET ")
+    pos = tls_append_str(rp, pos, path)
+    pos = tls_append_str(rp, pos, " HTTP/1.0\r\nHost: localhost\r\n\r\n")
+    let ___: i32 = flow_rt_ssl_write(ssl, rp as ptr<void>, pos)
+
+    let mut n: i32 = flow_rt_ssl_read(ssl, out as ptr<void>, out_cap - 1)
+    if n < 0 {
+        n = 0
+    }
+    out[n] = 0
+    tls_client_teardown(ssl, ctx, c)
+    return n
+}
+
+# HTTP/2 GET over ALPN h2. Returns DATA payload length or -1.
+function tls_client_h2_get(port: i32, path: string, body_out: ptr<u8>, body_cap: i32, alpn_out: ptr<i32>) -> i32 {
+    let c: i32 = flow_rt_tls_tcp_connect(port)
+    if c < 0 {
+        return -1
+    }
+    let ctx: ptr<void> = flow_rt_tls_ctx_client(2)
+    if ctx == null {
+        let _: i32 = flow_rt_tls_fd_close(c)
+        return -1
+    }
+    let ssl: ptr<void> = flow_rt_ssl_connect_fd(ctx, c)
+    if ssl == null {
+        flow_rt_tls_ctx_free(ctx)
+        let __: i32 = flow_rt_tls_fd_close(c)
+        return -1
+    }
+    alpn_out[0] = flow_rt_ssl_alpn_selected(ssl)
+
+    let preface: string = h2_client_preface()
+    let pp: ptr<u8> = preface
+    if tls_write_all(ssl, pp, 24) < 0 {
+        tls_client_teardown(ssl, ctx, c)
+        return -1
+    }
+    # Client SETTINGS (empty).
+    if h2_write_frame(ssl, 4, 0, 0, null, 0) < 0 {
+        tls_client_teardown(ssl, ctx, c)
+        return -1
+    }
+
+    let mut hpack: array<u8, 256> = []
+    let hb: ptr<u8> = hpack
+    let hi: i32 = h2_build_req_headers(hb, 256, path)
+    if hi < 0 {
+        tls_client_teardown(ssl, ctx, c)
+        return -1
+    }
+
+    let mut saw_server_settings: i32 = 0
+    let mut sent_headers: i32 = 0
+    let mut got_data: i32 = 0
+    let mut body_n: i32 = 0
+    let mut payload: array<u8, 4096> = []
+    let pl: ptr<u8> = payload
+    if body_cap > 0 {
+        body_out[0] = 0
+    }
+
+    let mut ftype: i32 = 0
+    let mut fflags: i32 = 0
+    let mut sid: i32 = 0
+    let mut i: i32 = 0
+    while i < 40 and got_data == 0 {
+        let len: i32 = h2_read_frame(ssl, &ftype, &fflags, &sid, pl, 4096)
+        if len < 0 {
+            tls_client_teardown(ssl, ctx, c)
+            return -1
+        }
+        if ftype == 4 {
+            # SETTINGS
+            if (fflags & 1) == 0 {
+                saw_server_settings = 1
+                if h2_write_frame(ssl, 4, 1, 0, null, 0) < 0 {
+                    tls_client_teardown(ssl, ctx, c)
+                    return -1
+                }
+                if sent_headers == 0 {
+                    # HEADERS + END_HEADERS | END_STREAM, after ACKing server SETTINGS
+                    if h2_write_frame(ssl, 1, 5, 1, hb, hi) < 0 {
+                        tls_client_teardown(ssl, ctx, c)
+                        return -1
+                    }
+                    sent_headers = 1
+                }
+            }
+        }
+        if ftype == 1 {
+            if sent_headers == 0 and saw_server_settings == 1 {
+                if h2_write_frame(ssl, 1, 5, 1, hb, hi) < 0 {
+                    tls_client_teardown(ssl, ctx, c)
+                    return -1
+                }
+                sent_headers = 1
+            }
+        }
+        if ftype == 0 {
+            # DATA
+            if body_cap > 1 and len > 0 {
+                let mut copy: i32 = len
+                if copy > body_cap - 1 {
+                    copy = body_cap - 1
+                }
+                let mut b: i32 = 0
+                while b < copy {
+                    body_out[b] = pl[b]
+                    b = b + 1
+                }
+                body_out[copy] = 0
+                body_n = copy
+            }
+            got_data = 1
+        }
+        i = i + 1
+    }
+
+    tls_client_teardown(ssl, ctx, c)
+    if got_data == 1 {
+        return body_n
+    }
+    return -1
+}
+
+# ---- selftest orchestration ----
+
+# check_mode: 0=HTTP/1.1 body only, 1=ALPN http/1.1 + body, 2=ALPN h2 + Hello H2
+function tls_serve_selftest(port: i32, ctx: ptr<void>, check_mode: i32) -> i32 {
+    if ctx == null {
+        return 0
+    }
+    let lfd: i32 = flow_rt_tls_tcp_listen(port)
+    if lfd < 0 {
+        flow_rt_tls_ctx_free(ctx)
+        return 0
+    }
+    if flow_rt_tls_serve_spawn(ctx, lfd) != 0 {
+        let _: i32 = flow_rt_tls_fd_close(lfd)
+        flow_rt_tls_ctx_free(ctx)
+        return 0
+    }
+    flow_rt_usleep(5000)
+    let mut ok: i32 = 0
+    let mut resp: array<u8, 1024> = []
+    let rp: ptr<u8> = resp
+    let mut alpn: i32 = 0
+    let mut attempt: i32 = 0
+    while attempt < 50 and ok == 0 {
+        if check_mode == 2 {
+            let n: i32 = tls_client_h2_get(port, "/", rp, 1024, &alpn)
+            if n > 0 and alpn == 2 and tls_buf_contains(rp, n, "Hello H2") == 1 {
+                ok = 1
+            }
+        } else {
+            let mut offer: i32 = 0
+            if check_mode == 1 {
+                offer = 1
+            }
+            let n2: i32 = tls_client_get(port, "/", offer, rp, 1024, &alpn)
+            if n2 > 0 and tls_buf_contains(rp, n2, "200") == 1 and tls_buf_contains(rp, n2, "Hello TLS") == 1 {
+                if check_mode != 1 or alpn == 1 {
+                    ok = 1
+                }
+            }
+        }
+        if ok == 0 {
+            flow_rt_usleep(2000)
+        }
+        attempt = attempt + 1
+    }
+    let __: i32 = flow_rt_tls_serve_join()
+    let ___: i32 = flow_rt_tls_fd_close(lfd)
+    flow_rt_tls_ctx_free(ctx)
+    return ok
+}
+
+# HTTPS selftest: ephemeral self-signed cert (in-memory), GET / -> 200.
+# Returns 1 on success, 0 on fail, -1 if TLS unavailable.
 @flow_api
 export function flow_https_selftest(port: i32) -> i32 {
-    return flow_rt_https_selftest(port)
+    if flow_rt_tls_available() == 0 {
+        return -1
+    }
+    return tls_serve_selftest(port, flow_rt_tls_ctx_server_mem(0), 0)
 }
 
+# PEM cert/key + ALPN http/1.1 selftest.
+# Returns 1 on success, 0 on fail, -1 if TLS unavailable.
 @flow_api
 export function flow_https_pem_alpn_selftest(port: i32) -> i32 {
-    return flow_rt_https_pem_alpn_selftest(port)
+    if flow_rt_tls_available() == 0 {
+        return -1
+    }
+    return tls_serve_selftest(port, flow_rt_tls_ctx_server_pem(0), 1)
 }
 
+# HTTPS HTTP/2 selftest: PEM + ALPN h2, preface/SETTINGS/HEADERS/DATA.
+# Returns 1 on success, 0 on fail, -1 if TLS unavailable.
 @flow_api
 export function flow_https_h2_selftest(port: i32) -> i32 {
-    return flow_rt_https_h2_selftest(port)
+    if flow_rt_tls_available() == 0 {
+        return -1
+    }
+    return tls_serve_selftest(port, flow_rt_tls_ctx_server_pem(1), 2)
 }
