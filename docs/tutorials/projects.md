@@ -9,7 +9,7 @@
 
 ```flow
 function score_guess(secret: i32, guess: i32) -> i32 {
-    let d: i32 = guess - secret
+    let mut d: i32 = guess - secret
     if d < 0 {
         d = -d
     }
