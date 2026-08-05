@@ -56,6 +56,7 @@ from .parser import (
     ReturnStatement,
     SortExpr,
     SortKey,
+    StaticDecl,
     Statement,
     StructDecl,
     StructLiteral,
@@ -165,6 +166,7 @@ class CGenerator:
         self._fn_typedefs_emitted = set()
         self._capture_stack = []  # sets of captured names, one per nested lambda body
         self._const_names = set()  # file-scope constants (reachable without capture)
+        self._static_names = set()  # file-scope module statics (reachable without capture)
         self._lambda_insert_idx = None  # where lambda definitions get spliced in
         self._last_lambda_info = None
 
@@ -264,7 +266,8 @@ class CGenerator:
                                    traits: List[TraitDecl] = None,
                                    enums: List[EnumDecl] = None,
                                    type_aliases: List[TypeAliasDecl] = None,
-                                   distinct_types: List[DistinctTypeDecl] = None) -> str:
+                                   distinct_types: List[DistinctTypeDecl] = None,
+                                   statics: List[StaticDecl] = None) -> str:
         lines: List[str] = []
         lines.append("#include <stdint.h>")
         lines.append("#include <stdbool.h>")
@@ -648,6 +651,20 @@ class CGenerator:
         if constants:
             lines.append("")
 
+        # Emit module statics: file-scope mutable state, always `static` so
+        # every translation unit (library or executable) keeps them private.
+        if statics:
+            lines.append("/* Module statics */")
+            for st in statics:
+                lines.append(self._gen_static_decl(st))
+                # Track types for print formatting / overload resolution.
+                self._var_types[st.name] = st.type
+                self._overload_resolver.set_var_type(st.name, self._type_to_string(st.type))
+                # File-scope statics stay reachable from lifted lambda
+                # functions, so they are never captured into closure envs.
+                self._static_names.add(st.name)
+            lines.append("")
+
         # Lambda definitions get spliced in here: after forward declarations
         # and constants (both may be referenced from lambda bodies), before
         # any function definition that may create a closure value.
@@ -690,6 +707,34 @@ class CGenerator:
 
         return "\n".join(lines).rstrip() + "\n"
     
+    def _is_zero_literal(self, e: Any) -> bool:
+        """True for a literal that lowers to zero (0, 0.0, false)."""
+        if not isinstance(e, Literal):
+            return False
+        try:
+            return float(e.value) == 0.0
+        except (TypeError, ValueError):
+            return e.value == "false"
+
+    def _gen_static_decl(self, st: StaticDecl) -> str:
+        """Generate a file-scope C static for a module static declaration."""
+        t = st.type
+        name = _c_ident(st.name)
+        if t.name.startswith("array_") and getattr(t, "size", None) and getattr(t, "element_type", None):
+            elem_c = self._c_type(t.element_type)
+            init = st.value
+            # Zero-fill shorthand: an all-zero array literal lowers to {0}.
+            if isinstance(init, ArrayLiteral) and all(
+                self._is_zero_literal(el) for el in init.elements
+            ):
+                return f"static {elem_c} {name}[{t.size}] = {{0}};"
+            if isinstance(init, ArrayLiteral):
+                return (
+                    f"static {elem_c} {name}[{t.size}] = "
+                    f"{self._gen_array_literal(init, as_initializer=True)};"
+                )
+        return f"static {self._c_type(t)} {name} = {self._gen_expr(st.value)};"
+
     def _gen_capability_method(self, capability_name: str, method: CapabilityMethod) -> List[str]:
         """Generate a capability method as a standalone C function with mangled name."""
         lines: List[str] = []
@@ -3099,6 +3144,8 @@ class CGenerator:
         for cap in list(getattr(e, "captures", []) or []):
             if cap in self._const_names:
                 continue
+            if cap in self._static_names:
+                continue
             if cap in self._effects:
                 continue
             cap_type = self._var_types.get(cap)
@@ -3536,6 +3583,7 @@ def flow_to_c(
         
         # Separate declarations by type
         constants = [d for d in declarations if isinstance(d, ConstDecl)]
+        statics = [d for d in declarations if isinstance(d, StaticDecl)]
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
         structs = [d for d in declarations if isinstance(d, StructDecl)]
         effects = [d for d in declarations if isinstance(d, EffectDecl)]
@@ -3566,7 +3614,7 @@ def flow_to_c(
                 
                 functions.append(method)
         
-        out = generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums, type_aliases, distinct_types)
+        out = generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums, type_aliases, distinct_types, statics=statics)
         # Expose overload warnings without changing the return signature.
         flow_to_c.last_warnings = list(generator._overload_resolver.warnings)
         return out

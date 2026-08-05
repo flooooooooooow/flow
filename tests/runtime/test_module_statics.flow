@@ -1,0 +1,29 @@
+# Module statics: top-level `let mut` is file-scope mutable state.
+# Exits 0 on success.
+
+let mut counter: i32 = 0
+let mut table: array<i32, 4> = [0, 0, 0, 0]
+
+function bump() -> i32 {
+    counter = counter + 1
+    return counter
+}
+
+function record(i: i32, v: i32) -> void {
+    table[i] = v
+}
+
+function main() -> i32 {
+    bump()
+    bump()
+    let third: i32 = bump()
+    if third != 3 {
+        return 1
+    }
+    record(0, 10)
+    record(3, 20)
+    if table[0] + table[3] != 30 {
+        return 2
+    }
+    return 0
+}
