@@ -24,6 +24,7 @@ from .parser import (
     ForkSource,
     FlowStage,
     FlowSyntaxError,
+    ChooseBlock,
     StructLiteral,
     StructDecl,
     Parameter,
@@ -34,6 +35,9 @@ from .parser import (
     FunctionCall,
     FunctionDecl,
     Block,
+    MatchStatement,
+    MatchCase,
+    Assignment,
     Type,
 )
 
@@ -86,6 +90,7 @@ class _Desugarer:
         self._synth: List[StructDecl] = []
         self._by_sig: Dict[tuple, str] = {}
         self._tmp = 0
+        self._choose = 0
 
     @property
     def synthesized(self) -> List[StructDecl]:
@@ -126,6 +131,65 @@ class _Desugarer:
             self._synth.append(StructDecl(name=name, fields=params))
         return StructLiteral(name, fields)
 
+    def _resolve_choose(self, node: "ChooseBlock", hoisted):
+        """Lower a choose block to a hoisted temp + `match` that assigns it.
+
+        `src |> choose sel { A => f, B => g }` becomes, above the statement:
+
+            let mut __choose_N : T
+            match sel { A => { __choose_N = f(src) }  B => { __choose_N = g(src) } }
+
+        and the expression itself becomes `__choose_N`. `T` is the arms' common
+        return type. Needs a surrounding statement list to hoist into.
+        """
+        if hoisted is None:
+            raise ForkRecordError(
+                "a `choose` pipeline (line {}) must appear in a statement "
+                "(a let/return/output), not a bare expression".format(node.line)
+            )
+        selector = self._resolve(node.selector, hoisted)
+        source = self._resolve(node.source, hoisted)
+        if not _is_trivial(source):
+            src_name = "__fork_src_{}".format(self._tmp)
+            self._tmp += 1
+            hoisted.append(
+                VarDecl(name=src_name, type=Type(name="auto"), initializer=source,
+                        is_mutable=False)
+            )
+            source = Variable(src_name)
+
+        arms = [(pat, _subst_source(self._resolve(tmpl, hoisted), source))
+                for pat, tmpl in node.arms]
+
+        result_type = None
+        for _pat, value in arms:
+            result_type = self._infer_field_type(value)
+            if result_type is not None:
+                break
+        if result_type is None:
+            raise ForkRecordError(
+                "cannot infer the result type of the `choose` at line {}: its "
+                "arms must end in a function whose return type is known".format(
+                    node.line
+                )
+            )
+
+        tmp = "__choose_{}".format(self._choose)
+        self._choose += 1
+        hoisted.append(
+            VarDecl(name=tmp, type=result_type, initializer=None, is_mutable=True)
+        )
+        cases = [
+            MatchCase(
+                pat,
+                Block([Assignment(target=tmp, value=value, target_expr=None)]),
+                None,
+            )
+            for pat, value in arms
+        ]
+        hoisted.append(MatchStatement(selector, cases, None))
+        return Variable(tmp)
+
     # --- traversal with statement-level hoisting -------------------------
 
     def _resolve(self, node: object, hoisted: List[object]) -> object:
@@ -147,6 +211,8 @@ class _Desugarer:
                     node.name, node.line
                 )
             )
+        if isinstance(node, ChooseBlock):
+            return self._resolve_choose(node, hoisted)
         if isinstance(node, ForkBlock):
             # Resolve nested forks in the source and branch templates first.
             source = self._resolve(node.source, hoisted)
