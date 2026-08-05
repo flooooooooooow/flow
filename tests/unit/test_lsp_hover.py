@@ -192,3 +192,172 @@ def test_builtin_sin_enriched_from_stdlib_docs():
     assert value is not None
     assert "sin" in value
     assert "Sine" in value or "radians" in value.lower()
+
+
+def test_hover_on_let_binding_shows_type():
+    server = FlowLanguageServer()
+    uri = "file:///tmp/let_hover.flow"
+    text = (
+        "function main() -> i32 {\n"
+        "    let n: i32 = 41\n"
+        "    return n + 1\n"
+        "}\n"
+    )
+    server.documents[uri] = text
+    server._analyze_document(uri)
+    # Hover on `n` in `return n + 1` (not the 'n' inside `return`)
+    import re
+    row = text.split("\n")[2]
+    col = re.search(r"\bn\b", row).start()
+    value = _hover_value(server, uri, 2, col)
+    assert value is not None
+    assert "n" in value
+    assert "i32" in value
+    assert "let" in value.lower() or "variable" in value.lower()
+
+
+def test_hover_on_mut_let_and_param():
+    server = FlowLanguageServer()
+    uri = "file:///tmp/param_hover.flow"
+    text = (
+        "function add(a: i32, b: i32) -> i32 {\n"
+        "    let mut total: i32 = a\n"
+        "    total = total + b\n"
+        "    return total\n"
+        "}\n"
+    )
+    server.documents[uri] = text
+    server._analyze_document(uri)
+
+    # Parameter `a` at use site in initializer (last `a` on the let line)
+    col_a = text.split("\n")[1].rindex("a")
+    value_a = _hover_value(server, uri, 1, col_a)
+    assert value_a is not None
+    assert "a" in value_a
+    assert "i32" in value_a
+    assert "Parameter" in value_a or "parameter" in value_a.lower()
+
+    # mut local `total` at assignment target
+    col_t = text.split("\n")[2].index("total")
+    value_t = _hover_value(server, uri, 2, col_t)
+    assert value_t is not None
+    assert "total" in value_t
+    assert "mut" in value_t
+    assert "i32" in value_t
+
+
+def test_hover_prefers_binding_over_ordering_catalog():
+    """A param named `sort` should show the binding, not ordering docs."""
+    server = FlowLanguageServer()
+    uri = "file:///tmp/shadow_sort.flow"
+    text = (
+        "function pick(sort: i32) -> i32 {\n"
+        "    return sort\n"
+        "}\n"
+    )
+    server.documents[uri] = text
+    server._analyze_document(uri)
+    import re
+    row = text.split("\n")[1]
+    col = re.search(r"\bsort\b", row).start()
+    value = _hover_value(server, uri, 1, col)
+    assert value is not None
+    assert "i32" in value
+    assert "Parameter" in value or "parameter" in value.lower()
+    assert "sortBy" not in value  # ordering catalog essay
+
+
+def test_definition_jumps_to_stdlib():
+    server = FlowLanguageServer()
+    server._ensure_stdlib_indexed()
+    uri = "file:///tmp/goto_stdlib.flow"
+    text = (
+        "function main() -> f32 {\n"
+        "    return add(1.0, 2.0)\n"
+        "}\n"
+    )
+    server.documents[uri] = text
+    server._analyze_document(uri)
+    col = text.split("\n")[1].index("add")
+    loc = server._handle_definition(
+        {
+            "textDocument": {"uri": uri},
+            "position": {"line": 1, "character": col},
+        }
+    )
+    assert loc is not None
+    assert "uri" in loc
+    assert loc["uri"].endswith("math.flow") or "stdlib" in loc["uri"]
+
+
+def test_completion_includes_stdlib_and_locals():
+    server = FlowLanguageServer()
+    uri = "file:///tmp/compl.flow"
+    text = (
+        "function main() -> f32 {\n"
+        "    let answer: f32 = 1.0\n"
+        "    return an\n"
+        "}\n"
+    )
+    server.documents[uri] = text
+    server._analyze_document(uri)
+    # Prefix "an" at end of `return an`
+    items = server._handle_completion(
+        {
+            "textDocument": {"uri": uri},
+            "position": {"line": 2, "character": text.split("\n")[2].index("an") + 2},
+        }
+    )
+    labels = {it["label"] for it in items}
+    assert "answer" in labels
+    # stdlib `add` matches prefix when typed further; check abs via "ab"
+    items_ab = server._handle_completion(
+        {
+            "textDocument": {"uri": uri},
+            "position": {"line": 2, "character": 11},
+        }
+    )
+    # Force a completion with prefix "ad"
+    server.documents[uri] = (
+        "function main() -> f32 {\n"
+        "    return ad\n"
+        "}\n"
+    )
+    server._analyze_document(uri)
+    items_ad = server._handle_completion(
+        {
+            "textDocument": {"uri": uri},
+            "position": {"line": 1, "character": 13},
+        }
+    )
+    labels_ad = {it["label"] for it in items_ad}
+    assert "add" in labels_ad
+
+
+def test_const_and_effect_indexed():
+    server = FlowLanguageServer()
+    uri = "file:///tmp/const_effect.flow"
+    text = (
+        "# Gravity\n"
+        "export const G: f64 = 9.81\n"
+        "\n"
+        "effect State {\n"
+        "    get() -> i32\n"
+        "}\n"
+        "\n"
+        "function main() -> f64 {\n"
+        "    return G\n"
+        "}\n"
+    )
+    server.documents[uri] = text
+    server._analyze_document(uri)
+    assert "G" in server.symbols[uri]
+    assert server.symbols[uri]["G"]["kind"] == "const"
+    assert "State" in server.symbols[uri]
+    assert server.symbols[uri]["State"]["kind"] == "effect"
+    col = text.split("\n")[8].index("G")
+    value = _hover_value(server, uri, 8, col)
+    assert value is not None
+    assert "G" in value
+    assert "f64" in value
+    assert "Gravity" in value
