@@ -1,0 +1,138 @@
+# Flow-native language test: the flowlm package (registry/packages/flowlm).
+#
+# Three checks, cheap enough to run on every `./flow test-lang`:
+#   1. tokenizer  — char vocabulary fits, mini-BPE shrinks the sequence, and
+#                   decode round-trips the corpus byte for byte
+#   2. gradients  — every analytic parameter gradient agrees with a central
+#                   finite difference on a tiny config
+#   3. training   — 150 Adam steps drive the loss below the uniform baseline
+#
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import registry.packages.flowlm.src.util {
+    flm_alloc_i32,
+    flm_alloc_u8,
+    flm_srand
+}
+import registry.packages.flowlm.src.corpus {
+    flm_corpus_len,
+    flm_corpus_load
+}
+import registry.packages.flowlm.src.tokenizer {
+    flm_vocab_fit,
+    flm_char_count,
+    flm_merge_count,
+    flm_vocab_size,
+    flm_encode_chars,
+    flm_decode,
+    flm_bpe_train,
+    flm_bpe_counts_size
+}
+import registry.packages.flowlm.src.model {
+    flm_model_init,
+    flm_model_randomize,
+    flm_param_count
+}
+import registry.packages.flowlm.src.train {
+    flm_optim_init,
+    flm_lr_schedule,
+    flm_train_step,
+    flm_eval_loss
+}
+import registry.packages.flowlm.src.gradcheck {
+    flm_gradcheck,
+    flm_gradcheck_worst,
+    flm_gradcheck_tol
+}
+
+extern {
+    function log(x: f64) -> f64
+}
+
+function main() -> i32 {
+    # ---------------------------------------------------------- 1. tokenizer
+    let nbytes: i32 = flm_corpus_len()
+    if nbytes < 4000 or nbytes > 8192 {
+        return 10
+    }
+    let text: ptr<u8> = flm_alloc_u8(nbytes + 1)
+    let got: i32 = flm_corpus_load(text, nbytes + 1)
+    if got != nbytes {
+        return 11
+    }
+    let nchars: i32 = flm_vocab_fit(text, got)
+    if nchars < 2 or nchars > 96 {
+        return 12
+    }
+    if flm_char_count() != nchars {
+        return 13
+    }
+    let ids: ptr<i32> = flm_alloc_i32(got + 1)
+    let nids: i32 = flm_encode_chars(text, got, ids, got + 1)
+    if nids != got {
+        return 14
+    }
+
+    let bpe: ptr<i32> = flm_alloc_i32(got + 1)
+    let mut i: i32 = 0
+    while i < nids {
+        bpe[i] = ids[i]
+        i = i + 1
+    }
+    let counts: ptr<i32> = flm_alloc_i32(flm_bpe_counts_size())
+    let nbpe: i32 = flm_bpe_train(bpe, nids, 16, counts)
+    if flm_merge_count() != 16 {
+        return 15
+    }
+    if nbpe >= nids {
+        return 16
+    }
+    if flm_vocab_size() != nchars + 16 {
+        return 17
+    }
+    let back: ptr<u8> = flm_alloc_u8(got + 16)
+    let nback: i32 = flm_decode(bpe, nbpe, back, got + 16)
+    if nback != got {
+        return 18
+    }
+    i = 0
+    while i < got {
+        if back[i] != text[i] {
+            return 19
+        }
+        i = i + 1
+    }
+
+    # ---------------------------------------------------------- 2. gradients
+    if !flm_gradcheck(false) {
+        return 20
+    }
+    if flm_gradcheck_worst() > flm_gradcheck_tol() {
+        return 21
+    }
+
+    # ----------------------------------------------------------- 3. training
+    if flm_model_init(nchars, 16, 16, 32) < 0 {
+        return 30
+    }
+    if flm_param_count() < 1 {
+        return 31
+    }
+    flm_srand(1234)
+    flm_model_randomize(0.08)
+    flm_optim_init()
+
+    let baseline: f64 = log(nchars as f64)
+    let mut step: i32 = 0
+    while step < 150 {
+        let lr: f32 = flm_lr_schedule(step, 0.02, 20, 150, 0.1)
+        flm_train_step(ids, nids, 16, 4, lr, 1.0)
+        step = step + 1
+    }
+    let after: f64 = flm_eval_loss(ids, nids, 16, 24, 101)
+    if after >= baseline - 0.4 {
+        return 32
+    }
+    println("flowlm: tokenizer, gradients, and training all OK")
+    return 0
+}
