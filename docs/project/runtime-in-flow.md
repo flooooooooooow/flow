@@ -70,6 +70,21 @@ SHA-256 core (`crypto.flow`, bit-exact vs hashlib) and the HTTP bench serve +
 client loops (`http_bench.flow`); C keeps the CSPRNG and the threaded
 accept-loop server.
 
+Progress (2026-08-05, evening): all planned waves have landed.
+- TLS/HTTP2 protocol logic in `tls.flow` (576 lines Flow; `flow_tls.c` 702 to
+  478, OpenSSL shims + cert machinery only). Selftest output byte-identical.
+- HTTP response formatting and route parsing in `http_routed.flow` (pure Flow
+  byte assembly; `flow_tcp.c` 338 to 275). Remaining C: middleware globals
+  needing atomics, sockets, thread/fiber harnesses.
+- Recorder logic in `gfx_record.flow` (env contract, key scripts, PPM writing;
+  `gfx_record.c` 237 to 186, ABI table + framebuffer only). Frames
+  byte-identical to the C recorder.
+- Module statics landed as a language feature (LANGUAGE_SPEC 3.3.1), unlocking:
+  tape store fully in Flow (`flow_rt_tape_store.c` deleted) and the task store
+  shrunk to its pthread trampoline (109 to 68 lines). Shared mutable state
+  stays mutex-guarded exactly as before; function-pointer tables and pthread_t
+  arrays stay in C.
+
 Stays native regardless: fctx asm + init, fiber worker loop, pthread/atomic
 kernels, race TLS tables, cchan and parallel-for hot loops, netpoll kqueue/epoll,
 Metal/Cocoa/SDL, miniaudio device, CPython embed.
