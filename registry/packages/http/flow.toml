@@ -1,0 +1,15 @@
+[package]
+name = "http"
+version = "0.1.0"
+description = "HTTP client wrapping libcurl (GET/POST, headers, timeouts)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/lib.flow"
+
+[dependencies]
+
+[dev-dependencies]
+
+[native]
+sources = ["native/flow_http.c"]
+libs = ["curl"]
