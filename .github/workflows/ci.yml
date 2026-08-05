@@ -174,25 +174,82 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-python
+      # Gen0 still needs a Python interpreter, but not pip deps (stdlib-only emit path).
+      - uses: ./.github/actions/setup-python-bare
 
       - name: Stage-A/B self-host roundtrip
         env:
           PYTHONPATH: src
+          FLOW_HOST: python
         run: |
           chmod +x ./flow compiler/scripts/*.sh
           # Full roundtrip: Phase-A fixtures + Phase-B bundle/topo/self-emit path.
           timeout 20m ./compiler/scripts/roundtrip.sh
 
-      - name: Phase C host smoke (FLOW_HOST=flowc)
+      - name: Stage flowc driver for artifact
+        run: |
+          mkdir -p /tmp/flowc-driver
+          picked=""
+          for cand in \
+            stage_a_driver_flow_self \
+            stage_a_driver_flow_g2 \
+            stage_a_driver_flow \
+            stage_a_driver
+          do
+            if [[ -x "compiler/build/$cand" ]]; then
+              cp "compiler/build/$cand" /tmp/flowc-driver/flowc
+              picked="$cand"
+              break
+            fi
+          done
+          if [[ -z "$picked" ]]; then
+            echo "No stage_a_driver* binary after roundtrip"
+            ls -la compiler/build || true
+            exit 1
+          fi
+          echo "Staged $picked as flowc-driver/flowc"
+          chmod +x /tmp/flowc-driver/flowc
+
+      - name: Upload Stage-A flowc driver
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowc-driver
+          path: /tmp/flowc-driver/flowc
+          if-no-files-found: error
+          retention-days: 3
+
+  # Phase D: user-facing compile must not pip-install the Python compiler.
+  flowc-compile:
+    name: flowc compile (no pip)
+    runs-on: ubuntu-latest
+    needs: [changes, flowc-bootstrap]
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download Stage-A flowc driver
+        uses: actions/download-artifact@v4
+        with:
+          name: flowc-driver
+          path: compiler/build
+
+      - name: Stage-A compile without Python/pip
         env:
-          PYTHONPATH: src
           FLOW_HOST: flowc
         run: |
-          chmod +x ./flow compiler/scripts/*.sh
-          FLOWC_BIN="$(./compiler/scripts/ensure_flowc.sh)"
+          chmod +x ./flow
+          FLOWC_BIN="compiler/build/flowc"
+          if [[ ! -f "$FLOWC_BIN" ]]; then
+            echo "Missing downloaded flowc at $FLOWC_BIN"
+            ls -laR compiler/build || true
+            exit 1
+          fi
+          chmod +x "$FLOWC_BIN"
           export FLOWC_BIN
           echo "Using flowc: $FLOWC_BIN"
+          # No ensure_flowc / Gen0 bootstrap here — that would need Python.
           ./flow run examples/basics/hello_world.flow
           ./flow compile examples/basics/fibonacci.flow
           # fibonacci.flow main returns fib(10) == 55 as process exit status
@@ -302,6 +359,7 @@ jobs:
       - security
       - flow-tier2
       - flowc-bootstrap
+      - flowc-compile
       - pytest
       - fuzz
       - flow-examples
@@ -351,6 +409,7 @@ jobs:
           compiler_req=false
           if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
           check flowc-bootstrap '${{ needs.flowc-bootstrap.result }}' "$compiler_req"
+          check flowc-compile '${{ needs.flowc-compile.result }}' "$compiler_req"
           check pytest '${{ needs.pytest.result }}' "$pytest_req"
           check fuzz '${{ needs.fuzz.result }}' "$fuzz_req"
           check flow-examples '${{ needs.flow-examples.result }}' "$ex_req"
