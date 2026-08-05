@@ -1,4 +1,5 @@
 # Delimited continuation scaffold — shift/resume demo
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Run: ./flow run examples/concurrency/cont_scaffold.flow
 
 import "stdlib/async.flow"
