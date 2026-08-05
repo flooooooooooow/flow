@@ -1,0 +1,40 @@
+# Pipeline fork block — apply several pipelines to one value, collect a record.
+#
+# `source |> Record { field = stage..., ... }` forks `source`: each branch is
+# the pipeline `source |> stage...`, and the whole block builds the named
+# `Record`. Branches read with `=` (a pipeline) rather than the struct-literal
+# `:` (a value), which keeps the fork and record forms visually distinct.
+#
+# Note: `source` is substituted into every branch, so bind a non-trivial
+# source with `let` first if you don't want it recomputed per branch.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+struct Stats {
+    doubled: i32,
+    squared: i32,
+    plus_ten: i32,
+}
+
+function twice(x: i32) -> i32 { return x * 2 }
+function square(x: i32) -> i32 { return x * x }
+function add(x: i32, k: i32) -> i32 { return x + k }
+
+function main() -> i32 {
+    let n: i32 = 6
+
+    # Fork n through three pipelines. `add(_, 10)` uses a placeholder so n
+    # lands in the first argument and 10 stays fixed.
+    let s: Stats = n |> Stats {
+        doubled = twice,
+        squared = square,
+        plus_ten = add(_, 10),
+    }
+
+    printf("doubled  = %d\n", s.doubled)   # 12
+    printf("squared  = %d\n", s.squared)   # 36
+    printf("plus_ten = %d\n", s.plus_ten)  # 16
+    return 0
+}
