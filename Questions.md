@@ -11,6 +11,21 @@ Format:
 
 ## Open Questions
 
+### 2026-08-05: Self-hosting cutover — when does `./flow` drop Python?
+
+**Context:** Plan in `docs/project/self-hosting.md`. Stage-A `flowc` exists
+as a bootstrap; production is still `src/flow/*.py`.
+
+**Options:**
+1. Hard cutover after Phase C parity suite green (recommended).
+2. Soft forever dual-host (`FLOW_HOST=python|flowc`) with no deadline.
+3. Freeze Python features and only grow `flowc` (slow user-facing velocity).
+
+**Recommendation:** (1) with a published parity checklist; keep (2) as escape
+hatch for one release after cutover.
+
+**Status:** 🔲 Pending
+
 ### 2026-08-04: Declarative ordering — Phase 2 scope
 
 **Context:** Phase 1 shipped (`docs/language/ordering.md`): `xs |> sort`,
