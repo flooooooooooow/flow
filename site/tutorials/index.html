@@ -7,9 +7,21 @@
     <meta name="description" content="Learn Flow with browser-based compile and run exercises.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../wiki.css">
     <link rel="stylesheet" href="../tutorial-runner.css">
+    <script>
+        // Same bootstrap as the docs shell so the theme carries across pages.
+        (function () {
+            try {
+                var t = localStorage.getItem('flow-wiki-theme');
+                if (t !== 'light' && t !== 'dark') t = 'dark';
+                document.documentElement.setAttribute('data-theme', t);
+            } catch (e) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
 </head>
 <body class="tutorials-shell">
     <header class="site-header">
@@ -20,9 +32,10 @@
                 <span class="brand-tag">tutorials</span>
             </a>
             <div class="header-tools">
+                <button type="button" class="btn theme-toggle" id="themeToggle" aria-label="Toggle color theme"><span class="sr-only">Toggle color theme</span></button>
                 <a href="../#tutorials%2Fbeginner.md" class="btn">Written guides</a>
+                <a href="https://github.com/abhishekshivakumar/transpile" class="btn" target="_blank" rel="noopener">GitHub</a>
                 <a href="../playground/" class="btn btn-accent">Playground</a>
-                <a href="https://github.com/flooooooooooow/flow" class="btn" target="_blank" rel="noopener">GitHub</a>
             </div>
         </div>
     </header>
@@ -48,10 +61,22 @@
         <a href="../">Documentation</a>
     </footer>
 
+    <script src="../vendor/highlight.min.js"></script>
+    <script src="../flow-lang.js"></script>
+    <script src="../flow-editor.js"></script>
     <script src="../flow-compile.js"></script>
     <script src="../tutorial-runner.js"></script>
     <script>
-        initTutorialsApp(document.body);
+        (function () {
+            var KEY = 'flow-wiki-theme';
+            var btn = document.getElementById('themeToggle');
+            btn.addEventListener('click', function () {
+                var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+                document.documentElement.setAttribute('data-theme', next);
+                try { localStorage.setItem(KEY, next); } catch (e) { /* private mode */ }
+            });
+            initTutorialsApp(document.body);
+        })();
     </script>
 </body>
 </html>

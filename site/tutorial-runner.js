@@ -18,9 +18,7 @@ function createFlowRunner(source, options = {}) {
             </div>
         </div>
         <div class="flow-runner-body">
-            <div class="flow-runner-editor">
-                <textarea spellcheck="false" aria-label="Flow source code"></textarea>
-            </div>
+            <div class="flow-runner-editor" data-editor-slot></div>
             <div class="flow-runner-output">
                 <div class="flow-runner-tabs" role="tablist">
                     <button type="button" class="flow-runner-tab active" data-tab="output" role="tab">Output</button>
@@ -28,7 +26,7 @@ function createFlowRunner(source, options = {}) {
                     <button type="button" class="flow-runner-tab" data-tab="c" role="tab">Generated C</button>
                     <button type="button" class="flow-runner-tab" data-tab="mlir" role="tab">MLIR</button>
                 </div>
-                <pre class="flow-runner-pane success" data-pane="output">Click Run to compile and execute.</pre>
+                <pre class="flow-runner-pane idle" data-pane="output">Click Run to compile and execute.</pre>
                 <pre class="flow-runner-pane" data-pane="ast" hidden></pre>
                 <pre class="flow-runner-pane" data-pane="c" hidden></pre>
                 <pre class="flow-runner-pane" data-pane="mlir" hidden></pre>
@@ -37,9 +35,10 @@ function createFlowRunner(source, options = {}) {
         <div class="flow-runner-hint">Browser interpreter · <kbd>⌘</kbd>+<kbd>Enter</kbd> to run · not the native compiler</div>
     `;
 
-    const textarea = wrap.querySelector('textarea');
     const original = source.trim();
-    textarea.value = original;
+    const editor = createFlowEditor(original, { label: 'Flow source code' });
+    wrap.querySelector('[data-editor-slot]').appendChild(editor.el);
+    const textarea = editor.input;
 
     const dot = wrap.querySelector('[data-dot]');
     const status = wrap.querySelector('[data-status]');
@@ -111,9 +110,9 @@ function createFlowRunner(source, options = {}) {
 
     wrap.querySelector('[data-run]').addEventListener('click', run);
     wrap.querySelector('[data-reset]').addEventListener('click', () => {
-        textarea.value = original;
+        editor.value = original;
         panes.output.textContent = 'Click Run to compile and execute.';
-        panes.output.className = 'flow-runner-pane success';
+        panes.output.className = 'flow-runner-pane idle';
         panes.ast.textContent = '';
         panes.c.textContent = '';
         panes.mlir.textContent = '';
@@ -121,18 +120,11 @@ function createFlowRunner(source, options = {}) {
         setTab('output');
     });
 
+    // Tab handling lives in the editor; this only adds the run shortcut.
     textarea.addEventListener('keydown', (e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             e.preventDefault();
             run();
-        }
-        // Tab inserts spaces in the editor
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            textarea.value = `${textarea.value.slice(0, start)}    ${textarea.value.slice(end)}`;
-            textarea.selectionStart = textarea.selectionEnd = start + 4;
         }
     });
 
@@ -140,6 +132,7 @@ function createFlowRunner(source, options = {}) {
         setTimeout(run, 80);
     }
 
+    wrap.flowEditor = editor;
     return wrap;
 }
 
@@ -187,6 +180,80 @@ function saveTutorialProgress(map) {
 
 function normalizeOutput(text) {
     return String(text || '').replace(/\r\n/g, '\n').trim();
+}
+
+function escapeText(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Renders the program's structure as explained, clickable steps. Hovering or
+ * focusing a step lights up the lines it describes in the editor.
+ */
+function renderWalkthrough(container, code, runner) {
+    const steps = analyzeFlowProgram(code);
+    if (!steps.length) {
+        container.hidden = true;
+        return;
+    }
+    container.hidden = false;
+
+    const lineWord = (s, e) => (s === e ? `line ${s}` : `lines ${s}–${e}`);
+
+    container.innerHTML = `
+        <div class="walk-head">
+            <h2>How this program is built</h2>
+            <p>Hover a step to light up the lines it describes.</p>
+        </div>
+        <ol class="walk-steps">
+            ${steps.map((step, i) => `
+                <li class="walk-step" data-start="${step.start}" data-end="${step.end}" tabindex="0">
+                    <span class="walk-index">${i + 1}</span>
+                    <div class="walk-body">
+                        <p class="walk-title">
+                            <span class="walk-kind walk-kind-${step.kind}">${step.label}</span>
+                            <code>${escapeText(step.title)}</code>
+                            <span class="walk-lines">${lineWord(step.start, step.end)}</span>
+                        </p>
+                        <p class="walk-detail">${escapeText(step.detail)}</p>
+                        ${step.sub.length ? `
+                            <ul class="walk-sub">
+                                ${step.sub.map((s) => `
+                                    <li class="walk-step" data-start="${s.start}" data-end="${s.end}" tabindex="0">
+                                        <code>${escapeText(s.title)}</code>
+                                        <span class="walk-detail">${escapeText(s.detail)}</span>
+                                        <span class="walk-lines">${lineWord(s.start, s.end)}</span>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        ` : ''}
+                    </div>
+                </li>
+            `).join('')}
+        </ol>
+    `;
+
+    const editor = runner?.flowEditor;
+    if (!editor) return;
+
+    container.querySelectorAll('.walk-step').forEach((el) => {
+        const start = Number(el.dataset.start);
+        const end = Number(el.dataset.end);
+        const on = (e) => {
+            e.stopPropagation();
+            container.querySelectorAll('.walk-step.lit').forEach((n) => n.classList.remove('lit'));
+            el.classList.add('lit');
+            editor.highlightLines(start, end);
+        };
+        const off = () => {
+            el.classList.remove('lit');
+            editor.clearHighlight();
+        };
+        el.addEventListener('mouseenter', on);
+        el.addEventListener('mouseleave', off);
+        el.addEventListener('focus', on);
+        el.addEventListener('blur', off);
+    });
 }
 
 function initTutorialsApp(root) {
@@ -334,11 +401,7 @@ function initTutorialsApp(root) {
                     </div>
                     <h1>${lesson.title}</h1>
                     <p class="tutorials-lead">${lesson.description || 'Edit the code and click Run.'}</p>
-                    <ol class="tutorials-goals">
-                        <li>Read the starter program — what should it print?</li>
-                        <li>Click <strong>Run</strong> (or ⌘/Ctrl+Enter).</li>
-                        <li>Tweak values / add a <code>printf</code>, then Run again.</li>
-                    </ol>
+                    <div class="tutorials-walkthrough" data-walkthrough hidden></div>
                     <div data-runner-slot></div>
                     <div class="tutorials-check" data-check hidden></div>
                     <div class="tutorials-nav">
@@ -373,6 +436,7 @@ function initTutorialsApp(root) {
                     },
                 });
                 slot.appendChild(runner);
+                renderWalkthrough(main.querySelector('[data-walkthrough]'), lesson.code, runner);
 
                 main.querySelector('[data-prev]')?.addEventListener('click', () => {
                     if (prev) renderLesson(prev.id);
