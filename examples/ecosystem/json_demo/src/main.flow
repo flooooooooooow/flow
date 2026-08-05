@@ -1,0 +1,45 @@
+# json package demo
+import json.lib {
+    json_validate,
+    json_get_i32,
+    json_get_bool,
+    json_has_key,
+    json_path_has,
+    json_path_get_i32,
+    json_path_get_bool,
+    json_path_get_string,
+    json_array_len
+}
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    let src: string = "{\"x\": 42, \"ok\": true, \"name\": \"flow\", \"nested\": {\"y\": 7, \"flag\": false}, \"items\": [10, 20, 30], \"a\": {\"b\": [1, 2]}}"
+    printf("valid=%d\n", json_validate(src))
+    printf("has_x=%d\n", json_has_key(src, "x"))
+    printf("x=%d\n", json_get_i32(src, "x"))
+    printf("ok=%d\n", json_get_bool(src, "ok"))
+    printf("missing=%d\n", json_has_key(src, "nope"))
+
+    printf("path_nested_y=%d\n", json_path_get_i32(src, "nested.y"))
+    printf("path_items_0=%d\n", json_path_get_i32(src, "items.0"))
+    printf("path_items_2=%d\n", json_path_get_i32(src, "items.2"))
+    printf("path_a_b_1=%d\n", json_path_get_i32(src, "a.b.1"))
+    printf("path_has_nested_y=%d\n", json_path_has(src, "nested.y"))
+    printf("path_has_nope=%d\n", json_path_has(src, "nested.nope"))
+    printf("path_flag=%d\n", json_path_get_bool(src, "nested.flag"))
+    printf("items_len=%d\n", json_array_len(src, "items"))
+    printf("a_b_len=%d\n", json_array_len(src, "a.b"))
+    printf("not_array=%d\n", json_array_len(src, "x"))
+
+    let buf: array<u8, 32> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let out: ptr<u8> = buf
+    let n: i32 = json_path_get_string(src, "name", out, 32)
+    printf("path_name_len=%d\n", n)
+    return 0
+}

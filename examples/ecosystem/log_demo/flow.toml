@@ -1,0 +1,12 @@
+[package]
+name = "log_demo"
+version = "0.1.0"
+description = "Demo for registry package log"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+log = "0.1.0"
+
+[dev-dependencies]

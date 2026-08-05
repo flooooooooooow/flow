@@ -1,0 +1,15 @@
+# testing package demo
+import testing.lib { test_begin, assert_eq_i32, assert_true, test_end }
+
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+function main() -> i32 {
+    test_begin("arithmetic")
+    assert_eq_i32(add(2, 2), 4)
+    assert_eq_i32(add(0, 0), 0)
+    assert_true(1)
+    assert_eq_i32(add(1, 1), 2)
+    return test_end()
+}
