@@ -77,7 +77,7 @@ FLOWC_OUT=compiler/build/stage_a_sum.c \
   ./flow run compiler/src/main.flow
 ```
 
-Round-trip (emit → `cc` → run; `stage_a_sum` / `stage_a_for_sum` exit `45`, `stage_a_const` exit `12`, `stage_a_struct` exit `42`, `stage_a_token_consts` dogfood exit `29`, `stage_a_ptr` / `stage_a_cast` / `stage_a_index_assign` / `stage_a_array_else` / `stage_a_float` exit `42`). Also compile-object dogfood for real modules [`src/token.flow`](src/token.flow), [`src/ast.flow`](src/ast.flow), [`src/lexer.flow`](src/lexer.flow), [`src/fileio.flow`](src/fileio.flow), [`src/parser.flow`](src/parser.flow), [`src/cgen.flow`](src/cgen.flow), [`src/typecheck.flow`](src/typecheck.flow), and [`src/resolve.flow`](src/resolve.flow) plus separate [`src/jsgen.flow`](src/jsgen.flow) / [`src/fmt.flow`](src/fmt.flow) dogfood (`compile_module` + `flowc_jsgen_fmt.o`; `FLOWC_BACKEND=js|fmt` fixture smokes — kept out of `flowc_frontend.o` fixed-point); plus two-file link smoke [`fixtures/pkg_add/`](fixtures/pkg_add/) (`import .math` skipped at emit → link `math.o`+`main.o` → exit `42`); plus `FLOWC_BUNDLE=1` smoke [`fixtures/bundle_main.flow`](fixtures/bundle_main.flow) + [`bundle_lib.flow`](fixtures/bundle_lib.flow) → exit `42` (default bundle typecheck); [`bundle_tc_ok.flow`](fixtures/bundle_tc_ok.flow) / [`bundle_tc_bad.flow`](fixtures/bundle_tc_bad.flow); plus typecheck fixtures (`typecheck_ok` → exit `42`, `typecheck_undef` rejected without opt-out):
+Round-trip (emit → `cc` → run; `stage_a_sum` / `stage_a_for_sum` exit `45`, `stage_a_const` exit `12`, `stage_a_struct` exit `42`, `stage_a_token_consts` dogfood exit `29`, `stage_a_ptr` / `stage_a_cast` / `stage_a_index_assign` / `stage_a_array_else` / `stage_a_float` / `stage_a_match` exit `42`; `match_unsupported` must be rejected with a struct-pattern diagnostic). Also compile-object dogfood for real modules [`src/token.flow`](src/token.flow), [`src/ast.flow`](src/ast.flow), [`src/lexer.flow`](src/lexer.flow), [`src/fileio.flow`](src/fileio.flow), [`src/parser.flow`](src/parser.flow), [`src/cgen.flow`](src/cgen.flow), [`src/typecheck.flow`](src/typecheck.flow), and [`src/resolve.flow`](src/resolve.flow) plus separate [`src/jsgen.flow`](src/jsgen.flow) / [`src/fmt.flow`](src/fmt.flow) dogfood (`compile_module` + `flowc_jsgen_fmt.o`; `FLOWC_BACKEND=js|fmt` fixture smokes — kept out of `flowc_frontend.o` fixed-point); plus two-file link smoke [`fixtures/pkg_add/`](fixtures/pkg_add/) (`import .math` skipped at emit → link `math.o`+`main.o` → exit `42`); plus `FLOWC_BUNDLE=1` smoke [`fixtures/bundle_main.flow`](fixtures/bundle_main.flow) + [`bundle_lib.flow`](fixtures/bundle_lib.flow) → exit `42` (default bundle typecheck); [`bundle_tc_ok.flow`](fixtures/bundle_tc_ok.flow) / [`bundle_tc_bad.flow`](fixtures/bundle_tc_bad.flow); plus typecheck fixtures (`typecheck_ok` → exit `42`, `typecheck_undef` rejected without opt-out):
 
 ```bash
 ./compiler/scripts/roundtrip.sh
@@ -179,7 +179,7 @@ What `flowc_parse_program` actually accepts:
 **Top-level**
 - [x] `function name(params) -> Type { ... }` / omit `-> Type` for void
 - [x] `struct Name { field: Type, ... }` (Stage-A emit: `typedef struct Name { int32_t … } Name;`)
-- [x] `extern { ... }` — **brace-matched skip only** (body not typed/parsed; Stage-A: `#include <stdio.h>` + `#include <string.h>` when present; no libc prototypes — would clash with headers)
+- [x] `extern { ... }` — **brace-matched skip only** (body not typed/parsed; Stage-A preamble always includes `<stdio.h>` + `<string.h>` so bundle TUs with later-module externs compile; no libc prototypes — would clash with headers)
 - [x] `import .sibling { a, b }` / `import pkg.mod { … }` / `import "path.flow"`
 - [x] `export function` / `export struct` / bare `export a, b`
 - [x] `const Name: Type = expr` / `export const Name: Type = expr` (Stage-A: non-export → `static const int32_t`; export → linkable `const int32_t`)
@@ -191,6 +191,7 @@ What `flowc_parse_program` actually accepts:
 - [x] `if cond { ... }` / `if ... else { ... }` (Stage-A: clean `} else {` brace chain)
 - [x] `while cond { ... }`
 - [x] `for name in lo to hi { ... }`
+- [x] `match expr { pattern => block, ... }` statement (AST_MATCH=35 / AST_MATCH_ARM=36; commas between arms optional). Patterns: int literals (incl. negative), `_` wildcard, or a binding ident as catch-all (Python-host semantics for non-enum idents). Guards, or-patterns, struct patterns, and list patterns are rejected with a diagnostic. Stage-A emit: scrutinee temp `__flowc_match` + if/else-if chain; binding arm declares `int32_t name = __flowc_match;`. Typecheck: obvious non-integer scrutinees rejected; catch-all arm must be last.
 - [x] `name = expr` / `name.field = expr` / `name[i] = expr` / `name[i].field = expr` (AST_ASSIGN: a=lhs, b=rhs)
 - [x] expression statements (e.g. calls)
 - [x] `break` / `continue`
