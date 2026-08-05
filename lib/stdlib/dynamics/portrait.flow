@@ -1,0 +1,43 @@
+# Phase-portrait trail helpers (pattern-adoption #165).
+# Ring-buffer + project helpers until `represent phase_portrait` lowers.
+# Import: import "stdlib/dynamics/portrait.flow"
+
+# Push (x, z) into a fixed-capacity ring. Updates head/count in place via ptrs.
+# xs/zs must each have length >= capacity.
+export function trail_push_2d(
+    xs: ptr<f64>,
+    zs: ptr<f64>,
+    capacity: i32,
+    head: ptr<i32>,
+    count: ptr<i32>,
+    x: f64,
+    z: f64
+) -> void {
+    let h: i32 = head[0]
+    xs[h] = x
+    zs[h] = z
+    head[0] = (h + 1) % capacity
+    let c: i32 = count[0]
+    if c < capacity {
+        count[0] = c + 1
+    }
+}
+
+# Oldest→newest index for draw order: i in 0..count maps to ring slot.
+export function trail_index(head: i32, count: i32, capacity: i32, i: i32) -> i32 {
+    return (head + capacity - count + i) % capacity
+}
+
+# Linear map from world v in [vmin, xmax] to pixel in [pad, width-pad).
+# vmin>vmax is allowed (inverted axis, e.g. screen y).
+export function project_axis(v: f64, vmin: f64, vmax: f64, width: i32, pad: i32) -> i32 {
+    let span: f64 = vmax - vmin
+    let mut t: f64 = 0.5
+    if span != 0.0 {
+        t = (v - vmin) / span
+    }
+    if t < 0.0 { t = 0.0 }
+    if t > 1.0 { t = 1.0 }
+    let inner: i32 = width - 2 * pad
+    return pad + (t * (inner as f64)) as i32
+}

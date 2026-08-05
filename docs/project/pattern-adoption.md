@@ -23,8 +23,8 @@ story. Adoption first; new sugar second.
 | P1 | Route linalg examples through `blas.flow` | adoption ✅ | [#168](https://github.com/flooooooooooow/flow/issues/168) |
 | P1 | Wire ML demos through Dual / grad codegen | adoption + docs ✅ | [#170](https://github.com/flooooooooooow/flow/issues/170) |
 | P1 | Owned `HttpResponse` + JSON decode helpers | API ✅ | [#167](https://github.com/flooooooooooow/flow/issues/167) |
-| P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib | [#162](https://github.com/flooooooooooow/flow/issues/162) |
-| P2 | Field / `laplacian` PDE surface | language | [#163](https://github.com/flooooooooooow/flow/issues/163) |
+| P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ partial | [#162](https://github.com/flooooooooooow/flow/issues/162) |
+| P2 | Field / `laplacian` PDE surface | language ✅ partial | [#163](https://github.com/flooooooooooow/flow/issues/163) |
 | P2 | Dual + Tensor operators + mutable params | language | [#161](https://github.com/flooooooooooow/flow/issues/161) |
 | P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering | [#160](https://github.com/flooooooooooow/flow/issues/160) |
 
@@ -128,11 +128,12 @@ flow Lorenz {
 ```
 
 **MVP split:**
-1. Port dynamics to `flow Lorenz` + `solver { method rk4 }` (shipped cards).
-2. Keep trail/project/draw in `main` behind `gfx_run` until `represent phase_portrait`
-   lowers (ring buffer + project helpers in stdlib `dynamics/portrait.flow`).
+1. Port dynamics to `flow Lorenz` + `solver { method rk4 }` ✅
+2. Trail/project helpers in `stdlib/dynamics/portrait.flow` ✅
+   (`trail_push_2d`, `trail_index`, `project_axis`); draw loop still in `main`
+   until `represent phase_portrait` lowers.
 
-**Exit:** `examples/evolution/lorenz_gfx.flow` ≤ ~60 lines; no manual `nxt[]` copy loop.
+**Exit:** no manual `nxt[]` ODE copy ✅; file ~80 lines (grammar card still open for ≤60).
 
 ---
 
@@ -178,29 +179,23 @@ ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 
 ### 7. Dynamics DSL / LQR beyond n=2
 
-**Today:** `dsys` / `sense` / `ga` / `closed` shine for 2-state plants;
-`apps/cartpole/control.flow` owns a private 4×4 Riccati stack.
+**Shipped MVP:** `lib/stdlib/dynamics/lqr.flow` —
+`dlqr_diag_q_scalar_u` / `lqr_diag_q` for n≤8, scalar input. Cartpole
+`cartpole_lqr_gains` is a thin wrapper (no private Riccati loop).
 
-**Sketch:**
-```flow
-dsys CartPole4 {
-    A = [ … 4×4 … ]
-    B = [ … 4×1 … ]
-}
-analyze CartPole4 {
-    lqr { Q = …  R = … } -> K
-}
-# or stdlib: function lqr(A, B, Q, R, n, m) -> ptr<f64>
-```
+**Follow-on:** LAPACK DARE; `analyze { lqr { … } }` for n>2 in the DSL.
 
-Prefer **stdlib `lqr`/`dare`** wrapping LAPACK first; extend DSL `n` only when
-matrix literals and codegen are solid.
+**Exit (stdlib):** Cartpole control has no private mini-ARE. ✅ DSL card open.
 
 ---
 
 ### 8. Field / `laplacian` PDE
 
-**North-star for `heat_diffusion.flow`:**
+**Shipped MVP:** `lib/stdlib/dynamics/pde.flow` (`laplacian_1d`,
+`laplacian_1d_at`, `heat_euler_step_1d`). Tourist
+`examples/evolution/heat_diffusion.flow` steps via the helper.
+
+**North-star grammar (follow-on):**
 ```flow
 field T : f64[32] on Line
 param alpha : f64 = 0.1
@@ -209,8 +204,8 @@ T evolves as alpha * laplacian(T)
 boundary T { left = 1.0  right = 0.0 }
 ```
 
-**MVP:** stdlib `laplacian_1d(buf, n, dx)` + `flow` over `array` states without
-full mesh types; full `field` grammar is the card.
+**Exit (stdlib):** heat demo reads as evolution via laplacian helper, not
+nested index soup. ✅ Grammar card remains open.
 
 ---
 
