@@ -6,6 +6,7 @@ Comprehensive examples demonstrating Flow's capabilities across multiple domains
 
 ```
 examples/
+├── ai/               # Game-AI training (Q-learning, GA, policy gradients)
 ├── basics/           # Fundamental algorithms, Result, match
 ├── audio/            # Real-time audio DSP (@rt_safe demos)
 ├── compilers/        # Language implementation demos
@@ -159,6 +160,15 @@ Self-hosting bootstrap (not a full compiler yet — see [compiler/README.md](../
 - **`compiler/` (`flowc`)** — Flow-in-Flow front-end: token + lexer + AST + subset parser (no C emitter) — `./flow run compiler/src/main.flow`
 - `compilers/calculator.flow` - Recursive-descent expression parser
 - `compilers/flow_identifier_lexer.flow` / `flow_lexer.flow` - historical lexer seeds
+
+### Game AI (`ai/`)
+Trains real agents on headless re-simulations of the games, using
+`lib/stdlib/ai.flow` (tutorial: [docs/tutorials/game-ai.md](../docs/tutorials/game-ai.md)).
+Each demo prints its learning curve, evaluates against a random baseline and
+exits 0 only when the trained agent wins by a wide margin:
+- `q_snake.flow` - Tabular Q-learning on snake (`./flow run examples/ai/q_snake.flow`)
+- `ga_flappy.flow` - Neuroevolution on flappy (`./flow run examples/ai/ga_flappy.flow`)
+- `policy_pong.flow` - REINFORCE policy MLP on pong (`./flow run examples/ai/policy_pong.flow`)
 
 ### Machine Learning (`ml/`)
 Neural network framework + autodiff:
