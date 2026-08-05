@@ -160,7 +160,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         return 1
     }
 
-    # Stage-A typecheck ON by default (opt-out for frontend dogfood modules).
+    # Stage-A typecheck ON by default (opt-out for intentional bad fixtures).
     if flowc_driver_want_typecheck() == 1 {
         let tc_errs: i32 = flowc_typecheck(p.arena, root, src)
         if tc_errs > 0 {
