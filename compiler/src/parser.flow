@@ -518,10 +518,13 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
         let ns: i32 = p[0].cur.start
         let ne: i32 = p[0].cur.end
         flowc_parser_advance(p)
-        if flowc_parser_eat(p, TOK_COLON) == 0 {
-            return AST_NONE
+        # Optional `: Type` — Stage-A used to require it; flowc sources use
+        # inferred `let mut x = …` in tests (#151).
+        let mut ty: i32 = AST_NONE
+        if flowc_parser_check(p[0], TOK_COLON) == 1 {
+            flowc_parser_advance(p)
+            ty = flowc_parse_type(p)
         }
-        let ty: i32 = flowc_parse_type(p)
         if flowc_parser_eat(p, TOK_EQ) == 0 {
             return AST_NONE
         }
