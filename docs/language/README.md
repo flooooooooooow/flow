@@ -12,6 +12,8 @@ Detailed documentation for the Flow programming language.
 | [Types](types.md) | Type system and primitive types |
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |
+| [Dynamics DSL](dynamics-dsl.md) | `dsys` / `analyze` / LQR expanders |
+| [Ordering](ordering.md) | Declarative `\|> sort` / `sortBy` |
 | [Graphics](graphics.md) | Native 2D graphics — macOS Cocoa; Linux/Windows SDL2 (+ stub) |
 | [Shaders](shaders.md) | Fill-shader surface language (Metal on macOS) |
 | [WebAssembly](wasm.md) | Near-term Flow→C→emscripten path; native Flow-in-WASM deferred |
@@ -21,6 +23,7 @@ Detailed documentation for the Flow programming language.
 | [Debugging](debugging.md) | `./flow debug`, `#line`, LLDB/GDB |
 | [Modules](modules.md) | Named imports + package paths |
 | [Language Design](language_design.md) | Design rationale |
+| [North-star](../vision/north-star.md) | Evolution / units design cards |
 
 ## Quick Reference
 
