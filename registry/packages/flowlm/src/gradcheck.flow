@@ -121,20 +121,20 @@ export function flm_gradcheck(verbose: bool) -> bool {
     flm_zero_grads()
     flm_backward(inp, tgt, ctx)
 
-    print("  config: V=")
-    print(vocab)
-    print(" D=")
-    print(dmodel)
-    print(" T=")
-    print(ctx)
-    print(" F=")
-    print(dff)
-    print("  params=")
-    print(np)
-    println("")
-    flm_println_f("  base loss (nats): ", base_loss)
-    println("")
     if verbose {
+        print("  config: V=")
+        print(vocab)
+        print(" D=")
+        print(dmodel)
+        print(" T=")
+        print(ctx)
+        print(" F=")
+        print(dff)
+        print("  params=")
+        print(np)
+        println("")
+        flm_println_f("  base loss (nats): ", base_loss)
+        println("")
         println("  tensor            n    max rel err   worst analytic   worst numeric")
         println("  ---------------------------------------------------------------------")
     }
@@ -194,10 +194,12 @@ export function flm_gradcheck(verbose: bool) -> bool {
         }
         ti = ti + 1
     }
-    println("")
-    flm_print_sci("  worst relative error over all parameters: ", flm_gc_worst)
-    println("")
-    print("  worst tensor: ")
-    println(flm_tensor_name(flm_gc_worst_tensor))
+    if verbose {
+        println("")
+        flm_print_sci("  worst relative error over all parameters: ", flm_gc_worst)
+        println("")
+        print("  worst tensor: ")
+        println(flm_tensor_name(flm_gc_worst_tensor))
+    }
     return all_ok
 }
