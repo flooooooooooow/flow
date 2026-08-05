@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Any, Tuple, Set
 from enum import Enum
 
 from .parser import (
-    FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
+    FunctionDecl, StructDecl, EffectDecl, CapabilityDecl, ConstDecl, StaticDecl, VarDecl, ReturnStatement, Assignment, BinaryOperation, UnaryOperation,
     FunctionCall, Literal, Variable, StructLiteral, ArrayLiteral, ArrayAccess, FieldAccess, MethodCall, EffectCall,
     IfStatement, WhileStatement, ForStatement, LayoutStatement, HandleStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl, TraitDecl,
@@ -874,6 +874,14 @@ class TypeChecker:
                               getattr(decl, 'is_exported', False), decl)
                 self.global_scope.define(symbol)
 
+            elif isinstance(decl, StaticDecl):
+                # Module statics are mutable module-scope variables; functions
+                # in the same module read/write them like normal variables.
+                static_type = self._parse_type(decl.type)
+                symbol = Symbol(decl.name, static_type, "variable",
+                              is_mutable=True, definition=decl)
+                self.global_scope.define(symbol)
+
     def _define_function(self, name: str, decl: FunctionDecl) -> None:
         param_types = [self._parse_type(p.type) for p in decl.parameters]
         return_type = self._parse_type(decl.return_type)
@@ -906,6 +914,8 @@ class TypeChecker:
                     self._check_function(method)
             elif isinstance(decl, ConstDecl):
                 self._check_const(decl)
+            elif isinstance(decl, StaticDecl):
+                self._check_static(decl)
             # Other declaration types don't need additional checking yet
 
     def _iter_call_names(self, node: Any, seen: Set[int]) -> "list[str]":
@@ -1090,6 +1100,94 @@ class TypeChecker:
         if not self._can_coerce(expr_type, expected_type):
             self.errors.append(
                 f"Const '{const.name}' has type {expr_type} but should be {expected_type}"
+            )
+
+    # Types a module static may have (plus fixed arrays of these, and ptr<T>).
+    STATIC_PRIMITIVE_TYPES = {"i32", "i64", "u8", "u32", "f32", "f64", "bool"}
+
+    def _is_const_scalar(self, expr: Any) -> bool:
+        """True for literal scalars usable as static initializers.
+
+        Covers numeric/bool literals and negated numeric literals. String
+        literals are excluded (statics of string type are not supported).
+        """
+        if isinstance(expr, Literal):
+            return getattr(expr.type, "name", "") != "string"
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            return isinstance(expr.operand, Literal)
+        return False
+
+    def _check_static(self, decl: StaticDecl) -> None:
+        """Validate a module static: allowed type + compile-time constant init."""
+        t = decl.type
+        name = decl.name
+        is_pointer = getattr(t, "is_pointer", False) or t.name.startswith("ptr_")
+        is_fixed_array = (
+            t.name.startswith("array_")
+            and getattr(t, "size", None)
+            and getattr(t, "element_type", None) is not None
+        )
+
+        if is_pointer:
+            # Pointers may only start as null; any other address would not be
+            # a link-time constant.
+            if not (isinstance(decl.value, Literal) and decl.value.value == "null"):
+                self.errors.append(
+                    f"Module static '{name}' of pointer type must be "
+                    f"initialized to null"
+                )
+            return
+
+        if is_fixed_array:
+            elem_name = getattr(t.element_type, "name", "")
+            if elem_name not in self.STATIC_PRIMITIVE_TYPES:
+                self.errors.append(
+                    f"Module static '{name}' has unsupported array element type "
+                    f"'{elem_name}': static arrays may only hold primitives "
+                    f"(i32/i64/u8/u32/f32/f64/bool)"
+                )
+                return
+            if not isinstance(decl.value, ArrayLiteral):
+                self.errors.append(
+                    f"Module static '{name}' initializer must be a full array "
+                    f"literal of compile-time constants"
+                )
+                return
+            if len(decl.value.elements) != t.size:
+                self.errors.append(
+                    f"Module static '{name}' array initializer has "
+                    f"{len(decl.value.elements)} elements but the type declares "
+                    f"{t.size}"
+                )
+                return
+            for element in decl.value.elements:
+                if not self._is_const_scalar(element):
+                    self.errors.append(
+                        f"Module static '{name}' array initializer must contain "
+                        f"only compile-time constant literals"
+                    )
+                    return
+        elif t.name in self.STATIC_PRIMITIVE_TYPES:
+            if not self._is_const_scalar(decl.value):
+                self.errors.append(
+                    f"Module static '{name}' initializer must be a compile-time "
+                    f"constant literal"
+                )
+                return
+        else:
+            self.errors.append(
+                f"Module static '{name}' has unsupported type '{t.name}': "
+                f"module statics must be a primitive (i32/i64/u8/u32/f32/f64/"
+                f"bool), a fixed array of primitives, or ptr<T>"
+            )
+            return
+
+        expr_type = self._check_expression(decl.value)
+        expected_type = self._parse_type(decl.type)
+        if not self._can_coerce(expr_type, expected_type):
+            self.errors.append(
+                f"Module static '{name}' has type {expr_type} but should be "
+                f"{expected_type}"
             )
 
     def _check_block(self, block: Block) -> SemanticType:

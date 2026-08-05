@@ -798,6 +798,20 @@ class ConstDecl:
 
 
 @dataclass
+class StaticDecl:
+    """Module-level mutable state: top-level `let mut name: Type = value`.
+
+    Lowers to a file-scope C `static`, so the variable is private to its
+    translation unit. The type annotation is required and the initializer
+    must be a compile-time constant (checked in the type checker).
+    """
+
+    name: str
+    type: Type
+    value: "Expression"
+
+
+@dataclass
 class TestDecl:
     name: str
     body: Block
@@ -1604,6 +1618,12 @@ class Parser:
                 decl = self.parse_const()
                 decl.is_exported = is_exported
                 declarations.append(decl)
+            elif self.current_token.type == TokenType.LET:
+                if is_exported:
+                    raise SyntaxError(
+                        f"Cannot export a module static at line {self.current_token.line}"
+                    )
+                declarations.append(self.parse_static())
             elif self.current_token.type == TokenType.TEST:
                 if is_exported:
                     raise SyntaxError(
@@ -1838,6 +1858,33 @@ class Parser:
             self.advance()
 
         return ConstDecl(name, type, value)
+
+    def parse_static(self) -> StaticDecl:
+        """Parse a module static: top-level `let mut name: Type = value`."""
+        line = self.current_token.line
+        self.expect(TokenType.LET)
+        if self.current_token.type != TokenType.MUT:
+            raise SyntaxError(
+                f"Top-level 'let' at line {line} must be 'let mut' (module static); "
+                f"use 'const' for immutable module-level values"
+            )
+        self.advance()
+        name = self.expect(TokenType.IDENTIFIER).value
+        if self.current_token.type != TokenType.COLON:
+            raise SyntaxError(
+                f"Module static '{name}' at line {line} requires an explicit "
+                f"type annotation"
+            )
+        self.advance()
+        type = self.parse_type()
+        self.expect(TokenType.ASSIGN)
+        value = self.parse_expression_without_assign()
+
+        # Semicolons are optional
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
+
+        return StaticDecl(name, type, value)
 
     def parse_test(self) -> FunctionDecl:
         self.expect(TokenType.TEST)
