@@ -82,7 +82,7 @@ function flowc_env_is_zero(name: string) -> i32 {
 
 # Stage-A typecheck default ON. Opt-out: FLOWC_TYPECHECK=0 or FLOWC_NO_TYPECHECK=1.
 # FLOWC_TYPECHECK=1 remains an explicit on (redundant with default).
-# Frontend dogfood paths pass FLOWC_TYPECHECK=0 when emitting modules.
+# Intentional opt-out: bad fixtures that must still emit C (roundtrip checks).
 function flowc_want_typecheck() -> i32 {
     if flowc_env_set("FLOWC_NO_TYPECHECK") == 1 {
         return 0
@@ -187,8 +187,8 @@ function flowc_emit_mode() -> i32 {
             return 1
         }
 
-        # Stage-A typecheck ON by default. Opt-out for frontend dogfood modules
-        # (extern / unresolved imports): FLOWC_TYPECHECK=0 or FLOWC_NO_TYPECHECK=1.
+        # Stage-A typecheck ON by default. Opt-out for intentional bad fixtures:
+        # FLOWC_TYPECHECK=0 or FLOWC_NO_TYPECHECK=1.
         if flowc_want_typecheck() == 1 {
             let tc_errs: i32 = flowc_typecheck(p.arena, root, src)
             if tc_errs > 0 {
