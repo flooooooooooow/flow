@@ -19,7 +19,7 @@ import .cgen { flowc_cgen_emit_ex }
 import .typecheck {
     TcCtx,
     flowc_tc_init, flowc_tc_free, flowc_tc_reset_module,
-    flowc_tc_seed_export, flowc_tc_check_program
+    flowc_tc_set_path, flowc_tc_seed_export, flowc_tc_check_program
 }
 
 extern {
@@ -601,6 +601,7 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
         }
 
         flowc_tc_reset_module(&ctx, src)
+        flowc_tc_set_path(&ctx, mpath)
         let errs: i32 = flowc_tc_check_program(&ctx, p.arena, root)
         if errs > 0 {
             puts("flowc bundle tc: module check failed")

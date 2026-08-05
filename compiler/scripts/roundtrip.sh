@@ -499,6 +499,11 @@ if ! grep -Eq 'flowc tc: at 5:' compiler/build/typecheck_undef.log; then
     cat compiler/build/typecheck_undef.log >&2
     exit 1
 fi
+if ! grep -Fq 'compiler/fixtures/typecheck_undef.flow' compiler/build/typecheck_undef.log; then
+    echo "FAIL FLOWC_TYPECHECK: expected file path in diagnostic" >&2
+    cat compiler/build/typecheck_undef.log >&2
+    exit 1
+fi
 # Opt-out still emits the undef fixture (typecheck skipped).
 FLOWC_FORCE_HOST=1 FLOWC_TYPECHECK=0 stage_a_emit \
     compiler/fixtures/typecheck_undef.flow \
