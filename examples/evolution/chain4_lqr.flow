@@ -1,0 +1,78 @@
+# CHAIN-4 LQR — `analyze { lqr }` for n=4 (#162 beyond n=2).
+# Discrete integrator chain; diagonal-Q LQR via dlqr_diag_q_scalar_u.
+#
+# Run: ./flow run examples/evolution/chain4_lqr.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+dsys plant {
+    discrete
+    dt 0.1
+    n 4 m 1 p 1
+    A 1.0 0.1 0.0 0.0  0.0 1.0 0.1 0.0  0.0 0.0 1.0 0.1  0.0 0.0 0.0 1.0
+    B 0.0 0.0 0.0 0.1
+    C 1.0 0.0 0.0 0.0
+}
+
+analyze plant {
+    lqr {
+        Q 1.0 1.0 1.0 1.0
+        R 1.0
+        max_iter 400
+        -> k0 k1 k2 k3
+    }
+}
+
+function main() -> i32 {
+    println("")
+    println("  CHAIN-4 LQR  --  analyze { lqr } n=4")
+    println("  =====================================")
+    println("")
+    print("    K = [")
+    printf("%.4f", k0)
+    print(", ")
+    printf("%.4f", k1)
+    print(", ")
+    printf("%.4f", k2)
+    print(", ")
+    printf("%.4f", k3)
+    println("]")
+
+    let mut x: array<f64, 4> = [1.0, 0.0, 0.0, 0.0]
+    let mut xn: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut u: array<f64, 1> = [0.0]
+    let mut energy: f64 = 0.0
+
+    for t in 0 to 80 {
+        u[0] = 0.0 - (k0 * x[0] + k1 * x[1] + k2 * x[2] + k3 * x[3])
+        plant_step(plant, x, u, xn)
+        x[0] = xn[0]
+        x[1] = xn[1]
+        x[2] = xn[2]
+        x[3] = xn[3]
+        energy = energy + x[0] * x[0] + x[1] * x[1] + x[2] * x[2] + x[3] * x[3]
+    }
+
+    print("    closed-loop energy (80) : ")
+    printf("%.4f", energy)
+    println("")
+    println("")
+
+    if fabs(k0) + fabs(k1) + fabs(k2) + fabs(k3) < 0.01 {
+        println("    FAIL: gains near zero")
+        return 1
+    }
+    if energy > 80.0 {
+        println("    FAIL: energy too high")
+        return 2
+    }
+    if fabs(x[0]) > 0.5 {
+        println("    FAIL: did not settle")
+        return 3
+    }
+    println("    OK: n=4 analyze { lqr }")
+    return 0
+}
