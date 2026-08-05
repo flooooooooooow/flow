@@ -23,6 +23,7 @@ from .parser import (
     ForkBlock,
     ForkSource,
     FlowStage,
+    FlowSyntaxError,
     StructLiteral,
     StructDecl,
     Parameter,
@@ -37,8 +38,14 @@ from .parser import (
 )
 
 
-class ForkRecordError(Exception):
-    """A fork record whose field types cannot be inferred structurally."""
+class ForkRecordError(FlowSyntaxError):
+    """A fork block that can't be lowered (uninferrable record, or a flow-stage
+    param block used outside a flow output).
+
+    Subclasses FlowSyntaxError so it is a clean rejection of invalid source —
+    not an internal crash — for callers (and the fuzzer) that distinguish the
+    two by `SyntaxError`.
+    """
 
 
 def _return_type_map(declarations: List[object]) -> Dict[str, Type]:
