@@ -59,8 +59,8 @@ g2_emit_module() {
     local -a cc_args=(-O0 -c)
 
     echo "=== g2_emit ${name} ==="
-    # Frontend modules: imports/extern — opt out of default-on typecheck.
-    FLOWC_TYPECHECK=0 ./compiler/build/stage_a_driver_self "$src" "$c_out"
+    # Typecheck on (default): imports seed names; extern blocks allow unknown calls.
+    ./compiler/build/stage_a_driver_self "$src" "$c_out"
     local h
     for h in "$@"; do
         cc_args+=(-include "$h")
@@ -205,7 +205,7 @@ echo "PASS stage_a_driver_flow_g2"
 
 # Gen3 probe: driver_g2 re-emits token; must match self/g2 token C (deterministic).
 echo "=== gen3 token emit (driver_g2) ==="
-FLOWC_TYPECHECK=0 ./compiler/build/stage_a_driver_g2 \
+./compiler/build/stage_a_driver_g2 \
     compiler/src/token.flow \
     compiler/build/gen3_token.c
 if ! cmp -s compiler/build/gen3_token.c compiler/build/g2_token.c; then
