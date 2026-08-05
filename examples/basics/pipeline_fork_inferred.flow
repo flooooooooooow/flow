@@ -1,0 +1,33 @@
+# Anonymous fork block — the record type is inferred, no struct declaration.
+#
+# `source |> { field = stage..., ... }` (no record name) forks `source` like a
+# named fork, but the record type is synthesized: each field takes the return
+# type of the function its pipeline ends in. Use this when the record is a
+# one-off aggregate you don't want to name.
+#
+# Compare examples/basics/pipeline_fork.flow, which forks into a *named* struct.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function twice(x: i32) -> i32 { return x * 2 }
+function square(x: i32) -> i32 { return x * x }
+function add_ten(x: i32) -> i32 { return x + 10 }
+
+function main() -> i32 {
+    let n: i32 = 6
+
+    # No struct named anywhere: the { doubled: i32, squared: i32, plus_ten: i32 }
+    # record is inferred from twice/square/add_ten's return types.
+    let s = n |> {
+        doubled  = twice,
+        squared  = square,
+        plus_ten = add_ten,
+    }
+
+    printf("doubled  = %d\n", s.doubled)   # 12
+    printf("squared  = %d\n", s.squared)   # 36
+    printf("plus_ten = %d\n", s.plus_ten)  # 16
+    return 0
+}

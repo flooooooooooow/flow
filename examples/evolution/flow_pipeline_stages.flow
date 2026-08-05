@@ -1,0 +1,57 @@
+# Flows as pipeline stages: `signal |> Gain |> Limiter`.
+#
+# Inside a flow, an `output` whose value pipes through flow-typed stages is
+# desugared into child instances wired in sequence — `signal -> Gain.x`,
+# `Gain.out -> Limiter.w` — with the output reading the last stage. Each stage
+# reads the previous stage's output before stepping, so a stage adds one tick
+# of delay (a sampled, state-broken pipeline). After settling, the chain holds
+# k * signal.
+#
+# Compare examples/evolution/parent_input_connect.flow, which wires one child
+# by hand with `connect`.
+#
+# Run: ./flow run examples/evolution/flow_pipeline_stages.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+
+    y evolves as k * x - y
+}
+
+flow Limiter {
+    state z : f64 = 0.0
+    input w : f64
+    output out : f64 = z
+
+    z evolves as w - z
+}
+
+flow Chain {
+    input signal : f64
+    # `Gain { k: 3.0 }` overrides the stage's `k` param (colon = value; a fork
+    # block would use `=`). Drop the braces to keep the stage's defaults.
+    output result : f64 = signal |> Gain { k: 3.0 } |> Limiter
+}
+
+function main() -> i32 {
+    let dt: f64 = 0.01
+    let mut c: Chain = Chain_new()
+    c.signal = 1.0
+
+    let mut i: i32 = 0
+    while i < 4000 {
+        Chain_step(&c, dt)
+        i = i + 1
+    }
+
+    # Gain -> k * signal = 3.0 (k overridden); Limiter tracks it -> 3.0
+    printf("pipeline result (expect ~3.0) = %f\n", c.result)
+    return 0
+}
