@@ -8,10 +8,10 @@ import .token {
     TOK_COLON, TOK_COMMA, TOK_SEMI, TOK_DOT, TOK_DOTDOT, TOK_ARROW,
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG,
-    TOK_ERROR, TOK_AMP,
+    TOK_ERROR, TOK_AMP, TOK_FATARROW,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
-    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR
+    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH
 }
 
 function flowc_lex_is_alpha(c: i32) -> i32 {
@@ -116,6 +116,7 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     let as_kw: array<u8, 2> = [97, 115]
     let and_kw: array<u8, 3> = [97, 110, 100]
     let or_kw: array<u8, 2> = [111, 114]
+    let match_kw: array<u8, 5> = [109, 97, 116, 99, 104]
     let p: ptr<u8> = let_kw
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_LET }
     p = fn_kw
@@ -162,6 +163,8 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_AND }
     p = or_kw
     if flowc_lex_ident_eq(src, start, end, p, 2) == 1 { return KW_OR }
+    p = match_kw
+    if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_MATCH }
     return 0
 }
 
@@ -240,6 +243,11 @@ export function flowc_lexer_next(lex: ptr<Lexer>) -> Token {
         flowc_lexer_bump(lex)
         flowc_lexer_bump(lex)
         return flowc_make_tok(TOK_EQEQ, 0, start, start + 2, line, col)
+    }
+    if c == 61 and n1 == 62 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_FATARROW, 0, start, start + 2, line, col)
     }
     if c == 33 and n1 == 61 {
         flowc_lexer_bump(lex)

@@ -8,7 +8,7 @@ import .ast {
     AST_INT, AST_BOOL, AST_STRING, AST_FLOAT, AST_ASSIGN, AST_EXPR_STMT,
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
-    AST_BREAK, AST_CONTINUE,
+    AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
     flowc_ast_chain_len
 }
 
@@ -551,6 +551,50 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_block(ctx, arena, arena.nodes[id].c)
         ctx[0].loop_depth = ctx[0].loop_depth - 1
         flowc_tc_pop_mark(ctx)
+        return
+    }
+    if kind == AST_MATCH {
+        let scrut: i32 = arena.nodes[id].a
+        flowc_tc_check_expr(ctx, arena, scrut)
+        # Scrutinee must be integer-typed: reject obvious non-integer forms
+        # (string/float literal, or ident with a known string/f32/f64 type).
+        if scrut != AST_NONE {
+            let sk: i32 = arena.nodes[scrut].kind
+            if sk == AST_STRING or sk == AST_FLOAT {
+                flowc_tc_note(ctx, "flowc tc: match scrutinee must be integer-typed", arena.nodes[scrut].start, arena.nodes[scrut].end)
+                flowc_tc_err(ctx)
+            }
+            if sk == AST_IDENT {
+                let sty: i32 = flowc_tc_lookup_val_type(ctx[0], arena.nodes[scrut].name_start, arena.nodes[scrut].name_end)
+                if sty != AST_NONE and arena.nodes[sty].kind == AST_TYPE {
+                    let tns: i32 = arena.nodes[sty].name_start
+                    let tne: i32 = arena.nodes[sty].name_end
+                    let mut bad: i32 = 0
+                    if flowc_tc_span_is(ctx[0].src, tns, tne, "string") == 1 { bad = 1 }
+                    if flowc_tc_span_is(ctx[0].src, tns, tne, "f32") == 1 { bad = 1 }
+                    if flowc_tc_span_is(ctx[0].src, tns, tne, "f64") == 1 { bad = 1 }
+                    if bad == 1 {
+                        flowc_tc_note(ctx, "flowc tc: match scrutinee must be integer-typed", arena.nodes[scrut].name_start, arena.nodes[scrut].name_end)
+                        flowc_tc_err(ctx)
+                    }
+                }
+            }
+        }
+        let mut arm: i32 = arena.nodes[id].b
+        while arm != AST_NONE {
+            # Wildcard / binding arm is a catch-all — must be the last arm.
+            if arena.nodes[arm].ival != 0 and arena.nodes[arm].next != AST_NONE {
+                flowc_tc_note(ctx, "flowc tc: catch-all match arm must be last", arena.nodes[arm].start, arena.nodes[arm].end)
+                flowc_tc_err(ctx)
+            }
+            flowc_tc_push_mark(ctx)
+            if arena.nodes[arm].ival == 2 {
+                flowc_tc_bind(ctx, arena.nodes[arm].name_start, arena.nodes[arm].name_end, 0, -1)
+            }
+            flowc_tc_check_block(ctx, arena, arena.nodes[arm].b)
+            flowc_tc_pop_mark(ctx)
+            arm = arena.nodes[arm].next
+        }
         return
     }
     if kind == AST_ASSIGN {
