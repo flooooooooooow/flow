@@ -1,0 +1,109 @@
+# PENDULUM with solver { method rk4 }. Same physical model as
+# pendulum_evolves.flow; the solver block swaps classic RK4 into
+# Pendulum_step (four Pendulum_derivs calls on temporary state copies).
+# Spec: docs/vision/north-star.md §2.4.
+#
+# Run: ./flow run examples/evolution/pendulum_rk4.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+flow Pendulum {
+    state angle    : f64 = 2.0
+    state velocity : f64 = 0.0
+    param gravity  : f64 = 9.81
+    param length   : f64 = 1.0
+    param damping  : f64 = 0.5
+
+    solver { dt 1 ms  method rk4 }
+
+    angle evolves as velocity
+    velocity evolves as -(gravity / length) * sin(angle) - damping * velocity
+}
+
+function pendulum_energy(theta: f64, omega: f64) -> f64 {
+    let mass: f64 = 1.0
+    let length: f64 = 1.0
+    let gravity: f64 = 9.81
+    let kinetic: f64 = 0.5 * mass * length * length * omega * omega
+    let potential: f64 = mass * gravity * length * (1.0 - cos(theta))
+    return kinetic + potential
+}
+
+function main() -> i32 {
+    let dt: f64 = Pendulum_default_dt()
+    let steps: i32 = 24000
+    let print_every: i32 = 2000
+
+    let mut p: Pendulum = Pendulum_new()
+    let angle0: f64 = p.angle
+    let e0: f64 = pendulum_energy(p.angle, p.velocity)
+    let mut prev_row_energy: f64 = e0
+    let mut energy_violations: i32 = 0
+    let mut saw_nan: i32 = 0
+
+    println("")
+    println("  PENDULUM as a flow  --  method rk4")
+    println("  ==================================")
+    println("")
+    println("      t [s]  angle [rad]   vel [rad/s]  energy [J]")
+    println("    -------  -----------  ------------  ----------")
+
+    for k in 0 to steps + 1 {
+        let t: f64 = k * dt
+        let e: f64 = pendulum_energy(p.angle, p.velocity)
+
+        if e != e or p.angle != p.angle {
+            saw_nan = 1
+        }
+
+        if k % print_every == 0 {
+            if k > 0 and e > prev_row_energy {
+                energy_violations = energy_violations + 1
+            }
+            prev_row_energy = e
+            print("    ")
+            printf("%7.2f", t)
+            printf("  %11.4f", p.angle)
+            printf("  %12.4f", p.velocity)
+            printf("  %10.4f", e)
+            println("")
+        }
+
+        Pendulum_step(&p, dt)
+    }
+
+    let e_end: f64 = pendulum_energy(p.angle, p.velocity)
+
+    println("")
+    print("    initial energy : ")
+    printf("%.4f J", e0)
+    println("")
+    print("    final energy   : ")
+    printf("%.6f J", e_end)
+    println("")
+    println("")
+
+    if saw_nan == 1 {
+        println("    FAIL: state became NaN")
+        return 1
+    }
+    if energy_violations > 0 {
+        println("    FAIL: energy increased")
+        return 2
+    }
+    if fabs(p.angle - angle0) < 1e-12 {
+        println("    FAIL: state did not change")
+        return 3
+    }
+    if fabs(p.angle) > 0.02 or fabs(p.velocity) > 0.02 {
+        println("    FAIL: pendulum did not settle at equilibrium")
+        return 4
+    }
+    println("    OK: RK4 energy decreased, pendulum settled at rest")
+    return 0
+}

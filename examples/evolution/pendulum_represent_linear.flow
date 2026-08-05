@@ -1,0 +1,88 @@
+# Stage-1 represent-linear bridge: nonlinear flow -> synthesized dsys.
+#
+# Pendulum below is the nonlinear plant (evolves as). An embedded
+# represent-linear block attaches an explicit small-angle A/B/C model at
+# the hanging equilibrium. Pre-parse expansion (dynamics_dsl.py) strips
+# that block and synthesizes dsys Pendulum_lin (continuous), so sense on
+# works unchanged.
+#
+# Automatic Jacobian-at-equilibrium linearization is not yet implemented;
+# omitting A raises "linearization coefficients required".
+#
+# Spec: docs/vision/north-star.md section 9 (card: represent-linear)
+# Run: ./flow run examples/evolution/pendulum_represent_linear.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+}
+
+flow Pendulum {
+    state angle    : f64 = 0.5
+    state velocity : f64 = 0.0
+    input torque   : f64
+    param gravity  : f64 = 9.81
+    param length   : f64 = 1.0
+    param damping  : f64 = 0.1
+
+    angle evolves as velocity
+    velocity evolves as -(gravity / length) * sin(angle) - damping * velocity + torque
+
+    # Small-angle linearization at (angle, velocity) = (0, 0):
+    #   A = [[0, 1], [-g/L, -d]],  B = [[0], [1]],  C = [1, 0]
+    represent linear {
+        at (angle: 0.0, velocity: 0.0)
+        inputs (torque)
+        outputs (angle)
+        continuous
+        dt 0.01
+        n 2 m 1 p 1
+        A 0.0 1.0 -9.81 -0.1
+        B 0.0 1.0
+        C 1.0 0.0
+    }
+}
+
+sense on Pendulum_lin {
+    controllable -> lin_ok
+    spectral -> lin_rho
+}
+
+function main() -> i32 {
+    println("")
+    println("  Pendulum: represent linear -> Pendulum_lin (dsys)")
+    println("  =================================================")
+    println("")
+
+    print("  linearized plant controllable: ")
+    if lin_ok == 1 {
+        println("yes")
+    } else {
+        println("NO")
+        return 1
+    }
+
+    print("  Euler-discretized spectral radius: ")
+    printf("%.6f", lin_rho)
+    println("")
+
+    # Open-loop damped pendulum discretized at dt=0.01 should be stable.
+    if lin_rho >= 1.0 {
+        println("  FAIL: expected stable open-loop linearization")
+        return 2
+    }
+
+    # Smoke the nonlinear flow still steps after represent was stripped.
+    let mut p: Pendulum = Pendulum_new()
+    p.torque = 0.0
+    let dt: f64 = 0.001
+    for k in 0 to 100 {
+        Pendulum_step(&p, dt)
+    }
+    print("  nonlinear angle after 100 steps: ")
+    printf("%.4f", p.angle)
+    println("")
+
+    println("  OK: represent linear bridged to sense on Pendulum_lin")
+    return 0
+}
