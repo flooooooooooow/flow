@@ -1,6 +1,6 @@
 # Self-Hosting Plan — Rewrite the Compiler in Flow
 
-> **Status:** Active · Phases A–B on `main` · Phase C soft cutover (`FLOW_HOST`) · **Tracker:** GitHub issues labeled `self-hosting` · **Bootstrap tree:** [`compiler/`](../../compiler/)
+> **Status:** Active · Phases A–C on `main` · Phase D in progress (pip-free flowc compile CI) · **Tracker:** GitHub issues labeled `self-hosting` · **Bootstrap tree:** [`compiler/`](../../compiler/)
 >
 > Goal: retire `src/flow/*.py` as the production compiler and make **`flowc`** (Flow→C, written in Flow) the sole host.
 
@@ -85,26 +85,29 @@ Expand `flowc` until it parses/emits everything the **compiler sources themselve
 
 **Exit:** `FLOWC_BUNDLE=1` builds all of `compiler/src` without `FLOWC_TYPECHECK=0` hacks except documented externs.
 
-### Phase C — `flowc` replaces Python for `./flow run|build`  *(in progress)*
+### Phase C — `flowc` replaces Python for `./flow run|build`  *(done — soft cutover)*
 
 - Thin `./flow` shim: `FLOW_HOST=flowc` (default) | `python` | `auto`.
 - Resolve driver via `compiler/scripts/ensure_flowc.sh` (prefers
   `stage_a_driver_flow_self`, bootstraps Gen0 with Phase-A roundtrip if needed).
-- CI: after `roundtrip.sh`, smoke `FLOW_HOST=flowc ./flow run examples/basics/hello_world.flow`.
-- Example/benchmark jobs keep `FLOW_HOST=python` until Stage-A covers the full
-  language surface (Phase D).
+- CI: after `roundtrip.sh`, smoke `FLOW_HOST=flowc` on Stage-A basics.
+- Example/benchmark jobs keep `FLOW_HOST=python` until broader surface coverage.
 
-**Exit:** default `./flow run examples/basics/hello_world.flow` does not import `src/flow/parser.py`.
+**Exit:** default `./flow run examples/basics/hello_world.flow` does not import `src/flow/parser.py`. ✅
 
-### Phase D — Retire Python from the compile path
+### Phase D — Retire Python from the compile path  *(in progress)*
 
-- Move remaining Python-only features (or reimplement):
-  - dynamics / shader / verify preprocessors → Flow or keep as optional Python plugins
-  - LSP: keep Python server talking to `flowc` JSON diagnostics, or rewrite later
-- Archive or quarantine unused Python modules.
-- README / getting-started: “requires `cc` + Flow binary,” not Python, for compile.
+- **Done (slice 1):** `flowc-compile` CI job downloads a Stage-A driver artifact and
+  compiles Stage-A programs with **no `pip install`** (and no Gen0 bootstrap).
+  Bootstrap (`flowc-bootstrap`) still uses the Python host + pip for Gen0 only
+  (transpiler → gpu_runtime → numpy today).
+- Keep dynamics / shader / verify / LSP as **optional Python host plugins** via
+  `FLOW_HOST=python` (see [python-in-flow.md](python-in-flow.md)).
+- Do not delete production `src/flow/*.py` until Stage-A covers their call sites
+  (coordinate with open language PRs).
+- Docs: compile of Stage-A programs needs `cc` + flowc driver, not pip.
 
-**Exit:** CI compile jobs have no `pip install` for the compiler itself.
+**Exit:** CI user-compile jobs have no `pip install` for the compiler itself.
 
 ### Phase E — Optional backends & polish
 
