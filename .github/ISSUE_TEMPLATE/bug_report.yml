@@ -1,0 +1,51 @@
+---
+name: Bug report
+description: Something in the compiler, runtime, or stdlib is wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make Flow better. Security issues → [SECURITY.md](https://github.com/flooooooooooow/flow/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Flow version
+      description: Output of `flow version` or git tag/commit
+      placeholder: "0.8.0"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Smallest `.flow` snippet or steps that show the bug
+      render: flow
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include compiler/runtime output if relevant
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Compiler (parser / typecheck / codegen)
+        - Runtime
+        - Standard library
+        - CLI / tooling
+        - Docs / wiki
+        - Other
+    validations:
+      required: true
