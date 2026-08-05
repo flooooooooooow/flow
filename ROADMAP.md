@@ -179,12 +179,12 @@ hand-rolled C-shaped loops. API sketches live in
 |------|--------|--------|
 | Canonicalize evolution demos onto flow/evolves | ✅ [#159](https://github.com/flooooooooooow/flow/issues/159) | Demote hand RK4; README leads with `*_evolves` / `*_rk4` / `when` |
 | gfx_run frame helper | ✅ [#164](https://github.com/flooooooooooow/flow/issues/164) | `gfx_frame_pump` + runtime `flow_gfx_run` / `gfx_run` |
-| Lorenz as flow + represent phase_portrait | ✅ partial [#165](https://github.com/flooooooooooow/flow/issues/165) | `flow Lorenz` + rk4 + `gfx_frame_pump`; trail manual until `represent phase_portrait` |
+| Lorenz as flow + represent phase_portrait | ✅ partial [#165](https://github.com/flooooooooooow/flow/issues/165) | `flow Lorenz` + rk4 + `gfx_frame_pump` + `dynamics/portrait.flow` trail; grammar `represent phase_portrait` still open |
 | Route linalg examples through blas.flow | ✅ [#168](https://github.com/flooooooooooow/flow/issues/168) | `getrf`/`lu_factor` + tourist `lu_decomposition.flow` via `solve`; hand LU → pedagogical twin |
 | Wire ML demos through Dual / grad codegen | ✅ [#170](https://github.com/flooooooooooow/flow/issues/170) | Tourist XOR uses `nn_autogen`; hand backprop → `mlp_xor_from_scratch.flow` |
 | Owned HttpResponse + JSON decode helpers | ✅ [#167](https://github.com/flooooooooooow/flow/issues/167) | `HttpBody` + `http_get` / `http_body_free`; live cache app drops buf ceremony |
-| Dynamics DSL / LQR beyond n=2 | 🔲 [#162](https://github.com/flooooooooooow/flow/issues/162) | Cartpole drops private 4×4 Riccati; prefer stdlib `lqr` then DSL |
-| Field / laplacian PDE surface | 🔲 [#163](https://github.com/flooooooooooow/flow/issues/163) | `heat_diffusion` → `T evolves as α * laplacian(T)` |
+| Dynamics DSL / LQR beyond n=2 | ✅ partial [#162](https://github.com/flooooooooooow/flow/issues/162) | `dynamics/lqr.flow` dlqr n≤8 scalar-u; cartpole uses it; DSL `analyze { lqr }` still open |
+| Field / laplacian PDE surface | ✅ partial [#163](https://github.com/flooooooooooow/flow/issues/163) | `dynamics/pde.flow` + heat demo; `field`/`boundary` grammar follow-on |
 | Dual + Tensor operators + mutable params | 🔲 [#161](https://github.com/flooooooooooow/flow/issues/161) | `a * b` on Dual; kill `param_set` rebuilds in `nn.flow` |
 | Closed-loop plant.step from dsys/connect | 🔲 [#160](https://github.com/flooooooooooow/flow/issues/160) | Analysis plant and sim share one steppable model |
 
