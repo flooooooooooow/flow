@@ -11,9 +11,8 @@
 #                           Euler at the control period dt.
 #   2. cartpole_ctrb_rank   rank of [B, AB, A^2B, A^3B]; 4 means every
 #                           state is reachable through the cart force.
-#   3. cartpole_lqr_gains   fixed-point iteration of the discrete-time
-#                           Riccati equation. The input is scalar, so the
-#                           usual matrix inverse collapses to one division.
+#   3. cartpole_lqr_gains   stdlib discrete Riccati (dynamics/lqr.flow)
+#                           for n=4 scalar input — no private ARE loop.
 #
 # Linearization derivation. At theta = 0, F = 0 the nonlinear equations of
 # model.flow reduce as sin(th) -> th, cos(th) -> 1, thd^2 terms -> 0:
@@ -44,6 +43,8 @@
 #   K = (Bd' P Ad) / (R + Bd' P Bd)        control law u = -K x.
 #
 # This file is a module used by main.flow and cartpole_gfx.flow.
+
+import "stdlib/dynamics/lqr.flow"
 
 extern {
     function fabs(x: f64) -> f64
@@ -177,7 +178,7 @@ function cartpole_ctrb_rank(ad: ptr<f64>, bd: ptr<f64>) -> i32 {
     return rank
 }
 
-# --- 3. LQR gain via the discrete Riccati fixed point ----------------------
+# --- 3. LQR gain via stdlib discrete Riccati (n=4, scalar u) ---------------
 
 # q_diag: the four diagonal entries of Q. r: the scalar input weight.
 # Writes the gain row K into k_out (control law u = -K x).
@@ -186,87 +187,5 @@ function cartpole_ctrb_rank(ad: ptr<f64>, bd: ptr<f64>) -> i32 {
 function cartpole_lqr_gains(ad: ptr<f64>, bd: ptr<f64>,
                             q_diag: ptr<f64>, r: f64,
                             k_out: ptr<f64>, max_iter: i32) -> i32 {
-    let at: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let p: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let pa: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let atpa: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let pn: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let pb: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
-    let atpb: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
-
-    cp_mat4_transpose(ad, at)
-
-    # P starts at Q
-    for i in 0 to 16 {
-        p[i] = 0.0
-    }
-    for i in 0 to 4 {
-        p[i * 4 + i] = q_diag[i]
-    }
-
-    let mut converged_at: i32 = 0 - 1
-    for iter in 0 to max_iter {
-        cp_mat4_mul(p, ad, pa)          # PA   = P Ad
-        cp_mat4_mul(at, pa, atpa)       # AtPA = Ad' P Ad
-        cp_mat4_vec(p, bd, pb)          # PB   = P Bd
-        cp_mat4_vec(at, pb, atpb)       # AtPB = Ad' P Bd
-
-        let mut s: f64 = r
-        for i in 0 to 4 {
-            s = s + bd[i] * pb[i]       # s = R + Bd' P Bd (scalar)
-        }
-
-        for i in 0 to 4 {
-            for j in 0 to 4 {
-                let mut q_ij: f64 = 0.0
-                if i == j {
-                    q_ij = q_diag[i]
-                }
-                pn[i * 4 + j] = q_ij + atpa[i * 4 + j] - atpb[i] * atpb[j] / s
-            }
-        }
-
-        # Symmetrize: keeps the asymmetric rounding residue at zero, which
-        # would otherwise grow through the unstable open-loop dynamics.
-        for i in 0 to 4 {
-            for j in i + 1 to 4 {
-                let avg: f64 = 0.5 * (pn[i * 4 + j] + pn[j * 4 + i])
-                pn[i * 4 + j] = avg
-                pn[j * 4 + i] = avg
-            }
-        }
-
-        let mut delta: f64 = 0.0
-        for i in 0 to 16 {
-            if fabs(pn[i] - p[i]) > delta {
-                delta = fabs(pn[i] - p[i])
-            }
-            p[i] = pn[i]
-        }
-
-        if delta < 0.000000001 {
-            converged_at = iter + 1
-            break
-        }
-    }
-
-    if converged_at < 0 {
-        return 0 - 1
-    }
-
-    # K = (Bd' P Ad) / (R + Bd' P Bd) with the converged P
-    cp_mat4_mul(p, ad, pa)
-    cp_mat4_vec(p, bd, pb)
-    let mut s: f64 = r
-    for i in 0 to 4 {
-        s = s + bd[i] * pb[i]
-    }
-    for j in 0 to 4 {
-        let mut acc: f64 = 0.0
-        for i in 0 to 4 {
-            acc = acc + bd[i] * pa[i * 4 + j]
-        }
-        k_out[j] = acc / s
-    }
-    return converged_at
+    return dlqr_diag_q_scalar_u(ad, bd, q_diag, r, 4, k_out, max_iter)
 }
