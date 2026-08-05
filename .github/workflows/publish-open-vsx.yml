@@ -62,9 +62,9 @@ jobs:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-            https://open-vsx.org/api/flooooooooooow)"
+            https://open-vsx.org/api/quilio)"
           if [ "$status" = "404" ]; then
-            npx --yes ovsx create-namespace flooooooooooow --pat "$OVSX_PAT"
+            npx --yes ovsx create-namespace quilio --pat "$OVSX_PAT"
           elif [ "$status" != "200" ]; then
             echo "::error::Open VSX namespace check returned HTTP $status."
             exit 1

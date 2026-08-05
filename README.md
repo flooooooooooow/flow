@@ -339,8 +339,8 @@ See [docs/python-target.md](docs/python-target.md) for details.
 ./scripts/publish_vscode_extension.sh --install
 
 # Or after marketplace publish:
-#   cursor --install-extension flooooooooooow.flow-language
-#   code --install-extension flooooooooooow.flow-language
+#   cursor --install-extension quilio.flow-language
+#   code --install-extension quilio.flow-language
 ```
 
 Extension lives at `third_party/integrations/vscode/flow-language/` (syntax + LSP).  

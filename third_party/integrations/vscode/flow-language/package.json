@@ -3,7 +3,7 @@
   "displayName": "FLOW Language",
   "description": "Syntax highlighting and LSP support for the FLOW programming language (effects, autodiff, C backend).",
   "version": "0.1.3",
-  "publisher": "flooooooooooow",
+  "publisher": "quilio",
   "author": "Flow contributors",
   "license": "MIT",
   "homepage": "https://github.com/flooooooooooow/flow",
