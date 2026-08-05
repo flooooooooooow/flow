@@ -199,6 +199,31 @@ x      |> mix(_, sidechain, k) # mix(x, sidechain, k)  — explicit leading slot
 At most one `_` may appear per stage — the piped value fills exactly one slot,
 so two placeholders would duplicate it and are rejected at parse time.
 
+#### Fork blocks
+
+A **fork block** applies several pipelines to the *same* value and collects the
+results into a record:
+
+```flow
+let s: Stats = n |> Stats {
+    doubled  = twice,
+    squared  = square,
+    plus_ten = add(_, 10),
+}
+# == Stats { doubled: twice(n), squared: square(n), plus_ten: add(n, 10) }
+```
+
+Each `field = stage…` branch is the pipeline `source |> stage…`, so branch
+stages compose (and take placeholders) exactly like any other pipeline. Branches
+use `=` — not the struct-literal `:` — so the fork and the record it builds read
+distinctly. The block lowers to a struct literal of the named record, which is
+type-checked against that struct's declared fields like any other literal. The
+result is itself a value, so a fork can sit mid-pipeline: `x |> R { … } |> f`.
+
+The record type is named on purpose: the piped value is substituted into every
+branch, so a non-trivial `source` (a call rather than a variable) is evaluated
+once per branch — bind it with `let` first when that matters.
+
 ## Grammar (Simplified EBNF)
 
 ```ebnf
