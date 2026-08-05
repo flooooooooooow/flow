@@ -1,0 +1,38 @@
+{
+  "name": "flow-themes",
+  "displayName": "Flow Themes",
+  "description": "Editor color themes tuned for the Flow programming language (dark + dim).",
+  "version": "0.1.0",
+  "publisher": "quilio",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Themes"
+  ],
+  "keywords": [
+    "flow",
+    "theme",
+    "dark"
+  ],
+  "contributes": {
+    "themes": [
+      {
+        "label": "Flow Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/flow-dark.json"
+      },
+      {
+        "label": "Flow Dim",
+        "uiTheme": "vs-dark",
+        "path": "./themes/flow-dim.json"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/flooooooooooow/flow.git",
+    "directory": "third_party/integrations/vscode/flow-themes"
+  }
+}
