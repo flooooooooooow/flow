@@ -1,4 +1,5 @@
 # Go-style channels — real send/recv/close (pthread mutex + condvar)
+# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Run: ./flow run examples/concurrency/channels.flow
 # See docs/language/concurrency-vs-go.md
 

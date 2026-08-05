@@ -120,7 +120,7 @@ function board_in_bounds(x: i32, y: i32) -> i32 {
 # ============================================================================
 
 function get_tetro_block(kind: i32, rot: i32, block_idx: i32, coord: i32) -> i32 {
-    let r: i32 = rot % 4
+    let mut r: i32 = rot % 4
     
     # I-piece
     if kind == TETRO_I {
@@ -260,7 +260,7 @@ function tetro_to_piece(kind: i32) -> i32 {
 
 function tetro_fits(blocks: ptr<i32>, kind: i32, rot: i32, tx: i32, ty: i32) -> i32 {
     for i in 0 to 4 {
-        let dx: i32 = get_tetro_block(kind, rot, i, 0)
+        let mut dx: i32 = get_tetro_block(kind, rot, i, 0)
         let dy: i32 = get_tetro_block(kind, rot, i, 1)
         let bx: i32 = tx + dx
         let by: i32 = ty + dy
@@ -281,7 +281,7 @@ function lock_tetromino(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
     let piece_type: i32 = tetro_to_piece(kind)
     
     for i in 0 to 4 {
-        let dx: i32 = get_tetro_block(kind, rot, i, 0)
+        let mut dx: i32 = get_tetro_block(kind, rot, i, 0)
         let dy: i32 = get_tetro_block(kind, rot, i, 1)
         let bx: i32 = tx + dx
         let by: i32 = ty + dy
@@ -305,8 +305,8 @@ function is_row_full(blocks: ptr<i32>, y: i32) -> i32 {
 }
 
 function process_line_clears(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>) -> i32 {
-    let lines_cleared: i32 = 0
-    let y: i32 = BOARD_HEIGHT - 1
+    let mut lines_cleared: i32 = 0
+    let mut y: i32 = BOARD_HEIGHT - 1
     
     while y >= 0 {
         if is_row_full(blocks, y) == 1 {
@@ -319,7 +319,7 @@ function process_line_clears(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32
             }
             
             # Drop rows above
-            let row: i32 = y
+            let mut row: i32 = y
             while row > 0 {
                 for x in 0 to BOARD_WIDTH {
                     let curr: i32 = board_idx(x, row)
@@ -382,16 +382,16 @@ function is_valid_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
     if colors[to_idx] == player { return 0 }
     
     let piece: i32 = pieces[from_idx]
-    let dx: i32 = tx - fx
+    let mut dx: i32 = tx - fx
     let dy: i32 = ty - fy
-    let adx: i32 = dx
-    let ady: i32 = dy
+    let mut adx: i32 = dx
+    let mut ady: i32 = dy
     if adx < 0 { adx = 0 - adx }
     if ady < 0 { ady = 0 - ady }
     
     # Pawn
     if piece == PIECE_PAWN {
-        let dir: i32 = 1
+        let mut dir: i32 = 1
         if player == COLOR_BLACK { dir = -1 }
         
         # Forward move
@@ -410,15 +410,15 @@ function is_valid_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
         if dx != 0 and dy != 0 { return 0 }
         if dx == 0 and dy == 0 { return 0 }
         
-        let sx: i32 = 0
-        let sy: i32 = 0
+        let mut sx: i32 = 0
+        let mut sy: i32 = 0
         if dx > 0 { sx = 1 }
         if dx < 0 { sx = -1 }
         if dy > 0 { sy = 1 }
         if dy < 0 { sy = -1 }
         
-        let cx: i32 = fx + sx
-        let cy: i32 = fy + sy
+        let mut cx: i32 = fx + sx
+        let mut cy: i32 = fy + sy
         while cx != tx or cy != ty {
             let idx: i32 = board_idx(cx, cy)
             if blocks[idx] == 0 { return 0 }
@@ -439,13 +439,13 @@ function is_valid_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
     if piece == PIECE_BISHOP {
         if adx != ady or adx == 0 { return 0 }
         
-        let sx: i32 = 1
-        let sy: i32 = 1
+        let mut sx: i32 = 1
+        let mut sy: i32 = 1
         if dx < 0 { sx = -1 }
         if dy < 0 { sy = -1 }
         
-        let cx: i32 = fx + sx
-        let cy: i32 = fy + sy
+        let mut cx: i32 = fx + sx
+        let mut cy: i32 = fy + sy
         while cx != tx or cy != ty {
             let idx: i32 = board_idx(cx, cy)
             if blocks[idx] == 0 { return 0 }
@@ -458,20 +458,20 @@ function is_valid_move(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
     
     # Queen (Rook + Bishop)
     if piece == PIECE_QUEEN {
-        let is_straight: i32 = (dx == 0 or dy == 0) and (dx != 0 or dy != 0)
-        let is_diagonal: i32 = adx == ady and adx != 0
+        let is_straight: bool = (dx == 0 or dy == 0) and (dx != 0 or dy != 0)
+        let is_diagonal: bool = adx == ady and adx != 0
         
-        if is_straight == 0 and is_diagonal == 0 { return 0 }
+        if (is_straight == false) and (is_diagonal == false) { return 0 }
         
-        let sx: i32 = 0
-        let sy: i32 = 0
+        let mut sx: i32 = 0
+        let mut sy: i32 = 0
         if dx > 0 { sx = 1 }
         if dx < 0 { sx = -1 }
         if dy > 0 { sy = 1 }
         if dy < 0 { sy = -1 }
         
-        let cx: i32 = fx + sx
-        let cy: i32 = fy + sy
+        let mut cx: i32 = fx + sx
+        let mut cy: i32 = fy + sy
         while cx != tx or cy != ty {
             let idx: i32 = board_idx(cx, cy)
             if blocks[idx] == 0 { return 0 }
@@ -591,9 +591,9 @@ function draw_piece(g: Gfx, sx: i32, sy: i32, piece: i32, color: i32) {
     if piece == PIECE_NONE { return }
     
     # Color: white pieces = white, black pieces = dark blue
-    let r: i32 = 255
-    let g2: i32 = 255
-    let b: i32 = 255
+    let mut r: i32 = 255
+    let mut g2: i32 = 255
+    let mut b: i32 = 255
     if color == COLOR_BLACK {
         r = 30
         g2 = 30
@@ -607,8 +607,8 @@ function draw_piece(g: Gfx, sx: i32, sy: i32, piece: i32, color: i32) {
     for row in 0 to 5 {
         let bits: i32 = piece_row(piece, row)
         for col in 0 to 5 {
-            let mask: i32 = 16
-            let shift: i32 = col
+            let mut mask: i32 = 16
+            let mut shift: i32 = col
             while shift > 0 {
                 mask = mask / 2
                 shift = shift - 1
@@ -642,7 +642,7 @@ function draw_digit(g: Gfx, x: i32, y: i32, d: i32, scale: i32, r: i32, g2: i32,
     for row in 0 to 5 {
         let bits: i32 = digit_row(d, row)
         for col in 0 to 3 {
-            let on: i32 = 0
+            let mut on: i32 = 0
             if col == 0 { on = (bits / 4) % 2 }
             elif col == 1 { on = (bits / 2) % 2 }
             else { on = bits % 2 }
@@ -660,16 +660,16 @@ function draw_number(g: Gfx, x: i32, y: i32, n: i32, scale: i32, r: i32, g2: i32
     }
     
     let buf: array<i32, 5> = [0, 0, 0, 0, 0]
-    let len: i32 = 0
-    let v: i32 = n
+    let mut len: i32 = 0
+    let mut v: i32 = n
     while v > 0 and len < 5 {
         buf[len] = v % 10
         v = v / 10
         len = len + 1
     }
     
-    let i: i32 = len - 1
-    let dx: i32 = 0
+    let mut i: i32 = len - 1
+    let mut dx: i32 = 0
     while i >= 0 {
         draw_digit(g, x + dx, y, buf[i], scale, r, g2, b)
         dx = dx + 4 * scale
@@ -693,8 +693,8 @@ function draw_game(g: Gfx, blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
     # Draw cells
     for cy in 0 to BOARD_HEIGHT {
         for cx in 0 to BOARD_WIDTH {
-            let sx: i32 = cell_to_screen_x(cx)
-            let sy: i32 = cell_to_screen_y(cy)
+            let mut sx: i32 = cell_to_screen_x(cx)
+            let mut sy: i32 = cell_to_screen_y(cy)
             let idx: i32 = board_idx(cx, cy)
             
             # Checkerboard pattern for empty cells
@@ -716,14 +716,14 @@ function draw_game(g: Gfx, blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
     if state.phase == PHASE_TETRIS {
         let tc: Rgb = tetro_color(state.tetro_kind)
         for i in 0 to 4 {
-            let dx: i32 = get_tetro_block(state.tetro_kind, state.tetro_rot, i, 0)
+            let mut dx: i32 = get_tetro_block(state.tetro_kind, state.tetro_rot, i, 0)
             let dy: i32 = get_tetro_block(state.tetro_kind, state.tetro_rot, i, 1)
             let bx: i32 = state.tetro_x + dx
             let by: i32 = state.tetro_y + dy
             
             if board_in_bounds(bx, by) == 1 {
-                let sx: i32 = cell_to_screen_x(bx)
-                let sy: i32 = cell_to_screen_y(by)
+                let mut sx: i32 = cell_to_screen_x(bx)
+                let mut sy: i32 = cell_to_screen_y(by)
                 gfx_fill_rect(g, sx, sy, CELL_SIZE, CELL_SIZE, tc.r, tc.g, tc.b)
             }
         }
@@ -731,8 +731,8 @@ function draw_game(g: Gfx, blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
     
     # Draw selection cursor in chess phase
     if state.phase == PHASE_CHESS {
-        let sx: i32 = cell_to_screen_x(state.sel_x)
-        let sy: i32 = cell_to_screen_y(state.sel_y)
+        let mut sx: i32 = cell_to_screen_x(state.sel_x)
+        let mut sy: i32 = cell_to_screen_y(state.sel_y)
         
         # Yellow border
         let bw: i32 = 4
@@ -784,7 +784,7 @@ function draw_game(g: Gfx, blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>,
         let preview_scale: i32 = 16
         
         for i in 0 to 4 {
-            let dx: i32 = get_tetro_block(state.next_tetro, 0, i, 0)
+            let mut dx: i32 = get_tetro_block(state.next_tetro, 0, i, 0)
             let dy: i32 = get_tetro_block(state.next_tetro, 0, i, 1)
             gfx_fill_rect(g, preview_x + (dx + 2) * preview_scale, 
                           preview_y + dy * preview_scale,
@@ -883,17 +883,17 @@ function main() -> i32 {
     state.next_tetro = state.rng_seed % 7
     
     # Key edge detection
-    let prev_left: bool = false
-    let prev_right: bool = false
-    let prev_up: bool = false
-    let prev_down: bool = false
-    let prev_space: bool = false
-    let prev_r: bool = false
-    let prev_h: bool = false
-    let prev_j: bool = false
-    let prev_k: bool = false
-    let prev_l: bool = false
-    let prev_n: bool = false
+    let mut prev_left: bool = false
+    let mut prev_right: bool = false
+    let mut prev_up: bool = false
+    let mut prev_down: bool = false
+    let mut prev_space: bool = false
+    let mut prev_r: bool = false
+    let mut prev_h: bool = false
+    let mut prev_j: bool = false
+    let mut prev_k: bool = false
+    let mut prev_l: bool = false
+    let mut prev_n: bool = false
     
     while !gfx_should_close(g) {
         gfx_poll(g)
