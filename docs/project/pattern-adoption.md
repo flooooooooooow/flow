@@ -1,6 +1,6 @@
 # Pattern Adoption — Less Code, Cooler Surfaces
 
-> Companion to [ROADMAP.md](../../ROADMAP.md) and the GitHub `[roadmap]` / `[patterns *]` issues.
+> Companion to [ROADMAP.md](../../ROADMAP.md) (repo root) and the GitHub `[roadmap]` / `[patterns *]` issues.
 > Goal: where Flow already has (or almost has) a distinctive pattern, **use it** in
 > canonical examples; where ceremony is still C-shaped, **sketch a readable surface**
 > and implement it.
@@ -20,9 +20,9 @@ story. Adoption first; new sugar second.
 | P0 | Canonicalize evolution demos onto `flow` / `evolves` / `when` | adoption ✅ | [#159](https://github.com/flooooooooooow/flow/issues/159) |
 | P0 | `gfx_run` frame helper | stdlib ✅ | [#164](https://github.com/flooooooooooow/flow/issues/164) |
 | P0 | Lorenz as `flow` + phase-portrait trail | language + demo ✅ partial | [#165](https://github.com/flooooooooooow/flow/issues/165) |
-| P1 | Route linalg examples through `blas.flow` | adoption | [#168](https://github.com/flooooooooooow/flow/issues/168) |
-| P1 | Wire ML demos through Dual / grad codegen | adoption + docs | [#170](https://github.com/flooooooooooow/flow/issues/170) |
-| P1 | Owned `HttpResponse` + JSON decode helpers | API | [#167](https://github.com/flooooooooooow/flow/issues/167) |
+| P1 | Route linalg examples through `blas.flow` | adoption ✅ | [#168](https://github.com/flooooooooooow/flow/issues/168) |
+| P1 | Wire ML demos through Dual / grad codegen | adoption + docs ✅ | [#170](https://github.com/flooooooooooow/flow/issues/170) |
+| P1 | Owned `HttpResponse` + JSON decode helpers | API ✅ | [#167](https://github.com/flooooooooooow/flow/issues/167) |
 | P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib | [#162](https://github.com/flooooooooooow/flow/issues/162) |
 | P2 | Field / `laplacian` PDE surface | language | [#163](https://github.com/flooooooooooow/flow/issues/163) |
 | P2 | Dual + Tensor operators + mutable params | language | [#161](https://github.com/flooooooooooow/flow/issues/161) |
@@ -140,73 +140,37 @@ flow Lorenz {
 
 ### 4. Linalg → `blas.flow`
 
-**Today:** `matrix_ops.flow`, `lu_decomposition.flow` reimplement dense loops.
-
-**Target:**
-```flow
-import "stdlib/blas.flow"
-# gemm / dgesv / getrf wrappers — thin Flow API over Accelerate/OpenBLAS
-let info: i32 = lu_factor(a, n, pivots)
-let x: array<f64, N> = solve(a, b)
-```
-
-Hand LU stays as `examples/linalg/lu_decomposition_pedagogical.flow` (or a
-commented section). Canonical demo calls stdlib.
+**Shipped:** Tourist `lu_decomposition.flow` calls `solve` / `lu_factor`
+(`getrf` wrapper). Hand Doolittle → `lu_decomposition_pedagogical.flow`.
+`blas_demo.flow` already exercises gemm/solve.
 
 **Exit:** Primary linalg tourist examples call BLAS; index loops only in
-“from scratch” files.
+“from scratch” files. ✅ (`lu_decomposition.flow` → `solve`/`lu_factor`;
+hand Doolittle → `lu_decomposition_pedagogical.flow`)
 
 ---
 
 ### 5. ML demos → Dual / grad codegen
 
-**Today:** `mlp_xor.flow`, `nn_layers.flow` hand-write backprop; README says
-“built-in AD.”
-
-**Target teaching path:**
-```flow
-import "stdlib/autodiff.flow"
-# Option A: Dual forward for tiny nets
-let loss: Dual = xor_loss_dual(params, x0, x1, y)
-
-# Option B: checked-in grad from scripts/tools/grad/flow_grad_flow.py
-import "stdlib/nn_autogen.flow"
-let g: Grads2x2x1 = xor_loss_grads(w, b, x, y)
-```
-
-Docs: AD is **stdlib + codegen today**; compiler `loss.grad` is a later card
-(`dual-tensor-operators-mutable-params`).
+**Shipped:** Tourist `examples/ml/models/mlp_xor.flow` trains via
+`net2x2x1_grads_xor_autogen` (`nn_autogen.flow` + checked-in
+`flow_grad_flow.py` output). Hand `dense_backward` lives in
+`mlp_xor_from_scratch.flow`. Docs: AD is **stdlib + codegen today**;
+compiler `loss.grad` remains a later card (#161).
 
 **Exit:** XOR demo trains without a hand `dense_backward`; overview/README
-wording matches reality.
+wording matches reality. ✅
 
 ---
 
 ### 6. Owned HTTP + JSON helpers
 
-**Today:** caller `http_alloc` → `http_get_into` → read `buf` → `http_free`.
+**Shipped:** `registry/packages/http` exports `HttpBody`, `http_get` /
+`http_get_cap`, `http_body_free`. `apps/http_json_cache/src/live_http.flow`
+uses owned get (no caller `http_alloc` ceremony). JSON helpers already
+ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 
-**Sketch:**
-```flow
-export struct HttpBody {
-    status: i64,
-    ok: bool,
-    curl_err: i64,
-    data: ptr<i8>,   # owned
-    len: i64
-}
-
-export function http_get(url: string) -> HttpBody
-export function http_body_free(r: HttpBody) -> void
-
-# JSON (registry/packages/json)
-export function json_get_i32(blob: string, key: string) -> Result_i32_string
-# later: decode into a struct via explicit schema helper
-```
-
-`apps/http_json_cache` becomes get → parse → cache without buffer ceremony.
-
-**Exit:** Live HTTP path uses owned body; docs show ≤10-line GET+JSON example.
+**Exit:** Live HTTP path uses owned body; docs show ≤10-line GET+JSON example. ✅
 
 ---
 

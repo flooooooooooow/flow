@@ -1,6 +1,6 @@
 # FLOW Roadmap
 
-> Last updated: 2026-08-04  
+> Last updated: 2026-08-05  
 > Current version: 0.3.3  
 > Lines of Code: ~38,000
 
@@ -180,9 +180,9 @@ hand-rolled C-shaped loops. API sketches live in
 | Canonicalize evolution demos onto flow/evolves | ✅ [#159](https://github.com/flooooooooooow/flow/issues/159) | Demote hand RK4; README leads with `*_evolves` / `*_rk4` / `when` |
 | gfx_run frame helper | ✅ [#164](https://github.com/flooooooooooow/flow/issues/164) | `gfx_frame_pump` + runtime `flow_gfx_run` / `gfx_run` |
 | Lorenz as flow + represent phase_portrait | ✅ partial [#165](https://github.com/flooooooooooow/flow/issues/165) | `flow Lorenz` + rk4 + `gfx_frame_pump`; trail manual until `represent phase_portrait` |
-| Route linalg examples through blas.flow | 🔲 [#168](https://github.com/flooooooooooow/flow/issues/168) | Thin LU/solve wrappers; pedagogical loops marked secondary |
-| Wire ML demos through Dual / grad codegen | 🔲 [#170](https://github.com/flooooooooooow/flow/issues/170) | Honest AD story; drop hand `dense_backward` from tourist XOR |
-| Owned HttpResponse + JSON decode helpers | 🔲 [#167](https://github.com/flooooooooooow/flow/issues/167) | `http_get` returns owned body; cache app loses buf/len ceremony |
+| Route linalg examples through blas.flow | ✅ [#168](https://github.com/flooooooooooow/flow/issues/168) | `getrf`/`lu_factor` + tourist `lu_decomposition.flow` via `solve`; hand LU → pedagogical twin |
+| Wire ML demos through Dual / grad codegen | ✅ [#170](https://github.com/flooooooooooow/flow/issues/170) | Tourist XOR uses `nn_autogen`; hand backprop → `mlp_xor_from_scratch.flow` |
+| Owned HttpResponse + JSON decode helpers | ✅ [#167](https://github.com/flooooooooooow/flow/issues/167) | `HttpBody` + `http_get` / `http_body_free`; live cache app drops buf ceremony |
 | Dynamics DSL / LQR beyond n=2 | 🔲 [#162](https://github.com/flooooooooooow/flow/issues/162) | Cartpole drops private 4×4 Riccati; prefer stdlib `lqr` then DSL |
 | Field / laplacian PDE surface | 🔲 [#163](https://github.com/flooooooooooow/flow/issues/163) | `heat_diffusion` → `T evolves as α * laplacian(T)` |
 | Dual + Tensor operators + mutable params | 🔲 [#161](https://github.com/flooooooooooow/flow/issues/161) | `a * b` on Dual; kill `param_set` rebuilds in `nn.flow` |

@@ -233,10 +233,11 @@ See the full walkthrough in [docs/effects-showcase.md](docs/effects-showcase.md)
 
 ### Automatic Differentiation
 
-```flow
-# Forward-mode autodiff built into the language
-# Used for neural networks, optimization, physics
-```
+Forward-mode Dual numbers and reverse helpers live in **stdlib** today
+(`lib/stdlib/autodiff.flow`, `autodiff_reverse.flow`). Tourist XOR trains
+via checked-in grad codegen (`nn_autogen.flow`) — see
+`examples/ml/models/mlp_xor.flow`. Compiler-integrated `loss.grad` is still
+on the roadmap.
 
 ### FFI (C Interop)
 
