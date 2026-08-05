@@ -315,7 +315,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 - ✅ Trait bounds — `<T: Display>` stored in AST
 - ✅ MLIR backend — Full pipeline: FLOW → MLIR → LLVM → native
 - ✅ LSP — go-to-definition, hover, autocomplete
-- ✅ Closures — Manual pattern with `self: Type`
+- ✅ Closures — Automatic by-value capture (`|x| …` + env/closure structs)
 - ✅ REPL — `flow repl` for interactive development
 - ✅ JIT — `flow jit` for fast execution via MLIR
 - ✅ Package manager — `flow init`, `flow add`, `flow build`
@@ -594,7 +594,10 @@ let result: i32 = add5(10)  # 15
 ```
 
 **Tasks:**
-- [ ] Implement closure environment capture (automatic captures, not just explicit `self`)
+- [x] Implement closure environment capture (automatic captures, not just explicit `self`)
+  - By-value env snapshot + `lambda_N_closure { fn, env }` in C backend
+  - Free-variable analysis covers locals, loop vars, nested lambdas, struct/array literals
+  - Remaining gap: escaping/HOF uniform ABI (return a capturing closure from a function)
 - [x] Decide: move vs copy semantics for captures
 - [x] Generate closure structs in C
 - [x] Test with higher-order functions
@@ -817,10 +820,10 @@ These are explicitly out of scope:
    - `impl Display for Point { ... }` works
    - Self parameter injected as first param in C
    - Method name mangling: Type_Trait_method
-2. [x] Closures/lambdas (partial) ✅
+2. [x] Closures/lambdas ✅
    - Lambda parsing: `|x: i32| -> i32 { return x * x }`
-   - Lambda C codegen: generates static functions
-   - IIFE pattern needs work (tracked for future)
+   - Automatic by-value capture + `lambda_N_closure { fn, env }` C lowering
+   - IIFE / escaping-HOF uniform ABI still tracked as follow-up
 3. [x] Better error messages ✅
    - FlowSyntaxError with source context
    - Shows line number, column, source line
@@ -828,7 +831,7 @@ These are explicitly out of scope:
    - Helpful suggestions for common errors
 
 **Next priorities:**
-1. [x] Full closure captures ✅ (manual closure pattern with explicit `self: Type`)
+1. [x] Full closure captures ✅ (automatic by-value env capture; escaping HOF ABI follow-up)
 2. [x] Trait bounds stored in AST ✅ (`<T: Display>` -> TypeParameter)
 3. [x] Enums / algebraic data types ✅ (tagged unions in C)
 4. [x] WASM build improvements ✅ (`flow wasm` command)
