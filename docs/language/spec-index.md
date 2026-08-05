@@ -18,7 +18,7 @@ Navigable table of contents for the full [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
 | [6. Effect System](../LANGUAGE_SPEC.md#6-effect-system) | [Effect](../LANGUAGE_SPEC.md#61-effect-declaration) · [Capability](../LANGUAGE_SPEC.md#62-capability-declaration) · [Handle](../LANGUAGE_SPEC.md#63-handle-statement) · [Details](../LANGUAGE_SPEC.md#64-effect-implementation-details) | [Effects Showcase](../effects-showcase.md) · [Async via Effects](async-effects.md) |
 | [7. Module System](../LANGUAGE_SPEC.md#7-module-system) | [Import](../LANGUAGE_SPEC.md#71-import-declaration) · [Export](../LANGUAGE_SPEC.md#72-export-declaration) · [Resolution](../LANGUAGE_SPEC.md#73-module-resolution) | [Modules](modules.md) |
 | [8. Memory Model](../LANGUAGE_SPEC.md#8-memory-model) | [Value semantics](../LANGUAGE_SPEC.md#81-value-semantics) · [Stack vs heap](../LANGUAGE_SPEC.md#82-stack-vs-heap) · [Pointers](../LANGUAGE_SPEC.md#83-pointer-operations) | [Memory (stdlib)](../library/memory.md) |
-| [9. Compilation Targets](../LANGUAGE_SPEC.md#9-compilation-targets) | [C](../LANGUAGE_SPEC.md#91-c-backend) · [MLIR](../LANGUAGE_SPEC.md#92-mlir-backend) · [Wasm](../LANGUAGE_SPEC.md#93-webassembly) · [JIT](../LANGUAGE_SPEC.md#94-jit-execution) | — |
+| [9. Compilation Targets](../LANGUAGE_SPEC.md#9-compilation-targets) | [C](../LANGUAGE_SPEC.md#91-c-backend) · [MLIR](../LANGUAGE_SPEC.md#92-mlir-backend) · [Wasm](../LANGUAGE_SPEC.md#93-webassembly) · [JIT](../LANGUAGE_SPEC.md#94-jit-execution) | [MLIR opt flags](mlir-opt-flags.md) · [Wasm](wasm.md) |
 
 ## Appendices (spec only)
 
