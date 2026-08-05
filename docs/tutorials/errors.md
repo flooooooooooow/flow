@@ -96,18 +96,20 @@ function main() -> i32 {
 
 ## Part 3: Assertions
 
-### 3.1 Expect helper
+### 3.1 Assertion helper
+
+`expect` is a reserved word in FLOW, so name the helper something else.
 
 ```flow
-function expect(cond: bool, msg: string) -> void {
+function check(cond: bool, msg: string) -> void {
     if !cond {
-        printf("EXPECT: %s\n", msg)
+        printf("CHECK FAILED: %s\n", msg)
     }
 }
 
 function main() -> i32 {
-    expect(1 + 1 == 2, "math works")
-    expect(2 + 2 == 5, "this should print")
+    check(1 + 1 == 2, "math works")
+    check(2 + 2 == 5, "this should print")
     return 0
 }
 ```
