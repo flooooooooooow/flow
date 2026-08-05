@@ -74,6 +74,8 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/self_fileio.c compiler/build/self_fileio.h
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/self_cgen.c compiler/build/self_cgen.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/self_typecheck.c compiler/build/self_typecheck.h
 
 self_emit_module resolve \
     compiler/build/self_token.h \
@@ -81,7 +83,8 @@ self_emit_module resolve \
     compiler/build/self_lexer.h \
     compiler/build/self_parser.h \
     compiler/build/self_fileio.h \
-    compiler/build/self_cgen.h
+    compiler/build/self_cgen.h \
+    compiler/build/self_typecheck.h
 
 # Relocatable link: proves driver-emitted frontend objects resolve together.
 cc -r -o compiler/build/flowc_frontend_self.o \
