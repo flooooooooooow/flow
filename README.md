@@ -344,7 +344,8 @@ See [docs/python-target.md](docs/python-target.md) for details.
 ```
 
 Extension lives at `third_party/integrations/vscode/flow-language/` (syntax + LSP).  
-Publishing: set `VSCE_PAT` and run `./scripts/publish_vscode_extension.sh --publish` — see that folder’s `PUBLISH.md`.
+Publishing: push a `vscode-v*` tag to run the Open VSX workflow, or publish locally with
+`OVSX_PAT ./scripts/publish_vscode_extension.sh --ovsx` — see that folder’s `PUBLISH.md`.
 
 ## Highlighted Examples
 
