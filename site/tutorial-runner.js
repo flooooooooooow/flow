@@ -7,7 +7,7 @@ function createFlowRunner(source, options = {}) {
     wrap.className = 'flow-runner';
     wrap.innerHTML = `
         <div class="flow-runner-header">
-            <span class="flow-runner-title">${options.title || 'Try it — compiles in browser'}</span>
+            <span class="flow-runner-title">${options.title || 'Try it — runs in your browser'}</span>
             <div class="flow-runner-actions">
                 <span class="flow-runner-status">
                     <span class="flow-runner-dot" data-dot></span>
@@ -83,10 +83,21 @@ function createFlowRunner(source, options = {}) {
 
         window.requestAnimationFrame(() => {
             const result = FlowCompile.run(code);
+            if (result.unsupported) {
+                panes.output.textContent = result.error;
+                panes.output.className = 'flow-runner-pane idle';
+                panes.ast.textContent = result.ast || '';
+                panes.c.textContent = '';
+                panes.mlir.textContent = '';
+                setState('', 'Native only');
+                setTab('output');
+                if (typeof options.onResult === 'function') options.onResult(result, code);
+                return;
+            }
             if (!result.ok) {
                 panes.output.textContent = `Error: ${result.error}`;
                 panes.output.className = 'flow-runner-pane error';
-                panes.ast.textContent = '';
+                panes.ast.textContent = result.ast || '';
                 panes.c.textContent = '';
                 panes.mlir.textContent = '';
                 setState('err', 'Error');
@@ -100,7 +111,9 @@ function createFlowRunner(source, options = {}) {
             panes.ast.textContent = result.ast;
             panes.c.textContent = result.c;
             panes.mlir.textContent = result.mlir;
-            setState('ok', 'Success');
+            setState('ok', result.exitCode === 0
+                ? 'Exited 0'
+                : `Exited ${result.exitCode}`);
             if (activeTab === 'output' || !panes[activeTab].textContent) {
                 setTab('output');
             }
@@ -415,6 +428,12 @@ function initTutorialsApp(root) {
                 const runner = createFlowRunner(lesson.code, {
                     title: `${lesson.track} · live`,
                     onResult(result) {
+                        if (result.unsupported) {
+                            check.hidden = false;
+                            check.className = 'tutorials-check hint';
+                            check.textContent = result.error;
+                            return;
+                        }
                         if (!result.ok) {
                             check.hidden = false;
                             check.className = 'tutorials-check fail';
