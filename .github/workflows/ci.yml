@@ -174,8 +174,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Gen0 still needs a Python interpreter, but not pip deps (stdlib-only emit path).
-      - uses: ./.github/actions/setup-python-bare
+      # Gen0 still imports the Python transpiler (numpy via gpu_runtime). User
+      # compile is proven pip-free in the flowc-compile job below.
+      - uses: ./.github/actions/setup-python
 
       - name: Stage-A/B self-host roundtrip
         env:
