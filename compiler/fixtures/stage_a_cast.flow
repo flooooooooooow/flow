@@ -1,0 +1,7 @@
+# Stage-A cgen round-trip: `expr as Type` → exit 42.
+
+function main() -> i32 {
+    let x: i32 = 40
+    let y: i64 = (x as i64) + 2
+    return (y as i32)
+}

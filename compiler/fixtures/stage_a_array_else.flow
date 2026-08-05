@@ -1,0 +1,24 @@
+# Stage-A cgen round-trip: array<T,N> init, while, %, if/else, string call → exit 42.
+# 10+20+30+5 = 65; 65 % 7 == 2 → then branch puts("ok") and returns 42.
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let a: array<i32, 4> = [10, 20, 30, 5]
+    let mut i: i32 = 0
+    let mut s: i32 = 0
+    while i < 4 {
+        s = s + a[i]
+        i = i + 1
+    }
+    let r: i32 = s % 7
+    if r == 2 {
+        puts("ok")
+        return 42
+    } else {
+        puts("bad")
+        return 0
+    }
+}

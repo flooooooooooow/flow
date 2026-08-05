@@ -1,0 +1,28 @@
+# Minimal Flow subset for flowc parser fixture tests.
+# Supported: extern, struct, function, let, if/else, for, return, calls.
+
+extern {
+    function puts(s: string) -> i32
+}
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function add(a: i32, b: i32) -> i32 {
+    let mut s: i32 = a + b
+    return s
+}
+
+function main() -> i32 {
+    let x: i32 = add(20, 22)
+    if x == 42 {
+        for i in 0 to 3 {
+            let y: i32 = i
+        }
+        return x
+    } else {
+        return 0
+    }
+}

@@ -1,0 +1,15 @@
+# Stage-A dogfood: recursive fibonacci (examples/basics/fibonacci.flow)
+# Expected: fibonacci(10) == 55
+
+function fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    } else {
+        return fibonacci(n - 1) + fibonacci(n - 2)
+    }
+}
+
+function main() -> i32 {
+    let result: i32 = fibonacci(10)
+    return result
+}
