@@ -113,3 +113,72 @@ def test_fork_duplicate_field_rejected():
     with pytest.raises(Exception) as exc:
         _lower("src |> R { a = f, a = g }")
     assert "Duplicate" in str(exc.value)
+
+
+# --- Anonymous fork records: `source |> { a = f, b = g }` ---------------------
+
+from flow.parser import StructDecl  # noqa: E402
+
+
+def _parse_program(src: str):
+    return Parser(Lexer(src)).parse()
+
+
+_ANON_SRC = """
+function twice(x: i32) -> i32 {{ return x * 2 }}
+function square(x: i32) -> i32 {{ return x * x }}
+function main() -> i32 {{
+    let n: i32 = 6
+    let s = n |> {{ {branches} }}
+    return 0
+}}
+"""
+
+
+def _anon(branches: str):
+    decls = _parse_program(_ANON_SRC.format(branches=branches))
+    structs = [d for d in decls if isinstance(d, StructDecl)]
+    main = next(d for d in decls if isinstance(d, FunctionDecl) and d.name == "main")
+    lit = main.body.statements[1].initializer
+    return structs, lit
+
+
+def test_anon_fork_synthesizes_struct_and_literal():
+    structs, lit = _anon("doubled = twice, squared = square")
+    assert len(structs) == 1
+    s = structs[0]
+    assert [(p.name, p.type.name) for p in s.fields] == [
+        ("doubled", "i32"),
+        ("squared", "i32"),
+    ]
+    # The fork lowers to a struct literal of the synthesized record.
+    assert isinstance(lit, StructLiteral)
+    assert lit.struct_name == s.name
+    assert _render(lit) == s.name + "{doubled: twice(n), squared: square(n)}"
+
+
+def test_anon_fork_dedups_identical_records():
+    src = """
+    function f(x: i32) -> i32 { return x }
+    function g(x: i32) -> i32 { return x }
+    function main() -> i32 {
+        let a = 1 |> { p = f, q = g }
+        let b = 2 |> { p = f, q = g }
+        return 0
+    }
+    """
+    structs = [d for d in _parse_program(src) if isinstance(d, StructDecl)]
+    assert len(structs) == 1
+
+
+def test_anon_fork_uninferrable_field_errors():
+    src = """
+    function main() -> i32 {
+        let obj = 5
+        let s = obj |> { bad = obj.method() }
+        return 0
+    }
+    """
+    with pytest.raises(Exception) as exc:
+        _parse_program(src)
+    assert "infer" in str(exc.value)
