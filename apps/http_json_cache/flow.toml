@@ -1,0 +1,25 @@
+[package]
+name = "http_json_cache"
+version = "0.1.0"
+description = "Small end-to-end app: URL-keyed JSON response cache (registry http + json)"
+author = "Flow Contributors"
+license = "MIT"
+entry = "src/main.flow"
+
+# Resolve package modules without copying into flow_packages/.
+# import json.lib → registry/packages/json/src/lib.flow
+# import http.lib → registry/packages/http/src/lib.flow (live path; needs libcurl)
+[paths]
+json = "../../registry/packages/json/src"
+http = "../../registry/packages/http/src"
+
+[dependencies]
+json = { path = "../../registry/packages/json" }
+http = { path = "../../registry/packages/http" }
+
+[dev-dependencies]
+
+# Used by `flow run-native` / `flow build-native` when exercising live HTTP.
+[native]
+sources = ["../../registry/packages/http/native/flow_http.c"]
+libs = ["curl"]
