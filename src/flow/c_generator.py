@@ -945,17 +945,23 @@ class CGenerator:
             return Type("i32")  # Default fallback
 
     def _is_string_expr(self, expr: Expression) -> bool:
-        """Check if an expression is a string type."""
+        """Check if an expression is a string type.
+
+        Function calls, casts, and other non-literal forms must be included:
+        otherwise a `string`-returning call used in `a + f()` is treated as a
+        non-string operand and forced through `_gen_stringify_expr`, which
+        copies it into a 64-byte stack buffer and silently truncates anything
+        longer. That is exactly how the repo-stats JSON emitter lost digits.
+        """
         if isinstance(expr, Literal) and expr.type.name == 'string':
             return True
         if isinstance(expr, Variable) and expr.name in self._var_types:
             return self._var_types[expr.name].name == 'string'
-        if isinstance(expr, FieldAccess):
-            return self._infer_expr_type(expr).name == 'string'
         if isinstance(expr, BinaryOperation) and expr.operator == '+':
             # String concat if either side is string
             return self._is_string_expr(expr.left) or self._is_string_expr(expr.right)
-        return False
+        inferred = self._infer_expr_type(expr)
+        return inferred is not None and inferred.name == 'string'
 
     def _infer_match_type(self, expr: Expression) -> Type:
         """Infer C type for match scrutinee bindings."""
