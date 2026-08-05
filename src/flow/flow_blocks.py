@@ -11,14 +11,15 @@ Flow AST that the type checker and every backend already understand:
     Name    Name_new()                       construct with declared defaults
     void    Name_init(Name* self)            (re)apply declared defaults
     void    Name_derivs(Name* self, ...)     dx/dt out-params, pre-step state
-    void    Name_step(Name* self, double dt) explicit Euler, events, outputs
+    void    Name_step(Name* self, double dt) Euler or RK4, events, outputs
     void    Name_outputs(Name* self)         inline output maps (if any)
 
 Integration semantics (spec 2.2, 2.4): all `evolves` right-hand sides are
 evaluated against the pre-step state (simultaneous derivative evaluation),
 then every state advances together. Name_derivs is generated as a separate
-function so a later card can swap RK4 into Name_step without touching the
-surface syntax or the Name_step signature. dt is caller-supplied, in seconds.
+function so `method rk4` is a pure codegen swap inside Name_step without
+touching the surface syntax or the Name_step signature. dt is caller-supplied,
+in seconds.
 
 Time blocks (spec section 4, card: time-blocks): each
 `every <duration> { ... }` block lowers to a hidden `__every_k_acc : i64`
@@ -41,6 +42,15 @@ stored previous sign (or g is exactly zero). A fired body applies its
 same post-step, pre-reset state, then all targets are assigned together.
 Detection is at step granularity; root-finding refinement is a later card.
 
+Constraints (spec section 5.4, card: constraints): each `always` /
+`never` clause lowers into Name_check, which returns 0 or the 1-based
+index of the first violated clause. Name_step calls Name_check after
+events and outputs (normative order of spec 1.4) and on violation calls
+flow_panic → abort(). --lenient demotion to a one-shot stderr warning is
+recorded in the north-star; flow lowering runs at parse time before the
+transpiler flag is known, so v1 always traps (same hard-error convention
+as other flow_blocks validation).
+
 The generated functions carry the "flow_api" attribute, which keeps their C
 names unmangled (src/flow/overload.py, src/flow/c_generator.py), so
 `Name_step(Name* self, double dt)` is a stable C embedding API. Because the
@@ -48,7 +58,7 @@ lowered output is ordinary AST, the strict type checker checks every
 generated body the same way it checks user code.
 """
 
-from typing import Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .parser import (
     ArrayAccess,
@@ -93,7 +103,7 @@ _PURE_MATH_FUNCTIONS = {
 }
 
 _GENERATED_SUFFIXES = (
-    "_new", "_init", "_derivs", "_step", "_outputs", "_default_dt",
+    "_new", "_init", "_derivs", "_step", "_outputs", "_check", "_default_dt",
 )
 
 # Catch-up bound for `every` blocks: at most this many firings per step
@@ -106,7 +116,7 @@ _EVERY_CATCHUP_CAP = 1024
 # (spec 2.3): 1 ms, in nanoseconds.
 _DEFAULT_DT_NS = 1_000_000
 
-_SOLVER_METHODS = ("euler",)
+_SOLVER_METHODS = ("euler", "rk4")
 
 
 def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
@@ -119,6 +129,16 @@ def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
     flow_decls = [d for d in declarations if isinstance(d, FlowDecl)]
     if not flow_decls:
         return declarations
+
+    flow_by_name: Dict[str, FlowDecl] = {}
+    for d in flow_decls:
+        if d.name in flow_by_name:
+            line = (d.location.line + 1) if d.location else None
+            raise _error(
+                f"flow '{d.name}' is declared twice",
+                line, source,
+            )
+        flow_by_name[d.name] = d
 
     local_pure_functions = {
         d.name
@@ -134,8 +154,10 @@ def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
     result: List[Any] = []
     for decl in declarations:
         if isinstance(decl, FlowDecl):
-            _validate_flow(decl, local_pure_functions, taken_names, source)
-            result.extend(_lower_flow(decl))
+            _validate_flow(
+                decl, local_pure_functions, taken_names, source, flow_by_name
+            )
+            result.extend(_lower_flow(decl, flow_by_name))
         else:
             result.append(decl)
     return result
@@ -156,14 +178,22 @@ def _validate_flow(
     local_pure_functions: Set[str],
     taken_names: Set[str],
     source: str,
+    flow_by_name: Optional[Dict[str, FlowDecl]] = None,
 ) -> None:
     flow_line = (flow.location.line + 1) if flow.location else None
+    children = list(getattr(flow, "children", None) or [])
+    connections = list(getattr(flow, "connections", None) or [])
+    if flow_by_name is None:
+        flow_by_name = {flow.name: flow}
 
-    if not flow.states:
+    if not flow.states and not children:
         raise _error(
             f"flow '{flow.name}' declares no state",
             flow_line, source,
-            suggestion="add at least one 'state name : f64 = value' declaration",
+            suggestion=(
+                "add at least one 'state name : f64 = value' declaration, "
+                "or nest child flows ('plant : Motor') for a composite"
+            ),
         )
 
     for suffix in _GENERATED_SUFFIXES:
@@ -202,6 +232,34 @@ def _validate_flow(
                 member.line, source,
             )
         members[member.name] = kind
+
+    for child in children:
+        if child.name in members:
+            raise _error(
+                f"flow '{flow.name}' declares '{child.name}' twice",
+                child.line, source,
+            )
+        if child.name.startswith("__"):
+            raise _error(
+                f"flow member '{child.name}' may not start with '__' "
+                f"(reserved for compiler-generated fields)",
+                child.line, source,
+            )
+        if child.type.name == flow.name:
+            raise _error(
+                f"nested flow member '{child.name}' in flow '{flow.name}' "
+                f"cannot have the parent type (no recursive nesting)",
+                child.line, source,
+            )
+        if child.type.name not in flow_by_name:
+            raise _error(
+                f"nested flow member '{child.name}' in flow '{flow.name}' "
+                f"has type '{child.type.name}', which is not a flow in "
+                f"this file",
+                child.line, source,
+                suggestion="declare the child with 'flow ChildName { ... }' first",
+            )
+        members[child.name] = "child"
 
     for state in flow.states:
         if state.initializer is None:
@@ -300,16 +358,10 @@ def _validate_flow(
                 flow.solver.line, source,
             )
         if flow.solver.method not in _SOLVER_METHODS:
-            if flow.solver.method == "rk4":
-                raise _error(
-                    f"'method rk4' in the solver block of flow "
-                    f"'{flow.name}' is not yet implemented; euler is the "
-                    f"only integration method in this version",
-                    flow.solver.line, source,
-                )
             raise _error(
                 f"unknown solver method '{flow.solver.method}' in flow "
-                f"'{flow.name}'; valid methods: euler",
+                f"'{flow.name}'; valid methods: "
+                f"{', '.join(_SOLVER_METHODS)}",
                 flow.solver.line, source,
             )
 
@@ -354,6 +406,17 @@ def _validate_flow(
             _check_pure(upd.expr, flow, f"'{upd.target} becomes'",
                         upd.line, local_pure_functions, source)
 
+    for always in flow.alwayses:
+        for clause in always.clauses:
+            _check_pure(clause.expr, flow, "'always' clause",
+                        clause.line, local_pure_functions, source)
+            _check_booleanish(clause.expr, flow, "always", clause.line, source)
+    for never in flow.nevers:
+        for clause in never.clauses:
+            _check_pure(clause.expr, flow, "'never' clause",
+                        clause.line, local_pure_functions, source)
+            _check_booleanish(clause.expr, flow, "never", clause.line, source)
+
     for state in flow.states:
         _check_pure(state.initializer, flow, f"initializer of '{state.name}'",
                     state.line, local_pure_functions, source)
@@ -363,6 +426,275 @@ def _validate_flow(
     for output in flow.outputs:
         _check_pure(output.expr, flow, f"output map of '{output.name}'",
                     output.line, local_pure_functions, source)
+
+    if connections or children:
+        _validate_connect(flow, children, connections, flow_by_name, source)
+
+
+def _validate_connect(
+    flow: FlowDecl,
+    children: List[Any],
+    connections: List[Any],
+    flow_by_name: Dict[str, FlowDecl],
+    source: str,
+) -> None:
+    """Port direction/type checks and algebraic-loop detection (spec §8.2).
+
+    Stage-1: unconnected child inputs are legal (embedder-driven before
+    Name_step). Parent re-export of child inputs and parent `becomes` into
+    `child.input` are NOT YET.
+    """
+    child_by_name = {c.name: c for c in children}
+    if connections and not children:
+        line = connections[0].line
+        raise _error(
+            f"'connect' in flow '{flow.name}' needs nested flow members "
+            f"to wire (e.g. 'plant : Motor')",
+            line, source,
+        )
+
+    driven: Dict[Tuple[str, str], Any] = {}
+    for conn in connections:
+        if conn.src_member not in child_by_name:
+            raise _error(
+                f"connection source '{conn.src_member}.{conn.src_port}' in "
+                f"flow '{flow.name}' names unknown nested member "
+                f"'{conn.src_member}'",
+                conn.line, source,
+            )
+        if conn.dst_member not in child_by_name:
+            raise _error(
+                f"connection destination '{conn.dst_member}.{conn.dst_port}' "
+                f"in flow '{flow.name}' names unknown nested member "
+                f"'{conn.dst_member}'",
+                conn.line, source,
+            )
+        if conn.src_member == conn.dst_member:
+            raise _error(
+                f"connection in flow '{flow.name}' wires "
+                f"'{conn.src_member}' to itself; Stage-1 connect is "
+                f"between sibling subflows only",
+                conn.line, source,
+            )
+        src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
+        dst_flow = flow_by_name[child_by_name[conn.dst_member].type.name]
+        src_kind, src_type = _lookup_port(src_flow, conn.src_port)
+        if src_kind is None:
+            raise _error(
+                f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
+                f"is not a port of '{src_flow.name}'",
+                conn.line, source,
+                suggestion=(
+                    f"connect sources must be an output or state of "
+                    f"'{src_flow.name}'"
+                ),
+            )
+        if src_kind not in ("output", "state"):
+            raise _error(
+                f"'{conn.src_member}.{conn.src_port}' in flow '{flow.name}' "
+                f"is a {src_kind}; connection sources must be an output "
+                f"or state",
+                conn.line, source,
+            )
+        dst_kind, dst_type = _lookup_port(dst_flow, conn.dst_port)
+        if dst_kind is None:
+            raise _error(
+                f"'{conn.dst_member}.{conn.dst_port}' in flow '{flow.name}' "
+                f"is not a port of '{dst_flow.name}'",
+                conn.line, source,
+                suggestion=f"connection destinations must be an input of "
+                           f"'{dst_flow.name}'",
+            )
+        if dst_kind != "input":
+            raise _error(
+                f"'{conn.dst_member}.{conn.dst_port}' in flow '{flow.name}' "
+                f"is a {dst_kind}; connection destinations must be an input",
+                conn.line, source,
+            )
+        if src_type.name != dst_type.name:
+            raise _error(
+                f"type mismatch in connect of flow '{flow.name}': "
+                f"'{conn.src_member}.{conn.src_port}' is {src_type.name} but "
+                f"'{conn.dst_member}.{conn.dst_port}' is {dst_type.name}",
+                conn.line, source,
+            )
+        key = (conn.dst_member, conn.dst_port)
+        if key in driven:
+            raise _error(
+                f"input '{conn.dst_member}.{conn.dst_port}' in flow "
+                f"'{flow.name}' has two incoming connections",
+                conn.line, source,
+            )
+        driven[key] = conn
+
+    # Algebraic loops: edges where the source is an output computed
+    # combinationally from inputs (spec §8.2). State-broken edges are fine.
+    combo_edges: List[Tuple[str, str, Any]] = []
+    for conn in connections:
+        src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
+        if _port_is_combinational(src_flow, conn.src_port):
+            combo_edges.append((conn.src_member, conn.dst_member, conn))
+    cycle = _find_member_cycle(
+        [c.name for c in children],
+        [(a, b) for a, b, _ in combo_edges],
+    )
+    if cycle is not None:
+        edge = next(
+            (c for a, b, c in combo_edges
+             if a in cycle and b in cycle),
+            connections[0] if connections else None,
+        )
+        line = edge.line if edge is not None else None
+        raise _error(
+            f"algebraic loop in connect of flow '{flow.name}' through "
+            f"combinational outputs: {' -> '.join(cycle)}",
+            line, source,
+            suggestion=(
+                "break the loop with a state (or an output mapped from a "
+                "state); Modelica-style algebraic solvers are out of scope"
+            ),
+        )
+
+
+def _lookup_port(flow: FlowDecl, port: str):
+    """Return (kind, type) for a named port on a flow, or (None, None)."""
+    for s in flow.states:
+        if s.name == port:
+            return "state", s.type
+    for i in flow.inputs:
+        if i.name == port:
+            return "input", i.type
+    for o in flow.outputs:
+        if o.name == port:
+            return "output", o.type
+    for p in flow.params:
+        if p.name == port:
+            return "param", p.type
+    return None, None
+
+
+def _port_is_combinational(flow: FlowDecl, port: str) -> bool:
+    """True when `port` is an output whose map references an input (spec §8.2)."""
+    for output in flow.outputs:
+        if output.name != port:
+            continue
+        if output.expr is None:
+            return False
+        input_names = {i.name for i in flow.inputs}
+        return _expr_refs_names(output.expr, input_names)
+    return False
+
+
+def _expr_refs_names(expr, names: Set[str]) -> bool:
+    if expr is None:
+        return False
+    if isinstance(expr, Variable):
+        return expr.name in names
+    if isinstance(expr, FunctionCall):
+        return any(_expr_refs_names(a, names) for a in expr.arguments)
+    for child in _children(expr):
+        if _expr_refs_names(child, names):
+            return True
+    return False
+
+
+def _find_member_cycle(
+    members: List[str], edges: List[Tuple[str, str]]
+) -> Optional[List[str]]:
+    """Return a cycle path (node list with repeated start) or None."""
+    adj: Dict[str, List[str]] = {m: [] for m in members}
+    for a, b in edges:
+        if a in adj and b in adj:
+            adj[a].append(b)
+    visiting: Set[str] = set()
+    visited: Set[str] = set()
+    stack: List[str] = []
+
+    def dfs(node: str) -> Optional[List[str]]:
+        visiting.add(node)
+        stack.append(node)
+        for nxt in adj[node]:
+            if nxt in visiting:
+                i = stack.index(nxt)
+                return stack[i:] + [nxt]
+            if nxt not in visited:
+                found = dfs(nxt)
+                if found is not None:
+                    return found
+        stack.pop()
+        visiting.remove(node)
+        visited.add(node)
+        return None
+
+    for m in members:
+        if m not in visited:
+            found = dfs(m)
+            if found is not None:
+                return found
+    return None
+
+
+def _topo_child_order(
+    children: List[Any],
+    connections: List[Any],
+    flow_by_name: Dict[str, FlowDecl],
+) -> List[Any]:
+    """Topological order by combinational edges; ties by declaration order.
+
+    Spec §8.3: state-broken edges do not constrain order.
+    """
+    child_by_name = {c.name: c for c in children}
+    names = [c.name for c in children]
+    indeg = {n: 0 for n in names}
+    adj: Dict[str, List[str]] = {n: [] for n in names}
+    for conn in connections:
+        src_flow = flow_by_name[child_by_name[conn.src_member].type.name]
+        if not _port_is_combinational(src_flow, conn.src_port):
+            continue
+        if conn.dst_member not in indeg or conn.src_member not in adj:
+            continue
+        adj[conn.src_member].append(conn.dst_member)
+        indeg[conn.dst_member] += 1
+    # Stable Kahn: among zero-indegree nodes, pick earliest declaration.
+    remaining = list(names)
+    ordered: List[Any] = []
+    while remaining:
+        ready = [n for n in remaining if indeg[n] == 0]
+        if not ready:
+            # Cycle already rejected in validation; fall back to decl order.
+            return list(children)
+        pick = ready[0]
+        remaining.remove(pick)
+        ordered.append(child_by_name[pick])
+        for nxt in adj[pick]:
+            indeg[nxt] -= 1
+    return ordered
+
+
+def _check_booleanish(expr, flow, kind: str, line, source) -> None:
+    """Reject clauses that clearly cannot type as bool (spec 5.4).
+
+    Full bool typing is done by the strict checker on the lowered
+    Name_check body; this catches the common mistake of a bare numeric
+    expression early, with a located flow-body message.
+    """
+    if isinstance(expr, BinaryOperation) and expr.operator in (
+        "==", "!=", "<", "<=", ">", ">=", "&&", "||", "and", "or",
+    ):
+        return
+    if isinstance(expr, UnaryOperation) and expr.operator in ("!", "not"):
+        return
+    if isinstance(expr, Literal) and getattr(expr.type, "name", None) == "bool":
+        return
+    if isinstance(expr, Variable):
+        # Member or local bool — leave to the type checker.
+        return
+    raise _error(
+        f"'{kind}' clause in flow '{flow.name}' must be a boolean "
+        f"expression",
+        line, source,
+        suggestion="write a comparison or logical expression, e.g. 'x < 1.0'",
+    )
 
 
 def _check_threshold(expr, flow, when, param_names, source) -> None:
@@ -461,13 +793,20 @@ def _children(expr) -> List[Any]:
 # ---------------------------------------------------------------------------
 
 
-def _lower_flow(flow: FlowDecl) -> List[Any]:
-    # Field order: state, input, output, param (spec 1.2), then hidden
-    # per-every-block accumulators (spec 4.4) and per-event guard memory
-    # (spec 5.3). User members may not start with '__', so the hidden names
-    # cannot collide.
+def _lower_flow(
+    flow: FlowDecl,
+    flow_by_name: Optional[Dict[str, FlowDecl]] = None,
+) -> List[Any]:
+    # Field order: nested flow children (spec §8), then state, input, output,
+    # param (spec 1.2), then hidden per-every-block accumulators (spec 4.4)
+    # and per-event guard memory (spec 5.3). User members may not start with
+    # '__', so the hidden names cannot collide.
+    children = list(getattr(flow, "children", None) or [])
+    if flow_by_name is None:
+        flow_by_name = {flow.name: flow}
     ordered = (
-        [(s.name, s.type) for s in flow.states]
+        [(c.name, c.type) for c in children]
+        + [(s.name, s.type) for s in flow.states]
         + [(i.name, i.type) for i in flow.inputs]
         + [(o.name, o.type) for o in flow.outputs]
         + [(p.name, p.type) for p in flow.params]
@@ -487,22 +826,44 @@ def _lower_flow(flow: FlowDecl) -> List[Any]:
 
     evolved = [ev for ev in flow.evolves]
     has_outputs = bool(flow.outputs)
+    clauses = _invariant_clauses(flow)
 
     functions = [
         _make_new(flow, ordered),
         _make_init(flow, member_names, member_types, has_outputs),
         _make_derivs(flow, member_names, member_types, evolved),
-        _make_step(flow, member_names, member_types, evolved, has_outputs),
+        _make_step(
+            flow, member_names, member_types, evolved, has_outputs,
+            clauses, flow_by_name=flow_by_name,
+        ),
         _make_default_dt(flow),
     ]
     if has_outputs:
         functions.append(_make_outputs(flow, member_names))
+    if clauses:
+        functions.append(_make_check(flow, member_names, clauses))
 
     for fn in functions:
         fn.is_exported = flow.is_exported
         fn.location = flow.location
 
     return [struct] + functions
+
+
+def _invariant_clauses(flow: FlowDecl) -> List[Tuple[str, Any]]:
+    """Flatten always/never clauses in declaration order within each kind.
+
+    always blocks are checked before never blocks (stable, matches how
+    the AST stores them as separate lists). Returns (kind, clause) pairs.
+    """
+    clauses: List[Tuple[str, Any]] = []
+    for always in getattr(flow, "alwayses", None) or []:
+        for clause in always.clauses:
+            clauses.append(("always", clause))
+    for never in getattr(flow, "nevers", None) or []:
+        for clause in never.clauses:
+            clauses.append(("never", clause))
+    return clauses
 
 
 def _self_ptr_type(flow_name: str) -> Type:
@@ -515,12 +876,15 @@ def _zero() -> Literal:
     return Literal("0.0", Type("f32"))
 
 
-def _zero_of(t: Type) -> Literal:
-    """Zero literal matching a member type: integer zero for the hidden
-    i64 accumulators, float zero for everything else."""
+def _zero_of(t: Type):
+    """Default value for a struct field: numeric zero, or Child_new() for
+    nested flow members (spec §8)."""
     if t.name == "i64":
         return _i64(0)
-    return _zero()
+    if t.name in _MEMBER_TYPES:
+        return _zero()
+    # Nested flow / struct field: construct via the generated Name_new API.
+    return FunctionCall(f"{t.name}_new", [])
 
 
 def _i64(value: int) -> Literal:
@@ -610,6 +974,19 @@ def _make_init(flow: FlowDecl, member_names: Set[str], member_types,
         statements.append(
             _assign_member(state.name, _rewrite(state.initializer, member_names))
         )
+    for child in getattr(flow, "children", None) or []:
+        # Child_new already ran inside Name_new; re-init so Name_init is a
+        # full reset of the composite (matches scalar member re-init).
+        statements.append(
+            FunctionCall(
+                f"{child.type.name}_init",
+                [
+                    UnaryOperation(
+                        "&", FieldAccess(Variable("self"), child.name)
+                    )
+                ],
+            )
+        )
     for k in range(len(flow.everys)):
         statements.append(_assign_member(f"__every_{k}_acc", _i64(0)))
     for k, when in enumerate(flow.whens):
@@ -669,13 +1046,187 @@ def _guard_expr(when, member_names: Set[str], member_types):
     return expr
 
 
+def _solver_method(flow: FlowDecl) -> str:
+    """Integration method pinned by the solver block, else explicit Euler."""
+    if flow.solver is not None:
+        return flow.solver.method
+    return "euler"
+
+
+def _dt_for_state(state_type: Type):
+    """Caller dt, narrowed to f32 when the evolved state is f32."""
+    dt_expr = Variable("dt")
+    if state_type.name == "f32":
+        return CastExpression(dt_expr, Type("f32"))
+    return dt_expr
+
+
+def _float_lit(text: str) -> Literal:
+    return Literal(text, Type("f32"))
+
+
+def _derivs_call(flow: FlowDecl, ordered_evolved, stage: str) -> FunctionCall:
+    return FunctionCall(
+        f"{flow.name}_derivs",
+        [Variable("self")]
+        + [
+            UnaryOperation("&", Variable(f"{stage}_{ev.target}"))
+            for ev in ordered_evolved
+        ],
+    )
+
+
+def _euler_integration(flow: FlowDecl, ordered_evolved, member_types):
+    """Explicit Euler with simultaneous update (spec 2.4)."""
+    statements = []
+    for ev in ordered_evolved:
+        state_type = member_types[ev.target]
+        statements.append(
+            VarDecl(f"d_{ev.target}", Type(state_type.name), _zero(),
+                    is_mutable=True)
+        )
+    if ordered_evolved:
+        statements.append(_derivs_call(flow, ordered_evolved, "d"))
+    for ev in ordered_evolved:
+        state_type = member_types[ev.target]
+        statements.append(
+            _assign_member(
+                ev.target,
+                BinaryOperation(
+                    FieldAccess(Variable("self"), ev.target),
+                    "+",
+                    BinaryOperation(
+                        Variable(f"d_{ev.target}"), "*",
+                        _dt_for_state(state_type),
+                    ),
+                ),
+            )
+        )
+    return statements
+
+
+def _set_state_from_y0_plus_k(ordered_evolved, member_types, k_stage: str,
+                              dt_scale):
+    """self.x = y0_x + k_stage_x * dt_scale for each evolved state."""
+    statements = []
+    for ev in ordered_evolved:
+        state_type = member_types[ev.target]
+        scale = dt_scale(state_type)
+        statements.append(
+            _assign_member(
+                ev.target,
+                BinaryOperation(
+                    Variable(f"y0_{ev.target}"),
+                    "+",
+                    BinaryOperation(Variable(f"{k_stage}_{ev.target}"),
+                                    "*", scale),
+                ),
+            )
+        )
+    return statements
+
+
+def _rk4_integration(flow: FlowDecl, ordered_evolved, member_types):
+    """Classic RK4 via four Name_derivs calls on temporary state copies
+    (spec 2.4): save y0, evaluate k1 at y0, k2 at y0+(dt/2)k1, k3 at
+    y0+(dt/2)k2, k4 at y0+dt*k3, then
+    y = y0 + (dt/6)(k1 + 2 k2 + 2 k3 + k4). Intermediate stages overwrite
+    only evolved fields on self; params, inputs, and hidden accumulators
+    are left alone.
+    """
+    statements = []
+    for ev in ordered_evolved:
+        state_type = member_types[ev.target]
+        statements.append(
+            VarDecl(
+                f"y0_{ev.target}",
+                Type(state_type.name),
+                FieldAccess(Variable("self"), ev.target),
+            )
+        )
+    for stage in ("k1", "k2", "k3", "k4"):
+        for ev in ordered_evolved:
+            state_type = member_types[ev.target]
+            statements.append(
+                VarDecl(
+                    f"{stage}_{ev.target}",
+                    Type(state_type.name),
+                    _zero(),
+                    is_mutable=True,
+                )
+            )
+
+    def half_dt(state_type: Type):
+        return BinaryOperation(
+            _dt_for_state(state_type), "*", _float_lit("0.5")
+        )
+
+    def full_dt(state_type: Type):
+        return _dt_for_state(state_type)
+
+    def sixth_dt(state_type: Type):
+        return BinaryOperation(
+            _dt_for_state(state_type), "/", _float_lit("6.0")
+        )
+
+    # k1 at y0 (self still holds the pre-step state)
+    statements.append(_derivs_call(flow, ordered_evolved, "k1"))
+    statements.extend(
+        _set_state_from_y0_plus_k(ordered_evolved, member_types, "k1", half_dt)
+    )
+    statements.append(_derivs_call(flow, ordered_evolved, "k2"))
+    statements.extend(
+        _set_state_from_y0_plus_k(ordered_evolved, member_types, "k2", half_dt)
+    )
+    statements.append(_derivs_call(flow, ordered_evolved, "k3"))
+    statements.extend(
+        _set_state_from_y0_plus_k(ordered_evolved, member_types, "k3", full_dt)
+    )
+    statements.append(_derivs_call(flow, ordered_evolved, "k4"))
+
+    for ev in ordered_evolved:
+        # k1 + 2*k2 + 2*k3 + k4
+        weighted = BinaryOperation(
+            BinaryOperation(
+                BinaryOperation(
+                    Variable(f"k1_{ev.target}"),
+                    "+",
+                    BinaryOperation(
+                        Variable(f"k2_{ev.target}"), "*", _float_lit("2.0"),
+                    ),
+                ),
+                "+",
+                BinaryOperation(
+                    Variable(f"k3_{ev.target}"), "*", _float_lit("2.0"),
+                ),
+            ),
+            "+",
+            Variable(f"k4_{ev.target}"),
+        )
+        statements.append(
+            _assign_member(
+                ev.target,
+                BinaryOperation(
+                    Variable(f"y0_{ev.target}"),
+                    "+",
+                    BinaryOperation(
+                        weighted, "*", sixth_dt(member_types[ev.target]),
+                    ),
+                ),
+            )
+        )
+    return statements
+
+
 def _make_step(flow: FlowDecl, member_names, member_types, evolved,
-               has_outputs) -> FunctionDecl:
-    """Name_step(self, dt): explicit Euler with simultaneous update, then
-    every-blocks due this tick in declaration order, then hybrid events in
-    declaration order, then output maps (the normative ordering of spec
-    1.4). dt is in seconds (spec 2.3, 2.4; every-blocks per spec 4.3 and
-    4.4; events per spec 5.2 and 5.3).
+               has_outputs, clauses=None, flow_by_name=None) -> FunctionDecl:
+    """Name_step(self, dt): integrate (Euler or RK4), then every-blocks due
+    this tick in declaration order, then hybrid events in declaration order,
+    then output maps, then nested children (spec §8.3), then invariant
+    checks (the normative ordering of spec 1.4). dt is in seconds (spec
+    2.3, 2.4; every-blocks per spec 4.3 and 4.4; events per spec 5.2 and
+    5.3; invariants per spec 5.4). Method comes from `solver { method … }`;
+    default is Euler.
 
     Event firing test: strict sign comparison, (g < 0) != (g_prev < 0),
     plus the exact-hit case g == 0. The spec's section 5.3 sketch compares
@@ -685,39 +1236,16 @@ def _make_step(flow: FlowDecl, member_names, member_types, evolved,
     Strict < and recomputing the stored guard from the post-reset state
     keep the spec's step-granularity semantics and fire once per crossing.
     """
+    if clauses is None:
+        clauses = _invariant_clauses(flow)
+    if flow_by_name is None:
+        flow_by_name = {flow.name: flow}
     ordered_evolved = _in_state_order(flow, evolved)
-    statements = []
-    for ev in ordered_evolved:
-        state_type = member_types[ev.target]
-        statements.append(
-            VarDecl(f"d_{ev.target}", Type(state_type.name), _zero(), is_mutable=True)
-        )
-    if ordered_evolved:
-        statements.append(
-            FunctionCall(
-                f"{flow.name}_derivs",
-                [Variable("self")]
-                + [
-                    UnaryOperation("&", Variable(f"d_{ev.target}"))
-                    for ev in ordered_evolved
-                ],
-            )
-        )
-    for ev in ordered_evolved:
-        state_type = member_types[ev.target]
-        dt_expr = Variable("dt")
-        if state_type.name == "f32":
-            dt_expr = CastExpression(dt_expr, Type("f32"))
-        statements.append(
-            _assign_member(
-                ev.target,
-                BinaryOperation(
-                    FieldAccess(Variable("self"), ev.target),
-                    "+",
-                    BinaryOperation(Variable(f"d_{ev.target}"), "*", dt_expr),
-                ),
-            )
-        )
+    method = _solver_method(flow)
+    if method == "rk4":
+        statements = _rk4_integration(flow, ordered_evolved, member_types)
+    else:
+        statements = _euler_integration(flow, ordered_evolved, member_types)
     if flow.everys:
         # dt converts to integer nanoseconds once per step (spec 4.4);
         # drift is bounded by the ns truncation per step.
@@ -744,11 +1272,142 @@ def _make_step(flow: FlowDecl, member_names, member_types, evolved,
         )
     if has_outputs:
         statements.append(FunctionCall(f"{flow.name}_outputs", [Variable("self")]))
+    statements.extend(_child_step_statements(flow, flow_by_name))
+    if clauses:
+        statements.extend(_check_call_statements(flow, clauses))
     return _flow_fn(
         flow, "_step",
         [Parameter("self", _self_ptr_type(flow.name)), Parameter("dt", Type("f64"))],
         Type("void"), statements,
     )
+
+
+def _child_step_statements(
+    flow: FlowDecl, flow_by_name: Dict[str, FlowDecl]
+) -> List[Any]:
+    """Copy connected ports, then Child_step, in topo order (spec §8.3)."""
+    children = list(getattr(flow, "children", None) or [])
+    connections = list(getattr(flow, "connections", None) or [])
+    if not children:
+        return []
+    ordered = _topo_child_order(children, connections, flow_by_name)
+    by_dst: Dict[str, List[Any]] = {c.name: [] for c in children}
+    for conn in connections:
+        by_dst.setdefault(conn.dst_member, []).append(conn)
+    statements: List[Any] = []
+    for child in ordered:
+        for conn in by_dst.get(child.name, []):
+            src = FieldAccess(
+                FieldAccess(Variable("self"), conn.src_member),
+                conn.src_port,
+            )
+            dst = FieldAccess(
+                FieldAccess(Variable("self"), conn.dst_member),
+                conn.dst_port,
+            )
+            statements.append(Assignment("", src, target_expr=dst))
+        statements.append(
+            FunctionCall(
+                f"{child.type.name}_step",
+                [
+                    UnaryOperation(
+                        "&", FieldAccess(Variable("self"), child.name)
+                    ),
+                    Variable("dt"),
+                ],
+            )
+        )
+    return statements
+
+
+def _make_check(flow: FlowDecl, member_names: Set[str], clauses) -> FunctionDecl:
+    """Name_check(self) -> i32: 0 if all invariants hold, else the 1-based
+    index of the first violated clause (spec 5.4). always clauses must be
+    true; never clauses must be false.
+    """
+    statements = []
+    for idx, (kind, clause) in enumerate(clauses, start=1):
+        cond = _rewrite(clause.expr, member_names)
+        if kind == "always":
+            violated = UnaryOperation("!", cond)
+        else:
+            violated = cond
+        statements.append(
+            IfStatement(
+                violated,
+                Block([ReturnStatement(Literal(str(idx), Type("i32")))]),
+                [],
+                None,
+            )
+        )
+    statements.append(ReturnStatement(Literal("0", Type("i32"))))
+    return _flow_fn(
+        flow, "_check",
+        [Parameter("self", _self_ptr_type(flow.name))],
+        Type("i32"), statements,
+    )
+
+
+def _check_call_statements(flow: FlowDecl, clauses) -> List[Any]:
+    """Statements Name_step appends after outputs to enforce invariants.
+
+        let __viol : i32 = Name_check(self)
+        if __viol == 1 { flow_panic("...") }
+        if __viol == 2 { flow_panic("...") }
+        ...
+    """
+    statements: List[Any] = [
+        VarDecl(
+            "__viol",
+            Type("i32"),
+            FunctionCall(f"{flow.name}_check", [Variable("self")]),
+        )
+    ]
+    for idx, (_kind, clause) in enumerate(clauses, start=1):
+        text = clause.text or _expr_text(clause.expr)
+        msg = f"{flow.name}:{clause.line}: invariant violated: {text}"
+        statements.append(
+            IfStatement(
+                BinaryOperation(
+                    Variable("__viol"), "==", Literal(str(idx), Type("i32"))
+                ),
+                Block([
+                    FunctionCall(
+                        "flow_panic",
+                        [Literal(f'"{_escape_c_string(msg)}"', Type("string"))],
+                    )
+                ]),
+                [],
+                None,
+            )
+        )
+    return statements
+
+
+def _escape_c_string(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _expr_text(expr) -> str:
+    """Fallback pretty-print when the parser did not capture a source slice."""
+    if expr is None:
+        return ""
+    if isinstance(expr, Literal):
+        return str(expr.value)
+    if isinstance(expr, Variable):
+        return expr.name
+    if isinstance(expr, BinaryOperation):
+        return f"({_expr_text(expr.left)} {expr.operator} {_expr_text(expr.right)})"
+    if isinstance(expr, UnaryOperation):
+        return f"({expr.operator}{_expr_text(expr.operand)})"
+    if isinstance(expr, FieldAccess):
+        return f"{_expr_text(expr.object)}.{expr.field}"
+    if isinstance(expr, FunctionCall):
+        args = ", ".join(_expr_text(a) for a in expr.arguments)
+        return f"{expr.name}({args})"
+    if isinstance(expr, CastExpression):
+        return f"({_expr_text(expr.expr)} as {expr.target_type.name})"
+    return "..."
 
 
 def _every_statements(k: int, every, member_names: Set[str], member_types):
