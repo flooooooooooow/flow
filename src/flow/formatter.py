@@ -55,7 +55,8 @@ class Formatter:
         prefix = "    " * indent
         if isinstance(stmt, VarDecl):
             init = f" = {self._format_expr(stmt.initializer)}" if stmt.initializer else ""
-            return [f"{prefix}let {stmt.name}: {self._format_type(stmt.type)}{init}"]
+            mut = "mut " if getattr(stmt, "is_mutable", False) else ""
+            return [f"{prefix}let {mut}{stmt.name}: {self._format_type(stmt.type)}{init}"]
         elif isinstance(stmt, ReturnStatement):
             val = f" {self._format_expr(stmt.value)}" if stmt.value else ""
             return [f"{prefix}return{val}"]
