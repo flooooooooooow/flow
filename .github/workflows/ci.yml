@@ -59,7 +59,7 @@ jobs:
       plugins: ${{ steps.filter.outputs.plugins }}
       deps: ${{ steps.filter.outputs.deps }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v4
         id: filter
@@ -98,7 +98,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' ||
       needs.changes.outputs.deps == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-python
 
@@ -125,7 +125,7 @@ jobs:
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.deps == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-python
 
@@ -146,7 +146,7 @@ jobs:
       needs.changes.outputs.libs == 'true' ||
       needs.changes.outputs.runtime == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-python
 
@@ -172,7 +172,7 @@ jobs:
       needs.changes.outputs.compiler == 'true' ||
       needs.changes.outputs.workflow == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-python
 
@@ -192,7 +192,7 @@ jobs:
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.tests == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-python
 
@@ -210,7 +210,7 @@ jobs:
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.tests == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-python
 
@@ -227,7 +227,7 @@ jobs:
       needs.changes.outputs.plugins == 'true' ||
       needs.changes.outputs.workflow == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Build and run Schur DSP correctness tests
         run: |
@@ -242,7 +242,7 @@ jobs:
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.examples == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-python
 
@@ -260,7 +260,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-python
 
