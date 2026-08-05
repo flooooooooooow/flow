@@ -17,9 +17,9 @@ story. Adoption first; new sugar second.
 
 | Priority | Item | Kind | Issue |
 |----------|------|------|-------|
-| P0 | Canonicalize evolution demos onto `flow` / `evolves` / `when` | adoption | [#159](https://github.com/flooooooooooow/flow/issues/159) |
-| P0 | `gfx_run` frame helper | stdlib | [#164](https://github.com/flooooooooooow/flow/issues/164) |
-| P0 | Lorenz as `flow` + phase-portrait trail | language + demo | [#165](https://github.com/flooooooooooow/flow/issues/165) |
+| P0 | Canonicalize evolution demos onto `flow` / `evolves` / `when` | adoption ✅ | [#159](https://github.com/flooooooooooow/flow/issues/159) |
+| P0 | `gfx_run` frame helper | stdlib ✅ | [#164](https://github.com/flooooooooooow/flow/issues/164) |
+| P0 | Lorenz as `flow` + phase-portrait trail | language + demo ✅ partial | [#165](https://github.com/flooooooooooow/flow/issues/165) |
 | P1 | Route linalg examples through `blas.flow` | adoption | [#168](https://github.com/flooooooooooow/flow/issues/168) |
 | P1 | Wire ML demos through Dual / grad codegen | adoption + docs | [#170](https://github.com/flooooooooooow/flow/issues/170) |
 | P1 | Owned `HttpResponse` + JSON decode helpers | API | [#167](https://github.com/flooooooooooow/flow/issues/167) |

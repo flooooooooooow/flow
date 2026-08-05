@@ -1,102 +1,80 @@
-# LORENZ GFX — live simulation, the wow demo (VISION.md: digital twins,
-# high-performance simulation). The Lorenz attractor (sigma=10, rho=28,
-# beta=8/3) is stepped with the stdlib RK4 integrator and its (x, z) plane is
-# projected into a real window: a fading comet trail of the last 320 states,
-# brighter = newer, redrawn every frame. The first Flow example to put the
-# dynamics stdlib and the graphics stdlib in the same program.
-#
-# North-star (VISION.md) — one day this same system reads:
-#
-#     flow Lorenz {
-#         x : f64;  y : f64;  z : f64
-#
-#         x evolves as sigma * (y - x)
-#         y evolves as x * (rho - z) - y
-#         z evolves as x * y - beta * z
-#
-#         represent phase_portrait(x, z)
-#     }
+# LORENZ GFX — live simulation wow demo (VISION.md: digital twins).
+# Declares the attractor as a `flow` with `solver { method rk4 }`, steps it
+# each frame, and draws an (x, z) fading trail via gfx_frame_pump (#164/#165).
 #
 # Run: ./flow gfx examples/evolution/lorenz_gfx.flow
-# (opens a window; runs at most 2000 frames, Esc or close to quit early)
 
 import "stdlib/gfx.flow"
-import "stdlib/dynamics/attractor.flow"
 
 const WIN_W: i32 = 900
 const WIN_H: i32 = 700
-const TRAIL: i32 = 320          # ring buffer of recent states
-const SUBSTEPS: i32 = 3         # RK4 substeps per frame
-const DT: f64 = 0.005           # integrator step
-const MAX_FRAMES: i32 = 2000    # bounded frame budget, then exit cleanly
+const TRAIL: i32 = 320
+const SUBSTEPS: i32 = 3
+const MAX_FRAMES: i32 = 2000
 
-# Project attractor x in [-25, 25] to a window column
+flow Lorenz {
+    state x : f64 = 1.0
+    state y : f64 = 1.0
+    state z : f64 = 1.0
+    param sigma : f64 = 10.0
+    param rho   : f64 = 28.0
+    param beta  : f64 = 2.666666666666667   # 8/3
+
+    solver { dt 5 ms  method rk4 }
+
+    x evolves as sigma * (y - x)
+    y evolves as x * (rho - z) - y
+    z evolves as x * y - beta * z
+}
+
 function project_x(x: f64) -> i32 {
     return ((x + 25.0) * 17.6 + 10.0) as i32
 }
 
-# Project attractor z in [0, 55] to a window row (screen y grows downward)
 function project_z(z: f64) -> i32 {
     return (670.0 - z * 12.0) as i32
 }
 
 function main() -> i32 {
     let g: Gfx = gfx_open(WIN_W, WIN_H, "Lorenz attractor - Flow evolution demo")
-
-    # State of the flow: one point moving on the attractor
-    let state: array<f64, 3> = [1.0, 1.0, 1.0]
-    let nxt: array<f64, 3> = [0.0, 0.0, 0.0]
+    let mut sys: Lorenz = Lorenz_new()
+    let dt: f64 = Lorenz_default_dt()
 
     # Warm up onto the attractor before drawing
     for w in 0 to 200 {
-        rk4_step_n(state, 3, DT, 1, nxt)
-        state[0] = nxt[0]
-        state[1] = nxt[1]
-        state[2] = nxt[2]
+        Lorenz_step(&sys, dt)
     }
 
-    # Ring buffer of recent (x, z) positions - the fading trail
     let trail_x: array<f64, 320> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let trail_z: array<f64, 320> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    let mut head: i32 = 0       # next write slot
-    let mut count: i32 = 0      # filled entries
-
+    let mut head: i32 = 0
+    let mut count: i32 = 0
     let mut frame: i32 = 0
-    while frame < MAX_FRAMES {
-        if gfx_should_close(g) { break }
-        gfx_poll(g)
-        if gfx_key_down(g, KEY_ESC) { break }
 
-        # --- Evolve: a few RK4 steps of the Lorenz field per frame ---------
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
         for s in 0 to SUBSTEPS {
-            rk4_step_n(state, 3, DT, 1, nxt)
-            state[0] = nxt[0]
-            state[1] = nxt[1]
-            state[2] = nxt[2]
+            Lorenz_step(&sys, dt)
         }
 
-        # Push the new position into the ring buffer
-        trail_x[head] = state[0]
-        trail_z[head] = state[2]
+        trail_x[head] = sys.x
+        trail_z[head] = sys.z
         head = (head + 1) % TRAIL
         if count < TRAIL { count = count + 1 }
 
-        # --- Render: fading trail, brighter = newer ------------------------
         gfx_clear(g, 8, 8, 16)
         for i in 0 to count {
-            # oldest entry first; index i = 0 is the dimmest
             let idx: i32 = (head + TRAIL - count + i) % TRAIL
             let px: i32 = project_x(trail_x[idx])
             let py: i32 = project_z(trail_z[idx])
             let b: i32 = 25 + (230 * (i + 1)) / count
             let mut size: i32 = 2
             if i >= count - 12 { size = 3 }
-            # warm ember palette: bright orange head, dark red tail
             gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)
         }
-        # comet head
-        let hx: i32 = project_x(state[0])
-        let hz: i32 = project_z(state[2])
+        let hx: i32 = project_x(sys.x)
+        let hz: i32 = project_z(sys.z)
         gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)
 
         gfx_present(g)

@@ -1,23 +1,10 @@
-# PENDULUM — the anchor example of the Flow vision (VISION.md).
-# A damped nonlinear pendulum: theta'' = -(g/L) sin(theta) - c theta'.
-# The program *is* the mathematical model: explicit state (angle, velocity),
-# explicit dynamics (one derivative function), explicit time (RK4 at fixed dt).
-# It integrates 20 seconds of evolution, prints the trajectory, and verifies
-# two physical guarantees: damped energy never increases, and the pendulum
-# settles at the stable equilibrium.
-#
-# North-star (VISION.md) — one day this same system reads:
-#
-#     flow Pendulum {
-#         angle    : Angle
-#         velocity : AngularVelocity
-#
-#         angle evolves as velocity
-#         velocity evolves as
-#             -(gravity / length) * sin(angle) - damping * velocity
-#
-#         always { energy(next) <= energy(now) }
-#     }
+# PENDULUM (pedagogical) — hand-rolled RK4 of the vision anchor plant.
+# Prefer the declarative form:
+#   examples/evolution/pendulum_evolves.flow   (flow + evolves as)
+#   examples/evolution/pendulum_rk4.flow       (solver { method rk4 })
+#   examples/evolution/pendulum_always.flow    (always invariants)
+# This file shows what those surfaces lower toward: explicit state, an
+# explicit derivative, and classic RK4 at fixed dt, plus energy checks.
 #
 # Run: ./flow run examples/evolution/pendulum.flow
 
