@@ -1,0 +1,21 @@
+# HTTP routes + request-id middleware selftest.
+# Run: ./flow run examples/concurrency/http_middleware.flow
+
+extern {
+    function flow_http_mw_enable(on: i32) -> void
+    function flow_http_routed_selftest(port: i32) -> i32
+}
+
+function main() -> i32 {
+    println("http middleware demo")
+    flow_http_mw_enable(1)
+    let r: i32 = flow_http_routed_selftest(18783)
+    print("  selftest -> ")
+    println(r)
+    if r != 1 {
+        println("FAIL")
+        return 1
+    }
+    println("OK")
+    return 0
+}

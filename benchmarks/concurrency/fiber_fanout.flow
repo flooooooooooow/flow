@@ -1,0 +1,26 @@
+# M:N fiber fan-out sum vs Go goroutine fan-out
+
+extern {
+    function flow_bench_fiber_fanout_sum(n: i32, fibers: i32) -> i64
+    function flow_fiber_maxprocs() -> i32
+}
+
+import "stdlib/time.flow"
+
+const N: i32 = 50000000
+const FIBERS: i32 = 256
+
+function main() -> i32 {
+    let t0: f64 = get_time()
+    let sum: i64 = flow_bench_fiber_fanout_sum(N, FIBERS)
+    let t1: f64 = get_time()
+    let n64: i64 = N as i64
+    let want: i64 = (n64 - 1) * n64 / 2
+    let ms: f64 = (t1 - t0) * 1000.0
+    printf("flow_fiber_fanout n=%d fibers=%d maxprocs=%d ms=%.3f checksum=%lld want=%lld\n",
+           N, FIBERS, flow_fiber_maxprocs(), ms, sum, want)
+    if sum != want {
+        return 1
+    }
+    return 0
+}

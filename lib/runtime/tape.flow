@@ -1,0 +1,125 @@
+# Flow runtime: reverse-mode AD tape (replaces runtime/flow_tape.c logic).
+# Node storage: runtime/flow_rt_tape_store.c
+
+extern {
+    function flow_rt_tape_max() -> i32
+    function flow_rt_tape_len() -> i32
+    function flow_rt_tape_set_len(n: i32) -> void
+    function flow_rt_tape_clear() -> void
+    function flow_rt_tape_set_node(i: i32, op: i32, a: i32, b: i32, val: f32) -> void
+    function flow_rt_tape_get_op(i: i32) -> i32
+    function flow_rt_tape_get_a(i: i32) -> i32
+    function flow_rt_tape_get_b(i: i32) -> i32
+    function flow_rt_tape_get_val(i: i32) -> f32
+    function flow_rt_tape_get_grad(i: i32) -> f32
+    function flow_rt_tape_set_grad(i: i32, g: f32) -> void
+    function flow_rt_tape_add_grad(i: i32, d: f32) -> void
+    function flow_rt_tape_zero_grads() -> void
+}
+
+const FLOW_TAPE_LEAF: i32 = 0
+const FLOW_TAPE_MUL: i32 = 1
+const FLOW_TAPE_ADD: i32 = 2
+
+@flow_api
+export function flow_tape_reset() -> void {
+    flow_rt_tape_clear()
+}
+
+function tape_push(op: i32, a: i32, b: i32, val: f32) -> i32 {
+    let len: i32 = flow_rt_tape_len()
+    let max: i32 = flow_rt_tape_max()
+    if len >= max {
+        return -1
+    }
+    flow_rt_tape_set_node(len, op, a, b, val)
+    flow_rt_tape_set_len(len + 1)
+    return len
+}
+
+@flow_api
+export function flow_tape_track(value: f32) -> i32 {
+    return tape_push(FLOW_TAPE_LEAF, -1, -1, value)
+}
+
+@flow_api
+export function flow_tape_mul(a: i32, b: i32) -> i32 {
+    let len: i32 = flow_rt_tape_len()
+    if a < 0 {
+        return -1
+    }
+    if b < 0 {
+        return -1
+    }
+    if a >= len {
+        return -1
+    }
+    if b >= len {
+        return -1
+    }
+    let v: f32 = flow_rt_tape_get_val(a) * flow_rt_tape_get_val(b)
+    return tape_push(FLOW_TAPE_MUL, a, b, v)
+}
+
+@flow_api
+export function flow_tape_add(a: i32, b: i32) -> i32 {
+    let len: i32 = flow_rt_tape_len()
+    if a < 0 {
+        return -1
+    }
+    if b < 0 {
+        return -1
+    }
+    if a >= len {
+        return -1
+    }
+    if b >= len {
+        return -1
+    }
+    let v: f32 = flow_rt_tape_get_val(a) + flow_rt_tape_get_val(b)
+    return tape_push(FLOW_TAPE_ADD, a, b, v)
+}
+
+@flow_api
+export function flow_tape_backward(root: i32) -> void {
+    let len: i32 = flow_rt_tape_len()
+    if root < 0 {
+        return
+    }
+    if root >= len {
+        return
+    }
+    flow_rt_tape_zero_grads()
+    flow_rt_tape_set_grad(root, 1.0)
+    let mut i: i32 = len - 1
+    while i >= 0 {
+        let g: f32 = flow_rt_tape_get_grad(i)
+        if g != 0.0 {
+            let op: i32 = flow_rt_tape_get_op(i)
+            if op == FLOW_TAPE_MUL {
+                let a: i32 = flow_rt_tape_get_a(i)
+                let b: i32 = flow_rt_tape_get_b(i)
+                flow_rt_tape_add_grad(a, g * flow_rt_tape_get_val(b))
+                flow_rt_tape_add_grad(b, g * flow_rt_tape_get_val(a))
+            } else {
+                if op == FLOW_TAPE_ADD {
+                    let a2: i32 = flow_rt_tape_get_a(i)
+                    let b2: i32 = flow_rt_tape_get_b(i)
+                    flow_rt_tape_add_grad(a2, g)
+                    flow_rt_tape_add_grad(b2, g)
+                }
+            }
+        }
+        i = i - 1
+    }
+}
+
+@flow_api
+export function flow_tape_get_grad(idx: i32) -> f32 {
+    return flow_rt_tape_get_grad(idx)
+}
+
+@flow_api
+export function flow_tape_get_val(idx: i32) -> f32 {
+    return flow_rt_tape_get_val(idx)
+}

@@ -1,0 +1,124 @@
+# Flow runtime: ThreadedAsync task table (logic over thin C storage).
+# Storage/trampoline: runtime/flow_rt_task_store.c
+
+extern {
+    function flow_rt_task_lock() -> void
+    function flow_rt_task_unlock() -> void
+    function flow_rt_task_max() -> i32
+    function flow_rt_task_set_fn(id: i32, fn: ptr<void>) -> void
+    function flow_rt_task_get_fn(id: i32) -> ptr<void>
+    function flow_rt_task_set_arg(id: i32, arg: i32) -> void
+    function flow_rt_task_get_arg(id: i32) -> i32
+    function flow_rt_task_set_result(id: i32, result: i32) -> void
+    function flow_rt_task_get_result(id: i32) -> i32
+    function flow_rt_task_set_done(id: i32, done: i32) -> void
+    function flow_rt_task_get_done(id: i32) -> i32
+    function flow_rt_task_set_spawned(id: i32, spawned: i32) -> void
+    function flow_rt_task_get_spawned(id: i32) -> i32
+    function flow_rt_call_task_fn(fn: ptr<void>, arg: i32) -> i32
+    function flow_rt_task_pthread_create(id: i32) -> i32
+    function flow_rt_task_pthread_join(id: i32) -> i32
+    function flow_rt_usleep(usec: i32) -> void
+}
+
+@flow_api
+export function flow_task_register(task_id: i32, fn: ptr<void>) -> void {
+    let max: i32 = flow_rt_task_max()
+    if task_id < 0 {
+        return
+    }
+    if task_id >= max {
+        return
+    }
+    flow_rt_task_lock()
+    flow_rt_task_set_fn(task_id, fn)
+    flow_rt_task_unlock()
+}
+
+@flow_api
+export function flow_async_worker(task_id: i32) -> void {
+    flow_rt_task_lock()
+    let fn: ptr<void> = flow_rt_task_get_fn(task_id)
+    let arg: i32 = flow_rt_task_get_arg(task_id)
+    flow_rt_task_unlock()
+
+    let mut result: i32 = 0
+    if fn != null {
+        result = flow_rt_call_task_fn(fn, arg)
+    } else {
+        # Default stand-in matching SimulatedAsync: task_id * 10
+        result = task_id * 10
+    }
+
+    flow_rt_task_lock()
+    flow_rt_task_set_result(task_id, result)
+    flow_rt_task_set_done(task_id, 1)
+    flow_rt_task_unlock()
+}
+
+@flow_api
+export function flow_async_spawn(task_id: i32, arg: i32) -> void {
+    let max: i32 = flow_rt_task_max()
+    if task_id < 0 {
+        return
+    }
+    if task_id >= max {
+        return
+    }
+    flow_rt_task_lock()
+    let spawned: i32 = flow_rt_task_get_spawned(task_id)
+    let done: i32 = flow_rt_task_get_done(task_id)
+    if spawned != 0 {
+        if done == 0 {
+            flow_rt_task_unlock()
+            return
+        }
+    }
+    flow_rt_task_set_arg(task_id, arg)
+    flow_rt_task_set_done(task_id, 0)
+    flow_rt_task_set_spawned(task_id, 1)
+    flow_rt_task_set_result(task_id, 0)
+    flow_rt_task_unlock()
+
+    if flow_rt_task_pthread_create(task_id) != 0 {
+        # Sync fallback
+        flow_async_worker(task_id)
+    }
+}
+
+@flow_api
+export function flow_async_join(task_id: i32) -> i32 {
+    let max: i32 = flow_rt_task_max()
+    if task_id < 0 {
+        return 0
+    }
+    if task_id >= max {
+        return 0
+    }
+    flow_rt_task_lock()
+    let spawned: i32 = flow_rt_task_get_spawned(task_id)
+    let done: i32 = flow_rt_task_get_done(task_id)
+    flow_rt_task_unlock()
+
+    if spawned != 0 {
+        if done == 0 {
+            let _: i32 = flow_rt_task_pthread_join(task_id)
+        }
+    } else {
+        # join without spawn → same formula as SimulatedAsync
+        return task_id * 10
+    }
+
+    flow_rt_task_lock()
+    let mut result: i32 = flow_rt_task_get_result(task_id)
+    flow_rt_task_set_spawned(task_id, 0)
+    flow_rt_task_unlock()
+    return result
+}
+
+@flow_api
+export function flow_async_delay(ms: i32) -> void {
+    if ms > 0 {
+        flow_rt_usleep(ms * 1000)
+    }
+}

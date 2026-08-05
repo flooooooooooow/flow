@@ -1,0 +1,22 @@
+# FiberAsync — cooperative fibers behind the Async effect
+# Run: ./flow run examples/concurrency/fiber_async.flow
+
+import "stdlib/async.flow"
+
+function main() -> i32 {
+    printf("FiberAsync demo\n")
+    let mut total: i32 = 0
+    handle Async with FiberAsync {
+        async_spawn(1)
+        async_spawn(2)
+        async_spawn(3)
+        total = async_join(1) + async_join(2) + async_join(3)
+    }
+    printf("  sum joins = %d (expect 60)\n", total)
+    if total != 60 {
+        printf("FAIL\n")
+        return 1
+    }
+    printf("OK\n")
+    return 0
+}

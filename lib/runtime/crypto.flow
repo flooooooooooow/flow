@@ -1,0 +1,16 @@
+# Flow runtime: crypto API over thin platform kernels (flow_rt_crypto.c).
+
+extern {
+    function flow_rt_sha256(data: ptr<void>, len: i64, out: ptr<void>) -> void
+    function flow_rt_random_bytes(buf: ptr<void>, len: i64) -> i32
+}
+
+@flow_api
+export function flow_sha256(data: ptr<void>, len: i64, out: ptr<void>) -> void {
+    flow_rt_sha256(data, len, out)
+}
+
+@flow_api
+export function flow_random_bytes(buf: ptr<void>, len: i64) -> i32 {
+    return flow_rt_random_bytes(buf, len)
+}
