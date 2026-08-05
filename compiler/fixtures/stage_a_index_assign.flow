@@ -1,0 +1,11 @@
+# Stage-A cgen round-trip: indexed assign `p[0] = n` → exit 42.
+
+function main() -> i32 {
+    let mut x: i32 = 0
+    let mut y: i32 = 0
+    let p: ptr<i32> = &x
+    let q: ptr<i32> = &y
+    p[0] = 40
+    q[0] = 2
+    return p[0] + q[0]
+}

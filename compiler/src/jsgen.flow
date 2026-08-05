@@ -1,0 +1,389 @@
+# @module flowc.jsgen
+# @means  Stage-A JS emitter: lower a tiny AST subset into a JavaScript buffer.
+
+import .token {
+    TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG,
+    TOK_AMPAMP, TOK_BARBAR
+}
+import .ast {
+    AstArena, AST_NONE,
+    AST_PROGRAM, AST_FN, AST_BLOCK, AST_LET, AST_RETURN,
+    AST_IF, AST_BINOP, AST_CALL, AST_IDENT, AST_INT, AST_BOOL,
+    AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
+    AST_EXPORT, AST_BREAK, AST_CONTINUE
+}
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+# Fixed-buffer writer for JS text.
+export struct JsgenBuf {
+    out: ptr<u8>,
+    cap: i32,
+    len: i32,
+    err: i32
+}
+
+function flowc_jsgen_buf_init(out: ptr<u8>, cap: i32) -> JsgenBuf {
+    return JsgenBuf { out: out, cap: cap, len: 0, err: 0 }
+}
+
+function flowc_jsgen_putc(w: ptr<JsgenBuf>, c: i32) {
+    if w[0].err != 0 {
+        return
+    }
+    if w[0].len >= w[0].cap {
+        w[0].err = 1
+        return
+    }
+    w[0].out[w[0].len] = c
+    w[0].len = w[0].len + 1
+}
+
+function flowc_jsgen_puts(w: ptr<JsgenBuf>, s: string) {
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        flowc_jsgen_putc(w, p[i])
+        i = i + 1
+    }
+}
+
+function flowc_jsgen_put_span(w: ptr<JsgenBuf>, src: ptr<u8>, start: i32, end: i32) {
+    let mut i: i32 = start
+    while i < end {
+        flowc_jsgen_putc(w, src[i])
+        i = i + 1
+    }
+}
+
+function flowc_jsgen_put_i32(w: ptr<JsgenBuf>, val: i32) {
+    let mut v: i32 = val
+    if v < 0 {
+        flowc_jsgen_putc(w, 45)
+        v = 0 - v
+    }
+    if v == 0 {
+        flowc_jsgen_putc(w, 48)
+        return
+    }
+    let mut digits: array<u8, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut n: i32 = 0
+    while v > 0 {
+        digits[n] = (v % 10) + 48
+        v = v / 10
+        n = n + 1
+    }
+    let mut i: i32 = n
+    while i > 0 {
+        i = i - 1
+        flowc_jsgen_putc(w, digits[i])
+    }
+}
+
+function flowc_jsgen_emit_expr(w: ptr<JsgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
+function flowc_jsgen_emit_stmt(w: ptr<JsgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
+function flowc_jsgen_emit_block(w: ptr<JsgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
+
+function flowc_jsgen_emit_binop_op(w: ptr<JsgenBuf>, op: i32) {
+    if op == TOK_PLUS {
+        flowc_jsgen_puts(w, " + ")
+        return
+    }
+    if op == TOK_MINUS {
+        flowc_jsgen_puts(w, " - ")
+        return
+    }
+    if op == TOK_STAR {
+        flowc_jsgen_puts(w, " * ")
+        return
+    }
+    if op == TOK_SLASH {
+        flowc_jsgen_puts(w, " / ")
+        return
+    }
+    if op == TOK_PERCENT {
+        flowc_jsgen_puts(w, " % ")
+        return
+    }
+    if op == TOK_EQEQ {
+        flowc_jsgen_puts(w, " == ")
+        return
+    }
+    if op == TOK_NE {
+        flowc_jsgen_puts(w, " != ")
+        return
+    }
+    if op == TOK_LT {
+        flowc_jsgen_puts(w, " < ")
+        return
+    }
+    if op == TOK_GT {
+        flowc_jsgen_puts(w, " > ")
+        return
+    }
+    if op == TOK_LE {
+        flowc_jsgen_puts(w, " <= ")
+        return
+    }
+    if op == TOK_GE {
+        flowc_jsgen_puts(w, " >= ")
+        return
+    }
+    if op == TOK_AMPAMP {
+        flowc_jsgen_puts(w, " && ")
+        return
+    }
+    if op == TOK_BARBAR {
+        flowc_jsgen_puts(w, " || ")
+        return
+    }
+    flowc_jsgen_puts(w, " /*op*/ ")
+}
+
+function flowc_jsgen_emit_expr(w: ptr<JsgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id == AST_NONE or w[0].err != 0 {
+        return
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_INT {
+        flowc_jsgen_put_i32(w, arena.nodes[id].ival)
+        return
+    }
+    if kind == AST_BOOL {
+        if arena.nodes[id].ival != 0 {
+            flowc_jsgen_puts(w, "true")
+        } else {
+            flowc_jsgen_puts(w, "false")
+        }
+        return
+    }
+    if kind == AST_IDENT {
+        flowc_jsgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        return
+    }
+    if kind == AST_BINOP {
+        flowc_jsgen_putc(w, 40)
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_emit_binop_op(w, arena.nodes[id].ival)
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_jsgen_putc(w, 41)
+        return
+    }
+    if kind == AST_UNARY {
+        flowc_jsgen_putc(w, 40)
+        if arena.nodes[id].ival == TOK_MINUS {
+            flowc_jsgen_putc(w, 45)
+        } else {
+            if arena.nodes[id].ival == TOK_BANG {
+                flowc_jsgen_putc(w, 33)
+            }
+        }
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_putc(w, 41)
+        return
+    }
+    if kind == AST_CALL {
+        flowc_jsgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_jsgen_putc(w, 40)
+        let mut arg: i32 = arena.nodes[id].a
+        let mut first: i32 = 1
+        while arg != AST_NONE {
+            if first == 0 {
+                flowc_jsgen_puts(w, ", ")
+            }
+            first = 0
+            flowc_jsgen_emit_expr(w, arena, src, arg)
+            arg = arena.nodes[arg].next
+        }
+        flowc_jsgen_putc(w, 41)
+        return
+    }
+    flowc_jsgen_puts(w, "0")
+}
+
+function flowc_jsgen_emit_block(w: ptr<JsgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id == AST_NONE or w[0].err != 0 {
+        return
+    }
+    flowc_jsgen_puts(w, "{\n")
+    let mut st: i32 = arena.nodes[id].a
+    while st != AST_NONE {
+        flowc_jsgen_emit_stmt(w, arena, src, st)
+        st = arena.nodes[st].next
+    }
+    flowc_jsgen_puts(w, "}\n")
+}
+
+function flowc_jsgen_emit_stmt(w: ptr<JsgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id == AST_NONE or w[0].err != 0 {
+        return
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_LET {
+        # Stage-A JS: drop types; always `let` (mutable or not).
+        flowc_jsgen_puts(w, "  let ")
+        flowc_jsgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_jsgen_puts(w, " = ")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_jsgen_puts(w, ";\n")
+        return
+    }
+    if kind == AST_RETURN {
+        if arena.nodes[id].a == AST_NONE {
+            flowc_jsgen_puts(w, "  return;\n")
+            return
+        }
+        flowc_jsgen_puts(w, "  return ")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_puts(w, ";\n")
+        return
+    }
+    if kind == AST_IF {
+        flowc_jsgen_puts(w, "  if (")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_puts(w, ") {\n")
+        let then_b: i32 = arena.nodes[id].b
+        if then_b != AST_NONE {
+            let mut st: i32 = arena.nodes[then_b].a
+            while st != AST_NONE {
+                flowc_jsgen_emit_stmt(w, arena, src, st)
+                st = arena.nodes[st].next
+            }
+        }
+        if arena.nodes[id].c != AST_NONE {
+            flowc_jsgen_puts(w, "} else {\n")
+            let else_b: i32 = arena.nodes[id].c
+            let mut est: i32 = arena.nodes[else_b].a
+            while est != AST_NONE {
+                flowc_jsgen_emit_stmt(w, arena, src, est)
+                est = arena.nodes[est].next
+            }
+            flowc_jsgen_puts(w, "}\n")
+        } else {
+            flowc_jsgen_puts(w, "}\n")
+        }
+        return
+    }
+    if kind == AST_WHILE {
+        flowc_jsgen_puts(w, "  while (")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_puts(w, ") ")
+        flowc_jsgen_emit_block(w, arena, src, arena.nodes[id].b)
+        return
+    }
+    if kind == AST_FOR {
+        # for i in lo to hi { body } → for (let i = lo; i < hi; i++) { body }
+        flowc_jsgen_puts(w, "  for (let ")
+        flowc_jsgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_jsgen_puts(w, " = ")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_puts(w, "; ")
+        flowc_jsgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_jsgen_puts(w, " < ")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_jsgen_puts(w, "; ")
+        flowc_jsgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_jsgen_puts(w, "++) ")
+        flowc_jsgen_emit_block(w, arena, src, arena.nodes[id].c)
+        return
+    }
+    if kind == AST_BREAK {
+        flowc_jsgen_puts(w, "  break;\n")
+        return
+    }
+    if kind == AST_CONTINUE {
+        flowc_jsgen_puts(w, "  continue;\n")
+        return
+    }
+    if kind == AST_ASSIGN {
+        flowc_jsgen_puts(w, "  ")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_puts(w, " = ")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_jsgen_puts(w, ";\n")
+        return
+    }
+    if kind == AST_EXPR_STMT {
+        flowc_jsgen_puts(w, "  ")
+        flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_puts(w, ";\n")
+        return
+    }
+    if kind == AST_BLOCK {
+        flowc_jsgen_emit_block(w, arena, src, id)
+        return
+    }
+}
+
+function flowc_jsgen_emit_fn(w: ptr<JsgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    # Skip forward decls (no body).
+    if arena.nodes[id].c == AST_NONE {
+        return
+    }
+    flowc_jsgen_puts(w, "function ")
+    flowc_jsgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_jsgen_putc(w, 40)
+    let mut param: i32 = arena.nodes[id].a
+    let mut first: i32 = 1
+    while param != AST_NONE {
+        if first == 0 {
+            flowc_jsgen_puts(w, ", ")
+        }
+        first = 0
+        flowc_jsgen_put_span(w, src, arena.nodes[param].name_start, arena.nodes[param].name_end)
+        param = arena.nodes[param].next
+    }
+    flowc_jsgen_puts(w, ") ")
+    flowc_jsgen_emit_block(w, arena, src, arena.nodes[id].c)
+    flowc_jsgen_putc(w, 10)
+}
+
+# Unwrap AST_EXPORT → inner FN; else return item if kind matches.
+function flowc_jsgen_unwrap_fn(arena: AstArena, item: i32) -> i32 {
+    if item == AST_NONE {
+        return AST_NONE
+    }
+    if arena.nodes[item].kind == AST_FN {
+        return item
+    }
+    if arena.nodes[item].kind == AST_EXPORT {
+        let inner: i32 = arena.nodes[item].a
+        if inner != AST_NONE and arena.nodes[inner].kind == AST_FN {
+            return inner
+        }
+    }
+    return AST_NONE
+}
+
+# Emit JS for a program AST into `out` (capacity `out_cap`).
+# Returns bytes written, or -1 on overflow / bad root.
+# `src` is the original Flow source (name spans index into it).
+# Stage-A subset: functions with let/return/if/else/while/for/binop/call/int.
+export function flowc_jsgen_emit(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32) -> i32 {
+    if root == AST_NONE or root < 0 {
+        return 0 - 1
+    }
+    if arena.nodes[root].kind != AST_PROGRAM {
+        return 0 - 1
+    }
+    let mut w: JsgenBuf = flowc_jsgen_buf_init(out, out_cap)
+    flowc_jsgen_puts(&w, "// Generated by flowc Stage-A\n\n")
+
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let fn: i32 = flowc_jsgen_unwrap_fn(arena, item)
+        if fn != AST_NONE {
+            flowc_jsgen_emit_fn(&w, arena, src, fn)
+        }
+        item = arena.nodes[item].next
+    }
+
+    if w.err != 0 {
+        return 0 - 1
+    }
+    return w.len
+}

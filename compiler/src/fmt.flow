@@ -1,0 +1,552 @@
+# @module flowc.fmt
+# @means  Stage-A Flow pretty-printer: emit formatted source into a buffer.
+
+import .token {
+    TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
+    TOK_AMPAMP, TOK_BARBAR
+}
+import .ast {
+    AstArena, AST_NONE,
+    AST_PROGRAM, AST_FN, AST_PARAM, AST_BLOCK, AST_LET, AST_RETURN,
+    AST_IF, AST_WHILE, AST_FOR, AST_BINOP, AST_CALL, AST_IDENT, AST_INT, AST_BOOL,
+    AST_STRING, AST_STRUCT, AST_FIELD, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE,
+    AST_INDEX, AST_CONST, AST_CAST, AST_ARRAY_LIT, AST_FLOAT, AST_ASSIGN,
+    AST_EXPR_STMT, AST_UNARY, AST_BREAK, AST_CONTINUE, AST_EXPORT
+}
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+# Fixed-buffer writer for formatted Flow text.
+export struct FmtBuf {
+    out: ptr<u8>,
+    cap: i32,
+    len: i32,
+    err: i32
+}
+
+function flowc_fmt_buf_init(out: ptr<u8>, cap: i32) -> FmtBuf {
+    return FmtBuf { out: out, cap: cap, len: 0, err: 0 }
+}
+
+function flowc_fmt_putc(w: ptr<FmtBuf>, c: i32) {
+    if w[0].err != 0 {
+        return
+    }
+    if w[0].len >= w[0].cap {
+        w[0].err = 1
+        return
+    }
+    w[0].out[w[0].len] = c
+    w[0].len = w[0].len + 1
+}
+
+function flowc_fmt_puts(w: ptr<FmtBuf>, s: string) {
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        flowc_fmt_putc(w, p[i])
+        i = i + 1
+    }
+}
+
+function flowc_fmt_put_span(w: ptr<FmtBuf>, src: ptr<u8>, start: i32, end: i32) {
+    let mut i: i32 = start
+    while i < end {
+        flowc_fmt_putc(w, src[i])
+        i = i + 1
+    }
+}
+
+function flowc_fmt_put_i32(w: ptr<FmtBuf>, val: i32) {
+    let mut v: i32 = val
+    if v < 0 {
+        flowc_fmt_putc(w, 45)
+        v = 0 - v
+    }
+    if v == 0 {
+        flowc_fmt_putc(w, 48)
+        return
+    }
+    let mut digits: array<u8, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut n: i32 = 0
+    while v > 0 {
+        digits[n] = (v % 10) + 48
+        v = v / 10
+        n = n + 1
+    }
+    let mut i: i32 = n
+    while i > 0 {
+        i = i - 1
+        flowc_fmt_putc(w, digits[i])
+    }
+}
+
+# Emit `indent` levels of 4 spaces.
+function flowc_fmt_indent(w: ptr<FmtBuf>, indent: i32) {
+    let mut i: i32 = 0
+    while i < indent {
+        flowc_fmt_puts(w, "    ")
+        i = i + 1
+    }
+}
+
+function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32)
+function flowc_fmt_emit_stmt(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, indent: i32)
+function flowc_fmt_emit_type(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, ty: i32)
+
+function flowc_fmt_emit_binop_op(w: ptr<FmtBuf>, op: i32) {
+    if op == TOK_PLUS {
+        flowc_fmt_puts(w, " + ")
+        return
+    }
+    if op == TOK_MINUS {
+        flowc_fmt_puts(w, " - ")
+        return
+    }
+    if op == TOK_STAR {
+        flowc_fmt_puts(w, " * ")
+        return
+    }
+    if op == TOK_SLASH {
+        flowc_fmt_puts(w, " / ")
+        return
+    }
+    if op == TOK_PERCENT {
+        flowc_fmt_puts(w, " % ")
+        return
+    }
+    if op == TOK_EQEQ {
+        flowc_fmt_puts(w, " == ")
+        return
+    }
+    if op == TOK_NE {
+        flowc_fmt_puts(w, " != ")
+        return
+    }
+    if op == TOK_LT {
+        flowc_fmt_puts(w, " < ")
+        return
+    }
+    if op == TOK_GT {
+        flowc_fmt_puts(w, " > ")
+        return
+    }
+    if op == TOK_LE {
+        flowc_fmt_puts(w, " <= ")
+        return
+    }
+    if op == TOK_GE {
+        flowc_fmt_puts(w, " >= ")
+        return
+    }
+    if op == TOK_AMPAMP {
+        flowc_fmt_puts(w, " && ")
+        return
+    }
+    if op == TOK_BARBAR {
+        flowc_fmt_puts(w, " || ")
+        return
+    }
+    flowc_fmt_puts(w, " ")
+}
+
+# Reconstruct Flow type text from AST_TYPE (ptr<T> / array<T, N> / bare name).
+function flowc_fmt_emit_type(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        flowc_fmt_puts(w, "void")
+        return
+    }
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    let inner: i32 = arena.nodes[ty].a
+    if inner != AST_NONE {
+        flowc_fmt_put_span(w, src, ns, ne)
+        flowc_fmt_putc(w, 60)
+        flowc_fmt_emit_type(w, arena, src, inner)
+        if arena.nodes[ty].ival > 0 {
+            flowc_fmt_puts(w, ", ")
+            flowc_fmt_put_i32(w, arena.nodes[ty].ival)
+        }
+        flowc_fmt_putc(w, 62)
+        return
+    }
+    flowc_fmt_put_span(w, src, ns, ne)
+}
+
+function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id == AST_NONE or w[0].err != 0 {
+        return
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_INT {
+        flowc_fmt_put_i32(w, arena.nodes[id].ival)
+        return
+    }
+    if kind == AST_FLOAT {
+        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        return
+    }
+    if kind == AST_BOOL {
+        if arena.nodes[id].ival == 0 {
+            flowc_fmt_puts(w, "false")
+        } else {
+            flowc_fmt_puts(w, "true")
+        }
+        return
+    }
+    if kind == AST_IDENT {
+        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        return
+    }
+    if kind == AST_STRING {
+        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        return
+    }
+    if kind == AST_BINOP {
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_emit_binop_op(w, arena.nodes[id].ival)
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        return
+    }
+    if kind == AST_UNARY {
+        if arena.nodes[id].ival == TOK_MINUS {
+            flowc_fmt_putc(w, 45)
+        } else {
+            if arena.nodes[id].ival == TOK_BANG {
+                flowc_fmt_putc(w, 33)
+            } else {
+                if arena.nodes[id].ival == TOK_AMP {
+                    flowc_fmt_putc(w, 38)
+                }
+            }
+        }
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        return
+    }
+    if kind == AST_CAST {
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_puts(w, " as ")
+        flowc_fmt_emit_type(w, arena, src, arena.nodes[id].b)
+        return
+    }
+    if kind == AST_INDEX {
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_putc(w, 91)
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_fmt_putc(w, 93)
+        return
+    }
+    if kind == AST_CALL {
+        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_fmt_putc(w, 40)
+        let mut arg: i32 = arena.nodes[id].a
+        let mut first: i32 = 1
+        while arg != AST_NONE {
+            if first == 0 {
+                flowc_fmt_puts(w, ", ")
+            }
+            first = 0
+            flowc_fmt_emit_expr(w, arena, src, arg)
+            arg = arena.nodes[arg].next
+        }
+        flowc_fmt_putc(w, 41)
+        return
+    }
+    if kind == AST_FIELD_ACCESS {
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_putc(w, 46)
+        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        return
+    }
+    if kind == AST_STRUCT_LIT {
+        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_fmt_puts(w, " { ")
+        let mut field: i32 = arena.nodes[id].a
+        let mut first: i32 = 1
+        while field != AST_NONE {
+            if first == 0 {
+                flowc_fmt_puts(w, ", ")
+            }
+            first = 0
+            flowc_fmt_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+            flowc_fmt_puts(w, ": ")
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[field].a)
+            field = arena.nodes[field].next
+        }
+        flowc_fmt_puts(w, " }")
+        return
+    }
+    if kind == AST_ARRAY_LIT {
+        flowc_fmt_putc(w, 91)
+        let mut el: i32 = arena.nodes[id].a
+        let mut first: i32 = 1
+        while el != AST_NONE {
+            if first == 0 {
+                flowc_fmt_puts(w, ", ")
+            }
+            first = 0
+            flowc_fmt_emit_expr(w, arena, src, el)
+            el = arena.nodes[el].next
+        }
+        flowc_fmt_putc(w, 93)
+        return
+    }
+    flowc_fmt_puts(w, "<expr>")
+}
+
+function flowc_fmt_emit_block_body(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, block: i32, indent: i32) {
+    if block == AST_NONE {
+        return
+    }
+    let mut st: i32 = arena.nodes[block].a
+    while st != AST_NONE {
+        flowc_fmt_emit_stmt(w, arena, src, st, indent)
+        st = arena.nodes[st].next
+    }
+}
+
+function flowc_fmt_emit_stmt(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, indent: i32) {
+    if id == AST_NONE or w[0].err != 0 {
+        return
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_LET {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "let ")
+        if arena.nodes[id].ival == 1 {
+            flowc_fmt_puts(w, "mut ")
+        }
+        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_fmt_puts(w, ": ")
+        flowc_fmt_emit_type(w, arena, src, arena.nodes[id].a)
+        if arena.nodes[id].b != AST_NONE {
+            flowc_fmt_puts(w, " = ")
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        }
+        flowc_fmt_putc(w, 10)
+        return
+    }
+    if kind == AST_RETURN {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "return")
+        if arena.nodes[id].a != AST_NONE {
+            flowc_fmt_putc(w, 32)
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        }
+        flowc_fmt_putc(w, 10)
+        return
+    }
+    if kind == AST_IF {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "if ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_puts(w, " {\n")
+        flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].b, indent + 1)
+        if arena.nodes[id].c != AST_NONE {
+            flowc_fmt_indent(w, indent)
+            flowc_fmt_puts(w, "} else {\n")
+            flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].c, indent + 1)
+        }
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "}\n")
+        return
+    }
+    if kind == AST_WHILE {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "while ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_puts(w, " {\n")
+        flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].b, indent + 1)
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "}\n")
+        return
+    }
+    if kind == AST_FOR {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "for ")
+        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_fmt_puts(w, " in ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_puts(w, " to ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_fmt_puts(w, " {\n")
+        flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].c, indent + 1)
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "}\n")
+        return
+    }
+    if kind == AST_BREAK {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "break\n")
+        return
+    }
+    if kind == AST_CONTINUE {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "continue\n")
+        return
+    }
+    if kind == AST_ASSIGN {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_puts(w, " = ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_fmt_putc(w, 10)
+        return
+    }
+    if kind == AST_EXPR_STMT {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_putc(w, 10)
+        return
+    }
+    if kind == AST_BLOCK {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "{\n")
+        flowc_fmt_emit_block_body(w, arena, src, id, indent + 1)
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "}\n")
+        return
+    }
+}
+
+function flowc_fmt_emit_param(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_fmt_puts(w, ": ")
+    flowc_fmt_emit_type(w, arena, src, arena.nodes[id].a)
+}
+
+function flowc_fmt_emit_fn(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, is_export: i32) {
+    if is_export == 1 {
+        flowc_fmt_puts(w, "export ")
+    }
+    flowc_fmt_puts(w, "function ")
+    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_fmt_putc(w, 40)
+    let mut param: i32 = arena.nodes[id].a
+    let mut first: i32 = 1
+    while param != AST_NONE {
+        if first == 0 {
+            flowc_fmt_puts(w, ", ")
+        }
+        first = 0
+        flowc_fmt_emit_param(w, arena, src, param)
+        param = arena.nodes[param].next
+    }
+    flowc_fmt_putc(w, 41)
+    let ret_ty: i32 = arena.nodes[id].b
+    if ret_ty != AST_NONE {
+        flowc_fmt_puts(w, " -> ")
+        flowc_fmt_emit_type(w, arena, src, ret_ty)
+    }
+    if arena.nodes[id].c == AST_NONE {
+        flowc_fmt_putc(w, 10)
+        return
+    }
+    flowc_fmt_puts(w, " {\n")
+    flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].c, 1)
+    flowc_fmt_puts(w, "}\n")
+}
+
+function flowc_fmt_emit_struct(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, is_export: i32) {
+    if is_export == 1 {
+        flowc_fmt_puts(w, "export ")
+    }
+    flowc_fmt_puts(w, "struct ")
+    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_fmt_puts(w, " {\n")
+    let mut field: i32 = arena.nodes[id].a
+    while field != AST_NONE {
+        flowc_fmt_indent(w, 1)
+        flowc_fmt_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+        flowc_fmt_puts(w, ": ")
+        flowc_fmt_emit_type(w, arena, src, arena.nodes[field].a)
+        flowc_fmt_putc(w, 10)
+        field = arena.nodes[field].next
+    }
+    flowc_fmt_puts(w, "}\n")
+}
+
+function flowc_fmt_emit_const(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if arena.nodes[id].ival == 1 {
+        flowc_fmt_puts(w, "export ")
+    }
+    flowc_fmt_puts(w, "const ")
+    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_fmt_puts(w, ": ")
+    flowc_fmt_emit_type(w, arena, src, arena.nodes[id].a)
+    flowc_fmt_puts(w, " = ")
+    flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+    flowc_fmt_putc(w, 10)
+}
+
+# Emit formatted Flow for a program AST into `out` (capacity `out_cap`).
+# Returns bytes written, or -1 on overflow / bad root.
+# `src` is the original Flow source (name spans index into it).
+export function flowc_fmt_emit(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32) -> i32 {
+    if root == AST_NONE or root < 0 {
+        return 0 - 1
+    }
+    if arena.nodes[root].kind != AST_PROGRAM {
+        return 0 - 1
+    }
+    let mut w: FmtBuf = flowc_fmt_buf_init(out, out_cap)
+    let mut item: i32 = arena.nodes[root].a
+    let mut first_item: i32 = 1
+    while item != AST_NONE {
+        let kind: i32 = arena.nodes[item].kind
+        let mut wrote: i32 = 0
+        if kind == AST_STRUCT {
+            if first_item == 0 {
+                flowc_fmt_putc(&w, 10)
+            }
+            flowc_fmt_emit_struct(&w, arena, src, item, 0)
+            wrote = 1
+        }
+        if kind == AST_FN {
+            if first_item == 0 {
+                flowc_fmt_putc(&w, 10)
+            }
+            flowc_fmt_emit_fn(&w, arena, src, item, 0)
+            wrote = 1
+        }
+        if kind == AST_CONST {
+            if first_item == 0 {
+                flowc_fmt_putc(&w, 10)
+            }
+            flowc_fmt_emit_const(&w, arena, src, item)
+            wrote = 1
+        }
+        if kind == AST_EXPORT {
+            let inner: i32 = arena.nodes[item].a
+            if inner != AST_NONE {
+                let ik: i32 = arena.nodes[inner].kind
+                if ik == AST_STRUCT {
+                    if first_item == 0 {
+                        flowc_fmt_putc(&w, 10)
+                    }
+                    flowc_fmt_emit_struct(&w, arena, src, inner, 1)
+                    wrote = 1
+                }
+                if ik == AST_FN {
+                    if first_item == 0 {
+                        flowc_fmt_putc(&w, 10)
+                    }
+                    flowc_fmt_emit_fn(&w, arena, src, inner, 1)
+                    wrote = 1
+                }
+            }
+        }
+        if wrote == 1 {
+            first_item = 0
+        }
+        item = arena.nodes[item].next
+    }
+    if w.err != 0 {
+        return 0 - 1
+    }
+    return w.len
+}
