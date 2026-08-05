@@ -298,6 +298,12 @@ class OverloadResolver:
             return True
         if expected.startswith("ptr_") and actual == expected[len("ptr_"):]:
             return True
+        # Bare `null` is typed as ptr_void; it must adopt any callee ptr<T>
+        # so overload mangling picks the parameter type (e.g. ptr_u8).
+        if actual == "ptr_void" and (
+            expected.startswith("ptr_") or expected == "ptr_void"
+        ):
+            return True
         # Capability parameters are opaque handler slots in the C backend.
         # A concrete struct value can satisfy `capability Effect` and is
         # passed by address at the call site.
