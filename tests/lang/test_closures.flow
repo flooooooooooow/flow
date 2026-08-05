@@ -1,0 +1,114 @@
+# Flow-native language test: closure capture and escaping closures.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_closure_capture.py::test_e2e_capture_one_var
+#   tests/unit/test_closure_capture.py::test_e2e_capture_two_vars
+#   tests/unit/test_closure_capture.py::test_e2e_snapshot_semantics_mutation_after_creation
+#   tests/unit/test_closure_capture.py::test_e2e_lambda_in_loop_captures_loop_variable
+#   tests/unit/test_closure_capture.py::test_e2e_nested_lambdas
+#   tests/unit/test_closure_capture.py::test_e2e_mutating_capture_inside_body_stays_local
+#   tests/unit/test_closure_capture.py::test_e2e_noncapturing_lambda_call
+#   tests/unit/test_escaping_closures.py::test_e2e_local_fn_type_capture
+#   tests/unit/test_escaping_closures.py::test_e2e_return_escaping_closure
+#   tests/unit/test_escaping_closures.py::test_e2e_hof_parameter
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function make_adder(n: i32) -> (i32) -> i32 {
+    return |x: i32| -> i32 { return x + n }
+}
+
+function apply(f: (i32) -> i32, x: i32) -> i32 {
+    return f(x)
+}
+
+# Kept in its own function: two annotated lambda locals in one function
+# currently collide on the generated `_flow_env` temporary (codegen bug,
+# worth its own board card; tracked in docs/project/tests-in-flow.md).
+function check_hof() -> i32 {
+    let m: i32 = 2
+    let times_m: (i32) -> i32 = |x: i32| -> i32 { return x * m }
+    return apply(times_m, 21)
+}
+
+function main() -> i32 {
+    # Capture one variable.
+    let a: i32 = 40
+    let add_a = |x: i32| -> i32 { return a + x }
+    if add_a(2) != 42 {
+        return 1
+    }
+
+    # Capture two variables.
+    let b: i32 = 30
+    let c: i32 = 12
+    let add_bc = |x: i32| -> i32 { return b + c + x }
+    if add_bc(0) != 42 {
+        return 2
+    }
+
+    # Snapshot semantics: the closure sees the value at creation time.
+    let mut d: i32 = 5
+    let get_d = |unused: i32| -> i32 { return d }
+    d = 100
+    if get_d(0) != 5 {
+        return 3
+    }
+
+    # Each loop iteration snapshots its own value of i: 10+0 .. 10+4 = 60.
+    let mut total: i32 = 0
+    for i in 0..5 {
+        let addi = |x: i32| -> i32 { return x + i }
+        total = total + addi(10)
+    }
+    if total != 60 {
+        return 4
+    }
+
+    # Nested lambdas re-capture through the outer env.
+    let base: i32 = 7
+    let outer = |x: i32| -> i32 {
+        let inner = |y: i32| -> i32 { return y + base }
+        return inner(x) * 2
+    }
+    if outer(3) != 20 {
+        return 5
+    }
+
+    # Writes to a captured variable stay in the closure's copy.
+    let mut count: i32 = 0
+    let bump = |x: i32| -> i32 {
+        count = count + x
+        return count
+    }
+    let r: i32 = bump(5)
+    if r != 5 {
+        return 6
+    }
+    if count != 0 {
+        return 7
+    }
+
+    # Non-capturing lambda keeps working.
+    let doubler = |x: i32| -> i32 { return x * 2 }
+    if doubler(21) != 42 {
+        return 8
+    }
+
+    # Annotated local fn-typed closure.
+    let n: i32 = 5
+    let add_n: (i32) -> i32 = |x: i32| -> i32 { return x + n }
+    if add_n(10) != 15 {
+        return 9
+    }
+
+    # Escaping closure returned from a function.
+    let add5: (i32) -> i32 = make_adder(5)
+    if add5(37) != 42 {
+        return 10
+    }
+
+    # Closure passed as a higher-order-function parameter.
+    if check_hof() != 42 {
+        return 11
+    }
+    return 0
+}

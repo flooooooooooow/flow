@@ -1,0 +1,62 @@
+# Flow-native language test: function calls, recursion, short-circuit logic.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[recursive_fact]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[nested_calls]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[short_circuit_and]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function fact(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    }
+    return n * fact(n - 1)
+}
+
+function double(x: i32) -> i32 {
+    return x + x
+}
+
+function inc(x: i32) -> i32 {
+    return x + 1
+}
+
+function even(n: i32) -> bool {
+    if n == 0 {
+        return true
+    }
+    return odd(n - 1)
+}
+
+function odd(n: i32) -> bool {
+    if n == 0 {
+        return false
+    }
+    return even(n - 1)
+}
+
+function main() -> i32 {
+    if fact(5) != 120 {
+        return 1
+    }
+    if double(inc(20)) != 42 {
+        return 2
+    }
+    let a: i32 = 3
+    let b: i32 = 4
+    if a < b and b < 10 {
+        # short-circuit and taken
+    } else {
+        return 3
+    }
+    if a > b or b == 4 {
+        # short-circuit or taken
+    } else {
+        return 4
+    }
+    if !even(7) and odd(7) {
+        # mutual recursion agrees
+    } else {
+        return 5
+    }
+    return 0
+}
