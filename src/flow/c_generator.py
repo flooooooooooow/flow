@@ -1279,7 +1279,7 @@ class CGenerator:
                 else f"{info['lambda_name']}();"
             )
         self._pending_lambdas.append(
-            (bridge, ret_c, fn_params, [f"(void)_env;", body])
+            (bridge, ret_c, fn_params, ["(void)_env;", body])
         )
         expr = f"(({fat}){{ .fn = &{bridge}, .env = NULL }})"
         return expr, prelude
@@ -3303,7 +3303,7 @@ class CGenerator:
         parts: List[str] = []
         for key in keys:
             field = _c_ident(key.field or "")
-            l = f"({lhs}).{field}"
+            lv = f"({lhs}).{field}"
             r = f"({rhs}).{field}"
             ft = None
             struct_fields = self._structs.get(elem_type.name, {})
@@ -3311,9 +3311,9 @@ class CGenerator:
                 ft = struct_fields[key.field]
             desc = bool(key.descending) ^ bool(global_desc)
             if ft is not None and getattr(ft, "name", "") == "string":
-                cmp_e = f"strcmp({l}, {r})"
+                cmp_e = f"strcmp({lv}, {r})"
             else:
-                cmp_e = f"(({l}) < ({r}) ? -1 : (({l}) > ({r}) ? 1 : 0))"
+                cmp_e = f"(({lv}) < ({r}) ? -1 : (({lv}) > ({r}) ? 1 : 0))"
             if desc:
                 cmp_e = f"(0 - ({cmp_e}))"
             parts.append(cmp_e)
