@@ -185,7 +185,7 @@ hand-rolled C-shaped loops. API sketches live in
 | Owned HttpResponse + JSON decode helpers | ✅ [#167](https://github.com/flooooooooooow/flow/issues/167) | `HttpBody` + `http_get` / `http_body_free`; live cache app drops buf ceremony |
 | Dynamics DSL / LQR beyond n=2 | ✅ partial [#162](https://github.com/flooooooooooow/flow/issues/162) | `dynamics/lqr.flow` dlqr n≤8 scalar-u; cartpole uses it; DSL `analyze { lqr }` still open |
 | Field / laplacian PDE surface | ✅ partial [#163](https://github.com/flooooooooooow/flow/issues/163) | `dynamics/pde.flow` + heat demo; `field`/`boundary` grammar follow-on |
-| Dual + Tensor operators + mutable params | 🔲 [#161](https://github.com/flooooooooooow/flow/issues/161) | `a * b` on Dual; kill `param_set` rebuilds in `nn.flow` |
+| Dual + Tensor operators + mutable params | ✅ partial [#161](https://github.com/flooooooooooow/flow/issues/161) | Dual `+ - * /` and unary `-` rewrite to overloads; mutable `nn` params still open |
 | Closed-loop plant.step from dsys/connect | 🔲 [#160](https://github.com/flooooooooooow/flow/issues/160) | Analysis plant and sim share one steppable model |
 
 ### 🧹 Repository Cleanup

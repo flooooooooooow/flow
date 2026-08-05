@@ -425,6 +425,9 @@ class TypeChecker:
             TypeKind.F32, TypeKind.F64
         }
 
+    def _is_dual(self, t: SemanticType) -> bool:
+        return t.kind == TypeKind.STRUCT and t.name == "Dual"
+
     def _is_integer(self, t: SemanticType) -> bool:
         return t.kind in {
             TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64, TypeKind.I128,
@@ -1871,6 +1874,15 @@ class TypeChecker:
             if result is not None:
                 return result
 
+        # Dual arithmetic (#161): Dual ⊕ Dual/f32 → Dual
+        if self._is_dual(left_type) or self._is_dual(right_type):
+            if op.operator in ["+", "-", "*", "/"]:
+                if self._is_dual(left_type) or self._is_numeric(left_type):
+                    if self._is_dual(right_type) or self._is_numeric(right_type):
+                        return SemanticType(TypeKind.STRUCT, name="Dual")
+            if op.operator in ["==", "!=", "<", ">", "<=", ">="]:
+                return SemanticType(TypeKind.BOOL)
+
         # Allow numeric coercions
         if self._is_numeric(left_type) and self._is_numeric(right_type):
             common = self._numeric_common_type(left_type, right_type)
@@ -1906,6 +1918,9 @@ class TypeChecker:
         if op.operator == "-":
             # Negating a unit-typed quantity keeps its dimension.
             if self._dims_of(operand_type) is not None:
+                return operand_type
+            # Dual unary minus (#161).
+            if self._is_dual(operand_type):
                 return operand_type
             # Must be numeric
             if operand_type.kind not in [TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64,
