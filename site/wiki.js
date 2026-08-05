@@ -77,9 +77,9 @@ async function tryInitPagefind() {
 async function init() {
     initTheme();
     const [navRes, searchRes, verRes] = await Promise.all([
-        fetch('wiki-nav.json'),
-        fetch('search-index.json'),
-        fetch('versions.json'),
+        fetch('wiki-nav.json', { cache: 'no-cache' }),
+        fetch('search-index.json', { cache: 'no-cache' }),
+        fetch('versions.json', { cache: 'no-cache' }),
     ]);
     navData = await navRes.json();
     searchIndex = await searchRes.json();
@@ -534,7 +534,9 @@ async function loadDoc(path) {
     }
 
     try {
-        const response = await fetch(path);
+        // Revalidate against the server (304 when unchanged) so a fresh deploy
+        // is visible immediately instead of after the Pages max-age window.
+        const response = await fetch(path, { cache: 'no-cache' });
         if (!response.ok) throw new Error(`Not found (${response.status})`);
         const text = await response.text();
         // nginx try_files falls back to index.html with HTTP 200 — never render that as a doc
