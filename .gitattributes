@@ -1,0 +1,14 @@
+# Treat Flow sources as first-class in the language bar once detectable.
+# Upstream github-linguist does not yet know `Flow`; a linguist PR is welcome.
+# Do not remap *.flow to another language (keeps history honest).
+*.flow linguist-detectable=true
+
+*.proof.md linguist-documentation
+docs/** linguist-documentation
+site/vendor/** linguist-vendored
+third_party/** linguist-vendored
+lib/verify/** linguist-documentation
+examples/verify/** linguist-documentation
+
+**/build/** linguist-generated
+**/*.dSYM/** linguist-generated
