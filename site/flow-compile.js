@@ -17,7 +17,7 @@
   'use strict';
 
   var STEP_LIMIT = 5000000;
-  var DEPTH_LIMIT = 2000;
+  var DEPTH_LIMIT = 1000;
   var OUTPUT_LIMIT = 4 * 1024 * 1024;
 
   var NATIVE_HINT = 'Run it natively with ./flow run <file>.flow';
@@ -41,11 +41,9 @@
     this.line = line || 0;
     this.detail = detail || '';
     this.message =
-      construct +
-      (this.line ? ' (line ' + this.line + ')' : '') +
-      ' is not supported in the browser interpreter — ' +
-      NATIVE_HINT +
-      '.' +
+      'Not supported in the browser interpreter: ' + construct +
+      (this.line ? ' (line ' + this.line + ')' : '') + '. ' +
+      NATIVE_HINT + '.' +
       (this.detail ? ' ' + this.detail : '');
   }
   Unsupported.prototype = Object.create(Error.prototype);
@@ -1207,7 +1205,7 @@
     if (++this.steps > STEP_LIMIT) {
       throw new FlowError(
         'step budget exceeded (' + STEP_LIMIT +
-        ' operations) — the program looks like it does not terminate', line);
+        ' operations). The program does not look like it terminates.', line);
     }
   };
 
@@ -2358,7 +2356,8 @@
             (s.type ? ': ' + s.type.name : '') + ' = ' + expr(s.value));
           break;
         case 'Assign':
-          lines.push(ind(depth) + 'Assign ' + expr(s.target) + ' ' + s.op + '= ' + expr(s.value));
+          lines.push(ind(depth) + 'Assign ' + expr(s.target) + ' ' +
+            (s.op === '=' ? '=' : s.op + '=') + ' ' + expr(s.value));
           break;
         case 'Return':
           lines.push(ind(depth) + 'Return' + (s.value ? ' ' + expr(s.value) : ''));
@@ -2418,7 +2417,8 @@
       if (!e) return '';
       switch (e.kind) {
         case 'IntLit': return e.value.toString();
-        case 'FloatLit': return String(e.value);
+        case 'FloatLit':
+          return Number.isInteger(e.value) ? e.value.toFixed(1) : String(e.value);
         case 'BoolLit': return String(e.value);
         case 'StringLit': return JSON.stringify(e.value);
         case 'NullLit': return 'null';
@@ -2440,14 +2440,14 @@
   }
 
   var C_NOTICE =
-    '// The browser interpreter executes Flow directly — it does not generate C.\n' +
+    '// The browser interpreter executes Flow directly. It does not generate C.\n' +
     '// Nothing is shown here rather than a plausible-looking fake.\n' +
     '//\n' +
     '// For the real C the native backend emits:\n' +
     '//     ./flow transpile yourfile.flow --c -o yourfile.c\n';
 
   var MLIR_NOTICE =
-    '// The browser interpreter executes Flow directly — it does not lower to MLIR.\n' +
+    '// The browser interpreter executes Flow directly. It does not lower to MLIR.\n' +
     '// Nothing is shown here rather than a plausible-looking fake.\n' +
     '//\n' +
     '// For real MLIR from the native backend:\n' +
@@ -2468,7 +2468,7 @@
   function execute(code) {
     var prog = compileProgram(code);
     if (!prog.functions.main) {
-      throw new FlowError('no main() function found — execution starts at main()', 0);
+      throw new FlowError('no main() function found. Execution starts at main().', 0);
     }
     var interp = new Interp(prog);
     var mainFn = prog.functions.main;
@@ -2507,9 +2507,15 @@
         mlir: ''
       };
     }
-    var message = err instanceof FlowError || err.name === 'FlowError'
-      ? err.message
-      : (err && err.message ? err.message : String(err));
+    var message;
+    if (err instanceof FlowError || err.name === 'FlowError') {
+      message = err.message;
+    } else if (err instanceof RangeError && /call stack/i.test(err.message || '')) {
+      // The host stack ran out before the interpreter's own depth cap.
+      message = 'recursion too deep for the browser interpreter. ' + NATIVE_HINT + '.';
+    } else {
+      message = err && err.message ? err.message : String(err);
+    }
     return {
       ok: false,
       unsupported: false,
