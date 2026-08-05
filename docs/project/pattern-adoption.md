@@ -25,7 +25,7 @@ story. Adoption first; new sugar second.
 | P1 | Owned `HttpResponse` + JSON decode helpers | API ✅ | [#167](https://github.com/flooooooooooow/flow/issues/167) |
 | P2 | Dynamics DSL / LQR beyond n=2 | language + stdlib ✅ partial | [#162](https://github.com/flooooooooooow/flow/issues/162) |
 | P2 | Field / `laplacian` PDE surface | language ✅ partial | [#163](https://github.com/flooooooooooow/flow/issues/163) |
-| P2 | Dual + Tensor operators + mutable params | language | [#161](https://github.com/flooooooooooow/flow/issues/161) |
+| P2 | Dual + Tensor operators + mutable params | language ✅ partial | [#161](https://github.com/flooooooooooow/flow/issues/161) |
 | P2 | Closed-loop `plant.step` from `dsys` / `connect` | stdlib + lowering | [#160](https://github.com/flooooooooooow/flow/issues/160) |
 
 ---
@@ -211,14 +211,17 @@ nested index soup. ✅ Grammar card remains open.
 
 ### 9. Dual / Tensor operators + mutable params
 
+**Shipped (Dual ops):** `a * a + 3.0 * x + 1.0` lowers to Dual
+overloads (`mul`/`add`/…) in the C generator + typechecker. Demo:
+`examples/ml/autodiff/dual_ops.flow`.
+
+**Still open:** mutable struct fields / param-vector updates so `nn.flow`
+drops multi-way `param_set` rebuilds; Tensor operators.
+
 ```flow
-let a: Dual = Dual { v: x, d: 1.0 }
-let y: Dual = sin(a * a + b)   # not dual_add(dual_mul(…))
-
-struct Net { mut w: … }        # or param vector view
+let y: Dual = sin(a * a + b)   # shipped for Dual arithmetic
+struct Net { mut w: … }        # follow-on
 ```
-
-Unblocks deleting the 9-way `param_set` rebuild in `nn.flow`.
 
 ---
 
