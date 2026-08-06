@@ -14,6 +14,12 @@ three original demos also keep their GIFs directly in this folder
 (`lorenz.gif`, `tetris.gif`, `2048.gif`); `tetris.gif` and `2048.gif` are
 copied into `games/` as well so the games directory covers every game.
 
+The eight software-3D examples in `examples/threed/` have clips at
+`docs/demos/threed/<name>.gif`. Those are recorded directly with
+`./flow record <program> --frames 90 --gif <path> --width 360 --keys <script>`
+rather than through `record_demos.py`; the key script for each is in the table
+in [examples/threed/README.md](../../examples/threed/README.md).
+
 The two galleries: [games](games.md) and [morphogenesis](morphogenesis.md).
 
 Regenerate everything with:
