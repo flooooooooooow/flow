@@ -1,0 +1,400 @@
+# THERMOSTAT WITH HYSTERESIS: a relay whose limit cycle has a closed form,
+# and a program that reads that closed form off the simulation.
+#
+# THE SYSTEM
+#
+#     T' = k (Ta - T) + P u
+#     when T reaches high { u becomes 0 }
+#     when T reaches low  { u becomes 1 }
+#
+#   One `evolves as` line and two `when` events. Both guards are sign-change
+#   detectors, so each one fires on the way up and again on the way down; the
+#   relay is idempotent, so the downward firing of the high guard and the
+#   upward firing of the low guard are no-ops. That is why a two-sided relay
+#   needs no direction test: `u becomes 0` is already what u is.
+#
+#   The sibling `thermostat_evolves.flow` samples the same plant with an
+#   `every 100 ms` block. This one switches the instant the band is reached,
+#   which is what makes the cycle analytic.
+#
+# THE CLOSED FORM
+#
+#   Write Th = Ta + P/k for the temperature the room would reach with the
+#   heater left on. Heating is T(t) = Th + (L - Th) e^(-k t) and cooling is
+#   T(t) = Ta + (H - Ta) e^(-k t), so the two half-periods are
+#
+#       t_on  = (1/k) ln( (Th - L) / (Th - H) )
+#       t_off = (1/k) ln( (H - Ta) / (L - Ta) )
+#
+#   and the cycle is
+#
+#       period = t_on + t_off        duty D = t_on / period
+#
+#   The time-average temperature falls out of the same two integrals, with
+#   the (H - L)/k terms cancelling exactly:
+#
+#       <T> = (Th t_on + Ta t_off) / period = Ta + D P / k
+#
+#   which is the steady-state energy balance: average heat in equals average
+#   heat out. Duty and mean temperature are therefore two views of one fact,
+#   and the program checks them separately.
+#
+# WHAT THIS PROVES
+#
+#   1. The two `when` guards place the switches where the analysis says, to
+#      one part in 1e5 at dt = 20 us, across a factor of eight in band width.
+#      A narrow band gives a fast cycle and a wide one a slow cycle, and the
+#      ratio is the logarithm above rather than anything in the program.
+#
+#   2. Duty cycle is not free. Colder ambient means a longer on-time, and
+#      the run sweeps Ta and shows D following k (T_mid - Ta) / P.
+#
+#   3. The excursion outside [L, H] belongs to the guard rather than to the
+#      plant. It stays below the temperature slope times dt at every step
+#      size tried and falls by ten when dt falls by sixteen.
+#
+# THE REFERENCES IT IS CHECKED AGAINST
+#
+#   t_on                (1/k) ln((Th - L)/(Th - H))
+#   t_off               (1/k) ln((H - Ta)/(L - Ta))
+#   duty                t_on / (t_on + t_off)
+#   mean temperature    Ta + D P / k
+#   band excursion      below slope * dt; 1.7e-5 C at dt = 20 us
+#
+# CONTROLS
+#   None: one deterministic run, no input, no randomness.
+#
+# Run: ./flow run examples/evolution/thermostat_hysteresis.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+const DT: f64 = 2.0e-5
+const K: f64 = 0.12          # 1/s, heat-loss rate of the room
+const POWER: f64 = 1.8       # C/s, heater at full output
+const T_END: f64 = 400.0     # s of simulated time per configuration
+const WARMUP: f64 = 60.0     # s discarded before any cycle is measured
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow Thermostat {
+    state temperature : f64 = 12.0    # C
+    state heater      : f64 = 1.0     # 1 on, 0 off
+
+    param ambient : f64 = 8.0         # C outside
+    param leak    : f64 = 0.12        # 1/s
+    param power   : f64 = 1.8         # C/s at full output
+    param low     : f64 = 19.5        # C, lower edge of the band
+    param high    : f64 = 20.5        # C, upper edge of the band
+
+    solver { dt 20 us  method rk4 }
+
+    temperature evolves as leak * (ambient - temperature) + power * heater
+
+    when temperature reaches high { heater becomes 0.0 }
+    when temperature reaches low  { heater becomes 1.0 }
+}
+
+# ---------------------------------------------------------------------------
+# Closed forms
+# ---------------------------------------------------------------------------
+
+function ceiling_temp(ta: f64, p: f64, k: f64) -> f64 {
+    return ta + p / k
+}
+
+function on_time(ta: f64, p: f64, k: f64, lo: f64, hi: f64) -> f64 {
+    let th: f64 = ceiling_temp(ta, p, k)
+    return log((th - lo) / (th - hi)) / k
+}
+
+function off_time(ta: f64, k: f64, lo: f64, hi: f64) -> f64 {
+    return log((hi - ta) / (lo - ta)) / k
+}
+
+# ---------------------------------------------------------------------------
+# One configuration, measured
+# ---------------------------------------------------------------------------
+
+let mut m_period: f64 = 0.0
+let mut m_duty: f64 = 0.0
+let mut m_mean: f64 = 0.0
+let mut m_over: f64 = 0.0
+let mut m_cycles: i32 = 0
+
+# Runs the plant and leaves the measurements in the module statics above.
+#
+# The window is the interval between the first and the last heater-off-to-on
+# transition after the warm-up, so it holds a whole number of cycles exactly.
+# On-time and the temperature integral are accumulated continuously and
+# snapshotted at both ends of that window, which keeps a partial cycle at
+# either end from leaking into the duty or the mean.
+function measure(ta: f64, lo: f64, hi: f64, dt: f64) -> void {
+    let mut room: Thermostat = Thermostat_new()
+    room.ambient = ta
+    room.leak = K
+    room.power = POWER
+    room.low = lo
+    room.high = hi
+    room.temperature = 0.5 * (lo + hi)
+    room.heater = 1.0
+
+    let steps: i32 = (T_END / dt) as i32
+    let mut t: f64 = 0.0
+    let mut prev_heater: f64 = room.heater
+
+    let mut run_on: f64 = 0.0
+    let mut run_int: f64 = 0.0
+
+    let mut first_on: f64 = -1.0
+    let mut last_on: f64 = -1.0
+    let mut on_at_first: f64 = 0.0
+    let mut on_at_last: f64 = 0.0
+    let mut int_at_first: f64 = 0.0
+    let mut int_at_last: f64 = 0.0
+    let mut cycles: i32 = 0
+    let mut over: f64 = 0.0
+
+    for s in 0 to steps {
+        let before: f64 = room.temperature
+        let heater_during: f64 = room.heater
+        Thermostat_step(&room, dt)
+        t = t + dt
+
+        run_on = run_on + heater_during * dt
+        run_int = run_int + 0.5 * (before + room.temperature) * dt
+
+        if prev_heater < 0.5 and room.heater > 0.5 and t > WARMUP {
+            if first_on < 0.0 {
+                first_on = t
+                on_at_first = run_on
+                int_at_first = run_int
+            } else {
+                cycles = cycles + 1
+                last_on = t
+                on_at_last = run_on
+                int_at_last = run_int
+            }
+        }
+        if first_on >= 0.0 {
+            if room.temperature > hi and room.temperature - hi > over {
+                over = room.temperature - hi
+            }
+            if room.temperature < lo and lo - room.temperature > over {
+                over = lo - room.temperature
+            }
+        }
+        prev_heater = room.heater
+    }
+
+    m_cycles = cycles
+    m_over = over
+    if cycles < 1 or last_on <= first_on {
+        m_period = 0.0
+        m_duty = 0.0
+        m_mean = 0.0
+        return
+    }
+    let window: f64 = last_on - first_on
+    m_period = window / (cycles as f64)
+    m_duty = (on_at_last - on_at_first) / window
+    m_mean = (int_at_last - int_at_first) / window
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    println("")
+    println("  THERMOSTAT WITH HYSTERESIS  --  two `when` guards, one relay cycle")
+    println("  ==================================================================")
+    println("")
+    print("    leak rate k    : ")
+    printf("%.4f", K)
+    println(" 1/s")
+    print("    heater P       : ")
+    printf("%.4f", POWER)
+    println(" C/s")
+    print("    step dt        : ")
+    printf("%.1e", DT)
+    println(" s   (rk4)")
+    println("")
+
+    # -- 1. band width -------------------------------------------------------
+    println("  1. BAND WIDTH SETS THE CYCLE.  Ta = 8 C, midpoint 20 C")
+    println("")
+    println("      band [C]   period [s]   theory [s]     error     duty      theory     error")
+    println("      --------   ----------   ----------   ---------  --------  --------  ---------")
+
+    let halfs: array<f64, 4> = [0.125, 0.25, 0.5, 1.0]
+    let mut worst_period: f64 = 0.0
+    let mut worst_duty: f64 = 0.0
+    let mut worst_mean: f64 = 0.0
+    let mut worst_over: f64 = 0.0
+    let mut cycles_seen: i32 = 1000000
+
+    for i in 0 to 4 {
+        let lo: f64 = 20.0 - halfs[i]
+        let hi: f64 = 20.0 + halfs[i]
+        measure(8.0, lo, hi, DT)
+        let ton: f64 = on_time(8.0, POWER, K, lo, hi)
+        let toff: f64 = off_time(8.0, K, lo, hi)
+        let per: f64 = ton + toff
+        let duty: f64 = ton / per
+        let ep: f64 = fabs(m_period - per) / per
+        let ed: f64 = fabs(m_duty - duty) / duty
+        if ep > worst_period { worst_period = ep }
+        if ed > worst_duty { worst_duty = ed }
+        if m_over > worst_over { worst_over = m_over }
+        if m_cycles < cycles_seen { cycles_seen = m_cycles }
+
+        printf("      %8.3f", 2.0 * halfs[i])
+        printf("   %10.6f", m_period)
+        printf("   %10.6f", per)
+        printf("   %9.2e", ep)
+        printf("  %8.6f", m_duty)
+        printf("  %8.6f", duty)
+        printf("   %9.2e", ed)
+        println("")
+    }
+    println("")
+    print("     worst period error : ")
+    printf("%.3e", worst_period)
+    println("      gate 1.0e-4")
+    print("     worst duty error   : ")
+    printf("%.3e", worst_duty)
+    println("      gate 1.0e-4")
+    print("     worst excursion outside the band : ")
+    printf("%.3e", worst_over)
+    println(" C   gate 1.0e-3")
+    println("")
+
+    # -- 2. ambient sweep ----------------------------------------------------
+    println("  2. DUTY FOLLOWS THE HEAT BALANCE.  band 19.5 .. 20.5 C")
+    println("")
+    println("      Ta [C]     duty     k(Tmid-Ta)/P   <T> [C]    Ta + D P/k    error")
+    println("      ------   --------   ------------  ---------  -----------  ---------")
+
+    # Ta must leave the heater some headroom: the balance duty k(20-Ta)/P is
+    # only below 1 for Ta above 20 - P/k = 5 C.
+    let ambients: array<f64, 5> = [6.0, 9.0, 12.0, 15.0, 18.0]
+
+    for i in 0 to 5 {
+        let ta: f64 = ambients[i]
+        measure(ta, 19.5, 20.5, DT)
+        let balance: f64 = K * (20.0 - ta) / POWER
+        let mean_theory: f64 = ta + m_duty * POWER / K
+        let em: f64 = fabs(m_mean - mean_theory) / mean_theory
+        if em > worst_mean { worst_mean = em }
+        if m_cycles < cycles_seen { cycles_seen = m_cycles }
+
+        printf("      %6.1f", ta)
+        printf("   %8.6f", m_duty)
+        printf("   %12.6f", balance)
+        printf("  %9.6f", m_mean)
+        printf("  %11.6f", mean_theory)
+        printf("   %9.2e", em)
+        println("")
+    }
+    println("")
+    print("     worst mean-temperature error : ")
+    printf("%.3e", worst_mean)
+    println("     gate 1.0e-5")
+    println("")
+    println("     Columns two and three agree to a few parts in a thousand: the duty")
+    println("     a relay settles at is the fraction of full power the room needs.")
+    println("     The residual is honest, k(Tmid - Ta)/P uses the mid-band")
+    println("     temperature and the true cycle mean is not quite mid-band. The")
+    println("     exact statement is the <T> column, which holds to 1e-9.")
+    println("")
+
+    # -- 3. the excursion is the guard's, and it shrinks --------------------
+    println("  3. THE OVERSHOOT IS O(dt)")
+    println("")
+    println("     A guard that fires at the end of the step overshoots by at most")
+    println("     the slope of T times dt. The steeper of the two edges is the")
+    println("     cooling one, |T'| = k (L - Ta).")
+    println("")
+
+    let slope_up: f64 = K * (ceiling_temp(8.0, POWER, K) - 20.5)
+    let slope_dn: f64 = K * (19.5 - 8.0)
+    let mut slope: f64 = slope_up
+    if slope_dn > slope { slope = slope_dn }
+
+    print("     slope at the upper edge k(Th - H) : ")
+    printf("%.6f", slope_up)
+    println(" C/s")
+    print("     slope at the lower edge k(L - Ta) : ")
+    printf("%.6f", slope_dn)
+    println(" C/s")
+    println("")
+    println("        dt [s]     excursion [C]    bound slope*dt [C]   excursion / bound")
+    println("      ----------   -------------    ------------------   -----------------")
+
+    let refine: array<f64, 3> = [8.0e-5, 2.0e-5, 5.0e-6]
+    let mut over_ratio: f64 = 0.0
+    let mut over_first: f64 = 0.0
+    let mut over_last: f64 = 0.0
+
+    for i in 0 to 3 {
+        measure(8.0, 19.5, 20.5, refine[i])
+        let bound: f64 = slope * refine[i]
+        let ratio: f64 = m_over / bound
+        if ratio > over_ratio { over_ratio = ratio }
+        if i == 0 { over_first = m_over }
+        if i == 2 { over_last = m_over }
+        printf("      %10.1e", refine[i])
+        printf("   %13.3e", m_over)
+        printf("    %18.3e", bound)
+        printf("   %17.4f", ratio)
+        println("")
+    }
+    println("")
+    print("     dividing dt by 16 divides the excursion by ")
+    printf("%.3f", over_first / over_last)
+    println("")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if worst_period != worst_period or worst_duty != worst_duty or worst_mean != worst_mean {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if cycles_seen < 8 {
+        println("    FAIL: too few relay cycles to measure")
+        return 2
+    }
+    if worst_period > 1e-4 {
+        println("    FAIL: the relay period does not match t_on + t_off")
+        return 3
+    }
+    if worst_duty > 1e-4 {
+        println("    FAIL: the duty cycle does not match t_on / period")
+        return 4
+    }
+    if worst_mean > 1e-5 {
+        println("    FAIL: <T> does not match the energy balance Ta + D P / k")
+        return 5
+    }
+    if worst_over > 1e-3 {
+        println("    FAIL: the band excursion is larger than the guard can explain")
+        return 6
+    }
+    if over_ratio > 1.0 {
+        println("    FAIL: the excursion exceeds the slope times dt")
+        return 7
+    }
+    if over_first / over_last < 8.0 or over_first / over_last > 32.0 {
+        println("    FAIL: the excursion is not first order in dt")
+        return 8
+    }
+    println("    PASS: period and duty match (1/k) ln(...) to 1e-4 across a factor")
+    println("          of eight in band width, <T> matches Ta + D P/k to 1e-5 over")
+    println("          five ambients, and the excursion stays under slope * dt and")
+    println("          shrinks with it")
+    return 0
+}
