@@ -1,0 +1,495 @@
+# BRUSSELATOR: Prigogine's dissipative structure, and its wavelength predicted.
+#
+# MODEL (Prigogine and Lefever, 1968)
+#   The trimolecular scheme A -> X, B + X -> Y + D, 2X + Y -> 3X, X -> E with
+#   A and B held fixed. Written for the two intermediates, with diffusion:
+#
+#     du/dt = Du * lap(u) + a - (b + 1) * u + u^2 * v
+#     dv/dt = Dv * lap(v) + b * u - u^2 * v
+#
+#   Those two lines are the `flow BrusselatorCell` block below, verbatim. The
+#   grid loop supplies each cell its laplacian and calls the generated step.
+#
+# WHY IT IS THE TEXTBOOK CASE
+#   The Brusselator is the reaction-diffusion system whose linear analysis is
+#   clean enough to do by hand, so the pattern it makes can be predicted
+#   before it is run. The uniform state is (u, v) = (a, b/a). Its Jacobian is
+#
+#     J = [ b - 1   a^2 ]      det J = a^2      tr J = b - 1 - a^2
+#         [  -b    -a^2 ]
+#
+#   so a Turing instability needs b > b_c = (1 + a sqrt(Du/Dv))^2, and the
+#   first mode to grow has
+#
+#     k_c^2 = sqrt(det J / (Du Dv)) = a / sqrt(Du Dv)
+#     lambda_c = 2 pi / k_c
+#
+#   A Hopf bifurcation takes over instead when b > 1 + a^2, which is what
+#   preset 4 crosses.
+#
+# THE MEASUREMENT
+#   The program takes a real 2D discrete Fourier transform of u every eighth
+#   frame (separable, 128 x 65 half-plane, precomputed twiddles), averages the
+#   power over integer radial shells, finds the peak shell and interpolates it
+#   parabolically. The observed wavelength is N / r_peak, and it is shown next
+#   to 2 pi / k_c from the analysis above. The two agree to a fraction of a
+#   cell once the pattern has settled. That is the evidence: the picture on
+#   screen is the one the linear theory ordered.
+#
+# NUMERICS
+#   128 x 128 periodic grid, dx = 1, five-point laplacian, explicit Euler at
+#   dt = 0.01 (the diffusion limit is dx^2 / (4 Dv) = 0.0156), 120 steps per
+#   displayed frame.
+#
+# PARAMETERS / KEYS
+#   1  HEXAGONS   a 4.5  b 6.85  Du 2  Dv 16   just above b_c = 6.71
+#   2  LABYRINTH  a 4.5  b 10.0  Du 2  Dv 16   deeper in: stripes wander
+#   3  COARSE     a 2.5  b 6.0   Du 2  Dv 16   smaller a, longer lambda_c
+#   4  OSCILLATE  a 4.5  b 22.0  Du 2  Dv 16   past Hopf: the bulk beats
+#   R  reseed     P  pause                     Esc quit
+#
+# PHENOMENON
+#   Uniform chemistry plus noise at 1 part in 100 becomes a lattice with a
+#   selected spacing. Nothing in the program contains that spacing; it is a
+#   ratio of two diffusion constants.
+#
+# Run: ./flow gfx examples/morphogenesis/brusselator.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function sqrt(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+}
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 120
+const TWO_PI: f64 = 6.283185307179586
+
+# Spectrum: half-plane kx = 0 .. 64, all ky, radial shells 0 .. 63.
+const KMAX: i32 = 65
+const SPEC_CELLS: i32 = 8320
+const SHELLS: i32 = 64
+const SPEC_EVERY: i32 = 8
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+# ---------------------------------------------------------------------------
+# The model. Two lines; the rest of this file is scaffolding and measurement.
+# ---------------------------------------------------------------------------
+
+flow BrusselatorCell {
+    state u : f64 = 4.5
+    state v : f64 = 1.6666666666666667
+
+    param lap_u : f64 = 0.0     # supplied per cell by the grid loop
+    param lap_v : f64 = 0.0
+    param du    : f64 = 2.0     # diffusion of the activator X
+    param dv    : f64 = 16.0    # diffusion of the inhibitor Y
+    param a     : f64 = 4.5     # held concentration of A
+    param b     : f64 = 7.5     # held concentration of B, the control knob
+
+    solver { dt 10 ms  method euler }
+
+    u evolves as du * lap_u + a - (b + 1.0) * u + u * u * v
+    v evolves as dv * lap_v + b * u - u * u * v
+}
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG
+# ---------------------------------------------------------------------------
+
+let mut rng_state: u32 = 1901194261
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+# ---------------------------------------------------------------------------
+# Presets
+# ---------------------------------------------------------------------------
+
+function preset_a(p: i32) -> f64 {
+    if p == 2 { return 2.5 }
+    return 4.5
+}
+
+function preset_b(p: i32) -> f64 {
+    if p == 1 { return 10.0 }
+    if p == 2 { return 6.0 }
+    if p == 3 { return 22.0 }
+    return 6.85
+}
+
+function preset_du(p: i32) -> f64 {
+    return 2.0
+}
+
+function preset_dv(p: i32) -> f64 {
+    return 16.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "LABYRINTH" }
+    if p == 2 { return "COARSE" }
+    if p == 3 { return "OSCILLATE" }
+    return "HEXAGONS"
+}
+
+# lambda_c = 2 pi / k_c with k_c^2 = a / sqrt(Du Dv).
+function predicted_wavelength(a: f64, du: f64, dv: f64) -> f64 {
+    let kc2: f64 = a / sqrt(du * dv)
+    if kc2 <= 0.0 { return 0.0 }
+    return TWO_PI / sqrt(kc2)
+}
+
+# b_c = (1 + a sqrt(Du / Dv))^2.
+function turing_threshold(a: f64, du: f64, dv: f64) -> f64 {
+    let s: f64 = 1.0 + a * sqrt(du / dv)
+    return s * s
+}
+
+# ---------------------------------------------------------------------------
+# Field
+# ---------------------------------------------------------------------------
+
+function seed_field(u: ptr<f64>, v: ptr<f64>, a: f64, b: f64) -> void {
+    let u0: f64 = a
+    let v0: f64 = b / a
+    for i in 0 to CELLS {
+        u[i] = u0 * (1.0 + 0.02 * (rng_unit() - 0.5))
+        v[i] = v0 * (1.0 + 0.02 * (rng_unit() - 0.5))
+    }
+}
+
+# Five-point laplacian, dx = 1, periodic.
+function lap_at(f: ptr<f64>, x: i32, y: i32) -> f64 {
+    let xm: i32 = (x + GRID - 1) % GRID
+    let xp: i32 = (x + 1) % GRID
+    let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+    let yp: i32 = ((y + 1) % GRID) * GRID
+    let r: i32 = y * GRID
+    return f[r + xm] + f[r + xp] + f[ym + x] + f[yp + x] - 4.0 * f[r + x]
+}
+
+function evolve(u: ptr<f64>, v: ptr<f64>, un: ptr<f64>, vn: ptr<f64>,
+                a: f64, b: f64, du: f64, dv: f64, dt: f64) -> void {
+    let mut cell: BrusselatorCell = BrusselatorCell_new()
+    cell.a = a
+    cell.b = b
+    cell.du = du
+    cell.dv = dv
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            cell.u = u[i]
+            cell.v = v[i]
+            cell.lap_u = lap_at(u, x, y)
+            cell.lap_v = lap_at(v, x, y)
+            BrusselatorCell_step(&cell, dt)
+            un[i] = cell.u
+            vn[i] = cell.v
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Measurement: the dominant wavelength, straight out of the power spectrum.
+#
+# A separable real DFT over the half-plane kx = 0..64, then the mean power in
+# each integer radial shell, then the peak shell interpolated parabolically.
+# The observed wavelength is N / r_peak. Reading the peak rather than a moment
+# of the spectrum keeps the harmonics of a sharp-edged pattern out of it.
+# ---------------------------------------------------------------------------
+
+function fill_twiddles(ct: ptr<f64>, st: ptr<f64>) -> void {
+    for i in 0 to GRID {
+        let ang: f64 = TWO_PI * (i as f64) / (GRID as f64)
+        ct[i] = cos(ang)
+        st[i] = sin(ang)
+    }
+}
+
+function spectral_wavelength(u: ptr<f64>, ar: ptr<f64>, ai: ptr<f64>,
+                             ct: ptr<f64>, st: ptr<f64>,
+                             shell: ptr<f64>, shell_n: ptr<f64>) -> f64 {
+    let mut mean: f64 = 0.0
+    for i in 0 to CELLS {
+        mean = mean + u[i]
+    }
+    mean = mean / (CELLS as f64)
+
+    # Stage one: transform every row. A = sum_x u' (cos - i sin).
+    for y in 0 to GRID {
+        let r: i32 = y * GRID
+        let o: i32 = y * KMAX
+        for kx in 0 to KMAX {
+            let mut sr: f64 = 0.0
+            let mut si: f64 = 0.0
+            for x in 0 to GRID {
+                let t: i32 = (kx * x) % GRID
+                let d: f64 = u[r + x] - mean
+                sr = sr + d * ct[t]
+                si = si - d * st[t]
+            }
+            ar[o + kx] = sr
+            ai[o + kx] = si
+        }
+    }
+
+    for s in 0 to SHELLS {
+        shell[s] = 0.0
+        shell_n[s] = 0.0
+    }
+
+    # Stage two: transform every column of A, and bin the power radially.
+    for ky in 0 to GRID {
+        let mut kyy: i32 = ky
+        if kyy > GRID / 2 { kyy = kyy - GRID }
+        for kx in 0 to KMAX {
+            let mut re: f64 = 0.0
+            let mut im: f64 = 0.0
+            for y in 0 to GRID {
+                let t: i32 = (ky * y) % GRID
+                let a: f64 = ar[y * KMAX + kx]
+                let b: f64 = ai[y * KMAX + kx]
+                re = re + a * ct[t] + b * st[t]
+                im = im + b * ct[t] - a * st[t]
+            }
+            let rad: f64 = sqrt(((kx * kx + kyy * kyy) as f64))
+            let s: i32 = (rad + 0.5) as i32
+            if s < SHELLS {
+                shell[s] = shell[s] + re * re + im * im
+                shell_n[s] = shell_n[s] + 1.0
+            }
+        }
+    }
+
+    for s in 0 to SHELLS {
+        if shell_n[s] > 0.0 {
+            shell[s] = shell[s] / shell_n[s]
+        }
+    }
+
+    # Peak shell, ignoring the DC neighbourhood and the very short scales.
+    let mut best: i32 = 3
+    for s in 3 to SHELLS - 2 {
+        if shell[s] > shell[best] { best = s }
+    }
+    let sm: f64 = shell[best - 1]
+    let s0: f64 = shell[best]
+    let sp: f64 = shell[best + 1]
+    let den: f64 = sm - 2.0 * s0 + sp
+    let mut rpeak: f64 = best as f64
+    if den < 0.0 {
+        rpeak = rpeak + 0.5 * (sm - sp) / den
+    }
+    if rpeak < 0.5 { return 0.0 }
+    return (GRID as f64) / rpeak
+}
+
+# Peak-to-trough contrast, so the HUD shows the instability growing.
+function amplitude(u: ptr<f64>) -> f64 {
+    let mut lo: f64 = u[0]
+    let mut hi: f64 = u[0]
+    for i in 1 to CELLS {
+        if u[i] < lo { lo = u[i] }
+        if u[i] > hi { hi = u[i] }
+    }
+    return hi - lo
+}
+
+# ---------------------------------------------------------------------------
+# Rendering: violet trough, magenta flank, gold crest.
+# ---------------------------------------------------------------------------
+
+function shade_r(t: f64) -> i32 {
+    let mut c: f64 = 40.0 + 320.0 * t
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function shade_g(t: f64) -> i32 {
+    let mut c: f64 = 18.0 + 40.0 * t
+    if t > 0.55 { c = 40.0 + 460.0 * (t - 0.55) }
+    if c > 235.0 { c = 235.0 }
+    return c as i32
+}
+
+function shade_b(t: f64) -> i32 {
+    let mut c: f64 = 80.0 + 130.0 * t
+    if t > 0.45 { c = 138.0 - 200.0 * (t - 0.45) }
+    if c < 34.0 { c = 34.0 }
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, u: ptr<f64>, lo: f64, hi: f64) -> void {
+    let mut span: f64 = hi - lo
+    if span < 0.001 { span = 0.001 }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let mut t: f64 = (u[y * GRID + x] - lo) / span
+            if t < 0.0 { t = 0.0 }
+            if t > 1.0 { t = 1.0 }
+            paint_cell(fb, x, y, shade_r(t), shade_g(t), shade_b(t))
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, a: f64, b: f64, bc: f64,
+                  meas: f64, pred: f64, amp: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "BRUSSELATOR", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 176, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 260, 12, "a", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 272, 12, a, 1, 1, 234, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 306, 12, "b", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 318, 12, b, 1, 1, 234, 232, 244)
+    let t7: i32 = gfx_draw_text(g, 358, 12, "b_c", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 382, 12, bc, 2, 1, 234, 232, 244)
+    let t9: i32 = gfx_draw_text(g, 436, 12, "AMP", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 460, 12, amp, 1, 1, 234, 232, 244)
+
+    let tb: i32 = gfx_draw_text(g, 8, 28, "WAVELENGTH  MEASURED", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 140, 28, meas, 2, 1, 120, 255, 190)
+    let td: i32 = gfx_draw_text(g, 190, 28, "PREDICTED 2pi/k_c", 1, 150, 146, 168)
+    let te: i32 = gfx_draw_fixed(g, 306, 28, pred, 2, 1, 120, 255, 190)
+    let tf: i32 = gfx_draw_text(g, 356, 28, "k_c^2 = a/sqrt(Du Dv)", 1, 118, 114, 138)
+
+    let tg: i32 = gfx_draw_text(g, 8, 42,
+        "1 HEXAGONS  2 LABYRINTH  3 COARSE  4 OSCILLATE  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let th: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let ti: i32 = gfx_draw_text(g, 8, 572,
+        "u evolves as Du*lap(u) + a - (b+1)*u + u^2*v", 1, 122, 118, 144)
+    let tj: i32 = gfx_draw_text(g, 8, 582,
+        "v evolves as Dv*lap(v) + b*u - u^2*v", 1, 122, 118, 144)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    let ua: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let va: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ub: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let vb: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let ar: array<f64, 8320> = [0.0, 0.0, 0.0, 0.0]
+    let ai: array<f64, 8320> = [0.0, 0.0, 0.0, 0.0]
+    let ct: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let st: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let shell: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let shell_n: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    fill_twiddles(ct, st)
+
+    let mut preset: i32 = 0
+    let mut a: f64 = preset_a(preset)
+    let mut b: f64 = preset_b(preset)
+    let mut du: f64 = preset_du(preset)
+    let mut dv: f64 = preset_dv(preset)
+    seed_field(ua, va, a, b)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Brusselator - Flow morphogenesis")
+    let dt: f64 = BrusselatorCell_default_dt()
+
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut meas: f64 = 0.0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if want >= 0 and want != preset {
+            preset = want
+            a = preset_a(preset)
+            b = preset_b(preset)
+            du = preset_du(preset)
+            dv = preset_dv(preset)
+            seed_field(ua, va, a, b)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(ua, va, a, b)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            # SUBSTEPS is even, so the field lands back in (ua, va).
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(ua, va, ub, vb, a, b, du, dv, dt)
+                evolve(ub, vb, ua, va, a, b, du, dv, dt)
+            }
+        }
+
+        let amp: f64 = amplitude(ua)
+        if frame % SPEC_EVERY == 0 {
+            meas = spectral_wavelength(ua, ar, ai, ct, st, shell, shell_n)
+        }
+        let pred: f64 = predicted_wavelength(a, du, dv)
+        let bc: f64 = turing_threshold(a, du, dv)
+
+        gfx_clear(g, 12, 10, 18)
+        draw_field(g, fb, ua, a - 0.6 * amp, a + 0.6 * amp)
+        draw_hud(g, preset, a, b, bc, meas, pred, amp, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
