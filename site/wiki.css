@@ -1896,3 +1896,11 @@ body.page-wide .markdown-body { max-width: none; }
     .code-block { border: 1px solid #ccc; background: #f6f6f6; page-break-inside: avoid; }
     .markdown-body h2, .markdown-body h3 { page-break-after: avoid; }
 }
+
+/* Links into the repository (source files, not docs pages) open on GitHub.
+   The marker makes it clear the click leaves the site. */
+.repo-source-link::after {
+    content: " ↗";
+    opacity: 0.55;
+    font-size: 0.85em;
+}

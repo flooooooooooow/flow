@@ -476,11 +476,42 @@ function highlightCode(el) {
     });
 }
 
+// Directories that exist in the repository but not on the docs site. A link
+// into one of these is a link to source code, so send it to GitHub rather
+// than to a site path that will 404.
+const REPO_SOURCE_DIRS = [
+    'examples/', 'lib/', 'src/', 'runtime/', 'compiler/', 'tests/',
+    'benchmarks/', 'scripts/', 'apps/', 'registry/', 'packaging/',
+    'third_party/',
+];
+// Deliberately absent: demos/ and wasm/, which exist BOTH in the repository
+// and as directories on this site (docs/demos, site/wasm). Sending those to
+// GitHub would break the galleries.
+const REPO_BLOB_BASE = 'https://github.com/flooooooooooow/flow/blob/main/';
+
+function repoSourceUrl(path) {
+    const clean = String(path || '').replace(/^\.\//, '').split('#')[0];
+    if (!REPO_SOURCE_DIRS.some((d) => clean.startsWith(d))) return null;
+    // A .md under one of these is still documentation the site may carry, but
+    // everything else (.flow, .c, .py, .sh, .h, directories) is source.
+    if (/\.md$/.test(clean)) return null;
+    const frag = String(path).includes('#') ? `#${String(path).split('#').slice(1).join('#')}` : '';
+    return `${REPO_BLOB_BASE}${clean}${frag}`;
+}
+
 function wireInternalLinks(container, basePath) {
     container.querySelectorAll('a[href]').forEach((a) => {
         const href = a.getAttribute('href');
         if (!href || href.startsWith('http') || href.startsWith('#') || href.startsWith('mailto:')) return;
         const resolved = resolveRelative(basePath, href);
+        const sourceUrl = repoSourceUrl(resolved);
+        if (sourceUrl) {
+            a.setAttribute('href', sourceUrl);
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener');
+            a.classList.add('repo-source-link');
+            return;
+        }
         a.setAttribute('href', `#${encodeURIComponent(resolved)}`);
         const docPath = resolved.split('#')[0];
         if (/\.(md|proof\.md|ebnf)$/.test(docPath)) {
