@@ -174,6 +174,10 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)"
     echo "  gpu <program>      Generate @gpu compute kernels as Metal sources"
     echo "  shader <program>   Run fill-shader demo (Metal; macOS)"
+    echo "  explain <program>  Print the compilation plan for every declarative"
+    echo "                    construct: implementations considered, their costs,"
+    echo "                    the choice, and what each rejected candidate failed"
+    echo "                    (same as: transpile <program> --c --strict --explain)"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
     echo "  fmt <files...>    Format FLOW source files"
     echo ""
@@ -2706,6 +2710,19 @@ PY
     "transpile")
         shift
         run_transpiler "$@"
+        ;;
+    "explain")
+        shift
+        program="${1:-}"
+        require_flow_file "$program"
+        shift
+        check_deps
+        explain_out="$(mktemp 2>/dev/null || mktemp -t flow_explain).c"
+        # The plan report goes to stderr; the C output is the byproduct here.
+        python3 -m "$FLOWC_MODULE" "$program" --c --strict --explain \
+            -o "$explain_out" "$@" 2>&1 >/dev/null \
+            | grep -v '^Resolving modules\|^Parsed \|^Generated C written to '
+        rm -f "$explain_out"
         ;;
     "fmt")
         shift

@@ -547,6 +547,29 @@ class SortExpr:
     compact: bool = False
     policies: List[str] = field(default_factory=list)
     entropy: Optional[str] = None  # None | "default" | "system" | "fast" | "secure" | "record" | seed int as str
+    general: bool = False  # `general`: pin the general plan, ignore hints
+    line: int = 0
+    # Written by the ordering-hints pass (src/flow/ordering_hints.py).
+    hint_input_order: str = "unknown"
+    hint_key_range: Optional[List[int]] = None
+
+
+@dataclass
+class FindExpr:
+    """Declarative search: `xs |> find(target)`.
+
+    Yields the index of the first element that compares equal to `target`
+    under the same total order `sort` uses, or -1 when there is none. The
+    compiler picks the search implementation: a linear scan in general, a
+    lower-bound binary search when ordering provenance proves the array is
+    ascending. See docs/language/ordering.md.
+    """
+
+    array: "Expression"
+    target: "Expression"
+    line: int = 0
+    hint_input_order: str = "unknown"
+    hint_key_range: Optional[List[int]] = None
 
 
 @dataclass
@@ -1165,6 +1188,7 @@ Expression = Union[
     Lambda,
     TryExpr,
     SortExpr,
+    FindExpr,
 ]
 Statement = Union[
     VarDecl,
@@ -3725,6 +3749,9 @@ class Parser:
             if self._at_declarative_sort():
                 left = self._parse_sort_pipeline(left)
                 continue
+            if self._at_declarative_search():
+                left = self._parse_find_pipeline(left)
+                continue
             rhs = self.parse_logical_or()
             left = self._apply_pipe(left, rhs)
         return left
@@ -3948,6 +3975,32 @@ class Parser:
             return False
         return tok.value in ("sort", "sortBy", "order")
 
+    def _at_declarative_search(self) -> bool:
+        """True at `find(...)` immediately after `|>`.
+
+        Only claimed in pipeline position and only with an argument list, so
+        an ordinary `find(...)` call elsewhere is untouched.
+        """
+        tok = self.current_token
+        return (
+            tok.type == TokenType.IDENTIFIER
+            and tok.value == "find"
+            and self.lookahead.type == TokenType.LPAREN
+        )
+
+    def _parse_find_pipeline(self, array: Expression) -> "FindExpr":
+        """Parse `xs |> find(target)`."""
+        line = getattr(self.current_token, "line", 0) or 0
+        self.advance()  # 'find'
+        if self.current_token.type != TokenType.LPAREN:
+            raise SyntaxError("Expected '(' after 'find' in pipeline")
+        self.advance()
+        target = self.parse_expression()
+        if self.current_token.type != TokenType.RPAREN:
+            raise SyntaxError("Expected ')' to close 'find(...)'")
+        self.advance()
+        return FindExpr(array=array, target=target, line=line)
+
     def _parse_sort_key(self) -> SortKey:
         """Parse `asc .field`, `desc .field`, or `.field` (asc)."""
         descending = False
@@ -3991,6 +4044,7 @@ class Parser:
         """Parse `sort` / `sortBy` / `order` and trailing modifiers after `|>`."""
         if self.current_token.type != TokenType.IDENTIFIER:
             raise SyntaxError("Expected sort/sortBy/order after '|>'")
+        line = getattr(self.current_token, "line", 0) or 0
         head = self.current_token.value
         self.advance()
 
@@ -4001,6 +4055,7 @@ class Parser:
         parallel = False
         adaptive = False
         compact = False
+        general = False
         policies: List[str] = []
         entropy: Optional[str] = None
 
@@ -4081,6 +4136,12 @@ class Parser:
                 adaptive = True
                 policies.append(mod)
                 self.advance()
+            elif mod == "general":
+                # Escape hatch: pin the general-purpose plan and ignore every
+                # hint. Exists so a benchmark can measure the plan it replaced.
+                general = True
+                policies.append(mod)
+                self.advance()
             elif mod == "compact":
                 compact = True
                 policies.append(mod)
@@ -4114,6 +4175,8 @@ class Parser:
             compact=compact,
             policies=policies,
             entropy=entropy,
+            general=general,
+            line=line,
         )
 
     def parse_assignment(self) -> Expression:
@@ -4639,6 +4702,9 @@ class Parser:
                 self._collect_free_variables(part, param_names, found)
         elif isinstance(node, SortExpr):
             self._collect_free_variables(node.array, param_names, found)
+        elif isinstance(node, FindExpr):
+            self._collect_free_variables(node.array, param_names, found)
+            self._collect_free_variables(node.target, param_names, found)
         elif isinstance(node, (IfStatement, WhileStatement, ForStatement, MatchStatement)):
             if isinstance(node, IfStatement):
                 self._collect_free_variables(node.condition, param_names, found)
