@@ -399,6 +399,23 @@ Every one has a recorded clip in the
 [neuron gallery](docs/demos/neuro.md).
 Index: [examples/neuro](examples/neuro/README.md).
 
+### Evolutionary biology
+
+Fifteen population-genetics, evolutionary-game, and ecology simulations for
+biologists — Wright-Fisher drift, Hardy-Weinberg, mutation-selection balance,
+quasispecies, Hawk-Dove, spatial Prisoner's Dilemma, Lotka-Volterra. Each
+gates its exit code on a closed form before the window opens.
+
+```bash
+./flow gfx examples/evoleco/wright_fisher.flow     # fixation time vs 4 N ln 2
+./flow gfx examples/evoleco/hawk_dove.flow         # mixed ESS at V/C
+./flow gfx examples/evoleco/spatial_pd.flow        # cooperation where mean-field dies
+```
+
+Every one has a recorded clip in the
+[evolutionary biology gallery](docs/demos/evoleco.md).
+Index: [examples/evoleco](examples/evoleco/README.md).
+
 ### AI and machine learning
 
 Training runs in Flow, on the CPU, in seconds — and every demo gates its exit

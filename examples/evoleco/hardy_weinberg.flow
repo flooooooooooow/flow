@@ -360,7 +360,7 @@ function main() -> i32 {
         if !paused {
             phase = phase + 1
             # Hold the non-HWE start, then mate once, then hold the recovery.
-            if phase == 40 {
+            if phase == 20 {
                 mate(faa, fhet, faa_m)
                 faa = next_aa
                 fhet = next_het
@@ -371,7 +371,7 @@ function main() -> i32 {
                 rng_state = rng_state + 1
                 live_chi = sample_chi(p, N_DIP)
             }
-            if phase > 100 {
+            if phase > 60 {
                 faa = start_aa(preset)
                 fhet = start_het(preset)
                 faa_m = start_aa_m(preset)
