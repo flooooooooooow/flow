@@ -1,0 +1,366 @@
+# AGE-STRUCTURED POPULATION: five stages, one dominant eigenvalue, and three
+# independent ways of getting at it.
+#
+# THE SYSTEM
+#
+#   A stage-classified population in continuous time. Individuals die at rate
+#   m_i, mature into the next stage at rate a_i, and the mature stages breed
+#   into stage 1 at rate f_i:
+#
+#       n1' = f3 n3 + f4 n4 + f5 n5 - (m1 + a1) n1
+#       ni' = a_{i-1} n_{i-1} - (m_i + a_i) n_i         i = 2, 3, 4
+#       n5' = a4 n4 - m5 n5
+#
+#   Five `evolves as` lines. Written as a matrix this is n' = A n, and every
+#   question about the population is a question about A.
+#
+# THE THREE ROUTES TO THE SAME NUMBER
+#
+#   1. Integrate. After the transients die the population grows exponentially
+#      at some rate r and its stage composition stops changing. The run reads
+#      r off d ln(total) / dt at the end of a long run.
+#
+#   2. Power-iterate. A is essentially nonnegative, so A + c I is a
+#      nonnegative matrix for large enough c and Perron-Frobenius applies:
+#      repeated multiplication converges to the dominant eigenvector, and the
+#      Rayleigh quotient to lambda_max(A) + c. Nothing about this route
+#      touches the integrator.
+#
+#   3. Ask both eigenvectors. With w the right eigenvector (the stable stage
+#      distribution) and v the left one (Fisher's reproductive value), the
+#      standard eigenvalue perturbation identity gives
+#
+#          d lambda / d A_ij  =  v_i w_j / (v . w)
+#
+#      The run predicts the sensitivity of the growth rate to the fecundity
+#      of stage 3 this way, then measures it by re-running the whole power
+#      iteration with that one entry nudged, and compares.
+#
+# WHAT THIS PROVES
+#   The generated integrator gets the asymptotic growth rate and the stable
+#   stage distribution of a five-stage demography to nine figures against
+#   linear algebra that shares none of its arithmetic, and the sensitivity
+#   formula that demographers use for conservation triage falls out of the
+#   same two eigenvectors.
+#
+# CONTROLS
+#   None: one deterministic run, no input, no randomness.
+#
+# Run: ./flow run examples/evolution/age_structured.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const NSTAGE: i32 = 5
+const SHIFT: f64 = 3.0            # makes A + c I nonnegative
+const POWER_ITERS: i32 = 400000
+const DT: f64 = 1.0e-3
+const T_END: f64 = 400.0
+
+# Vital rates. These are the only numbers in the model.
+const M1: f64 = 0.30
+const M2: f64 = 0.20
+const M3: f64 = 0.12
+const M4: f64 = 0.12
+const M5: f64 = 0.35
+const A1: f64 = 0.90
+const A2: f64 = 0.70
+const A3: f64 = 0.50
+const A4: f64 = 0.40
+const F3: f64 = 1.10
+const F4: f64 = 1.60
+const F5: f64 = 1.30
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow Cohorts {
+    state n1 : f64 = 1.0
+    state n2 : f64 = 0.0
+    state n3 : f64 = 0.0
+    state n4 : f64 = 0.0
+    state n5 : f64 = 0.0
+
+    param m1 : f64 = 0.30
+    param m2 : f64 = 0.20
+    param m3 : f64 = 0.12
+    param m4 : f64 = 0.12
+    param m5 : f64 = 0.35
+    param a1 : f64 = 0.90
+    param a2 : f64 = 0.70
+    param a3 : f64 = 0.50
+    param a4 : f64 = 0.40
+    param f3 : f64 = 1.10
+    param f4 : f64 = 1.60
+    param f5 : f64 = 1.30
+
+    solver { dt 1 ms  method rk4 }
+
+    n1 evolves as f3 * n3 + f4 * n4 + f5 * n5 - (m1 + a1) * n1
+    n2 evolves as a1 * n1 - (m2 + a2) * n2
+    n3 evolves as a2 * n2 - (m3 + a3) * n3
+    n4 evolves as a3 * n3 - (m4 + a4) * n4
+    n5 evolves as a4 * n4 - m5 * n5
+}
+
+# ---------------------------------------------------------------------------
+# The same matrix, as data
+# ---------------------------------------------------------------------------
+
+let mut amat: ptr<f64> = null
+
+function build_matrix(f3: f64) -> void {
+    for i in 0 to NSTAGE * NSTAGE {
+        amat[i] = 0.0
+    }
+    amat[0 * NSTAGE + 0] = 0.0 - (M1 + A1)
+    amat[0 * NSTAGE + 2] = f3
+    amat[0 * NSTAGE + 3] = F4
+    amat[0 * NSTAGE + 4] = F5
+    amat[1 * NSTAGE + 0] = A1
+    amat[1 * NSTAGE + 1] = 0.0 - (M2 + A2)
+    amat[2 * NSTAGE + 1] = A2
+    amat[2 * NSTAGE + 2] = 0.0 - (M3 + A3)
+    amat[3 * NSTAGE + 2] = A3
+    amat[3 * NSTAGE + 3] = 0.0 - (M4 + A4)
+    amat[4 * NSTAGE + 3] = A4
+    amat[4 * NSTAGE + 4] = 0.0 - M5
+}
+
+# One step of y = (A + c I) x, so the iteration matrix is nonnegative.
+function apply_shifted(x: ptr<f64>, y: ptr<f64>, transpose: bool) -> void {
+    for i in 0 to NSTAGE {
+        let mut acc: f64 = SHIFT * x[i]
+        for j in 0 to NSTAGE {
+            let mut coeff: f64 = amat[i * NSTAGE + j]
+            if transpose {
+                coeff = amat[j * NSTAGE + i]
+            }
+            acc = acc + coeff * x[j]
+        }
+        y[i] = acc
+    }
+}
+
+let mut vec_a: ptr<f64> = null
+let mut vec_b: ptr<f64> = null
+
+# Power iteration; leaves the unit-sum dominant vector in `out` and returns
+# lambda_max(A) = lambda_max(A + cI) - c.
+function dominant(out: ptr<f64>, transpose: bool) -> f64 {
+    for i in 0 to NSTAGE {
+        vec_a[i] = 1.0
+    }
+    let mut lam: f64 = 0.0
+    for it in 0 to POWER_ITERS {
+        apply_shifted(vec_a, vec_b, transpose)
+        let mut norm: f64 = 0.0
+        for i in 0 to NSTAGE {
+            norm = norm + vec_b[i]
+        }
+        lam = norm
+        for i in 0 to NSTAGE {
+            vec_a[i] = vec_b[i] / norm
+        }
+    }
+    for i in 0 to NSTAGE {
+        out[i] = vec_a[i]
+    }
+    return lam - SHIFT
+}
+
+# ---------------------------------------------------------------------------
+
+let mut right_vec: ptr<f64> = null
+let mut left_vec: ptr<f64> = null
+let mut ode_vec: ptr<f64> = null
+
+function main() -> i32 {
+    amat = calloc((NSTAGE * NSTAGE) as i64, 8) as ptr<f64>
+    vec_a = calloc(NSTAGE as i64, 8) as ptr<f64>
+    vec_b = calloc(NSTAGE as i64, 8) as ptr<f64>
+    right_vec = calloc(NSTAGE as i64, 8) as ptr<f64>
+    left_vec = calloc(NSTAGE as i64, 8) as ptr<f64>
+    ode_vec = calloc(NSTAGE as i64, 8) as ptr<f64>
+
+    println("")
+    println("  AGE-STRUCTURED POPULATION  --  five stages, three routes to r")
+    println("  =============================================================")
+    println("")
+
+    # -- route 2: linear algebra --------------------------------------------
+    build_matrix(F3)
+    let r_power: f64 = dominant(right_vec, false)
+    let r_left: f64 = dominant(left_vec, true)
+
+    print("    lambda_max from power iteration on A + 3I  : ")
+    printf("%.12f", r_power)
+    println(" /y")
+    print("    the same from the transpose                : ")
+    printf("%.12f", r_left)
+    println(" /y")
+    let lr_err: f64 = fabs(r_power - r_left)
+    print("    |difference|                               : ")
+    printf("%.3e", lr_err)
+    println("     gate 1.0e-11")
+    println("")
+
+    # -- route 1: integrate --------------------------------------------------
+    let mut c: Cohorts = Cohorts_new()
+    c.m1 = M1
+    c.m2 = M2
+    c.m3 = M3
+    c.m4 = M4
+    c.m5 = M5
+    c.a1 = A1
+    c.a2 = A2
+    c.a3 = A3
+    c.a4 = A4
+    c.f3 = F3
+    c.f4 = F4
+    c.f5 = F5
+    c.n1 = 1.0
+    c.n2 = 0.0
+    c.n3 = 0.0
+    c.n4 = 0.0
+    c.n5 = 0.0
+
+    println("  1. INTEGRATING THE FIVE `evolves as` LINES")
+    println("")
+    println("      t [y]     total        d ln(total)/dt    stage 1     stage 3     stage 5")
+    println("      ------   -----------   --------------   ---------   ---------   ---------")
+
+    let steps: i32 = (T_END / DT) as i32
+    let report: i32 = steps / 8
+    let mut prev_total: f64 = 1.0
+    let mut r_ode: f64 = 0.0
+    # A window long enough to average out the last of the transient but short
+    # enough that the total has not overflowed.
+    let window: i32 = (20.0 / DT) as i32
+    let mut window_start: f64 = 0.0
+
+    for k in 0 to steps {
+        Cohorts_step(&c, DT)
+        let total: f64 = c.n1 + c.n2 + c.n3 + c.n4 + c.n5
+        if k == steps - window - 1 {
+            window_start = total
+        }
+        if k == steps - 1 {
+            r_ode = log(total / window_start) / ((window as f64) * DT)
+            ode_vec[0] = c.n1 / total
+            ode_vec[1] = c.n2 / total
+            ode_vec[2] = c.n3 / total
+            ode_vec[3] = c.n4 / total
+            ode_vec[4] = c.n5 / total
+        }
+        if k % report == 0 {
+            printf("      %6.1f", (k as f64) * DT)
+            printf("   %11.4e", total)
+            printf("   %14.9f", log(total / prev_total) / ((report as f64) * DT))
+            printf("   %9.6f", c.n1 / total)
+            printf("   %9.6f", c.n3 / total)
+            printf("   %9.6f", c.n5 / total)
+            println("")
+            prev_total = total
+        }
+    }
+    println("")
+    let r_err: f64 = fabs(r_ode - r_power)
+    print("     r from the integrator      : ")
+    printf("%.12f", r_ode)
+    println(" /y")
+    print("     r from the power iteration : ")
+    printf("%.12f", r_power)
+    println(" /y")
+    print("     |difference|               : ")
+    printf("%.3e", r_err)
+    println("     gate 1.0e-9")
+    print("     doubling time ln 2 / r     : ")
+    printf("%.6f", log(2.0) / r_ode)
+    println(" y")
+    println("")
+
+    # -- the stable stage distribution --------------------------------------
+    println("  2. THE STABLE STAGE DISTRIBUTION AND THE REPRODUCTIVE VALUE")
+    println("")
+    println("      stage   from the ODE   right eigvec   error       left eigvec (v)")
+    println("      -----   ------------   ------------   ---------   ---------------")
+    let mut worst_vec: f64 = 0.0
+    for i in 0 to NSTAGE {
+        let e: f64 = fabs(ode_vec[i] - right_vec[i])
+        if e > worst_vec { worst_vec = e }
+        printf("      %5.0f", (i + 1) as f64)
+        printf("   %12.9f", ode_vec[i])
+        printf("   %12.9f", right_vec[i])
+        printf("   %9.2e", e)
+        printf("   %15.9f", left_vec[i])
+        println("")
+    }
+    println("")
+    print("     worst |ODE composition - eigenvector| : ")
+    printf("%.3e", worst_vec)
+    println("   gate 1.0e-8")
+    println("")
+
+    # -- sensitivity ---------------------------------------------------------
+    println("  3. SENSITIVITY OF r TO THE FECUNDITY OF STAGE 3")
+    println("")
+    let mut vw: f64 = 0.0
+    for i in 0 to NSTAGE {
+        vw = vw + left_vec[i] * right_vec[i]
+    }
+    let predicted: f64 = left_vec[0] * right_vec[2] / vw
+
+    let eps: f64 = 1.0e-5
+    build_matrix(F3 + eps)
+    let r_plus: f64 = dominant(vec_a, false)
+    build_matrix(F3 - eps)
+    let r_minus: f64 = dominant(vec_a, false)
+    build_matrix(F3)
+    let measured: f64 = (r_plus - r_minus) / (2.0 * eps)
+    let sens_err: f64 = fabs(measured - predicted)
+
+    print("     v_1 w_3 / (v . w)          : ")
+    printf("%.12f", predicted)
+    println("")
+    print("     central difference in f3   : ")
+    printf("%.12f", measured)
+    println("")
+    print("     |difference|               : ")
+    printf("%.3e", sens_err)
+    println("     gate 1.0e-7")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if r_ode != r_ode or r_power != r_power or sens_err != sens_err {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if lr_err > 1e-11 {
+        println("    FAIL: A and its transpose disagree on the dominant eigenvalue")
+        return 2
+    }
+    if r_err > 1e-9 {
+        println("    FAIL: the integrator and the power iteration disagree on r")
+        return 3
+    }
+    if worst_vec > 1e-8 {
+        println("    FAIL: the asymptotic composition is not the eigenvector")
+        return 4
+    }
+    if sens_err > 1e-7 {
+        println("    FAIL: the sensitivity is not v_i w_j / (v . w)")
+        return 5
+    }
+    println("    PASS: the integrator, the power iteration and its transpose")
+    println("          agree on r to 1e-9, the asymptotic composition is the")
+    println("          dominant eigenvector to 1e-8, and dr/df3 matches")
+    println("          v_1 w_3 / (v . w) to 1e-7")
+    return 0
+}
