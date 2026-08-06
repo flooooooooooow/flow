@@ -145,14 +145,33 @@ elastic collisions with restitution, projectile with drag vs the analytic
 vacuum case, inverted pendulum on a cart (already shipped as the cart-pole
 flagship — extend it).
 
-### 6. Chemistry and biology — 10 planned
+### 6. Chemistry and biology — 15 shipped (evoleco) + planned kinetics
 
-Chemical kinetics with stiff systems (Robertson problem — a real integrator
-stress test), Gillespie stochastic simulation, enzyme kinetics
-(Michaelis-Menten fitted from simulated data), gene regulatory networks
-(repressilator, toggle switch), predator-prey with a limit cycle, epidemic
-models (SIR/SEIR with an R0 sweep), population genetics drift, protein
-folding on a lattice, chemotaxis, ecosystem food webs.
+| # | Example | Evidence it carries |
+|---|---|---|
+| 1 | Wright-Fisher | Heterozygosity decays as (1 - 1/(2N))^t; fixation time scales as 4 Ne |
+| 2 | Hardy-Weinberg | Genotype frequencies recover p^2 : 2pq : q^2 in one generation |
+| 3 | Selection locus | Allele frequency follows the logistic closed form |
+| 4 | Mutation-selection | Equilibrium p* = u/s for a deleterious allele |
+| 5 | Bottleneck | Heterozygosity loss matches the product of (1 - 1/(2Nt)) |
+| 6 | Island migration | Fst settles near 1/(1 + 4 N m) |
+| 7 | Moran process | Neutral fixation probability is exactly 1/N |
+| 8 | Fitness landscape | Adaptive walks are monotone and stop at a local peak |
+| 9 | Quasispecies | Master frequency matches Eigen closed form; collapses past u_c |
+| 10 | Hawk-Dove | Mixed ESS at V/C; invader assay |
+| 11 | Spatial PD | Cooperation persists at b = 1.2 where mean-field dies |
+| 12 | Spatial RPS | All three types coexist; well-mixed fixes one |
+| 13 | Replicator dynamics | Simplex distance to Nash rest point below 1e-4 |
+| 14 | Lotka-Volterra gfx | First integral V drifts below 1e-9 over eight periods |
+| 15 | Spatial SIR | Attack rate matches final-size at growth-estimated R0_eff |
+
+**Status: complete for the evolutionary / ecological atlas.**
+`examples/evoleco/` · [gallery](../demos/evoleco.md)
+
+Still planned under chemistry: stiff kinetics (Robertson), Gillespie SSA,
+enzyme kinetics, gene regulatory networks (repressilator, toggle switch),
+protein folding on a lattice, chemotaxis, ecosystem food webs. Text
+companions for predator-prey and SIR already live in `examples/evolution/`.
 
 ### 7. Control and estimation — 10 planned
 

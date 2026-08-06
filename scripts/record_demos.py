@@ -11,14 +11,16 @@ re-creation of it. No display is required, which means this also works in CI.
   python3 scripts/record_demos.py lorenz     # one demo
   python3 scripts/record_demos.py --group morphogenesis
   python3 scripts/record_demos.py --group neuro
+  python3 scripts/record_demos.py --group evoleco
 
 Naming contract: every game in examples/games/ has a GIF at
 docs/demos/games/<name>.gif, every example in examples/morphogenesis/ has
-one at docs/demos/morphogenesis/<name>.gif, and every example in
-examples/neuro/ has one at docs/demos/neuro/<name>.gif. The three original
-demos (lorenz, tetris, 2048) also keep their GIFs directly in docs/demos/;
-tetris.gif and 2048.gif are copied into docs/demos/games/ so the games
-directory is complete.
+one at docs/demos/morphogenesis/<name>.gif, every example in
+examples/neuro/ has one at docs/demos/neuro/<name>.gif, and every example
+in examples/evoleco/ has one at docs/demos/evoleco/<name>.gif. The three
+original demos (lorenz, tetris, 2048) also keep their GIFs directly in
+docs/demos/; tetris.gif and 2048.gif are copied into docs/demos/games/ so
+the games directory is complete.
 
 Interactive demos are driven by `flow record --keys`, a list of
 `first-last:keycode` windows over frame numbers (see runtime/gfx_record.c).
@@ -45,6 +47,7 @@ OUT_DIR = ROOT / "docs" / "demos"
 GAMES_DIR = OUT_DIR / "games"
 MORPH_DIR = OUT_DIR / "morphogenesis"
 NEURO_DIR = OUT_DIR / "neuro"
+EVOECO_DIR = OUT_DIR / "evoleco"
 
 # macOS virtual keycodes, matching lib/stdlib/gfx.flow.
 KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP = 123, 124, 125, 126
@@ -862,6 +865,90 @@ NEURO_DEMOS: list[Demo] = [
 ]
 
 DEMOS += NEURO_DEMOS
+
+
+def evoeco(name: str, frames: int, skip: int, caption: str,
+           duration_ms: int = 70, colors: int = 32,
+           scale: float = 0.55, keys: str = "") -> Demo:
+    """An evolutionary-biology / ecology clip.
+
+    Same 512x592 window as morphogenesis. Measurements gate before the
+    window opens; FLOW_HOST=python is required for the full language.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/evoleco/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="evoleco",
+        resample=Image.NEAREST,
+        env={"FLOW_HOST": "python"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Evolutionary biology and ecology. Population-genetics programs measure
+# closed forms before the window opens; evolutionary games and ecology
+# companions do the same, then draw the live lattice or phase portrait.
+# ---------------------------------------------------------------------------
+
+EVOECO_DEMOS: list[Demo] = [
+    # ---- population genetics ----
+    evoeco("wright_fisher", 120, 2,
+           "Wright-Fisher — heterozygosity decays as (1 - 1/(2N))^t",
+           duration_ms=70, colors=24),
+    evoeco("hardy_weinberg", 90, 2,
+           "Hardy-Weinberg — genotype frequencies recover p^2 : 2pq : q^2",
+           duration_ms=80, colors=24),
+    evoeco("selection_locus", 120, 2,
+           "Viability selection — allele frequency follows the logistic",
+           duration_ms=70, colors=24),
+    evoeco("mutation_selection", 120, 2,
+           "Mutation-selection balance — equilibrium at p* = u/s",
+           duration_ms=70, colors=24),
+    evoeco("bottleneck", 100, 2,
+           "Bottleneck — heterozygosity loss matches the product over Nt",
+           duration_ms=70, colors=24),
+    evoeco("island_migration", 160, 2,
+           "Island model — Fst settles near 1/(1 + 4 N m K/(K-1))",
+           duration_ms=70, colors=24),
+    evoeco("moran_process", 120, 2,
+           "Moran process — neutral fixation probability is 1/N; selective rho gated",
+           duration_ms=70, colors=24),
+    # ---- evolutionary dynamics and games ----
+    evoeco("fitness_landscape", 120, 2,
+           "NK fitness landscape — adaptive walks climb to a local peak",
+           duration_ms=70, colors=24),
+    evoeco("quasispecies", 120, 2,
+           "Quasispecies — master sequence collapses past the error threshold",
+           duration_ms=70, colors=24),
+    evoeco("hawk_dove", 140, 2,
+           "Hawk-Dove — mixed ESS at V/C with an invader assay",
+           duration_ms=70, colors=24),
+    evoeco("spatial_pd", 160, 2,
+           "Spatial PD — cooperation persists where mean-field dies",
+           duration_ms=60, colors=16),
+    evoeco("rock_paper_scissors", 160, 2,
+           "Spatial RPS — cyclic chasing; coexistence against well-mixed death",
+           duration_ms=60, colors=16),
+    evoeco("replicator_dynamics", 140, 2,
+           "Replicator dynamics — simplex trajectory to the Nash rest point",
+           duration_ms=70, colors=24),
+    # ---- ecology (visual companions) ----
+    evoeco("lotka_volterra_gfx", 160, 2,
+           "Lotka-Volterra — orbits and a conserved first integral",
+           duration_ms=55, colors=16),
+    evoeco("sir_spatial", 160, 2,
+           "Spatial SIR — lattice attack rate vs final-size at R0_eff",
+           duration_ms=60, colors=16),
+]
+
+DEMOS += EVOECO_DEMOS
 
 
 def last_scripted_frame(keys: str) -> int:

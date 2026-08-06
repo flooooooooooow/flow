@@ -1,0 +1,385 @@
+# SPATIAL SIR: lattice epidemic vs the mean-field final-size equation.
+#
+# MODEL
+#   Each site of a periodic lattice is Susceptible, Infectious or Recovered.
+#   Every step an infectious site attempts transmission to each of its four
+#   von Neumann neighbours with probability beta, then recovers with
+#   probability gamma. The basic reproduction number on a well-mixed
+#   contact process of degree k = 4 is R0 = k * beta / gamma, but spatial
+#   correlations lower the effective reproduction number below that
+#   mean-field value. The program reports both, and compares the measured
+#   attack rate 1 - s_inf against the final-size root of the mean-field
+#   equation at the lattice's empirically estimated R0_eff.
+#
+#   Approximation (stated honestly): R0_eff is estimated from the early
+#   exponential growth of I(t) as 1 + r / gamma_eff, where r is fitted over
+#   the takeoff window. The final-size equation then uses that R0_eff. On a
+#   lattice the match is approximate because correlations persist; the gate
+#   allows a generous absolute error.
+#
+# GATES
+#   1. Subcritical (beta small): attack rate < 0.05.
+#   2. Supercritical: attack rate > 0.3 and |attack - final_size(R0_eff)| < 0.15.
+#
+# KEYS
+#   1 SUBCRITICAL   2 CRITICAL BAND   3 SUPERCRITICAL
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/sir_spatial.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+const GRID: i32 = 64
+const CELLS: i32 = 4096
+const CELL_PX: i32 = 8
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const MAX_STEPS: i32 = 2000
+const GAMMA: f64 = 0.25
+const KDEG: f64 = 4.0
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 2718281829
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+# 0 = S, 1 = I, 2 = R
+let mut cell: array<i32, 4096> = [0, 0, 0, 0]
+let mut nextc: array<i32, 4096> = [0, 0, 0, 0]
+let mut fb: array<u8, 786432> = [0, 0, 0, 0]
+
+let mut m_attack: f64 = 0.0
+let mut m_r0eff: f64 = 0.0
+let mut m_r0mf: f64 = 0.0
+let mut m_final_pred: f64 = 0.0
+
+function seed_epidemic(n_seed: i32) -> void {
+    for i in 0 to CELLS {
+        cell[i] = 0
+    }
+    for k in 0 to n_seed {
+        let i: i32 = ((rng_next() % (CELLS as u32)) as i32)
+        cell[i] = 1
+    }
+}
+
+function count_state(s: i32) -> i32 {
+    let mut n: i32 = 0
+    for i in 0 to CELLS {
+        if cell[i] == s { n = n + 1 }
+    }
+    return n
+}
+
+function step_sir(beta: f64, gamma: f64) -> void {
+    for i in 0 to CELLS {
+        nextc[i] = cell[i]
+    }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            if cell[i] == 1 {
+                # Transmit to four neighbours.
+                let nbs: array<i32, 4> = [
+                    y * GRID + (x + 1) % GRID,
+                    y * GRID + (x + GRID - 1) % GRID,
+                    ((y + 1) % GRID) * GRID + x,
+                    ((y + GRID - 1) % GRID) * GRID + x
+                ]
+                for k in 0 to 4 {
+                    let j: i32 = nbs[k]
+                    if cell[j] == 0 and nextc[j] == 0 {
+                        if rng_unit() < beta {
+                            nextc[j] = 1
+                        }
+                    }
+                }
+                if rng_unit() < gamma {
+                    nextc[i] = 2
+                }
+            }
+        }
+    }
+    for i in 0 to CELLS {
+        cell[i] = nextc[i]
+    }
+}
+
+function final_size_residual(s: f64, s0: f64, i0: f64, r0: f64) -> f64 {
+    return log(s0 / s) - r0 * (s0 + i0 - s)
+}
+
+function final_size_root(s0: f64, i0: f64, r0: f64) -> f64 {
+    if r0 <= 1.0 {
+        return s0
+    }
+    let mut lo: f64 = 1.0e-15
+    let mut hi: f64 = s0 - 1.0e-15
+    let f_hi: f64 = final_size_residual(hi, s0, i0, r0)
+    for b in 0 to 80 {
+        let mid: f64 = 0.5 * (lo + hi)
+        let f_mid: f64 = final_size_residual(mid, s0, i0, r0)
+        if (f_mid < 0.0) == (f_hi < 0.0) {
+            hi = mid
+        } else {
+            lo = mid
+        }
+    }
+    return 0.5 * (lo + hi)
+}
+
+function run_outbreak(beta: f64, gamma: f64) -> void {
+    seed_epidemic(8)
+    let s0: f64 = (count_state(0) as f64) / (CELLS as f64)
+    let i0: f64 = (count_state(1) as f64) / (CELLS as f64)
+    m_r0mf = KDEG * beta / gamma
+
+    # Early growth: log I over steps 2..12 while I is growing.
+    let mut i_early: f64 = i0
+    let mut i_late: f64 = i0
+    let mut grew: bool = false
+    for t in 0 to MAX_STEPS {
+        step_sir(beta, gamma)
+        let ii: i32 = count_state(1)
+        if t == 2 { i_early = (ii as f64) / (CELLS as f64) }
+        if t == 12 { i_late = (ii as f64) / (CELLS as f64) }
+        if ii == 0 { break }
+    }
+    let attack: f64 = (count_state(2) as f64) / (CELLS as f64)
+    m_attack = attack
+
+    # r ~ ln(I_late / I_early) / 10; R0_eff ~ 1 + r / gamma for an SIR-like
+    # early phase. Clamp to sensible bounds.
+    let mut r0eff: f64 = 0.5
+    if i_early > 1.0e-6 and i_late > i_early {
+        let r: f64 = log(i_late / i_early) / 10.0
+        r0eff = 1.0 + r / gamma
+        grew = true
+    }
+    if r0eff < 0.1 { r0eff = 0.1 }
+    if r0eff > 8.0 { r0eff = 8.0 }
+    # If nothing grew, treat as subcritical.
+    if !grew and attack < 0.05 {
+        r0eff = 0.8
+    }
+    m_r0eff = r0eff
+    let s_inf: f64 = final_size_root(s0, i0, r0eff)
+    m_final_pred = 1.0 - s_inf
+}
+
+function preset_beta(p: i32) -> f64 {
+    if p == 1 { return 0.12 }
+    if p == 2 { return 0.22 }
+    return 0.06
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "CRITICAL" }
+    if p == 2 { return "SUPER" }
+    return "SUBCRIT"
+}
+
+function paint_cell(x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let s: i32 = cell[y * GRID + x]
+            if s == 0 {
+                paint_cell(x, y, 40, 50, 70)
+            } else {
+                if s == 1 {
+                    paint_cell(x, y, 230, 90, 70)
+                } else {
+                    paint_cell(x, y, 90, 160, 120)
+                }
+            }
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, beta: f64, attack: f64, r0eff: f64,
+                  pred: f64, step: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "SPATIAL SIR  LATTICE VS FINAL SIZE", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_text(g, 40, 28, preset_name(preset), 1, 255, 198, 96)
+    let t4: i32 = gfx_draw_text(g, 130, 28, "beta", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 162, 28, beta, 2, 1, 234, 232, 244)
+    let t6: i32 = gfx_draw_text(g, 210, 28, "ATK", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_fixed(g, 238, 28, attack, 3, 1, 120, 255, 190)
+    let t8: i32 = gfx_draw_text(g, 300, 28, "R0eff", 1, 150, 146, 168)
+    let t9: i32 = gfx_draw_fixed(g, 340, 28, r0eff, 2, 1, 234, 232, 244)
+    let ta: i32 = gfx_draw_text(g, 400, 28, "PRED", 1, 150, 146, 168)
+    let tb: i32 = gfx_draw_fixed(g, 436, 28, pred, 2, 1, 120, 255, 190)
+    let tc: i32 = gfx_draw_text(g, 8, 42,
+        "1 SUB  2 CRITICAL  3 SUPER  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let td: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let te: i32 = gfx_draw_text(g, 8, 572,
+        "dark = S, red = I, green = R; von Neumann transmission", 1, 122, 118, 144)
+    let tf: i32 = gfx_draw_text(g, 8, 582,
+        "R0_eff from early growth; final-size match is approximate on a lattice", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    println("")
+    println("  SPATIAL SIR  --  lattice attack rate vs final-size at R0_eff")
+    println("  ============================================================")
+    println("")
+    println("    Note: lattice correlations make R0_eff < k beta/gamma. The")
+    println("    final-size comparison uses the growth-estimated R0_eff and")
+    println("    allows absolute error 0.15 because the match is approximate.")
+    println("")
+
+    rng_state = 2718281829
+    run_outbreak(0.06, GAMMA)
+    let atk_sub: f64 = m_attack
+    let r0_sub: f64 = m_r0eff
+    print("    subcritical beta=0.06  attack ")
+    printf("%.4f", atk_sub)
+    print("  R0_eff ")
+    printf("%.3f", r0_sub)
+    print("  R0_mf ")
+    printf("%.3f", m_r0mf)
+    println("")
+
+    rng_state = 2718281829
+    run_outbreak(0.22, GAMMA)
+    let atk_sup: f64 = m_attack
+    let r0_sup: f64 = m_r0eff
+    let pred_sup: f64 = m_final_pred
+    print("    supercritical beta=0.22 attack ")
+    printf("%.4f", atk_sup)
+    print("  R0_eff ")
+    printf("%.3f", r0_sup)
+    print("  pred ")
+    printf("%.4f", pred_sup)
+    print("  |err| ")
+    printf("%.4f", fabs(atk_sup - pred_sup))
+    println("")
+    println("")
+
+    if atk_sub > 0.05 {
+        println("    FAIL: subcritical parameters produced a large outbreak")
+        return 1
+    }
+    if atk_sup < 0.30 {
+        println("    FAIL: supercritical parameters did not produce an outbreak")
+        return 2
+    }
+    if fabs(atk_sup - pred_sup) > 0.15 {
+        println("    FAIL: attack rate disagrees with final-size(R0_eff) by more than 0.15")
+        return 3
+    }
+    println("    PASS: subcritical stays small; supercritical attack rate matches")
+    println("          the final-size equation at the growth-estimated R0_eff")
+    println("          within the stated lattice approximation")
+    println("")
+
+    let mut preset: i32 = 2
+    let mut beta: f64 = preset_beta(preset)
+    rng_state = 2718281829
+    seed_epidemic(8)
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Spatial SIR - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut step: i32 = 0
+    let mut attack: f64 = 0.0
+    let mut r0eff: f64 = KDEG * beta / GAMMA
+    let mut pred: f64 = 0.0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            beta = preset_beta(preset)
+            seed_epidemic(8)
+            step = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                seed_epidemic(8)
+                step = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            if count_state(1) > 0 {
+                step_sir(beta, GAMMA)
+                step = step + 1
+            }
+        }
+
+        attack = (count_state(2) as f64) / (CELLS as f64)
+        r0eff = KDEG * beta / GAMMA
+        let s0: f64 = 1.0 - 8.0 / (CELLS as f64)
+        let i0: f64 = 8.0 / (CELLS as f64)
+        pred = 1.0 - final_size_root(s0, i0, r0eff)
+
+        gfx_clear(gfx, 12, 10, 18)
+        draw_field(gfx)
+        draw_hud(gfx, preset, beta, attack, r0eff, pred, step, paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}

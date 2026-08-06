@@ -1,0 +1,391 @@
+# BOTTLENECK: a census crash, then recovery, and the heterozygosity product.
+#
+# MODEL
+#   A diploid population of size N_t changes through time. Under Wright-Fisher
+#   sampling with no mutation, expected heterozygosity obeys
+#
+#        E[H_{t+1} | H_t] = H_t (1 - 1/(2 N_t))
+#
+#   so after a sequence of sizes,
+#
+#        E[H_T] = H_0 * product_{t=0}^{T-1} (1 - 1/(2 N_t))
+#
+#   A bottleneck (few generations at small N) multiplies that product by a
+#   factor much less than one, and diversity does not recover when the census
+#   does: only new mutation (absent here) can rebuild H.
+#
+# THE MEASUREMENT
+#   Deterministic census schedule: N = N_big for a burn-in, then N_bot for
+#   B generations, then N_big again. Average H over many replicate WF
+#   trajectories and gate against the product formula.
+#
+# KEYS
+#   1 mild   2 severe   3 brief   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/evoleco/bottleneck.flow \
+#       --frames 4 --out /tmp/eco_bottleneck
+# Run (windowed):
+#   ./flow gfx examples/evoleco/bottleneck.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const TRACE_LEN: i32 = 240
+const MAX_N: i32 = 200
+const VERIFY_REPS: i32 = 800
+const ERR_GATE: f64 = 0.10
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 141421356
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "SEVERE" }
+    if p == 2 { return "BRIEF" }
+    return "MILD"
+}
+
+function preset_n_big(p: i32) -> i32 { return 100 }
+function preset_n_bot(p: i32) -> i32 {
+    if p == 1 { return 5 }
+    if p == 2 { return 10 }
+    return 20
+}
+function preset_bot_len(p: i32) -> i32 {
+    if p == 1 { return 20 }
+    if p == 2 { return 5 }
+    return 15
+}
+function preset_pre(p: i32) -> i32 { return 30 }
+function preset_post(p: i32) -> i32 { return 60 }
+
+function hetero(p: f64) -> f64 {
+    return 2.0 * p * (1.0 - p)
+}
+
+function wf_step(p: f64, two_n: i32) -> f64 {
+    let mut k: i32 = 0
+    for i in 0 to two_n {
+        if rng_unit() < p {
+            k = k + 1
+        }
+    }
+    return (k as f64) / (two_n as f64)
+}
+
+function n_at(t: i32, pre: i32, bot_len: i32, n_big: i32, n_bot: i32) -> i32 {
+    if t < pre { return n_big }
+    if t < pre + bot_len { return n_bot }
+    return n_big
+}
+
+function product_factor(pre: i32, bot_len: i32, post: i32,
+                       n_big: i32, n_bot: i32) -> f64 {
+    let total: i32 = pre + bot_len + post
+    let mut f: f64 = 1.0
+    for t in 0 to total {
+        let n: i32 = n_at(t, pre, bot_len, n_big, n_bot)
+        f = f * (1.0 - 1.0 / ((2 * n) as f64))
+    }
+    return f
+}
+
+function mean_h_end(pre: i32, bot_len: i32, post: i32,
+                    n_big: i32, n_bot: i32, reps: i32) -> f64 {
+    let total: i32 = pre + bot_len + post
+    let mut sum: f64 = 0.0
+    for r in 0 to reps {
+        let mut p: f64 = 0.5
+        for t in 0 to total {
+            let n: i32 = n_at(t, pre, bot_len, n_big, n_bot)
+            p = wf_step(p, 2 * n)
+        }
+        sum = sum + hetero(p)
+    }
+    return sum / (reps as f64)
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, h_trace: ptr<f64>, n_trace: ptr<f64>,
+                    nlen: i32, head: i32, n_big: i32) -> void {
+    clear_fb(fb)
+
+    # Census strip (top)
+    let cx0: i32 = 40
+    let cy0: i32 = 30
+    let cw: i32 = 432
+    let ch: i32 = 100
+    fill_rect_fb(fb, cx0, cy0, cw, ch, 18, 16, 28)
+    let mut i: i32 = 0
+    while i < head and i < nlen {
+        let x: i32 = cx0 + (i * (cw - 1)) / (nlen - 1)
+        let frac: f64 = n_trace[i] / (n_big as f64)
+        let h: i32 = ((frac * ((ch - 4) as f64)) as i32)
+        fill_rect_fb(fb, x, cy0 + ch - 2 - h, 2, h, 255, 180, 80)
+        i = i + 1
+    }
+
+    # Heterozygosity strip (bottom)
+    let hx0: i32 = 40
+    let hy0: i32 = 180
+    let hw: i32 = 432
+    let hh: i32 = 240
+    fill_rect_fb(fb, hx0, hy0, hw, hh, 18, 16, 28)
+    fill_rect_fb(fb, hx0, hy0 + hh / 2, hw, 1, 50, 48, 70)
+    i = 0
+    while i < head and i < nlen {
+        let x: i32 = hx0 + (i * (hw - 1)) / (nlen - 1)
+        let y: i32 = hy0 + hh - 1 - ((h_trace[i] * ((hh - 1) as f64)) as i32)
+        put_rgb(fb, x, y, 120, 255, 190)
+        put_rgb(fb, x, y - 1, 120, 255, 190)
+        i = i + 1
+    }
+
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, n_now: i32, h: f64, h_pred: f64,
+                  err: f64, gen: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "BOTTLENECK", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 180, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 260, 12, "N", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 274, 12, n_now, 1, 255, 198, 96)
+    let t5: i32 = gfx_draw_text(g, 330, 12, "GEN", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_int(g, 356, 12, gen, 1, 234, 232, 244)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "H MEASURED", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 84, 28, h, 4, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 150, 28, "H PRODUCT", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 220, 28, h_pred, 4, 1, 234, 232, 244)
+    let tb: i32 = gfx_draw_text(g, 300, 28, "REL ERR", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 354, 28, err, 4, 1, 255, 198, 96)
+
+    let td: i32 = gfx_draw_text(g, 8, 42,
+        "1 MILD  2 SEVERE  3 BRIEF  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let te: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tf: i32 = gfx_draw_text(g, 8, 572,
+        "E[H_T] = H_0 * product (1 - 1/(2 N_t)); census recovery does not restore H",
+        1, 122, 118, 144)
+    let tg: i32 = gfx_draw_text(g, 8, 582,
+        "top: census N(t); bottom: heterozygosity trajectory",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let h_trace: array<f64, 240> = [0.0, 0.0, 0.0, 0.0]
+    let n_trace: array<f64, 240> = [0.0, 0.0, 0.0, 0.0]
+
+    let preset0: i32 = 0
+    let n_big: i32 = preset_n_big(preset0)
+    let n_bot: i32 = preset_n_bot(preset0)
+    let bot_len: i32 = preset_bot_len(preset0)
+    let pre: i32 = preset_pre(preset0)
+    let post: i32 = preset_post(preset0)
+    let h0: f64 = 0.5
+    let factor: f64 = product_factor(pre, bot_len, post, n_big, n_bot)
+    let h_pred: f64 = h0 * factor
+
+    println("")
+    println("  BOTTLENECK  --  census crash and heterozygosity product formula")
+    println("  ==============================================================")
+    println("")
+    print("    N_big = ")
+    printf("%.0f", n_big as f64)
+    print("   N_bot = ")
+    printf("%.0f", n_bot as f64)
+    print("   bot gens = ")
+    printf("%.0f", bot_len as f64)
+    println("")
+    print("    schedule length                 : ")
+    printf("%.0f", (pre + bot_len + post) as f64)
+    println(" gens")
+    print("    product factor                  : ")
+    printf("%.6f", factor)
+    println("")
+    print("    predicted E[H]                  : ")
+    printf("%.6f", h_pred)
+    println("")
+
+    rng_state = 1901194261
+    let h_meas: f64 = mean_h_end(pre, bot_len, post, n_big, n_bot, VERIFY_REPS)
+    let err: f64 = fabs(h_meas - h_pred) / h_pred
+    print("    measured mean H                 : ")
+    printf("%.6f", h_meas)
+    println("")
+    print("    relative error                  : ")
+    printf("%.6f", err)
+    print("   (gate < ")
+    printf("%.2f", ERR_GATE)
+    println(")")
+    println("")
+
+    if err > ERR_GATE {
+        println("    FAIL: mean heterozygosity left the product formula")
+        return 1
+    }
+    println("    PASS: heterozygosity loss matches product_t (1 - 1/(2 N_t))")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut n_big_l: i32 = preset_n_big(preset)
+    let mut n_bot_l: i32 = preset_n_bot(preset)
+    let mut bot_len_l: i32 = preset_bot_len(preset)
+    let mut pre_l: i32 = preset_pre(preset)
+    let mut post_l: i32 = preset_post(preset)
+    let mut total_l: i32 = pre_l + bot_len_l + post_l
+    let mut p: f64 = 0.5
+    let mut gen: i32 = 0
+    let mut head: i32 = 0
+    let mut h_now: f64 = h0
+    let mut n_now: i32 = n_big_l
+    h_trace[0] = h0
+    n_trace[0] = n_big_l as f64
+    head = 1
+    let mut h_pred_live: f64 = h0
+    let mut factor_live: f64 = 1.0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Bottleneck - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            n_big_l = preset_n_big(preset)
+            n_bot_l = preset_n_bot(preset)
+            bot_len_l = preset_bot_len(preset)
+            pre_l = preset_pre(preset)
+            post_l = preset_post(preset)
+            total_l = pre_l + bot_len_l + post_l
+            p = 0.5
+            gen = 0
+            head = 1
+            factor_live = 1.0
+            h_trace[0] = h0
+            n_trace[0] = n_big_l as f64
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                p = 0.5
+                gen = 0
+                head = 1
+                factor_live = 1.0
+                h_trace[0] = h0
+                n_trace[0] = n_big_l as f64
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            n_now = n_at(gen, pre_l, bot_len_l, n_big_l, n_bot_l)
+            p = wf_step(p, 2 * n_now)
+            factor_live = factor_live * (1.0 - 1.0 / ((2 * n_now) as f64))
+            gen = gen + 1
+            h_now = hetero(p)
+            h_pred_live = h0 * factor_live
+            if head < TRACE_LEN {
+                h_trace[head] = h_now
+                n_trace[head] = n_now as f64
+                head = head + 1
+            } else {
+                for i in 0 to TRACE_LEN - 1 {
+                    h_trace[i] = h_trace[i + 1]
+                    n_trace[i] = n_trace[i + 1]
+                }
+                h_trace[TRACE_LEN - 1] = h_now
+                n_trace[TRACE_LEN - 1] = n_now as f64
+            }
+            if gen >= total_l {
+                p = 0.5
+                gen = 0
+                head = 1
+                factor_live = 1.0
+                h_trace[0] = h0
+                n_trace[0] = n_big_l as f64
+            }
+        }
+
+        let live_err: f64 = 0.0
+        if h_pred_live > 1.0e-12 {
+            live_err = fabs(h_now - h_pred_live) / h_pred_live
+        }
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, h_trace, n_trace, TRACE_LEN, head, n_big_l)
+        draw_hud(g, preset, n_now, h_now, h_pred_live, live_err, gen, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

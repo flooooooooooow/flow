@@ -1,0 +1,298 @@
+# MUTATION-SELECTION BALANCE: a deleterious allele equilibrates near u/s.
+#
+# MODEL
+#   Allele a is deleterious with selection coefficient s against it (fitness
+#   1 - s in the haploid/genic model). Wild-type A mutates to a at rate u per
+#   generation; back-mutation is neglected. The deterministic recurrence is
+#
+#        p' = (1 - s) (p (1 - u) + (1 - p) u) / W_bar
+#
+#   with mean fitness W_bar = 1 - s q' before normalisation, or equivalently
+#   selection then mutation. At equilibrium for u << s,
+#
+#        p* ≈ u / s
+#
+# THE MEASUREMENT
+#   Iterate the recurrence to stationarity from two starts (near 0 and near
+#   1), take the mean of the two endpoints, and gate |p* - u/s|.
+#
+# KEYS
+#   1 u/s=0.01   2 u/s=0.02   3 u/s=0.05   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/evoleco/mutation_selection.flow \
+#       --frames 4 --out /tmp/eco_mutation_selection
+# Run (windowed):
+#   ./flow gfx examples/evoleco/mutation_selection.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const TRACE_LEN: i32 = 220
+const VERIFY_STEPS: i32 = 8000
+const ERR_GATE: f64 = 0.05
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+function preset_u(p: i32) -> f64 {
+    if p == 1 { return 0.002 }
+    if p == 2 { return 0.005 }
+    return 0.001
+}
+
+function preset_s(p: i32) -> f64 {
+    return 0.10
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "u/s=0.02" }
+    if p == 2 { return "u/s=0.05" }
+    return "u/s=0.01"
+}
+
+# Selection against the deleterious allele (frequency p), then mutation
+# from wild-type at rate u.
+function ms_step(p: f64, s: f64, u: f64) -> f64 {
+    let w_bar: f64 = 1.0 - s * p
+    let p_sel: f64 = p * (1.0 - s) / w_bar
+    return p_sel * (1.0 - u) + (1.0 - p_sel) * u
+}
+
+function equilibrate(p0: f64, s: f64, u: f64, steps: i32) -> f64 {
+    let mut p: f64 = p0
+    for i in 0 to steps {
+        p = ms_step(p, s, u)
+    }
+    return p
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, trace: ptr<f64>, n: i32, head: i32,
+                    pstar: f64, ymax: f64) -> void {
+    clear_fb(fb)
+    let px0: i32 = 40
+    let py0: i32 = 40
+    let pw: i32 = 432
+    let ph: i32 = 360
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+
+    # Equilibrium line
+    let yeq: i32 = py0 + ph - 1 - (((pstar / ymax) * ((ph - 1) as f64)) as i32)
+    fill_rect_fb(fb, px0, yeq, pw, 1, 255, 180, 80)
+
+    let mut i: i32 = 0
+    while i < head and i < n {
+        let x: i32 = px0 + (i * (pw - 1)) / (n - 1)
+        let mut t: f64 = trace[i] / ymax
+        if t < 0.0 { t = 0.0 }
+        if t > 1.0 { t = 1.0 }
+        let y: i32 = py0 + ph - 1 - ((t * ((ph - 1) as f64)) as i32)
+        put_rgb(fb, x, y, 120, 255, 190)
+        put_rgb(fb, x, y - 1, 120, 255, 190)
+        i = i + 1
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, u: f64, s: f64, p: f64, pstar: f64,
+                  err: f64, gen: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "MUTATION-SELECTION", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 248, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 340, 12, "GEN", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 366, 12, gen, 1, 234, 232, 244)
+
+    let t5: i32 = gfx_draw_text(g, 8, 28, "p", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 20, 28, p, 4, 1, 120, 255, 190)
+    let t7: i32 = gfx_draw_text(g, 90, 28, "u/s", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 114, 28, pstar, 4, 1, 255, 198, 96)
+    let t9: i32 = gfx_draw_text(g, 190, 28, "|p*-u/s|/ (u/s)", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 310, 28, err, 4, 1, 234, 232, 244)
+    let tb: i32 = gfx_draw_text(g, 380, 28, "u", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 394, 28, u, 4, 1, 234, 232, 244)
+
+    let td: i32 = gfx_draw_text(g, 8, 42,
+        "1 u/s=0.01  2 u/s=0.02  3 u/s=0.05  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let te: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tf: i32 = gfx_draw_text(g, 8, 572,
+        "deleterious allele: selection then mutation; p* = u/s when u << s",
+        1, 122, 118, 144)
+    let tg: i32 = gfx_draw_text(g, 8, 582,
+        "orange line is u/s; green is the live frequency trajectory",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let trace: array<f64, 220> = [0.0, 0.0, 0.0, 0.0]
+
+    let s: f64 = 0.10
+    let u: f64 = 0.001
+    let target: f64 = u / s
+    let p_lo: f64 = equilibrate(0.0, s, u, VERIFY_STEPS)
+    let p_hi: f64 = equilibrate(1.0, s, u, VERIFY_STEPS)
+    let pstar: f64 = 0.5 * (p_lo + p_hi)
+    let err: f64 = fabs(pstar - target) / target
+
+    println("")
+    println("  MUTATION-SELECTION  --  deleterious allele equilibrium near u/s")
+    println("  ===============================================================")
+    println("")
+    print("    u = ")
+    printf("%.6f", u)
+    print("   s = ")
+    printf("%.3f", s)
+    print("   u/s = ")
+    printf("%.6f", target)
+    println("")
+    print("    equilibrium from p0 = 0         : ")
+    printf("%.6f", p_lo)
+    println("")
+    print("    equilibrium from p0 = 1         : ")
+    printf("%.6f", p_hi)
+    println("")
+    print("    mean p*                         : ")
+    printf("%.6f", pstar)
+    println("")
+    print("    |p* - u/s| / (u/s)              : ")
+    printf("%.6f", err)
+    print("   (gate < ")
+    printf("%.3f", ERR_GATE)
+    println(")")
+    println("")
+
+    if err > ERR_GATE {
+        println("    FAIL: equilibrium departed from u/s")
+        return 1
+    }
+    if fabs(p_lo - p_hi) > 1.0e-6 {
+        println("    FAIL: the two starts did not meet at one equilibrium")
+        return 2
+    }
+    println("    PASS: deleterious allele equilibrates at p* = u/s")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut u_live: f64 = preset_u(preset)
+    let mut s_live: f64 = preset_s(preset)
+    let mut target_live: f64 = u_live / s_live
+    let mut p: f64 = 0.0
+    let mut gen: i32 = 0
+    let mut head: i32 = 0
+    trace[0] = 0.0
+    head = 1
+    let mut ymax: f64 = target_live * 3.0
+    if ymax < 0.05 { ymax = 0.05 }
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Mutation-selection - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            u_live = preset_u(preset)
+            s_live = preset_s(preset)
+            target_live = u_live / s_live
+            ymax = target_live * 3.0
+            if ymax < 0.05 { ymax = 0.05 }
+            p = 0.0
+            gen = 0
+            head = 1
+            trace[0] = 0.0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                p = 0.0
+                gen = 0
+                head = 1
+                trace[0] = 0.0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            # Several generations per frame so the rise to u/s is visible.
+            for k in 0 to 8 {
+                p = ms_step(p, s_live, u_live)
+                gen = gen + 1
+            }
+            if head < TRACE_LEN {
+                trace[head] = p
+                head = head + 1
+            } else {
+                for i in 0 to TRACE_LEN - 1 {
+                    trace[i] = trace[i + 1]
+                }
+                trace[TRACE_LEN - 1] = p
+            }
+        }
+
+        let live_err: f64 = fabs(p - target_live) / target_live
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, trace, TRACE_LEN, head, target_live, ymax)
+        draw_hud(g, preset, u_live, s_live, p, target_live, live_err, gen, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

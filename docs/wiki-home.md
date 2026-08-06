@@ -121,6 +121,12 @@ each gated on a published measurement and recorded as a GIF: Hodgkin-Huxley,
 Izhikevich zoo, balanced E/I, Hopfield, CPG gaits. Sources:
 [examples/neuro](../examples/neuro/README.md).
 
+**[Evolutionary biology gallery →](demos/evoleco.md)** — population-genetics,
+evolutionary-game, and ecology simulations for biologists: Wright-Fisher,
+Hardy-Weinberg, selection, mutation-selection, bottlenecks, island migration,
+Moran, plus games and ecology companions. Sources:
+[examples/evoleco](../examples/evoleco/README.md).
+
 **[Training AI in Flow →](tutorials/game-ai.md)** — Q-learning, neuroevolution,
 and policy gradients against the games above, plus
 [ML on a MacBook](tutorials/ml-on-macbook.md) and the
@@ -139,6 +145,7 @@ and policy gradients against the games above, plus
 | [Game gallery](demos/games.md) | 24 complete games, each with a recorded GIF |
 | [Morphogenesis gallery](demos/morphogenesis.md) | 40 pattern-formation simulations, each with a recorded GIF |
 | [Neuron gallery](demos/neuro.md) | 15 spiking-dynamics simulations, each gated and recorded |
+| [Evolutionary biology gallery](demos/evoleco.md) | 15 pop-gen / evo-game / ecology sims, each gated and recorded |
 | [Evolution suite](demos/evolution.md) | 34 systems evolving through time, each gated on a measurement |
 | [Training game AIs](tutorials/game-ai.md) | Q-learning, GA, and policy gradients that measurably learn |
 | [ML on a MacBook](tutorials/ml-on-macbook.md) | Digit classifier, parallel training, the Metal path |
