@@ -71,6 +71,7 @@ nav:
     - Grammar: language/grammar.md
     - Syntax: language/syntax.md
     - Types: language/types.md
+    - Spans: language/spans.md
     - Variables: language/variables.md
     - Functions: language/functions.md
     - Dynamics DSL: language/dynamics-dsl.md
