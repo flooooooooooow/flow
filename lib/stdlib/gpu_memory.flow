@@ -20,6 +20,9 @@ extern {
     function flow_gpu_copy_d2h(dst: ptr<void>, src: ptr<void>, nbytes: i64) -> i32
     function flow_gpu_copy_d2d(dst: ptr<void>, src: ptr<void>, nbytes: i64) -> i32
     function flow_gpu_sync() -> void
+    function flow_gpu_mul_f32(out: ptr<void>, a: ptr<void>, b: ptr<void>, n: i64) -> i32
+    function flow_gpu_mul_backward_a_f32(grad_a: ptr<void>, grad_out: ptr<void>, b: ptr<void>, n: i64) -> i32
+    function flow_gpu_mul_backward_b_f32(grad_b: ptr<void>, grad_out: ptr<void>, a: ptr<void>, n: i64) -> i32
 }
 
 # Allocation flags (match runtime/gpu_memory.h)
@@ -158,6 +161,30 @@ export function gpu_copy_d2d(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32
 
 export function gpu_sync() -> void {
     flow_gpu_sync()
+}
+
+# Elementwise multiply kernels (Metal on macOS, -1 from the stub elsewhere).
+# The backward pair is the same kernel with different operands:
+# grad_a = grad_out * b, grad_b = grad_out * a.
+export function gpu_mul_f32(out: GpuBuffer, a: GpuBuffer, b: GpuBuffer, n: i64) -> i32 {
+    if out.device == null or a.device == null or b.device == null or n <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_mul_f32(out.device, a.device, b.device, n)
+}
+
+export function gpu_mul_backward_a_f32(grad_a: GpuBuffer, grad_out: GpuBuffer, b: GpuBuffer, n: i64) -> i32 {
+    if grad_a.device == null or grad_out.device == null or b.device == null or n <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_mul_backward_a_f32(grad_a.device, grad_out.device, b.device, n)
+}
+
+export function gpu_mul_backward_b_f32(grad_b: GpuBuffer, grad_out: GpuBuffer, a: GpuBuffer, n: i64) -> i32 {
+    if grad_b.device == null or grad_out.device == null or a.device == null or n <= 0 {
+        return 0 - 1
+    }
+    return flow_gpu_mul_backward_b_f32(grad_b.device, grad_out.device, a.device, n)
 }
 
 # Aliases matching docs/library/core.md naming

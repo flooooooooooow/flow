@@ -215,20 +215,25 @@ class CGenerator:
             return "%d"
         return "%g"
     
+    def _print_type_name(self, expr: Expression) -> str | None:
+        """Type name to pick a printf conversion for, or None if unknown.
+
+        Every expression form other than a literal or a variable goes
+        through `_infer_expr_type`, so `print(a + b)` and `print(xs[i])`
+        get the same conversion as `print(a)`.
+        """
+        if isinstance(expr, Literal):
+            return expr.type.name
+        if isinstance(expr, Variable):
+            if expr.name in self._var_types:
+                return self._var_types[expr.name].name
+            return None
+        inferred = self._infer_expr_type(expr)
+        return inferred.name if inferred else None
+
     def _printf_for_expr(self, expr: Expression, *, newline: bool) -> str:
         expr_str = self._gen_expr(expr)
-        type_name = None
-        if isinstance(expr, Literal):
-            type_name = expr.type.name
-        elif isinstance(expr, Variable):
-            if expr.name in self._var_types:
-                type_name = self._var_types[expr.name].name
-        elif isinstance(expr, FieldAccess):
-            field_type = self._infer_expr_type(expr)
-            type_name = field_type.name if field_type else None
-        elif isinstance(expr, FunctionCall):
-            ret_type = self._infer_expr_type(expr)
-            type_name = ret_type.name if ret_type else None
+        type_name = self._print_type_name(expr)
         fmt = self._printf_format_for_type_name(type_name)
         if newline:
             fmt = f"{fmt}\\n"
@@ -254,21 +259,15 @@ class CGenerator:
         if len(arguments) == 0:
             return 'printf("\\n")' if newline else ''
         if len(arguments) == 1:
-            arg = arguments[0]
-            if not newline and isinstance(arg, BinaryOperation) and arg.operator == '+':
-                return self._gen_expr(arg)
-            return self._printf_for_expr(arg, newline=newline)
+            # Note: `print(a + b)` used to emit the bare expression, which C
+            # evaluates and discards, so the call printed nothing at all.
+            return self._printf_for_expr(arguments[0], newline=newline)
         # Multiple arguments - print all with spaces
         parts = []
         for i, arg in enumerate(arguments):
             prefix = ' ' if i > 0 else ''
             expr_str = self._gen_expr(arg)
-            type_name = None
-            if isinstance(arg, Literal):
-                type_name = arg.type.name
-            elif isinstance(arg, Variable) and arg.name in self._var_types:
-                type_name = self._var_types[arg.name].name
-            fmt = self._printf_format_for_type_name(type_name)
+            fmt = self._printf_format_for_type_name(self._print_type_name(arg))
             parts.append(f'printf("{prefix}{fmt}", {expr_str})')
         if newline:
             parts.append('printf("\\n")')
