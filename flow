@@ -2766,6 +2766,19 @@ for f in sys.argv[1:]:
         ;;
     "wasm")
         shift
+        # Homebrew's emscripten ships a config pointing LLVM_ROOT at /usr/bin
+        # (Xcode clang, no wasm backend) and a launcher that picks the system
+        # python3, which is too old to parse its own sources. Point both at
+        # emscripten's own copies unless the caller already has.
+        if [ -z "${EMSDK_PYTHON:-}" ] && [ -x /opt/homebrew/bin/python3.14 ]; then
+            export EMSDK_PYTHON=/opt/homebrew/bin/python3.14
+        fi
+        if [ -z "${EM_LLVM_ROOT:-}" ] && [ -d /opt/homebrew/opt/emscripten/libexec/llvm/bin ]; then
+            export EM_LLVM_ROOT=/opt/homebrew/opt/emscripten/libexec/llvm/bin
+        fi
+        if [ -z "${EM_BINARYEN_ROOT:-}" ] && [ -d /opt/homebrew/opt/emscripten/libexec/binaryen ]; then
+            export EM_BINARYEN_ROOT=/opt/homebrew/opt/emscripten/libexec/binaryen
+        fi
         if [ -z "${1:-}" ]; then
             print_error "Usage: flow wasm <program.flow>"
             print_info "Requires emcc (Emscripten). See docs/language/wasm.md"
