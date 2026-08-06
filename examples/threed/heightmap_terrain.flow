@@ -1,0 +1,338 @@
+# HEIGHTMAP TERRAIN: procedural ground you can walk on, with distance fog.
+#
+# TECHNIQUE
+#   Height comes from four octaves of value noise. Value noise hashes the
+#   integer lattice, then interpolates the four corner values of a cell with a
+#   smoothstep weight t*t*(3-2t), which is what keeps the surface C1 continuous
+#   and free of the diamond creases you get from linear interpolation. The
+#   hash is an integer mix of the cell coordinates and a fixed seed
+#   (20260806), so the same landscape appears on every run and on every
+#   machine, with no table and no allocation.
+#
+#     height(x, z) = AMP * sum over k of 0.5^k * noise(x * f * 2^k, z * f * 2^k)
+#
+#   The mesh is built once: 64 x 64 cells over 128 world units, two triangles
+#   per cell, 4225 vertices. Normals are exact central differences of the
+#   height field rather than face normals, so Gouraud shading across a cell
+#   boundary is continuous and the terrain reads as a surface instead of as a
+#   grid of facets. Colour is a function of altitude and of slope: water,
+#   shore, grass, rock where the gradient is steep, snow at the top.
+#
+#   The camera follows the ground by sampling the same continuous height
+#   function the mesh was built from, so it never floats or sinks even between
+#   vertices. The eye is low-pass filtered towards ground + 1.7 so a sharp
+#   ridge does not snap the view.
+#
+#   Distance fog is linear in view depth and evaluated per vertex, then
+#   interpolated across the triangle. It matches the sky gradient at the far
+#   plane, which is what hides the edge of the world.
+#
+# CONTROLS
+#   W / A / S / D    walk
+#   Arrow keys       look
+#   M                cycle shading: GOURAUD, FLAT, WIRE
+#   F                toggle fog
+#   1 / 2 / 3        fog distance: near, medium, far
+#   R                return to the start
+#   Esc              quit
+#
+# HUD
+#   Position, ground height under the camera, shading mode, fog range,
+#   triangles submitted and drawn, and the measured frame cost.
+#
+# Run: ./flow gfx examples/threed/heightmap_terrain.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/render3d.flow"
+
+const WIN_W: i32 = 480
+const WIN_H: i32 = 360
+const MAX_FRAMES: i32 = 100000
+
+const KEY_M: i32 = 46
+const KEY_F: i32 = 3
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+const SEED: u32 = 20260806
+const GRID: i32 = 64
+const WIRE_GRID: i32 = 16
+const WORLD: f32 = 128.0
+const AMP: f32 = 13.0
+const BASE_FREQ: f32 = 0.021
+const OCTAVES: i32 = 4
+const WATER: f32 = -1.2
+
+const DT: f32 = 0.0166667
+const WALK: f32 = 9.0
+const LOOK_SPEED: f32 = 0.032
+const EYE_H: f32 = 1.7
+const EYE_SMOOTH: f32 = 0.25
+
+function hash_lattice(ix: i32, iz: i32) -> f32 {
+    let mut h: u32 = (ix as u32) * 374761393 + (iz as u32) * 668265263 + SEED
+    h = (h ^ (h >> 13)) * 1274126177
+    h = h ^ (h >> 16)
+    return ((h % 65536) as f32) / 65536.0
+}
+
+function smoothstep01(t: f32) -> f32 {
+    return t * t * (3.0 - 2.0 * t)
+}
+
+function value_noise(x: f32, z: f32) -> f32 {
+    let fx: f32 = floorf(x)
+    let fz: f32 = floorf(z)
+    let ix: i32 = fx as i32
+    let iz: i32 = fz as i32
+    let tx: f32 = smoothstep01(x - fx)
+    let tz: f32 = smoothstep01(z - fz)
+    let a: f32 = hash_lattice(ix, iz)
+    let b: f32 = hash_lattice(ix + 1, iz)
+    let c: f32 = hash_lattice(ix, iz + 1)
+    let d: f32 = hash_lattice(ix + 1, iz + 1)
+    let top: f32 = a + (b - a) * tx
+    let bot: f32 = c + (d - c) * tx
+    return top + (bot - top) * tz
+}
+
+# Four octaves, each half the amplitude and twice the frequency of the last.
+function terrain_height(x: f32, z: f32) -> f32 {
+    let mut sum: f32 = 0.0
+    let mut norm: f32 = 0.0
+    let mut amp: f32 = 1.0
+    let mut freq: f32 = BASE_FREQ
+    let mut k: i32 = 0
+    while k < OCTAVES {
+        sum = sum + amp * value_noise(x * freq, z * freq)
+        norm = norm + amp
+        amp = amp * 0.5
+        freq = freq * 2.0
+        k = k + 1
+    }
+    return AMP * (sum / norm - 0.42)
+}
+
+# Exact central differences of the height field give a continuous normal.
+function terrain_normal(x: f32, z: f32) -> V3 {
+    let e: f32 = 0.35
+    let hx: f32 = terrain_height(x + e, z) - terrain_height(x - e, z)
+    let hz: f32 = terrain_height(x, z + e) - terrain_height(x, z - e)
+    return v3_norm(v3(0.0 - hx, 2.0 * e, 0.0 - hz))
+}
+
+function terrain_colour(h: f32, slope: f32) -> V3 {
+    if h < WATER { return v3(0.16, 0.30, 0.52) }
+    if h < WATER + 0.9 { return v3(0.76, 0.70, 0.48) }
+    if slope > 0.62 { return v3(0.42, 0.40, 0.38) }
+    if h > AMP * 0.36 { return v3(0.92, 0.93, 0.96) }
+    if h > AMP * 0.20 { return v3(0.46, 0.44, 0.40) }
+    return v3(0.26, 0.48, 0.24)
+}
+
+# `cells` is the resolution of this build. The shaded modes use the full 64,
+# the wireframe uses 16: 8192 depth-tested spans a frame is fill the line
+# rasterizer cannot deliver at interactive rates, and a coarse grid is the
+# honest way to keep the mode usable rather than pretending it is free.
+function build_terrain(cells: i32) -> void {
+    r3d_mesh_reset()
+    let step: f32 = WORLD / (cells as f32)
+    let half: f32 = WORLD * 0.5
+    let mut j: i32 = 0
+    while j <= cells {
+        let z: f32 = 0.0 - half + (j as f32) * step
+        let mut i: i32 = 0
+        while i <= cells {
+            let x: f32 = 0.0 - half + (i as f32) * step
+            let mut h: f32 = terrain_height(x, z)
+            let n: V3 = terrain_normal(x, z)
+            let slope: f32 = 1.0 - n.y
+            let c: V3 = terrain_colour(h, slope)
+            if h < WATER { h = WATER }
+            r3d_mesh_vertex(v3(x, h, z), n, c)
+            i = i + 1
+        }
+        j = j + 1
+    }
+    let stride: i32 = cells + 1
+    let mut jj: i32 = 0
+    while jj < cells {
+        let mut ii: i32 = 0
+        while ii < cells {
+            let a: i32 = jj * stride + ii
+            let b: i32 = a + 1
+            let c: i32 = a + stride
+            let d: i32 = c + 1
+            r3d_mesh_tri(a, c, b)
+            r3d_mesh_tri(b, c, d)
+            ii = ii + 1
+        }
+        jj = jj + 1
+    }
+}
+
+function ground_at(x: f32, z: f32) -> f32 {
+    let h: f32 = terrain_height(x, z)
+    if h < WATER { return WATER }
+    return h
+}
+
+function mode_name(m: i32) -> string {
+    if m == 0 { return "GOURAUD" }
+    if m == 1 { return "FLAT" }
+    return "WIRE"
+}
+
+function main() -> i32 {
+    if !r3d_init(WIN_W, WIN_H) {
+        println("render3d init failed")
+        return 1
+    }
+    r3d_set_ambient(0.28)
+    build_terrain(GRID)
+
+    let mut proj: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut view: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut vp: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let model: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let pproj: ptr<f32> = proj
+    let pview: ptr<f32> = view
+    let pvp: ptr<f32> = vp
+    m4_perspective(pproj, r3d_radians(66.0), r3d_aspect(), 0.15, 130.0)
+
+    let sky_top: V3 = v3(0.30, 0.46, 0.72)
+    let sky_bot: V3 = v3(0.70, 0.76, 0.84)
+
+    let mut px: f32 = 0.0
+    let mut pz: f32 = 34.0
+    let mut eye_y: f32 = ground_at(0.0, 34.0) + EYE_H
+    let mut yaw: f32 = 0.0
+    let mut pitch: f32 = -0.10
+    let mut mode: i32 = 0
+    let mut fog_on: bool = true
+    let mut fog_far: f32 = 68.0
+    let mut last_m: bool = false
+    let mut last_f: bool = false
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "HEIGHTMAP TERRAIN - Flow render3d")
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        r3d_tick()
+
+        if gfx_key_down(g, KEY_LEFT) { yaw = yaw + LOOK_SPEED }
+        if gfx_key_down(g, KEY_RIGHT) { yaw = yaw - LOOK_SPEED }
+        if gfx_key_down(g, KEY_UP) { pitch = pitch + LOOK_SPEED }
+        if gfx_key_down(g, KEY_DOWN) { pitch = pitch - LOOK_SPEED }
+        pitch = r3d_clampf(pitch, -1.3, 1.3)
+
+        let m_now: bool = gfx_key_down(g, KEY_M)
+        if m_now and !last_m {
+            let prev: i32 = mode
+            mode = (mode + 1) % 3
+            if mode == 2 {
+                build_terrain(WIRE_GRID)
+            } elif prev == 2 {
+                build_terrain(GRID)
+            }
+        }
+        last_m = m_now
+        let f_now: bool = gfx_key_down(g, KEY_F)
+        if f_now and !last_f { fog_on = !fog_on }
+        last_f = f_now
+        if gfx_key_down(g, KEY_1) { fog_far = 34.0 }
+        if gfx_key_down(g, KEY_2) { fog_far = 68.0 }
+        if gfx_key_down(g, KEY_3) { fog_far = 118.0 }
+        if gfx_key_down(g, KEY_R) {
+            px = 0.0
+            pz = 34.0
+            yaw = 0.0
+            pitch = -0.10
+        }
+
+        let fwd: V3 = r3d_forward(yaw, 0.0)
+        let rgt: V3 = r3d_right(yaw)
+        let mut mx: f32 = 0.0
+        let mut mz: f32 = 0.0
+        if gfx_key_down(g, KEY_W) {
+            mx = mx + fwd.x
+            mz = mz + fwd.z
+        }
+        if gfx_key_down(g, KEY_S) {
+            mx = mx - fwd.x
+            mz = mz - fwd.z
+        }
+        if gfx_key_down(g, KEY_D) {
+            mx = mx + rgt.x
+            mz = mz + rgt.z
+        }
+        if gfx_key_down(g, KEY_A) {
+            mx = mx - rgt.x
+            mz = mz - rgt.z
+        }
+        let mlen: f32 = sqrtf(mx * mx + mz * mz)
+        if mlen > 0.0001 {
+            px = px + mx / mlen * WALK * DT
+            pz = pz + mz / mlen * WALK * DT
+        }
+        let lim: f32 = WORLD * 0.5 - 2.0
+        px = r3d_clampf(px, 0.0 - lim, lim)
+        pz = r3d_clampf(pz, 0.0 - lim, lim)
+
+        let ground: f32 = ground_at(px, pz)
+        eye_y = eye_y + (ground + EYE_H - eye_y) * EYE_SMOOTH
+
+        r3d_set_fog(fog_on, sky_bot, fog_far * 0.30, fog_far)
+        let eye: V3 = v3(px, eye_y, pz)
+        m4_look_at(pview, eye, v3_add(eye, r3d_forward(yaw, pitch)), v3(0.0, 1.0, 0.0))
+        m4_mul(pvp, proj, view)
+
+        r3d_clear_gradient(sky_top, sky_bot)
+        let mut rmode: i32 = R3D_GOURAUD
+        if mode == 1 { rmode = R3D_FLAT }
+        if mode == 2 { rmode = R3D_WIRE }
+        r3d_draw_mesh(model, vp, v3(0.42, 0.78, 0.46), rmode)
+        r3d_present(g)
+
+        gfx_fill_rect(g, 0, 0, WIN_W, 58, 14, 17, 24)
+        gfx_fill_rect(g, 0, WIN_H - 40, WIN_W, 40, 14, 17, 24)
+        gfx_draw_text(g, 8, 8, "HEIGHTMAP TERRAIN", 2, 245, 245, 250)
+        gfx_draw_text(g, 8, 32, "X", 1, 180, 185, 200)
+        gfx_draw_fixed(g, 18, 32, px as f64, 1, 1, 245, 245, 250)
+        gfx_draw_text(g, 78, 32, "Z", 1, 180, 185, 200)
+        gfx_draw_fixed(g, 88, 32, pz as f64, 1, 1, 245, 245, 250)
+        gfx_draw_text(g, 148, 32, "GROUND", 1, 180, 185, 200)
+        gfx_draw_fixed(g, 206, 32, ground as f64, 2, 1, 245, 245, 250)
+        gfx_draw_text(g, 8, 46, mode_name(mode), 1, 150, 220, 250)
+        if fog_on {
+            gfx_draw_text(g, 78, 46, "FOG", 1, 180, 185, 200)
+            gfx_draw_fixed(g, 110, 46, (fog_far * 0.30) as f64, 0, 1, 245, 245, 250)
+            gfx_draw_text(g, 140, 46, "-", 1, 180, 185, 200)
+            gfx_draw_fixed(g, 150, 46, fog_far as f64, 0, 1, 245, 245, 250)
+        } else {
+            gfx_draw_text(g, 78, 46, "FOG OFF", 1, 250, 150, 140)
+        }
+
+        gfx_draw_text(g, 8, WIN_H - 34, "SUBMIT", 1, 180, 185, 200)
+        gfx_draw_int(g, 66, WIN_H - 34, r3d_tris_submitted(), 1, 245, 245, 250)
+        gfx_draw_text(g, 118, WIN_H - 34, "DRAWN", 1, 180, 185, 200)
+        gfx_draw_int(g, 170, WIN_H - 34, r3d_tris_drawn(), 1, 245, 245, 250)
+        gfx_draw_text(g, 222, WIN_H - 34, "MS", 1, 180, 185, 200)
+        gfx_draw_fixed(g, 246, WIN_H - 34, r3d_frame_ms() as f64, 2, 1, 245, 245, 250)
+        gfx_draw_text(g, 308, WIN_H - 34, "FPS", 1, 180, 185, 200)
+        gfx_draw_fixed(g, 338, WIN_H - 34, r3d_fps() as f64, 1, 1, 130, 240, 160)
+        gfx_draw_text(g, 8, WIN_H - 18, "WASD WALK  ARROWS LOOK  M SHADING  F FOG  1-3 FOG RANGE",
+                      1, 150, 155, 170)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
