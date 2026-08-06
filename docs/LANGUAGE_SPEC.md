@@ -98,7 +98,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 | `noinline` | ✅ | Emits `__attribute__((noinline))` (§3.6) |
 | `always_inline` | ✅ | Emits `__attribute__((always_inline))` plus the inline specifier (§3.6) |
 | `target` | ✅ | Emits `__attribute__((target("…")))`; the string's shape is checked, its meaning is the C compiler's (§3.6) |
-| `module` | ⚠️ | Parsed and flattened into the import graph; **not** a true nested namespace |
+| `module` | ⚠️ | `module X { ... }` is parsed, then flattened: the block name is discarded and the inner declarations become globals. Two blocks declaring the same name emit duplicate C. Accepts 7 declaration forms; `import` inside a block is never resolved. See [modules-namespacing.md](language/modules-namespacing.md) |
 | `theorem` / `assume` / `therefore` | ⚠️ | Verification surface (`flow-verify` / design — see [verification.md](language/verification.md)) |
 | `unit` | ✅ | Units of measure (§2.6) |
 | `flow` | ✅ | Evolution block (§10.1) — contextual keyword |
@@ -854,7 +854,10 @@ import verify.nat as nat               # aliased module
 
 **Grammar:**
 ```
-export_decl := 'export' (function_decl | struct_decl | const_decl)
+export_decl := 'export' (function_decl | struct_decl | enum_decl | const_decl
+                        | type_decl | distinct_decl | effect_decl
+                        | capability_decl | theorem_decl)
+             | 'export' IDENTIFIER (',' IDENTIFIER)*
 ```
 
 **Status:** ✅ Fully implemented
@@ -869,14 +872,66 @@ export struct Point {
     x: f32,
     y: f32
 }
+
+# File-level list form
+function greet() -> i32 { return 1 }
+export greet
 ```
 
-### 7.3 Module Resolution
+### 7.3 Re-export Declaration
+
+**Grammar:**
+```
+reexport_decl := 'export' 'import' module_path ('{' symbols '}')?
+```
+
+**Status:** ✅ Implemented (Python host)
+
+`export import M` makes every symbol `M` exports an export of the current file
+as well. `export import M { a, b }` forwards only the named symbols, which must
+be exported by `M`. A package's `lib.flow` can therefore aggregate its
+submodules under one name.
+
+```flow
+# registry/packages/flowlm/src/lib.flow
+export import .util
+export import .model
+export import .train { flm_train_step, flm_sample }
+```
+
+```flow
+# consumer
+import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
+```
+
+Rules:
+
+- Forwarding binds the declaring module's symbol. The declaration is emitted
+  once no matter how many modules forward it.
+- Re-exports chain: forwarding a module also forwards what that module
+  forwarded.
+- `export import M as name` is rejected. Re-export forwards symbols; use a
+  plain `import ... as` for an alias.
+- A forwarded name that collides with another exported declaration, or with a
+  declaration in the forwarding file, is an error naming both source modules.
+
+The self-hosted `flowc` parser does not accept `export import` yet.
+
+### 7.4 Module Resolution
 
 Import paths are resolved relative to:
 1. Current file's directory
 2. Project root
 3. `lib/stdlib/` directory
+
+### 7.5 `module` Blocks
+
+`module X { ... }` is parsed and then flattened. The block name is discarded
+and its declarations become globals, so `module` groups source text without
+creating a namespace. See
+[language/modules-namespacing.md](language/modules-namespacing.md) for the
+current behavior, the collisions it allows, and what a real namespace would
+cost.
 
 ---
 

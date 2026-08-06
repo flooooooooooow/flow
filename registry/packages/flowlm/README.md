@@ -70,20 +70,27 @@ statistics look like at this size.
 | `src/model.flow` | forward pass and manual backward pass |
 | `src/train.flow` | Adam, gradient clipping, LR schedule, sampling, perplexity |
 | `src/gradcheck.flow` | analytic vs finite-difference self-test |
-| `src/lib.flow` | package entry point; imports every submodule |
+| `src/lib.flow` | package entry point; re-exports every submodule |
 
 ### A note on imports
 
-Flow's module resolver has no re-export. A brace list on an import is checked
-against the declarations in the named file, so `flowlm.lib` cannot forward
-`flowlm.model`'s symbols under its own name. Two forms work:
+`src/lib.flow` re-exports every submodule, so the package's 82 public symbols
+are all addressable under one name:
 
 ```flow
-import flowlm.lib                                  # pulls in the whole package
-import flowlm.model { flm_forward, flm_backward }  # explicit, per submodule
+import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```
 
-The submodules are the addressable units. `lib.flow` is the aggregator.
+A bare `import flowlm.lib` brings the same surface into scope without naming
+symbols. Importing a submodule directly still works and is the narrower
+dependency to declare:
+
+```flow
+import flowlm.model { flm_forward, flm_backward }
+```
+
+Both forms name the same declarations. Forwarding binds, it does not copy, so
+each function is defined once in the emitted C no matter which path you take.
 
 Registry resolution for `import flowlm.*` needs the package installed under
 `flow_packages/`. Inside this repository, where it is not, the demo and the
@@ -96,6 +103,8 @@ import registry.packages.flowlm.src.model { flm_forward }
 Both paths resolve to the same files. The second one is what
 `examples/ai/flowlm_charlm.flow` and `tests/lang/test_flowlm.flow` use, so they
 build with a bare `flow.transpiler` invocation and no registry install step.
+`tests/lang/test_reexport.flow` addresses the aggregator the same way,
+`registry.packages.flowlm.src.lib`, and pulls its whole surface from there.
 
 ## Architecture
 

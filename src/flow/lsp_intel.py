@@ -190,13 +190,87 @@ def refine_import_symbol_location(
     info['end_line'] = line
 
 
+_REEXPORT_MAX_DEPTH = 8
+
+
+def _module_exports(
+    dep_path: str,
+    resolver: 'ModuleResolver',
+    memo: Dict[str, Dict[str, Tuple[Any, str, str]]],
+    in_progress: set,
+    depth: int = 0,
+) -> Dict[str, Tuple[Any, str, str]]:
+    """Everything `dep_path` exports, following `export import` forwards.
+
+    Returns name -> (declaration, defining file text, defining file path).
+    The defining file is the one that actually declares the symbol, so
+    go-to-definition lands on the declaration rather than the aggregator.
+    """
+    if dep_path in memo:
+        return memo[dep_path]
+    if depth > _REEXPORT_MAX_DEPTH or dep_path in in_progress:
+        return {}
+
+    in_progress.add(dep_path)
+    out: Dict[str, Tuple[Any, str, str]] = {}
+    try:
+        dep_text = Path(dep_path).read_text(encoding='utf-8')
+    except OSError:
+        in_progress.discard(dep_path)
+        return out
+    dep_decls = parse_source(dep_text)
+    if dep_decls is None:
+        in_progress.discard(dep_path)
+        return out
+
+    export_names = set()
+    for d in dep_decls:
+        if isinstance(d, ExportDecl):
+            export_names.update(d.symbols)
+
+    base = os.path.dirname(dep_path)
+    for d in dep_decls:
+        if isinstance(d, ImportDecl):
+            if not getattr(d, 'is_reexport', False):
+                continue
+            try:
+                fwd_path, fwd_wanted = resolver._resolve_import(d, base)
+            except Exception:
+                continue
+            if not fwd_path or not os.path.isfile(fwd_path):
+                continue
+            forwarded = _module_exports(
+                fwd_path, resolver, memo, in_progress, depth + 1
+            )
+            for name, entry in forwarded.items():
+                if fwd_wanted is not None and name not in fwd_wanted:
+                    continue
+                out.setdefault(name, entry)
+            continue
+        if isinstance(d, ExportDecl):
+            continue
+        name = getattr(d, 'name', None)
+        if not name and hasattr(d, 'claim_path'):
+            name = d.claim_path
+        if not name:
+            continue
+        if not (bool(getattr(d, 'is_exported', False)) or name in export_names):
+            continue
+        out[name] = (d, dep_text, dep_path)
+
+    in_progress.discard(dep_path)
+    memo[dep_path] = out
+    return out
+
+
 def index_imports(
     file_path: str, declarations: List[Any]
 ) -> Tuple[Dict[str, Dict[str, Any]], List[Any]]:
-    """Depth-1 import index.
+    """Depth-1 import index, plus `export import` forwards.
 
     Returns (name -> symbol_info, imported_decls for typechecking).
-    Does not recurse into dependencies' imports.
+    Does not recurse into a dependency's ordinary imports; it does follow
+    its re-exports, because those are part of that module's public surface.
     """
     symbols: Dict[str, Dict[str, Any]] = {}
     imported_decls: List[Any] = []
@@ -206,6 +280,7 @@ def index_imports(
     resolver = ModuleResolver(file_path)
     base = os.path.dirname(file_path)
     seen_files: set = set()
+    memo: Dict[str, Dict[str, Tuple[Any, str, str]]] = {}
 
     for imp in declarations:
         if not isinstance(imp, ImportDecl):
@@ -220,37 +295,15 @@ def index_imports(
             continue
         seen_files.add(dep_path)
 
-        try:
-            dep_text = Path(dep_path).read_text(encoding='utf-8')
-        except OSError:
-            continue
-        dep_decls = parse_source(dep_text)
-        if dep_decls is None:
-            continue
-
-        export_names = set()
-        for d in dep_decls:
-            if isinstance(d, ExportDecl):
-                export_names.update(d.symbols)
-
-        source_uri = path_to_uri(dep_path)
-        for d in dep_decls:
-            if isinstance(d, (ImportDecl, ExportDecl)):
-                continue
-            name = getattr(d, 'name', None)
-            if not name and hasattr(d, 'claim_path'):
-                name = d.claim_path
-            if not name:
-                continue
-            exported = bool(getattr(d, 'is_exported', False)) or name in export_names
-            if not exported:
-                continue
+        for name, (d, def_text, def_path) in _module_exports(
+            dep_path, resolver, memo, set()
+        ).items():
             if wanted is not None and name not in wanted:
                 continue
-            info = symbol_info_from_decl(d, source_uri=source_uri)
+            info = symbol_info_from_decl(d, source_uri=path_to_uri(def_path))
             if not info:
                 continue
-            refine_import_symbol_location(info, dep_text, name)
+            refine_import_symbol_location(info, def_text, name)
             symbols[name] = info
             # Mark exported for typechecker collect
             try:
