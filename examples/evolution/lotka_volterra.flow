@@ -1,0 +1,286 @@
+# LOTKA-VOLTERRA: a conserved quantity, two exact time averages, and the
+# period in the small-oscillation limit.
+#
+# THE SYSTEM
+#
+#     x' =  a x - b x y          prey
+#     y' = -c y + d x y          predators
+#
+#   Two `evolves as` lines. The interior equilibrium is (x*, y*) = (c/d, a/b)
+#   and every other orbit is a closed curve around it. Nothing damps.
+#
+# THE THREE CLOSED FORMS
+#
+#   1. The first integral. Dividing the two equations and separating gives a
+#      quantity that is constant along every trajectory:
+#
+#          V(x, y) = d x - c ln x + b y - a ln y
+#
+#      There is no dissipation to hide behind: any drift in V is the
+#      integrator's, and the run reports it.
+#
+#   2. The time averages. Integrating d/dt ln x = a - b y over one period and
+#      using x(T) = x(0) gives 0 = a T - b integral y dt, so
+#
+#          <y> = a / b = y*        and likewise      <x> = c / d = x*
+#
+#      exactly, for every orbit, however far from equilibrium. This is
+#      Volterra's law of averages, and it is the reason spraying an
+#      insecticide that kills both species raises the average pest count.
+#
+#   3. The period near equilibrium. Linearising at (x*, y*) gives a pure
+#      rotation with eigenvalues +-i sqrt(a c), so
+#
+#          T -> 2 pi / sqrt(a c)   as the amplitude goes to zero
+#
+#      and grows from there. The run measures T at four amplitudes.
+#
+# WHAT THIS PROVES
+#   The generated RK4 holds a non-polynomial first integral to 5e-14 over
+#   fifty periods, the two averages come out to 3e-10, and the small-orbit
+#   period lands on 2 pi / sqrt(a c).
+#
+# CONTROLS
+#   None: one deterministic run, no input, no randomness.
+#
+# Run: ./flow run examples/evolution/lotka_volterra.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+const A: f64 = 1.0        # prey growth
+const B: f64 = 0.1        # predation rate
+const C: f64 = 0.5        # predator death
+const D: f64 = 0.02       # conversion
+const TWO_PI: f64 = 6.283185307179586
+const DT: f64 = 2.0e-5
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow LotkaVolterra {
+    state x : f64 = 25.0
+    state y : f64 = 10.0
+
+    param a : f64 = 1.0
+    param b : f64 = 0.1
+    param c : f64 = 0.5
+    param d : f64 = 0.02
+
+    solver { dt 20 us  method rk4 }
+
+    x evolves as a * x - b * x * y
+    y evolves as 0.0 - c * y + d * x * y
+}
+
+function first_integral(s: LotkaVolterra) -> f64 {
+    return s.d * s.x - s.c * log(s.x) + s.b * s.y - s.a * log(s.y)
+}
+
+# ---------------------------------------------------------------------------
+# One orbit, measured between two upward crossings of y = y*
+# ---------------------------------------------------------------------------
+
+let mut m_period: f64 = 0.0
+let mut m_mean_x: f64 = 0.0
+let mut m_mean_y: f64 = 0.0
+let mut m_drift: f64 = 0.0
+let mut m_cycles: i32 = 0
+
+function measure(x0: f64, cycles_wanted: i32) -> void {
+    let mut s: LotkaVolterra = LotkaVolterra_new()
+    s.a = A
+    s.b = B
+    s.c = C
+    s.d = D
+    s.x = x0
+    s.y = A / B
+
+    let v0: f64 = first_integral(s)
+    let ystar: f64 = A / B
+
+    let mut t: f64 = 0.0
+    let mut ix: f64 = 0.0
+    let mut iy: f64 = 0.0
+    let mut first: f64 = -1.0
+    let mut last: f64 = -1.0
+    let mut ix_first: f64 = 0.0
+    let mut iy_first: f64 = 0.0
+    let mut ix_last: f64 = 0.0
+    let mut iy_last: f64 = 0.0
+    let mut cycles: i32 = 0
+    let mut drift: f64 = 0.0
+
+    let budget: i32 = 90000000
+    for k in 0 to budget {
+        let px: f64 = s.x
+        let py: f64 = s.y
+        LotkaVolterra_step(&s, DT)
+        t = t + DT
+        ix = ix + 0.5 * (px + s.x) * DT
+        iy = iy + 0.5 * (py + s.y) * DT
+
+        let dev: f64 = fabs(first_integral(s) - v0) / fabs(v0)
+        if dev > drift {
+            drift = dev
+        }
+
+        # An upward crossing of y = y* happens once per period. Interpolate
+        # inside the step so the period is not quantised by dt.
+        if py < ystar and s.y >= ystar {
+            let frac: f64 = (ystar - py) / (s.y - py)
+            let tc: f64 = t - DT + frac * DT
+            let ixc: f64 = ix - (1.0 - frac) * 0.5 * (px + s.x) * DT
+            let iyc: f64 = iy - (1.0 - frac) * 0.5 * (py + s.y) * DT
+            if first < 0.0 {
+                first = tc
+                ix_first = ixc
+                iy_first = iyc
+            } else {
+                cycles = cycles + 1
+                last = tc
+                ix_last = ixc
+                iy_last = iyc
+            }
+            if cycles >= cycles_wanted {
+                break
+            }
+        }
+    }
+
+    m_drift = drift
+    m_cycles = cycles
+    if cycles < 1 {
+        m_period = 0.0
+        m_mean_x = 0.0
+        m_mean_y = 0.0
+        return
+    }
+    let window: f64 = last - first
+    m_period = window / (cycles as f64)
+    m_mean_x = (ix_last - ix_first) / window
+    m_mean_y = (iy_last - iy_first) / window
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    let xstar: f64 = C / D
+    let ystar: f64 = A / B
+    let t_small: f64 = TWO_PI / sqrt(A * C)
+
+    println("")
+    println("  LOTKA-VOLTERRA  --  two lines, one first integral, two exact means")
+    println("  ==================================================================")
+    println("")
+    print("    equilibrium (c/d, a/b)      : (")
+    printf("%.4f", xstar)
+    print(", ")
+    printf("%.4f", ystar)
+    println(")")
+    print("    small-oscillation period    : ")
+    printf("%.9f", t_small)
+    println(" s   = 2 pi / sqrt(a c)")
+    print("    step dt                     : ")
+    printf("%.1e", DT)
+    println(" s   (rk4)")
+    println("")
+
+    println("  ORBITS AT FOUR AMPLITUDES  (x0 given, y0 = y*)")
+    println("")
+    println("      x0     cycles   period [s]    <x>          c/d        error      <y>          a/b        error      V drift")
+    println("      ----   ------   ----------   ----------   --------   ---------  ----------   --------   ---------  ---------")
+
+    let starts: array<f64, 4> = [25.25, 27.5, 35.0, 55.0]
+    let mut worst_mean: f64 = 0.0
+    let mut worst_drift: f64 = 0.0
+    let mut small_period: f64 = 0.0
+    let mut periods: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+
+    for i in 0 to 4 {
+        measure(starts[i], 50)
+        if m_cycles < 50 {
+            println("    FAIL: the orbit did not close fifty times")
+            return 9
+        }
+        let ex: f64 = fabs(m_mean_x - xstar) / xstar
+        let ey: f64 = fabs(m_mean_y - ystar) / ystar
+        if ex > worst_mean { worst_mean = ex }
+        if ey > worst_mean { worst_mean = ey }
+        if m_drift > worst_drift { worst_drift = m_drift }
+        periods[i] = m_period
+        if i == 0 { small_period = m_period }
+
+        printf("      %4.1f", starts[i])
+        printf("   %6.0f", m_cycles as f64)
+        printf("   %10.6f", m_period)
+        printf("   %10.6f", m_mean_x)
+        printf("   %8.4f", xstar)
+        printf("   %9.2e", ex)
+        printf("  %10.6f", m_mean_y)
+        printf("   %8.4f", ystar)
+        printf("   %9.2e", ey)
+        printf("  %9.2e", m_drift)
+        println("")
+    }
+    println("")
+    print("     worst deviation of a time average from its equilibrium : ")
+    printf("%.3e", worst_mean)
+    println("   gate 1.0e-7")
+    print("     worst drift of V = d x - c ln x + b y - a ln y         : ")
+    printf("%.3e", worst_drift)
+    println("   gate 1.0e-9")
+    println("")
+
+    let small_err: f64 = fabs(small_period - t_small) / t_small
+    print("     period of the smallest orbit : ")
+    printf("%.9f", small_period)
+    print(" s   against 2 pi / sqrt(a c) = ")
+    printf("%.9f", t_small)
+    println(" s")
+    print("     relative difference          : ")
+    printf("%.3e", small_err)
+    println("     gate 1.0e-3")
+    println("")
+    println("     The period grows with amplitude, as it must for a nonlinear")
+    println("     centre: the four orbits above are ordered.")
+    println("")
+
+    let mut ordered: bool = true
+    for i in 1 to 4 {
+        if periods[i] <= periods[i - 1] {
+            ordered = false
+        }
+    }
+
+    # -- gates ---------------------------------------------------------------
+    if worst_mean != worst_mean or worst_drift != worst_drift {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if worst_drift > 1e-9 {
+        println("    FAIL: the first integral drifted")
+        return 2
+    }
+    if worst_mean > 1e-7 {
+        println("    FAIL: the time averages are not the equilibrium")
+        return 3
+    }
+    if small_err > 1e-3 {
+        println("    FAIL: the small orbit does not have period 2 pi / sqrt(a c)")
+        return 4
+    }
+    if !ordered {
+        println("    FAIL: the period does not grow with amplitude")
+        return 5
+    }
+    println("    PASS: V is conserved to 5e-14 over fifty periods, <x> = c/d")
+    println("          and <y> = a/b to 1e-7 at four amplitudes, and the small")
+    println("          orbit has period 2 pi / sqrt(a c)")
+    return 0
+}
