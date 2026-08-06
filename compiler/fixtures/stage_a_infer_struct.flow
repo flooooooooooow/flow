@@ -1,0 +1,34 @@
+# Stage-A inferred `let` (no `: Type`) inside one module.
+# `make_pair` returns a struct, `7 as i64` is a cast, `Pair { ... }` is a
+# struct literal: all three must get real C types, not int32_t. Exit 42.
+
+struct Pair {
+    lo: i32,
+    hi: i32
+}
+
+function make_pair(lo: i32, hi: i32) -> Pair {
+    return Pair { lo: lo, hi: hi }
+}
+
+function pair_sum(p: Pair) -> i32 {
+    return p.lo + p.hi
+}
+
+function main() -> i32 {
+    let p = make_pair(20, 22)
+    let lit = Pair { lo: 1, hi: 2 }
+    let wide = 7 as i64
+    let total = pair_sum(p)
+    if total != 42 {
+        return 1
+    }
+    if lit.lo + lit.hi != 3 {
+        return 2
+    }
+    let narrow = wide as i32
+    if narrow != 7 {
+        return 3
+    }
+    return total
+}
