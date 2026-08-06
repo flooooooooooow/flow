@@ -50,8 +50,15 @@ let mut wav_in_channels: i32 = 0
 let mut wav_in_frames: i64 = 0
 let mut wav_in_read: i64 = 0
 
-# 44-byte header staging area, shared by the reader and writer.
-let mut wav_hdr: array<u8, 44> = []
+# 44-byte header staging area, shared by the reader and writer. Written out
+# element by element because a module static in strict mode must state every
+# element of a fixed array; `[]` is not accepted there.
+let mut wav_hdr: array<u8, 44> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+]
 
 # =============================================================================
 # Little-endian header helpers

@@ -187,25 +187,32 @@ export function noise_new(seed: i64) -> NoiseState {
     return NoiseState { seed: seed }
 }
 
-# Generate next random sample and update state
+# Generate next random sample and update state.
+#
+# The modulus is a mask, not a sign flip. Without it the seed grows without
+# bound (the state is i64, so the multiply just keeps getting bigger) and
+# noise_value returns numbers in the billions rather than in [-1, 1). Any
+# oscillator or excitation built on this used to blow up on the first
+# sample. 2147483647 is 2^31 - 1, so the result is also always non-negative
+# and the "keep in positive range" branch is unnecessary.
 export function noise_tick(n: NoiseState) -> NoiseState {
     # LCG: seed = (seed * 1103515245 + 12345) mod 2^31
-    let mut new_seed: i64 = n.seed * 1103515245 + 12345
-    # Keep in positive range
-    if new_seed < 0 {
-        new_seed = -new_seed
-    }
+    let new_seed: i64 = (n.seed * 1103515245 + 12345) & 2147483647
     return NoiseState { seed: new_seed }
 }
 
-# Get current noise value [-1.0, 1.0]
+# Current noise value in [-1.0, 1.0).
 export function noise_value(n: NoiseState) -> f32 {
-    # Normalize to [-1, 1]
+    # seed is in [0, 2^31), so seed / 2^30 is in [0, 2) and this is in [-1, 1).
     let normalized: f64 = n.seed / 1073741824.0  # 2^30
     return normalized - 1.0
 }
 
-# White noise (calls tick internally - stateful convenience)
+# The value of the current state. This does not advance the generator: the
+# state is a value, so the caller has to hold the result of noise_tick.
+#
+#   n = noise_tick(n)
+#   let x: f32 = white_noise(n)
 export function white_noise(n: NoiseState) -> f32 {
     return noise_value(n)
 }

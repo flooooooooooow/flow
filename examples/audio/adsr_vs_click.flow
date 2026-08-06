@@ -1,0 +1,134 @@
+# Why envelopes exist: the same note with one, and then without one.
+#
+# WHAT YOU WILL HEAR
+#   Eight seconds. First five notes shaped by an ADSR envelope: they start
+#   and stop smoothly. Then the same five notes with the envelope removed,
+#   the oscillator simply switched on and off. Every one of those begins and
+#   ends with a click.
+#
+#   The click is the point. Switching a waveform on part-way through a cycle
+#   is a step discontinuity, and a step is broadband: energy at every
+#   frequency at once. An envelope is not decoration. It is the thing that
+#   keeps a note from also being an impulse.
+#
+#   Both halves play the same pitch, E4, at the same level. The only
+#   difference is the shape of the gain around it.
+#
+# LISTEN
+#   ./flow audio examples/audio/adsr_vs_click.flow
+#
+# RENDER AND CHECK
+#   FLOW_AUDIO_RENDER=build/audio/adsr_vs_click.wav \
+#     ./flow audio examples/audio/adsr_vs_click.flow
+
+import "stdlib/audio.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/envelopes.flow"
+import "stdlib/audio/safety.flow"
+import "stdlib/audio/sink.flow"
+import "stdlib/audio/verify.flow"
+
+const RATE_HZ: i32 = 48000
+const BLOCK: i32 = 256
+const SECONDS: f32 = 8.0
+
+# Five notes on a 0.7 s grid, each held for 0.45 s.
+const NOTE_STEP: i32 = 33600          # 0.700 s at 48 kHz
+const NOTE_HOLD: i32 = 21600          # 0.450 s
+const NOTE_COUNT: i32 = 5
+
+# The gated half starts here, leaving half a second of silence between the
+# two halves so the difference is not masked by the previous note's tail.
+const GATED_START: i32 = 192000       # 4.000 s
+
+const AMP: f32 = 0.35
+
+function main() -> i32 {
+    println("adsr vs click")
+    println("  8.0 seconds, E4 (329.63 Hz) throughout")
+    println("  0.0 - 3.5 s   five notes through an ADSR: 5 ms attack, 120 ms decay,")
+    println("                0.6 sustain, 150 ms release")
+    println("  4.0 - 7.5 s   the same five notes with the envelope removed")
+    println("  the second half clicks at every note edge; that is the lesson")
+
+    let rate: SampleRate = sample_rate_48000()
+    let mut out: AudioSink = sink_open(RATE_HZ, 2, BLOCK)
+    let sp: ptr<AudioSink> = &out
+    let mut chain: SafetyChain = safety_new(rate, SECONDS)
+    let cp: ptr<SafetyChain> = &chain
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(BLOCK, 2, layout_interleaved())
+
+    let note_hz: f32 = midi_to_freq(64)
+    # The oscillator runs free for the whole eight seconds and is never
+    # re-phased. That is what makes the gated notes start at an arbitrary
+    # point in the cycle, which is what makes them click.
+    let mut osc: Phasor = phasor_new(note_hz as f64, rate)
+    let mut env: ADSR = adsr_new_ms(5.0, 120.0, 0.6, 150.0, rate)
+    let mut gate_open: bool = false
+    let mut n: i32 = 0
+
+    while !safety_finished(cp) {
+        let count: i32 = safety_next_block(cp, BLOCK)
+        let mut i: i32 = 0
+        while i < count {
+            # Which note slot are we in, and are we inside its hold window?
+            let mut want_gate: bool = false
+            let mut gated_half: bool = false
+            if n < GATED_START {
+                let slot: i32 = n / NOTE_STEP
+                if slot < NOTE_COUNT and n - slot * NOTE_STEP < NOTE_HOLD {
+                    want_gate = true
+                }
+            } else {
+                gated_half = true
+                let m: i32 = n - GATED_START
+                let slot: i32 = m / NOTE_STEP
+                if slot < NOTE_COUNT and m - slot * NOTE_STEP < NOTE_HOLD {
+                    want_gate = true
+                }
+            }
+            if want_gate and !gate_open {
+                env = adsr_gate_on(env)
+                gate_open = true
+            }
+            if !want_gate and gate_open {
+                env = adsr_gate_off(env)
+                gate_open = false
+            }
+
+            env = adsr_tick(env)
+            let mut g: f32 = adsr_value(env)
+            if gated_half {
+                # No envelope at all. On is 1, off is 0, and the transition
+                # takes one sample.
+                g = 0.0
+                if want_gate {
+                    g = 1.0
+                }
+            }
+
+            let s: f32 = sine(phasor_value(osc)) * AMP * g
+            osc = phasor_tick(osc)
+
+            let fr: Frame = safety_process_frame(cp, s, s)
+            audio_buffer_set_f32(buf, i, 0, fr.left)
+            audio_buffer_set_f32(buf, i, 1, fr.right)
+            n = n + 1
+            i = i + 1
+        }
+        sink_write(sp, buf.data, count)
+    }
+
+    sink_close(sp)
+    audio_buffer_free_f32(buf)
+    safety_report(cp)
+
+    if sink_is_render() {
+        let spec: VerifySpec = verify_spec(SECONDS as f64, safety_ceiling_db(cp),
+                                           note_hz as f64)
+        if !verify_run(sink_render_path(), spec) {
+            return 1
+        }
+    }
+    return 0
+}
