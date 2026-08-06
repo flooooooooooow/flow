@@ -2046,6 +2046,14 @@ class TypeChecker:
         if actual.kind == TypeKind.STRING and self._is_byte_pointer(target):
             return True
 
+        # A byte array decays to a byte pointer, so the same reinterpretation
+        # applies to `array<u8, N> as string` (the caller is asserting the
+        # buffer is NUL-terminated, which is why this needs an explicit cast).
+        if self._is_byte_array(actual) and target.kind == TypeKind.STRING:
+            return True
+        if actual.kind == TypeKind.STRING and self._is_byte_array(target):
+            return True
+
         return False
 
     @staticmethod
@@ -2057,6 +2065,14 @@ class TypeChecker:
         if element is None:
             return True
         return element.kind in {TypeKind.I8, TypeKind.U8, TypeKind.VOID}
+
+    @staticmethod
+    def _is_byte_array(t: SemanticType) -> bool:
+        """True for `array<i8, N>` and `array<u8, N>`."""
+        if t.kind != TypeKind.ARRAY:
+            return False
+        element = t.element_type
+        return element is not None and element.kind in {TypeKind.I8, TypeKind.U8}
 
     def _check_literal(self, lit: Literal) -> SemanticType:
         """Type check a literal."""

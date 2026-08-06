@@ -121,3 +121,78 @@ class TestGenericInstantiationIsChecked:
     def test_concurrency_corpus_is_strict_clean(self, rel_path):
         assert_no_lenient_pragma(rel_path)
         assert strict_errors_for_file(rel_path) == []
+
+
+# ---------------------------------------------------------------------------
+# Gap 2: string vs byte buffer (flow-strict-string-buffer-coercions)
+# ---------------------------------------------------------------------------
+
+BYTE_BUFFER_CASTS = """
+extern {
+    function malloc(n: i64) -> ptr<u8>
+}
+
+function main() -> i32 {
+    let buf: ptr<u8> = malloc(8)
+    buf[0] = 104
+    buf[1] = 0
+    let from_ptr: string = buf as string
+
+    let mut arr: array<u8, 8> = []
+    arr[0] = 111
+    arr[1] = 0
+    let from_array: string = arr as string
+
+    let back_to_ptr: ptr<u8> = from_ptr
+    return 0
+}
+"""
+
+IMPLICIT_PTR_TO_STRING = """
+extern {
+    function malloc(n: i64) -> ptr<u8>
+}
+
+function main() -> i32 {
+    let buf: ptr<u8> = malloc(8)
+    let s: string = buf
+    return 0
+}
+"""
+
+IMPLICIT_ARRAY_TO_STRING = """
+function main() -> i32 {
+    let arr: array<u8, 8> = []
+    let s: string = arr
+    return 0
+}
+"""
+
+
+class TestByteBufferToString:
+    """A `ptr<u8>` or `array<u8, N>` becomes a `string` only through an
+    explicit cast. Implicit coercion would silently assert NUL termination
+    the checker cannot see, so it stays an error."""
+
+    def test_explicit_casts_are_accepted(self):
+        assert strict_errors(BYTE_BUFFER_CASTS) == []
+
+    def test_implicit_pointer_to_string_is_still_rejected(self):
+        errors = strict_errors(IMPLICIT_PTR_TO_STRING)
+        assert any("ptr<u8>" in e and "string" in e for e in errors), errors
+
+    def test_implicit_array_to_string_is_still_rejected(self):
+        errors = strict_errors(IMPLICIT_ARRAY_TO_STRING)
+        assert any("array<u8" in e and "string" in e for e in errors), errors
+
+    @pytest.mark.parametrize(
+        "rel_path",
+        [
+            "examples/compilers/know_demo.flow",
+            "examples/compilers/claim_address_demo.flow",
+            "examples/compilers/math_prose_demo.flow",
+        ],
+    )
+    def test_flowc_corpus_is_strict_clean(self, rel_path):
+        assert_no_lenient_pragma(rel_path)
+        assert strict_errors_for_file(rel_path) == []
