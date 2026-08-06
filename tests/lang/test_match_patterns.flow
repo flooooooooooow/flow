@@ -1,0 +1,107 @@
+# Flow-native language test: match pattern forms beyond bool and i32.
+# Catch-all arms, non-exhaustive fall-through, struct destructuring, float
+# and string scrutinees, and list patterns with bindings.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[match_catch_all]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[match_falls_through]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[match_struct_pattern]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[match_f32]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[match_string]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[match_list_pattern]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct P {
+    x: i32,
+    y: i32
+}
+
+function bucket(n: i32) -> i32 {
+    match n {
+        7 => { return 1 }
+        default { return 2 }
+    }
+}
+
+function pick(s: string) -> i32 {
+    match s {
+        "a" => { return 1 }
+        default { return 2 }
+    }
+}
+
+function main() -> i32 {
+    # A `default` arm catches everything the literal arms missed.
+    if bucket(7) + bucket(8) + bucket(9) != 5 {
+        return 1
+    }
+
+    # No arm matches and there is no default: the match is a no-op.
+    let n: i32 = 3
+    let mut hit: i32 = 0
+    match n {
+        1 => { hit = 1 }
+        3 => { hit = 3 }
+    }
+    if hit != 3 {
+        return 2
+    }
+
+    let mut missed: i32 = 99
+    match n {
+        1 => { missed = 1 }
+        2 => { missed = 2 }
+    }
+    if missed != 99 {
+        return 3
+    }
+
+    # A struct pattern binds the fields positionally.
+    let p: P = P { x: 3, y: 4 }
+    let mut r: i32 = 0
+    match p {
+        P(a, b) => { r = a + b }
+    }
+    if r != 7 {
+        return 4
+    }
+
+    # A float scrutinee.
+    let v: f32 = 2.0
+    let mut fr: i32 = 0
+    match v {
+        1.0 => { fr = 1 }
+        2.0 => { fr = 2 }
+        default { fr = 3 }
+    }
+    if fr != 2 {
+        return 5
+    }
+
+    # A string scrutinee compares by contents, not by pointer.
+    if pick("a") + pick("b") != 3 {
+        return 6
+    }
+
+    # A list pattern: literal head, bound tail elements.
+    let xs: array<i32, 3> = [1, 2, 3]
+    let mut lr: i32 = 0
+    match xs {
+        [1, c, d] => { lr = c + d }
+        default { lr = 99 }
+    }
+    if lr != 5 {
+        return 7
+    }
+
+    let ys: array<i32, 3> = [9, 2, 3]
+    let mut nr: i32 = 0
+    match ys {
+        [1, e, f] => { nr = e + f }
+        default { nr = 99 }
+    }
+    if nr != 99 {
+        return 8
+    }
+
+    return 0
+}
