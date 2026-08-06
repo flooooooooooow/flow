@@ -1,5 +1,4 @@
 # Claim Coordinates demo — Flow port of src/flow/claim_address.py
-# flow:lenient: strict checker gap, string vs byte-buffer coercions (ptr<u8>, array<u8, N>). Board card flow-strict-string-buffer-coercions.
 #
 # Run from repo root:
 #   ./flow run examples/compilers/claim_address_demo.flow

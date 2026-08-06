@@ -1,0 +1,81 @@
+# Flow-native language test: generic Chan<T> under --strict.
+#
+# The parser mangles `channel_new<i32>(4)` to a call named `channel_new_i32`,
+# and the monomorphizer only generates that function after type checking. The
+# checker synthesizes the same signature on demand, so these call sites are
+# now checked rather than reported as undefined.
+# Pins board card flow-strict-concurrency-intrinsics.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import "stdlib/concurrent.flow"
+
+struct Pair {
+    lo: i32,
+    hi: i32
+}
+
+function main() -> i32 {
+    # Scalar element type.
+    let mut ci: Chan<i32> = channel_new<i32>(4)
+    if !channel_send<i32>(&ci, 42) {
+        return 1
+    }
+    let mut got: i32 = 0
+    if !channel_recv<i32>(&ci, &got) {
+        return 2
+    }
+    if got != 42 {
+        return 3
+    }
+
+    # try_send / try_recv on an empty channel.
+    let mut spare: i32 = 0
+    if channel_try_recv<i32>(&ci, &spare) {
+        return 4
+    }
+    if !channel_try_send<i32>(&ci, 7) {
+        return 5
+    }
+    if !channel_try_recv<i32>(&ci, &spare) {
+        return 6
+    }
+    if spare != 7 {
+        return 7
+    }
+
+    channel_close<i32>(&ci)
+    channel_destroy<i32>(&ci)
+
+    # Struct element type: a second instantiation of the same template.
+    let mut cp: Chan<Pair> = channel_new<Pair>(2)
+    let sent: Pair = Pair { lo: 3, hi: 39 }
+    if !channel_send<Pair>(&cp, sent) {
+        return 8
+    }
+    let mut recvd: Pair = Pair { lo: 0, hi: 0 }
+    if !channel_recv<Pair>(&cp, &recvd) {
+        return 9
+    }
+    if recvd.lo + recvd.hi != 42 {
+        return 10
+    }
+
+    channel_close<Pair>(&cp)
+    channel_destroy<Pair>(&cp)
+
+    # i64 elements, to exercise a widened scalar.
+    let mut cl: Chan<i64> = channel_new<i64>(2)
+    if !channel_send<i64>(&cl, 1234567890123) {
+        return 11
+    }
+    let mut big: i64 = 0
+    if !channel_recv<i64>(&cl, &big) {
+        return 12
+    }
+    if big != 1234567890123 {
+        return 13
+    }
+    channel_destroy<i64>(&cl)
+
+    return 0
+}

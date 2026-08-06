@@ -2035,10 +2035,24 @@ run_lang_tests() {
             continue
         fi
 
-        # Step 2: Compile C to executable
+        # Step 2: Compile C to executable. Tests that import the concurrency
+        # stdlib call into runtime/flow_*.c (threads, channels, fibers), so
+        # link those sources for them; plain tests stay a one-file clang.
         local clang_output
         local clang_status=0
-        clang_output=$(clang -Wno-everything "$c_file" -o "$exe_file" -lm 2>&1) || clang_status=$?
+        local lang_conc_sources=()
+        local lang_conc_cflags=()
+        local lang_conc_ldflags=()
+        if grep -q 'stdlib/concurrent.flow' "$program" 2>/dev/null; then
+            flow_concurrency_flags
+            flow_runtime_flow_sources
+            lang_conc_sources=("${FLOW_CONC_SOURCES[@]}" "${FLOW_RUNTIME_FLOW_SOURCES[@]}")
+            lang_conc_cflags=("${FLOW_CONC_CFLAGS[@]}")
+            lang_conc_ldflags=("${FLOW_CONC_LDFLAGS[@]}")
+        fi
+        clang_output=$(clang -Wno-everything "${lang_conc_cflags[@]+"${lang_conc_cflags[@]}"}" \
+            "$c_file" "${lang_conc_sources[@]+"${lang_conc_sources[@]}"}" \
+            "${lang_conc_ldflags[@]+"${lang_conc_ldflags[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?
         if [ "$clang_status" -ne 0 ]; then
             print_error "✗ $rel_path (clang compile failed)"
             if [ -n "$clang_output" ]; then

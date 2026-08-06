@@ -1,4 +1,3 @@
-# flow:lenient - generic sizeof_T not visible to strict typecheck before mono
 import "stdlib/concurrent.flow"
 
 function main() -> i32 {
