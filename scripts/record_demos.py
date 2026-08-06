@@ -176,6 +176,11 @@ JUMPER_KEYS = (
     "462-479:123,485-496:124,500-518:123,522-568:124,573-578:124,583-596:123"
 )
 
+# Icy Tower: build speed on the full-width ground floor, bounce off the right
+# wall, keep the speed by switching to left, then jump on frame 34. That jump
+# leaves at max horizontal speed and clears six floors, which opens the combo.
+ICY_TOWER_KEYS = "2:49,4-31:124,32-90:123,34:49"
+
 # Lane racer: lane changes that dodge every car (with a few scenic weaves).
 LANE_RACER_KEYS = (
     "8-9:49,70-71:124,150-151:124,208-209:123,314-315:124,394-395:123,"
@@ -563,6 +568,10 @@ DEMOS: list[Demo] = [
          skip=4, duration_ms=60, colors=40),
     game("jumper", JUMPER_KEYS, 620,
          "Jumper — searched steering climbs the platform tower", 0.75),
+    game("icy_tower", ICY_TOWER_KEYS, 90,
+         "Icy Tower — speed built on the ground floor, a wall bounce, "
+         "then a six-floor leap into a combo", 0.715,
+         skip=2, duration_ms=50, colors=48),
     # ---- puzzle ----
     game("minesweeper", MINESWEEPER_KEYS, 400,
          "Minesweeper — flood reveal, flags, and one fatal click", 0.68),

@@ -1,6 +1,6 @@
 # Game Gallery
 
-24 complete games written in Flow. Every clip below is recorded from the real
+25 complete games written in Flow. Every clip below is recorded from the real
 compiled program through the headless recorder; the pixels come from the same
 drawing calls the native window receives.
 
@@ -36,6 +36,8 @@ P pause, R restart, Esc quit. Per-game keys are in each file's header comment.
 | **Flappy** — gravity and flap physics, session best<br>`flappy_gfx.flow` | **Frogger** — car lanes, ride-or-drown logs, home slots<br>`frogger_gfx.flow` | **Missile Command** — crosshair, blast rings, six cities<br>`missile_gfx.flow` |
 | ![Maze Chase](./games/maze_chase.gif) | ![Lane Racer](./games/lane_racer.gif) | ![Jumper](./games/jumper.gif) |
 | **Maze Chase** — pellets, three ghost styles, power mode<br>`maze_chase_gfx.flow` | **Lane Racer** — traffic dodging, near-miss bonus, fuel<br>`lane_racer_gfx.flow` | **Jumper** — moving and crumbling platforms, springs<br>`jumper_gfx.flow` |
+| ![Icy Tower](./games/icy_tower.gif) | | |
+| **Icy Tower** — running speed sets jump height and reach, wall bounces keep it, multi-floor landings chain a named combo<br>`icy_tower_gfx.flow` | | |
 
 ## Puzzle and logic
 
