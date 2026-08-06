@@ -7,6 +7,8 @@ GIF89a encoder in lib/stdlib/gif.flow for programs that want to write GIFs
 themselves. This is the host-side convenience path.
 
   frames_to_gif.py <frame-dir> <out.gif> [--fps 20] [--stride 2] [--width 480]
+
+`flow record --gif` passes --fps/--stride/--width straight through.
 """
 
 from __future__ import annotations
@@ -46,8 +48,14 @@ def main() -> int:
         images.append(im)
 
     # One palette for the whole clip: per-frame palettes force full-frame
-    # rewrites and inflate the file several times over.
-    palette = images[0].quantize(colors=256, method=Image.MEDIANCUT)
+    # rewrites and inflate the file several times over. Sample the palette
+    # across the clip rather than from frame 0, because a simulation often
+    # starts near-uniform and only earns its colours later.
+    sample = images[:: max(1, len(images) // 8)]
+    strip = Image.new("RGB", (images[0].width, images[0].height * len(sample)))
+    for row, im in enumerate(sample):
+        strip.paste(im, (0, row * images[0].height))
+    palette = strip.quantize(colors=256, method=Image.MEDIANCUT)
     quantized = [im.quantize(palette=palette, dither=Image.FLOYDSTEINBERG) for im in images]
 
     out = Path(args.out)
