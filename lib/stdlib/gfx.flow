@@ -31,6 +31,7 @@ extern { function flow_gfx_should_close(ctx: ptr<void>) -> i32 }
 extern { function flow_gfx_key_down(ctx: ptr<void>, keycode: i32) -> i32 }
 extern { function flow_gfx_clear(ctx: ptr<void>, r: u8, g: u8, b: u8) -> void }
 extern { function flow_gfx_fill_rect(ctx: ptr<void>, x: i32, y: i32, w: i32, h: i32, r: u8, g: u8, b: u8) -> void }
+extern { function flow_gfx_blit_rgb(ctx: ptr<void>, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>) -> void }
 extern { function flow_gfx_present(ctx: ptr<void>) -> void }
 extern { function flow_gfx_run(ctx: ptr<void>, max_frames: i32) -> i32 }
 
@@ -60,6 +61,15 @@ export function gfx_clear(g: Gfx, r: i32, g2: i32, b: i32) -> void {
 
 export function gfx_fill_rect(g: Gfx, x: i32, y: i32, w: i32, h: i32, r: i32, g2: i32, b: i32) -> void {
     flow_gfx_fill_rect(g.ctx, x, y, w, h, r, g2, b)
+}
+
+# Blit a packed RGB8 buffer (w*h*3 bytes, row-major) at (x, y).
+#
+# Per-pixel fields — particle sands, software rasterizers, image filters —
+# should build a buffer and blit it once per frame. A fill_rect per pixel is
+# tens of thousands of calls a frame and will not keep up.
+export function gfx_blit_rgb(g: Gfx, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>) -> void {
+    flow_gfx_blit_rgb(g.ctx, x, y, w, h, src)
 }
 
 export function gfx_present(g: Gfx) -> void {
