@@ -1,5 +1,4 @@
 # Flow-frame continuation: Cont.shift parks mid-function; resume restores locals.
-# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Run: ./flow run examples/concurrency/cont_flow_resume.flow
 
 import "stdlib/async.flow"

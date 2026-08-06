@@ -1,5 +1,4 @@
 import "stdlib/concurrent.flow"
-# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 
 function main() -> i32 {
     let mut a: Channel_i32 = channel_i32_new(1)

@@ -1,5 +1,4 @@
 # GPU FFT Implementation using Effect-Based Programming
-# flow:lenient: strict checker gap, capability parameters and gpu kernel externs inside handle blocks. Board card flow-strict-effect-ops.
 # This demonstrates FLOW's capability for high-performance computing
 
 # External CUDA runtime functions (would be provided by CUDA headers)

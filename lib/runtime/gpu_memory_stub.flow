@@ -55,3 +55,20 @@ export function flow_gpu_copy_d2d(dst_gpu: ptr<void>, src_gpu: ptr<void>, nbytes
 export function flow_gpu_sync() -> void {
     return
 }
+
+# Elementwise multiply kernels. Metal provides these on macOS; without a
+# backend there is nothing to dispatch to, so report failure.
+@flow_api
+export function flow_gpu_mul_f32(out_gpu: ptr<void>, a_gpu: ptr<void>, b_gpu: ptr<void>, n: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_mul_backward_a_f32(grad_a_gpu: ptr<void>, grad_out_gpu: ptr<void>, b_gpu: ptr<void>, n: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_mul_backward_b_f32(grad_b_gpu: ptr<void>, grad_out_gpu: ptr<void>, a_gpu: ptr<void>, n: i64) -> i32 {
+    return -1
+}

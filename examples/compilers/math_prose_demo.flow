@@ -1,5 +1,4 @@
 # math_prose + proof_sub dogfood demo
-# flow:lenient: strict checker gap, string vs byte-buffer coercions (ptr<u8>, array<u8, N>). Board card flow-strict-string-buffer-coercions.
 
 import "compiler/src/claim_address.flow"
 import "compiler/src/claim_path.flow"

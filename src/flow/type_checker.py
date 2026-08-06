@@ -410,6 +410,15 @@ class TypeChecker:
         self.warnings: List[str] = []
         self.struct_types: Dict[str, StructDecl] = {}
         self.generic_struct_types: Dict[str, StructDecl] = {}
+        # Generic function templates, keyed by their unmangled name. Call
+        # sites use the parser-mangled form (`channel_new<i32>` parses to
+        # `channel_new_i32`), so signatures are synthesized on demand to
+        # mirror what the monomorphizer will later generate.
+        self.generic_function_decls: Dict[str, FunctionDecl] = {}
+        # Type parameters of the generic function currently being checked.
+        # Inside a template body a type parameter is opaque, so it acts as a
+        # wildcard; the real checking happens at each concrete call site.
+        self._active_type_params: Set[str] = set()
         self.effect_types: Dict[str, EffectDecl] = {}
         self.capability_types: Dict[str, CapabilityDecl] = {}
         # Enum/ADT metadata, used for match exhaustiveness checking and to
@@ -852,6 +861,10 @@ class TypeChecker:
     def _can_coerce(self, actual: SemanticType, expected: SemanticType) -> bool:
         if actual is None or expected is None:
             return True
+        # A type parameter inside a generic template is opaque; see
+        # `_is_type_param`.
+        if self._is_type_param(actual) or self._is_type_param(expected):
+            return True
         # Treat void/unknown as a wildcard only in lenient checking
         if not self.strict and (
             actual.kind in {TypeKind.VOID, TypeKind.UNKNOWN}
@@ -878,6 +891,11 @@ class TypeChecker:
             return True
         # String to pointer
         if actual.kind == TypeKind.STRING and expected.kind == TypeKind.POINTER:
+            return True
+        # A function name used as a value is a C function pointer, which is
+        # what runtime callbacks (`flow_parallel_for_i32`, pthread entry
+        # points) take as `ptr<void>`. Only the untyped pointer accepts one.
+        if self._is_function_to_void_pointer(actual, expected):
             return True
         # Struct-to-pointer convenience (treat value as addressable)
         if actual.kind == TypeKind.STRUCT and expected.kind == TypeKind.POINTER:
@@ -1070,6 +1088,8 @@ class TypeChecker:
         """Collect function signatures and global symbols."""
         for decl in declarations:
             if isinstance(decl, FunctionDecl):
+                if getattr(decl, "type_params", None):
+                    self.generic_function_decls[decl.name] = decl
                 self._define_function(decl.name, decl)
 
             elif isinstance(decl, ImplDecl):
@@ -1270,6 +1290,10 @@ class TypeChecker:
         attrs = getattr(func, 'attributes', None) or []
         prev_rt_safe_fn = self._current_rt_safe_fn
         prev_fn_name = self._current_function_name
+        prev_type_params = self._active_type_params
+        self._active_type_params = {
+            tp.name for tp in (getattr(func, "type_params", None) or [])
+        }
         self._current_rt_safe_fn = func.name if 'rt_safe' in attrs else None
         self._current_function_name = func.name
 
@@ -1327,6 +1351,7 @@ class TypeChecker:
             self._function_local_storage = prev_local_storage
             self._span_origin = prev_span_origin
             self._current_return_type = prev_return_type
+            self._active_type_params = prev_type_params
 
     def _check_const(self, const: ConstDecl) -> None:
         """Type check a constant declaration."""
@@ -2327,6 +2352,14 @@ class TypeChecker:
         if actual.kind == TypeKind.STRING and self._is_byte_pointer(target):
             return True
 
+        # A byte array decays to a byte pointer, so the same reinterpretation
+        # applies to `array<u8, N> as string` (the caller is asserting the
+        # buffer is NUL-terminated, which is why this needs an explicit cast).
+        if self._is_byte_array(actual) and target.kind == TypeKind.STRING:
+            return True
+        if actual.kind == TypeKind.STRING and self._is_byte_array(target):
+            return True
+
         return False
 
     @staticmethod
@@ -2338,6 +2371,14 @@ class TypeChecker:
         if element is None:
             return True
         return element.kind in {TypeKind.I8, TypeKind.U8, TypeKind.VOID}
+
+    @staticmethod
+    def _is_byte_array(t: SemanticType) -> bool:
+        """True for `array<i8, N>` and `array<u8, N>`."""
+        if t.kind != TypeKind.ARRAY:
+            return False
+        element = t.element_type
+        return element is not None and element.kind in {TypeKind.I8, TypeKind.U8}
 
     def _check_literal(self, lit: Literal) -> SemanticType:
         """Type check a literal."""
@@ -2636,6 +2677,8 @@ class TypeChecker:
             if elem_type:
                 return SemanticType(TypeKind.ARRAY, element_type=elem_type)
         symbol = self.current_scope.lookup(call.name)
+        if not symbol and self._ensure_generic_function_instance(call.name):
+            symbol = self.current_scope.lookup(call.name)
         if not symbol:
             # Check if it's a known builtin function
             if call.name in self.BUILTIN_FUNCTIONS:
@@ -2700,6 +2743,12 @@ class TypeChecker:
             self._check_span_arguments(call, matching_overload)
             return matching_overload.return_type
 
+        # Trailing capability parameters are supplied by the enclosing
+        # `handle E with Cap { … }`, so a call inside one may omit them.
+        implicit = self._match_implicit_effect_overload(candidates, arg_types)
+        if implicit is not None:
+            return implicit.return_type
+
         # Fallback to builtin if no overload matches
         if call.name in self.BUILTIN_FUNCTIONS:
             kind = self.BUILTIN_FUNCTIONS[call.name]
@@ -2724,6 +2773,48 @@ class TypeChecker:
             f"No matching overload for function '{call.name}' with arguments ({', '.join(str(t) for t in arg_types)})"
         )
         return candidates[0].return_type
+
+    def _effect_name_of_param(self, param: SemanticType) -> Optional[str]:
+        """Effect named by a capability parameter, if it is one.
+
+        `gpu: GPU` and `gpu: capability<GPU>` both denote the GPU effect;
+        the parser spells the second form `capability_GPU`.
+        """
+        name = param.name or ""
+        if name.startswith("capability_"):
+            name = name[len("capability_"):]
+        return name if name in self.effect_types else None
+
+    def _match_implicit_effect_overload(
+        self, candidates: List[SemanticType], arg_types: List[SemanticType]
+    ) -> Optional[SemanticType]:
+        """Resolve `f(x)` to `f(x, gpu, fft)` inside a matching handle block.
+
+        Mirrors `c_generator._resolve_call_with_implicit_effect_args`, which
+        passes zero-initialized capability structs for the omitted trailing
+        parameters. Without the same rule here, strict mode rejected calls
+        that codegen resolves fine. Ambiguity is left unresolved so the
+        normal "no matching overload" error still fires.
+        """
+        active = self._active_effect_handlers()
+        if not active:
+            return None
+        matches = []
+        for candidate in candidates:
+            params = candidate.param_types
+            if len(params) <= len(arg_types):
+                continue
+            if not all(
+                self._is_compatible(actual, expected)
+                for expected, actual in zip(params, arg_types)
+            ):
+                continue
+            trailing = params[len(arg_types):]
+            effects = [self._effect_name_of_param(p) for p in trailing]
+            if any(e is None or e not in active for e in effects):
+                continue
+            matches.append(candidate)
+        return matches[0] if len(matches) == 1 else None
 
     def _check_struct_literal(self, struct_lit: StructLiteral) -> SemanticType:
         """Type check a struct literal."""
@@ -2786,9 +2877,41 @@ class TypeChecker:
                 )
         return SemanticType(TypeKind.STRUCT, name=struct_name)
 
+    @staticmethod
+    def _is_function_to_void_pointer(
+        actual: SemanticType, expected: SemanticType
+    ) -> bool:
+        """True for a function value passed where `ptr<void>` is expected."""
+        if actual.kind != TypeKind.FUNCTION or expected.kind != TypeKind.POINTER:
+            return False
+        element = expected.element_type
+        return element is None or element.kind == TypeKind.VOID
+
+    def _is_type_param(self, t: Optional[SemanticType]) -> bool:
+        """True for an unresolved type parameter of the template being checked."""
+        if t is None or not self._active_type_params:
+            return False
+        if t.kind == TypeKind.UNKNOWN and t.name in self._active_type_params:
+            return True
+        # Parser-mangled aggregates carry the parameter in a name segment
+        # (`Chan_T`, `ptr_Chan_T`), and the instance is only known per call.
+        if t.name and any(
+            seg in self._active_type_params for seg in t.name.split("_")
+        ):
+            return True
+        if t.element_type is not None and self._is_type_param(t.element_type):
+            return True
+        return False
+
     def _is_compatible(self, actual: SemanticType, expected: SemanticType) -> bool:
         """Check if actual type is compatible with expected type."""
         if actual == expected:
+            return True
+
+        # Inside a generic template a type parameter stands for every type it
+        # will be instantiated at, so it is compatible with anything. Concrete
+        # instances are checked at their call sites.
+        if self._is_type_param(actual) or self._is_type_param(expected):
             return True
 
         # Borrowed views: arrays and other spans auto-borrow, pointers do not.
@@ -2833,6 +2956,9 @@ class TypeChecker:
         if actual.kind == TypeKind.STRING and expected.kind == TypeKind.POINTER:
             if expected.element_type and expected.element_type.kind in [TypeKind.U8, TypeKind.I8, TypeKind.VOID]:
                 return True
+        # Function value to `ptr<void>`: a C callback (see `_can_coerce`).
+        if self._is_function_to_void_pointer(actual, expected):
+            return True
 
         # Array to pointer decay
         if actual.kind == TypeKind.ARRAY and expected.kind == TypeKind.POINTER:
@@ -2899,6 +3025,24 @@ class TypeChecker:
             return None
         return base_name, [ParsedType(part) for part in parts[:type_param_count]]
 
+    def _rewrite_mangled_type_name(
+        self, name: str, type_map: Dict[str, ParsedType]
+    ) -> str:
+        """Rewrite parser-mangled names that embed type parameters.
+
+        The parser flattens `ptr<Chan<T> >` to the name `ptr_Chan_T`, so a
+        substitution that only walks `type_args` leaves the name stale.
+        Replacing whole underscore-separated segments mirrors what
+        `monomorphize._rewrite_mangled_type_name` does for codegen.
+        """
+        if not name or not type_map:
+            return name
+        parts = name.split("_")
+        rewritten = [
+            (type_map[p].name or "void") if p in type_map else p for p in parts
+        ]
+        return "_".join(rewritten)
+
     def _substitute_parsed_type(
         self, parsed_type: ParsedType, type_map: Dict[str, ParsedType]
     ) -> ParsedType:
@@ -2925,7 +3069,7 @@ class TypeChecker:
             else None
         )
         return ParsedType(
-            parsed_type.name,
+            self._rewrite_mangled_type_name(parsed_type.name, type_map),
             is_pointer=parsed_type.is_pointer,
             is_reference=parsed_type.is_reference,
             is_capability=getattr(parsed_type, "is_capability", False),
@@ -2933,6 +3077,75 @@ class TypeChecker:
             element_type=element_type,
             type_args=type_args,
         )
+
+    def _match_generic_function(
+        self, call_name: str
+    ) -> Optional[Tuple[FunctionDecl, List[ParsedType]]]:
+        """Resolve a parser-mangled call name to its generic template.
+
+        `channel_new<i32>(4)` reaches the checker as a call to
+        `channel_new_i32`; the longest matching template name wins so that
+        `channel_send_i32` does not bind to a hypothetical `channel`.
+        """
+        if "_" not in call_name:
+            return None
+        best: Optional[Tuple[FunctionDecl, List[ParsedType]]] = None
+        best_len = -1
+        for name, decl in self.generic_function_decls.items():
+            prefix = name + "_"
+            if not call_name.startswith(prefix) or len(name) <= best_len:
+                continue
+            suffix = call_name[len(prefix):]
+            if not suffix:
+                continue
+            nparams = len(decl.type_params)
+            if nparams == 1:
+                best = (decl, [ParsedType(suffix)])
+                best_len = len(name)
+            else:
+                parts = suffix.split("_")
+                if len(parts) == nparams:
+                    best = (decl, [ParsedType(p) for p in parts])
+                    best_len = len(name)
+        return best
+
+    def _ensure_generic_function_instance(self, call_name: str) -> bool:
+        """Synthesize the signature the monomorphizer will generate.
+
+        Codegen expands `channel_send<Point>` into `channel_send_Point`
+        after type checking, so without this the checker sees a call to a
+        function nobody declared. Substituting the type arguments into the
+        template's parameter and return types gives the call site a real
+        signature to check against.
+        """
+        if self.current_scope.lookup(call_name):
+            return True
+        match = self._match_generic_function(call_name)
+        if match is None:
+            return False
+        decl, type_args = match
+        type_map = {
+            param.name: arg for param, arg in zip(decl.type_params, type_args)
+        }
+        params = [
+            Parameter(p.name, self._substitute_parsed_type(p.type, type_map))
+            for p in decl.parameters
+        ]
+        return_type = self._substitute_parsed_type(decl.return_type, type_map)
+        instance = FunctionDecl(
+            call_name,
+            params,
+            return_type,
+            getattr(decl, "body", None),
+            attributes=list(getattr(decl, "attributes", None) or []),
+            is_exported=getattr(decl, "is_exported", False),
+            is_extern=getattr(decl, "is_extern", False),
+            type_params=[],
+            location=getattr(decl, "location", None),
+            effects=list(getattr(decl, "effects", None) or []),
+        )
+        self._define_function(call_name, instance)
+        return True
 
     def _ensure_generic_struct_instance(
         self, name: str, type_args: Optional[List[ParsedType]] = None

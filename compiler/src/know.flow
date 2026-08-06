@@ -228,7 +228,7 @@ export function flowc_know_find_theorem_claim(
                 while i < len and src[i] != 40 and src[i] != 123 and src[i] != 10 {
                     i = i + 1
                 }
-                let end: i32 = i
+                let mut end: i32 = i
                 # trim trailing spaces
                 while end > start and (src[end - 1] == 32 or src[end - 1] == 9) {
                     end = end - 1
@@ -281,7 +281,7 @@ export function flowc_know_count_theorems(src: ptr<u8>, len: i32) -> i32 {
     ]
     while pos < len {
         if flowc_know_find_theorem_claim(src, len, &pos, buf, 256) == 1 {
-            let claim: string = buf
+            let claim: string = buf as string
             let addr: FlowcClaimAddress = flowc_claim_parse(claim)
             if addr.ok == 1 {
                 count = count + 1
