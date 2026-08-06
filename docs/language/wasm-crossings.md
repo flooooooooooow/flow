@@ -18,6 +18,7 @@ open http://127.0.0.1:8000/wasm-crossings/threads/
 | crossing | status | headline number |
 | --- | --- | --- |
 | 1. OS threads | proven in Chrome | 7.78x on 8 workers, identical results |
+| 2. GPU via WebGPU | proven in Chrome | 1,048,576 / 1,048,576 elements bit-identical |
 
 Measurements below were taken in Chrome 141 on an Apple M-series laptop
 (`navigator.hardwareConcurrency` = 14: 10 performance cores, 4 efficiency
@@ -161,3 +162,112 @@ against the control's 79 ms, which looks like a 2.4x penalty for `-pthread`
 and is not. After warm-up both builds land at 78 ms. The demo takes the best
 of 4 passes for this reason; a benchmark that runs a WASM workload once is
 measuring the baseline compiler.
+
+---
+
+## 2. The GPU, via WebGPU
+
+### Mechanism
+
+Flow owns its shader codegen. `src/flow/metal_codegen.py` walks an `@gpu`
+function's AST and prints Metal Shading Language. `src/flow/wgsl_codegen.py`
+is its sibling: same AST, same walk, WGSL out. There is no LLVM, no SPIR-V and
+no vendor compiler in between, so adding a shading language costs one file.
+
+```
+./flow gpu lib/stdlib/gpu_kernels.flow           # Metal, as before
+./flow gpu lib/stdlib/gpu_kernels.flow --wgsl    # WGSL, same AST
+```
+
+`wasm/flow_wasm_gpu.py` builds the demo. It takes one Flow file and produces
+two things from it:
+
+* a `.wgsl` per `@gpu` function, plus a small JSON reflection (binding indices,
+  storage access modes, uniform layout, workgroup size) so the JavaScript host
+  never has to re-parse Flow;
+* the same file through `src/flow/c_generator.py` into WASM, where the kernel
+  bodies become ordinary C.
+
+The CPU reference is not a re-implementation. Flow's C generator already emits
+a `gpu_thread_id()` stub, so `wasm/crossing_assets/gpu_thread_id_shim.c`
+replaces it with one backed by a variable, and a Flow driver loop advances that
+variable and calls the kernel once per element. Both columns of the comparison
+come from the same AST.
+
+### Where WGSL forced a different structure from Metal
+
+Two things in `wgsl_codegen.py` are not a transliteration of the Metal backend:
+
+* **Buffers carry an access mode.** Metal binds everything as `device T*`.
+  WGSL needs `var<storage, read>` or `var<storage, read_write>` declared up
+  front. The generator decides per parameter by walking the body for
+  assignments through that name, rather than guessing from whether the
+  identifier contains "out".
+* **Scalars cannot be loose bindings.** Metal takes
+  `constant int& n [[buffer(k)]]`. WGSL wants a uniform block, so every scalar
+  parameter is packed into one `Params` struct, padded to a multiple of 16
+  bytes, and referenced as `params.<name>`.
+
+Two smaller ones: WGSL has a long reserved-word list, so Flow identifiers that
+collide get a trailing underscore; and WGSL has no `f64`, so a kernel using it
+is rejected with a clear message instead of emitting something that will not
+compile. The generator also keeps `elif` chains, which the Metal backend
+silently drops.
+
+`gpu_vector_add` comes out as:
+
+```wgsl
+@group(0) @binding(0) var<storage, read> a: array<f32>;
+@group(0) @binding(1) var<storage, read> b: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+
+struct Params { n: i32, _pad0: u32, _pad1: u32, _pad2: u32, };
+@group(0) @binding(3) var<uniform> params: Params;
+
+@compute @workgroup_size(64)
+fn gpu_vector_add(@builtin(global_invocation_id) global_id: vec3<u32>, ...) {
+    let tid: i32 = i32(global_id.x);
+    let i: i32 = tid;
+    if ((i < params.n)) {
+        out[i] = (a[i] + b[i]);
+    }
+}
+```
+
+### Measured, in Chrome
+
+Adapter reported by WebGPU: `apple metal-3`. 1,048,576 f32 elements per buffer,
+inputs generated inside the WASM heap so the GPU and the CPU reference are
+handed exactly the same bytes. Each side is run twice and the second run is
+reported.
+
+| kernel | GPU (WGSL) | CPU (WASM) | exact matches | max abs diff | verdict |
+| --- | --- | --- | --- | --- | --- |
+| `gpu_vector_add` | 2.80 ms | 2.30 ms | 1048576 / 1048576 | 0 | bit-identical |
+| `gpu_elementwise_mul` | 2.60 ms | 2.00 ms | 1048576 / 1048576 | 0 | bit-identical |
+| `gpu_saxpy` | 3.10 ms | 1.80 ms | 1048576 / 1048576 | 0 | bit-identical |
+| `gpu_heavy_mix` | 2.80 ms | 201.50 ms | 199007 / 1048576 | 1.3e-3 | 9.0e-7 relative |
+
+The milestone is the first row: a Flow `@gpu` kernel, compiled by Flow to WGSL,
+dispatched on a real GPU from a browser, agreeing with the CPU on every one of
+a million elements. Console clean.
+
+The GPU timings include buffer upload, dispatch and readback. The first three
+kernels are memory-bound at one arithmetic operation per element, so the GPU
+loses to a straight-line WASM loop; that is what those rows are for. First
+dispatch of a kernel costs an extra 3 to 34 ms for shader compilation and
+pipeline creation, reported separately on the page.
+
+`gpu_heavy_mix` does 128 square roots per element and the GPU wins by **72x**.
+It is checked to a tolerance rather than for bit equality, because WGSL only
+promises `sqrt` to within 1 ulp. The measured disagreement is 9.0e-7 relative,
+which is the ulp noise of summing 128 terms.
+
+### A negative result worth keeping
+
+An earlier draft of that kernel chained its 256 steps: `acc = sqrt(abs(acc *
+scale + 0.5))`. Only 524,258 of 1,048,576 elements matched and the max relative
+difference was 268. Nothing was wrong with the GPU or the codegen. The map is
+chaotic, so a 1-ulp difference in one `sqrt` grows into a completely different
+answer. Numerical agreement tests on a GPU need a kernel whose error does not
+amplify, or they measure chaos instead of correctness.
