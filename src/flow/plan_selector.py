@@ -95,6 +95,9 @@ class Implementation:
     scratch: Callable[[Facts], int] = lambda f: 0
     # Lower wins when two costs tie. Keeps selection deterministic.
     rank: int = 50
+    # What the programmer could change to make this candidate applicable.
+    # Printed under "possible resolutions" when it is rejected.
+    resolution: str = ""
 
 
 @dataclass
@@ -106,6 +109,10 @@ class Candidate:
     cost: Optional[float]
     rejected: Optional[str] = None
     scratch: int = 0
+    resolution: str = ""
+    # True when the rejection was a resource budget rather than a mismatch
+    # between the implementation and the data.
+    over_budget: bool = False
 
     @property
     def chosen_marker(self) -> str:
@@ -123,6 +130,10 @@ class Selection:
     candidates: List[Candidate]
     chosen: str
     reason: str
+    # A resource budget refused at least one candidate, or nothing but one
+    # implementation was left standing. Either way the programmer probably
+    # wants to know what they could change.
+    constrained: bool = False
 
     def chosen_candidate(self) -> Optional[Candidate]:
         for cand in self.candidates:
@@ -158,11 +169,15 @@ def select(facts: Facts, location: str = "", detail: str = "") -> Selection:
 
     candidates: List[Candidate] = []
     viable: List[tuple] = []
+    over_budget = False
     for impl in impls:
         why_not = impl.applicable(facts)
+        blew_budget = False
         if why_not is None:
             need = int(impl.scratch(facts))
             if need > SCRATCH_BUDGET_BYTES:
+                blew_budget = True
+                over_budget = True
                 why_not = (
                     f"scratch {_bytes(need)} exceeds the "
                     f"{_bytes(SCRATCH_BUDGET_BYTES)} compiler scratch budget"
@@ -174,7 +189,17 @@ def select(facts: Facts, location: str = "", detail: str = "") -> Selection:
                 )
                 viable.append((cost, impl.rank, impl.name, impl))
                 continue
-        candidates.append(Candidate(impl.name, impl.summary, None, why_not, 0))
+        candidates.append(
+            Candidate(
+                impl.name,
+                impl.summary,
+                None,
+                why_not,
+                0,
+                impl.resolution,
+                blew_budget,
+            )
+        )
 
     if not viable:
         raise NoImplementation(
@@ -204,6 +229,7 @@ def select(facts: Facts, location: str = "", detail: str = "") -> Selection:
         candidates=candidates,
         chosen=best_name,
         reason=reason,
+        constrained=over_budget or len(viable) == 1,
     )
 
 
@@ -266,6 +292,20 @@ def format_selections(selections: List[Selection], source: str = "") -> str:
                 lines.append(f"      {'':<{width}}  {'':>10}   {cand.summary}")
         lines.append("")
         lines.append(f"      chose {sel.chosen}: {sel.reason}")
+        # A rejection is ordinary; it only deserves advice when the selector
+        # was actually boxed in. Otherwise the per-candidate reasons above
+        # already say everything.
+        resolutions = []
+        if sel.constrained:
+            rejected = [c for c in sel.candidates if c.rejected and c.resolution]
+            # Budget failures first: they are the ones the programmer hit.
+            rejected.sort(key=lambda c: not c.over_budget)
+            resolutions = [f"{c.name}: {c.resolution}" for c in rejected]
+        if resolutions:
+            lines.append("")
+            lines.append("      possible resolutions")
+            for text in resolutions[:4]:
+                lines.append(f"        - {text}")
         lines.append("")
 
     lines.append(
