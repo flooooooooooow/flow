@@ -16,6 +16,8 @@
 
 import "stdlib/audio.flow"
 
+extern { function sinf(x: f32) -> f32 }
+
 # =============================================================================
 # Constants
 # =============================================================================
@@ -87,20 +89,13 @@ export function phasor_sync(p: Phasor, target_phase: f64) -> Phasor {
 # These functions take a phase [0.0, 1.0) and return a sample [-1.0, 1.0]
 
 # Sine wave: sin(2π * phase)
+#
+# Uses libm sinf. The previous 7th-order Taylor series was off by 7.5% at the
+# ends of the cycle (sin(π) came out as -0.075 instead of 0), which is roughly
+# -25 dB of harmonic distortion on every sine in the library.
 export function sine(phase: f64) -> f32 {
-    # Taylor series approximation for sin(2π * phase)
-    let mut x: f64 = phase * TWO_PI
-    # Normalize to [-π, π] for better accuracy
-    if x > PI {
-        x = x - TWO_PI
-    }
-    # sin(x) ≈ x - x³/6 + x⁵/120 - x⁷/5040
-    let x2: f64 = x * x
-    let x3: f64 = x2 * x
-    let x5: f64 = x3 * x2
-    let x7: f64 = x5 * x2
-    let result: f64 = x - x3 / 6.0 + x5 / 120.0 - x7 / 5040.0
-    return result
+    let x: f32 = phase * TWO_PI
+    return sinf(x)
 }
 
 # Saw wave: 2 * phase - 1 (naive, has aliasing at high frequencies)

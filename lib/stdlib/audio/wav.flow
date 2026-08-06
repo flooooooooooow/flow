@@ -1,0 +1,321 @@
+# WAV File I/O (32-bit IEEE float PCM)
+#
+# Offline render target for the audio examples: everything that can play to a
+# device can also write a file, so audio is testable without a sound card.
+#
+# Format: RIFF/WAVE, WAVE_FORMAT_IEEE_FLOAT (tag 3), 32-bit little-endian
+# samples, interleaved. Float is used instead of 16-bit PCM so a render is
+# bit-exact: assertions on peak level need no quantisation tolerance, and two
+# runs of the same program produce byte-identical files.
+#
+# Writing (one file open at a time; state lives in module statics):
+#   wav_write_open("out.wav", 48000, 2)
+#   wav_write_frames(buf, frames)      # interleaved f32
+#   wav_write_close()                  # patches the RIFF sizes
+#
+# Reading (streaming, one file at a time):
+#   let info: WavInfo = wav_read_open("out.wav")
+#   if info.ok { let n: i32 = wav_read_frames(dst, 512) ... wav_read_close() }
+#
+# Only libc fopen/fwrite/fread/fseek/fclose cross the FFI line. No malloc:
+# staging buffers are module statics.
+
+import "stdlib/audio.flow"
+
+extern {
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function fread(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function fseek(f: ptr<void>, off: i64, whence: i32) -> i32
+    function fclose(f: ptr<void>) -> i32
+    function fputc(c: i32, f: ptr<void>) -> i32
+}
+
+export const WAV_SEEK_SET: i32 = 0
+export const WAV_HEADER_BYTES: i64 = 44
+export const WAV_STAGE_FRAMES: i32 = 1024
+
+# --- writer state (module statics) -----------------------------------------
+
+let mut wav_out: ptr<void> = null
+let mut wav_out_rate: i32 = 0
+let mut wav_out_channels: i32 = 0
+let mut wav_out_frames: i64 = 0
+
+# --- reader state (module statics) -----------------------------------------
+
+let mut wav_in: ptr<void> = null
+let mut wav_in_rate: i32 = 0
+let mut wav_in_channels: i32 = 0
+let mut wav_in_frames: i64 = 0
+let mut wav_in_read: i64 = 0
+
+# 44-byte header staging area, shared by the reader and writer.
+let mut wav_hdr: array<u8, 44> = []
+
+# =============================================================================
+# Little-endian header helpers
+# =============================================================================
+
+function wav_put_u8(f: ptr<void>, v: i32) -> void {
+    fputc(v & 255, f)
+}
+
+function wav_put_u16(f: ptr<void>, v: i32) -> void {
+    wav_put_u8(f, v)
+    wav_put_u8(f, v / 256)
+}
+
+function wav_put_u32(f: ptr<void>, v: i64) -> void {
+    let a: i64 = v & 255
+    let b: i64 = (v / 256) & 255
+    let c: i64 = (v / 65536) & 255
+    let d: i64 = (v / 16777216) & 255
+    wav_put_u8(f, a as i32)
+    wav_put_u8(f, b as i32)
+    wav_put_u8(f, c as i32)
+    wav_put_u8(f, d as i32)
+}
+
+function wav_put_tag(f: ptr<void>, a: i32, b: i32, c: i32, d: i32) -> void {
+    wav_put_u8(f, a)
+    wav_put_u8(f, b)
+    wav_put_u8(f, c)
+    wav_put_u8(f, d)
+}
+
+function wav_hdr_u16(off: i32) -> i32 {
+    let lo: i32 = wav_hdr[off] as i32
+    let hi: i32 = wav_hdr[off + 1] as i32
+    return lo + hi * 256
+}
+
+function wav_hdr_u32(off: i32) -> i64 {
+    let b0: i64 = wav_hdr[off] as i64
+    let b1: i64 = wav_hdr[off + 1] as i64
+    let b2: i64 = wav_hdr[off + 2] as i64
+    let b3: i64 = wav_hdr[off + 3] as i64
+    return b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+}
+
+# =============================================================================
+# Writer
+# =============================================================================
+
+# Write the 44-byte canonical header. Sizes are placeholders when
+# `total_frames` is 0; wav_write_close patches them.
+function wav_emit_header(f: ptr<void>, rate: i32, channels: i32, total_frames: i64) -> void {
+    let bytes_per_frame: i64 = (channels * 4) as i64
+    let data_bytes: i64 = total_frames * bytes_per_frame
+
+    wav_put_tag(f, 82, 73, 70, 70)              # "RIFF"
+    wav_put_u32(f, 36 + data_bytes)
+    wav_put_tag(f, 87, 65, 86, 69)              # "WAVE"
+
+    wav_put_tag(f, 102, 109, 116, 32)           # "fmt "
+    wav_put_u32(f, 16)                          # PCM-style fmt chunk size
+    wav_put_u16(f, 3)                           # WAVE_FORMAT_IEEE_FLOAT
+    wav_put_u16(f, channels)
+    wav_put_u32(f, rate as i64)
+    wav_put_u32(f, (rate as i64) * bytes_per_frame)
+    wav_put_u16(f, channels * 4)                # block align
+    wav_put_u16(f, 32)                          # bits per sample
+
+    wav_put_tag(f, 100, 97, 116, 97)            # "data"
+    wav_put_u32(f, data_bytes)
+}
+
+# Open a WAV file for writing. Returns false if the path cannot be created or
+# another file is already open.
+export function wav_write_open(path: string, rate: i32, channels: i32) -> bool {
+    if wav_out != null {
+        println("audio/wav: a file is already open for writing")
+        return false
+    }
+    if channels < 1 or channels > 8 {
+        println("audio/wav: channel count must be 1..8")
+        return false
+    }
+    let f: ptr<void> = fopen(path, "wb")
+    if f == null {
+        println("audio/wav: cannot open output file")
+        return false
+    }
+    wav_out = f
+    wav_out_rate = rate
+    wav_out_channels = channels
+    wav_out_frames = 0
+    wav_emit_header(f, rate, channels, 0)
+    return true
+}
+
+# Append interleaved f32 frames. Returns frames written.
+export function wav_write_frames(data: ptr<f32>, frames: i32) -> i32 {
+    if wav_out == null or frames <= 0 {
+        return 0
+    }
+    let count: i64 = (frames * wav_out_channels) as i64
+    let wrote: i64 = fwrite(data as ptr<void>, 4, count, wav_out)
+    let got: i32 = (wrote / (wav_out_channels as i64)) as i32
+    wav_out_frames = wav_out_frames + (got as i64)
+    return got
+}
+
+# Append one interleaved frame from a stereo Frame (channels must be 2).
+export function wav_write_frame(fr: Frame) -> i32 {
+    let pair: array<f32, 2> = [fr.left, fr.right]
+    let p: ptr<f32> = pair
+    return wav_write_frames(p, 1)
+}
+
+# Patch the RIFF/data sizes and close. Returns frames written.
+export function wav_write_close() -> i64 {
+    if wav_out == null {
+        return 0
+    }
+    let f: ptr<void> = wav_out
+    let total: i64 = wav_out_frames
+    fseek(f, 0, WAV_SEEK_SET)
+    wav_emit_header(f, wav_out_rate, wav_out_channels, total)
+    fclose(f)
+    wav_out = null
+    wav_out_rate = 0
+    wav_out_channels = 0
+    wav_out_frames = 0
+    return total
+}
+
+export function wav_write_is_open() -> bool {
+    return wav_out != null
+}
+
+export function wav_write_frame_count() -> i64 {
+    return wav_out_frames
+}
+
+# =============================================================================
+# Reader
+# =============================================================================
+
+export struct WavInfo {
+    ok: bool
+    rate: i32
+    channels: i32
+    bits: i32
+    format: i32
+    frames: i64
+}
+
+export function wav_info_bad() -> WavInfo {
+    return WavInfo { ok: false, rate: 0, channels: 0, bits: 0, format: 0, frames: 0 }
+}
+
+export function wav_info_duration(info: WavInfo) -> f64 {
+    if info.rate <= 0 {
+        return 0.0
+    }
+    return (info.frames as f64) / (info.rate as f64)
+}
+
+# Open a canonical 44-byte-header WAV for streaming reads. Only the layout
+# this module writes is accepted (float32, one "data" chunk at offset 36).
+export function wav_read_open(path: string) -> WavInfo {
+    if wav_in != null {
+        println("audio/wav: a file is already open for reading")
+        return wav_info_bad()
+    }
+    let f: ptr<void> = fopen(path, "rb")
+    if f == null {
+        println("audio/wav: cannot open input file")
+        return wav_info_bad()
+    }
+    let hp: ptr<u8> = wav_hdr
+    let got: i64 = fread(hp as ptr<void>, 1, WAV_HEADER_BYTES, f)
+    if got != WAV_HEADER_BYTES {
+        println("audio/wav: file shorter than a WAV header")
+        fclose(f)
+        return wav_info_bad()
+    }
+    # "RIFF" .... "WAVE" "fmt "
+    if wav_hdr[0] != 82 or wav_hdr[1] != 73 or wav_hdr[2] != 70 or wav_hdr[3] != 70 {
+        println("audio/wav: not a RIFF file")
+        fclose(f)
+        return wav_info_bad()
+    }
+    if wav_hdr[8] != 87 or wav_hdr[9] != 65 or wav_hdr[10] != 86 or wav_hdr[11] != 69 {
+        println("audio/wav: not a WAVE file")
+        fclose(f)
+        return wav_info_bad()
+    }
+    if wav_hdr[36] != 100 or wav_hdr[37] != 97 or wav_hdr[38] != 116 or wav_hdr[39] != 97 {
+        println("audio/wav: unsupported chunk layout (expected data at offset 36)")
+        fclose(f)
+        return wav_info_bad()
+    }
+    let fmt: i32 = wav_hdr_u16(20)
+    let channels: i32 = wav_hdr_u16(22)
+    let rate: i64 = wav_hdr_u32(24)
+    let bits: i32 = wav_hdr_u16(34)
+    let data_bytes: i64 = wav_hdr_u32(40)
+    if fmt != 3 or bits != 32 {
+        println("audio/wav: only 32-bit IEEE float WAV is supported")
+        fclose(f)
+        return wav_info_bad()
+    }
+    if channels < 1 {
+        println("audio/wav: bad channel count")
+        fclose(f)
+        return wav_info_bad()
+    }
+    let frames: i64 = data_bytes / ((channels * 4) as i64)
+    wav_in = f
+    wav_in_rate = rate as i32
+    wav_in_channels = channels
+    wav_in_frames = frames
+    wav_in_read = 0
+    return WavInfo {
+        ok: true,
+        rate: rate as i32,
+        channels: channels,
+        bits: bits,
+        format: fmt,
+        frames: frames
+    }
+}
+
+# Read up to `frames` interleaved f32 frames into `dst`. Returns frames read
+# (0 at end of file).
+export function wav_read_frames(dst: ptr<f32>, frames: i32) -> i32 {
+    if wav_in == null or frames <= 0 {
+        return 0
+    }
+    let mut want: i64 = frames as i64
+    let left: i64 = wav_in_frames - wav_in_read
+    if want > left {
+        want = left
+    }
+    if want <= 0 {
+        return 0
+    }
+    let count: i64 = want * (wav_in_channels as i64)
+    let got: i64 = fread(dst as ptr<void>, 4, count, wav_in)
+    let frames_got: i64 = got / (wav_in_channels as i64)
+    wav_in_read = wav_in_read + frames_got
+    return frames_got as i32
+}
+
+export function wav_read_close() -> void {
+    if wav_in == null {
+        return
+    }
+    fclose(wav_in)
+    wav_in = null
+    wav_in_rate = 0
+    wav_in_channels = 0
+    wav_in_frames = 0
+    wav_in_read = 0
+}
+
+export function wav_read_is_open() -> bool {
+    return wav_in != null
+}
