@@ -1,0 +1,560 @@
+# LEAKY INTEGRATE-AND-FIRE: the F-I curve against its closed form.
+#
+# MODEL
+#   The oldest spiking neuron model (Lapicque 1907). One linear ODE plus a
+#   threshold-and-reset rule:
+#
+#     tau_m * dV/dt = -V + R*I          (subthreshold)
+#     V >= V_th  ->  V := V_reset       (spike, then integrate again)
+#
+#   Both lines appear verbatim in `flow LIF` below: the ODE is `evolves as`,
+#   the spike is `when v reaches v_th { v becomes v_reset }`. Nothing in this
+#   file integrates anything by hand.
+#
+# PARAMETERS
+#   tau_m    20 ms    membrane time constant
+#   V_th     15 mV    threshold above rest
+#   V_reset   0 mV    reset (= rest, so the closed form below is exact)
+#   R*I      driving current expressed as its steady-state voltage, in mV
+#   dt        5 us    fixed Euler step
+#
+# WHAT THIS PROVES
+#   With V_rest = V_reset = 0 and no refractory period, the interspike
+#   interval integrates exactly:
+#
+#     T(I) = tau_m * ln( R*I / (R*I - V_th) )
+#     f(I) = 1 / T(I)
+#
+#   The program sweeps R*I over 24 values, measures the firing rate from the
+#   simulated spike train, and compares each one to that formula. The maximum
+#   relative error across the sweep is printed and the exit code is gated on
+#   it. This is a known-answer test for the compiler-generated integrator and
+#   for the hybrid `when ... reaches` event, not a demonstration.
+#
+# REFERENCE
+#   Gerstner, Kistler, Naud & Paninski, "Neuronal Dynamics" (2014), eq. 1.6
+#   (leaky integrate-and-fire gain function).
+#   Also Dayan & Abbott, "Theoretical Neuroscience" (2001), eq. 5.11.
+#
+# KEYS
+#   Left / Right   move the highlighted operating point
+#   P              pause the live trace          Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/lif_fi_curve.flow --frames 90 \
+#       --out build/frames_lif --gif build/lif_fi_curve.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/lif_fi_curve.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function log(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 780
+const WIN_H: i32 = 620
+const MAX_FRAMES: i32 = 4000
+
+const N_POINTS: i32 = 24        # currents in the sweep
+const RI_MIN: f64 = 16.0        # mV
+const RI_STEP: f64 = 2.0        # mV
+
+const TAU_M: f64 = 20.0         # ms
+const V_TH: f64 = 15.0          # mV
+const V_RESET: f64 = 0.0        # mV
+
+const SIM_MS: f64 = 1200.0      # measurement window per current
+const SIM_DT: f64 = 0.005       # ms
+const WARMUP_SPIKES: i32 = 2    # discard, so the ISI is the steady-state one
+
+const TOL_REL: f64 = 0.002      # 0.2 % gate on the worst point
+
+const TRACE_W: i32 = 480        # samples held for the live trace
+const SUBSTEPS: i32 = 20        # display substeps per trace sample
+const TRACE_DT: f64 = 0.05      # ms per display substep
+const PUSH_PER_FRAME: i32 = 24
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model. Two lines of neuroscience; the integrator is generated.
+# ---------------------------------------------------------------------------
+
+flow LIF {
+    state v : f64 = 0.0             # membrane potential above rest, mV
+
+    param drive   : f64 = 20.0      # R*I in mV
+    param tau     : f64 = 20.0      # ms
+    param v_th    : f64 = 15.0      # mV
+    param v_reset : f64 = 0.0       # mV
+
+    solver { dt 5 us  method euler }
+
+    v evolves as (drive - v) / tau
+
+    when v reaches v_th {
+        v becomes v_reset
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Module statics: the sweep results and the live trace ring
+# ---------------------------------------------------------------------------
+
+let mut sweep_ri: array<f64, 24> = [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut sweep_meas: array<f64, 24> = [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut sweep_exact: array<f64, 24> = [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut sweep_relerr: array<f64, 24> = [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+let mut trace: ptr<f64> = null      # TRACE_W samples of v
+let mut trace_fill: i32 = 0
+
+extern {
+    function malloc(size: i64) -> ptr<f64>
+}
+
+# ---------------------------------------------------------------------------
+# Closed form and measurement
+# ---------------------------------------------------------------------------
+
+# f(I) = 1 / (tau * ln(RI / (RI - V_th))), converted to Hz (tau is in ms).
+function exact_rate(ri: f64) -> f64 {
+    if ri <= V_TH {
+        return 0.0
+    }
+    return 1000.0 / (TAU_M * log(ri / (ri - V_TH)))
+}
+
+# Measure the steady-state rate by simulating and timing the spikes. The
+# first WARMUP_SPIKES intervals are discarded so the answer is the periodic
+# ISI rather than the first-spike latency from V = 0.
+function measure_rate(ri: f64) -> f64 {
+    let mut cell: LIF = LIF_new()
+    cell.drive = ri
+    cell.tau = TAU_M
+    cell.v_th = V_TH
+    cell.v_reset = V_RESET
+
+    let steps: i32 = (SIM_MS / SIM_DT) as i32
+    let mut prev_v: f64 = cell.v
+    let mut spikes: i32 = 0
+    let mut t_first: f64 = 0.0
+    let mut t_last: f64 = 0.0
+    let mut k: i32 = 0
+    while k < steps {
+        LIF_step(&cell, SIM_DT)
+        k = k + 1
+        # The reset already happened inside the step, so a drop in v is a
+        # spike. v is otherwise monotonically rising towards `drive`.
+        if cell.v < prev_v {
+            spikes = spikes + 1
+            let t: f64 = (k as f64) * SIM_DT
+            if spikes == WARMUP_SPIKES + 1 {
+                t_first = t
+            }
+            t_last = t
+        }
+        prev_v = cell.v
+    }
+    let counted: i32 = spikes - WARMUP_SPIKES - 1
+    if counted < 1 {
+        return 0.0
+    }
+    return 1000.0 * (counted as f64) / (t_last - t_first)
+}
+
+function run_sweep() -> f64 {
+    let mut worst: f64 = 0.0
+    let mut i: i32 = 0
+    while i < N_POINTS {
+        let ri: f64 = RI_MIN + (i as f64) * RI_STEP
+        let meas: f64 = measure_rate(ri)
+        let want: f64 = exact_rate(ri)
+        let rel: f64 = fabs(meas - want) / want
+        sweep_ri[i] = ri
+        sweep_meas[i] = meas
+        sweep_exact[i] = want
+        sweep_relerr[i] = rel
+        if rel > worst {
+            worst = rel
+        }
+        i = i + 1
+    }
+    return worst
+}
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+# ---------------------------------------------------------------------------
+# Panels
+# ---------------------------------------------------------------------------
+
+const TR_X: i32 = 40
+const TR_Y: i32 = 74
+const TR_H: i32 = 150
+
+function draw_trace_panel(g: Gfx, sel: i32) -> void {
+    draw_frame(g, TR_X, TR_Y, TRACE_W, TR_H, 60, 70, 90)
+    gfx_draw_text(g, TR_X, TR_Y - 16, "MEMBRANE POTENTIAL, LIVE", 1, 150, 165, 190)
+    gfx_draw_text(g, TR_X + 200, TR_Y - 16, "R*I", 1, 150, 165, 190)
+    gfx_draw_fixed(g, TR_X + 228, TR_Y - 16, sweep_ri[sel], 1, 1, 255, 205, 110)
+    gfx_draw_text(g, TR_X + 268, TR_Y - 16, "mV", 1, 150, 165, 190)
+    gfx_draw_text(g, TR_X + 310, TR_Y - 16, "480 ms WINDOW", 1, 110, 125, 150)
+
+    # threshold and reset guides
+    let y_th: i32 = TR_Y + TR_H - ((V_TH / 20.0) * (TR_H as f64)) as i32
+    let mut gx: i32 = TR_X
+    while gx < TR_X + TRACE_W {
+        gfx_fill_rect(g, gx, y_th, 3, 1, 120, 90, 60)
+        gx = gx + 8
+    }
+    gfx_draw_text(g, TR_X + TRACE_W + 6, y_th - 3, "Vth", 1, 200, 150, 90)
+    gfx_draw_text(g, TR_X + TRACE_W + 6, TR_Y + TR_H - 4, "0", 1, 110, 125, 150)
+
+    let mut i: i32 = 1
+    while i < trace_fill {
+        let v0: f64 = trace[i - 1]
+        let v1: f64 = trace[i]
+        let y0: i32 = TR_Y + TR_H - ((v0 / 20.0) * (TR_H as f64)) as i32
+        let y1: i32 = TR_Y + TR_H - ((v1 / 20.0) * (TR_H as f64)) as i32
+        if v1 < v0 - 1.0 {
+            # a reset: draw the spike as a full-height mark
+            draw_line(g, TR_X + i, TR_Y + 4, TR_X + i, y0, 1, 255, 225, 120)
+        } else {
+            draw_line(g, TR_X + i - 1, y0, TR_X + i, y1, 1, 120, 220, 200)
+        }
+        i = i + 1
+    }
+}
+
+const FI_X: i32 = 40
+const FI_Y: i32 = 290
+const FI_W: i32 = 300
+const FI_H: i32 = 220
+const FI_FMAX: f64 = 240.0
+const FI_RIMAX: f64 = 64.0
+
+function fi_px(ri: f64) -> i32 {
+    return FI_X + ((ri / FI_RIMAX) * (FI_W as f64)) as i32
+}
+
+function fi_py(f: f64) -> i32 {
+    return FI_Y + FI_H - ((f / FI_FMAX) * (FI_H as f64)) as i32
+}
+
+function draw_fi_panel(g: Gfx, sel: i32) -> void {
+    draw_frame(g, FI_X, FI_Y, FI_W, FI_H, 60, 70, 90)
+    gfx_draw_text(g, FI_X, FI_Y - 16, "F-I CURVE   line = closed form   dots = measured",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, FI_X - 32, FI_Y - 2, "Hz", 1, 110, 125, 150)
+    gfx_draw_int(g, FI_X - 32, FI_Y + 8, 240, 1, 110, 125, 150)
+    gfx_draw_int(g, FI_X - 32, FI_Y + FI_H - 8, 0, 1, 110, 125, 150)
+    gfx_draw_text(g, FI_X + FI_W - 60, FI_Y + FI_H + 6, "R*I  mV", 1, 110, 125, 150)
+    gfx_draw_int(g, FI_X + FI_W - 16, FI_Y + FI_H + 16, 64, 1, 110, 125, 150)
+
+    # the analytic gain function, sampled finely
+    let mut k: i32 = 0
+    while k < 240 {
+        let a: f64 = V_TH + 0.02 + ((k as f64) / 240.0) * (FI_RIMAX - V_TH)
+        let b: f64 = V_TH + 0.02 + (((k + 1) as f64) / 240.0) * (FI_RIMAX - V_TH)
+        let fa: f64 = exact_rate(a)
+        let fb: f64 = exact_rate(b)
+        if fa < FI_FMAX and fb < FI_FMAX {
+            draw_line(g, fi_px(a), fi_py(fa), fi_px(b), fi_py(fb), 1, 90, 140, 210)
+        }
+        k = k + 1
+    }
+
+    # measured points
+    let mut i: i32 = 0
+    while i < N_POINTS {
+        let px: i32 = fi_px(sweep_ri[i])
+        let py: i32 = fi_py(sweep_meas[i])
+        if i == sel {
+            gfx_fill_rect(g, px - 3, py - 3, 7, 7, 255, 205, 110)
+        } else {
+            gfx_fill_rect(g, px - 1, py - 1, 3, 3, 235, 240, 250)
+        }
+        i = i + 1
+    }
+}
+
+const ER_X: i32 = 400
+const ER_Y: i32 = 290
+const ER_W: i32 = 340
+const ER_H: i32 = 220
+
+function draw_error_panel(g: Gfx, sel: i32, worst: f64) -> void {
+    draw_frame(g, ER_X, ER_Y, ER_W, ER_H, 60, 70, 90)
+    gfx_draw_text(g, ER_X, ER_Y - 16, "RELATIVE ERROR vs CLOSED FORM  (parts per million)",
+                  1, 150, 165, 190)
+    let scale: f64 = 400.0     # ppm at full panel height
+    let mut i: i32 = 0
+    while i < N_POINTS {
+        let ppm: f64 = sweep_relerr[i] * 1000000.0
+        let mut hgt: i32 = ((ppm / scale) * (ER_H as f64)) as i32
+        if hgt > ER_H - 2 {
+            hgt = ER_H - 2
+        }
+        if hgt < 1 {
+            hgt = 1
+        }
+        let bx: i32 = ER_X + 6 + i * 14
+        if i == sel {
+            gfx_fill_rect(g, bx, ER_Y + ER_H - hgt, 10, hgt, 255, 205, 110)
+        } else {
+            gfx_fill_rect(g, bx, ER_Y + ER_H - hgt, 10, hgt, 90, 160, 200)
+        }
+        i = i + 1
+    }
+    gfx_draw_int(g, ER_X + 4, ER_Y + 4, 400, 1, 110, 125, 150)
+    gfx_draw_text(g, ER_X + 30, ER_Y + 4, "ppm", 1, 110, 125, 150)
+    gfx_draw_text(g, ER_X + 4, ER_Y + ER_H + 6, "WORST", 1, 150, 165, 190)
+    gfx_draw_fixed(g, ER_X + 48, ER_Y + ER_H + 6, worst * 1000000.0, 1, 1, 255, 205, 110)
+    gfx_draw_text(g, ER_X + 104, ER_Y + ER_H + 6, "ppm   GATE 2000 ppm", 1, 110, 125, 150)
+}
+
+function draw_hud(g: Gfx, sel: i32, worst: f64, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "LEAKY INTEGRATE-AND-FIRE  -  F-I CURVE vs CLOSED FORM",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32, "tau 20 ms   Vth 15 mV   Vreset 0 mV   Euler dt 5 us",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44, "f(I) = 1 / (tau * ln(RI / (RI - Vth)))   Gerstner et al. 2014 eq 1.6",
+                  1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 700, 10, "PAUSED", 1, 255, 120, 120)
+    }
+    gfx_draw_text(g, 12, WIN_H - 34, "SELECTED  R*I", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 108, WIN_H - 34, sweep_ri[sel], 1, 1, 255, 205, 110)
+    gfx_draw_text(g, 148, WIN_H - 34, "mV    MEASURED", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 264, WIN_H - 34, sweep_meas[sel], 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 330, WIN_H - 34, "Hz    EXACT", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 416, WIN_H - 34, sweep_exact[sel], 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 482, WIN_H - 34, "Hz", 1, 150, 165, 190)
+    if ok {
+        gfx_draw_text(g, 560, WIN_H - 34, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 560, WIN_H - 34, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16,
+                  "LEFT/RIGHT select operating point   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+# Live trace: integrated in the frame loop, same flow block, coarser dt.
+# ---------------------------------------------------------------------------
+
+function push_trace(v: f64) -> void {
+    if trace_fill < TRACE_W {
+        trace[trace_fill] = v
+        trace_fill = trace_fill + 1
+        return
+    }
+    let mut i: i32 = 1
+    while i < TRACE_W {
+        trace[i - 1] = trace[i]
+        i = i + 1
+    }
+    trace[TRACE_W - 1] = v
+}
+
+function advance_live(cell: ptr<LIF>) -> void {
+    let mut p: i32 = 0
+    while p < PUSH_PER_FRAME {
+        let mut s: i32 = 0
+        let mut peaked: bool = false
+        while s < SUBSTEPS {
+            let before: f64 = cell.v
+            LIF_step(cell, TRACE_DT)
+            if cell.v < before {
+                peaked = true
+            }
+            s = s + 1
+        }
+        if peaked {
+            push_trace(V_TH + 4.0)
+        } else {
+            push_trace(cell.v)
+        }
+        p = p + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    trace = malloc((TRACE_W as i64) * 8)
+
+    println("")
+    println("  LEAKY INTEGRATE-AND-FIRE  --  measured F-I curve vs closed form")
+    println("  ===============================================================")
+    println("")
+    println("    tau_m 20 ms   V_th 15 mV   V_reset 0 mV   Euler dt 5 us")
+    println("    f(I) = 1 / (tau_m * ln(R*I / (R*I - V_th)))")
+    println("")
+
+    let worst: f64 = run_sweep()
+
+    println("      R*I [mV]   measured [Hz]   closed form [Hz]   rel. error [ppm]")
+    println("      --------   -------------   ----------------   ----------------")
+    let mut i: i32 = 0
+    while i < N_POINTS {
+        print("    ")
+        printf("%10.1f", sweep_ri[i])
+        printf("   %13.5f", sweep_meas[i])
+        printf("   %16.5f", sweep_exact[i])
+        printf("   %16.1f", sweep_relerr[i] * 1000000.0)
+        println("")
+        i = i + 1
+    }
+    println("")
+    print("    worst relative error : ")
+    printf("%.6f", worst)
+    print("  (")
+    printf("%.1f", worst * 1000000.0)
+    println(" ppm)")
+    print("    gate                 : ")
+    printf("%.6f", TOL_REL)
+    println("")
+    println("")
+
+    let ok: bool = worst < TOL_REL and worst == worst
+
+    # Live panel starts at the middle of the sweep.
+    let mut sel: i32 = N_POINTS / 2
+    let mut live: LIF = LIF_new()
+    live.drive = sweep_ri[sel]
+    live.tau = TAU_M
+    live.v_th = V_TH
+    live.v_reset = V_RESET
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "LIF F-I curve - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+
+        let mut want: i32 = sel
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = sel - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = sel + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        # Unattended runs walk the sweep so a recording shows several points.
+        if frame > 0 and frame % 30 == 0 {
+            want = sel + 4
+        }
+        if want < 0 {
+            want = 0
+        }
+        if want >= N_POINTS {
+            want = want % N_POINTS
+        }
+        if want != sel {
+            sel = want
+            live = LIF_new()
+            live.drive = sweep_ri[sel]
+            live.tau = TAU_M
+            live.v_th = V_TH
+            live.v_reset = V_RESET
+            trace_fill = 0
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            advance_live(&live)
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_trace_panel(g, sel)
+        draw_fi_panel(g, sel)
+        draw_error_panel(g, sel, worst)
+        draw_hud(g, sel, worst, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !ok {
+        println("    FAIL: measured F-I curve departs from the closed form")
+        return 1
+    }
+    println("    PASS: F-I curve matches 1/(tau*ln(RI/(RI-Vth))) to 0.2 %")
+    return 0
+}

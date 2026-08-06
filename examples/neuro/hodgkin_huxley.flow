@@ -1,0 +1,728 @@
+# HODGKIN-HUXLEY: the action potential, from four coupled equations.
+#
+# MODEL
+#   Hodgkin & Huxley (1952) fitted voltage-clamp data on the squid giant axon
+#   to a circuit with a capacitor and three conductances, two of them gated by
+#   voltage-dependent particles. Four state variables, no more:
+#
+#     C dV/dt = I - gNa*m^3*h*(V - ENa) - gK*n^4*(V - EK) - gL*(V - EL)
+#     dm/dt = alpha_m(V)*(1-m) - beta_m(V)*m      Na activation
+#     dh/dt = alpha_h(V)*(1-h) - beta_h(V)*h      Na inactivation
+#     dn/dt = alpha_n(V)*(1-n) - beta_n(V)*n      K  activation
+#
+#   All four appear verbatim as `evolves as` lines in `flow HH` below. The
+#   rate functions are ordinary Flow functions called from inside the
+#   dynamics; the compiler generates HH_derivs and the RK4 stepper.
+#
+# PARAMETERS  (original 1952 values, 6.3 C, V in mV relative to bath)
+#   C   =   1.0 uF/cm2      membrane capacitance
+#   gNa = 120.0 mS/cm2      peak sodium conductance     ENa = +50.0 mV
+#   gK  =  36.0 mS/cm2      peak potassium conductance  EK  = -77.0 mV
+#   gL  =   0.3 mS/cm2      leak conductance            EL  = -54.387 mV
+#   dt  =  10 us, RK4
+#
+# WHAT THIS PROVES  (three numbers, all gated)
+#   1. SPIKE PEAK. Driven at 10 uA/cm2 the model overshoots to about +40 mV.
+#      Gate: peak in [+25, +50] mV.
+#   2. SPIKE WIDTH. Full width at half amplitude of the action potential is
+#      close to 1 ms at this temperature. Gate: width in [0.4, 2.0] ms.
+#   3. THRESHOLD CURRENT (rheobase for repetitive firing). Located by
+#      bisection on the injected current: below it the model settles, above
+#      it fires without stopping. The published value for these parameters is
+#      about 6.2 uA/cm2. Gate: located value in [5.5, 7.5] uA/cm2.
+#   The resting state and the spike threshold voltage are reported too.
+#
+# REFERENCE
+#   A. L. Hodgkin and A. F. Huxley, "A quantitative description of membrane
+#   current and its application to conduction and excitation in nerve",
+#   J. Physiol. 117:500-544 (1952).
+#   Repetitive-firing onset near I = 6.2 uA/cm2: Rinzel & Miller, Math.
+#   Biosci. 49:27-59 (1980), and Izhikevich, "Dynamical Systems in
+#   Neuroscience" (2007), section 2.3.
+#
+# KEYS
+#   Left / Right   change the injected current of the live trace
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/hodgkin_huxley.flow --frames 90 \
+#       --out build/frames_hh --gif build/hodgkin_huxley.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/hodgkin_huxley.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 900
+const WIN_H: i32 = 680
+const MAX_FRAMES: i32 = 4000
+
+const DT: f64 = 0.01            # ms, RK4
+const V_REST: f64 = -65.0
+
+const SPIKE_I: f64 = 10.0       # uA/cm2 for the shape measurement
+const SHAPE_MS: f64 = 40.0
+const STIM_ON: f64 = 5.0        # ms
+
+const SWEEP_N: i32 = 61         # rheobase sweep resolution
+const SWEEP_IMAX: f64 = 15.0
+const COUNT_MS: f64 = 200.0     # window used to decide "fires repetitively"
+const SETTLE_MS: f64 = 60.0
+
+const PEAK_LO: f64 = 25.0
+const PEAK_HI: f64 = 50.0
+const WIDTH_LO: f64 = 0.4
+const WIDTH_HI: f64 = 2.0
+const RHEO_LO: f64 = 5.5
+const RHEO_HI: f64 = 7.5
+const RHEO_REF: f64 = 6.2
+
+const TRACE_W: i32 = 560
+const SUBSTEPS: i32 = 20        # display substeps per sample (0.2 ms/sample)
+const PUSH_PER_FRAME: i32 = 28
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# Voltage-dependent rate constants (Hodgkin & Huxley 1952, table 3),
+# written in the modern sign convention with rest at -65 mV.
+# The singular points at V = -40 and V = -55 are covered by the limit.
+# ---------------------------------------------------------------------------
+
+function alpha_m(v: f64) -> f64 {
+    let d: f64 = v + 40.0
+    if d < 0.000001 and d > -0.000001 {
+        return 1.0
+    }
+    return 0.1 * d / (1.0 - exp(0.0 - d / 10.0))
+}
+
+function beta_m(v: f64) -> f64 {
+    return 4.0 * exp(0.0 - (v + 65.0) / 18.0)
+}
+
+function alpha_h(v: f64) -> f64 {
+    return 0.07 * exp(0.0 - (v + 65.0) / 20.0)
+}
+
+function beta_h(v: f64) -> f64 {
+    return 1.0 / (1.0 + exp(0.0 - (v + 35.0) / 10.0))
+}
+
+function alpha_n(v: f64) -> f64 {
+    let d: f64 = v + 55.0
+    if d < 0.000001 and d > -0.000001 {
+        return 0.1
+    }
+    return 0.01 * d / (1.0 - exp(0.0 - d / 10.0))
+}
+
+function beta_n(v: f64) -> f64 {
+    return 0.125 * exp(0.0 - (v + 65.0) / 80.0)
+}
+
+# ---------------------------------------------------------------------------
+# The model. Four equations; everything else in this file measures them.
+# ---------------------------------------------------------------------------
+
+flow HH {
+    state v : f64 = -65.0
+    state m : f64 = 0.05293
+    state h : f64 = 0.59612
+    state n : f64 = 0.31768
+
+    param i_ext : f64 = 0.0         # uA/cm2
+    param cm    : f64 = 1.0         # uF/cm2
+    param gna   : f64 = 120.0       # mS/cm2
+    param gk    : f64 = 36.0
+    param gl    : f64 = 0.3
+    param ena   : f64 = 50.0        # mV
+    param ek    : f64 = -77.0
+    param el    : f64 = -54.387
+
+    solver { dt 10 us  method rk4 }
+
+    v evolves as (i_ext
+                  - gna * m * m * m * h * (v - ena)
+                  - gk * n * n * n * n * (v - ek)
+                  - gl * (v - el)) / cm
+    m evolves as alpha_m(v) * (1.0 - m) - beta_m(v) * m
+    h evolves as alpha_h(v) * (1.0 - h) - beta_h(v) * h
+    n evolves as alpha_n(v) * (1.0 - n) - beta_n(v) * n
+}
+
+# ---------------------------------------------------------------------------
+# Module statics: the measured spike waveform, the sweep, the live ring
+# ---------------------------------------------------------------------------
+
+const SHAPE_N: i32 = 4000       # SHAPE_MS / DT
+
+let mut shape_v: ptr<f64> = null
+let mut sweep_i: ptr<f64> = null
+let mut sweep_rate: ptr<f64> = null
+
+let mut trace_v: ptr<f64> = null
+let mut trace_m: ptr<f64> = null
+let mut trace_h: ptr<f64> = null
+let mut trace_n: ptr<f64> = null
+let mut trace_fill: i32 = 0
+
+let mut peak_mv: f64 = 0.0
+let mut peak_ms: f64 = 0.0
+let mut width_ms: f64 = 0.0
+let mut ahp_mv: f64 = 0.0
+let mut thresh_mv: f64 = 0.0
+let mut rheobase: f64 = 0.0
+let mut rest_mv: f64 = 0.0
+
+# ---------------------------------------------------------------------------
+# Measurement 0: the resting state, found by relaxing with no current.
+# ---------------------------------------------------------------------------
+
+function measure_rest() -> f64 {
+    let mut c: HH = HH_new()
+    let steps: i32 = (200.0 / DT) as i32
+    let mut k: i32 = 0
+    while k < steps {
+        HH_step(&c, DT)
+        k = k + 1
+    }
+    return c.v
+}
+
+# ---------------------------------------------------------------------------
+# Measurement 1 and 2: peak, half-width, AHP and spike threshold from one
+# action potential elicited by a 10 uA/cm2 step.
+# ---------------------------------------------------------------------------
+
+function measure_shape() -> void {
+    let mut c: HH = HH_new()
+    let mut k: i32 = 0
+    let mut vmax: f64 = -1000.0
+    let mut kmax: i32 = 0
+    let mut vmin_after: f64 = 1000.0
+    let mut prev_v: f64 = c.v
+    let mut found_thresh: bool = false
+    thresh_mv = 0.0
+
+    while k < SHAPE_N {
+        let t: f64 = (k as f64) * DT
+        if t >= STIM_ON {
+            c.i_ext = SPIKE_I
+        }
+        HH_step(&c, DT)
+        shape_v[k] = c.v
+        # Spike threshold: first voltage whose slope passes 10 mV/ms while
+        # rising (the standard empirical definition).
+        if !found_thresh {
+            let slope: f64 = (c.v - prev_v) / DT
+            if slope > 10.0 {
+                thresh_mv = prev_v
+                found_thresh = true
+            }
+        }
+        if c.v > vmax {
+            vmax = c.v
+            kmax = k
+        }
+        prev_v = c.v
+        k = k + 1
+    }
+
+    # After-hyperpolarisation: the minimum in the 15 ms after the peak.
+    let mut j: i32 = kmax
+    let jend: i32 = kmax + ((15.0 / DT) as i32)
+    while j < jend and j < SHAPE_N {
+        if shape_v[j] < vmin_after {
+            vmin_after = shape_v[j]
+        }
+        j = j + 1
+    }
+
+    peak_mv = vmax
+    peak_ms = (kmax as f64) * DT
+    ahp_mv = vmin_after
+
+    # Full width at half amplitude, measured between rest and peak.
+    let half: f64 = 0.5 * (V_REST + vmax)
+    let mut a: i32 = kmax
+    while a > 0 and shape_v[a] > half {
+        a = a - 1
+    }
+    let mut b: i32 = kmax
+    while b < SHAPE_N - 1 and shape_v[b] > half {
+        b = b + 1
+    }
+    width_ms = ((b - a) as f64) * DT
+}
+
+# ---------------------------------------------------------------------------
+# Measurement 3: the current at which firing becomes repetitive.
+# ---------------------------------------------------------------------------
+
+# Spikes per second over COUNT_MS, after SETTLE_MS of transient.
+function firing_rate(i_amp: f64) -> f64 {
+    let mut c: HH = HH_new()
+    c.i_ext = i_amp
+    let settle: i32 = (SETTLE_MS / DT) as i32
+    let count: i32 = (COUNT_MS / DT) as i32
+    let mut k: i32 = 0
+    while k < settle {
+        HH_step(&c, DT)
+        k = k + 1
+    }
+    let mut spikes: i32 = 0
+    let mut prev_v: f64 = c.v
+    k = 0
+    while k < count {
+        HH_step(&c, DT)
+        if prev_v <= 0.0 and c.v > 0.0 {
+            spikes = spikes + 1
+        }
+        prev_v = c.v
+        k = k + 1
+    }
+    return 1000.0 * (spikes as f64) / COUNT_MS
+}
+
+# Bisection on "does it fire repetitively", 24 halvings of [0, 15].
+function find_rheobase() -> f64 {
+    let mut lo: f64 = 0.0
+    let mut hi: f64 = SWEEP_IMAX
+    let mut it: i32 = 0
+    while it < 24 {
+        let mid: f64 = 0.5 * (lo + hi)
+        if firing_rate(mid) > 0.0 {
+            hi = mid
+        } else {
+            lo = mid
+        }
+        it = it + 1
+    }
+    return 0.5 * (lo + hi)
+}
+
+function run_sweep() -> void {
+    let mut i: i32 = 0
+    while i < SWEEP_N {
+        let amp: f64 = ((i as f64) / ((SWEEP_N - 1) as f64)) * SWEEP_IMAX
+        sweep_i[i] = amp
+        sweep_rate[i] = firing_rate(amp)
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+function draw_dashed(g: Gfx, x: i32, y: i32, w: i32,
+                     r: i32, gg: i32, b: i32) -> void {
+    let mut gx: i32 = x
+    while gx < x + w {
+        gfx_fill_rect(g, gx, y, 3, 1, r, gg, b)
+        gx = gx + 8
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Panels
+# ---------------------------------------------------------------------------
+
+const TR_X: i32 = 40
+const TR_Y: i32 = 78
+const TR_H: i32 = 140
+const V_LO: f64 = -90.0
+const V_HI: f64 = 55.0
+
+function v_to_y(v: f64, top: i32, h: i32) -> i32 {
+    let t: f64 = (v - V_LO) / (V_HI - V_LO)
+    return top + h - ((t * (h as f64)) as i32)
+}
+
+function draw_live_panel(g: Gfx, i_amp: f64) -> void {
+    draw_frame(g, TR_X, TR_Y, TRACE_W, TR_H, 60, 70, 90)
+    gfx_draw_text(g, TR_X, TR_Y - 16, "MEMBRANE POTENTIAL, LIVE   I =", 1, 150, 165, 190)
+    gfx_draw_fixed(g, TR_X + 186, TR_Y - 16, i_amp, 2, 1, 255, 205, 110)
+    gfx_draw_text(g, TR_X + 244, TR_Y - 16, "uA/cm2", 1, 150, 165, 190)
+    gfx_draw_text(g, TR_X + 330, TR_Y - 16, "112 ms WINDOW", 1, 110, 125, 150)
+    draw_dashed(g, TR_X, v_to_y(0.0, TR_Y, TR_H), TRACE_W, 70, 80, 100)
+    draw_dashed(g, TR_X, v_to_y(V_REST, TR_Y, TR_H), TRACE_W, 90, 70, 50)
+    gfx_draw_text(g, TR_X + TRACE_W + 6, v_to_y(0.0, TR_Y, TR_H) - 3, "0 mV", 1, 110, 125, 150)
+    gfx_draw_text(g, TR_X + TRACE_W + 6, v_to_y(V_REST, TR_Y, TR_H) - 3, "-65", 1, 160, 130, 100)
+
+    let mut i: i32 = 1
+    while i < trace_fill {
+        draw_line(g, TR_X + i - 1, v_to_y(trace_v[i - 1], TR_Y, TR_H),
+                  TR_X + i, v_to_y(trace_v[i], TR_Y, TR_H), 1, 120, 220, 200)
+        i = i + 1
+    }
+}
+
+const GT_Y: i32 = 254
+const GT_H: i32 = 96
+
+function draw_gate_panel(g: Gfx) -> void {
+    draw_frame(g, TR_X, GT_Y, TRACE_W, GT_H, 60, 70, 90)
+    gfx_draw_text(g, TR_X, GT_Y - 16, "GATING PARTICLES", 1, 150, 165, 190)
+    gfx_draw_text(g, TR_X + 130, GT_Y - 16, "m Na activation", 1, 250, 130, 120)
+    gfx_draw_text(g, TR_X + 260, GT_Y - 16, "h Na inactivation", 1, 240, 200, 100)
+    gfx_draw_text(g, TR_X + 400, GT_Y - 16, "n K activation", 1, 120, 190, 250)
+    let mut i: i32 = 1
+    while i < trace_fill {
+        let ym0: i32 = GT_Y + GT_H - ((trace_m[i - 1] * (GT_H as f64)) as i32)
+        let ym1: i32 = GT_Y + GT_H - ((trace_m[i] * (GT_H as f64)) as i32)
+        let yh0: i32 = GT_Y + GT_H - ((trace_h[i - 1] * (GT_H as f64)) as i32)
+        let yh1: i32 = GT_Y + GT_H - ((trace_h[i] * (GT_H as f64)) as i32)
+        let yn0: i32 = GT_Y + GT_H - ((trace_n[i - 1] * (GT_H as f64)) as i32)
+        let yn1: i32 = GT_Y + GT_H - ((trace_n[i] * (GT_H as f64)) as i32)
+        draw_line(g, TR_X + i - 1, ym0, TR_X + i, ym1, 1, 250, 130, 120)
+        draw_line(g, TR_X + i - 1, yh0, TR_X + i, yh1, 1, 240, 200, 100)
+        draw_line(g, TR_X + i - 1, yn0, TR_X + i, yn1, 1, 120, 190, 250)
+        i = i + 1
+    }
+}
+
+const SH_X: i32 = 40
+const SH_Y: i32 = 420
+const SH_W: i32 = 320
+const SH_H: i32 = 180
+
+# The measured action potential, with peak and half-width marked.
+function draw_shape_panel(g: Gfx) -> void {
+    draw_frame(g, SH_X, SH_Y, SH_W, SH_H, 60, 70, 90)
+    gfx_draw_text(g, SH_X, SH_Y - 16, "ONE ACTION POTENTIAL   I = 10 uA/cm2", 1, 150, 165, 190)
+    let half: f64 = 0.5 * (V_REST + peak_mv)
+    draw_dashed(g, SH_X, v_to_y(half, SH_Y, SH_H), SH_W, 110, 90, 60)
+    gfx_draw_text(g, SH_X + SH_W - 46, v_to_y(half, SH_Y, SH_H) - 10, "half", 1, 180, 150, 100)
+
+    # 12 ms around the peak across the panel width
+    let t0: f64 = peak_ms - 3.0
+    let mut px: i32 = 0
+    while px < SH_W - 1 {
+        let ta: f64 = t0 + ((px as f64) / ((SH_W - 1) as f64)) * 12.0
+        let tb: f64 = t0 + (((px + 1) as f64) / ((SH_W - 1) as f64)) * 12.0
+        let ia: i32 = (ta / DT) as i32
+        let ib: i32 = (tb / DT) as i32
+        if ia >= 0 and ib < SHAPE_N {
+            draw_line(g, SH_X + px, v_to_y(shape_v[ia], SH_Y, SH_H),
+                      SH_X + px + 1, v_to_y(shape_v[ib], SH_Y, SH_H),
+                      1, 255, 225, 120)
+        }
+        px = px + 1
+    }
+    gfx_draw_text(g, SH_X + 170, SH_Y + 6, "PEAK", 1, 150, 165, 190)
+    gfx_draw_fixed(g, SH_X + 204, SH_Y + 6, peak_mv, 2, 1, 255, 205, 110)
+    gfx_draw_text(g, SH_X + 256, SH_Y + 6, "mV", 1, 150, 165, 190)
+    gfx_draw_text(g, SH_X + 170, SH_Y + 18, "WIDTH", 1, 150, 165, 190)
+    gfx_draw_fixed(g, SH_X + 212, SH_Y + 18, width_ms, 3, 1, 255, 205, 110)
+    gfx_draw_text(g, SH_X + 264, SH_Y + 18, "ms", 1, 150, 165, 190)
+    gfx_draw_text(g, SH_X + 170, SH_Y + 30, "AHP", 1, 150, 165, 190)
+    gfx_draw_fixed(g, SH_X + 204, SH_Y + 30, ahp_mv, 2, 1, 255, 205, 110)
+    gfx_draw_text(g, SH_X + 256, SH_Y + 30, "mV", 1, 150, 165, 190)
+}
+
+const RH_X: i32 = 420
+const RH_Y: i32 = 420
+const RH_W: i32 = 440
+const RH_H: i32 = 180
+const RATE_MAX: f64 = 140.0
+
+function draw_rheo_panel(g: Gfx) -> void {
+    draw_frame(g, RH_X, RH_Y, RH_W, RH_H, 60, 70, 90)
+    gfx_draw_text(g, RH_X, RH_Y - 16, "FIRING RATE vs INJECTED CURRENT", 1, 150, 165, 190)
+    gfx_draw_text(g, RH_X + 250, RH_Y - 16, "onset is discontinuous (type II)",
+                  1, 110, 125, 150)
+    let mut i: i32 = 1
+    while i < SWEEP_N {
+        let x0: i32 = RH_X + (((sweep_i[i - 1] / SWEEP_IMAX) * (RH_W as f64)) as i32)
+        let x1: i32 = RH_X + (((sweep_i[i] / SWEEP_IMAX) * (RH_W as f64)) as i32)
+        let y0: i32 = RH_Y + RH_H - (((sweep_rate[i - 1] / RATE_MAX) * (RH_H as f64)) as i32)
+        let y1: i32 = RH_Y + RH_H - (((sweep_rate[i] / RATE_MAX) * (RH_H as f64)) as i32)
+        gfx_fill_rect(g, x1 - 1, y1 - 1, 3, 3, 235, 240, 250)
+        draw_line(g, x0, y0, x1, y1, 1, 90, 140, 210)
+        i = i + 1
+    }
+    let rx: i32 = RH_X + (((rheobase / SWEEP_IMAX) * (RH_W as f64)) as i32)
+    let mut gy: i32 = RH_Y
+    while gy < RH_Y + RH_H {
+        gfx_fill_rect(g, rx, gy, 1, 3, 255, 120, 120)
+        gy = gy + 8
+    }
+    gfx_draw_text(g, rx + 4, RH_Y + 6, "RHEOBASE", 1, 255, 140, 140)
+    gfx_draw_fixed(g, rx + 4, RH_Y + 18, rheobase, 3, 1, 255, 205, 110)
+    gfx_draw_text(g, RH_X + 4, RH_Y + RH_H + 6, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, RH_X + RH_W - 60, RH_Y + RH_H + 6, "15 uA/cm2", 1, 110, 125, 150)
+    gfx_draw_text(g, RH_X + 4, RH_Y + 6, "140 Hz", 1, 110, 125, 150)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "HODGKIN-HUXLEY  -  SQUID GIANT AXON, 1952", 2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "C dV/dt = I - gNa m^3 h (V-ENa) - gK n^4 (V-EK) - gL (V-EL)   RK4 dt 10 us",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44,
+                  "gNa 120  gK 36  gL 0.3 mS/cm2    ENa +50  EK -77  EL -54.387 mV",
+                  1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 820, 10, "PAUSED", 1, 255, 120, 120)
+    }
+    gfx_draw_text(g, 12, WIN_H - 42, "PEAK", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 48, WIN_H - 42, peak_mv, 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 100, WIN_H - 42, "mV  [25,50]", 1, 110, 125, 150)
+    gfx_draw_text(g, 190, WIN_H - 42, "WIDTH", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 234, WIN_H - 42, width_ms, 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 286, WIN_H - 42, "ms  [0.4,2.0]", 1, 110, 125, 150)
+    gfx_draw_text(g, 396, WIN_H - 42, "RHEOBASE", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 464, WIN_H - 42, rheobase, 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 516, WIN_H - 42, "uA/cm2  ref 6.2", 1, 110, 125, 150)
+    if ok {
+        gfx_draw_text(g, 660, WIN_H - 46, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 660, WIN_H - 46, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 24, "REST", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 48, WIN_H - 24, rest_mv, 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 100, WIN_H - 24, "mV    SPIKE THRESHOLD", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 258, WIN_H - 24, thresh_mv, 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 310, WIN_H - 24, "mV  (dV/dt = 10 mV/ms)", 1, 110, 125, 150)
+    gfx_draw_text(g, 12, WIN_H - 12,
+                  "LEFT/RIGHT injected current   P pause   Esc quit", 1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+# The live trace
+# ---------------------------------------------------------------------------
+
+function push_trace(v: f64, m: f64, h: f64, n: f64) -> void {
+    if trace_fill < TRACE_W {
+        trace_v[trace_fill] = v
+        trace_m[trace_fill] = m
+        trace_h[trace_fill] = h
+        trace_n[trace_fill] = n
+        trace_fill = trace_fill + 1
+        return
+    }
+    let mut i: i32 = 1
+    while i < TRACE_W {
+        trace_v[i - 1] = trace_v[i]
+        trace_m[i - 1] = trace_m[i]
+        trace_h[i - 1] = trace_h[i]
+        trace_n[i - 1] = trace_n[i]
+        i = i + 1
+    }
+    trace_v[TRACE_W - 1] = v
+    trace_m[TRACE_W - 1] = m
+    trace_h[TRACE_W - 1] = h
+    trace_n[TRACE_W - 1] = n
+}
+
+function advance_live(c: ptr<HH>) -> void {
+    let mut p: i32 = 0
+    while p < PUSH_PER_FRAME {
+        let mut s: i32 = 0
+        while s < SUBSTEPS {
+            HH_step(c, DT)
+            s = s + 1
+        }
+        push_trace(c.v, c.m, c.h, c.n)
+        p = p + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    shape_v = malloc((SHAPE_N as i64) * 8)
+    sweep_i = malloc((SWEEP_N as i64) * 8)
+    sweep_rate = malloc((SWEEP_N as i64) * 8)
+    trace_v = malloc((TRACE_W as i64) * 8)
+    trace_m = malloc((TRACE_W as i64) * 8)
+    trace_h = malloc((TRACE_W as i64) * 8)
+    trace_n = malloc((TRACE_W as i64) * 8)
+
+    println("")
+    println("  HODGKIN-HUXLEY  --  spike shape and threshold vs the 1952 paper")
+    println("  ===============================================================")
+    println("")
+    println("    C 1 uF/cm2   gNa 120   gK 36   gL 0.3 mS/cm2")
+    println("    ENa +50   EK -77   EL -54.387 mV      RK4, dt = 10 us")
+    println("")
+
+    rest_mv = measure_rest()
+    measure_shape()
+    rheobase = find_rheobase()
+    run_sweep()
+
+    print("    resting potential      : ")
+    printf("%8.3f mV", rest_mv)
+    println("")
+    print("    spike threshold        : ")
+    printf("%8.3f mV", thresh_mv)
+    println("    (first V with dV/dt > 10 mV/ms)")
+    print("    spike peak             : ")
+    printf("%8.3f mV", peak_mv)
+    print("    gate [")
+    printf("%.1f", PEAK_LO)
+    print(", ")
+    printf("%.1f", PEAK_HI)
+    println("]")
+    print("    spike width at half    : ")
+    printf("%8.4f ms", width_ms)
+    print("    gate [")
+    printf("%.1f", WIDTH_LO)
+    print(", ")
+    printf("%.1f", WIDTH_HI)
+    println("]")
+    print("    after-hyperpolarisation: ")
+    printf("%8.3f mV", ahp_mv)
+    println("")
+    print("    repetitive-firing onset: ")
+    printf("%8.4f uA/cm2", rheobase)
+    print("  reference ")
+    printf("%.1f", RHEO_REF)
+    print("  gate [")
+    printf("%.1f", RHEO_LO)
+    print(", ")
+    printf("%.1f", RHEO_HI)
+    println("]")
+    println("")
+    print("    rate just below onset  : ")
+    printf("%6.1f Hz", firing_rate(rheobase - 0.05))
+    println("")
+    print("    rate just above onset  : ")
+    printf("%6.1f Hz", firing_rate(rheobase + 0.05))
+    println("   (a finite jump: type II excitability)")
+    println("")
+
+    let peak_ok: bool = peak_mv > PEAK_LO and peak_mv < PEAK_HI
+    let width_ok: bool = width_ms > WIDTH_LO and width_ms < WIDTH_HI
+    let rheo_ok: bool = rheobase > RHEO_LO and rheobase < RHEO_HI
+    let ok: bool = peak_ok and width_ok and rheo_ok
+
+    let mut live: HH = HH_new()
+    let mut amp_idx: i32 = 4
+    live.i_ext = 2.5 * (amp_idx as f64)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Hodgkin-Huxley - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = amp_idx
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = amp_idx - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = amp_idx + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if frame > 0 and frame % 40 == 0 {
+            want = amp_idx + 1
+        }
+        if want < 0 {
+            want = 0
+        }
+        if want > 6 {
+            want = 1
+        }
+        if want != amp_idx {
+            amp_idx = want
+            live.i_ext = 2.5 * (amp_idx as f64)
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            advance_live(&live)
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_live_panel(g, live.i_ext)
+        draw_gate_panel(g)
+        draw_shape_panel(g)
+        draw_rheo_panel(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !peak_ok {
+        println("    FAIL: spike peak outside the published range")
+        return 1
+    }
+    if !width_ok {
+        println("    FAIL: spike width at half amplitude outside the published range")
+        return 2
+    }
+    if !rheo_ok {
+        println("    FAIL: repetitive-firing onset outside the published range")
+        return 3
+    }
+    println("    PASS: peak, half-width and firing threshold all match Hodgkin & Huxley 1952")
+    return 0
+}
