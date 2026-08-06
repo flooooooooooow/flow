@@ -54,6 +54,7 @@ from .parser import (
     MatchStatement,
     MethodCall,
     ReturnStatement,
+    FindExpr,
     SortExpr,
     SortKey,
     StaticDecl,
@@ -81,6 +82,12 @@ from .parser import (
     make_span_type,
 )
 from .overload import OverloadResolver
+
+# Importing ordering_plans registers the sort / search implementations with the
+# selector. Without it the registry is empty and every site raises.
+from . import ordering_plans as _ordering_plans  # noqa: F401
+from .ordering_hints import annotate_ordering_hints
+from .plan_selector import Facts, Selection, format_selections, select
 from .attributes import (
     normalize_target_spec,
     parse_attribute,
@@ -169,6 +176,14 @@ class CGenerator:
         self._pending_env_structs = []  # typedef lines for env/closure/fn types
         self._pending_sort_helpers: List[str] = []  # full C function source blocks
         self._sort_helper_keys: set = set()  # dedupe keys for emitted helpers
+        self._pending_find_helpers: List[str] = []  # `|> find` search helpers
+        self._find_helper_keys: set = set()
+        self._pending_order_helpers: List[str] = []  # IEEE totalOrder comparators
+        self._order_helper_keys: set = set()
+        # One record per declarative selection site, in emission order. The
+        # `--explain` report is a rendering of this list.
+        self._selections: List[Selection] = []
+        self._current_fn_name = ""
         self._closure_vars = {}  # var name -> lambda info (capturing lambdas)
         self._fnptr_vars = {}  # var name -> lambda info (non-capturing lambdas)
         self._fn_fat_vars = set()  # vars typed as (T)->R fat-pointer closures
@@ -282,6 +297,9 @@ class CGenerator:
                                    type_aliases: List[TypeAliasDecl] = None,
                                    distinct_types: List[DistinctTypeDecl] = None,
                                    statics: List[StaticDecl] = None) -> str:
+        # Ordering provenance runs before codegen so every `|> sort` and
+        # `|> find` site carries its hints when the selector runs (issue #145).
+        annotate_ordering_hints(functions or [])
         lines: List[str] = []
         lines.append("#include <stdint.h>")
         lines.append("#include <stdbool.h>")
@@ -716,9 +734,17 @@ class CGenerator:
                     insert_extra.append(f"    {line}")
                 insert_extra.append("}")
             insert_extra.append("")
+        if self._pending_order_helpers:
+            insert_extra.append("// Total-order comparison (see docs/language/ordering.md)")
+            insert_extra.extend(self._pending_order_helpers)
+            insert_extra.append("")
         if self._pending_sort_helpers:
             insert_extra.append("// Auto-generated declarative sort helpers")
             insert_extra.extend(self._pending_sort_helpers)
+            insert_extra.append("")
+        if self._pending_find_helpers:
+            insert_extra.append("// Auto-generated declarative search helpers")
+            insert_extra.extend(self._pending_find_helpers)
             insert_extra.append("")
 
         if insert_extra:
@@ -1772,6 +1798,7 @@ class CGenerator:
         self._indent += 1
         
         # Save current var_types scope and create new scope for this function
+        self._current_fn_name = fn.name
         saved_var_types = self._var_types.copy()
         saved_resolver_var_types = self._overload_resolver._var_types.copy()
         saved_return_type = self._current_return_type
@@ -2227,6 +2254,7 @@ class CGenerator:
                 EffectCall,
                 MethodCall,
                 SortExpr,
+                FindExpr,
                 FieldAccess,
                 ArrayAccess,
                 CastExpression,
@@ -3083,6 +3111,9 @@ class CGenerator:
         if isinstance(e, SortExpr):
             return self._gen_sort_expr(e)
 
+        if isinstance(e, FindExpr):
+            return self._gen_find_expr(e)
+
         if isinstance(e, FunctionCall):
             # sizeof<T>() / sizeof_i32() intrinsic — prefer inline C sizeof
             if e.name.startswith("sizeof_") and len(e.arguments) == 0:
@@ -3705,115 +3736,92 @@ class CGenerator:
         self._overload_resolver.set_var_type(st.name, info["fn_typedef"])
         return [f"{self._i()}{info['fn_typedef']} {name} = {concrete};"]
 
-    def _sort_cmp_fragment(
-        self,
-        lhs: str,
-        rhs: str,
-        keys: List[SortKey],
-        elem_type: Type,
-        global_desc: bool,
-    ) -> str:
-        """C expression: negative if lhs<rhs, positive if lhs>rhs, else 0."""
-        if not keys:
-            # Primitive / whole-element compare
-            if getattr(elem_type, "name", "") == "string":
-                core = f"strcmp({lhs}, {rhs})"
-            else:
-                core = f"(({lhs}) < ({rhs}) ? -1 : (({lhs}) > ({rhs}) ? 1 : 0))"
-            return f"(0 - ({core}))" if global_desc else core
+    # ------------------------------------------------------------------
+    # Declarative ordering and search
+    #
+    # `xs |> sort` and `xs |> find(x)` name an intent. Which C loop realises
+    # that intent comes from the cost-based selector in plan_selector.py, fed
+    # facts from the element type and from the ordering-hints pass. Every
+    # decision is recorded in self._selections so `--explain` can print it.
+    # ------------------------------------------------------------------
 
-        parts: List[str] = []
-        for key in keys:
-            field = _c_ident(key.field or "")
-            lv = f"({lhs}).{field}"
-            r = f"({rhs}).{field}"
-            ft = None
-            struct_fields = self._structs.get(elem_type.name, {})
-            if key.field in struct_fields:
-                ft = struct_fields[key.field]
-            desc = bool(key.descending) ^ bool(global_desc)
-            if ft is not None and getattr(ft, "name", "") == "string":
-                cmp_e = f"strcmp({lv}, {r})"
-            else:
-                cmp_e = f"(({lv}) < ({r}) ? -1 : (({lv}) > ({r}) ? 1 : 0))"
-            if desc:
-                cmp_e = f"(0 - ({cmp_e}))"
-            parts.append(cmp_e)
-        if len(parts) == 1:
-            return parts[0]
-        # Lexicographic cascade; scalar compares may be evaluated twice (MVP).
-        chain = parts[-1]
-        for p in reversed(parts[:-1]):
-            chain = f"(({p}) != 0 ? ({p}) : ({chain}))"
-        return chain
+    # Runs shorter than this are grown with insertion sort before merging.
+    SORT_MIN_RUN = 32
 
-    def _ensure_sort_helper(self, expr: SortExpr, arr_type: Type) -> Tuple[str, int]:
-        """Register a static insertion-sort helper; return (name, n)."""
-        import hashlib
+    _INT_RANGES = {
+        "u8": (0, 255),
+        "u16": (0, 65535),
+        "u32": (0, 4294967295),
+        "u64": (0, 18446744073709551615),
+        "i8": (-128, 127),
+        "i16": (-32768, 32767),
+        "i32": (-2147483648, 2147483647),
+        "i64": (-9223372036854775808, 9223372036854775807),
+        "bool": (0, 1),
+    }
 
-        size = getattr(arr_type, "size", None)
-        elem = getattr(arr_type, "element_type", None)
-        if size is None or elem is None:
-            raise NotImplementedError(
-                "Declarative sort requires fixed-size array<T, N>"
+    _TYPE_BYTES = {
+        "i8": 1, "u8": 1, "bool": 1,
+        "i16": 2, "u16": 2,
+        "i32": 4, "u32": 4, "f32": 4, "float": 4,
+        "i64": 8, "u64": 8, "f64": 8, "double": 8,
+        "string": 8,
+    }
+
+    @staticmethod
+    def _is_float_type_name(name: str) -> bool:
+        return name in ("f32", "f64", "float", "double")
+
+    @staticmethod
+    def _float_order_suffix(name: str) -> str:
+        return "f32" if name in ("f32", "float") else "f64"
+
+    def _ensure_total_order_helper(self, type_name: str) -> str:
+        """Emit the IEEE 754 totalOrder comparison for a float width."""
+        suffix = self._float_order_suffix(type_name)
+        helper = f"__flow_ord_cmp_{suffix}"
+        if suffix in self._order_helper_keys:
+            return helper
+        self._order_helper_keys.add(suffix)
+        if suffix == "f64":
+            c_type, uint, bits, sign = "double", "uint64_t", "int64_t", "0x8000000000000000ULL"
+            shift = 63
+        else:
+            c_type, uint, bits, sign = "float", "uint32_t", "int32_t", "0x80000000U"
+            shift = 31
+        self._pending_order_helpers.append(
+            "\n".join(
+                [
+                    f"/* IEEE 754-2008 totalOrder for {c_type}: maps the sign-magnitude",
+                    "   bit pattern onto an unsigned key whose numeric order is the total",
+                    "   order  -NaN < -inf < ... < -0.0 < +0.0 < ... < +inf < +NaN.",
+                    "   Declarative sort and find use this, so a comparison is always",
+                    f"   transitive; `<` on {c_type} keeps IEEE semantics. */",
+                    f"static inline {uint} __flow_ord_key_{suffix}({c_type} x) {{",
+                    f"    {uint} u;",
+                    "    memcpy(&u, &x, sizeof u);",
+                    f"    {uint} mask = ({uint})(-({bits})(u >> {shift})) | {sign};",
+                    "    return u ^ mask;",
+                    "}",
+                    "",
+                    f"static inline int32_t {helper}({c_type} a, {c_type} b) {{",
+                    f"    {uint} ka = __flow_ord_key_{suffix}(a);",
+                    f"    {uint} kb = __flow_ord_key_{suffix}(b);",
+                    "    return (ka < kb) ? -1 : ((ka > kb) ? 1 : 0);",
+                    "}",
+                ]
             )
-        elem_c = self._c_type(elem)
-        key_sig = ",".join(
-            f"{'d' if k.descending else 'a'}.{k.field or '_'}" for k in expr.keys
         )
-        flags = (
-            f"g{'d' if expr.descending else 'a'}"
-            f"_u{1 if expr.unique else 0}"
-            f"_s{1 if expr.stable else 0}"
-        )
-        dedupe = f"{elem_c}|{size}|{key_sig}|{flags}"
-        helper = "__flow_sort_" + hashlib.md5(dedupe.encode(), usedforsecurity=False).hexdigest()[:12]
-        if dedupe not in self._sort_helper_keys:
-            self._sort_helper_keys.add(dedupe)
-            cmp_ij = self._sort_cmp_fragment(
-                "a[j]", "key", expr.keys, elem, expr.descending
-            )
-            # Insertion sort (stable): shift while a[j] > key
-            body = [
-                f"static void {helper}({elem_c} *a, int32_t n) {{",
-                "    for (int32_t i = 1; i < n; i++) {",
-                f"        {elem_c} key = a[i];",
-                "        int32_t j = i - 1;",
-                f"        while (j >= 0 && ({cmp_ij}) > 0) {{",
-                "            a[j + 1] = a[j];",
-                "            j = j - 1;",
-                "        }",
-                "        a[j + 1] = key;",
-                "    }",
-            ]
-            if expr.unique:
-                cmp_wr = self._sort_cmp_fragment(
-                    "a[w - 1]", "a[r]", expr.keys, elem, expr.descending
-                )
-                body.extend(
-                    [
-                        "    int32_t w = 0;",
-                        "    for (int32_t r = 0; r < n; r++) {",
-                        f"        if (w == 0 || ({cmp_wr}) != 0) {{",
-                        "            a[w] = a[r];",
-                        "            w = w + 1;",
-                        "        }",
-                        "    }",
-                        "    /* unique: compacted prefix length is w; tail is stale */",
-                        "    (void)w;",
-                    ]
-                )
-            body.append("}")
-            self._pending_sort_helpers.append("\n".join(body))
-        return helper, int(size)
+        return helper
 
-    def _gen_sort_expr(self, e: SortExpr) -> str:
-        """Lower `xs |> sort ...` to an in-place helper call, yielding `xs`."""
-        arr_type = self._infer_expr_type(e.array)
-        helper, n = self._ensure_sort_helper(e, arr_type)
-        arr_c = self._gen_expr(e.array)
-        # In-place sort; expression value is the (mutated) array/pointer.
-        return f"({{ {helper}(({self._c_type(arr_type.element_type)}*)({arr_c}), {n}); {arr_c}; }})"
+    def _scalar_cmp(self, lhs: str, rhs: str, type_name: str) -> str:
+        """Three-way compare of two scalars under Flow's ordering semantics."""
+        if type_name == "string":
+            return f"strcmp({lhs}, {rhs})"
+        if self._is_float_type_name(type_name):
+            helper = self._ensure_total_order_helper(type_name)
+            return f"{helper}({lhs}, {rhs})"
+        return f"(({lhs}) < ({rhs}) ? -1 : (({lhs}) > ({rhs}) ? 1 : 0))"
 
     def _sort_cmp_fragment(
         self,
@@ -3825,30 +3833,18 @@ class CGenerator:
     ) -> str:
         """C expression: negative if lhs<rhs, positive if lhs>rhs, else 0."""
         if not keys:
-            # Primitive / whole-element compare
-            if getattr(elem_type, "name", "") == "string":
-                core = f"strcmp({lhs}, {rhs})"
-            else:
-                core = f"(({lhs}) < ({rhs}) ? -1 : (({lhs}) > ({rhs}) ? 1 : 0))"
+            core = self._scalar_cmp(lhs, rhs, getattr(elem_type, "name", ""))
             return f"(0 - ({core}))" if global_desc else core
 
         parts: List[str] = []
+        struct_fields = self._structs.get(getattr(elem_type, "name", ""), {})
         for key in keys:
             field = _c_ident(key.field or "")
             left = f"({lhs}).{field}"
             right = f"({rhs}).{field}"
-            ft = None
-            struct_fields = self._structs.get(elem_type.name, {})
-            if key.field in struct_fields:
-                ft = struct_fields[key.field]
+            ft = struct_fields.get(key.field)
             desc = bool(key.descending) ^ bool(global_desc)
-            if ft is not None and getattr(ft, "name", "") == "string":
-                cmp_e = f"strcmp({left}, {right})"
-            else:
-                cmp_e = (
-                    f"(({left}) < ({right}) ? -1 : "
-                    f"(({left}) > ({right}) ? 1 : 0))"
-                )
+            cmp_e = self._scalar_cmp(left, right, getattr(ft, "name", "") if ft else "")
             if desc:
                 cmp_e = f"(0 - ({cmp_e}))"
             parts.append(cmp_e)
@@ -3860,8 +3856,241 @@ class CGenerator:
             chain = f"(({p}) != 0 ? ({p}) : ({chain}))"
         return chain
 
+    # -- facts ---------------------------------------------------------
+
+    def _elem_kind(self, elem: Type) -> str:
+        name = getattr(elem, "name", "")
+        if name == "string":
+            return "string"
+        if name == "bool":
+            return "bool"
+        if self._is_float_type_name(name):
+            return "float"
+        if name in self._INT_RANGES:
+            return "int"
+        return "struct"
+
+    def _elem_bytes(self, elem: Type) -> int:
+        name = getattr(elem, "name", "")
+        if name in self._TYPE_BYTES:
+            return self._TYPE_BYTES[name]
+        fields = self._structs.get(name)
+        if fields:
+            total = 0
+            widest = 1
+            for ftype in fields.values():
+                size = self._TYPE_BYTES.get(getattr(ftype, "name", ""), 8)
+                widest = max(widest, size)
+                if total % size:
+                    total += size - (total % size)
+                total += size
+            if total % widest:
+                total += widest - (total % widest)
+            return max(total, 1)
+        return 8
+
+    def _sort_key_range(self, expr: SortExpr, elem: Type):
+        """Proven [lo, hi] for a whole-element integer key, or None."""
+        if expr.keys:
+            return None
+        name = getattr(elem, "name", "")
+        type_range = self._INT_RANGES.get(name)
+        hint = getattr(expr, "hint_key_range", None)
+        if hint and len(hint) == 2:
+            lo, hi = int(hint[0]), int(hint[1])
+            if type_range:
+                lo = max(lo, type_range[0])
+                hi = min(hi, type_range[1])
+            return [lo, hi]
+        return list(type_range) if type_range else None
+
+    def _site_location(self, node) -> str:
+        line = getattr(node, "line", 0) or 0
+        where = f"line {line}" if line else "unknown line"
+        fn = getattr(self, "_current_fn_name", "")
+        return f"{where} in {fn}()" if fn else where
+
+    def _sort_selection(self, expr: SortExpr, elem: Type, size: int) -> "Selection":
+        """Run the cost selector for one `|> sort` site."""
+        direction = "desc" if expr.descending else "asc"
+        order = getattr(expr, "hint_input_order", "unknown") or "unknown"
+        if expr.general:
+            order = "unknown"
+        facts = Facts(
+            construct="sort",
+            n=int(size),
+            data={
+                "elem": getattr(elem, "name", "?"),
+                "elem_kind": self._elem_kind(elem),
+                "elem_bytes": self._elem_bytes(elem),
+                "keys": len(expr.keys),
+                "stable": bool(expr.stable),
+                "unique": bool(expr.unique),
+                "direction": direction,
+                "input_order": order,
+                "key_range": self._sort_key_range(expr, elem),
+                "expect_runs": "few" if expr.adaptive else "unknown",
+                "pinned": "bottom_up_merge" if expr.general else None,
+            },
+        )
+        keys = (
+            ", ".join(
+                f"{'desc' if k.descending else 'asc'} .{k.field}" for k in expr.keys
+            )
+            or "whole element"
+        )
+        detail = (
+            f"array<{getattr(elem, 'name', '?')}, {size}> "
+            f"keys: {keys}; order: {direction}"
+            + (" unique" if expr.unique else "")
+            + (f"; policies: {' '.join(expr.policies)}" if expr.policies else "")
+        )
+        sel = select(facts, location=self._site_location(expr), detail=detail)
+        self._selections.append(sel)
+        return sel
+
+    # -- C bodies ------------------------------------------------------
+
+    def _sort_body_insertion(self, elem_c: str, cmp_fn) -> List[str]:
+        cmp_ij = cmp_fn("a[j]", "key")
+        return [
+            "    for (int32_t i = 1; i < n; i++) {",
+            f"        {elem_c} key = a[i];",
+            "        int32_t j = i - 1;",
+            f"        while (j >= 0 && ({cmp_ij}) > 0) {{",
+            "            a[j + 1] = a[j];",
+            "            j = j - 1;",
+            "        }",
+            "        a[j + 1] = key;",
+            "    }",
+        ]
+
+    def _sort_body_noop(self, elem_c: str, cmp_fn) -> List[str]:
+        return [
+            "    /* provenance proved the input is already in this order */",
+            "    (void)a; (void)n;",
+        ]
+
+    def _sort_body_reverse(self, elem_c: str, cmp_fn) -> List[str]:
+        return [
+            "    /* provenance proved a strictly reversed input */",
+            "    for (int32_t lo = 0, hi = n - 1; lo < hi; lo++, hi--) {",
+            f"        {elem_c} t = a[lo];",
+            "        a[lo] = a[hi];",
+            "        a[hi] = t;",
+            "    }",
+        ]
+
+    def _sort_body_counting(
+        self, elem_c: str, cmp_fn, size: int, lo: int, hi: int, descending: bool
+    ) -> List[str]:
+        span = hi - lo + 1
+        walk = (
+            f"    for (int32_t v = {span} - 1; v >= 0; v--) {{"
+            if descending
+            else f"    for (int32_t v = 0; v < {span}; v++) {{"
+        )
+        return [
+            "    if (n < 2) { return; }",
+            f"    int32_t counts[{span}];",
+            f"    {elem_c} out[{size}];",
+            f"    for (int32_t v = 0; v < {span}; v++) {{ counts[v] = 0; }}",
+            f"    for (int32_t i = 0; i < n; i++) {{ counts[(int32_t)(a[i]) - {lo}]++; }}",
+            "    int32_t total = 0;",
+            walk,
+            "        int32_t c = counts[v];",
+            "        counts[v] = total;",
+            "        total += c;",
+            "    }",
+            f"    for (int32_t i = 0; i < n; i++) {{ out[counts[(int32_t)(a[i]) - {lo}]++] = a[i]; }}",
+            "    for (int32_t i = 0; i < n; i++) { a[i] = out[i]; }",
+        ]
+
+    def _sort_body_bottom_up(self, elem_c: str, cmp_fn, size: int) -> List[str]:
+        take_right = cmp_fn("a[j]", "a[i]")
+        return [
+            "    if (n < 2) { return; }",
+            f"    {elem_c} buf[{size}];",
+            "    for (int32_t width = 1; width < n; width *= 2) {",
+            "        for (int32_t lo = 0; lo < n; lo += 2 * width) {",
+            "            int32_t mid = lo + width; if (mid > n) { mid = n; }",
+            "            int32_t hi = lo + 2 * width; if (hi > n) { hi = n; }",
+            "            int32_t i = lo, j = mid, k = lo;",
+            "            while (i < mid && j < hi) {",
+            f"                if (({take_right}) < 0) {{ buf[k++] = a[j++]; }}",
+            "                else { buf[k++] = a[i++]; }",
+            "            }",
+            "            while (i < mid) { buf[k++] = a[i++]; }",
+            "            while (j < hi) { buf[k++] = a[j++]; }",
+            "        }",
+            "        for (int32_t i = 0; i < n; i++) { a[i] = buf[i]; }",
+            "    }",
+        ]
+
+    def _sort_body_natural_merge(self, elem_c: str, cmp_fn, size: int) -> List[str]:
+        minrun = self.SORT_MIN_RUN
+        max_runs = size // minrun + 3
+        desc_head = cmp_fn("a[j]", "a[i]")
+        desc_step = cmp_fn("a[j]", "a[j - 1]")
+        asc_step = cmp_fn("a[j]", "a[j - 1]")
+        ext_cmp = cmp_fn("a[k]", "key")
+        merge_cmp = cmp_fn("a[y]", "a[x]")
+        return [
+            "    if (n < 2) { return; }",
+            f"    {elem_c} buf[{size}];",
+            f"    int32_t starts[{max_runs}];",
+            "    int32_t nr = 0;",
+            "    int32_t i = 0;",
+            "    /* Pass 1: walk natural runs. A strictly descending run is",
+            "       reversed in place (stable, because it is strict); a run",
+            "       shorter than the minimum is grown by insertion. */",
+            "    while (i < n) {",
+            "        starts[nr++] = i;",
+            "        int32_t j = i + 1;",
+            f"        if (j < n && ({desc_head}) < 0) {{",
+            f"            while (j < n && ({desc_step}) < 0) {{ j++; }}",
+            "            for (int32_t lo = i, hi = j - 1; lo < hi; lo++, hi--) {",
+            f"                {elem_c} t = a[lo];",
+            "                a[lo] = a[hi];",
+            "                a[hi] = t;",
+            "            }",
+            "        } else {",
+            f"            while (j < n && ({asc_step}) >= 0) {{ j++; }}",
+            "        }",
+            f"        int32_t want = i + {minrun}; if (want > n) {{ want = n; }}",
+            "        while (j < want) {",
+            f"            {elem_c} key = a[j];",
+            "            int32_t k = j - 1;",
+            f"            while (k >= i && ({ext_cmp}) > 0) {{ a[k + 1] = a[k]; k--; }}",
+            "            a[k + 1] = key;",
+            "            j++;",
+            "        }",
+            "        i = j;",
+            "    }",
+            "    starts[nr] = n;",
+            "    /* Pass 2: merge adjacent runs pairwise until one remains. */",
+            "    while (nr > 1) {",
+            "        int32_t w = 0;",
+            "        for (int32_t r = 0; r + 1 < nr; r += 2) {",
+            "            int32_t lo = starts[r], mid = starts[r + 1], hi = starts[r + 2];",
+            "            int32_t x = lo, y = mid, k = lo;",
+            "            while (x < mid && y < hi) {",
+            f"                if (({merge_cmp}) < 0) {{ buf[k++] = a[y++]; }}",
+            "                else { buf[k++] = a[x++]; }",
+            "            }",
+            "            while (x < mid) { buf[k++] = a[x++]; }",
+            "            while (y < hi) { buf[k++] = a[y++]; }",
+            "            for (int32_t t = lo; t < hi; t++) { a[t] = buf[t]; }",
+            "            starts[w++] = lo;",
+            "        }",
+            "        if (nr % 2 == 1) { starts[w++] = starts[nr - 1]; }",
+            "        starts[w] = n;",
+            "        nr = w;",
+            "    }",
+        ]
+
     def _ensure_sort_helper(self, expr: SortExpr, arr_type: Type) -> Tuple[str, int]:
-        """Register a static insertion-sort helper; return (name, n)."""
+        """Select a sort plan, register its C helper, return (name, n)."""
         import hashlib
 
         size = getattr(arr_type, "size", None)
@@ -3870,7 +4099,12 @@ class CGenerator:
             raise NotImplementedError(
                 "Declarative sort requires fixed-size array<T, N>"
             )
+        size = int(size)
         elem_c = self._c_type(elem)
+        selection = self._sort_selection(expr, elem, size)
+        plan = selection.chosen
+        key_range = selection.facts.get("key_range")
+
         key_sig = ",".join(
             f"{'d' if k.descending else 'a'}.{k.field or '_'}" for k in expr.keys
         )
@@ -3879,49 +4113,58 @@ class CGenerator:
             f"_u{1 if expr.unique else 0}"
             f"_s{1 if expr.stable else 0}"
         )
-        dedupe = f"{elem_c}|{size}|{key_sig}|{flags}"
+        range_sig = f"{key_range[0]}:{key_range[1]}" if key_range else "-"
+        dedupe = f"{elem_c}|{size}|{key_sig}|{flags}|{plan}|{range_sig}"
         helper = (
             "__flow_sort_"
             + hashlib.md5(dedupe.encode(), usedforsecurity=False).hexdigest()[:12]
         )
-        if dedupe not in self._sort_helper_keys:
-            self._sort_helper_keys.add(dedupe)
-            cmp_ij = self._sort_cmp_fragment(
-                "a[j]", "key", expr.keys, elem, expr.descending
+        if dedupe in self._sort_helper_keys:
+            return helper, size
+        self._sort_helper_keys.add(dedupe)
+
+        def cmp_fn(lhs: str, rhs: str) -> str:
+            return self._sort_cmp_fragment(lhs, rhs, expr.keys, elem, expr.descending)
+
+        body = [
+            f"/* plan: {plan} -- {selection.reason} */",
+            f"static void {helper}({elem_c} *a, int32_t n) {{",
+        ]
+        if plan == "already_ordered":
+            body.extend(self._sort_body_noop(elem_c, cmp_fn))
+        elif plan == "reverse_in_place":
+            body.extend(self._sort_body_reverse(elem_c, cmp_fn))
+        elif plan == "counting":
+            body.extend(
+                self._sort_body_counting(
+                    elem_c, cmp_fn, size, key_range[0], key_range[1], expr.descending
+                )
             )
-            # Insertion sort (stable): shift while a[j] > key
-            body = [
-                f"static void {helper}({elem_c} *a, int32_t n) {{",
-                "    for (int32_t i = 1; i < n; i++) {",
-                f"        {elem_c} key = a[i];",
-                "        int32_t j = i - 1;",
-                f"        while (j >= 0 && ({cmp_ij}) > 0) {{",
-                "            a[j + 1] = a[j];",
-                "            j = j - 1;",
-                "        }",
-                "        a[j + 1] = key;",
-                "    }",
-            ]
-            if expr.unique:
-                cmp_wr = self._sort_cmp_fragment(
-                    "a[w - 1]", "a[r]", expr.keys, elem, expr.descending
-                )
-                body.extend(
-                    [
-                        "    int32_t w = 0;",
-                        "    for (int32_t r = 0; r < n; r++) {",
-                        f"        if (w == 0 || ({cmp_wr}) != 0) {{",
-                        "            a[w] = a[r];",
-                        "            w = w + 1;",
-                        "        }",
-                        "    }",
-                        "    /* unique: compacted prefix length is w; tail is stale */",
-                        "    (void)w;",
-                    ]
-                )
-            body.append("}")
-            self._pending_sort_helpers.append("\n".join(body))
-        return helper, int(size)
+        elif plan == "natural_merge":
+            body.extend(self._sort_body_natural_merge(elem_c, cmp_fn, size))
+        elif plan == "bottom_up_merge":
+            body.extend(self._sort_body_bottom_up(elem_c, cmp_fn, size))
+        else:
+            body.extend(self._sort_body_insertion(elem_c, cmp_fn))
+
+        if expr.unique:
+            cmp_wr = cmp_fn("a[w - 1]", "a[r]")
+            body.extend(
+                [
+                    "    int32_t w = 0;",
+                    "    for (int32_t r = 0; r < n; r++) {",
+                    f"        if (w == 0 || ({cmp_wr}) != 0) {{",
+                    "            a[w] = a[r];",
+                    "            w = w + 1;",
+                    "        }",
+                    "    }",
+                    "    /* unique: compacted prefix length is w; tail is stale */",
+                    "    (void)w;",
+                ]
+            )
+        body.append("}")
+        self._pending_sort_helpers.append("\n".join(body))
+        return helper, size
 
     def _gen_sort_expr(self, e: SortExpr) -> str:
         """Lower `xs |> sort ...` to an in-place helper call, yielding `xs`."""
@@ -3930,6 +4173,89 @@ class CGenerator:
         arr_c = self._gen_expr(e.array)
         # In-place sort; expression value is the (mutated) array/pointer.
         return f"({{ {helper}(({self._c_type(arr_type.element_type)}*)({arr_c}), {n}); {arr_c}; }})"
+
+    def _ensure_find_helper(self, expr: "FindExpr", arr_type: Type) -> Tuple[str, int]:
+        """Select a search plan, register its C helper, return (name, n)."""
+        import hashlib
+
+        size = getattr(arr_type, "size", None)
+        elem = getattr(arr_type, "element_type", None)
+        if size is None or elem is None:
+            raise NotImplementedError(
+                "Declarative find requires fixed-size array<T, N>"
+            )
+        size = int(size)
+        elem_c = self._c_type(elem)
+        elem_name = getattr(elem, "name", "?")
+        facts = Facts(
+            construct="search",
+            n=size,
+            data={
+                "elem": elem_name,
+                "elem_kind": self._elem_kind(elem),
+                "input_order": getattr(expr, "hint_input_order", "unknown")
+                or "unknown",
+            },
+        )
+        selection = select(
+            facts,
+            location=self._site_location(expr),
+            detail=f"array<{elem_name}, {size}> find(target)",
+        )
+        self._selections.append(selection)
+        plan = selection.chosen
+
+        dedupe = f"{elem_c}|{size}|{plan}"
+        helper = (
+            "__flow_find_"
+            + hashlib.md5(dedupe.encode(), usedforsecurity=False).hexdigest()[:12]
+        )
+        if dedupe in self._find_helper_keys:
+            return helper, size
+        self._find_helper_keys.add(dedupe)
+
+        cmp_mid = self._scalar_cmp("a[mid]", "x", elem_name)
+        cmp_lo = self._scalar_cmp("a[lo]", "x", elem_name)
+        cmp_i = self._scalar_cmp("a[i]", "x", elem_name)
+        lines = [
+            f"/* plan: {plan} -- {selection.reason} */",
+            f"static int32_t {helper}(const {elem_c} *a, int32_t n, {elem_c} x) {{",
+        ]
+        if plan == "binary_search":
+            lines.extend(
+                [
+                    "    int32_t lo = 0, hi = n;",
+                    "    while (lo < hi) {",
+                    "        int32_t mid = lo + (hi - lo) / 2;",
+                    f"        if (({cmp_mid}) < 0) {{ lo = mid + 1; }} else {{ hi = mid; }}",
+                    "    }",
+                    f"    if (lo < n && ({cmp_lo}) == 0) {{ return lo; }}",
+                    "    return -1;",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "    for (int32_t i = 0; i < n; i++) {",
+                    f"        if (({cmp_i}) == 0) {{ return i; }}",
+                    "    }",
+                    "    return -1;",
+                ]
+            )
+        lines.append("}")
+        self._pending_find_helpers.append("\n".join(lines))
+        return helper, size
+
+    def _gen_find_expr(self, e: "FindExpr") -> str:
+        """Lower `xs |> find(t)` to a helper call yielding an index or -1."""
+        arr_type = self._infer_expr_type(e.array)
+        helper, n = self._ensure_find_helper(e, arr_type)
+        arr_c = self._gen_expr(e.array)
+        target_c = self._gen_expr(e.target)
+        elem_c = self._c_type(arr_type.element_type)
+        return f"{helper}((const {elem_c}*)({arr_c}), {n}, ({elem_c})({target_c}))"
+
+
 
 
 def flow_to_c(
@@ -3987,6 +4313,8 @@ def flow_to_c(
         out = generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums, type_aliases, distinct_types, statics=statics)
         # Expose overload warnings without changing the return signature.
         flow_to_c.last_warnings = list(generator._overload_resolver.warnings)
+        # Same for the plan records `--explain` prints (issue #146).
+        flow_to_c.last_selections = list(generator._selections)
         return out
     except Exception as e:
         print(f"C generation error: {e}")
