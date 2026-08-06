@@ -1,5 +1,4 @@
 # GPU mul backward MVP — compare Metal kernels to CPU tensor reference
-# flow:lenient: strict checker gap, capability parameters and gpu kernel externs inside handle blocks. Board card flow-strict-effect-ops.
 #
 #   ./flow run examples/gpu/gpu_mul_backward.flow
 #

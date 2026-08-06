@@ -196,3 +196,90 @@ class TestByteBufferToString:
     def test_flowc_corpus_is_strict_clean(self, rel_path):
         assert_no_lenient_pragma(rel_path)
         assert strict_errors_for_file(rel_path) == []
+
+
+# ---------------------------------------------------------------------------
+# Gap 3: capability parameters in handle blocks (flow-strict-effect-ops)
+# ---------------------------------------------------------------------------
+
+IMPLICIT_CAPABILITY_ARGS = """
+effect Store {
+    put(v: i32) -> void,
+}
+
+capability MemStore {
+    effect Store,
+
+    function put(v: i32) -> void {
+        return
+    }
+}
+
+function stash(v: i32, store: Store) -> i32 {
+    Store.put(v)
+    return v
+}
+
+function main() -> i32 {
+    handle Store with MemStore {
+        let kept: i32 = stash(7)
+        return kept - 7
+    }
+    return 1
+}
+"""
+
+CAPABILITY_ARGS_OUTSIDE_HANDLE = """
+effect Store {
+    put(v: i32) -> void,
+}
+
+function stash(v: i32, store: Store) -> i32 {
+    return v
+}
+
+function main() -> i32 {
+    let kept: i32 = stash(7)
+    return kept
+}
+"""
+
+
+class TestImplicitCapabilityArguments:
+    """Inside `handle E with Cap { … }` a call may omit trailing parameters
+    typed by a handled effect; the C backend passes zero-initialized
+    capability structs for them. Strict checking now uses the same rule."""
+
+    def test_call_inside_handle_may_omit_capability_params(self):
+        assert strict_errors(IMPLICIT_CAPABILITY_ARGS) == []
+
+    def test_omission_outside_a_handle_is_still_an_error(self):
+        errors = strict_errors(CAPABILITY_ARGS_OUTSIDE_HANDLE)
+        assert any("stash" in e for e in errors), errors
+
+    @pytest.mark.parametrize(
+        "rel_path",
+        [
+            "examples/gpu/gpu_fft.flow",
+            "examples/gpu/gpu_mul_backward.flow",
+        ],
+    )
+    def test_gpu_corpus_is_strict_clean(self, rel_path):
+        assert_no_lenient_pragma(rel_path)
+        assert strict_errors_for_file(rel_path) == []
+
+    def test_gpu_mul_kernels_have_flow_bindings(self):
+        """gpu_mul_backward.flow called gpu_mul_f32 and friends with no
+        declaration anywhere, so the generated C had implicit declarations
+        that passed a GpuBuffer struct where the runtime wants a void*."""
+        with open(os.path.join(REPO_ROOT, "lib", "stdlib", "gpu_memory.flow")) as f:
+            stdlib = f.read()
+        with open(os.path.join(REPO_ROOT, "lib", "runtime", "gpu_memory_stub.flow")) as f:
+            stub = f.read()
+        for name in (
+            "gpu_mul_f32",
+            "gpu_mul_backward_a_f32",
+            "gpu_mul_backward_b_f32",
+        ):
+            assert f"export function {name}(" in stdlib, name
+            assert f"export function flow_{name}(" in stub, name
