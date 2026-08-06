@@ -48,6 +48,16 @@ MERGE_MIN_N = 16
 # and the emitted loop agree.
 SORT_MIN_RUN = 32
 
+# Cost charged per element for growing short runs up to SORT_MIN_RUN, in the
+# same units as one merge pass. A count of comparisons would put it near
+# SORT_MIN_RUN / 4, but insertion over a 32-element window stays in cache
+# while a merge pass streams the whole array, so it is much cheaper per
+# comparison than that count suggests. This number is calibrated against
+# benchmarks/ordering/adaptive_sort_bench.flow, where the run-detecting merge
+# beat the plain bottom-up merge on every input shape measured, random
+# included. Re-measure before changing it.
+RUN_EXTENSION_WEIGHT = SORT_MIN_RUN / 8.0
+
 
 def _pinned(facts: Facts, me: str) -> Optional[str]:
     pin = facts.get("pinned")
@@ -247,7 +257,7 @@ def _natural_merge_cost(facts: Facts) -> float:
     extension = 0.0
     if found > ceiling:
         found = ceiling
-        extension = n * (SORT_MIN_RUN / 4.0)
+        extension = n * RUN_EXTENSION_WEIGHT
     # One scan to find runs, the extension, then log2(runs) merge passes.
     return n + extension + n * _log2(found)
 
