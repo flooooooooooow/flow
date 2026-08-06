@@ -1,0 +1,39 @@
+# 128-bit integers: type mapping to __int128 and literal composition.
+# Supersedes nothing; new coverage for i128/u128 (LANGUAGE_SPEC section 2.1).
+
+extern { function printf(fmt: string, v: i64) -> i32 }
+
+function main() -> i32 {
+    # A literal wider than 64 bits survives codegen (composed from halves).
+    let big: i128 = 170141183460469231731687303715884105727
+    if big <= 0 {
+        return 1
+    }
+
+    # 3^40 overflows i64 partway; i128 carries it exactly.
+    let mut acc: i128 = 1
+    let mut i: i32 = 0
+    while i < 40 {
+        acc = acc * 3
+        i = i + 1
+    }
+    let m: i64 = (acc % 1000000007) as i64
+    if m != 953271190 {
+        return 2
+    }
+
+    # Unsigned wide arithmetic.
+    let mut u: u128 = 1
+    let mut k: i32 = 0
+    while k < 100 {
+        u = u * 2
+        k = k + 1
+    }
+    let uh: i64 = ((u >> 64) % 1000000007) as i64
+    if uh != 719476260 {
+        return 3
+    }
+
+    printf("wide ints ok (3^40 mod p = %lld)\n", m)
+    return 0
+}
