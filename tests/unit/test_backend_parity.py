@@ -580,6 +580,19 @@ function main() -> i32 {
     return 1
 }
 """,
+    "for_step_dynamic": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    let k: i32 = 3
+    for i in 0 to 10 step k {
+        s = s + i
+    }
+    if s == 18 {
+        return 0
+    }
+    return 1
+}
+""",
     "match_string": """
 function pick(s: string) -> i32 {
     match s {
