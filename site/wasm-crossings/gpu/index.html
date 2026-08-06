@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow crossing 2: an @gpu kernel on WebGPU</title>
+<link rel="stylesheet" href="crossing.css">
+</head>
+<body>
+<main>
+<h1>Crossing 2 &mdash; the GPU</h1>
+<p class="lede">
+Flow compiles an <code>@gpu</code> function to Metal today. The same AST goes
+through <code>src/flow/wgsl_codegen.py</code> to WGSL, and the browser
+dispatches it on the real GPU through WebGPU. The reference on the right comes
+from the <em>same</em> kernel body compiled to C and run one element at a time
+inside WASM, so the two columns are the same arithmetic on two machines.
+</p>
+
+<div class="facts">
+  <div class="fact"><span class="k">WebGPU</span><span class="v" id="f-gpu">&hellip;</span></div>
+  <div class="fact"><span class="k">adapter</span><span class="v" id="f-adapter">&hellip;</span></div>
+  <div class="fact"><span class="k">elements</span><span class="v">1,048,576</span></div>
+  <div class="fact"><span class="k">kernels</span><span class="v">4</span></div>
+</div>
+
+<h2>Run</h2>
+<div class="panel">
+  <button id="run">Run every kernel on GPU and CPU</button>
+  <button id="clear" class="secondary">Clear</button>
+</div>
+
+<h2>GPU vs CPU</h2>
+<div class="panel">
+<table>
+  <thead><tr>
+    <th>kernel</th><th>GPU (WGSL)</th><th>CPU (WASM)</th>
+    <th>exact matches</th><th>max abs diff</th><th>verdict</th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+
+<h2>Log</h2>
+<pre id="out">click run</pre>
+
+<h2>Generated WGSL (first kernel)</h2>
+<pre class="source">// Generated from Flow @gpu function `gpu_vector_add` by src/flow/wgsl_codegen.py
+const WORKGROUP_SIZE: i32 = 64;
+
+@group(0) @binding(0) var&lt;storage, read&gt; a: array&lt;f32&gt;;
+@group(0) @binding(1) var&lt;storage, read&gt; b: array&lt;f32&gt;;
+@group(0) @binding(2) var&lt;storage, read_write&gt; out: array&lt;f32&gt;;
+
+struct Params {
+    n: i32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+};
+@group(0) @binding(3) var&lt;uniform&gt; params: Params;
+
+@compute @workgroup_size(64)
+fn gpu_vector_add(
+    @builtin(global_invocation_id) global_id: vec3&lt;u32&gt;,
+    @builtin(workgroup_id) group_id: vec3&lt;u32&gt;,
+    @builtin(local_invocation_id) local_id: vec3&lt;u32&gt;,
+) {
+    let tid: i32 = i32(global_id.x);
+    let i: i32 = tid;
+    if ((i &lt; params.n)) {
+        out[i] = (a[i] + b[i]);
+    }
+}
+</pre>
+
+<h2>Flow source</h2>
+<pre class="source"># One Flow kernel, two backends: WGSL on the browser&#x27;s GPU and C on the CPU.
+#
+#   ./flow gpu examples/wasm/gpu_vector_add.flow      # Metal shaders
+#   python3 wasm/flow_wasm_gpu.py                     # WGSL + WASM CPU reference
+#
+# The @gpu bodies below are the ones from lib/stdlib/gpu_kernels.flow. Two
+# things read the same AST:
+#
+#   src/flow/wgsl_codegen.py   emits a WGSL compute shader, dispatched by the
+#                              browser through WebGPU
+#   src/flow/c_generator.py    emits ordinary C, compiled into the WASM module
+#
+# On the GPU, gpu_thread_id() is the invocation index and every element runs at
+# once. On the CPU the same call reads a variable that cpu_* advances, so the
+# kernel runs element by element. Same arithmetic, same order of operations,
+# so the two results are comparable float for float.
+
+extern {
+    function gpu_thread_id() -&gt; i32
+    function gpu_set_thread_id(i: i32) -&gt; void
+    function sqrtf(x: f32) -&gt; f32
+    function fabsf(x: f32) -&gt; f32
+}
+
+@gpu
+function gpu_vector_add(a: ptr&lt;f32&gt;, b: ptr&lt;f32&gt;, out: ptr&lt;f32&gt;, n: i32) -&gt; void {
+    let i: i32 = gpu_thread_id()
+    if i &lt; n {
+        out[i] = a[i] + b[i]
+    }
+}
+
+@gpu
+function gpu_elementwise_mul(a: ptr&lt;f32&gt;, b: ptr&lt;f32&gt;, out: ptr&lt;f32&gt;, n: i32) -&gt; void {
+    let i: i32 = gpu_thread_id()
+    if i &lt; n {
+        out[i] = a[i] * b[i]
+    }
+}
+
+@gpu
+function gpu_saxpy(a: ptr&lt;f32&gt;, b: ptr&lt;f32&gt;, out: ptr&lt;f32&gt;, n: i32, alpha: f32) -&gt; void {
+    let i: i32 = gpu_thread_id()
+    if i &lt; n {
+        out[i] = alpha * a[i] + b[i]
+    }
+}
+
+# Arithmetic-heavy kernel: 128 square roots per element. The three kernels
+# above are memory-bound, where a GPU cannot beat a copy; this one gives it
+# something to do.
+#
+# The terms are independent on purpose. WGSL only promises sqrt to within 1
+# ulp, so a *chained* iteration amplifies that into visible divergence: an
+# earlier draft chained 256 steps and only half the elements matched, because
+# the map is chaotic, not because the GPU was wrong. Summing independent terms
+# keeps the disagreement at the ulp level where it belongs.
+@gpu
+function gpu_heavy_mix(a: ptr&lt;f32&gt;, b: ptr&lt;f32&gt;, out: ptr&lt;f32&gt;, n: i32) -&gt; void {
+    let i: i32 = gpu_thread_id()
+    if i &lt; n {
+        let scale: f32 = b[i]
+        let mut t: f32 = a[i]
+        let mut acc: f32 = 0.0
+        for k in 0 to 128 {
+            t = t + 1.0
+            acc = acc + sqrtf(fabsf(t * scale))
+        }
+        out[i] = acc
+    }
+}
+
+# Serial CPU drivers. Each walks the same kernel body once per element.
+@flow_api
+export function cpu_vector_add(a: ptr&lt;f32&gt;, b: ptr&lt;f32&gt;, out: ptr&lt;f32&gt;, n: i32) -&gt; void {
+    for i in 0 to n {
+        gpu_set_thread_id(i)
+        gpu_vector_add(a, b, out, n)
+    }
+}
+
+@flow_api
+export function cpu_elementwise_mul(a: ptr&lt;f32&gt;, b: ptr&lt;f32&gt;, out: ptr&lt;f32&gt;, n: i32) -&gt; void {
+    for i in 0 to n {
+        gpu_set_thread_id(i)
+        gpu_elementwise_mul(a, b, out, n)
+    }
+}
+
+@flow_api
+export function cpu_saxpy(a: ptr&lt;f32&gt;, b: ptr&lt;f32&gt;, out: ptr&lt;f32&gt;, n: i32, alpha: f32) -&gt; void {
+    for i in 0 to n {
+        gpu_set_thread_id(i)
+        gpu_saxpy(a, b, out, n, alpha)
+    }
+}
+
+@flow_api
+export function cpu_heavy_mix(a: ptr&lt;f32&gt;, b: ptr&lt;f32&gt;, out: ptr&lt;f32&gt;, n: i32) -&gt; void {
+    for i in 0 to n {
+        gpu_set_thread_id(i)
+        gpu_heavy_mix(a, b, out, n)
+    }
+}
+
+# Fill a buffer with a deterministic, non-trivial pattern so a GPU that quietly
+# returns zeros cannot pass the comparison.
+@flow_api
+export function fill_pattern(buf: ptr&lt;f32&gt;, n: i32, seed: i32) -&gt; void {
+    let mut state: i32 = seed
+    for i in 0 to n {
+        state = state * 1103515245 + 12345
+        let bits: i32 = (state / 65536) % 2048
+        buf[i] = (bits as f32) / 1024.0 - 1.0
+    }
+}
+
+function main() -&gt; i32 {
+    println(&quot;gpu_vector_add: kernels for WGSL + CPU reference (see wasm/flow_wasm_gpu.py)&quot;)
+    return 0
+}
+</pre>
+
+<footer>
+Built by <code>wasm/flow_wasm_gpu.py</code>; WGSL from
+<code>src/flow/wgsl_codegen.py</code>. Mechanism:
+<code>docs/language/wasm-crossings.md</code>.
+</footer>
+</main>
+
+<script src="gpu_vector_add_cpu.js"></script>
+<script type="module">
+import { getDevice, runKernel, compare } from "./webgpu-host.js";
+
+const KERNELS = [
+  {
+    "kernel": "gpu_vector_add",
+    "entryPoint": "gpu_vector_add",
+    "workgroupSize": 64,
+    "buffers": [
+      {
+        "name": "a",
+        "binding": 0,
+        "type": "storage",
+        "access": "read",
+        "element": "f32"
+      },
+      {
+        "name": "b",
+        "binding": 1,
+        "type": "storage",
+        "access": "read",
+        "element": "f32"
+      },
+      {
+        "name": "out",
+        "binding": 2,
+        "type": "storage",
+        "access": "read_write",
+        "element": "f32"
+      }
+    ],
+    "params": [
+      {
+        "name": "n",
+        "type": "i32"
+      }
+    ],
+    "paramsBinding": 3,
+    "paramsBytes": 16,
+    "cpuEntry": "cpu_vector_add",
+    "file": "gpu_vector_add.wgsl"
+  },
+  {
+    "kernel": "gpu_elementwise_mul",
+    "entryPoint": "gpu_elementwise_mul",
+    "workgroupSize": 64,
+    "buffers": [
+      {
+        "name": "a",
+        "binding": 0,
+        "type": "storage",
+        "access": "read",
+        "element": "f32"
+      },
+      {
+        "name": "b",
+        "binding": 1,
+        "type": "storage",
+        "access": "read",
+        "element": "f32"
+      },
+      {
+        "name": "out",
+        "binding": 2,
+        "type": "storage",
+        "access": "read_write",
+        "element": "f32"
+      }
+    ],
+    "params": [
+      {
+        "name": "n",
+        "type": "i32"
+      }
+    ],
+    "paramsBinding": 3,
+    "paramsBytes": 16,
+    "cpuEntry": "cpu_elementwise_mul",
+    "file": "gpu_elementwise_mul.wgsl"
+  },
+  {
+    "kernel": "gpu_saxpy",
+    "entryPoint": "gpu_saxpy",
+    "workgroupSize": 64,
+    "buffers": [
+      {
+        "name": "a",
+        "binding": 0,
+        "type": "storage",
+        "access": "read",
+        "element": "f32"
+      },
+      {
+        "name": "b",
+        "binding": 1,
+        "type": "storage",
+        "access": "read",
+        "element": "f32"
+      },
+      {
+        "name": "out",
+        "binding": 2,
+        "type": "storage",
+        "access": "read_write",
+        "element": "f32"
+      }
+    ],
+    "params": [
+      {
+        "name": "n",
+        "type": "i32"
+      },
+      {
+        "name": "alpha",
+        "type": "f32"
+      }
+    ],
+    "paramsBinding": 3,
+    "paramsBytes": 16,
+    "cpuEntry": "cpu_saxpy",
+    "file": "gpu_saxpy.wgsl"
+  },
+  {
+    "kernel": "gpu_heavy_mix",
+    "entryPoint": "gpu_heavy_mix",
+    "workgroupSize": 64,
+    "buffers": [
+      {
+        "name": "a",
+        "binding": 0,
+        "type": "storage",
+        "access": "read",
+        "element": "f32"
+      },
+      {
+        "name": "b",
+        "binding": 1,
+        "type": "storage",
+        "access": "read",
+        "element": "f32"
+      },
+      {
+        "name": "out",
+        "binding": 2,
+        "type": "storage",
+        "access": "read_write",
+        "element": "f32"
+      }
+    ],
+    "params": [
+      {
+        "name": "n",
+        "type": "i32"
+      }
+    ],
+    "paramsBinding": 3,
+    "paramsBytes": 16,
+    "cpuEntry": "cpu_heavy_mix",
+    "file": "gpu_heavy_mix.wgsl"
+  }
+];
+const N = 1048576;
+
+const out = document.getElementById("out");
+const log = (s) => { out.textContent += s + "\n"; out.scrollTop = out.scrollHeight; };
+const setFact = (id, text, cls) => {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "v" + (cls ? " " + cls : "");
+};
+
+setFact("f-gpu", navigator.gpu ? "present" : "missing", navigator.gpu ? "ok" : "bad");
+
+let wasm = null;
+const cpuReady = createFlowCpu({ print: log, printErr: log }).then((m) => { wasm = m; });
+
+// Scalars every kernel might ask for. The host picks the ones its uniform
+// block declares.
+const SCALARS = { n: N, alpha: 2.5 };
+
+async function runAll() {
+  document.getElementById("run").disabled = true;
+  document.getElementById("rows").innerHTML = "";
+  await cpuReady;
+
+  let device;
+  try {
+    const got = await getDevice();
+    device = got.device;
+    const info = got.adapter.info || {};
+    setFact("f-adapter", [info.vendor, info.architecture].filter(Boolean).join(" ") || "ok", "ok");
+  } catch (e) {
+    setFact("f-adapter", "unavailable", "bad");
+    log("WebGPU unavailable: " + e.message);
+    document.getElementById("run").disabled = false;
+    return;
+  }
+
+  // Inputs live in the WASM heap so the CPU reference reads exactly the bytes
+  // the GPU was handed.
+  const bytes = N * 4;
+  const pa = wasm._malloc(bytes), pb = wasm._malloc(bytes), pout = wasm._malloc(bytes);
+  wasm._fill_pattern(pa, N, 12345);
+  wasm._fill_pattern(pb, N, 98765);
+  const a = wasm.HEAPF32.subarray(pa >> 2, (pa >> 2) + N).slice();
+  const b = wasm.HEAPF32.subarray(pb >> 2, (pb >> 2) + N).slice();
+  log(`inputs: a[0]=${a[0]} b[0]=${b[0]} a[${N - 1}]=${a[N - 1]}`);
+
+  for (const kernel of KERNELS) {
+    log("--- " + kernel.kernel + " ---");
+    const code = await (await fetch(kernel.file)).text();
+
+    const inputs = {};
+    for (const buf of kernel.buffers) {
+      if (buf.access !== "read") continue;
+      inputs[buf.name] = buf.name === "b" ? b : a;
+    }
+
+    const args = [pa, pb, pout, N];
+    if (kernel.params.some((p) => p.name === "alpha")) args.push(SCALARS.alpha);
+
+    // First call on either side pays for shader compilation and pipeline
+    // creation on the GPU, and for V8's baseline WASM tier on the CPU. Run
+    // each twice and report the second.
+    let gpuRes;
+    try {
+      const warm = await runKernel(device, kernel, code, inputs, SCALARS, N);
+      log(`  first GPU dispatch (compile + pipeline): ${warm.ms.toFixed(2)} ms`);
+      gpuRes = await runKernel(device, kernel, code, inputs, SCALARS, N);
+    } catch (e) {
+      log("GPU dispatch failed: " + e.message);
+      addRow(kernel.kernel, "&mdash;", "&mdash;", "&mdash;", "&mdash;", "FAIL", false);
+      continue;
+    }
+
+    wasm["_" + kernel.cpuEntry](...args);
+    const t0 = performance.now();
+    wasm["_" + kernel.cpuEntry](...args);
+    const cpuMs = performance.now() - t0;
+    const cpu = wasm.HEAPF32.subarray(pout >> 2, (pout >> 2) + N).slice();
+
+    const gpu = gpuRes.outputs.out;
+    const cmp = compare(gpu, cpu);
+    // Exact agreement is the bar for +, * and fma-free arithmetic. WGSL only
+    // promises sqrt to 1 ulp, so a chain of them is checked to a tolerance.
+    const exactBar = cmp.maxAbs === 0;
+    const ok = exactBar || cmp.maxRel < 1e-4;
+    const verdict = exactBar
+      ? "bit-identical"
+      : ok
+      ? "agrees to " + cmp.maxRel.toExponential(1) + " rel"
+      : "MISMATCH";
+    log(`  gpu ${gpuRes.ms.toFixed(2)} ms, cpu ${cpuMs.toFixed(2)} ms  (${(cpuMs / gpuRes.ms).toFixed(2)}x)`);
+    log(`  exact ${cmp.exact}/${cmp.n}, max abs diff ${cmp.maxAbs}, max rel ${cmp.maxRel}`);
+    log(`  gpu[0]=${gpu[0]} cpu[0]=${cpu[0]}  gpu[${N - 1}]=${gpu[N - 1]} cpu[${N - 1}]=${cpu[N - 1]}`);
+    addRow(
+      kernel.kernel,
+      gpuRes.ms.toFixed(2) + " ms",
+      cpuMs.toFixed(2) + " ms (" + (cpuMs / gpuRes.ms).toFixed(2) + "x)",
+      cmp.exact + " / " + cmp.n,
+      String(cmp.maxAbs),
+      verdict,
+      ok
+    );
+  }
+
+  wasm._free(pa); wasm._free(pb); wasm._free(pout);
+  document.getElementById("run").disabled = false;
+}
+
+function addRow(...cells) {
+  const ok = cells.pop();
+  const tr = document.createElement("tr");
+  tr.innerHTML = cells.map((c) => `<td>${c}</td>`).join("");
+  tr.lastChild.style.color = ok ? "var(--ok)" : "var(--bad)";
+  document.getElementById("rows").appendChild(tr);
+}
+
+document.getElementById("run").onclick = runAll;
+document.getElementById("clear").onclick = () => { out.textContent = ""; };
+window.runAll = runAll;
+</script>
+</body>
+</html>

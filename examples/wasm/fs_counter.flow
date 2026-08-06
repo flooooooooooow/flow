@@ -1,0 +1,102 @@
+# Persistence across page reloads, through ordinary stdio.
+#
+#   ./flow run examples/wasm/fs_counter.flow
+#   ./flow wasm examples/wasm/fs_counter.flow --fs idbfs
+#
+# Reads a run counter from a file, increments it, writes it back. Nothing here
+# knows about IndexedDB. In the browser the directory it writes to is an IDBFS
+# mount, so the bytes survive a reload; natively it is a directory on disk.
+#
+# The catch IDBFS adds is that the mount is a memory image of an IndexedDB
+# store, and the two only meet when the host calls FS.syncfs. The page calls it
+# inbound before main() and outbound after, which is why this program can stay
+# a plain stdio program.
+
+extern {
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(f: ptr<void>) -> i32
+    function fread(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function fwrite(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function mkdir(path: string, mode: i32) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+const STATE_DIR: string = "persist"
+const STATE_PATH: string = "persist/run_counter.bin"
+
+function read_counter(slot: ptr<i32>) -> i32 {
+    let f: ptr<void> = fopen(STATE_PATH, "rb")
+    if f == null {
+        return 0
+    }
+    let got: i64 = fread(slot as ptr<void>, 4, 1, f)
+    fclose(f)
+    if got != 1 {
+        return 0
+    }
+    return 1
+}
+
+function write_counter(slot: ptr<i32>) -> i32 {
+    let f: ptr<void> = fopen(STATE_PATH, "wb")
+    if f == null {
+        return 0 - 1
+    }
+    let put: i64 = fwrite(slot as ptr<void>, 4, 1, f)
+    fclose(f)
+    if put != 1 {
+        return 0 - 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    println("fs_counter: a run counter that outlives the page")
+    mkdir(STATE_DIR, 493)
+
+    let slot: ptr<i32> = malloc(4) as ptr<i32>
+    slot[0] = 0
+
+    let existed: i32 = read_counter(slot)
+    if existed == 1 {
+        print("  found ")
+        print(STATE_PATH)
+        print(" with previous run count ")
+        println(slot[0])
+    } else {
+        print("  no state file yet at ")
+        print(STATE_PATH)
+        println(" (first run)")
+    }
+
+    slot[0] = slot[0] + 1
+    if write_counter(slot) != 0 {
+        println("FAIL: could not write the state file")
+        free(slot as ptr<void>)
+        return 1
+    }
+
+    print("  run count is now ")
+    println(slot[0])
+
+    # Read it straight back so the check does not depend on the host.
+    let verify: ptr<i32> = malloc(4) as ptr<i32>
+    verify[0] = 0 - 1
+    if read_counter(verify) != 1 or verify[0] != slot[0] {
+        println("FAIL: readback disagreed with what was written")
+        free(slot as ptr<void>)
+        free(verify as ptr<void>)
+        return 1
+    }
+    println("  readback matches")
+
+    let count: i32 = slot[0]
+    free(slot as ptr<void>)
+    free(verify as ptr<void>)
+
+    print("RUNS=")
+    println(count)
+    println("PASS")
+    return 0
+}

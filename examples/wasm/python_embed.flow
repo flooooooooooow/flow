@@ -1,0 +1,96 @@
+# Flow calling Python, in a browser.
+#
+#   ./flow run examples/wasm/python_embed.flow      # native, libpython
+#   python3 wasm/flow_wasm_python.py                # browser, Pyodide
+#
+# Nothing below is browser-aware. It is the ordinary embedding surface from
+# lib/stdlib/python_embed.flow: init, extend sys.path, import a module, call
+# functions in it. Natively those land in runtime/flow_python_embed.c, which
+# drives libpython through the CPython C API. Under WASM they land in
+# wasm/crossing_assets/pyodide_bridge.js, which drives Pyodide.
+#
+# The Python module (examples/wasm/python/flow_demo.py) is also unchanged.
+
+import "stdlib/python_embed.flow"
+
+extern {
+    function printf(fmt: string, v: f64) -> i32
+}
+
+function main() -> i32 {
+    print_line("python_embed: Flow calling CPython")
+
+    let ctx0: PythonContext = python_begin(".", "python")
+    if !ctx0.ok {
+        print_line(python_last_error())
+        return ctx0.error
+    }
+
+    let ctx1: PythonContext = python_import(ctx0, "flow_demo")
+    if !ctx1.ok {
+        print_line(python_last_error())
+        return ctx1.error
+    }
+    print_line("  imported flow_demo")
+
+    let ctx2: PythonContext = python_call(ctx1, "banner")
+    if !ctx2.ok { return ctx2.error }
+
+    let ctx3: PythonContext = python_call_str(ctx2, "greet", "Flow")
+    if !ctx3.ok { return ctx3.error }
+
+    let ctx4: PythonContext = python_call_i32(ctx3, "square", 12)
+    if !ctx4.ok { return ctx4.error }
+
+    let ctx5: PythonContext = python_call_f32(ctx4, "scale", 1.5)
+    if !ctx5.ok { return ctx5.error }
+
+    let ctx6: PythonContext = python_call_bool(ctx5, "toggle", true)
+    if !ctx6.ok { return ctx6.error }
+
+    # A value computed by Python's own math library and returned to Flow.
+    # 3-4-12 is a Pythagorean quadruple, so this is exactly 13.
+    let h: f64 = python_call3_i32_f64(ctx6.py_mod, "hypot3", 3, 4, 12)
+    print("  hypot3(3, 4, 12) returned ")
+    printf("%.6f\n", h)
+    if h < 12.999999 or h > 13.000001 {
+        print_line("FAIL: Python returned the wrong value")
+        python_end()
+        return 5
+    }
+
+    # Module state persisted across the calls above; the function prints it.
+    let calls: i32 = python_call0(ctx6.py_mod, "event_count")
+    if calls != PY_OK {
+        print_line(python_last_error())
+        python_end()
+        return 6
+    }
+
+    # The error path: this function raises, and the failure has to come back
+    # as a nonzero code with a message rather than as a crash.
+    let bad: i32 = python_call0(ctx6.py_mod, "boom")
+    if bad == PY_OK {
+        print_line("FAIL: a raising function reported success")
+        python_end()
+        return 7
+    }
+    print("  boom() reported error code ")
+    println(bad)
+    print("  last error: ")
+    print_line(python_last_error())
+
+    # A missing attribute must also fail cleanly.
+    let missing: i32 = python_call0(ctx6.py_mod, "no_such_function")
+    if missing == PY_OK {
+        print_line("FAIL: a missing function reported success")
+        python_end()
+        return 8
+    }
+    print("  missing attribute reported error code ")
+    println(missing)
+
+    python_end()
+    print_line("PASS")
+    return 0
+}

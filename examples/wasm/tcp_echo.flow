@@ -1,0 +1,173 @@
+# A TCP round trip from inside a browser tab.
+#
+#   python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506 &
+#   ./flow run examples/wasm/tcp_echo.flow          # native, plain TCP
+#   python3 wasm/flow_wasm_sockets.py               # browser, over WebSocket
+#
+# This calls Flow's ordinary socket API: flow_rt_tcp_connect / send / recv /
+# close in runtime/flow_tcp.c, which are BSD sockets and nothing else. The
+# file is not modified for WASM. Emscripten maps those same calls onto a
+# WebSocket, so connect() to 127.0.0.1:9505 opens ws://127.0.0.1:9505/.
+#
+# Two things differ from a native run, and both are browser facts:
+#
+#   The port is a WebSocket port, because a browser cannot open a raw TCP
+#   socket to anywhere. Something has to speak WebSocket on the other end.
+#
+#   connect() cannot block, so Emscripten returns success immediately and the
+#   handshake finishes later. recv() reports EAGAIN until then. The poll loop
+#   below calls flow_net_yield, which is emscripten_sleep under WASM (giving
+#   the event loop a turn) and usleep natively.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function flow_rt_tcp_connect(host_hash: i32, port: i32) -> i32
+    function flow_rt_tcp_close(fd: i32) -> i32
+    function flow_rt_tcp_recv(fd: i32, buf: ptr<void>, len: i32) -> i32
+    function flow_rt_tcp_send(fd: i32, buf: ptr<void>, len: i32) -> i32
+    function flow_rt_monotonic_ns() -> i64
+    function flow_net_yield(ms: i32) -> void
+    function flow_demo_port() -> i32
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const MSG_LEN: i32 = 32
+const TRIPS: i32 = 8
+const POLL_MS: i32 = 2
+const POLL_LIMIT: i32 = 2500      # 2500 * 2 ms = 5 s before giving up
+
+let mut sendbuf: ptr<i8> = null
+let mut recvbuf: ptr<i8> = null
+
+# Deterministic payload: byte i of trip t.
+function fill_message(trip: i32) -> void {
+    for i in 0 to MSG_LEN {
+        let v: i32 = (i * 7 + trip * 31 + 65) % 90 + 33
+        sendbuf[i] = v as i8
+    }
+}
+
+function payload_matches() -> i32 {
+    for i in 0 to MSG_LEN {
+        if sendbuf[i] != recvbuf[i] {
+            return 0
+        }
+    }
+    return 1
+}
+
+# Read exactly MSG_LEN bytes, yielding to the event loop between attempts.
+# Returns bytes read, or -1 on timeout.
+function recv_all(fd: i32) -> i32 {
+    let mut got: i32 = 0
+    let mut polls: i32 = 0
+    while got < MSG_LEN {
+        let n: i32 = flow_rt_tcp_recv(fd, (recvbuf + (got as i64)) as ptr<void>, MSG_LEN - got)
+        if n > 0 {
+            got = got + n
+        } else {
+            polls = polls + 1
+            if polls > POLL_LIMIT {
+                return -1
+            }
+            flow_net_yield(POLL_MS)
+        }
+    }
+    return got
+}
+
+function main() -> i32 {
+    let port: i32 = flow_demo_port()
+    println("tcp_echo: Flow's BSD socket API, round-tripping through a relay")
+    print("  port: ")
+    println(port)
+    print("  message bytes: ")
+    println(MSG_LEN)
+    print("  round trips: ")
+    println(TRIPS)
+
+    sendbuf = malloc(MSG_LEN as i64) as ptr<i8>
+    recvbuf = malloc(MSG_LEN as i64) as ptr<i8>
+
+    let fd: i32 = flow_rt_tcp_connect(0, port)
+    if fd < 0 {
+        println("FAIL: connect returned an error")
+        return 1
+    }
+    print("  connected, fd ")
+    println(fd)
+
+    # Under WASM the handshake is still in flight here. Give it the event loop.
+    flow_net_yield(50)
+
+    let mut ok: i32 = 0
+    let mut best_ns: i64 = 0
+    let mut total_ns: i64 = 0
+
+    for trip in 0 to TRIPS {
+        fill_message(trip)
+        for i in 0 to MSG_LEN {
+            recvbuf[i] = 0
+        }
+        let t0: i64 = flow_rt_monotonic_ns()
+        let sent: i32 = flow_rt_tcp_send(fd, sendbuf as ptr<void>, MSG_LEN)
+        if sent != MSG_LEN {
+            print("  trip ")
+            print(trip)
+            println(": send failed")
+            continue
+        }
+        let got: i32 = recv_all(fd)
+        let t1: i64 = flow_rt_monotonic_ns()
+        if got != MSG_LEN {
+            print("  trip ")
+            print(trip)
+            println(": timed out waiting for the echo")
+            continue
+        }
+        if payload_matches() == 0 {
+            print("  trip ")
+            print(trip)
+            println(": echo did not match what was sent")
+            continue
+        }
+        let ns: i64 = t1 - t0
+        total_ns = total_ns + ns
+        if ok == 0 or ns < best_ns {
+            best_ns = ns
+        }
+        ok = ok + 1
+        print("  trip ")
+        print(trip)
+        print(": ")
+        print(MSG_LEN)
+        print(" bytes echoed, rtt ms ")
+        printf("%.3f\n", (ns as f64) / 1000000.0)
+    }
+
+    let closed: i32 = flow_rt_tcp_close(fd)
+    free(sendbuf as ptr<void>)
+    free(recvbuf as ptr<void>)
+
+    print("  round trips ok: ")
+    print(ok)
+    print(" / ")
+    println(TRIPS)
+    if ok > 0 {
+        print("  best rtt ms ")
+        printf("%.3f", (best_ns as f64) / 1000000.0)
+        print("   mean rtt ms ")
+        printf("%.3f\n", (total_ns as f64) / (ok as f64) / 1000000.0)
+    }
+    print("  close: ")
+    println(closed)
+
+    if ok != TRIPS {
+        println("FAIL")
+        return 1
+    }
+    println("PASS")
+    return 0
+}

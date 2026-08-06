@@ -1,0 +1,5 @@
+Flow reads this file with fopen and fread.
+In the browser it was never fetched by the program: emcc --preload-file
+packed it into a .data blob that the loader unpacks into MEMFS before main
+runs, so open("data/fs_input.txt") finds it already there.
+Line four exists so the count is not two.
