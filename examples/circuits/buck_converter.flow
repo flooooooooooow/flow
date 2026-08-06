@@ -1,0 +1,388 @@
+# BUCK CONVERTER: duty cycle to output voltage, and the ripple that comes
+# with it.
+#
+# WHY THE MATRIX AND NOT A `flow` BLOCK
+#   A switching converter is a different circuit in each half of the period.
+#   The averaged model is two ODEs and would be a fine `flow` block, but the
+#   averaged model is exactly what this example is trying to check. Simulating
+#   the switching means re-solving the network as the topology changes, which
+#   is the matrix's job. The switches are resistors whose value is written
+#   between steps, so the topology change is a value change and the solver
+#   refactors when it sees one.
+#
+# THE CIRCUIT
+#
+#      Vin --[ SW_hi ]--+--[ L ]--+-- Vout
+#                       |         |
+#                    [ SW_lo ]   [C]  [Rload]
+#                       |         |     |
+#                      gnd       gnd   gnd
+#
+#   Vin = 12 V, L = 100 uH, C = 10 uF, Rload = 5 ohm, fsw = 100 kHz.
+#   Each switch is Ron = 10 mohm closed and Roff = 1 Mohm open, and they are
+#   driven complementarily. This is the synchronous buck: no diode, so the
+#   ideal relation has nothing subtracted from it.
+#
+# WHAT THE TEXTBOOK SAYS, IN CONTINUOUS CONDUCTION
+#
+#     Vout      = D Vin                            volt-second balance on L
+#     dIL       = (Vin - Vout) D / (fsw L)         inductor ripple, pk-pk
+#     dVout     = dIL / (8 fsw C)                  output ripple, pk-pk
+#     IL        = Vout / Rload                     average inductor current
+#
+#   The conduction losses are the one thing the ideal relation leaves out. The
+#   averaged series resistance is Ron on both halves plus the load, so
+#   Vout = D Vin Rload/(Rload + Ron) = D Vin * 0.998004, a 0.2% droop that
+#   this example predicts and then measures.
+#
+# THE ASYNCHRONOUS CASE
+#   The low-side switch is then replaced by a Schottky-like diode
+#   (Is = 1 mA, n VT = 25.852 mV) and the same measurement is repeated at
+#   D = 0.5. Now the freewheel path has a forward drop, so
+#   Vout = D Vin - (1 - D) Vf, and Vf is measured from the simulation and
+#   compared with the Shockley voltage at the average inductor current. This
+#   is the part of the run where Newton has real work to do: the diode is
+#   reverse biased for D of the period and forward biased for the rest.
+#
+# NUMERICS
+#   dt = Tsw/2000 = 5 ns, so each edge lands exactly on a step boundary and
+#   the duty cycle is exact. Trapezoidal. The reactive states start at their
+#   predicted steady values, so only the RC settling of the output filter has
+#   to run off; 300 switching periods is 3 ms, or 6 output time constants.
+#   Measurements are taken over the last 20 periods.
+#
+# EVIDENCE
+#   Vout/Vin against D at seven duty cycles, gated at 1% against the ideal
+#   line with the conduction droop folded in; the inductor and output ripple
+#   against the two formulas above, gated at 5% and 10%; and for the diode
+#   version the measured forward drop against Shockley at the average current,
+#   gated at 5%.
+#
+# Run: ./flow run examples/circuits/buck_converter.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const VIN: f64 = 12.0
+const L_BUCK: f64 = 100e-6
+const C_BUCK: f64 = 10e-6
+const RLOAD: f64 = 5.0
+const FSW: f64 = 100e3
+const RON: f64 = 0.010
+const ROFF: f64 = 1e6
+const STEPS_PER_SW: i32 = 2000
+const PERIODS: i32 = 300
+const MEAS_PERIODS: i32 = 20
+
+const D_IS: f64 = 1e-3
+const D_NVT: f64 = 0.025852
+
+# Results of one run.
+let mut r_vout: f64 = 0.0
+let mut r_vripple: f64 = 0.0
+let mut r_il: f64 = 0.0
+let mut r_iripple: f64 = 0.0
+let mut r_vf: f64 = 0.0
+let mut r_iters: i32 = 0
+let mut r_factors: i32 = 0
+
+# Nodes: 1 = Vin rail, 2 = switch node, 3 = output.
+function run_buck(duty: f64, synchronous: bool) -> bool {
+    if !circ_reset() {
+        return false
+    }
+    circ_set_method(CIRC_TRAP)
+    circ_set_tol(1e-11, 1e-14)
+    let vin_src: i32 = circ_add_v(1, 0, VIN)
+    let sw_hi: i32 = circ_add_r(1, 2, ROFF)
+    let mut sw_lo: i32 = -1
+    let mut dfw: i32 = -1
+    if synchronous {
+        sw_lo = circ_add_r(2, 0, ROFF)
+    } else {
+        # Freewheel diode: anode at ground, cathode at the switch node, so it
+        # conducts when the switch node is pulled below ground by the inductor.
+        dfw = circ_add_d(0, 2, D_IS, D_NVT)
+    }
+    let vout_pred: f64 = duty * VIN
+    let ind: i32 = circ_add_l(2, 3, L_BUCK, vout_pred / RLOAD)
+    let cap: i32 = circ_add_c(3, 0, C_BUCK, vout_pred)
+    let rl: i32 = circ_add_r(3, 0, RLOAD)
+    if rl < 0 or !circ_finalize() {
+        return false
+    }
+    let tsw: f64 = 1.0 / FSW
+    let dt: f64 = tsw / (STEPS_PER_SW as f64)
+    let on_steps: i32 = (duty * (STEPS_PER_SW as f64) + 0.5) as i32
+    if !circ_tran_init(true, dt * 1e-6) {
+        return false
+    }
+
+    let total: i32 = PERIODS * STEPS_PER_SW
+    let meas_from: i32 = total - MEAS_PERIODS * STEPS_PER_SW
+    let mut vmin: f64 = 1e30
+    let mut vmax: f64 = 0.0 - 1e30
+    let mut imin: f64 = 1e30
+    let mut imax: f64 = 0.0 - 1e30
+    let mut vsum: f64 = 0.0
+    let mut isum: f64 = 0.0
+    let mut vfsum: f64 = 0.0
+    let mut vfn: i32 = 0
+    let mut nmeas: i32 = 0
+    r_iters = 0
+
+    for k in 0 to total {
+        let phase: i32 = k % STEPS_PER_SW
+        if phase < on_steps {
+            circ_set_value(sw_hi, RON)
+            if synchronous {
+                circ_set_value(sw_lo, ROFF)
+            }
+        } else {
+            circ_set_value(sw_hi, ROFF)
+            if synchronous {
+                circ_set_value(sw_lo, RON)
+            }
+        }
+        if !circ_tran_step(dt) {
+            return false
+        }
+        if circ_iterations() > r_iters {
+            r_iters = circ_iterations()
+        }
+        if k >= meas_from {
+            let v: f64 = circ_state(cap)
+            let i: f64 = circ_state(ind)
+            if v < vmin { vmin = v }
+            if v > vmax { vmax = v }
+            if i < imin { imin = i }
+            if i > imax { imax = i }
+            vsum = vsum + v
+            isum = isum + i
+            nmeas = nmeas + 1
+            # Diode forward drop, sampled in the middle of the off time.
+            if !synchronous and phase == (on_steps + STEPS_PER_SW) / 2 {
+                vfsum = vfsum + (0.0 - circ_v(2))
+                vfn = vfn + 1
+            }
+        }
+    }
+    r_vout = vsum / (nmeas as f64)
+    r_vripple = vmax - vmin
+    r_il = isum / (nmeas as f64)
+    r_iripple = imax - imin
+    r_vf = 0.0
+    if vfn > 0 {
+        r_vf = vfsum / (vfn as f64)
+    }
+    r_factors = circ_factor_count()
+    return true
+}
+
+function relerr(got: f64, want: f64) -> f64 {
+    let s: f64 = fabs(want)
+    if s < 1e-30 {
+        return fabs(got - want)
+    }
+    return fabs(got - want) / s
+}
+
+function main() -> i32 {
+    println("")
+    println("  BUCK CONVERTER  --  duty cycle, ripple, and the diode's toll")
+    println("  ============================================================")
+    println("")
+    print("  Vin = ")
+    printf("%.1f", VIN)
+    print(" V,  L = ")
+    printf("%.0f", L_BUCK * 1e6)
+    print(" uH,  C = ")
+    printf("%.0f", C_BUCK * 1e6)
+    print(" uF,  Rload = ")
+    printf("%.1f", RLOAD)
+    print(" ohm,  fsw = ")
+    printf("%.0f", FSW / 1000.0)
+    println(" kHz")
+    print("  Ron = ")
+    printf("%.0f", RON * 1000.0)
+    print(" mohm,  dt = Tsw/")
+    print(STEPS_PER_SW)
+    print(" = ")
+    printf("%.2f", 1e9 / (FSW * (STEPS_PER_SW as f64)))
+    print(" ns,  ")
+    print(PERIODS)
+    println(" switching periods per point")
+
+    # Conduction droop: on both halves the inductor current runs through one
+    # Ron, so the averaged model is a divider.
+    let droop: f64 = RLOAD / (RLOAD + RON)
+
+    println("")
+    println("  SYNCHRONOUS BUCK, DUTY SWEEP")
+    println("")
+    println("      D     Vout [V]   D*Vin [V]   with droop   rel err   Vout/Vin      D")
+    println("    -----  ---------  ----------  -----------  --------  ---------  -------")
+
+    let duties: array<f64, 7> = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+    let mut worst_d: f64 = 0.0
+    let mut w_iripple: f64 = 0.0
+    let mut w_vripple: f64 = 0.0
+    let mut m_iripple: f64 = 0.0
+    let mut m_vripple: f64 = 0.0
+    let mut m_il: f64 = 0.0
+    let mut m_vout: f64 = 0.0
+    let mut m_factors: i32 = 0
+    for k in 0 to 7 {
+        let d: f64 = duties[k]
+        if !run_buck(d, true) {
+            println("    FAIL: synchronous run did not complete")
+            return 1
+        }
+        let ideal: f64 = d * VIN
+        let withdroop: f64 = ideal * droop
+        let e: f64 = relerr(r_vout, withdroop)
+        if e > worst_d {
+            worst_d = e
+        }
+        print("    ")
+        printf("%5.2f", d)
+        printf("  %9.5f", r_vout)
+        printf("  %10.5f", ideal)
+        printf("  %11.5f", withdroop)
+        printf("  %8.2e", e)
+        printf("  %9.5f", r_vout / VIN)
+        printf("  %7.2f", d)
+        println("")
+        if d == 0.5 {
+            m_iripple = r_iripple
+            m_vripple = r_vripple
+            m_il = r_il
+            m_vout = r_vout
+            m_factors = r_factors
+        }
+    }
+
+    let di_ref: f64 = (VIN - m_vout) * 0.5 / (FSW * L_BUCK)
+    let dv_ref: f64 = di_ref / (8.0 * FSW * C_BUCK)
+    w_iripple = relerr(m_iripple, di_ref)
+    w_vripple = relerr(m_vripple, dv_ref)
+    println("")
+    println("  RIPPLE AT D = 0.50")
+    println("")
+    print("      inductor current  measured ")
+    printf("%.6f", m_iripple)
+    print(" A   (Vin-Vout)D/(fsw L) = ")
+    printf("%.6f", di_ref)
+    print(" A   rel err ")
+    printf("%.2e", w_iripple)
+    println("")
+    print("      output voltage    measured ")
+    printf("%9.6f", m_vripple * 1000.0)
+    print(" mV  dIL/(8 fsw C)      = ")
+    printf("%9.6f", dv_ref * 1000.0)
+    print(" mV  rel err ")
+    printf("%.2e", w_vripple)
+    println("")
+    print("      average IL        ")
+    printf("%.6f", m_il)
+    print(" A   Vout/Rload = ")
+    printf("%.6f", m_vout / RLOAD)
+    print(" A   CCM margin IL - dIL/2 = ")
+    printf("%.6f", m_il - 0.5 * m_iripple)
+    println(" A")
+    print("      LU factorizations ")
+    print(m_factors)
+    print(" over ")
+    print(PERIODS * STEPS_PER_SW)
+    println(" steps: two per period, one per switching edge")
+
+    println("")
+    println("  ASYNCHRONOUS BUCK AT D = 0.50   (freewheel diode instead of SW_lo)")
+    if !run_buck(0.5, false) {
+        println("    FAIL: diode run did not complete")
+        return 2
+    }
+    let vf_meas: f64 = r_vf
+    let vf_shockley: f64 = D_NVT * log(r_il / D_IS + 1.0)
+    let vf_err: f64 = relerr(vf_meas, vf_shockley)
+    let vout_model: f64 = 0.5 * VIN - 0.5 * vf_meas
+    println("")
+    print("      Vout measured        ")
+    printf("%.6f", r_vout)
+    println(" V")
+    print("      D Vin                ")
+    printf("%.6f", 0.5 * VIN)
+    println(" V   (what the ideal relation says)")
+    print("      D Vin - (1-D) Vf     ")
+    printf("%.6f", vout_model)
+    print(" V   rel err ")
+    printf("%.2e", relerr(r_vout, vout_model))
+    println("")
+    print("      diode drop measured  ")
+    printf("%.6f", vf_meas)
+    print(" V   Shockley at IL = ")
+    printf("%.4f", r_il)
+    print(" A: ")
+    printf("%.6f", vf_shockley)
+    print(" V   rel err ")
+    printf("%.2e", vf_err)
+    println("")
+    print("      worst Newton iterations per step: ")
+    print(r_iters)
+    println("")
+    println("      the freewheel drop is why a synchronous converter exists")
+
+    let vout_model_err: f64 = relerr(r_vout, vout_model)
+
+    println("")
+    print("  worst Vout error over the duty sweep : ")
+    printf("%.3e", worst_d)
+    println("     gate 1.000e-02")
+    print("  inductor ripple error at D = 0.5     : ")
+    printf("%.3e", w_iripple)
+    println("     gate 5.000e-02")
+    print("  output ripple error at D = 0.5       : ")
+    printf("%.3e", w_vripple)
+    println("     gate 1.000e-01")
+    print("  diode drop vs Shockley               : ")
+    printf("%.3e", vf_err)
+    println("     gate 5.000e-02")
+    print("  diode-buck Vout vs D Vin - (1-D) Vf  : ")
+    printf("%.3e", vout_model_err)
+    println("     gate 1.000e-02")
+    println("")
+
+    if worst_d != worst_d or w_vripple != w_vripple or vf_err != vf_err {
+        println("  FAIL: NaN in a measurement")
+        return 3
+    }
+    if worst_d >= 1e-2 {
+        println("  FAIL: Vout does not follow D Vin")
+        return 4
+    }
+    if w_iripple >= 5e-2 {
+        println("  FAIL: inductor ripple is not (Vin-Vout)D/(fsw L)")
+        return 5
+    }
+    if w_vripple >= 1e-1 {
+        println("  FAIL: output ripple is not dIL/(8 fsw C)")
+        return 6
+    }
+    if vf_err >= 5e-2 {
+        println("  FAIL: the freewheel drop is not the Shockley voltage")
+        return 7
+    }
+    if vout_model_err >= 1e-2 {
+        println("  FAIL: the diode buck does not follow D Vin - (1-D) Vf")
+        return 8
+    }
+    println("  PASS: Vout tracks D Vin across the sweep, both ripple formulas")
+    println("        hold, and the diode version loses exactly (1-D) Vf")
+    return 0
+}
