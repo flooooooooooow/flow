@@ -27,6 +27,7 @@ examples/
 ├── ml/               # Machine learning framework
 │   ├── models/       # Trained demos (XOR MLP, …)
 │   └── autodiff/     # Autodiff + neural-net examples (was neural_networks/)
+├── circuits/         # Circuit simulation: MNA solver, SPICE front end, 12 gated examples
 ├── morphogenesis/    # Pattern formation and growth: 20 live gfx demos
 ├── net/              # Networking sketches (HTTP / TCP)
 ├── numerical/        # Scientific computing
@@ -60,6 +61,7 @@ examples/
 | WASM | `examples/wasm/hello_wasm.flow` | `./flow run` / `./flow wasm examples/wasm/hello_wasm.flow` |
 | Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
 | Morphogenesis | `examples/morphogenesis/gray_scott.flow` | `./flow gfx examples/morphogenesis/gray_scott.flow` |
+| Circuits | `examples/circuits/rc_rl_rlc.flow` | `./flow run examples/circuits/rc_rl_rlc.flow` |
 
 ## Quick Start
 
@@ -202,6 +204,22 @@ The flagship suite for Flow's founding vision — systems that evolve through ti
 - `spring_mass_control.flow` — Model → analyze → control (`dsys` DSL)
 - `lorenz_gfx.flow` — `flow Lorenz` live in a window (`./flow gfx`)
 - `pendulum.flow` / `bouncing_ball.flow` — pedagogical hand integrators only
+
+### Circuits (`circuits/`)
+Twelve circuit-simulation programs plus a SPICE-subset netlist front end (see
+[circuits/README.md](circuits/README.md)). Each one prints what it measured
+next to what the closed form says and gates its exit code on the two agreeing,
+so they are measurements rather than pictures. Circuits that are genuinely
+differential-algebraic use the modified-nodal-analysis solver in
+`stdlib/circuit.flow`; circuits that are really ODEs are written as `flow`
+blocks with `evolves as`, and every header says which and why:
+- `rc_rl_rlc.flow` - three step responses, three integrators, three closed forms
+- `mna_dc.flow` - two resistive ladders against hand arithmetic, to 8.7e-16
+- `lc_tank.flow` - 1000 lossless cycles: trapezoidal conserves, backward Euler damps at its predicted rate
+- `diode_iv.flow` / `bjt_curves.flow` - Newton against Shockley and Ebers-Moll
+- `logic_delays.flow` - a ripple-carry adder from 20 one-line `flow` gates
+- `chua.flow` - the double scroll, with a Lyapunov exponent measured two ways
+- `netlist_demo.flow` - three SPICE decks parsed off disk into the same solver
 
 ### Morphogenesis (`morphogenesis/`)
 Twenty live graphics demos of pattern formation and growth, the visual
