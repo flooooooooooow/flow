@@ -13,6 +13,7 @@ from .parser import (
     HandleStatement, EffectCall, MethodCall,
     MatchStatement, StructPattern, ListPattern, ConstDecl, StaticDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl,
     ExpectStatement, RecordUpdate,
+    BreakStatement, ContinueStatement, DeferStatement,
 )
 
 class MLIRGenerator:
@@ -337,6 +338,8 @@ class MLIRGenerator:
 
     def _init_per_function_state(self) -> None:
         """Reset per-function SSA tracking (safe for unit tests that skip generate_function)."""
+        # Enclosing cf-lowered loops: break/continue branch to these labels.
+        self._loop_stack: List[Dict[str, Any]] = []
         self._tensor_call_results: set[str] = set()
         self._tensor_stable_ssas: set[str] = set()
         self._tensor_field_extracts: set[str] = set()
@@ -699,19 +702,43 @@ class MLIRGenerator:
     
     def generate_block(self, block: Block) -> str:
         mlir_code = []
-        # New lexical scope
-        self._symbol_stack.append(self.symbol_table)
-        self.symbol_table = self.symbol_table.copy()
-        
+        # New lexical scope (shallow copy). Locals declared here stay local;
+        # SSA updates to names that already existed in the parent must propagate
+        # back — otherwise nested while/for loop-carried values are lost when
+        # generate_while replaces symbol_table entries with new dicts.
+        parent_symbols = self.symbol_table
+        self._symbol_stack.append(parent_symbols)
+        self.symbol_table = parent_symbols.copy()
+        declared_here = {
+            stmt.name for stmt in block.statements if isinstance(stmt, VarDecl)
+        }
+
+        defer_stack: List[DeferStatement] = []
+        exited = False
         for stmt in block.statements:
+            if isinstance(stmt, DeferStatement):
+                defer_stack.append(stmt)
+                continue
+            # Deferred expressions run before leaving the scope, LIFO.
+            if isinstance(stmt, (ReturnStatement, BreakStatement, ContinueStatement)) and defer_stack:
+                mlir_code.extend(self._generate_defers(defer_stack))
+                defer_stack.clear()
             stmt_mlir = self.generate_statement(stmt)
             if stmt_mlir.strip():
                 mlir_code.append(stmt_mlir)
-                # If this is a return statement, it should be the last one
-                if isinstance(stmt, ReturnStatement):
-                    break
-        # Restore previous scope
+            if isinstance(stmt, (ReturnStatement, BreakStatement, ContinueStatement)):
+                # Anything after a terminator is unreachable and would be
+                # invalid MLIR in the same block.
+                exited = True
+                break
+        if defer_stack and not exited:
+            mlir_code.extend(self._generate_defers(defer_stack))
+
+        child_symbols = self.symbol_table
         self.symbol_table = self._symbol_stack.pop()
+        for name, info in child_symbols.items():
+            if name in parent_symbols and name not in declared_here:
+                parent_symbols[name] = info
         return "\n".join(mlir_code)
 
     def _block_has_return(self, block: Block) -> bool:
@@ -725,6 +752,11 @@ class MLIRGenerator:
                     if self._block_has_return(elif_block):
                         return True
                 if stmt.else_block and self._block_has_return(stmt.else_block):
+                    return True
+            if isinstance(stmt, MatchStatement):
+                if any(self._block_has_return(c.body) for c in stmt.cases):
+                    return True
+                if stmt.default_case and self._block_has_return(stmt.default_case):
                     return True
             if isinstance(stmt, WhileStatement):
                 if self._block_has_return(stmt.body):
@@ -746,12 +778,19 @@ class MLIRGenerator:
             return self.generate_assignment(stmt)
         elif isinstance(stmt, IfStatement):
             return self.generate_if(stmt)
+        elif isinstance(stmt, MatchStatement):
+            return self.generate_match(stmt)
         elif isinstance(stmt, WhileStatement):
             return self.generate_while(stmt)
         elif isinstance(stmt, ForStatement):
             return self.generate_for(stmt)
         elif isinstance(stmt, LayoutStatement):
             return self.generate_block(stmt.body)
+        elif isinstance(stmt, (BreakStatement, ContinueStatement)):
+            return self._generate_loop_jump(stmt)
+        elif isinstance(stmt, DeferStatement):
+            # Collected and emitted at scope exit by generate_block.
+            return ""
         elif isinstance(stmt, HandleStatement):
             return self.generate_handle(stmt)
         elif isinstance(stmt, (MethodCall, EffectCall)):
@@ -769,6 +808,115 @@ class MLIRGenerator:
         else:
             return f"{self.indent()}// Unsupported statement: {type(stmt).__name__}"
     
+    def _generate_loop_jump(self, stmt: Statement) -> str:
+        """Lower break/continue to a cf.br into the enclosing loop's exit/header."""
+        kind = "break" if isinstance(stmt, BreakStatement) else "continue"
+        if not self._loop_stack:
+            raise NotImplementedError(
+                f"`{kind}` outside a loop cannot be lowered to MLIR"
+            )
+        loop = self._loop_stack[-1]
+        if loop.get("region") == "scf":
+            # scf.for/scf.parallel regions are single-block; a cf.br out of them
+            # is invalid MLIR. Fail loudly instead of dropping the statement.
+            raise NotImplementedError(
+                f"`{kind}` inside a `for` loop is not supported by the MLIR "
+                f"backend yet; use the C backend (--c)"
+            )
+        target = loop["end"] if kind == "break" else loop["header"]
+        carried = loop["carried"]
+        ssas = [
+            self.symbol_table[name]["ssa_name"]
+            for name in carried
+            if name in self.symbol_table
+        ]
+        types = [
+            self.symbol_table[name]["mlir_type"]
+            for name in carried
+            if name in self.symbol_table
+        ]
+        lines: List[str] = []
+        iv_ssa = loop.get("iv_ssa")
+        if iv_ssa is not None:
+            # Counted loop: the induction variable is the first block argument.
+            # `continue` goes through the increment, as it does in C.
+            if kind == "continue":
+                next_iv = f"%{self.function_counter}"
+                self.function_counter += 1
+                lines.append(
+                    f"{self.indent()}{next_iv} = arith.addi {iv_ssa}, "
+                    f"{loop['iv_step']} : index"
+                )
+                iv_ssa = next_iv
+            ssas = [iv_ssa] + ssas
+            types = ["index"] + types
+        lines.append(
+            f"{self.indent()}cf.br ^{target}{self._cf_successor_operands(ssas, types)}"
+        )
+        return "\n".join(lines)
+
+    def _contains_loop_jump(self, block: Optional[Block]) -> bool:
+        """True when a block contains break/continue for the *enclosing* loop."""
+        if block is None:
+            return False
+        for stmt in block.statements:
+            if isinstance(stmt, (BreakStatement, ContinueStatement)):
+                return True
+            if isinstance(stmt, IfStatement):
+                if self._contains_loop_jump(stmt.then_block):
+                    return True
+                if any(self._contains_loop_jump(b) for _, b in stmt.elif_blocks):
+                    return True
+                if self._contains_loop_jump(stmt.else_block):
+                    return True
+            elif isinstance(stmt, MatchStatement):
+                if any(self._contains_loop_jump(c.body) for c in stmt.cases):
+                    return True
+                if self._contains_loop_jump(stmt.default_case):
+                    return True
+            elif isinstance(stmt, LayoutStatement):
+                if self._contains_loop_jump(stmt.body):
+                    return True
+            # while/for bodies bind their own break/continue, so stop there.
+        return False
+
+    def _needs_cf_loop_lowering(self, block: Optional[Block]) -> bool:
+        """True when a block cannot live inside a single-block scf region.
+
+        break/continue need a cf edge out, and `while` and `match` always emit
+        cf blocks of their own, which an scf.for/scf.if region cannot hold.
+        """
+        if block is None:
+            return False
+        for stmt in block.statements:
+            if isinstance(
+                stmt,
+                (BreakStatement, ContinueStatement, WhileStatement, MatchStatement),
+            ):
+                return True
+            if isinstance(stmt, ForStatement):
+                if self._needs_cf_loop_lowering(stmt.body):
+                    return True
+            elif isinstance(stmt, IfStatement):
+                if self._needs_cf_loop_lowering(stmt.then_block):
+                    return True
+                if any(self._needs_cf_loop_lowering(b) for _, b in stmt.elif_blocks):
+                    return True
+                if self._needs_cf_loop_lowering(stmt.else_block):
+                    return True
+            elif isinstance(stmt, LayoutStatement):
+                if self._needs_cf_loop_lowering(stmt.body):
+                    return True
+        return False
+
+    def _generate_defers(self, defers: List[DeferStatement]) -> List[str]:
+        """Emit deferred expressions in LIFO order (mirrors the C backend)."""
+        lines: List[str] = []
+        for defer_stmt in reversed(defers):
+            _value, value_ops = self.generate_expression(defer_stmt.expr)
+            lines.extend(value_ops)
+        return lines
+
     def generate_var_decl(self, var_decl: VarDecl) -> str:
         mlir_type = self.flow_type_to_mlir(var_decl.type)
          
@@ -788,6 +936,11 @@ class MLIRGenerator:
                 init_value = f"%{self.function_counter}"
                 self.function_counter += 1
                 init_ops = [f"{self.indent()}{init_value} = llvm.mlir.addressof @{global_name} : !llvm.ptr"]
+            elif isinstance(var_decl.initializer, ArrayLiteral) and mlir_type.startswith("memref<"):
+                init_value, init_ops = self.generate_array_literal(
+                    var_decl.initializer,
+                    elem_type_hint=self._memref_element_type(mlir_type),
+                )
             else:
                 init_value, init_ops = self.generate_expression(var_decl.initializer)
             
@@ -940,15 +1093,25 @@ class MLIRGenerator:
                     ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : i32 to index")
                     final_index = index_cast
 
+                # Use the array's declared memref type so fixed-shape locals
+                # store as memref<Nxi32> rather than an unranked memref<?xi32>
+                # (which does not type-check against the memref.alloc result).
                 elem_type = 'f32'
-                if isinstance(access.array, Variable) and access.array.name in self.symbol_table:
-                    arr_type = self.symbol_table[access.array.name].get('mlir_type', '')
-                    if 'i32' in arr_type and 'memref' in arr_type:
-                        elem_type = 'i32'
-                    elif 'f64' in arr_type:
-                        elem_type = 'f64'
+                arr_mlir = self._ssa_types.get(array_ssa)
+                if not arr_mlir and isinstance(access.array, Variable) and access.array.name in self.symbol_table:
+                    arr_mlir = self.symbol_table[access.array.name].get('mlir_type', '')
+                if arr_mlir and arr_mlir.startswith('memref<'):
+                    memref_ty = arr_mlir
+                    elem_type = self._memref_element_type(arr_mlir) or elem_type
+                else:
+                    memref_ty = f'memref<?x{elem_type}>'
 
-                ops.append(f"{self.indent()}memref.store {value_ssa}, {array_ssa}[{final_index}] : memref<?x{elem_type}>")
+                val_type = self._ssa_types.get(value_ssa) or self.get_expression_type(assignment.value)
+                if val_type != elem_type:
+                    value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, elem_type)
+                    ops.extend(cast_ops)
+
+                ops.append(f"{self.indent()}memref.store {value_ssa}, {array_ssa}[{final_index}] : {memref_ty}")
                 return "\n".join(ops)
             elif isinstance(access, FieldAccess):
                 field_store = self._generate_field_store(access, assignment.value, value_ssa, ops)
@@ -1049,6 +1212,14 @@ class MLIRGenerator:
         return "\n".join(ops)
 
     def generate_if(self, if_stmt: IfStatement) -> str:
+        # break/continue/while/match all need their own blocks, which an scf.if
+        # region cannot hold; force the cf lowering.
+        if (
+            self._needs_cf_loop_lowering(if_stmt.then_block)
+            or any(self._needs_cf_loop_lowering(b) for _, b in if_stmt.elif_blocks)
+            or self._needs_cf_loop_lowering(if_stmt.else_block)
+        ):
+            return self._generate_cf_if(if_stmt)
         if not if_stmt.elif_blocks:
             then_assigned = self._assigned_locals(if_stmt.then_block)
             else_assigned = self._assigned_locals(if_stmt.else_block) if if_stmt.else_block else []
@@ -1078,6 +1249,24 @@ class MLIRGenerator:
                     for name in self._assigned_locals(stmt.else_block):
                         if name not in assigned:
                             assigned.append(name)
+            elif isinstance(stmt, MatchStatement):
+                for case in stmt.cases:
+                    for name in self._assigned_locals(case.body):
+                        if name not in assigned:
+                            assigned.append(name)
+                if stmt.default_case:
+                    for name in self._assigned_locals(stmt.default_case):
+                        if name not in assigned:
+                            assigned.append(name)
+            elif isinstance(stmt, WhileStatement):
+                # Nested loops may assign outer locals (loop-carried for parent).
+                for name in self._assigned_locals(stmt.body):
+                    if name not in assigned:
+                        assigned.append(name)
+            elif isinstance(stmt, ForStatement):
+                for name in self._assigned_locals(stmt.body):
+                    if name not in assigned:
+                        assigned.append(name)
         return assigned
 
     def _generate_scf_if_with_yield(
@@ -1233,24 +1422,58 @@ class MLIRGenerator:
         current_then_block = self._new_block_label()
         current_else_block = self._new_block_label() if if_stmt.elif_blocks or if_stmt.else_block else self._new_block_label()
         end_block = self._new_block_label()
-        
+
         # Track if any branch needs the end block
         needs_end_block = False
-        
+
+        # Locals written by any branch are merged with block arguments on the
+        # join block; without this the branch-local SSA name escapes and fails
+        # dominance verification.
+        merged_vars: List[str] = []
+        for block in (
+            [if_stmt.then_block]
+            + [b for _, b in if_stmt.elif_blocks]
+            + ([if_stmt.else_block] if if_stmt.else_block else [])
+        ):
+            for name in self._assigned_locals(block):
+                if name not in merged_vars and name in self.symbol_table:
+                    merged_vars.append(name)
+        entry_ssas = {v: self.symbol_table[v]['ssa_name'] for v in merged_vars}
+        merged_types = [self.symbol_table[v]['mlir_type'] for v in merged_vars]
+
+        def _restore_entry_bindings() -> None:
+            for v in merged_vars:
+                self.symbol_table[v]['ssa_name'] = entry_ssas[v]
+
+        def _end_edge() -> str:
+            if not merged_vars:
+                return ""
+            return self._cf_successor_operands(
+                [self.symbol_table[v]['ssa_name'] for v in merged_vars], merged_types
+            )
+
+        def _entry_edge() -> str:
+            if not merged_vars:
+                return ""
+            return self._cf_successor_operands(
+                [entry_ssas[v] for v in merged_vars], merged_types
+            )
+
         mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{current_then_block}, ^{current_else_block}")
-        
+
         # Generate then block
         mlir_code.append(f"{self.indent()}^{current_then_block}:")
         self.indent_level += 1
+        _restore_entry_bindings()
         then_body = self.generate_block(if_stmt.then_block)
         if then_body.strip():
             mlir_code.append(then_body)
         # Only add branch if block doesn't already end with a terminator
         if not self._block_has_terminator(then_body):
-            mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+            mlir_code.append(f"{self.indent()}cf.br ^{end_block}{_end_edge()}")
             needs_end_block = True
         self.indent_level -= 1
-        
+
         # Generate elif blocks
         current_block = current_else_block
         for elif_condition, elif_block in if_stmt.elif_blocks:
@@ -1263,78 +1486,111 @@ class MLIRGenerator:
             mlir_code.extend(elif_cond_ops)
             
             elif_then_block = self._new_block_label()
-            mlir_code.append(f"{self.indent()}cf.cond_br {elif_cond_ssa}, ^{elif_then_block}, ^{next_elif_block}")
+            # A false edge straight to the join block still owes it operands.
+            fallthrough_edge = _entry_edge() if next_elif_block == end_block else ""
+            if next_elif_block == end_block:
+                needs_end_block = True
+            mlir_code.append(
+                f"{self.indent()}cf.cond_br {elif_cond_ssa}, "
+                f"^{elif_then_block}, ^{next_elif_block}{fallthrough_edge}"
+            )
             self.indent_level -= 1
-            
+
             # Generate elif then block
             mlir_code.append(f"{self.indent()}^{elif_then_block}:")
             self.indent_level += 1
+            _restore_entry_bindings()
             elif_body = self.generate_block(elif_block)
             if elif_body.strip():
                 mlir_code.append(elif_body)
             # Only add branch if block doesn't already end with a terminator
             if not self._block_has_terminator(elif_body):
-                mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+                mlir_code.append(f"{self.indent()}cf.br ^{end_block}{_end_edge()}")
                 needs_end_block = True
             self.indent_level -= 1
-            
+
             current_block = next_elif_block
-        
+
         # Generate else block or pass-through
         if if_stmt.else_block:
             mlir_code.append(f"{self.indent()}^{current_block}:")
             self.indent_level += 1
+            _restore_entry_bindings()
             else_body = self.generate_block(if_stmt.else_block)
             if else_body.strip():
                 mlir_code.append(else_body)
             # Only add branch if block doesn't already end with a terminator
             if not self._block_has_terminator(else_body):
-                mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+                mlir_code.append(f"{self.indent()}cf.br ^{end_block}{_end_edge()}")
                 needs_end_block = True
             self.indent_level -= 1
         elif current_block != end_block:
             mlir_code.append(f"{self.indent()}^{current_block}:")
             self.indent_level += 1
-            mlir_code.append(f"{self.indent()}cf.br ^{end_block}")
+            mlir_code.append(f"{self.indent()}cf.br ^{end_block}{_entry_edge()}")
             needs_end_block = True
             self.indent_level -= 1
-        
+
         # Only emit end block if at least one branch needs it
         if needs_end_block:
-            mlir_code.append(f"{self.indent()}^{end_block}:")
-        
+            if merged_vars:
+                end_args = []
+                for ty in merged_types:
+                    arg = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    end_args.append((arg, ty))
+                mlir_code.append(
+                    f"{self.indent()}^{end_block}"
+                    f"({', '.join(f'{a}: {t}' for a, t in end_args)}):"
+                )
+                for var_name, (arg, ty) in zip(merged_vars, end_args):
+                    self.symbol_table[var_name]['ssa_name'] = arg
+                    self._ssa_types[arg] = ty
+            else:
+                mlir_code.append(f"{self.indent()}^{end_block}:")
+        elif merged_vars:
+            # Every branch terminated; nothing after the if can observe the
+            # merge, but leave the entry bindings in place rather than an
+            # arm-local SSA name.
+            _restore_entry_bindings()
+
         return "\n".join(mlir_code)
     
+    def _cf_successor_operands(self, ssa_names: List[str], mlir_types: List[str]) -> str:
+        """CF dialect successor operands: (%a, %b : i32, i32) — types once after all values."""
+        if not ssa_names:
+            return ""
+        return f"({', '.join(ssa_names)} : {', '.join(mlir_types)})"
+
     def generate_while(self, while_stmt: WhileStatement) -> str:
         mlir_code = []
-        
+
         # Detect loop-carried variables
         loop_carried_vars = self._detect_loop_carried_vars(while_stmt.body)
-        
+
         # Create blocks
         header_block = self._new_block_label()
         body_block = self._new_block_label()
         end_block = self._new_block_label()
-        
+
         # Prepare initial values for loop-carried variables
-        init_args = []
+        init_ssas: List[str] = []
+        init_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                init_args.append(var_info['ssa_name'])
-        
+                init_ssas.append(var_info['ssa_name'])
+                init_types.append(var_info['mlir_type'])
+
         # Jump to header with initial values
-        if init_args:
-            # Add types to the arguments
-            init_args_with_types = []
-            for i, var_name in enumerate(loop_carried_vars):
-                if var_name in self.symbol_table:
-                    var_info = self.symbol_table[var_name]
-                    init_args_with_types.append(f"{init_args[i]} : {var_info['mlir_type']}")
-            mlir_code.append(f"{self.indent()}cf.br ^{header_block}({', '.join(init_args_with_types)})")
+        if init_ssas:
+            mlir_code.append(
+                f"{self.indent()}cf.br ^{header_block}"
+                f"{self._cf_successor_operands(init_ssas, init_types)}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
-        
+
         # Header block - check condition and receive loop-carried vars
         # Add block arguments for loop-carried variables
         block_args = []
@@ -1360,20 +1616,26 @@ class MLIRGenerator:
         if condition_ops:
             mlir_code.append("\n".join(condition_ops))
         
-        # Branch based on condition
-        body_args = []
-        body_args_with_types = []
+        # Branch based on condition — both successors take the loop-carried args
+        # (the exit block needs them too, otherwise its block arguments have no
+        # incoming values on the exit edge).
+        header_ssas: List[str] = []
+        header_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                body_args.append(self.symbol_table[var_name]['ssa_name'])
-                body_args_with_types.append(f"{self.symbol_table[var_name]['ssa_name']} : {var_info['mlir_type']}")
-        
-        if body_args:
-            mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}({', '.join(body_args_with_types)}), ^{end_block}")
+                header_ssas.append(var_info['ssa_name'])
+                header_types.append(var_info['mlir_type'])
+
+        if header_ssas:
+            succ = self._cf_successor_operands(header_ssas, header_types)
+            mlir_code.append(
+                f"{self.indent()}cf.cond_br {condition_ssa}, "
+                f"^{body_block}{succ}, ^{end_block}{succ}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}, ^{end_block}")
-        
+
         # Body block - receive loop-carried vars and execute body
         # Add block arguments for loop-carried variables in body
         body_block_args = []
@@ -1396,25 +1658,40 @@ class MLIRGenerator:
         
         # Generate body
         self.indent_level += 1
-        body_mlir = self.generate_block(while_stmt.body)
+        self._loop_stack.append({
+            "region": "cf",
+            "header": header_block,
+            "end": end_block,
+            "carried": list(loop_carried_vars),
+        })
+        try:
+            body_mlir = self.generate_block(while_stmt.body)
+        finally:
+            self._loop_stack.pop()
         if body_mlir.strip():
             mlir_code.append(body_mlir)
-        
+
         # Prepare final values for next iteration
-        final_args = []
-        final_args_with_types = []
+        final_ssas: List[str] = []
+        final_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                final_args.append(self.symbol_table[var_name]['ssa_name'])
-                final_args_with_types.append(f"{self.symbol_table[var_name]['ssa_name']} : {var_info['mlir_type']}")
-        
-        # Branch back to header with updated values
-        if final_args:
-            mlir_code.append(f"{self.indent()}cf.br ^{header_block}({', '.join(final_args_with_types)})")
+                final_ssas.append(var_info['ssa_name'])
+                final_types.append(var_info['mlir_type'])
+
+        # Branch back to header with updated values. Skip when the body already
+        # ended in a terminator (an unconditional break/continue/return).
+        if self._block_has_terminator(body_mlir):
+            pass
+        elif final_ssas:
+            mlir_code.append(
+                f"{self.indent()}cf.br ^{header_block}"
+                f"{self._cf_successor_operands(final_ssas, final_types)}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
-        
+
         self.indent_level -= 1
         
         # End block - receive final values
@@ -1456,9 +1733,455 @@ class MLIRGenerator:
                 assigned.update(self._collect_assigned_vars(stmt.body))
         return assigned
     
+    def _expr_is_loop_index(self, expr: Expression, iv_name: str) -> bool:
+        return isinstance(expr, Variable) and expr.name == iv_name
+
+    def _memref_scalar_base(self, expr: Expression, elem: str) -> Optional[str]:
+        """Return symbol name when expr is a memref/pointer array of `elem`."""
+        if not isinstance(expr, Variable) or expr.name not in self.symbol_table:
+            return None
+        info = self.symbol_table[expr.name]
+        mlir_ty = info.get("mlir_type", "")
+        flow_ty = info.get("flow_type")
+        if isinstance(mlir_ty, str) and mlir_ty.startswith("memref<") and f"x{elem}>" in mlir_ty:
+            return expr.name
+        if flow_ty is not None:
+            name = getattr(flow_ty, "name", "")
+            if name in (f"memref_{elem}", f"ptr_{elem}") or (
+                getattr(flow_ty, "is_pointer", False)
+                and getattr(flow_ty, "element_type", None) is not None
+                and flow_ty.element_type.name == elem
+            ):
+                return expr.name
+        return None
+
+    def _vectorizable_scalar_rhs(
+        self, expr: Expression, iv_name: str, allowed_bases: set, elem: str
+    ) -> bool:
+        """True when expr is loop-invariant or elem loads of allowed_bases[iv]."""
+        if isinstance(expr, Literal):
+            return True
+        if isinstance(expr, Variable):
+            return expr.name != iv_name  # invariant scalar / address
+        if isinstance(expr, ArrayAccess):
+            base = self._memref_scalar_base(expr.array, elem)
+            if base is None or base not in allowed_bases:
+                return False
+            return self._expr_is_loop_index(expr.index, iv_name)
+        if isinstance(expr, BinaryOperation):
+            ops_ok = ("+", "-", "*", "/") if elem.startswith("f") else ("+", "-", "*")
+            if expr.operator not in ops_ok:
+                return False
+            return (
+                self._vectorizable_scalar_rhs(expr.left, iv_name, allowed_bases, elem)
+                and self._vectorizable_scalar_rhs(expr.right, iv_name, allowed_bases, elem)
+            )
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            return self._vectorizable_scalar_rhs(expr.operand, iv_name, allowed_bases, elem)
+        return False
+
+    def _emit_vector_scalar_expr(
+        self, expr: Expression, iv_name: str, iv_ssa: str, ops: List[str], elem: str
+    ) -> Optional[str]:
+        """Lower a vectorizable scalar RHS to vector<4x{elem}> SSA."""
+        vty = f"vector<4x{elem}>"
+        zero = "0.0" if elem.startswith("f") else "0"
+        if isinstance(expr, Literal):
+            val = self._format_mlir_numeric(str(expr.value), elem)
+            splat = f"%{self.function_counter}"
+            self.function_counter += 1
+            cst = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{cst} = arith.constant {val} : {elem}")
+            ops.append(
+                f"{self.indent()}{splat} = vector.broadcast {cst} : {elem} to {vty}"
+            )
+            self._ssa_types[splat] = vty
+            return splat
+        if isinstance(expr, Variable):
+            info = self.symbol_table[expr.name]
+            scalar = info["ssa_name"]
+            ty = info.get("mlir_type", elem)
+            if ty != elem:
+                scalar, cast_ops = self._emit_cast(scalar, ty, elem)
+                ops.extend(cast_ops)
+            splat = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{splat} = vector.broadcast {scalar} : {elem} to {vty}"
+            )
+            self._ssa_types[splat] = vty
+            return splat
+        if isinstance(expr, ArrayAccess):
+            base = expr.array.name
+            base_ssa = self.symbol_table[base]["ssa_name"]
+            mlir_ty = self.symbol_table[base].get("mlir_type", f"memref<?x{elem}>")
+            if mlir_ty == "!llvm.ptr":
+                return None  # ptr bases not yet vector-transfer compatible
+            pad = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{pad} = arith.constant {zero} : {elem}")
+            vec = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{vec} = vector.transfer_read {base_ssa}[{iv_ssa}], {pad} "
+                f"{{in_bounds = [true]}} : {mlir_ty}, {vty}"
+            )
+            self._ssa_types[vec] = vty
+            return vec
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            inner = self._emit_vector_scalar_expr(expr.operand, iv_name, iv_ssa, ops, elem)
+            if inner is None:
+                return None
+            out = f"%{self.function_counter}"
+            self.function_counter += 1
+            if elem.startswith("f"):
+                ops.append(f"{self.indent()}{out} = arith.negf {inner} : {vty}")
+            else:
+                z = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{z} = arith.constant 0 : {elem}")
+                zb = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{zb} = vector.broadcast {z} : {elem} to {vty}")
+                ops.append(f"{self.indent()}{out} = arith.subi {zb}, {inner} : {vty}")
+            self._ssa_types[out] = vty
+            return out
+        if isinstance(expr, BinaryOperation):
+            left = self._emit_vector_scalar_expr(expr.left, iv_name, iv_ssa, ops, elem)
+            right = self._emit_vector_scalar_expr(expr.right, iv_name, iv_ssa, ops, elem)
+            if left is None or right is None:
+                return None
+            out = f"%{self.function_counter}"
+            self.function_counter += 1
+            if elem.startswith("f"):
+                op_map = {"+": "arith.addf", "-": "arith.subf", "*": "arith.mulf", "/": "arith.divf"}
+            else:
+                op_map = {"+": "arith.addi", "-": "arith.subi", "*": "arith.muli"}
+            ops.append(
+                f"{self.indent()}{out} = {op_map[expr.operator]} {left}, {right} : {vty}"
+            )
+            self._ssa_types[out] = vty
+            return out
+        return None
+
+    def _try_vectorize_elementwise_for(self, for_stmt: ForStatement) -> Optional[str]:
+        """Emit vector<4xT> transfer loops for simple elementwise f32/i32 bodies.
+
+        Pattern: `for i in lo to hi { out[i] = <expr using out/x/y[i] + scalars> }`
+        with no loop-carried scalars. Uses step-4 vector body + scalar remainder.
+        """
+        if for_stmt.is_parallel or for_stmt.step is not None:
+            return None
+        if not for_stmt.body or len(for_stmt.body.statements) != 1:
+            return None
+        stmt = for_stmt.body.statements[0]
+        if not isinstance(stmt, Assignment) or stmt.target_expr is None:
+            return None
+        access = stmt.target_expr
+        if not isinstance(access, ArrayAccess):
+            return None
+
+        elem = None
+        out_base = None
+        for candidate in ("f32", "i32"):
+            out_base = self._memref_scalar_base(access.array, candidate)
+            if out_base is not None:
+                elem = candidate
+                break
+        if out_base is None or elem is None:
+            return None
+        iv = for_stmt.variable
+        if not self._expr_is_loop_index(access.index, iv):
+            return None
+
+        bases = {out_base}
+
+        def walk(e):
+            if isinstance(e, ArrayAccess):
+                b = self._memref_scalar_base(e.array, elem)
+                if b:
+                    bases.add(b)
+                walk(e.index)
+            elif isinstance(e, BinaryOperation):
+                walk(e.left)
+                walk(e.right)
+            elif isinstance(e, UnaryOperation):
+                walk(e.operand)
+
+        walk(stmt.value)
+        if not self._vectorizable_scalar_rhs(stmt.value, iv, bases, elem):
+            return None
+        out_mlir = self.symbol_table[out_base].get("mlir_type", "")
+        if not (isinstance(out_mlir, str) and out_mlir.startswith("memref<") and f"x{elem}" in out_mlir):
+            flow_ty = self.symbol_table[out_base].get("flow_type")
+            if not (flow_ty and getattr(flow_ty, "name", "") == f"memref_{elem}"):
+                return None
+            out_mlir = f"memref<?x{elem}>"
+
+        for b in bases:
+            if self.symbol_table[b].get("mlir_type", "") == "!llvm.ptr":
+                return None
+
+        ops: List[str] = []
+        lower_bound, lower_ops = self.generate_expression(for_stmt.range_start)
+        upper_bound, upper_ops = self.generate_expression(for_stmt.range_end)
+        ops.extend(lower_ops)
+        ops.extend(upper_ops)
+
+        lb = f"%{self.function_counter}"; self.function_counter += 1
+        ub = f"%{self.function_counter}"; self.function_counter += 1
+        c1 = f"%{self.function_counter}"; self.function_counter += 1
+        c4 = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
+        ops.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
+        ops.append(f"{self.indent()}{c1} = arith.constant 1 : index")
+        ops.append(f"{self.indent()}{c4} = arith.constant 4 : index")
+
+        # n = ub - lb; n_vec = n - (n % 4); vec_ub = lb + n_vec
+        n = f"%{self.function_counter}"; self.function_counter += 1
+        rem = f"%{self.function_counter}"; self.function_counter += 1
+        n_vec = f"%{self.function_counter}"; self.function_counter += 1
+        vec_ub = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}{n} = arith.subi {ub}, {lb} : index")
+        ops.append(f"{self.indent()}{rem} = arith.remsi {n}, {c4} : index")
+        ops.append(f"{self.indent()}{n_vec} = arith.subi {n}, {rem} : index")
+        ops.append(f"{self.indent()}{vec_ub} = arith.addi {lb}, {n_vec} : index")
+
+        vty = f"vector<4x{elem}>"
+        # Vectorized loop
+        iv_v = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}scf.for {iv_v} = {lb} to {vec_ub} step {c4} {{")
+        self.indent_level += 1
+        self._ssa_types[iv_v] = "index"
+        saved_iv = self.symbol_table.get(iv)
+        self.symbol_table[iv] = {"type": "variable", "mlir_type": "index", "ssa_name": iv_v}
+        body_ops: List[str] = []
+        vec_val = self._emit_vector_scalar_expr(stmt.value, iv, iv_v, body_ops, elem)
+        if vec_val is None:
+            self.indent_level -= 1
+            if saved_iv is None:
+                self.symbol_table.pop(iv, None)
+            else:
+                self.symbol_table[iv] = saved_iv
+            return None
+        ops.extend(body_ops)
+        out_ssa = self.symbol_table[out_base]["ssa_name"]
+        ops.append(
+            f"{self.indent()}vector.transfer_write {vec_val}, {out_ssa}[{iv_v}] "
+            f"{{in_bounds = [true]}} : {vty}, {out_mlir}"
+        )
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        # Scalar remainder
+        iv_s = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}scf.for {iv_s} = {vec_ub} to {ub} step {c1} {{")
+        self.indent_level += 1
+        self._ssa_types[iv_s] = "index"
+        self.symbol_table[iv] = {"type": "variable", "mlir_type": "index", "ssa_name": iv_s}
+        # Reuse normal assignment lowering for the scalar tail.
+        old_inside = self.inside_scf_for
+        self.inside_scf_for = True
+        assign_mlir = self.generate_assignment(stmt)
+        if assign_mlir.strip():
+            ops.append(assign_mlir)
+        self.inside_scf_for = old_inside
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        if saved_iv is None:
+            self.symbol_table.pop(iv, None)
+        else:
+            self.symbol_table[iv] = saved_iv
+        ops.insert(0, f"{self.indent()}// flow: vectorized elementwise f32 loop (VF=4)")
+        return "\n".join(ops)
+
+    def _constant_step(self, for_stmt: ForStatement) -> Optional[int]:
+        """Compile-time step for a counted loop, or None when it is dynamic."""
+        step = for_stmt.step
+        if step is None:
+            return 1
+        if isinstance(step, UnaryOperation) and step.operator == "-":
+            inner = self._constant_step_literal(step.operand)
+            return None if inner is None else -inner
+        return self._constant_step_literal(step)
+
+    @staticmethod
+    def _constant_step_literal(expr: Expression) -> Optional[int]:
+        if not isinstance(expr, Literal):
+            return None
+        try:
+            return int(str(expr.value))
+        except (TypeError, ValueError):
+            return None
+
+    def _generate_cf_for(self, for_stmt: ForStatement, step_value: Optional[int] = 1) -> str:
+        """Counted loop lowered to cf blocks so break/continue have somewhere to go.
+
+        scf.for regions are single-block, so a `break` inside one cannot be
+        expressed. This mirrors generate_while's block layout with the
+        induction variable as an extra loop-carried value.
+        """
+        mlir_code: List[str] = []
+        loop_carried_vars = self._detect_loop_carried_vars(for_stmt.body)
+
+        lower_bound, lower_ops = self.generate_expression(for_stmt.range_start)
+        upper_bound, upper_ops = self.generate_expression(for_stmt.range_end)
+        mlir_code.extend(lower_ops)
+        mlir_code.extend(upper_ops)
+
+        lb = f"%{self.function_counter}"; self.function_counter += 1
+        ub = f"%{self.function_counter}"; self.function_counter += 1
+        mlir_code.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
+        mlir_code.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
+
+        # Descending loops run while iv > ub, exactly as the C backend does.
+        # With a constant step the direction is known here; with a dynamic one
+        # the sign is tested once in the entry block and selected per iteration.
+        ascending_ssa: Optional[str] = None
+        step = f"%{self.function_counter}"; self.function_counter += 1
+        if step_value is not None:
+            mlir_code.append(f"{self.indent()}{step} = arith.constant {step_value} : index")
+            cmp_pred = "slt" if step_value > 0 else "sgt"
+        else:
+            step_expr_ssa, step_ops = self.generate_expression(for_stmt.step)
+            mlir_code.extend(step_ops)
+            mlir_code.append(
+                f"{self.indent()}{step} = arith.index_cast {step_expr_ssa} : i32 to index"
+            )
+            zero = f"%{self.function_counter}"; self.function_counter += 1
+            ascending_ssa = f"%{self.function_counter}"; self.function_counter += 1
+            mlir_code.append(f"{self.indent()}{zero} = arith.constant 0 : index")
+            mlir_code.append(
+                f"{self.indent()}{ascending_ssa} = arith.cmpi sgt, {step}, {zero} : index"
+            )
+            cmp_pred = "slt"
+        self._ssa_types[step] = 'index'
+
+        header_block = self._new_block_label()
+        body_block = self._new_block_label()
+        end_block = self._new_block_label()
+
+        carried_types = [
+            self.symbol_table[v]['mlir_type']
+            for v in loop_carried_vars
+            if v in self.symbol_table
+        ]
+        entry_ssas = [
+            self.symbol_table[v]['ssa_name']
+            for v in loop_carried_vars
+            if v in self.symbol_table
+        ]
+        mlir_code.append(
+            f"{self.indent()}cf.br ^{header_block}"
+            f"{self._cf_successor_operands([lb] + entry_ssas, ['index'] + carried_types)}"
+        )
+
+        def _block_args() -> tuple[str, str, List[str]]:
+            iv_arg = f"%{self.function_counter}"; self.function_counter += 1
+            self._ssa_types[iv_arg] = 'index'
+            args = [f"{iv_arg}: index"]
+            names: List[str] = []
+            for var_name in loop_carried_vars:
+                if var_name not in self.symbol_table:
+                    continue
+                arg = f"%{self.function_counter}"; self.function_counter += 1
+                ty = self.symbol_table[var_name]['mlir_type']
+                self._ssa_types[arg] = ty
+                args.append(f"{arg}: {ty}")
+                names.append(var_name)
+                self.symbol_table[var_name] = {
+                    **self.symbol_table[var_name],
+                    'ssa_name': arg,
+                }
+            return iv_arg, ', '.join(args), names
+
+        # Header: iv < ub ?
+        header_iv, header_args, _ = _block_args()
+        mlir_code.append(f"{self.indent()}^{header_block}({header_args}):")
+        cond = f"%{self.function_counter}"; self.function_counter += 1
+        mlir_code.append(f"{self.indent()}{cond} = arith.cmpi {cmp_pred}, {header_iv}, {ub} : index")
+        if ascending_ssa is not None:
+            desc = f"%{self.function_counter}"; self.function_counter += 1
+            picked = f"%{self.function_counter}"; self.function_counter += 1
+            mlir_code.append(
+                f"{self.indent()}{desc} = arith.cmpi sgt, {header_iv}, {ub} : index"
+            )
+            mlir_code.append(
+                f"{self.indent()}{picked} = arith.select {ascending_ssa}, {cond}, {desc} : i1"
+            )
+            cond = picked
+        edge_ssas = [header_iv] + [
+            self.symbol_table[v]['ssa_name']
+            for v in loop_carried_vars
+            if v in self.symbol_table
+        ]
+        succ = self._cf_successor_operands(edge_ssas, ['index'] + carried_types)
+        mlir_code.append(
+            f"{self.indent()}cf.cond_br {cond}, ^{body_block}{succ}, ^{end_block}{succ}"
+        )
+
+        # Body
+        body_iv, body_args, _ = _block_args()
+        mlir_code.append(f"{self.indent()}^{body_block}({body_args}):")
+        self.indent_level += 1
+        self.symbol_table[for_stmt.variable] = {
+            'type': 'variable',
+            'mlir_type': 'index',
+            'ssa_name': body_iv,
+        }
+        self._loop_stack.append({
+            "region": "cf",
+            "header": header_block,
+            "end": end_block,
+            "carried": list(loop_carried_vars),
+            "iv_ssa": body_iv,
+            "iv_step": step,
+        })
+        try:
+            body_mlir = self.generate_block(for_stmt.body)
+        finally:
+            self._loop_stack.pop()
+        if body_mlir.strip():
+            mlir_code.append(body_mlir)
+
+        if not self._block_has_terminator(body_mlir):
+            next_iv = f"%{self.function_counter}"; self.function_counter += 1
+            mlir_code.append(f"{self.indent()}{next_iv} = arith.addi {body_iv}, {step} : index")
+            latch_ssas = [next_iv] + [
+                self.symbol_table[v]['ssa_name']
+                for v in loop_carried_vars
+                if v in self.symbol_table
+            ]
+            mlir_code.append(
+                f"{self.indent()}cf.br ^{header_block}"
+                f"{self._cf_successor_operands(latch_ssas, ['index'] + carried_types)}"
+            )
+        self.indent_level -= 1
+
+        # Exit
+        _end_iv, end_args, _ = _block_args()
+        mlir_code.append(f"{self.indent()}^{end_block}({end_args}):")
+        return "\n".join(mlir_code)
+
     def generate_for(self, for_stmt: ForStatement) -> str:
         mlir_code = []
-        
+
+        vectorized = self._try_vectorize_elementwise_for(for_stmt)
+        if vectorized is not None:
+            return vectorized
+
+        step_value = self._constant_step(for_stmt)
+        if not for_stmt.is_parallel:
+            # scf.for only accepts a positive step, so anything else (and any
+            # body needing its own blocks) takes the cf lowering.
+            if step_value is None or step_value <= 0 or self._needs_cf_loop_lowering(for_stmt.body):
+                if self.inside_scf_for:
+                    raise NotImplementedError(
+                        "this `for` loop needs cf lowering but sits inside an "
+                        "scf region; use the C backend (--c)"
+                    )
+                return self._generate_cf_for(for_stmt, step_value)
+
         if for_stmt.is_parallel:
             # Use scf.parallel for parallel loops
             lower_bound, lower_ops = self.generate_expression(for_stmt.range_start)
@@ -1488,7 +2211,7 @@ class MLIRGenerator:
             # Step constant
             step_ssa = f"%{self.function_counter}"
             self.function_counter += 1
-            mlir_code.append(f"{self.indent()}{step_ssa} = arith.constant 1 : index")
+            mlir_code.append(f"{self.indent()}{step_ssa} = arith.constant {step_value if step_value is not None else 1} : index")
             
             # Induction variable
             iv_name = f"%{self.function_counter}"
@@ -1505,7 +2228,11 @@ class MLIRGenerator:
             mlir_code.append(f"{self.indent()}scf.parallel ({iv_name}) = ({lower_bound}) to ({upper_bound}) step ({step_ssa}) {{")
             self.indent_level += 1
             
-            body_mlir = self.generate_block(for_stmt.body)
+            self._loop_stack.append({"region": "scf"})
+            try:
+                body_mlir = self.generate_block(for_stmt.body)
+            finally:
+                self._loop_stack.pop()
             if body_mlir.strip():
                 mlir_code.append(body_mlir)
             
@@ -1535,7 +2262,7 @@ class MLIRGenerator:
 
             mlir_code.append(f"{self.indent()}{lb_idx} = arith.index_cast {lower_bound} : i32 to index")
             mlir_code.append(f"{self.indent()}{ub_idx} = arith.index_cast {upper_bound} : i32 to index")
-            mlir_code.append(f"{self.indent()}{step_idx} = arith.constant 1 : index")
+            mlir_code.append(f"{self.indent()}{step_idx} = arith.constant {step_value if step_value is not None else 1} : index")
 
             # Induction variable
             iv = f"%{self.function_counter}"
@@ -1596,7 +2323,11 @@ class MLIRGenerator:
                     'ssa_name': iv
                 }
                 
-                body_mlir = self.generate_block(for_stmt.body)
+                self._loop_stack.append({"region": "scf"})
+                try:
+                    body_mlir = self.generate_block(for_stmt.body)
+                finally:
+                    self._loop_stack.pop()
                 if body_mlir.strip():
                     mlir_code.append(body_mlir)
                 
@@ -1628,7 +2359,11 @@ class MLIRGenerator:
                     'ssa_name': iv
                 }
                 
-                body_mlir = self.generate_block(for_stmt.body)
+                self._loop_stack.append({"region": "scf"})
+                try:
+                    body_mlir = self.generate_block(for_stmt.body)
+                finally:
+                    self._loop_stack.pop()
                 if body_mlir.strip():
                     mlir_code.append(body_mlir)
                 
@@ -1754,9 +2489,49 @@ class MLIRGenerator:
         for i in range(len(match_stmt.cases)):
             case_labels.append(self._new_block_label())
             next_case_labels.append(self._new_block_label())
-        
+
         end_label = self._new_block_label()
-        
+
+        # Locals written by any arm must be merged at the join point, or the
+        # SSA name bound inside one arm leaks out and fails dominance.
+        arms_terminate = bool(match_stmt.cases) and all(
+            self._block_has_return(c.body) for c in match_stmt.cases
+        )
+        if match_stmt.default_case is not None:
+            arms_terminate = arms_terminate and self._block_has_return(
+                match_stmt.default_case
+            )
+        else:
+            arms_terminate = False  # fallthrough path exists via final_next
+
+        merged_vars: List[str] = []
+        if not arms_terminate:
+            for block in [c.body for c in match_stmt.cases] + (
+                [match_stmt.default_case] if match_stmt.default_case else []
+            ):
+                for name in self._assigned_locals(block):
+                    if name not in merged_vars and name in self.symbol_table:
+                        merged_vars.append(name)
+        entry_ssas = {v: self.symbol_table[v]['ssa_name'] for v in merged_vars}
+        merged_types = [self.symbol_table[v]['mlir_type'] for v in merged_vars]
+
+        def _restore_entry_bindings() -> None:
+            for v in merged_vars:
+                self.symbol_table[v]['ssa_name'] = entry_ssas[v]
+
+        def _end_edge() -> str:
+            if not merged_vars:
+                return ""
+            ssas = [self.symbol_table[v]['ssa_name'] for v in merged_vars]
+            return self._cf_successor_operands(ssas, merged_types)
+
+        def _entry_edge() -> str:
+            if not merged_vars:
+                return ""
+            return self._cf_successor_operands(
+                [entry_ssas[v] for v in merged_vars], merged_types
+            )
+
         # Process each case
         for idx, case in enumerate(match_stmt.cases):
             case_label = case_labels[idx]
@@ -1780,9 +2555,16 @@ class MLIRGenerator:
                 if struct_decl:
                     saved_locals = self.symbol_table.copy()
                     
-                    # Create temp variable for val_ssa to allow FieldAccess reuse
+                    # Create temp variable for val_ssa to allow FieldAccess reuse.
+                    # flow_type is required: without it _determine_field_type
+                    # gives up and every binding lowers to `constant 0`.
                     temp_var_name = f"__match_input_{self.function_counter}"
-                    self.symbol_table[temp_var_name] = {'ssa_name': val_ssa, 'mlir_type': val_type}
+                    self.symbol_table[temp_var_name] = {
+                        'type': 'variable',
+                        'ssa_name': val_ssa,
+                        'mlir_type': val_type,
+                        'flow_type': Type(struct_pattern.struct_name),
+                    }
                     
                     for field_idx, binding_name in enumerate(struct_pattern.bindings):
                         if field_idx < len(struct_decl.fields):
@@ -1823,7 +2605,7 @@ class MLIRGenerator:
                         elem_lit = elem
                         if elem.type.name != "string" and lit_type is not None:
                             elem_lit = LiteralExpr(elem.value, lit_type)
-                        access = ArrayAccess(Variable(arr_temp), Literal(idx))
+                        access = ArrayAccess(Variable(arr_temp), Literal(idx, Type("i32")))
                         access_ssa, access_ops = self.generate_array_access(access)
                         mlir_code.extend(access_ops)
                         lit_ssa, lit_ops = self.generate_literal(elem_lit)
@@ -1841,7 +2623,7 @@ class MLIRGenerator:
                             )
                         literal_conds.append(c1)
                     elif isinstance(elem, Var) and elem.name != "_":
-                        access = ArrayAccess(Variable(arr_temp), Literal(idx))
+                        access = ArrayAccess(Variable(arr_temp), Literal(idx, Type("i32")))
                         access_ssa, access_ops = self.generate_array_access(access)
                         binding_ops.extend(access_ops)
                         self.symbol_table[elem.name] = {
@@ -1887,14 +2669,19 @@ class MLIRGenerator:
             
             if binding_ops:
                 mlir_code.extend(binding_ops)
-            
+
+            # Each arm starts from the pre-match bindings; assignments in a
+            # previous arm must not be visible here.
+            _restore_entry_bindings()
             body = self.generate_block(case.body)
             if body.strip():
                 mlir_code.append(body)
-            
-            # Branch to end
-            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
-            
+
+            # Skip cf.br after return/terminator (same guard as generate_if):
+            # two terminators in one block is invalid MLIR.
+            if not self._block_has_terminator(body):
+                mlir_code.append(f"{self.indent()}cf.br ^{end_label}{_end_edge()}")
+
             self.indent_level -= 1
             
             # Restore symbol table if we had bindings
@@ -1911,19 +2698,39 @@ class MLIRGenerator:
         if match_stmt.default_case:
             mlir_code.append(f"^{final_next_label}:")
             self.indent_level += 1
+            _restore_entry_bindings()
             default_body = self.generate_block(match_stmt.default_case)
             if default_body.strip():
                 mlir_code.append(default_body)
-            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+            if not self._block_has_terminator(default_body):
+                mlir_code.append(f"{self.indent()}cf.br ^{end_label}{_end_edge()}")
             self.indent_level -= 1
         else:
             # If no default, just make the last next label jump to end
             mlir_code.append(f"^{final_next_label}:")
-            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
-        
-        # End block
-        mlir_code.append(f"^{end_label}:")
-        
+            mlir_code.append(f"{self.indent()}cf.br ^{end_label}{_entry_edge()}")
+
+        # End block. When every arm already returned nothing branches here, so
+        # the block would have no terminator; llvm.unreachable keeps it valid.
+        # Otherwise the parent generate_block appends the statements that
+        # follow the match into this block.
+        if merged_vars:
+            end_args = []
+            for ty in merged_types:
+                arg = f"%{self.function_counter}"
+                self.function_counter += 1
+                end_args.append((arg, ty))
+            mlir_code.append(
+                f"^{end_label}({', '.join(f'{a}: {t}' for a, t in end_args)}):"
+            )
+            for var_name, (arg, ty) in zip(merged_vars, end_args):
+                self.symbol_table[var_name]['ssa_name'] = arg
+                self._ssa_types[arg] = ty
+        else:
+            mlir_code.append(f"^{end_label}:")
+        if arms_terminate:
+            mlir_code.append(f"{self.indent()}llvm.unreachable")
+
         return "\n".join(mlir_code)
     
     def generate_expression(self, expr: Expression) -> tuple[str, List[str]]:
@@ -3657,7 +4464,9 @@ class MLIRGenerator:
         args = [method_call.object] + method_call.arguments
         return self.generate_function_call(FunctionCall(method_call.method, args))
     
-    def generate_array_literal(self, array_literal: ArrayLiteral) -> tuple[str, List[str]]:
+    def generate_array_literal(
+        self, array_literal: ArrayLiteral, elem_type_hint: Optional[str] = None
+    ) -> tuple[str, List[str]]:
         self.function_counter += 1
 
         element_values: List[str] = []
@@ -3668,6 +4477,18 @@ class MLIRGenerator:
             element_values.append(v)
 
         elem_type = self.get_expression_type(array_literal.elements[0]) if array_literal.elements else 'f32'
+        # The declared element type wins: `array<i64, 3> = [1, 2, 3]` parses its
+        # elements as i32 literals, and allocating memref<3xi32> for a
+        # memref<3xi64> variable makes every later load/store type-mismatch.
+        if elem_type_hint and elem_type_hint != elem_type:
+            for i, element in enumerate(array_literal.elements):
+                src_ty = self._ssa_types.get(element_values[i]) or self.get_expression_type(element)
+                if src_ty != elem_type_hint:
+                    element_values[i], cast_ops = self._emit_cast(
+                        element_values[i], src_ty, elem_type_hint
+                    )
+                    ops.extend(cast_ops)
+            elem_type = elem_type_hint
         size = len(array_literal.elements)
 
         # !llvm.struct is not a valid memref element type. Lower struct arrays
