@@ -362,6 +362,197 @@ function main() -> i32 {
     return 1
 }
 """,
+    "for_break": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    let mut last: i32 = -1
+    for i in 0 to 20 {
+        if i == 4 {
+            break
+        }
+        s = s + i
+        last = i
+    }
+    if s == 6 && last == 3 {
+        return 0
+    }
+    return 1
+}
+""",
+    "for_continue": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to 10 {
+        if i == 3 {
+            continue
+        }
+        s = s + i
+    }
+    if s == 42 {
+        return 0
+    }
+    return 1
+}
+""",
+    "array_f32": """
+function main() -> i32 {
+    let mut xs: array<f32, 4> = [1.5, 2.5, 3.0, 3.0]
+    xs[2] = 0.5
+    let mut s: f32 = 0.0
+    let mut i: i32 = 0
+    while i < 4 {
+        s = s + xs[i]
+        i = i + 1
+    }
+    if s > 7.4 && s < 7.6 {
+        return 0
+    }
+    return 1
+}
+""",
+    # array<i64, N> = [1, 2, 3] parses as i32 literals; the memref must still
+    # be allocated with the declared element type.
+    "array_i64": """
+function main() -> i32 {
+    let mut xs: array<i64, 3> = [1, 2, 3]
+    xs[0] = 10
+    if xs[0] + xs[1] + xs[2] == 15 {
+        return 0
+    }
+    return 1
+}
+""",
+    "array_bool": """
+function main() -> i32 {
+    let mut flags: array<bool, 3> = [true, false, true]
+    flags[1] = true
+    if flags[0] && flags[1] && flags[2] {
+        return 0
+    }
+    return 1
+}
+""",
+    "array_2d_flat": """
+function main() -> i32 {
+    let mut g: array<i32, 9> = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut r: i32 = 0
+    while r < 3 {
+        let mut c: i32 = 0
+        while c < 3 {
+            g[r * 3 + c] = r * 3 + c
+            c = c + 1
+        }
+        r = r + 1
+    }
+    if g[0] + g[4] + g[8] == 12 {
+        return 0
+    }
+    return 1
+}
+""",
+    "array_of_structs": """
+struct P { x: i32, y: i32 }
+function main() -> i32 {
+    let mut ps: array<P, 2> = [P { x: 1, y: 2 }, P { x: 3, y: 4 }]
+    ps[0].x = 10
+    if ps[0].x + ps[1].y == 14 {
+        return 0
+    }
+    return 1
+}
+""",
+    "array_param": """
+function total(xs: array<i32, 4>) -> i32 {
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i < 4 {
+        s = s + xs[i]
+        i = i + 1
+    }
+    return s
+}
+function main() -> i32 {
+    let xs: array<i32, 4> = [1, 2, 3, 4]
+    if total(xs) == 10 {
+        return 0
+    }
+    return 1
+}
+""",
+    "match_struct_pattern": """
+struct P { x: i32, y: i32 }
+function main() -> i32 {
+    let p: P = P { x: 3, y: 4 }
+    let mut r: i32 = 0
+    match p {
+        P(a, b) => { r = a + b }
+    }
+    if r == 7 {
+        return 0
+    }
+    return 1
+}
+""",
+    "match_f32": """
+function main() -> i32 {
+    let v: f32 = 2.0
+    let mut r: i32 = 0
+    match v {
+        1.0 => { r = 1 }
+        2.0 => { r = 2 }
+        default { r = 3 }
+    }
+    if r == 2 {
+        return 0
+    }
+    return 1
+}
+""",
+    "while_inside_for": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to 3 {
+        let mut j: i32 = 0
+        while j < 4 {
+            s = s + 1
+            j = j + 1
+        }
+    }
+    if s == 12 {
+        return 0
+    }
+    return 1
+}
+""",
+    "nested_for_break": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to 3 {
+        for j in 0 to 5 {
+            if j == 2 {
+                break
+            }
+            s = s + 1
+        }
+    }
+    if s == 6 {
+        return 0
+    }
+    return 1
+}
+""",
+    "for_range_dots": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 0..5 {
+        s = s + i
+    }
+    if s == 10 {
+        return 0
+    }
+    return 1
+}
+""",
     "nested_while_carried": """
 function main() -> i32 {
     let mut outer: i32 = 0
