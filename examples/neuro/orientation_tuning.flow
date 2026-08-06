@@ -1,0 +1,989 @@
+# RETINA TO V1: orientation tuning out of untuned inputs.
+#
+# MODEL
+#   Hubel and Wiesel's 1962 proposal, built and then measured.
+#
+#   Stage 1, the retina. A 33 x 33 sheet of centre-surround cells. Each one
+#   convolves the image with a difference of Gaussians and splits into an ON
+#   and an OFF channel:
+#     d(x,y) = (image * (G_centre - G_surround))(x,y)
+#     ON  = max(0,  d)      OFF = max(0, -d)
+#   Nothing here has an orientation. The kernel is circular.
+#
+#   Stage 2, one V1 simple cell. Nine positions along a line at 30 degrees
+#   form its centre subregion, and two rows a quarter of a cycle to either
+#   side form its flanks. At each centre position an ON-centre retinal cell
+#   excites it and the co-located OFF-centre cell inhibits; in the flanks the
+#   two swap over. That push-pull arrangement makes the drive
+#     sum over the centre row of d  -  sum over the flanks of d
+#   which is Hubel and Wiesel's construction: orientation selectivity out of
+#   the ARRANGEMENT of unoriented inputs, with no oriented filter anywhere.
+#
+#   Stage 3, the spike generator. The V1 drive goes into a leaky
+#   integrate-and-fire cell:
+#     tau dV/dt = -V + R I,     V >= theta -> V := V_reset
+#   which is the `flow V1Cell` block below, one `evolves as` and one
+#   `when v reaches v_th { v becomes v_reset }`.
+#
+# PARAMETERS
+#   retina 33 x 33 over [-1,1]   DoG sigma_c 0.045, sigma_s 0.11, 7 x 7 kernel
+#   V1 subunits: 9 along the axis, spacing 0.09; OFF flanks at 0.13
+#   RF axis 30 degrees   grating spatial frequency 2.0 cycles per unit
+#   stimulus: 73 orientations at 2.5 degree steps, 8 phases each, best phase
+#   kept; three contrasts 0.5, 0.7 and 1.0; 500 ms of spiking per point
+#
+# WHAT THIS PROVES
+#   1. THE INPUT IS NOT TUNED. The orientation selectivity index of a single
+#      retinal ON cell is measured over the same 73 orientations. It has to
+#      come out near zero, or the V1 tuning would be inherited rather than
+#      built.
+#   2. THE OUTPUT IS. The V1 cell's spike-count tuning curve is measured, its
+#      preferred orientation is extracted from the doubled-angle vector
+#      average, and it must land on the 30 degree axis the wiring was built
+#      along.
+#   3. THE WIDTH IS PHYSIOLOGICAL. Half width at half height is measured by
+#      interpolating the tuning curve, and gated into the 10 to 45 degree
+#      band that simple cells occupy.
+#   4. THE PREFERENCE DOES NOT MOVE WITH CONTRAST. The whole sweep is
+#      repeated at three contrasts. The preferred orientation must not shift
+#      by more than two degrees, even though the response amplitude changes
+#      by a factor of three. The widths are reported too: they do narrow at
+#      low contrast, which is the iceberg effect a purely feedforward cell
+#      cannot avoid.
+#
+# REFERENCE
+#   D. H. Hubel and T. N. Wiesel, "Receptive fields, binocular interaction
+#   and functional architecture in the cat's visual cortex", J. Physiol.
+#   160:106-154 (1962) - the aligned-LGN model, and orientation half-widths
+#   of a few tens of degrees for simple cells.
+#   Contrast invariance of preferred orientation, and the iceberg effect on
+#   width: Sclar & Freeman, Exp. Brain Res. 46:457-461 (1982).
+#
+# KEYS
+#   Left / Right   change the grating orientation on screen
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/orientation_tuning.flow --frames 90 \
+#       --out build/frames_ori --gif build/orientation_tuning.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/orientation_tuning.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function atan2(y: f64, x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 660
+const MAX_FRAMES: i32 = 4000
+
+const R_N: i32 = 33             # retina side
+const R_CELLS: i32 = 1089
+const KR: i32 = 3               # DoG kernel radius
+const KW: i32 = 7
+const SIG_C: f64 = 0.045
+const SIG_S: f64 = 0.11
+const CENT_W: f64 = 1.0
+const SURR_W: f64 = 0.85
+
+const N_SUB: i32 = 9            # V1 subunits along the axis
+const SUB_STEP: f64 = 0.09
+const FLANK: f64 = 0.13
+const RF_DEG: f64 = 30.0
+
+const SF: f64 = 2.0             # grating cycles per unit
+const N_PHASE: i32 = 8
+const N_ORI: i32 = 73           # 0 .. 180 in 2.5 degree steps
+const ORI_STEP: f64 = 2.5
+const N_CON: i32 = 3
+
+const TAU: f64 = 20.0           # ms
+const V_TH: f64 = 15.0
+const V_RESET: f64 = 0.0
+const GAIN: f64 = 1.8
+const BASE_SUB: f64 = 0.0       # the LIF threshold is the only threshold
+const SPIKE_MS: f64 = 500.0
+const SPIKE_DT: f64 = 0.05
+
+const PI: f64 = 3.141592653589793
+const HWHH_LO: f64 = 10.0
+const HWHH_HI: f64 = 45.0
+const PREF_TOL: f64 = 5.0
+const SHIFT_TOL: f64 = 2.0
+const OSI_MIN: f64 = 0.6
+const OSI_RETINA_MAX: f64 = 0.05
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The spike generator.
+# ---------------------------------------------------------------------------
+
+flow V1Cell {
+    state v : f64 = 0.0
+
+    param drive   : f64 = 0.0       # R*I in mV
+    param tau     : f64 = 20.0
+    param v_th    : f64 = 15.0
+    param v_reset : f64 = 0.0
+
+    solver { dt 50 us  method euler }
+
+    v evolves as (drive - v) / tau
+
+    when v reaches v_th {
+        v becomes v_reset
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut img: ptr<f64> = null        # the grating
+let mut dog: ptr<f64> = null        # centre-surround response
+let mut kern: ptr<f64> = null       # KW x KW difference of Gaussians
+
+let mut sub_x: ptr<f64> = null      # V1 subunit positions
+let mut sub_y: ptr<f64> = null
+let mut sub_kind: ptr<f64> = null   # +1 = ON centre row, -1 = OFF flank
+
+let mut tune: ptr<f64> = null       # N_CON x N_ORI spike rates
+let mut tune_lin: ptr<f64> = null   # linear V1 drive, same sweep
+let mut tune_ret: ptr<f64> = null   # one retinal ON cell, same sweep
+
+let mut pref: array<f64, 3> = [0.0, 0.0, 0.0]
+let mut hwhh: array<f64, 3> = [0.0, 0.0, 0.0]
+let mut osi: array<f64, 3> = [0.0, 0.0, 0.0]
+let mut peak_hz: array<f64, 3> = [0.0, 0.0, 0.0]
+let mut osi_retina: f64 = 0.0
+let mut pref_retina: f64 = 0.0
+let mut pref_shift: f64 = 0.0
+
+let mut live_ori: f64 = 30.0
+
+# ---------------------------------------------------------------------------
+# Retina
+# ---------------------------------------------------------------------------
+
+function coord(i: i32) -> f64 {
+    return ((i as f64) - ((R_N - 1) as f64) * 0.5) / (((R_N - 1) as f64) * 0.5)
+}
+
+function build_kernel() -> void {
+    let step: f64 = 2.0 / ((R_N - 1) as f64)
+    let mut sum_c: f64 = 0.0
+    let mut sum_s: f64 = 0.0
+    let mut dy: i32 = -KR
+    while dy <= KR {
+        let mut dx: i32 = -KR
+        while dx <= KR {
+            let rx: f64 = (dx as f64) * step
+            let ry: f64 = (dy as f64) * step
+            let r2: f64 = rx * rx + ry * ry
+            let c: f64 = exp(0.0 - r2 / (2.0 * SIG_C * SIG_C))
+            let s: f64 = exp(0.0 - r2 / (2.0 * SIG_S * SIG_S))
+            sum_c = sum_c + c
+            sum_s = sum_s + s
+            kern[(dy + KR) * KW + (dx + KR)] = c
+            dx = dx + 1
+        }
+        dy = dy + 1
+    }
+    # normalise each Gaussian to unit mass, then take the difference
+    dy = -KR
+    while dy <= KR {
+        let mut dx: i32 = -KR
+        while dx <= KR {
+            let step2: f64 = 2.0 / ((R_N - 1) as f64)
+            let rx: f64 = (dx as f64) * step2
+            let ry: f64 = (dy as f64) * step2
+            let r2: f64 = rx * rx + ry * ry
+            let c: f64 = exp(0.0 - r2 / (2.0 * SIG_C * SIG_C)) / sum_c
+            let s: f64 = exp(0.0 - r2 / (2.0 * SIG_S * SIG_S)) / sum_s
+            kern[(dy + KR) * KW + (dx + KR)] = CENT_W * c - SURR_W * s
+            dx = dx + 1
+        }
+        dy = dy + 1
+    }
+}
+
+function make_grating(theta_deg: f64, phase: f64, contrast: f64) -> void {
+    let th: f64 = theta_deg * PI / 180.0
+    let ct: f64 = cos(th)
+    let st: f64 = sin(th)
+    let mut j: i32 = 0
+    while j < R_N {
+        let y: f64 = coord(j)
+        let mut i: i32 = 0
+        while i < R_N {
+            let x: f64 = coord(i)
+            # the bars of the grating run along theta, so the wave vector is
+            # perpendicular to it: this is the usual convention for the
+            # orientation of a grating
+            img[j * R_N + i] = contrast * cos(2.0 * PI * SF * (0.0 - x * st + y * ct) + phase)
+            i = i + 1
+        }
+        j = j + 1
+    }
+}
+
+function convolve() -> void {
+    let mut j: i32 = 0
+    while j < R_N {
+        let mut i: i32 = 0
+        while i < R_N {
+            let mut acc: f64 = 0.0
+            let mut dy: i32 = -KR
+            while dy <= KR {
+                let jj: i32 = j + dy
+                if jj >= 0 and jj < R_N {
+                    let mut dx: i32 = -KR
+                    while dx <= KR {
+                        let ii: i32 = i + dx
+                        if ii >= 0 and ii < R_N {
+                            acc = acc + kern[(dy + KR) * KW + (dx + KR)] * img[jj * R_N + ii]
+                        }
+                        dx = dx + 1
+                    }
+                }
+                dy = dy + 1
+            }
+            dog[j * R_N + i] = acc
+            i = i + 1
+        }
+        j = j + 1
+    }
+}
+
+function nearest(v: f64) -> i32 {
+    let half: f64 = ((R_N - 1) as f64) * 0.5
+    let mut k: i32 = ((v * half + half) + 0.5) as i32
+    if k < 0 {
+        k = 0
+    }
+    if k >= R_N {
+        k = R_N - 1
+    }
+    return k
+}
+
+# ---------------------------------------------------------------------------
+# V1 wiring: nine ON cells along the axis, OFF cells in the two flanks.
+# ---------------------------------------------------------------------------
+
+function build_v1() -> void {
+    let th: f64 = RF_DEG * PI / 180.0
+    let ax: f64 = cos(th)
+    let ay: f64 = sin(th)
+    let px: f64 = 0.0 - ay              # perpendicular
+    let py: f64 = ax
+    let mut n: i32 = 0
+    let mut k: i32 = 0
+    while k < N_SUB {
+        let s: f64 = ((k as f64) - ((N_SUB - 1) as f64) * 0.5) * SUB_STEP
+        # ON cell on the axis
+        sub_x[n] = s * ax
+        sub_y[n] = s * ay
+        sub_kind[n] = 1.0
+        n = n + 1
+        # OFF cells one quarter cycle to either side
+        sub_x[n] = s * ax + FLANK * px
+        sub_y[n] = s * ay + FLANK * py
+        sub_kind[n] = -1.0
+        n = n + 1
+        sub_x[n] = s * ax - FLANK * px
+        sub_y[n] = s * ay - FLANK * py
+        sub_kind[n] = -1.0
+        n = n + 1
+        k = k + 1
+    }
+}
+
+# Push-pull, as the cortex actually wires it: at each centre-row position an
+# ON-centre cell excites and the co-located OFF-centre cell inhibits, and in
+# the flanks the roles swap. Since ON - OFF is exactly the signed
+# centre-surround response, the sum is
+#   sum over the centre row of d  -  sum over the flanks of d
+# and the rectification happens once, at the cell's own threshold, rather
+# than separately at every synapse.
+function v1_drive() -> f64 {
+    let mut acc: f64 = 0.0
+    let total: i32 = N_SUB * 3
+    let mut n: i32 = 0
+    while n < total {
+        let i: i32 = nearest(sub_x[n])
+        let j: i32 = nearest(sub_y[n])
+        let d: f64 = dog[j * R_N + i]
+        acc = acc + sub_kind[n] * d
+        n = n + 1
+    }
+    return acc / ((total) as f64)
+}
+
+# The V1 drive at the best of N_PHASE phases, which is how a simple cell is
+# characterised experimentally.
+function best_drive(theta_deg: f64, contrast: f64) -> f64 {
+    let mut best: f64 = 0.0
+    let mut p: i32 = 0
+    while p < N_PHASE {
+        let ph: f64 = 2.0 * PI * (p as f64) / (N_PHASE as f64)
+        make_grating(theta_deg, ph, contrast)
+        convolve()
+        let d: f64 = v1_drive()
+        if d > best {
+            best = d
+        }
+        p = p + 1
+    }
+    return best
+}
+
+# One retinal ON cell, just off centre, measured the same way.
+function retina_response(theta_deg: f64, contrast: f64) -> f64 {
+    let mut best: f64 = 0.0
+    let mut p: i32 = 0
+    while p < N_PHASE {
+        let ph: f64 = 2.0 * PI * (p as f64) / (N_PHASE as f64)
+        make_grating(theta_deg, ph, contrast)
+        convolve()
+        let d: f64 = dog[(R_N / 2) * R_N + (R_N / 2 + 2)]
+        if d > best {
+            best = d
+        }
+        p = p + 1
+    }
+    return best
+}
+
+# Spikes in 500 ms for a given drive.
+function spike_rate(drive: f64) -> f64 {
+    let mut cell: V1Cell = V1Cell_new()
+    cell.tau = TAU
+    cell.v_th = V_TH
+    cell.v_reset = V_RESET
+    let mut d: f64 = GAIN * (drive - BASE_SUB) * 100.0
+    if d < 0.0 {
+        d = 0.0
+    }
+    cell.drive = d
+    if d <= V_TH {
+        return 0.0
+    }
+    let steps: i32 = (SPIKE_MS / SPIKE_DT) as i32
+    let mut prev: f64 = cell.v
+    let mut n: i32 = 0
+    let mut k: i32 = 0
+    while k < steps {
+        V1Cell_step(&cell, SPIKE_DT)
+        if cell.v < prev {
+            n = n + 1
+        }
+        prev = cell.v
+        k = k + 1
+    }
+    return 1000.0 * (n as f64) / SPIKE_MS
+}
+
+# ---------------------------------------------------------------------------
+# Tuning-curve analysis
+# ---------------------------------------------------------------------------
+
+function ori_of(i: i32) -> f64 {
+    return (i as f64) * ORI_STEP
+}
+
+# Preferred orientation from the doubled-angle vector average, in degrees.
+function preferred(curve: ptr<f64>) -> f64 {
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut i: i32 = 0
+    while i < N_ORI - 1 {
+        let a: f64 = 2.0 * ori_of(i) * PI / 180.0
+        sx = sx + curve[i] * cos(a)
+        sy = sy + curve[i] * sin(a)
+        i = i + 1
+    }
+    let mut d: f64 = 0.5 * atan2(sy, sx) * 180.0 / PI
+    while d < 0.0 {
+        d = d + 180.0
+    }
+    while d >= 180.0 {
+        d = d - 180.0
+    }
+    return d
+}
+
+function circ_dist(a: f64, b: f64) -> f64 {
+    let mut d: f64 = a - b
+    while d > 90.0 {
+        d = d - 180.0
+    }
+    while d < -90.0 {
+        d = d + 180.0
+    }
+    return fabs(d)
+}
+
+# Orientation selectivity index, using the response at the preferred and at
+# the orthogonal orientation.
+function selectivity(curve: ptr<f64>) -> f64 {
+    let mut best: i32 = 0
+    let mut i: i32 = 0
+    while i < N_ORI - 1 {
+        if curve[i] > curve[best] {
+            best = i
+        }
+        i = i + 1
+    }
+    let orth: i32 = (best + (N_ORI - 1) / 2) % (N_ORI - 1)
+    let rp: f64 = curve[best]
+    let ro: f64 = curve[orth]
+    if rp + ro <= 0.0 {
+        return 0.0
+    }
+    return (rp - ro) / (rp + ro)
+}
+
+# Half width at half height, in degrees, by walking out from the peak and
+# interpolating the crossing.
+function half_width(curve: ptr<f64>) -> f64 {
+    let mut best: i32 = 0
+    let mut i: i32 = 0
+    while i < N_ORI - 1 {
+        if curve[i] > curve[best] {
+            best = i
+        }
+        i = i + 1
+    }
+    let peak: f64 = curve[best]
+    let floor_v: f64 = 0.0
+    let half: f64 = 0.5 * (peak + floor_v)
+    if peak <= 0.0 {
+        return 0.0
+    }
+    let n: i32 = N_ORI - 1
+    # walk up
+    let mut up: f64 = 90.0
+    let mut k: i32 = 1
+    while k <= n / 2 {
+        let a: i32 = (best + k - 1) % n
+        let b: i32 = (best + k) % n
+        if curve[a] >= half and curve[b] < half {
+            let f: f64 = (curve[a] - half) / (curve[a] - curve[b])
+            up = ((k - 1) as f64 + f) * ORI_STEP
+            k = n
+        }
+        k = k + 1
+    }
+    # walk down
+    let mut dn: f64 = 90.0
+    k = 1
+    while k <= n / 2 {
+        let a: i32 = (best - k + 1 + n) % n
+        let b: i32 = (best - k + n) % n
+        if curve[a] >= half and curve[b] < half {
+            let f: f64 = (curve[a] - half) / (curve[a] - curve[b])
+            dn = ((k - 1) as f64 + f) * ORI_STEP
+            k = n
+        }
+        k = k + 1
+    }
+    return 0.5 * (up + dn)
+}
+
+function contrast_of(c: i32) -> f64 {
+    if c == 0 { return 0.50 }
+    if c == 1 { return 0.70 }
+    return 1.0
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+const IM_PX: i32 = 6
+const IM_X: i32 = 40
+const IM_Y: i32 = 110
+
+function draw_map(g: Gfx, x: i32, y: i32, v: ptr<f64>, scale: f64,
+                  title: string) -> void {
+    gfx_draw_text(g, x, y - 14, title, 1, 150, 165, 190)
+    let mut j: i32 = 0
+    while j < R_N {
+        let mut i: i32 = 0
+        while i < R_N {
+            let t: f64 = v[j * R_N + i] / scale
+            let mut lum: i32 = 128 + ((127.0 * t) as i32)
+            if lum < 0 {
+                lum = 0
+            }
+            if lum > 255 {
+                lum = 255
+            }
+            gfx_fill_rect(g, x + i * IM_PX, y + (R_N - 1 - j) * IM_PX,
+                          IM_PX, IM_PX, lum, lum, lum)
+            i = i + 1
+        }
+        j = j + 1
+    }
+    draw_frame(g, x - 1, y - 1, R_N * IM_PX, R_N * IM_PX, 60, 70, 90)
+}
+
+function draw_v1_wiring(g: Gfx, x: i32, y: i32) -> void {
+    let total: i32 = N_SUB * 3
+    let half: f64 = ((R_N - 1) as f64) * 0.5
+    let mut n: i32 = 0
+    while n < total {
+        let i: i32 = nearest(sub_x[n])
+        let j: i32 = nearest(sub_y[n])
+        let px: i32 = x + i * IM_PX
+        let py: i32 = y + (R_N - 1 - j) * IM_PX
+        if sub_kind[n] > 0.0 {
+            gfx_fill_rect(g, px, py, IM_PX, IM_PX, 255, 205, 110)
+        } else {
+            gfx_fill_rect(g, px, py, IM_PX, IM_PX, 90, 150, 240)
+        }
+        n = n + 1
+    }
+    gfx_draw_text(g, x, y + R_N * IM_PX + 4, "amber ON centre row   blue OFF flanks",
+                  1, 110, 125, 150)
+}
+
+const TC_X: i32 = 500
+const TC_Y: i32 = 110
+const TC_W: i32 = 390
+const TC_H: i32 = 200
+
+function draw_tuning(g: Gfx) -> void {
+    draw_frame(g, TC_X, TC_Y, TC_W, TC_H, 60, 70, 90)
+    gfx_draw_text(g, TC_X, TC_Y - 14,
+                  "SPIKE TUNING CURVES   one per contrast   dashed = retinal ON cell",
+                  1, 150, 165, 190)
+    let mut mx: f64 = 1.0
+    let mut c: i32 = 0
+    while c < N_CON {
+        let mut i: i32 = 0
+        while i < N_ORI {
+            if tune[c * N_ORI + i] > mx {
+                mx = tune[c * N_ORI + i]
+            }
+            i = i + 1
+        }
+        c = c + 1
+    }
+    c = 0
+    while c < N_CON {
+        let cr: i32 = 90 + c * 55
+        let cg: i32 = 150 + c * 35
+        let cb: i32 = 240 - c * 60
+        let mut i: i32 = 1
+        while i < N_ORI {
+            let x0: i32 = TC_X + (((i - 1) * TC_W) / (N_ORI - 1))
+            let x1: i32 = TC_X + ((i * TC_W) / (N_ORI - 1))
+            let y0: i32 = TC_Y + TC_H - (((tune[c * N_ORI + i - 1] / mx) * ((TC_H - 4) as f64)) as i32)
+            let y1: i32 = TC_Y + TC_H - (((tune[c * N_ORI + i] / mx) * ((TC_H - 4) as f64)) as i32)
+            draw_line(g, x0, y0, x1, y1, 2, cr, cg, cb)
+            i = i + 1
+        }
+        c = c + 1
+    }
+    # retinal cell, normalised to the same panel
+    let mut rmx: f64 = 0.000001
+    let mut i2: i32 = 0
+    while i2 < N_ORI {
+        if tune_ret[i2] > rmx {
+            rmx = tune_ret[i2]
+        }
+        i2 = i2 + 1
+    }
+    i2 = 1
+    while i2 < N_ORI {
+        if i2 % 2 == 0 {
+            let x: i32 = TC_X + ((i2 * TC_W) / (N_ORI - 1))
+            let y: i32 = TC_Y + TC_H - (((tune_ret[i2] / rmx) * ((TC_H - 4) as f64)) as i32)
+            gfx_fill_rect(g, x, y, 2, 2, 200, 200, 200)
+        }
+        i2 = i2 + 1
+    }
+    let xp: i32 = TC_X + (((RF_DEG / 180.0) * (TC_W as f64)) as i32)
+    let mut gy: i32 = TC_Y
+    while gy < TC_Y + TC_H {
+        gfx_fill_rect(g, xp, gy, 1, 3, 255, 130, 130)
+        gy = gy + 8
+    }
+    gfx_draw_text(g, xp + 4, TC_Y + 4, "RF axis 30 deg", 1, 255, 130, 130)
+    gfx_draw_text(g, TC_X + 4, TC_Y + TC_H + 4, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, TC_X + TC_W / 2 - 12, TC_Y + TC_H + 4, "90", 1, 110, 125, 150)
+    gfx_draw_text(g, TC_X + TC_W - 30, TC_Y + TC_H + 4, "180 deg", 1, 110, 125, 150)
+    gfx_draw_text(g, TC_X + 4, TC_Y + TC_H - 12, "peak", 1, 110, 125, 150)
+    gfx_draw_fixed(g, TC_X + 40, TC_Y + TC_H - 12, mx, 1, 1, 235, 240, 250)
+    gfx_draw_text(g, TC_X + 80, TC_Y + TC_H - 12, "Hz", 1, 110, 125, 150)
+}
+
+const PL_CX: i32 = 690
+const PL_CY: i32 = 440
+const PL_R: i32 = 90
+
+function draw_polar(g: Gfx) -> void {
+    gfx_draw_text(g, PL_CX - 90, PL_CY - PL_R - 24, "THE SAME CURVE IN POLAR FORM",
+                  1, 150, 165, 190)
+    let mut a: i32 = 0
+    while a < 360 {
+        let rad: f64 = (a as f64) * PI / 180.0
+        gfx_fill_rect(g, PL_CX + (((PL_R as f64) * cos(rad)) as i32),
+                      PL_CY - (((PL_R as f64) * sin(rad)) as i32), 1, 1, 50, 58, 74)
+        a = a + 4
+    }
+    let mut mx: f64 = 0.000001
+    let mut i: i32 = 0
+    while i < N_ORI {
+        if tune[(N_CON - 1) * N_ORI + i] > mx {
+            mx = tune[(N_CON - 1) * N_ORI + i]
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < N_ORI - 1 {
+        let r0: f64 = tune[(N_CON - 1) * N_ORI + i] / mx
+        let r1: f64 = tune[(N_CON - 1) * N_ORI + i + 1] / mx
+        let a0: f64 = ori_of(i) * PI / 180.0
+        let a1: f64 = ori_of(i + 1) * PI / 180.0
+        # plot both lobes, since orientation is defined mod 180
+        draw_line(g, PL_CX + ((r0 * (PL_R as f64) * cos(a0)) as i32),
+                  PL_CY - ((r0 * (PL_R as f64) * sin(a0)) as i32),
+                  PL_CX + ((r1 * (PL_R as f64) * cos(a1)) as i32),
+                  PL_CY - ((r1 * (PL_R as f64) * sin(a1)) as i32),
+                  2, 255, 205, 110)
+        draw_line(g, PL_CX - ((r0 * (PL_R as f64) * cos(a0)) as i32),
+                  PL_CY + ((r0 * (PL_R as f64) * sin(a0)) as i32),
+                  PL_CX - ((r1 * (PL_R as f64) * cos(a1)) as i32),
+                  PL_CY + ((r1 * (PL_R as f64) * sin(a1)) as i32),
+                  2, 255, 205, 110)
+        i = i + 1
+    }
+    let ar: f64 = RF_DEG * PI / 180.0
+    draw_line(g, PL_CX - (((PL_R + 12) as f64) * cos(ar)) as i32,
+              PL_CY + (((PL_R + 12) as f64) * sin(ar)) as i32,
+              PL_CX + (((PL_R + 12) as f64) * cos(ar)) as i32,
+              PL_CY - (((PL_R + 12) as f64) * sin(ar)) as i32,
+              1, 255, 130, 130)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "RETINA TO V1  -  ORIENTATION TUNING FROM UNTUNED INPUTS",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "33 x 33 centre-surround retina -> nine push-pull positions on a 30 deg axis -> leaky integrate-and-fire",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44,
+                  "Hubel & Wiesel 1962; grating 2 cycles per unit, best of 8 phases, 500 ms per point",
+                  1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 40, 400, "CONTRAST   PREFERRED   HALF WIDTH   OSI    PEAK",
+                  1, 150, 165, 190)
+    let mut c: i32 = 0
+    while c < N_CON {
+        let y: i32 = 416 + c * 14
+        gfx_draw_fixed(g, 46, y, contrast_of(c), 2, 1, 235, 240, 250)
+        gfx_draw_fixed(g, 130, y, pref[c], 3, 1, 235, 240, 250)
+        gfx_draw_text(g, 194, y, "deg", 1, 110, 125, 150)
+        gfx_draw_fixed(g, 236, y, hwhh[c], 3, 1, 235, 240, 250)
+        gfx_draw_text(g, 300, y, "deg", 1, 110, 125, 150)
+        gfx_draw_fixed(g, 336, y, osi[c], 4, 1, 235, 240, 250)
+        gfx_draw_fixed(g, 404, y, peak_hz[c], 1, 1, 235, 240, 250)
+        gfx_draw_text(g, 446, y, "Hz", 1, 110, 125, 150)
+        c = c + 1
+    }
+
+    gfx_draw_text(g, 12, WIN_H - 100, "RETINAL ON CELL: OSI", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 176, WIN_H - 100, osi_retina, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 252, WIN_H - 100, "gate < 0.05, the input carries no orientation",
+                  1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 84, "V1 PREFERRED ORIENTATION", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 208, WIN_H - 84, pref[N_CON - 1], 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 276, WIN_H - 84, "deg   against the 30 deg axis   HALF WIDTH",
+                  1, 110, 125, 150)
+    gfx_draw_fixed(g, 630, WIN_H - 84, hwhh[N_CON - 1], 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 698, WIN_H - 84, "deg", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 68, "SHIFT OF PREFERENCE ACROSS THE THREE CONTRASTS",
+                  1, 150, 165, 190)
+    gfx_draw_fixed(g, 380, WIN_H - 68, pref_shift, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 456, WIN_H - 68, "deg   gate 2.0", 1, 110, 125, 150)
+
+    if ok {
+        gfx_draw_text(g, 780, WIN_H - 92, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 780, WIN_H - 92, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16,
+                  "LEFT/RIGHT rotate the grating on screen   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    img = malloc((R_CELLS as i64) * 8)
+    dog = malloc((R_CELLS as i64) * 8)
+    kern = malloc(((KW * KW) as i64) * 8)
+    sub_x = malloc(((N_SUB * 3) as i64) * 8)
+    sub_y = malloc(((N_SUB * 3) as i64) * 8)
+    sub_kind = malloc(((N_SUB * 3) as i64) * 8)
+    tune = malloc(((N_CON * N_ORI) as i64) * 8)
+    tune_lin = malloc(((N_CON * N_ORI) as i64) * 8)
+    tune_ret = malloc((N_ORI as i64) * 8)
+
+    build_kernel()
+    build_v1()
+
+    println("")
+    println("  RETINA TO V1  --  orientation tuning built from untuned inputs")
+    println("  ==============================================================")
+    println("")
+    println("    33 x 33 difference-of-Gaussians retina, sigma_c 0.045, sigma_s 0.11")
+    println("    one V1 simple cell: push-pull, 9 centre positions on a 30 degree axis")
+    println("    gratings at 2.0 cycles per unit, 73 orientations, best of 8 phases")
+    println("    spikes counted over 500 ms of a leaky integrate-and-fire cell")
+    println("")
+
+    let mut c: i32 = 0
+    while c < N_CON {
+        let con: f64 = contrast_of(c)
+        let mut i: i32 = 0
+        while i < N_ORI {
+            let d: f64 = best_drive(ori_of(i), con)
+            tune_lin[c * N_ORI + i] = d
+            tune[c * N_ORI + i] = spike_rate(d)
+            i = i + 1
+        }
+        c = c + 1
+    }
+    let mut i: i32 = 0
+    while i < N_ORI {
+        tune_ret[i] = retina_response(ori_of(i), 1.0)
+        i = i + 1
+    }
+
+    c = 0
+    while c < N_CON {
+        let base: i32 = c * N_ORI
+        let curve: ptr<f64> = tune
+        # a small helper view into the right row
+        let mut row: ptr<f64> = malloc((N_ORI as i64) * 8)
+        let mut k: i32 = 0
+        while k < N_ORI {
+            row[k] = tune[base + k]
+            k = k + 1
+        }
+        pref[c] = preferred(row)
+        hwhh[c] = half_width(row)
+        osi[c] = selectivity(row)
+        let mut mx: f64 = 0.0
+        k = 0
+        while k < N_ORI {
+            if row[k] > mx {
+                mx = row[k]
+            }
+            k = k + 1
+        }
+        peak_hz[c] = mx
+        c = c + 1
+    }
+    osi_retina = selectivity(tune_ret)
+    pref_retina = preferred(tune_ret)
+    pref_shift = 0.0
+    c = 0
+    while c < N_CON {
+        let d: f64 = circ_dist(pref[c], pref[N_CON - 1])
+        if d > pref_shift {
+            pref_shift = d
+        }
+        c = c + 1
+    }
+
+    println("      contrast   preferred [deg]   half width [deg]      OSI     peak rate [Hz]")
+    println("      --------   ---------------   ----------------   -------   --------------")
+    c = 0
+    while c < N_CON {
+        print("    ")
+        printf("%10.2f", contrast_of(c))
+        printf("   %15.4f", pref[c])
+        printf("   %16.4f", hwhh[c])
+        printf("   %7.4f", osi[c])
+        printf("   %14.2f", peak_hz[c])
+        println("")
+        c = c + 1
+    }
+    println("")
+    print("    a single retinal ON cell, same sweep: OSI  ")
+    printf("%9.6f", osi_retina)
+    print("   gate < ")
+    printf("%.2f", OSI_RETINA_MAX)
+    println("")
+    print("                                          peak at ")
+    printf("%7.2f deg", pref_retina)
+    println("   (meaningless: the cell is circular)")
+    println("")
+    print("    V1 preferred orientation at full contrast  : ")
+    printf("%9.4f deg", pref[N_CON - 1])
+    print("   the wiring axis is ")
+    printf("%.1f", RF_DEG)
+    println("")
+    print("    error against the wiring axis              : ")
+    printf("%9.4f deg", circ_dist(pref[N_CON - 1], RF_DEG))
+    print("   gate ")
+    printf("%.1f", PREF_TOL)
+    println("")
+    print("    half width at half height                  : ")
+    printf("%9.4f deg", hwhh[N_CON - 1])
+    print("   gate [")
+    printf("%.0f", HWHH_LO)
+    print(", ")
+    printf("%.0f", HWHH_HI)
+    println("]")
+    print("    orientation selectivity index              : ")
+    printf("%9.4f", osi[N_CON - 1])
+    print("   gate > ")
+    printf("%.1f", OSI_MIN)
+    println("")
+    print("    largest shift of preference across contrast: ")
+    printf("%9.4f deg", pref_shift)
+    print("   gate ")
+    printf("%.1f", SHIFT_TOL)
+    println("")
+    println("")
+
+    let ret_ok: bool = osi_retina < OSI_RETINA_MAX
+    let pref_ok: bool = circ_dist(pref[N_CON - 1], RF_DEG) < PREF_TOL
+    let width_ok: bool = hwhh[N_CON - 1] > HWHH_LO and hwhh[N_CON - 1] < HWHH_HI
+    let osi_ok: bool = osi[N_CON - 1] > OSI_MIN
+    let shift_ok: bool = pref_shift < SHIFT_TOL
+    let ok: bool = ret_ok and pref_ok and width_ok and osi_ok and shift_ok
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Retina to V1 - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        if gfx_key_down(g, KEY_LEFT) {
+            live_ori = live_ori - 5.0
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            live_ori = live_ori + 5.0
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            live_ori = live_ori + 4.0
+        }
+        while live_ori >= 180.0 {
+            live_ori = live_ori - 180.0
+        }
+        while live_ori < 0.0 {
+            live_ori = live_ori + 180.0
+        }
+
+        make_grating(live_ori, 0.0, 1.0)
+        convolve()
+
+        gfx_clear(g, 10, 12, 18)
+        draw_map(g, IM_X, IM_Y, img, 1.2, "GRATING ON THE RETINA")
+        draw_map(g, IM_X + R_N * IM_PX + 30, IM_Y, dog, 0.35,
+                 "CENTRE-SURROUND OUTPUT + V1 WIRING")
+        draw_v1_wiring(g, IM_X + R_N * IM_PX + 30, IM_Y)
+        gfx_draw_text(g, IM_X, IM_Y + R_N * IM_PX + 4, "ORIENTATION", 1, 150, 165, 190)
+        gfx_draw_fixed(g, IM_X + 96, IM_Y + R_N * IM_PX + 4, live_ori, 1, 1, 255, 205, 110)
+        gfx_draw_text(g, IM_X + 140, IM_Y + R_N * IM_PX + 4, "deg", 1, 150, 165, 190)
+        draw_tuning(g)
+        draw_polar(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !ret_ok {
+        println("    FAIL: the retinal input is already orientation tuned")
+        return 1
+    }
+    if !pref_ok {
+        println("    FAIL: the V1 cell does not prefer the axis it was wired along")
+        return 2
+    }
+    if !osi_ok {
+        println("    FAIL: the V1 cell is not orientation selective")
+        return 3
+    }
+    if !width_ok {
+        println("    FAIL: the tuning half width is outside the physiological band")
+        return 4
+    }
+    if !shift_ok {
+        println("    FAIL: the preferred orientation moved with contrast")
+        return 5
+    }
+    println("    PASS: orientation tuning emerges from the arrangement of untuned inputs")
+    return 0
+}
