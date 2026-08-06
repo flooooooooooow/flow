@@ -1,0 +1,197 @@
+# Karplus-Strong: a plucked string from a delay line and one averaging filter.
+#
+# WHAT YOU WILL HEAR
+#   Eight seconds, eight plucks of the same string, one per second. The pitch
+#   is the same every time. The damping is not: the first pluck rings for
+#   most of a second, the last is a dead thud. You are hearing one number
+#   change.
+#
+# HOW IT WORKS
+#   Fill a delay line one wavelength long with the shape a pick leaves on a
+#   string, then feed it back through itself, averaging each sample with the
+#   one before it:
+#
+#       y[n] = 0.5 * (buf[i] + buf[i-1]) * damping
+#
+#   The loop length sets the pitch. The averaging is a one-zero lowpass, so
+#   every trip round the loop costs the signal some treble, which is why a
+#   plucked string starts bright and ends as almost a sine. The damping
+#   factor sets how long that takes. Two lines of arithmetic and a ring
+#   buffer; no wavetable, no physical model.
+#
+#   A 218-sample loop at 48 kHz nominally sounds at 220.18 Hz, a hair above
+#   A3. The averaging filter adds a fraction of a sample to the round trip,
+#   so the measured pitch comes out a touch flat of that, at 220.0 Hz. The
+#   offline check probes the nominal figure and still wins its bank by a
+#   clear margin, which is the honest way to state a delay-line pitch: it is
+#   set by an integer number of samples and is only as exact as that integer
+#   allows.
+#
+# LISTEN
+#   ./flow audio examples/audio/karplus_strong.flow
+#
+# RENDER AND CHECK
+#   FLOW_AUDIO_RENDER=build/audio/karplus_strong.wav \
+#     ./flow audio examples/audio/karplus_strong.flow
+
+import "stdlib/audio.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/safety.flow"
+import "stdlib/audio/sink.flow"
+import "stdlib/audio/verify.flow"
+
+const RATE_HZ: i32 = 48000
+const BLOCK: i32 = 256
+const SECONDS: f32 = 8.0
+
+# Longest loop the string can hold: 1024 samples is 47 Hz at 48 kHz.
+const KS_MAX: i32 = 1024
+
+const PLUCK_STEP: i32 = 48000         # one pluck per second
+const PLUCK_COUNT: i32 = 8
+
+# Damping of the first and last pluck. Below about 0.95 the string stops
+# being a string.
+const DAMP_FIRST: f32 = 0.9990
+const DAMP_LAST: f32 = 0.9400
+
+const AMP: f32 = 0.90
+
+# Where along the string the pick lands, as a fraction of its length.
+const PICK_POSITION: f32 = 0.25
+
+# How much of the excitation is pick scrape rather than string displacement.
+const PICK_NOISE: f32 = 0.12
+
+struct KsString {
+    buf: array<f32, 1024>
+    len: i32
+    idx: i32
+    prev: f32
+    damp: f32
+}
+
+function ks_new(len: i32) -> KsString {
+    let z: array<f32, 1024> = []
+    let mut n: i32 = len
+    if n < 2 {
+        n = 2
+    }
+    if n > KS_MAX {
+        n = KS_MAX
+    }
+    return KsString { buf: z, len: n, idx: 0, prev: 0.0, damp: 0.996 }
+}
+
+# Refill the loop. This is the pluck.
+#
+# The classic version fills the loop with white noise, which is easy to
+# explain and sounds wrong: white noise puts equal energy in every harmonic,
+# and the third harmonic then dominates the fundamental by about 5 dB. A
+# real plucked string starts as a triangle, because that is the shape a
+# finger leaves behind, and a triangle's harmonics fall off as 1/n^2. The
+# corner of the triangle is the pick position: at a quarter of the way along
+# the string the fourth harmonic and its multiples are missing entirely,
+# which is why picking near the bridge sounds different from picking over
+# the soundhole.
+#
+# A little noise is mixed in for the scrape of the pick itself.
+function ks_pluck(s: ptr<KsString>, noise: ptr<NoiseState>, damp: f32, amp: f32) -> void {
+    s.damp = damp
+    s.idx = 0
+    s.prev = 0.0
+    let n: f32 = s.len as f32
+    let corner: f32 = n * PICK_POSITION
+    let mut i: i32 = 0
+    while i < s.len {
+        let x: f32 = i as f32
+        let mut tri: f32 = 0.0
+        if x < corner {
+            tri = x / corner
+        } else {
+            tri = (n - x) / (n - corner)
+        }
+        # Centre the triangle so the loop carries no DC.
+        tri = tri - 0.5
+        let nx: NoiseState = noise_tick(noise[0])
+        noise[0] = nx
+        let grit: f32 = noise_value(nx)
+        s.buf[i] = amp * (tri * (1.0 - PICK_NOISE) + grit * PICK_NOISE)
+        i = i + 1
+    }
+}
+
+@rt_safe
+function ks_tick(s: ptr<KsString>) -> f32 {
+    let out: f32 = s.buf[s.idx]
+    let filtered: f32 = 0.5 * (out + s.prev)
+    s.prev = out
+    s.buf[s.idx] = filtered * s.damp
+    s.idx = s.idx + 1
+    if s.idx >= s.len {
+        s.idx = 0
+    }
+    return out
+}
+
+function main() -> i32 {
+    let rate: SampleRate = sample_rate_48000()
+    # A3 is 220 Hz; the nearest whole loop length at 48 kHz is 218 samples.
+    let loop_len: i32 = 218
+    let sounding_hz: f64 = (RATE_HZ as f64) / (loop_len as f64)
+
+    println("karplus-strong")
+    printf("  8.0 seconds, eight plucks of one string at %.2f Hz (nominal)\n", sounding_hz)
+    printf("  loop length %d samples, one-zero averaging filter in the loop\n", loop_len)
+    println("  damping runs 0.999 on the first pluck down to 0.940 on the last")
+    println("  same pitch every time; only the decay changes")
+
+    let mut out: AudioSink = sink_open(RATE_HZ, 2, BLOCK)
+    let sp: ptr<AudioSink> = &out
+    let mut chain: SafetyChain = safety_new(rate, SECONDS)
+    let cp: ptr<SafetyChain> = &chain
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(BLOCK, 2, layout_interleaved())
+
+    let mut wire: KsString = ks_new(loop_len)
+    let strp: ptr<KsString> = &wire
+    let mut noise: NoiseState = noise_new(20260806)
+    let np: ptr<NoiseState> = &noise
+
+    let mut n: i32 = 0
+    let mut pluck: i32 = -1
+
+    while !safety_finished(cp) {
+        let count: i32 = safety_next_block(cp, BLOCK)
+        let mut i: i32 = 0
+        while i < count {
+            let slot: i32 = n / PLUCK_STEP
+            if slot != pluck and slot < PLUCK_COUNT {
+                pluck = slot
+                let t: f32 = (slot as f32) / ((PLUCK_COUNT - 1) as f32)
+                let damp: f32 = DAMP_FIRST + (DAMP_LAST - DAMP_FIRST) * t
+                ks_pluck(strp, np, damp, AMP)
+            }
+            let s: f32 = ks_tick(strp)
+
+            let fr: Frame = safety_process_frame(cp, s, s)
+            audio_buffer_set_f32(buf, i, 0, fr.left)
+            audio_buffer_set_f32(buf, i, 1, fr.right)
+            n = n + 1
+            i = i + 1
+        }
+        sink_write(sp, buf.data, count)
+    }
+
+    sink_close(sp)
+    audio_buffer_free_f32(buf)
+    safety_report(cp)
+
+    if sink_is_render() {
+        let spec: VerifySpec = verify_spec(SECONDS as f64, safety_ceiling_db(cp),
+                                           sounding_hz)
+        if !verify_run(sink_render_path(), spec) {
+            return 1
+        }
+    }
+    return 0
+}
