@@ -148,6 +148,36 @@ exists.
 
 ---
 
+### 2026-08-06: Declarative ordering — Phase 2 selector and new surface
+
+**Context:** Phase 2 shipped (#144, #145, #146, #147). A cost-based selector
+(`src/flow/plan_selector.py`) picks among six sort lowerings and two search
+lowerings; ordering provenance (`src/flow/ordering_hints.py`) carries
+sortedness and integer-range facts through straight-line code; `--explain`
+prints every decision. Measured payoff in `benchmarks/ordering/RESULTS.md`.
+
+**Decided:**
+1. **Float ordering** — IEEE 754-2008 totalOrder for sort / unique / find;
+   arithmetic comparison stays IEEE. Rationale in `docs/language/ordering.md`.
+   Supersedes the NaN-before / NaN-after question in #144.
+2. **New surface** — two additions, both pipeline-position only:
+   `xs |> find(t)` (index of the first match under the same total order, or
+   `-1`) and the `general` sort policy (pin the general plan, ignore hints).
+   `find` is claimed only after `|>` and only when followed by `(`, so an
+   ordinary `find(...)` call is untouched.
+3. **Cost vocabulary** — one dimension, estimated element operations, plus a
+   single hard resource budget (256 KiB of compiler scratch). `require` /
+   `prefer` and a `supports cpu / simd / gpu` axis wait for a cost IR with
+   real units.
+
+**Still open:** items (1) `unique` length, (2) entropy, (3) `order { }` and
+(4) copy vs mutate from the 2026-08-04 entry above are all untouched.
+
+**Status:** ✅ Resolved for the selector and the new surface; the four Phase 1
+semantics questions above remain pending.
+
+---
+
 ### 2026-08-04: Dynamics DSL namespace style
 
 **Context:** Top-level bare keywords `dsys` / `horizon` / `sense` / `ga` /

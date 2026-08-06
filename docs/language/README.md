@@ -14,7 +14,8 @@ Detailed documentation for the Flow programming language.
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |
 | [Dynamics DSL](dynamics-dsl.md) | `dsys` / `analyze` / LQR expanders |
-| [Ordering](ordering.md) | Declarative `\|> sort` / `sortBy` |
+| [Ordering](ordering.md) | Declarative `\|> sort` / `sortBy` / `\|> find`, float total order |
+| [Explainable compilation](explainable-compilation.md) | `--explain`: the plan, the costs, the failed constraints |
 | [Graphics](graphics.md) | Native 2D graphics — macOS Cocoa; Linux/Windows SDL2 (+ stub) |
 | [Shaders](shaders.md) | Fill-shader surface language (Metal on macOS) |
 | [WebAssembly](wasm.md) | Near-term Flow→C→emscripten path; native Flow-in-WASM deferred |
