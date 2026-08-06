@@ -1,10 +1,49 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-08-05 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
+> Auto-generated from `lib/stdlib/` on 2026-08-06 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**83** modules scanned.
+**86** modules scanned.
 
 ## Modules
+
+### `ai.flow`
+
+Flow stdlib: game-AI trainers.  Three small trainer families for game agents, all storage in module statics
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `ai_seed` | `(seed: u32) -> void` | — |
+| `ai_rand_range` | `(n: i32) -> i32` | Uniform integer in [0, n). n <= 0 returns 0. |
+| `ai_rand_f32` | `() -> f32` | Uniform f32 in [0, 1). |
+| `ai_rand_signed` | `() -> f32` | Uniform f32 in [-1, 1). |
+| `ai_rand_gauss` | `() -> f32` | Approximately normal (sum of three uniforms, rescaled to std ~1). |
+| `ai_hash_mix` | `(x: i32) -> i32` | 32-bit integer mixing hash (fmix-style). Always returns a non-negative i32. Use it to fold game-state features into a Q-table state id. |
+| `q_init` | `(seed: u32) -> void` | Zero the table and seed the shared RNG. |
+| `q_value` | `(state: i32, action: i32) -> f32` | — |
+| `q_best` | `(state: i32, n_actions: i32) -> i32` | Greedy action (ties break toward the lowest index). |
+| `q_select` | `(state: i32, n_actions: i32, epsilon: f32) -> i32` | Epsilon-greedy action selection. |
+| `q_update` | `(s: i32, a: i32, r: f32, s_next: i32, n_actions: i32, alpha: f32, gamma: f32) -> void` | One Q-learning update: Q(s,a) += alpha * (r + gamma * max_a' Q(s',a') - Q(s,a)) |
+| `q_update_terminal` | `(s: i32, a: i32, r: f32, alpha: f32) -> void` | Terminal update: the target is just the reward (no bootstrap). |
+| `q_epsilon` | `(step: i32, total: i32, eps_start: f32, eps_end: f32) -> f32` | Linear epsilon decay: eps_start at step 0, eps_end at step >= total. |
+| `ga_init` | `(pop: i32, dim: i32, seed: u32) -> void` | Random population of `pop` genomes with `dim` genes each, in [-1, 1). |
+| `ga_pop_size` | `() -> i32` | — |
+| `ga_genome_dim` | `() -> i32` | — |
+| `ga_get` | `(i: i32, j: i32) -> f32` | — |
+| `ga_set` | `(i: i32, j: i32, v: f32) -> void` | — |
+| `ga_fitness_set` | `(i: i32, f: f32) -> void` | — |
+| `ga_best_index` | `() -> i32` | — |
+| `ga_best_fitness` | `() -> f32` | — |
+| `ga_evolve` | `(elite_frac: f32, mutate_sigma: f32) -> void` | One generation: keep the top elite_frac unchanged, refill the rest with tournament-selected parents, uniform crossover and gaussian mutation. Fitness values are reset to 0 afterwards; re-evaluate before the next evolve. |
+| `mlp_init` | `(n_in: i32, n_hid: i32, n_out: i32, seed: u32) -> void` | Configure sizes (clamped to the static budget) and randomize weights. |
+| `mlp_forward` | `(x: ptr<f32>) -> void` | Forward pass: caches input, hidden tanh activations and output logits. |
+| `mlp_output` | `(j: i32) -> f32` | Output logit j from the last forward pass. |
+| `mlp_argmax` | `() -> i32` | Greedy action from the last forward pass. |
+| `mlp_prob` | `(j: i32) -> f32` | Softmax probability of action j (valid after mlp_sample or mlp_reinforce). |
+| `mlp_sample` | `() -> i32` | Sample an action from the softmax over the last forward pass's logits. |
+| `mlp_reinforce` | `(x: ptr<f32>, action: i32, advantage: f32, lr: f32) -> void` | REINFORCE step: one gradient-ascent update on advantage * log pi(action \| x). Runs its own forward pass, so it can replay stored (x, action) pairs. |
+| `mlp_train_mse` | `(x: ptr<f32>, target: ptr<f32>, lr: f32) -> f32` | Supervised step: squared-error loss on the linear outputs, SGD update. Returns the loss before the update. |
 
 ### `array.flow`
 
@@ -1004,6 +1043,22 @@ Flow Dynamical Systems Standard Library  Declarative DSL via structs (no new key
 
 *No `export` items found (internal / extern-only module).*
 
+### `font.flow`
+
+Bitmap font: 5x7 glyphs for printable ASCII (32..126).  Renderer-agnostic on purpose. This module only answers "which pixels are lit
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `font_char_width` | `() -> i32` | — |
+| `font_char_height` | `() -> i32` | — |
+| `font_glyph_row` | `(ch: i32, row: i32) -> u8` | Row bit pattern for `ch` at `row` (0..6). Unknown characters render blank. |
+| `font_pixel` | `(ch: i32, col: i32, row: i32) -> bool` | True when the glyph for `ch` lights the pixel at (col, row). |
+| `font_text_width` | `(s: string, scale: i32) -> i32` | Width in pixels of `s` drawn at `scale`, including one blank column between characters (no trailing gap). |
+| `font_text_height` | `(scale: i32) -> i32` | — |
+| `font_int_width` | `(n: i32, scale: i32) -> i32` | Digits needed to render `n` (a lone minus sign counts as one). |
+
 ### `gfx.flow`
 
 gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runtime/gfx_macos.m, runtime/gfx_linux.c, runtime/gfx_windows.c
@@ -1473,6 +1528,31 @@ System information helpers (extern-backed)
 Tensor: N-dimensional array type for neural networks (stdlib) Import: import "stdlib/tensor.flow" MLIR-first ML workloads: use with `flow ml` or `flow mlir-run`
 
 *No `export` items found (internal / extern-only module).*
+
+### `text.flow`
+
+Text drawing for the gfx backends: blits stdlib/font.flow glyphs as rects.  Games used to hand-roll seven-segment digits out of rectangles. This draws
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gfx_draw_char` | `(g: Gfx, x: i32, y: i32, ch: i32, scale: i32,
+                              r: i32, gr: i32, b: i32) -> i32` | One character. Returns the x advance so callers can chain. |
+| `gfx_draw_text` | `(g: Gfx, x: i32, y: i32, s: string, scale: i32,
+                              r: i32, gr: i32, b: i32) -> i32` | — |
+| `gfx_draw_text_centered` | `(g: Gfx, cx: i32, y: i32, s: string, scale: i32,
+                                       r: i32, gr: i32, b: i32) -> i32` | Centered on `cx`. |
+| `gfx_draw_text_right` | `(g: Gfx, rx: i32, y: i32, s: string, scale: i32,
+                                    r: i32, gr: i32, b: i32) -> i32` | Right edge at `rx`. |
+| `gfx_draw_int` | `(g: Gfx, x: i32, y: i32, n: i32, scale: i32,
+                             r: i32, gr: i32, b: i32) -> i32` | Integers without going through string formatting: draw digits directly so callers need no scratch buffer. |
+| `gfx_draw_int_right` | `(g: Gfx, rx: i32, y: i32, n: i32, scale: i32,
+                                   r: i32, gr: i32, b: i32) -> i32` | — |
+| `gfx_draw_int_padded` | `(g: Gfx, x: i32, y: i32, n: i32, width: i32, scale: i32,
+                                    r: i32, gr: i32, b: i32) -> i32` | Zero-padded to `width` digits (clock and score displays). |
+| `gfx_draw_fixed` | `(g: Gfx, x: i32, y: i32, value: f64, decimals: i32, scale: i32,
+                               r: i32, gr: i32, b: i32) -> i32` | Fixed-point float with `decimals` places (no printf, no allocation). |
 
 ### `time.flow`
 

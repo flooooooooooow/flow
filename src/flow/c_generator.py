@@ -2440,8 +2440,28 @@ class CGenerator:
                 'i32', 'i64', 'i8', 'i16', 'u8', 'u16', 'u32', 'u64'
             )
 
+        # A `break` or `continue` in an arm targets the enclosing Flow loop, but
+        # inside a C switch `break` would bind to the switch instead and let the
+        # loop keep running. Fall back to an if/else chain for those shapes.
+        def _arm_breaks_out(node: object, depth: int = 0) -> bool:
+            if isinstance(node, (BreakStatement, ContinueStatement)):
+                return True
+            # Nested loops capture their own break/continue.
+            if isinstance(node, (WhileStatement, ForStatement)):
+                return False
+            for attr in ("body", "then_body", "else_body", "cases", "statements"):
+                child = getattr(node, attr, None)
+                if isinstance(child, list):
+                    if any(_arm_breaks_out(c, depth + 1) for c in child):
+                        return True
+                elif child is not None and _arm_breaks_out(child, depth + 1):
+                    return True
+            return False
+
+        arm_escapes_loop = any(_arm_breaks_out(case.body) for case in st.cases)
+
         # Check if we can use a switch (integer patterns/or-of-integers, no guards)
-        can_use_switch = all(
+        can_use_switch = not arm_escapes_loop and all(
             case.guard is None
             and (
                 _is_int_literal(case.pattern)

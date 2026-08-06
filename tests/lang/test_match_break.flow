@@ -1,0 +1,56 @@
+# `break` / `continue` inside a match arm must target the enclosing loop.
+# The C backend lowers integer matches to a switch, where a bare `break` would
+# bind to the switch instead; codegen falls back to if/else for these shapes.
+# Found by MLIR/C execution-parity work (the two backends disagreed).
+
+extern { function printf(fmt: string, v: i32) -> i32 }
+
+function main() -> i32 {
+    # break at 5: sums 0+1+2+3+4
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i < 10 {
+        match i {
+            5 => { break }
+            default { s = s + i }
+        }
+        i = i + 1
+    }
+    if s != 10 { return 1 }
+
+    # continue skips 3 and 7: 0+1+2+4+5+6+8+9 = 35
+    let mut t: i32 = 0
+    let mut j: i32 = 0
+    while j < 10 {
+        let cur: i32 = j
+        j = j + 1
+        match cur {
+            3 => { continue }
+            7 => { continue }
+            default { t = t + cur }
+        }
+    }
+    if t != 35 { return 2 }
+
+    # a nested loop's own break must still bind to the inner loop
+    let mut u: i32 = 0
+    let mut k: i32 = 0
+    while k < 3 {
+        match k {
+            1 => {
+                let mut m: i32 = 0
+                while m < 100 {
+                    if m == 4 { break }
+                    u = u + 1
+                    m = m + 1
+                }
+            }
+            default { u = u + 100 }
+        }
+        k = k + 1
+    }
+    if u != 204 { return 3 }
+
+    printf("match break/continue ok (%d)\n", s + t + u)
+    return 0
+}
