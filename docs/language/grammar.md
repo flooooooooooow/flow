@@ -38,6 +38,9 @@ export_marker  ::= "export"
 
 **Top-level forms:** functions, structs, algebraic effects, capabilities, constants, imports, and `extern` blocks for C FFI.
 
+`export` in front of an `import_decl` is a re-export: the imported module's
+exports become exports of this file. See [modules.md](modules.md#re-export).
+
 ---
 
 ## Functions & types
