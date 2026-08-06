@@ -1,0 +1,162 @@
+# Coarse-grained data-parallel reduction, built for the WASM threads crossing.
+#
+#   ./flow run examples/wasm/parallel_sum.flow
+#   ./flow wasm examples/wasm/parallel_sum.flow --threads
+#
+# SHARDS disjoint slices of one sum. Each shard writes only its own slot in
+# `partial`, so there is no sharing to synchronise; the reduction runs serially
+# afterwards in fixed shard order, which makes the serial and threaded runs
+# bit-for-bit identical.
+#
+# Grain is deliberately coarse. Emscripten's pthread_create costs tens of
+# microseconds because it hands a worker a job over postMessage, so a shard has
+# to be worth milliseconds before threading pays for itself. One spawn per
+# shard, one shard per worker, one pass.
+
+extern {
+    function malloc(size: i64) -> ptr<f64>
+    function free(p: ptr<f64>) -> void
+    function sqrt(x: f64) -> f64
+    function flow_rt_monotonic_ns() -> i64
+    function flow_rt_par_workers() -> i32
+    function flow_parallel_for_i32(start: i32, end: i32, stride: i32, body: ptr<void>, ctx: ptr<void>) -> void
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const SHARDS: i32 = 8
+const PER_SHARD: i32 = 12000000
+
+let mut partial: ptr<f64> = null
+
+# Sum sqrt(x)/x over this shard's slice. Pure compute, one write at the end.
+function shard_work(s: i32) -> void {
+    let base: i64 = (s as i64) * (PER_SHARD as i64)
+    let mut acc: f64 = 0.0
+    let mut i: i32 = 0
+    while i < PER_SHARD {
+        let x: f64 = ((base + (i as i64)) as f64) + 1.0
+        acc = acc + sqrt(x) / x
+        i = i + 1
+    }
+    partial[s] = acc
+}
+
+# pthread entry point: unmangled (@flow_api) so it can be handed to
+# flow_parallel_for_i32 as a plain C function pointer.
+@flow_api
+function shard_body(s: i32, ctx: ptr<void>) -> void {
+    shard_work(s)
+}
+
+# Empty shard body, used to price a bare spawn+join round trip.
+@flow_api
+function noop_body(s: i32, ctx: ptr<void>) -> void {
+    return
+}
+
+# SHARDS threads created and joined with no work in them. This is the floor:
+# threading cannot pay until a shard is worth more than this.
+function measure_spawn_ns() -> i64 {
+    let t0: i64 = flow_rt_monotonic_ns()
+    flow_parallel_for_i32(0, SHARDS, 1, noop_body, null)
+    let t1: i64 = flow_rt_monotonic_ns()
+    return t1 - t0
+}
+
+function reduce_partials() -> f64 {
+    let mut total: f64 = 0.0
+    for s in 0 to SHARDS {
+        total = total + partial[s]
+    }
+    return total
+}
+
+# One full pass. use_threads != 0 puts each shard on its own thread.
+# Returns wall time in ns.
+function run_pass(use_threads: i32) -> i64 {
+    for s in 0 to SHARDS {
+        partial[s] = 0.0
+    }
+    let t0: i64 = flow_rt_monotonic_ns()
+    if use_threads != 0 {
+        flow_parallel_for_i32(0, SHARDS, 1, shard_body, null)
+    } else {
+        for s in 0 to SHARDS {
+            shard_work(s)
+        }
+    }
+    let t1: i64 = flow_rt_monotonic_ns()
+    return t1 - t0
+}
+
+function main() -> i32 {
+    println("parallel_sum: disjoint-shard reduction on real threads")
+    print("  runtime workers: ")
+    println(flow_rt_par_workers())
+    print("  shards: ")
+    println(SHARDS)
+    print("  iterations per shard: ")
+    println(PER_SHARD)
+
+    partial = malloc((SHARDS as i64) * 8)
+
+    # Best of N. In a browser the first pass runs on V8's baseline wasm tier;
+    # the later passes run optimised, so taking the minimum reports steady
+    # state instead of JIT warm-up.
+    let reps: i32 = 4
+
+    let mut serial_ns: i64 = 0
+    let mut serial_total: f64 = 0.0
+    for r in 0 to reps {
+        let ns: i64 = run_pass(0)
+        if r == 0 or ns < serial_ns {
+            serial_ns = ns
+        }
+        serial_total = reduce_partials()
+    }
+    print("  serial:   ms ")
+    printf("%.2f", (serial_ns as f64) / 1000000.0)
+    print("  sum ")
+    printf("%.9f\n", serial_total)
+
+    let mut par_ns: i64 = 0
+    let mut par_total: f64 = 0.0
+    for r in 0 to reps {
+        let ns: i64 = run_pass(1)
+        if r == 0 or ns < par_ns {
+            par_ns = ns
+        }
+        par_total = reduce_partials()
+    }
+    print("  threaded: ms ")
+    printf("%.2f", (par_ns as f64) / 1000000.0)
+    print("  sum ")
+    printf("%.9f\n", par_total)
+
+    let speedup: f64 = (serial_ns as f64) / (par_ns as f64)
+    print("  speedup: ")
+    printf("%.2fx\n", speedup)
+
+    let mut spawn_ns: i64 = 0
+    for r in 0 to reps {
+        let ns: i64 = measure_spawn_ns()
+        if r == 0 or ns < spawn_ns {
+            spawn_ns = ns
+        }
+    }
+    print("  spawn floor: ms ")
+    printf("%.3f", (spawn_ns as f64) / 1000000.0)
+    print(" for ")
+    print(SHARDS)
+    println(" empty spawn+join round trips")
+
+    free(partial)
+
+    if serial_total != par_total {
+        println("FAIL: serial and threaded sums disagree")
+        return 1
+    }
+    println("  serial sum == threaded sum (fixed reduction order) OK")
+    println("PASS")
+    return 0
+}
