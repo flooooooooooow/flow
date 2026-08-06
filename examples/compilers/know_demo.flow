@@ -1,5 +1,4 @@
 # know + fingerprint dogfood
-# flow:lenient: strict checker gap, string vs byte-buffer coercions (ptr<u8>, array<u8, N>). Board card flow-strict-string-buffer-coercions.
 
 import "compiler/src/claim_address.flow"
 import "compiler/src/claim_path.flow"
@@ -55,7 +54,7 @@ function main() -> i32 {
     # Scan a tiny buffer with two theorems
     let src: string = "theorem «Bool» «disjunction» «order does not matter» (a: bool) {\n theorem «Nat» «addition» «zero is the left identity» (n: Nat) {\n"
     let p: ptr<u8> = src
-    let n: i32 = 0
+    let mut n: i32 = 0
     while p[n] != 0 {
         n = n + 1
     }
