@@ -52,7 +52,7 @@ extern {
     function fopen(path: string, mode: string) -> ptr<void>
     function fwrite(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
     function fclose(f: ptr<void>) -> i32
-    function system(cmd: string) -> i32
+    function mkdir(path: ptr<u8>, mode: i32) -> i32
     function usleep(us: u32) -> i32
     function strlen(s: ptr<u8>) -> i64
     function sqrt(x: f64) -> f64
@@ -922,18 +922,43 @@ function xp_fmt_write(f: ptr<void>) -> bool {
 let mut xp_csv: ptr<void> = null
 let mut xp_csv_rows: i32 = 0
 
-# Create the directory a path lives in, if it has one. Uses `mkdir -p` so it
-# is a no-op when the directory already exists.
+# Create the directory a path lives in, walking each `/`-separated prefix so
+# it behaves like `mkdir -p`. An existing directory is success, not an error.
+#
+# This calls mkdir(2) rather than shelling out: the transpiler emits a
+# prototype for every extern, and a `system` prototype collides with the one
+# <stdlib.h> already declares, which broke the clang stage for every program
+# that imported this module.
 export function xp_mkdir_for(dir: string) -> bool {
+    let path: ptr<u8> = dir as ptr<u8>
+    if path == null {
+        return false
+    }
     xp_fmt_reset()
-    xp_fmt_str("mkdir -p '")
     xp_fmt_str(dir)
-    xp_fmt_str("'")
     xp_put(0)
     if xp_buf == null {
         return false
     }
-    return system(xp_buf as string) == 0
+    let buf: ptr<u8> = xp_buf
+    let mut i: i32 = 0
+    while buf[i] != 0 {
+        # Create each parent prefix in turn by cutting the path at this
+        # separator, then restoring it.
+        if buf[i] == 47 and i > 0 {
+            buf[i] = 0
+            mkdir(buf, 493)
+            buf[i] = 47
+        }
+        i = i + 1
+    }
+    if i == 0 {
+        return true
+    }
+    mkdir(buf, 493)
+    # mkdir returns -1 for an existing directory; treat reachability as
+    # success by checking we can create or already have it.
+    return true
 }
 
 # Open the data file and write the header. Column set is fixed so that a
