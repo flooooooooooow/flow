@@ -208,7 +208,7 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  install           Install project deps if flow.toml exists; else LLVM tools"
     echo "  setup             Install LLVM / compiler tooling"
     echo "  python <program>  Generate Python package (wheel)"
-    echo "  wasm <program>    Compile to WebAssembly"
+    echo "  wasm <program>    Compile to WebAssembly + a runnable page"
     echo "  repl              Start interactive REPL"
     echo "  examples          List example programs"
     echo "  playground        Start native-local compile API + open playground docs"
@@ -2779,21 +2779,30 @@ for f in sys.argv[1:]:
         if [ -z "${EM_BINARYEN_ROOT:-}" ] && [ -d /opt/homebrew/opt/emscripten/libexec/binaryen ]; then
             export EM_BINARYEN_ROOT=/opt/homebrew/opt/emscripten/libexec/binaryen
         fi
-        if [ -z "${1:-}" ]; then
-            print_error "Usage: flow wasm <program.flow>"
+        if [ -z "${1:-}" ] || [ "${1:-}" = "--help" ]; then
+            print_error "Usage: flow wasm <program.flow> [--out DIR] [--legacy]"
+            print_info "Writes .wasm + .js + a runnable index.html."
+            print_info "gfx programs get a canvas page; others print into the page."
             print_info "Requires emcc (Emscripten). See docs/language/wasm.md"
-            print_info "Smoke without a file: ./scripts/build_wasm_hello.sh"
+            print_info "Whole gallery: python3 scripts/build_wasm_gallery.py"
             exit 1
+        fi
+        if [ "${1:-}" = "--legacy" ]; then
+            shift
+            require_flow_file "${1:-}"
+            python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "$@"
+            exit $?
         fi
         require_flow_file "${1:-}"
-        print_info "Flow → C → WASM (see docs/language/wasm.md)"
-        if ! python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "${1:-}"; then
-            print_error "WASM conversion failed"
+        if ! command -v emcc >/dev/null 2>&1; then
+            print_error "emcc not on PATH — install emsdk to emit .wasm"
+            print_info "  docs: docs/language/wasm.md"
             exit 1
         fi
-        if ! command -v emcc >/dev/null 2>&1; then
-            print_warning "emcc not on PATH — C/HTML were written; install emsdk to emit .wasm"
-            print_info "  docs: docs/language/wasm.md"
+        print_info "Flow → C → WASM (see docs/language/wasm.md)"
+        if ! python3 "$SCRIPT_DIR/scripts/wasm_build.py" "$@"; then
+            print_error "WASM build failed"
+            exit 1
         fi
         ;;
     "playground")

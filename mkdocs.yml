@@ -99,6 +99,7 @@ nav:
   - Demos:
     - Game Gallery: demos/games.md
     - Morphogenesis Gallery: demos/morphogenesis.md
+    - WebAssembly Gallery: demos/wasm.md
     - Recording Demos: demos/README.md
   - Project:
     - Changelog: project/CHANGELOG.md
