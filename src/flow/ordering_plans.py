@@ -252,12 +252,9 @@ register(
 
 
 def _bottom_up_applicable(facts: Facts) -> Optional[str]:
-    pin = _pinned(facts, "bottom_up_merge")
-    if pin:
-        return pin
-    if facts.n < 2:
-        return f"n={facts.n} needs no merge"
-    return None
+    # The general plan is always applicable. Something has to be, or a site
+    # with an unusual shape would have no lowering at all.
+    return _pinned(facts, "bottom_up_merge")
 
 
 register(
