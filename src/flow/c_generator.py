@@ -87,7 +87,7 @@ from .overload import OverloadResolver
 # selector. Without it the registry is empty and every site raises.
 from . import ordering_plans as _ordering_plans  # noqa: F401
 from .ordering_hints import annotate_ordering_hints
-from .plan_selector import Facts, Selection, format_selections, select
+from .plan_selector import Facts, Selection, select
 from .attributes import (
     normalize_target_spec,
     parse_attribute,
