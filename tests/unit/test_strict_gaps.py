@@ -371,3 +371,81 @@ class TestUnsignedLiteralArguments:
         )
         assert build.returncode == 0, build.stderr
         assert subprocess.run([str(binary)]).returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# Gap 5: print(expr) discarded its argument (flow-print-expr-discarded)
+# ---------------------------------------------------------------------------
+
+PRINT_EXPRESSIONS = """
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function twice(v: i32) -> i32 {
+    return v * 2
+}
+
+function main() -> i32 {
+    let a: i32 = 20
+    let b: i32 = 22
+    let s: string = "hi"
+    let p: Point = Point { x: 1, y: 2 }
+    let xs: array<i32, 3> = [7, 8, 9]
+
+    print(a + b)
+    print("\\n")
+    print("concat: " + s)
+    print("\\n")
+    print(twice(21))
+    print("\\n")
+    print(p.x + p.y)
+    print("\\n")
+    print(xs[2])
+    print("\\n")
+    println(a + b)
+    return 0
+}
+"""
+
+
+class TestPrintOfAnExpression:
+    """`print(a + b)` compiled to a bare `(a + b);`, which C evaluates and
+    discards, so the call printed nothing. Every expression form now goes
+    through the same printf conversion lookup as a plain variable."""
+
+    def test_no_argument_is_left_as_a_discarded_expression(self):
+        from flow.c_generator import flow_to_c
+
+        c = flow_to_c(parse_flow_code(PRINT_EXPRESSIONS))
+        body = c[c.index("int32_t main(void) {"):]
+        assert "    (a + b);" not in body
+        assert 'printf("%d", (a + b))' in body
+        assert 'printf("%d\\n", (a + b))' in body
+
+    def test_string_concatenation_is_printed(self):
+        from flow.c_generator import flow_to_c
+
+        c = flow_to_c(parse_flow_code(PRINT_EXPRESSIONS))
+        assert 'printf("%s", flow_strcat("concat: ", s))' in c
+
+    def test_output_is_correct_end_to_end(self, tmp_path):
+        import shutil
+        import subprocess
+
+        if shutil.which("clang") is None:
+            pytest.skip("clang not available")
+        from flow.c_generator import flow_to_c
+
+        c_path = tmp_path / "printing.c"
+        c_path.write_text(flow_to_c(parse_flow_code(PRINT_EXPRESSIONS)))
+        binary = tmp_path / "printing"
+        build = subprocess.run(
+            ["clang", "-Wno-everything", str(c_path), "-o", str(binary), "-lm"],
+            capture_output=True, text=True,
+        )
+        assert build.returncode == 0, build.stderr
+        run = subprocess.run([str(binary)], capture_output=True, text=True)
+        assert run.returncode == 0, run.stderr
+        assert run.stdout == "42\nconcat: hi\n42\n3\n9\n42\n"
