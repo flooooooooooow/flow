@@ -1,0 +1,325 @@
+# SIR EPIDEMIC: the final-size equation, the peak height, and the threshold,
+# all read off a three-line `flow` block.
+#
+# THE SYSTEM
+#
+#     S' = -beta S I
+#     I' =  beta S I - gamma I
+#     R' =  gamma I
+#
+#   Kermack and McKendrick (1927), with the population scaled to 1. The
+#   basic reproduction number is R0 = beta / gamma.
+#
+# THE FOUR CLOSED FORMS
+#
+#   1. Conservation. S + I + R is exactly 1 for all time, because the three
+#      right-hand sides sum to zero. Any drift is the integrator's.
+#
+#   2. The orbit equation. Dividing I' by S' and integrating,
+#
+#          I + S - (1/R0) ln S  =  constant
+#
+#      holds along every trajectory. It is the SIR analogue of an energy.
+#
+#   3. The peak. I' = 0 when S = 1/R0, so the largest fraction ever
+#      simultaneously infectious is, exactly,
+#
+#          I_max = I0 + S0 - 1/R0 - (1/R0) ln(R0 S0)
+#
+#      obtained by evaluating the orbit equation at S = 1/R0.
+#
+#   4. The final size. As t -> infinity, I -> 0 and the orbit equation gives
+#      the transcendental relation
+#
+#          ln(S0 / s_inf) = R0 (S0 + I0 - s_inf)
+#
+#      whose root is the fraction never infected. There is no elementary
+#      solution; the run bisects for it and compares against the integrated
+#      trajectory. Below R0 = 1 the root is essentially S0 and no epidemic
+#      happens, which is the threshold theorem.
+#
+#   5. The take-off rate. At t = 0, d ln I / dt = beta S0 - gamma, so an
+#      epidemic grows at gamma (R0 S0 - 1) per day and a subcritical one
+#      shrinks at the same rate with the sign flipped.
+#
+# WHAT THIS PROVES
+#   Seven values of R0, from subcritical to R0 = 5, each with four measured
+#   quantities against four references. The threshold at R0 = 1 is not coded
+#   anywhere; it is where the final-size root stops being S0.
+#
+# CONTROLS
+#   None: one deterministic run, no input, no randomness.
+#
+# Run: ./flow run examples/evolution/sir_epidemic.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function log(x: f64) -> f64
+    function exp(x: f64) -> f64
+}
+
+const GAMMA: f64 = 0.2          # 1/day recovery rate
+const I0: f64 = 1.0e-6
+const DT: f64 = 1.0e-3          # day
+const T_MAX: f64 = 4000.0       # day
+const N_R0: i32 = 7
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow SIR {
+    state s : f64 = 0.999999
+    state i : f64 = 0.000001
+    state r : f64 = 0.0
+
+    param beta  : f64 = 0.4
+    param gamma : f64 = 0.2
+
+    solver { dt 1 ms  method rk4 }
+
+    s evolves as 0.0 - beta * s * i
+    i evolves as beta * s * i - gamma * i
+    r evolves as gamma * i
+}
+
+function orbit_invariant(m: SIR) -> f64 {
+    let r0: f64 = m.beta / m.gamma
+    return m.i + m.s - log(m.s) / r0
+}
+
+# ---------------------------------------------------------------------------
+# The final-size root, by bisection on ln(S0/s) - R0 (S0 + I0 - s) = 0.
+# ---------------------------------------------------------------------------
+
+function final_size_residual(s: f64, s0: f64, i0: f64, r0: f64) -> f64 {
+    return log(s0 / s) - r0 * (s0 + i0 - s)
+}
+
+function final_size(s0: f64, i0: f64, r0: f64) -> f64 {
+    # The root sits in (0, s0). At s -> 0+ the residual is +infinity; just
+    # below s0 it has the sign of (1 - R0 s0) times a small positive number,
+    # so bracket from a hair below s0 downwards.
+    let mut lo: f64 = 1.0e-15
+    let mut hi: f64 = s0 - 1.0e-15
+    let f_hi: f64 = final_size_residual(hi, s0, i0, r0)
+    for b in 0 to 200 {
+        let mid: f64 = 0.5 * (lo + hi)
+        let f_mid: f64 = final_size_residual(mid, s0, i0, r0)
+        if (f_mid < 0.0) == (f_hi < 0.0) {
+            hi = mid
+        } else {
+            lo = mid
+        }
+    }
+    return 0.5 * (lo + hi)
+}
+
+# ---------------------------------------------------------------------------
+# One outbreak, measured
+# ---------------------------------------------------------------------------
+
+let mut m_final_s: f64 = 0.0
+let mut m_peak_i: f64 = 0.0
+let mut m_peak_s: f64 = 0.0
+let mut m_mass: f64 = 0.0
+let mut m_orbit: f64 = 0.0
+let mut m_growth: f64 = 0.0
+
+function simulate(r0: f64) -> void {
+    let s0: f64 = 1.0 - I0
+    let mut m: SIR = SIR_new()
+    m.gamma = GAMMA
+    m.beta = r0 * GAMMA
+    m.s = s0
+    m.i = I0
+    m.r = 0.0
+
+    let inv0: f64 = orbit_invariant(m)
+    let steps: i32 = (T_MAX / DT) as i32
+    let mut peak: f64 = m.i
+    let mut peak_s: f64 = m.s
+    let mut mass: f64 = 0.0
+    let mut orbit: f64 = 0.0
+
+    # d ln I / dt over the first tenth of a day, before S has moved.
+    let probe: i32 = (0.1 / DT) as i32
+    let i_start: f64 = m.i
+    let mut i_probe: f64 = m.i
+
+    for k in 0 to steps {
+        SIR_step(&m, DT)
+        if m.i > peak {
+            peak = m.i
+            peak_s = m.s
+        }
+        let d_mass: f64 = fabs(m.s + m.i + m.r - 1.0)
+        if d_mass > mass { mass = d_mass }
+        let d_orb: f64 = fabs(orbit_invariant(m) - inv0)
+        if d_orb > orbit { orbit = d_orb }
+        if k == probe - 1 {
+            i_probe = m.i
+        }
+        if m.i < 1.0e-15 and k > probe {
+            break
+        }
+    }
+
+    m_final_s = m.s
+    m_peak_i = peak
+    m_peak_s = peak_s
+    m_mass = mass
+    m_orbit = orbit
+    m_growth = log(i_probe / i_start) / 0.1
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    let s0: f64 = 1.0 - I0
+
+    println("")
+    println("  SIR EPIDEMIC  --  three `evolves as` lines against four references")
+    println("  ==================================================================")
+    println("")
+    print("    recovery rate gamma : ")
+    printf("%.4f", GAMMA)
+    println(" /day")
+    print("    seed I0             : ")
+    printf("%.1e", I0)
+    println("")
+    print("    step dt             : ")
+    printf("%.1e", DT)
+    println(" day   (rk4)")
+    println("")
+    println("      R0     s_inf         root of        error      I_max        closed form   error      growth /day   gamma(R0 s0 - 1)")
+    println("      ----   -----------   ------------   --------   ----------   -----------   --------   -----------   ----------------")
+
+    let r0s: array<f64, 7> = [0.8, 1.2, 1.5, 2.0, 2.5, 3.0, 5.0]
+    let mut worst_final: f64 = 0.0
+    let mut worst_peak: f64 = 0.0
+    let mut worst_growth: f64 = 0.0
+    let mut worst_mass: f64 = 0.0
+    let mut worst_orbit: f64 = 0.0
+    let mut attack_low: f64 = 0.0
+    let mut attack_high: f64 = 0.0
+
+    for k in 0 to N_R0 {
+        let r0: f64 = r0s[k]
+        simulate(r0)
+        let root: f64 = final_size(s0, I0, r0)
+        let ef: f64 = fabs(m_final_s - root)
+        if ef > worst_final { worst_final = ef }
+
+        # I_max only exists once the peak has been passed, which needs R0 s0 > 1.
+        let mut peak_theory: f64 = I0
+        if r0 * s0 > 1.0 {
+            peak_theory = I0 + s0 - 1.0 / r0 - log(r0 * s0) / r0
+        }
+        let ep: f64 = fabs(m_peak_i - peak_theory)
+        if ep > worst_peak { worst_peak = ep }
+
+        let growth_theory: f64 = GAMMA * (r0 * s0 - 1.0)
+        let eg: f64 = fabs(m_growth - growth_theory)
+        if eg > worst_growth { worst_growth = eg }
+
+        if m_mass > worst_mass { worst_mass = m_mass }
+        if m_orbit > worst_orbit { worst_orbit = m_orbit }
+        if k == 0 { attack_low = 1.0 - m_final_s }
+        if k == N_R0 - 1 { attack_high = 1.0 - m_final_s }
+
+        printf("      %4.1f", r0)
+        printf("   %11.9f", m_final_s)
+        printf("   %12.9f", root)
+        printf("   %8.1e", ef)
+        printf("   %10.8f", m_peak_i)
+        printf("   %11.8f", peak_theory)
+        printf("   %8.1e", ep)
+        printf("   %11.7f", m_growth)
+        printf("   %16.7f", growth_theory)
+        println("")
+    }
+    println("")
+    print("     worst |s_inf - root of the final-size equation| : ")
+    printf("%.3e", worst_final)
+    println("   gate 1.0e-9")
+    print("     worst |I_max - closed form|                     : ")
+    printf("%.3e", worst_peak)
+    println("   gate 1.0e-8   (the peak is read at grid points)")
+    print("     worst |take-off rate - gamma(R0 s0 - 1)|        : ")
+    printf("%.3e", worst_growth)
+    println("   gate 1.0e-4")
+    print("     worst |S + I + R - 1|                           : ")
+    printf("%.3e", worst_mass)
+    println("   gate 1.0e-12")
+    print("     worst drift of I + S - ln(S)/R0                 : ")
+    printf("%.3e", worst_orbit)
+    println("   gate 1.0e-12")
+    println("")
+
+    println("  THE THRESHOLD, AS AN ATTACK RATE")
+    println("")
+    println("      R0     attack rate 1 - s_inf   bar")
+    println("      ----   ---------------------   ------------------------------")
+    for k in 0 to N_R0 {
+        let r0: f64 = r0s[k]
+        let root: f64 = final_size(s0, I0, r0)
+        let attack: f64 = 1.0 - root
+        printf("      %4.1f", r0)
+        printf("   %21.9f", attack)
+        print("   ")
+        let bars: i32 = (attack * 40.0 + 0.5) as i32
+        for b in 0 to bars {
+            print("#")
+        }
+        println("")
+    }
+    println("")
+    print("     at R0 = 0.8 the outbreak infects ")
+    printf("%.3e", attack_low)
+    println(" of the population")
+    print("     at R0 = 5.0 it infects           ")
+    printf("%.6f", attack_high)
+    println("")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if worst_final != worst_final or worst_peak != worst_peak {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if worst_mass > 1e-12 {
+        println("    FAIL: S + I + R left 1")
+        return 2
+    }
+    if worst_orbit > 1e-12 {
+        println("    FAIL: the orbit invariant drifted")
+        return 3
+    }
+    if worst_final > 1e-9 {
+        println("    FAIL: the final size does not solve the final-size equation")
+        return 4
+    }
+    if worst_peak > 1e-8 {
+        println("    FAIL: the peak is not I0 + S0 - 1/R0 - ln(R0 S0)/R0")
+        return 5
+    }
+    if worst_growth > 1e-4 {
+        println("    FAIL: the take-off rate is not gamma (R0 s0 - 1)")
+        return 6
+    }
+    if attack_low > 1e-4 {
+        println("    FAIL: a subcritical R0 produced an outbreak")
+        return 7
+    }
+    if attack_high < 0.99 {
+        println("    FAIL: R0 = 5 did not infect nearly everybody")
+        return 8
+    }
+    println("    PASS: mass and the orbit invariant hold to 1e-12, the final size")
+    println("          solves ln(S0/s) = R0 (S0 + I0 - s) to 1e-9 at seven values")
+    println("          of R0, the peak matches its closed form, and nothing")
+    println("          happens below R0 = 1")
+    return 0
+}
