@@ -311,3 +311,34 @@ def test_report_is_honest_about_where_costs_come_from():
 def test_empty_report_says_so():
     text = format_selections([])
     assert "No selection sites" in text
+
+
+def test_an_ordinary_choice_does_not_lecture():
+    # Rejections are normal. Advice would be noise when the selector had a
+    # perfectly good plan available.
+    sel = select(sort_facts(n=100))
+    assert sel.constrained is False
+    assert "possible resolutions" not in format_selections([sel])
+
+
+def test_a_failed_budget_prints_cause_and_resolutions():
+    n = SCRATCH_BUDGET_BYTES
+    sel = select(
+        sort_facts(n=n, elem="f64", elem_kind="float", elem_bytes=8),
+        location="line 8 in main()",
+    )
+    assert sel.constrained is True
+    text = format_selections([sel])
+    assert "exceeds the 256.0 KiB compiler scratch budget" in text
+    assert "possible resolutions" in text
+    # Budget failures come first: they are the ones the programmer hit.
+    body = text[text.index("possible resolutions"):]
+    assert body.index("natural_merge") < body.index("already_ordered")
+
+
+def test_over_budget_is_distinguished_from_a_data_mismatch():
+    n = SCRATCH_BUDGET_BYTES
+    sel = select(sort_facts(n=n, elem="f64", elem_kind="float", elem_bytes=8))
+    by_name = {c.name: c for c in sel.candidates}
+    assert by_name["bottom_up_merge"].over_budget is True
+    assert by_name["counting"].over_budget is False
