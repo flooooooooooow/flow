@@ -1,0 +1,91 @@
+# Flow-native language test: spans as borrowed views (docs/language/spans.md).
+# Covers summing over a span, filling through a mutable span, passing a slice
+# onward, a fixed-extent parameter, and the `&[T]` sugar.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function total(values: span<i32>) -> i32 {
+    let mut acc: i32 = 0
+    let mut i: i32 = 0
+    while i < values.len {
+        acc = acc + values[i]
+        i = i + 1
+    }
+    return acc
+}
+
+function fill(values: span<mut i32>, v: i32) {
+    let mut i: i32 = 0
+    while i < len(values) {
+        values[i] = v
+        i = i + 1
+    }
+}
+
+# A slice of a span is a span: the view narrows, the storage does not move.
+function inner_total(values: span<i32>) -> i32 {
+    return total(values[1..3])
+}
+
+# Static extent: the caller must supply exactly four elements.
+function corners(v: span<i32, 4>) -> i32 {
+    return v[0] + v[3]
+}
+
+# The bracket sugar is the same type.
+function doubled_total(values: &[i32]) -> i32 {
+    return total(values) * 2
+}
+
+# Returning a view of a parameter outlives nothing.
+function head(values: span<i32>) -> span<i32> {
+    return values[0..2]
+}
+
+function main() -> i32 {
+    let xs: array<i32, 4> = [1, 2, 3, 4]
+
+    if total(xs) != 10 {
+        return 1
+    }
+    if inner_total(xs) != 5 {
+        return 2
+    }
+    if corners(xs) != 5 {
+        return 3
+    }
+    if doubled_total(xs) != 20 {
+        return 4
+    }
+    if total(head(xs)) != 3 {
+        return 5
+    }
+
+    # A slice bound by runtime values.
+    let mut lo: i32 = 1
+    let mut hi: i32 = 4
+    if total(xs[lo..hi]) != 9 {
+        return 6
+    }
+
+    # `.len` reports the borrowed length, not the storage length.
+    let view: span<i32> = xs[1..3]
+    if view.len != 2 {
+        return 7
+    }
+
+    # Writing through a mutable view mutates the borrowed storage.
+    let mut ys: array<i32, 4> = [0, 0, 0, 0]
+    fill(ys, 3)
+    if total(ys) != 12 {
+        return 8
+    }
+    fill(ys[0..2], 5)
+    if total(ys) != 16 {
+        return 9
+    }
+    if ys[2] != 3 {
+        return 10
+    }
+
+    return 0
+}
