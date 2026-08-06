@@ -1,0 +1,253 @@
+# Flow-native language test: flow blocks, `evolves as`, and `when … reaches`.
+#
+# Every number below is a power of two or an exact sum of them, so Euler
+# integration is exact and the comparisons can be equalities rather than
+# tolerances. The one loose check is the bouncing ball, where the rebound is
+# detected at dt resolution.
+#
+# Supersedes (behavioral parts of):
+#   tests/unit/test_hybrid_events.py::TestEndToEnd::test_reset_writes_are_simultaneous
+#   tests/unit/test_hybrid_events.py::TestEndToEnd::test_bouncing_ball_decays
+#   tests/unit/test_coverage_hybrid_events.py::TestMultipleWhenBlockOrdering::test_second_event_observes_first_events_reset
+#   tests/unit/test_coverage_hybrid_events.py::TestCrossStateReset::test_event_fires_once_when_guard_state_keeps_growing
+#   tests/unit/test_coverage_hybrid_events.py::TestGuardNearThresholdTinyDt::test_exact_hit_with_tiny_dt_fires_exactly_once
+#   tests/unit/test_coverage_hybrid_events.py::TestGuardNearThresholdTinyDt::test_crossing_between_steps_fires_exactly_once
+#   tests/unit/test_coverage_hybrid_events.py::TestGuardNearThresholdTinyDt::test_asymptotic_approach_never_fires
+#   tests/unit/test_coverage_flow_blocks.py::TestIndependentInstances::test_two_instances_of_one_flow_step_independently
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function fabs(x: f64) -> f64
+}
+
+# Two resets in one event body are simultaneous, like derivative evaluation.
+# Sequential assignment would leave a == b.
+flow Swap {
+    state t : f64 = 0.0
+    state a : f64 = 1.0
+    state b : f64 = 2.0
+    t evolves as 1.0
+    when t reaches 1.0 {
+        a becomes b
+        b becomes a
+    }
+}
+
+# Two when-blocks with the same guard fire in declaration order, so the
+# second observes the first one's writes.
+flow TwoWhens {
+    state t : f64 = 0.0
+    state a : f64 = 1.0
+    state b : f64 = 0.0
+    t evolves as 1.0
+    when t reaches 1.0 {
+        a becomes a * 2.0
+    }
+    when t reaches 1.0 {
+        b becomes a
+    }
+}
+
+# The guard watches t; the reset writes a different state. t grows through
+# the threshold and is never reset, so the event fires exactly once.
+flow Counter {
+    state t : f64 = 0.0
+    state hits : f64 = 0.0
+    t evolves as 1.0
+    when t reaches 1.0 {
+        hits becomes hits + 1.0
+    }
+}
+
+# dt = 2^-10 and threshold 0.25 make the hit exact in binary, so this takes
+# the `guard == 0` arm. Later steps move away and must not re-fire.
+flow Tiny {
+    state t : f64 = 0.0
+    state hits : f64 = 0.0
+    t evolves as 1.0
+    when t reaches 0.25 {
+        hits becomes hits + 1.0
+    }
+}
+
+# 0.3 is not representable, so t never equals it: the event fires on the
+# sign change between two steps, once.
+flow Cross {
+    state t : f64 = 0.0
+    state hits : f64 = 0.0
+    t evolves as 1.0
+    when t reaches 0.3 {
+        hits becomes hits + 1.0
+    }
+}
+
+# x approaches 1.0 from below and never reaches it, however close it gets.
+flow Approach {
+    state x : f64 = 0.0
+    state hits : f64 = 0.0
+    x evolves as 1.0 - x
+    when x reaches 1.0 {
+        hits becomes hits + 1.0
+    }
+}
+
+# A constant derivative makes Euler exact. Two instances with different
+# params and step counts must not disturb each other.
+flow Linear {
+    state x : f64 = 0.0
+    param rate : f64 = 1.0
+    x evolves as rate
+}
+
+flow Ball {
+    state height      : f64 = 2.0
+    state velocity    : f64 = 0.0
+    param gravity     : f64 = 9.81
+    param restitution : f64 = 0.8
+
+    height evolves as velocity
+    velocity evolves as -gravity
+
+    when height reaches 0.0 {
+        velocity becomes -restitution * velocity
+        height becomes 0.0
+    }
+}
+
+function main() -> i32 {
+    # --- simultaneous resets ------------------------------------------------
+    let mut s: Swap = Swap_new()
+    for k in 0 to 8 {
+        Swap_step(&s, 0.25)
+    }
+    if s.a != 2.0 {
+        return 1
+    }
+    if s.b != 1.0 {
+        return 2
+    }
+
+    # --- declaration-order firing -------------------------------------------
+    let mut w: TwoWhens = TwoWhens_new()
+    for k in 0 to 4 {
+        TwoWhens_step(&w, 0.25)
+    }
+    if w.a != 2.0 {
+        return 3
+    }
+    if w.b != 2.0 {
+        return 4
+    }
+
+    # --- guard state differs from the reset target --------------------------
+    let mut c: Counter = Counter_new()
+    for k in 0 to 32 {
+        Counter_step(&c, 0.125)
+    }
+    if c.hits != 1.0 {
+        return 5
+    }
+    if c.t != 4.0 {
+        return 6
+    }
+
+    # --- exact hit at tiny dt fires once ------------------------------------
+    let mut tiny: Tiny = Tiny_new()
+    for k in 0 to 512 {
+        Tiny_step(&tiny, 0.0009765625)
+    }
+    if tiny.hits != 1.0 {
+        return 7
+    }
+
+    # --- crossing between steps fires once ----------------------------------
+    let mut cross: Cross = Cross_new()
+    for k in 0 to 1024 {
+        Cross_step(&cross, 0.0009765625)
+    }
+    if cross.hits != 1.0 {
+        return 8
+    }
+
+    # --- asymptotic approach never fires ------------------------------------
+    let mut ap: Approach = Approach_new()
+    for k in 0 to 4096 {
+        Approach_step(&ap, 0.03125)
+    }
+    if ap.hits != 0.0 {
+        return 9
+    }
+    if ap.x <= 0.999 {
+        return 10
+    }
+    if ap.x > 1.0 {
+        return 11
+    }
+
+    # --- two instances step independently -----------------------------------
+    let mut la: Linear = Linear_new()
+    let mut lb: Linear = Linear_new()
+    lb.rate = 4.0
+    for k in 0 to 8 {
+        Linear_step(&la, 0.25)
+    }
+    for k in 0 to 4 {
+        Linear_step(&lb, 0.25)
+    }
+    if la.x != 2.0 {
+        return 12
+    }
+    if lb.x != 4.0 {
+        return 13
+    }
+
+    # --- bouncing ball decays -----------------------------------------------
+    # Dropped from 2 m with restitution 0.8, successive rebound peaks shrink
+    # by roughly restitution squared. Detection is a sign change at 1 ms, so
+    # the tolerance is loose.
+    let mut ball: Ball = Ball_new()
+    let mut prev_velocity: f64 = 0.0
+    let mut peak: f64 = 2.0
+    let mut bounces: i32 = 0
+    let mut peaks: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+
+    for k in 0 to 6000 {
+        Ball_step(&ball, 0.001)
+        if prev_velocity < 0.0 and ball.velocity > 0.0 {
+            if bounces < 4 {
+                peaks[bounces] = peak
+            }
+            bounces = bounces + 1
+            peak = 0.0
+        }
+        if ball.height > peak {
+            peak = ball.height
+        }
+        prev_velocity = ball.velocity
+    }
+
+    # NaN check: a NaN is the only value not equal to itself.
+    if ball.height != ball.height {
+        return 14
+    }
+    if bounces < 4 {
+        return 15
+    }
+    if fabs(peaks[0] - 2.0) > 0.01 {
+        return 16
+    }
+    let mut i: i32 = 0
+    while i < 3 {
+        let before: f64 = peaks[i]
+        let after: f64 = peaks[i + 1]
+        if after >= before {
+            return 17
+        }
+        if fabs(after / before - 0.64) > 0.12 {
+            return 18
+        }
+        i = i + 1
+    }
+
+    return 0
+}

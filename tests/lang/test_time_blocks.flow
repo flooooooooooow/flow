@@ -1,0 +1,78 @@
+# Flow-native language test: `every` blocks and the `solver` declaration.
+#
+# An `every P` body fires the first time the accumulated time reaches P
+# (LANGUAGE_SPEC 4.3) and catches up rather than dropping ticks when one
+# step covers several periods. Its writes are simultaneous, like the resets
+# in a `when` block.
+#
+# Supersedes (behavioral parts of):
+#   tests/unit/test_time_blocks.py::TestEndToEnd::test_firing_count_and_catchup
+#   tests/unit/test_time_blocks.py::TestEndToEnd::test_every_updates_are_simultaneous
+#
+# Not superseded: TestEndToEnd::test_rk4_matches_reference_and_moves_state,
+# which compares the rk4 solver against a reference integrator recomputed in
+# Python. Rewriting the reference in Flow would only compare the compiler
+# with itself, so that one stays host-side.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function fabs(x: f64) -> f64
+}
+
+flow Counter {
+    state t     : f64 = 0.0
+    state ticks : f64 = 0.0
+
+    solver { dt 1 ms  method euler }
+
+    t evolves as 1.0
+
+    every 10 ms {
+        ticks becomes ticks + 1.0
+    }
+}
+
+flow Swap {
+    state a : f64 = 1.0
+    state b : f64 = 2.0
+    every 10 ms {
+        a becomes b
+        b becomes a
+    }
+}
+
+function main() -> i32 {
+    # 1000 steps of 1 ms cover one second: an `every 10 ms` block fires
+    # exactly 100 times.
+    let mut c: Counter = Counter_new()
+    for k in 0 to 1000 {
+        Counter_step(&c, 0.001)
+    }
+    if c.ticks != 100.0 {
+        return 1
+    }
+
+    # One 95 ms step catches up with nine firings instead of one.
+    let mut burst: Counter = Counter_new()
+    Counter_step(&burst, 0.095)
+    if burst.ticks != 9.0 {
+        return 2
+    }
+
+    # The solver declaration is readable as the flow's default dt.
+    if fabs(Counter_default_dt() - 0.001) > 1e-12 {
+        return 3
+    }
+
+    # Writes inside one `every` body are simultaneous, so this swaps.
+    let mut s: Swap = Swap_new()
+    Swap_step(&s, 0.01)
+    if s.a != 2.0 {
+        return 4
+    }
+    if s.b != 1.0 {
+        return 5
+    }
+
+    return 0
+}

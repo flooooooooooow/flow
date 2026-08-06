@@ -1,0 +1,171 @@
+# Flow-native language test: loop forms and their exits.
+# break / continue in while and for, nested loops, and every `step` form.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[while_break]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[while_continue]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[for_break]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[for_continue]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[while_inside_for]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[nested_for_break]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[nested_while_carried]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[for_step]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[for_step_descending]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[for_step_break]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[for_step_dynamic]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[for_range_dots]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function main() -> i32 {
+    # `break` leaves the while loop with the counter at the break value.
+    let mut i: i32 = 0
+    let mut s: i32 = 0
+    while i < 100 {
+        if i == 5 {
+            break
+        }
+        s = s + i
+        i = i + 1
+    }
+    if s != 10 {
+        return 1
+    }
+    if i != 5 {
+        return 2
+    }
+
+    # `continue` skips the tail of the body, not the increment above it.
+    let mut j: i32 = 0
+    let mut cs: i32 = 0
+    while j < 10 {
+        j = j + 1
+        if j == 3 {
+            continue
+        }
+        cs = cs + j
+    }
+    if cs != 52 {
+        return 3
+    }
+
+    # `break` in a for loop: the induction variable stops advancing.
+    let mut fs: i32 = 0
+    let mut last: i32 = -1
+    for a in 0 to 20 {
+        if a == 4 {
+            break
+        }
+        fs = fs + a
+        last = a
+    }
+    if fs != 6 {
+        return 4
+    }
+    if last != 3 {
+        return 5
+    }
+
+    # `continue` in a for loop.
+    let mut cfs: i32 = 0
+    for b in 0 to 10 {
+        if b == 3 {
+            continue
+        }
+        cfs = cfs + b
+    }
+    if cfs != 42 {
+        return 6
+    }
+
+    # A while nested inside a for.
+    let mut wf: i32 = 0
+    for c in 0 to 3 {
+        let mut k: i32 = 0
+        while k < 4 {
+            wf = wf + 1
+            k = k + 1
+        }
+    }
+    if wf != 12 {
+        return 7
+    }
+
+    # `break` in an inner for binds to the inner loop only.
+    let mut nb: i32 = 0
+    for d in 0 to 3 {
+        for e in 0 to 5 {
+            if e == 2 {
+                break
+            }
+            nb = nb + 1
+        }
+    }
+    if nb != 6 {
+        return 8
+    }
+
+    # Nested while carrying the outer variable into the inner body.
+    let mut outer: i32 = 0
+    let mut total: i32 = 0
+    while outer < 4 {
+        let mut inner: i32 = 0
+        while inner < 3 {
+            total = total + outer
+            inner = inner + 1
+        }
+        outer = outer + 1
+    }
+    if total != 18 {
+        return 9
+    }
+
+    # `step` with a literal stride: 0, 2, 4, 6, 8.
+    let mut st: i32 = 0
+    for f in 0 to 10 step 2 {
+        st = st + f
+    }
+    if st != 20 {
+        return 10
+    }
+
+    # A negative stride counts down: 5, 4, 3, 2, 1.
+    let mut down: i32 = 0
+    for g in 5 to 0 step -1 {
+        down = down + g
+    }
+    if down != 15 {
+        return 11
+    }
+
+    # `break` out of a stepped loop.
+    let mut sb: i32 = 0
+    for h in 0 to 10 step 2 {
+        if h == 6 {
+            break
+        }
+        sb = sb + h
+    }
+    if sb != 6 {
+        return 12
+    }
+
+    # A stride held in a variable: 0, 3, 6, 9.
+    let mut sd: i32 = 0
+    let stride: i32 = 3
+    for m in 0 to 10 step stride {
+        sd = sd + m
+    }
+    if sd != 18 {
+        return 13
+    }
+
+    # The `..` range spelling is the same loop as `to`.
+    let mut dots: i32 = 0
+    for n in 0..5 {
+        dots = dots + n
+    }
+    if dots != 10 {
+        return 14
+    }
+
+    return 0
+}

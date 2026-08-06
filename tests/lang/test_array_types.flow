@@ -1,0 +1,104 @@
+# Flow-native language test: arrays of every element type, and how they are
+# passed, indexed and written. Complements tests/lang/test_arrays.flow, which
+# covers the plain i32 case.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_f32]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_i64]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_bool]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_2d_flat]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_of_structs]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_param]
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[array_elementwise_for]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct P {
+    x: i32,
+    y: i32
+}
+
+function total(xs: array<i32, 4>) -> i32 {
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i < 4 {
+        s = s + xs[i]
+        i = i + 1
+    }
+    return s
+}
+
+function main() -> i32 {
+    # f32 elements: the array holds floats, not truncated integers.
+    let mut fs: array<f32, 4> = [1.5, 2.5, 3.0, 3.0]
+    fs[2] = 0.5
+    let mut fsum: f32 = 0.0
+    let mut i: i32 = 0
+    while i < 4 {
+        fsum = fsum + fs[i]
+        i = i + 1
+    }
+    if fsum <= 7.4 || fsum >= 7.6 {
+        return 1
+    }
+
+    # `array<i64, N> = [1, 2, 3]` writes i32 literals into i64 storage; the
+    # memref must still be allocated with the declared element type.
+    let mut ls: array<i64, 3> = [1, 2, 3]
+    ls[0] = 10
+    if ls[0] + ls[1] + ls[2] != 15 {
+        return 2
+    }
+
+    # bool elements.
+    let mut flags: array<bool, 3> = [true, false, true]
+    flags[1] = true
+    if !(flags[0] && flags[1] && flags[2]) {
+        return 3
+    }
+
+    # A flat array indexed as a 3x3 grid.
+    let mut g: array<i32, 9> = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut r: i32 = 0
+    while r < 3 {
+        let mut c: i32 = 0
+        while c < 3 {
+            g[r * 3 + c] = r * 3 + c
+            c = c + 1
+        }
+        r = r + 1
+    }
+    if g[0] + g[4] + g[8] != 12 {
+        return 4
+    }
+
+    # Struct elements, written through an indexed field.
+    let mut ps: array<P, 2> = [P { x: 1, y: 2 }, P { x: 3, y: 4 }]
+    ps[0].x = 10
+    if ps[0].x + ps[1].y != 14 {
+        return 5
+    }
+
+    # An array passed by value to a function.
+    let xs: array<i32, 4> = [1, 2, 3, 4]
+    if total(xs) != 10 {
+        return 6
+    }
+
+    # Elementwise for over nine elements: four-wide vector body plus a
+    # scalar remainder loop, so the tail is exercised too.
+    let mut a9: array<i32, 9> = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    let mut b9: array<i32, 9> = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    for k in 0 to 9 {
+        b9[k] = a9[k] * 3 + b9[k]
+    }
+    let mut esum: i32 = 0
+    let mut j: i32 = 0
+    while j < 9 {
+        esum = esum + b9[j]
+        j = j + 1
+    }
+    if esum != 585 {
+        return 7
+    }
+
+    return 0
+}
