@@ -41,12 +41,37 @@ SEMANTIC_ATTRIBUTES = frozenset({
     "flow_api",   # stable C ABI name (c_generator name mangling)
     "test",       # synthesized by the parser for `test "..." { }` blocks
     "monomorphized",  # synthesized by monomorphize.py
+    "lifetime",   # lifetime domain (type_checker; docs/language/lifetime-domains.md)
 })
 
 KNOWN_ATTRIBUTES = CODEGEN_ATTRIBUTES | GUARD_ATTRIBUTES | SEMANTIC_ATTRIBUTES
 
 # Attributes that take arguments. Everything else must be bare.
-ATTRIBUTES_WITH_ARGS = frozenset({"only", "guard", "target"})
+ATTRIBUTES_WITH_ARGS = frozenset({"only", "guard", "target", "lifetime"})
+
+# Lifetime domains, shortest-lived first (docs/language/lifetime-domains.md).
+# The index in this tuple *is* the order: a domain may not hold a reference to,
+# or be called by, one that appears earlier.
+LIFETIME_DOMAINS: Tuple[str, ...] = ("callback", "frame", "session", "application")
+
+
+def domain_rank(domain: str) -> int:
+    """Position of `domain` in the lifetime order (smaller = shorter-lived)."""
+    return LIFETIME_DOMAINS.index(domain)
+
+
+def lifetime_domain(attrs: Optional[List[str]]) -> Optional[str]:
+    """The declared lifetime domain of a declaration, or None if unannotated.
+
+    Returns None for a malformed `@lifetime(...)` too; `attribute_errors`
+    reports that separately, and an unannotated declaration is unchecked
+    rather than mis-checked.
+    """
+    for attr in attrs or []:
+        name, args = parse_attribute(attr)
+        if name == "lifetime" and len(args) == 1 and args[0] in LIFETIME_DOMAINS:
+            return args[0]
+    return None
 
 # One comma-separated item of a `target(...)` spec. Accepts the forms GCC and
 # Clang document: a bare feature (`avx2`, `crypto`), a signed feature
@@ -99,6 +124,7 @@ def attribute_errors(fn_name: str, attrs: List[str]) -> List[str]:
     """Validate one declaration's attribute list. Returns error strings."""
     errors: List[str] = []
     seen = set()
+    lifetime_seen = False
     for attr in attrs:
         name, args = parse_attribute(attr)
         if name not in KNOWN_ATTRIBUTES:
@@ -113,6 +139,27 @@ def attribute_errors(fn_name: str, attrs: List[str]) -> List[str]:
             errors.append(
                 f"Attribute '@{name}' on function '{fn_name}' takes no arguments"
             )
+            continue
+        if name == "lifetime":
+            known = ", ".join(LIFETIME_DOMAINS)
+            if lifetime_seen:
+                errors.append(
+                    f"'{fn_name}' declares more than one '@lifetime' domain; "
+                    f"a declaration lives in exactly one domain"
+                )
+                continue
+            lifetime_seen = True
+            if len(args) != 1:
+                errors.append(
+                    f"Attribute '@lifetime' on '{fn_name}' takes exactly one "
+                    f"domain: {known}"
+                )
+            elif args[0] not in LIFETIME_DOMAINS:
+                errors.append(
+                    f"Unknown lifetime domain '{args[0]}' on '{fn_name}'. "
+                    f"Known domains: {known} "
+                    f"(see docs/language/lifetime-domains.md)"
+                )
             continue
         if name == "target":
             if not args:
