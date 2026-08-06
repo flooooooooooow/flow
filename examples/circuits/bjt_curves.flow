@@ -1,0 +1,297 @@
+# BJT COLLECTOR CURVES: Ebers-Moll, swept, against an independent root find.
+#
+# WHY THE MATRIX AND NOT A `flow` BLOCK
+#   Same reason as the diode next door. A biased transistor is a set of
+#   simultaneous algebraic equations, not a system evolving in time. Every
+#   point on these curves is a DC operating point.
+#
+# THE MODEL
+#   stdlib/circuit.flow carries the Ebers-Moll NPN in transport form. With
+#   vbe and vbc the two junction voltages:
+#
+#     iF = Is (exp(vbe/VT) - 1)          forward transport current
+#     iR = Is (exp(vbc/VT) - 1)          reverse transport current
+#     ic = iF - iR - iR/betaR
+#     ib = iF/betaF + iR/betaR
+#     ie = ic + ib
+#
+#   Each Newton iteration takes all four partial derivatives, stamps the
+#   three-terminal 3x3 conductance block plus its equivalent currents, and
+#   re-solves. Both junctions are limited independently.
+#
+#   Is = 1 fA, betaF = 100, betaR = 1, VT = 25.852 mV. There is no Early
+#   effect and no ohmic resistance in this model, so the active-region curves
+#   come out flat, which is exactly what Ebers-Moll says and exactly what a
+#   real transistor does not do. The point here is that the solver reproduces
+#   the model it was given, not that the model is a good transistor.
+#
+# THE MEASUREMENT
+#   Emitter grounded, base fed a fixed current, collector held at Vce by an
+#   ideal source. Vce is swept from 0 to 5 V for five base currents.
+#
+#   The reference is the same physics solved a completely different way. With
+#   Ib and Vce given, vbc = vbe - Vce, so ib is a monotone function of vbe
+#   alone and 200 bisections pin vbe to double precision; ic then follows in
+#   closed form. Newton on a 3x3 matrix and bisection on one scalar have no
+#   failure mode in common.
+#
+#   Two things fall out of the curves:
+#     saturation   at low Vce the base-collector junction turns on, iR grows,
+#                  and ic collapses. Vce,sat is reported as the voltage at
+#                  which ic reaches 99% of its active-region value.
+#     beta         in the active region ic/ib is betaF to within
+#                  (1 + 2 Is/iF) / (1 - betaF Is/iF), about 1e-10 here.
+#
+# EVIDENCE
+#   Worst relative collector-current error over the whole 5 x 51 sweep,
+#   gated at 1e-9; measured beta against betaF, gated at 1e-6; worst Newton
+#   iteration count reported.
+#
+# Run: ./flow run examples/circuits/bjt_curves.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const Q_IS: f64 = 1e-15
+const Q_BF: f64 = 100.0
+const Q_BR: f64 = 1.0
+const Q_VT: f64 = 0.025852
+
+const NVCE: i32 = 51
+const DVCE: f64 = 0.1
+
+function em_if(vbe: f64) -> f64 {
+    return Q_IS * (exp(vbe / Q_VT) - 1.0)
+}
+
+function em_ir(vbc: f64) -> f64 {
+    return Q_IS * (exp(vbc / Q_VT) - 1.0)
+}
+
+function em_ib(vbe: f64, vce: f64) -> f64 {
+    return em_if(vbe) / Q_BF + em_ir(vbe - vce) / Q_BR
+}
+
+function em_ic(vbe: f64, vce: f64) -> f64 {
+    let ir: f64 = em_ir(vbe - vce)
+    return em_if(vbe) - ir - ir / Q_BR
+}
+
+# ib is monotone increasing in vbe at fixed Vce, so bisection is safe.
+function bisect_vbe(ib: f64, vce: f64) -> f64 {
+    let mut lo: f64 = 0.0 - 1.0
+    let mut hi: f64 = 1.2
+    for k in 0 to 200 {
+        let mid: f64 = 0.5 * (lo + hi)
+        if em_ib(mid, vce) > ib {
+            hi = mid
+        } else {
+            lo = mid
+        }
+    }
+    return 0.5 * (lo + hi)
+}
+
+function relerr(got: f64, want: f64) -> f64 {
+    let s: f64 = fabs(want)
+    if s < 1e-30 {
+        return fabs(got - want)
+    }
+    return fabs(got - want) / s
+}
+
+# One column of the curve family: Vce swept at a fixed base current. Results
+# land in the module statics below because Flow functions return one value.
+let mut col_worst: f64 = 0.0
+let mut col_iters: i32 = 0
+let mut col_beta: f64 = 0.0
+let mut col_vcesat: f64 = 0.0
+let mut col_ic: ptr<f64> = null
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+function sweep_column(ib: f64) -> bool {
+    if !circ_reset() {
+        return false
+    }
+    circ_set_gmin(0.0)
+    circ_set_tol(1e-13, 1e-16)
+    # Emitter at ground, collector held by an ideal source, base fed a
+    # current that enters node 0 and leaves node 2, i.e. is pushed into the
+    # base.
+    let vce_src: i32 = circ_add_v(1, 0, 0.0)
+    let ib_src: i32 = circ_add_i(0, 2, ib)
+    let q: i32 = circ_add_q(1, 2, 0, Q_IS, Q_BF, Q_BR, Q_VT)
+    if q < 0 or !circ_finalize() {
+        return false
+    }
+    col_worst = 0.0
+    col_iters = 0
+    col_beta = 0.0
+    col_vcesat = 0.0
+    let mut ic_active: f64 = 0.0
+    for k in 0 to NVCE {
+        let vce: f64 = DVCE * (k as f64)
+        circ_set_value(vce_src, vce)
+        if !circ_op() {
+            print("    FAIL: no convergence at Vce = ")
+            printf("%.2f", vce)
+            println("")
+            return false
+        }
+        let ic: f64 = circ_i(q)
+        let vbe_ref: f64 = bisect_vbe(ib, vce)
+        let ic_ref: f64 = em_ic(vbe_ref, vce)
+        let e: f64 = relerr(ic, ic_ref)
+        if e > col_worst {
+            col_worst = e
+        }
+        if circ_iterations() > col_iters {
+            col_iters = circ_iterations()
+        }
+        col_ic[k] = ic
+        if k == NVCE - 1 {
+            ic_active = ic
+            col_beta = ic / circ_ib(q)
+        }
+    }
+    # Vce,sat: the lowest swept Vce at which ic is within 1% of its value at
+    # the top of the sweep.
+    col_vcesat = DVCE * ((NVCE - 1) as f64)
+    for k in 0 to NVCE {
+        let idx: i32 = NVCE - 1 - k
+        if col_ic[idx] >= 0.99 * ic_active {
+            col_vcesat = DVCE * (idx as f64)
+        }
+    }
+    return true
+}
+
+function main() -> i32 {
+    col_ic = calloc(NVCE as i64, 8) as ptr<f64>
+    if col_ic == null {
+        println("  FAIL: allocation")
+        return 1
+    }
+
+    println("")
+    println("  BJT COLLECTOR CURVES  --  Ebers-Moll vs bisection")
+    println("  ================================================")
+    println("")
+    print("  Is = ")
+    printf("%.1e", Q_IS)
+    print(" A,  betaF = ")
+    printf("%.0f", Q_BF)
+    print(",  betaR = ")
+    printf("%.0f", Q_BR)
+    print(",  VT = ")
+    printf("%.6f", Q_VT)
+    println(" V,  gmin off")
+    println("  emitter grounded, base current forced, Vce swept 0 to 5 V")
+
+    # Store one curve per base current so the family can be printed as a table.
+    let store: ptr<f64> = calloc((5 * NVCE) as i64, 8) as ptr<f64>
+    if store == null {
+        println("  FAIL: allocation")
+        return 1
+    }
+
+    let mut worst: f64 = 0.0
+    let mut iters: i32 = 0
+    let mut beta_worst: f64 = 0.0
+    let mut vcesat: array<f64, 5> = [0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut betas: array<f64, 5> = [0.0, 0.0, 0.0, 0.0, 0.0]
+    let ibs: array<f64, 5> = [10e-6, 20e-6, 30e-6, 40e-6, 50e-6]
+
+    for c in 0 to 5 {
+        if !sweep_column(ibs[c]) {
+            println("  FAIL: sweep did not complete")
+            return 2
+        }
+        for k in 0 to NVCE {
+            store[c * NVCE + k] = col_ic[k]
+        }
+        if col_worst > worst {
+            worst = col_worst
+        }
+        if col_iters > iters {
+            iters = col_iters
+        }
+        let be: f64 = relerr(col_beta, Q_BF)
+        if be > beta_worst {
+            beta_worst = be
+        }
+        vcesat[c] = col_vcesat
+        betas[c] = col_beta
+    }
+
+    println("")
+    println("  COLLECTOR CURRENT [mA]")
+    println("")
+    println("    Vce [V]     Ib=10uA    Ib=20uA    Ib=30uA    Ib=40uA    Ib=50uA")
+    println("    -------  ---------  ---------  ---------  ---------  ---------")
+    for k in 0 to NVCE {
+        if k % 5 == 0 or k == 1 or k == 2 {
+            print("    ")
+            printf("%7.2f", DVCE * (k as f64))
+            for c in 0 to 5 {
+                printf("  %9.5f", store[c * NVCE + k] * 1000.0)
+            }
+            println("")
+        }
+    }
+
+    println("")
+    println("  SATURATION AND BETA")
+    println("")
+    println("      Ib [uA]   Ic active [mA]   Ic/Ib      betaF     Vce,sat [V]")
+    println("    ---------  ---------------  ---------  ---------  -----------")
+    for c in 0 to 5 {
+        print("    ")
+        printf("%9.1f", ibs[c] * 1e6)
+        printf("  %15.6f", store[c * NVCE + NVCE - 1] * 1000.0)
+        printf("  %9.5f", betas[c])
+        printf("  %9.5f", Q_BF)
+        printf("  %11.2f", vcesat[c])
+        println("")
+    }
+
+    println("")
+    print("  worst relative Ic error over 5 x ")
+    print(NVCE)
+    print(" operating points: ")
+    printf("%.3e", worst)
+    println("")
+    print("  worst relative beta error vs betaF               : ")
+    printf("%.3e", beta_worst)
+    println("")
+    print("  worst Newton iteration count                     : ")
+    print(iters)
+    println("")
+    print("  gates: Ic 1.000e-09, beta 1.000e-06")
+    println("")
+    println("")
+
+    if worst != worst or beta_worst != beta_worst {
+        println("  FAIL: NaN in the sweep")
+        return 3
+    }
+    if worst >= 1e-9 {
+        println("  FAIL: solved collector current does not match Ebers-Moll")
+        return 4
+    }
+    if beta_worst >= 1e-6 {
+        println("  FAIL: active-region current gain is not betaF")
+        return 5
+    }
+    println("  PASS: the Newton solve reproduces Ebers-Moll everywhere on the")
+    println("        family, and the active region has the gain betaF says")
+    return 0
+}
