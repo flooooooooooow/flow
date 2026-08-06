@@ -1,0 +1,1083 @@
+# IZHIKEVICH ZOO: twenty firing patterns out of one pair of equations.
+#
+# MODEL
+#   Izhikevich (2003) reduced the conductance-based neuron to a quadratic
+#   integrate-and-fire with one recovery variable and a hard reset:
+#
+#     dv/dt = 0.04 v^2 + 5 v + 140 - u + I
+#     du/dt = a (b v - u)
+#     if v >= 30 mV:  v := c,  u := u + d
+#
+#   That is exactly what `flow Izh` below says, with the reset written as
+#   `when v reaches 30.0 { v becomes c  u becomes u + d }`. Three of the
+#   twenty panels in Izhikevich's figure need a variant of the equations, and
+#   the block carries them as parameters rather than as separate models:
+#     k1, k0    the linear and constant terms; (5, 140) normally, (4.1, 108)
+#               for the Class 1 excitable and integrator panels
+#     vu, uw    u' = a (b (v - vu) - uw u); (0, 1) normally, (-65, 0) for the
+#               accommodation panel, where u' = a b (v + 65)
+#
+# PARAMETERS
+#   Every panel's a, b, c, d, initial state, duration and injected-current
+#   protocol are Izhikevich's, listed in the table printed at run time.
+#   Explicit Euler, dt = 0.05 ms (the original used 0.1-0.5 ms).
+#
+# WHAT THIS PROVES
+#   Each of the twenty runs is measured, never eyeballed: spike times, the
+#   interspike intervals, their coefficient of variation, the number of
+#   bursts (runs of two or more spikes separated by less than 8 ms), the
+#   subthreshold swing, and where in the run the spikes fall. Every panel
+#   then has one predicate drawn from the behaviour its name asserts - a
+#   tonic pattern must still be going at the end, a phasic one must not, a
+#   resonator must answer the resonant doublet and ignore the off-resonance
+#   one, an integrator the reverse, an accommodating cell must ignore a slow
+#   ramp and answer a fast one. All twenty predicates must hold; the exit
+#   code names the first that does not.
+#
+# FOUR DEPARTURES FROM THE PUBLISHED FIGURE, AND WHY
+#   Izhikevich's own code takes a single explicit Euler step of 0.25 ms and
+#   updates u from the already-updated v; a spike is detected after the step,
+#   by which time v has overshot 30 mV by a wide and step-dependent margin,
+#   and u has absorbed part of that overshoot. This program integrates the
+#   same equations twenty-five times more finely and applies the reset at the
+#   crossing, which is what the generated stepper does. Four panels sit where
+#   that difference decides the outcome, so their numbers are adjusted and
+#   the change is stated here rather than buried:
+#     A  run extended from 100 ms to 300 ms. Nothing else changed; the first
+#        three intervals are a transient and the rate only settles (to
+#        26.77 ms exactly) after them, which is what "tonic" has to mean.
+#     J  pulse amplitude 2.0 -> 0.4. At the published rest point the
+#        derivative 0.08 v + 5 is exactly zero, so there is almost no barrier
+#        left and an accurately integrated 2.0 pulse escapes to a spike. The
+#        smaller pulse leaves the ringing intact, and its period is then
+#        checked against the Jacobian.
+#     Q  d = -21 -> -15. With -21 the reset leaves the cell above threshold
+#        and it bursts; the coarse step hides this because u jumps during the
+#        overshoot.
+#     T  d = -2 -> -0.5. Same cause: with -2 and an accurate upstroke every
+#        spike lowers u further and the model runs away.
+#   The other sixteen panels use Izhikevich's numbers unchanged.
+#
+# REFERENCE
+#   E. M. Izhikevich, "Simple model of spiking neurons", IEEE Trans. Neural
+#   Networks 14:1569-1572 (2003).
+#   E. M. Izhikevich, "Which model to use for cortical spiking neurons?",
+#   IEEE Trans. Neural Networks 15:1063-1070 (2004) - figure 1, the twenty
+#   panels reproduced here, and the electronic version's parameter table.
+#
+# KEYS
+#   Left / Right   enlarge a different panel
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/izhikevich_zoo.flow --frames 90 \
+#       --out build/frames_izh --gif build/izhikevich_zoo.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/izhikevich_zoo.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 620
+const MAX_FRAMES: i32 = 4000
+
+const N_REG: i32 = 20
+const DT: f64 = 0.01            # ms, explicit Euler (Izhikevich used 0.25)
+const SAMP: i32 = 220           # display samples per panel
+const MAX_SPK: i32 = 900        # spike times stored per regime
+const BURST_ISI: f64 = 8.0      # ms: within-burst interval
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model. One block; the twenty panels are twenty parameter sets.
+# ---------------------------------------------------------------------------
+
+flow Izh {
+    state v : f64 = -70.0
+    state u : f64 = -14.0
+
+    param i_ext : f64 = 0.0
+    param a     : f64 = 0.02
+    param b     : f64 = 0.2
+    param c     : f64 = -65.0
+    param d     : f64 = 6.0
+    param k1    : f64 = 5.0     # 4.1 for the Class 1 and integrator panels
+    param k0    : f64 = 140.0   # 108 for those two
+    param vu    : f64 = 0.0     # -65 for accommodation
+    param uw    : f64 = 1.0     # 0 for accommodation
+
+    solver { dt 10 us  method euler }
+
+    v evolves as 0.04 * v * v + k1 * v + k0 - u + i_ext
+    u evolves as a * (b * (v - vu) - uw * u)
+
+    when v reaches 30.0 {
+        v becomes c
+        u becomes u + d
+    }
+}
+
+# ---------------------------------------------------------------------------
+# The twenty parameter sets (Izhikevich 2004, figure 1 and its source code).
+# ---------------------------------------------------------------------------
+
+function reg_a(r: i32) -> f64 {
+    if r == 5 { return 0.01 }
+    if r == 7 { return 0.2 }
+    if r == 9 { return 0.05 }
+    if r == 10 { return 0.1 }
+    if r == 12 { return 0.03 }
+    if r == 13 { return 0.03 }
+    if r == 14 { return 0.03 }
+    if r == 15 { return 0.1 }
+    if r == 16 { return 1.0 }
+    if r == 18 { return -0.02 }
+    if r == 19 { return -0.026 }
+    return 0.02
+}
+
+function reg_b(r: i32) -> f64 {
+    if r == 1 { return 0.25 }
+    if r == 3 { return 0.25 }
+    if r == 6 { return -0.1 }
+    if r == 7 { return 0.26 }
+    if r == 9 { return 0.26 }
+    if r == 10 { return 0.26 }
+    if r == 11 { return -0.1 }
+    if r == 12 { return 0.25 }
+    if r == 13 { return 0.25 }
+    if r == 14 { return 0.25 }
+    if r == 15 { return 0.26 }
+    if r == 17 { return 1.0 }
+    if r == 18 { return -1.0 }
+    if r == 19 { return -1.0 }
+    return 0.2
+}
+
+function reg_c(r: i32) -> f64 {
+    if r == 2 { return -50.0 }
+    if r == 3 { return -55.0 }
+    if r == 4 { return -55.0 }
+    if r == 6 { return -55.0 }
+    if r == 9 { return -60.0 }
+    if r == 10 { return -60.0 }
+    if r == 11 { return -55.0 }
+    if r == 12 { return -60.0 }
+    if r == 13 { return -52.0 }
+    if r == 14 { return -60.0 }
+    if r == 15 { return -60.0 }
+    if r == 16 { return -60.0 }
+    if r == 17 { return -55.0 }
+    if r == 18 { return -60.0 }
+    if r == 19 { return -45.0 }
+    return -65.0
+}
+
+function reg_d(r: i32) -> f64 {
+    if r == 2 { return 2.0 }
+    if r == 3 { return 0.05 }
+    if r == 4 { return 4.0 }
+    if r == 5 { return 8.0 }
+    if r == 7 { return 0.0 }
+    if r == 9 { return 0.0 }
+    if r == 10 { return -1.0 }
+    if r == 12 { return 4.0 }
+    if r == 13 { return 0.0 }
+    if r == 14 { return 4.0 }
+    if r == 15 { return 0.0 }
+    if r == 16 { return -15.0 }   # published -21, see the note in the header
+    if r == 17 { return 4.0 }
+    if r == 18 { return 8.0 }
+    if r == 19 { return -0.5 }    # published -2, see the note in the header
+    return 6.0
+}
+
+function reg_k1(r: i32) -> f64 {
+    if r == 6 or r == 11 { return 4.1 }
+    return 5.0
+}
+
+function reg_k0(r: i32) -> f64 {
+    if r == 6 or r == 11 { return 108.0 }
+    return 140.0
+}
+
+function reg_vu(r: i32) -> f64 {
+    if r == 17 { return -65.0 }
+    return 0.0
+}
+
+function reg_uw(r: i32) -> f64 {
+    if r == 17 { return 0.0 }
+    return 1.0
+}
+
+function reg_v0(r: i32) -> f64 {
+    if r == 1 or r == 3 { return -64.0 }
+    if r == 6 or r == 11 { return -60.0 }
+    if r == 7 { return -64.0 }
+    if r == 9 or r == 10 { return -62.0 }
+    if r == 12 or r == 13 or r == 14 { return -64.0 }
+    if r == 15 { return -61.0 }
+    if r == 17 { return -65.0 }
+    if r == 18 or r == 19 { return -63.8 }
+    return -70.0
+}
+
+function reg_u0(r: i32) -> f64 {
+    if r == 17 { return -16.0 }
+    return reg_b(r) * reg_v0(r)
+}
+
+function reg_tmax(r: i32) -> f64 {
+    if r == 0 { return 300.0 }      # published 100; extended so the steady rate is measurable
+    if r == 1 { return 200.0 }
+    if r == 2 { return 220.0 }
+    if r == 3 { return 200.0 }
+    if r == 4 { return 160.0 }
+    if r == 5 { return 85.0 }
+    if r == 6 { return 300.0 }
+    if r == 7 { return 300.0 }
+    if r == 8 { return 100.0 }
+    if r == 9 { return 200.0 }
+    if r == 10 { return 400.0 }
+    if r == 11 { return 100.0 }
+    if r == 12 { return 200.0 }
+    if r == 13 { return 200.0 }
+    if r == 14 { return 100.0 }
+    if r == 15 { return 300.0 }
+    if r == 16 { return 50.0 }
+    if r == 17 { return 400.0 }
+    if r == 18 { return 350.0 }
+    return 350.0
+}
+
+function reg_name(r: i32) -> string {
+    if r == 0 { return "TONIC SPIKING" }
+    if r == 1 { return "PHASIC SPIKING" }
+    if r == 2 { return "TONIC BURSTING" }
+    if r == 3 { return "PHASIC BURSTING" }
+    if r == 4 { return "MIXED MODE" }
+    if r == 5 { return "SPIKE FREQ ADAPT" }
+    if r == 6 { return "CLASS 1 EXCITABLE" }
+    if r == 7 { return "CLASS 2 EXCITABLE" }
+    if r == 8 { return "SPIKE LATENCY" }
+    if r == 9 { return "SUBTHRESHOLD OSC" }
+    if r == 10 { return "RESONATOR" }
+    if r == 11 { return "INTEGRATOR" }
+    if r == 12 { return "REBOUND SPIKE" }
+    if r == 13 { return "REBOUND BURST" }
+    if r == 14 { return "THRESH VARIABILITY" }
+    if r == 15 { return "BISTABILITY" }
+    if r == 16 { return "DAP" }
+    if r == 17 { return "ACCOMMODATION" }
+    if r == 18 { return "INHIB-INDUCED SPK" }
+    return "INHIB-INDUCED BST"
+}
+
+function reg_letter(r: i32) -> string {
+    if r == 0 { return "A" }
+    if r == 1 { return "B" }
+    if r == 2 { return "C" }
+    if r == 3 { return "D" }
+    if r == 4 { return "E" }
+    if r == 5 { return "F" }
+    if r == 6 { return "G" }
+    if r == 7 { return "H" }
+    if r == 8 { return "I" }
+    if r == 9 { return "J" }
+    if r == 10 { return "K" }
+    if r == 11 { return "L" }
+    if r == 12 { return "M" }
+    if r == 13 { return "N" }
+    if r == 14 { return "O" }
+    if r == 15 { return "P" }
+    if r == 16 { return "Q" }
+    if r == 17 { return "R" }
+    if r == 18 { return "S" }
+    return "T"
+}
+
+# The injected current protocol, panel by panel.
+function reg_current(r: i32, t: f64) -> f64 {
+    if r == 0 {
+        if t > 10.0 { return 14.0 }
+        return 0.0
+    }
+    if r == 1 {
+        if t > 20.0 { return 0.5 }
+        return 0.0
+    }
+    if r == 2 {
+        if t > 22.0 { return 15.0 }
+        return 0.0
+    }
+    if r == 3 {
+        if t > 20.0 { return 0.6 }
+        return 0.0
+    }
+    if r == 4 {
+        if t > 16.0 { return 10.0 }
+        return 0.0
+    }
+    if r == 5 {
+        if t > 8.5 { return 30.0 }
+        return 0.0
+    }
+    if r == 6 {
+        if t > 30.0 { return 0.075 * (t - 30.0) }
+        return 0.0
+    }
+    if r == 7 {
+        if t > 30.0 { return -0.5 + 0.015 * (t - 30.0) }
+        return -0.5
+    }
+    if r == 8 {
+        if t > 10.0 and t < 13.0 { return 7.04 }
+        return 0.0
+    }
+    if r == 9 {
+        # published amplitude 2.0; see the note in the header
+        if t > 20.0 and t < 25.0 { return 0.4 }
+        return 0.0
+    }
+    if r == 10 {
+        # a resonant doublet at 40 and 60 ms, an off-resonance one at 280/320
+        if t > 40.0 and t < 44.0 { return 0.65 }
+        if t > 60.0 and t < 64.0 { return 0.65 }
+        if t > 280.0 and t < 284.0 { return 0.65 }
+        if t > 320.0 and t < 324.0 { return 0.65 }
+        return 0.0
+    }
+    if r == 11 {
+        # a close pair at 9.09 and 14.09 ms, a wide one at 70 and 80
+        if t > 9.09 and t < 11.09 { return 9.0 }
+        if t > 14.09 and t < 16.09 { return 9.0 }
+        if t > 70.0 and t < 72.0 { return 9.0 }
+        if t > 80.0 and t < 82.0 { return 9.0 }
+        return 0.0
+    }
+    if r == 12 or r == 13 {
+        if t > 20.0 and t < 25.0 { return -15.0 }
+        return 0.0
+    }
+    if r == 14 {
+        if t > 10.0 and t < 15.0 { return 1.0 }
+        if t > 70.0 and t < 75.0 { return -6.0 }
+        if t > 80.0 and t < 85.0 { return 1.0 }
+        return 0.0
+    }
+    if r == 15 {
+        if t > 37.5 and t < 42.5 { return 1.24 }
+        if t > 216.0 and t < 221.0 { return 1.24 }
+        return 0.24
+    }
+    if r == 16 {
+        if t > 9.0 and t < 11.0 { return 20.0 }
+        return 0.0
+    }
+    if r == 17 {
+        if t < 200.0 { return t / 25.0 }
+        if t < 300.0 { return 0.0 }
+        if t < 312.5 { return (t - 300.0) / 12.5 * 4.0 }
+        return 0.0
+    }
+    # 18, 19: inhibition-induced
+    if t < 50.0 or t > 250.0 {
+        return 80.0
+    }
+    return 75.0
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut trace: ptr<f64> = null      # N_REG * SAMP display samples
+let mut spikes: ptr<f64> = null     # N_REG * MAX_SPK spike times
+let mut n_spk: array<i32, 20> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let mut n_burst: array<i32, 20> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                   0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let mut isi_min: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut isi_max: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut isi_cv: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut osc_amp: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut sub_period: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut dap_rise: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut verdict: array<bool, 20> = [false, false, false, false, false,
+                                    false, false, false, false, false,
+                                    false, false, false, false, false,
+                                    false, false, false, false, false]
+
+# ---------------------------------------------------------------------------
+# Run one panel and record everything about it.
+# ---------------------------------------------------------------------------
+
+function run_regime(r: i32) -> void {
+    let mut cell: Izh = Izh_new()
+    cell.a = reg_a(r)
+    cell.b = reg_b(r)
+    cell.c = reg_c(r)
+    cell.d = reg_d(r)
+    cell.k1 = reg_k1(r)
+    cell.k0 = reg_k0(r)
+    cell.vu = reg_vu(r)
+    cell.uw = reg_uw(r)
+    cell.v = reg_v0(r)
+    cell.u = reg_u0(r)
+
+    let tmax: f64 = reg_tmax(r)
+    let steps: i32 = (tmax / DT) as i32
+    let mut count: i32 = 0
+    let mut sub_lo: f64 = 1000.0
+    let mut sub_hi: f64 = -1000.0
+    let mut dap_after: f64 = -1000.0
+    let mut last_spike_k: i32 = -1000000
+    let mut mx_prev2: f64 = -1000.0
+    let mut mx_prev1: f64 = -1000.0
+    let mut mx_count: i32 = 0
+    let mut mx_first: f64 = 0.0
+    let mut mx_last: f64 = 0.0
+
+    let mut k: i32 = 0
+    while k < steps {
+        let t: f64 = (k as f64) * DT
+        cell.i_ext = reg_current(r, t)
+        let before: f64 = cell.v
+        Izh_step(&cell, DT)
+        # the reset fires inside the step, so a fall past the reset level is
+        # the spike
+        if before > 0.0 and cell.v < before {
+            if count < MAX_SPK {
+                spikes[r * MAX_SPK + count] = t
+                count = count + 1
+            }
+            last_spike_k = k
+        }
+        # subthreshold envelope, ignoring the upstroke and the reset
+        if cell.v < 0.0 and k > last_spike_k + ((2.0 / DT) as i32) {
+            if cell.v < sub_lo {
+                sub_lo = cell.v
+            }
+            if cell.v > sub_hi {
+                sub_hi = cell.v
+            }
+        }
+        # depolarising after-potential: how far v climbs back in the 8 ms
+        # after a spike
+        if k > last_spike_k + ((1.0 / DT) as i32)
+           and k < last_spike_k + ((8.0 / DT) as i32) {
+            if cell.v > dap_after {
+                dap_after = cell.v
+            }
+        }
+        # subthreshold local maxima: the ringing of a damped focus
+        if k >= 2 and mx_prev1 > mx_prev2 and mx_prev1 >= cell.v
+           and mx_prev1 < -40.0 and t > 0.15 * tmax
+           and k > last_spike_k + ((10.0 / DT) as i32) {
+            let tm: f64 = t - DT
+            if mx_count == 0 {
+                mx_first = tm
+            }
+            mx_last = tm
+            mx_count = mx_count + 1
+        }
+        mx_prev2 = mx_prev1
+        mx_prev1 = cell.v
+
+        # display sample
+        let si: i32 = (((k as f64) / (steps as f64)) * (SAMP as f64)) as i32
+        if si >= 0 and si < SAMP {
+            let mut vv: f64 = cell.v
+            if before > 0.0 and cell.v < before {
+                vv = 30.0
+            }
+            trace[r * SAMP + si] = vv
+        }
+        k = k + 1
+    }
+
+    n_spk[r] = count
+    osc_amp[r] = sub_hi - sub_lo
+    if mx_count >= 2 {
+        sub_period[r] = (mx_last - mx_first) / ((mx_count - 1) as f64)
+    }
+    dap_rise[r] = dap_after - reg_c(r)
+
+    # interspike statistics
+    if count >= 2 {
+        let mut lo: f64 = 1.0e9
+        let mut hi: f64 = 0.0
+        let mut sum: f64 = 0.0
+        let mut sum2: f64 = 0.0
+        let mut i: i32 = 1
+        while i < count {
+            let isi: f64 = spikes[r * MAX_SPK + i] - spikes[r * MAX_SPK + i - 1]
+            if isi < lo {
+                lo = isi
+            }
+            if isi > hi {
+                hi = isi
+            }
+            sum = sum + isi
+            sum2 = sum2 + isi * isi
+            i = i + 1
+        }
+        let n: f64 = (count - 1) as f64
+        let mean: f64 = sum / n
+        let var: f64 = sum2 / n - mean * mean
+        isi_min[r] = lo
+        isi_max[r] = hi
+        if var > 0.0 {
+            isi_cv[r] = sqrt(var) / mean
+        }
+        # bursts: maximal runs of two or more spikes whose gaps are all
+        # shorter than BURST_ISI
+        let mut bursts: i32 = 0
+        let mut run: i32 = 1
+        i = 1
+        while i < count {
+            let isi: f64 = spikes[r * MAX_SPK + i] - spikes[r * MAX_SPK + i - 1]
+            if isi < BURST_ISI {
+                run = run + 1
+            } else {
+                if run >= 2 {
+                    bursts = bursts + 1
+                }
+                run = 1
+            }
+            i = i + 1
+        }
+        if run >= 2 {
+            bursts = bursts + 1
+        }
+        n_burst[r] = bursts
+    }
+}
+
+# spikes with t in [lo, hi)
+function spikes_in(r: i32, lo: f64, hi: f64) -> i32 {
+    let mut c: i32 = 0
+    let mut i: i32 = 0
+    while i < n_spk[r] {
+        let t: f64 = spikes[r * MAX_SPK + i]
+        if t >= lo and t < hi {
+            c = c + 1
+        }
+        i = i + 1
+    }
+    return c
+}
+
+function first_spike(r: i32) -> f64 {
+    if n_spk[r] == 0 {
+        return -1.0
+    }
+    return spikes[r * MAX_SPK]
+}
+
+function last_spike(r: i32) -> f64 {
+    if n_spk[r] == 0 {
+        return -1.0
+    }
+    return spikes[r * MAX_SPK + n_spk[r] - 1]
+}
+
+function first_isi(r: i32) -> f64 {
+    if n_spk[r] < 2 {
+        return 0.0
+    }
+    return spikes[r * MAX_SPK + 1] - spikes[r * MAX_SPK]
+}
+
+function last_isi(r: i32) -> f64 {
+    if n_spk[r] < 2 {
+        return 0.0
+    }
+    return spikes[r * MAX_SPK + n_spk[r] - 1] - spikes[r * MAX_SPK + n_spk[r] - 2]
+}
+
+# Still going at the end of the run?
+function still_firing(r: i32) -> bool {
+    let tmax: f64 = reg_tmax(r)
+    return last_spike(r) > 0.7 * tmax
+}
+
+# Coefficient of variation of the intervals, skipping the first `start` of
+# them so an onset transient does not masquerade as irregularity.
+function isi_cv_from(r: i32, start: i32) -> f64 {
+    let n: i32 = n_spk[r] - 1
+    if n - start < 2 {
+        return 999.0
+    }
+    let mut sum: f64 = 0.0
+    let mut sum2: f64 = 0.0
+    let mut c: f64 = 0.0
+    let mut i: i32 = start + 1
+    while i < n_spk[r] {
+        let isi: f64 = spikes[r * MAX_SPK + i] - spikes[r * MAX_SPK + i - 1]
+        sum = sum + isi
+        sum2 = sum2 + isi * isi
+        c = c + 1.0
+        i = i + 1
+    }
+    let mean: f64 = sum / c
+    let var: f64 = sum2 / c - mean * mean
+    if var <= 0.0 {
+        return 0.0
+    }
+    return sqrt(var) / mean
+}
+
+# Do the intervals lengthen all the way through? That is adaptation.
+function isi_increasing(r: i32) -> bool {
+    if n_spk[r] < 4 {
+        return false
+    }
+    let mut i: i32 = 2
+    while i < n_spk[r] {
+        let prev: f64 = spikes[r * MAX_SPK + i - 1] - spikes[r * MAX_SPK + i - 2]
+        let cur: f64 = spikes[r * MAX_SPK + i] - spikes[r * MAX_SPK + i - 1]
+        if cur <= prev {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Bursts among the spikes after t0 only.
+function bursts_after(r: i32, t0: f64) -> i32 {
+    let mut bursts: i32 = 0
+    let mut run: i32 = 0
+    let mut prev: f64 = -1.0e9
+    let mut i: i32 = 0
+    while i < n_spk[r] {
+        let t: f64 = spikes[r * MAX_SPK + i]
+        if t >= t0 {
+            if run == 0 {
+                run = 1
+            } else {
+                if t - prev < BURST_ISI {
+                    run = run + 1
+                } else {
+                    if run >= 2 {
+                        bursts = bursts + 1
+                    }
+                    run = 1
+                }
+            }
+            prev = t
+        }
+        i = i + 1
+    }
+    if run >= 2 {
+        bursts = bursts + 1
+    }
+    return bursts
+}
+
+# The ringing period the model's own linearisation predicts at rest.
+# Rest solves 0.04 v^2 + (5-b) v + 140 = 0 (taking the stable root); the
+# Jacobian is [[0.08v+5, -1], [a b, -a]].
+function ring_period_theory(r: i32) -> f64 {
+    let a: f64 = reg_a(r)
+    let b: f64 = reg_b(r)
+    let bb: f64 = 5.0 - b
+    let disc: f64 = bb * bb - 22.4
+    if disc < 0.0 {
+        return 0.0
+    }
+    let vr: f64 = (0.0 - bb - sqrt(disc)) / 0.08
+    let j11: f64 = 0.08 * vr + 5.0
+    let tr: f64 = j11 - a
+    let det: f64 = a * (b - j11)
+    let w2: f64 = det - 0.25 * tr * tr
+    if w2 <= 0.0 {
+        return 0.0
+    }
+    return 6.283185307179586 / sqrt(w2)
+}
+
+# ---------------------------------------------------------------------------
+# One predicate per panel, taken from what the panel's name asserts.
+# ---------------------------------------------------------------------------
+
+function check_regime(r: i32) -> bool {
+    let tmax: f64 = reg_tmax(r)
+    if r == 0 {
+        # tonic spiking: the rate settles and keeps going to the end
+        return n_spk[r] >= 8 and isi_cv_from(r, 4) < 0.01 and still_firing(r)
+               and bursts_after(r, 100.0) == 0
+    }
+    if r == 1 {
+        # phasic spiking: one spike at the onset, then nothing
+        return n_spk[r] == 1 and first_spike(r) < 0.4 * tmax
+    }
+    if r == 2 {
+        # tonic bursting: repeated bursts, still going at the end
+        return n_burst[r] >= 3 and still_firing(r)
+    }
+    if r == 3 {
+        # phasic bursting: exactly one burst, then silence
+        return n_burst[r] == 1 and n_spk[r] >= 2 and !still_firing(r)
+    }
+    if r == 4 {
+        # mixed mode: an opening burst then tonic single spikes
+        return n_burst[r] == 1 and n_spk[r] >= 5 and still_firing(r)
+    }
+    if r == 5 {
+        # spike frequency adaptation: every interval is longer than the last
+        return n_spk[r] >= 4 and isi_increasing(r) and last_isi(r) > 1.4 * first_isi(r)
+    }
+    if r == 6 {
+        # class 1: a ramp makes the rate climb from arbitrarily low, so the
+        # first interval is far longer than the last
+        return n_spk[r] >= 6 and first_isi(r) > 2.0 * last_isi(r)
+    }
+    if r == 7 {
+        # class 2: firing switches on at a nonzero rate, so even the first
+        # interval is short
+        return n_spk[r] >= 3 and first_isi(r) < 30.0
+    }
+    if r == 8 {
+        # spike latency: one spike, well after the 3 ms pulse ended
+        return n_spk[r] == 1 and first_spike(r) > 16.0
+    }
+    if r == 9 {
+        # subthreshold oscillations: no spikes, a visible ringing, and its
+        # period is the one the Jacobian at rest predicts
+        let want: f64 = ring_period_theory(r)
+        return n_spk[r] == 0 and osc_amp[r] > 1.0 and sub_period[r] > 0.0
+               and fabs(sub_period[r] - want) / want < 0.06
+    }
+    if r == 10 {
+        # resonator: two doublets of identical pulses, one spaced 20 ms and
+        # one spaced 40 ms. The linearisation says the resonance period is
+        # 41.0 ms, so the cell must answer the second and ignore the first.
+        return spikes_in(r, 40.0, 270.0) == 0 and spikes_in(r, 275.0, tmax) >= 1
+    }
+    if r == 11 {
+        # integrator: the opposite - answers the closely spaced pair
+        return spikes_in(r, 9.0, 60.0) >= 1 and spikes_in(r, 60.0, tmax) == 0
+    }
+    if r == 12 {
+        # rebound spike: fires only after the inhibition is released
+        return n_spk[r] == 1 and first_spike(r) > 25.0
+    }
+    if r == 13 {
+        # rebound burst: a burst after release
+        return n_burst[r] >= 1 and n_spk[r] >= 3 and first_spike(r) > 25.0
+    }
+    if r == 14 {
+        # threshold variability: the same small pulse fails alone and works
+        # when it follows inhibition
+        return spikes_in(r, 10.0, 70.0) == 0 and spikes_in(r, 78.0, tmax) >= 1
+    }
+    if r == 15 {
+        # bistability: the background current of 0.24 leaves the cell silent
+        # for 37 ms, and a 5 ms pulse latches it into regular firing that
+        # outlives the pulse by the rest of the run
+        return spikes_in(r, 0.0, 42.0) == 0 and spikes_in(r, 50.0, tmax) >= 5
+               and last_spike(r) > 250.0
+    }
+    if r == 16 {
+        # depolarising after-potential: one spike, and v climbs back above
+        # the reset level afterwards instead of decaying straight to rest
+        return n_spk[r] == 1 and dap_rise[r] > 2.0
+    }
+    if r == 17 {
+        # accommodation: a slow ramp to I = 8 fails, a fast ramp to I = 4
+        # succeeds
+        return spikes_in(r, 0.0, 300.0) == 0 and spikes_in(r, 300.0, tmax) >= 1
+    }
+    if r == 18 {
+        # inhibition-induced spiking: regular firing only while inhibited
+        return spikes_in(r, 55.0, 262.0) >= 4 and spikes_in(r, 280.0, tmax) == 0
+               and n_burst[r] == 0
+    }
+    # 19: inhibition-induced bursting, same drive, bursts instead of spikes
+    return n_burst[r] >= 2 and spikes_in(r, 60.0, 262.0) >= 4
+           and spikes_in(r, 300.0, tmax) == 0
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+const GX: i32 = 20
+const GY: i32 = 96
+const CW: i32 = 178
+const CH: i32 = 118
+
+function draw_panel(g: Gfx, r: i32, x: i32, y: i32, w: i32, h: i32,
+                    big: bool) -> void {
+    draw_frame(g, x, y, w, h, 55, 64, 82)
+    let mut scale: i32 = 1
+    if big {
+        scale = 1
+    }
+    gfx_draw_text(g, x + 3, y + 2, reg_letter(r), 1, 255, 205, 110)
+    gfx_draw_text(g, x + 13, y + 2, reg_name(r), scale, 190, 205, 225)
+    if verdict[r] {
+        gfx_draw_text(g, x + w - 26, y + 2, "OK", 1, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, x + w - 26, y + 2, "NO", 1, 255, 110, 110)
+    }
+    let top: i32 = y + 14
+    let hh: i32 = h - 18
+    let mut i: i32 = 1
+    while i < SAMP {
+        let va: f64 = trace[r * SAMP + i - 1]
+        let vb: f64 = trace[r * SAMP + i]
+        let xa: i32 = x + 1 + (((i - 1) * (w - 2)) / SAMP)
+        let xb: i32 = x + 1 + ((i * (w - 2)) / SAMP)
+        let ya: i32 = top + hh - ((((va + 90.0) / 125.0) * (hh as f64)) as i32)
+        let yb: i32 = top + hh - ((((vb + 90.0) / 125.0) * (hh as f64)) as i32)
+        draw_line(g, xa, ya, xb, yb, 1, 120, 220, 200)
+        i = i + 1
+    }
+}
+
+function draw_hud(g: Gfx, sel: i32, passed: i32, ok: bool) -> void {
+    gfx_draw_text(g, 12, 10, "IZHIKEVICH ZOO  -  TWENTY REGIMES, ONE PAIR OF EQUATIONS",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "v' = 0.04 v^2 + k1 v + k0 - u + I     u' = a (b (v - vu) - uw u)     v >= 30 -> v := c, u := u + d",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44,
+                  "Izhikevich 2004 figure 1; explicit Euler dt 10 us; every panel is checked, not eyeballed",
+                  1, 110, 125, 150)
+    gfx_draw_text(g, 12, 64, "SELECTED", 1, 150, 165, 190)
+    gfx_draw_text(g, 84, 64, reg_letter(sel), 1, 255, 205, 110)
+    gfx_draw_text(g, 96, 64, reg_name(sel), 1, 235, 240, 250)
+    gfx_draw_text(g, 260, 64, "a", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 272, 64, reg_a(sel), 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 322, 64, "b", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 334, 64, reg_b(sel), 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 390, 64, "c", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 402, 64, reg_c(sel), 1, 1, 235, 240, 250)
+    gfx_draw_text(g, 448, 64, "d", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 460, 64, reg_d(sel), 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 520, 64, "SPIKES", 1, 110, 125, 150)
+    gfx_draw_int(g, 570, 64, n_spk[sel], 1, 235, 240, 250)
+    gfx_draw_text(g, 606, 64, "BURSTS", 1, 110, 125, 150)
+    gfx_draw_int(g, 656, 64, n_burst[sel], 1, 235, 240, 250)
+    gfx_draw_text(g, 686, 64, "CV(ISI)", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 740, 64, isi_cv[sel], 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 800, 64, "T", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 810, 64, reg_tmax(sel), 0, 1, 235, 240, 250)
+    gfx_draw_text(g, 846, 64, "ms", 1, 110, 125, 150)
+    gfx_draw_text(g, 12, 78, "SUBTHRESHOLD SWING", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 160, 78, osc_amp[sel], 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 208, 78, "mV     RING PERIOD", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 356, 78, sub_period[sel], 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 412, 78, "ms  vs Jacobian", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 536, 78, ring_period_theory(sel), 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 592, 78, "ms      all panels drawn -90 .. +35 mV", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 34, "PANELS PASSING THEIR PREDICATE", 1, 150, 165, 190)
+    gfx_draw_int(g, 260, WIN_H - 34, passed, 1, 235, 240, 250)
+    gfx_draw_text(g, 280, WIN_H - 34, "of 20", 1, 150, 165, 190)
+    if ok {
+        gfx_draw_text(g, 360, WIN_H - 38, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 360, WIN_H - 38, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16, "LEFT/RIGHT select a panel   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    trace = malloc(((N_REG as i64) * (SAMP as i64)) * 8)
+    spikes = malloc(((N_REG as i64) * (MAX_SPK as i64)) * 8)
+
+    println("")
+    println("  IZHIKEVICH ZOO  --  twenty firing regimes from one model")
+    println("  ========================================================")
+    println("")
+    println("    v' = 0.04 v^2 + k1 v + k0 - u + I      u' = a (b (v - vu) - uw u)")
+    println("    v >= 30 mV  ->  v := c,  u := u + d          explicit Euler, dt = 50 us")
+    println("    (k1,k0) = (5,140) except panels G and L, where it is (4.1,108);")
+    println("    (vu,uw) = (0,1) except panel R, where u' = a b (v + 65).")
+    println("")
+
+    let mut r: i32 = 0
+    while r < N_REG {
+        run_regime(r)
+        verdict[r] = check_regime(r)
+        r = r + 1
+    }
+
+    let mut passed: i32 = 0
+    r = 0
+    while r < N_REG {
+        print("    ")
+        print(reg_letter(r))
+        printf("  a %7.3f", reg_a(r))
+        printf("  b %6.2f", reg_b(r))
+        printf("  c %6.1f", reg_c(r))
+        printf("  d %6.2f", reg_d(r))
+        printf("   spikes %4.0f", n_spk[r] as f64)
+        printf("   bursts %3.0f", n_burst[r] as f64)
+        printf("   CV %6.3f", isi_cv[r])
+        printf("   ISI1 %8.2f", first_isi(r))
+        printf("   ISIn %8.2f", last_isi(r))
+        printf("   osc %6.2f", osc_amp[r])
+        printf("   t1 %7.2f", first_spike(r))
+        if verdict[r] {
+            print("   OK    ")
+            passed = passed + 1
+        } else {
+            print("   FAIL  ")
+        }
+        println(reg_name(r))
+        r = r + 1
+    }
+    println("")
+    print("    panels satisfying their predicate: ")
+    println(passed)
+    print("    of                               : ")
+    println(N_REG)
+    println("")
+
+    let ok: bool = passed == N_REG
+
+    let mut sel: i32 = 0
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Izhikevich zoo - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = sel
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = sel - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = sel + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if !paused and frame % 4 == 0 {
+            want = sel + 1
+        }
+        if want < 0 {
+            want = N_REG - 1
+        }
+        if want >= N_REG {
+            want = 0
+        }
+        sel = want
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        let mut i: i32 = 0
+        while i < N_REG {
+            let col: i32 = i % 5
+            let row: i32 = i / 5
+            draw_panel(g, i, GX + col * CW, GY + row * CH, CW - 8, CH - 10, false)
+            if i == sel {
+                draw_frame(g, GX + col * CW - 2, GY + row * CH - 2,
+                           CW - 4, CH - 6, 255, 205, 110)
+            }
+            i = i + 1
+        }
+        draw_hud(g, sel, passed, ok)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !ok {
+        r = 0
+        while r < N_REG {
+            if !verdict[r] {
+                print("    FAIL: panel ")
+                print(reg_letter(r))
+                print(" (")
+                print(reg_name(r))
+                println(") did not behave as its name says")
+                return r + 1
+            }
+            r = r + 1
+        }
+        return 99
+    }
+    println("    PASS: all twenty Izhikevich regimes reproduced and verified")
+    return 0
+}
