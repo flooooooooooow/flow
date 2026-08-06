@@ -90,3 +90,9 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          # The site is ~3000 files (pagefind fragments, the proof corpus, the
+          # WASM gallery). Pages needs longer than the 10-minute default to
+          # publish that many; two runs died at exactly 600000 ms.
+          timeout: 1800000
+          error_count: 20
