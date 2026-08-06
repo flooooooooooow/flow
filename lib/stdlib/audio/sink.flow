@@ -38,6 +38,11 @@ export struct AudioSink {
     frames: i64
 }
 
+# The path FLOW_AUDIO_RENDER named, kept after sink_close so an example can
+# read its own render back and assert on the samples. Null in device and
+# silent mode.
+let mut sink_render_target: ptr<u8> = null
+
 function sink_env(name: string) -> ptr<u8> {
     let raw: ptr<u8> = getenv(name)
     if raw == null {
@@ -53,10 +58,12 @@ function sink_env(name: string) -> ptr<u8> {
 export function sink_open(rate: i32, channels: i32, block: i32) -> AudioSink {
     let empty: AudioDevice = AudioDevice { raw: null, has_input: false, has_output: false }
 
+    sink_render_target = null
     let render: ptr<u8> = sink_env("FLOW_AUDIO_RENDER")
     if render != null {
         let path: string = render as string
         if wav_write_open(path, rate, channels) {
+            sink_render_target = render
             printf("  output: WAV render -> %s (%d Hz, %d ch)\n", path, rate, channels)
             return AudioSink { mode: SINK_WAV, dev: empty, rate: rate,
                                channels: channels, block: block, frames: 0 }
@@ -138,4 +145,18 @@ export function sink_is_offline(s: ptr<AudioSink>) -> bool {
 
 export function sink_frames(s: ptr<AudioSink>) -> i64 {
     return s.frames
+}
+
+# True when this run wrote a WAV, so the example can read it back and check
+# it. Survives sink_close, which is when the file is finished and readable.
+export function sink_is_render() -> bool {
+    return sink_render_target != null
+}
+
+# Path of the WAV this run wrote. Empty string when nothing was written.
+export function sink_render_path() -> string {
+    if sink_render_target == null {
+        return ""
+    }
+    return sink_render_target as string
 }
