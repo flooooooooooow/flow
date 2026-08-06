@@ -110,9 +110,10 @@ gameplay, run commands, and sources.
 **[Evolution suite →](demos/evolution.md)** — thirty-four systems that change
 over time, each checked against theory.
 
-**[Morphogenesis gallery →](demos/morphogenesis.md)** — twenty-one live simulations
+**[Morphogenesis gallery →](demos/morphogenesis.md)** — forty live simulations
 of pattern formation, each with a recorded GIF: reaction-diffusion, Turing
-patterns, DLA, L-systems, Physarum networks, somitogenesis. Sources:
+patterns, DLA, L-systems, Physarum networks, somitogenesis, and the wave-2
+set (KS chaos, Vicsek, sandpile, Schelling, rivers). Sources:
 [examples/morphogenesis](../examples/morphogenesis/README.md).
 
 **[Neuron gallery →](demos/neuro.md)** — fifteen spiking-dynamics simulations,
@@ -136,7 +137,7 @@ and policy gradients against the games above, plus
 | [Beginner guide](tutorials/beginner.md) | Variables, functions, control flow |
 | [Playground](playground/index.html) | Syntax explorer with verified examples (compile locally with `./flow run`) |
 | [Game gallery](demos/games.md) | 24 complete games, each with a recorded GIF |
-| [Morphogenesis gallery](demos/morphogenesis.md) | 21 pattern-formation simulations, each with a recorded GIF |
+| [Morphogenesis gallery](demos/morphogenesis.md) | 40 pattern-formation simulations, each with a recorded GIF |
 | [Neuron gallery](demos/neuro.md) | 15 spiking-dynamics simulations, each gated and recorded |
 | [Evolution suite](demos/evolution.md) | 34 systems evolving through time, each gated on a measurement |
 | [Training game AIs](tutorials/game-ai.md) | Q-learning, GA, and policy gradients that measurably learn |
