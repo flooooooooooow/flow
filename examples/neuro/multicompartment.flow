@@ -1,0 +1,939 @@
+# MULTICOMPARTMENT NEURON: a backpropagating action potential.
+#
+# MODEL
+#   An active soma with the full Hodgkin-Huxley conductances, joined by an
+#   axial conductance to a chain of twelve passive dendritic compartments.
+#   Two `flow` blocks, one line of dynamics each for the passive part:
+#
+#     soma:      C dV/dt = I + I_axial - gNa m^3 h (V-ENa)
+#                                       - gK n^4 (V-EK) - gL (V-EL)
+#     dendrite:  c dV_i/dt = I_axial,i - g_d (V_i - E_d)
+#
+#     I_axial,i = g_c (V_{i-1} - V_i) + g_c (V_{i+1} - V_i)
+#
+#   The chain loop computes each compartment's axial current and steps it.
+#   Only the soma has sodium and potassium channels, so a spike is generated
+#   there and can only travel into the dendrite passively. That is a
+#   backpropagating action potential.
+#
+# PARAMETERS
+#   soma      HH 1952 values, C = 1 uF/cm2
+#   dendrite  12 compartments, c_d 0.30, g_d 0.030 (tau_d = 10 ms), E_d -65 mV
+#   coupling  g_c 1.80 between neighbours and between soma and compartment 1
+#   dt        10 us, RK4
+#
+# WHAT THIS PROVES
+#   1. The spike does travel backwards, and it does so with a real delay.
+#      Time to peak is measured in every compartment; the delay per
+#      compartment is the slope of a least-squares fit, and it must be
+#      strictly positive and monotone.
+#   2. The spike shrinks as it goes. Peak amplitude above rest is measured in
+#      every compartment and must decrease monotonically.
+#   3. The transient attenuates faster than a steady current does. The same
+#      cable is measured twice: once with a steady somatic current and the
+#      channels removed, and once with the spike. Two things are checked on
+#      the steady profile. First an identity that holds exactly in the
+#      discrete chain and needs no boundary assumption,
+#        g_c (V_{i-1} - 2 V_i + V_{i+1}) = g_d V_i,
+#      which recovers g_d/g_c and therefore lambda = sqrt(g_c/g_d) to machine
+#      precision. Second, because twelve compartments is electrotonically
+#      short, the sealed-end form cosh((L-x)/lambda) is fitted and compared
+#      with sqrt(g_c/g_d) at 5 %. Then the spike is fitted with the same
+#      plain exponential as the steady profile, over the same compartments,
+#      and its decay must come out strictly faster. That is Rall's frequency
+#      dependence of cable filtering, measured rather than asserted.
+#
+# REFERENCE
+#   G. J. Stuart and B. Sakmann, "Active propagation of somatic action
+#   potentials into neocortical pyramidal cell dendrites", Nature 367:69-72
+#   (1994) - amplitude decrement with distance and a submillisecond delay.
+#   W. Rall, "Core conductor theory and cable properties of neurons",
+#   Handbook of Physiology (1977) - the AC length constant is shorter than
+#   the DC one, lambda_AC = lambda_DC / sqrt(1 + omega*tau_m) for a sinusoid.
+#
+# KEYS
+#   Left / Right   change the somatic drive
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/multicompartment.flow --frames 90 \
+#       --out build/frames_mc --gif build/multicompartment.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/multicompartment.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function cosh(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 640
+const MAX_FRAMES: i32 = 4000
+
+const N_DEND: i32 = 12
+const N_ALL: i32 = 13           # soma + dendrite
+
+const V_REST: f64 = -65.0
+const C_D: f64 = 0.30
+const G_D: f64 = 0.030          # tau_d = C_D / G_D = 10 ms
+const G_C: f64 = 1.80
+const E_D: f64 = -65.0
+
+const DT: f64 = 0.01            # ms, RK4
+const DRIVE: f64 = 40.0         # uA/cm2 into the soma for the bAP run
+const RUN_MS: f64 = 120.0
+const SAMP_N: i32 = 12000       # RUN_MS / DT
+
+const FIT_LO: i32 = 1           # compartments used for the length-constant fits
+const FIT_HI: i32 = 11
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# Hodgkin-Huxley rate constants (1952 table 3, modern sign convention).
+# ---------------------------------------------------------------------------
+
+function alpha_m(v: f64) -> f64 {
+    let d: f64 = v + 40.0
+    if d < 0.000001 and d > -0.000001 {
+        return 1.0
+    }
+    return 0.1 * d / (1.0 - exp(0.0 - d / 10.0))
+}
+
+function beta_m(v: f64) -> f64 {
+    return 4.0 * exp(0.0 - (v + 65.0) / 18.0)
+}
+
+function alpha_h(v: f64) -> f64 {
+    return 0.07 * exp(0.0 - (v + 65.0) / 20.0)
+}
+
+function beta_h(v: f64) -> f64 {
+    return 1.0 / (1.0 + exp(0.0 - (v + 35.0) / 10.0))
+}
+
+function alpha_n(v: f64) -> f64 {
+    let d: f64 = v + 55.0
+    if d < 0.000001 and d > -0.000001 {
+        return 0.1
+    }
+    return 0.01 * d / (1.0 - exp(0.0 - d / 10.0))
+}
+
+function beta_n(v: f64) -> f64 {
+    return 0.125 * exp(0.0 - (v + 65.0) / 80.0)
+}
+
+# ---------------------------------------------------------------------------
+# The two compartment types.
+# ---------------------------------------------------------------------------
+
+flow Soma {
+    state v : f64 = -65.0
+    state m : f64 = 0.05293
+    state h : f64 = 0.59612
+    state n : f64 = 0.31768
+
+    param i_ext  : f64 = 0.0
+    param axial  : f64 = 0.0        # g_c * (V_dend1 - V_soma)
+    param cm     : f64 = 1.0
+    param gna    : f64 = 120.0
+    param gk     : f64 = 36.0
+    param gl     : f64 = 0.3
+    param ena    : f64 = 50.0
+    param ek     : f64 = -77.0
+    param el     : f64 = -54.387
+
+    solver { dt 10 us  method rk4 }
+
+    v evolves as (i_ext + axial
+                  - gna * m * m * m * h * (v - ena)
+                  - gk * n * n * n * n * (v - ek)
+                  - gl * (v - el)) / cm
+    m evolves as alpha_m(v) * (1.0 - m) - beta_m(v) * m
+    h evolves as alpha_h(v) * (1.0 - h) - beta_h(v) * h
+    n evolves as alpha_n(v) * (1.0 - n) - beta_n(v) * n
+}
+
+flow Dend {
+    state v : f64 = -65.0
+
+    param axial : f64 = 0.0
+    param gd    : f64 = 0.030
+    param ed    : f64 = -65.0
+    param cd    : f64 = 0.30
+
+    solver { dt 10 us  method rk4 }
+
+    v evolves as (axial - gd * (v - ed)) / cd
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut dv: ptr<f64> = null             # live dendrite voltages
+let mut samples: ptr<f64> = null        # SAMP_N x N_ALL recorded bAP traces
+
+let mut peak_mv: array<f64, 13> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut peak_ms: array<f64, 13> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut dc_mv: array<f64, 13> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+let mut lambda_dc_meas: f64 = 0.0
+let mut lambda_dc_cosh: f64 = 0.0
+let mut identity_err: f64 = 0.0
+let mut lambda_dc_theory: f64 = 0.0
+let mut lambda_ac: f64 = 0.0
+let mut delay_per_comp: f64 = 0.0
+let mut tip_ratio: f64 = 0.0
+let mut total_delay: f64 = 0.0
+let mut peaks_fall: bool = true
+let mut times_rise: bool = true
+
+# ---------------------------------------------------------------------------
+# One step of the whole cell. `blocked` removes the spike-generating
+# conductances, which turns the same code into a passive cable measurement.
+# ---------------------------------------------------------------------------
+
+function cell_step(s: ptr<Soma>, v: ptr<f64>, out: ptr<f64>,
+                   i_ext: f64, blocked: bool, dt: f64) -> void {
+    # soma
+    s.i_ext = i_ext
+    s.axial = G_C * (v[0] - s.v)
+    if blocked {
+        s.gna = 0.0
+        s.gk = 0.0
+    }
+    let v_soma_before: f64 = s.v
+    Soma_step(s, dt)
+
+    # dendrite chain
+    let mut d: Dend = Dend_new()
+    d.gd = G_D
+    d.ed = E_D
+    d.cd = C_D
+    let mut i: i32 = 0
+    while i < N_DEND {
+        let mut left: f64 = v_soma_before
+        if i > 0 {
+            left = v[i - 1]
+        }
+        let mut right: f64 = v[i]       # sealed tip
+        if i < N_DEND - 1 {
+            right = v[i + 1]
+        }
+        d.v = v[i]
+        d.axial = G_C * (left - v[i]) + G_C * (right - v[i])
+        Dend_step(&d, dt)
+        out[i] = d.v
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Measurement 1: the backpropagating action potential.
+# ---------------------------------------------------------------------------
+
+function record_bap() -> void {
+    let mut s: Soma = Soma_new()
+    let a: ptr<f64> = malloc((N_DEND as i64) * 8)
+    let b: ptr<f64> = malloc((N_DEND as i64) * 8)
+    let mut i: i32 = 0
+    while i < N_DEND {
+        a[i] = V_REST
+        b[i] = V_REST
+        i = i + 1
+    }
+    let mut k: i32 = 0
+    while k < SAMP_N {
+        cell_step(&s, a, b, DRIVE, false, DT)
+        i = 0
+        while i < N_DEND {
+            a[i] = b[i]
+            i = i + 1
+        }
+        samples[k * N_ALL] = s.v
+        i = 0
+        while i < N_DEND {
+            samples[k * N_ALL + 1 + i] = a[i]
+            i = i + 1
+        }
+        k = k + 1
+    }
+}
+
+# Find the third somatic spike and measure every compartment around it, so
+# the answer is the steady-state bAP and not the first transient.
+function measure_bap() -> void {
+    let mut spikes: i32 = 0
+    let mut k_spike: i32 = -1
+    let mut k: i32 = 1
+    while k < SAMP_N {
+        if samples[(k - 1) * N_ALL] <= 0.0 and samples[k * N_ALL] > 0.0 {
+            spikes = spikes + 1
+            if spikes == 3 {
+                k_spike = k
+                k = SAMP_N
+            }
+        }
+        k = k + 1
+    }
+    if k_spike < 0 {
+        return
+    }
+    let lo: i32 = k_spike - ((3.0 / DT) as i32)
+    let mut hi: i32 = k_spike + ((12.0 / DT) as i32)
+    if hi > SAMP_N {
+        hi = SAMP_N
+    }
+    let mut c: i32 = 0
+    while c < N_ALL {
+        let mut best: f64 = -1000.0
+        let mut best_k: i32 = lo
+        let mut j: i32 = lo
+        while j < hi {
+            let v: f64 = samples[j * N_ALL + c]
+            if v > best {
+                best = v
+                best_k = j
+            }
+            j = j + 1
+        }
+        peak_mv[c] = best - V_REST
+        peak_ms[c] = ((best_k - lo) as f64) * DT
+        c = c + 1
+    }
+    # relative to the somatic peak
+    let t0: f64 = peak_ms[0]
+    c = 0
+    while c < N_ALL {
+        peak_ms[c] = peak_ms[c] - t0
+        c = c + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Measurement 2: the DC length constant of the same cable, channels blocked.
+# ---------------------------------------------------------------------------
+
+function measure_dc() -> void {
+    let mut s: Soma = Soma_new()
+    let a: ptr<f64> = malloc((N_DEND as i64) * 8)
+    let b: ptr<f64> = malloc((N_DEND as i64) * 8)
+    let mut i: i32 = 0
+    while i < N_DEND {
+        a[i] = V_REST
+        b[i] = V_REST
+        i = i + 1
+    }
+    let steps: i32 = (400.0 / DT) as i32
+    let mut k: i32 = 0
+    while k < steps {
+        cell_step(&s, a, b, 2.0, true, DT)
+        i = 0
+        while i < N_DEND {
+            a[i] = b[i]
+            i = i + 1
+        }
+        k = k + 1
+    }
+    dc_mv[0] = s.v - V_REST
+    i = 0
+    while i < N_DEND {
+        dc_mv[1 + i] = a[i] - V_REST
+        i = i + 1
+    }
+}
+
+# The steady-state discrete cable obeys, exactly, in every interior
+# compartment:   g_c (V_{i-1} - 2 V_i + V_{i+1}) = g_d V_i.
+# Recovering g_d/g_c from the measured profile is therefore a boundary-free
+# identity check on the whole chain, and with it lambda = sqrt(g_c/g_d).
+function recover_gd_over_gc() -> f64 {
+    let want: f64 = G_D / G_C
+    let mut worst: f64 = 0.0
+    let mut i: i32 = 2
+    while i <= N_DEND - 2 {
+        let q: f64 = (dc_mv[i - 1] - 2.0 * dc_mv[i] + dc_mv[i + 1]) / dc_mv[i]
+        let rel: f64 = fabs(q - want) / want
+        if rel > worst {
+            worst = rel
+        }
+        i = i + 1
+    }
+    return worst
+}
+
+# A twelve-compartment sealed cable is electrotonically short, so its steady
+# profile is cosh((L - x)/lambda), not a pure exponential. Solve for lambda
+# from the ratio between two compartments; that ratio falls monotonically
+# with lambda, so bisection works.
+function fit_lambda_cosh(amp: &[f64], x1: i32, x2: i32) -> f64 {
+    # dc_mv[i] holds dendrite compartment i-1, and the seal sits half a
+    # compartment past the last one, so in these indices the end is at
+    # N_DEND + 0.5.
+    let l_end: f64 = (N_DEND as f64) + 0.5
+    let target: f64 = amp[x1] / amp[x2]
+    let mut lo: f64 = 0.2
+    let mut hi: f64 = 400.0
+    let mut it: i32 = 0
+    while it < 200 {
+        let mid: f64 = 0.5 * (lo + hi)
+        let r: f64 = cosh((l_end - (x1 as f64)) / mid) / cosh((l_end - (x2 as f64)) / mid)
+        if r > target {
+            lo = mid
+        } else {
+            hi = mid
+        }
+        it = it + 1
+    }
+    return 0.5 * (lo + hi)
+}
+
+# Least-squares slope of ln(amplitude) against compartment index.
+function fit_lambda(amp: &[f64]) -> f64 {
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut n: f64 = 0.0
+    let mut i: i32 = FIT_LO
+    while i <= FIT_HI {
+        if amp[i] > 0.0 {
+            let x: f64 = i as f64
+            let y: f64 = log(amp[i])
+            sx = sx + x
+            sy = sy + y
+            sxx = sxx + x * x
+            sxy = sxy + x * y
+            n = n + 1.0
+        }
+        i = i + 1
+    }
+    let slope: f64 = (n * sxy - sx * sy) / (n * sxx - sx * sx)
+    return 0.0 - 1.0 / slope
+}
+
+# Least-squares slope of time-to-peak against compartment index (ms/comp).
+function fit_delay() -> f64 {
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let n: f64 = (N_ALL) as f64
+    let mut i: i32 = 0
+    while i < N_ALL {
+        let x: f64 = i as f64
+        sx = sx + x
+        sy = sy + peak_ms[i]
+        sxx = sxx + x * x
+        sxy = sxy + x * peak_ms[i]
+        i = i + 1
+    }
+    return (n * sxy - sx * sy) / (n * sxx - sx * sx)
+}
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+function heat_r(t: f64) -> i32 {
+    let mut c: f64 = 25.0 + 460.0 * t
+    if c > 255.0 {
+        c = 255.0
+    }
+    return c as i32
+}
+
+function heat_g(t: f64) -> i32 {
+    let mut c: f64 = 35.0 + 290.0 * t
+    if c > 255.0 {
+        c = 255.0
+    }
+    return c as i32
+}
+
+function heat_b(t: f64) -> i32 {
+    let mut c: f64 = 65.0 + 130.0 * t
+    if t > 0.55 {
+        c = 137.0 - 210.0 * (t - 0.55)
+    }
+    if c < 28.0 {
+        c = 28.0
+    }
+    if c > 255.0 {
+        c = 255.0
+    }
+    return c as i32
+}
+
+# ---------------------------------------------------------------------------
+# Panels
+# ---------------------------------------------------------------------------
+
+const MO_X: i32 = 40
+const MO_Y: i32 = 78
+const MO_CELL: i32 = 44
+const MO_H: i32 = 44
+
+function draw_morphology(g: Gfx, soma_v: f64) -> void {
+    gfx_draw_text(g, MO_X, MO_Y - 14,
+                  "LIVE CELL: SOMA AT THE LEFT, TWELVE PASSIVE COMPARTMENTS",
+                  1, 150, 165, 190)
+    let mut i: i32 = 0
+    while i < N_ALL {
+        let mut v: f64 = soma_v
+        if i > 0 {
+            v = dv[i - 1]
+        }
+        let mut t: f64 = (v - V_REST) / 100.0
+        if t < 0.0 {
+            t = 0.0
+        }
+        if t > 1.0 {
+            t = 1.0
+        }
+        let mut hgt: i32 = MO_H
+        if i > 0 {
+            hgt = MO_H - 14
+        }
+        let y: i32 = MO_Y + (MO_H - hgt) / 2
+        gfx_fill_rect(g, MO_X + i * MO_CELL, y, MO_CELL - 4, hgt,
+                      heat_r(t), heat_g(t), heat_b(t))
+        i = i + 1
+    }
+    gfx_draw_text(g, MO_X, MO_Y + MO_H + 6, "SOMA", 1, 110, 125, 150)
+    gfx_draw_text(g, MO_X + 12 * MO_CELL - 40, MO_Y + MO_H + 6, "DISTAL TIP",
+                  1, 110, 125, 150)
+}
+
+const ST_X: i32 = 40
+const ST_Y: i32 = 168
+const ST_W: i32 = 400
+const ST_H: i32 = 340
+
+# The recorded bAP, one trace per compartment, stacked.
+function draw_stack(g: Gfx) -> void {
+    draw_frame(g, ST_X, ST_Y, ST_W, ST_H, 60, 70, 90)
+    gfx_draw_text(g, ST_X, ST_Y - 14,
+                  "THE THIRD SPIKE, EVERY COMPARTMENT, STACKED", 1, 150, 165, 190)
+    # locate the third spike again for the plot window
+    let mut spikes: i32 = 0
+    let mut k_spike: i32 = 0
+    let mut k: i32 = 1
+    while k < SAMP_N {
+        if samples[(k - 1) * N_ALL] <= 0.0 and samples[k * N_ALL] > 0.0 {
+            spikes = spikes + 1
+            if spikes == 3 {
+                k_spike = k
+                k = SAMP_N
+            }
+        }
+        k = k + 1
+    }
+    let lo: i32 = k_spike - ((2.0 / DT) as i32)
+    let span: i32 = (10.0 / DT) as i32
+    let row: i32 = ST_H / N_ALL
+    let mut c: i32 = 0
+    while c < N_ALL {
+        let base: i32 = ST_Y + row * c + row - 2
+        let mut px: i32 = 1
+        while px < ST_W {
+            let ja: i32 = lo + ((((px - 1) as f64) / (ST_W as f64)) * (span as f64)) as i32
+            let jb: i32 = lo + (((px as f64) / (ST_W as f64)) * (span as f64)) as i32
+            if ja > 0 and jb < SAMP_N {
+                let mut ya: i32 = base - (((samples[ja * N_ALL + c] - V_REST) / 110.0) * 120.0) as i32
+                let mut yb: i32 = base - (((samples[jb * N_ALL + c] - V_REST) / 110.0) * 120.0) as i32
+                if ya < ST_Y + 1 {
+                    ya = ST_Y + 1
+                }
+                if yb < ST_Y + 1 {
+                    yb = ST_Y + 1
+                }
+                let mut cr: i32 = 120
+                let mut cg: i32 = 220
+                let mut cb: i32 = 200
+                if c == 0 {
+                    cr = 255
+                    cg = 225
+                    cb = 120
+                }
+                draw_line(g, ST_X + px - 1, ya, ST_X + px, yb, 1, cr, cg, cb)
+            }
+            px = px + 1
+        }
+        gfx_draw_int(g, ST_X + ST_W + 4, base - 6, c, 1, 110, 125, 150)
+        c = c + 1
+    }
+    gfx_draw_text(g, ST_X + 4, ST_Y + ST_H - 12, "10 ms", 1, 110, 125, 150)
+}
+
+const AT_X: i32 = 490
+const AT_Y: i32 = 168
+const AT_W: i32 = 390
+const AT_H: i32 = 150
+
+function draw_attenuation(g: Gfx) -> void {
+    draw_frame(g, AT_X, AT_Y, AT_W, AT_H, 60, 70, 90)
+    gfx_draw_text(g, AT_X, AT_Y - 14,
+                  "ln AMPLITUDE vs DISTANCE   amber = spike   blue = steady current",
+                  1, 150, 165, 190)
+    let top_ac: f64 = log(peak_mv[0])
+    let top_dc: f64 = log(dc_mv[0])
+    let span: f64 = 5.0
+    let mut i: i32 = 1
+    while i < N_ALL {
+        let xa: i32 = AT_X + (((i - 1) * AT_W) / (N_ALL - 1))
+        let xb: i32 = AT_X + ((i * AT_W) / (N_ALL - 1))
+        let ya: i32 = AT_Y + ((((top_ac - log(peak_mv[i - 1])) / span) * (AT_H as f64)) as i32)
+        let yb: i32 = AT_Y + ((((top_ac - log(peak_mv[i])) / span) * (AT_H as f64)) as i32)
+        if ya < AT_Y + AT_H and yb < AT_Y + AT_H {
+            draw_line(g, xa, ya, xb, yb, 1, 255, 205, 110)
+        }
+        let za: i32 = AT_Y + ((((top_dc - log(dc_mv[i - 1])) / span) * (AT_H as f64)) as i32)
+        let zb: i32 = AT_Y + ((((top_dc - log(dc_mv[i])) / span) * (AT_H as f64)) as i32)
+        if za < AT_Y + AT_H and zb < AT_Y + AT_H {
+            draw_line(g, xa, za, xb, zb, 1, 120, 190, 250)
+        }
+        i = i + 1
+    }
+    gfx_draw_text(g, AT_X + 4, AT_Y + 4, "lambda_AC", 1, 255, 205, 110)
+    gfx_draw_fixed(g, AT_X + 82, AT_Y + 4, lambda_ac, 3, 1, 255, 205, 110)
+    gfx_draw_text(g, AT_X + 4, AT_Y + 16, "lambda_DC", 1, 120, 190, 250)
+    gfx_draw_fixed(g, AT_X + 82, AT_Y + 16, lambda_dc_meas, 3, 1, 120, 190, 250)
+    gfx_draw_text(g, AT_X + 150, AT_Y + 16, "cosh fit", 1, 110, 125, 150)
+    gfx_draw_fixed(g, AT_X + 220, AT_Y + 16, lambda_dc_cosh, 3, 1, 120, 190, 250)
+    gfx_draw_text(g, AT_X + 276, AT_Y + 16, "vs sqrt(g_c/g_d)", 1, 110, 125, 150)
+    gfx_draw_fixed(g, AT_X + 276, AT_Y + 28, lambda_dc_theory, 3, 1, 120, 190, 250)
+}
+
+const DL_X: i32 = 490
+const DL_Y: i32 = 358
+const DL_W: i32 = 390
+const DL_H: i32 = 150
+
+function draw_delay(g: Gfx) -> void {
+    draw_frame(g, DL_X, DL_Y, DL_W, DL_H, 60, 70, 90)
+    gfx_draw_text(g, DL_X, DL_Y - 14, "TIME TO PEAK vs DISTANCE", 1, 150, 165, 190)
+    let span: f64 = 2.2
+    let mut i: i32 = 1
+    while i < N_ALL {
+        let xa: i32 = DL_X + (((i - 1) * DL_W) / (N_ALL - 1))
+        let xb: i32 = DL_X + ((i * DL_W) / (N_ALL - 1))
+        let ya: i32 = DL_Y + DL_H - (((peak_ms[i - 1] / span) * (DL_H as f64)) as i32)
+        let yb: i32 = DL_Y + DL_H - (((peak_ms[i] / span) * (DL_H as f64)) as i32)
+        draw_line(g, xa, ya, xb, yb, 1, 200, 170, 255)
+        gfx_fill_rect(g, xb - 1, yb - 1, 3, 3, 235, 240, 250)
+        i = i + 1
+    }
+    gfx_draw_text(g, DL_X + 4, DL_Y + 4, "0 .. 2.2 ms", 1, 110, 125, 150)
+    gfx_draw_text(g, DL_X + 4, DL_Y + DL_H - 12, "soma", 1, 110, 125, 150)
+    gfx_draw_text(g, DL_X + DL_W - 30, DL_Y + DL_H - 12, "tip", 1, 110, 125, 150)
+}
+
+function draw_hud(g: Gfx, drive: f64, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "MULTICOMPARTMENT NEURON  -  BACKPROPAGATING SPIKE",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "active soma (HH) + 12 passive compartments, g_c 1.8, g_d 0.03, c_d 0.30, RK4 dt 10 us",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44, "LIVE SOMATIC DRIVE", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 156, 44, drive, 1, 1, 255, 205, 110)
+    gfx_draw_text(g, 200, 44, "uA/cm2", 1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 12, WIN_H - 104, "SOMATIC SPIKE", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 124, WIN_H - 104, peak_mv[0], 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 176, WIN_H - 104, "mV above rest    AT THE TIP", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 400, WIN_H - 104, peak_mv[N_ALL - 1], 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 452, WIN_H - 104, "mV   RATIO", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 542, WIN_H - 104, tip_ratio, 4, 1, 235, 240, 250)
+
+    gfx_draw_text(g, 12, WIN_H - 88, "DELAY PER COMPARTMENT", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 184, WIN_H - 88, delay_per_comp * 1000.0, 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 240, WIN_H - 88, "us     TOTAL SOMA TO TIP", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 434, WIN_H - 88, total_delay, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 496, WIN_H - 88, "ms", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 72, "LENGTH CONSTANT   AC", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 178, WIN_H - 72, lambda_ac, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 240, WIN_H - 72, "compartments      DC", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 404, WIN_H - 72, lambda_dc_meas, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 466, WIN_H - 72, "  sealed-cosh DC fit", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 630, WIN_H - 72, lambda_dc_cosh, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 692, WIN_H - 72, "vs", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 716, WIN_H - 72, lambda_dc_theory, 4, 1, 235, 240, 250)
+
+    gfx_draw_text(g, 12, WIN_H - 56, "the transient is filtered harder than the steady current: lambda_AC < lambda_DC",
+                  1, 110, 125, 150)
+
+    if ok {
+        gfx_draw_text(g, 740, WIN_H - 104, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 740, WIN_H - 104, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 20, "LEFT/RIGHT somatic drive   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    dv = malloc((N_DEND as i64) * 8)
+    samples = malloc(((SAMP_N as i64) * (N_ALL as i64)) * 8)
+
+    println("")
+    println("  MULTICOMPARTMENT NEURON  --  a backpropagating action potential")
+    println("  ===============================================================")
+    println("")
+    println("    active soma with the 1952 Hodgkin-Huxley conductances")
+    println("    12 passive compartments: c_d 0.30, g_d 0.030 (tau 10 ms), E -65 mV")
+    println("    axial coupling g_c 1.80 throughout      RK4, dt = 10 us")
+    println("")
+
+    record_bap()
+    measure_bap()
+    measure_dc()
+
+    lambda_dc_theory = sqrt(G_C / G_D)
+    lambda_dc_meas = fit_lambda(dc_mv)
+    lambda_dc_cosh = fit_lambda_cosh(dc_mv, 1, 9)
+    identity_err = recover_gd_over_gc()
+    lambda_ac = fit_lambda(peak_mv)
+    delay_per_comp = fit_delay()
+    total_delay = peak_ms[N_ALL - 1] - peak_ms[0]
+    tip_ratio = peak_mv[N_ALL - 1] / peak_mv[0]
+
+    println("      compartment   peak above rest [mV]   time to peak [ms]   fraction of soma")
+    println("      -----------   --------------------   -----------------   ----------------")
+    let mut i: i32 = 0
+    while i < N_ALL {
+        print("    ")
+        printf("%13.0f", i as f64)
+        printf("   %20.4f", peak_mv[i])
+        printf("   %17.4f", peak_ms[i])
+        printf("   %16.5f", peak_mv[i] / peak_mv[0])
+        println("")
+        if i > 0 {
+            if peak_mv[i] >= peak_mv[i - 1] {
+                peaks_fall = false
+            }
+            if peak_ms[i] <= peak_ms[i - 1] {
+                times_rise = false
+            }
+        }
+        i = i + 1
+    }
+    println("")
+    print("    peak amplitude falls monotonically  : ")
+    if peaks_fall {
+        println("yes")
+    } else {
+        println("NO")
+    }
+    print("    time to peak rises monotonically    : ")
+    if times_rise {
+        println("yes")
+    } else {
+        println("NO")
+    }
+    print("    delay per compartment               : ")
+    printf("%8.2f us", delay_per_comp * 1000.0)
+    println("")
+    print("    soma to distal tip                  : ")
+    printf("%8.4f ms", total_delay)
+    println("")
+    print("    tip amplitude as a fraction of soma : ")
+    printf("%8.5f", tip_ratio)
+    println("")
+    println("")
+    print("    cable identity g_d/g_c recovered from the DC profile, worst error: ")
+    printf("%.3e", identity_err)
+    println("")
+    println("      (exact discrete steady state: g_c (V_i-1 - 2V_i + V_i+1) = g_d V_i)")
+    println("")
+    print("    DC length constant, sqrt(g_c/g_d)   : ")
+    printf("%8.4f compartments", lambda_dc_theory)
+    println("")
+    print("    DC length constant, sealed-cosh fit : ")
+    printf("%8.4f compartments", lambda_dc_cosh)
+    print("   relative error ")
+    printf("%.5f", fabs(lambda_dc_cosh - lambda_dc_theory) / lambda_dc_theory)
+    println("")
+    print("    DC decay, plain exponential fit     : ")
+    printf("%8.4f compartments", lambda_dc_meas)
+    println("   (a short sealed cable looks flatter)")
+    print("    AC decay of the spike, same fit     : ")
+    printf("%8.4f compartments", lambda_ac)
+    print("   ratio AC/DC ")
+    printf("%.4f", lambda_ac / lambda_dc_meas)
+    println("")
+    println("")
+
+    let dc_ok: bool = identity_err < 1.0e-6
+                      and fabs(lambda_dc_cosh - lambda_dc_theory) / lambda_dc_theory < 0.05
+    let ac_ok: bool = lambda_ac > 0.0 and lambda_ac < lambda_dc_meas
+    let delay_ok: bool = delay_per_comp > 0.0 and total_delay > 0.05
+    let amp_ok: bool = tip_ratio > 0.02 and tip_ratio < 0.9
+    let ok: bool = peaks_fall and times_rise and dc_ok and ac_ok and delay_ok and amp_ok
+
+    # live cell
+    let mut live_s: Soma = Soma_new()
+    let live_next: ptr<f64> = malloc((N_DEND as i64) * 8)
+    i = 0
+    while i < N_DEND {
+        dv[i] = V_REST
+        live_next[i] = V_REST
+        i = i + 1
+    }
+    let mut drive_idx: i32 = 4
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Multicompartment neuron - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = drive_idx
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = drive_idx - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = drive_idx + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if frame > 0 and frame % 30 == 0 {
+            want = drive_idx + 2
+        }
+        if want < 1 {
+            want = 1
+        }
+        if want > 10 {
+            want = 3
+        }
+        drive_idx = want
+        let drive: f64 = 10.0 * (drive_idx as f64)
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            let mut s: i32 = 0
+            while s < 40 {
+                cell_step(&live_s, dv, live_next, drive, false, DT)
+                i = 0
+                while i < N_DEND {
+                    dv[i] = live_next[i]
+                    i = i + 1
+                }
+                s = s + 1
+            }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_morphology(g, live_s.v)
+        draw_stack(g)
+        draw_attenuation(g)
+        draw_delay(g)
+        draw_hud(g, drive, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !peaks_fall {
+        println("    FAIL: the spike did not attenuate monotonically along the dendrite")
+        return 1
+    }
+    if !times_rise {
+        println("    FAIL: the peak did not arrive later at each successive compartment")
+        return 2
+    }
+    if !amp_ok {
+        println("    FAIL: the distal amplitude is outside the expected band")
+        return 3
+    }
+    if !delay_ok {
+        println("    FAIL: no measurable propagation delay")
+        return 4
+    }
+    if !dc_ok {
+        println("    FAIL: the DC profile does not reproduce sqrt(g_c/g_d)")
+        return 5
+    }
+    if !ac_ok {
+        println("    FAIL: the spike did not attenuate faster than a steady current")
+        return 6
+    }
+    println("    PASS: the spike backpropagates, attenuating faster than DC, with a real delay")
+    return 0
+}
