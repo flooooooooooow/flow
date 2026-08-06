@@ -1,0 +1,318 @@
+# SPATIAL PRISONER'S DILEMMA: cooperation by imitation on a lattice.
+#
+# MODEL (Nowak and May, 1992)
+#   Each site of a periodic grid is a cooperator (C) or a defector (D). Every
+#   generation a site plays the donation game with its eight Moore neighbours
+#   and itself, scoring
+#
+#     C vs C : 1      C vs D : 0      D vs C : b      D vs D : 0
+#
+#   with temptation b > 1. It then copies the strategy of the neighbour
+#   (including itself) with the highest score. Mean-field replicator dynamics
+#   drive cooperators to extinction for every b > 1. On the lattice, spatial
+#   clustering lets cooperators persist for an intermediate band of b.
+#
+# GATES
+#   1. At b = 1.2 the lattice keeps a cooperation density above 0.3.
+#   2. At b = 2.5 cooperation collapses below 0.05 (past the spatial threshold).
+#   3. Mean-field from the same mixed start goes to extinction at b = 1.2,
+#      so the spatial persistence is not a mean-field effect.
+#
+# KEYS
+#   1 b=1.2 PERSIST   2 b=1.6 MIXED   3 b=2.5 EXTINCT
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/spatial_pd.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const GRID: i32 = 64
+const CELLS: i32 = 4096
+const CELL_PX: i32 = 8
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const GEN_GATE: i32 = 200
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 1618033989
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+let mut grid: array<i32, 4096> = [0, 0, 0, 0]
+let mut nextg: array<i32, 4096> = [0, 0, 0, 0]
+let mut score: array<f64, 4096> = [0.0, 0.0, 0.0, 0.0]
+let mut fb: array<u8, 786432> = [0, 0, 0, 0]
+
+function seed_grid(frac_c: f64) -> void {
+    for i in 0 to CELLS {
+        if rng_unit() < frac_c {
+            grid[i] = 1
+        } else {
+            grid[i] = 0
+        }
+    }
+}
+
+function coop_density() -> f64 {
+    let mut s: i32 = 0
+    for i in 0 to CELLS {
+        s = s + grid[i]
+    }
+    return (s as f64) / (CELLS as f64)
+}
+
+function pay(a: i32, b: i32, tempt: f64) -> f64 {
+    if a == 1 and b == 1 { return 1.0 }
+    if a == 1 and b == 0 { return 0.0 }
+    if a == 0 and b == 1 { return tempt }
+    return 0.0
+}
+
+function score_all(tempt: f64) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let mut s: f64 = 0.0
+            for dy in 0 to 3 {
+                for dx in 0 to 3 {
+                    let yy: i32 = (y + dy - 1 + GRID) % GRID
+                    let xx: i32 = (x + dx - 1 + GRID) % GRID
+                    let j: i32 = yy * GRID + xx
+                    s = s + pay(grid[i], grid[j], tempt)
+                }
+            }
+            score[i] = s
+        }
+    }
+}
+
+function imitate(tempt: f64) -> void {
+    score_all(tempt)
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let mut best_s: f64 = score[i]
+            let mut best_strat: i32 = grid[i]
+            for dy in 0 to 3 {
+                for dx in 0 to 3 {
+                    let yy: i32 = (y + dy - 1 + GRID) % GRID
+                    let xx: i32 = (x + dx - 1 + GRID) % GRID
+                    let j: i32 = yy * GRID + xx
+                    if score[j] > best_s + 1.0e-15 {
+                        best_s = score[j]
+                        best_strat = grid[j]
+                    }
+                }
+            }
+            nextg[i] = best_strat
+        }
+    }
+    for i in 0 to CELLS {
+        grid[i] = nextg[i]
+    }
+}
+
+function run_gens(tempt: f64, gens: i32, frac_c: f64) -> f64 {
+    seed_grid(frac_c)
+    for g in 0 to gens {
+        imitate(tempt)
+    }
+    return coop_density()
+}
+
+# Mean-field: well-mixed replicator with the same payoff.
+function mean_field(tempt: f64, p0: f64, steps: i32) -> f64 {
+    let mut p: f64 = p0
+    let dt: f64 = 0.05
+    for t in 0 to steps {
+        # Fitness: f_C = p * 1, f_D = p * b; wbar = p f_C + (1-p) f_D.
+        let fc: f64 = p * 1.0
+        let fd: f64 = p * tempt
+        let wbar: f64 = p * fc + (1.0 - p) * fd
+        p = p + dt * p * (fc - wbar)
+        if p < 0.0 { p = 0.0 }
+        if p > 1.0 { p = 1.0 }
+    }
+    return p
+}
+
+function preset_b(p: i32) -> f64 {
+    if p == 1 { return 1.6 }
+    if p == 2 { return 2.5 }
+    return 1.2
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "MIXED" }
+    if p == 2 { return "EXTINCT" }
+    return "PERSIST"
+}
+
+function paint_cell(x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            if grid[y * GRID + x] == 1 {
+                paint_cell(x, y, 70, 180, 220)
+            } else {
+                paint_cell(x, y, 200, 70, 70)
+            }
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, b: f64, dens: f64, gen: i32,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "SPATIAL PD  NOWAK MAY IMITATION", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_text(g, 40, 28, preset_name(preset), 1, 255, 198, 96)
+    let t4: i32 = gfx_draw_text(g, 130, 28, "b", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 146, 28, b, 2, 1, 234, 232, 244)
+    let t6: i32 = gfx_draw_text(g, 200, 28, "COOP", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_fixed(g, 236, 28, dens, 3, 1, 120, 255, 190)
+    let t8: i32 = gfx_draw_text(g, 300, 28, "GEN", 1, 150, 146, 168)
+    let t9: i32 = gfx_draw_int(g, 328, 28, gen, 1, 234, 232, 244)
+    let ta: i32 = gfx_draw_text(g, 8, 42,
+        "1 PERSIST  2 MIXED  3 EXTINCT  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let tb: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tc: i32 = gfx_draw_text(g, 8, 572,
+        "blue = C, red = D; imitate the highest-scoring Moore neighbour", 1, 122, 118, 144)
+    let td: i32 = gfx_draw_text(g, 8, 582,
+        "mean-field kills C for all b > 1; space lets clusters persist", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    println("")
+    println("  SPATIAL PRISONER'S DILEMMA  --  cooperation against mean-field death")
+    println("  ==================================================================")
+    println("")
+
+    rng_state = 1618033989
+    let dens_lo: f64 = run_gens(1.2, GEN_GATE, 0.5)
+    rng_state = 1618033989
+    let dens_hi: f64 = run_gens(2.5, GEN_GATE, 0.5)
+    let mf: f64 = mean_field(1.2, 0.5, 20000)
+
+    print("    spatial coop density at b = 1.2   : ")
+    printf("%.4f", dens_lo)
+    println("   gate > 0.30")
+    print("    spatial coop density at b = 2.5   : ")
+    printf("%.4f", dens_hi)
+    println("   gate < 0.05")
+    print("    mean-field density at b = 1.2     : ")
+    printf("%.4f", mf)
+    println("   gate < 0.01")
+    println("")
+
+    if dens_lo < 0.30 {
+        println("    FAIL: cooperation did not persist on the lattice at b = 1.2")
+        return 1
+    }
+    if dens_hi > 0.05 {
+        println("    FAIL: cooperation survived past the spatial extinction band")
+        return 2
+    }
+    if mf > 0.01 {
+        println("    FAIL: mean-field did not drive cooperators extinct")
+        return 3
+    }
+    println("    PASS: spatial clustering sustains cooperation at b = 1.2 where")
+    println("          mean-field extinguishes it; at b = 2.5 space fails too")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut b: f64 = preset_b(preset)
+    rng_state = 1618033989
+    seed_grid(0.5)
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Spatial PD - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut gen: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            b = preset_b(preset)
+            seed_grid(0.5)
+            gen = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                seed_grid(0.5)
+                gen = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            imitate(b)
+            gen = gen + 1
+        }
+
+        gfx_clear(gfx, 12, 10, 18)
+        draw_field(gfx)
+        draw_hud(gfx, preset, b, coop_density(), gen, paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}

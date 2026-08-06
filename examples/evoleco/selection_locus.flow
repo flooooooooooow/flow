@@ -1,0 +1,306 @@
+# SELECTION LOCUS: viability selection and the logistic closed form.
+#
+# MODEL (genic / haploid selection, or diploid with multiplicative fitness)
+#   Allele A has relative fitness 1 + s against a. In an infinite population
+#   the recurrence is
+#
+#        p' = p (1 + s) / (1 + s p)
+#
+#   which is the discrete logistic map on the logit scale. Its exact solution
+#   at integer generation t is
+#
+#        p(t) = p0 (1+s)^t / (1 - p0 + p0 (1+s)^t)
+#
+#   The continuous approximation dp/dt = s p (1-p) replaces (1+s)^t by e^{s t}
+#   and is shown on screen for comparison, but the gate uses the exact
+#   discrete closed form.
+#
+# THE MEASUREMENT
+#   Iterate the recurrence for T generations from p0, compare against the
+#   discrete closed form at each generation, and gate the maximum absolute
+#   error (numerical roundoff only).
+#
+# KEYS
+#   1 s=0.05   2 s=0.10   3 s=0.20   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/evoleco/selection_locus.flow \
+#       --frames 4 --out /tmp/eco_selection_locus
+# Run (windowed):
+#   ./flow gfx examples/evoleco/selection_locus.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const TRACE_LEN: i32 = 200
+const VERIFY_T: i32 = 120
+const P0: f64 = 0.05
+const ERR_GATE: f64 = 1.0e-10
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+function preset_s(p: i32) -> f64 {
+    if p == 1 { return 0.10 }
+    if p == 2 { return 0.20 }
+    return 0.05
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "s=0.10" }
+    if p == 2 { return "s=0.20" }
+    return "s=0.05"
+}
+
+function select_step(p: f64, s: f64) -> f64 {
+    return p * (1.0 + s) / (1.0 + s * p)
+}
+
+# Exact solution of the discrete recurrence p' = p(1+s)/(1+s p).
+function closed_form(p0: f64, s: f64, t: f64) -> f64 {
+    let w_t: f64 = exp(t * log(1.0 + s))
+    return p0 * w_t / (1.0 - p0 + p0 * w_t)
+}
+
+# Continuous approximation, drawn live but not gated.
+function closed_form_cont(p0: f64, s: f64, t: f64) -> f64 {
+    let e: f64 = exp(s * t)
+    return p0 * e / (1.0 - p0 + p0 * e)
+}
+
+function max_traj_error(s: f64, t_max: i32) -> f64 {
+    let mut p: f64 = P0
+    let mut worst: f64 = 0.0
+    for t in 0 to t_max + 1 {
+        let pred: f64 = closed_form(P0, s, t as f64)
+        let err: f64 = fabs(p - pred)
+        if err > worst { worst = err }
+        p = select_step(p, s)
+    }
+    return worst
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, disc: ptr<f64>, cont: ptr<f64>,
+                    n: i32, head: i32) -> void {
+    clear_fb(fb)
+    let px0: i32 = 40
+    let py0: i32 = 40
+    let pw: i32 = 432
+    let ph: i32 = 360
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    # gridlines at 0.25, 0.5, 0.75
+    fill_rect_fb(fb, px0, py0 + ph / 4, pw, 1, 40, 38, 56)
+    fill_rect_fb(fb, px0, py0 + ph / 2, pw, 1, 50, 48, 70)
+    fill_rect_fb(fb, px0, py0 + 3 * ph / 4, pw, 1, 40, 38, 56)
+
+    let mut i: i32 = 0
+    while i < head and i < n {
+        let x: i32 = px0 + (i * (pw - 1)) / (n - 1)
+        let yd: i32 = py0 + ph - 1 - ((disc[i] * ((ph - 1) as f64)) as i32)
+        let yc: i32 = py0 + ph - 1 - ((cont[i] * ((ph - 1) as f64)) as i32)
+        put_rgb(fb, x, yc, 90, 140, 220)
+        put_rgb(fb, x, yc - 1, 90, 140, 220)
+        put_rgb(fb, x, yd, 120, 255, 190)
+        put_rgb(fb, x, yd - 1, 120, 255, 190)
+        i = i + 1
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, s: f64, p: f64, pred: f64, err: f64,
+                  gen: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "SELECTION LOCUS", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 220, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 300, 12, "s", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 314, 12, s, 2, 1, 234, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 360, 12, "GEN", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_int(g, 386, 12, gen, 1, 234, 232, 244)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "p DISCRETE", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 84, 28, p, 4, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 150, 28, "p CLOSED", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 214, 28, pred, 4, 1, 90, 160, 240)
+    let tb: i32 = gfx_draw_text(g, 290, 28, "MAX |ERR|", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 358, 28, err, 4, 1, 255, 198, 96)
+
+    let td: i32 = gfx_draw_text(g, 8, 42,
+        "1 s=0.05  2 s=0.10  3 s=0.20  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let te: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tf: i32 = gfx_draw_text(g, 8, 572,
+        "p' = p(1+s)/(1+s p)     p(t) = p0 (1+s)^t / (1-p0 + p0 (1+s)^t)",
+        1, 122, 118, 144)
+    let tg: i32 = gfx_draw_text(g, 8, 582,
+        "green = discrete (gated); blue = continuous e^{st} approximation",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let disc: array<f64, 200> = [0.0, 0.0, 0.0, 0.0]
+    let cont: array<f64, 200> = [0.0, 0.0, 0.0, 0.0]
+
+    let s: f64 = 0.10
+    let err: f64 = max_traj_error(s, VERIFY_T)
+
+    println("")
+    println("  SELECTION LOCUS  --  viability selection vs logistic closed form")
+    println("  ================================================================")
+    println("")
+    print("    p0 = ")
+    printf("%.3f", P0)
+    print("   s = ")
+    printf("%.3f", s)
+    print("   generations = ")
+    printf("%.0f", VERIFY_T as f64)
+    println("")
+    print("    max |p_discrete - p_closed|     : ")
+    printf("%.6f", err)
+    print("   (gate < ")
+    printf("%.3f", ERR_GATE)
+    println(")")
+    println("")
+
+    if err > ERR_GATE {
+        println("    FAIL: discrete selection trajectory left the closed form")
+        return 1
+    }
+    println("    PASS: p(t) follows the logistic closed form for genic selection")
+    println("")
+
+    let mut preset: i32 = 1
+    let mut s_live: f64 = preset_s(preset)
+    let mut p: f64 = P0
+    let mut gen: i32 = 0
+    let mut head: i32 = 0
+    let mut worst: f64 = 0.0
+    disc[0] = P0
+    cont[0] = P0
+    head = 1
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Selection locus - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            s_live = preset_s(preset)
+            p = P0
+            gen = 0
+            head = 1
+            worst = 0.0
+            disc[0] = P0
+            cont[0] = P0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                p = P0
+                gen = 0
+                head = 1
+                worst = 0.0
+                disc[0] = P0
+                cont[0] = P0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            p = select_step(p, s_live)
+            gen = gen + 1
+            let pred: f64 = closed_form(P0, s_live, gen as f64)
+            let pred_c: f64 = closed_form_cont(P0, s_live, gen as f64)
+            let e: f64 = fabs(p - pred)
+            if e > worst { worst = e }
+            if head < TRACE_LEN {
+                disc[head] = p
+                cont[head] = pred_c
+                head = head + 1
+            } else {
+                for i in 0 to TRACE_LEN - 1 {
+                    disc[i] = disc[i + 1]
+                    cont[i] = cont[i + 1]
+                }
+                disc[TRACE_LEN - 1] = p
+                cont[TRACE_LEN - 1] = pred_c
+            }
+            if p > 0.99 {
+                p = P0
+                gen = 0
+                head = 1
+                worst = 0.0
+                disc[0] = P0
+                cont[0] = P0
+            }
+        }
+
+        let pred_now: f64 = closed_form(P0, s_live, gen as f64)
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, disc, cont, TRACE_LEN, head)
+        draw_hud(g, preset, s_live, p, pred_now, worst, gen, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

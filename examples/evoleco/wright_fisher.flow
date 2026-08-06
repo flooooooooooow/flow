@@ -1,0 +1,492 @@
+# WRIGHT-FISHER: neutral drift, fixation time, and heterozygosity decay.
+#
+# MODEL
+#   N diploid individuals, 2N gene copies. Each generation the next pool of
+#   2N alleles is drawn independently with replacement from the current
+#   frequency p (binomial sampling). No mutation, no selection.
+#
+# CLOSED FORMS
+#   1. Heterozygosity under random mating decays exactly as
+#
+#        H_t = H_0 (1 - 1/(2N))^t
+#
+#      with H = 2 p (1 - p).
+#
+#   2. Mean generations to absorption (fixation or loss) from frequency p,
+#      for a diploid population of size N (Ne = N), is
+#
+#        t_bar(p) = -4 N [ p ln p + (1-p) ln(1-p) ]
+#
+#      so from p = 1/2, t_bar = 4 N ln 2.
+#
+# THE MEASUREMENT
+#   Headless pass: average H over many replicate trajectories after T gens
+#   against H_0 (1-1/(2N))^T, and mean absorption time from p = 0.5 against
+#   4 N ln 2. Both relative errors are gated. Then the window opens on a
+#   live diploid lattice and a scrolling p(t) trace.
+#
+# KEYS
+#   1 N=20   2 N=40   3 N=80   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/evoleco/wright_fisher.flow \
+#       --frames 4 --out /tmp/eco_wright_fisher
+# Run (windowed):
+#   ./flow gfx examples/evoleco/wright_fisher.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function log(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const TRACE_LEN: i32 = 256
+const MAX_ALLELES: i32 = 320
+
+const VERIFY_N: i32 = 40
+const VERIFY_H_GENS: i32 = 80
+const VERIFY_H_REPS: i32 = 600
+const VERIFY_T_REPS: i32 = 400
+const VERIFY_T_CAP: i32 = 4000
+const H_GATE: f64 = 0.08
+const T_GATE: f64 = 0.18
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 1901194261
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_n(p: i32) -> i32 {
+    if p == 1 { return 40 }
+    if p == 2 { return 80 }
+    return 20
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "N=40" }
+    if p == 2 { return "N=80" }
+    return "N=20"
+}
+
+function hetero(p: f64) -> f64 {
+    return 2.0 * p * (1.0 - p)
+}
+
+function theory_absorb(n: f64, p: f64) -> f64 {
+    return 0.0 - 4.0 * n * (p * log(p) + (1.0 - p) * log(1.0 - p))
+}
+
+# One WF generation: binomial sample of 2N alleles given frequency p.
+function wf_step(p: f64, two_n: i32) -> f64 {
+    let mut k: i32 = 0
+    for i in 0 to two_n {
+        if rng_unit() < p {
+            k = k + 1
+        }
+    }
+    return (k as f64) / (two_n as f64)
+}
+
+function mean_hetero_after(n: i32, gens: i32, reps: i32) -> f64 {
+    let two_n: i32 = 2 * n
+    let mut sum: f64 = 0.0
+    for r in 0 to reps {
+        let mut p: f64 = 0.5
+        for g in 0 to gens {
+            p = wf_step(p, two_n)
+        }
+        sum = sum + hetero(p)
+    }
+    return sum / (reps as f64)
+}
+
+function mean_absorb_time(n: i32, reps: i32, cap: i32) -> f64 {
+    let two_n: i32 = 2 * n
+    let mut sum: f64 = 0.0
+    let mut count: i32 = 0
+    for r in 0 to reps {
+        let mut p: f64 = 0.5
+        let mut t: i32 = 0
+        while t < cap and p > 0.0 and p < 1.0 {
+            p = wf_step(p, two_n)
+            t = t + 1
+        }
+        if p <= 0.0 or p >= 1.0 {
+            sum = sum + (t as f64)
+            count = count + 1
+        }
+    }
+    if count == 0 { return 0.0 }
+    return sum / (count as f64)
+}
+
+# ---------------------------------------------------------------------------
+# Live state: allele array (0/1) for N diploids = 2N copies, plus p-trace.
+# ---------------------------------------------------------------------------
+
+function seed_pop(alleles: ptr<i32>, two_n: i32, p0: f64) -> void {
+    for i in 0 to two_n {
+        if rng_unit() < p0 {
+            alleles[i] = 1
+        } else {
+            alleles[i] = 0
+        }
+    }
+}
+
+function freq_of(alleles: ptr<i32>, two_n: i32) -> f64 {
+    let mut k: i32 = 0
+    for i in 0 to two_n {
+        k = k + alleles[i]
+    }
+    return (k as f64) / (two_n as f64)
+}
+
+function step_pop(alleles: ptr<i32>, scratch: ptr<i32>, two_n: i32) -> void {
+    let p: f64 = freq_of(alleles, two_n)
+    for i in 0 to two_n {
+        if rng_unit() < p {
+            scratch[i] = 1
+        } else {
+            scratch[i] = 0
+        }
+    }
+    for i in 0 to two_n {
+        alleles[i] = scratch[i]
+    }
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, alleles: ptr<i32>, two_n: i32,
+                    trace: ptr<f64>, tlen: i32, thd: i32) -> void {
+    clear_fb(fb)
+
+    # Diploid lattice: each individual is a 2-allele cell, laid out in a grid.
+    let cols: i32 = 20
+    let cell: i32 = 14
+    let ox: i32 = 16
+    let oy: i32 = 16
+    let n_ind: i32 = two_n / 2
+    for i in 0 to n_ind {
+        let c: i32 = i % cols
+        let r: i32 = i / cols
+        let a0: i32 = alleles[2 * i]
+        let a1: i32 = alleles[2 * i + 1]
+        let x: i32 = ox + c * (cell + 2)
+        let y: i32 = oy + r * (cell + 2)
+        fill_rect_fb(fb, x, y, cell, cell, 28, 26, 40)
+        # Left allele
+        let mut r0: i32 = 70
+        let mut g0: i32 = 90
+        let mut b0: i32 = 160
+        if a0 == 1 {
+            r0 = 240
+            g0 = 150
+            b0 = 70
+        }
+        fill_rect_fb(fb, x + 1, y + 1, cell / 2 - 1, cell - 2, r0, g0, b0)
+        # Right allele
+        let mut r1: i32 = 70
+        let mut g1: i32 = 90
+        let mut b1: i32 = 160
+        if a1 == 1 {
+            r1 = 240
+            g1 = 150
+            b1 = 70
+        }
+        fill_rect_fb(fb, x + cell / 2, y + 1, cell / 2 - 1, cell - 2, r1, g1, b1)
+    }
+
+    # Scrolling p(t) plot on the right half of the field.
+    let px0: i32 = 280
+    let py0: i32 = 40
+    let pw: i32 = 212
+    let ph: i32 = 200
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    # midline at p = 0.5
+    fill_rect_fb(fb, px0, py0 + ph / 2, pw, 1, 50, 48, 70)
+    let mut i: i32 = 0
+    while i < tlen - 1 {
+        let x0: i32 = px0 + (i * (pw - 1)) / (tlen - 1)
+        let x1: i32 = px0 + ((i + 1) * (pw - 1)) / (tlen - 1)
+        let y0: i32 = py0 + ph - 1 - ((trace[i] * ((ph - 1) as f64)) as i32)
+        let y1: i32 = py0 + ph - 1 - ((trace[i + 1] * ((ph - 1) as f64)) as i32)
+        put_rgb(fb, x0, y0, 120, 255, 190)
+        put_rgb(fb, x1, y1, 120, 255, 190)
+        # crude vertical connect
+        let mut y: i32 = y0
+        let mut step: i32 = 1
+        if y1 < y0 { step = 0 - 1 }
+        while y != y1 {
+            put_rgb(fb, x1, y, 90, 210, 160)
+            y = y + step
+        }
+        i = i + 1
+    }
+    # head marker
+    if thd > 0 {
+        let hx: i32 = px0 + ((thd - 1) * (pw - 1)) / (tlen - 1)
+        let hy: i32 = py0 + ph - 1 - ((trace[thd - 1] * ((ph - 1) as f64)) as i32)
+        fill_rect_fb(fb, hx - 2, hy - 2, 5, 5, 255, 220, 100)
+    }
+
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, n: i32, p: f64, h: f64, h_pred: f64,
+                  gen: i32, mean_t: f64, t_pred: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "WRIGHT-FISHER", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 250, 12, "2N", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 270, 12, 2 * n, 1, 234, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 320, 12, "GEN", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_int(g, 344, 12, gen, 1, 234, 232, 244)
+    let t7: i32 = gfx_draw_text(g, 400, 12, "p", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 412, 12, p, 3, 1, 120, 255, 190)
+
+    let t9: i32 = gfx_draw_text(g, 8, 28, "H MEASURED", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 84, 28, h, 4, 1, 120, 255, 190)
+    let tb: i32 = gfx_draw_text(g, 140, 28, "H PRED", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 188, 28, h_pred, 4, 1, 120, 255, 190)
+    let td: i32 = gfx_draw_text(g, 250, 28, "T_ABS", 1, 150, 146, 168)
+    let te: i32 = gfx_draw_fixed(g, 286, 28, mean_t, 1, 1, 234, 232, 244)
+    let tf: i32 = gfx_draw_text(g, 340, 28, "4N ln2", 1, 150, 146, 168)
+    let tg: i32 = gfx_draw_fixed(g, 386, 28, t_pred, 1, 1, 234, 232, 244)
+
+    let th: i32 = gfx_draw_text(g, 8, 42,
+        "1 N=20  2 N=40  3 N=80  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let ti: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tj: i32 = gfx_draw_text(g, 8, 572,
+        "H_t = H_0 (1 - 1/(2N))^t     t_bar(1/2) = 4 N ln 2", 1, 122, 118, 144)
+    let tk: i32 = gfx_draw_text(g, 8, 582,
+        "diploid lattice: orange = A, blue = a; right plot is p(t)", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let alleles: array<i32, 320> = [0, 0, 0, 0]
+    let scratch: array<i32, 320> = [0, 0, 0, 0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let trace: array<f64, 256> = [0.0, 0.0, 0.0, 0.0]
+
+    let n: i32 = VERIFY_N
+    let two_n: i32 = 2 * n
+    let h0: f64 = hetero(0.5)
+    let decay: f64 = 1.0 - 1.0 / (two_n as f64)
+    let mut factor: f64 = 1.0
+    for g in 0 to VERIFY_H_GENS {
+        factor = factor * decay
+    }
+    let h_pred: f64 = h0 * factor
+    let t_pred: f64 = theory_absorb(n as f64, 0.5)
+
+    println("")
+    println("  WRIGHT-FISHER  --  neutral drift, fixation time, heterozygosity")
+    println("  ===============================================================")
+    println("")
+    print("    N (diploid) = ")
+    printf("%.0f", n as f64)
+    print("   2N = ")
+    printf("%.0f", two_n as f64)
+    println("")
+    print("    H_0 at p = 0.5                  : ")
+    printf("%.6f", h0)
+    println("")
+    print("    predicted H after ")
+    printf("%.0f", VERIFY_H_GENS as f64)
+    print(" gens      : ")
+    printf("%.6f", h_pred)
+    println("")
+
+    rng_state = 1901194261
+    let h_meas: f64 = mean_hetero_after(n, VERIFY_H_GENS, VERIFY_H_REPS)
+    let h_err: f64 = fabs(h_meas - h_pred) / h_pred
+    print("    measured mean H                 : ")
+    printf("%.6f", h_meas)
+    println("")
+    print("    relative error                  : ")
+    printf("%.6f", h_err)
+    print("   (gate < ")
+    printf("%.2f", H_GATE)
+    println(")")
+    println("")
+
+    print("    predicted mean absorb time      : ")
+    printf("%.3f", t_pred)
+    println(" gens  (= 4 N ln 2)")
+    rng_state = 2718281829
+    let t_meas: f64 = mean_absorb_time(n, VERIFY_T_REPS, VERIFY_T_CAP)
+    let t_err: f64 = fabs(t_meas - t_pred) / t_pred
+    print("    measured mean absorb time       : ")
+    printf("%.3f", t_meas)
+    println(" gens")
+    print("    relative error                  : ")
+    printf("%.6f", t_err)
+    print("   (gate < ")
+    printf("%.2f", T_GATE)
+    println(")")
+    println("")
+
+    if h_err > H_GATE {
+        println("    FAIL: heterozygosity decay disagrees with (1 - 1/(2N))^t")
+        return 1
+    }
+    if t_err > T_GATE {
+        println("    FAIL: mean absorption time disagrees with 4 N ln 2")
+        return 2
+    }
+    println("    PASS: H_t matches (1-1/(2N))^t and t_bar(1/2) matches 4 N ln 2")
+    println("")
+
+    let mut preset: i32 = 1
+    let mut n_live: i32 = preset_n(preset)
+    let mut two_live: i32 = 2 * n_live
+    rng_state = 4242424242
+    seed_pop(alleles, two_live, 0.5)
+    for i in 0 to TRACE_LEN {
+        trace[i] = 0.5
+    }
+    let mut thd: i32 = 0
+    let mut gen: i32 = 0
+    let mut p_live: f64 = 0.5
+    let mut h_live: f64 = h0
+    let mut h_live_pred: f64 = h0
+    let mut decay_live: f64 = 1.0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Wright-Fisher - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            n_live = preset_n(preset)
+            two_live = 2 * n_live
+            seed_pop(alleles, two_live, 0.5)
+            gen = 0
+            thd = 0
+            decay_live = 1.0
+            for i in 0 to TRACE_LEN {
+                trace[i] = 0.5
+            }
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_pop(alleles, two_live, 0.5)
+                gen = 0
+                thd = 0
+                decay_live = 1.0
+                for i in 0 to TRACE_LEN {
+                    trace[i] = 0.5
+                }
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            # A few generations per displayed frame so the drift is visible.
+            let d: f64 = 1.0 - 1.0 / (two_live as f64)
+            for s in 0 to 2 {
+                step_pop(alleles, scratch, two_live)
+                gen = gen + 1
+                decay_live = decay_live * d
+            }
+            p_live = freq_of(alleles, two_live)
+            if thd < TRACE_LEN {
+                trace[thd] = p_live
+                thd = thd + 1
+            } else {
+                for i in 0 to TRACE_LEN - 1 {
+                    trace[i] = trace[i + 1]
+                }
+                trace[TRACE_LEN - 1] = p_live
+            }
+            # If absorbed, reseed so the clip keeps moving.
+            if p_live <= 0.0 or p_live >= 1.0 {
+                seed_pop(alleles, two_live, 0.5)
+                gen = 0
+                decay_live = 1.0
+            }
+        }
+
+        p_live = freq_of(alleles, two_live)
+        h_live = hetero(p_live)
+        h_live_pred = h0 * decay_live
+        let t_pred_live: f64 = theory_absorb(n_live as f64, 0.5)
+
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, alleles, two_live, trace, TRACE_LEN, thd)
+        draw_hud(g, preset, n_live, p_live, h_live, h_live_pred, gen,
+                 t_meas, t_pred_live, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

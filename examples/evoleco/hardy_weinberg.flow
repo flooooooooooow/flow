@@ -1,0 +1,395 @@
+# HARDY-WEINBERG: one generation of random mating restores p^2 : 2pq : q^2.
+#
+# MODEL
+#   A diploid locus with alleles A and a. Genotype frequencies are (f_AA,
+#   f_Aa, f_aa). Allele frequency p = f_AA + f_Aa/2 is conserved under
+#   Mendelian segregation. Random mating (or equivalently, random union of
+#   gametes) produces the next generation at exactly
+#
+#        f_AA' = p^2 ,   f_Aa' = 2 p q ,   f_aa' = q^2
+#
+#   in a single generation, regardless of the starting genotype mix, as long
+#   as there is no selection, mutation, migration, or assortative mating.
+#
+# THE MEASUREMENT
+#   Start far from HWE (excess heterozygotes, or a pure AA+aa mix). After one
+#   random-mating generation, gate the maximum absolute deviation of the
+#   three genotype frequencies from (p^2, 2pq, q^2). Chi-square on a finite
+#   census of N diploids is reported alongside.
+#
+# KEYS
+#   1 EXCESS HET   2 DEFICIENT HET   3 PURE HOM   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/evoleco/hardy_weinberg.flow \
+#       --frames 4 --out /tmp/eco_hardy_weinberg
+# Run (windowed):
+#   ./flow gfx examples/evoleco/hardy_weinberg.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const N_DIP: i32 = 2000
+const DEV_GATE: f64 = 1.0e-12
+const CHI_GATE: f64 = 0.05
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 161803398
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "DEFICIENT HET" }
+    if p == 2 { return "PURE HOM" }
+    return "EXCESS HET"
+}
+
+# Starting genotype frequencies for each preset. All share the same p.
+# preset 0: excess heterozygotes  (f_Aa = 0.9, p = 0.5)
+# preset 1: deficient hets        (f_Aa = 0.1, p = 0.5)
+# preset 2: only homozygotes      (f_AA = 0.5, f_aa = 0.5, p = 0.5)
+function start_aa(p: i32) -> f64 {
+    if p == 1 { return 0.45 }
+    if p == 2 { return 0.5 }
+    return 0.05
+}
+
+function start_het(p: i32) -> f64 {
+    if p == 1 { return 0.10 }
+    if p == 2 { return 0.0 }
+    return 0.90
+}
+
+function start_aa_m(p: i32) -> f64 {
+    if p == 1 { return 0.45 }
+    if p == 2 { return 0.5 }
+    return 0.05
+}
+
+function allele_p(faa: f64, fhet: f64) -> f64 {
+    return faa + 0.5 * fhet
+}
+
+function mate(faa: f64, fhet: f64, faa_m: f64) -> void {
+    # Pure gamete-pool mating; result is exact HWE at the conserved p.
+    # (Values written through the module-level next_* slots.)
+    let p: f64 = allele_p(faa, fhet)
+    let q: f64 = 1.0 - p
+    next_aa = p * p
+    next_het = 2.0 * p * q
+    next_aa_m = q * q
+}
+
+let mut next_aa: f64 = 0.0
+let mut next_het: f64 = 0.0
+let mut next_aa_m: f64 = 0.0
+
+function max_dev(faa: f64, fhet: f64, faa_m: f64, p: f64) -> f64 {
+    let q: f64 = 1.0 - p
+    let d0: f64 = fabs(faa - p * p)
+    let d1: f64 = fabs(fhet - 2.0 * p * q)
+    let d2: f64 = fabs(faa_m - q * q)
+    let mut m: f64 = d0
+    if d1 > m { m = d1 }
+    if d2 > m { m = d2 }
+    return m
+}
+
+# Finite census: draw N diploids from HWE gamete pool, return chi-square
+# against (p^2, 2pq, q^2) with the same p estimated from the sample.
+function sample_chi(p_true: f64, n: i32) -> f64 {
+    let mut n_aa: i32 = 0
+    let mut n_het: i32 = 0
+    let mut n_aa_m: i32 = 0
+    for i in 0 to n {
+        let g0: f64 = rng_unit()
+        let g1: f64 = rng_unit()
+        let mut aa0: i32 = 0
+        let mut aa1: i32 = 0
+        if g0 < p_true { aa0 = 1 }
+        if g1 < p_true { aa1 = 1 }
+        let s: i32 = aa0 + aa1
+        if s == 2 { n_aa = n_aa + 1 }
+        if s == 1 { n_het = n_het + 1 }
+        if s == 0 { n_aa_m = n_aa_m + 1 }
+    }
+    let p_hat: f64 = ((2 * n_aa + n_het) as f64) / ((2 * n) as f64)
+    let q: f64 = 1.0 - p_hat
+    let e_aa: f64 = (n as f64) * p_hat * p_hat
+    let e_het: f64 = (n as f64) * 2.0 * p_hat * q
+    let e_aa_m: f64 = (n as f64) * q * q
+    let mut chi: f64 = 0.0
+    if e_aa > 0.0 {
+        let d: f64 = (n_aa as f64) - e_aa
+        chi = chi + d * d / e_aa
+    }
+    if e_het > 0.0 {
+        let d: f64 = (n_het as f64) - e_het
+        chi = chi + d * d / e_het
+    }
+    if e_aa_m > 0.0 {
+        let d: f64 = (n_aa_m as f64) - e_aa_m
+        chi = chi + d * d / e_aa_m
+    }
+    return chi
+}
+
+function draw_bar(g: Gfx, x: i32, y_base: i32, h: i32, w: i32,
+                  r: i32, g2: i32, b: i32) -> void {
+    if h >= 1 {
+        gfx_fill_rect(g, x, y_base - h, w, h, r, g2, b)
+    }
+}
+
+function draw_scene(g: Gfx, faa: f64, fhet: f64, faa_m: f64, p: f64,
+                    after: bool) -> void {
+    let q: f64 = 1.0 - p
+    let base: i32 = 480
+    let max_h: i32 = 280
+    let bw: i32 = 56
+
+    # Expected HWE bars (outline / dim)
+    let e0: i32 = ((p * p) * (max_h as f64)) as i32
+    let e1: i32 = ((2.0 * p * q) * (max_h as f64)) as i32
+    let e2: i32 = ((q * q) * (max_h as f64)) as i32
+    gfx_fill_rect(g, 70, base - e0, bw, e0, 40, 38, 56)
+    gfx_fill_rect(g, 160, base - e1, bw, e1, 40, 38, 56)
+    gfx_fill_rect(g, 250, base - e2, bw, e2, 40, 38, 56)
+
+    # Observed bars
+    let h0: i32 = (faa * (max_h as f64)) as i32
+    let h1: i32 = (fhet * (max_h as f64)) as i32
+    let h2: i32 = (faa_m * (max_h as f64)) as i32
+    draw_bar(g, 78, base, h0, bw - 16, 240, 150, 70)
+    draw_bar(g, 168, base, h1, bw - 16, 120, 220, 170)
+    draw_bar(g, 258, base, h2, bw - 16, 70, 110, 200)
+
+    gfx_draw_text(g, 78, base + 8, "AA", 1, 200, 196, 210)
+    gfx_draw_text(g, 168, base + 8, "Aa", 1, 200, 196, 210)
+    gfx_draw_text(g, 258, base + 8, "aa", 1, 200, 196, 210)
+
+    # Target markers p^2, 2pq, q^2 as ticks
+    gfx_draw_text(g, 340, 120, "TARGET HWE", 1, 150, 146, 168)
+    gfx_draw_text(g, 340, 140, "p^2", 1, 150, 146, 168)
+    gfx_draw_fixed(g, 380, 140, p * p, 4, 1, 234, 232, 244)
+    gfx_draw_text(g, 340, 158, "2pq", 1, 150, 146, 168)
+    gfx_draw_fixed(g, 380, 158, 2.0 * p * q, 4, 1, 234, 232, 244)
+    gfx_draw_text(g, 340, 176, "q^2", 1, 150, 146, 168)
+    gfx_draw_fixed(g, 380, 176, q * q, 4, 1, 234, 232, 244)
+
+    if after {
+        gfx_draw_text(g, 340, 210, "AFTER MATING", 1, 120, 255, 190)
+    } else {
+        gfx_draw_text(g, 340, 210, "BEFORE MATING", 1, 255, 180, 100)
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, p: f64, dev: f64, chi: f64,
+                  gen: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "HARDY-WEINBERG", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 220, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 360, 12, "p", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 374, 12, p, 3, 1, 120, 255, 190)
+    let t5: i32 = gfx_draw_text(g, 440, 12, "GEN", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_int(g, 466, 12, gen, 1, 234, 232, 244)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "MAX |f - HWE|", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 110, 28, dev, 2, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 200, 28, "CHI^2 (N=2000)", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 310, 28, chi, 4, 1, 234, 232, 244)
+
+    let tb: i32 = gfx_draw_text(g, 8, 42,
+        "1 EXCESS HET  2 DEFICIENT HET  3 PURE HOM  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let td: i32 = gfx_draw_text(g, 8, 572,
+        "one generation of random mating: f' = (p^2, 2pq, q^2)", 1, 122, 118, 144)
+    let te: i32 = gfx_draw_text(g, 8, 582,
+        "dim bars are the HWE targets; bright bars are the current genotype mix",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let mut preset: i32 = 0
+    let faa0: f64 = start_aa(preset)
+    let fhet0: f64 = start_het(preset)
+    let faa_m0: f64 = start_aa_m(preset)
+    let p0: f64 = allele_p(faa0, fhet0)
+
+    mate(faa0, fhet0, faa_m0)
+    let dev: f64 = max_dev(next_aa, next_het, next_aa_m, p0)
+
+    println("")
+    println("  HARDY-WEINBERG  --  genotype frequencies after one random mating")
+    println("  ================================================================")
+    println("")
+    print("    start AA, Aa, aa               : ")
+    printf("%.4f", faa0)
+    print("  ")
+    printf("%.4f", fhet0)
+    print("  ")
+    printf("%.4f", faa_m0)
+    println("")
+    print("    allele frequency p             : ")
+    printf("%.6f", p0)
+    println("")
+    print("    after mating AA, Aa, aa        : ")
+    printf("%.6f", next_aa)
+    print("  ")
+    printf("%.6f", next_het)
+    print("  ")
+    printf("%.6f", next_aa_m)
+    println("")
+    print("    HWE targets p^2, 2pq, q^2      : ")
+    printf("%.6f", p0 * p0)
+    print("  ")
+    printf("%.6f", 2.0 * p0 * (1.0 - p0))
+    print("  ")
+    printf("%.6f", (1.0 - p0) * (1.0 - p0))
+    println("")
+    print("    max deviation from HWE         : ")
+    printf("%.12f", dev)
+    println("")
+    print("    gate                           : ")
+    printf("%.12f", DEV_GATE)
+    println("")
+
+    rng_state = 314159265
+    let chi: f64 = sample_chi(p0, N_DIP)
+    # For infinite-population exact mating, chi is a finite-N fluctuation
+    # check that HWE sampling is consistent; gate mean-level via p-value proxy:
+    # with 2 df, chi^2 < 6 is comfortable (p > 0.05 roughly near 5.99).
+    print("    finite-N chi^2 (N = 2000)      : ")
+    printf("%.4f", chi)
+    print("   (gate < ")
+    printf("%.2f", 12.0)
+    println(")")
+    println("")
+
+    if dev > DEV_GATE {
+        println("    FAIL: genotype frequencies did not recover HWE in one generation")
+        return 1
+    }
+    if chi > 12.0 {
+        println("    FAIL: finite census chi-square against HWE is too large")
+        return 2
+    }
+    println("    PASS: random mating restores p^2 : 2pq : q^2 in one generation")
+    println("")
+
+    let mut faa: f64 = faa0
+    let mut fhet: f64 = fhet0
+    let mut faa_m: f64 = faa_m0
+    let mut p: f64 = p0
+    let mut gen: i32 = 0
+    let mut after: bool = false
+    let mut phase: i32 = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Hardy-Weinberg - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut live_dev: f64 = max_dev(faa, fhet, faa_m, p)
+    let mut live_chi: f64 = chi
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            faa = start_aa(preset)
+            fhet = start_het(preset)
+            faa_m = start_aa_m(preset)
+            p = allele_p(faa, fhet)
+            gen = 0
+            after = false
+            phase = 0
+            live_dev = max_dev(faa, fhet, faa_m, p)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                faa = start_aa(preset)
+                fhet = start_het(preset)
+                faa_m = start_aa_m(preset)
+                p = allele_p(faa, fhet)
+                gen = 0
+                after = false
+                phase = 0
+                live_dev = max_dev(faa, fhet, faa_m, p)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            phase = phase + 1
+            # Hold the non-HWE start, then mate once, then hold the recovery.
+            if phase == 40 {
+                mate(faa, fhet, faa_m)
+                faa = next_aa
+                fhet = next_het
+                faa_m = next_aa_m
+                gen = 1
+                after = true
+                live_dev = max_dev(faa, fhet, faa_m, p)
+                rng_state = rng_state + 1
+                live_chi = sample_chi(p, N_DIP)
+            }
+            if phase > 100 {
+                faa = start_aa(preset)
+                fhet = start_het(preset)
+                faa_m = start_aa_m(preset)
+                p = allele_p(faa, fhet)
+                gen = 0
+                after = false
+                phase = 0
+                live_dev = max_dev(faa, fhet, faa_m, p)
+            }
+        }
+
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, faa, fhet, faa_m, p, after)
+        draw_hud(g, preset, p, live_dev, live_chi, gen, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

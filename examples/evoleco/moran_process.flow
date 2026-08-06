@@ -1,0 +1,422 @@
+# MORAN PROCESS: birth-death updates and the fixation probability 1/N.
+#
+# MODEL
+#   A haploid population of N individuals. Each step, one individual is
+#   chosen to reproduce (weighted by fitness) and one is chosen to die
+#   (uniformly); the offspring replaces the dead. Time is in units of N
+#   such updates (one generation).
+#
+#   Neutral case (all fitness 1): the fixation probability of a type that
+#   starts at i copies is exactly i/N. In particular a single mutant fixes
+#   with probability 1/N.
+#
+#   Selective case with fitness ratio r = 1 + s for the mutant:
+#
+#        rho = (1 - 1/r) / (1 - 1/r^N)     (r != 1)
+#
+# THE MEASUREMENT
+#   Many independent runs from one mutant, gate the measured fixation
+#   frequency against 1/N (neutral) and against rho (selective preset).
+#
+# KEYS
+#   1 neutral N=30   2 neutral N=50   3 selective r=1.1 N=30
+#   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/evoleco/moran_process.flow \
+#       --frames 4 --out /tmp/eco_moran_process
+# Run (windowed):
+#   ./flow gfx examples/evoleco/moran_process.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const TRACE_LEN: i32 = 220
+const MAX_N: i32 = 80
+const VERIFY_N: i32 = 30
+const VERIFY_TRIALS: i32 = 6000
+const VERIFY_SEL_TRIALS: i32 = 4000
+const ERR_GATE: f64 = 0.12
+const SEL_GATE: f64 = 0.15
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 123456789
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 11) % (n as u32)) as i32
+}
+
+function preset_n(p: i32) -> i32 {
+    if p == 1 { return 50 }
+    if p == 2 { return 30 }
+    return 30
+}
+
+function preset_r(p: i32) -> f64 {
+    if p == 2 { return 1.1 }
+    return 1.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "NEUTRAL N=50" }
+    if p == 2 { return "SELECT r=1.1" }
+    return "NEUTRAL N=30"
+}
+
+function rho_selective(r: f64, n: i32) -> f64 {
+    if fabs(r - 1.0) < 1.0e-12 {
+        return 1.0 / (n as f64)
+    }
+    let rn: f64 = exp((n as f64) * log(r))
+    return (1.0 - 1.0 / r) / (1.0 - 1.0 / rn)
+}
+
+# One absorbing Moran run from a single mutant. Returns 1 if fixed.
+function moran_absorb(pop: ptr<i32>, n: i32, r: f64, cap: i32) -> i32 {
+    for i in 0 to n {
+        pop[i] = 0
+    }
+    pop[0] = 1
+    let mut k: i32 = 1
+    let mut t: i32 = 0
+    while t < cap and k > 0 and k < n {
+        # Birth: fitness-weighted
+        let fit_mut: f64 = (k as f64) * r
+        let fit_tot: f64 = fit_mut + ((n - k) as f64)
+        let mut birth_mut: bool = false
+        if rng_unit() < fit_mut / fit_tot {
+            birth_mut = true
+        }
+        let death: i32 = rng_below(n)
+        let died_mut: bool = pop[death] == 1
+        if birth_mut and !died_mut {
+            pop[death] = 1
+            k = k + 1
+        }
+        if !birth_mut and died_mut {
+            pop[death] = 0
+            k = k - 1
+        }
+        t = t + 1
+    }
+    if k >= n { return 1 }
+    return 0
+}
+
+function fixation_rate(n: i32, r: f64, trials: i32) -> f64 {
+    let pop: array<i32, 80> = [0, 0, 0, 0]
+    let mut wins: i32 = 0
+    let cap: i32 = n * n * 40
+    for t in 0 to trials {
+        wins = wins + moran_absorb(pop, n, r, cap)
+    }
+    return (wins as f64) / (trials as f64)
+}
+
+function count_mut(pop: ptr<i32>, n: i32) -> i32 {
+    let mut k: i32 = 0
+    for i in 0 to n {
+        k = k + pop[i]
+    }
+    return k
+}
+
+function seed_one(pop: ptr<i32>, n: i32) -> void {
+    for i in 0 to n {
+        pop[i] = 0
+    }
+    pop[rng_below(n)] = 1
+}
+
+function moran_step_live(pop: ptr<i32>, n: i32, r: f64) -> void {
+    let k: i32 = count_mut(pop, n)
+    if k > 0 and k < n {
+        let fit_mut: f64 = (k as f64) * r
+        let fit_tot: f64 = fit_mut + ((n - k) as f64)
+        let mut birth_mut: bool = false
+        if rng_unit() < fit_mut / fit_tot {
+            birth_mut = true
+        }
+        let death: i32 = rng_below(n)
+        if birth_mut {
+            pop[death] = 1
+        } else {
+            pop[death] = 0
+        }
+    }
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, pop: ptr<i32>, n: i32,
+                    trace: ptr<f64>, tlen: i32, head: i32) -> void {
+    clear_fb(fb)
+
+    # Individual row
+    let cell: i32 = 8
+    let ox: i32 = 20
+    let oy: i32 = 40
+    for i in 0 to n {
+        let c: i32 = i % 40
+        let r: i32 = i / 40
+        let x: i32 = ox + c * (cell + 2)
+        let y: i32 = oy + r * (cell + 2)
+        if pop[i] == 1 {
+            fill_rect_fb(fb, x, y, cell, cell, 240, 150, 70)
+        } else {
+            fill_rect_fb(fb, x, y, cell, cell, 70, 100, 170)
+        }
+    }
+
+    # Frequency trace
+    let px0: i32 = 40
+    let py0: i32 = 200
+    let pw: i32 = 432
+    let ph: i32 = 240
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    fill_rect_fb(fb, px0, py0 + ph / 2, pw, 1, 50, 48, 70)
+    let mut i: i32 = 0
+    while i < head and i < tlen {
+        let x: i32 = px0 + (i * (pw - 1)) / (tlen - 1)
+        let y: i32 = py0 + ph - 1 - ((trace[i] * ((ph - 1) as f64)) as i32)
+        put_rgb(fb, x, y, 120, 255, 190)
+        i = i + 1
+    }
+
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, n: i32, r: f64, p: f64, rho: f64,
+                  meas: f64, err: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "MORAN PROCESS", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 340, 12, "N", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 354, 12, n, 1, 234, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 400, 12, "r", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 414, 12, r, 2, 1, 234, 232, 244)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "p NOW", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 50, 28, p, 3, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 110, 28, "rho THEORY", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 186, 28, rho, 4, 1, 255, 198, 96)
+    let tb: i32 = gfx_draw_text(g, 260, 28, "rho MEAS", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 324, 28, meas, 4, 1, 234, 232, 244)
+    let td: i32 = gfx_draw_text(g, 400, 28, "ERR", 1, 150, 146, 168)
+    let te: i32 = gfx_draw_fixed(g, 426, 28, err, 3, 1, 234, 232, 244)
+
+    let tf: i32 = gfx_draw_text(g, 8, 42,
+        "1 NEUT N=30  2 NEUT N=50  3 SEL r=1.1  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let tg: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let th: i32 = gfx_draw_text(g, 8, 572,
+        "neutral rho = 1/N; selective rho = (1-1/r)/(1-1/r^N)",
+        1, 122, 118, 144)
+    let ti: i32 = gfx_draw_text(g, 8, 582,
+        "orange = mutant, blue = wild-type; plot is mutant frequency",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let pop: array<i32, 80> = [0, 0, 0, 0]
+    let trace: array<f64, 220> = [0.0, 0.0, 0.0, 0.0]
+
+    let n: i32 = VERIFY_N
+    let rho_n: f64 = 1.0 / (n as f64)
+    println("")
+    println("  MORAN PROCESS  --  birth-death fixation probability")
+    println("  ===================================================")
+    println("")
+    print("    neutral N = ")
+    printf("%.0f", n as f64)
+    print("   theory rho = 1/N = ")
+    printf("%.6f", rho_n)
+    println("")
+
+    rng_state = 1901194261
+    let meas_n: f64 = fixation_rate(n, 1.0, VERIFY_TRIALS)
+    let err_n: f64 = fabs(meas_n - rho_n) / rho_n
+    print("    measured fixation rate          : ")
+    printf("%.6f", meas_n)
+    println("")
+    print("    relative error                  : ")
+    printf("%.6f", err_n)
+    print("   (gate < ")
+    printf("%.2f", ERR_GATE)
+    println(")")
+    println("")
+
+    let r_sel: f64 = 1.1
+    let rho_s: f64 = rho_selective(r_sel, n)
+    print("    selective r = ")
+    printf("%.2f", r_sel)
+    print("   theory rho = ")
+    printf("%.6f", rho_s)
+    println("")
+    rng_state = 2718281829
+    let meas_s: f64 = fixation_rate(n, r_sel, VERIFY_SEL_TRIALS)
+    let err_s: f64 = fabs(meas_s - rho_s) / rho_s
+    print("    measured selective fixation     : ")
+    printf("%.6f", meas_s)
+    println("")
+    print("    relative error                  : ")
+    printf("%.6f", err_s)
+    print("   (gate < ")
+    printf("%.2f", SEL_GATE)
+    println(")")
+    println("")
+
+    if err_n > ERR_GATE {
+        println("    FAIL: neutral fixation probability left 1/N")
+        return 1
+    }
+    if err_s > SEL_GATE {
+        println("    FAIL: selective fixation probability left (1-1/r)/(1-1/r^N)")
+        return 2
+    }
+    println("    PASS: Moran fixation matches 1/N and the selective closed form")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut n_live: i32 = preset_n(preset)
+    let mut r_live: f64 = preset_r(preset)
+    let mut rho_live: f64 = rho_selective(r_live, n_live)
+    let mut meas_show: f64 = meas_n
+    rng_state = 42424242
+    seed_one(pop, n_live)
+    let mut head: i32 = 0
+    let mut p: f64 = 1.0 / (n_live as f64)
+    trace[0] = p
+    head = 1
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Moran process - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            n_live = preset_n(preset)
+            r_live = preset_r(preset)
+            rho_live = rho_selective(r_live, n_live)
+            if preset == 2 {
+                meas_show = meas_s
+            } else {
+                meas_show = meas_n
+            }
+            seed_one(pop, n_live)
+            head = 1
+            p = 1.0 / (n_live as f64)
+            trace[0] = p
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_one(pop, n_live)
+                head = 1
+                p = 1.0 / (n_live as f64)
+                trace[0] = p
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to n_live {
+                moran_step_live(pop, n_live, r_live)
+            }
+            let k: i32 = count_mut(pop, n_live)
+            p = (k as f64) / (n_live as f64)
+            if k == 0 or k == n_live {
+                seed_one(pop, n_live)
+                p = 1.0 / (n_live as f64)
+            }
+            if head < TRACE_LEN {
+                trace[head] = p
+                head = head + 1
+            } else {
+                for i in 0 to TRACE_LEN - 1 {
+                    trace[i] = trace[i + 1]
+                }
+                trace[TRACE_LEN - 1] = p
+            }
+        }
+
+        let live_err: f64 = fabs(meas_show - rho_live) / rho_live
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, pop, n_live, trace, TRACE_LEN, head)
+        draw_hud(g, preset, n_live, r_live, p, rho_live, meas_show, live_err, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
