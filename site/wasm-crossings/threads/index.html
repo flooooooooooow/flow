@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow crossing 1: OS threads in WebAssembly</title>
+<!-- Must run before anything touches SharedArrayBuffer: it reloads once to
+     put the cross-origin-isolation service worker in control. -->
+<script src="coi-serviceworker.js"></script>
+<link rel="stylesheet" href="crossing.css">
+</head>
+<body>
+<main>
+<h1>Crossing 1 &mdash; OS threads</h1>
+<p class="lede">
+Flow's concurrency runtime is pthreads. This page runs the same Flow program
+twice: once built with <code>-pthread</code>, so
+<code>flow_parallel_for_i32</code> lands on real <code>pthread_create</code>
+backed by Web Workers over a shared heap, and once built without it, where
+<code>pthread_create</code> fails and Flow's parallel-for falls back to running
+the job inline.
+</p>
+
+<div class="facts">
+  <div class="fact"><span class="k">cross-origin isolated</span><span class="v" id="f-coi">&hellip;</span></div>
+  <div class="fact"><span class="k">SharedArrayBuffer</span><span class="v" id="f-sab">&hellip;</span></div>
+  <div class="fact"><span class="k">hardwareConcurrency</span><span class="v" id="f-hc">&hellip;</span></div>
+  <div class="fact"><span class="k">build workers</span><span class="v">8</span></div>
+</div>
+
+<h2>Run</h2>
+<div class="panel">
+  <button id="run-threaded">Run threaded build</button>
+  <button id="run-single" class="secondary">Run single-thread build</button>
+  <button id="clear" class="secondary">Clear</button>
+</div>
+
+<h2>Measured</h2>
+<div class="panel">
+<table>
+  <thead><tr><th>build</th><th>serial pass</th><th>threaded pass</th><th>in-process speedup</th><th>result</th></tr></thead>
+  <tbody>
+    <tr><td>threaded (-pthread)</td><td id="t-ser">&mdash;</td><td id="t-par">&mdash;</td><td id="t-sp">&mdash;</td><td id="t-res">&mdash;</td></tr>
+    <tr><td>single-thread control</td><td id="s-ser">&mdash;</td><td id="s-par">&mdash;</td><td id="s-sp">&mdash;</td><td id="s-res">&mdash;</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Program output</h2>
+<pre id="out">click a button</pre>
+
+<h2>Flow source</h2>
+<pre class="source"># Coarse-grained data-parallel reduction, built for the WASM threads crossing.
+#
+#   ./flow run examples/wasm/parallel_sum.flow
+#   ./flow wasm examples/wasm/parallel_sum.flow --threads
+#
+# SHARDS disjoint slices of one sum. Each shard writes only its own slot in
+# `partial`, so there is no sharing to synchronise; the reduction runs serially
+# afterwards in fixed shard order, which makes the serial and threaded runs
+# bit-for-bit identical.
+#
+# Grain is deliberately coarse. Emscripten&#x27;s pthread_create costs tens of
+# microseconds because it hands a worker a job over postMessage, so a shard has
+# to be worth milliseconds before threading pays for itself. One spawn per
+# shard, one shard per worker, one pass.
+
+extern {
+    function malloc(size: i64) -&gt; ptr&lt;f64&gt;
+    function free(p: ptr&lt;f64&gt;) -&gt; void
+    function sqrt(x: f64) -&gt; f64
+    function flow_rt_monotonic_ns() -&gt; i64
+    function flow_rt_par_workers() -&gt; i32
+    function flow_parallel_for_i32(start: i32, end: i32, stride: i32, body: ptr&lt;void&gt;, ctx: ptr&lt;void&gt;) -&gt; void
+    function printf(fmt: string, val: f64) -&gt; i32
+}
+
+const SHARDS: i32 = 8
+const PER_SHARD: i32 = 12000000
+
+let mut partial: ptr&lt;f64&gt; = null
+
+# Sum sqrt(x)/x over this shard&#x27;s slice. Pure compute, one write at the end.
+function shard_work(s: i32) -&gt; void {
+    let base: i64 = (s as i64) * (PER_SHARD as i64)
+    let mut acc: f64 = 0.0
+    let mut i: i32 = 0
+    while i &lt; PER_SHARD {
+        let x: f64 = ((base + (i as i64)) as f64) + 1.0
+        acc = acc + sqrt(x) / x
+        i = i + 1
+    }
+    partial[s] = acc
+}
+
+# pthread entry point: unmangled (@flow_api) so it can be handed to
+# flow_parallel_for_i32 as a plain C function pointer.
+@flow_api
+function shard_body(s: i32, ctx: ptr&lt;void&gt;) -&gt; void {
+    shard_work(s)
+}
+
+# Empty shard body, used to price a bare spawn+join round trip.
+@flow_api
+function noop_body(s: i32, ctx: ptr&lt;void&gt;) -&gt; void {
+    return
+}
+
+# SHARDS threads created and joined with no work in them. This is the floor:
+# threading cannot pay until a shard is worth more than this.
+function measure_spawn_ns() -&gt; i64 {
+    let t0: i64 = flow_rt_monotonic_ns()
+    flow_parallel_for_i32(0, SHARDS, 1, noop_body, null)
+    let t1: i64 = flow_rt_monotonic_ns()
+    return t1 - t0
+}
+
+function reduce_partials() -&gt; f64 {
+    let mut total: f64 = 0.0
+    for s in 0 to SHARDS {
+        total = total + partial[s]
+    }
+    return total
+}
+
+# One full pass. use_threads != 0 puts each shard on its own thread.
+# Returns wall time in ns.
+function run_pass(use_threads: i32) -&gt; i64 {
+    for s in 0 to SHARDS {
+        partial[s] = 0.0
+    }
+    let t0: i64 = flow_rt_monotonic_ns()
+    if use_threads != 0 {
+        flow_parallel_for_i32(0, SHARDS, 1, shard_body, null)
+    } else {
+        for s in 0 to SHARDS {
+            shard_work(s)
+        }
+    }
+    let t1: i64 = flow_rt_monotonic_ns()
+    return t1 - t0
+}
+
+function main() -&gt; i32 {
+    println(&quot;parallel_sum: disjoint-shard reduction on real threads&quot;)
+    print(&quot;  runtime workers: &quot;)
+    println(flow_rt_par_workers())
+    print(&quot;  shards: &quot;)
+    println(SHARDS)
+    print(&quot;  iterations per shard: &quot;)
+    println(PER_SHARD)
+
+    partial = malloc((SHARDS as i64) * 8)
+
+    # Best of N. In a browser the first pass runs on V8&#x27;s baseline wasm tier;
+    # the later passes run optimised, so taking the minimum reports steady
+    # state instead of JIT warm-up.
+    let reps: i32 = 4
+
+    let mut serial_ns: i64 = 0
+    let mut serial_total: f64 = 0.0
+    for r in 0 to reps {
+        let ns: i64 = run_pass(0)
+        if r == 0 or ns &lt; serial_ns {
+            serial_ns = ns
+        }
+        serial_total = reduce_partials()
+    }
+    print(&quot;  serial:   ms &quot;)
+    printf(&quot;%.2f&quot;, (serial_ns as f64) / 1000000.0)
+    print(&quot;  sum &quot;)
+    printf(&quot;%.9f\n&quot;, serial_total)
+
+    let mut par_ns: i64 = 0
+    let mut par_total: f64 = 0.0
+    for r in 0 to reps {
+        let ns: i64 = run_pass(1)
+        if r == 0 or ns &lt; par_ns {
+            par_ns = ns
+        }
+        par_total = reduce_partials()
+    }
+    print(&quot;  threaded: ms &quot;)
+    printf(&quot;%.2f&quot;, (par_ns as f64) / 1000000.0)
+    print(&quot;  sum &quot;)
+    printf(&quot;%.9f\n&quot;, par_total)
+
+    let speedup: f64 = (serial_ns as f64) / (par_ns as f64)
+    print(&quot;  speedup: &quot;)
+    printf(&quot;%.2fx\n&quot;, speedup)
+
+    let mut spawn_ns: i64 = 0
+    for r in 0 to reps {
+        let ns: i64 = measure_spawn_ns()
+        if r == 0 or ns &lt; spawn_ns {
+            spawn_ns = ns
+        }
+    }
+    print(&quot;  spawn floor: ms &quot;)
+    printf(&quot;%.3f&quot;, (spawn_ns as f64) / 1000000.0)
+    print(&quot; for &quot;)
+    print(SHARDS)
+    println(&quot; empty spawn+join round trips&quot;)
+
+    free(partial)
+
+    if serial_total != par_total {
+        println(&quot;FAIL: serial and threaded sums disagree&quot;)
+        return 1
+    }
+    println(&quot;  serial sum == threaded sum (fixed reduction order) OK&quot;)
+    println(&quot;PASS&quot;)
+    return 0
+}
+</pre>
+
+<footer>
+Built by <code>wasm/flow_wasm_threads.py</code>. Mechanism and constraints:
+<code>docs/language/wasm-crossings.md</code>.
+</footer>
+</main>
+
+<script src="parallel_sum_threaded.js"></script>
+<script src="parallel_sum_single.js"></script>
+<script>
+const out = document.getElementById("out");
+const log = (line) => { out.textContent += line + "\n"; out.scrollTop = out.scrollHeight; };
+
+function setFact(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "v" + (cls ? " " + cls : "");
+}
+
+setFact("f-coi", self.crossOriginIsolated ? "yes" : "no", self.crossOriginIsolated ? "ok" : "bad");
+setFact("f-sab", typeof SharedArrayBuffer === "function" ? "available" : "blocked",
+        typeof SharedArrayBuffer === "function" ? "ok" : "bad");
+setFact("f-hc", String(navigator.hardwareConcurrency || "?"));
+
+// Pull the numbers the Flow program prints straight out of its stdout.
+function parseRun(text) {
+  const num = (re) => { const m = text.match(re); return m ? parseFloat(m[1]) : null; };
+  return {
+    serial: num(/serial:\s+ms\s+([0-9.]+)/),
+    parallel: num(/threaded:\s+ms\s+([0-9.]+)/),
+    speedup: num(/speedup:\s+([0-9.]+)x/),
+    pass: /\bPASS\b/.test(text),
+  };
+}
+
+function fill(prefix, r, wall) {
+  const f = (v, s) => (v === null ? "&mdash;" : v.toFixed(2) + s);
+  document.getElementById(prefix + "-ser").innerHTML = f(r.serial, " ms");
+  document.getElementById(prefix + "-par").innerHTML = f(r.parallel, " ms");
+  document.getElementById(prefix + "-sp").innerHTML = f(r.speedup, "x");
+  const res = document.getElementById(prefix + "-res");
+  res.textContent = (r.pass ? "PASS" : "FAIL") + " (" + wall.toFixed(0) + " ms wall)";
+  res.style.color = r.pass ? "var(--ok)" : "var(--bad)";
+}
+
+async function runModule(factory, label, prefix, buttons) {
+  buttons.forEach((b) => (b.disabled = true));
+  log("=== " + label + " ===");
+  let text = "";
+  const t0 = performance.now();
+  await new Promise((resolve) => {
+    factory({
+      print: (s) => { text += s + "\n"; log(s); },
+      printErr: (s) => { text += s + "\n"; log("stderr: " + s); },
+      onExit: () => resolve(),
+      quit: () => resolve(),
+    }).catch((e) => { log("module failed: " + e); resolve(); });
+  });
+  const wall = performance.now() - t0;
+  fill(prefix, parseRun(text), wall);
+  log("");
+  buttons.forEach((b) => (b.disabled = false));
+}
+
+const btnT = document.getElementById("run-threaded");
+const btnS = document.getElementById("run-single");
+const btns = [btnT, btnS];
+
+btnT.onclick = () => {
+  if (!self.crossOriginIsolated) {
+    log("not cross-origin isolated: SharedArrayBuffer is blocked, so the");
+    log("threaded build cannot start. Reload once to let the service worker");
+    log("take control, and serve over https or localhost.");
+    return;
+  }
+  runModule(createFlowThreaded, "threaded build (-pthread, PROXY_TO_PTHREAD)", "t", btns);
+};
+btnS.onclick = () => runModule(createFlowSingle, "single-thread control (no -pthread)", "s", btns);
+document.getElementById("clear").onclick = () => { out.textContent = ""; };
+</script>
+</body>
+</html>

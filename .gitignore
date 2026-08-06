@@ -121,3 +121,7 @@ plugins/SchurPhaser/tests/dsp_test
 # Package manager install trees (recreated by `./flow install`)
 flow_packages/
 **/flow_packages/
+
+# WASM crossing demos are deployed as-is from site/, so their .wasm ships
+# (overrides the blanket **/*.wasm rule above). Rebuild: wasm/flow_wasm_*.py
+!site/wasm-crossings/**/*.wasm

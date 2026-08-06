@@ -208,7 +208,7 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  install           Install project deps if flow.toml exists; else LLVM tools"
     echo "  setup             Install LLVM / compiler tooling"
     echo "  python <program>  Generate Python package (wheel)"
-    echo "  wasm <program>    Compile to WebAssembly"
+    echo "  wasm <program>    Compile to WebAssembly (--threads for pthreads)"
     echo "  repl              Start interactive REPL"
     echo "  examples          List example programs"
     echo "  playground        Start native-local compile API + open playground docs"
@@ -2779,13 +2779,35 @@ for f in sys.argv[1:]:
         if [ -z "${EM_BINARYEN_ROOT:-}" ] && [ -d /opt/homebrew/opt/emscripten/libexec/binaryen ]; then
             export EM_BINARYEN_ROOT=/opt/homebrew/opt/emscripten/libexec/binaryen
         fi
+        # --threads routes to the pthreads-over-Web-Workers build instead of
+        # the plain single-threaded page. See docs/language/wasm-crossings.md.
+        wasm_threads=0
+        wasm_workers=8
+        wasm_args=()
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --threads) wasm_threads=1 ;;
+                --workers) shift; wasm_workers="${1:-8}" ;;
+                *) wasm_args+=("$1") ;;
+            esac
+            shift
+        done
+        set -- ${wasm_args[@]+"${wasm_args[@]}"}
         if [ -z "${1:-}" ]; then
-            print_error "Usage: flow wasm <program.flow>"
+            print_error "Usage: flow wasm <program.flow> [--threads] [--workers N]"
             print_info "Requires emcc (Emscripten). See docs/language/wasm.md"
             print_info "Smoke without a file: ./scripts/build_wasm_hello.sh"
             exit 1
         fi
         require_flow_file "${1:-}"
+        if [ "$wasm_threads" -eq 1 ]; then
+            print_info "Flow → C → threaded WASM (see docs/language/wasm-crossings.md)"
+            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_threads.py" "$1" --workers "$wasm_workers"; then
+                print_error "Threaded WASM build failed"
+                exit 1
+            fi
+            exit 0
+        fi
         print_info "Flow → C → WASM (see docs/language/wasm.md)"
         if ! python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "${1:-}"; then
             print_error "WASM conversion failed"
