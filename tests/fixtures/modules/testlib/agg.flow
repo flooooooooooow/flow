@@ -1,0 +1,11 @@
+# Aggregator: forwards `.alpha` wholesale and one symbol from `.beta`.
+#
+#   export import .alpha          re-exports alpha_one and alpha_two
+#   export import .beta { ... }   re-exports beta_one only
+
+export import .alpha
+export import .beta { beta_one }
+
+export function agg_own() -> i32 {
+    return 100
+}
