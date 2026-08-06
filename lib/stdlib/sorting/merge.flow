@@ -1,0 +1,537 @@
+# Sorting library: the merge family.
+#
+# Four ways to spend O(n) scratch to buy stability and an n log n worst case.
+# The scratch comes from the module-static pool in core.flow, sized by
+# SORT_SCRATCH_CAPACITY, so none of these allocates during a sort and none of
+# them puts a buffer on the C stack. That is the one place this library
+# deliberately differs from the compiler's own merge lowerings, which are
+# capped at 256 KiB precisely because their scratch is a stack array.
+#
+# Above SORT_SCRATCH_CAPACITY elements every function here falls back to
+# intro_sort rather than reading past the buffer. The fallback is not
+# stable; the header of each function says so.
+
+import stdlib.sorting.core {
+    sort_copy, sort_scratch, sort_reverse, SORT_SCRATCH_CAPACITY,
+    SORT_INSERTION_CUTOFF
+}
+import stdlib.sorting.quadratic { insertion_sort }
+import stdlib.sorting.quick { intro_sort }
+
+extern {
+    function calloc(count: i64, size: i64) -> ptr<i64>
+}
+
+# ---------------------------------------------------------------------------
+# Merge one ordered run with the next
+# ---------------------------------------------------------------------------
+# `xs[0..split]` and `xs[split..]` are each ordered; leave the whole span
+# ordered. `buf` must be at least `split` long.
+#
+# Only the left half is copied out. The right half is merged in place from its
+# own storage, which halves the scratch traffic against the textbook version
+# that copies both halves. Taking `>=` on the left is what keeps it stable:
+# on a tie the left element, which came first, is emitted first.
+function merge_halves(xs: &mut [i32], split: i64, buf: &mut [i32]) -> void {
+    let mut left: span<mut i32> = buf[0..split]
+    sort_copy(left, xs[0..split])
+
+    let mut i: i64 = 0
+    let mut j: i64 = split
+    let mut k: i64 = 0
+    while i < split and j < xs.len {
+        if left[i] <= xs[j] {
+            xs[k] = left[i]
+            i = i + 1
+        } else {
+            xs[k] = xs[j]
+            j = j + 1
+        }
+        k = k + 1
+    }
+    # Whatever is left of the copied half still has to be written back. The
+    # right half, if it is what remains, is already where it belongs.
+    while i < split {
+        xs[k] = left[i]
+        i = i + 1
+        k = k + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# merge_sort (top-down)
+#   stable
+#   best O(n log n)   average O(n log n)   worst O(n log n)
+#   extra space O(n) from the shared scratch pool
+#
+#   Split in half, sort each half, merge. Below SORT_INSERTION_CUTOFF it hands
+#   off to insertion sort, which is worth about 15% at 1e5 on this machine.
+#
+#   Pick it when: you need stability and a worst-case guarantee, and O(n)
+#   scratch is acceptable. It is the sort to reach for when the elements are
+#   records with a key, because it never reorders equal keys.
+#
+#   Flow idioms: the recursion slices the span; the scratch is a span borrowed
+#   from a module static, so the whole recursion tree shares one buffer.
+# ---------------------------------------------------------------------------
+export function merge_sort(xs: &mut [i32]) -> void {
+    if xs.len > SORT_SCRATCH_CAPACITY {
+        intro_sort(xs)
+        return
+    }
+    let mut buf: span<mut i32> = sort_scratch(xs.len)
+    merge_sort_into(xs, buf)
+}
+
+function merge_sort_into(xs: &mut [i32], buf: &mut [i32]) -> void {
+    if xs.len <= SORT_INSERTION_CUTOFF {
+        insertion_sort(xs)
+        return
+    }
+    let split: i64 = xs.len / 2
+    merge_sort_into(xs[0..split], buf)
+    merge_sort_into(xs[split..xs.len], buf)
+    # Already ordered across the seam: the merge would be a copy, skip it.
+    if xs[split - 1] <= xs[split] {
+        return
+    }
+    merge_halves(xs, split, buf)
+}
+
+# ---------------------------------------------------------------------------
+# bottom_up_merge_sort
+#   stable
+#   best O(n log n)   average O(n log n)   worst O(n log n)
+#   extra space O(n)
+#
+#   The same merges in the same order, driven by a doubling width instead of a
+#   recursion. No stack at all, which matters when the sort is called from a
+#   signal handler or an audio callback where the frame budget is fixed.
+#
+#   The first pass is an insertion sort of each SORT_INSERTION_CUTOFF-sized
+#   block rather than a merge of singletons, which skips the bottom log2(24)
+#   levels of the merge tree.
+#
+#   Pick it when: you want merge sort with a bounded stack. This is what the
+#   compiler's own `bottom_up_merge` plan lowers to, so it is the right thing
+#   to measure the selector's choice against.
+# ---------------------------------------------------------------------------
+export function bottom_up_merge_sort(xs: &mut [i32]) -> void {
+    if xs.len > SORT_SCRATCH_CAPACITY {
+        intro_sort(xs)
+        return
+    }
+    if xs.len <= SORT_INSERTION_CUTOFF {
+        insertion_sort(xs)
+        return
+    }
+    let mut buf: span<mut i32> = sort_scratch(xs.len)
+
+    # Level 0: insertion-sort blocks of the cutoff size.
+    let mut start: i64 = 0
+    while start < xs.len {
+        let mut stop: i64 = start + SORT_INSERTION_CUTOFF
+        if stop > xs.len {
+            stop = xs.len
+        }
+        insertion_sort(xs[start..stop])
+        start = stop
+    }
+
+    # Levels 1..: merge adjacent pairs of runs of the doubling width.
+    let mut width: i64 = SORT_INSERTION_CUTOFF
+    while width < xs.len {
+        let mut lo: i64 = 0
+        while lo + width < xs.len {
+            let mut hi: i64 = lo + 2 * width
+            if hi > xs.len {
+                hi = xs.len
+            }
+            if xs[lo + width - 1] > xs[lo + width] {
+                merge_halves(xs[lo..hi], width, buf)
+            }
+            lo = hi
+        }
+        width = width * 2
+    }
+}
+
+# ---------------------------------------------------------------------------
+# natural_merge_sort
+#   stable
+#   best O(n) on an input that is already one run
+#   average O(n log r) where r is the number of runs
+#   worst O(n log n)   extra space O(n)
+#
+#   Finds the runs that are already there instead of imposing a fixed block
+#   size, then merges neighbouring runs until one is left. Descending runs are
+#   detected too and reversed in place, which is what makes a reverse-sorted
+#   input a single O(n) pass. The reversal is only applied to *strictly*
+#   descending runs, because reversing a run containing equal keys would break
+#   stability. That is the same reason the compiler's `reverse_in_place` plan
+#   demands a strict reversal.
+#
+#   Pick it when: the input has structure. Appending a day's records to a
+#   sorted log and re-sorting is the case: two runs, one merge, O(n).
+# ---------------------------------------------------------------------------
+export function natural_merge_sort(xs: &mut [i32]) -> void {
+    if xs.len > SORT_SCRATCH_CAPACITY {
+        intro_sort(xs)
+        return
+    }
+    if xs.len < 2 {
+        return
+    }
+    let mut buf: span<mut i32> = sort_scratch(xs.len)
+
+    let mut merged: bool = true
+    while merged {
+        merged = false
+        let mut lo: i64 = 0
+        while lo < xs.len {
+            let mid: i64 = run_end(xs, lo)
+            if mid >= xs.len {
+                lo = xs.len
+            } else {
+                let hi: i64 = run_end(xs, mid)
+                merge_halves(xs[lo..hi], mid - lo, buf)
+                merged = true
+                lo = hi
+            }
+        }
+    }
+}
+
+# End of the run starting at `lo`. An ascending run is taken as-is; a strictly
+# descending run is reversed in place and its end returned, so the caller sees
+# an ascending run either way.
+function run_end(xs: &mut [i32], lo: i64) -> i64 {
+    if lo + 1 >= xs.len {
+        return xs.len
+    }
+    let mut i: i64 = lo + 1
+    if xs[lo] <= xs[i] {
+        while i < xs.len and xs[i - 1] <= xs[i] {
+            i = i + 1
+        }
+        return i
+    }
+    while i < xs.len and xs[i - 1] > xs[i] {
+        i = i + 1
+    }
+    sort_reverse(xs[lo..i])
+    return i
+}
+
+# ---------------------------------------------------------------------------
+# tim_sort (an honest subset)
+#   stable
+#   best O(n)   average O(n log n)   worst O(n log n)
+#   extra space O(n)
+#
+#   What this implements, and what it does not, stated plainly:
+#
+#   IN:  minrun computed from n by Tim Peters' rule (the top 6 bits of n,
+#        rounded up if any lower bit is set, giving 32..64);
+#        natural run detection with in-place reversal of strictly descending
+#        runs; short runs extended to minrun with a binary insertion sort;
+#        a run stack with the three-way invariant
+#            len[i-2] > len[i-1] + len[i]   and   len[i-1] > len[i]
+#        and the merge_collapse that restores it;
+#        galloping merge, entered after MIN_GALLOP consecutive wins by one
+#        side, with an exponential search for the insertion point and the
+#        adaptive MIN_GALLOP adjustment.
+#
+#   OUT: merge_hi / merge_lo as two separate routines (this merges the smaller
+#        side into scratch either way, which costs the same asymptotically and
+#        a little more copying on a right-heavy merge); the "galloping mode
+#        exits when it stops paying" refinement is present but simplified to a
+#        single threshold rather than CPython's per-run bookkeeping.
+#
+#   Pick it when: real-world data, which is almost never random. On the
+#   partially-ordered shape in the measured table it is the fastest sort in
+#   this library, and it is stable, which quicksort is not.
+# ---------------------------------------------------------------------------
+
+const TIM_MIN_GALLOP: i64 = 7
+const TIM_MAX_RUNS: i64 = 90
+
+# The run stack. `calloc` rather than a literal-initialised static array,
+# because a module static needs a full literal initializer and ninety zeros
+# in the source would be worse than this.
+let mut RUN_BASE: ptr<i64> = null
+let mut RUN_LEN: ptr<i64> = null
+
+export function tim_sort(xs: &mut [i32]) -> void {
+    if xs.len > SORT_SCRATCH_CAPACITY {
+        intro_sort(xs)
+        return
+    }
+    if xs.len <= SORT_INSERTION_CUTOFF {
+        insertion_sort(xs)
+        return
+    }
+
+    if RUN_BASE == null {
+        RUN_BASE = calloc(TIM_MAX_RUNS, 8)
+        RUN_LEN = calloc(TIM_MAX_RUNS, 8)
+    }
+
+    let minrun: i64 = tim_minrun(xs.len)
+    let mut buf: span<mut i32> = sort_scratch(xs.len)
+    let mut top: i64 = 0
+    let mut lo: i64 = 0
+
+    while lo < xs.len {
+        # Identify the natural run at `lo`, then extend it to minrun.
+        let mut end: i64 = run_end(xs, lo)
+        let mut want: i64 = lo + minrun
+        if want > xs.len {
+            want = xs.len
+        }
+        if end < want {
+            binary_insert_tail(xs[lo..want], end - lo)
+            end = want
+        }
+
+        RUN_BASE[top] = lo
+        RUN_LEN[top] = end - lo
+        top = top + 1
+        top = tim_collapse(xs, buf, top)
+        lo = end
+    }
+
+    # Force the remaining runs together.
+    while top > 1 {
+        tim_merge_at(xs, buf, top - 2)
+        top = tim_shift_down(top, top - 2)
+    }
+}
+
+# Tim Peters' minrun: the top 6 bits of n, plus 1 if any bit below them is
+# set. The point is that n / minrun should be a power of two or just under,
+# so the merge tree stays balanced.
+function tim_minrun(n: i64) -> i64 {
+    let mut r: i64 = 0
+    let mut m: i64 = n
+    while m >= 64 {
+        r = r | (m & 1)
+        m = m / 2
+    }
+    return m + r
+}
+
+# Binary insertion sort of xs[start..], given that xs[0..start] is ordered.
+function binary_insert_tail(xs: &mut [i32], start: i64) -> void {
+    let mut i: i64 = start
+    if i < 1 {
+        i = 1
+    }
+    while i < xs.len {
+        let key: i32 = xs[i]
+        let mut lo: i64 = 0
+        let mut hi: i64 = i
+        while lo < hi {
+            let mid: i64 = lo + (hi - lo) / 2
+            if xs[mid] > key {
+                hi = mid
+            } else {
+                lo = mid + 1
+            }
+        }
+        let mut j: i64 = i
+        while j > lo {
+            xs[j] = xs[j - 1]
+            j = j - 1
+        }
+        xs[lo] = key
+        i = i + 1
+    }
+}
+
+# Restore the run-stack invariant. Returns the new stack height.
+function tim_collapse(xs: &mut [i32], buf: &mut [i32], height: i64) -> i64 {
+    let mut top: i64 = height
+    while top > 1 {
+        let mut n: i64 = top - 2
+        if n > 0 and RUN_LEN[n - 1] <= RUN_LEN[n] + RUN_LEN[n + 1] {
+            if RUN_LEN[n - 1] < RUN_LEN[n + 1] {
+                n = n - 1
+            }
+            tim_merge_at(xs, buf, n)
+            top = tim_shift_down(top, n)
+        } else {
+            if RUN_LEN[n] <= RUN_LEN[n + 1] {
+                tim_merge_at(xs, buf, n)
+                top = tim_shift_down(top, n)
+            } else {
+                return top
+            }
+        }
+    }
+    return top
+}
+
+# Merge runs `n` and `n+1`, leaving the result recorded at `n`.
+function tim_merge_at(xs: &mut [i32], buf: &mut [i32], n: i64) -> void {
+    let base: i64 = RUN_BASE[n]
+    let split: i64 = RUN_LEN[n]
+    let total: i64 = split + RUN_LEN[n + 1]
+    gallop_merge(xs[base..(base + total)], split, buf)
+    RUN_LEN[n] = total
+}
+
+# Drop run `n+1` from the stack, sliding the rest down.
+function tim_shift_down(height: i64, n: i64) -> i64 {
+    let mut i: i64 = n + 1
+    while i + 1 < height {
+        RUN_BASE[i] = RUN_BASE[i + 1]
+        RUN_LEN[i] = RUN_LEN[i + 1]
+        i = i + 1
+    }
+    return height - 1
+}
+
+# ---------------------------------------------------------------------------
+# Galloping merge
+# ---------------------------------------------------------------------------
+# One-at-a-time merge until one side wins MIN_GALLOP times in a row, then
+# exponential search for how far that side can run before the other catches
+# up, and copy the whole stretch at once. On data with long ordered stretches
+# this turns a linear scan into a logarithmic one; on interleaved data the
+# threshold means it is never entered.
+#
+# Stability: the left side wins ties (`<=`), and the gallop bounds are chosen
+# to match — searching the right side for the *first* element strictly greater
+# than the left key, and the left side for the *first* element greater than or
+# equal to the right key.
+function gallop_merge(xs: &mut [i32], split: i64, buf: &mut [i32]) -> void {
+    if split <= 0 or split >= xs.len {
+        return
+    }
+    if xs[split - 1] <= xs[split] {
+        return
+    }
+
+    let mut left: span<mut i32> = buf[0..split]
+    sort_copy(left, xs[0..split])
+
+    let mut i: i64 = 0
+    let mut j: i64 = split
+    let mut k: i64 = 0
+    let mut left_wins: i64 = 0
+    let mut right_wins: i64 = 0
+
+    while i < split and j < xs.len {
+        if left_wins >= TIM_MIN_GALLOP or right_wins >= TIM_MIN_GALLOP {
+            # Gallop: take everything from the left that is <= xs[j] ...
+            let take_l: i64 = gallop_left_upper(left, i, xs[j])
+            let mut t: i64 = i
+            while t < take_l {
+                xs[k] = left[t]
+                t = t + 1
+                k = k + 1
+            }
+            i = take_l
+            if i >= split {
+                left_wins = 0
+                right_wins = 0
+                # Loop guard will exit.
+            } else {
+                # ... then everything from the right that is < left[i].
+                let take_r: i64 = gallop_right_lower(xs, j, left[i])
+                let mut u: i64 = j
+                while u < take_r {
+                    xs[k] = xs[u]
+                    u = u + 1
+                    k = k + 1
+                }
+                j = take_r
+            }
+            left_wins = 0
+            right_wins = 0
+        } else {
+            if left[i] <= xs[j] {
+                xs[k] = left[i]
+                i = i + 1
+                left_wins = left_wins + 1
+                right_wins = 0
+            } else {
+                xs[k] = xs[j]
+                j = j + 1
+                right_wins = right_wins + 1
+                left_wins = 0
+            }
+            k = k + 1
+        }
+    }
+    while i < split {
+        xs[k] = left[i]
+        i = i + 1
+        k = k + 1
+    }
+}
+
+# First index at or after `from` in `run` holding a value strictly greater
+# than `key`. Exponential probe, then binary search inside the bracket.
+function gallop_left_upper(run: &[i32], from: i64, key: i32) -> i64 {
+    let n: i64 = run.len
+    if from >= n {
+        return n
+    }
+    if run[from] > key {
+        return from
+    }
+    let mut step: i64 = 1
+    let mut lo: i64 = from
+    let mut hi: i64 = from + 1
+    while hi < n and run[hi] <= key {
+        lo = hi
+        step = step * 2
+        hi = from + step
+    }
+    if hi > n {
+        hi = n
+    }
+    while lo < hi {
+        let mid: i64 = lo + (hi - lo) / 2
+        if run[mid] > key {
+            hi = mid
+        } else {
+            lo = mid + 1
+        }
+    }
+    return lo
+}
+
+# First index at or after `from` in `run` holding a value greater than or
+# equal to `key`.
+function gallop_right_lower(run: &[i32], from: i64, key: i32) -> i64 {
+    let n: i64 = run.len
+    if from >= n {
+        return n
+    }
+    if run[from] >= key {
+        return from
+    }
+    let mut step: i64 = 1
+    let mut lo: i64 = from
+    let mut hi: i64 = from + 1
+    while hi < n and run[hi] < key {
+        lo = hi
+        step = step * 2
+        hi = from + step
+    }
+    if hi > n {
+        hi = n
+    }
+    while lo < hi {
+        let mid: i64 = lo + (hi - lo) / 2
+        if run[mid] >= key {
+            hi = mid
+        } else {
+            lo = mid + 1
+        }
+    }
+    return lo
+}
