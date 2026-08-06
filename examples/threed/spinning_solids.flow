@@ -447,6 +447,8 @@ function main() -> i32 {
         r3d_draw_mesh(model, vp, v3(0.45, 0.80, 0.42), mode)
         r3d_present(g)
 
+        gfx_fill_rect(g, 0, 0, WIN_W, 68, 14, 17, 24)
+        gfx_fill_rect(g, 0, WIN_H - 68, WIN_W, 68, 14, 17, 24)
         gfx_draw_text(g, 8, 8, "SPINNING SOLIDS", 2, 235, 235, 245)
         gfx_draw_text(g, 8, 28, solid_name(kind), 2, 250, 210, 120)
         gfx_draw_text(g, 8, 48, mode_name(mode), 2, 150, 220, 250)
