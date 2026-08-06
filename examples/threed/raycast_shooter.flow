@@ -1,0 +1,443 @@
+# RAYCAST SHOOTER: picking and hitscan with the same slab test.
+#
+# THE IDEA
+#   Rasterizing and ray casting are two directions through one geometry. The
+#   renderer projects boxes onto the screen; this program takes the pixel at
+#   the centre of the screen and asks which box is behind it. Both answers
+#   come from the same numbers, so the highlight under the crosshair and the
+#   thing a shot hits can never disagree.
+#
+# THE TEST
+#   r3d_ray_aabb is the slab method: for each axis, the ray's entry and exit
+#   parameters through that axis's pair of planes, keeping the largest entry
+#   and the smallest exit. If the entry ever passes the exit the ray misses.
+#   An axis the ray is parallel to is an inside-or-out test on that axis
+#   alone. The direction is unit length, so the returned parameter is a
+#   distance in world units and comparing hits across targets is just
+#   comparing t.
+#
+#   Picking runs every frame against every live target and keeps the nearest.
+#   Firing runs the identical query and uses the same result, which is why
+#   there is no separate "shooting" code path: a shot is a pick that scores.
+#
+# TARGETS
+#   Eight boxes on a ring near eye level, each bobbing on its own phase and
+#   drifting around the ring. Their AABBs are rebuilt from the animated centre every frame,
+#   before picking, so the test always runs against the boxes actually on
+#   screen. Clear the wave and the next one arrives with more targets, smaller
+#   and further out, up to the array's limit.
+#
+# SCORING
+#   100 for a hit, plus 8 a metre of range and a 60 bonus for a box under
+#   0.45 half-extent. A miss costs nothing but the accuracy figure, which is
+#   hits over shots.
+#
+# CONTROLS
+#   Arrows      look
+#   W A S D     move
+#   Space       fire
+#   R           restart at wave 1
+#   Esc         quit
+#
+#   FLOW_SHOOT_LOG=1 prints a line whenever the aimed target changes and a
+#   line for every shot: frame, target, distance, score.
+#
+# Run: ./flow gfx examples/threed/raycast_shooter.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/render3d.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function getenv(name: string) -> ptr<u8>
+    function printf(fmt: string, v: f64) -> i32
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function sqrtf(x: f32) -> f32
+}
+
+const WIN_W: i32 = 480
+const WIN_H: i32 = 360
+const MAX_FRAMES: i32 = 100000
+
+const KEY_SPACE: i32 = 49
+
+const MAX_TARGETS: i32 = 20
+const ARENA: f32 = 22.0
+const GRID_N: i32 = 22
+
+const EYE_H: f32 = 1.7
+const MOVE_SPEED: f32 = 0.14
+const LOOK_SPEED: f32 = 0.028
+const PITCH_LIMIT: f32 = 1.35
+const COOLDOWN: i32 = 8
+const TRACER_LIFE: i32 = 6
+
+let mut tx: ptr<f32> = null       # ring angle
+let mut tr: ptr<f32> = null       # ring radius
+let mut ty: ptr<f32> = null       # base height
+let mut tph: ptr<f32> = null      # bob phase
+let mut tsp: ptr<f32> = null      # angular drift
+let mut thalf: ptr<f32> = null    # half-extent
+let mut tcol: ptr<f32> = null     # colour, 3 each
+let mut tlive: ptr<i32> = null
+let mut tcx: ptr<f32> = null      # animated centre, 3 each
+let mut nt: i32 = 0
+
+let mut lcg: u32 = 777
+
+function rnd() -> u32 {
+    lcg = lcg * 1664525 + 1013904223
+    return lcg
+}
+
+function rnd_unit() -> f32 {
+    return ((rnd() >> 9) % 65536) as f32 / 65536.0
+}
+
+# A wave: more targets each time, smaller and further out.
+function spawn_wave(wave: i32) -> void {
+    let mut n: i32 = 8 + wave * 2
+    if n > MAX_TARGETS { n = MAX_TARGETS }
+    nt = n
+    let shrink: f32 = 0.80 - (wave as f32) * 0.07
+    let mut i: i32 = 0
+    while i < n {
+        let o: i32 = i * 3
+        tx[i] = 6.2831853 * (i as f32) / (n as f32) + rnd_unit() * 0.3
+        tr[i] = 9.0 + (wave as f32) * 1.4 + rnd_unit() * 5.0
+        ty[i] = 1.2 + rnd_unit() * 1.8
+        tph[i] = rnd_unit() * 6.2831853
+        tsp[i] = (rnd_unit() - 0.5) * 0.012
+        let mut h: f32 = shrink * (0.65 + rnd_unit() * 0.55)
+        if h < 0.30 { h = 0.30 }
+        thalf[i] = h
+        let hue: f32 = rnd_unit()
+        tcol[o] = 0.55 + 0.42 * hue
+        tcol[o + 1] = 0.75 - 0.45 * hue
+        tcol[o + 2] = 0.30 + 0.55 * (1.0 - hue)
+        tlive[i] = 1
+        tcx[o] = 0.0
+        tcx[o + 1] = 0.0
+        tcx[o + 2] = 0.0
+        i = i + 1
+    }
+}
+
+# Advance the ring and rewrite every centre. Picking reads tcx, so this has
+# to run before the query, not after the draw.
+function animate(t: f32) -> void {
+    let mut i: i32 = 0
+    while i < nt {
+        let o: i32 = i * 3
+        tx[i] = tx[i] + tsp[i]
+        let a: f32 = tx[i]
+        tcx[o] = cosf(a) * tr[i]
+        tcx[o + 1] = ty[i] + sinf(t * 1.7 + tph[i]) * 0.6
+        tcx[o + 2] = sinf(a) * tr[i]
+        i = i + 1
+    }
+}
+
+# Nearest live target along the ray, or -1. Writes the distance through
+# `out_t`, which is a one-element scratch array rather than a second return.
+function pick(origin: V3, dir: V3, out_t: ptr<f32>) -> i32 {
+    let mut best: i32 = -1
+    let mut best_t: f32 = 1.0e30
+    let mut i: i32 = 0
+    while i < nt {
+        if tlive[i] == 1 {
+            let o: i32 = i * 3
+            let h: f32 = thalf[i]
+            let lo: V3 = v3(tcx[o] - h, tcx[o + 1] - h, tcx[o + 2] - h)
+            let hi: V3 = v3(tcx[o] + h, tcx[o + 1] + h, tcx[o + 2] + h)
+            let t: f32 = r3d_ray_aabb(origin, dir, lo, hi)
+            if t >= 0.0 and t < best_t {
+                best_t = t
+                best = i
+            }
+        }
+        i = i + 1
+    }
+    out_t[0] = best_t
+    return best
+}
+
+function live_count() -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < nt {
+        if tlive[i] == 1 { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+function draw_ground(vp: &[f32]) -> void {
+    let step_w: f32 = 2.0 * ARENA / (GRID_N as f32)
+    let mut i: i32 = 0
+    while i < GRID_N {
+        let mut j: i32 = 0
+        while j < GRID_N {
+            let x0: f32 = 0.0 - ARENA + (i as f32) * step_w
+            let z0: f32 = 0.0 - ARENA + (j as f32) * step_w
+            let x1: f32 = x0 + step_w
+            let z1: f32 = z0 + step_w
+            let mut c: V3 = v3(0.17, 0.19, 0.24)
+            if (i + j) % 2 == 0 { c = v3(0.24, 0.27, 0.33) }
+            r3d_tri(vp, v3(x0, 0.0, z0), v3(x1, 0.0, z1), v3(x1, 0.0, z0), c, c, c)
+            r3d_tri(vp, v3(x0, 0.0, z0), v3(x0, 0.0, z1), v3(x1, 0.0, z1), c, c, c)
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    tx = malloc((MAX_TARGETS * 4) as i64) as ptr<f32>
+    tr = malloc((MAX_TARGETS * 4) as i64) as ptr<f32>
+    ty = malloc((MAX_TARGETS * 4) as i64) as ptr<f32>
+    tph = malloc((MAX_TARGETS * 4) as i64) as ptr<f32>
+    tsp = malloc((MAX_TARGETS * 4) as i64) as ptr<f32>
+    thalf = malloc((MAX_TARGETS * 4) as i64) as ptr<f32>
+    tcol = malloc((MAX_TARGETS * 3 * 4) as i64) as ptr<f32>
+    tcx = malloc((MAX_TARGETS * 3 * 4) as i64) as ptr<f32>
+    tlive = malloc((MAX_TARGETS * 4) as i64) as ptr<i32>
+    let scratch: ptr<f32> = malloc(8 as i64) as ptr<f32>
+    if tx == null or tr == null or ty == null or tph == null or tsp == null {
+        println("allocation failed")
+        return 1
+    }
+    if thalf == null or tcol == null or tcx == null or tlive == null or scratch == null {
+        println("allocation failed")
+        return 1
+    }
+    if !r3d_init(WIN_W, WIN_H) {
+        println("render3d init failed")
+        return 1
+    }
+    r3d_set_ambient(0.30)
+    r3d_set_fog(true, v3(0.10, 0.12, 0.18), 24.0, 52.0)
+
+    let logging: bool = getenv("FLOW_SHOOT_LOG") != null
+
+    let mut proj: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut view: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut vp: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let model: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let pproj: ptr<f32> = proj
+    let pview: ptr<f32> = view
+    let pvp: ptr<f32> = vp
+    m4_perspective(pproj, r3d_radians(66.0), r3d_aspect(), 0.1, 90.0)
+
+    lcg = 777
+    let mut wave: i32 = 1
+    spawn_wave(wave)
+
+    let mut px: f32 = 0.0
+    let mut pz: f32 = 0.0
+    let mut yaw: f32 = 0.0
+    let mut pitch: f32 = 0.0
+    let mut score: i32 = 0
+    let mut shots: i32 = 0
+    let mut hits: i32 = 0
+    let mut cooldown: i32 = 0
+    let mut tracer: i32 = 0
+    let mut flash: i32 = 0
+    let mut tracer_end: V3 = v3(0.0, 0.0, 0.0)
+    let mut last_space: bool = false
+    let mut last_aimed: i32 = -1
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "RAYCAST SHOOTER - Flow render3d")
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        r3d_tick()
+
+        if gfx_key_down(g, KEY_LEFT) { yaw = yaw + LOOK_SPEED }
+        if gfx_key_down(g, KEY_RIGHT) { yaw = yaw - LOOK_SPEED }
+        if gfx_key_down(g, KEY_UP) { pitch = pitch + LOOK_SPEED }
+        if gfx_key_down(g, KEY_DOWN) { pitch = pitch - LOOK_SPEED }
+        pitch = r3d_clampf(pitch, 0.0 - PITCH_LIMIT, PITCH_LIMIT)
+
+        let flat: V3 = r3d_forward(yaw, 0.0)
+        let rgt: V3 = r3d_right(yaw)
+        if gfx_key_down(g, KEY_W) {
+            px = px + flat.x * MOVE_SPEED
+            pz = pz + flat.z * MOVE_SPEED
+        }
+        if gfx_key_down(g, KEY_S) {
+            px = px - flat.x * MOVE_SPEED
+            pz = pz - flat.z * MOVE_SPEED
+        }
+        if gfx_key_down(g, KEY_D) {
+            px = px + rgt.x * MOVE_SPEED
+            pz = pz + rgt.z * MOVE_SPEED
+        }
+        if gfx_key_down(g, KEY_A) {
+            px = px - rgt.x * MOVE_SPEED
+            pz = pz - rgt.z * MOVE_SPEED
+        }
+        px = r3d_clampf(px, 1.0 - ARENA, ARENA - 1.0)
+        pz = r3d_clampf(pz, 1.0 - ARENA, ARENA - 1.0)
+
+        if gfx_key_down(g, KEY_R) {
+            lcg = 777
+            wave = 1
+            spawn_wave(wave)
+            score = 0
+            shots = 0
+            hits = 0
+        }
+
+        animate((frame as f32) * 0.0166667)
+
+        let eye: V3 = v3(px, EYE_H, pz)
+        let dir: V3 = r3d_forward(yaw, pitch)
+
+        # One query, used for the highlight and, this frame, maybe for a shot.
+        let aimed: i32 = pick(eye, dir, scratch)
+        let aim_t: f32 = scratch[0]
+
+        if logging and aimed != last_aimed {
+            printf("aim frame %.0f", frame as f64)
+            printf("  target %.0f", aimed as f64)
+            printf("  dist %.2f\n", aim_t as f64)
+        }
+        last_aimed = aimed
+
+        if cooldown > 0 { cooldown = cooldown - 1 }
+        let sp_now: bool = gfx_key_down(g, KEY_SPACE)
+        let fired: bool = sp_now and !last_space and cooldown == 0
+        last_space = sp_now
+        if fired {
+            shots = shots + 1
+            cooldown = COOLDOWN
+            tracer = TRACER_LIFE
+            if aimed >= 0 {
+                hits = hits + 1
+                tlive[aimed] = 0
+                let mut gain: i32 = 100 + (aim_t * 8.0) as i32
+                if thalf[aimed] < 0.45 { gain = gain + 60 }
+                score = score + gain
+                flash = 8
+                tracer_end = v3_add(eye, v3_scale(dir, aim_t))
+                if logging {
+                    printf("shot frame %.0f", frame as f64)
+                    printf("  target %.0f", aimed as f64)
+                    printf("  dist %.2f", aim_t as f64)
+                    printf("  half %.2f", thalf[aimed] as f64)
+                    printf("  score %.0f\n", score as f64)
+                }
+            } else {
+                tracer_end = v3_add(eye, v3_scale(dir, 60.0))
+                if logging {
+                    printf("shot frame %.0f", frame as f64)
+                    printf("  miss, shots %.0f\n", shots as f64)
+                }
+            }
+        }
+        if tracer > 0 { tracer = tracer - 1 }
+        if flash > 0 { flash = flash - 1 }
+
+        if live_count() == 0 {
+            wave = wave + 1
+            spawn_wave(wave)
+        }
+
+        let look: V3 = v3_add(eye, dir)
+        m4_look_at(pview, eye, look, v3(0.0, 1.0, 0.0))
+        m4_mul(pvp, proj, view)
+
+        # Targets as one mesh; the aimed one is brightened in place, which is
+        # the picking result made visible.
+        r3d_mesh_reset()
+        let mut i: i32 = 0
+        while i < nt {
+            if tlive[i] == 1 {
+                let o: i32 = i * 3
+                let h: f32 = thalf[i]
+                let mut c: V3 = v3(tcol[o], tcol[o + 1], tcol[o + 2])
+                if i == aimed { c = v3(1.0, 0.95, 0.55) }
+                r3d_mesh_box(v3(tcx[o], tcx[o + 1], tcx[o + 2]), v3(h, h, h), c)
+            }
+            i = i + 1
+        }
+
+        r3d_clear_gradient(v3(0.04, 0.05, 0.09), v3(0.13, 0.16, 0.23))
+        r3d_draw_mesh(model, vp, v3(0.40, 0.85, 0.35), R3D_FLAT)
+        draw_ground(vp)
+        if tracer > 0 {
+            let muzzle: V3 = v3_add(eye, v3_add(v3_scale(dir, 0.7),
+                                                v3(0.0, -0.22, 0.0)))
+            r3d_line3(vp, muzzle, tracer_end, v3(1.0, 0.86, 0.42))
+            r3d_sprite(vp, tracer_end, 0.10, v3(1.0, 0.95, 0.6))
+        }
+        r3d_present(g)
+
+        # Crosshair, red while something is in the sights.
+        let mut cr: i32 = 235
+        let mut cg: i32 = 240
+        let mut cb: i32 = 245
+        if aimed >= 0 {
+            cr = 250
+            cg = 110
+            cb = 90
+        }
+        let cx: i32 = WIN_W / 2
+        let cy: i32 = WIN_H / 2
+        gfx_fill_rect(g, cx - 9, cy, 6, 1, cr, cg, cb)
+        gfx_fill_rect(g, cx + 4, cy, 6, 1, cr, cg, cb)
+        gfx_fill_rect(g, cx, cy - 9, 1, 6, cr, cg, cb)
+        gfx_fill_rect(g, cx, cy + 4, 1, 6, cr, cg, cb)
+        if flash > 0 {
+            gfx_fill_rect(g, cx - 14, cy - 14, 29, 2, 250, 220, 120)
+            gfx_fill_rect(g, cx - 14, cy + 13, 29, 2, 250, 220, 120)
+            gfx_fill_rect(g, cx - 14, cy - 14, 2, 29, 250, 220, 120)
+            gfx_fill_rect(g, cx + 13, cy - 14, 2, 29, 250, 220, 120)
+        }
+
+        gfx_fill_rect(g, 0, 0, WIN_W, 56, 14, 17, 24)
+        gfx_fill_rect(g, 0, WIN_H - 40, WIN_W, 40, 14, 17, 24)
+        gfx_draw_text(g, 8, 6, "RAYCAST SHOOTER", 2, 240, 240, 246)
+        gfx_draw_text(g, 240, 8, "SCORE", 1, 170, 175, 190)
+        gfx_draw_int(g, 290, 8, score, 1, 250, 220, 140)
+        gfx_draw_text(g, 360, 8, "WAVE", 1, 170, 175, 190)
+        gfx_draw_int(g, 400, 8, wave, 1, 240, 240, 246)
+
+        gfx_draw_text(g, 8, 30, "LEFT", 1, 170, 175, 190)
+        gfx_draw_int(g, 48, 30, live_count(), 1, 240, 240, 246)
+        gfx_draw_text(g, 80, 30, "SHOTS", 1, 170, 175, 190)
+        gfx_draw_int(g, 132, 30, shots, 1, 240, 240, 246)
+        gfx_draw_text(g, 176, 30, "HITS", 1, 170, 175, 190)
+        gfx_draw_int(g, 216, 30, hits, 1, 240, 240, 246)
+        gfx_draw_text(g, 258, 30, "ACC", 1, 170, 175, 190)
+        let mut acc: f32 = 0.0
+        if shots > 0 { acc = 100.0 * (hits as f32) / (shots as f32) }
+        gfx_draw_fixed(g, 288, 30, acc as f64, 0, 1, 130, 240, 160)
+        gfx_draw_text(g, 322, 30, "%", 1, 170, 175, 190)
+        if aimed >= 0 {
+            gfx_draw_text(g, 350, 30, "RANGE", 1, 170, 175, 190)
+            gfx_draw_fixed(g, 400, 30, aim_t as f64, 1, 1, 250, 130, 110)
+        }
+
+        gfx_draw_text(g, 8, WIN_H - 34, "TRIS", 1, 170, 175, 190)
+        gfx_draw_int(g, 48, WIN_H - 34, r3d_tris_drawn(), 1, 240, 240, 246)
+        gfx_draw_text(g, 116, WIN_H - 34, "MS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 140, WIN_H - 34, r3d_frame_ms() as f64, 2, 1, 240, 240, 246)
+        gfx_draw_text(g, 204, WIN_H - 34, "FPS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 236, WIN_H - 34, r3d_fps() as f64, 1, 1, 130, 240, 160)
+        gfx_draw_text(g, 8, WIN_H - 18, "ARROWS LOOK  WASD MOVE  SPACE FIRE  R RESET",
+                      1, 140, 145, 160)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
