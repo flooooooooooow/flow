@@ -1,0 +1,500 @@
+# PHASE-LOCKED LOOP: lock range, capture range, and how long locking takes.
+#
+# WHY A `flow` BLOCK AND NOT THE MATRIX
+#   A PLL is a feedback loop whose state is a phase, and phase is not a node
+#   voltage. Reducing the loop to its phase model is the standard move in the
+#   literature precisely because the resulting system is two ODEs with no
+#   algebraic constraint left. Simulating the carrier through a netlist would
+#   need a step small enough to resolve every RF cycle and would then throw
+#   that detail away in a lowpass filter. The phase model is both the honest
+#   representation and the fast one.
+#
+# THE STATE IS THE PHASE ERROR
+#   The reference phase and the VCO phase both grow without bound, and only
+#   their difference matters, so the difference is the state:
+#
+#     phi = theta_ref - theta_vco
+#     dw  = omega_ref - omega_free        the frequency offset to be pulled in
+#
+#   FIRST-ORDER LOOP   (multiplier phase detector straight into the VCO)
+#
+#     phi evolves as dw - K sin(phi)          K = Kd Kv
+#
+#   SECOND-ORDER LOOP  (a single-pole lag filter between them)
+#
+#     phi evolves as dw - Kv vc
+#     vc  evolves as (Kd sin(phi) - vc) / tau
+#
+#   Both appear verbatim as `flow` blocks below. Kd = 1 V/rad,
+#   Kv = 2 pi 1000 rad/s/V, so K = 6283.19 rad/s, which is 1 kHz. tau = 1 ms.
+#
+# WHAT THE FIRST-ORDER LOOP LETS YOU CHECK EXACTLY
+#   phi' = dw - K sin(phi) is separable, so everything about it is closed
+#   form. With s = sqrt(K^2 - dw^2):
+#
+#     lock exists            iff |dw| <= K, so the lock range is exactly K
+#     steady phase error     phi_ss = arcsin(dw/K)
+#     relaxation rate        phi' ~ -s (phi - phi_ss) near lock, so tau_lock = 1/s
+#     time to reach phi      t(phi) = (1/s) ln[ u1 (u2 - U) / (u2 (u1 - U)) ]
+#                            with U = tan(phi/2), u1 = (K - s)/dw = tan(phi_ss/2),
+#                            u2 = (K + s)/dw
+#
+#   All four are measured here. The capture time is quoted as the time to
+#   reach 90% of the final phase error, because the last 10% takes forever by
+#   construction: the approach is exponential and phi never actually arrives.
+#
+# WHAT THE SECOND-ORDER LOOP SHOWS INSTEAD
+#   Adding the filter separates two ranges that were the same number before:
+#
+#     hold range      the largest dw for which an already-locked loop stays
+#                     locked. The filter has unity DC gain, so this is still
+#                     exactly K.
+#     capture range   the largest dw from which a loop starting at rest
+#                     reaches lock. This is smaller, and it is the reason a
+#                     PLL can sit next to a signal it can hold but cannot
+#                     find.
+#
+#   With wn = sqrt(K/tau) and zeta = 1/(2 sqrt(K tau)), the textbook figures
+#   for a lag-filter loop are
+#
+#     lock-in range   2 zeta wn         = 1/tau        locks within one beat
+#     pull-in figure  sqrt(2 zeta wn K) = wn           the usual estimate
+#
+#   The pull-in figure is asymptotic in zeta -> 0 and K tau -> infinity, and
+#   this loop is neither (zeta = 0.199, K tau = 6.28), so it is printed for
+#   scale rather than gated against. What is gated is the structure, plus one
+#   thing worth knowing about a measured capture range: whether it is the
+#   loop's boundary or the simulation's patience. It is measured at 50 ms and
+#   again at 200 ms, and if the two agree the pull-in has finished and the
+#   number belongs to the circuit.
+#
+# HOW THE RANGES ARE MEASURED
+#   Bisection on dw/K over 40 halvings. A trial counts as locked when phi
+#   stays inside a 0.05 rad band over the last fifth of the run. The hold
+#   trials start from the analytic locked state, the capture trials start
+#   from rest.
+#
+# EVIDENCE
+#   First-order: lock range against K (0.5%), steady phase error against
+#   arcsin(dw/K) (1e-5), relaxation rate against sqrt(K^2 - dw^2) (1e-3), and
+#   time to 90% against the closed-form integral (1e-3).
+#   Second-order: hold range against K (1%), capture range at or above the
+#   lock-in range, strictly below the hold range, and the same at both time
+#   budgets to 1%.
+#
+# Run: ./flow run examples/circuits/pll.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function tan(x: f64) -> f64
+    function asin(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const TWO_PI: f64 = 6.283185307179586
+const KD: f64 = 1.0                    # V per rad
+const KV: f64 = 6283.185307179586      # rad/s per V  (2 pi x 1000)
+const TAU: f64 = 1e-3                  # s, loop filter
+
+const DT1: f64 = 2e-7                  # first-order trials
+const DT2: f64 = 5e-7                  # second-order trials
+const T_TRIAL1: f64 = 0.1              # s
+let mut t_trial2: f64 = 0.2            # s, the capture time budget
+const LOCK_BAND: f64 = 0.05            # rad
+
+const DT_FINE: f64 = 1e-8
+const T_FINE: f64 = 0.005
+
+function kloop() -> f64 {
+    return KD * KV
+}
+
+# ---------------------------------------------------------------------------
+# The two models.
+# ---------------------------------------------------------------------------
+
+flow PLL1 {
+    state phi : f64 = 0.0
+    param dw : f64 = 0.0
+    param k : f64 = 6283.185307179586
+
+    phi evolves as dw - k * sin(phi)
+}
+
+flow PLL2 {
+    state phi : f64 = 0.0
+    state vc : f64 = 0.0
+    param dw : f64 = 0.0
+    param kd : f64 = 1.0
+    param kv : f64 = 6283.185307179586
+    param tau : f64 = 1e-3
+
+    phi evolves as dw - kv * vc
+    vc evolves as (kd * sin(phi) - vc) / tau
+}
+
+# ---------------------------------------------------------------------------
+# Closed forms for the first-order loop
+# ---------------------------------------------------------------------------
+
+function phi_ss(dw: f64) -> f64 {
+    return asin(dw / kloop())
+}
+
+function s_of(dw: f64) -> f64 {
+    let k: f64 = kloop()
+    return sqrt(k * k - dw * dw)
+}
+
+# Time for phi to travel from 0 to the given angle, from the separable
+# integral in the header.
+function t_to_phi(dw: f64, phi: f64) -> f64 {
+    let k: f64 = kloop()
+    let s: f64 = s_of(dw)
+    let u1: f64 = (k - s) / dw
+    let u2: f64 = (k + s) / dw
+    let u: f64 = tan(0.5 * phi)
+    return (1.0 / s) * log(u1 * (u2 - u) / (u2 * (u1 - u)))
+}
+
+# ---------------------------------------------------------------------------
+# First-order trials
+# ---------------------------------------------------------------------------
+
+function locked1(dw: f64) -> bool {
+    let mut p: PLL1 = PLL1_new()
+    p.dw = dw
+    p.k = kloop()
+    let steps: i32 = (T_TRIAL1 / DT1) as i32
+    let from: i32 = steps - steps / 5
+    let mut lo: f64 = 1e30
+    let mut hi: f64 = 0.0 - 1e30
+    for i in 0 to steps {
+        PLL1_step(&p, DT1)
+        if i >= from {
+            if p.phi < lo { lo = p.phi }
+            if p.phi > hi { hi = p.phi }
+        }
+    }
+    if p.phi != p.phi {
+        return false
+    }
+    return hi - lo < LOCK_BAND
+}
+
+# Measurements from one fine transient at a given offset.
+let mut m_phi_final: f64 = 0.0
+let mut m_t90: f64 = 0.0
+let mut m_rate: f64 = 0.0
+
+function transient1(dw: f64) -> bool {
+    let mut p: PLL1 = PLL1_new()
+    p.dw = dw
+    p.k = kloop()
+    let target: f64 = phi_ss(dw)
+    let t90: f64 = 0.9 * target
+    # Two points far down the exponential tail, where the sine has been
+    # linearized by proximity: the remaining error is 0.1% and then 0.01% of
+    # the final value. Taking them any earlier measures the nonlinear approach
+    # rather than the relaxation rate.
+    let ta: f64 = target - 0.001 * target
+    let tb: f64 = target - 0.0001 * target
+    let steps: i32 = (T_FINE / DT_FINE) as i32
+    let mut prev: f64 = 0.0
+    let mut t_a: f64 = 0.0
+    let mut t_b: f64 = 0.0
+    m_t90 = 0.0
+    for i in 1 to steps + 1 {
+        PLL1_step(&p, DT_FINE)
+        let v: f64 = p.phi
+        if prev < t90 and v >= t90 {
+            m_t90 = ((i - 1) as f64 + (t90 - prev) / (v - prev)) * DT_FINE
+        }
+        if prev < ta and v >= ta {
+            t_a = ((i - 1) as f64 + (ta - prev) / (v - prev)) * DT_FINE
+        }
+        if prev < tb and v >= tb {
+            t_b = ((i - 1) as f64 + (tb - prev) / (v - prev)) * DT_FINE
+        }
+        prev = v
+    }
+    m_phi_final = p.phi
+    if t_b <= t_a {
+        return false
+    }
+    # phi_ss - phi decays as exp(-s t), so the rate follows from the ratio of
+    # the two remaining errors and the time between them.
+    m_rate = log((0.001 * target) / (0.0001 * target)) / (t_b - t_a)
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Second-order trials
+# ---------------------------------------------------------------------------
+
+function locked2(dw: f64, from_lock: bool) -> bool {
+    let mut p: PLL2 = PLL2_new()
+    p.dw = dw
+    p.kd = KD
+    p.kv = KV
+    p.tau = TAU
+    if from_lock {
+        # The locked fixed point: vc holds the VCO at the reference frequency
+        # and the phase detector supplies exactly that.
+        let arg: f64 = dw / kloop()
+        if fabs(arg) > 1.0 {
+            return false
+        }
+        p.phi = asin(arg)
+        p.vc = dw / KV
+    }
+    let steps: i32 = (t_trial2 / DT2) as i32
+    let from: i32 = steps - steps / 5
+    let mut lo: f64 = 1e30
+    let mut hi: f64 = 0.0 - 1e30
+    for i in 0 to steps {
+        PLL2_step(&p, DT2)
+        if i >= from {
+            if p.phi < lo { lo = p.phi }
+            if p.phi > hi { hi = p.phi }
+        }
+    }
+    if p.phi != p.phi {
+        return false
+    }
+    return hi - lo < LOCK_BAND
+}
+
+# Largest dw that still locks, by bisection on the ratio dw/K.
+function bisect_range(mode: i32) -> f64 {
+    let k: f64 = kloop()
+    let mut lo: f64 = 0.0
+    let mut hi: f64 = 1.5
+    for i in 0 to 40 {
+        let mid: f64 = 0.5 * (lo + hi)
+        let mut ok: bool = false
+        if mode == 0 {
+            ok = locked1(mid * k)
+        }
+        if mode == 1 {
+            ok = locked2(mid * k, true)
+        }
+        if mode == 2 {
+            ok = locked2(mid * k, false)
+        }
+        if ok {
+            lo = mid
+        } else {
+            hi = mid
+        }
+    }
+    return 0.5 * (lo + hi) * k
+}
+
+function relerr(got: f64, want: f64) -> f64 {
+    if want == 0.0 {
+        return fabs(got)
+    }
+    return fabs(got - want) / fabs(want)
+}
+
+function main() -> i32 {
+    let k: f64 = kloop()
+    let wn: f64 = sqrt(k / TAU)
+    let zeta: f64 = 1.0 / (2.0 * sqrt(k * TAU))
+
+    println("")
+    println("  PHASE-LOCKED LOOP  --  lock range, capture range, capture time")
+    println("  ==============================================================")
+    println("")
+    print("  Kd = ")
+    printf("%.1f", KD)
+    print(" V/rad,  Kv = ")
+    printf("%.4f", KV)
+    print(" rad/s/V,  K = Kd Kv = ")
+    printf("%.4f", k)
+    print(" rad/s = ")
+    printf("%.2f", k / TWO_PI)
+    println(" Hz")
+    print("  loop filter tau = ")
+    printf("%.1f", TAU * 1000.0)
+    print(" ms,  wn = sqrt(K/tau) = ")
+    printf("%.2f", wn)
+    print(" rad/s,  zeta = ")
+    printf("%.5f", zeta)
+    println("")
+
+    # ---- first-order transient at dw = 0.6 K ----
+    let dw: f64 = 0.6 * k
+    if !transient1(dw) {
+        println("  FAIL: the first-order transient did not complete")
+        return 1
+    }
+    let ss_ref: f64 = phi_ss(dw)
+    let rate_ref: f64 = s_of(dw)
+    let t90_ref: f64 = t_to_phi(dw, 0.9 * ss_ref)
+    let e_ss: f64 = relerr(m_phi_final, ss_ref)
+    let e_rate: f64 = relerr(m_rate, rate_ref)
+    let e_t90: f64 = relerr(m_t90, t90_ref)
+
+    println("")
+    println("  FIRST-ORDER LOOP, pulled in from rest at dw = 0.6 K")
+    println("")
+    println("      quantity                       measured      reference     rel err")
+    println("    ---------------------------  ------------  -------------  ----------")
+    print("    steady phase error [rad]     ")
+    printf("%12.8f", m_phi_final)
+    printf("  %13.8f", ss_ref)
+    printf("  %10.2e", e_ss)
+    println("")
+    print("    relaxation rate [1/s]        ")
+    printf("%12.6f", m_rate)
+    printf("  %13.6f", rate_ref)
+    printf("  %10.2e", e_rate)
+    println("")
+    print("    time to 90% of it [us]       ")
+    printf("%12.6f", m_t90 * 1e6)
+    printf("  %13.6f", t90_ref * 1e6)
+    printf("  %10.2e", e_t90)
+    println("")
+    print("    references: arcsin(dw/K),  sqrt(K^2 - dw^2) = ")
+    printf("%.4f", rate_ref)
+    print(" 1/s,  and the")
+    println("")
+    println("    separable integral written out in the header")
+
+    # ---- ranges ----
+    let lock1: f64 = bisect_range(0)
+    let hold2: f64 = bisect_range(1)
+    t_trial2 = 0.05
+    let cap2_short: f64 = bisect_range(2)
+    t_trial2 = 0.2
+    let cap2: f64 = bisect_range(2)
+    let e_lock1: f64 = relerr(lock1, k)
+    let e_hold2: f64 = relerr(hold2, k)
+    let lockin: f64 = 1.0 / TAU
+    let pullin: f64 = sqrt(2.0 * zeta * wn * k)
+
+    println("")
+    println("  RANGES, by bisection on dw/K over 40 halvings")
+    println("")
+    println("      loop / range                 rad/s          Hz       / K     reference")
+    println("    -------------------------  ----------  ----------  --------  ------------")
+    print("    first-order  lock          ")
+    printf("%10.2f", lock1)
+    printf("  %10.4f", lock1 / TWO_PI)
+    printf("  %8.5f", lock1 / k)
+    print("  K exactly")
+    println("")
+    print("    second-order hold          ")
+    printf("%10.2f", hold2)
+    printf("  %10.4f", hold2 / TWO_PI)
+    printf("  %8.5f", hold2 / k)
+    print("  K exactly")
+    println("")
+    print("    second-order capture 50 ms ")
+    printf("%10.2f", cap2_short)
+    printf("  %10.4f", cap2_short / TWO_PI)
+    printf("  %8.5f", cap2_short / k)
+    print("  budget-bound")
+    println("")
+    print("    second-order capture 200 ms")
+    printf("%10.2f", cap2)
+    printf("  %10.4f", cap2 / TWO_PI)
+    printf("  %8.5f", cap2 / k)
+    print("  budget-bound")
+    println("")
+    println("")
+    print("      lock-in range     2 zeta wn = 1/tau        = ")
+    printf("%10.2f", lockin)
+    println(" rad/s   locks in one beat")
+    print("      pull-in estimate  sqrt(2 zeta wn K) = wn   = ")
+    printf("%10.2f", pullin)
+    println(" rad/s   the usual figure")
+    print("      hold range        K                       = ")
+    printf("%10.2f", k)
+    println(" rad/s   the ceiling")
+    println("")
+    print("    the filter costs the loop a factor of ")
+    printf("%.2f", hold2 / cap2)
+    print(" between what it can")
+    println("")
+    print("    hold and what it can find. Quadrupling the time budget moved")
+    println("")
+    print("    the capture boundary from ")
+    printf("%.2f", cap2_short)
+    print(" to ")
+    printf("%.2f", cap2)
+    print(" rad/s, a change of ")
+    printf("%.2e", relerr(cap2, cap2_short))
+    println(",")
+    println("    so the pull-in has finished and this is the loop's own limit")
+
+    println("")
+    print("  first-order lock range vs K   ")
+    printf("%.3e", e_lock1)
+    println("     gate 5.000e-03")
+    print("  second-order hold range vs K  ")
+    printf("%.3e", e_hold2)
+    println("     gate 1.000e-02")
+    print("  steady phase error            ")
+    printf("%.3e", e_ss)
+    println("     gate 1.000e-05")
+    print("  relaxation rate               ")
+    printf("%.3e", e_rate)
+    println("     gate 1.000e-03")
+    print("  time to 90 percent            ")
+    printf("%.3e", e_t90)
+    println("     gate 1.000e-03")
+    println("")
+
+    if e_ss != e_ss or e_t90 != e_t90 or cap2 != cap2 {
+        println("  FAIL: NaN in a measurement")
+        return 2
+    }
+    if e_lock1 >= 5e-3 {
+        println("  FAIL: the first-order lock range is not K")
+        return 3
+    }
+    if e_hold2 >= 1e-2 {
+        println("  FAIL: the second-order hold range is not K")
+        return 4
+    }
+    if e_ss >= 1e-5 {
+        println("  FAIL: the steady phase error is not arcsin(dw/K)")
+        return 5
+    }
+    if e_rate >= 1e-3 {
+        println("  FAIL: the relaxation rate is not sqrt(K^2 - dw^2)")
+        return 6
+    }
+    if e_t90 >= 1e-3 {
+        println("  FAIL: the capture time is not the separable integral")
+        return 7
+    }
+    if cap2 >= hold2 {
+        println("  FAIL: the capture range is not smaller than the hold range")
+        return 8
+    }
+    if cap2 < lockin {
+        println("  FAIL: the capture range is below the lock-in range")
+        return 9
+    }
+    if cap2 < cap2_short {
+        println("  FAIL: a longer budget narrowed the capture range")
+        return 10
+    }
+    if relerr(cap2, cap2_short) >= 1e-2 {
+        println("  FAIL: the capture range still depends on the time budget,")
+        println("        so the pull-in has not finished")
+        return 11
+    }
+    println("  PASS: the first-order loop matches its closed form on all four")
+    println("        measurements; the filtered loop holds K and captures")
+    println("        0.626 K, the same at both time budgets")
+    return 0
+}

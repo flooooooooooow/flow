@@ -1,0 +1,12 @@
+Series RLC step response, driven from a 1 V source
+* Exercises R, C, L, V, named nodes, engineering suffixes and .tran with UIC.
+* The analytic answer is in examples/circuits/rc_rl_rlc.flow:
+*   alpha = R/(2L) = 500 1/s, w0 = 1/sqrt(LC) = 3162.2777 rad/s
+*   vc(t) = V [1 - exp(-a t)(cos(wd t) + (a/wd) sin(wd t))]
+V1  in   0     DC 1
+R1  in   mid   100
+L1  mid  cap   100m    IC=0
+C1  cap  0     1u      IC=0
+.tran 1u 10m UIC
+.print tran V(cap)
+.end

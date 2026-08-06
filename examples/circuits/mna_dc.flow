@@ -1,0 +1,269 @@
+# MODIFIED NODAL ANALYSIS: the DC operating point of two resistive ladders,
+# against arithmetic done by hand in this header.
+#
+# WHY THE MATRIX AND NOT A `flow` BLOCK
+#   A resistive network has no state. There is nothing to integrate and
+#   nothing that evolves; every node voltage is fixed at once by Kirchhoff's
+#   current law. The honest representation is the linear system, so this
+#   example uses stdlib/circuit.flow directly.
+#
+# LADDER A: three rungs of 1 kohm, driven by 10 V
+#
+#     (1)--R1--(2)--R3--(3)--R5--(4)
+#      |        |        |        |
+#     10V      R2       R4       R6
+#      |        |        |        |
+#     gnd      gnd      gnd      gnd        every R = 1 kohm
+#
+#   Fold the ladder up from the right:
+#     R5 + R6            = 2 k
+#     (2 k) || R4        = 2/3 k
+#     R3 + 2/3 k         = 5/3 k
+#     (5/3 k) || R2      = 5/8 k
+#     R1 + 5/8 k         = 13/8 k          total seen by the source
+#
+#   So the source current is 10 / (13/8 k) = 80/13 mA, and
+#     V2 = 10 * (5/8) / (13/8) = 50/13 = 3.846153846153846 V
+#     V3 = V2 * (2/3) / (5/3)  = 20/13 = 1.538461538461538 V
+#     V4 = V3 / 2              = 10/13 = 0.769230769230769 V
+#
+#   Check by KCL at node 2, in units of 1/13 mA:
+#     in  (130 - 50) = 80        out  50 (through R2) + 30 (through R3) = 80
+#
+# LADDER B: a 14-node R-2R ladder that halves exactly
+#
+#   Series R between consecutive nodes, 2R shunt at nodes 2..13, R shunt at
+#   node 14. Looking right from any node the resistance is exactly R, so every
+#   rung divides by two and V(k) = V(1) / 2^(k-1) with no rounding at all.
+#   Driving node 1 with 8.192 V puts node 14 at 8.192 / 2^13 = 1.000 mV.
+#   Thirteen exact halvings is a stiff test of the pivoting: the smallest node
+#   voltage is four decades below the largest. The source sees R + R = 2 kohm,
+#   so the supply current is exactly 8.192 / 2000 = 4.096 mA.
+#
+# GMIN
+#   The solver adds a conductance to ground at every node so that a circuit
+#   with a floating node still has a non-singular matrix. The default is
+#   SPICE's 1e-12 S. Both ladders are fully resistive and need no such help,
+#   so each is solved twice: once with gmin off, which is the accuracy of the
+#   LU itself, and once at the default, which shows the leakage floor. With
+#   1 kohm rungs the default gmin is 1e-9 of the branch conductance, and that
+#   is exactly the error it produces.
+#
+# EVIDENCE
+#   Every node voltage and both branch currents against the closed forms
+#   above. The gate is a maximum relative error below 1e-12 with gmin off.
+#
+# Run: ./flow run examples/circuits/mna_dc.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const RUNGS: i32 = 14
+const VSRC_B: f64 = 8.192
+const RUNG_R: f64 = 1000.0
+
+function relerr(got: f64, want: f64) -> f64 {
+    if want == 0.0 {
+        return fabs(got)
+    }
+    return fabs(got - want) / fabs(want)
+}
+
+function row(label: string, got: f64, want: f64) -> f64 {
+    let e: f64 = relerr(got, want)
+    print("    ")
+    print(label)
+    printf("  %18.12f", got)
+    printf("  %18.12f", want)
+    printf("   %9.2e", e)
+    println("")
+    return e
+}
+
+function worse(a: f64, b: f64) -> f64 {
+    if b > a {
+        return b
+    }
+    return a
+}
+
+# --------------------------------------------------------------------------
+# Ladder A
+# --------------------------------------------------------------------------
+
+function ladder_a(gmin: f64, verbose: bool) -> f64 {
+    if !circ_reset() {
+        return 1.0
+    }
+    circ_set_gmin(gmin)
+    let vs: i32 = circ_add_v(1, 0, 10.0)
+    let r1: i32 = circ_add_r(1, 2, RUNG_R)
+    let r2: i32 = circ_add_r(2, 0, RUNG_R)
+    let r3: i32 = circ_add_r(2, 3, RUNG_R)
+    let r4: i32 = circ_add_r(3, 0, RUNG_R)
+    let r5: i32 = circ_add_r(3, 4, RUNG_R)
+    let r6: i32 = circ_add_r(4, 0, RUNG_R)
+    if r6 < 0 or !circ_finalize() {
+        println("    FAIL: netlist rejected")
+        return 1.0
+    }
+    if !circ_op() {
+        println("    FAIL: DC solve did not converge")
+        return 1.0
+    }
+    if !verbose {
+        let mut q: f64 = relerr(circ_v(2), 50.0 / 13.0)
+        q = worse(q, relerr(circ_v(3), 20.0 / 13.0))
+        q = worse(q, relerr(circ_v(4), 10.0 / 13.0))
+        q = worse(q, relerr(0.0 - circ_i(vs), 0.080 / 13.0))
+        return q
+    }
+
+    println("")
+    println("  LADDER A  three 1 kohm rungs on 10 V")
+    println("")
+    println("    node             solved           reference     rel err")
+    println("    -----  -----------------  ------------------  ----------")
+
+    let mut w: f64 = row("V1   ", circ_v(1), 10.0)
+    w = worse(w, row("V2   ", circ_v(2), 50.0 / 13.0))
+    w = worse(w, row("V3   ", circ_v(3), 20.0 / 13.0))
+    w = worse(w, row("V4   ", circ_v(4), 10.0 / 13.0))
+    # The MNA branch unknown of a voltage source is the current flowing into
+    # its n+ terminal, so the current delivered to node 1 is its negative.
+    w = worse(w, row("Isrc ", 0.0 - circ_i(vs), 0.080 / 13.0))
+    w = worse(w, row("I(R1)", circ_i(r1), 0.080 / 13.0))
+    w = worse(w, row("I(R6)", circ_i(r6), 0.010 / 13.0))
+
+    print("    matrix order ")
+    print(circ_dim_of())
+    print(", LU factorizations ")
+    print(circ_factor_count())
+    print(", Newton iterations ")
+    print(circ_iterations())
+    println("")
+    return w
+}
+
+# --------------------------------------------------------------------------
+# Ladder B
+# --------------------------------------------------------------------------
+
+function ladder_b(gmin: f64, verbose: bool) -> f64 {
+    if !circ_reset() {
+        return 1.0
+    }
+    circ_set_gmin(gmin)
+    let vs: i32 = circ_add_v(1, 0, VSRC_B)
+    for k in 1 to RUNGS {
+        let series: i32 = circ_add_r(k, k + 1, RUNG_R)
+        if series < 0 {
+            println("    FAIL: netlist rejected")
+            return 1.0
+        }
+    }
+    for k in 2 to RUNGS {
+        let shunt: i32 = circ_add_r(k, 0, 2.0 * RUNG_R)
+        if shunt < 0 {
+            println("    FAIL: netlist rejected")
+            return 1.0
+        }
+    }
+    let term: i32 = circ_add_r(RUNGS, 0, RUNG_R)
+    if term < 0 or !circ_finalize() {
+        println("    FAIL: netlist rejected")
+        return 1.0
+    }
+    if !circ_op() {
+        println("    FAIL: DC solve did not converge")
+        return 1.0
+    }
+
+    if verbose {
+        println("")
+        println("  LADDER B  14-node R-2R, exact halving from 8.192 V")
+        println("")
+        println("    node             solved           reference     rel err")
+        println("    -----  -----------------  ------------------  ----------")
+    }
+
+    let mut w: f64 = 0.0
+    let mut want: f64 = VSRC_B
+    for k in 1 to RUNGS + 1 {
+        let got: f64 = circ_v(k)
+        let e: f64 = relerr(got, want)
+        w = worse(w, e)
+        if verbose and (k == 1 or k == 2 or k == 7 or k == 13 or k == 14) {
+            print("    V")
+            print(k)
+            if k < 10 {
+                print(" ")
+            }
+            printf("   %18.12f", got)
+            printf("  %18.12f", want)
+            printf("   %9.2e", e)
+            println("")
+        }
+        want = want * 0.5
+    }
+    w = worse(w, relerr(0.0 - circ_i(vs), VSRC_B / (2.0 * RUNG_R)))
+    if verbose {
+        print("    Isrc ")
+        printf("  %18.12f", 0.0 - circ_i(vs))
+        printf("  %18.12f", VSRC_B / (2.0 * RUNG_R))
+        printf("   %9.2e", relerr(0.0 - circ_i(vs), VSRC_B / (2.0 * RUNG_R)))
+        println("")
+        print("    matrix order ")
+        print(circ_dim_of())
+        print(", LU factorizations ")
+        print(circ_factor_count())
+        println("")
+    }
+    return w
+}
+
+function main() -> i32 {
+    println("")
+    println("  MNA DC OPERATING POINT  --  resistive ladders vs hand arithmetic")
+    println("  ================================================================")
+
+    let a_exact: f64 = ladder_a(0.0, true)
+    let b_exact: f64 = ladder_b(0.0, true)
+    let a_gmin: f64 = ladder_a(1e-12, false)
+    let b_gmin: f64 = ladder_b(1e-12, false)
+
+    let worst: f64 = worse(a_exact, b_exact)
+    let worst_gmin: f64 = worse(a_gmin, b_gmin)
+
+    println("")
+    print("  worst relative error, gmin off        : ")
+    printf("%.3e", worst)
+    println("     gate < 1.000e-12")
+    print("  worst relative error, gmin 1e-12 S    : ")
+    printf("%.3e", worst_gmin)
+    println("")
+    print("  predicted gmin floor  gmin / (1/R)    : ")
+    printf("%.3e", 1e-12 * RUNG_R)
+    println("")
+    println("")
+
+    if worst != worst or worst_gmin != worst_gmin {
+        println("  FAIL: NaN in the solution")
+        return 1
+    }
+    if worst >= 1e-12 {
+        println("  FAIL: DC operating point does not match the reference")
+        return 2
+    }
+    if worst_gmin >= 1e-7 {
+        println("  FAIL: gmin leakage is larger than its own prediction")
+        return 3
+    }
+    println("  PASS: every node voltage and branch current matches the hand-")
+    println("        computed ladder, and the gmin error is the size gmin says")
+    return 0
+}

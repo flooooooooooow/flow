@@ -1,0 +1,806 @@
+# SPICE NETLIST FRONT END: a subset parser that builds stdlib/circuit.flow
+# structures.
+#
+# WHAT IT READS
+#   A deck is a title line, then element and dot cards, then optionally .end.
+#   Everything is case-insensitive. Comment lines start with `*`; anything
+#   after `;` on a line is also a comment.
+#
+#     Rname  n+ n- value
+#     Cname  n+ n- value [IC=v0]
+#     Lname  n+ n- value [IC=i0]
+#     Vname  n+ n- [DC] value
+#     Iname  n+ n- [DC] value            current flows n+ -> source -> n-
+#     Dname  n+ n- [IS=value] [N=value]  Shockley diode, anode first
+#
+#     .TRAN  tstep tstop [tstart] [tmax] [UIC]
+#     .DC    srcname vstart vstop vincr
+#     .OP
+#     .END   .ENDS  .PRINT  .PLOT  .OPTIONS  .WIDTH  .TITLE   (accepted, no effect)
+#
+#   Node names are arbitrary identifiers. `0`, `gnd` and `ground` are the
+#   reference node. Every other name gets the next free node index, in the
+#   order the parser first sees it, so a deck's node numbering is stable and
+#   readable back with spice_node("out").
+#
+#   Values take the SPICE engineering suffixes, case-insensitively, with any
+#   trailing unit letters ignored:
+#
+#     T 1e12   G 1e9   MEG 1e6   K 1e3   M 1e-3   U 1e-6   N 1e-9
+#     P 1e-12  F 1e-15
+#
+#   MEG is checked before M, so `2.2MEG` is 2.2e6 and `2.2M` is 2.2e-3, which
+#   is what SPICE means and what trips people up. `1uF` is 1e-6 and `1F` is
+#   1e-15, also as SPICE means it.
+#
+# WHAT IT DOES NOT READ, EXACTLY
+#   These are recognized as unsupported and counted, not silently dropped;
+#   spice_skipped() returns how many cards were passed over and
+#   spice_error_line() names the line of the first hard error.
+#
+#     .SUBCKT / .ENDS bodies and X instance cards
+#     .MODEL cards and model references on element cards; diode parameters
+#       must be given inline as IS= and N=
+#     Q, M and J devices. The solver has an Ebers-Moll NPN, but wiring it to
+#       a .model card needs the model system first
+#     E, G, F and H controlled sources. The solver has E and G; only the
+#       card syntax is missing
+#     Source waveforms: PULSE, SIN, PWL, EXP, AC. Only a DC value is read,
+#       so a transient run from this parser drives constant sources
+#     Continuation lines beginning with `+`
+#     .AC, .NOISE, .TF, .FOUR, .IC, .NODESET, .PARAM, .INCLUDE, .LIB
+#     Arithmetic expressions in braces
+#
+#   Everything in the "reads" list above is exercised by the three decks in
+#   examples/circuits/netlists/ and checked against closed forms by
+#   examples/circuits/netlist_demo.flow.
+#
+# CAPS
+#   SPICE_MAX_TEXT   65536 bytes of deck
+#   SPICE_MAX_NAMES  128 distinct node names, ground included
+#   SPICE_MAX_SRCNM  64 named sources, for .DC to refer to
+#   Element and node counts are the caps of stdlib/circuit.flow.
+
+import "stdlib/circuit.flow"
+
+extern {
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fread(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function fseek(f: ptr<void>, off: i64, whence: i32) -> i32
+    function ftell(f: ptr<void>) -> i64
+    function fclose(f: ptr<void>) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const SPICE_MAX_TEXT: i32 = 65536
+const SPICE_MAX_NAMES: i32 = 128
+const SPICE_MAX_SRCNM: i32 = 64
+
+const SP_SEEK_SET: i32 = 0
+const SP_SEEK_END: i32 = 2
+
+# Source text.
+let mut sp_text: ptr<u8> = null
+let mut sp_len: i32 = 0
+let mut sp_pos: i32 = 0
+let mut sp_line: i32 = 0
+
+# Current token, as an offset and length into the text.
+let mut sp_tok: i32 = 0
+let mut sp_toklen: i32 = 0
+
+# Node name table. Entry 0 is always ground.
+let mut sp_name_off: ptr<i32> = null
+let mut sp_name_len: ptr<i32> = null
+let mut sp_nnames: i32 = 0
+
+# Named sources, so .DC can refer to one.
+let mut sp_src_off: ptr<i32> = null
+let mut sp_src_len: ptr<i32> = null
+let mut sp_src_elem: ptr<i32> = null
+let mut sp_nsrc: i32 = 0
+
+# Analysis cards.
+let mut sp_has_tran: bool = false
+let mut sp_tstep: f64 = 0.0
+let mut sp_tstop: f64 = 0.0
+let mut sp_uic: bool = false
+let mut sp_has_dc: bool = false
+let mut sp_dc_elem: i32 = -1
+let mut sp_dc_start: f64 = 0.0
+let mut sp_dc_stop: f64 = 0.0
+let mut sp_dc_step: f64 = 0.0
+let mut sp_has_op: bool = false
+
+let mut sp_skipped: i32 = 0
+let mut sp_errline: i32 = 0
+let mut sp_ready: bool = false
+
+# ---------------------------------------------------------------------------
+# Character helpers
+# ---------------------------------------------------------------------------
+
+function sp_ch(i: i32) -> i32 {
+    if i < 0 or i >= sp_len {
+        return 0
+    }
+    return sp_text[i] as i32
+}
+
+function sp_low(c: i32) -> i32 {
+    if c >= 65 and c <= 90 {
+        return c + 32
+    }
+    return c
+}
+
+function sp_is_space(c: i32) -> bool {
+    return c == 32 or c == 9 or c == 13
+}
+
+function sp_is_eol(c: i32) -> bool {
+    return c == 10 or c == 0
+}
+
+function sp_is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+# ---------------------------------------------------------------------------
+# Tokenizer. sp_next reads one token from the current line and returns false
+# at the end of the line; sp_eat_line moves to the next line.
+# ---------------------------------------------------------------------------
+
+function sp_next() -> bool {
+    while sp_pos < sp_len and sp_is_space(sp_ch(sp_pos)) {
+        sp_pos = sp_pos + 1
+    }
+    let c: i32 = sp_ch(sp_pos)
+    if sp_is_eol(c) or c == 59 {
+        return false
+    }
+    # `=` and `(` `)` are separators as well as whitespace, so IS=1e-14 and
+    # V(out) both tokenize the way a reader expects.
+    if c == 61 or c == 40 or c == 41 or c == 44 {
+        sp_tok = sp_pos
+        sp_toklen = 1
+        sp_pos = sp_pos + 1
+        return true
+    }
+    sp_tok = sp_pos
+    while sp_pos < sp_len {
+        let d: i32 = sp_ch(sp_pos)
+        if sp_is_space(d) or sp_is_eol(d) or d == 59 or d == 61
+            or d == 40 or d == 41 or d == 44 {
+            break
+        }
+        sp_pos = sp_pos + 1
+    }
+    sp_toklen = sp_pos - sp_tok
+    return sp_toklen > 0
+}
+
+function sp_eat_line() -> bool {
+    while sp_pos < sp_len and sp_ch(sp_pos) != 10 {
+        sp_pos = sp_pos + 1
+    }
+    if sp_pos < sp_len {
+        sp_pos = sp_pos + 1
+        sp_line = sp_line + 1
+        return true
+    }
+    return false
+}
+
+# Compare the current token with a literal, case-insensitively.
+function sp_tok_is(lit: string) -> bool {
+    let b: ptr<u8> = lit as ptr<u8>
+    let mut i: i32 = 0
+    while i < sp_toklen {
+        let a: i32 = sp_low(sp_ch(sp_tok + i))
+        let c: i32 = b[i] as i32
+        if c == 0 {
+            return false
+        }
+        if a != sp_low(c) {
+            return false
+        }
+        i = i + 1
+    }
+    return b[sp_toklen] as i32 == 0
+}
+
+# Compare two stored names, case-insensitively.
+function sp_names_eq(off1: i32, len1: i32, off2: i32, len2: i32) -> bool {
+    if len1 != len2 {
+        return false
+    }
+    for i in 0 to len1 {
+        if sp_low(sp_ch(off1 + i)) != sp_low(sp_ch(off2 + i)) {
+            return false
+        }
+    }
+    return true
+}
+
+function sp_lit_eq(off: i32, len: i32, lit: string) -> bool {
+    let b: ptr<u8> = lit as ptr<u8>
+    let mut i: i32 = 0
+    while i < len {
+        let c: i32 = b[i] as i32
+        if c == 0 {
+            return false
+        }
+        if sp_low(sp_ch(off + i)) != sp_low(c) {
+            return false
+        }
+        i = i + 1
+    }
+    return b[len] as i32 == 0
+}
+
+# ---------------------------------------------------------------------------
+# Numbers with SPICE engineering suffixes
+# ---------------------------------------------------------------------------
+
+function sp_suffix(off: i32, len: i32) -> f64 {
+    if len <= 0 {
+        return 1.0
+    }
+    if len >= 3 {
+        if sp_low(sp_ch(off)) == 109 and sp_low(sp_ch(off + 1)) == 101
+            and sp_low(sp_ch(off + 2)) == 103 {
+            return 1e6
+        }
+    }
+    let c: i32 = sp_low(sp_ch(off))
+    if c == 116 { return 1e12 }        # t
+    if c == 103 { return 1e9 }         # g
+    if c == 107 { return 1e3 }         # k
+    if c == 109 { return 1e-3 }        # m
+    if c == 117 { return 1e-6 }        # u
+    if c == 110 { return 1e-9 }        # n
+    if c == 112 { return 1e-12 }       # p
+    if c == 102 { return 1e-15 }       # f
+    return 1.0
+}
+
+function sp_number(off: i32, len: i32) -> f64 {
+    let mut i: i32 = 0
+    let mut sign: f64 = 1.0
+    if i < len and sp_ch(off + i) == 45 {
+        sign = -1.0
+        i = i + 1
+    } else {
+        if i < len and sp_ch(off + i) == 43 {
+            i = i + 1
+        }
+    }
+    let mut mant: f64 = 0.0
+    while i < len and sp_is_digit(sp_ch(off + i)) {
+        mant = mant * 10.0 + ((sp_ch(off + i) - 48) as f64)
+        i = i + 1
+    }
+    if i < len and sp_ch(off + i) == 46 {
+        i = i + 1
+        let mut scale: f64 = 0.1
+        while i < len and sp_is_digit(sp_ch(off + i)) {
+            mant = mant + scale * ((sp_ch(off + i) - 48) as f64)
+            scale = scale * 0.1
+            i = i + 1
+        }
+    }
+    # An exponent, if `e` is followed by a sign or a digit. Otherwise `e`
+    # would be an ordinary trailing unit letter.
+    if i < len and sp_low(sp_ch(off + i)) == 101 {
+        let nxt: i32 = sp_ch(off + i + 1)
+        if i + 1 < len and (sp_is_digit(nxt) or nxt == 43 or nxt == 45) {
+            i = i + 1
+            let mut esign: i32 = 1
+            if sp_ch(off + i) == 45 {
+                esign = -1
+                i = i + 1
+            } else {
+                if sp_ch(off + i) == 43 {
+                    i = i + 1
+                }
+            }
+            let mut ev: i32 = 0
+            while i < len and sp_is_digit(sp_ch(off + i)) {
+                ev = ev * 10 + (sp_ch(off + i) - 48)
+                i = i + 1
+            }
+            let mut p: f64 = 1.0
+            for k in 0 to ev {
+                p = p * 10.0
+            }
+            if esign < 0 {
+                mant = mant / p
+            } else {
+                mant = mant * p
+            }
+        }
+    }
+    return sign * mant * sp_suffix(off + i, len - i)
+}
+
+function sp_tok_number() -> f64 {
+    return sp_number(sp_tok, sp_toklen)
+}
+
+# ---------------------------------------------------------------------------
+# Node names
+# ---------------------------------------------------------------------------
+
+function sp_is_ground(off: i32, len: i32) -> bool {
+    if sp_lit_eq(off, len, "0") {
+        return true
+    }
+    if sp_lit_eq(off, len, "gnd") {
+        return true
+    }
+    return sp_lit_eq(off, len, "ground")
+}
+
+# Node index for the current token, allocating a new one on first sight.
+function sp_node() -> i32 {
+    if sp_is_ground(sp_tok, sp_toklen) {
+        return 0
+    }
+    for i in 0 to sp_nnames {
+        if sp_names_eq(sp_name_off[i], sp_name_len[i], sp_tok, sp_toklen) {
+            return i + 1
+        }
+    }
+    if sp_nnames >= SPICE_MAX_NAMES {
+        return -1
+    }
+    sp_name_off[sp_nnames] = sp_tok
+    sp_name_len[sp_nnames] = sp_toklen
+    sp_nnames = sp_nnames + 1
+    return sp_nnames
+}
+
+# Look up a node by name from outside the parser.
+export function spice_node(name: string) -> i32 {
+    let b: ptr<u8> = name as ptr<u8>
+    let mut n: i32 = 0
+    while b[n] as i32 != 0 {
+        n = n + 1
+    }
+    if n == 1 and b[0] as i32 == 48 {
+        return 0
+    }
+    for i in 0 to sp_nnames {
+        if sp_lit_eq(sp_name_off[i], sp_name_len[i], name) {
+            return i + 1
+        }
+    }
+    return -1
+}
+
+export function spice_node_count() -> i32 {
+    return sp_nnames
+}
+
+# Element index of a named source, or -1.
+export function spice_source(name: string) -> i32 {
+    for i in 0 to sp_nsrc {
+        if sp_lit_eq(sp_src_off[i], sp_src_len[i], name) {
+            return sp_src_elem[i]
+        }
+    }
+    return -1
+}
+
+function sp_record_source(off: i32, len: i32, elem: i32) -> void {
+    if sp_nsrc >= SPICE_MAX_SRCNM {
+        return
+    }
+    sp_src_off[sp_nsrc] = off
+    sp_src_len[sp_nsrc] = len
+    sp_src_elem[sp_nsrc] = elem
+    sp_nsrc = sp_nsrc + 1
+}
+
+function sp_find_source(off: i32, len: i32) -> i32 {
+    for i in 0 to sp_nsrc {
+        if sp_names_eq(sp_src_off[i], sp_src_len[i], off, len) {
+            return sp_src_elem[i]
+        }
+    }
+    return -1
+}
+
+# ---------------------------------------------------------------------------
+# Loading
+# ---------------------------------------------------------------------------
+
+function sp_alloc() -> bool {
+    if sp_text != null {
+        return true
+    }
+    sp_text = calloc((SPICE_MAX_TEXT + 1) as i64, 1) as ptr<u8>
+    sp_name_off = calloc(SPICE_MAX_NAMES as i64, 4) as ptr<i32>
+    sp_name_len = calloc(SPICE_MAX_NAMES as i64, 4) as ptr<i32>
+    sp_src_off = calloc(SPICE_MAX_SRCNM as i64, 4) as ptr<i32>
+    sp_src_len = calloc(SPICE_MAX_SRCNM as i64, 4) as ptr<i32>
+    sp_src_elem = calloc(SPICE_MAX_SRCNM as i64, 4) as ptr<i32>
+    return sp_text != null and sp_src_elem != null
+}
+
+# Read a deck from disk. Returns false if the file is missing or larger than
+# SPICE_MAX_TEXT.
+export function spice_load(path: string) -> bool {
+    if !sp_alloc() {
+        return false
+    }
+    let f: ptr<void> = fopen(path, "rb")
+    if f == null {
+        sp_errline = -1
+        return false
+    }
+    let seek_end: i32 = fseek(f, 0, SP_SEEK_END)
+    let size: i64 = ftell(f)
+    let rewound: i32 = fseek(f, 0, SP_SEEK_SET)
+    if size > SPICE_MAX_TEXT as i64 or size <= 0 {
+        let closed: i32 = fclose(f)
+        sp_errline = -2
+        return false
+    }
+    let got: i64 = fread(sp_text as ptr<void>, 1, size, f)
+    let closed: i32 = fclose(f)
+    if got != size {
+        sp_errline = -3
+        return false
+    }
+    sp_len = got as i32
+    sp_text[sp_len] = 0
+    sp_pos = 0
+    sp_line = 1
+    sp_nnames = 0
+    sp_nsrc = 0
+    sp_skipped = 0
+    sp_errline = 0
+    sp_has_tran = false
+    sp_has_dc = false
+    sp_has_op = false
+    sp_uic = false
+    sp_ready = true
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Card parsers
+# ---------------------------------------------------------------------------
+
+# Two node tokens, then leave the cursor on the next token.
+let mut sp_n1: i32 = 0
+let mut sp_n2: i32 = 0
+
+function sp_two_nodes() -> bool {
+    if !sp_next() {
+        return false
+    }
+    sp_n1 = sp_node()
+    if !sp_next() {
+        return false
+    }
+    sp_n2 = sp_node()
+    return sp_n1 >= 0 and sp_n2 >= 0
+}
+
+function sp_card_rcl(kind: i32) -> bool {
+    if !sp_two_nodes() {
+        return false
+    }
+    if !sp_next() {
+        return false
+    }
+    let value: f64 = sp_tok_number()
+    let mut ic: f64 = 0.0
+    # Optional IC=... trailer.
+    while sp_next() {
+        if sp_tok_is("ic") {
+            if !sp_next() {
+                return false
+            }
+            if sp_tok_is("=") {
+                if !sp_next() {
+                    return false
+                }
+            }
+            ic = sp_tok_number()
+        }
+    }
+    let mut e: i32 = -1
+    if kind == CIRC_R {
+        e = circ_add_r(sp_n1, sp_n2, value)
+    }
+    if kind == CIRC_C {
+        e = circ_add_c(sp_n1, sp_n2, value, ic)
+    }
+    if kind == CIRC_L {
+        e = circ_add_l(sp_n1, sp_n2, value, ic)
+    }
+    return e >= 0
+}
+
+function sp_card_source(kind: i32, name_off: i32, name_len: i32) -> bool {
+    if !sp_two_nodes() {
+        return false
+    }
+    if !sp_next() {
+        return false
+    }
+    if sp_tok_is("dc") {
+        if !sp_next() {
+            return false
+        }
+    }
+    if sp_tok_is("ac") or sp_tok_is("pulse") or sp_tok_is("sin")
+        or sp_tok_is("pwl") or sp_tok_is("exp") {
+        # A waveform this parser does not build. Take nothing from the card
+        # rather than guessing, and count it.
+        sp_skipped = sp_skipped + 1
+        while sp_next() {
+            sp_skipped = sp_skipped + 0
+        }
+        return false
+    }
+    let value: f64 = sp_tok_number()
+    while sp_next() {
+        sp_skipped = sp_skipped + 1
+    }
+    let mut e: i32 = -1
+    if kind == CIRC_V {
+        e = circ_add_v(sp_n1, sp_n2, value)
+    }
+    if kind == CIRC_I {
+        e = circ_add_i(sp_n1, sp_n2, value)
+    }
+    if e < 0 {
+        return false
+    }
+    sp_record_source(name_off, name_len, e)
+    return true
+}
+
+function sp_card_diode() -> bool {
+    if !sp_two_nodes() {
+        return false
+    }
+    let mut is_sat: f64 = 1e-14
+    let mut nemis: f64 = 1.0
+    let vt: f64 = 0.025852
+    while sp_next() {
+        if sp_tok_is("is") {
+            if !sp_next() {
+                return false
+            }
+            if sp_tok_is("=") {
+                if !sp_next() {
+                    return false
+                }
+            }
+            is_sat = sp_tok_number()
+        } else {
+            if sp_tok_is("n") {
+                if !sp_next() {
+                    return false
+                }
+                if sp_tok_is("=") {
+                    if !sp_next() {
+                        return false
+                    }
+                }
+                nemis = sp_tok_number()
+            } else {
+                # A model name. There is no model system, so this is skipped
+                # and the built-in defaults stand.
+                sp_skipped = sp_skipped + 1
+            }
+        }
+    }
+    return circ_add_d(sp_n1, sp_n2, is_sat, nemis * vt) >= 0
+}
+
+function sp_card_tran() -> bool {
+    if !sp_next() {
+        return false
+    }
+    sp_tstep = sp_tok_number()
+    if !sp_next() {
+        return false
+    }
+    sp_tstop = sp_tok_number()
+    sp_uic = false
+    while sp_next() {
+        if sp_tok_is("uic") {
+            sp_uic = true
+        }
+    }
+    sp_has_tran = true
+    return true
+}
+
+function sp_card_dc() -> bool {
+    if !sp_next() {
+        return false
+    }
+    let noff: i32 = sp_tok
+    let nlen: i32 = sp_toklen
+    if !sp_next() {
+        return false
+    }
+    sp_dc_start = sp_tok_number()
+    if !sp_next() {
+        return false
+    }
+    sp_dc_stop = sp_tok_number()
+    if !sp_next() {
+        return false
+    }
+    sp_dc_step = sp_tok_number()
+    sp_dc_elem = sp_find_source(noff, nlen)
+    if sp_dc_elem < 0 {
+        return false
+    }
+    sp_has_dc = true
+    while sp_next() {
+        sp_skipped = sp_skipped + 1
+    }
+    return true
+}
+
+function sp_card_dot() -> bool {
+    if sp_tok_is(".tran") {
+        return sp_card_tran()
+    }
+    if sp_tok_is(".dc") {
+        return sp_card_dc()
+    }
+    if sp_tok_is(".op") {
+        sp_has_op = true
+        return true
+    }
+    if sp_tok_is(".end") or sp_tok_is(".ends") or sp_tok_is(".print")
+        or sp_tok_is(".plot") or sp_tok_is(".options") or sp_tok_is(".option")
+        or sp_tok_is(".width") or sp_tok_is(".title") {
+        return true
+    }
+    # Recognized as a dot card, not supported. Counted, not hidden.
+    sp_skipped = sp_skipped + 1
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# The deck
+# ---------------------------------------------------------------------------
+
+# Parse the loaded deck into stdlib/circuit.flow, then finalize it. The first
+# non-blank line is the title, as SPICE requires.
+export function spice_parse() -> bool {
+    if !sp_ready {
+        return false
+    }
+    if !circ_reset() {
+        return false
+    }
+    sp_pos = 0
+    sp_line = 1
+    sp_nnames = 0
+    sp_nsrc = 0
+    sp_skipped = 0
+    sp_errline = 0
+    sp_has_tran = false
+    sp_has_dc = false
+    sp_has_op = false
+
+    # Title line.
+    let ate: bool = sp_eat_line()
+
+    while sp_pos < sp_len {
+        if sp_next() {
+            let c: i32 = sp_low(sp_ch(sp_tok))
+            let mut ok: bool = true
+            if c == 42 {
+                ok = true                      # * comment
+            } else {
+                if c == 46 {
+                    ok = sp_card_dot()
+                } else {
+                    let noff: i32 = sp_tok
+                    let nlen: i32 = sp_toklen
+                    if c == 114 {
+                        ok = sp_card_rcl(CIRC_R)
+                    } else {
+                        if c == 99 {
+                            ok = sp_card_rcl(CIRC_C)
+                        } else {
+                            if c == 108 {
+                                ok = sp_card_rcl(CIRC_L)
+                            } else {
+                                if c == 118 {
+                                    ok = sp_card_source(CIRC_V, noff, nlen)
+                                } else {
+                                    if c == 105 {
+                                        ok = sp_card_source(CIRC_I, noff, nlen)
+                                    } else {
+                                        if c == 100 {
+                                            ok = sp_card_diode()
+                                        } else {
+                                            if c == 43 {
+                                                # Continuation line: not joined.
+                                                sp_skipped = sp_skipped + 1
+                                            } else {
+                                                # X, Q, M, J, E, G, F, H, ...
+                                                sp_skipped = sp_skipped + 1
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if !ok {
+                sp_errline = sp_line
+                return false
+            }
+        }
+        if !sp_eat_line() {
+            sp_pos = sp_len
+        }
+    }
+    return circ_finalize()
+}
+
+export function spice_error_line() -> i32 {
+    return sp_errline
+}
+
+export function spice_skipped() -> i32 {
+    return sp_skipped
+}
+
+export function spice_has_tran() -> bool {
+    return sp_has_tran
+}
+
+export function spice_tstep() -> f64 {
+    return sp_tstep
+}
+
+export function spice_tstop() -> f64 {
+    return sp_tstop
+}
+
+export function spice_uic() -> bool {
+    return sp_uic
+}
+
+export function spice_has_dc() -> bool {
+    return sp_has_dc
+}
+
+export function spice_dc_source() -> i32 {
+    return sp_dc_elem
+}
+
+export function spice_dc_start() -> f64 {
+    return sp_dc_start
+}
+
+export function spice_dc_stop() -> f64 {
+    return sp_dc_stop
+}
+
+export function spice_dc_step() -> f64 {
+    return sp_dc_step
+}
+
+export function spice_has_op() -> bool {
+    return sp_has_op
+}

@@ -1,0 +1,283 @@
+# TRANSMISSION LINE: 32 lumped sections, and the reflection coefficient the
+# far end sends back.
+#
+# WHY THE MATRIX AND NOT A `flow` BLOCK
+#   The lumped model is 65 coupled state variables with an algebraic
+#   constraint at every node, and the source resistance and load close the
+#   system at both ends. It is exactly the case MNA is for. Writing it as 65
+#   `evolves as` lines is possible and would be worse: the interesting content
+#   is the topology, and the topology is what the netlist expresses.
+#
+# THE LINE
+#   A pi-section ladder standing in for a uniform line:
+#
+#     (34)--Rs--(1)--L--(2)--L--(3)-- ... --L--(33)
+#                |       |       |                |
+#               C/2      C       C               C/2   ZL
+#                |       |       |                |     |
+#               gnd     gnd     gnd              gnd   gnd
+#
+#     N   = 32 sections
+#     L   = Z0 td / N = 15.625 nH        C = td / (Z0 N) = 6.25 pF
+#     Z0  = sqrt(L/C) = 50 ohm           td = N sqrt(LC) = 10 ns
+#     Rs  = 50 ohm, matched, so nothing re-reflects at the source
+#
+#   A lumped ladder is a low-pass filter, not a line: it has a cutoff at
+#   fc = 1/(pi sqrt(LC)) = 1.019 GHz, above which it stops propagating and
+#   starts ringing. So the drive is a raised-cosine ramp with a 2 ns rise,
+#   whose content sits an octave below the cutoff. That is the honest cost of
+#   the lumped approximation, and the residual error in the table below is
+#   mostly it.
+#
+# THE MEASUREMENT
+#   Drive the source with a 2 V step. Behind a matched Rs the wave that
+#   launches into the line is 1 V, and while it is travelling, the line input
+#   sits at exactly that:
+#
+#     V(node 1) = Vinc                      for  t_rise < t < 2 td
+#     V(node 1) = Vinc (1 + Gamma)          for  t > 2 td
+#
+#   so reading the input node before and after the round trip gives Gamma
+#   directly, with no knowledge of the load needed:
+#
+#     Gamma_measured = V(node 1, t = 35 ns) / V(node 1, t = 15 ns) - 1
+#
+#   The reference is the one line of transmission-line theory this example
+#   exists to check:
+#
+#     Gamma = (ZL - Z0) / (ZL + Z0)
+#
+#   Six loads are swept, from a near short to a near open.
+#
+# ALSO MEASURED
+#   The one-way delay, as the time the far end first reaches half the
+#   incident amplitude, against td = N sqrt(LC) = 10 ns. And the LU
+#   factorization count: the circuit is linear and dt never changes, so the
+#   67x67 matrix is factored once for the run (plus once for the microscopic
+#   priming step that reads the t = 0 currents) and each of the 4000 steps
+#   costs one triangular solve.
+#
+# EVIDENCE
+#   Six measured reflection coefficients against (ZL-Z0)/(ZL+Z0), gated at
+#   0.03 absolute; the measured one-way delay against N sqrt(LC), gated at 5%.
+#
+# Run: ./flow run examples/circuits/transmission_line.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const NSEG: i32 = 32
+const Z0: f64 = 50.0
+const TD: f64 = 10e-9
+const VSTEP: f64 = 2.0
+const T_RISE: f64 = 2e-9
+const DT: f64 = 10e-12
+const T_END: f64 = 40e-9
+const T_BEFORE: f64 = 15e-9         # incident only
+const T_AFTER: f64 = 35e-9          # incident plus the returned reflection
+const PI: f64 = 3.141592653589793
+
+function l_seg() -> f64 {
+    return Z0 * TD / (NSEG as f64)
+}
+
+function c_seg() -> f64 {
+    return TD / (Z0 * (NSEG as f64))
+}
+
+function f_cutoff() -> f64 {
+    return 1.0 / (PI * sqrt(l_seg() * c_seg()))
+}
+
+function src_at(t: f64) -> f64 {
+    if t <= 0.0 {
+        return 0.0
+    }
+    if t >= T_RISE {
+        return VSTEP
+    }
+    return VSTEP * 0.5 * (1.0 - cos(PI * t / T_RISE))
+}
+
+let mut m_gamma: f64 = 0.0
+let mut m_vbefore: f64 = 0.0
+let mut m_vafter: f64 = 0.0
+let mut m_delay: f64 = 0.0
+let mut m_factors: i32 = 0
+let mut m_dim: i32 = 0
+
+function run_line(zl: f64) -> bool {
+    if !circ_reset() {
+        return false
+    }
+    circ_set_method(CIRC_TRAP)
+    let src: i32 = circ_add_v(34, 0, 0.0)
+    let rs: i32 = circ_add_r(34, 1, Z0)
+    let chalf1: i32 = circ_add_c(1, 0, 0.5 * c_seg(), 0.0)
+    for k in 1 to NSEG + 1 {
+        let ind: i32 = circ_add_l(k, k + 1, l_seg(), 0.0)
+        if ind < 0 {
+            return false
+        }
+    }
+    for k in 2 to NSEG + 1 {
+        let cap: i32 = circ_add_c(k, 0, c_seg(), 0.0)
+        if cap < 0 {
+            return false
+        }
+    }
+    let chalf2: i32 = circ_add_c(NSEG + 1, 0, 0.5 * c_seg(), 0.0)
+    let load: i32 = circ_add_r(NSEG + 1, 0, zl)
+    if load < 0 or !circ_finalize() {
+        return false
+    }
+    m_dim = circ_dim_of()
+    if !circ_tran_init(true, DT * 1e-6) {
+        return false
+    }
+
+    let steps: i32 = (T_END / DT) as i32
+    let half_inc: f64 = 0.5 * VSTEP * 0.5      # half of the 1 V incident wave
+    let mut prev_far: f64 = 0.0
+    m_delay = 0.0
+    m_vbefore = 0.0
+    m_vafter = 0.0
+    for k in 1 to steps + 1 {
+        let t: f64 = (k as f64) * DT
+        circ_set_value(src, src_at(t))
+        if !circ_tran_step(DT) {
+            return false
+        }
+        let far: f64 = circ_v(NSEG + 1)
+        if m_delay == 0.0 and prev_far < half_inc and far >= half_inc {
+            let frac: f64 = (half_inc - prev_far) / (far - prev_far)
+            # The drive reaches half amplitude at T_RISE/2, so the one-way
+            # delay is measured between the two half-amplitude points.
+            m_delay = ((k - 1) as f64 + frac) * DT - 0.5 * T_RISE
+        }
+        prev_far = far
+        if k == (T_BEFORE / DT) as i32 {
+            m_vbefore = circ_v(1)
+        }
+        if k == (T_AFTER / DT) as i32 {
+            m_vafter = circ_v(1)
+        }
+    }
+    m_factors = circ_factor_count()
+    if m_vbefore == 0.0 {
+        return false
+    }
+    m_gamma = m_vafter / m_vbefore - 1.0
+    return true
+}
+
+function main() -> i32 {
+    println("")
+    println("  TRANSMISSION LINE  --  reflection vs (ZL - Z0)/(ZL + Z0)")
+    println("  ========================================================")
+    println("")
+    print("  ")
+    print(NSEG)
+    print(" pi sections,  L = ")
+    printf("%.4f", l_seg() * 1e9)
+    print(" nH,  C = ")
+    printf("%.4f", c_seg() * 1e12)
+    print(" pF,  Z0 = sqrt(L/C) = ")
+    printf("%.4f", sqrt(l_seg() / c_seg()))
+    println(" ohm")
+    print("  one-way delay N sqrt(LC) = ")
+    printf("%.4f", TD * 1e9)
+    print(" ns,  lattice cutoff 1/(pi sqrt(LC)) = ")
+    printf("%.4f", f_cutoff() / 1e9)
+    println(" GHz")
+    print("  2 V raised-cosine step, ")
+    printf("%.1f", T_RISE * 1e9)
+    print(" ns rise, matched Rs = ")
+    printf("%.0f", Z0)
+    print(" ohm,  dt = ")
+    printf("%.0f", DT * 1e12)
+    println(" ps")
+
+    println("")
+    println("    ZL [ohm]     V1 at 15 ns   V1 at 35 ns    Gamma meas   Gamma ref     abs err")
+    println("    ----------  ------------  ------------  ------------  ----------  ----------")
+
+    let loads: array<f64, 6> = [5.0, 16.666666666666668, 50.0, 150.0, 500.0, 1e6]
+    let mut worst: f64 = 0.0
+    let mut delay_err: f64 = 0.0
+    for i in 0 to 6 {
+        let zl: f64 = loads[i]
+        if !run_line(zl) {
+            println("    FAIL: run did not complete")
+            return 1
+        }
+        let gref: f64 = (zl - Z0) / (zl + Z0)
+        let e: f64 = fabs(m_gamma - gref)
+        if e > worst {
+            worst = e
+        }
+        if i == 2 {
+            # The matched case is where the one-way delay is cleanest: no
+            # reflection comes back to confuse the far-end waveform.
+            delay_err = fabs(m_delay - TD) / TD
+        }
+        print("    ")
+        printf("%10.2f", zl)
+        printf("  %12.6f", m_vbefore)
+        printf("  %12.6f", m_vafter)
+        printf("  %12.6f", m_gamma)
+        printf("  %10.6f", gref)
+        printf("  %10.2e", e)
+        println("")
+    }
+
+    println("")
+    print("  matched-load one-way delay  measured ")
+    printf("%.5f", m_delay * 1e9)
+    print(" ns   N sqrt(LC) = ")
+    printf("%.5f", TD * 1e9)
+    print(" ns   rel err ")
+    printf("%.2e", delay_err)
+    println("")
+    print("  matrix order ")
+    print(m_dim)
+    print(",  LU factorizations ")
+    print(m_factors)
+    print(" over ")
+    print((T_END / DT) as i32)
+    println(" steps")
+    println("  two factorizations: one for the microscopic priming step that reads")
+    println("  the t = 0 branch currents, one for the 4000-step run itself. The")
+    println("  circuit is linear and dt never changes, so every step is a solve")
+
+    println("")
+    print("  worst absolute reflection-coefficient error: ")
+    printf("%.3e", worst)
+    println("     gate 3.000e-02")
+    print("  one-way delay error                        : ")
+    printf("%.3e", delay_err)
+    println("     gate 5.000e-02")
+    println("")
+
+    if worst != worst or delay_err != delay_err {
+        println("  FAIL: NaN in a measurement")
+        return 2
+    }
+    if worst >= 3e-2 {
+        println("  FAIL: the measured reflection is not (ZL-Z0)/(ZL+Z0)")
+        return 3
+    }
+    if delay_err >= 5e-2 {
+        println("  FAIL: the one-way delay is not N sqrt(LC)")
+        return 4
+    }
+    println("  PASS: the ladder reflects what the impedance mismatch says it")
+    println("        should, from a near short to a near open")
+    return 0
+}

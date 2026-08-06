@@ -1,0 +1,11 @@
+Diode I-V through a 1 kohm series resistor
+* Exercises D with inline IS and N, and .dc naming a source.
+* The analytic answer solves Vd + R Is (exp(Vd/(N VT)) - 1) = Vsrc.
+V1  in  0   DC 0
+R1  in  a   1k         ; trailing comments start at a semicolon
+D1  a   0   IS=1e-14 N=1.0
+* There is no .model system, so the next card is counted as skipped rather
+* than quietly ignored. spice_skipped() reports 1 for this deck.
+.model DMOD D IS=1e-14
+.dc V1 -1 5 0.1
+.end
