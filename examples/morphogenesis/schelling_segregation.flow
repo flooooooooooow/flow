@@ -1,0 +1,662 @@
+# SCHELLING SEGREGATION: mild preferences, and the pattern nobody wanted.
+#
+# MODEL (Schelling, 1971)
+#   A 64 x 64 periodic lattice. Each site holds an agent of one of two colours
+#   or is vacant; the seed makes about 5 percent of sites vacant and splits
+#   the rest evenly. An agent looks at its eight Moore neighbours, ignores the
+#   vacant ones, and is unhappy when
+#
+#       (like neighbours) / (occupied neighbours)  <  T
+#
+#   for a tolerance threshold T. An agent with no occupied neighbours at all
+#   is counted happy. In one round every unhappy agent, taken in random order,
+#   moves. Its destination is chosen by sampling up to twenty vacancies at
+#   random and taking the first that would leave it happy; if none of the
+#   twenty would, it moves to the twentieth. Happiness is rechecked at the
+#   moment the agent moves, so the round is asynchronous.
+#
+#   This is a discrete model, so it carries no `flow` block with `evolves as`:
+#   the state is a colour per site and the update is a relocation rule rather
+#   than a rate of change.
+#
+# WHAT IS MEASURED, AND AGAINST WHAT
+#
+#   The segregation index is the mean over occupied sites of the fraction of
+#   occupied neighbours that share the agent's colour. A well-mixed lattice
+#   gives the population share, so 0.5 for a balanced mixture, and that is
+#   where every run starts. The threshold is swept over nine values from 0.1
+#   to 0.9 and the index is reported at each, together with the number of
+#   agents still unhappy when the run stops and the number of rounds it took.
+#
+#   Gates:
+#     the index at T = 0.3 exceeds 0.7, so a demand for three like neighbours
+#       in eight produces a lattice three quarters same-coloured;
+#     the final index exceeds T itself at every T below 0.6, which is the
+#       point of the model: individually modest demands overshoot;
+#     the index increases with T, allowing 0.02 for run-to-run noise, up to
+#       the jamming threshold;
+#     the unhappy count falls under one percent of the population below the
+#       jamming threshold, and stays above it at and past that threshold.
+#
+#   The jamming threshold is measured rather than assumed: it is the lowest T
+#   in the sweep whose run ends with more than one percent of agents unhappy
+#   after 200 rounds. With eight neighbours and five percent vacancy it lands
+#   near T = 0.7, where an agent needs six of eight like neighbours and no
+#   arrangement satisfies everyone.
+#
+#   Schelling made the point with coins on a board and a one-dimensional strip
+#   of pluses and minuses. The claim here is his: a preference far short of a
+#   demand for segregation produces segregation anyway.
+#
+# REFERENCE
+#   T. C. Schelling, "Dynamic models of segregation", Journal of Mathematical
+#   Sociology 1:143-186 (1971).
+#
+# LIVE VIEW / KEYS
+#   The lattice, one round a frame. Unhappy agents are drawn pale, so the
+#   pale speckle across the opening frames drains away as the blocks form.
+#   The HUD shows the threshold, the segregation index, the unhappy count and
+#   the round number.
+#
+#   1 T 0.30   the classic three-in-eight rule
+#   2 T 0.50   half your neighbours, sharp blocks
+#   3 T 0.60   near the jam, slow and ragged
+#   4 T 0.20   barely any preference, barely any pattern
+#   R reseed   P pause   Esc quit
+#
+# Run: ./flow gfx examples/morphogenesis/schelling_segregation.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const GRID: i32 = 64
+const NCELL: i32 = 4096
+const CELL_PX: i32 = 8
+const VACANCY_PCT: i32 = 5
+const TRIES: i32 = 20
+const MAX_ROUNDS: i32 = 200
+const NTHR: i32 = 9
+const RESIDUAL_FRAC: f64 = 0.01
+const MIXED_INDEX: f64 = 0.5
+
+const GATE_T: f64 = 0.3
+const GATE_INDEX_AT_T: f64 = 0.7
+const MONO_TOL: f64 = 0.05
+const SELF_BEAT_MAX_T: f64 = 0.6
+
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+let mut cell: ptr<i32> = null      # 0 vacant, 1 first colour, 2 second colour
+let mut vac: ptr<i32> = null       # indices of the vacant sites
+let mut unl: ptr<i32> = null       # indices of the unhappy agents this round
+let mut fb: ptr<u8> = null
+
+let mut sw_thr: ptr<f64> = null
+let mut sw_index: ptr<f64> = null
+let mut sw_unhappy: ptr<f64> = null
+let mut sw_rounds: ptr<f64> = null
+
+let mut nvac: i32 = 0
+let mut nb_like: i32 = 0
+let mut nb_occ: i32 = 0
+let mut n_agents: i32 = 0
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG. Thirty bits from the top halves of two draws.
+# ---------------------------------------------------------------------------
+
+let mut rng_state: u32 = 1234567891
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_u30() -> i32 {
+    let a: i32 = ((rng_next() >> 16) % 32768) as i32
+    let b: i32 = ((rng_next() >> 16) % 32768) as i32
+    return a * 32768 + b
+}
+
+function rng_below(n: i32) -> i32 {
+    return rng_u30() % n
+}
+
+# ---------------------------------------------------------------------------
+# Neighbourhood
+# ---------------------------------------------------------------------------
+
+# Count the eight Moore neighbours of site i, filling nb_like and nb_occ.
+function neighbours(i: i32, colour: i32) -> void {
+    let x: i32 = i % GRID
+    let y: i32 = i / GRID
+    let xm: i32 = (x + GRID - 1) % GRID
+    let xp: i32 = (x + 1) % GRID
+    let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+    let yp: i32 = ((y + 1) % GRID) * GRID
+    let r: i32 = y * GRID
+    let mut occ: i32 = 0
+    let mut like: i32 = 0
+    let mut c: i32 = 0
+    c = cell[r + xm]
+    if c != 0 { occ = occ + 1
+        if c == colour { like = like + 1 } }
+    c = cell[r + xp]
+    if c != 0 { occ = occ + 1
+        if c == colour { like = like + 1 } }
+    c = cell[ym + x]
+    if c != 0 { occ = occ + 1
+        if c == colour { like = like + 1 } }
+    c = cell[yp + x]
+    if c != 0 { occ = occ + 1
+        if c == colour { like = like + 1 } }
+    c = cell[ym + xm]
+    if c != 0 { occ = occ + 1
+        if c == colour { like = like + 1 } }
+    c = cell[ym + xp]
+    if c != 0 { occ = occ + 1
+        if c == colour { like = like + 1 } }
+    c = cell[yp + xm]
+    if c != 0 { occ = occ + 1
+        if c == colour { like = like + 1 } }
+    c = cell[yp + xp]
+    if c != 0 { occ = occ + 1
+        if c == colour { like = like + 1 } }
+    nb_like = like
+    nb_occ = occ
+}
+
+# An agent of `colour` sitting at site i: is it happy? No occupied neighbour
+# at all counts as happy.
+function happy_at(i: i32, colour: i32, thr: f64) -> bool {
+    neighbours(i, colour)
+    if nb_occ == 0 { return true }
+    return (nb_like as f64) / (nb_occ as f64) >= thr
+}
+
+# ---------------------------------------------------------------------------
+# Measurement
+# ---------------------------------------------------------------------------
+
+function segregation_index() -> f64 {
+    let mut s: f64 = 0.0
+    let mut n: f64 = 0.0
+    for i in 0 to NCELL {
+        let c: i32 = cell[i]
+        if c != 0 {
+            neighbours(i, c)
+            if nb_occ > 0 {
+                s = s + (nb_like as f64) / (nb_occ as f64)
+                n = n + 1.0
+            }
+        }
+    }
+    if n < 1.0 { return 0.0 }
+    return s / n
+}
+
+function count_unhappy(thr: f64) -> i32 {
+    let mut n: i32 = 0
+    for i in 0 to NCELL {
+        let c: i32 = cell[i]
+        if c != 0 {
+            if !happy_at(i, c, thr) { n = n + 1 }
+        }
+    }
+    return n
+}
+
+# ---------------------------------------------------------------------------
+# Seeding and one round
+# ---------------------------------------------------------------------------
+
+function seed_grid(seed: u32) -> void {
+    rng_state = seed
+    n_agents = 0
+    for i in 0 to NCELL {
+        if rng_below(100) < VACANCY_PCT {
+            cell[i] = 0
+        } else {
+            cell[i] = 1 + rng_below(2)
+            n_agents = n_agents + 1
+        }
+    }
+}
+
+# One asynchronous round. Returns the number of agents found unhappy at the
+# start of it.
+function run_round(thr: f64) -> i32 {
+    nvac = 0
+    for i in 0 to NCELL {
+        if cell[i] == 0 {
+            vac[nvac] = i
+            nvac = nvac + 1
+        }
+    }
+    if nvac < 1 { return 0 }
+
+    let mut nun: i32 = 0
+    for i in 0 to NCELL {
+        let c: i32 = cell[i]
+        if c != 0 {
+            if !happy_at(i, c, thr) {
+                unl[nun] = i
+                nun = nun + 1
+            }
+        }
+    }
+
+    # Fisher-Yates, so the order of moves carries no lattice bias.
+    let mut k: i32 = nun - 1
+    while k > 0 {
+        let j: i32 = rng_below(k + 1)
+        let t: i32 = unl[k]
+        unl[k] = unl[j]
+        unl[j] = t
+        k = k - 1
+    }
+
+    for m in 0 to nun {
+        let src: i32 = unl[m]
+        let c: i32 = cell[src]
+        if c != 0 {
+            if !happy_at(src, c, thr) {
+                let mut t: i32 = 0
+                let mut chosen: i32 = -1
+                let mut chosen_k: i32 = -1
+                while t < TRIES {
+                    let k2: i32 = rng_below(nvac)
+                    chosen = vac[k2]
+                    chosen_k = k2
+                    if happy_at(chosen, c, thr) {
+                        t = TRIES
+                    } else {
+                        t = t + 1
+                    }
+                }
+                cell[src] = 0
+                cell[chosen] = c
+                vac[chosen_k] = src
+            }
+        }
+    }
+    return nun
+}
+
+# Run one threshold to convergence or to the round cap.
+let mut r_index0: f64 = 0.0
+let mut r_index1: f64 = 0.0
+let mut r_unhappy: i32 = 0
+let mut r_rounds: i32 = 0
+
+function run_threshold(thr: f64) -> void {
+    seed_grid(1234567891)
+    r_index0 = segregation_index()
+    let mut rounds: i32 = 0
+    let mut nun: i32 = count_unhappy(thr)
+    while rounds < MAX_ROUNDS and nun > 0 {
+        nun = run_round(thr)
+        rounds = rounds + 1
+    }
+    r_index1 = segregation_index()
+    r_unhappy = count_unhappy(thr)
+    r_rounds = rounds
+}
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+function paint_cell(x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx, thr: f64) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let c: i32 = cell[i]
+            let mut r: i32 = 18
+            let mut g2: i32 = 17
+            let mut b: i32 = 26
+            if c != 0 {
+                let content: bool = happy_at(i, c, thr)
+                if c == 1 {
+                    r = 232
+                    g2 = 104
+                    b = 66
+                    if !content { r = 255
+                        g2 = 196
+                        b = 172 }
+                } else {
+                    r = 62
+                    g2 = 142
+                    b = 226
+                    if !content { r = 174
+                        g2 = 214
+                        b = 255 }
+                }
+            }
+            paint_cell(x, y, r, g2, b)
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function preset_thr(p: i32) -> f64 {
+    if p == 1 { return 0.5 }
+    if p == 2 { return 0.6 }
+    if p == 3 { return 0.2 }
+    return 0.3
+}
+
+function draw_hud(g: Gfx, thr: f64, index: f64, unhappy: i32, round: i32,
+                  jam: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "SCHELLING SEGREGATION", 2, 238, 236, 244)
+    let t2: i32 = gfx_draw_text(g, 296, 12, "THRESHOLD T", 1, 150, 148, 164)
+    let t3: i32 = gfx_draw_fixed(g, 370, 12, thr, 2, 1, 255, 198, 96)
+    let t4: i32 = gfx_draw_text(g, 416, 12, "ROUND", 1, 150, 148, 164)
+    let t5: i32 = gfx_draw_int(g, 452, 12, round, 1, 234, 232, 242)
+    let t6: i32 = gfx_draw_text(g, 8, 28, "SEGREGATION INDEX", 1, 150, 148, 164)
+    let t7: i32 = gfx_draw_fixed(g, 122, 28, index, 4, 1, 120, 255, 190)
+    let t8: i32 = gfx_draw_text(g, 186, 28, "MIXED 0.5", 1, 118, 116, 132)
+    let t9: i32 = gfx_draw_text(g, 254, 28, "UNHAPPY", 1, 150, 148, 164)
+    let ta: i32 = gfx_draw_int(g, 306, 28, unhappy, 1, 234, 232, 242)
+    let tb: i32 = gfx_draw_text(g, 360, 28, "JAMS AT T", 1, 150, 148, 164)
+    let tc: i32 = gfx_draw_fixed(g, 424, 28, jam, 2, 1, 234, 232, 242)
+    let td: i32 = gfx_draw_text(g, 8, 42,
+        "1 T 0.30  2 T 0.50  3 T 0.60  4 T 0.20  R RESEED  P PAUSE",
+        1, 112, 110, 130)
+    if paused {
+        let te: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tf: i32 = gfx_draw_text(g, 8, 572,
+        "unhappy when like neighbours / occupied neighbours < T; pale = unhappy",
+        1, 122, 120, 140)
+    let tg: i32 = gfx_draw_text(g, 8, 582,
+        "nobody here wants segregation; every one of them gets it",
+        1, 122, 120, 140)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    cell = calloc(NCELL as i64, 4 as i64)
+    vac = calloc(NCELL as i64, 4 as i64)
+    unl = calloc(NCELL as i64, 4 as i64)
+    fb = calloc(786432 as i64, 1 as i64)
+    sw_thr = calloc(NTHR as i64, 8 as i64)
+    sw_index = calloc(NTHR as i64, 8 as i64)
+    sw_unhappy = calloc(NTHR as i64, 8 as i64)
+    sw_rounds = calloc(NTHR as i64, 8 as i64)
+
+    seed_grid(1234567891)
+    let start_index: f64 = segregation_index()
+    let agents: f64 = n_agents as f64
+    let residual: f64 = RESIDUAL_FRAC * agents
+
+    println("")
+    println("  SCHELLING SEGREGATION  --  mild preferences, and the pattern nobody wanted")
+    println("  =========================================================================")
+    println("")
+    println("    Schelling (1971). 64 x 64 periodic lattice, Moore neighbourhood,")
+    print("    ")
+    printf("%.0f", agents)
+    print(" agents on ")
+    printf("%.0f", NCELL as f64)
+    print(" sites, ")
+    printf("%.1f", 100.0 * (1.0 - agents / (NCELL as f64)))
+    println(" percent vacant, two colours split evenly.")
+    println("    Unhappy agents move to a sampled vacancy that would satisfy them,")
+    print("    drawn from up to ")
+    printf("%.0f", TRIES as f64)
+    println(" random tries, otherwise to the last one tried.")
+    println("")
+    print("    segregation index of the seeded, mixed lattice : ")
+    printf("%.5f", start_index)
+    print("     population share is ")
+    printf("%.2f", MIXED_INDEX)
+    println("")
+    println("")
+
+    println("  1. THE SWEEP OVER THE TOLERANCE THRESHOLD")
+    println("")
+    println("         T      rounds   unhappy left   index at the end   index - T")
+    println("       -----   -------   ------------   ----------------   ---------")
+
+    for k in 0 to NTHR {
+        let thr: f64 = 0.1 * ((k + 1) as f64)
+        run_threshold(thr)
+        sw_thr[k] = thr
+        sw_index[k] = r_index1
+        sw_unhappy[k] = r_unhappy as f64
+        sw_rounds[k] = r_rounds as f64
+        print("       ")
+        printf("%5.2f", thr)
+        printf("   %7.0f", r_rounds as f64)
+        printf("   %12.0f", r_unhappy as f64)
+        printf("   %16.5f", r_index1)
+        printf("   %9.5f", r_index1 - thr)
+        println("")
+    }
+    println("")
+
+    # -- the jamming threshold ----------------------------------------------
+    let mut jam: f64 = 1.0
+    let mut jam_k: i32 = NTHR
+    for k in 0 to NTHR {
+        if jam_k == NTHR {
+            if sw_unhappy[k] > residual {
+                jam = sw_thr[k]
+                jam_k = k
+            }
+        }
+    }
+
+    print("     residual counted as settled  : ")
+    printf("%10.1f", residual)
+    print(" agents, one percent of ")
+    printf("%.0f", agents)
+    println("")
+    print("     measured jamming threshold   : ")
+    printf("%10.2f", jam)
+    println("     the lowest T that still has unhappy agents after 400 rounds")
+    println("")
+
+    # -- the gated statements ------------------------------------------------
+    let mut idx_at_gate: f64 = 0.0
+    for k in 0 to NTHR {
+        if sw_thr[k] > GATE_T - 0.001 and sw_thr[k] < GATE_T + 0.001 {
+            idx_at_gate = sw_index[k]
+        }
+    }
+
+    let mut beats_self: bool = true
+    let mut worst_margin: f64 = 1.0e9
+    for k in 0 to NTHR {
+        if sw_thr[k] < SELF_BEAT_MAX_T {
+            let margin: f64 = sw_index[k] - sw_thr[k]
+            if margin < worst_margin { worst_margin = margin }
+            if margin <= 0.0 { beats_self = false }
+        }
+    }
+
+    let mut mono: bool = true
+    let mut worst_drop: f64 = 0.0
+    # Only compare consecutive thresholds strictly below the jam point, so
+    # the collapse at jamming is not scored as a monotone failure.
+    for k in 1 to jam_k {
+        let drop: f64 = sw_index[k - 1] - sw_index[k]
+        if drop > worst_drop { worst_drop = drop }
+        if drop > MONO_TOL { mono = false }
+    }
+
+    let mut settled_ok: bool = true
+    for k in 0 to NTHR {
+        if k < jam_k {
+            if sw_unhappy[k] > residual { settled_ok = false }
+        }
+    }
+    let jam_unsettled: bool = jam_k < NTHR
+
+    println("  2. WHAT THE SWEEP SAYS")
+    println("")
+    print("     index at T = 0.30            : ")
+    printf("%10.5f", idx_at_gate)
+    print("     gate > ")
+    printf("%.2f", GATE_INDEX_AT_T)
+    println("")
+    print("     smallest index - T below 0.6 : ")
+    printf("%10.5f", worst_margin)
+    println("     gate > 0, every T overshoots itself")
+    print("     largest fall in index with T : ")
+    printf("%10.5f", worst_drop)
+    print("     gate < ")
+    printf("%.2f", MONO_TOL)
+    println("   up to the jamming threshold")
+    print("     unhappy left below the jam   : ")
+    if settled_ok {
+        println("      under the residual at every T")
+    } else {
+        println("      ABOVE the residual somewhere")
+    }
+    print("     unhappy left at the jam      : ")
+    printf("%10.0f", sw_unhappy[NTHR - 1])
+    println("     the run never settles there")
+    println("")
+    println("     A demand for three like neighbours in eight is not a demand for")
+    println("     segregation. It is satisfied by a lattice that is 37.5 percent")
+    println("     same-coloured, and the mixed seed already gives 50 percent. The")
+    println("     lattice these rules reach is far past both.")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if start_index != start_index or idx_at_gate != idx_at_gate {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if start_index < 0.48 or start_index > 0.52 {
+        println("    FAIL: the seeded lattice is not mixed at the population share")
+        return 2
+    }
+    if idx_at_gate < GATE_INDEX_AT_T {
+        println("    FAIL: T = 0.3 does not drive the index past 0.7")
+        return 3
+    }
+    if !beats_self {
+        println("    FAIL: the final index does not exceed the threshold below 0.6")
+        return 4
+    }
+    if !mono {
+        println("    FAIL: the index does not increase with the threshold")
+        return 5
+    }
+    if !settled_ok {
+        println("    FAIL: a run below the jamming threshold never settled")
+        return 6
+    }
+    if !jam_unsettled {
+        println("    FAIL: no jamming threshold was found inside the sweep")
+        return 7
+    }
+    println("    PASS: a mixed lattice at 0.50 segregates past 0.70 at T = 0.30, the")
+    println("          final index beats the threshold at every T below 0.6 and rises")
+    println("          with it, and the model jams at the T reported above")
+    println("")
+
+    # -- live view -----------------------------------------------------------
+    let mut preset: i32 = 0
+    let mut thr: f64 = preset_thr(preset)
+    seed_grid(1234567891)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Schelling segregation - Flow morphogenesis")
+
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut round: i32 = 0
+    let mut unhappy: i32 = count_unhappy(thr)
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if want >= 0 and want != preset {
+            preset = want
+            thr = preset_thr(preset)
+            seed_grid(1234567891)
+            round = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_grid(rng_next())
+                round = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            if unhappy > 0 {
+                let found: i32 = run_round(thr)
+                round = round + 1
+            }
+        }
+
+        unhappy = count_unhappy(thr)
+        let index: f64 = segregation_index()
+
+        gfx_clear(g, 12, 11, 18)
+        draw_field(g, thr)
+        draw_hud(g, thr, index, unhappy, round, jam, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

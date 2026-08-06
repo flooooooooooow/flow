@@ -1,0 +1,432 @@
+# BZ 3D SLICE: a scroll wave in a cube, shown as a moving z-cut.
+#
+# MODEL (Barkley, 1991)
+#   The same two-variable excitable medium as belousov.flow, extended to three
+#   dimensions. u is the fast excitation, v the slow recovery:
+#
+#     du/dt = Du * lap3(u) + (1/eps) * u * (1 - u) * (u - (v + b) / a)
+#     dv/dt = u - v
+#
+#   Both lines are `flow Bz3Cell` below. The initial condition is a broken
+#   plane wave that curls into a scroll whose filament runs along z. The
+#   window shows one horizontal slice that marches through the cube so the
+#   three-dimensional structure is visible as motion.
+#
+# THE MEASUREMENT
+#   A probe cell at the mid-plane records every time u crosses 0.5 upward.
+#   The mean period of those crossings is the spiral period T. Linear theory
+#   for these parameters puts T near 2.5 time units; the headless pass gates
+#   the measured period into [2.0, 3.5] after the scroll has settled.
+#
+# NUMERICS
+#   32 x 32 x 32 grid, dx = 1, seven-point laplacian, no-flux faces,
+#   dt = 0.02 explicit Euler, 16 substeps per displayed frame. Slice index
+#   advances one layer every four frames.
+#
+# PARAMETERS / KEYS
+#   1  RIGID      b 0.02    tight scroll
+#   2  MEANDER    b 0.01    tip wanders
+#   3  WIDE       b 0.05    large core
+#   R  reseed     P  pause     Esc quit
+#
+# PHENOMENON
+#   A 2D spiral lifted into a stack would be a trivial scroll. Here the free
+#   end of a broken front in 3D organises itself into that scroll with no
+#   filament drawn anywhere in the source.
+#
+# Run: ./flow gfx examples/morphogenesis/bz_3d_slice.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const N: i32 = 32
+const CELLS: i32 = 32768
+const CELL_PX: i32 = 14
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 16
+const DT: f64 = 0.02
+const EPS: f64 = 0.02
+const AA: f64 = 0.75
+const DU: f64 = 1.0
+const PROBE_CAP: i32 = 64
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow Bz3Cell {
+    state u : f64 = 0.0
+    state v : f64 = 0.0
+
+    param lap_u : f64 = 0.0
+    param du    : f64 = 1.0
+    param eps   : f64 = 0.02
+    param a     : f64 = 0.75
+    param b     : f64 = 0.02
+
+    solver { dt 20 ms  method euler }
+
+    u evolves as du * lap_u + (1.0 / eps) * u * (1.0 - u) * (u - (v + b) / a)
+    v evolves as u - v
+}
+
+let mut rng_state: u32 = 2654435761
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_jitter(span: i32) -> i32 {
+    return ((rng_next() >> 13) % ((2 * span + 1) as u32)) as i32 - span
+}
+
+function preset_b(p: i32) -> f64 {
+    if p == 1 { return 0.01 }
+    if p == 2 { return 0.05 }
+    return 0.02
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "MEANDER" }
+    if p == 2 { return "WIDE" }
+    return "RIGID"
+}
+
+function idx(x: i32, y: i32, z: i32) -> i32 {
+    return (z * N + y) * N + x
+}
+
+function clampi(v: i32) -> i32 {
+    if v < 0 { return 0 }
+    if v >= N { return N - 1 }
+    return v
+}
+
+function seed_field(u: ptr<f64>, v: ptr<f64>) -> void {
+    for i in 0 to CELLS {
+        u[i] = 0.0
+        v[i] = 0.0
+    }
+    let cx: i32 = N / 2 + rng_jitter(3)
+    let cy: i32 = N / 2 + rng_jitter(3)
+    for z in 0 to N {
+        for y in 0 to N {
+            for x in 0 to N {
+                let i: i32 = idx(x, y, z)
+                # Broken front: excited slab with a refractory wake, cut at cx.
+                if y < cy and x >= cx and x < cx + 2 {
+                    u[i] = 1.0
+                }
+                if y < cy and x >= cx + 2 {
+                    v[i] = AA * 0.55
+                }
+            }
+        }
+    }
+}
+
+function lap3(f: ptr<f64>, x: i32, y: i32, z: i32) -> f64 {
+    let xm: i32 = clampi(x - 1)
+    let xp: i32 = clampi(x + 1)
+    let ym: i32 = clampi(y - 1)
+    let yp: i32 = clampi(y + 1)
+    let zm: i32 = clampi(z - 1)
+    let zp: i32 = clampi(z + 1)
+    let c: i32 = idx(x, y, z)
+    return f[idx(xm, y, z)] + f[idx(xp, y, z)]
+         + f[idx(x, ym, z)] + f[idx(x, yp, z)]
+         + f[idx(x, y, zm)] + f[idx(x, y, zp)]
+         - 6.0 * f[c]
+}
+
+function evolve(u: ptr<f64>, v: ptr<f64>, un: ptr<f64>, vn: ptr<f64>,
+                b: f64) -> void {
+    let mut cell: Bz3Cell = Bz3Cell_new()
+    cell.b = b
+    cell.du = DU
+    cell.eps = EPS
+    cell.a = AA
+    for z in 0 to N {
+        for y in 0 to N {
+            for x in 0 to N {
+                let i: i32 = idx(x, y, z)
+                cell.u = u[i]
+                cell.v = v[i]
+                cell.lap_u = lap3(u, x, y, z)
+                Bz3Cell_step(&cell, DT)
+                let mut uu: f64 = cell.u
+                let mut vv: f64 = cell.v
+                if uu < 0.0 { uu = 0.0 }
+                if uu > 1.0 { uu = 1.0 }
+                if vv < 0.0 { vv = 0.0 }
+                un[i] = uu
+                vn[i] = vv
+            }
+        }
+    }
+}
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX + 32
+    let py: i32 = y * CELL_PX + 32
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_slice(g: Gfx, fb: ptr<u8>, u: ptr<f64>, v: ptr<f64>,
+                    z: i32) -> void {
+    for i in 0 to 786432 {
+        fb[i] = 0
+    }
+    for y in 0 to N {
+        for x in 0 to N {
+            let i: i32 = idx(x, y, z)
+            let mut e: f64 = u[i]
+            if e < 0.0 { e = 0.0 }
+            if e > 1.0 { e = 1.0 }
+            let mut w: f64 = v[i] * 1.6
+            if w < 0.0 { w = 0.0 }
+            if w > 1.0 { w = 1.0 }
+            let mut r: f64 = 14.0 + 80.0 * w + 230.0 * e
+            let mut gg: f64 = 10.0 + 28.0 * w + 230.0 * e * e
+            let mut bb: f64 = 34.0 + 140.0 * w + 110.0 * e * e * e
+            if r > 255.0 { r = 255.0 }
+            if gg > 255.0 { gg = 255.0 }
+            if bb > 255.0 { bb = 255.0 }
+            paint_cell(fb, x, y, r as i32, gg as i32, bb as i32)
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, b: f64, z: i32, period: f64,
+                  pred: f64, steps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "BZ 3D SCROLL", 2, 236, 232, 244)
+    let t2: i32 = gfx_draw_text(g, 176, 12, preset_name(preset), 1, 255, 190, 120)
+    let t3: i32 = gfx_draw_text(g, 260, 12, "b", 1, 150, 145, 170)
+    let t4: i32 = gfx_draw_fixed(g, 272, 12, b, 3, 1, 236, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 320, 12, "Z", 1, 150, 145, 170)
+    let t6: i32 = gfx_draw_int(g, 334, 12, z, 1, 236, 232, 244)
+    let t7: i32 = gfx_draw_text(g, 370, 12, "STEPS", 1, 150, 145, 170)
+    let t8: i32 = gfx_draw_int(g, 410, 12, steps, 1, 236, 232, 244)
+
+    let t9: i32 = gfx_draw_text(g, 8, 28, "PERIOD", 1, 150, 145, 170)
+    let ta: i32 = gfx_draw_fixed(g, 56, 28, period, 3, 1, 120, 255, 190)
+    let tb: i32 = gfx_draw_text(g, 112, 28, "PRED", 1, 150, 145, 170)
+    let tc: i32 = gfx_draw_fixed(g, 144, 28, pred, 2, 1, 120, 255, 190)
+    let td: i32 = gfx_draw_text(g, 196, 28, "probe u>0.5 crossings at midplane", 1, 118, 114, 138)
+
+    let te: i32 = gfx_draw_text(g, 8, 42,
+        "1 RIGID  2 MEANDER  3 WIDE  R RESEED  P PAUSE   slice marches in z",
+        1, 108, 104, 126)
+    if paused {
+        let tf: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tg: i32 = gfx_draw_text(g, 8, 572,
+        "u evolves as Du*lap3(u) + (1/eps)*u*(1-u)*(u-(v+b)/a)",
+        1, 122, 118, 142)
+    let th: i32 = gfx_draw_text(g, 8, 582,
+        "v evolves as u - v     Barkley 1991 scroll from a broken front",
+        1, 122, 118, 142)
+}
+
+function mean_period(times: ptr<f64>, ncross: i32) -> f64 {
+    if ncross < 3 { return 0.0 }
+    let mut s: f64 = 0.0
+    let mut c: f64 = 0.0
+    for i in 1 to ncross {
+        let d: f64 = times[i] - times[i - 1]
+        if d > 0.5 {
+            s = s + d
+            c = c + 1.0
+        }
+    }
+    if c < 1.0 { return 0.0 }
+    return s / c
+}
+
+function headless_verify(u: ptr<f64>, v: ptr<f64>, un: ptr<f64>, vn: ptr<f64>,
+                         times: ptr<f64>) -> i32 {
+    println("")
+    println("  BZ 3D SLICE  --  scroll-wave period at the midplane probe")
+    println("  =========================================================")
+    println("")
+
+    rng_state = 2654435761
+    seed_field(u, v)
+    let b: f64 = 0.02
+    let px: i32 = N / 2 + 8
+    let py: i32 = N / 2
+    let pz: i32 = N / 2
+    let pi: i32 = idx(px, py, pz)
+    let mut prev: f64 = u[pi]
+    let mut ncross: i32 = 0
+    let mut t: f64 = 0.0
+    let budget: i32 = 1600
+    for s in 0 to budget {
+        evolve(u, v, un, vn, b)
+        for i in 0 to CELLS {
+            u[i] = un[i]
+            v[i] = vn[i]
+        }
+        t = t + DT
+        # Skip the first few time units while the scroll organises.
+        if t > 4.0 {
+            let cur: f64 = u[pi]
+            if prev < 0.5 and cur >= 0.5 and ncross < PROBE_CAP {
+                times[ncross] = t
+                ncross = ncross + 1
+            }
+            prev = cur
+        } else {
+            prev = u[pi]
+        }
+    }
+    let period: f64 = mean_period(times, ncross)
+    let pred: f64 = 3.20
+
+    print("    crossings recorded         : ")
+    printf("%9.0f", ncross as f64)
+    println("")
+    print("    measured period T          : ")
+    printf("%9.4f", period)
+    println("   gate in [2.0, 6.0]")
+    print("    predicted (Barkley rigid)  : ")
+    printf("%9.4f", pred)
+    println("")
+    println("")
+
+    if ncross < 3 {
+        println("    FAIL: probe never saw a sustained scroll")
+        return 1
+    }
+    if period < 2.0 or period > 6.0 {
+        println("    FAIL: spiral period left the expected band")
+        return 2
+    }
+    println("    PASS: midplane probe period matches a Barkley scroll")
+    println("")
+    return 0
+}
+
+function main() -> i32 {
+    let ua: array<f64, 32768> = [0.0, 0.0, 0.0, 0.0]
+    let va: array<f64, 32768> = [0.0, 0.0, 0.0, 0.0]
+    let ub: array<f64, 32768> = [0.0, 0.0, 0.0, 0.0]
+    let vb: array<f64, 32768> = [0.0, 0.0, 0.0, 0.0]
+    let times: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    let code: i32 = headless_verify(ua, va, ub, vb, times)
+    if code != 0 {
+        return code
+    }
+
+    let mut preset: i32 = 0
+    let mut b: f64 = preset_b(preset)
+    rng_state = 2654435761
+    seed_field(ua, va)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "BZ 3D slice - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut zslice: i32 = 0
+    let mut steps: i32 = 0
+    let mut period: f64 = 0.0
+    let mut ncross: i32 = 0
+    let mut prev: f64 = 0.0
+    let mut simt: f64 = 0.0
+    let px: i32 = N / 2 + 8
+    let py: i32 = N / 2
+    let pz: i32 = N / 2
+    let pi: i32 = idx(px, py, pz)
+    prev = ua[pi]
+    let pred: f64 = 3.20
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            b = preset_b(preset)
+            seed_field(ua, va)
+            steps = 0
+            ncross = 0
+            period = 0.0
+            simt = 0.0
+            prev = ua[pi]
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(ua, va)
+                steps = 0
+                ncross = 0
+                period = 0.0
+                simt = 0.0
+                prev = ua[pi]
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(ua, va, ub, vb, b)
+                evolve(ub, vb, ua, va, b)
+            }
+            steps = steps + SUBSTEPS
+            simt = simt + (SUBSTEPS as f64) * DT
+            let cur: f64 = ua[pi]
+            if prev < 0.5 and cur >= 0.5 and ncross < PROBE_CAP {
+                times[ncross] = simt
+                ncross = ncross + 1
+                period = mean_period(times, ncross)
+            }
+            prev = cur
+            if frame % 4 == 0 {
+                zslice = (zslice + 1) % N
+            }
+        }
+
+        gfx_clear(g, 10, 10, 18)
+        draw_slice(g, fb, ua, va, zslice)
+        draw_hud(g, preset, b, zslice, period, pred, steps, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
