@@ -87,22 +87,32 @@ biological pattern (Physarum, cell sorting, somitogenesis).
 | 14 | Spiking retina to V1 | Orientation tuning emerges |
 | 15 | Reservoir computing | Memory capacity measured |
 
-### 3. Circuit simulation — 12 planned
+### 3. Circuit simulation — 12 shipped
 
-| # | Example | Evidence |
+| # | Example | Evidence it carries |
 |---|---|---|
-| 1 | RC / RL / RLC transients | Match the analytic solution to tolerance |
-| 2 | Modified nodal analysis solver | Reproduce a reference netlist's DC operating point |
-| 3 | Transient analysis with adaptive dt | Energy conservation in an LC tank |
-| 4 | Diode and BJT models | I-V curves vs Shockley / Ebers-Moll |
-| 5 | Op-amp circuits | Gain and bandwidth vs theory |
-| 6 | Colpitts / Wien oscillators | Oscillation frequency vs design equations |
-| 7 | Switching converter (buck) | Ripple and duty-cycle relationship |
-| 8 | Digital logic gate delays | Propagation through a ripple-carry adder |
-| 9 | Transmission line | Reflection coefficients vs impedance mismatch |
-| 10 | Chua's circuit | Double-scroll attractor, Lyapunov exponent |
-| 11 | Phase-locked loop | Lock range and capture behaviour |
-| 12 | Netlist front end | Parse SPICE-subset netlists into a `flow` block |
+| 1 | `rc_rl_rlc` | All three step responses against their closed forms, by a `flow` block and by both MNA companions; worst 3.7e-4 |
+| 2 | `mna_dc` | Two ladders against hand arithmetic in the header; worst 8.7e-16, and the gmin leakage is the size gmin predicts |
+| 3 | `lc_tank` | 1000 lossless cycles: trapezoidal drifts 1.0e-9, backward Euler decays at exactly (1+w^2)^-200 per cycle; adaptive dt holds 3.6e-11 |
+| 4 | `diode_iv` | Newton vs Shockley to 1.7e-12 on two sweeps, and 59.526 mV/decade recovered from the simulated curve |
+| 5 | `bjt_curves` | 255 Ebers-Moll operating points against bisection, worst 6.7e-13; active-region gain is betaF to 1.0e-10 |
+| 6 | `opamp` | DC gain to 1.6e-8, rolloff and phase from a single-bin DFT to 5.0e-5, and gain x bandwidth = A0 fp measured at two gains |
+| 7 | `oscillator_colpitts` | Starts itself from a 20 ns kick; 2.246281 MHz against 1/(2 pi sqrt(L Ceq)), error 2.0e-3 |
+| 8 | `buck_converter` | Vout follows D Vin to 3.0e-8 over seven duty cycles; both ripple formulas within 1e-3; the diode version loses exactly (1-D) Vf |
+| 9 | `logic_delays` | A ripple-carry adder from 20 one-line `flow` gates: 512/512 sums correct, critical path 799.9930 ps against the sum of its stages |
+| 10 | `transmission_line` | Six loads from near short to near open, reflection within 2.1e-3 of (ZL-Z0)/(ZL+Z0) |
+| 11 | `chua` | Largest Lyapunov exponent 0.4316 by two methods agreeing to 5.3e-6, at three step sizes; volume contracts at -3.8155 |
+| 12 | `pll` | Phase error, relaxation rate and capture time against the separable integral, to 1e-11, 1.2e-4 and 2.9e-5; lock range K |
+| — | `netlist_demo` | A SPICE-subset front end feeding the same solver: three decks, checked to 1.9e-6, 1.1e-14 and 1.7e-16 |
+
+**Status: complete.** `examples/circuits/` · solver
+[`lib/stdlib/circuit.flow`](../../lib/stdlib/circuit.flow) · netlist front end
+[`lib/stdlib/spice.flow`](../../lib/stdlib/spice.flow)
+
+These are measurement programs rather than pictures: each one gates its exit
+code on the number it printed, so none of them is a windowed demo and none
+carries a GIF. Where a picture earns its place it is drawn in ASCII to stdout,
+as `chua` does with its attractor.
 
 ### 4. Diffusion, transport and fields — 12 planned
 
@@ -164,13 +174,13 @@ reconstruction, optical flow, wavelets.
 |---|---:|---:|
 | Morphogenesis | 20 | 20 |
 | Neuron and networks | 15 | 0 |
-| Circuits | 12 | 0 |
+| Circuits | 12 | 12 |
 | Diffusion and fields | 12 | 0 |
 | Physics and mechanics | 12 | 1 |
 | Chemistry and biology | 10 | 0 |
 | Control and estimation | 10 | 2 |
 | Signals and imaging | 9 | 0 |
-| **Total** | **100** | **23** |
+| **Total** | **100** | **35** |
 
 Related: [VISION.md](../../VISION.md) · [dynamics DSL](../language/dynamics-dsl.md) ·
 [morphogenesis gallery](../demos/morphogenesis.md)
