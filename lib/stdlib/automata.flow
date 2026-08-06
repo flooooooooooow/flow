@@ -1,0 +1,1316 @@
+# automata: a cellular-automaton framework.
+#
+# Import: import "stdlib/automata.flow"
+#
+# The library owns the parts every CA repeats and nothing else. Grids stay
+# with the caller as `ptr<i32>` over storage the caller declared, so the
+# module allocates nothing and holds no hidden simulation state. The only
+# module state here is a small PRNG used by the asynchronous update modes,
+# and it is seeded explicitly.
+#
+# WHAT IS HERE
+#   geometry     1D rows, 2D square (von Neumann / Moore), hexagonal
+#                (odd-r offset) and triangular (edge) neighbourhoods, each
+#                with toroidal, fixed or reflecting boundaries
+#   rules        elementary (Wolfram 0-255), k-state totalistic and
+#                outer-totalistic, life-like from B/S notation, generations
+#                (multi-state with a refractory tail), cyclic, wireworld,
+#                abelian sandpiles, turmites (Langton's ant generalised),
+#                and Margolus block rules for reversible CAs
+#   scheduling   synchronous, random-independent asynchronous, ordered
+#                sweep, and shuffled sweep
+#   measures     population, density, Shannon entropy over states, spatial
+#                block entropy, Hamming distance, FNV-1a state hashing with
+#                cycle detection, and a Wolfram-class classifier that
+#                returns the evidence it used
+#
+# CONVENTIONS
+#   A grid is row-major, `w * h` cells of `i32`. A 1D row is `w * 1`.
+#   Step functions read `src` and write `dst` and never alias them, except
+#   the ordered / shuffled asynchronous modes, which update in place by
+#   construction (that is what makes them asynchronous).
+#   Step functions return the number of cells whose value changed, so a
+#   caller can detect a fixed point without a second pass.
+
+extern {
+    function log(x: f64) -> f64
+}
+
+# ---------------------------------------------------------------- geometry
+
+# Boundary handling.
+const CA_TORUS: i32 = 0      # wraps: index n is index 0
+const CA_FIXED: i32 = 1      # outside the grid is a constant value
+const CA_REFLECT: i32 = 2    # mirrors: index -1 is index 1, index n is n-2
+
+# Neighbourhoods.
+const CA_VON: i32 = 0        # 4 edge neighbours of a square cell
+const CA_MOORE: i32 = 1      # 8 neighbours of a square cell
+const CA_HEX: i32 = 2        # 6 neighbours, odd-r offset rows
+const CA_TRI: i32 = 3        # 3 edge neighbours of a triangular cell
+
+# Update schedules.
+const CA_SYNC: i32 = 0       # every cell sees the same previous state
+const CA_ASYNC_RANDOM: i32 = 1   # each cell updates with probability alpha
+const CA_ASYNC_ORDERED: i32 = 2  # in-place sweep in row-major order
+const CA_ASYNC_SHUFFLED: i32 = 3 # in-place, one random cell per cell count
+
+# ---------------------------------------------------------------- rng
+
+# xorshift64*, deterministic and seeded. Module statics may not hold u64, so
+# the state lives as i64 and is cast on use; the bit pattern is identical.
+let mut ca_rng_state: i64 = 88172645463325252
+
+export function ca_seed(s: i32) -> void {
+    # Splitmix-style avalanche so neighbouring seeds do not give
+    # neighbouring streams.
+    let mut z: u64 = (s as u64) + 11400714819323198485
+    z = (z ^ (z >> 30)) * 13787848793156543929
+    z = (z ^ (z >> 27)) * 10723151780598845931
+    z = z ^ (z >> 31)
+    if z == 0 {
+        z = 88172645463325252
+    }
+    ca_rng_state = z as i64
+}
+
+export function ca_rand_u32() -> u32 {
+    let mut x: u64 = ca_rng_state as u64
+    x = x ^ (x >> 12)
+    x = x ^ (x << 25)
+    x = x ^ (x >> 27)
+    ca_rng_state = x as i64
+    return ((x * 2685821657736338717) >> 32) as u32
+}
+
+# Uniform on [0, n).
+export function ca_rand_below(n: i32) -> i32 {
+    if n <= 1 {
+        return 0
+    }
+    return (ca_rand_u32() % (n as u32)) as i32
+}
+
+# Uniform on [0, 1).
+export function ca_rand_unit() -> f64 {
+    return (ca_rand_u32() as f64) / 4294967296.0
+}
+
+# ---------------------------------------------------------------- indexing
+
+# Fold one axis index into range under `bound`. Returns -1 when the index is
+# outside a fixed boundary.
+export function ca_fold(i: i32, n: i32, bound: i32) -> i32 {
+    if n <= 0 {
+        return -1
+    }
+    if i >= 0 and i < n {
+        return i
+    }
+    if bound == CA_TORUS {
+        let mut k: i32 = i % n
+        if k < 0 {
+            k = k + n
+        }
+        return k
+    }
+    if bound == CA_REFLECT {
+        if n == 1 {
+            return 0
+        }
+        let period: i32 = 2 * n - 2
+        let mut k: i32 = i % period
+        if k < 0 {
+            k = k + period
+        }
+        if k >= n {
+            k = period - k
+        }
+        return k
+    }
+    return -1
+}
+
+# Read a cell, returning `outside` where a fixed boundary bites.
+export function ca_get(grid: ptr<i32>, w: i32, h: i32, x: i32, y: i32,
+                       bound: i32, outside: i32) -> i32 {
+    let fx: i32 = ca_fold(x, w, bound)
+    let fy: i32 = ca_fold(y, h, bound)
+    if fx < 0 or fy < 0 {
+        return outside
+    }
+    return grid[fy * w + fx]
+}
+
+export function ca_set(grid: ptr<i32>, w: i32, h: i32, x: i32, y: i32,
+                       v: i32) -> void {
+    if x < 0 or y < 0 or x >= w or y >= h {
+        return
+    }
+    grid[y * w + x] = v
+}
+
+# ---------------------------------------------------------- neighbourhoods
+
+export function ca_nb_count(nb: i32) -> i32 {
+    if nb == CA_VON {
+        return 4
+    }
+    if nb == CA_HEX {
+        return 6
+    }
+    if nb == CA_TRI {
+        return 3
+    }
+    return 8
+}
+
+# Offsets depend on the cell for the two non-square tilings: hexagonal rows
+# are staggered (odd-r), and a triangle points up or down by parity.
+export function ca_nb_dx(nb: i32, k: i32, x: i32, y: i32) -> i32 {
+    if nb == CA_VON {
+        if k == 0 { return 0 }
+        if k == 1 { return 1 }
+        if k == 2 { return 0 }
+        return -1
+    }
+    if nb == CA_HEX {
+        let odd: i32 = y & 1
+        if k == 0 { return -1 }
+        if k == 1 { return 1 }
+        if k == 2 { return odd - 1 }
+        if k == 3 { return odd }
+        if k == 4 { return odd - 1 }
+        return odd
+    }
+    if nb == CA_TRI {
+        if k == 0 { return -1 }
+        if k == 1 { return 1 }
+        return 0
+    }
+    if k == 0 { return -1 }
+    if k == 1 { return 0 }
+    if k == 2 { return 1 }
+    if k == 3 { return -1 }
+    if k == 4 { return 1 }
+    if k == 5 { return -1 }
+    if k == 6 { return 0 }
+    return 1
+}
+
+export function ca_nb_dy(nb: i32, k: i32, x: i32, y: i32) -> i32 {
+    if nb == CA_VON {
+        if k == 0 { return -1 }
+        if k == 1 { return 0 }
+        if k == 2 { return 1 }
+        return 0
+    }
+    if nb == CA_HEX {
+        if k == 0 { return 0 }
+        if k == 1 { return 0 }
+        if k == 2 { return -1 }
+        if k == 3 { return -1 }
+        if k == 4 { return 1 }
+        return 1
+    }
+    if nb == CA_TRI {
+        if k == 0 { return 0 }
+        if k == 1 { return 0 }
+        # An up-pointing triangle (x + y even) has its third edge below.
+        if ((x + y) & 1) == 0 { return 1 }
+        return -1
+    }
+    if k == 0 { return -1 }
+    if k == 1 { return -1 }
+    if k == 2 { return -1 }
+    if k == 3 { return 0 }
+    if k == 4 { return 0 }
+    if k == 5 { return 1 }
+    if k == 6 { return 1 }
+    return 1
+}
+
+# How many neighbours hold `state`.
+export function ca_count_state(grid: ptr<i32>, w: i32, h: i32, x: i32, y: i32,
+                               nb: i32, bound: i32, state: i32) -> i32 {
+    let n: i32 = ca_nb_count(nb)
+    let mut c: i32 = 0
+    for k in 0 to n {
+        let vx: i32 = x + ca_nb_dx(nb, k, x, y)
+        let vy: i32 = y + ca_nb_dy(nb, k, x, y)
+        if ca_get(grid, w, h, vx, vy, bound, -1) == state {
+            c = c + 1
+        }
+    }
+    return c
+}
+
+# Sum over the neighbourhood, with `outside` counted where fixed.
+export function ca_nb_sum(grid: ptr<i32>, w: i32, h: i32, x: i32, y: i32,
+                          nb: i32, bound: i32, outside: i32) -> i32 {
+    let n: i32 = ca_nb_count(nb)
+    let mut s: i32 = 0
+    for k in 0 to n {
+        let vx: i32 = x + ca_nb_dx(nb, k, x, y)
+        let vy: i32 = y + ca_nb_dy(nb, k, x, y)
+        s = s + ca_get(grid, w, h, vx, vy, bound, outside)
+    }
+    return s
+}
+
+# ---------------------------------------------------------- elementary CAs
+
+# Wolfram's numbering: the rule byte's bit (4l + 2c + r) is the new centre.
+export function ca_elementary_bit(rule: i32, l: i32, c: i32, r: i32) -> i32 {
+    return (rule >> (4 * l + 2 * c + r)) & 1
+}
+
+export function ca_elementary_step(src: ptr<i32>, dst: ptr<i32>, n: i32,
+                                   rule: i32, bound: i32) -> i32 {
+    let mut changed: i32 = 0
+    for i in 0 to n {
+        let l: i32 = ca_get(src, n, 1, i - 1, 0, bound, 0)
+        let c: i32 = src[i]
+        let r: i32 = ca_get(src, n, 1, i + 1, 0, bound, 0)
+        let v: i32 = ca_elementary_bit(rule, l, c, r)
+        dst[i] = v
+        if v != c {
+            changed = changed + 1
+        }
+    }
+    return changed
+}
+
+# Fill a `gens x n` raster, row 0 already holding the initial condition.
+# The raster is the usual space-time diagram: time increases downward.
+export function ca_elementary_raster(rows: ptr<i32>, n: i32, gens: i32,
+                                     rule: i32, bound: i32) -> void {
+    for t in 1 to gens {
+        ca_elementary_step(rows + (t - 1) * n, rows + t * n, n, rule, bound)
+    }
+}
+
+# A single 1 in the middle of an otherwise empty row.
+export function ca_seed_single(row: ptr<i32>, n: i32) -> void {
+    for i in 0 to n {
+        row[i] = 0
+    }
+    row[n / 2] = 1
+}
+
+export function ca_seed_random(row: ptr<i32>, n: i32, nstates: i32) -> void {
+    for i in 0 to n {
+        row[i] = ca_rand_below(nstates)
+    }
+}
+
+# --------------------------------------------------------- totalistic rules
+
+# k-state totalistic: the new value is digit (sum of the 2r+1 window) of the
+# code written in base k. Radius 1, k = 3 gives Wolfram's totalistic codes.
+export function ca_totalistic_step(src: ptr<i32>, dst: ptr<i32>, n: i32,
+                                   k: i32, radius: i32, code: i32,
+                                   bound: i32) -> i32 {
+    let mut changed: i32 = 0
+    for i in 0 to n {
+        let mut s: i32 = 0
+        for d in 0 to (2 * radius + 1) {
+            s = s + ca_get(src, n, 1, i - radius + d, 0, bound, 0)
+        }
+        let mut v: i32 = code
+        for q in 0 to s {
+            v = v / k
+        }
+        v = v % k
+        dst[i] = v
+        if v != src[i] {
+            changed = changed + 1
+        }
+    }
+    return changed
+}
+
+# Outer totalistic: the centre keeps its own identity, so the code is
+# indexed by (centre, outer sum) rather than by the total alone.
+export function ca_outer_totalistic_step(src: ptr<i32>, dst: ptr<i32>, n: i32,
+                                         k: i32, radius: i32, code: i32,
+                                         bound: i32) -> i32 {
+    let outer_max: i32 = 2 * radius * (k - 1)
+    let mut changed: i32 = 0
+    for i in 0 to n {
+        let mut s: i32 = 0
+        for d in 0 to (2 * radius + 1) {
+            if d != radius {
+                s = s + ca_get(src, n, 1, i - radius + d, 0, bound, 0)
+            }
+        }
+        let idx: i32 = src[i] * (outer_max + 1) + s
+        let mut v: i32 = code
+        for q in 0 to idx {
+            v = v / k
+        }
+        v = v % k
+        dst[i] = v
+        if v != src[i] {
+            changed = changed + 1
+        }
+    }
+    return changed
+}
+
+# --------------------------------------------------------- life-like rules
+
+# Parse B/S notation ("B3/S23", "b36/s23", "23/3" is not accepted) into two
+# bitmasks: out[0] births, out[1] survivals, bit n meaning n neighbours.
+# Returns false if the string names no neighbour counts or holds a character
+# outside "BbSs0-9/ ".
+export function ca_parse_bs(spec: string, out: ptr<i32>) -> bool {
+    let b: ptr<u8> = spec as ptr<u8>
+    out[0] = 0
+    out[1] = 0
+    let mut i: i32 = 0
+    let mut which: i32 = -1
+    let mut any: bool = false
+    while b[i] != 0 {
+        let c: i32 = b[i] as i32
+        if c == 66 or c == 98 {
+            which = 0
+        } else {
+            if c == 83 or c == 115 {
+                which = 1
+            } else {
+                if c >= 48 and c <= 57 {
+                    if which < 0 {
+                        return false
+                    }
+                    out[which] = out[which] | (1 << (c - 48))
+                    any = true
+                } else {
+                    if c != 47 and c != 32 {
+                        return false
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return any
+}
+
+export function ca_bs_has(mask: i32, count: i32) -> bool {
+    if count < 0 or count > 30 {
+        return false
+    }
+    return ((mask >> count) & 1) == 1
+}
+
+# One synchronous life-like generation. Cells are 0 or 1.
+export function ca_life_step(src: ptr<i32>, dst: ptr<i32>, w: i32, h: i32,
+                             birth: i32, survive: i32, nb: i32,
+                             bound: i32) -> i32 {
+    let mut changed: i32 = 0
+    for y in 0 to h {
+        for x in 0 to w {
+            let idx: i32 = y * w + x
+            let alive: i32 = src[idx]
+            let c: i32 = ca_count_state(src, w, h, x, y, nb, bound, 1)
+            let mut v: i32 = 0
+            if alive == 1 {
+                if ca_bs_has(survive, c) {
+                    v = 1
+                }
+            } else {
+                if ca_bs_has(birth, c) {
+                    v = 1
+                }
+            }
+            dst[idx] = v
+            if v != alive {
+                changed = changed + 1
+            }
+        }
+    }
+    return changed
+}
+
+# The same rule under a chosen schedule.
+#
+#   CA_SYNC            classic: dst is a full new generation
+#   CA_ASYNC_RANDOM    dst starts as a copy of src; each cell is offered an
+#                      update with probability alpha_ppm / 1e6, and the
+#                      updates are still read from src (independent async)
+#   CA_ASYNC_ORDERED   in place on src, row-major; later cells in the sweep
+#                      already see this generation's earlier results
+#   CA_ASYNC_SHUFFLED  in place on src, w*h random cells per generation
+#
+# The in-place modes write through `src` and copy the result into `dst` so
+# the caller's double-buffer swap stays the same in every mode.
+export function ca_life_step_mode(src: ptr<i32>, dst: ptr<i32>, w: i32, h: i32,
+                                  birth: i32, survive: i32, nb: i32,
+                                  bound: i32, mode: i32,
+                                  alpha_ppm: i32) -> i32 {
+    if mode == CA_SYNC {
+        return ca_life_step(src, dst, w, h, birth, survive, nb, bound)
+    }
+    let total: i32 = w * h
+    let mut changed: i32 = 0
+    if mode == CA_ASYNC_RANDOM {
+        for i in 0 to total {
+            dst[i] = src[i]
+        }
+        for y in 0 to h {
+            for x in 0 to w {
+                if (ca_rand_u32() % 1000000) < (alpha_ppm as u32) {
+                    let idx: i32 = y * w + x
+                    let alive: i32 = src[idx]
+                    let c: i32 = ca_count_state(src, w, h, x, y, nb, bound, 1)
+                    let mut v: i32 = 0
+                    if alive == 1 {
+                        if ca_bs_has(survive, c) { v = 1 }
+                    } else {
+                        if ca_bs_has(birth, c) { v = 1 }
+                    }
+                    dst[idx] = v
+                    if v != alive {
+                        changed = changed + 1
+                    }
+                }
+            }
+        }
+        return changed
+    }
+    if mode == CA_ASYNC_ORDERED {
+        for y in 0 to h {
+            for x in 0 to w {
+                let idx: i32 = y * w + x
+                let alive: i32 = src[idx]
+                let c: i32 = ca_count_state(src, w, h, x, y, nb, bound, 1)
+                let mut v: i32 = 0
+                if alive == 1 {
+                    if ca_bs_has(survive, c) { v = 1 }
+                } else {
+                    if ca_bs_has(birth, c) { v = 1 }
+                }
+                src[idx] = v
+                if v != alive {
+                    changed = changed + 1
+                }
+            }
+        }
+        for i in 0 to total {
+            dst[i] = src[i]
+        }
+        return changed
+    }
+    for q in 0 to total {
+        let idx: i32 = ca_rand_below(total)
+        let x: i32 = idx % w
+        let y: i32 = idx / w
+        let alive: i32 = src[idx]
+        let c: i32 = ca_count_state(src, w, h, x, y, nb, bound, 1)
+        let mut v: i32 = 0
+        if alive == 1 {
+            if ca_bs_has(survive, c) { v = 1 }
+        } else {
+            if ca_bs_has(birth, c) { v = 1 }
+        }
+        src[idx] = v
+        if v != alive {
+            changed = changed + 1
+        }
+    }
+    for i in 0 to total {
+        dst[i] = src[i]
+    }
+    return changed
+}
+
+# ------------------------------------------------------------- generations
+
+# Multi-state "generations" rules. State 1 is alive; states 2 .. nstates-1
+# are the refractory tail, counting up and then dying; state 0 is empty.
+# Only state-1 neighbours count. Brian's Brain is nstates 3 with B2/S.
+export function ca_generations_step(src: ptr<i32>, dst: ptr<i32>, w: i32,
+                                    h: i32, birth: i32, survive: i32,
+                                    nstates: i32, nb: i32, bound: i32) -> i32 {
+    let mut changed: i32 = 0
+    for y in 0 to h {
+        for x in 0 to w {
+            let idx: i32 = y * w + x
+            let s: i32 = src[idx]
+            let mut v: i32 = 0
+            if s == 0 {
+                let c: i32 = ca_count_state(src, w, h, x, y, nb, bound, 1)
+                if ca_bs_has(birth, c) {
+                    v = 1
+                }
+            } else {
+                if s == 1 {
+                    let c: i32 = ca_count_state(src, w, h, x, y, nb, bound, 1)
+                    if ca_bs_has(survive, c) {
+                        v = 1
+                    } else {
+                        v = 2
+                        if nstates <= 2 {
+                            v = 0
+                        }
+                    }
+                } else {
+                    v = s + 1
+                    if v >= nstates {
+                        v = 0
+                    }
+                }
+            }
+            dst[idx] = v
+            if v != s {
+                changed = changed + 1
+            }
+        }
+    }
+    return changed
+}
+
+# ------------------------------------------------------------- cyclic CAs
+
+# Greenberg-Hastings / cyclic CA: state s is eaten by s+1 mod nstates once
+# `threshold` neighbours already hold s+1.
+export function ca_cyclic_step(src: ptr<i32>, dst: ptr<i32>, w: i32, h: i32,
+                               nstates: i32, threshold: i32, nb: i32,
+                               bound: i32) -> i32 {
+    let mut changed: i32 = 0
+    for y in 0 to h {
+        for x in 0 to w {
+            let idx: i32 = y * w + x
+            let s: i32 = src[idx]
+            let nxt: i32 = (s + 1) % nstates
+            let c: i32 = ca_count_state(src, w, h, x, y, nb, bound, nxt)
+            if c >= threshold {
+                dst[idx] = nxt
+                changed = changed + 1
+            } else {
+                dst[idx] = s
+            }
+        }
+    }
+    return changed
+}
+
+# -------------------------------------------------------------- wireworld
+
+const WW_EMPTY: i32 = 0
+const WW_WIRE: i32 = 1
+const WW_HEAD: i32 = 2
+const WW_TAIL: i32 = 3
+
+# Wireworld: head -> tail -> wire, and wire -> head when exactly one or two
+# of its eight neighbours are heads. That single clause is what makes the
+# rule a logic family rather than a decoration.
+export function ca_wireworld_step(src: ptr<i32>, dst: ptr<i32>, w: i32,
+                                  h: i32, bound: i32) -> i32 {
+    let mut changed: i32 = 0
+    for y in 0 to h {
+        for x in 0 to w {
+            let idx: i32 = y * w + x
+            let s: i32 = src[idx]
+            let mut v: i32 = s
+            if s == WW_HEAD {
+                v = WW_TAIL
+            } else {
+                if s == WW_TAIL {
+                    v = WW_WIRE
+                } else {
+                    if s == WW_WIRE {
+                        let c: i32 = ca_count_state(src, w, h, x, y, CA_MOORE,
+                                                    bound, WW_HEAD)
+                        if c == 1 or c == 2 {
+                            v = WW_HEAD
+                        }
+                    }
+                }
+            }
+            dst[idx] = v
+            if v != s {
+                changed = changed + 1
+            }
+        }
+    }
+    return changed
+}
+
+# -------------------------------------------------------------- sandpiles
+
+# One parallel toppling sweep of the abelian sandpile. Every site holding at
+# least `threshold` grains gives one grain to each von Neumann neighbour;
+# grains that leave a fixed boundary are lost. Returns the number of sites
+# that toppled, so zero means the configuration is stable.
+export function ca_sandpile_sweep(grid: ptr<i32>, delta: ptr<i32>, w: i32,
+                                  h: i32, threshold: i32, bound: i32) -> i32 {
+    let total: i32 = w * h
+    for i in 0 to total {
+        delta[i] = 0
+    }
+    let mut topples: i32 = 0
+    for y in 0 to h {
+        for x in 0 to w {
+            let idx: i32 = y * w + x
+            if grid[idx] >= threshold {
+                topples = topples + 1
+                delta[idx] = delta[idx] - threshold
+                for k in 0 to 4 {
+                    let vx: i32 = ca_fold(x + ca_nb_dx(CA_VON, k, x, y), w, bound)
+                    let vy: i32 = ca_fold(y + ca_nb_dy(CA_VON, k, x, y), h, bound)
+                    if vx >= 0 and vy >= 0 {
+                        delta[vy * w + vx] = delta[vy * w + vx] + 1
+                    }
+                }
+            }
+        }
+    }
+    for i in 0 to total {
+        grid[i] = grid[i] + delta[i]
+    }
+    return topples
+}
+
+# Drop one grain and relax to stability. Fills stats with the avalanche
+# observables the scaling laws are stated in:
+#   stats[0] size      total topplings
+#   stats[1] duration  sweeps needed to return to stability
+#   stats[2] area      distinct sites that toppled at least once
+export function ca_sandpile_avalanche(grid: ptr<i32>, delta: ptr<i32>,
+                                      touched: ptr<i32>, w: i32, h: i32,
+                                      x: i32, y: i32, threshold: i32,
+                                      bound: i32, max_sweeps: i32,
+                                      stats: ptr<i32>) -> i32 {
+    let total: i32 = w * h
+    for i in 0 to total {
+        touched[i] = 0
+    }
+    grid[y * w + x] = grid[y * w + x] + 1
+    let mut size: i32 = 0
+    let mut duration: i32 = 0
+    while duration < max_sweeps {
+        for i in 0 to total {
+            if grid[i] >= threshold {
+                touched[i] = 1
+            }
+        }
+        let t: i32 = ca_sandpile_sweep(grid, delta, w, h, threshold, bound)
+        if t == 0 {
+            break
+        }
+        size = size + t
+        duration = duration + 1
+    }
+    let mut area: i32 = 0
+    for i in 0 to total {
+        area = area + touched[i]
+    }
+    stats[0] = size
+    stats[1] = duration
+    stats[2] = area
+    return size
+}
+
+# --------------------------------------------------------------- turmites
+
+# A turmite is a head with a state, walking a coloured grid. The table maps
+# (state, colour) to (new colour, turn, new state) and is indexed
+#   ((state * ncolours) + colour) * 3 + field.
+# Turns: 0 left, 1 right, 2 straight on, 3 about-face.
+#
+# The head is `st` = [x, y, dir, state] with dir 0 = north, 1 = east,
+# 2 = south, 3 = west. Returns 1 if the head stayed on the grid.
+const CA_TURN_LEFT: i32 = 0
+const CA_TURN_RIGHT: i32 = 1
+const CA_TURN_NONE: i32 = 2
+const CA_TURN_BACK: i32 = 3
+
+export function ca_turmite_step(grid: ptr<i32>, w: i32, h: i32, st: ptr<i32>,
+                                table: ptr<i32>, ncolours: i32, bound: i32) -> i32 {
+    let x: i32 = st[0]
+    let y: i32 = st[1]
+    if x < 0 or y < 0 or x >= w or y >= h {
+        return 0
+    }
+    let idx: i32 = y * w + x
+    let colour: i32 = grid[idx]
+    let base: i32 = (st[3] * ncolours + colour) * 3
+    grid[idx] = table[base]
+    let turn: i32 = table[base + 1]
+    st[3] = table[base + 2]
+    let mut dir: i32 = st[2]
+    if turn == CA_TURN_LEFT {
+        dir = (dir + 3) % 4
+    }
+    if turn == CA_TURN_RIGHT {
+        dir = (dir + 1) % 4
+    }
+    if turn == CA_TURN_BACK {
+        dir = (dir + 2) % 4
+    }
+    st[2] = dir
+    let mut nx: i32 = x
+    let mut ny: i32 = y
+    if dir == 0 { ny = y - 1 }
+    if dir == 1 { nx = x + 1 }
+    if dir == 2 { ny = y + 1 }
+    if dir == 3 { nx = x - 1 }
+    let fx: i32 = ca_fold(nx, w, bound)
+    let fy: i32 = ca_fold(ny, h, bound)
+    if fx < 0 or fy < 0 {
+        st[0] = nx
+        st[1] = ny
+        return 0
+    }
+    st[0] = fx
+    st[1] = fy
+    return 1
+}
+
+# Langton's ant as a one-state, two-colour turmite: RL.
+export function ca_langton_table(out: ptr<i32>) -> void {
+    out[0] = 1
+    out[1] = CA_TURN_RIGHT
+    out[2] = 0
+    out[3] = 0
+    out[4] = CA_TURN_LEFT
+    out[5] = 0
+}
+
+# A turmite table from a turn string over {L, R, N, U}: "RL" is Langton's
+# ant, "RLR" and "LLRR" are the well-known multi-colour ants. Returns the
+# number of colours, or 0 if the string holds an unknown letter.
+export function ca_ant_table(turns: string, out: ptr<i32>) -> i32 {
+    let b: ptr<u8> = turns as ptr<u8>
+    let mut n: i32 = 0
+    while b[n] != 0 {
+        n = n + 1
+    }
+    if n < 2 {
+        return 0
+    }
+    for i in 0 to n {
+        let c: i32 = b[i] as i32
+        let mut t: i32 = -1
+        if c == 76 or c == 108 { t = CA_TURN_LEFT }
+        if c == 82 or c == 114 { t = CA_TURN_RIGHT }
+        if c == 78 or c == 110 { t = CA_TURN_NONE }
+        if c == 85 or c == 117 { t = CA_TURN_BACK }
+        if t < 0 {
+            return 0
+        }
+        out[i * 3] = (i + 1) % n
+        out[i * 3 + 1] = t
+        out[i * 3 + 2] = 0
+    }
+    return n
+}
+
+# --------------------------------------------------------- Margolus blocks
+
+# The Margolus neighbourhood partitions the grid into 2x2 blocks, offset by
+# one cell on odd steps. A rule is a table of 16 entries mapping the block's
+# 4-bit occupancy to the next one, with bit 0 top-left, bit 1 top-right,
+# bit 2 bottom-left, bit 3 bottom-right. When the table is a permutation of
+# 0..15 the automaton is reversible, exactly, with no floating point in
+# sight: step backwards with the inverse table and the parity run in reverse.
+#
+# `w` and `h` must be even. Cells are 0 or 1.
+export function ca_margolus_step(grid: ptr<i32>, w: i32, h: i32,
+                                 table: ptr<i32>, parity: i32) -> void {
+    let off: i32 = parity & 1
+    let mut by: i32 = off
+    while by + 1 < h + off {
+        let mut bx: i32 = off
+        while bx + 1 < w + off {
+            let x0: i32 = bx % w
+            let y0: i32 = by % h
+            let x1: i32 = (bx + 1) % w
+            let y1: i32 = (by + 1) % h
+            let tl: i32 = y0 * w + x0
+            let tr: i32 = y0 * w + x1
+            let bl: i32 = y1 * w + x0
+            let br: i32 = y1 * w + x1
+            let code: i32 = grid[tl] | (grid[tr] << 1) | (grid[bl] << 2)
+                            | (grid[br] << 3)
+            let v: i32 = table[code & 15]
+            grid[tl] = v & 1
+            grid[tr] = (v >> 1) & 1
+            grid[bl] = (v >> 2) & 1
+            grid[br] = (v >> 3) & 1
+            bx = bx + 2
+        }
+        by = by + 2
+    }
+}
+
+export function ca_margolus_is_permutation(table: ptr<i32>) -> bool {
+    let seen: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 0]
+    for i in 0 to 16 {
+        seen[i] = 0
+    }
+    for i in 0 to 16 {
+        let v: i32 = table[i]
+        if v < 0 or v > 15 {
+            return false
+        }
+        if seen[v] == 1 {
+            return false
+        }
+        seen[v] = 1
+    }
+    return true
+}
+
+# The inverse table, so the same stepper runs the CA backwards.
+export function ca_margolus_invert(table: ptr<i32>, inv: ptr<i32>) -> bool {
+    if !ca_margolus_is_permutation(table) {
+        return false
+    }
+    for i in 0 to 16 {
+        inv[table[i]] = i
+    }
+    return true
+}
+
+# Rotate a block 180 degrees: top-left swaps with bottom-right.
+function ca_block_rot180(code: i32) -> i32 {
+    return ((code & 1) << 3) | ((code & 2) << 1) | ((code & 4) >> 1)
+           | ((code & 8) >> 3)
+}
+
+# HPP lattice gas in Margolus form: every particle moves diagonally across
+# its block (a 180 degree rotation), except that a pair meeting head-on
+# along one diagonal leaves along the other. This is the billiard-ball
+# model's collision, and the table is its own inverse.
+export function ca_margolus_hpp_table(out: ptr<i32>) -> void {
+    for c in 0 to 16 {
+        out[c] = ca_block_rot180(c)
+    }
+    # 1001 is top-left plus bottom-right; 0110 is the other diagonal.
+    out[9] = 6
+    out[6] = 9
+}
+
+# Critters (Toffoli and Margolus): complement the block, leave it alone when
+# exactly two cells are on, and also rotate when exactly three are on. It is
+# reversible and it has gliders.
+export function ca_margolus_critters_table(out: ptr<i32>) -> void {
+    for c in 0 to 16 {
+        let mut bits: i32 = 0
+        for k in 0 to 4 {
+            bits = bits + ((c >> k) & 1)
+        }
+        if bits == 2 {
+            out[c] = c
+        } else {
+            let comp: i32 = 15 - c
+            if bits == 3 {
+                out[c] = ca_block_rot180(comp)
+            } else {
+                out[c] = comp
+            }
+        }
+    }
+}
+
+# Tron: complement blocks that are uniform, leave everything else. Also an
+# involution.
+export function ca_margolus_tron_table(out: ptr<i32>) -> void {
+    for c in 0 to 16 {
+        out[c] = c
+    }
+    out[0] = 15
+    out[15] = 0
+}
+
+# ---------------------------------------------------------------- measures
+
+export function ca_population(grid: ptr<i32>, n: i32) -> i32 {
+    let mut c: i32 = 0
+    for i in 0 to n {
+        if grid[i] != 0 {
+            c = c + 1
+        }
+    }
+    return c
+}
+
+export function ca_count_value(grid: ptr<i32>, n: i32, v: i32) -> i32 {
+    let mut c: i32 = 0
+    for i in 0 to n {
+        if grid[i] == v {
+            c = c + 1
+        }
+    }
+    return c
+}
+
+export function ca_density(grid: ptr<i32>, n: i32) -> f64 {
+    if n <= 0 {
+        return 0.0
+    }
+    return (ca_population(grid, n) as f64) / (n as f64)
+}
+
+export function ca_hamming(a: ptr<i32>, b: ptr<i32>, n: i32) -> i32 {
+    let mut d: i32 = 0
+    for i in 0 to n {
+        if a[i] != b[i] {
+            d = d + 1
+        }
+    }
+    return d
+}
+
+# Shannon entropy of the state distribution, in bits per cell. `bins` must
+# hold at least `nstates` entries and is used as scratch.
+export function ca_entropy(grid: ptr<i32>, n: i32, nstates: i32,
+                           bins: ptr<i32>) -> f64 {
+    if n <= 0 or nstates <= 1 {
+        return 0.0
+    }
+    for s in 0 to nstates {
+        bins[s] = 0
+    }
+    for i in 0 to n {
+        let v: i32 = grid[i]
+        if v >= 0 and v < nstates {
+            bins[v] = bins[v] + 1
+        }
+    }
+    let mut hbits: f64 = 0.0
+    let inv_ln2: f64 = 1.4426950408889634
+    for s in 0 to nstates {
+        if bins[s] > 0 {
+            let p: f64 = (bins[s] as f64) / (n as f64)
+            hbits = hbits - p * log(p) * inv_ln2
+        }
+    }
+    return hbits
+}
+
+# Block entropy of a binary row: Shannon entropy over the 2^len sliding
+# windows, divided by len, so a maximally random row scores 1 bit per cell
+# and a constant row scores 0. `bins` needs 2^len entries; len <= 12.
+export function ca_block_entropy(row: ptr<i32>, n: i32, len: i32,
+                                 bins: ptr<i32>) -> f64 {
+    if len < 1 or len > 12 or n < len {
+        return 0.0
+    }
+    let nbins: i32 = 1 << len
+    for i in 0 to nbins {
+        bins[i] = 0
+    }
+    let count: i32 = n - len + 1
+    for i in 0 to count {
+        let mut code: i32 = 0
+        for k in 0 to len {
+            code = (code << 1)
+            if row[i + k] != 0 {
+                code = code | 1
+            }
+        }
+        bins[code] = bins[code] + 1
+    }
+    let mut hbits: f64 = 0.0
+    let inv_ln2: f64 = 1.4426950408889634
+    for i in 0 to nbins {
+        if bins[i] > 0 {
+            let p: f64 = (bins[i] as f64) / (count as f64)
+            hbits = hbits - p * log(p) * inv_ln2
+        }
+    }
+    return hbits / (len as f64)
+}
+
+# FNV-1a over the cell values: a configuration fingerprint for cycle
+# detection. Two different configurations colliding is a 2^-64 event, and
+# callers that cannot accept even that should compare the states directly
+# once a hash matches.
+export function ca_hash(grid: ptr<i32>, n: i32) -> i64 {
+    let mut hv: u64 = 14695981039346656037
+    for i in 0 to n {
+        let v: u32 = grid[i] as u32
+        for b in 0 to 4 {
+            let byte: u64 = ((v >> (8 * b)) & 255) as u64
+            hv = (hv ^ byte) * 1099511628211
+        }
+    }
+    return hv as i64
+}
+
+# Search a ring of past hashes for `h`; returns the slot, or -1.
+export function ca_cycle_find(ring: ptr<i64>, len: i32, h: i64) -> i32 {
+    for i in 0 to len {
+        if ring[i] == h {
+            return i
+        }
+    }
+    return -1
+}
+
+# Run a 1D rule until the configuration repeats. Fills out[0] with the
+# period and out[1] with the transient length, both -1 if nothing repeated
+# within `max_steps`. `ring` must hold `max_steps` hashes.
+export function ca_find_cycle(a: ptr<i32>, b: ptr<i32>, n: i32, rule: i32,
+                              bound: i32, max_steps: i32, ring: ptr<i64>,
+                              out: ptr<i32>) -> i32 {
+    out[0] = -1
+    out[1] = -1
+    for t in 0 to max_steps {
+        let h: i64 = ca_hash(a, n)
+        let hit: i32 = ca_cycle_find(ring, t, h)
+        if hit >= 0 {
+            out[0] = t - hit
+            out[1] = hit
+            return out[0]
+        }
+        ring[t] = h
+        ca_elementary_step(a, b, n, rule, bound)
+        for i in 0 to n {
+            a[i] = b[i]
+        }
+    }
+    return -1
+}
+
+# ------------------------------------------------------------- classifier
+
+# Wolfram's four classes, decided from measurements rather than from a
+# lookup table, and honest about it: the caller gets every number the
+# decision used and can disagree.
+#
+#   evidence[0]  final density of live cells
+#   evidence[1]  late activity, mean fraction of cells changing per step
+#   evidence[2]  late block entropy, bits per cell (block length 8)
+#   evidence[3]  cycle period found, 0 if none within the run
+#   evidence[4]  transient length before the cycle, -1 if none
+#   evidence[5]  damage growth, cells per step, from a one-cell perturbation
+#   evidence[6]  final damage fraction
+#   evidence[7]  mean input entropy, bits, 0 to 3
+#   evidence[8]  variance of the input entropy over the late window
+#   evidence[9]  peak damage fraction reached at any point in the run
+#
+# The input entropy is Wuensche's statistic (Wuensche 1999, "Classifying
+# cellular automata automatically"): at each step, count how often each of
+# the eight neighbourhood patterns was looked up, and take the Shannon
+# entropy of that histogram. A chaotic rule uses all eight steadily, so the
+# entropy is high and flat. A class IV rule alternates between ordered and
+# disordered episodes as its structures interact, so the same entropy
+# fluctuates, and the variance is the thing that separates rule 110 from
+# rule 90 when density and pattern entropy do not.
+#
+# The decision, in order:
+#   class I    the run reaches a uniform state: entropy 0 and no activity
+#   class II   a cycle was found, or a one-cell defect never spread past
+#              CA_DAMAGE_GATE, so the rule forgets perturbations
+#   class IV   damage spreads and the input entropy is unsteady: variance
+#              above CA_VAR_GATE_NUM / width
+#   class III  damage spreads and the input entropy is steady
+#
+struct CAWork {
+    a: ptr<i32>,
+    b: ptr<i32>,
+    pa: ptr<i32>,
+    pb: ptr<i32>,
+    ring: ptr<i64>,
+    bins: ptr<i32>
+}
+
+const CA_CLASS_I: i32 = 1
+const CA_CLASS_II: i32 = 2
+const CA_CLASS_III: i32 = 3
+const CA_CLASS_IV: i32 = 4
+
+# Gates used by ca_classify, exposed so a caller can see and change them.
+# The variance gate scales with the lattice: a histogram over `width`
+# lookups fluctuates like 1 / width even for a perfectly steady rule.
+const CA_VAR_GATE_NUM: f64 = 0.075   # gate = CA_VAR_GATE_NUM / width
+const CA_DAMAGE_GATE: f64 = 0.02     # peak damage fraction that counts as spread
+
+# Shannon entropy, in bits, of how often each of the eight elementary
+# neighbourhood patterns was looked up over one row.
+export function ca_input_entropy(row: ptr<i32>, n: i32, bound: i32,
+                                 bins: ptr<i32>) -> f64 {
+    for k in 0 to 8 {
+        bins[k] = 0
+    }
+    for i in 0 to n {
+        let l: i32 = ca_get(row, n, 1, i - 1, 0, bound, 0)
+        let c: i32 = row[i]
+        let r: i32 = ca_get(row, n, 1, i + 1, 0, bound, 0)
+        bins[4 * l + 2 * c + r] = bins[4 * l + 2 * c + r] + 1
+    }
+    let mut hbits: f64 = 0.0
+    let inv_ln2: f64 = 1.4426950408889634
+    for k in 0 to 8 {
+        if bins[k] > 0 {
+            let p: f64 = (bins[k] as f64) / (n as f64)
+            hbits = hbits - p * log(p) * inv_ln2
+        }
+    }
+    return hbits
+}
+
+export function ca_classify(rule: i32, width: i32, gens: i32, bound: i32,
+                            wk: CAWork, evidence: ptr<f64>) -> i32 {
+    # Random initial condition: a single seed hides class III behind the
+    # light cone, and Wolfram's classes are statements about typical
+    # initial conditions.
+    for i in 0 to width {
+        wk.a[i] = (ca_rand_u32() & 1) as i32
+        wk.pa[i] = wk.a[i]
+    }
+    # The perturbed copy differs in exactly one cell.
+    wk.pa[width / 2] = 1 - wk.pa[width / 2]
+
+    let late_from: i32 = (2 * gens) / 3
+    let mut late_changes: i32 = 0
+    let mut late_steps: i32 = 0
+    let mut period: i32 = 0
+    let mut transient: i32 = -1
+    let mut damage_sum: f64 = 0.0
+    let mut damage_n: i32 = 0
+    let mut damage_first: i32 = -1
+    let mut damage_peak: i32 = 0
+    let mut ih_sum: f64 = 0.0
+    let mut ih_sq: f64 = 0.0
+    let mut ih_n: i32 = 0
+
+    for t in 0 to gens {
+        if period == 0 {
+            let h: i64 = ca_hash(wk.a, width)
+            let hit: i32 = ca_cycle_find(wk.ring, t, h)
+            if hit >= 0 {
+                period = t - hit
+                transient = hit
+            } else {
+                wk.ring[t] = h
+            }
+        }
+        let ch: i32 = ca_elementary_step(wk.a, wk.b, width, rule, bound)
+        ca_elementary_step(wk.pa, wk.pb, width, rule, bound)
+        for i in 0 to width {
+            wk.a[i] = wk.b[i]
+            wk.pa[i] = wk.pb[i]
+        }
+        if t >= late_from {
+            late_changes = late_changes + ch
+            late_steps = late_steps + 1
+        }
+        let d: i32 = ca_hamming(wk.a, wk.pa, width)
+        if d > 0 and damage_first < 0 {
+            damage_first = t
+        }
+        if d > damage_peak {
+            damage_peak = d
+        }
+        if t >= late_from {
+            damage_sum = damage_sum + (d as f64)
+            damage_n = damage_n + 1
+            let ih: f64 = ca_input_entropy(wk.a, width, bound, wk.bins)
+            ih_sum = ih_sum + ih
+            ih_sq = ih_sq + ih * ih
+            ih_n = ih_n + 1
+        }
+    }
+
+    let density: f64 = ca_density(wk.a, width)
+    let mut activity: f64 = 0.0
+    if late_steps > 0 {
+        activity = (late_changes as f64) / ((late_steps * width) as f64)
+    }
+    let entropy: f64 = ca_block_entropy(wk.a, width, 8, wk.bins)
+    let mut damage_frac: f64 = 0.0
+    if damage_n > 0 {
+        damage_frac = damage_sum / ((damage_n * width) as f64)
+    }
+    # Growth rate over the whole run, in cells per step.
+    let mut damage_rate: f64 = 0.0
+    if damage_first >= 0 and gens > damage_first {
+        damage_rate = (ca_hamming(wk.a, wk.pa, width) as f64)
+                      / ((gens - damage_first) as f64)
+    }
+
+    let mut ih_mean: f64 = 0.0
+    let mut ih_var: f64 = 0.0
+    if ih_n > 0 {
+        ih_mean = ih_sum / (ih_n as f64)
+        ih_var = ih_sq / (ih_n as f64) - ih_mean * ih_mean
+        if ih_var < 0.0 {
+            ih_var = 0.0
+        }
+    }
+
+    evidence[0] = density
+    evidence[1] = activity
+    evidence[2] = entropy
+    evidence[3] = period as f64
+    evidence[4] = transient as f64
+    evidence[5] = damage_rate
+    evidence[6] = damage_frac
+    evidence[7] = ih_mean
+    evidence[8] = ih_var
+    evidence[9] = (damage_peak as f64) / (width as f64)
+
+    if entropy < 0.001 and activity < 0.0001 {
+        return CA_CLASS_I
+    }
+    if period > 0 and period <= width {
+        return CA_CLASS_II
+    }
+    # A defect that never spreads means the rule forgets perturbations, and
+    # a rule that forgets perturbations is not chaotic whatever its picture
+    # looks like.
+    if evidence[9] <= CA_DAMAGE_GATE {
+        return CA_CLASS_II
+    }
+    let var_gate: f64 = CA_VAR_GATE_NUM / (width as f64)
+    if ih_var > var_gate {
+        return CA_CLASS_IV
+    }
+    return CA_CLASS_III
+}
+
+export function ca_class_name(cls: i32) -> string {
+    if cls == CA_CLASS_I { return "I HOMOGENEOUS" }
+    if cls == CA_CLASS_II { return "II PERIODIC" }
+    if cls == CA_CLASS_III { return "III CHAOTIC" }
+    return "IV COMPLEX"
+}
+
+# ---------------------------------------------------------------- drawing
+
+# Pack a grid into an RGB8 buffer for one gfx_blit_rgb call, scaling each
+# cell to `px` by `px` device pixels. `pal` holds 3 bytes per state.
+# A dense grid drawn cell by cell with fill_rect is tens of thousands of
+# calls a frame; this is one.
+export function ca_blit_pack(grid: ptr<i32>, w: i32, h: i32, px: i32,
+                             pal: ptr<u8>, nstates: i32,
+                             out: ptr<u8>) -> void {
+    let row_bytes: i32 = w * px * 3
+    for y in 0 to h {
+        let src_row: i32 = y * w
+        for x in 0 to w {
+            let mut s: i32 = grid[src_row + x]
+            if s < 0 { s = 0 }
+            if s >= nstates { s = nstates - 1 }
+            let r: u8 = pal[s * 3]
+            let g: u8 = pal[s * 3 + 1]
+            let b: u8 = pal[s * 3 + 2]
+            for sy in 0 to px {
+                let base: i32 = (y * px + sy) * row_bytes + x * px * 3
+                for sx in 0 to px {
+                    let o: i32 = base + sx * 3
+                    out[o] = r
+                    out[o + 1] = g
+                    out[o + 2] = b
+                }
+            }
+        }
+    }
+}
