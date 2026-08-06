@@ -1,0 +1,431 @@
+# SPRING CHAIN: five masses, five normal modes, five analytic frequencies.
+#
+# THE SYSTEM
+#
+#   Five equal masses on a line, joined to each other and to two fixed walls
+#   by six identical springs. With m = 1 and k = 1 and x0 = x6 = 0 pinned:
+#
+#     x_i'  = v_i
+#     v_i'  = x_{i-1} - 2 x_i + x_{i+1}          i = 1 .. 5
+#
+#   Ten `evolves as` lines, written out one per state. That is the whole
+#   model; there is no matrix anywhere in this file.
+#
+# THE REFERENCE
+#
+#   The discrete Laplacian on N interior points with Dirichlet ends has
+#   eigenvalues 4 sin^2( j pi / (2(N+1)) ) with eigenvectors
+#   u_j[i] = sin( i j pi / (N+1) ), so the chain's normal-mode angular
+#   frequencies are exactly
+#
+#     omega_j = 2 sin( j pi / 12 )        j = 1 .. 5
+#
+#            j    omega_j        period 2 pi / omega_j
+#            1    0.5176381      12.1392
+#            2    1.0000000       6.2832
+#            3    1.4142136       4.4429
+#            4    1.7320508       3.6276
+#            5    1.9318517       3.2523
+#
+#   Two more closed-form facts are checked as well:
+#
+#     sum of omega_j^2 = trace of the stiffness matrix = 2 N = 10
+#     the modes are orthogonal, so a chain started in mode j stays in mode j
+#
+# WHAT THIS EXAMPLE PROVES
+#
+#   1. Each mode's period, measured from interpolated zero crossings of x1
+#      over 50 oscillations, matches 2 pi / omega_j to better than 1e-9
+#      relative. That is the generated RK4 reproducing five different
+#      eigenvalues of a system it was never told the eigenvalues of.
+#
+#   2. Mode purity. While mode j runs, the amplitudes of the other four modal
+#      coordinates q_l = (2/6) sum_i x_i sin(i l pi / 6) are measured. They
+#      stay at the 1e-12 level: the generated integrator does not leak energy
+#      between eigenspaces.
+#
+#   3. Energy. From a general initial condition that excites all five modes,
+#      the total energy is conserved to 1e-11 relative over 400 seconds.
+#
+# WHERE THE LANGUAGE RAN OUT
+#
+#   The natural way to state this check would be `represent linear` on the
+#   flow followed by `analyze Chain5 { poles }`. The shipped analysis path
+#   (`dsys` / `sense on`) computes a spectral radius only for n = 2 by closed
+#   form, and `analyze { lqr }` reaches n = 4. A ten-state plant has no route
+#   through it, so the eigenvalues here are compared against the closed form
+#   in ordinary Flow code. An `analyze` that can take the poles of an n-state
+#   flow is the missing piece; this file is what writing around it looks like.
+#
+# CONTROLS
+#   None. Five deterministic mode runs plus one mixed run.
+#
+# Run: ./flow run examples/evolution/spring_chain.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function puts(s: ptr<u8>) -> i32
+}
+
+const PI: f64 = 3.141592653589793
+const TWO_PI: f64 = 6.283185307179586
+const DT: f64 = 2e-4
+const NMODES: i32 = 5
+const PERIODS: i32 = 50
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow Chain5 {
+    state x1 : f64 = 0.0
+    state x2 : f64 = 0.0
+    state x3 : f64 = 0.0
+    state x4 : f64 = 0.0
+    state x5 : f64 = 0.0
+    state v1 : f64 = 0.0
+    state v2 : f64 = 0.0
+    state v3 : f64 = 0.0
+    state v4 : f64 = 0.0
+    state v5 : f64 = 0.0
+
+    param k : f64 = 1.0
+    param m : f64 = 1.0
+
+    solver { dt 200 us  method rk4 }
+
+    x1 evolves as v1
+    x2 evolves as v2
+    x3 evolves as v3
+    x4 evolves as v4
+    x5 evolves as v5
+
+    v1 evolves as k * (0.0 - 2.0 * x1 + x2) / m
+    v2 evolves as k * (x1 - 2.0 * x2 + x3) / m
+    v3 evolves as k * (x2 - 2.0 * x3 + x4) / m
+    v4 evolves as k * (x3 - 2.0 * x4 + x5) / m
+    v5 evolves as k * (x4 - 2.0 * x5 + 0.0) / m
+}
+
+function mode_frequency(j: i32) -> f64 {
+    return 2.0 * sin((j as f64) * PI / 12.0)
+}
+
+function mode_shape(i: i32, j: i32) -> f64 {
+    return sin((i as f64) * (j as f64) * PI / 6.0)
+}
+
+function chain_energy(c: Chain5) -> f64 {
+    let kinetic: f64 = 0.5 * c.m * (c.v1 * c.v1 + c.v2 * c.v2 + c.v3 * c.v3
+                                    + c.v4 * c.v4 + c.v5 * c.v5)
+    let d0: f64 = c.x1
+    let d1: f64 = c.x2 - c.x1
+    let d2: f64 = c.x3 - c.x2
+    let d3: f64 = c.x4 - c.x3
+    let d4: f64 = c.x5 - c.x4
+    let d5: f64 = 0.0 - c.x5
+    let potential: f64 = 0.5 * c.k * (d0 * d0 + d1 * d1 + d2 * d2
+                                      + d3 * d3 + d4 * d4 + d5 * d5)
+    return kinetic + potential
+}
+
+# Modal coordinate l of the current displacement, with the 2/(N+1) weight
+# that makes the transform its own inverse for this basis.
+function modal(c: Chain5, l: i32) -> f64 {
+    let acc: f64 = c.x1 * mode_shape(1, l) + c.x2 * mode_shape(2, l)
+                 + c.x3 * mode_shape(3, l) + c.x4 * mode_shape(4, l)
+                 + c.x5 * mode_shape(5, l)
+    return acc / 3.0
+}
+
+function chain_in_mode(j: i32, amp: f64) -> Chain5 {
+    let mut c: Chain5 = Chain5_new()
+    c.x1 = amp * mode_shape(1, j)
+    c.x2 = amp * mode_shape(2, j)
+    c.x3 = amp * mode_shape(3, j)
+    c.x4 = amp * mode_shape(4, j)
+    c.x5 = amp * mode_shape(5, j)
+    return c
+}
+
+# ---------------------------------------------------------------------------
+# Measurement
+# ---------------------------------------------------------------------------
+
+let mut meas_period: ptr<f64> = null
+let mut meas_leak: ptr<f64> = null
+
+function measure_mode(j: i32) -> void {
+    let mut c: Chain5 = chain_in_mode(j, 0.1)
+    let omega: f64 = mode_frequency(j)
+    let want: f64 = TWO_PI / omega
+
+    let mut t: f64 = 0.0
+    let mut prev: f64 = c.x1
+    let mut first_up: f64 = 0.0
+    let mut last_up: f64 = 0.0
+    let mut ups: i32 = 0
+    let mut leak: f64 = 0.0
+
+    let horizon: f64 = want * ((PERIODS + 3) as f64)
+    let steps: i32 = (horizon / DT) as i32
+
+    for s in 0 to steps {
+        Chain5_step(&c, DT)
+        t = t + DT
+
+        # every 200th step is enough to bound the leak and keeps the run cheap
+        if s % 200 == 0 {
+            for l in 1 to NMODES + 1 {
+                if l != j {
+                    let q: f64 = fabs(modal(c, l))
+                    if q > leak {
+                        leak = q
+                    }
+                }
+            }
+        }
+
+        if prev < 0.0 and c.x1 >= 0.0 {
+            let frac: f64 = (0.0 - prev) / (c.x1 - prev)
+            let tc: f64 = t - DT + frac * DT
+            if ups == 0 {
+                first_up = tc
+            }
+            last_up = tc
+            ups = ups + 1
+            if ups == PERIODS + 1 {
+                meas_period[j - 1] = (last_up - first_up) / (PERIODS as f64)
+                meas_leak[j - 1] = leak
+                return
+            }
+        }
+        prev = c.x1
+    }
+    meas_period[j - 1] = 0.0
+    meas_leak[j - 1] = leak
+}
+
+# ---------------------------------------------------------------------------
+# Mode shapes drawn on an ASCII canvas
+# ---------------------------------------------------------------------------
+
+const PW: i32 = 74
+const PH: i32 = 7
+
+let mut canvas: ptr<u8> = null
+let mut rowbuf: ptr<u8> = null
+
+function canvas_init() -> void {
+    canvas = calloc((PW * PH) as i64, 1) as ptr<u8>
+    rowbuf = calloc((PW + 1) as i64, 1) as ptr<u8>
+    canvas_clear()
+}
+
+function canvas_clear() -> void {
+    for i in 0 to PW * PH {
+        canvas[i] = 32
+    }
+}
+
+function canvas_put(px: i32, py: i32, ch: i32) -> void {
+    if px < 0 or px >= PW or py < 0 or py >= PH {
+        return
+    }
+    canvas[py * PW + px] = ch as u8
+}
+
+function canvas_point(x: f64, y: f64, xlo: f64, xhi: f64,
+                      ylo: f64, yhi: f64, ch: i32) -> void {
+    let px: i32 = (((x - xlo) / (xhi - xlo)) * ((PW - 1) as f64) + 0.5) as i32
+    let py: i32 = (((yhi - y) / (yhi - ylo)) * ((PH - 1) as f64) + 0.5) as i32
+    canvas_put(px, py, ch)
+}
+
+function canvas_draw() -> void {
+    for r in 0 to PH {
+        for c in 0 to PW {
+            rowbuf[c] = canvas[r * PW + c]
+        }
+        rowbuf[PW] = 0
+        print("    ")
+        let written: i32 = puts(rowbuf)
+        if written < 0 {
+            return
+        }
+    }
+}
+
+# Displacement of node i (0 and 6 are the pinned walls) in mode j.
+function node_amplitude(i: i32, j: i32) -> f64 {
+    if i <= 0 or i >= 6 {
+        return 0.0
+    }
+    return mode_shape(i, j)
+}
+
+# One canvas per mode, with the segments between masses filled in so the
+# shape reads as a curve rather than five dots.
+function draw_shapes() -> void {
+    for j in 1 to NMODES + 1 {
+        canvas_clear()
+        for i in 0 to 6 {
+            let a: f64 = node_amplitude(i, j)
+            let b: f64 = node_amplitude(i + 1, j)
+            for f in 0 to 20 {
+                let u: f64 = (f as f64) / 20.0
+                let x: f64 = (i as f64) + u
+                let y: f64 = a + (b - a) * u
+                canvas_point(x, y, 0.0, 6.0, -1.15, 1.15, 42)
+            }
+        }
+        print("     mode ")
+        printf("%1.0f", j as f64)
+        print("   omega = ")
+        printf("%9.7f", mode_frequency(j))
+        print("   period = ")
+        printf("%10.7f", TWO_PI / mode_frequency(j))
+        println("")
+        canvas_draw()
+        println("")
+    }
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    meas_period = calloc(8, 8) as ptr<f64>
+    meas_leak = calloc(8, 8) as ptr<f64>
+    canvas_init()
+
+    println("")
+    println("  SPRING CHAIN  --  five normal modes against 2 sin(j pi / 12)")
+    println("  ============================================================")
+    println("")
+    println("    five masses, six springs, both ends pinned, m = k = 1")
+    println("    ten `evolves as` lines, RK4 at dt = 2e-4")
+    println("")
+
+    for j in 1 to NMODES + 1 {
+        measure_mode(j)
+    }
+
+    println("       j   omega_j analytic   period analytic   period measured   rel. error")
+    println("      ---   ---------------   ---------------   ---------------   ----------")
+
+    let mut worst: f64 = 0.0
+    let mut sum_omega2: f64 = 0.0
+    for j in 1 to NMODES + 1 {
+        let omega: f64 = mode_frequency(j)
+        let want: f64 = TWO_PI / omega
+        let got: f64 = meas_period[j - 1]
+        let rel: f64 = fabs(got - want) / want
+        if rel > worst {
+            worst = rel
+        }
+        sum_omega2 = sum_omega2 + omega * omega
+        print("      ")
+        printf("%3.0f", j as f64)
+        printf("   %15.9f", omega)
+        printf("   %15.9f", want)
+        printf("   %15.9f", got)
+        printf("   %10.2e", rel)
+        println("")
+    }
+    println("")
+    print("    worst relative period error : ")
+    printf("%.3e", worst)
+    println("      gate 1.0e-09")
+    print("    sum of omega_j^2            : ")
+    printf("%.12f", sum_omega2)
+    println("      reference 2 N = 10")
+    println("")
+
+    println("    modal leakage while one mode runs (all other q_l, worst seen)")
+    println("")
+    println("       j    worst |q_l|, l != j")
+    println("      ---   --------------------")
+    let mut worst_leak: f64 = 0.0
+    for j in 1 to NMODES + 1 {
+        print("      ")
+        printf("%3.0f", j as f64)
+        printf("   %20.3e", meas_leak[j - 1])
+        println("")
+        if meas_leak[j - 1] > worst_leak {
+            worst_leak = meas_leak[j - 1]
+        }
+    }
+    println("")
+
+    println("  MODE SHAPES   one canvas per mode, walls pinned at both ends")
+    println("")
+    draw_shapes()
+    println("")
+    println("     horizontal: node 0 (wall) to node 6 (wall)   vertical: sin(i j pi / 6)")
+    println("")
+
+    # -- a general initial condition: energy over 400 s ----------------------
+    println("  ENERGY FROM A GENERAL INITIAL CONDITION   400 s")
+    println("")
+
+    let mut g: Chain5 = Chain5_new()
+    g.x1 = 0.20
+    g.x2 = -0.13
+    g.x3 = 0.07
+    g.x4 = 0.31
+    g.x5 = -0.05
+    g.v1 = 0.11
+    g.v3 = -0.24
+
+    let e0: f64 = chain_energy(g)
+    let mut worst_energy: f64 = 0.0
+    let energy_steps: i32 = 2000000
+    for s in 0 to energy_steps {
+        Chain5_step(&g, DT)
+        if s % 500 == 0 {
+            let dev: f64 = fabs(chain_energy(g) - e0) / e0
+            if dev > worst_energy {
+                worst_energy = dev
+            }
+        }
+    }
+
+    print("    E(0)                          : ")
+    printf("%.15f", e0)
+    println("")
+    print("    worst |E(t) - E(0)| / E(0)    : ")
+    printf("%.3e", worst_energy)
+    println("      gate 1.0e-11")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    for j in 0 to NMODES {
+        if meas_period[j] != meas_period[j] or meas_period[j] <= 0.0 {
+            println("    FAIL: a mode period was not recovered")
+            return 1
+        }
+    }
+    if worst > 1e-9 {
+        println("    FAIL: a measured period misses the analytic eigenvalue")
+        return 2
+    }
+    if fabs(sum_omega2 - 10.0) > 1e-12 {
+        println("    FAIL: the frequencies do not sum to the stiffness trace")
+        return 3
+    }
+    if worst_leak > 1e-10 {
+        println("    FAIL: energy leaked between eigenspaces")
+        return 4
+    }
+    if worst_energy > 1e-11 {
+        println("    FAIL: total energy was not conserved")
+        return 5
+    }
+    println("    PASS: five measured periods match 2 pi / (2 sin(j pi / 12)) to")
+    println("          1e-9, modes stay orthogonal, energy holds to 1e-11")
+    return 0
+}

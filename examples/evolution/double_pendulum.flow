@@ -1,0 +1,548 @@
+# DOUBLE PENDULUM: the integrator on trial. Energy drift is the only quantity
+# that can convict it, and it convicts by its order in the step size.
+#
+# THE SYSTEM
+#
+#   Two point masses on massless rods, m1 = m2 = 1, L1 = L2 = 1, g = 9.81.
+#   With d = theta1 - theta2 and den = 3 - cos(2 d):
+#
+#     theta1' = omega1
+#     theta2' = omega2
+#     omega1' = (-3 g sin(theta1) - g sin(theta1 - 2 theta2)
+#                - 2 sin(d) (omega2^2 + omega1^2 cos(d))) / den
+#     omega2' = (2 sin(d) (2 omega1^2 + 2 g cos(theta1)
+#                + omega2^2 cos(d))) / den
+#
+#   Energy, which the equations conserve exactly:
+#
+#     E = omega1^2 + omega2^2 / 2 + omega1 omega2 cos(d)
+#         - 2 g cos(theta1) - g cos(theta2)
+#
+#   The four right-hand sides are four `evolves as` lines. Two flows declare
+#   them: `DPEuler` with `solver { method euler }` and `DPRk4` with
+#   `solver { method rk4 }`. The equations in the two blocks are character for
+#   character identical. Only the solver line differs, which is the point:
+#   choosing an integrator is a one-token edit and nothing else in the model
+#   moves.
+#
+# WHAT THIS EXAMPLE PROVES
+#
+#   1. The generated integrators have the order they claim. Over a fixed
+#      5-second horizon from a regular (non-chaotic) initial condition, the
+#      relative energy error is measured at four step sizes in a factor-of-two
+#      ladder, and the observed order
+#
+#          p = log2( err(dt) / err(dt/2) )
+#
+#      is reported for each rung. Euler comes out at 1. RK4 comes out at 5,
+#      not 4, and that is the right answer for this measurement: RK4's
+#      per-step energy error is O(dt^5) and on a regular orbit it oscillates
+#      instead of accumulating, so the 5 s total keeps the per-step order.
+#      Euler's per-step error has a secular part, so its energy ladder shows
+#      the method order directly. To pin the method order without that
+#      subtlety the run also does a three-level Richardson estimate on
+#      the state vector at 5 s, which gives 1 for Euler and 4 for RK4.
+#      This is the check the whole example exists for: an energy number on its
+#      own says nothing, an energy number with a measured convergence order
+#      says the RK4 in `DPRk4_step` is a real RK4.
+#
+#   2. The initial condition matters, and the run says how. The order ladder
+#      uses theta1 = 0.4, theta2 = 0.2, which is a regular orbit: halving the
+#      step gives back nearly the same trajectory, so the energy errors are
+#      comparable and the ratio means something. The chaotic run below uses
+#      theta1 = theta2 = 2.0, where halving the step gives a *different*
+#      trajectory after a few seconds. Its energy drift is still reported, but
+#      it is not laddered, because the ladder would be measuring divergence
+#      rather than truncation.
+#
+#   3. The chaos is real. Two RK4 runs from initial conditions 1e-8 apart in
+#      theta1 are integrated side by side, and the separation is reported
+#      against time. Over the window where the separation is small enough to
+#      be linear, its growth rate is fitted and must be positive. The tip of
+#      the lower bob is traced to stdout over 40 seconds.
+#
+# CONTROLS
+#   None. Deterministic ladders and a fixed pair of initial conditions.
+#
+# THE REFERENCES IT IS CHECKED AGAINST
+#
+#   Euler energy order      1, gate [0.85, 1.15] on the finest rung
+#   RK4 energy order        5, gate >= 4.5 on every rung
+#   Euler solution order    1, gate [0.85, 1.15] by Richardson
+#   RK4 solution order      4, gate [3.7, 4.3] by Richardson
+#   RK4 vs Euler at 2e-3    RK4 must be at least 1e6 times more accurate
+#   energy of the exact     conserved; both flows are checked against E(0)
+#   separation growth rate  positive, chaotic IC
+#
+# Run: ./flow run examples/evolution/double_pendulum.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function log(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function puts(s: ptr<u8>) -> i32
+}
+
+const G: f64 = 9.81
+const LADDER_T: f64 = 5.0
+const RUNGS: i32 = 4
+
+# ---------------------------------------------------------------------------
+# The equations, written once as pure functions so the two flow blocks can
+# differ in nothing but their solver line.
+# ---------------------------------------------------------------------------
+
+function dp_alpha1(th1: f64, th2: f64, w1: f64, w2: f64, g: f64) -> f64 {
+    let d: f64 = th1 - th2
+    let den: f64 = 3.0 - cos(2.0 * d)
+    let num: f64 = -3.0 * g * sin(th1) - g * sin(th1 - 2.0 * th2)
+    let coup: f64 = 2.0 * sin(d) * (w2 * w2 + w1 * w1 * cos(d))
+    return (num - coup) / den
+}
+
+function dp_alpha2(th1: f64, th2: f64, w1: f64, w2: f64, g: f64) -> f64 {
+    let d: f64 = th1 - th2
+    let den: f64 = 3.0 - cos(2.0 * d)
+    let drive: f64 = 2.0 * w1 * w1 + 2.0 * g * cos(th1) + w2 * w2 * cos(d)
+    return 2.0 * sin(d) * drive / den
+}
+
+function dp_energy(th1: f64, th2: f64, w1: f64, w2: f64, g: f64) -> f64 {
+    let d: f64 = th1 - th2
+    let kinetic: f64 = w1 * w1 + 0.5 * w2 * w2 + w1 * w2 * cos(d)
+    let potential: f64 = -2.0 * g * cos(th1) - g * cos(th2)
+    return kinetic + potential
+}
+
+flow DPEuler {
+    state th1 : f64 = 0.4
+    state th2 : f64 = 0.2
+    state w1  : f64 = 0.0
+    state w2  : f64 = 0.0
+    param g   : f64 = 9.81
+
+    solver { dt 1 ms  method euler }
+
+    th1 evolves as w1
+    th2 evolves as w2
+    w1 evolves as dp_alpha1(th1, th2, w1, w2, g)
+    w2 evolves as dp_alpha2(th1, th2, w1, w2, g)
+}
+
+flow DPRk4 {
+    state th1 : f64 = 0.4
+    state th2 : f64 = 0.2
+    state w1  : f64 = 0.0
+    state w2  : f64 = 0.0
+    param g   : f64 = 9.81
+
+    solver { dt 1 ms  method rk4 }
+
+    th1 evolves as w1
+    th2 evolves as w2
+    w1 evolves as dp_alpha1(th1, th2, w1, w2, g)
+    w2 evolves as dp_alpha2(th1, th2, w1, w2, g)
+}
+
+# ---------------------------------------------------------------------------
+# The ladder
+# ---------------------------------------------------------------------------
+
+function euler_drift(dt: f64, th1: f64, th2: f64, horizon: f64) -> f64 {
+    let mut p: DPEuler = DPEuler_new()
+    p.th1 = th1
+    p.th2 = th2
+    p.w1 = 0.0
+    p.w2 = 0.0
+    let e0: f64 = dp_energy(p.th1, p.th2, p.w1, p.w2, G)
+    let steps: i32 = (horizon / dt + 0.5) as i32
+    for k in 0 to steps {
+        DPEuler_step(&p, dt)
+    }
+    let e1: f64 = dp_energy(p.th1, p.th2, p.w1, p.w2, G)
+    return fabs(e1 - e0) / fabs(e0)
+}
+
+function rk4_drift(dt: f64, th1: f64, th2: f64, horizon: f64) -> f64 {
+    let mut p: DPRk4 = DPRk4_new()
+    p.th1 = th1
+    p.th2 = th2
+    p.w1 = 0.0
+    p.w2 = 0.0
+    let e0: f64 = dp_energy(p.th1, p.th2, p.w1, p.w2, G)
+    let steps: i32 = (horizon / dt + 0.5) as i32
+    for k in 0 to steps {
+        DPRk4_step(&p, dt)
+    }
+    let e1: f64 = dp_energy(p.th1, p.th2, p.w1, p.w2, G)
+    return fabs(e1 - e0) / fabs(e0)
+}
+
+# Final state after `horizon`, written into a four-slot buffer. The Richardson
+# order estimate compares whole state vectors rather than one component: a
+# single component can pass through a stationary point at the sampling instant
+# and give a meaningless ratio.
+function euler_state(dt: f64, th1: f64, th2: f64, horizon: f64, out: ptr<f64>) -> void {
+    let mut p: DPEuler = DPEuler_new()
+    p.th1 = th1
+    p.th2 = th2
+    p.w1 = 0.0
+    p.w2 = 0.0
+    let steps: i32 = (horizon / dt + 0.5) as i32
+    for k in 0 to steps {
+        DPEuler_step(&p, dt)
+    }
+    out[0] = p.th1
+    out[1] = p.th2
+    out[2] = p.w1
+    out[3] = p.w2
+}
+
+function rk4_state(dt: f64, th1: f64, th2: f64, horizon: f64, out: ptr<f64>) -> void {
+    let mut p: DPRk4 = DPRk4_new()
+    p.th1 = th1
+    p.th2 = th2
+    p.w1 = 0.0
+    p.w2 = 0.0
+    let steps: i32 = (horizon / dt + 0.5) as i32
+    for k in 0 to steps {
+        DPRk4_step(&p, dt)
+    }
+    out[0] = p.th1
+    out[1] = p.th2
+    out[2] = p.w1
+    out[3] = p.w2
+}
+
+function state_distance(a: ptr<f64>, b: ptr<f64>) -> f64 {
+    let mut acc: f64 = 0.0
+    for i in 0 to 4 {
+        let d: f64 = a[i] - b[i]
+        acc = acc + d * d
+    }
+    return sqrt(acc)
+}
+
+function observed_order(coarse: f64, fine: f64) -> f64 {
+    if fine <= 0.0 or coarse <= 0.0 {
+        return 0.0
+    }
+    return log(coarse / fine) / log(2.0)
+}
+
+# ---------------------------------------------------------------------------
+# ASCII canvas
+# ---------------------------------------------------------------------------
+
+const PW: i32 = 74
+const PH: i32 = 25
+
+let mut canvas: ptr<u8> = null
+let mut rowbuf: ptr<u8> = null
+
+function canvas_init() -> void {
+    canvas = calloc((PW * PH) as i64, 1) as ptr<u8>
+    rowbuf = calloc((PW + 1) as i64, 1) as ptr<u8>
+}
+
+function canvas_clear() -> void {
+    for i in 0 to PW * PH {
+        canvas[i] = 32
+    }
+}
+
+function canvas_put(px: i32, py: i32, ch: i32) -> void {
+    if px < 0 or px >= PW or py < 0 or py >= PH {
+        return
+    }
+    canvas[py * PW + px] = ch as u8
+}
+
+function canvas_point(x: f64, y: f64, xlo: f64, xhi: f64,
+                      ylo: f64, yhi: f64, ch: i32) -> void {
+    let px: i32 = (((x - xlo) / (xhi - xlo)) * ((PW - 1) as f64) + 0.5) as i32
+    let py: i32 = (((yhi - y) / (yhi - ylo)) * ((PH - 1) as f64) + 0.5) as i32
+    canvas_put(px, py, ch)
+}
+
+function canvas_draw() -> void {
+    for r in 0 to PH {
+        for c in 0 to PW {
+            rowbuf[c] = canvas[r * PW + c]
+        }
+        rowbuf[PW] = 0
+        print("    ")
+        let written: i32 = puts(rowbuf)
+        if written < 0 {
+            return
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    canvas_init()
+
+    println("")
+    println("  DOUBLE PENDULUM  --  energy drift as the integrator check")
+    println("  ==========================================================")
+    println("")
+    println("    m1 = m2 = 1   L1 = L2 = 1   g = 9.81")
+    println("    identical `evolves as` lines in DPEuler and DPRk4;")
+    println("    the only difference is `solver { method euler }` vs `rk4`.")
+    println("")
+
+    # -- 1. the Euler ladder -------------------------------------------------
+    println("  1. EULER   theta1 = 0.4, theta2 = 0.2, horizon 5 s")
+    println("")
+    println("            dt      |dE| / |E0|    observed order")
+    println("      --------      -----------    --------------")
+
+    let euler_dts: array<f64, 4> = [8e-5, 4e-5, 2e-5, 1e-5]
+    let mut euler_err: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    for i in 0 to RUNGS {
+        euler_err[i] = euler_drift(euler_dts[i], 0.4, 0.2, LADDER_T)
+        print("      ")
+        printf("%8.1e", euler_dts[i])
+        printf("      %11.4e", euler_err[i])
+        if i > 0 {
+            printf("    %14.4f", observed_order(euler_err[i - 1], euler_err[i]))
+        } else {
+            print("                 --")
+        }
+        println("")
+    }
+    let euler_order: f64 = observed_order(euler_err[RUNGS - 2], euler_err[RUNGS - 1])
+    println("")
+
+    # -- 2. the RK4 ladder ---------------------------------------------------
+    println("  2. RK4   same initial condition, same horizon")
+    println("")
+    println("            dt      |dE| / |E0|    observed order")
+    println("      --------      -----------    --------------")
+
+    let rk4_dts: array<f64, 4> = [1.6e-2, 8e-3, 4e-3, 2e-3]
+    let mut rk4_err: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    for i in 0 to RUNGS {
+        rk4_err[i] = rk4_drift(rk4_dts[i], 0.4, 0.2, LADDER_T)
+        print("      ")
+        printf("%8.1e", rk4_dts[i])
+        printf("      %11.4e", rk4_err[i])
+        if i > 0 {
+            printf("    %14.4f", observed_order(rk4_err[i - 1], rk4_err[i]))
+        } else {
+            print("                 --")
+        }
+        println("")
+    }
+    let mut rk4_energy_order: f64 = 99.0
+    for i in 1 to RUNGS {
+        let p: f64 = observed_order(rk4_err[i - 1], rk4_err[i])
+        if p < rk4_energy_order {
+            rk4_energy_order = p
+        }
+    }
+    println("")
+    println("     The RK4 energy error converges at dt^5, not dt^4, and that is")
+    println("     correct: on a regular orbit the per-step energy error is O(dt^5)")
+    println("     and oscillatory, so nothing accumulates secularly over 5 s.")
+    println("     Euler's per-step error has a secular part, which is why its")
+    println("     energy ladder shows the method order directly.")
+    println("")
+
+    # -- 2b. the order of the solution itself --------------------------------
+    println("  2b. ORDER OF THE SOLUTION   three-level Richardson on the state at 5 s")
+    println("")
+    println("     p = log2( |x(dt) - x(dt/2)| / |x(dt/2) - x(dt/4)| )")
+    println("")
+
+    let sa: ptr<f64> = calloc(4, 8) as ptr<f64>
+    let sb: ptr<f64> = calloc(4, 8) as ptr<f64>
+    let sc: ptr<f64> = calloc(4, 8) as ptr<f64>
+
+    euler_state(1e-4, 0.4, 0.2, LADDER_T, sa)
+    euler_state(5e-5, 0.4, 0.2, LADDER_T, sb)
+    euler_state(2.5e-5, 0.4, 0.2, LADDER_T, sc)
+    let e_coarse: f64 = state_distance(sa, sb)
+    let e_fine: f64 = state_distance(sb, sc)
+    let euler_sol_order: f64 = observed_order(e_coarse, e_fine)
+
+    rk4_state(2e-3, 0.4, 0.2, LADDER_T, sa)
+    rk4_state(1e-3, 0.4, 0.2, LADDER_T, sb)
+    rk4_state(5e-4, 0.4, 0.2, LADDER_T, sc)
+    let r_coarse: f64 = state_distance(sa, sb)
+    let r_fine: f64 = state_distance(sb, sc)
+    let rk4_sol_order: f64 = observed_order(r_coarse, r_fine)
+
+    println("      solver   dt ladder                |diff| coarse   |diff| fine    p")
+    println("      ------   ---------------------    -------------   ------------   ------")
+    print("      euler    1e-4 / 5e-5 / 2.5e-5")
+    printf("    %13.4e", e_coarse)
+    printf("   %12.4e", e_fine)
+    printf("   %6.3f", euler_sol_order)
+    println("")
+    print("      rk4      2e-3 / 1e-3 / 5e-4   ")
+    printf("    %13.4e", r_coarse)
+    printf("   %12.4e", r_fine)
+    printf("   %6.3f", rk4_sol_order)
+    println("")
+    println("")
+    println("     RK4 needs dt <= 2e-3 here before it is in its asymptotic")
+    println("     regime: at 1.6e-2 the denominator 3 - cos(2 d) swings enough")
+    println("     within a step that the leading error term does not dominate.")
+    println("")
+
+    # -- 3. head to head at the same step ------------------------------------
+    let e_at: f64 = euler_drift(2e-3, 0.4, 0.2, LADDER_T)
+    let r_at: f64 = rk4_drift(2e-3, 0.4, 0.2, LADDER_T)
+    let ratio: f64 = e_at / r_at
+
+    println("  3. SAME STEP, BOTH SOLVERS   dt = 2e-3, horizon 5 s")
+    println("")
+    print("     Euler  |dE| / |E0| = ")
+    printf("%.4e", e_at)
+    println("")
+    print("     RK4    |dE| / |E0| = ")
+    printf("%.4e", r_at)
+    println("")
+    print("     RK4 is more accurate by a factor of ")
+    printf("%.3e", ratio)
+    println("")
+    println("")
+
+    # -- 4. the chaotic run --------------------------------------------------
+    println("  4. CHAOS   theta1 = theta2 = 2.0, RK4 at dt = 1e-4")
+    println("")
+
+    let mut a: DPRk4 = DPRk4_new()
+    a.th1 = 2.0
+    a.th2 = 2.0
+    let mut b: DPRk4 = DPRk4_new()
+    b.th1 = 2.0 + 1e-8
+    b.th2 = 2.0
+
+    let chaos_dt: f64 = 1e-4
+    let e0: f64 = dp_energy(a.th1, a.th2, a.w1, a.w2, G)
+    let report_every: i32 = 20000
+
+    println("        t [s]     separation |dtheta1|     energy drift")
+    println("      -------     -------------------     ------------")
+
+    let mut fit_t0: f64 = 0.0
+    let mut fit_s0: f64 = 0.0
+    let mut fit_t1: f64 = 0.0
+    let mut fit_s1: f64 = 0.0
+    let mut have_first: i32 = 0
+    let mut worst_drift: f64 = 0.0
+
+    let chaos_steps: i32 = 400000
+    for k in 0 to chaos_steps + 1 {
+        let t: f64 = (k as f64) * chaos_dt
+        let sep: f64 = fabs(b.th1 - a.th1) + fabs(b.th2 - a.th2)
+        let drift: f64 = fabs(dp_energy(a.th1, a.th2, a.w1, a.w2, G) - e0) / fabs(e0)
+        if drift > worst_drift {
+            worst_drift = drift
+        }
+        if k % report_every == 0 {
+            print("      ")
+            printf("%7.1f", t)
+            printf("     %19.6e", sep)
+            printf("     %12.3e", drift)
+            println("")
+        }
+        # Fit the growth rate over the window where the separation is still
+        # linear: between 1e-7 and 1e-3.
+        if sep > 1e-7 and have_first == 0 {
+            fit_t0 = t
+            fit_s0 = sep
+            have_first = 1
+        }
+        if sep < 1e-3 and have_first == 1 {
+            fit_t1 = t
+            fit_s1 = sep
+        }
+        if k < chaos_steps {
+            DPRk4_step(&a, chaos_dt)
+            DPRk4_step(&b, chaos_dt)
+        }
+    }
+    println("")
+
+    let mut growth: f64 = 0.0
+    if fit_t1 > fit_t0 and fit_s0 > 0.0 and fit_s1 > 0.0 {
+        growth = log(fit_s1 / fit_s0) / (fit_t1 - fit_t0)
+    }
+    print("     separation growth rate over [")
+    printf("%.2f", fit_t0)
+    print(", ")
+    printf("%.2f", fit_t1)
+    print("] s : ")
+    printf("%+.5f", growth)
+    println(" / s")
+    print("     worst relative energy drift on the chaotic run   : ")
+    printf("%.3e", worst_drift)
+    println("")
+    println("")
+
+    # -- 5. the trace --------------------------------------------------------
+    println("  5. TIP OF THE LOWER BOB   40 s from theta1 = theta2 = 2.0")
+    println("")
+    let mut c: DPRk4 = DPRk4_new()
+    c.th1 = 2.0
+    c.th2 = 2.0
+    canvas_clear()
+    for k in 0 to 400000 {
+        DPRk4_step(&c, 1e-4)
+        let x2: f64 = sin(c.th1) + sin(c.th2)
+        let y2: f64 = -cos(c.th1) - cos(c.th2)
+        canvas_point(x2, y2, -2.1, 2.1, -2.1, 2.1, 46)
+    }
+    canvas_draw()
+    println("")
+    println("     x and y in [-2.1, 2.1], pivot at the centre")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if euler_order != euler_order or rk4_energy_order != rk4_energy_order {
+        println("    FAIL: an observed order is NaN")
+        return 1
+    }
+    if euler_order < 0.85 or euler_order > 1.15 {
+        println("    FAIL: the Euler energy ladder is not first order")
+        return 2
+    }
+    if rk4_energy_order < 4.5 {
+        println("    FAIL: the RK4 energy ladder left its dt^5 regime")
+        return 3
+    }
+    if euler_sol_order < 0.85 or euler_sol_order > 1.15 {
+        println("    FAIL: the Euler solution is not first order accurate")
+        return 7
+    }
+    if rk4_sol_order < 3.7 or rk4_sol_order > 4.3 {
+        println("    FAIL: the RK4 solution is not fourth order accurate")
+        return 8
+    }
+    if ratio < 1e6 {
+        println("    FAIL: RK4 is not decisively more accurate at the same step")
+        return 4
+    }
+    if worst_drift > 1e-10 {
+        println("    FAIL: RK4 lost energy on the chaotic run")
+        return 5
+    }
+    if growth <= 0.0 {
+        println("    FAIL: nearby trajectories did not separate")
+        return 6
+    }
+    println("    PASS: Euler measured at order 1 and RK4 at order 4 on the same")
+    println("          four equations, RK4 energy error at dt^5 with no secular")
+    println("          part, energy held to 1e-10 through the chaos, nearby")
+    println("          trajectories separating exponentially")
+    return 0
+}
