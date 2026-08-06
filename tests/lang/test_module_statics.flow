@@ -1,0 +1,83 @@
+# Flow-native language test: module-level mutable state.
+#
+# A top-level `let mut name: Type = init` is a file-scope C `static` that
+# every function in the module reads and writes like a normal variable. The
+# thing worth pinning at runtime is that the storage really is shared and
+# really does persist between calls.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_module_statics.py::TestCompileAndRun::test_counter_bumped_three_times_exits_with_3
+#   tests/unit/test_module_statics.py::TestCompileAndRun::test_array_static_read_write_across_functions
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+let mut counter: i32 = 0
+let mut cells: array<i32, 4> = [0, 0, 0, 0]
+let mut ratio: f32 = 0.5
+let mut head: ptr<i32> = null
+
+function bump() -> i32 {
+    counter = counter + 1
+    return counter
+}
+
+function poke(i: i32, v: i32) -> void {
+    cells[i] = v
+}
+
+function peek(i: i32) -> i32 {
+    return cells[i]
+}
+
+function scale(v: f32) -> f32 {
+    ratio = ratio * 2.0
+    return v * ratio
+}
+
+function main() -> i32 {
+    # The counter survives across calls: three bumps, three distinct values.
+    if bump() != 1 {
+        return 1
+    }
+    if bump() != 2 {
+        return 2
+    }
+    if bump() != 3 {
+        return 3
+    }
+    if counter != 3 {
+        return 4
+    }
+
+    # An array static written by one function and read by another.
+    poke(0, 1)
+    poke(3, 2)
+    if cells[0] + cells[3] != 3 {
+        return 5
+    }
+    if peek(0) != 1 {
+        return 6
+    }
+    if peek(1) != 0 {
+        return 7
+    }
+
+    # A float static, mutated in place: ratio 0.5 doubles to 1.0, so the
+    # first call scales by 1.0 and the second by 2.0.
+    let first: f32 = scale(2.0)
+    if first <= 1.9 || first >= 2.1 {
+        return 8
+    }
+    let second: f32 = scale(2.0)
+    if second <= 3.9 || second >= 4.1 {
+        return 9
+    }
+    if ratio <= 1.9 || ratio >= 2.1 {
+        return 10
+    }
+
+    # A pointer static starts null and can be pointed at real storage.
+    if head != null {
+        return 11
+    }
+
+    return 0
+}
