@@ -68,6 +68,33 @@ supports attributes on `function` declarations.
   `@rt_safe` with a “may block / priority inversion” diagnostic. Blocking
   channel ops (`channel_i32_send` / `recv` / `select2`) are not yet name-checked.
 
+## Lifetime domains
+
+`@rt_safe` answers one question: does this call chain touch the heap or block.
+[Lifetime domains](../language/lifetime-domains.md) answer the other one: how
+long does this memory live, and who is allowed to keep a reference to it.
+
+```flow
+@lifetime(callback)
+function process_block(state: ptr<FilterState>, n: i32) -> void { }
+```
+
+`@lifetime(callback)` **is** `@rt_safe`: it runs the same whole-program call
+graph and rejects the same names, with a diagnostic that says
+"is in the `callback` lifetime domain, which forbids allocation" instead of
+"is marked '@rt_safe'". Writing both attributes is allowed and changes
+nothing. On top of that a domain-annotated function is checked for escapes:
+storing a reference to one of its locals in a longer-lived module static, or
+returning one, is an error naming both domains.
+
+`@lifetime(frame)` is the weaker sibling for a render or block loop. It
+forbids heap create/destroy so bumping a pre-made arena is the way to
+allocate, and it permits a lock, which `callback` does not.
+
+`@lifetime(session)` and `@lifetime(application)` place no allocation
+restriction; they exist so the escape and call-ordering rules have a
+longer-lived end to point at. Prep and teardown belong there.
+
 ## Thread model
 
 | Phase | Thread | Role |
@@ -126,5 +153,7 @@ or blocking waits inside the ring ops.
 
 - [Audio DSP](audio.md) — modules and I/O backends
 - [Memory](memory.md) — heap and arenas (use only in prep/teardown for RT apps)
+- [Lifetime domains](../language/lifetime-domains.md) — `callback` / `frame` /
+  `session` / `application`, and the escape rule between them
 - Examples: `examples/audio/loopback_effects.flow`, `examples/audio/bus_graph_demo.flow`
 - Tests: `tests/unit/test_rt_safety.py` — `@rt_safe` positive/negative cases

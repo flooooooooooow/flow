@@ -183,10 +183,14 @@ error: lifetime domain violation: 'build_scene' is in the `frame` domain but
 ```
 
 `arena_alloc`, `arena_alloc_i32`, `arena_alloc_f32`, `arena_reset`,
-`arena_used`, `arena_remaining`, `frame_begin`, `frame_end` and the
-`frame_alloc_*` family stay legal in both `callback` and `frame`, because none
-of them reaches `malloc`. `arena_create` / `arena_destroy` /
-`frame_arena_create` / `frame_arena_destroy` do, and are rejected.
+`arena_used`, `arena_remaining`, `frame_begin`, `frame_end`,
+`frame_high_water`, `frame_count` and the `frame_alloc_*` family stay legal in
+both `callback` and `frame`, because none of them reaches `malloc`.
+`arena_create` / `arena_destroy` / `frame_arena_create` /
+`frame_arena_destroy` do, and are rejected.
+
+The two domains differ in exactly one place: a lock. `frame` permits
+`mutex_lock`; `callback` does not.
 
 `session` and `application` place no allocation restriction.
 
@@ -305,24 +309,74 @@ function render_frame(f: ptr<FrameArena>, n: i64) -> f32 {
 
 ### Measured cost
 
-`benchmarks/micro/frame_arena_benchmark.flow`, 200 frames x 1000 allocations
-of 64 f32 each (200,000 allocations), Apple M-series, clang -O2:
+`benchmarks/micro/frame_arena_benchmark.flow` runs the same workload twice:
+200 frames, 1000 allocations of 64 `f32` per frame, 200,000 allocations, each
+block touched at both ends so nothing is optimised away. Apple M-series,
+clang via `./flow run`, three runs:
 
 | Allocator | Total | Per allocation |
 |---|---|---|
-| `malloc` + `free` each allocation | see `benchmarks/RESULTS.md` | |
-| `frame_alloc_f32` + one `frame_begin` per frame | | |
+| `malloc` + `free` per block | 2.23 - 2.33 ms | 11.2 - 11.6 ns |
+| `frame_alloc_f32`, one `frame_begin` per frame | 1.108 - 1.110 ms | 5.54 - 5.55 ns |
 
-Run it with `./flow run benchmarks/micro/frame_arena_benchmark.flow`. The
-numbers in `RESULTS.md` are from one machine; the ratio is the durable part.
+About 2.1x per allocation, against a `malloc` that is hitting its best case:
+same size every time, freed immediately, so the allocator's fast path is warm.
+The ratio is the durable part; the absolute numbers are one machine.
+
+The larger difference is not in that table. The malloc column pays 200,000
+frees. The frame column pays 200 stores of zero, one per `frame_begin`, and
+the cost of releasing a frame does not grow with the number of allocations in
+it. Bounded reset time is the reason the domain exists.
+
+Run it with `FLOW_HOST=python ./flow run benchmarks/micro/frame_arena_benchmark.flow`.
+The benchmark inlines its own copy of `FrameArena` so it stays one
+translation unit.
 
 ## Example
 
 [`examples/audio/lifetime_domains.flow`](../../examples/audio/lifetime_domains.flow)
-is a full prep / process / teardown split: an `application` static holding the
-device state, an `@lifetime(session)` setup function that creates the frame
-arena, an `@lifetime(frame)` block builder that bumps, and an
-`@lifetime(callback)` process function that only reads pre-allocated storage.
+is a full prep / process / teardown split: `application` statics for the run
+counters, `@lifetime(session)` functions that do the only two `malloc`s,
+an `@lifetime(frame)` block builder that bumps scratch for two voices, and
+`@lifetime(callback)` render and mix functions that touch pre-allocated
+storage only. It runs:
+
+```text
+blocks processed: 64
+arena high water: 1024 bytes (one block's scratch)
+peak level:       0.700
+```
+
+Move a `malloc` into `process_block` and the build stops:
+
+```text
+error: lifetime domain violation: 'process_block' is in the `frame` domain but
+       calls 'malloc', which allocates or frees heap memory. Frame-domain code
+       allocates by bumping a frame arena (frame_alloc_*); see
+       docs/language/lifetime-domains.md
+```
+
+## Staging
+
+| Capability | Status |
+|---|---|
+| `@lifetime(...)` on a function | ✅ |
+| `@lifetime(...)` on a module static | ✅ (only attribute allowed there) |
+| LD1 escape into a longer-lived static | ✅ direct cases — see [gaps](#what-the-compiler-does-not-check) |
+| LD2 escape by return | ✅ direct cases |
+| LD3 `callback` = `@rt_safe` | ✅ shares the `@rt_safe` call graph |
+| LD3 `frame` forbids heap create/destroy | ✅ allocation names only, locks allowed |
+| LD4 call ordering between declared domains | ✅ |
+| `FrameArena` bump API in the stdlib | ✅ `lib/stdlib/memory.flow` |
+| Escape through a call, struct field, closure or heap | ❌ not checked, by design in v0 |
+| Domain of arena-allocated memory | ❌ |
+| Domains on parameters / in types | ❌ |
+| `request` / `persistent` domains | ❌ |
+| `domain frame { ... }` blocks | ❌ |
+| Domains in the MLIR / JS / Python backends | n/a — the annotation is checked, then erased |
+
+The annotation leaves no trace in generated code. Every domain lowers to the
+same C as the unannotated function.
 
 ## Future work
 
