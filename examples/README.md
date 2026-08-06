@@ -125,7 +125,7 @@ Fundamental algorithms demonstrating Flow syntax:
 - `match_enums.flow` - `match` on a simple enum
 
 ### Games (`games/`)
-23 complete games, all playable via `./flow gfx <file>` (or headless via `./flow record <file>`). Every game has a recorded gameplay GIF in the [game gallery](../docs/demos/games.md). Flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md).
+24 complete games, all playable via `./flow gfx <file>` (or headless via `./flow record <file>`). Every game has a recorded gameplay GIF in the [game gallery](../docs/demos/games.md). Flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md).
 
 Arcade:
 - `snake_gfx.flow` - Snake with growth, speed-up, wall/self death
@@ -155,6 +155,9 @@ Board:
 - `othello_gfx.flow` - vs corner-aware AI, staged flip animation, pass handling
 - `checkers_gfx.flow` - Hotseat, forced captures, multi-jump chains, kings
 - `chetris_gfx.flow` / `chetris_test.flow` - Chess×Tetris hybrid + mechanics suite
+
+Sandbox:
+- `falling_sand_gfx.flow` - The Falling Sand Game: 384x192 cells at one cell per pixel, wall/sand/water/oil/fire/plant/salt/salt water/steam/ice plus spouts, keyboard pen
 
 ### Ecosystem (`ecosystem/`)
 Registry package demos (`./flow install` then `./flow run` or `./flow run-native`):
