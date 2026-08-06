@@ -1,0 +1,990 @@
+# Audio Safety Module
+#
+# The master chain every Flow audio example runs through before a sample
+# reaches a speaker. It exists so that running an unfamiliar program with
+# headphones on cannot hurt you or the gear.
+#
+# Signal path per frame:
+#
+#   NaN / infinity guard  ->  DC blocker  ->  denormal flush
+#     ->  lookahead brickwall limiter  ->  soft start / stop + watchdog
+#     ->  hard clamp (last resort, counted)
+#
+# The limiter is a true-peak brickwall with lookahead. The proof that no
+# output sample can exceed the ceiling is in `limiter_step` below; the hard
+# clamp after it should never fire, so `safety_clamp_count` is a bug counter,
+# not a normal reading.
+#
+# Usage:
+#   import "stdlib/audio/safety.flow"
+#
+#   let rate: SampleRate = sample_rate_48000()
+#   let mut safe: SafetyChain = safety_new(rate, 3.0)   # 3 seconds, -6 dBFS
+#   let sp: ptr<SafetyChain> = &safe
+#   while !safety_finished(sp) {
+#       let out: Frame = safety_process_frame(sp, l, r)
+#       ...
+#   }
+#   safety_report(sp)
+#
+# Everything on the per-sample path is `@rt_safe`: no heap, no locks, fixed
+# bounds. See docs/library/rt-safety.md and docs/library/audio-safety.md.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/filters.flow"
+
+extern { function sinf(x: f32) -> f32 }
+extern { function expf(x: f32) -> f32 }
+extern { function fabsf(x: f32) -> f32 }
+extern { function sqrtf(x: f32) -> f32 }
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+# Maximum lookahead in samples. Fixes the size of every buffer in Limiter, so
+# the whole chain is one stack allocation with no heap anywhere.
+export const SAFETY_LOOKAHEAD_MAX: i32 = 256
+
+# Default output ceiling. -6 dBFS, not 0 dBFS: tutorials are played by people
+# who have no idea how loud their system is set.
+export const SAFETY_DEFAULT_CEILING_DB: f32 = -6.0
+
+export const SAFETY_DEFAULT_LOOKAHEAD_MS: f32 = 2.0
+export const SAFETY_DEFAULT_FADE_MS: f32 = 15.0
+export const SAFETY_DEFAULT_RELEASE_FAST_MS: f32 = 30.0
+export const SAFETY_DEFAULT_RELEASE_SLOW_MS: f32 = 400.0
+export const SAFETY_DEFAULT_HOLD_MS: f32 = 5.0
+
+# Watchdog. No chain will ever run longer than this, whatever it was asked
+# for. A stuck oscillator gets faded out and the caller told to stop.
+export const SAFETY_MAX_SECONDS: f32 = 30.0
+
+# Below this magnitude a float is flushed to zero. Denormals cost hundreds of
+# cycles per operation on some CPUs and are inaudible either way.
+export const SAFETY_DENORMAL: f32 = 1.0e-20
+
+# Anything past this is treated as an infinity.
+export const SAFETY_INF: f32 = 1.0e30
+
+# Feedback coefficients at or above this diverge; the guard refuses them.
+export const FEEDBACK_HARD_LIMIT: f32 = 1.0
+
+# Above this the tail is long enough to be a nuisance even though it decays.
+# The guard clamps here and says so.
+export const FEEDBACK_SOFT_MAX: f32 = 0.98
+
+# ln(1000) = 6.907755. RT60 is the time to decay by 60 dB, a factor of 1000.
+const LN_1000: f32 = 6.9077553
+
+const HALF_PI: f32 = 1.5707963
+
+# The limiter aims a hair under the ceiling so that f32 rounding in the final
+# multiply cannot push a sample one ULP over it and trip the hard clamp.
+# 0.9999 is -0.00087 dB: inaudible, and about 800x the relative rounding error
+# of a single-precision multiply.
+const LIMITER_MARGIN: f32 = 0.9999
+
+# =============================================================================
+# Small numeric guards
+# =============================================================================
+
+# True for NaN and for anything past +/- 1e30.
+@rt_safe
+export function sample_is_bad(x: f32) -> bool {
+    if x != x {
+        return true
+    }
+    if x > SAFETY_INF {
+        return true
+    }
+    if x < 0.0 - SAFETY_INF {
+        return true
+    }
+    return false
+}
+
+# Flush denormals to zero.
+@rt_safe
+export function flush_denormal(x: f32) -> f32 {
+    if x > SAFETY_DENORMAL {
+        return x
+    }
+    if x < 0.0 - SAFETY_DENORMAL {
+        return x
+    }
+    return 0.0
+}
+
+@rt_safe
+function abs32(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+# =============================================================================
+# True-peak detector
+# =============================================================================
+
+# Inter-sample peaks are found by reconstructing the waveform between two
+# samples with a Catmull-Rom spline over four consecutive samples and probing
+# it at 1/4, 1/2 and 3/4 of the interval: a cheap 4x oversampled check.
+#
+# Catmull-Rom overshoots slightly more than a true band-limited
+# reconstruction, so the reading errs high. For a limiter that is the safe
+# direction.
+export struct TruePeak {
+    l0: f32
+    l1: f32
+    l2: f32
+    l3: f32
+    r0: f32
+    r1: f32
+    r2: f32
+    r3: f32
+}
+
+export function true_peak_new() -> TruePeak {
+    return TruePeak {
+        l0: 0.0, l1: 0.0, l2: 0.0, l3: 0.0,
+        r0: 0.0, r1: 0.0, r2: 0.0, r3: 0.0
+    }
+}
+
+# Largest magnitude on the Catmull-Rom curve through y0..y3, over the
+# interval between y1 and y2 (endpoints included).
+@rt_safe
+function catmull_peak(y0: f32, y1: f32, y2: f32, y3: f32) -> f32 {
+    let mut m: f32 = abs32(y1)
+    let a2: f32 = abs32(y2)
+    if a2 > m {
+        m = a2
+    }
+    let c0: f32 = 2.0 * y1
+    let c1: f32 = y2 - y0
+    let c2: f32 = 2.0 * y0 - 5.0 * y1 + 4.0 * y2 - y3
+    let c3: f32 = 3.0 * y1 - 3.0 * y2 + y3 - y0
+
+    let p1: f32 = 0.5 * (c0 + c1 * 0.25 + c2 * 0.0625 + c3 * 0.015625)
+    let p2: f32 = 0.5 * (c0 + c1 * 0.5 + c2 * 0.25 + c3 * 0.125)
+    let p3: f32 = 0.5 * (c0 + c1 * 0.75 + c2 * 0.5625 + c3 * 0.421875)
+
+    let a: f32 = abs32(p1)
+    if a > m {
+        m = a
+    }
+    let b: f32 = abs32(p2)
+    if b > m {
+        m = b
+    }
+    let c: f32 = abs32(p3)
+    if c > m {
+        m = c
+    }
+    return m
+}
+
+# Push one stereo frame and return the true-peak magnitude of the interval it
+# completes. That interval covers input samples n-2 and n-1, so the reading
+# runs two samples behind the input; the limiter accounts for that.
+@rt_safe
+export function true_peak_push(d: ptr<TruePeak>, l: f32, r: f32) -> f32 {
+    d.l3 = d.l2
+    d.l2 = d.l1
+    d.l1 = d.l0
+    d.l0 = l
+    d.r3 = d.r2
+    d.r2 = d.r1
+    d.r1 = d.r0
+    d.r0 = r
+
+    let pl: f32 = catmull_peak(d.l3, d.l2, d.l1, d.l0)
+    let pr: f32 = catmull_peak(d.r3, d.r2, d.r1, d.r0)
+    if pl > pr {
+        return pl
+    }
+    return pr
+}
+
+export function true_peak_reset(d: ptr<TruePeak>) -> void {
+    d.l0 = 0.0
+    d.l1 = 0.0
+    d.l2 = 0.0
+    d.l3 = 0.0
+    d.r0 = 0.0
+    d.r1 = 0.0
+    d.r2 = 0.0
+    d.r3 = 0.0
+}
+
+# =============================================================================
+# Lookahead brickwall limiter
+# =============================================================================
+
+# Stereo-linked: one gain drives both channels, so the stereo image never
+# shifts when the limiter works.
+#
+# Per sample, with lookahead L:
+#
+#   raw[n]    = min(1, ceiling / truepeak[n])       instant requirement
+#   env[n]    <= raw[n]                             program-dependent release
+#   held[n]   = min(env[n-L+1..n])                  running minimum
+#   gain[n]   = mean(held[n-L+1..n])                moving average, L long
+#   out[n]    = in[n-L] * gain[n]
+#
+# Why that can never exceed the ceiling: every term held[n-j] in the average
+# is the minimum of env over a window of length L ending at n-j, so for
+# j in 0..L-1 every term is <= env[n-L+1] <= raw[n-L+1]. The average of
+# numbers all <= raw[n-L+1] is <= raw[n-L+1]. And raw[n-L+1] is the gain that
+# holds the true peak covering input samples n-L-1 and n-L at the ceiling.
+# The output sample is in[n-L]. Done.
+#
+# The moving average also makes the gain continuous, so there is no zipper
+# noise, and it sets the attack time: the gain reaches its target over
+# exactly L samples.
+export struct Limiter {
+    # Configuration
+    ceiling: f32
+    look: i32
+    rel_fast: f32
+    rel_slow: f32
+    hold_len: i32
+
+    # Detector
+    tp: TruePeak
+    env: f32
+    hold_ctr: i32
+
+    # Gain pipeline (both rings are exactly `look` entries long)
+    req: array<f32, 256>
+    held: array<f32, 256>
+    ridx: i32
+    hidx: i32
+    gain: f32
+
+    # Audio lookahead delay (also `look` long)
+    dl: array<f32, 256>
+    dr: array<f32, 256>
+    didx: i32
+
+    # Metering
+    gain_min: f32
+}
+
+export function limiter_new(ceiling_db: f32, lookahead_ms: f32,
+                            release_fast_ms: f32, release_slow_ms: f32,
+                            hold_ms: f32, rate: SampleRate) -> Limiter {
+    let mut look: i32 = (lookahead_ms * (rate.hz as f32) / 1000.0) as i32
+    if look < 4 {
+        look = 4
+    }
+    if look > SAFETY_LOOKAHEAD_MAX {
+        look = SAFETY_LOOKAHEAD_MAX
+    }
+    let mut hold: i32 = (hold_ms * (rate.hz as f32) / 1000.0) as i32
+    if hold < 0 {
+        hold = 0
+    }
+    let z: array<f32, 256> = []
+    let mut l: Limiter = Limiter {
+        ceiling: db_to_linear(ceiling_db) * LIMITER_MARGIN,
+        look: look,
+        rel_fast: expf(0.0 - 1000.0 / (release_fast_ms * (rate.hz as f32))),
+        rel_slow: expf(0.0 - 1000.0 / (release_slow_ms * (rate.hz as f32))),
+        hold_len: hold,
+        tp: true_peak_new(),
+        env: 1.0,
+        hold_ctr: 0,
+        req: z,
+        held: z,
+        ridx: 0,
+        hidx: 0,
+        gain: 1.0,
+        dl: z,
+        dr: z,
+        didx: 0,
+        gain_min: 1.0
+    }
+    let lp: ptr<Limiter> = &l
+    limiter_reset(lp)
+    return l
+}
+
+export function limiter_reset(l: ptr<Limiter>) -> void {
+    let tpp: ptr<TruePeak> = &l.tp
+    true_peak_reset(tpp)
+    l.env = 1.0
+    l.hold_ctr = 0
+    l.ridx = 0
+    l.hidx = 0
+    l.didx = 0
+    l.gain = 1.0
+    l.gain_min = 1.0
+    let mut k: i32 = 0
+    while k < SAFETY_LOOKAHEAD_MAX {
+        l.req[k] = 1.0
+        l.held[k] = 1.0
+        l.dl[k] = 0.0
+        l.dr[k] = 0.0
+        k = k + 1
+    }
+}
+
+export function limiter_set_ceiling_db(l: ptr<Limiter>, ceiling_db: f32) -> void {
+    l.ceiling = db_to_linear(ceiling_db) * LIMITER_MARGIN
+}
+
+# Process one stereo frame. Writes the limited frame through `out_l` / `out_r`
+# and returns the gain that was applied (1.0 = no reduction).
+@rt_safe
+export function limiter_step(l: ptr<Limiter>, in_l: f32, in_r: f32,
+                             out_l: ptr<f32>, out_r: ptr<f32>) -> f32 {
+    let look: i32 = l.look
+    let tpp: ptr<TruePeak> = &l.tp
+    let peak: f32 = true_peak_push(tpp, in_l, in_r)
+
+    # 1. Instantaneous requirement.
+    let mut raw: f32 = 1.0
+    if peak > l.ceiling {
+        raw = l.ceiling / peak
+    }
+
+    # 2. Program-dependent release. Gain reduction engages immediately (the
+    #    lookahead pays for the attack); recovery is slow when the reduction
+    #    is deep and fast when it is shallow, which is what stops a limiter
+    #    from pumping on bass while still letting go after a single transient.
+    if raw < l.env {
+        l.env = raw
+        l.hold_ctr = l.hold_len
+    } else {
+        if l.hold_ctr > 0 {
+            l.hold_ctr = l.hold_ctr - 1
+        } else {
+            let mut depth: f32 = 1.0 - l.env
+            depth = depth * 4.0
+            if depth < 0.0 {
+                depth = 0.0
+            }
+            if depth > 1.0 {
+                depth = 1.0
+            }
+            let rc: f32 = l.rel_fast + (l.rel_slow - l.rel_fast) * depth
+            l.env = raw + (l.env - raw) * rc
+        }
+    }
+
+    # 3. Running minimum over the last `look` requirements.
+    l.req[l.ridx] = l.env
+    l.ridx = l.ridx + 1
+    if l.ridx >= look {
+        l.ridx = 0
+    }
+    let mut held: f32 = 1.0
+    let mut k: i32 = 0
+    while k < look {
+        if l.req[k] < held {
+            held = l.req[k]
+        }
+        k = k + 1
+    }
+
+    # 4. Moving average of the running minimum: a continuous gain whose value
+    #    is bounded above by the requirement of the sample now leaving the
+    #    delay line.
+    l.held[l.hidx] = held
+    l.hidx = l.hidx + 1
+    if l.hidx >= look {
+        l.hidx = 0
+    }
+    let mut sum: f32 = 0.0
+    let mut j: i32 = 0
+    while j < look {
+        sum = sum + l.held[j]
+        j = j + 1
+    }
+    let gain: f32 = sum / (look as f32)
+    l.gain = gain
+    if gain < l.gain_min {
+        l.gain_min = gain
+    }
+
+    # 5. Apply to the delayed audio.
+    let dl: f32 = l.dl[l.didx]
+    let dr: f32 = l.dr[l.didx]
+    l.dl[l.didx] = in_l
+    l.dr[l.didx] = in_r
+    l.didx = l.didx + 1
+    if l.didx >= look {
+        l.didx = 0
+    }
+    out_l[0] = dl * gain
+    out_r[0] = dr * gain
+    return gain
+}
+
+export function limiter_gain(l: ptr<Limiter>) -> f32 {
+    return l.gain
+}
+
+export function limiter_gain_reduction_db(l: ptr<Limiter>) -> f32 {
+    return linear_to_db(l.gain)
+}
+
+export function limiter_max_gain_reduction_db(l: ptr<Limiter>) -> f32 {
+    return linear_to_db(l.gain_min)
+}
+
+export function limiter_latency_samples(l: ptr<Limiter>) -> i32 {
+    return l.look
+}
+
+# =============================================================================
+# Feedback guard
+# =============================================================================
+
+# A delay or reverb whose feedback coefficient reaches 1.0 never decays; past
+# 1.0 it grows without bound. This is the single most common way a synth
+# patch turns into a hazard, so it gets a guard rather than a comment.
+
+export function feedback_is_safe(k: f32) -> bool {
+    return fabsf(k) < FEEDBACK_HARD_LIMIT
+}
+
+# Returns a coefficient that is safe to use. A magnitude at or above 1.0 is
+# refused outright and becomes 0.0, because there is no sensible substitute
+# for "make this louder forever". Between FEEDBACK_SOFT_MAX and 1.0 the value
+# is clamped and the caller told.
+export function feedback_guard(k: f32) -> f32 {
+    let mag: f32 = fabsf(k)
+    if mag >= FEEDBACK_HARD_LIMIT {
+        printf("audio/safety: REFUSED feedback coefficient %.4f\n", k as f64)
+        printf("  |k| must be < 1.0 or the loop never decays (|k| = 1) or grows without bound (|k| > 1).\n")
+        printf("  Feedback set to 0.0. Use rt60_to_feedback(rt60_seconds, delay_seconds) to say what you mean.\n")
+        return 0.0
+    }
+    if mag > FEEDBACK_SOFT_MAX {
+        printf("audio/safety: feedback %.4f clamped to %.4f (tail would outlast the watchdog)\n",
+               k as f64, FEEDBACK_SOFT_MAX as f64)
+        if k < 0.0 {
+            return 0.0 - FEEDBACK_SOFT_MAX
+        }
+        return FEEDBACK_SOFT_MAX
+    }
+    return k
+}
+
+# Feedback coefficient that decays 60 dB in `rt60_seconds`, for a loop whose
+# round trip is `delay_seconds`. This is how you should ask for a tail:
+# in time, not in a number between 0 and 1 that you guessed.
+export function rt60_to_feedback(rt60_seconds: f32, delay_seconds: f32) -> f32 {
+    if rt60_seconds <= 0.0 or delay_seconds <= 0.0 {
+        return 0.0
+    }
+    let k: f32 = expf(0.0 - LN_1000 * delay_seconds / rt60_seconds)
+    return feedback_guard(k)
+}
+
+# The inverse: how long a given coefficient rings for.
+export function feedback_to_rt60(k: f32, delay_seconds: f32) -> f32 {
+    let mag: f32 = fabsf(k)
+    if mag <= 0.0 or mag >= FEEDBACK_HARD_LIMIT or delay_seconds <= 0.0 {
+        return 0.0
+    }
+    return 0.0 - LN_1000 * delay_seconds / logf_safe(mag)
+}
+
+function logf_safe(x: f32) -> f32 {
+    # ln(x) = log10(x) * ln(10); linear_to_db gives 20*log10(x).
+    return linear_to_db(x) * 0.11512925
+}
+
+# =============================================================================
+# Master safety chain
+# =============================================================================
+
+export struct SafetyConfig {
+    ceiling_db: f32
+    lookahead_ms: f32
+    fade_in_ms: f32
+    fade_out_ms: f32
+    release_fast_ms: f32
+    release_slow_ms: f32
+    hold_ms: f32
+    max_seconds: f32
+}
+
+export function safety_config_default() -> SafetyConfig {
+    return SafetyConfig {
+        ceiling_db: SAFETY_DEFAULT_CEILING_DB,
+        lookahead_ms: SAFETY_DEFAULT_LOOKAHEAD_MS,
+        fade_in_ms: SAFETY_DEFAULT_FADE_MS,
+        fade_out_ms: SAFETY_DEFAULT_FADE_MS,
+        release_fast_ms: SAFETY_DEFAULT_RELEASE_FAST_MS,
+        release_slow_ms: SAFETY_DEFAULT_RELEASE_SLOW_MS,
+        hold_ms: SAFETY_DEFAULT_HOLD_MS,
+        max_seconds: SAFETY_MAX_SECONDS
+    }
+}
+
+# Deliberate ceiling override, for work that is going somewhere other than a
+# stranger's headphones. Everything else stays default.
+export function safety_config_ceiling(cfg: SafetyConfig, ceiling_db: f32) -> SafetyConfig {
+    return SafetyConfig {
+        ceiling_db: ceiling_db,
+        lookahead_ms: cfg.lookahead_ms,
+        fade_in_ms: cfg.fade_in_ms,
+        fade_out_ms: cfg.fade_out_ms,
+        release_fast_ms: cfg.release_fast_ms,
+        release_slow_ms: cfg.release_slow_ms,
+        hold_ms: cfg.hold_ms,
+        max_seconds: cfg.max_seconds
+    }
+}
+
+export function safety_config_fades(cfg: SafetyConfig, fade_in_ms: f32, fade_out_ms: f32) -> SafetyConfig {
+    return SafetyConfig {
+        ceiling_db: cfg.ceiling_db,
+        lookahead_ms: cfg.lookahead_ms,
+        fade_in_ms: fade_in_ms,
+        fade_out_ms: fade_out_ms,
+        release_fast_ms: cfg.release_fast_ms,
+        release_slow_ms: cfg.release_slow_ms,
+        hold_ms: cfg.hold_ms,
+        max_seconds: cfg.max_seconds
+    }
+}
+
+export struct SafetyChain {
+    rate_hz: f32
+    ceiling_db: f32
+    ceiling: f32
+
+    total_frames: i64
+    fade_in_frames: i64
+    fade_out_frames: i64
+    pos: i64
+    watchdog_hit: bool
+
+    dc_l: DCBlocker
+    dc_r: DCBlocker
+    lim: Limiter
+
+    muted: bool
+    nan_count: i64
+    clamp_count: i64
+
+    tp_in: TruePeak
+    tp_out: TruePeak
+    peak_in: f32
+    peak_tp_in: f32
+    peak_out: f32
+    peak_tp_out: f32
+    rms_in_acc: f64
+    rms_out_acc: f64
+    meter_n: i64
+}
+
+export function safety_new(rate: SampleRate, seconds: f32) -> SafetyChain {
+    return safety_new_with(rate, seconds, safety_config_default())
+}
+
+export function safety_new_with(rate: SampleRate, seconds: f32, cfg: SafetyConfig) -> SafetyChain {
+    let hz: f32 = rate.hz as f32
+    let mut secs: f32 = seconds
+    let mut hit: bool = false
+    if secs <= 0.0 {
+        secs = 1.0
+    }
+    let mut cap: f32 = cfg.max_seconds
+    if cap <= 0.0 or cap > SAFETY_MAX_SECONDS {
+        cap = SAFETY_MAX_SECONDS
+    }
+    if secs > cap {
+        printf("audio/safety: watchdog: %.1f s requested, capped to %.1f s\n", secs as f64, cap as f64)
+        secs = cap
+        hit = true
+    }
+    let total: i64 = (secs * hz) as i64
+    let mut fin: i64 = (cfg.fade_in_ms * hz / 1000.0) as i64
+    let mut fout: i64 = (cfg.fade_out_ms * hz / 1000.0) as i64
+    if fin < 1 {
+        fin = 1
+    }
+    if fout < 1 {
+        fout = 1
+    }
+    if fin + fout > total {
+        fin = total / 2
+        fout = total - fin
+    }
+    return SafetyChain {
+        rate_hz: hz,
+        ceiling_db: cfg.ceiling_db,
+        ceiling: db_to_linear(cfg.ceiling_db),
+        total_frames: total,
+        fade_in_frames: fin,
+        fade_out_frames: fout,
+        pos: 0,
+        watchdog_hit: hit,
+        dc_l: dcblocker_new(rate),
+        dc_r: dcblocker_new(rate),
+        lim: limiter_new(cfg.ceiling_db, cfg.lookahead_ms, cfg.release_fast_ms,
+                         cfg.release_slow_ms, cfg.hold_ms, rate),
+        muted: false,
+        nan_count: 0,
+        clamp_count: 0,
+        tp_in: true_peak_new(),
+        tp_out: true_peak_new(),
+        peak_in: 0.0,
+        peak_tp_in: 0.0,
+        peak_out: 0.0,
+        peak_tp_out: 0.0,
+        rms_in_acc: 0.0,
+        rms_out_acc: 0.0,
+        meter_n: 0
+    }
+}
+
+# Equal-power fade shape: gain = sin(pi/2 * t), so gain^2 rises like a
+# quarter sine and the perceived loudness ramp is even. t = 0 gives exactly
+# zero, which is what keeps the first and last sample silent.
+@rt_safe
+export function fade_gain(t: f32) -> f32 {
+    if t <= 0.0 {
+        return 0.0
+    }
+    if t >= 1.0 {
+        return 1.0
+    }
+    return sinf(HALF_PI * t)
+}
+
+@rt_safe
+function safety_envelope(c: ptr<SafetyChain>) -> f32 {
+    let pos: i64 = c.pos
+    let total: i64 = c.total_frames
+    if pos >= total {
+        return 0.0
+    }
+    let mut g: f32 = 1.0
+    if pos < c.fade_in_frames {
+        g = fade_gain((pos as f32) / (c.fade_in_frames as f32))
+    }
+    let out_start: i64 = total - c.fade_out_frames
+    if pos >= out_start {
+        let remain: i64 = total - 1 - pos
+        let go: f32 = fade_gain((remain as f32) / (c.fade_out_frames as f32))
+        if go < g {
+            g = go
+        }
+    }
+    return g
+}
+
+# Process one stereo frame through the whole chain. Advances the watchdog.
+@rt_safe
+export function safety_process_frame(c: ptr<SafetyChain>, in_l: f32, in_r: f32) -> Frame {
+    if c.pos >= c.total_frames {
+        c.pos = c.pos + 1
+        return frame_zero()
+    }
+
+    # --- NaN / infinity guard -------------------------------------------
+    let mut xl: f32 = in_l
+    let mut xr: f32 = in_r
+    if sample_is_bad(xl) or sample_is_bad(xr) {
+        c.nan_count = c.nan_count + 1
+        c.muted = true
+    }
+    if c.muted {
+        c.pos = c.pos + 1
+        return frame_zero()
+    }
+
+    # --- input metering ---------------------------------------------------
+    let al: f32 = abs32(xl)
+    let ar: f32 = abs32(xr)
+    if al > c.peak_in {
+        c.peak_in = al
+    }
+    if ar > c.peak_in {
+        c.peak_in = ar
+    }
+    let tpi: ptr<TruePeak> = &c.tp_in
+    let tin: f32 = true_peak_push(tpi, xl, xr)
+    if tin > c.peak_tp_in {
+        c.peak_tp_in = tin
+    }
+    c.rms_in_acc = c.rms_in_acc + ((xl * xl + xr * xr) as f64) * 0.5
+
+    # --- DC blocker --------------------------------------------------------
+    c.dc_l = dcblocker_tick(c.dc_l, xl)
+    c.dc_r = dcblocker_tick(c.dc_r, xr)
+    xl = flush_denormal(dcblocker_output(c.dc_l))
+    xr = flush_denormal(dcblocker_output(c.dc_r))
+
+    # --- lookahead brickwall limiter --------------------------------------
+    let ol: array<f32, 1> = []
+    let orr: array<f32, 1> = []
+    let olp: ptr<f32> = ol
+    let orp: ptr<f32> = orr
+    let lp: ptr<Limiter> = &c.lim
+    limiter_step(lp, xl, xr, olp, orp)
+    let mut yl: f32 = flush_denormal(ol[0])
+    let mut yr: f32 = flush_denormal(orr[0])
+
+    # --- soft start / stop -------------------------------------------------
+    let env: f32 = safety_envelope(c)
+    yl = yl * env
+    yr = yr * env
+
+    # --- hard clamp (should never fire) ------------------------------------
+    let ceil: f32 = c.ceiling
+    if yl > ceil {
+        yl = ceil
+        c.clamp_count = c.clamp_count + 1
+    }
+    if yl < 0.0 - ceil {
+        yl = 0.0 - ceil
+        c.clamp_count = c.clamp_count + 1
+    }
+    if yr > ceil {
+        yr = ceil
+        c.clamp_count = c.clamp_count + 1
+    }
+    if yr < 0.0 - ceil {
+        yr = 0.0 - ceil
+        c.clamp_count = c.clamp_count + 1
+    }
+
+    # --- output metering ---------------------------------------------------
+    let bl: f32 = abs32(yl)
+    let br: f32 = abs32(yr)
+    if bl > c.peak_out {
+        c.peak_out = bl
+    }
+    if br > c.peak_out {
+        c.peak_out = br
+    }
+    let tpo: ptr<TruePeak> = &c.tp_out
+    let tout: f32 = true_peak_push(tpo, yl, yr)
+    if tout > c.peak_tp_out {
+        c.peak_tp_out = tout
+    }
+    c.rms_out_acc = c.rms_out_acc + ((yl * yl + yr * yr) as f64) * 0.5
+    c.meter_n = c.meter_n + 1
+
+    c.pos = c.pos + 1
+    return Frame { left: yl, right: yr }
+}
+
+# Process a block of interleaved stereo frames in place. Returns the number
+# of frames that are still inside the watchdog window; anything past that is
+# zeroed and should not be written out.
+@rt_safe
+export function safety_process_block(c: ptr<SafetyChain>, data: ptr<f32>, frames: i32) -> i32 {
+    let mut valid: i32 = 0
+    let mut i: i32 = 0
+    while i < frames {
+        let idx: i32 = i * 2
+        let live: bool = c.pos < c.total_frames
+        let out: Frame = safety_process_frame(c, data[idx], data[idx + 1])
+        data[idx] = out.left
+        data[idx + 1] = out.right
+        if live {
+            valid = valid + 1
+        }
+        i = i + 1
+    }
+    return valid
+}
+
+# Frames left in the watchdog window, capped at `max_block`. Loop on this and
+# the render is exactly as long as it said it would be.
+export function safety_next_block(c: ptr<SafetyChain>, max_block: i32) -> i32 {
+    let left: i64 = c.total_frames - c.pos
+    if left <= 0 {
+        return 0
+    }
+    if left < (max_block as i64) {
+        return left as i32
+    }
+    return max_block
+}
+
+export function safety_reset(c: ptr<SafetyChain>) -> void {
+    c.pos = 0
+    c.muted = false
+    c.nan_count = 0
+    c.clamp_count = 0
+    c.peak_in = 0.0
+    c.peak_tp_in = 0.0
+    c.peak_out = 0.0
+    c.peak_tp_out = 0.0
+    c.rms_in_acc = 0.0
+    c.rms_out_acc = 0.0
+    c.meter_n = 0
+    let lp: ptr<Limiter> = &c.lim
+    limiter_reset(lp)
+    let tpi: ptr<TruePeak> = &c.tp_in
+    let tpo: ptr<TruePeak> = &c.tp_out
+    true_peak_reset(tpi)
+    true_peak_reset(tpo)
+}
+
+# =============================================================================
+# Chain readouts
+# =============================================================================
+
+export function safety_finished(c: ptr<SafetyChain>) -> bool {
+    return c.pos >= c.total_frames
+}
+
+export function safety_total_frames(c: ptr<SafetyChain>) -> i64 {
+    return c.total_frames
+}
+
+export function safety_frames_done(c: ptr<SafetyChain>) -> i64 {
+    return c.pos
+}
+
+export function safety_duration_seconds(c: ptr<SafetyChain>) -> f32 {
+    return (c.total_frames as f32) / c.rate_hz
+}
+
+export function safety_watchdog_hit(c: ptr<SafetyChain>) -> bool {
+    return c.watchdog_hit
+}
+
+export function safety_ceiling_db(c: ptr<SafetyChain>) -> f32 {
+    return c.ceiling_db
+}
+
+export function safety_ceiling_linear(c: ptr<SafetyChain>) -> f32 {
+    return c.ceiling
+}
+
+export function safety_latency_samples(c: ptr<SafetyChain>) -> i32 {
+    let lp: ptr<Limiter> = &c.lim
+    return limiter_latency_samples(lp)
+}
+
+export function safety_peak_in(c: ptr<SafetyChain>) -> f32 {
+    return c.peak_in
+}
+
+export function safety_peak_in_db(c: ptr<SafetyChain>) -> f32 {
+    return linear_to_db(c.peak_in)
+}
+
+export function safety_true_peak_in(c: ptr<SafetyChain>) -> f32 {
+    return c.peak_tp_in
+}
+
+export function safety_true_peak_in_db(c: ptr<SafetyChain>) -> f32 {
+    return linear_to_db(c.peak_tp_in)
+}
+
+export function safety_peak_out(c: ptr<SafetyChain>) -> f32 {
+    return c.peak_out
+}
+
+export function safety_peak_out_db(c: ptr<SafetyChain>) -> f32 {
+    return linear_to_db(c.peak_out)
+}
+
+export function safety_true_peak_out(c: ptr<SafetyChain>) -> f32 {
+    return c.peak_tp_out
+}
+
+export function safety_true_peak_out_db(c: ptr<SafetyChain>) -> f32 {
+    return linear_to_db(c.peak_tp_out)
+}
+
+function safety_rms_of(acc: f64, n: i64) -> f32 {
+    if n <= 0 {
+        return 0.0
+    }
+    let mean: f64 = acc / (n as f64)
+    if mean <= 0.0 {
+        return 0.0
+    }
+    return sqrtf(mean as f32)
+}
+
+export function safety_rms_in(c: ptr<SafetyChain>) -> f32 {
+    return safety_rms_of(c.rms_in_acc, c.meter_n)
+}
+
+export function safety_rms_in_db(c: ptr<SafetyChain>) -> f32 {
+    return linear_to_db(safety_rms_in(c))
+}
+
+export function safety_rms_out(c: ptr<SafetyChain>) -> f32 {
+    return safety_rms_of(c.rms_out_acc, c.meter_n)
+}
+
+export function safety_rms_out_db(c: ptr<SafetyChain>) -> f32 {
+    return linear_to_db(safety_rms_out(c))
+}
+
+export function safety_gain_reduction_db(c: ptr<SafetyChain>) -> f32 {
+    let lp: ptr<Limiter> = &c.lim
+    return limiter_gain_reduction_db(lp)
+}
+
+export function safety_max_gain_reduction_db(c: ptr<SafetyChain>) -> f32 {
+    let lp: ptr<Limiter> = &c.lim
+    return limiter_max_gain_reduction_db(lp)
+}
+
+export function safety_clamp_count(c: ptr<SafetyChain>) -> i64 {
+    return c.clamp_count
+}
+
+export function safety_nan_count(c: ptr<SafetyChain>) -> i64 {
+    return c.nan_count
+}
+
+export function safety_muted(c: ptr<SafetyChain>) -> bool {
+    return c.muted
+}
+
+# True when the render came out clean: nothing over the ceiling, no NaN, and
+# the hard clamp never had to save us.
+export function safety_ok(c: ptr<SafetyChain>) -> bool {
+    if c.nan_count != 0 {
+        return false
+    }
+    if c.clamp_count != 0 {
+        return false
+    }
+    if c.peak_tp_out > c.ceiling * 1.0001 {
+        return false
+    }
+    return true
+}
+
+export function safety_report(c: ptr<SafetyChain>) -> void {
+    printf("  safety chain -------------------------------------------------\n")
+    printf("    ceiling        %7.2f dBFS   lookahead %d samples\n",
+           c.ceiling_db as f64, safety_latency_samples(c))
+    printf("    peak in        %7.2f dBFS   true peak in  %7.2f dBFS\n",
+           safety_peak_in_db(c) as f64, safety_true_peak_in_db(c) as f64)
+    printf("    peak out       %7.2f dBFS   true peak out %7.2f dBFS\n",
+           safety_peak_out_db(c) as f64, safety_true_peak_out_db(c) as f64)
+    printf("    rms in         %7.2f dBFS   rms out       %7.2f dBFS\n",
+           safety_rms_in_db(c) as f64, safety_rms_out_db(c) as f64)
+    printf("    gain reduction %7.2f dB (worst)\n",
+           safety_max_gain_reduction_db(c) as f64)
+    printf("    clamp hits     %7lld       nan hits %lld\n",
+           c.clamp_count, c.nan_count)
+    if c.clamp_count != 0 {
+        printf("    ** the hard clamp fired: that is a limiter bug, please report it **\n")
+    }
+    if c.nan_count != 0 {
+        printf("    ** NaN reached the output: muted for the rest of the run **\n")
+    }
+}
