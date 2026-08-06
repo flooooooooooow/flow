@@ -1,0 +1,67 @@
+# Reading an input file that was preloaded into the virtual filesystem.
+#
+#   ./flow run examples/wasm/fs_preload.flow
+#   python3 wasm/flow_wasm_fs.py            # builds this with --preload-file
+#
+# The program opens a relative path and reads it. Natively that is a file on
+# disk. In the browser, emcc --preload-file packed the same file into a .data
+# blob next to the .wasm; the loader fetches it and unpacks it into MEMFS
+# before main() runs, so the open succeeds with no fetch in the program.
+
+extern {
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(f: ptr<void>) -> i32
+    function fread(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+const INPUT_PATH: string = "data/fs_input.txt"
+const CAP: i32 = 8192
+
+function main() -> i32 {
+    println("fs_preload: reading an input file out of the virtual filesystem")
+    print("  path: ")
+    println(INPUT_PATH)
+
+    let f: ptr<void> = fopen(INPUT_PATH, "rb")
+    if f == null {
+        println("FAIL: could not open the input file")
+        return 1
+    }
+
+    let buf: ptr<u8> = malloc(CAP as i64) as ptr<u8>
+    let n: i64 = fread(buf as ptr<void>, 1, CAP as i64, f)
+    fclose(f)
+
+    if n <= 0 {
+        println("FAIL: read nothing")
+        free(buf as ptr<void>)
+        return 1
+    }
+
+    # Byte count, line count, and a checksum so a truncated read is visible.
+    let mut lines: i32 = 0
+    let mut sum: i32 = 0
+    let mut i: i32 = 0
+    while (i as i64) < n {
+        let b: i32 = buf[i] as i32
+        # Modulus kept small so sum * 31 cannot overflow i32 and the value is
+        # the same natively and under wasm.
+        sum = (sum * 31 + b) % 65521
+        if b == 10 {
+            lines = lines + 1
+        }
+        i = i + 1
+    }
+    free(buf as ptr<void>)
+
+    print("  bytes: ")
+    println(n as i32)
+    print("  lines: ")
+    println(lines)
+    print("  checksum: ")
+    println(sum)
+    println("PASS")
+    return 0
+}

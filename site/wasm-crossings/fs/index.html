@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow crossing 5: files in WebAssembly</title>
+<link rel="stylesheet" href="crossing.css">
+</head>
+<body>
+<main>
+<h1>Crossing 5 &mdash; the filesystem</h1>
+<p class="lede">
+Three Flow programs calling <code>fopen</code>, <code>fread</code>,
+<code>fwrite</code> and <code>mkdir</code>. Emscripten answers all of it out of
+a virtual filesystem, so the first one below writes a real animated GIF byte by
+byte in Flow, and the page reads those bytes back out and shows them.
+</p>
+
+<div class="facts">
+  <div class="fact"><span class="k">MEMFS</span><span class="v" id="f-memfs">&hellip;</span></div>
+  <div class="fact"><span class="k">IDBFS</span><span class="v" id="f-idbfs">&hellip;</span></div>
+  <div class="fact"><span class="k">preloaded data</span><span class="v" id="f-preload">&hellip;</span></div>
+  <div class="fact"><span class="k">runs recorded</span><span class="v" id="f-runs">&mdash;</span></div>
+</div>
+
+<h2>1. Flow writes a GIF into MEMFS, the browser renders it</h2>
+<div class="panel">
+  <button id="run-gif">Write build/gif_demo.gif</button>
+  <span id="gif-note"></span>
+  <div style="margin-top:1rem;display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap">
+    <img id="gif-img" alt="GIF written by Flow inside WASM"
+         style="image-rendering:pixelated;width:256px;height:256px;border:1px solid var(--line);border-radius:8px;background:#06080d">
+    <div>
+      <table>
+        <tbody>
+          <tr><th>path in MEMFS</th><td id="g-path">&mdash;</td></tr>
+          <tr><th>bytes written</th><td id="g-size">&mdash;</td></tr>
+          <tr><th>header</th><td id="g-magic">&mdash;</td></tr>
+          <tr><th>frames encoded</th><td id="g-frames">&mdash;</td></tr>
+          <tr><th>sha256</th><td id="g-sha" style="font:11px ui-monospace,monospace;word-break:break-all">&mdash;</td></tr>
+          <tr><th>matches native build</th><td id="g-same">&mdash;</td></tr>
+          <tr><th>result</th><td id="g-res">&mdash;</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h2>2. IDBFS: a counter that survives a reload</h2>
+<div class="panel">
+  <button id="run-counter">Run once</button>
+  <button id="reload" class="secondary">Reload the page</button>
+  <button id="wipe" class="secondary">Wipe stored state</button>
+  <table style="margin-top:0.8rem">
+    <tbody>
+      <tr><th>mount</th><td>/persist (IDBFS over IndexedDB)</td></tr>
+      <tr><th>count before</th><td id="c-before">&mdash;</td></tr>
+      <tr><th>count after</th><td id="c-after">&mdash;</td></tr>
+      <tr><th>syncfs in / out</th><td id="c-sync">&mdash;</td></tr>
+      <tr><th>result</th><td id="c-res">&mdash;</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>3. --preload-file: an input file the program never fetched</h2>
+<div class="panel">
+  <button id="run-preload">Read data/fs_input.txt</button>
+  <table style="margin-top:0.8rem">
+    <tbody>
+      <tr><th>bytes</th><td id="p-bytes">&mdash;</td></tr>
+      <tr><th>lines</th><td id="p-lines">&mdash;</td></tr>
+      <tr><th>checksum</th><td id="p-sum">&mdash;</td></tr>
+      <tr><th>native run</th><td>bytes 291, lines 5</td></tr>
+      <tr><th>result</th><td id="p-res">&mdash;</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Log</h2>
+<pre id="out">click a button</pre>
+
+<h2>Flow source: the GIF writer</h2>
+<pre class="source"># Animated GIF from pure Flow: 24 frames of a square bouncing over a
+# gradient, written with the stdlib GIF89a encoder (lib/stdlib/gif.flow).
+# Output: build/gif_demo.gif. Prints the byte size and exits 0.
+
+import stdlib.gif { gif_begin, gif_add_frame_rgb, gif_end }
+
+extern {
+    function mkdir(path: string, mode: i32) -&gt; i32
+    function printf(fmt: string, v: i64) -&gt; i32
+    function fopen(path: string, mode: string) -&gt; ptr&lt;void&gt;
+    function fseek(f: ptr&lt;void&gt;, off: i64, whence: i32) -&gt; i32
+    function ftell(f: ptr&lt;void&gt;) -&gt; i64
+    function fclose(f: ptr&lt;void&gt;) -&gt; i32
+    function malloc(size: i64) -&gt; ptr&lt;void&gt;
+    function free(p: ptr&lt;void&gt;) -&gt; void
+}
+
+const WIDTH: i32 = 128
+const HEIGHT: i32 = 128
+const FRAMES: i32 = 24
+const SQUARE: i32 = 24
+
+function draw_frame(buf: ptr&lt;u8&gt;, frame: i32) -&gt; void {
+    # Gradient background.
+    let mut y: i32 = 0
+    while y &lt; HEIGHT {
+        let mut x: i32 = 0
+        while x &lt; WIDTH {
+            let j: i32 = (y * WIDTH + x) * 3
+            buf[j] = (x * 2) as u8
+            buf[j + 1] = (y * 2) as u8
+            buf[j + 2] = 60 as u8
+            x = x + 1
+        }
+        y = y + 1
+    }
+
+    # Bouncing square: x sweeps right, y follows a triangle wave.
+    let sx: i32 = 8 + frame * 4
+    let mut sy: i32 = 0
+    if frame &lt; 12 {
+        sy = 8 + frame * 8
+    } else {
+        sy = 8 + (23 - frame) * 8
+    }
+    let mut dy: i32 = 0
+    while dy &lt; SQUARE {
+        let mut dx: i32 = 0
+        while dx &lt; SQUARE {
+            let j: i32 = ((sy + dy) * WIDTH + (sx + dx)) * 3
+            buf[j] = 255 as u8
+            buf[j + 1] = 210 as u8
+            buf[j + 2] = 40 as u8
+            dx = dx + 1
+        }
+        dy = dy + 1
+    }
+}
+
+function file_size(path: string) -&gt; i64 {
+    let f: ptr&lt;void&gt; = fopen(path, &quot;rb&quot;)
+    if f == null {
+        return 0 - 1
+    }
+    fseek(f, 0, 2)
+    let size: i64 = ftell(f)
+    fclose(f)
+    return size
+}
+
+function main() -&gt; i32 {
+    mkdir(&quot;build&quot;, 493)
+    if gif_begin(&quot;build/gif_demo.gif&quot;, WIDTH, HEIGHT, 5) != 0 {
+        return 1
+    }
+
+    let buf: ptr&lt;u8&gt; = malloc((WIDTH as i64) * (HEIGHT as i64) * 3) as ptr&lt;u8&gt;
+    if buf == null {
+        return 5
+    }
+
+    let mut frame: i32 = 0
+    while frame &lt; FRAMES {
+        draw_frame(buf, frame)
+        if gif_add_frame_rgb(buf, WIDTH, HEIGHT) != 0 {
+            return 2
+        }
+        frame = frame + 1
+    }
+    free(buf as ptr&lt;void&gt;)
+    if gif_end() != 0 {
+        return 3
+    }
+
+    let size: i64 = file_size(&quot;build/gif_demo.gif&quot;)
+    if size &lt;= 0 {
+        return 4
+    }
+    printf(&quot;build/gif_demo.gif: %lld bytes\n&quot;, size)
+    return 0
+}
+</pre>
+
+<h2>Flow source: the IDBFS counter</h2>
+<pre class="source"># Persistence across page reloads, through ordinary stdio.
+#
+#   ./flow run examples/wasm/fs_counter.flow
+#   ./flow wasm examples/wasm/fs_counter.flow --fs idbfs
+#
+# Reads a run counter from a file, increments it, writes it back. Nothing here
+# knows about IndexedDB. In the browser the directory it writes to is an IDBFS
+# mount, so the bytes survive a reload; natively it is a directory on disk.
+#
+# The catch IDBFS adds is that the mount is a memory image of an IndexedDB
+# store, and the two only meet when the host calls FS.syncfs. The page calls it
+# inbound before main() and outbound after, which is why this program can stay
+# a plain stdio program.
+
+extern {
+    function fopen(path: string, mode: string) -&gt; ptr&lt;void&gt;
+    function fclose(f: ptr&lt;void&gt;) -&gt; i32
+    function fread(p: ptr&lt;void&gt;, size: i64, n: i64, f: ptr&lt;void&gt;) -&gt; i64
+    function fwrite(p: ptr&lt;void&gt;, size: i64, n: i64, f: ptr&lt;void&gt;) -&gt; i64
+    function mkdir(path: string, mode: i32) -&gt; i32
+    function malloc(size: i64) -&gt; ptr&lt;void&gt;
+    function free(p: ptr&lt;void&gt;) -&gt; void
+}
+
+const STATE_DIR: string = &quot;persist&quot;
+const STATE_PATH: string = &quot;persist/run_counter.bin&quot;
+
+function read_counter(slot: ptr&lt;i32&gt;) -&gt; i32 {
+    let f: ptr&lt;void&gt; = fopen(STATE_PATH, &quot;rb&quot;)
+    if f == null {
+        return 0
+    }
+    let got: i64 = fread(slot as ptr&lt;void&gt;, 4, 1, f)
+    fclose(f)
+    if got != 1 {
+        return 0
+    }
+    return 1
+}
+
+function write_counter(slot: ptr&lt;i32&gt;) -&gt; i32 {
+    let f: ptr&lt;void&gt; = fopen(STATE_PATH, &quot;wb&quot;)
+    if f == null {
+        return 0 - 1
+    }
+    let put: i64 = fwrite(slot as ptr&lt;void&gt;, 4, 1, f)
+    fclose(f)
+    if put != 1 {
+        return 0 - 1
+    }
+    return 0
+}
+
+function main() -&gt; i32 {
+    println(&quot;fs_counter: a run counter that outlives the page&quot;)
+    mkdir(STATE_DIR, 493)
+
+    let slot: ptr&lt;i32&gt; = malloc(4) as ptr&lt;i32&gt;
+    slot[0] = 0
+
+    let existed: i32 = read_counter(slot)
+    if existed == 1 {
+        print(&quot;  found &quot;)
+        print(STATE_PATH)
+        print(&quot; with previous run count &quot;)
+        println(slot[0])
+    } else {
+        print(&quot;  no state file yet at &quot;)
+        print(STATE_PATH)
+        println(&quot; (first run)&quot;)
+    }
+
+    slot[0] = slot[0] + 1
+    if write_counter(slot) != 0 {
+        println(&quot;FAIL: could not write the state file&quot;)
+        free(slot as ptr&lt;void&gt;)
+        return 1
+    }
+
+    print(&quot;  run count is now &quot;)
+    println(slot[0])
+
+    # Read it straight back so the check does not depend on the host.
+    let verify: ptr&lt;i32&gt; = malloc(4) as ptr&lt;i32&gt;
+    verify[0] = 0 - 1
+    if read_counter(verify) != 1 or verify[0] != slot[0] {
+        println(&quot;FAIL: readback disagreed with what was written&quot;)
+        free(slot as ptr&lt;void&gt;)
+        free(verify as ptr&lt;void&gt;)
+        return 1
+    }
+    println(&quot;  readback matches&quot;)
+
+    let count: i32 = slot[0]
+    free(slot as ptr&lt;void&gt;)
+    free(verify as ptr&lt;void&gt;)
+
+    print(&quot;RUNS=&quot;)
+    println(count)
+    println(&quot;PASS&quot;)
+    return 0
+}
+</pre>
+
+<footer>
+Built by <code>wasm/flow_wasm_fs.py</code>. Mechanism:
+<code>docs/language/wasm-crossings.md</code>.
+</footer>
+</main>
+
+<script src="gif_writer.js"></script>
+<script src="fs_counter.js"></script>
+<script src="fs_preload.js"></script>
+<script>
+const out = document.getElementById("out");
+const log = (s) => { out.textContent += s + "\n"; out.scrollTop = out.scrollHeight; };
+const setFact = (id, text, cls) => {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "v" + (cls ? " " + cls : "");
+};
+const setRes = (id, ok, text) => {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.style.color = ok ? "var(--ok)" : "var(--bad)";
+};
+
+// Instantiate a module without running main, so the page can mount, sync and
+// read around the program.
+function load(factory, opts) {
+  return factory(Object.assign({
+    print: (s) => log(s),
+    printErr: (s) => log("stderr: " + s),
+    noInitialRun: true,
+  }, opts || {}));
+}
+
+// Walk the GIF89a block structure so the frame count is the real one rather
+// than a count of 0x2C bytes, which also occur inside compressed data.
+function parseGif(b) {
+  const width = b[6] | (b[7] << 8);
+  const height = b[8] | (b[9] << 8);
+  let p = 13;
+  if (b[10] & 0x80) p += 3 * (1 << ((b[10] & 0x07) + 1));   // global colour table
+  const skipSubBlocks = () => {
+    while (p < b.length && b[p] !== 0) p += b[p] + 1;
+    p++;
+  };
+  let frames = 0;
+  let trailer = false;
+  while (p < b.length) {
+    const tag = b[p++];
+    if (tag === 0x3b) { trailer = true; break; }          // end of file
+    if (tag === 0x21) { p++; skipSubBlocks(); continue; }  // extension
+    if (tag === 0x2c) {                                     // image descriptor
+      const packed = b[p + 8];
+      p += 9;
+      if (packed & 0x80) p += 3 * (1 << ((packed & 0x07) + 1)); // local table
+      p++;                                                   // LZW min code size
+      skipSubBlocks();
+      frames++;
+      continue;
+    }
+    break;                                                   // unexpected byte
+  }
+  return { width, height, frames, trailer };
+}
+
+// ---- 1. MEMFS + the GIF -------------------------------------------------
+async function runGif() {
+  document.getElementById("run-gif").disabled = true;
+  log("=== gif_writer (MEMFS) ===");
+  const m = await load(createFlowGif);
+  setFact("f-memfs", "mounted", "ok");
+
+  const rc = m.callMain([]);
+  const path = "/build/gif_demo.gif";
+  let bytes = null;
+  try {
+    bytes = m.FS.readFile(path);
+  } catch (e) {
+    log("could not read " + path + ": " + e);
+  }
+
+  if (!bytes) {
+    setRes("g-res", false, "FAIL (no file in MEMFS)");
+    document.getElementById("run-gif").disabled = false;
+    return false;
+  }
+
+  const magic = String.fromCharCode(...bytes.slice(0, 6));
+  const gif = parseGif(bytes);
+
+  document.getElementById("g-path").textContent = path;
+  document.getElementById("g-size").textContent = bytes.length.toLocaleString() + " bytes";
+  document.getElementById("g-magic").textContent =
+    magic + " " + gif.width + "x" + gif.height;
+  document.getElementById("g-frames").textContent =
+    gif.frames + (gif.trailer ? "" : " (truncated)");
+
+  // Same program built with clang and run on macOS produces this file. If the
+  // WASM run hashes the same, the encoder crossed without drifting a byte.
+  const NATIVE_SHA256 =
+    "9bbb1327b8f74b69dd87e50f65adafe7da7d2eaca963c646604ab2596844f59b";
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const sha = [...new Uint8Array(digest)].map((v) => v.toString(16).padStart(2, "0")).join("");
+  const sameAsNative = sha === NATIVE_SHA256;
+  document.getElementById("g-sha").textContent = sha;
+  const sameCell = document.getElementById("g-same");
+  sameCell.textContent = sameAsNative ? "yes, byte for byte" : "no";
+  sameCell.style.color = sameAsNative ? "var(--ok)" : "var(--warn)";
+
+  const url = URL.createObjectURL(new Blob([bytes], { type: "image/gif" }));
+  const img = document.getElementById("gif-img");
+  const shown = await new Promise((resolve) => {
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+
+  const ok = rc === 0 && magic.startsWith("GIF89a") && gif.trailer && gif.frames === 24 && shown;
+  log(`  exit ${rc}, ${bytes.length} bytes, header ${magic} ${gif.width}x${gif.height}, ${gif.frames} frames, trailer ${gif.trailer}`);
+  log(`  browser decoded it: ${shown} (${img.naturalWidth}x${img.naturalHeight})`);
+  setRes("g-res", ok, ok ? `PASS: decoded ${img.naturalWidth}x${img.naturalHeight}` : "FAIL");
+  document.getElementById("run-gif").disabled = false;
+  return ok;
+}
+
+// ---- 2. IDBFS -----------------------------------------------------------
+// IDBFS is a MEMFS image plus an IndexedDB store, and they only meet when
+// FS.syncfs is called. Inbound before the program runs, outbound after.
+async function runCounter() {
+  document.getElementById("run-counter").disabled = true;
+  log("=== fs_counter (IDBFS) ===");
+  let syncIn = false;
+
+  const m = await load(createFlowCounter, {
+    preRun: [function (mod) {
+      const FS = mod.FS;
+      try { FS.mkdir("/persist"); } catch (e) { /* already there */ }
+      FS.mount(mod.IDBFS, {}, "/persist");
+      // Block startup until the IndexedDB contents are in memory.
+      mod.addRunDependency("idbfs-in");
+      FS.syncfs(true, (err) => {
+        if (err) log("  syncfs(in) error: " + err);
+        else syncIn = true;
+        mod.removeRunDependency("idbfs-in");
+      });
+    }],
+  });
+  setFact("f-idbfs", "mounted at /persist", "ok");
+  log("  syncfs(true) done: " + syncIn);
+
+  let before = 0;
+  try {
+    const prev = m.FS.readFile("/persist/run_counter.bin");
+    before = new DataView(prev.buffer, prev.byteOffset, 4).getInt32(0, true);
+  } catch (e) {
+    before = 0;
+  }
+
+  const rc = m.callMain([]);
+
+  const after = new DataView(
+    m.FS.readFile("/persist/run_counter.bin").buffer
+  ).getInt32(0, true);
+
+  const syncOut = await new Promise((resolve) => {
+    m.FS.syncfs(false, (err) => {
+      if (err) log("  syncfs(out) error: " + err);
+      resolve(!err);
+    });
+  });
+  log("  syncfs(false) done: " + syncOut);
+
+  document.getElementById("c-before").textContent = String(before);
+  document.getElementById("c-after").textContent = String(after);
+  document.getElementById("c-sync").textContent = `${syncIn} / ${syncOut}`;
+  setFact("f-runs", String(after), "ok");
+  const ok = rc === 0 && after === before + 1 && syncOut;
+  setRes("c-res", ok, ok ? `PASS: ${before} -> ${after}, persisted` : "FAIL");
+  log(`  exit ${rc}, counter ${before} -> ${after}`);
+  document.getElementById("run-counter").disabled = false;
+  return ok;
+}
+
+async function wipe() {
+  const m = await load(createFlowCounter, {
+    preRun: [function (mod) {
+      const FS = mod.FS;
+      try { FS.mkdir("/persist"); } catch (e) { /* already there */ }
+      FS.mount(mod.IDBFS, {}, "/persist");
+      mod.addRunDependency("idbfs-in");
+      FS.syncfs(true, () => mod.removeRunDependency("idbfs-in"));
+    }],
+  });
+  try { m.FS.unlink("/persist/run_counter.bin"); } catch (e) { /* nothing there */ }
+  await new Promise((r) => m.FS.syncfs(false, r));
+  log("stored state wiped");
+  setFact("f-runs", "0");
+}
+
+// ---- 3. --preload-file ---------------------------------------------------
+async function runPreload() {
+  document.getElementById("run-preload").disabled = true;
+  log("=== fs_preload (--preload-file) ===");
+  const m = await load(createFlowPreload);
+  let listed = [];
+  try { listed = m.FS.readdir("/data"); } catch (e) { /* not mounted */ }
+  setFact("f-preload", listed.filter((f) => f[0] !== ".").join(", ") || "missing",
+          listed.length > 2 ? "ok" : "bad");
+
+  let text = "";
+  const rc = m.callMain([]);
+  text = out.textContent;
+  const num = (re) => { const mm = text.match(re); return mm ? mm[1] : null; };
+  document.getElementById("p-bytes").textContent = num(/bytes: (\d+)/) || "\u2014";
+  document.getElementById("p-lines").textContent = num(/lines: (\d+)/) || "\u2014";
+  document.getElementById("p-sum").textContent = num(/checksum: (-?\d+)/) || "\u2014";
+  const ok = rc === 0;
+  setRes("p-res", ok, ok ? "PASS" : "FAIL");
+  document.getElementById("run-preload").disabled = false;
+  return ok;
+}
+
+document.getElementById("run-gif").onclick = runGif;
+document.getElementById("run-counter").onclick = runCounter;
+document.getElementById("run-preload").onclick = runPreload;
+document.getElementById("reload").onclick = () => location.reload();
+document.getElementById("wipe").onclick = wipe;
+window.runGif = runGif;
+window.runCounter = runCounter;
+window.runPreload = runPreload;
+window.wipeState = wipe;
+</script>
+</body>
+</html>

@@ -2801,23 +2801,36 @@ for f in sys.argv[1:]:
         # the plain single-threaded page. See docs/language/wasm-crossings.md.
         wasm_threads=0
         wasm_workers=8
+        wasm_fs=""
+        wasm_preload=()
         wasm_args=()
         while [ $# -gt 0 ]; do
             case "$1" in
                 --threads) wasm_threads=1 ;;
                 --workers) shift; wasm_workers="${1:-8}" ;;
+                --fs) shift; wasm_fs="${1:-memfs}" ;;
+                --preload) shift; wasm_preload+=(--preload "${1:-}") ;;
                 *) wasm_args+=("$1") ;;
             esac
             shift
         done
         set -- ${wasm_args[@]+"${wasm_args[@]}"}
         if [ -z "${1:-}" ]; then
-            print_error "Usage: flow wasm <program.flow> [--threads] [--workers N]"
+            print_error "Usage: flow wasm <program.flow> [--threads] [--workers N] [--fs memfs|idbfs] [--preload DIR@/MOUNT]"
             print_info "Requires emcc (Emscripten). See docs/language/wasm.md"
             print_info "Smoke without a file: ./scripts/build_wasm_hello.sh"
             exit 1
         fi
         require_flow_file "${1:-}"
+        if [ -n "$wasm_fs" ]; then
+            print_info "Flow → C → WASM with a $wasm_fs filesystem (see docs/language/wasm-crossings.md)"
+            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_fs.py" "$1" --fs "$wasm_fs" \
+                    ${wasm_preload[@]+"${wasm_preload[@]}"}; then
+                print_error "Filesystem WASM build failed"
+                exit 1
+            fi
+            exit 0
+        fi
         if [ "$wasm_threads" -eq 1 ]; then
             print_info "Flow → C → threaded WASM (see docs/language/wasm-crossings.md)"
             if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_threads.py" "$1" --workers "$wasm_workers"; then
