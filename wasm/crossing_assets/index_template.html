@@ -1,0 +1,77 @@
+<h1>WASM crossings</h1>
+<p class="lede">
+Five things people assume a systems language cannot take to WebAssembly. Flow
+does all five in runtime C or in its own codegen, so each one is a concrete
+question with a concrete answer. Every page below states the mechanism, the
+constraint that made it look impossible, the workaround, and a number measured
+in a real browser.
+</p>
+
+<div class="panel">
+<table>
+  <thead><tr><th>crossing</th><th>what actually crosses</th><th>measured in Chrome</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><a href="threads/">1. OS threads</a></td>
+      <td>pthreads over Web Workers and a shared heap</td>
+      <td>7.78x on 8 workers, bit-identical results</td>
+    </tr>
+    <tr>
+      <td><a href="gpu/">2. The GPU</a></td>
+      <td>Flow's own AST to WGSL, dispatched by WebGPU</td>
+      <td>1,048,576 / 1,048,576 elements agree exactly</td>
+    </tr>
+    <tr>
+      <td><a href="sockets/">3. Sockets</a></td>
+      <td>BSD sockets mapped onto WebSocket frames</td>
+      <td>8 / 8 round trips, best rtt 2.20 ms</td>
+    </tr>
+    <tr>
+      <td><a href="python/">4. Embedded CPython</a></td>
+      <td>Flow's embedding ABI routed to Pyodide</td>
+      <td>CPython 3.12.7, 11 / 11 checks</td>
+    </tr>
+    <tr>
+      <td><a href="fs/">5. The filesystem</a></td>
+      <td>stdio on MEMFS, IDBFS and preloaded data</td>
+      <td>GIF byte-identical to native, state survives reload</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Running them</h2>
+<div class="panel">
+<pre class="source">python3 -m http.server -d site 8000
+open http://127.0.0.1:8000/wasm-crossings/
+
+# crossing 3 needs the echo relay running first
+python3 scripts/ws_echo_relay.py --port 9505
+
+# rebuilding
+./flow wasm examples/wasm/parallel_sum.flow --threads --workers 8
+./flow gpu examples/wasm/gpu_vector_add.flow --wgsl
+./flow wasm examples/wasm/fs_counter.flow --fs idbfs
+python3 wasm/flow_wasm_sockets.py
+python3 wasm/flow_wasm_python.py
+python3 wasm/flow_wasm_fs.py</pre>
+</div>
+
+<h2>Notes that apply to all of them</h2>
+<div class="panel">
+<ul>
+  <li>Crossings 1 and 3 need a foreground tab to measure honestly. Chrome
+      clamps timers in a background tab to about 1 Hz, which turned a 3.4 ms
+      round trip into 748 ms with no code change.</li>
+  <li>V8 compiles WASM at a baseline tier first. A workload run once is
+      measuring the baseline compiler; the demos take the best of several
+      passes.</li>
+  <li>Crossing 4 fetches Pyodide from a CDN, so that page needs network. The
+      other four are self-contained.</li>
+</ul>
+</div>
+
+<footer>
+Mechanism and full measurements: <code>docs/language/wasm-crossings.md</code>.
+Builders: <code>wasm/flow_wasm_*.py</code>.
+</footer>
