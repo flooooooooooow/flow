@@ -405,6 +405,29 @@ def missile_script() -> str:
     return ",".join(parts)
 
 
+def falling_sand_script() -> str:
+    """Draws with the keyboard pen. Sand first, then the pen walks down into
+    the oil pool, the brush is widened twice, and fire is laid into the oil;
+    once it has taken hold the pen climbs back up and pours water on it.
+
+    The pen accelerates while a direction is held (2 px/frame for six frames,
+    then 4, then 6), so the two travel windows below are sized to land on the
+    oil pool at y=132 and to climb back to y=98.
+    """
+    return ",".join([
+        "2-18:49",      # paint sand from the start position
+        "8-18:124",     # sweep the stroke right
+        "22-23:23",     # 5 -> fire
+        "24-45:125",    # walk the pen down into the oil pool
+        "47:30",        # ] widen the brush
+        "50:30",        # ] again, radius 8
+        "52-70:49",     # light the oil
+        "74-75:20",     # 3 -> water
+        "76-86:126",    # climb back above the fire
+        "88-104:49",    # pour water onto it: steam
+    ])
+
+
 @dataclass
 class Demo:
     name: str
@@ -563,6 +586,21 @@ DEMOS: list[Demo] = [
          "Checkers — hotseat opening with three forced jumps", 0.6),
     game("chetris", chetris_script(), 560,
          "Chetris — tetromino locks and king moves, turn by turn", 0.6),
+    # ---- sandbox ----
+    Demo(
+        name="falling_sand",
+        program="examples/games/falling_sand_gfx.flow",
+        caption="The Falling Sand Game — a sand stroke, then oil set alight "
+                "and doused with water",
+        frames=120,
+        skip=1,
+        duration_ms=55,
+        scale=1.0,
+        keys=falling_sand_script(),
+        colors=40,
+        # One simulated cell per pixel: interpolating would smear the grain.
+        resample=Image.NEAREST,
+    ),
 ]
 
 

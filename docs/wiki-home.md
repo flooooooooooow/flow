@@ -104,7 +104,7 @@ scripted input.
 
 </div>
 
-**[Full game gallery →](demos/games.md)** — all 23 games with recorded
+**[Full game gallery →](demos/games.md)** — all 24 games with recorded
 gameplay, run commands, and sources.
 
 **[Morphogenesis gallery →](demos/morphogenesis.md)** — twenty live simulations
@@ -127,7 +127,7 @@ and policy gradients against the games above, plus
 | [Interactive Tutorials](tutorials/index.html) | Edit &amp; run **130+** lessons (incl. manual memory) |
 | [Beginner guide](tutorials/beginner.md) | Variables, functions, control flow |
 | [Playground](playground/index.html) | Syntax explorer with verified examples (compile locally with `./flow run`) |
-| [Game gallery](demos/games.md) | 23 complete games, each with a recorded GIF |
+| [Game gallery](demos/games.md) | 24 complete games, each with a recorded GIF |
 | [Morphogenesis gallery](demos/morphogenesis.md) | 20 pattern-formation simulations, each with a recorded GIF |
 | [Training game AIs](tutorials/game-ai.md) | Q-learning, GA, and policy gradients that measurably learn |
 | [ML on a MacBook](tutorials/ml-on-macbook.md) | Digit classifier, parallel training, the Metal path |
