@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -10,7 +12,7 @@ import pytest
 
 from flow.mlir_jit import MLIRJIT
 from flow.jit_runner import compile_flow_to_mlir
-from tests.unit.compiler_helpers import compile_and_run, needs_clang
+from tests.unit.compiler_helpers import compile_and_run, needs_clang, to_c
 
 
 def _mlir_toolchain() -> bool:
@@ -42,6 +44,40 @@ def _run_mlir(source: str) -> int:
         return result
     finally:
         Path(flow_file).unlink(missing_ok=True)
+
+
+def _run_c_capture(source: str) -> tuple[int, str]:
+    """Transpile -> clang -> run; return (exit code, stdout)."""
+    c_code = to_c(source)
+    with tempfile.TemporaryDirectory() as td:
+        c_path = os.path.join(td, "prog.c")
+        bin_path = os.path.join(td, "prog")
+        Path(c_path).write_text(c_code)
+        build = subprocess.run(
+            ["clang", "-w", "-O0", "-o", bin_path, c_path],
+            capture_output=True,
+            text=True,
+        )
+        assert build.returncode == 0, f"clang failed:\n{build.stderr}\n---\n{c_code}"
+        run = subprocess.run([bin_path], capture_output=True, text=True)
+        return run.returncode, run.stdout
+
+
+def _run_mlir_capture(source: str, capsys) -> tuple[int, str]:
+    """Run through the MLIR JIT; return (exit code, program stdout).
+
+    MLIRJIT forwards the child's stdout to sys.stdout, so capsys sees it. JIT
+    diagnostics are prefixed with a status emoji and are filtered out.
+    """
+    capsys.readouterr()  # drop anything buffered so far
+    rc = _run_mlir(source)
+    captured = capsys.readouterr()
+    lines = [
+        ln
+        for ln in captured.out.splitlines()
+        if not ln.startswith(("⚠️", "❌", "MLIR "))
+    ]
+    return rc, "".join(ln + "\n" for ln in lines)
 
 
 PROGRAMS = {
@@ -363,3 +399,74 @@ def test_c_mlir_exit_code_parity(name: str):
     # are missing, so any exception here is a real lowering failure.
     mlir_rc = _run_mlir(src)
     assert c_rc == mlir_rc == 0, f"{name}: C={c_rc} MLIR={mlir_rc}"
+
+
+# Programs whose observable behaviour is stdout, not just the exit code.
+STDOUT_PROGRAMS = {
+    "defer_lifo": """
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+function work() -> i32 {
+    let mut acc: i32 = 0
+    defer printf("cleanup-a\\n", 0)
+    defer printf("cleanup-b\\n", 0)
+    acc = acc + 41
+    printf("body\\n", 0)
+    return acc
+}
+function main() -> i32 {
+    if work() == 41 {
+        return 0
+    }
+    return 1
+}
+""",
+    "defer_in_loop_body": """
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+function main() -> i32 {
+    let mut i: i32 = 0
+    while i < 3 {
+        defer printf("tick %d\\n", i)
+        i = i + 1
+    }
+    if i == 3 {
+        return 0
+    }
+    return 1
+}
+""",
+    "break_skips_tail": """
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+function main() -> i32 {
+    let mut i: i32 = 0
+    while i < 10 {
+        if i == 2 {
+            break
+        }
+        printf("i=%d\\n", i)
+        i = i + 1
+    }
+    if i == 2 {
+        return 0
+    }
+    return 1
+}
+""",
+}
+
+
+@needs_clang
+@needs_mlir
+@pytest.mark.parametrize("name", list(STDOUT_PROGRAMS.keys()))
+def test_c_mlir_stdout_parity(name: str, capsys):
+    src = STDOUT_PROGRAMS[name]
+    c_rc, c_out = _run_c_capture(src)
+    mlir_rc, mlir_out = _run_mlir_capture(src, capsys)
+    assert c_rc == 0, f"{name}: C exited {c_rc}"
+    assert c_rc == mlir_rc, f"{name}: C={c_rc} MLIR={mlir_rc}"
+    assert c_out == mlir_out, f"{name}: C stdout {c_out!r} != MLIR {mlir_out!r}"
