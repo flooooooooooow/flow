@@ -27,7 +27,8 @@ from .parser import (
     TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
     MatchStatement, StructPattern, OrPattern, ListPattern, DeferStatement, TryExpr, Lambda,
     VectorLiteral, ExpectStatement, RecordUpdate, BreakStatement, ContinueStatement,
-    SortExpr,
+    SortExpr, SliceExpr,
+    is_span_type_name, span_is_mutable, span_element_name, format_span_type,
 )
 from .attributes import attribute_errors
 
@@ -50,6 +51,7 @@ class TypeKind(Enum):
     STRING = "string"
     STRUCT = "struct"
     ARRAY = "array"
+    SPAN = "span"  # Borrowed view {pointer, length} — docs/language/spans.md
     POINTER = "pointer"
     FUNCTION = "function"
     NULL = "null"  # null pointer type
@@ -101,6 +103,8 @@ class SemanticType:
                 return f"array<{self.element_type}, {self.size}>"
             else:
                 return f"array<{self.element_type}>"
+        elif self.kind == TypeKind.SPAN:
+            return format_span_type(self.name, self.size)
         elif self.kind == TypeKind.POINTER:
             return f"ptr<{self.element_type}>"
         elif self.kind == TypeKind.FUNCTION:
@@ -450,6 +454,16 @@ class TypeChecker:
         self._current_function_name: Optional[str] = None
         # name -> declared effect row (`with E1, E2`)
         self.function_effects: Dict[str, List[str]] = {}
+        # name -> declaration, for diagnostics that want parameter names
+        self.function_decls: Dict[str, FunctionDecl] = {}
+
+        # Spans (docs/language/spans.md). Escape checking is scope-local, not
+        # a region inference: we track which locals own storage in the current
+        # function and which span locals borrow from them.
+        self.static_names: Set[str] = set()
+        self._function_local_storage: Set[str] = set()
+        self._span_origin: Dict[str, str] = {}
+        self._current_return_type: Optional[SemanticType] = None
 
     def _is_numeric(self, t: SemanticType) -> bool:
         return t.kind in {
@@ -637,6 +651,204 @@ class TypeChecker:
         )
         return left_type if left_dims is not None else right_type
 
+    # --- Spans (docs/language/spans.md) ---------------------------------
+    @staticmethod
+    def _is_span(t: Optional[SemanticType]) -> bool:
+        return bool(t is not None and t.kind == TypeKind.SPAN)
+
+    @staticmethod
+    def _span_is_mut(t: SemanticType) -> bool:
+        return span_is_mutable(t.name)
+
+    def _span_elements_match(self, actual_elem, expected_elem) -> bool:
+        """Element types of a borrow must agree exactly (no widening).
+
+        A span aliases storage, so a `span<f64>` may not view an `array<f32>`:
+        the reinterpretation would be unsound.
+        """
+        if actual_elem is None or expected_elem is None:
+            return True
+        return actual_elem == expected_elem
+
+    def _borrow_compatible(self, actual: SemanticType, expected: SemanticType) -> bool:
+        """Can `actual` be auto-borrowed into the span type `expected`?
+
+        Extent is deliberately not checked here: a length mismatch selects the
+        overload and is then reported by `_check_span_arguments` with both
+        numbers named. Pointers are rejected — their length is unknown.
+        """
+        if not self._is_span(expected):
+            return False
+        if actual.kind == TypeKind.POINTER:
+            return False
+        if actual.kind == TypeKind.ARRAY:
+            return self._span_elements_match(actual.element_type, expected.element_type)
+        if self._is_span(actual):
+            if not self._span_elements_match(actual.element_type, expected.element_type):
+                return False
+            # span<mut T> needs a mutable source; span<const T> takes either.
+            return self._span_is_mut(actual) or not self._span_is_mut(expected)
+        return False
+
+    @staticmethod
+    def _location_suffix(node: Any) -> str:
+        loc = getattr(node, "location", None)
+        if loc is None:
+            return ""
+        return f" at line {loc.line + 1}, column {loc.column + 1}"
+
+    def _static_length(self, expr: Any) -> Optional[int]:
+        """Compile-time length of a borrow source, or None if dynamic."""
+        if isinstance(expr, ArrayLiteral):
+            return len(expr.elements)
+        if isinstance(expr, SliceExpr):
+            lo = self._literal_int(expr.start)
+            hi = self._literal_int(expr.end)
+            if lo is None or hi is None:
+                return None
+            return max(0, hi - lo)
+        if isinstance(expr, Variable):
+            symbol = self.current_scope.lookup(expr.name)
+            if symbol is None:
+                return None
+            if symbol.type.kind in (TypeKind.ARRAY, TypeKind.SPAN):
+                return symbol.type.size
+        return None
+
+    def _literal_int(self, expr: Any) -> Optional[int]:
+        if isinstance(expr, Literal):
+            try:
+                text = str(expr.value)
+                return int(text, 16) if text.lower().startswith("0x") else int(text)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            inner = self._literal_int(expr.operand)
+            return None if inner is None else -inner
+        if isinstance(expr, Variable):
+            symbol = self._lookup_const_symbol(expr.name)
+            if symbol is not None and isinstance(symbol.definition, ConstDecl):
+                return self._literal_int(symbol.definition.value)
+        return None
+
+    def _borrow_source_is_mutable_storage(self, expr: Any) -> Optional[bool]:
+        """True/False when the borrow root is a binding, None when unknown."""
+        if isinstance(expr, SliceExpr):
+            return self._borrow_source_is_mutable_storage(expr.base)
+        if isinstance(expr, Variable):
+            symbol = self.current_scope.lookup(expr.name)
+            if symbol is None:
+                return None
+            if symbol.type.kind == TypeKind.SPAN:
+                # A span's own mutability lives in its type, not its binding.
+                return self._span_is_mut(symbol.type)
+            if symbol.type.kind == TypeKind.POINTER:
+                return True
+            return symbol.is_mutable
+        return None
+
+    def _borrow_root_name(self, expr: Any) -> Optional[str]:
+        if isinstance(expr, Variable):
+            return expr.name
+        if isinstance(expr, SliceExpr):
+            return self._borrow_root_name(expr.base)
+        if isinstance(expr, ArrayAccess):
+            return self._borrow_root_name(expr.array)
+        if isinstance(expr, FieldAccess):
+            return self._borrow_root_name(expr.object)
+        return None
+
+    def _local_borrow_origin(self, expr: Any) -> Optional[str]:
+        """Name of function-local storage this expression borrows, if any."""
+        if isinstance(expr, SliceExpr):
+            return self._local_borrow_origin(expr.base)
+        if isinstance(expr, Variable):
+            if expr.name in self._function_local_storage:
+                return expr.name
+            return self._span_origin.get(expr.name)
+        return None
+
+    def _check_slice_expr(self, expr: SliceExpr) -> SemanticType:
+        base_type = self._check_expression(expr.base)
+        for bound, what in ((expr.start, "start"), (expr.end, "end")):
+            bound_type = self._check_expression(bound)
+            if bound_type.kind not in (TypeKind.UNKNOWN, TypeKind.VOID) and not self._is_integer(bound_type):
+                self.errors.append(
+                    f"slice {what} bound must be an integer, got {bound_type}"
+                )
+        if base_type.kind not in (TypeKind.ARRAY, TypeKind.SPAN, TypeKind.POINTER):
+            if self.strict:
+                self.errors.append(
+                    f"cannot slice {base_type}: a slice needs contiguous storage "
+                    f"(array<T, N>, span, or ptr<T>)"
+                )
+            return SemanticType(TypeKind.UNKNOWN)
+
+        elem = base_type.element_type or SemanticType(TypeKind.UNKNOWN)
+        mutable = self._borrow_source_is_mutable_storage(expr.base)
+        is_mut = True if mutable is None else mutable
+        prefix = "span_mut_" if is_mut else "span_const_"
+        return SemanticType(
+            TypeKind.SPAN,
+            name=f"{prefix}{elem}",
+            element_type=elem,
+            size=self._static_length(expr),
+        )
+
+    def _check_span_arguments(self, call: FunctionCall, signature: SemanticType) -> bool:
+        """Validate auto-borrow at a call site (docs/language/spans.md).
+
+        Checks mutability of the borrowed storage, rejects pointers (no
+        length), and enforces static extents. Returns True if it reported
+        anything, so the caller can skip a generic overload complaint.
+        """
+        before = len(self.errors)
+        decl = self.function_decls.get(call.name)
+        for index, expected in enumerate(signature.param_types):
+            if not self._is_span(expected) or index >= len(call.arguments):
+                continue
+            arg = call.arguments[index]
+            param_name = (
+                decl.parameters[index].name
+                if decl is not None and index < len(decl.parameters)
+                else f"#{index + 1}"
+            )
+            actual = self._infer_type_quiet(arg)
+
+            if actual.kind == TypeKind.POINTER:
+                self.errors.append(
+                    f"cannot borrow {actual} into {expected} for parameter "
+                    f"'{param_name}' of '{call.name}': a pointer has no length. "
+                    f"Slice it instead, e.g. `{self._borrow_root_name(arg) or 'p'}[0..n]`"
+                )
+                continue
+
+            if self._span_is_mut(expected):
+                mutable = self._borrow_source_is_mutable_storage(arg)
+                if mutable is False:
+                    binding = self._borrow_root_name(arg) or param_name
+                    self.errors.append(
+                        f"cannot borrow `{binding}` mutably; it is declared with `let`"
+                    )
+                    continue
+
+            if expected.size is not None:
+                length = self._static_length(arg)
+                if length is None:
+                    self.errors.append(
+                        f"static extent mismatch: parameter '{param_name}' of "
+                        f"'{call.name}' expects {expected}, but the argument length "
+                        f"is not known at compile time; a static-extent span cannot "
+                        f"be formed from a dynamic length"
+                    )
+                elif length != expected.size:
+                    self.errors.append(
+                        f"static extent mismatch: parameter '{param_name}' of "
+                        f"'{call.name}' expects {expected} but the argument has "
+                        f"length {length} (expected {expected.size}, got {length})"
+                    )
+        return len(self.errors) > before
+
     def _can_coerce(self, actual: SemanticType, expected: SemanticType) -> bool:
         if actual is None or expected is None:
             return True
@@ -646,6 +858,8 @@ class TypeChecker:
             or expected.kind in {TypeKind.VOID, TypeKind.UNKNOWN}
         ):
             return True
+        if self._is_span(expected) or self._is_span(actual):
+            return self._borrow_compatible(actual, expected)
         if actual == expected:
             return True
         # Unit types agree when their dimension vectors agree (an anonymous
@@ -882,6 +1096,7 @@ class TypeChecker:
                 symbol = Symbol(decl.name, static_type, "variable",
                               is_mutable=True, definition=decl)
                 self.global_scope.define(symbol)
+                self.static_names.add(decl.name)
 
     def _define_function(self, name: str, decl: FunctionDecl) -> None:
         param_types = [self._parse_type(p.type) for p in decl.parameters]
@@ -897,6 +1112,7 @@ class TypeChecker:
                       getattr(decl, 'is_exported', False), decl)
         self.global_scope.define(symbol)
         self.function_effects[name] = row
+        self.function_decls[name] = decl
         # Validate effect names in the row early
         for effect_name in row:
             if effect_name not in self.effect_types and self.strict:
@@ -1062,6 +1278,15 @@ class TypeChecker:
         declared_row = set(getattr(func, "effects", None) or [])
         self._effect_handler_stack.append(declared_row)
 
+        # Span escape checking is per-function: locals owning storage and the
+        # span locals that borrow them are tracked only inside this body.
+        prev_local_storage = self._function_local_storage
+        prev_span_origin = self._span_origin
+        prev_return_type = self._current_return_type
+        self._function_local_storage = set()
+        self._span_origin = {}
+        self._current_return_type = self._parse_type(func.return_type)
+
         try:
             # Add parameters to scope
             for param in func.parameters:
@@ -1099,6 +1324,9 @@ class TypeChecker:
             self.current_scope = func_scope.parent
             self._current_rt_safe_fn = prev_rt_safe_fn
             self._current_function_name = prev_fn_name
+            self._function_local_storage = prev_local_storage
+            self._span_origin = prev_span_origin
+            self._current_return_type = prev_return_type
 
     def _check_const(self, const: ConstDecl) -> None:
         """Type check a constant declaration."""
@@ -1135,6 +1363,16 @@ class TypeChecker:
             and getattr(t, "size", None)
             and getattr(t, "element_type", None) is not None
         )
+
+        if is_span_type_name(t.name):
+            # A span static starts empty ({NULL, 0}); a real borrow is
+            # installed at runtime and escape-checked at the assignment.
+            if not (isinstance(decl.value, Literal) and decl.value.value == "null"):
+                self.errors.append(
+                    f"Module static '{name}' of span type must be "
+                    f"initialized to null"
+                )
+            return
 
         if is_pointer:
             # Pointers may only start as null; any other address would not be
@@ -1667,6 +1905,11 @@ class TypeChecker:
             else:
                 expected_type = SemanticType(TypeKind.UNKNOWN)
             is_mutable = getattr(var, 'is_mutable', False)
+            if (
+                expected_type.kind != TypeKind.SPAN
+                and self._current_function_name is not None
+            ):
+                self._function_local_storage.add(var.name)
             self.current_scope.define(
                 Symbol(var.name, expected_type, "variable", is_mutable=is_mutable)
             )
@@ -1688,6 +1931,17 @@ class TypeChecker:
             # Type inference - for now, just use the expression type
             expected_type = expr_type
 
+        # Span bookkeeping: a local of storage kind can be borrowed from; a
+        # local span records which storage (if any) it borrows.
+        if expected_type.kind == TypeKind.SPAN:
+            origin = self._local_borrow_origin(var.initializer)
+            if origin is not None:
+                self._span_origin[var.name] = origin
+            else:
+                self._span_origin.pop(var.name, None)
+        elif self._current_function_name is not None:
+            self._function_local_storage.add(var.name)
+
         # Add to current scope with mutability flag
         is_mutable = getattr(var, 'is_mutable', False)
         symbol = Symbol(var.name, expected_type, "variable", is_mutable=is_mutable)
@@ -1705,6 +1959,15 @@ class TypeChecker:
         """Type check a return statement."""
         if ret.value:
             ret_type = self._check_expression(ret.value)
+            # Escape check: a returned span may not view storage that dies
+            # with this frame (docs/language/spans.md, "Lifetime").
+            if self._is_span(self._current_return_type):
+                origin = self._local_borrow_origin(ret.value)
+                if origin is not None:
+                    self.errors.append(
+                        f"span outlives borrowed storage `{origin}`"
+                        f"{self._location_suffix(ret)}"
+                    )
         else:
             ret_type = SemanticType(TypeKind.VOID)
         # Record for the enclosing function's return-type validation. Recording
@@ -1718,11 +1981,21 @@ class TypeChecker:
         """Type check an assignment."""
         # Handle field access assignments (target_expr is set)
         if assign.target_expr is not None:
-            # For now, allow all field/array assignments - mutability check 
-            # would require tracking whether the base object is mutable
+            # Writing through a span is only legal for a mutable view.
+            if isinstance(assign.target_expr, ArrayAccess):
+                base_type = self._infer_type_quiet(assign.target_expr.array)
+                if self._is_span(base_type) and not self._span_is_mut(base_type):
+                    binding = self._borrow_root_name(assign.target_expr) or "span"
+                    self.errors.append(
+                        f"cannot write through `{binding}`: {base_type} is an "
+                        f"immutable view (declare it "
+                        f"{format_span_type('span_mut_' + span_element_name(base_type.name))})"
+                    )
+            # Other field/array assignments are permitted; a full mutability
+            # check would require tracking whether the base object is mutable.
             expr_type = self._check_expression(assign.value)
             return expr_type
-        
+
         symbol = self.current_scope.lookup(assign.target)
         if not symbol:
             self.errors.append(f"Undefined variable '{assign.target}'")
@@ -1740,6 +2013,15 @@ class TypeChecker:
             symbol.is_mutable = True
 
         expr_type = self._check_expression(assign.value)
+        # Escape check: a module static outlives every frame, so it may not
+        # be given a view of a local.
+        if self._is_span(symbol.type) and assign.target in self.static_names:
+            origin = self._local_borrow_origin(assign.value)
+            if origin is not None:
+                self.errors.append(
+                    f"span outlives borrowed storage `{origin}`"
+                    f"{self._location_suffix(assign)}"
+                )
         if not self._can_coerce(expr_type, symbol.type):
             self.errors.append(
                 f"Cannot assign {expr_type} to variable '{assign.target}' of type {symbol.type}"
@@ -1857,9 +2139,11 @@ class TypeChecker:
             return SemanticType(
                 TypeKind.UNKNOWN, name=f"vec{len(expr.elements)}_{elem_name}"
             )
+        elif isinstance(expr, SliceExpr):
+            return self._check_slice_expr(expr)
         elif isinstance(expr, ArrayAccess):
             base_type = self._check_expression(expr.array)
-            if base_type.kind == TypeKind.ARRAY or base_type.kind == TypeKind.POINTER:
+            if base_type.kind in (TypeKind.ARRAY, TypeKind.POINTER, TypeKind.SPAN):
                 return base_type.element_type or SemanticType(TypeKind.VOID)
             return SemanticType(TypeKind.VOID)
         elif isinstance(expr, CastExpression):
@@ -1870,6 +2154,15 @@ class TypeChecker:
             return target_type
         elif isinstance(expr, FieldAccess):
             obj_type = self._check_expression(expr.object)
+            # A span exposes exactly one field: its length.
+            if obj_type.kind == TypeKind.SPAN:
+                if expr.field == "len":
+                    return SemanticType(TypeKind.I64)
+                self.errors.append(
+                    f"span has no field '{expr.field}'; a span exposes `.len` "
+                    f"and element access `[i]`"
+                )
+                return SemanticType(TypeKind.UNKNOWN)
             struct_name = None
             if obj_type.kind == TypeKind.STRUCT:
                 struct_name = obj_type.name
@@ -2404,6 +2697,7 @@ class TypeChecker:
                 break
 
         if matching_overload:
+            self._check_span_arguments(call, matching_overload)
             return matching_overload.return_type
 
         # Fallback to builtin if no overload matches
@@ -2414,6 +2708,16 @@ class TypeChecker:
             elif kind == TypeKind.ARRAY:
                 return SemanticType(TypeKind.ARRAY, element_type=SemanticType(TypeKind.I32))
             return SemanticType(kind)
+
+        # A failed borrow (e.g. a pointer argument) reads as "no matching
+        # overload" unless we say what actually went wrong.
+        for candidate in candidates:
+            if len(candidate.param_types) != len(arg_types):
+                continue
+            if not any(self._is_span(p) for p in candidate.param_types):
+                continue
+            if self._check_span_arguments(call, candidate):
+                return candidate.return_type
 
         # No match found - report error based on the first candidate (or provide generic error)
         self.errors.append(
@@ -2486,6 +2790,10 @@ class TypeChecker:
         """Check if actual type is compatible with expected type."""
         if actual == expected:
             return True
+
+        # Borrowed views: arrays and other spans auto-borrow, pointers do not.
+        if self._is_span(expected) or self._is_span(actual):
+            return self._borrow_compatible(actual, expected)
 
         # Unit types: dimension vectors decide compatibility.
         actual_dims = self._dims_of(actual)
@@ -2684,6 +2992,21 @@ class TypeChecker:
                 param_types=params,
                 return_type=ret,
                 effects=list(getattr(parsed_type, "effects", None) or []),
+            )
+        # Borrowed views: span_const_T / span_mut_T (docs/language/spans.md).
+        if is_span_type_name(parsed_type.name):
+            if parsed_type.element_type is not None:
+                elem = self._parse_type(parsed_type.element_type)
+            else:
+                elem = (
+                    self._parse_named_scalar(span_element_name(parsed_type.name))
+                    or SemanticType(TypeKind.UNKNOWN, name=span_element_name(parsed_type.name))
+                )
+            return SemanticType(
+                TypeKind.SPAN,
+                name=parsed_type.name,
+                element_type=elem,
+                size=parsed_type.size,
             )
         if parsed_type.type_args:
             base_name = parsed_type.name.split("_", 1)[0]
