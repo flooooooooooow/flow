@@ -30,7 +30,11 @@ from .parser import (
     SortExpr, SliceExpr,
     is_span_type_name, span_is_mutable, span_element_name, format_span_type,
 )
-from .attributes import attribute_errors
+from .attributes import (
+    attribute_errors,
+    domain_rank,
+    lifetime_domain,
+)
 
 
 class TypeKind(Enum):
@@ -473,6 +477,28 @@ class TypeChecker:
         self._function_local_storage: Set[str] = set()
         self._span_origin: Dict[str, str] = {}
         self._current_return_type: Optional[SemanticType] = None
+
+        # Lifetime domains (docs/language/lifetime-domains.md). A function or
+        # module static carries a domain only when it is annotated
+        # `@lifetime(...)`; unannotated declarations are unchecked, so the
+        # feature is opt-in and cannot change the meaning of existing code.
+        # A module static that IS annotated, or that is written to from an
+        # annotated function, is treated as `application` by default: it lives
+        # as long as the process.
+        self.function_domains: Dict[str, str] = {}
+        self.static_domains: Dict[str, str] = {}
+        self._current_domain: Optional[str] = None
+        # Set when the current function's RT-safe checking comes from
+        # `@lifetime(callback)` rather than a literal `@rt_safe`, so the
+        # diagnostic can name the domain.
+        self._rt_safe_from_domain: bool = False
+        # Heap-only variant of `_rt_unsafe_reason`, used by the `frame` domain:
+        # bumping an existing arena is how a frame allocates, and a frame loop
+        # may take a lock, so only heap create/destroy is forbidden there.
+        self._heap_unsafe_reason: Dict[str, str] = {}
+        # ids of AST nodes that already produced a lifetime-domain diagnostic,
+        # so the older span message does not double-report the same escape.
+        self._domain_reported: Set[int] = set()
 
     def _is_numeric(self, t: SemanticType) -> bool:
         return t.kind in {
@@ -960,6 +986,15 @@ class TypeChecker:
         # banned API, directly or transitively) so `@rt_safe` violations can
         # be reported at the call site during Phase 3.
         self._rt_unsafe_reason = self._compute_rt_unsafe_functions(declarations)
+        # Same fixed point over heap names only, for the `frame` domain
+        # (docs/language/lifetime-domains.md, LD3).
+        self._heap_unsafe_reason = self._compute_rt_unsafe_functions(
+            declarations, seed=self.RT_UNSAFE_HEAP_NAMES
+        )
+
+        # Phase 2.6: Collect declared lifetime domains, so a call site can be
+        # checked against the callee's domain (LD4) before its body is seen.
+        self._collect_lifetime_domains(declarations)
 
         # Phase 3: Type check all declarations
         self._check_declarations(declarations)
@@ -1182,7 +1217,11 @@ class TypeChecker:
                 names.extend(self._iter_call_names(value, seen))
         return names
 
-    def _compute_rt_unsafe_functions(self, declarations: List[Any]) -> Dict[str, str]:
+    def _compute_rt_unsafe_functions(
+        self,
+        declarations: List[Any],
+        seed: Optional[frozenset] = None,
+    ) -> Dict[str, str]:
         """Compute which user-defined functions are RT-unsafe.
 
         Returns a map from function name to the name of the nearest
@@ -1191,6 +1230,10 @@ class TypeChecker:
         over the direct-call graph, so it also catches indirect/transitive
         violations (e.g. an RT-safe function calling a helper that itself
         calls `malloc` or `mutex_lock`).
+
+        `seed` selects which leaf names count as banned. The default is every
+        RT-unsafe name; the `frame` lifetime domain passes the heap-only
+        subset (docs/language/lifetime-domains.md).
         """
         direct_calls: Dict[str, Set[str]] = {}
 
@@ -1207,7 +1250,8 @@ class TypeChecker:
                     mangled_name = f"{decl.for_type.name}_{decl.trait_name}_{method.name}"
                     register(mangled_name, method.body)
 
-        unsafe_reason: Dict[str, str] = {name: name for name in self.RT_UNSAFE_ALL_NAMES}
+        leaves = self.RT_UNSAFE_ALL_NAMES if seed is None else seed
+        unsafe_reason: Dict[str, str] = {name: name for name in leaves}
 
         changed = True
         while changed:
@@ -1242,19 +1286,184 @@ class TypeChecker:
         if reason is None:
             return
         fn = self._current_rt_safe_fn
+        # `@lifetime(callback)` composes with `@rt_safe` (LD3): the check is
+        # the same call graph, the diagnostic names the domain instead of the
+        # attribute (docs/language/lifetime-domains.md).
+        if self._rt_safe_from_domain:
+            marked = "is in the `callback` lifetime domain, which forbids allocation,"
+            doc = "docs/language/lifetime-domains.md"
+        else:
+            marked = "is marked '@rt_safe'"
+            doc = "docs/library/rt-safety.md"
         if reason == name:
             self.errors.append(
-                f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
+                f"RT-safety violation: '{fn}' {marked} but calls "
                 f"'{name}', which is forbidden on an RT-safe path "
                 f"(heap, device/file I/O, GPU, or blocking lock; "
-                f"see docs/library/rt-safety.md)"
+                f"see {doc})"
             )
         else:
             self.errors.append(
-                f"RT-safety violation: '{fn}' is marked '@rt_safe' but calls "
+                f"RT-safety violation: '{fn}' {marked} but calls "
                 f"'{name}', which is not RT-safe because it calls '{reason}' "
-                f"(forbidden on an RT-safe path; see docs/library/rt-safety.md)"
+                f"(forbidden on an RT-safe path; see {doc})"
             )
+
+    # ---- Lifetime domains (docs/language/lifetime-domains.md) --------------
+
+    LIFETIME_DOC = "docs/language/lifetime-domains.md"
+
+    def _collect_lifetime_domains(self, declarations: List[Any]) -> None:
+        """Record the declared domain of every function and module static."""
+        for decl in declarations:
+            if isinstance(decl, FunctionDecl):
+                domain = lifetime_domain(getattr(decl, 'attributes', None))
+                if domain is not None:
+                    self.function_domains[decl.name] = domain
+            elif isinstance(decl, ImplDecl):
+                for method in decl.methods:
+                    domain = lifetime_domain(getattr(method, 'attributes', None))
+                    if domain is not None:
+                        mangled = f"{decl.for_type.name}_{decl.trait_name}_{method.name}"
+                        self.function_domains[mangled] = domain
+            elif isinstance(decl, StaticDecl):
+                # A module static lives for the process run, so `application`
+                # is its default; an annotation may only re-label it.
+                self.static_domains[decl.name] = (
+                    lifetime_domain(getattr(decl, 'attributes', None))
+                    or 'application'
+                )
+
+    def _static_domain(self, name: str) -> str:
+        return self.static_domains.get(name, 'application')
+
+    def _domain_borrow_root(self, expr: Any) -> Optional[str]:
+        """Name of the function-local *storage* this expression references.
+
+        Only expression shapes that genuinely produce a reference into named
+        local storage count. A local `ptr` variable holding a value from
+        `malloc` or `arena_alloc` is not one of them: its pointee outlives the
+        frame, and treating it as an escape would be a false positive. The
+        shapes tracked are:
+
+          - a local `array<T, N>` variable (decays to a pointer)
+          - a local struct variable under `&`
+          - a slice of either
+          - a span local whose origin is already recorded by the span pass
+          - `&expr` where `expr` indexes or projects one of the above
+        """
+        if isinstance(expr, SliceExpr):
+            return self._domain_borrow_root(expr.base)
+        if isinstance(expr, UnaryOperation) and expr.operator == "&":
+            root = self._borrow_root_name(expr.operand)
+            if root is not None and root in self._function_local_storage:
+                return root
+            return None
+        if isinstance(expr, Variable):
+            origin = self._span_origin.get(expr.name)
+            if origin is not None:
+                return origin
+            if expr.name in self._function_local_storage:
+                symbol = self.current_scope.lookup(expr.name)
+                if symbol is not None and symbol.type.kind in (
+                    TypeKind.ARRAY, TypeKind.SPAN
+                ):
+                    return expr.name
+            return None
+        return None
+
+    @staticmethod
+    def _is_reference_type(t: Optional[SemanticType]) -> bool:
+        """Types that can carry a reference into someone else's storage."""
+        return t is not None and t.kind in (TypeKind.POINTER, TypeKind.SPAN, TypeKind.ARRAY)
+
+    def _check_domain_escape_to_static(self, assign: Assignment, target: str,
+                                       target_type: SemanticType) -> bool:
+        """LD1: a longer-lived static may not be given a shorter-lived view."""
+        if self._current_domain is None or target not in self.static_names:
+            return False
+        if not self._is_reference_type(target_type):
+            return False
+        target_domain = self._static_domain(target)
+        if domain_rank(target_domain) <= domain_rank(self._current_domain):
+            return False
+        origin = self._domain_borrow_root(assign.value)
+        if origin is None:
+            return False
+        self._domain_reported.add(id(assign))
+        self.errors.append(
+            f"lifetime domain escape: `{origin}` lives in the "
+            f"`{self._current_domain}` domain but is stored in `{target}`, "
+            f"which lives in the `{target_domain}` domain (a longer-lived "
+            f"domain may not hold a reference to a shorter-lived one)"
+            f"{self._location_suffix(assign)}"
+        )
+        return True
+
+    def _check_domain_escape_by_return(self, ret: ReturnStatement) -> bool:
+        """LD2: a domain function may not return a view of its own frame."""
+        if self._current_domain is None or ret.value is None:
+            return False
+        if not self._is_reference_type(self._current_return_type):
+            return False
+        origin = self._domain_borrow_root(ret.value)
+        if origin is None:
+            return False
+        self._domain_reported.add(id(ret))
+        self.errors.append(
+            f"lifetime domain escape: `{origin}` lives in the "
+            f"`{self._current_domain}` domain but is returned from "
+            f"'{self._current_function_name}', which outlives it (a returned "
+            f"reference may not point into the frame that produced it)"
+            f"{self._location_suffix(ret)}"
+        )
+        return True
+
+    def _check_domain_call(self, name: str) -> None:
+        """LD3 (frame heap discipline) and LD4 (call ordering) at a call site.
+
+        The `callback` domain's allocation check is LD3 too, but it runs
+        through `_check_rt_safe_call` so it shares one call graph with
+        `@rt_safe`.
+        """
+        caller_domain = self._current_domain
+        if caller_domain is None:
+            return
+        # LD4: the callee may not outlive the caller. Only fires when both
+        # sides declared a domain, so it compares intent against intent.
+        callee_domain = self.function_domains.get(name)
+        if callee_domain is not None and domain_rank(callee_domain) > domain_rank(caller_domain):
+            self.errors.append(
+                f"lifetime domain violation: '{self._current_function_name}' "
+                f"is in the `{caller_domain}` domain but calls '{name}', which "
+                f"is in the `{callee_domain}` domain (a shorter-lived domain "
+                f"may not call into a longer-lived one; see {self.LIFETIME_DOC})"
+            )
+            return
+        # LD3 for `frame`: bumping an arena is how a frame allocates, so only
+        # heap create/destroy is forbidden. `callback` is handled by
+        # `_check_rt_safe_call`, which is strictly stronger.
+        if caller_domain != 'frame':
+            return
+        reason = self._heap_unsafe_reason.get(name)
+        if reason is None:
+            return
+        if reason == name:
+            self.errors.append(
+                f"lifetime domain violation: '{self._current_function_name}' "
+                f"is in the `frame` domain but calls '{name}', which allocates "
+                f"or frees heap memory. Frame-domain code allocates by bumping "
+                f"a frame arena (frame_alloc_*); see {self.LIFETIME_DOC}"
+            )
+        else:
+            self.errors.append(
+                f"lifetime domain violation: '{self._current_function_name}' "
+                f"is in the `frame` domain but calls '{name}', which allocates "
+                f"or frees heap memory because it calls '{reason}'. "
+                f"Frame-domain code allocates by bumping a frame arena "
+                f"(frame_alloc_*); see {self.LIFETIME_DOC}"
+            )
+
     def _check_trait_bounds(self, func: FunctionDecl) -> None:
         """Validate generic type parameter trait bounds when concrete types are known."""
         type_params = getattr(func, "type_params", None) or []
@@ -1294,7 +1503,22 @@ class TypeChecker:
         self._active_type_params = {
             tp.name for tp in (getattr(func, "type_params", None) or [])
         }
-        self._current_rt_safe_fn = func.name if 'rt_safe' in attrs else None
+        # Lifetime domains (docs/language/lifetime-domains.md): `callback`
+        # implies the whole `@rt_safe` discipline, so it reuses that check and
+        # only changes the wording of the diagnostic.
+        domain = lifetime_domain(attrs)
+        prev_domain = self._current_domain
+        prev_rt_from_domain = self._rt_safe_from_domain
+        self._current_domain = domain
+        if 'rt_safe' in attrs:
+            self._current_rt_safe_fn = func.name
+            self._rt_safe_from_domain = False
+        elif domain == 'callback':
+            self._current_rt_safe_fn = func.name
+            self._rt_safe_from_domain = True
+        else:
+            self._current_rt_safe_fn = None
+            self._rt_safe_from_domain = False
         self._current_function_name = func.name
 
         # Effect-row Phase 2: declared `with E…` effects are assumed available
@@ -1347,6 +1571,8 @@ class TypeChecker:
             self._effect_handler_stack.pop()
             self.current_scope = func_scope.parent
             self._current_rt_safe_fn = prev_rt_safe_fn
+            self._current_domain = prev_domain
+            self._rt_safe_from_domain = prev_rt_from_domain
             self._current_function_name = prev_fn_name
             self._function_local_storage = prev_local_storage
             self._span_origin = prev_span_origin
@@ -1382,6 +1608,18 @@ class TypeChecker:
         """Validate a module static: allowed type + compile-time constant init."""
         t = decl.type
         name = decl.name
+        # Only `@lifetime(...)` is meaningful on a static today; anything else
+        # is a spelling mistake worth naming (docs/language/lifetime-domains.md).
+        attrs = getattr(decl, 'attributes', None) or []
+        if attrs:
+            self.errors.extend(attribute_errors(name, attrs))
+            for attr in attrs:
+                attr_name = attr.split("(", 1)[0].strip()
+                if attr_name not in ("lifetime",):
+                    self.errors.append(
+                        f"Attribute '@{attr_name}' is not allowed on module "
+                        f"static '{name}'; only '@lifetime(...)' is"
+                    )
         is_pointer = getattr(t, "is_pointer", False) or t.name.startswith("ptr_")
         is_fixed_array = (
             t.name.startswith("array_")
@@ -1984,9 +2222,11 @@ class TypeChecker:
         """Type check a return statement."""
         if ret.value:
             ret_type = self._check_expression(ret.value)
-            # Escape check: a returned span may not view storage that dies
-            # with this frame (docs/language/spans.md, "Lifetime").
-            if self._is_span(self._current_return_type):
+            # Escape checks. The lifetime-domain one (LD2) says strictly more
+            # when it applies, so it wins and suppresses the span message for
+            # the same return (docs/language/lifetime-domains.md).
+            reported = self._check_domain_escape_by_return(ret)
+            if not reported and self._is_span(self._current_return_type):
                 origin = self._local_borrow_origin(ret.value)
                 if origin is not None:
                     self.errors.append(
@@ -2039,8 +2279,15 @@ class TypeChecker:
 
         expr_type = self._check_expression(assign.value)
         # Escape check: a module static outlives every frame, so it may not
-        # be given a view of a local.
-        if self._is_span(symbol.type) and assign.target in self.static_names:
+        # be given a view of a local. LD1 names both domains when the writing
+        # function declared one, and then suppresses the span message so one
+        # mistake is reported once (docs/language/lifetime-domains.md).
+        reported = self._check_domain_escape_to_static(assign, assign.target, symbol.type)
+        if (
+            not reported
+            and self._is_span(symbol.type)
+            and assign.target in self.static_names
+        ):
             origin = self._local_borrow_origin(assign.value)
             if origin is not None:
                 self.errors.append(
@@ -2652,6 +2899,7 @@ class TypeChecker:
     def _check_function_call(self, call: FunctionCall) -> SemanticType:
         """Type check a function call."""
         self._check_rt_safe_call(call.name)
+        self._check_domain_call(call.name)
         # dbg expr: evaluates to expr, so its type is the operand's type.
         if call.name == "__flow_dbg":
             if len(call.arguments) != 1:
