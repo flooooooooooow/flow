@@ -244,6 +244,52 @@ class Type:
     effects: List[str] = field(default_factory=list)
 
 
+# --- Spans (docs/language/spans.md) -----------------------------------------
+# A span is a borrowed view over contiguous storage: {pointer, length}. Both
+# spellings (`span<T>` and the `&[T]` sugar) desugar to one internal Type so
+# every downstream pass sees a single representation.
+SPAN_CONST_PREFIX = "span_const_"
+SPAN_MUT_PREFIX = "span_mut_"
+
+
+def make_span_type(element_type: "Type", is_mut: bool, extent: Optional[int] = None) -> "Type":
+    """Build the canonical span Type for an element type and mutability."""
+    prefix = SPAN_MUT_PREFIX if is_mut else SPAN_CONST_PREFIX
+    return Type(
+        f"{prefix}{element_type.name}",
+        size=extent,
+        element_type=element_type,
+    )
+
+
+def is_span_type_name(name: str) -> bool:
+    return bool(name) and (
+        name.startswith(SPAN_CONST_PREFIX) or name.startswith(SPAN_MUT_PREFIX)
+    )
+
+
+def span_is_mutable(name: str) -> bool:
+    return bool(name) and name.startswith(SPAN_MUT_PREFIX)
+
+
+def span_element_name(name: str) -> str:
+    if name.startswith(SPAN_MUT_PREFIX):
+        return name[len(SPAN_MUT_PREFIX):]
+    if name.startswith(SPAN_CONST_PREFIX):
+        return name[len(SPAN_CONST_PREFIX):]
+    return name
+
+
+def format_span_type(name: str, extent: Optional[int] = None) -> str:
+    """Render a span type name back into source syntax for diagnostics."""
+    inner = span_element_name(name)
+    if span_is_mutable(name):
+        inner = f"mut {inner}"
+    if extent is not None:
+        inner = f"{inner}, {extent}"
+    return f"span<{inner}>"
+
+
 @dataclass
 class TypeParameter:
     """A generic type parameter with optional trait bound: T or T: Display"""
@@ -517,6 +563,19 @@ class VectorLiteral:
 class ArrayAccess:
     array: "Expression"
     index: "Expression"
+
+
+@dataclass
+class SliceExpr:
+    """`base[start..end]` — a borrowed view (span) over contiguous storage.
+
+    See docs/language/spans.md. `start`/`end` are ordinary expressions; when
+    both are integer literals the extent is a compile-time fact.
+    """
+
+    base: "Expression"
+    start: "Expression"
+    end: "Expression"
 
 
 @dataclass
@@ -2865,7 +2924,88 @@ class Parser:
         type = self.parse_type()
         return Parameter(name, type)
 
+    def _layer2_span_error(self, form: str, suggestion: str):
+        """Diagnostic for span forms the design accepts but this compiler does not."""
+        return self.error(
+            f"{form} is not yet implemented in this compiler version",
+            suggestion=suggestion,
+        )
+
+    def parse_span_type(self) -> Type:
+        """Parse `span<...>` after the `span` keyword has been consumed.
+
+        Supported (layer 1): span<T>, span<const T>, span<mut T>, and each of
+        those with a static extent, e.g. span<mut f32, 512>.
+        """
+        if self.current_token.type == TokenType.LBRACKET:
+            raise self._layer2_span_error(
+                "the `span[N]` extent-only form",
+                "write the element type too, e.g. span<f32, 16>",
+            )
+        if self.current_token.type != TokenType.LESS:
+            raise self._layer2_span_error(
+                "bare `span` with inferred element type",
+                "name the element type, e.g. span<f32> or &[f32]",
+            )
+        self.advance()  # consume <
+
+        is_mut = False
+        keyword = None
+        if self.current_token.type == TokenType.MUT:
+            is_mut = True
+            keyword = "mut"
+            self.advance()
+        elif self.current_token.type == TokenType.CONST:
+            keyword = "const"
+            self.advance()
+
+        if keyword and self.current_token.type in (TokenType.GREATER, TokenType.COMMA):
+            raise self._layer2_span_error(
+                f"`span<{keyword}>` without an element type",
+                f"name the element type, e.g. span<{keyword} f32>",
+            )
+
+        element_type = self.parse_type()
+        if element_type.name in ("number", "integer", "float"):
+            raise self._layer2_span_error(
+                f"the trait-shaped element constraint `span<{element_type.name}>`",
+                "use a concrete element type, e.g. span<f64>",
+            )
+
+        extent = None
+        if self.current_token.type == TokenType.COMMA:
+            self.advance()
+            if self.current_token.type != TokenType.NUMBER:
+                raise self._layer2_span_error(
+                    "a dependent span extent",
+                    "use an integer literal extent, e.g. span<mut f32, 512>",
+                )
+            extent = self.parse_array_size("span")
+        self.expect(TokenType.GREATER)
+        return make_span_type(element_type, is_mut, extent)
+
+    def parse_reference_span_type(self) -> Type:
+        """Parse the `&[T]` / `&mut [T]` / `&[T; N]` sugar (`&` consumed)."""
+        is_mut = False
+        if self.current_token.type == TokenType.MUT:
+            is_mut = True
+            self.advance()
+        self.expect(TokenType.LBRACKET)
+        element_type = self.parse_type()
+        extent = None
+        if self.current_token.type == TokenType.SEMICOLON:
+            self.advance()
+            extent = self.parse_array_size("span")
+        self.expect(TokenType.RBRACKET)
+        return make_span_type(element_type, is_mut, extent)
+
     def parse_type(self) -> Type:
+        # Reference sugar for spans: &[T], &mut [T], &[T; N], &mut [T; N].
+        # Desugars at parse time so downstream passes see only span_* types.
+        if self.current_token.type == TokenType.AMPERSAND:
+            self.advance()
+            return self.parse_reference_span_type()
+
         # Check for capability type: capability EffectName
         if self.current_token.type == TokenType.CAPABILITY:
             self.advance()
@@ -2890,6 +3030,10 @@ class Parser:
         ]:
             type_name = self.current_token.value
             self.advance()
+
+            # Borrowed views: span<T>, span<mut T>, span<T, N>, span<mut T, N>
+            if type_name == "span":
+                return self.parse_span_type()
 
             # Check for generic array type: array<T, N> or array<T>
             if type_name == "array" and self.current_token.type == TokenType.LESS:
@@ -4642,8 +4786,15 @@ class Parser:
             elif self.current_token.type == TokenType.LBRACKET:
                 self.advance()  # consume [
                 index = self.parse_expression_without_assign()
-                self.expect(TokenType.RBRACKET)
-                expr = ArrayAccess(expr, index)
+                if self.current_token.type == TokenType.DOTDOT:
+                    # Slice expression `base[start..end]` produces a span.
+                    self.advance()  # consume ..
+                    end = self.parse_expression_without_assign()
+                    self.expect(TokenType.RBRACKET)
+                    expr = SliceExpr(expr, index, end)
+                else:
+                    self.expect(TokenType.RBRACKET)
+                    expr = ArrayAccess(expr, index)
 
         return expr
 
