@@ -324,3 +324,18 @@ class TestLspFollowsReexports:
         assert "beta_one" in symbols
         # Definition location points at the declaring file, not the aggregator.
         assert symbols["alpha_one"]["uri"].endswith("alpha.flow")
+
+
+class TestFormatterRoundTrip:
+    def test_formatter_keeps_the_export_prefix(self):
+        from flow.formatter import Formatter
+
+        source = (
+            "export import .alpha\n"
+            "export import .beta { beta_one }\n"
+            "import verify.nat as nat\n"
+        )
+        out = Formatter().format_file(source)
+        assert "export import .alpha" in out
+        assert "export import .beta { beta_one }" in out
+        assert "import verify.nat as nat" in out
