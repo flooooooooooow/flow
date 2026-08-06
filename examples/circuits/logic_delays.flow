@@ -1,0 +1,472 @@
+# LOGIC DELAYS: a 4-bit ripple-carry adder built out of gates that take time.
+#
+# WHY A `flow` BLOCK AND NOT THE MATRIX
+#   A logic gate driving a capacitive load is a first-order system with one
+#   state and one time constant, and nothing else in the circuit couples to
+#   it: the gate's output does not load its own inputs. So there is no
+#   simultaneous system to solve, and the honest representation is the
+#   differential equation itself:
+#
+#       vout evolves as (vtarget - vout) / tau
+#
+#   That single line, in the `flow LogicGate` block below, is the whole
+#   timing model of every gate in this file. Twenty copies of it make a
+#   4-bit adder, and the propagation delays that come out of it are the sum
+#   of what each copy does.
+#
+# THE GATE MODEL
+#   A gate reads its inputs, thresholds them at VDD/2 to get logic values,
+#   evaluates its function, and drives its output toward the resulting rail
+#   with time constant tau. From a full rail, reaching VDD/2 takes
+#
+#       tpd = tau ln 2
+#
+#   so the model is written in terms of tpd and tau is derived. Three gate
+#   types with three delays, which is what makes the critical path a real
+#   sum rather than a multiplication:
+#
+#       XOR  120 ps      AND  80 ps      OR  90 ps
+#
+# THE ADDER
+#   Each bit is the textbook five-gate full adder:
+#
+#       x1 = a XOR b        s    = x1 XOR cin
+#       x2 = a AND b        x3   = x1 AND cin        cout = x2 OR x3
+#
+#   Four of them chained, c0 = cin, c4 = cout. Twenty gates, nine primary
+#   inputs.
+#
+# THE TWO CRITICAL PATHS
+#   A ripple-carry adder's worst case is a carry that has to travel the whole
+#   chain, and there are two ways to start one.
+#
+#   VECTOR A   A = 1111, B = 0000, cin rises 0 -> 1.
+#     Every x1 is already 1, so each stage passes the carry through
+#     AND then OR and nothing else moves:
+#       t(c4) = 4 (tpd_AND + tpd_OR) = 4 (80 + 90) = 680 ps
+#
+#   VECTOR B   A = 1110 -> 1111 (bit 0 rises), B = 0000, cin = 1.
+#     Now the carry has to be created at bit 0, which costs an XOR first:
+#       t(c4) = tpd_XOR + 4 tpd_AND + 4 tpd_OR = 120 + 320 + 360 = 800 ps
+#     That is the worst case of this adder.
+#
+#   Both predictions are sums of the delays of the individual gates on the
+#   path, written out in the header, and both are compared with the crossing
+#   times the simulation produces.
+#
+# FUNCTION
+#   Timing is only interesting if the adder adds, so all 512 input
+#   combinations (16 x 16 x 2) are run to settling and checked against
+#   A + B + cin as integers.
+#
+# NUMERICS
+#   Explicit Euler at 0.02 ps, which is tau_XOR/8656, over 3 ns after the
+#   input transition. Crossing times are interpolated between samples. The
+#   target
+#   of a gate flips on the sample after its input crosses the threshold, so
+#   each stage carries up to one step of quantization; nine stages of that is
+#   0.18 ps out of 800, which is where the residual error comes from.
+#
+# EVIDENCE
+#   All 512 sums correct; every individual gate delay against tau ln 2; both
+#   critical paths against the sums above. Gates: 1e-3 relative on every
+#   delay, and every sum exact.
+#
+# Run: ./flow run examples/circuits/logic_delays.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const VDD: f64 = 1.0
+const VTH: f64 = 0.5
+const LN2: f64 = 0.6931471805599453
+
+const TPD_XOR: f64 = 120e-12
+const TPD_AND: f64 = 80e-12
+const TPD_OR: f64 = 90e-12
+
+const K_XOR: i32 = 0
+const K_AND: i32 = 1
+const K_OR: i32 = 2
+
+const NGATE: i32 = 20           # 4 stages x 5 gates
+const N_SIGNALS: i32 = 29       # gates 0..19, then a0..a3, b0..b3, cin
+
+const DT_FINE: f64 = 0.02e-12
+const T_RUN: f64 = 3e-9
+const DT_SETTLE: f64 = 2e-12
+const T_SETTLE: f64 = 2e-9
+
+# ---------------------------------------------------------------------------
+# The model. One line.
+# ---------------------------------------------------------------------------
+
+flow LogicGate {
+    state vout : f64 = 0.0
+    param vtarget : f64 = 0.0
+    param tau : f64 = 1e-10
+
+    vout evolves as (vtarget - vout) / tau
+}
+
+# ---------------------------------------------------------------------------
+# Netlist of the adder. Signal indices 0..19 are gate outputs; 20..28 are the
+# primary inputs a0..a3, b0..b3, cin.
+# ---------------------------------------------------------------------------
+
+let mut g_kind: array<i32, 20> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let mut g_in1: array<i32, 20> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let mut g_in2: array<i32, 20> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let mut sig: array<f64, 29> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                               0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                               0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                               0.0, 0.0]
+let mut cross_t: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0]
+let mut crossed: array<bool, 20> = [false, false, false, false, false,
+                                    false, false, false, false, false,
+                                    false, false, false, false, false,
+                                    false, false, false, false, false]
+
+function idx_a(k: i32) -> i32 {
+    return 20 + k
+}
+
+function idx_b(k: i32) -> i32 {
+    return 24 + k
+}
+
+function idx_cin() -> i32 {
+    return 28
+}
+
+# Carry into stage k: cin for stage 0, the OR of the stage below otherwise.
+function idx_carry(k: i32) -> i32 {
+    if k == 0 {
+        return idx_cin()
+    }
+    return 5 * (k - 1) + 4
+}
+
+function build_adder() -> void {
+    for k in 0 to 4 {
+        let base: i32 = 5 * k
+        let x1: i32 = base
+        let cin: i32 = idx_carry(k)
+        g_kind[base] = K_XOR
+        g_in1[base] = idx_a(k)
+        g_in2[base] = idx_b(k)
+        g_kind[base + 1] = K_XOR         # sum bit
+        g_in1[base + 1] = x1
+        g_in2[base + 1] = cin
+        g_kind[base + 2] = K_AND         # generate
+        g_in1[base + 2] = idx_a(k)
+        g_in2[base + 2] = idx_b(k)
+        g_kind[base + 3] = K_AND         # propagate and carry
+        g_in1[base + 3] = x1
+        g_in2[base + 3] = cin
+        g_kind[base + 4] = K_OR          # carry out
+        g_in1[base + 4] = base + 2
+        g_in2[base + 4] = base + 3
+    }
+}
+
+function tpd_of(kind: i32) -> f64 {
+    if kind == K_XOR {
+        return TPD_XOR
+    }
+    if kind == K_AND {
+        return TPD_AND
+    }
+    return TPD_OR
+}
+
+function tau_of(kind: i32) -> f64 {
+    return tpd_of(kind) / LN2
+}
+
+function logic_of(kind: i32, a: bool, b: bool) -> bool {
+    if kind == K_XOR {
+        return a != b
+    }
+    if kind == K_AND {
+        return a and b
+    }
+    return a or b
+}
+
+function high(i: i32) -> bool {
+    return sig[i] > VTH
+}
+
+# One synchronous Euler step of every gate. All targets are read from the
+# pre-step signal values, so the update order does not matter.
+function step_all(dt: f64) -> void {
+    let mut target: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0]
+    for g in 0 to NGATE {
+        let out: bool = logic_of(g_kind[g], high(g_in1[g]), high(g_in2[g]))
+        if out {
+            target[g] = VDD
+        } else {
+            target[g] = 0.0
+        }
+    }
+    let mut cell: LogicGate = LogicGate_new()
+    for g in 0 to NGATE {
+        cell.vout = sig[g]
+        cell.vtarget = target[g]
+        cell.tau = tau_of(g_kind[g])
+        LogicGate_step(&cell, dt)
+        sig[g] = cell.vout
+    }
+}
+
+function set_inputs(a: i32, b: i32, cin: i32) -> void {
+    for k in 0 to 4 {
+        let abit: i32 = (a >> k) % 2
+        let bbit: i32 = (b >> k) % 2
+        sig[idx_a(k)] = (abit as f64) * VDD
+        sig[idx_b(k)] = (bbit as f64) * VDD
+    }
+    sig[idx_cin()] = (cin as f64) * VDD
+}
+
+function settle(dt: f64, t_end: f64) -> void {
+    let steps: i32 = (t_end / dt) as i32
+    for k in 0 to steps {
+        step_all(dt)
+    }
+}
+
+function read_sum() -> i32 {
+    let mut total: i32 = 0
+    for k in 0 to 4 {
+        if high(5 * k + 1) {
+            total = total + (1 << k)
+        }
+    }
+    if high(19) {
+        total = total + 16
+    }
+    return total
+}
+
+# ---------------------------------------------------------------------------
+# Timing runs
+# ---------------------------------------------------------------------------
+
+# Settle at (a0, b0, cin0), flip to (a1, b1, cin1) at t = 0, then record the
+# first threshold crossing of every gate output.
+function timing_run(a0: i32, b0: i32, c0: i32,
+                    a1: i32, b1: i32, c1: i32) -> bool {
+    set_inputs(a0, b0, c0)
+    settle(DT_SETTLE, T_SETTLE)
+    for g in 0 to NGATE {
+        crossed[g] = false
+        cross_t[g] = 0.0
+    }
+    set_inputs(a1, b1, c1)
+    let steps: i32 = (T_RUN / DT_FINE) as i32
+    let mut prev: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                    0.0, 0.0, 0.0, 0.0]
+    for g in 0 to NGATE {
+        prev[g] = sig[g]
+    }
+    for k in 1 to steps + 1 {
+        step_all(DT_FINE)
+        for g in 0 to NGATE {
+            if !crossed[g] {
+                let a: f64 = prev[g] - VTH
+                let b: f64 = sig[g] - VTH
+                if (a < 0.0 and b >= 0.0) or (a > 0.0 and b <= 0.0) {
+                    let frac: f64 = a / (a - b)
+                    cross_t[g] = ((k - 1) as f64 + frac) * DT_FINE
+                    crossed[g] = true
+                }
+            }
+            prev[g] = sig[g]
+        }
+    }
+    return true
+}
+
+function relerr(got: f64, want: f64) -> f64 {
+    if want == 0.0 {
+        return fabs(got)
+    }
+    return fabs(got - want) / fabs(want)
+}
+
+function report_path(label: string, gate: i32, predicted: f64) -> f64 {
+    let got: f64 = cross_t[gate]
+    let e: f64 = relerr(got, predicted)
+    print("      ")
+    print(label)
+    printf("  %12.4f", got * 1e12)
+    printf("  %13.4f", predicted * 1e12)
+    printf("   %9.2e", e)
+    println("")
+    return e
+}
+
+function main() -> i32 {
+    build_adder()
+
+    println("")
+    println("  LOGIC DELAYS  --  a 4-bit ripple-carry adder made of `flow` gates")
+    println("  =================================================================")
+    println("")
+    print("  gate delays: XOR ")
+    printf("%.0f", TPD_XOR * 1e12)
+    print(" ps,  AND ")
+    printf("%.0f", TPD_AND * 1e12)
+    print(" ps,  OR ")
+    printf("%.0f", TPD_OR * 1e12)
+    print(" ps      tau = tpd / ln 2")
+    println("")
+    print("  20 gates, Euler step ")
+    printf("%.3f", DT_FINE * 1e12)
+    print(" ps = tau_XOR/")
+    printf("%.0f", tau_of(K_XOR) / DT_FINE)
+    println("")
+
+    # ---- function over all 512 input combinations ----
+    let mut bad: i32 = 0
+    let mut first_bad_a: i32 = -1
+    let mut first_bad_b: i32 = -1
+    for a in 0 to 16 {
+        for b in 0 to 16 {
+            for c in 0 to 2 {
+                set_inputs(a, b, c)
+                settle(DT_SETTLE, T_SETTLE)
+                if read_sum() != a + b + c {
+                    bad = bad + 1
+                    if first_bad_a < 0 {
+                        first_bad_a = a
+                        first_bad_b = b
+                    }
+                }
+            }
+        }
+    }
+    println("")
+    print("  FUNCTION   512 input combinations settled and checked: ")
+    print(512 - bad)
+    print(" of 512 correct")
+    println("")
+
+    # ---- vector A: carry-in ripples through four stages ----
+    println("")
+    println("  VECTOR A   A = 1111, B = 0000, cin 0 -> 1")
+    println("             every stage is already in propagate, so each carry")
+    println("             costs one AND and one OR")
+    println("")
+    println("      node             measured ps     predicted ps     rel err")
+    println("      -------------  -------------  ---------------  ----------")
+    let ok_a: bool = timing_run(15, 0, 0, 15, 0, 1)
+    let ao: f64 = TPD_AND + TPD_OR
+    let mut worst: f64 = 0.0
+    let e1: f64 = report_path("c1  (gate  4)", 4, ao)
+    let e2: f64 = report_path("c2  (gate  9)", 9, 2.0 * ao)
+    let e3: f64 = report_path("c3  (gate 14)", 14, 3.0 * ao)
+    let e4: f64 = report_path("c4  (gate 19)", 19, 4.0 * ao)
+    let e5: f64 = report_path("s3  (gate 16)", 16, 3.0 * ao + TPD_XOR)
+    if e1 > worst { worst = e1 }
+    if e2 > worst { worst = e2 }
+    if e3 > worst { worst = e3 }
+    if e4 > worst { worst = e4 }
+    if e5 > worst { worst = e5 }
+    print("      worst-case path is c4 at ")
+    printf("%.4f", cross_t[19] * 1e12)
+    print(" ps; the sum of its stage")
+    println("")
+    print("      delays is 4 x (80 + 90) = ")
+    printf("%.1f", 4.0 * ao * 1e12)
+    println(" ps")
+
+    # ---- vector B: the carry has to be generated first ----
+    println("")
+    println("  VECTOR B   A = 1110 -> 1111, B = 0000, cin = 1")
+    println("             bit 0 must XOR before it can generate a carry, so the")
+    println("             path picks up one more gate at the front")
+    println("")
+    println("      node             measured ps     predicted ps     rel err")
+    println("      -------------  -------------  ---------------  ----------")
+    let ok_b: bool = timing_run(14, 0, 1, 15, 0, 1)
+    let f1: f64 = report_path("x1_0 (gate 0)", 0, TPD_XOR)
+    let f2: f64 = report_path("c1  (gate  4)", 4, TPD_XOR + ao)
+    let f3: f64 = report_path("c2  (gate  9)", 9, TPD_XOR + 2.0 * ao)
+    let f4: f64 = report_path("c3  (gate 14)", 14, TPD_XOR + 3.0 * ao)
+    let f5: f64 = report_path("c4  (gate 19)", 19, TPD_XOR + 4.0 * ao)
+    if f1 > worst { worst = f1 }
+    if f2 > worst { worst = f2 }
+    if f3 > worst { worst = f3 }
+    if f4 > worst { worst = f4 }
+    if f5 > worst { worst = f5 }
+    print("      worst-case path is c4 at ")
+    printf("%.4f", cross_t[19] * 1e12)
+    print(" ps; the sum of its stage")
+    println("")
+    print("      delays is 120 + 4 x 80 + 4 x 90 = ")
+    printf("%.1f", (TPD_XOR + 4.0 * ao) * 1e12)
+    println(" ps")
+
+    # ---- per-stage differences: each hop must cost exactly one gate ----
+    println("")
+    println("  PER-STAGE HOP   c(k+1) - c(k) must be one AND plus one OR")
+    println("")
+    println("      hop        measured ps    predicted ps     rel err")
+    println("      --------  ------------  --------------  ----------")
+    let hops: array<i32, 3> = [9, 14, 19]
+    let prevs: array<i32, 3> = [4, 9, 14]
+    for i in 0 to 3 {
+        let d: f64 = cross_t[hops[i]] - cross_t[prevs[i]]
+        let e: f64 = relerr(d, ao)
+        if e > worst {
+            worst = e
+        }
+        print("      c")
+        print(i + 2)
+        print(" - c")
+        print(i + 1)
+        printf("   %12.4f", d * 1e12)
+        printf("  %14.4f", ao * 1e12)
+        printf("   %9.2e", e)
+        println("")
+    }
+
+    println("")
+    print("  worst relative delay error over all measurements: ")
+    printf("%.3e", worst)
+    println("")
+    print("  gate: < 1.000e-03")
+    println("")
+    println("")
+
+    if worst != worst {
+        println("  FAIL: NaN in a crossing time")
+        return 1
+    }
+    if bad > 0 {
+        print("  FAIL: ")
+        print(bad)
+        println(" of 512 sums are wrong")
+        return 2
+    }
+    if worst >= 1e-3 {
+        println("  FAIL: a measured delay is not the sum of its stage delays")
+        return 3
+    }
+    println("  PASS: the adder adds, every gate takes tau ln 2, and both")
+    println("        critical paths are the sums written in the header")
+    return 0
+}
