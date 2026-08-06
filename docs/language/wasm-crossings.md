@@ -136,6 +136,13 @@ An empty `parallel_for` over 8 shards, measured on the same page, costs
 **0.155 ms** for 8 spawn-and-join round trips, so about 19 microseconds per
 Emscripten thread out of a prewarmed pool.
 
+That 7.78x is the best of several runs on an otherwise idle machine. Repeating
+it later with a load average around 6 gave 2.64x to 2.89x, and the *serial*
+pass moved from 78 ms to 190 ms at the same time, which is the tell: the
+machine got slower, not the threading. Every run produced the same sum and the
+same PASS. Quote the speedup only alongside the serial baseline it was measured
+against.
+
 ### The grain caveat
 
 That 19 microseconds is roughly 20x what a native `pthread_create` costs, and
