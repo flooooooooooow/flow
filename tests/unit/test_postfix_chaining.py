@@ -6,11 +6,6 @@ arbitrarily: ptr[0].field, a.b[0].c, f()[1].x, pts[0].method(), (p)[0].x.
 The C generator must produce valid C for the resulting AST shapes.
 """
 
-import shutil
-import subprocess
-
-import pytest
-
 from flow.parser import (
     parse_flow_code,
     Lexer,
@@ -236,23 +231,7 @@ class TestPostfixChainingCodegen:
         assert "melody[i]" in c_code
         assert ".duration)" in c_code or "melody[i].duration" in c_code
 
-    @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not available")
-    @pytest.mark.parametrize(
-        "program", [POINTER_STRUCT_PROGRAM, ARRAY_OF_STRUCTS_PROGRAM]
-    )
-    def test_generated_c_compiles_and_passes(self, program, tmp_path):
-        c_code = generate_c(program)
-        c_file = tmp_path / "prog.c"
-        exe_file = tmp_path / "prog"
-        c_file.write_text(c_code)
-        compile_result = subprocess.run(
-            ["clang", "-Wno-everything", str(c_file), "-o", str(exe_file)],
-            capture_output=True,
-            text=True,
-        )
-        assert compile_result.returncode == 0, compile_result.stderr
-        run_result = subprocess.run(
-            [str(exe_file)], capture_output=True, text=True, timeout=30
-        )
-        assert run_result.returncode == 0, run_result.stdout + run_result.stderr
-        assert "PASS" in run_result.stdout
+    # test_generated_c_compiles_and_passes built and ran both programs and
+    # looked for "PASS" on stdout. Both now run as one strict Flow program,
+    # tests/lang/test_pointer_structs.flow, which also checks that a write
+    # through one element leaves its neighbour alone.

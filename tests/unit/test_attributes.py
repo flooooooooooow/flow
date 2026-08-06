@@ -131,24 +131,10 @@ function main() -> i32 {
     assert "extern inline int32_t main(void)" in c
 
 
-@needs_clang
-def test_inline_compiles_and_runs():
-    assert compile_and_run(INLINE_SRC) == 0
+# test_inline_compiles_and_runs -> tests/lang/test_attributes.flow
 
 
-@needs_clang
-def test_exported_inline_compiles_and_runs():
-    src = """
-@inline
-export function add(a: i32, b: i32) -> i32 {
-    return a + b
-}
-
-function main() -> i32 {
-    return add(1, 2) - 3
-}
-"""
-    assert compile_and_run(src) == 0
+# test_exported_inline_compiles_and_runs -> tests/lang/test_attributes.flow
 
 
 # --------------------------------------------------------------------------
@@ -184,9 +170,9 @@ def test_noinline_emits_gnu_attribute():
     assert "static" not in " ".join(lines)
 
 
-@needs_clang
-def test_noinline_compiles_and_runs():
-    assert compile_and_run(NOINLINE_SRC) == 0
+# test_noinline_compiles_and_runs -> tests/lang/test_attributes.flow.
+# test_noinline_survives_optimization stays: test-lang compiles every
+# program with one fixed clang invocation, so it cannot ask for -O2.
 
 
 @needs_clang
@@ -229,9 +215,9 @@ def test_always_inline_emits_attribute_and_inline_specifier():
         ), line
 
 
-@needs_clang
-def test_always_inline_compiles_and_runs():
-    assert compile_and_run(ALWAYS_INLINE_SRC) == 0
+# test_always_inline_compiles_and_runs -> tests/lang/test_attributes.flow.
+# test_always_inline_is_accepted_at_O0 stays for the same reason as the
+# -O2 case above: it needs its own clang flags.
 
 
 @needs_clang
@@ -576,13 +562,8 @@ function main() -> i32 {
 """
 
 
-@needs_clang
-def test_dbg_prints_to_stderr_and_is_value_transparent():
-    """C backend: `dbg e` evaluates `e` once, writes it to stderr and yields
-    it, so removing the keyword cannot change the result."""
-    code, stderr = build_and_run(DBG_SRC)
-    assert code == 0, stderr
-    assert "dbg: 41" in stderr, stderr
+# test_dbg_prints_to_stderr_and_is_value_transparent -> 
+# tests/lang/test_dbg_expect.flow, judged against its .expected-stderr.
 
 
 def test_dbg_in_mlir_is_evaluation_only():
@@ -603,24 +584,11 @@ function main() -> i32 {
 """
 
 
-@needs_clang
-def test_expect_aborts_with_a_diagnostic_when_false():
-    code, stderr = build_and_run(EXPECT_FAIL_SRC)
-    assert code == 1, (code, stderr)
-    assert "expect failed" in stderr, stderr
+# test_expect_aborts_with_a_diagnostic_when_false -> 
+# tests/lang/test_expect_fails.flow, whose .exitcode is 1.
 
 
-@needs_clang
-def test_expect_is_a_no_op_when_true():
-    src = """
-function main() -> i32 {
-    expect 1 + 1 == 2
-    return 0
-}
-"""
-    code, stderr = build_and_run(src)
-    assert code == 0, stderr
-    assert stderr == "", stderr
+# test_expect_is_a_no_op_when_true -> tests/lang/test_dbg_expect.flow.
 
 
 def test_expect_requires_a_bool():
