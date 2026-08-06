@@ -94,6 +94,7 @@ function flowc_cgen_put_i32(w: ptr<CgenBuf>, val: i32) {
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
+function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
 
 # Compare two source spans for equal content.
 function flowc_cgen_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -328,10 +329,110 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         flowc_cgen_put_span(w, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
         return 1
     }
+    if kind == AST_BINOP {
+        # `let s = "a" + b` — string concatenation, not an int.
+        if flowc_cgen_expr_is_string(w, arena, src, init) == 1 {
+            flowc_cgen_puts(w, "const char*")
+            return 1
+        }
+        return 0
+    }
     if kind == AST_CALL {
         return flowc_cgen_write_sig_type(w, arena, src, init)
     }
     return 0
+}
+
+# --- string concatenation -------------------------------------------------
+# `a + b` is C addition unless an operand is a string, in which case Stage-A
+# lowers it to __flowc_str_concat (emitted in the preamble). Detection is
+# syntactic and deliberately conservative: a string literal, a `+` chain that
+# already contains one, a cast to `string`, or a call to a function declared
+# `-> string` (this module's arena first, then the bundle signature table).
+# Two string values with no literal and no call between them are still emitted
+# as `+` and rejected by the C compiler — a loud failure, never wrong output.
+
+# 1 if `ty` is the AST_TYPE node for `string`.
+function flowc_cgen_type_is_string(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[ty].a != AST_NONE {
+        return 0
+    }
+    return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "string")
+}
+
+# 1 if the signature table records `const char*` for this call's callee.
+function flowc_cgen_sig_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
+    let off: i32 = flowc_cgen_sig_find(
+        w[0].sigs, w[0].sigs_len, src,
+        arena.nodes[call].name_start, arena.nodes[call].name_end
+    )
+    if off < 0 {
+        return 0
+    }
+    let want: string = "const char*"
+    let wp: ptr<u8> = want
+    let wn: i32 = strlen(want) as i32
+    let mut i: i32 = 0
+    while i < wn {
+        if off + i >= w[0].sigs_len {
+            return 0
+        }
+        if w[0].sigs[off + i] != wp[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    if off + wn >= w[0].sigs_len {
+        return 0
+    }
+    if w[0].sigs[off + wn] != 0 {
+        return 0
+    }
+    return 1
+}
+
+function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_STRING {
+        return 1
+    }
+    if kind == AST_CAST {
+        return flowc_cgen_type_is_string(arena, src, arena.nodes[id].b)
+    }
+    if kind == AST_BINOP {
+        if arena.nodes[id].ival != TOK_PLUS {
+            return 0
+        }
+        if flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].a) == 1 {
+            return 1
+        }
+        return flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].b)
+    }
+    if kind == AST_CALL {
+        let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if fn != AST_NONE {
+            return flowc_cgen_type_is_string(arena, src, arena.nodes[fn].b)
+        }
+        return flowc_cgen_sig_is_string(w, arena, src, id)
+    }
+    return 0
+}
+
+# 1 if this `+` node should lower to __flowc_str_concat.
+function flowc_cgen_is_str_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].a) == 1 {
+        return 1
+    }
+    return flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].b)
 }
 
 # Append one `name\0ctype\0` entry. Returns the new length (unchanged if full).
@@ -481,6 +582,17 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     if kind == AST_BINOP {
         let op: i32 = arena.nodes[id].ival
+        # `a + b` on strings is concatenation, not pointer arithmetic.
+        if op == TOK_PLUS {
+            if flowc_cgen_is_str_concat(w, arena, src, id) == 1 {
+                flowc_cgen_puts(w, "__flowc_str_concat(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, ", ")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_putc(w, 41)
+                return
+            }
+        }
         let wrap: i32 = flowc_cgen_binop_needs_parens(op)
         if wrap == 1 {
             flowc_cgen_putc(w, 40)
@@ -979,6 +1091,20 @@ export function flowc_cgen_emit_sigs(
         # the libc headers used by Stage-A externs (FILE*/strlen/puts).
         flowc_cgen_puts(&w, "#include <stdio.h>\n")
         flowc_cgen_puts(&w, "#include <string.h>\n")
+        flowc_cgen_putc(&w, 10)
+        # Stage-A string `+`. `static inline` so a TU that never concatenates
+        # does not warn. The result is never freed: Flow strings here live for
+        # the process, same as the arenas the compiler itself allocates.
+        flowc_cgen_puts(&w, "static inline const char* __flowc_str_concat(const char* a, const char* b) {\n")
+        flowc_cgen_puts(&w, "  size_t la; size_t lb; char* r;\n")
+        flowc_cgen_puts(&w, "  if (a == 0) { a = \"\"; }\n")
+        flowc_cgen_puts(&w, "  if (b == 0) { b = \"\"; }\n")
+        flowc_cgen_puts(&w, "  la = strlen(a); lb = strlen(b);\n")
+        flowc_cgen_puts(&w, "  r = (char*)malloc(la + lb + 1);\n")
+        flowc_cgen_puts(&w, "  if (r == 0) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n")
+        flowc_cgen_puts(&w, "  return r;\n")
+        flowc_cgen_puts(&w, "}\n")
         flowc_cgen_putc(&w, 10)
     }
 

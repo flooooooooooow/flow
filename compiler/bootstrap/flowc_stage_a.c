@@ -3,6 +3,17 @@
 #include <stdio.h>
 #include <string.h>
 
+static inline const char* __flowc_str_concat(const char* a, const char* b) {
+  size_t la; size_t lb; char* r;
+  if (a == 0) { a = ""; }
+  if (b == 0) { b = ""; }
+  la = strlen(a); lb = strlen(b);
+  r = (char*)malloc(la + lb + 1);
+  if (r == 0) { return ""; }
+  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;
+  return r;
+}
+
 static const int32_t FLOWC_IO_SEEK_SET = 0;
 static const int32_t FLOWC_IO_SEEK_END = 2;
 void* flowc_io_fopen(const char* path, const char* mode) {
@@ -1997,6 +2008,7 @@ void flowc_cgen_put_i32(CgenBuf* w, int32_t val) {
 void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_block(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_expr_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_span_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
   if ((a1 - a0) != (b1 - b0)) {
   return 0;
@@ -2208,10 +2220,94 @@ int32_t flowc_cgen_write_lit_type(CgenBuf* w, AstArena arena, uint8_t* src, int3
   flowc_cgen_put_span(w, src, ((arena).nodes[init]).name_start, ((arena).nodes[init]).name_end);
   return 1;
 }
+  if (kind == AST_BINOP) {
+  if (flowc_cgen_expr_is_string(w, arena, src, init) == 1) {
+  flowc_cgen_puts(w, "const char*");
+  return 1;
+}
+  return 0;
+}
   if (kind == AST_CALL) {
   return flowc_cgen_write_sig_type(w, arena, src, init);
 }
   return 0;
+}
+
+int32_t flowc_cgen_type_is_string(AstArena arena, uint8_t* src, int32_t ty) {
+  if (ty == AST_NONE) {
+  return 0;
+}
+  if (((arena).nodes[ty]).kind != AST_TYPE) {
+  return 0;
+}
+  if (((arena).nodes[ty]).a != AST_NONE) {
+  return 0;
+}
+  return flowc_cgen_span_is(src, ((arena).nodes[ty]).name_start, ((arena).nodes[ty]).name_end, "string");
+}
+
+int32_t flowc_cgen_sig_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call) {
+  int32_t off = flowc_cgen_sig_find((w[0]).sigs, (w[0]).sigs_len, src, ((arena).nodes[call]).name_start, ((arena).nodes[call]).name_end);
+  if (off < 0) {
+  return 0;
+}
+  const char* want = "const char*";
+  uint8_t* wp = (uint8_t*)(want);
+  int32_t wn = (int32_t)(strlen(want));
+  int32_t i = 0;
+  while (i < wn) {
+  if ((off + i) >= (w[0]).sigs_len) {
+  return 0;
+}
+  if ((w[0]).sigs[(off + i)] != wp[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  if ((off + wn) >= (w[0]).sigs_len) {
+  return 0;
+}
+  if ((w[0]).sigs[(off + wn)] != 0) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t flowc_cgen_expr_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (id == AST_NONE) {
+  return 0;
+}
+  int32_t kind = ((arena).nodes[id]).kind;
+  if (kind == AST_STRING) {
+  return 1;
+}
+  if (kind == AST_CAST) {
+  return flowc_cgen_type_is_string(arena, src, ((arena).nodes[id]).b);
+}
+  if (kind == AST_BINOP) {
+  if (((arena).nodes[id]).ival != TOK_PLUS) {
+  return 0;
+}
+  if (flowc_cgen_expr_is_string(w, arena, src, ((arena).nodes[id]).a) == 1) {
+  return 1;
+}
+  return flowc_cgen_expr_is_string(w, arena, src, ((arena).nodes[id]).b);
+}
+  if (kind == AST_CALL) {
+  int32_t fn = flowc_cgen_find_fn(arena, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  if (fn != AST_NONE) {
+  return flowc_cgen_type_is_string(arena, src, ((arena).nodes[fn]).b);
+}
+  return flowc_cgen_sig_is_string(w, arena, src, id);
+}
+  return 0;
+}
+
+int32_t flowc_cgen_is_str_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (flowc_cgen_expr_is_string(w, arena, src, ((arena).nodes[id]).a) == 1) {
+  return 1;
+}
+  return flowc_cgen_expr_is_string(w, arena, src, ((arena).nodes[id]).b);
 }
 
 int32_t flowc_cgen_sig_put(AstArena arena, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len, int32_t fn, int32_t rt) {
@@ -2347,6 +2443,16 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 }
   if (kind == AST_BINOP) {
   int32_t op = ((arena).nodes[id]).ival;
+  if (op == TOK_PLUS) {
+  if (flowc_cgen_is_str_concat(w, arena, src, id) == 1) {
+  flowc_cgen_puts(w, "__flowc_str_concat(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ", ");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_putc(w, 41);
+  return;
+}
+}
   int32_t wrap = flowc_cgen_binop_needs_parens(op);
   if (wrap == 1) {
   flowc_cgen_putc(w, 40);
@@ -2796,6 +2902,17 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "#include <stdlib.h>\n");
   flowc_cgen_puts((&w), "#include <stdio.h>\n");
   flowc_cgen_puts((&w), "#include <string.h>\n");
+  flowc_cgen_putc((&w), 10);
+  flowc_cgen_puts((&w), "static inline const char* __flowc_str_concat(const char* a, const char* b) {\n");
+  flowc_cgen_puts((&w), "  size_t la; size_t lb; char* r;\n");
+  flowc_cgen_puts((&w), "  if (a == 0) { a = \"\"; }\n");
+  flowc_cgen_puts((&w), "  if (b == 0) { b = \"\"; }\n");
+  flowc_cgen_puts((&w), "  la = strlen(a); lb = strlen(b);\n");
+  flowc_cgen_puts((&w), "  r = (char*)malloc(la + lb + 1);\n");
+  flowc_cgen_puts((&w), "  if (r == 0) { return \"\"; }\n");
+  flowc_cgen_puts((&w), "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n");
+  flowc_cgen_puts((&w), "  return r;\n");
+  flowc_cgen_puts((&w), "}\n");
   flowc_cgen_putc((&w), 10);
 }
   int32_t item = ((arena).nodes[root]).a;
