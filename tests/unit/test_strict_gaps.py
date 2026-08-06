@@ -283,3 +283,91 @@ class TestImplicitCapabilityArguments:
         ):
             assert f"export function {name}(" in stdlib, name
             assert f"export function flow_{name}(" in stub, name
+
+
+# ---------------------------------------------------------------------------
+# Gap 4: u32 literal mangling (flow-u32-literal-mangling)
+# ---------------------------------------------------------------------------
+
+UNSIGNED_LITERAL_ARGS = """
+function take_u8(x: u8) -> u8 {
+    return x + 1
+}
+
+function take_u32(x: u32) -> u32 {
+    return x + 1
+}
+
+function take_u64(x: u64) -> u64 {
+    return x + 1
+}
+
+function main() -> i32 {
+    let a: u8 = take_u8(9)
+    let b: u32 = take_u32(1234)
+    let c: u64 = take_u64(5678)
+    if a != 10 {
+        return 1
+    }
+    if b != 1235 {
+        return 2
+    }
+    if c != 5679 {
+        return 3
+    }
+    return 0
+}
+"""
+
+SIGNED_OVERLOAD_PREFERRED = """
+function pick(x: i32) -> i32 {
+    return 1
+}
+
+function pick(x: u32) -> i32 {
+    return 2
+}
+
+function main() -> i32 {
+    return pick(5)
+}
+"""
+
+
+class TestUnsignedLiteralArguments:
+    """An unsuffixed integer literal has no committed width, so it may bind
+    to any integer parameter. Before this, `take_u32(1234)` resolved to no
+    overload and the backend emitted an undeclared unmangled call."""
+
+    def test_generated_c_calls_the_mangled_overload(self):
+        from flow.c_generator import flow_to_c
+
+        c = flow_to_c(parse_flow_code(UNSIGNED_LITERAL_ARGS))
+        assert "take_u8_u8(9)" in c
+        assert "take_u32_u32(1234)" in c
+        assert "take_u64_u64(5678)" in c
+
+    def test_exact_signed_overload_still_wins(self):
+        from flow.c_generator import flow_to_c
+
+        c = flow_to_c(parse_flow_code(SIGNED_OVERLOAD_PREFERRED))
+        assert "pick_i32(5)" in c
+        assert "pick_u32(5)" not in c
+
+    def test_program_runs(self, tmp_path):
+        import shutil
+        import subprocess
+
+        if shutil.which("clang") is None:
+            pytest.skip("clang not available")
+        from flow.c_generator import flow_to_c
+
+        c_path = tmp_path / "unsigned.c"
+        c_path.write_text(flow_to_c(parse_flow_code(UNSIGNED_LITERAL_ARGS)))
+        binary = tmp_path / "unsigned"
+        build = subprocess.run(
+            ["clang", "-Wno-everything", str(c_path), "-o", str(binary), "-lm"],
+            capture_output=True, text=True,
+        )
+        assert build.returncode == 0, build.stderr
+        assert subprocess.run([str(binary)]).returncode == 0
