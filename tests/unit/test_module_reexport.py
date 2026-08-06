@@ -273,43 +273,10 @@ class TestReexportCollisions:
         assert "leaf_fn" in resolver.symbol_table
 
 
-class TestCompileAndRun:
-    @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not available")
-    def test_reexport_program_compiles_and_returns_expected_exit_code(self, tmp_path):
-        # alpha_one() + alpha_two() + beta_one() + agg_own() = 1 + 2 + 10 + 100
-        c_file = tmp_path / "prog.c"
-        exe = tmp_path / "prog"
-        env = dict(os.environ)
-        env["PYTHONPATH"] = os.path.join(REPO_ROOT, "src") + os.pathsep + env.get(
-            "PYTHONPATH", ""
-        )
-        transpile = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "flow.transpiler",
-                _fixture("consumer_reexport.flow"),
-                "--c",
-                "--strict",
-                "-o",
-                str(c_file),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=REPO_ROOT,
-            env=env,
-        )
-        assert transpile.returncode == 0, transpile.stdout + transpile.stderr
-
-        compile_result = subprocess.run(
-            ["clang", "-Wno-everything", str(c_file), "-o", str(exe), "-lm"],
-            capture_output=True,
-            text=True,
-        )
-        assert compile_result.returncode == 0, compile_result.stderr
-
-        run = subprocess.run([str(exe)], capture_output=True)
-        assert run.returncode == 113
+# TestCompileAndRun built consumer_reexport.flow and checked it exits 113.
+# It is now tests/lang/test_reexport.flow, which checks each forwarded
+# function individually as well as the 113 total, and additionally drives
+# the six-submodule flowlm aggregator.
 
 
 class TestLspFollowsReexports:
