@@ -330,9 +330,15 @@ class TypeChecker:
     # arena does not allocate/free, so it stays RT-safe (see rt-safety.md,
     # "Allowed on the audio thread"). Only creating/destroying/growing the
     # arena's backing storage is forbidden.
+    # `frame_arena_create` / `frame_arena_destroy` wrap the same malloc/free,
+    # so they join the list; the `frame_*` hot path (`frame_begin`,
+    # `frame_alloc*`, `frame_end`, `frame_used`, `frame_high_water`,
+    # `frame_count`) is bump-pointer arithmetic and stays RT-safe
+    # (docs/language/lifetime-domains.md).
     RT_UNSAFE_STDLIB_NAMES: frozenset = frozenset({
         'alloc_bytes', 'alloc_zeroed', 'alloc_i32', 'alloc_f32', 'alloc_f64',
         'arena_create', 'arena_destroy',
+        'frame_arena_create', 'frame_arena_destroy',
     })
     # Audio device lifecycle + buffer alloc (lib/stdlib/audio/io.flow,
     # lib/stdlib/audio.flow). Ring-buffer read/write helpers and pure
