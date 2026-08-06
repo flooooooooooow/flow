@@ -36,6 +36,7 @@ examples/
 ├── physics/          # Physics DSL experiments
 ├── stats/            # Statistics / regression
 ├── systems/          # Systems programming + system_info
+├── threed/           # Software 3D renderer demos (render3d.flow)
 ├── ui/               # UI layout (stdlib ui_layout)
 ├── verify/           # flow-verify proof corpus (not the tourist showcase)
 └── wasm/             # WASM target smoke (Flow→C→emcc)
@@ -95,6 +96,7 @@ One tourist-facing entrypoint per domain. Prefer these when demoing or linking f
 | Evolution (flagship) | `examples/evolution/pendulum_evolves.flow` | `./flow run examples/evolution/pendulum_evolves.flow` |
 | Dynamics / `dsys` | `examples/dynamics/ga_dsys_syntax.flow` | `./flow run examples/dynamics/ga_dsys_syntax.flow` |
 | Games / graphics | `examples/games/tetris_gfx.flow` | `./flow gfx examples/games/tetris_gfx.flow` |
+| 3D / software raster | `examples/threed/spinning_solids.flow` | `./flow gfx examples/threed/spinning_solids.flow` |
 | Shaders | `examples/graphics/shader_demo.flow` | `./flow run examples/graphics/shader_demo.flow` |
 | GPU / SIMD | `examples/gpu/simd_saxpy.flow` | `./flow run examples/gpu/simd_saxpy.flow` |
 | Linalg | `examples/linalg/matrix_ops.flow` | `./flow run examples/linalg/matrix_ops.flow` |
@@ -125,7 +127,7 @@ Fundamental algorithms demonstrating Flow syntax:
 - `match_enums.flow` - `match` on a simple enum
 
 ### Games (`games/`)
-24 complete games, all playable via `./flow gfx <file>` (or headless via `./flow record <file>`). Every game has a recorded gameplay GIF in the [game gallery](../docs/demos/games.md). Flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md).
+25 complete games, all playable via `./flow gfx <file>` (or headless via `./flow record <file>`). Every game has a recorded gameplay GIF in the [game gallery](../docs/demos/games.md). Flagship writeup: [docs/demos/chetris.md](../docs/demos/chetris.md).
 
 Arcade:
 - `snake_gfx.flow` - Snake with growth, speed-up, wall/self death
@@ -140,6 +142,7 @@ Arcade:
 - `maze_chase_gfx.flow` - Maze, pellets, 3 ghost styles, power-mode chains
 - `lane_racer_gfx.flow` - 4-lane traffic dodger, near-miss bonus, fuel
 - `jumper_gfx.flow` - Vertical platformer: moving/crumbling platforms, springs
+- `icy_tower_gfx.flow` - Momentum platformer: running speed sets jump height and reach, wall bounces keep it, multi-floor landings chain a named combo, the tower scrolls faster the higher you get
 
 Puzzle and logic:
 - `minesweeper_gfx.flow` - 16x16, 40 mines, flood fill, safe first click
@@ -158,6 +161,19 @@ Board:
 
 Sandbox:
 - `falling_sand_gfx.flow` - The Falling Sand Game: 384x192 cells at one cell per pixel, wall/sand/water/oil/fire/plant/salt/salt water/steam/ice plus spouts, keyboard pen
+
+### 3D (`threed/`)
+Eight demos on `lib/stdlib/render3d.flow`, a software rasterizer written in Flow
+(pipeline, caps and limitations: [docs/language/graphics-3d.md](../docs/language/graphics-3d.md);
+per-example table: [examples/threed/README.md](threed/README.md)):
+- `spinning_solids.flow` - Five Platonic solids from vertex lists, faces recovered by a plane sweep; wire / flat / Gouraud / unlit
+- `fps_camera.flow` - First-person camera, per-axis box collision, gravity and jumping
+- `third_person.flow` - Chase camera with smoothing and raycast occlusion pull-in
+- `heightmap_terrain.flow` - Value-noise terrain, four octaves, walked with distance fog
+- `voxel_world.flow` - Chunked block field, visible-face meshing, raycast block selector
+- `physics3d.flow` - Rigid spheres, restitution, sphere-sphere and sphere-plane impulses, energy readout
+- `raycast_shooter.flow` - Ray-vs-AABB picking and hitscan from one query, waves and score
+- `billboard_particles.flow` - 1200 alpha-blended billboards, depth-sorted by a counting sort
 
 ### Ecosystem (`ecosystem/`)
 Registry package demos (`./flow install` then `./flow run` or `./flow run-native`):
