@@ -1,0 +1,80 @@
+# Flow-native language test: generic structs and generic functions.
+#
+# The pilot could not add this file: `box_make<i32>(7)` parses as a call to
+# `box_make_i32`, a function the monomorphizer only creates after type
+# checking, so strict mode reported it undefined. The checker now synthesizes
+# the same signature on demand, so explicit instantiations are checked and
+# these programs are strict-clean.
+#
+# Still unsupported, and therefore absent below: the *inferred* generic struct
+# literal, `let b: Box<i32> = Box { value: 42 }`. Strict mode reports
+# "field 'value' expects T, got i32" because the literal carries no type
+# argument. Written as `Box<i32> { value: 42 }` it checks and runs.
+#
+# Supersedes (behavioral parts of):
+#   tests/unit/test_c_generator_abi.py::test_e2e_generic_box_after_mono
+#   tests/unit/test_monomorphize.py::test_e2e_generic_pair_compiles_and_runs
+#   tests/unit/test_strict_gaps.py::TestGenericInstantiationIsChecked (run half)
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Box<T> {
+    value: T
+}
+
+struct Pair<A, B> {
+    first: A,
+    second: B
+}
+
+function box_make<T>(v: T) -> Box<T> {
+    return Box<T> { value: v }
+}
+
+function box_get<T>(b: ptr<Box<T> >) -> T {
+    return b.value
+}
+
+function identity<T>(x: T) -> T {
+    return x
+}
+
+function main() -> i32 {
+    # A generic function returning a generic struct.
+    let mut b: Box<i32> = box_make<i32>(7)
+    if box_get<i32>(&b) != 7 {
+        return 1
+    }
+
+    # A second instantiation of the same template: two specializations must
+    # coexist in the emitted C without colliding.
+    let mut f: Box<f32> = box_make<f32>(1.5)
+    if f.value <= 1.4 || f.value >= 1.6 {
+        return 2
+    }
+    if box_get<f32>(&f) <= 1.4 {
+        return 3
+    }
+
+    # Repeating an instantiation must not emit a second definition; if it
+    # did, this file would not link.
+    let again: Box<i32> = Box<i32> { value: 42 }
+    if again.value != 42 {
+        return 4
+    }
+
+    # Two type parameters.
+    let p: Pair<i32, bool> = Pair<i32, bool> { first: 1, second: true }
+    if p.first != 1 {
+        return 5
+    }
+    if !p.second {
+        return 6
+    }
+
+    # A generic function with no struct involved.
+    if identity<i32>(9) != 9 {
+        return 7
+    }
+
+    return 0
+}
