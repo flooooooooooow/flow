@@ -5,7 +5,6 @@ from tests.unit.compiler_helpers import (
     typecheck,
     to_c,
     needs_clang,
-    compile_and_run,
     compile_c_only,
 )
 from flow.monomorphize import monomorphize
@@ -44,31 +43,6 @@ def test_pipeline_clang_syntax_only():
     compile_c_only(PIPELINE_SRC)
 
 
-@needs_clang
-def test_pipeline_runs():
-    assert compile_and_run(PIPELINE_SRC) == 0
-
-
-@needs_clang
-def test_pipeline_control_and_calls():
-    src = """
-function abs_i(x: i32) -> i32 {
-    if x < 0 {
-        return 0 - x
-    }
-    return x
-}
-
-function main() -> i32 {
-    let mut s: i32 = 0
-    for i in 0 to 5 {
-        s = s + abs_i(i - 2)
-    }
-    # abs(-2)+abs(-1)+abs(0)+abs(1)+abs(2) = 2+1+0+1+2 = 6
-    if s == 6 {
-        return 0
-    }
-    return 1
-}
-"""
-    assert compile_and_run(src) == 0
+# test_pipeline_runs and test_pipeline_control_and_calls compiled and ran
+# PIPELINE_SRC and an abs/loop program. Both now run as Flow programs:
+# tests/lang/test_structs.flow and tests/lang/test_functions.flow.

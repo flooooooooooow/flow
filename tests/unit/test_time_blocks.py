@@ -586,34 +586,6 @@ flow Ramp {
 
 
 class TestEndToEnd:
-    @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
-    def test_firing_count_and_catchup(self, tmp_path):
-        # 1000 steps of 1 ms cover 1 s: an `every 10 ms` block fires 100
-        # times (first firing at t >= P, spec 4.3). A single 95 ms step
-        # catches up with 9 firings instead of dropping ticks.
-        program = COUNTER + """
-extern { function printf(fmt: string, val: f64) -> i32 }
-
-function main() -> i32 {
-    let mut c: Counter = Counter_new()
-    for k in 0 to 1000 {
-        Counter_step(&c, 0.001)
-    }
-    printf("%.1f\\n", c.ticks)
-
-    let mut burst: Counter = Counter_new()
-    Counter_step(&burst, 0.095)
-    printf("%.1f\\n", burst.ticks)
-
-    printf("%.6f\\n", Counter_default_dt())
-    return 0
-}
-"""
-        out = run_flow_program(program, tmp_path, "every_e2e")
-        steady, burst, default_dt = out.split()
-        assert float(steady) == 100.0
-        assert float(burst) == 9.0
-        assert float(default_dt) == pytest.approx(0.001)
 
     @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
     def test_rk4_matches_reference_and_moves_state(self, tmp_path):
@@ -680,30 +652,8 @@ function main() -> i32 {
         assert abs(sv - ref_v) < 1e-9
         assert abs(ramp_x - 2.0) < 1e-12
 
-    @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
-    def test_every_updates_are_simultaneous(self, tmp_path):
-        # `a becomes b; b becomes a` inside one every-body must swap.
-        program = """
-extern { function printf(fmt: string, val: f64) -> i32 }
-
-flow Swap {
-    state a : f64 = 1.0
-    state b : f64 = 2.0
-    every 10 ms {
-        a becomes b
-        b becomes a
-    }
-}
-
-function main() -> i32 {
-    let mut s: Swap = Swap_new()
-    Swap_step(&s, 0.01)
-    printf("%.1f\\n", s.a)
-    printf("%.1f\\n", s.b)
-    return 0
-}
-"""
-        out = run_flow_program(program, tmp_path, "swap_every_e2e")
-        a, b = (float(line) for line in out.split())
-        assert a == 2.0
-        assert b == 1.0
+    # test_firing_count_and_catchup and test_every_updates_are_simultaneous
+    # are now tests/lang/test_time_blocks.flow. What stays is
+    # test_rk4_matches_reference_and_moves_state, which compares the rk4
+    # solver against a reference integrator recomputed in Python; a Flow
+    # rewrite would only compare the compiler with itself.
