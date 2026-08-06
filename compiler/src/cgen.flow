@@ -21,15 +21,20 @@ extern {
 }
 
 # Fixed-buffer writer for C text.
+# `sigs` / `sigs_len` carry an optional cross-module return-type table
+# (`name\0ctype\0` entries, see flowc_cgen_collect_sigs) so an inferred
+# `let x = dep_fn(...)` in a later bundle module gets the right C type.
 export struct CgenBuf {
     out: ptr<u8>,
     cap: i32,
     len: i32,
-    err: i32
+    err: i32,
+    sigs: ptr<u8>,
+    sigs_len: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -199,6 +204,176 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         return
     }
     flowc_cgen_puts(w, "int32_t")
+}
+
+# --- inferred `let` types -------------------------------------------------
+# `let x = expr` (no `: Type`) used to emit `int32_t` unconditionally, which
+# produced wrong C for struct/pointer/string initialisers. Stage-A now infers
+# from the initialiser: casts and calls to functions declared in this module
+# use the declared type node; string/float/struct literals write a type
+# directly; calls into other bundle modules use the signature table below.
+
+# Index of the top-level AST_FN whose name span matches, else AST_NONE.
+function flowc_cgen_find_fn(arena: AstArena, src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if end <= start {
+        return AST_NONE
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN {
+            if flowc_cgen_span_eq(src, start, end, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# AST_TYPE node describing `init`, or AST_NONE when no node applies.
+function flowc_cgen_infer_type_node(arena: AstArena, src: ptr<u8>, init: i32) -> i32 {
+    if init == AST_NONE {
+        return AST_NONE
+    }
+    let kind: i32 = arena.nodes[init].kind
+    if kind == AST_CAST {
+        return arena.nodes[init].b
+    }
+    if kind == AST_CALL {
+        let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
+        if fn != AST_NONE {
+            return arena.nodes[fn].b
+        }
+    }
+    return AST_NONE
+}
+
+# Byte offset of the ctype for `name` in a `name\0ctype\0` table, else -1.
+function flowc_cgen_sig_find(buf: ptr<u8>, blen: i32, src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if buf == null {
+        return 0 - 1
+    }
+    let nlen: i32 = end - start
+    if nlen <= 0 or blen <= 0 {
+        return 0 - 1
+    }
+    let mut p: i32 = 0
+    while p < blen {
+        let mut i: i32 = 0
+        while p + i < blen and buf[p + i] != 0 {
+            i = i + 1
+        }
+        let mut hit: i32 = 0
+        if i == nlen {
+            hit = 1
+            let mut j: i32 = 0
+            while j < nlen {
+                if buf[p + j] != src[start + j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+        }
+        let vpos: i32 = p + i + 1
+        if vpos >= blen {
+            return 0 - 1
+        }
+        if hit == 1 {
+            return vpos
+        }
+        let mut k: i32 = 0
+        while vpos + k < blen and buf[vpos + k] != 0 {
+            k = k + 1
+        }
+        p = vpos + k + 1
+    }
+    return 0 - 1
+}
+
+# Write the C type recorded for a call's callee. 1 if written, else 0.
+function flowc_cgen_write_sig_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
+    let off: i32 = flowc_cgen_sig_find(
+        w[0].sigs, w[0].sigs_len, src,
+        arena.nodes[call].name_start, arena.nodes[call].name_end
+    )
+    if off < 0 {
+        return 0
+    }
+    let mut i: i32 = off
+    while i < w[0].sigs_len {
+        if w[0].sigs[i] == 0 {
+            return 1
+        }
+        flowc_cgen_putc(w, w[0].sigs[i])
+        i = i + 1
+    }
+    return 1
+}
+
+# Write a C type for initialisers with no AST_TYPE node. 1 if written, else 0.
+function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, init: i32) -> i32 {
+    if init == AST_NONE {
+        return 0
+    }
+    let kind: i32 = arena.nodes[init].kind
+    if kind == AST_STRING {
+        flowc_cgen_puts(w, "const char*")
+        return 1
+    }
+    if kind == AST_FLOAT {
+        flowc_cgen_puts(w, "double")
+        return 1
+    }
+    if kind == AST_STRUCT_LIT {
+        flowc_cgen_put_span(w, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
+        return 1
+    }
+    if kind == AST_CALL {
+        return flowc_cgen_write_sig_type(w, arena, src, init)
+    }
+    return 0
+}
+
+# Append one `name\0ctype\0` entry. Returns the new length (unchanged if full).
+function flowc_cgen_sig_put(
+    arena: AstArena,
+    src: ptr<u8>,
+    buf: ptr<u8>,
+    cap: i32,
+    len: i32,
+    fn: i32,
+    rt: i32
+) -> i32 {
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    let nlen: i32 = ne - ns
+    if nlen <= 0 {
+        return len
+    }
+    if len + nlen + 4 > cap {
+        return len
+    }
+    let mut i: i32 = 0
+    while i < nlen {
+        buf[len + i] = src[ns + i]
+        i = i + 1
+    }
+    let mut n: i32 = len + nlen
+    buf[n] = 0
+    n = n + 1
+    let dest: ptr<u8> = buf + n
+    let mut tw: CgenBuf = flowc_cgen_buf_init(dest, cap - n - 1)
+    flowc_cgen_emit_type(&tw, arena, src, rt)
+    if tw.err != 0 {
+        return len
+    }
+    if tw.len <= 0 {
+        return len
+    }
+    n = n + tw.len
+    buf[n] = 0
+    n = n + 1
+    return n
 }
 
 # Comparison/logic ops match C precedence (same as Flow parser). Skip outer
@@ -437,8 +612,13 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     if kind == AST_LET {
         # Stage-A: emit annotated type (ptr/struct/primitives/array); default int32_t.
         # array<T,N> name → T name[N]; ptr lets wrap init in (T*)(expr).
-        let ty: i32 = arena.nodes[id].a
+        # No annotation → infer from the initialiser (see flowc_cgen_infer_type_node).
+        let ann: i32 = arena.nodes[id].a
         let init: i32 = arena.nodes[id].b
+        let mut ty: i32 = ann
+        if ann == AST_NONE {
+            ty = flowc_cgen_infer_type_node(arena, src, init)
+        }
         let mut arr_n: i32 = 0
         let mut arr_inner: i32 = AST_NONE
         if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
@@ -453,7 +633,13 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if arr_n > 0 {
             flowc_cgen_emit_type(w, arena, src, arr_inner)
         } else {
-            flowc_cgen_emit_type(w, arena, src, ty)
+            let mut wrote: i32 = 0
+            if ty == AST_NONE {
+                wrote = flowc_cgen_write_lit_type(w, arena, src, init)
+            }
+            if wrote == 0 {
+                flowc_cgen_emit_type(w, arena, src, ty)
+            }
         }
         flowc_cgen_putc(w, 32)
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -762,7 +948,18 @@ function flowc_cgen_unwrap(arena: AstArena, item: i32, want: i32) -> i32 {
 # `export struct` / `export function` are AST_EXPORT wrappers — unwrap for emit.
 # Bare `export a, b` and import/extern are skipped.
 # flags: bit0 (1) = skip #include preamble (for multi-file bundle TUs).
-export function flowc_cgen_emit_ex(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32, flags: i32) -> i32 {
+# `sigs` / `sigs_len` are an optional cross-module return-type table
+# (flowc_cgen_collect_sigs); pass null / 0 for single-module emit.
+export function flowc_cgen_emit_sigs(
+    arena: AstArena,
+    root: i32,
+    src: ptr<u8>,
+    out: ptr<u8>,
+    out_cap: i32,
+    flags: i32,
+    sigs: ptr<u8>,
+    sigs_len: i32
+) -> i32 {
     if root == AST_NONE or root < 0 {
         return 0 - 1
     }
@@ -770,6 +967,8 @@ export function flowc_cgen_emit_ex(arena: AstArena, root: i32, src: ptr<u8>, out
         return 0 - 1
     }
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
+    w.sigs = sigs
+    w.sigs_len = sigs_len
     # bit0 without requiring Stage-A bitwise operators during self-parse.
     if (flags % 2) == 0 {
         flowc_cgen_puts(&w, "#include <stdint.h>\n")
@@ -818,6 +1017,42 @@ export function flowc_cgen_emit_ex(arena: AstArena, root: i32, src: ptr<u8>, out
     return w.len
 }
 
+export function flowc_cgen_emit_ex(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32, flags: i32) -> i32 {
+    return flowc_cgen_emit_sigs(arena, root, src, out, out_cap, flags, null, 0)
+}
+
 export function flowc_cgen_emit(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32) -> i32 {
-    return flowc_cgen_emit_ex(arena, root, src, out, out_cap, 0)
+    return flowc_cgen_emit_sigs(arena, root, src, out, out_cap, 0, null, 0)
+}
+
+# Append `name\0ctype\0` for every top-level function with a declared return
+# type into `buf` (capacity `cap`, already holding `len` bytes). Returns the
+# new length; entries that do not fit are dropped.
+export function flowc_cgen_collect_sigs(
+    arena: AstArena,
+    root: i32,
+    src: ptr<u8>,
+    buf: ptr<u8>,
+    cap: i32,
+    len: i32
+) -> i32 {
+    if buf == null or root == AST_NONE or root < 0 {
+        return len
+    }
+    if arena.nodes[root].kind != AST_PROGRAM {
+        return len
+    }
+    let mut n: i32 = len
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let fn: i32 = flowc_cgen_unwrap(arena, item, AST_FN)
+        if fn != AST_NONE {
+            let rt: i32 = arena.nodes[fn].b
+            if rt != AST_NONE {
+                n = flowc_cgen_sig_put(arena, src, buf, cap, n, fn, rt)
+            }
+        }
+        item = arena.nodes[item].next
+    }
+    return n
 }
