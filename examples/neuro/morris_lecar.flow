@@ -1,0 +1,942 @@
+# MORRIS-LECAR: locating a Hopf bifurcation numerically.
+#
+# MODEL
+#   Morris & Lecar (1981) fitted the barnacle giant muscle fibre with a
+#   two-variable membrane: an instantaneous calcium current and a slow
+#   potassium gate.
+#
+#     C dV/dt = I - gL(V-VL) - gCa*m_inf(V)*(V-VCa) - gK*w*(V-VK)
+#     dw/dt   = phi * (w_inf(V) - w) / tau_w(V)
+#
+#     m_inf(V) = 0.5 * (1 + tanh((V - V1)/V2))
+#     w_inf(V) = 0.5 * (1 + tanh((V - V3)/V4))
+#     tau_w(V) = 1 / cosh((V - V3) / (2*V4))
+#
+#   Both differential equations are `evolves as` lines in `flow ML` below.
+#
+# PARAMETERS  (the "type II" set of Rinzel & Ermentrout)
+#   C 20 uF/cm2   gL 2   gCa 4.4   gK 8 mS/cm2
+#   VL -60   VCa 120   VK -84 mV
+#   V1 -1.2   V2 18   V3 2   V4 30 mV     phi 0.04
+#   RK4, dt = 0.02 ms
+#
+# WHAT THIS PROVES
+#   1. The equilibrium is located by bisection on the steady-state current
+#      balance, for any I. The residual is printed.
+#   2. The Jacobian at that equilibrium is formed analytically, and the Hopf
+#      condition tr J = 0 (with det J > 0) is located by a second bisection,
+#      this time on I. That is the critical current, reported to five
+#      decimals and gated against the published 93.86 uA/cm2.
+#   3. Linear theory is then checked against the nonlinear model two ways.
+#      (a) Below the critical current a small perturbation rings at
+#          2*pi/sqrt(det J - (tr J)^2/4); the measured ringing period is
+#          gated against that at 2 %.
+#      (b) An amplitude sweep started from rest stays quiet below the Hopf
+#          point and oscillates above it.
+#   4. The bifurcation is SUBCRITICAL, so a second sweep run downwards from
+#      an already-oscillating state keeps oscillating below the Hopf point
+#      until a fold of limit cycles. That fold is located too, and the
+#      bistable window between it and the Hopf point is reported. The gate
+#      requires the fold to sit strictly below the Hopf current, which is the
+#      signature of subcriticality.
+#
+# REFERENCE
+#   C. Morris and H. Lecar, "Voltage oscillations in the barnacle giant
+#   muscle fiber", Biophys. J. 35:193-213 (1981).
+#   Parameter set and bifurcation structure: J. Rinzel and G. B. Ermentrout,
+#   "Analysis of neural excitability and oscillations", in Koch & Segev,
+#   "Methods in Neuronal Modeling", 2nd ed. (1998), figure 7.6: Hopf at
+#   I = 93.86 uA/cm2, fold of limit cycles near I = 88.3.
+#
+# KEYS
+#   Left / Right   move the live current across the bifurcation
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/morris_lecar.flow --frames 90 \
+#       --out build/frames_ml --gif build/morris_lecar.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/morris_lecar.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function tanh(x: f64) -> f64
+    function cosh(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 680
+const MAX_FRAMES: i32 = 4000
+
+const C_M: f64 = 20.0
+const G_L: f64 = 2.0
+const G_CA: f64 = 4.4
+const G_K: f64 = 8.0
+const V_L: f64 = -60.0
+const V_CA: f64 = 120.0
+const V_K: f64 = -84.0
+const VV1: f64 = -1.2
+const VV2: f64 = 18.0
+const VV3: f64 = 2.0
+const VV4: f64 = 30.0
+const PHI: f64 = 0.04
+
+const DT: f64 = 0.02            # ms
+const SETTLE_MS: f64 = 2000.0
+const MEAS_MS: f64 = 1000.0
+
+const SWEEP_N: i32 = 61
+const SWEEP_LO: f64 = 80.0
+const SWEEP_HI: f64 = 110.0
+
+const HOPF_REF: f64 = 93.86
+const HOPF_TOL: f64 = 1.5
+const FOLD_REF: f64 = 88.3
+
+const TRACE_W: i32 = 420
+const TRAIL_N: i32 = 700
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# Steady-state activation curves and their derivatives.
+# ---------------------------------------------------------------------------
+
+function m_inf(v: f64) -> f64 {
+    return 0.5 * (1.0 + tanh((v - VV1) / VV2))
+}
+
+function m_inf_d(v: f64) -> f64 {
+    let t: f64 = tanh((v - VV1) / VV2)
+    return 0.5 * (1.0 - t * t) / VV2
+}
+
+function w_inf(v: f64) -> f64 {
+    return 0.5 * (1.0 + tanh((v - VV3) / VV4))
+}
+
+function w_inf_d(v: f64) -> f64 {
+    let t: f64 = tanh((v - VV3) / VV4)
+    return 0.5 * (1.0 - t * t) / VV4
+}
+
+function tau_w(v: f64) -> f64 {
+    return 1.0 / cosh((v - VV3) / (2.0 * VV4))
+}
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow ML {
+    state v : f64 = -60.855
+    state w : f64 = 0.0149
+
+    param i_ext : f64 = 90.0
+    param cm    : f64 = 20.0
+    param gl    : f64 = 2.0
+    param gca   : f64 = 4.4
+    param gk    : f64 = 8.0
+    param vl    : f64 = -60.0
+    param vca   : f64 = 120.0
+    param vk    : f64 = -84.0
+    param phi   : f64 = 0.04
+
+    solver { dt 20 us  method rk4 }
+
+    v evolves as (i_ext
+                  - gl * (v - vl)
+                  - gca * m_inf(v) * (v - vca)
+                  - gk * w * (v - vk)) / cm
+    w evolves as phi * (w_inf(v) - w) / tau_w(v)
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut up_i: ptr<f64> = null
+let mut up_amp: ptr<f64> = null
+let mut dn_i: ptr<f64> = null
+let mut dn_amp: ptr<f64> = null
+
+let mut trail_v: ptr<f64> = null
+let mut trail_w: ptr<f64> = null
+let mut trail_fill: i32 = 0
+let mut trail_head: i32 = 0
+let mut trace_v: ptr<f64> = null
+let mut trace_fill: i32 = 0
+
+let mut i_hopf: f64 = 0.0
+let mut v_hopf: f64 = 0.0
+let mut det_hopf: f64 = 0.0
+let mut fp_resid: f64 = 0.0
+let mut ring_meas: f64 = 0.0
+let mut ring_theory: f64 = 0.0
+let mut i_fold: f64 = 0.0
+let mut amp_below: f64 = 0.0
+let mut amp_above: f64 = 0.0
+
+# ---------------------------------------------------------------------------
+# Equilibrium and its Jacobian
+# ---------------------------------------------------------------------------
+
+# Steady-state total membrane current at potential v (w sits at w_inf).
+function steady_current(v: f64) -> f64 {
+    return G_L * (v - V_L) + G_CA * m_inf(v) * (v - V_CA) + G_K * w_inf(v) * (v - V_K)
+}
+
+# steady_current is monotone increasing on this parameter set, so bisection
+# on [-80, 60] finds the unique equilibrium for a given injected current.
+function equilibrium_v(i_ext: f64) -> f64 {
+    let mut lo: f64 = -80.0
+    let mut hi: f64 = 60.0
+    let mut it: i32 = 0
+    while it < 200 {
+        let mid: f64 = 0.5 * (lo + hi)
+        if steady_current(mid) > i_ext {
+            hi = mid
+        } else {
+            lo = mid
+        }
+        it = it + 1
+    }
+    return 0.5 * (lo + hi)
+}
+
+function jac_trace_at(v: f64) -> f64 {
+    let j11: f64 = (0.0 - G_L
+                    - G_CA * (m_inf_d(v) * (v - V_CA) + m_inf(v))
+                    - G_K * w_inf(v)) / C_M
+    let j22: f64 = 0.0 - PHI / tau_w(v)
+    return j11 + j22
+}
+
+function jac_det_at(v: f64) -> f64 {
+    let j11: f64 = (0.0 - G_L
+                    - G_CA * (m_inf_d(v) * (v - V_CA) + m_inf(v))
+                    - G_K * w_inf(v)) / C_M
+    let j12: f64 = (0.0 - G_K * (v - V_K)) / C_M
+    let j21: f64 = PHI * w_inf_d(v) / tau_w(v)
+    let j22: f64 = 0.0 - PHI / tau_w(v)
+    return j11 * j22 - j12 * j21
+}
+
+function trace_of_current(i_ext: f64) -> f64 {
+    return jac_trace_at(equilibrium_v(i_ext))
+}
+
+# Bisect on I for tr J = 0.
+function find_hopf(lo_in: f64, hi_in: f64) -> f64 {
+    let mut lo: f64 = lo_in
+    let mut hi: f64 = hi_in
+    let neg_lo: bool = trace_of_current(lo) < 0.0
+    let mut it: i32 = 0
+    while it < 140 {
+        let mid: f64 = 0.5 * (lo + hi)
+        if (trace_of_current(mid) < 0.0) == neg_lo {
+            lo = mid
+        } else {
+            hi = mid
+        }
+        it = it + 1
+    }
+    return 0.5 * (lo + hi)
+}
+
+# ---------------------------------------------------------------------------
+# Simulation-side measurements
+# ---------------------------------------------------------------------------
+
+# Peak-to-peak swing of V, started from the equilibrium plus a nudge.
+function amplitude_from_rest(i_ext: f64) -> f64 {
+    let ve: f64 = equilibrium_v(i_ext)
+    let mut c: ML = ML_new()
+    c.i_ext = i_ext
+    c.v = ve + 2.0
+    c.w = w_inf(ve)
+    let settle: i32 = (SETTLE_MS / DT) as i32
+    let meas: i32 = (MEAS_MS / DT) as i32
+    let mut k: i32 = 0
+    while k < settle {
+        ML_step(&c, DT)
+        k = k + 1
+    }
+    let mut lo: f64 = c.v
+    let mut hi: f64 = c.v
+    k = 0
+    while k < meas {
+        ML_step(&c, DT)
+        if c.v < lo {
+            lo = c.v
+        }
+        if c.v > hi {
+            hi = c.v
+        }
+        k = k + 1
+    }
+    return hi - lo
+}
+
+# Ringing period of the damped spiral below the Hopf point.
+function ringing_period(i_ext: f64) -> f64 {
+    let level: f64 = equilibrium_v(i_ext)
+    let mut c: ML = ML_new()
+    c.i_ext = i_ext
+    c.v = level + 1.0
+    c.w = w_inf(level)
+    let steps: i32 = (600.0 / DT) as i32
+    let mut prev: f64 = c.v
+    let mut first: f64 = 0.0
+    let mut last: f64 = 0.0
+    let mut crossings: i32 = 0
+    let mut k: i32 = 0
+    while k < steps {
+        ML_step(&c, DT)
+        k = k + 1
+        if prev <= level and c.v > level {
+            let frac: f64 = (level - prev) / (c.v - prev)
+            let t: f64 = ((k - 1) as f64 + frac) * DT
+            if crossings == 0 {
+                first = t
+            }
+            last = t
+            crossings = crossings + 1
+        }
+        prev = c.v
+    }
+    if crossings < 2 {
+        return 0.0
+    }
+    return (last - first) / ((crossings - 1) as f64)
+}
+
+# Sweep upwards, each point started from its own equilibrium.
+function sweep_up() -> void {
+    let mut j: i32 = 0
+    while j < SWEEP_N {
+        let amp_i: f64 = SWEEP_LO + ((j as f64) / ((SWEEP_N - 1) as f64)) * (SWEEP_HI - SWEEP_LO)
+        up_i[j] = amp_i
+        up_amp[j] = amplitude_from_rest(amp_i)
+        j = j + 1
+    }
+}
+
+# Sweep downwards by continuation: the state is carried from one current to
+# the next, so an existing limit cycle survives as far down as it can.
+function sweep_down() -> void {
+    let mut c: ML = ML_new()
+    c.i_ext = SWEEP_HI
+    c.v = equilibrium_v(SWEEP_HI) + 2.0
+    c.w = w_inf(equilibrium_v(SWEEP_HI))
+    let warm: i32 = ((SETTLE_MS * 2.0) / DT) as i32
+    let mut k: i32 = 0
+    while k < warm {
+        ML_step(&c, DT)
+        k = k + 1
+    }
+    let settle: i32 = (SETTLE_MS / DT) as i32
+    let meas: i32 = (MEAS_MS / DT) as i32
+    let mut j: i32 = SWEEP_N - 1
+    while j >= 0 {
+        let amp_i: f64 = SWEEP_LO + ((j as f64) / ((SWEEP_N - 1) as f64)) * (SWEEP_HI - SWEEP_LO)
+        c.i_ext = amp_i
+        k = 0
+        while k < settle {
+            ML_step(&c, DT)
+            k = k + 1
+        }
+        let mut lo: f64 = c.v
+        let mut hi: f64 = c.v
+        k = 0
+        while k < meas {
+            ML_step(&c, DT)
+            if c.v < lo {
+                lo = c.v
+            }
+            if c.v > hi {
+                hi = c.v
+            }
+            k = k + 1
+        }
+        dn_i[j] = amp_i
+        dn_amp[j] = hi - lo
+        j = j - 1
+    }
+}
+
+# Lowest current at which the down-sweep still oscillates.
+function locate_fold() -> f64 {
+    let mut j: i32 = 0
+    while j < SWEEP_N {
+        if dn_amp[j] > 20.0 {
+            return dn_i[j]
+        }
+        j = j + 1
+    }
+    return 0.0
+}
+
+# Refine the fold: continue an established limit cycle down in 0.02 uA/cm2
+# steps and report the last current at which it survives.
+function refine_fold(coarse: f64) -> f64 {
+    let start: f64 = coarse + 1.0
+    let mut c: ML = ML_new()
+    c.i_ext = SWEEP_HI
+    c.v = equilibrium_v(SWEEP_HI) + 2.0
+    c.w = w_inf(equilibrium_v(SWEEP_HI))
+    let warm: i32 = ((SETTLE_MS * 2.0) / DT) as i32
+    let mut k: i32 = 0
+    while k < warm {
+        ML_step(&c, DT)
+        k = k + 1
+    }
+    # walk down to the start of the fine scan
+    let mut cur: f64 = SWEEP_HI
+    while cur > start {
+        cur = cur - 0.5
+        c.i_ext = cur
+        k = 0
+        while k < (500.0 / DT) as i32 {
+            ML_step(&c, DT)
+            k = k + 1
+        }
+    }
+    let settle: i32 = (1000.0 / DT) as i32
+    let meas: i32 = (400.0 / DT) as i32
+    let mut last_alive: f64 = 0.0
+    while cur > coarse - 2.0 {
+        c.i_ext = cur
+        k = 0
+        while k < settle {
+            ML_step(&c, DT)
+            k = k + 1
+        }
+        let mut lo: f64 = c.v
+        let mut hi: f64 = c.v
+        k = 0
+        while k < meas {
+            ML_step(&c, DT)
+            if c.v < lo {
+                lo = c.v
+            }
+            if c.v > hi {
+                hi = c.v
+            }
+            k = k + 1
+        }
+        if hi - lo > 20.0 {
+            last_alive = cur
+        } else {
+            return last_alive
+        }
+        cur = cur - 0.02
+    }
+    return last_alive
+}
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+# ---------------------------------------------------------------------------
+# Phase plane
+# ---------------------------------------------------------------------------
+
+const PP_X: i32 = 30
+const PP_Y: i32 = 90
+const PP_W: i32 = 400
+const PP_H: i32 = 340
+const PV_LO: f64 = -70.0
+const PV_HI: f64 = 50.0
+const PW_LO: f64 = -0.05
+const PW_HI: f64 = 0.65
+
+function pp_x(v: f64) -> i32 {
+    return PP_X + ((((v - PV_LO) / (PV_HI - PV_LO)) * (PP_W as f64)) as i32)
+}
+
+function pp_y(w: f64) -> i32 {
+    return PP_Y + PP_H - ((((w - PW_LO) / (PW_HI - PW_LO)) * (PP_H as f64)) as i32)
+}
+
+function draw_phase(g: Gfx, i_ext: f64) -> void {
+    draw_frame(g, PP_X, PP_Y, PP_W, PP_H, 60, 70, 90)
+    gfx_draw_text(g, PP_X, PP_Y - 14, "PHASE PLANE  V - w  WITH NULLCLINES", 1, 150, 165, 190)
+
+    # V-nullcline: w = (I - gL(V-VL) - gCa m_inf (V-VCa)) / (gK (V-VK))
+    let mut k: i32 = 0
+    while k < PP_W - 1 {
+        let va: f64 = PV_LO + ((k as f64) / ((PP_W - 1) as f64)) * (PV_HI - PV_LO)
+        let vb: f64 = PV_LO + (((k + 1) as f64) / ((PP_W - 1) as f64)) * (PV_HI - PV_LO)
+        let wa: f64 = (i_ext - G_L * (va - V_L) - G_CA * m_inf(va) * (va - V_CA))
+                      / (G_K * (va - V_K))
+        let wb: f64 = (i_ext - G_L * (vb - V_L) - G_CA * m_inf(vb) * (vb - V_CA))
+                      / (G_K * (vb - V_K))
+        if wa > PW_LO and wa < PW_HI and wb > PW_LO and wb < PW_HI {
+            draw_line(g, PP_X + k, pp_y(wa), PP_X + k + 1, pp_y(wb), 1, 250, 140, 120)
+        }
+        k = k + 1
+    }
+    # w-nullcline: w = w_inf(V)
+    k = 0
+    while k < PP_W - 1 {
+        let va: f64 = PV_LO + ((k as f64) / ((PP_W - 1) as f64)) * (PV_HI - PV_LO)
+        let vb: f64 = PV_LO + (((k + 1) as f64) / ((PP_W - 1) as f64)) * (PV_HI - PV_LO)
+        let wa: f64 = w_inf(va)
+        let wb: f64 = w_inf(vb)
+        if wa > PW_LO and wa < PW_HI and wb > PW_LO and wb < PW_HI {
+            draw_line(g, PP_X + k, pp_y(wa), PP_X + k + 1, pp_y(wb), 1, 120, 190, 250)
+        }
+        k = k + 1
+    }
+    gfx_draw_text(g, PP_X + 6, PP_Y + 6, "V-nullcline", 1, 250, 140, 120)
+    gfx_draw_text(g, PP_X + 6, PP_Y + 18, "w-nullcline  w = w_inf(V)", 1, 120, 190, 250)
+    gfx_draw_text(g, PP_X + PP_W - 20, PP_Y + PP_H - 14, "V", 1, 110, 125, 150)
+    gfx_draw_text(g, PP_X + 6, PP_Y + PP_H - 14, "w", 1, 110, 125, 150)
+
+    let mut j: i32 = 1
+    while j < trail_fill {
+        let ia: i32 = (trail_head - trail_fill + j - 1 + 2 * TRAIL_N) % TRAIL_N
+        let ib: i32 = (trail_head - trail_fill + j + 2 * TRAIL_N) % TRAIL_N
+        let fade: i32 = 70 + (170 * j) / trail_fill
+        draw_line(g, pp_x(trail_v[ia]), pp_y(trail_w[ia]),
+                  pp_x(trail_v[ib]), pp_y(trail_w[ib]), 1, fade, 235, 195)
+        j = j + 1
+    }
+
+    let ve: f64 = equilibrium_v(i_ext)
+    let we: f64 = w_inf(ve)
+    if jac_trace_at(ve) < 0.0 {
+        gfx_fill_rect(g, pp_x(ve) - 3, pp_y(we) - 3, 7, 7, 140, 240, 170)
+        gfx_draw_text(g, pp_x(ve) + 8, pp_y(we) - 4, "STABLE", 1, 140, 240, 170)
+    } else {
+        draw_frame(g, pp_x(ve) - 4, pp_y(we) - 4, 8, 8, 255, 130, 130)
+        gfx_draw_text(g, pp_x(ve) + 8, pp_y(we) - 4, "UNSTABLE", 1, 255, 130, 130)
+    }
+}
+
+const TS_X: i32 = 460
+const TS_Y: i32 = 90
+const TS_H: i32 = 130
+
+function draw_trace(g: Gfx) -> void {
+    draw_frame(g, TS_X, TS_Y, TRACE_W, TS_H, 60, 70, 90)
+    gfx_draw_text(g, TS_X, TS_Y - 14, "V(t), LIVE", 1, 150, 165, 190)
+    let mut i: i32 = 1
+    while i < trace_fill {
+        let y0: i32 = TS_Y + TS_H - ((((trace_v[i - 1] - PV_LO) / (PV_HI - PV_LO)) * (TS_H as f64)) as i32)
+        let y1: i32 = TS_Y + TS_H - ((((trace_v[i] - PV_LO) / (PV_HI - PV_LO)) * (TS_H as f64)) as i32)
+        draw_line(g, TS_X + i - 1, y0, TS_X + i, y1, 1, 120, 220, 200)
+        i = i + 1
+    }
+    gfx_draw_text(g, TS_X + TRACE_W + 4, TS_Y - 2, "+50", 1, 110, 125, 150)
+    gfx_draw_text(g, TS_X + TRACE_W + 4, TS_Y + TS_H - 8, "-70", 1, 110, 125, 150)
+}
+
+const BF_X: i32 = 460
+const BF_Y: i32 = 270
+const BF_W: i32 = 420
+const BF_H: i32 = 160
+const AMP_MAX: f64 = 110.0
+
+function bf_x(i_ext: f64) -> i32 {
+    return BF_X + ((((i_ext - SWEEP_LO) / (SWEEP_HI - SWEEP_LO)) * (BF_W as f64)) as i32)
+}
+
+function draw_bifurcation(g: Gfx, i_live: f64) -> void {
+    draw_frame(g, BF_X, BF_Y, BF_W, BF_H, 60, 70, 90)
+    gfx_draw_text(g, BF_X, BF_Y - 14,
+                  "AMPLITUDE vs I    teal = from rest    amber = continued down",
+                  1, 150, 165, 190)
+    let mut i: i32 = 1
+    while i < SWEEP_N {
+        let y0: i32 = BF_Y + BF_H - (((up_amp[i - 1] / AMP_MAX) * (BF_H as f64)) as i32)
+        let y1: i32 = BF_Y + BF_H - (((up_amp[i] / AMP_MAX) * (BF_H as f64)) as i32)
+        draw_line(g, bf_x(up_i[i - 1]), y0, bf_x(up_i[i]), y1, 1, 120, 220, 200)
+        let z0: i32 = BF_Y + BF_H - (((dn_amp[i - 1] / AMP_MAX) * (BF_H as f64)) as i32)
+        let z1: i32 = BF_Y + BF_H - (((dn_amp[i] / AMP_MAX) * (BF_H as f64)) as i32)
+        draw_line(g, bf_x(dn_i[i - 1]), z0, bf_x(dn_i[i]), z1, 1, 255, 205, 110)
+        i = i + 1
+    }
+    let xh: i32 = bf_x(i_hopf)
+    let xf: i32 = bf_x(i_fold)
+    let mut gy: i32 = BF_Y
+    while gy < BF_Y + BF_H {
+        gfx_fill_rect(g, xh, gy, 1, 3, 255, 120, 120)
+        gfx_fill_rect(g, xf, gy, 1, 3, 160, 140, 255)
+        gy = gy + 8
+    }
+    gfx_draw_text(g, xh - 50, BF_Y + 4, "HOPF", 1, 255, 130, 130)
+    gfx_draw_text(g, xf - 44, BF_Y + 18, "FOLD", 1, 170, 150, 255)
+    gfx_fill_rect(g, bf_x(i_live), BF_Y, 1, BF_H, 235, 240, 250)
+    gfx_draw_text(g, BF_X + 4, BF_Y + BF_H + 4, "80", 1, 110, 125, 150)
+    gfx_draw_text(g, BF_X + BF_W - 40, BF_Y + BF_H + 4, "110 uA/cm2", 1, 110, 125, 150)
+}
+
+const ST_X: i32 = 30
+const ST_Y: i32 = 480
+const ST_W: i32 = 850
+const ST_H: i32 = 100
+
+# How the Hopf point was found: the trace of the Jacobian at the equilibrium,
+# as a function of the injected current. The bifurcation is where it crosses.
+function draw_stability(g: Gfx, i_live: f64) -> void {
+    draw_frame(g, ST_X, ST_Y, ST_W, ST_H, 60, 70, 90)
+    gfx_draw_text(g, ST_X, ST_Y - 14,
+                  "tr J AT THE EQUILIBRIUM vs I   -  the Hopf point is the zero crossing",
+                  1, 150, 165, 190)
+    let span: f64 = 0.012
+    let y0: i32 = ST_Y + ST_H / 2
+    let mut gx: i32 = ST_X
+    while gx < ST_X + ST_W {
+        gfx_fill_rect(g, gx, y0, 3, 1, 80, 90, 110)
+        gx = gx + 8
+    }
+    gfx_draw_text(g, ST_X + 4, y0 - 10, "tr J = 0", 1, 110, 125, 150)
+    let mut k: i32 = 1
+    while k < ST_W {
+        let ia: f64 = SWEEP_LO + (((k - 1) as f64) / (ST_W as f64)) * (SWEEP_HI - SWEEP_LO)
+        let ib: f64 = SWEEP_LO + ((k as f64) / (ST_W as f64)) * (SWEEP_HI - SWEEP_LO)
+        let ta: f64 = trace_of_current(ia)
+        let tb: f64 = trace_of_current(ib)
+        let ya: i32 = y0 - (((ta / span) * ((ST_H / 2) as f64)) as i32)
+        let yb: i32 = y0 - (((tb / span) * ((ST_H / 2) as f64)) as i32)
+        if ya > ST_Y and ya < ST_Y + ST_H and yb > ST_Y and yb < ST_Y + ST_H {
+            draw_line(g, ST_X + k - 1, ya, ST_X + k, yb, 1, 200, 170, 255)
+        }
+        k = k + 1
+    }
+    let xh: i32 = ST_X + ((((i_hopf - SWEEP_LO) / (SWEEP_HI - SWEEP_LO)) * (ST_W as f64)) as i32)
+    gfx_fill_rect(g, xh, ST_Y, 1, ST_H, 255, 120, 120)
+    gfx_draw_text(g, xh + 4, ST_Y + 4, "HOPF", 1, 255, 130, 130)
+    let xl: i32 = ST_X + ((((i_live - SWEEP_LO) / (SWEEP_HI - SWEEP_LO)) * (ST_W as f64)) as i32)
+    gfx_fill_rect(g, xl, ST_Y, 1, ST_H, 235, 240, 250)
+    gfx_draw_text(g, ST_X + 4, ST_Y + ST_H + 4, "80", 1, 110, 125, 150)
+    gfx_draw_text(g, ST_X + ST_W - 60, ST_Y + ST_H + 4, "110 uA/cm2", 1, 110, 125, 150)
+    gfx_draw_text(g, ST_X + ST_W - 190, ST_Y + 4, "tr J > 0  UNSTABLE", 1, 255, 130, 130)
+    gfx_draw_text(g, ST_X + 100, ST_Y + ST_H - 14, "tr J < 0  STABLE", 1, 140, 240, 170)
+}
+
+function draw_hud(g: Gfx, i_live: f64, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "MORRIS-LECAR  -  HOPF BIFURCATION LOCATED NUMERICALLY",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "C dV/dt = I - gL(V-VL) - gCa m_inf(V)(V-VCa) - gK w (V-VK)     RK4 dt 20 us",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44,
+                  "dw/dt = phi (w_inf(V) - w) / tau_w(V)    phi 0.04   gCa 4.4   V3 2   V4 30",
+                  1, 110, 125, 150)
+    gfx_draw_text(g, 640, 44, "LIVE I", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 692, 44, i_live, 2, 1, 255, 205, 110)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 12, WIN_H - 62, "HOPF CURRENT  tr J = 0", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 188, WIN_H - 62, i_hopf, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 268, WIN_H - 62, "uA/cm2    reference 93.86    V* ", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 528, WIN_H - 62, v_hopf, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 596, WIN_H - 62, "mV", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 50, "det J THERE", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 104, WIN_H - 50, det_hopf * 1000.0, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 172, WIN_H - 50, "e-3   (positive: a Hopf, not a saddle node)",
+                  1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 38, "RINGING PERIOD", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 124, WIN_H - 38, ring_meas, 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 192, WIN_H - 38, "ms   vs 2 pi / sqrt(det - tr^2/4)", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 452, WIN_H - 38, ring_theory, 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 520, WIN_H - 38, "ms", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 26, "FOLD OF LIMIT CYCLES", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 172, WIN_H - 26, i_fold, 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 224, WIN_H - 26, "uA/cm2   reference 88.3   BISTABLE WINDOW",
+                  1, 110, 125, 150)
+    gfx_draw_fixed(g, 552, WIN_H - 26, i_hopf - i_fold, 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 604, WIN_H - 26, "wide", 1, 110, 125, 150)
+
+    if ok {
+        gfx_draw_text(g, 700, WIN_H - 54, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 700, WIN_H - 54, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 12,
+                  "LEFT/RIGHT move I across the bifurcation   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+# Live integration
+# ---------------------------------------------------------------------------
+
+function push_trace(v: f64) -> void {
+    if trace_fill < TRACE_W {
+        trace_v[trace_fill] = v
+        trace_fill = trace_fill + 1
+        return
+    }
+    let mut i: i32 = 1
+    while i < TRACE_W {
+        trace_v[i - 1] = trace_v[i]
+        i = i + 1
+    }
+    trace_v[TRACE_W - 1] = v
+}
+
+function advance_live(c: ptr<ML>) -> void {
+    let mut p: i32 = 0
+    while p < 20 {
+        let mut s: i32 = 0
+        while s < 25 {
+            ML_step(c, DT)
+            s = s + 1
+        }
+        trail_v[trail_head] = c.v
+        trail_w[trail_head] = c.w
+        trail_head = (trail_head + 1) % TRAIL_N
+        if trail_fill < TRAIL_N {
+            trail_fill = trail_fill + 1
+        }
+        push_trace(c.v)
+        p = p + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    up_i = malloc((SWEEP_N as i64) * 8)
+    up_amp = malloc((SWEEP_N as i64) * 8)
+    dn_i = malloc((SWEEP_N as i64) * 8)
+    dn_amp = malloc((SWEEP_N as i64) * 8)
+    trail_v = malloc((TRAIL_N as i64) * 8)
+    trail_w = malloc((TRAIL_N as i64) * 8)
+    trace_v = malloc((TRACE_W as i64) * 8)
+
+    println("")
+    println("  MORRIS-LECAR  --  locating the Hopf bifurcation numerically")
+    println("  ===========================================================")
+    println("")
+    println("    C 20   gL 2   gCa 4.4   gK 8      VL -60   VCa 120   VK -84")
+    println("    V1 -1.2   V2 18   V3 2   V4 30    phi 0.04     RK4 dt 20 us")
+    println("")
+
+    i_hopf = find_hopf(80.0, 110.0)
+    v_hopf = equilibrium_v(i_hopf)
+    det_hopf = jac_det_at(v_hopf)
+    fp_resid = fabs(steady_current(v_hopf) - i_hopf)
+
+    let i_probe: f64 = i_hopf - 3.0
+    let v_probe: f64 = equilibrium_v(i_probe)
+    let tr_probe: f64 = jac_trace_at(v_probe)
+    let det_probe: f64 = jac_det_at(v_probe)
+    ring_meas = ringing_period(i_probe)
+    ring_theory = 6.283185307179586 / sqrt(det_probe - 0.25 * tr_probe * tr_probe)
+
+    amp_below = amplitude_from_rest(i_hopf - 2.0)
+    amp_above = amplitude_from_rest(i_hopf + 2.0)
+
+    sweep_up()
+    sweep_down()
+    i_fold = refine_fold(locate_fold())
+
+    print("    equilibrium at the critical current : V* = ")
+    printf("%10.6f mV", v_hopf)
+    println("")
+    print("    current-balance residual there      : ")
+    printf("%.3e", fp_resid)
+    println("   gate < 1e-9")
+    println("")
+    print("    HOPF CURRENT (bisection on tr J = 0): ")
+    printf("%12.6f uA/cm2", i_hopf)
+    println("")
+    print("      published value                   : ")
+    printf("%12.2f uA/cm2", HOPF_REF)
+    print("   difference ")
+    printf("%.4f", fabs(i_hopf - HOPF_REF))
+    print("   gate ")
+    printf("%.1f", HOPF_TOL)
+    println("")
+    print("      det J at that point               : ")
+    printf("%12.8f", det_hopf)
+    println("   must be positive for a Hopf")
+    println("")
+    print("    ringing period at I = Hopf - 3      : ")
+    printf("%10.5f ms", ring_meas)
+    println("")
+    print("      2 pi / sqrt(det - tr^2/4)         : ")
+    printf("%10.5f ms", ring_theory)
+    print("   relative gap ")
+    printf("%.5f", fabs(ring_meas - ring_theory) / ring_theory)
+    println("")
+    println("")
+    print("    amplitude from rest at Hopf - 2     : ")
+    printf("%9.4f mV", amp_below)
+    println("   expect quiet")
+    print("    amplitude from rest at Hopf + 2     : ")
+    printf("%9.4f mV", amp_above)
+    println("   expect a large cycle")
+    println("")
+    print("    fold of limit cycles (down sweep)   : ")
+    printf("%9.3f uA/cm2", i_fold)
+    print("   reference ")
+    printf("%.1f", FOLD_REF)
+    println("")
+    print("    bistable window                     : ")
+    printf("%9.2f uA/cm2", i_hopf - i_fold)
+    println("   (the Hopf is subcritical)")
+    println("")
+
+    let resid_ok: bool = fp_resid < 1.0e-9
+    let hopf_ok: bool = fabs(i_hopf - HOPF_REF) < HOPF_TOL
+    let det_ok: bool = det_hopf > 0.0
+    let ring_ok: bool = fabs(ring_meas - ring_theory) / ring_theory < 0.02
+    let sim_ok: bool = amp_below < 5.0 and amp_above > 40.0
+    let fold_ok: bool = i_fold > 0.0 and i_fold < i_hopf and fabs(i_fold - FOLD_REF) < 1.0
+    let ok: bool = resid_ok and hopf_ok and det_ok and ring_ok and sim_ok and fold_ok
+
+    let mut live: ML = ML_new()
+    let mut i_idx: i32 = 88
+    live.i_ext = i_idx as f64
+    live.v = equilibrium_v(live.i_ext) + 2.0
+    live.w = w_inf(equilibrium_v(live.i_ext))
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Morris-Lecar - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = i_idx
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = i_idx - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = i_idx + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if frame > 0 and frame % 30 == 0 {
+            want = i_idx + 3
+        }
+        if want < 82 {
+            want = 82
+        }
+        if want > 106 {
+            want = 86
+        }
+        if want != i_idx {
+            i_idx = want
+            live.i_ext = i_idx as f64
+            # A kick, not a reset: above the fold this lands the state on the
+            # large cycle, below it the state falls back to rest. That is the
+            # bistability the down sweep measured, visible live.
+            live.v = equilibrium_v(live.i_ext) + 10.0
+            live.w = w_inf(equilibrium_v(live.i_ext))
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            advance_live(&live)
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_phase(g, live.i_ext)
+        draw_trace(g)
+        draw_bifurcation(g, live.i_ext)
+        draw_stability(g, live.i_ext)
+        draw_hud(g, live.i_ext, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !resid_ok {
+        println("    FAIL: the equilibrium solve did not converge")
+        return 1
+    }
+    if !det_ok {
+        println("    FAIL: det J is not positive at the located point, so it is not a Hopf")
+        return 2
+    }
+    if !hopf_ok {
+        println("    FAIL: located Hopf current differs from the published value")
+        return 3
+    }
+    if !ring_ok {
+        println("    FAIL: ringing period disagrees with the Jacobian frequency")
+        return 4
+    }
+    if !sim_ok {
+        println("    FAIL: the simulation does not switch on where the analysis says")
+        return 5
+    }
+    if !fold_ok {
+        println("    FAIL: no fold of limit cycles below the Hopf point")
+        return 6
+    }
+    println("    PASS: Hopf point located, verified by simulation, subcritical with hysteresis")
+    return 0
+}

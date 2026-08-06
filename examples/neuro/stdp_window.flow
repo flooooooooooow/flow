@@ -1,0 +1,740 @@
+# SPIKE-TIMING-DEPENDENT PLASTICITY: the canonical asymmetric window.
+#
+# MODEL
+#   One synapse, one pre-synaptic spike, one post-synaptic spike, and the
+#   pair-based rule of Song, Miller & Abbott (2000) fitted to the data of Bi
+#   & Poo (1998). Two exponential eligibility traces do all the bookkeeping:
+#
+#     dx_pre/dt  = -x_pre  / tau_plus         (rises by 1 at each pre spike)
+#     dx_post/dt = -x_post / tau_minus        (rises by 1 at each post spike)
+#
+#     at a pre spike :  w -= A_minus * x_post     depression
+#     at a post spike:  w += A_plus  * x_pre      potentiation
+#
+#   The two decays are the `evolves as` lines of `flow Traces` below. The
+#   weight itself is not a differential equation - it is piecewise constant
+#   and moves only at spikes - so it lives in the caller, and the increments
+#   are applied there. Nor is `when x reaches L` the right tool here: the
+#   spikes are imposed by the protocol at chosen times, not produced by a
+#   threshold crossing.
+#
+# PARAMETERS
+#   tau_plus  16.8 ms      tau_minus 33.7 ms      (Bi & Poo 1998 fit)
+#   A_plus    0.0078       A_minus   0.0055
+#   RK4, dt = 0.01 ms, one pairing per delay, delays from -100 to +100 ms
+#
+# WHAT THIS PROVES
+#   Because a single pairing leaves the trace untouched by anything else, the
+#   rule has a closed form:
+#
+#     dt > 0 (pre before post):   dw = +A_plus  * exp(-dt / tau_plus)
+#     dt < 0 (post before pre):   dw = -A_minus * exp( dt / tau_minus)
+#
+#   The program measures dw at 201 delays by running the traces through the
+#   compiler-generated integrator, and compares every point with that
+#   formula. Three gated checks follow.
+#     1. Worst relative deviation from the closed form, over all 201 delays.
+#     2. The two time constants, recovered by least squares on ln|dw| from
+#        the measured window alone, against 16.8 and 33.7 ms.
+#     3. The area of each lobe, against the exact geometric sums
+#        A_plus * sum q_plus^k and A_minus * sum q_minus^k. Their ratio,
+#        A_minus*tau_minus / A_plus*tau_plus = 1.41, is why an uncorrelated
+#        pre/post pair depresses on average: the depression lobe is wider.
+#   A repeated-pairing protocol (60 pairs at 1 Hz) is then run at dt = +10
+#   and dt = -10 ms, and its sign must follow the window.
+#
+# REFERENCE
+#   G. Bi and M. Poo, "Synaptic modifications in cultured hippocampal
+#   neurons: dependence on spike timing, synaptic strength, and postsynaptic
+#   cell type", J. Neurosci. 18:10464-10472 (1998) - figure 7, tau_plus
+#   16.8 ms and tau_minus 33.7 ms.
+#   S. Song, K. D. Miller and L. F. Abbott, "Competitive Hebbian learning
+#   through spike-timing-dependent synaptic plasticity", Nature Neurosci.
+#   3:919-926 (2000) - the trace formulation used here.
+#
+# KEYS
+#   Left / Right   move the highlighted delay
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/stdp_window.flow --frames 90 \
+#       --out build/frames_stdp --gif build/stdp_window.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/stdp_window.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 900
+const WIN_H: i32 = 660
+const MAX_FRAMES: i32 = 4000
+
+const TAU_PLUS: f64 = 16.8
+const TAU_MINUS: f64 = 33.7
+const A_PLUS: f64 = 0.0078
+const A_MINUS: f64 = 0.0055
+
+const SIM_DT: f64 = 0.01        # ms
+const SIM_MS: f64 = 400.0
+const T_PRE: f64 = 150.0        # the pre spike always lands here
+
+const N_DELAY: i32 = 201        # -100 .. +100 ms in 1 ms steps
+const DELAY_MIN: f64 = -100.0
+
+const TOL_SHAPE: f64 = 1.0e-9   # relative, against the closed form
+const TOL_TAU: f64 = 0.001      # relative, on the recovered time constants
+const TOL_AREA: f64 = 1.0e-9    # relative, against the exact geometric sums
+
+const PAIRS: i32 = 60
+const PAIR_PERIOD: f64 = 1000.0 # ms, 1 Hz
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model: two exponential eligibility traces.
+# ---------------------------------------------------------------------------
+
+flow Traces {
+    state x_pre  : f64 = 0.0
+    state x_post : f64 = 0.0
+
+    param tau_plus  : f64 = 16.8
+    param tau_minus : f64 = 33.7
+
+    solver { dt 10 us  method rk4 }
+
+    x_pre  evolves as 0.0 - x_pre / tau_plus
+    x_post evolves as 0.0 - x_post / tau_minus
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut w_meas: ptr<f64> = null
+let mut w_exact: ptr<f64> = null
+let mut w_rel: ptr<f64> = null
+
+let mut live_pre: ptr<f64> = null       # live trace ring, for the display
+let mut live_post: ptr<f64> = null
+let mut live_w: ptr<f64> = null
+let mut live_fill: i32 = 0
+
+let mut worst_rel: f64 = 0.0
+let mut tau_plus_fit: f64 = 0.0
+let mut tau_minus_fit: f64 = 0.0
+let mut area_pot: f64 = 0.0
+let mut area_dep: f64 = 0.0
+let mut area_pot_exact: f64 = 0.0
+let mut area_dep_exact: f64 = 0.0
+let mut ratio_int: f64 = 0.0
+let mut rep_plus: f64 = 0.0
+let mut rep_minus: f64 = 0.0
+
+# ---------------------------------------------------------------------------
+# One pairing at delay dt_ms = t_post - t_pre. Returns the weight change.
+# ---------------------------------------------------------------------------
+
+function pairing(dt_ms: f64) -> f64 {
+    let mut tr: Traces = Traces_new()
+    tr.tau_plus = TAU_PLUS
+    tr.tau_minus = TAU_MINUS
+
+    let steps: i32 = (SIM_MS / SIM_DT) as i32
+    let k_pre: i32 = (T_PRE / SIM_DT) as i32
+    let k_post: i32 = ((T_PRE + dt_ms) / SIM_DT) as i32
+
+    let mut w: f64 = 0.0
+    let mut k: i32 = 0
+    while k < steps {
+        # Events fire at the top of the step, pre before post, so a
+        # simultaneous pair counts as pre-then-post.
+        if k == k_pre {
+            w = w - A_MINUS * tr.x_post
+            tr.x_pre = tr.x_pre + 1.0
+        }
+        if k == k_post {
+            w = w + A_PLUS * tr.x_pre
+            tr.x_post = tr.x_post + 1.0
+        }
+        Traces_step(&tr, SIM_DT)
+        k = k + 1
+    }
+    return w
+}
+
+function closed_form(dt_ms: f64) -> f64 {
+    if dt_ms >= 0.0 {
+        return A_PLUS * exp(0.0 - dt_ms / TAU_PLUS)
+    }
+    return 0.0 - A_MINUS * exp(dt_ms / TAU_MINUS)
+}
+
+function run_window() -> void {
+    let mut i: i32 = 0
+    while i < N_DELAY {
+        let d: f64 = DELAY_MIN + (i as f64)
+        let m: f64 = pairing(d)
+        let e: f64 = closed_form(d)
+        w_meas[i] = m
+        w_exact[i] = e
+        let rel: f64 = fabs(m - e) / fabs(e)
+        w_rel[i] = rel
+        if rel > worst_rel {
+            worst_rel = rel
+        }
+        i = i + 1
+    }
+}
+
+# Recover a time constant from the measured window by least squares on
+# ln|dw| against delay. Uses only the simulated numbers.
+function fit_tau(from_idx: i32, to_idx: i32) -> f64 {
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut n: f64 = 0.0
+    let mut i: i32 = from_idx
+    while i <= to_idx {
+        let d: f64 = DELAY_MIN + (i as f64)
+        let a: f64 = fabs(w_meas[i])
+        if a > 0.0 {
+            let x: f64 = fabs(d)
+            let y: f64 = log(a)
+            sx = sx + x
+            sy = sy + y
+            sxx = sxx + x * x
+            sxy = sxy + x * y
+            n = n + 1.0
+        }
+        i = i + 1
+    }
+    let slope: f64 = (n * sxy - sx * sy) / (n * sxx - sx * sx)
+    return 0.0 - 1.0 / slope
+}
+
+# Repeated pairing: PAIRS pairs at 1 Hz, all-to-all traces.
+function repeated(dt_ms: f64) -> f64 {
+    let mut tr: Traces = Traces_new()
+    tr.tau_plus = TAU_PLUS
+    tr.tau_minus = TAU_MINUS
+    let mut w: f64 = 0.0
+    let total_ms: f64 = (PAIRS as f64) * PAIR_PERIOD + 500.0
+    let steps: i32 = (total_ms / SIM_DT) as i32
+    let per: i32 = (PAIR_PERIOD / SIM_DT) as i32
+    let off_pre: i32 = (200.0 / SIM_DT) as i32
+    let off_post: i32 = ((200.0 + dt_ms) / SIM_DT) as i32
+    let mut k: i32 = 0
+    while k < steps {
+        let phase: i32 = k % per
+        let cycle: i32 = k / per
+        if cycle < PAIRS {
+            if phase == off_pre {
+                w = w - A_MINUS * tr.x_post
+                tr.x_pre = tr.x_pre + 1.0
+            }
+            if phase == off_post {
+                w = w + A_PLUS * tr.x_pre
+                tr.x_post = tr.x_post + 1.0
+            }
+        }
+        Traces_step(&tr, SIM_DT)
+        k = k + 1
+    }
+    return w
+}
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+# ---------------------------------------------------------------------------
+# The window plot
+# ---------------------------------------------------------------------------
+
+const WD_X: i32 = 40
+const WD_Y: i32 = 84
+const WD_W: i32 = 480
+const WD_H: i32 = 300
+const WD_SCALE: f64 = 0.009     # full half-height in weight units
+
+function wd_x(d: f64) -> i32 {
+    return WD_X + ((((d - DELAY_MIN) / 200.0) * (WD_W as f64)) as i32)
+}
+
+function wd_y(w: f64) -> i32 {
+    return WD_Y + WD_H / 2 - (((w / WD_SCALE) * ((WD_H / 2) as f64)) as i32)
+}
+
+function draw_window(g: Gfx, sel: i32) -> void {
+    draw_frame(g, WD_X, WD_Y, WD_W, WD_H, 60, 70, 90)
+    gfx_draw_text(g, WD_X, WD_Y - 16,
+                  "STDP WINDOW   line = closed form   dots = simulated traces",
+                  1, 150, 165, 190)
+    let y0: i32 = WD_Y + WD_H / 2
+    let mut gx: i32 = WD_X
+    while gx < WD_X + WD_W {
+        gfx_fill_rect(g, gx, y0, 3, 1, 70, 80, 100)
+        gx = gx + 8
+    }
+    let xz: i32 = wd_x(0.0)
+    let mut gy: i32 = WD_Y
+    while gy < WD_Y + WD_H {
+        gfx_fill_rect(g, xz, gy, 1, 3, 70, 80, 100)
+        gy = gy + 8
+    }
+    gfx_draw_text(g, xz + 6, WD_Y + 6, "PRE BEFORE POST: POTENTIATION", 1, 130, 230, 160)
+    gfx_draw_text(g, WD_X + 6, WD_Y + WD_H - 14, "POST BEFORE PRE: DEPRESSION",
+                  1, 255, 140, 140)
+    gfx_draw_text(g, WD_X + 4, WD_Y + 6, "+0.009", 1, 110, 125, 150)
+    gfx_draw_text(g, WD_X + 4, y0 - 10, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, WD_X, WD_Y + WD_H + 6, "-100 ms", 1, 110, 125, 150)
+    gfx_draw_text(g, xz - 16, WD_Y + WD_H + 6, "dt = 0", 1, 110, 125, 150)
+    gfx_draw_text(g, WD_X + WD_W - 50, WD_Y + WD_H + 6, "+100 ms", 1, 110, 125, 150)
+
+    # the closed form, finely sampled
+    let mut k: i32 = 0
+    while k < 400 {
+        let da: f64 = -100.0 + ((k as f64) / 400.0) * 100.0
+        let db: f64 = -100.0 + (((k + 1) as f64) / 400.0) * 100.0
+        draw_line(g, wd_x(da), wd_y(closed_form(da)),
+                  wd_x(db), wd_y(closed_form(db)), 1, 250, 140, 120)
+        let ea: f64 = ((k as f64) / 400.0) * 100.0
+        let eb: f64 = (((k + 1) as f64) / 400.0) * 100.0
+        draw_line(g, wd_x(ea), wd_y(closed_form(ea)),
+                  wd_x(eb), wd_y(closed_form(eb)), 1, 120, 220, 200)
+        k = k + 1
+    }
+    # measured points
+    let mut i: i32 = 0
+    while i < N_DELAY {
+        let d: f64 = DELAY_MIN + (i as f64)
+        let px: i32 = wd_x(d)
+        let py: i32 = wd_y(w_meas[i])
+        if i == sel {
+            gfx_fill_rect(g, px - 3, py - 3, 7, 7, 255, 205, 110)
+        } else {
+            gfx_fill_rect(g, px - 1, py - 1, 2, 2, 235, 240, 250)
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Live traces at the selected delay
+# ---------------------------------------------------------------------------
+
+const LV_X: i32 = 560
+const LV_Y: i32 = 84
+const LV_W: i32 = 310
+const LV_H: i32 = 150
+
+function draw_live(g: Gfx, sel: i32) -> void {
+    draw_frame(g, LV_X, LV_Y, LV_W, LV_H, 60, 70, 90)
+    gfx_draw_text(g, LV_X, LV_Y - 16, "ELIGIBILITY TRACES AT dt =", 1, 150, 165, 190)
+    gfx_draw_fixed(g, LV_X + 216, LV_Y - 16, DELAY_MIN + (sel as f64), 0, 1, 255, 205, 110)
+    gfx_draw_text(g, LV_X + 260, LV_Y - 16, "ms", 1, 150, 165, 190)
+    gfx_draw_text(g, LV_X + 4, LV_Y + 4, "x_pre", 1, 120, 220, 200)
+    gfx_draw_text(g, LV_X + 60, LV_Y + 4, "x_post", 1, 250, 140, 120)
+    let mut i: i32 = 1
+    while i < live_fill {
+        let ya: i32 = LV_Y + LV_H - ((live_pre[i - 1] * ((LV_H - 6) as f64)) as i32)
+        let yb: i32 = LV_Y + LV_H - ((live_pre[i] * ((LV_H - 6) as f64)) as i32)
+        draw_line(g, LV_X + i - 1, ya, LV_X + i, yb, 1, 120, 220, 200)
+        let za: i32 = LV_Y + LV_H - ((live_post[i - 1] * ((LV_H - 6) as f64)) as i32)
+        let zb: i32 = LV_Y + LV_H - ((live_post[i] * ((LV_H - 6) as f64)) as i32)
+        draw_line(g, LV_X + i - 1, za, LV_X + i, zb, 1, 250, 140, 120)
+        i = i + 1
+    }
+}
+
+const WT_X: i32 = 560
+const WT_Y: i32 = 274
+const WT_W: i32 = 310
+const WT_H: i32 = 110
+
+function draw_weight(g: Gfx) -> void {
+    draw_frame(g, WT_X, WT_Y, WT_W, WT_H, 60, 70, 90)
+    gfx_draw_text(g, WT_X, WT_Y - 16, "WEIGHT: PIECEWISE CONSTANT, MOVES AT SPIKES",
+                  1, 150, 165, 190)
+    let y0: i32 = WT_Y + WT_H / 2
+    let mut gx: i32 = WT_X
+    while gx < WT_X + WT_W {
+        gfx_fill_rect(g, gx, y0, 3, 1, 70, 80, 100)
+        gx = gx + 8
+    }
+    let mut i: i32 = 1
+    while i < live_fill {
+        let ya: i32 = y0 - (((live_w[i - 1] / 0.009) * ((WT_H / 2) as f64)) as i32)
+        let yb: i32 = y0 - (((live_w[i] / 0.009) * ((WT_H / 2) as f64)) as i32)
+        draw_line(g, WT_X + i - 1, ya, WT_X + i, yb, 1, 255, 205, 110)
+        i = i + 1
+    }
+}
+
+const RS_X: i32 = 40
+const RS_Y: i32 = 430
+const RS_W: i32 = 480
+const RS_H: i32 = 110
+
+function draw_residual(g: Gfx) -> void {
+    draw_frame(g, RS_X, RS_Y, RS_W, RS_H, 60, 70, 90)
+    gfx_draw_text(g, RS_X, RS_Y - 16,
+                  "RELATIVE DEVIATION FROM THE CLOSED FORM, parts in 1e15",
+                  1, 150, 165, 190)
+    let scale: f64 = 20.0
+    let mut i: i32 = 0
+    while i < N_DELAY {
+        let ppt: f64 = w_rel[i] * 1.0e15
+        let mut hgt: i32 = ((ppt / scale) * (RS_H as f64)) as i32
+        if hgt > RS_H - 2 {
+            hgt = RS_H - 2
+        }
+        if hgt < 1 {
+            hgt = 1
+        }
+        let bx: i32 = RS_X + 2 + (i * (RS_W - 4)) / N_DELAY
+        gfx_fill_rect(g, bx, RS_Y + RS_H - hgt, 2, hgt, 90, 160, 200)
+        i = i + 1
+    }
+    gfx_draw_text(g, RS_X + 4, RS_Y + 4, "20", 1, 110, 125, 150)
+    gfx_draw_text(g, RS_X + 26, RS_Y + 4, "parts in 1e15 full scale", 1, 110, 125, 150)
+}
+
+function draw_hud(g: Gfx, sel: i32, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "SPIKE-TIMING-DEPENDENT PLASTICITY  -  THE PAIRING WINDOW",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "tau+ 16.8 ms   tau- 33.7 ms   A+ 0.0078   A- 0.0055   Bi & Poo 1998   RK4 dt 10 us",
+                  1, 150, 165, 190)
+
+    gfx_draw_text(g, 560, 430, "SELECTED dt", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 656, 430, DELAY_MIN + (sel as f64), 0, 1, 255, 205, 110)
+    gfx_draw_text(g, 700, 430, "ms", 1, 150, 165, 190)
+    gfx_draw_text(g, 560, 444, "MEASURED dw", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 664, 444, w_meas[sel] * 1000.0, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 744, 444, "e-3", 1, 110, 125, 150)
+    gfx_draw_text(g, 560, 458, "CLOSED FORM", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 664, 458, w_exact[sel] * 1000.0, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 744, 458, "e-3", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 96, "WORST DEVIATION FROM THE CLOSED FORM", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 300, WIN_H - 96, worst_rel * 1.0e15, 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 368, WIN_H - 96, "parts in 1e15    gate 1e-9 relative", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 80, "TIME CONSTANTS RECOVERED FROM THE WINDOW  tau+", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 380, WIN_H - 80, tau_plus_fit, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 452, WIN_H - 80, "vs 16.8      tau-", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 590, WIN_H - 80, tau_minus_fit, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 662, WIN_H - 80, "vs 33.7 ms", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 64, "LOBE AREAS   potentiation", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 216, WIN_H - 64, area_pot, 6, 1, 235, 240, 250)
+    gfx_draw_text(g, 300, WIN_H - 64, "depression", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 388, WIN_H - 64, area_dep, 6, 1, 235, 240, 250)
+    gfx_draw_text(g, 472, WIN_H - 64, "A-tau- / A+tau+", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 600, WIN_H - 64, ratio_int, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 660, WIN_H - 64, "so uncorrelated pairs depress", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 48, "60 PAIRINGS AT 1 Hz   dt = +10 ms", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 282, WIN_H - 48, rep_plus, 5, 1, 130, 230, 160)
+    gfx_draw_text(g, 354, WIN_H - 48, "     dt = -10 ms", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 494, WIN_H - 48, rep_minus, 5, 1, 255, 140, 140)
+
+    if ok {
+        gfx_draw_text(g, 760, WIN_H - 90, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 760, WIN_H - 90, "FAIL", 2, 255, 110, 110)
+    }
+    if paused {
+        gfx_draw_text(g, 810, 10, "PAUSED", 1, 255, 120, 120)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16, "LEFT/RIGHT move the delay   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+# Fill the live display buffers for one pairing at the selected delay.
+# ---------------------------------------------------------------------------
+
+function fill_live(sel: i32) -> void {
+    let dt_ms: f64 = DELAY_MIN + (sel as f64)
+    let mut tr: Traces = Traces_new()
+    tr.tau_plus = TAU_PLUS
+    tr.tau_minus = TAU_MINUS
+    let sub: i32 = 50                # 0.5 ms per displayed sample
+    let k_pre: i32 = (T_PRE / SIM_DT) as i32
+    let k_post: i32 = ((T_PRE + dt_ms) / SIM_DT) as i32
+    let start: i32 = ((T_PRE - 60.0) / SIM_DT) as i32
+    let mut w: f64 = 0.0
+    live_fill = 0
+    let mut k: i32 = 0
+    let total: i32 = start + 312 * sub
+    while k < total {
+        if k == k_pre {
+            w = w - A_MINUS * tr.x_post
+            tr.x_pre = tr.x_pre + 1.0
+        }
+        if k == k_post {
+            w = w + A_PLUS * tr.x_pre
+            tr.x_post = tr.x_post + 1.0
+        }
+        Traces_step(&tr, SIM_DT)
+        if k >= start and (k - start) % sub == 0 and live_fill < 310 {
+            live_pre[live_fill] = tr.x_pre
+            live_post[live_fill] = tr.x_post
+            live_w[live_fill] = w
+            live_fill = live_fill + 1
+        }
+        k = k + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    w_meas = malloc((N_DELAY as i64) * 8)
+    w_exact = malloc((N_DELAY as i64) * 8)
+    w_rel = malloc((N_DELAY as i64) * 8)
+    live_pre = malloc(320 * 8)
+    live_post = malloc(320 * 8)
+    live_w = malloc(320 * 8)
+
+    println("")
+    println("  STDP  --  the pairing window against its closed form")
+    println("  ====================================================")
+    println("")
+    println("    tau+ 16.8 ms   tau- 33.7 ms   A+ 0.0078   A- 0.0055")
+    println("    one pre spike, one post spike, 201 delays from -100 to +100 ms")
+    println("    RK4 on the two eligibility traces, dt = 10 us")
+    println("")
+
+    run_window()
+
+    # least squares on the simulated window alone
+    tau_plus_fit = fit_tau(101, 160)        # dt = +1 .. +60 ms
+    tau_minus_fit = fit_tau(40, 99)         # dt = -60 .. -1 ms
+
+    # exact geometric sums of the two lobes, k = 1 .. 100
+    let qp: f64 = exp(-1.0 / TAU_PLUS)
+    let qm: f64 = exp(-1.0 / TAU_MINUS)
+    area_pot_exact = A_PLUS * qp * (1.0 - exp(-100.0 / TAU_PLUS)) / (1.0 - qp)
+    area_dep_exact = A_MINUS * qm * (1.0 - exp(-100.0 / TAU_MINUS)) / (1.0 - qm)
+    let mut i: i32 = 0
+    while i < N_DELAY {
+        let d: f64 = DELAY_MIN + (i as f64)
+        if d > 0.5 {
+            area_pot = area_pot + w_meas[i]
+        }
+        if d < -0.5 {
+            area_dep = area_dep - w_meas[i]
+        }
+        i = i + 1
+    }
+    ratio_int = (A_MINUS * TAU_MINUS) / (A_PLUS * TAU_PLUS)
+
+    rep_plus = repeated(10.0)
+    rep_minus = repeated(-10.0)
+
+    println("       dt [ms]      measured dw      closed form dw    rel. dev [1e-15]")
+    println("       -------      -----------      --------------    ----------------")
+    let show: array<i32, 11> = [0, 40, 80, 90, 99, 100, 101, 110, 120, 160, 200]
+    let sp: ptr<i32> = show
+    let mut j: i32 = 0
+    while j < 11 {
+        let idx: i32 = sp[j]
+        print("    ")
+        printf("%10.0f", DELAY_MIN + (idx as f64))
+        printf("   %14.10f", w_meas[idx])
+        printf("   %17.10f", w_exact[idx])
+        printf("   %17.3f", w_rel[idx] * 1.0e12)
+        println("")
+        j = j + 1
+    }
+    println("")
+    print("    worst relative deviation over all 201 delays : ")
+    printf("%.4e", worst_rel)
+    print("   gate ")
+    printf("%.1e", TOL_SHAPE)
+    println("")
+    println("")
+    print("    tau+ recovered from the measured window      : ")
+    printf("%12.7f ms", tau_plus_fit)
+    print("   vs 16.8   rel ")
+    printf("%.3e", fabs(tau_plus_fit - TAU_PLUS) / TAU_PLUS)
+    println("")
+    print("    tau- recovered from the measured window      : ")
+    printf("%12.7f ms", tau_minus_fit)
+    print("   vs 33.7   rel ")
+    printf("%.3e", fabs(tau_minus_fit - TAU_MINUS) / TAU_MINUS)
+    println("")
+    println("")
+    print("    potentiation lobe area, measured             : ")
+    printf("%12.9f", area_pot)
+    println("")
+    print("    potentiation lobe area, exact geometric sum  : ")
+    printf("%12.9f", area_pot_exact)
+    print("   rel ")
+    printf("%.3e", fabs(area_pot - area_pot_exact) / area_pot_exact)
+    println("")
+    print("    depression  lobe area, measured              : ")
+    printf("%12.9f", area_dep)
+    println("")
+    print("    depression  lobe area, exact geometric sum   : ")
+    printf("%12.9f", area_dep_exact)
+    print("   rel ")
+    printf("%.3e", fabs(area_dep - area_dep_exact) / area_dep_exact)
+    println("")
+    print("    A-*tau- / A+*tau+                            : ")
+    printf("%12.6f", ratio_int)
+    println("   above 1, so uncorrelated pairs depress")
+    println("")
+    print("    60 pairings at 1 Hz, dt = +10 ms             : ")
+    printf("%12.7f", rep_plus)
+    println("   net potentiation")
+    print("    60 pairings at 1 Hz, dt = -10 ms             : ")
+    printf("%12.7f", rep_minus)
+    println("   net depression")
+    println("")
+
+    let shape_ok: bool = worst_rel < TOL_SHAPE
+    let tau_ok: bool = fabs(tau_plus_fit - TAU_PLUS) / TAU_PLUS < TOL_TAU
+                       and fabs(tau_minus_fit - TAU_MINUS) / TAU_MINUS < TOL_TAU
+    let area_ok: bool = fabs(area_pot - area_pot_exact) / area_pot_exact < TOL_AREA
+                        and fabs(area_dep - area_dep_exact) / area_dep_exact < TOL_AREA
+    let asym_ok: bool = ratio_int > 1.0
+    let rep_ok: bool = rep_plus > 0.0 and rep_minus < 0.0
+    let ok: bool = shape_ok and tau_ok and area_ok and asym_ok and rep_ok
+
+    let mut sel: i32 = 110
+    fill_live(sel)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "STDP window - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = sel
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = sel - 5
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = sel + 5
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if !paused {
+            want = sel + 2
+        }
+        if want < 60 {
+            want = 60
+        }
+        if want > 160 {
+            want = 60
+        }
+        if want != sel {
+            sel = want
+            fill_live(sel)
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_window(g, sel)
+        draw_live(g, sel)
+        draw_weight(g)
+        draw_residual(g)
+        draw_hud(g, sel, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !shape_ok {
+        println("    FAIL: the measured window departs from the closed form")
+        return 1
+    }
+    if !tau_ok {
+        println("    FAIL: the recovered time constants are not 16.8 and 33.7 ms")
+        return 2
+    }
+    if !area_ok {
+        println("    FAIL: the lobe areas do not match the exact geometric sums")
+        return 3
+    }
+    if !asym_ok {
+        println("    FAIL: the window is not asymmetric in the depressing direction")
+        return 4
+    }
+    if !rep_ok {
+        println("    FAIL: repeated pairing did not follow the sign of the window")
+        return 5
+    }
+    println("    PASS: the canonical asymmetric STDP window, to parts in 1e14")
+    return 0
+}
