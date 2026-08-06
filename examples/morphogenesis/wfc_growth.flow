@@ -1,0 +1,474 @@
+# WFC GROWTH: structure appearing by constraint propagation.
+#
+# MODEL (wave function collapse)
+#   Every cell starts holding all sixteen tiles of a pipe set at once. A
+#   tile carries a socket on each edge, 1 where a trace leaves the tile and
+#   0 where it does not, and two neighbours are compatible only when the
+#   sockets facing each other agree. One round is:
+#
+#     find the undecided cell with the fewest options left
+#     collapse it to one of those options at random
+#     propagate: delete from each neighbour every tile that no longer has
+#                a compatible partner here, and keep going while anything
+#                changed; a cell down to one option is decided implicitly
+#
+#   Growth here is not a front moving through space, it is information
+#   moving through a constraint graph. Structure appears exactly where
+#   possibility has been used up, and no trace is ever left half-drawn,
+#   because a trace that stops mid-edge is not one of the sixteen tiles.
+#
+# REUSE
+#   The option bookkeeping comes from stdlib/dynamics/wfc.flow:
+#   wfc_entropy_at counts a cell's surviving options and wfc_collapse_at
+#   picks the n-th of them. That module also ships a four-tile room set,
+#   which is too loose to make a picture, so the tile table, the
+#   compatibility test and the propagation worklist are local here.
+#
+# PARAMETERS
+#   48 x 48 grid, 16 tiles, blank sockets forced along the border so the
+#   circuit closes on itself, one seed cell collapsed at the centre,
+#   26 explicit collapses per displayed frame (implicit ones are free).
+#
+# KEYS
+#   1 CROSS seed    2 BLANK seed    3 ELBOW seed
+#   R restart    P pause    Esc quit
+#
+# WHAT THE COLOURS MEAN
+#   Decided cells draw their traces. Undecided cells are grey, brighter
+#   the fewer options they have left, so the halo of nearly-determined
+#   cells running ahead of the collapse front is visible.
+#
+# Run: ./flow gfx examples/morphogenesis/wfc_growth.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/dynamics/wfc.flow"
+
+const SIDE: i32 = 48
+const NCELLS: i32 = 2304
+const TILES: i32 = 16
+const OPTS: i32 = 36864
+const CELL_PX: i32 = 10
+const ORIGIN_X: i32 = 16
+const FIELD_Y: i32 = 66
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const ROUNDS_PER_FRAME: i32 = 26
+const STACK_CAP: i32 = 16384
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 90210777
+let mut stack_len: i32 = 0
+let mut contradiction: i32 = 0
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_seed_value() -> i32 {
+    return ((rng_next() >> 12) % 100000) as i32
+}
+
+# Sixteen pipe tiles: one for every subset of the four edges. The tile
+# index IS its socket set, bit 0 north, bit 1 east, bit 2 south, bit 3 west.
+# Because every socket combination exists, no arrangement of neighbours can
+# be impossible, so the collapse never has to backtrack.
+function socket(t: i32, d: i32) -> i32 {
+    return (t >> d) & 1
+}
+
+function opposite(d: i32) -> i32 {
+    return (d + 2) % 4
+}
+
+function compatible(a: i32, b: i32, d: i32) -> bool {
+    return socket(a, d) == socket(b, opposite(d))
+}
+
+function seed_tile(p: i32) -> i32 {
+    if p == 1 { return 0 }
+    if p == 2 { return 3 }
+    return 15
+}
+
+function seed_name(p: i32) -> string {
+    if p == 1 { return "BLANK" }
+    if p == 2 { return "ELBOW" }
+    return "CROSS"
+}
+
+function push(stack: ptr<i32>, idx: i32) -> void {
+    if stack_len < STACK_CAP {
+        stack[stack_len] = idx
+        stack_len = stack_len + 1
+    }
+}
+
+function neighbour_of(idx: i32, d: i32) -> i32 {
+    let x: i32 = idx % SIDE
+    let y: i32 = idx / SIDE
+    if d == 0 {
+        if y == 0 { return -1 }
+        return idx - SIDE
+    }
+    if d == 1 {
+        if x == SIDE - 1 { return -1 }
+        return idx + 1
+    }
+    if d == 2 {
+        if y == SIDE - 1 { return -1 }
+        return idx + SIDE
+    }
+    if x == 0 { return -1 }
+    return idx - 1
+}
+
+# Remove from a cell every tile that has no compatible partner left in the
+# cell that just changed. Returns true if the neighbour lost options.
+function trim(cells: ptr<i32>, options: ptr<i32>, src: i32, dst: i32,
+              d: i32) -> bool {
+    let fb: i32 = src * TILES
+    let tb: i32 = dst * TILES
+    let mut changed: bool = false
+    for tb_i in 0 to TILES {
+        if options[tb + tb_i] == 1 {
+            let mut ok: bool = false
+            let mut ta: i32 = 0
+            while ta < TILES and !ok {
+                if options[fb + ta] == 1 {
+                    if compatible(ta, tb_i, d) { ok = true }
+                }
+                ta = ta + 1
+            }
+            if !ok {
+                options[tb + tb_i] = 0
+                changed = true
+            }
+        }
+    }
+    if changed {
+        let ent: i32 = wfc_entropy_at(options, tb, TILES)
+        if ent == 0 {
+            contradiction = 1
+        }
+        if ent == 1 and cells[dst] < 0 {
+            for k in 0 to TILES {
+                if options[tb + k] == 1 { cells[dst] = k }
+            }
+        }
+    }
+    return changed
+}
+
+function propagate(cells: ptr<i32>, options: ptr<i32>, stack: ptr<i32>) -> void {
+    let mut guard: i32 = 0
+    while stack_len > 0 and guard < 200000 {
+        guard = guard + 1
+        stack_len = stack_len - 1
+        let idx: i32 = stack[stack_len]
+        for d in 0 to 4 {
+            let n: i32 = neighbour_of(idx, d)
+            if n >= 0 {
+                if trim(cells, options, idx, n, d) {
+                    push(stack, n)
+                }
+            }
+        }
+    }
+}
+
+function reset(cells: ptr<i32>, options: ptr<i32>, stack: ptr<i32>,
+               tile: i32) -> void {
+    contradiction = 0
+    stack_len = 0
+    for i in 0 to NCELLS {
+        cells[i] = -1
+    }
+    for i in 0 to OPTS {
+        options[i] = 1
+    }
+    # The border faces blank, so no trace runs off the board.
+    for i in 0 to NCELLS {
+        let x: i32 = i % SIDE
+        let y: i32 = i / SIDE
+        for t in 0 to TILES {
+            let mut bad: bool = false
+            if y == 0 and socket(t, 0) == 1 { bad = true }
+            if x == SIDE - 1 and socket(t, 1) == 1 { bad = true }
+            if y == SIDE - 1 and socket(t, 2) == 1 { bad = true }
+            if x == 0 and socket(t, 3) == 1 { bad = true }
+            if bad { options[i * TILES + t] = 0 }
+        }
+    }
+    let mid: i32 = (SIDE / 2) * SIDE + SIDE / 2
+    cells[mid] = tile
+    for t in 0 to TILES {
+        if t != tile { options[mid * TILES + t] = 0 }
+    }
+    push(stack, mid)
+    propagate(cells, options, stack)
+}
+
+function on_front(cells: ptr<i32>, idx: i32) -> bool {
+    for d in 0 to 4 {
+        let n: i32 = neighbour_of(idx, d)
+        if n >= 0 {
+            if cells[n] >= 0 { return true }
+        }
+    }
+    return false
+}
+
+# One explicit collapse. Prefer the least uncertain cell that already
+# touches decided ground, so the structure grows out of the seed instead of
+# nucleating separately along the constrained border. Returns 1 if a cell
+# was chosen.
+function collapse_one(cells: ptr<i32>, options: ptr<i32>, stack: ptr<i32>,
+                      seed: i32) -> i32 {
+    let mut best: i32 = -1
+    let mut best_ent: i32 = TILES + 1
+    let mut any: i32 = -1
+    let mut any_ent: i32 = TILES + 1
+    let mut ties: i32 = 0
+    for i in 0 to NCELLS {
+        if cells[i] < 0 {
+            let ent: i32 = wfc_entropy_at(options, i * TILES, TILES)
+            if ent > 1 {
+                if ent < any_ent {
+                    any_ent = ent
+                    any = i
+                }
+                if on_front(cells, i) {
+                    # Reservoir tie-break so the front stays round rather
+                    # than sweeping in row order.
+                    if ent < best_ent {
+                        best_ent = ent
+                        best = i
+                        ties = 1
+                    } else {
+                        if ent == best_ent {
+                            ties = ties + 1
+                            if ((rng_next() >> 13) % (ties as u32)) as i32 == 0 {
+                                best = i
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if best < 0 { best = any }
+    if best < 0 { return 0 }
+    let base: i32 = best * TILES
+    # wfc_collapse_at returns the n-th surviving option, so the index handed
+    # to it has to be reduced modulo how many survive, not modulo the tile
+    # count.
+    let live: i32 = wfc_entropy_at(options, base, TILES)
+    let choice: i32 = wfc_collapse_at(options, base, TILES, seed % live)
+    cells[best] = choice
+    for t in 0 to TILES {
+        if t != choice { options[base + t] = 0 }
+    }
+    push(stack, best)
+    propagate(cells, options, stack)
+    return 1
+}
+
+function decided_count(cells: ptr<i32>) -> i32 {
+    let mut n: i32 = 0
+    for i in 0 to NCELLS {
+        if cells[i] >= 0 { n = n + 1 }
+    }
+    return n
+}
+
+function mean_options(cells: ptr<i32>, options: ptr<i32>) -> f64 {
+    let mut sum: i32 = 0
+    let mut open: i32 = 0
+    for i in 0 to NCELLS {
+        if cells[i] < 0 {
+            sum = sum + wfc_entropy_at(options, i * TILES, TILES)
+            open = open + 1
+        }
+    }
+    if open == 0 { return 0.0 }
+    return (sum as f64) / (open as f64)
+}
+
+function trace_density(cells: ptr<i32>) -> f64 {
+    let mut arms: i32 = 0
+    let mut n: i32 = 0
+    for i in 0 to NCELLS {
+        if cells[i] >= 0 {
+            n = n + 1
+            for d in 0 to 4 {
+                arms = arms + socket(cells[i], d)
+            }
+        }
+    }
+    if n == 0 { return 0.0 }
+    return (arms as f64) / ((4 * n) as f64)
+}
+
+# Draw a decided cell as its actual traces: a pad plus one arm per socket.
+function draw_tile(g: Gfx, px: i32, py: i32, t: i32) -> void {
+    gfx_fill_rect(g, px, py, CELL_PX - 1, CELL_PX - 1, 16, 26, 30)
+    let cx: i32 = px + CELL_PX / 2 - 2
+    let cy: i32 = py + CELL_PX / 2 - 2
+    let mut arms: i32 = 0
+    for d in 0 to 4 {
+        arms = arms + socket(t, d)
+    }
+    if arms == 0 { return }
+    let r: i32 = 90 + 34 * arms
+    let gg: i32 = 190 + 14 * arms
+    let b: i32 = 150 - 20 * arms
+    gfx_fill_rect(g, cx, cy, 3, 3, r, gg, b)
+    if socket(t, 0) == 1 { gfx_fill_rect(g, cx, py, 3, CELL_PX / 2, r, gg, b) }
+    if socket(t, 2) == 1 { gfx_fill_rect(g, cx, cy, 3, CELL_PX / 2, r, gg, b) }
+    if socket(t, 3) == 1 { gfx_fill_rect(g, px, cy, CELL_PX / 2, 3, r, gg, b) }
+    if socket(t, 1) == 1 { gfx_fill_rect(g, cx, cy, CELL_PX / 2, 3, r, gg, b) }
+}
+
+function draw_field(g: Gfx, cells: ptr<i32>, options: ptr<i32>) -> void {
+    for y in 0 to SIDE {
+        for x in 0 to SIDE {
+            let idx: i32 = y * SIDE + x
+            let px: i32 = ORIGIN_X + x * CELL_PX
+            let py: i32 = FIELD_Y + y * CELL_PX
+            if cells[idx] >= 0 {
+                draw_tile(g, px, py, cells[idx])
+            } else {
+                let ent: i32 = wfc_entropy_at(options, idx * TILES, TILES)
+                let mut v: i32 = 150 - 10 * ent
+                if v < 26 { v = 26 }
+                gfx_fill_rect(g, px, py, CELL_PX - 1, CELL_PX - 1,
+                              v, v, v + 14)
+            }
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, decided: i32, entropy: f64,
+                  density: f64, rounds: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "WFC GROWTH  CONSTRAINT COLLAPSE", 2,
+                                232, 240, 238)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "SEED", 1, 140, 156, 152)
+    let t3: i32 = gfx_draw_text(g, 40, 28, seed_name(preset), 1, 250, 200, 130)
+    let t4: i32 = gfx_draw_text(g, 100, 28, "DECIDED", 1, 140, 156, 152)
+    let t5: i32 = gfx_draw_int(g, 152, 28, decided, 1, 232, 240, 238)
+    let t6: i32 = gfx_draw_text(g, 194, 28, "OF", 1, 140, 156, 152)
+    let t7: i32 = gfx_draw_int(g, 212, 28, NCELLS, 1, 232, 240, 238)
+    let t8: i32 = gfx_draw_text(g, 254, 28, "OPTIONS", 1, 140, 156, 152)
+    let t9: i32 = gfx_draw_fixed(g, 306, 28, entropy, 2, 1, 232, 240, 238)
+    let ta: i32 = gfx_draw_text(g, 354, 28, "TRACE", 1, 140, 156, 152)
+    let tb: i32 = gfx_draw_fixed(g, 392, 28, density, 2, 1, 232, 240, 238)
+    let tc: i32 = gfx_draw_text(g, 8, 42,
+        "1 CROSS  2 BLANK  3 ELBOW  R RESTART  P PAUSE   ROUNDS ",
+        1, 108, 120, 118)
+    let td: i32 = gfx_draw_int(g, 344, 42, rounds, 1, 108, 120, 118)
+    let te: i32 = gfx_draw_text(g, 8, 54,
+        "grey cells are undecided, brighter means fewer options remain", 1,
+        108, 120, 118)
+    if paused {
+        let tf: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tg: i32 = gfx_draw_text(g, 8, 572,
+        "collapse the least uncertain cell, then propagate the consequences",
+        1, 118, 128, 126)
+    let th: i32 = gfx_draw_text(g, 8, 582,
+        "no rule forbids a broken trace: a broken trace is simply not a tile",
+        1, 118, 128, 126)
+}
+
+function main() -> i32 {
+    let cells: array<i32, 2304> = [0, 0, 0, 0]
+    let options: array<i32, 36864> = [0, 0, 0, 0]
+    let stack: array<i32, 16384> = [0, 0, 0, 0]
+
+    let mut preset: i32 = 0
+    reset(cells, options, stack, seed_tile(preset))
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "WFC growth - Flow morphogenesis")
+
+    let mut rounds: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reset_held: bool = false
+    let mut hold: i32 = 0
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            reset(cells, options, stack, seed_tile(preset))
+            rounds = 0
+            hold = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held {
+                reset(cells, options, stack, seed_tile(preset))
+                rounds = 0
+                hold = 0
+            }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        let mut progressed: i32 = 0
+        if !paused {
+            for k in 0 to ROUNDS_PER_FRAME {
+                progressed = progressed
+                             + collapse_one(cells, options, stack,
+                                            rng_seed_value())
+                rounds = rounds + 1
+            }
+        }
+
+        if contradiction == 1 {
+            reset(cells, options, stack, seed_tile(preset))
+            rounds = 0
+            hold = 0
+        }
+
+        if progressed == 0 and rounds > 4 {
+            hold = hold + 1
+            if hold > 150 {
+                reset(cells, options, stack, seed_tile(preset))
+                rounds = 0
+                hold = 0
+            }
+        }
+
+        gfx_clear(g, 10, 16, 18)
+        draw_field(g, cells, options)
+        draw_hud(g, preset, decided_count(cells), mean_options(cells, options),
+                 trace_density(cells), rounds, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
