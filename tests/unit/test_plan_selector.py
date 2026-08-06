@@ -219,12 +219,25 @@ def test_small_arrays_pick_insertion():
     assert select(sort_facts(n=8)).chosen == "insertion"
 
 
-def test_large_unstructured_arrays_pick_the_general_merge():
-    assert select(sort_facts(n=4096)).chosen == "bottom_up_merge"
+def test_large_arrays_pick_the_run_detecting_merge():
+    # It measured faster than the plain bottom-up merge on every input shape
+    # in benchmarks/ordering, unstructured input included, so it is the
+    # default above the insertion crossover.
+    assert select(sort_facts(n=4096)).chosen == "natural_merge"
 
 
-def test_adaptive_policy_picks_the_run_detecting_merge():
-    assert select(sort_facts(n=4096, expect_runs="few")).chosen == "natural_merge"
+def test_adaptive_policy_widens_the_run_detector_margin():
+    plain = select(sort_facts(n=4096))
+    adaptive = select(sort_facts(n=4096, expect_runs="few"))
+    assert adaptive.chosen == plain.chosen == "natural_merge"
+    assert adaptive.chosen_candidate().cost < plain.chosen_candidate().cost
+
+
+def test_the_run_detector_is_not_worth_it_on_short_arrays():
+    sel = select(sort_facts(n=12))
+    assert sel.chosen == "insertion"
+    reason = next(c.rejected for c in sel.candidates if c.name == "natural_merge")
+    assert "run-detection floor" in reason
 
 
 def test_general_policy_pins_the_general_plan():

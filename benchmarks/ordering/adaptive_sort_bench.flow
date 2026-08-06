@@ -1,0 +1,283 @@
+# Adaptive ordering benchmark (issue #145).
+#
+# Measures what the sortedness and positivity hints actually buy. Each shape
+# of input is sorted twice at 32768 elements: once with `general`, which pins
+# the general-purpose stable bottom-up merge, and once with `adaptive`, which
+# lets the selector pick the run-detecting merge. The u8 pass compares the
+# same general plan against the counting sort the element type unlocks.
+#
+# The `adaptive` rows are also what a plain `|> sort` picks at this size, so
+# the general column is the plan those inputs used to get.
+#
+# The copy that refills the working array sits inside the timed region, so the
+# first line printed is a copy-only loop. Subtract it from every other row.
+#
+# Run it with benchmarks/ordering/run.sh.
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, secs: f64) -> i32
+}
+
+function fill_sorted(dst: ptr<i32>, n: i32) -> i32 {
+    for i in 0 to n {
+        dst[i] = i
+    }
+    return 0
+}
+
+function fill_reverse(dst: ptr<i32>, n: i32) -> i32 {
+    for i in 0 to n {
+        dst[i] = n - i
+    }
+    return 0
+}
+
+function fill_random(dst: ptr<i32>, n: i32) -> i32 {
+    let mut s: i32 = 12345
+    for i in 0 to n {
+        s = (s * 1103515245 + 12345) % 2147483647
+        if s < 0 {
+            s = 0 - s
+        }
+        dst[i] = s % 1000000
+    }
+    return 0
+}
+
+function fill_few_unique(dst: ptr<i32>, n: i32) -> i32 {
+    let mut s: i32 = 999
+    for i in 0 to n {
+        s = (s * 1103515245 + 12345) % 2147483647
+        if s < 0 {
+            s = 0 - s
+        }
+        dst[i] = s % 8
+    }
+    return 0
+}
+
+function fill_sawtooth(dst: ptr<i32>, n: i32) -> i32 {
+    for i in 0 to n {
+        dst[i] = i % 64
+    }
+    return 0
+}
+
+function fill_bytes(dst: ptr<u8>, n: i32) -> i32 {
+    let mut s: i32 = 4242
+    for i in 0 to n {
+        s = (s * 1103515245 + 12345) % 2147483647
+        if s < 0 {
+            s = 0 - s
+        }
+        dst[i] = (s % 256) as u8
+    }
+    return 0
+}
+
+# Returns the last element written so a caller can consume it. Without that
+# the copy-only baseline loop gets optimised away and reads as zero.
+function copy_i32(src: ptr<i32>, dst: ptr<i32>, n: i32) -> i32 {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+    return dst[n - 1]
+}
+
+function copy_u8(src: ptr<u8>, dst: ptr<u8>, n: i32) -> i32 {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+    return 0
+}
+
+function check_i32(a: ptr<i32>, n: i32) -> i32 {
+    for i in 1 to n {
+        if a[i - 1] > a[i] {
+            return 0
+        }
+    }
+    return 1
+}
+
+function check_u8(a: ptr<u8>, n: i32) -> i32 {
+    for i in 1 to n {
+        if a[i - 1] > a[i] {
+            return 0
+        }
+    }
+    return 1
+}
+
+function secs(t0: i64, t1: i64) -> f64 {
+    return ((t1 - t0) as f64) / 1000000.0
+}
+
+function main() -> i32 {
+    let mut src: array<i32, 32768> = [0, 0, 0, 0]
+    let mut work: array<i32, 32768> = [0, 0, 0, 0]
+    let mut bsrc: array<u8, 32768> = [0, 0, 0, 0]
+    let mut bwork: array<u8, 32768> = [0, 0, 0, 0]
+    let mut t0: i64 = 0
+    let mut t1: i64 = 0
+
+    # Copy-only baseline. Every timed row below includes one of these per rep.
+    fill_random(src, 32768)
+    let mut acc: i32 = 0
+    t0 = clock()
+    for r in 0 to 100 {
+        acc = acc + copy_i32(src, work, 32768)
+    }
+    t1 = clock()
+    printf("copy_baseline          %.5f\n", secs(t0, t1))
+    if acc == 1 {
+        return 13
+    }
+
+    # --- already sorted ---------------------------------------------------
+    fill_sorted(src, 32768)
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort general
+    }
+    t1 = clock()
+    printf("sorted.general         %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 1
+    }
+
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort adaptive
+    }
+    t1 = clock()
+    printf("sorted.adaptive        %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 2
+    }
+
+    # --- reverse sorted ---------------------------------------------------
+    fill_reverse(src, 32768)
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort general
+    }
+    t1 = clock()
+    printf("reverse.general        %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 3
+    }
+
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort adaptive
+    }
+    t1 = clock()
+    printf("reverse.adaptive       %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 4
+    }
+
+    # --- sawtooth: 512 ascending runs of 64 -------------------------------
+    fill_sawtooth(src, 32768)
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort general
+    }
+    t1 = clock()
+    printf("sawtooth.general       %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 5
+    }
+
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort adaptive
+    }
+    t1 = clock()
+    printf("sawtooth.adaptive      %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 6
+    }
+
+    # --- few unique keys, random order ------------------------------------
+    fill_few_unique(src, 32768)
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort general
+    }
+    t1 = clock()
+    printf("fewuniq.general        %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 7
+    }
+
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort adaptive
+    }
+    t1 = clock()
+    printf("fewuniq.adaptive       %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 8
+    }
+
+    # --- random: the case with no structure to exploit --------------------
+    fill_random(src, 32768)
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort general
+    }
+    t1 = clock()
+    printf("random.general         %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 9
+    }
+
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_i32(src, work, 32768)
+        work |> sort adaptive
+    }
+    t1 = clock()
+    printf("random.adaptive        %.5f\n", secs(t0, t1))
+    if check_i32(work, 32768) != 1 {
+        return 10
+    }
+
+    # --- u8: the element type bounds the key range to [0, 255] ------------
+    fill_bytes(bsrc, 32768)
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_u8(bsrc, bwork, 32768)
+        bwork |> sort general
+    }
+    t1 = clock()
+    printf("bytes.general          %.5f\n", secs(t0, t1))
+    if check_u8(bwork, 32768) != 1 {
+        return 11
+    }
+
+    t0 = clock()
+    for r in 0 to 100 {
+        copy_u8(bsrc, bwork, 32768)
+        bwork |> sort
+    }
+    t1 = clock()
+    printf("bytes.counting         %.5f\n", secs(t0, t1))
+    if check_u8(bwork, 32768) != 1 {
+        return 12
+    }
+
+    return 0
+}
