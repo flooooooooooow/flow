@@ -4,7 +4,7 @@ Seven population-genetics simulations written in Flow. Every clip below is
 recorded from the real compiled program through the headless recorder. Every
 program also measures the thing it is demonstrating, prints the measurement
 beside the closed form, and returns a nonzero exit code if the comparison
-fails — so these are regression tests that happen to draw pictures.
+fails, so these are regression tests that happen to draw pictures.
 
 This is the biology half of [VISION.md](../vision.md): a system that evolves
 through time is better written as a statement of how it evolves than as a

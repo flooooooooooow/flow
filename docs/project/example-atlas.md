@@ -207,7 +207,7 @@ reconstruction, optical flow, wavelets.
 | Circuits | 12 | 12 |
 | Diffusion and fields | 12 | 0 |
 | Physics and mechanics | 12 | 1 |
-| Chemistry and biology | 10 | 0 |
+| Chemistry and biology | 15 | 15 |
 | Control and estimation | 10 | 2 |
 | Signals and imaging | 9 | 0 |
 | **Total** | **100** | **50** |
