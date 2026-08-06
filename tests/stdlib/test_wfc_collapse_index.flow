@@ -1,0 +1,92 @@
+# Regression: wfc_collapse_at must index the live options, not the tiles.
+#
+# flow-wfc-collapse-index. With four tiles and only two options still live,
+# a seed of 3 used to be reduced modulo the tile count, walk past both
+# survivors and fall out of the loop returning tile 0, which was not live.
+# The grid then held a tile incompatible with its neighbours, the next
+# propagation emptied a cell, and the collapse stalled with cells still
+# undecided.
+import "stdlib/dynamics/wfc.flow"
+
+function main() -> i32 {
+    let mut fails: i32 = 0
+
+    # One cell, four tiles, options 1 and 3 live.
+    let opts: array<i32, 4> = [0, 1, 0, 1]
+    for s in 0 to 16 {
+        let pick: i32 = wfc_collapse_at(opts, 0, 4, s)
+        if pick != 1 and pick != 3 {
+            fails = fails + 1
+        }
+    }
+    # Both live options are reachable, so the choice is not stuck on one.
+    let mut saw1: i32 = 0
+    let mut saw3: i32 = 0
+    for s in 0 to 16 {
+        let pick: i32 = wfc_collapse_at(opts, 0, 4, s)
+        if pick == 1 { saw1 = 1 }
+        if pick == 3 { saw3 = 1 }
+    }
+    if saw1 == 0 or saw3 == 0 {
+        fails = fails + 1
+    }
+
+    # An empty cell is a contradiction, reported rather than papered over.
+    let empty: array<i32, 4> = [0, 0, 0, 0]
+    if wfc_collapse_at(empty, 0, 4, 5) != -1 {
+        fails = fails + 1
+    }
+
+    # A full 4x4 collapse decides every cell instead of leaving single-option
+    # cells undecided forever.
+    let cells: array<i32, 16> = [-1, -1, -1, -1, -1, -1, -1, -1,
+                                 -1, -1, -1, -1, -1, -1, -1, -1]
+    let options: array<i32, 64> = [0, 0, 0, 0]
+    for i in 0 to 16 {
+        cells[i] = -1
+    }
+    for i in 0 to 64 {
+        options[i] = 1
+    }
+    let grid: WFCGrid = WFCGrid { width: 4, height: 4, cells: cells,
+                                  options: options }
+    cells[0] = 1
+    for t in 0 to 4 {
+        if t != 1 {
+            options[t] = 0
+        }
+    }
+    wfc_run_collapse(grid, 4, 7, 256)
+    let decided: i32 = wfc_count_collapsed(grid)
+    if decided != 16 {
+        fails = fails + 1
+    }
+
+    # Every decided pair of neighbours agrees on the socket between them.
+    for y in 0 to 4 {
+        for x in 0 to 4 {
+            let idx: i32 = y * 4 + x
+            if cells[idx] >= 0 {
+                let a: WFCTile = wfc_tile_table(cells[idx])
+                if x + 1 < 4 {
+                    if cells[idx + 1] >= 0 {
+                        let b: WFCTile = wfc_tile_table(cells[idx + 1])
+                        if wfc_compatible(a, b, 1) == 0 {
+                            fails = fails + 1
+                        }
+                    }
+                }
+                if y + 1 < 4 {
+                    if cells[idx + 4] >= 0 {
+                        let b: WFCTile = wfc_tile_table(cells[idx + 4])
+                        if wfc_compatible(a, b, 2) == 0 {
+                            fails = fails + 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return fails
+}

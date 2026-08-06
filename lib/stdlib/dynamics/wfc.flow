@@ -58,8 +58,26 @@ function wfc_entropy_at(options: ptr<i32>, base: i32, count: i32) -> i32 {
     return c
 }
 
+# Pick one of the options still live in a cell, uniformly over the live set.
+#
+# The index has to be reduced modulo how many options survive, not modulo
+# the tile count: with 4 tiles and 2 live options a seed of 3 used to walk
+# past both survivors and fall out of the loop returning tile 0, which may
+# not be live at all. That wrote an incompatible tile into the grid, and the
+# next propagation emptied a neighbour and stalled the collapse.
+# Filed as flow-wfc-collapse-index.
+#
+# Returns -1 when the cell has no options left, which is a contradiction the
+# caller has to handle; every other return is a live option.
 function wfc_collapse_at(options: ptr<i32>, base: i32, count: i32, seed: i32) -> i32 {
-    let mut pick: i32 = seed % count
+    let live: i32 = wfc_entropy_at(options, base, count)
+    if live <= 0 {
+        return -1
+    }
+    let mut pick: i32 = seed % live
+    if pick < 0 {
+        pick = pick + live
+    }
     for i in 0 to count {
         if options[base + i] == 1 {
             if pick == 0 {
@@ -68,7 +86,7 @@ function wfc_collapse_at(options: ptr<i32>, base: i32, count: i32, seed: i32) ->
             pick = pick - 1
         }
     }
-    return 0
+    return -1
 }
 
 function wfc_propagate(grid: WFCGrid, tile_count: i32) -> i32 {
@@ -136,21 +154,49 @@ function wfc_propagate(grid: WFCGrid, tile_count: i32) -> i32 {
     return guard
 }
 
+# One round of collapse. Returns 1 when the wave moved, 0 when every cell is
+# decided, and -1 on a contradiction (some cell has no options left).
+#
+# A cell that propagation has already reduced to one option is decided: it
+# is settled here rather than left forever at cells[idx] == -1, which used
+# to make the run report "no progress" with undecided cells still on the
+# board.
 function wfc_step(grid: WFCGrid, tile_count: i32, seed: i32) -> i32 {
     let w: i32 = grid.width
     let h: i32 = grid.height
+    let total: i32 = w * h
+    let mut settled: i32 = 0
+    for idx in 0 to total {
+        if grid.cells[idx] < 0 {
+            let base: i32 = idx * tile_count
+            let ent: i32 = wfc_entropy_at(grid.options, base, tile_count)
+            if ent == 0 {
+                return -1
+            }
+            if ent == 1 {
+                for t in 0 to tile_count {
+                    if grid.options[base + t] == 1 {
+                        grid.cells[idx] = t
+                    }
+                }
+                settled = settled + 1
+            }
+        }
+    }
+    if settled > 0 {
+        wfc_propagate(grid, tile_count)
+        return 1
+    }
+
     let mut best_idx: i32 = -1
-    let mut best_ent: i32 = 999
-    for y in 0 to h {
-        for x in 0 to w {
-            let idx: i32 = y * w + x
-            if grid.cells[idx] < 0 {
+    let mut best_ent: i32 = tile_count + 1
+    for idx in 0 to total {
+        if grid.cells[idx] < 0 {
             let base: i32 = idx * tile_count
             let ent: i32 = wfc_entropy_at(grid.options, base, tile_count)
             if ent > 1 and ent < best_ent {
                 best_ent = ent
                 best_idx = idx
-            }
             }
         }
     }
@@ -159,6 +205,9 @@ function wfc_step(grid: WFCGrid, tile_count: i32, seed: i32) -> i32 {
     }
     let base: i32 = best_idx * tile_count
     let choice: i32 = wfc_collapse_at(grid.options, base, tile_count, seed)
+    if choice < 0 {
+        return -1
+    }
     grid.cells[best_idx] = choice
     for t in 0 to tile_count {
         if t != choice {
@@ -212,14 +261,18 @@ function wfc_mean_entropy(grid: WFCGrid, tile_count: i32) -> f64 {
     return sum / (open_cells * 1.0)
 }
 
+# Collapse until the grid is decided, a contradiction appears, or the step
+# budget runs out. Returns the number of rounds taken.
 function wfc_run_collapse(grid: WFCGrid, tile_count: i32, seed: i32, max_steps: i32) -> i32 {
     wfc_propagate(grid, tile_count)
     let mut cur_seed: i32 = seed
     let mut steps: i32 = 0
     while steps < max_steps {
-        if wfc_step(grid, tile_count, cur_seed) == 0 {
+        if wfc_step(grid, tile_count, cur_seed) != 1 {
             return steps
         }
+        # The seed advances by an odd stride so successive picks do not
+        # land on the same option when two cells have the same option count.
         cur_seed = cur_seed + 13
         steps = steps + 1
     }
