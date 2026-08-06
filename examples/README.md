@@ -29,6 +29,7 @@ examples/
 │   └── autodiff/     # Autodiff + neural-net examples (was neural_networks/)
 ├── morphogenesis/    # Pattern formation and growth: 20 live gfx demos
 ├── net/              # Networking sketches (HTTP / TCP)
+├── neuro/            # Neurons and networks: 15 gated gfx simulations
 ├── numerical/        # Scientific computing
 ├── packages/         # Path-dependency package consumer
 ├── physics/          # Physics DSL experiments
@@ -60,6 +61,7 @@ examples/
 | WASM | `examples/wasm/hello_wasm.flow` | `./flow run` / `./flow wasm examples/wasm/hello_wasm.flow` |
 | Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
 | Morphogenesis | `examples/morphogenesis/gray_scott.flow` | `./flow gfx examples/morphogenesis/gray_scott.flow` |
+| Neurons | `examples/neuro/hodgkin_huxley.flow` | `./flow gfx examples/neuro/hodgkin_huxley.flow` |
 
 ## Quick Start
 
@@ -216,6 +218,25 @@ of what it is claiming:
 - `dla.flow` - diffusion-limited aggregation with a live fractal dimension
 - `slime_mold.flow` - Physarum agents building a transport network
 - `somite_clock.flow` - `phase evolves as omega` read out by a moving front
+
+### Neurons and networks (`neuro/`)
+Fifteen live graphics simulations of spiking dynamics, the second domain of
+[the Example Atlas](../docs/project/example-atlas.md) (see
+[neuro/README.md](neuro/README.md)). Each one measures the phenomenon it
+demonstrates, prints the measurement beside the published value, and returns
+a nonzero exit code if the comparison fails, so they are regression tests as
+well as demos. Continuous models are `flow` blocks with `evolves as`; spike
+resets are `when v reaches threshold { v becomes reset }`.
+- `hodgkin_huxley.flow` - four gates, peak +40.26 mV, firing onset 6.213 uA/cm2
+- `izhikevich_zoo.flow` - all twenty regimes of Izhikevich 2004 figure 1, each checked
+- `lif_fi_curve.flow` - measured F-I curve against its closed form, 512 ppm
+- `morris_lecar.flow` - Hopf point at 93.8576 uA/cm2 by bisection on tr J = 0
+- `balanced_network.flow` - 12500 LIF neurons at the mean-field rate, CV(ISI) 0.795
+- `hopfield.flow` - capacity 0.166 against the 0.138 N bound, energy monotone
+- `reservoir.flow` - memory capacity 40.566 against Jaeger's bound of N = 100
+
+Run them with `./flow record examples/neuro/<name>.flow --frames 90 --out
+build/frames --gif build/<name>.gif`, or windowed with `./flow gfx`.
 
 ### Dynamics (`dynamics/`)
 Dynamical systems, analysis, and control via `stdlib/dynamics` and the
