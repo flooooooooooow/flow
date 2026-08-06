@@ -237,6 +237,9 @@ jobs:
           chmod +x ./flow compiler/scripts/*.sh
           ./compiler/scripts/bootstrap_from_c.sh
 
+      - name: Every compiler/src module compiles under flowc
+        run: ./compiler/scripts/selfcompile_audit.sh
+
       - name: Three consecutive generation fixed-points
         run: ./compiler/scripts/self_host_full.sh
 
