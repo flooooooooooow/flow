@@ -251,7 +251,26 @@ class OverloadResolver:
                 f"{len(exact_matches)} overloads match"
             )
             return None
-        
+
+        # An unsuffixed integer literal has no committed width, so it can
+        # stand in for any integer parameter. Without this, `take_u32(1234)`
+        # resolved to nothing and the backend emitted an undeclared call to
+        # the unmangled `take_u32`, which callers had to work around by
+        # writing `1234 as u32`. This runs only after exact matching, so an
+        # `i32` overload still wins over a `u32` one for the same literal.
+        literal_matches = self._match_with_widening_literals(
+            overloads, call.arguments, arg_types
+        )
+        if len(literal_matches) == 1:
+            return literal_matches[0].mangled_name
+        if len(literal_matches) > 1:
+            types_str = ", ".join(str(t) for t in arg_types)
+            self.warnings.append(
+                f"Ambiguous call to '{name}' with types ({types_str}): "
+                f"{len(literal_matches)} overloads match an integer literal"
+            )
+            return None
+
         # If only one overload and no exact match found, check if it's compatible
         if len(overloads) == 1:
             entry = overloads[0]
@@ -278,6 +297,34 @@ class OverloadResolver:
         # No match found among multiple overloads
         return None
     
+    def _match_with_widening_literals(
+        self,
+        overloads: List[OverloadEntry],
+        arguments: List[Expression],
+        arg_types: List[Optional[str]],
+    ) -> List[OverloadEntry]:
+        """Overloads that match once integer literals may take any int width."""
+        matches: List[OverloadEntry] = []
+        for entry in overloads:
+            if len(entry.param_types) != len(arg_types):
+                continue
+            ok = True
+            for param_type, arg_type, argument in zip(
+                entry.param_types, arg_types, arguments
+            ):
+                if arg_type is None:
+                    ok = False
+                    break
+                if self._types_compatible(param_type, arg_type):
+                    continue
+                if param_type in self.INT_TYPES and self._is_int_literal(argument):
+                    continue
+                ok = False
+                break
+            if ok:
+                matches.append(entry)
+        return matches
+
     def _ptr_type_for_array(self, array_type: str) -> Optional[str]:
         """Map stack arrays to pointer types for overload matching."""
         if not array_type.startswith("array_"):
@@ -318,7 +365,42 @@ class OverloadResolver:
         if expected in ('i32', 'i64') and actual in ('i32', 'i64'):
             return True
         return False
-    
+
+    INT_TYPES = {
+        'i8', 'i16', 'i32', 'i64', 'i128',
+        'u8', 'u16', 'u32', 'u64', 'u128',
+        'int', 'char', 'short', 'long',
+    }
+
+    @classmethod
+    def _is_int_literal(cls, expr: Expression) -> bool:
+        """True for an integer literal, including a negated one.
+
+        The parser stamps every unsuffixed integer as `i32` (there is no
+        literal suffix syntax), so the literal node itself is the only
+        signal that a value has no committed width.
+        """
+        if isinstance(expr, UnaryOperation) and expr.operator in ('-', '+'):
+            return cls._is_int_literal(expr.operand)
+        if not isinstance(expr, Literal):
+            return False
+        typ = getattr(expr, 'type', None)
+        type_name = typ if isinstance(typ, str) else getattr(typ, 'name', None)
+        if type_name is not None and type_name not in cls.INT_TYPES:
+            return False
+        value = expr.value
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, int):
+            return True
+        if isinstance(value, str):
+            try:
+                int(value, 0)
+                return True
+            except (ValueError, TypeError):
+                return False
+        return False
+
     def get_all_functions_with_mangled_names(self) -> List[Tuple[FunctionDecl, str]]:
         """Get all registered functions with their mangled names."""
         result = []
