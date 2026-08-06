@@ -64,9 +64,10 @@ EM_JS(void, flow_gfx_js_init, (int32_t w, int32_t h, const char *title), {
         frames: 0
     };
     if (cv) {
+        // Set the backing store only; the host page's CSS decides how big it
+        // is drawn, so a large program still fits inside a small frame.
         cv.width = w;
         cv.height = h;
-        if (!cv.style.width) { cv.style.width = w + "px"; }
         cv.setAttribute("tabindex", "0");
         try { cv.focus(); } catch (e) {}
     }
