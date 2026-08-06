@@ -1,0 +1,510 @@
+# SCHNAKENBERG: a cubic autocatalytic Turing system with a predicted wavelength.
+#
+# MODEL (Schnakenberg, 1979)
+#   Two intermediates with a cubic autocatalytic step. With diffusion:
+#
+#     du/dt = Du * lap(u) + u^2 * v - u + a
+#     dv/dt = Dv * lap(v) - u^2 * v + b
+#
+#   Those two lines are the body of `flow SchnakenbergCell` below.
+#
+# HOMOGENEOUS STEADY STATE
+#   u* = a + b
+#   v* = b / (a + b)^2
+#
+# LINEAR THEORY
+#   Jacobian at (u*, v*):
+#
+#     J11 = 2 u* v* - 1     J12 = u*^2
+#     J21 = -2 u* v*        J22 = -u*^2
+#
+#   Growth rate of mode k is the largest real part of the eigenvalues of
+#   J - k^2 diag(Du, Dv). Scanning k finds k_max; the predicted wavelength is
+#   2 pi / k_max. The measured dominant wavelength from the radial power
+#   spectrum of u is gated within 15 % of that prediction.
+#
+# PARAMETERS
+#   a 0.1   b 0.9   Du 1.0   Dv 20.0
+#   128 x 128 periodic grid, dx = 1, five-point laplacian
+#   dt 0.005 explicit Euler, 100 steps per displayed frame
+#
+# KEYS
+#   1 STANDARD (Dv 20)   2 FINE (Dv 40)   3 COARSE (Dv 12)
+#   R reseed             P pause          Esc quit
+#
+# REFERENCE
+#   J. Schnakenberg, J. Theor. Biol. 81:389-400 (1979).
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/morphogenesis/schnakenberg.flow \
+#       --frames 4 --out /tmp/rec_schnakenberg
+# Run (windowed):
+#   ./flow gfx examples/morphogenesis/schnakenberg.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+}
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 100
+const TWO_PI: f64 = 6.283185307179586
+
+const KMAX: i32 = 65
+const SHELLS: i32 = 64
+const VERIFY_STEPS: i32 = 20000
+
+const A_PARAM: f64 = 0.1
+const B_PARAM: f64 = 0.9
+const DU: f64 = 1.0
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow SchnakenbergCell {
+    state u : f64 = 1.0
+    state v : f64 = 0.9
+
+    param lap_u : f64 = 0.0
+    param lap_v : f64 = 0.0
+    param du    : f64 = 1.0
+    param dv    : f64 = 20.0
+    param a     : f64 = 0.1
+    param b     : f64 = 0.9
+
+    solver { dt 5 ms  method euler }
+
+    u evolves as du * lap_u + u * u * v - u + a
+    v evolves as dv * lap_v - u * u * v + b
+}
+
+let mut rng_state: u32 = 2025080701
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_dv(p: i32) -> f64 {
+    if p == 1 { return 40.0 }
+    if p == 2 { return 12.0 }
+    return 20.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "FINE" }
+    if p == 2 { return "COARSE" }
+    return "STANDARD"
+}
+
+function u_star() -> f64 {
+    return A_PARAM + B_PARAM
+}
+
+function v_star() -> f64 {
+    let u0: f64 = u_star()
+    return B_PARAM / (u0 * u0)
+}
+
+function growth_of(a11: f64, a12: f64, a21: f64, a22: f64) -> f64 {
+    let tr: f64 = a11 + a22
+    let det: f64 = a11 * a22 - a12 * a21
+    let disc: f64 = tr * tr * 0.25 - det
+    if disc >= 0.0 {
+        return tr * 0.5 + sqrt(disc)
+    }
+    return tr * 0.5
+}
+
+function predicted_wavelength(dv: f64) -> f64 {
+    let u0: f64 = u_star()
+    let v0: f64 = v_star()
+    let j11: f64 = 2.0 * u0 * v0 - 1.0
+    let j12: f64 = u0 * u0
+    let j21: f64 = 0.0 - 2.0 * u0 * v0
+    let j22: f64 = 0.0 - u0 * u0
+
+    let mut best_k: f64 = 0.1
+    let mut best_g: f64 = -1.0e9
+    let nscan: i32 = 600
+    let kmax: f64 = 2.5
+    for i in 0 to nscan {
+        let k: f64 = 0.001 + (kmax - 0.001) * (i as f64) / ((nscan - 1) as f64)
+        let g: f64 = growth_of(j11 - DU * k * k, j12, j21, j22 - dv * k * k)
+        if g > best_g {
+            best_g = g
+            best_k = k
+        }
+    }
+    let dk: f64 = (kmax - 0.001) / ((nscan - 1) as f64)
+    let km: f64 = best_k - dk
+    let kp: f64 = best_k + dk
+    let gm: f64 = growth_of(j11 - DU * km * km, j12, j21, j22 - dv * km * km)
+    let g0: f64 = growth_of(j11 - DU * best_k * best_k, j12, j21, j22 - dv * best_k * best_k)
+    let gp: f64 = growth_of(j11 - DU * kp * kp, j12, j21, j22 - dv * kp * kp)
+    let den: f64 = gm - 2.0 * g0 + gp
+    let mut kpeak: f64 = best_k
+    if den < 0.0 {
+        kpeak = kpeak + 0.5 * (gm - gp) / den * dk
+    }
+    if kpeak <= 0.0 { return 0.0 }
+    return TWO_PI / kpeak
+}
+
+function seed_field(u: ptr<f64>, v: ptr<f64>) -> void {
+    let u0: f64 = u_star()
+    let v0: f64 = v_star()
+    for i in 0 to CELLS {
+        u[i] = u0 * (1.0 + 0.02 * (rng_unit() - 0.5))
+        v[i] = v0
+    }
+}
+
+function lap_at(f: ptr<f64>, x: i32, y: i32) -> f64 {
+    let xm: i32 = (x + GRID - 1) % GRID
+    let xp: i32 = (x + 1) % GRID
+    let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+    let yp: i32 = ((y + 1) % GRID) * GRID
+    let r: i32 = y * GRID
+    return f[r + xm] + f[r + xp] + f[ym + x] + f[yp + x] - 4.0 * f[r + x]
+}
+
+function evolve(u: ptr<f64>, v: ptr<f64>, un: ptr<f64>, vn: ptr<f64>,
+                dv: f64, dt: f64) -> void {
+    let mut cell: SchnakenbergCell = SchnakenbergCell_new()
+    cell.a = A_PARAM
+    cell.b = B_PARAM
+    cell.du = DU
+    cell.dv = dv
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            cell.u = u[i]
+            cell.v = v[i]
+            cell.lap_u = lap_at(u, x, y)
+            cell.lap_v = lap_at(v, x, y)
+            SchnakenbergCell_step(&cell, dt)
+            if cell.u < 0.0 { cell.u = 0.0 }
+            if cell.v < 0.0 { cell.v = 0.0 }
+            un[i] = cell.u
+            vn[i] = cell.v
+        }
+    }
+}
+
+function fill_twiddles(ct: ptr<f64>, st: ptr<f64>) -> void {
+    for i in 0 to GRID {
+        let ang: f64 = TWO_PI * (i as f64) / (GRID as f64)
+        ct[i] = cos(ang)
+        st[i] = sin(ang)
+    }
+}
+
+function spectral_wavelength(u: ptr<f64>, ar: ptr<f64>, ai: ptr<f64>,
+                             ct: ptr<f64>, st: ptr<f64>,
+                             shell: ptr<f64>, shell_n: ptr<f64>) -> f64 {
+    let mut mean: f64 = 0.0
+    for i in 0 to CELLS {
+        mean = mean + u[i]
+    }
+    mean = mean / (CELLS as f64)
+
+    for y in 0 to GRID {
+        let r: i32 = y * GRID
+        let o: i32 = y * KMAX
+        for kx in 0 to KMAX {
+            let mut sr: f64 = 0.0
+            let mut si: f64 = 0.0
+            for x in 0 to GRID {
+                let t: i32 = (kx * x) % GRID
+                let d: f64 = u[r + x] - mean
+                sr = sr + d * ct[t]
+                si = si - d * st[t]
+            }
+            ar[o + kx] = sr
+            ai[o + kx] = si
+        }
+    }
+
+    for s in 0 to SHELLS {
+        shell[s] = 0.0
+        shell_n[s] = 0.0
+    }
+
+    for ky in 0 to GRID {
+        let mut kyy: i32 = ky
+        if kyy > GRID / 2 { kyy = kyy - GRID }
+        for kx in 0 to KMAX {
+            let mut re: f64 = 0.0
+            let mut im: f64 = 0.0
+            for y in 0 to GRID {
+                let t: i32 = (ky * y) % GRID
+                let ar_v: f64 = ar[y * KMAX + kx]
+                let ai_v: f64 = ai[y * KMAX + kx]
+                re = re + ar_v * ct[t] + ai_v * st[t]
+                im = im + ai_v * ct[t] - ar_v * st[t]
+            }
+            let rad: f64 = sqrt(((kx * kx + kyy * kyy) as f64))
+            let s: i32 = (rad + 0.5) as i32
+            if s < SHELLS {
+                shell[s] = shell[s] + re * re + im * im
+                shell_n[s] = shell_n[s] + 1.0
+            }
+        }
+    }
+
+    for s in 0 to SHELLS {
+        if shell_n[s] > 0.0 {
+            shell[s] = shell[s] / shell_n[s]
+        }
+    }
+
+    let mut best: i32 = 3
+    for s in 3 to SHELLS - 2 {
+        if shell[s] > shell[best] { best = s }
+    }
+    let sm: f64 = shell[best - 1]
+    let s0: f64 = shell[best]
+    let sp: f64 = shell[best + 1]
+    let den: f64 = sm - 2.0 * s0 + sp
+    let mut rpeak: f64 = best as f64
+    if den < 0.0 {
+        rpeak = rpeak + 0.5 * (sm - sp) / den
+    }
+    if rpeak < 0.5 { return 0.0 }
+    return (GRID as f64) / rpeak
+}
+
+function amplitude(u: ptr<f64>) -> f64 {
+    let mut lo: f64 = u[0]
+    let mut hi: f64 = u[0]
+    for i in 1 to CELLS {
+        if u[i] < lo { lo = u[i] }
+        if u[i] > hi { hi = u[i] }
+    }
+    return hi - lo
+}
+
+function shade_r(t: f64) -> i32 {
+    let mut c: f64 = 20.0 + 40.0 * t
+    if t > 0.4 { c = 36.0 + 280.0 * (t - 0.4) }
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function shade_g(t: f64) -> i32 {
+    let mut c: f64 = 40.0 + 180.0 * t
+    if c > 230.0 { c = 230.0 }
+    return c as i32
+}
+
+function shade_b(t: f64) -> i32 {
+    let mut c: f64 = 90.0 + 200.0 * t
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, u: ptr<f64>, lo: f64, hi: f64) -> void {
+    let mut span: f64 = hi - lo
+    if span < 0.001 { span = 0.001 }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let mut t: f64 = (u[y * GRID + x] - lo) / span
+            if t < 0.0 { t = 0.0 }
+            if t > 1.0 { t = 1.0 }
+            paint_cell(fb, x, y, shade_r(t), shade_g(t), shade_b(t))
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, dv: f64, meas: f64, pred: f64,
+                  amp: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "SCHNAKENBERG", 2, 230, 240, 250)
+    let t2: i32 = gfx_draw_text(g, 176, 12, preset_name(preset), 1, 120, 220, 255)
+    let t3: i32 = gfx_draw_text(g, 250, 12, "Dv", 1, 140, 150, 165)
+    let t4: i32 = gfx_draw_fixed(g, 270, 12, dv, 1, 1, 230, 240, 250)
+    let t5: i32 = gfx_draw_text(g, 330, 12, "AMP", 1, 140, 150, 165)
+    let t6: i32 = gfx_draw_fixed(g, 358, 12, amp, 2, 1, 230, 240, 250)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "WAVELENGTH  MEASURED", 1, 140, 150, 165)
+    let t8: i32 = gfx_draw_fixed(g, 140, 28, meas, 2, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 190, 28, "PREDICTED 2pi/k_max", 1, 140, 150, 165)
+    let ta: i32 = gfx_draw_fixed(g, 318, 28, pred, 2, 1, 120, 255, 190)
+
+    let tb: i32 = gfx_draw_text(g, 8, 42,
+        "1 STANDARD  2 FINE  3 COARSE  R RESEED  P PAUSE",
+        1, 108, 116, 128)
+    if paused {
+        let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let td: i32 = gfx_draw_text(g, 8, 572,
+        "u evolves as Du*lap(u) + u^2*v - u + a", 1, 120, 130, 150)
+    let te: i32 = gfx_draw_text(g, 8, 582,
+        "v evolves as Dv*lap(v) - u^2*v + b", 1, 120, 130, 150)
+}
+
+function main() -> i32 {
+    let ua: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let va: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ub: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let vb: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let ar: array<f64, 8320> = [0.0, 0.0, 0.0, 0.0]
+    let ai: array<f64, 8320> = [0.0, 0.0, 0.0, 0.0]
+    let ct: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let st: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let shell: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let shell_n: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    fill_twiddles(ct, st)
+
+    let dv: f64 = 20.0
+    let dt: f64 = SchnakenbergCell_default_dt()
+    let pred: f64 = predicted_wavelength(dv)
+
+    println("")
+    println("  SCHNAKENBERG  --  cubic autocatalysis, Turing wavelength")
+    println("  ========================================================")
+    println("")
+    print("    u* = a + b                      : ")
+    printf("%9.6f", u_star())
+    println("")
+    print("    v* = b / (a+b)^2                : ")
+    printf("%9.6f", v_star())
+    println("")
+    print("    predicted wavelength 2pi/k_max  : ")
+    printf("%9.6f", pred)
+    println(" cells")
+
+    rng_state = 2025080701
+    seed_field(ua, va)
+    for s in 0 to VERIFY_STEPS / 2 {
+        evolve(ua, va, ub, vb, dv, dt)
+        evolve(ub, vb, ua, va, dv, dt)
+    }
+    let meas: f64 = spectral_wavelength(ua, ar, ai, ct, st, shell, shell_n)
+    let amp: f64 = amplitude(ua)
+    let err: f64 = fabs(meas - pred) / pred
+
+    print("    measured wavelength (spectrum)  : ")
+    printf("%9.6f", meas)
+    println(" cells")
+    print("    relative error                  : ")
+    printf("%9.6f", err)
+    println("   (gate < 0.15)")
+    print("    u amplitude                     : ")
+    printf("%9.6f", amp)
+    println("")
+    println("")
+
+    if amp < 0.05 {
+        println("    FAIL: pattern amplitude stayed too small")
+        return 1
+    }
+    if err > 0.15 {
+        println("    FAIL: measured wavelength disagrees with linear theory")
+        return 2
+    }
+    println("    PASS: dominant wavelength matches k_max from dispersion of J - k^2 D")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut dv_live: f64 = dv
+    rng_state = 2025080701
+    seed_field(ua, va)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Schnakenberg - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut meas_live: f64 = meas
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            dv_live = preset_dv(preset)
+            seed_field(ua, va)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(ua, va)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(ua, va, ub, vb, dv_live, dt)
+                evolve(ub, vb, ua, va, dv_live, dt)
+            }
+        }
+
+        let amp_live: f64 = amplitude(ua)
+        if frame % 8 == 0 {
+            meas_live = spectral_wavelength(ua, ar, ai, ct, st, shell, shell_n)
+        }
+        let pred_live: f64 = predicted_wavelength(dv_live)
+        let u0: f64 = u_star()
+
+        gfx_clear(g, 10, 14, 22)
+        draw_field(g, fb, ua, u0 - 0.7 * amp_live, u0 + 0.7 * amp_live)
+        draw_hud(g, preset, dv_live, meas_live, pred_live, amp_live, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

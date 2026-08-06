@@ -1,0 +1,415 @@
+# ALLEN-CAHN: curvature-driven interface motion toward mean-curvature flow.
+#
+# MODEL (Allen and Cahn, 1979)
+#   A non-conserved order parameter u with a double-well potential and
+#   interfacial energy. Interfaces of thickness O(eps) move by mean curvature:
+#
+#     du/dt = eps^2 * lap(u) + u - u^3
+#
+#   That single line is the body of `flow AllenCahnCell`. Unlike Cahn-Hilliard,
+#   u is not conserved: a circular droplet shrinks and disappears.
+#
+# THE MEASUREMENT
+#   Seed a circular droplet of radius R0. Under mean-curvature flow in 2D the
+#   radius obeys R dR/dt = -1 (mobility scaled so the constant is 1), hence
+#
+#     R^2(t) = R0^2 - 2 t
+#
+#   The program measures the area of {u > 0}, converts it to an effective
+#   radius, fits d(R^2)/dt over an early window, and gates the slope within
+#   25 % of -2. Interface length (phase-bond count) must also fall.
+#
+# PARAMETERS
+#   eps^2 1.0   R0 28   128 x 128 periodic grid, dx = 1
+#   dt 0.05 explicit Euler, 40 steps per displayed frame
+#
+# KEYS
+#   1 DROPLET (R0 28)   2 LARGE (R0 36)   3 SMALL (R0 20)
+#   R reseed            P pause           Esc quit
+#
+# REFERENCE
+#   S. M. Allen and J. W. Cahn, Acta Metall. 27:1085-1095 (1979).
+#   L. Bronsard and R. V. Kohn, J. Diff. Eq. 90:211-237 (1991).
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/morphogenesis/allen_cahn.flow \
+#       --frames 4 --out /tmp/rec_allen_cahn
+# Run (windowed):
+#   ./flow gfx examples/morphogenesis/allen_cahn.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function tanh(x: f64) -> f64
+}
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 40
+const VERIFY_STEPS: i32 = 4000
+const EPS2: f64 = 1.0
+const PI: f64 = 3.141592653589793
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow AllenCahnCell {
+    state u : f64 = 0.0
+
+    param lap_u : f64 = 0.0
+    param eps2  : f64 = 1.0
+
+    solver { dt 50 ms  method euler }
+
+    u evolves as eps2 * lap_u + u - u * u * u
+}
+
+function preset_r0(p: i32) -> f64 {
+    if p == 1 { return 36.0 }
+    if p == 2 { return 20.0 }
+    return 28.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "LARGE" }
+    if p == 2 { return "SMALL" }
+    return "DROPLET"
+}
+
+function seed_droplet(u: ptr<f64>, r0: f64) -> void {
+    let cx: f64 = (GRID as f64) * 0.5
+    let cy: f64 = (GRID as f64) * 0.5
+    let inv: f64 = 1.0 / sqrt(2.0)
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let dx: f64 = (x as f64) + 0.5 - cx
+            let dy: f64 = (y as f64) + 0.5 - cy
+            let r: f64 = sqrt(dx * dx + dy * dy)
+            u[y * GRID + x] = tanh((r0 - r) * inv)
+        }
+    }
+}
+
+function lap_at(f: ptr<f64>, x: i32, y: i32) -> f64 {
+    let xm: i32 = (x + GRID - 1) % GRID
+    let xp: i32 = (x + 1) % GRID
+    let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+    let yp: i32 = ((y + 1) % GRID) * GRID
+    let r: i32 = y * GRID
+    return f[r + xm] + f[r + xp] + f[ym + x] + f[yp + x] - 4.0 * f[r + x]
+}
+
+function evolve(u: ptr<f64>, un: ptr<f64>, dt: f64) -> void {
+    let mut cell: AllenCahnCell = AllenCahnCell_new()
+    cell.eps2 = EPS2
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            cell.u = u[i]
+            cell.lap_u = lap_at(u, x, y)
+            AllenCahnCell_step(&cell, dt)
+            un[i] = cell.u
+        }
+    }
+}
+
+function positive_area(u: ptr<f64>) -> f64 {
+    let mut n: f64 = 0.0
+    for i in 0 to CELLS {
+        if u[i] > 0.0 {
+            n = n + 1.0
+        }
+    }
+    return n
+}
+
+function radius_from_area(u: ptr<f64>) -> f64 {
+    let a: f64 = positive_area(u)
+    if a <= 0.0 { return 0.0 }
+    return sqrt(a / PI)
+}
+
+function interface_bonds(u: ptr<f64>) -> i32 {
+    let mut n: i32 = 0
+    for y in 0 to GRID {
+        let r: i32 = y * GRID
+        let rp: i32 = ((y + 1) % GRID) * GRID
+        for x in 0 to GRID {
+            let xp: i32 = (x + 1) % GRID
+            let here: bool = u[r + x] > 0.0
+            if here != (u[r + xp] > 0.0) { n = n + 1 }
+            if here != (u[rp + x] > 0.0) { n = n + 1 }
+        }
+    }
+    return n
+}
+
+function shade_r(t: f64) -> i32 {
+    let mut c: f64 = 40.0 + 180.0 * t
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function shade_g(t: f64) -> i32 {
+    let mut c: f64 = 50.0 + 120.0 * t
+    if c > 220.0 { c = 220.0 }
+    return c as i32
+}
+
+function shade_b(t: f64) -> i32 {
+    let mut c: f64 = 90.0 + 40.0 * t
+    if c > 200.0 { c = 200.0 }
+    return c as i32
+}
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, u: ptr<f64>) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let mut t: f64 = 0.5 * (u[y * GRID + x] + 1.0)
+            if t < 0.0 { t = 0.0 }
+            if t > 1.0 { t = 1.0 }
+            paint_cell(fb, x, y, shade_r(t), shade_g(t), shade_b(t))
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, r0: f64, radius: f64, bonds: i32,
+                  slope: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "ALLEN-CAHN", 2, 240, 236, 230)
+    let t2: i32 = gfx_draw_text(g, 160, 12, preset_name(preset), 1, 250, 175, 110)
+    let t3: i32 = gfx_draw_text(g, 240, 12, "R0", 1, 145, 150, 158)
+    let t4: i32 = gfx_draw_fixed(g, 260, 12, r0, 1, 1, 240, 236, 230)
+    let t5: i32 = gfx_draw_text(g, 320, 12, "R", 1, 145, 150, 158)
+    let t6: i32 = gfx_draw_fixed(g, 336, 12, radius, 2, 1, 240, 236, 230)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "d(R^2)/dt", 1, 145, 150, 158)
+    let t8: i32 = gfx_draw_fixed(g, 76, 28, slope, 3, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 150, 28, "theory -2", 1, 145, 150, 158)
+    let ta: i32 = gfx_draw_text(g, 240, 28, "INTERFACE", 1, 145, 150, 158)
+    let tb: i32 = gfx_draw_int(g, 310, 28, bonds, 1, 240, 236, 230)
+
+    let tc: i32 = gfx_draw_text(g, 8, 42,
+        "1 DROPLET  2 LARGE  3 SMALL  R RESEED  P PAUSE",
+        1, 108, 112, 120)
+    if paused {
+        let td: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let te: i32 = gfx_draw_text(g, 8, 572,
+        "u evolves as eps^2*lap(u) + u - u^3", 1, 122, 126, 138)
+    let tf: i32 = gfx_draw_text(g, 8, 582,
+        "circular droplet: R^2(t) = R0^2 - 2t under mean-curvature flow", 1,
+        122, 126, 138)
+}
+
+function main() -> i32 {
+    let ua: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ub: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    let r0: f64 = 28.0
+    let dt: f64 = AllenCahnCell_default_dt()
+
+    println("")
+    println("  ALLEN-CAHN  --  curvature-driven droplet shrinkage")
+    println("  ==================================================")
+    println("")
+    println("    eps^2 1.0, R0 28, mean-curvature theory R^2 = R0^2 - 2t")
+    println("")
+
+    seed_droplet(ua, r0)
+    let bonds0: i32 = interface_bonds(ua)
+    let r_init: f64 = radius_from_area(ua)
+
+    # Sample R^2(t) every 100 steps over the first VERIFY_STEPS.
+    let mut sum_t: f64 = 0.0
+    let mut sum_r2: f64 = 0.0
+    let mut sum_t2: f64 = 0.0
+    let mut sum_tr2: f64 = 0.0
+    let mut nfit: i32 = 0
+    let mut t: f64 = 0.0
+    let sample_every: i32 = 100
+    let fit_until: i32 = 3000
+
+    for s in 0 to VERIFY_STEPS / 2 {
+        evolve(ua, ub, dt)
+        evolve(ub, ua, dt)
+        t = t + 2.0 * dt
+        let step_i: i32 = (s + 1) * 2
+        if step_i <= fit_until and step_i % sample_every == 0 {
+            let r: f64 = radius_from_area(ua)
+            let r2: f64 = r * r
+            sum_t = sum_t + t
+            sum_r2 = sum_r2 + r2
+            sum_t2 = sum_t2 + t * t
+            sum_tr2 = sum_tr2 + t * r2
+            nfit = nfit + 1
+        }
+    }
+
+    let mut slope: f64 = 0.0
+    if nfit >= 2 {
+        let nf: f64 = nfit as f64
+        let den: f64 = nf * sum_t2 - sum_t * sum_t
+        if fabs(den) > 1.0e-12 {
+            slope = (nf * sum_tr2 - sum_t * sum_r2) / den
+        }
+    }
+    let bonds1: i32 = interface_bonds(ua)
+    let r_final: f64 = radius_from_area(ua)
+    let slope_err: f64 = fabs(slope - (0.0 - 2.0)) / 2.0
+
+    print("    initial radius (from area)      : ")
+    printf("%9.4f", r_init)
+    println("")
+    print("    final radius (after verify)     : ")
+    printf("%9.4f", r_final)
+    println("")
+    print("    fitted d(R^2)/dt                : ")
+    printf("%9.4f", slope)
+    println("   (theory -2)")
+    print("    relative error vs -2            : ")
+    printf("%9.4f", slope_err)
+    println("   (gate < 0.25)")
+    print("    interface bonds  start -> end   : ")
+    printf("%6.0f", bonds0 as f64)
+    print(" -> ")
+    printf("%6.0f", bonds1 as f64)
+    println("")
+    println("")
+
+    let slope_ok: bool = slope_err < 0.25 and slope < 0.0
+    let shrink_ok: bool = r_final < r_init - 1.0 and bonds1 < bonds0
+    if !slope_ok {
+        println("    FAIL: d(R^2)/dt disagrees with mean-curvature theory")
+        return 1
+    }
+    if !shrink_ok {
+        println("    FAIL: droplet did not shrink / interface did not shorten")
+        return 2
+    }
+    println("    PASS: droplet radius follows R^2 = R0^2 - 2t within tolerance")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut r0_live: f64 = r0
+    seed_droplet(ua, r0_live)
+    let mut slope_live: f64 = slope
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Allen-Cahn - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut t_live: f64 = 0.0
+    let mut sum_t_l: f64 = 0.0
+    let mut sum_r2_l: f64 = 0.0
+    let mut sum_t2_l: f64 = 0.0
+    let mut sum_tr2_l: f64 = 0.0
+    let mut nfit_l: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            r0_live = preset_r0(preset)
+            seed_droplet(ua, r0_live)
+            t_live = 0.0
+            sum_t_l = 0.0
+            sum_r2_l = 0.0
+            sum_t2_l = 0.0
+            sum_tr2_l = 0.0
+            nfit_l = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_droplet(ua, r0_live)
+                t_live = 0.0
+                sum_t_l = 0.0
+                sum_r2_l = 0.0
+                sum_t2_l = 0.0
+                sum_tr2_l = 0.0
+                nfit_l = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(ua, ub, dt)
+                evolve(ub, ua, dt)
+            }
+            t_live = t_live + (SUBSTEPS as f64) * dt
+            if nfit_l < 40 {
+                let r: f64 = radius_from_area(ua)
+                let r2: f64 = r * r
+                sum_t_l = sum_t_l + t_live
+                sum_r2_l = sum_r2_l + r2
+                sum_t2_l = sum_t2_l + t_live * t_live
+                sum_tr2_l = sum_tr2_l + t_live * r2
+                nfit_l = nfit_l + 1
+                if nfit_l >= 2 {
+                    let nf: f64 = nfit_l as f64
+                    let den: f64 = nf * sum_t2_l - sum_t_l * sum_t_l
+                    if fabs(den) > 1.0e-12 {
+                        slope_live = (nf * sum_tr2_l - sum_t_l * sum_r2_l) / den
+                    }
+                }
+            }
+        }
+
+        let radius: f64 = radius_from_area(ua)
+        let bonds: i32 = interface_bonds(ua)
+
+        gfx_clear(g, 16, 14, 20)
+        draw_field(g, fb, ua)
+        draw_hud(g, preset, r0_live, radius, bonds, slope_live, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
