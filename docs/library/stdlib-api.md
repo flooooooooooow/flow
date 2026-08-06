@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` on 2026-08-06 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**88** modules scanned.
+**95** modules scanned.
 
 ## Modules
 
@@ -546,7 +546,12 @@ Musical Notation Module - Load Music from Files  Simple text-based notation for 
 | `parse_note_name` | `(name: string) -> i32` | Parse note name to MIDI number (e.g., "C4" -> 60) |
 | `parse_note_simple` | `(note_str: string, duration: i32) -> MusicNote` | Helper: Parse a single note/duration pair Format: "C4/4" means C4 for 4 sixteenth notes (quarter note) |
 | `notation_reader_new` | `() -> NotationReader` | — |
-| `notation_load_file` | `(reader: ptr<NotationReader>, path: string) -> bool` | Regular functions (effect impl not fully supported in C backend yet) |
+| `notation_add` | `(reader: ptr<NotationReader>, midi: i32, duration: i32) -> bool` | Append one note. Returns false when the reader is full. This is how you build a sequence today. The text-file parser below is not implemented; it returns a fixed tune whatever path you give it, and the comment there says so. |
+| `notation_add_rest` | `(reader: ptr<NotationReader>, duration: i32) -> bool` | Append a rest. A MIDI number below 0 means silence; players are expected to check for it. |
+| `note_is_rest` | `(n: MusicNote) -> bool` | — |
+| `notation_clear` | `(reader: ptr<NotationReader>) -> void` | — |
+| `notation_total_sixteenths` | `(reader: ptr<NotationReader>) -> i32` | Total length of the sequence in sixteenth notes. |
+| `notation_load_file` | `(reader: ptr<NotationReader>, path: string) -> bool` | NOT A PARSER. This ignores `path` entirely and loads a fixed tune, so that the players in examples/audio have something to read while the text format above is still unimplemented. Use notation_add to build a real sequence. |
 | `load_file` | `(reader: ptr<NotationReader>, path: string) -> bool` | — |
 | `get_note_count` | `(reader: ptr<NotationReader>) -> i32` | — |
 | `get_note` | `(reader: ptr<NotationReader>, idx: i32) -> MusicNote` | — |
@@ -577,7 +582,7 @@ Audio Oscillators Module  Phase-based oscillators and waveshaping functions.
 | `phasor_set_freq` | `(p: Phasor, freq: f64, rate: SampleRate) -> Phasor` | Set frequency (returns new phasor with updated increment) |
 | `phasor_reset` | `(p: Phasor) -> Phasor` | Reset phase to zero |
 | `phasor_sync` | `(p: Phasor, target_phase: f64) -> Phasor` | Sync to another phasor's phase |
-| `sine` | `(phase: f64) -> f32` | Sine wave: sin(2π * phase) |
+| `sine` | `(phase: f64) -> f32` | Sine wave: sin(2π * phase) Uses libm sinf. The previous 7th-order Taylor series was off by 7.5% at the ends of the cycle (sin(π) came out as -0.075 instead of 0), which is roughly -25 dB of harmonic distortion on every sine in the library. |
 | `saw` | `(phase: f64) -> f32` | Saw wave: 2 * phase - 1 (naive, has aliasing at high frequencies) |
 | `saw_reverse` | `(phase: f64) -> f32` | Reverse saw (ramp down) |
 | `square` | `(phase: f64) -> f32` | Square wave: phase < 0.5 ? 1.0 : -1.0 (naive, has aliasing) |
@@ -586,9 +591,9 @@ Audio Oscillators Module  Phase-based oscillators and waveshaping functions.
 | `saw_blep` | `(phase: f64, increment: f64) -> f32` | Band-limited saw using PolyBLEP |
 | `square_blep` | `(phase: f64, increment: f64) -> f32` | Band-limited square using PolyBLEP |
 | `noise_new` | `(seed: i64) -> NoiseState` | Create noise generator with seed |
-| `noise_tick` | `(n: NoiseState) -> NoiseState` | Generate next random sample and update state |
-| `noise_value` | `(n: NoiseState) -> f32` | Get current noise value [-1.0, 1.0] |
-| `white_noise` | `(n: NoiseState) -> f32` | White noise (calls tick internally - stateful convenience) |
+| `noise_tick` | `(n: NoiseState) -> NoiseState` | Generate next random sample and update state. The modulus is a mask, not a sign flip. Without it the seed grows without bound (the state is i64, so the multiply just keeps getting bigger) and noise_value returns numbers in the billions rather than in [-1, 1). Any |
+| `noise_value` | `(n: NoiseState) -> f32` | Current noise value in [-1.0, 1.0). |
+| `white_noise` | `(n: NoiseState) -> f32` | The value of the current state. This does not advance the generator: the state is a value, so the caller has to hold the result of noise_tick. n = noise_tick(n) let x: f32 = white_noise(n) |
 | `lfo_new` | `(rate_hz: f64, sample_rate: SampleRate, depth: f32) -> LFO` | Create an LFO |
 | `lfo_tick` | `(l: LFO) -> LFO` | Tick the LFO |
 | `lfo_sine` | `(l: LFO) -> f32` | Get sine LFO value (bipolar: -depth to +depth) |
@@ -616,6 +621,89 @@ Audio Processor Module  Trait-based interface for audio processing components.
 | `process_with_gain_clip` | `(sample: f32, gain: f32, threshold: f32) -> f32` | Process a mono sample through gain and clip |
 | `crossfade` | `(a: f32, b: f32, mix: f32) -> f32` | Mix two signals with crossfade (0.0 = all A, 1.0 = all B) |
 | `crossfade_equal_power` | `(a: f32, b: f32, mix: f32) -> f32` | Equal power crossfade (smoother for audio) |
+
+### `audio/safety.flow`
+
+Audio Safety Module  The master chain every Flow audio example runs through before a sample
+
+**Structs:** `TruePeak`, `Limiter`, `SafetyConfig`, `SafetyChain`
+
+**Constants:**
+
+- `SAFETY_LOOKAHEAD_MAX: i32`
+- `SAFETY_DEFAULT_CEILING_DB: f32`
+- `SAFETY_DEFAULT_LOOKAHEAD_MS: f32`
+- `SAFETY_DEFAULT_FADE_MS: f32`
+- `SAFETY_DEFAULT_RELEASE_FAST_MS: f32`
+- `SAFETY_DEFAULT_RELEASE_SLOW_MS: f32`
+- `SAFETY_DEFAULT_HOLD_MS: f32`
+- `SAFETY_MAX_SECONDS: f32`
+- `SAFETY_DENORMAL: f32`
+- `SAFETY_INF: f32`
+- `FEEDBACK_HARD_LIMIT: f32`
+- `FEEDBACK_SOFT_MAX: f32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `sample_is_bad` | `(x: f32) -> bool` | — |
+| `flush_denormal` | `(x: f32) -> f32` | — |
+| `true_peak_new` | `() -> TruePeak` | — |
+| `true_peak_push` | `(d: ptr<TruePeak>, l: f32, r: f32) -> f32` | — |
+| `true_peak_reset` | `(d: ptr<TruePeak>) -> void` | — |
+| `limiter_new` | `(ceiling_db: f32, lookahead_ms: f32,
+                            release_fast_ms: f32, release_slow_ms: f32,
+                            hold_ms: f32, rate: SampleRate) -> Limiter` | — |
+| `limiter_reset` | `(l: ptr<Limiter>) -> void` | — |
+| `limiter_set_ceiling_db` | `(l: ptr<Limiter>, ceiling_db: f32) -> void` | — |
+| `limiter_step` | `(l: ptr<Limiter>, in_l: f32, in_r: f32,
+                             out_l: ptr<f32>, out_r: ptr<f32>) -> f32` | — |
+| `limiter_gain` | `(l: ptr<Limiter>) -> f32` | — |
+| `limiter_gain_reduction_db` | `(l: ptr<Limiter>) -> f32` | — |
+| `limiter_max_gain_reduction_db` | `(l: ptr<Limiter>) -> f32` | — |
+| `limiter_latency_samples` | `(l: ptr<Limiter>) -> i32` | — |
+| `feedback_is_safe` | `(k: f32) -> bool` | A delay or reverb whose feedback coefficient reaches 1.0 never decays; past 1.0 it grows without bound. This is the single most common way a synth patch turns into a hazard, so it gets a guard rather than a comment. |
+| `feedback_guard` | `(k: f32) -> f32` | Returns a coefficient that is safe to use. A magnitude at or above 1.0 is refused outright and becomes 0.0, because there is no sensible substitute for "make this louder forever". Between FEEDBACK_SOFT_MAX and 1.0 the value is clamped and the caller told. |
+| `rt60_to_feedback` | `(rt60_seconds: f32, delay_seconds: f32) -> f32` | Feedback coefficient that decays 60 dB in `rt60_seconds`, for a loop whose round trip is `delay_seconds`. This is how you should ask for a tail: in time, not in a number between 0 and 1 that you guessed. |
+| `feedback_to_rt60` | `(k: f32, delay_seconds: f32) -> f32` | The inverse: how long a given coefficient rings for. |
+| `safety_config_default` | `() -> SafetyConfig` | — |
+| `safety_config_ceiling` | `(cfg: SafetyConfig, ceiling_db: f32) -> SafetyConfig` | Deliberate ceiling override, for work that is going somewhere other than a stranger's headphones. Everything else stays default. |
+| `safety_config_fades` | `(cfg: SafetyConfig, fade_in_ms: f32, fade_out_ms: f32) -> SafetyConfig` | — |
+| `safety_new` | `(rate: SampleRate, seconds: f32) -> SafetyChain` | — |
+| `safety_new_with` | `(rate: SampleRate, seconds: f32, cfg: SafetyConfig) -> SafetyChain` | — |
+| `fade_gain` | `(t: f32) -> f32` | — |
+| `safety_process_frame` | `(c: ptr<SafetyChain>, in_l: f32, in_r: f32) -> Frame` | — |
+| `safety_process_block` | `(c: ptr<SafetyChain>, data: ptr<f32>, frames: i32) -> i32` | — |
+| `safety_next_block` | `(c: ptr<SafetyChain>, max_block: i32) -> i32` | Frames left in the watchdog window, capped at `max_block`. Loop on this and the render is exactly as long as it said it would be. |
+| `safety_reset` | `(c: ptr<SafetyChain>) -> void` | — |
+| `safety_finished` | `(c: ptr<SafetyChain>) -> bool` | Chain readouts |
+| `safety_total_frames` | `(c: ptr<SafetyChain>) -> i64` | — |
+| `safety_frames_done` | `(c: ptr<SafetyChain>) -> i64` | — |
+| `safety_duration_seconds` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_watchdog_hit` | `(c: ptr<SafetyChain>) -> bool` | — |
+| `safety_ceiling_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_ceiling_linear` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_latency_samples` | `(c: ptr<SafetyChain>) -> i32` | — |
+| `safety_peak_in` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_peak_in_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_true_peak_in` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_true_peak_in_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_peak_out` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_peak_out_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_true_peak_out` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_true_peak_out_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_rms_in` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_rms_in_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_rms_out` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_rms_out_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_gain_reduction_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_max_gain_reduction_db` | `(c: ptr<SafetyChain>) -> f32` | — |
+| `safety_clamp_count` | `(c: ptr<SafetyChain>) -> i64` | — |
+| `safety_nan_count` | `(c: ptr<SafetyChain>) -> i64` | — |
+| `safety_muted` | `(c: ptr<SafetyChain>) -> bool` | — |
+| `safety_ok` | `(c: ptr<SafetyChain>) -> bool` | True when the render came out clean: nothing over the ceiling, no NaN, and the hard clamp never had to save us. |
+| `safety_report` | `(c: ptr<SafetyChain>) -> void` | — |
 
 ### `audio/scales.flow`
 
@@ -694,6 +782,31 @@ Audio SIMD Helpers  Portable loops live here; the always-linked Flow runtime mod
 | `audio_mix_interleaved_f32_fast` | `(dst: ptr<f32>, src: ptr<f32>, frames: i32, channels: i32) -> void` | — |
 | `audio_copy_interleaved_f32_fast` | `(dst: ptr<f32>, src: ptr<f32>, frames: i32, channels: i32) -> void` | — |
 
+### `audio/sink.flow`
+
+Audio Sink: one output target, device or file  Every audio example writes through a sink instead of talking to the device
+
+**Structs:** `AudioSink`
+
+**Constants:**
+
+- `SINK_DEVICE: i32`
+- `SINK_WAV: i32`
+- `SINK_SILENT: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `sink_open` | `(rate: i32, channels: i32, block: i32) -> AudioSink` | Open the sink the environment asks for. |
+| `sink_write` | `(s: ptr<AudioSink>, data: ptr<f32>, frames: i32) -> i32` | Write interleaved f32 frames. Returns frames accepted. |
+| `sink_close` | `(s: ptr<AudioSink>) -> i64` | — |
+| `sink_mode` | `(s: ptr<AudioSink>) -> i32` | — |
+| `sink_is_offline` | `(s: ptr<AudioSink>) -> bool` | — |
+| `sink_frames` | `(s: ptr<AudioSink>) -> i64` | — |
+| `sink_is_render` | `() -> bool` | True when this run wrote a WAV, so the example can read it back and check it. Survives sink_close, which is when the file is finished and readable. |
+| `sink_render_path` | `() -> string` | Path of the WAV this run wrote. Empty string when nothing was written. |
+
 ### `audio/synth.flow`
 
 Synth Presets Module - Ready-to-Use Instruments  Pre-configured synthesizers that sound good out of the box.
@@ -714,11 +827,73 @@ Synth Presets Module - Ready-to-Use Instruments  Pre-configured synthesizers tha
 | `synth_brass` | `() -> Synth` | Brass synth - punchy and bright |
 | `synth_tick` | `(synth: Synth, freq: f32, gate: bool) -> f32` | Generate one sample from the synth |
 
+### `audio/verify.flow`
+
+Offline render verification: how CI listens to audio without a sound card.  Every audio example can render to a WAV instead of opening a device
+
+**Structs:** `VerifyReport`, `VerifySpec`
+
+**Constants:**
+
+- `VERIFY_MAX_BINS: i32`
+- `VERIFY_BLOCK: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `verify_bank_clear` | `() -> void` | Goertzel bank |
+| `verify_bank_add` | `(hz: f64) -> i32` | Append one analysis frequency. Returns its bin index, or -1 when full. |
+| `verify_bank_count` | `() -> i32` | — |
+| `verify_bank_freq` | `(i: i32) -> f64` | — |
+| `verify_bank_tone` | `(expect_hz: f64, rate_hz: f64) -> i32` | Bin 0 is `expect_hz`; the rest is a semitone ladder that avoids it. |
+| `verify_bank_power` | `(i: i32) -> f64` | Goertzel magnitude squared for one bin. |
+| `verify_report_bad` | `() -> VerifyReport` | — |
+| `verify_wav` | `(path: string, edge_frames: i32) -> VerifyReport` | Stream the whole file once and measure everything. `edge_frames` is the head/tail window used for the fade check. Call verify_bank_tone first if a tone check is wanted; pass expect_hz <= 0 through verify_run to skip it. |
+| `verify_spec` | `(seconds: f64, ceiling_db: f32, expect_hz: f64) -> VerifySpec` | The usual spec: 48 kHz stereo, the safety chain's own ceiling and fade length, duration matched to 10 ms. Pass expect_hz <= 0 for material with no single pitch. |
+| `verify_spec_rate` | `(spec: VerifySpec, rate: i32, channels: i32) -> VerifySpec` | — |
+| `verify_spec_tolerance` | `(spec: VerifySpec, tol_seconds: f64) -> VerifySpec` | — |
+| `verify_spec_fade` | `(spec: VerifySpec, fade_ms: f64) -> VerifySpec` | Only needed when the example overrode the safety chain's fade length. |
+| `verify_run` | `(path: string, spec: VerifySpec) -> bool` | Read the render back and check it against the spec. Prints one line per check and returns true only if every line passed. This is the call an example gates its exit code on. |
+
+### `audio/wav.flow`
+
+WAV File I/O (32-bit IEEE float PCM)  Offline render target for the audio examples: everything that can play to a
+
+**Structs:** `WavInfo`
+
+**Constants:**
+
+- `WAV_SEEK_SET: i32`
+- `WAV_HEADER_BYTES: i64`
+- `WAV_STAGE_FRAMES: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `wav_write_open` | `(path: string, rate: i32, channels: i32) -> bool` | Open a WAV file for writing. Returns false if the path cannot be created or another file is already open. |
+| `wav_write_frames` | `(data: ptr<f32>, frames: i32) -> i32` | Append interleaved f32 frames. Returns frames written. |
+| `wav_write_frame` | `(fr: Frame) -> i32` | Append one interleaved frame from a stereo Frame (channels must be 2). |
+| `wav_write_close` | `() -> i64` | Patch the RIFF/data sizes and close. Returns frames written. |
+| `wav_write_is_open` | `() -> bool` | — |
+| `wav_write_frame_count` | `() -> i64` | — |
+| `wav_info_bad` | `() -> WavInfo` | — |
+| `wav_info_duration` | `(info: WavInfo) -> f64` | — |
+| `wav_read_open` | `(path: string) -> WavInfo` | Open a canonical 44-byte-header WAV for streaming reads. Only the layout this module writes is accepted (float32, one "data" chunk at offset 36). |
+| `wav_read_frames` | `(dst: ptr<f32>, frames: i32) -> i32` | Read up to `frames` interleaved f32 frames into `dst`. Returns frames read (0 at end of file). |
+| `wav_read_close` | `() -> void` | — |
+| `wav_read_is_open` | `() -> bool` | — |
+
 ### `audio.flow`
 
 Audio Module - Core Types and Operations  Real-time audio processing primitives with proper DSP nomenclature.
 
 **Structs:** `SampleRate`, `Samples`, `Seconds`, `Frame`, `Layout`, `Buffer`, `AudioBufferF32`
+
+**Constants:**
+
+- `DB_SILENCE: f32`
 
 **Functions:**
 
@@ -759,9 +934,10 @@ Audio Module - Core Types and Operations  Real-time audio processing primitives 
 | `buffer_mono` | `(frames: i32) -> Buffer` | Create a mono buffer |
 | `buffer_sample_count` | `(buf: Buffer) -> i32` | Get total sample count (frames * channels) |
 | `buffer_duration` | `(buf: Buffer, rate: SampleRate) -> Seconds` | Get buffer duration in seconds |
-| `linear_to_db` | `(linear: f32) -> f32` | Convert linear amplitude to decibels 1.0 -> 0dB, 0.5 -> -6dB, 0.0 -> -infinity (clamped to -96dB) |
-| `db_to_linear` | `(db: f32) -> f32` | Convert decibels to linear amplitude 0dB -> 1.0, -6dB -> 0.5, -96dB -> ~0.0 |
-| `midi_to_freq` | `(note: i32) -> f32` | MIDI note to frequency (A4 = 69 = 440Hz) |
+| `linear_to_db` | `(linear: f32) -> f32` | Convert linear amplitude to decibels: 20 * log10(linear). 1.0 -> 0 dB, 0.5 -> -6.02 dB, 0.0 (or negative) -> DB_SILENCE. |
+| `db_to_linear` | `(db: f32) -> f32` | Convert decibels to linear amplitude: 10^(db/20). 0 dB -> 1.0, -6.02 dB -> 0.5, <= -96 dB -> 0.0 |
+| `midi_to_freq` | `(note: i32) -> f32` | MIDI note to frequency (A4 = 69 = 440Hz): f = 440 * 2^((note - 69) / 12) Exact via powf; the old repeated-multiply version drifted by ~2.4e-4 relative over four octaves and only handled whole semitones. |
+| `midi_to_freq_f` | `(note: f32) -> f32` | MIDI note to frequency with a fractional (pitch-bent / detuned) note number. |
 | `freq_to_period_samples` | `(freq: f32, rate: SampleRate) -> f32` | Frequency to period in samples |
 | `clip` | `(sample: f32) -> f32` | Hard clip a sample to [-1.0, 1.0] |
 | `soft_clip` | `(sample: f32) -> f32` | Soft clip using tanh-like curve (warmer saturation) |
@@ -1092,6 +1268,124 @@ Flow Dynamical Systems Standard Library  Declarative DSL via structs (no new key
 
 *No `export` items found (internal / extern-only module).*
 
+### `experiment.flow`
+
+experiment: running behavioural and psychophysical experiments in Flow.  The case for compiling an experiment rather than interpreting it is narrow
+
+**Structs:** `XpOnset`, `XpResponse`
+
+**Constants:**
+
+- `XP_KEY_A: i32`
+- `XP_KEY_S: i32`
+- `XP_KEY_D: i32`
+- `XP_KEY_F: i32`
+- `XP_KEY_Z: i32`
+- `XP_KEY_X: i32`
+- `XP_KEY_C: i32`
+- `XP_KEY_V: i32`
+- `XP_KEY_B: i32`
+- `XP_KEY_1: i32`
+- `XP_KEY_2: i32`
+- `XP_KEY_3: i32`
+- `XP_KEY_4: i32`
+- `XP_KEY_J: i32`
+- `XP_KEY_K: i32`
+- `XP_KEY_L: i32`
+- `XP_KEY_M: i32`
+- `XP_KEY_N: i32`
+- `XP_KEY_RETURN: i32`
+- `XP_KEY_SPACE: i32`
+- `XP_FIXATION: i32`
+- `XP_STIMULUS: i32`
+- `XP_FEEDBACK: i32`
+- `XP_DONE: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `xp_now_ns` | `() -> i64` | Nanoseconds on the monotonic clock. Never goes backwards, unaffected by NTP steps or the user changing the system time mid-session. |
+| `xp_ms_to_ns` | `(ms: f64) -> i64` | — |
+| `xp_ns_to_ms` | `(ns: i64) -> f64` | — |
+| `xp_ns_to_us` | `(ns: i64) -> f64` | — |
+| `xp_clock_resolution_ns` | `(samples: i32) -> i64` | Smallest nonzero clock increment observed over `samples` back-to-back reads. This is the floor on reaction-time resolution: an RT cannot be reported finer than the clock can tick. |
+| `xp_refresh_set` | `(hz: f64) -> void` | Nominal display refresh, used by xp_align_to_frame. This is what the display is *told* to be; nothing here verifies it against the panel. |
+| `xp_refresh_hz_get` | `() -> f64` | — |
+| `xp_frame_ns` | `() -> i64` | — |
+| `xp_epoch_mark` | `() -> i64` | Start of the frame grid. Call once, after the window is up. |
+| `xp_align_to_frame` | `(t_ns: i64) -> i64` | Round a target time up to the next nominal refresh boundary. Without a vsync callback this is a grid, not a guarantee; see the honesty section of docs/library/experiments.md. |
+| `xp_onset_reset` | `() -> void` | — |
+| `xp_onset_n` | `() -> i32` | — |
+| `xp_onset_mean_us` | `() -> f64` | — |
+| `xp_onset_sd_us` | `() -> f64` | — |
+| `xp_onset_worst_us` | `() -> f64` | Worst absolute onset error seen since the last reset. This is the number a reviewer should be shown, not the mean. |
+| `xp_onset_last_us` | `() -> f64` | — |
+| `xp_wait_until` | `(target_ns: i64) -> i64` | Sleep coarsely, then spin, until the monotonic clock reaches target_ns. Handing the last two milliseconds to a spin loop is the whole trick: the scheduler will not wake a thread to better than about a millisecond, and a millisecond is six percent of a 60 Hz frame. |
+| `xp_present_at` | `(target_ns: i64) -> XpOnset` | Wait for the target instant and count the miss against the onset statistics. Call this immediately before drawing, so the returned error is the onset error of the frame you are about to present. Use xp_wait_until instead for waits that are not stimulus onsets (frame pacing, inter-block pauses), so |
+| `xp_seed` | `(seed: u32) -> u32` | — |
+| `xp_seed_of_record` | `() -> u32` | The seed that was actually installed. Log it with the data; an experiment whose randomisation cannot be regenerated is not reproducible. |
+| `xp_rand` | `() -> f64` | — |
+| `xp_rand_int` | `(n: i32) -> i32` | — |
+| `xp_rand_normal` | `() -> f64` | — |
+| `xp_rand_exp` | `(mean: f64) -> f64` | — |
+| `xp_ex_gaussian` | `(mu: f64, sigma: f64, tau: f64) -> f64` | Ex-Gaussian reaction time: Gaussian(mu, sigma) plus Exponential(tau). This is the standard descriptive RT distribution (Ratcliff 1979); tau supplies the right tail that a plain Gaussian cannot. |
+| `xp_design_reset` | `() -> void` | — |
+| `xp_factor` | `(levels: i32) -> i32` | Add a factor with `levels` levels. Returns its index, or -1 if the design is already full. Level codes are 0 .. levels-1 throughout. |
+| `xp_nfactors` | `() -> i32` | — |
+| `xp_nlevels` | `(factor: i32) -> i32` | — |
+| `xp_design_build` | `(reps: i32) -> i32` | Cross every factor with every other, `reps` times. Trials come out in systematic order; call xp_shuffle to randomise. Returns the trial count, or -1 if the design does not fit. |
+| `xp_ntrials` | `() -> i32` | — |
+| `xp_ncells` | `() -> i32` | — |
+| `xp_level` | `(pos: i32, factor: i32) -> i32` | Level of `factor` on the trial presented at position `pos`. |
+| `xp_cell` | `(pos: i32) -> i32` | Cell index (the position in the systematic cross) of the trial at `pos`. |
+| `xp_blocks` | `(n: i32) -> bool` | Split the trial list into n equal blocks. Returns false if the trial count does not divide evenly, because a ragged last block quietly unbalances a design and that should be an error, not a rounding. |
+| `xp_nblocks_get` | `() -> i32` | — |
+| `xp_block_of` | `(pos: i32) -> i32` | — |
+| `xp_practice` | `(n: i32) -> void` | Mark the first n positions as practice. They are presented and logged like any other trial; the analysis is expected to drop them. |
+| `xp_is_practice` | `(pos: i32) -> bool` | — |
+| `xp_npractice_get` | `() -> i32` | — |
+| `xp_shuffle` | `(seed: u32) -> u32` | Fisher-Yates over the whole presentation order. The seed is stored and returned so it can go in the data file and regenerate the exact sequence. |
+| `xp_shuffle_within_blocks` | `(seed: u32) -> u32` | Shuffle within each block, so the block structure survives randomisation. |
+| `xp_shuffle_seed_get` | `() -> u32` | — |
+| `xp_latin` | `(n: i32, row: i32, pos: i32) -> i32` | Balanced Latin square (Williams design): condition to run at position `pos` for the participant in row `row`, with `n` conditions. Every condition appears once per row and once per column, and for even n every ordered pair of conditions is immediately adjacent exactly once, which |
+| `xp_latin_balanced` | `(n: i32) -> bool` | — |
+| `xp_response_miss` | `(timeout_ms: f64, onset_err_us: f64) -> XpResponse` | — |
+| `xp_response_make` | `(key: i32, rt_ms: f64, expected: i32,
+                                 onset_err_us: f64) -> XpResponse` | — |
+| `xp_isi_ns` | `(min_ms: f64, jitter_ms: f64) -> i64` | Fixation duration is jittered so the participant cannot use a rhythm to predict onset, which is the single most common way an RT effect leaks away. |
+| `xp_trial_begin` | `(fix_ms: f64, jitter_ms: f64, timeout_ms: f64,
+                               feedback_ms: f64, expected: i32) -> void` | — |
+| `xp_trial_state` | `() -> i32` | — |
+| `xp_trial_onset_ns` | `() -> i64` | — |
+| `xp_trial_result` | `() -> XpResponse` | — |
+| `xp_trial_poll` | `(g: Gfx, k0: i32, k1: i32, k2: i32, k3: i32) -> i32` | Call once per frame, after gfx_poll and before drawing. Returns the state to draw. The stimulus onset time is stamped on the first frame in which the state is XP_STIMULUS, which is the frame the caller then draws and presents; the residual is the present-to-photon latency, which software |
+| `xp_response_sim` | `(onset: XpOnset, key: i32, rt_ms: f64,
+                                expected: i32, timeout_ms: f64) -> XpResponse` | Simulated participant. The presentation wait is real, so onset_err_us is a real measurement of this machine; the key and the RT come from the caller's responder model. Nothing here pretends a finger was involved. |
+| `xp_fmt_reset` | `() -> void` | — |
+| `xp_fmt_str` | `(s: string) -> void` | — |
+| `xp_fmt_i32` | `(v: i32) -> void` | — |
+| `xp_fmt_f64` | `(v: f64, decimals: i32) -> void` | Fixed-point, `decimals` places, round-half-up with carry. Written out here rather than handed to printf so a CSV row is byte-identical everywhere. |
+| `xp_fmt_len` | `() -> i32` | — |
+| `xp_mkdir_for` | `(dir: string) -> bool` | Create the directory a path lives in, walking each `/`-separated prefix so it behaves like `mkdir -p`. An existing directory is success, not an error. This calls mkdir(2) rather than shelling out: the transpiler emits a prototype for every extern, and a `system` prototype collides with the one |
+| `xp_log_open` | `(path: string) -> bool` | Open the data file and write the header. Column set is fixed so that a reader never has to guess: unused factor columns hold -1. subject,block,trial,practice,f0,f1,f2,f3,response,rt_ms,correct,onset_err_us |
+| `xp_log_is_open` | `() -> bool` | — |
+| `xp_log_row` | `(subject: i32, pos: i32, resp: XpResponse) -> bool` | Write one trial. `pos` is the presentation position, so the factor levels and the block come from the design rather than from the caller restating them. |
+| `xp_log_rows` | `() -> i32` | — |
+| `xp_log_close` | `() -> void` | — |
+| `xp_timing_write` | `(path: string, label: string) -> bool` | Write the timing report. Kept out of stdout on purpose: these numbers are a property of the machine and the run, and stdout has to stay byte-identical for the CI gate. Returns false if the file could not be written. |
+| `xp_fixation` | `(g: Gfx, cx: i32, cy: i32, arm: i32, thick: i32,
+                            r: i32, gr: i32, b: i32) -> void` | A fixation cross: two bars, centred, drawn in one call so every paradigm gets the same one. |
+| `xp_center_text` | `(g: Gfx, cx: i32, y: i32, s: string, scale: i32,
+                               r: i32, gr: i32, b: i32) -> void` | — |
+| `xp_instruction_panel` | `(g: Gfx, w: i32, h: i32, title: string) -> void` | Instruction screen scaffolding: a panel, a title, then numbered lines the caller adds with xp_instruction_line. |
+| `xp_instruction_line` | `(g: Gfx, x: i32, y: i32, s: string,
+                                    r: i32, gr: i32, b: i32) -> void` | — |
+| `xp_progress` | `(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                            done: i32, total: i32) -> void` | Progress bar over the block: filled fraction is trials done over total. |
+| `xp_feedback_bar` | `(g: Gfx, cx: i32, y: i32, w: i32, h: i32,
+                                resp: XpResponse) -> void` | Correct / incorrect / too-slow feedback, as a coloured bar under fixation. |
+
 ### `font.flow`
 
 Bitmap font: 5x7 glyphs for printable ASCII (32..126).  Renderer-agnostic on purpose. This module only answers "which pixels are lit
@@ -1123,6 +1417,7 @@ gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runti
 | `gfx_key_down` | `(g: Gfx, keycode: i32) -> bool` | — |
 | `gfx_clear` | `(g: Gfx, r: i32, g2: i32, b: i32) -> void` | — |
 | `gfx_fill_rect` | `(g: Gfx, x: i32, y: i32, w: i32, h: i32, r: i32, g2: i32, b: i32) -> void` | — |
+| `gfx_blit_rgb` | `(g: Gfx, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>) -> void` | Blit a packed RGB8 buffer (w*h*3 bytes, row-major) at (x, y). Per-pixel fields — particle sands, software rasterizers, image filters — should build a buffer and blit it once per frame. A fill_rect per pixel is tens of thousands of calls a frame and will not keep up. |
 | `gfx_present` | `(g: Gfx) -> void` | — |
 | `gfx_frame_pump` | `(g: Gfx) -> bool` | Poll events; return false if the window should close or Esc is down. |
 | `gfx_run` | `(g: Gfx, max_frames: i32) -> i32` | Run up to max_frames, calling user-defined flow_gfx_frame(ctx, frame) each tick. Returns the number of frames completed. Requires linking the gfx runtime. |
@@ -1257,7 +1552,7 @@ Math Module - Exported functions and constants This module demonstrates FLOW's e
 
 Manual memory management — real libc heap (C backend)  Flow has no GC. Heap memory is yours to allocate and free.
 
-**Structs:** `Arena`
+**Structs:** `Arena`, `FrameArena`
 
 **Functions:**
 
@@ -1291,6 +1586,18 @@ Manual memory management — real libc heap (C backend)  Flow has no GC. Heap me
 | `arena_destroy` | `(arena: ptr<Arena>) -> void` | — |
 | `arena_used` | `(arena: Arena) -> i64` | — |
 | `arena_remaining` | `(arena: Arena) -> i64` | — |
+| `frame_arena_create` | `(capacity: i64) -> FrameArena` | — |
+| `frame_arena_destroy` | `(f: ptr<FrameArena>) -> void` | — |
+| `frame_begin` | `(f: ptr<FrameArena>) -> void` | Reset the frame. This is the whole deallocation. |
+| `frame_alloc` | `(f: ptr<FrameArena>, size: i64) -> ptr<void>` | — |
+| `frame_alloc_i32` | `(f: ptr<FrameArena>, count: i64) -> ptr<i32>` | — |
+| `frame_alloc_f32` | `(f: ptr<FrameArena>, count: i64) -> ptr<f32>` | — |
+| `frame_alloc_f64` | `(f: ptr<FrameArena>, count: i64) -> ptr<f64>` | — |
+| `frame_end` | `(f: ptr<FrameArena>) -> void` | Close the frame: record the high-water mark so a fixed capacity can be sized from a real run, and count the frame. |
+| `frame_used` | `(f: FrameArena) -> i64` | — |
+| `frame_remaining` | `(f: FrameArena) -> i64` | — |
+| `frame_high_water` | `(f: FrameArena) -> i64` | — |
+| `frame_count` | `(f: FrameArena) -> i64` | — |
 
 ### `memory_simple.flow`
 
@@ -1488,6 +1795,72 @@ Process / host-command helpers Runtime: flow_run_cmd / flow_have_cmd in runtime/
 | `env_is` | `(name: string, want: string) -> bool` | — |
 | `str_eq` | `(a: string, b: string) -> bool` | — |
 
+### `psychstats.flow`
+
+psychstats: the analysis half of Flow's behavioural-experiment support.  Everything a reaction-time or psychophysics paper reports, computed in Flow
+
+**Structs:** `PsTTest`, `PsAnovaTerm`, `PsAnova2`, `PsTrim`, `PsLogNormal`, `PsFit`, `PsBootCI`, `PsSdt`
+
+**Constants:**
+
+- `PS_LOGISTIC: i32`
+- `PS_WEIBULL: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `ps_seed` | `(seed: u32) -> u32` | — |
+| `ps_seed_of_record` | `() -> u32` | The seed the last ps_seed call actually installed. Log it beside the data. |
+| `ps_rand` | `() -> f64` | Uniform f64 in [0, 1). |
+| `ps_rand_int` | `(n: i32) -> i32` | Uniform integer in [0, n). n <= 0 returns 0. |
+| `ps_rand_normal` | `() -> f64` | — |
+| `ps_rand_binomial` | `(m: i32, p: f64) -> i32` | Number of successes in m Bernoulli(p) draws. m is a trial count, so the direct loop is both exact and cheap. |
+| `ps_sum` | `(x: ptr<f64>, n: i32) -> f64` | Descriptives |
+| `ps_mean` | `(x: ptr<f64>, n: i32) -> f64` | — |
+| `ps_var` | `(x: ptr<f64>, n: i32) -> f64` | Sample variance, denominator n - 1. |
+| `ps_sd` | `(x: ptr<f64>, n: i32) -> f64` | — |
+| `ps_sem` | `(x: ptr<f64>, n: i32) -> f64` | — |
+| `ps_min` | `(x: ptr<f64>, n: i32) -> f64` | — |
+| `ps_max` | `(x: ptr<f64>, n: i32) -> f64` | — |
+| `ps_sort_into` | `(src: ptr<f64>, n: i32, dst: ptr<f64>) -> void` | Insertion sort of src[0..n) into dst. dst may alias nothing in src. |
+| `ps_quantile` | `(x: ptr<f64>, n: i32, q: f64) -> f64` | Linear-interpolation quantile on the sorted sample (numpy's default, method="linear"): position q*(n-1) in the order statistics. |
+| `ps_median` | `(x: ptr<f64>, n: i32) -> f64` | — |
+| `ps_gammp` | `(a: f64, x: f64) -> f64` | Regularized lower incomplete gamma P(a, x). |
+| `ps_norm_cdf` | `(z: f64) -> f64` | Standard normal CDF. Phi(z) = 0.5 * (1 + sign(z) * P(1/2, z^2/2)). |
+| `ps_norm_pdf` | `(z: f64) -> f64` | — |
+| `ps_norm_inv` | `(p: f64) -> f64` | Standard normal quantile. Wichura, "Algorithm AS 241: The percentage points of the normal distribution", Applied Statistics 37:477-484 (1988), PPND16 branch. Maximum absolute error about 1e-16 for p in (0, 1). |
+| `ps_betai` | `(a: f64, b: f64, x: f64) -> f64` | Regularized incomplete beta I_x(a, b). |
+| `ps_t_p2` | `(t: f64, df: f64) -> f64` | Two-tailed p for Student's t with df degrees of freedom. |
+| `ps_t_cdf` | `(t: f64, df: f64) -> f64` | CDF of Student's t. |
+| `ps_f_sf` | `(f: f64, df1: f64, df2: f64) -> f64` | Upper tail of the F distribution, i.e. the ANOVA p-value. |
+| `ps_ttest_paired` | `(x: ptr<f64>, y: ptr<f64>, n: i32) -> PsTTest` | Paired (within-subject) t-test on x - y. Cohen's d here is d_z = mean(diff) / sd(diff), the effect size that matches the paired test statistic (t = d_z * sqrt(n)). Report it as d_z, not as the between-subject d; the two differ whenever the pair correlation is not zero. |
+| `ps_ttest_ind` | `(x: ptr<f64>, nx: i32, y: ptr<f64>, ny: i32) -> PsTTest` | Independent-samples t-test, equal variances assumed (Student's). Cohen's d is the pooled-SD version, (m1 - m2) / s_pooled. |
+| `ps_anova_rm1` | `(data: ptr<f64>, n_subj: i32, k: i32) -> PsAnovaTerm` | One-way repeated-measures ANOVA. data is n_subj rows of k condition means, row-major: data[s * k + c]. Error term is the subject x condition interaction. |
+| `ps_anova_rm2` | `(data: ptr<f64>, n_subj: i32, na: i32, nb: i32) -> PsAnova2` | Two-way repeated-measures ANOVA, both factors within subject. data is n_subj rows of (na * nb) cell means, row-major within a row: data[s * na * nb + ia * nb + ib]. Each effect gets its own subject-interaction error term, which is the |
+| `ps_perm_paired` | `(x: ptr<f64>, y: ptr<f64>, n: i32, iters: i32, seed: u32) -> f64` | Sign-flip permutation test on paired data. Two-tailed p on the mean difference, with the observed arrangement included in the count: p = (1 + #{\|mean*\| >= \|mean_obs\|}) / (1 + iters) which keeps p strictly positive (Phipson & Smyth 2010). |
+| `ps_perm_ind` | `(x: ptr<f64>, nx: i32, y: ptr<f64>, ny: i32,
+                            iters: i32, seed: u32) -> f64` | Label-shuffling permutation test for two independent groups. |
+| `ps_trim_sd` | `(x: ptr<f64>, n: i32, k: f64, out: ptr<f64>) -> PsTrim` | Drop trials more than k SDs from the mean; write survivors to out. The cut is computed once from the full sample (no iteration), which is what "2.5 SD trimming" means in the RT literature and what a reader will assume. |
+| `ps_trim_abs` | `(x: ptr<f64>, n: i32, lo: f64, hi: f64, out: ptr<f64>) -> PsTrim` | Drop trials outside an absolute window, the usual 200 ms / 2000 ms cut. |
+| `ps_ies` | `(mean_rt: f64, accuracy: f64) -> f64` | Inverse efficiency score: mean correct RT divided by proportion correct (Townsend & Ashby 1983). Undefined at zero accuracy; returns 0 there. |
+| `ps_lognormal_fit` | `(x: ptr<f64>, n: i32) -> PsLogNormal` | Maximum-likelihood log-normal fit. For the log-normal the MLE is exactly the mean and (population) SD of the logs, so no search is needed. |
+| `ps_psy_p` | `(kind: i32, s: f64, alpha: f64, beta: f64,
+                         gamma: f64, lambda: f64) -> f64` | Predicted proportion correct at stimulus level s. logistic: gamma + (1 - gamma - lambda) / (1 + exp(-(s - alpha) / beta)) Weibull:  gamma + (1 - gamma - lambda) * (1 - exp(-(s / alpha)^beta)) alpha is the threshold parameter, beta the width (logistic) or shape |
+| `ps_fit` | `(kind: i32, s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                       gamma: f64, lambda: f64) -> PsFit` | Maximum-likelihood fit of a psychometric function to binomial counts. s[i]  stimulus level of block i k[i]  number correct at that level m[i]  number of trials at that level |
+| `ps_fit_logistic` | `(s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                                gamma: f64, lambda: f64) -> PsFit` | — |
+| `ps_fit_weibull` | `(s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                               gamma: f64, lambda: f64) -> PsFit` | — |
+| `ps_fit_boot_ci` | `(kind: i32, s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                               gamma: f64, lambda: f64,
+                               iters: i32, level: f64, seed: u32) -> PsBootCI` | Parametric bootstrap CI on the threshold: resample each level's correct count from Binomial(m[i], p_hat(s[i])) at the fitted parameters, refit, and take the empirical percentile interval. `level` is the two-sided coverage, so 0.95 gives the 2.5th and 97.5th percentiles. |
+| `ps_sdt` | `(hits: i32, misses: i32, fas: i32, crs: i32) -> PsSdt` | d-prime and criterion from a 2x2 confusion table. Rates of exactly 0 or 1 make z infinite, so the log-linear correction of Hautus (1995) is applied to the whole table when that happens: add 0.5 to every cell and 1 to both totals. `corrected` says whether it fired. |
+| `ps_auc` | `(signal: ptr<f64>, n1: i32, noise: ptr<f64>, n2: i32) -> f64` | Area under the ROC by the Mann-Whitney statistic: the probability that a random signal trial outranks a random noise trial, ties counting a half. Exact, and O(n1 * n2), which is nothing at experiment sizes. |
+| `ps_auc_from_dprime` | `(d: f64) -> f64` | The equal-variance Gaussian relationship between d-prime and ROC area. |
+| `ps_dprime_from_auc` | `(a: f64) -> f64` | — |
+
 ### `python_embed.flow`
 
 Minimal Python embedding interface (extern-backed)
@@ -1522,6 +1895,102 @@ Minimal Python embedding interface (extern-backed)
 | `python_call_f32` | `(ctx: PythonContext, fn_name: string, arg: f32) -> PythonContext` | — |
 | `python_call_bool` | `(ctx: PythonContext, fn_name: string, arg: bool) -> PythonContext` | — |
 | `python_end` | `() -> void` | — |
+
+### `render3d.flow`
+
+render3d: a software 3D renderer written in Flow.  Everything below runs on the CPU. There is no GPU, no driver, and no shader
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `r3d_clampf` | `(v: f32, lo: f32, hi: f32) -> f32` | Scalar helpers |
+| `r3d_minf` | `(a: f32, b: f32) -> f32` | — |
+| `r3d_maxf` | `(a: f32, b: f32) -> f32` | — |
+| `r3d_lerpf` | `(a: f32, b: f32, t: f32) -> f32` | — |
+| `r3d_radians` | `(deg: f32) -> f32` | — |
+| `v3` | `(x: f32, y: f32, z: f32) -> V3` | Vector math |
+| `v3_add` | `(a: V3, b: V3) -> V3` | — |
+| `v3_sub` | `(a: V3, b: V3) -> V3` | — |
+| `v3_mul` | `(a: V3, b: V3) -> V3` | — |
+| `v3_scale` | `(a: V3, s: f32) -> V3` | — |
+| `v3_neg` | `(a: V3) -> V3` | — |
+| `v3_dot` | `(a: V3, b: V3) -> f32` | — |
+| `v3_cross` | `(a: V3, b: V3) -> V3` | — |
+| `v3_len` | `(a: V3) -> f32` | — |
+| `v3_len2` | `(a: V3) -> f32` | — |
+| `v3_dist` | `(a: V3, b: V3) -> f32` | — |
+| `v3_norm` | `(a: V3) -> V3` | Zero-length input returns (0, 0, 0) rather than a NaN. |
+| `v3_lerp` | `(a: V3, b: V3, t: f32) -> V3` | — |
+| `v3_face_normal` | `(a: V3, b: V3, c: V3) -> V3` | Normal of the triangle a-b-c under counter-clockwise winding. |
+| `m4_identity` | `(out: ptr<f32>) -> void` | 4x4 matrices, row-major, applied to column vectors |
+| `m4_translation` | `(out: ptr<f32>, x: f32, y: f32, z: f32) -> void` | — |
+| `m4_scaling` | `(out: ptr<f32>, sx: f32, sy: f32, sz: f32) -> void` | — |
+| `m4_rotation_x` | `(out: ptr<f32>, a: f32) -> void` | — |
+| `m4_rotation_y` | `(out: ptr<f32>, a: f32) -> void` | — |
+| `m4_rotation_z` | `(out: ptr<f32>, a: f32) -> void` | — |
+| `m4_mul` | `(out: ptr<f32>, a: &[f32], b: &[f32]) -> void` | out = a * b. `out` must not alias `a` or `b`. |
+| `m4_copy` | `(out: ptr<f32>, src: &[f32]) -> void` | — |
+| `m4_perspective` | `(out: ptr<f32>, fovy: f32, aspect: f32,
+                               znear: f32, zfar: f32) -> void` | OpenGL-style perspective. fovy is the vertical field of view in radians. clip.w comes out equal to the view-space distance in front of the eye. |
+| `m4_look_at` | `(out: ptr<f32>, eye: V3, target: V3, up: V3) -> void` | Right-handed look-at. `up` need not be perpendicular to the view direction. |
+| `m4_point` | `(m: &[f32], p: V3) -> V3` | Transform a position (w = 1) and drop the resulting w. |
+| `m4_dir` | `(m: &[f32], d: V3) -> V3` | Transform a direction (w = 0): the translation column is ignored. |
+| `m4_pointw` | `(m: &[f32], p: V3) -> f32` | The w component of m * (p, 1); needed on its own for clip-space work. |
+| `r3d_set_ambient` | `(a: f32) -> void` | Lighting |
+| `r3d_ambient_level` | `() -> f32` | — |
+| `r3d_lambert` | `(base: V3, normal: V3, to_light: V3) -> V3` | Lambert against a directional light. `to_light` points from the surface towards the light and is normalized here. The ambient term keeps unlit faces visible instead of black. |
+| `r3d_set_fog` | `(on: bool, col: V3, start: f32, stop: f32) -> void` | Fog |
+| `r3d_apply_fog` | `(col: V3, view_depth: f32) -> V3` | Linear fog on view depth. Returns the colour unchanged when fog is off. |
+| `r3d_init` | `(w: i32, h: i32) -> bool` | Allocate every buffer once. Returns false if the resolution exceeds the fixed maximums or if any allocation fails. |
+| `r3d_width` | `() -> i32` | — |
+| `r3d_height` | `() -> i32` | — |
+| `r3d_aspect` | `() -> f32` | — |
+| `r3d_pixels` | `() -> ptr<u8>` | — |
+| `r3d_set_cull` | `(mode: i32) -> void` | — |
+| `r3d_set_near` | `(w: f32) -> void` | — |
+| `r3d_clear` | `(col: V3) -> void` | Clear colour and depth, and reset the per-frame counters. |
+| `r3d_clear_gradient` | `(top: V3, bottom: V3) -> void` | A vertical gradient background, cleared depth included. Cheaper than a sky mesh and it makes the horizon readable in the outdoor demos. |
+| `r3d_put` | `(x: i32, y: i32, col: V3) -> void` | Write one pixel with no depth test. |
+| `r3d_put_depth` | `(x: i32, y: i32, z: f32, col: V3) -> void` | Write one pixel if it passes and updates the depth test. |
+| `r3d_depth_at` | `(x: i32, y: i32) -> f32` | Read the depth buffer, for tests and for depth-aware effects. |
+| `r3d_present` | `(g: Gfx) -> void` | Blit the colour buffer into the window in one call. |
+| `r3d_tris_submitted` | `() -> i32` | Statistics and timing |
+| `r3d_tris_drawn` | `() -> i32` | — |
+| `r3d_tris_clipped` | `() -> i32` | — |
+| `r3d_tris_culled` | `() -> i32` | — |
+| `r3d_pixels_shaded` | `() -> i32` | — |
+| `r3d_tick` | `() -> void` | Call once per frame. Measures process CPU time between calls and keeps an exponential moving average, so the HUD number is the cost of the frame on the machine that is running it rather than a nominal target. |
+| `r3d_fps` | `() -> f32` | — |
+| `r3d_frame_ms` | `() -> f32` | — |
+| `r3d_mesh_reset` | `() -> void` | Mesh building |
+| `r3d_mesh_verts` | `() -> i32` | — |
+| `r3d_mesh_tris` | `() -> i32` | — |
+| `r3d_mesh_vertex` | `(p: V3, n: V3, c: V3) -> i32` | Append a vertex. Returns its index, or -1 when the capacity is exhausted. |
+| `r3d_mesh_tri` | `(i0: i32, i1: i32, i2: i32) -> bool` | Append a triangle by vertex index. Counter-clockwise is front-facing. |
+| `r3d_mesh_quad` | `(a: V3, b: V3, c: V3, d: V3, col: V3) -> void` | A flat quad a-b-c-d, wound counter-clockwise, with one shared normal. |
+| `r3d_mesh_box` | `(centre: V3, half: V3, col: V3) -> void` | An axis-aligned box given its centre and half-extents. Six quads, each with its own normal, so the faces shade separately. |
+| `r3d_mesh_box_face` | `(centre: V3, half: V3, face: i32, col: V3) -> void` | One box face by index: 0 +Z, 1 -Z, 2 +X, 3 -X, 4 +Y, 5 -Y. Voxel worlds need faces one at a time so hidden ones can be skipped. |
+| `r3d_mesh_sphere` | `(centre: V3, radius: f32, segs: i32, rings: i32,
+                                col: V3) -> void` | A UV sphere. `segs` divisions around, `rings` divisions top to bottom. Normals are exact, so this is the mesh to use for Gouraud shading. |
+| `r3d_raster_tri` | `(a: SVert, b: SVert, c: SVert) -> void` | Fill one screen-space triangle with a depth test, back/front culling and perspective-correct colour. Coordinates are pixels, z is in [0, 1], iw is 1 / w_clip. |
+| `r3d_clip_and_raster` | `(a: V4C, b: V4C, c: V4C) -> void` | Sutherland-Hodgman against w >= r3d_near, then fan-triangulate and raster. Everything in front of the eye survives untouched; a triangle straddling the plane becomes one or two triangles; one entirely behind disappears. |
+| `r3d_tri` | `(viewproj: &[f32], pa: V3, pb: V3, pc: V3,
+                       ca: V3, cb: V3, cc: V3) -> void` | Immediate-mode triangle: three world positions, three colours, one matrix. |
+| `r3d_line` | `(x0: i32, y0: i32, x1: i32, y1: i32, col: V3) -> void` | Bresenham in screen space, no depth test. |
+| `r3d_line_depth` | `(x0: i32, y0: i32, z0: f32,
+                               x1: i32, y1: i32, z1: f32, col: V3) -> void` | Bresenham with a depth test, interpolating z linearly between the endpoints. |
+| `r3d_line_clip` | `(a: V4C, b: V4C, col: V3) -> void` | A clip-space line segment, clipped to the near plane and depth-tested. This is the entry point the wireframe path uses, because the mesh vertices are already in clip space by then and re-transforming them per edge would triple the matrix work. |
+| `r3d_line3` | `(viewproj: &[f32], pa: V3, pb: V3, col: V3) -> void` | A world-space line segment, clipped to the near plane and depth-tested. |
+| `r3d_sprite` | `(viewproj: &[f32], centre: V3, radius: f32, col: V3) -> void` | A screen-aligned depth-tested disc at a world point, sized by `radius` in world units at the point's distance. This is the billboard primitive: it always faces the camera because it is drawn in screen space. |
+| `r3d_sprite_blend` | `(viewproj: &[f32], centre: V3, radius: f32,
+                                 col: V3, alpha: f32) -> i32` | Alpha-blended billboard. The depth buffer is read but never written, so a translucent sprite is hidden by solid geometry in front of it without occluding the sprites behind it. That makes the result order-dependent: the caller must submit these back to front. Returns the number of pixels touched. |
+| `r3d_draw_mesh` | `(model: &[f32], viewproj: &[f32], to_light: V3,
+                              mode: i32) -> void` | Transform, light, clip and rasterize the whole current mesh. model     object to world viewproj  world to clip to_light  direction from a surface towards the directional light |
+| `r3d_ray_aabb` | `(origin: V3, dir: V3, lo: V3, hi: V3) -> f32` | Slab test against an axis-aligned box. Returns the entry distance along the ray, or -1.0 when there is no hit in front of the origin. |
+| `r3d_ray_sphere` | `(origin: V3, dir: V3, centre: V3, radius: f32) -> f32` | Nearest intersection of a ray with a sphere, or -1.0 for a miss. |
+| `r3d_forward` | `(yaw: f32, pitch: f32) -> V3` | The view direction for a camera given yaw (around +Y, 0 looks down -Z) and pitch (positive looks up). |
+| … | 1 more | |
 
 ### `result.flow`
 
