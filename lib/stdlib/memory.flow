@@ -153,3 +153,93 @@ export function arena_used(arena: Arena) -> i64 {
 export function arena_remaining(arena: Arena) -> i64 {
     return arena.capacity - arena.offset
 }
+
+# ── Frame domain (docs/language/lifetime-domains.md) ─────────────────
+# An Arena plus the bookkeeping a frame loop wants: how deep the deepest
+# frame went, and how many frames have run. Freeing a whole frame's worth
+# of allocations is `frame_begin`, which is one store of zero.
+#
+# Create and destroy at startup and shutdown. Everything else on this
+# list is bump-pointer arithmetic and is legal in the `callback` and
+# `frame` domains and inside `@rt_safe`.
+
+export struct FrameArena {
+    arena: Arena,
+    high_water: i64,
+    frames: i64
+}
+
+export function frame_arena_create(capacity: i64) -> FrameArena {
+    let a: Arena = arena_create(capacity)
+    return FrameArena { arena: a, high_water: 0, frames: 0 }
+}
+
+export function frame_arena_destroy(f: ptr<FrameArena>) -> void {
+    let buf: ptr<i8> = f[0].arena.buffer
+    if buf != null {
+        let mut p: ptr<void> = buf
+        free(p)
+    }
+    f[0].arena.buffer = null
+    f[0].arena.capacity = 0
+    f[0].arena.offset = 0
+}
+
+# Reset the frame. This is the whole deallocation.
+export function frame_begin(f: ptr<FrameArena>) -> void {
+    f[0].arena.offset = 0
+}
+
+export function frame_alloc(f: ptr<FrameArena>, size: i64) -> ptr<void> {
+    let base: ptr<i8> = f[0].arena.buffer
+    let off: i64 = f[0].arena.offset
+    let cap: i64 = f[0].arena.capacity
+    let aligned: i64 = align_up(size, 8)
+    if base == null {
+        return null
+    }
+    if off + aligned > cap {
+        return null
+    }
+    let out: ptr<void> = base + off
+    f[0].arena.offset = off + aligned
+    return out
+}
+
+export function frame_alloc_i32(f: ptr<FrameArena>, count: i64) -> ptr<i32> {
+    return frame_alloc(f, count * sizeof_i32())
+}
+
+export function frame_alloc_f32(f: ptr<FrameArena>, count: i64) -> ptr<f32> {
+    return frame_alloc(f, count * sizeof_f32())
+}
+
+export function frame_alloc_f64(f: ptr<FrameArena>, count: i64) -> ptr<f64> {
+    return frame_alloc(f, count * sizeof_f64())
+}
+
+# Close the frame: record the high-water mark so a fixed capacity can be
+# sized from a real run, and count the frame.
+export function frame_end(f: ptr<FrameArena>) -> void {
+    let used: i64 = f[0].arena.offset
+    if used > f[0].high_water {
+        f[0].high_water = used
+    }
+    f[0].frames = f[0].frames + 1
+}
+
+export function frame_used(f: FrameArena) -> i64 {
+    return f.arena.offset
+}
+
+export function frame_remaining(f: FrameArena) -> i64 {
+    return f.arena.capacity - f.arena.offset
+}
+
+export function frame_high_water(f: FrameArena) -> i64 {
+    return f.high_water
+}
+
+export function frame_count(f: FrameArena) -> i64 {
+    return f.frames
+}

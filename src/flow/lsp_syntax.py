@@ -242,6 +242,17 @@ SYNTAX_HOVER: Dict[str, str] = {
         "**`@rt_safe`** — real-time safety attribute (no unbounded alloc / locks).\n\n"
         "```flow\n@rt_safe\nfunction process_block(buf: ptr<f32>, n: i32) -> void { ... }\n```"
     ),
+    "@lifetime": (
+        "**`@lifetime(D)`** — lifetime domain: `callback`, `frame`, `session` "
+        "or `application`, shortest-lived first. Goes on a function (the "
+        "domain its frame runs in) or a module static (the domain of that "
+        "storage, default `application`).\n\n"
+        "```flow\n@lifetime(callback)\nfunction process(input: span<f32>) -> f32 { ... }\n```\n"
+        "`callback` implies `@rt_safe`; `frame` forbids heap create/destroy "
+        "but allows bumping an arena. A longer-lived domain may not hold a "
+        "reference to a shorter-lived one.\n\n"
+        "See docs/language/lifetime-domains.md."
+    ),
     "@inline": (
         "**`@inline`** — inline hint. Emits `static inline` in the generated C "
         "(`extern inline` when the symbol must stay externally visible).\n\n"
@@ -358,7 +369,8 @@ def syntax_token_at_position(text: str, line: int, character: int) -> Optional[s
             if line_text[start : start + op_len] == op and start <= col < start + op_len:
                 return op
 
-    # Attributes: @gpu, @rt_safe, @inline, @noinline, @always_inline, @target
+    # Attributes: @gpu, @rt_safe, @lifetime, @inline, @noinline,
+    # @always_inline, @target
     if line_text[col] == "@" or (
         col > 0 and line_text[col - 1] == "@"
     ) or _in_attr_name(line_text, col):
