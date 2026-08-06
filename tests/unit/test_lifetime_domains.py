@@ -28,7 +28,7 @@ from flow.attributes import (
 )
 from flow.parser import parse_flow_code
 
-from .compiler_helpers import compile_and_run, errors, needs_clang, to_c
+from .compiler_helpers import errors, to_c
 
 
 MALLOC = """
@@ -729,9 +729,11 @@ def test_an_accepted_domain_program_type_checks_clean():
     assert errors(ACCEPTED_PROGRAM) == []
 
 
-@needs_clang
-def test_an_accepted_domain_program_runs():
-    assert compile_and_run(ACCEPTED_PROGRAM) == 0
+# test_an_accepted_domain_program_runs compiled and ran ACCEPTED_PROGRAM.
+# tests/lang/test_lifetime_domains.flow runs a larger version of the same
+# shape: an application static written from a session function, a callback
+# reading a span, a frame function bumping and resetting an arena, and a
+# callback returning a view of its parameter.
 
 
 @pytest.mark.parametrize("domain", LIFETIME_DOMAINS)
