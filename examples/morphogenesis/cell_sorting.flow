@@ -1,0 +1,355 @@
+# CELL SORTING: differential adhesion, and tissue layers that sort
+# themselves out of a random mixture.
+#
+# MODEL (Steinberg's differential adhesion hypothesis, 1963; Metropolis
+# exchange dynamics on a lattice)
+#   Two cell types and the surrounding medium sit on a lattice. Every
+#   contact between two occupants costs an adhesion energy J. Cells swap
+#   with a neighbour whenever the swap lowers the total contact energy, and
+#   sometimes when it does not, with the usual Metropolis probability. No
+#   cell knows which tissue it belongs to and nothing computes a target
+#   shape.
+#
+#     E     = sum over neighbouring pairs of J(type_i, type_j)
+#     dE    = E(after the swap) - E(before)
+#     accept if dE <= 0, otherwise with probability exp(-dE / T)
+#
+#   Steinberg's result is that the more cohesive tissue ends up inside,
+#   engulfed by the weaker one, exactly as two immiscible liquids arrange
+#   themselves by surface tension.
+#
+# PARAMETERS
+#   96 x 96 lattice, Moore neighbourhood, a disc of 50/50 mixed cells,
+#   temperature T 2.0, 120000 swap attempts per displayed frame.
+#
+# KEYS
+#   1 ENGULF     J(AA) 8, J(BB) 2, J(AB) 11: B is the more cohesive tissue
+#                and forms a core inside an A shell
+#   2 MIX        J(AB) 3 below both self-energies, so unlike contacts are
+#                favoured and the mixture refuses to sort
+#   3 SEPARATE   J(AB) 12 with both types equally happy against medium: the
+#                two tissues split into two lobes rather than nesting
+#   R reseed    P pause    Esc quit
+#
+# THE READOUT
+#   HETERO is the fraction of cell-cell contacts that are between unlike
+#   types. Sorting drives it down, mixing drives it up, and it is the same
+#   number a biologist would measure from a section.
+#
+# Run: ./flow gfx examples/morphogenesis/cell_sorting.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function exp(x: f64) -> f64
+}
+
+const SIDE: i32 = 96
+const NCELLS: i32 = 9216
+const CELL_PX: i32 = 5
+const ORIGIN_X: i32 = 16
+const FIELD_Y: i32 = 74
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const ATTEMPTS: i32 = 120000
+const TEMPERATURE: f64 = 2.0
+const RADIUS2: f64 = 1156.0      # a disc of radius 34
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 31415926
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 11) % (n as u32)) as i32
+}
+
+function mode_name(m: i32) -> string {
+    if m == 1 { return "MIX" }
+    if m == 2 { return "SEPARATE" }
+    return "ENGULF"
+}
+
+# Adhesion energy between two occupants: 0 is medium, 1 and 2 are the two
+# cell types. Lower J means a stronger bond. Everything the tissue does is
+# in this table.
+#
+# Two conditions decide the outcome. Unlike contacts must cost more than the
+# average of the two like contacts, J(AB) > (J(AA) + J(BB)) / 2, or the
+# types stay mixed. Then whichever type has the larger surface tension
+# against the medium, J(XM) - J(XX)/2, ends up inside.
+function adhesion(m: i32, a: i32, b: i32) -> f64 {
+    let mut lo: i32 = a
+    let mut hi: i32 = b
+    if lo > hi {
+        lo = b
+        hi = a
+    }
+    if lo == 0 and hi == 0 { return 0.0 }
+    if m == 1 {
+        # MIX: unlike contacts are the cheapest bond available.
+        if lo == 0 { return 12.0 }
+        if lo == hi { return 8.0 }
+        return 3.0
+    }
+    if m == 2 {
+        # SEPARATE: strong demixing, identical tension against the medium.
+        if lo == 0 { return 8.0 }
+        if lo == hi { return 2.0 }
+        return 12.0
+    }
+    # ENGULF: B is the more cohesive tissue and has the higher tension
+    # against the medium, so B ends up inside an A shell.
+    if lo == 0 and hi == 1 { return 12.0 }
+    if lo == 0 and hi == 2 { return 16.0 }
+    if lo == 1 and hi == 1 { return 8.0 }
+    if lo == 2 and hi == 2 { return 2.0 }
+    return 11.0
+}
+
+function seed_field(t: ptr<i32>) -> void {
+    for y in 0 to SIDE {
+        for x in 0 to SIDE {
+            let dx: f64 = (x - SIDE / 2) as f64
+            let dy: f64 = (y - SIDE / 2) as f64
+            let mut v: i32 = 0
+            if dx * dx + dy * dy < RADIUS2 {
+                if rng_unit() < 0.5 { v = 1 } else { v = 2 }
+            }
+            t[y * SIDE + x] = v
+        }
+    }
+}
+
+function nb_dx(k: i32) -> i32 {
+    if k == 0 { return 1 }
+    if k == 1 { return -1 }
+    if k == 2 { return 0 }
+    if k == 3 { return 0 }
+    if k == 4 { return 1 }
+    if k == 5 { return 1 }
+    if k == 6 { return -1 }
+    return -1
+}
+
+function nb_dy(k: i32) -> i32 {
+    if k == 0 { return 0 }
+    if k == 1 { return 0 }
+    if k == 2 { return 1 }
+    if k == 3 { return -1 }
+    if k == 4 { return 1 }
+    if k == 5 { return -1 }
+    if k == 6 { return 1 }
+    return -1
+}
+
+# Contact energy of one site if it held `kind`, over its eight neighbours.
+function site_energy(t: ptr<i32>, x: i32, y: i32, kind: i32, m: i32) -> f64 {
+    let mut e: f64 = 0.0
+    for k in 0 to 8 {
+        let nx: i32 = x + nb_dx(k)
+        let ny: i32 = y + nb_dy(k)
+        if nx >= 0 and nx < SIDE and ny >= 0 and ny < SIDE {
+            e = e + adhesion(m, kind, t[ny * SIDE + nx])
+        }
+    }
+    return e
+}
+
+# One Metropolis exchange between a random site and a random neighbour.
+function try_swap(t: ptr<i32>, m: i32) -> i32 {
+    let x: i32 = 1 + rng_below(SIDE - 2)
+    let y: i32 = 1 + rng_below(SIDE - 2)
+    let k: i32 = rng_below(8)
+    let nx: i32 = x + nb_dx(k)
+    let ny: i32 = y + nb_dy(k)
+    if nx < 1 or nx >= SIDE - 1 or ny < 1 or ny >= SIDE - 1 { return 0 }
+
+    let i: i32 = y * SIDE + x
+    let j: i32 = ny * SIDE + nx
+    let a: i32 = t[i]
+    let b: i32 = t[j]
+    if a == b { return 0 }
+
+    let before: f64 = site_energy(t, x, y, a, m) + site_energy(t, nx, ny, b, m)
+    let after: f64 = site_energy(t, x, y, b, m) + site_energy(t, nx, ny, a, m)
+    let de: f64 = after - before
+    if de > 0.0 {
+        if rng_unit() > exp(-de / TEMPERATURE) { return 0 }
+    }
+    t[i] = b
+    t[j] = a
+    return 1
+}
+
+# Fraction of cell-cell contacts that join unlike types.
+function hetero_fraction(t: ptr<i32>) -> f64 {
+    let mut unlike: i32 = 0
+    let mut total: i32 = 0
+    for y in 0 to SIDE - 1 {
+        for x in 0 to SIDE - 1 {
+            let a: i32 = t[y * SIDE + x]
+            if a > 0 {
+                let r: i32 = t[y * SIDE + x + 1]
+                let d: i32 = t[(y + 1) * SIDE + x]
+                if r > 0 {
+                    total = total + 1
+                    if r != a { unlike = unlike + 1 }
+                }
+                if d > 0 {
+                    total = total + 1
+                    if d != a { unlike = unlike + 1 }
+                }
+            }
+        }
+    }
+    if total == 0 { return 0.0 }
+    return (unlike as f64) / (total as f64)
+}
+
+function total_energy(t: ptr<i32>, m: i32) -> f64 {
+    let mut e: f64 = 0.0
+    for y in 0 to SIDE - 1 {
+        for x in 0 to SIDE - 1 {
+            let a: i32 = t[y * SIDE + x]
+            e = e + adhesion(m, a, t[y * SIDE + x + 1])
+            e = e + adhesion(m, a, t[(y + 1) * SIDE + x])
+        }
+    }
+    return e / 1000.0
+}
+
+function draw_field(g: Gfx, t: ptr<i32>) -> void {
+    for y in 0 to SIDE {
+        for x in 0 to SIDE {
+            let v: i32 = t[y * SIDE + x]
+            let mut rr: i32 = 14
+            let mut gg: i32 = 16
+            let mut bb: i32 = 26
+            if v == 1 {
+                rr = 244
+                gg = 146
+                bb = 62
+            }
+            if v == 2 {
+                rr = 52
+                gg = 168
+                bb = 196
+            }
+            gfx_fill_rect(g, ORIGIN_X + x * CELL_PX, FIELD_Y + y * CELL_PX,
+                          CELL_PX, CELL_PX, rr, gg, bb)
+        }
+    }
+}
+
+function draw_hud(g: Gfx, mode: i32, hetero: f64, energy: f64, swaps: i32,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "CELL SORTING  DIFFERENTIAL ADHESION",
+                                2, 240, 238, 234)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "ADHESION", 1, 150, 148, 144)
+    let t3: i32 = gfx_draw_text(g, 62, 28, mode_name(mode), 1, 255, 196, 120)
+    let t4: i32 = gfx_draw_text(g, 140, 28, "HETERO", 1, 150, 148, 144)
+    let t5: i32 = gfx_draw_fixed(g, 184, 28, hetero, 3, 1, 255, 210, 150)
+    let t6: i32 = gfx_draw_text(g, 240, 28, "ENERGY k", 1, 150, 148, 144)
+    let t7: i32 = gfx_draw_fixed(g, 296, 28, energy, 2, 1, 240, 238, 234)
+    let t8: i32 = gfx_draw_text(g, 356, 28, "SWAPS k", 1, 150, 148, 144)
+    let t9: i32 = gfx_draw_int(g, 406, 28, swaps, 1, 240, 238, 234)
+    let ta: i32 = gfx_draw_text(g, 8, 42,
+        "T 2.0   1 ENGULF  2 MIX  3 SEPARATE  R RESEED  P PAUSE",
+        1, 112, 110, 106)
+    let tb: i32 = gfx_draw_text(g, 8, 58, "TYPE A", 1, 244, 146, 62)
+    let tc: i32 = gfx_draw_text(g, 56, 58, "TYPE B", 1, 52, 168, 196)
+    let td: i32 = gfx_draw_text(g, 108, 58,
+        "accept a swap when it lowers contact energy, sometimes when it does not",
+        1, 112, 110, 106)
+    if paused {
+        let te: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tf: i32 = gfx_draw_text(g, 8, 572,
+        "no cell knows its tissue; the layers are a minimum of the energy",
+        1, 122, 120, 116)
+    let tg: i32 = gfx_draw_text(g, 8, 582,
+        "the more cohesive type ends up inside, which is Steinberg's result",
+        1, 122, 120, 116)
+}
+
+function main() -> i32 {
+    let t: array<i32, 9216> = [0, 0, 0, 0]
+
+    let mut mode: i32 = 0
+    seed_field(t)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Cell sorting - Flow morphogenesis")
+
+    let mut swaps: i32 = 0
+    let mut hetero: f64 = 0.0
+    let mut energy: f64 = 0.0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != mode {
+            mode = want
+            seed_field(t)
+            swaps = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(t)
+                swaps = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            let mut accepted: i32 = 0
+            for k in 0 to ATTEMPTS {
+                accepted = accepted + try_swap(t, mode)
+            }
+            swaps = swaps + accepted / 1000
+            hetero = hetero_fraction(t)
+            energy = total_energy(t, mode)
+        }
+
+        gfx_clear(g, 12, 14, 20)
+        draw_field(g, t)
+        draw_hud(g, mode, hetero, energy, swaps, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
