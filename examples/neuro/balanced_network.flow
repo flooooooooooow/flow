@@ -1,0 +1,942 @@
+# BALANCED E/I NETWORK: the asynchronous irregular cortical state.
+#
+# MODEL
+#   Brunel's sparse random network of leaky integrate-and-fire neurons
+#   (2000). Every neuron is
+#
+#     tau dV/dt = -V          plus a delta jump J at each incoming spike
+#     V >= theta  ->  V := V_r, then refractory for t_ref
+#
+#   which is the whole of `flow LIFNeuron` below: one `evolves as` for the
+#   leak and one `when v reaches v_th { v becomes v_reset }` for the spike.
+#   Synaptic input is a jump, not a current, so the network loop adds it to v
+#   before the step. Excitatory synapses add J, inhibitory ones subtract g*J,
+#   and every spike arrives after that neuron's own axonal delay.
+#
+#   One `LIFNeuron` value is reused for all 12500 neurons, the way the
+#   morphogenesis examples reuse one cell for the whole grid. That is safe
+#   here because the event guard always ends a step below threshold, so the
+#   next neuron starts from a clean guard.
+#
+# PARAMETERS
+#   N_E 10000   N_I 2500    connection probability 0.1
+#   C_E 1000 excitatory and C_I 250 inhibitory inputs per neuron
+#   tau 20 ms   theta 20 mV   V_r 10 mV   t_ref 2 ms
+#   axonal delay drawn uniformly from 0.5 to 3.0 ms, one per neuron.
+#   Brunel used a single 1.5 ms delay; spreading it damps the delay-driven
+#   ripple that a network of this size would otherwise carry.
+#   J 0.2 mV   g 6   eta 2   (inhibition dominated: g*C_I/C_E = 1.5)
+#   external drive: Poisson at eta * nu_thr per synapse,
+#   nu_thr = theta/(J*C_E*tau) = 10 Hz
+#   Euler, dt = 0.1 ms. The network size, connectivity and cell parameters
+#   are Brunel's; J is twice his 0.1 mV, which puts sigma near theta - V_r
+#   and so puts the cells firmly in the fluctuation-driven regime.
+#
+# WHAT THIS PROVES
+#   1. The state is ASYNCHRONOUS, by Brunel's own measure: the variance over
+#      time of the population mean membrane potential, divided by the mean
+#      over neurons of the variance over time of each one. A network firing
+#      in lockstep gives 1; N independent neurons give 1/N, here 8e-5. The
+#      coefficient of variation of the population spike count in 2 ms bins is
+#      printed too, beside the 1/sqrt(mean count) that independent Poisson
+#      spiking would give.
+#   2. The state is IRREGULAR. The mean coefficient of variation of the
+#      interspike intervals across neurons is close to 1, the signature of
+#      firing driven by fluctuations rather than by a mean current. Gated to
+#      [0.7, 1.3].
+#   3. The rate is the one the theory predicts. The mean-field self-
+#      consistent rate is computed here from Brunel's diffusion
+#      approximation, by solving
+#        1/nu = t_ref + tau sqrt(pi) INT_{(V_r-mu)/sigma}^{(theta-mu)/sigma}
+#                                    exp(u^2) (1 + erf(u)) du
+#      with mu(nu) and sigma(nu) taken from the same parameters, by fixed
+#      point iteration on nu. The measured rate is compared with it.
+#
+# REFERENCE
+#   N. Brunel, "Dynamics of sparsely connected networks of excitatory and
+#   inhibitory spiking neurons", J. Comput. Neurosci. 8:183-208 (2000):
+#   the asynchronous irregular state, and equation 21 for the rate.
+#   The rate integral is Siegert (1951); see also Amit & Brunel, Cereb.
+#   Cortex 7:237-252 (1997).
+#
+# KEYS
+#   P   pause the live network                            Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/balanced_network.flow --frames 90 \
+#       --out build/frames_bal --gif build/balanced_network.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/balanced_network.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function erf(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 660
+const MAX_FRAMES: i32 = 4000
+
+const N_E: i32 = 10000
+const N_I: i32 = 2500
+const N_ALL: i32 = 12500
+const OUTDEG: i32 = 1250        # p(connect) = 0.1
+const C_E: f64 = 1000.0
+const C_I: f64 = 250.0
+
+const TAU: f64 = 20.0           # ms
+const THETA: f64 = 20.0         # mV
+const V_RESET: f64 = 10.0       # mV
+const T_REF: f64 = 2.0          # ms
+const DELAY_LO: f64 = 0.5       # ms, axonal delays are drawn uniformly
+const DELAY_HI: f64 = 3.0       # ms, from this range, one per neuron
+
+const J_SYN: f64 = 0.2          # mV, excitatory PSP
+
+# Brunel's figure 8B: inhibition dominates and the network settles into the
+# asynchronous irregular state.
+const G_AI: f64 = 6.0
+const ETA_AI: f64 = 2.0
+
+const DT: f64 = 0.1             # ms
+const N_DELAY: i32 = 36         # ring slots, > DELAY_HI / DT
+const N_REF: i32 = 20           # T_REF / DT
+
+const WARM_MS: f64 = 300.0
+const MEAS_MS: f64 = 900.0
+const BIN_MS: f64 = 2.0
+
+const RATE_LO: f64 = 5.0
+const RATE_HI: f64 = 80.0
+const CV_LO: f64 = 0.7
+const CV_HI: f64 = 1.3
+const SYNC_MAX: f64 = 0.10      # Brunel's synchrony measure
+
+const RAST_CAP: i32 = 30000
+const RAST_SHOW: i32 = 300      # neurons drawn in the live raster
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow LIFNeuron {
+    state v : f64 = 0.0
+
+    param tau     : f64 = 20.0
+    param v_th    : f64 = 20.0
+    param v_reset : f64 = 10.0
+
+    solver { dt 100 us  method euler }
+
+    v evolves as 0.0 - v / tau
+
+    when v reaches v_th {
+        v becomes v_reset
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Module statics: the whole network lives here.
+# ---------------------------------------------------------------------------
+
+let mut vm: ptr<f64> = null         # membrane potentials
+let mut refr: ptr<i32> = null       # refractory steps remaining
+let mut ring: ptr<f64> = null       # N_DELAY x N_ALL delayed input
+let mut targets: ptr<i32> = null    # N_ALL x OUTDEG postsynaptic indices
+let mut dly: ptr<i32> = null        # axonal delay of each neuron, in steps
+
+let mut spk_count: ptr<i32> = null
+let mut last_t: ptr<f64> = null
+let mut isi_n: ptr<i32> = null
+let mut isi_s: ptr<f64> = null
+let mut isi_s2: ptr<f64> = null
+
+let mut v_sum: ptr<f64> = null      # per-neuron running sum of V, for Brunel's
+let mut v_sum2: ptr<f64> = null     # synchrony measure
+let mut pop_s: f64 = 0.0            # sum over steps of the population mean V
+let mut pop_s2: f64 = 0.0
+let mut pop_n: f64 = 0.0
+
+let mut pop_bin: ptr<f64> = null    # population count per BIN_MS
+let mut n_bins: i32 = 0
+
+let mut rast_t: ptr<f64> = null
+let mut rast_id: ptr<i32> = null
+let mut rast_head: i32 = 0
+let mut rast_fill: i32 = 0
+
+let mut rate_hz: f64 = 0.0
+let mut cv_mean: f64 = 0.0
+let mut cv_n: i32 = 0
+let mut sync: f64 = 0.0
+let mut sync_poisson: f64 = 0.0
+let mut sync_brunel: f64 = 0.0
+let mut rate_theory: f64 = 0.0
+let mut mu_final: f64 = 0.0
+let mut sigma_final: f64 = 0.0
+let mut sim_t: f64 = 0.0
+let mut step_k: i32 = 0
+
+let mut g_ratio: f64 = 6.0          # the condition currently being run
+let mut eta_drive: f64 = 4.0
+
+let mut cond_rate: array<f64, 2> = [0.0, 0.0]
+let mut cond_cv: array<f64, 2> = [0.0, 0.0]
+let mut cond_sync: array<f64, 2> = [0.0, 0.0]
+let mut cond_syncp: array<f64, 2> = [0.0, 0.0]
+let mut cond_syncb: array<f64, 2> = [0.0, 0.0]
+let mut cond_theory: array<f64, 2> = [0.0, 0.0]
+let mut cond_mu: array<f64, 2> = [0.0, 0.0]
+let mut cond_sigma: array<f64, 2> = [0.0, 0.0]
+
+let mut rng_state: u32 = 20240611
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG
+# ---------------------------------------------------------------------------
+
+# xorshift32. A plain LCG is not good enough here: its serial correlation
+# shows up as spurious population events, because every neuron in a step
+# draws its external input from consecutive values of the same stream.
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 8) % 16777216) as i32
+    return (bits as f64) / 16777216.0
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 13) % (n as u32)) as i32
+}
+
+# Knuth's method. The caller passes exp(-lambda) so it is not recomputed
+# twelve thousand times per step.
+function rng_poisson(l: f64) -> i32 {
+    let mut k: i32 = 0
+    let mut p: f64 = 1.0
+    while true {
+        p = p * rng_unit()
+        if p <= l {
+            return k
+        }
+        k = k + 1
+        if k > 40 {
+            return k
+        }
+    }
+    return k
+}
+
+# ---------------------------------------------------------------------------
+# Wiring: every neuron projects to OUTDEG randomly chosen postsynaptic cells.
+# ---------------------------------------------------------------------------
+
+function build_network() -> void {
+    let mut i: i32 = 0
+    while i < N_ALL {
+        vm[i] = V_RESET * rng_unit()
+        refr[i] = 0
+        dly[i] = ((DELAY_LO / DT) as i32)
+                 + rng_below((((DELAY_HI - DELAY_LO) / DT) as i32) + 1)
+        spk_count[i] = 0
+        last_t[i] = -1.0
+        isi_n[i] = 0
+        isi_s[i] = 0.0
+        isi_s2[i] = 0.0
+        v_sum[i] = 0.0
+        v_sum2[i] = 0.0
+        let mut j: i32 = 0
+        while j < OUTDEG {
+            targets[i * OUTDEG + j] = rng_below(N_ALL)
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let mut r: i32 = 0
+    while r < N_DELAY * N_ALL {
+        ring[r] = 0.0
+        r = r + 1
+    }
+}
+
+function weight_of(pre: i32) -> f64 {
+    if pre < N_E {
+        return J_SYN
+    }
+    return 0.0 - g_ratio * J_SYN
+}
+
+# ---------------------------------------------------------------------------
+# One network step. `measuring` turns on the statistics.
+# ---------------------------------------------------------------------------
+
+function net_step(measuring: bool) -> void {
+    let slot: i32 = step_k % N_DELAY
+    let deliver: i32 = slot * N_ALL
+
+    let lambda_ext: f64 = C_E * eta_drive * (THETA / (J_SYN * C_E * TAU)) * DT
+    let exp_neg_lambda: f64 = exp(0.0 - lambda_ext)
+    let mut cell: LIFNeuron = LIFNeuron_new()
+    cell.tau = TAU
+    cell.v_th = THETA
+    cell.v_reset = V_RESET
+
+    let mut bin: i32 = 0
+    if measuring {
+        bin = ((sim_t - WARM_MS) / BIN_MS) as i32
+    }
+
+    let mut i: i32 = 0
+    while i < N_ALL {
+        if refr[i] > 0 {
+            refr[i] = refr[i] - 1
+            ring[deliver + i] = 0.0
+            i = i + 1
+        } else {
+            # external Poisson drive plus everything that arrived now
+            let n_ext: i32 = rng_poisson(exp_neg_lambda)
+            let jump: f64 = J_SYN * (n_ext as f64) + ring[deliver + i]
+            ring[deliver + i] = 0.0
+
+            cell.v = vm[i] + jump
+            let pre: f64 = cell.v
+            LIFNeuron_step(&cell, DT)
+            # A reset drops v by at least theta - V_r - dt/tau*theta, which is
+            # far more than the 0.1 mV a plain leak step can remove.
+            let spiked: bool = pre - cell.v > 1.0
+            vm[i] = cell.v
+
+            if spiked {
+                refr[i] = N_REF
+                let mut j: i32 = 0
+                let w: f64 = weight_of(i)
+                let base: i32 = i * OUTDEG
+                let arrive: i32 = ((step_k + dly[i]) % N_DELAY) * N_ALL
+                while j < OUTDEG {
+                    ring[arrive + targets[base + j]] = ring[arrive + targets[base + j]] + w
+                    j = j + 1
+                }
+                if measuring {
+                    spk_count[i] = spk_count[i] + 1
+                    if last_t[i] > 0.0 {
+                        let isi: f64 = sim_t - last_t[i]
+                        isi_n[i] = isi_n[i] + 1
+                        isi_s[i] = isi_s[i] + isi
+                        isi_s2[i] = isi_s2[i] + isi * isi
+                    }
+                    last_t[i] = sim_t
+                    if bin >= 0 and bin < n_bins {
+                        pop_bin[bin] = pop_bin[bin] + 1.0
+                    }
+                }
+                # live raster: only the neurons the panel draws, so the ring
+                # holds seconds of history instead of a fraction of one
+                if i < 240 or (i >= N_E and i < N_E + 60) {
+                    rast_t[rast_head] = sim_t
+                    rast_id[rast_head] = i
+                    rast_head = (rast_head + 1) % RAST_CAP
+                    if rast_fill < RAST_CAP {
+                        rast_fill = rast_fill + 1
+                    }
+                }
+            }
+            i = i + 1
+        }
+    }
+    if measuring {
+        let mut pm: f64 = 0.0
+        let mut q: i32 = 0
+        while q < N_ALL {
+            pm = pm + vm[q]
+            v_sum[q] = v_sum[q] + vm[q]
+            v_sum2[q] = v_sum2[q] + vm[q] * vm[q]
+            q = q + 1
+        }
+        pm = pm / (N_ALL as f64)
+        pop_s = pop_s + pm
+        pop_s2 = pop_s2 + pm * pm
+        pop_n = pop_n + 1.0
+    }
+    step_k = step_k + 1
+    sim_t = sim_t + DT
+}
+
+# ---------------------------------------------------------------------------
+# Brunel's mean-field rate: the Siegert first-passage integral, solved by
+# Simpson's rule, wrapped in a fixed point on nu.
+# ---------------------------------------------------------------------------
+
+# exp(u^2) * (1 + erf(u)) = exp(u^2) * erfc(-u); for u below -8 the product
+# is close to its asymptote 1/(|u| sqrt(pi)) and exp(u^2) would overflow.
+function siegert_integrand(u: f64) -> f64 {
+    if u < -8.0 {
+        let a: f64 = 0.0 - u
+        return (1.0 / (a * 1.7724538509055159)) * (1.0 - 0.5 / (a * a))
+    }
+    return exp(u * u) * (1.0 + erf(u))
+}
+
+function siegert_rate(mu: f64, sigma: f64) -> f64 {
+    let y_th: f64 = (THETA - mu) / sigma
+    let y_r: f64 = (V_RESET - mu) / sigma
+    let n: i32 = 4000
+    let h: f64 = (y_th - y_r) / (n as f64)
+    let mut s: f64 = siegert_integrand(y_r) + siegert_integrand(y_th)
+    let mut k: i32 = 1
+    while k < n {
+        let u: f64 = y_r + (k as f64) * h
+        if k % 2 == 1 {
+            s = s + 4.0 * siegert_integrand(u)
+        } else {
+            s = s + 2.0 * siegert_integrand(u)
+        }
+        k = k + 1
+    }
+    let integral: f64 = s * h / 3.0
+    let t_isi: f64 = T_REF + TAU * 1.7724538509055159 * integral
+    if t_isi <= 0.0 {
+        return 0.0
+    }
+    return 1.0 / t_isi
+}
+
+# mu and sigma of the free membrane potential at population rate nu (per ms).
+function mu_of(nu: f64) -> f64 {
+    let nu_ext: f64 = eta_drive * (THETA / (J_SYN * C_E * TAU))
+    return TAU * J_SYN * ((C_E - g_ratio * C_I) * nu + C_E * nu_ext)
+}
+
+function sigma_of(nu: f64) -> f64 {
+    let nu_ext: f64 = eta_drive * (THETA / (J_SYN * C_E * TAU))
+    let var: f64 = TAU * J_SYN * J_SYN
+                   * ((C_E + g_ratio * g_ratio * C_I) * nu + C_E * nu_ext)
+    return sqrt(var)
+}
+
+function solve_mean_field() -> f64 {
+    let mut nu: f64 = 0.03           # per ms
+    let mut it: i32 = 0
+    while it < 400 {
+        let mu: f64 = mu_of(nu)
+        let sg: f64 = sigma_of(nu)
+        let f: f64 = siegert_rate(mu, sg)
+        nu = 0.7 * nu + 0.3 * f
+        it = it + 1
+    }
+    mu_final = mu_of(nu)
+    sigma_final = sigma_of(nu)
+    return nu
+}
+
+# ---------------------------------------------------------------------------
+# Statistics
+# ---------------------------------------------------------------------------
+
+function summarise() -> void {
+    let mut total: f64 = 0.0
+    let mut cvsum: f64 = 0.0
+    let mut cvcount: i32 = 0
+    let mut i: i32 = 0
+    while i < N_ALL {
+        total = total + (spk_count[i] as f64)
+        if isi_n[i] >= 3 {
+            let n: f64 = isi_n[i] as f64
+            let mean: f64 = isi_s[i] / n
+            let var: f64 = isi_s2[i] / n - mean * mean
+            if var > 0.0 and mean > 0.0 {
+                cvsum = cvsum + sqrt(var) / mean
+                cvcount = cvcount + 1
+            }
+        }
+        i = i + 1
+    }
+    rate_hz = 1000.0 * total / ((N_ALL as f64) * MEAS_MS)
+    cv_n = cvcount
+    if cvcount > 0 {
+        cv_mean = cvsum / (cvcount as f64)
+    }
+
+    let mut bsum: f64 = 0.0
+    let mut bsum2: f64 = 0.0
+    let mut b: i32 = 0
+    while b < n_bins {
+        bsum = bsum + pop_bin[b]
+        bsum2 = bsum2 + pop_bin[b] * pop_bin[b]
+        b = b + 1
+    }
+    let nb: f64 = n_bins as f64
+    let bmean: f64 = bsum / nb
+    let bvar: f64 = bsum2 / nb - bmean * bmean
+    if bmean > 0.0 and bvar > 0.0 {
+        sync = sqrt(bvar) / bmean
+        sync_poisson = 1.0 / sqrt(bmean)
+    }
+
+    # Brunel's synchrony measure: the variance over time of the population
+    # mean membrane potential, divided by the average over neurons of the
+    # variance over time of each one. Perfect synchrony gives 1; perfectly
+    # independent neurons give 1/N.
+    let pmean: f64 = pop_s / pop_n
+    let pvar: f64 = pop_s2 / pop_n - pmean * pmean
+    let mut ivar: f64 = 0.0
+    i = 0
+    while i < N_ALL {
+        let m: f64 = v_sum[i] / pop_n
+        let vv: f64 = v_sum2[i] / pop_n - m * m
+        if vv > 0.0 {
+            ivar = ivar + vv
+        }
+        i = i + 1
+    }
+    ivar = ivar / (N_ALL as f64)
+    if ivar > 0.0 and pvar > 0.0 {
+        sync_brunel = pvar / ivar
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+const RA_X: i32 = 40
+const RA_Y: i32 = 86
+const RA_W: i32 = 840
+const RA_H: i32 = 300
+const RA_MS: f64 = 400.0        # width of the raster window
+
+function draw_raster(g: Gfx) -> void {
+    draw_frame(g, RA_X, RA_Y, RA_W, RA_H, 60, 70, 90)
+    gfx_draw_text(g, RA_X, RA_Y - 14,
+                  "RASTER, LIVE   300 of 12500 neurons   400 ms window   teal E   red I",
+                  1, 150, 165, 190)
+    let t_end: f64 = sim_t
+    let t_start: f64 = t_end - RA_MS
+    let mut k: i32 = 0
+    while k < rast_fill {
+        let idx: i32 = (rast_head - 1 - k + 2 * RAST_CAP) % RAST_CAP
+        let t: f64 = rast_t[idx]
+        if t < t_start {
+            k = rast_fill
+        } else {
+            let id: i32 = rast_id[idx]
+            let mut show: i32 = -1
+            if id < 240 {
+                show = id
+            } else {
+                if id >= N_E and id < N_E + 60 {
+                    show = 240 + (id - N_E)
+                }
+            }
+            if show >= 0 {
+                let px: i32 = RA_X + ((((t - t_start) / RA_MS) * (RA_W as f64)) as i32)
+                let py: i32 = RA_Y + 2 + ((show * (RA_H - 4)) / RAST_SHOW)
+                if id < N_E {
+                    gfx_fill_rect(g, px, py, 2, 2, 120, 220, 200)
+                } else {
+                    gfx_fill_rect(g, px, py, 2, 2, 255, 130, 130)
+                }
+            }
+            k = k + 1
+        }
+    }
+    gfx_fill_rect(g, RA_X, RA_Y + 2 + ((240 * (RA_H - 4)) / RAST_SHOW), RA_W, 1,
+                  90, 100, 120)
+    gfx_draw_text(g, RA_X + RA_W + 4, RA_Y + 4, "E", 1, 120, 220, 200)
+    gfx_draw_text(g, RA_X + RA_W + 4, RA_Y + 2 + ((246 * (RA_H - 4)) / RAST_SHOW),
+                  "I", 1, 255, 130, 130)
+}
+
+const PB_X: i32 = 40
+const PB_Y: i32 = 420
+const PB_W: i32 = 400
+const PB_H: i32 = 130
+
+function draw_popbins(g: Gfx) -> void {
+    draw_frame(g, PB_X, PB_Y, PB_W, PB_H, 60, 70, 90)
+    gfx_draw_text(g, PB_X, PB_Y - 14,
+                  "POPULATION COUNT PER 2 ms BIN, measurement window", 1, 150, 165, 190)
+    let mut mx: f64 = 1.0
+    let mut b: i32 = 0
+    while b < n_bins {
+        if pop_bin[b] > mx {
+            mx = pop_bin[b]
+        }
+        b = b + 1
+    }
+    let mut px: i32 = 0
+    while px < PB_W {
+        let bi: i32 = ((px as f64) / (PB_W as f64) * (n_bins as f64)) as i32
+        if bi >= 0 and bi < n_bins {
+            let h: i32 = ((pop_bin[bi] / mx) * ((PB_H - 4) as f64)) as i32
+            gfx_fill_rect(g, PB_X + px, PB_Y + PB_H - h, 1, h, 90, 160, 200)
+        }
+        px = px + 1
+    }
+    gfx_draw_text(g, PB_X + 4, PB_Y + 4, "peak", 1, 110, 125, 150)
+    gfx_draw_fixed(g, PB_X + 40, PB_Y + 4, mx, 0, 1, 235, 240, 250)
+    gfx_draw_text(g, PB_X + 4, PB_Y + PB_H + 4, "flat means asynchronous",
+                  1, 110, 125, 150)
+}
+
+const HG_X: i32 = 480
+const HG_Y: i32 = 420
+const HG_W: i32 = 400
+const HG_H: i32 = 130
+
+function draw_cv_hist(g: Gfx) -> void {
+    draw_frame(g, HG_X, HG_Y, HG_W, HG_H, 60, 70, 90)
+    gfx_draw_text(g, HG_X, HG_Y - 14, "DISTRIBUTION OF CV(ISI) ACROSS NEURONS",
+                  1, 150, 165, 190)
+    let nb: i32 = 40
+    let bins: array<i32, 40> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let bp: ptr<i32> = bins
+    let mut i: i32 = 0
+    while i < N_ALL {
+        if isi_n[i] >= 3 {
+            let n: f64 = isi_n[i] as f64
+            let mean: f64 = isi_s[i] / n
+            let var: f64 = isi_s2[i] / n - mean * mean
+            if var > 0.0 and mean > 0.0 {
+                let cv: f64 = sqrt(var) / mean
+                let mut b: i32 = ((cv / 2.0) * (nb as f64)) as i32
+                if b < 0 {
+                    b = 0
+                }
+                if b >= nb {
+                    b = nb - 1
+                }
+                bp[b] = bp[b] + 1
+            }
+        }
+        i = i + 1
+    }
+    let mut mx: i32 = 1
+    let mut b: i32 = 0
+    while b < nb {
+        if bp[b] > mx {
+            mx = bp[b]
+        }
+        b = b + 1
+    }
+    b = 0
+    while b < nb {
+        let h: i32 = ((bp[b] * (HG_H - 4)) / mx)
+        gfx_fill_rect(g, HG_X + 4 + b * 9, HG_Y + HG_H - h, 7, h, 120, 220, 200)
+        b = b + 1
+    }
+    let xline: i32 = HG_X + 4 + ((nb / 2) * 9)
+    let mut gy: i32 = HG_Y
+    while gy < HG_Y + HG_H {
+        gfx_fill_rect(g, xline, gy, 1, 3, 255, 205, 110)
+        gy = gy + 8
+    }
+    gfx_draw_text(g, xline + 4, HG_Y + 4, "CV = 1", 1, 255, 205, 110)
+    gfx_draw_text(g, HG_X + 4, HG_Y + HG_H + 4, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, HG_X + HG_W - 20, HG_Y + HG_H + 4, "2", 1, 110, 125, 150)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "BALANCED E/I NETWORK  -  ASYNCHRONOUS IRREGULAR STATE",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "10000 E + 2500 I leaky integrate-and-fire, p 0.1, J 0.2 mV, g 6, delays 0.5 to 3.0 ms, Euler dt 100 us",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44,
+                  "tau 20 ms   theta 20 mV   Vreset 10 mV   refractory 2 ms   external Poisson at 2 x the threshold rate",
+                  1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 12, WIN_H - 84, "MEAN RATE", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 92, WIN_H - 84, cond_rate[1], 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 156, WIN_H - 84, "Hz     MEAN FIELD PREDICTS", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 366, WIN_H - 84, rate_theory, 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 430, WIN_H - 84, "Hz     RATIO", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 520, WIN_H - 84, cond_rate[1] / rate_theory, 4, 1, 235, 240, 250)
+
+    gfx_draw_text(g, 12, WIN_H - 68, "MEAN CV(ISI)", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 116, WIN_H - 68, cond_cv[1], 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 178, WIN_H - 68, "over", 1, 110, 125, 150)
+    gfx_draw_int(g, 214, WIN_H - 68, cv_n, 1, 235, 240, 250)
+    gfx_draw_text(g, 256, WIN_H - 68, "neurons     gate [0.7, 1.3]", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 52, "SYNCHRONY (Brunel)", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 160, WIN_H - 52, cond_syncb[1], 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 236, WIN_H - 52, "gate < 0.10    population CV in 2 ms bins",
+                  1, 110, 125, 150)
+    gfx_draw_fixed(g, 574, WIN_H - 52, cond_sync[1], 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 636, WIN_H - 52, "vs Poisson", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 720, WIN_H - 52, cond_syncp[1], 4, 1, 235, 240, 250)
+
+    gfx_draw_text(g, 12, WIN_H - 36, "mu", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 34, WIN_H - 36, cond_mu[1], 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 98, WIN_H - 36, "mV   sigma", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 184, WIN_H - 36, cond_sigma[1], 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 248, WIN_H - 36,
+                  "mV   mu below threshold, so spikes come from fluctuations",
+                  1, 110, 125, 150)
+
+    if ok {
+        gfx_draw_text(g, 740, WIN_H - 76, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 740, WIN_H - 76, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16, "P pause the live network   Esc quit", 1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+# One whole condition: rewire, warm up, measure, summarise, and solve the
+# mean field for the same parameters.
+# ---------------------------------------------------------------------------
+
+function run_condition(slot: i32, g: f64, eta: f64) -> void {
+    g_ratio = g
+    eta_drive = eta
+    rng_state = 20240611
+    sim_t = 0.0
+    step_k = 0
+    rast_head = 0
+    rast_fill = 0
+    rate_hz = 0.0
+    cv_mean = 0.0
+    cv_n = 0
+    sync = 0.0
+    sync_poisson = 0.0
+    sync_brunel = 0.0
+    pop_s = 0.0
+    pop_s2 = 0.0
+    pop_n = 0.0
+    let mut b: i32 = 0
+    while b < n_bins {
+        pop_bin[b] = 0.0
+        b = b + 1
+    }
+    build_network()
+
+    let warm: i32 = (WARM_MS / DT) as i32
+    let meas: i32 = (MEAS_MS / DT) as i32
+    let mut k: i32 = 0
+    while k < warm {
+        net_step(false)
+        k = k + 1
+    }
+    k = 0
+    while k < meas {
+        net_step(true)
+        k = k + 1
+    }
+    summarise()
+    cond_rate[slot] = rate_hz
+    cond_cv[slot] = cv_mean
+    cond_sync[slot] = sync
+    cond_syncp[slot] = sync_poisson
+    cond_syncb[slot] = sync_brunel
+    cond_theory[slot] = 1000.0 * solve_mean_field()
+    cond_mu[slot] = mu_final
+    cond_sigma[slot] = sigma_final
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    vm = malloc((N_ALL as i64) * 8)
+    refr = calloc(N_ALL as i64, 4)
+    ring = malloc(((N_DELAY as i64) * (N_ALL as i64)) * 8)
+    targets = calloc((N_ALL as i64) * (OUTDEG as i64), 4)
+    dly = calloc(N_ALL as i64, 4)
+    spk_count = calloc(N_ALL as i64, 4)
+    last_t = malloc((N_ALL as i64) * 8)
+    isi_n = calloc(N_ALL as i64, 4)
+    isi_s = malloc((N_ALL as i64) * 8)
+    isi_s2 = malloc((N_ALL as i64) * 8)
+    n_bins = (MEAS_MS / BIN_MS) as i32
+    pop_bin = malloc((n_bins as i64) * 8)
+    v_sum = malloc((N_ALL as i64) * 8)
+    v_sum2 = malloc((N_ALL as i64) * 8)
+    rast_t = malloc((RAST_CAP as i64) * 8)
+    rast_id = calloc(RAST_CAP as i64, 4)
+
+    let mut b: i32 = 0
+    while b < n_bins {
+        pop_bin[b] = 0.0
+        b = b + 1
+    }
+
+    println("")
+    println("  BALANCED E/I NETWORK  --  the asynchronous irregular state")
+    println("  ==========================================================")
+    println("")
+    println("    10000 excitatory + 2500 inhibitory LIF neurons, p(connect) = 0.1")
+    println("    C_E 1000   C_I 250   J 0.2 mV   g 6   axonal delays 0.5 to 3.0 ms")
+    println("    tau 20 ms   theta 20 mV   V_reset 10 mV   t_ref 2 ms   Euler dt 0.1 ms")
+    println("    external Poisson drive at eta = 2 times the threshold rate of 5 Hz")
+    println("")
+
+    run_condition(1, G_AI, ETA_AI)
+    rate_theory = cond_theory[1]
+
+    print("    measured mean rate            : ")
+    printf("%9.4f Hz", cond_rate[1])
+    print("     gate [")
+    printf("%.0f", RATE_LO)
+    print(", ")
+    printf("%.0f", RATE_HI)
+    println("]")
+    print("    mean-field (Siegert) rate     : ")
+    printf("%9.4f Hz", cond_theory[1])
+    print("     ratio measured/theory ")
+    printf("%.4f", cond_rate[1] / cond_theory[1])
+    println("")
+    print("      mu at that rate             : ")
+    printf("%9.4f mV", cond_mu[1])
+    print("     threshold ")
+    printf("%.1f", THETA)
+    println(" mV")
+    print("      sigma at that rate          : ")
+    printf("%9.4f mV", cond_sigma[1])
+    println("")
+    println("")
+    print("    mean CV(ISI) across neurons   : ")
+    printf("%9.4f", cond_cv[1])
+    print("     over ")
+    printf("%.0f", cv_n as f64)
+    print(" neurons   gate [")
+    printf("%.1f", CV_LO)
+    print(", ")
+    printf("%.1f", CV_HI)
+    println("]")
+    print("    population CV, 2 ms bins      : ")
+    printf("%9.4f", cond_sync[1])
+    print("     independent Poisson would give ")
+    printf("%.4f", cond_syncp[1])
+    println("")
+    println("")
+    print("    Brunel synchrony measure      : ")
+    printf("%9.5f", cond_syncb[1])
+    print("     gate < ")
+    printf("%.2f", SYNC_MAX)
+    println("")
+    println("      var over time of the population mean V, over the mean over")
+    println("      neurons of the variance over time of each one. A network")
+    println("      firing in lockstep gives 1; 12500 independent neurons give")
+    println("      8e-5. A gamma-band ripple survives at this size, so the")
+    println("      measured value sits two orders of magnitude below lockstep")
+    println("      rather than at the independent limit.")
+    println("")
+
+    let rate_ok: bool = cond_rate[1] > RATE_LO and cond_rate[1] < RATE_HI
+    let cv_ok: bool = cond_cv[1] > CV_LO and cond_cv[1] < CV_HI
+    let sync_ok: bool = cond_syncb[1] < SYNC_MAX
+    let mf_ok: bool = cond_rate[1] / cond_theory[1] > 0.5
+                      and cond_rate[1] / cond_theory[1] < 2.0
+    let ok: bool = rate_ok and cv_ok and sync_ok and mf_ok
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Balanced E/I network - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            let mut s: i32 = 0
+            while s < 100 {          # 10 ms of network per frame
+                net_step(false)
+                s = s + 1
+            }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_raster(g)
+        draw_popbins(g)
+        draw_cv_hist(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !rate_ok {
+        println("    FAIL: mean firing rate outside the asynchronous irregular band")
+        return 1
+    }
+    if !cv_ok {
+        println("    FAIL: CV(ISI) is not near 1, so the firing is not irregular")
+        return 2
+    }
+    if !sync_ok {
+        println("    FAIL: the population is synchronised, not asynchronous")
+        return 3
+    }
+    if !mf_ok {
+        println("    FAIL: the measured rate does not match Brunel's mean-field prediction")
+        return 4
+    }
+    println("    PASS: asynchronous, irregular, and at the rate the mean field predicts")
+    return 0
+}

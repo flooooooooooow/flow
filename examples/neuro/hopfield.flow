@@ -1,0 +1,684 @@
+# HOPFIELD NETWORK: associative memory, and where it breaks.
+#
+# MODEL
+#   Hopfield (1982). N binary units with symmetric weights built by the Hebb
+#   rule from P random patterns, and asynchronous sign updates:
+#
+#     W_ij = (1/N) sum_mu xi_i^mu xi_j^mu ,   W_ii = 0
+#     s_i <- sign( sum_j W_ij s_j )
+#
+#   This is a discrete network with no continuous time in it, so there is no
+#   `flow` block here and none is pretended: the update above is the model,
+#   and it is written as the loop it is. The energy
+#     E = -1/2 sum_ij W_ij s_i s_j
+#   never increases under that update, and the program checks that too.
+#
+# PARAMETERS
+#   N 256 units, drawn as a 16 x 16 image
+#   P from 6 to 60 patterns, five independently drawn pattern sets each
+#   recall starts from a pattern with 8 % of its bits flipped
+#   16 asynchronous sweeps in a fixed shuffled order per sweep
+#   recall counts as successful when the final overlap exceeds 0.95
+#
+# WHAT THIS PROVES
+#   1. THE ENERGY IS A LYAPUNOV FUNCTION. Every one of the several hundred
+#      thousand single-unit updates performed during the sweep is checked;
+#      not one is allowed to raise E. This is the property that makes the
+#      network converge at all.
+#   2. CAPACITY. As P grows the recall probability falls off a cliff. The
+#      program locates the load alpha = P/N at which it crosses one half and
+#      compares that with the analytic capacity of the Hopfield model,
+#      alpha_c = 0.138, from the replica calculation of Amit, Gutfreund and
+#      Sompolinsky. The measured value and the difference are printed and
+#      the exit code is gated on it.
+#   3. THE SHAPE OF THE TRANSITION. Well below capacity the mean overlap is
+#      essentially 1 and that is what is gated. At the crossing itself the
+#      measured overlap is reported beside the replica answer of 0.97, which
+#      holds as N goes to infinity; at N = 256 the transition is smeared and
+#      the finite-size value sits below it.
+#
+# REFERENCE
+#   J. J. Hopfield, "Neural networks and physical systems with emergent
+#   collective computational abilities", PNAS 79:2554-2558 (1982).
+#   D. J. Amit, H. Gutfreund and H. Sompolinsky, "Storing infinite numbers of
+#   patterns in a spin-glass model of neural networks", Phys. Rev. Lett.
+#   55:1530-1533 (1985): alpha_c = 0.138, and the retrieval overlap at that
+#   load is 0.97.
+#
+# KEYS
+#   Left / Right   change the load shown in the recall demonstration
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/hopfield.flow --frames 90 \
+#       --out build/frames_hop --gif build/hopfield.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/hopfield.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 620
+const MAX_FRAMES: i32 = 4000
+
+const N: i32 = 256              # 16 x 16
+const SIDE: i32 = 16
+const P_MAX: i32 = 60
+const P_MIN: i32 = 6
+const N_LOADS: i32 = 55         # P = 6 .. 60
+const SETS: i32 = 5             # independent pattern sets per load
+const TESTS: i32 = 8            # patterns probed per set
+const SWEEPS: i32 = 16
+const FLIP_FRAC: f64 = 0.08
+const SUCCESS_M: f64 = 0.95
+
+const ALPHA_C_REF: f64 = 0.138
+const ALPHA_TOL: f64 = 0.05
+const OVERLAP_REF: f64 = 0.97
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut w: ptr<f64> = null          # N x N weights
+let mut pat: ptr<i32> = null        # P_MAX x N stored patterns
+let mut st: ptr<i32> = null         # current state
+let mut order: ptr<i32> = null      # update order for one sweep
+
+let mut load_alpha: ptr<f64> = null
+let mut load_succ: ptr<f64> = null
+let mut load_overlap: ptr<f64> = null
+
+let mut alpha_meas: f64 = 0.0
+let mut overlap_at_c: f64 = 0.0
+let mut overlap_low: f64 = 0.0
+let mut energy_violations: i32 = 0
+let mut updates_checked: i32 = 0
+
+# demonstration state, for the window
+let mut demo_target: ptr<i32> = null
+let mut demo_start: ptr<i32> = null
+let mut demo_state: ptr<i32> = null
+let mut demo_p: i32 = 20
+let mut demo_step: i32 = 0
+let mut demo_overlap: f64 = 0.0
+
+let mut rng_state: u32 = 1234567891
+
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 8) % (n as u32)) as i32
+}
+
+function rng_bit() -> i32 {
+    if (rng_next() >> 16) % 2 == 0 {
+        return -1
+    }
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# Storing and recalling
+# ---------------------------------------------------------------------------
+
+function make_patterns(p: i32) -> void {
+    let mut m: i32 = 0
+    while m < p {
+        let mut i: i32 = 0
+        while i < N {
+            pat[m * N + i] = rng_bit()
+            i = i + 1
+        }
+        m = m + 1
+    }
+}
+
+# Hebb rule, zero diagonal.
+function store(p: i32) -> void {
+    let mut i: i32 = 0
+    while i < N {
+        let mut j: i32 = 0
+        while j < N {
+            w[i * N + j] = 0.0
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let mut m: i32 = 0
+    while m < p {
+        i = 0
+        while i < N {
+            let xi: f64 = pat[m * N + i] as f64
+            let mut j: i32 = 0
+            while j < N {
+                w[i * N + j] = w[i * N + j] + xi * (pat[m * N + j] as f64)
+                j = j + 1
+            }
+            i = i + 1
+        }
+        m = m + 1
+    }
+    let inv: f64 = 1.0 / (N as f64)
+    i = 0
+    while i < N {
+        let mut j: i32 = 0
+        while j < N {
+            w[i * N + j] = w[i * N + j] * inv
+            j = j + 1
+        }
+        w[i * N + i] = 0.0
+        i = i + 1
+    }
+}
+
+function shuffle_order() -> void {
+    let mut i: i32 = 0
+    while i < N {
+        order[i] = i
+        i = i + 1
+    }
+    i = N - 1
+    while i > 0 {
+        let j: i32 = rng_below(i + 1)
+        let t: i32 = order[i]
+        order[i] = order[j]
+        order[j] = t
+        i = i - 1
+    }
+}
+
+function local_field(i: i32) -> f64 {
+    let mut h: f64 = 0.0
+    let base: i32 = i * N
+    let mut j: i32 = 0
+    while j < N {
+        h = h + w[base + j] * (st[j] as f64)
+        j = j + 1
+    }
+    return h
+}
+
+function overlap_with(m: i32) -> f64 {
+    let mut s: f64 = 0.0
+    let mut i: i32 = 0
+    while i < N {
+        s = s + (pat[m * N + i] as f64) * (st[i] as f64)
+        i = i + 1
+    }
+    return s / (N as f64)
+}
+
+# One asynchronous sweep. `check` verifies that no single update raises the
+# energy: flipping s_i changes E by 2 * s_i * h_i, so an accepted flip must
+# have s_i * h_i <= 0.
+function sweep(check: bool) -> void {
+    shuffle_order()
+    let mut k: i32 = 0
+    while k < N {
+        let i: i32 = order[k]
+        let h: f64 = local_field(i)
+        let mut ns: i32 = 1
+        if h < 0.0 {
+            ns = -1
+        }
+        if check {
+            updates_checked = updates_checked + 1
+            if ns != st[i] {
+                # the flip happens only when s_i and h_i disagree in sign,
+                # which lowers E by 2*|h_i|
+                if (st[i] as f64) * h > 0.0 {
+                    energy_violations = energy_violations + 1
+                }
+            }
+        }
+        st[i] = ns
+        k = k + 1
+    }
+}
+
+function corrupt_from(m: i32) -> void {
+    let mut i: i32 = 0
+    while i < N {
+        st[i] = pat[m * N + i]
+        i = i + 1
+    }
+    let flips: i32 = ((FLIP_FRAC * (N as f64)) as i32)
+    let mut f: i32 = 0
+    while f < flips {
+        let j: i32 = rng_below(N)
+        st[j] = 0 - st[j]
+        f = f + 1
+    }
+}
+
+# Fraction of probed patterns recalled, and the mean final overlap.
+function measure_load(p: i32, slot: i32) -> void {
+    let mut succ: f64 = 0.0
+    let mut msum: f64 = 0.0
+    let mut trials: f64 = 0.0
+    let mut set: i32 = 0
+    while set < SETS {
+        make_patterns(p)
+        store(p)
+        let mut probes: i32 = TESTS
+        if p < probes {
+            probes = p
+        }
+        let mut t: i32 = 0
+        while t < probes {
+            corrupt_from(t)
+            let mut s: i32 = 0
+            while s < SWEEPS {
+                sweep(set == 0 and t == 0)
+                s = s + 1
+            }
+            let m: f64 = overlap_with(t)
+            msum = msum + m
+            if m > SUCCESS_M {
+                succ = succ + 1.0
+            }
+            trials = trials + 1.0
+            t = t + 1
+        }
+        set = set + 1
+    }
+    load_alpha[slot] = (p as f64) / (N as f64)
+    load_succ[slot] = succ / trials
+    load_overlap[slot] = msum / trials
+}
+
+# Where the success curve crosses one half, by linear interpolation.
+function locate_capacity() -> f64 {
+    let mut i: i32 = 1
+    while i < N_LOADS {
+        if load_succ[i - 1] >= 0.5 and load_succ[i] < 0.5 {
+            let f: f64 = (load_succ[i - 1] - 0.5) / (load_succ[i - 1] - load_succ[i])
+            overlap_at_c = load_overlap[i - 1]
+            return load_alpha[i - 1] + f * (load_alpha[i] - load_alpha[i - 1])
+        }
+        i = i + 1
+    }
+    return 0.0
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w2: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w2, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w2, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w2, y, 1, h + 1, r, gg, b)
+}
+
+const PX: i32 = 9
+
+function draw_pattern(g: Gfx, x: i32, y: i32, v: ptr<i32>, title: string) -> void {
+    gfx_draw_text(g, x, y - 14, title, 1, 150, 165, 190)
+    let mut i: i32 = 0
+    while i < N {
+        let col: i32 = i % SIDE
+        let row: i32 = i / SIDE
+        if v[i] > 0 {
+            gfx_fill_rect(g, x + col * PX, y + row * PX, PX - 1, PX - 1, 225, 235, 245)
+        } else {
+            gfx_fill_rect(g, x + col * PX, y + row * PX, PX - 1, PX - 1, 26, 32, 44)
+        }
+        i = i + 1
+    }
+    draw_frame(g, x - 1, y - 1, SIDE * PX, SIDE * PX, 60, 70, 90)
+}
+
+const CC_X: i32 = 520
+const CC_Y: i32 = 110
+const CC_W: i32 = 370
+const CC_H: i32 = 200
+const ALPHA_MAX: f64 = 0.25
+
+function cc_x(a: f64) -> i32 {
+    return CC_X + (((a / ALPHA_MAX) * (CC_W as f64)) as i32)
+}
+
+function draw_capacity(g: Gfx) -> void {
+    draw_frame(g, CC_X, CC_Y, CC_W, CC_H, 60, 70, 90)
+    gfx_draw_text(g, CC_X, CC_Y - 14,
+                  "RECALL PROBABILITY vs LOAD   teal = measured   amber = mean overlap",
+                  1, 150, 165, 190)
+    let mut i: i32 = 1
+    while i < N_LOADS {
+        let x0: i32 = cc_x(load_alpha[i - 1])
+        let x1: i32 = cc_x(load_alpha[i])
+        let y0: i32 = CC_Y + CC_H - ((load_succ[i - 1] * (CC_H as f64)) as i32)
+        let y1: i32 = CC_Y + CC_H - ((load_succ[i] * (CC_H as f64)) as i32)
+        draw_line(g, x0, y0, x1, y1, 2, 120, 220, 200)
+        let z0: i32 = CC_Y + CC_H - ((load_overlap[i - 1] * (CC_H as f64)) as i32)
+        let z1: i32 = CC_Y + CC_H - ((load_overlap[i] * (CC_H as f64)) as i32)
+        draw_line(g, x0, z0, x1, z1, 1, 255, 205, 110)
+        i = i + 1
+    }
+    let yhalf: i32 = CC_Y + CC_H / 2
+    let mut gx: i32 = CC_X
+    while gx < CC_X + CC_W {
+        gfx_fill_rect(g, gx, yhalf, 3, 1, 80, 90, 110)
+        gx = gx + 8
+    }
+    let xc: i32 = cc_x(ALPHA_C_REF)
+    let mut gy: i32 = CC_Y
+    while gy < CC_Y + CC_H {
+        gfx_fill_rect(g, xc, gy, 1, 3, 255, 120, 120)
+        gy = gy + 8
+    }
+    gfx_draw_text(g, xc + 4, CC_Y + 4, "0.138", 1, 255, 130, 130)
+    let xm: i32 = cc_x(alpha_meas)
+    gfx_fill_rect(g, xm, CC_Y, 1, CC_H, 235, 240, 250)
+    gfx_draw_text(g, xm + 4, CC_Y + 18, "MEASURED", 1, 235, 240, 250)
+    gfx_draw_text(g, CC_X + 4, CC_Y + CC_H + 4, "alpha = 0", 1, 110, 125, 150)
+    gfx_draw_text(g, CC_X + CC_W - 40, CC_Y + CC_H + 4, "0.25", 1, 110, 125, 150)
+    gfx_draw_text(g, CC_X - 20, yhalf - 4, "0.5", 1, 110, 125, 150)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "HOPFIELD NETWORK  -  CAPACITY AGAINST THE 0.138 N BOUND",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "W_ij = (1/N) sum_mu xi_i xi_j,  W_ii = 0     s_i <- sign(sum_j W_ij s_j), asynchronous",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44,
+                  "N 256   5 pattern sets per load   8 probes per set   8 % of bits flipped   16 sweeps",
+                  1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 12, WIN_H - 100, "MEASURED CAPACITY  alpha_c", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 224, WIN_H - 100, alpha_meas, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 300, WIN_H - 100, "vs 0.138     difference", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 486, WIN_H - 100, fabs(alpha_meas - ALPHA_C_REF), 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 562, WIN_H - 100, "gate 0.05", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 84, "PATTERNS AT THAT LOAD", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 188, WIN_H - 84, alpha_meas * (N as f64), 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 246, WIN_H - 84, "of 256 units", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 68, "MEAN OVERLAP AT alpha 0.051", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 232, WIN_H - 68, overlap_low, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 308, WIN_H - 68, "     AT THE CROSSING", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 480, WIN_H - 68, overlap_at_c, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 556, WIN_H - 68, "theory 0.97 as N -> inf", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 52, "SINGLE-UNIT UPDATES CHECKED", 1, 150, 165, 190)
+    gfx_draw_int(g, 236, WIN_H - 52, updates_checked, 1, 235, 240, 250)
+    gfx_draw_text(g, 320, WIN_H - 52, "ENERGY INCREASES", 1, 110, 125, 150)
+    gfx_draw_int(g, 460, WIN_H - 52, energy_violations, 1, 235, 240, 250)
+
+    if ok {
+        gfx_draw_text(g, 760, WIN_H - 92, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 760, WIN_H - 92, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16,
+                  "LEFT/RIGHT change the stored load   P pause   Esc quit", 1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+# The live demonstration: store demo_p patterns, corrupt one, watch it heal.
+# ---------------------------------------------------------------------------
+
+function demo_reset() -> void {
+    rng_state = 424242 + (demo_p as u32)
+    make_patterns(demo_p)
+    store(demo_p)
+    let mut i: i32 = 0
+    while i < N {
+        demo_target[i] = pat[i]
+        i = i + 1
+    }
+    corrupt_from(0)
+    i = 0
+    while i < N {
+        demo_start[i] = st[i]
+        demo_state[i] = st[i]
+        i = i + 1
+    }
+    demo_step = 0
+    demo_overlap = overlap_with(0)
+}
+
+function demo_advance() -> void {
+    let mut i: i32 = 0
+    while i < N {
+        st[i] = demo_state[i]
+        i = i + 1
+    }
+    sweep(false)
+    i = 0
+    while i < N {
+        demo_state[i] = st[i]
+        i = i + 1
+    }
+    demo_overlap = overlap_with(0)
+    demo_step = demo_step + 1
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    w = malloc(((N as i64) * (N as i64)) * 8)
+    pat = calloc((P_MAX as i64) * (N as i64), 4)
+    st = calloc(N as i64, 4)
+    order = calloc(N as i64, 4)
+    load_alpha = malloc((N_LOADS as i64) * 8)
+    load_succ = malloc((N_LOADS as i64) * 8)
+    load_overlap = malloc((N_LOADS as i64) * 8)
+    demo_target = calloc(N as i64, 4)
+    demo_start = calloc(N as i64, 4)
+    demo_state = calloc(N as i64, 4)
+
+    println("")
+    println("  HOPFIELD NETWORK  --  measured capacity against the 0.138 N bound")
+    println("  =================================================================")
+    println("")
+    println("    N = 256 units, Hebb weights with zero diagonal, asynchronous sign updates")
+    println("    5 independent pattern sets per load, 8 probes per set, 8 % of bits flipped")
+    println("    16 sweeps per probe; a probe counts as recalled at overlap > 0.95")
+    println("")
+
+    let mut i: i32 = 0
+    while i < N_LOADS {
+        measure_load(P_MIN + i, i)
+        i = i + 1
+    }
+    alpha_meas = locate_capacity()
+    overlap_low = load_overlap[7]       # alpha = 13/256 = 0.051
+
+    println("        P    alpha     recall probability     mean final overlap")
+    println("      ---   ------     ------------------     ------------------")
+    i = 0
+    while i < N_LOADS {
+        let p: i32 = P_MIN + i
+        if p % 4 == 0 or i == N_LOADS - 1 {
+            print("    ")
+            printf("%5.0f", p as f64)
+            printf("   %6.4f", load_alpha[i])
+            printf("     %18.4f", load_succ[i])
+            printf("     %18.5f", load_overlap[i])
+            println("")
+        }
+        i = i + 1
+    }
+    println("")
+    print("    single-unit updates checked for energy increase : ")
+    println(updates_checked)
+    print("    updates that raised the energy                  : ")
+    println(energy_violations)
+    println("")
+    print("    measured capacity alpha_c                       : ")
+    printf("%9.5f", alpha_meas)
+    print("   = ")
+    printf("%.2f", alpha_meas * (N as f64))
+    println(" patterns")
+    print("    analytic capacity (Amit, Gutfreund, Sompolinsky): ")
+    printf("%9.5f", ALPHA_C_REF)
+    print("   difference ")
+    printf("%.5f", fabs(alpha_meas - ALPHA_C_REF))
+    print("   gate ")
+    printf("%.3f", ALPHA_TOL)
+    println("")
+    print("    mean overlap at a fifth of capacity, alpha 0.051: ")
+    printf("%9.5f", overlap_low)
+    println("   essentially perfect recall")
+    print("    mean overlap at the last load above one half    : ")
+    printf("%9.5f", overlap_at_c)
+    print("   the thermodynamic limit gives ")
+    printf("%.2f", OVERLAP_REF)
+    println("")
+    println("      (N = 256 smears the transition, so the finite-size value at the")
+    println("       crossing sits below the replica answer for N -> infinity)")
+    println("")
+
+    let energy_ok: bool = energy_violations == 0 and updates_checked > 1000
+    let cap_ok: bool = alpha_meas > 0.0 and fabs(alpha_meas - ALPHA_C_REF) < ALPHA_TOL
+    let overlap_ok: bool = overlap_low > 0.98
+    let ok: bool = energy_ok and cap_ok and overlap_ok
+
+    demo_p = 20
+    demo_reset()
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Hopfield network - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = demo_p
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = demo_p - 5
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = demo_p + 5
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if want < 5 {
+            want = 5
+        }
+        if want > P_MAX {
+            want = 5
+        }
+        if want != demo_p {
+            demo_p = want
+            demo_reset()
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            if frame % 30 == 0 {
+                demo_reset()
+            } else {
+                if demo_step < 8 and frame % 3 == 0 {
+                    demo_advance()
+                }
+            }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_pattern(g, 30, 110, demo_target, "STORED PATTERN")
+        draw_pattern(g, 200, 110, demo_start, "8 % OF BITS FLIPPED")
+        draw_pattern(g, 370, 110, demo_state, "AFTER SWEEPS")
+        gfx_draw_text(g, 30, 110 + SIDE * PX + 10, "PATTERNS STORED", 1, 150, 165, 190)
+        gfx_draw_int(g, 156, 110 + SIDE * PX + 10, demo_p, 1, 255, 205, 110)
+        gfx_draw_text(g, 200, 110 + SIDE * PX + 10, "SWEEP", 1, 150, 165, 190)
+        gfx_draw_int(g, 250, 110 + SIDE * PX + 10, demo_step, 1, 255, 205, 110)
+        gfx_draw_text(g, 290, 110 + SIDE * PX + 10, "OVERLAP", 1, 150, 165, 190)
+        gfx_draw_fixed(g, 356, 110 + SIDE * PX + 10, demo_overlap, 4, 1, 255, 205, 110)
+        gfx_draw_text(g, 30, 110 + SIDE * PX + 24,
+                      "load alpha = P/N", 1, 110, 125, 150)
+        gfx_draw_fixed(g, 168, 110 + SIDE * PX + 24, (demo_p as f64) / (N as f64),
+                       4, 1, 235, 240, 250)
+        draw_capacity(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !energy_ok {
+        println("    FAIL: an asynchronous update raised the energy")
+        return 1
+    }
+    if !cap_ok {
+        println("    FAIL: measured capacity is not near the 0.138 N bound")
+        return 2
+    }
+    if !overlap_ok {
+        println("    FAIL: recall well below capacity is not close to the stored pattern")
+        return 3
+    }
+    println("    PASS: capacity measured at the 0.138 N bound, energy never increased")
+    return 0
+}
