@@ -53,8 +53,7 @@
       "wasm_bytes": 13746,
       "js_bytes": 20332,
       "total_bytes": 34078,
-      "page": "2048_gfx/index.html",
-      "seconds": 0.9
+      "page": "2048_gfx/index.html"
     },
     {
       "name": "asteroids_gfx",
@@ -67,8 +66,7 @@
       "wasm_bytes": 17390,
       "js_bytes": 20337,
       "total_bytes": 37727,
-      "page": "asteroids_gfx/index.html",
-      "seconds": 0.9
+      "page": "asteroids_gfx/index.html"
     },
     {
       "name": "breakout_gfx",
@@ -81,8 +79,7 @@
       "wasm_bytes": 12149,
       "js_bytes": 20336,
       "total_bytes": 32485,
-      "page": "breakout_gfx/index.html",
-      "seconds": 0.9
+      "page": "breakout_gfx/index.html"
     },
     {
       "name": "checkers_gfx",
@@ -95,8 +92,7 @@
       "wasm_bytes": 25142,
       "js_bytes": 21327,
       "total_bytes": 46469,
-      "page": "checkers_gfx/index.html",
-      "seconds": 0.9
+      "page": "checkers_gfx/index.html"
     },
     {
       "name": "chetris_gfx",
@@ -109,8 +105,7 @@
       "wasm_bytes": 17270,
       "js_bytes": 20335,
       "total_bytes": 37605,
-      "page": "chetris_gfx/index.html",
-      "seconds": 0.9
+      "page": "chetris_gfx/index.html"
     },
     {
       "name": "connect4_gfx",
@@ -123,8 +118,7 @@
       "wasm_bytes": 14121,
       "js_bytes": 20336,
       "total_bytes": 34457,
-      "page": "connect4_gfx/index.html",
-      "seconds": 0.9
+      "page": "connect4_gfx/index.html"
     },
     {
       "name": "flappy_gfx",
@@ -137,8 +131,7 @@
       "wasm_bytes": 11843,
       "js_bytes": 20334,
       "total_bytes": 32177,
-      "page": "flappy_gfx/index.html",
-      "seconds": 0.9
+      "page": "flappy_gfx/index.html"
     },
     {
       "name": "frogger_gfx",
@@ -151,8 +144,7 @@
       "wasm_bytes": 15615,
       "js_bytes": 20335,
       "total_bytes": 35950,
-      "page": "frogger_gfx/index.html",
-      "seconds": 0.9
+      "page": "frogger_gfx/index.html"
     },
     {
       "name": "hanoi_gfx",
@@ -165,8 +157,7 @@
       "wasm_bytes": 22985,
       "js_bytes": 21324,
       "total_bytes": 44309,
-      "page": "hanoi_gfx/index.html",
-      "seconds": 0.9
+      "page": "hanoi_gfx/index.html"
     },
     {
       "name": "invaders_gfx",
@@ -179,8 +170,7 @@
       "wasm_bytes": 17439,
       "js_bytes": 20336,
       "total_bytes": 37775,
-      "page": "invaders_gfx/index.html",
-      "seconds": 0.9
+      "page": "invaders_gfx/index.html"
     },
     {
       "name": "jumper_gfx",
@@ -193,8 +183,7 @@
       "wasm_bytes": 13438,
       "js_bytes": 20334,
       "total_bytes": 33772,
-      "page": "jumper_gfx/index.html",
-      "seconds": 0.9
+      "page": "jumper_gfx/index.html"
     },
     {
       "name": "lane_racer_gfx",
@@ -207,8 +196,7 @@
       "wasm_bytes": 12700,
       "js_bytes": 20338,
       "total_bytes": 33038,
-      "page": "lane_racer_gfx/index.html",
-      "seconds": 0.9
+      "page": "lane_racer_gfx/index.html"
     },
     {
       "name": "lightsout_gfx",
@@ -221,8 +209,7 @@
       "wasm_bytes": 12367,
       "js_bytes": 20337,
       "total_bytes": 32704,
-      "page": "lightsout_gfx/index.html",
-      "seconds": 0.8
+      "page": "lightsout_gfx/index.html"
     },
     {
       "name": "match3_gfx",
@@ -235,8 +222,7 @@
       "wasm_bytes": 22275,
       "js_bytes": 21325,
       "total_bytes": 43600,
-      "page": "match3_gfx/index.html",
-      "seconds": 0.9
+      "page": "match3_gfx/index.html"
     },
     {
       "name": "maze_chase_gfx",
@@ -249,8 +235,7 @@
       "wasm_bytes": 16463,
       "js_bytes": 20338,
       "total_bytes": 36801,
-      "page": "maze_chase_gfx/index.html",
-      "seconds": 0.9
+      "page": "maze_chase_gfx/index.html"
     },
     {
       "name": "minesweeper_gfx",
@@ -263,8 +248,7 @@
       "wasm_bytes": 22610,
       "js_bytes": 21330,
       "total_bytes": 43940,
-      "page": "minesweeper_gfx/index.html",
-      "seconds": 0.9
+      "page": "minesweeper_gfx/index.html"
     },
     {
       "name": "missile_gfx",
@@ -277,8 +261,7 @@
       "wasm_bytes": 27463,
       "js_bytes": 21326,
       "total_bytes": 48789,
-      "page": "missile_gfx/index.html",
-      "seconds": 1.0
+      "page": "missile_gfx/index.html"
     },
     {
       "name": "othello_gfx",
@@ -291,8 +274,7 @@
       "wasm_bytes": 24546,
       "js_bytes": 21326,
       "total_bytes": 45872,
-      "page": "othello_gfx/index.html",
-      "seconds": 0.9
+      "page": "othello_gfx/index.html"
     },
     {
       "name": "pong_gfx",
@@ -305,8 +287,7 @@
       "wasm_bytes": 11862,
       "js_bytes": 20332,
       "total_bytes": 32194,
-      "page": "pong_gfx/index.html",
-      "seconds": 0.9
+      "page": "pong_gfx/index.html"
     },
     {
       "name": "simon_gfx",
@@ -319,8 +300,7 @@
       "wasm_bytes": 21338,
       "js_bytes": 21324,
       "total_bytes": 42662,
-      "page": "simon_gfx/index.html",
-      "seconds": 0.9
+      "page": "simon_gfx/index.html"
     },
     {
       "name": "snake_gfx",
@@ -333,8 +313,7 @@
       "wasm_bytes": 21033,
       "js_bytes": 21324,
       "total_bytes": 42357,
-      "page": "snake_gfx/index.html",
-      "seconds": 0.9
+      "page": "snake_gfx/index.html"
     },
     {
       "name": "sokoban_gfx",
@@ -347,8 +326,7 @@
       "wasm_bytes": 13253,
       "js_bytes": 20335,
       "total_bytes": 33588,
-      "page": "sokoban_gfx/index.html",
-      "seconds": 0.9
+      "page": "sokoban_gfx/index.html"
     },
     {
       "name": "tetris_gfx",
@@ -361,8 +339,7 @@
       "wasm_bytes": 16991,
       "js_bytes": 20334,
       "total_bytes": 37325,
-      "page": "tetris_gfx/index.html",
-      "seconds": 1.0
+      "page": "tetris_gfx/index.html"
     },
     {
       "name": "belousov",
@@ -375,8 +352,7 @@
       "wasm_bytes": 14636,
       "js_bytes": 20332,
       "total_bytes": 34968,
-      "page": "belousov/index.html",
-      "seconds": 0.9
+      "page": "belousov/index.html"
     },
     {
       "name": "branching_vessels",
@@ -389,8 +365,7 @@
       "wasm_bytes": 29782,
       "js_bytes": 20341,
       "total_bytes": 50123,
-      "page": "branching_vessels/index.html",
-      "seconds": 1.0
+      "page": "branching_vessels/index.html"
     },
     {
       "name": "cahn_hilliard",
@@ -403,8 +378,7 @@
       "wasm_bytes": 14879,
       "js_bytes": 20337,
       "total_bytes": 35216,
-      "page": "cahn_hilliard/index.html",
-      "seconds": 1.1
+      "page": "cahn_hilliard/index.html"
     },
     {
       "name": "cell_sorting",
@@ -417,8 +391,7 @@
       "wasm_bytes": 21029,
       "js_bytes": 20336,
       "total_bytes": 41365,
-      "page": "cell_sorting/index.html",
-      "seconds": 1.1
+      "page": "cell_sorting/index.html"
     },
     {
       "name": "coral_ballistic",
@@ -431,8 +404,7 @@
       "wasm_bytes": 14581,
       "js_bytes": 20339,
       "total_bytes": 34920,
-      "page": "coral_ballistic/index.html",
-      "seconds": 1.0
+      "page": "coral_ballistic/index.html"
     },
     {
       "name": "cyclic_ca",
@@ -445,8 +417,7 @@
       "wasm_bytes": 14087,
       "js_bytes": 20333,
       "total_bytes": 34420,
-      "page": "cyclic_ca/index.html",
-      "seconds": 1.2
+      "page": "cyclic_ca/index.html"
     },
     {
       "name": "dla",
@@ -459,8 +430,7 @@
       "wasm_bytes": 26292,
       "js_bytes": 20327,
       "total_bytes": 46619,
-      "page": "dla/index.html",
-      "seconds": 1.1
+      "page": "dla/index.html"
     },
     {
       "name": "eden_growth",
@@ -473,8 +443,7 @@
       "wasm_bytes": 14641,
       "js_bytes": 20335,
       "total_bytes": 34976,
-      "page": "eden_growth/index.html",
-      "seconds": 1.1
+      "page": "eden_growth/index.html"
     },
     {
       "name": "gray_scott",
@@ -487,8 +456,7 @@
       "wasm_bytes": 17697,
       "js_bytes": 20334,
       "total_bytes": 38031,
-      "page": "gray_scott/index.html",
-      "seconds": 1.0
+      "page": "gray_scott/index.html"
     },
     {
       "name": "heat_morph",
@@ -501,8 +469,7 @@
       "wasm_bytes": 13878,
       "js_bytes": 20334,
       "total_bytes": 34212,
-      "page": "heat_morph/index.html",
-      "seconds": 0.9
+      "page": "heat_morph/index.html"
     },
     {
       "name": "hexagonal_ca",
@@ -515,8 +482,7 @@
       "wasm_bytes": 15845,
       "js_bytes": 20336,
       "total_bytes": 36181,
-      "page": "hexagonal_ca/index.html",
-      "seconds": 0.9
+      "page": "hexagonal_ca/index.html"
     },
     {
       "name": "life_variants",
@@ -529,8 +495,7 @@
       "wasm_bytes": 13148,
       "js_bytes": 20337,
       "total_bytes": 33485,
-      "page": "life_variants/index.html",
-      "seconds": 0.8
+      "page": "life_variants/index.html"
     },
     {
       "name": "lsystem_plant",
@@ -543,8 +508,7 @@
       "wasm_bytes": 22387,
       "js_bytes": 20337,
       "total_bytes": 42724,
-      "page": "lsystem_plant/index.html",
-      "seconds": 0.9
+      "page": "lsystem_plant/index.html"
     },
     {
       "name": "lsystem_tree",
@@ -557,8 +521,7 @@
       "wasm_bytes": 21415,
       "js_bytes": 20336,
       "total_bytes": 41751,
-      "page": "lsystem_tree/index.html",
-      "seconds": 1.1
+      "page": "lsystem_tree/index.html"
     },
     {
       "name": "slime_mold",
@@ -571,8 +534,7 @@
       "wasm_bytes": 22825,
       "js_bytes": 20334,
       "total_bytes": 43159,
-      "page": "slime_mold/index.html",
-      "seconds": 1.2
+      "page": "slime_mold/index.html"
     },
     {
       "name": "somite_clock",
@@ -585,8 +547,7 @@
       "wasm_bytes": 33140,
       "js_bytes": 21327,
       "total_bytes": 54467,
-      "page": "somite_clock/index.html",
-      "seconds": 1.4
+      "page": "somite_clock/index.html"
     },
     {
       "name": "swift_hohenberg",
@@ -599,8 +560,7 @@
       "wasm_bytes": 14601,
       "js_bytes": 20339,
       "total_bytes": 34940,
-      "page": "swift_hohenberg/index.html",
-      "seconds": 1.2
+      "page": "swift_hohenberg/index.html"
     },
     {
       "name": "turing_spots",
@@ -613,8 +573,7 @@
       "wasm_bytes": 15178,
       "js_bytes": 20336,
       "total_bytes": 35514,
-      "page": "turing_spots/index.html",
-      "seconds": 1.2
+      "page": "turing_spots/index.html"
     },
     {
       "name": "turing_stripes",
@@ -627,8 +586,7 @@
       "wasm_bytes": 15108,
       "js_bytes": 20338,
       "total_bytes": 35446,
-      "page": "turing_stripes/index.html",
-      "seconds": 1.1
+      "page": "turing_stripes/index.html"
     },
     {
       "name": "wfc_growth",
@@ -641,8 +599,7 @@
       "wasm_bytes": 19219,
       "js_bytes": 20334,
       "total_bytes": 39553,
-      "page": "wfc_growth/index.html",
-      "seconds": 1.2
+      "page": "wfc_growth/index.html"
     },
     {
       "name": "bubble_sort",
@@ -655,8 +612,7 @@
       "wasm_bytes": 7002,
       "js_bytes": 10828,
       "total_bytes": 17830,
-      "page": "bubble_sort/index.html",
-      "seconds": 0.9
+      "page": "bubble_sort/index.html"
     },
     {
       "name": "declarative_sort",
@@ -669,8 +625,7 @@
       "wasm_bytes": 15849,
       "js_bytes": 11286,
       "total_bytes": 27135,
-      "page": "declarative_sort/index.html",
-      "seconds": 1.0
+      "page": "declarative_sort/index.html"
     },
     {
       "name": "dot_product",
@@ -683,8 +638,7 @@
       "wasm_bytes": 7001,
       "js_bytes": 10828,
       "total_bytes": 17829,
-      "page": "dot_product/index.html",
-      "seconds": 1.0
+      "page": "dot_product/index.html"
     },
     {
       "name": "factorial",
@@ -697,8 +651,7 @@
       "wasm_bytes": 7002,
       "js_bytes": 10826,
       "total_bytes": 17828,
-      "page": "factorial/index.html",
-      "seconds": 1.0
+      "page": "factorial/index.html"
     },
     {
       "name": "fibonacci",
@@ -711,8 +664,7 @@
       "wasm_bytes": 7053,
       "js_bytes": 10826,
       "total_bytes": 17879,
-      "page": "fibonacci/index.html",
-      "seconds": 1.0
+      "page": "fibonacci/index.html"
     },
     {
       "name": "gcd",
@@ -725,8 +677,7 @@
       "wasm_bytes": 7024,
       "js_bytes": 10820,
       "total_bytes": 17844,
-      "page": "gcd/index.html",
-      "seconds": 1.0
+      "page": "gcd/index.html"
     },
     {
       "name": "hello_wasm",
@@ -739,8 +690,7 @@
       "wasm_bytes": 13346,
       "js_bytes": 11280,
       "total_bytes": 24626,
-      "page": "hello_wasm/index.html",
-      "seconds": 1.1
+      "page": "hello_wasm/index.html"
     },
     {
       "name": "hello_world",
@@ -753,8 +703,7 @@
       "wasm_bytes": 7001,
       "js_bytes": 10828,
       "total_bytes": 17829,
-      "page": "hello_world/index.html",
-      "seconds": 1.0
+      "page": "hello_world/index.html"
     },
     {
       "name": "loops",
@@ -767,8 +716,7 @@
       "wasm_bytes": 7002,
       "js_bytes": 10822,
       "total_bytes": 17824,
-      "page": "loops/index.html",
-      "seconds": 1.0
+      "page": "loops/index.html"
     },
     {
       "name": "match_enums",
@@ -781,8 +729,7 @@
       "wasm_bytes": 13294,
       "js_bytes": 11281,
       "total_bytes": 24575,
-      "page": "match_enums/index.html",
-      "seconds": 1.0
+      "page": "match_enums/index.html"
     },
     {
       "name": "palindrome",
@@ -795,8 +742,7 @@
       "wasm_bytes": 7001,
       "js_bytes": 10827,
       "total_bytes": 17828,
-      "page": "palindrome/index.html",
-      "seconds": 1.0
+      "page": "palindrome/index.html"
     },
     {
       "name": "pipeline_choose",
@@ -809,8 +755,7 @@
       "wasm_bytes": 13322,
       "js_bytes": 11285,
       "total_bytes": 24607,
-      "page": "pipeline_choose/index.html",
-      "seconds": 1.0
+      "page": "pipeline_choose/index.html"
     },
     {
       "name": "pipeline_fork",
@@ -823,8 +768,7 @@
       "wasm_bytes": 13320,
       "js_bytes": 11283,
       "total_bytes": 24603,
-      "page": "pipeline_fork/index.html",
-      "seconds": 1.0
+      "page": "pipeline_fork/index.html"
     },
     {
       "name": "pipeline_fork_inferred",
@@ -837,8 +781,7 @@
       "wasm_bytes": 13320,
       "js_bytes": 11292,
       "total_bytes": 24612,
-      "page": "pipeline_fork_inferred/index.html",
-      "seconds": 1.1
+      "page": "pipeline_fork_inferred/index.html"
     },
     {
       "name": "pipeline_placeholder",
@@ -851,8 +794,7 @@
       "wasm_bytes": 13332,
       "js_bytes": 11290,
       "total_bytes": 24622,
-      "page": "pipeline_placeholder/index.html",
-      "seconds": 1.1
+      "page": "pipeline_placeholder/index.html"
     },
     {
       "name": "power",
@@ -865,8 +807,7 @@
       "wasm_bytes": 7002,
       "js_bytes": 10822,
       "total_bytes": 17824,
-      "page": "power/index.html",
-      "seconds": 1.0
+      "page": "power/index.html"
     },
     {
       "name": "prime_numbers",
@@ -879,8 +820,7 @@
       "wasm_bytes": 7114,
       "js_bytes": 10830,
       "total_bytes": 17944,
-      "page": "prime_numbers/index.html",
-      "seconds": 1.0
+      "page": "prime_numbers/index.html"
     },
     {
       "name": "result_pipeline",
@@ -893,8 +833,7 @@
       "wasm_bytes": 13371,
       "js_bytes": 11285,
       "total_bytes": 24656,
-      "page": "result_pipeline/index.html",
-      "seconds": 1.1
+      "page": "result_pipeline/index.html"
     },
     {
       "name": "simple_for",
@@ -907,8 +846,7 @@
       "wasm_bytes": 8908,
       "js_bytes": 11280,
       "total_bytes": 20188,
-      "page": "simple_for/index.html",
-      "seconds": 1.0
+      "page": "simple_for/index.html"
     },
     {
       "name": "simple_search",
@@ -921,8 +859,7 @@
       "wasm_bytes": 7044,
       "js_bytes": 10830,
       "total_bytes": 17874,
-      "page": "simple_search/index.html",
-      "seconds": 1.1
+      "page": "simple_search/index.html"
     },
     {
       "name": "spans",
@@ -935,8 +872,7 @@
       "wasm_bytes": 7001,
       "js_bytes": 10822,
       "total_bytes": 17823,
-      "page": "spans/index.html",
-      "seconds": 1.1
+      "page": "spans/index.html"
     },
     {
       "name": "type_safety_demo",
@@ -949,8 +885,7 @@
       "wasm_bytes": 9405,
       "js_bytes": 11286,
       "total_bytes": 20691,
-      "page": "type_safety_demo/index.html",
-      "seconds": 1.1
+      "page": "type_safety_demo/index.html"
     },
     {
       "name": "async_effects",
@@ -963,8 +898,7 @@
       "wasm_bytes": 17038,
       "js_bytes": 12660,
       "total_bytes": 29698,
-      "page": "async_effects/index.html",
-      "seconds": 0.8
+      "page": "async_effects/index.html"
     },
     {
       "name": "async_primitives",
@@ -973,8 +907,7 @@
       "source": "examples/effects/async_primitives.flow",
       "summary": "Async primitives (effects-based) \u2014 minimal runnable slice",
       "status": "failed",
-      "error": "emcc: undefined symbol flow_fiber_run_main",
-      "seconds": 0.4
+      "error": "emcc: undefined symbol flow_fiber_run_main"
     },
     {
       "name": "calculator",
@@ -987,8 +920,7 @@
       "wasm_bytes": 20388,
       "js_bytes": 11280,
       "total_bytes": 31668,
-      "page": "calculator/index.html",
-      "seconds": 1.4
+      "page": "calculator/index.html"
     },
     {
       "name": "claim_address_demo",
@@ -1001,8 +933,7 @@
       "wasm_bytes": 20146,
       "js_bytes": 11288,
       "total_bytes": 31434,
-      "page": "claim_address_demo/index.html",
-      "seconds": 1.2
+      "page": "claim_address_demo/index.html"
     },
     {
       "name": "closures_demo",
@@ -1015,8 +946,7 @@
       "wasm_bytes": 13897,
       "js_bytes": 11283,
       "total_bytes": 25180,
-      "page": "closures_demo/index.html",
-      "seconds": 1.2
+      "page": "closures_demo/index.html"
     },
     {
       "name": "composition_car_engine",
@@ -1029,8 +959,7 @@
       "wasm_bytes": 7002,
       "js_bytes": 10839,
       "total_bytes": 17841,
-      "page": "composition_car_engine/index.html",
-      "seconds": 1.2
+      "page": "composition_car_engine/index.html"
     },
     {
       "name": "composition_team_employee",
@@ -1043,8 +972,7 @@
       "wasm_bytes": 7003,
       "js_bytes": 10842,
       "total_bytes": 17845,
-      "page": "composition_team_employee/index.html",
-      "seconds": 1.2
+      "page": "composition_team_employee/index.html"
     },
     {
       "name": "dependency_injection",
@@ -1057,8 +985,7 @@
       "wasm_bytes": 17105,
       "js_bytes": 12667,
       "total_bytes": 29772,
-      "page": "dependency_injection/index.html",
-      "seconds": 0.8
+      "page": "dependency_injection/index.html"
     },
     {
       "name": "effect_rows",
@@ -1071,8 +998,7 @@
       "wasm_bytes": 14911,
       "js_bytes": 12658,
       "total_bytes": 27569,
-      "page": "effect_rows/index.html",
-      "seconds": 0.7
+      "page": "effect_rows/index.html"
     },
     {
       "name": "enum_match_exhaustive",
@@ -1085,8 +1011,7 @@
       "wasm_bytes": 13388,
       "js_bytes": 11291,
       "total_bytes": 24679,
-      "page": "enum_match_exhaustive/index.html",
-      "seconds": 1.2
+      "page": "enum_match_exhaustive/index.html"
     },
     {
       "name": "enums_demo",
@@ -1099,8 +1024,7 @@
       "wasm_bytes": 13816,
       "js_bytes": 11280,
       "total_bytes": 25096,
-      "page": "enums_demo/index.html",
-      "seconds": 1.2
+      "page": "enums_demo/index.html"
     },
     {
       "name": "flow_identifier_lexer",
@@ -1113,8 +1037,7 @@
       "wasm_bytes": 11067,
       "js_bytes": 11291,
       "total_bytes": 22358,
-      "page": "flow_identifier_lexer/index.html",
-      "seconds": 1.1
+      "page": "flow_identifier_lexer/index.html"
     },
     {
       "name": "flow_lexer",
@@ -1127,8 +1050,7 @@
       "wasm_bytes": 13394,
       "js_bytes": 11280,
       "total_bytes": 24674,
-      "page": "flow_lexer/index.html",
-      "seconds": 0.8
+      "page": "flow_lexer/index.html"
     },
     {
       "name": "generics_demo",
@@ -1141,8 +1063,7 @@
       "wasm_bytes": 17149,
       "js_bytes": 11283,
       "total_bytes": 28432,
-      "page": "generics_demo/index.html",
-      "seconds": 1.5
+      "page": "generics_demo/index.html"
     },
     {
       "name": "know_demo",
@@ -1155,8 +1076,7 @@
       "wasm_bytes": 25093,
       "js_bytes": 11279,
       "total_bytes": 36372,
-      "page": "know_demo/index.html",
-      "seconds": 0.9
+      "page": "know_demo/index.html"
     },
     {
       "name": "lsp_ordering_port",
@@ -1169,8 +1089,7 @@
       "wasm_bytes": 9339,
       "js_bytes": 11287,
       "total_bytes": 20626,
-      "page": "lsp_ordering_port/index.html",
-      "seconds": 0.7
+      "page": "lsp_ordering_port/index.html"
     },
     {
       "name": "math_prose_demo",
@@ -1183,8 +1102,7 @@
       "wasm_bytes": 23190,
       "js_bytes": 11285,
       "total_bytes": 34475,
-      "page": "math_prose_demo/index.html",
-      "seconds": 0.8
+      "page": "math_prose_demo/index.html"
     },
     {
       "name": "oop_counter",
@@ -1197,8 +1115,7 @@
       "wasm_bytes": 7001,
       "js_bytes": 10828,
       "total_bytes": 17829,
-      "page": "oop_counter/index.html",
-      "seconds": 1.3
+      "page": "oop_counter/index.html"
     },
     {
       "name": "oop_person",
@@ -1211,8 +1128,7 @@
       "wasm_bytes": 7001,
       "js_bytes": 10827,
       "total_bytes": 17828,
-      "page": "oop_person/index.html",
-      "seconds": 1.6
+      "page": "oop_person/index.html"
     },
     {
       "name": "option_result_demo",
@@ -1225,8 +1141,7 @@
       "wasm_bytes": 17324,
       "js_bytes": 11288,
       "total_bytes": 28612,
-      "page": "option_result_demo/index.html",
-      "seconds": 1.6
+      "page": "option_result_demo/index.html"
     },
     {
       "name": "showcase",
@@ -1239,8 +1154,7 @@
       "wasm_bytes": 18561,
       "js_bytes": 12655,
       "total_bytes": 31216,
-      "page": "showcase/index.html",
-      "seconds": 0.8
+      "page": "showcase/index.html"
     },
     {
       "name": "state_effects",
@@ -1253,8 +1167,7 @@
       "wasm_bytes": 20096,
       "js_bytes": 12660,
       "total_bytes": 32756,
-      "page": "state_effects/index.html",
-      "seconds": 0.8
+      "page": "state_effects/index.html"
     },
     {
       "name": "traits_demo",
@@ -1267,8 +1180,7 @@
       "wasm_bytes": 17183,
       "js_bytes": 11281,
       "total_bytes": 28464,
-      "page": "traits_demo/index.html",
-      "seconds": 1.5
+      "page": "traits_demo/index.html"
     },
     {
       "name": "blas_demo",
@@ -1277,8 +1189,7 @@
       "source": "examples/linalg/blas_demo.flow",
       "summary": "BLAS Demo: Comparing naive vs Accelerate-backed matrix operations",
       "status": "failed",
-      "error": "emcc: undefined symbol cblas_dgemm",
-      "seconds": 0.4
+      "error": "emcc: undefined symbol cblas_dgemm"
     },
     {
       "name": "controllability_demo",
@@ -1291,8 +1202,7 @@
       "wasm_bytes": 12963,
       "js_bytes": 10837,
       "total_bytes": 23800,
-      "page": "controllability_demo/index.html",
-      "seconds": 0.8
+      "page": "controllability_demo/index.html"
     },
     {
       "name": "ga_control",
@@ -1305,8 +1215,7 @@
       "wasm_bytes": 17502,
       "js_bytes": 11613,
       "total_bytes": 29115,
-      "page": "ga_control/index.html",
-      "seconds": 0.8
+      "page": "ga_control/index.html"
     },
     {
       "name": "ga_dsys_namespaced",
@@ -1319,8 +1228,7 @@
       "wasm_bytes": 32557,
       "js_bytes": 11621,
       "total_bytes": 44178,
-      "page": "ga_dsys_namespaced/index.html",
-      "seconds": 0.9
+      "page": "ga_dsys_namespaced/index.html"
     },
     {
       "name": "ga_dsys_syntax",
@@ -1333,8 +1241,7 @@
       "wasm_bytes": 33951,
       "js_bytes": 11617,
       "total_bytes": 45568,
-      "page": "ga_dsys_syntax/index.html",
-      "seconds": 0.9
+      "page": "ga_dsys_syntax/index.html"
     },
     {
       "name": "ga_full_analysis",
@@ -1347,8 +1254,7 @@
       "wasm_bytes": 32924,
       "js_bytes": 11619,
       "total_bytes": 44543,
-      "page": "ga_full_analysis/index.html",
-      "seconds": 1.0
+      "page": "ga_full_analysis/index.html"
     },
     {
       "name": "ga_wfc_coupled",
@@ -1361,8 +1267,7 @@
       "wasm_bytes": 36272,
       "js_bytes": 11617,
       "total_bytes": 47889,
-      "page": "ga_wfc_coupled/index.html",
-      "seconds": 1.0
+      "page": "ga_wfc_coupled/index.html"
     },
     {
       "name": "gramian_demo",
@@ -1375,8 +1280,7 @@
       "wasm_bytes": 11853,
       "js_bytes": 10829,
       "total_bytes": 22682,
-      "page": "gramian_demo/index.html",
-      "seconds": 0.9
+      "page": "gramian_demo/index.html"
     },
     {
       "name": "lorenz_attractor",
@@ -1389,8 +1293,7 @@
       "wasm_bytes": 9780,
       "js_bytes": 11619,
       "total_bytes": 21399,
-      "page": "lorenz_attractor/index.html",
-      "seconds": 0.8
+      "page": "lorenz_attractor/index.html"
     },
     {
       "name": "lu_decomposition",
@@ -1399,8 +1302,7 @@
       "source": "examples/linalg/lu_decomposition.flow",
       "summary": "LU / linear solve via stdlib BLAS (pattern-adoption #168)",
       "status": "failed",
-      "error": "emcc: undefined symbol cblas_dcopy",
-      "seconds": 0.4
+      "error": "emcc: undefined symbol cblas_dcopy"
     },
     {
       "name": "lu_decomposition_pedagogical",
@@ -1413,8 +1315,7 @@
       "wasm_bytes": 20111,
       "js_bytes": 11298,
       "total_bytes": 31409,
-      "page": "lu_decomposition_pedagogical/index.html",
-      "seconds": 0.8
+      "page": "lu_decomposition_pedagogical/index.html"
     },
     {
       "name": "matrix_ops",
@@ -1427,8 +1328,7 @@
       "wasm_bytes": 19378,
       "js_bytes": 11280,
       "total_bytes": 30658,
-      "page": "matrix_ops/index.html",
-      "seconds": 0.8
+      "page": "matrix_ops/index.html"
     },
     {
       "name": "natural_physics",
@@ -1441,8 +1341,7 @@
       "wasm_bytes": 8798,
       "js_bytes": 11285,
       "total_bytes": 20083,
-      "page": "natural_physics/index.html",
-      "seconds": 0.7
+      "page": "natural_physics/index.html"
     },
     {
       "name": "natural_syntax_demo",
@@ -1455,8 +1354,7 @@
       "wasm_bytes": 17305,
       "js_bytes": 11289,
       "total_bytes": 28594,
-      "page": "natural_syntax_demo/index.html",
-      "seconds": 0.7
+      "page": "natural_syntax_demo/index.html"
     },
     {
       "name": "ode_solver",
@@ -1469,8 +1367,7 @@
       "wasm_bytes": 23105,
       "js_bytes": 11280,
       "total_bytes": 34385,
-      "page": "ode_solver/index.html",
-      "seconds": 0.7
+      "page": "ode_solver/index.html"
     },
     {
       "name": "optimization",
@@ -1483,8 +1380,7 @@
       "wasm_bytes": 20092,
       "js_bytes": 11282,
       "total_bytes": 31374,
-      "page": "optimization/index.html",
-      "seconds": 0.8
+      "page": "optimization/index.html"
     },
     {
       "name": "regression_gd",
@@ -1497,8 +1393,7 @@
       "wasm_bytes": 16895,
       "js_bytes": 11283,
       "total_bytes": 28178,
-      "page": "regression_gd/index.html",
-      "seconds": 0.8
+      "page": "regression_gd/index.html"
     },
     {
       "name": "wfc_demo",
@@ -1511,8 +1406,7 @@
       "wasm_bytes": 8852,
       "js_bytes": 10825,
       "total_bytes": 19677,
-      "page": "wfc_demo/index.html",
-      "seconds": 0.7
+      "page": "wfc_demo/index.html"
     },
     {
       "name": "digits_mlp",
@@ -1521,8 +1415,7 @@
       "source": "examples/ml/digits_mlp.flow",
       "summary": "Multi-class digits MLP trained from scratch on the CPU",
       "status": "failed",
-      "error": "emcc: undefined symbol flow_rt_monotonic_ns",
-      "seconds": 0.4
+      "error": "emcc: undefined symbol flow_rt_monotonic_ns"
     },
     {
       "name": "digits_mlp_metal",
@@ -1531,8 +1424,7 @@
       "source": "examples/ml/digits_mlp_metal.flow",
       "summary": "Metal GPU status check for the digits MLP: what runs on the GPU today",
       "status": "failed",
-      "error": "emcc: undefined symbol flow_gpu_alloc",
-      "seconds": 0.3
+      "error": "emcc: undefined symbol flow_gpu_alloc"
     },
     {
       "name": "digits_mlp_parallel",
@@ -1541,8 +1433,7 @@
       "source": "examples/ml/digits_mlp_parallel.flow",
       "summary": "Data-parallel gradient accumulation for the digits MLP",
       "status": "failed",
-      "error": "emcc: undefined symbol flow_rt_monotonic_ns",
-      "seconds": 0.4
+      "error": "emcc: undefined symbol flow_rt_monotonic_ns"
     },
     {
       "name": "flowlm_charlm",
@@ -1555,8 +1446,7 @@
       "wasm_bytes": 66462,
       "js_bytes": 11616,
       "total_bytes": 78078,
-      "page": "flowlm_charlm/index.html",
-      "seconds": 1.0
+      "page": "flowlm_charlm/index.html"
     },
     {
       "name": "ga_flappy",
@@ -1565,8 +1455,7 @@
       "source": "examples/ai/ga_flappy.flow",
       "summary": "GA-FLAPPY - neuroevolution on headless flappy",
       "status": "failed",
-      "error": "emcc: undefined symbol fly",
-      "seconds": 0.6
+      "error": "emcc: undefined symbol fly"
     },
     {
       "name": "mlir_tensor_bench",
@@ -1579,8 +1468,7 @@
       "wasm_bytes": 17929,
       "js_bytes": 11287,
       "total_bytes": 29216,
-      "page": "mlir_tensor_bench/index.html",
-      "seconds": 0.9
+      "page": "mlir_tensor_bench/index.html"
     },
     {
       "name": "nn_layers",
@@ -1593,8 +1481,7 @@
       "wasm_bytes": 19194,
       "js_bytes": 11279,
       "total_bytes": 30473,
-      "page": "nn_layers/index.html",
-      "seconds": 0.9
+      "page": "nn_layers/index.html"
     },
     {
       "name": "optimizers",
@@ -1607,8 +1494,7 @@
       "wasm_bytes": 18634,
       "js_bytes": 11280,
       "total_bytes": 29914,
-      "page": "optimizers/index.html",
-      "seconds": 0.9
+      "page": "optimizers/index.html"
     },
     {
       "name": "policy_pong",
@@ -1621,8 +1507,7 @@
       "wasm_bytes": 25585,
       "js_bytes": 11614,
       "total_bytes": 37199,
-      "page": "policy_pong/index.html",
-      "seconds": 0.8
+      "page": "policy_pong/index.html"
     },
     {
       "name": "q_snake",
@@ -1635,8 +1520,7 @@
       "wasm_bytes": 20466,
       "js_bytes": 11610,
       "total_bytes": 32076,
-      "page": "q_snake/index.html",
-      "seconds": 0.8
+      "page": "q_snake/index.html"
     },
     {
       "name": "tape_mul",
@@ -1645,8 +1529,7 @@
       "source": "examples/ml/tape_mul.flow",
       "summary": "Live reverse-mode Tape via ArrayTape (runtime/flow_tape.c)",
       "status": "failed",
-      "error": "emcc: undefined symbol flow_tape_reset",
-      "seconds": 0.4
+      "error": "emcc: undefined symbol flow_tape_reset"
     },
     {
       "name": "tensor",
@@ -1659,8 +1542,7 @@
       "wasm_bytes": 17936,
       "js_bytes": 11276,
       "total_bytes": 29212,
-      "page": "tensor/index.html",
-      "seconds": 0.9
+      "page": "tensor/index.html"
     },
     {
       "name": "arena_frame",
@@ -1669,8 +1551,7 @@
       "source": "examples/systems/arena_frame.flow",
       "summary": "Per-frame arena: bump allocate, then arena_reset each frame",
       "status": "failed",
-      "error": "emcc: site/wasm/arena_frame/arena_frame.c:81:9: error: redefinition of 'sizeof_i32'",
-      "seconds": 0.3
+      "error": "emcc: site/wasm/arena_frame/arena_frame.c:81:9: error: redefinition of 'sizeof_i32'"
     },
     {
       "name": "csv_parser",
@@ -1683,8 +1564,7 @@
       "wasm_bytes": 15695,
       "js_bytes": 11613,
       "total_bytes": 27308,
-      "page": "csv_parser/index.html",
-      "seconds": 0.7
+      "page": "csv_parser/index.html"
     },
     {
       "name": "gif_writer",
@@ -1697,8 +1577,7 @@
       "wasm_bytes": 19073,
       "js_bytes": 59707,
       "total_bytes": 78780,
-      "page": "gif_writer/index.html",
-      "seconds": 0.8
+      "page": "gif_writer/index.html"
     },
     {
       "name": "graphics",
@@ -1707,8 +1586,7 @@
       "source": "examples/graphics/graphics.flow",
       "summary": "Graphics Module for FLOW",
       "status": "failed",
-      "error": "emcc: undefined symbol main",
-      "seconds": 0.5
+      "error": "emcc: undefined symbol main"
     },
     {
       "name": "hash_table",
@@ -1721,8 +1599,7 @@
       "wasm_bytes": 17385,
       "js_bytes": 11280,
       "total_bytes": 28665,
-      "page": "hash_table/index.html",
-      "seconds": 0.8
+      "page": "hash_table/index.html"
     },
     {
       "name": "manual_memory",
@@ -1731,8 +1608,7 @@
       "source": "examples/systems/manual_memory.flow",
       "summary": "Manual heap + arena demo (stdlib/memory.flow)",
       "status": "failed",
-      "error": "emcc: site/wasm/manual_memory/manual_memory.c:81:9: error: redefinition of 'sizeof_i32'",
-      "seconds": 0.3
+      "error": "emcc: site/wasm/manual_memory/manual_memory.c:81:9: error: redefinition of 'sizeof_i32'"
     },
     {
       "name": "memory_pool",
@@ -1745,8 +1621,7 @@
       "wasm_bytes": 15511,
       "js_bytes": 11281,
       "total_bytes": 26792,
-      "page": "memory_pool/index.html",
-      "seconds": 0.7
+      "page": "memory_pool/index.html"
     },
     {
       "name": "ring_buffer",
@@ -1759,8 +1634,7 @@
       "wasm_bytes": 16181,
       "js_bytes": 11281,
       "total_bytes": 27462,
-      "page": "ring_buffer/index.html",
-      "seconds": 0.7
+      "page": "ring_buffer/index.html"
     },
     {
       "name": "runtime_sha256",
@@ -1769,8 +1643,7 @@
       "source": "examples/crypto/runtime_sha256.flow",
       "summary": "Crypto self-test via always-linked lib/runtime/crypto.flow",
       "status": "failed",
-      "error": "emcc: undefined symbol flow_sha256",
-      "seconds": 0.3
+      "error": "emcc: undefined symbol flow_sha256"
     },
     {
       "name": "sha256",
@@ -1783,8 +1656,7 @@
       "wasm_bytes": 16190,
       "js_bytes": 11276,
       "total_bytes": 27466,
-      "page": "sha256/index.html",
-      "seconds": 0.7
+      "page": "sha256/index.html"
     },
     {
       "name": "shader_demo",
@@ -1797,8 +1669,7 @@
       "wasm_bytes": 14062,
       "js_bytes": 11281,
       "total_bytes": 25343,
-      "page": "shader_demo/index.html",
-      "seconds": 0.7
+      "page": "shader_demo/index.html"
     },
     {
       "name": "system_info",
@@ -1807,8 +1678,7 @@
       "source": "examples/systems/system_info.flow",
       "summary": "System info demo in FLOW (extern-backed)",
       "status": "failed",
-      "error": "emcc: undefined symbol os_is_linux",
-      "seconds": 0.3
+      "error": "emcc: undefined symbol os_is_linux"
     },
     {
       "name": "text_demo",
@@ -1821,8 +1691,7 @@
       "wasm_bytes": 12797,
       "js_bytes": 20333,
       "total_bytes": 33130,
-      "page": "text_demo/index.html",
-      "seconds": 0.8
+      "page": "text_demo/index.html"
     }
   ]
 }

@@ -175,7 +175,6 @@ def collect(categories) -> list:
 
 
 def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
-    started = time.time()
     record = {
         "name": target["name"],
         "title": target["title"],
@@ -189,9 +188,10 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
                        title=target["title"], opt=opt, timeout=timeout)
     except BuildError as exc:
         shutil.rmtree(out_dir, ignore_errors=True)
-        record.update(status="failed", error=str(exc),
-                      seconds=round(time.time() - started, 1))
+        record.update(status="failed", error=str(exc))
         return record
+    # Build times deliberately stay out of the manifest so a rebuild produces
+    # a byte-identical file.
     record.update(
         status="ok",
         gfx=result["gfx"],
@@ -199,7 +199,6 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
         js_bytes=result["js_bytes"],
         total_bytes=result["wasm_bytes"] + result["js_bytes"],
         page=f"{target['name']}/index.html",
-        seconds=result["seconds"],
     )
     return record
 
