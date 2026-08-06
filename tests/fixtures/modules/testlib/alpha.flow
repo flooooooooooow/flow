@@ -1,0 +1,13 @@
+# Re-export fixture: a submodule with two exports and one private helper.
+
+export function alpha_one() -> i32 {
+    return 1
+}
+
+export function alpha_two() -> i32 {
+    return 2
+}
+
+function alpha_private() -> i32 {
+    return 99
+}

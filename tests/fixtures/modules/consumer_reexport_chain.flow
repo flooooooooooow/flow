@@ -1,0 +1,7 @@
+# Re-export chains: `.agg_chain` forwards `.agg`, which forwards `.alpha`.
+
+import testlib.agg_chain { alpha_one, beta_one }
+
+function main() -> i32 {
+    return alpha_one() + beta_one()
+}
