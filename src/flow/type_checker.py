@@ -677,6 +677,11 @@ class TypeChecker:
         # String to pointer
         if actual.kind == TypeKind.STRING and expected.kind == TypeKind.POINTER:
             return True
+        # A function name used as a value is a C function pointer, which is
+        # what runtime callbacks (`flow_parallel_for_i32`, pthread entry
+        # points) take as `ptr<void>`. Only the untyped pointer accepts one.
+        if self._is_function_to_void_pointer(actual, expected):
+            return True
         # Struct-to-pointer convenience (treat value as addressable)
         if actual.kind == TypeKind.STRUCT and expected.kind == TypeKind.POINTER:
             return True
@@ -2560,6 +2565,16 @@ class TypeChecker:
                 )
         return SemanticType(TypeKind.STRUCT, name=struct_name)
 
+    @staticmethod
+    def _is_function_to_void_pointer(
+        actual: SemanticType, expected: SemanticType
+    ) -> bool:
+        """True for a function value passed where `ptr<void>` is expected."""
+        if actual.kind != TypeKind.FUNCTION or expected.kind != TypeKind.POINTER:
+            return False
+        element = expected.element_type
+        return element is None or element.kind == TypeKind.VOID
+
     def _is_type_param(self, t: Optional[SemanticType]) -> bool:
         """True for an unresolved type parameter of the template being checked."""
         if t is None or not self._active_type_params:
@@ -2625,6 +2640,9 @@ class TypeChecker:
         if actual.kind == TypeKind.STRING and expected.kind == TypeKind.POINTER:
             if expected.element_type and expected.element_type.kind in [TypeKind.U8, TypeKind.I8, TypeKind.VOID]:
                 return True
+        # Function value to `ptr<void>`: a C callback (see `_can_coerce`).
+        if self._is_function_to_void_pointer(actual, expected):
+            return True
 
         # Array to pointer decay
         if actual.kind == TypeKind.ARRAY and expected.kind == TypeKind.POINTER:
