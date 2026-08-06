@@ -72,6 +72,7 @@ nav:
     - Syntax: language/syntax.md
     - Types: language/types.md
     - Spans: language/spans.md
+    - Lifetime Domains: language/lifetime-domains.md
     - Variables: language/variables.md
     - Functions: language/functions.md
     - Dynamics DSL: language/dynamics-dsl.md
