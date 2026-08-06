@@ -1995,7 +1995,26 @@ class MLIRGenerator:
         ops.insert(0, f"{self.indent()}// flow: vectorized elementwise f32 loop (VF=4)")
         return "\n".join(ops)
 
-    def _generate_cf_for(self, for_stmt: ForStatement) -> str:
+    def _constant_step(self, for_stmt: ForStatement) -> Optional[int]:
+        """Compile-time step for a counted loop, or None when it is dynamic."""
+        step = for_stmt.step
+        if step is None:
+            return 1
+        if isinstance(step, UnaryOperation) and step.operator == "-":
+            inner = self._constant_step_literal(step.operand)
+            return None if inner is None else -inner
+        return self._constant_step_literal(step)
+
+    @staticmethod
+    def _constant_step_literal(expr: Expression) -> Optional[int]:
+        if not isinstance(expr, Literal):
+            return None
+        try:
+            return int(str(expr.value))
+        except (TypeError, ValueError):
+            return None
+
+    def _generate_cf_for(self, for_stmt: ForStatement, step_value: int = 1) -> str:
         """Counted loop lowered to cf blocks so break/continue have somewhere to go.
 
         scf.for regions are single-block, so a `break` inside one cannot be
@@ -2015,7 +2034,9 @@ class MLIRGenerator:
         step = f"%{self.function_counter}"; self.function_counter += 1
         mlir_code.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
         mlir_code.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
-        mlir_code.append(f"{self.indent()}{step} = arith.constant 1 : index")
+        mlir_code.append(f"{self.indent()}{step} = arith.constant {step_value} : index")
+        # Descending loops run while iv > ub, exactly as the C backend does.
+        cmp_pred = "slt" if step_value > 0 else "sgt"
 
         header_block = self._new_block_label()
         body_block = self._new_block_label()
@@ -2059,7 +2080,7 @@ class MLIRGenerator:
         header_iv, header_args, _ = _block_args()
         mlir_code.append(f"{self.indent()}^{header_block}({header_args}):")
         cond = f"%{self.function_counter}"; self.function_counter += 1
-        mlir_code.append(f"{self.indent()}{cond} = arith.cmpi slt, {header_iv}, {ub} : index")
+        mlir_code.append(f"{self.indent()}{cond} = arith.cmpi {cmp_pred}, {header_iv}, {ub} : index")
         edge_ssas = [header_iv] + [
             self.symbol_table[v]['ssa_name']
             for v in loop_carried_vars
@@ -2120,13 +2141,19 @@ class MLIRGenerator:
         if vectorized is not None:
             return vectorized
 
-        if (
-            not for_stmt.is_parallel
-            and for_stmt.step is None
-            and not self.inside_scf_for
-            and self._needs_cf_loop_lowering(for_stmt.body)
-        ):
-            return self._generate_cf_for(for_stmt)
+        step_value = self._constant_step(for_stmt)
+        if not for_stmt.is_parallel:
+            if step_value is None:
+                # A dynamic step can run either direction; the scf.for path
+                # below would silently drop it and iterate by one.
+                raise NotImplementedError(
+                    "`for ... step <expr>` needs a constant step in the MLIR "
+                    "backend; use the C backend (--c)"
+                )
+            if not self.inside_scf_for and (
+                step_value <= 0 or self._needs_cf_loop_lowering(for_stmt.body)
+            ):
+                return self._generate_cf_for(for_stmt, step_value)
 
         if for_stmt.is_parallel:
             # Use scf.parallel for parallel loops
@@ -2157,7 +2184,7 @@ class MLIRGenerator:
             # Step constant
             step_ssa = f"%{self.function_counter}"
             self.function_counter += 1
-            mlir_code.append(f"{self.indent()}{step_ssa} = arith.constant 1 : index")
+            mlir_code.append(f"{self.indent()}{step_ssa} = arith.constant {step_value if step_value is not None else 1} : index")
             
             # Induction variable
             iv_name = f"%{self.function_counter}"
@@ -2208,7 +2235,7 @@ class MLIRGenerator:
 
             mlir_code.append(f"{self.indent()}{lb_idx} = arith.index_cast {lower_bound} : i32 to index")
             mlir_code.append(f"{self.indent()}{ub_idx} = arith.index_cast {upper_bound} : i32 to index")
-            mlir_code.append(f"{self.indent()}{step_idx} = arith.constant 1 : index")
+            mlir_code.append(f"{self.indent()}{step_idx} = arith.constant {step_value if step_value is not None else 1} : index")
 
             # Induction variable
             iv = f"%{self.function_counter}"
@@ -2551,7 +2578,7 @@ class MLIRGenerator:
                         elem_lit = elem
                         if elem.type.name != "string" and lit_type is not None:
                             elem_lit = LiteralExpr(elem.value, lit_type)
-                        access = ArrayAccess(Variable(arr_temp), Literal(idx))
+                        access = ArrayAccess(Variable(arr_temp), Literal(idx, Type("i32")))
                         access_ssa, access_ops = self.generate_array_access(access)
                         mlir_code.extend(access_ops)
                         lit_ssa, lit_ops = self.generate_literal(elem_lit)
@@ -2569,7 +2596,7 @@ class MLIRGenerator:
                             )
                         literal_conds.append(c1)
                     elif isinstance(elem, Var) and elem.name != "_":
-                        access = ArrayAccess(Variable(arr_temp), Literal(idx))
+                        access = ArrayAccess(Variable(arr_temp), Literal(idx, Type("i32")))
                         access_ssa, access_ops = self.generate_array_access(access)
                         binding_ops.extend(access_ops)
                         self.symbol_table[elem.name] = {
