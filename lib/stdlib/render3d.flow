@@ -1,0 +1,1412 @@
+# render3d: a software 3D renderer written in Flow.
+#
+# Everything below runs on the CPU. There is no GPU, no driver, and no shader
+# language. A frame is built by writing bytes into a packed RGB8 buffer and
+# handing that buffer to `gfx_blit_rgb` once, which is the only reason a
+# per-pixel rasterizer is viable through the gfx API at all.
+#
+# PIPELINE
+#   1. Mesh build      r3d_mesh_reset, r3d_mesh_vertex / r3d_mesh_tri, or the
+#                      box / quad / sphere helpers. Positions, normals and
+#                      base colours live in module-static arrays.
+#   2. Vertex stage    model matrix to world space, then the view-projection
+#                      matrix to clip space. Normals go through the model
+#                      matrix as directions. Per-vertex lighting and fog are
+#                      evaluated here for Gouraud shading.
+#   3. Near clipping   Sutherland-Hodgman against the single plane w >= near.
+#                      A triangle becomes zero, one or two triangles. This is
+#                      what stops geometry behind the eye from wrapping around
+#                      the screen.
+#   4. Projection      perspective divide, then the viewport map. Screen y
+#                      points down.
+#   5. Culling         signed screen-space area, back or front or neither.
+#   6. Rasterization   edge functions over the bounding box, barycentric
+#                      weights normalized by the signed area. Depth is the
+#                      interpolated NDC z, which is already linear in screen
+#                      space and therefore correct under perspective. Colour
+#                      is interpolated as c/w against 1/w and divided back,
+#                      which is the perspective-correct form.
+#   7. Presentation    r3d_present blits the colour buffer in one call. HUD
+#                      text is drawn afterwards with stdlib/text.flow so it
+#                      sits on top and is never depth-tested.
+#
+# COORDINATES
+#   Right-handed world space, +Y up. The projection is the OpenGL form, so
+#   clip.w equals view-space distance in front of the eye and NDC z runs
+#   -1 (near) to +1 (far). The depth buffer stores (z + 1) / 2, so smaller is
+#   nearer, and it is cleared to R3D_DEPTH_FAR.
+#
+# MATRICES
+#   A 4x4 matrix is `array<f32, 16>` in row-major order, applied to a column
+#   vector. Builders take `out: ptr<f32>`; consumers take `&[f32]`. There is
+#   no Mat4 struct because module statics cannot hold structs.
+#
+# WHAT IS NOT HERE
+#   No texturing, no shadows, no mipmaps, no alpha blending, no multi-sample
+#   coverage, no top-left fill rule. Triangles that share an edge can write
+#   the same pixel twice in a frame; with a depth test that is invisible, and
+#   without one it costs a little fill. See docs/language/graphics-3d.md.
+#
+# Related: docs/language/graphics-3d.md, examples/threed/
+
+import "stdlib/gfx.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function sqrtf(x: f32) -> f32
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function tanf(x: f32) -> f32
+    function fabsf(x: f32) -> f32
+    function floorf(x: f32) -> f32
+    function clock() -> i64
+}
+
+# ---------------------------------------------------------------------------
+# Fixed maximums. Every buffer is allocated once, at r3d_init, to these caps.
+# ---------------------------------------------------------------------------
+
+# Largest framebuffer the renderer will allocate. 640 x 480 of RGB8 plus a
+# float depth buffer is 2.1 MB, which is the whole memory budget of the
+# renderer apart from the mesh.
+const R3D_MAX_W: i32 = 640
+const R3D_MAX_H: i32 = 480
+
+# Mesh capacity for one draw call's worth of geometry.
+const R3D_MAX_VERTS: i32 = 16384
+const R3D_MAX_TRIS: i32 = 24576
+
+# Clip scratch: one triangle against one plane yields at most 4 vertices.
+const R3D_CLIP_MAX: i32 = 8
+const R3D_CLIP_STRIDE: i32 = 7
+
+# Depth clear value. Anything a real projection produces is far below this.
+const R3D_DEPTH_FAR: f32 = 1.0e30
+
+# Shading modes for r3d_draw_mesh.
+const R3D_WIRE: i32 = 0
+const R3D_FLAT: i32 = 1
+const R3D_GOURAUD: i32 = 2
+const R3D_UNLIT: i32 = 3
+
+# Cull modes.
+const R3D_CULL_NONE: i32 = 0
+const R3D_CULL_BACK: i32 = 1
+const R3D_CULL_FRONT: i32 = 2
+
+const R3D_PI: f32 = 3.14159265
+const R3D_TINY: f32 = 0.000001
+
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+
+# The renderer's vector type. Named V3 rather than Vec3 so a program may also
+# import stdlib/vec.flow without a clash.
+struct V3 { x: f32, y: f32, z: f32 }
+
+# A clip-space vertex: homogeneous position plus a linear colour.
+struct V4C { x: f32, y: f32, z: f32, w: f32, r: f32, g: f32, b: f32 }
+
+# A screen-space vertex ready for the rasterizer. `iw` is 1/w_clip and drives
+# perspective-correct colour interpolation; `z` is the depth already mapped
+# into [0, 1].
+struct SVert { x: f32, y: f32, z: f32, iw: f32, r: f32, g: f32, b: f32 }
+
+# ---------------------------------------------------------------------------
+# Module statics: framebuffer, depth buffer, mesh, scratch
+# ---------------------------------------------------------------------------
+
+let mut r3d_color: ptr<u8> = null
+let mut r3d_depth: ptr<f32> = null
+let mut r3d_w: i32 = 0
+let mut r3d_h: i32 = 0
+let mut r3d_started: bool = false
+
+let mut r3d_vx: ptr<f32> = null      # object-space positions, 3 per vertex
+let mut r3d_vn: ptr<f32> = null      # object-space normals, 3 per vertex
+let mut r3d_vc: ptr<f32> = null      # base colours, 3 per vertex
+let mut r3d_wp: ptr<f32> = null      # world positions after the vertex stage
+let mut r3d_cp: ptr<f32> = null      # clip positions, 4 per vertex
+let mut r3d_sc: ptr<f32> = null      # shaded colours, 3 per vertex
+let mut r3d_idx: ptr<i32> = null     # triangle indices, 3 per triangle
+let mut r3d_nvert: i32 = 0
+let mut r3d_ntri: i32 = 0
+
+let mut r3d_clip_a: ptr<f32> = null
+let mut r3d_clip_b: ptr<f32> = null
+
+let mut r3d_cull: i32 = 1
+let mut r3d_near: f32 = 0.05
+let mut r3d_ambient: f32 = 0.25
+
+let mut r3d_fog_on: bool = false
+let mut r3d_fog_r: f32 = 0.0
+let mut r3d_fog_g: f32 = 0.0
+let mut r3d_fog_b: f32 = 0.0
+let mut r3d_fog_near: f32 = 20.0
+let mut r3d_fog_far: f32 = 60.0
+
+# Per-frame counters, reset by r3d_clear.
+let mut r3d_stat_tris: i32 = 0
+let mut r3d_stat_drawn: i32 = 0
+let mut r3d_stat_clipped: i32 = 0
+let mut r3d_stat_culled: i32 = 0
+let mut r3d_stat_pixels: i32 = 0
+
+# Frame timing.
+let mut r3d_last_clock: i64 = 0
+let mut r3d_fps_ema: f32 = 0.0
+let mut r3d_ms_ema: f32 = 0.0
+let mut r3d_ticks: i32 = 0
+
+# ---------------------------------------------------------------------------
+# Scalar helpers
+# ---------------------------------------------------------------------------
+
+export function r3d_clampf(v: f32, lo: f32, hi: f32) -> f32 {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+export function r3d_minf(a: f32, b: f32) -> f32 {
+    if a < b { return a }
+    return b
+}
+
+export function r3d_maxf(a: f32, b: f32) -> f32 {
+    if a > b { return a }
+    return b
+}
+
+export function r3d_lerpf(a: f32, b: f32, t: f32) -> f32 {
+    return a + (b - a) * t
+}
+
+export function r3d_radians(deg: f32) -> f32 {
+    return deg * R3D_PI / 180.0
+}
+
+# ---------------------------------------------------------------------------
+# Vector math
+# ---------------------------------------------------------------------------
+
+export function v3(x: f32, y: f32, z: f32) -> V3 {
+    return V3 { x: x, y: y, z: z }
+}
+
+export function v3_add(a: V3, b: V3) -> V3 {
+    return V3 { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }
+}
+
+export function v3_sub(a: V3, b: V3) -> V3 {
+    return V3 { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }
+}
+
+export function v3_mul(a: V3, b: V3) -> V3 {
+    return V3 { x: a.x * b.x, y: a.y * b.y, z: a.z * b.z }
+}
+
+export function v3_scale(a: V3, s: f32) -> V3 {
+    return V3 { x: a.x * s, y: a.y * s, z: a.z * s }
+}
+
+export function v3_neg(a: V3) -> V3 {
+    return V3 { x: 0.0 - a.x, y: 0.0 - a.y, z: 0.0 - a.z }
+}
+
+export function v3_dot(a: V3, b: V3) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+export function v3_cross(a: V3, b: V3) -> V3 {
+    return V3 {
+        x: a.y * b.z - a.z * b.y,
+        y: a.z * b.x - a.x * b.z,
+        z: a.x * b.y - a.y * b.x
+    }
+}
+
+export function v3_len(a: V3) -> f32 {
+    return sqrtf(a.x * a.x + a.y * a.y + a.z * a.z)
+}
+
+export function v3_len2(a: V3) -> f32 {
+    return a.x * a.x + a.y * a.y + a.z * a.z
+}
+
+export function v3_dist(a: V3, b: V3) -> f32 {
+    return v3_len(v3_sub(a, b))
+}
+
+# Zero-length input returns (0, 0, 0) rather than a NaN.
+export function v3_norm(a: V3) -> V3 {
+    let l: f32 = v3_len(a)
+    if l < R3D_TINY {
+        return V3 { x: 0.0, y: 0.0, z: 0.0 }
+    }
+    return V3 { x: a.x / l, y: a.y / l, z: a.z / l }
+}
+
+export function v3_lerp(a: V3, b: V3, t: f32) -> V3 {
+    return V3 {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t
+    }
+}
+
+# Normal of the triangle a-b-c under counter-clockwise winding.
+export function v3_face_normal(a: V3, b: V3, c: V3) -> V3 {
+    return v3_norm(v3_cross(v3_sub(b, a), v3_sub(c, a)))
+}
+
+# ---------------------------------------------------------------------------
+# 4x4 matrices, row-major, applied to column vectors
+# ---------------------------------------------------------------------------
+
+export function m4_identity(out: ptr<f32>) -> void {
+    let mut i: i32 = 0
+    while i < 16 {
+        out[i] = 0.0
+        i = i + 1
+    }
+    out[0] = 1.0
+    out[5] = 1.0
+    out[10] = 1.0
+    out[15] = 1.0
+}
+
+export function m4_translation(out: ptr<f32>, x: f32, y: f32, z: f32) -> void {
+    m4_identity(out)
+    out[3] = x
+    out[7] = y
+    out[11] = z
+}
+
+export function m4_scaling(out: ptr<f32>, sx: f32, sy: f32, sz: f32) -> void {
+    m4_identity(out)
+    out[0] = sx
+    out[5] = sy
+    out[10] = sz
+}
+
+export function m4_rotation_x(out: ptr<f32>, a: f32) -> void {
+    let c: f32 = cosf(a)
+    let s: f32 = sinf(a)
+    m4_identity(out)
+    out[5] = c
+    out[6] = 0.0 - s
+    out[9] = s
+    out[10] = c
+}
+
+export function m4_rotation_y(out: ptr<f32>, a: f32) -> void {
+    let c: f32 = cosf(a)
+    let s: f32 = sinf(a)
+    m4_identity(out)
+    out[0] = c
+    out[2] = s
+    out[8] = 0.0 - s
+    out[10] = c
+}
+
+export function m4_rotation_z(out: ptr<f32>, a: f32) -> void {
+    let c: f32 = cosf(a)
+    let s: f32 = sinf(a)
+    m4_identity(out)
+    out[0] = c
+    out[1] = 0.0 - s
+    out[4] = s
+    out[5] = c
+}
+
+# out = a * b. `out` must not alias `a` or `b`.
+export function m4_mul(out: ptr<f32>, a: &[f32], b: &[f32]) -> void {
+    let mut i: i32 = 0
+    while i < 4 {
+        let mut j: i32 = 0
+        while j < 4 {
+            let mut s: f32 = 0.0
+            let mut k: i32 = 0
+            while k < 4 {
+                s = s + a[i * 4 + k] * b[k * 4 + j]
+                k = k + 1
+            }
+            out[i * 4 + j] = s
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+export function m4_copy(out: ptr<f32>, src: &[f32]) -> void {
+    let mut i: i32 = 0
+    while i < 16 {
+        out[i] = src[i]
+        i = i + 1
+    }
+}
+
+# OpenGL-style perspective. fovy is the vertical field of view in radians.
+# clip.w comes out equal to the view-space distance in front of the eye.
+export function m4_perspective(out: ptr<f32>, fovy: f32, aspect: f32,
+                               znear: f32, zfar: f32) -> void {
+    let f: f32 = 1.0 / tanf(fovy * 0.5)
+    let mut i: i32 = 0
+    while i < 16 {
+        out[i] = 0.0
+        i = i + 1
+    }
+    out[0] = f / aspect
+    out[5] = f
+    out[10] = (zfar + znear) / (znear - zfar)
+    out[11] = (2.0 * zfar * znear) / (znear - zfar)
+    out[14] = -1.0
+}
+
+# Right-handed look-at. `up` need not be perpendicular to the view direction.
+export function m4_look_at(out: ptr<f32>, eye: V3, target: V3, up: V3) -> void {
+    let f: V3 = v3_norm(v3_sub(target, eye))
+    let mut s: V3 = v3_norm(v3_cross(f, up))
+    if v3_len2(s) < R3D_TINY {
+        s = v3_norm(v3_cross(f, V3 { x: 0.0, y: 0.0, z: 1.0 }))
+    }
+    let u: V3 = v3_cross(s, f)
+    out[0] = s.x
+    out[1] = s.y
+    out[2] = s.z
+    out[3] = 0.0 - v3_dot(s, eye)
+    out[4] = u.x
+    out[5] = u.y
+    out[6] = u.z
+    out[7] = 0.0 - v3_dot(u, eye)
+    out[8] = 0.0 - f.x
+    out[9] = 0.0 - f.y
+    out[10] = 0.0 - f.z
+    out[11] = v3_dot(f, eye)
+    out[12] = 0.0
+    out[13] = 0.0
+    out[14] = 0.0
+    out[15] = 1.0
+}
+
+# Transform a position (w = 1) and drop the resulting w.
+export function m4_point(m: &[f32], p: V3) -> V3 {
+    return V3 {
+        x: m[0] * p.x + m[1] * p.y + m[2] * p.z + m[3],
+        y: m[4] * p.x + m[5] * p.y + m[6] * p.z + m[7],
+        z: m[8] * p.x + m[9] * p.y + m[10] * p.z + m[11]
+    }
+}
+
+# Transform a direction (w = 0): the translation column is ignored.
+export function m4_dir(m: &[f32], d: V3) -> V3 {
+    return V3 {
+        x: m[0] * d.x + m[1] * d.y + m[2] * d.z,
+        y: m[4] * d.x + m[5] * d.y + m[6] * d.z,
+        z: m[8] * d.x + m[9] * d.y + m[10] * d.z
+    }
+}
+
+# The w component of m * (p, 1); needed on its own for clip-space work.
+export function m4_pointw(m: &[f32], p: V3) -> f32 {
+    return m[12] * p.x + m[13] * p.y + m[14] * p.z + m[15]
+}
+
+# ---------------------------------------------------------------------------
+# Lighting
+# ---------------------------------------------------------------------------
+
+export function r3d_set_ambient(a: f32) -> void {
+    r3d_ambient = r3d_clampf(a, 0.0, 1.0)
+}
+
+export function r3d_ambient_level() -> f32 {
+    return r3d_ambient
+}
+
+# Lambert against a directional light. `to_light` points from the surface
+# towards the light and is normalized here. The ambient term keeps unlit faces
+# visible instead of black.
+export function r3d_lambert(base: V3, normal: V3, to_light: V3) -> V3 {
+    let n: V3 = v3_norm(normal)
+    let l: V3 = v3_norm(to_light)
+    let mut d: f32 = v3_dot(n, l)
+    if d < 0.0 { d = 0.0 }
+    let k: f32 = r3d_ambient + (1.0 - r3d_ambient) * d
+    return V3 { x: base.x * k, y: base.y * k, z: base.z * k }
+}
+
+# ---------------------------------------------------------------------------
+# Fog
+# ---------------------------------------------------------------------------
+
+export function r3d_set_fog(on: bool, col: V3, start: f32, stop: f32) -> void {
+    r3d_fog_on = on
+    r3d_fog_r = col.x
+    r3d_fog_g = col.y
+    r3d_fog_b = col.z
+    r3d_fog_near = start
+    r3d_fog_far = stop
+}
+
+# Linear fog on view depth. Returns the colour unchanged when fog is off.
+export function r3d_apply_fog(col: V3, view_depth: f32) -> V3 {
+    if !r3d_fog_on {
+        return col
+    }
+    let span: f32 = r3d_fog_far - r3d_fog_near
+    if span < R3D_TINY {
+        return col
+    }
+    let t: f32 = r3d_clampf((view_depth - r3d_fog_near) / span, 0.0, 1.0)
+    return V3 {
+        x: col.x + (r3d_fog_r - col.x) * t,
+        y: col.y + (r3d_fog_g - col.y) * t,
+        z: col.z + (r3d_fog_b - col.z) * t
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Framebuffer
+# ---------------------------------------------------------------------------
+
+# Allocate every buffer once. Returns false if the resolution exceeds the
+# fixed maximums or if any allocation fails.
+export function r3d_init(w: i32, h: i32) -> bool {
+    if w <= 0 or h <= 0 or w > R3D_MAX_W or h > R3D_MAX_H {
+        return false
+    }
+    r3d_w = w
+    r3d_h = h
+    r3d_color = calloc((R3D_MAX_W * R3D_MAX_H * 3) as i64, 1) as ptr<u8>
+    r3d_depth = calloc((R3D_MAX_W * R3D_MAX_H) as i64, 4) as ptr<f32>
+    r3d_vx = calloc((R3D_MAX_VERTS * 3) as i64, 4) as ptr<f32>
+    r3d_vn = calloc((R3D_MAX_VERTS * 3) as i64, 4) as ptr<f32>
+    r3d_vc = calloc((R3D_MAX_VERTS * 3) as i64, 4) as ptr<f32>
+    r3d_wp = calloc((R3D_MAX_VERTS * 3) as i64, 4) as ptr<f32>
+    r3d_cp = calloc((R3D_MAX_VERTS * 4) as i64, 4) as ptr<f32>
+    r3d_sc = calloc((R3D_MAX_VERTS * 3) as i64, 4) as ptr<f32>
+    r3d_idx = calloc((R3D_MAX_TRIS * 3) as i64, 4) as ptr<i32>
+    r3d_clip_a = calloc((R3D_CLIP_MAX * R3D_CLIP_STRIDE) as i64, 4) as ptr<f32>
+    r3d_clip_b = calloc((R3D_CLIP_MAX * R3D_CLIP_STRIDE) as i64, 4) as ptr<f32>
+    if r3d_color == null or r3d_depth == null or r3d_vx == null {
+        return false
+    }
+    if r3d_vn == null or r3d_vc == null or r3d_wp == null or r3d_cp == null {
+        return false
+    }
+    if r3d_sc == null or r3d_idx == null or r3d_clip_a == null or r3d_clip_b == null {
+        return false
+    }
+    r3d_started = true
+    r3d_last_clock = clock()
+    return true
+}
+
+export function r3d_width() -> i32 {
+    return r3d_w
+}
+
+export function r3d_height() -> i32 {
+    return r3d_h
+}
+
+export function r3d_aspect() -> f32 {
+    if r3d_h <= 0 {
+        return 1.0
+    }
+    return (r3d_w as f32) / (r3d_h as f32)
+}
+
+export function r3d_pixels() -> ptr<u8> {
+    return r3d_color
+}
+
+export function r3d_set_cull(mode: i32) -> void {
+    r3d_cull = mode
+}
+
+export function r3d_set_near(w: f32) -> void {
+    if w > R3D_TINY {
+        r3d_near = w
+    }
+}
+
+# Clear colour and depth, and reset the per-frame counters.
+export function r3d_clear(col: V3) -> void {
+    if !r3d_started { return }
+    let cr: u8 = (r3d_clampf(col.x, 0.0, 1.0) * 255.0) as u8
+    let cg: u8 = (r3d_clampf(col.y, 0.0, 1.0) * 255.0) as u8
+    let cb: u8 = (r3d_clampf(col.z, 0.0, 1.0) * 255.0) as u8
+    let n: i32 = r3d_w * r3d_h
+    let mut i: i32 = 0
+    while i < n {
+        let o: i32 = i * 3
+        r3d_color[o] = cr
+        r3d_color[o + 1] = cg
+        r3d_color[o + 2] = cb
+        r3d_depth[i] = R3D_DEPTH_FAR
+        i = i + 1
+    }
+    r3d_stat_tris = 0
+    r3d_stat_drawn = 0
+    r3d_stat_clipped = 0
+    r3d_stat_culled = 0
+    r3d_stat_pixels = 0
+}
+
+# A vertical gradient background, cleared depth included. Cheaper than a sky
+# mesh and it makes the horizon readable in the outdoor demos.
+export function r3d_clear_gradient(top: V3, bottom: V3) -> void {
+    if !r3d_started { return }
+    let mut y: i32 = 0
+    while y < r3d_h {
+        let t: f32 = (y as f32) / ((r3d_h - 1) as f32)
+        let cr: u8 = (r3d_clampf(top.x + (bottom.x - top.x) * t, 0.0, 1.0) * 255.0) as u8
+        let cg: u8 = (r3d_clampf(top.y + (bottom.y - top.y) * t, 0.0, 1.0) * 255.0) as u8
+        let cb: u8 = (r3d_clampf(top.z + (bottom.z - top.z) * t, 0.0, 1.0) * 255.0) as u8
+        let row: i32 = y * r3d_w
+        let mut x: i32 = 0
+        while x < r3d_w {
+            let o: i32 = (row + x) * 3
+            r3d_color[o] = cr
+            r3d_color[o + 1] = cg
+            r3d_color[o + 2] = cb
+            r3d_depth[row + x] = R3D_DEPTH_FAR
+            x = x + 1
+        }
+        y = y + 1
+    }
+    r3d_stat_tris = 0
+    r3d_stat_drawn = 0
+    r3d_stat_clipped = 0
+    r3d_stat_culled = 0
+    r3d_stat_pixels = 0
+}
+
+# Write one pixel with no depth test.
+export function r3d_put(x: i32, y: i32, col: V3) -> void {
+    if x < 0 or x >= r3d_w or y < 0 or y >= r3d_h { return }
+    let o: i32 = (y * r3d_w + x) * 3
+    r3d_color[o] = (r3d_clampf(col.x, 0.0, 1.0) * 255.0) as u8
+    r3d_color[o + 1] = (r3d_clampf(col.y, 0.0, 1.0) * 255.0) as u8
+    r3d_color[o + 2] = (r3d_clampf(col.z, 0.0, 1.0) * 255.0) as u8
+}
+
+# Write one pixel if it passes and updates the depth test.
+export function r3d_put_depth(x: i32, y: i32, z: f32, col: V3) -> void {
+    if x < 0 or x >= r3d_w or y < 0 or y >= r3d_h { return }
+    let i: i32 = y * r3d_w + x
+    if z >= r3d_depth[i] { return }
+    r3d_depth[i] = z
+    let o: i32 = i * 3
+    r3d_color[o] = (r3d_clampf(col.x, 0.0, 1.0) * 255.0) as u8
+    r3d_color[o + 1] = (r3d_clampf(col.y, 0.0, 1.0) * 255.0) as u8
+    r3d_color[o + 2] = (r3d_clampf(col.z, 0.0, 1.0) * 255.0) as u8
+}
+
+# Read the depth buffer, for tests and for depth-aware effects.
+export function r3d_depth_at(x: i32, y: i32) -> f32 {
+    if x < 0 or x >= r3d_w or y < 0 or y >= r3d_h {
+        return R3D_DEPTH_FAR
+    }
+    return r3d_depth[y * r3d_w + x]
+}
+
+# Blit the colour buffer into the window in one call.
+export function r3d_present(g: Gfx) -> void {
+    if !r3d_started { return }
+    gfx_blit_rgb(g, 0, 0, r3d_w, r3d_h, r3d_color)
+}
+
+# ---------------------------------------------------------------------------
+# Statistics and timing
+# ---------------------------------------------------------------------------
+
+export function r3d_tris_submitted() -> i32 { return r3d_stat_tris }
+export function r3d_tris_drawn() -> i32 { return r3d_stat_drawn }
+export function r3d_tris_clipped() -> i32 { return r3d_stat_clipped }
+export function r3d_tris_culled() -> i32 { return r3d_stat_culled }
+export function r3d_pixels_shaded() -> i32 { return r3d_stat_pixels }
+
+# Call once per frame. Measures process CPU time between calls and keeps an
+# exponential moving average, so the HUD number is the cost of the frame on
+# the machine that is running it rather than a nominal target.
+export function r3d_tick() -> void {
+    let now: i64 = clock()
+    let dt_us: f32 = ((now - r3d_last_clock) as f32)
+    r3d_last_clock = now
+    if r3d_ticks < 1 {
+        r3d_ticks = r3d_ticks + 1
+        return
+    }
+    let ms: f32 = dt_us / 1000.0
+    if r3d_ticks < 2 {
+        r3d_ms_ema = ms
+    } else {
+        r3d_ms_ema = r3d_ms_ema * 0.9 + ms * 0.1
+    }
+    if r3d_ms_ema > 0.0001 {
+        r3d_fps_ema = 1000.0 / r3d_ms_ema
+    }
+    r3d_ticks = r3d_ticks + 1
+}
+
+export function r3d_fps() -> f32 {
+    return r3d_fps_ema
+}
+
+export function r3d_frame_ms() -> f32 {
+    return r3d_ms_ema
+}
+
+# ---------------------------------------------------------------------------
+# Mesh building
+# ---------------------------------------------------------------------------
+
+export function r3d_mesh_reset() -> void {
+    r3d_nvert = 0
+    r3d_ntri = 0
+}
+
+export function r3d_mesh_verts() -> i32 { return r3d_nvert }
+export function r3d_mesh_tris() -> i32 { return r3d_ntri }
+
+# Append a vertex. Returns its index, or -1 when the capacity is exhausted.
+export function r3d_mesh_vertex(p: V3, n: V3, c: V3) -> i32 {
+    if r3d_nvert >= R3D_MAX_VERTS {
+        return -1
+    }
+    let i: i32 = r3d_nvert
+    let o: i32 = i * 3
+    r3d_vx[o] = p.x
+    r3d_vx[o + 1] = p.y
+    r3d_vx[o + 2] = p.z
+    r3d_vn[o] = n.x
+    r3d_vn[o + 1] = n.y
+    r3d_vn[o + 2] = n.z
+    r3d_vc[o] = c.x
+    r3d_vc[o + 1] = c.y
+    r3d_vc[o + 2] = c.z
+    r3d_nvert = i + 1
+    return i
+}
+
+# Append a triangle by vertex index. Counter-clockwise is front-facing.
+export function r3d_mesh_tri(i0: i32, i1: i32, i2: i32) -> bool {
+    if r3d_ntri >= R3D_MAX_TRIS {
+        return false
+    }
+    if i0 < 0 or i1 < 0 or i2 < 0 {
+        return false
+    }
+    if i0 >= r3d_nvert or i1 >= r3d_nvert or i2 >= r3d_nvert {
+        return false
+    }
+    let o: i32 = r3d_ntri * 3
+    r3d_idx[o] = i0
+    r3d_idx[o + 1] = i1
+    r3d_idx[o + 2] = i2
+    r3d_ntri = r3d_ntri + 1
+    return true
+}
+
+# A flat quad a-b-c-d, wound counter-clockwise, with one shared normal.
+export function r3d_mesh_quad(a: V3, b: V3, c: V3, d: V3, col: V3) -> void {
+    let n: V3 = v3_face_normal(a, b, c)
+    let i0: i32 = r3d_mesh_vertex(a, n, col)
+    let i1: i32 = r3d_mesh_vertex(b, n, col)
+    let i2: i32 = r3d_mesh_vertex(c, n, col)
+    let i3: i32 = r3d_mesh_vertex(d, n, col)
+    if i3 < 0 { return }
+    r3d_mesh_tri(i0, i1, i2)
+    r3d_mesh_tri(i0, i2, i3)
+}
+
+# An axis-aligned box given its centre and half-extents. Six quads, each with
+# its own normal, so the faces shade separately.
+export function r3d_mesh_box(centre: V3, half: V3, col: V3) -> void {
+    let x0: f32 = centre.x - half.x
+    let x1: f32 = centre.x + half.x
+    let y0: f32 = centre.y - half.y
+    let y1: f32 = centre.y + half.y
+    let z0: f32 = centre.z - half.z
+    let z1: f32 = centre.z + half.z
+    r3d_mesh_quad(v3(x0, y0, z1), v3(x1, y0, z1), v3(x1, y1, z1), v3(x0, y1, z1), col)
+    r3d_mesh_quad(v3(x1, y0, z0), v3(x0, y0, z0), v3(x0, y1, z0), v3(x1, y1, z0), col)
+    r3d_mesh_quad(v3(x1, y0, z1), v3(x1, y0, z0), v3(x1, y1, z0), v3(x1, y1, z1), col)
+    r3d_mesh_quad(v3(x0, y0, z0), v3(x0, y0, z1), v3(x0, y1, z1), v3(x0, y1, z0), col)
+    r3d_mesh_quad(v3(x0, y1, z1), v3(x1, y1, z1), v3(x1, y1, z0), v3(x0, y1, z0), col)
+    r3d_mesh_quad(v3(x0, y0, z0), v3(x1, y0, z0), v3(x1, y0, z1), v3(x0, y0, z1), col)
+}
+
+# One box face by index: 0 +Z, 1 -Z, 2 +X, 3 -X, 4 +Y, 5 -Y. Voxel worlds need
+# faces one at a time so hidden ones can be skipped.
+export function r3d_mesh_box_face(centre: V3, half: V3, face: i32, col: V3) -> void {
+    let x0: f32 = centre.x - half.x
+    let x1: f32 = centre.x + half.x
+    let y0: f32 = centre.y - half.y
+    let y1: f32 = centre.y + half.y
+    let z0: f32 = centre.z - half.z
+    let z1: f32 = centre.z + half.z
+    if face == 0 {
+        r3d_mesh_quad(v3(x0, y0, z1), v3(x1, y0, z1), v3(x1, y1, z1), v3(x0, y1, z1), col)
+    } elif face == 1 {
+        r3d_mesh_quad(v3(x1, y0, z0), v3(x0, y0, z0), v3(x0, y1, z0), v3(x1, y1, z0), col)
+    } elif face == 2 {
+        r3d_mesh_quad(v3(x1, y0, z1), v3(x1, y0, z0), v3(x1, y1, z0), v3(x1, y1, z1), col)
+    } elif face == 3 {
+        r3d_mesh_quad(v3(x0, y0, z0), v3(x0, y0, z1), v3(x0, y1, z1), v3(x0, y1, z0), col)
+    } elif face == 4 {
+        r3d_mesh_quad(v3(x0, y1, z1), v3(x1, y1, z1), v3(x1, y1, z0), v3(x0, y1, z0), col)
+    } else {
+        r3d_mesh_quad(v3(x0, y0, z0), v3(x1, y0, z0), v3(x1, y0, z1), v3(x0, y0, z1), col)
+    }
+}
+
+# A UV sphere. `segs` divisions around, `rings` divisions top to bottom.
+# Normals are exact, so this is the mesh to use for Gouraud shading.
+export function r3d_mesh_sphere(centre: V3, radius: f32, segs: i32, rings: i32,
+                                col: V3) -> void {
+    if segs < 3 or rings < 2 { return }
+    let base: i32 = r3d_nvert
+    let mut ring: i32 = 0
+    while ring <= rings {
+        let phi: f32 = R3D_PI * (ring as f32) / (rings as f32)
+        let sp: f32 = sinf(phi)
+        let cp: f32 = cosf(phi)
+        let mut seg: i32 = 0
+        while seg <= segs {
+            let theta: f32 = 2.0 * R3D_PI * (seg as f32) / (segs as f32)
+            let n: V3 = v3(sp * cosf(theta), cp, sp * sinf(theta))
+            r3d_mesh_vertex(v3_add(centre, v3_scale(n, radius)), n, col)
+            seg = seg + 1
+        }
+        ring = ring + 1
+    }
+    let stride: i32 = segs + 1
+    let mut r: i32 = 0
+    while r < rings {
+        let mut s: i32 = 0
+        while s < segs {
+            let a: i32 = base + r * stride + s
+            let b: i32 = a + stride
+            r3d_mesh_tri(a, b, a + 1)
+            r3d_mesh_tri(a + 1, b, b + 1)
+            s = s + 1
+        }
+        r = r + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Rasterization
+# ---------------------------------------------------------------------------
+
+# Fill one screen-space triangle with a depth test, back/front culling and
+# perspective-correct colour. Coordinates are pixels, z is in [0, 1], iw is
+# 1 / w_clip.
+export function r3d_raster_tri(a: SVert, b: SVert, c: SVert) -> void {
+    if !r3d_started { return }
+    let area: f32 = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+    # Screen y points down, so a counter-clockwise world triangle has a
+    # negative signed area here. Front-facing therefore means area < 0.
+    if r3d_cull == R3D_CULL_BACK and area >= 0.0 {
+        r3d_stat_culled = r3d_stat_culled + 1
+        return
+    }
+    if r3d_cull == R3D_CULL_FRONT and area <= 0.0 {
+        r3d_stat_culled = r3d_stat_culled + 1
+        return
+    }
+    if fabsf(area) < R3D_TINY {
+        return
+    }
+    let inv_area: f32 = 1.0 / area
+
+    let mut minx: i32 = (floorf(r3d_minf(a.x, r3d_minf(b.x, c.x)))) as i32
+    let mut maxx: i32 = (floorf(r3d_maxf(a.x, r3d_maxf(b.x, c.x)))) as i32 + 1
+    let mut miny: i32 = (floorf(r3d_minf(a.y, r3d_minf(b.y, c.y)))) as i32
+    let mut maxy: i32 = (floorf(r3d_maxf(a.y, r3d_maxf(b.y, c.y)))) as i32 + 1
+    if minx < 0 { minx = 0 }
+    if miny < 0 { miny = 0 }
+    if maxx > r3d_w - 1 { maxx = r3d_w - 1 }
+    if maxy > r3d_h - 1 { maxy = r3d_h - 1 }
+    if minx > maxx or miny > maxy { return }
+
+    r3d_stat_drawn = r3d_stat_drawn + 1
+
+    let ar: f32 = a.r * a.iw
+    let ag: f32 = a.g * a.iw
+    let ab: f32 = a.b * a.iw
+    let br: f32 = b.r * b.iw
+    let bg: f32 = b.g * b.iw
+    let bb: f32 = b.b * b.iw
+    let cr: f32 = c.r * c.iw
+    let cg: f32 = c.g * c.iw
+    let cb: f32 = c.b * c.iw
+
+    let mut py: i32 = miny
+    while py <= maxy {
+        let fy: f32 = (py as f32) + 0.5
+        let row: i32 = py * r3d_w
+        let mut px: i32 = minx
+        while px <= maxx {
+            let fx: f32 = (px as f32) + 0.5
+            let w0: f32 = ((b.x - a.x) * (fy - a.y) - (b.y - a.y) * (fx - a.x)) * inv_area
+            let w1: f32 = ((c.x - b.x) * (fy - b.y) - (c.y - b.y) * (fx - b.x)) * inv_area
+            let w2: f32 = 1.0 - w0 - w1
+            # w1 weights vertex a, w2 weights vertex b, w0 weights vertex c.
+            if w0 >= 0.0 and w1 >= 0.0 and w2 >= 0.0 {
+                let z: f32 = w1 * a.z + w2 * b.z + w0 * c.z
+                let di: i32 = row + px
+                if z < r3d_depth[di] {
+                    let iw: f32 = w1 * a.iw + w2 * b.iw + w0 * c.iw
+                    if iw > R3D_TINY {
+                        let inv: f32 = 1.0 / iw
+                        let rr: f32 = (w1 * ar + w2 * br + w0 * cr) * inv
+                        let gg: f32 = (w1 * ag + w2 * bg + w0 * cg) * inv
+                        let bbv: f32 = (w1 * ab + w2 * bb + w0 * cb) * inv
+                        r3d_depth[di] = z
+                        let o: i32 = di * 3
+                        r3d_color[o] = (r3d_clampf(rr, 0.0, 1.0) * 255.0) as u8
+                        r3d_color[o + 1] = (r3d_clampf(gg, 0.0, 1.0) * 255.0) as u8
+                        r3d_color[o + 2] = (r3d_clampf(bbv, 0.0, 1.0) * 255.0) as u8
+                        r3d_stat_pixels = r3d_stat_pixels + 1
+                    }
+                }
+            }
+            px = px + 1
+        }
+        py = py + 1
+    }
+}
+
+# Clip-space vertex to screen space.
+function r3d_to_screen(v: V4C) -> SVert {
+    let inv: f32 = 1.0 / v.w
+    let ndc_x: f32 = v.x * inv
+    let ndc_y: f32 = v.y * inv
+    let ndc_z: f32 = v.z * inv
+    return SVert {
+        x: (ndc_x * 0.5 + 0.5) * (r3d_w as f32),
+        y: (0.5 - ndc_y * 0.5) * (r3d_h as f32),
+        z: ndc_z * 0.5 + 0.5,
+        iw: inv,
+        r: v.r,
+        g: v.g,
+        b: v.b
+    }
+}
+
+function r3d_clip_store(buf: ptr<f32>, slot: i32, v: V4C) -> void {
+    let o: i32 = slot * R3D_CLIP_STRIDE
+    buf[o] = v.x
+    buf[o + 1] = v.y
+    buf[o + 2] = v.z
+    buf[o + 3] = v.w
+    buf[o + 4] = v.r
+    buf[o + 5] = v.g
+    buf[o + 6] = v.b
+}
+
+function r3d_clip_load(buf: ptr<f32>, slot: i32) -> V4C {
+    let o: i32 = slot * R3D_CLIP_STRIDE
+    return V4C {
+        x: buf[o], y: buf[o + 1], z: buf[o + 2], w: buf[o + 3],
+        r: buf[o + 4], g: buf[o + 5], b: buf[o + 6]
+    }
+}
+
+function r3d_clip_lerp(p: V4C, q: V4C, t: f32) -> V4C {
+    return V4C {
+        x: p.x + (q.x - p.x) * t,
+        y: p.y + (q.y - p.y) * t,
+        z: p.z + (q.z - p.z) * t,
+        w: p.w + (q.w - p.w) * t,
+        r: p.r + (q.r - p.r) * t,
+        g: p.g + (q.g - p.g) * t,
+        b: p.b + (q.b - p.b) * t
+    }
+}
+
+# Sutherland-Hodgman against w >= r3d_near, then fan-triangulate and raster.
+# Everything in front of the eye survives untouched; a triangle straddling the
+# plane becomes one or two triangles; one entirely behind disappears.
+export function r3d_clip_and_raster(a: V4C, b: V4C, c: V4C) -> void {
+    r3d_stat_tris = r3d_stat_tris + 1
+    if a.w >= r3d_near and b.w >= r3d_near and c.w >= r3d_near {
+        r3d_raster_tri(r3d_to_screen(a), r3d_to_screen(b), r3d_to_screen(c))
+        return
+    }
+    if a.w < r3d_near and b.w < r3d_near and c.w < r3d_near {
+        r3d_stat_clipped = r3d_stat_clipped + 1
+        return
+    }
+    r3d_stat_clipped = r3d_stat_clipped + 1
+    r3d_clip_store(r3d_clip_a, 0, a)
+    r3d_clip_store(r3d_clip_a, 1, b)
+    r3d_clip_store(r3d_clip_a, 2, c)
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < 3 {
+        let cur: V4C = r3d_clip_load(r3d_clip_a, i)
+        let nxt: V4C = r3d_clip_load(r3d_clip_a, (i + 1) % 3)
+        let cur_in: bool = cur.w >= r3d_near
+        let nxt_in: bool = nxt.w >= r3d_near
+        if cur_in and count < R3D_CLIP_MAX {
+            r3d_clip_store(r3d_clip_b, count, cur)
+            count = count + 1
+        }
+        if cur_in != nxt_in and count < R3D_CLIP_MAX {
+            let denom: f32 = nxt.w - cur.w
+            if fabsf(denom) > R3D_TINY {
+                let t: f32 = (r3d_near - cur.w) / denom
+                r3d_clip_store(r3d_clip_b, count, r3d_clip_lerp(cur, nxt, t))
+                count = count + 1
+            }
+        }
+        i = i + 1
+    }
+    if count < 3 { return }
+    let v0: SVert = r3d_to_screen(r3d_clip_load(r3d_clip_b, 0))
+    let mut k: i32 = 1
+    while k < count - 1 {
+        let v1: SVert = r3d_to_screen(r3d_clip_load(r3d_clip_b, k))
+        let v2: SVert = r3d_to_screen(r3d_clip_load(r3d_clip_b, k + 1))
+        r3d_raster_tri(v0, v1, v2)
+        k = k + 1
+    }
+}
+
+# Immediate-mode triangle: three world positions, three colours, one matrix.
+export function r3d_tri(viewproj: &[f32], pa: V3, pb: V3, pc: V3,
+                       ca: V3, cb: V3, cc: V3) -> void {
+    let qa: V3 = m4_point(viewproj, pa)
+    let qb: V3 = m4_point(viewproj, pb)
+    let qc: V3 = m4_point(viewproj, pc)
+    let wa: f32 = m4_pointw(viewproj, pa)
+    let wb: f32 = m4_pointw(viewproj, pb)
+    let wc: f32 = m4_pointw(viewproj, pc)
+    r3d_clip_and_raster(
+        V4C { x: qa.x, y: qa.y, z: qa.z, w: wa, r: ca.x, g: ca.y, b: ca.z },
+        V4C { x: qb.x, y: qb.y, z: qb.z, w: wb, r: cb.x, g: cb.y, b: cb.z },
+        V4C { x: qc.x, y: qc.y, z: qc.z, w: wc, r: cc.x, g: cc.y, b: cc.z })
+}
+
+# ---------------------------------------------------------------------------
+# Line drawing
+# ---------------------------------------------------------------------------
+
+# Bresenham in screen space, no depth test.
+export function r3d_line(x0: i32, y0: i32, x1: i32, y1: i32, col: V3) -> void {
+    let mut x: i32 = x0
+    let mut y: i32 = y0
+    let mut dx: i32 = x1 - x0
+    if dx < 0 { dx = 0 - dx }
+    let mut dy: i32 = y1 - y0
+    if dy < 0 { dy = 0 - dy }
+    dy = 0 - dy
+    let mut sx: i32 = -1
+    if x0 < x1 { sx = 1 }
+    let mut sy: i32 = -1
+    if y0 < y1 { sy = 1 }
+    let mut err: i32 = dx + dy
+    let mut guard: i32 = 0
+    let limit: i32 = R3D_MAX_W + R3D_MAX_H + 4
+    while guard < limit {
+        r3d_put(x, y, col)
+        if x == x1 and y == y1 { return }
+        let e2: i32 = 2 * err
+        if e2 >= dy {
+            err = err + dy
+            x = x + sx
+        }
+        if e2 <= dx {
+            err = err + dx
+            y = y + sy
+        }
+        guard = guard + 1
+    }
+}
+
+# Bresenham with a depth test, interpolating z linearly between the endpoints.
+export function r3d_line_depth(x0: i32, y0: i32, z0: f32,
+                               x1: i32, y1: i32, z1: f32, col: V3) -> void {
+    let mut dxi: i32 = x1 - x0
+    if dxi < 0 { dxi = 0 - dxi }
+    let mut dyi: i32 = y1 - y0
+    if dyi < 0 { dyi = 0 - dyi }
+    let mut steps: i32 = dyi
+    if dxi > dyi { steps = dxi }
+    if steps <= 0 {
+        r3d_put_depth(x0, y0, z0, col)
+        return
+    }
+    # Both endpoints outside the same edge means the whole span is outside.
+    if x0 < 0 and x1 < 0 { return }
+    if y0 < 0 and y1 < 0 { return }
+    if x0 >= r3d_w and x1 >= r3d_w { return }
+    if y0 >= r3d_h and y1 >= r3d_h { return }
+    if steps > R3D_MAX_W + R3D_MAX_H { return }
+
+    let inv: f32 = 1.0 / (steps as f32)
+    let sx: f32 = ((x1 - x0) as f32) * inv
+    let sy: f32 = ((y1 - y0) as f32) * inv
+    let sz: f32 = (z1 - z0) * inv
+    let mut fx: f32 = (x0 as f32) + 0.5
+    let mut fy: f32 = (y0 as f32) + 0.5
+    let mut fz: f32 = z0
+    let cr: u8 = (r3d_clampf(col.x, 0.0, 1.0) * 255.0) as u8
+    let cg: u8 = (r3d_clampf(col.y, 0.0, 1.0) * 255.0) as u8
+    let cb: u8 = (r3d_clampf(col.z, 0.0, 1.0) * 255.0) as u8
+    let mut s: i32 = 0
+    while s <= steps {
+        let xi: i32 = fx as i32
+        let yi: i32 = fy as i32
+        if xi >= 0 and xi < r3d_w and yi >= 0 and yi < r3d_h {
+            let di: i32 = yi * r3d_w + xi
+            if fz < r3d_depth[di] {
+                r3d_depth[di] = fz
+                let o: i32 = di * 3
+                r3d_color[o] = cr
+                r3d_color[o + 1] = cg
+                r3d_color[o + 2] = cb
+                r3d_stat_pixels = r3d_stat_pixels + 1
+            }
+        }
+        fx = fx + sx
+        fy = fy + sy
+        fz = fz + sz
+        s = s + 1
+    }
+}
+
+# A clip-space line segment, clipped to the near plane and depth-tested. This
+# is the entry point the wireframe path uses, because the mesh vertices are
+# already in clip space by then and re-transforming them per edge would triple
+# the matrix work.
+export function r3d_line_clip(a: V4C, b: V4C, col: V3) -> void {
+    let mut va: V4C = a
+    let mut vb: V4C = b
+    if va.w < r3d_near and vb.w < r3d_near {
+        return
+    }
+    if va.w < r3d_near {
+        let t: f32 = (r3d_near - va.w) / (vb.w - va.w)
+        va = r3d_clip_lerp(va, vb, t)
+    } elif vb.w < r3d_near {
+        let t: f32 = (r3d_near - vb.w) / (va.w - vb.w)
+        vb = r3d_clip_lerp(vb, va, t)
+    }
+    let sa: SVert = r3d_to_screen(va)
+    let sb: SVert = r3d_to_screen(vb)
+    r3d_line_depth(sa.x as i32, sa.y as i32, sa.z,
+                   sb.x as i32, sb.y as i32, sb.z, col)
+}
+
+# A world-space line segment, clipped to the near plane and depth-tested.
+export function r3d_line3(viewproj: &[f32], pa: V3, pb: V3, col: V3) -> void {
+    let qa: V3 = m4_point(viewproj, pa)
+    let qb: V3 = m4_point(viewproj, pb)
+    let wa: f32 = m4_pointw(viewproj, pa)
+    let wb: f32 = m4_pointw(viewproj, pb)
+    let mut va: V4C = V4C { x: qa.x, y: qa.y, z: qa.z, w: wa, r: col.x, g: col.y, b: col.z }
+    let mut vb: V4C = V4C { x: qb.x, y: qb.y, z: qb.z, w: wb, r: col.x, g: col.y, b: col.z }
+    if va.w < r3d_near and vb.w < r3d_near {
+        return
+    }
+    if va.w < r3d_near {
+        let t: f32 = (r3d_near - va.w) / (vb.w - va.w)
+        va = r3d_clip_lerp(va, vb, t)
+    } elif vb.w < r3d_near {
+        let t: f32 = (r3d_near - vb.w) / (va.w - vb.w)
+        vb = r3d_clip_lerp(vb, va, t)
+    }
+    let sa: SVert = r3d_to_screen(va)
+    let sb: SVert = r3d_to_screen(vb)
+    r3d_line_depth(sa.x as i32, sa.y as i32, sa.z,
+                   sb.x as i32, sb.y as i32, sb.z, col)
+}
+
+# ---------------------------------------------------------------------------
+# Sprites
+# ---------------------------------------------------------------------------
+
+# A screen-aligned depth-tested disc at a world point, sized by `radius` in
+# world units at the point's distance. This is the billboard primitive: it
+# always faces the camera because it is drawn in screen space.
+export function r3d_sprite(viewproj: &[f32], centre: V3, radius: f32, col: V3) -> void {
+    let q: V3 = m4_point(viewproj, centre)
+    let w: f32 = m4_pointw(viewproj, centre)
+    if w < r3d_near { return }
+    let s: SVert = r3d_to_screen(V4C { x: q.x, y: q.y, z: q.z, w: w,
+                                       r: col.x, g: col.y, b: col.z })
+    # viewproj[5] is f = 1/tan(fovy/2); a world radius maps to this many pixels.
+    let px_r: f32 = radius * viewproj[5] / w * ((r3d_h as f32) * 0.5)
+    if px_r < 0.5 {
+        r3d_put_depth(s.x as i32, s.y as i32, s.z, col)
+        return
+    }
+    let ri: i32 = px_r as i32
+    let cx: i32 = s.x as i32
+    let cy: i32 = s.y as i32
+    let r2: f32 = px_r * px_r
+    let mut dy: i32 = 0 - ri
+    while dy <= ri {
+        let mut dx: i32 = 0 - ri
+        while dx <= ri {
+            let fd: f32 = (dx as f32) * (dx as f32) + (dy as f32) * (dy as f32)
+            if fd <= r2 {
+                r3d_put_depth(cx + dx, cy + dy, s.z, col)
+            }
+            dx = dx + 1
+        }
+        dy = dy + 1
+    }
+}
+
+# Alpha-blended billboard. The depth buffer is read but never written, so a
+# translucent sprite is hidden by solid geometry in front of it without
+# occluding the sprites behind it. That makes the result order-dependent: the
+# caller must submit these back to front. Returns the number of pixels touched.
+export function r3d_sprite_blend(viewproj: &[f32], centre: V3, radius: f32,
+                                 col: V3, alpha: f32) -> i32 {
+    let q: V3 = m4_point(viewproj, centre)
+    let w: f32 = m4_pointw(viewproj, centre)
+    if w < r3d_near { return 0 }
+    let a: f32 = r3d_clampf(alpha, 0.0, 1.0)
+    if a <= 0.0 { return 0 }
+    let s: SVert = r3d_to_screen(V4C { x: q.x, y: q.y, z: q.z, w: w,
+                                       r: col.x, g: col.y, b: col.z })
+    let px_r: f32 = radius * viewproj[5] / w * ((r3d_h as f32) * 0.5)
+    let mut ri: i32 = px_r as i32
+    if ri < 1 { ri = 1 }
+    let cx: i32 = s.x as i32
+    let cy: i32 = s.y as i32
+    let r2: f32 = px_r * px_r + 0.25
+    let sr: f32 = r3d_clampf(col.x, 0.0, 1.0) * 255.0
+    let sg: f32 = r3d_clampf(col.y, 0.0, 1.0) * 255.0
+    let sb: f32 = r3d_clampf(col.z, 0.0, 1.0) * 255.0
+    let mut touched: i32 = 0
+    let mut dy: i32 = 0 - ri
+    while dy <= ri {
+        let y: i32 = cy + dy
+        if y >= 0 and y < r3d_h {
+            let row: i32 = y * r3d_w
+            let mut dx: i32 = 0 - ri
+            while dx <= ri {
+                let x: i32 = cx + dx
+                if x >= 0 and x < r3d_w {
+                    let fd: f32 = (dx as f32) * (dx as f32) + (dy as f32) * (dy as f32)
+                    if fd <= r2 {
+                        let di: i32 = row + x
+                        if s.z < r3d_depth[di] {
+                            let o: i32 = di * 3
+                            let dr: f32 = r3d_color[o] as f32
+                            let dg: f32 = r3d_color[o + 1] as f32
+                            let db: f32 = r3d_color[o + 2] as f32
+                            r3d_color[o] = (dr + (sr - dr) * a) as u8
+                            r3d_color[o + 1] = (dg + (sg - dg) * a) as u8
+                            r3d_color[o + 2] = (db + (sb - db) * a) as u8
+                            touched = touched + 1
+                        }
+                    }
+                }
+                dx = dx + 1
+            }
+        }
+        dy = dy + 1
+    }
+    r3d_stat_pixels = r3d_stat_pixels + touched
+    return touched
+}
+
+# ---------------------------------------------------------------------------
+# Mesh drawing
+# ---------------------------------------------------------------------------
+
+# Transform, light, clip and rasterize the whole current mesh.
+#
+#   model     object to world
+#   viewproj  world to clip
+#   to_light  direction from a surface towards the directional light
+#   mode      R3D_WIRE, R3D_FLAT, R3D_GOURAUD or R3D_UNLIT
+export function r3d_draw_mesh(model: &[f32], viewproj: &[f32], to_light: V3,
+                              mode: i32) -> void {
+    if !r3d_started { return }
+    let light: V3 = v3_norm(to_light)
+
+    let mut i: i32 = 0
+    while i < r3d_nvert {
+        let o3: i32 = i * 3
+        let o4: i32 = i * 4
+        let p: V3 = v3(r3d_vx[o3], r3d_vx[o3 + 1], r3d_vx[o3 + 2])
+        let wpos: V3 = m4_point(model, p)
+        r3d_wp[o3] = wpos.x
+        r3d_wp[o3 + 1] = wpos.y
+        r3d_wp[o3 + 2] = wpos.z
+        let cq: V3 = m4_point(viewproj, wpos)
+        let cw: f32 = m4_pointw(viewproj, wpos)
+        r3d_cp[o4] = cq.x
+        r3d_cp[o4 + 1] = cq.y
+        r3d_cp[o4 + 2] = cq.z
+        r3d_cp[o4 + 3] = cw
+        let base: V3 = v3(r3d_vc[o3], r3d_vc[o3 + 1], r3d_vc[o3 + 2])
+        let mut col: V3 = base
+        if mode == R3D_GOURAUD {
+            let nrm: V3 = m4_dir(model, v3(r3d_vn[o3], r3d_vn[o3 + 1], r3d_vn[o3 + 2]))
+            col = r3d_lambert(base, nrm, light)
+        }
+        col = r3d_apply_fog(col, cw)
+        r3d_sc[o3] = col.x
+        r3d_sc[o3 + 1] = col.y
+        r3d_sc[o3 + 2] = col.z
+        i = i + 1
+    }
+
+    let mut t: i32 = 0
+    while t < r3d_ntri {
+        let ti: i32 = t * 3
+        let i0: i32 = r3d_idx[ti]
+        let i1: i32 = r3d_idx[ti + 1]
+        let i2: i32 = r3d_idx[ti + 2]
+        let a3: i32 = i0 * 3
+        let b3: i32 = i1 * 3
+        let c3: i32 = i2 * 3
+        let a4: i32 = i0 * 4
+        let b4: i32 = i1 * 4
+        let c4: i32 = i2 * 4
+
+        if mode == R3D_WIRE {
+            let col: V3 = v3(r3d_sc[a3], r3d_sc[a3 + 1], r3d_sc[a3 + 2])
+            let ka: V4C = V4C { x: r3d_cp[a4], y: r3d_cp[a4 + 1], z: r3d_cp[a4 + 2],
+                                w: r3d_cp[a4 + 3], r: col.x, g: col.y, b: col.z }
+            let kb: V4C = V4C { x: r3d_cp[b4], y: r3d_cp[b4 + 1], z: r3d_cp[b4 + 2],
+                                w: r3d_cp[b4 + 3], r: col.x, g: col.y, b: col.z }
+            let kc: V4C = V4C { x: r3d_cp[c4], y: r3d_cp[c4 + 1], z: r3d_cp[c4 + 2],
+                                w: r3d_cp[c4 + 3], r: col.x, g: col.y, b: col.z }
+            r3d_line_clip(ka, kb, col)
+            r3d_line_clip(kb, kc, col)
+            r3d_line_clip(kc, ka, col)
+            r3d_stat_tris = r3d_stat_tris + 1
+            t = t + 1
+            continue
+        }
+
+        let mut ca: V3 = v3(r3d_sc[a3], r3d_sc[a3 + 1], r3d_sc[a3 + 2])
+        let mut cb: V3 = v3(r3d_sc[b3], r3d_sc[b3 + 1], r3d_sc[b3 + 2])
+        let mut cc: V3 = v3(r3d_sc[c3], r3d_sc[c3 + 1], r3d_sc[c3 + 2])
+
+        if mode == R3D_FLAT {
+            let pa: V3 = v3(r3d_wp[a3], r3d_wp[a3 + 1], r3d_wp[a3 + 2])
+            let pb: V3 = v3(r3d_wp[b3], r3d_wp[b3 + 1], r3d_wp[b3 + 2])
+            let pc: V3 = v3(r3d_wp[c3], r3d_wp[c3 + 1], r3d_wp[c3 + 2])
+            let nrm: V3 = v3_face_normal(pa, pb, pc)
+            let base: V3 = v3(r3d_vc[a3], r3d_vc[a3 + 1], r3d_vc[a3 + 2])
+            let lit: V3 = r3d_apply_fog(r3d_lambert(base, nrm, light), r3d_cp[a4 + 3])
+            ca = lit
+            cb = lit
+            cc = lit
+        }
+
+        r3d_clip_and_raster(
+            V4C { x: r3d_cp[a4], y: r3d_cp[a4 + 1], z: r3d_cp[a4 + 2], w: r3d_cp[a4 + 3],
+                  r: ca.x, g: ca.y, b: ca.z },
+            V4C { x: r3d_cp[b4], y: r3d_cp[b4 + 1], z: r3d_cp[b4 + 2], w: r3d_cp[b4 + 3],
+                  r: cb.x, g: cb.y, b: cb.z },
+            V4C { x: r3d_cp[c4], y: r3d_cp[c4 + 1], z: r3d_cp[c4 + 2], w: r3d_cp[c4 + 3],
+                  r: cc.x, g: cc.y, b: cc.z })
+        t = t + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Ray casting: the picking side of the same geometry
+# ---------------------------------------------------------------------------
+
+# Slab test against an axis-aligned box. Returns the entry distance along the
+# ray, or -1.0 when there is no hit in front of the origin.
+export function r3d_ray_aabb(origin: V3, dir: V3, lo: V3, hi: V3) -> f32 {
+    let mut tmin: f32 = 0.0
+    let mut tmax: f32 = 1.0e30
+
+    let mut t1: f32 = 0.0
+    let mut t2: f32 = 0.0
+
+    if fabsf(dir.x) < R3D_TINY {
+        if origin.x < lo.x or origin.x > hi.x { return -1.0 }
+    } else {
+        t1 = (lo.x - origin.x) / dir.x
+        t2 = (hi.x - origin.x) / dir.x
+        if t1 > t2 {
+            let sw: f32 = t1
+            t1 = t2
+            t2 = sw
+        }
+        if t1 > tmin { tmin = t1 }
+        if t2 < tmax { tmax = t2 }
+    }
+
+    if fabsf(dir.y) < R3D_TINY {
+        if origin.y < lo.y or origin.y > hi.y { return -1.0 }
+    } else {
+        t1 = (lo.y - origin.y) / dir.y
+        t2 = (hi.y - origin.y) / dir.y
+        if t1 > t2 {
+            let sw: f32 = t1
+            t1 = t2
+            t2 = sw
+        }
+        if t1 > tmin { tmin = t1 }
+        if t2 < tmax { tmax = t2 }
+    }
+
+    if fabsf(dir.z) < R3D_TINY {
+        if origin.z < lo.z or origin.z > hi.z { return -1.0 }
+    } else {
+        t1 = (lo.z - origin.z) / dir.z
+        t2 = (hi.z - origin.z) / dir.z
+        if t1 > t2 {
+            let sw: f32 = t1
+            t1 = t2
+            t2 = sw
+        }
+        if t1 > tmin { tmin = t1 }
+        if t2 < tmax { tmax = t2 }
+    }
+
+    if tmax < tmin { return -1.0 }
+    if tmax < 0.0 { return -1.0 }
+    return tmin
+}
+
+# Nearest intersection of a ray with a sphere, or -1.0 for a miss.
+export function r3d_ray_sphere(origin: V3, dir: V3, centre: V3, radius: f32) -> f32 {
+    let oc: V3 = v3_sub(origin, centre)
+    let b: f32 = v3_dot(oc, dir)
+    let c: f32 = v3_dot(oc, oc) - radius * radius
+    let disc: f32 = b * b - c
+    if disc < 0.0 { return -1.0 }
+    let sq: f32 = sqrtf(disc)
+    let t0: f32 = 0.0 - b - sq
+    if t0 >= 0.0 { return t0 }
+    let t1: f32 = 0.0 - b + sq
+    if t1 >= 0.0 { return t1 }
+    return -1.0
+}
+
+# The view direction for a camera given yaw (around +Y, 0 looks down -Z) and
+# pitch (positive looks up).
+export function r3d_forward(yaw: f32, pitch: f32) -> V3 {
+    let cp: f32 = cosf(pitch)
+    return v3(0.0 - sinf(yaw) * cp, sinf(pitch), 0.0 - cosf(yaw) * cp)
+}
+
+# The right vector for the same camera, on the horizontal plane.
+export function r3d_right(yaw: f32) -> V3 {
+    return v3(cosf(yaw), 0.0, 0.0 - sinf(yaw))
+}
