@@ -1,0 +1,334 @@
+# COLPITTS OSCILLATOR: a circuit with no input, and the frequency it picks.
+#
+# WHY THE MATRIX AND NOT A `flow` BLOCK
+#   An oscillator is the case where writing the state equations by hand is
+#   worst. The frequency is set by a resonant loop, the amplitude by a
+#   nonlinearity somewhere else, and the two are coupled through the bias
+#   network. There is no clean two-state ODE to write down: the answer is a
+#   property of the whole network, so the whole network is what gets solved.
+#
+# THE CIRCUIT   common-base Colpitts, NPN, 12 V rail
+#
+#                      Vcc (1)
+#                       |
+#                    [ rl ]  20 ohm      tank loss
+#                       |
+#                  (5)  L  10 uH
+#                       |
+#          +------------+ (2) collector
+#          |            |
+#        [ C1 ]       [ Q ]  <-- base (4), bypassed to ground by Cb
+#        1 nF           |
+#          +------------+ (3) emitter, and the capacitive tap
+#          |            |
+#        [ C2 ]       [ Re ]  3 kohm   
+#        1 nF           |
+#          |            |
+#         gnd          gnd
+#
+#   Base bias: Rb1 = 30 kohm from Vcc to node 4, Rb2 = 10 kohm to ground,
+#   bypassed by Cb = 100 nF, which is 0.7 ohm at the operating frequency and
+#   so holds the base at AC ground. The transistor is the same Ebers-Moll NPN
+#   as bjt_curves, Is = 1 fA, betaF = 100.
+#
+# THE DESIGN EQUATION
+#   The tank is L across C1 in series with C2, so
+#
+#     Ceq = C1 C2 / (C1 + C2) = 0.5 nF
+#     f0  = 1 / (2 pi sqrt(L Ceq)) = 2.25079 MHz
+#
+#   That is the number this example is checking. It is a small-signal,
+#   unloaded, undamped prediction, and the running oscillator is none of those
+#   things: the transistor's input impedance loads the tap, the tank has
+#   finite Q, and the amplitude is limited by the transistor leaving its
+#   active region on every cycle. The measured frequency should therefore land
+#   near f0 but not on it, and the gate is set at 5%, which is the honest size
+#   of those effects rather than a number chosen to pass.
+#
+# STARTING IT
+#   A simulated oscillator has no noise to start from. The DC operating point
+#   is a fixed point and a deterministic solver will sit on it forever. So the
+#   run begins at the operating point and a 1 mA current pulse is injected
+#   into the collector node for 20 ns, which is the model's version of turning
+#   the power on. Everything after that is the circuit's own doing.
+#
+# MEASUREMENT
+#   The collector waveform is recorded over the last 100 cycles, its mean is
+#   taken, and the frequency is the number of upward mean crossings divided by
+#   the time between the first and last of them, each located by linear
+#   interpolation. The peak-to-peak swing is also recorded over cycles 100 to
+#   200, which is 200 cycles and about 90 tank time constants before the
+#   measurement window.
+#
+# EVIDENCE
+#   Measured oscillation frequency against 1/(2 pi sqrt(L Ceq)), gated at 5%.
+#   The amplitude is measured in two windows 200 cycles apart and their ratio
+#   is gated to 1.00 within 2%, which is what separates a limit cycle from a
+#   ring-down. The upward-crossing count must be one per nominal cycle, which
+#   is what separates a clean fundamental from a waveform with structure in
+#   it.
+#
+# Run: ./flow run examples/circuits/oscillator_colpitts.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const VCC: f64 = 12.0
+const L_TANK: f64 = 10e-6
+const C1: f64 = 1e-9
+const C2: f64 = 1e-9
+const RL_LOSS: f64 = 20.0
+const RE: f64 = 3000.0
+const RB1: f64 = 30000.0
+const RB2: f64 = 10000.0
+const CB: f64 = 100e-9
+
+const Q_IS: f64 = 1e-15
+const Q_BF: f64 = 100.0
+const Q_BR: f64 = 1.0
+const Q_VT: f64 = 0.025852
+
+const TWO_PI: f64 = 6.283185307179586
+const PER_CYCLE: i32 = 500
+const CYCLES: i32 = 400
+const MEAS_CYCLES: i32 = 100
+const KICK_A: f64 = 1e-3
+const KICK_STEPS: i32 = 22        # about 20 ns at the step size below
+
+function ceq() -> f64 {
+    return C1 * C2 / (C1 + C2)
+}
+
+function f0() -> f64 {
+    return 1.0 / (TWO_PI * sqrt(L_TANK * ceq()))
+}
+
+let mut buf: ptr<f64> = null
+let mut meas_f: f64 = 0.0
+let mut meas_pp: f64 = 0.0
+let mut meas_crossings: i32 = 0
+let mut meas_vbias: f64 = 0.0
+let mut meas_iters: i32 = 0
+let mut meas_pp_early: f64 = 0.0
+
+function run() -> bool {
+    if !circ_reset() {
+        return false
+    }
+    circ_set_method(CIRC_TRAP)
+    circ_set_tol(1e-11, 1e-14)
+
+    let vcc: i32 = circ_add_v(1, 0, VCC)
+    let rl: i32 = circ_add_r(1, 5, RL_LOSS)
+    let ind: i32 = circ_add_l(5, 2, L_TANK, 0.0)
+    let c1: i32 = circ_add_c(2, 3, C1, 0.0)
+    let c2: i32 = circ_add_c(3, 0, C2, 0.0)
+    let re: i32 = circ_add_r(3, 0, RE)
+    let rb1: i32 = circ_add_r(1, 4, RB1)
+    let rb2: i32 = circ_add_r(4, 0, RB2)
+    let cb: i32 = circ_add_c(4, 0, CB, 0.0)
+    let q: i32 = circ_add_q(2, 4, 3, Q_IS, Q_BF, Q_BR, Q_VT)
+    # Startup pulse into the collector node, off for the rest of the run.
+    let kick: i32 = circ_add_i(0, 2, 0.0)
+    if kick < 0 or !circ_finalize() {
+        return false
+    }
+    if !circ_op() {
+        println("    FAIL: no DC operating point")
+        return false
+    }
+    print("    DC operating point:  Vc = ")
+    printf("%.4f", circ_v(2))
+    print(" V,  Vb = ")
+    printf("%.4f", circ_v(4))
+    print(" V,  Ve = ")
+    printf("%.4f", circ_v(3))
+    print(" V,  Ic = ")
+    printf("%.4f", circ_i(q) * 1000.0)
+    println(" mA")
+    print("    small-signal gm = Ic/VT = ")
+    printf("%.5f", circ_i(q) / Q_VT)
+    print(" S,  tank Q = w0 L / rl = ")
+    printf("%.2f", TWO_PI * f0() * L_TANK / RL_LOSS)
+    println("")
+
+    let period: f64 = 1.0 / f0()
+    let dt: f64 = period / (PER_CYCLE as f64)
+    if !circ_tran_init(false, 0.0) {
+        return false
+    }
+
+    let total: i32 = CYCLES * PER_CYCLE
+    let nbuf: i32 = MEAS_CYCLES * PER_CYCLE
+    let from: i32 = total - nbuf
+    # An earlier window of the same length, two windows back, so the two
+    # amplitudes can be compared and a slowly decaying ring-down ruled out.
+    let early_from: i32 = from - 2 * nbuf
+    let early_to: i32 = from - nbuf
+    let mut elo: f64 = 1e30
+    let mut ehi: f64 = 0.0 - 1e30
+    meas_iters = 0
+    for k in 0 to total {
+        if k < KICK_STEPS {
+            circ_set_value(kick, KICK_A)
+        } else {
+            circ_set_value(kick, 0.0)
+        }
+        if !circ_tran_step(dt) {
+            println("    FAIL: transient step failed")
+            return false
+        }
+        if circ_iterations() > meas_iters {
+            meas_iters = circ_iterations()
+        }
+        if k >= early_from and k < early_to {
+            let v: f64 = circ_v(2)
+            if v < elo { elo = v }
+            if v > ehi { ehi = v }
+        }
+        if k >= from {
+            buf[k - from] = circ_v(2)
+        }
+    }
+    meas_pp_early = ehi - elo
+
+    let mut sum: f64 = 0.0
+    let mut lo: f64 = 1e30
+    let mut hi: f64 = 0.0 - 1e30
+    for i in 0 to nbuf {
+        sum = sum + buf[i]
+        if buf[i] < lo { lo = buf[i] }
+        if buf[i] > hi { hi = buf[i] }
+    }
+    let mean: f64 = sum / (nbuf as f64)
+    meas_vbias = mean
+    meas_pp = hi - lo
+
+    let mut n: i32 = 0
+    let mut t_first: f64 = 0.0
+    let mut t_last: f64 = 0.0
+    for i in 1 to nbuf {
+        let a: f64 = buf[i - 1] - mean
+        let b: f64 = buf[i] - mean
+        if a <= 0.0 and b > 0.0 {
+            let frac: f64 = (0.0 - a) / (b - a)
+            let t: f64 = ((i - 1) as f64 + frac) * dt
+            if n == 0 {
+                t_first = t
+            }
+            t_last = t
+            n = n + 1
+        }
+    }
+    meas_crossings = n
+    meas_f = 0.0
+    if n > 1 {
+        meas_f = ((n - 1) as f64) / (t_last - t_first)
+    }
+    return true
+}
+
+function main() -> i32 {
+    buf = calloc((MEAS_CYCLES * PER_CYCLE) as i64, 8) as ptr<f64>
+    if buf == null {
+        println("  FAIL: allocation")
+        return 1
+    }
+
+    println("")
+    println("  COLPITTS OSCILLATOR  --  measured frequency vs the tank equation")
+    println("  ================================================================")
+    println("")
+    print("  L = ")
+    printf("%.1f", L_TANK * 1e6)
+    print(" uH,  C1 = ")
+    printf("%.1f", C1 * 1e9)
+    print(" nF,  C2 = ")
+    printf("%.1f", C2 * 1e9)
+    print(" nF,  Ceq = C1C2/(C1+C2) = ")
+    printf("%.3f", ceq() * 1e9)
+    println(" nF")
+    print("  f0 = 1/(2 pi sqrt(L Ceq)) = ")
+    printf("%.4f", f0() / 1e6)
+    print(" MHz,  period = ")
+    printf("%.2f", 1e9 / f0())
+    println(" ns")
+    print("  step = period/")
+    print(PER_CYCLE)
+    print(",  run = ")
+    print(CYCLES)
+    print(" cycles,  measured over the last ")
+    print(MEAS_CYCLES)
+    println("")
+    println("")
+
+    if !run() {
+        println("  FAIL: the run did not complete")
+        return 2
+    }
+
+    let err: f64 = fabs(meas_f - f0()) / f0()
+    println("")
+    println("  STEADY-STATE OSCILLATION")
+    print("    collector swing        ")
+    printf("%.5f", meas_pp)
+    print(" V peak-to-peak about ")
+    printf("%.5f", meas_vbias)
+    println(" V")
+    print("    swing 200 cycles earlier ")
+    printf("%.5f", meas_pp_early)
+    print(" V,  late/early = ")
+    printf("%.5f", meas_pp / meas_pp_early)
+    println("   (a ring-down would be far below 1)")
+    print("    upward mean crossings  ")
+    print(meas_crossings)
+    print(" over ")
+    print(MEAS_CYCLES)
+    println(" nominal cycles")
+    print("    worst Newton iterations per step ")
+    print(meas_iters)
+    println("")
+    println("")
+    print("    measured frequency     ")
+    printf("%.6f", meas_f / 1e6)
+    println(" MHz")
+    print("    1/(2 pi sqrt(L Ceq))   ")
+    printf("%.6f", f0() / 1e6)
+    println(" MHz")
+    print("    relative error         ")
+    printf("%.3e", err)
+    println("     gate 5.000e-02")
+    println("")
+
+    if meas_f != meas_f or meas_pp != meas_pp {
+        println("  FAIL: NaN in the waveform")
+        return 3
+    }
+    if meas_pp < 0.5 {
+        println("  FAIL: no oscillation of usable amplitude")
+        return 4
+    }
+    if meas_pp / meas_pp_early < 0.98 or meas_pp / meas_pp_early > 1.02 {
+        println("  FAIL: the amplitude is still moving; this is a transient,")
+        println("        not a limit cycle")
+        return 7
+    }
+    if meas_crossings < MEAS_CYCLES - 5 or meas_crossings > MEAS_CYCLES + 5 {
+        println("  FAIL: crossing count is not one per cycle; the waveform is")
+        println("        not a clean fundamental")
+        return 5
+    }
+    if err >= 5e-2 {
+        println("  FAIL: the oscillation frequency is not the tank frequency")
+        return 6
+    }
+    println("  PASS: the circuit oscillates on its own at the frequency the")
+    println("        tank equation predicts, within the loading it also has")
+    return 0
+}

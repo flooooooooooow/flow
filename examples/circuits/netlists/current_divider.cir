@@ -1,0 +1,11 @@
+Current divider on a 3 mA source
+* Exercises I and .op, and the milli suffix on both a current and a resistor.
+* By hand: R2 + R3 = 6 kohm, in parallel with R1 gives 6/7 kohm, so
+*   V(a) = 3 mA * 6/7 kohm = 18/7 = 2.571428571428571 V
+*   V(b) = V(a) * R3/(R2+R3) = V(a) * 2/3 = 12/7 = 1.714285714285714 V
+I1  0  a   3m
+R1  a  0   1k
+R2  a  b   2k
+R3  b  0   4k
+.op
+.end
