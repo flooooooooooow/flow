@@ -749,29 +749,28 @@ MORPH_DEMOS: list[Demo] = [
     morph("turing_hex_ca", 160, 2,
           "Turing hex CA — Young activator-inhibitor on a triangular lattice",
           duration_ms=70, colors=16),
-    morph("flocking_patterns", 160, 4,
+    morph("flocking_patterns", 120, 5,
           "Vicsek flocking — order parameter collapses with noise",
-          duration_ms=70, colors=12),
-    morph("sandpile", 180, 3,
+          duration_ms=80, colors=8),
+    morph("sandpile", 120, 4,
           "Abelian sandpile — avalanche sizes on a power law",
-          duration_ms=60, colors=24),
+          duration_ms=70, colors=12),
     morph("schelling_segregation", 200, 4,
           "Schelling — mild preference produces strong segregation",
           duration_ms=70, colors=16),
-    morph("voronoi_growth", 200, 3,
+    morph("voronoi_growth", 160, 4,
           "Johnson-Mehl — nucleation and growth with an Avrami exponent",
-          duration_ms=60, colors=24),
-]
-
+          duration_ms=70, colors=16),
     morph("ant_pheromone", 200, 4,
           "Ant pheromone — the short bridge wins by stigmergy",
           duration_ms=70, colors=24),
     morph("crack_propagation", 200, 4,
           "Random fuse crack — disorder lengthens the failure path",
           duration_ms=70, colors=24),
-    morph("river_erosion", 240, 5,
+    morph("river_erosion", 160, 8,
           "Stream-power rivers — drainage basins obey Hack's law",
-          duration_ms=70, colors=24),
+          duration_ms=90, colors=12),
+]
 DEMOS += MORPH_DEMOS
 
 
