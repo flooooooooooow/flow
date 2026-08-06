@@ -179,6 +179,31 @@ Status: ✅ Hash comments only
 | `void` | 0 bytes | No value | ✅ |
 | `string` | ptr | String literal (const char*) | ✅ |
 
+#### Float comparison: two relations
+
+`f32` and `f64` have two distinct comparison relations, and which one applies
+depends on the operation.
+
+| Operation | Relation | NaN | `-0.0` vs `+0.0` | Status |
+|-----------|----------|-----|------------------|--------|
+| `<` `>` `<=` `>=` `==` `!=` | IEEE 754 | Every comparison is false, `x == x` is false | Equal | ✅ |
+| `\|> sort`, `sortBy`, `sort unique`, `\|> find` | IEEE 754-2008 totalOrder (clause 5.10) | Ordered by sign then payload: `-NaN` first, `+NaN` last | `-0.0` sorts strictly before `+0.0` | ✅ |
+
+Arithmetic keeps IEEE semantics unchanged. Ordering needs a relation that is
+reflexive, antisymmetric and transitive, which IEEE comparison is not, so
+declarative ordering uses totalOrder:
+
+```
+-NaN < -inf < ... < -0.0 < +0.0 < ... < +inf < +NaN
+```
+
+`sort unique` compacts elements the *ordering* calls equal, so for floats that
+is bitwise equality: two NaNs with the same payload collapse to one, and
+`-0.0` and `+0.0` both survive.
+
+Rationale, alternatives considered, and the implementation are in
+[ordering.md](language/ordering.md). Tests: `tests/lang/test_sort_nan.flow`.
+
 ### 2.2 Composite Types
 
 | Type | Syntax | Status |
@@ -585,16 +610,33 @@ let result: i32 = add_n(10)  # 15
 - Prefer `|params| -> Ret { … }` over the older manual
   `struct + self` closure idiom.
 
-### 4.5 Pipe / Declarative Ordering
+### 4.5 Pipe / Declarative Ordering and Search
 
 **Status:** ✅
 
 ```flow
 let ys = xs |> sort
 let zs = xs |> sortBy [asc .key, desc .tie]
+let i  = xs |> find(target)     # index of the first match, or -1
 ```
 
-See [ordering.md](language/ordering.md) and `examples/basics/declarative_sort.flow`.
+These name an intent. The compiler picks the implementation from a registry
+of lowerings with cost models and applicability predicates.
+
+| Surface | Meaning | Status |
+|---------|---------|--------|
+| `\|> sort`, `sort by`, `sortBy`, `descending`, `unique` | Order, in place, on `array<T, N>` | ✅ |
+| `\|> find(t)` | First index equal to `t` under the same total order, else `-1` | ✅ |
+| Plan selection (6 sort plans, 2 search plans) | Cheapest applicable, with a scratch budget | ✅ |
+| Ordering hints (sortedness, integer range) through straight-line code | Skip-sort, reverse-only, counting sort, binary search | ✅ |
+| `adaptive`, `general` | Shift the run estimate; pin the general plan | ✅ |
+| `stable` / `unstable` | Parsed; every plan is stable today, so `unstable` buys nothing | ⚠️ |
+| `with entropy`, `parallel`, `gpu`, `simd`, `compact`, … | Parsed, no specialization | ⚠️ |
+| `--explain` / `flow explain` | Print the plan, the costs, and every failed constraint | ✅ |
+
+See [ordering.md](language/ordering.md),
+[explainable-compilation.md](language/explainable-compilation.md), and
+`examples/basics/declarative_sort.flow`.
 
 **Related (library, not core syntax):** Dual / Tensor arithmetic overloads (`+ - * /`, scale, add_scalar) are implemented in the C generator + stdlib — see pattern-adoption notes and `examples/ml/autodiff/tensor_ops.flow`.
 
