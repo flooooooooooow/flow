@@ -182,6 +182,15 @@ def main():
         help="SPIR-V output path (default: build/<input>.spv)",
     )
     parser.add_argument(
+        "--explain",
+        action="store_true",
+        help=(
+            "Print the selected compilation plan for every declarative "
+            "construct (sort, find): what was considered, each cost, the "
+            "choice, and the constraint each rejected candidate failed"
+        ),
+    )
+    parser.add_argument(
         "--module-info", action="store_true", help="Show module information"
     )
     parser.add_argument(
@@ -474,6 +483,14 @@ def main():
                 strict_effects=args.strict_effects,
                 library=args.library,
             )
+            if getattr(args, "explain", False):
+                from .plan_selector import format_selections
+
+                selections = getattr(flow_to_c, "last_selections", []) or []
+                print(
+                    format_selections(selections, source=args.input),
+                    file=sys.stderr,
+                )
             overload_warnings = getattr(flow_to_c, "last_warnings", None)
             if overload_warnings:
                 print("Overload resolution warnings:", file=sys.stderr)

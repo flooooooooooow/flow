@@ -1,0 +1,184 @@
+# Flow-native language test: every sort and search plan the selector can pick.
+#
+# `xs |> sort` names an intent. Which C loop realises it comes from the cost
+# model in src/flow/ordering_plans.py, so a compiler change can silently swap
+# the plan under a program. Whichever plan is chosen, the answer has to be the
+# same. This test drives one program down each of them and checks the result,
+# not the generated text. Run `--explain` on this file to see which plan each
+# site got.
+#
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Row {
+    key: i32,
+    tag: i32
+}
+
+function fill_descending(xs: ptr<i32>, n: i32) -> i32 {
+    for i in 0 to n {
+        xs[i] = n - i
+    }
+    return 0
+}
+
+function fill_sawtooth(xs: ptr<i32>, n: i32) -> i32 {
+    for i in 0 to n {
+        xs[i] = (i * 37) % 23
+    }
+    return 0
+}
+
+function fill_bytes(xs: ptr<u8>, n: i32) -> i32 {
+    for i in 0 to n {
+        xs[i] = ((i * 91) % 251) as u8
+    }
+    return 0
+}
+
+function ascending_i32(xs: ptr<i32>, n: i32) -> i32 {
+    for i in 1 to n {
+        if xs[i - 1] > xs[i] {
+            return 0
+        }
+    }
+    return 1
+}
+
+function ascending_u8(xs: ptr<u8>, n: i32) -> i32 {
+    for i in 1 to n {
+        if xs[i - 1] > xs[i] {
+            return 0
+        }
+    }
+    return 1
+}
+
+function main() -> i32 {
+    # already_ordered: the literal is strictly ascending, so provenance
+    # proves the sort has nothing to do.
+    let mut a: array<i32, 20> = [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+        11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+    ]
+    a |> sort
+    # binary_search: the fact `sort` just established is still live here, so
+    # the search constraint is satisfied and the plan flips off linear scan.
+    # A call taking `a` would invalidate it, which is why this comes first.
+    let hit: i32 = a |> find(13)
+    let miss: i32 = a |> find(21)
+    if hit != 12 {
+        return 1
+    }
+    if miss != -1 {
+        return 2
+    }
+    if ascending_i32(a, 20) != 1 {
+        return 3
+    }
+    if a[0] != 1 || a[19] != 20 {
+        return 4
+    }
+
+    # reverse_in_place: the literal is strictly descending, so one reversal
+    # is a correct sort and stability is not at risk.
+    let mut b: array<i32, 20> = [
+        20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+        10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+    ]
+    b |> sort
+    if ascending_i32(b, 20) != 1 {
+        return 5
+    }
+    if b[0] != 1 || b[19] != 20 {
+        return 6
+    }
+
+    # counting: the u8 element type bounds every key to [0, 255] with no
+    # analysis at all, which is the positivity hint issue #145 asks for.
+    let mut c: array<u8, 1024> = [0, 0, 0, 0]
+    fill_bytes(c, 1024)
+    c |> sort
+    if ascending_u8(c, 1024) != 1 {
+        return 7
+    }
+
+    # bottom_up_merge: `general` pins the general plan and drops every hint.
+    let mut d: array<i32, 600> = [0, 0, 0, 0]
+    fill_descending(d, 600)
+    d |> sort general
+    if ascending_i32(d, 600) != 1 {
+        return 8
+    }
+    if d[0] != 1 || d[599] != 600 {
+        return 9
+    }
+
+    # natural_merge: `adaptive` asks for run detection. A fully descending
+    # input is one strict run, which the detector reverses.
+    let mut e: array<i32, 600> = [0, 0, 0, 0]
+    fill_descending(e, 600)
+    e |> sort adaptive
+    if ascending_i32(e, 600) != 1 {
+        return 10
+    }
+    if e[0] != 1 || e[599] != 600 {
+        return 11
+    }
+
+    # natural_merge on input with many short runs, which is the case where
+    # the run detector has to fall back to merging.
+    let mut f: array<i32, 600> = [0, 0, 0, 0]
+    fill_sawtooth(f, 600)
+    f |> sort adaptive
+    if ascending_i32(f, 600) != 1 {
+        return 12
+    }
+    if f[0] != 0 || f[599] != 22 {
+        return 13
+    }
+
+    # Stability survives the merge plans. Rows tie on `key`, so a stable sort
+    # keeps their original `tag` order.
+    let mut rows: array<Row, 6> = [
+        Row { key: 2, tag: 1 },
+        Row { key: 1, tag: 2 },
+        Row { key: 2, tag: 3 },
+        Row { key: 1, tag: 4 },
+        Row { key: 2, tag: 5 },
+        Row { key: 1, tag: 6 }
+    ]
+    rows |> sortBy [asc .key] adaptive
+    if rows[0].tag != 2 || rows[1].tag != 4 || rows[2].tag != 6 {
+        return 14
+    }
+    if rows[3].tag != 1 || rows[4].tag != 3 || rows[5].tag != 5 {
+        return 15
+    }
+
+    # linear_scan: no ordering provenance, so the selector falls back.
+    let mut g: array<i32, 8> = [5, 2, 9, 1, 7, 3, 8, 4]
+    if (g |> find(9)) != 2 {
+        return 16
+    }
+    if (g |> find(5)) != 0 {
+        return 17
+    }
+    if (g |> find(100)) != -1 {
+        return 18
+    }
+
+    # Descending sorts go through the same plans.
+    let mut h: array<i32, 600> = [0, 0, 0, 0]
+    fill_sawtooth(h, 600)
+    h |> sort descending adaptive
+    for i in 1 to 600 {
+        if h[i - 1] < h[i] {
+            return 19
+        }
+    }
+    if h[0] != 22 || h[599] != 0 {
+        return 20
+    }
+
+    return 0
+}
