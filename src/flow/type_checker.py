@@ -29,6 +29,7 @@ from .parser import (
     VectorLiteral, ExpectStatement, RecordUpdate, BreakStatement, ContinueStatement,
     SortExpr,
 )
+from .attributes import attribute_errors
 
 
 class TypeKind(Enum):
@@ -1031,6 +1032,13 @@ class TypeChecker:
 
     def _check_function(self, func: FunctionDecl) -> None:
         """Type check a function declaration."""
+        # Attributes are checked before the body: an unknown or malformed
+        # attribute is a spelling mistake the user wants to hear about even
+        # when the body is fine (docs/LANGUAGE_SPEC.md §3.6).
+        self.errors.extend(
+            attribute_errors(func.name, getattr(func, 'attributes', None) or [])
+        )
+
         # Extern functions have no body to check - they're just declarations
         if getattr(func, 'is_extern', False):
             return

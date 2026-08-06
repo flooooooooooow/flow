@@ -186,9 +186,10 @@ SYNTAX_HOVER: Dict[str, str] = {
         "See docs/language/functions.md."
     ),
     "inline": (
-        "**`inline`** — hint that a function should be inlined.\n\n"
-        "```flow\ninline function fast_add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n```\n"
-        "See docs/language/language_design.md."
+        "**`inline`** — hint that a function should be inlined. Written as the "
+        "`@inline` attribute.\n\n"
+        "```flow\n@inline\nfunction fast_add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n```\n"
+        "See docs/LANGUAGE_SPEC.md §3.6."
     ),
     "in": (
         "**`in`** — separator in `for i in lo to hi`.\n\n"
@@ -242,9 +243,30 @@ SYNTAX_HOVER: Dict[str, str] = {
         "```flow\n@rt_safe\nfunction process_block(buf: ptr<f32>, n: i32) -> void { ... }\n```"
     ),
     "@inline": (
-        "**`@inline`** — attribute form of the inline hint.\n\n"
+        "**`@inline`** — inline hint. Emits `static inline` in the generated C "
+        "(`extern inline` when the symbol must stay externally visible).\n\n"
         "```flow\n@inline\nfunction tick() -> void { ... }\n```\n"
-        "See also the `inline` keyword."
+        "See docs/LANGUAGE_SPEC.md §3.6."
+    ),
+    "@noinline": (
+        "**`@noinline`** — inline barrier. Emits "
+        "`__attribute__((noinline))` in the generated C.\n\n"
+        "```flow\n@noinline\nfunction cold_path() -> void { ... }\n```\n"
+        "See docs/LANGUAGE_SPEC.md §3.6."
+    ),
+    "@always_inline": (
+        "**`@always_inline`** — forced inline. Emits "
+        "`__attribute__((always_inline))` plus the inline specifier, and is "
+        "honored even at `-O0`.\n\n"
+        "```flow\n@always_inline\nfunction lerp(a: f32, b: f32, t: f32) -> f32 { ... }\n```\n"
+        "See docs/LANGUAGE_SPEC.md §3.6."
+    ),
+    "@target": (
+        "**`@target(\"…\")`** — per-function C target features. Emits "
+        "`__attribute__((target(\"…\")))`. Flow checks the string's shape; the "
+        "host C compiler decides whether the features exist.\n\n"
+        "```flow\n@target(\"avx2\")\nfunction dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }\n```\n"
+        "See docs/LANGUAGE_SPEC.md §3.6."
     ),
     # --- Types ---
     "array": (
@@ -336,7 +358,7 @@ def syntax_token_at_position(text: str, line: int, character: int) -> Optional[s
             if line_text[start : start + op_len] == op and start <= col < start + op_len:
                 return op
 
-    # Attributes: @gpu, @rt_safe, @inline
+    # Attributes: @gpu, @rt_safe, @inline, @noinline, @always_inline, @target
     if line_text[col] == "@" or (
         col > 0 and line_text[col - 1] == "@"
     ) or _in_attr_name(line_text, col):
