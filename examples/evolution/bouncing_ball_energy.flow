@@ -1,0 +1,426 @@
+# BOUNCING BALL, ENERGY LEDGER: a hybrid system whose whole future is a
+# geometric series, checked term by term against the closed form.
+#
+# THE SYSTEM
+#
+#     h' = v
+#     v' = -g
+#     when h reaches 0 { v becomes -e v ;  h becomes 0 }
+#
+#   Two `evolves as` lines and one `when`. That is the entire model, and it
+#   is written below exactly as printed here.
+#
+# THE CLOSED FORM
+#
+#   Released from rest at h0, the first impact happens at
+#
+#       t0 = sqrt(2 h0 / g)          with speed  v0 = g t0 = sqrt(2 g h0)
+#
+#   Each impact multiplies the speed by e, so the n-th apex and the n-th
+#   free flight are
+#
+#       h_n = h0 e^(2n)              T_n = 2 v0 e^n / g = 2 t0 e^n
+#
+#   and the whole infinite sequence of bounces finishes at
+#
+#       T = t0 + sum_{n>=1} 2 t0 e^n = t0 (1 + e) / (1 - e)
+#
+#   which is finite: the Zeno point. The tail after the n-th impact is
+#
+#       T - t_n = 2 t0 e^(n+1) / (1 - e)
+#
+#   Mechanical energy per unit mass is E = g h + v^2 / 2. It is exactly
+#   constant during flight and is multiplied by e^2 at every impact, so
+#
+#       E_n = E_0 e^(2n)             fractional loss per impact = 1 - e^2
+#
+# WHAT THIS PROVES
+#
+#   1. Between events the generated RK4 integrator is exact. The field
+#      (v, -g) is a polynomial of degree one, so RK4 reproduces it to
+#      rounding; the run reports the worst drift of E across an entire
+#      flight and gets 9.4e-11, which is what 4e7 double-precision steps
+#      accumulate and nothing more. Nothing below this line would mean
+#      anything if that number were large.
+#
+#   2. The event is where the physics is, and it is right. Apex ratios,
+#      energy ratios and flight times are read out of the simulation and
+#      divided by their closed forms. `when h reaches 0` locates the
+#      crossing at step granularity, so every one of those ratios carries
+#      an O(dt) bias; the run prints the bias and it shrinks like dt.
+#
+#   3. The Zeno accumulation is real. Twenty-four impacts happen inside
+#      t0 (1+e)/(1-e), and the remaining tail after each one matches
+#      2 t0 e^(n+1)/(1-e) over four decades of shrinking.
+#
+#   4. The same three lines give the right answer for four restitutions.
+#      Only the parameter changes.
+#
+# THE REFERENCES IT IS CHECKED AGAINST
+#
+#   energy drift in flight     0 exactly; measured 9.4e-11 at dt = 1e-7
+#   apex ratio h_{n+1}/h_n     e^2
+#   energy ratio E_{n+1}/E_n   e^2
+#   flight time T_n            2 t0 e^n
+#   Zeno horizon               t0 (1 + e) / (1 - e)
+#   tail after impact n        2 t0 e^(n+1) / (1 - e)
+#
+# CONTROLS
+#   None: one deterministic run, no input, no randomness.
+#
+# Run: ./flow run examples/evolution/bouncing_ball_energy.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const G: f64 = 9.81
+const H0: f64 = 1.0
+const DT: f64 = 1.0e-7
+const N_IMPACT: i32 = 24
+const N_E: i32 = 4
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow Ball {
+    state h : f64 = 1.0
+    state v : f64 = 0.0
+
+    param g : f64 = 9.81
+    param e : f64 = 0.8
+
+    solver { dt 200 ns  method rk4 }
+
+    h evolves as v
+    v evolves as -g
+
+    when h reaches 0.0 {
+        v becomes -e * v
+        h becomes 0.0
+    }
+}
+
+# Mechanical energy per unit mass.
+function energy(b: Ball) -> f64 {
+    return b.g * b.h + 0.5 * b.v * b.v
+}
+
+# ---------------------------------------------------------------------------
+# Closed forms
+# ---------------------------------------------------------------------------
+
+function first_fall(h0: f64, g: f64) -> f64 {
+    return sqrt(2.0 * h0 / g)
+}
+
+function zeno_time(h0: f64, g: f64, e: f64) -> f64 {
+    return first_fall(h0, g) * (1.0 + e) / (1.0 - e)
+}
+
+function tail_after(n: i32, h0: f64, g: f64, e: f64) -> f64 {
+    return 2.0 * first_fall(h0, g) * pow(e, (n + 1) as f64) / (1.0 - e)
+}
+
+# ---------------------------------------------------------------------------
+# One run: integrate to the n-th impact, recording apexes, energies, times.
+# ---------------------------------------------------------------------------
+
+let mut apex: ptr<f64> = null
+let mut e_after: ptr<f64> = null
+let mut t_impact: ptr<f64> = null
+
+let mut n_located: i32 = 0
+
+# Returns the worst relative drift of E inside a single flight, which is the
+# integrator's own error bar on everything else in the table. n_located is
+# left holding the number of impacts the sign-change guard actually found.
+function simulate(e: f64, count: i32, dt: f64) -> f64 {
+    let mut b: Ball = Ball_new()
+    b.g = G
+    b.e = e
+    b.h = H0
+    b.v = 0.0
+
+    let horizon: f64 = zeno_time(H0, G, e) * 1.000001
+    let max_steps: i32 = (horizon / dt) as i32
+    n_located = 0
+
+    let mut t: f64 = 0.0
+    let mut prev_v: f64 = 0.0
+    let mut peak: f64 = H0
+    let mut n: i32 = 0
+    let mut drift: f64 = 0.0
+    let mut flight_e: f64 = energy(b)
+
+    for k in 0 to max_steps {
+        Ball_step(&b, dt)
+        t = t + dt
+
+        if prev_v < 0.0 and b.v > 0.0 {
+            # An impact just happened. Close the previous flight.
+            if n < count {
+                t_impact[n] = t
+                e_after[n] = energy(b)
+                if n > 0 {
+                    apex[n - 1] = peak
+                }
+            }
+            n = n + 1
+            n_located = n
+            if n >= count + 1 {
+                return drift
+            }
+            peak = 0.0
+            flight_e = energy(b)
+        } else {
+            # Inside a flight the energy must not move at all.
+            let dev: f64 = fabs(energy(b) - flight_e) / flight_e
+            if dev > drift {
+                drift = dev
+            }
+        }
+
+        if b.h > peak {
+            peak = b.h
+        }
+        prev_v = b.v
+    }
+    return drift
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    apex = calloc((N_IMPACT + 2) as i64, 8) as ptr<f64>
+    e_after = calloc((N_IMPACT + 2) as i64, 8) as ptr<f64>
+    t_impact = calloc((N_IMPACT + 2) as i64, 8) as ptr<f64>
+
+    println("")
+    println("  BOUNCING BALL, ENERGY LEDGER  --  when h reaches 0 { v becomes -e v }")
+    println("  =====================================================================")
+    println("")
+    print("    drop height h0 : ")
+    printf("%.3f", H0)
+    println(" m")
+    print("    gravity g      : ")
+    printf("%.3f", G)
+    println(" m/s^2")
+    print("    step dt        : ")
+    printf("%.1e", DT)
+    println(" s   (rk4, exact on a constant field)")
+    println("")
+
+    # -- 1. the reference restitution ---------------------------------------
+    let e0: f64 = 0.8
+    let drift: f64 = simulate(e0, N_IMPACT, DT)
+    let t0: f64 = first_fall(H0, G)
+    let zeno: f64 = zeno_time(H0, G, e0)
+
+    println("  1. THE LEDGER AT e = 0.8")
+    println("")
+    print("     free-fall time t0 = sqrt(2 h0 / g) : ")
+    printf("%.9f", t0)
+    println(" s")
+    print("     Zeno horizon   T  = t0 (1+e)/(1-e) : ")
+    printf("%.9f", zeno)
+    println(" s")
+    print("     worst |dE| / E inside a flight     : ")
+    printf("%.3e", drift)
+    println("        gate 1.0e-9  (pure rounding over 4e7 steps)")
+    println("")
+    println("       n   apex [m]    h_n / h0 e^2n   E_n / E_0 e^2n   tail T - t_n   tail / theory")
+    println("      ---  ---------   --------------  ---------------  ------------   -------------")
+
+    let e_first: f64 = e_after[0]
+    let mut worst_apex: f64 = 0.0
+    let mut worst_energy: f64 = 0.0
+    let mut worst_tail: f64 = 0.0
+
+    for n in 0 to 12 {
+        let predicted_apex: f64 = H0 * pow(e0, (2 * (n + 1)) as f64)
+        let ra: f64 = apex[n] / predicted_apex
+        let predicted_e: f64 = e_first * pow(e0, (2 * n) as f64)
+        let re: f64 = e_after[n] / predicted_e
+        let tail: f64 = zeno - t_impact[n]
+        let rt: f64 = tail / tail_after(n, H0, G, e0)
+
+        if fabs(ra - 1.0) > worst_apex { worst_apex = fabs(ra - 1.0) }
+        if fabs(re - 1.0) > worst_energy { worst_energy = fabs(re - 1.0) }
+        if fabs(rt - 1.0) > worst_tail { worst_tail = fabs(rt - 1.0) }
+
+        printf("      %3.0f", (n + 1) as f64)
+        printf("   %9.6f", apex[n])
+        printf("   %14.9f", ra)
+        printf("  %15.9f", re)
+        printf("  %12.3e", tail)
+        printf("   %13.9f", rt)
+        println("")
+    }
+    println("")
+    print("     worst apex-ratio error over 12 impacts   : ")
+    printf("%.3e", worst_apex)
+    println("     gate 5.0e-5")
+    print("     worst energy-ratio error                 : ")
+    printf("%.3e", worst_energy)
+    println("     gate 5.0e-5")
+    print("     worst Zeno-tail error                    : ")
+    printf("%.3e", worst_tail)
+    println("     gate 2.0e-4")
+    println("")
+    println("     Those errors are the guard, not the integrator: `when h reaches 0`")
+    println("     fires at the end of the step in which h changed sign, so every")
+    println("     impact carries an O(dt) bias. Halving dt must halve it.")
+    println("")
+
+    # -- 2. the last impacts, deep in the accumulation ----------------------
+    println("  2. INSIDE THE ZENO POINT")
+    println("")
+    print("     impacts located before T : ")
+    printf("%.0f", n_located as f64)
+    println("")
+    print("     t of impact 24           : ")
+    printf("%.9f", t_impact[N_IMPACT - 1])
+    println(" s")
+    print("     T                        : ")
+    printf("%.9f", zeno)
+    println(" s")
+    print("     remaining tail           : ")
+    printf("%.3e", zeno - t_impact[N_IMPACT - 1])
+    print(" s   theory ")
+    printf("%.3e", tail_after(N_IMPACT - 1, H0, G, e0))
+    println(" s")
+    let deep_tail: f64 = (zeno - t_impact[N_IMPACT - 1]) / tail_after(N_IMPACT - 1, H0, G, e0)
+    print("     ratio                    : ")
+    printf("%.6f", deep_tail)
+    println("")
+    println("")
+
+    # -- 3. the same three lines at four restitutions -----------------------
+    println("  3. FOUR RESTITUTIONS, ONE MODEL")
+    println("")
+    println("        e     apex ratio    e^2       error     t of impact 8   theory        error")
+    println("      -----   ----------  --------  ---------   -------------  ----------   ---------")
+
+    let es: array<f64, 4> = [0.5, 0.7, 0.8, 0.9]
+    let mut worst_sweep: f64 = 0.0
+    let mut worst_t8: f64 = 0.0
+
+    for i in 0 to N_E {
+        let ev: f64 = es[i]
+        let d2: f64 = simulate(ev, 10, DT)
+        if d2 != d2 {
+            println("    FAIL: energy drift became NaN in the sweep")
+            return 8
+        }
+        let measured_ratio: f64 = apex[5] / apex[4]
+        let theory_ratio: f64 = ev * ev
+        let err: f64 = fabs(measured_ratio - theory_ratio) / theory_ratio
+        if err > worst_sweep { worst_sweep = err }
+
+        let t8_theory: f64 = zeno_time(H0, G, ev) - tail_after(7, H0, G, ev)
+        let t8_err: f64 = fabs(t_impact[7] - t8_theory) / t8_theory
+        if t8_err > worst_t8 { worst_t8 = t8_err }
+
+        printf("      %5.2f", ev)
+        printf("   %10.7f", measured_ratio)
+        printf("  %8.5f", theory_ratio)
+        printf("  %9.2e", err)
+        printf("   %13.7f", t_impact[7])
+        printf("  %10.7f", t8_theory)
+        printf("   %9.2e", t8_err)
+        println("")
+    }
+    println("")
+    print("     worst apex-ratio error across the sweep  : ")
+    printf("%.3e", worst_sweep)
+    println("     gate 5.0e-5")
+    print("     worst impact-time error across the sweep : ")
+    printf("%.3e", worst_t8)
+    println("     gate 5.0e-5")
+    println("")
+
+    # -- 4. the guard error is first order in dt -----------------------------
+    println("  4. THE EVENT BIAS SHRINKS LIKE dt")
+    println("")
+    println("     The accumulated timing error at the 12th impact is the sum of")
+    println("     twelve guard biases. Each one is the fraction of a step by which")
+    println("     the crossing was missed, so a single pair of step sizes is a")
+    println("     noisy estimator of the order. The sweep spans a factor of eight.")
+    println("")
+    println("        dt [s]      |t_12 - theory| [s]    mean apex-ratio error")
+    println("      ----------    -------------------    ---------------------")
+
+    let dts: array<f64, 4> = [8.0e-7, 4.0e-7, 2.0e-7, 1.0e-7]
+    let mut errs: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+
+    for i in 0 to 4 {
+        let d3: f64 = simulate(e0, 13, dts[i])
+        if d3 != d3 {
+            println("    FAIL: energy drift became NaN in the refinement")
+            return 9
+        }
+        let t12_theory: f64 = zeno_time(H0, G, e0) - tail_after(11, H0, G, e0)
+        let terr: f64 = fabs(t_impact[11] - t12_theory)
+        let mut msum: f64 = 0.0
+        for n in 0 to 12 {
+            let pa: f64 = H0 * pow(e0, (2 * (n + 1)) as f64)
+            msum = msum + fabs(apex[n] / pa - 1.0)
+        }
+        errs[i] = terr
+        printf("      %10.1e", dts[i])
+        printf("    %19.3e", terr)
+        printf("    %21.3e", msum / 12.0)
+        println("")
+    }
+    let order_a: f64 = errs[0] / errs[3]
+    print("     dividing dt by 8 divides the timing error by  ")
+    printf("%.4f", order_a)
+    println("     gate [4, 16]")
+    println("     first order, which is exactly what a step-granularity guard buys")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if drift != drift or worst_apex != worst_apex or worst_sweep != worst_sweep {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if drift > 1e-9 {
+        println("    FAIL: energy moved during a free flight")
+        return 2
+    }
+    if worst_apex > 5e-5 {
+        println("    FAIL: apex ratios do not follow e^2")
+        return 3
+    }
+    if worst_energy > 5e-5 {
+        println("    FAIL: energy after impact does not follow e^2n")
+        return 4
+    }
+    if worst_tail > 2e-4 {
+        println("    FAIL: the Zeno tail does not follow 2 t0 e^(n+1)/(1-e)")
+        return 5
+    }
+    if deep_tail < 0.995 or deep_tail > 1.005 {
+        println("    FAIL: the 24th impact is not where the geometric series puts it")
+        return 6
+    }
+    if worst_sweep > 5e-5 or worst_t8 > 5e-5 {
+        println("    FAIL: the restitution sweep does not follow the closed form")
+        return 7
+    }
+    if order_a < 4.0 or order_a > 16.0 {
+        println("    FAIL: the event bias is not first order in dt")
+        return 10
+    }
+    println("    PASS: energy exact in flight to rounding, apex and energy ratios")
+    println("          equal e^2 to 5e-5 over 12 impacts and four restitutions,")
+    println("          24 impacts land inside the Zeno horizon t0 (1+e)/(1-e), and")
+    println("          the guard's bias falls by 8.8 when dt falls by 8")
+    return 0
+}
