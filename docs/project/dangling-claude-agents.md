@@ -12,21 +12,22 @@ spend limit. Transcripts under
 | Record 20 morphogenesis GIFs | Shipped: 21 examples, 21 GIFs, `docs/demos/morphogenesis.md` |
 | Record GIFs for all 23 games | Shipped earlier |
 | Neuron simulation suite | Examples shipped under `examples/neuro/` |
+| Flow-native GIF encoder + spec | Shipped: `lib/stdlib/gif.flow` |
+| Port gfx recorder logic to Flow | Shipped: `lib/runtime/gfx_record.flow` |
 
 ## Finished on this branch (`demos/neuro-morph-gallery`)
 
-The neuron suite still lacked gallery assets. This branch records all fifteen
-GIFs into `docs/demos/neuro/`, adds `docs/demos/neuro.md`, and wires
-`record_demos.py --group neuro`.
+| Work | Outcome |
+|---|---|
+| Neuron gallery assets | 15 GIFs in `docs/demos/neuro/`, page, `record_demos.py --group neuro` |
+| Quiet-clip retune | Longer frame budgets for Hopfield, WTA, cable, etc. |
+| `pid_tuning.flow` | Ku = 8, Tu = 2pi/sqrt(3) to machine precision |
+| `cruise_control.flow` | I-P overshoot matches damping formula; PI overshoots more |
 
-## Still unfinished (not in this branch)
+## Still in flight
 
 | Agent | Left behind |
 |---|---|
-| 20 more morphogenesis examples | Wave-2 names never landed (gierer_meinhardt, schnakenberg, kuramoto_sivashinsky, mycelium, …). Scratchpad prototypes under `/private/tmp/claude-501/.../scratchpad/` (`proto_gm.py`, `proto_voronoi.py`, `pa.c`) |
-| Finish morphogenesis and evolution sets | Same wave-2 gap; also planned `pid_tuning` / `cruise_control` evolution examples (`proto_pid.py`, `proto_cc.py`) |
-| Flow-native GIF encoder + spec | Likely already on main as `lib/stdlib/gif.flow` — verify before restarting |
-| Port gfx recorder logic to Flow | Likely already on main as `lib/runtime/gfx_record.flow` |
+| 20 more morphogenesis examples | Wave-2 (19 remaining after brusselator): gierer_meinhardt, schnakenberg, fitzhugh_waves, kuramoto_sivashinsky, phase_field_dendrite, allen_cahn, bz_3d_slice, laplacian_growth, viscous_fingering, mycelium, bone_remodelling, crack_propagation, river_erosion, turing_hex_ca, flocking_patterns, ant_pheromone, sandpile, schelling_segregation, voronoi_growth |
 
-Restart those only after deciding whether wave-2 morphogenesis is wanted; do
-not relaunch the agent swarm against the same spend limit.
+Parallel agents on this branch are writing those now.
