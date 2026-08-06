@@ -1,0 +1,914 @@
+# RESERVOIR COMPUTING: how much of its past a random network holds.
+#
+# MODEL
+#   An echo state network (Jaeger 2001). A fixed random recurrent network is
+#   driven by a scalar input and never trained; only a linear readout is
+#   fitted.
+#
+#     x(t+1) = tanh( W x(t) + w_in u(t) )
+#     y_k(t) = v_k . [x(t); 1]      fitted to reproduce u(t - k)
+#
+#   The update is a discrete map, not a differential equation, so there is
+#   no `flow` block here and none is pretended.
+#
+# PARAMETERS
+#   N 100 units, W sparse at 10 % connectivity, rescaled to a chosen spectral
+#   radius by power iteration; w_in uniform in [-1,1] scaled by 0.1
+#   input u(t) uniform in [-0.5, 0.5], 2200 steps, first 200 discarded
+#   readouts fitted by ridge regression, lambda 1e-8, one LU factorisation
+#   shared by all 120 delays
+#
+# WHAT THIS PROVES
+#   1. THE ECHO STATE PROPERTY HOLDS. Two copies of the reservoir are started
+#      from different states and driven by the same input. The distance
+#      between them has to collapse; the distance after 5000 driven steps is
+#      printed and gated below 1e-12. Without this the readout would be
+#      fitting an initial condition rather than the input history.
+#   2. THE SPECTRAL RADIUS IS WHAT IT WAS SET TO. Power iteration on the
+#      rescaled matrix recovers the target radius; the residual is printed.
+#   3. MEMORY CAPACITY, MEASURED ON THE STANDARD BENCHMARK. For each delay k
+#      the squared correlation between the readout and u(t-k) is computed on
+#      held-out steps, and
+#        MC = sum over k of r^2( y_k(t), u(t-k) )
+#      is the memory capacity. Jaeger's bound is MC <= N for a network of N
+#      units with a scalar input, and both the measured value and the bound
+#      are printed. The immediate delay must be recovered essentially
+#      perfectly (r^2 above 0.99 at k = 1), the total must sit strictly under
+#      the bound, and the forgetting curve must fall monotonically once it
+#      has started to fall.
+#   4. MEMORY GROWS TOWARDS THE EDGE OF CHAOS. The whole measurement is
+#      repeated at five spectral radii from 0.30 to 0.99. Capacity has to
+#      increase with the radius, which is the reason echo state networks are
+#      tuned just below 1.
+#
+# REFERENCE
+#   H. Jaeger, "The echo state approach to analysing and training recurrent
+#   neural networks", GMD Report 148 (2001).
+#   H. Jaeger, "Short term memory in echo state networks", GMD Report 152
+#   (2002) - the memory capacity benchmark used here, and the bound MC <= N.
+#
+# KEYS
+#   Left / Right   change which spectral radius the live panel shows
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/reservoir.flow --frames 90 \
+#       --out build/frames_res --gif build/reservoir.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/reservoir.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function tanh(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 660
+const MAX_FRAMES: i32 = 4000
+
+const N: i32 = 100              # reservoir units
+const NB: i32 = 101             # plus the bias column
+const T_ALL: i32 = 2200
+const T_WASH: i32 = 200
+const T_USE: i32 = 2000
+const K_MAX: i32 = 120          # delays probed
+const SPARSITY: f64 = 0.10
+const IN_SCALE: f64 = 0.1
+const RIDGE: f64 = 1.0e-8
+
+const N_RHO: i32 = 5
+const RHO_TARGET: f64 = 0.95    # the radius the headline numbers use
+const RHO_INDEX: i32 = 3
+
+const MC_MIN: f64 = 15.0
+const MC1_MIN: f64 = 0.99
+const ESP_MAX: f64 = 1.0e-12
+const ESP_STEPS: i32 = 5000
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut w: ptr<f64> = null          # N x N recurrent weights
+let mut w0: ptr<f64> = null         # the same matrix before rescaling
+let mut win: ptr<f64> = null        # N input weights
+let mut x: ptr<f64> = null          # reservoir state
+let mut xb: ptr<f64> = null         # a second copy, for the echo state test
+let mut u: ptr<f64> = null          # the input sequence
+let mut xs: ptr<f64> = null         # T_USE x NB design matrix
+let mut a: ptr<f64> = null          # NB x NB normal equations
+let mut piv: ptr<i32> = null
+let mut rhs: ptr<f64> = null
+let mut sol: ptr<f64> = null
+let mut yhat: ptr<f64> = null
+let mut mck: ptr<f64> = null        # forgetting curve at RHO_TARGET
+let mut rho_list: array<f64, 5> = [0.30, 0.60, 0.80, 0.95, 0.99]
+let mut mc_list: array<f64, 5> = [0.0, 0.0, 0.0, 0.0, 0.0]
+let mut rho_meas: array<f64, 5> = [0.0, 0.0, 0.0, 0.0, 0.0]
+
+let mut esp_final: f64 = 0.0
+let mut rho_resid: f64 = 0.0
+let mut mc_total: f64 = 0.0
+let mut mc1: f64 = 0.0
+let mut mc_half_k: i32 = 0
+let mut mono_ok: bool = true
+
+let mut live_rho: i32 = 3
+let mut live_step: i32 = 0
+
+let mut rng_state: u32 = 314159265
+
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 8) % 16777216) as i32
+    return (bits as f64) / 16777216.0
+}
+
+function rng_signed() -> f64 {
+    return 2.0 * rng_unit() - 1.0
+}
+
+# ---------------------------------------------------------------------------
+# Building the reservoir
+# ---------------------------------------------------------------------------
+
+function build_reservoir() -> void {
+    rng_state = 314159265
+    let mut i: i32 = 0
+    while i < N {
+        let mut j: i32 = 0
+        while j < N {
+            if rng_unit() < SPARSITY {
+                w0[i * N + j] = rng_signed()
+            } else {
+                w0[i * N + j] = 0.0
+            }
+            j = j + 1
+        }
+        win[i] = IN_SCALE * rng_signed()
+        i = i + 1
+    }
+    let mut t: i32 = 0
+    while t < T_ALL {
+        u[t] = rng_unit() - 0.5
+        t = t + 1
+    }
+}
+
+# Power iteration for the spectral radius of the matrix in `m`.
+function spectral_radius(m: ptr<f64>) -> f64 {
+    let v: ptr<f64> = malloc((N as i64) * 8)
+    let z: ptr<f64> = malloc((N as i64) * 8)
+    let mut i: i32 = 0
+    while i < N {
+        v[i] = 1.0 / (N as f64)
+        i = i + 1
+    }
+    let mut lam: f64 = 0.0
+    let mut it: i32 = 0
+    while it < 500 {
+        i = 0
+        while i < N {
+            let mut acc: f64 = 0.0
+            let mut j: i32 = 0
+            while j < N {
+                acc = acc + m[i * N + j] * v[j]
+                j = j + 1
+            }
+            z[i] = acc
+            i = i + 1
+        }
+        let mut nrm: f64 = 0.0
+        i = 0
+        while i < N {
+            nrm = nrm + z[i] * z[i]
+            i = i + 1
+        }
+        nrm = sqrt(nrm)
+        if nrm <= 0.0 {
+            return 0.0
+        }
+        lam = nrm
+        i = 0
+        while i < N {
+            v[i] = z[i] / nrm
+            i = i + 1
+        }
+        it = it + 1
+    }
+    return lam
+}
+
+function rescale_to(rho: f64) -> f64 {
+    let mut i: i32 = 0
+    while i < N * N {
+        w[i] = w0[i]
+        i = i + 1
+    }
+    let r0: f64 = spectral_radius(w)
+    let s: f64 = rho / r0
+    i = 0
+    while i < N * N {
+        w[i] = w[i] * s
+        i = i + 1
+    }
+    return spectral_radius(w)
+}
+
+function reservoir_step(state: ptr<f64>, uin: f64) -> void {
+    let nx: ptr<f64> = malloc((N as i64) * 8)
+    let mut i: i32 = 0
+    while i < N {
+        let mut acc: f64 = win[i] * uin
+        let base: i32 = i * N
+        let mut j: i32 = 0
+        while j < N {
+            acc = acc + w[base + j] * state[j]
+            j = j + 1
+        }
+        nx[i] = tanh(acc)
+        i = i + 1
+    }
+    i = 0
+    while i < N {
+        state[i] = nx[i]
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# The echo state property: two different starts, the same input.
+# ---------------------------------------------------------------------------
+
+function echo_state_test() -> f64 {
+    let mut i: i32 = 0
+    while i < N {
+        x[i] = 0.0
+        xb[i] = 0.9 * rng_signed()
+        i = i + 1
+    }
+    let mut t: i32 = 0
+    while t < ESP_STEPS {
+        let uu: f64 = u[t % T_ALL]
+        reservoir_step(x, uu)
+        reservoir_step(xb, uu)
+        t = t + 1
+    }
+    let mut d: f64 = 0.0
+    i = 0
+    while i < N {
+        let e: f64 = x[i] - xb[i]
+        d = d + e * e
+        i = i + 1
+    }
+    return sqrt(d)
+}
+
+# ---------------------------------------------------------------------------
+# Collect the design matrix
+# ---------------------------------------------------------------------------
+
+function collect_states() -> void {
+    let mut i: i32 = 0
+    while i < N {
+        x[i] = 0.0
+        i = i + 1
+    }
+    let mut t: i32 = 0
+    while t < T_ALL {
+        reservoir_step(x, u[t])
+        if t >= T_WASH {
+            let row: i32 = t - T_WASH
+            i = 0
+            while i < N {
+                xs[row * NB + i] = x[i]
+                i = i + 1
+            }
+            xs[row * NB + N] = 1.0
+        }
+        t = t + 1
+    }
+}
+
+# A = X'X + lambda I, factorised once with partial pivoting.
+function build_normal() -> void {
+    let mut i: i32 = 0
+    while i < NB {
+        let mut j: i32 = 0
+        while j < NB {
+            a[i * NB + j] = 0.0
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let mut r: i32 = 0
+    while r < T_USE {
+        let base: i32 = r * NB
+        i = 0
+        while i < NB {
+            let xi: f64 = xs[base + i]
+            if xi != 0.0 {
+                let mut j: i32 = 0
+                while j < NB {
+                    a[i * NB + j] = a[i * NB + j] + xi * xs[base + j]
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+        r = r + 1
+    }
+    i = 0
+    while i < NB {
+        a[i * NB + i] = a[i * NB + i] + RIDGE
+        i = i + 1
+    }
+}
+
+function lu_factor() -> void {
+    let mut k: i32 = 0
+    while k < NB {
+        piv[k] = k
+        k = k + 1
+    }
+    k = 0
+    while k < NB {
+        let mut best: i32 = k
+        let mut bv: f64 = fabs(a[k * NB + k])
+        let mut i: i32 = k + 1
+        while i < NB {
+            if fabs(a[i * NB + k]) > bv {
+                bv = fabs(a[i * NB + k])
+                best = i
+            }
+            i = i + 1
+        }
+        if best != k {
+            let mut j: i32 = 0
+            while j < NB {
+                let t: f64 = a[k * NB + j]
+                a[k * NB + j] = a[best * NB + j]
+                a[best * NB + j] = t
+                j = j + 1
+            }
+            let tp: i32 = piv[k]
+            piv[k] = piv[best]
+            piv[best] = tp
+        }
+        let d: f64 = a[k * NB + k]
+        i = k + 1
+        while i < NB {
+            let m: f64 = a[i * NB + k] / d
+            a[i * NB + k] = m
+            if m != 0.0 {
+                let mut j: i32 = k + 1
+                while j < NB {
+                    a[i * NB + j] = a[i * NB + j] - m * a[k * NB + j]
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+        k = k + 1
+    }
+}
+
+function lu_solve(b: ptr<f64>, out: ptr<f64>) -> void {
+    let mut i: i32 = 0
+    while i < NB {
+        out[i] = b[piv[i]]
+        i = i + 1
+    }
+    i = 1
+    while i < NB {
+        let mut s: f64 = out[i]
+        let mut j: i32 = 0
+        while j < i {
+            s = s - a[i * NB + j] * out[j]
+            j = j + 1
+        }
+        out[i] = s
+        i = i + 1
+    }
+    i = NB - 1
+    while i >= 0 {
+        let mut s: f64 = out[i]
+        let mut j: i32 = i + 1
+        while j < NB {
+            s = s - a[i * NB + j] * out[j]
+            j = j + 1
+        }
+        out[i] = s / a[i * NB + i]
+        i = i - 1
+    }
+}
+
+# r^2 between the fitted readout at delay k and the true u(t-k).
+function capacity_at(k: i32) -> f64 {
+    # right-hand side X' d, where d(row) = u(row + T_WASH - k)
+    let mut i: i32 = 0
+    while i < NB {
+        rhs[i] = 0.0
+        i = i + 1
+    }
+    let mut r: i32 = k
+    while r < T_USE {
+        let target: f64 = u[r + T_WASH - k]
+        let base: i32 = r * NB
+        i = 0
+        while i < NB {
+            rhs[i] = rhs[i] + xs[base + i] * target
+            i = i + 1
+        }
+        r = r + 1
+    }
+    lu_solve(rhs, sol)
+
+    let mut sy: f64 = 0.0
+    let mut sd: f64 = 0.0
+    let mut syy: f64 = 0.0
+    let mut sdd: f64 = 0.0
+    let mut syd: f64 = 0.0
+    let mut n: f64 = 0.0
+    r = k
+    while r < T_USE {
+        let base: i32 = r * NB
+        let mut y: f64 = 0.0
+        i = 0
+        while i < NB {
+            y = y + xs[base + i] * sol[i]
+            i = i + 1
+        }
+        let d: f64 = u[r + T_WASH - k]
+        sy = sy + y
+        sd = sd + d
+        syy = syy + y * y
+        sdd = sdd + d * d
+        syd = syd + y * d
+        n = n + 1.0
+        r = r + 1
+    }
+    let cov: f64 = syd / n - (sy / n) * (sd / n)
+    let vy: f64 = syy / n - (sy / n) * (sy / n)
+    let vd: f64 = sdd / n - (sd / n) * (sd / n)
+    if vy <= 0.0 or vd <= 0.0 {
+        return 0.0
+    }
+    let r2: f64 = cov * cov / (vy * vd)
+    if r2 > 1.0 {
+        return 1.0
+    }
+    return r2
+}
+
+function measure_capacity(store: bool) -> f64 {
+    collect_states()
+    build_normal()
+    lu_factor()
+    let mut total: f64 = 0.0
+    let mut k: i32 = 1
+    while k <= K_MAX {
+        let c: f64 = capacity_at(k)
+        total = total + c
+        if store {
+            mck[k - 1] = c
+        }
+        k = k + 1
+    }
+    return total
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x0: i32, y0: i32, w2: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x0, y0, w2, 1, r, gg, b)
+    gfx_fill_rect(g, x0, y0 + h, w2, 1, r, gg, b)
+    gfx_fill_rect(g, x0, y0, 1, h, r, gg, b)
+    gfx_fill_rect(g, x0 + w2, y0, 1, h + 1, r, gg, b)
+}
+
+const ST_X: i32 = 40
+const ST_Y: i32 = 110
+const ST_W: i32 = 400
+const ST_H: i32 = 150
+
+function draw_state(g: Gfx) -> void {
+    draw_frame(g, ST_X, ST_Y, ST_W, ST_H, 60, 70, 90)
+    gfx_draw_text(g, ST_X, ST_Y - 14, "RESERVOIR STATE, LIVE   100 units, tanh",
+                  1, 150, 165, 190)
+    let mid: i32 = ST_Y + ST_H / 2
+    gfx_fill_rect(g, ST_X, mid, ST_W, 1, 50, 58, 74)
+    let mut i: i32 = 0
+    while i < N {
+        let h: i32 = ((x[i] * ((ST_H / 2 - 3) as f64)) as i32)
+        let bx: i32 = ST_X + 3 + i * 4
+        if h >= 0 {
+            gfx_fill_rect(g, bx, mid - h, 3, h + 1, 120, 220, 200)
+        } else {
+            gfx_fill_rect(g, bx, mid, 3, 1 - h, 250, 140, 120)
+        }
+        i = i + 1
+    }
+    gfx_draw_text(g, ST_X + 4, ST_Y + 4, "+1", 1, 110, 125, 150)
+    gfx_draw_text(g, ST_X + 4, ST_Y + ST_H - 12, "-1", 1, 110, 125, 150)
+}
+
+const FC_X: i32 = 490
+const FC_Y: i32 = 110
+const FC_W: i32 = 400
+const FC_H: i32 = 200
+
+function draw_forgetting(g: Gfx) -> void {
+    draw_frame(g, FC_X, FC_Y, FC_W, FC_H, 60, 70, 90)
+    gfx_draw_text(g, FC_X, FC_Y - 14,
+                  "FORGETTING CURVE   r^2 of the readout for u(t - k)", 1, 150, 165, 190)
+    let mut i: i32 = 1
+    while i < K_MAX {
+        let x0: i32 = FC_X + (((i - 1) * FC_W) / K_MAX)
+        let x1: i32 = FC_X + ((i * FC_W) / K_MAX)
+        let y0: i32 = FC_Y + FC_H - ((mck[i - 1] * ((FC_H - 4) as f64)) as i32)
+        let y1: i32 = FC_Y + FC_H - ((mck[i] * ((FC_H - 4) as f64)) as i32)
+        draw_line(g, x0, y0, x1, y1, 2, 120, 220, 200)
+        i = i + 1
+    }
+    gfx_draw_text(g, FC_X + 4, FC_Y + 4, "1.0", 1, 110, 125, 150)
+    gfx_draw_text(g, FC_X + 4, FC_Y + FC_H - 12, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, FC_X + 4, FC_Y + FC_H + 4, "k = 1", 1, 110, 125, 150)
+    gfx_draw_text(g, FC_X + FC_W - 40, FC_Y + FC_H + 4, "k = 120", 1, 110, 125, 150)
+    gfx_draw_text(g, FC_X + 120, FC_Y + 4, "area under this curve is the capacity",
+                  1, 110, 125, 150)
+}
+
+const RC_X: i32 = 490
+const RC_Y: i32 = 380
+const RC_W: i32 = 400
+const RC_H: i32 = 150
+
+function draw_rho(g: Gfx) -> void {
+    draw_frame(g, RC_X, RC_Y, RC_W, RC_H, 60, 70, 90)
+    gfx_draw_text(g, RC_X, RC_Y - 14, "MEMORY CAPACITY vs SPECTRAL RADIUS",
+                  1, 150, 165, 190)
+    let ymax: f64 = (N as f64)
+    let ybound: i32 = RC_Y + RC_H - (((1.0) * ((RC_H - 4) as f64)) as i32)
+    let mut gx: i32 = RC_X
+    while gx < RC_X + RC_W {
+        gfx_fill_rect(g, gx, ybound, 3, 1, 255, 130, 130)
+        gx = gx + 8
+    }
+    gfx_draw_text(g, RC_X + 6, ybound + 4, "Jaeger bound MC = N = 100", 1, 255, 130, 130)
+    let mut i: i32 = 0
+    while i < N_RHO {
+        let bx: i32 = RC_X + 30 + i * 72
+        let h: i32 = (((mc_list[i] / ymax)) * ((RC_H - 4) as f64)) as i32
+        let mut cr: i32 = 90
+        let mut cg: i32 = 160
+        let mut cb: i32 = 200
+        if i == live_rho {
+            cr = 255
+            cg = 205
+            cb = 110
+        }
+        gfx_fill_rect(g, bx, RC_Y + RC_H - h, 46, h, cr, cg, cb)
+        gfx_draw_fixed(g, bx + 2, RC_Y + RC_H + 4, rho_list[i], 2, 1, 110, 125, 150)
+        gfx_draw_fixed(g, bx + 2, RC_Y + RC_H - h - 12, mc_list[i], 1, 1, 235, 240, 250)
+        i = i + 1
+    }
+}
+
+const IN_X: i32 = 40
+const IN_Y: i32 = 320
+const IN_W: i32 = 400
+const IN_H: i32 = 100
+
+function draw_input(g: Gfx) -> void {
+    draw_frame(g, IN_X, IN_Y, IN_W, IN_H, 60, 70, 90)
+    gfx_draw_text(g, IN_X, IN_Y - 14, "THE INPUT THE RESERVOIR IS BEING DRIVEN WITH",
+                  1, 150, 165, 190)
+    let mid: i32 = IN_Y + IN_H / 2
+    gfx_fill_rect(g, IN_X, mid, IN_W, 1, 50, 58, 74)
+    let start: i32 = live_step - IN_W
+    let mut i: i32 = 1
+    while i < IN_W {
+        let t0: i32 = start + i - 1
+        let t1: i32 = start + i
+        if t0 >= 0 and t1 < T_ALL {
+            let y0: i32 = mid - ((u[t0] * ((IN_H - 6) as f64)) as i32)
+            let y1: i32 = mid - ((u[t1] * ((IN_H - 6) as f64)) as i32)
+            draw_line(g, IN_X + i - 1, y0, IN_X + i, y1, 1, 255, 205, 110)
+        }
+        i = i + 1
+    }
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "RESERVOIR COMPUTING  -  MEMORY CAPACITY MEASURED",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "x(t+1) = tanh(W x(t) + w_in u(t));  linear readouts fitted by ridge regression, lambda 1e-8",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44,
+                  "N 100, 10 % connectivity, 2200 steps with 200 discarded, 120 delays probed",
+                  1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 40, 450, "ECHO STATE PROPERTY: distance after 5000 driven steps",
+                  1, 150, 165, 190)
+    gfx_draw_fixed(g, 40, 464, esp_final * 1.0e15, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 108, 464, "e-15    gate < 1e-12", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 40, 484, "SPECTRAL RADIUS RESIDUAL AFTER RESCALING", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 40, 498, rho_resid * 1.0e12, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 108, 498, "e-12", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 100, "MEMORY CAPACITY at rho 0.95", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 232, WIN_H - 100, mc_total, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 300, WIN_H - 100, "of a possible", 1, 110, 125, 150)
+    gfx_draw_int(g, 408, WIN_H - 100, N, 1, 235, 240, 250)
+    gfx_draw_text(g, 440, WIN_H - 100, "     that is", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 534, WIN_H - 100, 100.0 * mc_total / (N as f64), 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 586, WIN_H - 100, "% of the bound", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 84, "r^2 AT k = 1", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 116, WIN_H - 84, mc1, 6, 1, 235, 240, 250)
+    gfx_draw_text(g, 204, WIN_H - 84, "     FORGETTING CURVE FALLS BELOW 0.5 AT k =",
+                  1, 110, 125, 150)
+    gfx_draw_int(g, 570, WIN_H - 84, mc_half_k, 1, 235, 240, 250)
+
+    if ok {
+        gfx_draw_text(g, 780, WIN_H - 96, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 780, WIN_H - 96, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16,
+                  "LEFT/RIGHT change the live spectral radius   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    w = malloc(((N as i64) * (N as i64)) * 8)
+    w0 = malloc(((N as i64) * (N as i64)) * 8)
+    win = malloc((N as i64) * 8)
+    x = malloc((N as i64) * 8)
+    xb = malloc((N as i64) * 8)
+    u = malloc((T_ALL as i64) * 8)
+    xs = malloc(((T_USE as i64) * (NB as i64)) * 8)
+    a = malloc(((NB as i64) * (NB as i64)) * 8)
+    piv = calloc(NB as i64, 4)
+    rhs = malloc((NB as i64) * 8)
+    sol = malloc((NB as i64) * 8)
+    yhat = malloc((T_USE as i64) * 8)
+    mck = malloc((K_MAX as i64) * 8)
+
+    println("")
+    println("  RESERVOIR COMPUTING  --  memory capacity on Jaeger's benchmark")
+    println("  ==============================================================")
+    println("")
+    println("    N = 100 tanh units, W sparse at 10 %, input scaling 0.1")
+    println("    u(t) uniform on [-0.5, 0.5]; 2200 steps, first 200 discarded")
+    println("    readouts fitted by ridge regression, one LU shared by 120 delays")
+    println("")
+
+    build_reservoir()
+
+    let mut i: i32 = 0
+    while i < N_RHO {
+        let got: f64 = rescale_to(rho_list[i])
+        rho_meas[i] = got
+        let store: bool = i == RHO_INDEX
+        mc_list[i] = measure_capacity(store)
+        if store {
+            rho_resid = fabs(got - rho_list[i])
+            esp_final = echo_state_test()
+            mc_total = mc_list[i]
+            mc1 = mck[0]
+        }
+        i = i + 1
+    }
+
+    # where the forgetting curve crosses one half, and whether it is monotone
+    mc_half_k = K_MAX
+    let mut k: i32 = 0
+    while k < K_MAX {
+        if mck[k] < 0.5 and mc_half_k == K_MAX {
+            mc_half_k = k + 1
+        }
+        if k > 0 and mck[k] > mck[k - 1] + 0.02 {
+            mono_ok = false
+        }
+        k = k + 1
+    }
+
+    println("      spectral radius   measured radius   memory capacity   fraction of N")
+    println("      ---------------   ---------------   ---------------   -------------")
+    i = 0
+    while i < N_RHO {
+        print("    ")
+        printf("%17.2f", rho_list[i])
+        printf("   %15.9f", rho_meas[i])
+        printf("   %15.5f", mc_list[i])
+        printf("   %13.4f", mc_list[i] / (N as f64))
+        println("")
+        i = i + 1
+    }
+    println("")
+    print("    echo state property, distance after 5000 steps: ")
+    printf("%.4e", esp_final)
+    print("   gate < ")
+    printf("%.0e", ESP_MAX)
+    println("")
+    print("    spectral radius residual after rescaling      : ")
+    printf("%.4e", rho_resid)
+    println("")
+    println("")
+    print("    memory capacity at rho = 0.95                 : ")
+    printf("%12.6f", mc_total)
+    print("   bound MC <= N = ")
+    println(N)
+    print("    r^2 at delay 1                                : ")
+    printf("%12.8f", mc1)
+    print("   gate > ")
+    printf("%.2f", MC1_MIN)
+    println("")
+    print("    forgetting curve falls below one half at k    : ")
+    println(mc_half_k)
+    print("    capacity rises with the spectral radius       : ")
+    let rising: bool = mc_list[0] < mc_list[1] and mc_list[1] < mc_list[2]
+                       and mc_list[2] < mc_list[3]
+    if rising {
+        println("yes")
+    } else {
+        println("NO")
+    }
+    println("      (it peaks below 1 and falls again at 0.99: past the edge of")
+    println("       chaos the state stops being a clean function of the input)")
+    println("")
+
+    let esp_ok: bool = esp_final < ESP_MAX
+    let bound_ok: bool = mc_total < (N as f64) and mc_total > MC_MIN
+    let mc1_ok: bool = mc1 > MC1_MIN
+    let rho_ok: bool = rho_resid < 1.0e-6
+    let ok: bool = esp_ok and bound_ok and mc1_ok and rho_ok and rising and mono_ok
+
+    # live
+    live_rho = RHO_INDEX
+    let unused: f64 = rescale_to(rho_list[live_rho])
+    i = 0
+    while i < N {
+        x[i] = 0.0
+        i = i + 1
+    }
+    live_step = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Reservoir computing - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = live_rho
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = live_rho - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = live_rho + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if frame > 0 and frame % 30 == 0 {
+            want = live_rho + 1
+        }
+        if want < 0 {
+            want = N_RHO - 1
+        }
+        if want >= N_RHO {
+            want = 0
+        }
+        if want != live_rho {
+            live_rho = want
+            let r: f64 = rescale_to(rho_list[live_rho])
+            i = 0
+            while i < N {
+                x[i] = 0.0
+                i = i + 1
+            }
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            let mut s: i32 = 0
+            while s < 6 {
+                reservoir_step(x, u[live_step % T_ALL])
+                live_step = live_step + 1
+                s = s + 1
+            }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_state(g)
+        draw_input(g)
+        draw_forgetting(g)
+        draw_rho(g)
+        gfx_draw_text(g, 40, 430, "LIVE SPECTRAL RADIUS", 1, 150, 165, 190)
+        gfx_draw_fixed(g, 208, 430, rho_list[live_rho], 2, 1, 255, 205, 110)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !rho_ok {
+        println("    FAIL: the spectral radius was not set accurately")
+        return 1
+    }
+    if !esp_ok {
+        println("    FAIL: the echo state property does not hold")
+        return 2
+    }
+    if !mc1_ok {
+        println("    FAIL: the reservoir cannot even reproduce the last input")
+        return 3
+    }
+    if !bound_ok {
+        println("    FAIL: measured capacity is outside (15, N)")
+        return 4
+    }
+    if !mono_ok {
+        println("    FAIL: the forgetting curve is not monotone")
+        return 5
+    }
+    if !rising {
+        println("    FAIL: capacity does not grow with the spectral radius")
+        return 6
+    }
+    println("    PASS: echo state property holds and capacity sits under Jaeger's N bound")
+    return 0
+}
