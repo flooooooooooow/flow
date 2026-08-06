@@ -405,6 +405,15 @@ class TypeChecker:
         self.warnings: List[str] = []
         self.struct_types: Dict[str, StructDecl] = {}
         self.generic_struct_types: Dict[str, StructDecl] = {}
+        # Generic function templates, keyed by their unmangled name. Call
+        # sites use the parser-mangled form (`channel_new<i32>` parses to
+        # `channel_new_i32`), so signatures are synthesized on demand to
+        # mirror what the monomorphizer will later generate.
+        self.generic_function_decls: Dict[str, FunctionDecl] = {}
+        # Type parameters of the generic function currently being checked.
+        # Inside a template body a type parameter is opaque, so it acts as a
+        # wildcard; the real checking happens at each concrete call site.
+        self._active_type_params: Set[str] = set()
         self.effect_types: Dict[str, EffectDecl] = {}
         self.capability_types: Dict[str, CapabilityDecl] = {}
         # Enum/ADT metadata, used for match exhaustiveness checking and to
@@ -639,6 +648,10 @@ class TypeChecker:
     def _can_coerce(self, actual: SemanticType, expected: SemanticType) -> bool:
         if actual is None or expected is None:
             return True
+        # A type parameter inside a generic template is opaque; see
+        # `_is_type_param`.
+        if self._is_type_param(actual) or self._is_type_param(expected):
+            return True
         # Treat void/unknown as a wildcard only in lenient checking
         if not self.strict and (
             actual.kind in {TypeKind.VOID, TypeKind.UNKNOWN}
@@ -855,6 +868,8 @@ class TypeChecker:
         """Collect function signatures and global symbols."""
         for decl in declarations:
             if isinstance(decl, FunctionDecl):
+                if getattr(decl, "type_params", None):
+                    self.generic_function_decls[decl.name] = decl
                 self._define_function(decl.name, decl)
 
             elif isinstance(decl, ImplDecl):
@@ -1046,6 +1061,10 @@ class TypeChecker:
         attrs = getattr(func, 'attributes', None) or []
         prev_rt_safe_fn = self._current_rt_safe_fn
         prev_fn_name = self._current_function_name
+        prev_type_params = self._active_type_params
+        self._active_type_params = {
+            tp.name for tp in (getattr(func, "type_params", None) or [])
+        }
         self._current_rt_safe_fn = func.name if 'rt_safe' in attrs else None
         self._current_function_name = func.name
 
@@ -1091,6 +1110,7 @@ class TypeChecker:
             self.current_scope = func_scope.parent
             self._current_rt_safe_fn = prev_rt_safe_fn
             self._current_function_name = prev_fn_name
+            self._active_type_params = prev_type_params
 
     def _check_const(self, const: ConstDecl) -> None:
         """Type check a constant declaration."""
@@ -2335,6 +2355,8 @@ class TypeChecker:
             if elem_type:
                 return SemanticType(TypeKind.ARRAY, element_type=elem_type)
         symbol = self.current_scope.lookup(call.name)
+        if not symbol and self._ensure_generic_function_instance(call.name):
+            symbol = self.current_scope.lookup(call.name)
         if not symbol:
             # Check if it's a known builtin function
             if call.name in self.BUILTIN_FUNCTIONS:
@@ -2474,9 +2496,31 @@ class TypeChecker:
                 )
         return SemanticType(TypeKind.STRUCT, name=struct_name)
 
+    def _is_type_param(self, t: Optional[SemanticType]) -> bool:
+        """True for an unresolved type parameter of the template being checked."""
+        if t is None or not self._active_type_params:
+            return False
+        if t.kind == TypeKind.UNKNOWN and t.name in self._active_type_params:
+            return True
+        # Parser-mangled aggregates carry the parameter in a name segment
+        # (`Chan_T`, `ptr_Chan_T`), and the instance is only known per call.
+        if t.name and any(
+            seg in self._active_type_params for seg in t.name.split("_")
+        ):
+            return True
+        if t.element_type is not None and self._is_type_param(t.element_type):
+            return True
+        return False
+
     def _is_compatible(self, actual: SemanticType, expected: SemanticType) -> bool:
         """Check if actual type is compatible with expected type."""
         if actual == expected:
+            return True
+
+        # Inside a generic template a type parameter stands for every type it
+        # will be instantiated at, so it is compatible with anything. Concrete
+        # instances are checked at their call sites.
+        if self._is_type_param(actual) or self._is_type_param(expected):
             return True
 
         # Unit types: dimension vectors decide compatibility.
@@ -2583,6 +2627,24 @@ class TypeChecker:
             return None
         return base_name, [ParsedType(part) for part in parts[:type_param_count]]
 
+    def _rewrite_mangled_type_name(
+        self, name: str, type_map: Dict[str, ParsedType]
+    ) -> str:
+        """Rewrite parser-mangled names that embed type parameters.
+
+        The parser flattens `ptr<Chan<T> >` to the name `ptr_Chan_T`, so a
+        substitution that only walks `type_args` leaves the name stale.
+        Replacing whole underscore-separated segments mirrors what
+        `monomorphize._rewrite_mangled_type_name` does for codegen.
+        """
+        if not name or not type_map:
+            return name
+        parts = name.split("_")
+        rewritten = [
+            (type_map[p].name or "void") if p in type_map else p for p in parts
+        ]
+        return "_".join(rewritten)
+
     def _substitute_parsed_type(
         self, parsed_type: ParsedType, type_map: Dict[str, ParsedType]
     ) -> ParsedType:
@@ -2609,7 +2671,7 @@ class TypeChecker:
             else None
         )
         return ParsedType(
-            parsed_type.name,
+            self._rewrite_mangled_type_name(parsed_type.name, type_map),
             is_pointer=parsed_type.is_pointer,
             is_reference=parsed_type.is_reference,
             is_capability=getattr(parsed_type, "is_capability", False),
@@ -2617,6 +2679,75 @@ class TypeChecker:
             element_type=element_type,
             type_args=type_args,
         )
+
+    def _match_generic_function(
+        self, call_name: str
+    ) -> Optional[Tuple[FunctionDecl, List[ParsedType]]]:
+        """Resolve a parser-mangled call name to its generic template.
+
+        `channel_new<i32>(4)` reaches the checker as a call to
+        `channel_new_i32`; the longest matching template name wins so that
+        `channel_send_i32` does not bind to a hypothetical `channel`.
+        """
+        if "_" not in call_name:
+            return None
+        best: Optional[Tuple[FunctionDecl, List[ParsedType]]] = None
+        best_len = -1
+        for name, decl in self.generic_function_decls.items():
+            prefix = name + "_"
+            if not call_name.startswith(prefix) or len(name) <= best_len:
+                continue
+            suffix = call_name[len(prefix):]
+            if not suffix:
+                continue
+            nparams = len(decl.type_params)
+            if nparams == 1:
+                best = (decl, [ParsedType(suffix)])
+                best_len = len(name)
+            else:
+                parts = suffix.split("_")
+                if len(parts) == nparams:
+                    best = (decl, [ParsedType(p) for p in parts])
+                    best_len = len(name)
+        return best
+
+    def _ensure_generic_function_instance(self, call_name: str) -> bool:
+        """Synthesize the signature the monomorphizer will generate.
+
+        Codegen expands `channel_send<Point>` into `channel_send_Point`
+        after type checking, so without this the checker sees a call to a
+        function nobody declared. Substituting the type arguments into the
+        template's parameter and return types gives the call site a real
+        signature to check against.
+        """
+        if self.current_scope.lookup(call_name):
+            return True
+        match = self._match_generic_function(call_name)
+        if match is None:
+            return False
+        decl, type_args = match
+        type_map = {
+            param.name: arg for param, arg in zip(decl.type_params, type_args)
+        }
+        params = [
+            Parameter(p.name, self._substitute_parsed_type(p.type, type_map))
+            for p in decl.parameters
+        ]
+        return_type = self._substitute_parsed_type(decl.return_type, type_map)
+        instance = FunctionDecl(
+            call_name,
+            params,
+            return_type,
+            getattr(decl, "body", None),
+            attributes=list(getattr(decl, "attributes", None) or []),
+            is_exported=getattr(decl, "is_exported", False),
+            is_extern=getattr(decl, "is_extern", False),
+            type_params=[],
+            location=getattr(decl, "location", None),
+            effects=list(getattr(decl, "effects", None) or []),
+        )
+        self._define_function(call_name, instance)
+        return True
 
     def _ensure_generic_struct_instance(
         self, name: str, type_args: Optional[List[ParsedType]] = None
