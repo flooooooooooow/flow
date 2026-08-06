@@ -1,5 +1,4 @@
 # Producer → transform → consumer pipeline over Go-style channels.
-# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Run: ./flow run examples/concurrency/pipeline.flow
 #
 # Stages communicate with channel_i32_send / channel_i32_recv.
