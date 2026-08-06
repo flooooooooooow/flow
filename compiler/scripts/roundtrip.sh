@@ -89,6 +89,22 @@ if grep -q 'static const int32_t' compiler/build/stage_a_token_consts.c; then
     echo "FAIL stage_a_token_consts: export const should be non-static" >&2
     exit 1
 fi
+# String `+` is concatenation (__flowc_str_concat), not pointer arithmetic.
+run_case stage_a_strcat 42
+if ! grep -Fq '__flowc_str_concat(__flowc_str_concat("hello, ", name), "!")' compiler/build/stage_a_strcat.c; then
+    echo "FAIL stage_a_strcat: expected nested __flowc_str_concat for the literal chain" >&2
+    grep -n 'hello' compiler/build/stage_a_strcat.c >&2 || true
+    exit 1
+fi
+if grep -Eq '\("hello, " \+ ' compiler/build/stage_a_strcat.c; then
+    echo "FAIL stage_a_strcat: string operands emitted as C addition" >&2
+    exit 1
+fi
+if ! grep -Fq 'const char* joined = __flowc_str_concat' compiler/build/stage_a_strcat.c; then
+    echo "FAIL stage_a_strcat: inferred let over a concat should be const char*" >&2
+    exit 1
+fi
+
 # Inferred `let` (no `: Type`): struct-returning call, cast, struct literal.
 run_case stage_a_infer_struct 42
 if ! grep -Fq 'Pair p = make_pair(20, 22);' compiler/build/stage_a_infer_struct.c; then
@@ -711,6 +727,10 @@ echo "PASS stage_a_match fixtures"
 # Gen2: driver linked against self.o re-emits frontend → flowc_frontend_g2.o,
 # then fixed-point cmp self.o==g2.o, C/Flow g2 driver smokes (sum→45), gen3 token cmp.
 ./compiler/scripts/stage_a_self_emit_g2.sh
+
+# Phase-B exit gate: every module under compiler/src must bundle-emit C that
+# the C compiler accepts with no diagnostics.
+./compiler/scripts/selfcompile_audit.sh
 
 # Checked-in bootstrap: a cc-only path to a working flowc, and the C in
 # compiler/bootstrap/ must still be exactly what flowc emits from compiler/src.
