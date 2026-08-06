@@ -1,0 +1,542 @@
+# DEFFUANT BOUNDED CONFIDENCE: how many opinions a population ends up with.
+#
+# MODEL
+#   Deffuant, Neau, Amblard and Weisbuch (2000). Every agent holds a real
+#   opinion in [0, 1]. Pick two agents at random. If they are already close
+#   enough to listen to each other they meet in the middle; otherwise
+#   nothing happens:
+#
+#       if |x_i - x_j| < eps:
+#           x_i <- x_i + mu (x_j - x_i)
+#           x_j <- x_j + mu (x_i - x_j)
+#
+#   eps is the confidence threshold, mu the convergence rate. There is no
+#   repulsion, no leader and no external field.
+#
+# PARAMETERS
+#   500 agents, opinions uniform on [0, 1], mu = 0.5, 1500 sweeps
+#   (one sweep = 500 random pairings), 6 independent populations per eps,
+#   eight confidence thresholds from 0.045 to 0.45.
+#   A cluster is a run of sorted opinions with no gap wider than eps/2;
+#   a cluster counts as major when it holds at least 1 % of the population.
+#
+# WHAT THIS PROVES
+#   1. THE MEAN OPINION IS CONSERVED EXACTLY. One interaction moves the two
+#      agents by mu(x_j - x_i) and mu(x_i - x_j), which sum to zero, so the
+#      population mean is invariant to the last bit. The program tracks the
+#      drift over all 2.4 million interactions and gates on it.
+#   2. THE NUMBER OF SURVIVING CLUSTERS IS ABOUT 1 / (2 eps). Clusters that
+#      end up closer than eps would have merged, so the final opinions are
+#      spaced by rather more than eps and the unit interval holds about
+#      1/(2 eps) of them. The program fits the measured count against
+#      1/(2 eps) through the origin and gates on the slope.
+#   3. WIDE CONFIDENCE MEANS CONSENSUS. As eps grows the count falls to one:
+#      every population tested at eps = 0.45 ends on a single opinion, which
+#      is what 1/(2 eps) = 1.11 asks for.
+#
+# REFERENCE
+#   G. Deffuant, D. Neau, F. Amblard and G. Weisbuch, "Mixing beliefs among
+#   interacting agents", Advances in Complex Systems 3:87-98 (2000).
+#   G. Weisbuch, G. Deffuant, F. Amblard and J.-P. Nadal, "Meet, discuss and
+#   segregate!", Complexity 7:55-63 (2002): the 1/(2 eps) counting rule.
+#
+# KEYS
+#   Left / Right  change the confidence threshold of the live run
+#   R  restart the live run       P  pause        Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/social/deffuant.flow --frames 90 \
+#       --out build/frames_deffuant --gif docs/demos/social/deffuant.gif
+# Run (windowed):
+#   ./flow gfx examples/social/deffuant.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+}
+
+const WIN_W: i32 = 1000
+const WIN_H: i32 = 680
+const MAX_FRAMES: i32 = 4000
+
+const KEY_P: i32 = 35
+
+const N: i32 = 500
+const MU: f64 = 0.5
+const SWEEPS: i32 = 1500
+const TRIALS: i32 = 6
+const EPS_POINTS: i32 = 8
+const MINOR_FRAC: f64 = 0.01
+
+const SLOPE_GATE: f64 = 0.120
+const DRIFT_GATE: f64 = 0.000000001
+
+# live run
+const HIST_COLS: i32 = 420
+const HIST_ROWS: i32 = 300
+const LIVE_SWEEPS_PER_FRAME: i32 = 4
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut op: ptr<f64> = null          # working population
+let mut sorted: ptr<f64> = null      # sorted copy for cluster counting
+
+let mut eps_val: ptr<f64> = null
+let mut eps_n: ptr<f64> = null       # mean major cluster count
+let mut eps_pred: ptr<f64> = null    # 1 / (2 eps)
+let mut slope: f64 = 0.0
+let mut worst_drift: f64 = 0.0
+let mut interactions: i32 = 0
+
+let mut live_op: ptr<f64> = null
+let mut live_hist: ptr<u8> = null    # HIST_COLS x HIST_ROWS x 3
+let mut live_eps_idx: i32 = 5
+let mut live_col: i32 = 0
+let mut live_sweep: i32 = 0
+let mut live_clusters: i32 = 0
+
+let mut rng_state: u32 = 2463534242
+
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 8) % (n as u32)) as i32
+}
+
+function rng_unit() -> f64 {
+    return ((rng_next() >> 8) as f64) / 16777216.0
+}
+
+function eps_at(idx: i32) -> f64 {
+    if idx == 0 { return 0.045 }
+    if idx == 1 { return 0.060 }
+    if idx == 2 { return 0.080 }
+    if idx == 3 { return 0.110 }
+    if idx == 4 { return 0.150 }
+    if idx == 5 { return 0.220 }
+    if idx == 6 { return 0.300 }
+    return 0.450
+}
+
+# ---------------------------------------------------------------------------
+# The model
+# ---------------------------------------------------------------------------
+
+function seed_population(x: ptr<f64>) -> void {
+    let mut i: i32 = 0
+    while i < N {
+        x[i] = rng_unit()
+        i = i + 1
+    }
+}
+
+function population_mean(x: ptr<f64>) -> f64 {
+    let mut s: f64 = 0.0
+    let mut i: i32 = 0
+    while i < N {
+        s = s + x[i]
+        i = i + 1
+    }
+    return s / (N as f64)
+}
+
+# One sweep = N random pairings.
+function deffuant_sweep(x: ptr<f64>, eps: f64) -> void {
+    let mut k: i32 = 0
+    while k < N {
+        let i: i32 = rng_below(N)
+        let mut j: i32 = rng_below(N)
+        if j == i {
+            j = (i + 1) % N
+        }
+        let d: f64 = x[j] - x[i]
+        let mut ad: f64 = d
+        if ad < 0.0 {
+            ad = 0.0 - ad
+        }
+        if ad < eps {
+            x[i] = x[i] + MU * d
+            x[j] = x[j] - MU * d
+            interactions = interactions + 1
+        }
+        k = k + 1
+    }
+}
+
+function sort_copy(x: ptr<f64>) -> void {
+    let mut i: i32 = 0
+    while i < N {
+        sorted[i] = x[i]
+        i = i + 1
+    }
+    i = 1
+    while i < N {
+        let v: f64 = sorted[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and sorted[j] > v {
+            sorted[j + 1] = sorted[j]
+            j = j - 1
+        }
+        sorted[j + 1] = v
+        i = i + 1
+    }
+}
+
+# Runs of sorted opinions separated by gaps wider than eps/2; only runs
+# holding at least MINOR_FRAC of the population are counted.
+function count_clusters(x: ptr<f64>, eps: f64) -> i32 {
+    sort_copy(x)
+    let gap: f64 = eps * 0.5
+    let floor_size: i32 = ((MINOR_FRAC * (N as f64)) as i32)
+    let mut clusters: i32 = 0
+    let mut run: i32 = 1
+    let mut i: i32 = 1
+    while i < N {
+        if sorted[i] - sorted[i - 1] > gap {
+            if run >= floor_size {
+                clusters = clusters + 1
+            }
+            run = 1
+        } else {
+            run = run + 1
+        }
+        i = i + 1
+    }
+    if run >= floor_size {
+        clusters = clusters + 1
+    }
+    return clusters
+}
+
+function measure_sweep() -> void {
+    let mut idx: i32 = 0
+    while idx < EPS_POINTS {
+        let eps: f64 = eps_at(idx)
+        let mut total: f64 = 0.0
+        let mut t: i32 = 0
+        while t < TRIALS {
+            seed_population(op)
+            let m0: f64 = population_mean(op)
+            let mut s: i32 = 0
+            while s < SWEEPS {
+                deffuant_sweep(op, eps)
+                s = s + 1
+            }
+            let m1: f64 = population_mean(op)
+            let drift: f64 = fabs(m1 - m0)
+            if drift > worst_drift {
+                worst_drift = drift
+            }
+            total = total + (count_clusters(op, eps) as f64)
+            t = t + 1
+        }
+        eps_val[idx] = eps
+        eps_n[idx] = total / (TRIALS as f64)
+        eps_pred[idx] = 1.0 / (2.0 * eps)
+        idx = idx + 1
+    }
+    # least squares through the origin: n = slope * 1/(2 eps)
+    let mut sxy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    idx = 0
+    while idx < EPS_POINTS {
+        sxy = sxy + eps_pred[idx] * eps_n[idx]
+        sxx = sxx + eps_pred[idx] * eps_pred[idx]
+        idx = idx + 1
+    }
+    slope = sxy / sxx
+}
+
+# ---------------------------------------------------------------------------
+# Live run: the classic time-versus-opinion trajectory picture
+# ---------------------------------------------------------------------------
+
+function live_clear() -> void {
+    let mut i: i32 = 0
+    while i < HIST_COLS * HIST_ROWS * 3 {
+        live_hist[i] = 14 as u8
+        i = i + 1
+    }
+}
+
+function live_reset() -> void {
+    rng_state = 19650218
+    seed_population(live_op)
+    live_clear()
+    live_col = 0
+    live_sweep = 0
+    live_clusters = N
+}
+
+function live_plot_column() -> void {
+    if live_col >= HIST_COLS {
+        return
+    }
+    let mut i: i32 = 0
+    while i < N {
+        let mut row: i32 = ((1.0 - live_op[i]) * ((HIST_ROWS - 1) as f64)) as i32
+        if row < 0 { row = 0 }
+        if row >= HIST_ROWS { row = HIST_ROWS - 1 }
+        let o: i32 = (row * HIST_COLS + live_col) * 3
+        live_hist[o] = 255 as u8
+        live_hist[o + 1] = 196 as u8
+        live_hist[o + 2] = 92 as u8
+        i = i + 1
+    }
+    live_col = live_col + 1
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+const PL_X: i32 = 520
+const PL_Y: i32 = 116
+const PL_W: i32 = 448
+const PL_H: i32 = 300
+const PL_MAX: f64 = 12.0
+
+function draw_cluster_plot(g: Gfx) -> void {
+    draw_frame(g, PL_X, PL_Y, PL_W, PL_H, 62, 72, 94)
+    gfx_draw_text(g, PL_X, PL_Y - 28, "SURVIVING CLUSTERS vs 1 / (2 eps)",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, PL_X, PL_Y - 16,
+                  "grey = the counting rule    teal = measured, 6 populations each",
+                  1, 108, 122, 148)
+    # the diagonal y = x
+    let mut i: i32 = 0
+    while i < PL_W {
+        let v: f64 = (i as f64) / (PL_W as f64) * PL_MAX
+        let py: i32 = PL_Y + PL_H - ((v / PL_MAX * (PL_H as f64)) as i32)
+        gfx_fill_rect(g, PL_X + i, py, 2, 1, 92, 104, 128)
+        i = i + 4
+    }
+    i = 0
+    while i < EPS_POINTS {
+        let px: i32 = PL_X + ((eps_pred[i] / PL_MAX * (PL_W as f64)) as i32)
+        let py: i32 = PL_Y + PL_H - ((eps_n[i] / PL_MAX * (PL_H as f64)) as i32)
+        gfx_fill_rect(g, px - 3, py - 3, 7, 7, 120, 220, 200)
+        gfx_draw_fixed(g, px + 6, py - 4, eps_val[i], 3, 1, 150, 165, 190)
+        i = i + 1
+    }
+    gfx_draw_text(g, PL_X + 4, PL_Y + PL_H + 6, "1/(2 eps) = 0", 1, 104, 118, 142)
+    gfx_draw_text(g, PL_X + PL_W - 24, PL_Y + PL_H + 6, "12", 1, 104, 118, 142)
+    gfx_draw_text(g, PL_X - 18, PL_Y - 4, "12", 1, 104, 118, 142)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 14, 12, "DEFFUANT BOUNDED CONFIDENCE", 2, 236, 240, 250)
+    gfx_draw_text(g, 14, 36,
+        "pick two agents; if |x_i - x_j| < eps they each move half way to the other, otherwise nothing happens",
+        1, 152, 168, 194)
+    gfx_draw_text(g, 14, 50,
+        "500 agents, mu = 0.5, opinions uniform on [0,1]", 1, 108, 122, 148)
+    if paused {
+        gfx_draw_text(g, WIN_W - 70, 12, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 24, 88, "LIVE RUN   opinion (vertical) against time (horizontal)",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, 24, 424, "eps", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 52, 424, eps_at(live_eps_idx), 3, 1, 255, 205, 110)
+    gfx_draw_text(g, 100, 424, "SWEEP", 1, 152, 168, 194)
+    gfx_draw_int(g, 148, 424, live_sweep, 1, 236, 240, 250)
+    gfx_draw_text(g, 210, 424, "CLUSTERS NOW", 1, 152, 168, 194)
+    gfx_draw_int(g, 316, 424, live_clusters, 1, 236, 240, 250)
+    gfx_draw_text(g, 360, 424, "RULE", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 396, 424, 1.0 / (2.0 * eps_at(live_eps_idx)), 2, 1, 255, 205, 110)
+
+    let by: i32 = 470
+    gfx_draw_text(g, 24, by, "FITTED SLOPE of clusters against 1/(2 eps)", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 372, by, slope, 5, 1, 236, 240, 250)
+    gfx_draw_text(g, 448, by, "vs 1.0   gate", 1, 108, 122, 148)
+    gfx_draw_fixed(g, 560, by, SLOPE_GATE, 3, 1, 236, 240, 250)
+
+    gfx_draw_text(g, 24, by + 16, "WORST MEAN-OPINION DRIFT over all populations",
+                  1, 152, 168, 194)
+    gfx_draw_fixed(g, 372, by + 16, worst_drift * 1000000000.0, 4, 1, 236, 240, 250)
+    gfx_draw_text(g, 448, by + 16, "x 1e-9    the mean is conserved exactly",
+                  1, 108, 122, 148)
+
+    gfx_draw_text(g, 24, by + 32, "INTERACTIONS ACCEPTED across the sweep", 1, 152, 168, 194)
+    gfx_draw_int(g, 372, by + 32, interactions, 1, 236, 240, 250)
+
+    gfx_draw_text(g, 24, by + 48, "MEAN CLUSTERS AT eps 0.45", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 372, by + 48, eps_n[7], 2, 1, 236, 240, 250)
+    gfx_draw_text(g, 420, by + 48, "must be exactly 1: wide confidence gives consensus",
+                  1, 108, 122, 148)
+
+    if ok {
+        gfx_draw_text(g, 24, by + 70, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 24, by + 70, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 14, WIN_H - 16,
+        "LEFT / RIGHT change eps    R restart    P pause    Esc quit",
+        1, 108, 122, 148)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    op = malloc((N as i64) * 8)
+    sorted = malloc((N as i64) * 8)
+    live_op = malloc((N as i64) * 8)
+    eps_val = malloc((EPS_POINTS as i64) * 8)
+    eps_n = malloc((EPS_POINTS as i64) * 8)
+    eps_pred = malloc((EPS_POINTS as i64) * 8)
+    live_hist = calloc((HIST_COLS as i64) * (HIST_ROWS as i64) * 3, 1) as ptr<u8>
+
+    println("")
+    println("  DEFFUANT BOUNDED CONFIDENCE  --  cluster count against the 1/(2 eps) rule")
+    println("  ========================================================================")
+    println("")
+    println("    500 agents, mu = 0.5, 1500 sweeps, 6 independent populations per eps")
+    println("    a major cluster holds at least 1 % of the population")
+    println("")
+
+    measure_sweep()
+
+    println("       eps     1/(2 eps)     floor      measured clusters")
+    println("      ----     ---------     -----      -----------------")
+    let mut i: i32 = 0
+    while i < EPS_POINTS {
+        print("    ")
+        printf("%6.3f", eps_val[i])
+        printf("     %9.4f", eps_pred[i])
+        printf("     %5.0f", (eps_pred[i] as i32) as f64)
+        printf("      %17.4f", eps_n[i])
+        println("")
+        i = i + 1
+    }
+    println("")
+    print("    fitted slope of clusters against 1/(2 eps) : ")
+    printf("%.5f", slope)
+    print("   gate |slope - 1| < ")
+    printf("%.3f", SLOPE_GATE)
+    println("")
+    print("    accepted interactions                      : ")
+    println(interactions)
+    print("    worst mean-opinion drift                   : ")
+    printf("%.3e", worst_drift)
+    print("   gate ")
+    printf("%.1e", DRIFT_GATE)
+    println("")
+    println("      (each meeting moves the pair symmetrically, so the mean cannot move)")
+    println("")
+
+    let slope_ok: bool = fabs(slope - 1.0) < SLOPE_GATE
+    let drift_ok: bool = worst_drift < DRIFT_GATE
+    let consensus_ok: bool = eps_n[7] == 1.0
+    let ok: bool = slope_ok and drift_ok and consensus_ok
+
+    if consensus_ok {
+        println("    wide confidence gives consensus: every population at eps 0.45 ends on 1 cluster")
+    } else {
+        println("    wide confidence did NOT give consensus")
+    }
+    println("")
+
+    live_reset()
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Deffuant bounded confidence - Flow social atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+    let mut reset_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = live_eps_idx
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held { want = live_eps_idx - 1 }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held { want = live_eps_idx + 1 }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if want < 0 { want = 0 }
+        if want >= EPS_POINTS { want = EPS_POINTS - 1 }
+        if want != live_eps_idx {
+            live_eps_idx = want
+            live_reset()
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held { live_reset() }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused and live_col < HIST_COLS {
+            let eps: f64 = eps_at(live_eps_idx)
+            let mut s: i32 = 0
+            while s < LIVE_SWEEPS_PER_FRAME {
+                deffuant_sweep(live_op, eps)
+                live_sweep = live_sweep + 1
+                s = s + 1
+            }
+            live_plot_column()
+            live_clusters = count_clusters(live_op, eps)
+        }
+
+        gfx_clear(g, 11, 13, 20)
+        gfx_blit_rgb(g, 24, 104, HIST_COLS, HIST_ROWS, live_hist)
+        draw_frame(g, 23, 103, HIST_COLS + 1, HIST_ROWS + 1, 62, 72, 94)
+        draw_cluster_plot(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !drift_ok {
+        println("    FAIL: the mean opinion drifted, so the pairwise update is not symmetric")
+        return 1
+    }
+    if !slope_ok {
+        println("    FAIL: the cluster count does not follow the 1/(2 eps) rule")
+        return 2
+    }
+    if !consensus_ok {
+        println("    FAIL: wide confidence did not produce a single cluster")
+        return 3
+    }
+    println("    PASS: clusters track 1/(2 eps), the mean opinion never moved")
+    return 0
+}
