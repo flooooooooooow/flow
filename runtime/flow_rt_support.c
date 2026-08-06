@@ -2,6 +2,7 @@
  * Logic lives in lib/runtime/ Flow sources; this file only wraps syscalls / ABI glue.
  */
 #include <stdint.h>
+#include <stdio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -37,6 +38,13 @@ int64_t flow_rt_monotonic_ns(void) {
         return 0;
     }
     return sec * 1000000000LL + nsec;
+}
+
+/* stderr is a libc global, and its symbol differs per platform (__stderrp on
+ * Darwin, stderr on glibc). Flow externs are functions only, so diagnostics
+ * written from Flow reach the stream through this. */
+void *flow_rt_stderr(void) {
+    return (void *)stderr;
 }
 
 void flow_rt_usleep(int32_t usec) {
