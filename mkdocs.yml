@@ -96,6 +96,10 @@ nav:
   - Specification:
     - Language Spec: LANGUAGE_SPEC.md
   - Effects Showcase: effects-showcase.md
+  - Demos:
+    - Game Gallery: demos/games.md
+    - Morphogenesis Gallery: demos/morphogenesis.md
+    - Recording Demos: demos/README.md
   - Project:
     - Changelog: project/CHANGELOG.md
     - Contributing: project/CONTRIBUTING.md
