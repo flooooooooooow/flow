@@ -1,0 +1,352 @@
+# Known-answer tests for lib/stdlib/psychstats.flow.
+#
+# Every reference value in this file was computed with numpy 2.0.2 and scipy
+# 1.13.1 on the same machine, by the script quoted beside each block. Where
+# scipy has no direct equivalent (repeated-measures ANOVA, the psychometric
+# MLE) the reference is numpy from first principles or scipy.optimize running
+# the same likelihood, and the comment says so. The two permutation tests are
+# checked against exact enumeration of all 2^8 sign patterns and all C(12,6)
+# label splits respectively, so the reference there is exact and the Flow
+# value is Monte Carlo.
+#
+# Run: ./flow run tests/stdlib/test_psychstats.flow
+# Exit code is 0 only if every row passes.
+
+import "stdlib/psychstats.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function strlen(s: ptr<u8>) -> i64
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const NAME_W: i32 = 30
+
+let mut fail_count: i32 = 0
+let mut check_count: i32 = 0
+
+# ---------------------------------------------------------------------------
+# Data (module statics, so the tables are laid out once)
+# ---------------------------------------------------------------------------
+
+# Dataset A: 8 subjects x 3 conditions, Stroop-like RT means in ms.
+let mut data_a: array<f64, 24> = [
+    512.0, 604.0, 548.0,
+    498.0, 631.0, 561.0,
+    534.0, 588.0, 540.0,
+    566.0, 672.0, 597.0,
+    489.0, 575.0, 522.0,
+    551.0, 649.0, 585.0,
+    507.0, 596.0, 545.0,
+    523.0, 618.0, 559.0
+]
+let mut a_c0: array<f64, 8> = [512.0, 498.0, 534.0, 566.0, 489.0, 551.0, 507.0, 523.0]
+let mut a_c1: array<f64, 8> = [604.0, 631.0, 588.0, 672.0, 575.0, 649.0, 596.0, 618.0]
+
+# Dataset B: two independent groups.
+let mut data_b1: array<f64, 10> = [21.0, 25.0, 19.0, 30.0, 27.0, 23.0, 22.0, 28.0, 24.0, 26.0]
+let mut data_b2: array<f64, 8> = [31.0, 29.0, 35.0, 28.0, 33.0, 30.0, 36.0, 32.0]
+
+# Dataset C: 6 subjects x 2 (factor A) x 3 (factor B), row-major per subject.
+let mut data_c: array<f64, 36> = [
+    520.0, 545.0, 580.0, 560.0, 600.0, 655.0,
+    505.0, 533.0, 566.0, 548.0, 585.0, 641.0,
+    540.0, 561.0, 601.0, 578.0, 622.0, 672.0,
+    498.0, 522.0, 559.0, 534.0, 578.0, 630.0,
+    531.0, 556.0, 592.0, 571.0, 611.0, 668.0,
+    515.0, 540.0, 574.0, 555.0, 596.0, 649.0
+]
+
+# Dataset D: one subject's raw RTs, with one anticipation and one lapse.
+let mut data_d: array<f64, 16> = [
+    412.0, 388.0, 455.0, 501.0, 430.0, 398.0, 476.0, 1520.0,
+    441.0, 467.0, 405.0, 152.0, 489.0, 423.0, 460.0, 437.0
+]
+let mut trim_out: array<f64, 16> = [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+]
+
+# Psychometric data: 2AFC contrast detection, 40 trials per level.
+let mut psy_x: array<f64, 7> = [0.02, 0.04, 0.06, 0.08, 0.10, 0.14, 0.20]
+let mut psy_k: array<f64, 7> = [21.0, 24.0, 28.0, 32.0, 35.0, 38.0, 40.0]
+let mut psy_m: array<f64, 7> = [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+
+# ROC samples.
+let mut roc_sig: array<f64, 8> = [1.2, 0.4, 2.1, 1.7, -0.3, 0.9, 2.6, 1.1]
+let mut roc_noi: array<f64, 6> = [0.1, -0.8, 0.6, -1.2, 0.3, 1.4]
+
+# Permutation datasets, sized so exact enumeration is feasible in the
+# reference: 2^8 sign patterns, and C(12,6) = 924 label splits.
+let mut perm_x: array<f64, 8> = [112.0, 97.0, 121.0, 108.0, 99.0, 115.0, 104.0, 109.0]
+let mut perm_y: array<f64, 8> = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+let mut perm_g1: array<f64, 6> = [21.0, 25.0, 19.0, 30.0, 27.0, 23.0]
+let mut perm_g2: array<f64, 6> = [31.0, 29.0, 26.0, 28.0, 33.0, 24.0]
+
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+function pad(name: string) -> void {
+    print(name)
+    let n: i32 = strlen(name as ptr<u8>) as i32
+    let mut i: i32 = n
+    while i < NAME_W {
+        print(" ")
+        i = i + 1
+    }
+}
+
+# Relative check, falling back to absolute when the reference is ~0.
+function check(name: string, got: f64, want: f64, tol: f64) -> void {
+    check_count = check_count + 1
+    let mut err: f64 = fabs(got - want)
+    if fabs(want) > 1.0e-12 {
+        err = err / fabs(want)
+    }
+    print("  ")
+    pad(name)
+    printf("%18.10g", got)
+    printf("  %18.10g", want)
+    printf("   %9.2e", err)
+    if err <= tol {
+        println("   ok")
+    } else {
+        println("   FAIL")
+        fail_count = fail_count + 1
+    }
+}
+
+function check_int(name: string, got: i32, want: i32) -> void {
+    check(name, got as f64, want as f64, 0.0)
+}
+
+function section(title: string) -> void {
+    println("")
+    print("  ")
+    println(title)
+    print("  ")
+    pad("routine")
+    print("        flow value ")
+    print("     reference value")
+    println("      rel err")
+}
+
+# ---------------------------------------------------------------------------
+
+function test_descriptives() -> void {
+    section("DESCRIPTIVES  (numpy, dataset A column 0)")
+    let c0: ptr<f64> = a_c0
+    check("ps_mean", ps_mean(c0, 8), 522.5, 1.0e-14)
+    check("ps_sd", ps_sd(c0, 8), 26.48449681282564, 1.0e-13)
+    check("ps_sem", ps_sem(c0, 8), 9.363683646331257, 1.0e-13)
+    check("ps_median", ps_median(c0, 8), 517.5, 1.0e-14)
+    check("ps_quantile q=0.25", ps_quantile(c0, 8, 0.25), 504.75, 1.0e-14)
+    check("ps_min", ps_min(c0, 8), 489.0, 0.0)
+    check("ps_max", ps_max(c0, 8), 566.0, 0.0)
+    check("ps_var", ps_var(c0, 8), 26.48449681282564 * 26.48449681282564, 1.0e-13)
+}
+
+function test_distributions() -> void {
+    section("DISTRIBUTIONS  (scipy.stats)")
+    check("ps_norm_cdf(-2.5)", ps_norm_cdf(-2.5), 0.006209665325776134, 1.0e-12)
+    check("ps_norm_cdf(-1.0)", ps_norm_cdf(-1.0), 0.15865525393145707, 1.0e-13)
+    check("ps_norm_cdf(0.0)", ps_norm_cdf(0.0), 0.5, 1.0e-15)
+    check("ps_norm_cdf(0.5)", ps_norm_cdf(0.5), 0.6914624612740131, 1.0e-13)
+    check("ps_norm_cdf(1.95996398)", ps_norm_cdf(1.959963984540054), 0.975, 1.0e-13)
+    check("ps_norm_cdf(3.0)", ps_norm_cdf(3.0), 0.9986501019683699, 1.0e-13)
+    check("ps_norm_inv(0.025)", ps_norm_inv(0.025), -1.9599639845400545, 1.0e-13)
+    check("ps_norm_inv(0.1)", ps_norm_inv(0.1), -1.2815515655446004, 1.0e-13)
+    check("ps_norm_inv(0.975)", ps_norm_inv(0.975), 1.959963984540054, 1.0e-13)
+    check("ps_norm_inv(0.999)", ps_norm_inv(0.999), 3.090232306167813, 1.0e-13)
+    check("ps_betai(2,3,0.4)", ps_betai(2.0, 3.0, 0.4), 0.5247999999999999, 1.0e-13)
+    check("ps_t_p2(2.5, 9)", ps_t_p2(2.5, 9.0), 0.03386182768298571, 1.0e-12)
+    check("ps_t_cdf(1.3, 20)", ps_t_cdf(1.3, 20.0), 0.8958077522433066, 1.0e-12)
+    check("ps_f_sf(4.2, 2, 14)", ps_f_sf(4.2, 2.0, 14.0), 0.03725290298461914, 1.0e-12)
+}
+
+function test_ttests() -> void {
+    section("T-TESTS  (scipy.stats.ttest_rel / ttest_ind)")
+    let c0: ptr<f64> = a_c0
+    let c1: ptr<f64> = a_c1
+    let pt: PsTTest = ps_ttest_paired(c1, c0, 8)
+    check("paired t", pt.t, 12.124676410768837, 1.0e-13)
+    check("paired df", pt.df, 7.0, 0.0)
+    check("paired p", pt.p, 5.9320213541725595e-06, 1.0e-11)
+    check("paired Cohen dz", pt.d, 4.286720454873607, 1.0e-13)
+    check("paired mean diff", pt.diff, 94.125, 1.0e-14)
+
+    let b1: ptr<f64> = data_b1
+    let b2: ptr<f64> = data_b2
+    let it: PsTTest = ps_ttest_ind(b1, 10, b2, 8)
+    check("independent t", it.t, -4.8638278524573995, 1.0e-13)
+    check("independent df", it.df, 16.0, 0.0)
+    check("independent p", it.p, 0.00017240856844922384, 1.0e-12)
+    check("independent Cohen d", it.d, -2.307116124109617, 1.0e-13)
+}
+
+function test_anova() -> void {
+    section("ONE-WAY RM ANOVA  (numpy from first principles, dataset A)")
+    let a: ptr<f64> = data_a
+    let r: PsAnovaTerm = ps_anova_rm1(a, 8, 3)
+    check("rm1 F", r.f, 134.5271827937984, 1.0e-12)
+    check("rm1 df1", r.df1, 2.0, 0.0)
+    check("rm1 df2", r.df2, 14.0, 0.0)
+    check("rm1 p", r.p, 7.241145057779263e-10, 1.0e-10)
+    check("rm1 partial eta^2", r.eta2p, 0.9505395369156834, 1.0e-13)
+
+    section("TWO-WAY RM ANOVA  (numpy from first principles, dataset C)")
+    let c: ptr<f64> = data_c
+    let r2: PsAnova2 = ps_anova_rm2(c, 6, 2, 3)
+    check("rm2 A F", r2.a.f, 18331.405694007626, 1.0e-11)
+    check("rm2 A df1", r2.a.df1, 1.0, 0.0)
+    check("rm2 A df2", r2.a.df2, 5.0, 0.0)
+    check("rm2 A p", r2.a.p, 4.169275923572364e-10, 1.0e-9)
+    check("rm2 A partial eta^2", r2.a.eta2p, 0.9997273184241537, 1.0e-13)
+    check("rm2 B F", r2.b.f, 24873.181818364897, 1.0e-11)
+    check("rm2 B df1", r2.b.df1, 2.0, 0.0)
+    check("rm2 B df2", r2.b.df2, 10.0, 0.0)
+    check("rm2 B p", r2.b.p, 3.2791164081431673e-19, 1.0e-9)
+    check("rm2 B partial eta^2", r2.b.eta2p, 0.9997990206826004, 1.0e-13)
+    check("rm2 AxB F", r2.ab.f, 222.43016759728866, 1.0e-11)
+    check("rm2 AxB df1", r2.ab.df1, 2.0, 0.0)
+    check("rm2 AxB df2", r2.ab.df2, 10.0, 0.0)
+    check("rm2 AxB p", r2.ab.p, 5.135818468506451e-09, 1.0e-9)
+    check("rm2 AxB partial eta^2", r2.ab.eta2p, 0.9780152296732528, 1.0e-13)
+}
+
+function test_permutation() -> void {
+    section("PERMUTATION  (exact enumeration; flow value is Monte Carlo)")
+    let px: ptr<f64> = perm_x
+    let py: ptr<f64> = perm_y
+    let p1: f64 = ps_perm_paired(px, py, 8, 20000, 20240815)
+    check("paired sign-flip p", p1, 0.0390625, 0.12)
+    let g1: ptr<f64> = perm_g1
+    let g2: ptr<f64> = perm_g2
+    let p2: f64 = ps_perm_ind(g1, 6, g2, 6, 20000, 20240815)
+    check("independent shuffle p", p2, 0.08225108225108226, 0.12)
+    # Same seed, same answer: this is the reproducibility guarantee.
+    let p1b: f64 = ps_perm_paired(px, py, 8, 20000, 20240815)
+    check("paired p reproducible", p1b, p1, 0.0)
+}
+
+function test_rt() -> void {
+    section("RT HYGIENE  (numpy, dataset D)")
+    let d: ptr<f64> = data_d
+    let out: ptr<f64> = trim_out
+    check("raw mean", ps_mean(d, 16), 490.875, 1.0e-14)
+    check("raw sd", ps_sd(d, 16), 285.6080939562696, 1.0e-13)
+    let t1: PsTrim = ps_trim_sd(d, 16, 2.5, out)
+    check("trim 2.5 SD lo", t1.lo, -223.14523489067403, 1.0e-13)
+    check("trim 2.5 SD hi", t1.hi, 1204.8952348906741, 1.0e-13)
+    check_int("trim 2.5 SD kept", t1.kept, 15)
+    check("trim 2.5 SD mean", ps_mean(out, t1.kept), 422.26666666666665, 1.0e-13)
+    let trimmed_mean: f64 = ps_mean(out, t1.kept)
+    let t2: PsTrim = ps_trim_abs(d, 16, 200.0, 1000.0, out)
+    check_int("trim 200-1000 ms kept", t2.kept, 14)
+    check("trim 200-1000 ms mean", ps_mean(out, t2.kept), 441.57142857142856, 1.0e-13)
+    check("ps_ies (acc 0.92)", ps_ies(trimmed_mean, 0.92), 458.98550724637676, 1.0e-13)
+
+    let ln: PsLogNormal = ps_lognormal_fit(d, 16)
+    check("lognormal mu", ln.mu, 6.098443060326303, 1.0e-13)
+    check("lognormal sigma", ln.sigma, 0.4141591328573366, 1.0e-13)
+    check("lognormal mean", ln.mean, 485.02816139845476, 1.0e-13)
+    check("lognormal median", ln.median, 445.16413654435405, 1.0e-13)
+    check("lognormal mode", ln.mode, 374.99596765671157, 1.0e-13)
+}
+
+function test_psychometric() -> void {
+    section("PSYCHOMETRIC MLE  (scipy.optimize.minimize on the same likelihood)")
+    let x: ptr<f64> = psy_x
+    let k: ptr<f64> = psy_k
+    let m: ptr<f64> = psy_m
+    let lg: PsFit = ps_fit_logistic(x, k, m, 7, 0.5, 0.02)
+    check_int("logistic converged", lg.ok as i32, 1)
+    check("logistic alpha", lg.alpha, 0.06983317086809213, 1.0e-6)
+    check("logistic beta", lg.beta, 0.02273943673145855, 1.0e-6)
+    check("logistic threshold", lg.threshold, 0.06983317086809213, 1.0e-6)
+    check("logistic slope at thr", lg.slope, 5.277175472884202, 1.0e-5)
+    check("logistic log-likelihood", lg.loglik, -123.03445845595586, 1.0e-10)
+
+    let wb: PsFit = ps_fit_weibull(x, k, m, 7, 0.5, 0.02)
+    check_int("weibull converged", wb.ok as i32, 1)
+    check("weibull alpha", wb.alpha, 0.08151796493001912, 1.0e-6)
+    check("weibull beta", wb.beta, 2.03476492719213, 1.0e-6)
+    check("weibull threshold", wb.threshold, 0.06808098742797837, 1.0e-6)
+    check("weibull slope at thr", wb.slope, 4.97193103233335, 1.0e-5)
+    check("weibull log-likelihood", wb.loglik, -122.92542816956232, 1.0e-10)
+
+    # The bootstrap has no closed form. What is checkable: the interval
+    # brackets the point estimate, it is reproducible under a fixed seed, and
+    # its width is the order the binomial noise implies (about 0.01 here).
+    let ci: PsBootCI = ps_fit_boot_ci(PS_LOGISTIC, x, k, m, 7, 0.5, 0.02, 400, 0.95, 12345)
+    check_int("bootstrap converged", ci.ok as i32, 1)
+    print("    bootstrap 95% CI on the logistic threshold: [")
+    printf("%.5f", ci.lo)
+    print(", ")
+    printf("%.5f", ci.hi)
+    print("]  median ")
+    printf("%.5f", ci.median)
+    print("  from ")
+    printf("%.0f", ci.n_ok as f64)
+    println(" resamples")
+    let brackets: bool = ci.lo < lg.threshold and lg.threshold < ci.hi
+    check_int("CI brackets the estimate", brackets as i32, 1)
+    let ci2: PsBootCI = ps_fit_boot_ci(PS_LOGISTIC, x, k, m, 7, 0.5, 0.02, 400, 0.95, 12345)
+    check("CI reproducible (lo)", ci2.lo, ci.lo, 0.0)
+    check("CI reproducible (hi)", ci2.hi, ci.hi, 0.0)
+}
+
+function test_sdt() -> void {
+    section("SIGNAL DETECTION  (scipy.stats.norm.ppf / mannwhitneyu)")
+    let s: PsSdt = ps_sdt(44, 6, 12, 38)
+    check("hit rate", s.hit_rate, 0.88, 1.0e-15)
+    check("false-alarm rate", s.fa_rate, 0.24, 1.0e-15)
+    check("d-prime", s.dprime, 1.8812893549061775, 1.0e-13)
+    check("criterion c", s.criterion, -0.23434211461300136, 1.0e-13)
+    check("beta", s.beta, 0.6434793609168218, 1.0e-13)
+    check_int("no correction needed", s.corrected as i32, 0)
+
+    let sc: PsSdt = ps_sdt(20, 0, 0, 20)
+    check_int("log-linear correction fired", sc.corrected as i32, 1)
+    check("corrected hit rate", sc.hit_rate, 0.9761904761904762, 1.0e-15)
+    check("corrected d-prime", sc.dprime, 3.9615047932945577, 1.0e-13)
+
+    let sig: ptr<f64> = roc_sig
+    let noi: ptr<f64> = roc_noi
+    check("ROC area (Mann-Whitney)", ps_auc(sig, 8, noi, 6), 0.8125, 1.0e-15)
+    check("AUC from d' = 1", ps_auc_from_dprime(1.0), 0.7602499389065233, 1.0e-13)
+    check("d' from AUC round trip", ps_dprime_from_auc(ps_auc_from_dprime(1.0)), 1.0, 1.0e-12)
+}
+
+function main() -> i32 {
+    println("")
+    println("  psychstats known-answer tests")
+    println("  =============================")
+    println("  References: numpy 2.0.2 / scipy 1.13.1, plus exact enumeration")
+    println("  for the two permutation tests.")
+
+    test_descriptives()
+    test_distributions()
+    test_ttests()
+    test_anova()
+    test_permutation()
+    test_rt()
+    test_psychometric()
+    test_sdt()
+
+    println("")
+    print("  ")
+    printf("%.0f", check_count as f64)
+    print(" checks, ")
+    printf("%.0f", fail_count as f64)
+    println(" failures")
+    if fail_count > 0 {
+        println("  FAIL")
+        return 1
+    }
+    println("  PASS")
+    println("")
+    return 0
+}
