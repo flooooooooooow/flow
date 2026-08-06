@@ -1,0 +1,1916 @@
+# planet: a procedural planet as a system that evolves through time.
+#
+# A planet is not a texture. It is the fixed point of a few slow processes
+# running against each other: plates move and pile crust up, water runs
+# downhill and takes the crust away, air carries heat and moisture across
+# what is left, and life sorts itself by temperature and rainfall. Every
+# stage below is one of those processes, and every stage is separately
+# runnable so the intermediate state can be inspected and measured.
+#
+# PIPELINE
+#   1  planet_stage_grid       cubesphere sampling, neighbour graph, cell areas
+#   2  planet_stage_tectonics  plate Voronoi, Euler-pole motion, boundary class
+#   3  planet_stage_elevation  crust dichotomy + fractal relief, sea level
+#   4  planet_stage_erosion    depression filling, D8 routing, stream power
+#   5  planet_stage_climate    insolation, wind bands, orographic rainfall
+#   6  planet_stage_biomes     Whittaker classification
+#   7  planet_stage_hydrology  flow accumulation, rivers, lake filling
+#
+#   planet_generate(seed, plates, erosion_iters) runs all seven in order.
+#
+# THE GRID
+#   Cells are the faces of an equiangular cubesphere: six square faces of
+#   PLANET_FACE_N x PLANET_FACE_N cells, gnomonically projected onto the
+#   sphere with the tangent warp that equalises angular spacing. There is no
+#   pole, so nothing is oversampled and no algorithm has to special-case a
+#   singular row the way an equirectangular grid does. Worst-case area
+#   distortion (largest cell over smallest) is measured at generation time
+#   and printed by the evidence program; for the equiangular warp at
+#   PLANET_FACE_N = 96 it is 1.403, against 3^1.5 = 5.196 for the raw
+#   gnomonic cube and unbounded for equirectangular.
+#
+#   Neighbours are found without an adjacency table. A cell index one step
+#   off the edge of a face still produces a valid (u, v) pair, the tangent
+#   warp still maps it to a direction, and the inverse lookup names the cell
+#   on the neighbouring face that contains it. The eight neighbours of every
+#   cell are computed once and cached in PLANET_CELLS * 8 integers.
+#
+# MEMORY
+#   Every field is a module-static pointer allocated once by planet_init to
+#   the caps below. At PLANET_FACE_N = 96 that is 55296 cells:
+#     8-neighbour table   55296 * 8 * 4 B  = 1.77 MB
+#     16 f32 fields       55296 * 4 B each = 3.54 MB
+#     6 i32 / u8 fields                    = 0.72 MB
+#   about 6 MB in total, allocated once and never resized.
+#
+# DETERMINISM
+#   One 32-bit LCG, seeded by planet_seed, drives every random choice, and
+#   the stages consume it in a fixed order. The same seed and the same
+#   parameters reproduce a planet bit for bit.
+#
+# NOISE
+#   planet_noise_* is a self-contained 3D gradient-noise set (hash, gradient,
+#   fBm, ridged, domain warp) kept private to this module so planet.flow has
+#   no dependency but libm. It should be folded into stdlib/procgen.flow once
+#   that lands.
+#
+# WHAT IS NOT MODELLED
+#   No plate history: plates are placed once and their motion is applied as a
+#   single steady-state boundary forcing rather than integrated over Myr, so
+#   there are no collision sutures, no accreted terranes and no seafloor
+#   age-depth profile. No glaciation, no sediment routing to a marine shelf,
+#   no ocean currents, no seasons (temperature and precipitation are annual
+#   means), no orbital eccentricity or obliquity, no atmosphere chemistry.
+#
+# Related: docs/library/planet.md, examples/planet/
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function sqrtf(x: f32) -> f32
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function tanf(x: f32) -> f32
+    function atanf(x: f32) -> f32
+    function atan2f(y: f32, x: f32) -> f32
+    function asinf(x: f32) -> f32
+    function acosf(x: f32) -> f32
+    function expf(x: f32) -> f32
+    function logf(x: f32) -> f32
+    function powf(x: f32, y: f32) -> f32
+    function fabsf(x: f32) -> f32
+    function floorf(x: f32) -> f32
+    function clock() -> i64
+}
+
+# ---------------------------------------------------------------------------
+# Caps. Changing PLANET_FACE_N requires changing PLANET_CELLS to 6 * N * N.
+# ---------------------------------------------------------------------------
+
+const PLANET_FACE_N: i32 = 96
+const PLANET_CELLS: i32 = 55296
+const PLANET_MAX_PLATES: i32 = 48
+
+# Mean planetary radius, kilometres. Everything with a length unit is in km.
+const PLANET_R_KM: f32 = 6371.0
+
+const PL_PI: f32 = 3.14159265
+const PL_TINY: f32 = 1.0e-9
+
+# Priority-flood epsilon: the minimum drop enforced between a cell and the
+# cell it was flooded from, so a filled depression still has a strictly
+# descending path out of it. 1 mm expressed in km.
+const PL_EPS: f32 = 0.000001
+
+# Biome ids. The classification table is in planet_classify_biome.
+const PB_OCEAN: i32 = 0
+const PB_SHELF: i32 = 1
+const PB_SEA_ICE: i32 = 2
+const PB_ICE_SHEET: i32 = 3
+const PB_TUNDRA: i32 = 4
+const PB_BOREAL: i32 = 5
+const PB_TEMPERATE_RAIN: i32 = 6
+const PB_TEMPERATE_FOREST: i32 = 7
+const PB_WOODLAND: i32 = 8
+const PB_GRASSLAND: i32 = 9
+const PB_COLD_DESERT: i32 = 10
+const PB_DESERT: i32 = 11
+const PB_SAVANNA: i32 = 12
+const PB_TROPICAL_SEASONAL: i32 = 13
+const PB_TROPICAL_RAIN: i32 = 14
+const PB_ALPINE: i32 = 15
+const PB_LAKE: i32 = 16
+const PB_COUNT: i32 = 17
+
+# Boundary classes.
+const PBD_NONE: i32 = 0
+const PBD_CONVERGENT: i32 = 1
+const PBD_DIVERGENT: i32 = 2
+const PBD_TRANSFORM: i32 = 3
+
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+
+# Named PVec3 so a program may import stdlib/render3d.flow (V3) and
+# stdlib/vec.flow (Vec3) alongside this module without a clash.
+struct PVec3 { x: f32, y: f32, z: f32 }
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut pl_ready: bool = false
+let mut pl_face_n: i32 = 96
+let mut pl_ncells: i32 = 55296
+
+# Geometry
+let mut pl_px: ptr<f32> = null        # unit position x
+let mut pl_py: ptr<f32> = null
+let mut pl_pz: ptr<f32> = null
+let mut pl_area: ptr<f32> = null      # solid angle, steradian
+let mut pl_nb: ptr<i32> = null        # 8 neighbours per cell
+
+# Tectonics
+let mut pl_plate: ptr<i32> = null
+let mut pl_bnd: ptr<i32> = null       # boundary class per cell
+let mut pl_tect: ptr<f32> = null      # tectonic elevation forcing, km
+let mut pl_scratch: ptr<f32> = null
+
+# Per-plate state
+let mut pl_seed_x: ptr<f32> = null
+let mut pl_seed_y: ptr<f32> = null
+let mut pl_seed_z: ptr<f32> = null
+let mut pl_pole_x: ptr<f32> = null    # Euler pole axis
+let mut pl_pole_y: ptr<f32> = null
+let mut pl_pole_z: ptr<f32> = null
+let mut pl_rate: ptr<f32> = null      # angular rate, arbitrary units
+let mut pl_cont: ptr<i32> = null      # 1 continental crust, 0 oceanic
+let mut pl_nplates: i32 = 12
+
+# Elevation and hydrology
+let mut pl_h: ptr<f32> = null         # bedrock elevation, km, sea level = 0
+let mut pl_w: ptr<f32> = null         # depression-filled surface, km
+let mut pl_down: ptr<i32> = null      # steepest-descent neighbour, -1 if none
+let mut pl_acc: ptr<f32> = null       # upstream drainage area, km^2
+let mut pl_len: ptr<f32> = null       # longest upstream flow path, km
+let mut pl_order: ptr<i32> = null     # priority-flood pop order (ascending w)
+let mut pl_vis: ptr<i32> = null
+let mut pl_order_n: i32 = 0
+
+# Heap for the priority flood
+let mut pl_hk: ptr<f32> = null
+let mut pl_hi: ptr<i32> = null
+let mut pl_hn: i32 = 0
+
+# Climate
+let mut pl_temp: ptr<f32> = null      # mean annual temperature, C
+let mut pl_precip: ptr<f32> = null    # annual precipitation, mm
+let mut pl_moist: ptr<f32> = null
+let mut pl_moist2: ptr<f32> = null
+let mut pl_upw: ptr<i32> = null       # upwind neighbour index
+let mut pl_coast: ptr<f32> = null     # distance to the nearest ocean cell, km
+
+# Biomes
+let mut pl_biome: ptr<i32> = null
+
+# Sea level bookkeeping. Elevations are stored already shifted so that sea
+# level is exactly 0; pl_sea_raw records the pre-shift datum for reporting.
+let mut pl_sea_raw: f32 = 0.0
+let mut pl_land_frac: f32 = 0.0
+let mut pl_target_land: f32 = 0.29
+
+# Per-stage wall time, milliseconds, index 1..7.
+let mut pl_ms: ptr<f32> = null
+let mut pl_t0: i64 = 0
+
+# RNG
+let mut pl_rng: u32 = 1
+let mut pl_seed0: u32 = 1
+
+# Tunables, settable before generation.
+let mut pl_erosion_k: f32 = 0.035
+let mut pl_erosion_m: f32 = 0.5
+let mut pl_uplift_rate: f32 = 0.010
+let mut pl_diffusion: f32 = 0.10
+let mut pl_relief: f32 = 1.05
+let mut pl_wind_strength: f32 = 1.0
+
+# ---------------------------------------------------------------------------
+# Scalar helpers
+# ---------------------------------------------------------------------------
+
+export function pl_minf(a: f32, b: f32) -> f32 {
+    if a < b { return a }
+    return b
+}
+
+export function pl_maxf(a: f32, b: f32) -> f32 {
+    if a > b { return a }
+    return b
+}
+
+export function pl_clampf(v: f32, lo: f32, hi: f32) -> f32 {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+export function pl_smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    if e1 - e0 < PL_TINY { return 0.0 }
+    let t: f32 = pl_clampf((x - e0) / (e1 - e0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+}
+
+export function pl_lerpf(a: f32, b: f32, t: f32) -> f32 {
+    return a + (b - a) * t
+}
+
+# ---------------------------------------------------------------------------
+# Deterministic RNG: a 32-bit LCG (Numerical Recipes constants).
+# ---------------------------------------------------------------------------
+
+export function planet_seed(s: u32) -> void {
+    pl_seed0 = s
+    pl_rng = s * 2654435761 + 1
+    if pl_rng == 0 { pl_rng = 1 }
+}
+
+export function planet_current_seed() -> u32 {
+    return pl_seed0
+}
+
+function pl_next() -> u32 {
+    pl_rng = pl_rng * 1664525 + 1013904223
+    return pl_rng
+}
+
+# Uniform in [0, 1).
+function pl_unit() -> f32 {
+    let bits: i32 = ((pl_next() >> 8) % 16777216) as i32
+    return (bits as f32) / 16777216.0
+}
+
+# Uniform in [a, b).
+function pl_range(a: f32, b: f32) -> f32 {
+    return a + (b - a) * pl_unit()
+}
+
+function pl_below(n: i32) -> i32 {
+    if n <= 1 { return 0 }
+    return ((pl_next() >> 7) % (n as u32)) as i32
+}
+
+# ---------------------------------------------------------------------------
+# planet_noise: 3D gradient noise, self-contained.
+#
+# TODO: fold into stdlib/procgen.flow when that module lands. Nothing here
+# depends on the planet state, so the move is a copy.
+# ---------------------------------------------------------------------------
+
+# Integer hash. Three rounds of xor-multiply, seeded from pl_seed0 so noise
+# fields move with the planet seed.
+export function planet_noise_hash(ix: i32, iy: i32, iz: i32, salt: i32) -> u32 {
+    let mut h: u32 = (ix as u32) * 374761393
+    h = h + (iy as u32) * 668265263
+    h = h + (iz as u32) * 2246822519
+    h = h + (salt as u32) * 3266489917
+    h = h + pl_seed0 * 374761393
+    h = h ^ (h >> 13)
+    h = h * 1274126177
+    h = h ^ (h >> 16)
+    h = h * 2654435761
+    h = h ^ (h >> 15)
+    return h
+}
+
+# Perlin's improved gradient set: the 12 edge midpoints of a cube, plus 4
+# repeats to make the selection a cheap 4-bit mask.
+function pl_grad(h: u32, x: f32, y: f32, z: f32) -> f32 {
+    let g: i32 = (h % 16) as i32
+    let mut u: f32 = x
+    if g >= 8 { u = y }
+    let mut v: f32 = z
+    if g < 4 { v = y }
+    if g == 12 or g == 14 { v = x }
+    let mut a: f32 = u
+    if (g % 2) == 1 { a = -u }
+    let mut b: f32 = v
+    if (g % 4) >= 2 { b = -v }
+    return a + b
+}
+
+function pl_fade(t: f32) -> f32 {
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+}
+
+# Gradient noise in [-1, 1] (approximately; the theoretical bound is wider).
+export function planet_noise3(x: f32, y: f32, z: f32, salt: i32) -> f32 {
+    let fx: f32 = floorf(x)
+    let fy: f32 = floorf(y)
+    let fz: f32 = floorf(z)
+    let ix: i32 = fx as i32
+    let iy: i32 = fy as i32
+    let iz: i32 = fz as i32
+    let tx: f32 = x - fx
+    let ty: f32 = y - fy
+    let tz: f32 = z - fz
+    let ux: f32 = pl_fade(tx)
+    let uy: f32 = pl_fade(ty)
+    let uz: f32 = pl_fade(tz)
+
+    let n000: f32 = pl_grad(planet_noise_hash(ix, iy, iz, salt), tx, ty, tz)
+    let n100: f32 = pl_grad(planet_noise_hash(ix + 1, iy, iz, salt), tx - 1.0, ty, tz)
+    let n010: f32 = pl_grad(planet_noise_hash(ix, iy + 1, iz, salt), tx, ty - 1.0, tz)
+    let n110: f32 = pl_grad(planet_noise_hash(ix + 1, iy + 1, iz, salt), tx - 1.0, ty - 1.0, tz)
+    let n001: f32 = pl_grad(planet_noise_hash(ix, iy, iz + 1, salt), tx, ty, tz - 1.0)
+    let n101: f32 = pl_grad(planet_noise_hash(ix + 1, iy, iz + 1, salt), tx - 1.0, ty, tz - 1.0)
+    let n011: f32 = pl_grad(planet_noise_hash(ix, iy + 1, iz + 1, salt), tx, ty - 1.0, tz - 1.0)
+    let n111: f32 = pl_grad(planet_noise_hash(ix + 1, iy + 1, iz + 1, salt), tx - 1.0, ty - 1.0, tz - 1.0)
+
+    let x00: f32 = pl_lerpf(n000, n100, ux)
+    let x10: f32 = pl_lerpf(n010, n110, ux)
+    let x01: f32 = pl_lerpf(n001, n101, ux)
+    let x11: f32 = pl_lerpf(n011, n111, ux)
+    let y0: f32 = pl_lerpf(x00, x10, uy)
+    let y1: f32 = pl_lerpf(x01, x11, uy)
+    return pl_lerpf(y0, y1, uz)
+}
+
+# Fractional Brownian motion: octaves of gradient noise at doubling
+# frequency and halving amplitude, normalised to roughly [-1, 1].
+export function planet_noise_fbm(x: f32, y: f32, z: f32, octaves: i32,
+                                 salt: i32) -> f32 {
+    let mut sum: f32 = 0.0
+    let mut amp: f32 = 1.0
+    let mut norm: f32 = 0.0
+    let mut freq: f32 = 1.0
+    for o in 0 to octaves {
+        sum = sum + amp * planet_noise3(x * freq, y * freq, z * freq, salt + o * 131)
+        norm = norm + amp
+        amp = amp * 0.5
+        freq = freq * 2.0
+    }
+    if norm < PL_TINY { return 0.0 }
+    return sum / norm
+}
+
+# Ridged multifractal: 1 - |noise| per octave, which turns the zero crossings
+# into creases. Used for mountain-belt texture, in [0, 1].
+export function planet_noise_ridged(x: f32, y: f32, z: f32, octaves: i32,
+                                    salt: i32) -> f32 {
+    let mut sum: f32 = 0.0
+    let mut amp: f32 = 1.0
+    let mut norm: f32 = 0.0
+    let mut freq: f32 = 1.0
+    for o in 0 to octaves {
+        let n: f32 = planet_noise3(x * freq, y * freq, z * freq, salt + o * 977)
+        let r: f32 = 1.0 - fabsf(n)
+        sum = sum + amp * r * r
+        norm = norm + amp
+        amp = amp * 0.5
+        freq = freq * 2.0
+    }
+    if norm < PL_TINY { return 0.0 }
+    return sum / norm
+}
+
+# Domain-warped fBm: the sample point is displaced by another noise field
+# first, which breaks the axis-aligned look of plain fBm and gives coastlines
+# their folded, non-fractal-looking character.
+export function planet_noise_warped(x: f32, y: f32, z: f32, octaves: i32,
+                                    warp: f32, salt: i32) -> f32 {
+    let wx: f32 = planet_noise_fbm(x + 11.3, y + 4.7, z + 2.1, 3, salt + 7001)
+    let wy: f32 = planet_noise_fbm(x - 3.9, y + 17.2, z - 8.4, 3, salt + 7101)
+    let wz: f32 = planet_noise_fbm(x + 6.5, y - 12.8, z + 19.6, 3, salt + 7201)
+    return planet_noise_fbm(x + warp * wx, y + warp * wy, z + warp * wz,
+                            octaves, salt)
+}
+
+# ---------------------------------------------------------------------------
+# Vector helpers
+# ---------------------------------------------------------------------------
+
+export function pvec3(x: f32, y: f32, z: f32) -> PVec3 {
+    return PVec3 { x: x, y: y, z: z }
+}
+
+export function pv_norm(a: PVec3) -> PVec3 {
+    let l: f32 = sqrtf(a.x * a.x + a.y * a.y + a.z * a.z)
+    if l < PL_TINY { return PVec3 { x: 0.0, y: 0.0, z: 1.0 } }
+    return PVec3 { x: a.x / l, y: a.y / l, z: a.z / l }
+}
+
+export function pv_dot(a: PVec3, b: PVec3) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+export function pv_cross(a: PVec3, b: PVec3) -> PVec3 {
+    return PVec3 {
+        x: a.y * b.z - a.z * b.y,
+        y: a.z * b.x - a.x * b.z,
+        z: a.x * b.y - a.y * b.x
+    }
+}
+
+export function pv_sub(a: PVec3, b: PVec3) -> PVec3 {
+    return PVec3 { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }
+}
+
+# ---------------------------------------------------------------------------
+# STAGE 1 --- cubesphere sampling
+#
+# Face conventions (u, v in [-1, 1] before the tangent warp, a = tan(pi u / 4)):
+#   0 +X  ( 1,  b, -a)      3 -Y  ( a, -1,  b)
+#   1 -X  (-1,  b,  a)      4 +Z  ( a,  b,  1)
+#   2 +Y  ( a,  1, -b)      5 -Z  (-a,  b, -1)
+# ---------------------------------------------------------------------------
+
+# Direction for the face-local warped coordinates (a, b). Not normalised.
+function pl_face_dir(face: i32, a: f32, b: f32) -> PVec3 {
+    if face == 0 { return PVec3 { x: 1.0, y: b, z: -a } }
+    if face == 1 { return PVec3 { x: -1.0, y: b, z: a } }
+    if face == 2 { return PVec3 { x: a, y: 1.0, z: -b } }
+    if face == 3 { return PVec3 { x: a, y: -1.0, z: b } }
+    if face == 4 { return PVec3 { x: a, y: b, z: 1.0 } }
+    return PVec3 { x: -a, y: b, z: -1.0 }
+}
+
+# Unit direction of an arbitrary (possibly out-of-range) face coordinate.
+# k and j are cell indices; +0.5 puts the sample at the cell centre.
+function pl_cell_dir_at(face: i32, jf: f32, kf: f32) -> PVec3 {
+    let n: f32 = pl_face_n as f32
+    let u: f32 = 2.0 * kf / n - 1.0
+    let v: f32 = 2.0 * jf / n - 1.0
+    let a: f32 = tanf(0.25 * PL_PI * u)
+    let b: f32 = tanf(0.25 * PL_PI * v)
+    return pv_norm(pl_face_dir(face, a, b))
+}
+
+# Inverse cubesphere lookup: the cell containing a direction.
+export function planet_cell_at_dir(dx: f32, dy: f32, dz: f32) -> i32 {
+    let ax: f32 = fabsf(dx)
+    let ay: f32 = fabsf(dy)
+    let az: f32 = fabsf(dz)
+    let mut face: i32 = 0
+    let mut a: f32 = 0.0
+    let mut b: f32 = 0.0
+    if ax >= ay and ax >= az {
+        if dx > 0.0 {
+            face = 0
+            a = -dz / ax
+            b = dy / ax
+        } else {
+            face = 1
+            a = dz / ax
+            b = dy / ax
+        }
+    } else {
+        if ay >= az {
+            if dy > 0.0 {
+                face = 2
+                a = dx / ay
+                b = -dz / ay
+            } else {
+                face = 3
+                a = dx / ay
+                b = dz / ay
+            }
+        } else {
+            if dz > 0.0 {
+                face = 4
+                a = dx / az
+                b = dy / az
+            } else {
+                face = 5
+                a = -dx / az
+                b = dy / az
+            }
+        }
+    }
+    let n: f32 = pl_face_n as f32
+    let u: f32 = atanf(a) * 4.0 / PL_PI
+    let v: f32 = atanf(b) * 4.0 / PL_PI
+    let mut k: i32 = ((u + 1.0) * 0.5 * n) as i32
+    let mut j: i32 = ((v + 1.0) * 0.5 * n) as i32
+    if k < 0 { k = 0 }
+    if j < 0 { j = 0 }
+    if k >= pl_face_n { k = pl_face_n - 1 }
+    if j >= pl_face_n { j = pl_face_n - 1 }
+    return (face * pl_face_n + j) * pl_face_n + k
+}
+
+export function planet_cell_at_lonlat(lon_deg: f32, lat_deg: f32) -> i32 {
+    let lon: f32 = lon_deg * PL_PI / 180.0
+    let lat: f32 = lat_deg * PL_PI / 180.0
+    let cl: f32 = cosf(lat)
+    return planet_cell_at_dir(cl * cosf(lon), sinf(lat), cl * sinf(lon))
+}
+
+# Spherical excess of the triangle (a, b, c) by the Van Oosterom-Strackee
+# formula. All three must be unit vectors.
+function pl_tri_area(a: PVec3, b: PVec3, c: PVec3) -> f32 {
+    let num: f32 = fabsf(pv_dot(a, pv_cross(b, c)))
+    let den: f32 = 1.0 + pv_dot(a, b) + pv_dot(b, c) + pv_dot(c, a)
+    return 2.0 * atan2f(num, den)
+}
+
+export function planet_init() -> bool {
+    if pl_ready { return true }
+    pl_face_n = PLANET_FACE_N
+    pl_ncells = PLANET_CELLS
+
+    let n: i64 = PLANET_CELLS as i64
+    let np: i64 = PLANET_MAX_PLATES as i64
+
+    pl_px = calloc(n, 4) as ptr<f32>
+    pl_py = calloc(n, 4) as ptr<f32>
+    pl_pz = calloc(n, 4) as ptr<f32>
+    pl_area = calloc(n, 4) as ptr<f32>
+    pl_nb = calloc(n * 8, 4) as ptr<i32>
+
+    pl_plate = calloc(n, 4) as ptr<i32>
+    pl_bnd = calloc(n, 4) as ptr<i32>
+    pl_tect = calloc(n, 4) as ptr<f32>
+    pl_scratch = calloc(n, 4) as ptr<f32>
+
+    pl_seed_x = calloc(np, 4) as ptr<f32>
+    pl_seed_y = calloc(np, 4) as ptr<f32>
+    pl_seed_z = calloc(np, 4) as ptr<f32>
+    pl_pole_x = calloc(np, 4) as ptr<f32>
+    pl_pole_y = calloc(np, 4) as ptr<f32>
+    pl_pole_z = calloc(np, 4) as ptr<f32>
+    pl_rate = calloc(np, 4) as ptr<f32>
+    pl_cont = calloc(np, 4) as ptr<i32>
+
+    pl_h = calloc(n, 4) as ptr<f32>
+    pl_w = calloc(n, 4) as ptr<f32>
+    pl_down = calloc(n, 4) as ptr<i32>
+    pl_acc = calloc(n, 4) as ptr<f32>
+    pl_len = calloc(n, 4) as ptr<f32>
+    pl_order = calloc(n, 4) as ptr<i32>
+    pl_vis = calloc(n, 4) as ptr<i32>
+    pl_hk = calloc(n + 8, 4) as ptr<f32>
+    pl_hi = calloc(n + 8, 4) as ptr<i32>
+
+    pl_temp = calloc(n, 4) as ptr<f32>
+    pl_precip = calloc(n, 4) as ptr<f32>
+    pl_moist = calloc(n, 4) as ptr<f32>
+    pl_moist2 = calloc(n, 4) as ptr<f32>
+    pl_upw = calloc(n, 4) as ptr<i32>
+    pl_coast = calloc(n, 4) as ptr<f32>
+    pl_biome = calloc(n, 4) as ptr<i32>
+    pl_ms = calloc(16, 4) as ptr<f32>
+
+    if pl_px == null or pl_nb == null or pl_h == null or pl_biome == null {
+        return false
+    }
+    if pl_hk == null or pl_hi == null or pl_ms == null or pl_coast == null {
+        return false
+    }
+    pl_ready = true
+    return true
+}
+
+function pl_clock_start() -> void {
+    pl_t0 = clock()
+}
+
+function pl_clock_stop(slot: i32) -> void {
+    let dt: i64 = clock() - pl_t0
+    pl_ms[slot] = (dt as f32) / 1000.0
+}
+
+export function planet_stage_ms(slot: i32) -> f32 {
+    if slot < 0 or slot >= 16 { return 0.0 }
+    return pl_ms[slot]
+}
+
+# Stage 1. Sample positions, cell areas and the eight-neighbour graph.
+export function planet_stage_grid() -> void {
+    if !planet_init() { return }
+    pl_clock_start()
+    let n: i32 = pl_face_n
+
+    for face in 0 to 6 {
+        for j in 0 to n {
+            for k in 0 to n {
+                let i: i32 = (face * n + j) * n + k
+                let d: PVec3 = pl_cell_dir_at(face, (j as f32) + 0.5,
+                                              (k as f32) + 0.5)
+                pl_px[i] = d.x
+                pl_py[i] = d.y
+                pl_pz[i] = d.z
+                let c00: PVec3 = pl_cell_dir_at(face, j as f32, k as f32)
+                let c10: PVec3 = pl_cell_dir_at(face, j as f32, (k + 1) as f32)
+                let c11: PVec3 = pl_cell_dir_at(face, (j + 1) as f32, (k + 1) as f32)
+                let c01: PVec3 = pl_cell_dir_at(face, (j + 1) as f32, k as f32)
+                pl_area[i] = pl_tri_area(c00, c10, c11) + pl_tri_area(c00, c11, c01)
+            }
+        }
+    }
+
+    # Eight neighbours. An index one step off a face edge still yields a
+    # valid direction through the tangent warp, so the inverse lookup names
+    # the cell on the adjacent face. No adjacency table is needed.
+    for face in 0 to 6 {
+        for j in 0 to n {
+            for k in 0 to n {
+                let i: i32 = (face * n + j) * n + k
+                let mut slot: i32 = 0
+                for dj in -1 to 2 {
+                    for dk in -1 to 2 {
+                        if dj != 0 or dk != 0 {
+                            let jj: i32 = j + dj
+                            let kk: i32 = k + dk
+                            let mut nid: i32 = 0
+                            if jj >= 0 and jj < n and kk >= 0 and kk < n {
+                                nid = (face * n + jj) * n + kk
+                            } else {
+                                let d: PVec3 = pl_cell_dir_at(face,
+                                                              (jj as f32) + 0.5,
+                                                              (kk as f32) + 0.5)
+                                nid = planet_cell_at_dir(d.x, d.y, d.z)
+                                if nid == i {
+                                    # Corner cells off two edges at once can
+                                    # round back onto themselves; fall back to
+                                    # the in-face orthogonal neighbour.
+                                    let cj: i32 = pl_clamp_i(j + dj, 0, n - 1)
+                                    let ck: i32 = pl_clamp_i(k + dk, 0, n - 1)
+                                    nid = (face * n + cj) * n + ck
+                                }
+                            }
+                            pl_nb[i * 8 + slot] = nid
+                            slot = slot + 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pl_clock_stop(1)
+}
+
+function pl_clamp_i(v: i32, lo: i32, hi: i32) -> i32 {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+# Great-circle distance between two cells, kilometres.
+export function planet_cell_dist(i: i32, j: i32) -> f32 {
+    let d: f32 = pl_clampf(pl_px[i] * pl_px[j] + pl_py[i] * pl_py[j]
+                           + pl_pz[i] * pl_pz[j], -1.0, 1.0)
+    return acosf(d) * PLANET_R_KM
+}
+
+export function planet_cell_area_km2(i: i32) -> f32 {
+    return pl_area[i] * PLANET_R_KM * PLANET_R_KM
+}
+
+export function planet_cells() -> i32 { return pl_ncells }
+export function planet_face_n() -> i32 { return pl_face_n }
+export function planet_pos_x(i: i32) -> f32 { return pl_px[i] }
+export function planet_pos_y(i: i32) -> f32 { return pl_py[i] }
+export function planet_pos_z(i: i32) -> f32 { return pl_pz[i] }
+export function planet_pos(i: i32) -> PVec3 {
+    return PVec3 { x: pl_px[i], y: pl_py[i], z: pl_pz[i] }
+}
+export function planet_neighbor(i: i32, d: i32) -> i32 {
+    return pl_nb[i * 8 + d]
+}
+
+# Latitude in degrees, +90 at +Y.
+export function planet_lat(i: i32) -> f32 {
+    return asinf(pl_clampf(pl_py[i], -1.0, 1.0)) * 180.0 / PL_PI
+}
+
+export function planet_lon(i: i32) -> f32 {
+    return atan2f(pl_pz[i], pl_px[i]) * 180.0 / PL_PI
+}
+
+# Total solid angle, which must come to 4 pi. The evidence program checks it.
+export function planet_total_area() -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to pl_ncells { s = s + pl_area[i] }
+    return s
+}
+
+export function planet_area_min() -> f32 {
+    let mut m: f32 = 1.0e9
+    for i in 0 to pl_ncells {
+        if pl_area[i] < m { m = pl_area[i] }
+    }
+    return m
+}
+
+export function planet_area_max() -> f32 {
+    let mut m: f32 = 0.0
+    for i in 0 to pl_ncells {
+        if pl_area[i] > m { m = pl_area[i] }
+    }
+    return m
+}
+
+# ---------------------------------------------------------------------------
+# STAGE 2 --- tectonics
+#
+# Plates are a noise-perturbed spherical Voronoi tessellation. Each carries
+# an Euler pole and an angular rate, so the surface velocity at a point p is
+# omega x p, which is what plate motion actually is. Every cell that touches
+# a cell of another plate is classified from the relative velocity resolved
+# onto the boundary normal, and the resulting uplift or subsidence is spread
+# away from the boundary by a decaying distance transform.
+# ---------------------------------------------------------------------------
+
+function pl_plate_velocity(p: i32, i: i32) -> PVec3 {
+    let axis: PVec3 = PVec3 { x: pl_pole_x[p], y: pl_pole_y[p], z: pl_pole_z[p] }
+    let pos: PVec3 = PVec3 { x: pl_px[i], y: pl_py[i], z: pl_pz[i] }
+    let v: PVec3 = pv_cross(axis, pos)
+    return PVec3 { x: v.x * pl_rate[p], y: v.y * pl_rate[p], z: v.z * pl_rate[p] }
+}
+
+export function planet_stage_tectonics(nplates: i32) -> void {
+    if !planet_init() { return }
+    pl_clock_start()
+    let mut np: i32 = nplates
+    if np < 2 { np = 2 }
+    if np > PLANET_MAX_PLATES { np = PLANET_MAX_PLATES }
+    pl_nplates = np
+
+    # Plate seeds, Euler poles and crust type.
+    for p in 0 to np {
+        let s: PVec3 = pl_random_dir()
+        pl_seed_x[p] = s.x
+        pl_seed_y[p] = s.y
+        pl_seed_z[p] = s.z
+        let a: PVec3 = pl_random_dir()
+        pl_pole_x[p] = a.x
+        pl_pole_y[p] = a.y
+        pl_pole_z[p] = a.z
+        pl_rate[p] = pl_range(0.25, 1.0)
+        # About a third of plates carry continental crust, which is roughly
+        # the fraction of Earth's surface that is continental.
+        if pl_unit() < 0.38 {
+            pl_cont[p] = 1
+        } else {
+            pl_cont[p] = 0
+        }
+    }
+    # Guarantee at least one of each so the crust dichotomy always exists.
+    pl_cont[0] = 1
+    pl_cont[np - 1] = 0
+
+    # Voronoi with a noise-perturbed metric: straight geodesic boundaries
+    # would look drawn rather than grown.
+    for i in 0 to pl_ncells {
+        let x: f32 = pl_px[i]
+        let y: f32 = pl_py[i]
+        let z: f32 = pl_pz[i]
+        let jitter: f32 = 0.10 * planet_noise_fbm(x * 3.2, y * 3.2, z * 3.2, 4, 5501)
+        let mut best: i32 = 0
+        let mut bestv: f32 = -2.0
+        for p in 0 to np {
+            let d: f32 = x * pl_seed_x[p] + y * pl_seed_y[p] + z * pl_seed_z[p]
+            let v: f32 = d + jitter * planet_noise3(x * 5.0 + (p as f32) * 13.0,
+                                                    y * 5.0, z * 5.0, 6100 + p)
+            if v > bestv {
+                bestv = v
+                best = p
+            }
+        }
+        pl_plate[i] = best
+        pl_bnd[i] = PBD_NONE
+        pl_tect[i] = 0.0
+    }
+
+    # Boundary classification and forcing.
+    for i in 0 to pl_ncells {
+        let pi: i32 = pl_plate[i]
+        let vi: PVec3 = pl_plate_velocity(pi, i)
+        let pos_i: PVec3 = PVec3 { x: pl_px[i], y: pl_py[i], z: pl_pz[i] }
+        let mut best_mag: f32 = 0.0
+        let mut best_force: f32 = 0.0
+        let mut best_class: i32 = PBD_NONE
+        for d in 0 to 8 {
+            let nid: i32 = pl_nb[i * 8 + d]
+            let pj: i32 = pl_plate[nid]
+            if pj != pi {
+                let pos_j: PVec3 = PVec3 { x: pl_px[nid], y: pl_py[nid], z: pl_pz[nid] }
+                let dir: PVec3 = pv_norm(pv_sub(pos_j, pos_i))
+                let vj: PVec3 = pl_plate_velocity(pj, nid)
+                let vrel: PVec3 = pv_sub(vi, vj)
+                let conv: f32 = pv_dot(vrel, dir)
+                let mag: f32 = sqrtf(pv_dot(vrel, vrel))
+                if mag > best_mag {
+                    best_mag = mag
+                    let ci: i32 = pl_cont[pi]
+                    let cj: i32 = pl_cont[pj]
+                    if conv > 0.30 * mag {
+                        best_class = PBD_CONVERGENT
+                        if ci == 1 and cj == 1 {
+                            best_force = conv * 3.4          # collision belt
+                        } else {
+                            if ci == 1 {
+                                best_force = conv * 2.3      # Andean arc
+                            } else {
+                                if cj == 1 {
+                                    best_force = -conv * 3.6 # trench, ocean side
+                                } else {
+                                    if pi < pj {
+                                        best_force = -conv * 3.0
+                                    } else {
+                                        best_force = conv * 1.5
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        if conv < -0.30 * mag {
+                            best_class = PBD_DIVERGENT
+                            let div: f32 = -conv
+                            if ci == 0 and cj == 0 {
+                                best_force = div * 1.1       # mid-ocean ridge
+                            } else {
+                                best_force = -div * 1.3      # rift valley
+                            }
+                        } else {
+                            best_class = PBD_TRANSFORM
+                            best_force = mag * 0.30
+                        }
+                    }
+                }
+            }
+        }
+        pl_bnd[i] = best_class
+        pl_tect[i] = best_force
+    }
+
+    # Spread the boundary forcing inland. Two decaying distance transforms,
+    # one for uplift and one for subsidence, because mountain belts are wide
+    # and trenches are narrow.
+    pl_spread(0.885, 16, 1.0)
+    pl_spread(0.700, 10, -1.0)
+    pl_clock_stop(2)
+}
+
+function pl_random_dir() -> PVec3 {
+    # Marsaglia: uniform on the sphere from two uniforms.
+    let z: f32 = pl_range(-1.0, 1.0)
+    let t: f32 = pl_range(0.0, 2.0 * PL_PI)
+    let r: f32 = sqrtf(pl_maxf(0.0, 1.0 - z * z))
+    return PVec3 { x: r * cosf(t), y: z, z: r * sinf(t) }
+}
+
+# One signed distance transform over the neighbour graph: a cell takes the
+# largest-magnitude decayed value among its neighbours, if that beats what it
+# already holds. `sign` selects which polarity is propagated.
+function pl_spread(decay: f32, rings: i32, sign: f32) -> void {
+    for r in 0 to rings {
+        for i in 0 to pl_ncells { pl_scratch[i] = pl_tect[i] }
+        for i in 0 to pl_ncells {
+            let cur: f32 = pl_tect[i]
+            let mut best: f32 = cur
+            for d in 0 to 8 {
+                let nid: i32 = pl_nb[i * 8 + d]
+                let cand: f32 = pl_scratch[nid] * decay
+                if cand * sign > 0.0 and cand * sign > best * sign {
+                    best = cand
+                }
+            }
+            pl_tect[i] = best
+        }
+    }
+}
+
+export function planet_plate(i: i32) -> i32 { return pl_plate[i] }
+export function planet_plate_count() -> i32 { return pl_nplates }
+export function planet_boundary(i: i32) -> i32 { return pl_bnd[i] }
+export function planet_tectonic(i: i32) -> f32 { return pl_tect[i] }
+export function planet_plate_continental(p: i32) -> bool { return pl_cont[p] == 1 }
+
+# Total length of plate boundaries, kilometres. Counts each shared edge once
+# by only looking at the four orthogonal neighbours and requiring i < n.
+export function planet_boundary_length_km() -> f32 {
+    let mut total: f32 = 0.0
+    for i in 0 to pl_ncells {
+        let side: f32 = sqrtf(pl_area[i]) * PLANET_R_KM
+        # Orthogonal neighbours are slots 1, 3, 4, 6 in the -1..1 raster.
+        let o0: i32 = pl_nb[i * 8 + 1]
+        let o1: i32 = pl_nb[i * 8 + 3]
+        let o2: i32 = pl_nb[i * 8 + 4]
+        let o3: i32 = pl_nb[i * 8 + 6]
+        if o0 > i and pl_plate[o0] != pl_plate[i] { total = total + side }
+        if o1 > i and pl_plate[o1] != pl_plate[i] { total = total + side }
+        if o2 > i and pl_plate[o2] != pl_plate[i] { total = total + side }
+        if o3 > i and pl_plate[o3] != pl_plate[i] { total = total + side }
+    }
+    return total
+}
+
+# ---------------------------------------------------------------------------
+# STAGE 3 --- elevation
+#
+# Two crust populations at different densities float at different heights,
+# and that dichotomy, not the noise, is what makes a hypsometric curve
+# bimodal. The plate crust flag is smoothed into a continuous continentality
+# field so continents are not plate-shaped polygons, then thresholded through
+# a narrow smoothstep whose transition band is the continental slope.
+# ---------------------------------------------------------------------------
+
+const PL_CONT_BASE: f32 = 0.95      # km, continental platform above datum
+const PL_OCEAN_BASE: f32 = -4.10    # km, abyssal plain below datum
+
+export function planet_stage_elevation() -> void {
+    if !planet_init() { return }
+    pl_clock_start()
+
+    # Continentality: crust flag, smoothed over the graph, then broken up by
+    # warped noise so the coastline is not the Voronoi edge.
+    for i in 0 to pl_ncells {
+        pl_h[i] = pl_cont[pl_plate[i]] as f32
+    }
+    for pass in 0 to 7 {
+        for i in 0 to pl_ncells { pl_scratch[i] = pl_h[i] }
+        for i in 0 to pl_ncells {
+            let mut s: f32 = pl_scratch[i] * 2.0
+            let mut wsum: f32 = 2.0
+            for d in 0 to 8 {
+                s = s + pl_scratch[pl_nb[i * 8 + d]]
+                wsum = wsum + 1.0
+            }
+            pl_h[i] = s / wsum
+        }
+    }
+
+    for i in 0 to pl_ncells {
+        let x: f32 = pl_px[i]
+        let y: f32 = pl_py[i]
+        let z: f32 = pl_pz[i]
+        let cs: f32 = pl_h[i]
+        let broad: f32 = planet_noise_warped(x * 1.9, y * 1.9, z * 1.9, 5, 0.45, 211)
+        let cont: f32 = cs + 0.42 * broad - 0.045
+        # A narrow transition band is the continental slope: most of the
+        # surface sits at one of the two plateaus, which is the bimodality.
+        let mix: f32 = pl_smoothstep(0.34, 0.62, cont)
+        let base: f32 = pl_lerpf(PL_OCEAN_BASE, PL_CONT_BASE, mix)
+
+        # Fractal relief, scaled down over the abyss (the deep ocean floor is
+        # genuinely smoother than land at this wavelength).
+        let detail: f32 = planet_noise_warped(x * 6.5, y * 6.5, z * 6.5, 6, 0.30, 977)
+        let amp: f32 = pl_lerpf(0.28, 0.95, mix) * pl_relief
+
+        # Ridged noise only where tectonics is already lifting: mountain
+        # belts are creased, cratons are not.
+        let t: f32 = pl_tect[i]
+        let ridge: f32 = planet_noise_ridged(x * 9.0, y * 9.0, z * 9.0, 5, 3301)
+        let crease: f32 = pl_maxf(0.0, t) * (0.45 * ridge - 0.12)
+
+        pl_h[i] = base + amp * detail + t + crease
+    }
+
+    planet_set_sea_level_by_land_fraction(pl_target_land)
+    pl_clock_stop(3)
+}
+
+# Choose the sea-level datum so the land fraction hits `target`, then shift
+# every elevation so sea level is exactly 0. Bisection on the area-weighted
+# land fraction: 40 halvings on a 20 km bracket resolves to under a
+# micrometre, so the answer is exact for f32.
+export function planet_set_sea_level_by_land_fraction(target: f32) -> void {
+    let mut lo: f32 = -12.0
+    let mut hi: f32 = 12.0
+    let mut total: f32 = 0.0
+    for i in 0 to pl_ncells { total = total + pl_area[i] }
+    for it in 0 to 40 {
+        let mid: f32 = 0.5 * (lo + hi)
+        let mut land: f32 = 0.0
+        for i in 0 to pl_ncells {
+            if pl_h[i] > mid { land = land + pl_area[i] }
+        }
+        if land / total > target { lo = mid } else { hi = mid }
+    }
+    let sea: f32 = 0.5 * (lo + hi)
+    pl_sea_raw = sea
+    for i in 0 to pl_ncells { pl_h[i] = pl_h[i] - sea }
+    pl_land_frac = planet_measure_land_fraction()
+}
+
+export function planet_measure_land_fraction() -> f32 {
+    let mut land: f32 = 0.0
+    let mut total: f32 = 0.0
+    for i in 0 to pl_ncells {
+        total = total + pl_area[i]
+        if pl_h[i] > 0.0 { land = land + pl_area[i] }
+    }
+    if total < PL_TINY { return 0.0 }
+    return land / total
+}
+
+export function planet_elev(i: i32) -> f32 { return pl_h[i] }
+export function planet_is_land(i: i32) -> bool { return pl_h[i] > 0.0 }
+export function planet_sea_datum() -> f32 { return pl_sea_raw }
+export function planet_land_fraction() -> f32 { return pl_land_frac }
+export function planet_set_target_land(t: f32) -> void { pl_target_land = t }
+export function planet_set_relief(r: f32) -> void { pl_relief = r }
+export function planet_set_erosion(k: f32, m: f32, uplift: f32, diff: f32) -> void {
+    pl_erosion_k = k
+    pl_erosion_m = m
+    pl_uplift_rate = uplift
+    pl_diffusion = diff
+}
+
+# Area-weighted fraction of the sphere at or below `e` kilometres. This is
+# the hypsometric curve, evaluated pointwise.
+export function planet_hypsometric(e: f32) -> f32 {
+    let mut below: f32 = 0.0
+    let mut total: f32 = 0.0
+    for i in 0 to pl_ncells {
+        total = total + pl_area[i]
+        if pl_h[i] <= e { below = below + pl_area[i] }
+    }
+    if total < PL_TINY { return 0.0 }
+    return below / total
+}
+
+# Area-weighted elevation histogram: bin count in [lo, hi) split `bins` ways,
+# written as fractions into `out`.
+export function planet_hypsometric_hist(lo: f32, hi: f32, bins: i32,
+                                        out: ptr<f32>) -> void {
+    for b in 0 to bins { out[b] = 0.0 }
+    let mut total: f32 = 0.0
+    let span: f32 = hi - lo
+    if span < PL_TINY { return }
+    for i in 0 to pl_ncells {
+        total = total + pl_area[i]
+        let mut b: i32 = (((pl_h[i] - lo) / span) * (bins as f32)) as i32
+        if b < 0 { b = 0 }
+        if b >= bins { b = bins - 1 }
+        out[b] = out[b] + pl_area[i]
+    }
+    if total < PL_TINY { return }
+    for b in 0 to bins { out[b] = out[b] / total }
+}
+
+# ---------------------------------------------------------------------------
+# STAGE 4 --- hydrology core and hydraulic erosion
+#
+# Depressions are removed by priority flood (Barnes, Lehman and Mulla 2014):
+# start from the ocean, always expand the lowest cell on the frontier, and
+# raise each newly reached cell to the level it was reached at plus an
+# epsilon. The result has no interior minimum, so every land cell has a
+# strictly descending path to the sea, and the pop order is a topological
+# order for flow accumulation with no separate sort.
+#
+# Erosion is detachment-limited stream power,
+#     dh/dt = U - K A^m S^n
+# with n = 1, which is the standard fluvial incision law. The steady state of
+# that equation is a network obeying Hack's law, and the evidence program
+# measures the exponent rather than asserting it.
+# ---------------------------------------------------------------------------
+
+function pl_heap_clear() -> void {
+    pl_hn = 0
+}
+
+function pl_heap_push(k: f32, idx: i32) -> void {
+    let mut c: i32 = pl_hn
+    pl_hn = pl_hn + 1
+    pl_hk[c] = k
+    pl_hi[c] = idx
+    let mut climbing: bool = true
+    while climbing {
+        if c <= 0 {
+            climbing = false
+        } else {
+            let p: i32 = (c - 1) / 2
+            if pl_hk[p] <= pl_hk[c] {
+                climbing = false
+            } else {
+                let tk: f32 = pl_hk[p]
+                let ti: i32 = pl_hi[p]
+                pl_hk[p] = pl_hk[c]
+                pl_hi[p] = pl_hi[c]
+                pl_hk[c] = tk
+                pl_hi[c] = ti
+                c = p
+            }
+        }
+    }
+}
+
+function pl_heap_pop() -> i32 {
+    if pl_hn <= 0 { return -1 }
+    let top: i32 = pl_hi[0]
+    pl_hn = pl_hn - 1
+    pl_hk[0] = pl_hk[pl_hn]
+    pl_hi[0] = pl_hi[pl_hn]
+    let mut c: i32 = 0
+    let mut sinking: bool = true
+    while sinking {
+        let l: i32 = 2 * c + 1
+        let r: i32 = l + 1
+        let mut m: i32 = c
+        if l < pl_hn and pl_hk[l] < pl_hk[m] { m = l }
+        if r < pl_hn and pl_hk[r] < pl_hk[m] { m = r }
+        if m == c {
+            sinking = false
+        } else {
+            let tk: f32 = pl_hk[m]
+            let ti: i32 = pl_hi[m]
+            pl_hk[m] = pl_hk[c]
+            pl_hi[m] = pl_hi[c]
+            pl_hk[c] = tk
+            pl_hi[c] = ti
+            c = m
+        }
+    }
+    return top
+}
+
+# Priority flood. Fills pl_w (the depression-free surface) and pl_order (the
+# pop order, ascending in pl_w).
+export function planet_flood() -> void {
+    pl_heap_clear()
+    pl_order_n = 0
+    for i in 0 to pl_ncells {
+        pl_vis[i] = 0
+        pl_w[i] = pl_h[i]
+    }
+    let mut seeded: i32 = 0
+    for i in 0 to pl_ncells {
+        if pl_h[i] <= 0.0 {
+            pl_vis[i] = 1
+            pl_heap_push(pl_h[i], i)
+            seeded = seeded + 1
+        }
+    }
+    if seeded == 0 {
+        # A planet with no ocean still needs an outlet: use the lowest cell.
+        let mut lowest: i32 = 0
+        for i in 0 to pl_ncells {
+            if pl_h[i] < pl_h[lowest] { lowest = i }
+        }
+        pl_vis[lowest] = 1
+        pl_heap_push(pl_h[lowest], lowest)
+    }
+    let mut running: bool = true
+    while running {
+        let c: i32 = pl_heap_pop()
+        if c < 0 {
+            running = false
+        } else {
+            pl_order[pl_order_n] = c
+            pl_order_n = pl_order_n + 1
+            for d in 0 to 8 {
+                let nid: i32 = pl_nb[c * 8 + d]
+                if pl_vis[nid] == 0 {
+                    pl_vis[nid] = 1
+                    let mut wn: f32 = pl_h[nid]
+                    let floorv: f32 = pl_w[c] + PL_EPS
+                    if wn < floorv { wn = floorv }
+                    pl_w[nid] = wn
+                    pl_heap_push(wn, nid)
+                }
+            }
+        }
+    }
+}
+
+# Steepest descent on the filled surface. Ocean cells are terminal.
+export function planet_route() -> void {
+    for i in 0 to pl_ncells {
+        pl_down[i] = -1
+        if pl_h[i] > 0.0 {
+            let mut best: i32 = -1
+            let mut bestslope: f32 = 0.0
+            for d in 0 to 8 {
+                let nid: i32 = pl_nb[i * 8 + d]
+                let drop: f32 = pl_w[i] - pl_w[nid]
+                if drop > 0.0 {
+                    let dist: f32 = planet_cell_dist(i, nid)
+                    if dist > PL_TINY {
+                        let s: f32 = drop / dist
+                        if s > bestslope {
+                            bestslope = s
+                            best = nid
+                        }
+                    }
+                }
+            }
+            pl_down[i] = best
+        }
+    }
+}
+
+# Upstream drainage area and longest upstream flow path, in one reverse pass
+# over the flood order (which is descending in pl_w, so every contributor is
+# already accumulated when its receiver is reached).
+export function planet_accumulate() -> void {
+    for i in 0 to pl_ncells {
+        pl_len[i] = 0.0
+        if pl_h[i] > 0.0 {
+            pl_acc[i] = planet_cell_area_km2(i)
+        } else {
+            pl_acc[i] = 0.0
+        }
+    }
+    let mut k: i32 = pl_order_n - 1
+    while k >= 0 {
+        let i: i32 = pl_order[k]
+        let d: i32 = pl_down[i]
+        if d >= 0 {
+            pl_acc[d] = pl_acc[d] + pl_acc[i]
+            let cand: f32 = pl_len[i] + planet_cell_dist(i, d)
+            if cand > pl_len[d] { pl_len[d] = cand }
+        }
+        k = k - 1
+    }
+}
+
+# Stage 4. `iters` rounds of flood, route, accumulate, incise, diffuse.
+export function planet_stage_erosion(iters: i32) -> void {
+    if !planet_init() { return }
+    pl_clock_start()
+    for it in 0 to iters {
+        planet_erode_step()
+    }
+    pl_clock_stop(4)
+}
+
+# One erosion round, exposed so the evolution demo can step it live.
+export function planet_erode_step() -> void {
+    planet_flood()
+    planet_route()
+    planet_accumulate()
+
+    # Detachment-limited incision. The per-step lowering is capped at half
+    # the drop to the receiver, which makes the explicit update
+    # unconditionally monotone: no cell can fall below the one it drains to.
+    for i in 0 to pl_ncells {
+        if pl_h[i] > 0.0 {
+            let d: i32 = pl_down[i]
+            if d >= 0 {
+                let drop: f32 = pl_h[i] - pl_h[d]
+                if drop > 0.0 {
+                    let dist: f32 = planet_cell_dist(i, d)
+                    if dist > PL_TINY {
+                        let s: f32 = drop / dist
+                        let a: f32 = pl_acc[i]
+                        let e: f32 = pl_erosion_k * powf(a, pl_erosion_m) * s
+                        let de: f32 = pl_minf(e, 0.5 * drop)
+                        pl_h[i] = pl_h[i] - de
+                    }
+                }
+            }
+            # Tectonic uplift keeps the orogen alive against erosion; without
+            # it the steady state is a flat plain and there is no network.
+            pl_h[i] = pl_h[i] + pl_uplift_rate * (0.35 + pl_maxf(0.0, pl_tect[i]))
+        }
+    }
+
+    # Hillslope diffusion: what the fluvial law cannot do, because stream
+    # power vanishes where drainage area does.
+    for i in 0 to pl_ncells { pl_scratch[i] = pl_h[i] }
+    for i in 0 to pl_ncells {
+        if pl_scratch[i] > 0.0 {
+            let mut s: f32 = 0.0
+            for d in 0 to 8 { s = s + pl_scratch[pl_nb[i * 8 + d]] }
+            let avg: f32 = s / 8.0
+            pl_h[i] = pl_scratch[i] + pl_diffusion * (avg - pl_scratch[i])
+        }
+    }
+}
+
+export function planet_flow_km2(i: i32) -> f32 { return pl_acc[i] }
+export function planet_flow_len_km(i: i32) -> f32 { return pl_len[i] }
+export function planet_downstream(i: i32) -> i32 { return pl_down[i] }
+export function planet_filled(i: i32) -> f32 { return pl_w[i] }
+export function planet_lake_depth(i: i32) -> f32 {
+    if pl_h[i] <= 0.0 { return 0.0 }
+    let d: f32 = pl_w[i] - pl_h[i]
+    if d < 0.0 { return 0.0 }
+    return d
+}
+
+# ---------------------------------------------------------------------------
+# Hack's law
+#
+# L = c A^h relates the length of the longest flow path in a basin to the
+# basin's area. Measured on Earth's networks h sits between 0.5 and 0.6, most
+# often quoted as 0.57 (Hack 1957; Rigon et al. 1996). Regressing log L on
+# log A over every network point above a minimum area is the standard
+# estimator, and it is what a real drainage network produces and a noise
+# field does not.
+# ---------------------------------------------------------------------------
+
+let mut pl_hack_h: f32 = 0.0
+let mut pl_hack_c: f32 = 0.0
+let mut pl_hack_r2: f32 = 0.0
+let mut pl_hack_n: i32 = 0
+
+export function planet_measure_hack(min_area_km2: f32) -> f32 {
+    let mut n: f32 = 0.0
+    let mut sx: f32 = 0.0
+    let mut sy: f32 = 0.0
+    let mut sxx: f32 = 0.0
+    let mut sxy: f32 = 0.0
+    let mut syy: f32 = 0.0
+    for i in 0 to pl_ncells {
+        if pl_h[i] > 0.0 and pl_acc[i] >= min_area_km2 and pl_len[i] > 1.0 {
+            let x: f32 = logf(pl_acc[i])
+            let y: f32 = logf(pl_len[i])
+            n = n + 1.0
+            sx = sx + x
+            sy = sy + y
+            sxx = sxx + x * x
+            sxy = sxy + x * y
+            syy = syy + y * y
+        }
+    }
+    pl_hack_n = n as i32
+    if n < 8.0 {
+        pl_hack_h = 0.0
+        pl_hack_r2 = 0.0
+        return 0.0
+    }
+    let den: f32 = n * sxx - sx * sx
+    if fabsf(den) < PL_TINY {
+        pl_hack_h = 0.0
+        return 0.0
+    }
+    let slope: f32 = (n * sxy - sx * sy) / den
+    let inter: f32 = (sy - slope * sx) / n
+    pl_hack_h = slope
+    pl_hack_c = inter
+    let sst: f32 = syy - sy * sy / n
+    let sse: f32 = syy - inter * sy - slope * sxy
+    if sst > PL_TINY {
+        pl_hack_r2 = 1.0 - sse / sst
+    } else {
+        pl_hack_r2 = 0.0
+    }
+    return pl_hack_h
+}
+
+export function planet_hack_exponent() -> f32 { return pl_hack_h }
+export function planet_hack_intercept() -> f32 { return pl_hack_c }
+export function planet_hack_r2() -> f32 { return pl_hack_r2 }
+export function planet_hack_samples() -> i32 { return pl_hack_n }
+
+# ---------------------------------------------------------------------------
+# STAGE 5 --- climate
+#
+# Insolation sets a zonal temperature profile; elevation cools it at the
+# environmental lapse rate; continental interiors at high latitude cool
+# further because they are far from the ocean's heat capacity.
+#
+# Wind is the three-cell model: easterly trades to 30 degrees, westerlies to
+# 60, polar easterlies beyond, with the meridional limb of each cell added so
+# air actually crosses latitude bands. Moisture is advected upwind cell by
+# cell; it is picked up over water and dropped in proportion to the forced
+# ascent, which is what puts rain on the windward face of a range and a
+# desert behind it.
+# ---------------------------------------------------------------------------
+
+# Zonal wind at a latitude: (east component, north component), unit-ish.
+function pl_wind_east(lat_deg: f32) -> f32 {
+    let a: f32 = fabsf(lat_deg)
+    if a < 30.0 { return -1.0 }        # trades blow toward the west
+    if a < 60.0 { return 1.0 }         # westerlies blow toward the east
+    return -0.7                        # polar easterlies
+}
+
+function pl_wind_north(lat_deg: f32) -> f32 {
+    let a: f32 = fabsf(lat_deg)
+    let mut m: f32 = 0.0
+    if a < 30.0 { m = -0.45 }          # Hadley: equatorward at the surface
+    if a >= 30.0 and a < 60.0 { m = 0.35 }
+    if a >= 60.0 { m = -0.30 }
+    if lat_deg < 0.0 { m = -m }
+    return m
+}
+
+# Latitude factor on rainfall: the ITCZ band, the subtropical highs at about
+# 27 degrees, and the mid-latitude storm track.
+function pl_zonal_rain(lat_deg: f32) -> f32 {
+    let a: f32 = fabsf(lat_deg)
+    let itcz: f32 = 1.55 * expf(-(lat_deg / 11.0) * (lat_deg / 11.0))
+    let storm: f32 = 0.70 * expf(-((a - 51.0) / 17.0) * ((a - 51.0) / 17.0))
+    let high: f32 = 0.40 * expf(-((a - 27.0) / 11.0) * ((a - 27.0) / 11.0))
+    let polar: f32 = 0.25 * pl_smoothstep(60.0, 85.0, a)
+    return pl_maxf(0.06, 0.42 + itcz + storm - high - polar)
+}
+
+function pl_zonal_temp(lat_deg: f32) -> f32 {
+    let s: f32 = sinf(lat_deg * PL_PI / 180.0)
+    let s2: f32 = s * s
+    return 27.0 - 40.0 * s2 - 15.0 * s2 * s2
+}
+
+# Distance from every cell to the nearest ocean cell, kilometres, by
+# repeated relaxation over the neighbour graph (a Dijkstra-lite that is
+# cheap and converges in far fewer passes than the grid diameter because
+# each pass propagates along the whole scan).
+function pl_coast_distance() -> void {
+    for i in 0 to pl_ncells {
+        if pl_h[i] <= 0.0 {
+            pl_coast[i] = 0.0
+        } else {
+            pl_coast[i] = 1.0e8
+        }
+    }
+    for pass in 0 to 24 {
+        for i in 0 to pl_ncells {
+            let mut best: f32 = pl_coast[i]
+            for d in 0 to 8 {
+                let nid: i32 = pl_nb[i * 8 + d]
+                let cand: f32 = pl_coast[nid] + planet_cell_dist(i, nid)
+                if cand < best { best = cand }
+            }
+            pl_coast[i] = best
+        }
+        let mut k: i32 = pl_ncells - 1
+        while k >= 0 {
+            let mut best: f32 = pl_coast[k]
+            for d in 0 to 8 {
+                let nid: i32 = pl_nb[k * 8 + d]
+                let cand: f32 = pl_coast[nid] + planet_cell_dist(k, nid)
+                if cand < best { best = cand }
+            }
+            pl_coast[k] = best
+            k = k - 1
+        }
+    }
+}
+
+export function planet_stage_climate() -> void {
+    if !planet_init() { return }
+    pl_clock_start()
+    pl_coast_distance()
+
+    # Temperature.
+    for i in 0 to pl_ncells {
+        let lat: f32 = planet_lat(i)
+        let mut t: f32 = pl_zonal_temp(lat)
+        if pl_h[i] > 0.0 {
+            t = t - 6.5 * pl_h[i]
+            let s: f32 = sinf(lat * PL_PI / 180.0)
+            let inland: f32 = 1.0 - expf(-pl_coast[i] / 1400.0)
+            t = t - 8.0 * inland * (0.22 + 0.78 * s * s)
+        }
+        pl_temp[i] = t
+    }
+
+    # Upwind neighbour: the neighbour whose bearing from the cell most
+    # opposes the local wind.
+    for i in 0 to pl_ncells {
+        let lat: f32 = planet_lat(i)
+        let pos: PVec3 = PVec3 { x: pl_px[i], y: pl_py[i], z: pl_pz[i] }
+        let up: PVec3 = PVec3 { x: 0.0, y: 1.0, z: 0.0 }
+        let mut east: PVec3 = pv_cross(up, pos)
+        let el: f32 = sqrtf(pv_dot(east, east))
+        if el < 0.001 {
+            east = PVec3 { x: 1.0, y: 0.0, z: 0.0 }
+        } else {
+            east = PVec3 { x: east.x / el, y: east.y / el, z: east.z / el }
+        }
+        let north: PVec3 = pv_cross(pos, east)
+        let we: f32 = pl_wind_east(lat)
+        let wn: f32 = pl_wind_north(lat)
+        let wind: PVec3 = pv_norm(PVec3 {
+            x: east.x * we + north.x * wn,
+            y: east.y * we + north.y * wn,
+            z: east.z * we + north.z * wn
+        })
+        let mut best: i32 = pl_nb[i * 8]
+        let mut bestd: f32 = 2.0
+        for d in 0 to 8 {
+            let nid: i32 = pl_nb[i * 8 + d]
+            let dir: PVec3 = pv_norm(pv_sub(
+                PVec3 { x: pl_px[nid], y: pl_py[nid], z: pl_pz[nid] }, pos))
+            let dp: f32 = pv_dot(dir, wind)
+            if dp < bestd {
+                bestd = dp
+                best = nid
+            }
+        }
+        pl_upw[i] = best
+    }
+
+    # Moisture advection to steady state. One pass moves moisture one cell
+    # downwind, so the pass count sets how far inland air can reach; 110
+    # passes is wider than any continent on this grid.
+    for i in 0 to pl_ncells { pl_moist[i] = 0.0 }
+    for pass in 0 to 110 {
+        for i in 0 to pl_ncells {
+            let u: i32 = pl_upw[i]
+            let m_in: f32 = pl_moist[u]
+            let cap: f32 = 0.22 * expf(0.058 * pl_clampf(pl_temp[i], -30.0, 35.0))
+            let mut m: f32 = m_in
+            if pl_h[i] <= 0.0 {
+                # Open water: relax toward the saturation capacity.
+                m = m_in + (cap - m_in) * 0.28
+                if m < 0.0 { m = 0.0 }
+                m = m * (1.0 - 0.03)
+            } else {
+                let lift: f32 = pl_maxf(0.0, pl_h[i] - pl_maxf(0.0, pl_h[u]))
+                let frac: f32 = pl_clampf(0.028 + 0.55 * lift, 0.0, 0.92)
+                m = m_in * (1.0 - frac)
+                # Weak recycling from soil, lakes and transpiration.
+                m = m + pl_maxf(0.0, cap - m) * 0.020
+            }
+            pl_moist2[i] = m
+        }
+        for i in 0 to pl_ncells { pl_moist[i] = pl_moist2[i] }
+    }
+
+    # Precipitation from the converged moisture field.
+    for i in 0 to pl_ncells {
+        let u: i32 = pl_upw[i]
+        let m_in: f32 = pl_moist[u]
+        let lat: f32 = planet_lat(i)
+        let mut frac: f32 = 0.030
+        if pl_h[i] > 0.0 {
+            let lift: f32 = pl_maxf(0.0, pl_h[i] - pl_maxf(0.0, pl_h[u]))
+            frac = pl_clampf(0.028 + 0.55 * lift, 0.0, 0.92)
+        }
+        # 26000 converts the dimensionless moisture flux into mm/yr so that
+        # the global land mean lands near Earth's 700 mm.
+        pl_precip[i] = pl_maxf(0.0, m_in * frac * pl_zonal_rain(lat) * 26000.0)
+    }
+    pl_clock_stop(5)
+}
+
+export function planet_temp(i: i32) -> f32 { return pl_temp[i] }
+export function planet_precip(i: i32) -> f32 { return pl_precip[i] }
+export function planet_coast_dist(i: i32) -> f32 { return pl_coast[i] }
+export function planet_upwind(i: i32) -> i32 { return pl_upw[i] }
+
+export function planet_mean_land_precip() -> f32 {
+    let mut s: f32 = 0.0
+    let mut a: f32 = 0.0
+    for i in 0 to pl_ncells {
+        if pl_h[i] > 0.0 {
+            s = s + pl_precip[i] * pl_area[i]
+            a = a + pl_area[i]
+        }
+    }
+    if a < PL_TINY { return 0.0 }
+    return s / a
+}
+
+# Rain-shadow evidence. Over every land cell above `hmin` kilometres that is
+# on a slope, compare the mean precipitation where the wind is climbing
+# (windward) against where it is descending (leeward). A real orographic
+# model gives a ratio well above one; a noise field gives one.
+export function planet_rain_shadow_ratio(hmin: f32) -> f32 {
+    let mut ws: f32 = 0.0
+    let mut wn: f32 = 0.0
+    let mut ls: f32 = 0.0
+    let mut ln: f32 = 0.0
+    for i in 0 to pl_ncells {
+        if pl_h[i] > hmin {
+            let u: i32 = pl_upw[i]
+            let d: f32 = pl_h[i] - pl_h[u]
+            if d > 0.05 {
+                ws = ws + pl_precip[i]
+                wn = wn + 1.0
+            }
+            if d < -0.05 {
+                ls = ls + pl_precip[i]
+                ln = ln + 1.0
+            }
+        }
+    }
+    if wn < 1.0 or ln < 1.0 or ls < PL_TINY { return 0.0 }
+    let wmean: f32 = ws / wn
+    let lmean: f32 = ls / ln
+    if lmean < PL_TINY { return 0.0 }
+    return wmean / lmean
+}
+
+# ---------------------------------------------------------------------------
+# STAGE 6 --- biomes
+#
+# Whittaker's classification: mean annual temperature against annual
+# precipitation, with the polar and alpine cutoffs that Whittaker's diagram
+# leaves implicit. Precipitation thresholds are in millimetres per year.
+#
+#   T < -7 C                            ice sheet if P > 200, else tundra
+#   -7 <= T < 2                         tundra;  boreal forest if P > 350
+#   2 <= T < 10        P > 500          boreal forest
+#                      150 < P <= 500   cold steppe
+#                      P <= 150         cold desert
+#   10 <= T < 20       P > 2000         temperate rainforest
+#                      1000 < P <= 2000 temperate forest
+#                      400 < P <= 1000  woodland and shrubland
+#                      250 < P <= 400   grassland
+#                      P <= 250         desert
+#   T >= 20            P > 2200         tropical rainforest
+#                      1300 < P <= 2200 tropical seasonal forest
+#                      600 < P <= 1300  savanna
+#                      250 < P <= 600   grassland
+#                      P <= 250         desert
+#
+#   Land above 3.2 km with T < 3 C is alpine regardless of rainfall.
+#   Ocean shallower than 0.35 km is shelf; ocean with T < -1.8 C is sea ice.
+# ---------------------------------------------------------------------------
+
+export function planet_classify_biome(elev: f32, temp: f32, precip: f32,
+                                      lake: f32) -> i32 {
+    if elev <= 0.0 {
+        if temp < -1.8 { return PB_SEA_ICE }
+        if elev > -0.35 { return PB_SHELF }
+        return PB_OCEAN
+    }
+    if lake > 0.004 { return PB_LAKE }
+    if elev > 3.2 and temp < 3.0 { return PB_ALPINE }
+    if temp < -7.0 {
+        if precip > 200.0 { return PB_ICE_SHEET }
+        return PB_TUNDRA
+    }
+    if temp < 2.0 {
+        if precip > 350.0 { return PB_BOREAL }
+        return PB_TUNDRA
+    }
+    if temp < 10.0 {
+        if precip > 500.0 { return PB_BOREAL }
+        if precip > 150.0 { return PB_GRASSLAND }
+        return PB_COLD_DESERT
+    }
+    if temp < 20.0 {
+        if precip > 2000.0 { return PB_TEMPERATE_RAIN }
+        if precip > 1000.0 { return PB_TEMPERATE_FOREST }
+        if precip > 400.0 { return PB_WOODLAND }
+        if precip > 250.0 { return PB_GRASSLAND }
+        return PB_DESERT
+    }
+    if precip > 2200.0 { return PB_TROPICAL_RAIN }
+    if precip > 1300.0 { return PB_TROPICAL_SEASONAL }
+    if precip > 600.0 { return PB_SAVANNA }
+    if precip > 250.0 { return PB_GRASSLAND }
+    return PB_DESERT
+}
+
+export function planet_stage_biomes() -> void {
+    if !planet_init() { return }
+    pl_clock_start()
+    for i in 0 to pl_ncells {
+        pl_biome[i] = planet_classify_biome(pl_h[i], pl_temp[i], pl_precip[i],
+                                            planet_lake_depth(i))
+    }
+    pl_clock_stop(6)
+}
+
+export function planet_biome(i: i32) -> i32 { return pl_biome[i] }
+
+export function planet_biome_name(b: i32) -> string {
+    if b == PB_OCEAN { return "ocean" }
+    if b == PB_SHELF { return "shelf" }
+    if b == PB_SEA_ICE { return "sea ice" }
+    if b == PB_ICE_SHEET { return "ice sheet" }
+    if b == PB_TUNDRA { return "tundra" }
+    if b == PB_BOREAL { return "boreal forest" }
+    if b == PB_TEMPERATE_RAIN { return "temperate rainforest" }
+    if b == PB_TEMPERATE_FOREST { return "temperate forest" }
+    if b == PB_WOODLAND { return "woodland" }
+    if b == PB_GRASSLAND { return "grassland" }
+    if b == PB_COLD_DESERT { return "cold desert" }
+    if b == PB_DESERT { return "desert" }
+    if b == PB_SAVANNA { return "savanna" }
+    if b == PB_TROPICAL_SEASONAL { return "tropical seasonal forest" }
+    if b == PB_TROPICAL_RAIN { return "tropical rainforest" }
+    if b == PB_ALPINE { return "alpine" }
+    if b == PB_LAKE { return "lake" }
+    return "unknown"
+}
+
+export function planet_biome_r(b: i32) -> f32 {
+    if b == PB_OCEAN { return 0.043 }
+    if b == PB_SHELF { return 0.13 }
+    if b == PB_SEA_ICE { return 0.85 }
+    if b == PB_ICE_SHEET { return 0.95 }
+    if b == PB_TUNDRA { return 0.58 }
+    if b == PB_BOREAL { return 0.16 }
+    if b == PB_TEMPERATE_RAIN { return 0.11 }
+    if b == PB_TEMPERATE_FOREST { return 0.27 }
+    if b == PB_WOODLAND { return 0.48 }
+    if b == PB_GRASSLAND { return 0.70 }
+    if b == PB_COLD_DESERT { return 0.62 }
+    if b == PB_DESERT { return 0.85 }
+    if b == PB_SAVANNA { return 0.74 }
+    if b == PB_TROPICAL_SEASONAL { return 0.36 }
+    if b == PB_TROPICAL_RAIN { return 0.09 }
+    if b == PB_ALPINE { return 0.72 }
+    if b == PB_LAKE { return 0.18 }
+    return 1.0
+}
+
+export function planet_biome_g(b: i32) -> f32 {
+    if b == PB_OCEAN { return 0.11 }
+    if b == PB_SHELF { return 0.36 }
+    if b == PB_SEA_ICE { return 0.91 }
+    if b == PB_ICE_SHEET { return 0.97 }
+    if b == PB_TUNDRA { return 0.60 }
+    if b == PB_BOREAL { return 0.34 }
+    if b == PB_TEMPERATE_RAIN { return 0.40 }
+    if b == PB_TEMPERATE_FOREST { return 0.51 }
+    if b == PB_WOODLAND { return 0.56 }
+    if b == PB_GRASSLAND { return 0.72 }
+    if b == PB_COLD_DESERT { return 0.60 }
+    if b == PB_DESERT { return 0.74 }
+    if b == PB_SAVANNA { return 0.68 }
+    if b == PB_TROPICAL_SEASONAL { return 0.60 }
+    if b == PB_TROPICAL_RAIN { return 0.42 }
+    if b == PB_ALPINE { return 0.74 }
+    if b == PB_LAKE { return 0.42 }
+    return 0.0
+}
+
+export function planet_biome_b(b: i32) -> f32 {
+    if b == PB_OCEAN { return 0.28 }
+    if b == PB_SHELF { return 0.56 }
+    if b == PB_SEA_ICE { return 0.96 }
+    if b == PB_ICE_SHEET { return 0.99 }
+    if b == PB_TUNDRA { return 0.50 }
+    if b == PB_BOREAL { return 0.24 }
+    if b == PB_TEMPERATE_RAIN { return 0.22 }
+    if b == PB_TEMPERATE_FOREST { return 0.25 }
+    if b == PB_WOODLAND { return 0.30 }
+    if b == PB_GRASSLAND { return 0.42 }
+    if b == PB_COLD_DESERT { return 0.50 }
+    if b == PB_DESERT { return 0.48 }
+    if b == PB_SAVANNA { return 0.36 }
+    if b == PB_TROPICAL_SEASONAL { return 0.24 }
+    if b == PB_TROPICAL_RAIN { return 0.16 }
+    if b == PB_ALPINE { return 0.78 }
+    if b == PB_LAKE { return 0.72 }
+    return 1.0
+}
+
+# Area-weighted fraction of land covered by biome `b`. Lakes count as land.
+export function planet_biome_land_fraction(b: i32) -> f32 {
+    let mut s: f32 = 0.0
+    let mut a: f32 = 0.0
+    for i in 0 to pl_ncells {
+        if pl_h[i] > 0.0 {
+            a = a + pl_area[i]
+            if pl_biome[i] == b { s = s + pl_area[i] }
+        }
+    }
+    if a < PL_TINY { return 0.0 }
+    return s / a
+}
+
+# ---------------------------------------------------------------------------
+# STAGE 7 --- rivers and lakes
+#
+# The flood, routing and accumulation already ran during erosion; running
+# them once more against the final topography gives the drainage network that
+# the maps draw. A cell is a river when its upstream area passes the channel
+# initiation threshold, which is how channel heads are picked in real DEM
+# work. A cell is a lake when the depression-filled surface stands above the
+# bedrock.
+# ---------------------------------------------------------------------------
+
+let mut pl_river_threshold: f32 = 60000.0
+let mut pl_river_cells: i32 = 0
+let mut pl_lake_cells: i32 = 0
+let mut pl_lake_area: f32 = 0.0
+let mut pl_river_km: f32 = 0.0
+
+export function planet_set_river_threshold(a: f32) -> void {
+    pl_river_threshold = a
+}
+
+export function planet_stage_hydrology() -> void {
+    if !planet_init() { return }
+    pl_clock_start()
+    planet_flood()
+    planet_route()
+    planet_accumulate()
+    pl_river_cells = 0
+    pl_lake_cells = 0
+    pl_lake_area = 0.0
+    pl_river_km = 0.0
+    for i in 0 to pl_ncells {
+        if pl_h[i] > 0.0 {
+            if pl_acc[i] >= pl_river_threshold {
+                pl_river_cells = pl_river_cells + 1
+                let d: i32 = pl_down[i]
+                if d >= 0 { pl_river_km = pl_river_km + planet_cell_dist(i, d) }
+            }
+            if planet_lake_depth(i) > 0.004 {
+                pl_lake_cells = pl_lake_cells + 1
+                pl_lake_area = pl_lake_area + planet_cell_area_km2(i)
+            }
+        }
+    }
+    pl_clock_stop(7)
+}
+
+export function planet_is_river(i: i32) -> bool {
+    return pl_h[i] > 0.0 and pl_acc[i] >= pl_river_threshold
+}
+
+export function planet_river_cells() -> i32 { return pl_river_cells }
+export function planet_river_length_km() -> f32 { return pl_river_km }
+export function planet_lake_cells() -> i32 { return pl_lake_cells }
+export function planet_lake_area_km2() -> f32 { return pl_lake_area }
+
+# Number of distinct river mouths: land cells whose receiver is ocean and
+# whose upstream area passes the river threshold. One per basin outlet.
+export function planet_basin_count() -> i32 {
+    let mut n: i32 = 0
+    for i in 0 to pl_ncells {
+        if pl_h[i] > 0.0 and pl_acc[i] >= pl_river_threshold {
+            let d: i32 = pl_down[i]
+            if d < 0 or pl_h[d] <= 0.0 { n = n + 1 }
+        }
+    }
+    return n
+}
+
+# Fraction of land that drains to the ocean rather than terminating inland.
+export function planet_drained_fraction() -> f32 {
+    let mut drained: f32 = 0.0
+    let mut total: f32 = 0.0
+    for i in 0 to pl_ncells {
+        if pl_h[i] > 0.0 {
+            total = total + pl_area[i]
+            if pl_down[i] >= 0 { drained = drained + pl_area[i] }
+        }
+    }
+    if total < PL_TINY { return 0.0 }
+    return drained / total
+}
+
+# ---------------------------------------------------------------------------
+# Orchestration
+# ---------------------------------------------------------------------------
+
+export function planet_generate(seed: u32, nplates: i32, erosion_iters: i32) -> bool {
+    if !planet_init() { return false }
+    planet_seed(seed)
+    planet_stage_grid()
+    planet_stage_tectonics(nplates)
+    planet_stage_elevation()
+    planet_stage_erosion(erosion_iters)
+    planet_stage_climate()
+    planet_stage_hydrology()
+    planet_stage_biomes()
+    return true
+}
+
+# Total generation time, milliseconds.
+export function planet_total_ms() -> f32 {
+    let mut s: f32 = 0.0
+    for i in 1 to 8 { s = s + pl_ms[i] }
+    return s
+}
+
+# ---------------------------------------------------------------------------
+# Mesh helper for the globe view
+#
+# The simulation grid is finer than a software rasterizer wants, so the globe
+# is drawn from a coarser cubesphere whose vertices are looked up in the
+# simulation grid. `mesh_n` cells per face gives 6*(mesh_n+1)^2 vertices and
+# 6*2*mesh_n^2 triangles.
+# ---------------------------------------------------------------------------
+
+export function planet_mesh_corner(face: i32, j: i32, k: i32, mesh_n: i32) -> PVec3 {
+    let n: f32 = mesh_n as f32
+    let u: f32 = 2.0 * (k as f32) / n - 1.0
+    let v: f32 = 2.0 * (j as f32) / n - 1.0
+    let a: f32 = tanf(0.25 * PL_PI * u)
+    let b: f32 = tanf(0.25 * PL_PI * v)
+    return pv_norm(pl_face_dir(face, a, b))
+}
+
+export function planet_mesh_vertex_count(mesh_n: i32) -> i32 {
+    return 6 * (mesh_n + 1) * (mesh_n + 1)
+}
+
+export function planet_mesh_tri_count(mesh_n: i32) -> i32 {
+    return 12 * mesh_n * mesh_n
+}
