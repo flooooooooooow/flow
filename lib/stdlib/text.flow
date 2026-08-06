@@ -138,8 +138,14 @@ export function gfx_draw_fixed(g: Gfx, x: i32, y: i32, value: f64, decimals: i32
         scale10 = scale10 * 10
         d = d + 1
     }
-    let whole: i32 = v as i32
-    let frac: i32 = ((v - (whole as f64)) * (scale10 as f64) + 0.5) as i32
+    let mut whole: i32 = v as i32
+    let mut frac: i32 = ((v - (whole as f64)) * (scale10 as f64) + 0.5) as i32
+    # Rounding the fraction up to scale10 must carry into the whole part,
+    # otherwise 64.996 at 2 decimals prints as "64.100".
+    if frac >= scale10 {
+        frac = frac - scale10
+        whole = whole + 1
+    }
     pen = pen + gfx_draw_int(g, pen, y, whole, scale, r, gr, b)
     if decimals > 0 {
         pen = pen + gfx_draw_char(g, pen, y, 46, scale, r, gr, b)

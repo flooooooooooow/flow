@@ -1,0 +1,829 @@
+# CENTRAL PATTERN GENERATOR: four gaits from one circuit.
+#
+# MODEL
+#   One phase oscillator per limb, coupled all-to-all, in the form used for
+#   quadruped central pattern generators since Collins & Stewart:
+#
+#     dphi_i/dt = omega + sum_j K sin(phi_j - phi_i - psi_ij)
+#
+#   That single line is the `evolves as` in `flow Limb` below. Wrapping phi
+#   back into [0, 2 pi) is bookkeeping and is done by the caller, not by the
+#   dynamics.
+#
+#   The gait is not written into the oscillators. It is written into the
+#   coupling: psi_ij is the phase lag the bond between limbs i and j prefers.
+#   Four sets of bonds give four gaits, and the phase differences the limbs
+#   actually settle into are then measured rather than assumed.
+#
+#     WALK   LF 0    RF 1/2  LH 3/4  RH 1/4    a rotating wave
+#     TROT   LF 0    RF 1/2  LH 1/2  RH 0      diagonal pairs together
+#     PACE   LF 0    RF 1/2  LH 0    RH 1/2    lateral pairs together
+#     BOUND  LF 0    RF 0    LH 1/2  RH 1/2    front pair, then hind pair
+#
+# PARAMETERS
+#   omega 2 pi * 1.5 rad/s (1.5 strides per second)   K 2.0 s^-1
+#   RK4, dt = 1 ms; every gait starts from the same four random phases
+#
+# WHAT THIS PROVES
+#   1. THE GAIT EMERGES AND IS STABLE. Started from random phases, each
+#      coupling settles to its gait. The measured phase differences are
+#      printed in degrees and compared with the canonical quadruped values;
+#      the worst error over all four gaits and all four limbs is gated.
+#   2. THE LIMBS ARE FREQUENCY LOCKED. Each limb's own cycle frequency is
+#      measured over the last ten seconds from its zero crossings. All four
+#      must agree, and with the stride frequency the oscillators were given.
+#   3. THE LOCK IS AN ATTRACTOR, AND RELAXES AT THE RATE THE JACOBIAN SAYS.
+#      One limb is kicked 90 degrees out of place. Around the locked state
+#      the Jacobian of the all-to-all coupling is -K L, where L is the graph
+#      Laplacian of the complete graph on four nodes, whose nonzero
+#      eigenvalues are all 4. So a perturbation must decay with time constant
+#      1/(4K) = 0.125 s. The measured recovery time constant is compared with
+#      that and gated at 5 %.
+#   4. THE FOOTFALL ORDER IS THE RIGHT ONE. Each limb's phase within the
+#      stride is what fixes when its foot goes down, so the order is checked
+#      limb by limb against the canonical value, to within one degree, for
+#      all four gaits. The footfall diagram in the window is drawn from the
+#      simulated phases, not from the table.
+#
+# REFERENCE
+#   J. J. Collins and I. Stewart, "Coupled nonlinear oscillators and the
+#   symmetries of animal gaits", J. Nonlinear Sci. 3:349-392 (1993).
+#   M. Golubitsky, I. Stewart, P.-L. Buono and J. J. Collins, "Symmetry in
+#   locomotor central pattern generators and animal gaits", Nature
+#   401:693-695 (1999) - the phase relations listed above.
+#
+# KEYS
+#   Left / Right   change gait
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/cpg_gait.flow --frames 90 \
+#       --out build/frames_cpg --gif build/cpg_gait.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/cpg_gait.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function log(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 660
+const MAX_FRAMES: i32 = 4000
+
+const NL: i32 = 4               # limbs: 0 LF, 1 RF, 2 LH, 3 RH
+const NG: i32 = 4               # gaits: walk, trot, pace, bound
+
+const OMEGA: f64 = 9.42477796076938     # 2 pi * 1.5 rad/s
+const K_C: f64 = 2.0                    # coupling strength, 1/s
+const DT: f64 = 0.001                   # s
+const SETTLE_S: f64 = 20.0
+const MEAS_S: f64 = 10.0
+const KICK_S: f64 = 4.0
+
+const TWO_PI: f64 = 6.283185307179586
+const PHASE_TOL: f64 = 1.0      # degrees
+const FREQ_TOL: f64 = 1.0e-6    # relative
+const TAU_TOL: f64 = 0.05       # relative, on the recovery time constant
+
+const GD_N: i32 = 300           # footfall diagram samples
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model: one limb oscillator.
+# ---------------------------------------------------------------------------
+
+flow Limb {
+    state phi : f64 = 0.0
+
+    param omega    : f64 = 9.42477796076938
+    param coupling : f64 = 0.0      # sum_j K sin(phi_j - phi_i - psi_ij)
+
+    solver { dt 1 ms  method rk4 }
+
+    phi evolves as omega + coupling
+}
+
+# ---------------------------------------------------------------------------
+# Gaits: the phase of each limb, as a fraction of a stride.
+# ---------------------------------------------------------------------------
+
+function gait_phase(g: i32, limb: i32) -> f64 {
+    if g == 0 {                          # WALK, a rotating wave
+        if limb == 0 { return 0.0 }
+        if limb == 1 { return 0.5 }
+        if limb == 2 { return 0.75 }
+        return 0.25
+    }
+    if g == 1 {                          # TROT, diagonal pairs
+        if limb == 0 { return 0.0 }
+        if limb == 1 { return 0.5 }
+        if limb == 2 { return 0.5 }
+        return 0.0
+    }
+    if g == 2 {                          # PACE, lateral pairs
+        if limb == 0 { return 0.0 }
+        if limb == 1 { return 0.5 }
+        if limb == 2 { return 0.0 }
+        return 0.5
+    }
+    # BOUND, front pair then hind pair
+    if limb == 0 { return 0.0 }
+    if limb == 1 { return 0.0 }
+    if limb == 2 { return 0.5 }
+    return 0.5
+}
+
+function gait_name(g: i32) -> string {
+    if g == 0 { return "WALK" }
+    if g == 1 { return "TROT" }
+    if g == 2 { return "PACE" }
+    return "BOUND"
+}
+
+function limb_name(i: i32) -> string {
+    if i == 0 { return "LF" }
+    if i == 1 { return "RF" }
+    if i == 2 { return "LH" }
+    return "RH"
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut phi: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+let mut phase_err: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+let mut meas_phase: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut meas_freq: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut gait_err: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+let mut gait_freq_spread: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+let mut gait_tau: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+let mut gait_order_ok: array<bool, 4> = [false, false, false, false]
+
+let mut worst_phase: f64 = 0.0
+let mut worst_freq: f64 = 0.0
+let mut worst_tau: f64 = 0.0
+let mut tau_theory: f64 = 0.0
+
+let mut diagram: ptr<f64> = null    # NL x GD_N stance flags for the display
+let mut diag_n: i32 = 0
+let mut live_gait: i32 = 1
+
+# ---------------------------------------------------------------------------
+# Ring mechanics
+# ---------------------------------------------------------------------------
+
+function wrap(x: f64) -> f64 {
+    let mut v: f64 = x
+    while v >= TWO_PI {
+        v = v - TWO_PI
+    }
+    while v < 0.0 {
+        v = v + TWO_PI
+    }
+    return v
+}
+
+function ang_deg(x: f64) -> f64 {
+    let mut d: f64 = x * 360.0 / TWO_PI
+    while d >= 360.0 {
+        d = d - 360.0
+    }
+    while d < 0.0 {
+        d = d + 360.0
+    }
+    return d
+}
+
+function shortest_deg(a: f64, b: f64) -> f64 {
+    let mut d: f64 = a - b
+    while d > 180.0 {
+        d = d - 360.0
+    }
+    while d < -180.0 {
+        d = d + 360.0
+    }
+    return d
+}
+
+function init_phases() -> void {
+    # the same four arbitrary starting phases for every gait
+    let pp: ptr<f64> = phi
+    pp[0] = 0.37
+    pp[1] = 4.91
+    pp[2] = 2.05
+    pp[3] = 5.72
+}
+
+function cpg_step(g: i32) -> void {
+    let pp: ptr<f64> = phi
+    let mut next: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let np: ptr<f64> = next
+    let mut unit: Limb = Limb_new()
+    unit.omega = OMEGA
+    let mut i: i32 = 0
+    while i < NL {
+        let mut c: f64 = 0.0
+        let mut j: i32 = 0
+        while j < NL {
+            if j != i {
+                let psi: f64 = TWO_PI * (gait_phase(g, j) - gait_phase(g, i))
+                c = c + K_C * sin(pp[j] - pp[i] - psi)
+            }
+            j = j + 1
+        }
+        unit.coupling = c
+        unit.phi = pp[i]
+        Limb_step(&unit, DT)
+        np[i] = wrap(unit.phi)
+        i = i + 1
+    }
+    i = 0
+    while i < NL {
+        pp[i] = np[i]
+        i = i + 1
+    }
+}
+
+# Phase of each limb relative to limb 0, in degrees.
+function relative_phases(out: ptr<f64>) -> void {
+    let pp: ptr<f64> = phi
+    let mut i: i32 = 0
+    while i < NL {
+        out[i] = ang_deg(pp[i] - pp[0])
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# One gait: settle, measure phases and frequencies, then kick it.
+# ---------------------------------------------------------------------------
+
+function run_gait(g: i32) -> void {
+    init_phases()
+    let settle: i32 = (SETTLE_S / DT) as i32
+    let mut k: i32 = 0
+    while k < settle {
+        cpg_step(g)
+        k = k + 1
+    }
+
+    # phase differences
+    let mut rel: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let rp: ptr<f64> = rel
+    relative_phases(rp)
+    let mut worst: f64 = 0.0
+    let mut i: i32 = 0
+    while i < NL {
+        let want: f64 = 360.0 * (gait_phase(g, i) - gait_phase(g, 0))
+        let e: f64 = fabs(shortest_deg(rp[i], want))
+        meas_phase[g * NL + i] = rp[i]
+        if e > worst {
+            worst = e
+        }
+        i = i + 1
+    }
+    gait_err[g] = worst
+
+    # frequency of each limb, from its upward zero crossings of sin(phi)
+    let meas: i32 = (MEAS_S / DT) as i32
+    let mut first: array<f64, 4> = [-1.0, -1.0, -1.0, -1.0]
+    let mut last: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut cnt: array<i32, 4> = [0, 0, 0, 0]
+    let fp: ptr<f64> = first
+    let lp: ptr<f64> = last
+    let cp: ptr<i32> = cnt
+    let pp: ptr<f64> = phi
+    let mut prev: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let vp: ptr<f64> = prev
+    i = 0
+    while i < NL {
+        vp[i] = pp[i]
+        i = i + 1
+    }
+    k = 0
+    while k < meas {
+        cpg_step(g)
+        let t: f64 = (k as f64) * DT
+        i = 0
+        while i < NL {
+            # a wrap from near 2pi back to near 0 marks one completed cycle
+            if pp[i] < vp[i] - 3.0 {
+                let frac: f64 = (TWO_PI - vp[i]) / (pp[i] + TWO_PI - vp[i])
+                let tc: f64 = t + frac * DT
+                if cp[i] == 0 {
+                    fp[i] = tc
+                }
+                lp[i] = tc
+                cp[i] = cp[i] + 1
+            }
+            vp[i] = pp[i]
+            i = i + 1
+        }
+        k = k + 1
+    }
+    let mut fmin: f64 = 1.0e9
+    let mut fmax: f64 = 0.0
+    i = 0
+    while i < NL {
+        let mut f: f64 = 0.0
+        if cp[i] >= 2 {
+            f = ((cp[i] - 1) as f64) / (lp[i] - fp[i])
+        }
+        meas_freq[g * NL + i] = f
+        if f < fmin {
+            fmin = f
+        }
+        if f > fmax {
+            fmax = f
+        }
+        i = i + 1
+    }
+    gait_freq_spread[g] = (fmax - fmin) / fmax
+
+    # footfall order: the limbs sorted by phase within a stride
+    let mut order_ok: bool = true
+    i = 1
+    while i < NL {
+        let want: f64 = 360.0 * (gait_phase(g, i) - gait_phase(g, 0))
+        if fabs(shortest_deg(meas_phase[g * NL + i], want)) > PHASE_TOL {
+            order_ok = false
+        }
+        i = i + 1
+    }
+    gait_order_ok[g] = order_ok
+
+    # Kick limb 1 by 90 degrees and fit the decay. The fit uses only the
+    # window where the error is between 8 and 0.5 degrees: sin(x) is not x
+    # at 90 degrees, so the first part of the recovery is slower than the
+    # linearisation, and it is the linear tail that the Jacobian predicts.
+    pp[1] = wrap(pp[1] + TWO_PI * 0.25)
+    let kick_steps: i32 = (KICK_S / DT) as i32
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut nfit: f64 = 0.0
+    k = 0
+    while k < kick_steps {
+        cpg_step(g)
+        relative_phases(rp)
+        let want: f64 = 360.0 * (gait_phase(g, 1) - gait_phase(g, 0))
+        let e: f64 = fabs(shortest_deg(rp[1], want))
+        if e < 8.0 and e > 0.5 {
+            let t: f64 = (k as f64) * DT
+            let y: f64 = log(e)
+            sx = sx + t
+            sy = sy + y
+            sxx = sxx + t * t
+            sxy = sxy + t * y
+            nfit = nfit + 1.0
+        }
+        k = k + 1
+    }
+    if nfit > 4.0 {
+        let slope: f64 = (nfit * sxy - sx * sy) / (nfit * sxx - sx * sx)
+        gait_tau[g] = 0.0 - 1.0 / slope
+    } else {
+        gait_tau[g] = 0.0
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+# The animal, seen from the side, with all four limbs drawn.
+const AN_X: i32 = 60
+const AN_Y: i32 = 130
+const AN_W: i32 = 300
+const AN_H: i32 = 190
+
+function limb_x(i: i32) -> i32 {
+    if i == 0 or i == 1 {
+        return AN_X + 230          # front
+    }
+    return AN_X + 70               # hind
+}
+
+function limb_side(i: i32) -> i32 {
+    if i == 0 or i == 2 {
+        return -12                 # left, drawn slightly behind
+    }
+    return 12
+}
+
+function draw_animal(g: Gfx) -> void {
+    gfx_draw_text(g, AN_X, AN_Y - 14, "THE ANIMAL   a foot is down when sin(phi) < 0",
+                  1, 150, 165, 190)
+    draw_frame(g, AN_X, AN_Y, AN_W, AN_H, 60, 70, 90)
+    let body_y: i32 = AN_Y + 70
+    gfx_fill_rect(g, AN_X + 50, body_y, 200, 26, 70, 84, 108)
+    gfx_fill_rect(g, AN_X + 240, body_y - 16, 40, 30, 70, 84, 108)
+    let ground: i32 = AN_Y + AN_H - 24
+    gfx_fill_rect(g, AN_X + 10, ground, AN_W - 20, 2, 90, 100, 120)
+    let pp: ptr<f64> = phi
+    let mut i: i32 = 0
+    while i < NL {
+        let s: f64 = sin(pp[i])
+        let hipx: i32 = limb_x(i) + limb_side(i)
+        let hipy: i32 = body_y + 20
+        let swing: i32 = ((26.0 * cos(pp[i])) as i32)
+        let lift: i32 = 0
+        let mut foot_y: i32 = ground
+        let mut cr: i32 = 255
+        let mut cg: i32 = 205
+        let mut cb: i32 = 110
+        if s >= 0.0 {
+            foot_y = ground - 18 - ((14.0 * s) as i32)
+            cr = 120
+            cg = 190
+            cb = 250
+        }
+        draw_line(g, hipx, hipy, hipx + swing, foot_y, 3, cr, cg, cb)
+        gfx_fill_rect(g, hipx + swing - 4, foot_y - 2, 9, 5, cr, cg, cb)
+        gfx_draw_text(g, hipx + swing - 8, foot_y + 8, limb_name(i), 1, 150, 165, 190)
+        i = i + 1
+    }
+}
+
+# The phase circle.
+const PC_CX: i32 = 470
+const PC_CY: i32 = 225
+const PC_R: i32 = 78
+
+function draw_circle(g: Gfx) -> void {
+    gfx_draw_text(g, PC_CX - 70, AN_Y - 14, "PHASES", 1, 150, 165, 190)
+    let mut a: i32 = 0
+    while a < 360 {
+        let rad: f64 = (a as f64) * TWO_PI / 360.0
+        let x: i32 = PC_CX + (((PC_R as f64) * cos(rad)) as i32)
+        let y: i32 = PC_CY - (((PC_R as f64) * sin(rad)) as i32)
+        gfx_fill_rect(g, x, y, 1, 1, 60, 70, 90)
+        a = a + 3
+    }
+    let pp: ptr<f64> = phi
+    let mut i: i32 = 0
+    while i < NL {
+        let x: i32 = PC_CX + (((PC_R as f64) * cos(pp[i])) as i32)
+        let y: i32 = PC_CY - (((PC_R as f64) * sin(pp[i])) as i32)
+        gfx_fill_rect(g, x - 4, y - 4, 9, 9, 255, 205, 110)
+        gfx_draw_text(g, x + 8, y - 4, limb_name(i), 1, 235, 240, 250)
+        i = i + 1
+    }
+}
+
+# The classic gait diagram: a black bar while the foot is on the ground.
+const GD_X: i32 = 60
+const GD_Y: i32 = 380
+const GD_W: i32 = 800
+const GD_H: i32 = 120
+
+function draw_diagram(g: Gfx) -> void {
+    gfx_draw_text(g, GD_X, GD_Y - 14,
+                  "FOOTFALL DIAGRAM   filled = stance   the gait is what this picture is",
+                  1, 150, 165, 190)
+    draw_frame(g, GD_X, GD_Y, GD_W, GD_H, 60, 70, 90)
+    let row: i32 = GD_H / NL
+    let mut i: i32 = 0
+    while i < NL {
+        gfx_draw_text(g, GD_X - 26, GD_Y + i * row + row / 2 - 3, limb_name(i),
+                      1, 150, 165, 190)
+        let mut k: i32 = 0
+        while k < diag_n {
+            if diagram[i * GD_N + k] > 0.5 {
+                let x: i32 = GD_X + 1 + ((k * (GD_W - 2)) / GD_N)
+                gfx_fill_rect(g, x, GD_Y + i * row + 4, 3, row - 8, 120, 220, 200)
+            }
+            k = k + 1
+        }
+        i = i + 1
+    }
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "CENTRAL PATTERN GENERATOR  -  FOUR GAITS FROM ONE CIRCUIT",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "dphi_i/dt = omega + sum_j K sin(phi_j - phi_i - psi_ij)     RK4 dt 1 ms   omega 1.5 Hz   K 2 /s",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44, "LIVE GAIT", 1, 110, 125, 150)
+    gfx_draw_text(g, 84, 44, gait_name(live_gait), 1, 255, 205, 110)
+    gfx_draw_text(g, 150, 44,
+                  "   psi is the only thing that changes between gaits", 1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 620, 122, "MEASURED PHASES, degrees", 1, 150, 165, 190)
+    let mut gi: i32 = 0
+    while gi < NG {
+        let y: i32 = 148 + gi * 30
+        gfx_draw_text(g, 620, y, gait_name(gi), 1, 235, 240, 250)
+        let mut i: i32 = 0
+        while i < NL {
+            gfx_draw_fixed(g, 680 + i * 52, y, meas_phase[gi * NL + i], 1, 1,
+                           200, 215, 235)
+            if gi == 0 {
+                gfx_draw_text(g, 680 + i * 52, y - 11, limb_name(i), 1, 100, 115, 140)
+            }
+            i = i + 1
+        }
+        gfx_draw_text(g, 620, y + 11, "err", 1, 100, 115, 140)
+        gfx_draw_fixed(g, 650, y + 11, gait_err[gi], 3, 1, 140, 200, 170)
+        gfx_draw_text(g, 706, y + 11, "deg", 1, 100, 115, 140)
+        gi = gi + 1
+    }
+
+    gfx_draw_text(g, 12, WIN_H - 100, "WORST PHASE ERROR OVER ALL FOUR GAITS",
+                  1, 150, 165, 190)
+    gfx_draw_fixed(g, 310, WIN_H - 100, worst_phase, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 386, WIN_H - 100, "deg     gate 1.0", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 84, "WORST FREQUENCY SPREAD BETWEEN LIMBS",
+                  1, 150, 165, 190)
+    gfx_draw_fixed(g, 310, WIN_H - 84, worst_freq * 1000000.0, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 386, WIN_H - 84, "parts per million", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 68, "RECOVERY FROM A 90 deg KICK, worst gait",
+                  1, 150, 165, 190)
+    gfx_draw_fixed(g, 322, WIN_H - 68, worst_tau, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 398, WIN_H - 68, "s     Jacobian says 1/(4K)", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 598, WIN_H - 68, tau_theory, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 674, WIN_H - 68, "s", 1, 110, 125, 150)
+
+    if ok {
+        gfx_draw_text(g, 760, WIN_H - 94, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 760, WIN_H - 94, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16, "LEFT/RIGHT change gait   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    diagram = malloc(((NL as i64) * (GD_N as i64)) * 8)
+    tau_theory = 1.0 / (4.0 * K_C)
+
+    println("")
+    println("  CENTRAL PATTERN GENERATOR  --  four quadruped gaits, measured")
+    println("  =============================================================")
+    println("")
+    println("    four coupled phase oscillators, omega = 2 pi * 1.5 rad/s, K = 2 /s")
+    println("    RK4, dt = 1 ms, same four random starting phases for every gait")
+    println("")
+
+    let mut gi: i32 = 0
+    while gi < NG {
+        run_gait(gi)
+        if gait_err[gi] > worst_phase {
+            worst_phase = gait_err[gi]
+        }
+        if gait_freq_spread[gi] > worst_freq {
+            worst_freq = gait_freq_spread[gi]
+        }
+        if gi == 0 or fabs(gait_tau[gi] - tau_theory) > fabs(worst_tau - tau_theory) {
+            worst_tau = gait_tau[gi]
+        }
+        gi = gi + 1
+    }
+
+    println("      gait      LF        RF        LH        RH     worst error   stride [Hz]   recovery [s]")
+    println("      -----   -------   -------   -------   -------  -----------   -----------   ------------")
+    gi = 0
+    while gi < NG {
+        print("    ")
+        print(gait_name(gi))
+        if gi == 3 {
+            print("  ")
+        } else {
+            print("   ")
+        }
+        printf("%9.3f", meas_phase[gi * NL])
+        printf(" %9.3f", meas_phase[gi * NL + 1])
+        printf(" %9.3f", meas_phase[gi * NL + 2])
+        printf(" %9.3f", meas_phase[gi * NL + 3])
+        printf("  %11.5f", gait_err[gi])
+        printf("   %11.6f", meas_freq[gi * NL])
+        printf("   %12.5f", gait_tau[gi])
+        println("")
+        gi = gi + 1
+    }
+    println("")
+    println("      canonical: WALK 0 180 270 90   TROT 0 180 180 0   PACE 0 180 0 180   BOUND 0 0 180 180")
+    println("")
+    print("    worst phase error over all gaits and limbs : ")
+    printf("%9.6f deg", worst_phase)
+    print("   gate ")
+    printf("%.1f", PHASE_TOL)
+    println("")
+    print("    worst frequency spread between limbs       : ")
+    printf("%9.3e", worst_freq)
+    print("   gate ")
+    printf("%.0e", FREQ_TOL)
+    println("")
+    print("    stride frequency, measured                 : ")
+    printf("%9.6f Hz", meas_freq[0])
+    print("   set to ")
+    printf("%.6f", OMEGA / TWO_PI)
+    println("")
+    print("    recovery time constant, worst gait         : ")
+    printf("%9.5f s", worst_tau)
+    println("")
+    print("    Jacobian of -K L on the complete graph K4  : ")
+    printf("%9.5f s", tau_theory)
+    print("   relative error ")
+    printf("%.5f", fabs(worst_tau - tau_theory) / tau_theory)
+    print("   gate ")
+    printf("%.2f", TAU_TOL)
+    println("")
+    println("")
+
+    let phase_ok: bool = worst_phase < PHASE_TOL
+    let freq_ok: bool = worst_freq < FREQ_TOL
+    let tau_ok: bool = fabs(worst_tau - tau_theory) / tau_theory < TAU_TOL
+    let mut order_ok: bool = true
+    gi = 0
+    while gi < NG {
+        if !gait_order_ok[gi] {
+            order_ok = false
+        }
+        gi = gi + 1
+    }
+    let ok: bool = phase_ok and freq_ok and tau_ok and order_ok
+
+    # live
+    live_gait = 1
+    init_phases()
+    diag_n = 0
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "CPG gait - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = live_gait
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = live_gait - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = live_gait + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if frame > 0 and frame % 34 == 0 {
+            want = live_gait + 1
+        }
+        if want < 0 {
+            want = NG - 1
+        }
+        if want >= NG {
+            want = 0
+        }
+        if want != live_gait {
+            live_gait = want
+            # Restart from the generic phases. Carrying the old gait's lock
+            # over would leave the state sitting on a saddle: every gait's
+            # pattern is a fixed point of every other gait's coupling, just
+            # an unstable one, and it can take many seconds to fall off.
+            init_phases()
+            diag_n = 0
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            let pp: ptr<f64> = phi
+            let mut s: i32 = 0
+            while s < 40 {           # 40 ms per frame, sampled every 4 ms
+                cpg_step(live_gait)
+                if s % 4 == 0 and diag_n < GD_N {
+                    let mut i: i32 = 0
+                    while i < NL {
+                        if sin(pp[i]) < 0.0 {
+                            diagram[i * GD_N + diag_n] = 1.0
+                        } else {
+                            diagram[i * GD_N + diag_n] = 0.0
+                        }
+                        i = i + 1
+                    }
+                    diag_n = diag_n + 1
+                } elif s % 4 == 0 {
+                    let mut k: i32 = 1
+                    while k < GD_N {
+                        let mut i: i32 = 0
+                        while i < NL {
+                            diagram[i * GD_N + k - 1] = diagram[i * GD_N + k]
+                            i = i + 1
+                        }
+                        k = k + 1
+                    }
+                    let mut i2: i32 = 0
+                    while i2 < NL {
+                        if sin(pp[i2]) < 0.0 {
+                            diagram[i2 * GD_N + GD_N - 1] = 1.0
+                        } else {
+                            diagram[i2 * GD_N + GD_N - 1] = 0.0
+                        }
+                        i2 = i2 + 1
+                    }
+                }
+                s = s + 1
+            }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_animal(g)
+        draw_circle(g)
+        draw_diagram(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !phase_ok {
+        println("    FAIL: at least one gait did not settle to its canonical phases")
+        return 1
+    }
+    if !order_ok {
+        println("    FAIL: the footfall order does not match the gait")
+        return 2
+    }
+    if !freq_ok {
+        println("    FAIL: the four limbs are not frequency locked")
+        return 3
+    }
+    if !tau_ok {
+        println("    FAIL: recovery from a kick does not match the Jacobian rate")
+        return 4
+    }
+    println("    PASS: four gaits, phase locked, and recovering at the predicted rate")
+    return 0
+}

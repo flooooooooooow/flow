@@ -67,25 +67,32 @@ biological pattern (Physarum, cell sorting, somitogenesis).
 
 **Status: complete.** `examples/morphogenesis/` · [gallery](../demos/morphogenesis.md)
 
-### 2. Neuron and network simulation — 15 planned
+### 2. Neuron and network simulation — 15 shipped
 
-| # | Example | Evidence it must carry |
-|---|---|---|
-| 1 | Hodgkin-Huxley single compartment | Spike shape and threshold vs published values |
-| 2 | Izhikevich neuron zoo | All 20 firing regimes from one model, parameter-swept |
-| 3 | Leaky integrate-and-fire | F-I curve matches the closed-form solution |
-| 4 | FitzHugh-Nagumo phase plane | Nullclines and limit cycle drawn live |
-| 5 | Morris-Lecar bifurcation | Hopf point located numerically, matches analysis |
-| 6 | Cable equation on a dendrite | Attenuation matches the analytic length constant |
-| 7 | Multi-compartment neuron | Backpropagating action potential |
-| 8 | STDP at one synapse | Weight-change curve vs the canonical window |
-| 9 | Balanced E/I network | Asynchronous irregular state; CV(ISI) near 1 |
-| 10 | Ring attractor | Bump persists and tracks input |
-| 11 | Hopfield associative memory | Capacity curve vs the 0.138N bound |
-| 12 | Winner-take-all circuit | Selection latency vs input contrast |
-| 13 | Central pattern generator | Stable phase-locked gait |
-| 14 | Spiking retina to V1 | Orientation tuning emerges |
-| 15 | Reservoir computing | Memory capacity measured |
+| # | Example | Evidence it carries | Measured |
+|---|---|---|---|
+| 1 | Hodgkin-Huxley single compartment | Spike shape and threshold vs published values | peak +40.26 mV, half-width 1.480 ms, firing onset 6.213 uA/cm2 against 6.2 |
+| 2 | Izhikevich neuron zoo | All 20 firing regimes from one model, parameter-swept | 20 of 20 panels satisfy a predicate drawn from the name of the regime |
+| 3 | Leaky integrate-and-fire | F-I curve matches the closed-form solution | worst error 512 ppm over 24 currents |
+| 4 | FitzHugh-Nagumo phase plane | Nullclines and limit cycle drawn live | Hopf window [0.33128, 1.41872]; ringing 22.667 vs 22.661 from the Jacobian |
+| 5 | Morris-Lecar bifurcation | Hopf point located numerically, matches analysis | 93.8576 uA/cm2 against 93.86; fold of limit cycles 88.300 against 88.3 |
+| 6 | Cable equation on a dendrite | Attenuation matches the analytic length constant | worst error 0.17 % over six length constants |
+| 7 | Multi-compartment neuron | Backpropagating action potential | 296 us per compartment, distal tip at 10.7 % of the somatic peak |
+| 8 | STDP at one synapse | Weight-change curve vs the canonical window | worst deviation 1.05e-14 over 201 delays |
+| 9 | Balanced E/I network | Asynchronous irregular state; CV(ISI) near 1 | 15.470 Hz against 15.112 from the Siegert mean field; CV 0.795 |
+| 10 | Ring attractor | Bump persists and tracks input | drift 0.00000 deg/s over ten seconds; tracks a 30 deg/s cue at 30.000 |
+| 11 | Hopfield associative memory | Capacity curve vs the 0.138N bound | 0.166; energy never rose across 225280 updates |
+| 12 | Winner-take-all circuit | Selection latency vs input contrast | slope 9.068 ms against 9.091 from the linearisation, R^2 0.999991 |
+| 13 | Central pattern generator | Stable phase-locked gait | four gaits at 0.000000 deg phase error; recovery 0.12455 s against 0.12500 |
+| 14 | Spiking retina to V1 | Orientation tuning emerges | preferred 29.802 deg for a 30 deg wiring axis, half-width 15.94 deg, OSI 1.0 |
+| 15 | Reservoir computing | Memory capacity measured | MC 40.566 against Jaeger's bound of N = 100 |
+
+**Status: complete.** `examples/neuro/` · [domain README](../../examples/neuro/README.md)
+
+Each of the fifteen prints its measurements and returns a nonzero exit code
+naming the first check that failed. Because they all draw, the gating run is
+`./flow record <file> --frames 90 --out <dir> --gif <path>`, which builds
+against the headless recorder and passes the program's exit status through.
 
 ### 3. Circuit simulation — 12 shipped
 
@@ -173,14 +180,14 @@ reconstruction, optical flow, wavelets.
 | Domain | Planned | Shipped |
 |---|---:|---:|
 | Morphogenesis | 20 | 20 |
-| Neuron and networks | 15 | 0 |
+| Neuron and networks | 15 | 15 |
 | Circuits | 12 | 12 |
 | Diffusion and fields | 12 | 0 |
 | Physics and mechanics | 12 | 1 |
 | Chemistry and biology | 10 | 0 |
 | Control and estimation | 10 | 2 |
 | Signals and imaging | 9 | 0 |
-| **Total** | **100** | **35** |
+| **Total** | **100** | **50** |
 
 Related: [VISION.md](../../VISION.md) · [dynamics DSL](../language/dynamics-dsl.md) ·
 [morphogenesis gallery](../demos/morphogenesis.md)
