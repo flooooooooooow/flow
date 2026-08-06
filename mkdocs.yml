@@ -100,6 +100,7 @@ nav:
   - Demos:
     - Game Gallery: demos/games.md
     - Morphogenesis Gallery: demos/morphogenesis.md
+    - Neuron Gallery: demos/neuro.md
     - Evolution Suite: demos/evolution.md
     - WebAssembly Gallery: demos/wasm.md
     - Recording Demos: demos/README.md

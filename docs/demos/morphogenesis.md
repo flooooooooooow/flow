@@ -135,4 +135,5 @@ Every simulation here also runs live in a browser, from the same source:
 you press the preset keys yourself.
 
 Related: [examples/morphogenesis](../../examples/morphogenesis/) sources ·
-[game gallery](games.md) · [examples index](../../examples/README.md)
+[neuron gallery](neuro.md) · [game gallery](games.md) ·
+[examples index](../../examples/README.md)

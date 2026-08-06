@@ -115,6 +115,11 @@ of pattern formation, each with a recorded GIF: reaction-diffusion, Turing
 patterns, DLA, L-systems, Physarum networks, somitogenesis. Sources:
 [examples/morphogenesis](../examples/morphogenesis/README.md).
 
+**[Neuron gallery →](demos/neuro.md)** — fifteen spiking-dynamics simulations,
+each gated on a published measurement and recorded as a GIF: Hodgkin-Huxley,
+Izhikevich zoo, balanced E/I, Hopfield, CPG gaits. Sources:
+[examples/neuro](../examples/neuro/README.md).
+
 **[Training AI in Flow →](tutorials/game-ai.md)** — Q-learning, neuroevolution,
 and policy gradients against the games above, plus
 [ML on a MacBook](tutorials/ml-on-macbook.md) and the
@@ -132,6 +137,7 @@ and policy gradients against the games above, plus
 | [Playground](playground/index.html) | Syntax explorer with verified examples (compile locally with `./flow run`) |
 | [Game gallery](demos/games.md) | 24 complete games, each with a recorded GIF |
 | [Morphogenesis gallery](demos/morphogenesis.md) | 21 pattern-formation simulations, each with a recorded GIF |
+| [Neuron gallery](demos/neuro.md) | 15 spiking-dynamics simulations, each gated and recorded |
 | [Evolution suite](demos/evolution.md) | 32 systems evolving through time, each gated on a measurement |
 | [Training game AIs](tutorials/game-ai.md) | Q-learning, GA, and policy gradients that measurably learn |
 | [ML on a MacBook](tutorials/ml-on-macbook.md) | Digit classifier, parallel training, the Metal path |

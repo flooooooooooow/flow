@@ -383,6 +383,22 @@ Every one has a recorded clip in the
 ([wiki version](https://flooooooooooow.github.io/flow/#demos/morphogenesis.md)).
 Index: [examples/morphogenesis](examples/morphogenesis/README.md).
 
+### Neurons and networks
+
+Fifteen spiking-dynamics simulations that gate their exit code on a published
+measurement — Hodgkin-Huxley spike shape, all twenty Izhikevich regimes, a
+12500-neuron balanced network, Hopfield capacity, CPG gaits.
+
+```bash
+./flow gfx examples/neuro/hodgkin_huxley.flow   # four gates, type-II onset
+./flow gfx examples/neuro/izhikevich_zoo.flow   # twenty regimes, one model
+./flow gfx examples/neuro/balanced_network.flow # asynchronous irregular state
+```
+
+Every one has a recorded clip in the
+[neuron gallery](docs/demos/neuro.md).
+Index: [examples/neuro](examples/neuro/README.md).
+
 ### AI and machine learning
 
 Training runs in Flow, on the CPU, in seconds — and every demo gates its exit

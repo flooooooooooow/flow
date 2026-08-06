@@ -9,8 +9,9 @@ the same drawing calls the native window would receive.
 Every game in `examples/games/` has a gameplay GIF at
 `docs/demos/games/<name>.gif`, where `<name>` is the game's file name without
 the `_gfx.flow` suffix (`snake_gfx.flow` → `games/snake.gif`). Every example in
-`examples/morphogenesis/` has one at `docs/demos/morphogenesis/<name>.gif`. The
-three original demos also keep their GIFs directly in this folder
+`examples/morphogenesis/` has one at `docs/demos/morphogenesis/<name>.gif`.
+Every example in `examples/neuro/` has one at `docs/demos/neuro/<name>.gif`.
+The three original demos also keep their GIFs directly in this folder
 (`lorenz.gif`, `tetris.gif`, `2048.gif`); `tetris.gif` and `2048.gif` are
 copied into `games/` as well so the games directory covers every game.
 
@@ -20,7 +21,8 @@ The eight software-3D examples in `examples/threed/` have clips at
 rather than through `record_demos.py`; the key script for each is in the table
 in [examples/threed/README.md](../../examples/threed/README.md).
 
-The two galleries: [games](games.md) and [morphogenesis](morphogenesis.md).
+The galleries: [games](games.md), [morphogenesis](morphogenesis.md), and
+[neuro](neuro.md).
 
 Regenerate everything with:
 
@@ -28,6 +30,7 @@ Regenerate everything with:
 python3 scripts/record_demos.py                      # all demos
 python3 scripts/record_demos.py frogger              # just one
 python3 scripts/record_demos.py --group morphogenesis # one gallery
+python3 scripts/record_demos.py --group neuro        # neuron atlas
 python3 scripts/record_demos.py --check              # which GIFs exist, and their sizes
 ```
 
