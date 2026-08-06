@@ -1,0 +1,557 @@
+# PHYSICS 3D: rigid spheres in a box, and where the energy goes.
+#
+# SIMULATION
+#   Fourteen spheres, each with a radius, a mass proportional to r^3, a
+#   position and a linear velocity. No rotation, no inertia tensor, no
+#   friction torque: these are point masses with a radius, which is the
+#   smallest model in which sphere-sphere and sphere-plane response are both
+#   real problems.
+#
+#   Semi-implicit Euler at h = 1/120 with two substeps a frame, so the
+#   simulation advances 1/60 per rendered frame. Velocity is integrated first
+#   and position from the new velocity, which is what keeps a constant-gravity
+#   fall stable at this step size.
+#
+# CONTACTS
+#   Sphere-plane. The arena is five planes: the floor at y = 0 and four walls
+#   at |x| = 6 and |z| = 6, each with an inward normal. Penetration is
+#   d = r - (dot(p, n) - offset); when d > 0 the centre is pushed out along n
+#   by d and the normal velocity is reflected, v -= n * (1 + e) * dot(v, n),
+#   but only when the sphere is moving into the plane. A fraction FRICTION of
+#   the tangential velocity is removed at the same time.
+#
+#   Sphere-sphere. For a pair closer than ri + rj, the normal is the line of
+#   centres. Each centre is pushed apart in proportion to its inverse mass so
+#   the pair's centre of mass does not move, then a normal impulse
+#     j = -(1 + e) * dot(vrel, n) / (1/mi + 1/mj)
+#   is applied, again only for an approaching pair. That is the standard
+#   equal-and-opposite impulse: momentum is conserved exactly, and e sets how
+#   much of the approach speed comes back as separation speed.
+#
+# ENERGY, HONESTLY
+#   E = sum over spheres of (1/2 m |v|^2 + m g y), with y the centre height
+#   above the floor. Two things take energy out and neither is a bug:
+#
+#     - restitution below 1. Every bounce keeps e^2 of the normal kinetic
+#       energy, so a ball dropped from height h reaches e^2 h, then e^4 h.
+#       At the default e = 0.85 that is 72% a bounce.
+#     - tangential friction at a contact, FRICTION = 0.02 of the sliding
+#       velocity per contact.
+#
+#   Nothing puts energy back, so E falls monotonically to the resting value
+#   sum(m g r), the potential of every sphere lying on the floor. The HUD
+#   shows E as a percentage of the starting E and the resting floor as a
+#   percentage too, so the two numbers can be read against each other. Set
+#   e = 1.00 with D and the fall stops almost entirely: what remains is the
+#   friction term and the positional correction, which together drift by a
+#   fraction of a percent over a few hundred frames rather than holding E
+#   exactly. This integrator is not symplectic-with-contacts; it does not
+#   claim to conserve energy at e = 1.
+#
+#   Run with FLOW_PHYS_LOG=1 to print E, KE and PE every 30 frames, plus a
+#   one-off projection probe of every sphere at frame 45; FLOW_PHYS_PROBE=N
+#   moves the probe to frame N. The probe prints each sphere's screen centre,
+#   pixel radius and view depth, which is enough to check from the outside
+#   that the pixels where two spheres overlap belong to the nearer one.
+#
+# DRAW ORDER
+#   The spheres are submitted first and the arena second, which is the wrong
+#   order for a painter and the right order for a depth buffer. If the depth
+#   test were not doing its job the floor would paint over the spheres; it
+#   does not, and the spheres in front of each other resolve the same way.
+#
+# CONTROLS
+#   Left / Right    orbit the camera
+#   Up / Down       raise and lower the camera
+#   A / D           restitution down / up
+#   W               toggle the slow auto-orbit
+#   Space           pause
+#   R               drop a fresh set
+#   Esc             quit
+#
+# Run: ./flow gfx examples/threed/physics3d.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/render3d.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function getenv(name: string) -> ptr<u8>
+    function printf(fmt: string, v: f64) -> i32
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function sqrtf(x: f32) -> f32
+}
+
+const WIN_W: i32 = 480
+const WIN_H: i32 = 360
+const MAX_FRAMES: i32 = 100000
+
+const KEY_SPACE: i32 = 49
+
+const NBALL: i32 = 14
+const ARENA: f32 = 6.0
+const RIM_H: f32 = 1.0
+const GRAV: f32 = 9.8
+const H_STEP: f32 = 0.008333333
+const SUBSTEPS: i32 = 2
+const FRICTION: f32 = 0.02
+const DENSITY: f32 = 1.0
+
+const SEGS: i32 = 12
+const RINGS: i32 = 8
+const GRID_N: i32 = 12
+
+const PROBE_FRAME: i32 = 45
+const LOG_EVERY: i32 = 30
+
+# Decimal digits out of a C string, for the probe-frame environment variable.
+function parse_int(s: ptr<u8>) -> i32 {
+    let mut v: i32 = 0
+    let mut i: i32 = 0
+    while (s[i] as i32) != 0 {
+        let c: i32 = s[i] as i32
+        if c < 48 or c > 57 { return v }
+        v = v * 10 + (c - 48)
+        i = i + 1
+    }
+    return v
+}
+
+let mut bpos: ptr<f32> = null
+let mut bvel: ptr<f32> = null
+let mut bcol: ptr<f32> = null
+let mut brad: ptr<f32> = null
+let mut bmass: ptr<f32> = null
+let mut contacts: i32 = 0
+
+let mut lcg: u32 = 4242
+
+function rnd() -> u32 {
+    lcg = lcg * 1664525 + 1013904223
+    return lcg
+}
+
+function rnd_unit() -> f32 {
+    return ((rnd() >> 9) % 65536) as f32 / 65536.0
+}
+
+# A fresh drop: a ring of spheres at staggered heights with a small tangential
+# push, from a fixed seed so every run is the same experiment.
+function reset_balls() -> void {
+    lcg = 4242
+    let mut i: i32 = 0
+    while i < NBALL {
+        let o: i32 = i * 3
+        let a: f32 = 6.2831853 * (i as f32) / (NBALL as f32)
+        let ring: f32 = 1.6 + rnd_unit() * 2.8
+        let r: f32 = 0.34 + rnd_unit() * 0.42
+        bpos[o] = cosf(a) * ring
+        bpos[o + 1] = 2.2 + (i as f32) * 0.55 + rnd_unit() * 0.8
+        bpos[o + 2] = sinf(a) * ring
+        bvel[o] = (rnd_unit() - 0.5) * 3.4
+        bvel[o + 1] = 0.0
+        bvel[o + 2] = (rnd_unit() - 0.5) * 3.4
+        brad[i] = r
+        bmass[i] = DENSITY * r * r * r
+        let hue: f32 = (i as f32) / (NBALL as f32)
+        bcol[o] = 0.35 + 0.60 * hue
+        bcol[o + 1] = 0.85 - 0.55 * hue
+        bcol[o + 2] = 0.40 + 0.50 * (1.0 - hue)
+        i = i + 1
+    }
+}
+
+# One plane contact. `nx, ny, nz` is the inward normal and `off` the plane's
+# signed distance from the origin along it.
+function hit_plane(i: i32, nx: f32, ny: f32, nz: f32, off: f32, e: f32) -> void {
+    let o: i32 = i * 3
+    let d: f32 = brad[i] - (bpos[o] * nx + bpos[o + 1] * ny + bpos[o + 2] * nz - off)
+    if d <= 0.0 { return }
+    bpos[o] = bpos[o] + nx * d
+    bpos[o + 1] = bpos[o + 1] + ny * d
+    bpos[o + 2] = bpos[o + 2] + nz * d
+    let vn: f32 = bvel[o] * nx + bvel[o + 1] * ny + bvel[o + 2] * nz
+    if vn >= 0.0 { return }
+    let k: f32 = (1.0 + e) * vn
+    bvel[o] = bvel[o] - nx * k
+    bvel[o + 1] = bvel[o + 1] - ny * k
+    bvel[o + 2] = bvel[o + 2] - nz * k
+    # Tangential friction: shave a fraction of the sliding velocity.
+    let vn2: f32 = bvel[o] * nx + bvel[o + 1] * ny + bvel[o + 2] * nz
+    let tx: f32 = bvel[o] - nx * vn2
+    let ty: f32 = bvel[o + 1] - ny * vn2
+    let tz: f32 = bvel[o + 2] - nz * vn2
+    bvel[o] = bvel[o] - tx * FRICTION
+    bvel[o + 1] = bvel[o + 1] - ty * FRICTION
+    bvel[o + 2] = bvel[o + 2] - tz * FRICTION
+    contacts = contacts + 1
+}
+
+function step(e: f32) -> void {
+    let h: f32 = H_STEP
+    let mut i: i32 = 0
+    while i < NBALL {
+        let o: i32 = i * 3
+        bvel[o + 1] = bvel[o + 1] - GRAV * h
+        bpos[o] = bpos[o] + bvel[o] * h
+        bpos[o + 1] = bpos[o + 1] + bvel[o + 1] * h
+        bpos[o + 2] = bpos[o + 2] + bvel[o + 2] * h
+        i = i + 1
+    }
+
+    # Sphere-sphere: every pair once.
+    let mut a: i32 = 0
+    while a < NBALL {
+        let oa: i32 = a * 3
+        let mut b: i32 = a + 1
+        while b < NBALL {
+            let ob: i32 = b * 3
+            let dx: f32 = bpos[ob] - bpos[oa]
+            let dy: f32 = bpos[ob + 1] - bpos[oa + 1]
+            let dz: f32 = bpos[ob + 2] - bpos[oa + 2]
+            let d2: f32 = dx * dx + dy * dy + dz * dz
+            let sum: f32 = brad[a] + brad[b]
+            if d2 < sum * sum and d2 > 0.000001 {
+                let d: f32 = sqrtf(d2)
+                let nx: f32 = dx / d
+                let ny: f32 = dy / d
+                let nz: f32 = dz / d
+                let ima: f32 = 1.0 / bmass[a]
+                let imb: f32 = 1.0 / bmass[b]
+                let isum: f32 = ima + imb
+                # Split the overlap by inverse mass: the centre of mass of the
+                # pair does not move.
+                let pen: f32 = sum - d
+                let ca: f32 = pen * ima / isum
+                let cb: f32 = pen * imb / isum
+                bpos[oa] = bpos[oa] - nx * ca
+                bpos[oa + 1] = bpos[oa + 1] - ny * ca
+                bpos[oa + 2] = bpos[oa + 2] - nz * ca
+                bpos[ob] = bpos[ob] + nx * cb
+                bpos[ob + 1] = bpos[ob + 1] + ny * cb
+                bpos[ob + 2] = bpos[ob + 2] + nz * cb
+                let rvx: f32 = bvel[ob] - bvel[oa]
+                let rvy: f32 = bvel[ob + 1] - bvel[oa + 1]
+                let rvz: f32 = bvel[ob + 2] - bvel[oa + 2]
+                let vn: f32 = rvx * nx + rvy * ny + rvz * nz
+                if vn < 0.0 {
+                    let j: f32 = (0.0 - (1.0 + e) * vn) / isum
+                    bvel[oa] = bvel[oa] - nx * j * ima
+                    bvel[oa + 1] = bvel[oa + 1] - ny * j * ima
+                    bvel[oa + 2] = bvel[oa + 2] - nz * j * ima
+                    bvel[ob] = bvel[ob] + nx * j * imb
+                    bvel[ob + 1] = bvel[ob + 1] + ny * j * imb
+                    bvel[ob + 2] = bvel[ob + 2] + nz * j * imb
+                    contacts = contacts + 1
+                }
+            }
+            b = b + 1
+        }
+        a = a + 1
+    }
+
+    # The five planes of the arena.
+    let mut k: i32 = 0
+    while k < NBALL {
+        hit_plane(k, 0.0, 1.0, 0.0, 0.0, e)
+        hit_plane(k, 1.0, 0.0, 0.0, 0.0 - ARENA, e)
+        hit_plane(k, -1.0, 0.0, 0.0, 0.0 - ARENA, e)
+        hit_plane(k, 0.0, 0.0, 1.0, 0.0 - ARENA, e)
+        hit_plane(k, 0.0, 0.0, -1.0, 0.0 - ARENA, e)
+        k = k + 1
+    }
+}
+
+function energy_kin() -> f32 {
+    let mut s: f32 = 0.0
+    let mut i: i32 = 0
+    while i < NBALL {
+        let o: i32 = i * 3
+        let v2: f32 = bvel[o] * bvel[o] + bvel[o + 1] * bvel[o + 1]
+                    + bvel[o + 2] * bvel[o + 2]
+        s = s + 0.5 * bmass[i] * v2
+        i = i + 1
+    }
+    return s
+}
+
+function energy_pot() -> f32 {
+    let mut s: f32 = 0.0
+    let mut i: i32 = 0
+    while i < NBALL {
+        s = s + bmass[i] * GRAV * bpos[i * 3 + 1]
+        i = i + 1
+    }
+    return s
+}
+
+# The potential every sphere would have lying still on the floor: the value E
+# decays towards, not zero.
+function energy_rest() -> f32 {
+    let mut s: f32 = 0.0
+    let mut i: i32 = 0
+    while i < NBALL {
+        s = s + bmass[i] * GRAV * brad[i]
+        i = i + 1
+    }
+    return s
+}
+
+# Floor and rim, submitted after the spheres so the depth buffer has to be
+# the thing that sorts them.
+function draw_arena(vp: &[f32]) -> void {
+    let step_w: f32 = 2.0 * ARENA / (GRID_N as f32)
+    let mut i: i32 = 0
+    while i < GRID_N {
+        let mut j: i32 = 0
+        while j < GRID_N {
+            let x0: f32 = 0.0 - ARENA + (i as f32) * step_w
+            let z0: f32 = 0.0 - ARENA + (j as f32) * step_w
+            let x1: f32 = x0 + step_w
+            let z1: f32 = z0 + step_w
+            let mut c: V3 = v3(0.20, 0.23, 0.30)
+            if (i + j) % 2 == 0 { c = v3(0.29, 0.33, 0.42) }
+            let p0: V3 = v3(x0, 0.0, z0)
+            let p1: V3 = v3(x1, 0.0, z0)
+            let p2: V3 = v3(x1, 0.0, z1)
+            let p3: V3 = v3(x0, 0.0, z1)
+            r3d_tri(vp, p0, p2, p1, c, c, c)
+            r3d_tri(vp, p0, p3, p2, c, c, c)
+            j = j + 1
+        }
+        i = i + 1
+    }
+    # Knee-high rim. The collision planes are full height; only the rim is
+    # drawn, so the camera can see into the box.
+    let rc: V3 = v3(0.42, 0.46, 0.58)
+    let rd: V3 = v3(0.24, 0.27, 0.36)
+    let mut s: i32 = 0
+    while s < 4 {
+        let mut ax: f32 = 0.0
+        let mut az: f32 = 0.0
+        let mut bx: f32 = 0.0
+        let mut bz: f32 = 0.0
+        if s == 0 {
+            ax = 0.0 - ARENA
+            az = 0.0 - ARENA
+            bx = ARENA
+            bz = 0.0 - ARENA
+        }
+        if s == 1 {
+            ax = ARENA
+            az = 0.0 - ARENA
+            bx = ARENA
+            bz = ARENA
+        }
+        if s == 2 {
+            ax = ARENA
+            az = ARENA
+            bx = 0.0 - ARENA
+            bz = ARENA
+        }
+        if s == 3 {
+            ax = 0.0 - ARENA
+            az = ARENA
+            bx = 0.0 - ARENA
+            bz = 0.0 - ARENA
+        }
+        let lo_a: V3 = v3(ax, 0.0, az)
+        let lo_b: V3 = v3(bx, 0.0, bz)
+        let hi_a: V3 = v3(ax, RIM_H, az)
+        let hi_b: V3 = v3(bx, RIM_H, bz)
+        r3d_tri(vp, lo_a, hi_b, lo_b, rd, rc, rd)
+        r3d_tri(vp, lo_a, hi_a, hi_b, rd, rc, rc)
+        s = s + 1
+    }
+}
+
+function main() -> i32 {
+    bpos = malloc((NBALL * 3 * 4) as i64) as ptr<f32>
+    bvel = malloc((NBALL * 3 * 4) as i64) as ptr<f32>
+    bcol = malloc((NBALL * 3 * 4) as i64) as ptr<f32>
+    brad = malloc((NBALL * 4) as i64) as ptr<f32>
+    bmass = malloc((NBALL * 4) as i64) as ptr<f32>
+    if bpos == null or bvel == null or bcol == null {
+        println("allocation failed")
+        return 1
+    }
+    if brad == null or bmass == null {
+        println("allocation failed")
+        return 1
+    }
+    if !r3d_init(WIN_W, WIN_H) {
+        println("render3d init failed")
+        return 1
+    }
+    r3d_set_ambient(0.26)
+
+    let logging: bool = getenv("FLOW_PHYS_LOG") != null
+    let probe_env: ptr<u8> = getenv("FLOW_PHYS_PROBE")
+    let mut probe_frame: i32 = PROBE_FRAME
+    if probe_env != null { probe_frame = parse_int(probe_env) }
+
+    let mut proj: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut view: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut vp: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let model: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let pproj: ptr<f32> = proj
+    let pview: ptr<f32> = view
+    let pvp: ptr<f32> = vp
+    m4_perspective(pproj, r3d_radians(58.0), r3d_aspect(), 0.1, 120.0)
+
+    reset_balls()
+    let e0: f32 = energy_kin() + energy_pot()
+    let e_rest: f32 = energy_rest()
+    let mut e_start: f32 = e0
+
+    let mut rest: f32 = 0.85
+    let mut yaw: f32 = 0.7
+    let mut cam_h: f32 = 7.0
+    let mut spin: bool = true
+    let mut paused: bool = false
+    let mut last_w: bool = false
+    let mut last_space: bool = false
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "PHYSICS 3D - Flow render3d")
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        r3d_tick()
+
+        if gfx_key_down(g, KEY_LEFT) { yaw = yaw - 0.03 }
+        if gfx_key_down(g, KEY_RIGHT) { yaw = yaw + 0.03 }
+        if gfx_key_down(g, KEY_UP) { cam_h = cam_h + 0.12 }
+        if gfx_key_down(g, KEY_DOWN) { cam_h = cam_h - 0.12 }
+        cam_h = r3d_clampf(cam_h, 1.2, 18.0)
+        if gfx_key_down(g, KEY_A) { rest = rest - 0.01 }
+        if gfx_key_down(g, KEY_D) { rest = rest + 0.01 }
+        rest = r3d_clampf(rest, 0.0, 1.0)
+
+        let w_now: bool = gfx_key_down(g, KEY_W)
+        if w_now and !last_w { spin = !spin }
+        last_w = w_now
+        let sp_now: bool = gfx_key_down(g, KEY_SPACE)
+        if sp_now and !last_space { paused = !paused }
+        last_space = sp_now
+        if gfx_key_down(g, KEY_R) {
+            reset_balls()
+            e_start = energy_kin() + energy_pot()
+        }
+
+        if spin { yaw = yaw + 0.006 }
+
+        contacts = 0
+        if !paused {
+            let mut s: i32 = 0
+            while s < SUBSTEPS {
+                step(rest)
+                s = s + 1
+            }
+        }
+
+        let ke: f32 = energy_kin()
+        let pe: f32 = energy_pot()
+        let etot: f32 = ke + pe
+
+        let eye: V3 = v3(cosf(yaw) * 15.0, cam_h, sinf(yaw) * 15.0)
+        m4_look_at(pview, eye, v3(0.0, 1.4, 0.0), v3(0.0, 1.0, 0.0))
+        m4_mul(pvp, proj, view)
+
+        # Spheres first, arena second: the depth buffer decides, not the order.
+        r3d_mesh_reset()
+        let mut i: i32 = 0
+        while i < NBALL {
+            let o: i32 = i * 3
+            r3d_mesh_sphere(v3(bpos[o], bpos[o + 1], bpos[o + 2]), brad[i],
+                            SEGS, RINGS,
+                            v3(bcol[o], bcol[o + 1], bcol[o + 2]))
+            i = i + 1
+        }
+        r3d_clear_gradient(v3(0.05, 0.07, 0.13), v3(0.15, 0.19, 0.28))
+        r3d_draw_mesh(model, vp, v3(0.38, 0.88, 0.28), R3D_GOURAUD)
+        draw_arena(vp)
+        r3d_present(g)
+
+        if logging and frame % LOG_EVERY == 0 {
+            printf("frame %.0f", frame as f64)
+            printf("  KE %.3f", ke as f64)
+            printf("  PE %.3f", pe as f64)
+            printf("  E %.3f", etot as f64)
+            printf("  E/E0 %.4f", (etot / e_start) as f64)
+            printf("  Erest/E0 %.4f", (e_rest / e_start) as f64)
+            printf("  ms %.2f", r3d_frame_ms() as f64)
+            printf("  fps %.1f\n", r3d_fps() as f64)
+        }
+        if logging and frame == probe_frame {
+            # Where each sphere landed on screen, and how deep. Two entries
+            # whose discs overlap are the depth test's exam question.
+            printf("probe frame %.0f\n", frame as f64)
+            let mut q: i32 = 0
+            while q < NBALL {
+                let o: i32 = q * 3
+                let c: V3 = v3(bpos[o], bpos[o + 1], bpos[o + 2])
+                let cl: V3 = m4_point(vp, c)
+                let cw: f32 = m4_pointw(vp, c)
+                if cw > 0.05 {
+                    printf("  ball %.0f", q as f64)
+                    printf(" sx %.1f", ((cl.x / cw * 0.5 + 0.5) * (WIN_W as f32)) as f64)
+                    printf(" sy %.1f", ((0.5 - cl.y / cw * 0.5) * (WIN_H as f32)) as f64)
+                    printf(" rpx %.1f", (brad[q] * vp[5] / cw * ((WIN_H as f32) * 0.5)) as f64)
+                    printf(" w %.3f", cw as f64)
+                    printf(" col %.2f", bcol[o] as f64)
+                    printf(" %.2f", bcol[o + 1] as f64)
+                    printf(" %.2f\n", bcol[o + 2] as f64)
+                }
+                q = q + 1
+            }
+        }
+
+        gfx_fill_rect(g, 0, 0, WIN_W, 60, 14, 17, 24)
+        gfx_fill_rect(g, 0, WIN_H - 44, WIN_W, 44, 14, 17, 24)
+        gfx_draw_text(g, 8, 6, "PHYSICS 3D", 2, 240, 240, 246)
+        gfx_draw_text(g, 150, 8, "SPHERES", 1, 170, 175, 190)
+        gfx_draw_int(g, 214, 8, NBALL, 1, 240, 240, 246)
+        gfx_draw_text(g, 250, 8, "CONTACTS", 1, 170, 175, 190)
+        gfx_draw_int(g, 322, 8, contacts, 1, 240, 240, 246)
+        gfx_draw_text(g, 380, 8, "E", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 392, 8, etot as f64, 1, 1, 240, 240, 246)
+
+        gfx_draw_text(g, 8, 30, "RESTITUTION", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 100, 30, rest as f64, 2, 1, 250, 220, 140)
+        gfx_draw_text(g, 150, 30, "KE", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 172, 30, ke as f64, 1, 1, 150, 220, 250)
+        gfx_draw_text(g, 232, 30, "PE", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 254, 30, pe as f64, 1, 1, 150, 220, 250)
+        gfx_draw_text(g, 314, 30, "E/E0", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 352, 30, (100.0 * etot / e_start) as f64, 1, 1, 130, 240, 160)
+        gfx_draw_text(g, 410, 30, "%", 1, 170, 175, 190)
+
+        gfx_draw_text(g, 8, WIN_H - 38, "REST FLOOR", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 92, WIN_H - 38, (100.0 * e_rest / e_start) as f64, 1, 1,
+                       250, 190, 120)
+        gfx_draw_text(g, 134, WIN_H - 38, "%", 1, 170, 175, 190)
+        gfx_draw_text(g, 156, WIN_H - 38, "TRIS", 1, 170, 175, 190)
+        gfx_draw_int(g, 196, WIN_H - 38, r3d_tris_drawn(), 1, 240, 240, 246)
+        gfx_draw_text(g, 262, WIN_H - 38, "MS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 286, WIN_H - 38, r3d_frame_ms() as f64, 2, 1, 240, 240, 246)
+        gfx_draw_text(g, 350, WIN_H - 38, "FPS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 382, WIN_H - 38, r3d_fps() as f64, 1, 1, 130, 240, 160)
+        if paused {
+            gfx_draw_text(g, 430, WIN_H - 38, "PAUSE", 1, 250, 160, 160)
+        }
+        gfx_draw_text(g, 8, WIN_H - 20,
+                      "ARROWS ORBIT   A/D RESTITUTION   W SPIN   SPACE PAUSE   R DROP",
+                      1, 140, 145, 160)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
