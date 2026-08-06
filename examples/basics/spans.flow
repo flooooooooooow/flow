@@ -1,0 +1,65 @@
+# Spans: a borrowed view over contiguous storage.
+#
+# A span is a {pointer, length} pair. It never owns its data and never
+# allocates. Callers never write `span(...)`: an array or a slice borrows
+# into one automatically. See docs/language/spans.md.
+
+# Read-only view. `&[f32]` is the same type, spelled differently.
+function total(samples: span<f32>) -> f32 {
+    let mut acc: f32 = 0.0
+    let mut i: i32 = 0
+    while i < samples.len {
+        acc = acc + samples[i]
+        i = i + 1
+    }
+    return acc
+}
+
+# Mutable view. Only `let mut` storage can be borrowed this way.
+function scale(samples: span<mut f32>, factor: f32) {
+    let mut i: i32 = 0
+    while i < samples.len {
+        samples[i] = samples[i] * factor
+        i = i + 1
+    }
+}
+
+# A static extent is a compile-time fact: the caller must supply exactly 4.
+function corners(box: span<f32, 4>) -> f32 {
+    return box[0] + box[3]
+}
+
+# A slice of a span is a span. The view narrows; nothing is copied.
+function first_half(samples: span<f32>) -> span<f32> {
+    return samples[0..2]
+}
+
+function main() -> i32 {
+    let mut signal: array<f32, 4> = [1.0, 2.0, 3.0, 4.0]
+
+    # A fixed array borrows at the call site: {signal, 4}.
+    let sum: f32 = total(signal)
+
+    # A slice expression borrows a run of it: {&signal[1], 2}.
+    let window: f32 = total(signal[1..3])
+
+    # Writing through a mutable view mutates the borrowed storage.
+    scale(signal, 2.0)
+
+    let edges: f32 = corners(signal)
+    let front: f32 = total(first_half(signal))
+
+    if sum != 10.0 {
+        return 1
+    }
+    if window != 5.0 {
+        return 2
+    }
+    if edges != 10.0 {
+        return 3
+    }
+    if front != 6.0 {
+        return 4
+    }
+    return 0
+}
