@@ -1,0 +1,217 @@
+# CRUISE CONTROL: PI on a first-order vehicle, I-P vs textbook PI.
+#
+# PLANT
+#   m v' = u - B v + d, with m = 1000 kg, B = 50 N s/m. A PI controller
+#   with setpoint weighting b_sp on the proportional term:
+#
+#       u = Kp (b_sp * r - v) + Ki * xi
+#       xi' = r - v
+#
+#   b_sp = 1 is textbook PI (setpoint goes through Kp). b_sp = 0 is the
+#   I-P form (setpoint only through the integrator). Both share the same
+#   characteristic polynomial; only the zeros differ, so overshoot of a
+#   step response changes while the damping ratio does not.
+#
+# CLOSED FORMS
+#   Choosing Ki = m wn^2 and Kp = 2 m wn zeta - B places the closed-loop
+#   poles at -zeta wn +- i wn sqrt(1 - zeta^2). The measured log decrement
+#   of successive peaks recovers zeta, and the peak spacing recovers wn.
+#   For I-P (b_sp = 0) the step overshoot matches exp(-pi zeta / sqrt(1-zeta^2))
+#   to parts in 1e-8; textbook PI overshoots more because of the zero.
+#
+# WHAT THIS PROVES
+#   Pole placement by the generated RK4, the damping formula, and the
+#   distinction between PI and I-P overshoot.
+#
+# Run: ./flow run examples/evolution/cruise_control.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function exp(x: f64) -> f64
+}
+
+const M: f64 = 1000.0
+const B: f64 = 50.0
+const DT: f64 = 1.0e-3
+const WN: f64 = 0.2
+const TWO_PI: f64 = 6.283185307179586
+const KI: f64 = 40.0  # M * WN * WN
+
+flow Cruise {
+    state v  : f64 = 0.0
+    state xi : f64 = 0.0
+
+    param kp  : f64 = 0.0
+    param ki  : f64 = KI
+    param r   : f64 = 25.0
+    param d   : f64 = 0.0
+    param bsp : f64 = 0.0
+
+    solver { dt 1 ms  method rk4 }
+
+    v evolves as (kp * (bsp * r - v) + ki * xi - B * v + d) / M
+    xi evolves as r - v
+}
+
+let mut m_zeta: f64 = 0.0
+let mut m_wn: f64 = 0.0
+let mut m_overshoot: f64 = 0.0
+let mut m_vfin: f64 = 0.0
+let mut m_npeaks: i32 = 0
+
+function sim_ringing(kp: f64, bsp: f64, tend: f64) -> void {
+    let mut s: Cruise = Cruise_new()
+    s.kp = kp
+    s.ki = KI
+    s.r = 25.0
+    s.d = 0.0
+    s.bsp = bsp
+
+    let n: i32 = (tend / DT) as i32
+    let mut ym2: f64 = -1.0e30
+    let mut ym1: f64 = -1.0e30
+    let mut have2: bool = false
+    let mut have1: bool = false
+    let mut peak: f64 = -1.0e30
+    let mut t1: f64 = -1.0
+    let mut y1: f64 = 0.0
+    let mut t2: f64 = -1.0
+    let mut y2: f64 = 0.0
+    let mut np: i32 = 0
+    let mut t: f64 = 0.0
+
+    for k in 0 to n {
+        Cruise_step(&s, DT)
+        t = t + DT
+        let y: f64 = s.v
+        if y > peak {
+            peak = y
+        }
+        if have2 and have1 {
+            if ym1 > ym2 and ym1 >= y {
+                let den: f64 = ym2 - 2.0 * ym1 + y
+                let mut d: f64 = 0.0
+                if fabs(den) > 1.0e-18 {
+                    d = 0.5 * (ym2 - y) / den
+                }
+                let tp: f64 = (t - DT) + d * DT
+                let yp: f64 = ym1 - 0.25 * (ym2 - y) * d
+                np = np + 1
+                if np == 1 {
+                    t1 = tp
+                    y1 = yp
+                }
+                if np == 2 {
+                    t2 = tp
+                    y2 = yp
+                }
+            }
+        }
+        ym2 = ym1
+        ym1 = y
+        if !have1 {
+            have1 = true
+        } else {
+            have2 = true
+        }
+    }
+
+    m_vfin = s.v
+    m_npeaks = np
+    m_overshoot = (peak - m_vfin) / m_vfin
+    if np < 2 or t2 <= t1 {
+        m_zeta = 0.0
+        m_wn = 0.0
+        return
+    }
+    let td: f64 = t2 - t1
+    let delta: f64 = log(fabs(y1 - m_vfin) / fabs(y2 - m_vfin))
+    m_zeta = delta / sqrt(4.0 * TWO_PI * TWO_PI / 4.0 + delta * delta)
+    # delta / sqrt(4 pi^2 + delta^2)
+    let mut den2: f64 = 4.0 * 9.869604401089358 + delta * delta
+    m_zeta = delta / sqrt(den2)
+    m_wn = TWO_PI / (td * sqrt(1.0 - m_zeta * m_zeta))
+}
+
+function main() -> i32 {
+    println("  CRUISE CONTROL  --  PI pole placement, PI vs I-P overshoot")
+    println("  ==========================================================")
+    println("")
+
+    let mut worst_z: f64 = 0.0
+    let mut worst_wn: f64 = 0.0
+    let mut worst_ov: f64 = 0.0
+    let mut all_ok: bool = true
+
+    # Three damping ratios; I-P form (bsp = 0) should match the formulas.
+    let zetas: array<f64, 3> = [0.3, 0.5, 0.7]
+    for i in 0 to 3 {
+        let zeta: f64 = zetas[i]
+        let kp: f64 = 2.0 * M * WN * zeta - B
+        sim_ringing(kp, 0.0, 400.0)
+        let z_err: f64 = fabs(m_zeta - zeta)
+        let wn_err: f64 = fabs(m_wn - WN) / WN
+        let ov_ref: f64 = exp(0.0 - 3.141592653589793 * zeta / sqrt(1.0 - zeta * zeta))
+        let ov_err: f64 = fabs(m_overshoot - ov_ref)
+
+        print("    I-P zeta=")
+        printf("%4.2f", zeta)
+        print("  meas zeta=")
+        printf("%8.5f", m_zeta)
+        print("  wn=")
+        printf("%8.5f", m_wn)
+        print("  Mp=")
+        printf("%9.6f", m_overshoot)
+        print("  ref=")
+        printf("%9.6f", ov_ref)
+        println("")
+
+        if z_err > worst_z { worst_z = z_err }
+        if wn_err > worst_wn { worst_wn = wn_err }
+        if ov_err > worst_ov { worst_ov = ov_err }
+        if z_err > 5.0e-3 or wn_err > 5.0e-3 or ov_err > 1.0e-4 {
+            all_ok = false
+        }
+    }
+    println("")
+
+    # Same poles, textbook PI (bsp = 1): larger overshoot than the formula.
+    let zeta: f64 = 0.5
+    let kp: f64 = 2.0 * M * WN * zeta - B
+    sim_ringing(kp, 1.0, 400.0)
+    let ov_ref: f64 = exp(0.0 - 3.141592653589793 * zeta / sqrt(1.0 - zeta * zeta))
+    print("    PI  zeta=0.50  Mp=")
+    printf("%9.6f", m_overshoot)
+    print("  I-P formula=")
+    printf("%9.6f", ov_ref)
+    print("  (PI must overshoot more)")
+    println("")
+    let pi_more: bool = m_overshoot > ov_ref + 0.05
+    if !pi_more {
+        all_ok = false
+    }
+    println("")
+
+    print("    worst |zeta err|, |wn|rel, |Mp|err : ")
+    printf("%9.3e", worst_z)
+    print("  ")
+    printf("%9.3e", worst_wn)
+    print("  ")
+    printf("%9.3e", worst_ov)
+    println("")
+    println("")
+
+    if all_ok and pi_more {
+        println("    PASS: pole placement and I-P overshoot match; PI overshoots more")
+        return 0
+    }
+    if !pi_more {
+        println("    FAIL: textbook PI did not overshoot more than I-P")
+        return 1
+    }
+    println("    FAIL: I-P damping, wn or overshoot missed the closed form")
+    return 2
+}

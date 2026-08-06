@@ -107,7 +107,7 @@ scripted input.
 **[Full game gallery →](demos/games.md)** — all 24 games with recorded
 gameplay, run commands, and sources.
 
-**[Evolution suite →](demos/evolution.md)** — thirty-two systems that change
+**[Evolution suite →](demos/evolution.md)** — thirty-four systems that change
 over time, each checked against theory.
 
 **[Morphogenesis gallery →](demos/morphogenesis.md)** — twenty-one live simulations
@@ -138,7 +138,7 @@ and policy gradients against the games above, plus
 | [Game gallery](demos/games.md) | 24 complete games, each with a recorded GIF |
 | [Morphogenesis gallery](demos/morphogenesis.md) | 21 pattern-formation simulations, each with a recorded GIF |
 | [Neuron gallery](demos/neuro.md) | 15 spiking-dynamics simulations, each gated and recorded |
-| [Evolution suite](demos/evolution.md) | 32 systems evolving through time, each gated on a measurement |
+| [Evolution suite](demos/evolution.md) | 34 systems evolving through time, each gated on a measurement |
 | [Training game AIs](tutorials/game-ai.md) | Q-learning, GA, and policy gradients that measurably learn |
 | [ML on a MacBook](tutorials/ml-on-macbook.md) | Digit classifier, parallel training, the Metal path |
 | [Comparison](comparison.md) | Flow vs C, Rust, Zig, Mojo |
