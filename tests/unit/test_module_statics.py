@@ -11,7 +11,7 @@ import pytest
 from flow.parser import parse_flow_code, StaticDecl
 from flow.mlir_generator import flow_to_mlir
 
-from .compiler_helpers import errors, to_c, typecheck, compile_and_run, needs_clang
+from .compiler_helpers import errors, to_c, typecheck
 
 
 COUNTER_MODULE = """
@@ -117,23 +117,6 @@ class TestMlirBackend:
             flow_to_mlir(decls)
 
 
-@needs_clang
-class TestCompileAndRun:
-    def test_counter_bumped_three_times_exits_with_3(self):
-        assert compile_and_run(COUNTER_MODULE) == 3
-
-    def test_array_static_read_write_across_functions(self):
-        source = """
-        let mut cells: array<i32, 4> = [0, 0, 0, 0]
-
-        function poke(i: i32, v: i32) -> void {
-            cells[i] = v
-        }
-
-        function main() -> i32 {
-            poke(0, 1)
-            poke(3, 2)
-            return cells[0] + cells[3]
-        }
-        """
-        assert compile_and_run(source) == 3
+# TestCompileAndRun compiled and ran COUNTER_MODULE and an array-static
+# program. Both now run as tests/lang/test_module_statics.flow, which also
+# covers a float static mutated in place and a null pointer static.

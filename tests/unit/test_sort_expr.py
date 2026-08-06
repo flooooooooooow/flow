@@ -77,34 +77,10 @@ def test_parse_sortBy_alias_and_entropy():
     assert "parallel" in s.policies
 
 
-def test_typecheck_and_codegen_i32_sort():
-    src = """
-    function main() -> i32 {
-        let mut xs: array<i32, 4> = [4, 2, 3, 1]
-        xs |> sort
-        return xs[0]
-    }
-    """
-    c = flow_to_c(_parse(src))
-    assert "__flow_sort_" in c
-    assert "int32_t *a" in c
-
-
-def test_codegen_struct_multi_key():
-    src = """
-    struct P { score: i32, name: i32 }
-    function main() -> i32 {
-        let mut ps: array<P, 2> = [
-            P { score: 1, name: 2 },
-            P { score: 2, name: 1 }
-        ]
-        ps |> sortBy [desc .score, asc .name]
-        return ps[0].score
-    }
-    """
-    c = flow_to_c(_parse(src))
-    assert ".score" in c
-    assert ".name" in c
+# test_typecheck_and_codegen_i32_sort and test_codegen_struct_multi_key
+# asserted that the emitted C mentions __flow_sort_ and the key field
+# names. Sorted order is what those asserts stood for, and
+# tests/lang/test_sort.flow checks it by running the sort.
 
 
 # ---------------------------------------------------------------------------

@@ -14,6 +14,8 @@
 # The FrameArena mirrors lib/stdlib/memory.flow; it is inlined so this
 # test is one translation unit.
 #
+# Supersedes (behavioral parts of):
+#   tests/unit/test_lifetime_domains.py::test_an_accepted_domain_program_runs
 # Exit 0 on success; a nonzero exit identifies the failing check.
 
 extern {
