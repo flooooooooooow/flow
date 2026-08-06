@@ -490,7 +490,7 @@ function main() -> i32 {
     let eval_n: i32 = 100
 
     # Random baseline on the evaluation seeds (rally capped at 4 hits).
-    ai_seed(2718 as u32)
+    ai_seed(2718)
     let base_avg: f32 = eval_mode(MODE_RANDOM, eval_n)
     print("random baseline: avg rally ")
     printf("%.2f", base_avg as f64)
@@ -500,7 +500,7 @@ function main() -> i32 {
     println("")
 
     # Train.
-    mlp_init(3, 8, 3, 1337 as u32)
+    mlp_init(3, 8, 3, 1337)
     println("training 500 episodes (REINFORCE, gamma 0.98, lr 0.005):")
     let mut win_hits: i32 = 0
     let mut win_miss: i32 = 0
