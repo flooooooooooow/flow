@@ -8,7 +8,11 @@ Uses name mangling to generate unique C function names.
 
 from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
-from .parser import FunctionDecl, Type, Expression, Variable, Literal, FunctionCall, StructLiteral, FieldAccess, BinaryOperation, UnaryOperation
+from .parser import (
+    FunctionDecl, Type, Expression, Variable, Literal, FunctionCall,
+    StructLiteral, FieldAccess, BinaryOperation, UnaryOperation, SliceExpr,
+    is_span_type_name, span_element_name,
+)
 
 
 @dataclass
@@ -138,7 +142,15 @@ class OverloadResolver:
         
         elif isinstance(expr, Variable):
             return self._var_types.get(expr.name)
-        
+
+        elif isinstance(expr, SliceExpr):
+            # `base[a..b]` borrows a span; mutability is decided by the type
+            # checker, so report the const form and let span-vs-span
+            # compatibility below accept either.
+            base = self.get_expr_type(expr.base)
+            elem = self._element_name(base)
+            return f"span_const_{elem}" if elem else None
+
         elif isinstance(expr, FieldAccess):
             # Get type of object, then look up field type
             obj_type = self.get_expr_type(expr.object)
@@ -291,10 +303,33 @@ class OverloadResolver:
             return f"ptr_{parts[1]}"
         return None
 
+    @staticmethod
+    def _element_name(type_name: Optional[str]) -> Optional[str]:
+        """Element type name of an array / span / pointer type name."""
+        if not type_name:
+            return None
+        if is_span_type_name(type_name):
+            return span_element_name(type_name)
+        for prefix in ("array_", "ptr_"):
+            if type_name.startswith(prefix):
+                rest = type_name[len(prefix):]
+                parts = rest.split("_", 1)
+                if parts[0].isdigit() and len(parts) > 1:
+                    return parts[1]
+                return rest
+        return None
+
     def _types_compatible(self, expected: str, actual: str) -> bool:
         """Check if actual type is compatible with expected type."""
         if expected == actual:
             return True
+        # Spans auto-borrow from arrays and other spans of the same element.
+        # Mutability and extent are the type checker's business; here we only
+        # need to pick the right overload.
+        if is_span_type_name(expected):
+            if not (is_span_type_name(actual) or actual.startswith("array_")):
+                return False
+            return span_element_name(expected) == self._element_name(actual)
         ptr_type = self._ptr_type_for_array(actual)
         if ptr_type and expected == ptr_type:
             return True

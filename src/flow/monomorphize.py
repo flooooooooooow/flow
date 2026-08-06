@@ -33,7 +33,7 @@ from .parser import (
     VarDecl, ReturnStatement, Assignment, IfStatement, WhileStatement,
     ForStatement, BinaryOperation, UnaryOperation, FunctionCall,
     Literal, StructLiteral, ArrayLiteral, FieldAccess,
-    ArrayAccess, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter, CastExpression,
+    ArrayAccess, SliceExpr, Expression, ImplDecl, TraitDecl, EnumDecl, TypeParameter, CastExpression,
     ExpectStatement, RecordUpdate, Variable,
 )
 
@@ -299,6 +299,10 @@ class Monomorphizer:
         elif isinstance(expr, ArrayAccess):
             self._scan_expression(expr.array)
             self._scan_expression(expr.index)
+        elif isinstance(expr, SliceExpr):
+            self._scan_expression(expr.base)
+            self._scan_expression(expr.start)
+            self._scan_expression(expr.end)
         elif isinstance(expr, ArrayLiteral):
             for elem in expr.elements:
                 self._scan_expression(elem)
@@ -759,6 +763,12 @@ class Monomorphizer:
             new_arr = self._substitute_expression(expr.array, type_map)
             new_idx = self._substitute_expression(expr.index, type_map)
             return ArrayAccess(new_arr, new_idx)
+        elif isinstance(expr, SliceExpr):
+            return SliceExpr(
+                self._substitute_expression(expr.base, type_map),
+                self._substitute_expression(expr.start, type_map),
+                self._substitute_expression(expr.end, type_map),
+            )
         elif isinstance(expr, ArrayLiteral):
             new_elems = [self._substitute_expression(e, type_map) for e in expr.elements]
             return ArrayLiteral(new_elems)
@@ -968,6 +978,12 @@ class Monomorphizer:
             new_arr = self._rewrite_expression(expr.array)
             new_idx = self._rewrite_expression(expr.index)
             return ArrayAccess(new_arr, new_idx)
+        elif isinstance(expr, SliceExpr):
+            return SliceExpr(
+                self._rewrite_expression(expr.base),
+                self._rewrite_expression(expr.start),
+                self._rewrite_expression(expr.end),
+            )
         elif isinstance(expr, ArrayLiteral):
             new_elems = [self._rewrite_expression(e) for e in expr.elements]
             return ArrayLiteral(new_elems)
