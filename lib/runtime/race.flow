@@ -1,16 +1,247 @@
-# Flow runtime: race-detector probe wrappers (TLS tables stay in flow_race.c).
+# Flow runtime: opt-in race / deadlock detector (FLOW_RACE=1).
+#
+# Everything policy-shaped lives here: the enable decision, the lock-order
+# edge table and its inversion test, the shadow-memory table, the
+# happens-before decision for every read/write, and all five diagnostics.
+#
+# runtime/flow_race.c keeps only what Flow cannot express: the thread-local
+# lock stack, pthread_self as a thread key, and the two table mutexes. It
+# calls into this module with the relevant mutex already held.
 
 extern {
-    function flow_rt_race_init() -> void
-    function flow_rt_race_enabled() -> i32
+    function getenv(name: string) -> ptr<u8>
+    function calloc(count: i64, size: i64) -> ptr<void>
+    function fprintf(f: ptr<void>, fmt: string) -> i32
+    function flow_rt_stderr() -> ptr<void>
+}
+
+const RACE_EDGES: i32 = 512
+const RACE_SHADOW: i32 = 4096
+
+# -1 = not probed yet, 0 = off, 1 = on.
+let mut race_state: i32 = -1
+
+# Lock-order graph: edge_before[i] happened before edge_after[i].
+let mut edge_before: ptr<i64> = null
+let mut edge_after: ptr<i64> = null
+let mut edge_n: i32 = 0
+
+# Shadow memory: last writer / reader per touched address.
+let mut shadow_addr: ptr<i64> = null
+let mut shadow_size: ptr<i32> = null
+let mut shadow_writer: ptr<i64> = null
+let mut shadow_reader: ptr<i64> = null
+let mut shadow_held: ptr<i32> = null
+let mut shadow_n: i32 = 0
+
+# Lowercase hex with no leading zeros, i.e. exactly what printf("%lx") emits.
+# Written as a NUL-terminated string into `buf` (needs 17 bytes).
+function race_hex(buf: ptr<u8>, v: i64) -> void {
+    if v == 0 {
+        buf[0] = 48
+        buf[1] = 0
+        return
+    }
+    let tmp: array<u8, 20> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let t: ptr<u8> = tmp
+    let mut n: i32 = 0
+    let mut rest: i64 = v
+    while rest != 0 and n < 16 {
+        let d: i64 = rest & 15
+        if d < 10 {
+            t[n] = (48 + d) as u8
+        } else {
+            t[n] = (87 + d) as u8
+        }
+        n = n + 1
+        rest = (rest >> 4) & 0x0FFFFFFFFFFFFFFF
+    }
+    let mut i: i32 = 0
+    while i < n {
+        buf[i] = t[n - 1 - i]
+        i = i + 1
+    }
+    buf[n] = 0
 }
 
 @flow_api
 export function flow_race_init() -> void {
-    flow_rt_race_init()
+    if race_state >= 0 {
+        return
+    }
+    let raw: ptr<u8> = getenv("FLOW_RACE")
+    race_state = 0
+    if raw != null and raw[0] == 49 {
+        race_state = 1
+    }
+    if race_state == 1 {
+        fprintf(flow_rt_stderr(), "[flow-race] enabled (lock-order + shadow memory)\n")
+    }
 }
 
 @flow_api
 export function flow_race_enabled() -> i32 {
-    return flow_rt_race_enabled()
+    if race_state < 0 {
+        flow_race_init()
+    }
+    return race_state
+}
+
+# Tables are allocated on first use; both callers hold the matching mutex.
+function race_edges_ready() -> bool {
+    if edge_before != null {
+        return true
+    }
+    edge_before = calloc(RACE_EDGES as i64, 8) as ptr<i64>
+    edge_after = calloc(RACE_EDGES as i64, 8) as ptr<i64>
+    if edge_before == null or edge_after == null {
+        return false
+    }
+    return true
+}
+
+function race_shadow_ready() -> bool {
+    if shadow_addr != null {
+        return true
+    }
+    shadow_addr = calloc(RACE_SHADOW as i64, 8) as ptr<i64>
+    shadow_size = calloc(RACE_SHADOW as i64, 4) as ptr<i32>
+    shadow_writer = calloc(RACE_SHADOW as i64, 8) as ptr<i64>
+    shadow_reader = calloc(RACE_SHADOW as i64, 8) as ptr<i64>
+    shadow_held = calloc(RACE_SHADOW as i64, 4) as ptr<i32>
+    if shadow_addr == null or shadow_size == null or shadow_writer == null {
+        return false
+    }
+    if shadow_reader == null or shadow_held == null {
+        return false
+    }
+    return true
+}
+
+function race_edge_exists(a: i64, b: i64) -> bool {
+    let mut i: i32 = 0
+    while i < edge_n {
+        if edge_before[i] == a and edge_after[i] == b {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Record `before` -> `after`. The reverse edge already being present means the
+# two locks are taken in both orders somewhere, which is a deadlock waiting to
+# happen. Called with the edge mutex held.
+@flow_api
+export function flow_race_note_edge(before: ptr<void>, after: ptr<void>) -> void {
+    if !race_edges_ready() {
+        return
+    }
+    let a: i64 = before as i64
+    let b: i64 = after as i64
+    if a == b {
+        return
+    }
+    if race_edge_exists(b, a) {
+        fprintf(flow_rt_stderr(),
+                "[flow-race] WARNING: lock-order inversion %p <-> %p (possible deadlock)\n",
+                before, after)
+        return
+    }
+    if race_edge_exists(a, b) {
+        return
+    }
+    if edge_n >= RACE_EDGES {
+        return
+    }
+    edge_before[edge_n] = a
+    edge_after[edge_n] = b
+    edge_n = edge_n + 1
+}
+
+# Slot index for `addr`, appending a fresh zeroed slot if needed. -1 when full.
+function race_shadow_find(addr: i64) -> i32 {
+    let mut i: i32 = 0
+    while i < shadow_n {
+        if shadow_addr[i] == addr {
+            return i
+        }
+        i = i + 1
+    }
+    if shadow_n >= RACE_SHADOW {
+        return -1
+    }
+    let slot: i32 = shadow_n
+    shadow_n = shadow_n + 1
+    shadow_addr[slot] = addr
+    shadow_size[slot] = 0
+    shadow_writer[slot] = 0
+    shadow_reader[slot] = 0
+    shadow_held[slot] = 0
+    return slot
+}
+
+# One shadow-memory touch. `tid` identifies the calling thread, `locked` says
+# whether it holds any lock right now. Two threads reaching the same address
+# with neither holding a lock is the race we report. Called with the shadow
+# mutex held.
+@flow_api
+export function flow_race_shadow_touch(
+    addr: ptr<void>,
+    size: i32,
+    is_write: i32,
+    tid: i64,
+    locked: i32
+) -> void {
+    if addr == null {
+        return
+    }
+    if !race_shadow_ready() {
+        return
+    }
+    let key: i64 = addr as i64
+    let slot: i32 = race_shadow_find(key)
+    if slot < 0 {
+        return
+    }
+    let hex_me: array<u8, 20> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let hex_other: array<u8, 20> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let me: ptr<u8> = hex_me
+    let other: ptr<u8> = hex_other
+    race_hex(me, tid)
+    let unguarded: bool = locked == 0 and shadow_held[slot] == 0
+    shadow_size[slot] = size
+    if is_write != 0 {
+        if shadow_writer[slot] != 0 and shadow_writer[slot] != tid and unguarded {
+            race_hex(other, shadow_writer[slot])
+            fprintf(flow_rt_stderr(),
+                    "[flow-race] WARNING: data race write %p size=%d threads %s / %s (no common lock)\n",
+                    addr, size, other as string, me as string)
+        }
+        if shadow_reader[slot] != 0 and shadow_reader[slot] != tid and unguarded {
+            race_hex(other, shadow_reader[slot])
+            fprintf(flow_rt_stderr(),
+                    "[flow-race] WARNING: data race write-after-read %p threads %s / %s\n",
+                    addr, other as string, me as string)
+        }
+        shadow_writer[slot] = tid
+        shadow_held[slot] = locked
+        return
+    }
+    if shadow_writer[slot] != 0 and shadow_writer[slot] != tid and unguarded {
+        race_hex(other, shadow_writer[slot])
+        fprintf(flow_rt_stderr(),
+                "[flow-race] WARNING: data race read %p size=%d threads %s / %s (no common lock)\n",
+                addr, size, other as string, me as string)
+    }
+    shadow_reader[slot] = tid
 }
