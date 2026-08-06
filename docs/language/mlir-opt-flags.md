@@ -36,5 +36,23 @@ python3 -m flow.transpiler --print-pass-pipeline --opt-level O2 --no-inline
 
 `--opt-report` prints pass statistics using the same flag set.
 
-> Vectorization / loop fusion need affine or SCF loops from the generator;
-> on today’s mostly func/arith MLIR they are soft no-ops until that IR lands.
+## Generator-side vectorization
+
+Independently of `--optimize`, the generator rewrites simple elementwise
+counted loops itself:
+
+```
+for i in 0 to n { out[i] = a * x[i] + y[i] }
+```
+
+over `f32` or `i32` memref bases becomes a step-4 `scf.for` of
+`vector.transfer_read` / `vector.transfer_write` plus a scalar remainder loop,
+marked in the IR with `// flow: vectorized elementwise f32 loop (VF=4)`.
+Loop-carried accumulators and pointer bases stay scalar.
+
+The lowering pipeline runs `--convert-vector-to-scf` before `--convert-scf-to-cf`
+and `--convert-vector-to-llvm` before `--convert-func-to-llvm`; without both,
+`vector.transfer_read` reaches `mlir-translate` as an unregistered op.
+
+> `affine-super-vectorize` and `affine-loop-fusion` still need affine loops,
+> which the generator does not emit; they remain soft no-ops.
