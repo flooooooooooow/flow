@@ -1,0 +1,128 @@
+# Two-operator FM: one oscillator bending another one's phase.
+#
+# WHAT YOU WILL HEAR
+#   Eight seconds, five strikes of the same bell, one every 1.6 seconds. The
+#   pitch is A4 every time. What changes is the modulation index, which
+#   climbs from 1 to 12 across the five strikes: the first strike is nearly a
+#   pure tone, the last is a full metallic clang.
+#
+# HOW IT WORKS
+#   The carrier's phase is offset by the modulator's output:
+#
+#       out = sin(2*pi*fc*t + I(t) * sin(2*pi*fm*t))
+#
+#   Every unit of index buys roughly one more sideband pair either side of
+#   the carrier, spaced fm apart. The modulator here runs at 1.4 times the
+#   carrier, which is not a whole-number ratio, so the sidebands do not land
+#   on a harmonic series and the result reads as metal rather than as a
+#   musical instrument. The index decays over each strike, which is why the
+#   sound gets darker as it rings out: real struck metal loses its high
+#   partials first.
+#
+# LISTEN
+#   ./flow audio examples/audio/fm_voice.flow
+#
+# RENDER AND CHECK
+#   FLOW_AUDIO_RENDER=build/audio/fm_voice.wav \
+#     ./flow audio examples/audio/fm_voice.flow
+
+import "stdlib/audio.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/envelopes.flow"
+import "stdlib/audio/safety.flow"
+import "stdlib/audio/sink.flow"
+import "stdlib/audio/verify.flow"
+
+const RATE_HZ: i32 = 48000
+const BLOCK: i32 = 256
+const SECONDS: f32 = 8.0
+
+const STRIKE_STEP: i32 = 76800        # 1.600 s at 48 kHz
+const STRIKE_COUNT: i32 = 5
+
+# Modulator frequency as a multiple of the carrier. 1.4 is deliberately not
+# a whole number.
+const FM_RATIO: f64 = 1.4
+
+# Index of the first and last strike, in radians of carrier phase deviation.
+const INDEX_FIRST: f32 = 1.0
+const INDEX_LAST: f32 = 12.0
+
+const AMP: f32 = 0.40
+
+# 1 / (2 * pi): converts a phase deviation in radians into the normalised
+# phase units the oscillator module uses.
+const INV_TWO_PI: f64 = 0.15915494309189535
+
+function main() -> i32 {
+    println("fm voice")
+    println("  8.0 seconds, five strikes of a bell at A4 (440.00 Hz)")
+    println("  carrier 440.00 Hz, modulator 616.00 Hz (ratio 1.4, inharmonic)")
+    println("  modulation index 1 on the first strike, 12 on the last")
+    println("  each strike starts bright and darkens as the index decays")
+
+    let rate: SampleRate = sample_rate_48000()
+    let mut out: AudioSink = sink_open(RATE_HZ, 2, BLOCK)
+    let sp: ptr<AudioSink> = &out
+    let mut chain: SafetyChain = safety_new(rate, SECONDS)
+    let cp: ptr<SafetyChain> = &chain
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(BLOCK, 2, layout_interleaved())
+
+    let carrier_hz: f32 = midi_to_freq(69)
+    let mut car: Phasor = phasor_new(carrier_hz as f64, rate)
+    let mut mod_op: Phasor = phasor_new((carrier_hz as f64) * FM_RATIO, rate)
+
+    # Two decays per strike: the index falls faster than the loudness, which
+    # is what makes a struck bell darken while it is still ringing.
+    let mut amp_env: ExpDecay = exp_decay_new(900.0, rate)
+    let mut idx_env: ExpDecay = exp_decay_new(260.0, rate)
+
+    let mut n: i32 = 0
+    let mut strike: i32 = -1
+    let mut index_now: f32 = INDEX_FIRST
+
+    while !safety_finished(cp) {
+        let count: i32 = safety_next_block(cp, BLOCK)
+        let mut i: i32 = 0
+        while i < count {
+            let slot: i32 = n / STRIKE_STEP
+            if slot != strike and slot < STRIKE_COUNT {
+                strike = slot
+                let t: f32 = (slot as f32) / ((STRIKE_COUNT - 1) as f32)
+                index_now = INDEX_FIRST + (INDEX_LAST - INDEX_FIRST) * t
+                amp_env = exp_decay_trigger(amp_env)
+                idx_env = exp_decay_trigger(idx_env)
+            }
+
+            amp_env = exp_decay_tick(amp_env)
+            idx_env = exp_decay_tick(idx_env)
+            let idx: f64 = (index_now * exp_decay_value(idx_env)) as f64
+
+            let m: f32 = sine(phasor_value(mod_op))
+            mod_op = phasor_tick(mod_op)
+            let pm: f64 = phasor_value(car) + idx * (m as f64) * INV_TWO_PI
+            let s: f32 = sine(pm) * AMP * exp_decay_value(amp_env)
+            car = phasor_tick(car)
+
+            let fr: Frame = safety_process_frame(cp, s, s)
+            audio_buffer_set_f32(buf, i, 0, fr.left)
+            audio_buffer_set_f32(buf, i, 1, fr.right)
+            n = n + 1
+            i = i + 1
+        }
+        sink_write(sp, buf.data, count)
+    }
+
+    sink_close(sp)
+    audio_buffer_free_f32(buf)
+    safety_report(cp)
+
+    if sink_is_render() {
+        let spec: VerifySpec = verify_spec(SECONDS as f64, safety_ceiling_db(cp),
+                                           carrier_hz as f64)
+        if !verify_run(sink_render_path(), spec) {
+            return 1
+        }
+    }
+    return 0
+}
