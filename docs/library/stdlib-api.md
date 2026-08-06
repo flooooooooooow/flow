@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` on 2026-08-05 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**82** modules scanned.
+**83** modules scanned.
 
 ## Modules
 
@@ -1022,6 +1022,19 @@ gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runti
 | `gfx_present` | `(g: Gfx) -> void` | — |
 | `gfx_frame_pump` | `(g: Gfx) -> bool` | Poll events; return false if the window should close or Esc is down. |
 | `gfx_run` | `(g: Gfx, max_frames: i32) -> i32` | Run up to max_frames, calling user-defined flow_gfx_frame(ctx, frame) each tick. Returns the number of frames completed. Requires linking the gfx runtime. |
+
+### `gif.flow`
+
+GIF89a animated encoder, pure Flow. Writes an infinite-loop animation with a fixed 256-color global palette and correct GIF-variant LZW compression. Only libc file I/O and malloc/free cross the FFI line.
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gif_map_rgb` | `(r: i32, g: i32, b: i32) -> i32` | Nearest palette index for a 24-bit color, integer math only: quantize to the cube, then let one of the 4 grays win when it is strictly closer. |
+| `gif_begin` | `(path: string, width: i32, height: i32, delay_cs: i32) -> i32` | Opens `path` and writes the GIF89a header, logical screen descriptor, global color table, and a NETSCAPE2.0 infinite-loop extension. `delay_cs` is the per-frame delay in centiseconds. Returns 0 on success. |
+| `gif_add_frame_rgb` | `(pixels: ptr<u8>, width: i32, height: i32) -> i32` | Adds one full frame. `pixels` is RGB24, row-major, width*height*3 bytes. Dimensions must match gif_begin. Returns 0 on success. |
+| `gif_end` | `() -> i32` | Writes the trailer and closes the file. Returns 0 on success. |
 
 ### `gpu_gradients.flow`
 
