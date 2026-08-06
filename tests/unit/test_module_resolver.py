@@ -278,3 +278,97 @@ function main() -> i32 {
             pytest.skip("Nat-plus-succ-left.flow missing")
         resolver = get_module_resolver(consumer)
         assert resolver.modules  # resolves despite `{ commutes }` citation
+
+class TestModuleBlockFlattening:
+    """`module X { ... }` is flattened; the block name is discarded.
+
+    Guards the behavior documented in docs/language/modules-namespacing.md so
+    the design note stays accurate. Change these and change that note.
+    """
+
+    def test_module_block_declarations_become_globals(self):
+        from flow.module_resolver import flatten_module_declarations
+
+        code = """
+module audio {
+    function gain() -> i32 {
+        return 1
+    }
+}
+"""
+        decls = flatten_module_declarations(Parser(Lexer(code)).parse())
+        assert [getattr(d, "name", None) for d in decls] == ["gain"]
+
+    def test_two_blocks_may_declare_the_same_name(self):
+        from flow.module_resolver import flatten_module_declarations
+
+        code = """
+module audio {
+    function gain() -> i32 {
+        return 1
+    }
+}
+
+module video {
+    function gain() -> i32 {
+        return 2
+    }
+}
+"""
+        decls = flatten_module_declarations(Parser(Lexer(code)).parse())
+        # Both survive flattening, so the C backend emits a redefinition.
+        assert [getattr(d, "name", None) for d in decls] == ["gain", "gain"]
+
+    def test_symbol_inside_a_block_is_not_importable(self, tmp_path):
+        lib = tmp_path / "nsmod.flow"
+        lib.write_text(
+            "module inner {\n"
+            "    function helper() -> i32 {\n"
+            "        return 42\n"
+            "    }\n"
+            "}\n\n"
+            "export inner\n",
+            encoding="utf-8",
+        )
+        consumer = tmp_path / "use.flow"
+        consumer.write_text(
+            "import .nsmod { helper }\n\n"
+            "function main() -> i32 {\n"
+            "    return helper()\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="has no symbol 'helper'"):
+            get_module_resolver(str(consumer))
+
+    def test_import_inside_a_block_is_never_resolved(self, tmp_path):
+        sibling = tmp_path / "alpha.flow"
+        sibling.write_text(
+            "export function alpha_one() -> i32 {\n    return 1\n}\n", encoding="utf-8"
+        )
+        root = tmp_path / "root.flow"
+        root.write_text(
+            "module m {\n"
+            "    import .alpha\n\n"
+            "    function use_it() -> i32 {\n"
+            "        return alpha_one()\n"
+            "    }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        resolver = get_module_resolver(str(root))
+        # The nested import never becomes a dependency edge.
+        assert resolver.get_module_dependencies(str(root)) == []
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "export function f() -> i32 { return 1 }",
+            "let mut s: i32 = 0",
+            "module b { function f() -> i32 { return 1 } }",
+        ],
+    )
+    def test_block_rejects_most_declaration_forms(self, body):
+        code = "module a {\n    " + body + "\n}"
+        with pytest.raises(SyntaxError, match="Unexpected declaration inside module"):
+            Parser(Lexer(code)).parse()
