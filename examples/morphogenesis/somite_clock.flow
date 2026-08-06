@@ -1,0 +1,369 @@
+# SOMITE CLOCK: segmentation by a clock and a wavefront.
+#
+# MODEL (Cooke and Zeeman, 1976; the segmentation clock of vertebrate
+# somitogenesis)
+#   A vertebrate embryo lays down its body segments one at a time, from head
+#   to tail, all of them the same length. The mechanism is an oscillator
+#   read out by a moving front.
+#
+#     every cell in the unsegmented tail carries a phase oscillator
+#     the oscillator runs fastest at the tip and slows with distance from it,
+#       so the tissue carries a kinematic phase wave travelling forward
+#     a determination front travels tailward at a fixed speed
+#     when the front reaches a cell, its phase is frozen and read out
+#
+#   The oscillator is the whole of `flow SomiteOsc`:
+#
+#     phase evolves as omega
+#
+#   Every cell obeys that one line. The segments are what happens when a
+#   travelling front samples it.
+#
+# WHY THE SEGMENTS COME OUT EQUAL
+#   The front advances at speed v and the clock has period P, so a new
+#   segment boundary is laid down every P and the segment length is v * P.
+#   Nothing measures a segment. Change either number and every segment in
+#   the animal changes together, which is what a real segmentation-clock
+#   mutant looks like.
+#
+# PARAMETERS
+#   128 cells along the head-to-tail axis, dt 0.02, ten steps per displayed
+#   frame. Tip clock period 2.0, front speed 5 cells per unit time,
+#   presomitic zone 38 cells, frequency gradient omega(a) = omega0 * exp(-a/12)
+#   where a is the distance from the tip, so a cell stops oscillating within
+#   a few cells of leaving the tailbud.
+#
+# KEYS
+#   1 NORMAL    period 2.0   speed 5.0    segments 10 cells long
+#   2 FAST      period 1.2   speed 5.0    segments 6 cells long, more of them
+#   3 SLOW      period 3.2   speed 5.0    segments 16 cells long, fewer
+#   R restart    P pause    Esc quit
+#
+# THE PANELS
+#   Left: the embryo. Frozen tissue is drawn as alternating segment blocks,
+#   the presomitic zone in cyan by live phase, the determination front as a
+#   white line. The presomitic zone never runs out while the tail is still
+#   growing, which is also true of the animal. Right: the raw phase of every
+#   cell, so the travelling wave ahead of the front and its arrest behind it
+#   are both visible.
+#
+# Run: ./flow gfx examples/morphogenesis/somite_clock.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function sin(x: f64) -> f64
+    function exp(x: f64) -> f64
+}
+
+const N: i32 = 128
+const ROW_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const BODY_CX: i32 = 190
+const STRIP_X: i32 = 400
+const STRIP_W: i32 = 100
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const STEPS_PER_FRAME: i32 = 10
+
+const TIP0: f64 = 45.0
+const TIP_SPEED: f64 = 5.0
+const PSM_LEN: f64 = 38.0
+const LAMBDA: f64 = 12.0
+const TWO_PI: f64 = 6.283185307179586
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+# The clock. One line, one state, one parameter.
+flow SomiteOsc {
+    state phase : f64 = 0.0
+    param omega : f64 = 3.141592653589793
+
+    solver { dt 20 ms  method euler }
+
+    phase evolves as omega
+}
+
+function preset_period(p: i32) -> f64 {
+    if p == 1 { return 1.2 }
+    if p == 2 { return 3.2 }
+    return 2.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "FAST" }
+    if p == 2 { return "SLOW" }
+    return "NORMAL"
+}
+
+# Every cell is born in the tailbud carrying the tailbud's phase at that
+# moment, and the tailbud passes position i at time (i - TIP0) / speed. So
+# the whole axis, past and future, starts on one straight phase ramp of
+# omega0 / speed radians per cell. That ramp is the segment pattern before
+# anything has been read out.
+function reset(phase: ptr<f64>, frozen: ptr<i32>, seg: ptr<i32>,
+               omega0: f64) -> void {
+    for i in 0 to N {
+        phase[i] = omega0 * ((i as f64) - TIP0) / TIP_SPEED
+        frozen[i] = 0
+        seg[i] = 0
+    }
+}
+
+# Advance every unfrozen cell by dt, then let the front freeze whatever it
+# has reached.
+function advance(phase: ptr<f64>, frozen: ptr<i32>, seg: ptr<i32>,
+                 tip: f64, front: f64, omega0: f64, dt: f64) -> void {
+    let mut cell: SomiteOsc = SomiteOsc_new()
+    let itip: i32 = tip as i32
+    for i in 0 to N {
+        if i <= itip and frozen[i] == 0 {
+            let a: f64 = tip - (i as f64)
+            cell.phase = phase[i]
+            cell.omega = omega0 * exp(0.0 - a / LAMBDA)
+            SomiteOsc_step(&cell, dt)
+            phase[i] = cell.phase
+        }
+    }
+    let ifront: i32 = front as i32
+    for i in 0 to N {
+        if i <= ifront and frozen[i] == 0 {
+            frozen[i] = 1
+            # One somite per whole turn of the clock: the read-out is which
+            # cycle the phase was in, so a boundary lands wherever the phase
+            # crosses a multiple of 2 pi.
+            let c: f64 = phase[i] / TWO_PI
+            let mut k: i32 = c as i32
+            if c < 0.0 { k = k - 1 }
+            seg[i] = ((k % 2) + 2) % 2
+        }
+    }
+}
+
+function segment_count(frozen: ptr<i32>, seg: ptr<i32>) -> i32 {
+    let mut n: i32 = 0
+    let mut prev: i32 = -1
+    for i in 0 to N {
+        if frozen[i] == 1 {
+            if seg[i] != prev {
+                n = n + 1
+                prev = seg[i]
+            }
+        }
+    }
+    return n
+}
+
+function frozen_extent(frozen: ptr<i32>) -> i32 {
+    let mut n: i32 = 0
+    for i in 0 to N {
+        n = n + frozen[i]
+    }
+    return n
+}
+
+# Body half-width at axial position i, tapered at head and tail.
+function half_width(i: i32, tip: f64) -> i32 {
+    let itip: i32 = tip as i32
+    let mut w: i32 = 130
+    if i < 8 { w = 60 + 9 * i }
+    let tail: i32 = itip - i
+    if tail < 14 { w = 20 + 8 * tail }
+    if w > 130 { w = 130 }
+    if w < 8 { w = 8 }
+    return w
+}
+
+function draw_body(g: Gfx, phase: ptr<f64>, frozen: ptr<i32>, seg: ptr<i32>,
+                   tip: f64, front: f64) -> void {
+    let itip: i32 = tip as i32
+    let ifront: i32 = front as i32
+    for i in 0 to N {
+        if i <= itip {
+            let w: i32 = half_width(i, tip)
+            let y: i32 = FIELD_Y + i * ROW_PX
+            let mut rr: i32 = 0
+            let mut gg: i32 = 0
+            let mut bb: i32 = 0
+            if frozen[i] == 1 {
+                if seg[i] == 1 {
+                    rr = 238
+                    gg = 176
+                    bb = 96
+                } else {
+                    rr = 150
+                    gg = 98
+                    bb = 62
+                }
+            } else {
+                let s: f64 = (sin(phase[i]) + 1.0) * 0.5
+                rr = (24.0 + 40.0 * s) as i32
+                gg = (86.0 + 140.0 * s) as i32
+                bb = (104.0 + 140.0 * s) as i32
+            }
+            gfx_fill_rect(g, BODY_CX - w, y, 2 * w, ROW_PX, rr, gg, bb)
+            # A dark rule wherever the read-out flipped: a segment boundary.
+            if i > 0 and frozen[i] == 1 and frozen[i - 1] == 1 {
+                if seg[i] != seg[i - 1] {
+                    gfx_fill_rect(g, BODY_CX - w, y, 2 * w, 1, 26, 18, 14)
+                }
+            }
+        }
+    }
+    # The determination front.
+    let fy: i32 = FIELD_Y + ifront * ROW_PX
+    gfx_fill_rect(g, BODY_CX - 150, fy, 300, 2, 250, 250, 240)
+    let t1: i32 = gfx_draw_text(g, BODY_CX + 156, fy - 4, "FRONT", 1,
+                                250, 250, 240)
+}
+
+# The raw phase of every cell: a travelling wave that stops at the front.
+function draw_strip(g: Gfx, phase: ptr<f64>, tip: f64) -> void {
+    let itip: i32 = tip as i32
+    for i in 0 to N {
+        let y: i32 = FIELD_Y + i * ROW_PX
+        let mut rr: i32 = 16
+        let mut gg: i32 = 18
+        let mut bb: i32 = 24
+        if i <= itip {
+            let s: f64 = (sin(phase[i]) + 1.0) * 0.5
+            rr = (30.0 + 210.0 * s * s) as i32
+            gg = (40.0 + 150.0 * s) as i32
+            bb = (110.0 - 60.0 * s) as i32
+        }
+        gfx_fill_rect(g, STRIP_X, y, STRIP_W, ROW_PX, rr, gg, bb)
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, period: f64, tip: f64, front: f64,
+                  segments: i32, seg_len: f64, clock: f64,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "SOMITE CLOCK AND WAVEFRONT", 2,
+                                240, 234, 226)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "RATE", 1, 150, 144, 136)
+    let t3: i32 = gfx_draw_text(g, 40, 28, preset_name(preset), 1, 250, 196, 120)
+    let t4: i32 = gfx_draw_text(g, 96, 28, "PERIOD", 1, 150, 144, 136)
+    let t5: i32 = gfx_draw_fixed(g, 140, 28, period, 1, 1, 240, 234, 226)
+    let t6: i32 = gfx_draw_text(g, 176, 28, "CLOCK", 1, 150, 144, 136)
+    let t7: i32 = gfx_draw_fixed(g, 214, 28, clock, 2, 1, 150, 230, 240)
+    let t8: i32 = gfx_draw_text(g, 258, 28, "SEGMENTS", 1, 150, 144, 136)
+    let t9: i32 = gfx_draw_int(g, 314, 28, segments, 1, 240, 234, 226)
+    let ta: i32 = gfx_draw_text(g, 340, 28, "LENGTH", 1, 150, 144, 136)
+    let tb: i32 = gfx_draw_fixed(g, 384, 28, seg_len, 1, 1, 255, 206, 130)
+    let tc: i32 = gfx_draw_text(g, 424, 28, "CELLS", 1, 150, 144, 136)
+    let td: i32 = gfx_draw_text(g, 8, 42,
+        "phase evolves as omega   1 NORMAL  2 FAST  3 SLOW  R RESTART  P PAUSE",
+        1, 112, 108, 100)
+    if paused {
+        let te: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tf: i32 = gfx_draw_text(g, 8, 572,
+        "segment length = front speed x clock period, so nothing measures it",
+        1, 122, 118, 112)
+    let tg: i32 = gfx_draw_text(g, 8, 582,
+        "right strip: raw phase, a travelling wave arrested by the front",
+        1, 122, 118, 112)
+}
+
+function main() -> i32 {
+    let phase: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let frozen: array<i32, 128> = [0, 0, 0, 0]
+    let seg: array<i32, 128> = [0, 0, 0, 0]
+
+    let mut preset: i32 = 0
+    reset(phase, frozen, seg, TWO_PI / preset_period(preset))
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Somite clock - Flow morphogenesis")
+    let dt: f64 = SomiteOsc_default_dt()
+
+    let mut t: f64 = 0.0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reset_held: bool = false
+    let mut hold: i32 = 0
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            reset(phase, frozen, seg, TWO_PI / preset_period(preset))
+            t = 0.0
+            hold = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held {
+                reset(phase, frozen, seg, TWO_PI / preset_period(preset))
+                t = 0.0
+                hold = 0
+            }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        let period: f64 = preset_period(preset)
+        let omega0: f64 = TWO_PI / period
+
+        let mut tip: f64 = TIP0 + TIP_SPEED * t
+        if tip > (N - 3) as f64 { tip = (N - 3) as f64 }
+        let mut front: f64 = tip - PSM_LEN
+        if front < 0.0 { front = 0.0 }
+
+        let grown: bool = tip >= (N - 3) as f64
+        if grown {
+            hold = hold + 1
+            if hold > 120 {
+                reset(phase, frozen, seg, TWO_PI / preset_period(preset))
+                t = 0.0
+                hold = 0
+            }
+        }
+
+        if !paused {
+            for k in 0 to STEPS_PER_FRAME {
+                tip = TIP0 + TIP_SPEED * t
+                if tip > (N - 3) as f64 { tip = (N - 3) as f64 }
+                front = tip - PSM_LEN
+                if front < 0.0 { front = 0.0 }
+                advance(phase, frozen, seg, tip, front, omega0, dt)
+                t = t + dt
+            }
+        }
+
+        let segments: i32 = segment_count(frozen, seg)
+        let extent: i32 = frozen_extent(frozen)
+        let mut seg_len: f64 = 0.0
+        if segments > 1 { seg_len = (extent as f64) / (segments as f64) }
+        let clock: f64 = phase[(tip as i32)] / TWO_PI
+        let cyc: f64 = clock - (clock as i32) as f64
+
+        gfx_clear(g, 12, 14, 20)
+        draw_body(g, phase, frozen, seg, tip, front)
+        draw_strip(g, phase, tip)
+        draw_hud(g, preset, period, tip, front, segments, seg_len, cyc, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
