@@ -27,6 +27,7 @@ examples/
 ├── ml/               # Machine learning framework
 │   ├── models/       # Trained demos (XOR MLP, …)
 │   └── autodiff/     # Autodiff + neural-net examples (was neural_networks/)
+├── morphogenesis/    # Pattern formation and growth: 20 live gfx demos
 ├── net/              # Networking sketches (HTTP / TCP)
 ├── numerical/        # Scientific computing
 ├── packages/         # Path-dependency package consumer
@@ -58,6 +59,7 @@ examples/
 | Packages | `examples/packages/use_hello_lib/` | `python3 -m flow.package install` then `./flow run …/src/main.flow` |
 | WASM | `examples/wasm/hello_wasm.flow` | `./flow run` / `./flow wasm examples/wasm/hello_wasm.flow` |
 | Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
+| Morphogenesis | `examples/morphogenesis/gray_scott.flow` | `./flow gfx examples/morphogenesis/gray_scott.flow` |
 
 ## Quick Start
 
@@ -200,6 +202,20 @@ The flagship suite for Flow's founding vision — systems that evolve through ti
 - `spring_mass_control.flow` — Model → analyze → control (`dsys` DSL)
 - `lorenz_gfx.flow` — `flow Lorenz` live in a window (`./flow gfx`)
 - `pendulum.flow` / `bouncing_ball.flow` — pedagogical hand integrators only
+
+### Morphogenesis (`morphogenesis/`)
+Twenty live graphics demos of pattern formation and growth, the visual
+companion to `evolution/` (see
+[morphogenesis/README.md](morphogenesis/README.md)). Continuous models state
+their dynamics as a `flow` block with `evolves as`; every example labels its
+parameters on screen with `stdlib/text.flow` and carries a live measurement
+of what it is claiming:
+- `gray_scott.flow` - Gray-Scott reaction-diffusion, five F/k presets
+- `turing_spots.flow` / `turing_stripes.flow` - one coefficient apart
+- `belousov.flow` - Barkley excitable medium, rotating spiral waves
+- `dla.flow` - diffusion-limited aggregation with a live fractal dimension
+- `slime_mold.flow` - Physarum agents building a transport network
+- `somite_clock.flow` - `phase evolves as omega` read out by a moving front
 
 ### Dynamics (`dynamics/`)
 Dynamical systems, analysis, and control via `stdlib/dynamics` and the

@@ -1,0 +1,268 @@
+# SWIFT-HOHENBERG: rolls and hexagons from a wavelength-selecting operator.
+#
+# MODEL
+#   The archetype of pattern formation with an intrinsic length scale. The
+#   linear operator -(1 + lap)^2 has its maximum growth at wavenumber k = 1,
+#   so a band of modes near one wavelength grows and everything else decays.
+#   The cubic saturates the amplitude; the quadratic breaks the u -> -u
+#   symmetry, which is what decides rolls against hexagons.
+#
+#     du/dt = r*u - (1 + lap)^2 u + g*u^2 - u^3
+#           = r*u - u - 2*lap(u) - lap(lap(u)) + g*u^2 - u^3
+#
+#   The expanded form is the body of `flow ShCell`. The grid loop computes
+#   lap(u) into one scratch field and lap(lap(u)) into a second, then steps
+#   every cell once.
+#
+# PARAMETERS
+#   dx 1.2 (so one wavelength 2*pi/dx is about 5 cells, 21 screen pixels)
+#   dt 0.04 explicit Euler, 128 x 128 periodic grid, 12 steps per frame.
+#   Stability: the fourth-order operator caps dt near 0.09 at this dx.
+#
+# KEYS
+#   1 ROLLS     r 0.50  g 0.00   symmetric, so stripes and defects
+#   2 HEXAGONS  r 0.30  g 1.10   broken symmetry, so a lattice of peaks
+#   3 CHAOS     r 0.90  g 0.40   above the roll band, defects never anneal
+#   R reseed    P pause    Esc quit
+#
+# PHENOMENON
+#   From white noise a single wavelength survives, then the surviving modes
+#   organise: a labyrinth of rolls with grain boundaries and defects when
+#   g = 0, a lattice of isolated peaks when g is switched on. Convection
+#   cells, buckled sheets and sand ripples all sit in this equation.
+#
+# Run: ./flow gfx examples/morphogenesis/swift_hohenberg.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 12
+const DX2_INV: f64 = 0.6944444444444444   # 1 / dx^2 with dx = 1.2
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow ShCell {
+    state u : f64 = 0.0
+
+    param lap1 : f64 = 0.0      # lap(u)
+    param lap2 : f64 = 0.0      # lap(lap(u))
+    param r    : f64 = 0.5      # distance above the instability threshold
+    param g    : f64 = 0.0      # quadratic symmetry breaking
+
+    solver { dt 40 ms  method euler }
+
+    u evolves as r * u - u - 2.0 * lap1 - lap2 + g * u * u - u * u * u
+}
+
+let mut rng_state: u32 = 3735928559
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_signed() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 32768.0 - 1.0
+}
+
+function preset_r(p: i32) -> f64 {
+    if p == 1 { return 0.30 }
+    if p == 2 { return 0.90 }
+    return 0.50
+}
+
+function preset_g(p: i32) -> f64 {
+    if p == 1 { return 1.10 }
+    if p == 2 { return 0.40 }
+    return 0.00
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "HEXAGONS" }
+    if p == 2 { return "CHAOS" }
+    return "ROLLS"
+}
+
+function seed_field(u: ptr<f64>) -> void {
+    for i in 0 to CELLS {
+        u[i] = 0.05 * rng_signed()
+    }
+}
+
+# Five-point periodic laplacian of `src` into `dst`.
+function laplacian(src: ptr<f64>, dst: ptr<f64>) -> void {
+    for y in 0 to GRID {
+        let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+        let yp: i32 = ((y + 1) % GRID) * GRID
+        let r: i32 = y * GRID
+        for x in 0 to GRID {
+            let xm: i32 = (x + GRID - 1) % GRID
+            let xp: i32 = (x + 1) % GRID
+            dst[r + x] = (src[r + xm] + src[r + xp] + src[ym + x] + src[yp + x]
+                          - 4.0 * src[r + x]) * DX2_INV
+        }
+    }
+}
+
+function evolve(u: ptr<f64>, l1: ptr<f64>, l2: ptr<f64>,
+                r: f64, gq: f64, dt: f64) -> void {
+    laplacian(u, l1)
+    laplacian(l1, l2)
+    let mut cell: ShCell = ShCell_new()
+    cell.r = r
+    cell.g = gq
+    for i in 0 to CELLS {
+        cell.u = u[i]
+        cell.lap1 = l1[i]
+        cell.lap2 = l2[i]
+        ShCell_step(&cell, dt)
+        u[i] = cell.u
+    }
+}
+
+function field_amplitude(u: ptr<f64>) -> f64 {
+    let mut m: f64 = 0.0
+    for i in 0 to CELLS {
+        let mut a: f64 = u[i]
+        if a < 0.0 { a = 0.0 - a }
+        if a > m { m = a }
+    }
+    return m
+}
+
+# Diverging ramp: cold trough, dark ridge line, warm crest.
+function draw_field(g: Gfx, u: ptr<f64>, amp: f64) -> void {
+    let mut inv: f64 = 1.0
+    if amp > 0.001 { inv = 1.0 / amp }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let mut t: f64 = u[y * GRID + x] * inv
+            if t < -1.0 { t = -1.0 }
+            if t > 1.0 { t = 1.0 }
+            # Dark ridge line at u = 0, cool troughs, warm crests.
+            let mut rr: f64 = 18.0
+            let mut gg: f64 = 20.0
+            let mut bb: f64 = 26.0
+            if t < 0.0 {
+                let lo: f64 = 0.0 - t
+                rr = 18.0 + 24.0 * lo
+                gg = 20.0 + 118.0 * lo
+                bb = 26.0 + 140.0 * lo
+            } else {
+                rr = 18.0 + 234.0 * t
+                gg = 20.0 + 192.0 * t
+                bb = 26.0 + 126.0 * t
+            }
+            gfx_fill_rect(g, x * CELL_PX, FIELD_Y + y * CELL_PX,
+                          CELL_PX, CELL_PX, rr as i32, gg as i32, bb as i32)
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, r: f64, gq: f64, amp: f64,
+                  steps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "SWIFT-HOHENBERG  ROLLS / HEXAGONS", 2,
+                                236, 238, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 140, 150, 165)
+    let t3: i32 = gfx_draw_text(g, 40, 28, preset_name(preset), 1, 255, 200, 130)
+    let t4: i32 = gfx_draw_text(g, 118, 28, "r", 1, 140, 150, 165)
+    let t5: i32 = gfx_draw_fixed(g, 130, 28, r, 2, 1, 236, 238, 246)
+    let t6: i32 = gfx_draw_text(g, 172, 28, "g", 1, 140, 150, 165)
+    let t7: i32 = gfx_draw_fixed(g, 184, 28, gq, 2, 1, 236, 238, 246)
+    let t8: i32 = gfx_draw_text(g, 226, 28, "AMPLITUDE", 1, 140, 150, 165)
+    let t9: i32 = gfx_draw_fixed(g, 288, 28, amp, 2, 1, 236, 238, 246)
+    let ta: i32 = gfx_draw_text(g, 330, 28, "STEPS", 1, 140, 150, 165)
+    let tb: i32 = gfx_draw_int(g, 368, 28, steps, 1, 236, 238, 246)
+    let tc: i32 = gfx_draw_text(g, 8, 42,
+        "dx 1.2  dt 0.04   1 ROLLS  2 HEXAGONS  3 CHAOS  R RESEED  P PAUSE",
+        1, 105, 112, 128)
+    if paused {
+        let td: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let te: i32 = gfx_draw_text(g, 8, 572,
+        "u evolves as r*u - u - 2*lap(u) - lap(lap(u)) + g*u^2 - u^3", 1,
+        120, 128, 148)
+    let tf: i32 = gfx_draw_text(g, 8, 582,
+        "the operator -(1+lap)^2 selects one wavelength out of white noise", 1,
+        120, 128, 148)
+}
+
+function main() -> i32 {
+    let u: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let l1: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let l2: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+
+    let mut preset: i32 = 0
+    let mut r: f64 = preset_r(preset)
+    let mut gq: f64 = preset_g(preset)
+    seed_field(u)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Swift-Hohenberg - Flow morphogenesis")
+    let dt: f64 = ShCell_default_dt()
+
+    let mut steps: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            r = preset_r(preset)
+            gq = preset_g(preset)
+            seed_field(u)
+            steps = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(u)
+                steps = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS {
+                evolve(u, l1, l2, r, gq, dt)
+                steps = steps + 1
+            }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_field(g, u, field_amplitude(u))
+        draw_hud(g, preset, r, gq, field_amplitude(u), steps, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

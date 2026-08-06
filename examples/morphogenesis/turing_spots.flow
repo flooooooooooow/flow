@@ -1,0 +1,272 @@
+# TURING SPOTS: the activator-inhibitor system behind animal coats.
+#
+# MODEL (Gierer-Meinhardt, 1972)
+#   A short-range activator A catalyses its own production; a long-range
+#   inhibitor H, produced by A, suppresses it. Diffusion-driven instability:
+#   the uniform state is stable without diffusion and unstable with it, which
+#   is Turing's 1952 result.
+#
+#     da/dt = Da * lap(a) + rho * a^2 / (h * (1 + kappa * a^2)) - mu_a * a + rho_a
+#     dh/dt = Dh * lap(h) + rho * a^2 - mu_h * h
+#
+#   Both lines are the body of `flow TuringCell` below. Nothing else in this
+#   file knows what a Turing pattern is.
+#
+# PARAMETERS
+#   Da 0.0434   Dh 0.868   (inhibitor diffuses 20x faster: the Turing condition,
+#                            which for this system is Dh/Da > 9.3)
+#   rho 0.05    rho_a 0.001
+#   mu_a 0.05   mu_h 0.08  (uniform state a* = mu_h/mu_a)
+#   kappa 0     no saturation -> isolated peaks, i.e. spots
+#   dt 0.15 (explicit Euler, 4*Dh*dt < 1), 128 x 128 periodic grid,
+#   80 steps per displayed frame.
+#
+# KEYS
+#   1 SPARSE (mu_h 0.075)   2 STANDARD (0.080)   3 DENSE (0.090)
+#   R reseed    P pause    Esc quit
+#
+# PHENOMENON
+#   Uniform noise, amplified selectively by diffusion, resolves into a
+#   hexagonal lattice of activator peaks with a wavelength set by the
+#   diffusion ratio rather than by anything in the initial condition.
+#   Its stripe-regime twin is turing_stripes.flow.
+#
+# Run: ./flow gfx examples/morphogenesis/turing_spots.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 80
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow TuringCell {
+    state a : f64 = 1.6
+    state h : f64 = 1.6
+
+    param lap_a : f64 = 0.0
+    param lap_h : f64 = 0.0
+    param da    : f64 = 0.0434
+    param dh    : f64 = 0.868
+    param rho   : f64 = 0.05
+    param rho_a : f64 = 0.001
+    param mu_a  : f64 = 0.05
+    param mu_h  : f64 = 0.08
+    param kappa : f64 = 0.0
+
+    solver { dt 150 ms  method euler }
+
+    a evolves as da * lap_a + rho * a * a / ((h + 0.000001) * (1.0 + kappa * a * a)) - mu_a * a + rho_a
+    h evolves as dh * lap_h + rho * a * a - mu_h * h
+}
+
+let mut rng_state: u32 = 20250806
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_mu_h(p: i32) -> f64 {
+    if p == 0 { return 0.075 }
+    if p == 2 { return 0.090 }
+    return 0.080
+}
+
+function preset_name(p: i32) -> string {
+    if p == 0 { return "SPARSE" }
+    if p == 2 { return "DENSE" }
+    return "STANDARD"
+}
+
+function seed_field(a: ptr<f64>, h: ptr<f64>, a0: f64) -> void {
+    for i in 0 to CELLS {
+        a[i] = a0 * (0.94 + 0.12 * rng_unit())
+        h[i] = a0
+    }
+}
+
+function lap_at(f: ptr<f64>, x: i32, y: i32) -> f64 {
+    let xm: i32 = (x + GRID - 1) % GRID
+    let xp: i32 = (x + 1) % GRID
+    let ym: i32 = (y + GRID - 1) % GRID
+    let yp: i32 = (y + 1) % GRID
+    let r: i32 = y * GRID
+    return f[r + xm] + f[r + xp] + f[ym * GRID + x] + f[yp * GRID + x]
+           - 4.0 * f[r + x]
+}
+
+function evolve(a: ptr<f64>, h: ptr<f64>, an: ptr<f64>, hn: ptr<f64>,
+                mu_h: f64, kappa: f64, dt: f64) -> void {
+    let mut cell: TuringCell = TuringCell_new()
+    cell.mu_h = mu_h
+    cell.kappa = kappa
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            cell.a = a[i]
+            cell.h = h[i]
+            cell.lap_a = lap_at(a, x, y)
+            cell.lap_h = lap_at(h, x, y)
+            TuringCell_step(&cell, dt)
+            if cell.a < 0.0 { cell.a = 0.0 }
+            if cell.h < 0.000001 { cell.h = 0.000001 }
+            an[i] = cell.a
+            hn[i] = cell.h
+        }
+    }
+}
+
+function field_peak(a: ptr<f64>) -> f64 {
+    let mut m: f64 = 0.0
+    for i in 0 to CELLS {
+        if a[i] > m { m = a[i] }
+    }
+    return m
+}
+
+# Skin ramp: dark hide -> tan -> pale spot.
+function shade_r(t: f64) -> i32 {
+    let mut c: f64 = 28.0 + 240.0 * t
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function shade_g(t: f64) -> i32 {
+    let mut c: f64 = 20.0 + 200.0 * t * t
+    if c > 250.0 { c = 250.0 }
+    return c as i32
+}
+
+function shade_b(t: f64) -> i32 {
+    let mut c: f64 = 26.0 + 120.0 * t * t * t
+    if c > 210.0 { c = 210.0 }
+    return c as i32
+}
+
+function draw_field(g: Gfx, a: ptr<f64>, peak: f64) -> void {
+    let mut inv: f64 = 1.0
+    if peak > 0.001 { inv = 1.0 / peak }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let mut t: f64 = a[y * GRID + x] * inv
+            if t < 0.0 { t = 0.0 }
+            if t > 1.0 { t = 1.0 }
+            gfx_fill_rect(g, x * CELL_PX, FIELD_Y + y * CELL_PX,
+                          CELL_PX, CELL_PX,
+                          shade_r(t), shade_g(t), shade_b(t))
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, mu_h: f64, peak: f64,
+                  steps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "TURING SPOTS  ACTIVATOR-INHIBITOR", 2,
+                                240, 232, 220)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "REGIME", 1, 150, 140, 130)
+    let t3: i32 = gfx_draw_text(g, 50, 28, preset_name(preset), 1, 255, 200, 120)
+    let t4: i32 = gfx_draw_text(g, 130, 28, "mu_h", 1, 150, 140, 130)
+    let t5: i32 = gfx_draw_fixed(g, 162, 28, mu_h, 3, 1, 240, 232, 220)
+    let t6: i32 = gfx_draw_text(g, 216, 28, "PEAK A", 1, 150, 140, 130)
+    let t7: i32 = gfx_draw_fixed(g, 260, 28, peak, 2, 1, 240, 232, 220)
+    let t8: i32 = gfx_draw_text(g, 320, 28, "EULER STEPS", 1, 150, 140, 130)
+    let t9: i32 = gfx_draw_int(g, 392, 28, steps, 1, 240, 232, 220)
+    let ta: i32 = gfx_draw_text(g, 8, 42,
+        "Da 0.0434  Dh 0.868  ratio 20   1 SPARSE  2 STANDARD  3 DENSE  R RESEED  P PAUSE",
+        1, 110, 104, 96)
+    if paused {
+        let tb: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tc: i32 = gfx_draw_text(g, 8, 572,
+        "a evolves as Da*lap(a) + rho*a^2/(h*(1+kappa*a^2)) - mu_a*a + rho_a", 1,
+        120, 130, 150)
+    let td: i32 = gfx_draw_text(g, 8, 582,
+        "h evolves as Dh*lap(h) + rho*a^2 - mu_h*h        kappa = 0 -> SPOTS", 1,
+        120, 130, 150)
+}
+
+function main() -> i32 {
+    let aa: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ha: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ab: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let hb: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+
+    let mut preset: i32 = 1
+    let mut mu_h: f64 = preset_mu_h(preset)
+    let kappa: f64 = 0.0
+    seed_field(aa, ha, 1.6)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Turing spots - Flow morphogenesis")
+    let dt: f64 = TuringCell_default_dt()
+
+    let mut steps: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            mu_h = preset_mu_h(preset)
+            seed_field(aa, ha, 1.6)
+            steps = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(aa, ha, 1.6)
+                steps = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(aa, ha, ab, hb, mu_h, kappa, dt)
+                evolve(ab, hb, aa, ha, mu_h, kappa, dt)
+                steps = steps + 2
+            }
+        }
+
+        let peak: f64 = field_peak(aa)
+        gfx_clear(g, 14, 12, 10)
+        draw_field(g, aa, peak)
+        draw_hud(g, preset, mu_h, peak, steps, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
