@@ -128,5 +128,9 @@ can no longer reuse runs of identical pixels.
 
 Details: [demos README](README.md).
 
+Every simulation here also runs live in a browser, from the same source:
+[WebAssembly Gallery](wasm.md). The GIFs show the trajectory; the gallery lets
+you press the preset keys yourself.
+
 Related: [examples/morphogenesis](../../examples/morphogenesis/) sources ·
 [game gallery](games.md) · [examples index](../../examples/README.md)
