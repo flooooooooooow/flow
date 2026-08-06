@@ -89,6 +89,41 @@ if grep -q 'static const int32_t' compiler/build/stage_a_token_consts.c; then
     echo "FAIL stage_a_token_consts: export const should be non-static" >&2
     exit 1
 fi
+# String `+` is concatenation (__flowc_str_concat), not pointer arithmetic.
+run_case stage_a_strcat 42
+if ! grep -Fq '__flowc_str_concat(__flowc_str_concat("hello, ", name), "!")' compiler/build/stage_a_strcat.c; then
+    echo "FAIL stage_a_strcat: expected nested __flowc_str_concat for the literal chain" >&2
+    grep -n 'hello' compiler/build/stage_a_strcat.c >&2 || true
+    exit 1
+fi
+if grep -Eq '\("hello, " \+ ' compiler/build/stage_a_strcat.c; then
+    echo "FAIL stage_a_strcat: string operands emitted as C addition" >&2
+    exit 1
+fi
+if ! grep -Fq 'const char* joined = __flowc_str_concat' compiler/build/stage_a_strcat.c; then
+    echo "FAIL stage_a_strcat: inferred let over a concat should be const char*" >&2
+    exit 1
+fi
+
+# Inferred `let` (no `: Type`): struct-returning call, cast, struct literal.
+run_case stage_a_infer_struct 42
+if ! grep -Fq 'Pair p = make_pair(20, 22);' compiler/build/stage_a_infer_struct.c; then
+    echo "FAIL stage_a_infer_struct: inferred let should be typed Pair" >&2
+    grep -n 'make_pair(20' compiler/build/stage_a_infer_struct.c >&2 || true
+    exit 1
+fi
+if grep -Fq 'int32_t p = make_pair' compiler/build/stage_a_infer_struct.c; then
+    echo "FAIL stage_a_infer_struct: struct return inferred as int32_t" >&2
+    exit 1
+fi
+if ! grep -Fq 'int64_t wide = (int64_t)(7);' compiler/build/stage_a_infer_struct.c; then
+    echo "FAIL stage_a_infer_struct: cast init should infer int64_t" >&2
+    exit 1
+fi
+if ! grep -Fq 'Pair lit = (Pair){' compiler/build/stage_a_infer_struct.c; then
+    echo "FAIL stage_a_infer_struct: struct literal init should infer Pair" >&2
+    exit 1
+fi
 # Dogfood: Token struct + flowc_make_tok (struct return type).
 run_case stage_a_token_struct 26
 # ptr<i32> params/lets + unary & + index (exit 40+2).
@@ -393,6 +428,29 @@ if [[ ! -f compiler/build/bundle_tc_bad_optout.c ]]; then
     echo "FAIL FLOWC_TYPECHECK=0: expected bundle_tc_bad opt-out emit to write C" >&2
     exit 1
 fi
+# bundle_infer_main: `let p = make_pair(...)` where make_pair lives in the
+# sibling module — the type has to come from the bundle signature table.
+FLOWC_FORCE_HOST=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/fixtures \
+    stage_a_emit \
+    compiler/fixtures/bundle_infer_main.flow \
+    compiler/build/bundle_infer_main.c
+if ! grep -Fq 'Pair p = make_pair(20, 22);' compiler/build/bundle_infer_main.c; then
+    echo "FAIL bundle_infer: cross-module inferred let should be typed Pair" >&2
+    grep -n 'make_pair(20' compiler/build/bundle_infer_main.c >&2 || true
+    exit 1
+fi
+if grep -Fq 'int32_t p = make_pair' compiler/build/bundle_infer_main.c; then
+    echo "FAIL bundle_infer: cross-module struct return inferred as int32_t" >&2
+    exit 1
+fi
+cc -O0 -o compiler/build/bundle_infer_main compiler/build/bundle_infer_main.c
+set +e
+./compiler/build/bundle_infer_main
+bundle_infer_code=$?
+set -e
+echo "bundle_infer_main exit=$bundle_infer_code"
+test "$bundle_infer_code" -eq 42
+
 echo "PASS FLOWC_BUNDLE fixtures"
 
 # Real frontend pair: FLOWC_BUNDLE=1 emits token.flow then lexer.flow in one TU
@@ -669,5 +727,17 @@ echo "PASS stage_a_match fixtures"
 # Gen2: driver linked against self.o re-emits frontend → flowc_frontend_g2.o,
 # then fixed-point cmp self.o==g2.o, C/Flow g2 driver smokes (sum→45), gen3 token cmp.
 ./compiler/scripts/stage_a_self_emit_g2.sh
+
+# Phase-B exit gate: every module under compiler/src must bundle-emit C that
+# the C compiler accepts with no diagnostics.
+./compiler/scripts/selfcompile_audit.sh
+
+# Checked-in bootstrap: a cc-only path to a working flowc, and the C in
+# compiler/bootstrap/ must still be exactly what flowc emits from compiler/src.
+./compiler/scripts/bootstrap_from_c.sh --verify
+
+# Whole-compiler self-host: bundle all of compiler/src through flowc, run its
+# self-tests, and check three consecutive generations are byte-identical.
+./compiler/scripts/self_host_full.sh
 
 echo "ALL PASS"

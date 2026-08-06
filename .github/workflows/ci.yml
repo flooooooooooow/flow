@@ -219,6 +219,69 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  # Phase D/E: a clean checkout must produce a working flowc with cc alone, and
+  # three consecutive generations of flowc must agree byte for byte.
+  # Deliberately no setup-python step — that is the point of this job.
+  flowc-selfhost:
+    name: flowc self-host (no Python)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build flowc from the checked-in bootstrap C
+        run: |
+          chmod +x ./flow compiler/scripts/*.sh
+          ./compiler/scripts/bootstrap_from_c.sh
+
+      - name: Every compiler/src module compiles under flowc
+        run: ./compiler/scripts/selfcompile_audit.sh
+
+      - name: Three consecutive generation fixed-points
+        run: ./compiler/scripts/self_host_full.sh
+
+      - name: Compile and run a Flow program (FLOW_HOST=flowc)
+        env:
+          FLOW_HOST: flowc
+        run: |
+          ./flow compile examples/basics/fibonacci.flow
+          set +e
+          ./build/fibonacci
+          ec=$?
+          set -e
+          test "$ec" -eq 55
+
+      - name: Same again with python and python3 removed from PATH
+        run: |
+          mkdir -p /tmp/nopy
+          printf '#!/bin/sh\necho "python invoked: $0 $*" >&2\nexit 127\n' > /tmp/nopy/python3
+          cp /tmp/nopy/python3 /tmp/nopy/python
+          chmod +x /tmp/nopy/python3 /tmp/nopy/python
+          rm -rf compiler/build build
+          export PATH="/tmp/nopy:$PATH"
+          export FLOW_HOST=flowc
+          ./compiler/scripts/bootstrap_from_c.sh
+          ./flow compile examples/basics/fibonacci.flow
+          set +e
+          ./build/fibonacci
+          ec=$?
+          set -e
+          test "$ec" -eq 55
+
+      - name: Package the distributable compiler
+        run: ./compiler/scripts/package_flowc.sh
+
+      - name: Upload flowc package
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowc-package-linux
+          path: dist/flowc-*
+          if-no-files-found: error
+          retention-days: 7
+
   # Phase D: user-facing compile must not pip-install the Python compiler.
   flowc-compile:
     name: flowc compile (no pip)
@@ -387,6 +450,7 @@ jobs:
       - security
       - flow-tier2
       - flowc-bootstrap
+      - flowc-selfhost
       - flowc-compile
       - pytest
       - fuzz
@@ -438,6 +502,7 @@ jobs:
           compiler_req=false
           if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
           check flowc-bootstrap '${{ needs.flowc-bootstrap.result }}' "$compiler_req"
+          check flowc-selfhost '${{ needs.flowc-selfhost.result }}' "$compiler_req"
           check flowc-compile '${{ needs.flowc-compile.result }}' "$compiler_req"
           check pytest '${{ needs.pytest.result }}' "$pytest_req"
           check fuzz '${{ needs.fuzz.result }}' "$fuzz_req"
