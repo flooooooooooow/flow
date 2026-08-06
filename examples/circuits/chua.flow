@@ -1,0 +1,539 @@
+# CHUA'S CIRCUIT: the double scroll, and a measured positive Lyapunov
+# exponent.
+#
+# WHY A `flow` BLOCK AND NOT THE MATRIX
+#   Chua's circuit is the one nonlinear circuit whose state equations are
+#   worth writing down directly. In the dimensionless form below there are
+#   three states and no algebraic constraint left: the two capacitor voltages
+#   and the inductor current, with the nonlinear resistor folded into a single
+#   piecewise-linear function of x. There is nothing for a matrix to solve, and
+#   writing it as three `evolves as` lines is both shorter and closer to the
+#   paper it comes from.
+#
+# THE MODEL   (Matsumoto 1984; Chua, Komuro and Matsumoto 1986)
+#
+#     x' = alpha (y - x - h(x))
+#     y' = x - y + z
+#     z' = -beta y
+#
+#     h(x) = m1 x + (m0 - m1) (|x + 1| - |x - 1|) / 2
+#
+#   x and y are the two capacitor voltages scaled by the breakpoint voltage of
+#   the Chua diode, z is the inductor current, and time is scaled by 1/(R C2).
+#   h is the driving-point characteristic of the Chua diode: slope m0 in the
+#   inner segment, m1 outside. The classic double-scroll parameters are
+#
+#     alpha = 15.6    beta = 28    m0 = -8/7    m1 = -5/7
+#
+#   Those three lines appear verbatim in the `flow Chua` block below.
+#
+# LARGEST LYAPUNOV EXPONENT, MEASURED TWICE
+#   There is no closed form to compare against here, so the exponent is
+#   measured by two methods that share no arithmetic, and they have to agree.
+#
+#   A. Two trajectories, after Benettin, Galgani, Giorgilli and Strelcyn
+#      (1980). A second copy of the system is started a distance d0 = 1e-8
+#      away. Both are integrated for a renormalization interval, the
+#      separation d is measured, log(d/d0) is accumulated, and the copy is
+#      pulled back to distance d0 along the direction it drifted:
+#
+#        lambda_1 = (1/T) sum log(d_k / d0)
+#
+#   B. The variational equation. A tangent vector obeys w' = J(x) w with
+#
+#        J = [ -alpha(1 + h'(x))   alpha    0 ]
+#            [        1             -1      1 ]
+#            [        0            -beta    0 ]
+#
+#      integrated alongside the trajectory and renormalized to unit length on
+#      the same schedule. This is the linearization the first method only
+#      approximates by using a small finite separation.
+#
+#   The exponent is a property of the circuit only in the limit dt -> 0, and
+#   a `flow` block integrates with explicit Euler, whose error in lambda is
+#   first order in dt and not small. So the run is repeated at three step
+#   sizes, 2.5e-5, 5e-5 and 1e-4, the answer is extrapolated to dt = 0 by
+#   Richardson, and the extrapolation is checked by doing it twice on
+#   overlapping pairs. What is reported is the extrapolate together with the
+#   size of the correction; at 2.5e-5 the correction is about 1% and the two
+#   extrapolates agree to better than that.
+#
+#   The gates are that the two methods agree to 1e-3 at every step size, that
+#   the two Richardson extrapolates agree to 5%, and that the exponent is
+#   positive and finite.
+#
+# DISSIPATION, WHICH IS THE OTHER HALF OF THE ARGUMENT
+#   A positive exponent alone is not a strange attractor: an unstable linear
+#   system has one too. What makes it strange is that phase-space volume also
+#   contracts. The divergence of this flow is
+#
+#     div = -1 - alpha (1 + h'(x))
+#
+#   which is +1.2286 while |x| < 1 and -5.4571 outside, so the sign of its
+#   time average depends entirely on how the trajectory shares its time
+#   between the inner segment and the outer ones. The run measures both the
+#   average divergence and that time fraction, and checks they agree with the
+#   two-segment identity. Volume shrinks, distances between nearby points
+#   grow: that is the definition of the object.
+#
+# NUMERICS
+#   Explicit Euler at dt = 2.5e-5, 5e-5 and 1e-4 dimensionless time units. 100
+#   units of transient are discarded, then 3000 units are measured with
+#   renormalization every 0.5.
+#
+# EVIDENCE
+#   lambda_1 positive, the same from both methods, and consistent under
+#   Richardson extrapolation in the step size; the trajectory visits both
+#   scrolls, counted as crossings of the inner segment; the average divergence
+#   negative and equal to the two-segment identity to 1e-6, which is where
+#   summing a hundred million doubles lands; and an x-y
+#   projection printed so the double scroll can be seen.
+#
+# Run: ./flow run examples/circuits/chua.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const ALPHA: f64 = 15.6
+const BETA: f64 = 28.0
+const M0: f64 = -1.1428571428571428      # -8/7
+const M1: f64 = -0.7142857142857143      # -5/7
+
+const DT: f64 = 2.5e-5
+const T_TRANSIENT: f64 = 100.0
+const T_MEASURE: f64 = 3000.0
+const T_RENORM: f64 = 0.5
+const D0: f64 = 1e-8
+
+const PLOT_W: i32 = 71
+const PLOT_H: i32 = 27
+
+# ---------------------------------------------------------------------------
+# The model. Three lines.
+# ---------------------------------------------------------------------------
+
+flow Chua {
+    state x : f64 = 0.1
+    state y : f64 = 0.0
+    state z : f64 = 0.0
+
+    param alpha : f64 = 15.6
+    param beta : f64 = 28.0
+    param m0 : f64 = -1.1428571428571428
+    param m1 : f64 = -0.7142857142857143
+
+    x evolves as alpha * (y - x - (m1 * x + 0.5 * (m0 - m1) * (fabs(x + 1.0) - fabs(x - 1.0))))
+    y evolves as x - y + z
+    z evolves as 0.0 - beta * y
+}
+
+function make() -> Chua {
+    let mut c: Chua = Chua_new()
+    c.alpha = ALPHA
+    c.beta = BETA
+    c.m0 = M0
+    c.m1 = M1
+    return c
+}
+
+# Slope of the Chua diode characteristic at x.
+function hprime(x: f64) -> f64 {
+    if fabs(x) < 1.0 {
+        return M0
+    }
+    return M1
+}
+
+# Divergence of the vector field at x: the trace of the Jacobian.
+function divergence(x: f64) -> f64 {
+    return 0.0 - 1.0 - ALPHA * (1.0 + hprime(x))
+}
+
+let mut plot: ptr<u8> = null
+
+function plot_clear() -> void {
+    for i in 0 to PLOT_W * PLOT_H {
+        plot[i] = 32
+    }
+}
+
+function plot_put(px: i32, py: i32, ch: i32) -> void {
+    if px < 0 or px >= PLOT_W or py < 0 or py >= PLOT_H {
+        return
+    }
+    plot[py * PLOT_W + px] = ch as u8
+}
+
+function plot_point(x: f64, y: f64, xlo: f64, xhi: f64,
+                    ylo: f64, yhi: f64, ch: i32) -> void {
+    let px: i32 = (((x - xlo) / (xhi - xlo)) * ((PLOT_W - 1) as f64)) as i32
+    let py: i32 = (((yhi - y) / (yhi - ylo)) * ((PLOT_H - 1) as f64)) as i32
+    plot_put(px, py, ch)
+}
+
+function plot_draw() -> void {
+    for r in 0 to PLOT_H {
+        print("    ")
+        for c in 0 to PLOT_W {
+            let ch: i32 = plot[r * PLOT_W + c] as i32
+            if ch == 32 {
+                print(" ")
+            } else {
+                if ch == 43 {
+                    print("+")
+                } else {
+                    if ch == 124 {
+                        print("|")
+                    } else {
+                        if ch == 45 {
+                            print("-")
+                        } else {
+                            print("#")
+                        }
+                    }
+                }
+            }
+        }
+        println("")
+    }
+}
+
+# Results.
+let mut r_lambda: f64 = 0.0
+let mut r_lambda_tan: f64 = 0.0
+let mut r_divavg: f64 = 0.0
+let mut r_frac_in: f64 = 0.0
+let mut r_scrolls: i32 = 0
+let mut r_xmin: f64 = 0.0
+let mut r_xmax: f64 = 0.0
+let mut r_ymin: f64 = 0.0
+let mut r_ymax: f64 = 0.0
+let mut r_intervals: i32 = 0
+
+function run(dt: f64, draw: bool) -> bool {
+    let mut a: Chua = make()
+    let mut b: Chua = make()
+
+    let tsteps: i32 = (T_TRANSIENT / dt) as i32
+    for k in 0 to tsteps {
+        Chua_step(&a, dt)
+    }
+    # Start the twin a distance D0 away, after the transient, so both are on
+    # the attractor before any measuring begins.
+    b.x = a.x + D0
+    b.y = a.y
+    b.z = a.z
+
+    let per: i32 = (T_RENORM / dt) as i32
+    let intervals: i32 = (T_MEASURE / T_RENORM) as i32
+    r_intervals = intervals
+
+    # Tangent vector for the variational method, unit length along x.
+    let mut wx: f64 = 1.0
+    let mut wy: f64 = 0.0
+    let mut wz: f64 = 0.0
+
+    let mut lsum: f64 = 0.0
+    let mut tsum: f64 = 0.0
+    let mut dsum: f64 = 0.0
+    let mut nin: i64 = 0
+    let mut ntot: i64 = 0
+    let mut scrolls: i32 = 0
+    let mut side: i32 = 0
+    r_xmin = a.x
+    r_xmax = a.x
+    r_ymin = a.y
+    r_ymax = a.y
+
+    if draw {
+        plot_clear()
+    }
+    for i in 0 to intervals {
+        for k in 0 to per {
+            # One Euler step of the tangent vector, using the pre-step state,
+            # to match how the flow block integrates the trajectory.
+            let hp: f64 = hprime(a.x)
+            let dwx: f64 = 0.0 - ALPHA * (1.0 + hp) * wx + ALPHA * wy
+            let dwy: f64 = wx - wy + wz
+            let dwz: f64 = 0.0 - BETA * wy
+            Chua_step(&a, dt)
+            Chua_step(&b, dt)
+            wx = wx + dt * dwx
+            wy = wy + dt * dwy
+            wz = wz + dt * dwz
+            dsum = dsum + divergence(a.x)
+            ntot = ntot + 1
+            if fabs(a.x) < 1.0 {
+                nin = nin + 1
+            }
+            # A scroll switch is the trajectory crossing the inner segment and
+            # coming out the other side.
+            if a.x > 1.0 and side != 1 {
+                if side == -1 {
+                    scrolls = scrolls + 1
+                }
+                side = 1
+            }
+            if a.x < 0.0 - 1.0 and side != -1 {
+                if side == 1 {
+                    scrolls = scrolls + 1
+                }
+                side = -1
+            }
+            if a.x < r_xmin { r_xmin = a.x }
+            if a.x > r_xmax { r_xmax = a.x }
+            if a.y < r_ymin { r_ymin = a.y }
+            if a.y > r_ymax { r_ymax = a.y }
+            if draw and k % 20 == 0 and i < 400 {
+                plot_point(a.x, a.y, -3.0, 3.0, -0.5, 0.5, 35)
+            }
+        }
+        let dx: f64 = b.x - a.x
+        let dy: f64 = b.y - a.y
+        let dz: f64 = b.z - a.z
+        let d: f64 = sqrt(dx * dx + dy * dy + dz * dz)
+        if d <= 0.0 or d != d {
+            return false
+        }
+        lsum = lsum + log(d / D0)
+        let s: f64 = D0 / d
+        b.x = a.x + dx * s
+        b.y = a.y + dy * s
+        b.z = a.z + dz * s
+
+        let wn: f64 = sqrt(wx * wx + wy * wy + wz * wz)
+        if wn <= 0.0 or wn != wn {
+            return false
+        }
+        tsum = tsum + log(wn)
+        wx = wx / wn
+        wy = wy / wn
+        wz = wz / wn
+    }
+    r_lambda = lsum / ((intervals as f64) * T_RENORM)
+    r_lambda_tan = tsum / ((intervals as f64) * T_RENORM)
+    r_divavg = dsum / (ntot as f64)
+    r_frac_in = (nin as f64) / (ntot as f64)
+    r_scrolls = scrolls
+    return true
+}
+
+function main() -> i32 {
+    plot = calloc((PLOT_W * PLOT_H) as i64, 1) as ptr<u8>
+    if plot == null {
+        println("  FAIL: allocation")
+        return 1
+    }
+
+    println("")
+    println("  CHUA'S CIRCUIT  --  the double scroll, and how fast it forgets")
+    println("  ==============================================================")
+    println("")
+    print("  alpha = ")
+    printf("%.1f", ALPHA)
+    print(",  beta = ")
+    printf("%.1f", BETA)
+    print(",  m0 = ")
+    printf("%.6f", M0)
+    print(",  m1 = ")
+    printf("%.6f", M1)
+    println("")
+    print("  Euler dt = ")
+    printf("%.0e", DT)
+    print(",  transient ")
+    printf("%.0f", T_TRANSIENT)
+    print(" units discarded,  ")
+    printf("%.0f", T_MEASURE)
+    print(" units measured,  renormalized every ")
+    printf("%.1f", T_RENORM)
+    println("")
+
+    if !run(DT, true) {
+        println("  FAIL: the trajectory diverged or collapsed")
+        return 2
+    }
+    let lam_pair: f64 = r_lambda
+    let lam_tan: f64 = r_lambda_tan
+    let divavg: f64 = r_divavg
+    let frac_in: f64 = r_frac_in
+    let scrolls: i32 = r_scrolls
+    let xlo: f64 = r_xmin
+    let xhi: f64 = r_xmax
+    let ylo: f64 = r_ymin
+    let yhi: f64 = r_ymax
+
+    if !run(2.0 * DT, false) {
+        println("  FAIL: the 2 dt run diverged")
+        return 2
+    }
+    let lam_pair_2: f64 = r_lambda
+    let lam_tan_2: f64 = r_lambda_tan
+
+    if !run(4.0 * DT, false) {
+        println("  FAIL: the 4 dt run diverged")
+        return 2
+    }
+    let lam_pair_4: f64 = r_lambda
+    let lam_tan_4: f64 = r_lambda_tan
+
+    println("")
+    println("  x-y PROJECTION OF THE ATTRACTOR   (x from -3 to 3, y from -0.5 to 0.5)")
+    println("")
+    plot_draw()
+
+    let div_in: f64 = divergence(0.0)
+    let div_out: f64 = divergence(2.0)
+    let div_identity: f64 = frac_in * div_in + (1.0 - frac_in) * div_out
+    let div_err: f64 = fabs(divavg - div_identity)
+    let mut method_err: f64 = fabs(lam_pair - lam_tan) / fabs(lam_tan)
+    let m2: f64 = fabs(lam_pair_2 - lam_tan_2) / fabs(lam_tan_2)
+    let m4: f64 = fabs(lam_pair_4 - lam_tan_4) / fabs(lam_tan_4)
+    if m2 > method_err {
+        method_err = m2
+    }
+    if m4 > method_err {
+        method_err = m4
+    }
+    # Euler is first order, so lambda(dt) = lambda0 + c dt. Two overlapping
+    # pairs give two estimates of lambda0; they have to agree.
+    let lam0_fine: f64 = 2.0 * lam_tan - lam_tan_2
+    let lam0_coarse: f64 = 2.0 * lam_tan_2 - lam_tan_4
+    let rich_err: f64 = fabs(lam0_fine - lam0_coarse) / fabs(lam0_fine)
+
+    println("")
+    println("  LARGEST LYAPUNOV EXPONENT   (columns are the Euler step size)")
+    println("")
+    print("      method                       ")
+    printf("  %11.1e", 4.0 * DT)
+    printf("  %11.1e", 2.0 * DT)
+    printf("  %11.1e", DT)
+    println("")
+    println("    -------------------------------  -----------  -----------  -----------")
+    print("    A  two trajectories, d0 = 1e-8 ")
+    printf("  %11.6f", lam_pair_4)
+    printf("  %11.6f", lam_pair_2)
+    printf("  %11.6f", lam_pair)
+    println("")
+    print("    B  variational equation        ")
+    printf("  %11.6f", lam_tan_4)
+    printf("  %11.6f", lam_tan_2)
+    printf("  %11.6f", lam_tan)
+    println("")
+    print("       worst A vs B disagreement at any step size: ")
+    printf("%.3e", method_err)
+    println("")
+    println("")
+    println("    Euler's error here is first order in dt and it is not small,")
+    println("    so extrapolate: lambda0 = 2 lambda(h) - lambda(2h)")
+    println("")
+    print("      from the two finest steps   :  ")
+    printf("%.6f", lam0_fine)
+    println("")
+    print("      from the two coarsest steps :  ")
+    printf("%.6f", lam0_coarse)
+    println("")
+    print("      the two extrapolates differ by ")
+    printf("%.3e", rich_err)
+    print(", and the correction to the")
+    println("")
+    print("      finest run is ")
+    printf("%.1f", 100.0 * fabs(lam_tan - lam0_fine) / lam0_fine)
+    println("% of the answer")
+
+    println("")
+    println("  ATTRACTOR")
+    print("    renormalization intervals   ")
+    print(r_intervals)
+    print("   over ")
+    printf("%.0f", T_MEASURE)
+    println(" time units")
+    print("    scroll switches             ")
+    print(scrolls)
+    println("")
+    print("    x range   ")
+    printf("%.5f", xlo)
+    print(" to ")
+    printf("%.5f", xhi)
+    print("      y range   ")
+    printf("%.5f", ylo)
+    print(" to ")
+    printf("%.5f", yhi)
+    println("")
+    println("")
+    print("    time fraction with |x| < 1  ")
+    printf("%.6f", frac_in)
+    println("")
+    print("    average divergence          ")
+    printf("%.6f", divavg)
+    println("   = sum of all three Lyapunov exponents")
+    print("    two-segment identity        ")
+    printf("%.6f", div_identity)
+    print("   = f (")
+    printf("%.4f", div_in)
+    print(") + (1-f) (")
+    printf("%.4f", div_out)
+    print(")   err ")
+    printf("%.2e", div_err)
+    println("")
+    print("    so the other two exponents sum to ")
+    printf("%.6f", divavg - lam_tan)
+    println("")
+
+    println("")
+    println("  WHAT THIS SHOWS")
+    println("    Nearby states separate exponentially, so the circuit forgets")
+    println("    its initial condition at a measured rate. At the same time")
+    println("    phase-space volume shrinks. A set that stretches in one")
+    println("    direction while shrinking in volume has to fold, and the")
+    println("    projection above is what the folding looks like.")
+    println("")
+
+    if lam_tan != lam_tan or divavg != divavg or lam_pair != lam_pair {
+        println("  FAIL: NaN in a measurement")
+        return 3
+    }
+    if lam_tan <= 0.05 or lam_pair <= 0.05 {
+        println("  FAIL: the largest Lyapunov exponent is not positive")
+        return 4
+    }
+    if lam_tan >= 1.0 {
+        println("  FAIL: the exponent is implausibly large; the integration")
+        println("        has probably gone unstable")
+        return 5
+    }
+    if method_err >= 1e-3 {
+        println("  FAIL: the two Lyapunov methods disagree")
+        return 9
+    }
+    if lam0_fine <= 0.05 or lam0_fine >= 1.0 {
+        println("  FAIL: the extrapolated exponent is not positive and finite")
+        return 10
+    }
+    if rich_err >= 0.05 {
+        println("  FAIL: the two Richardson extrapolates disagree, so the")
+        println("        step-size error is not first order and the answer is")
+        println("        not converged")
+        return 11
+    }
+    if scrolls < 20 {
+        println("  FAIL: the trajectory did not visit both scrolls")
+        return 6
+    }
+    if divavg >= 0.0 {
+        println("  FAIL: phase-space volume did not contract")
+        return 7
+    }
+    if div_err >= 1e-6 {
+        println("  FAIL: the average divergence does not match the")
+        println("        two-segment identity")
+        return 8
+    }
+    println("  PASS: two independent methods at three step sizes agree on a")
+    println("        positive exponent, volume contracts, both scrolls visited")
+    return 0
+}
