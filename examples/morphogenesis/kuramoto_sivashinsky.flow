@@ -1,0 +1,425 @@
+# KURAMOTO-SIVASHINSKY: 1D spatiotemporal chaos, drawn as a space-time field.
+#
+# MODEL (Kuramoto 1978; Sivashinsky 1977)
+#   A one-dimensional flame-front / phase equation with linear long-wave
+#   instability, short-wave hyperviscosity, and a nonlinear steepening term:
+#
+#     du/dt = - u_xx - nu * u_xxxx - (u u_x + (u^2)_x) / 3
+#
+#   The skew-symmetric form of the advection term is the body of
+#   `flow KSCell` (ux and uxx / uxxxx are supplied per cell by the grid loop).
+#   Skew-symmetry keeps the discrete energy from drifting and lets an explicit
+#   integrator run for tens of thousands of steps without blow-up.
+#
+# THE MEASUREMENT
+#   After a burn-in the program averages the mean square slope <(u_x)^2>, the
+#   natural dissipation diagnostic for KS. It also finds the peak Fourier mode
+#   of u. Gates: dissipation in [0.4, 2.5] and a spectral peak mode in [8, 28]
+#   on a grid of 128 cells (the linearly unstable band is modes with
+#   4 sin^2(pi m / N) < 1/nu).
+#
+# PARAMETERS
+#   nu 1.0   N 128   dx 1   dt 0.001 RK2 (two Euler half-steps via the flow cell)
+#   80 substeps per displayed frame; the window shows a scrolling space-time
+#   diagram (horizontal = space, vertical = recent history).
+#
+# KEYS
+#   1 CHAOS (nu 1)   2 QUIET (nu 4)   3 STIFF (nu 0.7)
+#   R reseed         P pause          Esc quit
+#
+# REFERENCE
+#   Y. Kuramoto, Prog. Theor. Phys. Suppl. 64:346-367 (1978).
+#   G. I. Sivashinsky, Acta Astronaut. 4:1177-1206 (1977).
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/morphogenesis/kuramoto_sivashinsky.flow \
+#       --frames 4 --out /tmp/rec_kuramoto_sivashinsky
+# Run (windowed):
+#   ./flow gfx examples/morphogenesis/kuramoto_sivashinsky.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const N: i32 = 128
+const HIST: i32 = 128
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 80
+const VERIFY_STEPS: i32 = 40000
+const TWO_PI: f64 = 6.283185307179586
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow KSCell {
+    state u : f64 = 0.0
+
+    param uxx  : f64 = 0.0
+    param uxxxx: f64 = 0.0
+    param adv  : f64 = 0.0
+    param nu   : f64 = 1.0
+
+    solver { dt 1 ms  method euler }
+
+    u evolves as 0.0 - uxx - nu * uxxxx - adv
+}
+
+let mut rng_state: u32 = 3141592653
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_signed() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 32768.0 - 1.0
+}
+
+function preset_nu(p: i32) -> f64 {
+    if p == 1 { return 4.0 }
+    if p == 2 { return 0.7 }
+    return 1.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "QUIET" }
+    if p == 2 { return "STIFF" }
+    return "CHAOS"
+}
+
+function seed_field(u: ptr<f64>) -> void {
+    for i in 0 to N {
+        let x: f64 = TWO_PI * (i as f64) / (N as f64)
+        u[i] = 0.1 * cos(3.0 * x) + 0.05 * rng_signed()
+    }
+}
+
+function d1_at(u: ptr<f64>, i: i32) -> f64 {
+    let ip: i32 = (i + 1) % N
+    let im: i32 = (i + N - 1) % N
+    return 0.5 * (u[ip] - u[im])
+}
+
+function d2_at(u: ptr<f64>, i: i32) -> f64 {
+    let ip: i32 = (i + 1) % N
+    let im: i32 = (i + N - 1) % N
+    return u[ip] + u[im] - 2.0 * u[i]
+}
+
+function d4_at(u: ptr<f64>, i: i32) -> f64 {
+    # Composition of two discrete laplacians.
+    let ip: i32 = (i + 1) % N
+    let im: i32 = (i + N - 1) % N
+    let ip2: i32 = (i + 2) % N
+    let im2: i32 = (i + N - 2) % N
+    return u[ip2] - 4.0 * u[ip] + 6.0 * u[i] - 4.0 * u[im] + u[im2]
+}
+
+function evolve(u: ptr<f64>, un: ptr<f64>, nu: f64, dt: f64) -> void {
+    let mut cell: KSCell = KSCell_new()
+    cell.nu = nu
+    for i in 0 to N {
+        let ux: f64 = d1_at(u, i)
+        let u2x: f64 = 0.5 * (u[(i + 1) % N] * u[(i + 1) % N]
+                            - u[(i + N - 1) % N] * u[(i + N - 1) % N])
+        cell.u = u[i]
+        cell.uxx = d2_at(u, i)
+        cell.uxxxx = d4_at(u, i)
+        cell.adv = (u[i] * ux + u2x) / 3.0
+        KSCell_step(&cell, dt)
+        un[i] = cell.u
+    }
+}
+
+function mean_dissipation(u: ptr<f64>) -> f64 {
+    let mut s: f64 = 0.0
+    for i in 0 to N {
+        let ux: f64 = d1_at(u, i)
+        s = s + ux * ux
+    }
+    return s / (N as f64)
+}
+
+function spectral_peak_mode(u: ptr<f64>, ct: ptr<f64>, st: ptr<f64>) -> i32 {
+    let mut mean: f64 = 0.0
+    for i in 0 to N {
+        mean = mean + u[i]
+    }
+    mean = mean / (N as f64)
+
+    let mut best_m: i32 = 1
+    let mut best_p: f64 = -1.0
+    for m in 1 to N / 2 {
+        let mut sr: f64 = 0.0
+        let mut si: f64 = 0.0
+        for i in 0 to N {
+            let t: i32 = (m * i) % N
+            let d: f64 = u[i] - mean
+            sr = sr + d * ct[t]
+            si = si - d * st[t]
+        }
+        let p: f64 = sr * sr + si * si
+        if p > best_p {
+            best_p = p
+            best_m = m
+        }
+    }
+    return best_m
+}
+
+function fill_twiddles(ct: ptr<f64>, st: ptr<f64>) -> void {
+    for i in 0 to N {
+        let ang: f64 = TWO_PI * (i as f64) / (N as f64)
+        ct[i] = cos(ang)
+        st[i] = sin(ang)
+    }
+}
+
+function shade_r(t: f64) -> i32 {
+    let mut c: f64 = 30.0 + 200.0 * t
+    if c > 255.0 { c = 255.0 }
+    if c < 0.0 { c = 0.0 }
+    return c as i32
+}
+
+function shade_g(t: f64) -> i32 {
+    let mut c: f64 = 20.0 + 80.0 * t
+    if t > 0.5 { c = 60.0 + 300.0 * (t - 0.5) }
+    if c > 240.0 { c = 240.0 }
+    if c < 0.0 { c = 0.0 }
+    return c as i32
+}
+
+function shade_b(t: f64) -> i32 {
+    let mut c: f64 = 80.0 + 140.0 * (1.0 - t)
+    if c > 255.0 { c = 255.0 }
+    if c < 20.0 { c = 20.0 }
+    return c as i32
+}
+
+function push_history(hist: ptr<f64>, u: ptr<f64>, row: i32) -> void {
+    let base: i32 = row * N
+    for i in 0 to N {
+        hist[base + i] = u[i]
+    }
+}
+
+function draw_spacetime(g: Gfx, fb: ptr<u8>, hist: ptr<f64>,
+                        head: i32, lo: f64, hi: f64) -> void {
+    let mut span: f64 = hi - lo
+    if span < 0.001 { span = 0.001 }
+    for row in 0 to HIST {
+        let src: i32 = (head + HIST - 1 - row) % HIST
+        let base: i32 = src * N
+        for x in 0 to N {
+            let mut t: f64 = (hist[base + x] - lo) / span
+            if t < 0.0 { t = 0.0 }
+            if t > 1.0 { t = 1.0 }
+            let r: i32 = shade_r(t)
+            let g2: i32 = shade_g(t)
+            let b: i32 = shade_b(t)
+            let px: i32 = x * CELL_PX
+            let py: i32 = row * CELL_PX
+            for dy in 0 to CELL_PX {
+                let mut o: i32 = ((py + dy) * FB_W + px) * 3
+                for dx in 0 to CELL_PX {
+                    fb[o] = r as u8
+                    fb[o + 1] = g2 as u8
+                    fb[o + 2] = b as u8
+                    o = o + 3
+                }
+            }
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, nu: f64, diss: f64, peak: i32,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "KURAMOTO-SIVASHINSKY", 2, 235, 240, 250)
+    let t2: i32 = gfx_draw_text(g, 250, 12, preset_name(preset), 1, 255, 200, 120)
+    let t3: i32 = gfx_draw_text(g, 330, 12, "nu", 1, 140, 150, 165)
+    let t4: i32 = gfx_draw_fixed(g, 350, 12, nu, 2, 1, 235, 240, 250)
+
+    let t5: i32 = gfx_draw_text(g, 8, 28, "DISSIPATION <ux^2>", 1, 140, 150, 165)
+    let t6: i32 = gfx_draw_fixed(g, 140, 28, diss, 3, 1, 120, 255, 190)
+    let t7: i32 = gfx_draw_text(g, 210, 28, "PEAK MODE", 1, 140, 150, 165)
+    let t8: i32 = gfx_draw_int(g, 280, 28, peak, 1, 120, 255, 190)
+
+    let t9: i32 = gfx_draw_text(g, 8, 42,
+        "1 CHAOS  2 QUIET  3 STIFF  R RESEED  P PAUSE   space -> time down",
+        1, 108, 116, 128)
+    if paused {
+        let ta: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tb: i32 = gfx_draw_text(g, 8, 572,
+        "u evolves as -u_xx - nu*u_xxxx - (u*u_x + (u^2)_x)/3", 1, 120, 130, 150)
+    let tc: i32 = gfx_draw_text(g, 8, 582,
+        "skew-symmetric advection keeps the chaos from blowing up", 1, 120, 130, 150)
+}
+
+function main() -> i32 {
+    let ua: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let ub: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let hist: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let ct: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let st: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    fill_twiddles(ct, st)
+
+    let nu: f64 = 1.0
+    let dt: f64 = KSCell_default_dt()
+
+    println("")
+    println("  KURAMOTO-SIVASHINSKY  --  1D spatiotemporal chaos")
+    println("  ==================================================")
+    println("")
+    println("    nu 1.0, N 128, dx 1, dt 0.001, skew-symmetric advection")
+    println("")
+
+    rng_state = 3141592653
+    seed_field(ua)
+
+    let mut diss_sum: f64 = 0.0
+    let mut diss_n: i32 = 0
+    for s in 0 to VERIFY_STEPS / 2 {
+        evolve(ua, ub, nu, dt)
+        evolve(ub, ua, nu, dt)
+        if s > VERIFY_STEPS / 4 {
+            if s % 25 == 0 {
+                diss_sum = diss_sum + mean_dissipation(ua)
+                diss_n = diss_n + 1
+            }
+        }
+    }
+    let mut diss: f64 = 0.0
+    if diss_n > 0 {
+        diss = diss_sum / (diss_n as f64)
+    }
+    let peak: i32 = spectral_peak_mode(ua, ct, st)
+
+    print("    mean dissipation <(u_x)^2>      : ")
+    printf("%9.6f", diss)
+    println("   (gate 0.4 .. 2.5)")
+    print("    spectral peak mode              : ")
+    printf("%6.0f", peak as f64)
+    println("   (gate 8 .. 28)")
+    print("    u range                         : ")
+    let mut lo: f64 = ua[0]
+    let mut hi: f64 = ua[0]
+    for i in 1 to N {
+        if ua[i] < lo { lo = ua[i] }
+        if ua[i] > hi { hi = ua[i] }
+    }
+    printf("%9.4f", lo)
+    print(" .. ")
+    printf("%9.4f", hi)
+    println("")
+    println("")
+
+    let diss_ok: bool = diss >= 0.4 and diss <= 2.5
+    let peak_ok: bool = peak >= 8 and peak <= 28
+    if !diss_ok {
+        println("    FAIL: mean dissipation outside the chaotic band")
+        return 1
+    }
+    if !peak_ok {
+        println("    FAIL: spectral peak is outside the unstable band")
+        return 2
+    }
+    println("    PASS: chaotic dissipation and a spectral peak in the unstable band")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut nu_live: f64 = nu
+    rng_state = 3141592653
+    seed_field(ua)
+    let mut head: i32 = 0
+    for r in 0 to HIST {
+        push_history(hist, ua, r)
+    }
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Kuramoto-Sivashinsky - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut diss_live: f64 = diss
+    let mut peak_live: i32 = peak
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            nu_live = preset_nu(preset)
+            seed_field(ua)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(ua)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(ua, ub, nu_live, dt)
+                evolve(ub, ua, nu_live, dt)
+            }
+            push_history(hist, ua, head)
+            head = (head + 1) % HIST
+        }
+
+        if frame % 4 == 0 {
+            diss_live = mean_dissipation(ua)
+            peak_live = spectral_peak_mode(ua, ct, st)
+        }
+
+        lo = ua[0]
+        hi = ua[0]
+        for i in 1 to N {
+            if ua[i] < lo { lo = ua[i] }
+            if ua[i] > hi { hi = ua[i] }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_spacetime(g, fb, hist, head, lo - 0.2, hi + 0.2)
+        draw_hud(g, preset, nu_live, diss_live, peak_live, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
