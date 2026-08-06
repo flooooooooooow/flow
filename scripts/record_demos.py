@@ -764,13 +764,13 @@ MORPH_DEMOS: list[Demo] = [
 ]
 
     morph("ant_pheromone", 200, 4,
-          "ant pheromone — wave-2 morphogenesis clip",
+          "Ant pheromone — the short bridge wins by stigmergy",
           duration_ms=70, colors=24),
     morph("crack_propagation", 200, 4,
-          "crack propagation — wave-2 morphogenesis clip",
+          "Random fuse crack — disorder lengthens the failure path",
           duration_ms=70, colors=24),
-    morph("river_erosion", 200, 4,
-          "river erosion — wave-2 morphogenesis clip",
+    morph("river_erosion", 240, 5,
+          "Stream-power rivers — drainage basins obey Hack's law",
           duration_ms=70, colors=24),
 DEMOS += MORPH_DEMOS
 
