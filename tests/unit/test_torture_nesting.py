@@ -7,7 +7,6 @@ from tests.unit.compiler_helpers import (
     to_c,
     needs_clang,
     compile_c_only,
-    compile_and_run,
     errors,
 )
 
@@ -100,28 +99,6 @@ def test_nested_if_compiles():
     compile_c_only(_nested_ifs(16))
 
 
-@needs_clang
-def test_nested_struct_runs():
-    assert compile_and_run(_nested_structs(4)) == 0
-
-
-@needs_clang
-def test_many_locals_runs_exit_zero():
-    assigns = "\n".join(f"    let v{i}: i32 = {i}" for i in range(64))
-    adds = " + ".join(f"v{i}" for i in range(64))
-    src = f"""
-function main() -> i32 {{
-{assigns}
-    let s: i32 = {adds}
-    if s == 2016 {{
-        return 0
-    }}
-    return 1
-}}
-"""
-    assert compile_and_run(src) == 0
-
-
 def test_match_bool_still_typechecks():
     errs = errors(
         """
@@ -155,20 +132,7 @@ function main() -> i32 {{
     assert "f31" in c
 
 
-@needs_clang
-def test_many_functions_runs():
-    fns = "\n".join(
-        f"function f{i}(x: i32) -> i32 {{ return x + {i} }}" for i in range(32)
-    )
-    calls = " + ".join(f"f{i}(1)" for i in range(32))
-    src = f"""
-{fns}
-function main() -> i32 {{
-    let s: i32 = {calls}
-    if s == 528 {{
-        return 0
-    }}
-    return 1
-}}
-"""
-    assert compile_and_run(src) == 0
+# test_nested_struct_runs, test_many_locals_runs_exit_zero and
+# test_many_functions_runs compiled and ran generated stress programs.
+# All three now run as tests/lang/test_torture.flow, which additionally
+# runs a sixteen-deep nested if rather than only parsing it.
