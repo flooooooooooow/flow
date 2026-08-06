@@ -208,7 +208,8 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  install           Install project deps if flow.toml exists; else LLVM tools"
     echo "  setup             Install LLVM / compiler tooling"
     echo "  python <program>  Generate Python package (wheel)"
-    echo "  wasm <program>    Compile to WebAssembly + a runnable page"
+    echo "  wasm <program> [--threads] [--fs memfs|idbfs] [--out DIR]"
+    echo "                    Compile to WebAssembly + a runnable page"
     echo "  repl              Start interactive REPL"
     echo "  examples          List example programs"
     echo "  playground        Start native-local compile API + open playground docs"
@@ -2513,22 +2514,36 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         ;;
     "gpu")
         shift
+        # --wgsl emits WebGPU shaders instead of Metal, from the same AST.
+        gpu_lang="metal"
+        gpu_args=()
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --wgsl) gpu_lang="wgsl" ;;
+                --metal) gpu_lang="metal" ;;
+                *) gpu_args+=("$1") ;;
+            esac
+            shift
+        done
+        set -- ${gpu_args[@]+"${gpu_args[@]}"}
         if [ -z "${1:-}" ]; then
-            print_error "Usage: flow gpu <program.flow>"
+            print_error "Usage: flow gpu <program.flow> [--wgsl]"
             exit 1
         fi
         require_flow_file "${1:-}"
         check_deps
-        print_info "Generating GPU shaders from ${1:-}..."
-        python3 - "$SCRIPT_DIR" "${1:-}" <<'PY'
+        print_info "Generating GPU shaders from ${1:-} ($gpu_lang)..."
+        python3 - "$SCRIPT_DIR" "${1:-}" "$gpu_lang" <<'PY'
 import sys
 
 script_dir = sys.argv[1]
 program = sys.argv[2]
+lang = sys.argv[3] if len(sys.argv) > 3 else "metal"
 sys.path.insert(0, f"{script_dir}/src")
 
 from flow.module_resolver import ModuleResolver
 from flow.metal_codegen import generate_metal_shaders, extract_gpu_functions
+from flow.wgsl_codegen import generate_wgsl_shaders
 
 # Resolve modules
 resolver = ModuleResolver(program)
@@ -2553,8 +2568,12 @@ if not gpu_funcs:
     print("}")
     sys.exit(0)
 
-# Generate Metal shaders
-results = generate_metal_shaders(declarations, f"{script_dir}/build/gpu")
+if lang == "wgsl":
+    results = generate_wgsl_shaders(declarations, f"{script_dir}/build/wgsl")
+    for name, path, _layout in results:
+        print(f"Generated WGSL shader: {path}")
+else:
+    results = generate_metal_shaders(declarations, f"{script_dir}/build/gpu")
 print(f"Generated {len(results)} GPU shader(s)")
 PY
         ;;
@@ -2779,8 +2798,28 @@ for f in sys.argv[1:]:
         if [ -z "${EM_BINARYEN_ROOT:-}" ] && [ -d /opt/homebrew/opt/emscripten/libexec/binaryen ]; then
             export EM_BINARYEN_ROOT=/opt/homebrew/opt/emscripten/libexec/binaryen
         fi
+        # --threads builds pthreads over Web Workers, --fs mounts MEMFS/IDBFS;
+        # both are documented in docs/language/wasm-crossings.md. Everything
+        # else goes to the standard page builder.
+        wasm_threads=0
+        wasm_workers=8
+        wasm_fs=""
+        wasm_preload=()
+        wasm_args=()
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --threads) wasm_threads=1 ;;
+                --workers) shift; wasm_workers="${1:-8}" ;;
+                --fs) shift; wasm_fs="${1:-memfs}" ;;
+                --preload) shift; wasm_preload+=(--preload "${1:-}") ;;
+                *) wasm_args+=("$1") ;;
+            esac
+            shift
+        done
+        set -- ${wasm_args[@]+"${wasm_args[@]}"}
         if [ -z "${1:-}" ] || [ "${1:-}" = "--help" ]; then
             print_error "Usage: flow wasm <program.flow> [--out DIR] [--legacy]"
+            print_info "                 [--threads [--workers N]] [--fs memfs|idbfs] [--preload DIR@/MOUNT]"
             print_info "Writes .wasm + .js + a runnable index.html."
             print_info "gfx programs get a canvas page; others print into the page."
             print_info "Requires emcc (Emscripten). See docs/language/wasm.md"
@@ -2798,6 +2837,23 @@ for f in sys.argv[1:]:
             print_error "emcc not on PATH — install emsdk to emit .wasm"
             print_info "  docs: docs/language/wasm.md"
             exit 1
+        fi
+        if [ -n "$wasm_fs" ]; then
+            print_info "Flow → C → WASM with a $wasm_fs filesystem (see docs/language/wasm-crossings.md)"
+            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_fs.py" "$1" --fs "$wasm_fs" \
+                    ${wasm_preload[@]+"${wasm_preload[@]}"}; then
+                print_error "Filesystem WASM build failed"
+                exit 1
+            fi
+            exit 0
+        fi
+        if [ "$wasm_threads" -eq 1 ]; then
+            print_info "Flow → C → threaded WASM (see docs/language/wasm-crossings.md)"
+            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_threads.py" "$1" --workers "$wasm_workers"; then
+                print_error "Threaded WASM build failed"
+                exit 1
+            fi
+            exit 0
         fi
         print_info "Flow → C → WASM (see docs/language/wasm.md)"
         if ! python3 "$SCRIPT_DIR/scripts/wasm_build.py" "$@"; then
