@@ -158,7 +158,8 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  debug <program> [--break N|--break main] [--no-launch]  Debug build (+ optional LLDB/GDB)"
     echo "  window <program>  Run with SDL2 window backend"
     echo "  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)"
-    echo "  record <program> [--frames N] [--out DIR] [--gif [PATH]] [--keys SPEC]"
+    echo "  record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]] [--keys SPEC]"
+    echo "                   [--fps N] [--stride N] [--width PX]"
     echo "                    Run a gfx program headless; write PPM frames, or a GIF with --gif"
     echo "  shader <program>  Run fill-shader demo (Metal window on macOS; see docs/language/shaders.md)"
     echo "  demo vulkan [basic|advanced]  Vulkan triangle / scene demos (macOS + MoltenVK)"
@@ -1108,17 +1109,25 @@ run_gfx_program() {
 # Build a gfx program against the headless recording backend and run it, so demo
 # frames come from the real program instead of a mock-up. Configured through
 # FLOW_GFX_RECORD_* — see runtime/gfx_record.c.
-# flow record <program> [--frames N] [--out DIR] [--gif [PATH]] [--keys SPEC]
+# flow record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]]
+#                       [--keys SPEC] [--fps N] [--stride N] [--width PX]
+#
+# --frames/--skip/--out/--keys shape the capture; --fps/--stride/--width shape
+# the GIF and are handed to scripts/frames_to_gif.py.
 #
 # Flags win; the FLOW_GFX_RECORD_* environment variables remain as a fallback
 # so existing scripts keep working.
 record_gfx_program() {
     local program=""
     local rec_frames=""
+    local rec_skip=""
     local rec_dir=""
     local rec_keys=""
     local rec_gif=""
     local want_gif=0
+    local gif_fps=""
+    local gif_stride=""
+    local gif_width=""
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -1131,6 +1140,15 @@ record_gfx_program() {
                 shift 2
                 ;;
             --frames=*) rec_frames="${1#*=}"; shift ;;
+            --skip)
+                rec_skip="${2:-}"
+                if [ -z "$rec_skip" ]; then
+                    print_error "--skip needs a count, e.g. --skip 2 (keep every 2nd frame)"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            --skip=*) rec_skip="${1#*=}"; shift ;;
             --out|-o)
                 rec_dir="${2:-}"
                 if [ -z "$rec_dir" ]; then
@@ -1154,9 +1172,16 @@ record_gfx_program() {
                 shift
                 ;;
             --gif=*) want_gif=1; rec_gif="${1#*=}"; shift ;;
+            --fps) gif_fps="${2:-}"; shift 2 ;;
+            --fps=*) gif_fps="${1#*=}"; shift ;;
+            --stride) gif_stride="${2:-}"; shift 2 ;;
+            --stride=*) gif_stride="${1#*=}"; shift ;;
+            --width) gif_width="${2:-}"; shift 2 ;;
+            --width=*) gif_width="${1#*=}"; shift ;;
             -*)
                 print_error "Unknown flag for 'flow record': $1"
-                echo "  usage: flow record <program.flow> [--frames N] [--out DIR] [--gif [PATH]] [--keys SPEC]"
+                echo "  usage: flow record <program.flow> [--frames N] [--skip N] [--out DIR]"
+                echo "                     [--gif [PATH]] [--keys SPEC] [--fps N] [--stride N] [--width PX]"
                 exit 1
                 ;;
             *)
@@ -1186,6 +1211,7 @@ record_gfx_program() {
     fi
 
     [ -n "$rec_frames" ] && export FLOW_GFX_RECORD_FRAMES="$rec_frames"
+    [ -n "$rec_skip" ] && export FLOW_GFX_RECORD_SKIP="$rec_skip"
     [ -n "$rec_dir" ] && export FLOW_GFX_RECORD_DIR="$rec_dir"
     [ -n "$rec_keys" ] && export FLOW_GFX_RECORD_KEYS="$rec_keys"
 
@@ -1227,7 +1253,12 @@ record_gfx_program() {
 
     if [ "$want_gif" = "1" ]; then
         print_info "Encoding $rec_gif ..."
-        if python3 "$SCRIPT_DIR/scripts/frames_to_gif.py" "${rec_dir:-frames}" "$rec_gif"; then
+        local gif_args=()
+        [ -n "$gif_fps" ] && gif_args+=(--fps "$gif_fps")
+        [ -n "$gif_stride" ] && gif_args+=(--stride "$gif_stride")
+        [ -n "$gif_width" ] && gif_args+=(--width "$gif_width")
+        if python3 "$SCRIPT_DIR/scripts/frames_to_gif.py" "${rec_dir:-frames}" "$rec_gif" \
+            "${gif_args[@]+"${gif_args[@]}"}"; then
             print_success "GIF: $rec_gif"
         else
             print_error "GIF encoding failed"
