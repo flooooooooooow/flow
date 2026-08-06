@@ -1,6 +1,6 @@
 # Game Gallery
 
-23 complete games written in Flow. Every clip below is recorded from the real
+24 complete games written in Flow. Every clip below is recorded from the real
 compiled program through the headless recorder; the pixels come from the same
 drawing calls the native window receives.
 
@@ -56,6 +56,13 @@ P pause, R restart, Esc quit. Per-game keys are in each file's header comment.
 | **Connect Four** — vs AI that takes and blocks wins<br>`connect4_gfx.flow` | **Othello** — vs corner-aware AI, staged flips<br>`othello_gfx.flow` | **Checkers** — hotseat, forced captures, kings<br>`checkers_gfx.flow` |
 | ![Chetris](./games/chetris.gif) | | |
 | **Chetris** — the Chess×Tetris hybrid ([writeup](chetris.md))<br>`chetris_gfx.flow` | | |
+
+## Sandbox
+
+| | | |
+|:---:|:---:|:---:|
+| ![Falling Sand](./games/falling_sand.gif) | | |
+| **The Falling Sand Game** — 384×192 cells at one cell per pixel, eleven materials on a density ladder, keyboard pen<br>`falling_sand_gfx.flow` | | |
 
 ## How the recordings work
 
