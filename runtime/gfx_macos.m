@@ -221,6 +221,38 @@ void flow_gfx_clear(void* handle, uint8_t r, uint8_t g, uint8_t b) {
     }
 }
 
+
+/* Blit a packed RGB8 buffer (w*h*3 bytes, row-major, no padding) into the
+ * framebuffer at (x, y). Per-pixel work belongs here rather than in a
+ * fill_rect call per pixel: a 320x240 particle field is 76800 rects a frame,
+ * which the rect path cannot sustain. Clipped like fill_rect. */
+void flow_gfx_blit_rgb(void *handle, int32_t x, int32_t y, int32_t w, int32_t h,
+                       const uint8_t *src) {
+    FlowGfxContext *ctx = (FlowGfxContext *)handle;
+    if (!ctx || !ctx->pixels || !src) return;
+    if (w <= 0 || h <= 0) return;
+
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w; if (x1 > ctx->width) x1 = ctx->width;
+    int y1 = y + h; if (y1 > ctx->height) y1 = ctx->height;
+    if (x0 >= x1 || y0 >= y1) return;
+
+    uint8_t *dst = ctx->pixels;
+    for (int yy = y0; yy < y1; yy++) {
+        const uint8_t *srow = src + ((size_t)(yy - y) * (size_t)w + (size_t)(x0 - x)) * 3u;
+        uint8_t *drow = dst + ((size_t)yy * (size_t)ctx->width + (size_t)x0) * 4u;
+        for (int xx = x0; xx < x1; xx++) {
+            drow[0] = srow[0];
+            drow[1] = srow[1];
+            drow[2] = srow[2];
+            drow[3] = 255;
+            srow += 3;
+            drow += 4;
+        }
+    }
+}
+
 void flow_gfx_fill_rect(void* handle, int32_t x, int32_t y, int32_t w, int32_t h,
                         uint8_t r, uint8_t g, uint8_t b) {
     FlowGfxContext* ctx = (FlowGfxContext*)handle;
