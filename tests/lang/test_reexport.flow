@@ -13,6 +13,8 @@
 # Every re-exported function must have exactly one definition in the emitted
 # C; if forwarding duplicated a declaration this file would not link.
 #
+# Supersedes (behavioral parts of):
+#   tests/unit/test_module_reexport.py::TestCompileAndRun::test_reexport_program_compiles_and_returns_expected_exit_code
 # Exit 0 on success; a nonzero exit identifies the failing check.
 
 import registry.packages.flowlm.src.lib {

@@ -3,10 +3,17 @@
 # The attributes are optimization hints, so they must not change what the
 # program computes. This test pins that: the same arithmetic, spread across
 # functions carrying each attribute, still produces the expected values.
-# Exit 0 on success; a nonzero exit identifies the failing check.
 #
 # `@target(...)` is deliberately absent: its feature strings are
-# architecture-specific, so a portable language test cannot pin one.
+# architecture-specific, so a portable language test cannot pin one. The
+# -O2 and -O0 -Werror variants stay host-side too: test-lang compiles every
+# program with one fixed clang invocation.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_attributes.py::test_inline_compiles_and_runs
+#   tests/unit/test_attributes.py::test_exported_inline_compiles_and_runs
+#   tests/unit/test_attributes.py::test_noinline_compiles_and_runs
+#   tests/unit/test_attributes.py::test_always_inline_compiles_and_runs
+# Exit 0 on success; a nonzero exit identifies the failing check.
 
 @inline
 function add(a: i32, b: i32) -> i32 {
