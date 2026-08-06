@@ -9,6 +9,44 @@ Stage-A `flowc` is the **default host** for `./flow run` and `./flow compile`
 (tests, MLIR, gfx, DSLs). Drivers live under `compiler/build/`; if none exist,
 `compiler/scripts/ensure_flowc.sh` bootstraps Gen0 via Phase-A roundtrip.
 
+## Get a compiler with nothing but `cc`
+
+[`bootstrap/flowc_stage_a.c`](bootstrap/flowc_stage_a.c) is `driver.flow` plus
+every module it imports, emitted by flowc as one translation unit. No Python,
+no pip, no network:
+
+```bash
+./compiler/scripts/bootstrap_from_c.sh     # -> compiler/build/flowc_bootstrap
+./flow run examples/basics/fibonacci.flow  # exit 55
+```
+
+`roundtrip.sh` runs `bootstrap_from_c.sh --verify`, which requires that file to
+be byte-for-byte what flowc emits from `compiler/src` today, so it cannot drift.
+After changing `compiler/src`, regenerate with `--regen`.
+
+## flowc compiles flowc
+
+```bash
+./compiler/scripts/selfcompile_audit.sh   # every compiler/src module -> C, 0 cc diagnostics
+./compiler/scripts/self_host_full.sh      # three consecutive generation fixed-points
+```
+
+`self_host_full.sh` bundles all of `compiler/src` into one ~195 KB C file. That
+binary is a complete flowc: run it bare and it executes the front-end
+self-tests (`flowc: PASS`); give it `FLOWC_IN`/`FLOWC_OUT` and it emits C. It
+then recompiles `compiler/src`, and so does its child:
+`gen1.c == gen2.c == gen3.c`, and `gen2.o == gen3.o`.
+
+## Package it
+
+```bash
+./compiler/scripts/package_flowc.sh   # dist/flowc-<version>-<os>-<arch>.tar.gz
+```
+
+The archive carries the binary, the bootstrap C, a `build.sh` that rebuilds it
+with `cc`, a LICENSE, and two examples. Released on `flowc-v*` tags by
+[`.github/workflows/flowc-release.yml`](../.github/workflows/flowc-release.yml).
+
 ## How to run
 
 From the repo root (default host = flowc for Stage-A programs):
@@ -187,6 +225,12 @@ What `flowc_parse_program` actually accepts:
 
 **Statements**
 - [x] `let name: Type = expr` / `let mut name: Type = expr` (Stage-A: typed emit — `int32_t` / `uint8_t` / `int64_t` / `float`/`double` / `T*` / struct name)
+- [x] `let name = expr` — no annotation; the type is inferred from the
+  initialiser: `expr as T` and calls to functions declared in this module use
+  the declared type node; string / float / struct literals and string `+`
+  chains write the type directly; calls into other bundle modules read the
+  `name\0ctype\0` signature table `flowc_bundle_emit` fills deps-first.
+  Anything else still falls back to `int32_t`.
 - [x] `return expr`
 - [x] `if cond { ... }` / `if ... else { ... }` (Stage-A: clean `} else {` brace chain)
 - [x] `while cond { ... }`
@@ -202,6 +246,13 @@ What `flowc_parse_program` actually accepts:
 - [x] identifiers, calls `f(a, b)`, `(expr)`
 - [x] unary `!` / `-` / `&` (address-of; Stage-A emit: `(&expr)`)
 - [x] binary `||` `&&` / keyword `or` `and` / `==` `!=` `<` `<=` `>` `>=` `+` `-` `*` `/` `%` (precedence climbing; `%` same prec as `*` `/`; Stage-A emit: ` % `)
+- [x] string `+` → `__flowc_str_concat(a, b)`, a `static inline` helper in the
+  preamble that mallocs and never frees (process-lifetime strings, same as the
+  compiler's arenas). An operand counts as a string when it is a literal, a `+`
+  chain already containing one, a cast to `string`, or a call to a function
+  declared `-> string`. Two string values with neither a literal nor a call
+  between them still emit `+` and are rejected by `cc` — loud, never wrong
+  output. Fixture: [`fixtures/stage_a_strcat.flow`](fixtures/stage_a_strcat.flow) (exit 42).
 - [x] postfix `expr.field` / `expr[i]` (Stage-A emit: `(expr).field` / `base[index]`)
 - [x] `expr as Type` cast (AST_CAST=32; Stage-A emit: `(ctype)(expr)`)
 - [x] struct literals `Type { field: expr, ... }` (lookahead requires `ident :` after `{` so `while i < n {` is not a lit; Stage-A emit: `(Name){ .f = e, … }`)
@@ -237,7 +288,9 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
   first emit; after self-emit, `stage_a_driver_flow_self` is fully
   Stage-A Flow driver + self frontend; C `stage_a_driver` remains a
   fallback)
-- Compiling production `src/flow` with `flowc`
+- Compiling production `src/flow` with `flowc` (the Python sources use the full
+  language, far beyond Stage-A)
+- Generics, effects, DSLs; `jsgen` / `fmt` do not lower `AST_MATCH`
 - Note: Stage-A already round-trips `examples/basics/fibonacci.flow` twin
   (`compiler/fixtures/stage_a_fib.flow` → exit 55) via `./compiler/scripts/roundtrip.sh`
 
@@ -278,7 +331,13 @@ check generated C string constants.
 
 `export function` + multi-file `import .math` link smoke: [`fixtures/pkg_add/`](fixtures/pkg_add/) via `stage_a_link_two.sh` (exit 42). Float literals: [`fixtures/stage_a_float.flow`](fixtures/stage_a_float.flow) (exit 42; `40.5f` / `1.5`).
 
-**Self-host loop (frontend modules):** partial — exists via roundtrip +
+**Self-host loop (whole compiler):** `selfcompile_audit.sh` shows all 17
+modules of `compiler/src` emitting C with zero `cc` diagnostics, and
+`self_host_full.sh` closes three generations byte-identically. What is *not*
+covered is the rest of the language: flowc compiles the subset flowc is
+written in, not all of Flow.
+
+**Self-host loop (frontend modules):** exists via roundtrip +
 `scripts/stage_a_self_emit.sh` / `stage_a_self_emit_g2.sh` — driver
 re-emits `token`/`ast`/`lexer`/`fileio`/`parser`/`cgen`/`typecheck`/`resolve` →
 `flowc_frontend_self.o` → `flowc_frontend_g2.o` (byte-identical fixed

@@ -15,7 +15,7 @@ import .parser {
     flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser
 }
 import .fileio { flowc_read_file }
-import .cgen { flowc_cgen_emit_ex }
+import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs }
 import .typecheck {
     TcCtx,
     flowc_tc_init, flowc_tc_free, flowc_tc_reset_module,
@@ -34,6 +34,7 @@ const FLOWC_RESOLVE_MAX_MODS: i32 = 32
 const FLOWC_RESOLVE_PATH_CAP: i32 = 256
 const FLOWC_RESOLVE_SRC_CAP: i32 = 262144
 const FLOWC_RESOLVE_AST_CAP: i32 = 262144
+const FLOWC_RESOLVE_SIG_CAP: i32 = 65536
 
 # Copy NUL-terminated `s` into `dst` (cap includes NUL). Returns length, or -1.
 function flowc_resolve_copy_cstr(s: string, dst: ptr<u8>, cap: i32) -> i32 {
@@ -475,8 +476,18 @@ function flowc_resolve_topo(
 }
 
 # Emit one module's C into `out` (remaining capacity `out_cap`).
-# flags forwarded to flowc_cgen_emit_ex.
-function flowc_resolve_emit_one(path: string, out: ptr<u8>, out_cap: i32, flags: i32) -> i32 {
+# flags forwarded to flowc_cgen_emit_sigs. `sigs` is the growing cross-module
+# return-type table (deps emitted first); `siglen` is read and updated in place
+# so a later module can type `let x = dep_fn(...)` with no annotation.
+function flowc_resolve_emit_one(
+    path: string,
+    out: ptr<u8>,
+    out_cap: i32,
+    flags: i32,
+    sigs: ptr<u8>,
+    sigcap: i32,
+    siglen: ptr<i32>
+) -> i32 {
     let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
     if src == null {
         return 0 - 1
@@ -501,7 +512,10 @@ function flowc_resolve_emit_one(path: string, out: ptr<u8>, out_cap: i32, flags:
         return 0 - 1
     }
 
-    let n: i32 = flowc_cgen_emit_ex(p.arena, root, src, out, out_cap, flags)
+    let n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
+    if sigs != null {
+        siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
+    }
     flowc_parser_free(p)
     free(src)
     return n
@@ -667,6 +681,20 @@ export function flowc_bundle_emit(
         return 0 - 1
     }
 
+    # Cross-module return types for inferred `let` (see flowc_cgen_collect_sigs).
+    let sigs: ptr<u8> = malloc(FLOWC_RESOLVE_SIG_CAP as i64)
+    if sigs == null {
+        free(order_store)
+        free(path_store)
+        return 0 - 1
+    }
+    zi = 0
+    while zi < FLOWC_RESOLVE_SIG_CAP {
+        sigs[zi] = 0
+        zi = zi + 1
+    }
+    let mut siglen: i32 = 0
+
     let mut written: i32 = 0
     let mut mi: i32 = 0
     let mut first: i32 = 1
@@ -681,12 +709,14 @@ export function flowc_bundle_emit(
         let dest: ptr<u8> = out + written
         let rem: i32 = out_cap - written
         if rem <= 0 {
+            free(sigs)
             free(order_store)
             free(path_store)
             return 0 - 1
         }
-        let n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags)
+        let n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen)
         if n <= 0 {
+            free(sigs)
             free(order_store)
             free(path_store)
             return 0 - 1
@@ -699,6 +729,7 @@ export function flowc_bundle_emit(
         mi = mi + 1
     }
 
+    free(sigs)
     free(order_store)
     free(path_store)
     return written

@@ -1,0 +1,9 @@
+# Cross-module inferred `let`: `make_pair` lives in another bundle module, so
+# the type comes from the bundle signature table, not this module's arena.
+# Exit 42.
+import .bundle_infer_lib { Pair, make_pair, pair_sum }
+
+function main() -> i32 {
+    let p = make_pair(20, 22)
+    return pair_sum(p)
+}
