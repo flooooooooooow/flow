@@ -88,11 +88,15 @@ biological pattern (Physarum, cell sorting, somitogenesis).
 | 15 | Reservoir computing | Memory capacity measured | MC 40.566 against Jaeger's bound of N = 100 |
 
 **Status: complete.** `examples/neuro/` · [domain README](../../examples/neuro/README.md)
+· [gallery](../demos/neuro.md)
 
 Each of the fifteen prints its measurements and returns a nonzero exit code
 naming the first check that failed. Because they all draw, the gating run is
 `./flow record <file> --frames 90 --out <dir> --gif <path>`, which builds
 against the headless recorder and passes the program's exit status through.
+Recorded clips for all fifteen live in the
+[neuron gallery](../demos/neuro.md); regenerate with
+`python3 scripts/record_demos.py --group neuro`.
 
 ### 3. Circuit simulation — 12 shipped
 

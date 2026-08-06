@@ -274,6 +274,8 @@ resets are `when v reaches threshold { v becomes reset }`.
 
 Run them with `./flow record examples/neuro/<name>.flow --frames 90 --out
 build/frames --gif build/<name>.gif`, or windowed with `./flow gfx`.
+Gallery: [docs/demos/neuro.md](../docs/demos/neuro.md); regenerate with
+`python3 scripts/record_demos.py --group neuro`.
 
 ### Dynamics (`dynamics/`)
 Dynamical systems, analysis, and control via `stdlib/dynamics` and the
