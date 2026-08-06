@@ -1,0 +1,317 @@
+# HEXAGONAL CA: snow crystal growth on a triangular lattice.
+#
+# MODEL (Reiter, 2005)
+#   One real-valued field s per hexagonal cell, standing for the amount of
+#   water there. A cell is frozen when s >= 1. A cell is receptive when it
+#   is frozen or touches a frozen cell. Split s at every step:
+#
+#     receptive cell:      u = 0     v = s + gamma      (locked in, plus
+#                                                        constant deposition)
+#     non-receptive cell:  u = s     v = 0
+#
+#     s' = u + v + (alpha / 2) * (mean of u over the six neighbours - u)
+#
+#   Only the non-receptive part diffuses. Vapour therefore cannot flow
+#   through the crystal, it can only be intercepted at the boundary, and
+#   the tips intercept it first. Six-fold symmetry comes from the lattice;
+#   the dendrites come from that interception.
+#
+# PARAMETERS
+#   alpha diffusion, beta background vapour, gamma deposition rate.
+#   128 x 128 offset-row hex lattice drawn with a half-cell row shift and
+#   0.866 row pitch, one frozen seed at the centre, 30 steps per frame.
+#
+# KEYS
+#   1 DENDRITE  alpha 1.00  beta 0.40  gamma 0.0001   classic stellar arms
+#   2 PLATE     alpha 2.00  beta 0.45  gamma 0.0001   broad hexagonal plates
+#   3 FERN      alpha 1.00  beta 0.35  gamma 0.0010   fine side branching
+#   R restart    P pause    Esc quit
+#
+# PHENOMENON
+#   Every snowflake in a storm shares one growth law and no two look alike,
+#   because the arms grow into whatever vapour field the other arms leave.
+#   Change beta by 0.05 and the crystal habit changes completely, which is
+#   why real snowflakes are classified by the temperature they grew at.
+#
+# Run: ./flow gfx examples/morphogenesis/hexagonal_ca.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_W: i32 = 4
+const ROW_TOP: i32 = 30
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const STEPS_PER_FRAME: i32 = 30
+const CENTER: i32 = 64
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+function preset_alpha(p: i32) -> f64 {
+    if p == 1 { return 2.00 }
+    return 1.00
+}
+
+function preset_beta(p: i32) -> f64 {
+    if p == 1 { return 0.45 }
+    if p == 2 { return 0.35 }
+    return 0.40
+}
+
+function preset_gamma(p: i32) -> f64 {
+    if p == 2 { return 0.0010 }
+    return 0.0001
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "PLATE" }
+    if p == 2 { return "FERN" }
+    return "DENDRITE"
+}
+
+# Six neighbours of (x, y) on an odd-row-shifted hex lattice.
+function nb_x(x: i32, y: i32, k: i32) -> i32 {
+    let odd: i32 = y % 2
+    if k == 0 { return x - 1 }
+    if k == 1 { return x + 1 }
+    if k == 2 { return x - 1 + odd }
+    if k == 3 { return x + odd }
+    if k == 4 { return x - 1 + odd }
+    return x + odd
+}
+
+function nb_y(y: i32, k: i32) -> i32 {
+    if k == 0 { return y }
+    if k == 1 { return y }
+    if k == 2 { return y - 1 }
+    if k == 3 { return y - 1 }
+    if k == 4 { return y + 1 }
+    return y + 1
+}
+
+function seed_field(s: ptr<f64>, beta: f64) -> void {
+    for i in 0 to CELLS {
+        s[i] = beta
+    }
+    s[CENTER * GRID + CENTER] = 1.0
+}
+
+function frozen_at(s: ptr<f64>, x: i32, y: i32) -> bool {
+    if x < 0 or x >= GRID or y < 0 or y >= GRID { return false }
+    return s[y * GRID + x] >= 1.0
+}
+
+function step(s: ptr<f64>, sn: ptr<f64>, u: ptr<f64>, alpha: f64,
+              beta: f64, gamma: f64) -> void {
+    # Split into the diffusing part u and the locked part, cell by cell.
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let mut receptive: bool = s[i] >= 1.0
+            let mut k: i32 = 0
+            while k < 6 and !receptive {
+                if frozen_at(s, nb_x(x, y, k), nb_y(y, k)) { receptive = true }
+                k = k + 1
+            }
+            if receptive {
+                u[i] = 0.0
+                sn[i] = s[i] + gamma
+            } else {
+                u[i] = s[i]
+                sn[i] = 0.0
+            }
+        }
+    }
+    # Diffuse u over the six neighbours and recombine.
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let mut sum: f64 = 0.0
+            for k in 0 to 6 {
+                let nx: i32 = nb_x(x, y, k)
+                let ny: i32 = nb_y(y, k)
+                if nx < 0 or nx >= GRID or ny < 0 or ny >= GRID {
+                    sum = sum + beta
+                } else {
+                    sum = sum + u[ny * GRID + nx]
+                }
+            }
+            s[i] = sn[i] + u[i] + 0.5 * alpha * (sum / 6.0 - u[i])
+        }
+    }
+}
+
+function frozen_count(s: ptr<f64>) -> i32 {
+    let mut n: i32 = 0
+    for i in 0 to CELLS {
+        if s[i] >= 1.0 { n = n + 1 }
+    }
+    return n
+}
+
+function crystal_span(s: ptr<f64>) -> i32 {
+    let mut span: i32 = 0
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            if s[y * GRID + x] >= 1.0 {
+                let mut dx: i32 = x - CENTER
+                let mut dy: i32 = y - CENTER
+                if dx < 0 { dx = 0 - dx }
+                if dy < 0 { dy = 0 - dy }
+                if dx > span { span = dx }
+                if dy > span { span = dy }
+            }
+        }
+    }
+    return span
+}
+
+# Ice on a night-blue field; vapour density shows as a faint haze.
+function draw_field(g: Gfx, s: ptr<f64>) -> void {
+    for y in 0 to GRID {
+        let py: i32 = FIELD_Y + ROW_TOP + (y * 7) / 2
+        let ox: i32 = (y % 2) * (CELL_W / 2)
+        for x in 0 to GRID {
+            let v: f64 = s[y * GRID + x]
+            let mut rr: i32 = 0
+            let mut gg: i32 = 0
+            let mut bb: i32 = 0
+            if v >= 1.0 {
+                let mut t: f64 = (v - 1.0) * 1.6
+                if t > 1.0 { t = 1.0 }
+                rr = (150.0 + 105.0 * t) as i32
+                gg = (205.0 + 50.0 * t) as i32
+                bb = 255
+            } else {
+                let mut t: f64 = v * 1.4
+                if t < 0.0 { t = 0.0 }
+                if t > 1.0 { t = 1.0 }
+                rr = (8.0 + 26.0 * t) as i32
+                gg = (12.0 + 40.0 * t) as i32
+                bb = (26.0 + 70.0 * t) as i32
+            }
+            gfx_fill_rect(g, x * CELL_W + ox, py, CELL_W, 4, rr, gg, bb)
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, alpha: f64, beta: f64, gamma: f64,
+                  frozen: i32, span: i32, steps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "HEXAGONAL CA  SNOW CRYSTAL", 2,
+                                226, 240, 255)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "HABIT", 1, 130, 150, 180)
+    let t3: i32 = gfx_draw_text(g, 46, 28, preset_name(preset), 1, 170, 225, 255)
+    let t4: i32 = gfx_draw_text(g, 116, 28, "a", 1, 130, 150, 180)
+    let t5: i32 = gfx_draw_fixed(g, 128, 28, alpha, 2, 1, 226, 240, 255)
+    let t6: i32 = gfx_draw_text(g, 170, 28, "b", 1, 130, 150, 180)
+    let t7: i32 = gfx_draw_fixed(g, 182, 28, beta, 2, 1, 226, 240, 255)
+    let t8: i32 = gfx_draw_text(g, 224, 28, "g", 1, 130, 150, 180)
+    let t9: i32 = gfx_draw_fixed(g, 236, 28, gamma, 4, 1, 226, 240, 255)
+    let ta: i32 = gfx_draw_text(g, 296, 28, "FROZEN", 1, 130, 150, 180)
+    let tb: i32 = gfx_draw_int(g, 340, 28, frozen, 1, 226, 240, 255)
+    let tc: i32 = gfx_draw_text(g, 386, 28, "SPAN", 1, 130, 150, 180)
+    let td: i32 = gfx_draw_int(g, 418, 28, span, 1, 226, 240, 255)
+    let te: i32 = gfx_draw_text(g, 8, 42,
+        "1 DENDRITE  2 PLATE  3 FERN  R RESTART  P PAUSE   STEPS ",
+        1, 100, 116, 140)
+    let tf: i32 = gfx_draw_int(g, 344, 42, steps, 1, 100, 116, 140)
+    if paused {
+        let tg: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let th: i32 = gfx_draw_text(g, 8, 572,
+        "s' = u + v + (alpha/2) * (mean of u over six neighbours - u)", 1,
+        112, 126, 150)
+    let ti: i32 = gfx_draw_text(g, 8, 582,
+        "only the non-receptive part diffuses, so the tips take the vapour",
+        1, 112, 126, 150)
+}
+
+function main() -> i32 {
+    let s: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let sn: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let u: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+
+    let mut preset: i32 = 0
+    seed_field(s, preset_beta(preset))
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Hexagonal CA - Flow morphogenesis")
+
+    let mut steps: i32 = 0
+    let mut frozen: i32 = 1
+    let mut span: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reset_held: bool = false
+    let mut hold: i32 = 0
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            seed_field(s, preset_beta(preset))
+            steps = 0
+            hold = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held {
+                seed_field(s, preset_beta(preset))
+                steps = 0
+                hold = 0
+            }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        let full: bool = span > 56
+        if full {
+            hold = hold + 1
+            if hold > 120 {
+                seed_field(s, preset_beta(preset))
+                steps = 0
+                hold = 0
+            }
+        }
+
+        if !paused and !full {
+            for k in 0 to STEPS_PER_FRAME {
+                step(s, sn, u, preset_alpha(preset), preset_beta(preset),
+                     preset_gamma(preset))
+                steps = steps + 1
+            }
+            frozen = frozen_count(s)
+            span = crystal_span(s)
+        }
+
+        gfx_clear(g, 8, 11, 22)
+        draw_field(g, s)
+        draw_hud(g, preset, preset_alpha(preset), preset_beta(preset),
+                 preset_gamma(preset), frozen, span, steps, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
