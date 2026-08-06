@@ -378,6 +378,9 @@ systems evolving through time.
 ./flow gfx examples/morphogenesis/somite_clock.flow  # segments laid down in sequence
 ```
 
+Every one has a recorded clip in the
+[morphogenesis gallery](docs/demos/morphogenesis.md)
+([wiki version](https://flooooooooooow.github.io/flow/#demos/morphogenesis.md)).
 Index: [examples/morphogenesis](examples/morphogenesis/README.md).
 
 ### AI and machine learning
