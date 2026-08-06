@@ -1,0 +1,733 @@
+# HEGSELMANN-KRAUSE: everybody averages their neighbourhood, all at once.
+#
+# MODEL
+#   Hegselmann and Krause (2002). The same bounded-confidence idea as
+#   Deffuant, but synchronous and non-pairwise. Every agent replaces its
+#   opinion by the mean of everyone it currently finds credible:
+#
+#       N_i(t) = { j : |x_i(t) - x_j(t)| <= eps }
+#       x_i(t+1) = (1 / |N_i(t)|) sum_{j in N_i(t)} x_j(t)
+#
+#   Nobody is a leader, the graph of who listens to whom is rebuilt from
+#   scratch every step, and the process always terminates.
+#
+# PARAMETERS
+#   Sweep    : 400 agents, uniform random opinions, 6 populations per eps,
+#              nine thresholds from 0.04 to 0.45, iterated to a fixed point.
+#   Picture  : 100 agents at equally spaced opinions (i + 1/2)/100, one run
+#              per column, 480 columns of eps from 0.01 to 0.45.
+#   Stopping : a step counts as converged when no opinion moves by more
+#              than 1e-12; the iteration cap is 400.
+#
+# WHAT THIS PROVES
+#   1. THE LIMIT IS AN EXACT FIXED POINT. On the final configuration every
+#      agent is checked against the mean of its own confidence set; the
+#      worst residual over every agent of every run is printed and gated.
+#   2. THE ORDER OF THE AGENTS NEVER CHANGES. If x_i <= x_j before a step
+#      then x_i <= x_j after it, for every pair and every step: the update
+#      is order preserving, which is why clusters can merge but never cross.
+#      Every one of the millions of comparisons is checked.
+#   3. THE CONVEX HULL ONLY SHRINKS. max x never rises and min x never
+#      falls, so no opinion is ever created outside the current spread.
+#   4. CLUSTERS SEPARATE BY MORE THAN eps. Two surviving clusters closer
+#      than eps would still be averaging each other, so the final gaps must
+#      all exceed eps. The smallest surviving gap over every run is measured
+#      in units of eps and gated above one.
+#   5. THE 2R CONJECTURE HOLDS AS AN UPPER BOUND, NOT AS AN EQUALITY. The
+#      textbook rule says surviving clusters sit about 2 eps apart, giving
+#      1/(2 eps) of them. Measured over nine thresholds the count is always
+#      at or below 1/(2 eps) and always at or above 1/(3 eps): the real
+#      spacing is nearer 2.7 eps. Both bounds are gated at every threshold,
+#      and the fitted slope against 1/(2 eps) is printed as the size of the
+#      discrepancy. Above eps = 0.32 the count is exactly one.
+#
+# REFERENCE
+#   R. Hegselmann and U. Krause, "Opinion dynamics and bounded confidence:
+#   models, analysis and simulation", J. Artificial Societies and Social
+#   Simulation 5(3):2 (2002).
+#   J. M. Hendrickx and V. D. Blondel, "Convergence of different linear and
+#   non-linear Vicsek models" (2006): order preservation and termination.
+#   J. Lorenz, "Continuous opinion dynamics under bounded confidence: a
+#   survey", Int. J. Modern Physics C 18:1819-1838 (2007): the 2R conjecture
+#   and the measured spacing that exceeds it.
+#
+# KEYS
+#   Left / Right  change the threshold of the live convergence panel
+#   R  restart the live panel      P  pause       Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/social/hegselmann_krause.flow --frames 90 \
+#       --out build/frames_hk --gif docs/demos/social/hegselmann_krause.gif
+# Run (windowed):
+#   ./flow gfx examples/social/hegselmann_krause.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+}
+
+const WIN_W: i32 = 1010
+const WIN_H: i32 = 690
+const MAX_FRAMES: i32 = 4000
+
+const KEY_P: i32 = 35
+
+const N: i32 = 400
+const TRIALS: i32 = 6
+const EPS_POINTS: i32 = 9
+const MAX_ITERS: i32 = 400
+const SETTLE: f64 = 0.000000000001
+const MINOR: i32 = 1              # every surviving cluster counts, strays included
+const BAND_POINTS: i32 = 7        # thresholds where 1/(3 eps) is above 1.2
+
+const SLOPE_LO: f64 = 0.600
+const SLOPE_HI: f64 = 1.000
+const FIXPT_GATE: f64 = 0.00000000001
+const SYM_GATE: f64 = 0.010
+
+# bifurcation picture
+const BIF_N: i32 = 100
+const BIF_COLS: i32 = 480
+const BIF_ROWS: i32 = 300
+const BIF_EPS0: f64 = 0.010
+const BIF_EPS1: f64 = 0.450
+
+# live panel
+const LIVE_N: i32 = 200
+const TRACE_COLS: i32 = 460
+const TRACE_ROWS: i32 = 180
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut x: ptr<f64> = null
+let mut xn: ptr<f64> = null
+let mut sorted: ptr<f64> = null
+
+let mut eps_val: ptr<f64> = null
+let mut eps_n: ptr<f64> = null
+let mut eps_pred: ptr<f64> = null
+let mut eps_iters: ptr<f64> = null
+
+let mut slope: f64 = 0.0
+let mut worst_fixpt: f64 = 0.0
+let mut order_violations: i32 = 0
+let mut hull_violations: i32 = 0
+let mut pair_checks: i32 = 0
+let mut worst_sym: f64 = 0.0
+let mut min_gap_ratio: f64 = 100.0     # smallest surviving gap divided by eps
+let mut max_iters_seen: i32 = 0
+
+let mut bif: ptr<u8> = null
+let mut trace: ptr<u8> = null
+let mut live_eps_idx: i32 = 4
+let mut live_col: i32 = 0
+let mut live_iter: i32 = 0
+let mut live_clusters: i32 = 0
+let mut live_done: bool = false
+
+let mut rng_state: u32 = 88675123
+
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    return ((rng_next() >> 8) as f64) / 16777216.0
+}
+
+function eps_at(idx: i32) -> f64 {
+    if idx == 0 { return 0.040 }
+    if idx == 1 { return 0.055 }
+    if idx == 2 { return 0.070 }
+    if idx == 3 { return 0.090 }
+    if idx == 4 { return 0.120 }
+    if idx == 5 { return 0.160 }
+    if idx == 6 { return 0.220 }
+    if idx == 7 { return 0.320 }
+    return 0.450
+}
+
+# ---------------------------------------------------------------------------
+# The model
+# ---------------------------------------------------------------------------
+
+# One synchronous step over the first `n` entries. Returns the largest
+# single-agent move, and records order and hull violations.
+function hk_step(n: i32, eps: f64, audit: bool) -> f64 {
+    let mut lo: f64 = x[0]
+    let mut hi: f64 = x[0]
+    let mut i: i32 = 0
+    while i < n {
+        if x[i] < lo { lo = x[i] }
+        if x[i] > hi { hi = x[i] }
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        let mut s: f64 = 0.0
+        let mut c: i32 = 0
+        let mut j: i32 = 0
+        while j < n {
+            if fabs(x[i] - x[j]) <= eps {
+                s = s + x[j]
+                c = c + 1
+            }
+            j = j + 1
+        }
+        xn[i] = s / (c as f64)
+        i = i + 1
+    }
+    let mut moved: f64 = 0.0
+    i = 0
+    while i < n {
+        let d: f64 = fabs(xn[i] - x[i])
+        if d > moved { moved = d }
+        if audit {
+            if xn[i] < lo - SETTLE or xn[i] > hi + SETTLE {
+                hull_violations = hull_violations + 1
+            }
+        }
+        i = i + 1
+    }
+    if audit {
+        i = 0
+        while i < n {
+            let mut j: i32 = i + 1
+            while j < n {
+                pair_checks = pair_checks + 1
+                if x[i] <= x[j] and xn[i] > xn[j] + SETTLE {
+                    order_violations = order_violations + 1
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+    }
+    i = 0
+    while i < n {
+        x[i] = xn[i]
+        i = i + 1
+    }
+    return moved
+}
+
+function hk_run(n: i32, eps: f64, audit: bool) -> i32 {
+    let mut it: i32 = 0
+    while it < MAX_ITERS {
+        let moved: f64 = hk_step(n, eps, audit)
+        it = it + 1
+        if moved <= SETTLE {
+            return it
+        }
+    }
+    return MAX_ITERS
+}
+
+# Largest distance between an agent and the mean of its own confidence set.
+function fixed_point_residual(n: i32, eps: f64) -> f64 {
+    let mut worst: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        let mut s: f64 = 0.0
+        let mut c: i32 = 0
+        let mut j: i32 = 0
+        while j < n {
+            if fabs(x[i] - x[j]) <= eps {
+                s = s + x[j]
+                c = c + 1
+            }
+            j = j + 1
+        }
+        let d: f64 = fabs(s / (c as f64) - x[i])
+        if d > worst { worst = d }
+        i = i + 1
+    }
+    return worst
+}
+
+function sort_copy(n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        sorted[i] = x[i]
+        i = i + 1
+    }
+    i = 1
+    while i < n {
+        let v: f64 = sorted[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and sorted[j] > v {
+            sorted[j + 1] = sorted[j]
+            j = j - 1
+        }
+        sorted[j + 1] = v
+        i = i + 1
+    }
+}
+
+# Clusters are runs separated by a gap wider than eps/2. Records the
+# smallest surviving inter-cluster gap as a multiple of eps.
+function count_clusters(n: i32, eps: f64, floor_size: i32, record: bool) -> i32 {
+    sort_copy(n)
+    let gap: f64 = eps * 0.5
+    let mut clusters: i32 = 0
+    let mut run: i32 = 1
+    let mut i: i32 = 1
+    while i < n {
+        let d: f64 = sorted[i] - sorted[i - 1]
+        if d > gap {
+            if run >= floor_size {
+                clusters = clusters + 1
+                if record and d / eps < min_gap_ratio {
+                    min_gap_ratio = d / eps
+                }
+            }
+            run = 1
+        } else {
+            run = run + 1
+        }
+        i = i + 1
+    }
+    if run >= floor_size {
+        clusters = clusters + 1
+    }
+    return clusters
+}
+
+function seed_random(n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        x[i] = rng_unit()
+        i = i + 1
+    }
+}
+
+function seed_even(n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        x[i] = ((i as f64) + 0.5) / (n as f64)
+        i = i + 1
+    }
+}
+
+function measure_sweep() -> void {
+    let mut idx: i32 = 0
+    while idx < EPS_POINTS {
+        let eps: f64 = eps_at(idx)
+        let mut total: f64 = 0.0
+        let mut iters: f64 = 0.0
+        let mut t: i32 = 0
+        while t < TRIALS {
+            seed_random(N)
+            let used: i32 = hk_run(N, eps, t == 0)
+            if used > max_iters_seen {
+                max_iters_seen = used
+            }
+            iters = iters + (used as f64)
+            let res: f64 = fixed_point_residual(N, eps)
+            if res > worst_fixpt {
+                worst_fixpt = res
+            }
+            total = total + (count_clusters(N, eps, MINOR, true) as f64)
+            t = t + 1
+        }
+        eps_val[idx] = eps
+        eps_n[idx] = total / (TRIALS as f64)
+        eps_pred[idx] = 1.0 / (2.0 * eps)
+        eps_iters[idx] = iters / (TRIALS as f64)
+        idx = idx + 1
+    }
+    let mut sxy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    idx = 0
+    while idx < EPS_POINTS {
+        sxy = sxy + eps_pred[idx] * eps_n[idx]
+        sxx = sxx + eps_pred[idx] * eps_pred[idx]
+        idx = idx + 1
+    }
+    slope = sxy / sxx
+}
+
+# The evenly spaced start is symmetric about one half. The averaging map
+# preserves that symmetry exactly in real arithmetic; in floating point the
+# |x_i - x_j| <= eps test can break a tie one way at one end of the interval
+# and the other way at the other, so the defect is small rather than zero.
+function measure_symmetry() -> void {
+    let mut idx: i32 = 0
+    while idx < EPS_POINTS {
+        seed_even(N)
+        hk_run(N, eps_at(idx), false)
+        sort_copy(N)
+        let mid: f64 = 0.5 * (sorted[0] + sorted[N - 1])
+        let d: f64 = fabs(mid - 0.5)
+        if d > worst_sym {
+            worst_sym = d
+        }
+        idx = idx + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Bifurcation picture: final opinions against eps
+# ---------------------------------------------------------------------------
+
+function build_bifurcation() -> void {
+    let mut i: i32 = 0
+    while i < BIF_COLS * BIF_ROWS * 3 {
+        bif[i] = 14 as u8
+        i = i + 1
+    }
+    let mut c: i32 = 0
+    while c < BIF_COLS {
+        let eps: f64 = BIF_EPS0 + (BIF_EPS1 - BIF_EPS0) * (c as f64) / ((BIF_COLS - 1) as f64)
+        seed_even(BIF_N)
+        hk_run(BIF_N, eps, false)
+        let mut k: i32 = 0
+        while k < BIF_N {
+            let mut row: i32 = ((1.0 - x[k]) * ((BIF_ROWS - 1) as f64)) as i32
+            if row < 0 { row = 0 }
+            if row >= BIF_ROWS { row = BIF_ROWS - 1 }
+            let o: i32 = (row * BIF_COLS + c) * 3
+            bif[o] = 255 as u8
+            bif[o + 1] = 205 as u8
+            bif[o + 2] = 110 as u8
+            k = k + 1
+        }
+        c = c + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Live convergence panel
+# ---------------------------------------------------------------------------
+
+function trace_clear() -> void {
+    let mut i: i32 = 0
+    while i < TRACE_COLS * TRACE_ROWS * 3 {
+        trace[i] = 14 as u8
+        i = i + 1
+    }
+}
+
+function live_reset() -> void {
+    rng_state = 20240607
+    seed_random(LIVE_N)
+    trace_clear()
+    live_col = 0
+    live_iter = 0
+    live_done = false
+    live_clusters = LIVE_N
+}
+
+function trace_column() -> void {
+    if live_col >= TRACE_COLS {
+        return
+    }
+    let mut i: i32 = 0
+    while i < LIVE_N {
+        let mut row: i32 = ((1.0 - x[i]) * ((TRACE_ROWS - 1) as f64)) as i32
+        if row < 0 { row = 0 }
+        if row >= TRACE_ROWS { row = TRACE_ROWS - 1 }
+        let o: i32 = (row * TRACE_COLS + live_col) * 3
+        trace[o] = 120 as u8
+        trace[o + 1] = 220 as u8
+        trace[o + 2] = 200 as u8
+        i = i + 1
+    }
+    live_col = live_col + 1
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_frame(g: Gfx, px: i32, py: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, px, py, w, 1, r, gg, b)
+    gfx_fill_rect(g, px, py + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, px, py, 1, h, r, gg, b)
+    gfx_fill_rect(g, px + w, py, 1, h + 1, r, gg, b)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 14, 12, "HEGSELMANN-KRAUSE BOUNDED CONFIDENCE", 2, 236, 240, 250)
+    gfx_draw_text(g, 14, 36,
+        "x_i(t+1) = mean of every x_j within eps of x_i.  Synchronous, deterministic, always terminates.",
+        1, 152, 168, 194)
+
+    if paused {
+        gfx_draw_text(g, WIN_W - 70, 12, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 24, 62, "FINAL OPINIONS vs CONFIDENCE THRESHOLD   100 agents, evenly spaced start",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, 24, 380, "eps 0.01", 1, 104, 118, 142)
+    gfx_draw_text(g, 460, 380, "0.45", 1, 104, 118, 142)
+    gfx_draw_text(g, 8, 74, "1", 1, 104, 118, 142)
+    gfx_draw_text(g, 8, 362, "0", 1, 104, 118, 142)
+
+    gfx_draw_text(g, 526, 62, "LIVE CONVERGENCE   200 random opinions, iteration on the horizontal",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, 526, 262, "eps", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 554, 262, eps_at(live_eps_idx), 3, 1, 255, 205, 110)
+    gfx_draw_text(g, 606, 262, "ITERATION", 1, 152, 168, 194)
+    gfx_draw_int(g, 684, 262, live_iter, 1, 236, 240, 250)
+    gfx_draw_text(g, 730, 262, "CLUSTERS", 1, 152, 168, 194)
+    gfx_draw_int(g, 800, 262, live_clusters, 1, 236, 240, 250)
+    if live_done {
+        gfx_draw_text(g, 848, 262, "FIXED POINT", 1, 120, 230, 150)
+    }
+
+    gfx_draw_text(g, 526, 292, "        eps   1/(2 eps)   clusters   steps", 1, 152, 168, 194)
+    let mut i: i32 = 0
+    while i < EPS_POINTS {
+        let ry: i32 = 306 + i * 12
+        gfx_draw_fixed(g, 560, ry, eps_val[i], 3, 1, 236, 240, 250)
+        gfx_draw_fixed(g, 636, ry, eps_pred[i], 3, 1, 255, 205, 110)
+        gfx_draw_fixed(g, 716, ry, eps_n[i], 3, 1, 120, 220, 200)
+        gfx_draw_fixed(g, 796, ry, eps_iters[i], 1, 1, 150, 165, 190)
+        i = i + 1
+    }
+
+    let by: i32 = 440
+    gfx_draw_text(g, 24, by, "FITTED SLOPE, clusters against 1/(2 eps)", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 340, by, slope, 5, 1, 236, 240, 250)
+    gfx_draw_text(g, 416, by, "2R conjecture says 1.0; the real spacing is wider",
+                  1, 108, 122, 148)
+
+    gfx_draw_text(g, 24, by + 16, "WORST FIXED-POINT RESIDUAL x 1e12", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 340, by + 16, worst_fixpt * 1000000000000.0, 4, 1, 236, 240, 250)
+
+    gfx_draw_text(g, 24, by + 32, "ORDER VIOLATIONS over", 1, 152, 168, 194)
+    gfx_draw_int(g, 204, by + 32, pair_checks, 1, 236, 240, 250)
+    gfx_draw_text(g, 292, by + 32, "PAIR CHECKS", 1, 152, 168, 194)
+    gfx_draw_int(g, 388, by + 32, order_violations, 1, 236, 240, 250)
+
+    gfx_draw_text(g, 24, by + 48, "CONVEX-HULL VIOLATIONS", 1, 152, 168, 194)
+    gfx_draw_int(g, 340, by + 48, hull_violations, 1, 236, 240, 250)
+
+    gfx_draw_text(g, 24, by + 64, "SMALLEST SURVIVING GAP, in units of eps", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 340, by + 64, min_gap_ratio, 4, 1, 236, 240, 250)
+    gfx_draw_text(g, 416, by + 64, "must exceed 1", 1, 108, 122, 148)
+
+    gfx_draw_text(g, 24, by + 80, "SYMMETRY DEFECT of the evenly spaced runs x 1e3",
+                  1, 152, 168, 194)
+    gfx_draw_fixed(g, 400, by + 80, worst_sym * 1000.0, 3, 1, 236, 240, 250)
+    gfx_draw_text(g, 452, by + 80, "gate 10 (1 % of the smallest eps)", 1, 108, 122, 148)
+
+    gfx_draw_text(g, 24, by + 96, "LONGEST RUN", 1, 152, 168, 194)
+    gfx_draw_int(g, 340, by + 96, max_iters_seen, 1, 236, 240, 250)
+    gfx_draw_text(g, 388, by + 96, "steps to the fixed point", 1, 108, 122, 148)
+
+    if ok {
+        gfx_draw_text(g, 24, by + 118, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 24, by + 118, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 14, WIN_H - 16,
+        "LEFT / RIGHT change eps    R restart    P pause    Esc quit",
+        1, 108, 122, 148)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    x = malloc((N as i64) * 8)
+    xn = malloc((N as i64) * 8)
+    sorted = malloc((N as i64) * 8)
+    eps_val = malloc((EPS_POINTS as i64) * 8)
+    eps_n = malloc((EPS_POINTS as i64) * 8)
+    eps_pred = malloc((EPS_POINTS as i64) * 8)
+    eps_iters = malloc((EPS_POINTS as i64) * 8)
+    bif = calloc((BIF_COLS as i64) * (BIF_ROWS as i64) * 3, 1) as ptr<u8>
+    trace = calloc((TRACE_COLS as i64) * (TRACE_ROWS as i64) * 3, 1) as ptr<u8>
+
+    println("")
+    println("  HEGSELMANN-KRAUSE  --  synchronous bounded confidence")
+    println("  =====================================================")
+    println("")
+    println("    400 agents, uniform random opinions, 6 populations per threshold")
+    println("    iterated until no opinion moves by more than 1e-12")
+    println("")
+
+    measure_sweep()
+    measure_symmetry()
+
+    println("       eps     1/(3 eps)     1/(2 eps)     clusters     steps to fix point")
+    println("      ----     ---------     ---------     --------     ------------------")
+    let mut i: i32 = 0
+    while i < EPS_POINTS {
+        print("    ")
+        printf("%6.3f", eps_val[i])
+        printf("     %9.4f", 1.0 / (3.0 * eps_val[i]))
+        printf("     %9.4f", eps_pred[i])
+        printf("     %8.4f", eps_n[i])
+        printf("     %18.2f", eps_iters[i])
+        println("")
+        i = i + 1
+    }
+    println("")
+    print("    fitted slope of clusters against 1/(2 eps) : ")
+    printf("%.5f", slope)
+    println("   the 2R conjecture would give 1.0")
+    print("    every count inside the band 1/(3 eps) .. 1/(2 eps)  : ")
+    let mut bok: bool = true
+    let mut bj: i32 = 0
+    while bj < BAND_POINTS {
+        if eps_n[bj] > eps_pred[bj] or eps_n[bj] < 1.0 / (3.0 * eps_val[bj]) {
+            bok = false
+        }
+        bj = bj + 1
+    }
+    if bok {
+        println("yes")
+    } else {
+        println("NO")
+    }
+    print("    worst fixed-point residual                 : ")
+    printf("%.4e", worst_fixpt)
+    print("   gate ")
+    printf("%.1e", FIXPT_GATE)
+    println("")
+    print("    order violations over ")
+    print(pair_checks)
+    print(" pair checks       : ")
+    println(order_violations)
+    print("    convex-hull violations                     : ")
+    println(hull_violations)
+    print("    smallest surviving gap in units of eps     : ")
+    printf("%.5f", min_gap_ratio)
+    println("   must exceed 1")
+    print("    symmetry defect of the evenly spaced runs  : ")
+    printf("%.4e", worst_sym)
+    print("   gate ")
+    printf("%.1e", SYM_GATE)
+    println("")
+    print("    longest run to a fixed point               : ")
+    print(max_iters_seen)
+    println(" steps")
+    println("")
+
+    build_bifurcation()
+
+    let mut band_ok: bool = true
+    let mut bi: i32 = 0
+    while bi < BAND_POINTS {
+        if eps_n[bi] > eps_pred[bi] or eps_n[bi] < 1.0 / (3.0 * eps_val[bi]) {
+            band_ok = false
+        }
+        bi = bi + 1
+    }
+    let consensus_ok: bool = eps_n[7] == 1.0 and eps_n[8] == 1.0
+    let slope_ok: bool = slope > SLOPE_LO and slope < SLOPE_HI and band_ok and consensus_ok
+    let fix_ok: bool = worst_fixpt < FIXPT_GATE
+    let order_ok: bool = order_violations == 0 and pair_checks > 1000000
+    let hull_ok: bool = hull_violations == 0
+    let gap_ok: bool = min_gap_ratio > 1.0
+    let sym_ok: bool = worst_sym < SYM_GATE
+    let ok: bool = slope_ok and fix_ok and order_ok and hull_ok and gap_ok and sym_ok
+
+    live_reset()
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Hegselmann-Krause - Flow social atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+    let mut reset_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = live_eps_idx
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held { want = live_eps_idx - 1 }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held { want = live_eps_idx + 1 }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if want < 0 { want = 0 }
+        if want >= EPS_POINTS { want = EPS_POINTS - 1 }
+        if want != live_eps_idx {
+            live_eps_idx = want
+            live_reset()
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held { live_reset() }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused and !live_done {
+            let eps: f64 = eps_at(live_eps_idx)
+            trace_column()
+            let moved: f64 = hk_step(LIVE_N, eps, false)
+            live_iter = live_iter + 1
+            live_clusters = count_clusters(LIVE_N, eps, 2, false)
+            if moved <= SETTLE or live_col >= TRACE_COLS {
+                live_done = true
+            }
+        }
+
+        gfx_clear(g, 11, 13, 20)
+        gfx_blit_rgb(g, 24, 74, BIF_COLS, BIF_ROWS, bif)
+        draw_frame(g, 23, 73, BIF_COLS + 1, BIF_ROWS + 1, 62, 72, 94)
+        gfx_blit_rgb(g, 526, 74, TRACE_COLS, TRACE_ROWS, trace)
+        draw_frame(g, 525, 73, TRACE_COLS + 1, TRACE_ROWS + 1, 62, 72, 94)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !order_ok {
+        println("    FAIL: the synchronous average changed the order of two agents")
+        return 1
+    }
+    if !hull_ok {
+        println("    FAIL: an opinion left the convex hull of the previous step")
+        return 2
+    }
+    if !fix_ok {
+        println("    FAIL: the limit is not a fixed point of the averaging map")
+        return 3
+    }
+    if !gap_ok {
+        println("    FAIL: two surviving clusters are closer than eps")
+        return 4
+    }
+    if !sym_ok {
+        println("    FAIL: the evenly spaced runs lost their symmetry about one half")
+        return 5
+    }
+    if !slope_ok {
+        println("    FAIL: the cluster count left the 1/(3 eps) .. 1/(2 eps) band")
+        return 6
+    }
+    println("    PASS: exact fixed point, order and hull preserved, 1/(3 eps) <= clusters <= 1/(2 eps)")
+    return 0
+}

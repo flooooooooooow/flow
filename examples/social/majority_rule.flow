@@ -1,0 +1,846 @@
+# MAJORITY RULE: a minority that keeps talking can still lose, or still win.
+#
+# MODEL
+#   Galam's local majority rule. A population repeatedly breaks into small
+#   discussion groups of size r drawn at random. Every group adopts the
+#   opinion its own majority already holds, and then the groups dissolve and
+#   re-form. Nobody is persuaded by argument; only by counting heads.
+#
+#   For odd r there are no ties. For even r Galam's inertia principle sends
+#   a tie to the opinion already in place, B, which breaks the symmetry
+#   between the two sides.
+#
+#   One round maps the fraction p holding opinion A to
+#       f(p) = sum_{j > r/2} C(r, j) p^j (1-p)^(r-j)
+#   plus, for even r, the tie term only when the tie goes to A.
+#
+# PARAMETERS
+#   600 agents, reshuffled into groups of r every round, r = 3, 4 and 5.
+#   Empirical map : 41 densities, 200 independent regroupings each.
+#   Exit run      : 13 densities around the tipping point, 150 trials each,
+#                   run to consensus with a 400-round cap.
+#
+# WHAT THIS PROVES
+#   1. THE ONE-ROUND MAP IS THE BINOMIAL EXPRESSION ABOVE. The mean of
+#      p_{t+1} over 200 random regroupings is compared with f(p) at 41
+#      densities and the root-mean-square gap is gated. Nothing about the
+#      binomial is coded into the simulation: it shuffles agents and counts.
+#   2. THE TIPPING POINT FOR ODD GROUPS IS ONE HALF. With r = 3 and r = 5
+#      the map is symmetric, so the unstable fixed point sits at p = 1/2 and
+#      a minority always loses. Measured from the empirical map and again
+#      from the exit probability.
+#   3. AN EVEN GROUP WITH INERTIA MOVES THE TIPPING POINT TO 0.7675919.
+#      With r = 4 and ties going to B, the fixed-point condition p = 4p^3 -
+#      3p^4 factorises as (p - 1)(3p^2 - p - 1) = 0, so
+#          p_c = (1 + sqrt(13)) / 6 = 0.7675919
+#      and opinion A needs more than three quarters of the population before
+#      it can win. Both the fixed point of the measured map and the density
+#      at which the measured exit probability crosses one half are compared
+#      with that number.
+#
+# REFERENCE
+#   S. Galam, "Minority opinion spreading in random geometry", Eur. Phys. J.
+#   B 25:403-406 (2002).
+#   S. Galam, "Contrarian deterministic effects on opinion dynamics",
+#   Physica A 333:453-460 (2004): the inertia principle and (1+sqrt(13))/6.
+#
+# KEYS
+#   1  r = 3      2  r = 4 with inertia      3  r = 5
+#   Left / Right  change the initial density of the live population
+#   R  restart     P  pause      Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/social/majority_rule.flow --frames 90 \
+#       --out build/frames_majority --gif docs/demos/social/majority_rule.gif
+# Run (windowed):
+#   ./flow gfx examples/social/majority_rule.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+}
+
+const WIN_W: i32 = 1020
+const WIN_H: i32 = 700
+const MAX_FRAMES: i32 = 4000
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+const N: i32 = 600
+const RULES: i32 = 3                 # r = 3, r = 4 with inertia, r = 5
+const MAP_POINTS: i32 = 41
+const MAP_REPS: i32 = 200
+const EX_POINTS: i32 = 13
+const EX_TRIALS: i32 = 150
+const ROUND_CAP: i32 = 400
+
+const PC4: f64 = 0.7675919           # (1 + sqrt(13)) / 6
+const MAP_GATE: f64 = 0.012
+const PC_MAP_GATE: f64 = 0.010
+const PC_EXIT_GATE: f64 = 0.035
+
+# live panel
+const GRID_COLS: i32 = 40
+const GRID_ROWS: i32 = 15
+const DOT: i32 = 11
+const TRACE_LEN: i32 = 240
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut pop: ptr<i32> = null
+let mut perm: ptr<i32> = null
+let mut live: ptr<i32> = null
+let mut trace: ptr<f64> = null
+
+let mut map_p: ptr<f64> = null       # RULES x MAP_POINTS measured next density
+let mut map_ref: ptr<f64> = null     # analytic f(p)
+let mut map_rms: ptr<f64> = null     # per rule
+let mut pc_map: ptr<f64> = null      # fixed point of the measured map
+let mut pc_exit: ptr<f64> = null     # density where the exit probability is 1/2
+let mut pc_ref: ptr<f64> = null      # analytic tipping point
+let mut ex_x: ptr<f64> = null        # RULES x EX_POINTS density
+let mut ex_y: ptr<f64> = null        # RULES x EX_POINTS exit probability
+
+let mut live_rule: i32 = 1
+let mut live_p0_idx: i32 = 6
+let mut live_round: i32 = 0
+let mut live_len: i32 = 0
+let mut live_done: bool = false
+
+let mut rng_state: u32 = 1103515245
+
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 8) % (n as u32)) as i32
+}
+
+function rule_size(rule: i32) -> i32 {
+    if rule == 0 { return 3 }
+    if rule == 1 { return 4 }
+    return 5
+}
+
+function rule_tie_to_a(rule: i32) -> bool {
+    return false
+}
+
+function rule_name(rule: i32) -> string {
+    if rule == 0 { return "GROUPS OF 3" }
+    if rule == 1 { return "GROUPS OF 4, TIES TO B" }
+    return "GROUPS OF 5"
+}
+
+# Fixed width so the printed table lines up.
+function rule_label(rule: i32) -> string {
+    if rule == 0 { return "           GROUPS OF 3" }
+    if rule == 1 { return "GROUPS OF 4, TIES TO B" }
+    return "           GROUPS OF 5"
+}
+
+# ---------------------------------------------------------------------------
+# The analytic one-round map
+# ---------------------------------------------------------------------------
+
+function binom(r: i32, j: i32) -> f64 {
+    let mut acc: f64 = 1.0
+    let mut k: i32 = 0
+    while k < j {
+        acc = acc * (((r - k) as f64) / ((k + 1) as f64))
+        k = k + 1
+    }
+    return acc
+}
+
+function powi(p: f64, k: i32) -> f64 {
+    let mut acc: f64 = 1.0
+    let mut i: i32 = 0
+    while i < k {
+        acc = acc * p
+        i = i + 1
+    }
+    return acc
+}
+
+function map_f(p: f64, r: i32, tie_to_a: bool) -> f64 {
+    let mut s: f64 = 0.0
+    let mut j: i32 = 0
+    while j <= r {
+        let mut takes: bool = 2 * j > r
+        if 2 * j == r and tie_to_a {
+            takes = true
+        }
+        if takes {
+            s = s + binom(r, j) * powi(p, j) * powi(1.0 - p, r - j)
+        }
+        j = j + 1
+    }
+    return s
+}
+
+# The unstable fixed point of f, bracketed away from the two absorbing ends.
+function tipping_point(r: i32, tie_to_a: bool) -> f64 {
+    let mut lo: f64 = 0.02
+    let mut hi: f64 = 0.98
+    let mut it: i32 = 0
+    while it < 200 {
+        let mid: f64 = 0.5 * (lo + hi)
+        if map_f(mid, r, tie_to_a) - mid < 0.0 {
+            lo = mid
+        } else {
+            hi = mid
+        }
+        it = it + 1
+    }
+    return 0.5 * (lo + hi)
+}
+
+# ---------------------------------------------------------------------------
+# The agent-based model
+# ---------------------------------------------------------------------------
+
+function seed_population(x: ptr<i32>, ones: i32) -> void {
+    let mut i: i32 = 0
+    while i < N {
+        if i < ones {
+            x[i] = 1
+        } else {
+            x[i] = 0
+        }
+        i = i + 1
+    }
+    i = N - 1
+    while i > 0 {
+        let j: i32 = rng_below(i + 1)
+        let t: i32 = x[i]
+        x[i] = x[j]
+        x[j] = t
+        i = i - 1
+    }
+}
+
+function count_ones(x: ptr<i32>) -> i32 {
+    let mut c: i32 = 0
+    let mut i: i32 = 0
+    while i < N {
+        c = c + x[i]
+        i = i + 1
+    }
+    return c
+}
+
+# Reshuffle into groups of r, then set each group to its own majority.
+function round_of(x: ptr<i32>, r: i32, tie_to_a: bool) -> void {
+    let mut i: i32 = 0
+    while i < N {
+        perm[i] = i
+        i = i + 1
+    }
+    i = N - 1
+    while i > 0 {
+        let j: i32 = rng_below(i + 1)
+        let t: i32 = perm[i]
+        perm[i] = perm[j]
+        perm[j] = t
+        i = i - 1
+    }
+    let groups: i32 = N / r
+    let mut gidx: i32 = 0
+    while gidx < groups {
+        let base: i32 = gidx * r
+        let mut a: i32 = 0
+        let mut k: i32 = 0
+        while k < r {
+            a = a + x[perm[base + k]]
+            k = k + 1
+        }
+        let mut win: i32 = 0
+        if 2 * a > r {
+            win = 1
+        }
+        if 2 * a == r and tie_to_a {
+            win = 1
+        }
+        k = 0
+        while k < r {
+            x[perm[base + k]] = win
+            k = k + 1
+        }
+        gidx = gidx + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Measurements
+# ---------------------------------------------------------------------------
+
+function measure_map(rule: i32) -> void {
+    let r: i32 = rule_size(rule)
+    let tie: bool = rule_tie_to_a(rule)
+    let base: i32 = rule * MAP_POINTS
+    let mut sq: f64 = 0.0
+    let mut idx: i32 = 0
+    while idx < MAP_POINTS {
+        let target: f64 = (idx as f64) / ((MAP_POINTS - 1) as f64)
+        let ones: i32 = ((target * (N as f64) + 0.5) as i32)
+        let p: f64 = (ones as f64) / (N as f64)
+        let mut total: f64 = 0.0
+        let mut rep: i32 = 0
+        while rep < MAP_REPS {
+            seed_population(pop, ones)
+            round_of(pop, r, tie)
+            total = total + (count_ones(pop) as f64) / (N as f64)
+            rep = rep + 1
+        }
+        let meas: f64 = total / (MAP_REPS as f64)
+        map_p[base + idx] = meas
+        map_ref[base + idx] = map_f(p, r, tie)
+        let d: f64 = meas - map_ref[base + idx]
+        sq = sq + d * d
+        idx = idx + 1
+    }
+    map_rms[rule] = sqrt(sq / (MAP_POINTS as f64))
+    # unstable fixed point of the measured map, by linear interpolation
+    pc_map[rule] = 0.0
+    idx = 1
+    while idx < MAP_POINTS {
+        let p0: f64 = ((idx - 1) as f64) / ((MAP_POINTS - 1) as f64)
+        let p1: f64 = (idx as f64) / ((MAP_POINTS - 1) as f64)
+        let d0: f64 = map_p[base + idx - 1] - p0
+        let d1: f64 = map_p[base + idx] - p1
+        if d0 < 0.0 and d1 >= 0.0 {
+            pc_map[rule] = p0 + (p1 - p0) * (0.0 - d0) / (d1 - d0)
+        }
+        idx = idx + 1
+    }
+}
+
+function measure_exit(rule: i32) -> void {
+    let r: i32 = rule_size(rule)
+    let tie: bool = rule_tie_to_a(rule)
+    let centre: f64 = pc_ref[rule]
+    let base: i32 = rule * EX_POINTS
+    let mut idx: i32 = 0
+    while idx < EX_POINTS {
+        let off: f64 = ((idx - EX_POINTS / 2) as f64) * 0.015
+        let mut target: f64 = centre + off
+        if target < 0.02 { target = 0.02 }
+        if target > 0.98 { target = 0.98 }
+        let ones: i32 = ((target * (N as f64) + 0.5) as i32)
+        let mut wins: i32 = 0
+        let mut t: i32 = 0
+        while t < EX_TRIALS {
+            seed_population(pop, ones)
+            let mut a: i32 = ones
+            let mut rounds: i32 = 0
+            while a > 0 and a < N and rounds < ROUND_CAP {
+                round_of(pop, r, tie)
+                a = count_ones(pop)
+                rounds = rounds + 1
+            }
+            if a == N {
+                wins = wins + 1
+            }
+            t = t + 1
+        }
+        ex_x[base + idx] = (ones as f64) / (N as f64)
+        ex_y[base + idx] = (wins as f64) / (EX_TRIALS as f64)
+        idx = idx + 1
+    }
+    pc_exit[rule] = 0.0
+    idx = 1
+    while idx < EX_POINTS {
+        if ex_y[base + idx - 1] < 0.5 and ex_y[base + idx] >= 0.5 {
+            let f: f64 = (0.5 - ex_y[base + idx - 1]) /
+                         (ex_y[base + idx] - ex_y[base + idx - 1])
+            pc_exit[rule] = ex_x[base + idx - 1] +
+                            f * (ex_x[base + idx] - ex_x[base + idx - 1])
+        }
+        idx = idx + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Live panel
+# ---------------------------------------------------------------------------
+
+function live_p0() -> f64 {
+    return 0.30 + 0.05 * (live_p0_idx as f64)
+}
+
+function live_reset() -> void {
+    rng_state = 3141592653
+    let ones: i32 = ((live_p0() * (N as f64)) as i32)
+    let mut i: i32 = 0
+    while i < N {
+        if i < ones {
+            live[i] = 1
+        } else {
+            live[i] = 0
+        }
+        i = i + 1
+    }
+    i = N - 1
+    while i > 0 {
+        let j: i32 = rng_below(i + 1)
+        let t: i32 = live[i]
+        live[i] = live[j]
+        live[j] = t
+        i = i - 1
+    }
+    live_round = 0
+    live_len = 1
+    live_done = false
+    trace[0] = (ones as f64) / (N as f64)
+}
+
+function live_step() -> void {
+    let mut a: i32 = 0
+    let mut i: i32 = 0
+    while i < N {
+        a = a + live[i]
+        i = i + 1
+    }
+    if a == 0 or a == N or live_len >= TRACE_LEN {
+        live_done = true
+        return
+    }
+    # the round routine works on the shared population buffer
+    i = 0
+    while i < N {
+        pop[i] = live[i]
+        i = i + 1
+    }
+    round_of(pop, rule_size(live_rule), rule_tie_to_a(live_rule))
+    i = 0
+    while i < N {
+        live[i] = pop[i]
+        i = i + 1
+    }
+    let mut b: i32 = 0
+    i = 0
+    while i < N {
+        b = b + live[i]
+        i = i + 1
+    }
+    trace[live_len] = (b as f64) / (N as f64)
+    live_len = live_len + 1
+    live_round = live_round + 1
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_frame(g: Gfx, px: i32, py: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, px, py, w, 1, r, gg, b)
+    gfx_fill_rect(g, px, py + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, px, py, 1, h, r, gg, b)
+    gfx_fill_rect(g, px + w, py, 1, h + 1, r, gg, b)
+}
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 { dx = 0 - dx }
+    if dy < 0 { dy = 0 - dy }
+    let mut steps: i32 = dx
+    if dy > steps { steps = dy }
+    if steps == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= steps {
+        let t: f64 = (i as f64) / (steps as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+const POP_X: i32 = 20
+const POP_Y: i32 = 92
+
+function draw_population(g: Gfx) -> void {
+    let mut i: i32 = 0
+    while i < N {
+        let col: i32 = i % GRID_COLS
+        let row: i32 = i / GRID_COLS
+        if live[i] == 1 {
+            gfx_fill_rect(g, POP_X + col * DOT, POP_Y + row * DOT,
+                          DOT - 2, DOT - 2, 255, 196, 92)
+        } else {
+            gfx_fill_rect(g, POP_X + col * DOT, POP_Y + row * DOT,
+                          DOT - 2, DOT - 2, 44, 58, 96)
+        }
+        i = i + 1
+    }
+    draw_frame(g, POP_X - 2, POP_Y - 2, GRID_COLS * DOT, GRID_ROWS * DOT, 62, 72, 94)
+}
+
+const TR_X: i32 = 20
+const TR_Y: i32 = 290
+const TR_W: i32 = 420
+const TR_H: i32 = 150
+
+function draw_trace(g: Gfx) -> void {
+    draw_frame(g, TR_X, TR_Y, TR_W, TR_H, 62, 72, 94)
+    gfx_draw_text(g, TR_X, TR_Y - 14, "FRACTION HOLDING A, ROUND BY ROUND",
+                  1, 152, 168, 194)
+    let yc: i32 = TR_Y + TR_H - ((pc_ref[live_rule] * (TR_H as f64)) as i32)
+    let mut gx: i32 = TR_X
+    while gx < TR_X + TR_W {
+        gfx_fill_rect(g, gx, yc, 3, 1, 255, 120, 120)
+        gx = gx + 8
+    }
+    gfx_draw_text(g, TR_X + TR_W - 96, yc - 12, "TIPPING POINT", 1, 255, 130, 130)
+    let mut i: i32 = 1
+    while i < live_len {
+        let ax: i32 = TR_X + (((i - 1) * TR_W) / TRACE_LEN)
+        let bx: i32 = TR_X + ((i * TR_W) / TRACE_LEN)
+        let ay: i32 = TR_Y + TR_H - ((trace[i - 1] * (TR_H as f64)) as i32)
+        let by: i32 = TR_Y + TR_H - ((trace[i] * (TR_H as f64)) as i32)
+        draw_line(g, ax, ay, bx, by, 2, 120, 220, 200)
+        i = i + 1
+    }
+}
+
+const MPX: i32 = 500
+const MPY: i32 = 92
+const MPW: i32 = 240
+const MPH: i32 = 240
+
+function draw_map(g: Gfx) -> void {
+    draw_frame(g, MPX, MPY, MPW, MPH, 62, 72, 94)
+    gfx_draw_text(g, MPX, MPY - 26, "ONE-ROUND MAP  p -> f(p)", 1, 152, 168, 194)
+    gfx_draw_text(g, MPX, MPY - 14, "amber = binomial   teal = measured   grey = diagonal",
+                  1, 108, 122, 148)
+    draw_line(g, MPX, MPY + MPH, MPX + MPW, MPY, 1, 92, 104, 128)
+    let base: i32 = live_rule * MAP_POINTS
+    let mut i: i32 = 1
+    while i < MAP_POINTS {
+        let ax: i32 = MPX + (((i - 1) * MPW) / (MAP_POINTS - 1))
+        let bx: i32 = MPX + ((i * MPW) / (MAP_POINTS - 1))
+        let ay: i32 = MPY + MPH - ((map_ref[base + i - 1] * (MPH as f64)) as i32)
+        let by: i32 = MPY + MPH - ((map_ref[base + i] * (MPH as f64)) as i32)
+        draw_line(g, ax, ay, bx, by, 2, 255, 205, 110)
+        i = i + 1
+    }
+    i = 0
+    while i < MAP_POINTS {
+        let px: i32 = MPX + ((i * MPW) / (MAP_POINTS - 1))
+        let py: i32 = MPY + MPH - ((map_p[base + i] * (MPH as f64)) as i32)
+        gfx_fill_rect(g, px - 1, py - 1, 3, 3, 120, 220, 200)
+        i = i + 1
+    }
+    let xc: i32 = MPX + ((pc_ref[live_rule] * (MPW as f64)) as i32)
+    let mut gy: i32 = MPY
+    while gy < MPY + MPH {
+        gfx_fill_rect(g, xc, gy, 1, 3, 255, 120, 120)
+        gy = gy + 8
+    }
+    gfx_draw_text(g, MPX + 4, MPY + MPH + 6, "p = 0", 1, 104, 118, 142)
+    gfx_draw_text(g, MPX + MPW - 16, MPY + MPH + 6, "1", 1, 104, 118, 142)
+}
+
+const EPX: i32 = 780
+const EPY: i32 = 92
+const EPW: i32 = 220
+const EPH: i32 = 240
+
+function draw_exit(g: Gfx) -> void {
+    draw_frame(g, EPX, EPY, EPW, EPH, 62, 72, 94)
+    gfx_draw_text(g, EPX, EPY - 26, "EXIT PROBABILITY NEAR THE TIPPING POINT",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, EPX, EPY - 14, "red line = the analytic tipping point",
+                  1, 108, 122, 148)
+    let base: i32 = live_rule * EX_POINTS
+    let lo: f64 = ex_x[base]
+    let hi: f64 = ex_x[base + EX_POINTS - 1]
+    let mut i: i32 = 1
+    while i < EX_POINTS {
+        let ax: i32 = EPX + (((ex_x[base + i - 1] - lo) / (hi - lo) * (EPW as f64)) as i32)
+        let bx: i32 = EPX + (((ex_x[base + i] - lo) / (hi - lo) * (EPW as f64)) as i32)
+        let ay: i32 = EPY + EPH - ((ex_y[base + i - 1] * (EPH as f64)) as i32)
+        let by: i32 = EPY + EPH - ((ex_y[base + i] * (EPH as f64)) as i32)
+        draw_line(g, ax, ay, bx, by, 2, 120, 220, 200)
+        i = i + 1
+    }
+    let xc: i32 = EPX + (((pc_ref[live_rule] - lo) / (hi - lo) * (EPW as f64)) as i32)
+    let mut gy: i32 = EPY
+    while gy < EPY + EPH {
+        gfx_fill_rect(g, xc, gy, 1, 3, 255, 120, 120)
+        gy = gy + 8
+    }
+    let yh: i32 = EPY + EPH / 2
+    let mut gx: i32 = EPX
+    while gx < EPX + EPW {
+        gfx_fill_rect(g, gx, yh, 3, 1, 90, 100, 124)
+        gx = gx + 8
+    }
+    gfx_draw_fixed(g, EPX + 2, EPY + EPH + 6, lo, 3, 1, 104, 118, 142)
+    gfx_draw_fixed(g, EPX + EPW - 40, EPY + EPH + 6, hi, 3, 1, 104, 118, 142)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 14, 12, "GALAM MAJORITY RULE  -  WHERE THE TIPPING POINT SITS",
+                  2, 236, 240, 250)
+    gfx_draw_text(g, 14, 36,
+        "reshuffle into groups of r, every group adopts its own majority; with r even a tie goes to B",
+        1, 152, 168, 194)
+    gfx_draw_text(g, 14, 50, "600 agents", 1, 108, 122, 148)
+    gfx_draw_text(g, 110, 50, rule_name(live_rule), 1, 255, 205, 110)
+    gfx_draw_text(g, 300, 50, "TIPPING POINT", 1, 108, 122, 148)
+    gfx_draw_fixed(g, 410, 50, pc_ref[live_rule], 7, 1, 236, 240, 250)
+    if paused {
+        gfx_draw_text(g, WIN_W - 70, 12, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, POP_X, POP_Y - 14, "POPULATION   amber = A   navy = B",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, POP_X, 262, "START", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 62, 262, live_p0(), 2, 1, 255, 205, 110)
+    gfx_draw_text(g, 108, 262, "ROUND", 1, 152, 168, 194)
+    gfx_draw_int(g, 156, 262, live_round, 1, 236, 240, 250)
+    gfx_draw_text(g, 196, 262, "NOW", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 226, 262, trace[live_len - 1], 4, 1, 236, 240, 250)
+    if live_done {
+        gfx_draw_text(g, 292, 262, "SETTLED", 1, 120, 230, 150)
+    }
+
+    let by: i32 = 470
+    gfx_draw_text(g, 20, by, "        rule     analytic p_c     map p_c     exit p_c        map rms",
+                  1, 152, 168, 194)
+    let mut i: i32 = 0
+    while i < RULES {
+        let ry: i32 = by + 16 + i * 14
+        gfx_draw_text(g, 20, ry, rule_name(i), 1, 236, 240, 250)
+        gfx_draw_fixed(g, 250, ry, pc_ref[i], 7, 1, 255, 205, 110)
+        gfx_draw_fixed(g, 380, ry, pc_map[i], 7, 1, 120, 220, 200)
+        gfx_draw_fixed(g, 500, ry, pc_exit[i], 7, 1, 120, 220, 200)
+        gfx_draw_fixed(g, 620, ry, map_rms[i], 6, 1, 150, 165, 190)
+        i = i + 1
+    }
+
+    gfx_draw_text(g, 20, by + 74,
+        "the r = 4 tipping point is the root of 3p^2 - p - 1 = 0, that is (1 + sqrt(13)) / 6 = 0.7675919",
+        1, 108, 122, 148)
+    gfx_draw_text(g, 20, by + 88,
+        "so with an even group and inertia a new opinion needs three quarters of the room, not half",
+        1, 108, 122, 148)
+
+    if ok {
+        gfx_draw_text(g, 20, by + 112, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 20, by + 112, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 14, WIN_H - 14,
+        "1 / 2 / 3 choose the group rule    LEFT / RIGHT change the start    R restart    P pause    Esc quit",
+        1, 108, 122, 148)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    pop = calloc(N as i64, 4)
+    perm = calloc(N as i64, 4)
+    live = calloc(N as i64, 4)
+    trace = malloc((TRACE_LEN as i64) * 8)
+    map_p = malloc(((RULES * MAP_POINTS) as i64) * 8)
+    map_ref = malloc(((RULES * MAP_POINTS) as i64) * 8)
+    map_rms = malloc((RULES as i64) * 8)
+    pc_map = malloc((RULES as i64) * 8)
+    pc_exit = malloc((RULES as i64) * 8)
+    pc_ref = malloc((RULES as i64) * 8)
+    ex_x = malloc(((RULES * EX_POINTS) as i64) * 8)
+    ex_y = malloc(((RULES * EX_POINTS) as i64) * 8)
+
+    println("")
+    println("  GALAM MAJORITY RULE  --  the measured tipping point")
+    println("  ===================================================")
+    println("")
+    println("    600 agents, reshuffled into groups every round, run to consensus")
+    println("")
+
+    let mut rule: i32 = 0
+    while rule < RULES {
+        pc_ref[rule] = tipping_point(rule_size(rule), rule_tie_to_a(rule))
+        rule = rule + 1
+    }
+    rule = 0
+    while rule < RULES {
+        measure_map(rule)
+        measure_exit(rule)
+        rule = rule + 1
+    }
+
+    println("                       rule     analytic p_c      map p_c     exit p_c       map rms")
+    println("      ---------------------     ------------     --------     --------     ---------")
+    rule = 0
+    while rule < RULES {
+        print("      ")
+        print(rule_label(rule))
+        printf("     %12.7f", pc_ref[rule])
+        printf("     %8.5f", pc_map[rule])
+        printf("     %8.5f", pc_exit[rule])
+        printf("     %9.6f", map_rms[rule])
+        println("")
+        rule = rule + 1
+    }
+    println("")
+    print("    closed form for groups of four with inertia : (1 + sqrt(13)) / 6 = ")
+    printf("%.7f", PC4)
+    println("")
+    print("    bisected from the binomial map              : ")
+    printf("%.7f", pc_ref[1])
+    print("   difference ")
+    printf("%.3e", fabs(pc_ref[1] - PC4))
+    println("")
+    print("    odd groups put the tipping point at one half: r = 3 gives ")
+    printf("%.7f", pc_ref[0])
+    print(" , r = 5 gives ")
+    printf("%.7f", pc_ref[2])
+    println("")
+    println("")
+    print("    worst rms between the measured map and the binomial : ")
+    let mut worst_rms: f64 = 0.0
+    let mut worst_pcmap: f64 = 0.0
+    let mut worst_pcexit: f64 = 0.0
+    rule = 0
+    while rule < RULES {
+        if map_rms[rule] > worst_rms { worst_rms = map_rms[rule] }
+        let a: f64 = fabs(pc_map[rule] - pc_ref[rule])
+        if a > worst_pcmap { worst_pcmap = a }
+        let b: f64 = fabs(pc_exit[rule] - pc_ref[rule])
+        if b > worst_pcexit { worst_pcexit = b }
+        rule = rule + 1
+    }
+    printf("%.6f", worst_rms)
+    print("   gate ")
+    printf("%.3f", MAP_GATE)
+    println("")
+    print("    worst gap, fixed point of the measured map          : ")
+    printf("%.6f", worst_pcmap)
+    print("   gate ")
+    printf("%.3f", PC_MAP_GATE)
+    println("")
+    print("    worst gap, density where the exit probability is 1/2: ")
+    printf("%.6f", worst_pcexit)
+    print("   gate ")
+    printf("%.3f", PC_EXIT_GATE)
+    println("")
+    println("")
+
+    let map_ok: bool = worst_rms < MAP_GATE
+    let pcmap_ok: bool = worst_pcmap < PC_MAP_GATE
+    let pcexit_ok: bool = worst_pcexit < PC_EXIT_GATE
+    let closed_ok: bool = fabs(pc_ref[1] - PC4) < 0.0000005
+    let ok: bool = map_ok and pcmap_ok and pcexit_ok and closed_ok
+
+    live_reset()
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Galam majority rule - Flow social atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+    let mut reset_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want_rule: i32 = live_rule
+        if gfx_key_down(g, KEY_1) { want_rule = 0 }
+        if gfx_key_down(g, KEY_2) { want_rule = 1 }
+        if gfx_key_down(g, KEY_3) { want_rule = 2 }
+        if want_rule != live_rule {
+            live_rule = want_rule
+            live_reset()
+        }
+        let mut want: i32 = live_p0_idx
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held { want = live_p0_idx - 1 }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held { want = live_p0_idx + 1 }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if want < 0 { want = 0 }
+        if want > 12 { want = 12 }
+        if want != live_p0_idx {
+            live_p0_idx = want
+            live_reset()
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held { live_reset() }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused and !live_done and frame % 6 == 0 {
+            live_step()
+        }
+
+        gfx_clear(g, 11, 13, 20)
+        draw_population(g)
+        draw_trace(g)
+        draw_map(g)
+        draw_exit(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !closed_ok {
+        println("    FAIL: the bisected fixed point does not match (1 + sqrt(13)) / 6")
+        return 1
+    }
+    if !map_ok {
+        println("    FAIL: the measured one-round map is not the binomial expression")
+        return 2
+    }
+    if !pcmap_ok {
+        println("    FAIL: the fixed point of the measured map is off the analytic tipping point")
+        return 3
+    }
+    if !pcexit_ok {
+        println("    FAIL: the exit probability does not cross one half at the tipping point")
+        return 4
+    }
+    println("    PASS: tipping points at 1/2 for odd groups and at (1+sqrt(13))/6 for four with inertia")
+    return 0
+}
