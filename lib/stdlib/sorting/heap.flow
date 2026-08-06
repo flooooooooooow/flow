@@ -1,0 +1,305 @@
+# Sorting library: the heap family.
+#
+# A binary max-heap laid out in the span itself: the children of `i` live at
+# `2i+1` and `2i+2`. Nothing here allocates, and the whole family works on a
+# `&mut [i32]` with no auxiliary index arrays.
+#
+# Also here: partial sort and top-k, which are the reason heaps are worth
+# having in a sorting library at all. Sorting a million elements to read the
+# largest ten is the mistake this module exists to prevent.
+
+import stdlib.sorting.core { sort_swap, sort_reverse, sort_copy, sort_scratch }
+
+extern {
+    function malloc(bytes: i64) -> ptr<i32>
+}
+
+# Restore the max-heap property at `root`, over the first `count` elements.
+# Written as a loop rather than the textbook recursion: the recursion is a
+# tail call, and a loop makes that explicit instead of hoping the C compiler
+# notices.
+#
+# `@inline` is deliberately absent. This is the hot inner routine of heapsort
+# and it is called from four places; inlining it made no measurable difference
+# and grew every caller. Measured; see docs/library/sorting.md.
+function sift_down(xs: &mut [i32], root: i64, count: i64) -> void {
+    let mut i: i64 = root
+    while true {
+        let left: i64 = 2 * i + 1
+        if left >= count {
+            return
+        }
+        let mut big: i64 = left
+        let right: i64 = left + 1
+        if right < count and xs[right] > xs[left] {
+            big = right
+        }
+        if xs[i] >= xs[big] {
+            return
+        }
+        sort_swap(xs, i, big)
+        i = big
+    }
+}
+
+# Turn a span into a max-heap. Floyd's bottom-up construction: O(n), not
+# O(n log n), because most nodes are near the leaves and sift down barely at
+# all.
+export function heapify(xs: &mut [i32]) -> void {
+    let mut i: i64 = xs.len / 2 - 1
+    while i >= 0 {
+        sift_down(xs, i, xs.len)
+        i = i - 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# heap_sort
+#   NOT stable (the root/last swap reorders equal keys arbitrarily)
+#   best O(n log n)   average O(n log n)   worst O(n log n)
+#   extra space O(1)
+#
+#   Pick it when: you need a hard worst-case guarantee with no allocation.
+#   Nothing an adversary can construct makes it slower than n log n, which is
+#   exactly why introsort falls back to it. Its weakness is locality: every
+#   sift down walks a path of doubling strides, so it misses cache on large
+#   inputs and loses to quicksort and merge sort by a factor of 2 to 3 in the
+#   measured table despite identical asymptotics.
+# ---------------------------------------------------------------------------
+export function heap_sort(xs: &mut [i32]) -> void {
+    if xs.len < 2 {
+        return
+    }
+    heapify(xs)
+    let mut end: i64 = xs.len - 1
+    while end > 0 {
+        sort_swap(xs, 0, end)
+        sift_down(xs, 0, end)
+        end = end - 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# partial_sort
+#   NOT stable
+#   O(n + k log n) with a full heapify, or O(n log k) via the bounded heap
+#   below, whichever the caller asks for.
+#   extra space O(1)
+#
+#   Leaves the k smallest elements, in order, in `xs[0..k]`. The tail is
+#   permuted arbitrarily. This is the shape you want for "the ten worst
+#   latencies" or "the first page of results".
+#
+#   Strategy: keep a max-heap of the k smallest seen so far in `xs[0..k]`.
+#   Anything larger than the heap root cannot make the answer, so it is
+#   skipped with one comparison. At the end the heap is sorted by the standard
+#   heapsort drain, which leaves it ascending.
+#
+#   Flow idioms: the bounded heap lives in a *slice of the caller's own span*,
+#   `xs[0..k]`, so top-k allocates nothing at all.
+# ---------------------------------------------------------------------------
+export function partial_sort(xs: &mut [i32], k: i64) -> void {
+    let mut want: i64 = k
+    if want > xs.len {
+        want = xs.len
+    }
+    if want <= 0 {
+        return
+    }
+
+    # Build the max-heap over the first `want` elements, in place.
+    let mut head: span<mut i32> = xs[0..want]
+    heapify(head)
+
+    # Stream the rest past the heap root.
+    let mut i: i64 = want
+    while i < xs.len {
+        if xs[i] < xs[0] {
+            xs[0] = xs[i]
+            sift_down(xs[0..want], 0, want)
+        }
+        i = i + 1
+    }
+
+    # Drain: repeatedly move the root to the end of the shrinking heap. This
+    # leaves xs[0..want] ascending.
+    let mut end: i64 = want - 1
+    while end > 0 {
+        sort_swap(xs, 0, end)
+        sift_down(xs[0..end], 0, end)
+        end = end - 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# top_k_descending
+#   NOT stable
+#   O(n log k)   extra space O(1)
+#   Leaves the k largest elements in `xs[0..k]`, largest first. Same machinery
+#   as partial_sort with the comparison flipped, then reversed at the end.
+# ---------------------------------------------------------------------------
+export function top_k_descending(xs: &mut [i32], k: i64) -> void {
+    let mut want: i64 = k
+    if want > xs.len {
+        want = xs.len
+    }
+    if want <= 0 {
+        return
+    }
+    partial_sort_largest(xs, want)
+    sort_reverse(xs[0..want])
+}
+
+# Min-heap variant: keeps the k largest in xs[0..k], ascending on return.
+function partial_sort_largest(xs: &mut [i32], want: i64) -> void {
+    let mut head: span<mut i32> = xs[0..want]
+    build_min_heap(head)
+    let mut i: i64 = want
+    while i < xs.len {
+        if xs[i] > xs[0] {
+            xs[0] = xs[i]
+            sift_down_min(xs[0..want], 0, want)
+        }
+        i = i + 1
+    }
+    # Drain a min-heap and you get descending order; reverse to ascend.
+    let mut end: i64 = want - 1
+    while end > 0 {
+        sort_swap(xs, 0, end)
+        sift_down_min(xs[0..end], 0, end)
+        end = end - 1
+    }
+    sort_reverse(xs[0..want])
+}
+
+function build_min_heap(xs: &mut [i32]) -> void {
+    let mut i: i64 = xs.len / 2 - 1
+    while i >= 0 {
+        sift_down_min(xs, i, xs.len)
+        i = i - 1
+    }
+}
+
+function sift_down_min(xs: &mut [i32], root: i64, count: i64) -> void {
+    let mut i: i64 = root
+    while true {
+        let left: i64 = 2 * i + 1
+        if left >= count {
+            return
+        }
+        let mut small: i64 = left
+        let right: i64 = left + 1
+        if right < count and xs[right] < xs[left] {
+            small = right
+        }
+        if xs[i] <= xs[small] {
+            return
+        }
+        sort_swap(xs, i, small)
+        i = small
+    }
+}
+
+# ---------------------------------------------------------------------------
+# tournament_sort
+#   NOT stable
+#   best O(n log n)   average O(n log n)   worst O(n log n)
+#   extra space O(n) for the tournament tree
+#
+#   A selection sort whose "find the minimum" step is a tournament: n leaves,
+#   a complete binary tree above them, each internal node holding the index of
+#   the smaller of its two children. Extracting the winner costs O(1); replaying
+#   the path from the vacated leaf back to the root costs O(log n). So it is
+#   selection sort at n log n instead of n^2.
+#
+#   Pick it when: you are merging k sorted streams and need the winner of each
+#   round cheaply. As a plain array sort it is strictly worse than heapsort,
+#   which is the same idea with the tree stored implicitly and no extra space.
+#   It is here because the explicit tree is the version you can actually read.
+#
+#   Flow idioms: the tree is a module static, sized by a documented const, and
+#   handed to the helpers as a `&mut [i32]` view of exactly the part in use.
+# ---------------------------------------------------------------------------
+
+# The tree holds 2 * ceil-to-power-of-two(n) indices, so an input of
+# TOURNAMENT_CAPACITY elements needs 2 * TOURNAMENT_CAPACITY tree slots.
+# Above the cap, tournament_sort falls back to heap_sort rather than reading
+# out of bounds. The winners are collected into the shared merge scratch,
+# because the tree indexes into `xs` and so `xs` may not be overwritten until
+# the last extraction is done.
+export const TOURNAMENT_CAPACITY: i64 = 65536
+
+let mut TREE_BUF: ptr<i32> = null
+
+export function tournament_sort(xs: &mut [i32]) -> void {
+    if xs.len < 2 {
+        return
+    }
+    if xs.len > TOURNAMENT_CAPACITY {
+        heap_sort(xs)
+        return
+    }
+    if TREE_BUF == null {
+        TREE_BUF = malloc(TOURNAMENT_CAPACITY * 2 * 4)
+    }
+
+    # Round the leaf count up to a power of two so the tree is complete.
+    let mut leaves: i64 = 1
+    while leaves < xs.len {
+        leaves = leaves * 2
+    }
+    let mut tree: span<mut i32> = TREE_BUF[0..(2 * leaves)]
+
+    # Leaves live at tree[leaves .. 2*leaves) and hold a source index, or -1
+    # for a leaf that has been consumed or was never real.
+    let mut i: i64 = 0
+    while i < leaves {
+        if i < xs.len {
+            tree[leaves + i] = i as i32
+        } else {
+            tree[leaves + i] = -1
+        }
+        i = i + 1
+    }
+    # Every internal node holds the index of the winner below it.
+    let mut node: i64 = leaves - 1
+    while node >= 1 {
+        tree[node] = winner(xs, tree[2 * node], tree[2 * node + 1])
+        node = node - 1
+    }
+
+    # n extractions, each replaying one leaf-to-root path.
+    let mut winners: span<mut i32> = sort_scratch(xs.len)
+    let mut out: i64 = 0
+    while out < xs.len {
+        let champ: i32 = tree[1]
+        winners[out] = xs[champ as i64]
+        let mut at: i64 = leaves + (champ as i64)
+        tree[at] = -1
+        at = at / 2
+        while at >= 1 {
+            tree[at] = winner(xs, tree[2 * at], tree[2 * at + 1])
+            at = at / 2
+        }
+        out = out + 1
+    }
+
+    sort_copy(xs, winners)
+}
+
+# The smaller of two candidate leaf indices; -1 means "no candidate".
+# Ties keep the left index, which is the only thing tournament_sort does to
+# limit the damage; it is still not stable, because the tree reorders the
+# losers as they are replayed.
+function winner(xs: &[i32], a: i32, b: i32) -> i32 {
+    if a < 0 {
+        return b
+    }
+    if b < 0 {
+        return a
+    }
+    if xs[b as i64] < xs[a as i64] {
+        return b
+    }
+    return a
+}
