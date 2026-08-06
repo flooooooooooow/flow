@@ -1,0 +1,490 @@
+# OP-AMP: closed-loop gain, and the gain-bandwidth product measured twice.
+#
+# WHY THE MATRIX AND NOT A `flow` BLOCK
+#   The macromodel has exactly one state, the compensation capacitor, so it
+#   looks like a candidate for `evolves as`. It is not, because the loop is
+#   closed through a resistor network: the current into the integrator depends
+#   on the output through Rf and Rin, and that is an algebraic constraint to
+#   be solved simultaneously with everything else. Writing it as an ODE means
+#   reducing the feedback network by hand first, which is the work MNA does.
+#
+# THE MACROMODEL
+#   The textbook one-pole op amp, out of three of the solver's elements:
+#
+#     G   transconductance gm from the differential input into node 2
+#     R1  and C1 to ground at node 2, the dominant pole
+#     E   a unity-gain voltage source following node 2, the output buffer
+#
+#     A_ol(s) = gm R1 / (1 + s R1 C1)
+#     A0  = gm R1                = 1e5     (100 dB)
+#     fp  = 1/(2 pi R1 C1)       = 10 Hz
+#     GBW = A0 fp = gm/(2 pi C1) = 1 MHz
+#
+#   gm = 6.2832 mS, C1 = 1 nF, R1 = 15.915 Mohm. The buffer has no output
+#   resistance, which keeps the closed forms below exact.
+#
+# THE TWO CONFIGURATIONS   Rin = 1 kohm
+#
+#     inverting        ideal gain -Rf/Rin
+#     non-inverting    ideal gain 1 + Rf/Rin
+#
+#   Both have the same noise gain NG = 1 + Rf/Rin, which is what the loop
+#   actually sees, so both must have the same bandwidth. With a one-pole op
+#   amp the closed loop is exactly first order:
+#
+#     inverting      A_dc = -(Rf/Rin) A0/(NG + A0)
+#     non-inverting  A_dc =      NG   A0/(NG + A0)
+#     both           f_cl = fp (NG + A0)/NG
+#
+#   Multiply the last two together and the resistors cancel:
+#
+#     A_dc(non-inverting) * f_cl = NG A0/(NG+A0) * fp (NG+A0)/NG = A0 fp = GBW
+#
+#   exactly, for any Rf. That is the gain-bandwidth product, and it is a
+#   statement this example can measure rather than assert: the same circuit is
+#   built at Rf = 10 kohm and Rf = 100 kohm, gain and bandwidth are measured
+#   independently at each, and the product is compared with 1 MHz.
+#
+# THREE MEASUREMENTS
+#   1. DC gain from a single operating point.
+#   2. The closed-loop time constant from a step response, read as
+#      (t80 - t20)/ln 4 between two interpolated crossings, which cancels the
+#      half-step lag the trapezoidal rule puts on a discontinuous input.
+#      f_3dB = 1/(2 pi tau).
+#   3. Gain and phase at five frequencies from 1 kHz to 1 MHz, each measured
+#      by correlating the output against sin and cos of the drive over four
+#      whole periods after twenty time constants of settling. That is a
+#      single-bin DFT, and on an exact bin it is exact.
+#
+#   The step size is set by the closed-loop pole, not by the signal: dt is
+#   tau/50 or the period over 256, whichever is smaller, and the period is
+#   divided into a whole number of steps so the DFT bin stays exact. Drive
+#   phase runs continuously through settling and measurement, because a step
+#   in the drive at the start of the measurement window would kick the loop
+#   and put its ring-down straight into the answer.
+#
+# EVIDENCE
+#   Every measured gain, phase and bandwidth against the closed forms above.
+#   Gates: DC gain 1e-6, time constant 1e-3, gain magnitude 1e-3, phase 0.05
+#   degrees, gain-bandwidth product 1e-3.
+#
+# Run: ./flow run examples/circuits/opamp.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function atan2(y: f64, x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const A0: f64 = 1e5
+const GBW: f64 = 1e6
+const C1: f64 = 1e-9
+const RIN: f64 = 1000.0
+const TWO_PI: f64 = 6.283185307179586
+const RAD2DEG: f64 = 57.29577951308232
+const VAMP: f64 = 0.01
+const LN4: f64 = 1.3862943611198906
+
+const CFG_INV: i32 = 0
+const CFG_NONINV: i32 = 1
+
+# The feedback resistor is swept, so it is state rather than a constant.
+let mut rf_val: f64 = 10000.0
+
+function gm() -> f64 {
+    return TWO_PI * GBW * C1
+}
+
+function r1() -> f64 {
+    return A0 / gm()
+}
+
+function fp() -> f64 {
+    return 1.0 / (TWO_PI * r1() * C1)
+}
+
+function noise_gain() -> f64 {
+    return 1.0 + rf_val / RIN
+}
+
+function dc_gain_ref(cfg: i32) -> f64 {
+    let ng: f64 = noise_gain()
+    if cfg == CFG_INV {
+        return 0.0 - (rf_val / RIN) * A0 / (ng + A0)
+    }
+    return ng * A0 / (ng + A0)
+}
+
+function f_cl_ref() -> f64 {
+    let ng: f64 = noise_gain()
+    return fp() * (ng + A0) / ng
+}
+
+function tau_ref() -> f64 {
+    return 1.0 / (TWO_PI * f_cl_ref())
+}
+
+function mag_ref(cfg: i32, f: f64) -> f64 {
+    let x: f64 = f / f_cl_ref()
+    return fabs(dc_gain_ref(cfg)) / sqrt(1.0 + x * x)
+}
+
+# Phase of the output relative to the drive, in degrees. The inverting
+# configuration starts at 180 degrees and rolls the same way.
+function phase_ref(cfg: i32, f: f64) -> f64 {
+    let x: f64 = f / f_cl_ref()
+    let roll: f64 = 0.0 - atan2(x, 1.0) * RAD2DEG
+    if cfg == CFG_INV {
+        return 180.0 + roll
+    }
+    return roll
+}
+
+function relerr(got: f64, want: f64) -> f64 {
+    let s: f64 = fabs(want)
+    if s < 1e-30 {
+        return fabs(got - want)
+    }
+    return fabs(got - want) / s
+}
+
+# ---------------------------------------------------------------------------
+# Netlist. Node 1 is the inverting input, 2 the compensation node, 3 the
+# output, 4 the signal source.
+# ---------------------------------------------------------------------------
+
+let mut el_src: i32 = -1
+
+function build(cfg: i32) -> bool {
+    if !circ_reset() {
+        return false
+    }
+    circ_set_tol(1e-13, 1e-16)
+    el_src = circ_add_v(4, 0, 0.0)
+    if cfg == CFG_INV {
+        let rin: i32 = circ_add_r(4, 1, RIN)
+        # in+ is ground, in- is node 1
+        let g: i32 = circ_add_g(0, 2, 0, 1, gm())
+    } else {
+        let rin: i32 = circ_add_r(1, 0, RIN)
+        # in+ is node 4, in- is node 1
+        let g: i32 = circ_add_g(0, 2, 4, 1, gm())
+    }
+    let rf: i32 = circ_add_r(1, 3, rf_val)
+    let rp: i32 = circ_add_r(2, 0, r1())
+    let cp: i32 = circ_add_c(2, 0, C1, 0.0)
+    let e: i32 = circ_add_e(3, 0, 2, 0, 1.0)
+    if e < 0 {
+        return false
+    }
+    return circ_finalize()
+}
+
+function measure_dc(cfg: i32) -> f64 {
+    if !build(cfg) {
+        return 0.0
+    }
+    circ_set_value(el_src, 0.1)
+    if !circ_op() {
+        return 0.0
+    }
+    return circ_v(3) / 0.1
+}
+
+# Step response, read between the 20% and 80% crossings:
+#
+#     v(t) = V (1 - exp(-t/tau))  =>  t80 - t20 = tau ln 4
+#
+# The difference of two crossings is used rather than the single 63.2% point
+# because an ideal step is a discontinuity, and the trapezoidal companion
+# answers a discontinuity with a half-step lag. That lag is a constant offset
+# on both crossings and cancels in the difference; on the 63.2% point alone it
+# shows up as a dt/(2 tau) error in the answer.
+function measure_tau(cfg: i32) -> f64 {
+    if !build(cfg) {
+        return 0.0
+    }
+    circ_set_method(CIRC_TRAP)
+    circ_set_value(el_src, 0.0)
+    if !circ_tran_init(false, 0.0) {
+        return 0.0
+    }
+    let final_v: f64 = dc_gain_ref(cfg) * VAMP
+    let dt: f64 = tau_ref() / 2000.0
+    circ_set_value(el_src, VAMP)
+    let mut prev: f64 = 0.0
+    let mut t20: f64 = 0.0
+    let mut t80: f64 = 0.0
+    for k in 1 to 40001 {
+        if !circ_tran_step(dt) {
+            return 0.0
+        }
+        let v: f64 = circ_v(3)
+        let a: f64 = prev / final_v
+        let b: f64 = v / final_v
+        if a < 0.2 and b >= 0.2 {
+            t20 = ((k - 1) as f64 + (0.2 - a) / (b - a)) * dt
+        }
+        if a < 0.8 and b >= 0.8 {
+            t80 = ((k - 1) as f64 + (0.8 - a) / (b - a)) * dt
+            return (t80 - t20) / LN4
+        }
+        prev = v
+    }
+    return 0.0
+}
+
+# Single-bin DFT of the output at the drive frequency.
+let mut mag_out: f64 = 0.0
+let mut phase_out: f64 = 0.0
+
+function measure_ac(cfg: i32, f: f64) -> bool {
+    if !build(cfg) {
+        return false
+    }
+    circ_set_method(CIRC_TRAP)
+    circ_set_value(el_src, 0.0)
+    if !circ_tran_init(false, 0.0) {
+        return false
+    }
+    let period: f64 = 1.0 / f
+    let dt_max: f64 = tau_ref() / 50.0
+    let mut per_period: i32 = 256
+    let need: i32 = (period / dt_max) as i32 + 1
+    if need > per_period {
+        per_period = need
+    }
+    let dt: f64 = period / (per_period as f64)
+    let w: f64 = TWO_PI * f
+
+    # Settle for twenty closed-loop time constants, rounded up to whole steps.
+    let settle: i32 = (20.0 * tau_ref() / dt) as i32 + 1
+    let mut k: i32 = 1
+    while k <= settle {
+        let t: f64 = (k as f64) * dt
+        circ_set_value(el_src, VAMP * sin(w * t))
+        if !circ_tran_step(dt) {
+            return false
+        }
+        k = k + 1
+    }
+    # Four whole periods of correlation, with the drive phase running on
+    # unbroken from the settling window.
+    let n: i32 = 4 * per_period
+    let mut ss: f64 = 0.0
+    let mut cc: f64 = 0.0
+    let last: i32 = settle + n
+    while k <= last {
+        let t: f64 = (k as f64) * dt
+        circ_set_value(el_src, VAMP * sin(w * t))
+        if !circ_tran_step(dt) {
+            return false
+        }
+        let v: f64 = circ_v(3)
+        ss = ss + v * sin(w * t)
+        cc = cc + v * cos(w * t)
+        k = k + 1
+    }
+    let s: f64 = 2.0 * ss / (n as f64)
+    let c: f64 = 2.0 * cc / (n as f64)
+    mag_out = sqrt(s * s + c * c) / VAMP
+    phase_out = atan2(c, s) * RAD2DEG
+    return true
+}
+
+function cfg_name(cfg: i32) -> string {
+    if cfg == CFG_INV {
+        return "inverting    "
+    }
+    return "non-inverting"
+}
+
+let mut worst_gain: f64 = 0.0
+let mut worst_phase: f64 = 0.0
+
+function sweep(cfg: i32) -> bool {
+    let freqs: array<f64, 5> = [1e3, 1e4, 90919.09090909091, 3e5, 1e6]
+    println("")
+    print("    ")
+    print(cfg_name(cfg))
+    println("")
+    println("      f [Hz]     |A| measured   |A| reference   rel err    phase deg   ref deg    err deg")
+    println("    ----------  -------------  --------------  ---------  ----------  ---------  ---------")
+    for k in 0 to 5 {
+        let f: f64 = freqs[k]
+        if !measure_ac(cfg, f) {
+            println("      FAIL: AC point did not complete")
+            return false
+        }
+        let mref: f64 = mag_ref(cfg, f)
+        let pref: f64 = phase_ref(cfg, f)
+        let me: f64 = relerr(mag_out, mref)
+        let pe: f64 = fabs(phase_out - pref)
+        if me > worst_gain {
+            worst_gain = me
+        }
+        if pe > worst_phase {
+            worst_phase = pe
+        }
+        print("    ")
+        printf("%10.1f", f)
+        printf("  %13.7f", mag_out)
+        printf("  %14.7f", mref)
+        printf("  %9.2e", me)
+        printf("  %10.4f", phase_out)
+        printf("  %9.4f", pref)
+        printf("  %9.2e", pe)
+        println("")
+    }
+    return true
+}
+
+function main() -> i32 {
+    println("")
+    println("  OP-AMP  --  closed-loop gain and bandwidth vs the one-pole theory")
+    println("  =================================================================")
+    println("")
+    print("  A0 = ")
+    printf("%.0f", A0)
+    print(",  GBW = ")
+    printf("%.0f", GBW)
+    print(" Hz,  fp = ")
+    printf("%.4f", fp())
+    print(" Hz,  gm = ")
+    printf("%.6f", gm() * 1000.0)
+    print(" mS,  R1 = ")
+    printf("%.4f", r1() / 1e6)
+    println(" Mohm")
+
+    println("")
+    println("  DC GAIN AND STEP RESPONSE")
+    println("")
+    println("    Rf [kohm]   configuration    DC gain    reference   rel err     tau [us]   ref [us]    rel err")
+    println("    ---------  ---------------  ---------  -----------  ---------  ----------  ---------  ---------")
+
+    let mut worst_dc: f64 = 0.0
+    let mut worst_tau: f64 = 0.0
+    let mut worst_gbw: f64 = 0.0
+    let rfs: array<f64, 2> = [10000.0, 100000.0]
+    let mut gbw_meas: array<f64, 2> = [0.0, 0.0]
+
+    for ri in 0 to 2 {
+        rf_val = rfs[ri]
+        for cfg in 0 to 2 {
+            let g: f64 = measure_dc(cfg)
+            let gref: f64 = dc_gain_ref(cfg)
+            let ge: f64 = relerr(g, gref)
+            let tau: f64 = measure_tau(cfg)
+            let te: f64 = relerr(tau, tau_ref())
+            if ge > worst_dc {
+                worst_dc = ge
+            }
+            if te > worst_tau {
+                worst_tau = te
+            }
+            if cfg == CFG_NONINV {
+                gbw_meas[ri] = g / (TWO_PI * tau)
+            }
+            print("    ")
+            printf("%9.0f", rf_val / 1000.0)
+            print("  ")
+            print(cfg_name(cfg))
+            printf("  %9.4f", g)
+            printf("  %11.4f", gref)
+            printf("  %9.2e", ge)
+            printf("  %10.5f", tau * 1e6)
+            printf("  %9.5f", tau_ref() * 1e6)
+            printf("  %9.2e", te)
+            println("")
+        }
+    }
+
+    println("")
+    println("  GAIN-BANDWIDTH PRODUCT   (non-inverting: A_dc x f_3dB must be A0 fp)")
+    println("")
+    println("    Rf [kohm]    A_dc    f_3dB [Hz]   product [Hz]     GBW [Hz]    rel err")
+    println("    ---------  --------  ----------  -------------  -----------  ---------")
+    for ri in 0 to 2 {
+        rf_val = rfs[ri]
+        let e: f64 = relerr(gbw_meas[ri], GBW)
+        if e > worst_gbw {
+            worst_gbw = e
+        }
+        print("    ")
+        printf("%9.0f", rf_val / 1000.0)
+        printf("  %8.4f", dc_gain_ref(CFG_NONINV))
+        printf("  %10.2f", gbw_meas[ri] / dc_gain_ref(CFG_NONINV))
+        printf("  %13.2f", gbw_meas[ri])
+        printf("  %11.2f", GBW)
+        printf("  %9.2e", e)
+        println("")
+    }
+    println("    a ten-times larger closed-loop gain bought a ten-times")
+    println("    smaller bandwidth, and the product did not move")
+
+    rf_val = 10000.0
+    println("")
+    print("  GAIN AND PHASE VS FREQUENCY   (single-bin DFT, Rf = 10 kohm, NG = ")
+    printf("%.0f", noise_gain())
+    print(", f_cl = ")
+    printf("%.2f", f_cl_ref())
+    println(" Hz)")
+    if !sweep(CFG_INV) {
+        return 1
+    }
+    if !sweep(CFG_NONINV) {
+        return 1
+    }
+
+    println("")
+    print("  worst DC gain error            ")
+    printf("%.3e", worst_dc)
+    println("     gate 1.000e-06")
+    print("  worst tau error                ")
+    printf("%.3e", worst_tau)
+    println("     gate 1.000e-03")
+    print("  worst |A| error over the sweep ")
+    printf("%.3e", worst_gain)
+    println("     gate 1.000e-03")
+    print("  worst phase error              ")
+    printf("%.3e", worst_phase)
+    println(" deg gate 5.000e-02 deg")
+    print("  worst gain-bandwidth error     ")
+    printf("%.3e", worst_gbw)
+    println("     gate 1.000e-03")
+    println("")
+
+    if worst_dc != worst_dc or worst_gain != worst_gain {
+        println("  FAIL: NaN in a measurement")
+        return 2
+    }
+    if worst_dc >= 1e-6 {
+        println("  FAIL: DC gain does not match A0/(NG+A0)")
+        return 3
+    }
+    if worst_tau >= 1e-3 {
+        println("  FAIL: step response time constant is wrong")
+        return 4
+    }
+    if worst_gain >= 1e-3 {
+        println("  FAIL: the measured rolloff is not the one-pole curve")
+        return 5
+    }
+    if worst_phase >= 5e-2 {
+        println("  FAIL: the measured phase is not the one-pole curve")
+        return 6
+    }
+    if worst_gbw >= 1e-3 {
+        println("  FAIL: measured gain x bandwidth is not A0 fp")
+        return 7
+    }
+    println("  PASS: both configurations hit their ideal gain to within")
+    println("        NG/A0, share one bandwidth f_cl = fp (NG+A0)/NG, and the")
+    println("        measured gain-bandwidth product is A0 fp at both gains")
+    return 0
+}

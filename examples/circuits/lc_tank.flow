@@ -1,0 +1,402 @@
+# LC TANK: energy drift over a thousand cycles, and what the integrator does
+# to it.
+#
+# WHY THE MATRIX AND NOT A `flow` BLOCK
+#   A parallel LC tank could be written as two `evolves as` lines, and the RLC
+#   example next door does exactly that. It is here as a netlist because the
+#   question is about the *integrator*, and stdlib/circuit.flow is where the
+#   two companion models live side by side. The circuit is a fixture; the
+#   subject is backward Euler against the trapezoidal rule.
+#
+# THE CIRCUIT
+#   L = 100 mH and C = 1 uF in parallel, no resistance anywhere, started with
+#   1 V on the capacitor and no current in the inductor.
+#
+#     f0 = 1 / (2 pi sqrt(LC)) = 503.2921 Hz        T0 = 1.98692 ms
+#     E  = 1/2 C v^2 + 1/2 L i^2 = 500 nJ, constant for all time
+#
+#   There is no dissipation in the circuit, so every joule the simulation
+#   loses was taken by the integrator.
+#
+# WHAT EACH METHOD DOES, AND WHY
+#   Write one step as a linear map on the state (v, i). For a lossless
+#   oscillator with w = w0*dt the two companion models give
+#
+#     backward Euler   amplitude gain 1 / sqrt(1 + w^2)   per step
+#     trapezoidal      amplitude gain exactly 1           per step
+#
+#   Backward Euler is A-stable by being unconditionally *dissipative*: its
+#   pole sits strictly inside the unit circle even when the exact pole is on
+#   it. That is a virtue on a stiff circuit and a disaster on a resonator.
+#   The trapezoidal rule is the Cayley transform of the step matrix, which is
+#   an isometry in the energy norm, so it conserves the tank's energy to
+#   rounding. This example measures both.
+#
+#   Predicted backward-Euler energy after n steps:  (1 + w^2)^-n.
+#   With 200 steps per cycle, w = 2 pi / 200, so one cycle costs a factor
+#   (1 + 0.0009870)^-200 = 0.8213, and the tank is dark long before cycle 100.
+#
+# ADAPTIVE STEP
+#   The trapezoidal run is repeated with the step-doubling controller in
+#   circ_tran_step_adaptive: each step is taken once whole and twice halved,
+#   and the difference between the two reactive states is the local error
+#   estimate. On a pure sinusoid the estimate is nearly constant over the
+#   cycle, so the controller finds one step size and holds it; the useful
+#   evidence is that it lands where the error tolerance says it should, and
+#   that energy is still conserved when it does.
+#
+# EVIDENCE
+#   Energy at cycles 1, 10, 100 and 1000 for both methods; the measured
+#   backward-Euler per-cycle decay against (1 + w^2)^-200; the oscillation
+#   frequency measured from zero crossings against 1/(2 pi sqrt(LC)); and the
+#   adaptive run's step count, rejections and final energy.
+#
+#   Gates: trapezoidal energy drift below 1e-8 relative over 1000 cycles,
+#   which is the level accumulated double-precision rounding reaches in the
+#   200 000 steps the fixed run takes,
+#   backward Euler below 1e-3 of the initial energy by cycle 100 (that is, it
+#   must visibly damp), the measured BE decay within 1% of the prediction, and
+#   the measured frequency within 1e-3 of f0.
+#
+# Run: ./flow run examples/circuits/lc_tank.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const L_TANK: f64 = 0.1
+const C_TANK: f64 = 1e-6
+const V0: f64 = 1.0
+const TWO_PI: f64 = 6.283185307179586
+const CYCLES: i32 = 1000
+const PER_CYCLE: i32 = 200
+
+# Energy at cycle boundaries, filled by run_fixed.
+let mut e_at_1: f64 = 0.0
+let mut e_at_10: f64 = 0.0
+let mut e_at_100: f64 = 0.0
+let mut e_at_1000: f64 = 0.0
+let mut e_max: f64 = 0.0
+let mut e_min: f64 = 0.0
+let mut meas_freq: f64 = 0.0
+
+function w0() -> f64 {
+    return 1.0 / sqrt(L_TANK * C_TANK)
+}
+
+function f0() -> f64 {
+    return w0() / TWO_PI
+}
+
+function energy(v: f64, i: f64) -> f64 {
+    return 0.5 * C_TANK * v * v + 0.5 * L_TANK * i * i
+}
+
+function e0() -> f64 {
+    return energy(V0, 0.0)
+}
+
+# One fixed-step run of `CYCLES` cycles at `PER_CYCLE` steps each. Fills the
+# module statics above; returns false on solver failure.
+function run_fixed(method: i32) -> bool {
+    if !circ_reset() {
+        return false
+    }
+    circ_set_gmin(0.0)          # both nodes have a DC path; no help needed
+    circ_set_method(method)
+    let l: i32 = circ_add_l(1, 0, L_TANK, 0.0)
+    let c: i32 = circ_add_c(1, 0, C_TANK, V0)
+    if c < 0 or !circ_finalize() {
+        return false
+    }
+    let period: f64 = 1.0 / f0()
+    let dt: f64 = period / (PER_CYCLE as f64)
+    if !circ_tran_init(true, dt * 1e-6) {
+        return false
+    }
+
+    e_max = e0()
+    e_min = e0()
+    let mut prev_v: f64 = V0
+    let mut crossings: i32 = 0
+    let mut first_cross_t: f64 = 0.0
+    let mut last_cross_t: f64 = 0.0
+
+    let total: i32 = CYCLES * PER_CYCLE
+    for k in 1 to total + 1 {
+        if !circ_tran_step(dt) {
+            return false
+        }
+        let v: f64 = circ_state(c)
+        let i: f64 = circ_state(l)
+        let e: f64 = energy(v, i)
+        if e > e_max {
+            e_max = e
+        }
+        if e < e_min {
+            e_min = e
+        }
+        # Downward zero crossings of v, located by linear interpolation.
+        if prev_v > 0.0 and v <= 0.0 {
+            let frac: f64 = prev_v / (prev_v - v)
+            let tc: f64 = ((k - 1) as f64 + frac) * dt
+            if crossings == 0 {
+                first_cross_t = tc
+            }
+            last_cross_t = tc
+            crossings = crossings + 1
+        }
+        prev_v = v
+        if k == PER_CYCLE {
+            e_at_1 = e
+        }
+        if k == 10 * PER_CYCLE {
+            e_at_10 = e
+        }
+        if k == 100 * PER_CYCLE {
+            e_at_100 = e
+        }
+        if k == total {
+            e_at_1000 = e
+        }
+    }
+    meas_freq = 0.0
+    if crossings > 1 {
+        meas_freq = ((crossings - 1) as f64) / (last_cross_t - first_cross_t)
+    }
+    return true
+}
+
+let mut ad_steps: i32 = 0
+let mut ad_rejects: i32 = 0
+let mut ad_dt_min: f64 = 0.0
+let mut ad_dt_max: f64 = 0.0
+let mut ad_energy: f64 = 0.0
+let mut ad_drift: f64 = 0.0
+let mut ad_t: f64 = 0.0
+
+function run_adaptive(tol: f64) -> bool {
+    if !circ_reset() {
+        return false
+    }
+    circ_set_gmin(0.0)
+    circ_set_method(CIRC_TRAP)
+    let l: i32 = circ_add_l(1, 0, L_TANK, 0.0)
+    let c: i32 = circ_add_c(1, 0, C_TANK, V0)
+    if c < 0 or !circ_finalize() {
+        return false
+    }
+    let period: f64 = 1.0 / f0()
+    let t_end: f64 = period * (CYCLES as f64)
+    let dt_min: f64 = period / 100000.0
+    let dt_max: f64 = period / 8.0
+    if !circ_tran_init(true, dt_min * 1e-3) {
+        return false
+    }
+
+    let mut dt: f64 = period / 64.0
+    ad_steps = 0
+    ad_dt_min = dt_max
+    ad_dt_max = dt_min
+    ad_drift = 0.0
+    let mut t: f64 = 0.0
+    while t < t_end and ad_steps < 4000000 {
+        let took: f64 = circ_tran_step_adaptive(dt, tol, dt_min, dt_max)
+        if took <= 0.0 {
+            return false
+        }
+        t = t + took
+        ad_steps = ad_steps + 1
+        if took < ad_dt_min {
+            ad_dt_min = took
+        }
+        if took > ad_dt_max {
+            ad_dt_max = took
+        }
+        let e: f64 = energy(circ_state(c), circ_state(l))
+        let d: f64 = fabs(e - e0()) / e0()
+        if d > ad_drift {
+            ad_drift = d
+        }
+        dt = circ_next_dt()
+    }
+    ad_t = t
+    ad_rejects = circ_reject_count()
+    ad_energy = energy(circ_state(c), circ_state(l))
+    return true
+}
+
+function erow(label: string, e: f64) -> void {
+    print("      ")
+    print(label)
+    printf("  %14.6e", e)
+    printf("   %12.6e", e / e0())
+    println("")
+}
+
+function main() -> i32 {
+    println("")
+    println("  LC TANK  --  energy over 1000 cycles, backward Euler vs trapezoidal")
+    println("  ==================================================================")
+    println("")
+    print("  L = 100 mH,  C = 1 uF,  v(0) = 1 V,  i(0) = 0")
+    println("")
+    print("  f0 = ")
+    printf("%.4f", f0())
+    print(" Hz,  T0 = ")
+    printf("%.5f", 1000.0 / f0())
+    print(" ms,  E0 = ")
+    printf("%.4f", e0() * 1e9)
+    println(" nJ")
+    print("  fixed step = T0/")
+    print(PER_CYCLE)
+    print(" = ")
+    printf("%.4f", 1e6 / (f0() * (PER_CYCLE as f64)))
+    print(" us,  w = w0*dt = ")
+    printf("%.6f", TWO_PI / (PER_CYCLE as f64))
+    println("")
+
+    let w: f64 = TWO_PI / (PER_CYCLE as f64)
+    let be_cycle_pred: f64 = exp(0.0 - (PER_CYCLE as f64) * log(1.0 + w * w))
+
+    # ---- backward Euler ----
+    if !run_fixed(CIRC_BE) {
+        println("  FAIL: backward Euler run did not complete")
+        return 1
+    }
+    let be1: f64 = e_at_1
+    let be10: f64 = e_at_10
+    let be100: f64 = e_at_100
+    let be1000: f64 = e_at_1000
+    let be_freq: f64 = meas_freq
+
+    println("")
+    println("    BACKWARD EULER")
+    println("                        energy [J]     E / E0")
+    erow("cycle    1 ", be1)
+    erow("cycle   10 ", be10)
+    erow("cycle  100 ", be100)
+    erow("cycle 1000 ", be1000)
+    print("      measured decay per cycle  ")
+    printf("%.6f", be1 / e0())
+    print("    predicted (1+w^2)^-200  ")
+    printf("%.6f", be_cycle_pred)
+    println("")
+    let be_pred_err: f64 = fabs(be1 / e0() - be_cycle_pred) / be_cycle_pred
+    print("      prediction error ")
+    printf("%.3e", be_pred_err)
+    println("")
+
+    # ---- trapezoidal ----
+    if !run_fixed(CIRC_TRAP) {
+        println("  FAIL: trapezoidal run did not complete")
+        return 2
+    }
+    let tr1: f64 = e_at_1
+    let tr10: f64 = e_at_10
+    let tr100: f64 = e_at_100
+    let tr1000: f64 = e_at_1000
+    let tr_freq: f64 = meas_freq
+    let tr_drift: f64 = fabs(tr1000 - e0()) / e0()
+    let tr_span: f64 = (e_max - e_min) / e0()
+
+    println("")
+    println("    TRAPEZOIDAL")
+    println("                        energy [J]     E / E0")
+    erow("cycle    1 ", tr1)
+    erow("cycle   10 ", tr10)
+    erow("cycle  100 ", tr100)
+    erow("cycle 1000 ", tr1000)
+    print("      drift after 1000 cycles  ")
+    printf("%.3e", tr_drift)
+    print("    peak-to-peak over the run  ")
+    printf("%.3e", tr_span)
+    println("")
+
+    let f_err: f64 = fabs(tr_freq - f0()) / f0()
+    print("      measured frequency ")
+    printf("%.6f", tr_freq)
+    print(" Hz   vs 1/(2 pi sqrt(LC)) ")
+    printf("%.6f", f0())
+    print(" Hz   rel err ")
+    printf("%.3e", f_err)
+    println("")
+    print("      backward-Euler frequency ")
+    printf("%.6f", be_freq)
+    println(" Hz  (measured before the tank goes dark)")
+
+    # ---- adaptive ----
+    if !run_adaptive(1e-7) {
+        println("  FAIL: adaptive run did not complete")
+        return 3
+    }
+    println("")
+    println("    TRAPEZOIDAL WITH ADAPTIVE dt   (step doubling, tol 1e-7)")
+    print("      accepted steps ")
+    print(ad_steps)
+    print("   rejected ")
+    print(ad_rejects)
+    print("   LU factorizations ")
+    print(circ_factor_count())
+    println("")
+    print("      dt: mean ")
+    printf("%.4f", ad_t * 1e6 / (ad_steps as f64))
+    print(" us, range ")
+    printf("%.4f", ad_dt_min * 1e6)
+    print(" to ")
+    printf("%.4f", ad_dt_max * 1e6)
+    print(" us   (fixed run used ")
+    printf("%.4f", 1e6 / (f0() * (PER_CYCLE as f64)))
+    println(" us)")
+    println("      the small end of that range is the first few steps, where")
+    println("      the controller is still finding the scale of the problem")
+    print("      simulated ")
+    printf("%.4f", ad_t)
+    print(" s   final energy ")
+    printf("%.6e", ad_energy)
+    print(" J   worst drift ")
+    printf("%.3e", ad_drift)
+    println("")
+
+    println("")
+    println("  WHAT THIS SHOWS")
+    println("    Backward Euler removed energy the circuit had no way to")
+    println("    dissipate, at exactly the rate its own pole predicts. The")
+    println("    trapezoidal rule kept it, at both a fixed and an adaptive")
+    println("    step, because its step map is an isometry in the energy norm.")
+    println("")
+
+    if tr_drift != tr_drift or ad_drift != ad_drift {
+        println("  FAIL: NaN in the energy trace")
+        return 4
+    }
+    if tr_drift >= 1e-8 {
+        println("  FAIL: trapezoidal energy drifted")
+        return 5
+    }
+    if ad_drift >= 1e-6 {
+        println("  FAIL: adaptive trapezoidal energy drifted")
+        return 6
+    }
+    if be100 / e0() >= 1e-3 {
+        println("  FAIL: backward Euler did not visibly damp")
+        return 7
+    }
+    if be_pred_err >= 1e-2 {
+        println("  FAIL: backward-Euler decay does not match (1+w^2)^-200")
+        return 8
+    }
+    if f_err >= 1e-3 {
+        println("  FAIL: oscillation frequency is off")
+        return 9
+    }
+    println("  PASS: trapezoidal conserves, backward Euler damps at the")
+    println("        predicted rate, and the frequency is 1/(2 pi sqrt(LC))")
+    return 0
+}
