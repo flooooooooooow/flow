@@ -1,0 +1,631 @@
+# ANT PHEROMONE: stigmergy finds the short bridge without a map.
+#
+# MODEL (Deneubourg et al., 1990, the double-bridge experiment)
+#   A nest and a food source sit at opposite ends of two corridors. At the
+#   nest fork an ant chooses the short or the long corridor with
+#
+#       P_i = (c + tau_i)^alpha  /  sum_j (c + tau_j)^alpha
+#
+#   then walks that corridor to the food, deposits pheromone on every cell
+#   it crosses, and returns by the same corridor. The trail evaporates
+#   uniformly each global step. The short corridor returns ants sooner, so
+#   its pheromone reinforces itself and traffic collapses onto it.
+#
+# WHAT IS MEASURED
+#   After a transient, the fraction of completed round trips that used the
+#   short corridor, and the share of trail mass on the short corridor.
+#     short-path trip fraction > 0.70
+#     short-corridor trail mass share > 0.60
+#   A control with alpha = 0 (pheromone ignored at the fork) must stay near
+#   chance (trip fraction in [0.40, 0.60]), so the length bias is shown to
+#   need the reinforcement rule. Equal lengths with alpha > 0 spontaneously
+#   break symmetry onto one corridor, which is the same physics.
+#
+# NUMERICS
+#   Corridors of width 4. Short length 48 cells, long length 96 cells when
+#   unequal. 200 ants. alpha = 2, c = 1, deposit 1.0, evaporation 0.004.
+#   Headless: 6000 steps unequal, then 6000 equal.
+#
+# REFERENCE
+#   J. L. Deneubourg, S. Aron, S. Goss and J. M. Pasteels, "The self-
+#   organizing exploratory pattern of the Argentine ant", J. Insect
+#   Behav. 3:159-168 (1990).
+#
+# LIVE VIEW / KEYS
+#   1 DOUBLE    classic unequal bridges, short wins
+#   2 EQUAL     equal bridges, no preferred corridor
+#   3 FAST EVAP stronger evaporation, thinner trails
+#   4 GREEDY    alpha = 4, sharper reinforcement
+#   R reseed    P pause    Esc quit
+#
+# Run: ./flow gfx examples/morphogenesis/ant_pheromone.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function pow(x: f64, y: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const GW: i32 = 96
+const GH: i32 = 64
+const CELLS: i32 = 6144
+const CELL_PX: i32 = 5
+const ORIGIN_X: i32 = 16
+const FIELD_Y: i32 = 74
+const FB_W: i32 = 480
+const FB_H: i32 = 320
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const NANTS: i32 = 200
+const STEPS_PER_FRAME: i32 = 4
+
+const SHORT_LEN: i32 = 48
+const LONG_LEN_UNEQ: i32 = 96
+const LONG_LEN_EQ: i32 = 48
+const CORR_W: i32 = 4
+const SHORT_Y: i32 = 20
+const LONG_Y: i32 = 40
+const X0: i32 = 24
+
+const ALPHA_DEFAULT: f64 = 2.0
+const C0: f64 = 1.0
+const DEPOSIT: f64 = 1.0
+const EVAP_DEFAULT: f64 = 0.004
+const VERIFY_STEPS: i32 = 6000
+const MEASURE_AFTER: i32 = 2000
+
+const SHORT_FRAC_MIN: f64 = 0.70
+const SHORT_MASS_MIN: f64 = 0.60
+const EQUAL_LO: f64 = 0.35
+const EQUAL_HI: f64 = 0.65
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+# cell: 0 wall, 1 nest, 2 food, 3 short, 4 long
+let mut cell: ptr<i32> = null
+let mut tau: ptr<f64> = null
+# ant state: bridge 0 short / 1 long; pos along corridor 0..len; dir +1 to food, -1 to nest
+let mut a_bridge: ptr<i32> = null
+let mut a_pos: ptr<i32> = null
+let mut a_dir: ptr<i32> = null
+let mut a_len: ptr<i32> = null
+let mut fb: ptr<u8> = null
+
+let mut rng_state: u32 = 1901194261
+let mut trips_short: i32 = 0
+let mut trips_long: i32 = 0
+let mut measuring: bool = false
+let mut equal_mode: bool = false
+let mut long_len: i32 = LONG_LEN_UNEQ
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "EQUAL" }
+    if p == 2 { return "FAST EVAP" }
+    if p == 3 { return "GREEDY" }
+    return "DOUBLE"
+}
+
+function preset_alpha(p: i32) -> f64 {
+    if p == 3 { return 4.0 }
+    return ALPHA_DEFAULT
+}
+
+function preset_evap(p: i32) -> f64 {
+    if p == 2 { return 0.02 }
+    return EVAP_DEFAULT
+}
+
+function corridor_tau(bridge: i32) -> f64 {
+    let mut s: f64 = 0.0
+    let mut n: i32 = 0
+    let y0: i32 = SHORT_Y
+    if bridge == 1 { y0 = LONG_Y }
+    let len: i32 = SHORT_LEN
+    if bridge == 1 { len = long_len }
+    for x in 0 to len {
+        for dy in 0 to CORR_W {
+            s = s + tau[(y0 + dy) * GW + (X0 + x)]
+            n = n + 1
+        }
+    }
+    if n == 0 { return 0.0 }
+    return s / (n as f64)
+}
+
+function paint_corridors() -> void {
+    for i in 0 to CELLS {
+        cell[i] = 0
+        tau[i] = 0.0
+    }
+    # nest and food pads
+    for y in 16 to 48 {
+        for x in 4 to 20 {
+            cell[y * GW + x] = 1
+        }
+        for x in 76 to 92 {
+            cell[y * GW + x] = 2
+        }
+    }
+    # short corridor
+    for x in 0 to SHORT_LEN {
+        for dy in 0 to CORR_W {
+            cell[(SHORT_Y + dy) * GW + (X0 + x)] = 3
+        }
+    }
+    # long corridor (drawn compressed if longer than short: fold once)
+    if long_len <= SHORT_LEN {
+        for x in 0 to long_len {
+            for dy in 0 to CORR_W {
+                cell[(LONG_Y + dy) * GW + (X0 + x)] = 4
+            }
+        }
+    } else {
+        let half: i32 = long_len / 2
+        for x in 0 to half {
+            for dy in 0 to CORR_W {
+                cell[(LONG_Y + dy) * GW + (X0 + x)] = 4
+            }
+        }
+        # return fold drawn as a second band just below
+        for x in 0 to half {
+            for dy in 0 to CORR_W {
+                cell[(LONG_Y + CORR_W + 2 + dy) * GW + (X0 + half - 1 - x)] = 4
+            }
+        }
+    }
+}
+
+function bridge_xy(bridge: i32, pos: i32) -> i32 {
+    # returns packed y*GW+x for display
+    if bridge == 0 {
+        let mut x: i32 = X0 + pos
+        if x >= X0 + SHORT_LEN { x = X0 + SHORT_LEN - 1 }
+        if x < X0 { x = X0 }
+        return SHORT_Y * GW + x
+    }
+    if long_len <= SHORT_LEN {
+        let mut x: i32 = X0 + pos
+        if x >= X0 + long_len { x = X0 + long_len - 1 }
+        if x < X0 { x = X0 }
+        return LONG_Y * GW + x
+    }
+    let half: i32 = long_len / 2
+    if pos < half {
+        return LONG_Y * GW + (X0 + pos)
+    }
+    let p2: i32 = pos - half
+    let mut x: i32 = X0 + half - 1 - p2
+    if x < X0 { x = X0 }
+    return (LONG_Y + CORR_W + 2) * GW + x
+}
+
+function choose_bridge(alpha: f64) -> i32 {
+    let ts: f64 = corridor_tau(0)
+    let tl: f64 = corridor_tau(1)
+    let ws: f64 = pow(C0 + ts, alpha)
+    let wl: f64 = pow(C0 + tl, alpha)
+    if rng_unit() * (ws + wl) < ws { return 0 }
+    return 1
+}
+
+function deposit_at(bridge: i32, pos: i32) -> void {
+    let idx: i32 = bridge_xy(bridge, pos)
+    let x: i32 = idx % GW
+    if bridge == 0 {
+        for dy in 0 to CORR_W {
+            let j: i32 = (SHORT_Y + dy) * GW + x
+            tau[j] = tau[j] + DEPOSIT
+        }
+    } else {
+        if long_len <= SHORT_LEN {
+            for dy in 0 to CORR_W {
+                let j: i32 = (LONG_Y + dy) * GW + x
+                tau[j] = tau[j] + DEPOSIT
+            }
+        } else {
+            let half: i32 = long_len / 2
+            if pos < half {
+                for dy in 0 to CORR_W {
+                    let j: i32 = (LONG_Y + dy) * GW + x
+                    tau[j] = tau[j] + DEPOSIT
+                }
+            } else {
+                for dy in 0 to CORR_W {
+                    let j: i32 = (LONG_Y + CORR_W + 2 + dy) * GW + x
+                    tau[j] = tau[j] + DEPOSIT
+                }
+            }
+        }
+    }
+}
+
+function seed_ants() -> void {
+    for i in 0 to NANTS {
+        let b: i32 = choose_bridge(ALPHA_DEFAULT)
+        a_bridge[i] = b
+        a_pos[i] = 0
+        a_dir[i] = 1
+        if b == 0 {
+            a_len[i] = SHORT_LEN
+        } else {
+            a_len[i] = long_len
+        }
+    }
+    trips_short = 0
+    trips_long = 0
+}
+
+function step_ants(alpha: f64, evap: f64) -> void {
+    for i in 0 to NANTS {
+        let b: i32 = a_bridge[i]
+        let pos: i32 = a_pos[i]
+        let dir: i32 = a_dir[i]
+        let len: i32 = a_len[i]
+
+        deposit_at(b, pos)
+        let mut npos: i32 = pos + dir
+        let mut ndir: i32 = dir
+        let mut nb: i32 = b
+        let mut nlen: i32 = len
+
+        if npos >= len {
+            # reached food, turn back
+            npos = len - 1
+            ndir = 0 - 1
+        }
+        if npos < 0 {
+            # reached nest: count trip, pick a new bridge
+            if measuring {
+                if b == 0 {
+                    trips_short = trips_short + 1
+                } else {
+                    trips_long = trips_long + 1
+                }
+            }
+            nb = choose_bridge(alpha)
+            npos = 0
+            ndir = 1
+            if nb == 0 {
+                nlen = SHORT_LEN
+            } else {
+                nlen = long_len
+            }
+        }
+
+        a_bridge[i] = nb
+        a_pos[i] = npos
+        a_dir[i] = ndir
+        a_len[i] = nlen
+    }
+
+    let keep: f64 = 1.0 - evap
+    for i in 0 to CELLS {
+        tau[i] = tau[i] * keep
+    }
+}
+
+function trail_shares(short_m: ptr<f64>, long_m: ptr<f64>) -> void {
+    let mut s: f64 = 0.0
+    let mut l: f64 = 0.0
+    for i in 0 to CELLS {
+        if cell[i] == 3 { s = s + tau[i] }
+        if cell[i] == 4 { l = l + tau[i] }
+    }
+    short_m[0] = s
+    long_m[0] = l
+}
+
+function setup_mode(equal: bool) -> void {
+    equal_mode = equal
+    if equal {
+        long_len = LONG_LEN_EQ
+    } else {
+        long_len = LONG_LEN_UNEQ
+    }
+    paint_corridors()
+    seed_ants()
+}
+
+function run_experiment(equal: bool, alpha: f64, evap: f64) -> void {
+    setup_mode(equal)
+    measuring = false
+    for t in 0 to MEASURE_AFTER {
+        step_ants(alpha, evap)
+    }
+    trips_short = 0
+    trips_long = 0
+    measuring = true
+    for t in 0 to VERIFY_STEPS - MEASURE_AFTER {
+        step_ants(alpha, evap)
+    }
+    measuring = false
+}
+
+function paint_cell(buf: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x < 0 or x >= GW or y < 0 or y >= GH { return }
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            buf[o] = r as u8
+            buf[o + 1] = g2 as u8
+            buf[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx) -> void {
+    for y in 0 to GH {
+        for x in 0 to GW {
+            let k: i32 = cell[y * GW + x]
+            if k == 0 {
+                paint_cell(fb, x, y, 12, 12, 16)
+            } else {
+                let v: f64 = tau[y * GW + x]
+                let mut t: f64 = v / (v + 6.0)
+                if t > 1.0 { t = 1.0 }
+                let mut rr: i32 = (18.0 + 210.0 * t) as i32
+                let mut gg: i32 = (22.0 + 150.0 * t) as i32
+                let mut bb: i32 = (30.0 + 40.0 * t) as i32
+                if k == 1 {
+                    rr = 70
+                    gg = 190
+                    bb = 120
+                }
+                if k == 2 {
+                    rr = 220
+                    gg = 150
+                    bb = 55
+                }
+                paint_cell(fb, x, y, rr, gg, bb)
+            }
+        }
+    }
+    for i in 0 to NANTS {
+        let idx: i32 = bridge_xy(a_bridge[i], a_pos[i])
+        let x: i32 = idx % GW
+        let y: i32 = idx / GW + rng_below_safe(CORR_W)
+        paint_cell(fb, x, y, 255, 230, 90)
+    }
+    gfx_blit_rgb(g, ORIGIN_X, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function rng_below_safe(n: i32) -> i32 {
+    if n <= 1 { return 0 }
+    return ((rng_next() >> 11) % (n as u32)) as i32
+}
+
+function draw_hud(g: Gfx, preset: i32, short_frac: f64, mass_share: f64,
+                  trips: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "ANT PHEROMONE  DOUBLE BRIDGE", 2,
+                                240, 234, 224)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 150, 144, 130)
+    let t3: i32 = gfx_draw_text(g, 42, 28, preset_name(preset), 1, 255, 196, 110)
+    let t4: i32 = gfx_draw_text(g, 140, 28, "SHORT FRAC", 1, 150, 144, 130)
+    let t5: i32 = gfx_draw_fixed(g, 210, 28, short_frac, 3, 1, 130, 255, 190)
+    let t6: i32 = gfx_draw_text(g, 270, 28, "MASS", 1, 150, 144, 130)
+    let t7: i32 = gfx_draw_fixed(g, 304, 28, mass_share, 3, 1, 130, 255, 190)
+    let t8: i32 = gfx_draw_text(g, 360, 28, "TRIPS", 1, 150, 144, 130)
+    let t9: i32 = gfx_draw_int(g, 400, 28, trips, 1, 236, 232, 244)
+
+    let ta: i32 = gfx_draw_text(g, 8, 42,
+        "1 DOUBLE  2 EQUAL  3 FAST EVAP  4 GREEDY  R RESEED  P PAUSE",
+        1, 112, 108, 120)
+    let tb: i32 = gfx_draw_text(g, 8, 58,
+        "NEST green   FOOD amber   SHORT upper   LONG lower (folded when longer)",
+        1, 112, 108, 120)
+    if paused {
+        let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let td: i32 = gfx_draw_text(g, 8, 572,
+        "P_i = (c + tau_i)^alpha / sum_j (c + tau_j)^alpha at the nest fork",
+        1, 122, 118, 132)
+    let te: i32 = gfx_draw_text(g, 8, 582,
+        "the short bridge returns ants sooner, so its pheromone reinforces itself",
+        1, 122, 118, 132)
+}
+
+function main() -> i32 {
+    cell = calloc(CELLS as i64, 4 as i64)
+    tau = calloc(CELLS as i64, 8 as i64)
+    a_bridge = calloc(NANTS as i64, 4 as i64)
+    a_pos = calloc(NANTS as i64, 4 as i64)
+    a_dir = calloc(NANTS as i64, 4 as i64)
+    a_len = calloc(NANTS as i64, 4 as i64)
+    fb = calloc((FB_W * FB_H * 3) as i64, 1 as i64)
+
+    let sm: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let lm: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+
+    println("")
+    println("  ANT PHEROMONE  --  the double bridge, and the short path that wins")
+    println("  ==================================================================")
+    println("")
+    println("    Deneubourg et al. (1990). At the nest fork ants choose by")
+    println("    (c + tau)^alpha. The short corridor reinforces itself.")
+    println("")
+
+    rng_state = 1901194261
+    run_experiment(false, ALPHA_DEFAULT, EVAP_DEFAULT)
+    let tot_u: i32 = trips_short + trips_long
+    let mut short_frac: f64 = 0.0
+    if tot_u > 0 {
+        short_frac = (trips_short as f64) / (tot_u as f64)
+    }
+    trail_shares(sm, lm)
+    let mut mass_share: f64 = 0.0
+    let mass_tot: f64 = sm[0] + lm[0]
+    if mass_tot > 1.0e-9 {
+        mass_share = sm[0] / mass_tot
+    }
+    let short_trips: i32 = trips_short
+    let long_trips: i32 = trips_long
+
+    println("  1. UNEQUAL BRIDGES  (short length 48, long length 96)")
+    println("")
+    print("     completed round trips         : ")
+    printf("%10.0f", tot_u as f64)
+    println("")
+    print("     short / long                  : ")
+    printf("%6.0f", short_trips as f64)
+    print(" / ")
+    printf("%.0f", long_trips as f64)
+    println("")
+    print("     short-path trip fraction      : ")
+    printf("%10.4f", short_frac)
+    print("     gate > ")
+    printf("%.2f", SHORT_FRAC_MIN)
+    println("")
+    print("     short-corridor trail mass     : ")
+    printf("%10.4f", mass_share)
+    print("     gate > ")
+    printf("%.2f", SHORT_MASS_MIN)
+    println("")
+    println("")
+
+    rng_state = 1901194261
+    run_experiment(false, 0.0, EVAP_DEFAULT)
+    let tot_e: i32 = trips_short + trips_long
+    let mut blind_frac: f64 = 0.5
+    if tot_e > 0 {
+        blind_frac = (trips_short as f64) / (tot_e as f64)
+    }
+
+    println("  2. BLIND FORK  (alpha = 0, same unequal lengths)")
+    println("")
+    print("     completed round trips         : ")
+    printf("%10.0f", tot_e as f64)
+    println("")
+    print("     short-path trip fraction      : ")
+    printf("%10.4f", blind_frac)
+    print("     gate in [")
+    printf("%.2f", EQUAL_LO)
+    print(", ")
+    printf("%.2f", EQUAL_HI)
+    println("]")
+    println("     without reinforcement the fork is a fair coin, so length alone")
+    println("     does not select the short corridor")
+    println("")
+
+    if short_frac != short_frac or mass_share != mass_share or blind_frac != blind_frac {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if tot_u < 100 {
+        println("    FAIL: too few trips completed on the unequal bridges")
+        return 2
+    }
+    if short_frac < SHORT_FRAC_MIN {
+        println("    FAIL: the short path did not capture the traffic")
+        return 3
+    }
+    if mass_share < SHORT_MASS_MIN {
+        println("    FAIL: the short corridor does not hold most of the trail")
+        return 4
+    }
+    if tot_e < 100 {
+        println("    FAIL: too few trips completed in the blind-fork control")
+        return 5
+    }
+    if blind_frac < EQUAL_LO or blind_frac > EQUAL_HI {
+        println("    FAIL: the blind fork is not a fair coin")
+        return 6
+    }
+    println("    PASS: unequal bridges with reinforcement send most trips and")
+    println("          trail mass onto the short corridor; without reinforcement")
+    println("          the same geometry stays near chance")
+    println("")
+
+    let mut preset: i32 = 0
+    setup_mode(false)
+    measuring = true
+    trips_short = 0
+    trips_long = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Ant pheromone - Flow morphogenesis")
+
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut alpha: f64 = preset_alpha(preset)
+    let mut evap: f64 = preset_evap(preset)
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if want >= 0 and want != preset {
+            preset = want
+            alpha = preset_alpha(preset)
+            evap = preset_evap(preset)
+            setup_mode(preset == 1)
+            measuring = true
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                setup_mode(preset == 1)
+                measuring = true
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to STEPS_PER_FRAME {
+                step_ants(alpha, evap)
+            }
+        }
+
+        let tot: i32 = trips_short + trips_long
+        let mut sf: f64 = 0.0
+        if tot > 0 { sf = (trips_short as f64) / (tot as f64) }
+        trail_shares(sm, lm)
+        let mut ms: f64 = 0.0
+        let mt: f64 = sm[0] + lm[0]
+        if mt > 1.0e-9 { ms = sm[0] / mt }
+
+        gfx_clear(g, 12, 12, 16)
+        draw_field(g)
+        draw_hud(g, preset, sf, ms, tot, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

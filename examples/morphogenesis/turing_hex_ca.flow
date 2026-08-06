@@ -1,0 +1,678 @@
+# TURING HEX CA: a Turing pattern with no differential equation in it.
+#
+# MODEL (Young, 1984 — a local activator with a lateral inhibitor)
+#   Young replaced Turing's two coupled reaction-diffusion equations with two
+#   counting operations on a lattice of black and white cells. Short-range
+#   activation is a disc of radius R1 around the cell; long-range inhibition
+#   is the annulus outside it, out to R2. The cell's next colour is the sign
+#   of the weighted difference:
+#
+#     w(cell) = w_a * (count of black cells within radius R1)
+#             - w_i * (count of black cells in R1 < r <= R2)
+#     cell becomes black if w > 0, white otherwise
+#
+#   Everything is updated at once. There is no chemistry, no time step and no
+#   diffusion constant, yet the picture is a Turing pattern: the same spots
+#   and the same spots-to-stripes crossover as the PDE, from the same cause,
+#   which is a short activator range beaten at long range by an inhibitor.
+#
+# WHY THIS FILE IS NOT hexagonal_ca.flow OR turing_spots.flow
+#   hexagonal_ca.flow runs Reiter's snowflake rule, which is a growth model
+#   with a mass budget. turing_spots.flow integrates the reaction-diffusion
+#   PDE. This file is the discrete activator-inhibitor rule, two weighted
+#   neighbour sums and a sign, and it runs on a TRIANGULAR lattice so that
+#   the six-fold order the rule produces can be measured directly rather than
+#   inferred through a square grid's own four-fold bias.
+#
+#   Cells are stored in odd-row offset coordinates and converted to axial
+#   (cube) coordinates to count rings, using the standard hex distance
+#
+#     hex_dist(dq, dr) = ( |dq| + |dr| + |dq + dr| ) / 2
+#
+#   Rows are drawn at their true hex positions: even rows at x, odd rows
+#   shifted by half a cell, so the lattice on screen is triangular.
+#
+# THE MEASUREMENT
+#   Two numbers, both computed on the live lattice every frame.
+#
+#   (a) SPACING. Black cells are grouped into connected regions by a flood
+#       fill over the six hex neighbours. Regions touching the border, and
+#       regions under 4 cells, are discarded. Each surviving region's
+#       centroid is taken in physical coordinates (x = col + 0.5 * (row odd),
+#       y = row * sqrt(3)/2), and the mean over spots of each spot's distance
+#       to its nearest neighbouring spot is the spacing. It is shown beside
+#       R2, the inhibition radius, which is the only length the rule contains.
+#       The spacing settles a little above R2: the inhibitor's reach is what
+#       keeps one spot from sitting next to another.
+#
+#   (b) PSI6, the hexatic order parameter,
+#
+#         psi6 = | mean over spots of ( 1/6 sum over its 6 nearest neighbours
+#                                       of exp(6 i theta) ) |
+#
+#       with theta the bond angle. It is near 0 for spots dropped at random
+#       and 1 for a perfect triangular lattice. It starts low and climbs as
+#       the rule anneals the arrangement; the HUD shows it against 1.00.
+#
+# NUMERICS
+#   96 x 96 hex lattice (9216 cells) at 5 px wide and 4 px per row, so the
+#   whole lattice fits the 512 field. One synchronous generation per
+#   displayed frame; a 217-cell neighbourhood at R2 = 8 is the largest, which
+#   is why the generation rate is one and not three. Neighbour offset lists
+#   are built once per preset, one list per row parity.
+#
+# PARAMETERS / KEYS
+#   1  SPOTS    R1 2  R2 5  w_i 0.30  seed 0.35   round spots on a lattice
+#   2  COARSE   R1 3  R2 8  w_i 0.235 seed 0.35   same rule, longer ranges
+#   3  STRIPES  R1 2  R2 5  w_i 0.375 seed 0.50   inhibition up: labyrinth
+#   4  SPARSE   R1 2  R2 6  w_i 0.22  seed 0.12   few seeds, wide spacing
+#   R  reseed     P  pause      Esc quit
+#
+# PHENOMENON
+#   From salt-and-pepper noise the lattice sorts itself into evenly spaced
+#   spots in three or four generations, then spends the rest of the run
+#   straightening their arrangement. The spacing never moves far from R2 and
+#   psi6 climbs while the picture stops changing, which is the annealing you
+#   can see happening: the pattern is already there long before it is ordered.
+#   Raising the inhibition weight alone turns the spots into stripes, the same
+#   crossover the reaction-diffusion version shows.
+#
+# Run: ./flow gfx examples/morphogenesis/turing_hex_ca.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function sqrt(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function atan2(y: f64, x: f64) -> f64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const GRID: i32 = 96
+const CELLS: i32 = 9216
+const CELL_W: i32 = 5
+const ROW_H: i32 = 4
+const OX: i32 = 16
+const OY: i32 = 64
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+
+const NB_MAX: i32 = 256
+const MAX_SPOTS: i32 = 2048
+const MIN_SPOT: i32 = 4
+const SQRT3_2: f64 = 0.8660254037844386
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG
+# ---------------------------------------------------------------------------
+
+let mut rng_state: u32 = 1177431901
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+# ---------------------------------------------------------------------------
+# Presets
+# ---------------------------------------------------------------------------
+
+function preset_r1(p: i32) -> i32 {
+    if p == 1 { return 3 }
+    return 2
+}
+
+function preset_r2(p: i32) -> i32 {
+    if p == 1 { return 8 }
+    if p == 3 { return 6 }
+    return 5
+}
+
+function preset_wi(p: i32) -> f64 {
+    if p == 1 { return 0.235 }
+    if p == 2 { return 0.375 }
+    if p == 3 { return 0.22 }
+    return 0.30
+}
+
+function preset_seed(p: i32) -> f64 {
+    if p == 2 { return 0.50 }
+    if p == 3 { return 0.12 }
+    return 0.35
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "COARSE" }
+    if p == 2 { return "STRIPES" }
+    if p == 3 { return "SPARSE" }
+    return "SPOTS"
+}
+
+# ---------------------------------------------------------------------------
+# The lattice. Odd-row offset storage, cube coordinates for the ring counts.
+#
+#   cube from odd-r offset:  x = col - (row - (row mod 2)) / 2,  z = row
+#   hex distance:            ( |dx| + |dy| + |dz| ) / 2  with y = -x - z
+#
+# Because a row's half-cell shift depends on its parity, the offset vector to
+# a ring neighbour differs between even and odd rows. Both lists are built
+# once, indexed by parity, and reused for every cell.
+# ---------------------------------------------------------------------------
+
+function hex_dist_offset(parity: i32, dcol: i32, drow: i32) -> i32 {
+    let base: i32 = parity + 200
+    let xs: i32 = 0 - (base - (base % 2)) / 2
+    let tr: i32 = base + drow
+    let xt: i32 = dcol - (tr - (tr % 2)) / 2
+    let dx: i32 = xt - xs
+    let dz: i32 = drow
+    let dy: i32 = 0 - dx - dz
+    let mut ax: i32 = dx
+    if ax < 0 { ax = 0 - ax }
+    let mut ay: i32 = dy
+    if ay < 0 { ay = 0 - ay }
+    let mut az: i32 = dz
+    if az < 0 { az = 0 - az }
+    return (ax + ay + az) / 2
+}
+
+function build_lists(in_dc: ptr<i32>, in_dr: ptr<i32>, in_n: ptr<i32>,
+                     ot_dc: ptr<i32>, ot_dr: ptr<i32>, ot_n: ptr<i32>,
+                     r1: i32, r2: i32) -> void {
+    let span: i32 = r2 + 2
+    for parity in 0 to 2 {
+        let mut ni: i32 = 0
+        let mut no: i32 = 0
+        for drow in 0 - r2 to r2 + 1 {
+            for dcol in 0 - span to span + 1 {
+                let d: i32 = hex_dist_offset(parity, dcol, drow)
+                if d <= r1 {
+                    if ni < NB_MAX {
+                        in_dc[parity * NB_MAX + ni] = dcol
+                        in_dr[parity * NB_MAX + ni] = drow
+                        ni = ni + 1
+                    }
+                } else {
+                    if d <= r2 {
+                        if no < NB_MAX {
+                            ot_dc[parity * NB_MAX + no] = dcol
+                            ot_dr[parity * NB_MAX + no] = drow
+                            no = no + 1
+                        }
+                    }
+                }
+            }
+        }
+        in_n[parity] = ni
+        ot_n[parity] = no
+    }
+}
+
+function seed_lattice(s: ptr<i32>, frac: f64) -> void {
+    for i in 0 to CELLS {
+        if rng_unit() < frac {
+            s[i] = 1
+        } else {
+            s[i] = 0
+        }
+    }
+}
+
+# One synchronous generation of Young's rule.
+function generation(s: ptr<i32>, out: ptr<i32>,
+                    in_dc: ptr<i32>, in_dr: ptr<i32>, in_n: ptr<i32>,
+                    ot_dc: ptr<i32>, ot_dr: ptr<i32>, ot_n: ptr<i32>,
+                    wa: f64, wi: f64) -> i32 {
+    let mut changed: i32 = 0
+    for row in 0 to GRID {
+        let parity: i32 = row % 2
+        let ni: i32 = in_n[parity]
+        let no: i32 = ot_n[parity]
+        let ib: i32 = parity * NB_MAX
+        for col in 0 to GRID {
+            let mut ca: i32 = 0
+            for k in 0 to ni {
+                let r2c: i32 = (row + in_dr[ib + k] + GRID) % GRID
+                let c2c: i32 = (col + in_dc[ib + k] + GRID + GRID) % GRID
+                ca = ca + s[r2c * GRID + c2c]
+            }
+            let mut ci: i32 = 0
+            for k in 0 to no {
+                let r2c: i32 = (row + ot_dr[ib + k] + GRID) % GRID
+                let c2c: i32 = (col + ot_dc[ib + k] + GRID + GRID) % GRID
+                ci = ci + s[r2c * GRID + c2c]
+            }
+            let w: f64 = wa * (ca as f64) - wi * (ci as f64)
+            let mut nv: i32 = 0
+            if w > 0.0 { nv = 1 }
+            let i: i32 = row * GRID + col
+            if nv != s[i] { changed = changed + 1 }
+            out[i] = nv
+        }
+    }
+    return changed
+}
+
+# ---------------------------------------------------------------------------
+# Measurement (a): spot centroids by flood fill over the six hex neighbours.
+# ---------------------------------------------------------------------------
+
+function label_spots(s: ptr<i32>, lab: ptr<i32>, stk: ptr<i32>,
+                     sx: ptr<f64>, sy: ptr<f64>) -> i32 {
+    # Six hex neighbours in odd-row offset coordinates, even rows then odd.
+    let nc: array<i32, 12> = [1, -1, 0, -1, 0, -1, 1, -1, 0, 1, 0, 1]
+    let nr: array<i32, 12> = [0, 0, -1, -1, 1, 1, 0, 0, -1, -1, 1, 1]
+
+    for i in 0 to CELLS {
+        lab[i] = 0
+    }
+    let mut mark: i32 = 0
+    let mut nspots: i32 = 0
+
+    for row0 in 0 to GRID {
+        for col0 in 0 to GRID {
+            let i0: i32 = row0 * GRID + col0
+            if s[i0] == 1 and lab[i0] == 0 {
+                mark = mark + 1
+                lab[i0] = mark
+                let mut top: i32 = 0
+                stk[top] = i0
+                top = top + 1
+                let mut cx: f64 = 0.0
+                let mut cy: f64 = 0.0
+                let mut cnt: i32 = 0
+                let mut edge: bool = false
+                while top > 0 {
+                    top = top - 1
+                    let c: i32 = stk[top]
+                    let cr: i32 = c / GRID
+                    let cc: i32 = c % GRID
+                    cx = cx + (cc as f64) + 0.5 * ((cr % 2) as f64)
+                    cy = cy + (cr as f64) * SQRT3_2
+                    cnt = cnt + 1
+                    if cc == 0 or cc == GRID - 1 or cr == 0 or cr == GRID - 1 {
+                        edge = true
+                    }
+                    let base: i32 = (cr % 2) * 6
+                    for k in 0 to 6 {
+                        let nrr: i32 = cr + nr[base + k]
+                        let ncc: i32 = cc + nc[base + k]
+                        if nrr >= 0 and nrr < GRID and ncc >= 0 and ncc < GRID {
+                            let j: i32 = nrr * GRID + ncc
+                            if s[j] == 1 and lab[j] == 0 {
+                                lab[j] = mark
+                                stk[top] = j
+                                top = top + 1
+                            }
+                        }
+                    }
+                }
+                if !edge and cnt >= MIN_SPOT and nspots < MAX_SPOTS {
+                    sx[nspots] = cx / (cnt as f64)
+                    sy[nspots] = cy / (cnt as f64)
+                    nspots = nspots + 1
+                }
+            }
+        }
+    }
+    return nspots
+}
+
+function mean_spacing(sx: ptr<f64>, sy: ptr<f64>, n: i32) -> f64 {
+    if n < 2 { return 0.0 }
+    let mut acc: f64 = 0.0
+    for i in 0 to n {
+        let mut best: f64 = 1.0e18
+        for j in 0 to n {
+            if j != i {
+                let dx: f64 = sx[j] - sx[i]
+                let dy: f64 = sy[j] - sy[i]
+                let d2: f64 = dx * dx + dy * dy
+                if d2 < best { best = d2 }
+            }
+        }
+        acc = acc + sqrt(best)
+    }
+    return acc / (n as f64)
+}
+
+# ---------------------------------------------------------------------------
+# Measurement (b): psi6 over each spot's six nearest neighbours.
+# ---------------------------------------------------------------------------
+
+function hexatic_order(sx: ptr<f64>, sy: ptr<f64>, n: i32) -> f64 {
+    if n < 8 { return 0.0 }
+    let mut gr: f64 = 0.0
+    let mut gi: f64 = 0.0
+    for i in 0 to n {
+        # Six nearest neighbours by insertion into a sorted list of six.
+        let bd: array<f64, 6> = [1.0e18, 1.0e18, 1.0e18, 1.0e18, 1.0e18, 1.0e18]
+        let bj: array<i32, 6> = [-1, -1, -1, -1, -1, -1]
+        for j in 0 to n {
+            if j != i {
+                let dx: f64 = sx[j] - sx[i]
+                let dy: f64 = sy[j] - sy[i]
+                let d2: f64 = dx * dx + dy * dy
+                if d2 < bd[5] {
+                    let mut k: i32 = 5
+                    while k > 0 and bd[k - 1] > d2 {
+                        bd[k] = bd[k - 1]
+                        bj[k] = bj[k - 1]
+                        k = k - 1
+                    }
+                    bd[k] = d2
+                    bj[k] = j
+                }
+            }
+        }
+        let mut lr: f64 = 0.0
+        let mut li: f64 = 0.0
+        for k in 0 to 6 {
+            let j: i32 = bj[k]
+            if j >= 0 {
+                let th: f64 = atan2(sy[j] - sy[i], sx[j] - sx[i])
+                lr = lr + cos(6.0 * th)
+                li = li + sin(6.0 * th)
+            }
+        }
+        gr = gr + lr / 6.0
+        gi = gi + li / 6.0
+    }
+    gr = gr / (n as f64)
+    gi = gi / (n as f64)
+    return sqrt(gr * gr + gi * gi)
+}
+
+# ---------------------------------------------------------------------------
+# Rendering: hexagon-shaped stamps on offset rows, so the lattice reads
+# triangular rather than square.
+# ---------------------------------------------------------------------------
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H {
+        let o: i32 = i * 3
+        fb[o] = 13 as u8
+        fb[o + 1] = 11 as u8
+        fb[o + 2] = 20 as u8
+    }
+}
+
+function paint_hex(fb: ptr<u8>, col: i32, row: i32,
+                   r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = OX + col * CELL_W + (row % 2) * 2
+    let py: i32 = OY + row * ROW_H
+    for dy in 0 to ROW_H {
+        # Widths 3, 5, 5, 3 make a stubby hexagon out of a 5 x 4 block.
+        let mut x0: i32 = 0
+        let mut w: i32 = CELL_W
+        if dy == 0 or dy == ROW_H - 1 {
+            x0 = 1
+            w = CELL_W - 2
+        }
+        let mut o: i32 = ((py + dy) * FB_W + px + x0) * 3
+        for dx in 0 to w {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, s: ptr<i32>) -> void {
+    clear_fb(fb)
+    for row in 0 to GRID {
+        for col in 0 to GRID {
+            if s[row * GRID + col] == 1 {
+                paint_hex(fb, col, row, 255, 186, 84)
+            } else {
+                paint_hex(fb, col, row, 30, 27, 44)
+            }
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, r1: i32, r2: i32, wi: f64,
+                  spacing: f64, psi6: f64, nspots: i32, gen: i32,
+                  changed: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "TURING HEX CA", 2, 240, 234, 224)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 196, 104)
+    let t3: i32 = gfx_draw_text(g, 268, 12, "R1", 1, 150, 144, 160)
+    let t4: i32 = gfx_draw_int(g, 288, 12, r1, 1, 236, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 302, 12, "R2", 1, 150, 144, 160)
+    let t6: i32 = gfx_draw_int(g, 322, 12, r2, 1, 236, 232, 244)
+    let t7: i32 = gfx_draw_text(g, 338, 12, "w_i", 1, 150, 144, 160)
+    let t8: i32 = gfx_draw_fixed(g, 362, 12, wi, 3, 1, 236, 232, 244)
+    let t9: i32 = gfx_draw_text(g, 404, 12, "GEN", 1, 150, 144, 160)
+    let ta: i32 = gfx_draw_int(g, 428, 12, gen, 1, 236, 232, 244)
+    let tb: i32 = gfx_draw_text(g, 456, 12, "FLIP", 1, 150, 144, 160)
+    let tc: i32 = gfx_draw_int(g, 484, 12, changed, 1, 236, 232, 244)
+
+    let td: i32 = gfx_draw_text(g, 8, 28, "SPACING", 1, 150, 144, 160)
+    let te: i32 = gfx_draw_fixed(g, 60, 28, spacing, 2, 1, 130, 255, 190)
+    let tf: i32 = gfx_draw_text(g, 104, 28, "R2", 1, 150, 144, 160)
+    let tg: i32 = gfx_draw_int(g, 124, 28, r2, 1, 130, 255, 190)
+    let th: i32 = gfx_draw_text(g, 144, 28, "PSI6", 1, 150, 144, 160)
+    let ti: i32 = gfx_draw_fixed(g, 176, 28, psi6, 3, 1, 130, 255, 190)
+    let tj: i32 = gfx_draw_text(g, 220, 28, "IDEAL 1.000", 1, 150, 144, 160)
+    let tk: i32 = gfx_draw_text(g, 306, 28, "SPOTS", 1, 150, 144, 160)
+    let tl: i32 = gfx_draw_int(g, 344, 28, nspots, 1, 236, 232, 244)
+    let tm: i32 = gfx_draw_text(g, 382, 28, "HEX LATTICE 96x96", 1, 118, 114, 132)
+
+    let tn: i32 = gfx_draw_text(g, 8, 42,
+        "1 SPOTS  2 COARSE  3 STRIPES  4 SPARSE  R RESEED  P PAUSE",
+        1, 112, 108, 128)
+    if paused {
+        let tp: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tq: i32 = gfx_draw_text(g, 8, 572,
+        "w = w_a*(black within R1) - w_i*(black in R1 < r <= R2); black if w > 0",
+        1, 124, 120, 140)
+    let tr: i32 = gfx_draw_text(g, 8, 582,
+        "hex_dist(dq,dr) = (|dq| + |dr| + |dq+dr|) / 2 on a triangular lattice",
+        1, 124, 120, 140)
+}
+
+# ---------------------------------------------------------------------------
+
+function headless_verify(sa: ptr<i32>, sb: ptr<i32>, lab: ptr<i32>,
+                         stk: ptr<i32>, sx: ptr<f64>, sy: ptr<f64>,
+                         in_dc: ptr<i32>, in_dr: ptr<i32>, in_n: ptr<i32>,
+                         ot_dc: ptr<i32>, ot_dr: ptr<i32>, ot_n: ptr<i32>) -> i32 {
+    let preset: i32 = 0
+    let r1: i32 = preset_r1(preset)
+    let r2: i32 = preset_r2(preset)
+    let wi: f64 = preset_wi(preset)
+    build_lists(in_dc, in_dr, in_n, ot_dc, ot_dr, ot_n, r1, r2)
+    seed_lattice(sa, preset_seed(preset))
+
+    println("")
+    println("  TURING HEX CA  --  spacing vs R2, hexatic order")
+    println("  ==============================================")
+    println("")
+
+    let mut gen: i32 = 0
+    let mut spacing: f64 = 0.0
+    let mut psi6: f64 = 0.0
+    let mut nspots: i32 = 0
+    let mut changed: i32 = 1
+    while gen < 80 and changed > 0 {
+        changed = generation(sa, sb, in_dc, in_dr, in_n,
+                             ot_dc, ot_dr, ot_n, 1.0, wi)
+        for i in 0 to CELLS {
+            sa[i] = sb[i]
+        }
+        gen = gen + 1
+    }
+    # Anneal a bit past quiescence so psi6 can climb.
+    for extra in 0 to 40 {
+        changed = generation(sa, sb, in_dc, in_dr, in_n,
+                             ot_dc, ot_dr, ot_n, 1.0, wi)
+        for i in 0 to CELLS {
+            sa[i] = sb[i]
+        }
+        gen = gen + 1
+    }
+    nspots = label_spots(sa, lab, stk, sx, sy)
+    spacing = mean_spacing(sx, sy, nspots)
+    psi6 = hexatic_order(sx, sy, nspots)
+    let r2f: f64 = r2 as f64
+    let ratio: f64 = 0.0
+    if r2f > 0.0 {
+        ratio = spacing / r2f
+    }
+
+    print("    generations run            : ")
+    printf("%9.0f", gen as f64)
+    println("")
+    print("    spots labelled             : ")
+    printf("%9.0f", nspots as f64)
+    println("")
+    print("    mean nearest-spot spacing  : ")
+    printf("%9.4f", spacing)
+    print("   R2 = ")
+    printf("%.0f", r2f)
+    println("")
+    print("    spacing / R2               : ")
+    printf("%9.4f", ratio)
+    println("   gate in [1.05, 1.80]")
+    print("    hexatic order psi6         : ")
+    printf("%9.4f", psi6)
+    println("   gate > 0.10")
+    println("")
+
+    let spots_ok: bool = nspots >= 8
+    let space_ok: bool = ratio >= 1.05 and ratio <= 1.80
+    let order_ok: bool = psi6 > 0.10
+    if !spots_ok {
+        println("    FAIL: too few spots to measure a lattice")
+        return 1
+    }
+    if !space_ok {
+        println("    FAIL: spacing left the band around R2")
+        return 2
+    }
+    if !order_ok {
+        println("    FAIL: hexatic order stayed below 0.10")
+        return 3
+    }
+    println("    PASS: spacing tracks R2 and psi6 shows triangular order")
+    return 0
+}
+
+function main() -> i32 {
+    let sa: array<i32, 9216> = [0, 0, 0, 0]
+    let sb: array<i32, 9216> = [0, 0, 0, 0]
+    let lab: array<i32, 9216> = [0, 0, 0, 0]
+    let stk: array<i32, 9216> = [0, 0, 0, 0]
+    let sx: array<f64, 2048> = [0.0, 0.0, 0.0, 0.0]
+    let sy: array<f64, 2048> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let in_dc: array<i32, 512> = [0, 0, 0, 0]
+    let in_dr: array<i32, 512> = [0, 0, 0, 0]
+    let in_n: array<i32, 2> = [0, 0]
+    let ot_dc: array<i32, 512> = [0, 0, 0, 0]
+    let ot_dr: array<i32, 512> = [0, 0, 0, 0]
+    let ot_n: array<i32, 2> = [0, 0]
+
+    let ver: i32 = headless_verify(sa, sb, lab, stk, sx, sy,
+                                   in_dc, in_dr, in_n, ot_dc, ot_dr, ot_n)
+    if ver != 0 {
+        return ver
+    }
+
+    let mut preset: i32 = 0
+    let mut r1: i32 = preset_r1(preset)
+    let mut r2: i32 = preset_r2(preset)
+    let mut wi: f64 = preset_wi(preset)
+    build_lists(in_dc, in_dr, in_n, ot_dc, ot_dr, ot_n, r1, r2)
+    seed_lattice(sa, preset_seed(preset))
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Turing hex CA - Flow morphogenesis")
+
+    let mut gen: i32 = 0
+    let mut changed: i32 = 0
+    let mut spacing: f64 = 0.0
+    let mut psi6: f64 = 0.0
+    let mut nspots: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if want >= 0 and want != preset {
+            preset = want
+            r1 = preset_r1(preset)
+            r2 = preset_r2(preset)
+            wi = preset_wi(preset)
+            build_lists(in_dc, in_dr, in_n, ot_dc, ot_dr, ot_n, r1, r2)
+            seed_lattice(sa, preset_seed(preset))
+            gen = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_lattice(sa, preset_seed(preset))
+                gen = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            changed = generation(sa, sb, in_dc, in_dr, in_n,
+                                 ot_dc, ot_dr, ot_n, 1.0, wi)
+            for i in 0 to CELLS {
+                sa[i] = sb[i]
+            }
+            gen = gen + 1
+            nspots = label_spots(sa, lab, stk, sx, sy)
+            spacing = mean_spacing(sx, sy, nspots)
+            psi6 = hexatic_order(sx, sy, nspots)
+        }
+
+        gfx_clear(g, 13, 11, 20)
+        draw_field(g, fb, sa)
+        draw_hud(g, preset, r1, r2, wi, spacing, psi6, nspots, gen,
+                 changed, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

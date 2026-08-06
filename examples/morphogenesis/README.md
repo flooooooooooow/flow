@@ -71,6 +71,11 @@ so every run of a preset is the same run.
 | [`lsystem_plant.flow`](lsystem_plant.flow) | A shoot extending and branching in order | Stochastic L-system, turtle over a growing prefix | `./flow gfx examples/morphogenesis/lsystem_plant.flow` |
 | [`lsystem_tree.flow`](lsystem_tree.flow) | A projected oak whose tips move in wind | Recursive 3D branching grammar | `./flow gfx examples/morphogenesis/lsystem_tree.flow` |
 | [`coral_ballistic.flow`](coral_ballistic.flow) | Porous columnar reef, fill under 0.5 | Ballistic deposition, shadowing instability | `./flow gfx examples/morphogenesis/coral_ballistic.flow` |
+| [`phase_field_dendrite.flow`](phase_field_dendrite.flow) | Six-fold dendrite; tip speed and arm count | Kobayashi anisotropic phase field | `./flow gfx examples/morphogenesis/phase_field_dendrite.flow` |
+| [`bz_3d_slice.flow`](bz_3d_slice.flow) | Scroll wave; period from midplane probe | Barkley medium in a 32^3 cube | `./flow gfx examples/morphogenesis/bz_3d_slice.flow` |
+| [`laplacian_growth.flow`](laplacian_growth.flow) | Dielectric-breakdown cluster; D_Rg near 1.7 | Niemeyer DBM with eta | `./flow gfx examples/morphogenesis/laplacian_growth.flow` |
+| [`viscous_fingering.flow`](viscous_fingering.flow) | Single finger; w/W near 1/2 | Saffman-Taylor channel proxy | `./flow gfx examples/morphogenesis/viscous_fingering.flow` |
+| [`mycelium.flow`](mycelium.flow) | Colony; hyphal length grows under depletion | Tip branching on a nutrient field | `./flow gfx examples/morphogenesis/mycelium.flow` |
 
 ## Cellular and discrete
 

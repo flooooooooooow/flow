@@ -1,0 +1,705 @@
+# ABELIAN SANDPILE: grains in, grains out, and a straight line over two decades.
+#
+# MODEL (Bak, Tang and Wiesenfeld, 1987)
+#   An L x L lattice of integer heights with open boundaries. One grain is
+#   dropped on a uniformly random site. Any site that reaches height 4 topples:
+#
+#       h[i] becomes h[i] - 4
+#       h[j] becomes h[j] + 1     for each of the four neighbours j
+#
+#   Grains handed across the edge leave the system. Toppling repeats until
+#   every site is below 4. That relaxation is one avalanche and its size s is
+#   the number of topplings it took. The order in which unstable sites are
+#   toppled does not change the final configuration or the count, which is
+#   what "abelian" means here (Dhar, 1990).
+#
+#   This is a discrete model, so it carries no `flow` block with `evolves as`:
+#   the state is an integer per site and the update is a toppling rule rather
+#   than a rate of change.
+#
+# WHAT IS MEASURED, AND AGAINST WHAT
+#
+#   1. CONSERVATION, exactly. Every grain is either still on the lattice or
+#      has left at the boundary. The program counts grains added, sums the
+#      heights, counts grains handed off the edge, and gates
+#
+#          added == stored + lost
+#
+#      as an integer identity with zero tolerance. In the stationary state the
+#      stored term stops growing, so outflow matches inflow: every grain added
+#      eventually leaves. The run reports the fraction that has left.
+#
+#   2. SCALE INVARIANCE. Avalanche sizes go into logarithmic bins, eight per
+#      decade, over 200000 avalanches taken after a transient. A straight line
+#      is fitted to log10 P(s) against log10 s over s in [10, 1000]. The sharp
+#      claim under test is that the points lie on a line across those two
+#      decades, so the gate is on R^2, set at 0.98. The slope is reported as
+#      tau.
+#
+#      Be careful with tau. The two-dimensional BTW avalanche-size exponent is
+#      usually quoted near 1.2 (Manna's simulations give about 1.22). The value
+#      you measure depends on the fitting range and on the lattice size, and
+#      the model shows multifractal rather than simple finite-size scaling
+#      (Tebaldi, De Menech and Stella, 1999), so a single exponent approximates
+#      a spectrum. The gate on tau is a window, [1.00, 1.45].
+#
+#   3. SIZE INDEPENDENCE OF THE MEAN HEIGHT. The stationary mean height is an
+#      intensive property of the critical state. It is measured at L = 32 and
+#      at L = 64 and the two are gated to agree within 0.05 of a grain. Both
+#      sit under the infinite-volume value 17/8 = 2.125 (Priezzhev, 1994),
+#      because an open boundary drains the sites near it.
+#
+# NUMERICS
+#   Relaxation uses an explicit stack of unstable sites with a membership flag,
+#   so the stack never holds more than L^2 entries. Sites are drawn from a
+#   deterministic LCG, thirty bits assembled from the top halves of two draws.
+#
+# REFERENCE
+#   P. Bak, C. Tang and K. Wiesenfeld, "Self-organized criticality: an
+#   explanation of the 1/f noise", Phys. Rev. Lett. 59:381-384 (1987).
+#   D. Dhar, "Self-organized critical state of sandpile automaton models",
+#   Phys. Rev. Lett. 64:1613-1616 (1990), for the abelian property.
+#   V. B. Priezzhev, "Structure of two-dimensional sandpile. I. Height
+#   probabilities", J. Stat. Phys. 74:955-979 (1994), for 17/8.
+#
+# LIVE VIEW / KEYS
+#   128 x 128 lattice. Four colours for heights 0 to 3, and every site that
+#   toppled during the frame is flashed. The HUD carries the running tau and
+#   R^2 from the live histogram, the mean height, and the conservation
+#   residual, which stays at zero.
+#
+#   1 UNIFORM   40 grains a frame at random sites, the critical steady state
+#   2 CENTRE    the lattice emptied, 400 grains a frame all on the centre site
+#   3 SINGLE    one grain a frame, so single avalanches are visible
+#   4 STORM     300 grains a frame at random sites
+#   R reseed    P pause    Esc quit
+#
+# Run: ./flow gfx examples/morphogenesis/sandpile.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function log10(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const MAXCELLS: i32 = 16384
+
+const GRID_LIVE: i32 = 128
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+
+# Histogram: eight logarithmic bins per decade, six decades.
+const NBINS: i32 = 48
+const PER_DECADE: f64 = 8.0
+const FIT_LO: i32 = 8            # s = 10
+const FIT_HI: i32 = 24           # s = 1000
+const MIN_BIN: f64 = 20.0
+
+const L_BIG: i32 = 64
+const L_SMALL: i32 = 32
+const TRANS_BIG: i32 = 60000
+const NAVAL_BIG: i32 = 200000
+const TRANS_SMALL: i32 = 20000
+const NAVAL_SMALL: i32 = 100000
+
+const TAU_LO: f64 = 1.00
+const TAU_HI: f64 = 1.45
+const R2_MIN: f64 = 0.98
+const HEIGHT_TOL: f64 = 0.05
+const HEIGHT_REF: f64 = 2.125    # 17/8, the infinite-volume mean height
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+let mut h: ptr<i32> = null       # heights
+let mut stk: ptr<i32> = null     # stack of unstable sites
+let mut instk: ptr<i32> = null   # membership flag, keeps the stack bounded
+let mut hot: ptr<i32> = null     # toppled during this frame, for the display
+let mut hist: ptr<f64> = null    # avalanche size histogram
+let mut fb: ptr<u8> = null
+
+let mut n_added: i64 = 0
+let mut n_lost: i64 = 0
+let mut stk_sp: i32 = 0
+
+let mut hist_total: f64 = 0.0
+let mut fit_tau: f64 = 0.0
+let mut fit_r2: f64 = 0.0
+let mut fit_pts: i32 = 0
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG. Thirty bits from the top halves of two draws.
+# ---------------------------------------------------------------------------
+
+let mut rng_state: u32 = 1901194261
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_u30() -> i32 {
+    let a: i32 = ((rng_next() >> 16) % 32768) as i32
+    let b: i32 = ((rng_next() >> 16) % 32768) as i32
+    return a * 32768 + b
+}
+
+function rng_below(n: i32) -> i32 {
+    return rng_u30() % n
+}
+
+# ---------------------------------------------------------------------------
+# The rule
+# ---------------------------------------------------------------------------
+
+function give(j: i32) -> void {
+    h[j] = h[j] + 1
+    if h[j] >= 4 {
+        if instk[j] == 0 {
+            stk[stk_sp] = j
+            instk[j] = 1
+            stk_sp = stk_sp + 1
+        }
+    }
+}
+
+# Relax the lattice from one seed site. Returns the number of topplings.
+function relax(l: i32, site: i32, mark: bool) -> i32 {
+    let mut top: i32 = 0
+    stk_sp = 0
+    if h[site] >= 4 {
+        stk[0] = site
+        instk[site] = 1
+        stk_sp = 1
+    }
+    while stk_sp > 0 {
+        stk_sp = stk_sp - 1
+        let i: i32 = stk[stk_sp]
+        instk[i] = 0
+        let x: i32 = i % l
+        let y: i32 = i / l
+        while h[i] >= 4 {
+            h[i] = h[i] - 4
+            top = top + 1
+            if mark { hot[i] = 1 }
+            if x > 0 { give(i - 1) } else { n_lost = n_lost + 1 }
+            if x < l - 1 { give(i + 1) } else { n_lost = n_lost + 1 }
+            if y > 0 { give(i - l) } else { n_lost = n_lost + 1 }
+            if y < l - 1 { give(i + l) } else { n_lost = n_lost + 1 }
+        }
+    }
+    return top
+}
+
+function drop_at(l: i32, site: i32, mark: bool) -> i32 {
+    h[site] = h[site] + 1
+    n_added = n_added + 1
+    return relax(l, site, mark)
+}
+
+function stored(l: i32) -> i64 {
+    let n: i32 = l * l
+    let mut s: i64 = 0
+    for i in 0 to n {
+        s = s + (h[i] as i64)
+    }
+    return s
+}
+
+function reset_lattice(l: i32, randomize: bool) -> void {
+    let n: i32 = l * l
+    for i in 0 to n {
+        instk[i] = 0
+        hot[i] = 0
+        if randomize {
+            h[i] = rng_below(4)
+        } else {
+            h[i] = 0
+        }
+    }
+    n_added = 0
+    n_lost = 0
+    n_added = stored(l)
+}
+
+# ---------------------------------------------------------------------------
+# Histogram and the straight-line fit
+# ---------------------------------------------------------------------------
+
+function hist_reset() -> void {
+    for k in 0 to NBINS {
+        hist[k] = 0.0
+    }
+    hist_total = 0.0
+}
+
+function hist_add(s: i32) -> void {
+    if s < 1 { return }
+    let k: i32 = (log10(s as f64) * PER_DECADE) as i32
+    if k >= 0 and k < NBINS {
+        hist[k] = hist[k] + 1.0
+        hist_total = hist_total + 1.0
+    }
+}
+
+function bin_edge(k: i32) -> f64 {
+    return pow(10.0, (k as f64) / PER_DECADE)
+}
+
+# Least squares on log10 P(s) against log10 s. Sets fit_tau, fit_r2, fit_pts.
+function fit_powerlaw() -> void {
+    fit_tau = 0.0
+    fit_r2 = 0.0
+    fit_pts = 0
+    if hist_total < 1.0 { return }
+    let mut n: f64 = 0.0
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut syy: f64 = 0.0
+    for k in FIT_LO to FIT_HI + 1 {
+        if hist[k] >= MIN_BIN {
+            let lo: f64 = bin_edge(k)
+            let hi: f64 = bin_edge(k + 1)
+            let width: f64 = hi - lo
+            let srep: f64 = pow(10.0, ((k as f64) + 0.5) / PER_DECADE)
+            let p: f64 = hist[k] / (hist_total * width)
+            let x: f64 = log10(srep)
+            let y: f64 = log10(p)
+            n = n + 1.0
+            sx = sx + x
+            sy = sy + y
+            sxx = sxx + x * x
+            sxy = sxy + x * y
+            syy = syy + y * y
+        }
+    }
+    fit_pts = n as i32
+    if n < 4.0 { return }
+    let dx: f64 = n * sxx - sx * sx
+    let dy: f64 = n * syy - sy * sy
+    if dx <= 0.0 or dy <= 0.0 { return }
+    let cov: f64 = n * sxy - sx * sy
+    fit_tau = 0.0 - cov / dx
+    fit_r2 = (cov * cov) / (dx * dy)
+}
+
+# ---------------------------------------------------------------------------
+# Driving
+# ---------------------------------------------------------------------------
+
+let mut drive_maxs: i32 = 0
+let mut drive_means: f64 = 0.0
+
+# Drop `ndrops` grains at random sites. Returns the mean height, sampled
+# every hundredth drop. Optionally files each avalanche in the histogram.
+function drive(l: i32, ndrops: i32, hist_on: bool) -> f64 {
+    let n: i32 = l * l
+    let mut hsum: f64 = 0.0
+    let mut hn: f64 = 0.0
+    let mut smax: i32 = 0
+    let mut ssum: f64 = 0.0
+    for d in 0 to ndrops {
+        let site: i32 = rng_below(n)
+        let s: i32 = drop_at(l, site, false)
+        if s > smax { smax = s }
+        ssum = ssum + (s as f64)
+        if hist_on { hist_add(s) }
+        if d % 100 == 0 {
+            hsum = hsum + (stored(l) as f64) / (n as f64)
+            hn = hn + 1.0
+        }
+    }
+    drive_maxs = smax
+    drive_means = ssum / (ndrops as f64)
+    if hn < 1.0 { return 0.0 }
+    return hsum / hn
+}
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+function col_r(hv: i32) -> i32 {
+    if hv <= 0 { return 26 }
+    if hv == 1 { return 40 }
+    if hv == 2 { return 72 }
+    return 246
+}
+
+function col_g(hv: i32) -> i32 {
+    if hv <= 0 { return 24 }
+    if hv == 1 { return 96 }
+    if hv == 2 { return 188 }
+    return 202
+}
+
+function col_b(hv: i32) -> i32 {
+    if hv <= 0 { return 46 }
+    if hv == 1 { return 170 }
+    if hv == 2 { return 152 }
+    return 92
+}
+
+function paint_cell(x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx) -> void {
+    for y in 0 to GRID_LIVE {
+        for x in 0 to GRID_LIVE {
+            let i: i32 = y * GRID_LIVE + x
+            let hv: i32 = h[i]
+            let mut r: i32 = col_r(hv)
+            let mut g2: i32 = col_g(hv)
+            let mut b: i32 = col_b(hv)
+            if hot[i] == 1 {
+                r = r / 3 + 172
+                g2 = g2 / 3 + 42
+                b = b / 3 + 52
+            }
+            paint_cell(x, y, r, g2, b)
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "CENTRE" }
+    if p == 2 { return "SINGLE" }
+    if p == 3 { return "STORM" }
+    return "UNIFORM"
+}
+
+function preset_drops(p: i32) -> i32 {
+    if p == 1 { return 400 }
+    if p == 2 { return 1 }
+    if p == 3 { return 300 }
+    return 40
+}
+
+function draw_hud(g: Gfx, preset: i32, meanh: f64, resid: f64,
+                  avals: f64, lastmax: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "ABELIAN SANDPILE", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 236, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 300, 12, "L", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 312, 12, GRID_LIVE, 1, 234, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 348, 12, "MEAN h", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 392, 12, meanh, 3, 1, 120, 255, 190)
+    let t7: i32 = gfx_draw_text(g, 8, 28, "tau", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 32, 28, fit_tau, 3, 1, 255, 198, 96)
+    let t9: i32 = gfx_draw_text(g, 80, 28, "R^2", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 104, 28, fit_r2, 4, 1, 255, 198, 96)
+    let tb: i32 = gfx_draw_text(g, 162, 28, "AVALANCHES", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 232, 28, avals, 0, 1, 234, 232, 244)
+    let td: i32 = gfx_draw_text(g, 300, 28, "LARGEST", 1, 150, 146, 168)
+    let te: i32 = gfx_draw_int(g, 348, 28, lastmax, 1, 234, 232, 244)
+    let tf: i32 = gfx_draw_text(g, 404, 28, "added-stored-lost", 1, 150, 146, 168)
+    let tg: i32 = gfx_draw_fixed(g, 404, 40, resid, 0, 1, 120, 255, 190)
+    let th: i32 = gfx_draw_text(g, 8, 42,
+        "1 UNIFORM  2 CENTRE  3 SINGLE  4 STORM  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let ti: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tj: i32 = gfx_draw_text(g, 8, 572,
+        "h >= 4 topples: h -= 4, each of the four neighbours +1, edges leak",
+        1, 122, 118, 144)
+    let tk: i32 = gfx_draw_text(g, 8, 582,
+        "no tuned parameter: the pile finds the critical slope by itself",
+        1, 122, 118, 144)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    h = calloc(MAXCELLS as i64, 4 as i64)
+    stk = calloc((MAXCELLS + 8) as i64, 4 as i64)
+    instk = calloc(MAXCELLS as i64, 4 as i64)
+    hot = calloc(MAXCELLS as i64, 4 as i64)
+    hist = calloc(NBINS as i64, 8 as i64)
+    fb = calloc(786432 as i64, 1 as i64)
+
+    println("")
+    println("  ABELIAN SANDPILE  --  exact conservation, and scale invariance measured")
+    println("  =======================================================================")
+    println("")
+    println("    Bak, Tang and Wiesenfeld (1987). L x L open lattice, one grain on a")
+    println("    uniformly random site, any site at height 4 topples to its four")
+    println("    neighbours, grains handed across the edge leave.")
+    println("")
+
+    # -- 1. the driven run at L = 64 -----------------------------------------
+    hist_reset()
+    reset_lattice(L_BIG, false)
+    let mh_transient: f64 = drive(L_BIG, TRANS_BIG, false)
+    let mh_big: f64 = drive(L_BIG, NAVAL_BIG, true)
+    let st_big: i64 = stored(L_BIG)
+    let resid_big: i64 = n_added - st_big - n_lost
+    let added_big: f64 = n_added as f64
+    let lost_big: f64 = n_lost as f64
+    let mean_s: f64 = drive_means
+    let max_s: i32 = drive_maxs
+
+    println("  1. CONSERVATION  (L = 64, empty start, 60000 transient + 200000 measured drops)")
+    println("")
+    print("     grains added                 : ")
+    printf("%12.0f", added_big)
+    println("")
+    print("     grains stored on the lattice : ")
+    printf("%12.0f", st_big as f64)
+    println("")
+    print("     grains lost off the edge     : ")
+    printf("%12.0f", lost_big)
+    println("")
+    print("     added - stored - lost        : ")
+    printf("%12.0f", resid_big as f64)
+    println("     gate exactly 0")
+    print("     fraction of grains that left : ")
+    printf("%12.6f", lost_big / added_big)
+    println("     the pile is stationary, so inflow leaves")
+    println("")
+
+    # -- 2. avalanche statistics ---------------------------------------------
+    fit_powerlaw()
+    let tau_big: f64 = fit_tau
+    let r2_big: f64 = fit_r2
+    let pts_big: i32 = fit_pts
+    let counted: f64 = hist_total
+
+    println("  2. SCALE INVARIANCE  (200000 avalanches, eight log bins per decade)")
+    println("")
+    print("     avalanches with s >= 1       : ")
+    printf("%12.0f", counted)
+    print("   of ")
+    printf("%.0f", NAVAL_BIG as f64)
+    println(" drops")
+    print("     mean avalanche size <s>      : ")
+    printf("%12.3f", mean_s)
+    print("   largest ")
+    printf("%.0f", max_s as f64)
+    println("")
+    println("")
+    println("        s range        log10 s     log10 P(s)      count")
+    println("        -----------   ---------   ------------   --------")
+    for k in FIT_LO to FIT_HI + 1 {
+        if hist[k] >= MIN_BIN {
+            let lo: f64 = bin_edge(k)
+            let hi: f64 = bin_edge(k + 1)
+            let srep: f64 = pow(10.0, ((k as f64) + 0.5) / PER_DECADE)
+            let p: f64 = hist[k] / (counted * (hi - lo))
+            print("        ")
+            printf("%7.1f", lo)
+            print(" -")
+            printf("%7.1f", hi)
+            printf("   %9.4f", log10(srep))
+            printf("   %12.5f", log10(p))
+            printf("   %8.0f", hist[k])
+            println("")
+        }
+    }
+    println("")
+    print("     fitted over s in [10, 1000], ")
+    printf("%.0f", pts_big as f64)
+    println(" bins")
+    print("     tau (minus the slope)        : ")
+    printf("%12.4f", tau_big)
+    print("     gate [")
+    printf("%.2f", TAU_LO)
+    print(", ")
+    printf("%.2f", TAU_HI)
+    println("]")
+    print("     R^2 of the straight line     : ")
+    printf("%12.6f", r2_big)
+    print("     gate > ")
+    printf("%.2f", R2_MIN)
+    println("")
+    println("")
+    println("     The literature quotes tau near 1.2 for two dimensions, and the")
+    println("     value depends on the fitting range and the lattice size; BTW in 2D")
+    println("     has multifractal scaling, so one exponent stands in for a spectrum.")
+    println("     The sharp claim tested here is the straight line over two decades.")
+    println("")
+
+    # -- 3. mean height at two sizes -----------------------------------------
+    hist_reset()
+    reset_lattice(L_SMALL, false)
+    let mh_s_transient: f64 = drive(L_SMALL, TRANS_SMALL, false)
+    let mh_small: f64 = drive(L_SMALL, NAVAL_SMALL, false)
+    let st_small: i64 = stored(L_SMALL)
+    let resid_small: i64 = n_added - st_small - n_lost
+    let dh: f64 = fabs(mh_big - mh_small)
+
+    println("  3. THE STATIONARY MEAN HEIGHT IS INTENSIVE")
+    println("")
+    print("     mean height at L = 32        : ")
+    printf("%12.5f", mh_small)
+    println("")
+    print("     mean height at L = 64        : ")
+    printf("%12.5f", mh_big)
+    println("")
+    print("     difference                   : ")
+    printf("%12.5f", dh)
+    print("     gate < ")
+    printf("%.2f", HEIGHT_TOL)
+    println("")
+    print("     infinite volume 17/8         : ")
+    printf("%12.5f", HEIGHT_REF)
+    println("     Priezzhev (1994); an open edge drains, so both sit below it")
+    print("     added - stored - lost, L = 32: ")
+    printf("%12.0f", resid_small as f64)
+    println("     gate exactly 0")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if tau_big != tau_big or r2_big != r2_big or mh_big != mh_big {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if resid_big != 0 {
+        println("    FAIL: grains were not conserved at L = 64")
+        return 2
+    }
+    if resid_small != 0 {
+        println("    FAIL: grains were not conserved at L = 32")
+        return 3
+    }
+    if counted < 50000.0 {
+        println("    FAIL: too few avalanches reached the histogram")
+        return 4
+    }
+    if pts_big < 8 {
+        println("    FAIL: the fitting range holds too few populated bins")
+        return 5
+    }
+    if r2_big < R2_MIN {
+        println("    FAIL: log P(s) against log s is not a straight line")
+        return 6
+    }
+    if tau_big < TAU_LO or tau_big > TAU_HI {
+        println("    FAIL: tau is outside the stated window")
+        return 7
+    }
+    if dh > HEIGHT_TOL {
+        println("    FAIL: the stationary mean height depends on the lattice size")
+        return 8
+    }
+    if mh_big > HEIGHT_REF {
+        println("    FAIL: the mean height exceeds the infinite-volume 17/8")
+        return 9
+    }
+    println("    PASS: added = stored + lost exactly at both sizes, log P(s) is a")
+    println("          straight line over two decades, and the stationary mean height")
+    println("          is the same at L = 32 and L = 64")
+    println("")
+
+    # -- live view -----------------------------------------------------------
+    hist_reset()
+    reset_lattice(GRID_LIVE, true)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Abelian sandpile - Flow morphogenesis")
+
+    let mut preset: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut lastmax: i32 = 0
+    let ncell: i32 = GRID_LIVE * GRID_LIVE
+    let centre: i32 = (GRID_LIVE / 2) * GRID_LIVE + GRID_LIVE / 2
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if want >= 0 and want != preset {
+            preset = want
+            hist_reset()
+            if preset == 1 {
+                reset_lattice(GRID_LIVE, false)
+            } else {
+                reset_lattice(GRID_LIVE, true)
+            }
+            lastmax = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                hist_reset()
+                reset_lattice(GRID_LIVE, true)
+                lastmax = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        for i in 0 to ncell {
+            hot[i] = 0
+        }
+
+        if !paused {
+            let drops: i32 = preset_drops(preset)
+            for d in 0 to drops {
+                let mut site: i32 = centre
+                if preset != 1 { site = rng_below(ncell) }
+                let s: i32 = drop_at(GRID_LIVE, site, true)
+                hist_add(s)
+                if s > lastmax { lastmax = s }
+            }
+        }
+
+        if frame % 15 == 0 { fit_powerlaw() }
+
+        let meanh: f64 = (stored(GRID_LIVE) as f64) / (ncell as f64)
+        let resid: f64 = (n_added - stored(GRID_LIVE) - n_lost) as f64
+
+        gfx_clear(g, 12, 10, 18)
+        draw_field(g)
+        draw_hud(g, preset, meanh, resid, hist_total, lastmax, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

@@ -1,0 +1,988 @@
+# BONE REMODELLING: Wolff's law as a mechanostat on a lattice of bars.
+#
+# MODEL
+#   A 17 x 17 grid of nodes, spacing 1, joined by axial bars in four
+#   families: horizontal, vertical, and both diagonals. 1056 bars, 578
+#   degrees of freedom. Bar j has unit direction c, length L, area A and
+#   stiffness E A / L. The lattice is loaded by tractions on its boundary
+#   and solved for nodal equilibrium
+#
+#     K(A) u = F
+#
+#   by Jacobi-preconditioned conjugate gradients. No node is clamped. The
+#   loads are self-equilibrated, so the three rigid body modes are projected
+#   out of the residual and the search direction instead, which leaves the
+#   minimum-norm solution and no spurious reaction anywhere.
+#
+#   The axial strain of bar j is eps = ((u_q - u_p) . c) / L and its strain
+#   energy density is U = E eps^2 / 2. Each bar then adapts, which is the
+#   `flow BarArea` block below, verbatim:
+#
+#     dA/dt = k (U - U_set) A
+#
+#   with a floor: no strut is resorbed below A_min, so the state that evolves
+#   is the adaptive part a = A - A_min and the rule is
+#
+#     da/dt = k (U - U_set) a        A = A_min + a
+#
+#   U_set is the mechanostat setpoint (Frost 1987), taken as the current
+#   volume-weighted mean stimulus, U_set = sum(L a U) / sum(L a). A bar above
+#   the setpoint apposes, a bar below it resorbs, which is Huiskes' adaptive
+#   elasticity with the reference stimulus set by the tissue itself.
+#
+# WHY THAT SETPOINT, AND WHAT IT BUYS
+#   Two exact properties follow from choosing U_set as the weighted mean.
+#
+#   Mass. d/dt sum(L a) = k sum(L a (U - U_set)) = 0. The adaptive volume is
+#   conserved by the rule, not by fiat. The driver renormalises it each step
+#   anyway and the sum is gated to 1e-12.
+#
+#   Compliance. For a fixed load, dC/dA_j = -2 L_j U_j, so
+#
+#     dC/dt = -2 k sum( L a (U - U_set)^2 )  <=  0
+#
+#   The mechanostat is a descent direction for compliance at constant mass.
+#   That is the claim the program then checks step by step.
+#
+# THE MEASUREMENTS
+#   1. Compliance C = F . u falls at every adaptation step once the transient
+#      has passed, and converges. The reduction against the uniform starting
+#      lattice is reported. The energy identity C = 2 sum(U A L) is checked
+#      alongside it, which is an independent test of the solve.
+#
+#   2. Wolff's law properly stated: the surviving bars line up with the
+#      principal stress directions. The same rule is run under two loads.
+#
+#      PURE SHEAR. Principal axes at exactly +45 and -45 degrees. The two
+#      diagonal families should take nearly all the material and the two
+#      axis-aligned families almost none.
+#
+#      UNIAXIAL TENSION along x. Principal axis at 0 degrees. The
+#      distribution should flip: the horizontal family takes the material.
+#
+#      Nothing differs between the two runs but the boundary tractions. The
+#      contrast is the measurement.
+#
+#   3. Total adaptive volume is conserved to 1e-12 after renormalisation.
+#
+# PARAMETERS
+#   E 1, A0 1, A_min 0.04, k 1, adaptation step 0.1, 300 steps. The load is
+#   scaled once so the uniform lattice sits exactly at stimulus U_set = 1;
+#   a bar at twice the setpoint then gains ten per cent of its adaptive area
+#   per step. CG runs to a relative residual of 1e-11.
+#
+# KEYS
+#   1 SHEAR      pure shear, principal axes at +-45
+#   2 TENSION X  uniaxial along x, principal axis at 0
+#   3 BIAXIAL    equal tension on both axes
+#   4 TENSION Y  uniaxial along y, principal axis at 90
+#   R restart    P pause      Esc quit
+#
+# REFERENCES
+#   Wolff, J. (1892). Das Gesetz der Transformation der Knochen. Hirschwald.
+#   Frost, H. M. (1987). Bone "mass" and the "mechanostat": a proposal.
+#     The Anatomical Record 219, 1-9.
+#   Huiskes, R., Weinans, H., Grootenboer, H. J., Dalstra, M., Fudala, B.,
+#     Slooff, T. J. (1987). Adaptive bone-remodeling theory applied to
+#     prosthetic-design analysis. Journal of Biomechanics 20, 1135-1150.
+#
+# Run: ./flow gfx examples/morphogenesis/bone_remodelling.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const NGRID: i32 = 17
+const NNODE: i32 = 289
+const NDOF: i32 = 578
+const NBAR: i32 = 1056
+
+const EMOD: f64 = 1.0
+const A0: f64 = 1.0
+const A_MIN: f64 = 0.04
+const GAIN: f64 = 1.0
+const NSTEP: i32 = 300
+const CG_TOL: f64 = 0.00000000001
+const CG_MAXIT: i32 = 4000
+const SQRT2: f64 = 1.4142135623730951
+
+# Load cases.
+const LOAD_SHEAR: i32 = 0
+const LOAD_TENSX: i32 = 1
+const LOAD_BIAX: i32 = 2
+const LOAD_TENSY: i32 = 3
+
+# Gates.
+const MONO_TOL: f64 = 0.000000000001   # roundoff allowance on strict decrease
+const CONV_MAX: f64 = 0.001            # relative change of C over 20 steps
+const RED_MIN: f64 = 1.50              # compliance reduction against uniform
+const DIAG_MIN: f64 = 0.95             # diagonal share under pure shear
+const AXIAL_MIN: f64 = 0.90            # axial share under uniaxial tension
+const MASS_TOL: f64 = 0.000000000001
+const IDENT_TOL: f64 = 0.000000001
+const RES_MAX: f64 = 0.0000000001
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const MARGIN: i32 = 20
+const STEP_PX: i32 = 29
+const MAX_FRAMES: i32 = 6000
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+# ---------------------------------------------------------------------------
+# The adaptation law. One line; the rest of this file is the solve and the
+# measurement. The driver supplies U and U_set per bar.
+# ---------------------------------------------------------------------------
+
+flow BarArea {
+    state a : f64 = 0.96        # adaptive part of the area, A = A_min + a
+
+    param u     : f64 = 0.0     # strain energy density in this bar
+    param u_set : f64 = 1.0     # mechanostat setpoint
+    param k     : f64 = 1.0     # remodelling gain
+
+    solver { dt 100 ms  method rk4 }
+
+    a evolves as k * (u - u_set) * a
+}
+
+# ---------------------------------------------------------------------------
+# Lattice
+# ---------------------------------------------------------------------------
+
+let mut bp: ptr<i32> = null      # start node
+let mut bq: ptr<i32> = null      # end node
+let mut bcx: ptr<f64> = null     # unit direction
+let mut bcy: ptr<f64> = null
+let mut blen: ptr<f64> = null
+let mut bfam: ptr<i32> = null    # 0 horizontal 1 vertical 2 +45 3 -45
+let mut barea: ptr<f64> = null   # A = A_min + a
+let mut badp: ptr<f64> = null    # a
+let mut bu: ptr<f64> = null      # strain energy density
+
+let mut fvec: ptr<f64> = null
+let mut uvec: ptr<f64> = null
+let mut rvec: ptr<f64> = null
+let mut zvec: ptr<f64> = null
+let mut pvec: ptr<f64> = null
+let mut apv: ptr<f64> = null
+let mut dinv: ptr<f64> = null
+let mut mode1: ptr<f64> = null   # rigid body translation in x
+let mut mode2: ptr<f64> = null   # rigid body translation in y
+let mut mode3: ptr<f64> = null   # rigid body rotation
+let mut chist: ptr<f64> = null
+
+let mut nbar: i32 = 0
+let mut v0adp: f64 = 0.0
+let mut cg_iters: i32 = 0
+let mut cg_res: f64 = 0.0
+let mut u_set: f64 = 1.0
+
+function alloc_all() -> void {
+    bp = calloc(NBAR as i64, 4) as ptr<i32>
+    bq = calloc(NBAR as i64, 4) as ptr<i32>
+    bcx = calloc(NBAR as i64, 8) as ptr<f64>
+    bcy = calloc(NBAR as i64, 8) as ptr<f64>
+    blen = calloc(NBAR as i64, 8) as ptr<f64>
+    bfam = calloc(NBAR as i64, 4) as ptr<i32>
+    barea = calloc(NBAR as i64, 8) as ptr<f64>
+    badp = calloc(NBAR as i64, 8) as ptr<f64>
+    bu = calloc(NBAR as i64, 8) as ptr<f64>
+    fvec = calloc(NDOF as i64, 8) as ptr<f64>
+    uvec = calloc(NDOF as i64, 8) as ptr<f64>
+    rvec = calloc(NDOF as i64, 8) as ptr<f64>
+    zvec = calloc(NDOF as i64, 8) as ptr<f64>
+    pvec = calloc(NDOF as i64, 8) as ptr<f64>
+    apv = calloc(NDOF as i64, 8) as ptr<f64>
+    dinv = calloc(NDOF as i64, 8) as ptr<f64>
+    mode1 = calloc(NDOF as i64, 8) as ptr<f64>
+    mode2 = calloc(NDOF as i64, 8) as ptr<f64>
+    mode3 = calloc(NDOF as i64, 8) as ptr<f64>
+    chist = calloc((NSTEP + 8) as i64, 8) as ptr<f64>
+}
+
+function add_bar(p: i32, q: i32, cx: f64, cy: f64, ln: f64, fam: i32) -> void {
+    bp[nbar] = p
+    bq[nbar] = q
+    bcx[nbar] = cx
+    bcy[nbar] = cy
+    blen[nbar] = ln
+    bfam[nbar] = fam
+    barea[nbar] = A0
+    badp[nbar] = A0 - A_MIN
+    nbar = nbar + 1
+}
+
+function build_lattice() -> void {
+    nbar = 0
+    let d: f64 = 1.0 / SQRT2
+    for y in 0 to NGRID {
+        for x in 0 to NGRID - 1 {
+            add_bar(y * NGRID + x, y * NGRID + x + 1, 1.0, 0.0, 1.0, 0)
+        }
+    }
+    for y in 0 to NGRID - 1 {
+        for x in 0 to NGRID {
+            add_bar(y * NGRID + x, (y + 1) * NGRID + x, 0.0, 1.0, 1.0, 1)
+        }
+    }
+    for y in 0 to NGRID - 1 {
+        for x in 0 to NGRID - 1 {
+            add_bar(y * NGRID + x, (y + 1) * NGRID + x + 1, d, d, SQRT2, 2)
+        }
+    }
+    for y in 0 to NGRID - 1 {
+        for x in 1 to NGRID {
+            add_bar(y * NGRID + x, (y + 1) * NGRID + x - 1, 0.0 - d, d, SQRT2, 3)
+        }
+    }
+    v0adp = 0.0
+    for j in 0 to nbar {
+        v0adp = v0adp + blen[j] * badp[j]
+    }
+}
+
+# The three rigid body modes, orthonormal. Projecting them out replaces the
+# usual arbitrary pins and leaves no reaction force anywhere.
+function build_modes() -> void {
+    let cc: f64 = ((NGRID - 1) as f64) * 0.5
+    let mut n1: f64 = 0.0
+    let mut n3: f64 = 0.0
+    for i in 0 to NNODE {
+        let x: f64 = (i % NGRID) as f64
+        let y: f64 = (i / NGRID) as f64
+        mode1[2 * i] = 1.0
+        mode1[2 * i + 1] = 0.0
+        mode2[2 * i] = 0.0
+        mode2[2 * i + 1] = 1.0
+        mode3[2 * i] = 0.0 - (y - cc)
+        mode3[2 * i + 1] = x - cc
+        n1 = n1 + 1.0
+        n3 = n3 + (y - cc) * (y - cc) + (x - cc) * (x - cc)
+    }
+    let s1: f64 = 1.0 / sqrt(n1)
+    let s3: f64 = 1.0 / sqrt(n3)
+    for i in 0 to NDOF {
+        mode1[i] = mode1[i] * s1
+        mode2[i] = mode2[i] * s1
+        mode3[i] = mode3[i] * s3
+    }
+}
+
+function dotv(a: ptr<f64>, b: ptr<f64>) -> f64 {
+    let mut s: f64 = 0.0
+    for i in 0 to NDOF {
+        s = s + a[i] * b[i]
+    }
+    return s
+}
+
+function project(v: ptr<f64>) -> void {
+    let d1: f64 = dotv(v, mode1)
+    let d2: f64 = dotv(v, mode2)
+    let d3: f64 = dotv(v, mode3)
+    for i in 0 to NDOF {
+        v[i] = v[i] - d1 * mode1[i] - d2 * mode2[i] - d3 * mode3[i]
+    }
+}
+
+# Boundary tractions of unit magnitude, lumped onto the edge nodes. Every
+# case below is self-equilibrated in force and in moment.
+function build_forces(load: i32) -> void {
+    for i in 0 to NDOF {
+        fvec[i] = 0.0
+    }
+    let e: i32 = NGRID - 1
+    let sx: bool = load == LOAD_TENSX or load == LOAD_BIAX
+    let sy: bool = load == LOAD_TENSY or load == LOAD_BIAX
+    for y in 0 to e {
+        let a: i32 = y * NGRID + e
+        let b: i32 = (y + 1) * NGRID + e
+        let c: i32 = y * NGRID
+        let d: i32 = (y + 1) * NGRID
+        if load == LOAD_SHEAR {
+            fvec[2 * a + 1] = fvec[2 * a + 1] + 0.5
+            fvec[2 * b + 1] = fvec[2 * b + 1] + 0.5
+            fvec[2 * c + 1] = fvec[2 * c + 1] - 0.5
+            fvec[2 * d + 1] = fvec[2 * d + 1] - 0.5
+        }
+        if sx {
+            fvec[2 * a] = fvec[2 * a] + 0.5
+            fvec[2 * b] = fvec[2 * b] + 0.5
+            fvec[2 * c] = fvec[2 * c] - 0.5
+            fvec[2 * d] = fvec[2 * d] - 0.5
+        }
+    }
+    for x in 0 to e {
+        let a: i32 = e * NGRID + x
+        let b: i32 = e * NGRID + x + 1
+        if load == LOAD_SHEAR {
+            fvec[2 * a] = fvec[2 * a] + 0.5
+            fvec[2 * b] = fvec[2 * b] + 0.5
+            fvec[2 * x] = fvec[2 * x] - 0.5
+            fvec[2 * (x + 1)] = fvec[2 * (x + 1)] - 0.5
+        }
+        if sy {
+            fvec[2 * a + 1] = fvec[2 * a + 1] + 0.5
+            fvec[2 * b + 1] = fvec[2 * b + 1] + 0.5
+            fvec[2 * x + 1] = fvec[2 * x + 1] - 0.5
+            fvec[2 * (x + 1) + 1] = fvec[2 * (x + 1) + 1] - 0.5
+        }
+    }
+    project(fvec)
+}
+
+# ---------------------------------------------------------------------------
+# Solve
+# ---------------------------------------------------------------------------
+
+function matvec(x: ptr<f64>, y: ptr<f64>) -> void {
+    for i in 0 to NDOF {
+        y[i] = 0.0
+    }
+    for j in 0 to nbar {
+        let p: i32 = bp[j]
+        let q: i32 = bq[j]
+        let cx: f64 = bcx[j]
+        let cy: f64 = bcy[j]
+        let d: f64 = (x[2 * q] - x[2 * p]) * cx + (x[2 * q + 1] - x[2 * p + 1]) * cy
+        let f: f64 = EMOD * barea[j] / blen[j] * d
+        y[2 * p] = y[2 * p] - f * cx
+        y[2 * p + 1] = y[2 * p + 1] - f * cy
+        y[2 * q] = y[2 * q] + f * cx
+        y[2 * q + 1] = y[2 * q + 1] + f * cy
+    }
+}
+
+function build_diag() -> void {
+    for i in 0 to NDOF {
+        dinv[i] = 0.0
+    }
+    for j in 0 to nbar {
+        let k: f64 = EMOD * barea[j] / blen[j]
+        let p: i32 = bp[j]
+        let q: i32 = bq[j]
+        let ax: f64 = k * bcx[j] * bcx[j]
+        let ay: f64 = k * bcy[j] * bcy[j]
+        dinv[2 * p] = dinv[2 * p] + ax
+        dinv[2 * p + 1] = dinv[2 * p + 1] + ay
+        dinv[2 * q] = dinv[2 * q] + ax
+        dinv[2 * q + 1] = dinv[2 * q + 1] + ay
+    }
+    for i in 0 to NDOF {
+        if dinv[i] > 0.0 {
+            dinv[i] = 1.0 / dinv[i]
+        } else {
+            dinv[i] = 1.0
+        }
+    }
+}
+
+# Jacobi-preconditioned CG in the complement of the rigid body modes,
+# warm-started from the previous step's displacement.
+function cg_solve() -> void {
+    build_diag()
+    project(uvec)
+    matvec(uvec, apv)
+    let mut fnorm: f64 = sqrt(dotv(fvec, fvec))
+    if fnorm <= 0.0 { fnorm = 1.0 }
+    for i in 0 to NDOF {
+        rvec[i] = fvec[i] - apv[i]
+    }
+    project(rvec)
+    for i in 0 to NDOF {
+        zvec[i] = dinv[i] * rvec[i]
+    }
+    project(zvec)
+    for i in 0 to NDOF {
+        pvec[i] = zvec[i]
+    }
+    let mut rz: f64 = dotv(rvec, zvec)
+    let mut it: i32 = 0
+    while it < CG_MAXIT {
+        matvec(pvec, apv)
+        project(apv)
+        let pap: f64 = dotv(pvec, apv)
+        if pap <= 0.0 { break }
+        let al: f64 = rz / pap
+        for i in 0 to NDOF {
+            uvec[i] = uvec[i] + al * pvec[i]
+            rvec[i] = rvec[i] - al * apv[i]
+        }
+        it = it + 1
+        let rn: f64 = sqrt(dotv(rvec, rvec))
+        if rn / fnorm < CG_TOL {
+            cg_res = rn / fnorm
+            cg_iters = it
+            project(uvec)
+            return
+        }
+        for i in 0 to NDOF {
+            zvec[i] = dinv[i] * rvec[i]
+        }
+        project(zvec)
+        let rznew: f64 = dotv(rvec, zvec)
+        let be: f64 = rznew / rz
+        rz = rznew
+        for i in 0 to NDOF {
+            pvec[i] = zvec[i] + be * pvec[i]
+        }
+    }
+    cg_res = sqrt(dotv(rvec, rvec)) / fnorm
+    cg_iters = it
+    project(uvec)
+}
+
+# Strain energy density in every bar. Returns the setpoint, the
+# adaptive-volume-weighted mean stimulus.
+function bar_energies() -> f64 {
+    let mut num: f64 = 0.0
+    let mut den: f64 = 0.0
+    for j in 0 to nbar {
+        let p: i32 = bp[j]
+        let q: i32 = bq[j]
+        let d: f64 = (uvec[2 * q] - uvec[2 * p]) * bcx[j] + (uvec[2 * q + 1] - uvec[2 * p + 1]) * bcy[j]
+        let eps: f64 = d / blen[j]
+        bu[j] = 0.5 * EMOD * eps * eps
+        num = num + blen[j] * badp[j] * bu[j]
+        den = den + blen[j] * badp[j]
+    }
+    if den <= 0.0 { return 0.0 }
+    return num / den
+}
+
+function total_energy() -> f64 {
+    let mut s: f64 = 0.0
+    for j in 0 to nbar {
+        s = s + bu[j] * barea[j] * blen[j]
+    }
+    return s
+}
+
+# Share of the total bar volume held by one orientation family.
+function fam_frac(fam: i32) -> f64 {
+    let mut s: f64 = 0.0
+    let mut t: f64 = 0.0
+    for j in 0 to nbar {
+        let w: f64 = blen[j] * barea[j]
+        t = t + w
+        if bfam[j] == fam { s = s + w }
+    }
+    return s / t
+}
+
+# Area-weighted mean absolute deviation from the nearest principal axis.
+# Under pure shear those axes are +-45 degrees, so a diagonal bar deviates by
+# 0 and an axis-aligned bar by 45. Under uniaxial tension it is the reverse.
+function mean_deviation(load: i32) -> f64 {
+    let mut s: f64 = 0.0
+    let mut t: f64 = 0.0
+    for j in 0 to nbar {
+        let w: f64 = blen[j] * barea[j]
+        t = t + w
+        let f: i32 = bfam[j]
+        let mut d: f64 = 0.0
+        if load == LOAD_SHEAR {
+            if f < 2 { d = 45.0 }
+        } else {
+            if f >= 2 { d = 45.0 }
+        }
+        s = s + w * d
+    }
+    return s / t
+}
+
+# ---------------------------------------------------------------------------
+# One adaptation step, and the whole run
+# ---------------------------------------------------------------------------
+
+let mut mass_err: f64 = 0.0
+
+function adapt_step(dta: f64) -> void {
+    let mut bar: BarArea = BarArea_new()
+    bar.k = GAIN
+    bar.u_set = u_set
+    for j in 0 to nbar {
+        bar.a = badp[j]
+        bar.u = bu[j]
+        BarArea_step(&bar, dta)
+        badp[j] = bar.a
+    }
+    let mut vs: f64 = 0.0
+    for j in 0 to nbar {
+        vs = vs + blen[j] * badp[j]
+    }
+    let ren: f64 = v0adp / vs
+    for j in 0 to nbar {
+        badp[j] = badp[j] * ren
+        barea[j] = A_MIN + badp[j]
+    }
+    let mut vs2: f64 = 0.0
+    for j in 0 to nbar {
+        vs2 = vs2 + blen[j] * badp[j]
+    }
+    mass_err = fabs(vs2 / v0adp - 1.0)
+}
+
+# Builds the uniform lattice, scales the load so its stimulus is exactly 1,
+# and leaves it solved and ready to adapt.
+function setup_case(load: i32) -> void {
+    build_lattice()
+    build_modes()
+    build_forces(load)
+    for i in 0 to NDOF {
+        uvec[i] = 0.0
+    }
+    cg_solve()
+    let us0: f64 = bar_energies()
+    let sc: f64 = 1.0 / sqrt(us0)
+    for i in 0 to NDOF {
+        fvec[i] = fvec[i] * sc
+        uvec[i] = uvec[i] * sc
+    }
+    u_set = bar_energies()
+}
+
+let mut res_c0: f64 = 0.0
+let mut res_cf: f64 = 0.0
+let mut res_viol: i32 = 0
+let mut res_worst_rise: f64 = 0.0
+let mut res_conv: f64 = 0.0
+let mut res_mass: f64 = 0.0
+let mut res_ident: f64 = 0.0
+let mut res_res: f64 = 0.0
+let mut res_cgavg: f64 = 0.0
+
+function run_case(load: i32) -> void {
+    setup_case(load)
+    let dta: f64 = BarArea_default_dt()
+    res_viol = 0
+    res_worst_rise = 0.0
+    res_mass = 0.0
+    res_ident = 0.0
+    res_res = 0.0
+    let mut itsum: i32 = 0
+    let mut cprev: f64 = 0.0
+    for s in 0 to NSTEP {
+        cg_solve()
+        itsum = itsum + cg_iters
+        if cg_res > res_res { res_res = cg_res }
+        u_set = bar_energies()
+        let comp: f64 = dotv(fvec, uvec)
+        chist[s] = comp
+        if s == 0 { res_c0 = comp }
+        let ident: f64 = fabs(comp - 2.0 * total_energy()) / fabs(comp)
+        if ident > res_ident { res_ident = ident }
+        # Monotone decrease is required only after the transient.
+        if s > NSTEP / 2 {
+            let rise: f64 = (comp - cprev) / cprev
+            if rise > MONO_TOL {
+                res_viol = res_viol + 1
+                if rise > res_worst_rise { res_worst_rise = rise }
+            }
+        }
+        cprev = comp
+        adapt_step(dta)
+        if mass_err > res_mass { res_mass = mass_err }
+    }
+    res_cf = chist[NSTEP - 1]
+    res_conv = fabs(chist[NSTEP - 1] - chist[NSTEP - 21]) / chist[NSTEP - 1]
+    res_cgavg = (itsum as f64) / (NSTEP as f64)
+}
+
+function load_name(load: i32) -> string {
+    if load == LOAD_TENSX { return "TENSION X" }
+    if load == LOAD_BIAX { return "BIAXIAL" }
+    if load == LOAD_TENSY { return "TENSION Y" }
+    return "SHEAR"
+}
+
+function report_case(load: i32) -> void {
+    print("       load                      ")
+    print(load_name(load))
+    println("")
+    print("       compliance C0 uniform     ")
+    printf("%12.5f", res_c0)
+    println("")
+    print("       compliance C converged    ")
+    printf("%12.5f", res_cf)
+    println("")
+    print("       reduction C0 / C          ")
+    printf("%12.5f", res_c0 / res_cf)
+    print("   gate > ")
+    printf("%.2f", RED_MIN)
+    println("")
+    print("       rises in the last ")
+    printf("%.0f", (NSTEP / 2) as f64)
+    print(" steps  ")
+    printf("%6.0f", res_viol as f64)
+    print("   worst ")
+    printf("%9.2e", res_worst_rise)
+    print("   gate 0")
+    println("")
+    print("       change of C over 20 steps ")
+    printf("%12.3e", res_conv)
+    print("   gate < ")
+    printf("%.0e", CONV_MAX)
+    println("")
+    print("       area shares  H ")
+    printf("%7.5f", fam_frac(0))
+    print("   V ")
+    printf("%7.5f", fam_frac(1))
+    print("   +45 ")
+    printf("%7.5f", fam_frac(2))
+    print("   -45 ")
+    printf("%7.5f", fam_frac(3))
+    println("")
+    print("       diagonal share            ")
+    printf("%12.5f", fam_frac(2) + fam_frac(3))
+    print("   axial share ")
+    printf("%.5f", fam_frac(0) + fam_frac(1))
+    println("")
+    print("       mean deviation from the principal axes ")
+    printf("%8.4f", mean_deviation(load))
+    println(" degrees")
+    print("       adaptive volume error     ")
+    printf("%12.3e", res_mass)
+    print("   gate < ")
+    printf("%.0e", MASS_TOL)
+    println("")
+    print("       energy identity error     ")
+    printf("%12.3e", res_ident)
+    print("   gate < ")
+    printf("%.0e", IDENT_TOL)
+    println("")
+    print("       CG iterations per step    ")
+    printf("%12.1f", res_cgavg)
+    print("   worst residual ")
+    printf("%.2e", res_res)
+    println("")
+}
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+function node_px(i: i32) -> i32 {
+    return MARGIN + (i % NGRID) * STEP_PX
+}
+
+function node_py(i: i32) -> i32 {
+    return FIELD_Y + MARGIN + (NGRID - 1 - i / NGRID) * STEP_PX
+}
+
+function shade_r(t: f64) -> i32 {
+    if t < 0.5 { return (62.0 + 346.0 * t) as i32 }
+    let s: f64 = t - 0.5
+    let mut c: f64 = 235.0 + 40.0 * s * 2.0
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function shade_g(t: f64) -> i32 {
+    if t < 0.5 { return (82.0 + 286.0 * t) as i32 }
+    let s: f64 = t - 0.5
+    let mut c: f64 = 225.0 - 210.0 * s * 2.0
+    if c < 100.0 { c = 100.0 }
+    return c as i32
+}
+
+function shade_b(t: f64) -> i32 {
+    if t < 0.5 { return (126.0 + 148.0 * t) as i32 }
+    let s: f64 = t - 0.5
+    let mut c: f64 = 200.0 - 280.0 * s * 2.0
+    if c < 60.0 { c = 60.0 }
+    return c as i32
+}
+
+function draw_bar(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, w: i32,
+                  r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 { dx = 0 - dx }
+    if dy < 0 { dy = 0 - dy }
+    let mut steps: i32 = dx
+    if dy > steps { steps = dy }
+    if steps < 1 { steps = 1 }
+    for k in 0 to steps + 1 {
+        let t: f64 = (k as f64) / (steps as f64)
+        let px: i32 = x0 + ((x1 - x0) as f64 * t) as i32
+        let py: i32 = y0 + ((y1 - y0) as f64 * t) as i32
+        gfx_fill_rect(g, px - w / 2, py - w / 2, w, w, r, gg, b)
+    }
+}
+
+function draw_lattice(g: Gfx) -> void {
+    let mut amax: f64 = 0.0
+    for j in 0 to nbar {
+        if barea[j] > amax { amax = barea[j] }
+    }
+    if amax <= 0.0 { amax = 1.0 }
+    let mut uref: f64 = u_set
+    if uref <= 0.0 { uref = 1.0 }
+    for j in 0 to nbar {
+        let f: f64 = barea[j] / amax
+        let mut w: i32 = 1 + (6.0 * f) as i32
+        if w > 7 { w = 7 }
+        let mut t: f64 = 0.5 * bu[j] / uref
+        if t < 0.0 { t = 0.0 }
+        if t > 1.0 { t = 1.0 }
+        draw_bar(g, node_px(bp[j]), node_py(bp[j]),
+                 node_px(bq[j]), node_py(bq[j]), w,
+                 shade_r(t), shade_g(t), shade_b(t))
+    }
+}
+
+function draw_hud(g: Gfx, load: i32, step: i32, comp: f64, c0: f64,
+                  paused: bool) -> void {
+    let diag: f64 = fam_frac(2) + fam_frac(3)
+    let axial: f64 = fam_frac(0) + fam_frac(1)
+    let t1: i32 = gfx_draw_text(g, 8, 8, "BONE REMODELLING", 2, 232, 226, 214)
+    let t2: i32 = gfx_draw_text(g, 226, 12, load_name(load), 1, 255, 196, 108)
+    let t3: i32 = gfx_draw_text(g, 320, 12, "STEP", 1, 146, 140, 132)
+    let t4: i32 = gfx_draw_int(g, 352, 12, step, 1, 232, 226, 214)
+    let t5: i32 = gfx_draw_text(g, 404, 12, "BARS", 1, 146, 140, 132)
+    let t6: i32 = gfx_draw_int(g, 436, 12, nbar, 1, 232, 226, 214)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "COMPLIANCE", 1, 146, 140, 132)
+    let t8: i32 = gfx_draw_fixed(g, 78, 28, comp, 1, 1, 132, 240, 200)
+    let t9: i32 = gfx_draw_text(g, 138, 28, "C0/C", 1, 146, 140, 132)
+    let ta: i32 = gfx_draw_fixed(g, 170, 28, c0 / comp, 3, 1, 132, 240, 200)
+    let tb: i32 = gfx_draw_text(g, 222, 28, "DIAGONAL", 1, 146, 140, 132)
+    let tc: i32 = gfx_draw_fixed(g, 282, 28, diag, 3, 1, 132, 240, 200)
+    let td: i32 = gfx_draw_text(g, 334, 28, "AXIAL", 1, 146, 140, 132)
+    let te: i32 = gfx_draw_fixed(g, 374, 28, axial, 3, 1, 132, 240, 200)
+    let tf: i32 = gfx_draw_text(g, 426, 28, "DEV", 1, 146, 140, 132)
+    let tg: i32 = gfx_draw_fixed(g, 450, 28, mean_deviation(load), 1, 1, 190, 184, 174)
+
+    let th: i32 = gfx_draw_text(g, 8, 42,
+        "1 SHEAR  2 TENSION X  3 BIAXIAL  4 TENSION Y  R RESTART  P PAUSE",
+        1, 112, 108, 100)
+    if paused {
+        let ti: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tj: i32 = gfx_draw_text(g, 8, 572,
+        "a evolves as k*(U - U_set)*a,  A = A_min + a,  U_set = mean stimulus",
+        1, 120, 114, 106)
+    let tk: i32 = gfx_draw_text(g, 8, 582,
+        "thickness is area, colour is strain energy density; mass is fixed",
+        1, 120, 114, 106)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    alloc_all()
+
+    println("")
+    println("  BONE REMODELLING  --  Wolff's law from a mechanostat on a lattice")
+    println("  =================================================================")
+    println("")
+    print("    lattice ")
+    printf("%.0f", NGRID as f64)
+    print(" x ")
+    printf("%.0f", NGRID as f64)
+    print(" nodes, ")
+    printf("%.0f", NDOF as f64)
+    print(" dof, four bar families")
+    println("")
+    print("    E ")
+    printf("%.1f", EMOD)
+    print("   A0 ")
+    printf("%.2f", A0)
+    print("   A_min ")
+    printf("%.3f", A_MIN)
+    print("   gain k ")
+    printf("%.2f", GAIN)
+    print("   step ")
+    printf("%.3f", BarArea_default_dt())
+    print("   steps ")
+    printf("%.0f", NSTEP as f64)
+    println("")
+    println("    da/dt = k (U - U_set) a,  A = A_min + a,  U_set = sum(L a U)/sum(L a)")
+    println("    the load is scaled so the uniform lattice sits at U_set = 1")
+    println("")
+
+    println("  1. COMPLIANCE FALLS, AND WOLFF'S LAW UNDER PURE SHEAR")
+    println("     principal axes at +45 and -45 degrees")
+    println("")
+    run_case(LOAD_SHEAR)
+    report_case(LOAD_SHEAR)
+    let sh_c0: f64 = res_c0
+    let sh_cf: f64 = res_cf
+    let sh_viol: i32 = res_viol
+    let sh_conv: f64 = res_conv
+    let sh_mass: f64 = res_mass
+    let sh_ident: f64 = res_ident
+    let sh_res: f64 = res_res
+    let sh_diag: f64 = fam_frac(2) + fam_frac(3)
+    let sh_axial: f64 = fam_frac(0) + fam_frac(1)
+    let sh_dev: f64 = mean_deviation(LOAD_SHEAR)
+    println("")
+
+    println("  2. THE SAME RULE UNDER UNIAXIAL TENSION")
+    println("     principal axis at 0 degrees; only the tractions changed")
+    println("")
+    run_case(LOAD_TENSX)
+    report_case(LOAD_TENSX)
+    let tx_c0: f64 = res_c0
+    let tx_cf: f64 = res_cf
+    let tx_viol: i32 = res_viol
+    let tx_conv: f64 = res_conv
+    let tx_mass: f64 = res_mass
+    let tx_ident: f64 = res_ident
+    let tx_res: f64 = res_res
+    let tx_diag: f64 = fam_frac(2) + fam_frac(3)
+    let tx_axial: f64 = fam_frac(0) + fam_frac(1)
+    let tx_dev: f64 = mean_deviation(LOAD_TENSX)
+    println("")
+
+    println("  3. THE CONTRAST")
+    println("")
+    println("                          diagonal share   axial share   mean deviation")
+    print("       pure shear             ")
+    printf("%10.5f", sh_diag)
+    printf("    %10.5f", sh_axial)
+    printf("     %8.4f deg", sh_dev)
+    println("")
+    print("       uniaxial tension       ")
+    printf("%10.5f", tx_diag)
+    printf("    %10.5f", tx_axial)
+    printf("     %8.4f deg", tx_dev)
+    println("")
+    println("")
+
+    let mono_ok: bool = sh_viol == 0 and tx_viol == 0
+    let conv_ok: bool = sh_conv < CONV_MAX and tx_conv < CONV_MAX
+    let red_ok: bool = sh_c0 / sh_cf > RED_MIN and tx_c0 / tx_cf > RED_MIN
+    let wolff_ok: bool = sh_diag > DIAG_MIN and tx_axial > AXIAL_MIN
+                         and sh_diag > tx_diag and tx_axial > sh_axial
+    let mass_ok: bool = sh_mass < MASS_TOL and tx_mass < MASS_TOL
+    let ident_ok: bool = sh_ident < IDENT_TOL and tx_ident < IDENT_TOL
+    let solve_ok: bool = sh_res < RES_MAX and tx_res < RES_MAX
+
+    if !solve_ok {
+        println("    FAIL: the equilibrium solve did not reach its residual target")
+        return 1
+    }
+    if !ident_ok {
+        println("    FAIL: C = 2 sum(U A L) does not hold, so the solve is wrong")
+        return 2
+    }
+    if !mono_ok {
+        println("    FAIL: compliance rose after the transient")
+        return 3
+    }
+    if !conv_ok {
+        println("    FAIL: compliance had not converged")
+        return 4
+    }
+    if !red_ok {
+        println("    FAIL: the adapted lattice is not stiffer than the uniform one")
+        return 5
+    }
+    if !mass_ok {
+        println("    FAIL: adaptive volume was not conserved")
+        return 6
+    }
+    if !wolff_ok {
+        println("    FAIL: the surviving bars do not follow the principal axes")
+        return 7
+    }
+    println("    PASS: compliance decreases monotonically to convergence and falls by")
+    print("          ")
+    printf("%.3f", sh_c0 / sh_cf)
+    print("x in shear and ")
+    printf("%.3f", tx_c0 / tx_cf)
+    println("x in tension against the uniform lattice;")
+    println("          the surviving bars align with the principal stress axes and swap")
+    println("          families when the axes rotate (Wolff 1892, Frost 1987,")
+    println("          Huiskes et al. 1987); adaptive volume held to 1e-12.")
+    println("")
+
+    # -----------------------------------------------------------------
+    # Live view
+    # -----------------------------------------------------------------
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Bone remodelling - Flow morphogenesis")
+    let dta: f64 = BarArea_default_dt()
+
+    let mut load: i32 = LOAD_SHEAR
+    setup_case(load)
+    let mut c0: f64 = 0.0
+    let mut comp: f64 = 0.0
+    let mut step: i32 = 0
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reset_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = LOAD_SHEAR }
+        if gfx_key_down(g, KEY_2) { want = LOAD_TENSX }
+        if gfx_key_down(g, KEY_3) { want = LOAD_BIAX }
+        if gfx_key_down(g, KEY_4) { want = LOAD_TENSY }
+        if want >= 0 and want != load {
+            load = want
+            setup_case(load)
+            step = 0
+            c0 = 0.0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held {
+                setup_case(load)
+                step = 0
+                c0 = 0.0
+            }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        cg_solve()
+        u_set = bar_energies()
+        comp = dotv(fvec, uvec)
+        if c0 <= 0.0 { c0 = comp }
+
+        gfx_clear(g, 12, 12, 16)
+        draw_lattice(g)
+        draw_hud(g, load, step, comp, c0, paused)
+        gfx_present(g)
+
+        if !paused {
+            for k in 0 to 2 {
+                adapt_step(dta)
+                cg_solve()
+                u_set = bar_energies()
+                step = step + 1
+            }
+        }
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
