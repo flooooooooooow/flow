@@ -1,19 +1,14 @@
 # flowlm — a character language model small enough to train on a laptop CPU.
 #
-# This is the package entry point. Importing it pulls in every submodule:
+# This is the package entry point. It re-exports every submodule, so the whole
+# public surface is addressable under one name:
 #
-#     import flowlm.lib
+#     import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 #
-# brings the whole public surface into scope. To be explicit about what you
-# depend on, import the submodule instead and name the symbols:
+# A bare `import flowlm.lib` pulls the same surface in without naming symbols.
+# Importing a submodule directly still works and is the narrower dependency:
 #
 #     import flowlm.model { flm_model_init, flm_forward, flm_backward }
-#     import flowlm.train { flm_train_step, flm_sample }
-#
-# Both forms work. Flow's module resolver has no re-export: a brace list is
-# checked against the declarations in the named file, so `flowlm.lib` cannot
-# forward `flowlm.model`'s symbols under its own name. The submodules are the
-# addressable units; this file is the convenience aggregator.
 #
 # Submodules
 #   flowlm.util       allocation, deterministic LCG, f32 libm wrappers, printing
@@ -33,12 +28,12 @@
 #   loop: flm_train_step(ids, n_ids, 32, 8, lr, 1.0)
 #   flm_sample(prompt, prompt_len, out, 200, 0.8)
 
-import .util
-import .corpus
-import .tokenizer
-import .model
-import .train
-import .gradcheck
+export import .util
+export import .corpus
+export import .tokenizer
+export import .model
+export import .train
+export import .gradcheck
 
 # Package version, as a single integer: major * 10000 + minor * 100 + patch.
 export function flm_version() -> i32 {
