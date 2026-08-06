@@ -254,26 +254,11 @@ def test_c_backend_exit_zero(name: str):
 
 @needs_clang
 @needs_mlir
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param(
-            n,
-            marks=pytest.mark.xfail(
-                reason="bool match lowering parity; board card flow-mlir-lowering-parity",
-                strict=False,
-            ),
-        )
-        if n == "bool_match"
-        else n
-        for n in PROGRAMS.keys()
-    ],
-)
+@pytest.mark.parametrize("name", list(PROGRAMS.keys()))
 def test_c_mlir_exit_code_parity(name: str):
     src = PROGRAMS[name]
     c_rc = compile_and_run(src)
-    try:
-        mlir_rc = _run_mlir(src)
-    except Exception as exc:
-        pytest.skip(f"MLIR run unavailable for {name}: {exc}")
+    # The toolchain guard above already skipped when mlir-opt/mlir-translate
+    # are missing, so any exception here is a real lowering failure.
+    mlir_rc = _run_mlir(src)
     assert c_rc == mlir_rc == 0, f"{name}: C={c_rc} MLIR={mlir_rc}"

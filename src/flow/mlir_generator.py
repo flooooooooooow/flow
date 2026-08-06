@@ -699,10 +699,17 @@ class MLIRGenerator:
     
     def generate_block(self, block: Block) -> str:
         mlir_code = []
-        # New lexical scope
-        self._symbol_stack.append(self.symbol_table)
-        self.symbol_table = self.symbol_table.copy()
-        
+        # New lexical scope (shallow copy). Locals declared here stay local;
+        # SSA updates to names that already existed in the parent must propagate
+        # back — otherwise nested while/for loop-carried values are lost when
+        # generate_while replaces symbol_table entries with new dicts.
+        parent_symbols = self.symbol_table
+        self._symbol_stack.append(parent_symbols)
+        self.symbol_table = parent_symbols.copy()
+        declared_here = {
+            stmt.name for stmt in block.statements if isinstance(stmt, VarDecl)
+        }
+
         for stmt in block.statements:
             stmt_mlir = self.generate_statement(stmt)
             if stmt_mlir.strip():
@@ -710,8 +717,12 @@ class MLIRGenerator:
                 # If this is a return statement, it should be the last one
                 if isinstance(stmt, ReturnStatement):
                     break
-        # Restore previous scope
+
+        child_symbols = self.symbol_table
         self.symbol_table = self._symbol_stack.pop()
+        for name, info in child_symbols.items():
+            if name in parent_symbols and name not in declared_here:
+                parent_symbols[name] = info
         return "\n".join(mlir_code)
 
     def _block_has_return(self, block: Block) -> bool:
@@ -725,6 +736,11 @@ class MLIRGenerator:
                     if self._block_has_return(elif_block):
                         return True
                 if stmt.else_block and self._block_has_return(stmt.else_block):
+                    return True
+            if isinstance(stmt, MatchStatement):
+                if any(self._block_has_return(c.body) for c in stmt.cases):
+                    return True
+                if stmt.default_case and self._block_has_return(stmt.default_case):
                     return True
             if isinstance(stmt, WhileStatement):
                 if self._block_has_return(stmt.body):
@@ -746,6 +762,8 @@ class MLIRGenerator:
             return self.generate_assignment(stmt)
         elif isinstance(stmt, IfStatement):
             return self.generate_if(stmt)
+        elif isinstance(stmt, MatchStatement):
+            return self.generate_match(stmt)
         elif isinstance(stmt, WhileStatement):
             return self.generate_while(stmt)
         elif isinstance(stmt, ForStatement):
@@ -940,15 +958,25 @@ class MLIRGenerator:
                     ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : i32 to index")
                     final_index = index_cast
 
+                # Use the array's declared memref type so fixed-shape locals
+                # store as memref<Nxi32> rather than an unranked memref<?xi32>
+                # (which does not type-check against the memref.alloc result).
                 elem_type = 'f32'
-                if isinstance(access.array, Variable) and access.array.name in self.symbol_table:
-                    arr_type = self.symbol_table[access.array.name].get('mlir_type', '')
-                    if 'i32' in arr_type and 'memref' in arr_type:
-                        elem_type = 'i32'
-                    elif 'f64' in arr_type:
-                        elem_type = 'f64'
+                arr_mlir = self._ssa_types.get(array_ssa)
+                if not arr_mlir and isinstance(access.array, Variable) and access.array.name in self.symbol_table:
+                    arr_mlir = self.symbol_table[access.array.name].get('mlir_type', '')
+                if arr_mlir and arr_mlir.startswith('memref<'):
+                    memref_ty = arr_mlir
+                    elem_type = self._memref_element_type(arr_mlir) or elem_type
+                else:
+                    memref_ty = f'memref<?x{elem_type}>'
 
-                ops.append(f"{self.indent()}memref.store {value_ssa}, {array_ssa}[{final_index}] : memref<?x{elem_type}>")
+                val_type = self._ssa_types.get(value_ssa) or self.get_expression_type(assignment.value)
+                if val_type != elem_type:
+                    value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, elem_type)
+                    ops.extend(cast_ops)
+
+                ops.append(f"{self.indent()}memref.store {value_ssa}, {array_ssa}[{final_index}] : {memref_ty}")
                 return "\n".join(ops)
             elif isinstance(access, FieldAccess):
                 field_store = self._generate_field_store(access, assignment.value, value_ssa, ops)
@@ -1078,6 +1106,15 @@ class MLIRGenerator:
                     for name in self._assigned_locals(stmt.else_block):
                         if name not in assigned:
                             assigned.append(name)
+            elif isinstance(stmt, WhileStatement):
+                # Nested loops may assign outer locals (loop-carried for parent).
+                for name in self._assigned_locals(stmt.body):
+                    if name not in assigned:
+                        assigned.append(name)
+            elif isinstance(stmt, ForStatement):
+                for name in self._assigned_locals(stmt.body):
+                    if name not in assigned:
+                        assigned.append(name)
         return assigned
 
     def _generate_scf_if_with_yield(
@@ -1305,36 +1342,41 @@ class MLIRGenerator:
         
         return "\n".join(mlir_code)
     
+    def _cf_successor_operands(self, ssa_names: List[str], mlir_types: List[str]) -> str:
+        """CF dialect successor operands: (%a, %b : i32, i32) — types once after all values."""
+        if not ssa_names:
+            return ""
+        return f"({', '.join(ssa_names)} : {', '.join(mlir_types)})"
+
     def generate_while(self, while_stmt: WhileStatement) -> str:
         mlir_code = []
-        
+
         # Detect loop-carried variables
         loop_carried_vars = self._detect_loop_carried_vars(while_stmt.body)
-        
+
         # Create blocks
         header_block = self._new_block_label()
         body_block = self._new_block_label()
         end_block = self._new_block_label()
-        
+
         # Prepare initial values for loop-carried variables
-        init_args = []
+        init_ssas: List[str] = []
+        init_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                init_args.append(var_info['ssa_name'])
-        
+                init_ssas.append(var_info['ssa_name'])
+                init_types.append(var_info['mlir_type'])
+
         # Jump to header with initial values
-        if init_args:
-            # Add types to the arguments
-            init_args_with_types = []
-            for i, var_name in enumerate(loop_carried_vars):
-                if var_name in self.symbol_table:
-                    var_info = self.symbol_table[var_name]
-                    init_args_with_types.append(f"{init_args[i]} : {var_info['mlir_type']}")
-            mlir_code.append(f"{self.indent()}cf.br ^{header_block}({', '.join(init_args_with_types)})")
+        if init_ssas:
+            mlir_code.append(
+                f"{self.indent()}cf.br ^{header_block}"
+                f"{self._cf_successor_operands(init_ssas, init_types)}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
-        
+
         # Header block - check condition and receive loop-carried vars
         # Add block arguments for loop-carried variables
         block_args = []
@@ -1360,20 +1402,26 @@ class MLIRGenerator:
         if condition_ops:
             mlir_code.append("\n".join(condition_ops))
         
-        # Branch based on condition
-        body_args = []
-        body_args_with_types = []
+        # Branch based on condition — both successors take the loop-carried args
+        # (the exit block needs them too, otherwise its block arguments have no
+        # incoming values on the exit edge).
+        header_ssas: List[str] = []
+        header_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                body_args.append(self.symbol_table[var_name]['ssa_name'])
-                body_args_with_types.append(f"{self.symbol_table[var_name]['ssa_name']} : {var_info['mlir_type']}")
-        
-        if body_args:
-            mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}({', '.join(body_args_with_types)}), ^{end_block}")
+                header_ssas.append(var_info['ssa_name'])
+                header_types.append(var_info['mlir_type'])
+
+        if header_ssas:
+            succ = self._cf_successor_operands(header_ssas, header_types)
+            mlir_code.append(
+                f"{self.indent()}cf.cond_br {condition_ssa}, "
+                f"^{body_block}{succ}, ^{end_block}{succ}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.cond_br {condition_ssa}, ^{body_block}, ^{end_block}")
-        
+
         # Body block - receive loop-carried vars and execute body
         # Add block arguments for loop-carried variables in body
         body_block_args = []
@@ -1401,20 +1449,23 @@ class MLIRGenerator:
             mlir_code.append(body_mlir)
         
         # Prepare final values for next iteration
-        final_args = []
-        final_args_with_types = []
+        final_ssas: List[str] = []
+        final_types: List[str] = []
         for var_name in loop_carried_vars:
             if var_name in self.symbol_table:
                 var_info = self.symbol_table[var_name]
-                final_args.append(self.symbol_table[var_name]['ssa_name'])
-                final_args_with_types.append(f"{self.symbol_table[var_name]['ssa_name']} : {var_info['mlir_type']}")
-        
+                final_ssas.append(var_info['ssa_name'])
+                final_types.append(var_info['mlir_type'])
+
         # Branch back to header with updated values
-        if final_args:
-            mlir_code.append(f"{self.indent()}cf.br ^{header_block}({', '.join(final_args_with_types)})")
+        if final_ssas:
+            mlir_code.append(
+                f"{self.indent()}cf.br ^{header_block}"
+                f"{self._cf_successor_operands(final_ssas, final_types)}"
+            )
         else:
             mlir_code.append(f"{self.indent()}cf.br ^{header_block}")
-        
+
         self.indent_level -= 1
         
         # End block - receive final values
@@ -1891,10 +1942,12 @@ class MLIRGenerator:
             body = self.generate_block(case.body)
             if body.strip():
                 mlir_code.append(body)
-            
-            # Branch to end
-            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
-            
+
+            # Skip cf.br after return/terminator (same guard as generate_if):
+            # two terminators in one block is invalid MLIR.
+            if not self._block_has_terminator(body):
+                mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+
             self.indent_level -= 1
             
             # Restore symbol table if we had bindings
@@ -1914,16 +1967,31 @@ class MLIRGenerator:
             default_body = self.generate_block(match_stmt.default_case)
             if default_body.strip():
                 mlir_code.append(default_body)
-            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+            if not self._block_has_terminator(default_body):
+                mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
             self.indent_level -= 1
         else:
             # If no default, just make the last next label jump to end
             mlir_code.append(f"^{final_next_label}:")
             mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
-        
-        # End block
+
+        # End block. When every arm already returned nothing branches here, so
+        # the block would have no terminator; llvm.unreachable keeps it valid.
+        # Otherwise the parent generate_block appends the statements that
+        # follow the match into this block.
         mlir_code.append(f"^{end_label}:")
-        
+        arms_terminate = bool(match_stmt.cases) and all(
+            self._block_has_return(c.body) for c in match_stmt.cases
+        )
+        if match_stmt.default_case is not None:
+            arms_terminate = arms_terminate and self._block_has_return(
+                match_stmt.default_case
+            )
+        else:
+            arms_terminate = False  # fallthrough path exists via final_next
+        if arms_terminate:
+            mlir_code.append(f"{self.indent()}llvm.unreachable")
+
         return "\n".join(mlir_code)
     
     def generate_expression(self, expr: Expression) -> tuple[str, List[str]]:
