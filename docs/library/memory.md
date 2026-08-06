@@ -71,6 +71,40 @@ function main() -> i32 {
 }
 ```
 
+## Frame arena
+
+`FrameArena` is an `Arena` plus the bookkeeping a frame loop wants. It is the
+storage behind the `frame` [lifetime domain](../language/lifetime-domains.md).
+
+| Call | Cost |
+|------|------|
+| `frame_arena_create(cap)` | one `malloc` — startup only |
+| `frame_begin(f)` | one store of zero. This is the whole deallocation. |
+| `frame_alloc` / `frame_alloc_i32` / `frame_alloc_f32` / `frame_alloc_f64` | bump, 8-byte aligned |
+| `frame_end(f)` | record the high-water mark, count the frame |
+| `frame_used` / `frame_remaining` / `frame_high_water` / `frame_count` | field reads |
+| `frame_arena_destroy(f)` | one `free` — shutdown only |
+
+```flow
+@lifetime(frame)
+function render(f: ptr<FrameArena>, n: i64) -> f32 {
+    frame_begin(f)
+    let scratch: ptr<f32> = frame_alloc_f32(f, n)
+    # … fill and read scratch; it dies at the next frame_begin …
+    frame_end(f)
+    return 0.0
+}
+```
+
+Everything except create and destroy is bump-pointer arithmetic, so it is
+legal inside `@rt_safe` and in the `callback` and `frame` domains. Releasing a
+frame costs the same whether it held one allocation or a thousand: measured at
+5.5 ns per allocation against 11.4 ns for `malloc` + `free`
+(`benchmarks/micro/frame_arena_benchmark.flow`), with the whole frame's
+release being one store.
+
+Size the capacity from a real run's `frame_high_water`.
+
 ## Rules of thumb
 
 1. **Check for `null`** after every heap allocation.
@@ -88,5 +122,7 @@ function main() -> i32 {
 ## See also
 
 - [RT Safety](rt-safety.md) — no-alloc audio-thread contract
+- [Lifetime domains](../language/lifetime-domains.md) — `callback` / `frame` /
+  `session` / `application`, and what the compiler checks between them
 - [Comparison](../comparison.md) — Flow vs C/Rust memory models
 - Working demo: `examples/systems/manual_memory.flow`

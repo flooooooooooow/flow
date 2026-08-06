@@ -967,6 +967,61 @@ let val: i32 = *p          # Dereference
 **Status:** ✅ Address-of, dereference, and `ptr[i].field` / postfix chaining on the C backend.
 Example: `tests/runtime/test_pointers.flow`.
 
+### 8.4 Lifetime Domains
+
+Where a value lives is a second question from where the allocator put it. A
+lifetime domain names how long it lives. Full description:
+[lifetime-domains.md](language/lifetime-domains.md).
+
+```text
+callback  <  frame  <  session  <  application
+```
+
+`@lifetime(D)` goes on a function, where it declares the domain the frame runs
+in, and on a module static, where it declares the domain of that storage
+(default `application`). It is the only attribute allowed on a static. A value
+takes its domain from its allocation site: a local belongs to the enclosing
+function's domain, a static to its own.
+
+```flow
+@lifetime(application)
+let mut tail: span<f32> = null
+
+@lifetime(session)
+function setup() -> FrameArena { return frame_arena_create(1 << 16) }
+
+@lifetime(frame)
+function build(f: ptr<FrameArena>, n: i64) -> ptr<f32> {
+    frame_begin(f)
+    return frame_alloc_f32(f, n)
+}
+
+@lifetime(callback)
+function process(input: span<f32>) -> f32 { return input[0] }
+```
+
+Four rules are checked, each an error in `--strict` and a warning in
+`--lenient`:
+
+| Rule | What it rejects |
+|---|---|
+| LD1 | storing a reference rooted in local storage into a static of a longer-lived domain |
+| LD2 | returning a reference into the annotated function's own frame |
+| LD3 | allocation: `callback` is `@rt_safe`; `frame` forbids heap create/destroy but allows bumping an arena |
+| LD4 | calling a function whose declared domain outlives the caller's |
+
+Domains are opt-in. An unannotated function has no domain and no rule fires
+inside it. The annotation is erased after checking: every domain lowers to the
+same C.
+
+**Not checked** (documented rather than half-enforced): escape through a call,
+a struct field, a closure, or heap storage; the domain of arena-allocated
+memory; domains on parameters or in types.
+
+**Status:** ✅ C-backend type checker. Tests: `tests/unit/test_lifetime_domains.py`,
+`tests/lang/test_lifetime_domains.flow`. Example:
+`examples/audio/lifetime_domains.flow`.
+
 ---
 
 ## 9. Compilation Targets
@@ -1193,6 +1248,7 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Arrays | ✅ | ✅ | ✅ | ✅ |
 | Spans (`span<T>` / `&[T]`, concrete elements) | ✅ | ✅ | ❌ | ✅ |
 | Spans (bare `span`, trait-shaped, dependent extents) | ❌ | ❌ | ❌ | ✅ (documented gap) |
+| Lifetime domains (`@lifetime(...)`, 4 rules) | ✅ | ✅ (erased) | ✅ (erased) | ✅ |
 | If/Else | ✅ | ✅ | ✅ | ✅ |
 | While | ✅ | ✅ | ✅ | ✅ |
 | For (`to` / `..` / `step`) | ✅ | ✅ | ✅ | ✅ |
