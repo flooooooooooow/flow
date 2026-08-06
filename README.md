@@ -365,6 +365,40 @@ each with a recorded gameplay GIF: see the
 [game gallery](docs/demos/games.md) ([wiki version](https://flooooooooooow.github.io/flow/#demos/games.md))
 and the [examples index](examples/README.md).
 
+### Morphogenesis
+
+Twenty live simulations of pattern formation and growth — reaction-diffusion,
+Turing patterns, DLA, L-systems, cyclic automata, Physarum networks, and
+clock-and-wavefront somitogenesis. This is the founding thesis on screen:
+systems evolving through time.
+
+```bash
+./flow gfx examples/morphogenesis/gray_scott.flow    # solitons on a hex lattice
+./flow gfx examples/morphogenesis/slime_mold.flow    # transport networks emerge
+./flow gfx examples/morphogenesis/somite_clock.flow  # segments laid down in sequence
+```
+
+Index: [examples/morphogenesis](examples/morphogenesis/README.md).
+
+### AI and machine learning
+
+Training runs in Flow, on the CPU, in seconds — and every demo gates its exit
+code on beating a baseline, so the numbers below are reproduced on every run.
+
+| Demo | Baseline | Trained |
+|---|---|---|
+| Q-learning on Snake (`examples/ai/q_snake.flow`) | 0.06 foods | **19.7 foods** |
+| Neuroevolution on Flappy (`examples/ai/ga_flappy.flow`) | 0.0 pipes | **41.6 pipes** |
+| REINFORCE on Pong (`examples/ai/policy_pong.flow`) | 0.37 hits | **4.0 hits** |
+| Digit MLP (`examples/ml/digits_mlp.flow`) | — | **98.75%** test accuracy, 42 ms |
+
+`registry/packages/flowlm` is a small-language-model package: a character-level
+transformer with hand-derived backprop, verified against finite differences on
+every parameter tensor, reaching perplexity 7.7 against a 29.0 uniform baseline.
+
+Guides: [Training game AIs](docs/tutorials/game-ai.md) ·
+[ML on a MacBook](docs/tutorials/ml-on-macbook.md)
+
 ```bash
 # Tetris - fully playable!
 ./flow gfx examples/games/tetris_gfx.flow
