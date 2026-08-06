@@ -5,6 +5,9 @@ from something featureless (uniform noise, a single seed, a random mixture)
 and ends somewhere structured, with nothing in the source describing the
 structure. The rule is written down; the shape is what the rule does.
 
+Recorded clips of all twenty are in the
+[morphogenesis gallery](../../docs/demos/morphogenesis.md).
+
 This is [VISION.md](../../VISION.md) as a picture. Flow's founding claim is
 that the primary abstraction of a program should be **the evolution of a
 system through time** rather than a sequence of instructions, and that the
@@ -94,13 +97,19 @@ one number in the header.
 Every example runs headless, so a still or a GIF comes out of the same
 compiled program:
 
-```
-FLOW_GFX_RECORD_FRAMES=90 FLOW_GFX_RECORD_DIR=/tmp/frames \
-  ./flow record examples/morphogenesis/gray_scott.flow
+```bash
+./flow record examples/morphogenesis/gray_scott.flow \
+  --frames 240 --skip 4 --out /tmp/frames \
+  --gif docs/demos/morphogenesis/gray_scott.gif
 ```
 
-`FLOW_GFX_RECORD_KEYS="1-3:19"` holds a key over a range of frames, which is
-how the preset variants are captured without a display.
+`--keys "1-3:19"` holds a key over a range of frames, which is how the preset
+variants are captured without a display. `--skip N` keeps every Nth presented
+frame; `--fps`, `--stride` and `--width` size the GIF.
+
+The committed clips come from `python3 scripts/record_demos.py --group
+morphogenesis`, which carries a tuned frame budget per example. See the
+[gallery](../../docs/demos/morphogenesis.md) for how those budgets were chosen.
 
 ## Notes on the numerics
 
