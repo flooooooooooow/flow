@@ -13,6 +13,7 @@ from .parser import (
     HandleStatement, EffectCall, MethodCall,
     MatchStatement, StructPattern, ListPattern, ConstDecl, StaticDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl,
     ExpectStatement, RecordUpdate,
+    BreakStatement, ContinueStatement, DeferStatement,
 )
 
 class MLIRGenerator:
@@ -337,6 +338,8 @@ class MLIRGenerator:
 
     def _init_per_function_state(self) -> None:
         """Reset per-function SSA tracking (safe for unit tests that skip generate_function)."""
+        # Enclosing cf-lowered loops: break/continue branch to these labels.
+        self._loop_stack: List[Dict[str, Any]] = []
         self._tensor_call_results: set[str] = set()
         self._tensor_stable_ssas: set[str] = set()
         self._tensor_field_extracts: set[str] = set()
@@ -710,13 +713,26 @@ class MLIRGenerator:
             stmt.name for stmt in block.statements if isinstance(stmt, VarDecl)
         }
 
+        defer_stack: List[DeferStatement] = []
+        exited = False
         for stmt in block.statements:
+            if isinstance(stmt, DeferStatement):
+                defer_stack.append(stmt)
+                continue
+            # Deferred expressions run before leaving the scope, LIFO.
+            if isinstance(stmt, (ReturnStatement, BreakStatement, ContinueStatement)) and defer_stack:
+                mlir_code.extend(self._generate_defers(defer_stack))
+                defer_stack.clear()
             stmt_mlir = self.generate_statement(stmt)
             if stmt_mlir.strip():
                 mlir_code.append(stmt_mlir)
-                # If this is a return statement, it should be the last one
-                if isinstance(stmt, ReturnStatement):
-                    break
+            if isinstance(stmt, (ReturnStatement, BreakStatement, ContinueStatement)):
+                # Anything after a terminator is unreachable and would be
+                # invalid MLIR in the same block.
+                exited = True
+                break
+        if defer_stack and not exited:
+            mlir_code.extend(self._generate_defers(defer_stack))
 
         child_symbols = self.symbol_table
         self.symbol_table = self._symbol_stack.pop()
@@ -770,6 +786,11 @@ class MLIRGenerator:
             return self.generate_for(stmt)
         elif isinstance(stmt, LayoutStatement):
             return self.generate_block(stmt.body)
+        elif isinstance(stmt, (BreakStatement, ContinueStatement)):
+            return self._generate_loop_jump(stmt)
+        elif isinstance(stmt, DeferStatement):
+            # Collected and emitted at scope exit by generate_block.
+            return ""
         elif isinstance(stmt, HandleStatement):
             return self.generate_handle(stmt)
         elif isinstance(stmt, (MethodCall, EffectCall)):
@@ -787,6 +808,68 @@ class MLIRGenerator:
         else:
             return f"{self.indent()}// Unsupported statement: {type(stmt).__name__}"
     
+    def _generate_loop_jump(self, stmt: Statement) -> str:
+        """Lower break/continue to a cf.br into the enclosing loop's exit/header."""
+        kind = "break" if isinstance(stmt, BreakStatement) else "continue"
+        if not self._loop_stack:
+            raise NotImplementedError(
+                f"`{kind}` outside a loop cannot be lowered to MLIR"
+            )
+        loop = self._loop_stack[-1]
+        if loop.get("region") == "scf":
+            # scf.for/scf.parallel regions are single-block; a cf.br out of them
+            # is invalid MLIR. Fail loudly instead of dropping the statement.
+            raise NotImplementedError(
+                f"`{kind}` inside a `for` loop is not supported by the MLIR "
+                f"backend yet; use the C backend (--c)"
+            )
+        target = loop["end"] if kind == "break" else loop["header"]
+        carried = loop["carried"]
+        ssas = [
+            self.symbol_table[name]["ssa_name"]
+            for name in carried
+            if name in self.symbol_table
+        ]
+        types = [
+            self.symbol_table[name]["mlir_type"]
+            for name in carried
+            if name in self.symbol_table
+        ]
+        return f"{self.indent()}cf.br ^{target}{self._cf_successor_operands(ssas, types)}"
+
+    def _contains_loop_jump(self, block: Optional[Block]) -> bool:
+        """True when a block contains break/continue for the *enclosing* loop."""
+        if block is None:
+            return False
+        for stmt in block.statements:
+            if isinstance(stmt, (BreakStatement, ContinueStatement)):
+                return True
+            if isinstance(stmt, IfStatement):
+                if self._contains_loop_jump(stmt.then_block):
+                    return True
+                if any(self._contains_loop_jump(b) for _, b in stmt.elif_blocks):
+                    return True
+                if self._contains_loop_jump(stmt.else_block):
+                    return True
+            elif isinstance(stmt, MatchStatement):
+                if any(self._contains_loop_jump(c.body) for c in stmt.cases):
+                    return True
+                if self._contains_loop_jump(stmt.default_case):
+                    return True
+            elif isinstance(stmt, LayoutStatement):
+                if self._contains_loop_jump(stmt.body):
+                    return True
+            # while/for bodies bind their own break/continue, so stop there.
+        return False
+
+    def _generate_defers(self, defers: List[DeferStatement]) -> List[str]:
+        """Emit deferred expressions in LIFO order (mirrors the C backend)."""
+        lines: List[str] = []
+        for defer_stmt in reversed(defers):
+            _value, value_ops = self.generate_expression(defer_stmt.expr)
+            lines.extend(value_ops)
+        return lines
+
     def generate_var_decl(self, var_decl: VarDecl) -> str:
         mlir_type = self.flow_type_to_mlir(var_decl.type)
          
@@ -1077,6 +1160,14 @@ class MLIRGenerator:
         return "\n".join(ops)
 
     def generate_if(self, if_stmt: IfStatement) -> str:
+        # break/continue must branch out of the if, which an scf.if region
+        # cannot express; force the cf lowering.
+        if (
+            self._contains_loop_jump(if_stmt.then_block)
+            or any(self._contains_loop_jump(b) for _, b in if_stmt.elif_blocks)
+            or self._contains_loop_jump(if_stmt.else_block)
+        ):
+            return self._generate_cf_if(if_stmt)
         if not if_stmt.elif_blocks:
             then_assigned = self._assigned_locals(if_stmt.then_block)
             else_assigned = self._assigned_locals(if_stmt.else_block) if if_stmt.else_block else []
@@ -1444,10 +1535,19 @@ class MLIRGenerator:
         
         # Generate body
         self.indent_level += 1
-        body_mlir = self.generate_block(while_stmt.body)
+        self._loop_stack.append({
+            "region": "cf",
+            "header": header_block,
+            "end": end_block,
+            "carried": list(loop_carried_vars),
+        })
+        try:
+            body_mlir = self.generate_block(while_stmt.body)
+        finally:
+            self._loop_stack.pop()
         if body_mlir.strip():
             mlir_code.append(body_mlir)
-        
+
         # Prepare final values for next iteration
         final_ssas: List[str] = []
         final_types: List[str] = []
@@ -1457,8 +1557,11 @@ class MLIRGenerator:
                 final_ssas.append(var_info['ssa_name'])
                 final_types.append(var_info['mlir_type'])
 
-        # Branch back to header with updated values
-        if final_ssas:
+        # Branch back to header with updated values. Skip when the body already
+        # ended in a terminator (an unconditional break/continue/return).
+        if self._block_has_terminator(body_mlir):
+            pass
+        elif final_ssas:
             mlir_code.append(
                 f"{self.indent()}cf.br ^{header_block}"
                 f"{self._cf_successor_operands(final_ssas, final_types)}"
@@ -1822,7 +1925,11 @@ class MLIRGenerator:
             mlir_code.append(f"{self.indent()}scf.parallel ({iv_name}) = ({lower_bound}) to ({upper_bound}) step ({step_ssa}) {{")
             self.indent_level += 1
             
-            body_mlir = self.generate_block(for_stmt.body)
+            self._loop_stack.append({"region": "scf"})
+            try:
+                body_mlir = self.generate_block(for_stmt.body)
+            finally:
+                self._loop_stack.pop()
             if body_mlir.strip():
                 mlir_code.append(body_mlir)
             
@@ -1913,7 +2020,11 @@ class MLIRGenerator:
                     'ssa_name': iv
                 }
                 
-                body_mlir = self.generate_block(for_stmt.body)
+                self._loop_stack.append({"region": "scf"})
+                try:
+                    body_mlir = self.generate_block(for_stmt.body)
+                finally:
+                    self._loop_stack.pop()
                 if body_mlir.strip():
                     mlir_code.append(body_mlir)
                 
@@ -1945,7 +2056,11 @@ class MLIRGenerator:
                     'ssa_name': iv
                 }
                 
-                body_mlir = self.generate_block(for_stmt.body)
+                self._loop_stack.append({"region": "scf"})
+                try:
+                    body_mlir = self.generate_block(for_stmt.body)
+                finally:
+                    self._loop_stack.pop()
                 if body_mlir.strip():
                     mlir_code.append(body_mlir)
                 
