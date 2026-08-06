@@ -1,0 +1,33 @@
+# Stage-A string `+`: concatenation, not pointer arithmetic.
+# Checks a literal chain, a call returning `string` on the left of `+`, and
+# that the result reads back through libc strcmp/strlen. Exit 42.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+function greet(name: string) -> string {
+    return "hello, " + name + "!"
+}
+
+function main() -> i32 {
+    let who = "flow"
+    let msg = greet(who)
+    if strcmp(msg, "hello, flow!") != 0 {
+        return 1
+    }
+    let n = strlen(msg) as i32
+    if n != 12 {
+        return 2
+    }
+    let joined = greet("a") + "/" + greet("b")
+    if strcmp(joined, "hello, a!/hello, b!") != 0 {
+        return 3
+    }
+    # The two results must be independent allocations.
+    if strcmp(msg, "hello, flow!") != 0 {
+        return 4
+    }
+    return 42
+}
