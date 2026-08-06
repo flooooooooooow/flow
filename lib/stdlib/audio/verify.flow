@@ -1,0 +1,559 @@
+# Offline render verification: how CI listens to audio without a sound card.
+#
+# Every audio example can render to a WAV instead of opening a device
+# (see stdlib/audio/sink.flow and FLOW_AUDIO_RENDER). This module reads that
+# WAV back and asserts on the samples, so a build machine with no audio
+# hardware still catches a silent render, a clipped render, a render that
+# came out the wrong length, a missing fade, or an oscillator that drifted
+# off pitch.
+#
+# Usage at the end of an example:
+#
+#   let spec: VerifySpec = verify_spec(6.0, SAFETY_DEFAULT_CEILING_DB, 220.0)
+#   if !verify_run(path, spec) {
+#       return 1
+#   }
+#
+# What gets checked
+#   format        sample rate and channel count are what was asked for
+#   duration      frame count matches the requested seconds
+#   peak          no sample exceeds the safety ceiling
+#   finite        no NaN and no infinity anywhere in the file
+#   fade in       the first sample is zero and the head is far below peak
+#   fade out      the last sample is zero and the tail is far below peak
+#   dominant tone (optional) a Goertzel bank says the loudest partial is the
+#                 frequency the example said it would play
+#
+# THE TONE CHECK
+#   Bin 0 of the bank is the expected frequency. The other bins are a
+#   semitone ladder from 55 Hz up to just under Nyquist, with everything
+#   inside a semitone of the expectation left out. The check passes only if
+#   bin 0 has more energy than every competitor, so it fails on a tone that
+#   is one semitone off, not just on silence. Goertzel runs over the whole
+#   file, which includes the fades; they cost a little energy in every bin
+#   equally and do not move the winner.
+#
+# Reading is streaming and the staging buffer is a module static, so
+# verification allocates nothing.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/wav.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function cos(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+# Bank size. One expected frequency plus up to 95 competitors.
+export const VERIFY_MAX_BINS: i32 = 96
+
+# Frames per streaming read. Stereo, so the staging array is twice this.
+export const VERIFY_BLOCK: i32 = 512
+
+# The fade test measures the first and last quarter of the declared fade.
+# An equal-power fade is sin(pi/2 * t), so at t = 1/4 it is at
+# sin(pi/8) = 0.38268 of full scale: 8.3 dB down. The bound below is that
+# figure with 5% of slack, which is tight enough that a render with no fade
+# fails immediately and loose enough that limiter gain movement inside the
+# window cannot trip it.
+const VERIFY_EDGE_FRACTION: f64 = 0.25
+const VERIFY_EDGE_BOUND: f64 = 0.401816       # sin(pi/8) * 1.05
+
+# Lowest competitor in the tone ladder, and how many semitones it climbs.
+const VERIFY_LADDER_BASE_HZ: f64 = 55.0
+const VERIFY_LADDER_STEPS: i32 = 95
+
+# 2^(1/12) and 2^(1/24): one semitone and half a semitone.
+const SEMITONE: f64 = 1.0594630943592953
+const HALF_SEMITONE: f64 = 1.0293022366434921
+
+const TWO_PI_F64: f64 = 6.283185307179586
+
+# ---------------------------------------------------------------------------
+# Module statics
+#
+# Allocated once, on the first call. Verification runs after the audio has
+# been written, never on the per-sample path, so an allocation here costs
+# nothing that matters and it keeps the bank out of the binary's BSS.
+# ---------------------------------------------------------------------------
+
+let mut vf_stage: ptr<f32> = null
+let mut vf_freq: ptr<f64> = null
+let mut vf_coeff: ptr<f64> = null
+let mut vf_s1: ptr<f64> = null
+let mut vf_s2: ptr<f64> = null
+let mut vf_ready: bool = false
+let mut vf_nbins: i32 = 0
+
+function vf_alloc() -> bool {
+    if vf_ready {
+        return true
+    }
+    vf_stage = calloc((VERIFY_BLOCK * 2) as i64, 4) as ptr<f32>
+    vf_freq = calloc(VERIFY_MAX_BINS as i64, 8) as ptr<f64>
+    vf_coeff = calloc(VERIFY_MAX_BINS as i64, 8) as ptr<f64>
+    vf_s1 = calloc(VERIFY_MAX_BINS as i64, 8) as ptr<f64>
+    vf_s2 = calloc(VERIFY_MAX_BINS as i64, 8) as ptr<f64>
+    if vf_stage == null or vf_freq == null or vf_coeff == null {
+        return false
+    }
+    if vf_s1 == null or vf_s2 == null {
+        return false
+    }
+    vf_ready = true
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Goertzel bank
+# ---------------------------------------------------------------------------
+
+export function verify_bank_clear() -> void {
+    vf_nbins = 0
+    if !vf_alloc() {
+        return
+    }
+    let mut i: i32 = 0
+    while i < VERIFY_MAX_BINS {
+        vf_freq[i] = 0.0
+        vf_coeff[i] = 0.0
+        vf_s1[i] = 0.0
+        vf_s2[i] = 0.0
+        i = i + 1
+    }
+}
+
+# Append one analysis frequency. Returns its bin index, or -1 when full.
+export function verify_bank_add(hz: f64) -> i32 {
+    if !vf_alloc() {
+        return -1
+    }
+    if vf_nbins >= VERIFY_MAX_BINS {
+        return -1
+    }
+    let idx: i32 = vf_nbins
+    vf_freq[idx] = hz
+    vf_nbins = idx + 1
+    return idx
+}
+
+export function verify_bank_count() -> i32 {
+    return vf_nbins
+}
+
+export function verify_bank_freq(i: i32) -> f64 {
+    if i < 0 or i >= vf_nbins {
+        return 0.0
+    }
+    return vf_freq[i]
+}
+
+# Bin 0 is `expect_hz`; the rest is a semitone ladder that avoids it.
+export function verify_bank_tone(expect_hz: f64, rate_hz: f64) -> i32 {
+    verify_bank_clear()
+    if expect_hz <= 0.0 {
+        return 0
+    }
+    verify_bank_add(expect_hz)
+    let nyquist: f64 = rate_hz * 0.45
+    let mut f: f64 = VERIFY_LADDER_BASE_HZ
+    let mut k: i32 = 0
+    while k < VERIFY_LADDER_STEPS {
+        if f >= nyquist {
+            k = VERIFY_LADDER_STEPS
+        } else {
+            let ratio: f64 = f / expect_hz
+            let mut too_close: bool = false
+            if ratio > 1.0 / HALF_SEMITONE and ratio < HALF_SEMITONE {
+                too_close = true
+            }
+            if !too_close {
+                verify_bank_add(f)
+            }
+            f = f * SEMITONE
+            k = k + 1
+        }
+    }
+    return vf_nbins
+}
+
+function verify_bank_prime(rate_hz: f64) -> void {
+    let mut i: i32 = 0
+    while i < vf_nbins {
+        vf_coeff[i] = 2.0 * cos(TWO_PI_F64 * vf_freq[i] / rate_hz)
+        vf_s1[i] = 0.0
+        vf_s2[i] = 0.0
+        i = i + 1
+    }
+}
+
+function verify_bank_push(x: f64) -> void {
+    let mut i: i32 = 0
+    while i < vf_nbins {
+        let s0: f64 = x + vf_coeff[i] * vf_s1[i] - vf_s2[i]
+        vf_s2[i] = vf_s1[i]
+        vf_s1[i] = s0
+        i = i + 1
+    }
+}
+
+# Goertzel magnitude squared for one bin.
+export function verify_bank_power(i: i32) -> f64 {
+    if i < 0 or i >= vf_nbins {
+        return 0.0
+    }
+    let a: f64 = vf_s1[i]
+    let b: f64 = vf_s2[i]
+    return a * a + b * b - vf_coeff[i] * a * b
+}
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+export struct VerifyReport {
+    ok: bool
+    rate: i32
+    channels: i32
+    frames: i64
+    seconds: f64
+    peak: f32
+    bad: i64
+    first_abs: f32
+    last_abs: f32
+    head_peak: f32
+    tail_peak: f32
+    tone_checked: bool
+    tone_ok: bool
+    dom_hz: f64
+    dom_ratio: f64
+}
+
+export function verify_report_bad() -> VerifyReport {
+    return VerifyReport {
+        ok: false, rate: 0, channels: 0, frames: 0, seconds: 0.0,
+        peak: 0.0, bad: 0, first_abs: 0.0, last_abs: 0.0,
+        head_peak: 0.0, tail_peak: 0.0,
+        tone_checked: false, tone_ok: false, dom_hz: 0.0, dom_ratio: 0.0
+    }
+}
+
+function vabs32(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+function v_is_bad(x: f32) -> bool {
+    if x != x {
+        return true
+    }
+    if x > 1.0e30 {
+        return true
+    }
+    if x < -1.0e30 {
+        return true
+    }
+    return false
+}
+
+# Stream the whole file once and measure everything. `edge_frames` is the
+# head/tail window used for the fade check.
+# Call verify_bank_tone first if a tone check is wanted; pass expect_hz <= 0
+# through verify_run to skip it.
+export function verify_wav(path: string, edge_frames: i32) -> VerifyReport {
+    if !vf_alloc() {
+        return verify_report_bad()
+    }
+    let info: WavInfo = wav_read_open(path)
+    if !info.ok {
+        return verify_report_bad()
+    }
+    let ch: i32 = info.channels
+    let total: i64 = info.frames
+    let rate_hz: f64 = info.rate as f64
+    let tone: bool = vf_nbins > 0
+    if tone {
+        verify_bank_prime(rate_hz)
+    }
+
+    let mut peak: f32 = 0.0
+    let mut bad: i64 = 0
+    let mut first_abs: f32 = 0.0
+    let mut last_abs: f32 = 0.0
+    let mut head_peak: f32 = 0.0
+    let mut tail_peak: f32 = 0.0
+    let mut pos: i64 = 0
+    let mut edge: i32 = edge_frames
+    if edge < 1 {
+        edge = 1
+    }
+    let tail_start: i64 = total - (edge as i64)
+
+    let mut got: i32 = wav_read_frames(vf_stage, VERIFY_BLOCK)
+    while got > 0 {
+        let mut i: i32 = 0
+        while i < got {
+            let base: i32 = i * ch
+            let l: f32 = vf_stage[base]
+            let mut r: f32 = l
+            if ch > 1 {
+                r = vf_stage[base + 1]
+            }
+            if v_is_bad(l) or v_is_bad(r) {
+                bad = bad + 1
+            } else {
+                let al: f32 = vabs32(l)
+                let ar: f32 = vabs32(r)
+                let mut m: f32 = al
+                if ar > m {
+                    m = ar
+                }
+                if m > peak {
+                    peak = m
+                }
+                if pos == 0 {
+                    first_abs = m
+                }
+                if pos == total - 1 {
+                    last_abs = m
+                }
+                if pos < (edge as i64) {
+                    if m > head_peak {
+                        head_peak = m
+                    }
+                }
+                if pos >= tail_start {
+                    if m > tail_peak {
+                        tail_peak = m
+                    }
+                }
+                if tone {
+                    verify_bank_push(((l + r) * 0.5) as f64)
+                }
+            }
+            pos = pos + 1
+            i = i + 1
+        }
+        got = wav_read_frames(vf_stage, VERIFY_BLOCK)
+    }
+    wav_read_close()
+
+    let mut dom_hz: f64 = 0.0
+    let mut dom_ratio: f64 = 0.0
+    let mut tone_ok: bool = false
+    if tone {
+        let mut best: i32 = 0
+        let mut best_p: f64 = verify_bank_power(0)
+        let mut runner: f64 = 0.0
+        let mut i: i32 = 1
+        while i < vf_nbins {
+            let p: f64 = verify_bank_power(i)
+            if p > best_p {
+                runner = best_p
+                best_p = p
+                best = i
+            } else {
+                if p > runner {
+                    runner = p
+                }
+            }
+            i = i + 1
+        }
+        dom_hz = vf_freq[best]
+        tone_ok = best == 0
+        if runner > 0.0 {
+            dom_ratio = sqrt(best_p / runner)
+        }
+    }
+
+    return VerifyReport {
+        ok: true,
+        rate: info.rate,
+        channels: ch,
+        frames: pos,
+        seconds: (pos as f64) / rate_hz,
+        peak: peak,
+        bad: bad,
+        first_abs: first_abs,
+        last_abs: last_abs,
+        head_peak: head_peak,
+        tail_peak: tail_peak,
+        tone_checked: tone,
+        tone_ok: tone_ok,
+        dom_hz: dom_hz,
+        dom_ratio: dom_ratio
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Spec and assertions
+# ---------------------------------------------------------------------------
+
+export struct VerifySpec {
+    rate: i32
+    channels: i32
+    seconds: f64
+    tol_seconds: f64
+    ceiling_db: f32
+    fade_ms: f64
+    expect_hz: f64
+}
+
+# The usual spec: 48 kHz stereo, the safety chain's own ceiling and fade
+# length, duration matched to 10 ms. Pass expect_hz <= 0 for material with no
+# single pitch.
+export function verify_spec(seconds: f64, ceiling_db: f32, expect_hz: f64) -> VerifySpec {
+    return VerifySpec {
+        rate: 48000,
+        channels: 2,
+        seconds: seconds,
+        tol_seconds: 0.010,
+        ceiling_db: ceiling_db,
+        fade_ms: SAFETY_DEFAULT_FADE_MS as f64,
+        expect_hz: expect_hz
+    }
+}
+
+export function verify_spec_rate(spec: VerifySpec, rate: i32, channels: i32) -> VerifySpec {
+    return VerifySpec {
+        rate: rate,
+        channels: channels,
+        seconds: spec.seconds,
+        tol_seconds: spec.tol_seconds,
+        ceiling_db: spec.ceiling_db,
+        fade_ms: spec.fade_ms,
+        expect_hz: spec.expect_hz
+    }
+}
+
+export function verify_spec_tolerance(spec: VerifySpec, tol_seconds: f64) -> VerifySpec {
+    return VerifySpec {
+        rate: spec.rate,
+        channels: spec.channels,
+        seconds: spec.seconds,
+        tol_seconds: tol_seconds,
+        ceiling_db: spec.ceiling_db,
+        fade_ms: spec.fade_ms,
+        expect_hz: spec.expect_hz
+    }
+}
+
+# Only needed when the example overrode the safety chain's fade length.
+export function verify_spec_fade(spec: VerifySpec, fade_ms: f64) -> VerifySpec {
+    return VerifySpec {
+        rate: spec.rate,
+        channels: spec.channels,
+        seconds: spec.seconds,
+        tol_seconds: spec.tol_seconds,
+        ceiling_db: spec.ceiling_db,
+        fade_ms: fade_ms,
+        expect_hz: spec.expect_hz
+    }
+}
+
+function vmark(pass: bool) -> string {
+    if pass {
+        return "ok  "
+    }
+    return "FAIL"
+}
+
+# Read the render back and check it against the spec. Prints one line per
+# check and returns true only if every line passed. This is the call an
+# example gates its exit code on.
+export function verify_run(path: string, spec: VerifySpec) -> bool {
+    printf("  offline checks: %s\n", path)
+    verify_bank_clear()
+    if spec.expect_hz > 0.0 {
+        verify_bank_tone(spec.expect_hz, spec.rate as f64)
+    }
+    let edge: i32 = (spec.fade_ms * (spec.rate as f64) * VERIFY_EDGE_FRACTION / 1000.0) as i32
+    let rep: VerifyReport = verify_wav(path, edge)
+    if !rep.ok {
+        println("    [FAIL] file           not readable as a float32 WAV")
+        return false
+    }
+
+    let mut all: bool = true
+
+    let fmt_ok: bool = rep.rate == spec.rate and rep.channels == spec.channels
+    printf("    [%s] %-14s %d Hz, %d ch (want %d Hz, %d ch)\n",
+           vmark(fmt_ok), "format", rep.rate, rep.channels, spec.rate, spec.channels)
+    if !fmt_ok {
+        all = false
+    }
+
+    let dur_ok: bool = fabs(rep.seconds - spec.seconds) <= spec.tol_seconds
+    printf("    [%s] %-14s %.3f s, %lld frames (want %.3f +/- %.3f)\n",
+           vmark(dur_ok), "duration", rep.seconds, rep.frames,
+           spec.seconds, spec.tol_seconds)
+    if !dur_ok {
+        all = false
+    }
+
+    let ceiling: f32 = db_to_linear(spec.ceiling_db)
+    let peak_ok: bool = rep.peak <= ceiling * 1.0001
+    printf("    [%s] %-14s %.2f dBFS (ceiling %.2f dBFS)\n",
+           vmark(peak_ok), "peak", linear_to_db(rep.peak) as f64, spec.ceiling_db as f64)
+    if !peak_ok {
+        all = false
+    }
+
+    let audible: bool = rep.peak > 0.001
+    printf("    [%s] %-14s peak %.4f is above the silence floor\n",
+           vmark(audible), "not silent", rep.peak as f64)
+    if !audible {
+        all = false
+    }
+
+    let finite_ok: bool = rep.bad == 0
+    printf("    [%s] %-14s %lld frames scanned, %lld non-finite\n",
+           vmark(finite_ok), "finite", rep.frames, rep.bad)
+    if !finite_ok {
+        all = false
+    }
+
+    # An equal-power fade cannot be louder than sin(pi/2 * 1/4) of the file
+    # peak anywhere in its first quarter, so that is the bound. The first and
+    # last sample have to be exactly silent.
+    let bound: f32 = rep.peak * (VERIFY_EDGE_BOUND as f32)
+    let bound_db: f64 = linear_to_db(VERIFY_EDGE_BOUND as f32) as f64
+
+    let head_db: f32 = linear_to_db(rep.head_peak) - linear_to_db(rep.peak)
+    let fade_in_ok: bool = rep.first_abs < 1.0e-6 and rep.head_peak <= bound
+    printf("    [%s] %-14s first sample %.8f, first %d frames %.1f dB down (want <= %.1f)\n",
+           vmark(fade_in_ok), "fade in", rep.first_abs as f64, edge,
+           head_db as f64, bound_db)
+    if !fade_in_ok {
+        all = false
+    }
+
+    let tail_db: f32 = linear_to_db(rep.tail_peak) - linear_to_db(rep.peak)
+    let fade_out_ok: bool = rep.last_abs < 1.0e-6 and rep.tail_peak <= bound
+    printf("    [%s] %-14s last sample %.8f, last %d frames %.1f dB down (want <= %.1f)\n",
+           vmark(fade_out_ok), "fade out", rep.last_abs as f64, edge,
+           tail_db as f64, bound_db)
+    if !fade_out_ok {
+        all = false
+    }
+
+    if rep.tone_checked {
+        printf("    [%s] %-14s %.2f Hz wins by %.1fx over %d rivals\n",
+               vmark(rep.tone_ok), "dominant tone", rep.dom_hz, rep.dom_ratio,
+               verify_bank_count() - 1)
+        if !rep.tone_ok {
+            all = false
+        }
+    }
+
+    if all {
+        println("    render verified")
+    } else {
+        println("    ** render FAILED verification **")
+    }
+    return all
+}
