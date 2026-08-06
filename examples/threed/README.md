@@ -35,6 +35,41 @@ Arrows look or orbit, WASD moves where there is something to move, Space is the
 per-program action, R resets, Esc quits. Each file's header comment lists its
 own keys.
 
+## Recording the clips
+
+Each clip in `docs/demos/threed/` comes from one command. The key script is a
+list of `first-last:keycode` windows over presented-frame numbers, using the
+macOS keycodes in `lib/stdlib/gfx.flow`.
+
+```bash
+./flow record examples/threed/spinning_solids.flow --frames 90 \
+  --gif docs/demos/threed/spinning_solids.gif --width 360 \
+  --keys '25-26:19,50-51:21,74-75:23'
+./flow record examples/threed/fps_camera.flow --frames 90 \
+  --gif docs/demos/threed/fps_camera.gif --width 360 \
+  --keys '4-70:13,18-44:124,52-53:49,60-88:123'
+./flow record examples/threed/third_person.flow --frames 90 \
+  --gif docs/demos/threed/third_person.gif --width 360 \
+  --keys '4-72:13,10-48:124,56-57:49'
+./flow record examples/threed/heightmap_terrain.flow --frames 90 \
+  --gif docs/demos/threed/heightmap_terrain.gif --width 360 \
+  --keys '4-88:13,26-58:123'
+./flow record examples/threed/voxel_world.flow --frames 90 \
+  --gif docs/demos/threed/voxel_world.gif --width 360 \
+  --keys '4-70:13,18-48:124,74-75:12'
+./flow record examples/threed/physics3d.flow --frames 90 \
+  --gif docs/demos/threed/physics3d.gif --width 360
+./flow record examples/threed/raycast_shooter.flow --frames 90 \
+  --gif docs/demos/threed/raycast_shooter.gif --width 360 \
+  --keys '10-90:123,20:49,47:49,58:49,74:49'
+./flow record examples/threed/billboard_particles.flow --frames 90 \
+  --gif docs/demos/threed/billboard_particles.gif --width 360 \
+  --keys '6-90:124'
+```
+
+`physics3d.flow` takes no input: the camera orbits on its own and the spheres
+are dropped from a fixed seed.
+
 ## Environment switches
 
 Three examples print structured output when asked, which is how their claims
