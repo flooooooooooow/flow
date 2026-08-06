@@ -1046,14 +1046,66 @@ export function r3d_line_depth(x0: i32, y0: i32, z0: f32,
         r3d_put_depth(x0, y0, z0, col)
         return
     }
+    # Both endpoints outside the same edge means the whole span is outside.
+    if x0 < 0 and x1 < 0 { return }
+    if y0 < 0 and y1 < 0 { return }
+    if x0 >= r3d_w and x1 >= r3d_w { return }
+    if y0 >= r3d_h and y1 >= r3d_h { return }
+    if steps > R3D_MAX_W + R3D_MAX_H { return }
+
+    let inv: f32 = 1.0 / (steps as f32)
+    let sx: f32 = ((x1 - x0) as f32) * inv
+    let sy: f32 = ((y1 - y0) as f32) * inv
+    let sz: f32 = (z1 - z0) * inv
+    let mut fx: f32 = (x0 as f32) + 0.5
+    let mut fy: f32 = (y0 as f32) + 0.5
+    let mut fz: f32 = z0
+    let cr: u8 = (r3d_clampf(col.x, 0.0, 1.0) * 255.0) as u8
+    let cg: u8 = (r3d_clampf(col.y, 0.0, 1.0) * 255.0) as u8
+    let cb: u8 = (r3d_clampf(col.z, 0.0, 1.0) * 255.0) as u8
     let mut s: i32 = 0
     while s <= steps {
-        let t: f32 = (s as f32) / (steps as f32)
-        let x: i32 = x0 + (((x1 - x0) as f32) * t) as i32
-        let y: i32 = y0 + (((y1 - y0) as f32) * t) as i32
-        r3d_put_depth(x, y, z0 + (z1 - z0) * t, col)
+        let xi: i32 = fx as i32
+        let yi: i32 = fy as i32
+        if xi >= 0 and xi < r3d_w and yi >= 0 and yi < r3d_h {
+            let di: i32 = yi * r3d_w + xi
+            if fz < r3d_depth[di] {
+                r3d_depth[di] = fz
+                let o: i32 = di * 3
+                r3d_color[o] = cr
+                r3d_color[o + 1] = cg
+                r3d_color[o + 2] = cb
+                r3d_stat_pixels = r3d_stat_pixels + 1
+            }
+        }
+        fx = fx + sx
+        fy = fy + sy
+        fz = fz + sz
         s = s + 1
     }
+}
+
+# A clip-space line segment, clipped to the near plane and depth-tested. This
+# is the entry point the wireframe path uses, because the mesh vertices are
+# already in clip space by then and re-transforming them per edge would triple
+# the matrix work.
+export function r3d_line_clip(a: V4C, b: V4C, col: V3) -> void {
+    let mut va: V4C = a
+    let mut vb: V4C = b
+    if va.w < r3d_near and vb.w < r3d_near {
+        return
+    }
+    if va.w < r3d_near {
+        let t: f32 = (r3d_near - va.w) / (vb.w - va.w)
+        va = r3d_clip_lerp(va, vb, t)
+    } elif vb.w < r3d_near {
+        let t: f32 = (r3d_near - vb.w) / (va.w - vb.w)
+        vb = r3d_clip_lerp(vb, va, t)
+    }
+    let sa: SVert = r3d_to_screen(va)
+    let sb: SVert = r3d_to_screen(vb)
+    r3d_line_depth(sa.x as i32, sa.y as i32, sa.z,
+                   sb.x as i32, sb.y as i32, sb.z, col)
 }
 
 # A world-space line segment, clipped to the near plane and depth-tested.
@@ -1117,6 +1169,62 @@ export function r3d_sprite(viewproj: &[f32], centre: V3, radius: f32, col: V3) -
     }
 }
 
+# Alpha-blended billboard. The depth buffer is read but never written, so a
+# translucent sprite is hidden by solid geometry in front of it without
+# occluding the sprites behind it. That makes the result order-dependent: the
+# caller must submit these back to front. Returns the number of pixels touched.
+export function r3d_sprite_blend(viewproj: &[f32], centre: V3, radius: f32,
+                                 col: V3, alpha: f32) -> i32 {
+    let q: V3 = m4_point(viewproj, centre)
+    let w: f32 = m4_pointw(viewproj, centre)
+    if w < r3d_near { return 0 }
+    let a: f32 = r3d_clampf(alpha, 0.0, 1.0)
+    if a <= 0.0 { return 0 }
+    let s: SVert = r3d_to_screen(V4C { x: q.x, y: q.y, z: q.z, w: w,
+                                       r: col.x, g: col.y, b: col.z })
+    let px_r: f32 = radius * viewproj[5] / w * ((r3d_h as f32) * 0.5)
+    let mut ri: i32 = px_r as i32
+    if ri < 1 { ri = 1 }
+    let cx: i32 = s.x as i32
+    let cy: i32 = s.y as i32
+    let r2: f32 = px_r * px_r + 0.25
+    let sr: f32 = r3d_clampf(col.x, 0.0, 1.0) * 255.0
+    let sg: f32 = r3d_clampf(col.y, 0.0, 1.0) * 255.0
+    let sb: f32 = r3d_clampf(col.z, 0.0, 1.0) * 255.0
+    let mut touched: i32 = 0
+    let mut dy: i32 = 0 - ri
+    while dy <= ri {
+        let y: i32 = cy + dy
+        if y >= 0 and y < r3d_h {
+            let row: i32 = y * r3d_w
+            let mut dx: i32 = 0 - ri
+            while dx <= ri {
+                let x: i32 = cx + dx
+                if x >= 0 and x < r3d_w {
+                    let fd: f32 = (dx as f32) * (dx as f32) + (dy as f32) * (dy as f32)
+                    if fd <= r2 {
+                        let di: i32 = row + x
+                        if s.z < r3d_depth[di] {
+                            let o: i32 = di * 3
+                            let dr: f32 = r3d_color[o] as f32
+                            let dg: f32 = r3d_color[o + 1] as f32
+                            let db: f32 = r3d_color[o + 2] as f32
+                            r3d_color[o] = (dr + (sr - dr) * a) as u8
+                            r3d_color[o + 1] = (dg + (sg - dg) * a) as u8
+                            r3d_color[o + 2] = (db + (sb - db) * a) as u8
+                            touched = touched + 1
+                        }
+                    }
+                }
+                dx = dx + 1
+            }
+        }
+        dy = dy + 1
+    }
+    r3d_stat_pixels = r3d_stat_pixels + touched
+    return touched
+}
+
 # ---------------------------------------------------------------------------
 # Mesh drawing
 # ---------------------------------------------------------------------------
@@ -1174,13 +1282,16 @@ export function r3d_draw_mesh(model: &[f32], viewproj: &[f32], to_light: V3,
         let c4: i32 = i2 * 4
 
         if mode == R3D_WIRE {
-            let pa: V3 = v3(r3d_wp[a3], r3d_wp[a3 + 1], r3d_wp[a3 + 2])
-            let pb: V3 = v3(r3d_wp[b3], r3d_wp[b3 + 1], r3d_wp[b3 + 2])
-            let pc: V3 = v3(r3d_wp[c3], r3d_wp[c3 + 1], r3d_wp[c3 + 2])
             let col: V3 = v3(r3d_sc[a3], r3d_sc[a3 + 1], r3d_sc[a3 + 2])
-            r3d_line3(viewproj, pa, pb, col)
-            r3d_line3(viewproj, pb, pc, col)
-            r3d_line3(viewproj, pc, pa, col)
+            let ka: V4C = V4C { x: r3d_cp[a4], y: r3d_cp[a4 + 1], z: r3d_cp[a4 + 2],
+                                w: r3d_cp[a4 + 3], r: col.x, g: col.y, b: col.z }
+            let kb: V4C = V4C { x: r3d_cp[b4], y: r3d_cp[b4 + 1], z: r3d_cp[b4 + 2],
+                                w: r3d_cp[b4 + 3], r: col.x, g: col.y, b: col.z }
+            let kc: V4C = V4C { x: r3d_cp[c4], y: r3d_cp[c4 + 1], z: r3d_cp[c4 + 2],
+                                w: r3d_cp[c4 + 3], r: col.x, g: col.y, b: col.z }
+            r3d_line_clip(ka, kb, col)
+            r3d_line_clip(kb, kc, col)
+            r3d_line_clip(kc, ka, col)
             r3d_stat_tris = r3d_stat_tris + 1
             t = t + 1
             continue
