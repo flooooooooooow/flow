@@ -1,0 +1,68 @@
+# Flow-native language test: the declarative `|> sort` / `|> sortBy` pipeline.
+#
+# The Python twins asserted that the emitted C mentions `__flow_sort_` and the
+# key field names. Sorted order is the thing that matters, and a running
+# program checks it directly: a wrong comparator, an unstable tie break or a
+# dropped second key all change the array, and none of them change the text
+# those asserts looked for.
+# Supersedes:
+#   tests/unit/test_sort_expr.py::test_typecheck_and_codegen_i32_sort
+#   tests/unit/test_sort_expr.py::test_codegen_struct_multi_key
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct P {
+    score: i32,
+    name: i32
+}
+
+function main() -> i32 {
+    # Bare sort over scalars: ascending.
+    let mut xs: array<i32, 4> = [4, 2, 3, 1]
+    xs |> sort
+    if xs[0] != 1 {
+        return 1
+    }
+    if xs[1] != 2 {
+        return 2
+    }
+    if xs[2] != 3 {
+        return 3
+    }
+    if xs[3] != 4 {
+        return 4
+    }
+
+    # Already sorted input stays put.
+    let mut ys: array<i32, 3> = [1, 2, 3]
+    ys |> sort
+    if ys[0] != 1 || ys[2] != 3 {
+        return 5
+    }
+
+    # Two keys: score descending, then name ascending. The two middle
+    # elements tie on score, so the second key decides their order.
+    let mut ps: array<P, 4> = [
+        P { score: 1, name: 9 },
+        P { score: 2, name: 7 },
+        P { score: 2, name: 3 },
+        P { score: 5, name: 1 }
+    ]
+    ps |> sortBy [desc .score, asc .name]
+    if ps[0].score != 5 {
+        return 6
+    }
+    if ps[1].score != 2 {
+        return 7
+    }
+    if ps[1].name != 3 {
+        return 8
+    }
+    if ps[2].name != 7 {
+        return 9
+    }
+    if ps[3].score != 1 {
+        return 10
+    }
+
+    return 0
+}

@@ -1,0 +1,92 @@
+# Flow-native language test: postfix chaining through pointers and arrays.
+#
+# `bodies[0].pos.x = 1.5` indexes a pointer, walks two field levels and
+# assigns; `bodies[0].get_mass()` calls a method on an indexed element. Both
+# used to lower to a stray `->` or a dropped field. The Python twins asserted
+# on the emitted C text; running the program is the stronger check, because
+# it also proves the loads and stores reach the same storage.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_postfix_chaining.py::test_generated_c_compiles_and_passes[POINTER_STRUCT_PROGRAM]
+#   tests/unit/test_postfix_chaining.py::test_generated_c_compiles_and_passes[ARRAY_OF_STRUCTS_PROGRAM]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function malloc(size: i64) -> ptr<Body>
+    function free(p: ptr<Body>)
+}
+
+struct Vec2 {
+    x: f32,
+    y: f32
+}
+
+struct Body {
+    pos: Vec2,
+    mass: f32,
+    id: i32
+}
+
+struct Note {
+    pitch: i32,
+    duration: i32
+}
+
+function get_mass(b: Body) -> f32 {
+    return b.mass
+}
+
+function main() -> i32 {
+    let bodies: ptr<Body> = malloc(64)
+    bodies[0].id = 1
+    bodies[0].mass = 2.5
+    bodies[0].pos.x = 1.5
+    bodies[0].pos.y = 0.5
+    bodies[1].id = 2
+    bodies[1].mass = 4.0
+
+    let total: f32 = bodies[0].mass + bodies[1].mass + bodies[0].pos.x + bodies[0].pos.y
+    if total != 8.5 {
+        free(bodies)
+        return 1
+    }
+
+    # A method call on an indexed element: the receiver is passed by value.
+    let m: f32 = bodies[0].get_mass()
+    if m != 2.5 {
+        free(bodies)
+        return 2
+    }
+
+    # A write through one element must not disturb its neighbour.
+    bodies[0].mass = 9.0
+    if bodies[1].mass != 4.0 {
+        free(bodies)
+        return 3
+    }
+    if bodies[1].id != 2 {
+        free(bodies)
+        return 4
+    }
+    free(bodies)
+
+    # The same chaining over a fixed array of structs, with the index held
+    # in a loop variable.
+    let melody: array<Note, 4> = [
+        Note { pitch: 60, duration: 1 },
+        Note { pitch: 62, duration: 2 },
+        Note { pitch: 64, duration: 3 },
+        Note { pitch: 65, duration: 4 }
+    ]
+    let mut sum: i32 = 0
+    for i in 0 to 4 {
+        sum = sum + melody[i].duration
+    }
+    if sum != 10 {
+        return 5
+    }
+    if melody[2].pitch != 64 {
+        return 6
+    }
+
+    return 0
+}
