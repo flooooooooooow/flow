@@ -1,0 +1,440 @@
+# Sorting library: the partitioning family.
+#
+# Quicksort and its relatives. Everything here recurses by *slicing the span*:
+# `quick_sort(xs[0..p])` instead of `quick_sort(xs, lo, p)`. The bounds travel
+# with the data, so a partition cannot be told the wrong length, and the
+# recursive calls read as what they are.
+#
+# All of these are in-place and none of them allocates. The recursion depth is
+# the only memory they use, and each one bounds it explicitly.
+
+import stdlib.sorting.core { sort_swap, SORT_INSERTION_CUTOFF, rng_below }
+import stdlib.sorting.quadratic { insertion_sort }
+import stdlib.sorting.heap { heap_sort }
+
+# ---------------------------------------------------------------------------
+# Pivot selection: median of three
+# ---------------------------------------------------------------------------
+# Order first, middle and last in place, then use the middle as the pivot.
+# Doing it as a sort of three rather than a pick has two payoffs: the two
+# sentinels are already in the right halves, and an already-sorted or
+# reverse-sorted input gets the true median, which is what turns quicksort's
+# worst case on those two shapes into its best case.
+#
+# The adversarial input for *this* rule is the median-of-three killer: an
+# array constructed so that the median of the three sampled positions is
+# always the second-smallest remaining element. The fuzz harness builds one
+# and checks the depth limit catches it.
+function median_of_three(xs: &mut [i32]) -> i32 {
+    let last: i64 = xs.len - 1
+    let mid: i64 = xs.len / 2
+    if xs[mid] < xs[0] {
+        sort_swap(xs, 0, mid)
+    }
+    if xs[last] < xs[0] {
+        sort_swap(xs, 0, last)
+    }
+    if xs[last] < xs[mid] {
+        sort_swap(xs, mid, last)
+    }
+    return xs[mid]
+}
+
+# ---------------------------------------------------------------------------
+# Hoare partition
+# ---------------------------------------------------------------------------
+# Two indices walking inward, swapping the pairs that are on the wrong side.
+# Returns the split point `p`: everything in `xs[0..p+1]` is <= everything in
+# `xs[p+1..]`. Hoare's scheme does about three times fewer swaps than
+# Lomuto's and, unlike Lomuto, does not degrade to O(n^2) on all-equal input,
+# because both scans stop on a key equal to the pivot and the two indices
+# therefore meet in the middle.
+function hoare_partition(xs: &mut [i32], pivot: i32) -> i64 {
+    let mut i: i64 = -1
+    let mut j: i64 = xs.len
+    while true {
+        i = i + 1
+        while xs[i] < pivot {
+            i = i + 1
+        }
+        j = j - 1
+        while xs[j] > pivot {
+            j = j - 1
+        }
+        if i >= j {
+            return j
+        }
+        sort_swap(xs, i, j)
+    }
+    return j
+}
+
+# ---------------------------------------------------------------------------
+# quick_sort
+#   NOT stable
+#   best O(n log n)   average O(n log n)   worst O(n^2)
+#   extra space O(log n) stack, from the recursion on the smaller half only
+#
+#   Median-of-three pivot, Hoare partition, and a cutoff to insertion sort at
+#   SORT_INSERTION_CUTOFF elements. The recursion is on the smaller side and
+#   the loop continues on the larger, which bounds the stack at log2(n) frames
+#   no matter how badly the pivot choice goes.
+#
+#   Pick it when: the data is random-ish, you cannot spare O(n) scratch, and
+#   you do not need stability or a worst-case bound. It is the fastest sort in
+#   this library on random i32 input at every size measured.
+#
+#   Do not pick it when: an adversary chooses the input. Use introsort, which
+#   is this with a depth limit and a heapsort escape.
+# ---------------------------------------------------------------------------
+export function quick_sort(xs: &mut [i32]) -> void {
+    let mut view: span<mut i32> = xs[0..xs.len]
+    while view.len > SORT_INSERTION_CUTOFF {
+        let pivot: i32 = median_of_three(view)
+        let p: i64 = hoare_partition(view, pivot)
+        let left_len: i64 = p + 1
+        let right_len: i64 = view.len - left_len
+        # Recurse into the smaller half, loop on the larger. The stack never
+        # exceeds log2(n) frames because every recursive call at least halves.
+        if left_len < right_len {
+            quick_sort(view[0..left_len])
+            view = view[left_len..view.len]
+        } else {
+            quick_sort(view[left_len..view.len])
+            view = view[0..left_len]
+        }
+    }
+    insertion_sort(view)
+}
+
+# ---------------------------------------------------------------------------
+# dual_pivot_quick_sort
+#   NOT stable
+#   best O(n log n)   average O(n log n)   worst O(n^2)
+#   extra space O(log n) stack
+#
+#   Yaroslavskiy's scheme, the one in the JDK. Two pivots split the span into
+#   three parts (< p1, between, > p2) per pass instead of two, so the tree is
+#   ternary and shallower. On random input it does about 5% fewer comparisons
+#   than single-pivot quicksort and, more importantly, has better locality
+#   because each pass makes more progress.
+#
+#   Pick it when: you would pick quicksort, and n is large enough for the
+#   shallower tree to matter. On this machine it wins at 1e5 and above and
+#   loses below that to the simpler partition.
+#
+#   Two details that the textbook version leaves out and that this one needs:
+#
+#   * The pivots come from a five-point sample at n/7 spacing, ordered in
+#     place, taking the 2nd and 4th. Taking the two ends instead (which is how
+#     the scheme is usually written up) makes an already-sorted input degrade
+#     to a chain of n-2 sized middles and blows the stack at 1e5.
+#   * The recursion goes into the two *smaller* parts and loops on the
+#     largest. Neither of the two smaller parts can exceed n/2, so the stack
+#     is bounded by log2(n) frames whatever the pivots do.
+# ---------------------------------------------------------------------------
+export function dual_pivot_quick_sort(xs: &mut [i32]) -> void {
+    let mut view: span<mut i32> = xs[0..xs.len]
+    while view.len > SORT_INSERTION_CUTOFF {
+        let last: i64 = view.len - 1
+        sample_five(view)
+        let e2: i64 = view.len / 2 - view.len / 7
+        let e4: i64 = view.len / 2 + view.len / 7
+        # Park the two pivots at the ends, where the partition wants them.
+        sort_swap(view, 0, e2)
+        sort_swap(view, last, e4)
+        let p1: i32 = view[0]
+        let p2: i32 = view[last]
+
+        let mut lt: i64 = 1
+        let mut gt: i64 = last - 1
+        let mut k: i64 = 1
+        while k <= gt {
+            if view[k] < p1 {
+                sort_swap(view, k, lt)
+                lt = lt + 1
+            } else {
+                if view[k] > p2 {
+                    while view[gt] > p2 and k < gt {
+                        gt = gt - 1
+                    }
+                    sort_swap(view, k, gt)
+                    gt = gt - 1
+                    if view[k] < p1 {
+                        sort_swap(view, k, lt)
+                        lt = lt + 1
+                    }
+                }
+            }
+            k = k + 1
+        }
+        lt = lt - 1
+        gt = gt + 1
+        sort_swap(view, 0, lt)
+        sort_swap(view, last, gt)
+
+        let left_len: i64 = lt
+        let mid_lo: i64 = lt + 1
+        let mid_len: i64 = gt - mid_lo
+        let right_lo: i64 = gt + 1
+        let right_len: i64 = view.len - right_lo
+
+        # The middle only needs sorting when the pivots differ; when they are
+        # equal, every element between them equals both and is already home.
+        let mut do_mid: bool = p1 < p2
+        if !do_mid {
+            # Fold the middle away so the size comparison below ignores it.
+            if left_len >= right_len {
+                dual_pivot_quick_sort(view[right_lo..view.len])
+                view = view[0..left_len]
+            } else {
+                dual_pivot_quick_sort(view[0..left_len])
+                view = view[right_lo..view.len]
+            }
+        } else {
+            if left_len >= mid_len and left_len >= right_len {
+                dual_pivot_quick_sort(view[mid_lo..gt])
+                dual_pivot_quick_sort(view[right_lo..view.len])
+                view = view[0..left_len]
+            } else {
+                if mid_len >= right_len {
+                    dual_pivot_quick_sort(view[0..left_len])
+                    dual_pivot_quick_sort(view[right_lo..view.len])
+                    view = view[mid_lo..gt]
+                } else {
+                    dual_pivot_quick_sort(view[0..left_len])
+                    dual_pivot_quick_sort(view[mid_lo..gt])
+                    view = view[right_lo..view.len]
+                }
+            }
+        }
+    }
+    insertion_sort(view)
+}
+
+# Order the five sample positions n/2 - 2t, n/2 - t, n/2, n/2 + t, n/2 + 2t
+# (t = n/7) in place with a five-element insertion sort. Only the 2nd and 4th
+# are read afterwards; ordering all five is what makes them the 2nd and 4th.
+function sample_five(xs: &mut [i32]) -> void {
+    let t: i64 = xs.len / 7
+    let mid: i64 = xs.len / 2
+    let mut idx: array<i64, 5> = [mid - 2 * t, mid - t, mid, mid + t, mid + 2 * t]
+    let mut i: i64 = 1
+    while i < 5 {
+        let mut j: i64 = i
+        while j > 0 and xs[idx[j - 1]] > xs[idx[j]] {
+            sort_swap(xs, idx[j - 1], idx[j])
+            j = j - 1
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# intro_sort
+#   NOT stable
+#   best O(n log n)   average O(n log n)   worst O(n log n)
+#   extra space O(log n) stack
+#
+#   Musser's introspective sort: quicksort until the recursion gets deeper
+#   than 2*log2(n), then heapsort the offending sub-range, then insertion sort
+#   the whole thing at the end. The depth limit is what converts quicksort's
+#   O(n^2) worst case into a guarantee, at a cost of nothing at all on inputs
+#   that behave.
+#
+#   Pick it when: you want quicksort's speed and cannot accept its worst case.
+#   This is the right default for an unstable in-place sort, and it is what
+#   C++'s std::sort is.
+#
+#   Flow idioms: the depth budget rides along as a plain parameter and the
+#   sub-ranges are span slices, so the heapsort escape hatch is one call on a
+#   view rather than an index-arithmetic special case.
+# ---------------------------------------------------------------------------
+export function intro_sort(xs: &mut [i32]) -> void {
+    if xs.len < 2 {
+        return
+    }
+    intro_loop(xs, 2 * ilog2(xs.len))
+    # One final insertion pass over the whole span: every sub-range is within
+    # SORT_INSERTION_CUTOFF of its home, so this is O(n * cutoff), and doing
+    # it once beats doing it per leaf.
+    insertion_sort(xs)
+}
+
+function intro_loop(xs: &mut [i32], depth_budget: i64) -> void {
+    let mut view: span<mut i32> = xs[0..xs.len]
+    let mut budget: i64 = depth_budget
+    while view.len > SORT_INSERTION_CUTOFF {
+        if budget <= 0 {
+            # Out of budget: heapsort guarantees n log n from here down.
+            heap_sort(view)
+            return
+        }
+        budget = budget - 1
+        let pivot: i32 = median_of_three(view)
+        let p: i64 = hoare_partition(view, pivot)
+        let left_len: i64 = p + 1
+        let right_len: i64 = view.len - left_len
+        if left_len < right_len {
+            intro_loop(view[0..left_len], budget)
+            view = view[left_len..view.len]
+        } else {
+            intro_loop(view[left_len..view.len], budget)
+            view = view[0..left_len]
+        }
+    }
+}
+
+# floor(log2(n)) for n >= 1.
+function ilog2(n: i64) -> i64 {
+    let mut v: i64 = n
+    let mut r: i64 = 0
+    while v > 1 {
+        v = v / 2
+        r = r + 1
+    }
+    return r
+}
+
+# ---------------------------------------------------------------------------
+# random_pivot_quick_sort
+#   NOT stable
+#   best O(n log n)   average O(n log n) expected   worst O(n^2) with
+#   probability that vanishes in n
+#   extra space O(log n) stack
+#
+#   The pivot is drawn from the deterministic LCG in core.flow rather than
+#   sampled from the data, so no fixed input is adversarial: the killer has to
+#   know the seed. It is deterministic given a seed, which is what makes a
+#   failing fuzz case reproducible.
+#
+#   Pick it when: the input may be chosen by someone who has read your pivot
+#   rule, and you would rather pay a random number per partition than
+#   introsort's depth counter. In practice introsort is the better trade; this
+#   is here to make the comparison measurable.
+# ---------------------------------------------------------------------------
+export function random_pivot_quick_sort(xs: &mut [i32]) -> void {
+    let mut view: span<mut i32> = xs[0..xs.len]
+    while view.len > SORT_INSERTION_CUTOFF {
+        let r: i64 = rng_below(view.len as i32) as i64
+        let pivot: i32 = view[r]
+        let p: i64 = hoare_partition(view, pivot)
+        let left_len: i64 = p + 1
+        let right_len: i64 = view.len - left_len
+        if left_len < right_len {
+            random_pivot_quick_sort(view[0..left_len])
+            view = view[left_len..view.len]
+        } else {
+            random_pivot_quick_sort(view[left_len..view.len])
+            view = view[0..left_len]
+        }
+    }
+    insertion_sort(view)
+}
+
+# ---------------------------------------------------------------------------
+# quickselect
+#   NOT stable, and it permutes the input
+#   best O(n)   average O(n)   worst O(n^2)
+#   extra space O(1) — the recursion is eliminated entirely
+#
+#   Leaves the element that would be at index `k` after a full sort at
+#   `xs[k]`, with everything smaller before it and everything larger after.
+#   Returns that element.
+#
+#   Pick it when: you want the median, a percentile, or the k-th worst case,
+#   and sorting the whole array to read one element would be silly. The
+#   average is linear because each partition discards one side entirely, so
+#   the work is n + n/2 + n/4 + ... = 2n.
+#
+#   Flow idioms: no recursion at all. The span is narrowed in place by
+#   reslicing, so the loop is the algorithm.
+# ---------------------------------------------------------------------------
+export function quickselect(xs: &mut [i32], k: i64) -> i32 {
+    if xs.len <= 0 {
+        return 0
+    }
+    let mut target: i64 = k
+    if target < 0 {
+        target = 0
+    }
+    if target >= xs.len {
+        target = xs.len - 1
+    }
+
+    let mut view: span<mut i32> = xs[0..xs.len]
+    let mut offset: i64 = 0
+    while view.len > SORT_INSERTION_CUTOFF {
+        let pivot: i32 = median_of_three(view)
+        let p: i64 = hoare_partition(view, pivot)
+        let left_len: i64 = p + 1
+        if target - offset < left_len {
+            view = view[0..left_len]
+        } else {
+            offset = offset + left_len
+            view = view[left_len..view.len]
+        }
+    }
+    insertion_sort(view)
+    return xs[target]
+}
+
+# The median. For an even length this is the lower of the two middle values,
+# which is the convention that needs no arithmetic on the elements and so
+# works for any orderable type.
+export function median(xs: &mut [i32]) -> i32 {
+    if xs.len <= 0 {
+        return 0
+    }
+    return quickselect(xs, (xs.len - 1) / 2)
+}
+
+# ---------------------------------------------------------------------------
+# three_way_quick_sort (Dutch national flag)
+#   NOT stable
+#   best O(n)   average O(n log n)   worst O(n^2)
+#   extra space O(log n) stack
+#
+#   Partitions into three parts: less, equal, greater. Keys equal to the pivot
+#   are placed once and never looked at again, so an input with few distinct
+#   values costs O(n * distinct) instead of O(n log n).
+#
+#   Pick it when: the key has few distinct values. Sorting a million rows by a
+#   status enum is the case; the measured table shows it beating every other
+#   comparison sort on the few-unique shape by a wide margin, and losing
+#   slightly on fully random input because of the extra branch per element.
+# ---------------------------------------------------------------------------
+export function three_way_quick_sort(xs: &mut [i32]) -> void {
+    let mut view: span<mut i32> = xs[0..xs.len]
+    while view.len > SORT_INSERTION_CUTOFF {
+        let pivot: i32 = median_of_three(view)
+        let mut lt: i64 = 0
+        let mut i: i64 = 0
+        let mut gt: i64 = view.len
+        while i < gt {
+            if view[i] < pivot {
+                sort_swap(view, i, lt)
+                lt = lt + 1
+                i = i + 1
+            } else {
+                if view[i] > pivot {
+                    gt = gt - 1
+                    sort_swap(view, i, gt)
+                } else {
+                    i = i + 1
+                }
+            }
+        }
+        # Recurse into the smaller side, loop on the larger: log2(n) frames
+        # even when the pivot rule is being attacked.
+        let right_len: i64 = view.len - gt
+        if lt < right_len {
+            three_way_quick_sort(view[0..lt])
+            view = view[gt..view.len]
+        } else {
+            three_way_quick_sort(view[gt..view.len])
+            view = view[0..lt]
+        }
+    }
+    insertion_sort(view)
+}
