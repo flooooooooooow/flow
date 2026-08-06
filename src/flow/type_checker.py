@@ -2436,6 +2436,12 @@ class TypeChecker:
         if matching_overload:
             return matching_overload.return_type
 
+        # Trailing capability parameters are supplied by the enclosing
+        # `handle E with Cap { … }`, so a call inside one may omit them.
+        implicit = self._match_implicit_effect_overload(candidates, arg_types)
+        if implicit is not None:
+            return implicit.return_type
+
         # Fallback to builtin if no overload matches
         if call.name in self.BUILTIN_FUNCTIONS:
             kind = self.BUILTIN_FUNCTIONS[call.name]
@@ -2450,6 +2456,48 @@ class TypeChecker:
             f"No matching overload for function '{call.name}' with arguments ({', '.join(str(t) for t in arg_types)})"
         )
         return candidates[0].return_type
+
+    def _effect_name_of_param(self, param: SemanticType) -> Optional[str]:
+        """Effect named by a capability parameter, if it is one.
+
+        `gpu: GPU` and `gpu: capability<GPU>` both denote the GPU effect;
+        the parser spells the second form `capability_GPU`.
+        """
+        name = param.name or ""
+        if name.startswith("capability_"):
+            name = name[len("capability_"):]
+        return name if name in self.effect_types else None
+
+    def _match_implicit_effect_overload(
+        self, candidates: List[SemanticType], arg_types: List[SemanticType]
+    ) -> Optional[SemanticType]:
+        """Resolve `f(x)` to `f(x, gpu, fft)` inside a matching handle block.
+
+        Mirrors `c_generator._resolve_call_with_implicit_effect_args`, which
+        passes zero-initialized capability structs for the omitted trailing
+        parameters. Without the same rule here, strict mode rejected calls
+        that codegen resolves fine. Ambiguity is left unresolved so the
+        normal "no matching overload" error still fires.
+        """
+        active = self._active_effect_handlers()
+        if not active:
+            return None
+        matches = []
+        for candidate in candidates:
+            params = candidate.param_types
+            if len(params) <= len(arg_types):
+                continue
+            if not all(
+                self._is_compatible(actual, expected)
+                for expected, actual in zip(params, arg_types)
+            ):
+                continue
+            trailing = params[len(arg_types):]
+            effects = [self._effect_name_of_param(p) for p in trailing]
+            if any(e is None or e not in active for e in effects):
+                continue
+            matches.append(candidate)
+        return matches[0] if len(matches) == 1 else None
 
     def _check_struct_literal(self, struct_lit: StructLiteral) -> SemanticType:
         """Type check a struct literal."""
