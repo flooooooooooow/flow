@@ -1,0 +1,734 @@
+# WINNER-TAKE-ALL: how long a decision takes, and why.
+#
+# MODEL
+#   Eight rate units, each exciting itself and inhibiting all the others.
+#   This is the recurrent competition circuit that appears wherever a cortex
+#   has to pick one option out of several.
+#
+#     tau dr_i/dt = -r_i + f( I_i + alpha r_i - beta sum_{j != i} r_j )
+#     f(x) = min(r_max, max(0, x))
+#
+#   The first line is the `evolves as` in `flow WtaUnit` below; the circuit
+#   loop supplies f(.) as the unit's drive.
+#
+# PARAMETERS
+#   K 8 units   tau 10 ms   alpha 0.9   beta 1.2   r_max 1.0   RK4 dt 0.2 ms
+#   inputs: one unit at I = 1, the other seven at I = 1 - c, where c is the
+#   contrast. Sixteen contrasts from 0.02 to 0.50, logarithmically spaced.
+#
+# WHAT THIS PROVES
+#   1. THE RIGHT UNIT WINS, EVERY TIME. Sixteen contrasts are run with the
+#      strong input on unit 0, and sixteen more with it on a unit picked by
+#      the generator, so a bug that always chose index 0 would be caught.
+#      All thirty-two must end with exactly one unit active.
+#   2. THE OUTPUT IS ONE-HOT. At the end of every run the winner is at the
+#      saturation rate and every loser is below 1 % of it.
+#   3. LATENCY FALLS WITH CONTRAST, AND BY THE LAW THE LINEARISATION GIVES.
+#      Around the symmetric state the difference d between the two strongest
+#      units obeys
+#        tau dd/dt = (alpha - 1 + beta) d
+#      so d grows exponentially with time constant tau/(alpha-1+beta) and the
+#      time to reach any fixed criterion is
+#        T(c) = (tau / (alpha - 1 + beta)) * ln(1/c) + const.
+#      The program measures T at each contrast, fits a straight line against
+#      ln(1/c), and compares the fitted slope with tau/(alpha-1+beta) =
+#      9.0909 ms. The slope, its relative error and the fit's R^2 are all
+#      printed, and the exit code is gated on them. The law is asymptotic in
+#      small c - at high contrast the exponential separation is over before
+#      it has run for long, and the fixed cost of saturating the winner and
+#      clearing the losers dominates - so the fit uses the eight lowest
+#      contrasts, c from 0.02 to 0.09. All sixteen are plotted.
+#
+# REFERENCE
+#   R. J. Douglas and K. A. C. Martin, "Neuronal circuits of the neocortex",
+#   Annu. Rev. Neurosci. 27:419-451 (2004) - recurrent amplification and
+#   competition as the canonical cortical operation.
+#   S. Amari and M. A. Arbib, "Competition and cooperation in neural nets",
+#   in Systems Neuroscience (1977) - the winner-take-all dynamics used here.
+#   The logarithmic dependence of decision time on evidence strength is the
+#   same one measured behaviourally; see Gold & Shadlen, Annu. Rev. Neurosci.
+#   30:535-574 (2007).
+#
+# KEYS
+#   Left / Right   change the contrast of the live race
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/wta_circuit.flow --frames 90 \
+#       --out build/frames_wta --gif build/wta_circuit.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/wta_circuit.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function log(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 620
+const MAX_FRAMES: i32 = 4000
+
+const K: i32 = 8
+const TAU: f64 = 10.0
+const ALPHA: f64 = 0.9          # self-excitation
+const BETA: f64 = 1.2           # lateral inhibition
+const R_MAX: f64 = 1.0
+const DT: f64 = 0.05            # ms
+const RUN_MS: f64 = 600.0
+
+const N_C: i32 = 16
+const C_LO: f64 = 0.02
+const C_HI: f64 = 0.50
+
+const WIN_FRAC: f64 = 0.9       # winner must reach this fraction of r_max
+const LOSE_FRAC: f64 = 0.01     # losers must fall below this fraction
+
+const FIT_N: i32 = 8            # the low-contrast half, where the law is exact
+const SLOPE_TOL: f64 = 0.05
+const R2_MIN: f64 = 0.995
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model: one competing unit.
+# ---------------------------------------------------------------------------
+
+flow WtaUnit {
+    state r : f64 = 0.0
+
+    param drive : f64 = 0.0     # f(I + alpha r - beta sum_others), from the loop
+    param tau   : f64 = 10.0
+
+    solver { dt 50 us  method rk4 }
+
+    r evolves as (0.0 - r + drive) / tau
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut rate: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut inp: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut tie: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+let mut c_list: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut lat_fixed: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut lat_random: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut win_fixed: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                     0, 0, 0, 0, 0, 0, 0, 0]
+let mut win_random: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0]
+let mut want_random: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0,
+                                       0, 0, 0, 0, 0, 0, 0, 0]
+
+let mut slope_meas: f64 = 0.0
+let mut slope_theory: f64 = 0.0
+let mut r2: f64 = 0.0
+let mut correct: i32 = 0
+let mut onehot: i32 = 0
+let mut monotone: bool = true
+
+# live race
+let mut trace: ptr<f64> = null      # K x TRACE_N
+let mut trace_n: i32 = 0
+const TRACE_N: i32 = 420
+
+let mut rng_state: u32 = 55555555
+
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 8) % (n as u32)) as i32
+}
+
+# ---------------------------------------------------------------------------
+# The circuit
+# ---------------------------------------------------------------------------
+
+# A frozen, tiny asymmetry so that a perfectly symmetric input still resolves.
+function make_ties() -> void {
+    rng_state = 55555555
+    let tp: ptr<f64> = tie
+    let mut i: i32 = 0
+    while i < K {
+        tp[i] = 1.0e-9 * ((rng_below(1000) as f64) - 500.0)
+        i = i + 1
+    }
+}
+
+function set_inputs(strong: i32, c: f64) -> void {
+    let ip: ptr<f64> = inp
+    let tp: ptr<f64> = tie
+    let mut i: i32 = 0
+    while i < K {
+        if i == strong {
+            ip[i] = 1.0 + tp[i]
+        } else {
+            ip[i] = 1.0 - c + tp[i]
+        }
+        i = i + 1
+    }
+}
+
+function circuit_step() -> void {
+    let rp: ptr<f64> = rate
+    let ip: ptr<f64> = inp
+    let mut total: f64 = 0.0
+    let mut i: i32 = 0
+    while i < K {
+        total = total + rp[i]
+        i = i + 1
+    }
+    let mut unit: WtaUnit = WtaUnit_new()
+    unit.tau = TAU
+    i = 0
+    while i < K {
+        let mut d: f64 = ip[i] + ALPHA * rp[i] - BETA * (total - rp[i])
+        if d < 0.0 {
+            d = 0.0
+        }
+        if d > R_MAX {
+            d = R_MAX
+        }
+        unit.drive = d
+        unit.r = rp[i]
+        WtaUnit_step(&unit, DT)
+        rp[i] = unit.r
+        i = i + 1
+    }
+}
+
+# Start from the symmetric equilibrium the circuit would sit at if every
+# input were the mean of the eight, so the run contains only the separation
+# and not the charge-up transient. That equilibrium solves
+#   r = Ibar + alpha r - beta (K-1) r.
+function reset_rates(c: f64) -> void {
+    let ibar: f64 = 1.0 - c * ((K - 1) as f64) / (K as f64)
+    let r0: f64 = ibar / (1.0 + BETA * ((K - 1) as f64) - ALPHA)
+    let rp: ptr<f64> = rate
+    let mut i: i32 = 0
+    while i < K {
+        rp[i] = r0
+        i = i + 1
+    }
+}
+
+function argmax_rate() -> i32 {
+    let rp: ptr<f64> = rate
+    let mut best: i32 = 0
+    let mut i: i32 = 1
+    while i < K {
+        if rp[i] > rp[best] {
+            best = i
+        }
+        i = i + 1
+    }
+    return best
+}
+
+# Returns the latency in ms, or -1 if the circuit never resolved.
+# Resolution: the winner is above WIN_FRAC of r_max and every loser is below
+# LOSE_FRAC of it.
+function race(strong: i32, c: f64) -> f64 {
+    set_inputs(strong, c)
+    reset_rates(c)
+    let rp: ptr<f64> = rate
+    let steps: i32 = (RUN_MS / DT) as i32
+    let mut k: i32 = 0
+    while k < steps {
+        circuit_step()
+        k = k + 1
+        let lead: i32 = argmax_rate()
+        if rp[lead] > WIN_FRAC * R_MAX {
+            let mut clean: bool = true
+            let mut i: i32 = 0
+            while i < K {
+                if i != lead and rp[i] > LOSE_FRAC * R_MAX {
+                    clean = false
+                }
+                i = i + 1
+            }
+            if clean {
+                return (k as f64) * DT
+            }
+        }
+    }
+    return -1.0
+}
+
+function run_sweep() -> void {
+    make_ties()
+    let mut i: i32 = 0
+    while i < N_C {
+        # logarithmically spaced contrasts
+        let f: f64 = (i as f64) / ((N_C - 1) as f64)
+        let c: f64 = C_LO * exp(f * log(C_HI / C_LO))
+        c_list[i] = c
+
+        lat_fixed[i] = race(0, c)
+        win_fixed[i] = argmax_rate()
+
+        let s: i32 = rng_below(K)
+        want_random[i] = s
+        lat_random[i] = race(s, c)
+        win_random[i] = argmax_rate()
+        i = i + 1
+    }
+}
+
+# Least squares of latency against ln(1/c).
+function fit_slope() -> void {
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut syy: f64 = 0.0
+    let n: f64 = FIT_N as f64
+    let mut i: i32 = 0
+    while i < FIT_N {
+        let x: f64 = log(1.0 / c_list[i])
+        let y: f64 = lat_fixed[i]
+        sx = sx + x
+        sy = sy + y
+        sxx = sxx + x * x
+        sxy = sxy + x * y
+        syy = syy + y * y
+        i = i + 1
+    }
+    let num: f64 = n * sxy - sx * sy
+    slope_meas = num / (n * sxx - sx * sx)
+    let denom: f64 = sqrt((n * sxx - sx * sx) * (n * syy - sy * sy))
+    let r: f64 = num / denom
+    r2 = r * r
+    slope_theory = TAU / (ALPHA - 1.0 + BETA)
+}
+
+function check_results() -> void {
+    correct = 0
+    onehot = 0
+    monotone = true
+    let rp: ptr<f64> = rate
+    let mut i: i32 = 0
+    while i < N_C {
+        if win_fixed[i] == 0 and lat_fixed[i] > 0.0 {
+            correct = correct + 1
+        }
+        if win_random[i] == want_random[i] and lat_random[i] > 0.0 {
+            correct = correct + 1
+        }
+        if lat_fixed[i] > 0.0 {
+            onehot = onehot + 1
+        }
+        if lat_random[i] > 0.0 {
+            onehot = onehot + 1
+        }
+        if i > 0 and lat_fixed[i] >= lat_fixed[i - 1] {
+            monotone = false
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+function unit_r(i: i32) -> i32 {
+    if i == 0 {
+        return 255
+    }
+    return 90 + i * 12
+}
+
+function unit_g(i: i32) -> i32 {
+    if i == 0 {
+        return 205
+    }
+    return 180 - i * 8
+}
+
+function unit_b(i: i32) -> i32 {
+    if i == 0 {
+        return 110
+    }
+    return 210 - i * 10
+}
+
+const RC_X: i32 = 40
+const RC_Y: i32 = 110
+const RC_W: i32 = 420
+const RC_H: i32 = 220
+
+function draw_race(g: Gfx, c: f64) -> void {
+    draw_frame(g, RC_X, RC_Y, RC_W, RC_H, 60, 70, 90)
+    gfx_draw_text(g, RC_X, RC_Y - 14, "THE RACE, LIVE   amber is the strongest input",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, RC_X + 300, RC_Y - 14, "CONTRAST", 1, 150, 165, 190)
+    gfx_draw_fixed(g, RC_X + 372, RC_Y - 14, c, 3, 1, 255, 205, 110)
+    let mut u: i32 = 0
+    while u < K {
+        let mut i: i32 = 1
+        while i < trace_n {
+            let x0: i32 = RC_X + 1 + i - 1
+            let x1: i32 = RC_X + 1 + i
+            let y0: i32 = RC_Y + RC_H - ((trace[u * TRACE_N + i - 1] * ((RC_H - 4) as f64)) as i32)
+            let y1: i32 = RC_Y + RC_H - ((trace[u * TRACE_N + i] * ((RC_H - 4) as f64)) as i32)
+            draw_line(g, x0, y0, x1, y1, 1, unit_r(u), unit_g(u), unit_b(u))
+            i = i + 1
+        }
+        u = u + 1
+    }
+    gfx_draw_text(g, RC_X + 4, RC_Y + 4, "r = 1", 1, 110, 125, 150)
+    gfx_draw_text(g, RC_X + 4, RC_Y + RC_H - 12, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, RC_X + RC_W - 46, RC_Y + RC_H + 4, "84 ms", 1, 110, 125, 150)
+}
+
+const LT_X: i32 = 520
+const LT_Y: i32 = 110
+const LT_W: i32 = 370
+const LT_H: i32 = 220
+const LAT_MAX: f64 = 120.0
+
+function draw_latency(g: Gfx, sel: i32) -> void {
+    draw_frame(g, LT_X, LT_Y, LT_W, LT_H, 60, 70, 90)
+    gfx_draw_text(g, LT_X, LT_Y - 14,
+                  "SELECTION LATENCY vs ln(1/contrast)   line = fit to the low-c half",
+                  1, 150, 165, 190)
+    let xmin: f64 = log(1.0 / C_HI)
+    let xmax: f64 = log(1.0 / C_LO)
+    # fitted line
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut i: i32 = 0
+    while i < FIT_N {
+        sx = sx + log(1.0 / c_list[i])
+        sy = sy + lat_fixed[i]
+        i = i + 1
+    }
+    let mx: f64 = sx / (FIT_N as f64)
+    let my: f64 = sy / (FIT_N as f64)
+    let ya: f64 = my + slope_meas * (xmin - mx)
+    let yb: f64 = my + slope_meas * (xmax - mx)
+    draw_line(g, LT_X, LT_Y + LT_H - (((ya / LAT_MAX) * (LT_H as f64)) as i32),
+              LT_X + LT_W, LT_Y + LT_H - (((yb / LAT_MAX) * (LT_H as f64)) as i32),
+              1, 90, 140, 210)
+    i = 0
+    while i < N_C {
+        let x: i32 = LT_X + ((((log(1.0 / c_list[i]) - xmin) / (xmax - xmin)) * (LT_W as f64)) as i32)
+        let y: i32 = LT_Y + LT_H - (((lat_fixed[i] / LAT_MAX) * (LT_H as f64)) as i32)
+        if i == sel {
+            gfx_fill_rect(g, x - 3, y - 3, 7, 7, 255, 205, 110)
+        } else {
+            gfx_fill_rect(g, x - 2, y - 2, 4, 4, 235, 240, 250)
+        }
+        let yr: i32 = LT_Y + LT_H - (((lat_random[i] / LAT_MAX) * (LT_H as f64)) as i32)
+        gfx_fill_rect(g, x - 1, yr - 1, 2, 2, 120, 220, 200)
+        i = i + 1
+    }
+    gfx_draw_text(g, LT_X + 4, LT_Y + 4, "120 ms", 1, 110, 125, 150)
+    gfx_draw_text(g, LT_X + 4, LT_Y + LT_H - 12, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, LT_X + 4, LT_Y + LT_H + 4, "c = 0.5", 1, 110, 125, 150)
+    gfx_draw_text(g, LT_X + LT_W - 52, LT_Y + LT_H + 4, "c = 0.02", 1, 110, 125, 150)
+    gfx_draw_text(g, LT_X + 60, LT_Y + 4, "white: strong input on unit 0", 1, 235, 240, 250)
+    gfx_draw_text(g, LT_X + 60, LT_Y + 16, "teal: on a unit chosen at random", 1, 120, 220, 200)
+}
+
+const BR_X: i32 = 40
+const BR_Y: i32 = 380
+const BR_W: i32 = 420
+const BR_H: i32 = 80
+
+function draw_bars(g: Gfx) -> void {
+    gfx_draw_text(g, BR_X, BR_Y - 14, "CURRENT RATES", 1, 150, 165, 190)
+    let rp: ptr<f64> = rate
+    let mut i: i32 = 0
+    while i < K {
+        let h: i32 = ((rp[i] / R_MAX) * (BR_H as f64)) as i32
+        gfx_fill_rect(g, BR_X + i * 52, BR_Y + BR_H - h, 44, h,
+                      unit_r(i), unit_g(i), unit_b(i))
+        gfx_draw_int(g, BR_X + i * 52 + 18, BR_Y + BR_H + 4, i, 1, 110, 125, 150)
+        i = i + 1
+    }
+    draw_frame(g, BR_X - 1, BR_Y - 1, K * 52, BR_H + 1, 60, 70, 90)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "WINNER-TAKE-ALL  -  LATENCY AGAINST CONTRAST",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "tau dr/dt = -r + min(1, max(0, I + alpha r - beta sum_others))   RK4 dt 200 us",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44,
+                  "K 8   tau 10 ms   alpha 0.9   beta 1.2   resolved when the winner is above 0.9 and every loser below 0.01",
+                  1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 520, 400, "CORRECT WINNER IN", 1, 150, 165, 190)
+    gfx_draw_int(g, 664, 400, correct, 1, 235, 240, 250)
+    gfx_draw_text(g, 700, 400, "of 32 runs", 1, 110, 125, 150)
+    gfx_draw_text(g, 520, 414, "ONE-HOT AT THE END IN", 1, 150, 165, 190)
+    gfx_draw_int(g, 696, 414, onehot, 1, 235, 240, 250)
+    gfx_draw_text(g, 732, 414, "of 32", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 116, "FITTED SLOPE dT / d ln(1/c)", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 228, WIN_H - 116, slope_meas, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 304, WIN_H - 116, "ms      tau/(alpha-1+beta)", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 508, WIN_H - 116, slope_theory, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 584, WIN_H - 116, "ms", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 100, "RELATIVE ERROR", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 128, WIN_H - 100, fabs(slope_meas - slope_theory) / slope_theory,
+                   5, 1, 235, 240, 250)
+    gfx_draw_text(g, 204, WIN_H - 100, "gate 0.06      R^2 OF THE FIT", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 448, WIN_H - 100, r2, 6, 1, 235, 240, 250)
+    gfx_draw_text(g, 536, WIN_H - 100, "gate 0.995", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 84, "LATENCY AT c = 0.02", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 172, WIN_H - 84, lat_fixed[0], 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 236, WIN_H - 84, "ms      AT c = 0.50", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 396, WIN_H - 84, lat_fixed[N_C - 1], 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 460, WIN_H - 84, "ms      RATIO", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 570, WIN_H - 84, lat_fixed[0] / lat_fixed[N_C - 1], 4, 1, 235, 240, 250)
+
+    if ok {
+        gfx_draw_text(g, 760, WIN_H - 110, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 760, WIN_H - 110, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16,
+                  "LEFT/RIGHT change the contrast   P pause   Esc quit", 1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    trace = malloc(((K as i64) * (TRACE_N as i64)) * 8)
+
+    println("")
+    println("  WINNER-TAKE-ALL  -  selection latency against input contrast")
+    println("  ============================================================")
+    println("")
+    println("    8 units, tau 10 ms, self-excitation 0.9, lateral inhibition 1.2")
+    println("    inputs: one at 1.0, seven at 1 - c;   RK4, dt = 0.2 ms")
+    println("    resolved when the winner exceeds 0.9 and every loser is below 0.01")
+    println("")
+
+    run_sweep()
+    fit_slope()
+    check_results()
+
+    println("      contrast   ln(1/c)   latency [ms]   strong on unit   latency [ms]   winner")
+    println("      --------   -------   ------------   --------------   ------------   ------")
+    let mut i: i32 = 0
+    while i < N_C {
+        print("    ")
+        printf("%10.4f", c_list[i])
+        printf("   %7.4f", log(1.0 / c_list[i]))
+        printf("   %12.3f", lat_fixed[i])
+        printf("   %14.0f", want_random[i] as f64)
+        printf("   %12.3f", lat_random[i])
+        printf("   %6.0f", win_random[i] as f64)
+        println("")
+        i = i + 1
+    }
+    println("")
+    print("    runs ending with the right unit alone active : ")
+    print(correct)
+    println(" of 32")
+    print("    runs that resolved to one-hot at all         : ")
+    print(onehot)
+    println(" of 32")
+    print("    latency strictly decreasing with contrast    : ")
+    if monotone {
+        println("yes")
+    } else {
+        println("NO")
+    }
+    println("")
+    print("    fitted slope over the eight lowest contrasts : ")
+    printf("%10.5f ms", slope_meas)
+    println("")
+    print("    linearisation says tau/(alpha - 1 + beta)    : ")
+    printf("%10.5f ms", slope_theory)
+    print("   relative error ")
+    printf("%.5f", fabs(slope_meas - slope_theory) / slope_theory)
+    print("   gate ")
+    printf("%.2f", SLOPE_TOL)
+    println("")
+    print("    R^2 of that straight line                    : ")
+    printf("%10.6f", r2)
+    print("   gate ")
+    printf("%.3f", R2_MIN)
+    println("")
+    println("")
+
+    let win_ok: bool = correct == 2 * N_C and onehot == 2 * N_C
+    let slope_ok: bool = fabs(slope_meas - slope_theory) / slope_theory < SLOPE_TOL
+    let r2_ok: bool = r2 > R2_MIN
+    let ok: bool = win_ok and monotone and slope_ok and r2_ok
+
+    let mut sel: i32 = 4
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Winner-take-all - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+    set_inputs(0, c_list[sel])
+    reset_rates(c_list[sel])
+    trace_n = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = sel
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = sel - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = sel + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if want < 0 {
+            want = 0
+        }
+        if want >= N_C {
+            want = 0
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        # restart the race every 30 frames, stepping to the next contrast
+        if frame % 30 == 0 {
+            if frame > 0 {
+                want = sel + 3
+                if want >= N_C {
+                    want = 1
+                }
+            }
+            sel = want
+            set_inputs(0, c_list[sel])
+            reset_rates(c_list[sel])
+            trace_n = 0
+        }
+        if want != sel {
+            sel = want
+            set_inputs(0, c_list[sel])
+            reset_rates(c_list[sel])
+            trace_n = 0
+        }
+
+        if !paused and trace_n < TRACE_N {
+            let mut s: i32 = 0
+            while s < 14 and trace_n < TRACE_N {
+                circuit_step()
+                let rp: ptr<f64> = rate
+                let mut u: i32 = 0
+                while u < K {
+                    trace[u * TRACE_N + trace_n] = rp[u]
+                    u = u + 1
+                }
+                trace_n = trace_n + 1
+                s = s + 1
+            }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_race(g, c_list[sel])
+        draw_latency(g, sel)
+        draw_bars(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !win_ok {
+        println("    FAIL: some runs picked the wrong unit or never resolved")
+        return 1
+    }
+    if !monotone {
+        println("    FAIL: latency did not fall monotonically with contrast")
+        return 2
+    }
+    if !slope_ok {
+        println("    FAIL: the latency slope disagrees with tau/(alpha-1+beta)")
+        return 3
+    }
+    if !r2_ok {
+        println("    FAIL: latency is not logarithmic in the contrast")
+        return 4
+    }
+    println("    PASS: the right unit always wins, and latency follows the predicted log law")
+    return 0
+}

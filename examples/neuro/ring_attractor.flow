@@ -1,0 +1,690 @@
+# RING ATTRACTOR: a bump of activity that remembers an angle.
+#
+# MODEL
+#   180 rate units on a ring, one every two degrees. Each excites its
+#   neighbours and inhibits everyone, the classic Mexican hat written as a
+#   cosine:
+#
+#     tau dr_i/dt = -r_i + f( h_i )
+#     h_i = (1/N) sum_j [ -w0 + w1 cos(theta_i - theta_j) ] r_j + I_i
+#     f(x) = max(0, x)
+#
+#   The first line is the `evolves as` in `flow RingUnit` below; the caller
+#   supplies f(h_i) as the unit's drive. Because the kernel is a cosine, the
+#   whole recurrent sum collapses to three population moments,
+#     R = mean r,  Cx = mean r cos theta,  Cy = mean r sin theta,
+#   so a step costs O(N) rather than O(N^2), exactly:
+#     h_i = -w0 R + w1 (cos theta_i Cx + sin theta_i Cy) + I_i
+#
+# PARAMETERS
+#   N 180   tau 10 ms   w0 0.55   w1 2.4   dt 0.5 ms, RK4
+#   cue: a cosine bump of amplitude 1.2 and width 40 degrees
+#
+# WHAT THIS PROVES  (five measurements, all gated)
+#   1. A BUMP FORMS. Started flat, given a 300 ms cue at 90 degrees and then
+#      left alone, the activity profile is a single localised hill. Its full
+#      width at half maximum is measured in degrees, and it must be a proper
+#      bump: narrower than the ring and wider than one unit.
+#   2. IT REMEMBERS. With no input at all for ten seconds the bump stays put.
+#      The remembered angle is compared with the cue angle.
+#   3. IT DOES NOT DRIFT. The drift rate over those ten seconds is measured
+#      in degrees per second and gated below 0.5.
+#   4. IT STILL DOES NOT DRIFT MUCH WHEN THE RING IS IMPERFECT. The same
+#      measurement is repeated with 2 % frozen per-unit gain heterogeneity,
+#      which breaks the rotational symmetry the attractor depends on. The
+#      drift then becomes nonzero, is measured, and must stay small enough
+#      that the bump is still a memory rather than a travelling wave.
+#   5. IT TRACKS. A cue moving at 30 degrees per second is applied for three
+#      seconds. The bump's own angular velocity is measured and compared with
+#      the cue's, and the steady-state lag behind the cue is reported.
+#
+# REFERENCE
+#   R. Ben-Yishai, R. Lev Bar-Or and H. Sompolinsky, "Theory of orientation
+#   tuning in visual cortex", PNAS 92:3844-3848 (1995) - the cosine ring and
+#   its marginal phase.
+#   K. Zhang, "Representation of spatial orientation by the intrinsic
+#   dynamics of the head-direction cell ensemble", J. Neurosci. 16:2112-2126
+#   (1996) - the bump as a memory of an angle, and how a cue moves it.
+#
+# KEYS
+#   Left / Right   push the bump by hand
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/ring_attractor.flow --frames 90 \
+#       --out build/frames_ring --gif build/ring_attractor.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/ring_attractor.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function atan2(y: f64, x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 920
+const WIN_H: i32 = 660
+const MAX_FRAMES: i32 = 4000
+
+const N: i32 = 180
+const TAU: f64 = 10.0           # ms
+const W0: f64 = 0.55            # uniform inhibition
+const W1: f64 = 2.4             # cosine excitation
+const DT: f64 = 0.5             # ms
+
+const CUE_AMP: f64 = 1.2
+const CUE_WIDTH: f64 = 40.0     # degrees, half width of the cosine cue
+const CUE_ANGLE: f64 = 90.0
+const CUE_MS: f64 = 300.0
+
+const HOLD_MS: f64 = 10000.0    # memory test
+const TRACK_MS: f64 = 3000.0
+const TRACK_SPEED: f64 = 30.0   # degrees per second
+
+const HETERO: f64 = 0.02        # frozen per-unit gain spread
+
+const DRIFT_MAX: f64 = 0.5      # deg/s, perfect ring
+const DRIFT_MAX_HET: f64 = 6.0  # deg/s, with heterogeneity
+const TWO_PI: f64 = 6.283185307179586
+
+const HIST_N: i32 = 900         # samples of bump angle over time
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model: one unit of the ring.
+# ---------------------------------------------------------------------------
+
+flow RingUnit {
+    state r : f64 = 0.0
+
+    param drive : f64 = 0.0     # f(h_i), supplied by the ring loop
+    param tau   : f64 = 10.0
+
+    solver { dt 500 us  method rk4 }
+
+    r evolves as (0.0 - r + drive) / tau
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut rate: ptr<f64> = null       # activity of each unit
+let mut gain: ptr<f64> = null       # frozen per-unit gain
+let mut cs: ptr<f64> = null         # cos(theta_i), precomputed
+let mut sn: ptr<f64> = null
+let mut hist: ptr<f64> = null       # bump angle over time
+let mut hist_n: i32 = 0
+
+let mut bump_fwhm: f64 = 0.0
+let mut bump_peak: f64 = 0.0
+let mut angle_after_cue: f64 = 0.0
+let mut angle_after_hold: f64 = 0.0
+let mut drift_ideal: f64 = 0.0
+let mut drift_hetero: f64 = 0.0
+let mut track_speed: f64 = 0.0
+let mut track_lag: f64 = 0.0
+let mut live_angle: f64 = 0.0
+
+let mut rng_state: u32 = 987654321
+
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_signed() -> f64 {
+    let bits: i32 = ((rng_next() >> 8) % 16777216) as i32
+    return (bits as f64) / 8388608.0 - 1.0
+}
+
+# ---------------------------------------------------------------------------
+# Ring mechanics
+# ---------------------------------------------------------------------------
+
+function theta_of(i: i32) -> f64 {
+    return TWO_PI * (i as f64) / (N as f64)
+}
+
+function init_ring(hetero: f64) -> void {
+    rng_state = 987654321
+    let mut i: i32 = 0
+    while i < N {
+        rate[i] = 0.0
+        cs[i] = cos(theta_of(i))
+        sn[i] = sin(theta_of(i))
+        gain[i] = 1.0 + hetero * rng_signed()
+        i = i + 1
+    }
+}
+
+# The cue: a raised cosine centred on `centre_deg`, zero outside its width.
+function cue_at(i: i32, centre_deg: f64, amp: f64) -> f64 {
+    let deg: f64 = 360.0 * (i as f64) / (N as f64)
+    let mut d: f64 = deg - centre_deg
+    while d > 180.0 {
+        d = d - 360.0
+    }
+    while d < -180.0 {
+        d = d + 360.0
+    }
+    if fabs(d) > CUE_WIDTH {
+        return 0.0
+    }
+    return amp * 0.5 * (1.0 + cos(3.141592653589793 * d / CUE_WIDTH))
+}
+
+# One ring step. cue_amp = 0 means no input at all.
+function ring_step(cue_centre: f64, cue_amp: f64) -> void {
+    let mut sum_r: f64 = 0.0
+    let mut sum_c: f64 = 0.0
+    let mut sum_s: f64 = 0.0
+    let mut i: i32 = 0
+    while i < N {
+        sum_r = sum_r + rate[i]
+        sum_c = sum_c + rate[i] * cs[i]
+        sum_s = sum_s + rate[i] * sn[i]
+        i = i + 1
+    }
+    let nf: f64 = N as f64
+    let mean_r: f64 = sum_r / nf
+    let cx: f64 = sum_c / nf
+    let cy: f64 = sum_s / nf
+
+    let mut unit: RingUnit = RingUnit_new()
+    unit.tau = TAU
+    i = 0
+    while i < N {
+        let mut h: f64 = gain[i] * (0.0 - W0 * mean_r + W1 * (cs[i] * cx + sn[i] * cy))
+        if cue_amp > 0.0 {
+            h = h + cue_at(i, cue_centre, cue_amp)
+        }
+        if h < 0.0 {
+            h = 0.0
+        }
+        unit.drive = h
+        unit.r = rate[i]
+        RingUnit_step(&unit, DT)
+        rate[i] = unit.r
+        i = i + 1
+    }
+}
+
+# Population vector angle, in degrees.
+function bump_angle() -> f64 {
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut i: i32 = 0
+    while i < N {
+        sx = sx + rate[i] * cs[i]
+        sy = sy + rate[i] * sn[i]
+        i = i + 1
+    }
+    let a: f64 = atan2(sy, sx) * 360.0 / TWO_PI
+    if a < 0.0 {
+        return a + 360.0
+    }
+    return a
+}
+
+# Shortest signed difference between two angles, in degrees.
+function ang_diff(a: f64, b: f64) -> f64 {
+    let mut d: f64 = a - b
+    while d > 180.0 {
+        d = d - 360.0
+    }
+    while d < -180.0 {
+        d = d + 360.0
+    }
+    return d
+}
+
+# Full width at half maximum of the activity profile, in degrees.
+function measure_fwhm() -> f64 {
+    let mut peak: f64 = 0.0
+    let mut i: i32 = 0
+    while i < N {
+        if rate[i] > peak {
+            peak = rate[i]
+        }
+        i = i + 1
+    }
+    bump_peak = peak
+    if peak <= 0.0 {
+        return 0.0
+    }
+    let half: f64 = 0.5 * peak
+    let mut count: i32 = 0
+    i = 0
+    while i < N {
+        if rate[i] >= half {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return 360.0 * (count as f64) / (N as f64)
+}
+
+# ---------------------------------------------------------------------------
+# The three experiments
+# ---------------------------------------------------------------------------
+
+# Cue, then hold with no input, and see whether the angle survives.
+function run_memory(hetero: f64, record: bool) -> f64 {
+    init_ring(hetero)
+    let cue_steps: i32 = (CUE_MS / DT) as i32
+    let hold_steps: i32 = (HOLD_MS / DT) as i32
+    let mut k: i32 = 0
+    while k < cue_steps {
+        ring_step(CUE_ANGLE, CUE_AMP)
+        k = k + 1
+    }
+    let a0: f64 = bump_angle()
+    if record {
+        angle_after_cue = a0
+        bump_fwhm = measure_fwhm()
+        hist_n = 0
+    }
+    k = 0
+    while k < hold_steps {
+        ring_step(0.0, 0.0)
+        if record and k % (hold_steps / HIST_N) == 0 and hist_n < HIST_N {
+            hist[hist_n] = bump_angle()
+            hist_n = hist_n + 1
+        }
+        k = k + 1
+    }
+    let a1: f64 = bump_angle()
+    if record {
+        angle_after_hold = a1
+    }
+    return fabs(ang_diff(a1, a0)) / (HOLD_MS / 1000.0)
+}
+
+# Move the cue steadily and see whether the bump follows.
+function run_tracking() -> void {
+    init_ring(0.0)
+    let cue_steps: i32 = (CUE_MS / DT) as i32
+    let mut k: i32 = 0
+    while k < cue_steps {
+        ring_step(CUE_ANGLE, CUE_AMP)
+        k = k + 1
+    }
+    let track_steps: i32 = (TRACK_MS / DT) as i32
+    let settle: i32 = track_steps / 5
+    let mut a_start: f64 = 0.0
+    let mut t_start: f64 = 0.0
+    let mut lag_sum: f64 = 0.0
+    let mut lag_n: f64 = 0.0
+    k = 0
+    while k < track_steps {
+        let t: f64 = (k as f64) * DT
+        let centre: f64 = CUE_ANGLE + TRACK_SPEED * t / 1000.0
+        ring_step(centre, CUE_AMP)
+        if k == settle {
+            a_start = bump_angle()
+            t_start = t
+        }
+        if k > settle {
+            lag_sum = lag_sum + ang_diff(centre, bump_angle())
+            lag_n = lag_n + 1.0
+        }
+        k = k + 1
+    }
+    let t_end: f64 = ((track_steps - 1) as f64) * DT
+    let a_end: f64 = bump_angle()
+    let travelled: f64 = TRACK_SPEED * (t_end - t_start) / 1000.0
+    let mut moved: f64 = ang_diff(a_end, a_start)
+    # the cue travels less than half a turn, so unwrapping is unambiguous
+    if moved < 0.0 and travelled > 0.0 {
+        moved = moved + 360.0
+    }
+    track_speed = moved / ((t_end - t_start) / 1000.0)
+    track_lag = lag_sum / lag_n
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+const RG_CX: i32 = 210
+const RG_CY: i32 = 300
+const RG_R0: i32 = 70
+const RG_R1: i32 = 140
+
+function draw_ring(g: Gfx, cue_centre: f64, cue_on: bool) -> void {
+    gfx_draw_text(g, 40, 84, "THE RING, LIVE   radius and colour are activity",
+                  1, 150, 165, 190)
+    let mut peak: f64 = 0.001
+    let mut i: i32 = 0
+    while i < N {
+        if rate[i] > peak {
+            peak = rate[i]
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < N {
+        let t: f64 = rate[i] / peak
+        let rad: f64 = (RG_R0 as f64) + t * ((RG_R1 - RG_R0) as f64)
+        let x: i32 = RG_CX + ((rad * cs[i]) as i32)
+        let y: i32 = RG_CY - ((rad * sn[i]) as i32)
+        let x0: i32 = RG_CX + (((RG_R0 as f64) - 2.0) * cs[i]) as i32
+        let y0: i32 = RG_CY - (((RG_R0 as f64) - 2.0) * sn[i]) as i32
+        let cr: i32 = 40 + ((215.0 * t) as i32)
+        let cg: i32 = 60 + ((170.0 * t) as i32)
+        let cb: i32 = 90 + ((30.0 * t) as i32)
+        draw_line(g, x0, y0, x, y, 1, cr, cg, cb)
+        i = i + 1
+    }
+    # the remembered angle
+    let a: f64 = live_angle * TWO_PI / 360.0
+    let ax: i32 = RG_CX + (((RG_R1 + 14) as f64) * cos(a)) as i32
+    let ay: i32 = RG_CY - (((RG_R1 + 14) as f64) * sin(a)) as i32
+    gfx_fill_rect(g, ax - 3, ay - 3, 7, 7, 255, 205, 110)
+    gfx_draw_text(g, ax + 8, ay - 4, "BUMP", 1, 255, 205, 110)
+    if cue_on {
+        let c: f64 = cue_centre * TWO_PI / 360.0
+        let bx: i32 = RG_CX + (((RG_R1 + 30) as f64) * cos(c)) as i32
+        let by: i32 = RG_CY - (((RG_R1 + 30) as f64) * sin(c)) as i32
+        gfx_fill_rect(g, bx - 2, by - 2, 5, 5, 120, 220, 250)
+        gfx_draw_text(g, bx + 8, by - 4, "CUE", 1, 120, 220, 250)
+    }
+    gfx_draw_text(g, RG_CX - 14, RG_CY - 4, "0 deg", 1, 90, 100, 120)
+}
+
+const PF_X: i32 = 420
+const PF_Y: i32 = 100
+const PF_W: i32 = 460
+const PF_H: i32 = 150
+
+function draw_profile(g: Gfx) -> void {
+    draw_frame(g, PF_X, PF_Y, PF_W, PF_H, 60, 70, 90)
+    gfx_draw_text(g, PF_X, PF_Y - 14, "ACTIVITY PROFILE AROUND THE RING",
+                  1, 150, 165, 190)
+    let mut peak: f64 = 0.001
+    let mut i: i32 = 0
+    while i < N {
+        if rate[i] > peak {
+            peak = rate[i]
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < N {
+        let h: i32 = ((rate[i] / peak) * ((PF_H - 4) as f64)) as i32
+        let x: i32 = PF_X + 2 + ((i * (PF_W - 4)) / N)
+        gfx_fill_rect(g, x, PF_Y + PF_H - h, 2, h, 120, 220, 200)
+        i = i + 1
+    }
+    gfx_draw_text(g, PF_X + 4, PF_Y + PF_H + 4, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, PF_X + PF_W - 34, PF_Y + PF_H + 4, "360 deg", 1, 110, 125, 150)
+}
+
+const HS_X: i32 = 420
+const HS_Y: i32 = 300
+const HS_W: i32 = 460
+const HS_H: i32 = 170
+
+function draw_history(g: Gfx) -> void {
+    draw_frame(g, HS_X, HS_Y, HS_W, HS_H, 60, 70, 90)
+    gfx_draw_text(g, HS_X, HS_Y - 14,
+                  "REMEMBERED ANGLE OVER TEN SECONDS WITH NO INPUT", 1, 150, 165, 190)
+    let mut i: i32 = 1
+    while i < hist_n {
+        let x0: i32 = HS_X + (((i - 1) * HS_W) / HIST_N)
+        let x1: i32 = HS_X + ((i * HS_W) / HIST_N)
+        let y0: i32 = HS_Y + HS_H - (((hist[i - 1] / 360.0) * (HS_H as f64)) as i32)
+        let y1: i32 = HS_Y + HS_H - (((hist[i] / 360.0) * (HS_H as f64)) as i32)
+        draw_line(g, x0, y0, x1, y1, 2, 255, 205, 110)
+        i = i + 1
+    }
+    let ycue: i32 = HS_Y + HS_H - (((CUE_ANGLE / 360.0) * (HS_H as f64)) as i32)
+    let mut gx: i32 = HS_X
+    while gx < HS_X + HS_W {
+        gfx_fill_rect(g, gx, ycue, 3, 1, 120, 220, 250)
+        gx = gx + 8
+    }
+    gfx_draw_text(g, HS_X + 4, ycue - 12, "cue was at 90 deg", 1, 120, 220, 250)
+    gfx_draw_text(g, HS_X + 4, HS_Y + 4, "360", 1, 110, 125, 150)
+    gfx_draw_text(g, HS_X + 4, HS_Y + HS_H - 12, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, HS_X + HS_W - 40, HS_Y + HS_H + 4, "10 s", 1, 110, 125, 150)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "RING ATTRACTOR  -  A BUMP THAT REMEMBERS AN ANGLE",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "tau dr/dt = -r + max(0, -w0 <r> + w1 (cos t <r cos> + sin t <r sin>) + I)   RK4 dt 500 us",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44, "N 180   tau 10 ms   w0 0.55   w1 2.4", 1, 110, 125, 150)
+    if paused {
+        gfx_draw_text(g, 840, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 12, WIN_H - 116, "BUMP WIDTH AT HALF MAXIMUM", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 224, WIN_H - 116, bump_fwhm, 2, 1, 235, 240, 250)
+    gfx_draw_text(g, 280, WIN_H - 116, "deg     PEAK RATE", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 428, WIN_H - 116, bump_peak, 4, 1, 235, 240, 250)
+
+    gfx_draw_text(g, 12, WIN_H - 100, "ANGLE AFTER THE CUE", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 172, WIN_H - 100, angle_after_cue, 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 236, WIN_H - 100, "deg     AFTER TEN SECONDS OF SILENCE",
+                  1, 110, 125, 150)
+    gfx_draw_fixed(g, 528, WIN_H - 100, angle_after_hold, 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 592, WIN_H - 100, "deg", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 84, "DRIFT, PERFECT RING", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 172, WIN_H - 84, drift_ideal, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 248, WIN_H - 84, "deg/s   gate < 0.5      WITH 2 % GAIN SPREAD",
+                  1, 110, 125, 150)
+    gfx_draw_fixed(g, 620, WIN_H - 84, drift_hetero, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 696, WIN_H - 84, "deg/s", 1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 68, "TRACKING A 30 deg/s CUE: BUMP SPEED",
+                  1, 150, 165, 190)
+    gfx_draw_fixed(g, 292, WIN_H - 68, track_speed, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 360, WIN_H - 68, "deg/s     STEADY LAG", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 528, WIN_H - 68, track_lag, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 596, WIN_H - 68, "deg", 1, 110, 125, 150)
+
+    if ok {
+        gfx_draw_text(g, 760, WIN_H - 108, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 760, WIN_H - 108, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 16,
+                  "LEFT/RIGHT push the bump   P pause   Esc quit", 1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    rate = malloc((N as i64) * 8)
+    gain = malloc((N as i64) * 8)
+    cs = malloc((N as i64) * 8)
+    sn = malloc((N as i64) * 8)
+    hist = malloc((HIST_N as i64) * 8)
+
+    println("")
+    println("  RING ATTRACTOR  --  a bump that forms, persists and tracks")
+    println("  ==========================================================")
+    println("")
+    println("    180 rate units on a ring, tau 10 ms, w0 0.55, w1 2.4, RK4 dt 0.5 ms")
+    println("    cue: raised cosine, amplitude 1.2, half width 40 deg, at 90 deg for 300 ms")
+    println("")
+
+    drift_ideal = run_memory(0.0, true)
+    drift_hetero = run_memory(HETERO, false)
+    run_tracking()
+
+    print("    bump width at half maximum      : ")
+    printf("%9.3f deg", bump_fwhm)
+    print("     peak rate ")
+    printf("%.5f", bump_peak)
+    println("")
+    print("    angle right after the cue       : ")
+    printf("%9.4f deg", angle_after_cue)
+    println("")
+    print("    angle after 10 s with no input  : ")
+    printf("%9.4f deg", angle_after_hold)
+    print("     moved ")
+    printf("%.5f", fabs(ang_diff(angle_after_hold, angle_after_cue)))
+    println(" deg")
+    print("    drift, perfect ring             : ")
+    printf("%9.5f deg/s", drift_ideal)
+    print("   gate < ")
+    printf("%.1f", DRIFT_MAX)
+    println("")
+    print("    drift, 2 % gain heterogeneity   : ")
+    printf("%9.5f deg/s", drift_hetero)
+    print("   gate < ")
+    printf("%.1f", DRIFT_MAX_HET)
+    println("   (broken symmetry, so nonzero)")
+    println("")
+    print("    cue speed                       : ")
+    printf("%9.4f deg/s", TRACK_SPEED)
+    println("")
+    print("    bump speed while tracking       : ")
+    printf("%9.4f deg/s", track_speed)
+    print("   relative error ")
+    printf("%.5f", fabs(track_speed - TRACK_SPEED) / TRACK_SPEED)
+    println("")
+    print("    steady lag behind the cue       : ")
+    printf("%9.4f deg", track_lag)
+    println("")
+    println("")
+
+    let bump_ok: bool = bump_fwhm > 10.0 and bump_fwhm < 180.0 and bump_peak > 0.05
+    let mem_ok: bool = fabs(ang_diff(angle_after_cue, CUE_ANGLE)) < 3.0
+    let drift_ok: bool = drift_ideal < DRIFT_MAX
+    let het_ok: bool = drift_hetero < DRIFT_MAX_HET
+    let track_ok: bool = fabs(track_speed - TRACK_SPEED) / TRACK_SPEED < 0.10
+                         and fabs(track_lag) < 30.0
+    let ok: bool = bump_ok and mem_ok and drift_ok and het_ok and track_ok
+
+    # Live: re-run the whole story so the window shows it happening.
+    init_ring(0.0)
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Ring attractor - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut nudge: f64 = 0.0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        if gfx_key_down(g, KEY_LEFT) {
+            nudge = nudge - 6.0
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            nudge = nudge + 6.0
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        # frames 0..14 cue, 15..44 silent memory, 45.. moving cue
+        let mut cue_centre: f64 = CUE_ANGLE + nudge
+        let mut cue_amp: f64 = 0.0
+        let phase: i32 = frame % 90
+        if phase < 15 {
+            cue_amp = CUE_AMP
+        }
+        if phase >= 45 {
+            cue_amp = CUE_AMP
+            cue_centre = CUE_ANGLE + nudge + TRACK_SPEED * (((phase - 45) * 20) as f64) / 1000.0
+        }
+        if !paused {
+            let mut s: i32 = 0
+            while s < 40 {           # 20 ms of ring per frame
+                ring_step(cue_centre, cue_amp)
+                s = s + 1
+            }
+        }
+        live_angle = bump_angle()
+
+        gfx_clear(g, 10, 12, 18)
+        draw_ring(g, cue_centre, cue_amp > 0.0)
+        draw_profile(g)
+        draw_history(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !bump_ok {
+        println("    FAIL: no localised bump formed")
+        return 1
+    }
+    if !mem_ok {
+        println("    FAIL: the bump did not settle at the cue angle")
+        return 2
+    }
+    if !drift_ok {
+        println("    FAIL: the bump drifted on a perfect ring")
+        return 3
+    }
+    if !het_ok {
+        println("    FAIL: 2 % gain heterogeneity turned the bump into a travelling wave")
+        return 4
+    }
+    if !track_ok {
+        println("    FAIL: the bump did not track the moving cue")
+        return 5
+    }
+    println("    PASS: the bump forms, remembers for ten seconds, and tracks a moving cue")
+    return 0
+}
