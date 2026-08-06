@@ -1,0 +1,488 @@
+# SPINNING SOLIDS: the five Platonic solids through the whole 3D pipeline.
+#
+# TECHNIQUE
+#   Each solid is given only as a list of vertex coordinates. The faces are
+#   recovered at build time by a convex-hull plane sweep: for every triple of
+#   vertices, take the plane through them, orient it away from the origin, and
+#   keep it if no other vertex lies outside. Distinct planes are the faces.
+#   Every vertex lying on a face plane is collected, sorted by angle around
+#   the face normal, and fan-triangulated. That is why the dodecahedron's
+#   pentagons come out as pentagons and not as a mess of diagonals, without a
+#   single hand-written face table.
+#
+#     tetrahedron   4 verts    4 faces    4 triangles
+#     cube          8 verts    6 faces   12 triangles
+#     octahedron    6 verts    8 faces    8 triangles
+#     dodecahedron 20 verts   12 faces   36 triangles
+#     icosahedron  12 verts   20 faces   20 triangles
+#
+#   The rest is stdlib/render3d.flow doing its job: model matrix from two
+#   rotations, view-projection from look-at and perspective, near clipping,
+#   back-face culling by signed screen area, and a z-buffered edge-function
+#   rasterizer.
+#
+#   Three shading modes make the pipeline visible. WIRE draws depth-tested
+#   Bresenham edges. FLAT computes one normal per triangle from its world
+#   positions, so the facets stay hard. GOURAUD uses per-vertex normals, which
+#   for a solid inscribed in a sphere are the normalized vertex positions, so
+#   the same geometry reads as a smooth ball. The difference between the last
+#   two is the whole difference between flat and Gouraud lighting.
+#
+# CONTROLS
+#   1..5      tetrahedron, cube, octahedron, dodecahedron, icosahedron
+#   Left/Right  previous / next solid
+#   M         cycle shading: WIRE, FLAT, GOURAUD
+#   C         toggle back-face culling
+#   Space     pause the spin
+#   R         reset orientation
+#   Esc       quit
+#
+# HUD
+#   Solid name, shading mode, vertex and triangle counts, triangles submitted
+#   and drawn this frame, shaded pixel count, and the measured frame cost.
+#
+# Run: ./flow gfx examples/threed/spinning_solids.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/render3d.flow"
+
+extern {
+    function atan2f(y: f32, x: f32) -> f32
+    function malloc(n: i64) -> ptr<void>
+}
+
+const WIN_W: i32 = 480
+const WIN_H: i32 = 360
+const MAX_FRAMES: i32 = 100000
+
+const KEY_M: i32 = 46
+const KEY_C: i32 = 8
+const KEY_SPACE: i32 = 49
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+const KEY_5: i32 = 23
+
+const SOLID_TETRA: i32 = 0
+const SOLID_CUBE: i32 = 1
+const SOLID_OCTA: i32 = 2
+const SOLID_DODECA: i32 = 3
+const SOLID_ICOSA: i32 = 4
+
+const PHI: f32 = 1.6180339887
+const INV_PHI: f32 = 0.6180339887
+const PLANE_EPS: f32 = 0.002
+
+# Working storage for the hull sweep. The worst cases across the five solids
+# are the dodecahedron's twenty vertices and the icosahedron's twenty faces.
+const MAX_SV: i32 = 20
+const MAX_PLANES: i32 = 20
+
+let mut sv: ptr<f32> = null        # vertex coordinates, 3 per vertex
+let mut svn: i32 = 0
+let mut pl: ptr<f32> = null        # face planes, (nx, ny, nz, d) per plane
+let mut pln: i32 = 0
+let mut ring: ptr<i32> = null      # vertex indices of one face, in order
+let mut ringa: ptr<f32> = null     # their angles around the face normal
+
+function sv_get(i: i32) -> V3 {
+    let o: i32 = i * 3
+    return v3(sv[o], sv[o + 1], sv[o + 2])
+}
+
+function sv_push(x: f32, y: f32, z: f32) -> void {
+    if svn >= MAX_SV { return }
+    let o: i32 = svn * 3
+    sv[o] = x
+    sv[o + 1] = y
+    sv[o + 2] = z
+    svn = svn + 1
+}
+
+function solid_name(kind: i32) -> string {
+    if kind == SOLID_TETRA { return "TETRAHEDRON" }
+    if kind == SOLID_CUBE { return "CUBE" }
+    if kind == SOLID_OCTA { return "OCTAHEDRON" }
+    if kind == SOLID_DODECA { return "DODECAHEDRON" }
+    return "ICOSAHEDRON"
+}
+
+function mode_name(m: i32) -> string {
+    if m == R3D_WIRE { return "WIRE" }
+    if m == R3D_FLAT { return "FLAT" }
+    return "GOURAUD"
+}
+
+# The vertex sets. Every one is centred on the origin, which the hull sweep
+# relies on when it orients a face plane outwards.
+function build_verts(kind: i32) -> void {
+    svn = 0
+    if kind == SOLID_TETRA {
+        sv_push(1.0, 1.0, 1.0)
+        sv_push(1.0, -1.0, -1.0)
+        sv_push(-1.0, 1.0, -1.0)
+        sv_push(-1.0, -1.0, 1.0)
+        return
+    }
+    if kind == SOLID_CUBE {
+        let mut i: i32 = 0
+        while i < 8 {
+            let mut x: f32 = -1.0
+            let mut y: f32 = -1.0
+            let mut z: f32 = -1.0
+            if i % 2 == 1 { x = 1.0 }
+            if (i / 2) % 2 == 1 { y = 1.0 }
+            if (i / 4) % 2 == 1 { z = 1.0 }
+            sv_push(x, y, z)
+            i = i + 1
+        }
+        return
+    }
+    if kind == SOLID_OCTA {
+        sv_push(1.4, 0.0, 0.0)
+        sv_push(-1.4, 0.0, 0.0)
+        sv_push(0.0, 1.4, 0.0)
+        sv_push(0.0, -1.4, 0.0)
+        sv_push(0.0, 0.0, 1.4)
+        sv_push(0.0, 0.0, -1.4)
+        return
+    }
+    if kind == SOLID_DODECA {
+        let mut i: i32 = 0
+        while i < 8 {
+            let mut x: f32 = -1.0
+            let mut y: f32 = -1.0
+            let mut z: f32 = -1.0
+            if i % 2 == 1 { x = 1.0 }
+            if (i / 2) % 2 == 1 { y = 1.0 }
+            if (i / 4) % 2 == 1 { z = 1.0 }
+            sv_push(x, y, z)
+            i = i + 1
+        }
+        sv_push(0.0, INV_PHI, PHI)
+        sv_push(0.0, INV_PHI, 0.0 - PHI)
+        sv_push(0.0, 0.0 - INV_PHI, PHI)
+        sv_push(0.0, 0.0 - INV_PHI, 0.0 - PHI)
+        sv_push(INV_PHI, PHI, 0.0)
+        sv_push(INV_PHI, 0.0 - PHI, 0.0)
+        sv_push(0.0 - INV_PHI, PHI, 0.0)
+        sv_push(0.0 - INV_PHI, 0.0 - PHI, 0.0)
+        sv_push(PHI, 0.0, INV_PHI)
+        sv_push(PHI, 0.0, 0.0 - INV_PHI)
+        sv_push(0.0 - PHI, 0.0, INV_PHI)
+        sv_push(0.0 - PHI, 0.0, 0.0 - INV_PHI)
+        return
+    }
+    sv_push(-1.0, PHI, 0.0)
+    sv_push(1.0, PHI, 0.0)
+    sv_push(-1.0, 0.0 - PHI, 0.0)
+    sv_push(1.0, 0.0 - PHI, 0.0)
+    sv_push(0.0, -1.0, PHI)
+    sv_push(0.0, 1.0, PHI)
+    sv_push(0.0, -1.0, 0.0 - PHI)
+    sv_push(0.0, 1.0, 0.0 - PHI)
+    sv_push(PHI, 0.0, -1.0)
+    sv_push(PHI, 0.0, 1.0)
+    sv_push(0.0 - PHI, 0.0, -1.0)
+    sv_push(0.0 - PHI, 0.0, 1.0)
+}
+
+# Record a face plane if it is not already known.
+function plane_add(n: V3, d: f32) -> void {
+    if pln >= MAX_PLANES { return }
+    let mut i: i32 = 0
+    while i < pln {
+        let o: i32 = i * 4
+        let dot: f32 = n.x * pl[o] + n.y * pl[o + 1] + n.z * pl[o + 2]
+        if dot > 0.999 {
+            let dd: f32 = d - pl[o + 3]
+            if dd < PLANE_EPS and dd > 0.0 - PLANE_EPS {
+                return
+            }
+        }
+        i = i + 1
+    }
+    let o: i32 = pln * 4
+    pl[o] = n.x
+    pl[o + 1] = n.y
+    pl[o + 2] = n.z
+    pl[o + 3] = d
+    pln = pln + 1
+}
+
+# Every plane through three vertices with all remaining vertices on the inner
+# side is a face of the convex hull.
+function find_planes() -> void {
+    pln = 0
+    let mut i: i32 = 0
+    while i < svn {
+        let mut j: i32 = i + 1
+        while j < svn {
+            let mut k: i32 = j + 1
+            while k < svn {
+                let a: V3 = sv_get(i)
+                let b: V3 = sv_get(j)
+                let c: V3 = sv_get(k)
+                let mut n: V3 = v3_cross(v3_sub(b, a), v3_sub(c, a))
+                if v3_len(n) > 0.0001 {
+                    n = v3_norm(n)
+                    let mut d: f32 = v3_dot(n, a)
+                    if d < 0.0 {
+                        n = v3_neg(n)
+                        d = 0.0 - d
+                    }
+                    if d > PLANE_EPS {
+                        let mut outside: bool = false
+                        let mut m: i32 = 0
+                        while m < svn {
+                            if v3_dot(n, sv_get(m)) > d + PLANE_EPS {
+                                outside = true
+                            }
+                            m = m + 1
+                        }
+                        if !outside {
+                            plane_add(n, d)
+                        }
+                    }
+                }
+                k = k + 1
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+# A distinct colour per face index, cycling through six hues.
+function face_colour(i: i32) -> V3 {
+    let k: i32 = i % 6
+    if k == 0 { return v3(0.90, 0.32, 0.28) }
+    if k == 1 { return v3(0.98, 0.72, 0.24) }
+    if k == 2 { return v3(0.40, 0.80, 0.42) }
+    if k == 3 { return v3(0.30, 0.62, 0.92) }
+    if k == 4 { return v3(0.68, 0.44, 0.90) }
+    return v3(0.92, 0.52, 0.72)
+}
+
+# Collect the vertices on one face plane, order them around the normal, and
+# emit a triangle fan. Vertex normals are the normalized positions, which is
+# what lets GOURAUD read as a sphere while FLAT stays faceted.
+function emit_face(pi: i32) -> void {
+    let o: i32 = pi * 4
+    let n: V3 = v3(pl[o], pl[o + 1], pl[o + 2])
+    let d: f32 = pl[o + 3]
+    let centre: V3 = v3_scale(n, d)
+
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < svn {
+        let dv: f32 = v3_dot(n, sv_get(i)) - d
+        if dv < PLANE_EPS and dv > 0.0 - PLANE_EPS {
+            if count < MAX_SV {
+                ring[count] = i
+                count = count + 1
+            }
+        }
+        i = i + 1
+    }
+    if count < 3 { return }
+
+    let u: V3 = v3_norm(v3_sub(sv_get(ring[0]), centre))
+    let w: V3 = v3_cross(n, u)
+    let mut a: i32 = 0
+    while a < count {
+        let rel: V3 = v3_sub(sv_get(ring[a]), centre)
+        ringa[a] = atan2f(v3_dot(rel, w), v3_dot(rel, u))
+        a = a + 1
+    }
+
+    # Insertion sort by angle: at most five entries.
+    let mut s: i32 = 1
+    while s < count {
+        let key_i: i32 = ring[s]
+        let key_a: f32 = ringa[s]
+        let mut t: i32 = s - 1
+        while t >= 0 and ringa[t] > key_a {
+            ring[t + 1] = ring[t]
+            ringa[t + 1] = ringa[t]
+            t = t - 1
+        }
+        ring[t + 1] = key_i
+        ringa[t + 1] = key_a
+        s = s + 1
+    }
+
+    let col: V3 = face_colour(pi)
+    let mut idx: ptr<i32> = ring
+    let mut base: i32 = 0
+    let mut f: i32 = 0
+    while f < count {
+        let p: V3 = sv_get(idx[f])
+        let vi: i32 = r3d_mesh_vertex(p, v3_norm(p), col)
+        if f == 0 { base = vi }
+        f = f + 1
+    }
+    let mut tfan: i32 = 1
+    while tfan < count - 1 {
+        r3d_mesh_tri(base, base + tfan, base + tfan + 1)
+        tfan = tfan + 1
+    }
+}
+
+function build_solid(kind: i32) -> void {
+    build_verts(kind)
+    find_planes()
+    r3d_mesh_reset()
+    let mut i: i32 = 0
+    while i < pln {
+        emit_face(i)
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    sv = malloc((MAX_SV * 3 * 4) as i64) as ptr<f32>
+    pl = malloc((MAX_PLANES * 4 * 4) as i64) as ptr<f32>
+    ring = malloc((MAX_SV * 4) as i64) as ptr<i32>
+    ringa = malloc((MAX_SV * 4) as i64) as ptr<f32>
+    if sv == null or pl == null or ring == null or ringa == null {
+        println("allocation failed")
+        return 1
+    }
+    if !r3d_init(WIN_W, WIN_H) {
+        println("render3d init failed")
+        return 1
+    }
+    r3d_set_ambient(0.22)
+
+    let mut proj: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut view: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut vp: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut rx: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut ry: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut model: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                     0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let pproj: ptr<f32> = proj
+    let pview: ptr<f32> = view
+    let pvp: ptr<f32> = vp
+    let prx: ptr<f32> = rx
+    let pry: ptr<f32> = ry
+    let pmodel: ptr<f32> = model
+
+    m4_perspective(pproj, r3d_radians(55.0), r3d_aspect(), 0.1, 60.0)
+    m4_look_at(pview, v3(0.0, 1.6, 6.2), v3(0.0, 0.0, 0.0), v3(0.0, 1.0, 0.0))
+    m4_mul(pvp, proj, view)
+
+    let mut kind: i32 = SOLID_ICOSA
+    let mut mode: i32 = R3D_FLAT
+    let mut cull: bool = true
+    let mut spin: bool = true
+    let mut angle: f32 = 0.0
+    build_solid(kind)
+
+    let mut last_m: bool = false
+    let mut last_c: bool = false
+    let mut last_space: bool = false
+    let mut last_left: bool = false
+    let mut last_right: bool = false
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "SPINNING SOLIDS - Flow render3d")
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        r3d_tick()
+
+        let mut want: i32 = kind
+        if gfx_key_down(g, KEY_1) { want = SOLID_TETRA }
+        if gfx_key_down(g, KEY_2) { want = SOLID_CUBE }
+        if gfx_key_down(g, KEY_3) { want = SOLID_OCTA }
+        if gfx_key_down(g, KEY_4) { want = SOLID_DODECA }
+        if gfx_key_down(g, KEY_5) { want = SOLID_ICOSA }
+
+        let left_now: bool = gfx_key_down(g, KEY_LEFT)
+        if left_now and !last_left { want = (kind + 4) % 5 }
+        last_left = left_now
+        let right_now: bool = gfx_key_down(g, KEY_RIGHT)
+        if right_now and !last_right { want = (kind + 1) % 5 }
+        last_right = right_now
+
+        if want != kind {
+            kind = want
+            build_solid(kind)
+        }
+
+        let m_now: bool = gfx_key_down(g, KEY_M)
+        if m_now and !last_m { mode = (mode + 1) % 3 }
+        last_m = m_now
+
+        let c_now: bool = gfx_key_down(g, KEY_C)
+        if c_now and !last_c { cull = !cull }
+        last_c = c_now
+
+        let space_now: bool = gfx_key_down(g, KEY_SPACE)
+        if space_now and !last_space { spin = !spin }
+        last_space = space_now
+
+        if gfx_key_down(g, KEY_R) { angle = 0.0 }
+
+        if cull {
+            r3d_set_cull(R3D_CULL_BACK)
+        } else {
+            r3d_set_cull(R3D_CULL_NONE)
+        }
+
+        if spin { angle = angle + 0.018 }
+        m4_rotation_y(pry, angle)
+        m4_rotation_x(prx, angle * 0.63)
+        m4_mul(pmodel, ry, rx)
+
+        r3d_clear_gradient(v3(0.05, 0.06, 0.11), v3(0.16, 0.18, 0.26))
+        r3d_draw_mesh(model, vp, v3(0.45, 0.80, 0.42), mode)
+        r3d_present(g)
+
+        gfx_fill_rect(g, 0, 0, WIN_W, 68, 14, 17, 24)
+        gfx_fill_rect(g, 0, WIN_H - 68, WIN_W, 68, 14, 17, 24)
+        gfx_draw_text(g, 8, 8, "SPINNING SOLIDS", 2, 235, 235, 245)
+        gfx_draw_text(g, 8, 28, solid_name(kind), 2, 250, 210, 120)
+        gfx_draw_text(g, 8, 48, mode_name(mode), 2, 150, 220, 250)
+        if !cull {
+            gfx_draw_text(g, 120, 48, "NO CULL", 2, 250, 140, 140)
+        }
+
+        gfx_draw_text(g, 8, WIN_H - 62, "VERTS", 1, 170, 175, 190)
+        gfx_draw_int(g, 60, WIN_H - 62, r3d_mesh_verts(), 1, 235, 235, 245)
+        gfx_draw_text(g, 100, WIN_H - 62, "TRIS", 1, 170, 175, 190)
+        gfx_draw_int(g, 140, WIN_H - 62, r3d_mesh_tris(), 1, 235, 235, 245)
+        gfx_draw_text(g, 180, WIN_H - 62, "FACES", 1, 170, 175, 190)
+        gfx_draw_int(g, 232, WIN_H - 62, pln, 1, 235, 235, 245)
+
+        gfx_draw_text(g, 8, WIN_H - 48, "SUBMIT", 1, 170, 175, 190)
+        gfx_draw_int(g, 66, WIN_H - 48, r3d_tris_submitted(), 1, 235, 235, 245)
+        gfx_draw_text(g, 106, WIN_H - 48, "DRAWN", 1, 170, 175, 190)
+        gfx_draw_int(g, 158, WIN_H - 48, r3d_tris_drawn(), 1, 235, 235, 245)
+        gfx_draw_text(g, 198, WIN_H - 48, "CULLED", 1, 170, 175, 190)
+        gfx_draw_int(g, 256, WIN_H - 48, r3d_tris_culled(), 1, 235, 235, 245)
+
+        gfx_draw_text(g, 8, WIN_H - 34, "PIXELS", 1, 170, 175, 190)
+        gfx_draw_int(g, 66, WIN_H - 34, r3d_pixels_shaded(), 1, 235, 235, 245)
+        gfx_draw_text(g, 140, WIN_H - 34, "MS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 164, WIN_H - 34, r3d_frame_ms() as f64, 2, 1, 235, 235, 245)
+        gfx_draw_text(g, 210, WIN_H - 34, "FPS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 240, WIN_H - 34, r3d_fps() as f64, 1, 1, 130, 240, 160)
+
+        gfx_draw_text(g, 8, WIN_H - 18, "1-5 SOLID  M SHADING  C CULL  SPACE SPIN  ESC QUIT",
+                      1, 140, 145, 160)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
