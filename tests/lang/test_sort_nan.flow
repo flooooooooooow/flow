@@ -1,0 +1,171 @@
+# Flow-native language test: float ordering under IEEE 754 totalOrder.
+#
+# Declarative `sort` used to compare floats with C `<`. NaN compares false
+# against everything, so the comparator returned 0 for every pair involving a
+# NaN. That is not transitive, and an array holding one left the finite values
+# unordered: `[3.0, NaN, 1.0, NaN, 2.0] |> sort` came back unchanged.
+#
+# Ordering now uses IEEE 754-2008 totalOrder, so every pair of floats has a
+# defined relationship:
+#
+#     -NaN < -inf < ... < -0.0 < +0.0 < ... < +inf < +NaN
+#
+# Arithmetic `<` and `==` are untouched and keep IEEE semantics. This test
+# pins both halves of that split. See docs/language/ordering.md.
+#
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function nan_of(z: f64) -> f64 {
+    return z / z
+}
+
+function inf_of(z: f64) -> f64 {
+    return 1.0 / z
+}
+
+function main() -> i32 {
+    let zero: f64 = 0.0
+    let pos_nan: f64 = nan_of(zero)
+    let neg_nan: f64 = -pos_nan
+    let pos_inf: f64 = inf_of(zero)
+    let neg_inf: f64 = -pos_inf
+    let neg_zero: f64 = -zero
+
+    # IEEE relational operators are unchanged: NaN compares false with
+    # everything, including itself.
+    if pos_nan == pos_nan {
+        return 1
+    }
+    if pos_nan < 1.0 {
+        return 2
+    }
+    if pos_nan > 1.0 {
+        return 3
+    }
+    # And -0.0 == +0.0 arithmetically, even though they order apart.
+    if neg_zero != zero {
+        return 4
+    }
+
+    # Ordering places NaNs at the ends by sign, with the finite values
+    # correctly ordered in between.
+    let mut xs: array<f64, 7> = [
+        3.0, pos_nan, 1.0, neg_nan, 2.0, pos_inf, neg_inf
+    ]
+    xs |> sort
+    # xs[0] is -NaN: it is not equal to itself under IEEE.
+    if xs[0] == xs[0] {
+        return 5
+    }
+    if xs[1] != neg_inf {
+        return 6
+    }
+    if xs[2] != 1.0 {
+        return 7
+    }
+    if xs[3] != 2.0 {
+        return 8
+    }
+    if xs[4] != 3.0 {
+        return 9
+    }
+    if xs[5] != pos_inf {
+        return 10
+    }
+    if xs[6] == xs[6] {
+        return 11
+    }
+
+    # The finite values are ordered even with NaNs in the array. That is the
+    # regression: an intransitive comparator left them where they started.
+    let mut ys: array<f64, 5> = [3.0, pos_nan, 1.0, pos_nan, 2.0]
+    ys |> sort
+    if ys[0] != 1.0 {
+        return 12
+    }
+    if ys[1] != 2.0 {
+        return 13
+    }
+    if ys[2] != 3.0 {
+        return 14
+    }
+    if ys[3] == ys[3] {
+        return 15
+    }
+    if ys[4] == ys[4] {
+        return 16
+    }
+
+    # -0.0 sorts before +0.0, and totalOrder keeps both. They compare equal
+    # arithmetically, so the check reads the sign back through division.
+    let mut zs: array<f64, 4> = [zero, neg_zero, zero, neg_zero]
+    zs |> sort
+    # 1.0 / -0.0 is -inf, 1.0 / +0.0 is +inf.
+    if inf_of(zs[0]) > 0.0 {
+        return 17
+    }
+    if inf_of(zs[1]) > 0.0 {
+        return 18
+    }
+    if inf_of(zs[2]) < 0.0 {
+        return 19
+    }
+    if inf_of(zs[3]) < 0.0 {
+        return 20
+    }
+
+    # Descending reverses the whole total order, so +NaN leads.
+    let mut ds: array<f64, 4> = [1.0, pos_nan, neg_inf, 2.0]
+    ds |> sort descending
+    if ds[0] == ds[0] {
+        return 21
+    }
+    if ds[1] != 2.0 {
+        return 22
+    }
+    if ds[2] != 1.0 {
+        return 23
+    }
+    if ds[3] != neg_inf {
+        return 24
+    }
+
+    # f32 gets the same treatment on its own bit width.
+    let fzero: f32 = 0.0
+    let fnan: f32 = fzero / fzero
+    let mut fs: array<f32, 4> = [2.0, fnan, 0.5, 1.0]
+    fs |> sort
+    if fs[0] != 0.5 {
+        return 25
+    }
+    if fs[1] != 1.0 {
+        return 26
+    }
+    if fs[2] != 2.0 {
+        return 27
+    }
+    if fs[3] == fs[3] {
+        return 28
+    }
+
+    # `unique` uses the ordering notion of equality, which for floats is the
+    # total order. Two NaNs with the same payload collapse to one; -0.0 and
+    # +0.0 stay apart because the total order distinguishes them.
+    let mut us: array<f64, 5> = [pos_nan, pos_nan, neg_zero, zero, 1.0]
+    us |> sort unique
+    # Compacted prefix: -0.0, +0.0, 1.0, NaN, four distinct values.
+    if inf_of(us[0]) > 0.0 {
+        return 29
+    }
+    if inf_of(us[1]) < 0.0 {
+        return 30
+    }
+    if us[2] != 1.0 {
+        return 31
+    }
+    if us[3] == us[3] {
+        return 32
+    }
+
+    return 0
+}
