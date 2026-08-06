@@ -1,0 +1,121 @@
+name: flowc release
+
+# Publishes the self-hosted Flow compiler as a downloadable archive.
+# Tag `flowc-v0.9.0` (or run manually) and each platform builds flowc from the
+# checked-in bootstrap C, proves three consecutive generation fixed-points,
+# then packages the binary together with the C it was built from.
+#
+# Nothing here installs Python. If a job needs pip, the release is wrong.
+
+on:
+  push:
+    tags:
+      - 'flowc-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. flowc-v0.9.0)'
+        required: true
+      publish:
+        description: 'Attach the archives to a GitHub release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: flowc ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build flowc from bootstrap C (cc only)
+        run: |
+          chmod +x ./flow compiler/scripts/*.sh
+          ./compiler/scripts/bootstrap_from_c.sh
+
+      - name: Bootstrap C matches compiler/src
+        run: ./compiler/scripts/bootstrap_from_c.sh --verify
+
+      - name: Three consecutive generation fixed-points
+        run: ./compiler/scripts/self_host_full.sh
+
+      - name: Package
+        env:
+          FLOWC_VERSION: ${{ steps.ver.outputs.name }}
+        run: ./compiler/scripts/package_flowc.sh
+
+      - name: Unpack and use the archive as a user would
+        run: |
+          rm -rf /tmp/pkgcheck
+          mkdir -p /tmp/pkgcheck
+          archive="$(cat dist/flowc-latest.txt)"
+          tar -xzf "$archive" -C /tmp/pkgcheck
+          cd /tmp/pkgcheck/*/
+          ./build.sh
+          ./bin/flowc examples/stage_a_sum.flow sum.c
+          cc -O0 -o sum sum.c
+          set +e
+          ./sum
+          ec=$?
+          set -e
+          test "$ec" -eq 45
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flowc-${{ matrix.os }}
+          path: dist/flowc-*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/flowc-v') || inputs.publish
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd dist
+          ls -la
+          shasum -a 256 flowc-*.tar.gz | tee SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: flowc ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Self-hosted Flow compiler (Stage-A), built from
+            `compiler/bootstrap/flowc_stage_a.c` — the compiler emitted by
+            itself as a single C translation unit.
+
+            Each archive was checked three generations deep: flowc compiles
+            all of `compiler/src`, that compiler recompiles it, and so does
+            its child, byte for byte identical each time.
+
+            No Python is involved in building or using these archives.
+          files: |
+            dist/flowc-*.tar.gz
+            dist/flowc-*.sha256
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
