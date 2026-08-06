@@ -1,0 +1,253 @@
+# LIFE VARIANTS: three outer-totalistic rules on the same soup.
+#
+# MODEL
+#   A cell looks at how many of its eight neighbours are alive and consults
+#   two sets: the birth set B for a dead cell and the survival set S for a
+#   live one. Everything below is those two sets.
+#
+#     CONWAY      B3      / S23        gliders, still lifes, long transients
+#     HIGHLIFE    B36     / S23        adds the replicator, which self-copies
+#     DAY-NIGHT   B3678   / S34678     symmetric under swapping on and off,
+#                                      so it grows amoeboid domains instead
+#
+# PARAMETERS
+#   128 x 128 periodic grid, one generation per displayed frame, soup
+#   density set per rule. Colour is how long a cell has been alive; a cell
+#   that just died leaves a fading ghost, which makes the flow of activity
+#   visible rather than just the current frame.
+#
+# KEYS
+#   1 CONWAY    2 HIGHLIFE    3 DAY-NIGHT
+#   R reseed    P pause    Esc quit
+#
+# PHENOMENON
+#   Same lattice, same initial density, three characters. Conway thins out
+#   into sparse debris and stable junk. HighLife does the same but throws
+#   replicators that leave diagonal trails. Day-and-Night is on-off
+#   symmetric and coarsens into blobs with a permanently churning boundary,
+#   which is much closer to a growing tissue than Conway ever looks.
+#
+# Run: ./flow gfx examples/morphogenesis/life_variants.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 19700101
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+# Birth and survival sets as bit masks over the neighbour count 0..8.
+function rule_birth(p: i32) -> i32 {
+    if p == 1 { return 72 }          # B36   : bits 3 and 6
+    if p == 2 { return 456 }         # B3678 : bits 3, 6, 7, 8
+    return 8                         # B3
+}
+
+function rule_survive(p: i32) -> i32 {
+    if p == 2 { return 472 }         # S34678
+    return 12                        # S23
+}
+
+function rule_name(p: i32) -> string {
+    if p == 1 { return "HIGHLIFE B36/S23" }
+    if p == 2 { return "DAY-NIGHT B3678/S34678" }
+    return "CONWAY B3/S23"
+}
+
+function rule_density(p: i32) -> f64 {
+    if p == 2 { return 0.50 }
+    return 0.36
+}
+
+function bit_set(mask: i32, n: i32) -> bool {
+    return ((mask >> n) & 1) == 1
+}
+
+function seed_field(a: ptr<i32>, ghost: ptr<i32>, density: f64) -> void {
+    for i in 0 to CELLS {
+        ghost[i] = 0
+        if rng_unit() < density {
+            a[i] = 1
+        } else {
+            a[i] = 0
+        }
+    }
+}
+
+function step(a: ptr<i32>, b: ptr<i32>, age: ptr<i32>, ghost: ptr<i32>,
+              birth: i32, survive: i32) -> i32 {
+    let mut pop: i32 = 0
+    for y in 0 to GRID {
+        let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+        let yp: i32 = ((y + 1) % GRID) * GRID
+        let r: i32 = y * GRID
+        for x in 0 to GRID {
+            let xm: i32 = (x + GRID - 1) % GRID
+            let xp: i32 = (x + 1) % GRID
+            let n: i32 = a[r + xm] + a[r + xp] + a[ym + x] + a[yp + x]
+                       + a[ym + xm] + a[ym + xp] + a[yp + xm] + a[yp + xp]
+            let i: i32 = r + x
+            let mut alive: i32 = 0
+            if a[i] == 1 {
+                if bit_set(survive, n) { alive = 1 }
+            } else {
+                if bit_set(birth, n) { alive = 1 }
+            }
+            b[i] = alive
+            if alive == 1 {
+                pop = pop + 1
+                if age[i] < 60 { age[i] = age[i] + 1 }
+                ghost[i] = 24
+            } else {
+                age[i] = 0
+                if ghost[i] > 0 { ghost[i] = ghost[i] - 1 }
+            }
+        }
+    }
+    return pop
+}
+
+# Live cells warm with age; dead cells leave a cooling ghost.
+function draw_field(g: Gfx, a: ptr<i32>, age: ptr<i32>, ghost: ptr<i32>) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let mut rr: i32 = 10
+            let mut gg: i32 = 12
+            let mut bb: i32 = 18
+            if a[i] == 1 {
+                let t: f64 = (age[i] as f64) / 60.0
+                rr = (110.0 + 145.0 * t) as i32
+                gg = (200.0 - 40.0 * t) as i32
+                bb = (235.0 - 160.0 * t) as i32
+            } else {
+                if ghost[i] > 0 {
+                    let t: f64 = (ghost[i] as f64) / 24.0
+                    rr = (10.0 + 40.0 * t) as i32
+                    gg = (12.0 + 70.0 * t) as i32
+                    bb = (18.0 + 90.0 * t) as i32
+                }
+            }
+            gfx_fill_rect(g, x * CELL_PX, FIELD_Y + y * CELL_PX,
+                          CELL_PX, CELL_PX, rr, gg, bb)
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, gen: i32, pop: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "LIFE VARIANTS  B / S RULES", 2,
+                                232, 240, 248)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "RULE", 1, 140, 150, 165)
+    let t3: i32 = gfx_draw_text(g, 40, 28, rule_name(preset), 1, 140, 225, 255)
+    let t4: i32 = gfx_draw_text(g, 320, 28, "GEN", 1, 140, 150, 165)
+    let t5: i32 = gfx_draw_int(g, 344, 28, gen, 1, 232, 240, 248)
+    let t6: i32 = gfx_draw_text(g, 386, 28, "POP", 1, 140, 150, 165)
+    let t7: i32 = gfx_draw_int(g, 410, 28, pop, 1, 232, 240, 248)
+    let t8: i32 = gfx_draw_text(g, 8, 42,
+        "1 CONWAY  2 HIGHLIFE  3 DAY-NIGHT  R RESEED  P PAUSE",
+        1, 104, 112, 126)
+    if paused {
+        let t9: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let ta: i32 = gfx_draw_text(g, 8, 572,
+        "colour is age: fresh cells cyan, long-lived cells amber", 1,
+        118, 126, 142)
+    let tb: i32 = gfx_draw_text(g, 8, 582,
+        "dim trails are cells that died in the last 24 generations", 1,
+        118, 126, 142)
+}
+
+function main() -> i32 {
+    let a: array<i32, 16384> = [0, 0, 0, 0]
+    let b: array<i32, 16384> = [0, 0, 0, 0]
+    let age: array<i32, 16384> = [0, 0, 0, 0]
+    let ghost: array<i32, 16384> = [0, 0, 0, 0]
+
+    let mut preset: i32 = 0
+    seed_field(a, ghost, rule_density(preset))
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Life variants - Flow morphogenesis")
+
+    let mut gen: i32 = 0
+    let mut pop: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            for i in 0 to CELLS {
+                age[i] = 0
+            }
+            seed_field(a, ghost, rule_density(preset))
+            gen = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                for i in 0 to CELLS {
+                    age[i] = 0
+                }
+                seed_field(a, ghost, rule_density(preset))
+                gen = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            pop = step(a, b, age, ghost, rule_birth(preset),
+                       rule_survive(preset))
+            for i in 0 to CELLS {
+                a[i] = b[i]
+            }
+            gen = gen + 1
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_field(g, a, age, ghost)
+        draw_hud(g, preset, gen, pop, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
