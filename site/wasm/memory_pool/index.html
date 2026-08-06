@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Pool — Flow on WebAssembly</title>
+<style>
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  background: #0c0d11; color: #d8dae4;
+  font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  display: flex; flex-direction: column; min-height: 100vh;
+}
+header {
+  padding: 10px 16px; border-bottom: 1px solid #1e2029;
+  display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
+}
+header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .01em; }
+header .meta { color: #6d7183; font-size: 12px; }
+header a { color: #7aa2f7; text-decoration: none; }
+header a:hover { text-decoration: underline; }
+main { flex: 1; display: flex; flex-direction: column; align-items: center;
+       justify-content: center; padding: 16px; gap: 12px; }
+.stage { position: relative; line-height: 0; max-width: 100%; }
+canvas { display: block; background: #000; border: 1px solid #22252f;
+         border-radius: 4px; image-rendering: pixelated;
+         width: auto; height: auto;
+         max-width: 100%; max-height: calc(100vh - 190px); }
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; cursor: pointer;
+  background: rgba(9,10,14,.86); border-radius: 4px; line-height: 1.5;
+}
+.overlay strong { font-size: 16px; font-weight: 600; }
+.overlay span { color: #8a8fa3; font-size: 12px; max-width: 30ch;
+                text-align: center; }
+.overlay.hidden { display: none; }
+button {
+  font: inherit; background: #7aa2f7; color: #0c0d11; border: 0;
+  border-radius: 5px; padding: 7px 18px; cursor: pointer; font-weight: 600;
+}
+button:hover { background: #93b5ff; }
+button:disabled { background: #2a2d38; color: #6d7183; cursor: default; }
+.bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+       color: #6d7183; font-size: 12px; }
+pre#out {
+  width: min(880px, 100%); margin: 0; padding: 10px 12px; min-height: 3em;
+  max-height: 40vh; overflow: auto; background: #08090c;
+  border: 1px solid #1e2029; border-radius: 4px; color: #9ece6a;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; word-break: break-word;
+}
+pre#out:empty { display: none; }
+.keys { color: #6d7183; font-size: 12px; text-align: center;
+        max-width: 60ch; }
+.err { color: #f7768e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Memory Pool</h1>
+  <span class="meta">Flow &rarr; C &rarr; WebAssembly &middot; console</span>
+  <span class="meta"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/memory_pool.flow">source</a></span>
+</header>
+
+<main>
+  <div class="bar">
+    <button id="start">Run</button>
+    <button id="clear">Clear</button>
+    <span id="status">idle</span>
+  </div>
+  <pre id="out"></pre>
+</main>
+
+
+<script src="memory_pool.js"></script>
+<script>
+(function () {
+  var startBtn = document.getElementById('start');
+  var clearBtn = document.getElementById('clear');
+  var status = document.getElementById('status');
+  var out = document.getElementById('out');
+
+  function log(text, isErr) {
+    var line = document.createElement('span');
+    if (isErr) { line.className = 'err'; }
+    line.textContent = text + '\n';
+    out.appendChild(line);
+    out.scrollTop = out.scrollHeight;
+  }
+
+  function run() {
+    startBtn.disabled = true;
+    status.textContent = 'running...';
+    createFlowModule({
+      print: function (t) { log(t, false); },
+      printErr: function (t) { log(t, true); }
+    }).then(function (mod) {
+      var code = 0;
+      try { code = mod.callMain([]); } catch (e) {
+        if (e && e.name === 'ExitStatus') { code = e.status; }
+        else { log('' + e, true); code = -1; }
+      }
+      if (code === undefined) { code = 0; }
+      // Plenty of Flow examples answer with a return value rather than
+      // printing, so always show it.
+      log((out.textContent ? '\n' : '') + 'main returned ' + code, false);
+      status.textContent = 'exit ' + code;
+      startBtn.disabled = false;
+    }).catch(function (e) {
+      log('' + e, true);
+      status.textContent = 'failed to load';
+      startBtn.disabled = false;
+    });
+  }
+
+  startBtn.addEventListener('click', run);
+  clearBtn.addEventListener('click', function () { out.textContent = ''; });
+  if (location.search.indexOf('autostart=1') >= 0) { run(); }
+})();
+</script>
+
+</body>
+</html>

@@ -87,6 +87,11 @@ def emcc_command(c_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
         "-o", str(out_js),
         "-sENVIRONMENT=web",
         "-sALLOW_MEMORY_GROWTH=1",
+        # Flow puts fixed-size arrays on the stack, and a field simulation
+        # holds several 128x128 grids of doubles at once. wasm32 defaults to a
+        # 64 KB stack, which those overrun instantly.
+        "-sSTACK_SIZE=16MB",
+        "-sINITIAL_MEMORY=32MB",
         "-sMODULARIZE=1",
         "-sEXPORT_NAME=createFlowModule",
         "-sINVOKE_RUN=0",
@@ -120,17 +125,28 @@ def compile_wasm(c_file: Path, out_js: Path, gfx: bool, opt: str,
         raise BuildError("emcc: no .wasm emitted")
 
 
+def tidy(line: str) -> str:
+    """Drop scratch paths so the reason reads the same on any machine."""
+    import re
+    line = re.sub(r"\S*emscripten_temp_\S+?[:\s]", "", line)
+    line = line.replace(str(PROJECT_ROOT) + "/", "")
+    line = re.sub(r"^(emcc|wasm-ld|clang):\s*", "", line)
+    line = re.sub(r"\s*\[-W[a-z-]+\]", "", line)
+    return line.strip()
+
+
 def first_error(text: str) -> str:
     """Pull the most useful single line out of an emcc failure."""
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    import re
     for line in lines:
-        low = line.lower()
-        if "undefined symbol" in low:
-            return line[:200]
+        hit = re.search(r"undefined (?:exported )?symbol:?\s*\"?([\w.$]+)", line)
+        if hit:
+            return f"undefined symbol {hit.group(1).lstrip('_')}"
     for line in lines:
         if "error:" in line.lower():
-            return line[:200]
-    return (lines[-1] if lines else "unknown error")[:200]
+            return tidy(line)[:200]
+    return tidy(lines[-1] if lines else "unknown error")[:200]
 
 
 # ---------------------------------------------------------------------------
@@ -158,8 +174,9 @@ main { flex: 1; display: flex; flex-direction: column; align-items: center;
        justify-content: center; padding: 16px; gap: 12px; }
 .stage { position: relative; line-height: 0; max-width: 100%; }
 canvas { display: block; background: #000; border: 1px solid #22252f;
-         border-radius: 4px; max-width: 100%; height: auto;
-         image-rendering: pixelated; }
+         border-radius: 4px; image-rendering: pixelated;
+         width: auto; height: auto;
+         max-width: 100%; max-height: calc(100vh - 190px); }
 .overlay {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 10px; cursor: pointer;
@@ -310,7 +327,11 @@ CONSOLE_SCRIPT = """
         if (e && e.name === 'ExitStatus') { code = e.status; }
         else { log('' + e, true); code = -1; }
       }
-      status.textContent = 'exit ' + (code === undefined ? 0 : code);
+      if (code === undefined) { code = 0; }
+      // Plenty of Flow examples answer with a return value rather than
+      // printing, so always show it.
+      log((out.textContent ? '\\n' : '') + 'main returned ' + code, false);
+      status.textContent = 'exit ' + code;
       startBtn.disabled = false;
     }).catch(function (e) {
       log('' + e, true);

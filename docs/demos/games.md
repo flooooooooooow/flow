@@ -18,6 +18,9 @@ FLOW_GFX_RECORD_FRAMES=240 ./flow record examples/games/<name>_gfx.flow
 
 Regenerate every GIF on this page: `python3 scripts/record_demos.py`
 
+Every game here also runs in a browser, from the same source, on a fourth gfx
+backend that paints a canvas: [WebAssembly Gallery](wasm.md).
+
 All games share the house controls: arrows or WASD to move, Space to act,
 P pause, R restart, Esc quit. Per-game keys are in each file's header comment.
 
