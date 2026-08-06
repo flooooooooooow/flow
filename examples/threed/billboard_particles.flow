@@ -1,0 +1,520 @@
+# BILLBOARD PARTICLES: a thousand translucent sprites, sorted every frame.
+#
+# WHY SORTING IS THE PROGRAM
+#   A billboard here is a screen-aligned disc drawn by r3d_sprite_blend, which
+#   reads the depth buffer and does not write it. Reading is what lets a solid
+#   box hide the smoke behind it. Not writing is what lets two overlapping
+#   sprites both contribute colour. The price of not writing is that the
+#   depth buffer no longer orders the sprites against each other, so the
+#   program has to: alpha blending is not commutative, and drawing a near
+#   sprite before a far one leaves the far one painted on top.
+#
+#   So every frame, every live particle is projected, its view depth taken
+#   from the clip w, and the whole set is ordered far to near before a single
+#   sprite is drawn. Press S to turn the sort off and watch the plume turn
+#   into a flat sheet of the most recently emitted particles.
+#
+# THE SORT
+#   Counting sort on quantized depth, not a comparison sort. One pass finds
+#   the depth range, one pass buckets each particle into one of 1024 slots
+#   (the index inverted, so bucket 0 is the farthest), a prefix sum turns the
+#   counts into starting offsets, and one scatter pass writes the draw order.
+#   Four linear passes, no recursion, no allocation, and the same cost at
+#   1200 particles as at 12.
+#
+#   Within a bucket the order is emission order, so the result is exact only
+#   to the bucket width. Measured at frame 45 with 954 sprites over a 6.77 m
+#   depth range: bucket width 6.6 mm, 291 adjacent pairs not strictly far to
+#   near, worst one 6.4 mm out. That is the quantization and nothing else. A
+#   comparison sort would remove those 291 at the cost of the linear time.
+#
+# THE SYSTEM
+#   Three emitters on a slow carousel: a wide cool plume, a narrow hot jet,
+#   and a spark burst that fires in pulses. Particles get gravity, a little
+#   drag, a lifetime, and an alpha that fades as the square of remaining
+#   life so the tail thins out instead of vanishing. Dead slots are reused by
+#   a scanning cursor, so the array is the only storage the system has.
+#
+# DEPTH AGAINST SOLIDS
+#   Four pillars and a ground grid are drawn first, writing depth. The
+#   particles that pass behind a pillar are clipped by it. Nothing about the
+#   sprite path can produce that on its own; it is the depth read.
+#
+# CONTROLS
+#   Left / Right    orbit
+#   Up / Down       raise and lower the camera
+#   S               toggle depth sorting
+#   A / D           fewer / more particles emitted per frame
+#   Space           pause the simulation
+#   R               clear every particle
+#   Esc             quit
+#
+#   FLOW_PART_LOG=1 prints, at frame 45, the live count, the depth range, the
+#   bucket width, and how many adjacent pairs in the draw list are not far to
+#   near along with the worst one.
+#
+# Run: ./flow gfx examples/threed/billboard_particles.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/render3d.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function getenv(name: string) -> ptr<u8>
+    function printf(fmt: string, v: f64) -> i32
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function sqrtf(x: f32) -> f32
+}
+
+const WIN_W: i32 = 480
+const WIN_H: i32 = 360
+const MAX_FRAMES: i32 = 100000
+
+const KEY_SPACE: i32 = 49
+
+const MAX_PART: i32 = 1200
+const NBUCKET: i32 = 1024
+const DT: f32 = 0.0166667
+const GRAV: f32 = 3.2
+const DRAG: f32 = 0.992
+const PROBE_FRAME: i32 = 45
+
+const GRID_N: i32 = 16
+const GROUND: f32 = 9.0
+
+let mut ppos: ptr<f32> = null
+let mut pvel: ptr<f32> = null
+let mut pcol: ptr<f32> = null
+let mut plife: ptr<f32> = null
+let mut pmax: ptr<f32> = null
+let mut prad: ptr<f32> = null
+let mut pdepth: ptr<f32> = null
+let mut porder: ptr<i32> = null
+let mut pcount: ptr<i32> = null
+let mut cursor: i32 = 0
+let mut live: i32 = 0
+let mut drawn: i32 = 0
+
+let mut lcg: u32 = 20260806
+
+function rnd() -> u32 {
+    lcg = lcg * 1664525 + 1013904223
+    return lcg
+}
+
+function rnd_unit() -> f32 {
+    return ((rnd() >> 9) % 65536) as f32 / 65536.0
+}
+
+function rnd_sym() -> f32 {
+    return rnd_unit() * 2.0 - 1.0
+}
+
+# Find a dead slot by scanning forward from the last one used. The cursor
+# makes the search amortized constant instead of a full sweep per particle.
+function alloc_slot() -> i32 {
+    let mut tries: i32 = 0
+    while tries < MAX_PART {
+        let i: i32 = cursor
+        cursor = cursor + 1
+        if cursor >= MAX_PART { cursor = 0 }
+        if plife[i] <= 0.0 { return i }
+        tries = tries + 1
+    }
+    return -1
+}
+
+function emit(x: f32, y: f32, z: f32, spread: f32, up: f32,
+              r: f32, g: f32, b: f32, life: f32, rad: f32) -> void {
+    let i: i32 = alloc_slot()
+    if i < 0 { return }
+    let o: i32 = i * 3
+    ppos[o] = x + rnd_sym() * 0.12
+    ppos[o + 1] = y + rnd_unit() * 0.10
+    ppos[o + 2] = z + rnd_sym() * 0.12
+    pvel[o] = rnd_sym() * spread
+    pvel[o + 1] = up * (0.75 + rnd_unit() * 0.5)
+    pvel[o + 2] = rnd_sym() * spread
+    pcol[o] = r
+    pcol[o + 1] = g
+    pcol[o + 2] = b
+    plife[i] = life * (0.7 + rnd_unit() * 0.6)
+    pmax[i] = plife[i]
+    prad[i] = rad * (0.7 + rnd_unit() * 0.7)
+}
+
+function advance() -> void {
+    live = 0
+    let mut i: i32 = 0
+    while i < MAX_PART {
+        if plife[i] > 0.0 {
+            let o: i32 = i * 3
+            pvel[o + 1] = pvel[o + 1] - GRAV * DT
+            pvel[o] = pvel[o] * DRAG
+            pvel[o + 1] = pvel[o + 1] * DRAG
+            pvel[o + 2] = pvel[o + 2] * DRAG
+            ppos[o] = ppos[o] + pvel[o] * DT
+            ppos[o + 1] = ppos[o + 1] + pvel[o + 1] * DT
+            ppos[o + 2] = ppos[o + 2] + pvel[o + 2] * DT
+            # A particle that reaches the ground stops and fades faster.
+            if ppos[o + 1] < 0.05 {
+                ppos[o + 1] = 0.05
+                pvel[o + 1] = 0.0
+                pvel[o] = pvel[o] * 0.90
+                pvel[o + 2] = pvel[o + 2] * 0.90
+                plife[i] = plife[i] - DT * 2.0
+            }
+            plife[i] = plife[i] - DT
+            if plife[i] > 0.0 { live = live + 1 }
+        }
+        i = i + 1
+    }
+}
+
+# Counting sort of the live particles into porder, farthest first.
+# Returns the number of entries written.
+function sort_by_depth(vp: &[f32], sorted: bool) -> i32 {
+    let mut n: i32 = 0
+    let mut dmin: f32 = 1.0e30
+    let mut dmax: f32 = -1.0e30
+    let mut i: i32 = 0
+    while i < MAX_PART {
+        pdepth[i] = -1.0
+        if plife[i] > 0.0 {
+            let o: i32 = i * 3
+            let w: f32 = m4_pointw(vp, v3(ppos[o], ppos[o + 1], ppos[o + 2]))
+            if w > 0.06 {
+                pdepth[i] = w
+                if w < dmin { dmin = w }
+                if w > dmax { dmax = w }
+                n = n + 1
+            }
+        }
+        i = i + 1
+    }
+    if n == 0 { return 0 }
+
+    if !sorted {
+        # Emission order, which is what the sort exists to replace.
+        let mut k: i32 = 0
+        let mut j: i32 = 0
+        while j < MAX_PART {
+            if pdepth[j] > 0.0 {
+                porder[k] = j
+                k = k + 1
+            }
+            j = j + 1
+        }
+        return k
+    }
+
+    let mut span: f32 = dmax - dmin
+    if span < 0.0001 { span = 0.0001 }
+
+    let mut b: i32 = 0
+    while b <= NBUCKET {
+        pcount[b] = 0
+        b = b + 1
+    }
+    # Bucket index is inverted so bucket 0 collects the farthest particles.
+    let mut c: i32 = 0
+    while c < MAX_PART {
+        if pdepth[c] > 0.0 {
+            let mut k: i32 = (((pdepth[c] - dmin) / span) * ((NBUCKET - 1) as f32)) as i32
+            k = NBUCKET - 1 - k
+            if k < 0 { k = 0 }
+            if k >= NBUCKET { k = NBUCKET - 1 }
+            pcount[k] = pcount[k] + 1
+        }
+        c = c + 1
+    }
+    # Prefix sum turns counts into starting offsets.
+    let mut acc: i32 = 0
+    let mut p: i32 = 0
+    while p < NBUCKET {
+        let cnt: i32 = pcount[p]
+        pcount[p] = acc
+        acc = acc + cnt
+        p = p + 1
+    }
+    # Scatter.
+    let mut s: i32 = 0
+    while s < MAX_PART {
+        if pdepth[s] > 0.0 {
+            let mut k: i32 = (((pdepth[s] - dmin) / span) * ((NBUCKET - 1) as f32)) as i32
+            k = NBUCKET - 1 - k
+            if k < 0 { k = 0 }
+            if k >= NBUCKET { k = NBUCKET - 1 }
+            porder[pcount[k]] = s
+            pcount[k] = pcount[k] + 1
+        }
+        s = s + 1
+    }
+    return n
+}
+
+# Ground and four pillars: the solid geometry the sprites are tested against.
+function draw_scene(vp: &[f32]) -> void {
+    let step_w: f32 = 2.0 * GROUND / (GRID_N as f32)
+    let mut i: i32 = 0
+    while i < GRID_N {
+        let mut j: i32 = 0
+        while j < GRID_N {
+            let x0: f32 = 0.0 - GROUND + (i as f32) * step_w
+            let z0: f32 = 0.0 - GROUND + (j as f32) * step_w
+            let x1: f32 = x0 + step_w
+            let z1: f32 = z0 + step_w
+            let mut c: V3 = v3(0.13, 0.15, 0.20)
+            if (i + j) % 2 == 0 { c = v3(0.19, 0.22, 0.28) }
+            r3d_tri(vp, v3(x0, 0.0, z0), v3(x1, 0.0, z1), v3(x1, 0.0, z0), c, c, c)
+            r3d_tri(vp, v3(x0, 0.0, z0), v3(x0, 0.0, z1), v3(x1, 0.0, z1), c, c, c)
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    ppos = malloc((MAX_PART * 3 * 4) as i64) as ptr<f32>
+    pvel = malloc((MAX_PART * 3 * 4) as i64) as ptr<f32>
+    pcol = malloc((MAX_PART * 3 * 4) as i64) as ptr<f32>
+    plife = malloc((MAX_PART * 4) as i64) as ptr<f32>
+    pmax = malloc((MAX_PART * 4) as i64) as ptr<f32>
+    prad = malloc((MAX_PART * 4) as i64) as ptr<f32>
+    pdepth = malloc((MAX_PART * 4) as i64) as ptr<f32>
+    porder = malloc((MAX_PART * 4) as i64) as ptr<i32>
+    pcount = malloc(((NBUCKET + 1) * 4) as i64) as ptr<i32>
+    if ppos == null or pvel == null or pcol == null or plife == null {
+        println("allocation failed")
+        return 1
+    }
+    if pmax == null or prad == null or pdepth == null or porder == null {
+        println("allocation failed")
+        return 1
+    }
+    if pcount == null {
+        println("allocation failed")
+        return 1
+    }
+    if !r3d_init(WIN_W, WIN_H) {
+        println("render3d init failed")
+        return 1
+    }
+    r3d_set_ambient(0.34)
+
+    let logging: bool = getenv("FLOW_PART_LOG") != null
+
+    let mut i: i32 = 0
+    while i < MAX_PART {
+        plife[i] = 0.0
+        i = i + 1
+    }
+
+    let mut proj: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut view: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut vp: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let model: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let pproj: ptr<f32> = proj
+    let pview: ptr<f32> = view
+    let pvp: ptr<f32> = vp
+    m4_perspective(pproj, r3d_radians(60.0), r3d_aspect(), 0.1, 90.0)
+
+    let mut yaw: f32 = 0.6
+    let mut cam_h: f32 = 4.4
+    let mut sorted: bool = true
+    let mut paused: bool = false
+    let mut rate: i32 = 9
+    let mut last_s: bool = false
+    let mut last_space: bool = false
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "BILLBOARD PARTICLES - Flow render3d")
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        r3d_tick()
+
+        if gfx_key_down(g, KEY_LEFT) { yaw = yaw - 0.028 }
+        if gfx_key_down(g, KEY_RIGHT) { yaw = yaw + 0.028 }
+        if gfx_key_down(g, KEY_UP) { cam_h = cam_h + 0.10 }
+        if gfx_key_down(g, KEY_DOWN) { cam_h = cam_h - 0.10 }
+        cam_h = r3d_clampf(cam_h, 0.6, 14.0)
+        if gfx_key_down(g, KEY_A) { rate = rate - 1 }
+        if gfx_key_down(g, KEY_D) { rate = rate + 1 }
+        if rate < 0 { rate = 0 }
+        if rate > 24 { rate = 24 }
+
+        let s_now: bool = gfx_key_down(g, KEY_S)
+        if s_now and !last_s { sorted = !sorted }
+        last_s = s_now
+        let sp_now: bool = gfx_key_down(g, KEY_SPACE)
+        if sp_now and !last_space { paused = !paused }
+        last_space = sp_now
+        if gfx_key_down(g, KEY_R) {
+            let mut k: i32 = 0
+            while k < MAX_PART {
+                plife[k] = 0.0
+                k = k + 1
+            }
+        }
+
+        let t: f32 = (frame as f32) * DT
+        if !paused {
+            # Three emitters on a slow carousel.
+            let ca: f32 = t * 0.55
+            let ex: f32 = cosf(ca) * 3.2
+            let ez: f32 = sinf(ca) * 3.2
+            let mut e: i32 = 0
+            while e < rate {
+                emit(ex, 0.1, ez, 0.55, 4.4, 0.42, 0.72, 0.98, 2.4, 0.20)
+                emit(0.0 - ex, 0.1, 0.0 - ez, 0.22, 6.2, 0.99, 0.62, 0.24, 1.8, 0.15)
+                e = e + 1
+            }
+            if frame % 45 < 6 {
+                let mut k: i32 = 0
+                while k < rate * 2 {
+                    emit(0.0, 0.6, 0.0, 2.6, 3.0, 1.00, 0.90, 0.45, 1.2, 0.13)
+                    k = k + 1
+                }
+            }
+            advance()
+        }
+
+        let eye: V3 = v3(cosf(yaw) * 12.0, cam_h, sinf(yaw) * 12.0)
+        m4_look_at(pview, eye, v3(0.0, 2.2, 0.0), v3(0.0, 1.0, 0.0))
+        m4_mul(pvp, proj, view)
+
+        # Solids first: they write depth, and the sprites only read it.
+        r3d_mesh_reset()
+        let mut q: i32 = 0
+        while q < 4 {
+            let a: f32 = 1.5707963 * (q as f32) + 0.7853982
+            r3d_mesh_box(v3(cosf(a) * 6.0, 1.6, sinf(a) * 6.0),
+                         v3(0.5, 1.6, 0.5),
+                         v3(0.52 - 0.08 * (q as f32), 0.46, 0.62))
+            q = q + 1
+        }
+        r3d_clear_gradient(v3(0.03, 0.04, 0.08), v3(0.11, 0.13, 0.20))
+        r3d_draw_mesh(model, vp, v3(0.35, 0.90, 0.28), R3D_FLAT)
+        draw_scene(vp)
+
+        let n: i32 = sort_by_depth(vp, sorted)
+        drawn = n
+        let mut d: i32 = 0
+        while d < n {
+            let idx: i32 = porder[d]
+            let o: i32 = idx * 3
+            let frac: f32 = plife[idx] / pmax[idx]
+            let alpha: f32 = r3d_clampf(frac * frac, 0.0, 1.0) * 0.75
+            r3d_sprite_blend(vp, v3(ppos[o], ppos[o + 1], ppos[o + 2]),
+                             prad[idx],
+                             v3(pcol[o], pcol[o + 1], pcol[o + 2]), alpha)
+            d = d + 1
+        }
+        r3d_present(g)
+
+        if logging and frame == PROBE_FRAME {
+            # Adjacent pairs in the draw list that are not far-to-near. With
+            # the sort on this must be zero.
+            let mut bad: i32 = 0
+            let mut worst: f32 = 0.0
+            let mut k: i32 = 0
+            while k < n - 1 {
+                let gap: f32 = pdepth[porder[k + 1]] - pdepth[porder[k]]
+                if gap > 0.0 {
+                    bad = bad + 1
+                    if gap > worst { worst = gap }
+                }
+                k = k + 1
+            }
+            let far: f32 = pdepth[porder[0]]
+            let near: f32 = pdepth[porder[n - 1]]
+            printf("probe frame %.0f", frame as f64)
+            printf("  drawn %.0f", n as f64)
+            printf("  first_depth %.3f", far as f64)
+            printf("  last_depth %.3f", near as f64)
+            printf("  bucket_m %.4f", ((far - near) / (NBUCKET as f32)) as f64)
+            printf("  out_of_order %.0f", bad as f64)
+            printf("  worst_gap_m %.4f\n", worst as f64)
+            # Each pillar: where it lands on screen, how deep it is, and how
+            # many live particles are behind it inside its silhouette. Those
+            # particles must not appear, which is a check on the depth read.
+            let mut q2: i32 = 0
+            while q2 < 4 {
+                let pa: f32 = 1.5707963 * (q2 as f32) + 0.7853982
+                let pc: V3 = v3(cosf(pa) * 6.0, 1.6, sinf(pa) * 6.0)
+                let pl: V3 = m4_point(vp, pc)
+                let pw: f32 = m4_pointw(vp, pc)
+                if pw > 0.06 {
+                    let sx: f32 = (pl.x / pw * 0.5 + 0.5) * (WIN_W as f32)
+                    let sy: f32 = (0.5 - pl.y / pw * 0.5) * (WIN_H as f32)
+                    let hw: f32 = 0.5 * vp[5] / pw * ((WIN_H as f32) * 0.5)
+                    let hh: f32 = 1.6 * vp[5] / pw * ((WIN_H as f32) * 0.5)
+                    let mut behind: i32 = 0
+                    let mut m: i32 = 0
+                    while m < MAX_PART {
+                        if pdepth[m] > pw {
+                            let mo: i32 = m * 3
+                            let ml: V3 = m4_point(vp, v3(ppos[mo], ppos[mo + 1],
+                                                         ppos[mo + 2]))
+                            let mx: f32 = (ml.x / pdepth[m] * 0.5 + 0.5) * (WIN_W as f32)
+                            let my: f32 = (0.5 - ml.y / pdepth[m] * 0.5) * (WIN_H as f32)
+                            if mx > sx - hw and mx < sx + hw {
+                                if my > sy - hh and my < sy + hh { behind = behind + 1 }
+                            }
+                        }
+                        m = m + 1
+                    }
+                    printf("  pillar %.0f", q2 as f64)
+                    printf(" sx %.1f", sx as f64)
+                    printf(" sy %.1f", sy as f64)
+                    printf(" hw %.1f", hw as f64)
+                    printf(" hh %.1f", hh as f64)
+                    printf(" w %.2f", pw as f64)
+                    printf(" behind %.0f\n", behind as f64)
+                }
+                q2 = q2 + 1
+            }
+        }
+
+        gfx_fill_rect(g, 0, 0, WIN_W, 44, 14, 17, 24)
+        gfx_fill_rect(g, 0, WIN_H - 40, WIN_W, 40, 14, 17, 24)
+        gfx_draw_text(g, 8, 6, "BILLBOARD PARTICLES", 2, 240, 240, 246)
+        gfx_draw_text(g, 8, 28, "LIVE", 1, 170, 175, 190)
+        gfx_draw_int(g, 48, 28, live, 1, 240, 240, 246)
+        gfx_draw_text(g, 96, 28, "DRAWN", 1, 170, 175, 190)
+        gfx_draw_int(g, 148, 28, drawn, 1, 240, 240, 246)
+        gfx_draw_text(g, 196, 28, "RATE", 1, 170, 175, 190)
+        gfx_draw_int(g, 236, 28, rate, 1, 240, 240, 246)
+        gfx_draw_text(g, 268, 28, "BUCKETS", 1, 170, 175, 190)
+        gfx_draw_int(g, 336, 28, NBUCKET, 1, 240, 240, 246)
+        if sorted {
+            gfx_draw_text(g, 396, 28, "SORTED", 1, 130, 240, 160)
+        } else {
+            gfx_draw_text(g, 396, 28, "UNSORTED", 1, 250, 140, 130)
+        }
+
+        gfx_draw_text(g, 8, WIN_H - 34, "SPRITE PX", 1, 170, 175, 190)
+        gfx_draw_int(g, 88, WIN_H - 34, r3d_pixels_shaded(), 1, 240, 240, 246)
+        gfx_draw_text(g, 176, WIN_H - 34, "MS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 200, WIN_H - 34, r3d_frame_ms() as f64, 2, 1, 240, 240, 246)
+        gfx_draw_text(g, 264, WIN_H - 34, "FPS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 296, WIN_H - 34, r3d_fps() as f64, 1, 1, 130, 240, 160)
+        if paused {
+            gfx_draw_text(g, 360, WIN_H - 34, "PAUSE", 1, 250, 160, 160)
+        }
+        gfx_draw_text(g, 8, WIN_H - 18,
+                      "ARROWS ORBIT   S SORT   A/D RATE   SPACE PAUSE   R CLEAR",
+                      1, 140, 145, 160)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
