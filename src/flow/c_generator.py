@@ -74,6 +74,11 @@ from .parser import (
     VectorLiteral,
     WhileStatement,
     ForStatement,
+    SliceExpr,
+    is_span_type_name,
+    span_is_mutable,
+    span_element_name,
+    make_span_type,
 )
 from .overload import OverloadResolver
 
@@ -169,6 +174,11 @@ class CGenerator:
         self._static_names = set()  # file-scope module statics (reachable without capture)
         self._lambda_insert_idx = None  # where lambda definitions get spliced in
         self._last_lambda_info = None
+
+        # Spans (docs/language/spans.md): one two-word typedef per
+        # (element, mutability) pair, emitted on demand.
+        self._span_typedefs_emitted: set = set()
+        self._pending_span_typedefs: List[str] = []
 
     def _i(self) -> str:
         return "    " * self._indent
@@ -529,6 +539,13 @@ class CGenerator:
         if forward_declared:
             lines.append("")
 
+        # Borrowed views: one two-word struct per (element, mutability) pair,
+        # emitted after struct forward declarations so struct elements resolve.
+        # The slot is filled at the end so views discovered while generating
+        # bodies (e.g. a slice expression) still land ahead of every use.
+        self._collect_span_typedefs(functions, structs, statics)
+        span_insert_idx = len(lines)
+
         def emit_struct(name):
             if name in emitted:
                 return
@@ -705,6 +722,15 @@ class CGenerator:
             if insert_idx is None or insert_idx > len(lines):
                 insert_idx = len(lines)
             lines = lines[:insert_idx] + insert_extra + lines[insert_idx:]
+            if span_insert_idx >= insert_idx:
+                span_insert_idx += len(insert_extra)
+
+        if self._pending_span_typedefs:
+            span_block = ["/* Spans: borrowed {pointer, length} views */"]
+            span_block.extend(self._pending_span_typedefs)
+            span_block.append("")
+            self._pending_span_typedefs = []
+            lines = lines[:span_insert_idx] + span_block + lines[span_insert_idx:]
 
         return "\n".join(lines).rstrip() + "\n"
     
@@ -721,6 +747,10 @@ class CGenerator:
         """Generate a file-scope C static for a module static declaration."""
         t = st.type
         name = _c_ident(st.name)
+        # A span static starts as an empty view; a real borrow is installed
+        # at runtime (and escape-checked at the assignment).
+        if self._is_span_type(t):
+            return f"static {self._c_type(t)} {name} = {{0}};"
         if t.name.startswith("array_") and getattr(t, "size", None) and getattr(t, "element_type", None):
             elem_c = self._c_type(t.element_type)
             init = st.value
@@ -1094,8 +1124,13 @@ class CGenerator:
         elif isinstance(expr, RecordUpdate):
             inferred = self._infer_expr_type(expr.base)
             return inferred if inferred else Type("i32")
+        elif isinstance(expr, SliceExpr):
+            return self._span_type_for_expr(expr) or Type("i32")
         elif isinstance(expr, FieldAccess):
             obj_type = self._infer_expr_type(expr.object)
+            # A span exposes only `.len` (i64).
+            if self._is_span_type(obj_type) and expr.field == "len":
+                return Type("i64")
             # Unwrap pointers so ptr<Struct> field access resolves the struct
             if obj_type and obj_type.name not in self._structs:
                 elem = getattr(obj_type, "element_type", None)
@@ -1108,6 +1143,8 @@ class CGenerator:
             return Type("i32")
         elif isinstance(expr, ArrayAccess):
             base_type = self._infer_expr_type(expr.array)
+            if self._is_span_type(base_type):
+                return base_type.element_type or Type(span_element_name(base_type.name))
             if base_type is not None:
                 elem = getattr(base_type, "element_type", None)
                 if elem is not None:
@@ -1269,6 +1306,9 @@ class CGenerator:
         # Escaping function / closure types are fat-pointer typedefs, not structs
         if t.name.startswith("fn_") and "__" in t.name:
             return False
+        # Spans are two-word view typedefs emitted by _ensure_span_typedef
+        if is_span_type_name(t.name):
+            return False
         return True
 
     def _is_fn_type(self, t: Optional[Type]) -> bool:
@@ -1289,6 +1329,146 @@ class CGenerator:
             f"typedef struct {{ {ret_c} (*fn)({fn_params}); void* env; }} {c_name};"
         )
         return c_name
+
+    # --- Spans (docs/language/spans.md) ---------------------------------
+
+    @staticmethod
+    def _is_span_type(t: Optional[Type]) -> bool:
+        return bool(t is not None and is_span_type_name(getattr(t, "name", "")))
+
+    def _span_element_c_type(self, t: Type) -> str:
+        elem = getattr(t, "element_type", None)
+        if elem is None:
+            elem = Type(span_element_name(t.name))
+        return self._c_type(elem)
+
+    def _ensure_span_typedef(self, t: Type) -> str:
+        """Emit the two-word view struct for this (element, mutability) pair."""
+        c_name = f"flow_{_c_ident(t.name)}"
+        if c_name in self._span_typedefs_emitted:
+            return c_name
+        self._span_typedefs_emitted.add(c_name)
+        elem_c = self._span_element_c_type(t)
+        qualifier = "" if span_is_mutable(t.name) else "const "
+        self._pending_span_typedefs.append(
+            f"typedef struct {{ {qualifier}{elem_c} *data; int64_t len; }} {c_name};"
+        )
+        return c_name
+
+    def _collect_span_typedefs(self, functions, structs, statics) -> None:
+        """Walk every declared type so span typedefs precede their first use."""
+        for fn in functions or []:
+            self._c_type_if_span(getattr(fn, "return_type", None))
+            for p in getattr(fn, "parameters", None) or []:
+                self._c_type_if_span(p.type)
+            body = getattr(fn, "body", None)
+            if body is not None:
+                self._collect_span_typedefs_in_block(body)
+        for decl in structs or []:
+            for f in getattr(decl, "fields", None) or []:
+                self._c_type_if_span(f.type)
+        for st in statics or []:
+            self._c_type_if_span(getattr(st, "type", None))
+
+    def _c_type_if_span(self, t: Optional[Type]) -> None:
+        if self._is_span_type(t):
+            self._ensure_span_typedef(t)
+
+    def _collect_span_typedefs_in_block(self, block) -> None:
+        for stmt in getattr(block, "statements", None) or []:
+            self._collect_span_typedefs_in_stmt(stmt)
+
+    def _collect_span_typedefs_in_stmt(self, stmt) -> None:
+        if isinstance(stmt, VarDecl):
+            self._c_type_if_span(stmt.type)
+        for attr in ("body", "then_block", "else_block"):
+            sub = getattr(stmt, attr, None)
+            if isinstance(sub, Block):
+                self._collect_span_typedefs_in_block(sub)
+        for _, sub in getattr(stmt, "elif_blocks", None) or []:
+            if isinstance(sub, Block):
+                self._collect_span_typedefs_in_block(sub)
+        for case in getattr(stmt, "cases", None) or []:
+            sub = getattr(case, "body", None)
+            if isinstance(sub, Block):
+                self._collect_span_typedefs_in_block(sub)
+
+    def _span_type_for_expr(self, e: Expression) -> Optional[Type]:
+        """Best-effort span type of an expression, for context-free emission."""
+        if isinstance(e, SliceExpr):
+            base = self._infer_expr_type(e.base)
+            if self._is_span_type(base):
+                elem = base.element_type or Type(span_element_name(base.name))
+                return make_span_type(elem, span_is_mutable(base.name))
+            elem = getattr(base, "element_type", None)
+            if elem is None:
+                for prefix in ("ptr_", "array_"):
+                    if base is not None and base.name.startswith(prefix):
+                        rest = base.name[len(prefix):]
+                        parts = rest.split("_", 1)
+                        elem = Type(parts[1] if parts[0].isdigit() and len(parts) > 1 else rest)
+                        break
+            if elem is None:
+                return None
+            # Without binding mutability the C backend picks the mutable
+            # form; the type checker has already rejected illegal borrows.
+            return make_span_type(elem, True)
+        if isinstance(e, Variable):
+            t = self._var_types.get(e.name)
+            return t if self._is_span_type(t) else None
+        return None
+
+    def _gen_span_borrow(self, arg: Expression, target: Optional[Type]) -> str:
+        """Auto-borrow `arg` into the span type `target` (no wrapper in source)."""
+        if target is None or not self._is_span_type(target):
+            target = self._span_type_for_expr(arg)
+        if target is None:
+            return self._gen_expr(arg)
+        c_name = self._ensure_span_typedef(target)
+        elem_c = self._span_element_c_type(target)
+        cast = "" if span_is_mutable(target.name) else f"(const {elem_c}*)"
+
+        if isinstance(arg, SliceExpr):
+            base_c = self._gen_span_data_ptr(arg.base)
+            start = self._gen_expr(arg.start)
+            end = self._gen_expr(arg.end)
+            return (
+                f"(({c_name}){{ .data = {cast}(({base_c}) + ({start})), "
+                f".len = (int64_t)(({end}) - ({start})) }})"
+            )
+
+        arg_type = self._infer_expr_type(arg)
+        if self._is_span_type(arg_type):
+            src = self._gen_expr(arg)
+            if _c_ident(arg_type.name) == _c_ident(target.name):
+                return src
+            # const view of a mutable span: same words, different qualifier.
+            return (
+                f"(({c_name}){{ .data = {cast}({src}).data, "
+                f".len = ({src}).len }})"
+            )
+
+        if isinstance(arg, ArrayLiteral):
+            literal = self._gen_array_literal(arg, as_initializer=False)
+            return (
+                f"(({c_name}){{ .data = {cast}({literal}), "
+                f".len = (int64_t){len(arg.elements)} }})"
+            )
+
+        length = getattr(arg_type, "size", None)
+        base_c = self._gen_expr(arg)
+        if length is None:
+            length_c = f"(int64_t)(sizeof({base_c})/sizeof(({base_c})[0]))"
+        else:
+            length_c = f"(int64_t){length}"
+        return f"(({c_name}){{ .data = {cast}({base_c}), .len = {length_c} }})"
+
+    def _gen_span_data_ptr(self, e: Expression) -> str:
+        """C expression for the first element address of a contiguous source."""
+        t = self._infer_expr_type(e)
+        if self._is_span_type(t):
+            return f"({self._gen_expr(e)}).data"
+        return f"({self._gen_expr(e)})"
 
     def _wrap_lambda_as_fn_type(self, info: dict, fn_type: Type) -> tuple:
         """Return (c_expr, prelude_lines) converting last lambda into a fat pointer."""
@@ -1338,6 +1518,8 @@ class CGenerator:
     def _c_type(self, t: Type) -> str:
         if self._is_fn_type(t):
             return self._ensure_fn_typedef(t)
+        if self._is_span_type(t):
+            return self._ensure_span_typedef(t)
         if t.name == "auto":
             return "int32_t"  # Default auto-inferred type (standard C)
         if t.name == "i32":
@@ -1800,6 +1982,18 @@ class CGenerator:
                     # No initializer; fall back to i32 to keep C code valid
                     decl_type = Type("i32")
 
+            # A span local holds a borrow, so the initializer is borrowed
+            # into the declared view type rather than assigned verbatim.
+            if self._is_span_type(decl_type):
+                self._overload_resolver.set_var_type(st.name, decl_type.name)
+                self._var_types[st.name] = decl_type
+                c_t = self._c_type(decl_type)
+                safe_name = _sanitize_identifier(st.name)
+                if st.initializer is None:
+                    return [f"{self._i()}{c_t} {safe_name} = {{0}};"]
+                borrowed = self._gen_span_borrow(st.initializer, decl_type)
+                return [f"{self._i()}{c_t} {safe_name} = {borrowed};"]
+
             # Track variable type for overload resolution and expression inference
             self._overload_resolver.set_var_type(st.name, self._type_to_string(decl_type))
             self._var_types[st.name] = decl_type
@@ -1861,6 +2055,9 @@ class CGenerator:
             # when the RHS is a function returning the same array<T, N> type
             # (which decays to a pointer in C). Use memcpy for those instead.
             target_type = self._var_types.get(st.target)
+            if self._is_span_type(target_type):
+                borrowed = self._gen_span_borrow(st.value, target_type)
+                return [f"{self._i()}{target_name} = {borrowed};"]
             if (target_type and getattr(target_type, "name", "").startswith("array_")
                     and getattr(target_type, "size", None)):
                 value_expr = self._gen_expr(st.value)
@@ -1890,6 +2087,12 @@ class CGenerator:
                 lines = [f"{self._i()}{line}" for line in prelude]
                 lines.append(f"{self._i()}return {expr};")
                 return lines
+            # Returning a span borrows into the declared view type.
+            if self._is_span_type(self._current_return_type):
+                return [
+                    f"{self._i()}return "
+                    f"{self._gen_span_borrow(st.value, self._current_return_type)};"
+                ]
             return [f"{self._i()}return {self._gen_expr(st.value)};"]
 
         if isinstance(st, IfStatement):
@@ -2827,6 +3030,9 @@ class CGenerator:
             if e.name == "len":
                 if len(e.arguments) == 1:
                     arg = e.arguments[0]
+                    # Spans carry their own length: `len(s)` == `s.len`.
+                    if self._is_span_type(self._infer_expr_type(arg)):
+                        return f"({self._gen_expr(arg)}).len"
                     # For array types, use sizeof(arr)/sizeof(arr[0])
                     # For slice types (structs with .len field), use .len
                     if isinstance(arg, Variable):
@@ -2900,9 +3106,23 @@ class CGenerator:
                     target_overload, implicit_effect_args = implicit_match
                     func_name = _c_ident(target_overload.mangled_name)
             
+            # A single non-overloaded candidate still tells us the declared
+            # parameter types: spans borrow, so an argument's own type never
+            # equals the parameter type verbatim and may not have matched.
+            borrow_overload = target_overload
+            if borrow_overload is None and len(overloads) == 1:
+                borrow_overload = overloads[0]
+
             # Generate arguments, taking address of structs for capability parameters
             arg_strs = []
             for i, arg in enumerate(e.arguments):
+                # Auto-borrow: a contiguous source becomes {pointer, length}
+                # at the call site with no wrapper in the source program.
+                if borrow_overload and i < len(borrow_overload.function.parameters):
+                    declared = borrow_overload.function.parameters[i].type
+                    if self._is_span_type(declared):
+                        arg_strs.append(self._gen_span_borrow(arg, declared))
+                        continue
                 arg_expr = self._gen_expr(arg)
                 # Check if this parameter expects a capability type
                 if target_overload and i < len(target_overload.param_types):
@@ -2923,9 +3143,12 @@ class CGenerator:
         if isinstance(e, MethodCall):
             return self._gen_method_call(e)
         
+        if isinstance(e, SliceExpr):
+            return self._gen_span_borrow(e, None)
+
         if isinstance(e, ArrayAccess):
             return self._gen_array_access(e)
-        
+
         if isinstance(e, ArrayLiteral):
             return self._gen_array_literal(e)
         
@@ -3098,6 +3321,11 @@ class CGenerator:
     def _gen_lvalue_expr(self, e: Expression) -> str:
         """Generate an assignable C lvalue (no bounds-check ternaries)."""
         if isinstance(e, ArrayAccess):
+            base_type = self._infer_expr_type(e.array)
+            if self._is_span_type(base_type):
+                return (
+                    f"({self._gen_expr(e.array)}).data[{self._gen_expr(e.index)}]"
+                )
             return (
                 f"{self._gen_lvalue_expr(e.array)}[{self._gen_expr(e.index)}]"
             )
@@ -3115,6 +3343,21 @@ class CGenerator:
         a bounds-checked access that aborts on out-of-range indices.  For
         dynamically-sized or pointer-based arrays we fall back to raw indexing.
         """
+        # Element access through a span reads/writes the borrowed storage.
+        base_type = self._infer_expr_type(e.array)
+        if self._is_span_type(base_type):
+            span_expr = self._gen_expr(e.array)
+            index_expr = self._gen_expr(e.index)
+            if self._bounds_check:
+                return (
+                    f'((int64_t)({index_expr}) < ({span_expr}).len '
+                    f'? ({span_expr}).data[{index_expr}] '
+                    f': (fprintf(stderr, "span index %lld out of bounds (len %lld)\\n", '
+                    f'(long long)({index_expr}), (long long)({span_expr}).len), '
+                    f'abort(), ({span_expr}).data[0]))'
+                )
+            return f"({span_expr}).data[{index_expr}]"
+
         array_expr = self._gen_expr(e.array)
         index_expr = self._gen_expr(e.index)
 
