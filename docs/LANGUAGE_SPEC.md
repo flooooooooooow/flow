@@ -165,12 +165,12 @@ Status: ✅ Hash comments only
 | `i16` | 2 bytes | Signed 16-bit integer | ✅ |
 | `i32` | 4 bytes | Signed 32-bit integer | ✅ |
 | `i64` | 8 bytes | Signed 64-bit integer | ✅ |
-| `i128` | 16 bytes | Signed 128-bit integer | ⚠️ (parsed, C backend uses __int128) |
+| `i128` | 16 bytes | Signed 128-bit integer | ✅ (C backend emits `__int128`; literals wider than 64 bits are composed from halves) |
 | `u8` | 1 byte | Unsigned 8-bit integer | ✅ |
 | `u16` | 2 bytes | Unsigned 16-bit integer | ✅ |
 | `u32` | 4 bytes | Unsigned 32-bit integer | ✅ |
 | `u64` | 8 bytes | Unsigned 64-bit integer | ✅ |
-| `u128` | 16 bytes | Unsigned 128-bit integer | ⚠️ (parsed, C backend uses __uint128) |
+| `u128` | 16 bytes | Unsigned 128-bit integer | ✅ (C backend emits `unsigned __int128`; MLIR backend unsupported) |
 | `f32` | 4 bytes | IEEE 754 single precision | ✅ |
 | `f64` | 8 bytes | IEEE 754 double precision | ✅ |
 | `bool` | 1 byte | Boolean true/false | ✅ |
