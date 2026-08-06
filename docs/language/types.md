@@ -61,6 +61,23 @@ let element = arr[0]            # Access element
 arr[1] = 10                    # Modify element
 ```
 
+## 🪟 Span Types (borrowed views)
+
+A span is a `{pointer, length}` view over contiguous storage. It never owns
+its data and never allocates. Arrays and slices borrow into one automatically
+at the call site.
+
+```flow
+function analyse(samples: span<f32>) -> f32     # immutable view
+function clear(samples: span<mut f32>)          # mutable view
+function fft(frame: span<f32, 1024>)            # static extent
+function analyse(samples: &[f32]) -> f32        # same type, bracket sugar
+
+let window: span<f32> = signal[128..256]        # slice expression
+```
+
+Full reference: [spans.md](spans.md).
+
 ## 🏗️ Struct Types
 
 ### Struct Definition
