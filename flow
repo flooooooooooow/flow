@@ -2513,22 +2513,36 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         ;;
     "gpu")
         shift
+        # --wgsl emits WebGPU shaders instead of Metal, from the same AST.
+        gpu_lang="metal"
+        gpu_args=()
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --wgsl) gpu_lang="wgsl" ;;
+                --metal) gpu_lang="metal" ;;
+                *) gpu_args+=("$1") ;;
+            esac
+            shift
+        done
+        set -- ${gpu_args[@]+"${gpu_args[@]}"}
         if [ -z "${1:-}" ]; then
-            print_error "Usage: flow gpu <program.flow>"
+            print_error "Usage: flow gpu <program.flow> [--wgsl]"
             exit 1
         fi
         require_flow_file "${1:-}"
         check_deps
-        print_info "Generating GPU shaders from ${1:-}..."
-        python3 - "$SCRIPT_DIR" "${1:-}" <<'PY'
+        print_info "Generating GPU shaders from ${1:-} ($gpu_lang)..."
+        python3 - "$SCRIPT_DIR" "${1:-}" "$gpu_lang" <<'PY'
 import sys
 
 script_dir = sys.argv[1]
 program = sys.argv[2]
+lang = sys.argv[3] if len(sys.argv) > 3 else "metal"
 sys.path.insert(0, f"{script_dir}/src")
 
 from flow.module_resolver import ModuleResolver
 from flow.metal_codegen import generate_metal_shaders, extract_gpu_functions
+from flow.wgsl_codegen import generate_wgsl_shaders
 
 # Resolve modules
 resolver = ModuleResolver(program)
@@ -2553,8 +2567,12 @@ if not gpu_funcs:
     print("}")
     sys.exit(0)
 
-# Generate Metal shaders
-results = generate_metal_shaders(declarations, f"{script_dir}/build/gpu")
+if lang == "wgsl":
+    results = generate_wgsl_shaders(declarations, f"{script_dir}/build/wgsl")
+    for name, path, _layout in results:
+        print(f"Generated WGSL shader: {path}")
+else:
+    results = generate_metal_shaders(declarations, f"{script_dir}/build/gpu")
 print(f"Generated {len(results)} GPU shader(s)")
 PY
         ;;
