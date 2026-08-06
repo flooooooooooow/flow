@@ -1,6 +1,6 @@
 # Flow Module System
 
-> **Status:** Phase 1 implemented — dot-path imports, `[paths]`, `export` lists. String imports deprecated.  
+> **Status:** Phase 1 implemented — dot-path imports, `[paths]`, `export` lists, `export import` re-export. String imports deprecated.  
 > **Problem today:** `import "../../../../lib/verify/nat.flow"` breaks when you move a file.  
 > `stdlib/` vs `lib/stdlib/` vs `../../` — three dialects, zero confidence.
 
@@ -84,7 +84,7 @@ They stay in sync by convention, not by counting `../`.
 
 ## Import Syntax
 
-Four forms. Same keywords as the rest of Flow — explicit, no sigils.
+Five forms. Same keywords as the rest of Flow — explicit, no sigils.
 
 ```flow
 # 1. Single symbol
@@ -99,6 +99,9 @@ import verify.nat as nat
 
 # 4. Sibling within same package
 import .derived.nat_add_zero
+
+# 5. Re-export: forward another module's exports as your own
+export import .derived.nat_add_zero
 ```
 
 No `import *`. If you need more than a handful of symbols, your module is too big — split it.
@@ -136,6 +139,99 @@ What this prevents:
 - Naming debacles (the exported set *is* the public API — review it like a changelog)
 
 For theorems: **if it's not exported, no other package can `assume` it** — forces intentional API surfaces.
+
+---
+
+## Re-export
+
+A package usually wants one name that stands for the whole thing. `export
+import` forwards another module's exports as exports of this file.
+
+```flow
+# registry/packages/flowlm/src/lib.flow
+
+export import .util
+export import .corpus
+export import .tokenizer
+export import .model
+export import .train
+export import .gradcheck
+
+export function flm_version() -> i32 {
+    return 100
+}
+```
+
+Consumers name the aggregator and get the whole surface:
+
+```flow
+import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
+```
+
+Two forms:
+
+| Form | Forwards |
+|------|----------|
+| `export import .model` | everything `.model` exports |
+| `export import .train { flm_train_step, flm_sample }` | only those two symbols |
+
+The brace list is checked the same way an ordinary import's is: each name must
+exist in the named module and be exported there.
+
+### The spelling
+
+`export` is already a prefix on declarations (`export function`, `export
+struct`) and `import` is already a declaration. `export import` composes two
+productions that exist, and it adds no token and no sigil. The parser had an
+explicit error reserving that position; it now means re-export.
+
+### What it does not do
+
+- **No copies.** Forwarding binds the declaring module's symbol. Whatever the
+  path, each declaration is emitted once. Two modules forwarding the same
+  symbol is fine, because it is one symbol.
+- **No alias.** `export import verify.nat as nat` is rejected. Re-export
+  forwards names; use a plain `import ... as` when you want a local alias.
+- **No private leak.** A symbol the source module does not export cannot be
+  forwarded.
+
+Re-exports chain. Forwarding a module forwards what that module forwarded.
+
+### Collisions
+
+Forwarding two declarations under one name is an error, and the message names
+both source modules:
+
+```
+Re-export collision in .../agg.flow: forwarding '.dup_b' brings in a name
+that is already exported elsewhere — Symbol 'dup_fn' collision between
+.../dup_b.flow and .../dup_a.flow
+```
+
+Declaring a name locally that is also forwarded is the same error from the
+other side:
+
+```
+Re-export collision on symbol 'alpha_one' in .../agg_shadow.flow: re-exported
+from .../alpha.flow and also declared locally in .../agg_shadow.flow
+```
+
+Both are `SymbolCollisionError`, a `ValueError` subclass.
+
+The self-hosted `flowc` parser does not accept `export import` yet.
+
+---
+
+## `module` Blocks Are Not Namespaces
+
+`module X { ... }` is parsed and then flattened. The name is discarded and the
+inner declarations become globals, so the block groups source text and nothing
+more. Two blocks in one file declaring the same function name produce duplicate
+definitions in the emitted C, and the only error comes from the C compiler.
+
+Namespacing is the file, addressed by its dot path. See
+[modules-namespacing.md](modules-namespacing.md) for the exact behavior today,
+reproductions of what breaks, and the cost of making blocks real namespaces.
 
 ---
 
@@ -282,7 +378,7 @@ Compiler accepts old syntax with deprecation warning during transition. CI fails
 |-------|-------|
 | **1** | `[paths]` in `flow.toml`, dot-path resolver, `export` line |
 | **2** | New import syntax in parser; deprecation warning on strings |
-| **3** | `import .sibling`, LSP autocomplete on exports |
+| **3** | `import .sibling`, `export import` re-export, LSP autocomplete on exports |
 | **4** | `[dependencies]` remote resolution + lock file |
 | **5** | `flow doc <module>`, orphan-export CI lint |
 

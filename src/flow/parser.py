@@ -807,12 +807,18 @@ class ModuleDecl:
 
 @dataclass
 class ImportDecl:
-    """Module import — dot paths (verify.nat) or legacy string paths."""
+    """Module import — dot paths (verify.nat) or legacy string paths.
+
+    `is_reexport` marks `export import ...`: the imported module's exported
+    symbols (all of them, or the brace-list selection) become exports of the
+    importing file too. See docs/language/modules.md.
+    """
 
     path: str
     symbols: Optional[List[str]] = None
     alias: Optional[str] = None
     is_legacy_string: bool = False
+    is_reexport: bool = False
 
 
 @dataclass
@@ -1636,6 +1642,7 @@ class Parser:
                     TokenType.TYPE,
                     TokenType.DISTINCT,
                     TokenType.THEOREM,
+                    TokenType.IMPORT,
                 ):
                     is_exported = True
                 else:
@@ -1668,11 +1675,15 @@ class Parser:
                 decl.is_exported = is_exported
                 declarations.append(decl)
             elif self.current_token.type == TokenType.IMPORT:
+                imp = self.parse_import()
                 if is_exported:
-                    raise SyntaxError(
-                        f"Cannot export an import at line {self.current_token.line}"
-                    )
-                declarations.append(self.parse_import())
+                    if imp.alias is not None:
+                        raise SyntaxError(
+                            f"'export import {imp.path} as {imp.alias}' is not "
+                            f"supported: re-export forwards symbols, not aliases"
+                        )
+                    imp.is_reexport = True
+                declarations.append(imp)
             elif self.current_token.type == TokenType.CONST:
                 decl = self.parse_const()
                 decl.is_exported = is_exported
