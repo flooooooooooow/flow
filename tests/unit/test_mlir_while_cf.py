@@ -1,4 +1,3 @@
-import pytest
 """Pin CF-dialect successor operand syntax for while loop-carried vars."""
 
 import re
@@ -7,7 +6,6 @@ from flow.mlir_generator import MLIRGenerator
 from tests.unit.compiler_helpers import parse
 
 
-@pytest.mark.xfail(reason="pre-rewrite MLIR lowering expectation; port tracked as board card flow-mlir-lowering-parity", strict=False)
 def test_while_cf_br_types_once_after_values():
     mlir = MLIRGenerator().generate_module(
         parse(
@@ -34,7 +32,6 @@ function main() -> i32 {
     assert cond is not None, mlir
 
 
-@pytest.mark.xfail(reason="pre-rewrite MLIR lowering expectation; port tracked as board card flow-mlir-lowering-parity", strict=False)
 def test_nested_while_propagates_outer_carried_ssa():
     mlir = MLIRGenerator().generate_module(
         parse(
@@ -67,7 +64,6 @@ function main() -> i32 {
     assert parts[0] != parts[1], latch
 
 
-@pytest.mark.xfail(reason="pre-rewrite MLIR lowering expectation; port tracked as board card flow-mlir-lowering-parity", strict=False)
 def test_memref_store_uses_fixed_shape():
     mlir = MLIRGenerator().generate_module(
         parse(

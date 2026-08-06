@@ -982,11 +982,18 @@ Example: `tests/runtime/test_pointers.flow`.
 
 ### 9.2 MLIR Backend
 
-**Status:** ⚠️ Functional but incomplete
+**Status:** ⚠️ Functional; control flow and arrays match the C backend, effects do not
 
-- Basic function/control flow generation
-- LLVM dialect lowering
-- Limited effect support
+- Functions, structs, arrays, if/else, while, for (`to` / `..` / `step`),
+  `match`, `break` / `continue` / `defer` all lower and execute with the same
+  exit code as the C backend. `tests/unit/test_backend_parity.py` runs the
+  same programs through both and compares.
+- Loops and matches with their own control flow lower to the `cf` dialect
+  with block arguments carrying the merged locals; simple counted loops stay
+  on `scf.for` so the elementwise vectorizer can rewrite them to
+  `vector.transfer_read` / `vector.transfer_write` at VF=4.
+- Effects, capabilities and `handle` are partial; module statics are
+  unsupported and raise.
 - Full CLI pass toggles + `--print-pass-pipeline`: see [mlir-opt-flags.md](language/mlir-opt-flags.md)
 
 ### 9.3 WebAssembly
@@ -1183,21 +1190,21 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Structs | ✅ | ✅ | ✅ | ✅ |
 | Enums / traits / impl | ✅ | ⚠️ | ⚠️ | ⚠️ |
 | Units of measure | ✅ | ✅ | ❌ | ✅ |
-| Arrays | ✅ | ✅ | ⚠️ | ✅ |
+| Arrays | ✅ | ✅ | ✅ | ✅ |
 | Spans (`span<T>` / `&[T]`, concrete elements) | ✅ | ✅ | ❌ | ✅ |
 | Spans (bare `span`, trait-shaped, dependent extents) | ❌ | ❌ | ❌ | ✅ (documented gap) |
 | If/Else | ✅ | ✅ | ✅ | ✅ |
 | While | ✅ | ✅ | ✅ | ✅ |
-| For (`to` / `..`) | ✅ | ✅ | ⚠️ | ✅ |
-| `break` / `continue` / `defer` | ✅ | ✅ | ⚠️ | ⚠️ |
+| For (`to` / `..` / `step`) | ✅ | ✅ | ✅ | ✅ |
+| `break` / `continue` / `defer` | ✅ | ✅ | ✅ | ⚠️ |
 | Effects | ✅ | ✅ | ⚠️ | ✅ |
 | Capabilities | ✅ | ✅ | ⚠️ | ✅ |
 | Handle | ✅ | ✅ | ⚠️ | ✅ |
 | Import | ✅ | ✅ | ✅ | ✅ |
 | Export | ✅ | ✅ | ✅ | ✅ |
 | Extern | ✅ | ✅ | ✅ | ⚠️ |
-| Match | ✅ | ⚠️ | ⚠️ | ✅ |
-| Parallel | ✅ | ✅ | ❌ | ✅ (OpenMP / serial) |
+| Match | ✅ | ⚠️ | ✅ | ✅ |
+| Parallel | ✅ | ✅ | ⚠️ (scf.parallel, runs serially) | ✅ (OpenMP / serial) |
 | SIMD Vec | ✅ | ⚠️ | ⚠️ | ⚠️ |
 | Pointers (`&` / `*` / `ptr[i].field`) | ✅ | ✅ | ⚠️ | ✅ |
 | Lambdas / captures | ✅ | ✅ | ❌ | ✅ |
@@ -1210,7 +1217,25 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Binary `0b…` literals | ❌ | ❌ | ❌ | ✅ (documented gap) |
 | Dual / Tensor ops | ✅ | ✅ | ⚠️ | ⚠️ |
 
+The MLIR Gen column is measured by execution, not by inspecting the emitted
+IR. `tests/unit/test_backend_parity.py` compiles the same program through
+both backends and requires the same exit code, and for `defer` and `break`
+the same stdout. A row is ✅ only when a parity case covers it.
+
+Known MLIR gaps behind the remaining ⚠️ marks:
+
+- `break` / `continue` inside a `parallel for` body have no legal cf edge out
+  of the `scf.parallel` region; the generator raises instead of emitting
+  wrong code.
+- `parallel for` lowers to `scf.parallel`, which the current pass pipeline
+  serializes. Results are correct; there is no parallel execution.
+
+Match stays ⚠️ for C Gen because `break` inside a match arm lowers to a C
+`switch`, where `break` leaves the switch rather than the enclosing loop. The
+MLIR lowering branches to the loop's exit block and gets this right, so the
+two backends disagree on that one shape.
+
 ---
 
-*Last updated: 2026-08-05*
+*Last updated: 2026-08-06*
 *Version: 0.9.0*

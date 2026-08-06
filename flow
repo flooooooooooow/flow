@@ -980,8 +980,10 @@ mlir_lower_and_link() {
     print_info "Lowering MLIR to LLVM IR..."
     set -o pipefail
     if ! "$LLVM_PATH"/mlir-opt "$mlir_file" \
+        --convert-vector-to-scf \
         --convert-scf-to-cf \
         --memref-expand \
+        --convert-vector-to-llvm \
         --convert-arith-to-llvm \
         --convert-index-to-llvm \
         --convert-cf-to-llvm \

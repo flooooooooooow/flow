@@ -1,4 +1,3 @@
-import pytest
 """MLIR match lowering — must dispatch MatchStatement (not skip as unsupported)."""
 
 from flow.parser import parse_flow_code
@@ -21,13 +20,11 @@ function main() -> i32 { return as_i(true) - 1 }
 """
 
 
-@pytest.mark.xfail(reason="pre-rewrite MLIR lowering expectation; port tracked as board card flow-mlir-lowering-parity", strict=False)
 def test_match_is_not_unsupported_comment():
     mlir = _mlir(BOOL_MATCH)
     assert "Unsupported statement: MatchStatement" not in mlir
 
 
-@pytest.mark.xfail(reason="pre-rewrite MLIR lowering expectation; port tracked as board card flow-mlir-lowering-parity", strict=False)
 def test_bool_match_emits_cmp_and_cond_br():
     mlir = _mlir(BOOL_MATCH)
     assert "arith.cmpi eq" in mlir
