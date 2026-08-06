@@ -1,0 +1,527 @@
+# ROSSLER ATTRACTOR: the simplest chaotic flow, its return map, and its
+# largest Lyapunov exponent measured two ways.
+#
+# THE SYSTEM   (Rossler 1976)
+#
+#     x' = -y - z
+#     y' = x + a y
+#     z' = b + z (x - c)
+#
+#   with a = b = 0.2 and c the bifurcation parameter. There is exactly one
+#   nonlinearity, the product z x, and it only acts when the trajectory swings
+#   out past x = c. The rest of the time the orbit spirals outward in the
+#   (x, y) plane under the linear part, so the attractor is a flat spiral with
+#   a single fold: the minimum machinery a continuous system needs to be
+#   chaotic.
+#
+#   Three `evolves as` lines are the whole model.
+#
+# WHAT THIS EXAMPLE PROVES
+#
+#   1. The cascade. Successive maxima of x(t) are the natural section for this
+#      flow. A period-n orbit gives n distinct maxima that repeat forever. The
+#      run sweeps c over 2.5, 3.5, 4.0, 4.18 and 5.7 and reports the smallest
+#      n in {1, 2, 4, 8} whose maxima repeat to 1e-6, or "chaotic" when none
+#      does. The expected answers, from the standard picture of this family,
+#      are 1, 2, 4, 8 and chaotic.
+#
+#   2. The return map. At c = 5.7 the plot of x_{n+1} against x_n collapses
+#      onto a thin unimodal curve. That is the reason the flow behaves like a
+#      one-dimensional map, and it is printed rather than asserted.
+#
+#   3. The largest Lyapunov exponent at c = 5.7, measured by two methods that
+#      share no arithmetic and checked against the published value:
+#
+#      A. Two trajectories (Benettin, Galgani, Giorgilli, Strelcyn 1980). A
+#         copy started 1e-9 away is integrated alongside, the separation
+#         measured and log(d / d0) accumulated every 0.5 time units, and the
+#         copy pulled back along the direction it drifted.
+#
+#      B. The variational equation. `flow RosslerVar` carries the tangent
+#         vector as three more `evolves as` states, so the generated RK4
+#         integrates w' = J(x) w at the same substages as the trajectory:
+#
+#             J = [  0   -1   -1  ]
+#                 [  1    a    0  ]
+#                 [  z    0   x-c ]
+#
+#      The reference is lambda_1 = 0.0714, the value tabulated by Sprott for
+#      a = b = 0.2, c = 5.7.
+#
+#   4. The contraction identity. The divergence of this field is
+#      a + x - c, so the three exponents must sum to a + <x> - c with <x> the
+#      time average of x on the attractor. The run measures <x> and the
+#      identity is reported alongside lambda_1; with lambda_2 = 0 for any
+#      flow that is not a fixed point, it pins lambda_3.
+#
+# CONTROLS
+#   None. One deterministic run: RK4, dt = 2e-3, fixed initial condition.
+#
+# THE REFERENCES IT IS CHECKED AGAINST
+#
+#   periods at c = 2.5, 3.5, 4.0, 4.18, 5.7   1, 2, 4, 8, chaotic
+#   lambda_1 at c = 5.7                       0.0714 (Sprott), gate 0.008
+#   the two lambda methods                    must agree to 2e-3
+#   sum of exponents                          a + <x> - c, and must be < 0
+#
+# Run: ./flow run examples/evolution/rossler.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function puts(s: ptr<u8>) -> i32
+}
+
+const DT: f64 = 2e-3
+const A: f64 = 0.2
+const B: f64 = 0.2
+
+const TRANSIENT_T: f64 = 800.0
+const CASCADE_TRANSIENT_T: f64 = 3000.0
+const MAXIMA_WANTED: i32 = 96
+const RETURN_MAP_POINTS: i32 = 1200
+const REPEAT_TOL: f64 = 1e-6
+
+const LYAP_T: f64 = 10000.0
+const LYAP_RENORM_T: f64 = 0.5
+const LYAP_D0: f64 = 1e-9
+
+const LAMBDA_REF: f64 = 0.0714
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow Rossler {
+    state x : f64 = 1.0
+    state y : f64 = 1.0
+    state z : f64 = 1.0
+
+    param a : f64 = 0.2
+    param b : f64 = 0.2
+    param c : f64 = 5.7
+
+    solver { dt 2 ms  method rk4 }
+
+    x evolves as -y - z
+    y evolves as x + a * y
+    z evolves as b + z * (x - c)
+}
+
+# The same field with its variational equation carried as three more states.
+flow RosslerVar {
+    state x : f64 = 1.0
+    state y : f64 = 1.0
+    state z : f64 = 1.0
+    state wx : f64 = 1.0
+    state wy : f64 = 0.0
+    state wz : f64 = 0.0
+
+    param a : f64 = 0.2
+    param b : f64 = 0.2
+    param c : f64 = 5.7
+
+    solver { dt 2 ms  method rk4 }
+
+    x evolves as -y - z
+    y evolves as x + a * y
+    z evolves as b + z * (x - c)
+    wx evolves as -wy - wz
+    wy evolves as wx + a * wy
+    wz evolves as z * wx + (x - c) * wz
+}
+
+function rossler_at(c: f64) -> Rossler {
+    let mut r: Rossler = Rossler_new()
+    r.a = A
+    r.b = B
+    r.c = c
+    r.x = 1.0
+    r.y = 1.0
+    r.z = 1.0
+    return r
+}
+
+# ---------------------------------------------------------------------------
+# ASCII canvas
+# ---------------------------------------------------------------------------
+
+const PW: i32 = 74
+const PH: i32 = 25
+
+let mut canvas: ptr<u8> = null
+let mut rowbuf: ptr<u8> = null
+
+function canvas_init() -> void {
+    canvas = calloc((PW * PH) as i64, 1) as ptr<u8>
+    rowbuf = calloc((PW + 1) as i64, 1) as ptr<u8>
+}
+
+function canvas_clear() -> void {
+    for i in 0 to PW * PH {
+        canvas[i] = 32
+    }
+}
+
+function canvas_put(px: i32, py: i32, ch: i32) -> void {
+    if px < 0 or px >= PW or py < 0 or py >= PH {
+        return
+    }
+    canvas[py * PW + px] = ch as u8
+}
+
+function canvas_point(x: f64, y: f64, xlo: f64, xhi: f64,
+                      ylo: f64, yhi: f64, ch: i32) -> void {
+    let px: i32 = (((x - xlo) / (xhi - xlo)) * ((PW - 1) as f64) + 0.5) as i32
+    let py: i32 = (((yhi - y) / (yhi - ylo)) * ((PH - 1) as f64) + 0.5) as i32
+    canvas_put(px, py, ch)
+}
+
+function canvas_draw() -> void {
+    for r in 0 to PH {
+        for c in 0 to PW {
+            rowbuf[c] = canvas[r * PW + c]
+        }
+        rowbuf[PW] = 0
+        print("    ")
+        let written: i32 = puts(rowbuf)
+        if written < 0 {
+            return
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Successive maxima of x: the return map, and the period detector
+# ---------------------------------------------------------------------------
+
+let mut maxima: ptr<f64> = null
+
+# Collect `want` successive maxima of x, each refined by fitting a parabola
+# through the three samples that bracket it.
+function collect_maxima(c: f64, want: i32, transient: f64) -> i32 {
+    let mut r: Rossler = rossler_at(c)
+    let t_steps: i32 = (transient / DT) as i32
+    for k in 0 to t_steps {
+        Rossler_step(&r, DT)
+    }
+
+    let mut x0: f64 = r.x
+    Rossler_step(&r, DT)
+    let mut x1: f64 = r.x
+
+    let mut found: i32 = 0
+    let limit: i32 = (30000.0 / DT) as i32
+    for k in 0 to limit {
+        Rossler_step(&r, DT)
+        let x2: f64 = r.x
+        if x1 > x0 and x1 >= x2 {
+            let denom: f64 = x0 - 2.0 * x1 + x2
+            let mut peak: f64 = x1
+            if fabs(denom) > 1e-300 {
+                let shift: f64 = 0.5 * (x0 - x2) / denom
+                peak = x1 - 0.25 * (x0 - x2) * shift
+            }
+            maxima[found] = peak
+            found = found + 1
+            if found >= want {
+                return found
+            }
+        }
+        x0 = x1
+        x1 = x2
+    }
+    return found
+}
+
+function detect_period(count: i32) -> i32 {
+    let mut n: i32 = 1
+    while n <= 8 {
+        let mut worst: f64 = 0.0
+        let mut k: i32 = 0
+        while k + n < count {
+            let d: f64 = fabs(maxima[k + n] - maxima[k])
+            if d > worst {
+                worst = d
+            }
+            k = k + 1
+        }
+        if worst < REPEAT_TOL {
+            return n
+        }
+        n = n * 2
+    }
+    return 0
+}
+
+function maxima_residual(count: i32, n: i32) -> f64 {
+    let mut worst: f64 = 0.0
+    let mut k: i32 = 0
+    while k + n < count {
+        let d: f64 = fabs(maxima[k + n] - maxima[k])
+        if d > worst {
+            worst = d
+        }
+        k = k + 1
+    }
+    return worst
+}
+
+# ---------------------------------------------------------------------------
+# Lyapunov exponents
+# ---------------------------------------------------------------------------
+
+function lyapunov_pair(c: f64) -> f64 {
+    let mut a: Rossler = rossler_at(c)
+    let t_steps: i32 = (TRANSIENT_T / DT) as i32
+    for k in 0 to t_steps {
+        Rossler_step(&a, DT)
+    }
+
+    let mut b: Rossler = a
+    b.x = a.x + LYAP_D0
+
+    let chunk: i32 = (LYAP_RENORM_T / DT) as i32
+    let chunks: i32 = (LYAP_T / LYAP_RENORM_T) as i32
+    let mut total: f64 = 0.0
+
+    for p in 0 to chunks {
+        for k in 0 to chunk {
+            Rossler_step(&a, DT)
+            Rossler_step(&b, DT)
+        }
+        let dx: f64 = b.x - a.x
+        let dy: f64 = b.y - a.y
+        let dz: f64 = b.z - a.z
+        let d: f64 = sqrt(dx * dx + dy * dy + dz * dz)
+        if d <= 0.0 {
+            return 0.0
+        }
+        total = total + log(d / LYAP_D0)
+        let s: f64 = LYAP_D0 / d
+        b.x = a.x + dx * s
+        b.y = a.y + dy * s
+        b.z = a.z + dz * s
+    }
+    return total / ((chunks as f64) * LYAP_RENORM_T)
+}
+
+# Returns lambda_1 and writes the time average of x through `mean_x`.
+function lyapunov_variational(c: f64, mean_x: ptr<f64>) -> f64 {
+    let mut v: RosslerVar = RosslerVar_new()
+    v.a = A
+    v.b = B
+    v.c = c
+    let t_steps: i32 = (TRANSIENT_T / DT) as i32
+    for k in 0 to t_steps {
+        RosslerVar_step(&v, DT)
+    }
+    v.wx = 1.0
+    v.wy = 0.0
+    v.wz = 0.0
+
+    let chunk: i32 = (LYAP_RENORM_T / DT) as i32
+    let chunks: i32 = (LYAP_T / LYAP_RENORM_T) as i32
+    let mut total: f64 = 0.0
+    let mut xsum: f64 = 0.0
+    let mut nsamp: f64 = 0.0
+
+    for p in 0 to chunks {
+        for k in 0 to chunk {
+            RosslerVar_step(&v, DT)
+            xsum = xsum + v.x
+            nsamp = nsamp + 1.0
+        }
+        let norm: f64 = sqrt(v.wx * v.wx + v.wy * v.wy + v.wz * v.wz)
+        if norm <= 0.0 {
+            return 0.0
+        }
+        total = total + log(norm)
+        v.wx = v.wx / norm
+        v.wy = v.wy / norm
+        v.wz = v.wz / norm
+    }
+    mean_x[0] = xsum / nsamp
+    return total / ((chunks as f64) * LYAP_RENORM_T)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    canvas_init()
+    maxima = calloc(4096, 8) as ptr<f64>
+
+    println("")
+    println("  ROSSLER ATTRACTOR  --  cascade, return map, Lyapunov exponent")
+    println("  ==============================================================")
+    println("")
+    println("    x' = -y - z      y' = x + 0.2 y      z' = 0.2 + z (x - c)")
+    println("    RK4, dt = 2e-3; 3000 time units of transient for the cascade")
+    println("")
+
+    # -- 1. the cascade ------------------------------------------------------
+    println("  1. PERIOD DOUBLING IN c   successive maxima of x")
+    println("")
+    println("          c    orbit period    repeat residual    largest max")
+    println("      -----    ------------    ---------------    -----------")
+
+    let cs: array<f64, 5> = [2.5, 3.5, 4.0, 4.18, 5.7]
+    let mut orders: array<i32, 5> = [0, 0, 0, 0, 0]
+
+    for i in 0 to 5 {
+        let got: i32 = collect_maxima(cs[i], MAXIMA_WANTED, CASCADE_TRANSIENT_T)
+        let n: i32 = detect_period(got)
+        orders[i] = n
+        let mut probe: i32 = n
+        if n == 0 {
+            probe = 8
+        }
+        let mut biggest: f64 = maxima[0]
+        for k in 0 to got {
+            if maxima[k] > biggest {
+                biggest = maxima[k]
+            }
+        }
+        print("     ")
+        printf("%6.2f", cs[i])
+        if n == 0 {
+            print("         chaotic")
+        } else {
+            printf("    %12.0f", n as f64)
+        }
+        printf("    %15.3e", maxima_residual(got, probe))
+        printf("    %11.6f", biggest)
+        println("")
+    }
+    println("")
+
+    # -- 2. the attractor and the return map ---------------------------------
+    println("  2. THE ATTRACTOR AT c = 5.7   (x horizontal, z vertical)")
+    println("")
+
+    let mut r: Rossler = rossler_at(5.7)
+    let t_steps: i32 = (TRANSIENT_T / DT) as i32
+    for k in 0 to t_steps {
+        Rossler_step(&r, DT)
+    }
+    canvas_clear()
+    for k in 0 to 120000 {
+        Rossler_step(&r, DT)
+        canvas_point(r.x, r.z, -11.0, 13.0, 0.0, 24.0, 46)
+    }
+    canvas_draw()
+    println("")
+    println("     x in [-11, 13]     z in [0, 24]     the flat sheet and its z spike")
+    println("")
+
+    println("  3. THE RETURN MAP AT c = 5.7   (x_n horizontal, x_{n+1} vertical)")
+    println("")
+    let got57: i32 = collect_maxima(5.7, RETURN_MAP_POINTS, TRANSIENT_T)
+    let mut lo: f64 = maxima[0]
+    let mut hi: f64 = maxima[0]
+    for k in 0 to got57 {
+        if maxima[k] < lo {
+            lo = maxima[k]
+        }
+        if maxima[k] > hi {
+            hi = maxima[k]
+        }
+    }
+    canvas_clear()
+    for k in 0 to got57 - 1 {
+        canvas_point(maxima[k], maxima[k + 1], lo, hi, lo, hi, 46)
+    }
+    canvas_draw()
+    print("     both axes in [")
+    printf("%.4f", lo)
+    print(", ")
+    printf("%.4f", hi)
+    println("]")
+    println("")
+
+    # -- 4. Lyapunov ---------------------------------------------------------
+    println("  4. LARGEST LYAPUNOV EXPONENT AT c = 5.7")
+    println("")
+
+    let mut mean_x: array<f64, 1> = [0.0]
+    let lam_pair: f64 = lyapunov_pair(5.7)
+    let lam_var: f64 = lyapunov_variational(5.7, mean_x)
+    let disagree: f64 = fabs(lam_pair - lam_var)
+    let err_ref: f64 = fabs(lam_var - LAMBDA_REF)
+    let divergence: f64 = A + mean_x[0] - 5.7
+
+    print("     two-trajectory, d0 = 1e-9   lambda_1 = ")
+    printf("%+.6f", lam_pair)
+    println("")
+    print("     variational equation        lambda_1 = ")
+    printf("%+.6f", lam_var)
+    println("")
+    print("     difference between methods           = ")
+    printf("%.3e", disagree)
+    println("      gate 2.0e-03")
+    print("     Sprott's tabulated value             = ")
+    printf("%+.6f", LAMBDA_REF)
+    print("   |error| = ")
+    printf("%.4f", err_ref)
+    println("      gate 0.008")
+    println("")
+    print("     time average of x on the attractor   = ")
+    printf("%+.6f", mean_x[0])
+    println("")
+    print("     divergence a + <x> - c = sum lambda   = ")
+    printf("%+.6f", divergence)
+    println("")
+    print("     implied lambda_3 = div - lambda_1     = ")
+    printf("%+.6f", divergence - lam_var)
+    println("      (lambda_2 = 0 for a flow)")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if lam_var != lam_var or lam_pair != lam_pair or mean_x[0] != mean_x[0] {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if orders[0] != 1 {
+        println("    FAIL: c = 2.5 is not a period-1 orbit")
+        return 2
+    }
+    if orders[1] != 2 {
+        println("    FAIL: c = 3.5 is not a period-2 orbit")
+        return 3
+    }
+    if orders[2] != 4 {
+        println("    FAIL: c = 4.0 is not a period-4 orbit")
+        return 4
+    }
+    if orders[3] != 8 {
+        println("    FAIL: c = 4.18 is not a period-8 orbit")
+        return 5
+    }
+    if orders[4] != 0 {
+        println("    FAIL: c = 5.7 resolved to a finite period")
+        return 6
+    }
+    if lam_var <= 0.0 {
+        println("    FAIL: the exponent at c = 5.7 is not positive")
+        return 7
+    }
+    if disagree > 2e-3 {
+        println("    FAIL: the two Lyapunov methods disagree")
+        return 8
+    }
+    if err_ref > 0.008 {
+        println("    FAIL: lambda_1 misses the tabulated value")
+        return 9
+    }
+    if divergence >= 0.0 {
+        println("    FAIL: phase-space volume is not contracting")
+        return 10
+    }
+    println("    PASS: cascade 1 -> 2 -> 4 -> 8 -> chaos, unimodal return map,")
+    println("          lambda_1 within 0.008 of Sprott's 0.0714 by two methods,")
+    println("          volume contracting at the divergence of the field")
+    return 0
+}
