@@ -1,0 +1,513 @@
+# LOGISTIC BIFURCATION: the same nonlinearity in continuous and discrete
+# time, and Feigenbaum's constant measured off the cascade.
+#
+# TWO MODELS OF ONE NONLINEARITY
+#
+#   In continuous time the logistic law is tame. The `flow Logistic` block
+#
+#       x evolves as r * x * (1 - x / k)
+#
+#   has the exact solution
+#
+#       x(t) = k x0 e^(r t) / (k + x0 (e^(r t) - 1))
+#
+#   and every trajectory climbs monotonically to k. Nothing else happens,
+#   ever, for any r.
+#
+#   Sampled once per generation the same law is the logistic map
+#
+#       x_{n+1} = r x_n (1 - x_n)
+#
+#   and it does everything. The rest of this program is about the difference.
+#
+# THE MEASUREMENTS
+#
+#   1. The continuous model against its closed form, to 1e-13, so the two
+#      halves of the program are known to be the same nonlinearity.
+#
+#   2. Feigenbaum's delta. R_n is the superstable parameter of the period-2^n
+#      cycle: the value of r at which the critical point x = 1/2 lies on the
+#      cycle, so f_r^(2^n)(1/2) = 1/2. The ratios
+#
+#          delta_n = (R_{n-1} - R_{n-2}) / (R_n - R_{n-1})
+#
+#      converge to delta = 4.669201609102990... (Feigenbaum, 1978). Each R_n
+#      is found by scanning for the first sign change of f^(2^n)(1/2) - 1/2
+#      above R_{n-1} and then bisecting to machine precision.
+#
+#   3. Feigenbaum's alpha. With d_n the signed distance from 1/2 to the
+#      nearest cycle point at R_n, the ratios d_n / d_{n+1} converge to
+#      alpha = -2.502907875... The two constants come out of the same table.
+#
+#   4. The accumulation point. R_n + (R_n - R_{n-1}) / (delta - 1) estimates
+#      r_inf = 3.569945672...
+#
+#   5. The period-3 window. Sharkovskii's "period three implies chaos" window
+#      opens by a tangent bifurcation at exactly
+#
+#          r = 1 + sqrt(8) = 3.828427124746190
+#
+#      The run bisects on r for the smallest value at which f^3 acquires
+#      fixed points beyond those of f, by counting sign changes of f^3(x) - x
+#      on a 200000-point grid, and lands on 1 + sqrt(8) to 1e-9.
+#
+#   6. r = 4 in closed form. The substitution x = sin^2(pi u / 2) turns the
+#      map into u -> 2u mod 1, so x_n = sin^2(2^n pi theta) exactly. With
+#      theta = 1/9 the orbit is periodic with period 6, and the run checks
+#      the iterated map against that formula to 1e-9.
+#
+#      The exponent follows from the same substitution: |f'| = |4 cos(pi u)|
+#      and u is uniform on the invariant measure, so
+#
+#          lambda = ln 4 + integral_0^1 ln|cos(pi u)| du = ln 4 - ln 2 = ln 2
+#
+#      Sampling u uniformly puts the starting point straight onto the
+#      invariant density, so the measured average needs no burn-in and the
+#      only error left is the sampling one.
+#
+# CONTROLS
+#   None: one deterministic run, no input, and the only randomness is a fixed
+#   LCG choosing the 262144 starting points for the exponent.
+#
+# Run: ./flow run examples/evolution/logistic_bifurcation.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const FEIGENBAUM_DELTA: f64 = 4.669201609102990
+const FEIGENBAUM_ALPHA: f64 = -2.502907875095892
+const R_INFINITY: f64 = 3.569945672
+const N_LEVEL: i32 = 11          # superstable levels 0 .. 10
+const X_GRID: i32 = 200000       # samples used to count roots of f^3(x) - x
+const LYAP_ORBITS: i32 = 262144
+const LYAP_LEN: i32 = 16
+const PI: f64 = 3.141592653589793
+
+# ---------------------------------------------------------------------------
+# The continuous model.
+# ---------------------------------------------------------------------------
+
+flow Logistic {
+    state x : f64 = 0.01
+
+    param r : f64 = 0.8       # 1/s intrinsic growth rate
+    param k : f64 = 1.0       # carrying capacity
+
+    solver { dt 1 ms  method rk4 }
+
+    x evolves as r * x * (1.0 - x / k)
+}
+
+function logistic_exact(t: f64, x0: f64, r: f64, k: f64) -> f64 {
+    let e: f64 = exp(r * t)
+    return k * x0 * e / (k + x0 * (e - 1.0))
+}
+
+# ---------------------------------------------------------------------------
+# The map.
+# ---------------------------------------------------------------------------
+
+function iterate_from_half(r: f64, n: i32) -> f64 {
+    let mut x: f64 = 0.5
+    for i in 0 to n {
+        x = r * x * (1.0 - x)
+    }
+    return x
+}
+
+# f^(2^n)(1/2) - 1/2, the function whose roots are the superstable parameters.
+function super_residual(r: f64, level: i32) -> f64 {
+    let mut count: i32 = 1
+    for i in 0 to level {
+        count = count * 2
+    }
+    return iterate_from_half(r, count) - 0.5
+}
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG
+# ---------------------------------------------------------------------------
+
+let mut rng_state: u32 = 2463534242
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+# Thirty-two bits, built from the top halves of two draws. The doubling map
+# eats one bit of the starting point per iteration, so a short mantissa would
+# run out of entropy and drive every orbit onto zero. This is exactly the
+# place where "any old random number" is not good enough.
+function rng_unit() -> f64 {
+    let hi: f64 = (rng_next() >> 16) as f64
+    let lo: f64 = (rng_next() >> 16) as f64
+    return (hi * 65536.0 + lo) / 4294967296.0
+}
+
+# ---------------------------------------------------------------------------
+# Root counting for the period-3 window
+# ---------------------------------------------------------------------------
+
+function f3(x: f64, r: f64) -> f64 {
+    let a: f64 = r * x * (1.0 - x)
+    let b: f64 = r * a * (1.0 - a)
+    return r * b * (1.0 - b)
+}
+
+# Sign changes of f^3(x) - x strictly inside (0, 1). Below the window there is
+# exactly one, at the fixed point 1 - 1/r; inside it there are seven.
+function period3_roots(r: f64) -> i32 {
+    let lo: f64 = 0.001
+    let hi: f64 = 0.999
+    let mut prev: f64 = f3(lo, r) - lo
+    let mut changes: i32 = 0
+    for i in 1 to X_GRID + 1 {
+        let x: f64 = lo + (hi - lo) * (i as f64) / (X_GRID as f64)
+        let g: f64 = f3(x, r) - x
+        if (g < 0.0) != (prev < 0.0) {
+            changes = changes + 1
+        }
+        prev = g
+    }
+    return changes
+}
+
+# ---------------------------------------------------------------------------
+
+let mut r_super: ptr<f64> = null
+let mut d_super: ptr<f64> = null
+
+function main() -> i32 {
+    r_super = calloc(N_LEVEL as i64, 8) as ptr<f64>
+    d_super = calloc(N_LEVEL as i64, 8) as ptr<f64>
+
+    println("")
+    println("  LOGISTIC BIFURCATION  --  one nonlinearity, two clocks")
+    println("  ======================================================")
+    println("")
+
+    # -- 1. the continuous model --------------------------------------------
+    println("  1. CONTINUOUS TIME: `x evolves as r x (1 - x/k)`")
+    println("")
+    println("      t [s]     x(t)          closed form      |error|")
+    println("      -----   -----------   ---------------   ---------")
+
+    let dt: f64 = 0.001
+    let r_c: f64 = 0.8
+    let k_c: f64 = 1.0
+    let x0: f64 = 0.01
+    let mut lg: Logistic = Logistic_new()
+    lg.r = r_c
+    lg.k = k_c
+    lg.x = x0
+
+    let c_steps: i32 = 30000
+    let mut worst_c: f64 = 0.0
+    for s in 0 to c_steps + 1 {
+        let t: f64 = (s as f64) * dt
+        let exact: f64 = logistic_exact(t, x0, r_c, k_c)
+        let err: f64 = fabs(lg.x - exact)
+        if err > worst_c { worst_c = err }
+        if s % 5000 == 0 {
+            printf("      %5.1f", t)
+            printf("   %11.9f", lg.x)
+            printf("   %15.12f", exact)
+            printf("   %9.2e", err)
+            println("")
+        }
+        Logistic_step(&lg, dt)
+    }
+    println("")
+    print("     worst |x - exact| over 30 s : ")
+    printf("%.3e", worst_c)
+    println("     gate 1.0e-13")
+    println("")
+
+    # -- 2. the superstable cascade -----------------------------------------
+    println("  2. DISCRETE TIME: THE SUPERSTABLE CASCADE  f^(2^n)(1/2) = 1/2")
+    println("")
+    println("       n   period      R_n                  R_n - R_{n-1}    delta_n")
+    println("      ---  ------   ------------------      -------------   ---------")
+
+    r_super[0] = 2.0            # f(1/2) = 1/2 exactly at r = 2
+    d_super[0] = 0.5
+    printf("      %3.0f", 0.0)
+    printf("   %6.0f", 1.0)
+    printf("   %18.15f", r_super[0])
+    println("             -           -")
+
+    let mut level: i32 = 1
+    while level < N_LEVEL {
+        # A window that must contain R_level: the gaps shrink by about delta,
+        # so one previous gap is generous, and the margin keeps the scan off
+        # the known root at R_{level-1}.
+        let mut gap: f64 = 1.4
+        if level >= 2 {
+            gap = r_super[level - 1] - r_super[level - 2]
+        }
+        let start: f64 = r_super[level - 1] + gap * 1.0e-4
+        let stop: f64 = r_super[level - 1] + gap * 0.98
+
+        let scan: i32 = 4000
+        let mut prev_r: f64 = start
+        let mut prev_g: f64 = super_residual(start, level)
+        let mut lo: f64 = -1.0
+        let mut hi: f64 = -1.0
+        for i in 1 to scan + 1 {
+            let r: f64 = start + (stop - start) * (i as f64) / (scan as f64)
+            let g: f64 = super_residual(r, level)
+            if (g < 0.0) != (prev_g < 0.0) {
+                lo = prev_r
+                hi = r
+                break
+            }
+            prev_r = r
+            prev_g = g
+        }
+        if lo < 0.0 {
+            println("    FAIL: no superstable parameter found in the scan window")
+            return 9
+        }
+
+        let g_lo: f64 = super_residual(lo, level)
+        for b in 0 to 90 {
+            let mid: f64 = 0.5 * (lo + hi)
+            let g_mid: f64 = super_residual(mid, level)
+            if (g_mid < 0.0) == (g_lo < 0.0) {
+                lo = mid
+            } else {
+                hi = mid
+            }
+        }
+        let root: f64 = 0.5 * (lo + hi)
+        r_super[level] = root
+
+        # d_n: where the half-cycle iterate of the critical point lands.
+        let mut half: i32 = 1
+        for i in 0 to level - 1 {
+            half = half * 2
+        }
+        d_super[level] = iterate_from_half(root, half) - 0.5
+
+        printf("      %3.0f", level as f64)
+        let mut per: i32 = 1
+        for i in 0 to level {
+            per = per * 2
+        }
+        printf("   %6.0f", per as f64)
+        printf("   %18.15f", root)
+        printf("      %13.3e", root - r_super[level - 1])
+        if level >= 2 {
+            let dn: f64 = (r_super[level - 1] - r_super[level - 2])
+                        / (root - r_super[level - 1])
+            printf("   %9.6f", dn)
+        }
+        println("")
+        level = level + 1
+    }
+    println("")
+
+    let delta_last: f64 = (r_super[N_LEVEL - 2] - r_super[N_LEVEL - 3])
+                        / (r_super[N_LEVEL - 1] - r_super[N_LEVEL - 2])
+    let delta_err: f64 = fabs(delta_last - FEIGENBAUM_DELTA)
+    print("     delta measured at n = 10 : ")
+    printf("%.9f", delta_last)
+    println("")
+    print("     Feigenbaum's delta       : ")
+    printf("%.9f", FEIGENBAUM_DELTA)
+    println("")
+    print("     |difference|             : ")
+    printf("%.3e", delta_err)
+    println("     gate 1.0e-3")
+    println("")
+
+    # -- 3. alpha ------------------------------------------------------------
+    println("  3. THE OTHER CONSTANT:  alpha_n = d_n / d_{n+1}")
+    println("")
+    println("       n       d_n           alpha_n")
+    println("      ---   ------------   -----------")
+    let mut alpha_last: f64 = 0.0
+    for n in 1 to N_LEVEL {
+        printf("      %3.0f", n as f64)
+        printf("   %12.3e", d_super[n])
+        if n < N_LEVEL - 1 {
+            let a: f64 = d_super[n] / d_super[n + 1]
+            printf("   %11.6f", a)
+            alpha_last = a
+        }
+        println("")
+    }
+    let alpha_err: f64 = fabs(alpha_last - FEIGENBAUM_ALPHA)
+    println("")
+    print("     alpha measured : ")
+    printf("%.9f", alpha_last)
+    print("     reference ")
+    printf("%.9f", FEIGENBAUM_ALPHA)
+    println("")
+    print("     |difference|   : ")
+    printf("%.3e", alpha_err)
+    println("     gate 1.0e-3")
+    println("")
+
+    # -- 4. the accumulation point ------------------------------------------
+    let r_inf_est: f64 = r_super[N_LEVEL - 1]
+                       + (r_super[N_LEVEL - 1] - r_super[N_LEVEL - 2])
+                         / (FEIGENBAUM_DELTA - 1.0)
+    let r_inf_err: f64 = fabs(r_inf_est - R_INFINITY)
+    println("  4. THE ACCUMULATION POINT")
+    println("")
+    print("     R_10 + (R_10 - R_9)/(delta - 1) : ")
+    printf("%.12f", r_inf_est)
+    println("")
+    print("     r_infinity                      : ")
+    printf("%.12f", R_INFINITY)
+    println("")
+    print("     |difference|                    : ")
+    printf("%.3e", r_inf_err)
+    println("     gate 1.0e-8")
+    println("")
+
+    # -- 5. the period-3 window ----------------------------------------------
+    println("  5. WHERE PERIOD THREE BEGINS")
+    println("")
+    let r3_exact: f64 = 1.0 + sqrt(8.0)
+    let mut lo3: f64 = 3.82
+    let mut hi3: f64 = 3.84
+    if period3_roots(lo3) >= 3 {
+        println("    FAIL: period three already present below the window")
+        return 10
+    }
+    if period3_roots(hi3) < 3 {
+        println("    FAIL: period three absent above the window")
+        return 11
+    }
+    for b in 0 to 44 {
+        let mid: f64 = 0.5 * (lo3 + hi3)
+        if period3_roots(mid) >= 3 {
+            hi3 = mid
+        } else {
+            lo3 = mid
+        }
+    }
+    let r3: f64 = 0.5 * (lo3 + hi3)
+    let r3_err: f64 = fabs(r3 - r3_exact)
+    print("     first r with fixed points of f^3 beyond those of f : ")
+    printf("%.12f", r3)
+    println("")
+    print("     1 + sqrt(8)                                        : ")
+    printf("%.12f", r3_exact)
+    println("")
+    print("     |difference|                                       : ")
+    printf("%.3e", r3_err)
+    println("     gate 1.0e-8")
+    print("     sign changes of f^3(x) - x just inside the window  : ")
+    printf("%.0f", period3_roots(r3_exact + 1.0e-6) as f64)
+    println("   (one fixed point of f, six of the 3-cycle)")
+    println("")
+
+    # -- 6. the exponent at r = 4 --------------------------------------------
+    println("  6. AT r = 4 THE MAP IS THE TENT MAP IN DISGUISE")
+    println("")
+    println("     x = sin^2(pi u / 2) conjugates r = 4 to the doubling map on u,")
+    println("     so x_n = sin^2(2^n pi theta) exactly. Taking theta = 1/9 makes")
+    println("     the orbit periodic with period 6, because 2^6 = 64 = 1 mod 9.")
+    println("")
+
+    let mut cx: f64 = 0.0
+    let mut worst_conj: f64 = 0.0
+    let mut pow2: i32 = 1
+    cx = sin(PI / 9.0) * sin(PI / 9.0)
+    let mut xn: f64 = cx
+    for n in 0 to 24 {
+        pow2 = (pow2 * 2) % 9
+        let s: f64 = sin(PI * (pow2 as f64) / 9.0)
+        let closed: f64 = s * s
+        xn = 4.0 * xn * (1.0 - xn)
+        let e: f64 = fabs(xn - closed)
+        if e > worst_conj { worst_conj = e }
+    }
+    print("     worst |x_n - sin^2(2^n pi / 9)| over 24 iterations : ")
+    printf("%.3e", worst_conj)
+    println("     gate 1.0e-9")
+    println("")
+    println("     The exponent follows: mean ln |f'| = ln 4 + mean ln |cos(pi u)|")
+    println("     = ln 4 - ln 2 = ln 2. Sampling u uniformly puts x straight on")
+    println("     the invariant density, so no burn-in is needed and the only")
+    println("     error left is the sampling one.")
+    println("")
+
+    let mut lyap_sum: f64 = 0.0
+    let mut lyap_n: i32 = 0
+    for o in 0 to LYAP_ORBITS {
+        let u: f64 = rng_unit()
+        let s0: f64 = sin(0.5 * PI * u)
+        let mut x: f64 = s0 * s0
+        for i in 0 to LYAP_LEN {
+            let d: f64 = fabs(4.0 - 8.0 * x)
+            if d > 0.0 {
+                lyap_sum = lyap_sum + log(d)
+                lyap_n = lyap_n + 1
+            }
+            x = 4.0 * x * (1.0 - x)
+        }
+    }
+    let lyap: f64 = lyap_sum / (lyap_n as f64)
+    let lyap_err: f64 = fabs(lyap - log(2.0))
+    print("     mean ln |f'| over 262144 orbits x 16 steps : ")
+    printf("%.9f", lyap)
+    println("")
+    print("     ln 2                                      : ")
+    printf("%.9f", log(2.0))
+    println("")
+    print("     |difference|                              : ")
+    printf("%.3e", lyap_err)
+    println("     gate 1.0e-2   (the sampling error at 1e6 draws)")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if worst_c != worst_c or delta_err != delta_err or lyap != lyap {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if worst_c > 1e-13 {
+        println("    FAIL: the continuous model left its closed form")
+        return 2
+    }
+    if delta_err > 1e-3 {
+        println("    FAIL: the cascade does not give Feigenbaum's delta")
+        return 3
+    }
+    if alpha_err > 1e-3 {
+        println("    FAIL: the cascade does not give Feigenbaum's alpha")
+        return 4
+    }
+    if r_inf_err > 1e-8 {
+        println("    FAIL: the accumulation point is wrong")
+        return 5
+    }
+    if r3_err > 1e-8 {
+        println("    FAIL: period three does not begin at 1 + sqrt(8)")
+        return 6
+    }
+    if worst_conj > 1e-9 {
+        println("    FAIL: the r = 4 orbit is not sin^2(2^n pi theta)")
+        return 7
+    }
+    if lyap_err > 1e-2 {
+        println("    FAIL: the exponent at r = 4 is not ln 2")
+        return 8
+    }
+    println("    PASS: the continuous law tracks its closed form to 1e-13, the")
+    println("          cascade gives delta and alpha to 1e-3, r_infinity to 1e-8,")
+    println("          period three opens at 1 + sqrt(8), and the exponent at")
+    println("          r = 4 is ln 2")
+    return 0
+}
