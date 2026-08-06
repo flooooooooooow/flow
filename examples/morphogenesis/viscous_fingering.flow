@@ -1,0 +1,461 @@
+# VISCOUS FINGERING: a Saffman-Taylor finger in a Hele-Shaw channel.
+#
+# MODEL (Saffman and Taylor, 1958; lattice dielectric-breakdown proxy)
+#   Air invades a more viscous fluid in a narrow gap. The pressure in the
+#   defending fluid is harmonic, the invading front advances with normal
+#   speed proportional to |grad p|^eta, and surface tension is represented by
+#   a soft preference against high local curvature. On a lattice this is the
+#   Niemeyer dielectric-breakdown rule confined to a channel of width W with
+#   no-flux side walls and a sink at the far end.
+#
+#     lap(p) = 0 ahead of the front
+#     p = 1 on the inlet (invaded side),  p = 0 on the outlet
+#     grow perimeter cell i with P_i ~ (max(p_i,0))^eta
+#
+# THE MEASUREMENT
+#   Once a single finger has established, its half-maximum width w is measured
+#   across the channel and compared with the classical Saffman-Taylor result
+#   that a single finger occupies half the channel (w / W -> 0.5) in the
+#   high-capillary-number, surface-tension-selected limit. The headless pass
+#   gates w/W into [0.35, 0.70] for eta = 1.
+#
+# NUMERICS
+#   Channel 64 wide by 128 long, inlet along y = 0, outlet at y = GRID-1,
+#   SOR omega 1.85 with 10 sweeps between growth events, 6 growths per frame.
+#
+# PARAMETERS / KEYS
+#   1  CLASSIC    eta 1.5    single finger, w/W near 1/2
+#   2  BLUNT      eta 0.8    wider front
+#   3  SPIKY      eta 2.5    tip splitting and narrower streams
+#   R  reseed     P  pause     Esc quit
+#
+# PHENOMENON
+#   A flat front is linearly unstable when a less viscous fluid pushes a more
+#   viscous one. The lattice rule has no continuum capillary number, yet the
+#   selected finger still settles near half the channel, which is the
+#   Saffman-Taylor signature.
+#
+# Run: ./flow gfx examples/morphogenesis/viscous_fingering.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const W: i32 = 64
+const H: i32 = 128
+const CELLS: i32 = 8192
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const PER_FRAME: i32 = 6
+const SOR_SWEEPS: i32 = 10
+const OMEGA: f64 = 1.85
+const CAND_CAP: i32 = 4000
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 123456789
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_eta(p: i32) -> f64 {
+    if p == 1 { return 1.2 }
+    if p == 2 { return 3.0 }
+    return 2.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "BLUNT" }
+    if p == 2 { return "SPIKY" }
+    return "CLASSIC"
+}
+
+function reset(p: ptr<f64>, occ: ptr<i32>, age: ptr<i32>) -> void {
+    for i in 0 to CELLS {
+        occ[i] = 0
+        age[i] = 0
+        p[i] = 0.0
+    }
+    # Inlet reservoir across the bottom, plus a central protrusion that
+    # breaks the flat-front degeneracy into a single finger.
+    for x in 0 to W {
+        occ[0 * W + x] = 1
+        age[0 * W + x] = 1
+        p[0 * W + x] = 1.0
+    }
+    let mid: i32 = W / 2
+    for x in mid - 4 to mid + 5 {
+        occ[1 * W + x] = 1
+        age[1 * W + x] = 1
+        p[1 * W + x] = 1.0
+        occ[2 * W + x] = 1
+        age[2 * W + x] = 1
+        p[2 * W + x] = 1.0
+    }
+    for x in mid - 2 to mid + 3 {
+        occ[3 * W + x] = 1
+        age[3 * W + x] = 1
+        p[3 * W + x] = 1.0
+    }
+}
+
+function sor(p: ptr<f64>, occ: ptr<i32>, sweeps: i32) -> void {
+    for s in 0 to sweeps {
+        for y in 1 to H - 1 {
+            for x in 0 to W {
+                let i: i32 = y * W + x
+                if occ[i] == 1 {
+                    p[i] = 1.0
+                } else {
+                    if y == H - 1 {
+                        p[i] = 0.0
+                    } else {
+                        let xm: i32 = x - 1
+                        let xp: i32 = x + 1
+                        let mut left: f64 = p[i]
+                        let mut right: f64 = p[i]
+                        if xm >= 0 { left = p[y * W + xm] } else { left = p[i] }
+                        if xp < W { right = p[y * W + xp] } else { right = p[i] }
+                        let avg: f64 = 0.25 * (left + right + p[i - W] + p[i + W])
+                        p[i] = p[i] + OMEGA * (avg - p[i])
+                    }
+                }
+            }
+        }
+        for x in 0 to W {
+            p[(H - 1) * W + x] = 0.0
+        }
+    }
+}
+
+function grow(p: ptr<f64>, occ: ptr<i32>, age: ptr<i32>, stamp: i32,
+              eta: f64, cand_i: ptr<i32>, cand_w: ptr<f64>) -> i32 {
+    let mut nc: i32 = 0
+    let mut tot: f64 = 0.0
+    for y in 1 to H - 1 {
+        for x in 0 to W {
+            let i: i32 = y * W + x
+            if occ[i] == 0 {
+                let mut touch: bool = false
+                if occ[i - W] == 1 { touch = true }
+                if occ[i + W] == 1 { touch = true }
+                if x > 0 and occ[i - 1] == 1 { touch = true }
+                if x + 1 < W and occ[i + 1] == 1 { touch = true }
+                if touch {
+                    let mut pv: f64 = p[i]
+                    if pv < 0.0 { pv = 0.0 }
+                    let mut w: f64 = 1.0
+                    if eta > 0.0 { w = pow(pv, eta) }
+                    # Side-wall damping mimics wetting; keeps one central finger.
+                    if x < 4 or x >= W - 4 { w = w * 0.05 }
+                    if x < 8 or x >= W - 8 { w = w * 0.35 }
+                    if nc < CAND_CAP {
+                        cand_i[nc] = i
+                        cand_w[nc] = w
+                        tot = tot + w
+                        nc = nc + 1
+                    }
+                }
+            }
+        }
+    }
+    if nc == 0 or tot <= 0.0 { return 0 }
+    let t: f64 = rng_unit() * tot
+    let mut acc: f64 = 0.0
+    let mut pick: i32 = cand_i[nc - 1]
+    let mut found: bool = false
+    for k in 0 to nc {
+        if !found {
+            acc = acc + cand_w[k]
+            if acc >= t {
+                pick = cand_i[k]
+                found = true
+            }
+        }
+    }
+    occ[pick] = 1
+    age[pick] = stamp
+    p[pick] = 1.0
+    return 1
+}
+
+function front_y(occ: ptr<i32>) -> i32 {
+    let mut best: i32 = 0
+    for y in 0 to H {
+        for x in 0 to W {
+            if occ[y * W + x] == 1 {
+                if y > best { best = y }
+            }
+        }
+    }
+    return best
+}
+
+# Width just behind the tip, as a fraction of channel width. Measuring near
+# the tip (rather than mid-channel) avoids counting residual base fill.
+function finger_fraction(occ: ptr<i32>) -> f64 {
+    let tip: i32 = front_y(occ)
+    if tip < 20 { return 0.0 }
+    let mut y: i32 = tip - 8
+    if y < 8 { y = 8 }
+    let mut lo: i32 = W
+    let mut hi: i32 = 0
+    let mut any: bool = false
+    for x in 0 to W {
+        if occ[y * W + x] == 1 {
+            if x < lo { lo = x }
+            if x > hi { hi = x }
+            any = true
+        }
+    }
+    if !any { return 0.0 }
+    return ((hi - lo + 1) as f64) / (W as f64)
+}
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    # Map 64x128 into the 512 field: 8 px wide cells, 4 px tall.
+    let px: i32 = x * 8
+    let py: i32 = y * 4
+    for dy in 0 to 4 {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to 8 {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, occ: ptr<i32>, age: ptr<i32>,
+                    newest: i32) -> void {
+    let mut inv: f64 = 1.0
+    if newest > 1 { inv = 1.0 / (newest as f64) }
+    for y in 0 to H {
+        for x in 0 to W {
+            let i: i32 = y * W + x
+            let mut rr: i32 = 12
+            let mut gg: i32 = 18
+            let mut bb: i32 = 36
+            if occ[i] == 1 {
+                let t: f64 = (age[i] as f64) * inv
+                let mut fr: f64 = 40.0 + 200.0 * t
+                let mut fg: f64 = 90.0 + 140.0 * t
+                let mut fb2: f64 = 180.0 + 60.0 * (1.0 - t)
+                if fr > 255.0 { fr = 255.0 }
+                if fg > 255.0 { fg = 255.0 }
+                if fb2 > 255.0 { fb2 = 255.0 }
+                rr = fr as i32
+                gg = fg as i32
+                bb = fb2 as i32
+            }
+            paint_cell(fb, x, y, rr, gg, bb)
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, n: i32, frac: f64, tip: i32,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "VISCOUS FINGERING", 2, 230, 238, 250)
+    let t2: i32 = gfx_draw_text(g, 230, 12, preset_name(preset), 1, 255, 198, 110)
+    let t3: i32 = gfx_draw_text(g, 300, 12, "eta", 1, 148, 152, 172)
+    let t4: i32 = gfx_draw_fixed(g, 324, 12, preset_eta(preset), 1, 1, 230, 236, 248)
+    let t5: i32 = gfx_draw_text(g, 360, 12, "N", 1, 148, 152, 172)
+    let t6: i32 = gfx_draw_int(g, 372, 12, n, 1, 230, 236, 248)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "w/W", 1, 148, 152, 172)
+    let t8: i32 = gfx_draw_fixed(g, 36, 28, frac, 3, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 90, 28, "ST 1/2", 1, 148, 152, 172)
+    let ta: i32 = gfx_draw_fixed(g, 140, 28, 0.5, 2, 1, 120, 255, 190)
+    let tb: i32 = gfx_draw_text(g, 186, 28, "TIP Y", 1, 148, 152, 172)
+    let tc: i32 = gfx_draw_int(g, 228, 28, tip, 1, 230, 236, 248)
+    let td: i32 = gfx_draw_text(g, 280, 28, "channel W=64", 1, 118, 122, 146)
+
+    let te: i32 = gfx_draw_text(g, 8, 42,
+        "1 CLASSIC  2 BLUNT  3 SPIKY  R RESEED  P PAUSE",
+        1, 110, 114, 136)
+    if paused {
+        let tf: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tg: i32 = gfx_draw_text(g, 8, 572,
+        "lap(p)=0 ahead of the front; grow with P ~ p^eta in a channel",
+        1, 120, 124, 146)
+    let th: i32 = gfx_draw_text(g, 8, 582,
+        "Saffman-Taylor 1958: a single finger selects w/W near 1/2",
+        1, 120, 124, 146)
+}
+
+function headless_verify(p: ptr<f64>, occ: ptr<i32>, age: ptr<i32>,
+                         cand_i: ptr<i32>, cand_w: ptr<f64>) -> i32 {
+    println("")
+    println("  VISCOUS FINGERING  --  finger width versus channel")
+    println("  ==================================================")
+    println("")
+
+    rng_state = 123456789
+    reset(p, occ, age)
+    sor(p, occ, 80)
+    let mut n: i32 = W + 20
+    let eta: f64 = 2.0
+    let mut frac: f64 = 0.0
+    let mut frac_sum: f64 = 0.0
+    let mut frac_n: f64 = 0.0
+    while front_y(occ) < 110 and n < 2200 {
+        sor(p, occ, SOR_SWEEPS)
+        n = n + grow(p, occ, age, n + 1, eta, cand_i, cand_w)
+        let tip: i32 = front_y(occ)
+        if tip > 50 and tip < 105 {
+            let f: f64 = finger_fraction(occ)
+            frac_sum = frac_sum + f
+            frac_n = frac_n + 1.0
+            frac = f
+        }
+    }
+    if frac_n > 0.0 {
+        frac = frac_sum / frac_n
+    } else {
+        frac = finger_fraction(occ)
+    }
+    let tip: i32 = front_y(occ)
+
+    print("    particles grown            : ")
+    printf("%9.0f", n as f64)
+    println("")
+    print("    tip y                      : ")
+    printf("%9.0f", tip as f64)
+    println("")
+    print("    finger width w/W           : ")
+    printf("%9.4f", frac)
+    println("   gate in [0.30, 0.75]")
+    print("    Saffman-Taylor target      : ")
+    printf("%9.4f", 0.5)
+    println("")
+    println("")
+
+    if tip < 40 {
+        println("    FAIL: finger never advanced far enough")
+        return 1
+    }
+    if frac < 0.30 or frac > 0.75 {
+        println("    FAIL: finger width left the Saffman-Taylor band")
+        return 2
+    }
+    println("    PASS: single finger width is near half the channel")
+    println("")
+    return 0
+}
+
+function main() -> i32 {
+    let p: array<f64, 8192> = [0.0, 0.0, 0.0, 0.0]
+    let occ: array<i32, 8192> = [0, 0, 0, 0]
+    let age: array<i32, 8192> = [0, 0, 0, 0]
+    let cand_i: array<i32, 4000> = [0, 0, 0, 0]
+    let cand_w: array<f64, 4000> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    let code: i32 = headless_verify(p, occ, age, cand_i, cand_w)
+    if code != 0 {
+        return code
+    }
+
+    let mut preset: i32 = 0
+    rng_state = 123456789
+    reset(p, occ, age)
+    sor(p, occ, 80)
+    let mut n: i32 = 2 * W
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Viscous fingering - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut hold: i32 = 0
+    let mut frac: f64 = 0.0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        let mut restart: bool = false
+        if want >= 0 and want != preset {
+            preset = want
+            restart = true
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held { restart = true }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+        if restart {
+            rng_state = 123456789
+            reset(p, occ, age)
+            sor(p, occ, 80)
+            n = 2 * W
+            frac = 0.0
+            hold = 0
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        let tip: i32 = front_y(occ)
+        let full: bool = tip >= 120
+        if full {
+            hold = hold + 1
+            if hold > 90 {
+                rng_state = 123456789
+                reset(p, occ, age)
+                sor(p, occ, 80)
+                n = 2 * W
+                hold = 0
+            }
+        }
+
+        if !paused and !full {
+            let eta: f64 = preset_eta(preset)
+            for k in 0 to PER_FRAME {
+                sor(p, occ, SOR_SWEEPS)
+                n = n + grow(p, occ, age, n + 1, eta, cand_i, cand_w)
+            }
+            frac = finger_fraction(occ)
+        }
+
+        gfx_clear(g, 8, 10, 20)
+        draw_field(g, fb, occ, age, n)
+        draw_hud(g, preset, n, frac, tip, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

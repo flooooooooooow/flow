@@ -1,0 +1,623 @@
+# PHASE-FIELD DENDRITE: anisotropic solidification from a seed crystal.
+#
+# MODEL (Kobayashi, 1993)
+#   A phase field p in [0, 1] marks solid (1) versus melt (0). The interface
+#   energy is anisotropic with m-fold symmetry through
+#
+#     eps(theta) = eps_bar * (1 + delta * cos(j * (theta - theta0)))
+#
+#   and the temperature T carries the latent heat released as p advances:
+#
+#     tau * p_t = div(eps^2 grad p) + cross terms in eps eps' + p(1-p)(p-1/2+m)
+#     T_t       = lap(T) + K * p_t
+#     m         = (alpha/pi) * atan(gamma * (T_eq - T))
+#
+#   The temperature evolution is the `flow ThermalCell` block below. The
+#   anisotropic phase update is an explicit integrator (a fourth-order spatial
+#   operator that needs eps on neighbours), called as phase_step.
+#
+# THE MEASUREMENT
+#   Tip radius along +x is tracked each frame. A short least-squares window
+#   on R_tip(t) gives the steady tip speed V. Ray scanning around the seed
+#   counts primary arms; for six-fold anisotropy the count settles at 6.
+#   The headless pass gates V > 0 and arms in {5,6,7} after a fixed budget.
+#
+# NUMERICS
+#   128 x 128, dx = 0.04, phase dt = 1e-4, 24 substeps per frame, no-flux
+#   edges. Seed is a small disk of solid in a uniformly undercooled melt.
+#
+# PARAMETERS / KEYS
+#   1  SNOWFLAKE   j 6  delta 0.04  T0 0.0     six primary arms
+#   2  CUBIC       j 4  delta 0.04  T0 0.0     four arms
+#   3  WEAK        j 6  delta 0.01  T0 0.0     rounder tips
+#   4  DEEP        j 6  delta 0.04  T0 -0.5    faster, finer sidebranches
+#   R  reseed     P  pause     Esc quit
+#
+# PHENOMENON
+#   Nothing in the program draws a snowflake. Six-fold anisotropy in the
+#   interface energy is enough for six primary arms to outrun the rest, and
+#   the tip speed is set by the undercooling ahead of them.
+#
+# Run: ./flow gfx examples/morphogenesis/phase_field_dendrite.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function atan(x: f64) -> f64
+    function atan2(y: f64, x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const CENTER: i32 = 64
+const SUBSTEPS: i32 = 24
+const DX: f64 = 0.04
+const INV_DX: f64 = 25.0
+const INV_DX2: f64 = 625.0
+const PHASE_DT: f64 = 0.0001
+const TAU: f64 = 0.0003
+const EPS_BAR: f64 = 0.01
+const ALPHA: f64 = 0.9
+const GAMMA_K: f64 = 10.0
+const T_EQ: f64 = 1.0
+const LATENT: f64 = 1.6
+const NOISE: f64 = 0.015
+const RAYS: i32 = 72
+const RAY_MAX: i32 = 60
+const VWIN: i32 = 20
+const PI: f64 = 3.141592653589793
+const TWO_PI: f64 = 6.283185307179586
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+flow ThermalCell {
+    state t : f64 = 0.0
+    param lap_t  : f64 = 0.0
+    param dphi   : f64 = 0.0
+    param latent : f64 = 1.6
+    solver { dt 100 us  method euler }
+    t evolves as lap_t + latent * dphi
+}
+
+let mut rng_state: u32 = 2718281829
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_j(p: i32) -> f64 {
+    if p == 1 { return 4.0 }
+    return 6.0
+}
+
+function preset_delta(p: i32) -> f64 {
+    if p == 2 { return 0.01 }
+    return 0.04
+}
+
+function preset_tmelt(p: i32) -> f64 {
+    if p == 3 { return -0.5 }
+    return 0.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "CUBIC" }
+    if p == 2 { return "WEAK" }
+    if p == 3 { return "DEEP" }
+    return "SNOWFLAKE"
+}
+
+function clampi(i: i32) -> i32 {
+    if i < 0 { return 0 }
+    if i >= GRID { return GRID - 1 }
+    return i
+}
+
+function seed_field(p: ptr<f64>, tf: ptr<f64>, tmelt: f64) -> void {
+    let r0: f64 = 3.0
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let fx: f64 = (x - CENTER) as f64
+            let fy: f64 = (y - CENTER) as f64
+            let r: f64 = sqrt(fx * fx + fy * fy)
+            let mut v: f64 = 0.0
+            if r <= r0 { v = 1.0 }
+            if r > r0 and r < r0 + 2.0 {
+                v = 1.0 - (r - r0) * 0.5
+            }
+            p[y * GRID + x] = v
+            tf[y * GRID + x] = tmelt
+        }
+    }
+}
+
+function prepare_aniso(p: ptr<f64>, eps_a: ptr<f64>, ax: ptr<f64>, ay: ptr<f64>,
+                       delta: f64, jj: f64) -> void {
+    for y in 0 to GRID {
+        let r: i32 = y * GRID
+        let rm: i32 = clampi(y - 1) * GRID
+        let rp: i32 = clampi(y + 1) * GRID
+        for x in 0 to GRID {
+            let i: i32 = r + x
+            let xm: i32 = clampi(x - 1)
+            let xp: i32 = clampi(x + 1)
+            let px: f64 = (p[r + xp] - p[r + xm]) * 0.5 * INV_DX
+            let py: f64 = (p[rp + x] - p[rm + x]) * 0.5 * INV_DX
+            let g2: f64 = px * px + py * py
+            if g2 < 1.0e-10 {
+                eps_a[i] = EPS_BAR
+                ax[i] = 0.0
+                ay[i] = 0.0
+            } else {
+                let theta: f64 = atan2(py, px)
+                let arg: f64 = jj * theta
+                let eps: f64 = EPS_BAR * (1.0 + delta * cos(arg))
+                let epsp: f64 = 0.0 - EPS_BAR * delta * jj * sin(arg)
+                let ee: f64 = eps * epsp
+                eps_a[i] = eps
+                ax[i] = ee * px
+                ay[i] = ee * py
+            }
+        }
+    }
+}
+
+function phase_step(p: ptr<f64>, pn: ptr<f64>, dp: ptr<f64>, tf: ptr<f64>,
+                    eps_a: ptr<f64>, ax: ptr<f64>, ay: ptr<f64>) -> void {
+    let am: f64 = ALPHA / PI
+    for y in 0 to GRID {
+        let r: i32 = y * GRID
+        let rm: i32 = clampi(y - 1) * GRID
+        let rp: i32 = clampi(y + 1) * GRID
+        for x in 0 to GRID {
+            let i: i32 = r + x
+            let xm: i32 = clampi(x - 1)
+            let xp: i32 = clampi(x + 1)
+            let ec: f64 = eps_a[i] * eps_a[i]
+            let exp2: f64 = eps_a[r + xp] * eps_a[r + xp]
+            let exm2: f64 = eps_a[r + xm] * eps_a[r + xm]
+            let eyp2: f64 = eps_a[rp + x] * eps_a[rp + x]
+            let eym2: f64 = eps_a[rm + x] * eps_a[rm + x]
+            let pv: f64 = p[i]
+            let fxp: f64 = 0.5 * (ec + exp2) * (p[r + xp] - pv)
+            let fxm: f64 = 0.5 * (ec + exm2) * (pv - p[r + xm])
+            let fyp: f64 = 0.5 * (ec + eyp2) * (p[rp + x] - pv)
+            let fym: f64 = 0.5 * (ec + eym2) * (pv - p[rm + x])
+            let divt: f64 = ((fxp - fxm) + (fyp - fym)) * INV_DX2
+            let cross: f64 = (ax[rp + x] - ax[rm + x]) * 0.5 * INV_DX
+                           - (ay[r + xp] - ay[r + xm]) * 0.5 * INV_DX
+            let well: f64 = pv * (1.0 - pv)
+            let mut bulk: f64 = 0.0
+            if well > 1.0e-9 {
+                let m: f64 = am * atan(GAMMA_K * (T_EQ - tf[i]))
+                let mut nz: f64 = 0.0
+                if pv > 0.1 and pv < 0.9 {
+                    nz = NOISE * (rng_unit() - 0.5)
+                }
+                bulk = well * ((pv - 0.5) + m + nz)
+            }
+            let mut np: f64 = pv + PHASE_DT * (divt + cross + bulk) / TAU
+            if np < 0.0 { np = 0.0 }
+            if np > 1.0 { np = 1.0 }
+            pn[i] = np
+            dp[i] = (np - pv) / PHASE_DT
+        }
+    }
+}
+
+function thermal_pass(tf: ptr<f64>, tn: ptr<f64>, dp: ptr<f64>, dt: f64) -> void {
+    let mut cell: ThermalCell = ThermalCell_new()
+    cell.latent = LATENT
+    for y in 0 to GRID {
+        let r: i32 = y * GRID
+        let rm: i32 = clampi(y - 1) * GRID
+        let rp: i32 = clampi(y + 1) * GRID
+        for x in 0 to GRID {
+            let i: i32 = r + x
+            let xm: i32 = clampi(x - 1)
+            let xp: i32 = clampi(x + 1)
+            cell.t = tf[i]
+            cell.lap_t = (tf[r + xm] + tf[r + xp] + tf[rm + x] + tf[rp + x]
+                          - 4.0 * tf[i]) * INV_DX2
+            cell.dphi = dp[i]
+            ThermalCell_step(&cell, dt)
+            tn[i] = cell.t
+        }
+    }
+}
+
+function tip_radius(p: ptr<f64>) -> f64 {
+    let r: i32 = CENTER * GRID
+    let mut best: i32 = 0
+    for x in CENTER to GRID - 1 {
+        if p[r + x] > 0.5 { best = x - CENTER }
+    }
+    let mut frac: f64 = 0.0
+    let xi: i32 = CENTER + best
+    if xi + 1 < GRID {
+        let a: f64 = p[r + xi]
+        let b: f64 = p[r + xi + 1]
+        let den: f64 = a - b
+        if den > 1.0e-6 {
+            frac = (a - 0.5) / den
+            if frac < 0.0 { frac = 0.0 }
+            if frac > 1.0 { frac = 1.0 }
+        }
+    }
+    return ((best as f64) + frac) * DX
+}
+
+function scan_rays(p: ptr<f64>, rad: ptr<f64>, sm: ptr<f64>) -> void {
+    for a in 0 to RAYS {
+        let ang: f64 = TWO_PI * (a as f64) / (RAYS as f64)
+        let cx: f64 = cos(ang)
+        let cy: f64 = sin(ang)
+        let mut hit: f64 = 0.0
+        let mut k: i32 = 1
+        while k <= RAY_MAX * 2 {
+            let rr: f64 = (k as f64) * 0.5
+            let gx: i32 = CENTER + ((rr * cx) + 0.5) as i32
+            let gy: i32 = CENTER + ((rr * cy) + 0.5) as i32
+            if gx >= 0 and gx < GRID and gy >= 0 and gy < GRID {
+                if p[gy * GRID + gx] > 0.5 { hit = rr }
+            }
+            k = k + 1
+        }
+        rad[a] = hit
+    }
+    for a in 0 to RAYS {
+        let mut s: f64 = 0.0
+        for d in -2 to 3 {
+            s = s + rad[((a + d) + RAYS * 2) % RAYS]
+        }
+        sm[a] = s * 0.2
+    }
+}
+
+function count_arms(sm: ptr<f64>, keep: ptr<i32>) -> i32 {
+    let sep: i32 = 6
+    let mut mean: f64 = 0.0
+    for a in 0 to RAYS { mean = mean + sm[a] }
+    mean = mean / (RAYS as f64)
+    if mean < 3.0 { return 0 }
+    for a in 0 to RAYS {
+        keep[a] = 0
+        let am1: f64 = sm[((a + RAYS) - 1) % RAYS]
+        let ap1: f64 = sm[(a + 1) % RAYS]
+        if sm[a] >= am1 and sm[a] > ap1 and sm[a] > mean * 1.02 {
+            keep[a] = 1
+        }
+    }
+    for a in 0 to RAYS {
+        if keep[a] == 1 {
+            for d in 1 to sep {
+                let b: i32 = (a + d) % RAYS
+                if keep[b] == 1 {
+                    if sm[b] > sm[a] { keep[a] = 0 } else { keep[b] = 0 }
+                }
+            }
+        }
+    }
+    let mut n: i32 = 0
+    for a in 0 to RAYS { n = n + keep[a] }
+    return n
+}
+
+function solid_fraction(p: ptr<f64>) -> f64 {
+    let mut n: i32 = 0
+    for i in 0 to CELLS {
+        if p[i] > 0.5 { n = n + 1 }
+    }
+    return (n as f64) / (CELLS as f64)
+}
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function clamp255(v: f64) -> i32 {
+    if v < 0.0 { return 0 }
+    if v > 255.0 { return 255 }
+    return v as i32
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, p: ptr<f64>, tf: ptr<f64>,
+                    lo: f64, hi: f64) -> void {
+    let mut span: f64 = hi - lo
+    if span < 0.02 { span = 0.02 }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let mut w: f64 = (tf[i] - lo) / span
+            if w < 0.0 { w = 0.0 }
+            if w > 1.0 { w = 1.0 }
+            let mr: f64 = 16.0 + 250.0 * w * w
+            let mg: f64 = 18.0 + 120.0 * w * w * w
+            let mb: f64 = 52.0 + 60.0 * w
+            let s: f64 = p[i]
+            let rr: f64 = mr * (1.0 - s) + 236.0 * s
+            let gg: f64 = mg * (1.0 - s) + 248.0 * s
+            let bb: f64 = mb * (1.0 - s) + 255.0 * s
+            paint_cell(fb, x, y, clamp255(rr), clamp255(gg), clamp255(bb))
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, jj: f64, delta: f64, tmelt: f64,
+                  vinst: f64, vfit: f64, arms: i32, rtip: f64, frac: f64,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "PHASE-FIELD DENDRITE", 2, 232, 240, 250)
+    let t2: i32 = gfx_draw_text(g, 254, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 330, 12, "j", 1, 148, 152, 172)
+    let t4: i32 = gfx_draw_int(g, 340, 12, jj as i32, 1, 232, 236, 248)
+    let t5: i32 = gfx_draw_text(g, 352, 12, "delta", 1, 148, 152, 172)
+    let t6: i32 = gfx_draw_fixed(g, 386, 12, delta, 2, 1, 232, 236, 248)
+    let t7: i32 = gfx_draw_text(g, 430, 12, "T0", 1, 148, 152, 172)
+    let t8: i32 = gfx_draw_fixed(g, 448, 12, tmelt, 1, 1, 232, 236, 248)
+
+    let t9: i32 = gfx_draw_text(g, 8, 28, "V_TIP", 1, 148, 152, 172)
+    let ta: i32 = gfx_draw_fixed(g, 44, 28, vinst, 3, 1, 130, 255, 200)
+    let tb: i32 = gfx_draw_text(g, 100, 28, "STEADY", 1, 148, 152, 172)
+    let tc: i32 = gfx_draw_fixed(g, 148, 28, vfit, 3, 1, 130, 255, 200)
+    let td: i32 = gfx_draw_text(g, 200, 28, "ARMS", 1, 148, 152, 172)
+    let te: i32 = gfx_draw_int(g, 232, 28, arms, 1, 255, 210, 130)
+    let tf: i32 = gfx_draw_text(g, 256, 28, "PRED j", 1, 148, 152, 172)
+    let tg: i32 = gfx_draw_int(g, 300, 28, jj as i32, 1, 255, 210, 130)
+    let th: i32 = gfx_draw_text(g, 324, 28, "R", 1, 148, 152, 172)
+    let ti: i32 = gfx_draw_fixed(g, 338, 28, rtip, 3, 1, 232, 236, 248)
+    let tj: i32 = gfx_draw_text(g, 400, 28, "SOLID", 1, 148, 152, 172)
+    let tk: i32 = gfx_draw_fixed(g, 440, 28, frac, 2, 1, 232, 236, 248)
+
+    let tl: i32 = gfx_draw_text(g, 8, 42,
+        "1 SNOWFLAKE  2 CUBIC  3 WEAK  4 DEEP  R RESEED  P PAUSE",
+        1, 110, 112, 134)
+    if paused {
+        let tm: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tn: i32 = gfx_draw_text(g, 8, 572,
+        "tau p_t = div(eps^2 grad p) + cross(eps eps') + p(1-p)(p-1/2+m)",
+        1, 120, 122, 146)
+    let to2: i32 = gfx_draw_text(g, 8, 582,
+        "T evolves as lap(T) + K * p_t    eps = eps_bar (1 + delta cos(j theta))",
+        1, 120, 122, 146)
+}
+
+function run_block(pa: ptr<f64>, pb: ptr<f64>, ta: ptr<f64>, tb: ptr<f64>,
+                   dpf: ptr<f64>, epsa: ptr<f64>, axf: ptr<f64>, ayf: ptr<f64>,
+                   delta: f64, jj: f64, dt: f64, steps: i32) -> void {
+    for s in 0 to steps / 2 {
+        prepare_aniso(pa, epsa, axf, ayf, delta, jj)
+        phase_step(pa, pb, dpf, ta, epsa, axf, ayf)
+        thermal_pass(ta, tb, dpf, dt)
+        prepare_aniso(pb, epsa, axf, ayf, delta, jj)
+        phase_step(pb, pa, dpf, tb, epsa, axf, ayf)
+        thermal_pass(tb, ta, dpf, dt)
+    }
+}
+
+function headless_verify(pa: ptr<f64>, pb: ptr<f64>, ta: ptr<f64>, tb: ptr<f64>,
+                         dpf: ptr<f64>, epsa: ptr<f64>, axf: ptr<f64>,
+                         ayf: ptr<f64>, rad: ptr<f64>, smo: ptr<f64>,
+                         keep: ptr<i32>) -> i32 {
+    println("")
+    println("  PHASE-FIELD DENDRITE  --  tip speed and six-fold arms")
+    println("  =====================================================")
+    println("")
+
+    rng_state = 2718281829
+    let jj: f64 = 6.0
+    let delta: f64 = 0.04
+    let tmelt: f64 = 0.0
+    seed_field(pa, ta, tmelt)
+    let dt: f64 = ThermalCell_default_dt()
+    let mut r0: f64 = tip_radius(pa)
+    let mut simt: f64 = 0.0
+    let frames: i32 = 90
+    for f in 0 to frames {
+        run_block(pa, pb, ta, tb, dpf, epsa, axf, ayf, delta, jj, dt, SUBSTEPS)
+        simt = simt + (SUBSTEPS as f64) * PHASE_DT
+    }
+    let r1: f64 = tip_radius(pa)
+    let v: f64 = (r1 - r0) / simt
+    scan_rays(pa, rad, smo)
+    let arms: i32 = count_arms(smo, keep)
+    let frac: f64 = solid_fraction(pa)
+
+    print("    tip radius start           : ")
+    printf("%9.4f", r0)
+    println("")
+    print("    tip radius end             : ")
+    printf("%9.4f", r1)
+    println("")
+    print("    mean tip speed V           : ")
+    printf("%9.4f", v)
+    println("   gate > 0.05")
+    print("    primary arms counted       : ")
+    printf("%9.0f", arms as f64)
+    println("   gate in {5,6,7}")
+    print("    solid fraction             : ")
+    printf("%9.4f", frac)
+    println("")
+    println("")
+
+    if v <= 0.05 or r1 <= r0 {
+        println("    FAIL: dendrite tip did not advance")
+        return 1
+    }
+    if arms < 5 or arms > 7 {
+        println("    FAIL: arm count left the six-fold window")
+        return 2
+    }
+    println("    PASS: tip advances and six-fold anisotropy selects ~6 arms")
+    println("")
+    return 0
+}
+
+function main() -> i32 {
+    let pa: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let pb: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ta: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let tb: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let dpf: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let epsa: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let axf: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let ayf: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let rad: array<f64, 72> = [0.0, 0.0, 0.0, 0.0]
+    let smo: array<f64, 72> = [0.0, 0.0, 0.0, 0.0]
+    let keep: array<i32, 72> = [0, 0, 0, 0]
+    let rhist: array<f64, 20> = [0.0, 0.0, 0.0, 0.0]
+    let thist: array<f64, 20> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    let code: i32 = headless_verify(pa, pb, ta, tb, dpf, epsa, axf, ayf,
+                                    rad, smo, keep)
+    if code != 0 {
+        return code
+    }
+
+    let mut preset: i32 = 0
+    let mut jj: f64 = preset_j(preset)
+    let mut delta: f64 = preset_delta(preset)
+    let mut tmelt: f64 = preset_tmelt(preset)
+    rng_state = 2718281829
+    seed_field(pa, ta, tmelt)
+    let dt: f64 = ThermalCell_default_dt()
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Phase-field dendrite - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut simt: f64 = 0.0
+    let mut rprev: f64 = tip_radius(pa)
+    let mut vinst: f64 = 0.0
+    let mut vfit: f64 = 0.0
+    let mut nhist: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        let mut restart: bool = false
+        if want >= 0 and want != preset {
+            preset = want
+            jj = preset_j(preset)
+            delta = preset_delta(preset)
+            tmelt = preset_tmelt(preset)
+            restart = true
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held { restart = true }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+        if restart {
+            rng_state = 2718281829
+            seed_field(pa, ta, tmelt)
+            simt = 0.0
+            rprev = tip_radius(pa)
+            vinst = 0.0
+            vfit = 0.0
+            nhist = 0
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            run_block(pa, pb, ta, tb, dpf, epsa, axf, ayf, delta, jj, dt, SUBSTEPS)
+            simt = simt + (SUBSTEPS as f64) * PHASE_DT
+            let rt: f64 = tip_radius(pa)
+            let vraw: f64 = (rt - rprev) / ((SUBSTEPS as f64) * PHASE_DT)
+            vinst = 0.7 * vinst + 0.3 * vraw
+            rprev = rt
+            let slot: i32 = nhist % VWIN
+            rhist[slot] = rt
+            thist[slot] = simt
+            nhist = nhist + 1
+            let mut cnt: i32 = nhist
+            if cnt > VWIN { cnt = VWIN }
+            if cnt >= 4 {
+                let mut n: f64 = 0.0
+                let mut s_t: f64 = 0.0
+                let mut s_r: f64 = 0.0
+                let mut s_tt: f64 = 0.0
+                let mut s_tr: f64 = 0.0
+                for k in 0 to cnt {
+                    let idx: i32 = (((nhist - 1) - k) + VWIN * 8) % VWIN
+                    let tv: f64 = thist[idx]
+                    let rv: f64 = rhist[idx]
+                    n = n + 1.0
+                    s_t = s_t + tv
+                    s_r = s_r + rv
+                    s_tt = s_tt + tv * tv
+                    s_tr = s_tr + tv * rv
+                }
+                let den: f64 = n * s_tt - s_t * s_t
+                if den > 1.0e-12 {
+                    vfit = (n * s_tr - s_t * s_r) / den
+                }
+            }
+        }
+
+        scan_rays(pa, rad, smo)
+        let arms: i32 = count_arms(smo, keep)
+        let frac: f64 = solid_fraction(pa)
+        let mut lo: f64 = ta[0]
+        let mut hi: f64 = ta[0]
+        for i in 1 to CELLS {
+            if ta[i] < lo { lo = ta[i] }
+            if ta[i] > hi { hi = ta[i] }
+        }
+        gfx_clear(g, 10, 11, 20)
+        draw_field(g, fb, pa, ta, lo, hi)
+        draw_hud(g, preset, jj, delta, tmelt, vinst, vfit, arms, rprev, frac, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
