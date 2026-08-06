@@ -1,0 +1,390 @@
+# NETLIST FRONT END: three SPICE decks parsed, run, and checked against
+# closed forms.
+#
+# WHY THE MATRIX
+#   A netlist is a matrix by construction. The whole point of the SPICE card
+#   format is to describe a topology, and a topology is what MNA consumes.
+#
+# WHAT THIS RUNS
+#   stdlib/spice.flow reads a deck off disk, tokenizes it, and calls the same
+#   circ_add_* functions the hand-written examples in this directory call.
+#   Nothing downstream knows the circuit came from a file. Each deck is then
+#   analyzed by whichever dot card it carries, and the result is compared with
+#   a closed form worked out independently:
+#
+#     netlists/rlc_step.cir         .tran   against the analytic RLC step
+#                                           response, exp(-a t)(cos + sin)
+#     netlists/diode_sweep.cir      .dc     against 200 bisections on
+#                                           Vd + R Is (exp(Vd/(N VT)) - 1) = V
+#     netlists/current_divider.cir  .op     against fractions in the deck's
+#                                           own comment header
+#
+#   Between them the three decks use R, C, L, V, I and D cards, named nodes,
+#   IC= trailers, the k / m / u / MEG engineering suffixes, `DC` value
+#   prefixes, `*` and `;` comments, .tran with UIC, .dc naming a source, .op,
+#   and the .print and .end cards that are accepted and ignored.
+#
+# WHAT THE PARSER DOES NOT COVER
+#   Listed exactly at the top of lib/stdlib/spice.flow: no .subckt or X cards,
+#   no .model system (diode parameters are inline IS= and N=), no Q/M/J
+#   devices, no E/G/F/H card syntax, no source waveforms beyond a DC value, no
+#   continuation lines, no .ac / .noise / .ic / .param / .include, no
+#   expressions. Unsupported cards are counted by spice_skipped() rather than
+#   dropped in silence. Deck 2 carries one .model card for exactly that
+#   reason, and the count of 1 is checked below rather than merely printed.
+#
+# EVIDENCE
+#   Node names resolve to the indices the deck implies; the transient matches
+#   the analytic RLC response to 1e-3 normalized; the DC sweep matches the
+#   bisection reference to 1e-9 relative in current; the operating point
+#   matches 18/7 V and 12/7 V to 1e-12; and the one unsupported card in deck 2
+#   is reported as skipped.
+#
+# Run: ./flow run examples/circuits/netlist_demo.flow
+#      (run from the repository root; the deck paths are relative)
+
+import "stdlib/spice.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const R_RLC: f64 = 100.0
+const L_RLC: f64 = 0.1
+const C_RLC: f64 = 1e-6
+const VSTEP: f64 = 1.0
+
+const IS_SAT: f64 = 1e-14
+const NVT: f64 = 0.025852
+const RSER: f64 = 1000.0
+
+function relerr(got: f64, want: f64) -> f64 {
+    let s: f64 = fabs(want)
+    if s < 1e-30 {
+        return fabs(got - want)
+    }
+    return fabs(got - want) / s
+}
+
+# ---------------------------------------------------------------------------
+# Deck 1: the transient
+# ---------------------------------------------------------------------------
+
+function rlc_vc_exact(t: f64) -> f64 {
+    let a: f64 = R_RLC / (2.0 * L_RLC)
+    let wd: f64 = sqrt(1.0 / (L_RLC * C_RLC) - a * a)
+    let env: f64 = exp(0.0 - a * t)
+    return VSTEP * (1.0 - env * (cos(wd * t) + (a / wd) * sin(wd * t)))
+}
+
+function deck_tran() -> f64 {
+    println("")
+    println("  DECK 1  examples/circuits/netlists/rlc_step.cir")
+    if !spice_load("examples/circuits/netlists/rlc_step.cir") {
+        print("    FAIL: could not load the deck (code ")
+        print(spice_error_line())
+        println(")")
+        return 1.0
+    }
+    if !spice_parse() {
+        print("    FAIL: parse error on line ")
+        print(spice_error_line())
+        println("")
+        return 1.0
+    }
+    let n_in: i32 = spice_node("in")
+    let n_mid: i32 = spice_node("mid")
+    let n_cap: i32 = spice_node("cap")
+    print("    nodes: in -> ")
+    print(n_in)
+    print(", mid -> ")
+    print(n_mid)
+    print(", cap -> ")
+    print(n_cap)
+    print(",  matrix order ")
+    print(circ_dim_of())
+    print(",  cards skipped ")
+    print(spice_skipped())
+    println("")
+    if !spice_has_tran() {
+        println("    FAIL: no .tran card was found")
+        return 1.0
+    }
+    print("    .tran ")
+    printf("%.3e", spice_tstep())
+    print(" ")
+    printf("%.3e", spice_tstop())
+    if spice_uic() {
+        print("  UIC")
+    }
+    println("")
+
+    circ_set_method(CIRC_TRAP)
+    let dt: f64 = spice_tstep()
+    if !circ_tran_init(spice_uic(), dt * 1e-6) {
+        println("    FAIL: transient init")
+        return 1.0
+    }
+    let steps: i32 = (spice_tstop() / dt) as i32
+    let mut worst: f64 = 0.0
+    println("")
+    println("        t [ms]     V(cap) solved    analytic       abs err")
+    println("      --------  ---------------  ------------  ------------")
+    for k in 1 to steps + 1 {
+        if !circ_tran_step(dt) {
+            println("    FAIL: transient step")
+            return 1.0
+        }
+        let t: f64 = (k as f64) * dt
+        let got: f64 = circ_v(n_cap)
+        let want: f64 = rlc_vc_exact(t)
+        let e: f64 = fabs(got - want)
+        if e > worst {
+            worst = e
+        }
+        if k % 1000 == 0 {
+            print("      ")
+            printf("%8.3f", t * 1000.0)
+            printf("  %15.9f", got)
+            printf("  %12.9f", want)
+            printf("  %12.3e", e)
+            println("")
+        }
+    }
+    print("    worst absolute error over ")
+    print(steps)
+    print(" steps: ")
+    printf("%.3e", worst)
+    println("   (V step is 1 V, so this is also relative)")
+    return worst
+}
+
+# ---------------------------------------------------------------------------
+# Deck 2: the DC sweep
+# ---------------------------------------------------------------------------
+
+function shockley(vd: f64) -> f64 {
+    return IS_SAT * (exp(vd / NVT) - 1.0)
+}
+
+function bisect_vd(vsrc: f64) -> f64 {
+    # The root lies between 0 and Vsrc, whichever way round they are.
+    let mut lo: f64 = 0.0 - 2.0
+    let mut hi: f64 = 2.0
+    if vsrc < lo {
+        lo = vsrc - 1.0
+    }
+    if vsrc > hi {
+        hi = vsrc + 1.0
+    }
+    for k in 0 to 200 {
+        let mid: f64 = 0.5 * (lo + hi)
+        if mid + RSER * shockley(mid) - vsrc > 0.0 {
+            hi = mid
+        } else {
+            lo = mid
+        }
+    }
+    return 0.5 * (lo + hi)
+}
+
+let mut dc_skipped: i32 = 0
+
+function deck_dc() -> f64 {
+    println("")
+    println("  DECK 2  examples/circuits/netlists/diode_sweep.cir")
+    if !spice_load("examples/circuits/netlists/diode_sweep.cir") {
+        print("    FAIL: could not load the deck (code ")
+        print(spice_error_line())
+        println(")")
+        return 1.0
+    }
+    if !spice_parse() {
+        print("    FAIL: parse error on line ")
+        print(spice_error_line())
+        println("")
+        return 1.0
+    }
+    circ_set_gmin(0.0)
+    circ_set_tol(1e-13, 1e-16)
+    let n_a: i32 = spice_node("a")
+    let src: i32 = spice_dc_source()
+    print("    nodes: in -> ")
+    print(spice_node("in"))
+    print(", a -> ")
+    print(n_a)
+    print(",  matrix order ")
+    print(circ_dim_of())
+    print(",  cards skipped ")
+    print(spice_skipped())
+    println("")
+    dc_skipped = spice_skipped()
+    if !spice_has_dc() or src < 0 {
+        println("    FAIL: no usable .dc card")
+        return 1.0
+    }
+    print("    .dc source element ")
+    print(src)
+    print(" from ")
+    printf("%.3f", spice_dc_start())
+    print(" to ")
+    printf("%.3f", spice_dc_stop())
+    print(" step ")
+    printf("%.3f", spice_dc_step())
+    println("")
+
+    println("")
+    println("       Vsrc [V]     V(a) solved   V(a) bisect       Id [A]      rel err")
+    println("      ---------  --------------  ------------  ------------  -----------")
+    let n: i32 = ((spice_dc_stop() - spice_dc_start()) / spice_dc_step() + 0.5) as i32
+    let mut worst: f64 = 0.0
+    for k in 0 to n + 1 {
+        let v: f64 = spice_dc_start() + (k as f64) * spice_dc_step()
+        circ_set_value(src, v)
+        if !circ_op() {
+            print("    FAIL: no convergence at ")
+            printf("%.3f", v)
+            println(" V")
+            return 1.0
+        }
+        let vd: f64 = circ_v(n_a)
+        let vd_ref: f64 = bisect_vd(v)
+        let id: f64 = (v - vd) / RSER
+        let e: f64 = relerr(shockley(vd), shockley(vd_ref))
+        if e > worst {
+            worst = e
+        }
+        if k % 10 == 0 or k == n {
+            print("      ")
+            printf("%9.2f", v)
+            printf("  %14.9f", vd)
+            printf("  %12.9f", vd_ref)
+            printf("  %12.5e", id)
+            printf("  %11.2e", e)
+            println("")
+        }
+    }
+    print("    worst relative current error over ")
+    print(n + 1)
+    print(" points: ")
+    printf("%.3e", worst)
+    println("")
+    return worst
+}
+
+# ---------------------------------------------------------------------------
+# Deck 3: the operating point
+# ---------------------------------------------------------------------------
+
+function deck_op() -> f64 {
+    println("")
+    println("  DECK 3  examples/circuits/netlists/current_divider.cir")
+    if !spice_load("examples/circuits/netlists/current_divider.cir") {
+        print("    FAIL: could not load the deck (code ")
+        print(spice_error_line())
+        println(")")
+        return 1.0
+    }
+    if !spice_parse() {
+        print("    FAIL: parse error on line ")
+        print(spice_error_line())
+        println("")
+        return 1.0
+    }
+    circ_set_gmin(0.0)
+    let n_a: i32 = spice_node("a")
+    let n_b: i32 = spice_node("b")
+    print("    nodes: a -> ")
+    print(n_a)
+    print(", b -> ")
+    print(n_b)
+    print(",  matrix order ")
+    print(circ_dim_of())
+    print(",  cards skipped ")
+    print(spice_skipped())
+    print(",  .op ")
+    print(spice_has_op())
+    println("")
+    if !circ_op() {
+        println("    FAIL: no operating point")
+        return 1.0
+    }
+    let va: f64 = circ_v(n_a)
+    let vb: f64 = circ_v(n_b)
+    let va_ref: f64 = 18.0 / 7.0
+    let vb_ref: f64 = 12.0 / 7.0
+    let ea: f64 = relerr(va, va_ref)
+    let eb: f64 = relerr(vb, vb_ref)
+    println("")
+    println("        node        solved       reference      rel err")
+    println("      ------  ------------  --------------  -----------")
+    print("      V(a)  ")
+    printf("%12.9f", va)
+    printf("  %14.9f", va_ref)
+    printf("  %11.2e", ea)
+    println("")
+    print("      V(b)  ")
+    printf("%12.9f", vb)
+    printf("  %14.9f", vb_ref)
+    printf("  %11.2e", eb)
+    println("")
+    if eb > ea {
+        return eb
+    }
+    return ea
+}
+
+function main() -> i32 {
+    println("")
+    println("  SPICE NETLIST FRONT END  --  three decks, parsed and checked")
+    println("  ============================================================")
+
+    let e_tran: f64 = deck_tran()
+    let e_dc: f64 = deck_dc()
+    let e_op: f64 = deck_op()
+
+    println("")
+    print("  transient vs the analytic RLC step  : ")
+    printf("%.3e", e_tran)
+    println("     gate 1.000e-03")
+    print("  DC sweep vs bisection on Shockley   : ")
+    printf("%.3e", e_dc)
+    println("     gate 1.000e-09")
+    print("  operating point vs 18/7 and 12/7 V  : ")
+    printf("%.3e", e_op)
+    println("     gate 1.000e-12")
+    print("  unsupported cards counted in deck 2 : ")
+    print(dc_skipped)
+    println("             expected 1  (.model)")
+    println("")
+
+    if e_tran != e_tran or e_dc != e_dc or e_op != e_op {
+        println("  FAIL: NaN in a measurement")
+        return 1
+    }
+    if e_tran >= 1e-3 {
+        println("  FAIL: the parsed transient does not match the closed form")
+        return 2
+    }
+    if e_dc >= 1e-9 {
+        println("  FAIL: the parsed DC sweep does not match the closed form")
+        return 3
+    }
+    if e_op >= 1e-12 {
+        println("  FAIL: the parsed operating point does not match the deck's")
+        println("        own hand arithmetic")
+        return 4
+    }
+    if dc_skipped != 1 {
+        println("  FAIL: the .model card in deck 2 was not counted as skipped")
+        return 5
+    }
+    println("  PASS: all three decks parse into the solver and reproduce the")
+    println("        answers worked out independently of it")
+    return 0
+}
