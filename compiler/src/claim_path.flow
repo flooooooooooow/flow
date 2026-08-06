@@ -57,7 +57,7 @@ export function flowc_claim_path_parse(text: string) -> FlowcClaimPath {
         i = i + 1
     }
     buf[w] = 0
-    let facet: string = buf
+    let facet: string = buf as string
     # morphism: reverse common names → symbols when known
     let mut morph: string = addr.structure
     if strcmp(addr.structure, "addition") == 0 {
@@ -164,7 +164,7 @@ export function flowc_claim_fingerprint(expr: string) -> string {
         }
     }
     buf[w] = 0
-    let out: string = buf
+    let out: string = buf as string
     return out
 }
 
