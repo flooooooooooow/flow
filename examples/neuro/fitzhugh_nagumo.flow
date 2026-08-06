@@ -1,0 +1,792 @@
+# FITZHUGH-NAGUMO: the phase plane of excitability, with live nullclines.
+#
+# MODEL
+#   FitzHugh (1961) and Nagumo (1962) reduced Hodgkin-Huxley to two variables:
+#   a fast cubic voltage-like variable v and a slow linear recovery variable w.
+#
+#     dv/dt = v - v^3/3 - w + I
+#     dw/dt = eps * (v + a - b*w)
+#
+#   Both lines are `evolves as` in `flow FHN` below. Because the system is
+#   two-dimensional the whole of its behaviour is visible in one picture: the
+#   two nullclines, their intersection, and the trajectory.
+#
+# PARAMETERS
+#   a   = 0.7     offset of the w-nullcline
+#   b   = 0.8     slope of the w-nullcline
+#   eps = 0.08    timescale separation (w is 12.5x slower than v)
+#   I             injected current, the bifurcation parameter
+#   RK4, dt = 0.005 time units
+#
+# NULLCLINES (drawn live, they move with I)
+#   dv/dt = 0  ->  w = v - v^3/3 + I        the cubic
+#   dw/dt = 0  ->  w = (v + a) / b          the line
+#
+# WHAT THIS PROVES  (four checks, all gated)
+#   1. FIXED POINT. The intersection is located by bisection; the residual of
+#      both nullcline equations there is printed and gated below 1e-12.
+#   2. HOPF POINTS FROM LINEAR THEORY. The Jacobian at the fixed point is
+#        J = [[1 - v*^2, -1], [eps, -eps*b]]
+#      so tr J = 1 - v*^2 - eps*b. The Hopf condition tr J = 0 gives
+#      v* = +/- sqrt(1 - eps*b) exactly. Bisection on I reproduces both
+#      crossings; the located v* is compared with that closed form.
+#   3. THE PREDICTION IS TESTED BY SIMULATION. Inside the window the model
+#      oscillates, outside it settles. The amplitude sweep is gated at three
+#      currents: I = 0.2 (quiet), I = 0.5 (oscillating), I = 1.6 (quiet).
+#   4. HOPF FREQUENCY. Just below onset the fixed point is a stable focus, so
+#      a small perturbation rings at the frequency the Jacobian predicts,
+#      2*pi / sqrt(det J - (tr J)^2 / 4). The measured ringing period is
+#      compared with it and gated at 2 %. (It has to be measured below onset:
+#      FitzHugh-Nagumo has a canard explosion, so a few thousandths of a unit
+#      of current past the bifurcation the amplitude is already full size.)
+#      The period of the full relaxation cycle at I = 0.5 is measured too, and
+#      checked for convergence against a half-size step.
+#
+# REFERENCE
+#   R. FitzHugh, "Impulses and physiological states in theoretical models of
+#   nerve membrane", Biophys. J. 1:445-466 (1961).
+#   J. Nagumo, S. Arimoto, S. Yoshizawa, Proc. IRE 50:2061-2070 (1962).
+#   Hopf analysis as in Izhikevich, "Dynamical Systems in Neuroscience"
+#   (2007), section 4.2; oscillatory window I in (0.331, 1.419) for these
+#   constants.
+#
+# KEYS
+#   Left / Right   move I, and watch the cubic nullcline slide
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/fitzhugh_nagumo.flow --frames 90 \
+#       --out build/frames_fhn --gif build/fitzhugh_nagumo.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/fitzhugh_nagumo.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 900
+const WIN_H: i32 = 660
+const MAX_FRAMES: i32 = 4000
+
+const FA: f64 = 0.7
+const FB: f64 = 0.8
+const EPS: f64 = 0.08
+
+const DT: f64 = 0.005
+const SWEEP_N: i32 = 61
+const SWEEP_IMAX: f64 = 2.0
+const SETTLE_T: f64 = 400.0
+const MEAS_T: f64 = 400.0
+
+const I_QUIET_LO: f64 = 0.2
+const I_OSC: f64 = 0.5
+const I_QUIET_HI: f64 = 1.6
+
+const TRACE_W: i32 = 440
+const TRAIL_N: i32 = 900
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow FHN {
+    state v : f64 = -1.2
+    state w : f64 = -0.6
+
+    param i_ext : f64 = 0.5
+    param a     : f64 = 0.7
+    param b     : f64 = 0.8
+    param eps   : f64 = 0.08
+
+    solver { dt 5 ms  method rk4 }
+
+    v evolves as v - v * v * v / 3.0 - w + i_ext
+    w evolves as eps * (v + a - b * w)
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut sweep_i: ptr<f64> = null
+let mut sweep_amp: ptr<f64> = null
+
+let mut trail_v: ptr<f64> = null
+let mut trail_w: ptr<f64> = null
+let mut trail_fill: i32 = 0
+let mut trail_head: i32 = 0
+
+let mut trace_v: ptr<f64> = null
+let mut trace_w: ptr<f64> = null
+let mut trace_fill: i32 = 0
+
+let mut vstar: f64 = 0.0
+let mut wstar: f64 = 0.0
+let mut resid: f64 = 0.0
+let mut hopf_lo: f64 = 0.0
+let mut hopf_hi: f64 = 0.0
+let mut vstar_lo: f64 = 0.0
+let mut vstar_exact: f64 = 0.0
+let mut period_osc: f64 = 0.0
+let mut period_osc_half: f64 = 0.0
+let mut period_onset: f64 = 0.0
+let mut period_linear: f64 = 0.0
+let mut det_hopf: f64 = 0.0
+let mut amp_quiet_lo: f64 = 0.0
+let mut amp_osc: f64 = 0.0
+let mut amp_quiet_hi: f64 = 0.0
+
+# ---------------------------------------------------------------------------
+# Fixed point and linear stability
+# ---------------------------------------------------------------------------
+
+# g(v) = (v + a)/b - (v - v^3/3 + I); monotone increasing (g' = 1/b - 1 + v^2).
+function nullcline_gap(v: f64, i_ext: f64) -> f64 {
+    return (v + FA) / FB - (v - v * v * v / 3.0 + i_ext)
+}
+
+function fixed_point_v(i_ext: f64) -> f64 {
+    let mut lo: f64 = -4.0
+    let mut hi: f64 = 4.0
+    let mut it: i32 = 0
+    while it < 200 {
+        let mid: f64 = 0.5 * (lo + hi)
+        if nullcline_gap(mid, i_ext) > 0.0 {
+            hi = mid
+        } else {
+            lo = mid
+        }
+        it = it + 1
+    }
+    return 0.5 * (lo + hi)
+}
+
+# tr J = 1 - v*^2 - eps*b. Positive means the fixed point repels.
+function jac_trace(i_ext: f64) -> f64 {
+    let v: f64 = fixed_point_v(i_ext)
+    return 1.0 - v * v - EPS * FB
+}
+
+# det J = eps * (1 - b*(1 - v*^2))
+function jac_det(i_ext: f64) -> f64 {
+    let v: f64 = fixed_point_v(i_ext)
+    return EPS * (1.0 - FB * (1.0 - v * v))
+}
+
+# Bisect on I for tr J = 0 inside a bracket known to contain one crossing.
+function find_hopf(lo_in: f64, hi_in: f64) -> f64 {
+    let mut lo: f64 = lo_in
+    let mut hi: f64 = hi_in
+    let t_lo: f64 = jac_trace(lo)
+    let mut it: i32 = 0
+    while it < 120 {
+        let mid: f64 = 0.5 * (lo + hi)
+        let t_mid: f64 = jac_trace(mid)
+        if (t_mid < 0.0) == (t_lo < 0.0) {
+            lo = mid
+        } else {
+            hi = mid
+        }
+        it = it + 1
+    }
+    return 0.5 * (lo + hi)
+}
+
+# ---------------------------------------------------------------------------
+# Simulation-side measurements
+# ---------------------------------------------------------------------------
+
+# Peak-to-peak amplitude of v after the transient has died away.
+function amplitude(i_ext: f64) -> f64 {
+    let mut c: FHN = FHN_new()
+    c.i_ext = i_ext
+    let settle: i32 = (SETTLE_T / DT) as i32
+    let meas: i32 = (MEAS_T / DT) as i32
+    let mut k: i32 = 0
+    while k < settle {
+        FHN_step(&c, DT)
+        k = k + 1
+    }
+    let mut vmin: f64 = c.v
+    let mut vmax: f64 = c.v
+    k = 0
+    while k < meas {
+        FHN_step(&c, DT)
+        if c.v < vmin {
+            vmin = c.v
+        }
+        if c.v > vmax {
+            vmax = c.v
+        }
+        k = k + 1
+    }
+    return vmax - vmin
+}
+
+# Period of the damped spiral just BELOW the Hopf point. There the fixed
+# point is a stable focus, so a small perturbation rings at the frequency the
+# Jacobian predicts. Measuring it above onset would not work: FitzHugh-Nagumo
+# has a canard explosion, and the amplitude reaches its full relaxation value
+# within a few thousandths of a unit of current past the bifurcation.
+function damped_period(i_ext: f64, dt: f64) -> f64 {
+    let level: f64 = fixed_point_v(i_ext)
+    let mut c: FHN = FHN_new()
+    c.i_ext = i_ext
+    c.v = level + 0.02
+    c.w = (level + FA) / FB
+    let steps: i32 = (250.0 / dt) as i32
+    let mut prev: f64 = c.v
+    let mut first: f64 = 0.0
+    let mut last: f64 = 0.0
+    let mut crossings: i32 = 0
+    let mut k: i32 = 0
+    while k < steps {
+        FHN_step(&c, dt)
+        k = k + 1
+        if prev <= level and c.v > level {
+            let frac: f64 = (level - prev) / (c.v - prev)
+            let t: f64 = ((k - 1) as f64 + frac) * dt
+            if crossings == 0 {
+                first = t
+            }
+            last = t
+            crossings = crossings + 1
+        }
+        prev = c.v
+    }
+    if crossings < 2 {
+        return 0.0
+    }
+    return (last - first) / ((crossings - 1) as f64)
+}
+
+# Mean period from upward crossings of the fixed-point voltage.
+function period_at(i_ext: f64, dt: f64) -> f64 {
+    let mut c: FHN = FHN_new()
+    c.i_ext = i_ext
+    let level: f64 = fixed_point_v(i_ext)
+    let settle: i32 = (SETTLE_T / dt) as i32
+    let meas: i32 = ((MEAS_T * 3.0) / dt) as i32
+    let mut k: i32 = 0
+    while k < settle {
+        FHN_step(&c, dt)
+        k = k + 1
+    }
+    let mut prev: f64 = c.v
+    let mut first: f64 = 0.0
+    let mut last: f64 = 0.0
+    let mut crossings: i32 = 0
+    k = 0
+    while k < meas {
+        FHN_step(&c, dt)
+        k = k + 1
+        if prev <= level and c.v > level {
+            # Linear interpolation inside the step: the crossing instant.
+            let frac: f64 = (level - prev) / (c.v - prev)
+            let t: f64 = ((k - 1) as f64 + frac) * dt
+            if crossings == 0 {
+                first = t
+            }
+            last = t
+            crossings = crossings + 1
+        }
+        prev = c.v
+    }
+    if crossings < 2 {
+        return 0.0
+    }
+    return (last - first) / ((crossings - 1) as f64)
+}
+
+function run_sweep() -> void {
+    let mut i: i32 = 0
+    while i < SWEEP_N {
+        let amp_i: f64 = ((i as f64) / ((SWEEP_N - 1) as f64)) * SWEEP_IMAX
+        sweep_i[i] = amp_i
+        sweep_amp[i] = amplitude(amp_i)
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+# ---------------------------------------------------------------------------
+# Phase plane
+# ---------------------------------------------------------------------------
+
+const PP_X: i32 = 30
+const PP_Y: i32 = 90
+const PP_W: i32 = 380
+const PP_H: i32 = 380
+const V_LO: f64 = -2.6
+const V_HI: f64 = 2.6
+const W_LO: f64 = -0.8
+const W_HI: f64 = 2.2
+
+function pp_x(v: f64) -> i32 {
+    return PP_X + ((((v - V_LO) / (V_HI - V_LO)) * (PP_W as f64)) as i32)
+}
+
+function pp_y(w: f64) -> i32 {
+    return PP_Y + PP_H - ((((w - W_LO) / (W_HI - W_LO)) * (PP_H as f64)) as i32)
+}
+
+function draw_phase_plane(g: Gfx, i_ext: f64) -> void {
+    draw_frame(g, PP_X, PP_Y, PP_W, PP_H, 60, 70, 90)
+    gfx_draw_text(g, PP_X, PP_Y - 16, "PHASE PLANE, NULLCLINES DRAWN LIVE", 1, 150, 165, 190)
+
+    # axes
+    draw_line(g, PP_X, pp_y(0.0), PP_X + PP_W, pp_y(0.0), 1, 40, 48, 62)
+    draw_line(g, pp_x(0.0), PP_Y, pp_x(0.0), PP_Y + PP_H, 1, 40, 48, 62)
+
+    # v-nullcline: the cubic, w = v - v^3/3 + I
+    let mut k: i32 = 0
+    while k < PP_W - 1 {
+        let va: f64 = V_LO + ((k as f64) / ((PP_W - 1) as f64)) * (V_HI - V_LO)
+        let vb: f64 = V_LO + (((k + 1) as f64) / ((PP_W - 1) as f64)) * (V_HI - V_LO)
+        let wa: f64 = va - va * va * va / 3.0 + i_ext
+        let wb: f64 = vb - vb * vb * vb / 3.0 + i_ext
+        if wa > W_LO and wa < W_HI and wb > W_LO and wb < W_HI {
+            draw_line(g, PP_X + k, pp_y(wa), PP_X + k + 1, pp_y(wb), 1, 250, 140, 120)
+        }
+        k = k + 1
+    }
+    # w-nullcline: the line, w = (v + a)/b, clipped to the panel window
+    let mut vl: f64 = W_LO * FB - FA
+    let mut vr: f64 = W_HI * FB - FA
+    if vl < V_LO {
+        vl = V_LO
+    }
+    if vr > V_HI {
+        vr = V_HI
+    }
+    draw_line(g, pp_x(vl), pp_y((vl + FA) / FB),
+              pp_x(vr), pp_y((vr + FA) / FB), 1, 120, 190, 250)
+    gfx_draw_text(g, PP_X + 6, PP_Y + 6, "v-nullcline  w = v - v^3/3 + I", 1, 250, 140, 120)
+    gfx_draw_text(g, PP_X + 6, PP_Y + 18, "w-nullcline  w = (v + a)/b", 1, 120, 190, 250)
+    gfx_draw_text(g, PP_X + PP_W - 26, PP_Y + PP_H - 14, "v", 1, 110, 125, 150)
+    gfx_draw_text(g, PP_X + 6, PP_Y + PP_H - 14, "w", 1, 110, 125, 150)
+
+    # the trajectory trail
+    let mut j: i32 = 1
+    while j < trail_fill {
+        let ia: i32 = (trail_head - trail_fill + j - 1 + 2 * TRAIL_N) % TRAIL_N
+        let ib: i32 = (trail_head - trail_fill + j + 2 * TRAIL_N) % TRAIL_N
+        let fade: i32 = 60 + (180 * j) / trail_fill
+        draw_line(g, pp_x(trail_v[ia]), pp_y(trail_w[ia]),
+                  pp_x(trail_v[ib]), pp_y(trail_w[ib]), 1,
+                  fade, 230, 190)
+        j = j + 1
+    }
+
+    # the fixed point for this I
+    let vs: f64 = fixed_point_v(i_ext)
+    let ws: f64 = (vs + FA) / FB
+    let stable: bool = 1.0 - vs * vs - EPS * FB < 0.0
+    if stable {
+        gfx_fill_rect(g, pp_x(vs) - 3, pp_y(ws) - 3, 7, 7, 140, 240, 170)
+        gfx_draw_text(g, pp_x(vs) + 8, pp_y(ws) - 4, "STABLE", 1, 140, 240, 170)
+    } else {
+        draw_frame(g, pp_x(vs) - 4, pp_y(ws) - 4, 8, 8, 255, 130, 130)
+        gfx_draw_text(g, pp_x(vs) + 8, pp_y(ws) - 4, "UNSTABLE", 1, 255, 130, 130)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Time series
+# ---------------------------------------------------------------------------
+
+const TS_X: i32 = 440
+const TS_Y: i32 = 90
+const TS_H: i32 = 150
+
+function draw_timeseries(g: Gfx) -> void {
+    draw_frame(g, TS_X, TS_Y, TRACE_W, TS_H, 60, 70, 90)
+    gfx_draw_text(g, TS_X, TS_Y - 16, "v(t) AMBER    w(t) BLUE", 1, 150, 165, 190)
+    let mut i: i32 = 1
+    while i < trace_fill {
+        let ya0: i32 = TS_Y + TS_H - ((((trace_v[i - 1] - V_LO) / (V_HI - V_LO)) * (TS_H as f64)) as i32)
+        let ya1: i32 = TS_Y + TS_H - ((((trace_v[i] - V_LO) / (V_HI - V_LO)) * (TS_H as f64)) as i32)
+        let yb0: i32 = TS_Y + TS_H - ((((trace_w[i - 1] - W_LO) / (W_HI - W_LO)) * (TS_H as f64)) as i32)
+        let yb1: i32 = TS_Y + TS_H - ((((trace_w[i] - W_LO) / (W_HI - W_LO)) * (TS_H as f64)) as i32)
+        draw_line(g, TS_X + i - 1, ya0, TS_X + i, ya1, 1, 255, 205, 110)
+        draw_line(g, TS_X + i - 1, yb0, TS_X + i, yb1, 1, 120, 190, 250)
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Bifurcation strip
+# ---------------------------------------------------------------------------
+
+const BF_X: i32 = 440
+const BF_Y: i32 = 300
+const BF_W: i32 = 440
+const BF_H: i32 = 170
+const AMP_MAX: f64 = 5.0
+
+function draw_bifurcation(g: Gfx, i_ext: f64) -> void {
+    draw_frame(g, BF_X, BF_Y, BF_W, BF_H, 60, 70, 90)
+    gfx_draw_text(g, BF_X, BF_Y - 16, "OSCILLATION AMPLITUDE vs I   (peak to peak of v)",
+                  1, 150, 165, 190)
+    let mut i: i32 = 1
+    while i < SWEEP_N {
+        let x0: i32 = BF_X + (((sweep_i[i - 1] / SWEEP_IMAX) * (BF_W as f64)) as i32)
+        let x1: i32 = BF_X + (((sweep_i[i] / SWEEP_IMAX) * (BF_W as f64)) as i32)
+        let y0: i32 = BF_Y + BF_H - (((sweep_amp[i - 1] / AMP_MAX) * (BF_H as f64)) as i32)
+        let y1: i32 = BF_Y + BF_H - (((sweep_amp[i] / AMP_MAX) * (BF_H as f64)) as i32)
+        draw_line(g, x0, y0, x1, y1, 1, 120, 220, 200)
+        i = i + 1
+    }
+    let xl: i32 = BF_X + (((hopf_lo / SWEEP_IMAX) * (BF_W as f64)) as i32)
+    let xh: i32 = BF_X + (((hopf_hi / SWEEP_IMAX) * (BF_W as f64)) as i32)
+    let mut gy: i32 = BF_Y
+    while gy < BF_Y + BF_H {
+        gfx_fill_rect(g, xl, gy, 1, 3, 255, 130, 130)
+        gfx_fill_rect(g, xh, gy, 1, 3, 255, 130, 130)
+        gy = gy + 8
+    }
+    gfx_draw_text(g, xl + 3, BF_Y + 4, "HOPF", 1, 255, 130, 130)
+    gfx_draw_fixed(g, xl + 3, BF_Y + 15, hopf_lo, 4, 1, 255, 180, 140)
+    gfx_draw_text(g, xh + 3, BF_Y + 4, "HOPF", 1, 255, 130, 130)
+    gfx_draw_fixed(g, xh - 44, BF_Y + 15, hopf_hi, 4, 1, 255, 180, 140)
+    let xc: i32 = BF_X + (((i_ext / SWEEP_IMAX) * (BF_W as f64)) as i32)
+    gfx_fill_rect(g, xc, BF_Y, 1, BF_H, 255, 205, 110)
+    gfx_draw_text(g, BF_X + 4, BF_Y + BF_H + 6, "I = 0", 1, 110, 125, 150)
+    gfx_draw_text(g, BF_X + BF_W - 40, BF_Y + BF_H + 6, "I = 2", 1, 110, 125, 150)
+}
+
+function draw_hud(g: Gfx, i_ext: f64, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "FITZHUGH-NAGUMO  -  EXCITABILITY IN TWO VARIABLES",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "dv/dt = v - v^3/3 - w + I     dw/dt = eps (v + a - b w)     RK4 dt 0.005",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44, "a 0.7   b 0.8   eps 0.08", 1, 110, 125, 150)
+    gfx_draw_text(g, 250, 44, "LIVE I", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 300, 44, i_ext, 3, 1, 255, 205, 110)
+    if paused {
+        gfx_draw_text(g, 820, 10, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 12, WIN_H - 78, "HOPF WINDOW  I in [", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 164, WIN_H - 78, hopf_lo, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 232, WIN_H - 78, ",", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 244, WIN_H - 78, hopf_hi, 5, 1, 235, 240, 250)
+    gfx_draw_text(g, 312, WIN_H - 78, "]   located by bisection on tr J = 0",
+                  1, 110, 125, 150)
+
+    gfx_draw_text(g, 12, WIN_H - 62, "v* AT ONSET", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 104, WIN_H - 62, vstar_lo, 6, 1, 235, 240, 250)
+    gfx_draw_text(g, 184, WIN_H - 62, "vs sqrt(1 - eps b)", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 320, WIN_H - 62, vstar_exact, 6, 1, 235, 240, 250)
+
+    gfx_draw_text(g, 12, WIN_H - 46, "RINGING PERIOD", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 124, WIN_H - 46, period_onset, 3, 1, 235, 240, 250)
+    gfx_draw_text(g, 188, WIN_H - 46, "vs 2 pi / sqrt(det - tr^2/4)", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 412, WIN_H - 46, period_linear, 3, 1, 235, 240, 250)
+
+    gfx_draw_text(g, 12, WIN_H - 30, "PERIOD AT I = 0.5", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 148, WIN_H - 30, period_osc, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 216, WIN_H - 30, "time units   half-step", 1, 110, 125, 150)
+    gfx_draw_fixed(g, 388, WIN_H - 30, period_osc_half, 4, 1, 235, 240, 250)
+
+    if ok {
+        gfx_draw_text(g, 640, WIN_H - 60, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 640, WIN_H - 60, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 14, "LEFT/RIGHT change I   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+# Live integration
+# ---------------------------------------------------------------------------
+
+function push_trail(v: f64, w: f64) -> void {
+    trail_v[trail_head] = v
+    trail_w[trail_head] = w
+    trail_head = (trail_head + 1) % TRAIL_N
+    if trail_fill < TRAIL_N {
+        trail_fill = trail_fill + 1
+    }
+}
+
+function push_trace(v: f64, w: f64) -> void {
+    if trace_fill < TRACE_W {
+        trace_v[trace_fill] = v
+        trace_w[trace_fill] = w
+        trace_fill = trace_fill + 1
+        return
+    }
+    let mut i: i32 = 1
+    while i < TRACE_W {
+        trace_v[i - 1] = trace_v[i]
+        trace_w[i - 1] = trace_w[i]
+        i = i + 1
+    }
+    trace_v[TRACE_W - 1] = v
+    trace_w[TRACE_W - 1] = w
+}
+
+function advance_live(c: ptr<FHN>) -> void {
+    let mut p: i32 = 0
+    while p < 24 {
+        let mut s: i32 = 0
+        while s < 10 {
+            FHN_step(c, 0.02)
+            s = s + 1
+        }
+        push_trail(c.v, c.w)
+        push_trace(c.v, c.w)
+        p = p + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    sweep_i = malloc((SWEEP_N as i64) * 8)
+    sweep_amp = malloc((SWEEP_N as i64) * 8)
+    trail_v = malloc((TRAIL_N as i64) * 8)
+    trail_w = malloc((TRAIL_N as i64) * 8)
+    trace_v = malloc((TRACE_W as i64) * 8)
+    trace_w = malloc((TRACE_W as i64) * 8)
+
+    println("")
+    println("  FITZHUGH-NAGUMO  --  nullclines, Hopf window, limit cycle period")
+    println("  =================================================================")
+    println("")
+    println("    dv/dt = v - v^3/3 - w + I        dw/dt = eps (v + a - b w)")
+    println("    a = 0.7   b = 0.8   eps = 0.08   RK4, dt = 0.005")
+    println("")
+
+    # 1. fixed point at the reference current
+    vstar = fixed_point_v(I_OSC)
+    wstar = (vstar + FA) / FB
+    let r1: f64 = fabs(wstar - (vstar - vstar * vstar * vstar / 3.0 + I_OSC))
+    let r2: f64 = fabs(EPS * (vstar + FA - FB * wstar))
+    resid = r1
+    if r2 > resid {
+        resid = r2
+    }
+
+    # 2. Hopf points, and the closed form for v* there
+    hopf_lo = find_hopf(0.05, 0.9)
+    hopf_hi = find_hopf(0.9, 1.9)
+    vstar_lo = fixed_point_v(hopf_lo)
+    vstar_exact = 0.0 - sqrt(1.0 - EPS * FB)
+
+    # 3. amplitude at three currents
+    amp_quiet_lo = amplitude(I_QUIET_LO)
+    amp_osc = amplitude(I_OSC)
+    amp_quiet_hi = amplitude(I_QUIET_HI)
+
+    # 4. periods
+    let i_probe: f64 = hopf_lo - 0.01
+    period_onset = damped_period(i_probe, DT)
+    let tr_probe: f64 = jac_trace(i_probe)
+    det_hopf = jac_det(i_probe)
+    period_linear = 6.283185307179586 / sqrt(det_hopf - 0.25 * tr_probe * tr_probe)
+    period_osc = period_at(I_OSC, DT)
+    period_osc_half = period_at(I_OSC, DT * 0.5)
+
+    run_sweep()
+
+    print("    fixed point at I = 0.5     : v* = ")
+    printf("%9.6f", vstar)
+    print("   w* = ")
+    printf("%9.6f", wstar)
+    println("")
+    print("    nullcline residual there   : ")
+    printf("%.3e", resid)
+    println("    gate < 1e-12")
+    println("")
+    print("    Hopf point, lower          : I = ")
+    printf("%9.6f", hopf_lo)
+    println("   (bisection on tr J = 0)")
+    print("    Hopf point, upper          : I = ")
+    printf("%9.6f", hopf_hi)
+    println("")
+    print("    v* at the lower Hopf point : ")
+    printf("%12.9f", vstar_lo)
+    println("")
+    print("    closed form -sqrt(1-eps b) : ")
+    printf("%12.9f", vstar_exact)
+    print("   difference ")
+    printf("%.3e", fabs(vstar_lo - vstar_exact))
+    println("")
+    println("")
+    print("    amplitude at I = 0.2       : ")
+    printf("%9.6f", amp_quiet_lo)
+    println("   expect ~0 (below the window)")
+    print("    amplitude at I = 0.5       : ")
+    printf("%9.6f", amp_osc)
+    println("   expect > 1 (inside)")
+    print("    amplitude at I = 1.6       : ")
+    printf("%9.6f", amp_quiet_hi)
+    println("   expect ~0 (above the window)")
+    println("")
+    print("    ringing period at I = Hopf - 0.01")
+    println("")
+    print("      measured from simulation : ")
+    printf("%9.5f", period_onset)
+    println("")
+    print("      2 pi / sqrt(det - tr^2/4) : ")
+    printf("%9.5f", period_linear)
+    print("   relative gap ")
+    printf("%.5f", fabs(period_onset - period_linear) / period_linear)
+    println("")
+    print("    period of the cycle, I=0.5 : ")
+    printf("%9.5f", period_osc)
+    print("   at half step ")
+    printf("%9.5f", period_osc_half)
+    println("")
+    print("    step-halving change        : ")
+    printf("%.3e", fabs(period_osc - period_osc_half) / period_osc)
+    println("    gate < 1e-3")
+    println("")
+
+    let fp_ok: bool = resid < 1.0e-12
+    let vstar_ok: bool = fabs(vstar_lo - vstar_exact) < 1.0e-6
+    let window_ok: bool = amp_quiet_lo < 0.01 and amp_osc > 1.0 and amp_quiet_hi < 0.01
+    let hopf_freq_ok: bool = fabs(period_onset - period_linear) / period_linear < 0.02
+    let conv_ok: bool = fabs(period_osc - period_osc_half) / period_osc < 0.001
+    let ok: bool = fp_ok and vstar_ok and window_ok and hopf_freq_ok and conv_ok
+
+    let mut live: FHN = FHN_new()
+    let mut i_idx: i32 = 10
+    live.i_ext = 0.05 * (i_idx as f64)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "FitzHugh-Nagumo - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = i_idx
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = i_idx - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = i_idx + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if frame > 0 and frame % 30 == 0 {
+            want = i_idx + 6
+        }
+        if want < 2 {
+            want = 2
+        }
+        if want > 34 {
+            want = 4
+        }
+        if want != i_idx {
+            i_idx = want
+            live.i_ext = 0.05 * (i_idx as f64)
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            advance_live(&live)
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_phase_plane(g, live.i_ext)
+        draw_timeseries(g)
+        draw_bifurcation(g, live.i_ext)
+        draw_hud(g, live.i_ext, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !fp_ok {
+        println("    FAIL: fixed point did not satisfy both nullclines")
+        return 1
+    }
+    if !vstar_ok {
+        println("    FAIL: located Hopf v* disagrees with sqrt(1 - eps*b)")
+        return 2
+    }
+    if !window_ok {
+        println("    FAIL: simulated oscillation window does not match the Hopf window")
+        return 3
+    }
+    if !hopf_freq_ok {
+        println("    FAIL: ringing period disagrees with the linear Hopf frequency")
+        return 4
+    }
+    if !conv_ok {
+        println("    FAIL: measured period did not converge under step halving")
+        return 5
+    }
+    println("    PASS: nullclines, Hopf window, onset frequency and limit cycle all agree")
+    return 0
+}
