@@ -24,7 +24,8 @@ really is an ODE once you have written it down properly, they use a `flow`
 block with `evolves as` and the compiler generates the integrator.
 
 Every file says which one it is and why, in its header. Four of the thirteen
-programs are `flow` blocks:
+carry `flow` blocks, and `rc_rl_rlc` carries both so the two routes can be
+compared on a problem with a known answer:
 
 ```flow
 flow LogicGate {
@@ -114,6 +115,13 @@ budget is off before it starts.
 [`lib/stdlib/spice.flow`](../../lib/stdlib/spice.flow) is the netlist front
 end. What it reads and what it does not are both listed by name in its header;
 unsupported cards are counted, not silently dropped.
+
+## What is not done here
+
+The atlas asks each domain for one "same model, two languages" comparison
+against a Python/NumPy or C reference, with timing on both sides.
+`rc_rl_rlc` compares two representations, but both of them are Flow. The
+cross-language comparison for circuits is still owed.
 
 ## Why there are no GIFs here
 
