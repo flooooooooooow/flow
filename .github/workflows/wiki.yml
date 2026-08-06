@@ -91,8 +91,9 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v5
         with:
-          # The site is ~3000 files (pagefind fragments, the proof corpus, the
-          # WASM gallery). Pages needs longer than the 10-minute default to
-          # publish that many; two runs died at exactly 600000 ms.
+          # The site is ~1900 files. Raising this was not enough on its own
+          # (one success, then another abort), so the proof corpus is now left
+          # out of the pagefind index, cutting 1086 files. Keep the longer
+          # timeout as headroom.
           timeout: 1800000
           error_count: 20
