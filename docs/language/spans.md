@@ -273,10 +273,12 @@ total_span_const_i32(((flow_span_const_i32){ .data = (const int32_t*)(((xs)) + (
 | Dependent extents (`span<mut, source.extent>`) | ❌ layer 2 |
 | `span<number>` and other trait-shaped element constraints | ❌ layer 2 |
 | Span methods (`fill`, `reduce`, iteration) | ❌ layer 2 |
-| Spans as struct fields | ❌ not checked, not supported |
+| Spans as struct fields | ⚠️ compiles, but no escape checking — avoid |
 
-Every ❌ row that has a spelling is rejected at parse time with a message
-saying it is not implemented in this compiler version.
+The four layer-2 spellings (`span`, `span<mut>` / `span<const>`,
+`span<number>`, `span<mut, source.extent>`, plus `span[N]`) are rejected at
+parse time with a message saying they are not implemented in this compiler
+version.
 
 Example: [examples/basics/spans.flow](../../examples/basics/spans.flow) ·
 Tests: `tests/lang/test_spans.flow`, `tests/unit/test_spans.py`
