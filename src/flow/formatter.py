@@ -22,13 +22,25 @@ class Formatter:
         lines = []
         for decl in declarations:
             if isinstance(decl, ImportDecl):
-                lines.append(f'import "{decl.path}"')
+                lines.append(self._format_import(decl))
             elif isinstance(decl, StructDecl):
                 lines.extend(self._format_struct(decl))
             elif isinstance(decl, FunctionDecl):
                 lines.extend(self._format_function(decl))
             lines.append("")
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_import(decl: ImportDecl) -> str:
+        """Render an import back to source, keeping `export`, braces, alias."""
+        prefix = "export import" if getattr(decl, "is_reexport", False) else "import"
+        path = f'"{decl.path}"' if decl.is_legacy_string else decl.path
+        line = f"{prefix} {path}"
+        if decl.symbols:
+            line += " { " + ", ".join(decl.symbols) + " }"
+        elif decl.alias:
+            line += f" as {decl.alias}"
+        return line
 
     def _format_struct(self, decl: StructDecl) -> List[str]:
         lines = [f"struct {decl.name} {{"]
