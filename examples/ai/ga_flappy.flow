@@ -155,8 +155,8 @@ function genome_fitness(i: i32) -> f32 {
     let w1: f32 = ga_get(i, 1)
     let w2: f32 = ga_get(i, 2)
     let w3: f32 = ga_get(i, 3)
-    let f1: f32 = fly(w0, w1, w2, w3, 424242 as u32, FIT_FRAME_CAP, 0, false)
-    let f2: f32 = fly(w0, w1, w2, w3, 971131 as u32, FIT_FRAME_CAP, 0, false)
+    let f1: f32 = fly(w0, w1, w2, w3, 424242, FIT_FRAME_CAP, 0, false)
+    let f2: f32 = fly(w0, w1, w2, w3, 971131, FIT_FRAME_CAP, 0, false)
     return (f1 + f2) / 2.0
 }
 
@@ -166,7 +166,7 @@ function main() -> i32 {
     println("")
 
     # Random-flap baseline: average pipes over 20 fresh-seed runs.
-    ai_seed(31337 as u32)
+    ai_seed(31337)
     let mut base_total: f32 = 0.0
     let mut b: i32 = 0
     while b < 20 {
@@ -181,7 +181,7 @@ function main() -> i32 {
     println("")
 
     # Evolve.
-    ga_init(POP, GENOME_DIM, 4321 as u32)
+    ga_init(POP, GENOME_DIM, 4321)
     println("evolving 15 generations (pop 32, elite 25%, sigma 0.15):")
     let mut gen: i32 = 0
     while gen < GENERATIONS {
@@ -197,7 +197,7 @@ function main() -> i32 {
         let best: i32 = ga_best_index()
         let best_fit: f32 = ga_best_fitness()
         let bp: f32 = fly(ga_get(best, 0), ga_get(best, 1), ga_get(best, 2), ga_get(best, 3),
-                          424242 as u32, FIT_FRAME_CAP, 1, false)
+                          424242, FIT_FRAME_CAP, 1, false)
         let gen_no: i32 = gen + 1
         print("  gen ")
         print(gen_no)
