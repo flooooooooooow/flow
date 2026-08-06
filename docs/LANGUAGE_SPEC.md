@@ -186,6 +186,10 @@ Status: ✅ Hash comments only
 | Pointer | `ptr<T>` | ✅ |
 | Struct | `struct Name { ... }` | ✅ |
 | Vector (SIMD) | `vec<T, N>` | ⚠️ (parsed, limited codegen) |
+| Span (immutable view) | `span<T>`, `&[T]` | ✅ concrete element types — [spans.md](language/spans.md) |
+| Span (mutable view) | `span<mut T>`, `&mut [T]` | ✅ concrete element types |
+| Span (static extent) | `span<T, N>`, `&[T; N]` | ✅ length checked at the call site |
+| Span (inferred) | `span`, `span<mut>`, `span<number>` | ❌ layer 2 — parser reports "not yet implemented" |
 
 ### 2.3 Type Syntax
 
@@ -202,6 +206,17 @@ let p: ptr<i32> = &x
 
 # Nested types
 let matrix: array<array<f32>> = ...
+
+# Borrowed views (spans). Both spellings are the same type.
+function analyse(samples: span<f32>) -> f32
+function analyse(samples: &[f32]) -> f32
+function clear(samples: span<mut f32>)
+function fft(frame: &[f32; 1024])
+
+# Contiguous sources borrow implicitly; a slice expression produces a span.
+let window: span<f32> = signal[128..256]
+analyse(signal)
+analyse(signal[0..64])
 ```
 
 ### 2.4 Type Aliases and Distinct Types
@@ -976,6 +991,7 @@ Complete list of AST nodes defined in `src/flow/parser.py`:
 | `ArrayLiteral` | Array literal | elements |
 | `VectorLiteral` | SIMD vector | elements |
 | `ArrayAccess` | Array index | array, index |
+| `SliceExpr` | Slice / borrow `a[i..j]` | base, start, end |
 | `StructDecl` | Struct definition | name, fields |
 | `EffectDecl` | Effect definition | name, operations |
 | `EffectOperation` | Effect method signature | name, parameters, return_type |
@@ -1008,7 +1024,9 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | `_gen_handle` | Effect handle blocks |
 | `_gen_expr` | Expression dispatch |
 | `_gen_effect_call` | Effect method calls |
-| `_gen_array_access` | Array indexing |
+| `_gen_array_access` | Array indexing (arrays, pointers, spans) |
+| `_gen_span_borrow` | Auto-borrow at call sites; slice lowering |
+| `_ensure_span_typedef` | Two-word span view typedefs |
 | `_gen_array_literal` | Array literals |
 | `_gen_effect_runtime_types` | Effect vtable structs |
 | `_gen_capability_method` | Capability method implementations |
@@ -1027,6 +1045,8 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Enums / traits / impl | ✅ | ⚠️ | ⚠️ | ⚠️ |
 | Units of measure | ✅ | ✅ | ❌ | ✅ |
 | Arrays | ✅ | ✅ | ⚠️ | ✅ |
+| Spans (`span<T>` / `&[T]`, concrete elements) | ✅ | ✅ | ❌ | ✅ |
+| Spans (bare `span`, trait-shaped, dependent extents) | ❌ | ❌ | ❌ | ✅ (documented gap) |
 | If/Else | ✅ | ✅ | ✅ | ✅ |
 | While | ✅ | ✅ | ✅ | ✅ |
 | For (`to` / `..`) | ✅ | ✅ | ⚠️ | ✅ |
