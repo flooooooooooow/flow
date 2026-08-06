@@ -1,0 +1,212 @@
+# Flow-native language test: lifetime domains
+# (docs/language/lifetime-domains.md, GitHub issue #148).
+#
+# Every function here is domain-annotated and every one of them is a case
+# the checker must ACCEPT. The rejected programs and their exact
+# diagnostics live in tests/unit/test_lifetime_domains.py, which does not
+# need to run them.
+#
+# Covers: an application static written from a session function, a
+# callback function that only reads pre-allocated storage, a frame
+# function that bumps and resets an arena, a callback returning a view of
+# its parameter, and a session function calling into shorter domains.
+#
+# The FrameArena mirrors lib/stdlib/memory.flow; it is inlined so this
+# test is one translation unit.
+#
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+struct Arena {
+    buffer: ptr<i8>,
+    capacity: i64,
+    offset: i64
+}
+
+struct FrameArena {
+    arena: Arena,
+    high_water: i64,
+    frames: i64
+}
+
+# Application domain: lives for the whole run.
+@lifetime(application)
+let mut total: i32 = 0
+
+@lifetime(application)
+let mut frames_run: i64 = 0
+
+# ── Setup and teardown: session domain, allocation allowed ───────────
+
+@lifetime(session)
+function frame_arena_create(capacity: i64) -> FrameArena {
+    let raw: ptr<void> = malloc(capacity)
+    let buf: ptr<i8> = raw
+    let a: Arena = Arena { buffer: buf, capacity: capacity, offset: 0 }
+    return FrameArena { arena: a, high_water: 0, frames: 0 }
+}
+
+@lifetime(session)
+function frame_arena_destroy(f: ptr<FrameArena>) -> void {
+    let buf: ptr<i8> = f[0].arena.buffer
+    if buf != null {
+        let mut p: ptr<void> = buf
+        free(p)
+    }
+    f[0].arena.buffer = null
+    f[0].arena.capacity = 0
+    f[0].arena.offset = 0
+}
+
+# ── Hot path: bump only. Legal in `callback` and `frame`. ────────────
+
+@lifetime(callback)
+function frame_begin(f: ptr<FrameArena>) -> void {
+    f[0].arena.offset = 0
+}
+
+@lifetime(callback)
+function frame_alloc_i32(f: ptr<FrameArena>, count: i64) -> ptr<i32> {
+    let base: ptr<i8> = f[0].arena.buffer
+    let off: i64 = f[0].arena.offset
+    let aligned: i64 = (count * 4 + 7) & ~7
+    if off + aligned > f[0].arena.capacity {
+        return null
+    }
+    let out: ptr<i32> = base + off
+    f[0].arena.offset = off + aligned
+    return out
+}
+
+@lifetime(callback)
+function frame_end(f: ptr<FrameArena>) -> void {
+    let used: i64 = f[0].arena.offset
+    if used > f[0].high_water {
+        f[0].high_water = used
+    }
+    f[0].frames = f[0].frames + 1
+}
+
+# ── Callback domain: reads pre-allocated storage, allocates nothing ──
+
+@lifetime(callback)
+function sum_block(values: span<i32>) -> i32 {
+    let mut acc: i32 = 0
+    let mut i: i64 = 0
+    while i < values.len {
+        acc = acc + values[i]
+        i = i + 1
+    }
+    return acc
+}
+
+# Returning a view of a parameter is fine: the storage is the caller's.
+@lifetime(callback)
+function head(values: span<i32>) -> span<i32> {
+    return values[0..2]
+}
+
+# ── Frame domain: bumps the arena, resets it wholesale ───────────────
+
+@lifetime(frame)
+function build_and_sum(f: ptr<FrameArena>, n: i64, seed: i32) -> i32 {
+    frame_begin(f)
+    let scratch: ptr<i32> = frame_alloc_i32(f, n)
+    if scratch == null {
+        return -1
+    }
+    let mut i: i64 = 0
+    while i < n {
+        scratch[i] = seed + i
+        i = i + 1
+    }
+    let mut acc: i32 = 0
+    let mut j: i64 = 0
+    while j < n {
+        acc = acc + scratch[j]
+        j = j + 1
+    }
+    frame_end(f)
+    return acc
+}
+
+# A frame function may call into the callback domain, which is
+# shorter-lived. The other direction is what LD4 rejects.
+@lifetime(frame)
+function frame_uses_callback(values: span<i32>) -> i32 {
+    return sum_block(values)
+}
+
+# ── Session domain: drives the shorter domains ───────────────────────
+
+@lifetime(session)
+function run(f: ptr<FrameArena>) -> i32 {
+    let block: array<i32, 4> = [1, 2, 3, 4]
+
+    # callback domain, called from session: allowed.
+    let s: i32 = sum_block(block)
+    if s != 10 {
+        return 1
+    }
+
+    let two: span<i32> = head(block)
+    if sum_block(two) != 3 {
+        return 2
+    }
+
+    if frame_uses_callback(block) != 10 {
+        return 3
+    }
+
+    # Three frames over the same arena. Each resets the previous one.
+    let a: i32 = build_and_sum(f, 4, 10)
+    if a != 46 {
+        return 4
+    }
+    let b: i32 = build_and_sum(f, 4, 100)
+    if b != 406 {
+        return 5
+    }
+    let c: i32 = build_and_sum(f, 8, 0)
+    if c != 28 {
+        return 6
+    }
+
+    # The arena was reset every frame, so peak use is one frame's worth.
+    if f[0].high_water != 32 {
+        return 7
+    }
+    if f[0].frames != 3 {
+        return 8
+    }
+
+    total = s
+    frames_run = f[0].frames
+    return 0
+}
+
+function main() -> i32 {
+    let mut arena: FrameArena = frame_arena_create(4096)
+    if arena.arena.buffer == null {
+        return 9
+    }
+    let fp: ptr<FrameArena> = &arena
+
+    let rc: i32 = run(fp)
+    frame_arena_destroy(fp)
+
+    if rc != 0 {
+        return rc
+    }
+    if total != 10 {
+        return 10
+    }
+    if frames_run != 3 {
+        return 11
+    }
+    return 0
+}
