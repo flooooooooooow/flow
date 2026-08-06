@@ -869,11 +869,17 @@ class StaticDecl:
     Lowers to a file-scope C `static`, so the variable is private to its
     translation unit. The type annotation is required and the initializer
     must be a compile-time constant (checked in the type checker).
+
+    `attributes` carries decorators written above the `let mut`. Only
+    `@lifetime(...)` is meaningful there today
+    (docs/language/lifetime-domains.md).
     """
 
     name: str
     type: Type
     value: "Expression"
+    line: int = 0
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1693,7 +1699,9 @@ class Parser:
                     raise SyntaxError(
                         f"Cannot export a module static at line {self.current_token.line}"
                     )
-                declarations.append(self.parse_static())
+                static_decl = self.parse_static()
+                static_decl.attributes = attributes
+                declarations.append(static_decl)
             elif self.current_token.type == TokenType.TEST:
                 if is_exported:
                     raise SyntaxError(
@@ -1954,7 +1962,7 @@ class Parser:
         if self.current_token.type == TokenType.SEMICOLON:
             self.advance()
 
-        return StaticDecl(name, type, value)
+        return StaticDecl(name, type, value, line=line)
 
     def parse_test(self) -> FunctionDecl:
         self.expect(TokenType.TEST)
