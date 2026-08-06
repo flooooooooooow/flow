@@ -1,0 +1,144 @@
+# Stereo width: one knob, four settings, mid/side arithmetic underneath.
+#
+# WHAT YOU WILL HEAR
+#   Twelve seconds of a three-voice pad, in four three-second sections.
+#
+#     0 - 3 s    width 0.0   collapsed to mono, everything in the middle
+#     3 - 6 s    width 1.0   as played, voices left, centre and right
+#     6 - 9 s    width 2.0   pushed wide, the sides twice as loud
+#     9 - 12 s   width 0.0   back to mono
+#
+#   Use headphones. The pitch and the loudness barely move; what moves is
+#   how far apart the voices sit.
+#
+# HOW IT WORKS
+#   Split the stereo pair into what the two channels agree on and what they
+#   disagree on:
+#
+#       mid  = (left + right) / 2
+#       side = (left - right) / 2
+#
+#   That is lossless: left = mid + side, right = mid - side. Scale side by
+#   the width and put it back together. Zero deletes everything the channels
+#   disagree on, which is the definition of mono. Two doubles it.
+#
+#   Width above 1 costs you mono compatibility: anything that sums to zero
+#   when a listener's two speakers meet in a room disappears. That is the
+#   trade, and it is why the sensible range is about 0 to 1.6.
+#
+#   The width knob is smoothed with a one-pole at 60 ms. Jumping a gain in
+#   one sample is exactly the click the ADSR example is about.
+#
+# LISTEN
+#   ./flow audio examples/audio/stereo_width.flow
+#
+# RENDER AND CHECK
+#   FLOW_AUDIO_RENDER=build/audio/stereo_width.wav \
+#     ./flow audio examples/audio/stereo_width.flow
+
+import "stdlib/audio.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/filters.flow"
+import "stdlib/audio/safety.flow"
+import "stdlib/audio/sink.flow"
+import "stdlib/audio/verify.flow"
+
+const RATE_HZ: i32 = 48000
+const BLOCK: i32 = 256
+const SECONDS: f32 = 12.0
+
+const SECTION: i32 = 144000           # 3.0 s at 48 kHz
+
+# Centre pitch. The outer voices are detuned by a few cents either side,
+# which is what makes a pad move rather than sit still.
+const PITCH_HZ: f64 = 220.0
+const DETUNE: f64 = 0.6               # Hz, roughly 5 cents at this pitch
+
+const AMP: f32 = 0.22
+
+function main() -> i32 {
+    println("stereo width")
+    println("  12.0 seconds, a three-voice pad at 220 Hz")
+    println("   0 -  3 s   width 0.0, collapsed to mono")
+    println("   3 -  6 s   width 1.0, as played")
+    println("   6 -  9 s   width 2.0, pushed wide")
+    println("   9 - 12 s   width 0.0, back to mono")
+    println("  headphones recommended; the pitch does not change, the space does")
+
+    let rate: SampleRate = sample_rate_48000()
+    let mut out: AudioSink = sink_open(RATE_HZ, 2, BLOCK)
+    let sp: ptr<AudioSink> = &out
+    let mut chain: SafetyChain = safety_new(rate, SECONDS)
+    let cp: ptr<SafetyChain> = &chain
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(BLOCK, 2, layout_interleaved())
+
+    # Three saws: hard left, centre, hard right, each slightly detuned.
+    let mut vl: Phasor = phasor_new(PITCH_HZ - DETUNE, rate)
+    let mut vc: Phasor = phasor_new(PITCH_HZ, rate)
+    let mut vr: Phasor = phasor_new(PITCH_HZ + DETUNE, rate)
+
+    # Take the edge off the saws so the pad is pleasant to sit through.
+    let mut tone_l: Biquad = biquad_lowpass(2200.0, 0.707, rate)
+    let mut tone_r: Biquad = biquad_lowpass(2200.0, 0.707, rate)
+
+    # Width smoother.
+    let mut width_smooth: OnePole = onepole_smooth(60.0, rate)
+    width_smooth = onepole_set_state(width_smooth, 0.0)
+
+    let mut n: i32 = 0
+
+    while !safety_finished(cp) {
+        let count: i32 = safety_next_block(cp, BLOCK)
+        let mut i: i32 = 0
+        while i < count {
+            let section: i32 = n / SECTION
+            let mut target: f32 = 0.0
+            if section == 1 {
+                target = 1.0
+            }
+            if section == 2 {
+                target = 2.0
+            }
+            width_smooth = onepole_tick(width_smooth, target)
+            let width: f32 = onepole_output(width_smooth)
+
+            let a: f32 = saw(phasor_value(vl)) * AMP
+            let b: f32 = saw(phasor_value(vc)) * AMP
+            let c: f32 = saw(phasor_value(vr)) * AMP
+            vl = phasor_tick(vl)
+            vc = phasor_tick(vc)
+            vr = phasor_tick(vr)
+
+            tone_l = biquad_tick(tone_l, a + b * 0.707)
+            tone_r = biquad_tick(tone_r, c + b * 0.707)
+            let raw_l: f32 = biquad_output(tone_l)
+            let raw_r: f32 = biquad_output(tone_r)
+
+            # Mid/side, scale the side, put it back.
+            let mid: f32 = (raw_l + raw_r) * 0.5
+            let side: f32 = (raw_l - raw_r) * 0.5
+            let l: f32 = mid + side * width
+            let r: f32 = mid - side * width
+
+            let fr: Frame = safety_process_frame(cp, l, r)
+            audio_buffer_set_f32(buf, i, 0, fr.left)
+            audio_buffer_set_f32(buf, i, 1, fr.right)
+            n = n + 1
+            i = i + 1
+        }
+        sink_write(sp, buf.data, count)
+    }
+
+    sink_close(sp)
+    audio_buffer_free_f32(buf)
+    safety_report(cp)
+
+    if sink_is_render() {
+        let spec: VerifySpec = verify_spec(SECONDS as f64, safety_ceiling_db(cp),
+                                           PITCH_HZ)
+        if !verify_run(sink_render_path(), spec) {
+            return 1
+        }
+    }
+    return 0
+}

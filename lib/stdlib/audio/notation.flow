@@ -74,17 +74,52 @@ export function notation_reader_new() -> NotationReader {
     }
 }
 
-# Regular functions (effect impl not fully supported in C backend yet)
+# Append one note. Returns false when the reader is full.
+#
+# This is how you build a sequence today. The text-file parser below is not
+# implemented; it returns a fixed tune whatever path you give it, and the
+# comment there says so.
+export function notation_add(reader: ptr<NotationReader>, midi: i32, duration: i32) -> bool {
+    if reader.count >= 128 {
+        return false
+    }
+    reader.notes[reader.count] = MusicNote { midi: midi, duration: duration }
+    reader.count = reader.count + 1
+    reader.loaded = true
+    return true
+}
+
+# Append a rest. A MIDI number below 0 means silence; players are expected
+# to check for it.
+export function notation_add_rest(reader: ptr<NotationReader>, duration: i32) -> bool {
+    return notation_add(reader, -1, duration)
+}
+
+export function note_is_rest(n: MusicNote) -> bool {
+    return n.midi < 0
+}
+
+export function notation_clear(reader: ptr<NotationReader>) -> void {
+    reader.count = 0
+    reader.loaded = false
+}
+
+# Total length of the sequence in sixteenth notes.
+export function notation_total_sixteenths(reader: ptr<NotationReader>) -> i32 {
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < reader.count {
+        total = total + reader.notes[i].duration
+        i = i + 1
+    }
+    return total
+}
+
+# NOT A PARSER. This ignores `path` entirely and loads a fixed tune, so that
+# the players in examples/audio have something to read while the text format
+# above is still unimplemented. Use notation_add to build a real sequence.
 export function notation_load_file(reader: ptr<NotationReader>, path: string) -> bool {
     let reader_ptr: ptr<NotationReader> = reader
-    # In a real implementation, this would:
-    # 1. Open the file
-    # 2. Read lines
-    # 3. Parse each line into notes
-    # 4. Store in reader_ptr.notes
-
-    # For now, hardcode Hot Cross Buns as example
-    # This would be replaced with actual file reading
     reader_ptr.notes[0] = MusicNote { midi: 64, duration: 4 }   # E4/4
     reader_ptr.notes[1] = MusicNote { midi: 62, duration: 4 }   # D4/4
     reader_ptr.notes[2] = MusicNote { midi: 60, duration: 8 }   # C4/8
