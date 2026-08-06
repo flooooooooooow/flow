@@ -1,8 +1,8 @@
 # WASM crossings
 
-Four things people assume a systems language cannot take to WebAssembly:
-OS threads, the GPU, sockets, and an embedded CPython. Flow does all four in
-runtime C or in its own codegen, so each one is a concrete question with a
+Five things people assume a systems language cannot take to WebAssembly: OS
+threads, the GPU, sockets, files, and an embedded CPython. Flow does all five
+in runtime C or in its own codegen, so each one is a concrete question with a
 concrete answer.
 
 Each section below gives the mechanism, the constraint that made people think
@@ -20,6 +20,7 @@ open http://127.0.0.1:8000/wasm-crossings/threads/
 | 1. OS threads | proven in Chrome | 7.78x on 8 workers, identical results |
 | 2. GPU via WebGPU | proven in Chrome | 1,048,576 / 1,048,576 elements bit-identical |
 | 3. Sockets | proven in Chrome | 8 / 8 round trips, best rtt 2.20 ms |
+| 5. Filesystem | proven in Chrome | GIF byte-identical to native; counter survives reload |
 
 Measurements below were taken in Chrome 141 on an Apple M-series laptop
 (`navigator.hardwareConcurrency` = 14: 10 performance cores, 4 efficiency
@@ -347,3 +348,103 @@ foregrounded, and Chrome clamps `setTimeout` in a background tab to roughly
 1 Hz. Every poll that had to yield waited a full second. Foregrounding the tab
 took the mean from 748 ms to 3.4 ms with no code change. Any WASM benchmark
 that sleeps needs a visible tab, or it is measuring throttling.
+
+---
+
+## 5. The filesystem
+
+### Mechanism
+
+`fopen`, `fread`, `fwrite`, `fclose`, `mkdir`. Emscripten answers all of them
+out of a virtual filesystem, so a Flow program that writes a file writes a
+file. Three backends matter:
+
+| backend | what it is | lifetime |
+| --- | --- | --- |
+| MEMFS | a filesystem in the module's heap, the default | until the page unloads |
+| IDBFS | a MEMFS image backed by an IndexedDB store | survives reloads, if synced |
+| preload | `emcc --preload-file` packs a host directory into a `.data` blob | read-only, present before `main()` |
+
+```
+./flow wasm examples/wasm/fs_counter.flow --fs idbfs
+./flow wasm examples/wasm/fs_preload.flow --fs memfs --preload examples/wasm/data@/data
+python3 wasm/flow_wasm_fs.py          # builds all three demos and the page
+```
+
+### The constraints people trip over
+
+**IDBFS does not persist on its own.** The mount is an in-memory image; the
+IndexedDB store behind it is only touched when someone calls `FS.syncfs`.
+Inbound (`syncfs(true)`) has to finish before the program starts, or it reads
+an empty directory. Outbound (`syncfs(false)`) has to run after the program
+finishes, or the write is lost when the tab closes. Both are async and the
+Flow program is synchronous, so the host has to bracket the run.
+
+**A Flow program cannot fetch its own inputs.** There is no blocking read from
+the network inside WASM. Data an example needs has to be in the filesystem
+before `main()` runs.
+
+### The workaround
+
+For IDBFS, mount in `preRun` and hold up startup with a run dependency:
+
+```js
+preRun: [function (mod) {
+  mod.FS.mkdir("/persist");
+  mod.FS.mount(mod.IDBFS, {}, "/persist");
+  mod.addRunDependency("idbfs-in");
+  mod.FS.syncfs(true, () => mod.removeRunDependency("idbfs-in"));
+}]
+```
+
+then `-sINVOKE_RUN=0` so the page calls `callMain()` itself and can run
+`syncfs(false)` afterwards. `IDBFS` lives inside the module closure, so it has
+to be named in `EXPORTED_RUNTIME_METHODS` alongside `FS` before the page can
+reach it. `-sFORCE_FILESYSTEM=1` keeps the filesystem when the linker cannot
+see a use for it.
+
+For inputs, `--preload-file DIR@/mount`. The loader fetches the `.data` blob
+and unpacks it into MEMFS before `main()`, so a relative `fopen` just works.
+
+### Measured, in Chrome
+
+**Flow writes a GIF, the browser renders it.**
+`examples/graphics/gif_writer.flow` is compiled for wasm unmodified. It draws
+24 frames of a bouncing square and encodes them with the pure-Flow GIF89a
+encoder in `lib/stdlib/gif.flow`, writing `build/gif_demo.gif` byte by byte
+with `fwrite`. The page reads the bytes back out of MEMFS, walks the GIF block
+structure, hashes them, and hands them to an `<img>`.
+
+| | |
+| --- | --- |
+| path in MEMFS | `/build/gif_demo.gif` |
+| bytes written | 51,303 |
+| header | `GIF89a` 128x128 |
+| frames parsed | 24, trailer present |
+| sha256 | `9bbb1327b8f74b69dd87e50f65adafe7da7d2eaca963c646604ab2596844f59b` |
+| same file as a native clang build | yes, byte for byte |
+| browser decoded it | yes, 128x128, animating |
+
+The file the Flow encoder produced inside WASM is the same file it produces
+natively, to the byte, and Chrome's own GIF decoder renders it.
+
+**IDBFS persistence.** `examples/wasm/fs_counter.flow` reads a counter, adds
+one, writes it back, then reads it again to check. Observed across a real page
+reload:
+
+| | count before | count after | syncfs in / out | result |
+| --- | --- | --- | --- | --- |
+| first run, state wiped | 0 | 1 | true / true | PASS |
+| second run, same page | 1 | 2 | true / true | PASS |
+| after `location.reload()` | 2 | 3 | true / true | PASS |
+| next run | 3 | 4 | true / true | PASS |
+
+The 2 to 3 step is the one that matters: the module was torn down and rebuilt
+from scratch, and the counter came back from IndexedDB.
+
+**Preloaded input.** `examples/wasm/fs_preload.flow` opens
+`data/fs_input.txt`, a path that only exists because `--preload-file` put it
+there. Browser: 291 bytes, 5 lines, checksum 49099. Native run of the same
+program against the real file on disk: 291 bytes, 5 lines, checksum 49099.
+
+Console clean on all three.
