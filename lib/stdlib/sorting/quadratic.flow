@@ -1,0 +1,265 @@
+# Sorting library: the quadratic family.
+#
+# Six algorithms that all do O(n^2) work in the general case. Two of them
+# (insertion, binary insertion) are genuinely useful and are the base case of
+# every divide-and-conquer sort in this library. The rest are here because
+# they are worth being able to read, and because a library that only ships the
+# fast ones cannot show you why the fast ones are fast. Their measured cost at
+# 1e5 elements is in docs/library/sorting.md, and it is bad.
+#
+# Every function takes `&mut [i32]`: the span carries the length, so none of
+# these needs a separate count parameter, and a sub-range is sorted by handing
+# in a slice rather than a pair of indices.
+
+import stdlib.sorting.core { sort_swap }
+
+# ---------------------------------------------------------------------------
+# insertion_sort
+#   stable
+#   best O(n)   average O(n^2)   worst O(n^2)   extra space O(1)
+#   Pick it when: n is under ~32, or the input is nearly ordered. It is the
+#   base case of quicksort, introsort, merge sort and timsort here, and it is
+#   what the compiler's own `insertion` plan lowers to.
+#   Flow idioms: `&mut [i32]` in-place span; sorting a sub-range means slicing
+#   the span, not passing lo/hi.
+# ---------------------------------------------------------------------------
+export function insertion_sort(xs: &mut [i32]) -> void {
+    let mut i: i64 = 1
+    while i < xs.len {
+        let key: i32 = xs[i]
+        let mut j: i64 = i - 1
+        while j >= 0 and xs[j] > key {
+            xs[j + 1] = xs[j]
+            j = j - 1
+        }
+        xs[j + 1] = key
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# binary_insertion_sort
+#   stable
+#   best O(n log n) comparisons / O(n) moves
+#   average O(n^2) moves   worst O(n^2) moves   extra space O(1)
+#   Pick it when: comparisons are expensive relative to moves. It finds the
+#   insertion point in log n comparisons but still shifts a linear run, so it
+#   only beats plain insertion sort when the comparison dominates. For i32 it
+#   does not; the measured table says so.
+# ---------------------------------------------------------------------------
+export function binary_insertion_sort(xs: &mut [i32]) -> void {
+    let mut i: i64 = 1
+    while i < xs.len {
+        let key: i32 = xs[i]
+        # Upper bound: the first position holding a value strictly greater
+        # than `key`. Landing there is what keeps this stable.
+        let mut lo: i64 = 0
+        let mut hi: i64 = i
+        while lo < hi {
+            let mid: i64 = lo + (hi - lo) / 2
+            if xs[mid] > key {
+                hi = mid
+            } else {
+                lo = mid + 1
+            }
+        }
+        let mut j: i64 = i
+        while j > lo {
+            xs[j] = xs[j - 1]
+            j = j - 1
+        }
+        xs[lo] = key
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# selection_sort
+#   NOT stable (the long-range swap jumps an equal element over its peers)
+#   best O(n^2)   average O(n^2)   worst O(n^2)   extra space O(1)
+#   moves: exactly n - 1 swaps, which is its one virtue.
+#   Pick it when: a write is enormously more expensive than a read, e.g.
+#   sorting records in flash memory with a limited erase budget. Otherwise
+#   never; insertion sort beats it on every input shape measured here.
+#   For a stable version, see stable_selection_sort in stable.flow.
+# ---------------------------------------------------------------------------
+export function selection_sort(xs: &mut [i32]) -> void {
+    let mut i: i64 = 0
+    while i + 1 < xs.len {
+        let mut m: i64 = i
+        let mut j: i64 = i + 1
+        while j < xs.len {
+            if xs[j] < xs[m] {
+                m = j
+            }
+            j = j + 1
+        }
+        if m != i {
+            sort_swap(xs, i, m)
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# double_selection_sort
+#   NOT stable
+#   best O(n^2)   average O(n^2)   worst O(n^2)   extra space O(1)
+#   Finds the minimum and the maximum in one pass, so it halves the number of
+#   passes at the cost of a fiddly index fixup when the maximum sits where the
+#   minimum is about to go. Same asymptotics, roughly 25% fewer comparisons.
+# ---------------------------------------------------------------------------
+export function double_selection_sort(xs: &mut [i32]) -> void {
+    let mut lo: i64 = 0
+    let mut hi: i64 = xs.len - 1
+    while lo < hi {
+        let mut mn: i64 = lo
+        let mut mx: i64 = lo
+        let mut j: i64 = lo
+        while j <= hi {
+            if xs[j] < xs[mn] {
+                mn = j
+            }
+            if xs[j] > xs[mx] {
+                mx = j
+            }
+            j = j + 1
+        }
+        sort_swap(xs, lo, mn)
+        # If the maximum was sitting at `lo`, the swap just moved it to `mn`.
+        if mx == lo {
+            mx = mn
+        }
+        sort_swap(xs, hi, mx)
+        lo = lo + 1
+        hi = hi - 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# bubble_sort
+#   stable
+#   best O(n) with the early-exit flag   average O(n^2)   worst O(n^2)
+#   extra space O(1)
+#   Pick it when: you are teaching. At 1e5 elements this is a teaching
+#   artifact, not a sort; the measured table shows it losing to insertion sort
+#   by a wide margin and to the merge sorts by orders of magnitude. Shipped
+#   because a sorting library that omits it cannot make that point honestly.
+#   The early-exit flag makes an already-sorted input a single O(n) pass, and
+#   shrinking the upper bound to the last swap position skips the tail that is
+#   already settled.
+# ---------------------------------------------------------------------------
+export function bubble_sort(xs: &mut [i32]) -> void {
+    let mut n: i64 = xs.len
+    while n > 1 {
+        let mut last_swap: i64 = 0
+        let mut i: i64 = 1
+        while i < n {
+            if xs[i - 1] > xs[i] {
+                sort_swap(xs, i - 1, i)
+                last_swap = i
+            }
+            i = i + 1
+        }
+        # No swap in the whole pass: the span is ordered, stop.
+        if last_swap == 0 {
+            return
+        }
+        n = last_swap
+    }
+}
+
+# ---------------------------------------------------------------------------
+# cocktail_shaker_sort
+#   stable
+#   best O(n)   average O(n^2)   worst O(n^2)   extra space O(1)
+#   Bubble sort that alternates direction. It fixes bubble sort's one
+#   pathology, the "turtle": a small value near the end moves left one place
+#   per pass, so [2,3,4,...,n,1] costs bubble sort n passes and costs this two.
+#   Still quadratic in general. Pick it over bubble sort always, and over
+#   insertion sort never.
+# ---------------------------------------------------------------------------
+export function cocktail_shaker_sort(xs: &mut [i32]) -> void {
+    let mut lo: i64 = 0
+    let mut hi: i64 = xs.len - 1
+    while lo < hi {
+        let mut last: i64 = lo
+        let mut i: i64 = lo
+        while i < hi {
+            if xs[i] > xs[i + 1] {
+                sort_swap(xs, i, i + 1)
+                last = i
+            }
+            i = i + 1
+        }
+        hi = last
+        if lo >= hi {
+            return
+        }
+        last = hi
+        i = hi
+        while i > lo {
+            if xs[i - 1] > xs[i] {
+                sort_swap(xs, i - 1, i)
+                last = i
+            }
+            i = i - 1
+        }
+        lo = last
+    }
+}
+
+# ---------------------------------------------------------------------------
+# gnome_sort
+#   stable
+#   best O(n)   average O(n^2)   worst O(n^2)   extra space O(1)
+#   Insertion sort written as a single loop with one index that walks
+#   backwards on a swap and forwards otherwise. It does the same number of
+#   comparisons as insertion sort but pays a swap where insertion pays a
+#   shift, so it is consistently slower. Its virtue is that it is the shortest
+#   correct sort anyone has written; there is no reason to pick it.
+# ---------------------------------------------------------------------------
+export function gnome_sort(xs: &mut [i32]) -> void {
+    let mut i: i64 = 1
+    while i < xs.len {
+        if i == 0 or xs[i - 1] <= xs[i] {
+            i = i + 1
+        } else {
+            sort_swap(xs, i - 1, i)
+            i = i - 1
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# odd_even_sort (brick sort)
+#   stable
+#   best O(n)   average O(n^2)   worst O(n^2)   extra space O(1)
+#   A bubble sort split into two independent phases. Every compare-exchange
+#   within a phase touches a disjoint pair, which is what makes it the
+#   textbook parallel sort. Run serially, as here, it is bubble sort with
+#   worse constants; it is in the library so the phase structure is available
+#   to compare against `parallel for` later.
+# ---------------------------------------------------------------------------
+export function odd_even_sort(xs: &mut [i32]) -> void {
+    let mut done: bool = false
+    while !done {
+        done = true
+        let mut i: i64 = 1
+        while i + 1 < xs.len {
+            if xs[i] > xs[i + 1] {
+                sort_swap(xs, i, i + 1)
+                done = false
+            }
+            i = i + 2
+        }
+        i = 0
+        while i + 1 < xs.len {
+            if xs[i] > xs[i + 1] {
+                sort_swap(xs, i, i + 1)
+                done = false
+            }
+            i = i + 2
+        }
+    }
+}
