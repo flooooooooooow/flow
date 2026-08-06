@@ -145,21 +145,12 @@ function main() -> i32 {
     )
 
 
-@needs_clang
-def test_e2e_struct_field_math():
-    rc = compile_and_run(
-        """
-struct Point { x: i32, y: i32 }
-function main() -> i32 {
-    let p: Point = Point { x: 10, y: 32 }
-    if p.x + p.y == 42 {
-        return 0
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
+# test_e2e_struct_field_math is now tests/lang/test_structs.flow.
+# test_e2e_generic_box_after_mono stays: it uses the *inferred* generic
+# struct literal `let b: Box<i32> = Box { value: 42 }`, which strict mode
+# still rejects ("field 'value' expects T, got i32"), so it cannot become
+# a strict-clean tests/lang program. tests/lang/test_generics.flow covers
+# the explicit `Box<i32> { value: 42 }` spelling.
 
 
 @needs_clang

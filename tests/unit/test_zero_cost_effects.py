@@ -9,11 +9,6 @@ in functions outside the block, in lambda bodies (closures may outlive the
 block), and for operations the bound capability does not implement.
 """
 
-import shutil
-import subprocess
-
-import pytest
-
 from flow.parser import parse_flow_code
 from flow.c_generator import flow_to_c
 
@@ -162,41 +157,6 @@ def test_runtime_vtable_still_installed():
     assert "_current_Log_handler = _prev_Log_handler;" in body
 
 
-@pytest.mark.skipif(shutil.which("clang") is None, reason="clang not available")
-def test_end_to_end_behavior(tmp_path):
-    """Compile and run: direct calls, dynamic fallback, and handler restore
-    must all produce the same observable behavior as full dynamic dispatch."""
-    code = EFFECT_PRELUDE + """
-function helper() -> void {
-    Log.info("helper sees installed handler")
-}
-
-function main() -> i32 {
-    Log.info("no handler, silent")
-    handle Log with Console {
-        Log.info("direct")
-        helper()
-        handle Log with Quiet {
-            Log.info("quiet, silent")
-            let v: i32 = Log.metric("quiet has no metric, silent", 1)
-        }
-        Log.info("restored")
-    }
-    return 0
-}
-"""
-    c = flow_to_c(parse_flow_code(code))
-    c_file = tmp_path / "zc.c"
-    c_file.write_text(c)
-    binary = tmp_path / "zc"
-    subprocess.run(
-        ["clang", "-O2", "-o", str(binary), str(c_file)],
-        check=True,
-        capture_output=True,
-    )
-    result = subprocess.run([str(binary)], check=True, capture_output=True, text=True)
-    assert result.stdout == (
-        "[console] direct\n"
-        "[console] helper sees installed handler\n"
-        "[console] restored\n"
-    )
+# test_end_to_end_behavior compiled the handler program and compared stdout.
+# It is now tests/lang/test_effects.flow, judged against
+# tests/lang/test_effects.expected by the test-lang harness.
