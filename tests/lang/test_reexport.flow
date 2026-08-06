@@ -1,0 +1,123 @@
+# Flow-native language test: `export import` re-export.
+#
+# Two aggregators are exercised, both addressed by their own name:
+#
+#   1. registry/packages/flowlm/src/lib.flow re-exports six submodules.
+#      Everything below comes from that one import, though the declarations
+#      live in util.flow, corpus.flow, tokenizer.flow, model.flow and
+#      gradcheck.flow.
+#
+#   2. tests/fixtures/modules/testlib/agg.flow re-exports `.alpha` wholesale
+#      and only `beta_one` from `.beta`, so it also covers the selective form.
+#
+# Every re-exported function must have exactly one definition in the emitted
+# C; if forwarding duplicated a declaration this file would not link.
+#
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import registry.packages.flowlm.src.lib {
+    flm_version,
+    flm_alloc_i32,
+    flm_alloc_u8,
+    flm_srand,
+    flm_corpus_len,
+    flm_corpus_load,
+    flm_vocab_fit,
+    flm_char_count,
+    flm_encode_chars,
+    flm_decode,
+    flm_model_init,
+    flm_param_count,
+    flm_gradcheck,
+    flm_gradcheck_worst,
+    flm_gradcheck_tol
+}
+import tests.fixtures.modules.testlib.agg {
+    alpha_one,
+    alpha_two,
+    beta_one,
+    agg_own
+}
+
+function main() -> i32 {
+    # ------------------------------------- 1. selective + wholesale forwarding
+    # alpha_one and alpha_two arrive by `export import .alpha`;
+    # beta_one by `export import .beta { beta_one }`;
+    # agg_own is declared in the aggregator itself.
+    if alpha_one() != 1 {
+        return 10
+    }
+    if alpha_two() != 2 {
+        return 11
+    }
+    if beta_one() != 10 {
+        return 12
+    }
+    if agg_own() != 100 {
+        return 13
+    }
+    if alpha_one() + alpha_two() + beta_one() + agg_own() != 113 {
+        return 14
+    }
+
+    # ------------------------------ 2. a package aggregated under its own name
+    # flm_version is declared in lib.flow; everything else is forwarded.
+    if flm_version() < 100 {
+        return 20
+    }
+
+    let nbytes: i32 = flm_corpus_len()
+    if nbytes < 4000 or nbytes > 8192 {
+        return 21
+    }
+    let text: ptr<u8> = flm_alloc_u8(nbytes + 1)
+    let got: i32 = flm_corpus_load(text, nbytes + 1)
+    if got != nbytes {
+        return 22
+    }
+    let nchars: i32 = flm_vocab_fit(text, got)
+    if nchars < 2 or nchars > 96 {
+        return 23
+    }
+    if flm_char_count() != nchars {
+        return 24
+    }
+
+    let ids: ptr<i32> = flm_alloc_i32(got + 1)
+    let nids: i32 = flm_encode_chars(text, got, ids, got + 1)
+    if nids != got {
+        return 25
+    }
+    let back: ptr<u8> = flm_alloc_u8(got + 1)
+    let nback: i32 = flm_decode(ids, nids, back, got + 1)
+    if nback != got {
+        return 26
+    }
+    let mut i: i32 = 0
+    while i < got {
+        if back[i] != text[i] {
+            return 27
+        }
+        i = i + 1
+    }
+
+    # ------------------- 3. forwarded state is shared, not duplicated per path
+    # The gradient check calls flm_forward / flm_backward from model.flow and
+    # reads the same module statics this file touched through the aggregator.
+    flm_srand(7)
+    if flm_model_init(nchars, 8, 8, 16) < 0 {
+        return 30
+    }
+    if flm_param_count() < 1 {
+        return 31
+    }
+    if !flm_gradcheck(false) {
+        return 32
+    }
+    if flm_gradcheck_worst() > flm_gradcheck_tol() {
+        return 33
+    }
+
+    println("re-export: aggregator and package surfaces both OK")
+    return 0
+}
