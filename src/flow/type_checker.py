@@ -27,7 +27,7 @@ from .parser import (
     TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
     MatchStatement, StructPattern, OrPattern, ListPattern, DeferStatement, TryExpr, Lambda,
     VectorLiteral, ExpectStatement, RecordUpdate, BreakStatement, ContinueStatement,
-    SortExpr, SliceExpr,
+    SortExpr, FindExpr, SliceExpr,
     is_span_type_name, span_is_mutable, span_element_name, format_span_type,
 )
 from .attributes import attribute_errors
@@ -2244,6 +2244,8 @@ class TypeChecker:
             return SemanticType(TypeKind.FUNCTION, param_types=param_types, return_type=ret)
         elif isinstance(expr, SortExpr):
             return self._check_sort_expr(expr)
+        elif isinstance(expr, FindExpr):
+            return self._check_find_expr(expr)
         else:
             # For now, treat unknown expressions as unknown type
             return SemanticType(TypeKind.UNKNOWN)
@@ -2305,6 +2307,45 @@ class TypeChecker:
                     f"Cannot sort array of {elem} (need numeric or string elements)"
                 )
         return arr_type
+
+    def _check_find_expr(self, expr: FindExpr) -> SemanticType:
+        """Type-check declarative `|> find(target)`; the result is an index."""
+        i32 = SemanticType(TypeKind.I32)
+        arr_type = self._check_expression(expr.array)
+        target_type = self._check_expression(expr.target)
+        if arr_type.kind != TypeKind.ARRAY:
+            self.errors.append(
+                f"Declarative find requires a sized array, got {arr_type}"
+            )
+            return i32
+        if arr_type.size is None:
+            self.errors.append(
+                "Declarative find requires a fixed-size array (array<T, N>)"
+            )
+        elem = arr_type.element_type
+        if elem is None:
+            self.errors.append("Declarative find could not determine element type")
+            return i32
+
+        searchable = {
+            TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64,
+            TypeKind.U8, TypeKind.U16, TypeKind.U32, TypeKind.U64,
+            TypeKind.F32, TypeKind.F64, TypeKind.BOOL, TypeKind.STRING,
+        }
+        if elem.kind not in searchable:
+            self.errors.append(
+                f"Cannot find in array of {elem} (need numeric or string elements)"
+            )
+            return i32
+        if (
+            target_type.kind != TypeKind.UNKNOWN
+            and target_type.kind != elem.kind
+            and not (self._is_numeric(target_type) and self._is_numeric(elem))
+        ):
+            self.errors.append(
+                f"find target has type {target_type} but the array holds {elem}"
+            )
+        return i32
 
     def _can_cast(self, actual: SemanticType, target: SemanticType) -> bool:
         if actual == target:
