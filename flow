@@ -2104,6 +2104,24 @@ run_lang_tests() {
         local exit_code=0
         run_output=$("$exe_file" 2>&1) || exit_code=$?
 
+        # Step 4: Some behaviour is only visible on stdout — print ordering,
+        # what a `defer` runs and when, which effect handler answered a call.
+        # A test may put the exact expected output in a sibling `.expected`
+        # file; when one exists, a mismatch fails the test just like a nonzero
+        # exit. Tests without one are judged on the exit code alone.
+        local expected_file="${program%.flow}.expected"
+        local stdout_file="$build_dir/${basename}.stdout"
+        if [ $exit_code -eq 0 ] && [ -f "$expected_file" ]; then
+            "$exe_file" > "$stdout_file" 2>/dev/null || true
+            if ! diff -u "$expected_file" "$stdout_file" > "$build_dir/${basename}.diff" 2>&1; then
+                print_error "✗ $rel_path (stdout differs from ${expected_file#$SCRIPT_DIR/})"
+                cat "$build_dir/${basename}.diff"
+                failed=$((failed + 1))
+                failed_files="$failed_files\n  - $rel_path (stdout)"
+                continue
+            fi
+        fi
+
         if [ $exit_code -eq 0 ]; then
             print_success "✓ $rel_path"
             if [ $verbose -eq 1 ] && [ -n "$run_output" ]; then

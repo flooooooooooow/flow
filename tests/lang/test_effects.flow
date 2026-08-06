@@ -1,0 +1,64 @@
+# Flow-native language test: effects, capabilities and handler scoping.
+#
+# Inside `handle Log with Console { … }` the handler is known at compile time,
+# so the C backend emits a direct call instead of routing through the vtable.
+# That is an optimization, and it is only correct if the observable behaviour
+# is identical to full dynamic dispatch. This test pins the behaviour:
+#
+#   - an operation called with no handler installed does nothing
+#   - a call inside the block reaches the bound capability
+#   - a call in a *called function*, where the handler is unknowable at the
+#     call site, reaches the same capability
+#   - a nested handle overrides the outer one and restores it on exit
+#   - an operation the bound capability does not implement falls back to the
+#     effect's default, which here is silence
+#
+# Judged on its output: the expected text is in tests/lang/test_effects.expected.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_zero_cost_effects.py::test_end_to_end_behavior
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function printf(fmt: string, arg: string) -> i32
+}
+
+effect Log {
+    info(msg: string) -> void,
+    metric(name: string, value: i32) -> i32,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+    function metric(name: string, value: i32) -> i32 {
+        printf("[metric] %s\n", name)
+        return value
+    },
+}
+
+capability Quiet {
+    effect Log,
+    function info(msg: string) -> void {
+        let unused: i32 = 0
+    },
+}
+
+function helper() -> void {
+    Log.info("helper sees installed handler")
+}
+
+function main() -> i32 {
+    Log.info("no handler, silent")
+    handle Log with Console {
+        Log.info("direct")
+        helper()
+        handle Log with Quiet {
+            Log.info("quiet, silent")
+            let v: i32 = Log.metric("quiet has no metric, silent", 1)
+        }
+        Log.info("restored")
+    }
+    return 0
+}

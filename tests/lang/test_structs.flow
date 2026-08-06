@@ -5,6 +5,7 @@
 #   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[nested_struct]
 #   tests/unit/test_postfix_chaining.py::test_generated_c_compiles_and_passes[ARRAY_OF_STRUCTS_PROGRAM]
 #   tests/unit/test_c_generator_abi.py::test_e2e_struct_field_math
+#   tests/unit/test_compiler_pipeline.py::test_pipeline_runs
 # Exit 0 on success; a nonzero exit identifies the failing check.
 
 struct Point {
@@ -20,6 +21,11 @@ struct Seg {
 struct Note {
     pitch: i32,
     duration: i32
+}
+
+# A struct passed by value to a function that reads two of its fields.
+function dist2(p: Point) -> i32 {
+    return p.x * p.x + p.y * p.y
 }
 
 function main() -> i32 {
@@ -56,6 +62,10 @@ function main() -> i32 {
     q.x = 40
     if q.x + q.y != 42 {
         return 4
+    }
+
+    if dist2(Point { x: 3, y: 4 }) != 25 {
+        return 5
     }
     return 0
 }

@@ -1,0 +1,79 @@
+# Flow-native language test: unsigned integer parameters and literals.
+#
+# An unsuffixed integer literal has no committed width, so it may bind to a
+# parameter of any integer type. Before the fix behind board card
+# flow-u32-literal-mangling, `take_u32(1234)` resolved to no overload and the
+# backend emitted an undeclared unmangled call; the program still linked on
+# some hosts and computed the wrong thing on others. Running it is the
+# check that matters.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_strict_gaps.py::TestUnsignedLiteralArguments::test_program_runs
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function take_u8(x: u8) -> u8 {
+    return x + 1
+}
+
+function take_u32(x: u32) -> u32 {
+    return x + 1
+}
+
+function take_u64(x: u64) -> u64 {
+    return x + 1
+}
+
+function take_i32(x: i32) -> i32 {
+    return x + 1
+}
+
+# Two overloads distinguished only by signedness: an unsuffixed literal must
+# still pick the signed one.
+function pick(x: i32) -> i32 {
+    return 1
+}
+
+function pick(x: u32) -> i32 {
+    return 2
+}
+
+function main() -> i32 {
+    let a: u8 = take_u8(9)
+    if a != 10 {
+        return 1
+    }
+
+    let b: u32 = take_u32(1234)
+    if b != 1235 {
+        return 2
+    }
+
+    let c: u64 = take_u64(5678)
+    if c != 5679 {
+        return 3
+    }
+
+    let d: i32 = take_i32(41)
+    if d != 42 {
+        return 4
+    }
+
+    if pick(5) != 1 {
+        return 5
+    }
+
+    # u8 arithmetic wraps at 256; the value must be stored in eight bits,
+    # not silently widened.
+    let mut w: u8 = 255
+    w = w + 1
+    if w != 0 {
+        return 6
+    }
+
+    # A u32 value past the signed i32 range keeps its magnitude.
+    let big: u32 = 4000000000
+    if big <= 2147483647 {
+        return 7
+    }
+
+    return 0
+}
