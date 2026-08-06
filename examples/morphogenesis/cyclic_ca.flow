@@ -1,0 +1,246 @@
+# CYCLIC CELLULAR AUTOMATON: spirals out of pure noise.
+#
+# MODEL (Fisch, Gravner and Griffeath, 1991)
+#   Every cell holds one of N states arranged in a cycle. A cell in state s
+#   is eaten by state s+1: if enough of its neighbours are already there, it
+#   advances. There is no diffusion, no chemistry and no randomness after
+#   the initial condition.
+#
+#     if count of Moore neighbours in state (s + 1) mod N  >=  threshold
+#         s becomes (s + 1) mod N
+#
+# WHAT HAPPENS
+#   Three phases, all visible in one run. First the random field is
+#   featureless. Then local cyclic patches ("debris") appear as states
+#   chase each other. Finally a defect where all N states meet in order
+#   around a point cannot annihilate, and it pumps out a spiral wave that
+#   sweeps the debris away. The last state is a tiling of spiral cores.
+#
+# PARAMETERS
+#   128 x 128 periodic grid, Moore neighbourhood, 3 generations per frame.
+#
+# KEYS
+#   1 SPIRALS   N 14  threshold 1   classic, large clean spirals
+#   2 DEMONS    N 8   threshold 3   slow fronts, ragged cores
+#   3 COARSE    N 4   threshold 1   few states, fast, blocky spirals
+#   R reseed    P pause    Esc quit
+#
+# Run: ./flow gfx examples/morphogenesis/cyclic_ca.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const GENS_PER_FRAME: i32 = 3
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 424242421
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 13) % (n as u32)) as i32
+}
+
+function preset_states(p: i32) -> i32 {
+    if p == 1 { return 8 }
+    if p == 2 { return 4 }
+    return 14
+}
+
+function preset_threshold(p: i32) -> i32 {
+    if p == 1 { return 3 }
+    return 1
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "DEMONS" }
+    if p == 2 { return "COARSE" }
+    return "SPIRALS"
+}
+
+function seed_field(s: ptr<i32>, n: i32) -> void {
+    for i in 0 to CELLS {
+        s[i] = rng_below(n)
+    }
+}
+
+function step(s: ptr<i32>, out: ptr<i32>, n: i32, threshold: i32) -> i32 {
+    let mut changed: i32 = 0
+    for y in 0 to GRID {
+        let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+        let yp: i32 = ((y + 1) % GRID) * GRID
+        let r: i32 = y * GRID
+        for x in 0 to GRID {
+            let xm: i32 = (x + GRID - 1) % GRID
+            let xp: i32 = (x + 1) % GRID
+            let here: i32 = s[r + x]
+            let next: i32 = (here + 1) % n
+            let mut c: i32 = 0
+            if s[r + xm] == next { c = c + 1 }
+            if s[r + xp] == next { c = c + 1 }
+            if s[ym + x] == next { c = c + 1 }
+            if s[yp + x] == next { c = c + 1 }
+            if s[ym + xm] == next { c = c + 1 }
+            if s[ym + xp] == next { c = c + 1 }
+            if s[yp + xm] == next { c = c + 1 }
+            if s[yp + xp] == next { c = c + 1 }
+            if c >= threshold {
+                out[r + x] = next
+                changed = changed + 1
+            } else {
+                out[r + x] = here
+            }
+        }
+    }
+    return changed
+}
+
+# The state cycle is a cycle, so the palette has to be one too.
+function wheel_r(t: f64) -> i32 {
+    let h: f64 = t * 6.0
+    if h < 1.0 { return 212 }
+    if h < 2.0 { return (212.0 - 150.0 * (h - 1.0)) as i32 }
+    if h < 4.0 { return 62 }
+    if h < 5.0 { return (62.0 + 150.0 * (h - 4.0)) as i32 }
+    return 212
+}
+
+function wheel_g(t: f64) -> i32 {
+    let h: f64 = t * 6.0
+    if h < 1.0 { return (62.0 + 150.0 * h) as i32 }
+    if h < 3.0 { return 212 }
+    if h < 4.0 { return (212.0 - 150.0 * (h - 3.0)) as i32 }
+    return 62
+}
+
+function wheel_b(t: f64) -> i32 {
+    let h: f64 = t * 6.0
+    if h < 2.0 { return 62 }
+    if h < 3.0 { return (62.0 + 150.0 * (h - 2.0)) as i32 }
+    if h < 5.0 { return 212 }
+    return (212.0 - 150.0 * (h - 5.0)) as i32
+}
+
+function draw_field(g: Gfx, s: ptr<i32>, n: i32) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let t: f64 = (s[y * GRID + x] as f64) / (n as f64)
+            gfx_fill_rect(g, x * CELL_PX, FIELD_Y + y * CELL_PX,
+                          CELL_PX, CELL_PX,
+                          wheel_r(t), wheel_g(t), wheel_b(t))
+        }
+    }
+}
+
+function draw_hud(g: Gfx, preset: i32, n: i32, threshold: i32, gen: i32,
+                  churn: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "CYCLIC CELLULAR AUTOMATON", 2,
+                                236, 238, 242)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "RULE", 1, 145, 148, 158)
+    let t3: i32 = gfx_draw_text(g, 40, 28, preset_name(preset), 1, 255, 205, 120)
+    let t4: i32 = gfx_draw_text(g, 112, 28, "STATES", 1, 145, 148, 158)
+    let t5: i32 = gfx_draw_int(g, 156, 28, n, 1, 236, 238, 242)
+    let t6: i32 = gfx_draw_text(g, 184, 28, "THRESHOLD", 1, 145, 148, 158)
+    let t7: i32 = gfx_draw_int(g, 246, 28, threshold, 1, 236, 238, 242)
+    let t8: i32 = gfx_draw_text(g, 268, 28, "GEN", 1, 145, 148, 158)
+    let t9: i32 = gfx_draw_int(g, 292, 28, gen, 1, 236, 238, 242)
+    let ta: i32 = gfx_draw_text(g, 340, 28, "ADVANCED", 1, 145, 148, 158)
+    let tb: i32 = gfx_draw_int(g, 396, 28, churn, 1, 236, 238, 242)
+    let tc: i32 = gfx_draw_text(g, 8, 42,
+        "1 SPIRALS  2 DEMONS  3 COARSE  R RESEED  P PAUSE",
+        1, 108, 112, 122)
+    if paused {
+        let td: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let te: i32 = gfx_draw_text(g, 8, 572,
+        "s becomes (s+1) mod N when enough neighbours already hold (s+1)", 1,
+        120, 124, 138)
+    let tf: i32 = gfx_draw_text(g, 8, 582,
+        "noise, then debris, then spiral cores that cannot annihilate", 1,
+        120, 124, 138)
+}
+
+function main() -> i32 {
+    let a: array<i32, 16384> = [0, 0, 0, 0]
+    let b: array<i32, 16384> = [0, 0, 0, 0]
+
+    let mut preset: i32 = 0
+    let mut n: i32 = preset_states(preset)
+    let mut threshold: i32 = preset_threshold(preset)
+    seed_field(a, n)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Cyclic CA - Flow morphogenesis")
+
+    let mut gen: i32 = 0
+    let mut churn: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            n = preset_states(preset)
+            threshold = preset_threshold(preset)
+            seed_field(a, n)
+            gen = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(a, n)
+                gen = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for k in 0 to GENS_PER_FRAME {
+                churn = step(a, b, n, threshold)
+                for i in 0 to CELLS {
+                    a[i] = b[i]
+                }
+                gen = gen + 1
+            }
+        }
+
+        gfx_clear(g, 10, 10, 14)
+        draw_field(g, a, n)
+        draw_hud(g, preset, n, threshold, gen, churn, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
