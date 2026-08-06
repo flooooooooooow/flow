@@ -4,7 +4,8 @@ Fifteen programs about how neurons and networks of neurons behave in time.
 Every one of them measures the thing it is demonstrating, prints the
 measurement beside the published value it should match, and returns a
 nonzero exit code if it does not. They are regression tests that happen to
-draw pictures.
+draw pictures. Recorded clips of all fifteen are in the
+[neuron gallery](../../docs/demos/neuro.md).
 
 This is the second domain of [the Example Atlas](../../docs/project/example-atlas.md),
 after [`morphogenesis/`](../morphogenesis/README.md). It exists to make one
@@ -118,6 +119,14 @@ recorded, so `--frames 4` prints exactly the same numbers as `--frames 900`.
 | cpg_gait | `./flow record examples/neuro/cpg_gait.flow --frames 90 --out build/frames_cpg --gif build/cpg_gait.gif` |
 | orientation_tuning | `./flow record examples/neuro/orientation_tuning.flow --frames 90 --out build/frames_ori --gif build/orientation_tuning.gif` |
 | reservoir | `./flow record examples/neuro/reservoir.flow --frames 90 --out build/frames_res --gif build/reservoir.gif` |
+
+Or regenerate the whole gallery at once:
+
+```
+python3 scripts/record_demos.py --group neuro
+```
+
+The GIFs land in [`docs/demos/neuro/`](../../docs/demos/neuro.md).
 
 ## What "carries evidence" means here
 
