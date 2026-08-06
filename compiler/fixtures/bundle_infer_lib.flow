@@ -1,0 +1,13 @@
+# Sibling library that returns a struct, for cross-module inferred `let`.
+export struct Pair {
+    lo: i32,
+    hi: i32
+}
+
+export function make_pair(lo: i32, hi: i32) -> Pair {
+    return Pair { lo: lo, hi: hi }
+}
+
+export function pair_sum(p: Pair) -> i32 {
+    return p.lo + p.hi
+}
