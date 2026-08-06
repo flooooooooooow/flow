@@ -132,7 +132,7 @@ def _walk_statement(
     if isinstance(stmt, VarDecl):
         _kill(known, _mutated(stmt))
         if stmt.initializer is not None and straight_line:
-            facts = _facts_from_literal(stmt.initializer)
+            facts = _facts_from_literal(stmt.initializer, getattr(stmt.type, "size", None))
             if facts is not None:
                 known[stmt.name] = facts
                 return
@@ -329,9 +329,17 @@ def _collect_sites(node: Any, out: List[Any], skip_blocks: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _facts_from_literal(expr: Any) -> Optional[ArrayFacts]:
+def _facts_from_literal(expr: Any, declared_size: Any = None) -> Optional[ArrayFacts]:
     if not isinstance(expr, ArrayLiteral):
         return None
+    # A short initializer zero-fills the rest, so the literal describes only a
+    # prefix and says nothing about the whole array.
+    if declared_size is not None:
+        try:
+            if int(declared_size) != len(expr.elements):
+                return None
+        except (TypeError, ValueError):
+            return None
     values: List[float] = []
     ints: List[int] = []
     all_int = True
