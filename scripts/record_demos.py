@@ -9,13 +9,15 @@ re-creation of it. No display is required, which means this also works in CI.
 
   python3 scripts/record_demos.py            # all demos
   python3 scripts/record_demos.py lorenz     # one demo
+  python3 scripts/record_demos.py --group morphogenesis
 
 Naming contract: every game in examples/games/ has a GIF at
-docs/demos/games/<name>.gif. The three original demos (lorenz, tetris, 2048)
-also keep their GIFs directly in docs/demos/; tetris.gif and 2048.gif are
-copied into docs/demos/games/ so the games directory is complete.
+docs/demos/games/<name>.gif, and every example in examples/morphogenesis/ has
+one at docs/demos/morphogenesis/<name>.gif. The three original demos (lorenz,
+tetris, 2048) also keep their GIFs directly in docs/demos/; tetris.gif and
+2048.gif are copied into docs/demos/games/ so the games directory is complete.
 
-Interactive demos are driven by FLOW_GFX_RECORD_KEYS, a list of
+Interactive demos are driven by `flow record --keys`, a list of
 `first-last:keycode` windows over frame numbers (see runtime/gfx_record.c).
 Because the recorder and every game are fully deterministic (fixed RNG seeds,
 frame-counted input), several of the longer scripts below were derived by
@@ -38,6 +40,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "docs" / "demos"
 GAMES_DIR = OUT_DIR / "games"
+MORPH_DIR = OUT_DIR / "morphogenesis"
 
 # macOS virtual keycodes, matching lib/stdlib/gfx.flow.
 KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP = 123, 124, 125, 126
@@ -417,6 +420,12 @@ class Demo:
     # clip. Simulations in particular tend to use a fraction of their window.
     crop: bool = False
     colors: int = 64
+    # LANCZOS suits the games, whose art is drawn at window resolution. A
+    # simulation drawn as a grid of N x N pixel blocks is better off with
+    # NEAREST: interpolation smears every block edge into a gradient, which
+    # both softens the picture and roughly doubles the encoded size, because
+    # the GIF can no longer reuse runs of identical pixels.
+    resample: int = Image.LANCZOS
     env: dict[str, str] = field(default_factory=dict)
     # Where the GIF goes, relative to docs/demos/.
     subdir: str = "games"
@@ -436,6 +445,31 @@ def game(name: str, keys: str, frames: int, caption: str, scale: float,
         scale=scale,
         keys=keys,
         colors=colors,
+    )
+
+
+def morph(name: str, frames: int, skip: int, caption: str,
+          duration_ms: int = 60, colors: int = 64,
+          scale: float = 0.86, keys: str = "") -> Demo:
+    """A morphogenesis clip: no input, one full formation, then loop.
+
+    Every example draws into the same 512x592 window, so one scale suits all
+    of them (0.86 -> 440 px wide). `frames` and `skip` are the two knobs that
+    matter: the product has to cover the whole of the formation and stop
+    before an example that restarts itself begins its second run.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/morphogenesis/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="morphogenesis",
+        resample=Image.NEAREST,
     )
 
 
@@ -532,6 +566,103 @@ DEMOS: list[Demo] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Morphogenesis. These take no input at all, so the tuning is entirely in the
+# frame budget: the clip has to start before the pattern exists and end after
+# it does. Several examples finish, hold, and then reseed themselves; for
+# those the budget stops inside the hold so the loop point is the finished
+# form rather than a restart mid-clip. The per-clip numbers below were read
+# off a change-over-time curve of the recorded frames (mean absolute pixel
+# difference against frame 0 and against the previous frame).
+# ---------------------------------------------------------------------------
+
+MORPH_DEMOS: list[Demo] = [
+    # ---- reaction-diffusion and continuous fields ----
+    # Every cell of the field changes every frame in this group, so the GIF
+    # cannot reuse anything between frames: the budget is roughly 14 KB per
+    # kept frame at 16 colours. Hence ~50 kept frames, held longer on screen.
+    morph("gray_scott", 240, 4,
+          "Gray-Scott — a seeded blob divides into a field of solitons",
+          duration_ms=80, colors=12),
+    morph("turing_spots", 200, 4,
+          "Turing spots — noise resolves into a hexagonal lattice of peaks",
+          duration_ms=80, colors=24),
+    morph("turing_stripes", 240, 4,
+          "Turing stripes — the same system, saturated, so ridges form",
+          duration_ms=80, colors=12),
+    morph("belousov", 320, 10,
+          "Belousov-Zhabotinsky — four broken waves wind into spirals",
+          duration_ms=120, colors=10),
+    morph("swift_hohenberg", 400, 8,
+          "Swift-Hohenberg — one wavelength survives and anneals into rolls",
+          duration_ms=80, colors=12),
+    morph("cahn_hilliard", 800, 20,
+          "Cahn-Hilliard — a quenched mixture unmixes and coarsens",
+          duration_ms=95, colors=12),
+    # heat_morph rethrows its noise every 200 steps; stop inside the first.
+    morph("heat_morph", 200, 4,
+          "Perona-Malik diffusion — noise dissolves, boundaries sharpen",
+          duration_ms=80, colors=24),
+    # ---- growth and aggregation ----
+    # This group only redraws near the growth front, so the encoder stores a
+    # few hundred changed pixels per frame and the clips can run long.
+    # dla finishes near frame 140 and holds 120 frames before reseeding.
+    morph("dla", 180, 2,
+          "Diffusion-limited aggregation — a dendrite grows from one seed",
+          duration_ms=55, colors=48),
+    # eden fills the dish by frame ~180, then holds.
+    morph("eden_growth", 200, 3,
+          "Eden growth — a compact colony with a rough KPZ front",
+          duration_ms=65, colors=24),
+    # The midrib is up by frame ~80; the rest of the budget is the crown
+    # filling in with higher-order veins, which is the half worth watching.
+    morph("branching_vessels", 330, 3,
+          "Space colonization — a midrib forks into leaf venation",
+          duration_ms=55, colors=48),
+    # the plant is fully revealed by frame ~104 and restarts at ~240.
+    morph("lsystem_plant", 130, 1,
+          "L-system plant — a turtle walks a longer prefix each frame",
+          duration_ms=50, colors=48),
+    # the tree finishes growing around frame 56 and then only the wind moves,
+    # which redraws every branch, so this one is priced like a field.
+    morph("lsystem_tree", 200, 5,
+          "L-system tree — seven levels of 3D branching, then wind",
+          duration_ms=90, colors=16),
+    # coral tops out near frame 76 and restarts at ~180.
+    morph("coral_ballistic", 110, 1,
+          "Ballistic deposition — shadowing grows porous coral columns",
+          duration_ms=50, colors=32),
+    # ---- cellular and discrete ----
+    morph("cyclic_ca", 210, 7,
+          "Cyclic CA — noise, then debris, then a tiling of spiral cores",
+          duration_ms=120, colors=10),
+    morph("life_variants", 400, 12,
+          "Life variants — a soup thins into gliders and still lifes",
+          duration_ms=110, colors=12),
+    # the crystal stops growing near frame 60 and restarts at ~168.
+    morph("hexagonal_ca", 110, 1,
+          "Reiter snowflake — six-fold dendrites off one frozen cell",
+          duration_ms=50, colors=48),
+    # wfc completes near frame 100 and restarts at ~240.
+    morph("wfc_growth", 130, 1,
+          "Wave function collapse — a circuit resolves out of possibility",
+          duration_ms=50, colors=48),
+    # ---- biological pattern ----
+    morph("slime_mold", 500, 12,
+          "Physarum agents — a trail map becomes a transport network",
+          duration_ms=100, colors=12),
+    morph("cell_sorting", 600, 8,
+          "Differential adhesion — a 50/50 mixture sorts into layers",
+          duration_ms=70, colors=16),
+    # one full head-to-tail axis; the embryo restarts around frame 200.
+    morph("somite_clock", 180, 2,
+          "Clock and wavefront — equal somites laid down one at a time",
+          duration_ms=60, colors=48),
+]
+
+DEMOS += MORPH_DEMOS
+
+
 def last_scripted_frame(keys: str) -> int:
     if not keys:
         return 0
@@ -553,17 +684,18 @@ def warn_about_pacing(demo: Demo) -> None:
 
 def record(demo: Demo, frame_dir: Path) -> int:
     env = dict(os.environ)
-    env["FLOW_GFX_RECORD_DIR"] = str(frame_dir)
-    env["FLOW_GFX_RECORD_FRAMES"] = str(demo.frames)
-    env["FLOW_GFX_RECORD_SKIP"] = str(demo.skip)
-    if demo.keys:
-        env["FLOW_GFX_RECORD_KEYS"] = demo.keys
     env.update(demo.env)
+
+    cmd = ["./flow", "record", demo.program,
+           "--frames", str(demo.frames),
+           "--skip", str(demo.skip),
+           "--out", str(frame_dir)]
+    if demo.keys:
+        cmd += ["--keys", demo.keys]
 
     print(f"  running {demo.program} …")
     result = subprocess.run(
-        ["./flow", "record", demo.program],
-        cwd=ROOT, env=env, text=True, capture_output=True, timeout=900,
+        cmd, cwd=ROOT, env=env, text=True, capture_output=True, timeout=1800,
     )
     if result.returncode != 0:
         sys.stderr.write(result.stdout[-2000:])
@@ -626,7 +758,7 @@ def encode(demo: Demo, frame_dir: Path) -> Path:
         if demo.scale != 1.0:
             w = max(1, int(img.width * demo.scale))
             h = max(1, int(img.height * demo.scale))
-            img = img.resize((w, h), Image.LANCZOS)
+            img = img.resize((w, h), demo.resample)
         frames.append(img)
 
     # One global palette for the whole clip. Quantizing frames independently
@@ -685,6 +817,15 @@ def main(argv: list[str]) -> int:
     args = argv[1:]
     if "--check" in args:
         return check()
+
+    if "--group" in args:
+        i = args.index("--group")
+        group = args[i + 1] if i + 1 < len(args) else ""
+        del args[i:i + 2]
+        args += [d.name for d in DEMOS if d.subdir == group]
+        if not args:
+            raise SystemExit(f"no demo in group {group!r}; "
+                             f"have {sorted({d.subdir or 'root' for d in DEMOS})}")
 
     wanted = set(args)
     selected = [d for d in DEMOS if not wanted or d.name in wanted]
