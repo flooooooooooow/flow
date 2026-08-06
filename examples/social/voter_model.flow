@@ -1,0 +1,766 @@
+# VOTER MODEL: copy a neighbour at random, and a whole population agrees.
+#
+# MODEL
+#   Clifford and Sudbury (1973), Holley and Liggett (1975). Every site of a
+#   lattice holds one of two opinions. One update picks a site uniformly at
+#   random and overwrites it with the opinion of a uniformly chosen
+#   neighbour:
+#
+#       s_i  <-  s_j ,   j a uniform neighbour of i
+#
+#   Nobody weighs evidence, nobody is stubborn, and there is no noise. The
+#   only absorbing states are the two consensuses.
+#
+# PARAMETERS
+#   Live panel : 128 x 128 periodic lattice, von Neumann neighbours,
+#                two sweeps per frame (one sweep = one update per site).
+#   Exit run   : ring of 24 sites, k initial ones for k = 2, 4, ... 22,
+#                4000 independent trials per k.
+#   Scaling run: rings of 16, 24, 32, 48, 64, 96 and 128 sites started at
+#                density one half, 240 trials each.
+#   Decay run  : ring of 4096 sites, 24 realisations, wall density sampled
+#                at 100, 200, 400 and 800 sweeps.
+#
+# WHAT THIS PROVES
+#   1. THE EXIT PROBABILITY IS THE INITIAL DENSITY, EXACTLY. On any regular
+#      graph the mean opinion is a bounded martingale, so the probability of
+#      absorbing into all-ones equals the initial fraction of ones. The
+#      program measures that curve at eleven densities and gates on the
+#      largest deviation.
+#   2. CONSENSUS TIME SCALES AS N^2 IN ONE DIMENSION. The dual process is a
+#      set of coalescing random walks, so in d = 1 the last two domain walls
+#      have to diffuse a distance of order N to meet: T ~ N^z with z = 2.
+#      The exponent is fitted by least squares over seven ring sizes.
+#   3. THE DOMAIN WALLS ARE ANNIHILATING RANDOM WALKS. Between unlike
+#      neighbours sits a wall; a site update moves a wall or annihilates a
+#      pair, never creates one. Annihilating random walks in one dimension
+#      decay as rho(t) = 1 / sqrt(8 pi D t), and a single wall here has
+#      D = 1/2 per sweep, so rho(t) sqrt(t) -> 1 / sqrt(4 pi) = 0.2820948.
+#      The program measures that amplitude.
+#   The two-dimensional panel is the same rule and is there to be looked at:
+#   it coarsens without ever settling on a length scale, which is why the
+#   wall density falls like 1 / ln t rather than like a power.
+#
+# REFERENCE
+#   P. Clifford and A. Sudbury, "A model for spatial conflict", Biometrika
+#   60:581-588 (1973).
+#   R. A. Holley and T. M. Liggett, "Ergodic theorems for weakly interacting
+#   infinite systems and the voter model", Ann. Probab. 3:643-663 (1975).
+#   D. C. Torney and H. M. McConnell, "Diffusion-limited reactions in one
+#   dimension", J. Phys. Chem. 87:1941-1951 (1983): rho = 1/sqrt(8 pi D t).
+#   J. T. Cox, "Coalescing random walks and voter model consensus times",
+#   Ann. Probab. 17:1333-1366 (1989).
+#
+# KEYS
+#   R  reseed the live lattice      P  pause      Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/social/voter_model.flow --frames 90 \
+#       --out build/frames_voter --gif docs/demos/social/voter_model.gif
+# Run (windowed):
+#   ./flow gfx examples/social/voter_model.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+}
+
+const WIN_W: i32 = 1000
+const WIN_H: i32 = 700
+const MAX_FRAMES: i32 = 4000
+
+const KEY_P: i32 = 35
+
+# live lattice
+const LAT: i32 = 128
+const LAT_CELLS: i32 = 16384
+const ZOOM: i32 = 3
+const IMG: i32 = 384                 # LAT * ZOOM
+const LAT_X: i32 = 24
+const LAT_Y: i32 = 96
+const SWEEPS_PER_FRAME: i32 = 2
+
+# exit-probability run
+const EX_N: i32 = 24
+const EX_POINTS: i32 = 11            # k = 2, 4, ... 22
+const EX_TRIALS: i32 = 4000
+
+# consensus-time scaling run
+const SC_POINTS: i32 = 7
+const SC_TRIALS: i32 = 240
+const RING_MAX: i32 = 4096
+
+# wall-decay run
+const DEC_N: i32 = 4096
+const DEC_RUNS: i32 = 24
+const DEC_POINTS: i32 = 4
+
+const AMP_REF: f64 = 0.2820948       # 1 / sqrt(4 pi)
+const Z_REF: f64 = 2.0
+const EXIT_GATE: f64 = 0.030
+const Z_GATE: f64 = 0.150
+const AMP_GATE: f64 = 0.080          # relative
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut lat: ptr<i32> = null         # 128 x 128 live lattice
+let mut fb: ptr<u8> = null           # 384 x 384 RGB framebuffer
+let mut ring: ptr<i32> = null        # scratch ring up to RING_MAX
+
+let mut ex_rho: ptr<f64> = null
+let mut ex_p: ptr<f64> = null
+let mut ex_worst: f64 = 0.0
+
+let mut sc_n: ptr<f64> = null
+let mut sc_t: ptr<f64> = null
+let mut z_fit: f64 = 0.0
+let mut z_amp: f64 = 0.0
+
+let mut dec_t: ptr<f64> = null
+let mut dec_rho: ptr<f64> = null
+let mut amp_meas: f64 = 0.0
+
+let mut live_sweep: i32 = 0
+let mut live_walls: f64 = 0.0
+let mut live_density: f64 = 0.0
+
+let mut rng_state: u32 = 2463534242
+
+# xorshift32. A plain LCG is not good enough here: the decay run draws
+# millions of site indices and the low-order bits of an LCG cycle far sooner
+# than that, which fakes a slowdown in the wall density.
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 8) % (n as u32)) as i32
+}
+
+function rng_bit() -> i32 {
+    return ((rng_next() >> 16) % 2) as i32
+}
+
+# ---------------------------------------------------------------------------
+# One-dimensional voter model on a ring
+# ---------------------------------------------------------------------------
+
+# One sweep = n single-site updates.
+function ring_sweep(n: i32) -> void {
+    let mut u: i32 = 0
+    while u < n {
+        let i: i32 = rng_below(n)
+        let mut j: i32 = i + 1
+        if rng_bit() == 0 {
+            j = i - 1
+        }
+        if j < 0 {
+            j = n - 1
+        }
+        if j >= n {
+            j = 0
+        }
+        ring[i] = ring[j]
+        u = u + 1
+    }
+}
+
+function ring_ones(n: i32) -> i32 {
+    let mut ones: i32 = 0
+    let mut k: i32 = 0
+    while k < n {
+        ones = ones + ring[k]
+        k = k + 1
+    }
+    return ones
+}
+
+function ring_walls(n: i32) -> i32 {
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let j: i32 = (i + 1) % n
+        if ring[i] != ring[j] {
+            w = w + 1
+        }
+        i = i + 1
+    }
+    return w
+}
+
+# Exactly k ones, placed by a Fisher-Yates shuffle so the arrangement is
+# uniform and the density is exactly k / n.
+function ring_seed_k(n: i32, k: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        if i < k {
+            ring[i] = 1
+        } else {
+            ring[i] = 0
+        }
+        i = i + 1
+    }
+    i = n - 1
+    while i > 0 {
+        let j: i32 = rng_below(i + 1)
+        let t: i32 = ring[i]
+        ring[i] = ring[j]
+        ring[j] = t
+        i = i - 1
+    }
+}
+
+function ring_seed_half(n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        ring[i] = rng_bit()
+        i = i + 1
+    }
+}
+
+# Run to absorption; return 1 if all ones, 0 if all zeros.
+function ring_absorb(n: i32) -> i32 {
+    ring_sweep(n)
+    let mut ones: i32 = ring_ones(n)
+    while ones > 0 and ones < n {
+        ring_sweep(n)
+        ones = ring_ones(n)
+    }
+    if ones == n {
+        return 1
+    }
+    return 0
+}
+
+# Run to absorption; return the number of sweeps taken.
+function ring_consensus_time(n: i32) -> i32 {
+    ring_sweep(n)
+    let mut ones: i32 = ring_ones(n)
+    let mut sweeps: i32 = 1
+    while ones > 0 and ones < n {
+        ring_sweep(n)
+        ones = ring_ones(n)
+        sweeps = sweeps + 1
+    }
+    return sweeps
+}
+
+function scaling_size(idx: i32) -> i32 {
+    if idx == 0 { return 16 }
+    if idx == 1 { return 24 }
+    if idx == 2 { return 32 }
+    if idx == 3 { return 48 }
+    if idx == 4 { return 64 }
+    if idx == 5 { return 96 }
+    return 128
+}
+
+function decay_time(idx: i32) -> i32 {
+    if idx == 0 { return 100 }
+    if idx == 1 { return 200 }
+    if idx == 2 { return 400 }
+    return 800
+}
+
+# ---------------------------------------------------------------------------
+# Measurement phases
+# ---------------------------------------------------------------------------
+
+function measure_exit() -> void {
+    let mut idx: i32 = 0
+    while idx < EX_POINTS {
+        let k: i32 = 2 + 2 * idx
+        let mut wins: i32 = 0
+        let mut t: i32 = 0
+        while t < EX_TRIALS {
+            ring_seed_k(EX_N, k)
+            wins = wins + ring_absorb(EX_N)
+            t = t + 1
+        }
+        ex_rho[idx] = (k as f64) / (EX_N as f64)
+        ex_p[idx] = (wins as f64) / (EX_TRIALS as f64)
+        let d: f64 = fabs(ex_p[idx] - ex_rho[idx])
+        if d > ex_worst {
+            ex_worst = d
+        }
+        idx = idx + 1
+    }
+}
+
+function measure_scaling() -> void {
+    let mut idx: i32 = 0
+    while idx < SC_POINTS {
+        let n: i32 = scaling_size(idx)
+        let mut total: f64 = 0.0
+        let mut t: i32 = 0
+        while t < SC_TRIALS {
+            ring_seed_half(n)
+            total = total + (ring_consensus_time(n) as f64)
+            t = t + 1
+        }
+        sc_n[idx] = n as f64
+        sc_t[idx] = total / (SC_TRIALS as f64)
+        idx = idx + 1
+    }
+    # least squares on ln T = ln A + z ln N
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let m: f64 = SC_POINTS as f64
+    let mut i: i32 = 0
+    while i < SC_POINTS {
+        let x: f64 = log(sc_n[i])
+        let y: f64 = log(sc_t[i])
+        sx = sx + x
+        sy = sy + y
+        sxx = sxx + x * x
+        sxy = sxy + x * y
+        i = i + 1
+    }
+    z_fit = (m * sxy - sx * sy) / (m * sxx - sx * sx)
+    z_amp = (sy - z_fit * sx) / m
+}
+
+function measure_decay() -> void {
+    let mut idx: i32 = 0
+    while idx < DEC_POINTS {
+        dec_t[idx] = decay_time(idx) as f64
+        dec_rho[idx] = 0.0
+        idx = idx + 1
+    }
+    let mut r: i32 = 0
+    while r < DEC_RUNS {
+        ring_seed_half(DEC_N)
+        let mut sweeps: i32 = 0
+        idx = 0
+        while idx < DEC_POINTS {
+            let target: i32 = decay_time(idx)
+            while sweeps < target {
+                ring_sweep(DEC_N)
+                sweeps = sweeps + 1
+            }
+            dec_rho[idx] = dec_rho[idx] + (ring_walls(DEC_N) as f64) / (DEC_N as f64)
+            idx = idx + 1
+        }
+        r = r + 1
+    }
+    idx = 0
+    while idx < DEC_POINTS {
+        dec_rho[idx] = dec_rho[idx] / (DEC_RUNS as f64)
+        idx = idx + 1
+    }
+    amp_meas = dec_rho[DEC_POINTS - 1] * sqrt(dec_t[DEC_POINTS - 1])
+}
+
+# ---------------------------------------------------------------------------
+# The live two-dimensional lattice
+# ---------------------------------------------------------------------------
+
+function lat_seed() -> void {
+    let mut i: i32 = 0
+    while i < LAT_CELLS {
+        lat[i] = rng_bit()
+        i = i + 1
+    }
+    live_sweep = 0
+}
+
+function lat_sweep() -> void {
+    let mut u: i32 = 0
+    while u < LAT_CELLS {
+        let x: i32 = rng_below(LAT)
+        let y: i32 = rng_below(LAT)
+        let d: i32 = rng_below(4)
+        let mut nx: i32 = x
+        let mut ny: i32 = y
+        if d == 0 { nx = (x + 1) % LAT }
+        if d == 1 { nx = (x + LAT - 1) % LAT }
+        if d == 2 { ny = (y + 1) % LAT }
+        if d == 3 { ny = (y + LAT - 1) % LAT }
+        lat[y * LAT + x] = lat[ny * LAT + nx]
+        u = u + 1
+    }
+    live_sweep = live_sweep + 1
+}
+
+function lat_measure() -> void {
+    let mut walls: i32 = 0
+    let mut ones: i32 = 0
+    let mut y: i32 = 0
+    while y < LAT {
+        let mut x: i32 = 0
+        while x < LAT {
+            let s: i32 = lat[y * LAT + x]
+            ones = ones + s
+            if s != lat[y * LAT + (x + 1) % LAT] {
+                walls = walls + 1
+            }
+            if s != lat[((y + 1) % LAT) * LAT + x] {
+                walls = walls + 1
+            }
+            x = x + 1
+        }
+        y = y + 1
+    }
+    live_walls = (walls as f64) / ((2 * LAT_CELLS) as f64)
+    live_density = (ones as f64) / (LAT_CELLS as f64)
+}
+
+# Build the zoomed RGB image once per frame and hand it to the backend in a
+# single call: 147456 pixels is far too many for a rect apiece.
+function lat_render() -> void {
+    let mut y: i32 = 0
+    while y < LAT {
+        let mut x: i32 = 0
+        while x < LAT {
+            let s: i32 = lat[y * LAT + x]
+            let mut r: i32 = 32
+            let mut gg: i32 = 44
+            let mut b: i32 = 74
+            if s == 1 {
+                r = 255
+                gg = 196
+                b = 92
+            }
+            let mut dy: i32 = 0
+            while dy < ZOOM {
+                let row: i32 = (y * ZOOM + dy) * IMG
+                let mut dx: i32 = 0
+                while dx < ZOOM {
+                    let o: i32 = (row + x * ZOOM + dx) * 3
+                    fb[o] = r as u8
+                    fb[o + 1] = gg as u8
+                    fb[o + 2] = b as u8
+                    dx = dx + 1
+                }
+                dy = dy + 1
+            }
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 { dx = 0 - dx }
+    if dy < 0 { dy = 0 - dy }
+    let mut n: i32 = dx
+    if dy > n { n = dy }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+const EP_X: i32 = 456
+const EP_Y: i32 = 120
+const EP_W: i32 = 240
+const EP_H: i32 = 200
+
+function draw_exit_plot(g: Gfx) -> void {
+    draw_frame(g, EP_X, EP_Y, EP_W, EP_H, 62, 72, 94)
+    gfx_draw_text(g, EP_X, EP_Y - 26, "EXIT PROBABILITY vs INITIAL DENSITY",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, EP_X, EP_Y - 14, "grey line = the martingale answer p = rho",
+                  1, 108, 122, 148)
+    draw_line(g, EP_X, EP_Y + EP_H, EP_X + EP_W, EP_Y, 1, 96, 108, 132)
+    let mut i: i32 = 0
+    while i < EX_POINTS {
+        let px: i32 = EP_X + ((ex_rho[i] * (EP_W as f64)) as i32)
+        let py: i32 = EP_Y + EP_H - ((ex_p[i] * (EP_H as f64)) as i32)
+        gfx_fill_rect(g, px - 2, py - 2, 5, 5, 120, 220, 200)
+        i = i + 1
+    }
+    gfx_draw_text(g, EP_X, EP_Y + EP_H + 5, "rho 0", 1, 104, 118, 142)
+    gfx_draw_text(g, EP_X + EP_W - 24, EP_Y + EP_H + 5, "1", 1, 104, 118, 142)
+    gfx_draw_text(g, EP_X - 12, EP_Y - 2, "1", 1, 104, 118, 142)
+}
+
+const SP_X: i32 = 740
+const SP_Y: i32 = 120
+const SP_W: i32 = 232
+const SP_H: i32 = 200
+
+function draw_scaling_plot(g: Gfx) -> void {
+    draw_frame(g, SP_X, SP_Y, SP_W, SP_H, 62, 72, 94)
+    gfx_draw_text(g, SP_X, SP_Y - 26, "CONSENSUS TIME vs RING SIZE, LOG-LOG",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, SP_X, SP_Y - 14, "teal = measured   amber = slope 2 reference",
+                  1, 108, 122, 148)
+    let x0: f64 = log(16.0)
+    let x1: f64 = log(128.0)
+    let y0: f64 = log(sc_t[0]) - 0.4
+    let y1: f64 = log(sc_t[SC_POINTS - 1]) + 0.4
+    let mut i: i32 = 1
+    while i < SC_POINTS {
+        let ax: i32 = SP_X + (((log(sc_n[i - 1]) - x0) / (x1 - x0) * (SP_W as f64)) as i32)
+        let bx: i32 = SP_X + (((log(sc_n[i]) - x0) / (x1 - x0) * (SP_W as f64)) as i32)
+        let ay: i32 = SP_Y + SP_H - (((log(sc_t[i - 1]) - y0) / (y1 - y0) * (SP_H as f64)) as i32)
+        let by: i32 = SP_Y + SP_H - (((log(sc_t[i]) - y0) / (y1 - y0) * (SP_H as f64)) as i32)
+        draw_line(g, ax, ay, bx, by, 2, 120, 220, 200)
+        i = i + 1
+    }
+    # a pure slope-2 line anchored at the smallest ring
+    let mut k: i32 = 1
+    while k < SC_POINTS {
+        let la: f64 = log(sc_t[0]) + Z_REF * (log(sc_n[k - 1]) - x0)
+        let lb: f64 = log(sc_t[0]) + Z_REF * (log(sc_n[k]) - x0)
+        let ax: i32 = SP_X + (((log(sc_n[k - 1]) - x0) / (x1 - x0) * (SP_W as f64)) as i32)
+        let bx: i32 = SP_X + (((log(sc_n[k]) - x0) / (x1 - x0) * (SP_W as f64)) as i32)
+        let ay: i32 = SP_Y + SP_H - (((la - y0) / (y1 - y0) * (SP_H as f64)) as i32)
+        let by: i32 = SP_Y + SP_H - (((lb - y0) / (y1 - y0) * (SP_H as f64)) as i32)
+        draw_line(g, ax, ay, bx, by, 1, 255, 205, 110)
+        k = k + 1
+    }
+    gfx_draw_text(g, SP_X, SP_Y + SP_H + 5, "N 16", 1, 104, 118, 142)
+    gfx_draw_text(g, SP_X + SP_W - 30, SP_Y + SP_H + 5, "128", 1, 104, 118, 142)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 14, 12, "VOTER MODEL  -  COPY A NEIGHBOUR AT RANDOM",
+                  2, 236, 240, 250)
+    gfx_draw_text(g, 14, 36,
+        "s_i <- s_j for a uniformly chosen neighbour j.  No noise, no stubbornness, two absorbing states.",
+        1, 152, 168, 194)
+    gfx_draw_text(g, 14, 50,
+        "left: 128 x 128 periodic lattice, von Neumann neighbours, 2 sweeps per frame",
+        1, 108, 122, 148)
+    if paused {
+        gfx_draw_text(g, WIN_W - 70, 12, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, LAT_X, LAT_Y - 14, "LIVE LATTICE   amber = opinion 1   navy = opinion 0",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, LAT_X, LAT_Y + IMG + 8, "SWEEP", 1, 152, 168, 194)
+    gfx_draw_int(g, LAT_X + 52, LAT_Y + IMG + 8, live_sweep, 1, 236, 240, 250)
+    gfx_draw_text(g, LAT_X + 108, LAT_Y + IMG + 8, "ACTIVE BONDS", 1, 152, 168, 194)
+    gfx_draw_fixed(g, LAT_X + 214, LAT_Y + IMG + 8, live_walls, 4, 1, 236, 240, 250)
+    gfx_draw_text(g, LAT_X + 274, LAT_Y + IMG + 8, "DENSITY", 1, 152, 168, 194)
+    gfx_draw_fixed(g, LAT_X + 338, LAT_Y + IMG + 8, live_density, 4, 1, 236, 240, 250)
+    gfx_draw_text(g, LAT_X, LAT_Y + IMG + 22,
+        "in d = 2 the wall density falls like 1 / ln t, so the domains never stop growing",
+        1, 108, 122, 148)
+
+    let by: i32 = 500
+    gfx_draw_text(g, 456, by, "WORST EXIT DEVIATION over 11 densities", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 776, by, ex_worst, 5, 1, 236, 240, 250)
+    gfx_draw_text(g, 852, by, "gate", 1, 108, 122, 148)
+    gfx_draw_fixed(g, 886, by, EXIT_GATE, 3, 1, 236, 240, 250)
+
+    gfx_draw_text(g, 456, by + 16, "FITTED EXPONENT z of T ~ N^z", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 776, by + 16, z_fit, 5, 1, 236, 240, 250)
+    gfx_draw_text(g, 852, by + 16, "vs 2", 1, 108, 122, 148)
+
+    gfx_draw_text(g, 456, by + 32, "WALL AMPLITUDE rho sqrt(t) at t = 800", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 776, by + 32, amp_meas, 5, 1, 236, 240, 250)
+    gfx_draw_text(g, 852, by + 32, "vs", 1, 108, 122, 148)
+    gfx_draw_fixed(g, 878, by + 32, AMP_REF, 5, 1, 236, 240, 250)
+
+    if ok {
+        gfx_draw_text(g, 456, by + 54, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 456, by + 54, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 14, WIN_H - 16,
+        "R reseed the lattice    P pause    Esc quit", 1, 108, 122, 148)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    lat = calloc(LAT_CELLS as i64, 4)
+    fb = calloc((IMG as i64) * (IMG as i64) * 3, 1) as ptr<u8>
+    ring = calloc(RING_MAX as i64, 4)
+    ex_rho = malloc((EX_POINTS as i64) * 8)
+    ex_p = malloc((EX_POINTS as i64) * 8)
+    sc_n = malloc((SC_POINTS as i64) * 8)
+    sc_t = malloc((SC_POINTS as i64) * 8)
+    dec_t = malloc((DEC_POINTS as i64) * 8)
+    dec_rho = malloc((DEC_POINTS as i64) * 8)
+
+    println("")
+    println("  VOTER MODEL  --  exit probability, consensus time and wall decay")
+    println("  ================================================================")
+    println("")
+    println("    update: pick a site uniformly, copy a uniformly chosen neighbour")
+    println("")
+
+    measure_exit()
+    println("    EXIT PROBABILITY, ring of 24, 4000 trials per density")
+    println("        k    rho = k/24     measured p        p - rho")
+    println("      ---    ----------     ----------     ----------")
+    let mut i: i32 = 0
+    while i < EX_POINTS {
+        print("    ")
+        printf("%5.0f", (2 + 2 * i) as f64)
+        printf("    %10.6f", ex_rho[i])
+        printf("     %10.6f", ex_p[i])
+        printf("     %10.6f", ex_p[i] - ex_rho[i])
+        println("")
+        i = i + 1
+    }
+    print("    worst deviation : ")
+    printf("%.6f", ex_worst)
+    print("   gate ")
+    printf("%.3f", EXIT_GATE)
+    println("")
+    println("      (the mean opinion is a martingale, so p = rho holds exactly)")
+    println("")
+
+    measure_scaling()
+    println("    CONSENSUS TIME, rings at density one half, 240 trials each")
+    println("        N     mean sweeps      T / N^2")
+    println("      ---     -----------     --------")
+    i = 0
+    while i < SC_POINTS {
+        print("    ")
+        printf("%5.0f", sc_n[i])
+        printf("     %11.2f", sc_t[i])
+        printf("     %8.5f", sc_t[i] / (sc_n[i] * sc_n[i]))
+        println("")
+        i = i + 1
+    }
+    print("    fitted exponent z : ")
+    printf("%.5f", z_fit)
+    print("   against d = 1 theory ")
+    printf("%.1f", Z_REF)
+    print("   difference ")
+    printf("%.5f", fabs(z_fit - Z_REF))
+    println("")
+    print("    fitted amplitude A in T = A N^z : ")
+    printf("%.6f", z_amp)
+    println("   (log A)")
+    println("")
+
+    measure_decay()
+    println("    DOMAIN-WALL DENSITY, ring of 4096, 24 realisations")
+    println("        t      rho(t)     rho sqrt(t)      1/sqrt(4 pi)")
+    println("      ---     -------     -----------     -------------")
+    i = 0
+    while i < DEC_POINTS {
+        print("    ")
+        printf("%5.0f", dec_t[i])
+        printf("     %7.5f", dec_rho[i])
+        printf("     %11.6f", dec_rho[i] * sqrt(dec_t[i]))
+        printf("     %13.7f", AMP_REF)
+        println("")
+        i = i + 1
+    }
+    let amp_rel: f64 = fabs(amp_meas - AMP_REF) / AMP_REF
+    print("    amplitude at t = 800 : ")
+    printf("%.6f", amp_meas)
+    print("   relative error ")
+    printf("%.5f", amp_rel)
+    print("   gate ")
+    printf("%.3f", AMP_GATE)
+    println("")
+    println("      (walls are annihilating random walks with D = 1/2 per sweep)")
+    println("")
+
+    let exit_ok: bool = ex_worst < EXIT_GATE
+    let z_ok: bool = fabs(z_fit - Z_REF) < Z_GATE
+    let amp_ok: bool = amp_rel < AMP_GATE
+    let ok: bool = exit_ok and z_ok and amp_ok
+
+    rng_state = 987654321
+    lat_seed()
+    lat_measure()
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Voter model - Flow social atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                lat_seed()
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            let mut s: i32 = 0
+            while s < SWEEPS_PER_FRAME {
+                lat_sweep()
+                s = s + 1
+            }
+            lat_measure()
+        }
+
+        gfx_clear(g, 11, 13, 20)
+        lat_render()
+        gfx_blit_rgb(g, LAT_X, LAT_Y, IMG, IMG, fb)
+        draw_frame(g, LAT_X - 1, LAT_Y - 1, IMG + 1, IMG + 1, 62, 72, 94)
+        draw_exit_plot(g)
+        draw_scaling_plot(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !exit_ok {
+        println("    FAIL: the exit probability departs from the initial density")
+        return 1
+    }
+    if !z_ok {
+        println("    FAIL: the consensus time does not scale as N^2 in one dimension")
+        return 2
+    }
+    if !amp_ok {
+        println("    FAIL: the wall density does not follow 1/sqrt(8 pi D t)")
+        return 3
+    }
+    println("    PASS: p = rho exactly, T ~ N^2 in d = 1, walls annihilate as sqrt(t)")
+    return 0
+}

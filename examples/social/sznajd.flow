@@ -1,0 +1,809 @@
+# SZNAJD: two people who agree can convince a third. One cannot.
+#
+# MODEL
+#   Sznajd-Weron and Sznajd (2000), "united we stand, divided we fall".
+#   Persuasion flows outward from an agreeing pair rather than inward to a
+#   single agent, which is what makes it different from the voter model.
+#
+#   Chain version (periodic, odd length so the alternating state cannot
+#   exist): pick a site i. If s_i == s_{i+1}, both outer neighbours adopt
+#   that opinion:
+#       s_{i-1} <- s_i ,  s_{i+2} <- s_i
+#   If the pair disagrees, nothing happens.
+#
+#   Well-mixed version: draw three agents i, j, k independently and
+#   uniformly. If s_i == s_j then s_k <- s_i.
+#
+# PARAMETERS
+#   Well-mixed run : 24 agents, every initial count n = 1 .. 23,
+#                    5000 independent trials each.
+#   Chain run      : 101 and 401 sites, nine initial densities,
+#                    250 trials each, capped at 400 N^2 single-site updates.
+#   Live panel     : 401-site chain drawn as a space-time diagram, newest
+#                    row at the bottom.
+#
+# WHAT THIS PROVES
+#   1. THE WELL-MIXED EXIT PROBABILITY HAS A CLOSED FORM, AND IT MATCHES.
+#      With independent draws the number of ones is a birth-death chain with
+#          b_n = rho^2 (1 - rho),   d_n = (1 - rho)^2 rho,   rho = n/N
+#      so d_n / b_n = (N - n)/n and the product telescopes into a binomial
+#      coefficient. Gambler's ruin then gives exactly
+#          E(n) = ( sum_{j<n} C(N-1, j) ) / 2^(N-1)
+#      which is the binomial CDF: a step function of width 1/sqrt(N) rather
+#      than the voter model's straight line. Every one of the 23 measured
+#      points is compared against it.
+#   2. THE RULE IS UP-DOWN SYMMETRIC, EXACTLY. Nothing in the chain rule
+#      distinguishes the two opinions, so flipping every spin must flip the
+#      outcome. Each trial is therefore run twice on the same random stream,
+#      once on the drawn configuration and once on its complement, and the
+#      two outcomes must be opposite every single time. That is a bit-exact
+#      check rather than a statistical one, and it also supplies the mirror
+#      half of the curve for free.
+#   3. PERSUASION FROM A PAIR IS NOT CONSERVATIVE. The voter model conserves
+#      the mean opinion; this one does not. The chain's exit probability is
+#      measured against both the linear law E = rho and the pair-level form
+#          E = rho^2 / (rho^2 + (1 - rho)^2)
+#      and the root-mean-square distance to each is printed. The pair form
+#      is required to fit at least twice as well as the straight line, which
+#      is the whole of the claim that outflow dynamics is not the voter
+#      model wearing a different hat. The central slope of the curve is
+#      printed for both chain lengths as well.
+#
+# REFERENCE
+#   K. Sznajd-Weron and J. Sznajd, "Opinion evolution in closed community",
+#   Int. J. Modern Physics C 11:1157-1165 (2000).
+#   F. Slanina, K. Sznajd-Weron and P. Przybyla, "Some new results on
+#   one-dimensional outflow dynamics", EPL 82:18006 (2008): the nonlinear
+#   exit probability.
+#   S. Galam and A. C. R. Martins, "Pitfalls driven by the sole use of local
+#   updates", EPL 95:48005 (2011): the case for the linear law. The program
+#   reports the distance to both rather than picking a side.
+#
+# KEYS
+#   Left / Right  change the initial density of the live chain
+#   R  restart the live chain      P  pause       Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/social/sznajd.flow --frames 90 \
+#       --out build/frames_sznajd --gif docs/demos/social/sznajd.gif
+# Run (windowed):
+#   ./flow gfx examples/social/sznajd.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+    function calloc(count: i64, size: i64) -> ptr<i32>
+}
+
+const WIN_W: i32 = 1010
+const WIN_H: i32 = 690
+const MAX_FRAMES: i32 = 4000
+
+const KEY_P: i32 = 35
+
+# well-mixed run
+const MF_N: i32 = 24
+const MF_POINTS: i32 = 23
+const MF_TRIALS: i32 = 5000
+const MF_GATE: f64 = 0.030
+
+# chain runs
+const CH_SMALL: i32 = 101
+const CH_BIG: i32 = 401
+const CH_POINTS: i32 = 9
+const CH_HALF: i32 = 5            # densities actually simulated; the rest are mirrors
+const CH_TRIALS: i32 = 250
+
+# live panel
+const LIVE_N: i32 = 401
+const ST_ROWS: i32 = 260
+const UPDATES_PER_ROW: i32 = 200
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut spin: ptr<i32> = null        # chain / well-mixed population
+let mut live: ptr<i32> = null
+let mut st: ptr<u8> = null           # LIVE_N x ST_ROWS x 3 space-time image
+
+let mut mf_p: ptr<f64> = null        # measured exit probability
+let mut mf_ref: ptr<f64> = null      # binomial CDF
+let mut mf_worst: f64 = 0.0
+
+let mut ch_rho: ptr<f64> = null
+let mut ch_small: ptr<f64> = null
+let mut ch_big: ptr<f64> = null
+let mut ch_rho_s: ptr<f64> = null
+let mut saved: ptr<i32> = null
+let mut flip_violations: i32 = 0
+let mut flip_checks: i32 = 0
+let mut rms_linear: f64 = 0.0
+let mut rms_pair: f64 = 0.0
+let mut slope_small: f64 = 0.0
+let mut slope_big: f64 = 0.0
+let mut unfinished: i32 = 0
+
+let mut live_rho_idx: i32 = 4
+let mut live_row: i32 = 0
+let mut live_up: i32 = 0
+let mut live_updates: i32 = 0
+
+let mut rng_state: u32 = 2463534242
+
+function rng_next() -> u32 {
+    rng_state = rng_state ^ (rng_state << 13)
+    rng_state = rng_state ^ (rng_state >> 17)
+    rng_state = rng_state ^ (rng_state << 5)
+    return rng_state
+}
+
+function rng_below(n: i32) -> i32 {
+    return ((rng_next() >> 8) % (n as u32)) as i32
+}
+
+function rho_at(idx: i32) -> f64 {
+    return 0.1 + 0.1 * (idx as f64)
+}
+
+# ---------------------------------------------------------------------------
+# Exact well-mixed answer: the binomial CDF, built by a stable recursion.
+# ---------------------------------------------------------------------------
+
+function build_mf_reference() -> void {
+    # term_j = C(N-1, j) / 2^(N-1)
+    let mut term: f64 = 1.0
+    let mut j: i32 = 0
+    while j < MF_N - 1 {
+        term = term * 0.5
+        j = j + 1
+    }
+    let mut acc: f64 = 0.0
+    let mut n: i32 = 1
+    j = 0
+    while n <= MF_POINTS {
+        acc = acc + term
+        mf_ref[n - 1] = acc
+        # advance term from C(N-1, j) to C(N-1, j+1)
+        term = term * (((MF_N - 1 - j) as f64) / ((j + 1) as f64))
+        j = j + 1
+        n = n + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Well-mixed Sznajd
+# ---------------------------------------------------------------------------
+
+function mf_seed(n: i32) -> void {
+    let mut i: i32 = 0
+    while i < MF_N {
+        if i < n {
+            spin[i] = 1
+        } else {
+            spin[i] = 0
+        }
+        i = i + 1
+    }
+    i = MF_N - 1
+    while i > 0 {
+        let j: i32 = rng_below(i + 1)
+        let t: i32 = spin[i]
+        spin[i] = spin[j]
+        spin[j] = t
+        i = i - 1
+    }
+}
+
+function mf_absorb(n0: i32) -> i32 {
+    let mut n: i32 = n0
+    while n > 0 and n < MF_N {
+        let i: i32 = rng_below(MF_N)
+        let j: i32 = rng_below(MF_N)
+        if spin[i] == spin[j] {
+            let k: i32 = rng_below(MF_N)
+            if spin[k] != spin[i] {
+                spin[k] = spin[i]
+                if spin[i] == 1 {
+                    n = n + 1
+                } else {
+                    n = n - 1
+                }
+            }
+        }
+    }
+    if n == MF_N {
+        return 1
+    }
+    return 0
+}
+
+function measure_mean_field() -> void {
+    let mut n: i32 = 1
+    while n <= MF_POINTS {
+        let mut wins: i32 = 0
+        let mut t: i32 = 0
+        while t < MF_TRIALS {
+            mf_seed(n)
+            wins = wins + mf_absorb(n)
+            t = t + 1
+        }
+        mf_p[n - 1] = (wins as f64) / (MF_TRIALS as f64)
+        let d: f64 = fabs(mf_p[n - 1] - mf_ref[n - 1])
+        if d > mf_worst {
+            mf_worst = d
+        }
+        n = n + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Chain Sznajd
+# ---------------------------------------------------------------------------
+
+function chain_seed(n: i32, ones: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        if i < ones {
+            spin[i] = 1
+        } else {
+            spin[i] = 0
+        }
+        i = i + 1
+    }
+    i = n - 1
+    while i > 0 {
+        let j: i32 = rng_below(i + 1)
+        let t: i32 = spin[i]
+        spin[i] = spin[j]
+        spin[j] = t
+        i = i - 1
+    }
+}
+
+function chain_ones(n: i32) -> i32 {
+    let mut c: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        c = c + spin[i]
+        i = i + 1
+    }
+    return c
+}
+
+# One outflow update on the periodic chain. Returns the change in the
+# number of ones.
+function chain_update(n: i32) -> i32 {
+    let i: i32 = rng_below(n)
+    let ip: i32 = (i + 1) % n
+    if spin[i] != spin[ip] {
+        return 0
+    }
+    let im: i32 = (i + n - 1) % n
+    let ipp: i32 = (i + 2) % n
+    let v: i32 = spin[i]
+    let mut d: i32 = 0
+    if spin[im] != v {
+        d = d + v - spin[im]
+        spin[im] = v
+    }
+    if spin[ipp] != v {
+        d = d + v - spin[ipp]
+        spin[ipp] = v
+    }
+    return d
+}
+
+# Run to consensus; 1 for all ones, 0 for all zeros, -1 if the cap ran out.
+function chain_absorb(n: i32, ones0: i32) -> i32 {
+    let mut ones: i32 = ones0
+    let cap: i32 = 400 * n * n
+    let mut u: i32 = 0
+    while u < cap {
+        ones = ones + chain_update(n)
+        if ones == 0 {
+            return 0
+        }
+        if ones == n {
+            return 1
+        }
+        u = u + 1
+    }
+    return -1
+}
+
+# Initial counts, mirrored by construction: k(8 - idx) = n - k(idx).
+function chain_count(n: i32, idx: i32) -> i32 {
+    if idx == 4 {
+        return n / 2
+    }
+    if idx > 4 {
+        return n - chain_count(n, 8 - idx)
+    }
+    return (((0.1 + 0.1 * (idx as f64)) * (n as f64)) as i32)
+}
+
+# Every trial is run twice on the same random stream: once on the drawn
+# configuration, once on its complement. Up-down symmetry says the outcomes
+# must be opposite, which is checked bit for bit and gives the mirror
+# density its measurement for free.
+function measure_chain(n: i32, out: ptr<f64>, rho: ptr<f64>) -> void {
+    let mut idx: i32 = 0
+    while idx < CH_POINTS {
+        out[idx] = 0.0
+        rho[idx] = (chain_count(n, idx) as f64) / (n as f64)
+        idx = idx + 1
+    }
+    idx = 0
+    while idx < CH_HALF {
+        let k: i32 = chain_count(n, idx)
+        let mut wins: i32 = 0
+        let mut mirror_wins: i32 = 0
+        let mut t: i32 = 0
+        while t < CH_TRIALS {
+            chain_seed(n, k)
+            let mut c: i32 = 0
+            while c < n {
+                saved[c] = spin[c]
+                c = c + 1
+            }
+            let stream: u32 = rng_state
+            let r1: i32 = chain_absorb(n, k)
+            rng_state = stream
+            c = 0
+            while c < n {
+                spin[c] = 1 - saved[c]
+                c = c + 1
+            }
+            let r2: i32 = chain_absorb(n, n - k)
+            flip_checks = flip_checks + 1
+            if r1 < 0 or r2 < 0 {
+                unfinished = unfinished + 1
+            } else {
+                if r1 + r2 != 1 {
+                    flip_violations = flip_violations + 1
+                }
+                wins = wins + r1
+                mirror_wins = mirror_wins + r2
+            }
+            t = t + 1
+        }
+        out[idx] = (wins as f64) / (CH_TRIALS as f64)
+        if idx < 4 {
+            out[8 - idx] = (mirror_wins as f64) / (CH_TRIALS as f64)
+        }
+        idx = idx + 1
+    }
+}
+
+function analyse_chain() -> void {
+    let mut sl: f64 = 0.0
+    let mut sp: f64 = 0.0
+    let mut idx: i32 = 0
+    while idx < CH_POINTS {
+        let r: f64 = ch_rho[idx]
+        let pair: f64 = r * r / (r * r + (1.0 - r) * (1.0 - r))
+        let dl: f64 = ch_big[idx] - r
+        let dp: f64 = ch_big[idx] - pair
+        sl = sl + dl * dl
+        sp = sp + dp * dp
+        idx = idx + 1
+    }
+    rms_linear = sqrt(sl / (CH_POINTS as f64))
+    rms_pair = sqrt(sp / (CH_POINTS as f64))
+    # central slope over rho 0.4 .. 0.6
+    slope_small = (ch_small[5] - ch_small[3]) / (ch_rho_s[5] - ch_rho_s[3])
+    slope_big = (ch_big[5] - ch_big[3]) / (ch_rho[5] - ch_rho[3])
+}
+
+# ---------------------------------------------------------------------------
+# Live space-time chain
+# ---------------------------------------------------------------------------
+
+function st_clear() -> void {
+    let mut i: i32 = 0
+    while i < LIVE_N * ST_ROWS * 3 {
+        st[i] = 14 as u8
+        i = i + 1
+    }
+}
+
+function live_reset() -> void {
+    rng_state = 13579246
+    let ones0: i32 = ((rho_at(live_rho_idx) * (LIVE_N as f64)) as i32)
+    let mut i: i32 = 0
+    while i < LIVE_N {
+        if i < ones0 {
+            live[i] = 1
+        } else {
+            live[i] = 0
+        }
+        i = i + 1
+    }
+    i = LIVE_N - 1
+    while i > 0 {
+        let j: i32 = rng_below(i + 1)
+        let t: i32 = live[i]
+        live[i] = live[j]
+        live[j] = t
+        i = i - 1
+    }
+    st_clear()
+    live_row = 0
+    live_updates = 0
+    live_up = ones0
+}
+
+function live_update() -> void {
+    let i: i32 = rng_below(LIVE_N)
+    let ip: i32 = (i + 1) % LIVE_N
+    if live[i] != live[ip] {
+        return
+    }
+    let im: i32 = (i + LIVE_N - 1) % LIVE_N
+    let ipp: i32 = (i + 2) % LIVE_N
+    let v: i32 = live[i]
+    if live[im] != v {
+        live_up = live_up + v - live[im]
+        live[im] = v
+    }
+    if live[ipp] != v {
+        live_up = live_up + v - live[ipp]
+        live[ipp] = v
+    }
+}
+
+# Scroll the picture up by one row and draw the current chain at the bottom.
+function live_push_row() -> void {
+    if live_row < ST_ROWS {
+        let mut i: i32 = 0
+        while i < LIVE_N {
+            let o: i32 = (live_row * LIVE_N + i) * 3
+            if live[i] == 1 {
+                st[o] = 255 as u8
+                st[o + 1] = 196 as u8
+                st[o + 2] = 92 as u8
+            } else {
+                st[o] = 40 as u8
+                st[o + 1] = 54 as u8
+                st[o + 2] = 92 as u8
+            }
+            i = i + 1
+        }
+        live_row = live_row + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+function draw_frame(g: Gfx, px: i32, py: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, px, py, w, 1, r, gg, b)
+    gfx_fill_rect(g, px, py + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, px, py, 1, h, r, gg, b)
+    gfx_fill_rect(g, px + w, py, 1, h + 1, r, gg, b)
+}
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 { dx = 0 - dx }
+    if dy < 0 { dy = 0 - dy }
+    let mut steps: i32 = dx
+    if dy > steps { steps = dy }
+    if steps == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= steps {
+        let t: f64 = (i as f64) / (steps as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+const MP_X: i32 = 60
+const MP_Y: i32 = 400
+const MP_W: i32 = 400
+const MP_H: i32 = 220
+
+function draw_mf_plot(g: Gfx) -> void {
+    draw_frame(g, MP_X, MP_Y, MP_W, MP_H, 62, 72, 94)
+    gfx_draw_text(g, MP_X, MP_Y - 26, "WELL-MIXED EXIT PROBABILITY, 24 AGENTS",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, MP_X, MP_Y - 14,
+                  "amber = exact binomial CDF   teal = measured, 5000 trials each",
+                  1, 108, 122, 148)
+    let mut i: i32 = 1
+    while i < MF_POINTS {
+        let ax: i32 = MP_X + (((i - 1) * MP_W) / (MF_N - 1))
+        let bx: i32 = MP_X + ((i * MP_W) / (MF_N - 1))
+        let ay: i32 = MP_Y + MP_H - ((mf_ref[i - 1] * (MP_H as f64)) as i32)
+        let by: i32 = MP_Y + MP_H - ((mf_ref[i] * (MP_H as f64)) as i32)
+        draw_line(g, ax, ay, bx, by, 2, 255, 205, 110)
+        i = i + 1
+    }
+    i = 0
+    while i < MF_POINTS {
+        let px: i32 = MP_X + (((i + 1) * MP_W) / (MF_N - 1))
+        let py: i32 = MP_Y + MP_H - ((mf_p[i] * (MP_H as f64)) as i32)
+        gfx_fill_rect(g, px - 2, py - 2, 5, 5, 120, 220, 200)
+        i = i + 1
+    }
+    # the voter model's straight line, for contrast
+    draw_line(g, MP_X, MP_Y + MP_H, MP_X + MP_W, MP_Y, 1, 90, 100, 124)
+    gfx_draw_text(g, MP_X + 4, MP_Y + MP_H + 6, "n = 0", 1, 104, 118, 142)
+    gfx_draw_text(g, MP_X + MP_W - 22, MP_Y + MP_H + 6, "24", 1, 104, 118, 142)
+    gfx_draw_text(g, MP_X - 14, MP_Y - 4, "1", 1, 104, 118, 142)
+    gfx_draw_text(g, MP_X + 6, MP_Y + 6, "grey: the voter model's straight line",
+                  1, 90, 100, 124)
+}
+
+const CP_X: i32 = 560
+const CP_Y: i32 = 400
+const CP_W: i32 = 400
+const CP_H: i32 = 220
+
+function draw_chain_plot(g: Gfx) -> void {
+    draw_frame(g, CP_X, CP_Y, CP_W, CP_H, 62, 72, 94)
+    gfx_draw_text(g, CP_X, CP_Y - 26, "CHAIN EXIT PROBABILITY vs INITIAL DENSITY",
+                  1, 152, 168, 194)
+    gfx_draw_text(g, CP_X, CP_Y - 14,
+                  "teal = 401 sites   blue = 101 sites   amber = pair form   grey = linear",
+                  1, 108, 122, 148)
+    draw_line(g, CP_X, CP_Y + CP_H, CP_X + CP_W, CP_Y, 1, 90, 100, 124)
+    let mut i: i32 = 1
+    while i < 60 {
+        let r0: f64 = ((i - 1) as f64) / 60.0
+        let r1: f64 = (i as f64) / 60.0
+        let p0: f64 = r0 * r0 / (r0 * r0 + (1.0 - r0) * (1.0 - r0))
+        let p1: f64 = r1 * r1 / (r1 * r1 + (1.0 - r1) * (1.0 - r1))
+        draw_line(g, CP_X + ((r0 * (CP_W as f64)) as i32),
+                  CP_Y + CP_H - ((p0 * (CP_H as f64)) as i32),
+                  CP_X + ((r1 * (CP_W as f64)) as i32),
+                  CP_Y + CP_H - ((p1 * (CP_H as f64)) as i32),
+                  1, 255, 205, 110)
+        i = i + 1
+    }
+    i = 0
+    while i < CH_POINTS {
+        let px: i32 = CP_X + ((ch_rho[i] * (CP_W as f64)) as i32)
+        let ys: i32 = CP_Y + CP_H - ((ch_small[i] * (CP_H as f64)) as i32)
+        let yb: i32 = CP_Y + CP_H - ((ch_big[i] * (CP_H as f64)) as i32)
+        gfx_fill_rect(g, px - 2, ys - 2, 5, 5, 110, 150, 240)
+        gfx_fill_rect(g, px - 3, yb - 3, 7, 7, 120, 220, 200)
+        i = i + 1
+    }
+    gfx_draw_text(g, CP_X + 4, CP_Y + CP_H + 6, "rho 0", 1, 104, 118, 142)
+    gfx_draw_text(g, CP_X + CP_W - 16, CP_Y + CP_H + 6, "1", 1, 104, 118, 142)
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 14, 12, "SZNAJD  -  UNITED WE STAND, DIVIDED WE FALL",
+                  2, 236, 240, 250)
+    gfx_draw_text(g, 14, 36,
+        "if s_i == s_i+1 then s_i-1 and s_i+2 adopt that opinion; a lone agent convinces nobody",
+        1, 152, 168, 194)
+    if paused {
+        gfx_draw_text(g, WIN_W - 70, 12, "PAUSED", 1, 255, 120, 120)
+    }
+
+    gfx_draw_text(g, 14, 58,
+        "LIVE 401-SITE CHAIN, TIME DOWNWARD   amber = opinion 1   navy = opinion 0",
+        1, 152, 168, 194)
+    gfx_draw_text(g, 14, 340, "INITIAL DENSITY", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 138, 340, rho_at(live_rho_idx), 2, 1, 255, 205, 110)
+    gfx_draw_text(g, 186, 340, "NOW", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 218, 340, (live_up as f64) / (LIVE_N as f64), 4, 1, 236, 240, 250)
+    gfx_draw_text(g, 280, 340, "UPDATES", 1, 152, 168, 194)
+    gfx_draw_int(g, 344, 340, live_updates, 1, 236, 240, 250)
+    if live_up == 0 or live_up == LIVE_N {
+        gfx_draw_text(g, 430, 340, "CONSENSUS", 1, 120, 230, 150)
+    }
+
+    let by: i32 = 646
+    gfx_draw_text(g, 14, by, "WORST GAP TO THE BINOMIAL CDF", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 252, by, mf_worst, 5, 1, 236, 240, 250)
+    gfx_draw_text(g, 320, by, "gate", 1, 108, 122, 148)
+    gfx_draw_fixed(g, 352, by, MF_GATE, 3, 1, 236, 240, 250)
+    gfx_draw_text(g, 402, by, "SPIN-FLIP FAILURES", 1, 152, 168, 194)
+    gfx_draw_int(g, 546, by, flip_violations, 1, 236, 240, 250)
+    gfx_draw_text(g, 602, by, "CHAIN RMS  linear", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 748, by, rms_linear, 4, 1, 236, 240, 250)
+    gfx_draw_text(g, 810, by, "pair", 1, 152, 168, 194)
+    gfx_draw_fixed(g, 846, by, rms_pair, 4, 1, 236, 240, 250)
+    if ok {
+        gfx_draw_text(g, 916, by - 4, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 916, by - 4, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 14, WIN_H - 10,
+        "LEFT / RIGHT change the initial density    R restart    P pause    Esc quit",
+        1, 108, 122, 148)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    spin = calloc(CH_BIG as i64, 4)
+    live = calloc(LIVE_N as i64, 4)
+    st = calloc((LIVE_N as i64) * (ST_ROWS as i64) * 3, 1) as ptr<u8>
+    mf_p = malloc((MF_POINTS as i64) * 8)
+    mf_ref = malloc((MF_POINTS as i64) * 8)
+    ch_rho = malloc((CH_POINTS as i64) * 8)
+    ch_small = malloc((CH_POINTS as i64) * 8)
+    ch_big = malloc((CH_POINTS as i64) * 8)
+    ch_rho_s = malloc((CH_POINTS as i64) * 8)
+    saved = calloc(CH_BIG as i64, 4)
+
+    println("")
+    println("  SZNAJD OUTFLOW DYNAMICS  --  exit probability against the exact answer")
+    println("  =====================================================================")
+    println("")
+
+    build_mf_reference()
+    measure_mean_field()
+
+    println("    WELL MIXED, 24 agents, three independent uniform draws per update")
+    println("        n      rho       measured      binomial CDF        gap")
+    println("      ---     ----     ----------     -------------     ------")
+    let mut i: i32 = 0
+    while i < MF_POINTS {
+        print("    ")
+        printf("%5.0f", (i + 1) as f64)
+        printf("     %4.2f", ((i + 1) as f64) / (MF_N as f64))
+        printf("     %10.5f", mf_p[i])
+        printf("     %13.6f", mf_ref[i])
+        printf("     %6.4f", fabs(mf_p[i] - mf_ref[i]))
+        println("")
+        i = i + 1
+    }
+    print("    worst gap to the exact gambler's-ruin answer : ")
+    printf("%.5f", mf_worst)
+    print("   gate ")
+    printf("%.3f", MF_GATE)
+    println("")
+    println("      E(n) = sum_{j<n} C(23, j) / 2^23, from d_n/b_n = (N-n)/n")
+    println("")
+
+    measure_chain(CH_SMALL, ch_small, ch_rho_s)
+    measure_chain(CH_BIG, ch_big, ch_rho)
+    analyse_chain()
+
+    println("    PERIODIC CHAIN, 250 trials per density")
+    println("       rho      101 sites      401 sites       linear       pair form")
+    println("      ----     ----------     ----------     --------     -----------")
+    i = 0
+    while i < CH_POINTS {
+        let r: f64 = ch_rho[i]
+        print("    ")
+        printf("%6.4f", r)
+        printf("     %10.4f", ch_small[i])
+        printf("     %10.4f", ch_big[i])
+        printf("     %8.4f", r)
+        printf("     %11.4f", r * r / (r * r + (1.0 - r) * (1.0 - r)))
+        println("")
+        i = i + 1
+    }
+    print("    spin-flip pairs checked                  : ")
+    println(flip_checks)
+    print("    pairs whose outcomes were not opposite   : ")
+    println(flip_violations)
+    print("    rms distance of the 401-site curve to E = rho              : ")
+    printf("%.5f", rms_linear)
+    println("")
+    print("    rms distance of the 401-site curve to rho^2/(rho^2+(1-rho)^2): ")
+    printf("%.5f", rms_pair)
+    println("")
+    print("    central slope at 101 sites ")
+    printf("%.4f", slope_small)
+    print("   at 401 sites ")
+    printf("%.4f", slope_big)
+    println("   a straight line would give 1.0")
+    print("    runs that hit the update cap             : ")
+    println(unfinished)
+    println("")
+
+    let mf_ok: bool = mf_worst < MF_GATE
+    let sym_ok: bool = flip_violations == 0 and flip_checks > 2000
+    let steep_ok: bool = slope_big > 1.4 and rms_pair * 2.0 < rms_linear
+    let finished_ok: bool = unfinished == 0
+    let ok: bool = mf_ok and sym_ok and steep_ok and finished_ok
+
+    live_reset()
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Sznajd model - Flow social atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+    let mut reset_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = live_rho_idx
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held { want = live_rho_idx - 1 }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held { want = live_rho_idx + 1 }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if want < 0 { want = 0 }
+        if want >= CH_POINTS { want = CH_POINTS - 1 }
+        if want != live_rho_idx {
+            live_rho_idx = want
+            live_reset()
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reset_held { live_reset() }
+            reset_held = true
+        } else {
+            reset_held = false
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused and live_row < ST_ROWS {
+            live_push_row()
+            let mut u: i32 = 0
+            while u < UPDATES_PER_ROW {
+                live_update()
+                live_updates = live_updates + 1
+                u = u + 1
+            }
+        }
+
+        gfx_clear(g, 11, 13, 20)
+        gfx_blit_rgb(g, 14, 70, LIVE_N, ST_ROWS, st)
+        draw_frame(g, 13, 69, LIVE_N + 1, ST_ROWS + 1, 62, 72, 94)
+        draw_mf_plot(g)
+        draw_chain_plot(g)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !mf_ok {
+        println("    FAIL: the well-mixed exit probability is not the binomial CDF")
+        return 1
+    }
+    if !sym_ok {
+        println("    FAIL: a complemented chain did not produce the complementary outcome")
+        return 2
+    }
+    if !finished_ok {
+        println("    FAIL: some chain runs never reached consensus inside the cap")
+        return 3
+    }
+    if !steep_ok {
+        println("    FAIL: the chain curve is not steeper than linear, or the pair form does not fit better")
+        return 4
+    }
+    println("    PASS: exact binomial exit probability well mixed, symmetric and steepening on the chain")
+    return 0
+}
