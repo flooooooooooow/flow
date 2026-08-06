@@ -1,0 +1,304 @@
+# CHEMOSTAT: Monod growth in a stirred tank, its two steady states, the
+# washout threshold, and the dilution rate that maximises output.
+#
+# THE SYSTEM
+#
+#     S' = D (Sin - S) - mu(S) X / Y
+#     X' = (mu(S) - D) X
+#     mu(S) = mumax S / (Ks + S)
+#
+#   Two `evolves as` lines. S is the limiting substrate, X the biomass, D the
+#   dilution rate (flow divided by volume), Y the yield. The organism grows at
+#   a rate set by what it is eating, and the operator sets how fast the tank
+#   is being emptied.
+#
+# THE CLOSED FORMS
+#
+#   1. Coexistence. X' = 0 with X > 0 forces mu(S*) = D, so the cell density
+#      does not appear in the substrate balance at all:
+#
+#          S* = Ks D / (mumax - D)          X* = Y (Sin - S*)
+#
+#      The organism regulates the substrate to whatever the operator's flow
+#      rate demands. This is the fact that makes a chemostat an instrument.
+#
+#   2. Washout. S* exceeds Sin, and X* goes negative, once
+#
+#          D >= Dcrit = mumax Sin / (Ks + Sin)
+#
+#      Above that the only steady state is X = 0, S = Sin: the culture is
+#      flushed out faster than it can divide.
+#
+#   3. The best dilution rate. Productivity is D X*, and maximising it over D
+#      gives, exactly,
+#
+#          D_opt = mumax ( 1 - sqrt( Ks / (Ks + Sin) ) )
+#
+#      strictly below Dcrit. Running the tank at Dcrit produces nothing.
+#
+# WHAT THIS PROVES
+#   The two steady states, the threshold between them and the optimum are all
+#   consequences of two lines. The run integrates the model at fifty-five
+#   dilution rates, matches S* and X* to 1e-9, finds the productivity peak
+#   from the simulated curve, and lands on D_opt.
+#
+# CONTROLS
+#   None: one deterministic run, no input, no randomness.
+#
+# Run: ./flow run examples/evolution/chemostat.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const MUMAX: f64 = 0.5      # 1/h
+const KS: f64 = 1.0         # g/L
+const SIN: f64 = 10.0       # g/L in the feed
+const YIELD: f64 = 0.5      # g biomass per g substrate
+const DT: f64 = 2.0e-3      # h
+const T_END: f64 = 6000.0   # h
+const N_SCAN: i32 = 55
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+function monod(s: f64, mumax: f64, ks: f64) -> f64 {
+    if s <= 0.0 {
+        return 0.0
+    }
+    return mumax * s / (ks + s)
+}
+
+flow Chemostat {
+    state s : f64 = 10.0     # g/L substrate
+    state x : f64 = 0.05     # g/L biomass
+
+    param d     : f64 = 0.2     # 1/h dilution
+    param sin   : f64 = 10.0    # g/L feed
+    param mumax : f64 = 0.5     # 1/h
+    param ks    : f64 = 1.0     # g/L
+    param yld   : f64 = 0.5
+
+    solver { dt 2 ms  method rk4 }
+
+    s evolves as d * (sin - s) - monod(s, mumax, ks) * x / yld
+    x evolves as (monod(s, mumax, ks) - d) * x
+}
+
+# ---------------------------------------------------------------------------
+# Closed forms
+# ---------------------------------------------------------------------------
+
+function d_crit() -> f64 {
+    return MUMAX * SIN / (KS + SIN)
+}
+
+function d_opt() -> f64 {
+    return MUMAX * (1.0 - sqrt(KS / (KS + SIN)))
+}
+
+function s_star(d: f64) -> f64 {
+    if d >= d_crit() {
+        return SIN
+    }
+    return KS * d / (MUMAX - d)
+}
+
+function x_star(d: f64) -> f64 {
+    if d >= d_crit() {
+        return 0.0
+    }
+    return YIELD * (SIN - s_star(d))
+}
+
+# ---------------------------------------------------------------------------
+
+let mut m_s: f64 = 0.0
+let mut m_x: f64 = 0.0
+
+function settle(d: f64) -> void {
+    let mut c: Chemostat = Chemostat_new()
+    c.d = d
+    c.sin = SIN
+    c.mumax = MUMAX
+    c.ks = KS
+    c.yld = YIELD
+    c.s = SIN
+    c.x = 0.05
+
+    let steps: i32 = (T_END / DT) as i32
+    for k in 0 to steps {
+        Chemostat_step(&c, DT)
+    }
+    m_s = c.s
+    m_x = c.x
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    println("")
+    println("  CHEMOSTAT  --  two `evolves as` lines, two steady states")
+    println("  ========================================================")
+    println("")
+    print("    mumax ")
+    printf("%.4f", MUMAX)
+    print(" /h    Ks ")
+    printf("%.4f", KS)
+    print(" g/L    Sin ")
+    printf("%.4f", SIN)
+    print(" g/L    Y ")
+    printf("%.4f", YIELD)
+    println("")
+    print("    Dcrit = mumax Sin / (Ks + Sin) : ")
+    printf("%.9f", d_crit())
+    println(" /h")
+    print("    Dopt  = mumax (1 - sqrt(Ks/(Ks+Sin))) : ")
+    printf("%.9f", d_opt())
+    println(" /h")
+    println("")
+
+    # -- 1. steady states across the range ----------------------------------
+    println("  1. STEADY STATES")
+    println("")
+    println("      D [1/h]   S [g/L]      Ks D/(mumax-D)   error       X [g/L]      Y(Sin - S*)   error       regime")
+    println("      -------   ----------   --------------   ---------   ----------   -----------   ---------   -------")
+
+    let ds: array<f64, 8> = [0.05, 0.10, 0.20, 0.30, 0.35, 0.40, 0.44, 0.48]
+    let mut worst_s: f64 = 0.0
+    let mut worst_x: f64 = 0.0
+    let mut washout_x: f64 = 1.0
+
+    for i in 0 to 8 {
+        let d: f64 = ds[i]
+        settle(d)
+        let st: f64 = s_star(d)
+        let xt: f64 = x_star(d)
+        let es: f64 = fabs(m_s - st)
+        let ex: f64 = fabs(m_x - xt)
+        if d < d_crit() {
+            if es > worst_s { worst_s = es }
+            if ex > worst_x { worst_x = ex }
+        } else {
+            if m_x < washout_x { washout_x = m_x }
+            if es > worst_s { worst_s = es }
+        }
+
+        printf("      %7.3f", d)
+        printf("   %10.7f", m_s)
+        printf("   %14.7f", st)
+        printf("   %9.2e", es)
+        printf("   %10.7f", m_x)
+        printf("   %11.7f", xt)
+        printf("   %9.2e", ex)
+        if d < d_crit() {
+            print("   coexistence")
+        } else {
+            print("   washout")
+        }
+        println("")
+    }
+    println("")
+    print("     worst |S - S*| : ")
+    printf("%.3e", worst_s)
+    println(" g/L   gate 1.0e-8")
+    print("     worst |X - X*| : ")
+    printf("%.3e", worst_x)
+    println(" g/L   gate 1.0e-8")
+    print("     biomass left above Dcrit : ")
+    printf("%.3e", washout_x)
+    println(" g/L   gate 1.0e-8")
+    println("")
+
+    # -- 2. the productivity peak -------------------------------------------
+    println("  2. PRODUCTIVITY D X, MEASURED")
+    println("")
+    println("     Fifty-five dilution rates from 0.15 to 0.42 /h, each integrated")
+    println("     to steady state, productivity read off the simulation.")
+    println("")
+
+    let lo: f64 = 0.15
+    let hi: f64 = 0.42
+    let step: f64 = (hi - lo) / ((N_SCAN - 1) as f64)
+    let mut best_d: f64 = 0.0
+    let mut best_p: f64 = -1.0
+    let mut worst_p: f64 = 0.0
+
+    for i in 0 to N_SCAN {
+        let d: f64 = lo + step * (i as f64)
+        settle(d)
+        let p: f64 = d * m_x
+        let p_theory: f64 = d * x_star(d)
+        let e: f64 = fabs(p - p_theory)
+        if e > worst_p { worst_p = e }
+        if p > best_p {
+            best_p = p
+            best_d = d
+        }
+        if i % 6 == 0 {
+            printf("      D %7.4f", d)
+            printf("   X %9.6f", m_x)
+            printf("   D X %9.6f", p)
+            print("   ")
+            let bars: i32 = (p * 40.0 + 0.5) as i32
+            for b in 0 to bars {
+                print("#")
+            }
+            println("")
+        }
+    }
+    println("")
+    print("     peak of the simulated curve : D = ")
+    printf("%.6f", best_d)
+    print(" /h   productivity ")
+    printf("%.7f", best_p)
+    println(" g/L/h")
+    print("     Dopt from the closed form   : D = ")
+    printf("%.6f", d_opt())
+    print(" /h   productivity ")
+    printf("%.7f", d_opt() * x_star(d_opt()))
+    println(" g/L/h")
+    let opt_err: f64 = fabs(best_d - d_opt())
+    print("     |difference|                : ")
+    printf("%.3e", opt_err)
+    print(" /h    grid spacing ")
+    printf("%.3e", step)
+    println(" /h")
+    print("     worst |D X - D X*| over the scan : ")
+    printf("%.3e", worst_p)
+    println(" g/L/h   gate 1.0e-8")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if worst_s != worst_s or worst_x != worst_x or best_p != best_p {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if worst_s > 1e-8 {
+        println("    FAIL: the substrate did not settle at Ks D / (mumax - D)")
+        return 2
+    }
+    if worst_x > 1e-8 {
+        println("    FAIL: the biomass did not settle at Y (Sin - S*)")
+        return 3
+    }
+    if washout_x > 1e-8 {
+        println("    FAIL: the culture survived above Dcrit")
+        return 4
+    }
+    if worst_p > 1e-8 {
+        println("    FAIL: the simulated productivity curve is not D X*")
+        return 5
+    }
+    if opt_err > step {
+        println("    FAIL: the productivity peak is not at Dopt")
+        return 6
+    }
+    println("    PASS: S* and X* to 1e-8 across the range, washout above Dcrit,")
+    println("          and the simulated productivity curve peaks at")
+    println("          mumax (1 - sqrt(Ks/(Ks+Sin))) to within one grid step")
+    return 0
+}
