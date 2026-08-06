@@ -1,0 +1,157 @@
+# A drum machine driven by the musical clock.
+#
+# WHAT YOU WILL HEAR
+#   Eight seconds, four bars of 4/4 at 120 BPM. Kick, snare and hi-hat, all
+#   synthesised from an oscillator, a noise source and two filters. Nothing
+#   is sampled and nothing is loaded from disk.
+#
+# HOW IT WORKS
+#   stdlib/audio/clock.flow turns a tempo into sample counts: how many
+#   samples a beat lasts, a bar, a sixteenth. The sequencer is then one
+#   integer division. Step number is `sample / samples_per_sixteenth`, and a
+#   voice fires on the sample where that number changes. No timers, no
+#   callbacks, no drift: the grid is exact because it is arithmetic on the
+#   sample counter.
+#
+#   kick    sine whose pitch falls 110 Hz to 45 Hz in 40 ms, over a 180 ms
+#           amplitude decay. The pitch drop is what makes it a kick rather
+#           than a low beep.
+#   snare   noise through a bandpass at 1.8 kHz plus a 190 Hz body tone,
+#           110 ms decay.
+#   hat     noise through a highpass at 7 kHz, 28 ms decay, half as long on
+#           the offbeats so the pattern breathes.
+#
+# LISTEN
+#   ./flow audio examples/audio/drum_machine.flow
+#
+# RENDER AND CHECK
+#   FLOW_AUDIO_RENDER=build/audio/drum_machine.wav \
+#     ./flow audio examples/audio/drum_machine.flow
+
+import "stdlib/audio.flow"
+import "stdlib/audio/clock.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/envelopes.flow"
+import "stdlib/audio/filters.flow"
+import "stdlib/audio/safety.flow"
+import "stdlib/audio/sink.flow"
+import "stdlib/audio/verify.flow"
+
+const RATE_HZ: i32 = 48000
+const BLOCK: i32 = 256
+const SECONDS: f32 = 8.0
+const BPM: f64 = 120.0
+
+const KICK_HI: f64 = 110.0
+const KICK_LO: f64 = 45.0
+
+function main() -> i32 {
+    let rate: SampleRate = sample_rate_48000()
+    let beat: Clock = clock_new(BPM, rate)
+    let step_samples: i64 = samples_per_sixteenth(beat)
+    let bar_samples: i64 = samples_per_bar(beat)
+
+    println("drum machine")
+    println("  8.0 seconds, four bars of 4/4 at 120 BPM")
+    printf("  one sixteenth is %lld samples, one bar is %lld\n",
+           step_samples, bar_samples)
+    println("  kick, snare and hat, all synthesised; nothing sampled")
+
+    # Sixteen steps to the bar. 1 means the voice fires on that step.
+    let kick_pat: array<i32, 16> = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+    let snare_pat: array<i32, 16> = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1]
+    let hat_pat: array<i32, 16> = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1]
+
+    let mut out: AudioSink = sink_open(RATE_HZ, 2, BLOCK)
+    let sp: ptr<AudioSink> = &out
+    let mut chain: SafetyChain = safety_new(rate, SECONDS)
+    let cp: ptr<SafetyChain> = &chain
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(BLOCK, 2, layout_interleaved())
+
+    # Voices
+    let mut kick_osc: Phasor = phasor_new(KICK_HI, rate)
+    let mut kick_amp: ExpDecay = exp_decay_new(180.0, rate)
+    let mut kick_pitch: ExpDecay = exp_decay_new(40.0, rate)
+
+    let mut snare_noise: NoiseState = noise_new(90210)
+    let mut snare_bp: Biquad = biquad_bandpass(1800.0, 1.1, rate)
+    let mut snare_tone: Phasor = phasor_new(190.0, rate)
+    let mut snare_amp: ExpDecay = exp_decay_new(110.0, rate)
+
+    let mut hat_noise: NoiseState = noise_new(31337)
+    let mut hat_hp: Biquad = biquad_highpass(7000.0, 0.8, rate)
+    let mut hat_amp: ExpDecay = exp_decay_new(28.0, rate)
+
+    let mut n: i64 = 0
+    let mut step: i64 = -1
+
+    while !safety_finished(cp) {
+        let count: i32 = safety_next_block(cp, BLOCK)
+        let mut i: i32 = 0
+        while i < count {
+            let this_step: i64 = n / step_samples
+            if this_step != step {
+                step = this_step
+                let slot: i32 = (this_step % 16) as i32
+                if kick_pat[slot] == 1 {
+                    kick_amp = exp_decay_trigger(kick_amp)
+                    kick_pitch = exp_decay_trigger(kick_pitch)
+                    kick_osc = phasor_reset(kick_osc)
+                }
+                if snare_pat[slot] == 1 {
+                    snare_amp = exp_decay_trigger(snare_amp)
+                    snare_tone = phasor_reset(snare_tone)
+                }
+                if hat_pat[slot] == 1 {
+                    hat_amp = exp_decay_trigger(hat_amp)
+                }
+            }
+
+            # --- kick ---------------------------------------------------
+            kick_amp = exp_decay_tick(kick_amp)
+            kick_pitch = exp_decay_tick(kick_pitch)
+            let kf: f64 = KICK_LO + (KICK_HI - KICK_LO) * (exp_decay_value(kick_pitch) as f64)
+            kick_osc = phasor_set_freq(kick_osc, kf, rate)
+            let kick: f32 = sine(phasor_value(kick_osc)) * exp_decay_value(kick_amp) * 0.75
+            kick_osc = phasor_tick(kick_osc)
+
+            # --- snare --------------------------------------------------
+            snare_amp = exp_decay_tick(snare_amp)
+            snare_noise = noise_tick(snare_noise)
+            snare_bp = biquad_tick(snare_bp, noise_value(snare_noise))
+            let body: f32 = sine(phasor_value(snare_tone)) * 0.35
+            snare_tone = phasor_tick(snare_tone)
+            let snare: f32 = (biquad_output(snare_bp) + body) * exp_decay_value(snare_amp) * 0.45
+
+            # --- hat ----------------------------------------------------
+            hat_amp = exp_decay_tick(hat_amp)
+            hat_noise = noise_tick(hat_noise)
+            hat_hp = biquad_tick(hat_hp, noise_value(hat_noise))
+            let hat: f32 = biquad_output(hat_hp) * exp_decay_value(hat_amp) * 0.28
+
+            # Kick centred, snare and hat pushed slightly apart.
+            let l: f32 = kick + snare * 0.92 + hat * 0.72
+            let r: f32 = kick + snare * 0.72 + hat * 0.92
+
+            let fr: Frame = safety_process_frame(cp, l, r)
+            audio_buffer_set_f32(buf, i, 0, fr.left)
+            audio_buffer_set_f32(buf, i, 1, fr.right)
+            n = n + 1
+            i = i + 1
+        }
+        sink_write(sp, buf.data, count)
+    }
+
+    sink_close(sp)
+    audio_buffer_free_f32(buf)
+    safety_report(cp)
+
+    if sink_is_render() {
+        # Percussion has no single pitch to check, so no tone bank here.
+        let spec: VerifySpec = verify_spec(SECONDS as f64, safety_ceiling_db(cp), 0.0)
+        if !verify_run(sink_render_path(), spec) {
+            return 1
+        }
+    }
+    return 0
+}
