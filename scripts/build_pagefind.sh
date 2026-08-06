@@ -40,9 +40,21 @@ if src.exists():
 src.mkdir(parents=True)
 
 entries = json.loads(index_path.read_text(encoding="utf-8"))
+
+# Pagefind writes one fragment file per indexed page. The flow-verify proof
+# corpus is over a thousand pages, which pushed the deployed site past 2900
+# files and made the GitHub Pages publish step time out. Proofs stay on the
+# site and stay in search-index.json (the ⌘K fallback still finds them by
+# title); they are simply not full-text indexed.
+SKIP_PREFIXES = ("third-party/flow-verify/proofs/",)
+
+skipped = 0
 for entry in entries:
     rel = entry.get("path") or ""
     if not rel:
+        continue
+    if rel.startswith(SKIP_PREFIXES):
+        skipped += 1
         continue
     title = entry.get("title") or rel
     category = entry.get("category") or "guide"
@@ -68,7 +80,7 @@ for entry in entries:
 """,
         encoding="utf-8",
     )
-print(f"  staged {len(entries)} HTML stubs → {src}")
+print(f"  staged {len(entries) - skipped} HTML stubs ({skipped} proof pages left to the fallback index) → {src}")
 PY
 
 cleanup() {
