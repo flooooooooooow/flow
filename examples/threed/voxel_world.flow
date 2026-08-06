@@ -1,0 +1,584 @@
+# VOXEL WORLD: a chunked block field with face culling and a raycast selector.
+#
+# TECHNIQUE
+#   The world is 24 x 16 x 24 blocks held as one byte each, divided into 8^3
+#   chunks: 3 x 2 x 3 = 18 of them. Every chunk keeps a running count of the
+#   solid blocks it contains, and a chunk whose count is zero is skipped
+#   whole during meshing. Above the terrain that is most of the upper layer,
+#   so the scan cost tracks the surface rather than the volume.
+#
+#   Face culling is the other half. A block face is emitted only when the
+#   neighbour on that side is air. Anything outside the world horizontally, or
+#   below it, counts as solid, so the outer shell and the underside are never
+#   meshed. The interior of a hill costs nothing. The HUD reports blocks
+#   against faces emitted, and the ratio is the whole point: 3000-odd solid
+#   blocks turn into a few hundred quads.
+#
+#   The mesh is rebuilt only when a chunk is marked dirty by an edit, not per
+#   frame. The rebuild is whole-world because the renderer holds one vertex
+#   buffer; the chunk structure buys the empty-chunk skip and the dirty test,
+#   not a partial upload.
+#
+#   The selector is an Amanatides-Woo voxel DDA from the eye along the view
+#   direction. It walks cell boundaries in order of the smallest tMax, so it
+#   visits exactly the cells the ray passes through, and it remembers the
+#   axis it last crossed. That axis is the face normal, which is what makes
+#   "place a block against the face you are looking at" work. The selected
+#   cell is outlined with twelve depth-tested lines.
+#
+# CONTROLS
+#   W / A / S / D    fly forward, strafe, back
+#   Arrow keys       look
+#   Space / C        rise / descend
+#   Q                remove the selected block
+#   E                place a block against the selected face
+#   1 / 2 / 3        choose the block to place: stone, sand, ruby
+#   R                regenerate the world
+#   Esc              quit
+#
+# HUD
+#   Selected block coordinates and the face normal, solid block count, faces
+#   emitted by the last mesh build, number of rebuilds, triangles drawn, and
+#   the measured frame cost.
+#
+# Run: ./flow gfx examples/threed/voxel_world.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/render3d.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+}
+
+const WIN_W: i32 = 480
+const WIN_H: i32 = 360
+const MAX_FRAMES: i32 = 100000
+
+const KEY_SPACE: i32 = 49
+const KEY_C: i32 = 8
+const KEY_Q: i32 = 12
+const KEY_E: i32 = 14
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+const WX: i32 = 24
+const WY: i32 = 16
+const WZ: i32 = 24
+const CHUNK: i32 = 8
+const CX: i32 = 3
+const CY: i32 = 2
+const CZ: i32 = 3
+const NCHUNK: i32 = 18
+
+const AIR: i32 = 0
+const GRASS: i32 = 1
+const DIRT: i32 = 2
+const STONE: i32 = 3
+const SAND: i32 = 4
+const RUBY: i32 = 5
+
+const SEED: u32 = 20260806
+const REACH: f32 = 16.0
+const DT: f32 = 0.0166667
+const FLY: f32 = 7.5
+const LOOK_SPEED: f32 = 0.032
+
+let mut world: ptr<u8> = null
+let mut chunk_solid: ptr<i32> = null
+let mut dirty: bool = true
+let mut solid_total: i32 = 0
+let mut faces_emitted: i32 = 0
+let mut rebuilds: i32 = 0
+let mut chunks_meshed: i32 = 0
+
+# Selector state, filled by cast_voxel.
+let mut sel_hit: bool = false
+let mut sel_x: i32 = 0
+let mut sel_y: i32 = 0
+let mut sel_z: i32 = 0
+let mut sel_nx: i32 = 0
+let mut sel_ny: i32 = 0
+let mut sel_nz: i32 = 0
+
+function hash_lattice(ix: i32, iz: i32) -> f32 {
+    let mut h: u32 = (ix as u32) * 374761393 + (iz as u32) * 668265263 + SEED
+    h = (h ^ (h >> 13)) * 1274126177
+    h = h ^ (h >> 16)
+    return ((h % 65536) as f32) / 65536.0
+}
+
+function value_noise(x: f32, z: f32) -> f32 {
+    let fx: f32 = floorf(x)
+    let fz: f32 = floorf(z)
+    let ix: i32 = fx as i32
+    let iz: i32 = fz as i32
+    let ux: f32 = x - fx
+    let uz: f32 = z - fz
+    let tx: f32 = ux * ux * (3.0 - 2.0 * ux)
+    let tz: f32 = uz * uz * (3.0 - 2.0 * uz)
+    let a: f32 = hash_lattice(ix, iz)
+    let b: f32 = hash_lattice(ix + 1, iz)
+    let c: f32 = hash_lattice(ix, iz + 1)
+    let d: f32 = hash_lattice(ix + 1, iz + 1)
+    let top: f32 = a + (b - a) * tx
+    let bot: f32 = c + (d - c) * tx
+    return top + (bot - top) * tz
+}
+
+function in_bounds(x: i32, y: i32, z: i32) -> bool {
+    if x < 0 or x >= WX { return false }
+    if y < 0 or y >= WY { return false }
+    if z < 0 or z >= WZ { return false }
+    return true
+}
+
+function block_at(x: i32, y: i32, z: i32) -> i32 {
+    if !in_bounds(x, y, z) { return AIR }
+    return world[(y * WZ + z) * WX + x] as i32
+}
+
+# Everything outside the world sideways, and everything below it, counts as
+# solid so the outer shell and the underside are never meshed.
+function opaque_at(x: i32, y: i32, z: i32) -> bool {
+    if y >= WY { return false }
+    if y < 0 { return true }
+    if x < 0 or x >= WX or z < 0 or z >= WZ { return true }
+    return world[(y * WZ + z) * WX + x] as i32 != AIR
+}
+
+function chunk_index(x: i32, y: i32, z: i32) -> i32 {
+    return ((y / CHUNK) * CZ + (z / CHUNK)) * CX + (x / CHUNK)
+}
+
+function set_block(x: i32, y: i32, z: i32, id: i32) -> void {
+    if !in_bounds(x, y, z) { return }
+    let o: i32 = (y * WZ + z) * WX + x
+    let old: i32 = world[o] as i32
+    if old == id { return }
+    let ci: i32 = chunk_index(x, y, z)
+    if old == AIR {
+        chunk_solid[ci] = chunk_solid[ci] + 1
+        solid_total = solid_total + 1
+    }
+    if id == AIR {
+        chunk_solid[ci] = chunk_solid[ci] - 1
+        solid_total = solid_total - 1
+    }
+    world[o] = id as u8
+    dirty = true
+}
+
+function generate() -> void {
+    let mut i: i32 = 0
+    while i < WX * WY * WZ {
+        world[i] = 0
+        i = i + 1
+    }
+    let mut c: i32 = 0
+    while c < NCHUNK {
+        chunk_solid[c] = 0
+        c = c + 1
+    }
+    solid_total = 0
+    let mut x: i32 = 0
+    while x < WX {
+        let mut z: i32 = 0
+        while z < WZ {
+            let n: f32 = value_noise((x as f32) * 0.13, (z as f32) * 0.13) * 0.65
+                       + value_noise((x as f32) * 0.31, (z as f32) * 0.31) * 0.35
+            let h: i32 = 3 + (n * 8.0) as i32
+            let mut y: i32 = 0
+            while y <= h {
+                if y == h {
+                    set_block(x, y, z, GRASS)
+                } elif y > h - 3 {
+                    set_block(x, y, z, DIRT)
+                } else {
+                    set_block(x, y, z, STONE)
+                }
+                y = y + 1
+            }
+            z = z + 1
+        }
+        x = x + 1
+    }
+    dirty = true
+}
+
+# Face 4 is +Y, so grass gets a green top and brown sides.
+function block_colour(id: i32, face: i32) -> V3 {
+    if id == GRASS {
+        if face == 4 { return v3(0.32, 0.62, 0.26) }
+        if face == 5 { return v3(0.44, 0.32, 0.20) }
+        return v3(0.40, 0.30, 0.19)
+    }
+    if id == DIRT { return v3(0.44, 0.32, 0.20) }
+    if id == STONE { return v3(0.52, 0.53, 0.56) }
+    if id == SAND { return v3(0.82, 0.76, 0.50) }
+    return v3(0.80, 0.18, 0.26)
+}
+
+function face_free(x: i32, y: i32, z: i32, face: i32) -> bool {
+    if face == 0 { return !opaque_at(x, y, z + 1) }
+    if face == 1 { return !opaque_at(x, y, z - 1) }
+    if face == 2 { return !opaque_at(x + 1, y, z) }
+    if face == 3 { return !opaque_at(x - 1, y, z) }
+    if face == 4 { return !opaque_at(x, y + 1, z) }
+    return !opaque_at(x, y - 1, z)
+}
+
+function rebuild_mesh() -> void {
+    r3d_mesh_reset()
+    faces_emitted = 0
+    chunks_meshed = 0
+    let half: V3 = v3(0.5, 0.5, 0.5)
+    let mut cy: i32 = 0
+    while cy < CY {
+        let mut cz: i32 = 0
+        while cz < CZ {
+            let mut cx: i32 = 0
+            while cx < CX {
+                let ci: i32 = (cy * CZ + cz) * CX + cx
+                if chunk_solid[ci] > 0 {
+                    chunks_meshed = chunks_meshed + 1
+                    let mut y: i32 = cy * CHUNK
+                    while y < (cy + 1) * CHUNK {
+                        let mut z: i32 = cz * CHUNK
+                        while z < (cz + 1) * CHUNK {
+                            let mut x: i32 = cx * CHUNK
+                            while x < (cx + 1) * CHUNK {
+                                let id: i32 = block_at(x, y, z)
+                                if id != AIR {
+                                    let centre: V3 = v3((x as f32) + 0.5,
+                                                        (y as f32) + 0.5,
+                                                        (z as f32) + 0.5)
+                                    let mut f: i32 = 0
+                                    while f < 6 {
+                                        if face_free(x, y, z, f) {
+                                            r3d_mesh_box_face(centre, half, f,
+                                                              block_colour(id, f))
+                                            faces_emitted = faces_emitted + 1
+                                        }
+                                        f = f + 1
+                                    }
+                                }
+                                x = x + 1
+                            }
+                            z = z + 1
+                        }
+                        y = y + 1
+                    }
+                }
+                cx = cx + 1
+            }
+            cz = cz + 1
+        }
+        cy = cy + 1
+    }
+    rebuilds = rebuilds + 1
+    dirty = false
+}
+
+# Amanatides-Woo voxel traversal. Records the first solid cell and the face
+# whose plane the ray crossed to enter it.
+function cast_voxel(eye: V3, dir: V3, reach: f32) -> void {
+    sel_hit = false
+    sel_nx = 0
+    sel_ny = 0
+    sel_nz = 0
+    let big: f32 = 1.0e18
+    let mut ix: i32 = floorf(eye.x) as i32
+    let mut iy: i32 = floorf(eye.y) as i32
+    let mut iz: i32 = floorf(eye.z) as i32
+
+    let mut stepx: i32 = 1
+    if dir.x < 0.0 { stepx = -1 }
+    let mut stepy: i32 = 1
+    if dir.y < 0.0 { stepy = -1 }
+    let mut stepz: i32 = 1
+    if dir.z < 0.0 { stepz = -1 }
+
+    let mut dtx: f32 = big
+    let mut dty: f32 = big
+    let mut dtz: f32 = big
+    if fabsf(dir.x) > 0.00001 { dtx = fabsf(1.0 / dir.x) }
+    if fabsf(dir.y) > 0.00001 { dty = fabsf(1.0 / dir.y) }
+    if fabsf(dir.z) > 0.00001 { dtz = fabsf(1.0 / dir.z) }
+
+    let mut tx: f32 = big
+    let mut ty: f32 = big
+    let mut tz: f32 = big
+    if dtx < big {
+        if stepx > 0 {
+            tx = ((ix + 1) as f32 - eye.x) * dtx
+        } else {
+            tx = (eye.x - (ix as f32)) * dtx
+        }
+    }
+    if dty < big {
+        if stepy > 0 {
+            ty = ((iy + 1) as f32 - eye.y) * dty
+        } else {
+            ty = (eye.y - (iy as f32)) * dty
+        }
+    }
+    if dtz < big {
+        if stepz > 0 {
+            tz = ((iz + 1) as f32 - eye.z) * dtz
+        } else {
+            tz = (eye.z - (iz as f32)) * dtz
+        }
+    }
+
+    if block_at(ix, iy, iz) != AIR {
+        sel_hit = true
+        sel_x = ix
+        sel_y = iy
+        sel_z = iz
+        return
+    }
+
+    let mut travelled: f32 = 0.0
+    let mut guard: i32 = 0
+    while travelled <= reach and guard < 256 {
+        if tx <= ty and tx <= tz {
+            travelled = tx
+            ix = ix + stepx
+            tx = tx + dtx
+            sel_nx = 0 - stepx
+            sel_ny = 0
+            sel_nz = 0
+        } elif ty <= tz {
+            travelled = ty
+            iy = iy + stepy
+            ty = ty + dty
+            sel_nx = 0
+            sel_ny = 0 - stepy
+            sel_nz = 0
+        } else {
+            travelled = tz
+            iz = iz + stepz
+            tz = tz + dtz
+            sel_nx = 0
+            sel_ny = 0
+            sel_nz = 0 - stepz
+        }
+        if travelled > reach { return }
+        if block_at(ix, iy, iz) != AIR {
+            sel_hit = true
+            sel_x = ix
+            sel_y = iy
+            sel_z = iz
+            return
+        }
+        guard = guard + 1
+    }
+}
+
+# Twelve depth-tested edges around the selected cell.
+function draw_selection(vp: &[f32]) -> void {
+    let e: f32 = 0.008
+    let x0: f32 = (sel_x as f32) - e
+    let y0: f32 = (sel_y as f32) - e
+    let z0: f32 = (sel_z as f32) - e
+    let x1: f32 = (sel_x as f32) + 1.0 + e
+    let y1: f32 = (sel_y as f32) + 1.0 + e
+    let z1: f32 = (sel_z as f32) + 1.0 + e
+    let c: V3 = v3(1.0, 1.0, 0.25)
+    r3d_line3(vp, v3(x0, y0, z0), v3(x1, y0, z0), c)
+    r3d_line3(vp, v3(x1, y0, z0), v3(x1, y0, z1), c)
+    r3d_line3(vp, v3(x1, y0, z1), v3(x0, y0, z1), c)
+    r3d_line3(vp, v3(x0, y0, z1), v3(x0, y0, z0), c)
+    r3d_line3(vp, v3(x0, y1, z0), v3(x1, y1, z0), c)
+    r3d_line3(vp, v3(x1, y1, z0), v3(x1, y1, z1), c)
+    r3d_line3(vp, v3(x1, y1, z1), v3(x0, y1, z1), c)
+    r3d_line3(vp, v3(x0, y1, z1), v3(x0, y1, z0), c)
+    r3d_line3(vp, v3(x0, y0, z0), v3(x0, y1, z0), c)
+    r3d_line3(vp, v3(x1, y0, z0), v3(x1, y1, z0), c)
+    r3d_line3(vp, v3(x1, y0, z1), v3(x1, y1, z1), c)
+    r3d_line3(vp, v3(x0, y0, z1), v3(x0, y1, z1), c)
+}
+
+function block_name(id: i32) -> string {
+    if id == STONE { return "STONE" }
+    if id == SAND { return "SAND" }
+    return "RUBY"
+}
+
+function main() -> i32 {
+    world = malloc((WX * WY * WZ) as i64) as ptr<u8>
+    chunk_solid = malloc((NCHUNK * 4) as i64) as ptr<i32>
+    if world == null or chunk_solid == null {
+        println("allocation failed")
+        return 1
+    }
+    if !r3d_init(WIN_W, WIN_H) {
+        println("render3d init failed")
+        return 1
+    }
+    r3d_set_ambient(0.34)
+    r3d_set_fog(true, v3(0.60, 0.70, 0.82), 22.0, 46.0)
+    generate()
+    rebuild_mesh()
+
+    let mut proj: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut view: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut vp: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let model: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let pproj: ptr<f32> = proj
+    let pview: ptr<f32> = view
+    let pvp: ptr<f32> = vp
+    m4_perspective(pproj, r3d_radians(66.0), r3d_aspect(), 0.1, 60.0)
+
+    let mut ex: f32 = 12.0
+    let mut ey: f32 = 11.5
+    let mut ez: f32 = 19.0
+    let mut yaw: f32 = 0.0
+    let mut pitch: f32 = -0.40
+    let mut hold: i32 = STONE
+    let mut placed: i32 = 0
+    let mut removed: i32 = 0
+    let mut last_q: bool = false
+    let mut last_e: bool = false
+    let mut last_r: bool = false
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "VOXEL WORLD - Flow render3d")
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        r3d_tick()
+
+        if gfx_key_down(g, KEY_LEFT) { yaw = yaw + LOOK_SPEED }
+        if gfx_key_down(g, KEY_RIGHT) { yaw = yaw - LOOK_SPEED }
+        if gfx_key_down(g, KEY_UP) { pitch = pitch + LOOK_SPEED }
+        if gfx_key_down(g, KEY_DOWN) { pitch = pitch - LOOK_SPEED }
+        pitch = r3d_clampf(pitch, -1.45, 1.45)
+        if gfx_key_down(g, KEY_1) { hold = STONE }
+        if gfx_key_down(g, KEY_2) { hold = SAND }
+        if gfx_key_down(g, KEY_3) { hold = RUBY }
+
+        let fwd: V3 = r3d_forward(yaw, pitch)
+        let flat: V3 = r3d_forward(yaw, 0.0)
+        let rgt: V3 = r3d_right(yaw)
+        let mut mx: f32 = 0.0
+        let mut my: f32 = 0.0
+        let mut mz: f32 = 0.0
+        if gfx_key_down(g, KEY_W) {
+            mx = mx + flat.x
+            mz = mz + flat.z
+        }
+        if gfx_key_down(g, KEY_S) {
+            mx = mx - flat.x
+            mz = mz - flat.z
+        }
+        if gfx_key_down(g, KEY_D) {
+            mx = mx + rgt.x
+            mz = mz + rgt.z
+        }
+        if gfx_key_down(g, KEY_A) {
+            mx = mx - rgt.x
+            mz = mz - rgt.z
+        }
+        if gfx_key_down(g, KEY_SPACE) { my = my + 1.0 }
+        if gfx_key_down(g, KEY_C) { my = my - 1.0 }
+        ex = r3d_clampf(ex + mx * FLY * DT, -12.0, (WX as f32) + 12.0)
+        ey = r3d_clampf(ey + my * FLY * DT, 1.0, (WY as f32) + 14.0)
+        ez = r3d_clampf(ez + mz * FLY * DT, -12.0, (WZ as f32) + 12.0)
+
+        let eye: V3 = v3(ex, ey, ez)
+        cast_voxel(eye, fwd, REACH)
+
+        let q_now: bool = gfx_key_down(g, KEY_Q)
+        if q_now and !last_q and sel_hit {
+            set_block(sel_x, sel_y, sel_z, AIR)
+            removed = removed + 1
+        }
+        last_q = q_now
+
+        let e_now: bool = gfx_key_down(g, KEY_E)
+        if e_now and !last_e and sel_hit {
+            let nx: i32 = sel_x + sel_nx
+            let ny: i32 = sel_y + sel_ny
+            let nz: i32 = sel_z + sel_nz
+            if in_bounds(nx, ny, nz) and block_at(nx, ny, nz) == AIR {
+                set_block(nx, ny, nz, hold)
+                placed = placed + 1
+            }
+        }
+        last_e = e_now
+
+        let r_now: bool = gfx_key_down(g, KEY_R)
+        if r_now and !last_r {
+            generate()
+            placed = 0
+            removed = 0
+        }
+        last_r = r_now
+
+        if dirty { rebuild_mesh() }
+
+        m4_look_at(pview, eye, v3_add(eye, fwd), v3(0.0, 1.0, 0.0))
+        m4_mul(pvp, proj, view)
+
+        r3d_clear_gradient(v3(0.34, 0.50, 0.76), v3(0.68, 0.76, 0.86))
+        r3d_draw_mesh(model, vp, v3(0.40, 0.86, 0.32), R3D_FLAT)
+        if sel_hit { draw_selection(vp) }
+        r3d_present(g)
+
+        gfx_fill_rect(g, 0, 0, WIN_W, 58, 14, 17, 24)
+        gfx_fill_rect(g, 0, WIN_H - 40, WIN_W, 40, 14, 17, 24)
+        gfx_fill_rect(g, WIN_W / 2 - 5, WIN_H / 2, 11, 1, 250, 250, 120)
+        gfx_fill_rect(g, WIN_W / 2, WIN_H / 2 - 5, 1, 11, 250, 250, 120)
+
+        gfx_draw_text(g, 8, 8, "VOXEL WORLD", 2, 240, 240, 246)
+        gfx_draw_text(g, 200, 12, "HOLDING", 1, 170, 175, 190)
+        gfx_draw_text(g, 268, 12, block_name(hold), 1, 250, 210, 130)
+        if sel_hit {
+            gfx_draw_text(g, 8, 32, "SEL", 1, 170, 175, 190)
+            gfx_draw_int(g, 40, 32, sel_x, 1, 240, 240, 246)
+            gfx_draw_int(g, 70, 32, sel_y, 1, 240, 240, 246)
+            gfx_draw_int(g, 100, 32, sel_z, 1, 240, 240, 246)
+            gfx_draw_text(g, 138, 32, "FACE", 1, 170, 175, 190)
+            gfx_draw_int(g, 180, 32, sel_nx, 1, 250, 210, 130)
+            gfx_draw_int(g, 206, 32, sel_ny, 1, 250, 210, 130)
+            gfx_draw_int(g, 232, 32, sel_nz, 1, 250, 210, 130)
+        } else {
+            gfx_draw_text(g, 8, 32, "NO BLOCK IN REACH", 1, 250, 150, 140)
+        }
+        gfx_draw_text(g, 268, 32, "PLACED", 1, 170, 175, 190)
+        gfx_draw_int(g, 326, 32, placed, 1, 240, 240, 246)
+        gfx_draw_text(g, 358, 32, "CUT", 1, 170, 175, 190)
+        gfx_draw_int(g, 390, 32, removed, 1, 240, 240, 246)
+
+        gfx_draw_text(g, 8, 44, "BLOCKS", 1, 170, 175, 190)
+        gfx_draw_int(g, 66, 44, solid_total, 1, 240, 240, 246)
+        gfx_draw_text(g, 118, 44, "FACES", 1, 170, 175, 190)
+        gfx_draw_int(g, 170, 44, faces_emitted, 1, 240, 240, 246)
+        gfx_draw_text(g, 214, 44, "CHUNKS", 1, 170, 175, 190)
+        gfx_draw_int(g, 272, 44, chunks_meshed, 1, 240, 240, 246)
+        gfx_draw_text(g, 300, 44, "BUILDS", 1, 170, 175, 190)
+        gfx_draw_int(g, 358, 44, rebuilds, 1, 240, 240, 246)
+
+        gfx_draw_text(g, 8, WIN_H - 34, "TRIS", 1, 170, 175, 190)
+        gfx_draw_int(g, 48, WIN_H - 34, r3d_tris_drawn(), 1, 240, 240, 246)
+        gfx_draw_text(g, 110, WIN_H - 34, "PX", 1, 170, 175, 190)
+        gfx_draw_int(g, 134, WIN_H - 34, r3d_pixels_shaded(), 1, 240, 240, 246)
+        gfx_draw_text(g, 214, WIN_H - 34, "MS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 238, WIN_H - 34, r3d_frame_ms() as f64, 2, 1, 240, 240, 246)
+        gfx_draw_text(g, 300, WIN_H - 34, "FPS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 330, WIN_H - 34, r3d_fps() as f64, 1, 1, 130, 240, 160)
+        gfx_draw_text(g, 8, WIN_H - 18, "WASD FLY  ARROWS LOOK  SPACE/C UP-DOWN  Q CUT  E PLACE  1-3 BLOCK",
+                      1, 140, 145, 160)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
