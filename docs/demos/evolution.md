@@ -1,6 +1,6 @@
 # Evolution Suite
 
-Thirty-two programs about systems that change over time. This is the suite
+Thirty-four programs about systems that change over time. This is the suite
 that carries Flow's founding thesis directly: the dynamics are *declared*,
 not hand-integrated.
 
@@ -70,6 +70,8 @@ nonzero if the check fails, so the suite doubles as a regression test.
 |---|---|
 | `spring_mass_control.flow` | Model, analyse, control in one file via `dsys` |
 | `spring_mass_lqr.flow` · `chain4_lqr.flow` | LQR gains derived in Flow |
+| `pid_tuning.flow` | Ziegler-Nichols on 1/(s+1)^3; Ku = 8, Tu = 2pi/sqrt(3) |
+| `cruise_control.flow` | PI pole placement; I-P overshoot matches the damping formula |
 | `robot_connect.flow` · `parent_input_connect.flow` | `connect` composing subsystems |
 | `flow_pipeline_stages.flow` | A `flow` block as one stage of a `\|>` pipeline |
 
