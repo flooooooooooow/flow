@@ -1,6 +1,4 @@
 # Data-parallel gradient accumulation for the digits MLP.
-# flow:lenient: strict checker cannot yet type a function passed as ptr<void>
-# (flow_parallel_for_i32 body callback). Everything else follows strict rules.
 #
 #   FLOW_HOST=python ./flow run examples/ml/digits_mlp_parallel.flow
 #
