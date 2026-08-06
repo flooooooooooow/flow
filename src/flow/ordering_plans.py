@@ -33,16 +33,20 @@ from typing import Optional
 
 from .plan_selector import Facts, Implementation, register
 
-__all__ = ["sort_facts_ok", "COUNTING_MAX_SPAN"]
+__all__ = ["sort_facts_ok", "COUNTING_MAX_SPAN", "SORT_MIN_RUN"]
 
 
 # A counting sort allocates one bucket per distinct key. Past this span the
 # bucket array costs more than the merge it replaces.
 COUNTING_MAX_SPAN = 4096
 
-# Below this length a merge never pays for its bookkeeping, and run detection
-# has nothing to detect.
+# Below this length run detection has nothing to detect.
 MERGE_MIN_N = 16
+
+# Shortest run the natural merge will merge. Shorter runs are grown by
+# insertion first. The C generator emits this same number, so the cost model
+# and the emitted loop agree.
+SORT_MIN_RUN = 32
 
 
 def _pinned(facts: Facts, me: str) -> Optional[str]:
@@ -60,7 +64,7 @@ def sort_facts_ok(facts: Facts) -> Optional[str]:
 
 
 def _log2(x: float) -> float:
-    return math.log2(x) if x > 1 else 1.0
+    return math.log2(x) if x > 1 else 0.0
 
 
 def _runs(facts: Facts) -> float:
@@ -233,8 +237,19 @@ def _natural_merge_applicable(facts: Facts) -> Optional[str]:
 
 def _natural_merge_cost(facts: Facts) -> float:
     n = float(facts.n)
-    # One scan to find runs, then log2(runs) merge passes.
-    return n + n * _log2(_runs(facts))
+    found = _runs(facts)
+    # Runs shorter than the minimum are grown by insertion before merging, so
+    # a run detector never gets more than n/SORT_MIN_RUN runs, and it pays
+    # about SORT_MIN_RUN/4 comparisons per element when it has to do that
+    # growing. On unstructured input that extension is what makes the run
+    # detector lose to a plain bottom-up merge.
+    ceiling = max(1.0, n / SORT_MIN_RUN)
+    extension = 0.0
+    if found > ceiling:
+        found = ceiling
+        extension = n * (SORT_MIN_RUN / 4.0)
+    # One scan to find runs, the extension, then log2(runs) merge passes.
+    return n + extension + n * _log2(found)
 
 
 register(
