@@ -85,14 +85,23 @@ so every run of a preset is the same run.
 | [`life_variants.flow`](life_variants.flow) | Three characters from three B/S rules | Conway, HighLife, Day-and-Night | `./flow gfx examples/morphogenesis/life_variants.flow` |
 | [`hexagonal_ca.flow`](hexagonal_ca.flow) | A six-fold dendritic snow crystal | Reiter's snowflake automaton on a hex lattice | `./flow gfx examples/morphogenesis/hexagonal_ca.flow` |
 | [`wfc_growth.flow`](wfc_growth.flow) | A continuous circuit filling out from a seed | Wave function collapse over a 16-tile pipe set | `./flow gfx examples/morphogenesis/wfc_growth.flow` |
+| [`sandpile.flow`](sandpile.flow) | Avalanche sizes on a power law | Abelian sandpile (BTW) | `./flow gfx examples/morphogenesis/sandpile.flow` |
+| [`turing_hex_ca.flow`](turing_hex_ca.flow) | Spots at a selected wavelength on hex | Young activator-inhibitor CA | `./flow gfx examples/morphogenesis/turing_hex_ca.flow` |
+| [`schelling_segregation.flow`](schelling_segregation.flow) | Mild preference, strong segregation | Schelling threshold model | `./flow gfx examples/morphogenesis/schelling_segregation.flow` |
+| [`crack_propagation.flow`](crack_propagation.flow) | Disorder lengthens the failure path | Random fuse model | `./flow gfx examples/morphogenesis/crack_propagation.flow` |
+| [`voronoi_growth.flow`](voronoi_growth.flow) | Avrami exponent near 2 or 3 | Johnson-Mehl nucleation | `./flow gfx examples/morphogenesis/voronoi_growth.flow` |
 
-## Biological pattern
+## Biological pattern and agents
 
 | Example | Phenomenon | Model | Run |
 |---|---|---|---|
 | [`slime_mold.flow`](slime_mold.flow) | An arterial transport network with junctions | Physarum agents over a shared trail map | `./flow gfx examples/morphogenesis/slime_mold.flow` |
 | [`cell_sorting.flow`](cell_sorting.flow) | A mixture separating into tissue layers | Differential adhesion, Metropolis exchange | `./flow gfx examples/morphogenesis/cell_sorting.flow` |
 | [`somite_clock.flow`](somite_clock.flow) | Equal body segments laid down one at a time | Clock and wavefront somitogenesis | `./flow gfx examples/morphogenesis/somite_clock.flow` |
+| [`flocking_patterns.flow`](flocking_patterns.flow) | Order collapses with noise | Vicsek flocking | `./flow gfx examples/morphogenesis/flocking_patterns.flow` |
+| [`ant_pheromone.flow`](ant_pheromone.flow) | Short bridge wins by stigmergy | Double-bridge pheromone model | `./flow gfx examples/morphogenesis/ant_pheromone.flow` |
+| [`bone_remodelling.flow`](bone_remodelling.flow) | Trabeculae align with load | Wolff adaptive elasticity | `./flow gfx examples/morphogenesis/bone_remodelling.flow` |
+| [`river_erosion.flow`](river_erosion.flow) | Basins obey Hack's law | Stream-power incision | `./flow gfx examples/morphogenesis/river_erosion.flow` |
 
 ## Two examples worth reading side by side
 

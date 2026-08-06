@@ -91,15 +91,21 @@ recordings reproduce bit for bit.
 |:---:|:---:|:---:|
 | ![Cyclic cellular automaton](./morphogenesis/cyclic_ca.gif) | ![Life variants](./morphogenesis/life_variants.gif) | ![Hexagonal CA](./morphogenesis/hexagonal_ca.gif) |
 | **Cyclic CA**. Noise, then debris, then a tiling of spiral cores<br>`cyclic_ca.flow` | **Life variants**. A soup thins into gliders and still lifes<br>`life_variants.flow` | **Reiter snowflake**. Six-fold dendrites off one frozen cell<br>`hexagonal_ca.flow` |
-| ![Wave function collapse](./morphogenesis/wfc_growth.gif) | | |
-| **Wave function collapse**. A circuit resolves out of possibility<br>`wfc_growth.flow` | | |
+| ![Wave function collapse](./morphogenesis/wfc_growth.gif) | ![Sandpile](./morphogenesis/sandpile.gif) | ![Turing hex CA](./morphogenesis/turing_hex_ca.gif) |
+| **Wave function collapse**. A circuit resolves out of possibility<br>`wfc_growth.flow` | **Abelian sandpile**. Avalanche sizes on a power law<br>`sandpile.flow` | **Turing hex CA**. Activator-inhibitor spots on a triangular lattice<br>`turing_hex_ca.flow` |
+| ![Schelling](./morphogenesis/schelling_segregation.gif) | ![Crack](./morphogenesis/crack_propagation.gif) | ![Voronoi growth](./morphogenesis/voronoi_growth.gif) |
+| **Schelling**. Mild preference produces strong segregation<br>`schelling_segregation.flow` | **Random fuse**. Disorder lengthens the failure path<br>`crack_propagation.flow` | **Johnson-Mehl**. Nucleation and growth with an Avrami exponent<br>`voronoi_growth.flow` |
 
-## Biological pattern
+## Biological pattern and agents
 
 | | | |
 |:---:|:---:|:---:|
 | ![Slime mould](./morphogenesis/slime_mold.gif) | ![Cell sorting](./morphogenesis/cell_sorting.gif) | ![Somite clock](./morphogenesis/somite_clock.gif) |
 | **Physarum**. Agents and a decaying trail map build a transport network<br>`slime_mold.flow` | **Differential adhesion**. A 50/50 mixture sorts itself into layers<br>`cell_sorting.flow` | **Clock and wavefront**. Equal somites laid down one at a time<br>`somite_clock.flow` |
+| ![Flocking](./morphogenesis/flocking_patterns.gif) | ![Ant pheromone](./morphogenesis/ant_pheromone.gif) | ![Bone](./morphogenesis/bone_remodelling.gif) |
+| **Vicsek flocking**. Order collapses with noise<br>`flocking_patterns.flow` | **Double bridge**. The short path wins by stigmergy<br>`ant_pheromone.flow` | **Bone remodelling**. Trabeculae align with load<br>`bone_remodelling.flow` |
+| ![River erosion](./morphogenesis/river_erosion.gif) | | |
+| **Stream power**. Drainage basins obey Hack's law<br>`river_erosion.flow` | | |
 
 ## Two worth reading side by side
 
