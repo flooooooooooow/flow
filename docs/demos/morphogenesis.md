@@ -65,6 +65,8 @@ recordings reproduce bit for bit.
 | **Gray-Scott**. One seeded blob divides into a field of solitons<br>`gray_scott.flow` | **Turing spots**. Noise resolves into a hexagonal lattice of peaks<br>`turing_spots.flow` | **Turing stripes**. The same system with saturation, so ridges<br>`turing_stripes.flow` |
 | ![Belousov-Zhabotinsky](./morphogenesis/belousov.gif) | ![Swift-Hohenberg](./morphogenesis/swift_hohenberg.gif) | ![Cahn-Hilliard](./morphogenesis/cahn_hilliard.gif) |
 | **Belousov-Zhabotinsky**. Four broken waves wind into rotating spirals<br>`belousov.flow` | **Swift-Hohenberg**. One wavelength survives and anneals into rolls<br>`swift_hohenberg.flow` | **Cahn-Hilliard**. A quenched mixture unmixes and coarsens forever<br>`cahn_hilliard.flow` |
+| ![Brusselator](./morphogenesis/brusselator.gif) | | |
+| **Brusselator**. The textbook autocatalytic pair crossing its Hopf boundary into travelling structure<br>`brusselator.flow` | | |
 | ![Perona-Malik](./morphogenesis/heat_morph.gif) | | |
 | **Perona-Malik**. Noise dissolves while boundaries sharpen<br>`heat_morph.flow` | | |
 

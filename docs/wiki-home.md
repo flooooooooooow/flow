@@ -107,7 +107,10 @@ scripted input.
 **[Full game gallery →](demos/games.md)** — all 24 games with recorded
 gameplay, run commands, and sources.
 
-**[Morphogenesis gallery →](demos/morphogenesis.md)** — twenty live simulations
+**[Evolution suite →](demos/evolution.md)** — thirty-two systems that change
+over time, each checked against theory.
+
+**[Morphogenesis gallery →](demos/morphogenesis.md)** — twenty-one live simulations
 of pattern formation, each with a recorded GIF: reaction-diffusion, Turing
 patterns, DLA, L-systems, Physarum networks, somitogenesis. Sources:
 [examples/morphogenesis](../examples/morphogenesis/README.md).
@@ -128,7 +131,8 @@ and policy gradients against the games above, plus
 | [Beginner guide](tutorials/beginner.md) | Variables, functions, control flow |
 | [Playground](playground/index.html) | Syntax explorer with verified examples (compile locally with `./flow run`) |
 | [Game gallery](demos/games.md) | 24 complete games, each with a recorded GIF |
-| [Morphogenesis gallery](demos/morphogenesis.md) | 20 pattern-formation simulations, each with a recorded GIF |
+| [Morphogenesis gallery](demos/morphogenesis.md) | 21 pattern-formation simulations, each with a recorded GIF |
+| [Evolution suite](demos/evolution.md) | 32 systems evolving through time, each gated on a measurement |
 | [Training game AIs](tutorials/game-ai.md) | Q-learning, GA, and policy gradients that measurably learn |
 | [ML on a MacBook](tutorials/ml-on-macbook.md) | Digit classifier, parallel training, the Metal path |
 | [Comparison](comparison.md) | Flow vs C, Rust, Zig, Mojo |
