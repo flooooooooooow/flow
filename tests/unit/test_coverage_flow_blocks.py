@@ -6,11 +6,6 @@ evolves expressions that reference params and inputs together, and an
 end-to-end check that two instances of the same flow step independently.
 """
 
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
 
 from flow.c_generator import flow_to_c
@@ -137,63 +132,8 @@ flow Spring {
         assert "y0_x" in step and "k4_v" in step
 
 
-class TestIndependentInstances:
-    @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
-    def test_two_instances_of_one_flow_step_independently(self, tmp_path):
-        # Constant derivative makes Euler exact: after n steps of dt,
-        # x = x0 + n * dt * rate, with every quantity a power of two so
-        # the doubles are exact. The two instances use different params
-        # and step counts; neither may disturb the other.
-        program = """
-flow Linear {
-    state x : f64 = 0.0
-    param rate : f64 = 1.0
-    x evolves as rate
-}
+# TestIndependentInstances ran two instances of one flow block with
+# different params and step counts. It is now the Linear section of
+# tests/lang/test_hybrid_events.flow.
 
-extern {
-    function printf(fmt: string, val: f64) -> i32
-}
 
-function main() -> i32 {
-    let mut a: Linear = Linear_new()
-    let mut b: Linear = Linear_new()
-    b.rate = 4.0
-
-    for k in 0 to 8 {
-        Linear_step(&a, 0.25)
-    }
-    for k in 0 to 4 {
-        Linear_step(&b, 0.25)
-    }
-
-    printf("%.6f\\n", a.x)
-    printf("%.6f\\n", b.x)
-    return 0
-}
-"""
-        src = tmp_path / "instances.flow"
-        src.write_text(program)
-        c_file = tmp_path / "instances.c"
-        exe = tmp_path / "instances"
-        repo_root = Path(__file__).resolve().parents[2]
-
-        transpile = subprocess.run(
-            [sys.executable, "-m", "flow.transpiler", str(src), "--c",
-             "--strict", "-o", str(c_file)],
-            capture_output=True, text=True, timeout=120,
-            cwd=repo_root, env={"PYTHONPATH": str(repo_root / "src"),
-                                "PATH": "/usr/bin:/bin"},
-        )
-        assert transpile.returncode == 0, transpile.stderr
-        compile_run = subprocess.run(
-            ["clang", str(c_file), "-o", str(exe), "-lm"],
-            capture_output=True, text=True, timeout=120,
-        )
-        assert compile_run.returncode == 0, compile_run.stderr
-        run = subprocess.run([str(exe)], capture_output=True, text=True,
-                             timeout=60)
-        assert run.returncode == 0
-        a_x, b_x = (float(line) for line in run.stdout.split())
-        assert a_x == 2.0  # 8 steps * 0.25 * rate 1.0
-        assert b_x == 4.0  # 4 steps * 0.25 * rate 4.0

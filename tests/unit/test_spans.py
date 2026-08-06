@@ -12,7 +12,7 @@ import pytest
 from flow.parser import parse_flow_code
 from flow.type_checker import TypeKind
 
-from .compiler_helpers import compile_and_run, errors, needs_clang, to_c
+from .compiler_helpers import errors, to_c
 
 
 def _param_type(source: str, function: str = "f", index: int = 0):
@@ -149,143 +149,11 @@ def test_slice_with_runtime_bounds_uses_the_same_form():
     assert "(hi) - (lo)" in c
 
 
-@needs_clang
-def test_sum_over_a_borrowed_array_runs():
-    assert (
-        compile_and_run(
-            """
-            function total(values: span<i32>) -> i32 {
-                let mut acc: i32 = 0
-                let mut i: i32 = 0
-                while i < values.len {
-                    acc = acc + values[i]
-                    i = i + 1
-                }
-                return acc
-            }
-            function main() -> i32 {
-                let xs: array<i32, 4> = [1, 2, 3, 4]
-                return total(xs)
-            }
-            """
-        )
-        == 10
-    )
-
-
-@needs_clang
-def test_write_through_a_mutable_span_runs():
-    assert (
-        compile_and_run(
-            """
-            function fill(values: span<mut i32>, v: i32) {
-                let mut i: i32 = 0
-                while i < len(values) {
-                    values[i] = v
-                    i = i + 1
-                }
-            }
-            function main() -> i32 {
-                let mut xs: array<i32, 4> = [0, 0, 0, 0]
-                fill(xs, 3)
-                return xs[0] + xs[3]
-            }
-            """
-        )
-        == 6
-    )
-
-
-@needs_clang
-def test_slice_passed_onward_runs():
-    assert (
-        compile_and_run(
-            """
-            function total(values: span<i32>) -> i32 {
-                let mut acc: i32 = 0
-                let mut i: i32 = 0
-                while i < values.len {
-                    acc = acc + values[i]
-                    i = i + 1
-                }
-                return acc
-            }
-            function middle(values: span<i32>) -> i32 {
-                return total(values[1..3])
-            }
-            function main() -> i32 {
-                let xs: array<i32, 4> = [1, 2, 3, 4]
-                return middle(xs)
-            }
-            """
-        )
-        == 5
-    )
-
-
-@needs_clang
-def test_span_passes_through_unchanged():
-    assert (
-        compile_and_run(
-            """
-            function inner(values: span<i32>) -> i32 { return values[0] }
-            function outer(values: span<i32>) -> i32 { return inner(values) }
-            function main() -> i32 {
-                let xs: array<i32, 3> = [7, 8, 9]
-                return outer(xs)
-            }
-            """
-        )
-        == 7
-    )
-
-
-@needs_clang
-def test_fixed_extent_span_runs():
-    assert (
-        compile_and_run(
-            """
-            function corners(v: span<i32, 4>) -> i32 { return v[0] + v[3] }
-            function main() -> i32 {
-                let xs: array<i32, 4> = [1, 2, 3, 4]
-                return corners(xs)
-            }
-            """
-        )
-        == 5
-    )
-
-
-@needs_clang
-def test_reference_sugar_runs_identically():
-    assert (
-        compile_and_run(
-            """
-            function total(values: &[i32]) -> i32 {
-                let mut acc: i32 = 0
-                let mut i: i32 = 0
-                while i < values.len {
-                    acc = acc + values[i]
-                    i = i + 1
-                }
-                return acc
-            }
-            function scale(values: &mut [i32]) {
-                let mut i: i32 = 0
-                while i < values.len {
-                    values[i] = values[i] * 2
-                    i = i + 1
-                }
-            }
-            function main() -> i32 {
-                let mut xs: array<i32, 3> = [1, 2, 3]
-                scale(xs)
-                return total(xs)
-            }
-            """
-        )
-        == 12
-    )
+# The six compile-and-run cases (summing a borrowed array, filling through a
+# mutable span, a slice passed onward, a span forwarded unchanged, a
+# fixed-extent parameter, and the &[T] sugar) are now
+# tests/lang/test_spans.flow. The lowering shape and the rejection
+# diagnostics stay here.
 
 
 # --- Diagnostics -------------------------------------------------------------
