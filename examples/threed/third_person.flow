@@ -1,0 +1,437 @@
+# THIRD PERSON: an orbit / chase camera with smoothing and occlusion pull-in.
+#
+# TECHNIQUE
+#   The camera has three inputs: an orbit yaw, an orbit pitch, and a wanted
+#   distance. The point it looks at is the avatar's chest, target = pos +
+#   (0, 1.2, 0). The ideal eye is target - forward(yaw, pitch) * distance.
+#
+#   Two things stop that ideal eye from being used directly.
+#
+#   Occlusion. A ray is cast from the target back along the camera direction
+#   and tested against every level box with r3d_ray_aabb. If something is hit
+#   closer than the wanted distance, the camera moves to just in front of it,
+#   which is the standard fix for a chase camera clipping through a wall. The
+#   pull-in is instantaneous and the push-out is eased, because a camera that
+#   eases inwards spends those frames inside the wall.
+#
+#   Smoothing. The eye is not teleported to its target each frame. It is moved
+#   a fixed fraction of the way, eye += (want - eye) * 0.18, which is a
+#   one-pole low-pass on position. The look-at point is smoothed the same way
+#   with a stiffer 0.35, so the camera lags behind the avatar in translation
+#   while still keeping it near the centre of frame. Press M to switch the
+#   filter off and watch the difference: unsmoothed, the camera snaps and the
+#   avatar's own step becomes visible as judder.
+#
+#   The avatar itself moves on the ground plane in camera-relative directions,
+#   turns to face its velocity with an angular lerp, and jumps against the
+#   same axis-by-axis box collision used by fps_camera.flow.
+#
+# CONTROLS
+#   W / A / S / D    move, relative to where the camera is looking
+#   Arrow keys       orbit the camera
+#   Q / E            pull the camera in / push it out
+#   Space            jump
+#   M                toggle camera smoothing
+#   R                reset
+#   Esc              quit
+#
+# HUD
+#   Wanted distance, distance after occlusion, actual smoothed distance, the
+#   occluder flag, smoothing state, triangles drawn, and the measured frame
+#   cost.
+#
+# Run: ./flow gfx examples/threed/third_person.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/render3d.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function atan2f(y: f32, x: f32) -> f32
+}
+
+const WIN_W: i32 = 480
+const WIN_H: i32 = 360
+const MAX_FRAMES: i32 = 100000
+
+const KEY_SPACE: i32 = 49
+const KEY_M: i32 = 46
+const KEY_Q: i32 = 12
+const KEY_E: i32 = 14
+
+const DT: f32 = 0.0166667
+const GRAVITY: f32 = 18.0
+const MOVE_SPEED: f32 = 4.6
+const JUMP_SPEED: f32 = 7.0
+const ORBIT_SPEED: f32 = 0.032
+const EYE_SMOOTH: f32 = 0.18
+const LOOK_SMOOTH: f32 = 0.35
+const DIST_EASE: f32 = 0.10
+const CAM_MARGIN: f32 = 0.35
+const BODY_HX: f32 = 0.35
+const BODY_HY: f32 = 0.55
+const BODY_HZ: f32 = 0.35
+
+const MAX_BOXES: i32 = 32
+const FLOOR_N: i32 = 16
+const FLOOR_HALF: f32 = 16.0
+
+let mut box_lo: ptr<f32> = null
+let mut box_hi: ptr<f32> = null
+let mut box_col: ptr<f32> = null
+let mut box_n: i32 = 0
+
+let mut lcg: u32 = 776644
+
+function rnd_unit() -> f32 {
+    lcg = lcg * 1664525 + 1013904223
+    return ((lcg >> 9) % 65536) as f32 / 65536.0
+}
+
+function add_box(lx: f32, ly: f32, lz: f32, hx: f32, hy: f32, hz: f32,
+                 cr: f32, cg: f32, cb: f32) -> void {
+    if box_n >= MAX_BOXES { return }
+    let o: i32 = box_n * 3
+    box_lo[o] = lx
+    box_lo[o + 1] = ly
+    box_lo[o + 2] = lz
+    box_hi[o] = hx
+    box_hi[o + 1] = hy
+    box_hi[o + 2] = hz
+    box_col[o] = cr
+    box_col[o + 1] = cg
+    box_col[o + 2] = cb
+    box_n = box_n + 1
+}
+
+function build_level() -> void {
+    box_n = 0
+    lcg = 776644
+    let w: f32 = FLOOR_HALF
+    add_box(0.0 - w, 0.0, 0.0 - w, w, 3.5, 0.0 - w + 1.0, 0.42, 0.40, 0.50)
+    add_box(0.0 - w, 0.0, w - 1.0, w, 3.5, w, 0.42, 0.40, 0.50)
+    add_box(0.0 - w, 0.0, 0.0 - w, 0.0 - w + 1.0, 3.5, w, 0.37, 0.35, 0.46)
+    add_box(w - 1.0, 0.0, 0.0 - w, w, 3.5, w, 0.37, 0.35, 0.46)
+    # Two tall slabs the camera has to squeeze past.
+    add_box(-2.0, 0.0, -4.0, 2.0, 5.0, -3.0, 0.80, 0.42, 0.30)
+    add_box(3.5, 0.0, 2.0, 4.5, 5.0, 8.0, 0.30, 0.58, 0.82)
+    let mut p: i32 = 0
+    while p < 6 {
+        let px: f32 = (rnd_unit() - 0.5) * 22.0
+        let pz: f32 = (rnd_unit() - 0.5) * 22.0
+        let ph: f32 = 1.0 + rnd_unit() * 2.6
+        add_box(px - 0.8, 0.0, pz - 0.8, px + 0.8, ph, pz + 0.8,
+                0.50, 0.46 + rnd_unit() * 0.3, 0.34)
+        p = p + 1
+    }
+}
+
+function build_static_mesh() -> void {
+    r3d_mesh_reset()
+    let step: f32 = 2.0 * FLOOR_HALF / (FLOOR_N as f32)
+    let up: V3 = v3(0.0, 1.0, 0.0)
+    let mut i: i32 = 0
+    while i < FLOOR_N {
+        let mut j: i32 = 0
+        while j < FLOOR_N {
+            let x0: f32 = 0.0 - FLOOR_HALF + (i as f32) * step
+            let z0: f32 = 0.0 - FLOOR_HALF + (j as f32) * step
+            let x1: f32 = x0 + step
+            let z1: f32 = z0 + step
+            let mut c: V3 = v3(0.24, 0.27, 0.24)
+            if (i + j) % 2 == 0 { c = v3(0.32, 0.36, 0.32) }
+            let a: i32 = r3d_mesh_vertex(v3(x0, 0.0, z1), up, c)
+            let b: i32 = r3d_mesh_vertex(v3(x1, 0.0, z1), up, c)
+            let d: i32 = r3d_mesh_vertex(v3(x1, 0.0, z0), up, c)
+            let e: i32 = r3d_mesh_vertex(v3(x0, 0.0, z0), up, c)
+            r3d_mesh_tri(a, b, d)
+            r3d_mesh_tri(a, d, e)
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let mut k: i32 = 0
+    while k < box_n {
+        let o: i32 = k * 3
+        let lo: V3 = v3(box_lo[o], box_lo[o + 1], box_lo[o + 2])
+        let hi: V3 = v3(box_hi[o], box_hi[o + 1], box_hi[o + 2])
+        r3d_mesh_box(v3_scale(v3_add(lo, hi), 0.5), v3_scale(v3_sub(hi, lo), 0.5),
+                     v3(box_col[o], box_col[o + 1], box_col[o + 2]))
+        k = k + 1
+    }
+}
+
+# The avatar: a torso, a head and two arms, appended after the static mesh so
+# one draw call covers the whole scene.
+function add_avatar(px: f32, py: f32, pz: f32, facing: f32) -> void {
+    let s: f32 = sinf(facing)
+    let c: f32 = cosf(facing)
+    let torso: V3 = v3(px, py + 0.55, pz)
+    r3d_mesh_box(torso, v3(BODY_HX, BODY_HY, BODY_HZ), v3(0.88, 0.28, 0.30))
+    r3d_mesh_box(v3(px, py + 1.32, pz), v3(0.22, 0.22, 0.22), v3(0.95, 0.80, 0.62))
+    # A nose marker so the facing direction is readable at a glance.
+    r3d_mesh_box(v3(px - s * 0.32, py + 1.30, pz - c * 0.32), v3(0.08, 0.08, 0.08),
+                 v3(0.20, 0.20, 0.24))
+    r3d_mesh_box(v3(px + c * 0.48, py + 0.62, pz - s * 0.48), v3(0.12, 0.34, 0.12),
+                 v3(0.72, 0.24, 0.26))
+    r3d_mesh_box(v3(px - c * 0.48, py + 0.62, pz + s * 0.48), v3(0.12, 0.34, 0.12),
+                 v3(0.72, 0.24, 0.26))
+}
+
+function blocked(px: f32, py: f32, pz: f32) -> bool {
+    let cy: f32 = py + BODY_HY
+    let mut i: i32 = 0
+    while i < box_n {
+        let o: i32 = i * 3
+        if px + BODY_HX > box_lo[o] and px - BODY_HX < box_hi[o] {
+            if cy + BODY_HY > box_lo[o + 1] and cy - BODY_HY < box_hi[o + 1] {
+                if pz + BODY_HZ > box_lo[o + 2] and pz - BODY_HZ < box_hi[o + 2] {
+                    return true
+                }
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Nearest level box along the ray, or -1.0 when nothing is hit.
+function cast_level(origin: V3, dir: V3, max_t: f32) -> f32 {
+    let mut best: f32 = -1.0
+    let mut i: i32 = 0
+    while i < box_n {
+        let o: i32 = i * 3
+        let t: f32 = r3d_ray_aabb(origin, dir,
+                                  v3(box_lo[o], box_lo[o + 1], box_lo[o + 2]),
+                                  v3(box_hi[o], box_hi[o + 1], box_hi[o + 2]))
+        if t >= 0.0 and t <= max_t {
+            if best < 0.0 or t < best { best = t }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+# Shortest signed turn from a to b, so the avatar never spins the long way.
+function angle_lerp(a: f32, b: f32, k: f32) -> f32 {
+    let two_pi: f32 = 6.28318531
+    let mut d: f32 = b - a
+    while d > 3.14159265 { d = d - two_pi }
+    while d < 0.0 - 3.14159265 { d = d + two_pi }
+    return a + d * k
+}
+
+function main() -> i32 {
+    box_lo = malloc((MAX_BOXES * 3 * 4) as i64) as ptr<f32>
+    box_hi = malloc((MAX_BOXES * 3 * 4) as i64) as ptr<f32>
+    box_col = malloc((MAX_BOXES * 3 * 4) as i64) as ptr<f32>
+    if box_lo == null or box_hi == null or box_col == null {
+        println("allocation failed")
+        return 1
+    }
+    if !r3d_init(WIN_W, WIN_H) {
+        println("render3d init failed")
+        return 1
+    }
+    r3d_set_ambient(0.30)
+    r3d_set_fog(true, v3(0.55, 0.62, 0.70), 16.0, 42.0)
+    build_level()
+
+    let mut proj: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut view: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let mut vp: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let model: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    let pproj: ptr<f32> = proj
+    let pview: ptr<f32> = view
+    let pvp: ptr<f32> = vp
+    m4_perspective(pproj, r3d_radians(62.0), r3d_aspect(), 0.1, 70.0)
+
+    let mut px: f32 = 0.0
+    let mut py: f32 = 0.0
+    let mut pz: f32 = 6.0
+    let mut vy: f32 = 0.0
+    let mut facing: f32 = 0.0
+    let mut grounded: bool = true
+
+    let mut cam_yaw: f32 = 0.0
+    let mut cam_pitch: f32 = -0.30
+    let mut want_dist: f32 = 6.0
+    let mut smooth_dist: f32 = 6.0
+    let mut eye_x: f32 = 0.0
+    let mut eye_y: f32 = 3.0
+    let mut eye_z: f32 = 12.0
+    let mut look_x: f32 = 0.0
+    let mut look_y: f32 = 1.2
+    let mut look_z: f32 = 6.0
+    let mut smoothing: bool = true
+    let mut last_m: bool = false
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "THIRD PERSON - Flow render3d")
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        r3d_tick()
+
+        if gfx_key_down(g, KEY_LEFT) { cam_yaw = cam_yaw + ORBIT_SPEED }
+        if gfx_key_down(g, KEY_RIGHT) { cam_yaw = cam_yaw - ORBIT_SPEED }
+        if gfx_key_down(g, KEY_UP) { cam_pitch = cam_pitch + ORBIT_SPEED }
+        if gfx_key_down(g, KEY_DOWN) { cam_pitch = cam_pitch - ORBIT_SPEED }
+        cam_pitch = r3d_clampf(cam_pitch, -1.25, 0.55)
+        if gfx_key_down(g, KEY_Q) { want_dist = want_dist - 0.08 }
+        if gfx_key_down(g, KEY_E) { want_dist = want_dist + 0.08 }
+        want_dist = r3d_clampf(want_dist, 2.0, 12.0)
+
+        let m_now: bool = gfx_key_down(g, KEY_M)
+        if m_now and !last_m { smoothing = !smoothing }
+        last_m = m_now
+
+        if gfx_key_down(g, KEY_R) {
+            px = 0.0
+            py = 0.0
+            pz = 6.0
+            vy = 0.0
+            cam_yaw = 0.0
+            cam_pitch = -0.30
+            want_dist = 6.0
+        }
+
+        # Camera-relative movement on the ground plane.
+        let fwd: V3 = r3d_forward(cam_yaw, 0.0)
+        let rgt: V3 = r3d_right(cam_yaw)
+        let mut mx: f32 = 0.0
+        let mut mz: f32 = 0.0
+        if gfx_key_down(g, KEY_W) {
+            mx = mx + fwd.x
+            mz = mz + fwd.z
+        }
+        if gfx_key_down(g, KEY_S) {
+            mx = mx - fwd.x
+            mz = mz - fwd.z
+        }
+        if gfx_key_down(g, KEY_D) {
+            mx = mx + rgt.x
+            mz = mz + rgt.z
+        }
+        if gfx_key_down(g, KEY_A) {
+            mx = mx - rgt.x
+            mz = mz - rgt.z
+        }
+        let mlen: f32 = sqrtf(mx * mx + mz * mz)
+        if mlen > 0.0001 {
+            mx = mx / mlen * MOVE_SPEED
+            mz = mz / mlen * MOVE_SPEED
+            facing = angle_lerp(facing, atan2f(0.0 - mx, 0.0 - mz), 0.25)
+        }
+
+        if grounded and gfx_key_down(g, KEY_SPACE) {
+            vy = JUMP_SPEED
+            grounded = false
+        }
+
+        let try_x: f32 = px + mx * DT
+        if !blocked(try_x, py, pz) { px = try_x }
+        let try_z: f32 = pz + mz * DT
+        if !blocked(px, py, try_z) { pz = try_z }
+        vy = vy - GRAVITY * DT
+        let try_y: f32 = py + vy * DT
+        grounded = false
+        if blocked(px, try_y, pz) {
+            if vy < 0.0 { grounded = true }
+            vy = 0.0
+        } else {
+            py = try_y
+        }
+        if py <= 0.0 {
+            py = 0.0
+            if vy < 0.0 { vy = 0.0 }
+            grounded = true
+        }
+
+        # Camera solve.
+        let target: V3 = v3(px, py + 1.2, pz)
+        let dir: V3 = r3d_forward(cam_yaw, cam_pitch)
+        let back: V3 = v3_neg(dir)
+        let hit: f32 = cast_level(target, back, want_dist)
+        let mut free_dist: f32 = want_dist
+        let occluded: bool = hit >= 0.0
+        if occluded {
+            free_dist = r3d_maxf(hit - CAM_MARGIN, 1.0)
+        }
+        # Pull in immediately, push out slowly.
+        if free_dist < smooth_dist {
+            smooth_dist = free_dist
+        } else {
+            smooth_dist = smooth_dist + (free_dist - smooth_dist) * DIST_EASE
+        }
+        let want_eye: V3 = v3_add(target, v3_scale(back, smooth_dist))
+        if smoothing {
+            eye_x = eye_x + (want_eye.x - eye_x) * EYE_SMOOTH
+            eye_y = eye_y + (want_eye.y - eye_y) * EYE_SMOOTH
+            eye_z = eye_z + (want_eye.z - eye_z) * EYE_SMOOTH
+            look_x = look_x + (target.x - look_x) * LOOK_SMOOTH
+            look_y = look_y + (target.y - look_y) * LOOK_SMOOTH
+            look_z = look_z + (target.z - look_z) * LOOK_SMOOTH
+        } else {
+            eye_x = want_eye.x
+            eye_y = want_eye.y
+            eye_z = want_eye.z
+            look_x = target.x
+            look_y = target.y
+            look_z = target.z
+        }
+        let eye: V3 = v3(eye_x, r3d_maxf(eye_y, 0.35), eye_z)
+        m4_look_at(pview, eye, v3(look_x, look_y, look_z), v3(0.0, 1.0, 0.0))
+        m4_mul(pvp, proj, view)
+
+        build_static_mesh()
+        add_avatar(px, py, pz, facing)
+
+        r3d_clear_gradient(v3(0.30, 0.42, 0.60), v3(0.66, 0.70, 0.74))
+        r3d_draw_mesh(model, vp, v3(0.40, 0.86, 0.32), R3D_FLAT)
+        r3d_present(g)
+
+        let actual: f32 = v3_dist(eye, target)
+        gfx_fill_rect(g, 0, 0, WIN_W, 58, 14, 17, 24)
+        gfx_fill_rect(g, 0, WIN_H - 40, WIN_W, 40, 14, 17, 24)
+        gfx_draw_text(g, 8, 8, "THIRD PERSON", 2, 240, 240, 246)
+        gfx_draw_text(g, 8, 32, "WANT", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 50, 32, want_dist as f64, 2, 1, 240, 240, 246)
+        gfx_draw_text(g, 106, 32, "FREE", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 148, 32, free_dist as f64, 2, 1, 240, 240, 246)
+        gfx_draw_text(g, 204, 32, "EYE", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 236, 32, actual as f64, 2, 1, 240, 240, 246)
+        if occluded {
+            gfx_draw_text(g, 292, 32, "OCCLUDED", 1, 250, 170, 120)
+        }
+        if smoothing {
+            gfx_draw_text(g, 8, 46, "SMOOTHING ON", 1, 130, 240, 160)
+        } else {
+            gfx_draw_text(g, 8, 46, "SMOOTHING OFF", 1, 250, 140, 140)
+        }
+        gfx_draw_text(g, 130, 46, "ORBIT", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 182, 46, (cam_yaw * 57.29578) as f64, 0, 1, 240, 240, 246)
+        gfx_draw_text(g, 240, 46, "PITCH", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 292, 46, (cam_pitch * 57.29578) as f64, 0, 1, 240, 240, 246)
+
+        gfx_draw_text(g, 8, WIN_H - 34, "TRIS", 1, 170, 175, 190)
+        gfx_draw_int(g, 48, WIN_H - 34, r3d_tris_drawn(), 1, 240, 240, 246)
+        gfx_draw_text(g, 110, WIN_H - 34, "PX", 1, 170, 175, 190)
+        gfx_draw_int(g, 134, WIN_H - 34, r3d_pixels_shaded(), 1, 240, 240, 246)
+        gfx_draw_text(g, 214, WIN_H - 34, "MS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 238, WIN_H - 34, r3d_frame_ms() as f64, 2, 1, 240, 240, 246)
+        gfx_draw_text(g, 300, WIN_H - 34, "FPS", 1, 170, 175, 190)
+        gfx_draw_fixed(g, 330, WIN_H - 34, r3d_fps() as f64, 1, 1, 130, 240, 160)
+        gfx_draw_text(g, 8, WIN_H - 18, "WASD MOVE  ARROWS ORBIT  Q/E ZOOM  SPACE JUMP  M SMOOTH",
+                      1, 140, 145, 160)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
