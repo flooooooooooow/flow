@@ -2,9 +2,9 @@
 
 Two constructs share one selector (see `plan_selector`):
 
-* `sort` — `xs |> sort`, `xs |> sortBy [...]`. Six lowerings, from "do nothing
+* `sort`: `xs |> sort`, `xs |> sortBy [...]`. Six lowerings, from "do nothing
   because the input is already in that order" to a stable bottom-up merge.
-* `search` — `xs |> find(x)`. Two lowerings, linear scan and binary search.
+* `search`: `xs |> find(x)`. Two lowerings, linear scan and binary search.
 
 The interesting part is that the two constructs share facts. A `|> sort` in
 straight-line code leaves the array provably ascending, and a later `|> find`
@@ -19,7 +19,7 @@ Fact keys used by the sort implementations:
     keys        number of `by` keys (0 = whole-element compare)
     stable      caller asked for a stable order
     unique      caller asked for adjacent-duplicate compaction
-    direction   "asc" | "desc" — the order being produced
+    direction   "asc" | "desc", the order being produced
     input_order "asc" | "asc_strict" | "desc" | "desc_strict" | "unknown"
     key_range   [lo, hi] when the sort key is a bounded integer, else None
     expect_runs "few" when the caller wrote `adaptive`, else "unknown"
