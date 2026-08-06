@@ -1,0 +1,1119 @@
+# experiment: running behavioural and psychophysical experiments in Flow.
+#
+# The case for compiling an experiment rather than interpreting it is narrow
+# and checkable: psychophysics is measurement, and the two things being
+# measured are when the stimulus appeared and when the participant moved.
+# Flow compiles to C, so between the clock read and the pixel write there is
+# no interpreter dispatch, no allocator, and no garbage collector that can
+# decide to run during a 16 ms window. This module does not claim that buys
+# you zero jitter. It measures the jitter and writes it down, per trial.
+#
+# WHAT IS HERE
+#   clock        xp_now_ns, xp_present_at, xp_clock_resolution_ns
+#   onset stats  xp_onset_reset / _n / _mean_us / _sd_us / _worst_us
+#   randomness   xp_seed (recorded), xp_rand, xp_rand_normal, xp_ex_gaussian
+#   design       xp_factor, xp_design_build, xp_blocks, xp_shuffle,
+#                xp_shuffle_within_blocks, xp_latin, xp_practice
+#   response     XpResponse, xp_trial_begin / _poll / _result (frame-driven),
+#                xp_response_sim for the simulated participant
+#   logging      xp_log_open / xp_log_row / xp_log_close, one CSV row a trial
+#   screens      xp_fixation, xp_center_text, xp_progress, xp_instruction_*
+#
+# TWO MODES, AND WHICH IS WHICH
+#   Simulated (headless, gated in CI): the design, the presentation waits and
+#   the timing measurement are real; the response is drawn from a
+#   deterministic responder model instead of a finger. Run it with
+#       ./flow record <program> --frames 1 --out build/psych_frames
+#   which links the headless recorder, needs no display, and passes the
+#   program's exit code through.
+#
+#   Interactive (a real participant): the same program, run with
+#       ./flow gfx <program>
+#   opens a window and collects real key presses against the same clock.
+#
+# DETERMINISM
+#   stdout is deterministic: same seed, same bytes, every run. Measured
+#   timing is a property of the machine and the run, so it goes to the CSV
+#   (one onset_err_us column per trial) and to a small timing report file
+#   named on stdout. Nothing about the measured jitter is printed inline.
+#
+# CAPS
+#   XP_MAX_FACTORS factors, XP_MAX_LEVELS levels each, XP_MAX_TRIALS trials.
+#   Trial tables are module statics, allocated once.
+#
+# See docs/library/experiments.md for the worked example and the measured
+# timing characteristics, including what a research-grade rig still needs.
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64
+    function fclose(f: ptr<void>) -> i32
+    function system(cmd: string) -> i32
+    function usleep(us: u32) -> i32
+    function strlen(s: ptr<u8>) -> i64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function flow_rt_monotonic_timespec(sec_out: ptr<i64>, nsec_out: ptr<i64>) -> i32
+}
+
+# ---------------------------------------------------------------------------
+# Key codes (macOS NSEvent, the same numbering lib/stdlib/gfx.flow uses)
+# ---------------------------------------------------------------------------
+
+export const XP_KEY_A: i32 = 0
+export const XP_KEY_S: i32 = 1
+export const XP_KEY_D: i32 = 2
+export const XP_KEY_F: i32 = 3
+export const XP_KEY_Z: i32 = 6
+export const XP_KEY_X: i32 = 7
+export const XP_KEY_C: i32 = 8
+export const XP_KEY_V: i32 = 9
+export const XP_KEY_B: i32 = 11
+export const XP_KEY_1: i32 = 18
+export const XP_KEY_2: i32 = 19
+export const XP_KEY_3: i32 = 20
+export const XP_KEY_4: i32 = 21
+export const XP_KEY_J: i32 = 38
+export const XP_KEY_K: i32 = 40
+export const XP_KEY_L: i32 = 37
+export const XP_KEY_M: i32 = 46
+export const XP_KEY_N: i32 = 45
+export const XP_KEY_RETURN: i32 = 36
+export const XP_KEY_SPACE: i32 = 49
+
+# Trial states, as returned by xp_trial_poll.
+export const XP_FIXATION: i32 = 0
+export const XP_STIMULUS: i32 = 1
+export const XP_FEEDBACK: i32 = 2
+export const XP_DONE: i32 = 3
+
+const XP_MAX_FACTORS: i32 = 4
+const XP_MAX_LEVELS: i32 = 8
+const XP_MAX_TRIALS: i32 = 2048
+const XP_BUF: i32 = 1024
+
+# Below this much remaining, stop sleeping and spin on the clock. The OS
+# scheduler will not wake a thread to better than about a millisecond.
+const XP_SPIN_NS: i64 = 2000000
+
+# ---------------------------------------------------------------------------
+# Monotonic clock
+# ---------------------------------------------------------------------------
+
+# Nanoseconds on the monotonic clock. Never goes backwards, unaffected by
+# NTP steps or the user changing the system time mid-session.
+export function xp_now_ns() -> i64 {
+    let mut sec: i64 = 0
+    let mut nsec: i64 = 0
+    if flow_rt_monotonic_timespec(&sec, &nsec) != 0 {
+        return 0
+    }
+    return sec * 1000000000 + nsec
+}
+
+export function xp_ms_to_ns(ms: f64) -> i64 {
+    return (ms * 1000000.0) as i64
+}
+
+export function xp_ns_to_ms(ns: i64) -> f64 {
+    return (ns as f64) / 1000000.0
+}
+
+export function xp_ns_to_us(ns: i64) -> f64 {
+    return (ns as f64) / 1000.0
+}
+
+# Smallest nonzero clock increment observed over `samples` back-to-back
+# reads. This is the floor on reaction-time resolution: an RT cannot be
+# reported finer than the clock can tick.
+export function xp_clock_resolution_ns(samples: i32) -> i64 {
+    let mut best: i64 = 1000000000
+    let mut prev: i64 = xp_now_ns()
+    let mut i: i32 = 0
+    while i < samples {
+        let now: i64 = xp_now_ns()
+        let d: i64 = now - prev
+        if d > 0 and d < best {
+            best = d
+        }
+        prev = now
+        i = i + 1
+    }
+    return best
+}
+
+# ---------------------------------------------------------------------------
+# Stimulus onset timing
+# ---------------------------------------------------------------------------
+
+export struct XpOnset {
+    target_ns: i64,
+    actual_ns: i64,
+    error_ns: i64
+}
+
+let mut xp_refresh_hz: f64 = 60.0
+let mut xp_epoch_ns: i64 = 0
+
+# Nominal display refresh, used by xp_align_to_frame. This is what the
+# display is *told* to be; nothing here verifies it against the panel.
+export function xp_refresh_set(hz: f64) -> void {
+    if hz > 1.0 {
+        xp_refresh_hz = hz
+    }
+}
+
+export function xp_refresh_hz_get() -> f64 {
+    return xp_refresh_hz
+}
+
+export function xp_frame_ns() -> i64 {
+    return (1000000000.0 / xp_refresh_hz) as i64
+}
+
+# Start of the frame grid. Call once, after the window is up.
+export function xp_epoch_mark() -> i64 {
+    xp_epoch_ns = xp_now_ns()
+    return xp_epoch_ns
+}
+
+# Round a target time up to the next nominal refresh boundary. Without a
+# vsync callback this is a grid, not a guarantee; see the honesty section of
+# docs/library/experiments.md.
+export function xp_align_to_frame(t_ns: i64) -> i64 {
+    let f: i64 = xp_frame_ns()
+    if f <= 0 or xp_epoch_ns == 0 {
+        return t_ns
+    }
+    let d: i64 = t_ns - xp_epoch_ns
+    let k: i64 = (d + f - 1) / f
+    return xp_epoch_ns + k * f
+}
+
+# Onset-error accumulator.
+let mut xp_on_n: i32 = 0
+let mut xp_on_sum: f64 = 0.0
+let mut xp_on_sumsq: f64 = 0.0
+let mut xp_on_worst: f64 = 0.0
+let mut xp_on_last: f64 = 0.0
+
+export function xp_onset_reset() -> void {
+    xp_on_n = 0
+    xp_on_sum = 0.0
+    xp_on_sumsq = 0.0
+    xp_on_worst = 0.0
+    xp_on_last = 0.0
+}
+
+function xp_onset_record(err_ns: i64) -> void {
+    let us: f64 = (err_ns as f64) / 1000.0
+    xp_on_n = xp_on_n + 1
+    xp_on_sum = xp_on_sum + us
+    xp_on_sumsq = xp_on_sumsq + us * us
+    xp_on_last = us
+    if fabs(us) > xp_on_worst {
+        xp_on_worst = fabs(us)
+    }
+}
+
+export function xp_onset_n() -> i32 {
+    return xp_on_n
+}
+
+export function xp_onset_mean_us() -> f64 {
+    if xp_on_n <= 0 {
+        return 0.0
+    }
+    return xp_on_sum / (xp_on_n as f64)
+}
+
+export function xp_onset_sd_us() -> f64 {
+    if xp_on_n < 2 {
+        return 0.0
+    }
+    let n: f64 = xp_on_n as f64
+    let m: f64 = xp_on_sum / n
+    let v: f64 = (xp_on_sumsq - n * m * m) / (n - 1.0)
+    if v <= 0.0 {
+        return 0.0
+    }
+    return sqrt(v)
+}
+
+# Worst absolute onset error seen since the last reset. This is the number a
+# reviewer should be shown, not the mean.
+export function xp_onset_worst_us() -> f64 {
+    return xp_on_worst
+}
+
+export function xp_onset_last_us() -> f64 {
+    return xp_on_last
+}
+
+# Sleep coarsely, then spin, until the monotonic clock reaches target_ns.
+# Handing the last two milliseconds to a spin loop is the whole trick: the
+# scheduler will not wake a thread to better than about a millisecond, and a
+# millisecond is six percent of a 60 Hz frame.
+export function xp_wait_until(target_ns: i64) -> i64 {
+    let mut now: i64 = xp_now_ns()
+    while target_ns - now > XP_SPIN_NS {
+        let remain: i64 = target_ns - now - XP_SPIN_NS
+        let us: i64 = remain / 1000
+        if us > 0 {
+            usleep(us as u32)
+        }
+        now = xp_now_ns()
+    }
+    while now < target_ns {
+        now = xp_now_ns()
+    }
+    return now
+}
+
+# Wait for the target instant and count the miss against the onset statistics.
+# Call this immediately before drawing, so the returned error is the onset
+# error of the frame you are about to present. Use xp_wait_until instead for
+# waits that are not stimulus onsets (frame pacing, inter-block pauses), so
+# they do not pollute the measurement.
+export function xp_present_at(target_ns: i64) -> XpOnset {
+    let now: i64 = xp_wait_until(target_ns)
+    let err: i64 = now - target_ns
+    xp_onset_record(err)
+    return XpOnset { target_ns: target_ns, actual_ns: now, error_ns: err }
+}
+
+# ---------------------------------------------------------------------------
+# Deterministic randomness, with the seed on the record
+# ---------------------------------------------------------------------------
+
+let mut xp_rng: u32 = 2463534242
+let mut xp_seed_value: u32 = 2463534242
+
+export function xp_seed(seed: u32) -> u32 {
+    let mut s: u32 = seed
+    if s == 0 {
+        s = 2463534242
+    }
+    xp_rng = s
+    xp_seed_value = s
+    return s
+}
+
+# The seed that was actually installed. Log it with the data; an experiment
+# whose randomisation cannot be regenerated is not reproducible.
+export function xp_seed_of_record() -> u32 {
+    return xp_seed_value
+}
+
+function xp_next_u32() -> u32 {
+    xp_rng = xp_rng * 1664525 + 1013904223
+    return xp_rng
+}
+
+export function xp_rand() -> f64 {
+    let r: u32 = xp_next_u32()
+    let v: i32 = ((r >> 8) & 0xFFFFFF) as i32
+    return (v as f64) / 16777216.0
+}
+
+export function xp_rand_int(n: i32) -> i32 {
+    if n <= 0 {
+        return 0
+    }
+    let mut v: i32 = ((xp_next_u32() >> 8) as i32) % n
+    if v < 0 {
+        v = 0 - v
+    }
+    return v
+}
+
+let mut xp_spare: f64 = 0.0
+let mut xp_have_spare: bool = false
+
+export function xp_rand_normal() -> f64 {
+    if xp_have_spare {
+        xp_have_spare = false
+        return xp_spare
+    }
+    let mut u: f64 = 0.0
+    let mut v: f64 = 0.0
+    let mut s: f64 = 0.0
+    let mut guard: i32 = 0
+    while guard < 100 {
+        u = 2.0 * xp_rand() - 1.0
+        v = 2.0 * xp_rand() - 1.0
+        s = u * u + v * v
+        if s > 0.0 and s < 1.0 {
+            guard = 1000
+        } else {
+            guard = guard + 1
+        }
+    }
+    if s <= 0.0 or s >= 1.0 {
+        return 0.0
+    }
+    let f: f64 = sqrt(-2.0 * log(s) / s)
+    xp_spare = v * f
+    xp_have_spare = true
+    return u * f
+}
+
+export function xp_rand_exp(mean: f64) -> f64 {
+    let mut u: f64 = xp_rand()
+    if u < 1.0e-12 {
+        u = 1.0e-12
+    }
+    return -mean * log(u)
+}
+
+# Ex-Gaussian reaction time: Gaussian(mu, sigma) plus Exponential(tau). This
+# is the standard descriptive RT distribution (Ratcliff 1979); tau supplies
+# the right tail that a plain Gaussian cannot.
+export function xp_ex_gaussian(mu: f64, sigma: f64, tau: f64) -> f64 {
+    return mu + sigma * xp_rand_normal() + xp_rand_exp(tau)
+}
+
+# ---------------------------------------------------------------------------
+# Factorial design
+# ---------------------------------------------------------------------------
+
+let mut xp_lv: ptr<i32> = null        # XP_MAX_TRIALS x XP_MAX_FACTORS
+let mut xp_ord: ptr<i32> = null       # presentation position -> trial index
+let mut xp_blk: ptr<i32> = null       # presentation position -> block id
+let mut xp_tables: bool = false
+
+let mut xp_nlev: array<i32, 4> = [0, 0, 0, 0]
+let mut xp_nfac: i32 = 0
+let mut xp_ncell: i32 = 0
+let mut xp_ntrial: i32 = 0
+let mut xp_nblocks: i32 = 1
+let mut xp_npractice: i32 = 0
+let mut xp_shuffle_seed: u32 = 0
+
+function xp_tables_alloc() -> bool {
+    if xp_tables {
+        return true
+    }
+    xp_lv = calloc((XP_MAX_TRIALS * XP_MAX_FACTORS) as i64, 4) as ptr<i32>
+    xp_ord = calloc(XP_MAX_TRIALS as i64, 4) as ptr<i32>
+    xp_blk = calloc(XP_MAX_TRIALS as i64, 4) as ptr<i32>
+    if xp_lv == null or xp_ord == null or xp_blk == null {
+        return false
+    }
+    xp_tables = true
+    return true
+}
+
+export function xp_design_reset() -> void {
+    let p: ptr<i32> = xp_nlev
+    let mut i: i32 = 0
+    while i < XP_MAX_FACTORS {
+        p[i] = 0
+        i = i + 1
+    }
+    xp_nfac = 0
+    xp_ncell = 0
+    xp_ntrial = 0
+    xp_nblocks = 1
+    xp_npractice = 0
+}
+
+# Add a factor with `levels` levels. Returns its index, or -1 if the design
+# is already full. Level codes are 0 .. levels-1 throughout.
+export function xp_factor(levels: i32) -> i32 {
+    if xp_nfac >= XP_MAX_FACTORS or levels < 1 or levels > XP_MAX_LEVELS {
+        return -1
+    }
+    let p: ptr<i32> = xp_nlev
+    p[xp_nfac] = levels
+    xp_nfac = xp_nfac + 1
+    return xp_nfac - 1
+}
+
+export function xp_nfactors() -> i32 {
+    return xp_nfac
+}
+
+export function xp_nlevels(factor: i32) -> i32 {
+    if factor < 0 or factor >= xp_nfac {
+        return 0
+    }
+    let p: ptr<i32> = xp_nlev
+    return p[factor]
+}
+
+# Cross every factor with every other, `reps` times. Trials come out in
+# systematic order; call xp_shuffle to randomise. Returns the trial count,
+# or -1 if the design does not fit.
+export function xp_design_build(reps: i32) -> i32 {
+    if xp_nfac < 1 or reps < 1 {
+        return -1
+    }
+    if !xp_tables_alloc() {
+        return -1
+    }
+    let p: ptr<i32> = xp_nlev
+    let mut ncell: i32 = 1
+    let mut f: i32 = 0
+    while f < xp_nfac {
+        ncell = ncell * p[f]
+        f = f + 1
+    }
+    let ntrial: i32 = ncell * reps
+    if ntrial > XP_MAX_TRIALS {
+        return -1
+    }
+    xp_ncell = ncell
+    xp_ntrial = ntrial
+
+    let mut t: i32 = 0
+    while t < ntrial {
+        let mut cell: i32 = t % ncell
+        f = xp_nfac - 1
+        while f >= 0 {
+            xp_lv[t * XP_MAX_FACTORS + f] = cell % p[f]
+            cell = cell / p[f]
+            f = f - 1
+        }
+        f = xp_nfac
+        while f < XP_MAX_FACTORS {
+            xp_lv[t * XP_MAX_FACTORS + f] = -1
+            f = f + 1
+        }
+        xp_ord[t] = t
+        xp_blk[t] = 0
+        t = t + 1
+    }
+    xp_nblocks = 1
+    xp_npractice = 0
+    return ntrial
+}
+
+export function xp_ntrials() -> i32 {
+    return xp_ntrial
+}
+
+export function xp_ncells() -> i32 {
+    return xp_ncell
+}
+
+# Level of `factor` on the trial presented at position `pos`.
+export function xp_level(pos: i32, factor: i32) -> i32 {
+    if pos < 0 or pos >= xp_ntrial or factor < 0 or factor >= XP_MAX_FACTORS {
+        return -1
+    }
+    return xp_lv[xp_ord[pos] * XP_MAX_FACTORS + factor]
+}
+
+# Cell index (the position in the systematic cross) of the trial at `pos`.
+export function xp_cell(pos: i32) -> i32 {
+    if pos < 0 or pos >= xp_ntrial {
+        return -1
+    }
+    let p: ptr<i32> = xp_nlev
+    let mut c: i32 = 0
+    let mut f: i32 = 0
+    while f < xp_nfac {
+        c = c * p[f] + xp_lv[xp_ord[pos] * XP_MAX_FACTORS + f]
+        f = f + 1
+    }
+    return c
+}
+
+# Split the trial list into n equal blocks. Returns false if the trial count
+# does not divide evenly, because a ragged last block quietly unbalances a
+# design and that should be an error, not a rounding.
+export function xp_blocks(n: i32) -> bool {
+    if n < 1 or xp_ntrial < 1 {
+        return false
+    }
+    if xp_ntrial % n != 0 {
+        return false
+    }
+    let per: i32 = xp_ntrial / n
+    let mut i: i32 = 0
+    while i < xp_ntrial {
+        xp_blk[i] = i / per
+        i = i + 1
+    }
+    xp_nblocks = n
+    return true
+}
+
+export function xp_nblocks_get() -> i32 {
+    return xp_nblocks
+}
+
+export function xp_block_of(pos: i32) -> i32 {
+    if pos < 0 or pos >= xp_ntrial {
+        return -1
+    }
+    return xp_blk[pos]
+}
+
+# Mark the first n positions as practice. They are presented and logged like
+# any other trial; the analysis is expected to drop them.
+export function xp_practice(n: i32) -> void {
+    let mut k: i32 = n
+    if k < 0 {
+        k = 0
+    }
+    if k > xp_ntrial {
+        k = xp_ntrial
+    }
+    xp_npractice = k
+}
+
+export function xp_is_practice(pos: i32) -> bool {
+    return pos < xp_npractice
+}
+
+export function xp_npractice_get() -> i32 {
+    return xp_npractice
+}
+
+# Fisher-Yates over the whole presentation order. The seed is stored and
+# returned so it can go in the data file and regenerate the exact sequence.
+export function xp_shuffle(seed: u32) -> u32 {
+    let s: u32 = xp_seed(seed)
+    xp_shuffle_seed = s
+    let mut i: i32 = xp_ntrial - 1
+    while i > 0 {
+        let j: i32 = xp_rand_int(i + 1)
+        let t: i32 = xp_ord[i]
+        xp_ord[i] = xp_ord[j]
+        xp_ord[j] = t
+        i = i - 1
+    }
+    return s
+}
+
+# Shuffle within each block, so the block structure survives randomisation.
+export function xp_shuffle_within_blocks(seed: u32) -> u32 {
+    let s: u32 = xp_seed(seed)
+    xp_shuffle_seed = s
+    if xp_nblocks < 1 {
+        return s
+    }
+    let per: i32 = xp_ntrial / xp_nblocks
+    let mut b: i32 = 0
+    while b < xp_nblocks {
+        let base: i32 = b * per
+        let mut i: i32 = per - 1
+        while i > 0 {
+            let j: i32 = xp_rand_int(i + 1)
+            let t: i32 = xp_ord[base + i]
+            xp_ord[base + i] = xp_ord[base + j]
+            xp_ord[base + j] = t
+            i = i - 1
+        }
+        b = b + 1
+    }
+    return s
+}
+
+export function xp_shuffle_seed_get() -> u32 {
+    return xp_shuffle_seed
+}
+
+# Balanced Latin square (Williams design): condition to run at position
+# `pos` for the participant in row `row`, with `n` conditions. Every
+# condition appears once per row and once per column, and for even n every
+# ordered pair of conditions is immediately adjacent exactly once, which
+# balances first-order carryover. For odd n a single square cannot balance
+# carryover; pair each row with its reverse (run 2n participants) instead.
+export function xp_latin(n: i32, row: i32, pos: i32) -> i32 {
+    if n < 1 or pos < 0 or pos >= n {
+        return -1
+    }
+    let mut v: i32 = 0
+    if pos % 2 == 0 {
+        v = pos / 2
+    } else {
+        v = n - 1 - (pos - 1) / 2
+    }
+    let mut r: i32 = row % n
+    if r < 0 {
+        r = r + n
+    }
+    return (r + v) % n
+}
+
+export function xp_latin_balanced(n: i32) -> bool {
+    return n % 2 == 0
+}
+
+# ---------------------------------------------------------------------------
+# Responses
+# ---------------------------------------------------------------------------
+
+export struct XpResponse {
+    key: i32,             # keycode pressed, or -1 if none
+    rt_ms: f64,           # from measured stimulus onset to the key going down
+    correct: bool,
+    timed_out: bool,
+    onset_err_us: f64     # signed presentation error for this trial
+}
+
+export function xp_response_miss(timeout_ms: f64, onset_err_us: f64) -> XpResponse {
+    return XpResponse { key: -1, rt_ms: timeout_ms, correct: false,
+                        timed_out: true, onset_err_us: onset_err_us }
+}
+
+export function xp_response_make(key: i32, rt_ms: f64, expected: i32,
+                                 onset_err_us: f64) -> XpResponse {
+    return XpResponse { key: key, rt_ms: rt_ms, correct: key == expected,
+                        timed_out: false, onset_err_us: onset_err_us }
+}
+
+# Frame-driven trial state machine. The caller owns drawing; this owns time.
+# Module statics hold primitives only, so the pending result is kept field by
+# field and assembled by xp_trial_result.
+let mut xp_t_state: i32 = 3            # XP_DONE
+let mut xp_t_fix_end: i64 = 0
+let mut xp_t_onset: i64 = 0
+let mut xp_t_onset_target: i64 = 0
+let mut xp_t_deadline: i64 = 0
+let mut xp_t_fb_end: i64 = 0
+let mut xp_t_timeout_ms: f64 = 0.0
+let mut xp_t_feedback_ms: f64 = 0.0
+let mut xp_t_err_us: f64 = 0.0
+let mut xp_t_expected: i32 = -1
+let mut xp_t_held: bool = true
+let mut xp_r_key: i32 = -1
+let mut xp_r_rt: f64 = 0.0
+let mut xp_r_correct: bool = false
+let mut xp_r_timeout: bool = true
+
+# Fixation duration is jittered so the participant cannot use a rhythm to
+# predict onset, which is the single most common way an RT effect leaks away.
+export function xp_isi_ns(min_ms: f64, jitter_ms: f64) -> i64 {
+    return xp_ms_to_ns(min_ms + jitter_ms * xp_rand())
+}
+
+export function xp_trial_begin(fix_ms: f64, jitter_ms: f64, timeout_ms: f64,
+                               feedback_ms: f64, expected: i32) -> void {
+    let now: i64 = xp_now_ns()
+    xp_t_state = XP_FIXATION
+    xp_t_fix_end = now + xp_isi_ns(fix_ms, jitter_ms)
+    xp_t_onset_target = xp_align_to_frame(xp_t_fix_end)
+    xp_t_onset = 0
+    xp_t_deadline = 0
+    xp_t_fb_end = 0
+    xp_t_timeout_ms = timeout_ms
+    xp_t_feedback_ms = feedback_ms
+    xp_t_expected = expected
+    xp_t_err_us = 0.0
+    # Treat any key already down at trial start as held, so a key left down
+    # from the previous trial cannot register as a 0 ms response.
+    xp_t_held = true
+    xp_r_key = -1
+    xp_r_rt = timeout_ms
+    xp_r_correct = false
+    xp_r_timeout = true
+}
+
+export function xp_trial_state() -> i32 {
+    return xp_t_state
+}
+
+export function xp_trial_onset_ns() -> i64 {
+    return xp_t_onset
+}
+
+export function xp_trial_result() -> XpResponse {
+    return XpResponse { key: xp_r_key, rt_ms: xp_r_rt, correct: xp_r_correct,
+                        timed_out: xp_r_timeout, onset_err_us: xp_t_err_us }
+}
+
+function xp_any_down(g: Gfx, k0: i32, k1: i32, k2: i32, k3: i32) -> i32 {
+    if k0 >= 0 and gfx_key_down(g, k0) {
+        return k0
+    }
+    if k1 >= 0 and gfx_key_down(g, k1) {
+        return k1
+    }
+    if k2 >= 0 and gfx_key_down(g, k2) {
+        return k2
+    }
+    if k3 >= 0 and gfx_key_down(g, k3) {
+        return k3
+    }
+    return -1
+}
+
+# Call once per frame, after gfx_poll and before drawing. Returns the state
+# to draw. The stimulus onset time is stamped on the first frame in which
+# the state is XP_STIMULUS, which is the frame the caller then draws and
+# presents; the residual is the present-to-photon latency, which software
+# cannot see (see the honesty section of the docs).
+export function xp_trial_poll(g: Gfx, k0: i32, k1: i32, k2: i32, k3: i32) -> i32 {
+    let now: i64 = xp_now_ns()
+    if xp_t_state == XP_FIXATION {
+        if now >= xp_t_onset_target {
+            xp_t_onset = now
+            let err: i64 = now - xp_t_onset_target
+            xp_onset_record(err)
+            xp_t_err_us = (err as f64) / 1000.0
+            xp_t_deadline = now + xp_ms_to_ns(xp_t_timeout_ms)
+            xp_t_state = XP_STIMULUS
+        }
+        return xp_t_state
+    }
+    if xp_t_state == XP_STIMULUS {
+        let k: i32 = xp_any_down(g, k0, k1, k2, k3)
+        if k < 0 {
+            xp_t_held = false
+        }
+        if k >= 0 and !xp_t_held {
+            xp_r_key = k
+            xp_r_rt = xp_ns_to_ms(now - xp_t_onset)
+            xp_r_correct = k == xp_t_expected
+            xp_r_timeout = false
+            xp_t_fb_end = now + xp_ms_to_ns(xp_t_feedback_ms)
+            xp_t_state = XP_FEEDBACK
+            return xp_t_state
+        }
+        if now >= xp_t_deadline {
+            xp_r_key = -1
+            xp_r_rt = xp_t_timeout_ms
+            xp_r_correct = false
+            xp_r_timeout = true
+            xp_t_fb_end = now + xp_ms_to_ns(xp_t_feedback_ms)
+            xp_t_state = XP_FEEDBACK
+        }
+        return xp_t_state
+    }
+    if xp_t_state == XP_FEEDBACK {
+        if now >= xp_t_fb_end {
+            xp_t_state = XP_DONE
+        }
+        return xp_t_state
+    }
+    return XP_DONE
+}
+
+# Simulated participant. The presentation wait is real, so onset_err_us is a
+# real measurement of this machine; the key and the RT come from the caller's
+# responder model. Nothing here pretends a finger was involved.
+export function xp_response_sim(onset: XpOnset, key: i32, rt_ms: f64,
+                                expected: i32, timeout_ms: f64) -> XpResponse {
+    let err_us: f64 = (onset.error_ns as f64) / 1000.0
+    if rt_ms >= timeout_ms or key < 0 {
+        return xp_response_miss(timeout_ms, err_us)
+    }
+    return xp_response_make(key, rt_ms, expected, err_us)
+}
+
+# ---------------------------------------------------------------------------
+# Line formatting (no varargs; deterministic digits)
+# ---------------------------------------------------------------------------
+
+let mut xp_buf: ptr<u8> = null
+let mut xp_buf_len: i32 = 0
+
+function xp_buf_alloc() -> bool {
+    if xp_buf != null {
+        return true
+    }
+    xp_buf = calloc(XP_BUF as i64, 1) as ptr<u8>
+    return xp_buf != null
+}
+
+function xp_put(c: i32) -> void {
+    if xp_buf_len < XP_BUF - 1 {
+        xp_buf[xp_buf_len] = c as u8
+        xp_buf_len = xp_buf_len + 1
+    }
+}
+
+export function xp_fmt_reset() -> void {
+    xp_buf_len = 0
+}
+
+export function xp_fmt_str(s: string) -> void {
+    let b: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while b[i] != 0 {
+        xp_put(b[i] as i32)
+        i = i + 1
+    }
+}
+
+export function xp_fmt_i32(v: i32) -> void {
+    let mut n: i32 = v
+    if n < 0 {
+        xp_put(45)
+        n = 0 - n
+    }
+    let mut digits: array<i32, 12> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let d: ptr<i32> = digits
+    let mut count: i32 = 0
+    if n == 0 {
+        d[0] = 0
+        count = 1
+    }
+    while n > 0 {
+        d[count] = n % 10
+        n = n / 10
+        count = count + 1
+    }
+    let mut k: i32 = count - 1
+    while k >= 0 {
+        xp_put(48 + d[k])
+        k = k - 1
+    }
+}
+
+# Fixed-point, `decimals` places, round-half-up with carry. Written out here
+# rather than handed to printf so a CSV row is byte-identical everywhere.
+export function xp_fmt_f64(v: f64, decimals: i32) -> void {
+    let mut x: f64 = v
+    if x < 0.0 {
+        xp_put(45)
+        x = 0.0 - x
+    }
+    let mut scale: f64 = 1.0
+    let mut i: i32 = 0
+    while i < decimals {
+        scale = scale * 10.0
+        i = i + 1
+    }
+    let mut whole: i64 = x as i64
+    let mut frac: i64 = ((x - (whole as f64)) * scale + 0.5) as i64
+    let scale_i: i64 = scale as i64
+    if frac >= scale_i {
+        frac = frac - scale_i
+        whole = whole + 1
+    }
+    xp_fmt_i32(whole as i32)
+    if decimals > 0 {
+        xp_put(46)
+        let mut pow10: i64 = scale_i / 10
+        while pow10 >= 1 {
+            xp_put(48 + ((frac / pow10) % 10) as i32)
+            pow10 = pow10 / 10
+        }
+    }
+}
+
+export function xp_fmt_len() -> i32 {
+    return xp_buf_len
+}
+
+function xp_fmt_write(f: ptr<void>) -> bool {
+    if f == null or xp_buf == null {
+        return false
+    }
+    let n: i64 = fwrite(xp_buf as ptr<void>, 1, xp_buf_len as i64, f)
+    return n == (xp_buf_len as i64)
+}
+
+# ---------------------------------------------------------------------------
+# CSV logging: one row per trial
+# ---------------------------------------------------------------------------
+
+let mut xp_csv: ptr<void> = null
+let mut xp_csv_rows: i32 = 0
+
+# Create the directory a path lives in, if it has one. Uses `mkdir -p` so it
+# is a no-op when the directory already exists.
+export function xp_mkdir_for(dir: string) -> bool {
+    xp_fmt_reset()
+    xp_fmt_str("mkdir -p '")
+    xp_fmt_str(dir)
+    xp_fmt_str("'")
+    xp_put(0)
+    if xp_buf == null {
+        return false
+    }
+    return system(xp_buf as string) == 0
+}
+
+# Open the data file and write the header. Column set is fixed so that a
+# reader never has to guess: unused factor columns hold -1.
+#
+#   subject,block,trial,practice,f0,f1,f2,f3,response,rt_ms,correct,onset_err_us
+export function xp_log_open(path: string) -> bool {
+    if !xp_buf_alloc() {
+        return false
+    }
+    xp_csv = fopen(path, "wb")
+    if xp_csv == null {
+        return false
+    }
+    xp_csv_rows = 0
+    xp_fmt_reset()
+    xp_fmt_str("subject,block,trial,practice,f0,f1,f2,f3,response,rt_ms,correct,onset_err_us\n")
+    return xp_fmt_write(xp_csv)
+}
+
+export function xp_log_is_open() -> bool {
+    return xp_csv != null
+}
+
+# Write one trial. `pos` is the presentation position, so the factor levels
+# and the block come from the design rather than from the caller restating
+# them.
+export function xp_log_row(subject: i32, pos: i32, resp: XpResponse) -> bool {
+    if xp_csv == null {
+        return false
+    }
+    xp_fmt_reset()
+    xp_fmt_i32(subject)
+    xp_put(44)
+    xp_fmt_i32(xp_block_of(pos))
+    xp_put(44)
+    xp_fmt_i32(pos)
+    xp_put(44)
+    if xp_is_practice(pos) {
+        xp_fmt_i32(1)
+    } else {
+        xp_fmt_i32(0)
+    }
+    let mut f: i32 = 0
+    while f < XP_MAX_FACTORS {
+        xp_put(44)
+        xp_fmt_i32(xp_level(pos, f))
+        f = f + 1
+    }
+    xp_put(44)
+    xp_fmt_i32(resp.key)
+    xp_put(44)
+    xp_fmt_f64(resp.rt_ms, 3)
+    xp_put(44)
+    if resp.correct {
+        xp_fmt_i32(1)
+    } else {
+        xp_fmt_i32(0)
+    }
+    xp_put(44)
+    xp_fmt_f64(resp.onset_err_us, 1)
+    xp_put(10)
+    if !xp_fmt_write(xp_csv) {
+        return false
+    }
+    xp_csv_rows = xp_csv_rows + 1
+    return true
+}
+
+export function xp_log_rows() -> i32 {
+    return xp_csv_rows
+}
+
+export function xp_log_close() -> void {
+    if xp_csv != null {
+        fclose(xp_csv)
+        xp_csv = null
+    }
+}
+
+# Write the timing report. Kept out of stdout on purpose: these numbers are a
+# property of the machine and the run, and stdout has to stay byte-identical
+# for the CI gate. Returns false if the file could not be written.
+export function xp_timing_write(path: string, label: string) -> bool {
+    if !xp_buf_alloc() {
+        return false
+    }
+    let f: ptr<void> = fopen(path, "wb")
+    if f == null {
+        return false
+    }
+    xp_fmt_reset()
+    xp_fmt_str("# stimulus onset error, measured this run\n")
+    xp_fmt_str("paradigm            ")
+    xp_fmt_str(label)
+    xp_put(10)
+    xp_fmt_str("presentations       ")
+    xp_fmt_i32(xp_onset_n())
+    xp_put(10)
+    xp_fmt_str("mean_error_us       ")
+    xp_fmt_f64(xp_onset_mean_us(), 3)
+    xp_put(10)
+    xp_fmt_str("sd_error_us         ")
+    xp_fmt_f64(xp_onset_sd_us(), 3)
+    xp_put(10)
+    xp_fmt_str("worst_abs_error_us  ")
+    xp_fmt_f64(xp_onset_worst_us(), 3)
+    xp_put(10)
+    xp_fmt_str("clock_resolution_ns ")
+    xp_fmt_i32(xp_clock_resolution_ns(2000) as i32)
+    xp_put(10)
+    xp_fmt_str("nominal_refresh_hz  ")
+    xp_fmt_f64(xp_refresh_hz_get(), 2)
+    xp_put(10)
+    xp_fmt_str("randomisation_seed  ")
+    xp_fmt_i32(xp_shuffle_seed_get() as i32)
+    xp_put(10)
+    let ok: bool = xp_fmt_write(f)
+    fclose(f)
+    return ok
+}
+
+# ---------------------------------------------------------------------------
+# Screens
+# ---------------------------------------------------------------------------
+
+# A fixation cross: two bars, centred, drawn in one call so every paradigm
+# gets the same one.
+export function xp_fixation(g: Gfx, cx: i32, cy: i32, arm: i32, thick: i32,
+                            r: i32, gr: i32, b: i32) -> void {
+    let h: i32 = thick / 2
+    gfx_fill_rect(g, cx - arm, cy - h, 2 * arm, thick, r, gr, b)
+    gfx_fill_rect(g, cx - h, cy - arm, thick, 2 * arm, r, gr, b)
+}
+
+export function xp_center_text(g: Gfx, cx: i32, y: i32, s: string, scale: i32,
+                               r: i32, gr: i32, b: i32) -> void {
+    gfx_draw_text_centered(g, cx, y, s, scale, r, gr, b)
+}
+
+# Instruction screen scaffolding: a panel, a title, then numbered lines the
+# caller adds with xp_instruction_line.
+export function xp_instruction_panel(g: Gfx, w: i32, h: i32, title: string) -> void {
+    gfx_clear(g, 12, 14, 20)
+    gfx_fill_rect(g, 40, 40, w - 80, h - 80, 22, 26, 36)
+    gfx_fill_rect(g, 40, 40, w - 80, 3, 90, 140, 220)
+    gfx_draw_text_centered(g, w / 2, 66, title, 2, 220, 230, 245)
+}
+
+export function xp_instruction_line(g: Gfx, x: i32, y: i32, s: string,
+                                    r: i32, gr: i32, b: i32) -> void {
+    gfx_draw_text(g, x, y, s, 1, r, gr, b)
+}
+
+# Progress bar over the block: filled fraction is trials done over total.
+export function xp_progress(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                            done: i32, total: i32) -> void {
+    gfx_fill_rect(g, x, y, w, h, 40, 46, 60)
+    if total > 0 {
+        let mut fw: i32 = (w * done) / total
+        if fw < 0 {
+            fw = 0
+        }
+        if fw > w {
+            fw = w
+        }
+        gfx_fill_rect(g, x, y, fw, h, 90, 170, 120)
+    }
+}
+
+# Correct / incorrect / too-slow feedback, as a coloured bar under fixation.
+export function xp_feedback_bar(g: Gfx, cx: i32, y: i32, w: i32, h: i32,
+                                resp: XpResponse) -> void {
+    if resp.timed_out {
+        gfx_fill_rect(g, cx - w / 2, y, w, h, 190, 150, 60)
+        return
+    }
+    if resp.correct {
+        gfx_fill_rect(g, cx - w / 2, y, w, h, 70, 170, 100)
+    } else {
+        gfx_fill_rect(g, cx - w / 2, y, w, h, 190, 70, 70)
+    }
+}
