@@ -1,0 +1,248 @@
+# Lifetime domains on an audio path (docs/language/lifetime-domains.md)
+#
+# The prep / process / teardown split of docs/library/rt-safety.md, written
+# so the compiler knows about it:
+#
+#   @lifetime(application)  the module statics that live for the whole run
+#   @lifetime(session)      open, size, allocate, free
+#   @lifetime(frame)        one block of work over a bump arena
+#   @lifetime(callback)     the deadline path: reads and bumps, nothing else
+#
+# Move `malloc` into any callback- or frame-domain function below and the
+# build fails, naming the domain. Store a pointer to a local in one of the
+# application statics and the build fails, naming both domains.
+#
+# The FrameArena mirrors lib/stdlib/memory.flow; it is inlined so this
+# example is a single translation unit.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function printf(fmt: string, v: f64) -> i32
+}
+
+const BLOCK_FRAMES: i64 = 128
+const SAMPLE_RATE: f32 = 48000.0
+
+struct Arena {
+    buffer: ptr<i8>,
+    capacity: i64,
+    offset: i64
+}
+
+struct FrameArena {
+    arena: Arena,
+    high_water: i64,
+    frames: i64
+}
+
+struct VoiceState {
+    phase: f32,
+    increment: f32,
+    gain: f32
+}
+
+# ── Application domain ───────────────────────────────────────────────
+# These outlive every callback, so nothing a callback owns may be stored
+# in them.
+
+@lifetime(application)
+let mut blocks_processed: i64 = 0
+
+@lifetime(application)
+let mut peak: f32 = 0.0
+
+# ── Session domain: allocation lives here and nowhere else ───────────
+
+@lifetime(session)
+function frame_arena_create(capacity: i64) -> FrameArena {
+    let raw: ptr<void> = malloc(capacity)
+    let buf: ptr<i8> = raw
+    let a: Arena = Arena { buffer: buf, capacity: capacity, offset: 0 }
+    return FrameArena { arena: a, high_water: 0, frames: 0 }
+}
+
+@lifetime(session)
+function frame_arena_destroy(f: ptr<FrameArena>) -> void {
+    let buf: ptr<i8> = f[0].arena.buffer
+    if buf != null {
+        let mut p: ptr<void> = buf
+        free(p)
+    }
+    f[0].arena.buffer = null
+    f[0].arena.capacity = 0
+    f[0].arena.offset = 0
+}
+
+@lifetime(session)
+function voice_init(freq: f32, gain: f32) -> VoiceState {
+    return VoiceState {
+        phase: 0.0,
+        increment: freq / SAMPLE_RATE,
+        gain: gain
+    }
+}
+
+# ── Bump path: legal in callback and frame ───────────────────────────
+
+@lifetime(callback)
+function frame_begin(f: ptr<FrameArena>) -> void {
+    f[0].arena.offset = 0
+}
+
+@lifetime(callback)
+function frame_alloc_f32(f: ptr<FrameArena>, count: i64) -> ptr<f32> {
+    let base: ptr<i8> = f[0].arena.buffer
+    let off: i64 = f[0].arena.offset
+    let aligned: i64 = (count * 4 + 7) & ~7
+    if off + aligned > f[0].arena.capacity {
+        return null
+    }
+    let out: ptr<f32> = base + off
+    f[0].arena.offset = off + aligned
+    return out
+}
+
+@lifetime(callback)
+function frame_end(f: ptr<FrameArena>) -> void {
+    let used: i64 = f[0].arena.offset
+    if used > f[0].high_water {
+        f[0].high_water = used
+    }
+    f[0].frames = f[0].frames + 1
+}
+
+# ── Callback domain: the deadline path ───────────────────────────────
+# No heap, no locks, no file or device calls, directly or transitively.
+
+@lifetime(callback)
+function render_voice(v: ptr<VoiceState>, out: ptr<f32>, n: i64) -> void {
+    let mut phase: f32 = v[0].phase
+    let inc: f32 = v[0].increment
+    let gain: f32 = v[0].gain
+    let mut i: i64 = 0
+    while i < n {
+        # Naive saw, kept simple: the point is the memory discipline.
+        out[i] = (phase * 2.0 - 1.0) * gain
+        phase = phase + inc
+        if phase >= 1.0 {
+            phase = phase - 1.0
+        }
+        i = i + 1
+    }
+    v[0].phase = phase
+}
+
+@lifetime(callback)
+function mix_into(dst: ptr<f32>, src: ptr<f32>, n: i64) -> void {
+    let mut i: i64 = 0
+    while i < n {
+        dst[i] = dst[i] + src[i]
+        i = i + 1
+    }
+}
+
+@lifetime(callback)
+function block_peak(buf: ptr<f32>, n: i64) -> f32 {
+    let mut m: f32 = 0.0
+    let mut i: i64 = 0
+    while i < n {
+        let s: f32 = buf[i]
+        let mut a: f32 = s
+        if a < 0.0 {
+            a = 0.0 - a
+        }
+        if a > m {
+            m = a
+        }
+        i = i + 1
+    }
+    return m
+}
+
+# ── Frame domain: one block, bump-allocated, reset wholesale ─────────
+# Scratch here dies at the next frame_begin. It is never handed upward.
+
+@lifetime(frame)
+function process_block(f: ptr<FrameArena>, a: ptr<VoiceState>,
+                       b: ptr<VoiceState>, out: ptr<f32>, n: i64) -> f32 {
+    frame_begin(f)
+
+    let voice_a: ptr<f32> = frame_alloc_f32(f, n)
+    let voice_b: ptr<f32> = frame_alloc_f32(f, n)
+    if voice_a == null {
+        return -1.0
+    }
+    if voice_b == null {
+        return -1.0
+    }
+
+    render_voice(a, voice_a, n)
+    render_voice(b, voice_b, n)
+
+    let mut i: i64 = 0
+    while i < n {
+        out[i] = 0.0
+        i = i + 1
+    }
+    mix_into(out, voice_a, n)
+    mix_into(out, voice_b, n)
+
+    frame_end(f)
+    return block_peak(out, n)
+}
+
+# ── Session domain drives the loop ───────────────────────────────────
+
+@lifetime(session)
+function run(f: ptr<FrameArena>, out: ptr<f32>, blocks: i64) -> i32 {
+    let mut a: VoiceState = voice_init(220.0, 0.4)
+    let mut b: VoiceState = voice_init(330.0, 0.3)
+    let pa: ptr<VoiceState> = &a
+    let pb: ptr<VoiceState> = &b
+
+    let mut i: i64 = 0
+    while i < blocks {
+        let p: f32 = process_block(f, pa, pb, out, BLOCK_FRAMES)
+        if p < 0.0 {
+            return 1
+        }
+        if p > peak {
+            peak = p
+        }
+        blocks_processed = blocks_processed + 1
+        i = i + 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # One malloc for the frame arena, one for the output block. Both in
+    # the session domain, both before the loop starts.
+    let mut arena: FrameArena = frame_arena_create(8192)
+    if arena.arena.buffer == null {
+        return 1
+    }
+    let fp: ptr<FrameArena> = &arena
+
+    let raw: ptr<void> = malloc(BLOCK_FRAMES * 4)
+    let out: ptr<f32> = raw
+    if out == null {
+        frame_arena_destroy(fp)
+        return 1
+    }
+
+    let rc: i32 = run(fp, out, 64)
+
+    let processed: f64 = blocks_processed
+    let high: f64 = arena.high_water
+    let level: f64 = peak
+    printf("blocks processed: %.0f\n", processed)
+    printf("arena high water: %.0f bytes (one block's scratch)\n", high)
+    printf("peak level:       %.3f\n", level)
+
+    let mut back: ptr<void> = out
+    free(back)
+    frame_arena_destroy(fp)
+    return rc
+}

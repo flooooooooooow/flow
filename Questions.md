@@ -11,6 +11,34 @@ Format:
 
 ## Open Questions
 
+### 2026-08-06: Lifetime domains — annotation-only or `domain` blocks in v0?
+
+**Context:** Issue #148 asks for `callback` / `frame` / `session` /
+`application` as a first-class memory model, and leaves the v0 surface open:
+annotations on declarations, or a `domain frame { … }` block that implies an
+arena reset at the block's end.
+([lifetime-domains.md](docs/language/lifetime-domains.md))
+
+**Options:**
+1. Annotation-only — `@lifetime(D)` on a function and on a module static.
+   Reuses the existing decorator grammar, no parser work beyond a new
+   attribute name, and a value takes its domain from its allocation site.
+2. `domain frame { … }` blocks — nicer at the frame boundary because the
+   reset is implicit, but it needs new grammar, a new scope kind, and a
+   decision about what a domain block means when nested or when it contains
+   a `return`.
+3. Both.
+
+**Recommendation:** Option 1 for v0, shipped. `@lifetime(...)` parses on
+functions and statics; the four rules (LD1 escape to a longer-lived static,
+LD2 escape by return, LD3 allocation discipline, LD4 call ordering) are
+enforced by the type checker. Block sugar is listed under Future work with
+`frame_begin` / `frame_end` as the explicit form it would expand to.
+
+**Status:** ✅ Resolved for v0 (annotation-only, 2026-08-06)
+
+---
+
 ### 2026-08-05: `gfx_run` — callback vs block sugar?
 
 **Context:** Pattern adoption ([pattern-adoption.md](pattern-adoption.md)) wants

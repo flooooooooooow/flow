@@ -184,6 +184,22 @@ fields, closure environments, function calls that launder a view, or pointers
 taken out of a span. Those escapes compile today and are unsound; treat them
 as a known gap until layer 2 lands.
 
+**With lifetime domains.** [Lifetime domains](lifetime-domains.md) generalise
+this check. A function annotated `@lifetime(callback)` or `@lifetime(frame)`
+gets the same escape analysis over pointers as well as spans, and its
+diagnostic names both domains instead of just the storage:
+
+```text
+error: lifetime domain escape: `scratch` lives in the `callback` domain but is
+       stored in `tail`, which lives in the `application` domain (a
+       longer-lived domain may not hold a reference to a shorter-lived one)
+```
+
+Where both checks apply to one assignment or return, only the domain
+diagnostic is emitted. Without an annotation nothing changes: the span message
+above is what you get. The two share their gaps exactly, since the domain
+checker is built on `_span_origin` and `_function_local_storage`.
+
 ## Mutability
 
 `span<mut T>` may only borrow storage declared `let mut`. Borrowing a `let`
@@ -283,4 +299,6 @@ version.
 Example: [examples/basics/spans.flow](../../examples/basics/spans.flow) ·
 Tests: `tests/lang/test_spans.flow`, `tests/unit/test_spans.py`
 
-Related: [types.md](types.md) · [LANGUAGE_SPEC](../LANGUAGE_SPEC.md)
+Related: [types.md](types.md) ·
+[lifetime-domains.md](lifetime-domains.md) ·
+[LANGUAGE_SPEC](../LANGUAGE_SPEC.md)

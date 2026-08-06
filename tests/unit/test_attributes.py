@@ -22,6 +22,7 @@ import tempfile
 import pytest
 
 from flow.attributes import (
+    ATTRIBUTES_WITH_ARGS,
     KNOWN_ATTRIBUTES,
     attribute_errors,
     parse_attribute,
@@ -478,7 +479,7 @@ function f() -> i32 {
 
 def test_known_attributes_produce_no_error():
     for name in sorted(KNOWN_ATTRIBUTES):
-        if name in ("only", "guard", "target"):
+        if name in ATTRIBUTES_WITH_ARGS:
             continue
         assert attribute_errors("f", [name]) == [], name
 

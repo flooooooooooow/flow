@@ -1,0 +1,176 @@
+# Frame-arena allocation cost vs malloc/free
+# (docs/language/lifetime-domains.md, the `frame` lifetime domain)
+#
+# Same workload twice: FRAMES frames, each allocating PER_FRAME blocks of
+# BLOCK f32 and touching the first and last element of every block.
+#
+#   malloc path: one malloc + one free per block.
+#   frame path:  one bump per block, one frame_begin per frame. Freeing a
+#                whole frame's worth of allocations is that single store.
+#
+# The FrameArena here is a verbatim copy of the one in lib/stdlib/memory.flow.
+# It is inlined so the benchmark is a single translation unit and its numbers
+# are not affected by module resolution.
+#
+# Run: FLOW_HOST=python ./flow run benchmarks/micro/frame_arena_benchmark.flow
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, a: f64, b: f64) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+const CLOCKS: f64 = 1000000.0
+const FRAMES: i64 = 200
+const PER_FRAME: i64 = 1000
+const BLOCK: i64 = 64
+
+struct Arena {
+    buffer: ptr<i8>,
+    capacity: i64,
+    offset: i64
+}
+
+struct FrameArena {
+    arena: Arena,
+    high_water: i64,
+    frames: i64
+}
+
+function align_up8(size: i64) -> i64 {
+    return (size + 7) & ~7
+}
+
+function frame_arena_create(capacity: i64) -> FrameArena {
+    let raw: ptr<void> = malloc(capacity)
+    let buf: ptr<i8> = raw
+    let a: Arena = Arena { buffer: buf, capacity: capacity, offset: 0 }
+    return FrameArena { arena: a, high_water: 0, frames: 0 }
+}
+
+function frame_arena_destroy(f: ptr<FrameArena>) -> void {
+    let buf: ptr<i8> = f[0].arena.buffer
+    if buf != null {
+        let mut p: ptr<void> = buf
+        free(p)
+    }
+    f[0].arena.buffer = null
+    f[0].arena.capacity = 0
+    f[0].arena.offset = 0
+}
+
+function frame_begin(f: ptr<FrameArena>) -> void {
+    f[0].arena.offset = 0
+}
+
+function frame_alloc_f32(f: ptr<FrameArena>, count: i64) -> ptr<f32> {
+    let base: ptr<i8> = f[0].arena.buffer
+    let off: i64 = f[0].arena.offset
+    let aligned: i64 = align_up8(count * 4)
+    if off + aligned > f[0].arena.capacity {
+        return null
+    }
+    let out: ptr<f32> = base + off
+    f[0].arena.offset = off + aligned
+    return out
+}
+
+function frame_end(f: ptr<FrameArena>) -> void {
+    let used: i64 = f[0].arena.offset
+    if used > f[0].high_water {
+        f[0].high_water = used
+    }
+    f[0].frames = f[0].frames + 1
+}
+
+# Touch the block so the allocation cannot be optimised away.
+function touch(p: ptr<f32>, n: i64, v: f32) -> f32 {
+    p[0] = v
+    p[n - 1] = v + 1.0
+    return p[0] + p[n - 1]
+}
+
+function run_malloc() -> f64 {
+    let mut sink: f32 = 0.0
+    let mut frame: i64 = 0
+    while frame < FRAMES {
+        let mut i: i64 = 0
+        while i < PER_FRAME {
+            let raw: ptr<void> = malloc(BLOCK * 4)
+            let block: ptr<f32> = raw
+            sink = sink + touch(block, BLOCK, 1.0)
+            let mut back: ptr<void> = block
+            free(back)
+            i = i + 1
+        }
+        frame = frame + 1
+    }
+    return sink
+}
+
+# The frame-domain inner loop: bump only, reset wholesale at the boundary.
+# The `@lifetime(frame)` annotation is what makes a malloc in here a
+# compile-time error.
+@lifetime(frame)
+function run_one_frame(f: ptr<FrameArena>) -> f32 {
+    let mut sink: f32 = 0.0
+    frame_begin(f)
+    let mut i: i64 = 0
+    while i < PER_FRAME {
+        let block: ptr<f32> = frame_alloc_f32(f, BLOCK)
+        sink = sink + touch(block, BLOCK, 1.0)
+        i = i + 1
+    }
+    frame_end(f)
+    return sink
+}
+
+function run_frame(f: ptr<FrameArena>) -> f64 {
+    let mut sink: f32 = 0.0
+    let mut frame: i64 = 0
+    while frame < FRAMES {
+        sink = sink + run_one_frame(f)
+        frame = frame + 1
+    }
+    return sink
+}
+
+function main() -> i32 {
+    let total: f64 = FRAMES * PER_FRAME
+
+    let t0: i64 = clock()
+    let sink_a: f64 = run_malloc()
+    let t1: i64 = clock()
+
+    # Capacity for one frame of blocks, allocated once, outside any domain.
+    let mut arena: FrameArena = frame_arena_create(PER_FRAME * BLOCK * 4 + 4096)
+    if arena.arena.buffer == null {
+        printf("frame_arena_create failed\n", 0.0, 0.0)
+        return 1
+    }
+    let fp: ptr<FrameArena> = &arena
+
+    let t2: i64 = clock()
+    let sink_b: f64 = run_frame(fp)
+    let t3: i64 = clock()
+
+    let malloc_s: f64 = (t1 - t0) / CLOCKS
+    let frame_s: f64 = (t3 - t2) / CLOCKS
+    let high: f64 = arena.high_water
+    let ran: f64 = arena.frames
+    let cap: f64 = arena.arena.capacity
+
+    printf("allocations:  %.0f over %.0f frames\n", total, ran)
+    printf("malloc+free:  %.6f s total, %.2f ns/alloc\n",
+           malloc_s, malloc_s * 1000000000.0 / total)
+    printf("frame arena:  %.6f s total, %.2f ns/alloc\n",
+           frame_s, frame_s * 1000000000.0 / total)
+    printf("speedup:      %.2fx  (checksum %.0f)\n",
+           malloc_s / frame_s, sink_a + sink_b)
+    printf("high water:   %.0f bytes, capacity %.0f\n",
+           high, cap)
+
+    frame_arena_destroy(fp)
+    return 0
+}
