@@ -110,8 +110,12 @@ class MLIRJIT:
             result = subprocess.run(
                 [
                     mlir_opt,
+                    # vector.transfer_* -> scf/vector.load-store must run before
+                    # scf-to-cf, and convert-vector-to-llvm before func-to-llvm.
+                    "--convert-vector-to-scf",
                     "--convert-scf-to-cf",
                     "--memref-expand",
+                    "--convert-vector-to-llvm",
                     "--convert-arith-to-llvm",
                     "--convert-index-to-llvm",
                     "--convert-cf-to-llvm",

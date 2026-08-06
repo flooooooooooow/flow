@@ -243,6 +243,107 @@ function main() -> i32 {
     return 1
 }
 """,
+    # Hits the elementwise-for vectorizer (vector<4xi32> body + scalar tail);
+    # 9 elements so the remainder loop runs too.
+    "array_elementwise_for": """
+function main() -> i32 {
+    let mut xs: array<i32, 9> = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    let mut ys: array<i32, 9> = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    for i in 0 to 9 {
+        ys[i] = xs[i] * 3 + ys[i]
+    }
+    let mut s: i32 = 0
+    let mut j: i32 = 0
+    while j < 9 {
+        s = s + ys[j]
+        j = j + 1
+    }
+    if s == 585 {
+        return 0
+    }
+    return 1
+}
+""",
+    "match_catch_all": """
+function bucket(n: i32) -> i32 {
+    match n {
+        7 => { return 1 }
+        default { return 2 }
+    }
+}
+function main() -> i32 {
+    if bucket(7) + bucket(8) + bucket(9) == 5 {
+        return 0
+    }
+    return 1
+}
+""",
+    "match_falls_through": """
+function main() -> i32 {
+    let n: i32 = 3
+    let mut hit: i32 = 0
+    match n {
+        1 => { hit = 1 }
+        3 => { hit = 3 }
+    }
+    if hit == 3 {
+        return 0
+    }
+    return 1
+}
+""",
+    "while_break": """
+function main() -> i32 {
+    let mut i: i32 = 0
+    let mut s: i32 = 0
+    while i < 100 {
+        if i == 5 {
+            break
+        }
+        s = s + i
+        i = i + 1
+    }
+    if s == 10 && i == 5 {
+        return 0
+    }
+    return 1
+}
+""",
+    "while_continue": """
+function main() -> i32 {
+    let mut i: i32 = 0
+    let mut s: i32 = 0
+    while i < 10 {
+        i = i + 1
+        if i == 3 {
+            continue
+        }
+        s = s + i
+    }
+    if s == 52 {
+        return 0
+    }
+    return 1
+}
+""",
+    "nested_while_carried": """
+function main() -> i32 {
+    let mut outer: i32 = 0
+    let mut total: i32 = 0
+    while outer < 4 {
+        let mut inner: i32 = 0
+        while inner < 3 {
+            total = total + outer
+            inner = inner + 1
+        }
+        outer = outer + 1
+    }
+    if total == 18 {
+        return 0
+    }
+    return 1
+}
+""",
 }
 
 
