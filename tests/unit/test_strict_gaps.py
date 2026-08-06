@@ -449,3 +449,69 @@ class TestPrintOfAnExpression:
         run = subprocess.run([str(binary)], capture_output=True, text=True)
         assert run.returncode == 0, run.stderr
         assert run.stdout == "42\nconcat: hi\n42\n3\n9\n42\n"
+
+
+# ---------------------------------------------------------------------------
+# Function values as C callbacks (the last remaining flow:lenient pragma)
+# ---------------------------------------------------------------------------
+
+FUNCTION_AS_VOID_POINTER = """
+extern {
+    function run_body(start: i32, body: ptr<void>, ctx: ptr<void>) -> void
+}
+
+@flow_api
+function shard_body(s: i32, ctx: ptr<void>) -> void {
+    return
+}
+
+function main() -> i32 {
+    run_body(0, shard_body, null)
+    return 0
+}
+"""
+
+FUNCTION_AS_TYPED_POINTER = """
+extern {
+    function run_body(body: ptr<i32>) -> void
+}
+
+@flow_api
+function shard_body(s: i32) -> void {
+    return
+}
+
+function main() -> i32 {
+    run_body(shard_body)
+    return 0
+}
+"""
+
+
+class TestFunctionValueAsCallback:
+    """A function name used as a value is a C function pointer, which is
+    what runtime callbacks take as `ptr<void>`. A typed data pointer still
+    rejects one."""
+
+    def test_function_value_satisfies_void_pointer(self):
+        assert strict_errors(FUNCTION_AS_VOID_POINTER) == []
+
+    def test_function_value_does_not_satisfy_a_typed_pointer(self):
+        errors = strict_errors(FUNCTION_AS_TYPED_POINTER)
+        assert any("run_body" in e for e in errors), errors
+
+    def test_ml_corpus_is_strict_clean(self):
+        rel_path = "examples/ml/digits_mlp_parallel.flow"
+        assert_no_lenient_pragma(rel_path)
+        assert strict_errors_for_file(rel_path) == []
+
+
+def test_no_lenient_pragmas_remain():
+    """The corpus is strict-clean; a new pragma needs a new board card."""
+    import subprocess
+
+    found = subprocess.run(
+        ["grep", "-rl", "flow:lenient", "examples", "tests/runtime", "tests/lang", "lib"],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    ).stdout.split()
+    assert found == [], found
