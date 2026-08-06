@@ -3746,7 +3746,8 @@ class CGenerator:
     # ------------------------------------------------------------------
 
     # Runs shorter than this are grown with insertion sort before merging.
-    SORT_MIN_RUN = 32
+    # The cost model uses the same number, so an estimate matches the loop.
+    SORT_MIN_RUN = _ordering_plans.SORT_MIN_RUN
 
     _INT_RANGES = {
         "u8": (0, 255),
