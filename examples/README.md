@@ -28,9 +28,10 @@ examples/
 │   ├── models/       # Trained demos (XOR MLP, …)
 │   └── autodiff/     # Autodiff + neural-net examples (was neural_networks/)
 ├── circuits/         # Circuit simulation: MNA solver, SPICE front end, 12 gated examples
-├── morphogenesis/    # Pattern formation and growth: 20 live gfx demos
+├── morphogenesis/    # Pattern formation and growth: 40 live gfx demos
 ├── net/              # Networking sketches (HTTP / TCP)
 ├── neuro/            # Neurons and networks: 15 gated gfx simulations
+├── evoleco/          # Evolutionary biology: 15 gated pop-gen / game / ecology gfx
 ├── numerical/        # Scientific computing
 ├── packages/         # Path-dependency package consumer
 ├── physics/          # Physics DSL experiments
@@ -276,6 +277,22 @@ Run them with `./flow record examples/neuro/<name>.flow --frames 90 --out
 build/frames --gif build/<name>.gif`, or windowed with `./flow gfx`.
 Gallery: [docs/demos/neuro.md](../docs/demos/neuro.md); regenerate with
 `python3 scripts/record_demos.py --group neuro`.
+
+### Evolutionary biology (`evoleco/`)
+Fifteen live graphics simulations for evolutionary biologists — population
+genetics, evolutionary games, and ecology companions — the chemistry/biology
+domain of [the Example Atlas](../docs/project/example-atlas.md) (see
+[evoleco/README.md](evoleco/README.md)). Each one gates a closed-form or
+textbook measurement before the window opens.
+- `wright_fisher.flow` - heterozygosity decay and fixation time vs 4 N ln 2
+- `hardy_weinberg.flow` - genotype frequencies recover p^2 : 2pq : q^2
+- `selection_locus.flow` / `mutation_selection.flow` - logistic selection; p* = u/s
+- `spatial_pd.flow` / `rock_paper_scissors.flow` - spatial games vs mean-field
+- `lotka_volterra_gfx.flow` / `sir_spatial.flow` - visual ecology companions
+
+Run with `./flow gfx examples/evoleco/<name>.flow` or headless
+`./flow record`. Gallery: [docs/demos/evoleco.md](../docs/demos/evoleco.md);
+regenerate with `python3 scripts/record_demos.py --group evoleco`.
 
 ### Dynamics (`dynamics/`)
 Dynamical systems, analysis, and control via `stdlib/dynamics` and the

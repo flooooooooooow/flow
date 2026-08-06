@@ -1,0 +1,444 @@
+# FITNESS LANDSCAPE: an adaptive walk that only ever climbs.
+#
+# MODEL
+#   An NK landscape (Kauffman) on binary genotypes of length N. Each locus i
+#   has a fitness contribution drawn from U(0,1) that depends on itself and K
+#   other loci. Total fitness is the mean of the N contributions. Mount Fuji
+#   is the additive special case K = 0: each locus contributes independently,
+#   so there is a unique global peak.
+#
+#   An adaptive walk starts at a random genotype and, at each step, flips the
+#   single bit that raises fitness the most. It stops when every one-bit
+#   neighbour is worse or equal -- a local peak. The walk never accepts a
+#   downhill move, so fitness is monotone by construction of the rule; the
+#   gate checks that the implementation kept that promise and that the stop
+#   really is a local peak.
+#
+# GATES
+#   1. Fitness never decreases along the recorded path.
+#   2. The terminal genotype has no improving one-bit neighbour.
+#   3. On Mount Fuji (K = 0) the walk reaches the unique global peak.
+#
+# KEYS
+#   1 MOUNT FUJI   N 16  K 0     unique peak, short walk
+#   2 RUGGED       N 16  K 3     many local peaks
+#   3 HIGH K       N 12  K 5     nearly uncorrelated
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/fitness_landscape.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const MAX_N: i32 = 16
+const MAX_STEPS: i32 = 64
+const TABLE: i32 = 65536
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 2718281829
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_n(p: i32) -> i32 {
+    if p == 2 { return 12 }
+    return 16
+}
+
+function preset_k(p: i32) -> i32 {
+    if p == 1 { return 3 }
+    if p == 2 { return 5 }
+    return 0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "RUGGED" }
+    if p == 2 { return "HIGH K" }
+    return "MOUNT FUJI"
+}
+
+# Fitness table: for each locus i and each 2^(K+1) neighbourhood mask, a U(0,1).
+let mut fit_table: array<f64, 65536> = [0.0, 0.0, 0.0, 0.0]
+let mut partners: array<i32, 256> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+function build_landscape(n: i32, k: i32) -> void {
+    let masks: i32 = 1 << (k + 1)
+    for i in 0 to n {
+        for t in 0 to k {
+            # Partner loci: wrap around the circle, skipping self.
+            partners[i * MAX_N + t] = (i + 1 + t) % n
+        }
+        for m in 0 to masks {
+            fit_table[i * masks + m] = rng_unit()
+        }
+    }
+}
+
+function bit_of(g: i32, i: i32) -> i32 {
+    return (g >> i) & 1
+}
+
+function neighbourhood_mask(g: i32, i: i32, n: i32, k: i32) -> i32 {
+    let mut m: i32 = bit_of(g, i)
+    for t in 0 to k {
+        let p: i32 = partners[i * MAX_N + t]
+        m = m | (bit_of(g, p) << (t + 1))
+    }
+    return m
+}
+
+function fitness(g: i32, n: i32, k: i32) -> f64 {
+    let masks: i32 = 1 << (k + 1)
+    let mut s: f64 = 0.0
+    for i in 0 to n {
+        let m: i32 = neighbourhood_mask(g, i, n, k)
+        s = s + fit_table[i * masks + m]
+    }
+    return s / (n as f64)
+}
+
+function is_local_peak(g: i32, n: i32, k: i32) -> bool {
+    let f0: f64 = fitness(g, n, k)
+    for i in 0 to n {
+        let nbr: i32 = g ^ (1 << i)
+        if fitness(nbr, n, k) > f0 + 1.0e-15 {
+            return false
+        }
+    }
+    return true
+}
+
+function fuji_peak(n: i32, k: i32) -> i32 {
+    # For K = 0 the unique peak flips each bit to its better allele.
+    let mut g: i32 = 0
+    for i in 0 to n {
+        let a0: f64 = fit_table[i * 2 + 0]
+        let a1: f64 = fit_table[i * 2 + 1]
+        if a1 > a0 {
+            g = g | (1 << i)
+        }
+    }
+    return g
+}
+
+# Path buffers for the gated walk and the live view.
+let mut path_g: array<i32, 64> = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let mut path_f: array<f64, 64> = [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut path_len: i32 = 0
+
+function adaptive_walk(start: i32, n: i32, k: i32) -> void {
+    let mut g: i32 = start
+    path_len = 0
+    path_g[0] = g
+    path_f[0] = fitness(g, n, k)
+    path_len = 1
+    for step in 0 to MAX_STEPS - 1 {
+        let f0: f64 = path_f[path_len - 1]
+        let mut best_g: i32 = g
+        let mut best_f: f64 = f0
+        for i in 0 to n {
+            let nbr: i32 = g ^ (1 << i)
+            let fn: f64 = fitness(nbr, n, k)
+            if fn > best_f {
+                best_f = fn
+                best_g = nbr
+            }
+        }
+        if best_f <= f0 + 1.0e-15 {
+            break
+        }
+        g = best_g
+        path_g[path_len] = g
+        path_f[path_len] = best_f
+        path_len = path_len + 1
+    }
+}
+
+function path_monotone() -> bool {
+    for i in 1 to path_len {
+        if path_f[i] + 1.0e-15 < path_f[i - 1] {
+            return false
+        }
+    }
+    return true
+}
+
+function draw_hud(g: Gfx, preset: i32, n: i32, k: i32, step: i32,
+                  fcur: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "FITNESS LANDSCAPE  NK ADAPTIVE WALK", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_text(g, 40, 28, preset_name(preset), 1, 255, 198, 96)
+    let t4: i32 = gfx_draw_text(g, 140, 28, "N", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_int(g, 152, 28, n, 1, 234, 232, 244)
+    let t6: i32 = gfx_draw_text(g, 184, 28, "K", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_int(g, 196, 28, k, 1, 234, 232, 244)
+    let t8: i32 = gfx_draw_text(g, 228, 28, "STEP", 1, 150, 146, 168)
+    let t9: i32 = gfx_draw_int(g, 260, 28, step, 1, 234, 232, 244)
+    let ta: i32 = gfx_draw_text(g, 300, 28, "FITNESS", 1, 150, 146, 168)
+    let tb: i32 = gfx_draw_fixed(g, 356, 28, fcur, 4, 1, 120, 255, 190)
+    let tc: i32 = gfx_draw_text(g, 8, 42,
+        "1 MOUNT FUJI  2 RUGGED  3 HIGH K  R RESEED  P PAUSE",
+        1, 112, 108, 132)
+    if paused {
+        let td: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let te: i32 = gfx_draw_text(g, 8, 572,
+        "adaptive walk: flip the bit that raises fitness the most", 1, 122, 118, 144)
+    let tf: i32 = gfx_draw_text(g, 8, 582,
+        "stop at a local peak; fitness is monotone by the acceptance rule", 1, 122, 118, 144)
+}
+
+function draw_scene(g: Gfx, n: i32, step: i32) -> void {
+    # Fitness-vs-step polyline.
+    let plot_x0: i32 = 40
+    let plot_y0: i32 = FIELD_Y + 40
+    let plot_w: i32 = 432
+    let plot_h: i32 = 220
+    gfx_fill_rect(g, plot_x0, plot_y0, plot_w, plot_h, 22, 20, 32)
+    let mut fmin: f64 = path_f[0]
+    let mut fmax: f64 = path_f[0]
+    for i in 1 to path_len {
+        if path_f[i] < fmin { fmin = path_f[i] }
+        if path_f[i] > fmax { fmax = path_f[i] }
+    }
+    let mut span: f64 = fmax - fmin
+    if span < 1.0e-6 { span = 1.0e-6 }
+    let mut prev_x: i32 = plot_x0
+    let mut prev_y: i32 = plot_y0 + plot_h / 2
+    for i in 0 to path_len {
+        let mut t: f64 = 0.0
+        if path_len > 1 {
+            t = (i as f64) / ((path_len - 1) as f64)
+        }
+        let x: i32 = plot_x0 + ((t * (plot_w as f64)) as i32)
+        let yn: f64 = (path_f[i] - fmin) / span
+        let y: i32 = plot_y0 + plot_h - 4 - ((yn * ((plot_h - 8) as f64)) as i32)
+        if i > 0 {
+            # Thick segment approximation.
+            let mut xa: i32 = prev_x
+            let mut ya: i32 = prev_y
+            let steps: i32 = 8
+            for s in 0 to steps {
+                let xb: i32 = prev_x + ((x - prev_x) * s) / steps
+                let yb: i32 = prev_y + ((y - prev_y) * s) / steps
+                gfx_fill_rect(g, xb, yb, 3, 3, 120, 220, 255)
+                xa = xb
+                ya = yb
+            }
+        }
+        prev_x = x
+        prev_y = y
+    }
+    # Walker highlight at current step.
+    let mut si: i32 = step
+    if si >= path_len { si = path_len - 1 }
+    if si < 0 { si = 0 }
+    let mut tw: f64 = 0.0
+    if path_len > 1 {
+        tw = (si as f64) / ((path_len - 1) as f64)
+    }
+    let wx: i32 = plot_x0 + ((tw * (plot_w as f64)) as i32)
+    let wy_n: f64 = (path_f[si] - fmin) / span
+    let wy: i32 = plot_y0 + plot_h - 4 - ((wy_n * ((plot_h - 8) as f64)) as i32)
+    gfx_fill_rect(g, wx - 4, wy - 4, 9, 9, 255, 198, 96)
+
+    # Genotype bits as a row of cells.
+    let gx: i32 = 40
+    let gy: i32 = FIELD_Y + 300
+    let cell: i32 = 24
+    let cur: i32 = path_g[si]
+    for i in 0 to n {
+        let on: i32 = bit_of(cur, i)
+        let mut r: i32 = 40
+        let mut gg: i32 = 44
+        let mut b: i32 = 70
+        if on == 1 {
+            r = 255
+            gg = 180
+            b = 90
+        }
+        gfx_fill_rect(g, gx + i * (cell + 4), gy, cell, cell, r, gg, b)
+    }
+    let t: i32 = gfx_draw_text(g, gx, gy + 36, "GENOTYPE AT WALKER", 1, 150, 146, 168)
+}
+
+function main() -> i32 {
+    println("")
+    println("  FITNESS LANDSCAPE  --  NK adaptive walks that only climb")
+    println("  ========================================================")
+    println("")
+
+    # Gate on Mount Fuji (K = 0): unique peak, monotone path, local peak stop.
+    rng_state = 2718281829
+    let n0: i32 = 16
+    let k0: i32 = 0
+    build_landscape(n0, k0)
+    let peak: i32 = fuji_peak(n0, k0)
+    let start: i32 = (rng_next() % (1 << n0)) as i32
+    adaptive_walk(start, n0, k0)
+    let mono: bool = path_monotone()
+    let terminal: i32 = path_g[path_len - 1]
+    let peaked: bool = is_local_peak(terminal, n0, k0)
+    let at_global: bool = terminal == peak
+
+    print("    Mount Fuji N=16 K=0  start fitness ")
+    printf("%.6f", path_f[0])
+    print("  end ")
+    printf("%.6f", path_f[path_len - 1])
+    print("  steps ")
+    printf("%.0f", (path_len - 1) as f64)
+    println("")
+    print("    path monotone                     : ")
+    if mono { println("yes") } else { println("NO") }
+    print("    terminal is a local peak          : ")
+    if peaked { println("yes") } else { println("NO") }
+    print("    terminal is the unique global peak: ")
+    if at_global { println("yes") } else { println("NO") }
+    println("")
+
+    # Also one rugged walk for the measurement table.
+    rng_state = 3141592653
+    let n1: i32 = 16
+    let k1: i32 = 3
+    build_landscape(n1, k1)
+    let start1: i32 = (rng_next() % (1 << n1)) as i32
+    adaptive_walk(start1, n1, k1)
+    let mono1: bool = path_monotone()
+    let peak1: bool = is_local_peak(path_g[path_len - 1], n1, k1)
+    print("    rugged N=16 K=3      steps ")
+    printf("%.0f", (path_len - 1) as f64)
+    print("  end fitness ")
+    printf("%.6f", path_f[path_len - 1])
+    println("")
+    print("    rugged path monotone / local peak : ")
+    if mono1 and peak1 { println("yes / yes") } else { println("FAILED") }
+    println("")
+
+    if !mono or !peaked or !at_global {
+        println("    FAIL: Mount Fuji walk did not climb to its unique peak")
+        return 1
+    }
+    if !mono1 or !peak1 {
+        println("    FAIL: rugged walk was not monotone or did not stop at a peak")
+        return 2
+    }
+    println("    PASS: adaptive walks are monotone and stop at a local peak;")
+    println("          on Mount Fuji the unique global peak is reached")
+    println("")
+
+    # Live view.
+    let mut preset: i32 = 0
+    rng_state = 2718281829
+    let mut n: i32 = preset_n(preset)
+    let mut k: i32 = preset_k(preset)
+    build_landscape(n, k)
+    adaptive_walk((rng_next() % (1 << n)) as i32, n, k)
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Fitness landscape - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut step: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            n = preset_n(preset)
+            k = preset_k(preset)
+            build_landscape(n, k)
+            adaptive_walk((rng_next() % (1 << n)) as i32, n, k)
+            step = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                build_landscape(n, k)
+                adaptive_walk((rng_next() % (1 << n)) as i32, n, k)
+                step = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            if frame % 8 == 0 and step < path_len - 1 {
+                step = step + 1
+            }
+            if step >= path_len - 1 and frame % 90 == 0 {
+                build_landscape(n, k)
+                adaptive_walk((rng_next() % (1 << n)) as i32, n, k)
+                step = 0
+            }
+        }
+
+        let mut si: i32 = step
+        if si >= path_len { si = path_len - 1 }
+        gfx_clear(gfx, 12, 10, 18)
+        draw_scene(gfx, n, si)
+        draw_hud(gfx, preset, n, k, si, path_f[si], paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}
