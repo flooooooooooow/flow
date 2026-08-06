@@ -3,6 +3,57 @@
 Honest status of shipping Flow programs to the browser. This is **not** a
 self-hosted Flow-in-WASM compiler.
 
+## The gallery
+
+118 examples are compiled and playable at
+[the WebAssembly gallery](../demos/wasm.md), including every game and every
+morphogenesis field simulation. That page is the fastest way to see what the
+target can do today.
+
+```bash
+./flow wasm examples/games/snake_gfx.flow --out build/wasm/snake
+python3 scripts/build_wasm_gallery.py        # all of them, into site/wasm/
+```
+
+`./flow wasm` writes a `.wasm`, its `.js` loader and a runnable `index.html`.
+Graphics programs get a canvas page with keyboard wiring and a click-to-start
+button; everything else prints into a `<pre>`.
+
+## Status matrix
+
+Two rows are verified in a browser. The rest name the mechanism that would
+cross them and state that it is not built yet. None of them is a permanent
+limit.
+
+| Capability | State | Route |
+|---|---|---|
+| Pure computation | **Runs today** | Arithmetic, arrays, structs, strings, printf. Flow → C → wasm32 with nothing else linked in. |
+| gfx graphics and keyboard | **Runs today** | `runtime/gfx_wasm.c` blits the framebuffer to a canvas; DOM key events map to the macOS keycodes the programs already use. |
+| Threads and channels | In progress | Emscripten `-pthread` over SharedArrayBuffer and Web Workers. Needs cross-origin isolation, obtainable on GitHub Pages with a service-worker shim. |
+| Sockets and HTTP | In progress | Emscripten's WebSocket-backed POSIX socket bridge (`-lwebsocket.js`, `PROXY_POSIX_SOCKETS`). |
+| GPU kernels | In progress | WebGPU, with WGSL generated from the same `@gpu` AST that already emits Metal. |
+| Embedded CPython | In progress | Pyodide, CPython compiled to WebAssembly. |
+| File I/O | In progress | Emscripten MEMFS and IDBFS. |
+| Audio | Not attempted | miniaudio and the Metal audio path have no browser counterpart yet; WebAudio is the route. |
+
+## The browser gfx backend
+
+`runtime/gfx_wasm.c` is the fourth backend behind `lib/stdlib/gfx.flow`, after
+`gfx_macos.m` (Cocoa), `gfx_linux.c` (SDL) and `gfx_record.c` (headless PPM).
+It exports the same `flow_gfx_*` symbols, keeps an RGBA framebuffer, and on
+`flow_gfx_present` copies it into a canvas with one `putImageData`.
+
+Flow games put their loop inside `main`, which would freeze a tab. The pages
+are built with `-sASYNCIFY` so `flow_gfx_present` can await one
+`requestAnimationFrame` before returning: the Flow source keeps its plain
+while-loop and the browser gets its event loop back once per frame, paced to
+60 Hz with a MessageChannel fallback for hidden tabs.
+
+Two flags matter beyond that. `-sSTACK_SIZE=16MB`, because Flow puts
+fixed-size arrays on the stack and a 128×128 field simulation holds several
+grids of doubles at once, well past the 64 KB wasm32 default.
+`-sINVOKE_RUN=0`, so `main` starts on a user gesture rather than at load.
+
 ## Near-term path (supported story)
 
 ```text

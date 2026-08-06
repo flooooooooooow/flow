@@ -620,6 +620,7 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                     {"label": "Benchmarks", "path": "project/benchmark-results.md"},
                     {"label": "Interactive Tutorials", "path": "tutorials/index.html", "external": True},
                     {"label": "Playground", "path": "playground/index.html", "external": True},
+                    {"label": "WASM Gallery", "path": "wasm/index.html", "external": True},
                 ],
             },
             {
@@ -641,6 +642,7 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                     {"label": "Async via Effects", "path": "language/async-effects.md"},
                     {"label": "Graphics", "path": "language/graphics.md"},
                     {"label": "WebAssembly", "path": "language/wasm.md"},
+                    {"label": "WASM Gallery", "path": "demos/wasm.md"},
                     {"label": "Design Notes", "path": "language/language_design.md"},
                 ],
             },
@@ -928,6 +930,13 @@ def copy_site_shell() -> None:
     vendor_src = SITE / "vendor"
     if vendor_src.exists():
         copy_tree(vendor_src, OUT / "vendor")
+
+    # The WebAssembly gallery is a real static site, not markdown: the wiki's
+    # renderer cannot host live wasm, so the pages ship as-is under /wasm/ and
+    # docs/demos/wasm.md links to them.
+    wasm_src = SITE / "wasm"
+    if wasm_src.exists():
+        copy_tree(wasm_src, OUT / "wasm")
 
     tutorials_src = SITE / "tutorials"
     if tutorials_src.exists():
