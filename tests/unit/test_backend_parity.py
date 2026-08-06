@@ -541,6 +541,85 @@ function main() -> i32 {
     return 1
 }
 """,
+    "for_step": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to 10 step 2 {
+        s = s + i
+    }
+    if s == 20 {
+        return 0
+    }
+    return 1
+}
+""",
+    "for_step_descending": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 5 to 0 step -1 {
+        s = s + i
+    }
+    if s == 15 {
+        return 0
+    }
+    return 1
+}
+""",
+    "for_step_break": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to 10 step 2 {
+        if i == 6 {
+            break
+        }
+        s = s + i
+    }
+    if s == 6 {
+        return 0
+    }
+    return 1
+}
+""",
+    "match_string": """
+function pick(s: string) -> i32 {
+    match s {
+        "a" => { return 1 }
+        default { return 2 }
+    }
+}
+function main() -> i32 {
+    if pick("a") + pick("b") == 3 {
+        return 0
+    }
+    return 1
+}
+""",
+    "match_list_pattern": """
+function main() -> i32 {
+    let xs: array<i32, 3> = [1, 2, 3]
+    let mut r: i32 = 0
+    match xs {
+        [1, a, b] => { r = a + b }
+        default { r = 99 }
+    }
+    if r == 5 {
+        return 0
+    }
+    return 1
+}
+""",
+    "parallel_for": """
+function main() -> i32 {
+    let mut xs: array<i32, 4> = [0, 0, 0, 0]
+    parallel for i in 0 to 4 {
+        xs[i] = i
+    }
+    if xs[0] + xs[3] == 3 {
+        return 0
+    }
+    return 1
+}
+""",
     "for_range_dots": """
 function main() -> i32 {
     let mut s: i32 = 0
@@ -627,6 +706,22 @@ function main() -> i32 {
         return 0
     }
     return 1
+}
+""",
+    "defer_before_early_return": """
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+function f(n: i32) -> i32 {
+    defer printf("cleanup\\n", 0)
+    if n > 0 {
+        printf("positive\\n", 0)
+        return 1
+    }
+    return 0
+}
+function main() -> i32 {
+    return f(1) - 1
 }
 """,
     "break_skips_tail": """
