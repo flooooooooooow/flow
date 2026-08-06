@@ -1,6 +1,6 @@
 # Morphogenesis Gallery
 
-Twenty simulations of pattern formation written in Flow. Every clip below is
+Simulations of pattern formation written in Flow. Every clip below is
 recorded from the real compiled program through the headless recorder, and
 every clip starts before the pattern exists. Compare the first frame with the
 last one: that difference is the whole subject.
@@ -65,8 +65,10 @@ recordings reproduce bit for bit.
 | **Gray-Scott**. One seeded blob divides into a field of solitons<br>`gray_scott.flow` | **Turing spots**. Noise resolves into a hexagonal lattice of peaks<br>`turing_spots.flow` | **Turing stripes**. The same system with saturation, so ridges<br>`turing_stripes.flow` |
 | ![Belousov-Zhabotinsky](./morphogenesis/belousov.gif) | ![Swift-Hohenberg](./morphogenesis/swift_hohenberg.gif) | ![Cahn-Hilliard](./morphogenesis/cahn_hilliard.gif) |
 | **Belousov-Zhabotinsky**. Four broken waves wind into rotating spirals<br>`belousov.flow` | **Swift-Hohenberg**. One wavelength survives and anneals into rolls<br>`swift_hohenberg.flow` | **Cahn-Hilliard**. A quenched mixture unmixes and coarsens forever<br>`cahn_hilliard.flow` |
-| ![Brusselator](./morphogenesis/brusselator.gif) | | |
-| **Brusselator**. The textbook autocatalytic pair crossing its Hopf boundary into travelling structure<br>`brusselator.flow` | | |
+| ![Brusselator](./morphogenesis/brusselator.gif) | ![Gierer-Meinhardt](./morphogenesis/gierer_meinhardt.gif) | ![Schnakenberg](./morphogenesis/schnakenberg.gif) |
+| **Brusselator**. The textbook autocatalytic pair at its predicted wavelength<br>`brusselator.flow` | **Gierer-Meinhardt**. Activator-inhibitor spots gated against linear k_max<br>`gierer_meinhardt.flow` | **Schnakenberg**. Cubic autocatalysis selecting a Turing wavelength<br>`schnakenberg.flow` |
+| ![FitzHugh waves](./morphogenesis/fitzhugh_waves.gif) | ![Kuramoto-Sivashinsky](./morphogenesis/kuramoto_sivashinsky.gif) | ![Allen-Cahn](./morphogenesis/allen_cahn.gif) |
+| **FitzHugh waves**. Broken fronts wind into rotating spiral tips<br>`fitzhugh_waves.flow` | **Kuramoto-Sivashinsky**. 1D spatiotemporal chaos as a space-time plot<br>`kuramoto_sivashinsky.flow` | **Allen-Cahn**. A circular droplet shrinks under mean-curvature flow<br>`allen_cahn.flow` |
 | ![Perona-Malik](./morphogenesis/heat_morph.gif) | | |
 | **Perona-Malik**. Noise dissolves while boundaries sharpen<br>`heat_morph.flow` | | |
 

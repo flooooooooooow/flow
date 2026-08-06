@@ -1,0 +1,439 @@
+# FITZHUGH WAVES: spiral waves in a 2D FitzHugh-Nagumo excitable medium.
+#
+# MODEL (Barkley reduction of FitzHugh-Nagumo / Belousov-Zhabotinsky)
+#   Fast excitation u and slow recovery v on a closed dish (no-flux edges):
+#
+#     du/dt = Du * lap(u) + (1/eps) * u * (1 - u) * (u - (v + b) / a)
+#     dv/dt = u - v
+#
+#   Those two lines are the body of `flow FhnWaveCell`. v does not diffuse.
+#   A broken wavefront curls at its free end into a rotating spiral.
+#
+# THE MEASUREMENT
+#   Four broken plane waves seed four spiral tips. After a burn-in the program
+#   counts topological defects of the complex field (u - 0.5) + i (v - a/2)
+#   by plaquette winding, and measures the mean-u oscillation period from
+#   zero crossings. Gates: tip count in [4, 10] and period in [3.0, 6.0].
+#
+# PARAMETERS
+#   eps 0.02   a 0.75   b (see presets)   Du 1.0
+#   96 x 96 no-flux grid, dx = 1, five-point laplacian
+#   dt 0.02 explicit Euler, 40 steps per displayed frame
+#
+# KEYS
+#   1 RIGID (b 0.02)   2 MEANDER (b 0.01)   3 WIDE (b 0.05)
+#   R reseed           P pause              Esc quit
+#
+# REFERENCE
+#   R. FitzHugh, Biophys. J. 1:445-466 (1961).
+#   D. Barkley, Physica D 49:61-70 (1991).
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/morphogenesis/fitzhugh_waves.flow \
+#       --frames 4 --out /tmp/rec_fitzhugh_waves
+# Run (windowed):
+#   ./flow gfx examples/morphogenesis/fitzhugh_waves.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function atan2(y: f64, x: f64) -> f64
+}
+
+const GRID: i32 = 96
+const CELLS: i32 = 9216
+const CELL_PX: i32 = 5
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 480
+const FB_H: i32 = 480
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const SUBSTEPS: i32 = 40
+const VERIFY_STEPS: i32 = 6000
+const PI: f64 = 3.141592653589793
+
+const EPS: f64 = 0.02
+const AA: f64 = 0.75
+const DU: f64 = 1.0
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+flow FhnWaveCell {
+    state u : f64 = 0.0
+    state v : f64 = 0.0
+
+    param lap_u : f64 = 0.0
+    param du    : f64 = 1.0
+    param eps   : f64 = 0.02
+    param a     : f64 = 0.75
+    param b     : f64 = 0.02
+
+    solver { dt 20 ms  method euler }
+
+    u evolves as du * lap_u + (1.0 / eps) * u * (1.0 - u) * (u - (v + b) / a)
+    v evolves as u - v
+}
+
+let mut rng_state: u32 = 1046527061
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_jitter(span: i32) -> i32 {
+    return ((rng_next() >> 13) % ((2 * span + 1) as u32)) as i32 - span
+}
+
+function preset_b(p: i32) -> f64 {
+    if p == 1 { return 0.01 }
+    if p == 2 { return 0.05 }
+    return 0.02
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "MEANDER" }
+    if p == 2 { return "WIDE CORE" }
+    return "RIGID"
+}
+
+function seed_field(u: ptr<f64>, v: ptr<f64>) -> void {
+    let half: i32 = GRID / 2
+    for i in 0 to CELLS {
+        u[i] = 0.0
+        v[i] = 0.0
+    }
+    for qy in 0 to 2 {
+        for qx in 0 to 2 {
+            let ox: i32 = qx * half
+            let oy: i32 = qy * half
+            let cx: i32 = ox + half / 2 + rng_jitter(5)
+            let cy: i32 = oy + half / 2 + rng_jitter(5)
+            for y in oy to oy + half {
+                for x in ox to ox + half {
+                    let i: i32 = y * GRID + x
+                    if y < cy and x >= cx and x < cx + 3 {
+                        u[i] = 1.0
+                    }
+                    if y < cy and x >= cx + 3 {
+                        v[i] = AA * 0.6
+                    }
+                }
+            }
+        }
+    }
+}
+
+function lap_at(f: ptr<f64>, x: i32, y: i32) -> f64 {
+    let mut xm: i32 = x - 1
+    let mut xp: i32 = x + 1
+    let mut ym: i32 = y - 1
+    let mut yp: i32 = y + 1
+    if xm < 0 { xm = 0 }
+    if xp >= GRID { xp = GRID - 1 }
+    if ym < 0 { ym = 0 }
+    if yp >= GRID { yp = GRID - 1 }
+    let r: i32 = y * GRID
+    return f[r + xm] + f[r + xp] + f[ym * GRID + x] + f[yp * GRID + x]
+           - 4.0 * f[r + x]
+}
+
+function evolve(u: ptr<f64>, v: ptr<f64>, un: ptr<f64>, vn: ptr<f64>,
+                b: f64, dt: f64) -> void {
+    let mut cell: FhnWaveCell = FhnWaveCell_new()
+    cell.b = b
+    cell.a = AA
+    cell.eps = EPS
+    cell.du = DU
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            cell.u = u[i]
+            cell.v = v[i]
+            cell.lap_u = lap_at(u, x, y)
+            FhnWaveCell_step(&cell, dt)
+            if cell.u < 0.0 { cell.u = 0.0 }
+            if cell.u > 1.0 { cell.u = 1.0 }
+            if cell.v < 0.0 { cell.v = 0.0 }
+            un[i] = cell.u
+            vn[i] = cell.v
+        }
+    }
+}
+
+function mean_u(u: ptr<f64>) -> f64 {
+    let mut s: f64 = 0.0
+    for i in 0 to CELLS {
+        s = s + u[i]
+    }
+    return s / (CELLS as f64)
+}
+
+# Unwrap a phase difference into (-pi, pi].
+function wrap_pi(d: f64) -> f64 {
+    let mut x: f64 = d
+    while x > PI {
+        x = x - 2.0 * PI
+    }
+    while x <= 0.0 - PI {
+        x = x + 2.0 * PI
+    }
+    return x
+}
+
+# Count phase singularities of (u-0.5) + i(v - a/2) by plaquette winding.
+function count_tips(u: ptr<f64>, v: ptr<f64>) -> i32 {
+    let uth: f64 = 0.5
+    let vth: f64 = AA * 0.5
+    let mut tips: i32 = 0
+    for y in 0 to GRID - 1 {
+        for x in 0 to GRID - 1 {
+            let i00: i32 = y * GRID + x
+            let i10: i32 = y * GRID + x + 1
+            let i01: i32 = (y + 1) * GRID + x
+            let i11: i32 = (y + 1) * GRID + x + 1
+            let a0: f64 = atan2(v[i00] - vth, u[i00] - uth)
+            let a1: f64 = atan2(v[i10] - vth, u[i10] - uth)
+            let a2: f64 = atan2(v[i11] - vth, u[i11] - uth)
+            let a3: f64 = atan2(v[i01] - vth, u[i01] - uth)
+            let wind: f64 = wrap_pi(a1 - a0) + wrap_pi(a2 - a1)
+                          + wrap_pi(a3 - a2) + wrap_pi(a0 - a3)
+            if fabs(wind) > PI {
+                tips = tips + 1
+            }
+        }
+    }
+    return tips
+}
+
+function shade_r(t: f64) -> i32 {
+    let mut c: f64 = 18.0 + 40.0 * t
+    if t > 0.35 { c = 32.0 + 340.0 * (t - 0.35) }
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function shade_g(t: f64) -> i32 {
+    let mut c: f64 = 22.0 + 60.0 * t
+    if t > 0.5 { c = 52.0 + 200.0 * (t - 0.5) }
+    if c > 220.0 { c = 220.0 }
+    return c as i32
+}
+
+function shade_b(t: f64) -> i32 {
+    let mut c: f64 = 70.0 + 160.0 * t
+    if t > 0.55 { c = 158.0 - 180.0 * (t - 0.55) }
+    if c < 30.0 { c = 30.0 }
+    if c > 255.0 { c = 255.0 }
+    return c as i32
+}
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, u: ptr<f64>) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let mut t: f64 = u[y * GRID + x]
+            if t < 0.0 { t = 0.0 }
+            if t > 1.0 { t = 1.0 }
+            paint_cell(fb, x, y, shade_r(t), shade_g(t), shade_b(t))
+        }
+    }
+    gfx_blit_rgb(g, 16, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, b: f64, tips: i32, period: f64,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "FITZHUGH WAVES", 2, 235, 240, 250)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 180, 100)
+    let t3: i32 = gfx_draw_text(g, 300, 12, "b", 1, 140, 150, 165)
+    let t4: i32 = gfx_draw_fixed(g, 314, 12, b, 3, 1, 235, 240, 250)
+
+    let t5: i32 = gfx_draw_text(g, 8, 28, "TIPS", 1, 140, 150, 165)
+    let t6: i32 = gfx_draw_int(g, 40, 28, tips, 1, 120, 255, 190)
+    let t7: i32 = gfx_draw_text(g, 80, 28, "PERIOD", 1, 140, 150, 165)
+    let t8: i32 = gfx_draw_fixed(g, 128, 28, period, 3, 1, 120, 255, 190)
+
+    let t9: i32 = gfx_draw_text(g, 8, 42,
+        "1 RIGID  2 MEANDER  3 WIDE  R RESEED  P PAUSE",
+        1, 108, 116, 128)
+    if paused {
+        let ta: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tb: i32 = gfx_draw_text(g, 8, 572,
+        "u evolves as Du*lap(u) + (1/eps)*u*(1-u)*(u-(v+b)/a)", 1, 120, 130, 150)
+    let tc: i32 = gfx_draw_text(g, 8, 582,
+        "v evolves as u - v     Barkley / FitzHugh-Nagumo spirals", 1, 120, 130, 150)
+}
+
+function main() -> i32 {
+    let ua: array<f64, 9216> = [0.0, 0.0, 0.0, 0.0]
+    let va: array<f64, 9216> = [0.0, 0.0, 0.0, 0.0]
+    let ub: array<f64, 9216> = [0.0, 0.0, 0.0, 0.0]
+    let vb: array<f64, 9216> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 691200> = [0, 0, 0, 0]
+
+    let b: f64 = 0.02
+    let dt: f64 = FhnWaveCell_default_dt()
+
+    println("")
+    println("  FITZHUGH WAVES  --  spiral tips in an excitable medium")
+    println("  ======================================================")
+    println("")
+    println("    Barkley FHN, eps 0.02, a 0.75, b 0.02, Du 1.0, 96x96 no-flux")
+    println("")
+
+    rng_state = 1046527061
+    seed_field(ua, va)
+
+    let mut tip_sum: i32 = 0
+    let mut tip_n: i32 = 0
+    let mut prev_mean: f64 = mean_u(ua)
+    let mut prev_sign: i32 = 0
+    let mut last_cross_t: f64 = -1.0
+    let mut period_sum: f64 = 0.0
+    let mut period_n: i32 = 0
+    let mut t: f64 = 0.0
+    let sample_every: i32 = 40
+
+    for s in 0 to VERIFY_STEPS / 2 {
+        evolve(ua, va, ub, vb, b, dt)
+        evolve(ub, vb, ua, va, b, dt)
+        t = t + 2.0 * dt
+        if (s * 2) % sample_every == 0 {
+            let m: f64 = mean_u(ua)
+            let mut sign: i32 = 0
+            if m > prev_mean { sign = 1 }
+            if m < prev_mean { sign = 0 - 1 }
+            if prev_sign < 0 and sign > 0 and t > 40.0 {
+                if last_cross_t > 0.0 {
+                    period_sum = period_sum + (t - last_cross_t)
+                    period_n = period_n + 1
+                }
+                last_cross_t = t
+            }
+            if sign != 0 { prev_sign = sign }
+            prev_mean = m
+            if t > 60.0 {
+                tip_sum = tip_sum + count_tips(ua, va)
+                tip_n = tip_n + 1
+            }
+        }
+    }
+
+    let mut tips_avg: f64 = 0.0
+    if tip_n > 0 {
+        tips_avg = (tip_sum as f64) / (tip_n as f64)
+    }
+    let mut period: f64 = 0.0
+    if period_n > 0 {
+        period = period_sum / (period_n as f64)
+    }
+    let tips_now: i32 = count_tips(ua, va)
+
+    print("    tip count (final)               : ")
+    printf("%6.0f", tips_now as f64)
+    println("")
+    print("    tip count (late average)        : ")
+    printf("%9.3f", tips_avg)
+    println("   (gate 4 .. 10)")
+    print("    mean-u oscillation period       : ")
+    printf("%9.4f", period)
+    println("   (gate 3 .. 6)")
+    println("")
+
+    let tips_ok: bool = tips_avg >= 4.0 and tips_avg <= 10.0 and tips_now >= 4
+    let period_ok: bool = period >= 3.0 and period <= 6.0
+    if !tips_ok {
+        println("    FAIL: spiral tip count outside the expected band")
+        return 1
+    }
+    if !period_ok {
+        println("    FAIL: spiral period outside the expected band")
+        return 2
+    }
+    println("    PASS: spirals rotate with a stable tip count and period")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut b_live: f64 = b
+    rng_state = 1046527061
+    seed_field(ua, va)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "FitzHugh waves - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut tips_live: i32 = tips_now
+    let mut period_live: f64 = period
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            b_live = preset_b(preset)
+            seed_field(ua, va)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                seed_field(ua, va)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for s in 0 to SUBSTEPS / 2 {
+                evolve(ua, va, ub, vb, b_live, dt)
+                evolve(ub, vb, ua, va, b_live, dt)
+            }
+        }
+
+        if frame % 4 == 0 {
+            tips_live = count_tips(ua, va)
+        }
+
+        gfx_clear(g, 12, 10, 18)
+        draw_field(g, fb, ua)
+        draw_hud(g, preset, b_live, tips_live, period_live, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

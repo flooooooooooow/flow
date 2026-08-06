@@ -1,11 +1,11 @@
 # examples/morphogenesis: pattern and growth, running live
 
-Twenty real-time graphics programs about how form appears. Each one starts
-from something featureless (uniform noise, a single seed, a random mixture)
-and ends somewhere structured, with nothing in the source describing the
+Real-time graphics programs about how form appears. Each one starts from
+something featureless (uniform noise, a single seed, a random mixture) and
+ends somewhere structured, with nothing in the source describing the
 structure. The rule is written down; the shape is what the rule does.
 
-Recorded clips of all twenty are in the
+Recorded clips live in the
 [morphogenesis gallery](../../docs/demos/morphogenesis.md).
 
 This is [VISION.md](../../VISION.md) as a picture. Flow's founding claim is
@@ -53,6 +53,12 @@ so every run of a preset is the same run.
 | [`belousov.flow`](belousov.flow) | Four interlocking rotating spiral waves | Barkley two-variable excitable medium | `./flow gfx examples/morphogenesis/belousov.flow` |
 | [`swift_hohenberg.flow`](swift_hohenberg.flow) | Rolls with grain boundaries, or peaks | Swift-Hohenberg, a fourth-order pattern equation | `./flow gfx examples/morphogenesis/swift_hohenberg.flow` |
 | [`cahn_hilliard.flow`](cahn_hilliard.flow) | Bicontinuous domains coarsening forever | Cahn-Hilliard conserved (Model B) dynamics | `./flow gfx examples/morphogenesis/cahn_hilliard.flow` |
+| [`brusselator.flow`](brusselator.flow) | Hexagonal lattice at the predicted lambda | Prigogine-Lefever autocatalytic RD | `./flow gfx examples/morphogenesis/brusselator.flow` |
+| [`gierer_meinhardt.flow`](gierer_meinhardt.flow) | Activator-inhibitor spots; wavelength vs k_max | Gierer-Meinhardt without saturation | `./flow gfx examples/morphogenesis/gierer_meinhardt.flow` |
+| [`schnakenberg.flow`](schnakenberg.flow) | Cubic autocatalysis; wavelength vs k_max | Schnakenberg RD | `./flow gfx examples/morphogenesis/schnakenberg.flow` |
+| [`fitzhugh_waves.flow`](fitzhugh_waves.flow) | Spiral tips with measured period | Barkley / FitzHugh-Nagumo 2D medium | `./flow gfx examples/morphogenesis/fitzhugh_waves.flow` |
+| [`kuramoto_sivashinsky.flow`](kuramoto_sivashinsky.flow) | Spatiotemporal chaos; dissipation band | 1D Kuramoto-Sivashinsky | `./flow gfx examples/morphogenesis/kuramoto_sivashinsky.flow` |
+| [`allen_cahn.flow`](allen_cahn.flow) | Droplet shrinks as R^2 = R0^2 - 2t | Allen-Cahn mean-curvature flow | `./flow gfx examples/morphogenesis/allen_cahn.flow` |
 | [`heat_morph.flow`](heat_morph.flow) | Noise dissolves, boundaries sharpen | Perona-Malik anisotropic diffusion | `./flow gfx examples/morphogenesis/heat_morph.flow` |
 
 ## Growth and aggregation
