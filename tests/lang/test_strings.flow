@@ -1,0 +1,65 @@
+# Flow-native language test: string concatenation and its length.
+#
+# `_is_string_expr` used to recognize only literals, variables, fields and
+# `+` chains. A call returning `string` was treated as a non-string operand
+# and pushed through a 64-byte stack buffer via `snprintf("%s", ...)`, so
+# anything longer lost its tail: the repo-stats JSON emitter turned
+# `"lines": 35913` into `"lines": 3591`.
+#
+# The Python twins asserted the absence of that `snprintf` wrapper in the
+# emitted C. Measuring the result at runtime is the stronger check: it fails
+# on truncation however the truncation arrives.
+# Supersedes:
+#   tests/unit/test_string_concat_calls.py::test_string_returning_call_is_not_forced_through_snprintf_buffer
+#   tests/unit/test_string_concat_calls.py::test_generated_c_keeps_full_helper_return_in_strcat
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+}
+
+# 64 characters, one past the old buffer's usable width.
+function long_piece() -> string {
+    return "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!!"
+}
+
+function digits() -> string {
+    return "35913"
+}
+
+function main() -> i32 {
+    if strlen(long_piece()) != 64 {
+        return 1
+    }
+
+    # A call result concatenated between two literals: 1 + 64 + 1.
+    let wrapped: string = "[" + long_piece() + "]"
+    if strlen(wrapped) != 66 {
+        return 2
+    }
+    if strcmp(wrapped, "[abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!!]") != 0 {
+        return 3
+    }
+
+    # The exact regression: a numeric-looking tail must survive.
+    let json: string = "{\"lines\": " + digits() + "}"
+    if strcmp(json, "{\"lines\": 35913}") != 0 {
+        return 5
+    }
+
+    # Two calls in one chain, well past 64 bytes in total.
+    let doubled: string = long_piece() + long_piece()
+    if strlen(doubled) != 128 {
+        return 6
+    }
+
+    # Concatenating a plain variable still works.
+    let name: string = "flow"
+    let greet: string = "hello, " + name
+    if strcmp(greet, "hello, flow") != 0 {
+        return 7
+    }
+
+    return 0
+}

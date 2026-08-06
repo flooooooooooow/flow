@@ -1,6 +1,14 @@
 # Flow-native language test: spans as borrowed views (docs/language/spans.md).
 # Covers summing over a span, filling through a mutable span, passing a slice
-# onward, a fixed-extent parameter, and the `&[T]` sugar.
+# onward, a span forwarded unchanged, a fixed-extent parameter, and the
+# `&[T]` sugar.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_spans.py::test_sum_over_a_borrowed_array_runs
+#   tests/unit/test_spans.py::test_write_through_a_mutable_span_runs
+#   tests/unit/test_spans.py::test_slice_passed_onward_runs
+#   tests/unit/test_spans.py::test_span_passes_through_unchanged
+#   tests/unit/test_spans.py::test_fixed_extent_span_runs
+#   tests/unit/test_spans.py::test_reference_sugar_runs_identically
 # Exit 0 on success; a nonzero exit identifies the failing check.
 
 function total(values: span<i32>) -> i32 {
@@ -31,9 +39,26 @@ function corners(v: span<i32, 4>) -> i32 {
     return v[0] + v[3]
 }
 
-# The bracket sugar is the same type.
+# A span forwarded to another function unchanged: no re-borrow, no copy.
+function first_of(values: span<i32>) -> i32 {
+    return values[0]
+}
+
+function forwarded_first(values: span<i32>) -> i32 {
+    return first_of(values)
+}
+
+# The bracket sugar is the same type, in both directions.
 function doubled_total(values: &[i32]) -> i32 {
     return total(values) * 2
+}
+
+function scale(values: &mut [i32]) {
+    let mut i: i32 = 0
+    while i < values.len {
+        values[i] = values[i] * 2
+        i = i + 1
+    }
 }
 
 # Returning a view of a parameter outlives nothing.
@@ -85,6 +110,21 @@ function main() -> i32 {
     }
     if ys[2] != 3 {
         return 10
+    }
+
+    # A span handed on to a second function without being re-borrowed.
+    if forwarded_first(xs) != 1 {
+        return 11
+    }
+
+    # `&mut [T]` writes through to the borrowed storage.
+    let mut zs: array<i32, 3> = [1, 2, 3]
+    scale(zs)
+    if zs[0] != 2 {
+        return 12
+    }
+    if zs[2] != 6 {
+        return 13
     }
 
     return 0

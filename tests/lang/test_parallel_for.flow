@@ -1,0 +1,47 @@
+# Flow-native language test: `parallel for`.
+#
+# The loop lowers to an OpenMP parallel for behind `#ifdef _OPENMP`, so the
+# same source has to give the same answer whether or not the host toolchain
+# enables OpenMP. Both shapes below write to disjoint elements, so the result
+# is order-independent and the check is deterministic either way.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_backend_parity.py::test_c_backend_exit_zero[parallel_for]
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function main() -> i32 {
+    let mut xs: array<i32, 4> = [0, 0, 0, 0]
+    parallel for i in 0 to 4 {
+        xs[i] = i
+    }
+    if xs[0] + xs[3] != 3 {
+        return 1
+    }
+    if xs[1] != 1 {
+        return 2
+    }
+    if xs[2] != 2 {
+        return 3
+    }
+
+    # A wider loop with arithmetic in the body: every element must be
+    # written exactly once, so the sum is fixed.
+    let mut ys: array<i32, 16> = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    parallel for j in 0 to 16 {
+        ys[j] = j * j
+    }
+    let mut s: i32 = 0
+    let mut k: i32 = 0
+    while k < 16 {
+        s = s + ys[k]
+        k = k + 1
+    }
+    # sum of j^2 for j in 0..15
+    if s != 1240 {
+        return 4
+    }
+
+    return 0
+}

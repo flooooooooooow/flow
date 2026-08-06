@@ -1,0 +1,57 @@
+# Flow-native language test: `print` / `println` of an arbitrary expression.
+#
+# `print(a + b)` used to compile to a bare `(a + b);`, which C evaluates and
+# discards, so the call printed nothing at all. Every expression form now
+# goes through the same printf conversion lookup a plain variable does.
+#
+# This one is judged on its output, so the expected text lives beside it in
+# tests/lang/test_print.expected and the harness diffs the two. The exit code
+# still reports the value checks.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_strict_gaps.py::TestPrintOfAnExpression::test_output_is_correct_end_to_end
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function twice(v: i32) -> i32 {
+    return v * 2
+}
+
+function main() -> i32 {
+    let a: i32 = 20
+    let b: i32 = 22
+    let s: string = "hi"
+    let p: Point = Point { x: 1, y: 2 }
+    let xs: array<i32, 3> = [7, 8, 9]
+
+    print(a + b)
+    print("\n")
+    print("concat: " + s)
+    print("\n")
+    print(twice(21))
+    print("\n")
+    print(p.x + p.y)
+    print("\n")
+    print(xs[2])
+    print("\n")
+    println(a + b)
+
+    # The same expressions, checked by value: printing them must not have
+    # changed what they evaluate to.
+    if a + b != 42 {
+        return 1
+    }
+    if twice(21) != 42 {
+        return 2
+    }
+    if p.x + p.y != 3 {
+        return 3
+    }
+    if xs[2] != 9 {
+        return 4
+    }
+    return 0
+}
