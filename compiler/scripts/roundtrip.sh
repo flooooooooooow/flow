@@ -712,6 +712,10 @@ echo "PASS stage_a_match fixtures"
 # then fixed-point cmp self.o==g2.o, C/Flow g2 driver smokes (sum→45), gen3 token cmp.
 ./compiler/scripts/stage_a_self_emit_g2.sh
 
+# Checked-in bootstrap: a cc-only path to a working flowc, and the C in
+# compiler/bootstrap/ must still be exactly what flowc emits from compiler/src.
+./compiler/scripts/bootstrap_from_c.sh --verify
+
 # Whole-compiler self-host: bundle all of compiler/src through flowc, run its
 # self-tests, and check three consecutive generations are byte-identical.
 ./compiler/scripts/self_host_full.sh

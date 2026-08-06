@@ -33,7 +33,8 @@ if [[ -z "$BOOT" ]]; then
     for cand in \
         compiler/build/stage_a_driver_flow_self \
         compiler/build/stage_a_driver_flow \
-        compiler/build/stage_a_driver; do
+        compiler/build/stage_a_driver \
+        compiler/build/flowc_bootstrap; do
         if [[ -x "$cand" ]]; then
             BOOT="$cand"
             break
@@ -53,14 +54,10 @@ emit_compiler() {
     local bin="$1"
     local out="$2"
     rm -f "$out"
-    case "$bin" in
-        */stage_a_driver*)
-            FLOWC_BUNDLE=1 FLOWC_DIR="$SRCDIR" "$bin" "$ENTRY" "$out"
-            ;;
-        *)
-            FLOWC_BUNDLE=1 FLOWC_DIR="$SRCDIR" FLOWC_IN="$ENTRY" FLOWC_OUT="$out" "$bin"
-            ;;
-    esac
+    # driver.flow binaries prefer argv, main.flow binaries read the env — pass
+    # both so any generation works without knowing which shape it is.
+    FLOWC_BUNDLE=1 FLOWC_DIR="$SRCDIR" FLOWC_IN="$ENTRY" FLOWC_OUT="$out" \
+        "$bin" "$ENTRY" "$out"
     if [[ ! -s "$out" ]]; then
         echo "FAIL emit: ${bin} wrote no C to ${out}" >&2
         exit 1
