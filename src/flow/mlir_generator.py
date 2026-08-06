@@ -2014,7 +2014,7 @@ class MLIRGenerator:
         except (TypeError, ValueError):
             return None
 
-    def _generate_cf_for(self, for_stmt: ForStatement, step_value: int = 1) -> str:
+    def _generate_cf_for(self, for_stmt: ForStatement, step_value: Optional[int] = 1) -> str:
         """Counted loop lowered to cf blocks so break/continue have somewhere to go.
 
         scf.for regions are single-block, so a `break` inside one cannot be
@@ -2031,12 +2031,31 @@ class MLIRGenerator:
 
         lb = f"%{self.function_counter}"; self.function_counter += 1
         ub = f"%{self.function_counter}"; self.function_counter += 1
-        step = f"%{self.function_counter}"; self.function_counter += 1
         mlir_code.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
         mlir_code.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
-        mlir_code.append(f"{self.indent()}{step} = arith.constant {step_value} : index")
+
         # Descending loops run while iv > ub, exactly as the C backend does.
-        cmp_pred = "slt" if step_value > 0 else "sgt"
+        # With a constant step the direction is known here; with a dynamic one
+        # the sign is tested once in the entry block and selected per iteration.
+        ascending_ssa: Optional[str] = None
+        step = f"%{self.function_counter}"; self.function_counter += 1
+        if step_value is not None:
+            mlir_code.append(f"{self.indent()}{step} = arith.constant {step_value} : index")
+            cmp_pred = "slt" if step_value > 0 else "sgt"
+        else:
+            step_expr_ssa, step_ops = self.generate_expression(for_stmt.step)
+            mlir_code.extend(step_ops)
+            mlir_code.append(
+                f"{self.indent()}{step} = arith.index_cast {step_expr_ssa} : i32 to index"
+            )
+            zero = f"%{self.function_counter}"; self.function_counter += 1
+            ascending_ssa = f"%{self.function_counter}"; self.function_counter += 1
+            mlir_code.append(f"{self.indent()}{zero} = arith.constant 0 : index")
+            mlir_code.append(
+                f"{self.indent()}{ascending_ssa} = arith.cmpi sgt, {step}, {zero} : index"
+            )
+            cmp_pred = "slt"
+        self._ssa_types[step] = 'index'
 
         header_block = self._new_block_label()
         body_block = self._new_block_label()
@@ -2081,6 +2100,16 @@ class MLIRGenerator:
         mlir_code.append(f"{self.indent()}^{header_block}({header_args}):")
         cond = f"%{self.function_counter}"; self.function_counter += 1
         mlir_code.append(f"{self.indent()}{cond} = arith.cmpi {cmp_pred}, {header_iv}, {ub} : index")
+        if ascending_ssa is not None:
+            desc = f"%{self.function_counter}"; self.function_counter += 1
+            picked = f"%{self.function_counter}"; self.function_counter += 1
+            mlir_code.append(
+                f"{self.indent()}{desc} = arith.cmpi sgt, {header_iv}, {ub} : index"
+            )
+            mlir_code.append(
+                f"{self.indent()}{picked} = arith.select {ascending_ssa}, {cond}, {desc} : i1"
+            )
+            cond = picked
         edge_ssas = [header_iv] + [
             self.symbol_table[v]['ssa_name']
             for v in loop_carried_vars
@@ -2143,16 +2172,14 @@ class MLIRGenerator:
 
         step_value = self._constant_step(for_stmt)
         if not for_stmt.is_parallel:
-            if step_value is None:
-                # A dynamic step can run either direction; the scf.for path
-                # below would silently drop it and iterate by one.
-                raise NotImplementedError(
-                    "`for ... step <expr>` needs a constant step in the MLIR "
-                    "backend; use the C backend (--c)"
-                )
-            if not self.inside_scf_for and (
-                step_value <= 0 or self._needs_cf_loop_lowering(for_stmt.body)
-            ):
+            # scf.for only accepts a positive step, so anything else (and any
+            # body needing its own blocks) takes the cf lowering.
+            if step_value is None or step_value <= 0 or self._needs_cf_loop_lowering(for_stmt.body):
+                if self.inside_scf_for:
+                    raise NotImplementedError(
+                        "this `for` loop needs cf lowering but sits inside an "
+                        "scf region; use the C backend (--c)"
+                    )
                 return self._generate_cf_for(for_stmt, step_value)
 
         if for_stmt.is_parallel:
