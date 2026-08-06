@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow crossing 3: BSD sockets from a browser</title>
+<link rel="stylesheet" href="crossing.css">
+</head>
+<body>
+<main>
+<h1>Crossing 3 &mdash; sockets</h1>
+<p class="lede">
+<code>runtime/flow_tcp.c</code> is BSD sockets and nothing else, compiled for
+wasm unmodified. Emscripten maps <code>connect()</code>,
+<code>send()</code> and <code>recv()</code> onto a WebSocket, so a Flow program
+calling the ordinary socket API round-trips bytes from inside this tab.
+</p>
+<p class="lede">
+The far end has to speak WebSocket, because a browser cannot open a raw TCP
+socket to an arbitrary host and port. That is a browser security rule.
+Start the relay first:
+<code>python3 scripts/ws_echo_relay.py --port 9505</code>
+</p>
+
+<div class="facts">
+  <div class="fact"><span class="k">relay</span><span class="v" id="f-relay">&hellip;</span></div>
+  <div class="fact"><span class="k">port</span><span class="v">9505</span></div>
+  <div class="fact"><span class="k">transport</span><span class="v">ws://127.0.0.1:9505/</span></div>
+  <div class="fact"><span class="k">round trips ok</span><span class="v" id="f-ok">&mdash;</span></div>
+</div>
+
+<h2>Run</h2>
+<div class="panel">
+  <button id="run">Connect and echo</button>
+  <button id="probe" class="secondary">Probe relay</button>
+  <button id="clear" class="secondary">Clear</button>
+</div>
+
+<h2>Measured</h2>
+<div class="panel">
+<table>
+  <thead><tr><th>connect</th><th>round trips</th><th>best rtt</th><th>mean rtt</th><th>result</th></tr></thead>
+  <tbody><tr>
+    <td id="m-conn">&mdash;</td><td id="m-trips">&mdash;</td>
+    <td id="m-best">&mdash;</td><td id="m-mean">&mdash;</td><td id="m-res">&mdash;</td>
+  </tr></tbody>
+</table>
+</div>
+
+<h2>Program output</h2>
+<pre id="out">click run</pre>
+
+<h2>Flow source</h2>
+<pre class="source"># A TCP round trip from inside a browser tab.
+#
+#   python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506 &amp;
+#   ./flow run examples/wasm/tcp_echo.flow          # native, plain TCP
+#   python3 wasm/flow_wasm_sockets.py               # browser, over WebSocket
+#
+# This calls Flow&#x27;s ordinary socket API: flow_rt_tcp_connect / send / recv /
+# close in runtime/flow_tcp.c, which are BSD sockets and nothing else. The
+# file is not modified for WASM. Emscripten maps those same calls onto a
+# WebSocket, so connect() to 127.0.0.1:9505 opens ws://127.0.0.1:9505/.
+#
+# Two things differ from a native run, and both are browser facts:
+#
+#   The port is a WebSocket port, because a browser cannot open a raw TCP
+#   socket to anywhere. Something has to speak WebSocket on the other end.
+#
+#   connect() cannot block, so Emscripten returns success immediately and the
+#   handshake finishes later. recv() reports EAGAIN until then. The poll loop
+#   below calls flow_net_yield, which is emscripten_sleep under WASM (giving
+#   the event loop a turn) and usleep natively.
+
+extern {
+    function malloc(size: i64) -&gt; ptr&lt;void&gt;
+    function free(p: ptr&lt;void&gt;) -&gt; void
+    function memcpy(dst: ptr&lt;void&gt;, src: ptr&lt;void&gt;, n: i64) -&gt; ptr&lt;void&gt;
+    function flow_rt_tcp_connect(host_hash: i32, port: i32) -&gt; i32
+    function flow_rt_tcp_close(fd: i32) -&gt; i32
+    function flow_rt_tcp_recv(fd: i32, buf: ptr&lt;void&gt;, len: i32) -&gt; i32
+    function flow_rt_tcp_send(fd: i32, buf: ptr&lt;void&gt;, len: i32) -&gt; i32
+    function flow_rt_monotonic_ns() -&gt; i64
+    function flow_net_yield(ms: i32) -&gt; void
+    function flow_demo_port() -&gt; i32
+    function printf(fmt: string, val: f64) -&gt; i32
+}
+
+const MSG_LEN: i32 = 32
+const TRIPS: i32 = 8
+const POLL_MS: i32 = 2
+const POLL_LIMIT: i32 = 2500      # 2500 * 2 ms = 5 s before giving up
+
+let mut sendbuf: ptr&lt;i8&gt; = null
+let mut recvbuf: ptr&lt;i8&gt; = null
+
+# Deterministic payload: byte i of trip t.
+function fill_message(trip: i32) -&gt; void {
+    for i in 0 to MSG_LEN {
+        let v: i32 = (i * 7 + trip * 31 + 65) % 90 + 33
+        sendbuf[i] = v as i8
+    }
+}
+
+function payload_matches() -&gt; i32 {
+    for i in 0 to MSG_LEN {
+        if sendbuf[i] != recvbuf[i] {
+            return 0
+        }
+    }
+    return 1
+}
+
+# Read exactly MSG_LEN bytes, yielding to the event loop between attempts.
+# Returns bytes read, or -1 on timeout.
+function recv_all(fd: i32) -&gt; i32 {
+    let mut got: i32 = 0
+    let mut polls: i32 = 0
+    while got &lt; MSG_LEN {
+        let n: i32 = flow_rt_tcp_recv(fd, (recvbuf + (got as i64)) as ptr&lt;void&gt;, MSG_LEN - got)
+        if n &gt; 0 {
+            got = got + n
+        } else {
+            polls = polls + 1
+            if polls &gt; POLL_LIMIT {
+                return -1
+            }
+            flow_net_yield(POLL_MS)
+        }
+    }
+    return got
+}
+
+function main() -&gt; i32 {
+    let port: i32 = flow_demo_port()
+    println(&quot;tcp_echo: Flow&#x27;s BSD socket API, round-tripping through a relay&quot;)
+    print(&quot;  port: &quot;)
+    println(port)
+    print(&quot;  message bytes: &quot;)
+    println(MSG_LEN)
+    print(&quot;  round trips: &quot;)
+    println(TRIPS)
+
+    sendbuf = malloc(MSG_LEN as i64) as ptr&lt;i8&gt;
+    recvbuf = malloc(MSG_LEN as i64) as ptr&lt;i8&gt;
+
+    let fd: i32 = flow_rt_tcp_connect(0, port)
+    if fd &lt; 0 {
+        println(&quot;FAIL: connect returned an error&quot;)
+        return 1
+    }
+    print(&quot;  connected, fd &quot;)
+    println(fd)
+
+    # Under WASM the handshake is still in flight here. Give it the event loop.
+    flow_net_yield(50)
+
+    let mut ok: i32 = 0
+    let mut best_ns: i64 = 0
+    let mut total_ns: i64 = 0
+
+    for trip in 0 to TRIPS {
+        fill_message(trip)
+        for i in 0 to MSG_LEN {
+            recvbuf[i] = 0
+        }
+        let t0: i64 = flow_rt_monotonic_ns()
+        let sent: i32 = flow_rt_tcp_send(fd, sendbuf as ptr&lt;void&gt;, MSG_LEN)
+        if sent != MSG_LEN {
+            print(&quot;  trip &quot;)
+            print(trip)
+            println(&quot;: send failed&quot;)
+            continue
+        }
+        let got: i32 = recv_all(fd)
+        let t1: i64 = flow_rt_monotonic_ns()
+        if got != MSG_LEN {
+            print(&quot;  trip &quot;)
+            print(trip)
+            println(&quot;: timed out waiting for the echo&quot;)
+            continue
+        }
+        if payload_matches() == 0 {
+            print(&quot;  trip &quot;)
+            print(trip)
+            println(&quot;: echo did not match what was sent&quot;)
+            continue
+        }
+        let ns: i64 = t1 - t0
+        total_ns = total_ns + ns
+        if ok == 0 or ns &lt; best_ns {
+            best_ns = ns
+        }
+        ok = ok + 1
+        print(&quot;  trip &quot;)
+        print(trip)
+        print(&quot;: &quot;)
+        print(MSG_LEN)
+        print(&quot; bytes echoed, rtt ms &quot;)
+        printf(&quot;%.3f\n&quot;, (ns as f64) / 1000000.0)
+    }
+
+    let closed: i32 = flow_rt_tcp_close(fd)
+    free(sendbuf as ptr&lt;void&gt;)
+    free(recvbuf as ptr&lt;void&gt;)
+
+    print(&quot;  round trips ok: &quot;)
+    print(ok)
+    print(&quot; / &quot;)
+    println(TRIPS)
+    if ok &gt; 0 {
+        print(&quot;  best rtt ms &quot;)
+        printf(&quot;%.3f&quot;, (best_ns as f64) / 1000000.0)
+        print(&quot;   mean rtt ms &quot;)
+        printf(&quot;%.3f\n&quot;, (total_ns as f64) / (ok as f64) / 1000000.0)
+    }
+    print(&quot;  close: &quot;)
+    println(closed)
+
+    if ok != TRIPS {
+        println(&quot;FAIL&quot;)
+        return 1
+    }
+    println(&quot;PASS&quot;)
+    return 0
+}
+</pre>
+
+<h2>The relay (head of scripts/ws_echo_relay.py)</h2>
+<pre class="source">#!/usr/bin/env python3
+&quot;&quot;&quot;A WebSocket echo relay, in the standard library, for the WASM sockets demo.
+
+A browser cannot open a TCP socket. It can open a WebSocket, which is an HTTP
+request that upgrades into a framed, bidirectional byte stream. Emscripten
+bridges BSD sockets onto exactly that: `connect(fd, 127.0.0.1:9505)` inside a
+WASM module opens `ws://127.0.0.1:9505/`, and every `send`/`recv` becomes a
+binary WebSocket frame.
+
+So a Flow program calling the ordinary socket API reaches this relay, which
+sends every frame straight back. Nothing here is Flow-specific; any WebSocket
+echo server works. It is in the tree so the demo has no dependencies.
+
+    python3 scripts/ws_echo_relay.py --port 9505
+
+Also speaks plain TCP echo on --tcp-port, so the same Flow program can be run
+natively against the same relay for comparison.
+&quot;&quot;&quot;
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import socket
+import struct
+import threading
+
+WS_GUID = b&quot;258EAFA5-E914-47DA-95CA-C5AB0DC85B11&quot;
+
+OP_CONT = 0x0
+OP_TEXT = 0x1
+OP_BINARY = 0x2
+OP_CLOSE = 0x8
+OP_PING = 0x9
+OP_PONG = 0xA
+
+
+def recv_exactly(conn: socket.socket, count: int) -&gt; bytes:
+    &quot;&quot;&quot;Read exactly `count` bytes, or return short on a closed connection.&quot;&quot;&quot;
+    chunks = []
+    got = 0
+    while got &lt; count:
+        chunk = conn.recv(count - got)
+        if not chunk:
+            break
+        chunks.append(ch</pre>
+
+<footer>
+Built by <code>wasm/flow_wasm_sockets.py</code>. Mechanism:
+<code>docs/language/wasm-crossings.md</code>.
+</footer>
+</main>
+
+<script src="tcp_echo.js"></script>
+<script>
+const out = document.getElementById("out");
+const log = (s) => { out.textContent += s + "\n"; out.scrollTop = out.scrollHeight; };
+const setFact = (id, text, cls) => {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "v" + (cls ? " " + cls : "");
+};
+
+// Open a WebSocket by hand first, so a missing relay is reported as a missing
+// relay instead of as a socket bug inside the module.
+function probe() {
+  return new Promise((resolve) => {
+    let ws;
+    try {
+      ws = new WebSocket("ws://127.0.0.1:9505/", "binary");
+    } catch (e) {
+      setFact("f-relay", "unreachable", "bad");
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const done = (ok) => {
+      if (settled) return;   // onopen and the timeout can both fire
+      settled = true;
+      setFact("f-relay", ok ? "reachable" : "not running", ok ? "ok" : "bad");
+      if (!ok) log("relay not reachable: start it with  python3 scripts/ws_echo_relay.py --port 9505");
+      try { ws.close(); } catch (e) { /* already closed */ }
+      resolve(ok);
+    };
+    ws.onopen = () => done(true);
+    ws.onerror = () => done(false);
+    setTimeout(() => done(false), 2000);
+  });
+}
+
+async function runProgram() {
+  document.getElementById("run").disabled = true;
+  if (!(await probe())) {
+    document.getElementById("run").disabled = false;
+    return;
+  }
+  log("=== tcp_echo ===");
+  let text = "";
+  await new Promise((resolve) => {
+    createFlowSockets({
+      print: (s) => { text += s + "\n"; log(s); },
+      printErr: (s) => { text += s + "\n"; log("stderr: " + s); },
+      onExit: () => resolve(),
+      quit: () => resolve(),
+    }).catch((e) => { log("module failed: " + e); resolve(); });
+  });
+
+  const num = (re) => { const m = text.match(re); return m ? m[1] : null; };
+  const trips = num(/round trips ok:\s+(\d+ \/ \d+)/);
+  document.getElementById("m-conn").textContent = /connected, fd/.test(text) ? "ok" : "failed";
+  document.getElementById("m-trips").textContent = trips || "\u2014";
+  document.getElementById("m-best").textContent = (num(/best rtt ms ([0-9.]+)/) || "\u2014") + " ms";
+  document.getElementById("m-mean").textContent = (num(/mean rtt ms ([0-9.]+)/) || "\u2014") + " ms";
+  const pass = /\bPASS\b/.test(text);
+  const res = document.getElementById("m-res");
+  res.textContent = pass ? "PASS" : "FAIL";
+  res.style.color = pass ? "var(--ok)" : "var(--bad)";
+  setFact("f-ok", trips || "\u2014", pass ? "ok" : "bad");
+  document.getElementById("run").disabled = false;
+  return pass;
+}
+
+document.getElementById("run").onclick = runProgram;
+document.getElementById("probe").onclick = probe;
+document.getElementById("clear").onclick = () => { out.textContent = ""; };
+window.runProgram = runProgram;
+probe();
+</script>
+</body>
+</html>
