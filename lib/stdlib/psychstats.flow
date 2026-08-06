@@ -1,0 +1,1526 @@
+# psychstats: the analysis half of Flow's behavioural-experiment support.
+#
+# Everything a reaction-time or psychophysics paper reports, computed in Flow
+# with no interpreter and no allocation on the hot path:
+#
+#   descriptives      ps_mean / ps_sd / ps_sem / ps_median / ps_quantile
+#   distributions     ps_norm_cdf / ps_norm_inv / ps_t_cdf / ps_f_sf
+#   t-tests           ps_ttest_paired / ps_ttest_ind      (+ Cohen's d)
+#   ANOVA             ps_anova_rm1 / ps_anova_rm2         (F, df, partial eta^2)
+#   permutation       ps_perm_paired / ps_perm_ind
+#   RT hygiene        ps_trim_sd / ps_trim_abs / ps_ies / ps_lognormal_fit
+#   psychometrics     ps_fit_logistic / ps_fit_weibull / ps_fit_boot_ci
+#   detection theory  ps_sdt / ps_auc
+#
+# This module draws nothing and imports no graphics, so an analysis-only
+# program runs under plain `./flow run`. The presentation half lives in
+# lib/stdlib/experiment.flow.
+#
+# NUMERICS
+#   Tail probabilities come from the regularized incomplete beta function
+#   I_x(a, b), evaluated by the modified Lentz continued fraction (Press et
+#   al., Numerical Recipes 3rd ed., section 6.4). The normal quantile is
+#   Wichura's AS 241 double-precision rational approximation, accurate to
+#   about 1e-16 over the whole range. Both are checked against scipy in
+#   tests/stdlib/test_psychstats.flow.
+#
+# CAPS
+#   PS_CAP scratch doubles per buffer (three buffers, lazily calloc'd once).
+#   Routines that need scratch return a failure flag rather than overrun.
+#
+# RANDOMNESS
+#   One LCG, seeded by the caller with ps_seed. Permutation tests and
+#   bootstraps are therefore reproducible: same seed, same p-value.
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function sqrt(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+    function fabs(x: f64) -> f64
+    function lgamma(x: f64) -> f64
+}
+
+const PS_CAP: i32 = 4096
+
+const PS_TINY: f64 = 1.0e-300
+const PS_EPS: f64 = 3.0e-16
+const PS_SQRT2: f64 = 1.4142135623730951
+const PS_SQRT2PI: f64 = 2.5066282746310002
+
+# Psychometric-function families, for ps_fit / ps_fit_boot_ci.
+export const PS_LOGISTIC: i32 = 0
+export const PS_WEIBULL: i32 = 1
+
+# ---------------------------------------------------------------------------
+# Scratch (module statics, allocated once)
+# ---------------------------------------------------------------------------
+
+let mut ps_s1: ptr<f64> = null
+let mut ps_s2: ptr<f64> = null
+let mut ps_s3: ptr<f64> = null
+let mut ps_ready: bool = false
+
+function ps_alloc() -> bool {
+    if ps_ready {
+        return true
+    }
+    ps_s1 = calloc(PS_CAP as i64, 8) as ptr<f64>
+    ps_s2 = calloc(PS_CAP as i64, 8) as ptr<f64>
+    ps_s3 = calloc(PS_CAP as i64, 8) as ptr<f64>
+    if ps_s1 == null or ps_s2 == null or ps_s3 == null {
+        return false
+    }
+    ps_ready = true
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Deterministic RNG (LCG), shared by the permutation tests and the bootstrap
+# ---------------------------------------------------------------------------
+
+let mut ps_rng: u32 = 2463534242
+let mut ps_seed_used: u32 = 2463534242
+
+export function ps_seed(seed: u32) -> u32 {
+    let mut s: u32 = seed
+    if s == 0 {
+        s = 2463534242
+    }
+    ps_rng = s
+    ps_seed_used = s
+    return s
+}
+
+# The seed the last ps_seed call actually installed. Log it beside the data.
+export function ps_seed_of_record() -> u32 {
+    return ps_seed_used
+}
+
+function ps_next_u32() -> u32 {
+    ps_rng = ps_rng * 1664525 + 1013904223
+    return ps_rng
+}
+
+# Uniform f64 in [0, 1).
+export function ps_rand() -> f64 {
+    let r: u32 = ps_next_u32()
+    let v: i32 = ((r >> 8) & 0xFFFFFF) as i32
+    return (v as f64) / 16777216.0
+}
+
+# Uniform integer in [0, n). n <= 0 returns 0.
+export function ps_rand_int(n: i32) -> i32 {
+    if n <= 0 {
+        return 0
+    }
+    let mut v: i32 = ((ps_next_u32() >> 8) as i32) % n
+    if v < 0 {
+        v = 0 - v
+    }
+    return v
+}
+
+# Standard normal by Marsaglia polar, one spare cached.
+let mut ps_spare: f64 = 0.0
+let mut ps_have_spare: bool = false
+
+export function ps_rand_normal() -> f64 {
+    if ps_have_spare {
+        ps_have_spare = false
+        return ps_spare
+    }
+    let mut u: f64 = 0.0
+    let mut v: f64 = 0.0
+    let mut s: f64 = 0.0
+    let mut guard: i32 = 0
+    while guard < 100 {
+        u = 2.0 * ps_rand() - 1.0
+        v = 2.0 * ps_rand() - 1.0
+        s = u * u + v * v
+        if s > 0.0 and s < 1.0 {
+            guard = 1000
+        } else {
+            guard = guard + 1
+        }
+    }
+    if s <= 0.0 or s >= 1.0 {
+        return 0.0
+    }
+    let f: f64 = sqrt(-2.0 * log(s) / s)
+    ps_spare = v * f
+    ps_have_spare = true
+    return u * f
+}
+
+# Number of successes in m Bernoulli(p) draws. m is a trial count, so the
+# direct loop is both exact and cheap.
+export function ps_rand_binomial(m: i32, p: f64) -> i32 {
+    let mut k: i32 = 0
+    let mut i: i32 = 0
+    while i < m {
+        if ps_rand() < p {
+            k = k + 1
+        }
+        i = i + 1
+    }
+    return k
+}
+
+# ---------------------------------------------------------------------------
+# Descriptives
+# ---------------------------------------------------------------------------
+
+export function ps_sum(x: ptr<f64>, n: i32) -> f64 {
+    let mut s: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        s = s + x[i]
+        i = i + 1
+    }
+    return s
+}
+
+export function ps_mean(x: ptr<f64>, n: i32) -> f64 {
+    if n <= 0 {
+        return 0.0
+    }
+    return ps_sum(x, n) / (n as f64)
+}
+
+# Sample variance, denominator n - 1.
+export function ps_var(x: ptr<f64>, n: i32) -> f64 {
+    if n < 2 {
+        return 0.0
+    }
+    let m: f64 = ps_mean(x, n)
+    let mut s: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        let d: f64 = x[i] - m
+        s = s + d * d
+        i = i + 1
+    }
+    return s / ((n - 1) as f64)
+}
+
+export function ps_sd(x: ptr<f64>, n: i32) -> f64 {
+    return sqrt(ps_var(x, n))
+}
+
+export function ps_sem(x: ptr<f64>, n: i32) -> f64 {
+    if n < 2 {
+        return 0.0
+    }
+    return ps_sd(x, n) / sqrt(n as f64)
+}
+
+export function ps_min(x: ptr<f64>, n: i32) -> f64 {
+    if n <= 0 {
+        return 0.0
+    }
+    let mut m: f64 = x[0]
+    let mut i: i32 = 1
+    while i < n {
+        if x[i] < m {
+            m = x[i]
+        }
+        i = i + 1
+    }
+    return m
+}
+
+export function ps_max(x: ptr<f64>, n: i32) -> f64 {
+    if n <= 0 {
+        return 0.0
+    }
+    let mut m: f64 = x[0]
+    let mut i: i32 = 1
+    while i < n {
+        if x[i] > m {
+            m = x[i]
+        }
+        i = i + 1
+    }
+    return m
+}
+
+# Insertion sort of src[0..n) into dst. dst may alias nothing in src.
+export function ps_sort_into(src: ptr<f64>, n: i32, dst: ptr<f64>) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+    let mut k: i32 = 1
+    while k < n {
+        let v: f64 = dst[k]
+        let mut j: i32 = k - 1
+        while j >= 0 and dst[j] > v {
+            dst[j + 1] = dst[j]
+            j = j - 1
+        }
+        dst[j + 1] = v
+        k = k + 1
+    }
+}
+
+# Linear-interpolation quantile on the sorted sample (numpy's default,
+# method="linear"): position q*(n-1) in the order statistics.
+export function ps_quantile(x: ptr<f64>, n: i32, q: f64) -> f64 {
+    if n <= 0 or n > PS_CAP {
+        return 0.0
+    }
+    if !ps_alloc() {
+        return 0.0
+    }
+    ps_sort_into(x, n, ps_s1)
+    let mut qq: f64 = q
+    if qq < 0.0 {
+        qq = 0.0
+    }
+    if qq > 1.0 {
+        qq = 1.0
+    }
+    let pos: f64 = qq * ((n - 1) as f64)
+    let lo: i32 = pos as i32
+    let mut hi: i32 = lo + 1
+    if hi > n - 1 {
+        hi = n - 1
+    }
+    let frac: f64 = pos - (lo as f64)
+    return ps_s1[lo] + frac * (ps_s1[hi] - ps_s1[lo])
+}
+
+export function ps_median(x: ptr<f64>, n: i32) -> f64 {
+    return ps_quantile(x, n, 0.5)
+}
+
+# ---------------------------------------------------------------------------
+# Distributions
+# ---------------------------------------------------------------------------
+
+# Abramowitz & Stegun 7.1.26-free: erf via the same series the incomplete
+# gamma uses would be heavier than needed, so the normal CDF is built from
+# the complementary error function written out as a Chebyshev fit (Numerical
+# Recipes erfc, fractional error < 1.2e-7 is not enough for p-values, so this
+# is the full-precision incomplete-gamma route instead).
+function ps_gser(a: f64, x: f64) -> f64 {
+    let mut ap: f64 = a
+    let mut del: f64 = 1.0 / a
+    let mut sum: f64 = del
+    let mut n: i32 = 0
+    while n < 300 {
+        ap = ap + 1.0
+        del = del * x / ap
+        sum = sum + del
+        if fabs(del) < fabs(sum) * PS_EPS {
+            n = 1000
+        } else {
+            n = n + 1
+        }
+    }
+    return sum * exp(-x + a * log(x) - lgamma(a))
+}
+
+function ps_gcf(a: f64, x: f64) -> f64 {
+    let mut b: f64 = x + 1.0 - a
+    let mut c: f64 = 1.0 / PS_TINY
+    let mut d: f64 = 1.0 / b
+    let mut h: f64 = d
+    let mut i: i32 = 1
+    while i < 300 {
+        let an: f64 = -(i as f64) * ((i as f64) - a)
+        b = b + 2.0
+        d = an * d + b
+        if fabs(d) < PS_TINY {
+            d = PS_TINY
+        }
+        c = b + an / c
+        if fabs(c) < PS_TINY {
+            c = PS_TINY
+        }
+        d = 1.0 / d
+        let del: f64 = d * c
+        h = h * del
+        if fabs(del - 1.0) < PS_EPS {
+            i = 1000
+        } else {
+            i = i + 1
+        }
+    }
+    return exp(-x + a * log(x) - lgamma(a)) * h
+}
+
+# Regularized lower incomplete gamma P(a, x).
+export function ps_gammp(a: f64, x: f64) -> f64 {
+    if x <= 0.0 or a <= 0.0 {
+        return 0.0
+    }
+    if x < a + 1.0 {
+        return ps_gser(a, x)
+    }
+    return 1.0 - ps_gcf(a, x)
+}
+
+# Standard normal CDF. Phi(z) = 0.5 * (1 + sign(z) * P(1/2, z^2/2)).
+export function ps_norm_cdf(z: f64) -> f64 {
+    let h: f64 = ps_gammp(0.5, 0.5 * z * z)
+    if z >= 0.0 {
+        return 0.5 * (1.0 + h)
+    }
+    return 0.5 * (1.0 - h)
+}
+
+export function ps_norm_pdf(z: f64) -> f64 {
+    return exp(-0.5 * z * z) / PS_SQRT2PI
+}
+
+# Standard normal quantile. Wichura, "Algorithm AS 241: The percentage
+# points of the normal distribution", Applied Statistics 37:477-484 (1988),
+# PPND16 branch. Maximum absolute error about 1e-16 for p in (0, 1).
+export function ps_norm_inv(p: f64) -> f64 {
+    if p <= 0.0 {
+        return -1.0e308
+    }
+    if p >= 1.0 {
+        return 1.0e308
+    }
+    let q: f64 = p - 0.5
+    if fabs(q) <= 0.425 {
+        let r: f64 = 0.180625 - q * q
+        let num: f64 = (((((((2509.0809287301226727 * r + 33430.575583588128105) * r
+            + 67265.770927008700853) * r + 45921.953931549871457) * r
+            + 13731.693765509461125) * r + 1971.5909503065514427) * r
+            + 133.14166789178437745) * r + 3.387132872796366608)
+        let den: f64 = (((((((5226.495278852854561 * r + 28729.085735721942674) * r
+            + 39307.89580009271061) * r + 21213.794301586595867) * r
+            + 5394.1960214247511077) * r + 687.1870074920579083) * r
+            + 42.313330701600911252) * r + 1.0)
+        return q * num / den
+    }
+    let mut r: f64 = p
+    if q > 0.0 {
+        r = 1.0 - p
+    }
+    r = sqrt(-log(r))
+    let mut val: f64 = 0.0
+    if r <= 5.0 {
+        let rr: f64 = r - 1.6
+        let num: f64 = (((((((7.7454501427834140764e-4 * rr + 0.0227238449892691845833) * rr
+            + 0.24178072517745061177) * rr + 1.27045825245236838258) * rr
+            + 3.64784832476320460504) * rr + 5.7694972214606914055) * rr
+            + 4.6303378461565452959) * rr + 1.42343711074968357734)
+        let den: f64 = (((((((1.05075007164441684324e-9 * rr + 5.475938084995344946e-4) * rr
+            + 0.0151986665636164571966) * rr + 0.14810397642748007459) * rr
+            + 0.68976733498510000455) * rr + 1.6763848301838038494) * rr
+            + 2.05319162663775882187) * rr + 1.0)
+        val = num / den
+    } else {
+        let rr: f64 = r - 5.0
+        let num: f64 = (((((((2.01033439929228813265e-7 * rr + 2.71155556874348757815e-5) * rr
+            + 0.0012426609473880784386) * rr + 0.026532189526576123093) * rr
+            + 0.29656057182850489123) * rr + 1.7848265399172913358) * rr
+            + 5.4637849111641143699) * rr + 6.6579046435011037772)
+        let den: f64 = (((((((2.04426310338993978564e-15 * rr + 1.4215117583164458887e-7) * rr
+            + 1.8463183175100546818e-5) * rr + 7.868691311456132591e-4) * rr
+            + 0.0148753612908506148525) * rr + 0.13692988092273580531) * rr
+            + 0.59983220655588793769) * rr + 1.0)
+        val = num / den
+    }
+    if q < 0.0 {
+        return -val
+    }
+    return val
+}
+
+# Continued fraction for the incomplete beta (Numerical Recipes betacf).
+function ps_betacf(a: f64, b: f64, x: f64) -> f64 {
+    let qab: f64 = a + b
+    let qap: f64 = a + 1.0
+    let qam: f64 = a - 1.0
+    let mut c: f64 = 1.0
+    let mut d: f64 = 1.0 - qab * x / qap
+    if fabs(d) < PS_TINY {
+        d = PS_TINY
+    }
+    d = 1.0 / d
+    let mut h: f64 = d
+    let mut m: i32 = 1
+    while m <= 300 {
+        let mf: f64 = m as f64
+        let m2: f64 = 2.0 * mf
+        let aa: f64 = mf * (b - mf) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if fabs(d) < PS_TINY {
+            d = PS_TINY
+        }
+        c = 1.0 + aa / c
+        if fabs(c) < PS_TINY {
+            c = PS_TINY
+        }
+        d = 1.0 / d
+        h = h * d * c
+        let ab: f64 = -(a + mf) * (qab + mf) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + ab * d
+        if fabs(d) < PS_TINY {
+            d = PS_TINY
+        }
+        c = 1.0 + ab / c
+        if fabs(c) < PS_TINY {
+            c = PS_TINY
+        }
+        d = 1.0 / d
+        let del: f64 = d * c
+        h = h * del
+        if fabs(del - 1.0) < PS_EPS {
+            m = 1000
+        } else {
+            m = m + 1
+        }
+    }
+    return h
+}
+
+# Regularized incomplete beta I_x(a, b).
+export function ps_betai(a: f64, b: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0
+    }
+    if x >= 1.0 {
+        return 1.0
+    }
+    let lnbt: f64 = lgamma(a + b) - lgamma(a) - lgamma(b)
+        + a * log(x) + b * log(1.0 - x)
+    let bt: f64 = exp(lnbt)
+    if x < (a + 1.0) / (a + b + 2.0) {
+        return bt * ps_betacf(a, b, x) / a
+    }
+    return 1.0 - bt * ps_betacf(b, a, 1.0 - x) / b
+}
+
+# Two-tailed p for Student's t with df degrees of freedom.
+export function ps_t_p2(t: f64, df: f64) -> f64 {
+    if df <= 0.0 {
+        return 1.0
+    }
+    let tt: f64 = fabs(t)
+    return ps_betai(0.5 * df, 0.5, df / (df + tt * tt))
+}
+
+# CDF of Student's t.
+export function ps_t_cdf(t: f64, df: f64) -> f64 {
+    let half: f64 = 0.5 * ps_t_p2(t, df)
+    if t >= 0.0 {
+        return 1.0 - half
+    }
+    return half
+}
+
+# Upper tail of the F distribution, i.e. the ANOVA p-value.
+export function ps_f_sf(f: f64, df1: f64, df2: f64) -> f64 {
+    if f <= 0.0 or df1 <= 0.0 or df2 <= 0.0 {
+        return 1.0
+    }
+    return ps_betai(0.5 * df2, 0.5 * df1, df2 / (df2 + df1 * f))
+}
+
+# ---------------------------------------------------------------------------
+# t-tests
+# ---------------------------------------------------------------------------
+
+export struct PsTTest {
+    t: f64,
+    df: f64,
+    p: f64,          # two-tailed
+    d: f64,          # Cohen's d (see the note on each constructor)
+    diff: f64,       # mean difference, group 1 minus group 2
+    n1: i32,
+    n2: i32,
+    ok: bool
+}
+
+function ps_ttest_fail() -> PsTTest {
+    return PsTTest { t: 0.0, df: 0.0, p: 1.0, d: 0.0, diff: 0.0, n1: 0, n2: 0, ok: false }
+}
+
+# Paired (within-subject) t-test on x - y.
+# Cohen's d here is d_z = mean(diff) / sd(diff), the effect size that matches
+# the paired test statistic (t = d_z * sqrt(n)). Report it as d_z, not as the
+# between-subject d; the two differ whenever the pair correlation is not zero.
+export function ps_ttest_paired(x: ptr<f64>, y: ptr<f64>, n: i32) -> PsTTest {
+    if n < 2 or n > PS_CAP {
+        return ps_ttest_fail()
+    }
+    if !ps_alloc() {
+        return ps_ttest_fail()
+    }
+    let mut i: i32 = 0
+    while i < n {
+        ps_s3[i] = x[i] - y[i]
+        i = i + 1
+    }
+    let m: f64 = ps_mean(ps_s3, n)
+    let s: f64 = ps_sd(ps_s3, n)
+    if s <= 0.0 {
+        return ps_ttest_fail()
+    }
+    let df: f64 = (n - 1) as f64
+    let t: f64 = m / (s / sqrt(n as f64))
+    return PsTTest {
+        t: t,
+        df: df,
+        p: ps_t_p2(t, df),
+        d: m / s,
+        diff: m,
+        n1: n,
+        n2: n,
+        ok: true
+    }
+}
+
+# Independent-samples t-test, equal variances assumed (Student's).
+# Cohen's d is the pooled-SD version, (m1 - m2) / s_pooled.
+export function ps_ttest_ind(x: ptr<f64>, nx: i32, y: ptr<f64>, ny: i32) -> PsTTest {
+    if nx < 2 or ny < 2 {
+        return ps_ttest_fail()
+    }
+    let m1: f64 = ps_mean(x, nx)
+    let m2: f64 = ps_mean(y, ny)
+    let v1: f64 = ps_var(x, nx)
+    let v2: f64 = ps_var(y, ny)
+    let df: f64 = ((nx + ny - 2) as f64)
+    let sp2: f64 = (((nx - 1) as f64) * v1 + ((ny - 1) as f64) * v2) / df
+    if sp2 <= 0.0 {
+        return ps_ttest_fail()
+    }
+    let sp: f64 = sqrt(sp2)
+    let se: f64 = sp * sqrt(1.0 / (nx as f64) + 1.0 / (ny as f64))
+    let t: f64 = (m1 - m2) / se
+    return PsTTest {
+        t: t,
+        df: df,
+        p: ps_t_p2(t, df),
+        d: (m1 - m2) / sp,
+        diff: m1 - m2,
+        n1: nx,
+        n2: ny,
+        ok: true
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Repeated-measures ANOVA
+# ---------------------------------------------------------------------------
+
+export struct PsAnovaTerm {
+    f: f64,
+    df1: f64,
+    df2: f64,
+    p: f64,
+    eta2p: f64,      # partial eta squared, SS_effect / (SS_effect + SS_error)
+    ss: f64,
+    ss_err: f64
+}
+
+function ps_term_zero() -> PsAnovaTerm {
+    return PsAnovaTerm { f: 0.0, df1: 0.0, df2: 0.0, p: 1.0, eta2p: 0.0, ss: 0.0, ss_err: 0.0 }
+}
+
+function ps_term(ss: f64, df1: f64, ss_err: f64, df2: f64) -> PsAnovaTerm {
+    if df1 <= 0.0 or df2 <= 0.0 or ss_err <= 0.0 {
+        return ps_term_zero()
+    }
+    let ms: f64 = ss / df1
+    let mse: f64 = ss_err / df2
+    let f: f64 = ms / mse
+    return PsAnovaTerm {
+        f: f,
+        df1: df1,
+        df2: df2,
+        p: ps_f_sf(f, df1, df2),
+        eta2p: ss / (ss + ss_err),
+        ss: ss,
+        ss_err: ss_err
+    }
+}
+
+# One-way repeated-measures ANOVA.
+#   data is n_subj rows of k condition means, row-major: data[s * k + c].
+#   Error term is the subject x condition interaction.
+export function ps_anova_rm1(data: ptr<f64>, n_subj: i32, k: i32) -> PsAnovaTerm {
+    if n_subj < 2 or k < 2 {
+        return ps_term_zero()
+    }
+    let n: i32 = n_subj * k
+    let nf: f64 = n as f64
+    let mut grand: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        grand = grand + data[i]
+        i = i + 1
+    }
+    grand = grand / nf
+
+    let mut ss_total: f64 = 0.0
+    i = 0
+    while i < n {
+        let d: f64 = data[i] - grand
+        ss_total = ss_total + d * d
+        i = i + 1
+    }
+
+    let mut ss_cond: f64 = 0.0
+    let mut c: i32 = 0
+    while c < k {
+        let mut m: f64 = 0.0
+        let mut s: i32 = 0
+        while s < n_subj {
+            m = m + data[s * k + c]
+            s = s + 1
+        }
+        m = m / (n_subj as f64)
+        let d: f64 = m - grand
+        ss_cond = ss_cond + (n_subj as f64) * d * d
+        c = c + 1
+    }
+
+    let mut ss_subj: f64 = 0.0
+    let mut s: i32 = 0
+    while s < n_subj {
+        let mut m: f64 = 0.0
+        let mut cc: i32 = 0
+        while cc < k {
+            m = m + data[s * k + cc]
+            cc = cc + 1
+        }
+        m = m / (k as f64)
+        let d: f64 = m - grand
+        ss_subj = ss_subj + (k as f64) * d * d
+        s = s + 1
+    }
+
+    let ss_err: f64 = ss_total - ss_cond - ss_subj
+    let df1: f64 = (k - 1) as f64
+    let df2: f64 = ((k - 1) * (n_subj - 1)) as f64
+    return ps_term(ss_cond, df1, ss_err, df2)
+}
+
+export struct PsAnova2 {
+    a: PsAnovaTerm,
+    b: PsAnovaTerm,
+    ab: PsAnovaTerm,
+    ok: bool
+}
+
+# Two-way repeated-measures ANOVA, both factors within subject.
+#   data is n_subj rows of (na * nb) cell means, row-major within a row:
+#   data[s * na * nb + ia * nb + ib].
+#   Each effect gets its own subject-interaction error term, which is the
+#   standard fully-within design (Winer, Brown & Michels 1991, ch. 7).
+export function ps_anova_rm2(data: ptr<f64>, n_subj: i32, na: i32, nb: i32) -> PsAnova2 {
+    let fail: PsAnova2 = PsAnova2 { a: ps_term_zero(), b: ps_term_zero(), ab: ps_term_zero(), ok: false }
+    if n_subj < 2 or na < 2 or nb < 2 {
+        return fail
+    }
+    let cells: i32 = na * nb
+    let n: i32 = n_subj * cells
+    let sf: f64 = n_subj as f64
+    let af: f64 = na as f64
+    let bf: f64 = nb as f64
+
+    let mut grand: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        grand = grand + data[i]
+        i = i + 1
+    }
+    grand = grand / (n as f64)
+
+    let mut ss_total: f64 = 0.0
+    i = 0
+    while i < n {
+        let d: f64 = data[i] - grand
+        ss_total = ss_total + d * d
+        i = i + 1
+    }
+
+    # Subject marginal
+    let mut ss_subj: f64 = 0.0
+    let mut s: i32 = 0
+    while s < n_subj {
+        let mut m: f64 = 0.0
+        let mut c: i32 = 0
+        while c < cells {
+            m = m + data[s * cells + c]
+            c = c + 1
+        }
+        m = m / (cells as f64)
+        let d: f64 = m - grand
+        ss_subj = ss_subj + (cells as f64) * d * d
+        s = s + 1
+    }
+
+    # Factor A marginal, and the subject x A cells
+    let mut ss_a: f64 = 0.0
+    let mut ia: i32 = 0
+    while ia < na {
+        let mut m: f64 = 0.0
+        s = 0
+        while s < n_subj {
+            let mut ib: i32 = 0
+            while ib < nb {
+                m = m + data[s * cells + ia * nb + ib]
+                ib = ib + 1
+            }
+            s = s + 1
+        }
+        m = m / (sf * bf)
+        let d: f64 = m - grand
+        ss_a = ss_a + sf * bf * d * d
+        ia = ia + 1
+    }
+    let mut ss_sa: f64 = 0.0
+    s = 0
+    while s < n_subj {
+        ia = 0
+        while ia < na {
+            let mut m: f64 = 0.0
+            let mut ib: i32 = 0
+            while ib < nb {
+                m = m + data[s * cells + ia * nb + ib]
+                ib = ib + 1
+            }
+            m = m / bf
+            let d: f64 = m - grand
+            ss_sa = ss_sa + bf * d * d
+            ia = ia + 1
+        }
+        s = s + 1
+    }
+    let ss_err_a: f64 = ss_sa - ss_a - ss_subj
+
+    # Factor B marginal, and the subject x B cells
+    let mut ss_b: f64 = 0.0
+    let mut ib0: i32 = 0
+    while ib0 < nb {
+        let mut m: f64 = 0.0
+        s = 0
+        while s < n_subj {
+            ia = 0
+            while ia < na {
+                m = m + data[s * cells + ia * nb + ib0]
+                ia = ia + 1
+            }
+            s = s + 1
+        }
+        m = m / (sf * af)
+        let d: f64 = m - grand
+        ss_b = ss_b + sf * af * d * d
+        ib0 = ib0 + 1
+    }
+    let mut ss_sb: f64 = 0.0
+    s = 0
+    while s < n_subj {
+        ib0 = 0
+        while ib0 < nb {
+            let mut m: f64 = 0.0
+            ia = 0
+            while ia < na {
+                m = m + data[s * cells + ia * nb + ib0]
+                ia = ia + 1
+            }
+            m = m / af
+            let d: f64 = m - grand
+            ss_sb = ss_sb + af * d * d
+            ib0 = ib0 + 1
+        }
+        s = s + 1
+    }
+    let ss_err_b: f64 = ss_sb - ss_b - ss_subj
+
+    # A x B interaction from the cell means collapsed over subjects
+    let mut ss_cells: f64 = 0.0
+    ia = 0
+    while ia < na {
+        let mut ib: i32 = 0
+        while ib < nb {
+            let mut m: f64 = 0.0
+            s = 0
+            while s < n_subj {
+                m = m + data[s * cells + ia * nb + ib]
+                s = s + 1
+            }
+            m = m / sf
+            let d: f64 = m - grand
+            ss_cells = ss_cells + sf * d * d
+            ib = ib + 1
+        }
+        ia = ia + 1
+    }
+    let ss_ab: f64 = ss_cells - ss_a - ss_b
+    let ss_err_ab: f64 = ss_total - ss_subj - ss_a - ss_b - ss_ab - ss_err_a - ss_err_b
+
+    let dfs: f64 = sf - 1.0
+    return PsAnova2 {
+        a: ps_term(ss_a, af - 1.0, ss_err_a, (af - 1.0) * dfs),
+        b: ps_term(ss_b, bf - 1.0, ss_err_b, (bf - 1.0) * dfs),
+        ab: ps_term(ss_ab, (af - 1.0) * (bf - 1.0), ss_err_ab, (af - 1.0) * (bf - 1.0) * dfs),
+        ok: true
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Permutation tests
+# ---------------------------------------------------------------------------
+
+# Sign-flip permutation test on paired data. Two-tailed p on the mean
+# difference, with the observed arrangement included in the count:
+#   p = (1 + #{|mean*| >= |mean_obs|}) / (1 + iters)
+# which keeps p strictly positive (Phipson & Smyth 2010).
+export function ps_perm_paired(x: ptr<f64>, y: ptr<f64>, n: i32, iters: i32, seed: u32) -> f64 {
+    if n < 2 or n > PS_CAP or iters < 1 {
+        return 1.0
+    }
+    if !ps_alloc() {
+        return 1.0
+    }
+    ps_seed(seed)
+    let mut i: i32 = 0
+    while i < n {
+        ps_s1[i] = x[i] - y[i]
+        i = i + 1
+    }
+    let obs: f64 = fabs(ps_mean(ps_s1, n))
+    let mut ge: i32 = 0
+    let mut it: i32 = 0
+    while it < iters {
+        let mut s: f64 = 0.0
+        i = 0
+        while i < n {
+            if ps_rand() < 0.5 {
+                s = s - ps_s1[i]
+            } else {
+                s = s + ps_s1[i]
+            }
+            i = i + 1
+        }
+        if fabs(s / (n as f64)) >= obs {
+            ge = ge + 1
+        }
+        it = it + 1
+    }
+    return ((ge + 1) as f64) / ((iters + 1) as f64)
+}
+
+# Label-shuffling permutation test for two independent groups.
+export function ps_perm_ind(x: ptr<f64>, nx: i32, y: ptr<f64>, ny: i32,
+                            iters: i32, seed: u32) -> f64 {
+    let n: i32 = nx + ny
+    if nx < 2 or ny < 2 or n > PS_CAP or iters < 1 {
+        return 1.0
+    }
+    if !ps_alloc() {
+        return 1.0
+    }
+    ps_seed(seed)
+    let mut i: i32 = 0
+    while i < nx {
+        ps_s1[i] = x[i]
+        i = i + 1
+    }
+    i = 0
+    while i < ny {
+        ps_s1[nx + i] = y[i]
+        i = i + 1
+    }
+    let obs: f64 = fabs(ps_mean(x, nx) - ps_mean(y, ny))
+    let total: f64 = ps_sum(ps_s1, n)
+    let mut ge: i32 = 0
+    let mut it: i32 = 0
+    while it < iters {
+        # Partial Fisher-Yates: the first nx entries become the shuffled group.
+        i = 0
+        while i < n {
+            ps_s2[i] = ps_s1[i]
+            i = i + 1
+        }
+        i = 0
+        while i < nx {
+            let j: i32 = i + ps_rand_int(n - i)
+            let tmp: f64 = ps_s2[i]
+            ps_s2[i] = ps_s2[j]
+            ps_s2[j] = tmp
+            i = i + 1
+        }
+        let sa: f64 = ps_sum(ps_s2, nx)
+        let ma: f64 = sa / (nx as f64)
+        let mb: f64 = (total - sa) / (ny as f64)
+        if fabs(ma - mb) >= obs {
+            ge = ge + 1
+        }
+        it = it + 1
+    }
+    return ((ge + 1) as f64) / ((iters + 1) as f64)
+}
+
+# ---------------------------------------------------------------------------
+# Reaction-time hygiene
+# ---------------------------------------------------------------------------
+
+export struct PsTrim {
+    kept: i32,
+    dropped: i32,
+    lo: f64,
+    hi: f64
+}
+
+# Drop trials more than k SDs from the mean; write survivors to out.
+# The cut is computed once from the full sample (no iteration), which is what
+# "2.5 SD trimming" means in the RT literature and what a reader will assume.
+export function ps_trim_sd(x: ptr<f64>, n: i32, k: f64, out: ptr<f64>) -> PsTrim {
+    if n < 2 {
+        return PsTrim { kept: 0, dropped: 0, lo: 0.0, hi: 0.0 }
+    }
+    let m: f64 = ps_mean(x, n)
+    let s: f64 = ps_sd(x, n)
+    let lo: f64 = m - k * s
+    let hi: f64 = m + k * s
+    let mut kept: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if x[i] >= lo and x[i] <= hi {
+            out[kept] = x[i]
+            kept = kept + 1
+        }
+        i = i + 1
+    }
+    return PsTrim { kept: kept, dropped: n - kept, lo: lo, hi: hi }
+}
+
+# Drop trials outside an absolute window, the usual 200 ms / 2000 ms cut.
+export function ps_trim_abs(x: ptr<f64>, n: i32, lo: f64, hi: f64, out: ptr<f64>) -> PsTrim {
+    let mut kept: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if x[i] >= lo and x[i] <= hi {
+            out[kept] = x[i]
+            kept = kept + 1
+        }
+        i = i + 1
+    }
+    return PsTrim { kept: kept, dropped: n - kept, lo: lo, hi: hi }
+}
+
+# Inverse efficiency score: mean correct RT divided by proportion correct
+# (Townsend & Ashby 1983). Undefined at zero accuracy; returns 0 there.
+export function ps_ies(mean_rt: f64, accuracy: f64) -> f64 {
+    if accuracy <= 0.0 {
+        return 0.0
+    }
+    return mean_rt / accuracy
+}
+
+export struct PsLogNormal {
+    mu: f64,          # mean of log x
+    sigma: f64,       # SD of log x (MLE, denominator n)
+    mean: f64,        # exp(mu + sigma^2/2)
+    median: f64,      # exp(mu)
+    mode: f64,        # exp(mu - sigma^2)
+    ok: bool
+}
+
+# Maximum-likelihood log-normal fit. For the log-normal the MLE is exactly
+# the mean and (population) SD of the logs, so no search is needed.
+export function ps_lognormal_fit(x: ptr<f64>, n: i32) -> PsLogNormal {
+    let fail: PsLogNormal = PsLogNormal { mu: 0.0, sigma: 0.0, mean: 0.0, median: 0.0, mode: 0.0, ok: false }
+    if n < 2 or n > PS_CAP {
+        return fail
+    }
+    if !ps_alloc() {
+        return fail
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if x[i] <= 0.0 {
+            return fail
+        }
+        ps_s1[i] = log(x[i])
+        i = i + 1
+    }
+    let mu: f64 = ps_mean(ps_s1, n)
+    let mut acc: f64 = 0.0
+    i = 0
+    while i < n {
+        let d: f64 = ps_s1[i] - mu
+        acc = acc + d * d
+        i = i + 1
+    }
+    let sigma: f64 = sqrt(acc / (n as f64))
+    return PsLogNormal {
+        mu: mu,
+        sigma: sigma,
+        mean: exp(mu + 0.5 * sigma * sigma),
+        median: exp(mu),
+        mode: exp(mu - sigma * sigma),
+        ok: true
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Psychometric functions
+# ---------------------------------------------------------------------------
+
+# Predicted proportion correct at stimulus level s.
+#   logistic: gamma + (1 - gamma - lambda) / (1 + exp(-(s - alpha) / beta))
+#   Weibull:  gamma + (1 - gamma - lambda) * (1 - exp(-(s / alpha)^beta))
+# alpha is the threshold parameter, beta the width (logistic) or shape
+# (Weibull). gamma is the guess rate (0.5 for 2AFC), lambda the lapse rate.
+export function ps_psy_p(kind: i32, s: f64, alpha: f64, beta: f64,
+                         gamma: f64, lambda: f64) -> f64 {
+    let range: f64 = 1.0 - gamma - lambda
+    let mut f: f64 = 0.0
+    if kind == PS_WEIBULL {
+        if alpha <= 0.0 or beta <= 0.0 or s <= 0.0 {
+            f = 0.0
+        } else {
+            f = 1.0 - exp(-pow(s / alpha, beta))
+        }
+    } else {
+        if beta <= 0.0 {
+            f = 0.0
+        } else {
+            let z: f64 = (s - alpha) / beta
+            if z > 40.0 {
+                f = 1.0
+            } else {
+                if z < -40.0 {
+                    f = 0.0
+                } else {
+                    f = 1.0 / (1.0 + exp(-z))
+                }
+            }
+        }
+    }
+    let mut p: f64 = gamma + range * f
+    if p < 1.0e-12 {
+        p = 1.0e-12
+    }
+    if p > 1.0 - 1.0e-12 {
+        p = 1.0 - 1.0e-12
+    }
+    return p
+}
+
+# Negative binomial log-likelihood of the data under (alpha, beta).
+function ps_psy_nll(kind: i32, alpha: f64, beta: f64,
+                    s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                    gamma: f64, lambda: f64) -> f64 {
+    if beta <= 0.0 {
+        return 1.0e300
+    }
+    if kind == PS_WEIBULL and alpha <= 0.0 {
+        return 1.0e300
+    }
+    let mut nll: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        let p: f64 = ps_psy_p(kind, s[i], alpha, beta, gamma, lambda)
+        nll = nll - (k[i] * log(p) + (m[i] - k[i]) * log(1.0 - p))
+        i = i + 1
+    }
+    return nll
+}
+
+export struct PsFit {
+    alpha: f64,          # threshold parameter of the fitted family
+    beta: f64,           # width (logistic) or shape (Weibull)
+    threshold: f64,      # stimulus level at the midpoint criterion, see below
+    slope: f64,          # d p / d s at the threshold
+    loglik: f64,
+    iters: i32,
+    ok: bool
+}
+
+# Threshold reported at the criterion halfway between guess rate and ceiling,
+# i.e. p_target = gamma + (1 - gamma - lambda) / 2. For the logistic that is
+# exactly alpha; for the Weibull it is alpha * (ln 2)^(1/beta).
+function ps_psy_threshold(kind: i32, alpha: f64, beta: f64) -> f64 {
+    if kind == PS_WEIBULL {
+        return alpha * pow(log(2.0), 1.0 / beta)
+    }
+    return alpha
+}
+
+function ps_psy_slope(kind: i32, alpha: f64, beta: f64, gamma: f64, lambda: f64) -> f64 {
+    let thr: f64 = ps_psy_threshold(kind, alpha, beta)
+    let h: f64 = 1.0e-5 * (fabs(thr) + 1.0)
+    let a: f64 = ps_psy_p(kind, thr + h, alpha, beta, gamma, lambda)
+    let b: f64 = ps_psy_p(kind, thr - h, alpha, beta, gamma, lambda)
+    return (a - b) / (2.0 * h)
+}
+
+# Nelder-Mead over (alpha, beta), the standard reflection / expansion /
+# contraction / shrink simplex. Two parameters, so three vertices.
+function ps_nelder(kind: i32, s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                   gamma: f64, lambda: f64,
+                   a0: f64, b0: f64, out: ptr<f64>) -> i32 {
+    # Initial simplex scaled to the parameters themselves. An absolute step
+    # would be wildly oversized for contrast thresholds around 0.07.
+    let mut da: f64 = 0.1 * fabs(a0)
+    if da < 1.0e-9 {
+        da = 0.05
+    }
+    let mut db: f64 = 0.1 * fabs(b0)
+    if db < 1.0e-9 {
+        db = 0.05
+    }
+    let mut px: array<f64, 3> = [a0, a0 + da, a0]
+    let mut py: array<f64, 3> = [b0, b0, b0 + db]
+    let mut fv: array<f64, 3> = [0.0, 0.0, 0.0]
+    let xs: ptr<f64> = px
+    let ys: ptr<f64> = py
+    let fs: ptr<f64> = fv
+
+    let mut i: i32 = 0
+    while i < 3 {
+        fs[i] = ps_psy_nll(kind, xs[i], ys[i], s, k, m, n, gamma, lambda)
+        i = i + 1
+    }
+
+    let mut it: i32 = 0
+    while it < 400 {
+        # Order the three vertices by value: best, mid, worst.
+        let mut bi: i32 = 0
+        let mut wi: i32 = 0
+        i = 1
+        while i < 3 {
+            if fs[i] < fs[bi] {
+                bi = i
+            }
+            if fs[i] > fs[wi] {
+                wi = i
+            }
+            i = i + 1
+        }
+        let mut mi: i32 = 3 - bi - wi
+        if bi == wi {
+            mi = 1
+        }
+
+        # Stop only when the simplex has collapsed in BOTH the function value
+        # and the parameters. A function-only test quits early on the flat
+        # likelihood ridge of a well-sampled psychometric function and leaves
+        # the parameters good to just six digits.
+        let fspread: f64 = fabs(fs[wi] - fs[bi])
+        let mut xspread: f64 = 0.0
+        i = 0
+        while i < 3 {
+            let dx: f64 = fabs(xs[i] - xs[bi]) / (fabs(xs[bi]) + 1.0e-30)
+            let dy: f64 = fabs(ys[i] - ys[bi]) / (fabs(ys[bi]) + 1.0e-30)
+            if dx > xspread {
+                xspread = dx
+            }
+            if dy > xspread {
+                xspread = dy
+            }
+            i = i + 1
+        }
+        if fspread < 1.0e-14 * (fabs(fs[bi]) + 1.0e-14) and xspread < 1.0e-13 {
+            it = 10000
+        } else {
+            # Centroid of the two better points.
+            let cx: f64 = 0.5 * (xs[bi] + xs[mi])
+            let cy: f64 = 0.5 * (ys[bi] + ys[mi])
+
+            let rx: f64 = cx + (cx - xs[wi])
+            let ry: f64 = cy + (cy - ys[wi])
+            let fr: f64 = ps_psy_nll(kind, rx, ry, s, k, m, n, gamma, lambda)
+
+            if fr < fs[bi] {
+                let ex: f64 = cx + 2.0 * (cx - xs[wi])
+                let ey: f64 = cy + 2.0 * (cy - ys[wi])
+                let fe: f64 = ps_psy_nll(kind, ex, ey, s, k, m, n, gamma, lambda)
+                if fe < fr {
+                    xs[wi] = ex
+                    ys[wi] = ey
+                    fs[wi] = fe
+                } else {
+                    xs[wi] = rx
+                    ys[wi] = ry
+                    fs[wi] = fr
+                }
+            } else {
+                if fr < fs[mi] {
+                    xs[wi] = rx
+                    ys[wi] = ry
+                    fs[wi] = fr
+                } else {
+                    let kx: f64 = cx + 0.5 * (xs[wi] - cx)
+                    let ky: f64 = cy + 0.5 * (ys[wi] - cy)
+                    let fk: f64 = ps_psy_nll(kind, kx, ky, s, k, m, n, gamma, lambda)
+                    if fk < fs[wi] {
+                        xs[wi] = kx
+                        ys[wi] = ky
+                        fs[wi] = fk
+                    } else {
+                        # Shrink toward the best vertex.
+                        i = 0
+                        while i < 3 {
+                            if i != bi {
+                                xs[i] = xs[bi] + 0.5 * (xs[i] - xs[bi])
+                                ys[i] = ys[bi] + 0.5 * (ys[i] - ys[bi])
+                                fs[i] = ps_psy_nll(kind, xs[i], ys[i], s, k, m, n, gamma, lambda)
+                            }
+                            i = i + 1
+                        }
+                    }
+                }
+            }
+            it = it + 1
+        }
+    }
+
+    let mut bi2: i32 = 0
+    i = 1
+    while i < 3 {
+        if fs[i] < fs[bi2] {
+            bi2 = i
+        }
+        i = i + 1
+    }
+    out[0] = xs[bi2]
+    out[1] = ys[bi2]
+    out[2] = fs[bi2]
+    return 1
+}
+
+# Maximum-likelihood fit of a psychometric function to binomial counts.
+#   s[i]  stimulus level of block i
+#   k[i]  number correct at that level
+#   m[i]  number of trials at that level
+# gamma is the guess rate, lambda the lapse rate; both are held fixed.
+export function ps_fit(kind: i32, s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                       gamma: f64, lambda: f64) -> PsFit {
+    let fail: PsFit = PsFit { alpha: 0.0, beta: 0.0, threshold: 0.0, slope: 0.0,
+                              loglik: 0.0, iters: 0, ok: false }
+    if n < 2 {
+        return fail
+    }
+    # Start from the data: alpha at the level nearest the midpoint criterion,
+    # beta at a fraction of the stimulus range.
+    let smin: f64 = ps_min(s, n)
+    let smax: f64 = ps_max(s, n)
+    let range: f64 = smax - smin
+    let target: f64 = gamma + 0.5 * (1.0 - gamma - lambda)
+    let mut a0: f64 = 0.5 * (smin + smax)
+    let mut best: f64 = 1.0e300
+    let mut i: i32 = 0
+    while i < n {
+        if m[i] > 0.0 {
+            let obs: f64 = k[i] / m[i]
+            if fabs(obs - target) < best {
+                best = fabs(obs - target)
+                a0 = s[i]
+            }
+        }
+        i = i + 1
+    }
+    let mut b0: f64 = 0.25 * range
+    if kind == PS_WEIBULL {
+        if a0 <= 0.0 {
+            a0 = 0.5 * (smin + smax)
+        }
+        if a0 <= 0.0 {
+            a0 = 1.0
+        }
+        b0 = 2.0
+    }
+    if b0 <= 0.0 {
+        b0 = 1.0
+    }
+
+    # Two passes. A single simplex collapses onto a flat likelihood ridge and
+    # stops with the function value converged to 1e-12 while the parameters
+    # are only good to about 1e-6; restarting from the optimum with a fresh
+    # simplex pulls the parameters in by three more digits.
+    let mut res: array<f64, 3> = [0.0, 0.0, 0.0]
+    let rp: ptr<f64> = res
+    ps_nelder(kind, s, k, m, n, gamma, lambda, a0, b0, rp)
+    let mut a1: f64 = rp[0]
+    let mut b1: f64 = rp[1]
+    let f1: f64 = rp[2]
+    ps_nelder(kind, s, k, m, n, gamma, lambda, a1, b1, rp)
+    if rp[2] > f1 {
+        rp[0] = a1
+        rp[1] = b1
+        rp[2] = f1
+    }
+    let alpha: f64 = rp[0]
+    let beta: f64 = rp[1]
+    if beta <= 0.0 {
+        return fail
+    }
+    if kind == PS_WEIBULL and alpha <= 0.0 {
+        return fail
+    }
+    return PsFit {
+        alpha: alpha,
+        beta: beta,
+        threshold: ps_psy_threshold(kind, alpha, beta),
+        slope: ps_psy_slope(kind, alpha, beta, gamma, lambda),
+        loglik: -rp[2],
+        iters: 800,
+        ok: true
+    }
+}
+
+export function ps_fit_logistic(s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                                gamma: f64, lambda: f64) -> PsFit {
+    return ps_fit(PS_LOGISTIC, s, k, m, n, gamma, lambda)
+}
+
+export function ps_fit_weibull(s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                               gamma: f64, lambda: f64) -> PsFit {
+    return ps_fit(PS_WEIBULL, s, k, m, n, gamma, lambda)
+}
+
+export struct PsBootCI {
+    lo: f64,
+    hi: f64,
+    median: f64,
+    n_ok: i32,
+    ok: bool
+}
+
+# Parametric bootstrap CI on the threshold: resample each level's correct
+# count from Binomial(m[i], p_hat(s[i])) at the fitted parameters, refit, and
+# take the empirical percentile interval. `level` is the two-sided coverage,
+# so 0.95 gives the 2.5th and 97.5th percentiles.
+export function ps_fit_boot_ci(kind: i32, s: ptr<f64>, k: ptr<f64>, m: ptr<f64>, n: i32,
+                               gamma: f64, lambda: f64,
+                               iters: i32, level: f64, seed: u32) -> PsBootCI {
+    let fail: PsBootCI = PsBootCI { lo: 0.0, hi: 0.0, median: 0.0, n_ok: 0, ok: false }
+    if iters < 8 or iters > PS_CAP or n > PS_CAP {
+        return fail
+    }
+    if !ps_alloc() {
+        return fail
+    }
+    let base: PsFit = ps_fit(kind, s, k, m, n, gamma, lambda)
+    if !base.ok {
+        return fail
+    }
+    ps_seed(seed)
+    let mut got: i32 = 0
+    let mut it: i32 = 0
+    while it < iters {
+        let mut i: i32 = 0
+        while i < n {
+            let p: f64 = ps_psy_p(kind, s[i], base.alpha, base.beta, gamma, lambda)
+            ps_s2[i] = ps_rand_binomial(m[i] as i32, p) as f64
+            i = i + 1
+        }
+        let f: PsFit = ps_fit(kind, s, ps_s2, m, n, gamma, lambda)
+        if f.ok {
+            ps_s3[got] = f.threshold
+            got = got + 1
+        }
+        it = it + 1
+    }
+    if got < 8 {
+        return fail
+    }
+    let tail: f64 = 0.5 * (1.0 - level)
+    return PsBootCI {
+        lo: ps_quantile(ps_s3, got, tail),
+        hi: ps_quantile(ps_s3, got, 1.0 - tail),
+        median: ps_quantile(ps_s3, got, 0.5),
+        n_ok: got,
+        ok: true
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Signal detection theory
+# ---------------------------------------------------------------------------
+
+export struct PsSdt {
+    dprime: f64,
+    criterion: f64,      # c = -0.5 * (z_H + z_F)
+    beta: f64,           # likelihood ratio at the criterion
+    hit_rate: f64,       # after correction, if any was applied
+    fa_rate: f64,
+    corrected: bool,
+    ok: bool
+}
+
+# d-prime and criterion from a 2x2 confusion table.
+# Rates of exactly 0 or 1 make z infinite, so the log-linear correction of
+# Hautus (1995) is applied to the whole table when that happens: add 0.5 to
+# every cell and 1 to both totals. `corrected` says whether it fired.
+export function ps_sdt(hits: i32, misses: i32, fas: i32, crs: i32) -> PsSdt {
+    let fail: PsSdt = PsSdt { dprime: 0.0, criterion: 0.0, beta: 0.0,
+                              hit_rate: 0.0, fa_rate: 0.0, corrected: false, ok: false }
+    let nsig: i32 = hits + misses
+    let nnoise: i32 = fas + crs
+    if nsig <= 0 or nnoise <= 0 {
+        return fail
+    }
+    let mut h: f64 = (hits as f64) / (nsig as f64)
+    let mut f: f64 = (fas as f64) / (nnoise as f64)
+    let mut corrected: bool = false
+    if h <= 0.0 or h >= 1.0 or f <= 0.0 or f >= 1.0 {
+        h = ((hits as f64) + 0.5) / ((nsig as f64) + 1.0)
+        f = ((fas as f64) + 0.5) / ((nnoise as f64) + 1.0)
+        corrected = true
+    }
+    let zh: f64 = ps_norm_inv(h)
+    let zf: f64 = ps_norm_inv(f)
+    let d: f64 = zh - zf
+    let c: f64 = -0.5 * (zh + zf)
+    return PsSdt {
+        dprime: d,
+        criterion: c,
+        beta: exp(0.5 * (zf * zf - zh * zh)),
+        hit_rate: h,
+        fa_rate: f,
+        corrected: corrected,
+        ok: true
+    }
+}
+
+# Area under the ROC by the Mann-Whitney statistic: the probability that a
+# random signal trial outranks a random noise trial, ties counting a half.
+# Exact, and O(n1 * n2), which is nothing at experiment sizes.
+export function ps_auc(signal: ptr<f64>, n1: i32, noise: ptr<f64>, n2: i32) -> f64 {
+    if n1 <= 0 or n2 <= 0 {
+        return 0.5
+    }
+    let mut acc: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n1 {
+        let mut j: i32 = 0
+        while j < n2 {
+            if signal[i] > noise[j] {
+                acc = acc + 1.0
+            }
+            if signal[i] == noise[j] {
+                acc = acc + 0.5
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return acc / ((n1 as f64) * (n2 as f64))
+}
+
+# The equal-variance Gaussian relationship between d-prime and ROC area.
+export function ps_auc_from_dprime(d: f64) -> f64 {
+    return ps_norm_cdf(d / PS_SQRT2)
+}
+
+export function ps_dprime_from_auc(a: f64) -> f64 {
+    return PS_SQRT2 * ps_norm_inv(a)
+}
