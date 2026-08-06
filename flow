@@ -2103,30 +2103,56 @@ run_lang_tests() {
             continue
         fi
 
-        # Step 3: Run the executable; exit 0 = pass, nonzero = failing check
+        # Step 3: Run the executable, keeping the two streams apart.
         local run_output
         local exit_code=0
-        run_output=$("$exe_file" 2>&1) || exit_code=$?
-
-        # Step 4: Some behaviour is only visible on stdout — print ordering,
-        # what a `defer` runs and when, which effect handler answered a call.
-        # A test may put the exact expected output in a sibling `.expected`
-        # file; when one exists, a mismatch fails the test just like a nonzero
-        # exit. Tests without one are judged on the exit code alone.
-        local expected_file="${program%.flow}.expected"
         local stdout_file="$build_dir/${basename}.stdout"
-        if [ $exit_code -eq 0 ] && [ -f "$expected_file" ]; then
-            "$exe_file" > "$stdout_file" 2>/dev/null || true
+        local stderr_file="$build_dir/${basename}.stderr"
+        "$exe_file" > "$stdout_file" 2> "$stderr_file" || exit_code=$?
+        run_output=$(cat "$stdout_file" "$stderr_file")
+
+        # Step 3b: Some tests are about *failing*. `expect false` aborts, and
+        # the abort is the behaviour under test, so a nonzero exit is the pass.
+        # A sibling `.exitcode` file holding a single integer says which code
+        # the program must exit with; without one the expected code is 0.
+        local exitcode_file="${program%.flow}.exitcode"
+        local want_exit=0
+        if [ -f "$exitcode_file" ]; then
+            want_exit=$(tr -d '[:space:]' < "$exitcode_file")
+        fi
+
+        # Step 4: Some behaviour is only visible on a stream — print ordering,
+        # what a `defer` runs and when, which effect handler answered a call,
+        # the diagnostic a failed `expect` writes. A test may put the exact
+        # expected text in a sibling `.expected` (stdout) or `.expected-stderr`
+        # file; a mismatch fails the test just like a wrong exit code.
+        local stream_mismatch=0
+        local expected_file="${program%.flow}.expected"
+        if [ "$exit_code" -eq "$want_exit" ] && [ -f "$expected_file" ]; then
             if ! diff -u "$expected_file" "$stdout_file" > "$build_dir/${basename}.diff" 2>&1; then
                 print_error "✗ $rel_path (stdout differs from ${expected_file#$SCRIPT_DIR/})"
                 cat "$build_dir/${basename}.diff"
-                failed=$((failed + 1))
+                stream_mismatch=1
                 failed_files="$failed_files\n  - $rel_path (stdout)"
-                continue
             fi
         fi
 
-        if [ $exit_code -eq 0 ]; then
+        local expected_err_file="${program%.flow}.expected-stderr"
+        if [ $stream_mismatch -eq 0 ] && [ "$exit_code" -eq "$want_exit" ] && [ -f "$expected_err_file" ]; then
+            if ! diff -u "$expected_err_file" "$stderr_file" > "$build_dir/${basename}.errdiff" 2>&1; then
+                print_error "✗ $rel_path (stderr differs from ${expected_err_file#$SCRIPT_DIR/})"
+                cat "$build_dir/${basename}.errdiff"
+                stream_mismatch=1
+                failed_files="$failed_files\n  - $rel_path (stderr)"
+            fi
+        fi
+
+        if [ $stream_mismatch -eq 1 ]; then
+            failed=$((failed + 1))
+            continue
+        fi
+
+        if [ "$exit_code" -eq "$want_exit" ]; then
             print_success "✓ $rel_path"
             if [ $verbose -eq 1 ] && [ -n "$run_output" ]; then
                 echo "---- output: $rel_path ----"
@@ -2135,14 +2161,14 @@ run_lang_tests() {
             fi
             passed=$((passed + 1))
         else
-            print_error "✗ $rel_path (exit code $exit_code)"
+            print_error "✗ $rel_path (exit code $exit_code, expected $want_exit)"
             if [ -n "$run_output" ]; then
                 echo "---- output: $rel_path ----"
                 echo "$run_output"
                 echo "---------------------------"
             fi
             failed=$((failed + 1))
-            failed_files="$failed_files\n  - $rel_path (exit=$exit_code)"
+            failed_files="$failed_files\n  - $rel_path (exit=$exit_code want=$want_exit)"
         fi
 
     done < "$program_list_file"

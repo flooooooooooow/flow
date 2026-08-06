@@ -1,0 +1,23 @@
+# Flow-native language test: a failed `expect` aborts with a diagnostic.
+#
+# This is the one test in tests/lang/ whose pass condition is a *nonzero*
+# exit. `expect c` with a false condition writes a diagnostic to stderr and
+# exits 1, and that abort is the behaviour under test. The expected code is
+# in tests/lang/test_expect_fails.exitcode and the expected diagnostic in
+# tests/lang/test_expect_fails.expected-stderr.
+#
+# The checks before the failing expect must all run, which is what proves
+# the abort happens at the expect and not earlier.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_attributes.py::test_expect_aborts_with_a_diagnostic_when_false
+# Exits 1 with "expect failed" on stderr; anything else fails the test.
+
+function main() -> i32 {
+    # Reached: a satisfied expect changes nothing.
+    expect 1 + 1 == 2
+
+    # Not reached, because the expect below aborts first.
+    expect 1 + 1 == 3
+
+    return 0
+}
