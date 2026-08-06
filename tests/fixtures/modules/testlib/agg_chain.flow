@@ -1,0 +1,4 @@
+# Re-export of a re-export: forwarding `.agg` also forwards what `.agg`
+# itself forwarded from `.alpha` and `.beta`.
+
+export import .agg

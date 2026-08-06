@@ -1,0 +1,9 @@
+# Re-export fixture: a second submodule, used for selective re-export.
+
+export function beta_one() -> i32 {
+    return 10
+}
+
+export function beta_two() -> i32 {
+    return 20
+}

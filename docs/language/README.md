@@ -22,7 +22,8 @@ Detailed documentation for the Flow programming language.
 | [Concurrency vs Go](concurrency-vs-go.md) | Channels, fibers, OpenMP, measured benches |
 | [Replacing Go](replace-go.md) | Scorecard for Go-shaped workloads |
 | [Debugging](debugging.md) | `./flow debug`, `#line`, LLDB/GDB |
-| [Modules](modules.md) | Named imports + package paths |
+| [Modules](modules.md) | Named imports, package paths, `export import` re-export |
+| [Module namespacing](modules-namespacing.md) | Why `module X { }` flattens, and what a real namespace would cost |
 | [Language Design](language_design.md) | Design rationale |
 | [North-star](../vision/north-star.md) | Evolution / units design cards |
 
