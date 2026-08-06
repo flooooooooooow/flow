@@ -1,0 +1,672 @@
+# CABLE EQUATION: a passive dendrite, and the length constant it obeys.
+#
+# MODEL
+#   Rall's linear cable, the oldest quantitative statement about dendrites.
+#   Written per compartment, with the axial term supplied by the neighbours:
+#
+#     C dV_i/dt = g_a * (V_{i-1} - 2 V_i + V_{i+1}) - g_m * V_i + I_i
+#
+#   That single line is the `evolves as` in `flow Compartment` below. The
+#   chain loop hands each compartment its own axial current and steps it; no
+#   part of this file knows what an exponential is.
+#
+# PARAMETERS
+#   N        200 compartments, both ends sealed
+#   g_m      1.0     membrane conductance per compartment  (R_m = 1/g_m)
+#   g_a      axial conductance between compartments        (R_i = 1/g_a)
+#   C        1.0     so the membrane time constant tau_m = C/g_m = 1
+#   I        1.0 injected steadily into compartment 0
+#   dt       0.0004 tau_m, explicit Euler (stable while dt < 2C/(2g_a + g_m))
+#
+# WHAT THIS PROVES
+#   The continuum cable has length constant
+#
+#     lambda = sqrt(R_m / R_i) = sqrt(g_a / g_m)
+#
+#   and, far from the injection site and from the sealed end, a steadily
+#   driven cable settles to V(x) = V_0 exp(-x / lambda). The program runs the
+#   compartmental model to steady state, fits ln V against x by least squares
+#   over compartments 20..120, and compares the fitted length constant with
+#   sqrt(g_a/g_m). It does that for six values of lambda from 5 to 30
+#   compartments. The worst relative error over the sweep is printed and the
+#   exit code is gated on it.
+#
+#   The exact answer for the discretised chain is also computed, from
+#     r + 1/r = 2 + g_m/g_a,    lambda_discrete = -1 / ln r
+#   which is what the fit should really reproduce; the gap between that and
+#   the continuum sqrt(g_a/g_m) is the discretisation error, and it is
+#   reported separately so the two sources of error stay visible.
+#
+# REFERENCE
+#   W. Rall, "Branching dendritic trees and motoneuron membrane resistivity",
+#   Exp. Neurol. 1:491-527 (1959); and "Core conductor theory and cable
+#   properties of neurons", Handbook of Physiology (1977).
+#   Dayan & Abbott, "Theoretical Neuroscience" (2001), eq. 6.30.
+#
+# KEYS
+#   Left / Right   choose which lambda the live cable uses
+#   P              pause                                   Esc  quit
+#
+# Run (headless, gated, this is the regression test):
+#   ./flow record examples/neuro/cable_equation.flow --frames 90 \
+#       --out build/frames_cable --gif build/cable_equation.gif
+# Run (windowed):
+#   ./flow gfx examples/neuro/cable_equation.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function malloc(size: i64) -> ptr<f64>
+}
+
+const WIN_W: i32 = 900
+const WIN_H: i32 = 640
+const MAX_FRAMES: i32 = 4000
+
+const N_COMP: i32 = 200
+const GM: f64 = 1.0
+const CM: f64 = 1.0
+const I_INJECT: f64 = 1.0
+
+const DT: f64 = 0.0004          # in units of tau_m
+const SETTLE_T: f64 = 40.0      # tau_m; every mode decays at least this fast
+
+const FIT_LO: i32 = 20          # skip the injection site
+const FIT_HI: i32 = 120         # stay away from the sealed far end
+
+const N_LAMBDA: i32 = 6
+const TOL_REL: f64 = 0.02       # 2 % gate against the continuum formula
+const TOL_DISC: f64 = 0.005     # 0.5 % gate against the exact discrete answer
+
+const KEY_P: i32 = 35
+
+# ---------------------------------------------------------------------------
+# The model: one compartment of the cable.
+# ---------------------------------------------------------------------------
+
+flow Compartment {
+    state v : f64 = 0.0
+
+    param axial  : f64 = 0.0    # g_a * (V_left - 2V + V_right), from the chain
+    param inject : f64 = 0.0    # applied current
+    param gm     : f64 = 1.0
+    param cm     : f64 = 1.0
+
+    solver { dt 400 us  method euler }
+
+    v evolves as (inject + axial - gm * v) / cm
+}
+
+# ---------------------------------------------------------------------------
+# Module statics
+# ---------------------------------------------------------------------------
+
+let mut steady: ptr<f64> = null     # steady-state profile of the chosen lambda
+let mut live_v: ptr<f64> = null
+let mut live_n: ptr<f64> = null
+
+let mut lam_want: array<f64, 6> = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0]
+let mut lam_fit: array<f64, 6> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut lam_disc: array<f64, 6> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut lam_err: array<f64, 6> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut lam_err_disc: array<f64, 6> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut lam_resid: array<f64, 6> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+let mut worst_rel: f64 = 0.0
+let mut worst_disc: f64 = 0.0
+let mut settle_resid: f64 = 0.0
+let mut shown_lambda: f64 = 20.0
+
+# ---------------------------------------------------------------------------
+# The chain. One Compartment instance, stepped once per compartment per step.
+# ---------------------------------------------------------------------------
+
+function chain_step(v: ptr<f64>, out: ptr<f64>, ga: f64, dt: f64) -> void {
+    let mut c: Compartment = Compartment_new()
+    c.gm = GM
+    c.cm = CM
+    let mut i: i32 = 0
+    while i < N_COMP {
+        let mut left: f64 = v[i]        # sealed end: no axial current out
+        let mut right: f64 = v[i]
+        if i > 0 {
+            left = v[i - 1]
+        }
+        if i < N_COMP - 1 {
+            right = v[i + 1]
+        }
+        c.v = v[i]
+        c.axial = ga * (left - 2.0 * v[i] + right)
+        c.inject = 0.0
+        if i == 0 {
+            c.inject = I_INJECT
+        }
+        Compartment_step(&c, dt)
+        out[i] = c.v
+        i = i + 1
+    }
+}
+
+# Relax to steady state and leave the profile in `dst`. Returns the largest
+# remaining |dV/dt|, so the reader can see the relaxation really finished.
+function relax(dst: ptr<f64>, scratch: ptr<f64>, ga: f64) -> f64 {
+    let mut i: i32 = 0
+    while i < N_COMP {
+        dst[i] = 0.0
+        scratch[i] = 0.0
+        i = i + 1
+    }
+    let steps: i32 = (SETTLE_T / DT) as i32
+    let mut k: i32 = 0
+    while k < steps / 2 {
+        chain_step(dst, scratch, ga, DT)
+        chain_step(scratch, dst, ga, DT)
+        k = k + 1
+    }
+    # residual: one more step, and the biggest change it makes
+    chain_step(dst, scratch, ga, DT)
+    let mut worst: f64 = 0.0
+    i = 0
+    while i < N_COMP {
+        let d: f64 = fabs(scratch[i] - dst[i]) / DT
+        if d > worst {
+            worst = d
+        }
+        i = i + 1
+    }
+    return worst
+}
+
+# ---------------------------------------------------------------------------
+# Measurement: least-squares slope of ln V against compartment index.
+# ---------------------------------------------------------------------------
+
+function fit_length_constant(v: ptr<f64>) -> f64 {
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut n: f64 = 0.0
+    let mut i: i32 = FIT_LO
+    while i <= FIT_HI {
+        if v[i] > 0.0 {
+            let x: f64 = i as f64
+            let y: f64 = log(v[i])
+            sx = sx + x
+            sy = sy + y
+            sxx = sxx + x * x
+            sxy = sxy + x * y
+            n = n + 1.0
+        }
+        i = i + 1
+    }
+    let slope: f64 = (n * sxy - sx * sy) / (n * sxx - sx * sx)
+    return 0.0 - 1.0 / slope
+}
+
+# Largest relative departure from a pure exponential over the fitted range.
+function exponential_residual(v: ptr<f64>, lam: f64) -> f64 {
+    let v0: f64 = v[FIT_LO]
+    let mut worst: f64 = 0.0
+    let mut i: i32 = FIT_LO
+    while i <= FIT_HI {
+        let want: f64 = v0 * exp(0.0 - ((i - FIT_LO) as f64) / lam)
+        let rel: f64 = fabs(v[i] - want) / want
+        if rel > worst {
+            worst = rel
+        }
+        i = i + 1
+    }
+    return worst
+}
+
+# Exact length constant of the discrete chain: r + 1/r = 2 + g_m/g_a.
+function discrete_lambda(ga: f64) -> f64 {
+    let q: f64 = 2.0 + GM / ga
+    let r: f64 = 0.5 * (q - sqrt(q * q - 4.0))
+    return 0.0 - 1.0 / log(r)
+}
+
+function run_sweep() -> void {
+    let scratch: ptr<f64> = malloc((N_COMP as i64) * 8)
+    let prof: ptr<f64> = malloc((N_COMP as i64) * 8)
+    let mut j: i32 = 0
+    while j < N_LAMBDA {
+        let lam: f64 = lam_want[j]
+        let ga: f64 = lam * lam * GM
+        let resid: f64 = relax(prof, scratch, ga)
+        if resid > settle_resid {
+            settle_resid = resid
+        }
+        let fit: f64 = fit_length_constant(prof)
+        lam_fit[j] = fit
+        lam_disc[j] = discrete_lambda(ga)
+        lam_err[j] = fabs(fit - lam) / lam
+        lam_err_disc[j] = fabs(fit - lam_disc[j]) / lam_disc[j]
+        lam_resid[j] = exponential_residual(prof, fit)
+        if lam_err[j] > worst_rel {
+            worst_rel = lam_err[j]
+        }
+        if lam_err_disc[j] > worst_disc {
+            worst_disc = lam_err_disc[j]
+        }
+        j = j + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+
+function draw_line(g: Gfx, x0: i32, y0: i32, x1: i32, y1: i32, thick: i32,
+                   r: i32, gg: i32, b: i32) -> void {
+    let mut dx: i32 = x1 - x0
+    let mut dy: i32 = y1 - y0
+    if dx < 0 {
+        dx = 0 - dx
+    }
+    if dy < 0 {
+        dy = 0 - dy
+    }
+    let mut n: i32 = dx
+    if dy > n {
+        n = dy
+    }
+    if n == 0 {
+        gfx_fill_rect(g, x0, y0, thick, thick, r, gg, b)
+        return
+    }
+    let mut i: i32 = 0
+    while i <= n {
+        let t: f64 = (i as f64) / (n as f64)
+        let px: i32 = x0 + ((((x1 - x0) as f64) * t) as i32)
+        let py: i32 = y0 + ((((y1 - y0) as f64) * t) as i32)
+        gfx_fill_rect(g, px, py, thick, thick, r, gg, b)
+        i = i + 1
+    }
+}
+
+function draw_frame(g: Gfx, x: i32, y: i32, w: i32, h: i32,
+                    r: i32, gg: i32, b: i32) -> void {
+    gfx_fill_rect(g, x, y, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y + h, w, 1, r, gg, b)
+    gfx_fill_rect(g, x, y, 1, h, r, gg, b)
+    gfx_fill_rect(g, x + w, y, 1, h + 1, r, gg, b)
+}
+
+# blue -> teal -> amber -> white
+function heat_r(t: f64) -> i32 {
+    let mut c: f64 = 30.0 + 500.0 * t
+    if c > 255.0 {
+        c = 255.0
+    }
+    return c as i32
+}
+
+function heat_g(t: f64) -> i32 {
+    let mut c: f64 = 40.0 + 300.0 * t
+    if c > 255.0 {
+        c = 255.0
+    }
+    return c as i32
+}
+
+function heat_b(t: f64) -> i32 {
+    let mut c: f64 = 70.0 + 120.0 * t
+    if t > 0.55 {
+        c = 136.0 - 200.0 * (t - 0.55)
+    }
+    if c < 30.0 {
+        c = 30.0
+    }
+    if c > 255.0 {
+        c = 255.0
+    }
+    return c as i32
+}
+
+# ---------------------------------------------------------------------------
+# Panels
+# ---------------------------------------------------------------------------
+
+const CB_X: i32 = 40
+const CB_Y: i32 = 90
+const CB_PX: i32 = 4
+const CB_H: i32 = 40
+
+function draw_cable(g: Gfx, v: ptr<f64>, title: string, y: i32, vmax: f64) -> void {
+    gfx_draw_text(g, CB_X, y - 14, title, 1, 150, 165, 190)
+    let mut i: i32 = 0
+    while i < N_COMP {
+        let mut t: f64 = v[i] / vmax
+        if t < 0.0 {
+            t = 0.0
+        }
+        if t > 1.0 {
+            t = 1.0
+        }
+        gfx_fill_rect(g, CB_X + i * CB_PX, y, CB_PX, CB_H,
+                      heat_r(t), heat_g(t), heat_b(t))
+        i = i + 1
+    }
+    draw_frame(g, CB_X, y, N_COMP * CB_PX, CB_H, 60, 70, 90)
+    gfx_draw_text(g, CB_X, y + CB_H + 4, "x = 0  (injection)", 1, 110, 125, 150)
+    gfx_draw_text(g, CB_X + N_COMP * CB_PX - 76, y + CB_H + 4, "x = 200", 1, 110, 125, 150)
+}
+
+const PR_X: i32 = 40
+const PR_Y: i32 = 260
+const PR_W: i32 = 380
+const PR_H: i32 = 170
+
+function draw_profile(g: Gfx, lam: f64) -> void {
+    draw_frame(g, PR_X, PR_Y, PR_W, PR_H, 60, 70, 90)
+    gfx_draw_text(g, PR_X, PR_Y - 14,
+                  "STEADY PROFILE  dots = simulated   line = exp(-x/lambda)",
+                  1, 150, 165, 190)
+    let v0: f64 = steady[FIT_LO]
+    let scale: f64 = steady[0]
+    # analytic exponential anchored at the first fitted compartment
+    let mut k: i32 = FIT_LO
+    while k < FIT_HI {
+        let wa: f64 = v0 * exp(0.0 - ((k - FIT_LO) as f64) / lam)
+        let wb: f64 = v0 * exp(0.0 - ((k + 1 - FIT_LO) as f64) / lam)
+        let xa: i32 = PR_X + (((k as f64) / 200.0) * (PR_W as f64)) as i32
+        let xb: i32 = PR_X + ((((k + 1) as f64) / 200.0) * (PR_W as f64)) as i32
+        let ya: i32 = PR_Y + PR_H - (((wa / scale) * (PR_H as f64)) as i32)
+        let yb: i32 = PR_Y + PR_H - (((wb / scale) * (PR_H as f64)) as i32)
+        draw_line(g, xa, ya, xb, yb, 1, 250, 140, 120)
+        k = k + 1
+    }
+    let mut i: i32 = 0
+    while i < N_COMP {
+        let x: i32 = PR_X + (((i as f64) / 200.0) * (PR_W as f64)) as i32
+        let y: i32 = PR_Y + PR_H - (((steady[i] / scale) * (PR_H as f64)) as i32)
+        gfx_fill_rect(g, x, y, 2, 2, 235, 240, 250)
+        i = i + 1
+    }
+    gfx_draw_text(g, PR_X + 4, PR_Y + PR_H + 4, "0", 1, 110, 125, 150)
+    gfx_draw_text(g, PR_X + PR_W - 30, PR_Y + PR_H + 4, "200", 1, 110, 125, 150)
+    gfx_draw_text(g, PR_X + 4, PR_Y + 4, "V / V(0)", 1, 110, 125, 150)
+}
+
+const LG_X: i32 = 470
+const LG_Y: i32 = 260
+const LG_W: i32 = 390
+const LG_H: i32 = 170
+
+function draw_logprofile(g: Gfx, lam: f64) -> void {
+    draw_frame(g, LG_X, LG_Y, LG_W, LG_H, 60, 70, 90)
+    gfx_draw_text(g, LG_X, LG_Y - 14,
+                  "ln V vs x  -  a straight line is the whole claim", 1, 150, 165, 190)
+    let top: f64 = log(steady[0])
+    let span: f64 = 9.0        # natural-log units shown
+    let mut i: i32 = 1
+    while i < N_COMP {
+        if steady[i] > 0.0 and steady[i - 1] > 0.0 {
+            let ya: f64 = (top - log(steady[i - 1])) / span
+            let yb: f64 = (top - log(steady[i])) / span
+            if ya < 1.0 and yb < 1.0 {
+                let xa: i32 = LG_X + ((((i - 1) as f64) / 200.0) * (LG_W as f64)) as i32
+                let xb: i32 = LG_X + (((i as f64) / 200.0) * (LG_W as f64)) as i32
+                draw_line(g, xa, LG_Y + ((ya * (LG_H as f64)) as i32),
+                          xb, LG_Y + ((yb * (LG_H as f64)) as i32), 1, 120, 220, 200)
+            }
+        }
+        i = i + 1
+    }
+    # the fitted line over the fitted window
+    let la: f64 = (top - log(steady[FIT_LO])) / span
+    let lb: f64 = (top - (log(steady[FIT_LO]) - ((FIT_HI - FIT_LO) as f64) / lam)) / span
+    let xa: i32 = LG_X + (((FIT_LO as f64) / 200.0) * (LG_W as f64)) as i32
+    let xb: i32 = LG_X + (((FIT_HI as f64) / 200.0) * (LG_W as f64)) as i32
+    draw_line(g, xa, LG_Y + ((la * (LG_H as f64)) as i32),
+              xb, LG_Y + ((lb * (LG_H as f64)) as i32), 1, 255, 205, 110)
+    gfx_draw_text(g, xa, LG_Y + LG_H + 4, "fit window 20", 1, 255, 205, 110)
+    gfx_draw_text(g, xb - 20, LG_Y + LG_H + 4, "120", 1, 255, 205, 110)
+}
+
+const TB_X: i32 = 40
+const TB_Y: i32 = 470
+
+function draw_table(g: Gfx, sel: i32) -> void {
+    gfx_draw_text(g, TB_X, TB_Y - 14,
+                  "LAMBDA SWEEP   fitted vs sqrt(Rm/Ri)   and vs the exact discrete chain",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, TB_X, TB_Y, "sqrt(Rm/Ri)", 1, 110, 125, 150)
+    gfx_draw_text(g, TB_X + 110, TB_Y, "FITTED", 1, 110, 125, 150)
+    gfx_draw_text(g, TB_X + 210, TB_Y, "DISCRETE EXACT", 1, 110, 125, 150)
+    gfx_draw_text(g, TB_X + 350, TB_Y, "ERR vs CONTINUUM", 1, 110, 125, 150)
+    gfx_draw_text(g, TB_X + 500, TB_Y, "ERR vs DISCRETE", 1, 110, 125, 150)
+    let mut j: i32 = 0
+    while j < N_LAMBDA {
+        let y: i32 = TB_Y + 14 + j * 12
+        let mut cr: i32 = 200
+        let mut cg: i32 = 210
+        let mut cb: i32 = 225
+        if j == sel {
+            cr = 255
+            cg = 205
+            cb = 110
+        }
+        gfx_draw_fixed(g, TB_X, y, lam_want[j], 2, 1, cr, cg, cb)
+        gfx_draw_fixed(g, TB_X + 110, y, lam_fit[j], 5, 1, cr, cg, cb)
+        gfx_draw_fixed(g, TB_X + 210, y, lam_disc[j], 5, 1, cr, cg, cb)
+        gfx_draw_fixed(g, TB_X + 350, y, lam_err[j] * 100.0, 4, 1, cr, cg, cb)
+        gfx_draw_text(g, TB_X + 412, y, "%", 1, cr, cg, cb)
+        gfx_draw_fixed(g, TB_X + 500, y, lam_err_disc[j] * 100.0, 4, 1, cr, cg, cb)
+        gfx_draw_text(g, TB_X + 562, y, "%", 1, cr, cg, cb)
+        j = j + 1
+    }
+}
+
+function draw_hud(g: Gfx, ok: bool, paused: bool) -> void {
+    gfx_draw_text(g, 12, 10, "CABLE EQUATION  -  PASSIVE DENDRITE, LENGTH CONSTANT",
+                  2, 235, 240, 250)
+    gfx_draw_text(g, 12, 32,
+                  "C dV_i/dt = g_a (V_i-1 - 2V_i + V_i+1) - g_m V_i + I_i     Euler dt 4e-4 tau",
+                  1, 150, 165, 190)
+    gfx_draw_text(g, 12, 44, "lambda = sqrt(Rm/Ri) = sqrt(g_a/g_m)   Rall 1959",
+                  1, 110, 125, 150)
+    gfx_draw_text(g, 330, 44, "LIVE lambda", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 420, 44, shown_lambda, 1, 1, 255, 205, 110)
+    if paused {
+        gfx_draw_text(g, 820, 10, "PAUSED", 1, 255, 120, 120)
+    }
+    gfx_draw_text(g, 640, WIN_H - 60, "WORST ERROR", 1, 150, 165, 190)
+    gfx_draw_fixed(g, 736, WIN_H - 60, worst_rel * 100.0, 4, 1, 235, 240, 250)
+    gfx_draw_text(g, 798, WIN_H - 60, "%", 1, 150, 165, 190)
+    gfx_draw_text(g, 640, WIN_H - 48, "GATE 2.0 %", 1, 110, 125, 150)
+    if ok {
+        gfx_draw_text(g, 640, WIN_H - 32, "PASS", 2, 120, 230, 150)
+    } else {
+        gfx_draw_text(g, 640, WIN_H - 32, "FAIL", 2, 255, 110, 110)
+    }
+    gfx_draw_text(g, 12, WIN_H - 14,
+                  "LEFT/RIGHT choose lambda for the live cable   P pause   Esc quit",
+                  1, 110, 125, 150)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    steady = malloc((N_COMP as i64) * 8)
+    live_v = malloc((N_COMP as i64) * 8)
+    live_n = malloc((N_COMP as i64) * 8)
+
+    println("")
+    println("  CABLE EQUATION  --  measured attenuation vs the analytic length constant")
+    println("  ========================================================================")
+    println("")
+    println("    200 compartments, both ends sealed, unit current into compartment 0")
+    println("    g_m = 1, C = 1 (tau_m = 1), explicit Euler dt = 4e-4 tau_m")
+    println("    lambda = sqrt(R_m / R_i) = sqrt(g_a / g_m), in compartments")
+    println("    fit: least squares of ln V against x over compartments 20..120")
+    println("")
+
+    run_sweep()
+
+    println("     sqrt(Rm/Ri)      fitted    discrete exact    err vs cont.    err vs disc.")
+    println("     -----------   ---------    --------------    ------------    ------------")
+    let mut j: i32 = 0
+    while j < N_LAMBDA {
+        print("    ")
+        printf("%12.2f", lam_want[j])
+        printf("   %9.5f", lam_fit[j])
+        printf("       %11.5f", lam_disc[j])
+        printf("        %8.4f %%", lam_err[j] * 100.0)
+        printf("        %8.4f %%", lam_err_disc[j] * 100.0)
+        println("")
+        j = j + 1
+    }
+    println("")
+    print("    worst error vs sqrt(Rm/Ri)          : ")
+    printf("%.6f", worst_rel)
+    print("   gate ")
+    printf("%.3f", TOL_REL)
+    println("")
+    print("    worst error vs exact discrete chain : ")
+    printf("%.6f", worst_disc)
+    print("   gate ")
+    printf("%.3f", TOL_DISC)
+    println("")
+    print("    largest |dV/dt| left at steady state: ")
+    printf("%.3e", settle_resid)
+    println("   gate < 1e-6")
+    println("")
+    print("    largest departure from a pure exponential over the fit window: ")
+    let mut worst_shape: f64 = 0.0
+    j = 0
+    while j < N_LAMBDA {
+        if lam_resid[j] > worst_shape {
+            worst_shape = lam_resid[j]
+        }
+        j = j + 1
+    }
+    printf("%.3e", worst_shape)
+    println("")
+    println("")
+
+    let rel_ok: bool = worst_rel < TOL_REL
+    let disc_ok: bool = worst_disc < TOL_DISC
+    let settled_ok: bool = settle_resid < 1.0e-6
+    let shape_ok: bool = worst_shape < 0.02
+    let ok: bool = rel_ok and disc_ok and settled_ok and shape_ok
+
+    # Live panel: the transient spread of a step of current, plus the steady
+    # profile of the selected lambda for the plots.
+    let mut sel: i32 = 3
+    shown_lambda = lam_want[sel]
+    let scratch: ptr<f64> = malloc((N_COMP as i64) * 8)
+    settle_resid = relax(steady, scratch, shown_lambda * shown_lambda * GM)
+    let mut i: i32 = 0
+    while i < N_COMP {
+        live_v[i] = 0.0
+        live_n[i] = 0.0
+        i = i + 1
+    }
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Cable equation - Flow neuro atlas")
+    let mut frame: i32 = 0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut left_held: bool = false
+    let mut right_held: bool = false
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) {
+            break
+        }
+        let mut want: i32 = sel
+        if gfx_key_down(g, KEY_LEFT) {
+            if !left_held {
+                want = sel - 1
+            }
+            left_held = true
+        } else {
+            left_held = false
+        }
+        if gfx_key_down(g, KEY_RIGHT) {
+            if !right_held {
+                want = sel + 1
+            }
+            right_held = true
+        } else {
+            right_held = false
+        }
+        if frame > 0 and frame % 30 == 0 {
+            want = sel + 1
+        }
+        if want < 0 {
+            want = 0
+        }
+        if want >= N_LAMBDA {
+            want = 1
+        }
+        if want != sel {
+            sel = want
+            shown_lambda = lam_want[sel]
+            let unused: f64 = relax(steady, scratch, shown_lambda * shown_lambda * GM)
+            i = 0
+            while i < N_COMP {
+                live_v[i] = 0.0
+                live_n[i] = 0.0
+                i = i + 1
+            }
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held {
+                paused = !paused
+            }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            let ga: f64 = shown_lambda * shown_lambda * GM
+            let mut s: i32 = 0
+            while s < 250 {
+                chain_step(live_v, live_n, ga, DT)
+                chain_step(live_n, live_v, ga, DT)
+                s = s + 1
+            }
+        }
+
+        gfx_clear(g, 10, 12, 18)
+        draw_cable(g, live_v, "LIVE: CURRENT SWITCHED ON AT x = 0, SPREADING", CB_Y,
+                   steady[0])
+        draw_cable(g, steady, "STEADY STATE FOR THIS LAMBDA", CB_Y + 80, steady[0])
+        draw_profile(g, lam_fit[sel])
+        draw_logprofile(g, lam_fit[sel])
+        draw_table(g, sel)
+        draw_hud(g, ok, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !settled_ok {
+        println("    FAIL: the cable had not reached steady state")
+        return 1
+    }
+    if !shape_ok {
+        println("    FAIL: the steady profile is not exponential over the fit window")
+        return 2
+    }
+    if !rel_ok {
+        println("    FAIL: fitted length constant departs from sqrt(Rm/Ri)")
+        return 3
+    }
+    if !disc_ok {
+        println("    FAIL: fitted length constant departs from the exact discrete chain")
+        return 4
+    }
+    println("    PASS: attenuation follows exp(-x/lambda) with lambda = sqrt(Rm/Ri)")
+    return 0
+}
