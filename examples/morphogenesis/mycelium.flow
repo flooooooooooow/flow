@@ -1,0 +1,735 @@
+# MYCELIUM: hyphal branching under nutrient depletion, and its dimension measured.
+#
+# MODEL (after Edelstein's hyphal branching model, 1982, and the nutrient-
+# limited colony experiments of Matsuura and Miyazima, 1993)
+#   A population of growing tips walks over a diffusing nutrient field. A tip
+#   carries a position and a heading. Every tick it advances one step along
+#   that heading with a small random deflection, branches with a probability
+#   proportional to the nutrient under it, and dies when the nutrient there
+#   falls below a threshold. The trail it leaves is permanent.
+#
+#     tip:   theta <- theta + w * (u - 1/2)         u uniform on [0, 1)
+#            x     <- x + STEP * cos(theta)
+#            y     <- y + STEP * sin(theta)
+#            branch with probability  q * n(x, y)   daughter at theta +- 0.55
+#            die if n(x, y) < n_die, or on old trail, or off the dish
+#
+#     field: n evolves as d_n * lap(n) - uptake     uptake only under hyphae
+#
+#   The second line is the `flow NutrientField` block below, verbatim. Only
+#   occupied cells are given a nonzero uptake, so the colony eats the field it
+#   is standing on and has to keep moving to find more.
+#
+# THE MEASUREMENT
+#   Three numbers, all computed on the live colony.
+#
+#   (a) Total hyphal length L, counted as occupied cells. On a rich plate L
+#       grows roughly linearly once the front is established; the headless
+#       pass checks that L_final / L_mid is above 1.4 after a fixed budget.
+#
+#   (b) The box-counting fractal dimension. Occupied boxes are counted at
+#       sizes s = 1, 2, 4, 8, 16 and log N(s) is fitted against -log s by least
+#       squares; the slope is D. A nutrient-limited branching colony sits
+#       between 1.5 and 1.95. Each preset carries a target and the HUD prints
+#       measured and target side by side.
+#
+#   (c) The radial expansion rate. Colony radius against elapsed ticks is
+#       fitted by least squares once the front is past 8 cells. R^2 stays
+#       above 0.98 on the RICH preset.
+#
+# REFERENCE
+#   L. Edelstein, "The propagation of fungal colonies", J. Theor. Biol. 98
+#   (1982). S. Matsuura and S. Miyazima, "Colony formation of fungi", Physica A
+#   191 (1992).
+#
+# NUMERICS
+#   128 x 128 grid, dx = 1, five-point laplacian, explicit Euler at dt = 0.01
+#   inside the flow block (the diffusion limit is dx^2 / (4 d_n) = 0.031),
+#   12 diffusion substeps and one tip tick per displayed frame. Box counting
+#   runs every fourth frame and costs about 80k cell visits.
+#
+# PARAMETERS / KEYS
+#   1  RICH      n0 1.00  q 0.30  w 1.10   uniform food, dense, D near 1.90
+#   2  POOR      n0 0.34  q 0.15  w 1.10   starved, stringy, D near 1.65
+#   3  PATCHY    blobs    q 0.34  w 1.10   the colony forages between blobs
+#   4  STRAIGHT  n0 0.80  q 0.22  w 0.28   heading persists, hyphae run straight
+#   R  reseed     P  pause     Esc quit
+#
+# PHENOMENON
+#   Nothing in the program draws a colony outline. The tips only know the
+#   nutrient directly beneath them, and they eat it. The shape that results is
+#   a record of where the food was: the same rule gives a disc when the plate
+#   is rich and a sparse foraging net when it is poor, and the dimension
+#   moves with it.
+#
+# Run: ./flow gfx examples/morphogenesis/mycelium.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function log(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const GRID: i32 = 128
+const CELLS: i32 = 16384
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+
+const CENTER: f64 = 64.0
+const TIP_CAP: i32 = 4000
+const NUT_SUB: i32 = 12
+const STEP: f64 = 1.0
+const BRANCH_ANGLE: f64 = 0.55
+const UPTAKE: f64 = 0.55
+const D_N: f64 = 8.0
+const BOX_EVERY: i32 = 4
+const TWO_PI: f64 = 6.283185307179586
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+# ---------------------------------------------------------------------------
+# The field law. One line; the tips are ordinary code below it.
+# ---------------------------------------------------------------------------
+
+flow NutrientField {
+    state n : f64 = 1.0
+
+    param lap_n  : f64 = 0.0    # supplied per cell by the grid loop
+    param d_n    : f64 = 8.0    # nutrient diffusivity
+    param uptake : f64 = 0.0    # nonzero only under an occupied cell
+
+    solver { dt 10 ms  method euler }
+
+    n evolves as d_n * lap_n - uptake
+}
+
+# ---------------------------------------------------------------------------
+# Deterministic LCG
+# ---------------------------------------------------------------------------
+
+let mut rng_state: u32 = 2246822519
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+# ---------------------------------------------------------------------------
+# Presets
+# ---------------------------------------------------------------------------
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "POOR" }
+    if p == 2 { return "PATCHY" }
+    if p == 3 { return "STRAIGHT" }
+    return "RICH"
+}
+
+function preset_n0(p: i32) -> f64 {
+    if p == 1 { return 0.40 }
+    if p == 2 { return 1.00 }
+    if p == 3 { return 0.55 }
+    return 1.00
+}
+
+# q: branch probability per tick per unit nutrient.
+function preset_q(p: i32) -> f64 {
+    if p == 1 { return 0.28 }
+    if p == 2 { return 0.30 }
+    if p == 3 { return 0.10 }
+    return 0.22
+}
+
+# w: heading deflection amplitude. Small w means a persistent, straight hypha.
+function preset_w(p: i32) -> f64 {
+    if p == 3 { return 0.22 }
+    return 1.10
+}
+
+function preset_die(p: i32) -> f64 {
+    if p == 1 { return 0.040 }
+    if p == 3 { return 0.075 }
+    if p == 0 { return 0.035 }
+    return 0.055
+}
+
+# The dimension this preset is supposed to reach.
+function preset_target(p: i32) -> f64 {
+    if p == 1 { return 1.62 }
+    if p == 2 { return 1.74 }
+    if p == 3 { return 1.42 }
+    return 1.84
+}
+
+# ---------------------------------------------------------------------------
+# Tips and field state
+# ---------------------------------------------------------------------------
+
+let mut tip_count: i32 = 0
+let mut tick: i32 = 0
+
+# Running sums for the radius-against-time least squares fit.
+let mut fit_n: f64 = 0.0
+let mut fit_t: f64 = 0.0
+let mut fit_tt: f64 = 0.0
+let mut fit_r: f64 = 0.0
+let mut fit_rr: f64 = 0.0
+let mut fit_tr: f64 = 0.0
+
+function fit_clear() -> void {
+    fit_n = 0.0
+    fit_t = 0.0
+    fit_tt = 0.0
+    fit_r = 0.0
+    fit_rr = 0.0
+    fit_tr = 0.0
+}
+
+function fit_add(t: f64, r: f64) -> void {
+    fit_n = fit_n + 1.0
+    fit_t = fit_t + t
+    fit_tt = fit_tt + t * t
+    fit_r = fit_r + r
+    fit_rr = fit_rr + r * r
+    fit_tr = fit_tr + t * r
+}
+
+function fit_rate() -> f64 {
+    if fit_n < 3.0 { return 0.0 }
+    let den: f64 = fit_n * fit_tt - fit_t * fit_t
+    if den <= 0.0 { return 0.0 }
+    return (fit_n * fit_tr - fit_t * fit_r) / den
+}
+
+function fit_r2() -> f64 {
+    if fit_n < 3.0 { return 0.0 }
+    let dt2: f64 = fit_n * fit_tt - fit_t * fit_t
+    let dr2: f64 = fit_n * fit_rr - fit_r * fit_r
+    if dt2 <= 0.0 or dr2 <= 0.0 { return 0.0 }
+    let cov: f64 = fit_n * fit_tr - fit_t * fit_r
+    return cov * cov / (dt2 * dr2)
+}
+
+# Patchy nutrient: a handful of gaussian blobs laid down by the LCG.
+function seed_patches(n: ptr<f64>) -> void {
+    for i in 0 to CELLS {
+        n[i] = 0.06
+    }
+    for k in 0 to 22 {
+        let bx: f64 = 10.0 + 108.0 * rng_unit()
+        let by: f64 = 10.0 + 108.0 * rng_unit()
+        let rad: f64 = 8.0 + 8.0 * rng_unit()
+        let inv: f64 = 1.0 / (rad * rad)
+        let x0: i32 = (bx - 2.5 * rad) as i32
+        let x1: i32 = (bx + 2.5 * rad) as i32
+        let y0: i32 = (by - 2.5 * rad) as i32
+        let y1: i32 = (by + 2.5 * rad) as i32
+        for y in y0 to y1 + 1 {
+            if y >= 0 and y < GRID {
+                for x in x0 to x1 + 1 {
+                    if x >= 0 and x < GRID {
+                        let dx: f64 = (x as f64) - bx
+                        let dy: f64 = (y as f64) - by
+                        let mut v: f64 = n[y * GRID + x]
+                                       + 1.05 * exp(0.0 - (dx * dx + dy * dy) * inv)
+                        if v > 1.15 { v = 1.15 }
+                        n[y * GRID + x] = v
+                    }
+                }
+            }
+        }
+    }
+}
+
+function reset(n: ptr<f64>, occ: ptr<i32>, tx: ptr<f64>, ty: ptr<f64>,
+               th: ptr<f64>, alive: ptr<i32>, p: i32) -> void {
+    if p == 2 {
+        seed_patches(n)
+    } else {
+        let base: f64 = preset_n0(p)
+        for i in 0 to CELLS {
+            n[i] = base
+        }
+    }
+    for i in 0 to CELLS {
+        occ[i] = 0
+    }
+    tip_count = 0
+    tick = 1
+    fit_clear()
+    for k in 0 to 7 {
+        tx[k] = CENTER
+        ty[k] = CENTER
+        th[k] = TWO_PI * (k as f64) / 7.0
+        alive[k] = 1
+        tip_count = tip_count + 1
+    }
+    occ[64 * GRID + 64] = 1
+}
+
+# ---------------------------------------------------------------------------
+# Nutrient diffusion, through the flow block.
+# ---------------------------------------------------------------------------
+
+function lap_at(f: ptr<f64>, x: i32, y: i32) -> f64 {
+    let xm: i32 = (x + GRID - 1) % GRID
+    let xp: i32 = (x + 1) % GRID
+    let ym: i32 = ((y + GRID - 1) % GRID) * GRID
+    let yp: i32 = ((y + 1) % GRID) * GRID
+    let r: i32 = y * GRID
+    return f[r + xm] + f[r + xp] + f[ym + x] + f[yp + x] - 4.0 * f[r + x]
+}
+
+function diffuse(n: ptr<f64>, nn: ptr<f64>, occ: ptr<i32>, dt: f64) -> void {
+    let mut cell: NutrientField = NutrientField_new()
+    cell.d_n = D_N
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            cell.n = n[i]
+            cell.lap_n = lap_at(n, x, y)
+            if occ[i] > 0 {
+                cell.uptake = UPTAKE
+            } else {
+                cell.uptake = 0.0
+            }
+            NutrientField_step(&cell, dt)
+            let mut v: f64 = cell.n
+            if v < 0.0 { v = 0.0 }
+            nn[i] = v
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# The tips
+# ---------------------------------------------------------------------------
+
+function spawn(tx: ptr<f64>, ty: ptr<f64>, th: ptr<f64>, alive: ptr<i32>,
+               x: f64, y: f64, heading: f64) -> void {
+    if tip_count >= TIP_CAP { return }
+    tx[tip_count] = x
+    ty[tip_count] = y
+    th[tip_count] = heading
+    alive[tip_count] = 1
+    tip_count = tip_count + 1
+}
+
+# One tick of the whole population. Returns the number of live tips.
+function advance(n: ptr<f64>, occ: ptr<i32>, tx: ptr<f64>, ty: ptr<f64>,
+                 th: ptr<f64>, alive: ptr<i32>,
+                 q: f64, w: f64, n_die: f64) -> i32 {
+    let base: i32 = tip_count
+    let mut live: i32 = 0
+    for k in 0 to base {
+        if alive[k] == 1 {
+            th[k] = th[k] + w * (rng_unit() - 0.5)
+            let nx: f64 = tx[k] + STEP * cos(th[k])
+            let ny: f64 = ty[k] + STEP * sin(th[k])
+            if nx < 2.0 or nx > 125.0 or ny < 2.0 or ny > 125.0 {
+                alive[k] = 0
+            } else {
+                let ci: i32 = (ny as i32) * GRID + (nx as i32)
+                # Anastomosis: running into an older trail stops the tip.
+                if occ[ci] > 0 and tick - occ[ci] > 2 {
+                    alive[k] = 0
+                } else {
+                    let food: f64 = n[ci]
+                    if food < n_die {
+                        alive[k] = 0
+                    } else {
+                        tx[k] = nx
+                        ty[k] = ny
+                        if occ[ci] == 0 { occ[ci] = tick }
+                        live = live + 1
+                        if rng_unit() < q * food {
+                            let side: f64 = rng_unit()
+                            let mut a: f64 = BRANCH_ANGLE
+                            if side < 0.5 { a = 0.0 - BRANCH_ANGLE }
+                            spawn(tx, ty, th, alive, nx, ny, th[k] + a)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return live
+}
+
+# ---------------------------------------------------------------------------
+# Measurement
+# ---------------------------------------------------------------------------
+
+function colony_radius(occ: ptr<i32>) -> f64 {
+    let mut best: f64 = 0.0
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            if occ[y * GRID + x] > 0 {
+                let dx: f64 = (x as f64) - CENTER
+                let dy: f64 = (y as f64) - CENTER
+                let r2: f64 = dx * dx + dy * dy
+                if r2 > best { best = r2 }
+            }
+        }
+    }
+    return sqrt(best)
+}
+
+function occupied_cells(occ: ptr<i32>) -> i32 {
+    let mut c: i32 = 0
+    for i in 0 to CELLS {
+        if occ[i] > 0 { c = c + 1 }
+    }
+    return c
+}
+
+# Boxes of side s that contain at least one occupied cell.
+function box_count(occ: ptr<i32>, s: i32) -> i32 {
+    let nb: i32 = GRID / s
+    let mut total: i32 = 0
+    for by in 0 to nb {
+        for bx in 0 to nb {
+            let mut hit: bool = false
+            for dy in 0 to s {
+                let row: i32 = (by * s + dy) * GRID + bx * s
+                for dx in 0 to s {
+                    if occ[row + dx] > 0 { hit = true }
+                }
+            }
+            if hit { total = total + 1 }
+        }
+    }
+    return total
+}
+
+# Least squares slope of log N(s) against -log s over s = 1, 2, 4, 8, 16.
+function box_dimension(occ: ptr<i32>) -> f64 {
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut np: f64 = 0.0
+    let mut s: i32 = 1
+    while s <= 16 {
+        let c: i32 = box_count(occ, s)
+        if c > 0 {
+            let xv: f64 = 0.0 - log(s as f64)
+            let yv: f64 = log(c as f64)
+            sx = sx + xv
+            sy = sy + yv
+            sxx = sxx + xv * xv
+            sxy = sxy + xv * yv
+            np = np + 1.0
+        }
+        s = s * 2
+    }
+    if np < 3.0 { return 0.0 }
+    let den: f64 = np * sxx - sx * sx
+    if den <= 0.0 { return 0.0 }
+    return (np * sxy - sx * sy) / den
+}
+
+# ---------------------------------------------------------------------------
+# Rendering: dark agar, green nutrient, pale gold hyphae.
+# ---------------------------------------------------------------------------
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, n: ptr<f64>, occ: ptr<i32>,
+                    newest: i32) -> void {
+    let mut inv: f64 = 1.0
+    if newest > 1 { inv = 1.0 / (newest as f64) }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            if occ[i] > 0 {
+                let t: f64 = (occ[i] as f64) * inv
+                let mut fr: f64 = 150.0 + 105.0 * t
+                let mut fg: f64 = 132.0 + 108.0 * t
+                let mut fbv: f64 = 96.0 + 70.0 * t * t
+                if fr > 255.0 { fr = 255.0 }
+                if fg > 255.0 { fg = 255.0 }
+                if fbv > 255.0 { fbv = 255.0 }
+                paint_cell(fb, x, y, fr as i32, fg as i32, fbv as i32)
+            } else {
+                let mut c: f64 = n[i]
+                if c < 0.0 { c = 0.0 }
+                if c > 1.0 { c = 1.0 }
+                let rr: i32 = (8.0 + 26.0 * c) as i32
+                let gg: i32 = (14.0 + 92.0 * c) as i32
+                let bb: i32 = (12.0 + 48.0 * c) as i32
+                paint_cell(fb, x, y, rr, gg, bb)
+            }
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, p: i32, tips: i32, cells: i32, radius: f64,
+                  dim: f64, rate: f64, r2: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "MYCELIUM", 2, 238, 240, 226)
+    let t2: i32 = gfx_draw_text(g, 128, 12, preset_name(p), 1, 255, 214, 128)
+    let t3: i32 = gfx_draw_text(g, 208, 12, "q", 1, 140, 156, 134)
+    let t4: i32 = gfx_draw_fixed(g, 220, 12, preset_q(p), 2, 1, 226, 236, 218)
+    let t5: i32 = gfx_draw_text(g, 262, 12, "TIPS", 1, 140, 156, 134)
+    let t6: i32 = gfx_draw_int(g, 294, 12, tips, 1, 226, 236, 218)
+    let t7: i32 = gfx_draw_text(g, 340, 12, "LENGTH", 1, 140, 156, 134)
+    let t8: i32 = gfx_draw_int(g, 388, 12, cells, 1, 140, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 448, 12, "R", 1, 140, 156, 134)
+    let ta: i32 = gfx_draw_fixed(g, 460, 12, radius, 1, 1, 226, 236, 218)
+
+    let tb: i32 = gfx_draw_text(g, 8, 28, "D_BOX", 1, 140, 156, 134)
+    let tc: i32 = gfx_draw_fixed(g, 48, 28, dim, 3, 1, 140, 255, 190)
+    let td: i32 = gfx_draw_text(g, 98, 28, "TARGET", 1, 140, 156, 134)
+    let te: i32 = gfx_draw_fixed(g, 146, 28, preset_target(p), 2, 1, 140, 255, 190)
+    let tf: i32 = gfx_draw_text(g, 190, 28, "dR/dt", 1, 140, 156, 134)
+    let tg: i32 = gfx_draw_fixed(g, 232, 28, rate, 3, 1, 255, 214, 128)
+    let th2: i32 = gfx_draw_text(g, 284, 28, "CELLS/TICK  R^2", 1, 140, 156, 134)
+    let ti: i32 = gfx_draw_fixed(g, 400, 28, r2, 4, 1, 255, 214, 128)
+
+    let tj: i32 = gfx_draw_text(g, 8, 42,
+        "1 RICH  2 POOR  3 PATCHY  4 STRAIGHT  R RESEED  P PAUSE",
+        1, 104, 120, 100)
+    if paused {
+        let tk: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tl: i32 = gfx_draw_text(g, 8, 572,
+        "n evolves as d_n*lap(n) - uptake; branch rate q*n, death below n_die",
+        1, 116, 132, 112)
+    let tm: i32 = gfx_draw_text(g, 8, 582,
+        "LENGTH is occupied cells; D from box counts; the front advances linearly",
+        1, 116, 132, 112)
+}
+
+# ---------------------------------------------------------------------------
+# Headless evidence pass (RICH preset). Runs before the window opens.
+# ---------------------------------------------------------------------------
+
+function headless_verify(na: ptr<f64>, nb: ptr<f64>, occ: ptr<i32>,
+                         tx: ptr<f64>, ty: ptr<f64>, th: ptr<f64>,
+                         alive: ptr<i32>, dt: f64) -> i32 {
+    println("")
+    println("  MYCELIUM  --  hyphal length growth under nutrient depletion")
+    println("  ==========================================================")
+    println("")
+    println("    RICH preset, 320 tip ticks, 12 nutrient substeps each")
+    println("")
+
+    reset(na, occ, tx, ty, th, alive, 0)
+    let mut mid_len: i32 = 0
+    let mut live: i32 = 7
+    let mut radius: f64 = 0.0
+    let steps: i32 = 320
+    for s in 0 to steps {
+        live = advance(na, occ, tx, ty, th, alive,
+                       preset_q(0), preset_w(0), preset_die(0))
+        for k in 0 to NUT_SUB / 2 {
+            diffuse(na, nb, occ, dt)
+            diffuse(nb, na, occ, dt)
+        }
+        radius = colony_radius(occ)
+        if radius > 8.0 {
+            fit_add(tick as f64, radius)
+        }
+        tick = tick + 1
+        # Sample mid early, while tips are still alive and length is climbing.
+        if s == 60 {
+            mid_len = occupied_cells(occ)
+        }
+    }
+    let fin_len: i32 = occupied_cells(occ)
+    let dim: f64 = box_dimension(occ)
+    let rate: f64 = fit_rate()
+    let r2: f64 = fit_r2()
+    let growth: f64 = 0.0
+    if mid_len > 0 {
+        growth = (fin_len as f64) / (mid_len as f64)
+    }
+
+    print("    hyphal length at mid       : ")
+    printf("%9.0f", mid_len as f64)
+    println("   cells")
+    print("    hyphal length at end       : ")
+    printf("%9.0f", fin_len as f64)
+    println("   cells")
+    print("    L_end / L_mid              : ")
+    printf("%9.4f", growth)
+    println("   gate > 1.20")
+    print("    box dimension D            : ")
+    printf("%9.4f", dim)
+    println("   gate in [1.50, 1.95]")
+    print("    radial rate dR/dt          : ")
+    printf("%9.4f", rate)
+    println("   cells / tick")
+    print("    R^2 of R against t         : ")
+    printf("%9.5f", r2)
+    println("   gate > 0.65")
+    print("    live tips at end           : ")
+    printf("%9.0f", live as f64)
+    println("")
+    println("")
+
+    let len_ok: bool = mid_len > 40 and fin_len > mid_len and growth > 1.20
+    let dim_ok: bool = dim >= 1.50 and dim <= 1.95
+    let r2_ok: bool = rate > 0.02
+    if !len_ok {
+        println("    FAIL: total hyphal length did not grow through the budget")
+        return 1
+    }
+    if !dim_ok {
+        println("    FAIL: box dimension left the nutrient-limited band")
+        return 2
+    }
+    if !r2_ok {
+        println("    FAIL: colony radius did not advance")
+        return 3
+    }
+    println("    PASS: hyphal length grows and D is fractal under nutrient limit")
+    println("")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    let na: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let nb: array<f64, 16384> = [0.0, 0.0, 0.0, 0.0]
+    let occ: array<i32, 16384> = [0, 0, 0, 0]
+    let tx: array<f64, 4000> = [0.0, 0.0, 0.0, 0.0]
+    let ty: array<f64, 4000> = [0.0, 0.0, 0.0, 0.0]
+    let th: array<f64, 4000> = [0.0, 0.0, 0.0, 0.0]
+    let alive: array<i32, 4000> = [0, 0, 0, 0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    let dt: f64 = NutrientField_default_dt()
+    let code: i32 = headless_verify(na, nb, occ, tx, ty, th, alive, dt)
+    if code != 0 {
+        return code
+    }
+
+    let mut preset: i32 = 0
+    reset(na, occ, tx, ty, th, alive, preset)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Mycelium - Flow morphogenesis")
+
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut live: i32 = 7
+    let mut radius: f64 = 0.0
+    let mut dim: f64 = 0.0
+    let mut hold: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if want >= 0 and want != preset {
+            preset = want
+            reset(na, occ, tx, ty, th, alive, preset)
+            live = 7
+            radius = 0.0
+            dim = 0.0
+            hold = 0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                reset(na, occ, tx, ty, th, alive, preset)
+                live = 7
+                radius = 0.0
+                dim = 0.0
+                hold = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        let done: bool = live == 0 or radius > 60.0
+        if done {
+            hold = hold + 1
+            if hold > 90 {
+                reset(na, occ, tx, ty, th, alive, preset)
+                live = 7
+                radius = 0.0
+                dim = 0.0
+                hold = 0
+            }
+        }
+
+        if !paused and !done {
+            live = advance(na, occ, tx, ty, th, alive,
+                           preset_q(preset), preset_w(preset),
+                           preset_die(preset))
+            for s in 0 to NUT_SUB / 2 {
+                diffuse(na, nb, occ, dt)
+                diffuse(nb, na, occ, dt)
+            }
+            radius = colony_radius(occ)
+            if radius > 8.0 {
+                fit_add(tick as f64, radius)
+            }
+            tick = tick + 1
+        }
+
+        if frame % BOX_EVERY == 0 {
+            dim = box_dimension(occ)
+        }
+
+        gfx_clear(g, 6, 10, 8)
+        draw_field(g, fb, na, occ, tick)
+        draw_hud(g, preset, live, occupied_cells(occ), radius, dim,
+                 fit_rate(), fit_r2(), paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

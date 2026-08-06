@@ -1,0 +1,510 @@
+# CRACK PROPAGATION: fracture through a disordered fuse lattice.
+#
+# MODEL (de Arcangelis, Redner and Herrmann, 1989; random fuse model)
+#   A square lattice of fuses under uniaxial load. Bond i has a random
+#   breaking threshold t_i drawn uniformly from [1-w, 1+w]. Current is
+#   solved by a few Jacobi sweeps of Kirchhoff's law on the surviving
+#   graph; the bond with the largest |I| / t_i burns next. That process
+#   repeats until a left-right conducting path no longer exists. The
+#   sequence of burnt bonds is the crack.
+#
+# WHAT IS MEASURED
+#   Crack length (number of burnt bonds) against the disorder width w, and
+#   the roughness of the final spanning crack (rms height of the burnt
+#   front). Gates:
+#     at w = 0.1 the crack is short (length < 1.8 L)
+#     at w = 0.9 the crack is diffuse (length > 2.5 L)
+#     burnt-bond count increases with w across the three presets
+#
+# NUMERICS
+#   48 x 48 node lattice, horizontal unit voltage, 40 Jacobi sweeps per
+#   burn. Deterministic LCG thresholds. Headless burns three disorders.
+#
+# REFERENCE
+#   L. de Arcangelis, S. Redner and H. J. Herrmann, "A random fuse model
+#   for breaking processes", J. Physique Lett. 46:L585-L590 (1985).
+#
+# LIVE VIEW / KEYS
+#   1 CLEAN     w = 0.10, a nearly straight crack
+#   2 MEDIUM    w = 0.50
+#   3 ROUGH     w = 0.90, diffuse damage
+#   4 NOTCH     w = 0.50 with a left-edge notch
+#   R reseed    P pause    Esc quit
+#
+# Run: ./flow gfx examples/morphogenesis/crack_propagation.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+const N: i32 = 48
+const NODES: i32 = 2304
+const NBOND: i32 = 4608
+const CELL_PX: i32 = 10
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 480
+const FB_H: i32 = 480
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const JACOBI: i32 = 40
+const BURNS_PER_FRAME: i32 = 3
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+let mut rng_state: u32 = 1901194261
+
+# bonds: 0 .. N*(N-1) horizontal, then vertical
+let mut alive: ptr<i32> = null
+let mut thr: ptr<f64> = null
+let mut volt: ptr<f64> = null
+let mut volt2: ptr<f64> = null
+let mut burnt_x: ptr<i32> = null
+let mut burnt_y: ptr<i32> = null
+let mut fb: ptr<u8> = null
+
+let mut n_burnt: i32 = 0
+let mut spanning: bool = false
+let mut disorder_w: f64 = 0.1
+let mut use_notch: bool = false
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "MEDIUM" }
+    if p == 2 { return "ROUGH" }
+    if p == 3 { return "NOTCH" }
+    return "CLEAN"
+}
+
+function preset_w(p: i32) -> f64 {
+    if p == 1 { return 0.50 }
+    if p == 2 { return 0.90 }
+    if p == 3 { return 0.50 }
+    return 0.10
+}
+
+function preset_notch(p: i32) -> bool {
+    return p == 3
+}
+
+function nh() -> i32 {
+    return N * (N - 1)
+}
+
+function bond_count() -> i32 {
+    return 2 * N * (N - 1)
+}
+
+function reset_lattice(w: f64, notch: bool, seed: u32) -> void {
+    rng_state = seed
+    disorder_w = w
+    use_notch = notch
+    n_burnt = 0
+    spanning = false
+    let nb: i32 = bond_count()
+    for i in 0 to nb {
+        alive[i] = 1
+        thr[i] = 1.0 - w + 2.0 * w * rng_unit()
+    }
+    if notch {
+        # burn a short horizontal notch from the left edge at mid height
+        let y: i32 = N / 2
+        for x in 0 to 6 {
+            let b: i32 = y * (N - 1) + x
+            alive[b] = 0
+            burnt_x[n_burnt] = x
+            burnt_y[n_burnt] = y
+            n_burnt = n_burnt + 1
+        }
+    }
+    for i in 0 to NODES {
+        volt[i] = (i % N) as f64 / ((N - 1) as f64)
+        volt2[i] = volt[i]
+    }
+}
+
+function solve_voltage() -> void {
+    for it in 0 to JACOBI {
+        for y in 0 to N {
+            for x in 0 to N {
+                if x == 0 {
+                    volt2[y * N + x] = 0.0
+                } else {
+                    if x == N - 1 {
+                        volt2[y * N + x] = 1.0
+                    } else {
+                        let mut s: f64 = 0.0
+                        let mut c: f64 = 0.0
+                        # left horizontal bond
+                        let bl: i32 = y * (N - 1) + (x - 1)
+                        if alive[bl] == 1 {
+                            s = s + volt[y * N + x - 1]
+                            c = c + 1.0
+                        }
+                        # right horizontal bond
+                        let br: i32 = y * (N - 1) + x
+                        if alive[br] == 1 {
+                            s = s + volt[y * N + x + 1]
+                            c = c + 1.0
+                        }
+                        # up vertical bond
+                        if y > 0 {
+                            let bu: i32 = nh() + (y - 1) * N + x
+                            if alive[bu] == 1 {
+                                s = s + volt[(y - 1) * N + x]
+                                c = c + 1.0
+                            }
+                        }
+                        # down vertical bond
+                        if y < N - 1 {
+                            let bd: i32 = nh() + y * N + x
+                            if alive[bd] == 1 {
+                                s = s + volt[(y + 1) * N + x]
+                                c = c + 1.0
+                            }
+                        }
+                        if c > 0.0 {
+                            volt2[y * N + x] = s / c
+                        } else {
+                            volt2[y * N + x] = volt[y * N + x]
+                        }
+                    }
+                }
+            }
+        }
+        for i in 0 to NODES {
+            volt[i] = volt2[i]
+        }
+    }
+}
+
+function still_connected() -> bool {
+    # BFS from left edge through alive bonds
+    let mut seen: array<i32, 2304> = [0, 0, 0, 0]
+    let mut qx: array<i32, 2304> = [0, 0, 0, 0]
+    let mut qy: array<i32, 2304> = [0, 0, 0, 0]
+    let mut qh: i32 = 0
+    let mut qt: i32 = 0
+    for y in 0 to N {
+        seen[y * N + 0] = 1
+        qx[qt] = 0
+        qy[qt] = y
+        qt = qt + 1
+    }
+    while qh < qt {
+        let x: i32 = qx[qh]
+        let y: i32 = qy[qh]
+        qh = qh + 1
+        if x == N - 1 { return true }
+        if x < N - 1 {
+            let br: i32 = y * (N - 1) + x
+            if alive[br] == 1 and seen[y * N + x + 1] == 0 {
+                seen[y * N + x + 1] = 1
+                qx[qt] = x + 1
+                qy[qt] = y
+                qt = qt + 1
+            }
+        }
+        if x > 0 {
+            let bl: i32 = y * (N - 1) + (x - 1)
+            if alive[bl] == 1 and seen[y * N + x - 1] == 0 {
+                seen[y * N + x - 1] = 1
+                qx[qt] = x - 1
+                qy[qt] = y
+                qt = qt + 1
+            }
+        }
+        if y > 0 {
+            let bu: i32 = nh() + (y - 1) * N + x
+            if alive[bu] == 1 and seen[(y - 1) * N + x] == 0 {
+                seen[(y - 1) * N + x] = 1
+                qx[qt] = x
+                qy[qt] = y - 1
+                qt = qt + 1
+            }
+        }
+        if y < N - 1 {
+            let bd: i32 = nh() + y * N + x
+            if alive[bd] == 1 and seen[(y + 1) * N + x] == 0 {
+                seen[(y + 1) * N + x] = 1
+                qx[qt] = x
+                qy[qt] = y + 1
+                qt = qt + 1
+            }
+        }
+    }
+    return false
+}
+
+function burn_one() -> bool {
+    if spanning { return false }
+    solve_voltage()
+    let mut best: f64 = -1.0
+    let mut bi: i32 = -1
+    let mut bx: i32 = 0
+    let mut by: i32 = 0
+    let nb: i32 = bond_count()
+    let nhor: i32 = nh()
+
+    for y in 0 to N {
+        for x in 0 to N - 1 {
+            let b: i32 = y * (N - 1) + x
+            if alive[b] == 1 {
+                let i: f64 = fabs(volt[y * N + x + 1] - volt[y * N + x])
+                let r: f64 = i / thr[b]
+                if r > best {
+                    best = r
+                    bi = b
+                    bx = x
+                    by = y
+                }
+            }
+        }
+    }
+    for y in 0 to N - 1 {
+        for x in 0 to N {
+            let b: i32 = nhor + y * N + x
+            if alive[b] == 1 {
+                let i: f64 = fabs(volt[(y + 1) * N + x] - volt[y * N + x])
+                let r: f64 = i / thr[b]
+                if r > best {
+                    best = r
+                    bi = b
+                    bx = x
+                    by = y
+                }
+            }
+        }
+    }
+
+    if bi < 0 { spanning = true; return false }
+    alive[bi] = 0
+    burnt_x[n_burnt] = bx
+    burnt_y[n_burnt] = by
+    n_burnt = n_burnt + 1
+    if !still_connected() {
+        spanning = true
+    }
+    return true
+}
+
+function run_to_span(w: f64, notch: bool, seed: u32) -> void {
+    reset_lattice(w, notch, seed)
+    let budget: i32 = bond_count()
+    for k in 0 to budget {
+        if spanning { break }
+        let ok: bool = burn_one()
+        if !ok { break }
+    }
+}
+
+function roughness() -> f64 {
+    if n_burnt < 2 { return 0.0 }
+    let mut mean: f64 = 0.0
+    for i in 0 to n_burnt {
+        mean = mean + (burnt_y[i] as f64)
+    }
+    mean = mean / (n_burnt as f64)
+    let mut var: f64 = 0.0
+    for i in 0 to n_burnt {
+        let d: f64 = (burnt_y[i] as f64) - mean
+        var = var + d * d
+    }
+    return sqrt(var / (n_burnt as f64))
+}
+
+function paint_cell(buf: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            buf[o] = r as u8
+            buf[o + 1] = g2 as u8
+            buf[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_field(g: Gfx) -> void {
+    for y in 0 to N {
+        for x in 0 to N {
+            let v: f64 = volt[y * N + x]
+            let rr: i32 = (20.0 + 40.0 * v) as i32
+            let gg: i32 = (22.0 + 80.0 * v) as i32
+            let bb: i32 = (40.0 + 160.0 * v) as i32
+            paint_cell(fb, x, y, rr, gg, bb)
+        }
+    }
+    for i in 0 to n_burnt {
+        paint_cell(fb, burnt_x[i], burnt_y[i], 240, 90, 70)
+    }
+    gfx_blit_rgb(g, 16, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, w: f64, length: i32, rough: f64,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "CRACK PROPAGATION  RANDOM FUSE", 2,
+                                240, 234, 224)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 150, 144, 130)
+    let t3: i32 = gfx_draw_text(g, 42, 28, preset_name(preset), 1, 255, 196, 110)
+    let t4: i32 = gfx_draw_text(g, 120, 28, "w", 1, 150, 144, 130)
+    let t5: i32 = gfx_draw_fixed(g, 136, 28, w, 2, 1, 236, 232, 244)
+    let t6: i32 = gfx_draw_text(g, 180, 28, "BURNT", 1, 150, 144, 130)
+    let t7: i32 = gfx_draw_int(g, 222, 28, length, 1, 236, 232, 244)
+    let t8: i32 = gfx_draw_text(g, 280, 28, "ROUGH", 1, 150, 144, 130)
+    let t9: i32 = gfx_draw_fixed(g, 322, 28, rough, 2, 1, 130, 255, 190)
+    let ta: i32 = gfx_draw_text(g, 8, 42,
+        "1 CLEAN  2 MEDIUM  3 ROUGH  4 NOTCH  R RESEED  P PAUSE",
+        1, 112, 108, 120)
+    if paused {
+        let tb: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tc: i32 = gfx_draw_text(g, 8, 572,
+        "burn the bond with largest |I|/threshold; stop when left-right path breaks",
+        1, 122, 118, 132)
+    let td: i32 = gfx_draw_text(g, 8, 582,
+        "weak disorder: a straight crack; strong disorder: diffuse damage",
+        1, 122, 118, 132)
+}
+
+function main() -> i32 {
+    alive = calloc(NBOND as i64, 4 as i64)
+    thr = calloc(NBOND as i64, 8 as i64)
+    volt = calloc(NODES as i64, 8 as i64)
+    volt2 = calloc(NODES as i64, 8 as i64)
+    burnt_x = calloc(NBOND as i64, 4 as i64)
+    burnt_y = calloc(NBOND as i64, 4 as i64)
+    fb = calloc((FB_W * FB_H * 3) as i64, 1 as i64)
+
+    println("")
+    println("  CRACK PROPAGATION  --  random fuse model, length and roughness")
+    println("  ===============================================================")
+    println("")
+
+    run_to_span(0.10, false, 1901194261)
+    let len_clean: i32 = n_burnt
+    let rough_clean: f64 = roughness()
+
+    run_to_span(0.50, false, 1901194261)
+    let len_med: i32 = n_burnt
+    let rough_med: f64 = roughness()
+
+    run_to_span(0.90, false, 1901194261)
+    let len_rough: i32 = n_burnt
+    let rough_rough: f64 = roughness()
+
+    let L: f64 = N as f64
+    println("  1. CRACK LENGTH AND ROUGHNESS AGAINST DISORDER")
+    println("")
+    print("     w = 0.10   burnt ")
+    printf("%6.0f", len_clean as f64)
+    print("   L-normalised ")
+    printf("%6.3f", (len_clean as f64) / L)
+    print("   roughness ")
+    printf("%6.3f", rough_clean)
+    println("")
+    print("     w = 0.50   burnt ")
+    printf("%6.0f", len_med as f64)
+    print("   L-normalised ")
+    printf("%6.3f", (len_med as f64) / L)
+    print("   roughness ")
+    printf("%6.3f", rough_med)
+    println("")
+    print("     w = 0.90   burnt ")
+    printf("%6.0f", len_rough as f64)
+    print("   L-normalised ")
+    printf("%6.3f", (len_rough as f64) / L)
+    print("   roughness ")
+    printf("%6.3f", rough_rough)
+    println("")
+    println("")
+
+    let mut ok: bool = true
+    if (len_clean as f64) > 1.8 * L { ok = false }
+    if (len_rough as f64) < 2.5 * L { ok = false }
+    if len_med <= len_clean { ok = false }
+    if len_rough <= len_med { ok = false }
+
+    if !ok {
+        println("    FAIL: crack length did not grow with disorder as claimed")
+        return 2
+    }
+    println("    PASS: weak disorder yields a short spanning crack; stronger")
+    println("          disorder burns more bonds before the lattice fails")
+    println("")
+
+    let mut preset: i32 = 0
+    reset_lattice(preset_w(preset), preset_notch(preset), 1901194261)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Crack propagation - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if want >= 0 and want != preset {
+            preset = want
+            reset_lattice(preset_w(preset), preset_notch(preset), 1901194261)
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                reset_lattice(preset_w(preset), preset_notch(preset), rng_next())
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused and !spanning {
+            for s in 0 to BURNS_PER_FRAME {
+                if spanning { break }
+                let okb: bool = burn_one()
+                if !okb { break }
+            }
+        }
+
+        gfx_clear(g, 12, 12, 16)
+        draw_field(g)
+        draw_hud(g, preset, disorder_w, n_burnt, roughness(), paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

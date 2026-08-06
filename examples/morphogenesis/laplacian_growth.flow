@@ -1,0 +1,561 @@
+# LAPLACIAN GROWTH: dielectric breakdown, and its fractal dimension from Rg.
+#
+# MODEL (Niemeyer, Pietronero and Wiesmann, 1984)
+#   A grounded seed sits at the centre of a dish whose outer rim is held at
+#   potential 1. The electrostatic potential phi on the free cells solves
+#   Laplace's equation. Growth picks a perimeter candidate with probability
+#   proportional to phi^eta and freezes it to the cluster, after which phi is
+#   relaxed again.
+#
+#     lap(phi) = 0 on free cells
+#     phi = 0 on the cluster,  phi = 1 on the outer ring r >= R
+#     pick i with P_i = phi_i^eta / sum_j phi_j^eta
+#
+#   eta is the only control: eta = 0 recovers Eden growth (compact), eta = 1
+#   is dielectric-breakdown DLA-like (D near 1.7), and larger eta favours the
+#   hottest tips until the cluster becomes a sparse star.
+#
+# THE MEASUREMENT
+#   As particles are added, the radius of gyration Rg is recorded against N.
+#   A log-log least-squares fit gives D_rg = 1 / slope of log Rg vs log N.
+#   The headless pass grows eta = 1 to N = 500 and gates D_rg into [1.55, 1.90]
+#   with R^2 above 0.99. Niemeyer et al. report D near 1.75 for eta = 1.
+#
+# NUMERICS
+#   129 x 129 lattice (odd so the seed sits on a cell), successive
+#   over-relaxation with omega = 1.9, eight sweeps between growth events,
+#   outer Dirichlet ring at r_cluster + 8. Colour is arrival order.
+#
+# PARAMETERS / KEYS
+#   1  EDEN       eta 0.0    compact, D near 2
+#   2  DBM        eta 1.0    dielectric breakdown, D near 1.7
+#   3  NEEDLES    eta 2.0    tip-dominated sparse arms
+#   4  STARS      eta 4.0    a few long needles
+#   R  reseed     P  pause     Esc quit
+#
+# PHENOMENON
+#   Nothing steers the growth except the harmonic field of the cluster that
+#   already exists. Screening of fjords by tips is the whole of the rule, and
+#   eta decides how harshly the tips win.
+#
+# Run: ./flow gfx examples/morphogenesis/laplacian_growth.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const GRID: i32 = 129
+const CELLS: i32 = 16641
+const CELL_PX: i32 = 4
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const CENTER: i32 = 64
+const PER_FRAME: i32 = 4
+const MAX_N: i32 = 1400
+const SOR_SWEEPS: i32 = 8
+const OMEGA: f64 = 1.9
+const CAND_CAP: i32 = 8000
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+let mut rng_state: u32 = 1901194261
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_eta(p: i32) -> f64 {
+    if p == 0 { return 0.0 }
+    if p == 2 { return 2.0 }
+    if p == 3 { return 4.0 }
+    return 1.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == 0 { return "EDEN" }
+    if p == 2 { return "NEEDLES" }
+    if p == 3 { return "STARS" }
+    return "DBM"
+}
+
+function preset_target_d(p: i32) -> f64 {
+    if p == 0 { return 1.95 }
+    if p == 2 { return 1.25 }
+    if p == 3 { return 1.05 }
+    return 1.70
+}
+
+function reset(phi: ptr<f64>, occ: ptr<i32>, age: ptr<i32>,
+               cx: ptr<i32>, cy: ptr<i32>) -> i32 {
+    for i in 0 to CELLS {
+        occ[i] = 0
+        age[i] = 0
+        let x: i32 = i % GRID
+        let y: i32 = i / GRID
+        let dx: f64 = (x - CENTER) as f64
+        let dy: f64 = (y - CENTER) as f64
+        let r: f64 = sqrt(dx * dx + dy * dy)
+        let mut v: f64 = r / (CENTER as f64)
+        if v > 1.0 { v = 1.0 }
+        phi[i] = v
+    }
+    occ[CENTER * GRID + CENTER] = 1
+    age[CENTER * GRID + CENTER] = 1
+    phi[CENTER * GRID + CENTER] = 0.0
+    cx[0] = CENTER
+    cy[0] = CENTER
+    return 1
+}
+
+function sor(phi: ptr<f64>, occ: ptr<i32>, R: f64, sweeps: i32) -> void {
+    let R2: f64 = R * R
+    for s in 0 to sweeps {
+        for y in 1 to GRID - 1 {
+            for x in 1 to GRID - 1 {
+                let i: i32 = y * GRID + x
+                if occ[i] == 1 {
+                    phi[i] = 0.0
+                } else {
+                    let dx: f64 = (x - CENTER) as f64
+                    let dy: f64 = (y - CENTER) as f64
+                    if dx * dx + dy * dy >= R2 {
+                        phi[i] = 1.0
+                    } else {
+                        let avg: f64 = 0.25 * (phi[i - 1] + phi[i + 1]
+                                               + phi[i - GRID] + phi[i + GRID])
+                        phi[i] = phi[i] + OMEGA * (avg - phi[i])
+                    }
+                }
+            }
+        }
+    }
+}
+
+function cluster_rmax(cx: ptr<i32>, cy: ptr<i32>, n: i32) -> f64 {
+    let mut best: f64 = 1.0
+    for k in 0 to n {
+        let dx: f64 = (cx[k] - CENTER) as f64
+        let dy: f64 = (cy[k] - CENTER) as f64
+        let r2: f64 = dx * dx + dy * dy
+        if r2 > best { best = r2 }
+    }
+    return sqrt(best)
+}
+
+function radius_gyration(cx: ptr<i32>, cy: ptr<i32>, n: i32) -> f64 {
+    if n < 1 { return 0.0 }
+    let mut mx: f64 = 0.0
+    let mut my: f64 = 0.0
+    for k in 0 to n {
+        mx = mx + (cx[k] as f64)
+        my = my + (cy[k] as f64)
+    }
+    mx = mx / (n as f64)
+    my = my / (n as f64)
+    let mut s: f64 = 0.0
+    for k in 0 to n {
+        let a: f64 = (cx[k] as f64) - mx
+        let b: f64 = (cy[k] as f64) - my
+        s = s + a * a + b * b
+    }
+    return sqrt(s / (n as f64))
+}
+
+# Grow one particle. Returns the new N, or n unchanged if nothing stuck.
+function grow(phi: ptr<f64>, occ: ptr<i32>, age: ptr<i32>,
+              cx: ptr<i32>, cy: ptr<i32>, n: i32, eta: f64, R: f64,
+              cand_i: ptr<i32>, cand_p: ptr<f64>) -> i32 {
+    let R2: f64 = R * R
+    let mut nc: i32 = 0
+    let mut tot: f64 = 0.0
+    for y in 1 to GRID - 1 {
+        for x in 1 to GRID - 1 {
+            let i: i32 = y * GRID + x
+            if occ[i] == 0 {
+                let dx: f64 = (x - CENTER) as f64
+                let dy: f64 = (y - CENTER) as f64
+                if dx * dx + dy * dy < R2 {
+                    if occ[i - 1] == 1 or occ[i + 1] == 1
+                       or occ[i - GRID] == 1 or occ[i + GRID] == 1 {
+                        let mut p: f64 = phi[i]
+                        if p < 0.0 { p = 0.0 }
+                        let mut w: f64 = 1.0
+                        if eta > 0.0 {
+                            w = pow(p, eta)
+                        }
+                        if nc < CAND_CAP {
+                            cand_i[nc] = i
+                            cand_p[nc] = w
+                            tot = tot + w
+                            nc = nc + 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if nc == 0 or tot <= 0.0 { return n }
+    let t: f64 = rng_unit() * tot
+    let mut acc: f64 = 0.0
+    let mut pick: i32 = cand_i[nc - 1]
+    let mut found: bool = false
+    for k in 0 to nc {
+        if !found {
+            acc = acc + cand_p[k]
+            if acc >= t {
+                pick = cand_i[k]
+                found = true
+            }
+        }
+    }
+    occ[pick] = 1
+    age[pick] = n + 1
+    phi[pick] = 0.0
+    cx[n] = pick % GRID
+    cy[n] = pick / GRID
+    return n + 1
+}
+
+function paint_cell(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    if px >= FB_W { return }
+    let py: i32 = y * CELL_PX
+    if py >= FB_H { return }
+    for dy in 0 to CELL_PX {
+        if py + dy < FB_H {
+            let mut o: i32 = ((py + dy) * FB_W + px) * 3
+            for dx in 0 to CELL_PX {
+                if px + dx < FB_W {
+                    fb[o] = r as u8
+                    fb[o + 1] = g2 as u8
+                    fb[o + 2] = b as u8
+                }
+                o = o + 3
+            }
+        }
+    }
+}
+
+function draw_field(g: Gfx, fb: ptr<u8>, occ: ptr<i32>, age: ptr<i32>,
+                    newest: i32) -> void {
+    let mut inv: f64 = 1.0
+    if newest > 1 { inv = 1.0 / (newest as f64) }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let i: i32 = y * GRID + x
+            let mut rr: i32 = 10
+            let mut gg: i32 = 12
+            let mut bb: i32 = 22
+            if occ[i] == 1 {
+                let t: f64 = (age[i] as f64) * inv
+                let mut fr: f64 = 60.0 + 200.0 * t
+                let mut fg: f64 = 30.0 + 180.0 * t * t
+                let mut fb2: f64 = 140.0 + 80.0 * (1.0 - t)
+                if fr > 255.0 { fr = 255.0 }
+                if fg > 255.0 { fg = 255.0 }
+                if fb2 > 255.0 { fb2 = 255.0 }
+                rr = fr as i32
+                gg = fg as i32
+                bb = fb2 as i32
+            }
+            paint_cell(fb, x, y, rr, gg, bb)
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, n: i32, rg: f64, drg: f64,
+                  target: f64, r2: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "LAPLACIAN GROWTH", 2, 236, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 220, 12, preset_name(preset), 1, 255, 190, 120)
+    let t3: i32 = gfx_draw_text(g, 300, 12, "eta", 1, 148, 144, 168)
+    let t4: i32 = gfx_draw_fixed(g, 324, 12, preset_eta(preset), 1, 1, 236, 234, 246)
+    let t5: i32 = gfx_draw_text(g, 360, 12, "N", 1, 148, 144, 168)
+    let t6: i32 = gfx_draw_int(g, 372, 12, n, 1, 236, 234, 246)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "Rg", 1, 148, 144, 168)
+    let t8: i32 = gfx_draw_fixed(g, 28, 28, rg, 2, 1, 236, 234, 246)
+    let t9: i32 = gfx_draw_text(g, 80, 28, "D_Rg", 1, 148, 144, 168)
+    let ta: i32 = gfx_draw_fixed(g, 112, 28, drg, 3, 1, 120, 255, 190)
+    let tb: i32 = gfx_draw_text(g, 168, 28, "TARGET", 1, 148, 144, 168)
+    let tc: i32 = gfx_draw_fixed(g, 216, 28, target, 2, 1, 120, 255, 190)
+    let td: i32 = gfx_draw_text(g, 260, 28, "R^2", 1, 148, 144, 168)
+    let te: i32 = gfx_draw_fixed(g, 284, 28, r2, 4, 1, 255, 210, 130)
+
+    let tf: i32 = gfx_draw_text(g, 8, 42,
+        "1 EDEN  2 DBM  3 NEEDLES  4 STARS  R RESEED  P PAUSE",
+        1, 110, 106, 130)
+    if paused {
+        let tg: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let th: i32 = gfx_draw_text(g, 8, 572,
+        "lap(phi)=0; grow with P ~ phi^eta; D_Rg from log Rg vs log N",
+        1, 120, 116, 140)
+    let ti: i32 = gfx_draw_text(g, 8, 582,
+        "Niemeyer, Pietronero, Wiesmann 1984: eta=1 gives D near 1.75",
+        1, 120, 116, 140)
+}
+
+function headless_verify(phi: ptr<f64>, occ: ptr<i32>, age: ptr<i32>,
+                         cx: ptr<i32>, cy: ptr<i32>,
+                         cand_i: ptr<i32>, cand_p: ptr<f64>) -> i32 {
+    println("")
+    println("  LAPLACIAN GROWTH  --  D from Rg scaling at eta = 1")
+    println("  ==================================================")
+    println("")
+
+    rng_state = 1901194261
+    let mut n: i32 = reset(phi, occ, age, cx, cy)
+    let mut R: f64 = 6.0
+    sor(phi, occ, R, 200)
+
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut syy: f64 = 0.0
+    let mut m: f64 = 0.0
+    let target_n: i32 = 500
+    let eta: f64 = 1.0
+
+    while n < target_n {
+        let rmax: f64 = cluster_rmax(cx, cy, n)
+        let mut newR: f64 = rmax + 8.0
+        if newR > 62.0 { newR = 62.0 }
+        if newR > R { R = newR }
+        sor(phi, occ, R, SOR_SWEEPS)
+        let n2: i32 = grow(phi, occ, age, cx, cy, n, eta, R, cand_i, cand_p)
+        if n2 == n { break }
+        n = n2
+        if rmax > 58.0 { break }
+        if n >= 50 and n % 10 == 0 {
+            let rg: f64 = radius_gyration(cx, cy, n)
+            if rg > 1.0 {
+                let X: f64 = log(n as f64)
+                let Y: f64 = log(rg)
+                sx = sx + X
+                sy = sy + Y
+                sxx = sxx + X * X
+                sxy = sxy + X * Y
+                syy = syy + Y * Y
+                m = m + 1.0
+            }
+        }
+    }
+
+    let mut slope: f64 = 0.0
+    let mut r2: f64 = 0.0
+    let mut drg: f64 = 0.0
+    if m >= 4.0 {
+        let den: f64 = m * sxx - sx * sx
+        if den > 0.0 {
+            slope = (m * sxy - sx * sy) / den
+            let num: f64 = m * sxy - sx * sy
+            let den2: f64 = sqrt((m * sxx - sx * sx) * (m * syy - sy * sy))
+            if den2 > 0.0 {
+                r2 = (num / den2) * (num / den2)
+            }
+            if slope > 0.05 {
+                drg = 1.0 / slope
+            }
+        }
+    }
+
+    print("    particles grown            : ")
+    printf("%9.0f", n as f64)
+    println("")
+    print("    fit samples                : ")
+    printf("%9.0f", m)
+    println("")
+    print("    D_Rg = 1 / slope           : ")
+    printf("%9.4f", drg)
+    println("   gate in [1.55, 1.90]")
+    print("    R^2 of log Rg vs log N     : ")
+    printf("%9.5f", r2)
+    println("   gate > 0.99")
+    println("")
+
+    let d_ok: bool = drg >= 1.55 and drg <= 1.90
+    let r_ok: bool = r2 > 0.99
+    if !d_ok {
+        println("    FAIL: D_Rg left the dielectric-breakdown band")
+        return 1
+    }
+    if !r_ok {
+        println("    FAIL: Rg scaling fit is not linear enough")
+        return 2
+    }
+    println("    PASS: eta=1 gives D_Rg near 1.7 from Rg ~ N^(1/D)")
+    println("")
+    return 0
+}
+
+function main() -> i32 {
+    let phi: array<f64, 16641> = [0.0, 0.0, 0.0, 0.0]
+    let occ: array<i32, 16641> = [0, 0, 0, 0]
+    let age: array<i32, 16641> = [0, 0, 0, 0]
+    let cx: array<i32, 1400> = [0, 0, 0, 0]
+    let cy: array<i32, 1400> = [0, 0, 0, 0]
+    let cand_i: array<i32, 8000> = [0, 0, 0, 0]
+    let cand_p: array<f64, 8000> = [0.0, 0.0, 0.0, 0.0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    let code: i32 = headless_verify(phi, occ, age, cx, cy, cand_i, cand_p)
+    if code != 0 {
+        return code
+    }
+
+    let mut preset: i32 = 1
+    rng_state = 1901194261
+    let mut n: i32 = reset(phi, occ, age, cx, cy)
+    let mut R: f64 = 6.0
+    sor(phi, occ, R, 200)
+
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    let mut sxx: f64 = 0.0
+    let mut sxy: f64 = 0.0
+    let mut syy: f64 = 0.0
+    let mut m: f64 = 0.0
+    let mut drg: f64 = 0.0
+    let mut r2: f64 = 0.0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Laplacian growth - Flow morphogenesis")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut hold: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        let mut restart: bool = false
+        if want >= 0 and want != preset {
+            preset = want
+            restart = true
+        }
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held { restart = true }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+        if restart {
+            rng_state = 1901194261
+            n = reset(phi, occ, age, cx, cy)
+            R = 6.0
+            sor(phi, occ, R, 200)
+            sx = 0.0
+            sy = 0.0
+            sxx = 0.0
+            sxy = 0.0
+            syy = 0.0
+            m = 0.0
+            drg = 0.0
+            r2 = 0.0
+            hold = 0
+        }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        let rmax: f64 = cluster_rmax(cx, cy, n)
+        let full: bool = rmax >= 58.0 or n >= MAX_N - 4
+        if full {
+            hold = hold + 1
+            if hold > 100 {
+                rng_state = 1901194261
+                n = reset(phi, occ, age, cx, cy)
+                R = 6.0
+                sor(phi, occ, R, 200)
+                sx = 0.0
+                sy = 0.0
+                sxx = 0.0
+                sxy = 0.0
+                syy = 0.0
+                m = 0.0
+                hold = 0
+            }
+        }
+
+        if !paused and !full {
+            let eta: f64 = preset_eta(preset)
+            for k in 0 to PER_FRAME {
+                let rm: f64 = cluster_rmax(cx, cy, n)
+                let mut newR: f64 = rm + 8.0
+                if newR > 62.0 { newR = 62.0 }
+                if newR > R { R = newR }
+                sor(phi, occ, R, SOR_SWEEPS)
+                n = grow(phi, occ, age, cx, cy, n, eta, R, cand_i, cand_p)
+                if n >= 50 and n % 10 == 0 {
+                    let rg: f64 = radius_gyration(cx, cy, n)
+                    if rg > 1.0 {
+                        let X: f64 = log(n as f64)
+                        let Y: f64 = log(rg)
+                        sx = sx + X
+                        sy = sy + Y
+                        sxx = sxx + X * X
+                        sxy = sxy + X * Y
+                        syy = syy + Y * Y
+                        m = m + 1.0
+                        if m >= 4.0 {
+                            let den: f64 = m * sxx - sx * sx
+                            if den > 0.0 {
+                                let slope: f64 = (m * sxy - sx * sy) / den
+                                let num: f64 = m * sxy - sx * sy
+                                let den2: f64 = sqrt((m * sxx - sx * sx)
+                                                     * (m * syy - sy * sy))
+                                if den2 > 0.0 {
+                                    r2 = (num / den2) * (num / den2)
+                                }
+                                if slope > 0.05 {
+                                    drg = 1.0 / slope
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let rg_now: f64 = radius_gyration(cx, cy, n)
+        gfx_clear(g, 8, 8, 16)
+        draw_field(g, fb, occ, age, n)
+        draw_hud(g, preset, n, rg_now, drg, preset_target_d(preset), r2, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
