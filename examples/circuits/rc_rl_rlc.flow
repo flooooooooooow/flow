@@ -1,0 +1,436 @@
+# RC, RL AND RLC STEP RESPONSE: three integrators against three closed forms.
+#
+# THE POINT
+#   These three circuits are the only ones in this directory whose exact
+#   solution is a formula, so they are where the machinery gets calibrated.
+#   Each is solved twice, and both answers are compared with the analytic
+#   response:
+#
+#     as a `flow` block            explicit Euler on the state equation
+#     as a netlist through MNA     backward Euler and trapezoidal companions
+#
+#   The `flow` blocks below are the whole model. A series RC is one line, a
+#   series RL is one line, a series RLC is two, and the compiler writes the
+#   integrator. That is the case for the language: nothing between the
+#   differential equation and the executable.
+#
+#   The MNA runs exist to show the same answer arriving by the route SPICE
+#   takes, and to measure what each companion model costs in accuracy.
+#
+# THE CIRCUITS AND THEIR SOLUTIONS  (unit step, V = 1 V, all start at rest)
+#
+#   RC series      R = 1 kohm, C = 1 uF, tau = RC = 1 ms
+#     vc(t) = V (1 - exp(-t/tau))
+#
+#   RL series      R = 100 ohm, L = 100 mH, tau = L/R = 1 ms
+#     i(t) = (V/R) (1 - exp(-t/tau))
+#
+#   RLC series     R = 100 ohm, L = 100 mH, C = 1 uF
+#     a  = R/(2L) = 500 1/s          w0 = 1/sqrt(LC) = 3162.2777 rad/s
+#     wd = sqrt(w0^2 - a^2) = 3122.4990 rad/s          underdamped, Q = 3.162
+#     vc(t) = V [1 - exp(-a t) (cos(wd t) + (a/wd) sin(wd t))]
+#     iL(t) = V/(L wd) exp(-a t) sin(wd t)
+#
+# ERROR METRIC
+#   Relative error at a point where the signal passes through zero is not a
+#   number worth printing, so the error reported is the largest absolute
+#   deviation over the whole run divided by the largest value the analytic
+#   solution reaches on that run. Every one of the nine numbers is gated at
+#   1e-3.
+#
+# STEP SIZES
+#   Euler 10 ns, backward Euler 100 ns, trapezoidal 1 us, all against time
+#   constants of 1 ms. The order of each method is visible in the table: the
+#   trapezoidal rule uses a hundred times the step of Euler and is still the
+#   most accurate of the three.
+#
+# Run: ./flow run examples/circuits/rc_rl_rlc.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const VSTEP: f64 = 1.0
+const R_RC: f64 = 1000.0
+const C_RC: f64 = 1e-6
+const R_RL: f64 = 100.0
+const L_RL: f64 = 0.1
+const R_RLC: f64 = 100.0
+const L_RLC: f64 = 0.1
+const C_RLC: f64 = 1e-6
+
+const T_END_1: f64 = 0.005          # 5 tau for the first-order circuits
+const T_END_2: f64 = 0.010          # 5 ring-down time constants for the RLC
+
+const DT_EULER: f64 = 1e-8
+const DT_BE: f64 = 1e-7
+const DT_TRAP: f64 = 1e-6
+
+const GATE: f64 = 1e-3
+
+# ---------------------------------------------------------------------------
+# The models. Three circuits, four lines.
+# ---------------------------------------------------------------------------
+
+flow RCSeries {
+    state vc : f64 = 0.0            # V across the capacitor
+    param vin : f64 = 1.0
+    param r : f64 = 1000.0
+    param c : f64 = 1e-6
+
+    solver { dt 10 ns  method euler }
+
+    vc evolves as (vin - vc) / (r * c)
+}
+
+flow RLSeries {
+    state il : f64 = 0.0            # A through the inductor
+    param vin : f64 = 1.0
+    param r : f64 = 100.0
+    param l : f64 = 0.1
+
+    solver { dt 10 ns  method euler }
+
+    il evolves as (vin - r * il) / l
+}
+
+flow RLCSeries {
+    state vc : f64 = 0.0
+    state il : f64 = 0.0
+    param vin : f64 = 1.0
+    param r : f64 = 100.0
+    param l : f64 = 0.1
+    param c : f64 = 1e-6
+
+    solver { dt 10 ns  method euler }
+
+    vc evolves as il / c
+    il evolves as (vin - r * il - vc) / l
+}
+
+# ---------------------------------------------------------------------------
+# Closed forms
+# ---------------------------------------------------------------------------
+
+function rc_exact(t: f64) -> f64 {
+    return VSTEP * (1.0 - exp(0.0 - t / (R_RC * C_RC)))
+}
+
+function rl_exact(t: f64) -> f64 {
+    return (VSTEP / R_RL) * (1.0 - exp(0.0 - t * R_RL / L_RL))
+}
+
+function rlc_alpha() -> f64 {
+    return R_RLC / (2.0 * L_RLC)
+}
+
+function rlc_wd() -> f64 {
+    let w0sq: f64 = 1.0 / (L_RLC * C_RLC)
+    let a: f64 = rlc_alpha()
+    return sqrt(w0sq - a * a)
+}
+
+function rlc_vc_exact(t: f64) -> f64 {
+    let a: f64 = rlc_alpha()
+    let wd: f64 = rlc_wd()
+    let env: f64 = exp(0.0 - a * t)
+    return VSTEP * (1.0 - env * (cos(wd * t) + (a / wd) * sin(wd * t)))
+}
+
+function rlc_il_exact(t: f64) -> f64 {
+    let a: f64 = rlc_alpha()
+    let wd: f64 = rlc_wd()
+    return (VSTEP / (L_RLC * wd)) * exp(0.0 - a * t) * sin(wd * t)
+}
+
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+function verdict(e: f64) -> string {
+    if e != e {
+        return "NaN"
+    }
+    if e < GATE {
+        return "ok"
+    }
+    return "FAIL"
+}
+
+function row(name: string, method: string, dt: f64, steps: i32,
+             err: f64) -> void {
+    print("    ")
+    print(name)
+    print("  ")
+    print(method)
+    printf("  %9.2e", dt)
+    printf("  %9.0f", steps as f64)
+    printf("   %9.2e", err)
+    print("   ")
+    print(verdict(err))
+    println("")
+}
+
+# ---------------------------------------------------------------------------
+# `flow` block runs
+# ---------------------------------------------------------------------------
+
+function euler_rc() -> f64 {
+    let mut s: RCSeries = RCSeries_new()
+    s.vin = VSTEP
+    s.r = R_RC
+    s.c = C_RC
+    let dt: f64 = DT_EULER
+    let steps: i32 = (T_END_1 / dt) as i32
+    let mut worst: f64 = 0.0
+    for k in 0 to steps + 1 {
+        let t: f64 = (k as f64) * dt
+        let d: f64 = fabs(s.vc - rc_exact(t))
+        if d > worst {
+            worst = d
+        }
+        RCSeries_step(&s, dt)
+    }
+    return worst / VSTEP
+}
+
+function euler_rl() -> f64 {
+    let mut s: RLSeries = RLSeries_new()
+    s.vin = VSTEP
+    s.r = R_RL
+    s.l = L_RL
+    let dt: f64 = DT_EULER
+    let steps: i32 = (T_END_1 / dt) as i32
+    let scale: f64 = VSTEP / R_RL
+    let mut worst: f64 = 0.0
+    for k in 0 to steps + 1 {
+        let t: f64 = (k as f64) * dt
+        let d: f64 = fabs(s.il - rl_exact(t))
+        if d > worst {
+            worst = d
+        }
+        RLSeries_step(&s, dt)
+    }
+    return worst / scale
+}
+
+# Returns the vc error; writes the iL error through the caller's slot.
+let mut euler_rlc_il_err: f64 = 0.0
+
+function euler_rlc() -> f64 {
+    let mut s: RLCSeries = RLCSeries_new()
+    s.vin = VSTEP
+    s.r = R_RLC
+    s.l = L_RLC
+    s.c = C_RLC
+    let dt: f64 = DT_EULER
+    let steps: i32 = (T_END_2 / dt) as i32
+    let iscale: f64 = VSTEP / (L_RLC * rlc_wd())
+    let mut wv: f64 = 0.0
+    let mut wi: f64 = 0.0
+    for k in 0 to steps + 1 {
+        let t: f64 = (k as f64) * dt
+        let dv: f64 = fabs(s.vc - rlc_vc_exact(t))
+        let di: f64 = fabs(s.il - rlc_il_exact(t))
+        if dv > wv {
+            wv = dv
+        }
+        if di > wi {
+            wi = di
+        }
+        RLCSeries_step(&s, dt)
+    }
+    euler_rlc_il_err = wi / iscale
+    return wv / VSTEP
+}
+
+# ---------------------------------------------------------------------------
+# MNA runs
+# ---------------------------------------------------------------------------
+
+function mna_rc(method: i32, dt: f64) -> f64 {
+    if !circ_reset() {
+        return 1.0
+    }
+    circ_set_method(method)
+    let vs: i32 = circ_add_v(1, 0, VSTEP)
+    let r: i32 = circ_add_r(1, 2, R_RC)
+    let c: i32 = circ_add_c(2, 0, C_RC, 0.0)
+    if c < 0 or !circ_finalize() {
+        return 1.0
+    }
+    if !circ_tran_init(true, dt * 1e-6) {
+        return 1.0
+    }
+    let steps: i32 = (T_END_1 / dt) as i32
+    let mut worst: f64 = 0.0
+    for k in 1 to steps + 1 {
+        if !circ_tran_step(dt) {
+            return 1.0
+        }
+        let t: f64 = (k as f64) * dt
+        let d: f64 = fabs(circ_state(c) - rc_exact(t))
+        if d > worst {
+            worst = d
+        }
+    }
+    return worst / VSTEP
+}
+
+function mna_rl(method: i32, dt: f64) -> f64 {
+    if !circ_reset() {
+        return 1.0
+    }
+    circ_set_method(method)
+    let vs: i32 = circ_add_v(1, 0, VSTEP)
+    let r: i32 = circ_add_r(1, 2, R_RL)
+    let l: i32 = circ_add_l(2, 0, L_RL, 0.0)
+    if l < 0 or !circ_finalize() {
+        return 1.0
+    }
+    if !circ_tran_init(true, dt * 1e-6) {
+        return 1.0
+    }
+    let steps: i32 = (T_END_1 / dt) as i32
+    let scale: f64 = VSTEP / R_RL
+    let mut worst: f64 = 0.0
+    for k in 1 to steps + 1 {
+        if !circ_tran_step(dt) {
+            return 1.0
+        }
+        let t: f64 = (k as f64) * dt
+        let d: f64 = fabs(circ_state(l) - rl_exact(t))
+        if d > worst {
+            worst = d
+        }
+    }
+    return worst / scale
+}
+
+let mut mna_rlc_il_err: f64 = 0.0
+
+function mna_rlc(method: i32, dt: f64) -> f64 {
+    if !circ_reset() {
+        return 1.0
+    }
+    circ_set_method(method)
+    let vs: i32 = circ_add_v(1, 0, VSTEP)
+    let r: i32 = circ_add_r(1, 2, R_RLC)
+    let l: i32 = circ_add_l(2, 3, L_RLC, 0.0)
+    let c: i32 = circ_add_c(3, 0, C_RLC, 0.0)
+    if c < 0 or !circ_finalize() {
+        return 1.0
+    }
+    if !circ_tran_init(true, dt * 1e-6) {
+        return 1.0
+    }
+    let steps: i32 = (T_END_2 / dt) as i32
+    let iscale: f64 = VSTEP / (L_RLC * rlc_wd())
+    let mut wv: f64 = 0.0
+    let mut wi: f64 = 0.0
+    for k in 1 to steps + 1 {
+        if !circ_tran_step(dt) {
+            return 1.0
+        }
+        let t: f64 = (k as f64) * dt
+        let dv: f64 = fabs(circ_state(c) - rlc_vc_exact(t))
+        let di: f64 = fabs(circ_state(l) - rlc_il_exact(t))
+        if dv > wv {
+            wv = dv
+        }
+        if di > wi {
+            wi = di
+        }
+    }
+    mna_rlc_il_err = wi / iscale
+    return wv / VSTEP
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    println("")
+    println("  RC / RL / RLC STEP RESPONSE  --  three solvers vs the closed form")
+    println("  =================================================================")
+    println("")
+    print("  RLC  alpha = ")
+    printf("%.4f", rlc_alpha())
+    print(" 1/s,  wd = ")
+    printf("%.4f", rlc_wd())
+    print(" rad/s,  ring period = ")
+    printf("%.4f", 6.283185307179586 / rlc_wd() * 1000.0)
+    println(" ms")
+    println("")
+    println("    circuit / signal   method        dt      steps     max err   gate")
+    println("    ----------------  -------  ---------  ---------  ----------  ----")
+
+    let mut worst: f64 = 0.0
+
+    let e1: f64 = euler_rc()
+    row("RC   vc         ", "flow   ", DT_EULER, (T_END_1 / DT_EULER) as i32, e1)
+    let e2: f64 = mna_rc(CIRC_BE, DT_BE)
+    row("RC   vc         ", "mna be ", DT_BE, (T_END_1 / DT_BE) as i32, e2)
+    let e3: f64 = mna_rc(CIRC_TRAP, DT_TRAP)
+    row("RC   vc         ", "mna trp", DT_TRAP, (T_END_1 / DT_TRAP) as i32, e3)
+
+    let e4: f64 = euler_rl()
+    row("RL   iL         ", "flow   ", DT_EULER, (T_END_1 / DT_EULER) as i32, e4)
+    let e5: f64 = mna_rl(CIRC_BE, DT_BE)
+    row("RL   iL         ", "mna be ", DT_BE, (T_END_1 / DT_BE) as i32, e5)
+    let e6: f64 = mna_rl(CIRC_TRAP, DT_TRAP)
+    row("RL   iL         ", "mna trp", DT_TRAP, (T_END_1 / DT_TRAP) as i32, e6)
+
+    let e7: f64 = euler_rlc()
+    let e7i: f64 = euler_rlc_il_err
+    row("RLC  vc         ", "flow   ", DT_EULER, (T_END_2 / DT_EULER) as i32, e7)
+    row("RLC  iL         ", "flow   ", DT_EULER, (T_END_2 / DT_EULER) as i32, e7i)
+    let e8: f64 = mna_rlc(CIRC_BE, DT_BE)
+    let e8i: f64 = mna_rlc_il_err
+    row("RLC  vc         ", "mna be ", DT_BE, (T_END_2 / DT_BE) as i32, e8)
+    row("RLC  iL         ", "mna be ", DT_BE, (T_END_2 / DT_BE) as i32, e8i)
+    let e9: f64 = mna_rlc(CIRC_TRAP, DT_TRAP)
+    let e9i: f64 = mna_rlc_il_err
+    row("RLC  vc         ", "mna trp", DT_TRAP, (T_END_2 / DT_TRAP) as i32, e9)
+    row("RLC  iL         ", "mna trp", DT_TRAP, (T_END_2 / DT_TRAP) as i32, e9i)
+
+    if e1 > worst { worst = e1 }
+    if e2 > worst { worst = e2 }
+    if e3 > worst { worst = e3 }
+    if e4 > worst { worst = e4 }
+    if e5 > worst { worst = e5 }
+    if e6 > worst { worst = e6 }
+    if e7 > worst { worst = e7 }
+    if e7i > worst { worst = e7i }
+    if e8 > worst { worst = e8 }
+    if e8i > worst { worst = e8i }
+    if e9 > worst { worst = e9 }
+    if e9i > worst { worst = e9i }
+
+    println("")
+    print("  worst normalized error over all twelve traces: ")
+    printf("%.3e", worst)
+    println("")
+    print("  gate: < ")
+    printf("%.3e", GATE)
+    println("")
+    println("")
+
+    if worst != worst {
+        println("  FAIL: a trace went NaN")
+        return 1
+    }
+    if worst >= GATE {
+        println("  FAIL: a solver missed the closed form")
+        return 2
+    }
+    println("  PASS: `flow` Euler and both MNA companions reproduce all three")
+    println("        analytic step responses")
+    return 0
+}
