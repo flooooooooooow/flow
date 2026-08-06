@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` on 2026-08-06 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**86** modules scanned.
+**88** modules scanned.
 
 ## Modules
 
@@ -894,6 +894,55 @@ BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux) Import: import 
 | `zeros` | `(rows: i32, cols: i32) -> Mat` | rows×cols zero matrix (alias for mat_new). |
 | `ones` | `(rows: i32, cols: i32) -> Mat` | rows×cols matrix filled with 1.0. |
 
+### `circuit.flow`
+
+MODIFIED NODAL ANALYSIS: a small circuit simulator core, in Flow.  WHY A MATRIX AND NOT A `flow` BLOCK
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `circ_reset` | `() -> bool` | Clear the netlist. Every program starts here. |
+| `circ_error` | `() -> i32` | — |
+| `circ_add_r` | `(n1: i32, n2: i32, ohms: f64) -> i32` | — |
+| `circ_add_c` | `(n1: i32, n2: i32, farads: f64, v0: f64) -> i32` | Capacitor with an initial voltage (used only when circ_tran_init(true)). |
+| `circ_add_l` | `(n1: i32, n2: i32, henries: f64, i0: f64) -> i32` | Inductor with an initial current (flowing n1 -> n2). |
+| `circ_add_v` | `(n1: i32, n2: i32, volts: f64) -> i32` | — |
+| `circ_add_i` | `(n1: i32, n2: i32, amps: f64) -> i32` | Current amps flows into n1, through the source, out of n2 (SPICE sign). |
+| `circ_add_e` | `(n1: i32, n2: i32, c1: i32, c2: i32,
+                           gain: f64) -> i32` | VCVS: v(n1) - v(n2) = gain * (v(c1) - v(c2)) |
+| `circ_add_g` | `(n1: i32, n2: i32, c1: i32, c2: i32,
+                           gm: f64) -> i32` | VCCS: current gm * (v(c1) - v(c2)) flows into n1 and out of n2. |
+| `circ_add_d` | `(n1: i32, n2: i32, is_sat: f64, nvt: f64) -> i32` | Diode: i = Is * (exp(v / (n*VT)) - 1), anode n1, cathode n2. |
+| `circ_add_q` | `(nc: i32, nb: i32, ne: i32, is_sat: f64,
+                           bf: f64, br: f64, vt: f64) -> i32` | NPN BJT, Ebers-Moll transport form. Terminals collector, base, emitter. |
+| `circ_set_value` | `(e: i32, val: f64) -> void` | Change an element value in place (a source waveform, a switch resistance). |
+| `circ_get_value` | `(e: i32) -> f64` | — |
+| `circ_set_method` | `(m: i32) -> void` | — |
+| `circ_set_gmin` | `(g: f64) -> void` | — |
+| `circ_set_tol` | `(reltol: f64, abstol: f64) -> void` | — |
+| `circ_set_maxiter` | `(n: i32) -> void` | — |
+| `circ_finalize` | `() -> bool` | Assign branch-current rows and fix the matrix order. Returns false when a cap is exceeded. |
+| `circ_dim_of` | `() -> i32` | — |
+| `circ_node_count` | `() -> i32` | — |
+| `circ_v` | `(node: i32) -> f64` | — |
+| `circ_vd` | `(n1: i32, n2: i32) -> f64` | — |
+| `circ_iterations` | `() -> i32` | — |
+| `circ_worst_iterations` | `() -> i32` | — |
+| `circ_solve_count` | `() -> i32` | — |
+| `circ_factor_count` | `() -> i32` | — |
+| `circ_reject_count` | `() -> i32` | — |
+| `circ_i` | `(e: i32) -> f64` | Branch current of element e, in the n1 -> n2 direction (collector current for a BJT). |
+| `circ_ib` | `(e: i32) -> f64` | Base current of a BJT. |
+| `circ_state` | `(e: i32) -> f64` | The state variable of a reactive element: capacitor voltage or inductor current at the last accepted point. |
+| `circ_op` | `() -> bool` | DC operating point |
+| `circ_tran_init` | `(use_ic: bool, dt_prime: f64) -> bool` | Prepare for transient analysis. With use_ic the reactive states start from the values passed to circ_add_c / circ_add_l; otherwise they start from the DC operating point. The trapezoidal companion model needs the branch derivative at t = 0 as well |
+| `circ_tran_step` | `(dt: f64) -> bool` | One fixed step. Returns false if Newton or LU failed. |
+| `circ_time_now` | `() -> f64` | — |
+| `circ_tran_step_adaptive` | `(dt_try: f64, tol: f64,
+                                        dt_min: f64, dt_max: f64) -> f64` | Adaptive step by step doubling: one step of dt against two of dt/2. The error estimate is the largest normalized difference between the two results over the reactive state variables. Returns the step actually taken, or 0.0 on failure; circ_next_dt() suggests the next trial step. |
+| `circ_next_dt` | `() -> f64` | — |
+
 ### `collections.flow`
 
 FLOW Collections Standard Library HashMap, Set, Queue, Stack, Vector
@@ -1491,6 +1540,32 @@ SDL2 bindings (minimal)  This is a deliberately tiny subset needed for simple 2D
 FLOW Slice Type A slice is a view into a contiguous block of memory (ptr + length)
 
 *No `export` items found (internal / extern-only module).*
+
+### `spice.flow`
+
+SPICE NETLIST FRONT END: a subset parser that builds stdlib/circuit.flow structures.
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `spice_node` | `(name: string) -> i32` | Look up a node by name from outside the parser. |
+| `spice_node_count` | `() -> i32` | — |
+| `spice_source` | `(name: string) -> i32` | Element index of a named source, or -1. |
+| `spice_load` | `(path: string) -> bool` | Read a deck from disk. Returns false if the file is missing or larger than SPICE_MAX_TEXT. |
+| `spice_parse` | `() -> bool` | Parse the loaded deck into stdlib/circuit.flow, then finalize it. The first non-blank line is the title, as SPICE requires. |
+| `spice_error_line` | `() -> i32` | — |
+| `spice_skipped` | `() -> i32` | — |
+| `spice_has_tran` | `() -> bool` | — |
+| `spice_tstep` | `() -> f64` | — |
+| `spice_tstop` | `() -> f64` | — |
+| `spice_uic` | `() -> bool` | — |
+| `spice_has_dc` | `() -> bool` | — |
+| `spice_dc_source` | `() -> i32` | — |
+| `spice_dc_start` | `() -> f64` | — |
+| `spice_dc_stop` | `() -> f64` | — |
+| `spice_dc_step` | `() -> f64` | — |
+| `spice_has_op` | `() -> bool` | — |
 
 ### `srir.flow`
 
