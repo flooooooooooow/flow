@@ -409,6 +409,25 @@ class TypeChecker:
         'sem_wait', 'semaphore_wait',
     })
     RT_UNSAFE_ALL_NAMES: frozenset = RT_UNSAFE_HEAP_NAMES | RT_UNSAFE_LOCK_NAMES
+
+    # Names that create, destroy or grow heap storage. This is what the
+    # `frame` lifetime domain forbids: a frame is bump-allocated from an
+    # arena and reset wholesale, and a frame loop is allowed to block, so
+    # locks and device I/O are not on this list (they are on the `callback`
+    # domain's list, which is `@rt_safe`'s). See
+    # docs/language/lifetime-domains.md, LD3.
+    FRAME_UNSAFE_NAMES: frozenset = frozenset(
+        RT_UNSAFE_BUILTINS
+        | RT_UNSAFE_STDLIB_NAMES
+        | {
+            'audio_buffer_alloc_f32', 'audio_buffer_free_f32', 'delay_line_new',
+            'flow_gpu_alloc', 'flow_gpu_free',
+            'gpu_alloc_flags', 'gpu_alloc', 'gpu_alloc_unified',
+            'gpu_alloc_private', 'gpu_alloc_f32', 'gpu_alloc_f64',
+            'gpu_alloc_i32', 'gpu_allocate', 'gpu_free',
+            'metal_create_buffer',
+        }
+    )
     RT_UNSAFE_REASON_KIND: dict = {
         **{n: 'heap' for n in RT_UNSAFE_HEAP_NAMES},
         **{n: 'lock' for n in RT_UNSAFE_LOCK_NAMES},
@@ -995,7 +1014,7 @@ class TypeChecker:
         # Same fixed point over heap names only, for the `frame` domain
         # (docs/language/lifetime-domains.md, LD3).
         self._heap_unsafe_reason = self._compute_rt_unsafe_functions(
-            declarations, seed=self.RT_UNSAFE_HEAP_NAMES
+            declarations, seed=self.FRAME_UNSAFE_NAMES
         )
 
         # Phase 2.6: Collect declared lifetime domains, so a call site can be
@@ -1238,8 +1257,9 @@ class TypeChecker:
         calls `malloc` or `mutex_lock`).
 
         `seed` selects which leaf names count as banned. The default is every
-        RT-unsafe name; the `frame` lifetime domain passes the heap-only
-        subset (docs/language/lifetime-domains.md).
+        RT-unsafe name; the `frame` lifetime domain passes
+        `FRAME_UNSAFE_NAMES`, which is allocation only
+        (docs/language/lifetime-domains.md).
         """
         direct_calls: Dict[str, Set[str]] = {}
 
