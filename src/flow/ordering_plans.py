@@ -118,6 +118,11 @@ register(
         applicable=_already_ordered_applicable,
         cost=lambda f: 0.0,
         rank=0,
+        resolution=(
+            "sort where the order is provable. A call taking the array, a "
+            "write to one of its elements, or a surrounding loop all drop "
+            "the fact."
+        ),
     )
 )
 
@@ -148,6 +153,10 @@ register(
         applicable=_reverse_applicable,
         cost=lambda f: f.n / 2.0,
         rank=1,
+        resolution=(
+            "only a strictly reversed input can be sorted by reversing it; "
+            "add `unstable` if equal keys may be reordered"
+        ),
     )
 )
 
@@ -201,6 +210,10 @@ register(
         cost=_counting_cost,
         scratch=_counting_scratch,
         rank=2,
+        resolution=(
+            "narrow the element type (u8 bounds keys to [0, 255], bool to "
+            "[0, 1]) so the key range is proven without analysis"
+        ),
     )
 )
 
@@ -228,6 +241,7 @@ register(
         applicable=_insertion_applicable,
         cost=_insertion_cost,
         rank=3,
+        resolution="drop the `general` policy",
     )
 )
 
@@ -272,6 +286,11 @@ register(
         cost=_natural_merge_cost,
         scratch=_merge_scratch,
         rank=4,
+        resolution=(
+            "the merge buffer is one element per input element; sort in "
+            "chunks that fit the scratch budget, or use a narrower element "
+            "type"
+        ),
     )
 )
 
@@ -291,6 +310,11 @@ register(
         cost=lambda f: f.n + f.n * _log2(f.n),
         scratch=_merge_scratch,
         rank=5,
+        resolution=(
+            "the merge buffer is one element per input element; sort in "
+            "chunks that fit the scratch budget, or use a narrower element "
+            "type"
+        ),
     )
 )
 
@@ -329,5 +353,9 @@ register(
         applicable=_binary_applicable,
         cost=lambda f: _log2(max(2.0, float(f.n))),
         rank=0,
+        resolution=(
+            "sort the array immediately before searching it; a call taking "
+            "the array in between drops the ordering fact"
+        ),
     )
 )
