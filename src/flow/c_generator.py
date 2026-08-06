@@ -76,6 +76,11 @@ from .parser import (
     ForStatement,
 )
 from .overload import OverloadResolver
+from .attributes import (
+    normalize_target_spec,
+    parse_attribute,
+    validate_target_spec,
+)
 
 import re
 
@@ -1427,6 +1432,77 @@ class CGenerator:
         # Struct/enum/trait types - sanitize for safe C identifiers
         return _c_ident(t.name)
 
+    def _can_use_static_linkage(self, fn: FunctionDecl) -> bool:
+        """True when `static` may be added to this function without breaking a
+        caller outside the translation unit.
+
+        `main`, exported functions, `@flow_api` functions and everything in a
+        `--library` build keep external linkage: another object file may name
+        the symbol.
+        """
+        if self._library:
+            return False
+        if getattr(fn, "is_exported", False):
+            return False
+        if "flow_api" in (getattr(fn, "attributes", None) or []):
+            return False
+        if fn.name == "main":
+            return False
+        return True
+
+    def _c_attribute_prefix(self, fn: FunctionDecl) -> str:
+        """Lower Flow function attributes to C declaration specifiers.
+
+        `@inline`         -> `static inline` (`extern inline` when the symbol
+                             must stay externally visible)
+        `@always_inline`  -> `__attribute__((always_inline))` plus the same
+                             inline specifier
+        `@noinline`       -> `__attribute__((noinline))`
+        `@target("...")`  -> `__attribute__((target("...")))`
+
+        Declarations without a body in this translation unit (`extern`, forward
+        declarations) get nothing: an inline specifier there would promise a
+        definition the backend never emits.
+        """
+        attrs = getattr(fn, "attributes", None) or []
+        if not attrs:
+            return ""
+        if getattr(fn, "is_extern", False) or getattr(fn, "is_forward_decl", False):
+            return ""
+
+        names = set()
+        target_spec = None
+        for attr in attrs:
+            name, args = parse_attribute(attr)
+            if name == "target":
+                if args:
+                    target_spec = normalize_target_spec(",".join(args))
+            else:
+                names.add(name)
+
+        parts: List[str] = []
+        if "noinline" in names:
+            parts.append("__attribute__((noinline))")
+        elif "always_inline" in names:
+            parts.append("__attribute__((always_inline))")
+        if target_spec:
+            problem = validate_target_spec(target_spec)
+            if problem:
+                # Never splice an unvalidated string into generated C.
+                raise ValueError(f"{problem} (on function '{fn.name}')")
+            parts.append(f'__attribute__((target("{target_spec}")))')
+        # `inline` is only a hint, so it is dropped when `@noinline` also
+        # applies; the type checker rejects that combination anyway.
+        if ("inline" in names or "always_inline" in names) and "noinline" not in names:
+            if self._can_use_static_linkage(fn):
+                parts.append("static inline")
+            else:
+                # C99 `extern inline` = inline hint *and* an external
+                # definition, so the symbol still links from other objects.
+                parts.append("extern inline")
+
+        return (" ".join(parts) + " ") if parts else ""
+
     def _c_function_decl(self, fn: FunctionDecl, use_mangled: bool = True) -> str:
         ret = self._c_type(fn.return_type)
         if fn.parameters:
@@ -1439,7 +1515,7 @@ class CGenerator:
         if use_mangled and id(fn) in self._mangled_names:
             name = self._mangled_names[id(fn)]
         name = _c_ident(name)
-        return f"{ret} {name}({params})"
+        return f"{self._c_attribute_prefix(fn)}{ret} {name}({params})"
 
     def _sizeof_c_type_from_mangled(self, mangled_suffix: str) -> str:
         """Map sizeof_<Type> mangled suffix to a C type name."""

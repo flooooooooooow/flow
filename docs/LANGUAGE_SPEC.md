@@ -91,11 +91,13 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 | `as` | ✅ | Explicit cast |
 | `and` / `or` / `not` | ✅ | Logical (alongside `&&` / `\|\|` / `!`) |
 | `null` | ✅ | Null pointer literal |
-| `dbg` / `expect` / `test` | ⚠️ | Debug / assert / test helpers (parsed; coverage varies by host) |
-| `inline` | ⚠️ | Optimization Hint (parsed, ignored) |
-| `noinline` | ⚠️ | Optimization Hint (parsed, ignored) |
-| `always_inline` | ⚠️ | Optimization Hint (parsed, ignored) |
-| `target` | ⚠️ | Platform Target (parsed, ignored) |
+| `dbg` | ⚠️ | Prints to stderr and yields its operand in the C backend; evaluation-only in MLIR (§3.6.1) |
+| `expect` | ⚠️ | Aborts with a diagnostic in the C backend; evaluation-only in MLIR (§3.6.1) |
+| `test` | ⚠️ | Parses to a `bool` function; no backend or harness calls it (§3.6.1) |
+| `inline` | ✅ | Optimization hint; emits `static inline` (§3.6) |
+| `noinline` | ✅ | Emits `__attribute__((noinline))` (§3.6) |
+| `always_inline` | ✅ | Emits `__attribute__((always_inline))` plus the inline specifier (§3.6) |
+| `target` | ✅ | Emits `__attribute__((target("…")))`; the string's shape is checked, its meaning is the C compiler's (§3.6) |
 | `module` | ⚠️ | Parsed and flattened into the import graph; **not** a true nested namespace |
 | `theorem` / `assume` / `therefore` | ⚠️ | Verification surface (`flow-verify` / design — see [verification.md](language/verification.md)) |
 | `unit` | ✅ | Units of measure (§2.6) |
@@ -410,12 +412,94 @@ extern "C" {
 }
 ```
 
-### 3.6 Attributes (selected)
+### 3.6 Attributes
+
+An attribute is written `@name` or `@name(arg, …)` immediately before a
+`function` declaration. Several may be stacked. The full vocabulary lives in
+`src/flow/attributes.py`. A name outside it is a type error, so a misspelled
+attribute gets reported.
+
+```flow
+@always_inline
+@target("avx2")
+function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
+```
 
 | Attribute | Status | Notes |
 |-----------|--------|-------|
-| `@only` / `@guard` | ✅ | Effect / capability attributes (§3.1.1) |
+| `@only` / `@guard` | ✅ | Build-mode guards (§3.1.1) |
 | `@rt_safe` | ✅ | Real-time safety annotation — see [rt-safety.md](library/rt-safety.md) |
+| `@flow_api` | ✅ | Keep the plain, unmangled name for a stable C ABI |
+| `@gpu` | ✅ | Device code generation |
+| `@inline` | ✅ | Inline hint (below) |
+| `@noinline` | ✅ | Inline barrier (below) |
+| `@always_inline` | ✅ | Forced inline (below) |
+| `@target("…")` | ✅ | Per-function C target features (below) |
+
+#### Code-generation attributes
+
+These four change the C the backend emits. The specifier appears on both the
+forward declaration and the definition, so the two always agree.
+
+| Flow | Emitted C |
+|------|-----------|
+| `@inline` | `static inline int32_t add_i32_i32(int32_t a, int32_t b)` |
+| `@noinline` | `__attribute__((noinline)) int32_t sub_i32_i32(int32_t a, int32_t b)` |
+| `@always_inline` | `__attribute__((always_inline)) static inline int32_t mul_i32_i32(int32_t a, int32_t b)` |
+| `@target("crypto")` | `__attribute__((target("crypto"))) int32_t bump_i32(int32_t a)` |
+
+Caveats worth knowing before you reach for them:
+
+- **`@inline` is a hint.** The C compiler decides. At `-O0` nothing is inlined;
+  at `-O2` a small function is usually inlined with or without the attribute.
+- **`@inline` and `@always_inline` add `static`.** That is what makes the
+  inline definition self-contained. Some symbols have to stay visible to
+  another object file: `main`, an `export function`, a `@flow_api` function,
+  and anything in a `--library` build. For those the backend emits C99
+  `extern inline`, which keeps the external definition and the hint.
+- **`@always_inline` is honored at every optimization level,** including
+  `-O0`. If the compiler cannot inline the call, it reports an error.
+- **`@always_inline` combined with `@target(…)` usually fails to build.** A
+  caller without the named features cannot absorb a body that requires them,
+  and clang says so. Flow emits both attributes as written and lets the C
+  compiler make the call.
+- **`@noinline` cannot be combined with `@inline` or `@always_inline`;** the
+  type checker rejects the pair.
+- **`@target` is platform-specific and unverified at compile time.** Flow
+  checks only the string's shape: comma-separated items, each a bare feature
+  (`avx2`, `crypto`), a signed feature (`+avx2`, `-sse`, `no-sse`) or a
+  `key=value` pair (`arch=haswell`, `tune=native`,
+  `branch-protection=standard`). Whether those features exist is decided by the
+  host C compiler for the machine it is targeting. Clang warns on an
+  unrecognized feature and ignores it, so an x86 target string still compiles
+  on arm64 and does nothing there.
+- **Attributes on `extern` and forward declarations are dropped.** There is no
+  body in that translation unit, so an inline specifier would promise a
+  definition the backend never emits.
+- None of these change what a program computes. They only steer the C
+  compiler.
+
+#### 3.6.1 Debug and test helpers
+
+`dbg`, `expect` and `test` are keywords, and their support genuinely differs
+by backend. What each one does today:
+
+| Form | C backend | MLIR backend | JS backend |
+|------|-----------|--------------|------------|
+| `dbg <expr>` | Evaluates `<expr>` once, writes `dbg: <value>` to stderr, yields the value | Lowers to `<expr>`; no printing | Not supported |
+| `expect <cond>` | `if (!cond) { fprintf(stderr, "expect failed (line N)"); exit(1); }` | Emits the condition for its side effects; no abort | Not supported |
+| `test "name" { … }` | Becomes `bool test_name(void)` in the output | Same function, same non-use | Not supported |
+
+The Python packaging target goes through the C backend, so it inherits the C
+behaviour. `expect` requires a `bool` condition in every backend; that check is
+in the type checker.
+
+`test` blocks are the honest gap. A block parses into an ordinary
+`bool`-returning function carrying the `test` attribute, and nothing calls it:
+no backend emits a driver and no harness collects it. A failing body is never
+reached. Flow's own test suites are `tests/lang/*.flow` programs run by
+`./flow test-lang`, where `main` returns 0 on success and a distinct nonzero
+code per failing check.
 
 Enums (`enum`), traits (`trait` / `impl`), and `flow` / `unit` declarations are covered in §1.1 and §10; full field grammars live in the focused pages and EBNF.
 
