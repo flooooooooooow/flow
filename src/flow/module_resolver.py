@@ -52,6 +52,15 @@ def _fill_shader_host_stub() -> List[Any]:
     ]
 
 
+class SymbolCollisionError(ValueError):
+    """Two different declarations claim the same exported name.
+
+    A `ValueError` subclass so existing callers that catch `ValueError`
+    keep working; the distinct type lets the re-export path add context
+    about which forwarding import brought the second declaration in.
+    """
+
+
 class ModuleSymbol:
     """Represents a symbol exported from a module."""
 
@@ -77,6 +86,10 @@ class ModuleInfo:
         self.symbols: Dict[str, ModuleSymbol] = {}
         self.dependencies: Set[str] = set()
         self.is_loaded = False
+        # name -> file that this module re-exported the symbol from
+        # (`export import`). Populated before local declarations are bound,
+        # so a local declaration shadowing a re-export is caught as a clash.
+        self.reexports: Dict[str, str] = {}
 
 
 class ModuleResolver:
@@ -164,10 +177,24 @@ class ModuleResolver:
             resolved_path, import_symbols = self._resolve_import(imp, base_dir)
             if resolved_path:
                 module_info.dependencies.add(resolved_path)
-                self._resolve_recursive(resolved_path)
+                is_reexport = getattr(imp, "is_reexport", False)
+                try:
+                    self._resolve_recursive(resolved_path)
+                except SymbolCollisionError as exc:
+                    if not is_reexport:
+                        raise
+                    raise SymbolCollisionError(
+                        f"Re-export collision in {file_path}: forwarding "
+                        f"'{imp.path}' brings in a name that is already "
+                        f"exported elsewhere — {exc}"
+                    ) from exc
                 self._validate_import_symbols(
                     imp, resolved_path, import_symbols, file_path
                 )
+                if is_reexport:
+                    self._apply_reexport(
+                        imp, resolved_path, import_symbols, module_info
+                    )
 
         for decl in others:
             if isinstance(decl, ImplDecl):
@@ -177,7 +204,12 @@ class ModuleResolver:
 
             if name:
                 is_exported = getattr(decl, "is_exported", False) or name in export_names
-                decl.is_exported = is_exported
+                if name in module_info.reexports:
+                    raise SymbolCollisionError(
+                        f"Re-export collision on symbol '{name}' in {file_path}: "
+                        f"re-exported from {module_info.reexports[name]} and also "
+                        f"declared locally in {file_path}"
+                    )
                 symbol = ModuleSymbol(name, decl, file_path, is_exported)
                 module_info.symbols[name] = symbol
 
@@ -190,7 +222,7 @@ class ModuleResolver:
                             elif existing.is_exported and not is_exported:
                                 pass
                             elif is_exported == existing.is_exported:
-                                raise ValueError(
+                                raise SymbolCollisionError(
                                     f"Symbol '{name}' collision between "
                                     f"{file_path} and {existing.source_file}"
                                 )
@@ -201,6 +233,59 @@ class ModuleResolver:
 
         module_info.is_loaded = True
         self.import_stack.pop()
+
+    def _apply_reexport(
+        self,
+        imp: ImportDecl,
+        resolved_path: str,
+        import_symbols: Optional[List[str]],
+        module_info: ModuleInfo,
+    ):
+        """Forward another module's exports as exports of this one.
+
+        `export import .model` re-exports everything `.model` exports;
+        `export import .model { a, b }` re-exports just `a` and `b`.
+
+        Re-export binds the *same* `ModuleSymbol` object, so the declaration
+        is never copied into `all_declarations` a second time and the emitted
+        C contains exactly one definition. Re-exports chain: a symbol that
+        arrived in the source module by re-export is itself re-exportable.
+        """
+        source = self.modules.get(resolved_path)
+        if source is None or not source.is_loaded:
+            raise ValueError(
+                f"Cannot re-export from '{imp.path}' ({resolved_path}): the "
+                f"module is not fully loaded (circular import?)"
+            )
+
+        available = {
+            name: sym for name, sym in source.symbols.items() if sym.is_exported
+        }
+
+        if import_symbols:
+            wanted = []
+            for sym in import_symbols:
+                if sym not in available:
+                    # _validate_import_symbols already rejected genuinely
+                    # missing / unexported names; anything left here is a
+                    # citation-style brace entry with nothing to forward.
+                    continue
+                wanted.append(sym)
+            selected = {name: available[name] for name in wanted}
+        else:
+            selected = available
+
+        for name, symbol in selected.items():
+            existing = module_info.symbols.get(name)
+            if existing is not None and existing.source_file != symbol.source_file:
+                first = module_info.reexports.get(name, existing.source_file)
+                raise SymbolCollisionError(
+                    f"Re-export collision on symbol '{name}' in "
+                    f"{module_info.file_path}: re-exported from {first} and "
+                    f"from {symbol.source_file}"
+                )
+            module_info.symbols[name] = symbol
+            module_info.reexports.setdefault(name, symbol.source_file)
 
     def _resolve_import(
         self, imp: ImportDecl, base_dir: str

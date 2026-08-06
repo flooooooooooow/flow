@@ -1,0 +1,7 @@
+# A consumer names the aggregator, not the submodules.
+
+import testlib.agg { alpha_one, alpha_two, beta_one, agg_own }
+
+function main() -> i32 {
+    return alpha_one() + alpha_two() + beta_one() + agg_own()
+}
