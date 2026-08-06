@@ -154,6 +154,7 @@ let mut pl_nb: ptr<i32> = null        # 8 neighbours per cell
 let mut pl_plate: ptr<i32> = null
 let mut pl_bnd: ptr<i32> = null       # boundary class per cell
 let mut pl_tect: ptr<f32> = null      # tectonic elevation forcing, km
+let mut pl_tect2: ptr<f32> = null     # negative half of the forcing
 let mut pl_scratch: ptr<f32> = null
 
 # Per-plate state
@@ -551,6 +552,7 @@ export function planet_init() -> bool {
     pl_plate = calloc(n, 4) as ptr<i32>
     pl_bnd = calloc(n, 4) as ptr<i32>
     pl_tect = calloc(n, 4) as ptr<f32>
+    pl_tect2 = calloc(n, 4) as ptr<f32>
     pl_scratch = calloc(n, 4) as ptr<f32>
 
     pl_seed_x = calloc(np, 4) as ptr<f32>
@@ -742,6 +744,12 @@ export function planet_area_max() -> f32 {
 # away from the boundary by a decaying distance transform.
 # ---------------------------------------------------------------------------
 
+# Converts a dimensionless convergence rate into kilometres of crustal
+# thickening. Chosen so a full-speed continental collision builds a belt of
+# about 5 km and a full-speed subduction zone cuts a trench of about 4 km
+# below the surrounding abyssal plain, which is the range Earth shows.
+const PL_TECT_GAIN: f32 = 2.2
+
 function pl_plate_velocity(p: i32, i: i32) -> PVec3 {
     let axis: PVec3 = PVec3 { x: pl_pole_x[p], y: pl_pole_y[p], z: pl_pole_z[p] }
     let pos: PVec3 = PVec3 { x: pl_px[i], y: pl_py[i], z: pl_pz[i] }
@@ -862,14 +870,22 @@ export function planet_stage_tectonics(nplates: i32) -> void {
             }
         }
         pl_bnd[i] = best_class
-        pl_tect[i] = best_force
+        pl_tect[i] = best_force * PL_TECT_GAIN
     }
 
-    # Spread the boundary forcing inland. Two decaying distance transforms,
-    # one for uplift and one for subsidence, because mountain belts are wide
-    # and trenches are narrow.
-    pl_spread(0.885, 16, 1.0)
-    pl_spread(0.700, 10, -1.0)
+    # Spread the boundary forcing inland. Uplift and subsidence travel in
+    # separate fields with separate decays, because mountain belts are wide
+    # and trenches are narrow, and because a positive front must not be
+    # allowed to erase the trench it sits next to.
+    for i in 0 to pl_ncells {
+        pl_tect2[i] = pl_minf(0.0, pl_tect[i])
+        pl_tect[i] = pl_maxf(0.0, pl_tect[i])
+    }
+    pl_spread(pl_tect, 0.885, 18, 1.0)
+    pl_spread(pl_tect2, 0.760, 12, -1.0)
+    for i in 0 to pl_ncells {
+        pl_tect[i] = pl_tect[i] + pl_tect2[i]
+    }
     pl_clock_stop(2)
 }
 
@@ -883,21 +899,19 @@ function pl_random_dir() -> PVec3 {
 
 # One signed distance transform over the neighbour graph: a cell takes the
 # largest-magnitude decayed value among its neighbours, if that beats what it
-# already holds. `sign` selects which polarity is propagated.
-function pl_spread(decay: f32, rings: i32, sign: f32) -> void {
+# already holds. `sign` selects which polarity is propagated. Each ring is a
+# full double-buffered pass, so the result is independent of scan order.
+function pl_spread(field: ptr<f32>, decay: f32, rings: i32, sign: f32) -> void {
     for r in 0 to rings {
-        for i in 0 to pl_ncells { pl_scratch[i] = pl_tect[i] }
+        for i in 0 to pl_ncells { pl_scratch[i] = field[i] }
         for i in 0 to pl_ncells {
-            let cur: f32 = pl_tect[i]
-            let mut best: f32 = cur
+            let mut best: f32 = field[i]
             for d in 0 to 8 {
                 let nid: i32 = pl_nb[i * 8 + d]
                 let cand: f32 = pl_scratch[nid] * decay
-                if cand * sign > 0.0 and cand * sign > best * sign {
-                    best = cand
-                }
+                if cand * sign > best * sign { best = cand }
             }
-            pl_tect[i] = best
+            field[i] = best
         }
     }
 }
@@ -938,7 +952,7 @@ export function planet_boundary_length_km() -> f32 {
 # ---------------------------------------------------------------------------
 
 const PL_CONT_BASE: f32 = 0.95      # km, continental platform above datum
-const PL_OCEAN_BASE: f32 = -4.10    # km, abyssal plain below datum
+const PL_OCEAN_BASE: f32 = -3.50    # km, abyssal plain below datum
 
 export function planet_stage_elevation() -> void {
     if !planet_init() { return }
