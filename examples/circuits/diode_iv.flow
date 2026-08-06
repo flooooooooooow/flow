@@ -1,0 +1,314 @@
+# DIODE I-V: Newton-Raphson against the Shockley equation.
+#
+# WHY THE MATRIX AND NOT A `flow` BLOCK
+#   Nothing here evolves. A diode in series with a resistor is one nonlinear
+#   algebraic equation, and the answer is where two curves cross. That is a
+#   root find, not an integration, so this example uses the DC operating point
+#   of stdlib/circuit.flow.
+#
+# THE MODEL
+#   The solver's diode is the Shockley equation with no series resistance and
+#   no breakdown:
+#
+#     Id = Is * (exp(Vd / (n VT)) - 1)
+#
+#   with Is = 10 fA, n = 1 and VT = 25.852 mV, which is kT/q at 300 K. Each
+#   Newton iteration replaces it with the tangent at the current guess,
+#
+#     Id ~= gd * Vd + Ieq,     gd = Is/(n VT) exp(Vd / (n VT))
+#
+#   and re-solves the whole matrix. Junction voltages are limited between
+#   iterations by the standard pnjlim rule, without which the first iteration
+#   from a cold start asks for exp(400) and the solve dies.
+#
+# TWO SWEEPS
+#   A. The diode alone across a voltage source. Vd is pinned, so the converged
+#      current must be the Shockley value to full precision. This checks the
+#      element, the limiting and the convergence test in isolation.
+#
+#   B. A 1 kohm resistor in series, swept from -1 V to +5 V. Now Vd is not
+#      known in advance: it solves Vd + R Is (exp(Vd/(n VT)) - 1) = V. The
+#      reference is that same equation solved by 200 steps of bisection, which
+#      is an independent method with a different failure mode from Newton.
+#      Both must agree.
+#
+#   GMIN is switched off for both sweeps. Every node has a DC path through the
+#   resistor, so the solver does not need the leakage term, and with it off the
+#   reverse-bias current is the true -Is rather than -Is - gmin*Vd.
+#
+# ALSO MEASURED
+#   The forward slope. From two points a decade of current apart the model
+#   must show n VT ln(10) volts between them: the textbook 59.5 mV/decade at
+#   room temperature. Recovering n VT from the simulated curve is a check on
+#   the whole path rather than on any single equation.
+#
+# EVIDENCE
+#   Maximum relative current error over both sweeps, gated at 1e-9 against
+#   the closed form; the recovered n VT against 25.852 mV, gated at 1e-6; and
+#   the worst Newton iteration count over the sweep.
+#
+# Run: ./flow run examples/circuits/diode_iv.flow
+
+import "stdlib/circuit.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+const IS_SAT: f64 = 1e-14
+const NVT: f64 = 0.025852
+const RSER: f64 = 1000.0
+const LN10: f64 = 2.302585092994046
+
+function shockley(vd: f64) -> f64 {
+    return IS_SAT * (exp(vd / NVT) - 1.0)
+}
+
+# The series equation V = Vd + R * Id(Vd), solved by bisection. Monotone in
+# Vd, so 200 halvings put the bracket well below double precision.
+function bisect_vd(vsrc: f64) -> f64 {
+    let mut lo: f64 = 0.0 - 2.0
+    let mut hi: f64 = 2.0
+    if vsrc < lo {
+        lo = vsrc - 1.0
+    }
+    if vsrc > hi {
+        hi = vsrc + 1.0
+    }
+    for k in 0 to 200 {
+        let mid: f64 = 0.5 * (lo + hi)
+        let f: f64 = mid + RSER * shockley(mid) - vsrc
+        if f > 0.0 {
+            hi = mid
+        } else {
+            lo = mid
+        }
+    }
+    return 0.5 * (lo + hi)
+}
+
+function relerr(got: f64, want: f64) -> f64 {
+    let s: f64 = fabs(want)
+    if s < 1e-30 {
+        return fabs(got - want)
+    }
+    return fabs(got - want) / s
+}
+
+# ---------------------------------------------------------------------------
+# Sweep A: the diode alone
+# ---------------------------------------------------------------------------
+
+let mut a_worst: f64 = 0.0
+let mut a_iters: i32 = 0
+
+function sweep_a() -> bool {
+    println("")
+    println("  SWEEP A  diode alone, Vd pinned by the source")
+    println("")
+    println("      Vd [V]        Id solved [A]       Shockley [A]     rel err")
+    println("    --------  -------------------  -----------------  ----------")
+    a_worst = 0.0
+    a_iters = 0
+    for k in 0 to 15 {
+        let vd: f64 = 0.0 - 0.4 + 0.1 * (k as f64)
+        if !circ_reset() {
+            return false
+        }
+        circ_set_gmin(0.0)
+        circ_set_tol(1e-13, 1e-16)
+        let vs: i32 = circ_add_v(1, 0, vd)
+        let d: i32 = circ_add_d(1, 0, IS_SAT, NVT)
+        if d < 0 or !circ_finalize() {
+            return false
+        }
+        if !circ_op() {
+            print("    FAIL: no convergence at Vd = ")
+            printf("%.3f", vd)
+            println("")
+            return false
+        }
+        let got: f64 = circ_i(d)
+        let want: f64 = shockley(vd)
+        let e: f64 = relerr(got, want)
+        if e > a_worst {
+            a_worst = e
+        }
+        if circ_iterations() > a_iters {
+            a_iters = circ_iterations()
+        }
+        if k % 2 == 0 {
+            print("    ")
+            printf("%8.3f", vd)
+            printf("  %19.10e", got)
+            printf("  %17.9e", want)
+            printf("  %10.2e", e)
+            println("")
+        }
+    }
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Sweep B: 1 kohm in series
+# ---------------------------------------------------------------------------
+
+let mut b_worst: f64 = 0.0
+let mut b_iters: i32 = 0
+
+function sweep_b() -> bool {
+    println("")
+    println("  SWEEP B  1 kohm in series, V swept -1 V to +5 V")
+    println("")
+    println("     Vsrc [V]     Vd solved [V]   Vd bisection [V]    Id [A]        rel err  its")
+    println("    ---------  ----------------  -----------------  ------------  ----------  ---")
+    b_worst = 0.0
+    b_iters = 0
+    if !circ_reset() {
+        return false
+    }
+    circ_set_gmin(0.0)
+    circ_set_tol(1e-13, 1e-16)
+    let vs: i32 = circ_add_v(1, 0, 0.0)
+    let r: i32 = circ_add_r(1, 2, RSER)
+    let d: i32 = circ_add_d(2, 0, IS_SAT, NVT)
+    if d < 0 or !circ_finalize() {
+        return false
+    }
+    for k in 0 to 61 {
+        let v: f64 = 0.0 - 1.0 + 0.1 * (k as f64)
+        circ_set_value(vs, v)
+        if !circ_op() {
+            print("    FAIL: no convergence at V = ")
+            printf("%.3f", v)
+            println("")
+            return false
+        }
+        let vd_got: f64 = circ_v(2)
+        let vd_ref: f64 = bisect_vd(v)
+        let id_got: f64 = circ_i(d)
+        let id_ref: f64 = shockley(vd_ref)
+        let e: f64 = relerr(id_got, id_ref)
+        if e > b_worst {
+            b_worst = e
+        }
+        if circ_iterations() > b_iters {
+            b_iters = circ_iterations()
+        }
+        if k % 6 == 0 or k == 60 {
+            print("    ")
+            printf("%9.2f", v)
+            printf("  %16.9f", vd_got)
+            printf("  %17.9f", vd_ref)
+            printf("  %12.5e", id_got)
+            printf("  %10.2e", e)
+            printf("  %3.0f", circ_iterations() as f64)
+            println("")
+        }
+    }
+    return true
+}
+
+# Drive the diode with an ideal current source and read the junction voltage.
+# A decade of current apart, the difference must be n VT ln 10.
+function vd_at_current(id: f64) -> f64 {
+    if !circ_reset() {
+        return 0.0
+    }
+    circ_set_gmin(0.0)
+    circ_set_tol(1e-13, 1e-16)
+    # Current enters node 0 and leaves node 1, so node 1 is fed id amps.
+    let src: i32 = circ_add_i(0, 1, id)
+    let d: i32 = circ_add_d(1, 0, IS_SAT, NVT)
+    if d < 0 or !circ_finalize() {
+        return 0.0
+    }
+    if !circ_op() {
+        return 0.0
+    }
+    return circ_v(1)
+}
+
+function main() -> i32 {
+    println("")
+    println("  DIODE I-V  --  Newton-Raphson vs Shockley")
+    println("  =========================================")
+    println("")
+    print("  Is = ")
+    printf("%.3e", IS_SAT)
+    print(" A,  n VT = ")
+    printf("%.6f", NVT)
+    print(" V,  Rseries = ")
+    printf("%.0f", RSER)
+    println(" ohm,  gmin off")
+
+    if !sweep_a() {
+        println("  FAIL: sweep A did not complete")
+        return 1
+    }
+    if !sweep_b() {
+        println("  FAIL: sweep B did not complete")
+        return 2
+    }
+
+    # Recover n VT from a decade of current, forced by an ideal source.
+    let vd1: f64 = vd_at_current(1e-6)
+    let vd10: f64 = vd_at_current(1e-5)
+    let nvt_meas: f64 = (vd10 - vd1) / LN10
+    let nvt_err: f64 = relerr(nvt_meas, NVT)
+
+    println("")
+    println("  SLOPE FROM THE SIMULATED CURVE  (current forced, junction read)")
+    print("    Vd at   1 uA : ")
+    printf("%.9f", vd1)
+    println(" V")
+    print("    Vd at  10 uA : ")
+    printf("%.9f", vd10)
+    println(" V")
+    print("    one decade   : ")
+    printf("%.9f", vd10 - vd1)
+    print(" V   reference n VT ln 10 = ")
+    printf("%.9f", NVT * LN10)
+    println(" V")
+    print("    recovered n VT ")
+    printf("%.9f", nvt_meas)
+    print(" V vs ")
+    printf("%.9f", NVT)
+    print(" V   rel err ")
+    printf("%.3e", nvt_err)
+    println("")
+
+    println("")
+    print("  worst relative current error, sweep A: ")
+    printf("%.3e", a_worst)
+    print("   worst Newton its ")
+    print(a_iters)
+    println("")
+    print("  worst relative current error, sweep B: ")
+    printf("%.3e", b_worst)
+    print("   worst Newton its ")
+    print(b_iters)
+    println("")
+    print("  gates: current 1.000e-09, recovered n VT 1.000e-06")
+    println("")
+    println("")
+
+    if a_worst != a_worst or b_worst != b_worst or nvt_err != nvt_err {
+        println("  FAIL: NaN in the sweep")
+        return 3
+    }
+    if a_worst >= 1e-9 or b_worst >= 1e-9 {
+        println("  FAIL: solved current does not match the Shockley equation")
+        return 4
+    }
+    if nvt_err >= 1e-6 {
+        println("  FAIL: the slope of the simulated curve is not n VT ln 10")
+        return 5
+    }
+    println("  PASS: Newton reproduces Shockley on both sweeps, and the")
+    println("        simulated curve has the thermal-voltage slope it should")
+    return 0
+}

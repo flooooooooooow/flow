@@ -1,0 +1,1241 @@
+# MODIFIED NODAL ANALYSIS: a small circuit simulator core, in Flow.
+#
+# WHY A MATRIX AND NOT A `flow` BLOCK
+#   A lumped circuit is a differential-algebraic system, not an ODE. Kirchhoff's
+#   current law is an algebraic constraint that couples every node at once, and
+#   an ideal voltage source has no state to integrate at all. You cannot write
+#   `v evolves as ...` for a node whose voltage is pinned by a source. So the
+#   honest representation is the one SPICE uses: build a linear system each
+#   timestep, factor it, solve it.
+#
+#   Where a circuit *is* an ODE in disguise (an RC, an LC tank in state form,
+#   a PLL, a gate with an RC output) `examples/circuits/` writes it as a `flow`
+#   block instead, and says so in the header. This file is for everything else.
+#
+# THE METHOD
+#   Unknowns are the n node voltages (ground is node 0 and is not an unknown)
+#   followed by one branch current per voltage source, per VCVS and per
+#   inductor. Row i of the matrix is KCL at node i: the sum of currents leaving
+#   node i into the attached elements is zero. Reactive elements are replaced
+#   by their companion model at the current step size: a conductance in
+#   parallel with a current source that carries the history.
+#
+#     backward Euler   i_C(t) = (C/dt)(v - v_prev)
+#     trapezoidal      i_C(t) = (2C/dt)(v - v_prev) - i_prev
+#
+#   Nonlinear elements (diode, BJT) are linearized at the current iterate and
+#   the whole system is re-solved until Newton-Raphson converges. Junction
+#   voltages are limited between iterations with the standard `pnjlim` rule so
+#   the exponentials cannot overflow.
+#
+# CAPS (compile-time, enforced by circ_finalize)
+#   CIRC_MAX_NODES  80    non-ground nodes, numbered 1..80 (0 is ground)
+#   CIRC_MAX_EXTRA  80    branch-current unknowns: one per V, per E, per L
+#   CIRC_MAX_DIM   160    matrix order; must be >= MAX_NODES + MAX_EXTRA
+#   CIRC_MAX_ELEMS 256    elements of every kind together
+#
+#   The workspace is one 160x160 dense f64 matrix (205 kB) plus the element
+#   tables, allocated once on first use and reused for the life of the process.
+#   Nothing is allocated per step. Exceeding a cap makes circ_finalize return
+#   false and sets circ_error() to CIRC_ERR_CAPS; it never truncates silently.
+#
+# COST
+#   Dense LU is O(dim^3) to factor and O(dim^2) to solve. When the circuit is
+#   linear and dt has not changed the matrix is constant, so the factorization
+#   is reused and each step costs one O(dim^2) triangular solve. That reuse is
+#   what makes the 32-segment transmission line affordable.
+#
+# Used by: examples/circuits/ (see its README)
+
+extern {
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+# ---------------------------------------------------------------------------
+# Caps and enumerations
+# ---------------------------------------------------------------------------
+
+const CIRC_MAX_NODES: i32 = 80
+const CIRC_MAX_EXTRA: i32 = 80
+const CIRC_MAX_DIM: i32 = 160
+const CIRC_MAX_ELEMS: i32 = 256
+
+# Element kinds.
+const CIRC_R: i32 = 0       # resistor
+const CIRC_C: i32 = 1       # capacitor
+const CIRC_L: i32 = 2       # inductor
+const CIRC_V: i32 = 3       # independent voltage source
+const CIRC_I: i32 = 4       # independent current source
+const CIRC_E: i32 = 5       # voltage-controlled voltage source
+const CIRC_G: i32 = 6       # voltage-controlled current source
+const CIRC_D: i32 = 7       # diode (Shockley)
+const CIRC_Q: i32 = 8       # NPN BJT (Ebers-Moll, transport form)
+
+# Integration methods.
+const CIRC_BE: i32 = 0      # backward Euler
+const CIRC_TRAP: i32 = 1    # trapezoidal
+
+# Error codes, readable with circ_error().
+const CIRC_OK: i32 = 0
+const CIRC_ERR_CAPS: i32 = 1        # a cap was exceeded
+const CIRC_ERR_SINGULAR: i32 = 2    # LU found no usable pivot
+const CIRC_ERR_NOCONV: i32 = 3      # Newton hit the iteration limit
+const CIRC_ERR_ALLOC: i32 = 4       # workspace allocation failed
+const CIRC_ERR_STATE: i32 = 5       # called out of order
+
+const CIRC_SQRT2: f64 = 1.4142135623730951
+
+# ---------------------------------------------------------------------------
+# Element tables (module statics; allocated once)
+# ---------------------------------------------------------------------------
+
+let mut ce_kind: ptr<i32> = null
+let mut ce_na: ptr<i32> = null      # n+ / anode / collector
+let mut ce_nb: ptr<i32> = null      # n- / cathode / base
+let mut ce_nc: ptr<i32> = null      # control+ / emitter
+let mut ce_nd: ptr<i32> = null      # control-
+let mut ce_row: ptr<i32> = null     # branch-current row, or -1
+let mut ce_val: ptr<f64> = null     # ohms / farads / henries / volts / amps / gain
+let mut ce_p1: ptr<f64> = null      # saturation current / forward beta
+let mut ce_p2: ptr<f64> = null      # n*VT / reverse beta
+let mut ce_p3: ptr<f64> = null      # thermal voltage (BJT)
+let mut ce_s0: ptr<f64> = null      # history: v_prev (C) / i_prev (L) / vbe (Q)
+let mut ce_s1: ptr<f64> = null      # history: i_prev (C) / v_prev (L) / vd, vbc
+let mut ce_cur: ptr<f64> = null     # branch current after the last accepted solve
+let mut ce_ic: ptr<f64> = null      # user initial condition
+let mut ce_sm: ptr<f64> = null      # running max |state|, the adaptive scale
+
+# Save buffers for step-doubling.
+let mut bk_s0: ptr<f64> = null
+let mut bk_s1: ptr<f64> = null
+let mut bk_sm: ptr<f64> = null
+let mut bk_x: ptr<f64> = null
+let mut f1_s0: ptr<f64> = null      # state after the trial full step
+
+# ---------------------------------------------------------------------------
+# Matrix workspace
+# ---------------------------------------------------------------------------
+
+let mut mna_a: ptr<f64> = null      # DIM x DIM, row major; holds LU after factor
+let mut mna_b: ptr<f64> = null
+let mut mna_x: ptr<f64> = null
+let mut mna_xp: ptr<f64> = null     # previous Newton iterate
+let mut mna_piv: ptr<i32> = null
+
+# ---------------------------------------------------------------------------
+# Simulator state
+# ---------------------------------------------------------------------------
+
+let mut circ_alloced: bool = false
+let mut circ_nelem: i32 = 0
+let mut circ_nnodes: i32 = 0        # highest node index referenced
+let mut circ_nextra: i32 = 0
+let mut circ_dim: i32 = 0
+let mut circ_nl: i32 = 0            # count of nonlinear elements
+let mut circ_final: bool = false
+let mut circ_mode: i32 = 0          # 0 = DC, 1 = transient
+let mut circ_method: i32 = 0
+let mut circ_gmin: f64 = 1e-12
+let mut circ_reltol: f64 = 1e-9
+let mut circ_abstol: f64 = 1e-12
+let mut circ_maxiter: i32 = 200
+let mut circ_iters: i32 = 0         # Newton iterations of the last solve
+let mut circ_maxiters: i32 = 0      # worst Newton count since the last reset
+let mut circ_solves: i32 = 0        # LU solves since the last reset
+let mut circ_factors: i32 = 0       # LU factorizations since the last reset
+let mut circ_errcode: i32 = 0
+let mut circ_a_locked: bool = false # suppress matrix stamps (b-only assembly)
+let mut circ_lu_valid: bool = false
+let mut circ_lu_dt: f64 = -1.0
+let mut circ_lu_mode: i32 = -1
+let mut circ_lu_method: i32 = -1
+let mut circ_time: f64 = 0.0
+let mut circ_dt_next: f64 = 0.0
+let mut circ_rejects: i32 = 0       # adaptive steps rejected since the last reset
+
+# ---------------------------------------------------------------------------
+# Allocation
+# ---------------------------------------------------------------------------
+
+function circ_alloc() -> bool {
+    if circ_alloced {
+        return true
+    }
+    let ne: i64 = CIRC_MAX_ELEMS as i64
+    let nd: i64 = CIRC_MAX_DIM as i64
+    ce_kind = calloc(ne, 4) as ptr<i32>
+    ce_na = calloc(ne, 4) as ptr<i32>
+    ce_nb = calloc(ne, 4) as ptr<i32>
+    ce_nc = calloc(ne, 4) as ptr<i32>
+    ce_nd = calloc(ne, 4) as ptr<i32>
+    ce_row = calloc(ne, 4) as ptr<i32>
+    ce_val = calloc(ne, 8) as ptr<f64>
+    ce_p1 = calloc(ne, 8) as ptr<f64>
+    ce_p2 = calloc(ne, 8) as ptr<f64>
+    ce_p3 = calloc(ne, 8) as ptr<f64>
+    ce_s0 = calloc(ne, 8) as ptr<f64>
+    ce_s1 = calloc(ne, 8) as ptr<f64>
+    ce_cur = calloc(ne, 8) as ptr<f64>
+    ce_ic = calloc(ne, 8) as ptr<f64>
+    ce_sm = calloc(ne, 8) as ptr<f64>
+    bk_s0 = calloc(ne, 8) as ptr<f64>
+    bk_s1 = calloc(ne, 8) as ptr<f64>
+    bk_sm = calloc(ne, 8) as ptr<f64>
+    f1_s0 = calloc(ne, 8) as ptr<f64>
+    mna_a = calloc(nd * nd, 8) as ptr<f64>
+    mna_b = calloc(nd, 8) as ptr<f64>
+    mna_x = calloc(nd, 8) as ptr<f64>
+    mna_xp = calloc(nd, 8) as ptr<f64>
+    bk_x = calloc(nd, 8) as ptr<f64>
+    mna_piv = calloc(nd, 4) as ptr<i32>
+    if mna_a == null or mna_piv == null or ce_kind == null or f1_s0 == null {
+        circ_errcode = CIRC_ERR_ALLOC
+        return false
+    }
+    circ_alloced = true
+    return true
+}
+
+# Clear the netlist. Every program starts here.
+export function circ_reset() -> bool {
+    if !circ_alloc() {
+        return false
+    }
+    circ_nelem = 0
+    circ_nnodes = 0
+    circ_nextra = 0
+    circ_dim = 0
+    circ_nl = 0
+    circ_final = false
+    circ_mode = 0
+    circ_method = CIRC_BE
+    circ_gmin = 1e-12
+    circ_reltol = 1e-9
+    circ_abstol = 1e-12
+    circ_maxiter = 200
+    circ_iters = 0
+    circ_maxiters = 0
+    circ_solves = 0
+    circ_factors = 0
+    circ_rejects = 0
+    circ_errcode = CIRC_OK
+    circ_lu_valid = false
+    circ_lu_dt = -1.0
+    circ_lu_mode = -1
+    circ_lu_method = -1
+    circ_time = 0.0
+    circ_dt_next = 0.0
+    for i in 0 to CIRC_MAX_ELEMS {
+        ce_kind[i] = 0
+        ce_na[i] = 0
+        ce_nb[i] = 0
+        ce_nc[i] = 0
+        ce_nd[i] = 0
+        ce_row[i] = -1
+        ce_val[i] = 0.0
+        ce_p1[i] = 0.0
+        ce_p2[i] = 0.0
+        ce_p3[i] = 0.0
+        ce_s0[i] = 0.0
+        ce_s1[i] = 0.0
+        ce_cur[i] = 0.0
+        ce_ic[i] = 0.0
+        ce_sm[i] = 0.0
+    }
+    for i in 0 to CIRC_MAX_DIM {
+        mna_b[i] = 0.0
+        mna_x[i] = 0.0
+        mna_xp[i] = 0.0
+        mna_piv[i] = 0
+    }
+    return true
+}
+
+export function circ_error() -> i32 {
+    return circ_errcode
+}
+
+# ---------------------------------------------------------------------------
+# Netlist construction
+# ---------------------------------------------------------------------------
+
+function circ_note_node(n: i32) -> void {
+    if n > circ_nnodes {
+        circ_nnodes = n
+    }
+}
+
+function circ_new_elem(kind: i32, a: i32, b: i32, c: i32, d: i32,
+                       val: f64) -> i32 {
+    if circ_nelem >= CIRC_MAX_ELEMS or a > CIRC_MAX_NODES
+        or b > CIRC_MAX_NODES or c > CIRC_MAX_NODES or d > CIRC_MAX_NODES
+        or a < 0 or b < 0 or c < 0 or d < 0 {
+        circ_errcode = CIRC_ERR_CAPS
+        return -1
+    }
+    let e: i32 = circ_nelem
+    ce_kind[e] = kind
+    ce_na[e] = a
+    ce_nb[e] = b
+    ce_nc[e] = c
+    ce_nd[e] = d
+    ce_val[e] = val
+    ce_row[e] = -1
+    circ_note_node(a)
+    circ_note_node(b)
+    circ_note_node(c)
+    circ_note_node(d)
+    circ_nelem = e + 1
+    circ_final = false
+    circ_lu_valid = false
+    return e
+}
+
+export function circ_add_r(n1: i32, n2: i32, ohms: f64) -> i32 {
+    return circ_new_elem(CIRC_R, n1, n2, 0, 0, ohms)
+}
+
+# Capacitor with an initial voltage (used only when circ_tran_init(true)).
+export function circ_add_c(n1: i32, n2: i32, farads: f64, v0: f64) -> i32 {
+    let e: i32 = circ_new_elem(CIRC_C, n1, n2, 0, 0, farads)
+    if e >= 0 {
+        ce_ic[e] = v0
+    }
+    return e
+}
+
+# Inductor with an initial current (flowing n1 -> n2).
+export function circ_add_l(n1: i32, n2: i32, henries: f64, i0: f64) -> i32 {
+    let e: i32 = circ_new_elem(CIRC_L, n1, n2, 0, 0, henries)
+    if e >= 0 {
+        ce_ic[e] = i0
+    }
+    return e
+}
+
+export function circ_add_v(n1: i32, n2: i32, volts: f64) -> i32 {
+    return circ_new_elem(CIRC_V, n1, n2, 0, 0, volts)
+}
+
+# Current amps flows into n1, through the source, out of n2 (SPICE sign).
+export function circ_add_i(n1: i32, n2: i32, amps: f64) -> i32 {
+    return circ_new_elem(CIRC_I, n1, n2, 0, 0, amps)
+}
+
+# VCVS: v(n1) - v(n2) = gain * (v(c1) - v(c2))
+export function circ_add_e(n1: i32, n2: i32, c1: i32, c2: i32,
+                           gain: f64) -> i32 {
+    return circ_new_elem(CIRC_E, n1, n2, c1, c2, gain)
+}
+
+# VCCS: current gm * (v(c1) - v(c2)) flows into n1 and out of n2.
+export function circ_add_g(n1: i32, n2: i32, c1: i32, c2: i32,
+                           gm: f64) -> i32 {
+    return circ_new_elem(CIRC_G, n1, n2, c1, c2, gm)
+}
+
+# Diode: i = Is * (exp(v / (n*VT)) - 1), anode n1, cathode n2.
+export function circ_add_d(n1: i32, n2: i32, is_sat: f64, nvt: f64) -> i32 {
+    let e: i32 = circ_new_elem(CIRC_D, n1, n2, 0, 0, 0.0)
+    if e >= 0 {
+        ce_p1[e] = is_sat
+        ce_p2[e] = nvt
+        circ_nl = circ_nl + 1
+    }
+    return e
+}
+
+# NPN BJT, Ebers-Moll transport form. Terminals collector, base, emitter.
+export function circ_add_q(nc: i32, nb: i32, ne: i32, is_sat: f64,
+                           bf: f64, br: f64, vt: f64) -> i32 {
+    let e: i32 = circ_new_elem(CIRC_Q, nc, nb, ne, 0, 0.0)
+    if e >= 0 {
+        ce_p1[e] = is_sat
+        ce_p2[e] = bf
+        ce_p3[e] = br
+        ce_s0[e] = 0.0
+        ce_s1[e] = 0.0
+        ce_val[e] = vt
+        circ_nl = circ_nl + 1
+    }
+    return e
+}
+
+# Change an element value in place (a source waveform, a switch resistance).
+export function circ_set_value(e: i32, val: f64) -> void {
+    if e < 0 or e >= circ_nelem {
+        return
+    }
+    if ce_val[e] != val {
+        ce_val[e] = val
+        # Source values only touch b; R, C, L and gains touch the matrix.
+        let k: i32 = ce_kind[e]
+        if k != CIRC_V and k != CIRC_I {
+            circ_lu_valid = false
+        }
+    }
+}
+
+export function circ_get_value(e: i32) -> f64 {
+    if e < 0 or e >= circ_nelem {
+        return 0.0
+    }
+    return ce_val[e]
+}
+
+export function circ_set_method(m: i32) -> void {
+    if m != circ_method {
+        circ_method = m
+        circ_lu_valid = false
+    }
+}
+
+export function circ_set_gmin(g: f64) -> void {
+    circ_gmin = g
+    circ_lu_valid = false
+}
+
+export function circ_set_tol(reltol: f64, abstol: f64) -> void {
+    circ_reltol = reltol
+    circ_abstol = abstol
+}
+
+export function circ_set_maxiter(n: i32) -> void {
+    circ_maxiter = n
+}
+
+# Assign branch-current rows and fix the matrix order. Returns false when a
+# cap is exceeded.
+export function circ_finalize() -> bool {
+    if circ_nnodes > CIRC_MAX_NODES {
+        circ_errcode = CIRC_ERR_CAPS
+        return false
+    }
+    circ_nextra = 0
+    for e in 0 to circ_nelem {
+        let k: i32 = ce_kind[e]
+        if k == CIRC_V or k == CIRC_E or k == CIRC_L {
+            if circ_nextra >= CIRC_MAX_EXTRA {
+                circ_errcode = CIRC_ERR_CAPS
+                return false
+            }
+            ce_row[e] = circ_nnodes + circ_nextra
+            circ_nextra = circ_nextra + 1
+        } else {
+            ce_row[e] = -1
+        }
+    }
+    circ_dim = circ_nnodes + circ_nextra
+    if circ_dim > CIRC_MAX_DIM or circ_dim < 1 {
+        circ_errcode = CIRC_ERR_CAPS
+        return false
+    }
+    circ_final = true
+    circ_lu_valid = false
+    return true
+}
+
+export function circ_dim_of() -> i32 {
+    return circ_dim
+}
+
+export function circ_node_count() -> i32 {
+    return circ_nnodes
+}
+
+# ---------------------------------------------------------------------------
+# Stamping primitives
+# ---------------------------------------------------------------------------
+
+function mstamp(i: i32, j: i32, v: f64) -> void {
+    if circ_a_locked {
+        return
+    }
+    if i < 0 or j < 0 {
+        return
+    }
+    mna_a[i * circ_dim + j] = mna_a[i * circ_dim + j] + v
+}
+
+function bstamp(i: i32, v: f64) -> void {
+    if i < 0 {
+        return
+    }
+    mna_b[i] = mna_b[i] + v
+}
+
+# Conductance g bridging n1 and n2.
+function stamp_g(n1: i32, n2: i32, g: f64) -> void {
+    let r1: i32 = n1 - 1
+    let r2: i32 = n2 - 1
+    mstamp(r1, r1, g)
+    mstamp(r2, r2, g)
+    mstamp(r1, r2, 0.0 - g)
+    mstamp(r2, r1, 0.0 - g)
+}
+
+# Current i entering n1, leaving n2 (the SPICE current-source direction).
+function stamp_i(n1: i32, n2: i32, i: f64) -> void {
+    bstamp(n1 - 1, 0.0 - i)
+    bstamp(n2 - 1, i)
+}
+
+# ---------------------------------------------------------------------------
+# Junction limiting (SPICE pnjlim): keeps exp() from overflowing and keeps
+# Newton from stepping past the knee of the exponential.
+# ---------------------------------------------------------------------------
+
+function jlimit(vnew: f64, vold: f64, vt: f64, vcrit: f64) -> f64 {
+    if vnew > vcrit and fabs(vnew - vold) > (vt + vt) {
+        if vold > 0.0 {
+            let arg: f64 = 1.0 + (vnew - vold) / vt
+            if arg > 0.0 {
+                return vold + vt * log(arg)
+            }
+            return vcrit
+        }
+        return vt * log(vnew / vt)
+    }
+    if vnew < (0.0 - 40.0) * vt {
+        return (0.0 - 40.0) * vt
+    }
+    return vnew
+}
+
+function jcrit(is_sat: f64, vt: f64) -> f64 {
+    return vt * log(vt / (CIRC_SQRT2 * is_sat))
+}
+
+export function circ_v(node: i32) -> f64 {
+    if node <= 0 or node > circ_nnodes {
+        return 0.0
+    }
+    return mna_x[node - 1]
+}
+
+export function circ_vd(n1: i32, n2: i32) -> f64 {
+    return circ_v(n1) - circ_v(n2)
+}
+
+# ---------------------------------------------------------------------------
+# Assembly
+# ---------------------------------------------------------------------------
+
+function stamp_diode(e: i32) -> void {
+    let is_sat: f64 = ce_p1[e]
+    let vt: f64 = ce_p2[e]
+    let n1: i32 = ce_na[e]
+    let n2: i32 = ce_nb[e]
+    let vraw: f64 = circ_vd(n1, n2)
+    let vd: f64 = jlimit(vraw, ce_s1[e], vt, jcrit(is_sat, vt))
+    ce_s1[e] = vd
+    let ex: f64 = exp(vd / vt)
+    let id: f64 = is_sat * (ex - 1.0)
+    let gd: f64 = is_sat * ex / vt + circ_gmin
+    stamp_g(n1, n2, gd)
+    stamp_i(n1, n2, id - gd * vd)
+}
+
+function stamp_bjt(e: i32) -> void {
+    let is_sat: f64 = ce_p1[e]
+    let bf: f64 = ce_p2[e]
+    let br: f64 = ce_p3[e]
+    let vt: f64 = ce_val[e]
+    let nc: i32 = ce_na[e]
+    let nb: i32 = ce_nb[e]
+    let ne: i32 = ce_nc[e]
+    let vcrit: f64 = jcrit(is_sat, vt)
+    let vbe: f64 = jlimit(circ_vd(nb, ne), ce_s0[e], vt, vcrit)
+    let vbc: f64 = jlimit(circ_vd(nb, nc), ce_s1[e], vt, vcrit)
+    ce_s0[e] = vbe
+    ce_s1[e] = vbc
+
+    let exf: f64 = exp(vbe / vt)
+    let exr: f64 = exp(vbc / vt)
+    let if_t: f64 = is_sat * (exf - 1.0)
+    let ir_t: f64 = is_sat * (exr - 1.0)
+    let ic: f64 = if_t - ir_t - ir_t / br
+    let ib: f64 = if_t / bf + ir_t / br
+    let gif: f64 = is_sat * exf / vt
+    let gir: f64 = is_sat * exr / vt
+
+    let a: f64 = gif                            # d ic / d vbe
+    let b: f64 = 0.0 - gir * (1.0 + 1.0 / br)   # d ic / d vbc
+    let c: f64 = gif / bf                       # d ib / d vbe
+    let d: f64 = gir / br                       # d ib / d vbc
+    let ieqc: f64 = ic - a * vbe - b * vbc
+    let ieqb: f64 = ib - c * vbe - d * vbc
+
+    let rc: i32 = nc - 1
+    let rb: i32 = nb - 1
+    let re: i32 = ne - 1
+
+    mstamp(rc, rb, a + b)
+    mstamp(rc, re, 0.0 - a)
+    mstamp(rc, rc, 0.0 - b)
+    bstamp(rc, 0.0 - ieqc)
+
+    mstamp(rb, rb, c + d)
+    mstamp(rb, re, 0.0 - c)
+    mstamp(rb, rc, 0.0 - d)
+    bstamp(rb, 0.0 - ieqb)
+
+    mstamp(re, rb, 0.0 - (a + b + c + d))
+    mstamp(re, re, a + c)
+    mstamp(re, rc, b + d)
+    bstamp(re, ieqc + ieqb)
+
+    stamp_g(nb, ne, circ_gmin)
+    stamp_g(nb, nc, circ_gmin)
+}
+
+# Fill the matrix and right-hand side. `lock_a` skips every matrix write, for
+# reusing an existing LU factorization.
+function circ_assemble(dt: f64, lock_a: bool) -> void {
+    circ_a_locked = lock_a
+    if !lock_a {
+        let cells: i32 = circ_dim * circ_dim
+        for i in 0 to cells {
+            mna_a[i] = 0.0
+        }
+    }
+    for i in 0 to circ_dim {
+        mna_b[i] = 0.0
+    }
+
+    let tran: bool = circ_mode == 1
+    let trap: bool = circ_method == CIRC_TRAP
+
+    for e in 0 to circ_nelem {
+        let k: i32 = ce_kind[e]
+        let n1: i32 = ce_na[e]
+        let n2: i32 = ce_nb[e]
+        if k == CIRC_R {
+            if ce_val[e] != 0.0 {
+                stamp_g(n1, n2, 1.0 / ce_val[e])
+            }
+        }
+        if k == CIRC_C {
+            if tran {
+                let cap: f64 = ce_val[e]
+                let mut geq: f64 = cap / dt
+                let mut isrc: f64 = geq * ce_s0[e]
+                if trap {
+                    geq = 2.0 * cap / dt
+                    isrc = geq * ce_s0[e] + ce_s1[e]
+                }
+                stamp_g(n1, n2, geq)
+                stamp_i(n1, n2, 0.0 - isrc)
+            }
+            # In DC a capacitor is an open circuit: nothing to stamp.
+        }
+        if k == CIRC_L {
+            let r: i32 = ce_row[e]
+            mstamp(n1 - 1, r, 1.0)
+            mstamp(n2 - 1, r, -1.0)
+            mstamp(r, n1 - 1, 1.0)
+            mstamp(r, n2 - 1, -1.0)
+            if tran {
+                let ind: f64 = ce_val[e]
+                if trap {
+                    mstamp(r, r, 0.0 - 2.0 * ind / dt)
+                    bstamp(r, 0.0 - (2.0 * ind / dt) * ce_s0[e] - ce_s1[e])
+                } else {
+                    mstamp(r, r, 0.0 - ind / dt)
+                    bstamp(r, 0.0 - (ind / dt) * ce_s0[e])
+                }
+            }
+            # In DC an inductor is a short: row r says v(n1) - v(n2) = 0.
+        }
+        if k == CIRC_V {
+            let r: i32 = ce_row[e]
+            mstamp(n1 - 1, r, 1.0)
+            mstamp(n2 - 1, r, -1.0)
+            mstamp(r, n1 - 1, 1.0)
+            mstamp(r, n2 - 1, -1.0)
+            bstamp(r, ce_val[e])
+        }
+        if k == CIRC_I {
+            stamp_i(n1, n2, ce_val[e])
+        }
+        if k == CIRC_E {
+            let r: i32 = ce_row[e]
+            let c1: i32 = ce_nc[e]
+            let c2: i32 = ce_nd[e]
+            mstamp(n1 - 1, r, 1.0)
+            mstamp(n2 - 1, r, -1.0)
+            mstamp(r, n1 - 1, 1.0)
+            mstamp(r, n2 - 1, -1.0)
+            mstamp(r, c1 - 1, 0.0 - ce_val[e])
+            mstamp(r, c2 - 1, ce_val[e])
+        }
+        if k == CIRC_G {
+            let c1: i32 = ce_nc[e]
+            let c2: i32 = ce_nd[e]
+            let gm: f64 = ce_val[e]
+            mstamp(n1 - 1, c1 - 1, gm)
+            mstamp(n1 - 1, c2 - 1, 0.0 - gm)
+            mstamp(n2 - 1, c1 - 1, 0.0 - gm)
+            mstamp(n2 - 1, c2 - 1, gm)
+        }
+        if k == CIRC_D {
+            stamp_diode(e)
+        }
+        if k == CIRC_Q {
+            stamp_bjt(e)
+        }
+    }
+
+    # A conductance to ground at every node keeps the matrix non-singular when
+    # a node has no DC path (a floating capacitor, an op-amp input).
+    for n in 0 to circ_nnodes {
+        mstamp(n, n, circ_gmin)
+    }
+    circ_a_locked = false
+}
+
+# ---------------------------------------------------------------------------
+# Dense LU with partial pivoting
+# ---------------------------------------------------------------------------
+
+function lu_factor() -> bool {
+    let n: i32 = circ_dim
+    for k in 0 to n {
+        let mut p: i32 = k
+        let mut best: f64 = fabs(mna_a[k * n + k])
+        let mut i: i32 = k + 1
+        while i < n {
+            let v: f64 = fabs(mna_a[i * n + k])
+            if v > best {
+                best = v
+                p = i
+            }
+            i = i + 1
+        }
+        if best < 1e-300 {
+            circ_errcode = CIRC_ERR_SINGULAR
+            return false
+        }
+        mna_piv[k] = p
+        if p != k {
+            for j in 0 to n {
+                let t: f64 = mna_a[k * n + j]
+                mna_a[k * n + j] = mna_a[p * n + j]
+                mna_a[p * n + j] = t
+            }
+        }
+        let d: f64 = mna_a[k * n + k]
+        let mut r: i32 = k + 1
+        while r < n {
+            let m: f64 = mna_a[r * n + k] / d
+            mna_a[r * n + k] = m
+            if m != 0.0 {
+                let mut j: i32 = k + 1
+                while j < n {
+                    mna_a[r * n + j] = mna_a[r * n + j] - m * mna_a[k * n + j]
+                    j = j + 1
+                }
+            }
+            r = r + 1
+        }
+    }
+    circ_factors = circ_factors + 1
+    return true
+}
+
+function lu_solve() -> void {
+    let n: i32 = circ_dim
+    for i in 0 to n {
+        mna_x[i] = mna_b[i]
+    }
+    for k in 0 to n {
+        let p: i32 = mna_piv[k]
+        if p != k {
+            let t: f64 = mna_x[k]
+            mna_x[k] = mna_x[p]
+            mna_x[p] = t
+        }
+    }
+    # Forward substitution (unit lower triangle).
+    for i in 0 to n {
+        let mut s: f64 = mna_x[i]
+        for j in 0 to i {
+            s = s - mna_a[i * n + j] * mna_x[j]
+        }
+        mna_x[i] = s
+    }
+    # Back substitution.
+    let mut i: i32 = n - 1
+    while i >= 0 {
+        let mut s: f64 = mna_x[i]
+        let mut j: i32 = i + 1
+        while j < n {
+            s = s - mna_a[i * n + j] * mna_x[j]
+            j = j + 1
+        }
+        mna_x[i] = s / mna_a[i * n + i]
+        i = i - 1
+    }
+    circ_solves = circ_solves + 1
+}
+
+# One linear solve at the current operating point, reusing the factorization
+# when the matrix is provably unchanged.
+function circ_solve_once(dt: f64) -> bool {
+    let reusable: bool = circ_nl == 0 and circ_lu_valid
+        and circ_lu_dt == dt and circ_lu_mode == circ_mode
+        and circ_lu_method == circ_method
+    if reusable {
+        circ_assemble(dt, true)
+        lu_solve()
+        return true
+    }
+    circ_assemble(dt, false)
+    if !lu_factor() {
+        circ_lu_valid = false
+        return false
+    }
+    lu_solve()
+    if circ_nl == 0 {
+        circ_lu_valid = true
+        circ_lu_dt = dt
+        circ_lu_mode = circ_mode
+        circ_lu_method = circ_method
+    } else {
+        circ_lu_valid = false
+    }
+    return true
+}
+
+# Newton-Raphson. Reports the iteration count through circ_iterations().
+function circ_solve_nr(dt: f64) -> bool {
+    if !circ_final {
+        circ_errcode = CIRC_ERR_STATE
+        return false
+    }
+    if circ_nl == 0 {
+        circ_iters = 1
+        if !circ_solve_once(dt) {
+            return false
+        }
+        if circ_maxiters < 1 {
+            circ_maxiters = 1
+        }
+        return true
+    }
+    let mut it: i32 = 0
+    let mut conv: bool = false
+    while it < circ_maxiter {
+        for i in 0 to circ_dim {
+            mna_xp[i] = mna_x[i]
+        }
+        if !circ_solve_once(dt) {
+            circ_iters = it
+            return false
+        }
+        it = it + 1
+        let mut ok: bool = true
+        for i in 0 to circ_dim {
+            let d: f64 = fabs(mna_x[i] - mna_xp[i])
+            if d > circ_reltol * fabs(mna_x[i]) + circ_abstol {
+                ok = false
+            }
+        }
+        if ok and it >= 2 {
+            conv = true
+            break
+        }
+    }
+    circ_iters = it
+    if circ_iters > circ_maxiters {
+        circ_maxiters = circ_iters
+    }
+    if !conv {
+        circ_errcode = CIRC_ERR_NOCONV
+    }
+    return conv
+}
+
+export function circ_iterations() -> i32 {
+    return circ_iters
+}
+
+export function circ_worst_iterations() -> i32 {
+    return circ_maxiters
+}
+
+export function circ_solve_count() -> i32 {
+    return circ_solves
+}
+
+export function circ_factor_count() -> i32 {
+    return circ_factors
+}
+
+export function circ_reject_count() -> i32 {
+    return circ_rejects
+}
+
+# ---------------------------------------------------------------------------
+# Branch currents
+# ---------------------------------------------------------------------------
+
+function circ_update_currents(dt: f64) -> void {
+    let tran: bool = circ_mode == 1
+    let trap: bool = circ_method == CIRC_TRAP
+    for e in 0 to circ_nelem {
+        let k: i32 = ce_kind[e]
+        let n1: i32 = ce_na[e]
+        let n2: i32 = ce_nb[e]
+        if k == CIRC_R {
+            if ce_val[e] != 0.0 {
+                ce_cur[e] = circ_vd(n1, n2) / ce_val[e]
+            }
+        }
+        if k == CIRC_C {
+            if tran {
+                let vd: f64 = circ_vd(n1, n2)
+                if trap {
+                    ce_cur[e] = (2.0 * ce_val[e] / dt) * (vd - ce_s0[e])
+                                - ce_s1[e]
+                } else {
+                    ce_cur[e] = (ce_val[e] / dt) * (vd - ce_s0[e])
+                }
+            } else {
+                ce_cur[e] = 0.0
+            }
+        }
+        if k == CIRC_L or k == CIRC_V or k == CIRC_E {
+            ce_cur[e] = mna_x[ce_row[e]]
+        }
+        if k == CIRC_I {
+            ce_cur[e] = ce_val[e]
+        }
+        if k == CIRC_G {
+            ce_cur[e] = ce_val[e] * circ_vd(ce_nc[e], ce_nd[e])
+        }
+        if k == CIRC_D {
+            let vd: f64 = circ_vd(n1, n2)
+            ce_cur[e] = ce_p1[e] * (exp(ce_s1[e] / ce_p2[e]) - 1.0)
+                        + circ_gmin * vd
+        }
+        if k == CIRC_Q {
+            let vt: f64 = ce_val[e]
+            let exf: f64 = exp(ce_s0[e] / vt)
+            let exr: f64 = exp(ce_s1[e] / vt)
+            let if_t: f64 = ce_p1[e] * (exf - 1.0)
+            let ir_t: f64 = ce_p1[e] * (exr - 1.0)
+            ce_cur[e] = if_t - ir_t - ir_t / ce_p3[e]     # collector current
+        }
+    }
+}
+
+# Branch current of element e, in the n1 -> n2 direction (collector current
+# for a BJT).
+export function circ_i(e: i32) -> f64 {
+    if e < 0 or e >= circ_nelem {
+        return 0.0
+    }
+    return ce_cur[e]
+}
+
+# Base current of a BJT.
+export function circ_ib(e: i32) -> f64 {
+    if e < 0 or e >= circ_nelem or ce_kind[e] != CIRC_Q {
+        return 0.0
+    }
+    let vt: f64 = ce_val[e]
+    let if_t: f64 = ce_p1[e] * (exp(ce_s0[e] / vt) - 1.0)
+    let ir_t: f64 = ce_p1[e] * (exp(ce_s1[e] / vt) - 1.0)
+    return if_t / ce_p2[e] + ir_t / ce_p3[e]
+}
+
+# The state variable of a reactive element: capacitor voltage or inductor
+# current at the last accepted point.
+export function circ_state(e: i32) -> f64 {
+    if e < 0 or e >= circ_nelem {
+        return 0.0
+    }
+    return ce_s0[e]
+}
+
+# ---------------------------------------------------------------------------
+# DC operating point
+# ---------------------------------------------------------------------------
+
+export function circ_op() -> bool {
+    if !circ_final {
+        circ_errcode = CIRC_ERR_STATE
+        return false
+    }
+    circ_mode = 0
+    if !circ_solve_nr(0.0) {
+        return false
+    }
+    circ_update_currents(0.0)
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Transient
+# ---------------------------------------------------------------------------
+
+function circ_latch(dt: f64) -> void {
+    for e in 0 to circ_nelem {
+        let k: i32 = ce_kind[e]
+        if k == CIRC_C {
+            ce_s1[e] = ce_cur[e]
+            ce_s0[e] = circ_vd(ce_na[e], ce_nb[e])
+        }
+        if k == CIRC_L {
+            ce_s1[e] = circ_vd(ce_na[e], ce_nb[e])
+            ce_s0[e] = ce_cur[e]
+        }
+        if k == CIRC_C or k == CIRC_L {
+            let m: f64 = fabs(ce_s0[e])
+            if m > ce_sm[e] {
+                ce_sm[e] = m
+            }
+        }
+    }
+}
+
+# Prepare for transient analysis. With use_ic the reactive states start from
+# the values passed to circ_add_c / circ_add_l; otherwise they start from the
+# DC operating point.
+#
+# The trapezoidal companion model needs the branch derivative at t = 0 as well
+# as the state, and with initial conditions there is nothing to read it from.
+# So the initial-condition path takes one microscopic backward-Euler step of
+# dt_prime, which reads off the t = 0 currents and node voltages, then puts the
+# state back exactly where the caller asked for it and rewinds the clock.
+# Pass dt_prime a few orders of magnitude below the smallest time constant;
+# dt / 1e6 is a safe choice. It is ignored when use_ic is false, because a DC
+# operating point already has zero capacitor current and zero inductor voltage.
+export function circ_tran_init(use_ic: bool, dt_prime: f64) -> bool {
+    if !circ_final {
+        circ_errcode = CIRC_ERR_STATE
+        return false
+    }
+    circ_time = 0.0
+    circ_rejects = 0
+    if use_ic {
+        for e in 0 to circ_nelem {
+            let k: i32 = ce_kind[e]
+            if k == CIRC_C or k == CIRC_L {
+                ce_s0[e] = ce_ic[e]
+                ce_s1[e] = 0.0
+                ce_sm[e] = fabs(ce_ic[e])
+            }
+        }
+        for i in 0 to circ_dim {
+            mna_x[i] = 0.0
+        }
+        circ_mode = 1
+        circ_lu_valid = false
+        let want: i32 = circ_method
+        circ_method = CIRC_BE
+        if !circ_tran_step(dt_prime) {
+            circ_method = want
+            return false
+        }
+        for e in 0 to circ_nelem {
+            let k: i32 = ce_kind[e]
+            if k == CIRC_C or k == CIRC_L {
+                ce_s0[e] = ce_ic[e]
+            }
+        }
+        circ_method = want
+        circ_lu_valid = false
+        circ_time = 0.0
+        return true
+    }
+    if !circ_op() {
+        return false
+    }
+    for e in 0 to circ_nelem {
+        let k: i32 = ce_kind[e]
+        if k == CIRC_C {
+            ce_s0[e] = circ_vd(ce_na[e], ce_nb[e])
+            ce_s1[e] = 0.0
+        }
+        if k == CIRC_L {
+            ce_s0[e] = ce_cur[e]
+            ce_s1[e] = 0.0
+        }
+        if k == CIRC_C or k == CIRC_L {
+            ce_sm[e] = fabs(ce_s0[e])
+        }
+    }
+    circ_mode = 1
+    circ_lu_valid = false
+    return true
+}
+
+# One fixed step. Returns false if Newton or LU failed.
+export function circ_tran_step(dt: f64) -> bool {
+    if circ_mode != 1 {
+        circ_errcode = CIRC_ERR_STATE
+        return false
+    }
+    if !circ_solve_nr(dt) {
+        return false
+    }
+    circ_update_currents(dt)
+    circ_latch(dt)
+    circ_time = circ_time + dt
+    return true
+}
+
+export function circ_time_now() -> f64 {
+    return circ_time
+}
+
+function circ_save_state() -> void {
+    for e in 0 to circ_nelem {
+        bk_s0[e] = ce_s0[e]
+        bk_s1[e] = ce_s1[e]
+        bk_sm[e] = ce_sm[e]
+    }
+    for i in 0 to circ_dim {
+        bk_x[i] = mna_x[i]
+    }
+}
+
+function circ_restore_state() -> void {
+    for e in 0 to circ_nelem {
+        ce_s0[e] = bk_s0[e]
+        ce_s1[e] = bk_s1[e]
+        ce_sm[e] = bk_sm[e]
+    }
+    for i in 0 to circ_dim {
+        mna_x[i] = bk_x[i]
+    }
+}
+
+# Step-size controller exponent. The local error of one step scales as
+# dt^(p+1) with p the order of the method, so the step that just meets the
+# tolerance is dt * (tol/err)^(1/(p+1)): a square root for backward Euler,
+# a cube root for the trapezoidal rule. Using the wrong exponent makes the
+# controller hunt instead of settle.
+function circ_ctrl_ratio(ratio: f64) -> f64 {
+    if ratio <= 0.0 {
+        return 0.5
+    }
+    if circ_method == CIRC_TRAP {
+        return exp(log(ratio) / 3.0)
+    }
+    return sqrt(ratio)
+}
+
+# Adaptive step by step doubling: one step of dt against two of dt/2. The
+# error estimate is the largest normalized difference between the two results
+# over the reactive state variables. Returns the step actually taken, or 0.0
+# on failure; circ_next_dt() suggests the next trial step.
+export function circ_tran_step_adaptive(dt_try: f64, tol: f64,
+                                        dt_min: f64, dt_max: f64) -> f64 {
+    if circ_mode != 1 {
+        circ_errcode = CIRC_ERR_STATE
+        return 0.0
+    }
+    let mut dt: f64 = dt_try
+    if dt > dt_max {
+        dt = dt_max
+    }
+    if dt < dt_min {
+        dt = dt_min
+    }
+    let mut tries: i32 = 0
+    let t0: f64 = circ_time
+    while tries < 24 {
+        tries = tries + 1
+        circ_save_state()
+        # Trial: one whole step.
+        if !circ_tran_step(dt) {
+            circ_restore_state()
+            circ_time = t0
+            return 0.0
+        }
+        for e in 0 to circ_nelem {
+            f1_s0[e] = ce_s0[e]
+        }
+        # Reference: two half steps.
+        circ_restore_state()
+        circ_time = t0
+        let half: f64 = dt * 0.5
+        if !circ_tran_step(half) {
+            circ_restore_state()
+            circ_time = t0
+            return 0.0
+        }
+        if !circ_tran_step(half) {
+            circ_restore_state()
+            circ_time = t0
+            return 0.0
+        }
+        # Compare the reactive states.
+        let mut err: f64 = 0.0
+        for e in 0 to circ_nelem {
+            let k: i32 = ce_kind[e]
+            if k == CIRC_C or k == CIRC_L {
+                let d: f64 = fabs(f1_s0[e] - ce_s0[e])
+                # Scale by the largest value this state has reached, not by
+                # its value right now: a sinusoid passing through zero must
+                # not force the step size to collapse.
+                let mut scale: f64 = ce_sm[e]
+                if scale < 1e-30 {
+                    scale = 1e-30
+                }
+                let r: f64 = d / scale
+                if r > err {
+                    err = r
+                }
+            }
+        }
+        if err <= tol or dt <= dt_min {
+            let mut grow: f64 = 2.0
+            if err > 0.0 {
+                grow = 0.9 * circ_ctrl_ratio(tol / err)
+            }
+            if grow > 2.0 {
+                grow = 2.0
+            }
+            if grow < 0.5 {
+                grow = 0.5
+            }
+            circ_dt_next = dt * grow
+            if circ_dt_next > dt_max {
+                circ_dt_next = dt_max
+            }
+            if circ_dt_next < dt_min {
+                circ_dt_next = dt_min
+            }
+            return dt
+        }
+        # Reject: back out and shrink.
+        circ_rejects = circ_rejects + 1
+        circ_restore_state()
+        circ_time = t0
+        let mut shrink: f64 = 0.9 * circ_ctrl_ratio(tol / err)
+        if shrink > 0.7 {
+            shrink = 0.7
+        }
+        if shrink < 0.2 {
+            shrink = 0.2
+        }
+        dt = dt * shrink
+        if dt < dt_min {
+            dt = dt_min
+        }
+    }
+    circ_errcode = CIRC_ERR_NOCONV
+    return 0.0
+}
+
+export function circ_next_dt() -> f64 {
+    return circ_dt_next
+}
