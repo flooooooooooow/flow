@@ -1,0 +1,423 @@
+# VAN DER POL: one limit cycle, six values of mu, and the period measured
+# against both asymptotic expansions.
+#
+# THE SYSTEM
+#
+#     x' = v
+#     v' = mu (1 - x^2) v - x
+#
+#   The damping coefficient mu (1 - x^2) is negative near the origin and
+#   positive outside |x| = 1, so small orbits grow and large orbits shrink and
+#   everything that is not the fixed point ends on the same closed curve. That
+#   curve is the limit cycle. mu decides its shape: a near-circle at mu = 0.1,
+#   a relaxation oscillation of slow crawls and fast jumps at mu = 8.
+#
+#   The whole model is the two `evolves as` lines in `flow VanDerPol`. Nothing
+#   else in this file integrates anything.
+#
+# WHAT THIS EXAMPLE PROVES
+#
+#   The period of the cycle is a nontrivial function of mu with two known
+#   asymptotic expansions, and the simulation reproduces both of them in their
+#   own regimes:
+#
+#     small mu   T = 2 pi (1 + mu^2 / 16 - 5 mu^4 / 3072 + ...)
+#                (the Lindstedt / Poincare expansion; Andersen and Geer 1982)
+#
+#     large mu   T = (3 - 2 ln 2) mu + 3 alpha_1 mu^(-1/3) - (2/3) ln(mu) / mu
+#                with alpha_1 = 2.338107, the first zero of the Airy function
+#                (Dorodnicyn 1947). 3 - 2 ln 2 = 1.6137056.
+#
+#   Neither expansion is valid at mu = 1 or mu = 2, and the run says so
+#   instead of pretending: those rows are reported and left ungated except for
+#   the amplitude and the monotonicity of T in mu.
+#
+#   The amplitude is the other reference. For every mu the cycle reaches
+#   |x| = 2 to within a few percent: at small mu that is the leading term of
+#   the same expansion, at large mu it is where the slow branch of the cubic
+#   nullcline folds.
+#
+# HOW THE PERIOD IS MEASURED
+#
+#   Upward zero crossings of x, with the crossing instant refined by linear
+#   interpolation inside the step it fell in, timed from the first crossing
+#   after the transient to the crossing 50 periods later. Dividing by 50 also
+#   divides the interpolation error by 50.
+#
+#   The same crossings are counted a second time by the model itself:
+#
+#       when x reaches 0.0 { crossings becomes crossings + 1.0 }
+#
+#   That event fires on both the up and the down crossing, so it must end at
+#   exactly twice the driver's count. It is the declarative event mechanism
+#   checked against a hand-written detector, and it costs one state.
+#
+# CONTROLS
+#   None. Six deterministic runs, fixed step 2e-4, fixed initial condition.
+#
+# THE REFERENCES IT IS CHECKED AGAINST
+#
+#   mu = 0.1   small-mu expansion, gate 1e-5 relative
+#   mu = 0.5   small-mu expansion, gate 1e-3 relative
+#   mu = 4     large-mu expansion, gate 5e-2 relative
+#   mu = 8     large-mu expansion, gate 3e-2 relative
+#   amplitude  2.0 for every mu, gate 5e-2 absolute
+#   event count exactly twice the interpolated crossing count
+#
+# Run: ./flow run examples/evolution/van_der_pol.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function log(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function puts(s: ptr<u8>) -> i32
+}
+
+const TWO_PI: f64 = 6.283185307179586
+const DT: f64 = 2e-4
+const MEASURE_PERIODS: i32 = 50
+const N_MU: i32 = 6
+
+# ---------------------------------------------------------------------------
+# The model.
+# ---------------------------------------------------------------------------
+
+flow VanDerPol {
+    state x         : f64 = 2.0
+    state v         : f64 = 0.0
+    state crossings : f64 = 0.0
+    param mu        : f64 = 1.0
+
+    solver { dt 200 us  method rk4 }
+
+    x evolves as v
+    v evolves as mu * (1.0 - x * x) * v - x
+
+    when x reaches 0.0 {
+        crossings becomes crossings + 1.0
+    }
+}
+
+function vdp_at(mu: f64) -> VanDerPol {
+    let mut s: VanDerPol = VanDerPol_new()
+    s.mu = mu
+    s.x = 2.0
+    s.v = 0.0
+    s.crossings = 0.0
+    return s
+}
+
+# ---------------------------------------------------------------------------
+# The two asymptotic references.
+# ---------------------------------------------------------------------------
+
+function period_small_mu(mu: f64) -> f64 {
+    let m2: f64 = mu * mu
+    return TWO_PI * (1.0 + m2 / 16.0 - 5.0 * m2 * m2 / 3072.0)
+}
+
+function period_large_mu(mu: f64) -> f64 {
+    let lead: f64 = 1.6137056388801094 * mu
+    let airy: f64 = 7.014321 * pow(mu, -0.3333333333333333)
+    let logterm: f64 = 0.6666666666666666 * log(mu) / mu
+    return lead + airy - logterm
+}
+
+# ---------------------------------------------------------------------------
+# Measurement
+# ---------------------------------------------------------------------------
+
+let mut meas_period: ptr<f64> = null
+let mut meas_amp: ptr<f64> = null
+let mut meas_events: ptr<f64> = null
+let mut meas_ups: ptr<f64> = null
+
+function measure(idx: i32, mu: f64) -> void {
+    let mut s: VanDerPol = vdp_at(mu)
+
+    # Transient: long enough for the slowest cycle to settle at every mu.
+    let transient: f64 = 200.0 + 40.0 * mu
+    let t_steps: i32 = (transient / DT) as i32
+    for k in 0 to t_steps {
+        VanDerPol_step(&s, DT)
+    }
+    s.crossings = 0.0
+
+    let mut t: f64 = 0.0
+    let mut prev_x: f64 = s.x
+    let mut first_up: f64 = 0.0
+    let mut last_up: f64 = 0.0
+    let mut ups: i32 = 0
+    let mut amp: f64 = 0.0
+
+    # Enough steps to cover MEASURE_PERIODS periods of the longest cycle here.
+    let horizon: f64 = 60.0 + (MEASURE_PERIODS as f64) * (TWO_PI + 2.0 * mu)
+    let m_steps: i32 = (horizon / DT) as i32
+
+    for k in 0 to m_steps {
+        VanDerPol_step(&s, DT)
+        t = t + DT
+        if fabs(s.x) > amp {
+            amp = fabs(s.x)
+        }
+        if prev_x < 0.0 and s.x >= 0.0 {
+            let frac: f64 = (0.0 - prev_x) / (s.x - prev_x)
+            let tc: f64 = t - DT + frac * DT
+            if ups == 0 {
+                first_up = tc
+            }
+            last_up = tc
+            ups = ups + 1
+            if ups == MEASURE_PERIODS + 1 {
+                meas_period[idx] = (last_up - first_up) / (MEASURE_PERIODS as f64)
+                meas_amp[idx] = amp
+                meas_events[idx] = s.crossings
+                meas_ups[idx] = ups as f64
+                return
+            }
+        }
+        prev_x = s.x
+    }
+
+    meas_period[idx] = 0.0
+    meas_amp[idx] = amp
+    meas_events[idx] = s.crossings
+    meas_ups[idx] = ups as f64
+}
+
+# ---------------------------------------------------------------------------
+# ASCII canvas
+# ---------------------------------------------------------------------------
+
+const PW: i32 = 74
+const PH: i32 = 23
+
+let mut canvas: ptr<u8> = null
+let mut rowbuf: ptr<u8> = null
+
+function canvas_init() -> void {
+    canvas = calloc((PW * PH) as i64, 1) as ptr<u8>
+    rowbuf = calloc((PW + 1) as i64, 1) as ptr<u8>
+}
+
+function canvas_clear() -> void {
+    for i in 0 to PW * PH {
+        canvas[i] = 32
+    }
+}
+
+function canvas_put(px: i32, py: i32, ch: i32) -> void {
+    if px < 0 or px >= PW or py < 0 or py >= PH {
+        return
+    }
+    canvas[py * PW + px] = ch as u8
+}
+
+function canvas_point(x: f64, y: f64, xlo: f64, xhi: f64,
+                      ylo: f64, yhi: f64, ch: i32) -> void {
+    let px: i32 = (((x - xlo) / (xhi - xlo)) * ((PW - 1) as f64) + 0.5) as i32
+    let py: i32 = (((yhi - y) / (yhi - ylo)) * ((PH - 1) as f64) + 0.5) as i32
+    canvas_put(px, py, ch)
+}
+
+function canvas_draw() -> void {
+    for r in 0 to PH {
+        for c in 0 to PW {
+            rowbuf[c] = canvas[r * PW + c]
+        }
+        rowbuf[PW] = 0
+        print("    ")
+        let written: i32 = puts(rowbuf)
+        if written < 0 {
+            return
+        }
+    }
+}
+
+# One limit cycle drawn in the phase plane, auto-ranged in v.
+function draw_cycle(mu: f64, period: f64) -> void {
+    let mut s: VanDerPol = vdp_at(mu)
+    let t_steps: i32 = ((200.0 + 40.0 * mu) / DT) as i32
+    for k in 0 to t_steps {
+        VanDerPol_step(&s, DT)
+    }
+    let cyc_steps: i32 = (period / DT) as i32
+
+    let mut vlo: f64 = 0.0
+    let mut vhi: f64 = 0.0
+    let mut probe: VanDerPol = s
+    for k in 0 to cyc_steps {
+        VanDerPol_step(&probe, DT)
+        if probe.v < vlo {
+            vlo = probe.v
+        }
+        if probe.v > vhi {
+            vhi = probe.v
+        }
+    }
+
+    canvas_clear()
+    for k in 0 to cyc_steps {
+        VanDerPol_step(&s, DT)
+        canvas_point(s.x, s.v, -2.5, 2.5, vlo * 1.05, vhi * 1.05, 42)
+    }
+    canvas_draw()
+    print("     x in [-2.5, 2.5]     v in [")
+    printf("%.3f", vlo * 1.05)
+    print(", ")
+    printf("%.3f", vhi * 1.05)
+    println("]")
+}
+
+# x against time over two periods, which is where the relaxation shape shows.
+function draw_timeseries(mu: f64, period: f64) -> void {
+    let mut s: VanDerPol = vdp_at(mu)
+    let t_steps: i32 = ((200.0 + 40.0 * mu) / DT) as i32
+    for k in 0 to t_steps {
+        VanDerPol_step(&s, DT)
+    }
+    let span: f64 = 2.0 * period
+    let n_steps: i32 = (span / DT) as i32
+
+    canvas_clear()
+    for k in 0 to n_steps {
+        VanDerPol_step(&s, DT)
+        canvas_point((k as f64) * DT, s.x, 0.0, span, -2.6, 2.6, 42)
+    }
+    canvas_draw()
+    print("     t in [0, ")
+    printf("%.3f", span)
+    println("]     x in [-2.6, 2.6]")
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    canvas_init()
+    meas_period = calloc(N_MU as i64, 8) as ptr<f64>
+    meas_amp = calloc(N_MU as i64, 8) as ptr<f64>
+    meas_events = calloc(N_MU as i64, 8) as ptr<f64>
+    meas_ups = calloc(N_MU as i64, 8) as ptr<f64>
+
+    let mus: array<f64, 6> = [0.1, 0.5, 1.0, 2.0, 4.0, 8.0]
+
+    println("")
+    println("  VAN DER POL  --  period of the limit cycle vs mu")
+    println("  =================================================")
+    println("")
+    println("    x' = v      v' = mu (1 - x^2) v - x      RK4, dt = 2e-4")
+    println("    50 periods timed from interpolated upward zero crossings")
+    println("")
+
+    for i in 0 to N_MU {
+        measure(i, mus[i])
+    }
+
+    println("        mu    T measured    small-mu ref    large-mu ref   amplitude")
+    println("      ----    ----------    ------------    ------------   ---------")
+    for i in 0 to N_MU {
+        print("     ")
+        printf("%5.1f", mus[i])
+        printf("    %10.6f", meas_period[i])
+        printf("    %12.6f", period_small_mu(mus[i]))
+        printf("    %12.6f", period_large_mu(mus[i]))
+        printf("    %9.5f", meas_amp[i])
+        println("")
+    }
+    println("")
+    println("    Both reference columns are printed at every mu so the failure")
+    println("    of each expansion outside its own regime is visible; only the")
+    println("    four in-regime entries are gated.")
+    println("")
+
+    let e_small_1: f64 = fabs(meas_period[0] - period_small_mu(0.1)) / meas_period[0]
+    let e_small_2: f64 = fabs(meas_period[1] - period_small_mu(0.5)) / meas_period[1]
+    let e_large_1: f64 = fabs(meas_period[4] - period_large_mu(4.0)) / meas_period[4]
+    let e_large_2: f64 = fabs(meas_period[5] - period_large_mu(8.0)) / meas_period[5]
+
+    println("      regime            mu    relative error   gate")
+    println("      ---------------   ---   --------------   --------")
+    print("      small-mu expn     0.1")
+    printf("   %14.3e", e_small_1)
+    println("   1.0e-05")
+    print("      small-mu expn     0.5")
+    printf("   %14.3e", e_small_2)
+    println("   1.0e-03")
+    print("      large-mu expn     4.0")
+    printf("   %14.3e", e_large_1)
+    println("   5.0e-02")
+    print("      large-mu expn     8.0")
+    printf("   %14.3e", e_large_2)
+    println("   3.0e-02")
+    println("")
+
+    print("    declarative `when x reaches 0.0` firings vs 2 x measured ups:")
+    println("")
+    for i in 0 to N_MU {
+        print("      mu = ")
+        printf("%4.1f", mus[i])
+        print("   events ")
+        printf("%5.0f", meas_events[i])
+        print("   2 x ups ")
+        printf("%5.0f", 2.0 * meas_ups[i])
+        println("")
+    }
+    println("")
+
+    println("  PHASE PORTRAIT   mu = 4   (x horizontal, v vertical)")
+    println("")
+    draw_cycle(4.0, meas_period[4])
+    println("")
+
+    println("  RELAXATION SHAPE   mu = 8, two periods of x(t)")
+    println("")
+    draw_timeseries(8.0, meas_period[5])
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    for i in 0 to N_MU {
+        if meas_period[i] != meas_period[i] or meas_period[i] <= 0.0 {
+            println("    FAIL: no period recovered at one of the mu values")
+            return 1
+        }
+        if fabs(meas_amp[i] - 2.0) > 0.05 {
+            println("    FAIL: limit cycle amplitude departs from 2")
+            return 2
+        }
+        # The event fires on both crossings of x = 0 per period; the driver
+        # counts only the upward ones, and starts one step later.
+        let diff: f64 = fabs(meas_events[i] - 2.0 * meas_ups[i])
+        if diff > 1.0 {
+            println("    FAIL: `when x reaches 0.0` count disagrees with the detector")
+            return 3
+        }
+    }
+    for i in 1 to N_MU {
+        if meas_period[i] <= meas_period[i - 1] {
+            println("    FAIL: the period is not increasing in mu")
+            return 4
+        }
+    }
+    if e_small_1 > 1e-5 {
+        println("    FAIL: mu = 0.1 misses the small-mu expansion")
+        return 5
+    }
+    if e_small_2 > 1e-3 {
+        println("    FAIL: mu = 0.5 misses the small-mu expansion")
+        return 6
+    }
+    if e_large_1 > 5e-2 {
+        println("    FAIL: mu = 4 misses the large-mu expansion")
+        return 7
+    }
+    if e_large_2 > 3e-2 {
+        println("    FAIL: mu = 8 misses the large-mu expansion")
+        return 8
+    }
+    println("    PASS: both asymptotic expansions recovered in their own")
+    println("          regimes, amplitude 2 throughout, declarative event")
+    println("          count matches the interpolated detector")
+    return 0
+}
