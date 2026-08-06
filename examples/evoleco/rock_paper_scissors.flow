@@ -1,0 +1,355 @@
+# SPATIAL ROCK-PAPER-SCISSORS: cyclic chasing and coexistence.
+#
+# MODEL
+#   Each site of a periodic lattice holds Rock, Paper or Scissors. Every step
+#   a random site challenges a random neighbour; the winner of the cyclic
+#   dominance rule (R beats S, S beats P, P beats R) overwrites the loser.
+#   Ties leave the state unchanged. Well-mixed (urn) dynamics of the same
+#   rule drive two strategies extinct and fix the third. On the lattice the
+#   three types form chasing spiral waves and coexist indefinitely.
+#
+# GATES
+#   1. After many steps on the lattice, min(n_R, n_P, n_S) / N > 0.15.
+#   2. The same rule well-mixed from the same start has min frequency < 0.01
+#      (two types effectively extinct).
+#
+# KEYS
+#   1 SPATIAL coexistence   2 WELL-MIXED extinction (drawn as bars)
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/rock_paper_scissors.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const GRID: i32 = 64
+const CELLS: i32 = 4096
+const CELL_PX: i32 = 8
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const MAX_FRAMES: i32 = 6000
+const GATE_STEPS: i32 = 200000
+const MIX_N: i32 = 300
+const MIX_STEPS: i32 = 300000
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+
+let mut rng_state: u32 = 1414213563
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function rng_int(n: i32) -> i32 {
+    return (rng_next() % (n as u32)) as i32
+}
+
+let mut grid: array<i32, 4096> = [0, 0, 0, 0]
+let mut fb: array<u8, 786432> = [0, 0, 0, 0]
+let mut mix: array<i32, 3> = [0, 0, 0]
+
+function beats(a: i32, b: i32) -> bool {
+    # 0=R, 1=P, 2=S. R beats S, S beats P, P beats R.
+    if a == 0 and b == 2 { return true }
+    if a == 2 and b == 1 { return true }
+    if a == 1 and b == 0 { return true }
+    return false
+}
+
+function seed_spatial() -> void {
+    for i in 0 to CELLS {
+        grid[i] = rng_int(3)
+    }
+}
+
+function seed_mixed() -> void {
+    mix[0] = MIX_N / 3
+    mix[1] = MIX_N / 3
+    mix[2] = MIX_N - mix[0] - mix[1]
+}
+
+function mix_total() -> i32 {
+    return mix[0] + mix[1] + mix[2]
+}
+
+function count_type(t: i32) -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to CELLS {
+        if grid[i] == t { s = s + 1 }
+    }
+    return s
+}
+
+function min3(a: i32, b: i32, c: i32) -> i32 {
+    let mut m: i32 = a
+    if b < m { m = b }
+    if c < m { m = c }
+    return m
+}
+
+function spatial_step() -> void {
+    let i: i32 = rng_int(CELLS)
+    let x: i32 = i % GRID
+    let y: i32 = i / GRID
+    let dir: i32 = rng_int(4)
+    let mut nx: i32 = x
+    let mut ny: i32 = y
+    if dir == 0 { nx = (x + 1) % GRID }
+    if dir == 1 { nx = (x + GRID - 1) % GRID }
+    if dir == 2 { ny = (y + 1) % GRID }
+    if dir == 3 { ny = (y + GRID - 1) % GRID }
+    let j: i32 = ny * GRID + nx
+    let a: i32 = grid[i]
+    let b: i32 = grid[j]
+    if beats(a, b) {
+        grid[j] = a
+    } else {
+        if beats(b, a) {
+            grid[i] = b
+        }
+    }
+}
+
+function pick_mixed() -> i32 {
+    let n: i32 = mix_total()
+    if n <= 0 { return 0 }
+    let mut r: i32 = rng_int(n)
+    if r < mix[0] { return 0 }
+    r = r - mix[0]
+    if r < mix[1] { return 1 }
+    return 2
+}
+
+function mixed_step() -> void {
+    # Moran-style: pick two individuals proportional to counts; winner replaces loser.
+    let a: i32 = pick_mixed()
+    let b: i32 = pick_mixed()
+    if a == b { return }
+    if beats(a, b) {
+        if mix[b] > 0 {
+            mix[b] = mix[b] - 1
+            mix[a] = mix[a] + 1
+        }
+    } else {
+        if beats(b, a) {
+            if mix[a] > 0 {
+                mix[a] = mix[a] - 1
+                mix[b] = mix[b] + 1
+            }
+        }
+    }
+}
+
+function run_spatial(steps: i32) -> f64 {
+    seed_spatial()
+    for t in 0 to steps {
+        spatial_step()
+    }
+    let m: i32 = min3(count_type(0), count_type(1), count_type(2))
+    return (m as f64) / (CELLS as f64)
+}
+
+function run_mixed(steps: i32) -> f64 {
+    seed_mixed()
+    for t in 0 to steps {
+        mixed_step()
+    }
+    let m: i32 = min3(mix[0], mix[1], mix[2])
+    return (m as f64) / (MIX_N as f64)
+}
+
+function paint_cell(x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = x * CELL_PX
+    let py: i32 = y * CELL_PX
+    for dy in 0 to CELL_PX {
+        let mut o: i32 = ((py + dy) * FB_W + px) * 3
+        for dx in 0 to CELL_PX {
+            fb[o] = r as u8
+            fb[o + 1] = g2 as u8
+            fb[o + 2] = b as u8
+            o = o + 3
+        }
+    }
+}
+
+function draw_spatial(g: Gfx) -> void {
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            let t: i32 = grid[y * GRID + x]
+            if t == 0 {
+                paint_cell(x, y, 220, 80, 70)
+            } else {
+                if t == 1 {
+                    paint_cell(x, y, 80, 180, 120)
+                } else {
+                    paint_cell(x, y, 80, 140, 220)
+                }
+            }
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_mixed_bars(g: Gfx) -> void {
+    let mut total: f64 = mix_total() as f64
+    if total < 1.0 { total = 1.0 }
+    let h0: i32 = (((mix[0] as f64) / total) * 400.0) as i32
+    let h1: i32 = (((mix[1] as f64) / total) * 400.0) as i32
+    let h2: i32 = (((mix[2] as f64) / total) * 400.0) as i32
+    let base: i32 = FIELD_Y + 450
+    gfx_fill_rect(g, 80, base - h0, 80, h0, 220, 80, 70)
+    gfx_fill_rect(g, 216, base - h1, 80, h1, 80, 180, 120)
+    gfx_fill_rect(g, 352, base - h2, 80, h2, 80, 140, 220)
+    let t0: i32 = gfx_draw_text(g, 100, base + 8, "ROCK", 1, 220, 120, 110)
+    let t1: i32 = gfx_draw_text(g, 230, base + 8, "PAPER", 1, 120, 200, 150)
+    let t2: i32 = gfx_draw_text(g, 360, base + 8, "SCISS", 1, 120, 170, 230)
+}
+
+function draw_hud(g: Gfx, preset: i32, mn: f64, steps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "ROCK PAPER SCISSORS  SPATIAL VS MIXED", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 150, 146, 168)
+    if preset == 0 {
+        let t3: i32 = gfx_draw_text(g, 40, 28, "SPATIAL", 1, 255, 198, 96)
+    } else {
+        let t3: i32 = gfx_draw_text(g, 40, 28, "WELL MIXED", 1, 255, 198, 96)
+    }
+    let t4: i32 = gfx_draw_text(g, 160, 28, "MIN FRAC", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 224, 28, mn, 3, 1, 120, 255, 190)
+    let t6: i32 = gfx_draw_text(g, 300, 28, "STEPS", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_int(g, 340, 28, steps, 1, 234, 232, 244)
+    let t8: i32 = gfx_draw_text(g, 8, 42,
+        "1 SPATIAL  2 WELL-MIXED  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let t9: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let ta: i32 = gfx_draw_text(g, 8, 572,
+        "cyclic dominance: winner overwrites a random neighbour", 1, 122, 118, 144)
+    let tb: i32 = gfx_draw_text(g, 8, 582,
+        "space sustains all three; well-mixed dynamics fix one type", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    println("")
+    println("  ROCK-PAPER-SCISSORS  --  spatial coexistence vs well-mixed death")
+    println("  ================================================================")
+    println("")
+
+    rng_state = 1414213563
+    let spat: f64 = run_spatial(GATE_STEPS)
+    rng_state = 1414213563
+    let mixed: f64 = run_mixed(MIX_STEPS)
+
+    print("    spatial min frequency after ")
+    printf("%.0f", GATE_STEPS as f64)
+    print(" steps : ")
+    printf("%.4f", spat)
+    println("   gate > 0.15")
+    print("    well-mixed min frequency              : ")
+    printf("%.4f", mixed)
+    println("   gate < 0.01")
+    println("")
+
+    if spat < 0.15 {
+        println("    FAIL: spatial RPS lost coexistence")
+        return 1
+    }
+    if mixed > 0.01 {
+        println("    FAIL: well-mixed RPS did not approach fixation")
+        return 2
+    }
+    println("    PASS: all three types persist on the lattice while the")
+    println("          well-mixed process drives two of them extinct")
+    println("")
+
+    let mut preset: i32 = 0
+    rng_state = 1414213563
+    seed_spatial()
+    seed_mixed()
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Rock-Paper-Scissors - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut steps: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if want >= 0 and want != preset {
+            preset = want
+            seed_spatial()
+            seed_mixed()
+            steps = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                seed_spatial()
+                seed_mixed()
+                steps = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            let batch: i32 = 400
+            for k in 0 to batch {
+                if preset == 0 {
+                    spatial_step()
+                } else {
+                    mixed_step()
+                }
+            }
+            steps = steps + batch
+        }
+
+        let mut mn: f64 = 0.0
+        if preset == 0 {
+            mn = (min3(count_type(0), count_type(1), count_type(2)) as f64) / (CELLS as f64)
+        } else {
+            mn = (min3(mix[0], mix[1], mix[2]) as f64) / (MIX_N as f64)
+        }
+
+        gfx_clear(gfx, 12, 10, 18)
+        if preset == 0 {
+            draw_spatial(gfx)
+        } else {
+            draw_mixed_bars(gfx)
+        }
+        draw_hud(gfx, preset, mn, steps, paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}
