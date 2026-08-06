@@ -1,5 +1,4 @@
 # Generic Chan<T> via monomorphization
-# flow:lenient: strict checker gap, codegen-synthesized concurrency intrinsics (generic channels, continuations). Board card flow-strict-concurrency-intrinsics.
 # Run: ./flow run examples/concurrency/generic_channel.flow
 
 import "stdlib/concurrent.flow"
