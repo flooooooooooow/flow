@@ -1,0 +1,39 @@
+# Flow-native language test: `dbg` and a satisfied `expect`.
+#
+# `dbg e` evaluates `e` exactly once, writes it to stderr and yields it, so
+# deleting the keyword cannot change what the program computes. `expect c`
+# with a true condition is a no-op: nothing on either stream, no abort.
+#
+# Judged on stderr as well as the exit code: the expected text is in
+# tests/lang/test_dbg_expect.expected-stderr. The failing half of `expect`
+# is tests/lang/test_expect_fails.flow.
+# Supersedes (behavioral parts of):
+#   tests/unit/test_attributes.py::test_dbg_prints_to_stderr_and_is_value_transparent
+#   tests/unit/test_attributes.py::test_expect_is_a_no_op_when_true
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function double(v: i32) -> i32 {
+    return v * 2
+}
+
+function main() -> i32 {
+    # The value flows through unchanged.
+    let x: i32 = dbg 41
+    if x != 41 {
+        return 1
+    }
+
+    # A satisfied expect does nothing at all.
+    expect 1 + 1 == 2
+
+    # dbg around a call: the call must run once, and the result is the
+    # call's result.
+    let y: i32 = dbg double(21)
+    if y != 42 {
+        return 2
+    }
+
+    expect y == 42
+
+    return 0
+}
