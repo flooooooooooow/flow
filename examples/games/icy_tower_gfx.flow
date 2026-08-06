@@ -1,0 +1,735 @@
+# ICY TOWER - momentum platformer
+#
+# The mechanics are the game. Everything here follows from one number: the
+# horizontal speed the character has built up by the moment his feet leave a
+# floor.
+#
+# SPEED
+#   Holding a direction adds ACCEL to vx every tick up to MAX_VX. Nothing
+#   resets it in the air, and a wall keeps WALL_KEEP of it while flipping the
+#   sign, so the tower's two walls are an accelerator rather than a barrier:
+#   run right, bounce, run right again, and the speed you arrive with is the
+#   speed you leave with.
+#
+# JUMP
+#   vy = JUMP_BASE + |vx| * JUMP_GAIN. With the constants below a standing
+#   jump apexes at 72 world pixels, a little over one floor at 56 pixels of
+#   spacing; a full-speed jump apexes at 339, which is six floors. The
+#   horizontal reach grows at the same time because vx is carried through the
+#   arc, so a fast jump is both taller and longer and the two together are
+#   what clears the thin floors higher up.
+#
+# COMBO
+#   A landing that gained two or more floors opens a combo and refills its
+#   timer. Every further landing of two or more floors adds its gain and
+#   refills the timer again. The combo ends when the timer empties or when a
+#   landing takes you below the floor you came from, and it pays out
+#   floors * floors. That is the whole scoring pressure: floors are worth ten
+#   each, but a chain of thirty floors is nine hundred on its own.
+#
+#   The escalating names are a ladder of eleven phrases keyed to the combo's
+#   floor count. They are in the spirit of the original's shouted messages
+#   rather than a transcription of them; the exact wording of Icy Tower's
+#   ladder was not available here, so these were written to fit.
+#
+# THE TOWER
+#   Floors are generated on demand into a 128-slot ring keyed by floor number,
+#   so the tower is unbounded and memory is not. Width shrinks with height
+#   (150 pixels at the bottom, 46 at the ceiling of the curve) and the x
+#   position is uniform in whatever room is left, from a fixed seed so a run
+#   is reproducible. Every tenth floor is wider and carries its number.
+#
+# THE FALL
+#   The view starts still and begins scrolling once you reach floor 1, or
+#   after four seconds if you never leave the ground. From there it gains
+#   0.04 pixels per tick of scroll speed for every floor climbed, to a ceiling
+#   of 4.5. The camera also tracks the character upward and never moves down,
+#   so a good run outruns the scroll and a stalled one does not. Dropping
+#   below the bottom edge ends the run; the ground floor spans the whole
+#   tower, so what kills you is the floor rising past you, never a pit.
+#
+# CONTROLS
+#   Left / Right or A / D   run
+#   Space                   jump, and start the game from the title
+#   P                       pause
+#   R                       restart after a fall
+#   Esc                     quit
+#
+# Run: ./flow gfx examples/games/icy_tower_gfx.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function sqrtf(x: f32) -> f32
+    function fabsf(x: f32) -> f32
+    function floorf(x: f32) -> f32
+}
+
+const KEY_SPACE: i32 = 49
+const KEY_P: i32 = 35
+
+const WIN_W: i32 = 420
+const WIN_H: i32 = 620
+const MAX_FRAMES: i32 = 100000
+
+# Tower interior. The walls are solid; the playfield is between them.
+const WALL_TH: i32 = 18
+const PLAY_L: f32 = 18.0
+const PLAY_R: f32 = 402.0
+
+# Character box. Position is the centre of the feet.
+const HERO_HW: f32 = 10.0
+const HERO_H: f32 = 30.0
+
+# World geometry. Floor n has its top surface at n * FLOOR_SPACING.
+const FLOOR_SPACING: f32 = 56.0
+const FLOOR_TH: i32 = 10
+
+# Motion.
+const GRAVITY: f32 = 1.10
+const ACCEL: f32 = 0.48
+const AIR_ACCEL: f32 = 0.19
+const MAX_VX: f32 = 11.5
+const FRICTION: f32 = 0.86
+const JUMP_BASE: f32 = 12.6
+const JUMP_GAIN: f32 = 1.28
+const WALL_KEEP: f32 = 0.98
+
+# Camera and scroll.
+const CAM_LEAD: f32 = 248.0
+const CAM_START: f32 = -70.0
+const SCROLL_FROM: i32 = 1
+const SCROLL_BASE: f32 = 0.45
+const SCROLL_PER_FLOOR: f32 = 0.040
+const SCROLL_MAX: f32 = 4.5
+# Standing on the ground floor is safe for four seconds, then the tower
+# starts rising anyway.
+const IDLE_GRACE: i32 = 240
+
+# Combo.
+const COMBO_TIME: i32 = 150
+
+const STATE_TITLE: i32 = 0
+const STATE_PLAY: i32 = 1
+const STATE_OVER: i32 = 2
+
+const RING: i32 = 128
+const AHEAD: i32 = 14
+
+# ---------------------------------------------------------------------------
+# Tower storage: a ring of generated floors keyed by floor number.
+# ---------------------------------------------------------------------------
+
+let mut floor_x: ptr<f32> = null
+let mut floor_w: ptr<f32> = null
+let mut gen_top: i32 = -1
+
+let mut lcg: u32 = 20260806
+
+function rnd() -> u32 {
+    lcg = lcg * 1664525 + 1013904223
+    return lcg
+}
+
+function rnd_unit() -> f32 {
+    return ((rnd() >> 9) % 65536) as f32 / 65536.0
+}
+
+# Generate every floor up to and including `upto`. Floors are produced in
+# order so the ring slot for a floor always holds that floor.
+function ensure_floors(upto: i32) -> void {
+    while gen_top < upto {
+        let i: i32 = gen_top + 1
+        let slot: i32 = i % RING
+        if i == 0 {
+            floor_x[slot] = PLAY_L
+            floor_w[slot] = PLAY_R - PLAY_L
+        } else {
+            let span: f32 = PLAY_R - PLAY_L
+            let mut wmax: f32 = 150.0 - (i as f32) * 0.35
+            if wmax < 46.0 { wmax = 46.0 }
+            let mut w: f32 = 42.0 + rnd_unit() * (wmax - 42.0)
+            if i % 10 == 0 { w = w + 40.0 }
+            if w > span { w = span }
+            let x: f32 = PLAY_L + rnd_unit() * (span - w)
+            floor_x[slot] = x
+            floor_w[slot] = w
+        }
+        gen_top = i
+    }
+}
+
+function fx_at(i: i32) -> f32 {
+    return floor_x[i % RING]
+}
+
+function fw_at(i: i32) -> f32 {
+    return floor_w[i % RING]
+}
+
+# ---------------------------------------------------------------------------
+# Combo names. Eleven rungs, keyed to the combo's floor count.
+# ---------------------------------------------------------------------------
+
+function combo_name(n: i32) -> string {
+    if n >= 80 { return "GODLIKE" }
+    if n >= 65 { return "UNSTOPPABLE" }
+    if n >= 50 { return "ASTONISHING" }
+    if n >= 40 { return "EXTRAORDINARY" }
+    if n >= 32 { return "UNBELIEVABLE" }
+    if n >= 25 { return "SPLENDID" }
+    if n >= 19 { return "FANTASTIC" }
+    if n >= 14 { return "WONDERFUL" }
+    if n >= 9 { return "AMAZING" }
+    if n >= 5 { return "GREAT" }
+    if n >= 2 { return "NICE" }
+    return "COMBO"
+}
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+
+# Sky bands. The palette shifts every 50 floors so height reads as progress.
+function draw_bg(g: Gfx, tier: i32) -> void {
+    let t: i32 = tier % 3
+    let mut r0: i32 = 22
+    let mut g0: i32 = 30
+    let mut b0: i32 = 58
+    let mut r1: i32 = 96
+    let mut g1: i32 = 140
+    let mut b1: i32 = 198
+    if t == 1 {
+        r0 = 44
+        g0 = 20
+        b0 = 54
+        r1 = 214
+        g1 = 122
+        b1 = 128
+    }
+    if t == 2 {
+        r0 = 12
+        g0 = 40
+        b0 = 40
+        r1 = 120
+        g1 = 196
+        b1 = 168
+    }
+    let bands: i32 = 20
+    let bh: i32 = WIN_H / bands + 1
+    let mut i: i32 = 0
+    while i < bands {
+        let f: i32 = i * 256 / bands
+        let r: i32 = r0 + (r1 - r0) * f / 256
+        let gg: i32 = g0 + (g1 - g0) * f / 256
+        let b: i32 = b0 + (b1 - b0) * f / 256
+        gfx_fill_rect(g, 0, i * (WIN_H / bands), WIN_W, bh, r, gg, b)
+        i = i + 1
+    }
+}
+
+# Both walls, as a brick course that scrolls with the camera.
+function draw_walls(g: Gfx, cam_y: f32) -> void {
+    gfx_fill_rect(g, 0, 0, WALL_TH, WIN_H, 62, 48, 44)
+    gfx_fill_rect(g, WIN_W - WALL_TH, 0, WALL_TH, WIN_H, 62, 48, 44)
+    let bh: i32 = 22
+    let off: i32 = (cam_y as i32) % bh
+    let mut y: i32 = 0 - bh
+    let mut row: i32 = 0
+    while y < WIN_H + bh {
+        let sy: i32 = y + off
+        let mut shade: i32 = 0
+        if row % 2 == 0 { shade = 14 }
+        gfx_fill_rect(g, 2, sy, WALL_TH - 4, bh - 3, 96 + shade, 74 + shade, 66 + shade)
+        gfx_fill_rect(g, WIN_W - WALL_TH + 2, sy, WALL_TH - 4, bh - 3,
+                      96 + shade, 74 + shade, 66 + shade)
+        y = y + bh
+        row = row + 1
+    }
+}
+
+# One floor slab: an icy body, a bright top lip, a darker underside.
+function draw_floor(g: Gfx, idx: i32, cam_y: f32) -> void {
+    let x: i32 = fx_at(idx) as i32
+    let w: i32 = fw_at(idx) as i32
+    let top: f32 = (idx as f32) * FLOOR_SPACING
+    let sy: i32 = WIN_H - ((top - cam_y) as i32)
+    if sy < 0 - FLOOR_TH { return }
+    if sy > WIN_H { return }
+    let mut r: i32 = 150
+    let mut gg: i32 = 196
+    let mut b: i32 = 232
+    if idx % 10 == 0 {
+        r = 236
+        gg = 208
+        b = 120
+    }
+    if idx == 0 {
+        r = 120
+        gg = 108
+        b = 148
+    }
+    gfx_fill_rect(g, x, sy, w, FLOOR_TH, r, gg, b)
+    gfx_fill_rect(g, x, sy, w, 3, 246, 252, 255)
+    gfx_fill_rect(g, x, sy + FLOOR_TH - 2, w, 2, r * 2 / 3, gg * 2 / 3, b * 2 / 3)
+    if idx % 10 == 0 and idx > 0 {
+        gfx_draw_int(g, x + 4, sy - 12, idx, 1, 250, 226, 150)
+    }
+}
+
+# The character, built from rectangles, with four poses.
+#
+#   run   legs swing on a four-phase cycle driven by distance travelled
+#   jump  knees up, arms up
+#   fall  legs apart, arms out
+#   idle  standing
+#
+# At the top of the speed range he trails flame, which is the only cue in the
+# game that a jump is about to be worth several floors.
+function draw_hero(g: Gfx, sx: i32, sy: i32, facing: i32, pose: i32,
+                   phase: i32, hot: bool, frame: i32) -> void {
+    if hot {
+        let fl: i32 = (frame % 3) * 2
+        let bx: i32 = sx - facing * 14
+        gfx_fill_rect(g, bx - 5, sy - 20 + fl, 10, 14, 250, 170, 40)
+        gfx_fill_rect(g, bx - 3, sy - 16 + fl, 6, 9, 252, 232, 120)
+    }
+
+    # Legs.
+    if pose == 0 {
+        gfx_fill_rect(g, sx - 7, sy - 10, 5, 10, 52, 56, 96)
+        gfx_fill_rect(g, sx + 2, sy - 10, 5, 10, 52, 56, 96)
+    }
+    if pose == 1 {
+        let sw: i32 = phase % 4
+        let mut lead: i32 = 0
+        let mut trail: i32 = 0
+        if sw == 0 {
+            lead = 6
+            trail = -5
+        }
+        if sw == 1 {
+            lead = 2
+            trail = -1
+        }
+        if sw == 2 {
+            lead = -5
+            trail = 6
+        }
+        if sw == 3 {
+            lead = -1
+            trail = 2
+        }
+        gfx_fill_rect(g, sx - 3 + lead * facing, sy - 10, 5, 10, 52, 56, 96)
+        gfx_fill_rect(g, sx - 3 + trail * facing, sy - 10, 5, 10, 42, 46, 82)
+    }
+    if pose == 2 {
+        gfx_fill_rect(g, sx - 8, sy - 8, 6, 6, 52, 56, 96)
+        gfx_fill_rect(g, sx + 2, sy - 8, 6, 6, 52, 56, 96)
+    }
+    if pose == 3 {
+        gfx_fill_rect(g, sx - 10, sy - 9, 7, 8, 52, 56, 96)
+        gfx_fill_rect(g, sx + 3, sy - 9, 7, 8, 52, 56, 96)
+    }
+
+    # Torso and arms.
+    gfx_fill_rect(g, sx - 8, sy - 22, 16, 13, 226, 82, 74)
+    gfx_fill_rect(g, sx - 8, sy - 13, 16, 3, 190, 62, 58)
+    if pose == 2 {
+        gfx_fill_rect(g, sx - 12, sy - 30, 5, 10, 226, 82, 74)
+        gfx_fill_rect(g, sx + 7, sy - 30, 5, 10, 226, 82, 74)
+    }
+    if pose == 3 {
+        gfx_fill_rect(g, sx - 15, sy - 20, 7, 4, 226, 82, 74)
+        gfx_fill_rect(g, sx + 8, sy - 20, 7, 4, 226, 82, 74)
+    }
+    if pose == 0 or pose == 1 {
+        gfx_fill_rect(g, sx - 12, sy - 21, 4, 10, 226, 82, 74)
+        gfx_fill_rect(g, sx + 8, sy - 21, 4, 10, 226, 82, 74)
+    }
+
+    # Head, cap and face.
+    gfx_fill_rect(g, sx - 7, sy - 34, 14, 12, 244, 206, 168)
+    gfx_fill_rect(g, sx - 8, sy - 37, 16, 5, 40, 122, 200)
+    gfx_fill_rect(g, sx - 8 + facing * 6, sy - 33, 6, 3, 40, 122, 200)
+    gfx_fill_rect(g, sx - 1 + facing * 3, sy - 30, 2, 2, 30, 30, 40)
+}
+
+# Speed meter: a bar that fills with |vx| and turns hot at the top.
+function draw_speed_bar(g: Gfx, x: i32, y: i32, w: i32, speed: f32) -> void {
+    gfx_fill_rect(g, x, y, w, 8, 26, 28, 40)
+    let mut f: f32 = speed / MAX_VX
+    if f > 1.0 { f = 1.0 }
+    let fw: i32 = (f * (w as f32)) as i32
+    let mut r: i32 = 90
+    let mut gg: i32 = 200
+    let mut b: i32 = 250
+    if f > 0.85 {
+        r = 252
+        gg = 176
+        b = 48
+    }
+    gfx_fill_rect(g, x, y, fw, 8, r, gg, b)
+    gfx_fill_rect(g, x, y, w, 1, 60, 66, 88)
+}
+
+function main() -> i32 {
+    floor_x = malloc((RING * 4) as i64) as ptr<f32>
+    floor_w = malloc((RING * 4) as i64) as ptr<f32>
+    if floor_x == null or floor_w == null {
+        println("allocation failed")
+        return 1
+    }
+
+    let mut state: i32 = STATE_TITLE
+    let mut paused: bool = false
+
+    # Character.
+    let mut px: f32 = 210.0
+    let mut py: f32 = 0.0
+    let mut vx: f32 = 0.0
+    let mut vy: f32 = 0.0
+    let mut grounded: bool = true
+    let mut facing: i32 = 1
+    let mut run_phase: f32 = 0.0
+
+    # Tower and camera.
+    let mut cam_y: f32 = CAM_START
+    let mut run_ticks: i32 = 0
+    let mut cur_floor: i32 = 0
+    let mut top_floor: i32 = 0
+
+    # Scoring.
+    let mut score: i32 = 0
+    let mut combo_floors: i32 = 0
+    let mut combo_timer: i32 = 0
+    let mut combo_on: bool = false
+    let mut best_combo: i32 = 0
+    let mut run_best_combo: i32 = 0
+    let mut best_score: i32 = 0
+    let mut best_floor: i32 = 0
+    let mut combo_flash: i32 = 0
+
+    let mut prev_space: bool = false
+    let mut prev_p: bool = false
+
+    lcg = 20260806
+    gen_top = -1
+    ensure_floors(AHEAD)
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "ICY TOWER - Flow")
+    let mut frame: i32 = 0
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let space: bool = gfx_key_down(g, KEY_SPACE)
+        let mut space_edge: bool = space and !prev_space
+        prev_space = space
+        let pdown: bool = gfx_key_down(g, KEY_P)
+        if pdown and !prev_p { paused = !paused }
+        prev_p = pdown
+
+        let left: bool = gfx_key_down(g, KEY_LEFT) or gfx_key_down(g, KEY_A)
+        let right: bool = gfx_key_down(g, KEY_RIGHT) or gfx_key_down(g, KEY_D)
+
+        # ------------------------------------------------------------------
+        # State transitions
+        # ------------------------------------------------------------------
+        if state == STATE_TITLE and space_edge {
+            state = STATE_PLAY
+            lcg = 20260806
+            gen_top = -1
+            ensure_floors(AHEAD)
+            px = 210.0
+            py = 0.0
+            vx = 0.0
+            vy = 0.0
+            grounded = true
+            cam_y = CAM_START
+            run_ticks = 0
+            cur_floor = 0
+            top_floor = 0
+            score = 0
+            combo_floors = 0
+            combo_timer = 0
+            combo_on = false
+            run_best_combo = 0
+            combo_flash = 0
+            paused = false
+            # The press that started the run is not also a jump.
+            space_edge = false
+        }
+        if state == STATE_OVER and gfx_key_down(g, KEY_R) {
+            state = STATE_PLAY
+            lcg = 20260806
+            gen_top = -1
+            ensure_floors(AHEAD)
+            px = 210.0
+            py = 0.0
+            vx = 0.0
+            vy = 0.0
+            grounded = true
+            cam_y = CAM_START
+            run_ticks = 0
+            cur_floor = 0
+            top_floor = 0
+            score = 0
+            combo_floors = 0
+            combo_timer = 0
+            combo_on = false
+            run_best_combo = 0
+            combo_flash = 0
+        }
+
+        # ------------------------------------------------------------------
+        # Simulation
+        # ------------------------------------------------------------------
+        if state == STATE_PLAY and !paused {
+            # Running. Speed persists through the air, which is the whole
+            # point: the jump you get is the speed you brought to it.
+            let mut acc: f32 = ACCEL
+            if !grounded { acc = AIR_ACCEL }
+            if right and !left {
+                vx = vx + acc
+                facing = 1
+            }
+            if left and !right {
+                vx = vx - acc
+                facing = -1
+            }
+            if !left and !right and grounded {
+                vx = vx * FRICTION
+                if fabsf(vx) < 0.05 { vx = 0.0 }
+            }
+            if vx > MAX_VX { vx = MAX_VX }
+            if vx < 0.0 - MAX_VX { vx = 0.0 - MAX_VX }
+
+            if grounded and space_edge {
+                vy = JUMP_BASE + fabsf(vx) * JUMP_GAIN
+                grounded = false
+            }
+
+            # Integrate.
+            let py_prev: f32 = py
+            px = px + vx
+            vy = vy - GRAVITY
+            py = py + vy
+
+            # Walls keep the momentum and flip it.
+            if px - HERO_HW < PLAY_L {
+                px = PLAY_L + HERO_HW
+                vx = (0.0 - vx) * WALL_KEEP
+                facing = 1
+            }
+            if px + HERO_HW > PLAY_R {
+                px = PLAY_R - HERO_HW
+                vx = (0.0 - vx) * WALL_KEEP
+                facing = -1
+            }
+
+            run_phase = run_phase + fabsf(vx) * 0.075
+
+            # Landing. Only surfaces crossed downward this tick can catch the
+            # feet, so a fast fall never tunnels and a rise never snags.
+            grounded = false
+            if vy <= 0.0 {
+                let mut i: i32 = (py / FLOOR_SPACING) as i32
+                if i < 0 { i = 0 }
+                let hi: i32 = (py_prev / FLOOR_SPACING) as i32 + 1
+                while i <= hi {
+                    let top: f32 = (i as f32) * FLOOR_SPACING
+                    if top <= py_prev and top >= py {
+                        let fx: f32 = fx_at(i)
+                        let fw: f32 = fw_at(i)
+                        if px + HERO_HW > fx and px - HERO_HW < fx + fw {
+                            py = top
+                            vy = 0.0
+                            grounded = true
+
+                            let gained: i32 = i - cur_floor
+                            if gained >= 2 {
+                                combo_on = true
+                                combo_floors = combo_floors + gained
+                                combo_timer = COMBO_TIME
+                                combo_flash = 20
+                            }
+                            if i < cur_floor and combo_on {
+                                score = score + combo_floors * combo_floors
+                                if combo_floors > run_best_combo {
+                                    run_best_combo = combo_floors
+                                }
+                                combo_floors = 0
+                                combo_timer = 0
+                                combo_on = false
+                            }
+                            cur_floor = i
+                            if i > top_floor {
+                                score = score + (i - top_floor) * 10
+                                top_floor = i
+                            }
+                        }
+                    }
+                    i = i + 1
+                }
+            }
+
+            # Combo timer.
+            if combo_on {
+                combo_timer = combo_timer - 1
+                if combo_timer <= 0 {
+                    score = score + combo_floors * combo_floors
+                    if combo_floors > run_best_combo {
+                        run_best_combo = combo_floors
+                    }
+                    combo_floors = 0
+                    combo_on = false
+                }
+            }
+            if combo_flash > 0 { combo_flash = combo_flash - 1 }
+
+            # The tower scrolls, and faster the higher you get.
+            run_ticks = run_ticks + 1
+            let mut sf: i32 = top_floor
+            if run_ticks > IDLE_GRACE and sf < SCROLL_FROM { sf = SCROLL_FROM }
+            if sf >= SCROLL_FROM {
+                let mut sp: f32 = SCROLL_BASE
+                    + (sf - SCROLL_FROM) as f32 * SCROLL_PER_FLOOR
+                if sp > SCROLL_MAX { sp = SCROLL_MAX }
+                cam_y = cam_y + sp
+            }
+            let want: f32 = py - CAM_LEAD
+            if want > cam_y { cam_y = want }
+
+            ensure_floors(((cam_y + (WIN_H as f32)) / FLOOR_SPACING) as i32 + AHEAD)
+
+            # Below the bottom edge is the end of the run.
+            if py + HERO_H < cam_y {
+                if combo_on and combo_floors > run_best_combo {
+                    run_best_combo = combo_floors
+                }
+                if run_best_combo > best_combo { best_combo = run_best_combo }
+                if score > best_score { best_score = score }
+                if top_floor > best_floor { best_floor = top_floor }
+                state = STATE_OVER
+            }
+        }
+
+        # ------------------------------------------------------------------
+        # Render
+        # ------------------------------------------------------------------
+        draw_bg(g, top_floor / 50)
+        draw_walls(g, cam_y)
+
+        # Below the ground floor is not sky.
+        let base_y: i32 = WIN_H + (cam_y as i32)
+        if base_y < WIN_H {
+            gfx_fill_rect(g, WALL_TH, base_y + FLOOR_TH, WIN_W - 2 * WALL_TH,
+                          WIN_H - base_y, 26, 22, 36)
+        }
+
+        let lo_f: i32 = (cam_y / FLOOR_SPACING) as i32 - 1
+        let hi_f: i32 = ((cam_y + (WIN_H as f32)) / FLOOR_SPACING) as i32 + 1
+        let mut fi: i32 = lo_f
+        if fi < 0 { fi = 0 }
+        while fi <= hi_f {
+            draw_floor(g, fi, cam_y)
+            fi = fi + 1
+        }
+
+        if state != STATE_TITLE {
+            let sx: i32 = px as i32
+            let sy: i32 = WIN_H - ((py - cam_y) as i32)
+            let mut pose: i32 = 0
+            if grounded and fabsf(vx) > 0.6 { pose = 1 }
+            if !grounded and vy > 0.0 { pose = 2 }
+            if !grounded and vy <= 0.0 { pose = 3 }
+            let hot: bool = fabsf(vx) > MAX_VX * 0.85
+            draw_hero(g, sx, sy, facing, pose, run_phase as i32, hot, frame)
+        }
+
+        # HUD.
+        gfx_fill_rect(g, 0, 0, WIN_W, 46, 14, 17, 26)
+        # The counter reads the floor you are level with, so it ticks over
+        # during a leap; the score behind it only pays on a landing.
+        let mut disp_floor: i32 = top_floor
+        if state == STATE_PLAY {
+            let air_floor: i32 = (py / FLOOR_SPACING) as i32
+            if air_floor > disp_floor { disp_floor = air_floor }
+        }
+        gfx_draw_text(g, 8, 6, "FLOOR", 1, 150, 158, 178)
+        gfx_draw_int(g, 8, 18, disp_floor, 2, 240, 244, 250)
+        gfx_draw_text(g, 132, 6, "SCORE", 1, 150, 158, 178)
+        gfx_draw_int(g, 132, 18, score, 2, 250, 220, 140)
+        gfx_draw_text(g, 300, 6, "SPEED", 1, 150, 158, 178)
+        draw_speed_bar(g, 300, 20, 110, fabsf(vx))
+
+        if combo_on {
+            let name: string = combo_name(combo_floors)
+            let mut cr: i32 = 250
+            let mut cg: i32 = 210
+            let mut cb: i32 = 90
+            if combo_flash > 0 {
+                cr = 255
+                cg = 255
+                cb = 255
+            }
+            gfx_fill_rect(g, 0, 52, WIN_W, 40, 20, 16, 30)
+            gfx_draw_text_centered(g, WIN_W / 2, 56, name, 2, cr, cg, cb)
+            gfx_draw_int(g, 8, 58, combo_floors, 2, 250, 250, 250)
+            let bw: i32 = combo_timer * (WIN_W - 20) / COMBO_TIME
+            gfx_fill_rect(g, 10, 80, WIN_W - 20, 6, 40, 34, 54)
+            gfx_fill_rect(g, 10, 80, bw, 6, 240, 120, 60)
+        }
+
+        if state == STATE_TITLE {
+            gfx_fill_rect(g, 40, 180, WIN_W - 80, 250, 18, 22, 38)
+            gfx_fill_rect(g, 44, 184, WIN_W - 88, 242, 30, 40, 68)
+            gfx_draw_text_centered(g, WIN_W / 2, 206, "ICY", 5, 190, 232, 255)
+            gfx_draw_text_centered(g, WIN_W / 2, 254, "TOWER", 5, 190, 232, 255)
+            gfx_draw_text_centered(g, WIN_W / 2, 312, "RUN TO BUILD SPEED", 1, 210, 216, 230)
+            gfx_draw_text_centered(g, WIN_W / 2, 326, "SPEED BUYS HEIGHT", 1, 210, 216, 230)
+            gfx_draw_text_centered(g, WIN_W / 2, 340, "TWO FLOORS AT ONCE STARTS A COMBO", 1,
+                                   250, 210, 120)
+            gfx_draw_text_centered(g, WIN_W / 2, 366, "ARROWS RUN   SPACE JUMP", 1, 170, 178, 200)
+            if (frame / 20) % 2 == 0 {
+                gfx_draw_text_centered(g, WIN_W / 2, 396, "PRESS SPACE", 2, 250, 240, 160)
+            }
+            if best_score > 0 {
+                gfx_draw_text(g, 8, WIN_H - 20, "BEST", 1, 150, 158, 178)
+                gfx_draw_int(g, 48, WIN_H - 20, best_score, 1, 250, 220, 140)
+            }
+            draw_hero(g, WIN_W / 2, 470, 1, 1, frame / 6, false, frame)
+        }
+
+        if state == STATE_OVER {
+            gfx_fill_rect(g, 50, 200, WIN_W - 100, 210, 16, 12, 20)
+            gfx_fill_rect(g, 54, 204, WIN_W - 108, 202, 46, 26, 34)
+            gfx_draw_text_centered(g, WIN_W / 2, 220, "YOU FELL", 3, 255, 190, 170)
+            gfx_draw_text(g, 76, 268, "FLOOR", 1, 200, 180, 180)
+            gfx_draw_int_right(g, WIN_W - 76, 264, top_floor, 2, 250, 250, 250)
+            gfx_draw_text(g, 76, 296, "SCORE", 1, 200, 180, 180)
+            gfx_draw_int_right(g, WIN_W - 76, 292, score, 2, 250, 220, 140)
+            gfx_draw_text(g, 76, 324, "BEST COMBO", 1, 200, 180, 180)
+            gfx_draw_int_right(g, WIN_W - 76, 320, run_best_combo, 2, 250, 170, 90)
+            if run_best_combo >= 2 {
+                gfx_draw_text_centered(g, WIN_W / 2, 356, combo_name(run_best_combo), 1,
+                                       250, 200, 120)
+            }
+            if (frame / 20) % 2 == 0 {
+                gfx_draw_text_centered(g, WIN_W / 2, 382, "R TO RESTART", 1, 240, 240, 240)
+            }
+        }
+
+        if paused and state == STATE_PLAY {
+            gfx_draw_text_centered(g, WIN_W / 2, WIN_H / 2, "PAUSED", 3, 250, 250, 250)
+        }
+
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
