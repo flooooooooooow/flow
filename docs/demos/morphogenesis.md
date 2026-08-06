@@ -80,6 +80,10 @@ recordings reproduce bit for bit.
 | **Diffusion-limited aggregation**. A fractal dendrite off one seed, D near 1.7<br>`dla.flow` | **Eden growth**. A compact colony with a rough KPZ front<br>`eden_growth.flow` | **Space colonization**. A midrib forks into full leaf venation<br>`branching_vessels.flow` |
 | ![L-system plant](./morphogenesis/lsystem_plant.gif) | ![L-system tree](./morphogenesis/lsystem_tree.gif) | ![Coral](./morphogenesis/coral_ballistic.gif) |
 | **L-system plant**. A turtle walks a longer prefix of the string each frame<br>`lsystem_plant.flow` | **L-system tree**. Seven levels of 3D branching, then wind<br>`lsystem_tree.flow` | **Ballistic deposition**. Shadowing grows porous coral columns<br>`coral_ballistic.flow` |
+| ![Phase-field dendrite](./morphogenesis/phase_field_dendrite.gif) | ![BZ 3D slice](./morphogenesis/bz_3d_slice.gif) | ![Laplacian growth](./morphogenesis/laplacian_growth.gif) |
+| **Phase-field dendrite**. Six-fold anisotropy selects primary arms<br>`phase_field_dendrite.flow` | **BZ 3D slice**. A scroll wave revealed as a marching z-cut<br>`bz_3d_slice.flow` | **Laplacian growth**. Dielectric breakdown; D from Rg scaling<br>`laplacian_growth.flow` |
+| ![Viscous fingering](./morphogenesis/viscous_fingering.gif) | ![Mycelium](./morphogenesis/mycelium.gif) | |
+| **Viscous fingering**. A Saffman-Taylor finger at half the channel<br>`viscous_fingering.flow` | **Mycelium**. Hyphal length grows under nutrient depletion<br>`mycelium.flow` | |
 
 ## Cellular and discrete
 
