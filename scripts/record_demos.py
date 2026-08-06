@@ -10,12 +10,15 @@ re-creation of it. No display is required, which means this also works in CI.
   python3 scripts/record_demos.py            # all demos
   python3 scripts/record_demos.py lorenz     # one demo
   python3 scripts/record_demos.py --group morphogenesis
+  python3 scripts/record_demos.py --group neuro
 
 Naming contract: every game in examples/games/ has a GIF at
-docs/demos/games/<name>.gif, and every example in examples/morphogenesis/ has
-one at docs/demos/morphogenesis/<name>.gif. The three original demos (lorenz,
-tetris, 2048) also keep their GIFs directly in docs/demos/; tetris.gif and
-2048.gif are copied into docs/demos/games/ so the games directory is complete.
+docs/demos/games/<name>.gif, every example in examples/morphogenesis/ has
+one at docs/demos/morphogenesis/<name>.gif, and every example in
+examples/neuro/ has one at docs/demos/neuro/<name>.gif. The three original
+demos (lorenz, tetris, 2048) also keep their GIFs directly in docs/demos/;
+tetris.gif and 2048.gif are copied into docs/demos/games/ so the games
+directory is complete.
 
 Interactive demos are driven by `flow record --keys`, a list of
 `first-last:keycode` windows over frame numbers (see runtime/gfx_record.c).
@@ -41,6 +44,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "docs" / "demos"
 GAMES_DIR = OUT_DIR / "games"
 MORPH_DIR = OUT_DIR / "morphogenesis"
+NEURO_DIR = OUT_DIR / "neuro"
 
 # macOS virtual keycodes, matching lib/stdlib/gfx.flow.
 KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP = 123, 124, 125, 126
@@ -711,6 +715,93 @@ MORPH_DEMOS: list[Demo] = [
 ]
 
 DEMOS += MORPH_DEMOS
+
+
+def neuro(name: str, frames: int, skip: int, caption: str,
+          duration_ms: int = 70, colors: int = 40,
+          scale: float = 0.55, keys: str = "") -> Demo:
+    """A neuro-atlas clip: evidence panels that animate themselves.
+
+    Every example draws into a ~900x660 HUD window and auto-cycles its
+    presets, so no input script is required. Scale 0.55 lands near 500 px
+    wide, matching the morphogenesis gallery cards.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/neuro/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="neuro",
+        resample=Image.NEAREST,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Neuron and network atlas. Measurements gate the exit code before the window
+# opens; the clip itself is the live HUD the program draws after that pass.
+# Frame budgets are short because most examples auto-advance a preset every
+# few dozen frames — long enough to see the dynamics, short enough that the
+# headless verification still dominates the wall time.
+# ---------------------------------------------------------------------------
+
+NEURO_DEMOS: list[Demo] = [
+    # ---- single-cell dynamics ----
+    neuro("hodgkin_huxley", 120, 2,
+          "Hodgkin-Huxley — spike shape and type-II onset vs the 1952 paper",
+          duration_ms=70, colors=40),
+    # Auto-advances the highlight across all 20 panels every 4 frames.
+    neuro("izhikevich_zoo", 100, 1,
+          "Izhikevich zoo — twenty firing regimes from one pair of equations",
+          duration_ms=80, colors=32),
+    neuro("lif_fi_curve", 100, 2,
+          "Leaky integrate-and-fire — measured F-I curve against its closed form",
+          duration_ms=70, colors=32, scale=0.6),
+    neuro("fitzhugh_nagumo", 120, 2,
+          "FitzHugh-Nagumo — nullclines, Hopf window, and the limit cycle",
+          duration_ms=70, colors=40),
+    neuro("morris_lecar", 120, 2,
+          "Morris-Lecar — Hopf and fold currents found by bisection on tr J",
+          duration_ms=70, colors=40),
+    # ---- cable and compartments ----
+    neuro("cable_equation", 100, 2,
+          "Cable equation — attenuation vs the analytic length constant",
+          duration_ms=70, colors=40),
+    neuro("multicompartment", 120, 2,
+          "Multicompartment — a backpropagating action potential along a dendrite",
+          duration_ms=70, colors=40),
+    # ---- synapses and networks ----
+    neuro("stdp_window", 90, 2,
+          "STDP — the canonical asymmetric pairing window, parts in 1e14",
+          duration_ms=80, colors=32),
+    neuro("balanced_network", 90, 2,
+          "Balanced E/I — 12500 LIF neurons in the asynchronous irregular state",
+          duration_ms=80, colors=32),
+    neuro("ring_attractor", 120, 2,
+          "Ring attractor — a bump that remembers and tracks a moving cue",
+          duration_ms=70, colors=40),
+    neuro("hopfield", 100, 2,
+          "Hopfield — capacity against the 0.138 N bound, energy never rises",
+          duration_ms=70, colors=32),
+    neuro("wta_circuit", 100, 2,
+          "Winner-take-all — selection latency vs contrast, R^2 near 1",
+          duration_ms=70, colors=40),
+    neuro("cpg_gait", 120, 2,
+          "CPG gait — four quadruped gaits phase-locked from coupled oscillators",
+          duration_ms=70, colors=40),
+    neuro("orientation_tuning", 100, 2,
+          "Retina to V1 — orientation tuning from untuned inputs",
+          duration_ms=70, colors=40),
+    neuro("reservoir", 100, 2,
+          "Reservoir — echo-state memory capacity against Jaeger's bound N",
+          duration_ms=70, colors=40),
+]
+
+DEMOS += NEURO_DEMOS
 
 
 def last_scripted_frame(keys: str) -> int:
