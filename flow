@@ -158,7 +158,8 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  debug <program> [--break N|--break main] [--no-launch]  Debug build (+ optional LLDB/GDB)"
     echo "  window <program>  Run with SDL2 window backend"
     echo "  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)"
-    echo "  record <program>  Run a gfx program headless, writing frames as PPMs (see runtime/gfx_record.c)"
+    echo "  record <program> [--frames N] [--out DIR] [--gif [PATH]] [--keys SPEC]"
+    echo "                    Run a gfx program headless; write PPM frames, or a GIF with --gif"
     echo "  shader <program>  Run fill-shader demo (Metal window on macOS; see docs/language/shaders.md)"
     echo "  demo vulkan [basic|advanced]  Vulkan triangle / scene demos (macOS + MoltenVK)"
     echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout|layout|layout-dsl]"
@@ -1107,12 +1108,86 @@ run_gfx_program() {
 # Build a gfx program against the headless recording backend and run it, so demo
 # frames come from the real program instead of a mock-up. Configured through
 # FLOW_GFX_RECORD_* — see runtime/gfx_record.c.
+# flow record <program> [--frames N] [--out DIR] [--gif [PATH]] [--keys SPEC]
+#
+# Flags win; the FLOW_GFX_RECORD_* environment variables remain as a fallback
+# so existing scripts keep working.
 record_gfx_program() {
-    local program="$1"
+    local program=""
+    local rec_frames=""
+    local rec_dir=""
+    local rec_keys=""
+    local rec_gif=""
+    local want_gif=0
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --frames|-n)
+                rec_frames="${2:-}"
+                if [ -z "$rec_frames" ]; then
+                    print_error "--frames needs a count, e.g. --frames 90"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            --frames=*) rec_frames="${1#*=}"; shift ;;
+            --out|-o)
+                rec_dir="${2:-}"
+                if [ -z "$rec_dir" ]; then
+                    print_error "--out needs a directory, e.g. --out build/frames"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            --out=*) rec_dir="${1#*=}"; shift ;;
+            --keys)
+                rec_keys="${2:-}"
+                shift 2
+                ;;
+            --keys=*) rec_keys="${1#*=}"; shift ;;
+            --gif)
+                want_gif=1
+                case "${2:-}" in
+                    ""|-*) ;;
+                    *) rec_gif="$2"; shift ;;
+                esac
+                shift
+                ;;
+            --gif=*) want_gif=1; rec_gif="${1#*=}"; shift ;;
+            -*)
+                print_error "Unknown flag for 'flow record': $1"
+                echo "  usage: flow record <program.flow> [--frames N] [--out DIR] [--gif [PATH]] [--keys SPEC]"
+                exit 1
+                ;;
+            *)
+                if [ -z "$program" ]; then program="$1"; fi
+                shift
+                ;;
+        esac
+    done
+
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
     local build_dir="$SCRIPT_DIR/build"
+
+    # A GIF needs frames somewhere; default to a scratch dir under build/.
+    if [ "$want_gif" = "1" ]; then
+        if [ -z "$rec_gif" ]; then
+            rec_gif="$build_dir/$basename.gif"
+        fi
+        if [ -z "$rec_dir" ]; then
+            rec_dir="$build_dir/frames_$basename"
+            rm -rf "$rec_dir"
+        fi
+        if [ -z "$rec_frames" ]; then
+            rec_frames=120
+        fi
+    fi
+
+    [ -n "$rec_frames" ] && export FLOW_GFX_RECORD_FRAMES="$rec_frames"
+    [ -n "$rec_dir" ] && export FLOW_GFX_RECORD_DIR="$rec_dir"
+    [ -n "$rec_keys" ] && export FLOW_GFX_RECORD_KEYS="$rec_keys"
 
     check_deps
     mkdir -p "$build_dir"
@@ -1149,6 +1224,16 @@ record_gfx_program() {
 
     print_info "Recording..."
     "$exe_file"
+
+    if [ "$want_gif" = "1" ]; then
+        print_info "Encoding $rec_gif ..."
+        if python3 "$SCRIPT_DIR/scripts/frames_to_gif.py" "${rec_dir:-frames}" "$rec_gif"; then
+            print_success "GIF: $rec_gif"
+        else
+            print_error "GIF encoding failed"
+            exit 1
+        fi
+    fi
 }
 
 # Build and run Vulkan triangle demo (macOS + MoltenVK).
@@ -2211,7 +2296,8 @@ case "${1:-help}" in
         run_gfx_program "${2:-}"
         ;;
     "record")
-        record_gfx_program "${2:-}"
+        shift
+        record_gfx_program "$@"
         ;;
     "vulkan-demo")
         run_vulkan_demo
