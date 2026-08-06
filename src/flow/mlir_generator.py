@@ -1929,20 +1929,28 @@ class MLIRGenerator:
         ops.extend(lower_ops)
         ops.extend(upper_ops)
 
-        lb = f"%{self.function_counter}"; self.function_counter += 1
-        ub = f"%{self.function_counter}"; self.function_counter += 1
-        c1 = f"%{self.function_counter}"; self.function_counter += 1
-        c4 = f"%{self.function_counter}"; self.function_counter += 1
+        lb = f"%{self.function_counter}"
+        self.function_counter += 1
+        ub = f"%{self.function_counter}"
+        self.function_counter += 1
+        c1 = f"%{self.function_counter}"
+        self.function_counter += 1
+        c4 = f"%{self.function_counter}"
+        self.function_counter += 1
         ops.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
         ops.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
         ops.append(f"{self.indent()}{c1} = arith.constant 1 : index")
         ops.append(f"{self.indent()}{c4} = arith.constant 4 : index")
 
         # n = ub - lb; n_vec = n - (n % 4); vec_ub = lb + n_vec
-        n = f"%{self.function_counter}"; self.function_counter += 1
-        rem = f"%{self.function_counter}"; self.function_counter += 1
-        n_vec = f"%{self.function_counter}"; self.function_counter += 1
-        vec_ub = f"%{self.function_counter}"; self.function_counter += 1
+        n = f"%{self.function_counter}"
+        self.function_counter += 1
+        rem = f"%{self.function_counter}"
+        self.function_counter += 1
+        n_vec = f"%{self.function_counter}"
+        self.function_counter += 1
+        vec_ub = f"%{self.function_counter}"
+        self.function_counter += 1
         ops.append(f"{self.indent()}{n} = arith.subi {ub}, {lb} : index")
         ops.append(f"{self.indent()}{rem} = arith.remsi {n}, {c4} : index")
         ops.append(f"{self.indent()}{n_vec} = arith.subi {n}, {rem} : index")
@@ -1950,7 +1958,8 @@ class MLIRGenerator:
 
         vty = f"vector<4x{elem}>"
         # Vectorized loop
-        iv_v = f"%{self.function_counter}"; self.function_counter += 1
+        iv_v = f"%{self.function_counter}"
+        self.function_counter += 1
         ops.append(f"{self.indent()}scf.for {iv_v} = {lb} to {vec_ub} step {c4} {{")
         self.indent_level += 1
         self._ssa_types[iv_v] = "index"
@@ -1974,7 +1983,8 @@ class MLIRGenerator:
         self.indent_level -= 1
         ops.append(f"{self.indent()}}}")
         # Scalar remainder
-        iv_s = f"%{self.function_counter}"; self.function_counter += 1
+        iv_s = f"%{self.function_counter}"
+        self.function_counter += 1
         ops.append(f"{self.indent()}scf.for {iv_s} = {vec_ub} to {ub} step {c1} {{")
         self.indent_level += 1
         self._ssa_types[iv_s] = "index"
@@ -2029,8 +2039,10 @@ class MLIRGenerator:
         mlir_code.extend(lower_ops)
         mlir_code.extend(upper_ops)
 
-        lb = f"%{self.function_counter}"; self.function_counter += 1
-        ub = f"%{self.function_counter}"; self.function_counter += 1
+        lb = f"%{self.function_counter}"
+        self.function_counter += 1
+        ub = f"%{self.function_counter}"
+        self.function_counter += 1
         mlir_code.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
         mlir_code.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
 
@@ -2038,7 +2050,8 @@ class MLIRGenerator:
         # With a constant step the direction is known here; with a dynamic one
         # the sign is tested once in the entry block and selected per iteration.
         ascending_ssa: Optional[str] = None
-        step = f"%{self.function_counter}"; self.function_counter += 1
+        step = f"%{self.function_counter}"
+        self.function_counter += 1
         if step_value is not None:
             mlir_code.append(f"{self.indent()}{step} = arith.constant {step_value} : index")
             cmp_pred = "slt" if step_value > 0 else "sgt"
@@ -2048,8 +2061,10 @@ class MLIRGenerator:
             mlir_code.append(
                 f"{self.indent()}{step} = arith.index_cast {step_expr_ssa} : i32 to index"
             )
-            zero = f"%{self.function_counter}"; self.function_counter += 1
-            ascending_ssa = f"%{self.function_counter}"; self.function_counter += 1
+            zero = f"%{self.function_counter}"
+            self.function_counter += 1
+            ascending_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
             mlir_code.append(f"{self.indent()}{zero} = arith.constant 0 : index")
             mlir_code.append(
                 f"{self.indent()}{ascending_ssa} = arith.cmpi sgt, {step}, {zero} : index"
@@ -2077,14 +2092,16 @@ class MLIRGenerator:
         )
 
         def _block_args() -> tuple[str, str, List[str]]:
-            iv_arg = f"%{self.function_counter}"; self.function_counter += 1
+            iv_arg = f"%{self.function_counter}"
+            self.function_counter += 1
             self._ssa_types[iv_arg] = 'index'
             args = [f"{iv_arg}: index"]
             names: List[str] = []
             for var_name in loop_carried_vars:
                 if var_name not in self.symbol_table:
                     continue
-                arg = f"%{self.function_counter}"; self.function_counter += 1
+                arg = f"%{self.function_counter}"
+                self.function_counter += 1
                 ty = self.symbol_table[var_name]['mlir_type']
                 self._ssa_types[arg] = ty
                 args.append(f"{arg}: {ty}")
@@ -2098,11 +2115,14 @@ class MLIRGenerator:
         # Header: iv < ub ?
         header_iv, header_args, _ = _block_args()
         mlir_code.append(f"{self.indent()}^{header_block}({header_args}):")
-        cond = f"%{self.function_counter}"; self.function_counter += 1
+        cond = f"%{self.function_counter}"
+        self.function_counter += 1
         mlir_code.append(f"{self.indent()}{cond} = arith.cmpi {cmp_pred}, {header_iv}, {ub} : index")
         if ascending_ssa is not None:
-            desc = f"%{self.function_counter}"; self.function_counter += 1
-            picked = f"%{self.function_counter}"; self.function_counter += 1
+            desc = f"%{self.function_counter}"
+            self.function_counter += 1
+            picked = f"%{self.function_counter}"
+            self.function_counter += 1
             mlir_code.append(
                 f"{self.indent()}{desc} = arith.cmpi sgt, {header_iv}, {ub} : index"
             )
@@ -2145,7 +2165,8 @@ class MLIRGenerator:
             mlir_code.append(body_mlir)
 
         if not self._block_has_terminator(body_mlir):
-            next_iv = f"%{self.function_counter}"; self.function_counter += 1
+            next_iv = f"%{self.function_counter}"
+            self.function_counter += 1
             mlir_code.append(f"{self.indent()}{next_iv} = arith.addi {body_iv}, {step} : index")
             latch_ssas = [next_iv] + [
                 self.symbol_table[v]['ssa_name']
