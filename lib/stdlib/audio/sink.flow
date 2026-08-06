@@ -1,0 +1,141 @@
+# Audio Sink: one output target, device or file
+#
+# Every audio example writes through a sink instead of talking to the device
+# directly. That is what makes the examples testable: set FLOW_AUDIO_RENDER to
+# a path and the same program renders a WAV instead of opening a sound card.
+#
+#   FLOW_AUDIO_RENDER=out.wav   render offline to that path (no device)
+#   FLOW_AUDIO_SILENT=1         run the DSP, write nothing (timing checks)
+#   (neither set)               open the default output device
+#
+# Usage:
+#   let mut out: AudioSink = sink_open(48000, 2, 256)
+#   let op: ptr<AudioSink> = &out
+#   ... sink_write(op, buf, frames) ...
+#   sink_close(op)
+#
+# If a device is asked for and cannot be opened, the sink falls back to
+# silent mode and says so rather than failing the program: an example that
+# renders correctly on a headless CI box is still a passing example.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/io.flow"
+import "stdlib/audio/wav.flow"
+
+extern { function getenv(name: string) -> ptr<u8> }
+extern { function usleep(usec: i32) -> i32 }
+
+export const SINK_DEVICE: i32 = 0
+export const SINK_WAV: i32 = 1
+export const SINK_SILENT: i32 = 2
+
+export struct AudioSink {
+    mode: i32
+    dev: AudioDevice
+    rate: i32
+    channels: i32
+    block: i32
+    frames: i64
+}
+
+function sink_env(name: string) -> ptr<u8> {
+    let raw: ptr<u8> = getenv(name)
+    if raw == null {
+        return null
+    }
+    if raw[0] == 0 {
+        return null
+    }
+    return raw
+}
+
+# Open the sink the environment asks for.
+export function sink_open(rate: i32, channels: i32, block: i32) -> AudioSink {
+    let empty: AudioDevice = AudioDevice { raw: null, has_input: false, has_output: false }
+
+    let render: ptr<u8> = sink_env("FLOW_AUDIO_RENDER")
+    if render != null {
+        let path: string = render as string
+        if wav_write_open(path, rate, channels) {
+            printf("  output: WAV render -> %s (%d Hz, %d ch)\n", path, rate, channels)
+            return AudioSink { mode: SINK_WAV, dev: empty, rate: rate,
+                               channels: channels, block: block, frames: 0 }
+        }
+        println("  output: WAV render failed, running silent")
+        return AudioSink { mode: SINK_SILENT, dev: empty, rate: rate,
+                           channels: channels, block: block, frames: 0 }
+    }
+
+    if sink_env("FLOW_AUDIO_SILENT") != null {
+        println("  output: silent (FLOW_AUDIO_SILENT)")
+        return AudioSink { mode: SINK_SILENT, dev: empty, rate: rate,
+                           channels: channels, block: block, frames: 0 }
+    }
+
+    let cfg: AudioDeviceConfig = audio_device_config(rate, channels, block, false, true)
+    let dev: AudioDevice = audio_device_open(cfg)
+    if !audio_device_ok(dev) {
+        println("  output: no audio device, running silent")
+        println("          (set FLOW_AUDIO_RENDER=out.wav to render a file instead)")
+        return AudioSink { mode: SINK_SILENT, dev: empty, rate: rate,
+                           channels: channels, block: block, frames: 0 }
+    }
+    if audio_device_start(dev) != AUDIO_OK {
+        println(audio_last_error(dev))
+        audio_device_close(dev)
+        return AudioSink { mode: SINK_SILENT, dev: empty, rate: rate,
+                           channels: channels, block: block, frames: 0 }
+    }
+    printf("  output: audio device (%d Hz, %d ch, %d frame blocks)\n", rate, channels, block)
+    return AudioSink { mode: SINK_DEVICE, dev: dev, rate: rate,
+                       channels: channels, block: block, frames: 0 }
+}
+
+# Write interleaved f32 frames. Returns frames accepted.
+export function sink_write(s: ptr<AudioSink>, data: ptr<f32>, frames: i32) -> i32 {
+    if frames <= 0 {
+        return 0
+    }
+    if s.mode == SINK_WAV {
+        let n: i32 = wav_write_frames(data, frames)
+        s.frames = s.frames + (n as i64)
+        return n
+    }
+    if s.mode == SINK_DEVICE {
+        while audio_available_write(s.dev) < frames {
+            usleep(1000)
+        }
+        let n: i32 = audio_write_f32(s.dev, data, frames)
+        s.frames = s.frames + (n as i64)
+        return n
+    }
+    s.frames = s.frames + (frames as i64)
+    return frames
+}
+
+export function sink_close(s: ptr<AudioSink>) -> i64 {
+    let total: i64 = s.frames
+    if s.mode == SINK_WAV {
+        wav_write_close()
+    }
+    if s.mode == SINK_DEVICE {
+        # Let the ring drain before the device goes away, or the tail clicks.
+        usleep(400000)
+        audio_device_stop(s.dev)
+        audio_device_close(s.dev)
+    }
+    s.mode = SINK_SILENT
+    return total
+}
+
+export function sink_mode(s: ptr<AudioSink>) -> i32 {
+    return s.mode
+}
+
+export function sink_is_offline(s: ptr<AudioSink>) -> bool {
+    return s.mode != SINK_DEVICE
+}
+
+export function sink_frames(s: ptr<AudioSink>) -> i64 {
+    return s.frames
+}
