@@ -19,6 +19,7 @@ open http://127.0.0.1:8000/wasm-crossings/threads/
 | --- | --- | --- |
 | 1. OS threads | proven in Chrome | 7.78x on 8 workers, identical results |
 | 2. GPU via WebGPU | proven in Chrome | 1,048,576 / 1,048,576 elements bit-identical |
+| 3. Sockets | proven in Chrome | 8 / 8 round trips, best rtt 2.20 ms |
 
 Measurements below were taken in Chrome 141 on an Apple M-series laptop
 (`navigator.hardwareConcurrency` = 14: 10 performance cores, 4 efficiency
@@ -271,3 +272,78 @@ difference was 268. Nothing was wrong with the GPU or the codegen. The map is
 chaotic, so a 1-ulp difference in one `sqrt` grows into a completely different
 answer. Numerical agreement tests on a GPU need a kernel whose error does not
 amplify, or they measure chaos instead of correctness.
+
+---
+
+## 3. Sockets
+
+### Mechanism
+
+`runtime/flow_tcp.c` is `socket()`, `connect()`, `send()`, `recv()`, `close()`
+and nothing else, and `lib/runtime/tcp.flow` is a thin Flow surface over it.
+The file compiles for wasm unmodified.
+
+Emscripten's SOCKFS implements the BSD socket calls over WebSockets. A
+`connect()` to `127.0.0.1:9505` opens `ws://127.0.0.1:9505/` with the `binary`
+subprotocol, and every `send`/`recv` becomes a binary WebSocket frame. Flow's
+`flow_rt_tcp_connect` already hard-codes loopback, which is exactly the shape
+this maps onto.
+
+```
+python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506
+python3 wasm/flow_wasm_sockets.py
+```
+
+### The constraint people trip over
+
+**A browser cannot open a raw TCP socket.** Not to localhost, not to anywhere.
+There is no API for it and there will not be one, because a page that could
+speak arbitrary TCP could port-scan your intranet. Whatever is on the far end
+has to speak WebSocket. This is a browser security rule and it is not a Flow
+limitation; the same wall stops every language.
+
+`scripts/ws_echo_relay.py` is the far end, written against the Python standard
+library so the demo has no dependencies: an HTTP upgrade handshake, a frame
+codec, and an echo. It also serves plain TCP on a second port so the identical
+Flow program can be run natively for comparison.
+
+**Nothing may block.** Emscripten's `connect()` cannot wait for the handshake,
+so it returns success immediately and finishes later; `recv()` reports EAGAIN
+until the first frame lands. Both events arrive on the browser event loop, and
+a WASM module spinning in a poll loop never lets that loop run.
+
+### The workaround
+
+`-sASYNCIFY`, and a poll loop that yields. `flow_net_yield` in
+`wasm/crossing_assets/net_yield_shim.c` is `emscripten_sleep` under WASM and
+`usleep` natively, so one Flow source runs in both places. ASYNCIFY unwinds
+the WASM stack at the sleep, returns to the event loop, and resumes where it
+left off, which is what lets a straight-line `send`-then-`recv` program work
+inside a browser.
+
+### Measured, in Chrome
+
+Relay on `127.0.0.1:9505` (WebSocket) and `127.0.0.1:9506` (plain TCP).
+`examples/wasm/tcp_echo.flow` sends 8 messages of 32 bytes, waits for each
+echo, and compares the returned bytes to what it sent.
+
+| build | transport | round trips | best rtt | mean rtt |
+| --- | --- | --- | --- | --- |
+| browser (WASM) | `ws://127.0.0.1:9505/` | **8 / 8** | 2.20 ms | 3.40 ms |
+| native (clang) | TCP `127.0.0.1:9506` | 8 / 8 | 0.092 ms | 0.116 ms |
+
+Both PASS: every echo matched byte for byte. The relay's own log confirms it
+saw eight 32-byte binary frames and sent eight back. Console clean.
+
+The browser is roughly 24x slower per round trip, and almost all of that is
+the poll loop's own granularity: `emscripten_sleep` is a `setTimeout`, whose
+floor in a foreground tab is about 4 ms. It is measuring the browser's timer,
+not the network.
+
+### Background tabs distort this badly
+
+The first run of this demo reported a 748 ms mean round trip. The tab was not
+foregrounded, and Chrome clamps `setTimeout` in a background tab to roughly
+1 Hz. Every poll that had to yield waited a full second. Foregrounding the tab
+took the mean from 748 ms to 3.4 ms with no code change. Any WASM benchmark
+that sleeps needs a visible tab, or it is measuring throttling.
