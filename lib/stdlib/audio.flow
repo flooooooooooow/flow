@@ -19,6 +19,8 @@
 
 extern { function malloc(size: i32) -> ptr<f32> }
 extern { function free(ptr: ptr<f32>) -> void }
+extern { function powf(base: f32, e: f32) -> f32 }
+extern { function log10f(x: f32) -> f32 }
 
 # =============================================================================
 # Time and Rate Types
@@ -336,61 +338,44 @@ export function buffer_duration(buf: Buffer, rate: SampleRate) -> Seconds {
 # Decibel Conversions
 # =============================================================================
 
-# Convert linear amplitude to decibels
-# 1.0 -> 0dB, 0.5 -> -6dB, 0.0 -> -infinity (clamped to -96dB)
+# Floor for dB readouts. Anything quieter reads as DB_SILENCE.
+export const DB_SILENCE: f32 = -96.0
+
+# Convert linear amplitude to decibels: 20 * log10(linear).
+# 1.0 -> 0 dB, 0.5 -> -6.02 dB, 0.0 (or negative) -> DB_SILENCE.
 export function linear_to_db(linear: f32) -> f32 {
-    if linear <= 0.00001 {
-        return -96.0  # Effective silence
+    # 10^(-96/20) = 1.5849e-5. Below that we are past the floor anyway,
+    # and this also keeps log10f away from zero and negative inputs.
+    if linear <= 0.000015849 {
+        return DB_SILENCE
     }
-    # 20 * log10(linear) - using ln and conversion factor
-    # log10(x) = ln(x) / ln(10) ≈ ln(x) * 0.4343
-    let ln_val: f32 = 0.0  # TODO: Need ln function
-    # Approximation: for now just use ratio
-    return 20.0 * linear  # Placeholder - needs real log
+    return 20.0 * log10f(linear)
 }
 
-# Convert decibels to linear amplitude
-# 0dB -> 1.0, -6dB -> 0.5, -96dB -> ~0.0
+# Convert decibels to linear amplitude: 10^(db/20).
+# 0 dB -> 1.0, -6.02 dB -> 0.5, <= -96 dB -> 0.0
 export function db_to_linear(db: f32) -> f32 {
-    if db <= -96.0 {
+    if db <= DB_SILENCE {
         return 0.0
     }
-    # 10^(db/20) = e^(db/20 * ln(10)) ≈ e^(db * 0.1151)
-    # Approximation using Taylor series
-    let exp_arg: f32 = db * 0.1151
-    let result: f32 = 1.0 + exp_arg + exp_arg * exp_arg * 0.5
-    if result < 0.0 {
-        return 0.0
-    }
-    return result
+    return powf(10.0, db * 0.05)
 }
 
 # =============================================================================
 # Frequency Helpers
 # =============================================================================
 
-# MIDI note to frequency (A4 = 69 = 440Hz)
+# MIDI note to frequency (A4 = 69 = 440Hz): f = 440 * 2^((note - 69) / 12)
+# Exact via powf; the old repeated-multiply version drifted by ~2.4e-4
+# relative over four octaves and only handled whole semitones.
 export function midi_to_freq(note: i32) -> f32 {
-    # f = 440 * 2^((note - 69) / 12)
     let semitones: f32 = note - 69
-    let octaves: f32 = semitones / 12.0
-    # 2^octaves approximation
-    let mut freq: f32 = 440.0
-    # Simple approximation for common range
-    if octaves > 0.0 {
-        let mut i: i32 = 0
-        while i < octaves * 12.0 {
-            freq = freq * 1.05946  # 2^(1/12)
-            i = i + 1
-        }
-    } else {
-        let mut i: i32 = 0
-        while i < -octaves * 12.0 {
-            freq = freq / 1.05946
-            i = i + 1
-        }
-    }
-    return freq
+    return 440.0 * powf(2.0, semitones / 12.0)
+}
+
+# MIDI note to frequency with a fractional (pitch-bent / detuned) note number.
+export function midi_to_freq_f(note: f32) -> f32 {
+    return 440.0 * powf(2.0, (note - 69.0) / 12.0)
 }
 
 # Frequency to period in samples
